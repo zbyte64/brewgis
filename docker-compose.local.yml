@@ -1,0 +1,83 @@
+volumes:
+  brewgis_local_postgres_data: {}
+  brewgis_local_postgres_data_backups: {}
+  brewgis_local_redis_data: {}
+
+services:
+  django: &django
+    build:
+      context: .
+      dockerfile: ./compose/local/django/Dockerfile
+    image: brewgis_local_django
+    container_name: brewgis_local_django
+    depends_on:
+      - postgres
+      - redis
+      - tipg
+    volumes:
+      - .:/app:z
+    env_file:
+      - ./.envs/.local/.django
+      - ./.envs/.local/.postgres
+    ports:
+      - '8000:8000'
+    command: /start
+
+  postgres:
+    image: postgis/postgis:17-3.5
+    container_name: brewgis_local_postgres
+    volumes:
+      - brewgis_local_postgres_data:/var/lib/postgresql/data
+      - brewgis_local_postgres_data_backups:/backups
+    env_file:
+      - ./.envs/.local/.postgres
+  
+  tipg:
+    image: ghcr.io/developmentseed/tipg:latest
+    container_name: brewgis_local_tipg
+    environment:
+      PORT: 8081
+      TIPG_DEBUG: "True"
+      TIPG_ROOT_PATH: /tipg
+      DATABASE_URL: postgresql://rADfmsnMjDXKephNGWFkfdPkuSAjdASF:glm5bKLmVKkfdJaM9qkDREdor4y8uSEJZKZvLVwP5jeEX6YSnw6DnNG9EYvupSlg@postgres:5432/postgres
+    ports:
+      - 8081
+    depends_on:
+      - postgres
+
+  redis:
+    image: docker.io/redis:6
+    container_name: brewgis_local_redis
+    
+    volumes:
+      - brewgis_local_redis_data:/data
+    
+
+  celeryworker:
+    <<: *django
+    image: brewgis_local_celeryworker
+    container_name: brewgis_local_celeryworker
+    depends_on:
+      - redis
+      - postgres
+      - tipg
+    ports: []
+    command: /start-celeryworker
+
+  celerybeat:
+    <<: *django
+    image: brewgis_local_celerybeat
+    container_name: brewgis_local_celerybeat
+    depends_on:
+      - redis
+      - postgres
+    ports: []
+    command: /start-celerybeat
+
+  flower:
+    <<: *django
+    image: brewgis_local_flower
+    container_name: brewgis_local_flower
+    ports:
+      - '5555:5555'
+    command: /start-flower
