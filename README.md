@@ -7,11 +7,33 @@ GIS Workspace
 
 License: GPLv3
 
+## Virtual Environment
+
+Setup a python environment with the necessary dependencies:
+
+    $ python3.12 -m venv .
+    $ source bin/activate
+    $ pip install -r requirements/local.txt
+
 ## Settings
 
 Moved to [settings](https://cookiecutter-django.readthedocs.io/en/latest/1-getting-started/settings.html).
 
 ## Basic Commands
+
+### Initialize Application Database
+
+    $ docker compose -f docker-compose.local.yml run django python manage.py migrate
+
+### Loading Data
+
+- To load a sql file into the database:
+
+    $ docker compose -f docker-compose.local.yml exec -T postgres psql -U rADfmsnMjDXKephNGWFkfdPkuSAjdASF -d postgres < ~/Downloads/urbanfootprint-sacog-source-db.sql
+
+### Running Django commands through Docker
+
+    $ docker compose -f docker-compose.local.yml run django python manage.py createsuperuser
 
 ### Setting Up Your Users
 
