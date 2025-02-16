@@ -12,7 +12,7 @@
 
 __author__ = 'calthorpe_analytics'
 
-from footprint.main.models.analysis_module.vmt_module.vmt_model_constants import cProd_perc_per_hh, cProd_perc_hbw, cAttractions_per_hh_hbw, cAttractions_per_ret_emp_hbw, cAttractions_per_service_emp_hbw, cAttractions_per_ind_emp_hbw, cProd_perc_hbo, cAttractions_per_hh_hbo, cAttractions_per_ret_emp_hbo, cAttractions_per_service_emp_hbo, cAttractions_per_ind_emp_hbo, cProd_perc_nhb, cAttractions_per_hh_nhb, cAttractions_per_ret_emp_nhb, cAttractions_per_service_emp_nhb, cAttractions_per_ind_emp_nhb, c_nhbtgph_within_project, c_nhbtgph_in_to_out_project, cProd_school_hbw, cProd_school_hbo, cProd_school_nhb, cAttractions_school_hbw, cAttractions_school_hbo, cAttractions_school_nhb
+from brewgis.contrib.footprint.analysis_module.vmt_module.vmt_model_constants import cProd_perc_per_hh, cProd_perc_hbw, cAttractions_per_hh_hbw, cAttractions_per_ret_emp_hbw, cAttractions_per_service_emp_hbw, cAttractions_per_ind_emp_hbw, cProd_perc_hbo, cAttractions_per_hh_hbo, cAttractions_per_ret_emp_hbo, cAttractions_per_service_emp_hbo, cAttractions_per_ind_emp_hbo, cProd_perc_nhb, cAttractions_per_hh_nhb, cAttractions_per_ret_emp_nhb, cAttractions_per_service_emp_nhb, cAttractions_per_ind_emp_nhb, c_nhbtgph_within_project, c_nhbtgph_in_to_out_project, cProd_school_hbw, cProd_school_hbo, cProd_school_nhb, cAttractions_school_hbw, cAttractions_school_hbo, cAttractions_school_nhb
 
 
 ##-------------------------------

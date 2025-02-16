@@ -10,9 +10,9 @@
 # MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU General
 # Public License v3 for more details; see <http://www.gnu.org/licenses/>.
 
-from footprint.main.models.analysis_module.geoprocessing_functions import aggregate_within_distance, \
+from brewgis.contrib.footprint.analysis_module.geoprocessing_functions import aggregate_within_distance, \
     aggregate_within_variable_distance, calculate_distance
-from footprint.main.utils.uf_toolbox import drop_table, execute_sql, add_geom_idx, add_primary_key
+from brewgis.contrib.footprint.utils.uf_toolbox import drop_table, execute_sql, add_geom_idx, add_primary_key
 
 __author__ = 'calthorpe_analytics'
 

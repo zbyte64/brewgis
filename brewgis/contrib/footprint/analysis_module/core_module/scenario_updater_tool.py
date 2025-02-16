@@ -13,19 +13,19 @@
 
 import logging
 
-from footprint.main.managers.geo_inheritance_manager import GeoInheritanceManager
-from footprint.main.models.analysis_module.analysis_tool import AnalysisTool
-from footprint.main.models.analysis_module.core_module.core_update_future_scenario import update_future_scenario
-from footprint.main.models.analysis_module.core_module.core_update_increment import update_increment_feature
-from footprint.main.models.geospatial.db_entity_keys import DbEntityKey
-from footprint.main.utils.query_parsing import annotated_related_feature_class_pk_via_geographies
+
+from brewgis.contrib.footprint.analysis_module.analysis_tool import AnalysisTool
+from brewgis.contrib.footprint.analysis_module.core_module.core_update_future_scenario import update_future_scenario
+from brewgis.contrib.footprint.analysis_module.core_module.core_update_increment import update_increment_feature
+from brewgis.contrib.footprint.geospatial.db_entity_keys import DbEntityKey
+from brewgis.contrib.footprint.utils.query_parsing import annotated_related_feature_class_pk_via_geographies
 from footprint.utils.websockets import send_message_to_client
 
 logger = logging.getLogger(__name__)
 
 class ScenarioUpdaterTool(AnalysisTool):
 
-    objects = GeoInheritanceManager()
+    
 
     class Meta(object):
         app_label = 'main'

@@ -11,22 +11,22 @@
 # Public License v3 for more details; see <http://www.gnu.org/licenses/>.
 
 import logging
-from StringIO import StringIO
+from io import BytesIO as StringIO
 
 import datetime
 import os
 from django.db.models import Sum, Q
 
-from footprint.main.managers.geo_inheritance_manager import GeoInheritanceManager
-from footprint.main.models.analysis_module.analysis_tool import AnalysisTool
-from footprint.main.models.analysis_module.vmt_module.vmt_module_preprocesses import run_vmt_one_mile_buffers, \
+
+from brewgis.contrib.footprint.analysis_module.analysis_tool import AnalysisTool
+from brewgis.contrib.footprint.analysis_module.vmt_module.vmt_module_preprocesses import run_vmt_one_mile_buffers, \
     run_vmt_quarter_mile_buffers, run_vmt_variable_trip_length_buffers, run_transit_proximity
-from footprint.main.models.config.scenario import FutureScenario
-from footprint.main.models.geospatial.db_entity_keys import DbEntityKey
-from footprint.main.utils.query_parsing import annotated_related_feature_class_pk_via_geographies
-from footprint.main.utils.uf_toolbox import drop_table, execute_sql, copy_from_text_to_db, create_sql_calculations, \
+from brewgis.contrib.footprint.config.scenario import FutureScenario
+from brewgis.contrib.footprint.geospatial.db_entity_keys import DbEntityKey
+from brewgis.contrib.footprint.utils.query_parsing import annotated_related_feature_class_pk_via_geographies
+from brewgis.contrib.footprint.utils.uf_toolbox import drop_table, execute_sql, copy_from_text_to_db, create_sql_calculations, \
     truncate_table
-from footprint.main.utils.utils import parse_schema_and_table
+from brewgis.contrib.footprint.utils.utils import parse_schema_and_table
 from footprint.utils.websockets import send_message_to_client
 from vmt_calculate_final_results import calculate_final_vmt_results
 from vmt_calculate_log_odds import calculate_log_odds
@@ -41,7 +41,7 @@ logger = logging.getLogger(__name__)
 
 class VmtUpdaterTool(AnalysisTool):
 
-    objects = GeoInheritanceManager()
+    
     JOB_SIZE = 10000
 
     class Meta(object):

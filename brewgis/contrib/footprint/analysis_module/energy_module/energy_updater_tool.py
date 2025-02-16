@@ -15,19 +15,18 @@ from itertools import product
 import os
 import time
 import datetime
-from StringIO import StringIO
+from io import BytesIO as StringIO
 from django.db.models import Q
 from django.core.exceptions import ObjectDoesNotExist
-from footprint.main.managers.geo_inheritance_manager import GeoInheritanceManager
-from footprint.main.models.analysis.building_performance import BuildingPerformance
-from footprint.main.models.analysis_module.analysis_tool import AnalysisTool
-from footprint.main.models.config.scenario import FutureScenario
+from brewgis.contrib.footprint.analysis.building_performance import BuildingPerformance
+from brewgis.contrib.footprint.analysis_module.analysis_tool import AnalysisTool
+from brewgis.contrib.footprint.config.scenario import FutureScenario
 import logging
-from footprint.main.models.geospatial.db_entity_keys import DbEntityKey
-from footprint.main.utils.query_parsing import annotated_related_feature_class_pk_via_geographies
-from footprint.main.utils.uf_toolbox import copy_from_text_to_db, execute_sql, drop_table, create_sql_calculations, \
+from brewgis.contrib.footprint.geospatial.db_entity_keys import DbEntityKey
+from brewgis.contrib.footprint.utils.query_parsing import annotated_related_feature_class_pk_via_geographies
+from brewgis.contrib.footprint.utils.uf_toolbox import copy_from_text_to_db, execute_sql, drop_table, create_sql_calculations, \
     add_geom_idx, add_primary_key, add_attribute_idx, truncate_table
-from footprint.main.utils.utils import parse_schema_and_table
+from brewgis.contrib.footprint.utils.utils import parse_schema_and_table
 
 __author__ = 'calthorpe_analytics'
 
@@ -37,7 +36,6 @@ logger = logging.getLogger(__name__)
 
 class EnergyUpdaterTool(AnalysisTool, BuildingPerformance):
 
-    objects = GeoInheritanceManager()
     COMMERCIAL_TYPES = [
         'retail_services', 'restaurant', 'accommodation', 'other_services', 'office_services', 'education',
         'public_admin', 'medical_services', 'wholesale', 'transport_warehousing'

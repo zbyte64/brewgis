@@ -12,12 +12,12 @@
 
 import logging
 import time
-from footprint.main.managers.geo_inheritance_manager import GeoInheritanceManager
-from footprint.main.models.analysis_module.analysis_tool import AnalysisTool
-from footprint.main.models.geospatial.behavior import BehaviorKey
-from footprint.main.models.geospatial.db_entity_keys import DbEntityKey
-from footprint.main.utils.uf_toolbox import drop_table, execute_sql, add_geom_idx, create_sql_calculations
-from footprint.main.utils.utils import parse_schema_and_table
+
+from brewgis.contrib.footprint.analysis_module.analysis_tool import AnalysisTool
+from brewgis.contrib.footprint.geospatial.behavior import BehaviorKey
+from brewgis.contrib.footprint.geospatial.db_entity_keys import DbEntityKey
+from brewgis.contrib.footprint.utils.uf_toolbox import drop_table, execute_sql, add_geom_idx, create_sql_calculations
+from brewgis.contrib.footprint.utils.utils import parse_schema_and_table
 
 logger = logging.getLogger(__name__)
 
@@ -26,7 +26,7 @@ __author__ = 'calthorpe_analytics'
 
 class EnvironmentalConstraintUnionTool(AnalysisTool):
 
-    objects = GeoInheritanceManager()
+    
 
     class Meta(object):
         app_label = 'main'

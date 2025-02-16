@@ -10,8 +10,8 @@
 # MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU General
 # Public License v3 for more details; see <http://www.gnu.org/licenses/>.
 
-from footprint.main.models.analysis_module.core_module.core_revert_to_base_condition import core_increment_revert_to_base_condition
-from footprint.main.models.geospatial.db_entity_keys import DbEntityKey
+from brewgis.contrib.footprint.analysis_module.core_module.core_revert_to_base_condition import core_increment_revert_to_base_condition
+from brewgis.contrib.footprint.geospatial.db_entity_keys import DbEntityKey
 
 __author__ = 'calthorpe_analytics'
 

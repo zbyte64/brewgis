@@ -10,8 +10,8 @@
 # MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU General
 # Public License v3 for more details; see <http://www.gnu.org/licenses/>.
 
-from footprint.main.lib.functions import flatten
-from footprint.main.utils.uf_toolbox import count_cores, queue_process, report_sql_values, MultithreadProcess, \
+from brewgis.contrib.footprint.lib.functions import flatten
+from brewgis.contrib.footprint.utils.uf_toolbox import count_cores, queue_process, report_sql_values, MultithreadProcess, \
     create_sql_calculations, execute_sql, drop_table, add_attribute_idx
 
 __author__ = 'calthorpe_analytics'

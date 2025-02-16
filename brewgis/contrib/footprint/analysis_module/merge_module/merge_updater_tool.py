@@ -17,9 +17,9 @@ from django.contrib.gis.db import models
 from django.db import transaction
 from django.db.models.signals import post_save
 
-from footprint.main.managers.geo_inheritance_manager import GeoInheritanceManager
-from footprint.main.models.analysis_module.analysis_tool import AnalysisTool
-from footprint.main.utils.subclasses import receiver_subclasses
+
+from brewgis.contrib.footprint.analysis_module.analysis_tool import AnalysisTool
+from brewgis.contrib.footprint.utils.subclasses import receiver_subclasses
 from footprint.utils.websockets import send_message_to_client
 
 __author__ = 'calthorpe_analytics'
@@ -32,7 +32,7 @@ class MergeUpdaterTool(AnalysisTool):
     db_entity_key = models.CharField(max_length=100, null=True, blank=True)
     target_config_entity = models.ForeignKey('ConfigEntity', null=True, blank=True)
 
-    objects = GeoInheritanceManager()
+    
 
     class Meta(object):
         app_label = 'main'

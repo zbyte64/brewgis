@@ -11,11 +11,11 @@
 # Public License v3 for more details; see <http://www.gnu.org/licenses/>.
 
 from decimal import Decimal
-from footprint.main.lib.functions import map_to_dict
-from footprint.main.models.analysis_module.core_module.core_revert_to_base_condition import \
+from brewgis.contrib.footprint.lib.functions import map_to_dict
+from brewgis.contrib.footprint.analysis_module.core_module.core_revert_to_base_condition import \
     core_end_state_revert_to_base_condition
-from footprint.main.models.built_form.flat_built_form import FlatBuiltForm
-from footprint.main.models.geospatial.db_entity_keys import DbEntityKey
+from brewgis.contrib.footprint.built_form.flat_built_form import FlatBuiltForm
+from brewgis.contrib.footprint.geospatial.db_entity_keys import DbEntityKey
 
 import logging
 

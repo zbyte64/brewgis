@@ -12,8 +12,8 @@
 
 import math
 
-from footprint.main.models.analysis_module.vmt_module.vmt_model_constants import cICPM_hbw_110, cICPM_hbw_113, cICPM_hbw_114, cICPM_hbw_107, cICPM_hbo_109, cICPM_hbo_110, cICPM_hbo_112, cICPM_hbo_113, cICPM_hbo_114, cICPM_hbo_107, cICPM_nhb_107, cICPM_nhb_108, cICPM_nhb_109, cICPM_nhb_112, cICPM_nhb_113, cICPM_nhb_114, cWTPM_hbw_121, cWTPM_hbw_124, cWTPM_hbw_127, cWTPM_hbw_128, cWTPM_hbw_129, cWTPM_hbo_121, cWTPM_hbo_122, cWTPM_hbo_123, cWTPM_hbo_124, cWTPM_hbo_126, cWTPM_hbo_127, cWTPM_hbo_128, cWTPM_hbo_129, cWTPM_nhb_121, cWTPM_nhb_123, cWTPM_nhb_126, cWTPM_nhb_127, cWTPM_nhb_128, cWTPM_nhb_129, cTTPM_hbw_138, cTTPM_hbw_136, cTTPM_hbw_139, cTTPM_hbw_140, cTTPM_hbw_141, cTTPM_hbw_142, cTTPM_hbo_136, cTTPM_hbo_137, cTTPM_hbo_140, cTTPM_hbo_141, cTTPM_hbo_142, cTTPM_nhb_136, cTTPM_nhb_139, cTTPM_nhb_142
-from footprint.main.models.analysis_module.vmt_module.vmt_auto_ownership_model import generate_predicted_auto_ownership
+from brewgis.contrib.footprint.analysis_module.vmt_module.vmt_model_constants import cICPM_hbw_110, cICPM_hbw_113, cICPM_hbw_114, cICPM_hbw_107, cICPM_hbo_109, cICPM_hbo_110, cICPM_hbo_112, cICPM_hbo_113, cICPM_hbo_114, cICPM_hbo_107, cICPM_nhb_107, cICPM_nhb_108, cICPM_nhb_109, cICPM_nhb_112, cICPM_nhb_113, cICPM_nhb_114, cWTPM_hbw_121, cWTPM_hbw_124, cWTPM_hbw_127, cWTPM_hbw_128, cWTPM_hbw_129, cWTPM_hbo_121, cWTPM_hbo_122, cWTPM_hbo_123, cWTPM_hbo_124, cWTPM_hbo_126, cWTPM_hbo_127, cWTPM_hbo_128, cWTPM_hbo_129, cWTPM_nhb_121, cWTPM_nhb_123, cWTPM_nhb_126, cWTPM_nhb_127, cWTPM_nhb_128, cWTPM_nhb_129, cTTPM_hbw_138, cTTPM_hbw_136, cTTPM_hbw_139, cTTPM_hbw_140, cTTPM_hbw_141, cTTPM_hbw_142, cTTPM_hbo_136, cTTPM_hbo_137, cTTPM_hbo_140, cTTPM_hbo_141, cTTPM_hbo_142, cTTPM_nhb_136, cTTPM_nhb_139, cTTPM_nhb_142
+from brewgis.contrib.footprint.analysis_module.vmt_module.vmt_auto_ownership_model import generate_predicted_auto_ownership
 
 __author__ = 'calthorpe_analytics'
 

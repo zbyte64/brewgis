@@ -10,7 +10,7 @@
 # MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU General
 # Public License v3 for more details; see <http://www.gnu.org/licenses/>.
 
-from footprint.main.models.analysis_module.vmt_module.vmt_model_constants import cJobConversionRate
+from brewgis.contrib.footprint.analysis_module.vmt_module.vmt_model_constants import cJobConversionRate
 
 __author__ = 'calthorpe_analytics'
 

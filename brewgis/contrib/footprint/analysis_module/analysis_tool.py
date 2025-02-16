@@ -17,11 +17,11 @@ from django.conf import settings
 from django.db import models
 from django.db.models.signals import post_save
 
-from footprint.main.managers.geo_inheritance_manager import GeoInheritanceManager
+
 from footprint.main.mixins.shared_key import SharedKey
-from footprint.main.models.geospatial.behavior import Behavior
-from footprint.main.models.keys.keys import Keys
-from footprint.main.utils.subclasses import receiver_subclasses
+from brewgis.contrib.footprint.geospatial.behavior import Behavior
+from brewgis.contrib.footprint.keys.keys import Keys
+from brewgis.contrib.footprint.utils.subclasses import receiver_subclasses
 from footprint.utils.websockets import send_message_to_client
 
 __author__ = 'calthorpe_analytics'
@@ -34,7 +34,7 @@ class AnalysisTool(SharedKey):
         Base class for Analysis Tools. AnalysisModules have many AnalysisTools
     """
 
-    objects = GeoInheritanceManager()
+    
     config_entity = models.ForeignKey('ConfigEntity', null=False)
     # This behavior determines what DbEntities the tool responds to when the former are created or updated
     behavior = models.ForeignKey(Behavior, null=True)

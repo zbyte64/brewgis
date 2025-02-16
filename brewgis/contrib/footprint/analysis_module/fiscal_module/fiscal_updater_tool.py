@@ -13,9 +13,9 @@
 import logging
 import time
 
-from footprint.main.managers.geo_inheritance_manager import GeoInheritanceManager
-from footprint.main.models.analysis_module.analysis_tool import AnalysisTool
-from footprint.main.models.geospatial.db_entity_keys import DbEntityKey
+
+from brewgis.contrib.footprint.analysis_module.analysis_tool import AnalysisTool
+from brewgis.contrib.footprint.geospatial.db_entity_keys import DbEntityKey
 from footprint.utils.websockets import send_message_to_client
 
 __author__ = 'calthorpe_analytics'
@@ -25,7 +25,7 @@ logger = logging.getLogger(__name__)
 
 class FiscalUpdaterTool(AnalysisTool):
 
-    objects = GeoInheritanceManager()
+    
 
     class Meta(object):
         app_label = 'main'

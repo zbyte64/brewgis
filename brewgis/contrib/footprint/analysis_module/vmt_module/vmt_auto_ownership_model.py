@@ -11,7 +11,7 @@
 # Public License v3 for more details; see <http://www.gnu.org/licenses/>.
 
 import math
-from footprint.main.models.analysis_module.vmt_module.vmt_model_constants import cAuto_const, cAuto_const_coef, cAuto_workers_per_hh_coef, cAuto_non_workers_16_64_hh_coef, cAuto_non_workers_65_hh_coef, cAuto_hh_income_coef, cAuto_hh_income_gt_100k_coef, cAuto_hh_mfdu_coef, cAuto_log_net_hu_dens_coef, cAuto_log_net_retail_dens_coef, cAuto_jobs_45_trans_coef
+from brewgis.contrib.footprint.analysis_module.vmt_module.vmt_model_constants import cAuto_const, cAuto_const_coef, cAuto_workers_per_hh_coef, cAuto_non_workers_16_64_hh_coef, cAuto_non_workers_65_hh_coef, cAuto_hh_income_coef, cAuto_hh_income_gt_100k_coef, cAuto_hh_mfdu_coef, cAuto_log_net_hu_dens_coef, cAuto_log_net_retail_dens_coef, cAuto_jobs_45_trans_coef
 
 __author__ = 'calthorpe_analytics'
 

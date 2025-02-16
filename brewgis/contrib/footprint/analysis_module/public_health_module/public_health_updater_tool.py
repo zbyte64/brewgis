@@ -13,7 +13,7 @@
 import csv
 import glob
 import logging
-from StringIO import StringIO
+from io import BytesIO as StringIO
 from math import exp, log
 
 import os
@@ -21,17 +21,17 @@ import re
 from django.db import models
 from django.db.models import Q
 
-from footprint.main.managers.geo_inheritance_manager import GeoInheritanceManager
-from footprint.main.models.analysis_module.analysis_tool import AnalysisTool
-from footprint.main.models.analysis_module.public_health_module.public_health_preprocesses import \
+
+from brewgis.contrib.footprint.analysis_module.analysis_tool import AnalysisTool
+from brewgis.contrib.footprint.analysis_module.public_health_module.public_health_preprocesses import \
     populate_public_health_grid_relation_table, populate_grid_census_rate_attributes, run_distance_variables_processes, \
     run_aggregate_within_distance_processes, run_aggregate_within_variable_distance_processes, \
     populate_transformations_and_indices
-from footprint.main.models.config.scenario import FutureScenario
-from footprint.main.models.geospatial.db_entity_keys import DbEntityKey
-from footprint.main.utils.uf_toolbox import drop_table, execute_sql, copy_from_text_to_db, add_geom_idx, add_primary_key, \
+from brewgis.contrib.footprint.config.scenario import FutureScenario
+from brewgis.contrib.footprint.geospatial.db_entity_keys import DbEntityKey
+from brewgis.contrib.footprint.utils.uf_toolbox import drop_table, execute_sql, copy_from_text_to_db, add_geom_idx, add_primary_key, \
     create_sql_calculations, report_sql_values, truncate_table, flatten
-from footprint.main.utils.utils import parse_schema_and_table
+from brewgis.contrib.footprint.utils.utils import parse_schema_and_table
 from footprint.utils.websockets import send_message_to_client
 
 __author__ = 'calthorpe_analytics'
@@ -152,7 +152,7 @@ class PublicHealthOutcomeAnalysis(models.Model):
 
 class PublicHealthUpdaterTool(AnalysisTool):
 
-    objects = GeoInheritanceManager()
+    
     # draft of methods for public health analysis
 
     public_health_model_groups = {1: None, 2: None, 3: None, 4: None}

@@ -16,11 +16,13 @@ import datetime
 from django.utils.timezone import utc
 
 
-from footprint.main.models.config.scenario import BaseScenario, FutureScenario
-from footprint.main.models.geospatial.db_entity_keys import DbEntityKey
-from footprint.main.utils.utils import timestamp
-from brewgis.contrib.footprint.analysis_tool import AnalysisTool
-
+from brewgis.contrib.footprint.analysis_module.analysis_tool import AnalysisTool
+from brewgis.contrib.footprint.config.scenario import BaseScenario, FutureScenario
+from brewgis.contrib.footprint.geospatial.db_entity_keys import DbEntityKey
+from brewgis.contrib.footprint.presentation.layer.layer import Layer
+from brewgis.contrib.footprint.utils.utils import timestamp
+from footprint.utils.websockets import send_message_to_client
+from tilestache_uf.utils import invalidate_feature_cache
 
 logger = logging.getLogger(__name__)
 
@@ -28,6 +30,16 @@ __author__ = 'calthorpe_analytics'
 
 
 class AgricultureUpdaterTool(AnalysisTool):
+
+    
+
+    class Meta(object):
+        app_label = 'main'
+        abstract = False
+
+    def test_agriculture_core(self, **kwargs):
+        self.agriculture_analysis(**kwargs)
+
     ANALYSIS_FIELDS = ["gross_net_pct",
                         "built_form_key",
                         "built_form_id",
@@ -41,7 +53,7 @@ class AgricultureUpdaterTool(AnalysisTool):
                         "truck_trips"]
 
     def progress(self, proportion, **kwargs):
-        self.send_message_to_client(
+        send_message_to_client(
             kwargs['user'].id,
             dict(
                 event='postSavePublisherProportionCompleted',
@@ -51,6 +63,52 @@ class AgricultureUpdaterTool(AnalysisTool):
                 class_name='AnalysisModule',
                 key=kwargs['analysis_module'].key,
                 proportion=proportion))
+
+    def update_dependent_scenarios(self, base_features, scenario):
+        if isinstance(scenario, BaseScenario):
+
+            future_scenarios = FutureScenario.objects.filter(parent_config_entity=scenario.parent_config_entity_subclassed)
+            logger.info("Updating dependent scenarios {0} of {1}".format(future_scenarios, scenario))
+            for future_scenario in future_scenarios:
+
+                agriculture_feature_class = future_scenario.db_entity_feature_class(DbEntityKey.FUTURE_AGRICULTURE)
+                future_features = agriculture_feature_class.objects.filter(
+                    id__in=base_features,
+                    updater__isnull=True
+                )
+                logger.info("Updating {0} features of {1}".format(future_features.count(), future_scenario))
+
+                updated_built_forms = []
+                for feature in future_features.iterator():
+
+                    base_feature = base_features.get(id=feature.id)
+                    if base_feature.built_form_id != feature.built_form_id:
+                        updated_built_forms.append(feature)
+                    base_attributes = dict(
+                        gross_net_pct=base_feature.gross_net_pct,
+                        built_form_key=base_feature.built_form_key,
+                        built_form_id=base_feature.built_form_id,
+                        density_pct=base_feature.density_pct,
+                        acres_gross=base_feature.acres_gross,
+                        crop_yield=base_feature.crop_yield,
+                        market_value=base_feature.market_value,
+                        production_cost=base_feature.production_cost,
+                        water_consumption=base_feature.water_consumption,
+                        labor_force=base_feature.labor_force,
+                        truck_trips=base_feature.truck_trips,
+                    )
+
+                    for attr, value in base_attributes.iteritems():
+                        setattr(feature, attr, value)
+                    feature.save(update_fields=self.ANALYSIS_FIELDS)
+
+                layer = Layer.objects.filter(presentation__config_entity=agriculture_feature_class.config_entity,
+                                             db_entity_interest__db_entity__key=agriculture_feature_class.db_entity_key)[0]
+
+                if updated_built_forms:
+                    for key in layer.keys:
+                        # clear tilestache cache for updated dependencies
+                        invalidate_feature_cache(key, updated_built_forms)
 
     def update(self, **kwargs):
         scenario = self.config_entity.subclassed
@@ -69,7 +127,6 @@ class AgricultureUpdaterTool(AnalysisTool):
             features = agriculture_feature_class.objects.filter(id__in=ids)
         else:
             features = agriculture_feature_class.objects.filter(built_form__isnull=False)
-        # TODO pydantic ORM like access?
 
         feature_count = features.count()
 
@@ -120,6 +177,7 @@ class AgricultureUpdaterTool(AnalysisTool):
         self.progress(.9, **kwargs)
         logger.debug('{0}:Finished Agriculture Core Analysis for {1} '.format(timestamp(), self.config_entity))
 
+        self.update_dependent_scenarios(features, scenario)
 
     #
     # def update_progress(self, number, total, start, **kwargs):

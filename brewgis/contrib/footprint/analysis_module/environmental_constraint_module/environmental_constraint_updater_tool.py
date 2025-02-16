@@ -13,17 +13,17 @@
 
 from django.contrib.gis.db import models
 from django.db.models.signals import post_save
-from footprint.main.managers.geo_inheritance_manager import GeoInheritanceManager
-from footprint.main.models.analysis_module.analysis_tool import AnalysisTool
 
-from footprint.main.models.analysis_module.environmental_constraint_module.environmental_constraint_percent import \
+from brewgis.contrib.footprint.analysis_module.analysis_tool import AnalysisTool
+
+from brewgis.contrib.footprint.analysis_module.environmental_constraint_module.environmental_constraint_percent import \
     EnvironmentalConstraintPercent
-from footprint.main.models.geospatial.db_entity import DbEntity
-from footprint.main.models.geospatial.behavior import BehaviorKey
-from footprint.main.models.geospatial.db_entity_keys import DbEntityKey
-from footprint.main.utils.subclasses import receiver_subclasses
-from footprint.main.utils.uf_toolbox import execute_sql, create_sql_calculations
-from footprint.main.utils.utils import parse_schema_and_table
+from brewgis.contrib.footprint.geospatial.db_entity import DbEntity
+from brewgis.contrib.footprint.geospatial.behavior import BehaviorKey
+from brewgis.contrib.footprint.geospatial.db_entity_keys import DbEntityKey
+from brewgis.contrib.footprint.utils.subclasses import receiver_subclasses
+from brewgis.contrib.footprint.utils.uf_toolbox import execute_sql, create_sql_calculations
+from brewgis.contrib.footprint.utils.utils import parse_schema_and_table
 import logging
 
 logger = logging.getLogger(__name__)
@@ -34,7 +34,7 @@ __author__ = 'calthorpe_analytics'
 class EnvironmentalConstraintUpdaterTool(AnalysisTool):
 
     db_entities = models.ManyToManyField(DbEntity, through=EnvironmentalConstraintPercent)
-    objects = GeoInheritanceManager()
+    
 
     class Meta(object):
         app_label = 'main'

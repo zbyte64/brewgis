@@ -24,15 +24,15 @@ from django.utils.timezone import utc
 from picklefield import PickledObjectField
 
 from footprint.celery import app
-from footprint.main.lib.functions import remove_keys, merge
-from footprint.main.managers.geo_inheritance_manager import GeoInheritanceManager
+from brewgis.contrib.footprint.lib.functions import remove_keys, merge
+
 from footprint.main.mixins.deletable import Deletable
 from footprint.main.mixins.name import Name
 from footprint.main.mixins.shared_key import SharedKey
-from footprint.main.models.analysis_module.analysis_tool import AnalysisTool
-from footprint.main.models.config.config_entity import ConfigEntity
-from footprint.main.models.keys.keys import Keys
-from footprint.main.utils.utils import resolve_module_attr, full_module_path
+from brewgis.contrib.footprint.analysis_module.analysis_tool import AnalysisTool
+from brewgis.contrib.footprint.config.config_entity import ConfigEntity
+from brewgis.contrib.footprint.keys.keys import Keys
+from brewgis.contrib.footprint.utils.utils import resolve_module_attr, full_module_path
 from footprint.utils.async_job import Job
 from footprint.utils.websockets import send_message_to_client
 
@@ -45,7 +45,7 @@ class AnalysisModule(SharedKey, Name, Deletable):
         No longer abstract. This is a single concrete class.
     """
 
-    objects = GeoInheritanceManager()
+    
     class Meta(object):
         abstract = False
         app_label = 'main'

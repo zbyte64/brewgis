@@ -13,7 +13,7 @@
 
 
 from model_utils.managers import InheritanceManager
-from footprint.main.models.geospatial.db_entity import DbEntity
+from brewgis.contrib.footprint.geospatial.db_entity import DbEntity
 from django.contrib.gis.db import models
 
 __author__ = 'calthorpe_analytics'
