@@ -81,6 +81,7 @@ THIRD_PARTY_APPS = [
 ]
 
 LOCAL_APPS = [
+    "bregis.dbtmachine",
     "brewgis.workspace",
     # Your stuff: custom apps go here
 ]

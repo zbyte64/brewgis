@@ -42,19 +42,3 @@ class ScenarioLayer(models.Model):
 
     def resolve_tiles_url(self, tile_matrix_set:str='WebMercatorQuad'):
         return f'/tipg/collections/{self.layer.workspace.db_schema}.{self.db_table}/tiles/{tile_matrix_set}'
-
-
-# TODO coercable w/ model inheritance
-class UserDefinedViews(models.Model):
-    """
-        Track User Defined Views
-    """
-    workspace = models.ForeignKey(Workspace, on_delete=models.PROTECT)
-    scenario = models.ForeignKey(Scenario, null=True, blank=True, on_delete=models.PROTECT)
-    # The user who last updated the db_entity
-    updater = models.ForeignKey(settings.AUTH_USER_MODEL, null=True, on_delete=models.SET_NULL)
-    updated = models.DateTimeField(auto_now=True)
-    processed = models.DateTimeField(null=True, blank=True)
-    module = models.CharField(max_length=256)
-    config = models.JSONField()
-    db_view_result = models.CharField(max_length=64)
