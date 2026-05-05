@@ -7,39 +7,8 @@ from django.urls import path
 from django.views import defaults as default_views
 
 from django.urls import path 
-from django.contrib.auth.models import User
-from brewgis.workspace.models import Layer, Scenario, ScenarioLayer, Workspace
-from viewflow.contrib.auth import AuthViewset
-from viewflow.contrib.admin import Admin
-from viewflow.urls import Application, Site, ModelViewset
-
-from brewgis.workspace.viewsets import ImportDataViewset, CreateLayerViewset, ScenarioModelViewSet
-
-
-site = Site(title="ACME Corp", viewsets=[
-    Application(
-        title='Administration', icon='people', app_name='admin_dashboard', viewsets=[
-            ModelViewset(model=User),
-            Admin(),
-            AuthViewset(with_profile_view=False),
-            # from viewflow.workflow.flow import FlowAppViewset
-        ]
-    ),
-    Application(
-        title='GIS Workspace', icon='people', app_name='gis_workspace', viewsets=[
-            ImportDataViewset(),
-            CreateLayerViewset(),
-            ModelViewset(model=Workspace),
-            ScenarioModelViewSet(),
-            ModelViewset(model=Layer),
-            ModelViewset(model=ScenarioLayer),
-        ]
-    ),
-])
-
 
 urlpatterns = [
-    path('', site.urls),
     # Django Admin, use {% url 'admin:index' %}
     path(settings.ADMIN_URL, admin.site.urls),
     # User management
