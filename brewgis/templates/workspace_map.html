@@ -1,10 +1,10 @@
 {% extends request.resolver_match.app.base_template_name|default:'viewflow/base_page.html' %}
-{% load i18n viewflow %}
+{% load i18n viewflow static %}
 
 {% block extrahead %}
   {{ block.super }}
-  <script src="https://unpkg.com/maplibre-gl@^4.7.1/dist/maplibre-gl.js"></script>
   <link href="https://unpkg.com/maplibre-gl@^4.7.1/dist/maplibre-gl.css" rel="stylesheet" />
+  <script type="module" src="{% static 'js/brew-gis-map.js' %}"></script>
 {% endblock %}
 
 {% block content %}
@@ -33,33 +33,11 @@
             </section>
 
             {% block form %}
-            <div id="map" style="height: 90vh"></div>
-            <script>
-                var map = new maplibregl.Map({
-                    container: 'map', // container id
-                    style: 'https://raw.githubusercontent.com/go2garret/maps/main/src/assets/json/openStreetMap.json', // style URL
-                    center: [0, 0], // starting position [lng, lat]
-                    zoom: 1 // starting zoom
-                });
-                map.on('load', () => {
-                {% for layer in layers %}
-                map.addLayer({
-                    id: 'points',
-                    type: 'line',
-                    source: {
-                        type: 'vector',
-                        tiles: ['http://localhost:8000/{{layer.tiles_url}}/{z}/{x}/{y}']
-                    },
-                    'source-layer': 'default',
-                    paint: {
-                        'line-color': 'red',
-                        'line-width': 1
-                    },
-                });
-                {% endfor %}
-                })
-            </script>
-            
+            <brew-gis-map
+              map-style="https://raw.githubusercontent.com/go2garret/maps/main/src/assets/json/openStreetMap.json"
+              viewport='{{ viewport_json|safe }}'
+              layers='{{ layers_json|safe }}'>
+            </brew-gis-map>
             {% endblock form %}
           </div>
         </div>
