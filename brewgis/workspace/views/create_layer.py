@@ -1,41 +1,43 @@
-from ..models import Layer, Scenario, ScenarioLayer, Workspace
-from django.contrib.auth.decorators import user_passes_test
 from django import forms
+from django.contrib.auth.decorators import user_passes_test
+from django.http import HttpResponse
+from django.http import HttpResponseRedirect
+from django.shortcuts import render
+from django.urls import reverse
 from django.utils.decorators import method_decorator
 from django.views.generic.edit import CreateView
 
+from brewgis.workspace.models import Layer
+
 
 class CreateLayerForm(forms.ModelForm):
-    # name?
-    workspace = forms.ModelChoiceField(queryset=Workspace.objects.all())
-    # TODO scenario
-
     class Meta:
-        model = ScenarioLayer
-        fields = ['db_table']
+        model = Layer
+        fields = ["workspace", "key", "name", "db_table", "layer_source", "description"]
 
-
-def get_default_scenario(workspace: Workspace):
-    return Scenario.objects.get_or_create(workspace=workspace, name='default')[0]
-
-
-def create_layer(workspace: Workspace, db_table: str, name: str | None=None):
-    if name is None:
-        scenario = get_default_scenario(workspace)
-    else:
-        scenario = workspace.scenarios.get(name=name)
-    layer = Layer.objects.create(workspace=workspace)
-    return ScenarioLayer.objects.create(scenario=scenario, db_table=db_table, layer=layer)
-    
 
 @method_decorator(user_passes_test(lambda u: u.is_authenticated), name="dispatch")
 class CreateLayerView(CreateView):
     form_class = CreateLayerForm
     template_name = "form.html"
 
-    def form_valid(self, form: CreateLayerForm):
-        data = form.cleaned_data
-        workspace: Workspace = data['workspace']
-        return create_layer(workspace, data['db_table'])
-        # TODO return a response
+    def form_valid(self, form: CreateLayerForm) -> HttpResponse:
+        self.object = form.save()
+        redirect_url = reverse(
+            "workspace:workspace_map",
+            args=[self.object.workspace.pk],
+        )
+        if self.request.htmx:
+            response = HttpResponse()
+            response["HX-Redirect"] = redirect_url
+            return response
+        return HttpResponseRedirect(redirect_url)
 
+    def form_invalid(self, form: CreateLayerForm) -> HttpResponse:
+        if self.request.htmx:
+            return render(
+                self.request,
+                "workspace/partials/_form_content.html",
+                {"form": form, "view": self},
+            )
+        return super().form_invalid(form)

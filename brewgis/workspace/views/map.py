@@ -1,40 +1,36 @@
-from django.shortcuts import get_object_or_404, render
+import json
+
+from django.shortcuts import get_object_or_404
+from django.shortcuts import render
 from ninja import ModelSchema
-from pydantic import BaseModel, ConfigDict, Field
 
-from ..models import Scenario, Layer, ScenarioLayer
-
-
-class ScenarioLayerSchema(ModelSchema):
-    tiles_url: str = Field(alias='resolve_tiles_url')
-    
-    class Meta: 
-        model = ScenarioLayer
-        exclude = ['id', 'layer']
+from brewgis.workspace.models import Layer
+from brewgis.workspace.models import Workspace
 
 
 class LayerSchema(ModelSchema):
     class Meta:
         model = Layer
-        exclude = ['id']
+        exclude = ["id"]
 
 
-class BoundLayerSchema(LayerSchema, ScenarioLayerSchema):
-    pass
+def view_workspace_map(request, workspace_pk):
+    workspace = get_object_or_404(Workspace, pk=workspace_pk)
+    layers = workspace.layers.all()
+    layer_data = []
+    for layer in layers:
+        data = LayerSchema.model_validate(layer).model_dump()
+        data["tiles_url"] = layer.resolve_tiles_url()
+        layer_data.append(data)
 
-
-def view_scenario_map(request, pk):
-    scenario = get_object_or_404(Scenario, pk=pk)
-    scenario_layers = scenario.scenario_layers.all()
-    merged_layers = [ 
-        {
-            **LayerSchema.model_validate(sl.layer).model_dump(), 
-            **ScenarioLayerSchema.model_validate(sl).model_dump()
-        } 
-        for sl in scenario_layers
-    ]
     context = {
-        'layers': merged_layers,
-        'workspace': scenario.workspace,
+        "layers_json": json.dumps(layer_data),
+        "viewport_json": json.dumps(
+            {
+                "center": [0, 0],
+                "zoom": 1,
+            },
+        ),
+        "workspace": workspace,
     }
-    return render(request, 'workspace_map.html', context)
+    return render(request, "workspace_map.html", context)

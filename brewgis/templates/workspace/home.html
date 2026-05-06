@@ -1,0 +1,63 @@
+{% extends "base.html" %}
+{% load i18n %}
+
+{% block title %}Brew GIS{% endblock title %}
+
+{% block content %}
+<div class="container mt-4">
+  <div class="row">
+    <div class="col-lg-8 mx-auto">
+      <div class="card">
+        <div class="card-body">
+          <h1 class="card-title">Brew GIS</h1>
+          <p class="card-text">GIS Workspace for Urban Planners and Data Scientists.</p>
+
+          {% if user.is_authenticated %}
+            <div class="list-group mt-4">
+              <a href="{% url 'workspace:upload' %}" class="list-group-item list-group-item-action">
+                <div class="d-flex w-100 justify-content-between">
+                  <h5 class="mb-1">Upload GIS File</h5>
+                </div>
+                <p class="mb-1">Import a shapefile, GeoJSON, or other GIS file into the database.</p>
+              </a>
+              <a href="{% url 'workspace:create_layer' %}" class="list-group-item list-group-item-action">
+                <div class="d-flex w-100 justify-content-between">
+                  <h5 class="mb-1">Create Layer</h5>
+                </div>
+                <p class="mb-1">Define a new map layer referencing an existing database table.</p>
+              </a>
+            </div>
+
+            <div class="mt-4">
+              <h5>Workspaces</h5>
+              {% if workspaces %}
+                <ul class="list-group">
+                  {% for ws in workspaces %}
+                    <li class="list-group-item d-flex justify-content-between align-items-center">
+                      {{ ws.name }}
+                      <a href="{% url 'workspace:workspace_map' ws.pk %}" class="btn btn-sm btn-primary">
+                        View Map
+                      </a>
+                    </li>
+                  {% empty %}
+                    <li class="list-group-item">No workspaces yet. Create a layer to get started.</li>
+                  {% endfor %}
+                </ul>
+              {% else %}
+                <p class="text-muted">No workspaces found. <a href="{% url 'admin:index' %}">Create one in the admin</a>.</p>
+              {% endif %}
+            </div>
+          {% else %}
+            <p class="mt-3">
+              <a href="{% url 'account_login' %}" class="btn btn-primary">Sign In</a>
+              {% if ACCOUNT_ALLOW_REGISTRATION %}
+                <a href="{% url 'account_signup' %}" class="btn btn-outline-primary">Sign Up</a>
+              {% endif %}
+            </p>
+          {% endif %}
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+{% endblock content %}

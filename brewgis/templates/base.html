@@ -11,6 +11,7 @@
     {% endblock title %}
   </title>
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <meta name="csrf-token" content="{{ csrf_token }}" />
   <meta name="description"
         content="GIS Workspace" />
   <meta name="author"
@@ -50,6 +51,10 @@
 
   
   <script defer src="{% static 'js/project.js' %}"></script>
+  <script src="https://unpkg.com/htmx.org@2.0.4"
+          integrity="sha384-HGfztofotFshcF9FJisMMWj73TmfFeoknS2Cj4h3sD6KzDE42wC2xwKjLbJ4Gbg"
+          crossorigin="anonymous"
+          defer></script>
 
 
 {% endblock javascript %}
@@ -68,24 +73,15 @@
                 aria-label="Toggle navigation">
           <span class="navbar-toggler-icon"></span>
         </button>
-        <a class="navbar-brand" href="{% url 'home' %}">Brew GIS</a>
+        <a class="navbar-brand" href="{% url 'workspace:home' %}">Brew GIS</a>
         <div class="collapse navbar-collapse" id="navbarSupportedContent">
           <ul class="navbar-nav mr-auto">
             <li class="nav-item active">
-              <a class="nav-link" href="{% url 'home' %}">Home <span class="visually-hidden">(current)</span></a>
-            </li>
-            <li class="nav-item">
-              <a class="nav-link" href="{% url 'about' %}">About</a>
+              <a class="nav-link" href="{% url 'workspace:home' %}">Home <span class="visually-hidden">(current)</span></a>
             </li>
             {% if request.user.is_authenticated %}
               <li class="nav-item">
-                <a class="nav-link"
-                   href="{% url 'users:detail' request.user.username %}">{% translate "My Profile" %}</a>
-              </li>
-              <li class="nav-item">
-                {# URL provided by django-allauth/account/urls.py #}
                 <a class="nav-link" href="{% url 'account_logout' %}">{% translate "Sign Out" %}</a>
-              </li>
             {% else %}
               {% if ACCOUNT_ALLOW_REGISTRATION %}
                 <li class="nav-item">

@@ -2,7 +2,7 @@
 
 ## Project Overview
 
-Brew GIS is a GIS Workspace for Urban Planners and Data Scientists — an open-source alternative to enterprise GIS platforms (ArcGIS, Carto). It provides a batteries-included, Docker-based workspace for managing geographic data, creating map layers, organizing them into scenarios, and rendering maps with vector tiles. Built on Django with cookiecutter-django scaffolding.
+Brew GIS is a GIS Workspace for Urban Planners and Data Scientists — an open-source alternative to enterprise GIS platforms (ArcGIS, Carto). It provides a batteries-included, Docker-based workspace for managing geographic data, creating map layers, and rendering maps with vector tiles. Built on Django with cookiecutter-django scaffolding.
 
 **License:** GPLv3
 
@@ -13,8 +13,8 @@ User Browser                    Docker Compose Stack
      │                                │
      ├─ Auth ──► django-allauth       │
      ├─ Admin ─► Django Admin         │
-     ├─ Workflow UI ─► Viewflow       │
-     ├─ Map ─► MapLibre GL JS         │
+     ├─ Dynamic HTML ─► htmx          │
+     ├─ Map ─► MapLibre GL JS (Lit)   │
      │          │                     │
      │          ▼                     │
      │      Vector Tiles ◄── tipg ◄── PostGIS
@@ -24,33 +24,34 @@ User Browser                    Docker Compose Stack
      │                                 │
      └── brewgis.workspace ────────────┘
               │
-              ├─ Models: Workspace, Layer, Scenario, ScenarioLayer, UserDefinedViews
-              ├─ Views: FormViews, CreateView, FBVs, Viewflow viewsets
-              ├─ Async: Celery @shared_task for UserDefinedViews execution
+              ├─ Models: Workspace, Layer
+              ├─ Views: FormViews, CreateView, FBVs
               └─ GIS I/O: geopandas for file ingest, SQLAlchemy for PostGIS writes
 ```
-
-- **Request flow:** Browser → Django (via Whitenoise for static) → View (FormView/FBV/Viewflow) → Template (Bootstrap 5 + Viewflow layout)
-- **Map flow:** Template renders MapLibre GL JS → fetches vector tiles from `/tipg/collections/{schema}.{table}/tiles/{tms}/{z}/{x}/{y}` → tipg serves tiles from PostGIS
-- **Async flow:** Celery beat (DatabaseScheduler via django-celery-beat) dispatches periodic tasks → Redis broker → Celery workers execute tasks (e.g., `execute_user_define_views`)
+- **Request flow:** Browser → Django → View (FormView/CreateView/FBV) → Template (Bootstrap 5, htmx for dynamic updates, Lit for map component)
+- **Map flow:** Template renders `<brew-gis-map>` Lit component → fetches vector tiles from `/tipg/collections/{schema}.{table}/tiles/{tms}/{z}/{x}/{y}` → tipg serves tiles from PostGIS
+- **Async flow:** Celery beat (DatabaseScheduler via django-celery-beat) dispatches periodic tasks → Redis broker → Celery workers execute tasks
 - **GIS ingest:** User uploads GIS file → `ReadGISFileView` → `geopandas.read_file()` → `df.to_postgis()` via SQLAlchemy
+- **Dynamic UI:** htmx handles form submissions, partial page updates, and AJAX navigation without a JavaScript framework
 
 ## Key Directories
 
-| Directory | Purpose |
+|Directory|Purpose|
 |---|---|
-| `brewgis/workspace/` | The sole Django app — models, views, viewsets, tasks, templates |
-| `brewgis/workspace/views/` | View classes and functions, split by feature (map, create_layer, read_gis_file) |
-| `brewgis/templates/` | Django templates: base.html, form.html, workspace_map.html, allauth overrides |
-| `brewgis/static/` | Static assets (CSS, JS, images, fonts) |
-| `config/settings/` | Django settings: `base.py`, `local.py`, `production.py`, `test.py` |
-| `config/` | Root URLconf (`urls.py`), WSGI, Celery app |
-| `compose/` | Docker build contexts: `local/` and `production/` for each service |
-| `requirements/` | Pip requirements: `base.txt`, `local.txt`, `production.txt` |
-| `docs/` | Sphinx documentation source |
-| `tests/` | Root-level test directory (cookiecutter scaffolding) |
-| `.envs/.local/` | Environment files for Docker Compose local stack |
-| `.github/workflows/` | CI pipeline (linter + pytest via Docker) |
+|`brewgis/workspace/`|The sole Django app — models, views, tasks, templates|
+|`brewgis/workspace/views/`|View classes and functions, split by feature (home, map, create_layer, read_gis_file)|
+|`brewgis/templates/`|Django templates: base.html, form.html, workspace_map.html, allauth overrides|
+|`brewgis/templates/workspace/partials/`|htmx partial templates for dynamic updates|
+|`brewgis/static/`|Static assets (CSS, JS, images, fonts)|
+|`brewgis/static/js/brew-gis-map.js`|Lit-based MapLibre GL JS web component|
+|`config/settings/`|Django settings: `base.py`, `local.py`, `production.py`, `test.py`|
+|`config/`|Root URLconf (`urls.py`), WSGI, Celery app|
+|`compose/`|Docker build contexts: `local/` and `production/` for each service|
+|`requirements/`|Pip requirements: `base.txt`, `local.txt`, `production.txt`|
+|`docs/`|Sphinx documentation source|
+|`tests/`|Root-level test directory (cookiecutter scaffolding)|
+|`.envs/.local/`|Environment files for Docker Compose local stack|
+|`.github/workflows/`|CI pipeline (linter + pytest via Docker)|
 
 ## Development Commands
 
@@ -87,7 +88,6 @@ docker compose -f docker-compose.docs.yml build docs
 ```
 
 ## Runtime & Tooling
-
 - **Python:** 3.12 (required)
 - **Package manager:** pip via `requirements/*.txt`
 - **Runtime:** Docker (docker compose v2)
@@ -109,50 +109,51 @@ docker compose -f docker-compose.docs.yml build docs
 - **Template indent:** 2 spaces (djLint)
 - **Imports:** `from`-imports within app preferred. Ruff enforces isort via `I` rule with `force-single-line = true`
 
-### Error & Edge Case Handling
-- Two views (`CreateLayerView.form_valid`, `ReadGISFileView.form_valid`) return bare strings instead of `HttpResponse` — marked with `# TODO return a response`
-- `Layer.key` is a `CharField` **without `max_length`** — this is likely a bug (Django will use `max_length=None` which is invalid; fix to e.g. `max_length=128`)
-
 ### Django Patterns
 - **No REST Framework** — no DRF serializers or API views. django-ninja `ModelSchema` is used for data serialization in the map FBV.
-- **Viewflow** provides the workflow UI layer: `Viewset` and `ModelViewset` classes in `viewsets.py`
+- **htmx** for dynamic HTML: form submissions, partial updates via `HX-Redirect` header
+- **Lit web component** for the map: `<brew-gis-map>` element with properties for style, viewport, layers
 - **django-allauth** for authentication (username-based, email required + verified)
 - **Celery** uses JSON serialization, Redis broker, `django-celery-beat` DatabaseScheduler
 - **Settings** use `django-environ` for env-var-based configuration
 
 ### Frontend
-- **CSS framework:** Bootstrap 5 with Material Design components (via Viewflow). Template base extends `viewflow/base_page.html`
-- **Map library:** MapLibre GL JS v4.7+
-- **JS pattern:** Inline `<script>` in templates, no build step or bundler
-- **CSS/JS files:** Minimal — `project.css` (alert styling only), `project.js` (empty placeholder)
+- **CSS framework:** Bootstrap 5 (via CDN)
+- **Map library:** MapLibre GL JS v4.7+ wrapped in a Lit web component
+- **Dynamic HTML:** htmx 2.x for AJAX form submission, partial page updates, and redirect handling
+- **JS pattern:** Lit-based web component for the map; inline `<script>` for minor enhancements. No build step or bundler.
+- **CSS/JS files:** `project.css` (alert styling only), `project.js` (empty placeholder)
 
 ## Important Files
 
-| File | Role |
+|File|Role|
 |---|---|
-| `brewgis/workspace/models.py` | Domain models — **NOTE:** only Workspace and Layer defined. Scenario, ScenarioLayer, UserDefinedViews exist only in migrations |
-| `brewgis/workspace/viewsets.py` | Viewflow URL routing — **NOTE:** these viewsets are not wired into `config/urls.py` |
-| `brewgis/workspace/views/read_gis_file.py` | GIS file ingest pipeline (geopandas → PostGIS) |
-| `brewgis/workspace/views/map.py` | Map view using django-ninja schemas |
-| `brewgis/workspace/views/create_layer.py` | Layer/scenario creation logic |
-| `brewgis/workspace/tasks.py` | Celery task for UserDefinedViews execution |
-| `config/settings/base.py` | Base Django settings |
-| `config/urls.py` | Root URLconf |
-| `config/celery_app.py` | Celery application definition |
-| `brewgis/templates/workspace_map.html` | MapLibre GL JS map template |
-| `pyproject.toml` | Tool configuration (pytest, coverage, mypy, ruff, djlint) |
-| `docker-compose.local.yml` | Local development stack |
-| `docker-compose.production.yml` | Production stack (includes Traefik, Nginx) |
-| `.pre-commit-config.yaml` | Pre-commit hook configuration |
+|`brewgis/workspace/models.py`|Domain models: Workspace and Layer|
+|`brewgis/workspace/urls.py`|Workspace URL patterns (home, upload, create_layer, workspace_map)|
+|`brewgis/workspace/views/home.py`|Home page view listing workspaces|
+|`brewgis/workspace/views/read_gis_file.py`|GIS file ingest pipeline (geopandas → PostGIS)|
+|`brewgis/workspace/views/map.py`|Map view using django-ninja schemas, workspace-based|
+|`brewgis/workspace/views/create_layer.py`|Layer creation using ModelForm + CreateView|
+|`brewgis/templates/workspace/home.html`|Landing page with workspace list|
+|`brewgis/templates/form.html`|Form template extending base.html, uses `_form_content.html` partial for htmx|
+|`brewgis/templates/workspace_map.html`|MapLibre GL JS map template with `<brew-gis-map>` component|
+|`brewgis/templates/workspace/partials/_form_content.html`|htmx partial for form content (re-rendered on validation errors)|
+|`brewgis/templates/workspace/partials/_form_result.html`|htmx partial for success/error messages|
+|`brewgis/static/js/brew-gis-map.js`|Lit-based MapLibre GL JS web component|
+|`config/settings/base.py`|Base Django settings|
+|`config/urls.py`|Root URLconf|
+|`config/celery_app.py`|Celery application definition|
+|`pyproject.toml`|Tool configuration (pytest, coverage, mypy, ruff, djlint)|
+|`docker-compose.local.yml`|Local development stack|
+|`docker-compose.production.yml`|Production stack (includes Traefik, Nginx)|
+|`.pre-commit-config.yaml`|Pre-commit hook configuration|
 
 ## Testing & QA
-
 - **Framework:** pytest 8.3 + pytest-django + pytest-sugar
 - **Runner:** Django's `DiscoverRunner` (Django `TestCase` available)
 - **Config:** `pyproject.toml` `[tool.pytest.ini_options]` — `--ds=config.settings.test --reuse-db --import-mode=importlib`
-- **Factories:** factory-boy 3.3 installed, **no factories defined yet**
 - **Coverage:** `coverage` with `django_coverage_plugin`, includes `brewgis/**`, excludes `*/migrations/*` and `*/tests/*`
-- **State:** Only one test exists (`test_merge_production_dotenvs_in_dotenv.py`). `brewgis/workspace/tests.py` is an empty stub. No model or view tests written.
+- **State:** Only one test exists (`test_merge_production_dotenvs_in_dotenv.py`). No model or view tests written.
 - **CI:** GitHub Actions runs `pre-commit` and `pytest` in Docker on PRs/pushes to `master`/`main`
 
 ### Running Tests
@@ -161,15 +162,3 @@ docker compose -f docker-compose.local.yml run django pytest
 # With coverage:
 docker compose -f docker-compose.local.yml run django coverage run -m pytest
 ```
-
-## Known Issues / Work in Progress
-
-1. **Missing models in `models.py`:** `Scenario`, `ScenarioLayer`, and `UserDefinedViews` exist only in migration `0001_initial.py` but are not declared in `models.py`. Django will still work (models are loaded from migration state), but this is an anti-pattern — the models should be restored to `models.py` before editing them.
-
-2. **Viewsets not wired:** The Viewflow viewsets in `brewgis/workspace/viewsets.py` (`ImportDataViewset`, `CreateLayerViewset`, `ScenarioModelViewSet`) are not included in `config/urls.py`. The viewflow UI is unreachable.
-
-3. **Broken conftest:** `brewgis/conftest.py` imports `brewgis.users.models.User` and `brewgis.users.tests.factories.UserFactory` — neither exists. The `user` fixture would fail if tests were run. This is leftover cookiecutter scaffolding.
-
-4. **`Layer.key` CharField has no `max_length`:** `key = models.CharField()` will cause a migration error or use `max_length=None` which is invalid. Add `max_length`.
-
-5. **Views return strings, not `HttpResponse`:** Both `ReadGISFileView.form_valid()` and `CreateLayerView.form_valid()` return bare strings, not `HttpResponse` objects. These are marked `# TODO return a response`.

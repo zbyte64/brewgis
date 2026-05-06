@@ -1,47 +1,33 @@
-{% extends request.resolver_match.app.base_template_name|default:'viewflow/base_page.html' %}
-{% load i18n viewflow static %}
+{% extends "base.html" %}
+{% load static %}
 
 {% block extrahead %}
-  {{ block.super }}
   <link href="https://unpkg.com/maplibre-gl@^4.7.1/dist/maplibre-gl.css" rel="stylesheet" />
   <script type="module" src="{% static 'js/brew-gis-map.js' %}"></script>
-{% endblock %}
+{% endblock extrahead %}
+
+{% block title %}
+  Map - {{ workspace.name }}
+{% endblock title %}
 
 {% block content %}
-  <div class="mdc-layout-grid vf-page__grid">
-    <div class="mdc-layout-grid__inner">
-      {% block form-cell %}
-        <div class="mdc-layout-grid__cell {% block detail-cell-span %}mdc-layout-grid__cell--span-10-desktop mdc-layout-grid__cell--span-8-tablet mdc-layout-grid__cell--span-4-phone{% endblock %}">
-          <div class="mdc-card vf-card">
-            <section class="vf-card__header">
-              {% block form-header-title %}
-                <h1 class="vf-card__title">
-                  View Map
-                </h1>
-              {% endblock %}
-              {% block form-header-subtitle %}
-                <h2 class="vf-card__breadcrumbs">
-                  {% block breadcrumbs_items %}
-                  {% endblock %}
-                </h2>
-              {% endblock %}
-              {% block form-header-menu %}
-                <div class="vf-card__menu">
-                  {% include 'viewflow/includes/view_action_menu.html' with view=view only %}
-                </div>
-              {% endblock %}
-            </section>
-
-            {% block form %}
-            <brew-gis-map
-              map-style="https://raw.githubusercontent.com/go2garret/maps/main/src/assets/json/openStreetMap.json"
-              viewport='{{ viewport_json|safe }}'
-              layers='{{ layers_json|safe }}'>
-            </brew-gis-map>
-            {% endblock form %}
-          </div>
+<div class="container-fluid mt-2">
+  <div class="row">
+    <div class="col-12">
+      <div class="card">
+        <div class="card-header d-flex justify-content-between align-items-center">
+          <h5 class="card-title mb-0">{{ workspace.name }}</h5>
+          <a href="{% url 'workspace:home' %}" class="btn btn-sm btn-outline-secondary">Back</a>
         </div>
-      {% endblock form-cell %}
+        <div class="card-body p-0">
+          <brew-gis-map
+            map-style="https://raw.githubusercontent.com/go2garret/maps/main/src/assets/json/openStreetMap.json"
+            viewport='{{ viewport_json|safe }}'
+            layers='{{ layers_json|safe }}'>
+          </brew-gis-map>
+        </div>
+      </div>
     </div>
   </div>
+</div>
 {% endblock content %}

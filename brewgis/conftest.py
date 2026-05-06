@@ -1,7 +1,7 @@
 import pytest
+from django.contrib.auth import get_user_model
 
-from brewgis.users.models import User
-from brewgis.users.tests.factories import UserFactory
+User = get_user_model()
 
 
 @pytest.fixture(autouse=True)
@@ -11,4 +11,4 @@ def _media_storage(settings, tmpdir) -> None:
 
 @pytest.fixture
 def user(db) -> User:
-    return UserFactory()
+    return User.objects.create_user(username="testuser", password="testpass")  # noqa: S106
