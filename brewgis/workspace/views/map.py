@@ -1,5 +1,7 @@
 import json
 
+from django.http import HttpRequest
+from django.http import HttpResponse
 from django.shortcuts import get_object_or_404
 from django.shortcuts import render
 from ninja import ModelSchema
@@ -14,7 +16,7 @@ class LayerSchema(ModelSchema):
         exclude = ["id"]
 
 
-def view_workspace_map(request, workspace_pk):
+def view_workspace_map(request: HttpRequest, workspace_pk: int) -> HttpResponse:
     workspace = get_object_or_404(Workspace, pk=workspace_pk)
     layers = workspace.layers.all()
     layer_data = []

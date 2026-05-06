@@ -27,14 +27,14 @@ class CreateLayerView(CreateView):
             "workspace:workspace_map",
             args=[self.object.workspace.pk],
         )
-        if self.request.htmx:
+        if self.request.htmx:  # type: ignore[attr-defined]
             response = HttpResponse()
             response["HX-Redirect"] = redirect_url
             return response
         return HttpResponseRedirect(redirect_url)
 
     def form_invalid(self, form: CreateLayerForm) -> HttpResponse:
-        if self.request.htmx:
+        if self.request.htmx:  # type: ignore[attr-defined]
             return render(
                 self.request,
                 "workspace/partials/_form_content.html",

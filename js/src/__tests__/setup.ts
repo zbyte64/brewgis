@@ -1,16 +1,16 @@
-import { vi } from 'vitest';
+import { vi } from 'vitest'
 
 // Mock maplibregl module before any component imports
-const mockEventCallbacks: Record<string, Array<(...args: unknown[]) => void>> = {};
+const mockEventCallbacks: Record<string, Array<(...args: unknown[]) => void>> = {}
 
 const mockMap = {
   on: vi.fn().mockImplementation((event: string, cb: (...args: unknown[]) => void) => {
-    if (!mockEventCallbacks[event]) mockEventCallbacks[event] = [];
-    mockEventCallbacks[event].push(cb);
+    if (!mockEventCallbacks[event]) mockEventCallbacks[event] = []
+    mockEventCallbacks[event].push(cb)
     // Fire 'load' synchronously — real MapLibre fires after style loads,
     // but for tests we simulate ready state immediately
-    if (event === 'load') cb();
-    return mockMap;
+    if (event === 'load') cb()
+    return mockMap
   }),
   off: vi.fn().mockReturnThis(),
   remove: vi.fn(),
@@ -21,7 +21,10 @@ const mockMap = {
   getPitch: vi.fn().mockReturnValue(0),
   getBearing: vi.fn().mockReturnValue(0),
   getBounds: vi.fn().mockReturnValue({
-    toArray: vi.fn().mockReturnValue([[-180, -90], [180, 90]]),
+    toArray: vi.fn().mockReturnValue([
+      [-180, -90],
+      [180, 90],
+    ]),
   }),
   addSource: vi.fn(),
   removeSource: vi.fn(),
@@ -32,24 +35,24 @@ const mockMap = {
   getStyle: vi.fn().mockReturnValue({ layers: [] }),
   loaded: vi.fn().mockReturnValue(true),
   once: vi.fn().mockImplementation((event: string, cb: (...args: unknown[]) => void) => {
-    if (event === 'load') cb();
-    return mockMap;
+    if (event === 'load') cb()
+    return mockMap
   }),
   resize: vi.fn(),
   dragRotate: { enable: vi.fn(), disable: vi.fn() },
   touchZoomRotate: { enable: vi.fn(), disable: vi.fn() },
   addControl: vi.fn(),
-};
+}
 
 // Helper to trigger events in tests (e.g. triggerMockEvent('moveend'))
 const triggerMockEvent = (event: string, ...args: unknown[]) => {
-  const cbs = mockEventCallbacks[event] || [];
-  cbs.forEach((cb) => cb(...args));
-};
+  const cbs = mockEventCallbacks[event] || []
+  cbs.forEach((cb) => cb(...args))
+}
 
-const mockNavControl = vi.fn();
-const mockScaleControl = vi.fn();
-const mockAttributionControl = vi.fn();
+const mockNavControl = vi.fn()
+const mockScaleControl = vi.fn()
+const mockAttributionControl = vi.fn()
 
 vi.mock('maplibre-gl', () => ({
   default: {
@@ -63,6 +66,6 @@ vi.mock('maplibre-gl', () => ({
   NavigationControl: mockNavControl,
   ScaleControl: mockScaleControl,
   AttributionControl: mockAttributionControl,
-}));
+}))
 
-export { mockMap, triggerMockEvent };
+export { mockMap, triggerMockEvent }

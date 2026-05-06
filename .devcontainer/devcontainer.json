@@ -30,8 +30,7 @@
             "settings": {
                 "editor.formatOnSave": true,
                 "[python]": {
-                    "analysis.autoImportCompletions": true,
-                    "analysis.typeCheckingMode": "basic",
+                  "analysis.typeCheckingMode": "standard",
                     "defaultInterpreterPath": "/usr/local/bin/python",
                     "editor.codeActionsOnSave": {
                         "source.organizeImports": "always"

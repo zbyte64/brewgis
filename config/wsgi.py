@@ -40,10 +40,13 @@ application = get_wsgi_application()
 # from helloworld.wsgi import HelloWorldApplication
 # application = HelloWorldApplication(application)
 
-application = ProxyMiddleware(application, {
-    "/tipg/": {
-        "target": "http://tipg:8081/",
-        "remove_prefix": True,
-        "host": "localhost:8000",
-    }
-})
+application = ProxyMiddleware(
+    application,
+    {
+        "/tipg/": {
+            "target": "http://tipg:8081/",
+            "remove_prefix": True,
+            "host": "localhost:8000",
+        }
+    },
+)

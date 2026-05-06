@@ -6,7 +6,7 @@ from django.urls import include
 from django.urls import path
 from django.views import defaults as default_views
 
-from django.urls import path 
+from django.urls import path
 
 urlpatterns = [
     # Django Admin, use {% url 'admin:index' %}

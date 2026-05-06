@@ -6,7 +6,7 @@ class Workspace(models.Model):
     db_connection = models.CharField(max_length=64, default="default")
     db_schema = models.CharField(max_length=64, default="public")
 
-    def __str__(self):
+    def __str__(self) -> str:
         return self.name
 
 
@@ -30,9 +30,9 @@ class Layer(models.Model):
         ordering = ("display_order",)
         unique_together = [("workspace", "key")]
 
-    def __str__(self):
+    def __str__(self) -> str:
         return self.name
 
-    def resolve_tiles_url(self, tile_matrix_set: str = "WebMercatorQuad"):
+    def resolve_tiles_url(self, tile_matrix_set: str = "WebMercatorQuad") -> str:
         schema = self.workspace.db_schema
         return f"/tipg/collections/{schema}.{self.db_table}/tiles/{tile_matrix_set}"

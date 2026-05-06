@@ -1,0 +1,12 @@
+dist/
+node_modules/
+*.js
+*.mjs
+*.cjs
+*.map
+*.css
+*.html
+*.md
+*.yml
+*.yaml
+*.json

@@ -20,7 +20,7 @@ def test_merge(
     tmp_path: Path,
     input_contents: list[str],
     expected_output: str,
-):
+) -> None:
     output_file = tmp_path / ".env"
 
     files_to_merge = []

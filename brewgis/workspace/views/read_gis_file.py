@@ -1,4 +1,5 @@
 import os
+from io import BufferedReader
 
 import geopandas
 from django import forms
@@ -20,12 +21,14 @@ class ImportGISFileForm(forms.Form):
     table_name = forms.CharField(max_length=63)
 
 
-def read_gis_file_into_table(file_obj, schema: str, table_name: str):
+def read_gis_file_into_table(
+    file_obj: BufferedReader, schema: str, table_name: str
+) -> None:
     df = geopandas.read_file(file_obj)
     # columns need to be lower case for now: https://github.com/developmentseed/tipg/issues/195
     df.columns = map(str.lower, df.columns)
     con = create_engine(
-        os.environ.get("DATABASE_URL").replace("postgres://", "postgresql://", 1),
+        os.environ.get("DATABASE_URL").replace("postgres://", "postgresql://", 1),  # type: ignore[union-attr]
     )
     df.to_postgis(table_name, con, schema, chunksize=50000)
 
@@ -44,14 +47,14 @@ class ReadGISFileView(FormView):
             table_name=data["table_name"],
         )
         redirect_url = reverse("workspace:home")
-        if self.request.htmx:
+        if self.request.htmx:  # type: ignore[attr-defined]
             response = HttpResponse()
             response["HX-Redirect"] = redirect_url
             return response
         return HttpResponseRedirect(redirect_url)
 
     def form_invalid(self, form: ImportGISFileForm) -> HttpResponse:
-        if self.request.htmx:
+        if self.request.htmx:  # type: ignore[attr-defined]
             return render(
                 self.request,
                 "workspace/partials/_form_content.html",

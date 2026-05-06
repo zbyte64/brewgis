@@ -17,7 +17,10 @@ plugins = ["django_coverage_plugin"]
 [tool.mypy]
 python_version = "3.12"
 check_untyped_defs = true
-ignore_missing_imports = true
+warn_return_any = true
+warn_unreachable = true
+disallow_incomplete_defs = true
+disallow_untyped_defs = true
 warn_unused_ignores = true
 warn_redundant_casts = true
 warn_unused_configs = true
@@ -29,6 +32,28 @@ plugins = [
 # Django migrations should not produce any errors:
 module = "*.migrations.*"
 ignore_errors = true
+
+[[tool.mypy.overrides]]
+# Packages without stubs:
+module = [
+    "celery",
+    "environ",
+    "geopandas",
+    "werkzeug.*",
+]
+ignore_missing_imports = true
+
+[[tool.mypy.overrides]]
+# Existing untyped code — gradually remove overrides as functions are typed
+module = [
+    "brewgis.workspace.views",
+    "brewgis.workspace.models",
+    "brewgis.conftest",
+    "config.celery_app",
+    "config.wsgi",
+    "config.urls",
+]
+disallow_untyped_defs = false
 
 [tool.django-stubs]
 django_settings_module = "config.settings.test"
@@ -60,6 +85,14 @@ extend-exclude = [
     "staticfiles/*",
 ]
 
+
+[tool.ruff.format]
+quote-style = "double"
+indent-style = "space"
+
+[tool.ruff.lint.pycodestyle]
+max-line-length = 119
+max-doc-length = 119
 [tool.ruff.lint]
 select = [
   "F",
@@ -70,7 +103,7 @@ select = [
   "N",
   "UP",
   "YTT",
-  # "ANN", # flake8-annotations: we should support this in the future but 100+ errors atm
+  "ANN", # flake8-annotations
   "ASYNC",
   "S",
   "BLE",
@@ -102,7 +135,7 @@ select = [
   "TID",
   "TCH",
   "INT",
-  # "ARG", # Unused function argument
+  "ARG", # Unused function argument
   "PTH",
   "ERA",
   "PD",
@@ -113,24 +146,27 @@ select = [
   # "NPY",
   # "AIR",
   "PERF",
-  # "FURB",
-  # "LOG",
+  "FURB",
+  "LOG",
   "RUF",
 ]
 ignore = [
   "S101", # Use of assert detected https://docs.astral.sh/ruff/rules/assert/
   "RUF012", # Mutable class attributes should be annotated with `typing.ClassVar`
   "SIM102", # sometimes it's better to nest
-  "UP038", # Checks for uses of isinstance/issubclass that take a tuple
-          # of types for comparison.
-          # Deactivated because it can make the code slow:
-          # https://github.com/astral-sh/ruff/issues/7871
+  "ANN401", # Dynamically typed expressions are acceptable for pytest fixtures and gradual typing
+  "COM812", # Trailing comma — handled by ruff formatter
 ]
-# The fixes in extend-unsafe-fixes will require
-# provide the `--unsafe-fixes` flag when fixing.
-extend-unsafe-fixes = [
-    "UP038",
-]
+
+[tool.ruff.lint.per-file-ignores]
+# cookiecutter-generated files — keep blanket noqa
+"config/urls.py" = ["PGH004"]
+"config/wsgi.py" = ["PGH004"]
+"docs/conf.py" = ["PGH004"]
+"manage.py" = ["PGH004"]
+"merge_production_dotenvs_in_dotenv.py" = ["PGH004"]
+# Standard pytest fixture patterns
+"brewgis/conftest.py" = ["ANN001", "ARG001"]
 
 [tool.ruff.lint.isort]
 force-single-line = true

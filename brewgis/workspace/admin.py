@@ -7,4 +7,5 @@ from .models import Workspace
 class WorkspaceAdmin(admin.ModelAdmin):
     pass
 
+
 admin.site.register(Workspace, WorkspaceAdmin)
