@@ -71,6 +71,15 @@ class StyleClassFactory(factory.django.DjangoModelFactory):
 
 
 
+class ScenarioFactory(factory.django.DjangoModelFactory):
+    class Meta:
+        model = "workspace.Scenario"
+
+    name = factory.Sequence(lambda n: f"Scenario {n}")
+    slug = factory.Sequence(lambda n: f"scenario-{n}")
+    workspace = factory.SubFactory(WorkspaceFactory)
+    base_year = 2020
+    horizon_year = 2050
 class AnalysisRunFactory(factory.django.DjangoModelFactory):
     class Meta:
         model = "workspace.AnalysisRun"
@@ -79,6 +88,7 @@ class AnalysisRunFactory(factory.django.DjangoModelFactory):
     modules = ["env_constraint"]
     status = "pending"
     vars = {}
+    scenario = None
 class BuildingTypeFactory(factory.django.DjangoModelFactory):
     class Meta:
         model = BuildingType

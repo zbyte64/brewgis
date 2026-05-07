@@ -5,6 +5,9 @@ from brewgis.workspace.built_forms.models import PlaceTypeBuildingTypeMix  # noq
 from brewgis.workspace.built_forms.models import VintageChoices  # noqa: F401
 from brewgis.workspace.built_forms.models import StreetPatternChoices  # noqa: F401
 from django.conf import settings
+from django.utils.text import slugify
+
+
 
 
 class Workspace(models.Model):
@@ -162,12 +165,61 @@ class StyleClass(models.Model):
     def __str__(self) -> str:
         return f"{self.label} ({self.symbology.layer.name})"
 
+
+
+class ScenarioType(models.TextChoices):
+    BASE = "base", "Base"
+    ALTERNATIVE = "alternative", "Alternative"
+
+
+class Scenario(models.Model):
+    name = models.CharField(max_length=128)
+    slug = models.SlugField(max_length=128)
+    description = models.TextField(blank=True, default="")
+    workspace = models.ForeignKey(
+        Workspace, on_delete=models.CASCADE, related_name="scenarios"
+    )
+    scenario_type = models.CharField(
+        max_length=16,
+        choices=ScenarioType.choices,
+        default=ScenarioType.BASE,
+    )
+    parent = models.ForeignKey(
+        "self", on_delete=models.SET_NULL, null=True, blank=True, related_name="alternatives"
+    )
+    base_year = models.IntegerField()
+    horizon_year = models.IntegerField()
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        unique_together = ("workspace", "slug")
+        ordering = ("-created_at",)
+
+    def __str__(self) -> str:
+        return self.name
+
+    def save(self, *args: object, **kwargs: object) -> None:
+        if not self.slug:
+            self.slug = slugify(self.name)[:128]
+        super().save(*args, **kwargs)
+
+    @property
+    def target_schema(self) -> str:
+        return f"scenario_{self.slug}"
 class AnalysisRun(models.Model):
     """Tracks execution history of dbt analysis modules."""
 
     workspace = models.ForeignKey(
         Workspace,
         on_delete=models.CASCADE,
+        related_name="analysis_runs",
+    )
+    scenario = models.ForeignKey(
+        Scenario,
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
         related_name="analysis_runs",
     )
     modules = models.JSONField(

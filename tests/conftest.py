@@ -16,6 +16,7 @@ from tests.factories import PlaceTypeFactory
 from tests.factories import SymbologyConfigFactory
 from tests.factories import UserFactory
 from tests.factories import WorkspaceFactory
+from tests.factories import ScenarioFactory
 
 if TYPE_CHECKING:
     from django.contrib.auth.models import User
@@ -26,6 +27,7 @@ if TYPE_CHECKING:
     from brewgis.workspace.models import Layer
     from brewgis.workspace.models import SymbologyConfig
     from brewgis.workspace.models import Workspace
+    from brewgis.workspace.models import Scenario
 
 
 @pytest.fixture
@@ -36,6 +38,10 @@ def user(db) -> User:
 @pytest.fixture
 def workspace(db) -> Workspace:
     return WorkspaceFactory()
+
+@pytest.fixture
+def scenario(db, workspace: Workspace) -> Scenario:
+    return ScenarioFactory(workspace=workspace)
 
 
 @pytest.fixture

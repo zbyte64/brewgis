@@ -7,6 +7,7 @@ from datetime import timedelta
 from django.test import TestCase
 from django.utils import timezone
 from tests.factories import AnalysisRunFactory
+from tests.factories import ScenarioFactory
 from tests.factories import WorkspaceFactory
 
 from brewgis.workspace.models import AnalysisRun
@@ -17,11 +18,13 @@ class TestAnalysisRunModel(TestCase):
 
     def setUp(self) -> None:
         self.workspace = WorkspaceFactory()
+        self.scenario = ScenarioFactory(workspace=self.workspace)
         self.run = AnalysisRunFactory(
             workspace=self.workspace,
+            scenario=self.scenario,
             modules=["env_constraint", "core"],
             status="pending",
-            vars={"target_year": 2050, "scenario": "baseline"},
+            vars={"target_year": 2050},
         )
 
     def test_str_default(self) -> None:
@@ -147,3 +150,12 @@ class TestAnalysisRunModel(TestCase):
         run = AnalysisRun.objects.create(workspace=self.workspace)
         self.assertIsNone(run.started_at)
         self.assertIsNone(run.completed_at)
+
+    def test_scenario_fk(self) -> None:
+        """AnalysisRun can be associated with a Scenario via FK."""
+        self.assertEqual(self.run.scenario, self.scenario)
+
+    def test_scenario_nullable(self) -> None:
+        """scenario FK should be nullable for backward compat."""
+        run = AnalysisRun.objects.create(workspace=self.workspace)
+        self.assertIsNone(run.scenario)
