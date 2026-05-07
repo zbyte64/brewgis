@@ -65,7 +65,7 @@ class TestCanvasViewManager:
 
         assert "id" in cols
         assert "geometry" in cols
-        assert "status" in cols
+        assert "land_development_category" in cols
         assert "du" in cols
         assert "pop" in cols
         assert "hh" in cols

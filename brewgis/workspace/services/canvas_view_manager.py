@@ -6,9 +6,6 @@ overrides, implementing copy-on-write for tile server consumption.
 
 The view uses ``COALESCE(painted, base)`` on every paintable column and
 includes an ``uf_is_painted`` boolean flag.
-
-**Reconciliation note:** ``PAINTABLE_COLUMNS`` is a placeholder set that must
-be updated when the base canvas schema is finalised (Phase 1b).
 """
 
 from __future__ import annotations
@@ -18,31 +15,13 @@ from typing import TYPE_CHECKING
 from django.db import connection
 from django.db import transaction
 
+from brewgis.workspace.services.base_canvas_schema import BaseCanvasSchema
+
 if TYPE_CHECKING:
     from brewgis.workspace.models import Scenario
 
-# -----------------------------------------------------------------------
-# Placeholder — reconcile with actual base canvas schema when Phase 1b
-# ships.  These are the numeric columns the copy-on-write system knows
-# how to paint.
-# -----------------------------------------------------------------------
-PAINTABLE_COLUMNS: list[str] = [
-    "du",
-    "pop",
-    "hh",
-    "emp",
-    "residential_sqft",
-    "retail_sqft",
-    "office_sqft",
-    "industrial_sqft",
-    "public_sqft",
-    "other_sqft",
-    "gross_du",
-    "gross_sqft",
-    "water_demand",
-    "electricity_demand",
-    "gas_demand",
-]
+# Paintable columns — sourced from the canonical BaseCanvasSchema.
+PAINTABLE_COLUMNS: frozenset[str] = BaseCanvasSchema.PAINTABLE_COLUMNS
 
 _COLUMNS_DISCOVERY_SQL = """
 SELECT column_name

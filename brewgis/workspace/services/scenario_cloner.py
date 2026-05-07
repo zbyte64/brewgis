@@ -14,6 +14,7 @@ from typing import TYPE_CHECKING
 
 from brewgis.workspace.models import Scenario
 from brewgis.workspace.models import ScenarioType
+from brewgis.workspace.services.base_canvas_manager import DEFAULT_BASE_CANVAS_TABLE
 from brewgis.workspace.services.canvas_view_manager import create_canvas_view
 
 if TYPE_CHECKING:
@@ -21,8 +22,6 @@ if TYPE_CHECKING:
 
 logger = logging.getLogger(__name__)
 
-# Default base canvas table — change when Phase 1b establishes the actual name.
-DEFAULT_BASE_CANVAS_TABLE = "public.base_canvas"
 
 
 def clone_scenario(
