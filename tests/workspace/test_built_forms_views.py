@@ -1,12 +1,12 @@
 """Tests for built forms CRUD and baking views."""
 from __future__ import annotations
 
-from django.contrib.auth.models import User
 from django.test import TestCase
 from django.urls import reverse
-
-from brewgis.workspace.built_forms.models import BuildingType
 from brewgis.workspace.built_forms.models import PlaceType
+from brewgis.workspace.built_forms.models import BuildingType
+from tests.factories import UserFactory
+
 from brewgis.workspace.built_forms.models import PlaceTypeBuildingTypeMix
 
 
@@ -14,10 +14,7 @@ class TestBuildingTypeViews(TestCase):
     """BuildingType CRUD view tests."""
 
     def setUp(self) -> None:
-        self.user = User.objects.create_user(
-            username="testuser",
-            password="testpass123",
-        )
+        self.user = UserFactory()
 
     def test_list_requires_auth(self) -> None:
         """Building type list should redirect unauthenticated users."""
@@ -113,10 +110,7 @@ class TestPlaceTypeViews(TestCase):
     """PlaceType CRUD view tests."""
 
     def setUp(self) -> None:
-        self.user = User.objects.create_user(
-            username="testuser",
-            password="testpass123",
-        )
+        self.user = UserFactory()
 
     def test_list_requires_auth(self) -> None:
         """Place type list should redirect unauthenticated users."""
@@ -187,10 +181,7 @@ class TestBakingViews(TestCase):
     """Built form baking view tests."""
 
     def setUp(self) -> None:
-        self.user = User.objects.create_user(
-            username="testuser",
-            password="testpass123",
-        )
+        self.user = UserFactory()
         self.client.force_login(self.user)
 
         self.bt = BuildingType.objects.create(

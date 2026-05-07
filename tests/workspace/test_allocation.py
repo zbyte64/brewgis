@@ -2,10 +2,10 @@
 from __future__ import annotations
 
 from django.test import TestCase
+from tests.factories import BuildingTypeFactory
+from tests.factories import PlaceTypeFactory
 
 from brewgis.workspace.built_forms.allocation import AllocationEngine
-from brewgis.workspace.built_forms.models import BuildingType
-from brewgis.workspace.built_forms.models import PlaceType
 from brewgis.workspace.built_forms.models import PlaceTypeBuildingTypeMix
 
 
@@ -13,52 +13,33 @@ class TestAllocationBuildingType(TestCase):
     """Allocation engine tests for single BuildingType."""
 
     def setUp(self) -> None:
-        self.residential = BuildingType.objects.create(
+        self.residential = BuildingTypeFactory(
             name="Residential Test",
-            du_per_acre=10.0,
-            emp_per_acre=0.0,
-            far=0.8,
-            household_size=2.5,
-            vacancy_rate=5.0,
-            stories=2,
-            building_coverage=30.0,
             indoor_water_rate=200.0,
             outdoor_water_rate=300.0,
-            irrigable_area_fraction=0.2,
             electricity_eui=70.0,
             gas_eui=100.0,
-            parking_spaces_per_unit=1.5,
-            parking_spaces_per_1000sqft=0.0,
             trip_rate_override=5.0,
         )
-        self.employment = BuildingType.objects.create(
+        self.employment = BuildingTypeFactory(
             name="Employment Test",
             du_per_acre=None,
             emp_per_acre=50.0,
             far=0.5,
-            household_size=2.5,
-            vacancy_rate=5.0,
-            stories=1,
-            building_coverage=40.0,
             jobs_by_sector={"retail": 100},
-            indoor_water_rate=None,
             outdoor_water_rate=200.0,
             electricity_eui=120.0,
             gas_eui=80.0,
-            parking_spaces_per_unit=None,
             parking_spaces_per_1000sqft=4.0,
-            trip_rate_override=None,
             ite_land_use_code=820,
         )
-        self.mixed = BuildingType.objects.create(
+        self.mixed = BuildingTypeFactory(
             name="Mixed Use Test",
             du_per_acre=20.0,
             emp_per_acre=30.0,
             far=2.0,
             household_size=2.0,
             vacancy_rate=8.0,
-            stories=4,
-            building_coverage=50.0,
             jobs_by_sector={"retail": 40, "office": 60},
             indoor_water_rate=180.0,
             outdoor_water_rate=50.0,
@@ -278,11 +259,9 @@ class TestAllocationPlaceType(TestCase):
     """Allocation engine tests for PlaceType with building type mix."""
 
     def setUp(self) -> None:
-        self.bt_single = BuildingType.objects.create(
+        self.bt_single = BuildingTypeFactory(
             name="Single-Family",
             du_per_acre=5.0,
-            emp_per_acre=0.0,
-            far=0.45,
             household_size=2.6,
             vacancy_rate=4.0,
             indoor_water_rate=240.0,
@@ -292,13 +271,10 @@ class TestAllocationPlaceType(TestCase):
             parking_spaces_per_unit=2.0,
             trip_rate_override=9.5,
         )
-        self.bt_townhouse = BuildingType.objects.create(
+        self.bt_townhouse = BuildingTypeFactory(
             name="Townhouse",
             du_per_acre=12.0,
-            emp_per_acre=0.0,
-            far=0.7,
             household_size=2.4,
-            vacancy_rate=5.0,
             indoor_water_rate=220.0,
             outdoor_water_rate=200.0,
             electricity_eui=70.0,
@@ -306,29 +282,22 @@ class TestAllocationPlaceType(TestCase):
             parking_spaces_per_unit=1.5,
             trip_rate_override=6.5,
         )
-        self.bt_retail = BuildingType.objects.create(
+        self.bt_retail = BuildingTypeFactory(
             name="Neighborhood Retail",
             du_per_acre=None,
             emp_per_acre=25.0,
             far=0.5,
-            household_size=2.5,
-            vacancy_rate=5.0,
             jobs_by_sector={"retail": 80, "food_service": 20},
-            indoor_water_rate=None,
             outdoor_water_rate=200.0,
             electricity_eui=120.0,
             gas_eui=80.0,
-            parking_spaces_per_unit=None,
             parking_spaces_per_1000sqft=4.0,
-            trip_rate_override=None,
             ite_land_use_code=820,
         )
 
-        self.place_type = PlaceType.objects.create(
+        self.place_type = PlaceTypeFactory(
             name="Test Neighborhood",
             row_allocation_pct=30.0,
-            block_size=120.0,
-            street_pattern="grid",
         )
 
         PlaceTypeBuildingTypeMix.objects.create(
@@ -407,7 +376,7 @@ class TestAllocationPlaceType(TestCase):
 
     def test_single_building_type_place_type(self) -> None:
         """PlaceType with 100% a single building type should match direct allocation."""
-        pt = PlaceType.objects.create(
+        pt = PlaceTypeFactory(
             name="Single Mix",
             row_allocation_pct=25.0,
         )
