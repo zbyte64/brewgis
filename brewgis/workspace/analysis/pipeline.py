@@ -55,6 +55,7 @@ MODULE_RESULT_TABLES = {
 
 
 @deal.ensure(lambda module_names, result: set(result) == set(module_names))
+@deal.raises(ValueError)
 def resolve_module_order(module_names: list[str]) -> list[str]:
     """Resolve requested modules into execution order respecting dependencies.
 

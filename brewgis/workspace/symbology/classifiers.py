@@ -72,6 +72,7 @@ def _fmt(val: float) -> str:
     return f"{val:.2f}"
 
 
+@deal.pre(lambda breaks: len(breaks) >= 1)
 @deal.ensure(lambda breaks, result: len(result) == len(breaks) - 1)
 def _make_labels(breaks: list[float]) -> list[str]:
     """Build human-readable labels from break points."""
@@ -88,8 +89,8 @@ def _make_labels(breaks: list[float]) -> list[str]:
 # --------------------------------------------------------------------------
 
 
-@deal.ensure(lambda min_val, max_val, num_classes, result: len(result) == num_classes + 1)
-@deal.ensure(lambda min_val, max_val, num_classes, result: num_classes < 1 or (result[0] == min_val and result[-1] == max_val))
+@deal.ensure(lambda min_val, max_val, num_classes, result: num_classes < 1 or len(result) == num_classes + 1)
+@deal.ensure(lambda min_val, max_val, num_classes, result: num_classes < 1 or (result[0] == min_val and math.isclose(result[-1], max_val)))
 @deal.pre(lambda min_val, max_val, num_classes: max_val >= min_val)
 def _equal_interval_breaks(
     min_val: float,

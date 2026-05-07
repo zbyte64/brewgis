@@ -33,37 +33,37 @@ _DEAL_SEED: int | None = int(_DEAL_SEED_RAW) if _DEAL_SEED_RAW else None
 
 
 @pytest.mark.slow
-@deal.cases(_equal_interval_breaks, max_examples=25, seed=_DEAL_SEED)
+@deal.cases(_equal_interval_breaks, count=25, seed=_DEAL_SEED)
 def test_equal_interval_breaks_contract(case: deal.TestCase) -> None:
     case()
 
 
 @pytest.mark.slow
-@deal.cases(_logarithmic_breaks, max_examples=25, seed=_DEAL_SEED)
+@deal.cases(_logarithmic_breaks, count=25, seed=_DEAL_SEED)
 def test_logarithmic_breaks_contract(case: deal.TestCase) -> None:
     case()
 
 
 @pytest.mark.slow
-@deal.cases(_std_deviation_breaks, max_examples=25, seed=_DEAL_SEED)
+@deal.cases(_std_deviation_breaks, count=25, seed=_DEAL_SEED)
 def test_std_deviation_breaks_contract(case: deal.TestCase) -> None:
     case()
 
 
 @pytest.mark.slow
-@deal.cases(_sum_squared_diffs, max_examples=25, seed=_DEAL_SEED)
+@deal.cases(_sum_squared_diffs, count=25, seed=_DEAL_SEED)
 def test_sum_squared_diffs_contract(case: deal.TestCase) -> None:
     case()
 
 
 @pytest.mark.slow
-@deal.cases(_fmt, max_examples=25, seed=_DEAL_SEED)
+@deal.cases(_fmt, count=25, seed=_DEAL_SEED)
 def test_fmt_contract(case: deal.TestCase) -> None:
     case()
 
 
 @pytest.mark.slow
-@deal.cases(_make_labels, max_examples=25, seed=_DEAL_SEED)
+@deal.cases(_make_labels, count=25, seed=_DEAL_SEED)
 def test_make_labels_contract(case: deal.TestCase) -> None:
     case()
 
@@ -79,6 +79,6 @@ def test_make_labels_contract(case: deal.TestCase) -> None:
 
 
 @pytest.mark.slow
-@deal.cases(resolve_module_order, max_examples=25, seed=_DEAL_SEED)
+@deal.cases(resolve_module_order, count=25, seed=_DEAL_SEED)
 def test_resolve_module_order_contract(case: deal.TestCase) -> None:
     case()
