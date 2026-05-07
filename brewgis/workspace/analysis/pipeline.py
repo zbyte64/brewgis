@@ -1,16 +1,14 @@
-"""Analysis pipeline orchestrator — chains Celery tasks for module execution.
+"""Analysis pipeline orchestrator — dispatches Celery tasks for module execution.
 
 Manages the dependency graph between analysis modules and dispatches
-Celery tasks in the correct order. Currently supports:
+Celery tasks in the correct order. The pipeline:
 
-    env_constraint → core
-
-The pipeline:
 1. Creates an AnalysisRun record to track execution
 2. Resolves dependencies between requested modules
-3. Chains Celery tasks (env_constraint first, then core)
-4. Updates AnalysisRun status on completion/failure
-5. Auto-registers result views as Layers
+3. Dispatches the first module via Celery ``apply_async``
+4. A ``handle_module_completed`` callback fires after each module succeeds
+5. The callback registers result Layers and dispatches the next module
+6. On failure, the AnalysisRun is marked as failed
 """
 
 from __future__ import annotations
@@ -22,6 +20,7 @@ from django.utils import timezone
 
 from brewgis.workspace.analysis.layer_registry import register_result_layer
 from brewgis.workspace.models import AnalysisRun
+from brewgis.workspace.tasks import handle_module_completed
 from brewgis.workspace.tasks import run_core_module
 from brewgis.workspace.tasks import run_env_constraint
 
@@ -138,15 +137,17 @@ def run_analysis_pipeline(
     module_names: list[str],
     vars_: dict[str, Any] | None = None,
 ) -> AnalysisRun:
-    """Create an AnalysisRun record and dispatch the pipeline.
+    """Create an AnalysisRun record and dispatch the first module via Celery.
 
     This is the entry point called from views. The actual execution
-    happens asynchronously via Celery tasks.
+    happens asynchronously via Celery tasks. Returns immediately with
+    the AnalysisRun in 'pending' status; the htmx frontend polls for
+    status updates.
 
     Args:
         workspace_id: Workspace primary key.
         module_names: Modules to execute.
-        vars: dbt variables dict.
+        vars_: dbt variables dict.
 
     Returns:
         The AnalysisRun instance (status: pending).
@@ -172,7 +173,7 @@ def run_analysis_pipeline(
         ordered_modules,
     )
 
-    # Dispatch the first module in the chain
+    # Dispatch the first module via Celery
     _dispatch_next(run, ordered_modules, base_vars, completed_modules=[])
 
     return run
@@ -184,11 +185,11 @@ def _dispatch_next(
     base_vars: dict[str, Any],
     completed_modules: list[str],
 ) -> None:
-    """Dispatch the next module in the chain, or mark as completed.
+    """Dispatch the next module via Celery, or mark as completed.
 
-    Each module task is called with the updated vars (including completed_modules).
-    The Celery task is executed synchronously (for now — future enhancement
-    would use Celery chains for async execution).
+    Each module task is dispatched asynchronously via
+    ``apply_async(link=handle_module_completed)``. The link callback
+    handles result registration and dispatching subsequent modules.
     """
     if not remaining:
         # All modules complete
@@ -199,7 +200,10 @@ def _dispatch_next(
         return
 
     module = remaining[0]
-    module_vars = _get_vars_for_module(module, {**base_vars, "completed_modules": completed_modules})
+    module_vars = _get_vars_for_module(
+        module,
+        {**base_vars, "completed_modules": list(completed_modules)},
+    )
 
     # Update run status
     run.status = "running"
@@ -214,35 +218,26 @@ def _dispatch_next(
         run.save(update_fields=["status", "error_log", "completed_at"])
         return
 
-    try:
-        # Execute the Celery task synchronously
-        result = task_func(workspace_id=run.workspace_id, vars_=module_vars)
+    scenario_id = base_vars.get("scenario_id", "default")
 
-        if result["success"]:
-            # Register result layers
-            scenario_id = base_vars.get("scenario_id", "default")
-            _register_results(run.workspace_id, module, result, scenario_id)
+    logger.info(
+        "Dispatching module '%s' for AnalysisRun #%s",
+        module,
+        run.pk,
+    )
 
-            # Dispatch next module
-            _dispatch_next(run, remaining[1:], base_vars, [*completed_modules, module])
-        else:
-            run.status = "failed"
-            run.error_log = result.get("error", "Unknown error")
-            run.completed_at = timezone.now()
-            run.save(update_fields=["status", "error_log", "completed_at"])
-            logger.error(
-                "AnalysisRun #%s: module %s failed: %s",
-                run.pk,
-                module,
-                run.error_log,
-            )
-    except Exception as e:
-        run.status = "failed"
-        run.error_log = str(e)
-        run.completed_at = timezone.now()
-        run.save(update_fields=["status", "error_log", "completed_at"])
-        logger.exception(
-            "AnalysisRun #%s: exception in module %s",
-            run.pk,
-            module,
-        )
+    # Dispatch via Celery with a link callback for the next module
+    task_func.apply_async(
+        kwargs={
+            "workspace_id": run.workspace_id,
+            "vars_": module_vars,
+        },
+        link=handle_module_completed.s(
+            run_id=run.pk,
+            workspace_id=run.workspace_id,
+            remaining=remaining[1:],
+            base_vars=base_vars,
+            completed_modules=[*completed_modules, module],
+            scenario_id=scenario_id,
+        ),
+    )

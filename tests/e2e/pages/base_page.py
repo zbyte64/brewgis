@@ -27,7 +27,7 @@ class BasePage:
             if snapshot:
                 visible = []
 
-                def _collect(node, depth=0) -> None:
+                def _collect(node: dict, depth: int = 0) -> None:
                     role = node.get("role", "?")
                     name = node.get("name", "")
                     if role not in ("none", "generic", "InlineTextBox"):

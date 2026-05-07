@@ -2,15 +2,16 @@
 from __future__ import annotations
 
 import os
+import sys
+from contextlib import suppress
 from pathlib import Path
 from typing import TYPE_CHECKING
-from contextlib import suppress
 
 import pytest
 from django.test import override_settings
 
-from tests.factories import UserFactory
 from tests.e2e.pages.auth_page import AuthPage
+from tests.factories import UserFactory
 
 # Allow synchronous DB access from Playwright's async event loop
 os.environ.setdefault("DJANGO_ALLOW_ASYNC_UNSAFE", "true")
@@ -20,6 +21,7 @@ pytestmark = pytest.mark.django_db
 if TYPE_CHECKING:
     from django.contrib.auth.models import User
     from playwright.sync_api import Browser
+    from playwright.sync_api import ConsoleMessage
     from playwright.sync_api import Page
     from playwright.sync_api import Playwright
     from pytest_django.live_server_helper import LiveServer
@@ -54,7 +56,7 @@ def playwright() -> Playwright:
 @pytest.fixture(scope="session")
 def browser(playwright: Playwright, request) -> Browser:
     """Launch a Chromium browser for the session."""
-    headless = not request.config.getoption("--e2e-debug", False)
+    headless = not request.config.getoption("--e2e-debug", default=False)
     browser = playwright.chromium.launch(headless=headless, slow_mo=100 if not headless else 0)
     yield browser
     browser.close()
@@ -96,7 +98,7 @@ def _capture_page_errors(page: Page, screenshots_dir: Path) -> None:
     """Capture console errors and dump page state on failure."""
     errors: list[str] = []
 
-    def _log_error(msg) -> None:
+    def _log_error(msg: ConsoleMessage) -> None:
         errors.append(f"[{msg.type}] {msg.text}")
 
     page.on("console", _log_error)
@@ -108,13 +110,13 @@ def _capture_page_errors(page: Page, screenshots_dir: Path) -> None:
     # If test failed, dump diagnostics
     if hasattr(page, "_diagnostic_dump"):
         diag_path = screenshots_dir / "diagnostics.txt"
-        diag_path.write_text(page._diagnostic_dump)
-        print(f"\n[DX] Diagnostics dumped to: {diag_path}", file=sys.stderr)
-        print(f"[DX] Page URL: {page.url}", file=sys.stderr)
+        diag_path.write_text(page._diagnostic_dump)  # noqa: SLF001
+        print(f"\n[DX] Diagnostics dumped to: {diag_path}", file=sys.stderr)  # noqa: T201
+        print(f"[DX] Page URL: {page.url}", file=sys.stderr)  # noqa: T201
         if errors:
-            print(f"[DX] Console errors: {len(errors)} captured", file=sys.stderr)
+            print(f"[DX] Console errors: {len(errors)} captured", file=sys.stderr)  # noqa: T201
             for e in errors[-10:]:
-                print(f"     {e}", file=sys.stderr)
+                print(f"     {e}", file=sys.stderr)  # noqa: T201
 
 
 @pytest.fixture
@@ -171,7 +173,7 @@ def pytest_runtest_makereport(item, call) -> None:
                 snapshot = page.accessibility.snapshot()
                 if snapshot:
                     elements = []
-                    def flatten(node, depth=0):
+                    def flatten(node: dict, depth: int = 0) -> None:
                         role = node.get("role", "?")
                         name = node.get("name", "")
                         if role not in ("none", "generic"):
@@ -183,7 +185,8 @@ def pytest_runtest_makereport(item, call) -> None:
                     dom_path.write_text("\n".join(elements))
 
             # Print locations to stderr so they're visible in CI output
-            print(f"\n=== E2E FAILURE DIAGNOSTICS [{item.nodeid}] ===", file=sys.stderr)
-            print(f"   Screenshot: {screenshot_path}", file=sys.stderr)
-            print(f"   DOM tree:   {sd / 'dom_tree.txt'}", file=sys.stderr)
-            print(f"===========================================\n", file=sys.stderr)
+            print(f"\n=== E2E FAILURE DIAGNOSTICS [{item.nodeid}] ===", file=sys.stderr)  # noqa: T201
+            print(f"   Screenshot: {screenshot_path}", file=sys.stderr)  # noqa: T201
+            print(f"   DOM tree:   {sd / 'dom_tree.txt'}", file=sys.stderr)  # noqa: T201
+            print("===========================================\n", file=sys.stderr)  # noqa: T201
+

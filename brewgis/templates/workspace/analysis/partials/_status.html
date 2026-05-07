@@ -2,7 +2,7 @@
 <div id="analysis-status-{{ run.pk }}"
      class="card mt-3"
      hx-get="{% url 'workspace:analysis_status' run.pk %}"
-     hx-trigger="load delay:2s"
+     hx-trigger="{% if run.status == "running" %}every 2s{% endif %}"
      hx-swap="outerHTML">
   <div class="card-body">
     <div class="d-flex justify-content-between align-items-center">

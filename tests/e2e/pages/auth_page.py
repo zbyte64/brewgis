@@ -25,10 +25,9 @@ class AuthPage(BasePage):
         # Wait for the form to actually be attached to DOM
         try:
             self.page.wait_for_selector("form", state="attached", timeout=5000)
-        except Exception:
-            raise AssertionError(
-                f"Login form never appeared on page.\n{self.dump_state('no login form')}"
-            )
+        except Exception:  # noqa: BLE001
+            msg = f"Login form never appeared on page.\n{self.dump_state('no login form')}"
+            raise AssertionError(msg) from None
 
         # Try multiple selector strategies for username/password
         selectors = {
@@ -40,22 +39,20 @@ class AuthPage(BasePage):
             found = False
             for sel in candidates:
                 if self.page.locator(sel).count() > 0:
-                    self.page.fill(sel, field == "login" and username or password)
+                    self.page.fill(sel, (field == "login" and username) or password)
                     found = True
                     break
             if not found:
-                raise AssertionError(
-                    f"Could not find {field} field on login page.\n{self.dump_state(f'no {field} field')}"
-                )
+                msg = f"Could not find {field} field on login page.\n{self.dump_state(f'no {field} field')}"
+                raise AssertionError(msg)
 
         # Submit button — try button type or role-based
         submit = self.page.locator("button[type=submit]")
         if submit.count() == 0:
             submit = self.page.get_by_role("button", name="Sign In")
         if submit.count() == 0:
-            raise AssertionError(
-                f"Could not find submit button.\n{self.dump_state('no submit button')}"
-            )
+            msg = f"Could not find submit button.\n{self.dump_state('no submit button')}"
+            raise AssertionError(msg)
         submit.click()
 
     def is_on_login_page(self) -> bool:

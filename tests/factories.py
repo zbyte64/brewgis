@@ -69,6 +69,16 @@ class StyleClassFactory(factory.django.DjangoModelFactory):
     label = factory.Sequence(lambda n: f"Class {n}")
 
 
+
+
+class AnalysisRunFactory(factory.django.DjangoModelFactory):
+    class Meta:
+        model = "workspace.AnalysisRun"
+
+    workspace = factory.SubFactory(WorkspaceFactory)
+    modules = ["env_constraint"]
+    status = "pending"
+    vars = {}
 class BuildingTypeFactory(factory.django.DjangoModelFactory):
     class Meta:
         model = BuildingType
