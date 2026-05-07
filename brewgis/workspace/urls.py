@@ -1,22 +1,28 @@
 from django.urls import path
-from .views import building_type_bake  # noqa: F811
-from .views import building_type_create  # noqa: F811
-from .views import building_type_delete  # noqa: F811
-from .views import building_type_edit  # noqa: F811
-from .views import building_type_list  # noqa: F811
-from .views import place_type_bake  # noqa: F811
-from .views import place_type_create  # noqa: F811
-from .views import place_type_delete  # noqa: F811
-from .views import place_type_edit  # noqa: F811
-from .views import place_type_list  # noqa: F811
 
 from .views import CreateLayerView
 from .views import ReadGISFileView
-from .views import home
-from .views import view_workspace_map
 from .views import auto_generate
 from .views import edit_symbology
+from .views import home
 from .views import preview_symbology
+from .views import view_workspace_map
+from .views.built_forms import (
+    BuildingTypeCreateView as building_type_create,  # noqa: N813
+)
+from .views.built_forms import (
+    BuildingTypeDeleteView as building_type_delete,  # noqa: N813
+)
+from .views.built_forms import (
+    BuildingTypeUpdateView as building_type_edit,  # noqa: N813
+)
+from .views.built_forms import PlaceTypeCreateView as place_type_create  # noqa: N813
+from .views.built_forms import PlaceTypeDeleteView as place_type_delete  # noqa: N813
+from .views.built_forms import PlaceTypeUpdateView as place_type_edit  # noqa: N813
+from .views.built_forms import building_type_bake
+from .views.built_forms import building_type_list
+from .views.built_forms import place_type_bake
+from .views.built_forms import place_type_list
 
 app_name = "workspace"
 urlpatterns = [

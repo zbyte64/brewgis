@@ -7,7 +7,6 @@ from django import forms
 from django.contrib.auth.decorators import user_passes_test
 from django.http import HttpRequest
 from django.http import HttpResponse
-from django.http import HttpResponseRedirect
 from django.shortcuts import get_object_or_404
 from django.shortcuts import render
 from django.urls import reverse
@@ -19,6 +18,46 @@ from django.views.generic.edit import UpdateView
 from brewgis.workspace.built_forms.allocation import AllocationEngine
 from brewgis.workspace.built_forms.models import BuildingType
 from brewgis.workspace.built_forms.models import PlaceType
+
+# ── HtmxResponseMixin ─────────────────────────────────────────────────
+
+
+class HtmxResponseMixin:
+    """Mixin providing htmx-aware form_valid, form_invalid, and delete handlers.
+
+    Subclasses MUST define:
+      - ``success_url_name`` (str): name for reverse() redirect on success
+      - ``success_url_args`` (tuple): args for reverse(), default ()
+    """
+
+    success_url_name: str
+    success_url_args: tuple = ()
+
+    def get_redirect_url(self) -> str:
+        return reverse(self.success_url_name, args=self.success_url_args)
+
+    def get_success_url(self) -> str:
+        """Override so Django's generic views redirect to our named URL."""
+        return self.get_redirect_url()
+
+    def form_valid(self, form: Any) -> HttpResponse:
+        """Delegate actual work to parent, then intercept redirect for htmx."""
+        response = super().form_valid(form)
+        if getattr(self.request, "htmx", False):
+            htmx_response = HttpResponse()
+            htmx_response["HX-Redirect"] = self.get_redirect_url()
+            return htmx_response
+        return response
+
+    def form_invalid(self, form: Any) -> HttpResponse:
+        if getattr(self.request, "htmx", False):
+            return render(
+                self.request,
+                "workspace/partials/_form_content.html",
+                {"form": form, "view": self},
+            )
+        return super().form_invalid(form)
+
 
 # ── ModelForms ──────────────────────────────────────────────────────────
 
@@ -69,151 +108,61 @@ auth_method = user_passes_test(lambda u: u.is_authenticated)
 
 
 @method_decorator(auth_method, name="dispatch")
-class BuildingTypeCreateView(CreateView):
+class BuildingTypeCreateView(HtmxResponseMixin, CreateView):
     """Create a new BuildingType."""
 
     form_class = BuildingTypeForm
     template_name = "form.html"
-
-    def form_valid(self, form: BuildingTypeForm) -> HttpResponse:
-        self.object = form.save()
-        redirect_url = reverse("workspace:building_type_list")
-        if self.request.htmx:  # type: ignore[attr-defined]
-            response = HttpResponse()
-            response["HX-Redirect"] = redirect_url
-            return response
-        return HttpResponseRedirect(redirect_url)
-
-    def form_invalid(self, form: BuildingTypeForm) -> HttpResponse:
-        if self.request.htmx:  # type: ignore[attr-defined]
-            return render(
-                self.request,
-                "workspace/partials/_form_content.html",
-                {"form": form, "view": self},
-            )
-        return super().form_invalid(form)
+    success_url_name = "workspace:building_type_list"
 
 
 @method_decorator(auth_method, name="dispatch")
-class BuildingTypeUpdateView(UpdateView):
+class BuildingTypeUpdateView(HtmxResponseMixin, UpdateView):
     """Edit an existing BuildingType."""
 
     model = BuildingType
     form_class = BuildingTypeForm
     template_name = "form.html"
-
-    def get_object(self, **_kwargs: Any) -> BuildingType:
-        return get_object_or_404(BuildingType, pk=self.kwargs["pk"])
-
-    def form_valid(self, form: BuildingTypeForm) -> HttpResponse:
-        self.object = form.save()
-        redirect_url = reverse("workspace:building_type_list")
-        if self.request.htmx:  # type: ignore[attr-defined]
-            response = HttpResponse()
-            response["HX-Redirect"] = redirect_url
-            return response
-        return HttpResponseRedirect(redirect_url)
-
-    def form_invalid(self, form: BuildingTypeForm) -> HttpResponse:
-        if self.request.htmx:  # type: ignore[attr-defined]
-            return render(
-                self.request,
-                "workspace/partials/_form_content.html",
-                {"form": form, "view": self},
-            )
-        return super().form_invalid(form)
+    success_url_name = "workspace:building_type_list"
 
 
 @method_decorator(auth_method, name="dispatch")
-class BuildingTypeDeleteView(DeleteView):
+class BuildingTypeDeleteView(HtmxResponseMixin, DeleteView):
     """Delete a BuildingType."""
 
     model = BuildingType
-
-    def get_success_url(self) -> str:
-        return reverse("workspace:building_type_list")
-
-    def delete(self, request: HttpRequest, *_args: Any, **_kwargs: Any) -> HttpResponse:
-            self.object = self.get_object()
+    success_url_name = "workspace:building_type_list"
 
 
 # ── Place Type CRUD ─────────────────────────────────────────────────────
 
 
 @method_decorator(auth_method, name="dispatch")
-class PlaceTypeCreateView(CreateView):
+class PlaceTypeCreateView(HtmxResponseMixin, CreateView):
     """Create a new PlaceType."""
 
     form_class = PlaceTypeForm
     template_name = "form.html"
-
-    def form_valid(self, form: PlaceTypeForm) -> HttpResponse:
-        self.object = form.save()
-        redirect_url = reverse("workspace:place_type_list")
-        if self.request.htmx:  # type: ignore[attr-defined]
-            response = HttpResponse()
-            response["HX-Redirect"] = redirect_url
-            return response
-        return HttpResponseRedirect(redirect_url)
-
-    def form_invalid(self, form: PlaceTypeForm) -> HttpResponse:
-        if self.request.htmx:  # type: ignore[attr-defined]
-            return render(
-                self.request,
-                "workspace/partials/_form_content.html",
-                {"form": form, "view": self},
-            )
-        return super().form_invalid(form)
+    success_url_name = "workspace:place_type_list"
 
 
 @method_decorator(auth_method, name="dispatch")
-class PlaceTypeUpdateView(UpdateView):
+class PlaceTypeUpdateView(HtmxResponseMixin, UpdateView):
     """Edit an existing PlaceType."""
 
     model = PlaceType
     form_class = PlaceTypeForm
     template_name = "form.html"
-
-    def get_object(self, **_kwargs: Any) -> PlaceType:
-        return get_object_or_404(PlaceType, pk=self.kwargs["pk"])
-
-    def form_valid(self, form: PlaceTypeForm) -> HttpResponse:
-        self.object = form.save()
-        redirect_url = reverse("workspace:place_type_list")
-        if self.request.htmx:  # type: ignore[attr-defined]
-            response = HttpResponse()
-            response["HX-Redirect"] = redirect_url
-            return response
-        return HttpResponseRedirect(redirect_url)
-
-    def form_invalid(self, form: PlaceTypeForm) -> HttpResponse:
-        if self.request.htmx:  # type: ignore[attr-defined]
-            return render(
-                self.request,
-                "workspace/partials/_form_content.html",
-                {"form": form, "view": self},
-            )
-        return super().form_invalid(form)
+    success_url_name = "workspace:place_type_list"
 
 
 @method_decorator(auth_method, name="dispatch")
-class PlaceTypeDeleteView(DeleteView):
+class PlaceTypeDeleteView(HtmxResponseMixin, DeleteView):
     """Delete a PlaceType."""
 
     model = PlaceType
+    success_url_name = "workspace:place_type_list"
 
-    def get_success_url(self) -> str:
-        return reverse("workspace:place_type_list")
-
-    def delete(self, request: HttpRequest, *_args: Any, **_kwargs: Any) -> HttpResponse:
-        self.object = self.get_object()
-        self.object.delete()
-        redirect_url = self.get_success_url()
-        if request.htmx:  # type: ignore[attr-defined]
-            response = HttpResponse()
-            response["HX-Redirect"] = redirect_url
-            return response
-        return HttpResponseRedirect(redirect_url)
 
 # ── List Views ──────────────────────────────────────────────────────────
 
@@ -316,10 +265,3 @@ def place_type_bake(request: HttpRequest, pk: int) -> HttpResponse:
             "row_pct": place_type.row_allocation_pct or 25.0,
         },
     )
-# Aliases for URL imports
-building_type_create = BuildingTypeCreateView  # noqa: F811
-building_type_edit = BuildingTypeUpdateView  # noqa: F811
-building_type_delete = BuildingTypeDeleteView  # noqa: F811
-place_type_create = PlaceTypeCreateView  # noqa: F811
-place_type_edit = PlaceTypeUpdateView  # noqa: F811
-place_type_delete = PlaceTypeDeleteView  # noqa: F811
