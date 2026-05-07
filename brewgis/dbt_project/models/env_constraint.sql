@@ -96,12 +96,12 @@ FROM parcel_base
 {#
     No constraints — pass through gross acres as developable.
 #}
-SELECT
-    b.id AS parcel_id,
-    ST_Area(b.geom) / 4046.86 AS gross_acres,
-    ST_Area(b.geom) / 4046.86 AS acres_developable,
-    1.0 AS developable_proportion,
-    b.geom
-FROM {{ source_schema }}.{{ parcel_table }} b
+    SELECT
+        b.id AS parcel_id,
+        1.0 AS developable_proportion,
+        b.geom,
+        ST_AREA(b.geom) / 4046.86 AS gross_acres,
+        ST_AREA(b.geom) / 4046.86 AS acres_developable
+    FROM {{ source_schema }}.{{ parcel_table }} AS b
 
 {%- endif %}

@@ -33,6 +33,14 @@ User Browser                    Docker Compose Stack
 - **Async flow:** Celery beat (DatabaseScheduler via django-celery-beat) dispatches periodic tasks → Redis broker → Celery workers execute tasks
 - **GIS ingest:** User uploads GIS file → `ReadGISFileView` → `geopandas.read_file()` → `df.to_postgis()` via SQLAlchemy
 - **Dynamic UI:** htmx handles form submissions, partial page updates, and AJAX navigation without a JavaScript framework
+|- **Analysis pipeline:** dbt models execute in dependency order: `env_constraint` → `core` (end_state) → `water_demand` / `energy_demand` (parallel). Module outputs are registered as Layers in the workspace.
+|
+|  |Module|Purpose|Output table|
+|  |---|---|---|
+|  |`env_constraint`|Environmental constraint overlay|`env_constraint_{scenario_id}`|
+|  |`core`|End-state allocation + increment|`end_state_{scenario_id}`, `increment_{scenario_id}`|
+|  |`water_demand`|Residential & non-residential water demand (L/yr)|`water_demand_{scenario_id}`|
+|  |`energy_demand`|Residential & non-residential energy demand (kWh/yr)|`energy_demand_{scenario_id}`|
 
 ## Key Directories
 
@@ -84,6 +92,8 @@ docker compose -f docker-compose.local.yml run django python manage.py makemigra
 
 # Build docs
 docker compose -f docker-compose.docs.yml build docs
+|# SQLFluff lint dbt models
+|docker compose -f docker-compose.local.yml run django sqlfluff lint brewgis/dbt_project/
 ```
 
 ## Runtime & Tooling
@@ -96,6 +106,9 @@ docker compose -f docker-compose.docs.yml build docs
 - **Type checker:** mypy 1.13 with `django-stubs` and `mypy_django_plugin`
 - **CI:** GitHub Actions — pre-commit linting + pytest in Docker
 - **Pre-commit hooks:** `trailing-whitespace`, `end-of-file-fixer`, `check-json`, `check-toml`, `check-yaml`, `debug-statements`, `django-upgrade` (target 5.0), `ruff`, `ruff-format`, `djlint-reformat-django`, `djlint-django`
+|-
+|- **SQL linter (dbt):** SQLFluff (`sqlfluff` + `sqlfluff-templater-dbt`, dialect: `postgres`, templater: `dbt`) — runs in Django container via `docker compose run django sqlfluff lint brewgis/dbt_project/`
+|- **dbt LSP:** `j-clemons/dbt-language-server` (Go binary, v0.4.2) — installed on host at `~/.local/bin/dbt-language-server`. Resolves dbt refs, sources, macros, and variables in SQL/YAML files. Does not include Postgres function docs.
 
 ## Code Conventions
 
@@ -147,13 +160,17 @@ docker compose -f docker-compose.docs.yml build docs
 |`docker-compose.local.yml`|Local development stack|
 |`docker-compose.production.yml`|Production stack (includes Traefik, Nginx)|
 |`.pre-commit-config.yaml`|Pre-commit hook configuration|
+|`.sqlfluff`|SQLFluff configuration (postgres dialect, dbt templater, 119 line length)
+|`brewgis/dbt_project/models/core_end_state.sql`|Core end-state allocation dbt model|
+|`brewgis/dbt_project/models/water_demand.sql`|Water demand dbt model (residential + non-residential, L/yr)|
+|`brewgis/dbt_project/models/energy_demand.sql`|Energy demand dbt model (electricity + gas, kWh/yr)|
 
 ## Testing & QA
 - **Framework:** pytest 8.3 + pytest-django + pytest-sugar
 - **Runner:** Django's `DiscoverRunner` (Django `TestCase` available)
 - **Config:** `pyproject.toml` `[tool.pytest.ini_options]` — `--ds=config.settings.test --reuse-db --import-mode=importlib`
 - **Coverage:** `coverage` with `django_coverage_plugin`, includes `brewgis/**`, excludes `*/migrations/*` and `*/tests/*`
-- **State:** Only one test exists (`test_merge_production_dotenvs_in_dotenv.py`). No model or view tests written.
+- **State:** Over 50 tests across model, view, and analysis modules. Key test files: `tests/test_water_demand.py`, `tests/test_energy_demand.py`, `tests/test_dbt_runner.py`, `tests/test_layer_registry.py`, `tests/test_analysis_run.py`, `tests/workspace/test_built_forms_models.py`, `tests/workspace/test_built_forms_views.py`.
 - **CI:** GitHub Actions runs `pre-commit` and `pytest` in Docker on PRs/pushes to `master`/`main`
 
 ### Running Tests

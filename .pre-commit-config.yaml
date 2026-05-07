@@ -42,6 +42,16 @@ repos:
       - id: djlint-reformat-django
       - id: djlint-django
 
+  # SQL linting for dbt models
+  - repo: https://github.com/sqlfluff/sqlfluff
+    rev: v3.3.0
+    hooks:
+      - id: sqlfluff-lint
+        additional_dependencies:
+          - sqlfluff-templater-dbt>=3.3.0
+        files: ^brewgis/dbt_project/.*\.(sql|yml)$
+        args: [--config, .sqlfluff]
+
 
   - repo: https://github.com/codespell-project/codespell
     rev: v2.4.1

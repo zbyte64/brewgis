@@ -22,3 +22,14 @@ models:
   brewgis:
     +materialized: view
     +schema: "{{ var('target_schema', 'public') }}"
+vars:
+  # Default values for SQLFluff / dbt compilation.
+  # Runtime values are provided by dbt_runner.py when executing models.
+  parcel_table: parcels
+  constraint_table: constraints
+  built_form_table: built_forms
+  source_schema: public
+  target_schema: public
+  scenario_id: lint
+  base_canvas_table: base_canvas
+  constraints: []

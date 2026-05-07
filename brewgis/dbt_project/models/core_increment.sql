@@ -33,37 +33,41 @@
 WITH end_state AS (
     SELECT * FROM {{ target_schema }}.end_state_{{ scenario_id }}
 ),
+
 base AS (
     SELECT * FROM {{ source_schema }}.{{ base_canvas }}
 )
 
 SELECT
     -- Parcel ID for joining
-    COALESCE(es.parcel_id, b.parcel_id) AS parcel_id,
+    b.gross_acres,
 
     -- Base acres (from base canvas, same for all scenarios)
-    b.gross_acres AS gross_acres,
     es.acres_developable,
     es.acres_developed,
+    es.land_dev_category,
 
     -- Population & Households deltas
+    COALESCE(es.parcel_id, b.parcel_id) AS parcel_id,
     COALESCE(es.population, 0.0) - COALESCE(b.population, 0.0) AS population,
-    COALESCE(es.households, 0.0) - COALESCE(b.households, 0.0) AS households,
 
     -- Dwelling unit deltas
+    COALESCE(es.households, 0.0) - COALESCE(b.households, 0.0) AS households,
     COALESCE(es.dwelling_units_total, 0.0) - COALESCE(b.dwelling_units_total, 0.0) AS dwelling_units_total,
     COALESCE(es.dwelling_units_sf_ll, 0.0) - COALESCE(b.dwelling_units_sf_ll, 0.0) AS dwelling_units_sf_ll,
     COALESCE(es.dwelling_units_sf_sl, 0.0) - COALESCE(b.dwelling_units_sf_sl, 0.0) AS dwelling_units_sf_sl,
-    COALESCE(es.dwelling_units_attached_sf, 0.0) - COALESCE(b.dwelling_units_attached_sf, 0.0) AS dwelling_units_attached_sf,
+    COALESCE(es.dwelling_units_attached_sf, 0.0)
+    - COALESCE(b.dwelling_units_attached_sf, 0.0) AS dwelling_units_attached_sf,
     COALESCE(es.dwelling_units_mf_2_4, 0.0) - COALESCE(b.dwelling_units_mf_2_4, 0.0) AS dwelling_units_mf_2_4,
-    COALESCE(es.dwelling_units_mf_5p, 0.0) - COALESCE(b.dwelling_units_mf_5p, 0.0) AS dwelling_units_mf_5p,
 
     -- Employment deltas
-    COALESCE(es.employment_total, 0.0) - COALESCE(b.employment_total, 0.0) AS employment_total,
+    COALESCE(es.dwelling_units_mf_5p, 0.0) - COALESCE(b.dwelling_units_mf_5p, 0.0) AS dwelling_units_mf_5p,
 
     -- Building square footage deltas
+    COALESCE(es.employment_total, 0.0) - COALESCE(b.employment_total, 0.0) AS employment_total,
     COALESCE(es.building_sqft_total, 0.0) - COALESCE(b.building_sqft_total, 0.0) AS building_sqft_total,
-    COALESCE(es.building_sqft_residential, 0.0) - COALESCE(b.building_sqft_residential, 0.0) AS building_sqft_residential,
+    COALESCE(es.building_sqft_residential, 0.0)
+    - COALESCE(b.building_sqft_residential, 0.0) AS building_sqft_residential,
     COALESCE(es.building_sqft_commercial, 0.0) - COALESCE(b.building_sqft_commercial, 0.0) AS building_sqft_commercial,
     COALESCE(es.building_sqft_office, 0.0) - COALESCE(b.building_sqft_office, 0.0) AS building_sqft_office,
     COALESCE(es.building_sqft_industrial, 0.0) - COALESCE(b.building_sqft_industrial, 0.0) AS building_sqft_industrial,
@@ -72,27 +76,28 @@ SELECT
     COALESCE(es.building_sqft_wholesale, 0.0) - COALESCE(b.building_sqft_wholesale, 0.0) AS building_sqft_wholesale,
     COALESCE(es.building_sqft_education, 0.0) - COALESCE(b.building_sqft_education, 0.0) AS building_sqft_education,
     COALESCE(es.building_sqft_healthcare, 0.0) - COALESCE(b.building_sqft_healthcare, 0.0) AS building_sqft_healthcare,
-    COALESCE(es.building_sqft_hotel_lodging, 0.0) - COALESCE(b.building_sqft_hotel_lodging, 0.0) AS building_sqft_hotel_lodging,
-    COALESCE(es.building_sqft_entertainment, 0.0) - COALESCE(b.building_sqft_entertainment, 0.0) AS building_sqft_entertainment,
-    COALESCE(es.building_sqft_other, 0.0) - COALESCE(b.building_sqft_other, 0.0) AS building_sqft_other,
+    COALESCE(es.building_sqft_hotel_lodging, 0.0)
+    - COALESCE(b.building_sqft_hotel_lodging, 0.0) AS building_sqft_hotel_lodging,
+    COALESCE(es.building_sqft_entertainment, 0.0)
+    - COALESCE(b.building_sqft_entertainment, 0.0) AS building_sqft_entertainment,
 
     -- Water deltas
+    COALESCE(es.building_sqft_other, 0.0) - COALESCE(b.building_sqft_other, 0.0) AS building_sqft_other,
     COALESCE(es.res_irrigated_sqft, 0.0) - COALESCE(b.res_irrigated_sqft, 0.0) AS res_irrigated_sqft,
-    COALESCE(es.com_irrigated_sqft, 0.0) - COALESCE(b.com_irrigated_sqft, 0.0) AS com_irrigated_sqft,
 
     -- Parcel acres deltas
+    COALESCE(es.com_irrigated_sqft, 0.0) - COALESCE(b.com_irrigated_sqft, 0.0) AS com_irrigated_sqft,
     COALESCE(es.parcel_acres_developed, 0.0) - COALESCE(b.parcel_acres_developed, 0.0) AS parcel_acres_developed,
     COALESCE(es.parcel_acres_agriculture, 0.0) - COALESCE(b.parcel_acres_agriculture, 0.0) AS parcel_acres_agriculture,
     COALESCE(es.parcel_acres_open_space, 0.0) - COALESCE(b.parcel_acres_open_space, 0.0) AS parcel_acres_open_space,
-    COALESCE(es.parcel_acres_vacant, 0.0) - COALESCE(b.parcel_acres_vacant, 0.0) AS parcel_acres_vacant,
 
     -- Network deltas
-    COALESCE(es.intersection_density, 0.0) - COALESCE(b.intersection_density, 0.0) AS intersection_density,
+    COALESCE(es.parcel_acres_vacant, 0.0) - COALESCE(b.parcel_acres_vacant, 0.0) AS parcel_acres_vacant,
 
     -- Land development category (from end state, not a delta)
-    es.land_dev_category,
+    COALESCE(es.intersection_density, 0.0) - COALESCE(b.intersection_density, 0.0) AS intersection_density,
 
     -- Geometry (from end state — use base if no end state)
     COALESCE(es.geom, b.geom) AS geom
-FROM end_state es
-FULL OUTER JOIN base b ON es.parcel_id = b.parcel_id
+FROM end_state AS es
+FULL OUTER JOIN base AS b ON es.parcel_id = b.parcel_id

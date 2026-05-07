@@ -57,7 +57,9 @@
     {%- set from_extra = "" -%}
 {%- endif -%}
 
-{%- set applied_acres = "((" ~ developable_acres_expr ~ ") * " ~ dev_pct ~ " / 100.0 * " ~ gross_net_pct ~ " / 100.0)" -%}
+{%- set applied_acres %}
+    {{ developable_acres_expr }} * {{ dev_pct }} / 100.0 * {{ gross_net_pct }} / 100.0
+{%- endset -%}
 {%- set density_adj_acres = "(" ~ applied_acres ~ " * " ~ density_pct ~ " / 100.0)" -%}
 {%- set gross_acres = "ST_Area(p.geom) / 4046.86" -%}
 
@@ -76,11 +78,17 @@ WITH parcel_base AS (
         bf.jobs_by_sector,
         bf.indoor_water_rate,
         bf.outdoor_water_rate,
+        bf.id AS built_form_id,
+        bf.building_coverage,
+        bf.electricity_eui,
+        bf.gas_eui,
+        bf.vintage,
         bf.irrigable_area_fraction,
         p.geom
-    FROM {{ source_schema }}.{{ parcel_table }} p
-    {{ from_extra }}
-    LEFT JOIN {{ source_schema }}.{{ built_form_table }} bf
+    FROM
+        {{ source_schema }}.{{ parcel_table }} AS p
+        {{ from_extra }}
+    LEFT JOIN {{ source_schema }}.{{ built_form_table }} AS bf
         ON p.{{ built_form_key }} = bf.id
 )
 
@@ -91,83 +99,106 @@ SELECT
     parcel_base.applied_acres AS acres_developed,
 
     -- Population & Households
-    CASE
-        WHEN parcel_base.du_per_acre IS NOT NULL AND parcel_base.du_per_acre > 0
-        THEN parcel_base.density_adjusted_acres * parcel_base.du_per_acre
-        ELSE 0.0
-    END AS dwelling_units_total,
+    0.0 AS dwelling_units_sf_sl,
 
-    CASE
-        WHEN parcel_base.du_per_acre IS NOT NULL AND parcel_base.du_per_acre > 0
-        THEN (parcel_base.density_adjusted_acres * parcel_base.du_per_acre) * COALESCE(parcel_base.household_size, 2.5)
-        ELSE 0.0
-    END AS population,
+    0.0 AS dwelling_units_attached_sf,
 
-    CASE
-        WHEN parcel_base.du_per_acre IS NOT NULL AND parcel_base.du_per_acre > 0
-        THEN (parcel_base.density_adjusted_acres * parcel_base.du_per_acre) * (1.0 - COALESCE(parcel_base.vacancy_rate, 5.0) / 100.0)
-        ELSE 0.0
-    END AS households,
+    0.0 AS dwelling_units_mf_2_4,
 
     -- Dwelling unit breakdown (simplified — single-family default unless multi-family indicators)
-    CASE
-        WHEN parcel_base.du_per_acre IS NOT NULL AND parcel_base.du_per_acre > 0
-        THEN parcel_base.density_adjusted_acres * parcel_base.du_per_acre
-        ELSE 0.0
-    END AS dwelling_units_sf_ll,
-
-    0.0 AS dwelling_units_sf_sl,
-    0.0 AS dwelling_units_attached_sf,
-    0.0 AS dwelling_units_mf_2_4,
     0.0 AS dwelling_units_mf_5p,
-
-    -- Employment
-    CASE
-        WHEN parcel_base.emp_per_acre IS NOT NULL AND parcel_base.emp_per_acre > 0
-        THEN parcel_base.density_adjusted_acres * parcel_base.emp_per_acre
-        ELSE 0.0
-    END AS employment_total,
-
-    -- Building square footage
-    CASE
-        WHEN parcel_base.far IS NOT NULL AND parcel_base.far > 0
-        THEN parcel_base.density_adjusted_acres * 43560.0 * parcel_base.far
-        ELSE 0.0
-    END AS building_sqft_total,
 
     0.0 AS building_sqft_residential,
     0.0 AS building_sqft_commercial,
     0.0 AS building_sqft_office,
     0.0 AS building_sqft_industrial,
+
+    -- Employment
     0.0 AS building_sqft_public,
+
+    -- Building square footage
     0.0 AS building_sqft_retail,
+
     0.0 AS building_sqft_wholesale,
     0.0 AS building_sqft_education,
     0.0 AS building_sqft_healthcare,
     0.0 AS building_sqft_hotel_lodging,
     0.0 AS building_sqft_entertainment,
     0.0 AS building_sqft_other,
-
-    -- Water
-    0.0 AS res_irrigated_sqft,
-    0.0 AS com_irrigated_sqft,
-
-    -- Parcel acres by type
+    CASE
+        WHEN parcel_base.du_per_acre IS NOT NULL AND parcel_base.du_per_acre > 0
+            THEN parcel_base.density_adjusted_acres * 43560.0
+                * (1.0 - COALESCE(parcel_base.building_coverage, 30.0) / 100.0)
+                * COALESCE(parcel_base.irrigable_area_fraction, 0.0)
+        ELSE 0.0
+    END AS res_irrigated_sqft
+,
+    CASE
+        WHEN parcel_base.emp_per_acre IS NOT NULL AND parcel_base.emp_per_acre > 0
+            THEN parcel_base.density_adjusted_acres * 43560.0
+                * (1.0 - COALESCE(parcel_base.building_coverage, 30.0) / 100.0)
+                * COALESCE(parcel_base.irrigable_area_fraction, 0.0)
+        ELSE 0.0
+    END AS com_irrigated_sqft,
     parcel_base.applied_acres AS parcel_acres_developed,
     0.0 AS parcel_acres_agriculture,
     0.0 AS parcel_acres_open_space,
     0.0 AS parcel_acres_vacant,
 
-    -- Network indicators
+    -- Water
     0.0 AS intersection_density,
+    parcel_base.geom,
+
+    -- Parcel acres by type
+    CASE
+        WHEN parcel_base.du_per_acre IS NOT NULL AND parcel_base.du_per_acre > 0
+            THEN parcel_base.density_adjusted_acres * parcel_base.du_per_acre
+        ELSE 0.0
+    END AS dwelling_units_total,
+    CASE
+        WHEN parcel_base.du_per_acre IS NOT NULL AND parcel_base.du_per_acre > 0
+            THEN
+                (parcel_base.density_adjusted_acres * parcel_base.du_per_acre)
+                * COALESCE(parcel_base.household_size, 2.5)
+        ELSE 0.0
+    END AS population,
+    CASE
+        WHEN parcel_base.du_per_acre IS NOT NULL AND parcel_base.du_per_acre > 0
+            THEN
+                (parcel_base.density_adjusted_acres * parcel_base.du_per_acre)
+                * (1.0 - COALESCE(parcel_base.vacancy_rate, 5.0) / 100.0)
+        ELSE 0.0
+    END AS households,
+    CASE
+        WHEN parcel_base.du_per_acre IS NOT NULL AND parcel_base.du_per_acre > 0
+            THEN parcel_base.density_adjusted_acres * parcel_base.du_per_acre
+        ELSE 0.0
+    END AS dwelling_units_sf_ll,
+
+    -- Network indicators
+    CASE
+        WHEN parcel_base.emp_per_acre IS NOT NULL AND parcel_base.emp_per_acre > 0
+            THEN parcel_base.density_adjusted_acres * parcel_base.emp_per_acre
+        ELSE 0.0
+    END AS employment_total,
 
     -- Land development category
+    CASE
+        WHEN parcel_base.far IS NOT NULL AND parcel_base.far > 0
+            THEN parcel_base.density_adjusted_acres * 43560.0 * parcel_base.far
+        ELSE 0.0
+    END AS building_sqft_total,
+
     CASE
         WHEN parcel_base.du_per_acre IS NOT NULL AND parcel_base.du_per_acre >= 10.0 THEN 'urban'
         WHEN parcel_base.du_per_acre IS NOT NULL AND parcel_base.du_per_acre >= 5.0 THEN 'compact'
         WHEN parcel_base.du_per_acre IS NOT NULL AND parcel_base.du_per_acre >= 1.0 THEN 'standard'
         ELSE 'rural'
     END AS land_dev_category,
-
-    parcel_base.geom
+    parcel_base.built_form_id,
+    COALESCE(parcel_base.indoor_water_rate, 0.0) AS indoor_water_rate,
+    COALESCE(parcel_base.outdoor_water_rate, 0.0) AS outdoor_water_rate,
+    COALESCE(parcel_base.electricity_eui, 0.0) AS electricity_eui,
+    COALESCE(parcel_base.gas_eui, 0.0) AS gas_eui,
+    parcel_base.household_size,
 FROM parcel_base
