@@ -7,6 +7,9 @@ from .views import edit_symbology
 from .views import home
 from .views import preview_symbology
 from .views import view_workspace_map
+from .views import analysis_launch
+from .views import analysis_list
+from .views import analysis_status
 from .views.built_forms import (
     BuildingTypeCreateView as building_type_create,  # noqa: N813
 )
@@ -96,4 +99,8 @@ urlpatterns = [
         place_type_bake,
         name="place_type_bake",
     ),
+    # Analysis Pipeline
+    path("analysis/launch/", analysis_launch.as_view(), name="analysis_launch"),
+    path("analysis/runs/", analysis_list, name="analysis_list"),
+    path("analysis/runs/<int:run_pk>/", analysis_status, name="analysis_status"),
 ]

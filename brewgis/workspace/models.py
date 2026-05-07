@@ -161,3 +161,43 @@ class StyleClass(models.Model):
 
     def __str__(self) -> str:
         return f"{self.label} ({self.symbology.layer.name})"
+
+class AnalysisRun(models.Model):
+    """Tracks execution history of dbt analysis modules."""
+
+    workspace = models.ForeignKey(
+        Workspace,
+        on_delete=models.CASCADE,
+        related_name="analysis_runs",
+    )
+    modules = models.JSONField(
+        default=list,
+        help_text="List of module names executed (e.g. ['env_constraint', 'core']).",
+    )
+    status = models.CharField(
+        max_length=16,
+        choices=[
+            ("pending", "Pending"),
+            ("running", "Running"),
+            ("completed", "Completed"),
+            ("failed", "Failed"),
+        ],
+        default="pending",
+    )
+    vars = models.JSONField(
+        default=dict,
+        blank=True,
+        help_text="dbt variables used for this run.",
+    )
+    started_at = models.DateTimeField(null=True, blank=True)
+    completed_at = models.DateTimeField(null=True, blank=True)
+    error_log = models.TextField(blank=True, default="")
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        ordering = ("-created_at",)
+        verbose_name = "Analysis Run"
+
+    def __str__(self) -> str:
+        modules_str = ", ".join(self.modules) if self.modules else "unknown"
+        return f"AnalysisRun #{self.pk} [{self.status}] ({modules_str})"

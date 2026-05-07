@@ -26,3 +26,5 @@ django-htmx==1.21.0  # https://github.com/adamchainz/django-htmx
 geopandas[all]==1.0.1
 pandas==2.2.3
 GeoAlchemy2==0.16.0
+dbt-core>=1.8,<2.0  # https://github.com/dbt-labs/dbt-core
+dbt-postgres>=1.8,<2.0  # https://github.com/dbt-labs/dbt-postgres

@@ -1,0 +1,24 @@
+# Brew GIS DBT Project
+# Analysis modules for urban planning and scenario modeling.
+
+name: "brewgis"
+version: "1.0.0"
+config-version: 2
+
+profile: "brewgis"
+
+model-paths: ["models"]
+macro-paths: ["macros"]
+analysis-paths: []
+test-paths: []
+seed-paths: []
+snapshot-paths: []
+
+clean-targets:
+  - "target"
+  - "dbt_packages"
+
+models:
+  brewgis:
+    +materialized: view
+    +schema: "{{ var('target_schema', 'public') }}"

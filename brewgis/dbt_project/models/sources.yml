@@ -1,0 +1,24 @@
+# Source table references for Brew GIS analysis modules.
+# Dynamic source tables are resolved via dbt vars at runtime.
+# This file documents the expected source structure.
+
+version: 2
+
+sources:
+  - name: brewgis
+    description: "Dynamic analysis sources resolved via dbt vars."
+    freshness: null
+    loader: django
+    tables:
+      - name: parcels
+        description: "Parcel data with built form assignments."
+        identifier: "{{ var('parcel_table') }}"
+        schema: "{{ var('source_schema', 'public') }}"
+      - name: constraints
+        description: "Environmental constraint layers."
+        identifier: "{{ var('constraint_table') }}"
+        schema: "{{ var('source_schema', 'public') }}"
+      - name: built_forms
+        description: "Building type assignments on parcels."
+        identifier: "{{ var('built_form_table') }}"
+        schema: "{{ var('source_schema', 'public') }}"
