@@ -79,5 +79,13 @@ jobs:
       - name: Run Django Tests
         run: docker compose -f docker-compose.local.yml run django pytest
 
+      - name: Upload E2E screenshots on failure
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: e2e-screenshots
+          path: tests/e2e/screenshots/
+          retention-days: 7
+
       - name: Tear down the Stack
         run: docker compose -f docker-compose.local.yml down

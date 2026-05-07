@@ -57,6 +57,21 @@ RUN apt-get update && apt-get install --no-install-recommends -y \
   && apt-get purge -y --auto-remove -o APT::AutoRemove::RecommendsImportant=false \
   && rm -rf /var/lib/apt/lists/*
 
+# Playwright E2E test dependencies
+RUN apt-get update && apt-get install --no-install-recommends -y \
+    libnss3 libnspr4 libatk-bridge2.0-0 libdrm2 libxkbcommon0 \
+    libxcomposite1 libxdamage1 libxrandr2 libgbm1 libasound2 \
+    libpango-1.0-0 libcairo2 libatspi2.0-0 \
+    && rm -rf /var/lib/apt/lists/*
+
+# Install Playwright browsers (chromium only to keep image lean)
+# Use a shared path so the dev-user can access them at runtime
+ENV PLAYWRIGHT_BROWSERS_PATH=/usr/local/share/ms-playwright
+RUN pip install playwright==1.52.0 && \
+    mkdir -p /usr/local/share/ms-playwright && \
+    playwright install chromium --with-deps && \
+    pip uninstall -y playwright
+
 # All absolute dir copies ignore workdir instruction. All relative dir copies are wrt to the workdir instruction
 # copy python dependency wheels from python-build-stage
 COPY --from=python-build-stage /usr/src/app/wheels  /wheels/
