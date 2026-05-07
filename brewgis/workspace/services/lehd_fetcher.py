@@ -6,6 +6,7 @@ Characteristics (WAC) data at the Census block level.
 Data available: 2002–2021 (lagging indicator).
 See https://lehd.ces.census.gov/data/ for documentation.
 """
+
 from __future__ import annotations
 
 import logging
@@ -32,27 +33,27 @@ LEHD_BASE = "https://api.census.gov/data/2021/lehd"
 # SI02 = Trade, transportation, utilities
 # SI03 = All other services
 WAC_VARIABLES = {
-    "C000": "emp",        # Total jobs
-    "CA01": "emp_ag",     # Agriculture, forestry, fishing, hunting
-    "CA02": "emp_mining", # Mining, quarrying, oil/gas
-    "CA03": "emp_util",   # Utilities
-    "CA04": "emp_constr", # Construction
-    "CA05": "emp_mfg",    # Manufacturing
-    "CA06": "emp_wholesale", # Wholesale trade
-    "CA07": "emp_retail", # Retail trade
+    "C000": "emp",  # Total jobs
+    "CA01": "emp_ag",  # Agriculture, forestry, fishing, hunting
+    "CA02": "emp_mining",  # Mining, quarrying, oil/gas
+    "CA03": "emp_util",  # Utilities
+    "CA04": "emp_constr",  # Construction
+    "CA05": "emp_mfg",  # Manufacturing
+    "CA06": "emp_wholesale",  # Wholesale trade
+    "CA07": "emp_retail",  # Retail trade
     "CA08": "emp_trans",  # Transportation/warehousing
-    "CA09": "emp_info",   # Information
-    "CA10": "emp_finance", # Finance/insurance
-    "CA11": "emp_realestate", # Real estate
-    "CA12": "emp_professional", # Professional/scientific/technical services
-    "CA13": "emp_management", # Management of companies
+    "CA09": "emp_info",  # Information
+    "CA10": "emp_finance",  # Finance/insurance
+    "CA11": "emp_realestate",  # Real estate
+    "CA12": "emp_professional",  # Professional/scientific/technical services
+    "CA13": "emp_management",  # Management of companies
     "CA14": "emp_admin",  # Administrative/support/waste mgmt
-    "CA15": "emp_edu",    # Educational services
-    "CA16": "emp_healthcare", # Healthcare/social assistance
-    "CA17": "emp_arts",   # Arts/entertainment/recreation
-    "CA18": "emp_accomodation", # Accommodation/food services
+    "CA15": "emp_edu",  # Educational services
+    "CA16": "emp_healthcare",  # Healthcare/social assistance
+    "CA17": "emp_arts",  # Arts/entertainment/recreation
+    "CA18": "emp_accomodation",  # Accommodation/food services
     "CA19": "emp_other",  # Other services
-    "CA20": "emp_pub_admin", # Public administration
+    "CA20": "emp_pub_admin",  # Public administration
 }
 
 # Aggregate employment columns used in base canvas
@@ -243,7 +244,7 @@ def _generate_block_points(records: list[dict]) -> list[Point]:
     """
     points: list[Point] = []
     for rec in records:
-        h = hash(rec.get("geoid", f"{rec.get('tract','')}_{rec.get('block','')}"))
+        h = hash(rec.get("geoid", f"{rec.get('tract', '')}_{rec.get('block', '')}"))
         lng = -120.0 + (h % 1000) / 1000.0
         lat = 35.0 + ((h // 1000) % 1000) / 1000.0
         points.append(Point(lng, lat))
@@ -271,4 +272,9 @@ def fetch_lehd_data_summary(state_fips: str, county_fips: str) -> dict[str, Any]
             "row_count": row_count,
         }
     except RuntimeError as e:
-        return {"error": str(e), "variables": [], "aggregate_columns": [], "row_count": 0}
+        return {
+            "error": str(e),
+            "variables": [],
+            "aggregate_columns": [],
+            "row_count": 0,
+        }

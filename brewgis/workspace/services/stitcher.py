@@ -5,6 +5,7 @@ Supports multiple imputation strategies:
 - area_proportional: Fill from a source layer using area-weighted allocation.
 - built_form_default: Fill from the nearest matching built form definition.
 """
+
 from __future__ import annotations
 
 import logging
@@ -47,9 +48,7 @@ def impute_constant(
     """
     with connection.cursor() as cursor:
         cursor.execute(
-            f'UPDATE "{schema}"."{table}" '
-            f'SET "{column}" = %s '
-            f'WHERE "{column}" IS NULL',
+            f'UPDATE "{schema}"."{table}" SET "{column}" = %s WHERE "{column}" IS NULL',
             [value],
         )
         rows_updated = cursor.rowcount
@@ -90,18 +89,23 @@ def impute_area_proportional(
     """
     # Load source data
     source_gdf = _load_geometries_and_values(
-        source_schema, source_table, source_geom_col, [source_column],
+        source_schema,
+        source_table,
+        source_geom_col,
+        [source_column],
     )
     source_gdf["__sid__"] = source_gdf.index
 
     query = (
         f'SELECT "{target_geom_col}", '
-        f'ctid AS __ctid__, '
+        f"ctid AS __ctid__, "
         f'"{target_column}" FROM "{schema}"."{target_table}" '
         f'WHERE "{target_column}" IS NULL'
     )
     null_targets = gpd.read_postgis(
-        query, connection, geom_col=target_geom_col,
+        query,
+        connection,
+        geom_col=target_geom_col,
     )
 
     if null_targets.empty:
@@ -115,8 +119,10 @@ def impute_area_proportional(
     tid_to_ctid = null_targets["__ctid__"].to_dict()
     # Compute allocation weights
     allocation_df = _compute_allocation_factors(
-        source_gdf, null_targets,
-        source_id_col="__sid__", target_id_col="__tid__",
+        source_gdf,
+        null_targets,
+        source_id_col="__sid__",
+        target_id_col="__tid__",
     )
 
     # Compute values per target row
@@ -140,7 +146,7 @@ def impute_area_proportional(
                 cursor.execute(
                     f'UPDATE "{schema}"."{target_table}" '
                     f'SET "{target_column}" = %s '
-                    f'WHERE ctid = %s',
+                    f"WHERE ctid = %s",
                     [value, ctid],
                 )
                 rows_updated += 1
@@ -179,8 +185,8 @@ def impute_built_form_default(
     with connection.cursor() as cursor:
         # Check if the column exists in built_form_table
         cursor.execute(
-            f'SELECT column_name FROM information_schema.columns '
-            f'WHERE table_schema = %s AND table_name = %s AND column_name = %s',
+            f"SELECT column_name FROM information_schema.columns "
+            f"WHERE table_schema = %s AND table_name = %s AND column_name = %s",
             [schema, built_form_table, column],
         )
         if not cursor.fetchone():

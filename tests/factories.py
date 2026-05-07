@@ -1,4 +1,5 @@
 """Factory Boy factories for Brew GIS models."""
+
 from __future__ import annotations
 
 import factory
@@ -19,12 +20,9 @@ class UserFactory(factory.django.DjangoModelFactory):
         django_get_or_create = ("username",)
         skip_postgeneration_save = True
 
-
-
     username = factory.Sequence(lambda n: f"user_{n}")
     email = factory.LazyAttribute(lambda o: f"{o.username}@example.com")
     password = factory.PostGenerationMethodCall("set_password", "testpass123")
-
 
     @classmethod
     def _after_postgeneration(cls, instance, create, results=None):
@@ -32,6 +30,7 @@ class UserFactory(factory.django.DjangoModelFactory):
         super()._after_postgeneration(instance, create, results)
         if create:
             instance.save()
+
 
 class WorkspaceFactory(factory.django.DjangoModelFactory):
     class Meta:
@@ -69,8 +68,6 @@ class StyleClassFactory(factory.django.DjangoModelFactory):
     label = factory.Sequence(lambda n: f"Class {n}")
 
 
-
-
 class ScenarioFactory(factory.django.DjangoModelFactory):
     class Meta:
         model = "workspace.Scenario"
@@ -80,6 +77,8 @@ class ScenarioFactory(factory.django.DjangoModelFactory):
     workspace = factory.SubFactory(WorkspaceFactory)
     base_year = 2020
     horizon_year = 2050
+
+
 class AnalysisRunFactory(factory.django.DjangoModelFactory):
     class Meta:
         model = "workspace.AnalysisRun"
@@ -89,6 +88,18 @@ class AnalysisRunFactory(factory.django.DjangoModelFactory):
     status = "pending"
     vars = {}
     scenario = None
+
+
+class PaintedCanvasFactory(factory.django.DjangoModelFactory):
+    class Meta:
+        model = "workspace.PaintedCanvas"
+
+    scenario = factory.SubFactory(ScenarioFactory)
+    feature_id = factory.Sequence(lambda n: f"feature-{n}")
+    column_name = "du"
+    painted_value = 100.0
+
+
 class BuildingTypeFactory(factory.django.DjangoModelFactory):
     class Meta:
         model = BuildingType

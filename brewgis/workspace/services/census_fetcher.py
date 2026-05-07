@@ -6,6 +6,7 @@ Supported tables (mapped to base canvas columns):
 - B25024: Units in Structure (du, du_detsf*, du_attsf, du_mf*)
 - B25008: Total Population in Occupied Housing Units (pop/hh ratio check)
 """
+
 from __future__ import annotations
 
 import logging
@@ -276,8 +277,15 @@ def fetch_acs_data_summary(state_fips: str, county_fips: str) -> dict[str, Any]:
             "table_groups": list(ACS_TABLE_GROUPS.keys()),
             "row_count": row_count,
             "columns": [
-                "pop", "hh", "du", "du_detsf", "du_attsf",
-                "du_mf_2_9", "du_mf_10p", "owner_occupied", "renter_occupied",
+                "pop",
+                "hh",
+                "du",
+                "du_detsf",
+                "du_attsf",
+                "du_mf_2_9",
+                "du_mf_10p",
+                "owner_occupied",
+                "renter_occupied",
             ],
         }
     except RuntimeError as e:

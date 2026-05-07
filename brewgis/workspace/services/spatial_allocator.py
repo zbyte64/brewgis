@@ -4,6 +4,7 @@ Allocates attributes from a source layer (e.g., census block groups) to a
 target layer (e.g., parcels) by computing the area of intersection between
 each source and target geometry, then proportionally distributing values.
 """
+
 from __future__ import annotations
 
 import logging
@@ -119,11 +120,13 @@ def _compute_allocation_factors(
 
                 if intersection_area > 0:
                     weight = intersection_area / source_area
-                    allocation_rows.append({
-                        source_id_col: source_idx,
-                        target_id_col: target_idx,
-                        "weight": weight,
-                    })
+                    allocation_rows.append(
+                        {
+                            source_id_col: source_idx,
+                            target_id_col: target_idx,
+                            "weight": weight,
+                        }
+                    )
 
     if not allocation_rows:
         msg = "No spatial overlaps found between source and target layers."
@@ -165,12 +168,18 @@ def allocate_attributes(
     """
     # Load source data
     source_gdf = _load_geometries_and_values(
-        source_schema, source_table, source_geom_col, columns,
+        source_schema,
+        source_table,
+        source_geom_col,
+        columns,
     )
     source_gdf["__sid__"] = source_gdf.index
 
     target_gdf = _load_geometries_and_values(
-        target_schema, target_table, target_geom_col, include_ctid=True,
+        target_schema,
+        target_table,
+        target_geom_col,
+        include_ctid=True,
     )
     target_gdf["__tid__"] = target_gdf.index
     # Map tid to physical row identity
@@ -178,8 +187,10 @@ def allocate_attributes(
 
     # Compute allocation weights
     allocation_df = _compute_allocation_factors(
-        source_gdf, target_gdf,
-        source_id_col="__sid__", target_id_col="__tid__",
+        source_gdf,
+        target_gdf,
+        source_id_col="__sid__",
+        target_id_col="__tid__",
     )
 
     # For each column, compute allocated values per target
@@ -230,7 +241,7 @@ def allocate_attributes(
                     cursor.execute(
                         f'UPDATE "{target_schema}"."{target_table}" '
                         f'SET "{new_col}" = %s '
-                        f'WHERE ctid = %s',
+                        f"WHERE ctid = %s",
                         [value, ctid],
                     )
                     updated_count += 1

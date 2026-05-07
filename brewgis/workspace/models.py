@@ -1,13 +1,12 @@
+from django.conf import settings
 from django.db import models
+from django.utils.text import slugify
+
 from brewgis.workspace.built_forms.models import BuildingType  # noqa: F401
 from brewgis.workspace.built_forms.models import PlaceType  # noqa: F401
 from brewgis.workspace.built_forms.models import PlaceTypeBuildingTypeMix  # noqa: F401
-from brewgis.workspace.built_forms.models import VintageChoices  # noqa: F401
 from brewgis.workspace.built_forms.models import StreetPatternChoices  # noqa: F401
-from django.conf import settings
-from django.utils.text import slugify
-
-
+from brewgis.workspace.built_forms.models import VintageChoices  # noqa: F401
 
 
 class Workspace(models.Model):
@@ -70,8 +69,11 @@ class Layer(models.Model):
             }
         return {
             "type": "vector",
-            "tiles": [f"/tipg/collections/{self._source_id()}/tiles/WebMercatorQuad/{{z}}/{{x}}/{{y}}"],
+            "tiles": [
+                f"/tipg/collections/{self._source_id()}/tiles/WebMercatorQuad/{{z}}/{{x}}/{{y}}"
+            ],
         }
+
 
 class SymbologyConfig(models.Model):
     layer = models.OneToOneField(
@@ -166,7 +168,6 @@ class StyleClass(models.Model):
         return f"{self.label} ({self.symbology.layer.name})"
 
 
-
 class ScenarioType(models.TextChoices):
     BASE = "base", "Base"
     ALTERNATIVE = "alternative", "Alternative"
@@ -185,7 +186,11 @@ class Scenario(models.Model):
         default=ScenarioType.BASE,
     )
     parent = models.ForeignKey(
-        "self", on_delete=models.SET_NULL, null=True, blank=True, related_name="alternatives"
+        "self",
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name="alternatives",
     )
     base_year = models.IntegerField()
     horizon_year = models.IntegerField()
@@ -204,9 +209,51 @@ class Scenario(models.Model):
             self.slug = slugify(self.name)[:128]
         super().save(*args, **kwargs)
 
+    def delete(self, *args: object, **kwargs: object) -> None:
+        """Drop the canvas view then delete the model."""
+        from brewgis.workspace.services.canvas_view_manager import drop_canvas_view
+
+        try:
+            drop_canvas_view(self)
+        except Exception:  # noqa: BLE001
+            pass  # view may not exist
+        super().delete(*args, **kwargs)
+
     @property
     def target_schema(self) -> str:
         return f"scenario_{self.slug}"
+
+
+class PaintedCanvas(models.Model):
+    """Stores per-feature, per-column overrides for a scenario (EAV pattern).
+
+    Each row represents one overridden column on one feature/parcel
+    within a scenario.  The canvas SQL view pivots these rows and
+    COALESCEs them over the base canvas table, implementing
+    copy-on-write for tile server consumption.
+    """
+
+    scenario = models.ForeignKey(
+        Scenario, on_delete=models.CASCADE, related_name="painted_features"
+    )
+    feature_id = models.CharField(max_length=128)
+    column_name = models.CharField(max_length=128)
+    painted_value = models.FloatField(null=True, blank=True)
+    painted_by = models.ForeignKey(
+        settings.AUTH_USER_MODEL, on_delete=models.SET_NULL, null=True
+    )
+    painted_at = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        unique_together = ("scenario", "feature_id", "column_name")
+        indexes = [
+            models.Index(fields=["scenario", "feature_id"]),
+        ]
+
+    def __str__(self) -> str:
+        return f"PaintedCanvas[{self.scenario_id}]({self.feature_id}.{self.column_name}={self.painted_value})"
+
+
 class AnalysisRun(models.Model):
     """Tracks execution history of dbt analysis modules."""
 
@@ -253,6 +300,8 @@ class AnalysisRun(models.Model):
     def __str__(self) -> str:
         modules_str = ", ".join(self.modules) if self.modules else "unknown"
         return f"AnalysisRun #{self.pk} [{self.status}] ({modules_str})"
+
+
 class DataImportRun(models.Model):
     """Tracks execution of data import operations (Census, LEHD, POI)."""
 
