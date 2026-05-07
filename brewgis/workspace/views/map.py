@@ -8,6 +8,8 @@ from ninja import ModelSchema
 
 from brewgis.workspace.models import Layer
 from brewgis.workspace.models import Workspace
+from brewgis.workspace.models import SymbologyConfig
+from brewgis.workspace.symbology.generator import generate_maplibre_style
 
 
 class LayerSchema(ModelSchema):
@@ -23,6 +25,15 @@ def view_workspace_map(request: HttpRequest, workspace_pk: int) -> HttpResponse:
     for layer in layers:
         data = LayerSchema.model_validate(layer).model_dump()
         data["tiles_url"] = layer.resolve_tiles_url()
+
+        # Merge symbology-generated paint/layout if available
+        try:
+            config = layer.symbology
+            style = generate_maplibre_style(config)
+            data["paint"] = style["paint"]
+            data["layout"] = style["layout"]
+        except SymbologyConfig.DoesNotExist:
+            pass
         layer_data.append(data)
 
     context = {

@@ -168,5 +168,6 @@ ignore = [
 # Standard pytest fixture patterns
 "brewgis/conftest.py" = ["ANN001", "ARG001"]
 
+"tests/**/*.py" = ["PLR2004", "ANN001", "ARG001"]
 [tool.ruff.lint.isort]
 force-single-line = true

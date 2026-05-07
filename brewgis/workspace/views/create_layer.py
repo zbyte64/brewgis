@@ -8,6 +8,7 @@ from django.utils.decorators import method_decorator
 from django.views.generic.edit import CreateView
 
 from brewgis.workspace.models import Layer
+from brewgis.workspace.symbology.auto import auto_generate_symbology
 
 
 class CreateLayerForm(forms.ModelForm):
@@ -23,6 +24,11 @@ class CreateLayerView(CreateView):
 
     def form_valid(self, form: CreateLayerForm) -> HttpResponse:
         self.object = form.save()
+        # Auto-generate symbology from the source table
+        try:
+            auto_generate_symbology(self.object)
+        except Exception:
+            pass  # Non-fatal — symbology can be configured later
         redirect_url = reverse(
             "workspace:workspace_map",
             args=[self.object.workspace.pk],
