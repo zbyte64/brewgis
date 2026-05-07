@@ -2,8 +2,10 @@
 from __future__ import annotations
 
 from django import forms
+from crispy_forms.helper import FormHelper
+from crispy_forms.layout import Layout, Submit
 from django.contrib.auth.decorators import user_passes_test
-from django.http import HttpResponse
+from django.http import HttpRequest, HttpResponse
 from django.shortcuts import render
 from django.template.loader import render_to_string
 from django.utils.decorators import method_decorator
@@ -19,6 +21,13 @@ from brewgis.workspace.tasks import run_census_fetch
 
 class CensusFetchForm(forms.Form):
     """Form to configure a Census ACS data import."""
+    def __init__(self, *args: object, **kwargs: object) -> None:
+        super().__init__(*args, **kwargs)
+        self.helper = FormHelper()
+        self.helper.form_tag = False
+        self.helper.disable_csrf = True
+        self.helper.label_class = "form-label"
+        self.helper.field_class = "mb-3"
 
     workspace = forms.ModelChoiceField(
         queryset=Workspace.objects.all(),

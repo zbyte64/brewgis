@@ -1,6 +1,7 @@
 """View for spatial allocation between layers."""
 from __future__ import annotations
 
+from crispy_forms.helper import FormHelper
 from django import forms
 from django.contrib.auth.decorators import user_passes_test
 from django.http import HttpResponse
@@ -16,6 +17,13 @@ from brewgis.workspace.tasks import run_spatial_allocation
 
 class AllocateForm(forms.Form):
     """Form to configure a spatial allocation operation."""
+    def __init__(self, *args: object, **kwargs: object) -> None:
+        super().__init__(*args, **kwargs)
+        self.helper = FormHelper()
+        self.helper.form_tag = False
+        self.helper.disable_csrf = True
+        self.helper.label_class = "form-label"
+        self.helper.field_class = "mb-3"
 
     workspace = forms.ModelChoiceField(
         queryset=Workspace.objects.all(),
@@ -80,7 +88,7 @@ class AllocateView(FormView):
                 "columns": columns,
                 "column_prefix": data.get("column_prefix", ""),
             },
-            status="running",
+            status="pending",
         )
 
         run_spatial_allocation.delay(

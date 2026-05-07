@@ -1,6 +1,7 @@
 """View for importing OpenStreetMap Points of Interest."""
 from __future__ import annotations
 
+from crispy_forms.helper import FormHelper
 from django import forms
 from django.contrib.auth.decorators import user_passes_test
 from django.http import HttpResponse
@@ -17,6 +18,13 @@ from brewgis.workspace.tasks import run_poi_fetch
 
 class POIFetchForm(forms.Form):
     """Form to configure a POI import from OpenStreetMap."""
+    def __init__(self, *args: object, **kwargs: object) -> None:
+        super().__init__(*args, **kwargs)
+        self.helper = FormHelper()
+        self.helper.form_tag = False
+        self.helper.disable_csrf = True
+        self.helper.label_class = "form-label"
+        self.helper.field_class = "mb-3"
 
     workspace = forms.ModelChoiceField(
         queryset=Workspace.objects.all(),

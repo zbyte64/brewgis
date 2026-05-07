@@ -1,6 +1,7 @@
 """View for column stitching / imputation."""
 from __future__ import annotations
 
+from crispy_forms.helper import FormHelper
 from django import forms
 from django.contrib.auth.decorators import user_passes_test
 from django.http import HttpResponse
@@ -16,6 +17,13 @@ from brewgis.workspace.tasks import run_column_stitching
 
 class StitchForm(forms.Form):
     """Form to configure column stitching / imputation."""
+    def __init__(self, *args: object, **kwargs: object) -> None:
+        super().__init__(*args, **kwargs)
+        self.helper = FormHelper()
+        self.helper.form_tag = False
+        self.helper.disable_csrf = True
+        self.helper.label_class = "form-label"
+        self.helper.field_class = "mb-3"
 
     STRATEGY_CHOICES = [
         ("constant", "Constant Default Value"),
@@ -87,7 +95,7 @@ class StitchView(FormView):
                 "source_table": data.get("source_table"),
                 "source_column": data.get("source_column"),
             },
-            status="running",
+            status="pending",
         )
 
         run_column_stitching.delay(

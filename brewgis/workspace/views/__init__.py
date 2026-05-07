@@ -16,3 +16,4 @@ from .fetch_poi import POIFetchView as poi_fetch  # noqa: F401
 from .allocate_data import AllocateView as allocate  # noqa: F401
 from .stitch_data import StitchView as stitch  # noqa: F401
 from .import_center import import_center  # noqa: F401
+from .import_status import import_status  # noqa: F401

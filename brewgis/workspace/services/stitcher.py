@@ -92,9 +92,9 @@ def impute_area_proportional(
     )
     source_gdf["__sid__"] = source_gdf.index
 
-    # Load target data — only rows with NULL in target column
     query = (
         f'SELECT "{target_geom_col}", '
+        f'ctid AS __ctid__, '
         f'"{target_column}" FROM "{schema}"."{target_table}" '
         f'WHERE "{target_column}" IS NULL'
     )
@@ -110,7 +110,7 @@ def impute_area_proportional(
         }
 
     null_targets["__tid__"] = null_targets.index
-
+    tid_to_ctid = null_targets["__ctid__"].to_dict()
     # Compute allocation weights
     allocation_df = _compute_allocation_factors(
         source_gdf, null_targets,
@@ -129,23 +129,12 @@ def impute_area_proportional(
         allocated = float(source_val) * weight
         target_values[tid] = target_values.get(tid, 0.0) + allocated
 
-    # Write back
+    # Write back using stored ctid values
     rows_updated = 0
-    query = (
-        f'SELECT ctid FROM "{schema}"."{target_table}" '
-        f'WHERE "{target_column}" IS NULL '
-        f'ORDER BY ctid'
-    )
     with connection.cursor() as cursor:
-        cursor.execute(query)
-        null_rows = cursor.fetchall()
-
-        # Map by offset order
-        null_offsets = {i: row[0] for i, row in enumerate(null_rows)}
-
         for tid, value in target_values.items():
-            if tid in null_offsets:
-                ctid = null_offsets[tid]
+            if tid in tid_to_ctid:
+                ctid = tid_to_ctid[tid]
                 cursor.execute(
                     f'UPDATE "{schema}"."{target_table}" '
                     f'SET "{target_column}" = %s '

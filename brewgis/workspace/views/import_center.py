@@ -8,7 +8,6 @@ from django.shortcuts import render
 
 from brewgis.workspace.models import DataImportRun
 from brewgis.workspace.models import Workspace
-from brewgis.workspace.services.poi_fetcher import POI_CATEGORIES
 from brewgis.workspace.views.fetch_census import CensusFetchForm
 from brewgis.workspace.views.fetch_employment import EmploymentFetchForm
 from brewgis.workspace.views.fetch_poi import POIFetchForm
@@ -32,9 +31,6 @@ def import_center(request: HttpRequest) -> HttpResponse:
         "poi_form": POIFetchForm(),
         "allocate_form": AllocateForm(),
         "stitch_form": StitchForm(),
-        "poi_categories": sorted(
-            (k, k.replace("_", " ").title()) for k in POI_CATEGORIES
-        ),
         "recent_imports": recent_imports,
     }
 

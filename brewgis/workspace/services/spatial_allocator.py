@@ -21,6 +21,7 @@ def _load_geometries_and_values(
     table: str,
     geom_col: str,
     value_columns: list[str] | None = None,
+    include_ctid: bool = False,
 ) -> gpd.GeoDataFrame:
     """Load geometries and optional value columns from a PostGIS table.
 
@@ -29,15 +30,24 @@ def _load_geometries_and_values(
         table: Table name.
         geom_col: Geometry column name (typically 'geom' or 'geometry').
         value_columns: List of numeric columns to load. None = load all.
+        include_ctid: If True, include ctid AS __ctid__ for row identity.
 
     Returns:
-        GeoDataFrame with geometry and value columns.
+        GeoDataFrame with geometry and value columns, plus __ctid__ if requested.
     """
+    extra_cols = []
+    if include_ctid:
+        extra_cols.append("ctid AS __ctid__")
+
     if value_columns:
-        cols = ", ".join(value_columns)
+        if extra_cols:
+            cols = ", ".join(extra_cols + value_columns)
+        else:
+            cols = ", ".join(value_columns)
         query = f'SELECT "{geom_col}", {cols} FROM "{schema}"."{table}"'
     else:
-        query = f'SELECT * FROM "{schema}"."{table}"'
+        ctid_clause = ", ctid AS __ctid__" if include_ctid else ""
+        query = f'SELECT *{ctid_clause} FROM "{schema}"."{table}"'
 
     df = gpd.read_postgis(query, connection, geom_col=geom_col)
     return df
@@ -159,11 +169,12 @@ def allocate_attributes(
     )
     source_gdf["__sid__"] = source_gdf.index
 
-    # Load target geometries
     target_gdf = _load_geometries_and_values(
-        target_schema, target_table, target_geom_col,
+        target_schema, target_table, target_geom_col, include_ctid=True,
     )
     target_gdf["__tid__"] = target_gdf.index
+    # Map tid to physical row identity
+    tid_to_ctid = target_gdf["__ctid__"].to_dict()
 
     # Compute allocation weights
     allocation_df = _compute_allocation_factors(
@@ -213,16 +224,14 @@ def allocate_attributes(
                 errors.append(f"Failed to add column {new_col}: {e}")
                 continue
 
-            # Update each target row
             for tid, value in target_values[col].items():
                 try:
-                    # Get the actual DB primary key or use the index
+                    ctid = tid_to_ctid[tid]
                     cursor.execute(
                         f'UPDATE "{target_schema}"."{target_table}" '
                         f'SET "{new_col}" = %s '
-                        f'WHERE ctid = (SELECT ctid FROM "{target_schema}"."{target_table}" '
-                        f'OFFSET %s LIMIT 1)',
-                        [value, tid],
+                        f'WHERE ctid = %s',
+                        [value, ctid],
                     )
                     updated_count += 1
                 except Exception as e:

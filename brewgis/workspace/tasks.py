@@ -13,6 +13,20 @@ from brewgis.workspace.analysis.dbt_runner import DbtRunnerWrapper
 from brewgis.workspace.analysis.layer_registry import register_result_layer
 from brewgis.workspace.models import AnalysisRun
 from brewgis.workspace.models import DataImportRun
+from django.db import transaction
+from django.utils import timezone
+from django.conf import settings
+from sqlalchemy import create_engine
+
+from brewgis.workspace.models import Layer
+from brewgis.workspace.services.census_fetcher import fetch_acs_block_groups
+from brewgis.workspace.services.lehd_fetcher import fetch_lehd_block_data
+from brewgis.workspace.services.poi_fetcher import fetch_pois
+from brewgis.workspace.services.spatial_allocator import allocate_attributes
+from brewgis.workspace.services.stitcher import impute_constant
+from brewgis.workspace.services.stitcher import impute_area_proportional
+from brewgis.workspace.services.stitcher import impute_built_form_default
+from brewgis.workspace.symbology.auto import auto_generate_symbology
 
 logger = get_task_logger(__name__)
 _plain_logger = logging.getLogger(__name__)
@@ -539,17 +553,12 @@ def run_census_fetch(
     schema: str,
 ) -> dict:
     """Fetch Census ACS demographics data and write to PostGIS."""
-    from django.utils import timezone
 
     try:
         run = DataImportRun.objects.get(pk=run_pk)
         run.status = "running"
         run.started_at = timezone.now()
         run.save(update_fields=["status", "started_at"])
-
-        from brewgis.workspace.services.census_fetcher import (
-            fetch_acs_block_groups,
-        )
 
         gdf = fetch_acs_block_groups(state_fips, county_fips)
 
@@ -564,8 +573,6 @@ def run_census_fetch(
         table_name = f"census_acs_{state_fips}_{county_fips}"
 
         # Write to PostGIS
-        from sqlalchemy import create_engine
-        from django.conf import settings
 
         db_url = settings.DATABASES["default"]["NAME"]
         db_user = settings.DATABASES["default"]["USER"]
@@ -579,8 +586,6 @@ def run_census_fetch(
         engine.dispose()
 
         # Register as Layer
-        from brewgis.workspace.models import Layer
-        from brewgis.workspace.symbology.auto import auto_generate_symbology
 
         layer, created = Layer.objects.get_or_create(
             key=f"census_acs_{state_fips}_{county_fips}",
@@ -631,7 +636,6 @@ def run_lehd_fetch(
     schema: str,
 ) -> dict:
     """Fetch LEHD employment data and write to PostGIS."""
-    from django.utils import timezone
 
     try:
         run = DataImportRun.objects.get(pk=run_pk)
@@ -639,9 +643,6 @@ def run_lehd_fetch(
         run.started_at = timezone.now()
         run.save(update_fields=["status", "started_at"])
 
-        from brewgis.workspace.services.lehd_fetcher import (
-            fetch_lehd_block_data,
-        )
 
         gdf = fetch_lehd_block_data(state_fips, county_fips)
 
@@ -655,8 +656,6 @@ def run_lehd_fetch(
 
         table_name = f"lehd_{state_fips}_{county_fips}"
 
-        from sqlalchemy import create_engine
-        from django.conf import settings
 
         db_url = settings.DATABASES["default"]["NAME"]
         db_user = settings.DATABASES["default"]["USER"]
@@ -669,8 +668,6 @@ def run_lehd_fetch(
         gdf.to_postgis(table_name, engine, schema=schema, if_exists="replace", index=False)
         engine.dispose()
 
-        from brewgis.workspace.models import Layer
-        from brewgis.workspace.symbology.auto import auto_generate_symbology
 
         layer, created = Layer.objects.get_or_create(
             key=f"lehd_{state_fips}_{county_fips}",
@@ -724,8 +721,6 @@ def run_poi_fetch(
     schema: str,
 ) -> dict:
     """Fetch POIs from OpenStreetMap Overpass and write to PostGIS."""
-    from django.utils import timezone
-    from uuid import uuid4
 
     try:
         run = DataImportRun.objects.get(pk=run_pk)
@@ -733,7 +728,6 @@ def run_poi_fetch(
         run.started_at = timezone.now()
         run.save(update_fields=["status", "started_at"])
 
-        from brewgis.workspace.services.poi_fetcher import fetch_pois
 
         gdf = fetch_pois(min_lng, min_lat, max_lng, max_lat, categories)
 
@@ -749,8 +743,6 @@ def run_poi_fetch(
         table_name = f"poi_{suffix}"
         layer_key = f"poi_{suffix}"
 
-        from sqlalchemy import create_engine
-        from django.conf import settings
 
         db_url = settings.DATABASES["default"]["NAME"]
         db_user = settings.DATABASES["default"]["USER"]
@@ -763,8 +755,6 @@ def run_poi_fetch(
         gdf.to_postgis(table_name, engine, schema=schema, if_exists="replace", index=False)
         engine.dispose()
 
-        from brewgis.workspace.models import Layer
-        from brewgis.workspace.symbology.auto import auto_generate_symbology
 
         cat_label = ",".join(categories) if categories else "all"
         layer, created = Layer.objects.get_or_create(
@@ -821,16 +811,13 @@ def run_spatial_allocation(
     target_geom_col: str = "geom",
 ) -> dict:
     """Run spatial allocation between source and target layers."""
-    from django.utils import timezone
 
     try:
         run = DataImportRun.objects.get(pk=run_pk)
+        run.status = "running"
         run.started_at = timezone.now()
-        run.save(update_fields=["started_at"])
+        run.save(update_fields=["status", "started_at"])
 
-        from brewgis.workspace.services.spatial_allocator import (
-            allocate_attributes,
-        )
 
         result = allocate_attributes(
             source_schema=source_schema,
@@ -877,16 +864,13 @@ def run_column_stitching(
     source_column: str | None = None,
 ) -> dict:
     """Run column stitching / imputation on a table."""
-    from django.utils import timezone
 
     try:
         run = DataImportRun.objects.get(pk=run_pk)
+        run.status = "running"
         run.started_at = timezone.now()
-        run.save(update_fields=["started_at"])
+        run.save(update_fields=["status", "started_at"])
 
-        from brewgis.workspace.services.stitcher import impute_constant
-        from brewgis.workspace.services.stitcher import impute_area_proportional
-        from brewgis.workspace.services.stitcher import impute_built_form_default
 
         if strategy == "constant":
             if default_value is None:
