@@ -225,6 +225,149 @@ def run_core_module(
 
 
 # ────────────────────────────────────────────────────────────
+#  Water & Energy Demand tasks
+# ────────────────────────────────────────────────────────────
+
+
+@shared_task(
+    bind=True,
+    name="run_water_demand",
+    autoretry_for=(Exception,),
+    max_retries=2,
+    default_retry_delay=60,
+)
+def run_water_demand(
+    self,
+    workspace_id: int,
+    vars_: dict | None = None,
+) -> dict:
+    """Run the Water Demand dbt model.
+
+    Computes residential and non-residential water demand from the
+    end-state allocation table.
+
+    Args:
+        workspace_id: Workspace primary key.
+        vars_: dbt variables dict.
+
+    Returns:
+        Dict with keys: success, results, error, layer_schema, layer_table.
+    """
+    resolved_vars = vars_ or {}
+    logger.info(
+        "Running water_demand for workspace %s with vars: %s",
+        workspace_id,
+        resolved_vars,
+    )
+
+    runner = DbtRunnerWrapper()
+    dbt_result = runner.run(
+        select=["water_demand"],
+        vars_=resolved_vars,
+        full_refresh=True,
+    )
+
+    if dbt_result.success:
+        target_schema = resolved_vars.get("target_schema", "public")
+        scenario_id = resolved_vars.get("scenario_id", "default")
+        logger.info(
+            "water_demand completed for workspace %s (scenario %s)",
+            workspace_id,
+            scenario_id,
+        )
+        return {
+            "success": True,
+            "results": dbt_result.results,
+            "error": None,
+            "layer_schema": target_schema,
+            "layer_table": f"water_demand_{scenario_id}",
+        }
+
+    error_msg = dbt_result.error or "Unknown dbt error"
+    logger.error(
+        "water_demand failed for workspace %s: %s",
+        workspace_id,
+        error_msg,
+    )
+    return {
+        "success": False,
+        "results": [],
+        "error": error_msg,
+        "layer_schema": None,
+        "layer_table": None,
+    }
+
+
+@shared_task(
+    bind=True,
+    name="run_energy_demand",
+    autoretry_for=(Exception,),
+    max_retries=2,
+    default_retry_delay=60,
+)
+def run_energy_demand(
+    self,
+    workspace_id: int,
+    vars_: dict | None = None,
+) -> dict:
+    """Run the Energy Demand dbt model.
+
+    Computes residential and non-residential energy demand (electricity + gas)
+    from the end-state allocation table.
+
+    Args:
+        workspace_id: Workspace primary key.
+        vars_: dbt variables dict.
+
+    Returns:
+        Dict with keys: success, results, error, layer_schema, layer_table.
+    """
+    resolved_vars = vars_ or {}
+    logger.info(
+        "Running energy_demand for workspace %s with vars: %s",
+        workspace_id,
+        resolved_vars,
+    )
+
+    runner = DbtRunnerWrapper()
+    dbt_result = runner.run(
+        select=["energy_demand"],
+        vars_=resolved_vars,
+        full_refresh=True,
+    )
+
+    if dbt_result.success:
+        target_schema = resolved_vars.get("target_schema", "public")
+        scenario_id = resolved_vars.get("scenario_id", "default")
+        logger.info(
+            "energy_demand completed for workspace %s (scenario %s)",
+            workspace_id,
+            scenario_id,
+        )
+        return {
+            "success": True,
+            "results": dbt_result.results,
+            "error": None,
+            "layer_schema": target_schema,
+            "layer_table": f"energy_demand_{scenario_id}",
+        }
+
+    error_msg = dbt_result.error or "Unknown dbt error"
+    logger.error(
+        "energy_demand failed for workspace %s: %s",
+        workspace_id,
+        error_msg,
+    )
+    return {
+        "success": False,
+        "results": [],
+        "error": error_msg,
+        "layer_schema": None,
+        "layer_table": None,
+    }
+
+
+# ────────────────────────────────────────────────────────────
 #  Pipeline chain callback
 # ────────────────────────────────────────────────────────────
 
@@ -302,6 +445,10 @@ def _register_module_results(
             f"end_state_{scenario_id}",
             f"increment_{scenario_id}",
         ]
+    elif module == "water_demand":
+        table_templates = [f"water_demand_{scenario_id}"]
+    elif module == "energy_demand":
+        table_templates = [f"energy_demand_{scenario_id}"]
 
     for table_name in table_templates:
         register_result_layer(

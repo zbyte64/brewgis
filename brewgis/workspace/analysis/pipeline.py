@@ -23,6 +23,8 @@ from brewgis.workspace.models import AnalysisRun
 from brewgis.workspace.tasks import handle_module_completed
 from brewgis.workspace.tasks import run_core_module
 from brewgis.workspace.tasks import run_env_constraint
+from brewgis.workspace.tasks import run_water_demand
+from brewgis.workspace.tasks import run_energy_demand
 
 logger = logging.getLogger(__name__)
 
@@ -30,18 +32,23 @@ logger = logging.getLogger(__name__)
 MODULE_DEPENDENCIES: dict[str, list[str]] = {
     "env_constraint": [],
     "core": ["env_constraint"],
+    "water_demand": ["core"],
+    "energy_demand": ["core"],
 }
 
 # Module → Celery task mapping
 MODULE_TASKS = {
     "env_constraint": run_env_constraint,
     "core": run_core_module,
+    "water_demand": run_water_demand,
+    "energy_demand": run_energy_demand,
 }
 
-# Module → result table name template (for layer registration)
 MODULE_RESULT_TABLES = {
     "env_constraint": "env_constraint_{scenario_id}",
     "core": ["end_state_{scenario_id}", "increment_{scenario_id}"],
+    "water_demand": "water_demand_{scenario_id}",
+    "energy_demand": "energy_demand_{scenario_id}",
 }
 
 
