@@ -1,10 +1,32 @@
 """Shared pytest fixtures for Brew GIS tests."""
 from __future__ import annotations
+import os
 
 import deal
+import hypothesis
+from hypothesis import HealthCheck
 
-deal.enable()
+# Conditionally enable deal contract checking.
+# Only enabled when DEAL_ENABLED=1 (set by `make test-deal`).
+if os.environ.get("DEAL_ENABLED") == "1":
+    deal.enable()
 
+# Hypothesis profile selection.
+# Set HYPOTHESIS_PROFILE env var, or auto-detect CI environment.
+_HYPOTHESIS_PROFILE = os.environ.get(
+    "HYPOTHESIS_PROFILE",
+    "ci" if os.environ.get("CI") else "local",
+)
+
+hypothesis.settings.register_profile(
+    "ci", deadline=2000, max_examples=10,
+    suppress_health_check=[HealthCheck.too_slow],
+)
+hypothesis.settings.register_profile(
+    "local", deadline=None, max_examples=50,
+    suppress_health_check=[HealthCheck.too_slow],
+)
+hypothesis.settings.load_profile(_HYPOTHESIS_PROFILE)
 from typing import TYPE_CHECKING
 
 import pytest

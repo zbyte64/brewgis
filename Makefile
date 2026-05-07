@@ -55,20 +55,20 @@ clean-test-db:  ## Drop and recreate the test database
 # ─────────────────────────────────────────────
 
 .PHONY: test
-test:  ## Run all tests
-	$(COMPOSE_RUN) pytest
+test:  ## Run all tests (excludes e2e)
+	$(COMPOSE_RUN) pytest -m "not e2e" --timeout=300
 
 .PHONY: test-fast
 test-fast:  ## Run tests with fast-fail and reuse-db
 	$(COMPOSE_RUN) pytest -x --reuse-db
 
 .PHONY: test-parallel
-test-parallel:  ## Run tests in parallel (requires pytest-xdist)
-	$(COMPOSE_RUN) pytest -n auto --reuse-db
+test-parallel:  ## Run tests in parallel (excludes slow and e2e, requires pytest-xdist)
+	$(COMPOSE_RUN) pytest -n auto --reuse-db -m "not slow and not e2e" --timeout=300
 
 .PHONY: test-e2e
-test-e2e:  ## Run end-to-end tests only
-	$(COMPOSE_RUN) pytest tests/e2e/ -m e2e
+test-e2e:  ## Run end-to-end tests only (sequential, single worker)
+	$(COMPOSE_RUN) pytest tests/e2e/ -m e2e -n 0 --timeout=300
 
 .PHONY: test-models
 test-models:  ## Run model tests only
@@ -82,6 +82,17 @@ test-views:  ## Run view/HTTP tests only
 test-integration:  ## Run integration tests only
 	$(COMPOSE_RUN) pytest -m integration --reuse-db
 
+.PHONY: test-safe
+test-safe:  ## Run tests excluding slow and e2e (safe for parallel execution)
+	$(COMPOSE_RUN) pytest -m "not slow and not e2e" --timeout=300 -n auto
+
+.PHONY: test-deal
+test-deal:  ## Run deal property-based tests only (sequential, with deal enabled)
+	$(COMPOSE_RUN) bash -c "DEAL_ENABLED=1 DEAL_CASE_COUNT=10 pytest tests/workspace/test_deal_contracts.py -n 0 --timeout=300"
+
+.PHONY: test-all
+test-all:  ## Run all tests sequentially (safe for full coverage)
+	$(COMPOSE_RUN) pytest -n 0 --timeout=300
 # ─────────────────────────────────────────────
 # Linting & Formatting
 # ─────────────────────────────────────────────

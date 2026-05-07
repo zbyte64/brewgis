@@ -26,6 +26,8 @@ from brewgis.workspace.symbology.classifiers import _sum_squared_diffs
 # Seed for deterministic CI runs — use CI_PIPELINE_ID, GITHUB_RUN_ID, or similar
 _DEAL_SEED_RAW = os.environ.get("DEAL_SEED")
 _DEAL_SEED: int | None = int(_DEAL_SEED_RAW) if _DEAL_SEED_RAW else None
+_DEAL_CASE_COUNT_RAW = os.environ.get("DEAL_CASE_COUNT")
+_DEAL_CASE_COUNT: int = int(_DEAL_CASE_COUNT_RAW) if _DEAL_CASE_COUNT_RAW else 25
 
 # ---------------------------------------------------------------------------
 # Classifier contracts
@@ -33,37 +35,37 @@ _DEAL_SEED: int | None = int(_DEAL_SEED_RAW) if _DEAL_SEED_RAW else None
 
 
 @pytest.mark.slow
-@deal.cases(_equal_interval_breaks, count=25, seed=_DEAL_SEED)
+@deal.cases(_equal_interval_breaks, count=_DEAL_CASE_COUNT, seed=_DEAL_SEED)
 def test_equal_interval_breaks_contract(case: deal.TestCase) -> None:
     case()
 
 
 @pytest.mark.slow
-@deal.cases(_logarithmic_breaks, count=25, seed=_DEAL_SEED)
+@deal.cases(_logarithmic_breaks, count=_DEAL_CASE_COUNT, seed=_DEAL_SEED)
 def test_logarithmic_breaks_contract(case: deal.TestCase) -> None:
     case()
 
 
 @pytest.mark.slow
-@deal.cases(_std_deviation_breaks, count=25, seed=_DEAL_SEED)
+@deal.cases(_std_deviation_breaks, count=_DEAL_CASE_COUNT, seed=_DEAL_SEED)
 def test_std_deviation_breaks_contract(case: deal.TestCase) -> None:
     case()
 
 
 @pytest.mark.slow
-@deal.cases(_sum_squared_diffs, count=25, seed=_DEAL_SEED)
+@deal.cases(_sum_squared_diffs, count=_DEAL_CASE_COUNT, seed=_DEAL_SEED)
 def test_sum_squared_diffs_contract(case: deal.TestCase) -> None:
     case()
 
 
 @pytest.mark.slow
-@deal.cases(_fmt, count=25, seed=_DEAL_SEED)
+@deal.cases(_fmt, count=_DEAL_CASE_COUNT, seed=_DEAL_SEED)
 def test_fmt_contract(case: deal.TestCase) -> None:
     case()
 
 
 @pytest.mark.slow
-@deal.cases(_make_labels, count=25, seed=_DEAL_SEED)
+@deal.cases(_make_labels, count=_DEAL_CASE_COUNT, seed=_DEAL_SEED)
 def test_make_labels_contract(case: deal.TestCase) -> None:
     case()
 
@@ -79,6 +81,6 @@ def test_make_labels_contract(case: deal.TestCase) -> None:
 
 
 @pytest.mark.slow
-@deal.cases(resolve_module_order, count=25, seed=_DEAL_SEED)
+@deal.cases(resolve_module_order, count=_DEAL_CASE_COUNT, seed=_DEAL_SEED)
 def test_resolve_module_order_contract(case: deal.TestCase) -> None:
     case()

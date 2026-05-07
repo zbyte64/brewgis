@@ -23,6 +23,14 @@ services:
     ports:
       - '8000:8000'
     command: /start
+    deploy:
+      resources:
+        limits:
+          cpus: '8'
+          memory: 8G
+        reservations:
+          cpus: '2'
+          memory: 1G
 
   postgres:
     image: postgis/postgis:17-3.5

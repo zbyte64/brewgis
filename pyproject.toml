@@ -13,7 +13,10 @@ markers = [
     "models: database model tests",
     "views: view/HTTP tests",
     "integration: tests requiring full Docker stack (PostGIS, dbt, or external services)",
+    "timeout: mark test with per-test timeout for pytest-timeout",
 ]
+timeout = 300
+timeout_func_only = true
 
 # ==== Coverage ====
 [tool.coverage.run]

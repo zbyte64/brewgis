@@ -15,6 +15,14 @@ from tests.factories import UserFactory
 
 # Allow synchronous DB access from Playwright's async event loop
 os.environ.setdefault("DJANGO_ALLOW_ASYNC_UNSAFE", "true")
+# Enforce single worker for e2e tests — multiple browser instances cause memory exhaustion.
+if os.environ.get("PYTEST_XDIST_WORKER") and os.environ.get("E2E_WORKERS", "1") != "auto":
+    import warnings
+    warnings.warn(
+        "E2E tests should run with a single worker (-n 0). "
+        "Use `make test-e2e` which sets this automatically.",
+        stacklevel=2,
+    )
 
 # All e2e tests need database access (for live_server, factories, etc.)
 pytestmark = pytest.mark.django_db
@@ -57,7 +65,11 @@ def playwright() -> Playwright:
 def browser(playwright: Playwright, request) -> Browser:
     """Launch a Chromium browser for the session."""
     headless = not request.config.getoption("--e2e-debug", default=False)
-    browser = playwright.chromium.launch(headless=headless, slow_mo=100 if not headless else 0)
+    browser = playwright.chromium.launch(
+        headless=headless,
+        slow_mo=100 if not headless else 0,
+        args=["--disable-dev-shm-usage"],
+    )
     yield browser
     browser.close()
 
