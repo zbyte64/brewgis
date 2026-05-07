@@ -37,6 +37,8 @@
     Materialized as: {{ var('target_schema') }}.end_state_{{ var('scenario_id') }}
 #}
 
+{{ config(alias='end_state_' ~ var('scenario_id')) }}
+
 {%- set source_schema = var('source_schema') -%}
 {%- set parcel_table = var('parcel_table') -%}
 {%- set built_form_table = var('built_form_table', 'built_forms') -%}
@@ -200,5 +202,5 @@ SELECT
     COALESCE(parcel_base.outdoor_water_rate, 0.0) AS outdoor_water_rate,
     COALESCE(parcel_base.electricity_eui, 0.0) AS electricity_eui,
     COALESCE(parcel_base.gas_eui, 0.0) AS gas_eui,
-    parcel_base.household_size,
+    parcel_base.household_size
 FROM parcel_base

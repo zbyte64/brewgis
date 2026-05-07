@@ -21,6 +21,8 @@
 
     Materialized as: {{ var('target_schema') }}.water_demand_{{ var('scenario_id') }}
 #}
+{%- set scenario_id = var('scenario_id') -%}
+{{ config(alias='water_demand_' ~ scenario_id) }}
 
 SELECT
     es.parcel_id,

@@ -33,6 +33,10 @@ BUILT_FORM_COLUMNS: dict[str, str] = {
     "indoor_water_rate": "indoor_water_rate",
     "outdoor_water_rate": "outdoor_water_rate",
     "irrigable_area_fraction": "irrigable_area_fraction",
+    "building_coverage": "building_coverage",
+    "electricity_eui": "electricity_eui",
+    "gas_eui": "gas_eui",
+    "vintage": "vintage",
 }
 
 # Columns that need a COALESCE wrapper so None becomes 0 in the output table
@@ -43,6 +47,9 @@ _NULLABLE_TO_ZERO: set[str] = {
     "indoor_water_rate",
     "outdoor_water_rate",
     "irrigable_area_fraction",
+    "building_coverage",
+    "electricity_eui",
+    "gas_eui",
 }
 
 _BOOL_COLUMNS: set[str] = set()

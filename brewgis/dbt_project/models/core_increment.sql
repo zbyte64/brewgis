@@ -25,6 +25,9 @@
     Materialized as: {{ var('target_schema') }}.increment_{{ var('scenario_id') }}
 #}
 
+{{ config(alias='increment_' ~ var('scenario_id')) }}
+
+
 {%- set source_schema = var('source_schema') -%}
 {%- set base_canvas = var('base_canvas_table', 'base_canvas') -%}
 {%- set target_schema = var('target_schema') -%}

@@ -25,6 +25,8 @@
 
     Materialized as: {{ var('target_schema') }}.energy_demand_{{ var('scenario_id') }}
 #}
+{%- set scenario_id = var('scenario_id') -%}
+{{ config(alias='energy_demand_' ~ scenario_id) }}
 
 {%- set res_far = var('res_far_default', 0.5) -%}
 {%- set res_electric = "dwelling_units_total * electricity_eui * 0.092903 * (acres_developed * 43560.0 * " ~ res_far ~ " / NULLIF(dwelling_units_total, 0))" -%}
