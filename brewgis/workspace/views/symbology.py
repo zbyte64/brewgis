@@ -9,14 +9,14 @@ from __future__ import annotations
 import json
 
 from django.contrib.auth.decorators import user_passes_test
+from django.db import transaction
 from django.http import HttpRequest
 from django.http import HttpResponse
-from django.http import JsonResponse
 from django.http import HttpResponseRedirect
+from django.http import JsonResponse
 from django.shortcuts import get_object_or_404
 from django.shortcuts import render
 from django.views.decorators.http import require_GET
-from django.db import transaction
 from django.views.decorators.http import require_http_methods
 from django.views.decorators.http import require_POST
 

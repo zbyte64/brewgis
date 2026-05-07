@@ -162,3 +162,62 @@ docker compose -f docker-compose.local.yml run django pytest
 # With coverage:
 docker compose -f docker-compose.local.yml run django coverage run -m pytest
 ```
+
+## Gotchas & Patterns
+
+### Database Migrations — First-time Setup
+
+If the development database has pre-existing tables but no migration records:
+
+```bash
+# 1. Generate the initial migration (one-time):
+docker compose -f docker-compose.local.yml run django python manage.py makemigrations workspace
+
+# 2. Fake it on the existing database:
+docker compose -f docker-compose.local.yml run django python manage.py migrate workspace --fake
+```
+
+Subsequent schema changes use normal `makemigrations` + `migrate` — no `--fake`.
+
+### PostgreSQL Transaction Abort Handling
+
+When a query fails, PostgreSQL aborts the entire transaction.  Catching the Python
+exception *inside* a `transaction.atomic()` block prevents the rollback from
+completing, leaving the connection in an `InFailedSqlTransaction` state.
+
+**Correct pattern:**
+
+```python
+from django.db import transaction
+from django.db.utils import DatabaseError
+
+try:
+    with transaction.atomic():
+        risky_db_operation()
+except DatabaseError:
+    handle_gracefully()  # rollback completes before this runs
+```
+
+**Wrong pattern** (exception caught inside the `with` block prevents rollback):
+
+```python
+with transaction.atomic():
+    try:
+        risky_db_operation()
+    except DatabaseError:
+        pass  # PG connection is now broken
+```
+
+### Docker File Ownership
+
+Docker containers run as root by default.  Files created inside containers
+(migrations, staticfiles) are owned by root on the host.
+
+**Fix ownership:**
+
+```bash
+docker compose -f docker-compose.local.yml run --rm django bash /app/scripts/fix-perms.sh
+```
+
+Or rebuild after adding `user: "${UID:-1000}:${GID:-1000}"` to the django service
+in `docker-compose.local.yml` (already configured).

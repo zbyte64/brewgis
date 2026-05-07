@@ -88,6 +88,15 @@ repos:
         language: node
         files: ^js/src/.*\.ts$
         pass_filenames: false
+  # Prevent @method_decorator misuse on function-based views
+  - repo: local
+    hooks:
+      - id: check-method-decorator
+        name: Check @method_decorator not used on FBVs
+        entry: python scripts/check-method-decorator.py
+        language: python
+        files: ^brewgis/.*\.py$
+        pass_filenames: false
 # sets up .pre-commit-ci.yaml to ensure pre-commit dependencies stay up to date
 ci:
   autoupdate_schedule: weekly
