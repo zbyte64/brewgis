@@ -8,3 +8,11 @@ from .symbology import preview_symbology  # noqa: F401
 from .analysis import AnalysisLaunchView as analysis_launch  # noqa: F401
 from .analysis import analysis_list  # noqa: F401
 from .analysis import analysis_status  # noqa: F401
+from .fetch_census import CensusFetchView as census_fetch  # noqa: F401
+from .fetch_census import census_preview  # noqa: F401
+from .fetch_employment import EmploymentFetchView as employment_fetch  # noqa: F401
+from .fetch_employment import employment_preview  # noqa: F401
+from .fetch_poi import POIFetchView as poi_fetch  # noqa: F401
+from .allocate_data import AllocateView as allocate  # noqa: F401
+from .stitch_data import StitchView as stitch  # noqa: F401
+from .import_center import import_center  # noqa: F401

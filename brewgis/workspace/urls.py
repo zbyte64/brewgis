@@ -2,10 +2,19 @@ from django.urls import path
 
 from .views import CreateLayerView
 from .views import ReadGISFileView
+from .views import allocate
 from .views import auto_generate
+from .views import census_fetch
+from .views import census_preview
 from .views import edit_symbology
+from .views import employment_fetch
+from .views import employment_preview
 from .views import home
+from .views import import_center
+from .views import import_status
+from .views import poi_fetch
 from .views import preview_symbology
+from .views import stitch
 from .views import view_workspace_map
 from .views import analysis_launch
 from .views import analysis_list
@@ -103,4 +112,22 @@ urlpatterns = [
     path("analysis/launch/", analysis_launch.as_view(), name="analysis_launch"),
     path("analysis/runs/", analysis_list, name="analysis_list"),
     path("analysis/runs/<int:run_pk>/", analysis_status, name="analysis_status"),
+    # Import Center
+    path("import/", import_center, name="import_center"),
+    path("import/census/", census_fetch.as_view(), name="census_fetch"),
+    path("import/census/preview/", census_preview, name="census_preview"),
+    path(
+        "import/employment/",
+        employment_fetch.as_view(),
+        name="employment_fetch",
+    ),
+    path(
+        "import/employment/preview/",
+        employment_preview,
+        name="employment_preview",
+    ),
+    path("import/poi/", poi_fetch.as_view(), name="poi_fetch"),
+    path("import/allocate/", allocate.as_view(), name="allocate"),
+    path("import/stitch/", stitch.as_view(), name="stitch"),
+    path("import/status/<int:run_pk>/", import_status, name="import_status"),
 ]

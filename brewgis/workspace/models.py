@@ -201,3 +201,54 @@ class AnalysisRun(models.Model):
     def __str__(self) -> str:
         modules_str = ", ".join(self.modules) if self.modules else "unknown"
         return f"AnalysisRun #{self.pk} [{self.status}] ({modules_str})"
+class DataImportRun(models.Model):
+    """Tracks execution of data import operations (Census, LEHD, POI)."""
+
+    IMPORT_TYPE_CHOICES = [
+        ("census", "Census ACS Demographics"),
+        ("lehd", "LEHD Employment"),
+        ("poi", "Points of Interest"),
+        ("allocate", "Spatial Allocation"),
+        ("stitch", "Column Stitching"),
+    ]
+
+    workspace = models.ForeignKey(
+        Workspace,
+        on_delete=models.CASCADE,
+        related_name="data_import_runs",
+    )
+    import_type = models.CharField(
+        max_length=16,
+        choices=IMPORT_TYPE_CHOICES,
+    )
+    params = models.JSONField(
+        default=dict,
+        blank=True,
+        help_text="Parameters for the import (FIPS codes, bounding box, etc.).",
+    )
+    result = models.JSONField(
+        default=dict,
+        blank=True,
+        help_text="Result metadata (layer key, table name, row count, etc.).",
+    )
+    status = models.CharField(
+        max_length=16,
+        choices=[
+            ("pending", "Pending"),
+            ("running", "Running"),
+            ("completed", "Completed"),
+            ("failed", "Failed"),
+        ],
+        default="pending",
+    )
+    started_at = models.DateTimeField(null=True, blank=True)
+    completed_at = models.DateTimeField(null=True, blank=True)
+    error_log = models.TextField(blank=True, default="")
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        ordering = ("-created_at",)
+        verbose_name = "Data Import Run"
+
+    def __str__(self) -> str:
+        return f"DataImportRun #{self.pk} [{self.import_type}] ({self.status})"

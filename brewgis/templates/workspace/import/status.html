@@ -1,0 +1,25 @@
+{% extends "base.html" %}
+{% load workspace_tags %}
+
+{% block title %}
+  Import {{ run.get_import_type_display }} — Brew GIS
+{% endblock title %}
+
+{% block content %}
+<div class="container mt-2">
+  <nav aria-label="breadcrumb">
+    <ol class="breadcrumb">
+      <li class="breadcrumb-item"><a href="{% url 'workspace:home' %}">Home</a></li>
+      <li class="breadcrumb-item"><a href="{% url 'workspace:import_center' %}">Import Data</a></li>
+      <li class="breadcrumb-item active">Import Status</li>
+    </ol>
+  </nav>
+  <h2>Import Status</h2>
+  {% include "workspace/import/partials/_import_status.html" %}
+  {% if run.status == "completed" %}
+    <a href="{% url 'workspace:workspace_map' run.workspace.pk %}" class="btn btn-primary mt-3">
+      View on Map
+    </a>
+  {% endif %}
+</div>
+{% endblock content %}

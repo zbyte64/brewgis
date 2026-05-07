@@ -1,0 +1,16 @@
+<div id="census-preview">
+  {% if summary %}
+    {% if summary.error %}
+      <div class="alert alert-danger mt-2 small">{{ summary.error }}</div>
+    {% elif summary.row_count > 0 %}
+      <div class="alert alert-info mt-2 small py-2">
+        <strong>Available Data:</strong>
+        {{ summary.row_count }} block groups found.
+        Column groups: {{ summary.table_groups|join:", " }}.
+        Canvas columns: {{ summary.columns|join:", " }}.
+      </div>
+    {% else %}
+      <div class="alert alert-warning mt-2 small py-2">No data found for this geography.</div>
+    {% endif %}
+  {% endif %}
+</div>
