@@ -5,8 +5,8 @@ Requires a PostgreSQL+PostGIS database.
 """
 
 from __future__ import annotations
-
 import pytest
+
 from django.db import connection
 
 from brewgis.workspace.services.canvas_view_manager import create_canvas_view
@@ -17,41 +17,12 @@ from tests.factories import ScenarioFactory
 
 
 @pytest.fixture
-def base_canvas_table(db) -> str:
-    """Create a minimal base canvas table with static + paintable columns."""
-    with connection.cursor() as cursor:
-        cursor.execute("CREATE EXTENSION IF NOT EXISTS postgis")
-        cursor.execute(
-            """
-            CREATE TABLE IF NOT EXISTS test_base_canvas_vm (
-                id SERIAL PRIMARY KEY,
-                geometry GEOMETRY(POLYGON, 4326),
-                du DOUBLE PRECISION,
-                pop DOUBLE PRECISION,
-                hh DOUBLE PRECISION,
-                status VARCHAR(32)
-            )
-            """
-        )
-        cursor.execute(
-            """
-            INSERT INTO test_base_canvas_vm (geometry, du, pop, hh, status)
-            VALUES
-                (ST_SetSRID(ST_MakeEnvelope(0, 0, 1, 1), 4326), 100.0, 250.0, 80.0, 'active'),
-                (ST_SetSRID(ST_MakeEnvelope(1, 0, 2, 1), 4326), 50.0, 120.0, 40.0, 'active')
-            """
-        )
-    yield "public.test_base_canvas_vm"
-    with connection.cursor() as cursor:
-        cursor.execute("DROP TABLE IF EXISTS test_base_canvas_vm CASCADE")
-
-
-@pytest.fixture
 def canvas_scenario(db, workspace):
     """A scenario with a specific slug for canvas view tests."""
     return ScenarioFactory(workspace=workspace, slug="testcanvasvm")
 
 
+@pytest.mark.integration
 class TestCanvasViewManager:
     """Tests for :mod:`brewgis.workspace.services.canvas_view_manager`."""
 

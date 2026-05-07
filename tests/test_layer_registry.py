@@ -3,6 +3,8 @@
 
 from __future__ import annotations
 
+import pytest
+
 from unittest.mock import MagicMock
 from unittest.mock import patch
 
@@ -18,6 +20,7 @@ from brewgis.workspace.analysis.layer_registry import (
 )
 
 
+@pytest.mark.integration
 class TestFindNumericColumn(TestCase):
     """Tests for _find_numeric_column."""
 
@@ -63,6 +66,7 @@ class TestFindNumericColumn(TestCase):
         self.assertEqual(result, "total")
 
 
+@pytest.mark.integration
 class TestGetGeometryType(TestCase):
     """Tests for _get_geometry_type."""
 
@@ -117,6 +121,7 @@ class TestGetGeometryType(TestCase):
         self.assertEqual(result, "fill")
 
 
+@pytest.mark.integration
 class TestRegisterResultLayer(TestCase):
     """Tests for register_result_layer."""
 

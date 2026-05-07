@@ -7,6 +7,7 @@ Requires a PostgreSQL+PostGIS database for SQL view operations.
 from __future__ import annotations
 
 import pytest
+
 from django.db import connection
 
 from brewgis.workspace.models import Layer
@@ -14,36 +15,7 @@ from brewgis.workspace.services.scenario_cloner import clone_scenario
 from tests.factories import PaintedCanvasFactory
 
 
-@pytest.fixture
-def base_canvas_table(db) -> str:
-    """Create a minimal base canvas table for testing."""
-    with connection.cursor() as cursor:
-        cursor.execute("CREATE EXTENSION IF NOT EXISTS postgis")
-        cursor.execute(
-            """
-            CREATE TABLE IF NOT EXISTS test_base_canvas_cloning (
-                id SERIAL PRIMARY KEY,
-                geometry GEOMETRY(POLYGON, 4326),
-                du DOUBLE PRECISION,
-                pop DOUBLE PRECISION,
-                hh DOUBLE PRECISION,
-                status VARCHAR(32)
-            )
-            """
-        )
-        cursor.execute(
-            """
-            INSERT INTO test_base_canvas_cloning (geometry, du, pop, hh, status)
-            VALUES
-                (ST_SetSRID(ST_MakeEnvelope(0, 0, 1, 1), 4326), 100.0, 250.0, 80.0, 'active'),
-                (ST_SetSRID(ST_MakeEnvelope(1, 0, 2, 1), 4326), 50.0, 120.0, 40.0, 'active')
-            """
-        )
-    yield "public.test_base_canvas_cloning"
-    with connection.cursor() as cursor:
-        cursor.execute("DROP TABLE IF EXISTS test_base_canvas_cloning CASCADE")
-
-
+@pytest.mark.integration
 class TestScenarioCloning:
     """Tests for :func:`clone_scenario`."""
 

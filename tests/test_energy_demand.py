@@ -14,6 +14,7 @@ def sql_template() -> str:
     return MODEL_PATH.read_text()
 
 
+@pytest.mark.integration
 class TestEnergyDemandTemplate:
     """Verify the energy_demand SQL template structure and formulas."""
 
@@ -102,6 +103,7 @@ class TestEnergyDemandTemplate:
         assert col in sql_template
 
 
+@pytest.mark.integration
 class TestEnergyDemandFormula:
     """Verify energy demand formula logic produces correct values."""
 

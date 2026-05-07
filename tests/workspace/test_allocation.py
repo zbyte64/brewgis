@@ -1,6 +1,8 @@
 """Tests for the allocation engine."""
 from __future__ import annotations
 
+import pytest
+
 from django.test import TestCase
 from tests.factories import BuildingTypeFactory
 from tests.factories import PlaceTypeFactory
@@ -9,6 +11,7 @@ from brewgis.workspace.built_forms.allocation import AllocationEngine
 from brewgis.workspace.built_forms.models import PlaceTypeBuildingTypeMix
 
 
+@pytest.mark.integration
 class TestAllocationBuildingType(TestCase):
     """Allocation engine tests for single BuildingType."""
 
@@ -255,6 +258,7 @@ class TestAllocationBuildingType(TestCase):
         self.assertEqual(result.trips_per_day, 0.0)
 
 
+@pytest.mark.integration
 class TestAllocationPlaceType(TestCase):
     """Allocation engine tests for PlaceType with building type mix."""
 

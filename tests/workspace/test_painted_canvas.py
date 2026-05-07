@@ -14,6 +14,7 @@ from tests.factories import PaintedCanvasFactory
 from tests.factories import ScenarioFactory
 
 
+@pytest.mark.models
 class TestPaintedCanvasModel:
     """Direct model-level tests for PaintedCanvas."""
 

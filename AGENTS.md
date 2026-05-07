@@ -64,6 +64,58 @@ User Browser                    Docker Compose Stack
 ## Development Commands
 
 All commands use Docker Compose. **There is no local venv workflow** — everything runs in containers. Martin tile server runs alongside tipg in the local stack.
+
+**Quick reference (see `Makefile` for all targets):**
+```bash
+# Build and start the full local stack
+make up
+
+# Run all tests
+make test
+
+# Run tests with fast-fail and reuse-db
+make test-fast
+
+# Run tests in parallel
+make test-parallel
+
+# Run only model tests
+make test-models
+
+# Run only view/HTTP tests
+make test-views
+
+# Run only integration tests (PostGIS, dbt, external services)
+make test-integration
+
+# Lint and format
+make lint
+make lint-fix
+make format
+make format-check
+
+# Type checking
+make typecheck
+
+# Database migrations
+make migrate
+make makemigrations
+make check-migrations
+
+# Django shell
+make shell
+
+# Full CI pipeline (lint + format-check + typecheck + test)
+make check
+```
+
+**Overriding the compose file:**
+```bash
+# Use infra compose instead of local compose
+COMPOSE_FILE=docker-compose.infra.yml make test
+```
+
+**Raw Docker commands** (when `make` is not available or you need fine-grained control):
 ```bash
 # Build and start the full local stack (Django + PostGIS + Redis + tipg + Martin + Celery + Flower)
 docker compose -f docker-compose.local.yml up --build
@@ -84,6 +136,10 @@ docker compose -f docker-compose.local.yml run django mypy brewgis
 # Lint (via pre-commit, runs in CI)
 pre-commit run --all-files
 
+# Install pre-commit hooks (run once after cloning)
+make setup
+pre-commit install
+
 # Create superuser
 docker compose -f docker-compose.local.yml run django python manage.py createsuperuser
 
@@ -92,8 +148,9 @@ docker compose -f docker-compose.local.yml run django python manage.py makemigra
 
 # Build docs
 docker compose -f docker-compose.docs.yml build docs
-|# SQLFluff lint dbt models
-|docker compose -f docker-compose.local.yml run django sqlfluff lint brewgis/dbt_project/
+
+# SQLFluff lint dbt models
+docker compose -f docker-compose.local.yml run django sqlfluff lint brewgis/dbt_project/
 ```
 
 ## Host Development Mode
@@ -281,3 +338,37 @@ docker compose -f docker-compose.local.yml run --rm django bash /app/scripts/fix
 
 Or rebuild after adding `user: "${UID:-1000}:${GID:-1000}"` to the django service
 in `docker-compose.local.yml` (already configured).
+
+## Plan Review Checklist
+
+Before implementing a plan, verify each item below. Plans written at a high level
+often omit PostgreSQL/ORM mechanics that a Django developer must catch during
+implementation.
+
+- **SQL identifier quoting**: Any dynamic SQL that composes identifiers from
+  user-controlled strings (even slugified) must double-quote them. PostgreSQL
+  treats unquoted hyphens as minus operators.
+  *Lesson from Phase 1c: hyphens in scenario slugs broke `DROP VIEW` queries.*
+
+- **Schema/namespace lifecycle**: All `CREATE SCHEMA`, `CREATE TABLE`, or
+  `CREATE VIEW` operations must handle existence with `IF NOT EXISTS`. Schema
+  namespaced objects should own their schema creation.
+  *Lesson from Phase 1c: `create_canvas_view` assumed the target schema existed.*
+
+- **PostGIS extension in tests**: Test fixtures that create geometry tables must
+  enable the extension explicitly. Django's test database starts from template,
+  which may not include PostGIS.
+  *Lesson from Phase 1c: `type "geometry" does not exist` on geometry table creation.*
+
+- **Lifecycle hooks**: All lifecycle hooks (delete, cascade, signals) must be
+  explicitly wired or documented as not needed. Describing behavior at a high
+  level ("view is dropped on delete") without specifying the mechanism (model
+  override vs. signal) is a gap.
+  *Lesson from Phase 1c: plan described delete behavior without specifying mechanism.*
+
+- **Placeholder values**: All placeholder values (`"TODO"`, `"CHANGEME"`,
+  `DEFAULT_*` constants) should be tracked for future reconciliation.
+
+- **Test fixture review**: When creating test fixtures that depend on external
+  systems (PostGIS, Redis, external APIs), verify the test environment can
+  satisfy those dependencies.

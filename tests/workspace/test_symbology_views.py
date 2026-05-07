@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+import pytest
+
 from django.contrib.auth.models import User
 from django.test import TestCase
 from django.urls import reverse
@@ -11,6 +13,7 @@ from brewgis.workspace.models import SymbologyConfig
 from brewgis.workspace.models import Workspace
 
 
+@pytest.mark.views
 class TestSymbologyViews(TestCase):
     def setUp(self) -> None:
         self.workspace = Workspace.objects.create(

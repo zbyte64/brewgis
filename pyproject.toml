@@ -10,6 +10,9 @@ python_files = [
 markers = [
     "e2e: mark test as end-to-end test requiring Playwright browser",
     "slow: mark test as slow (property-based, hypothesis-generated)",
+    "models: database model tests",
+    "views: view/HTTP tests",
+    "integration: tests requiring full Docker stack (PostGIS, dbt, or external services)",
 ]
 
 # ==== Coverage ====

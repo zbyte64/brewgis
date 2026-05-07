@@ -3,6 +3,8 @@
 
 from __future__ import annotations
 
+import pytest
+
 from datetime import timedelta
 
 from django.test import TestCase
@@ -13,6 +15,7 @@ from brewgis.workspace.models import Scenario, ScenarioType
 from tests.factories import ScenarioFactory, WorkspaceFactory
 
 
+@pytest.mark.models
 class TestScenarioModel(TestCase):
     """Tests for the Scenario model fields and methods."""
 

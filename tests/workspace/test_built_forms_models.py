@@ -1,6 +1,8 @@
 """Tests for built forms models."""
 from __future__ import annotations
 
+import pytest
+
 from django.db import IntegrityError
 from django.test import TestCase
 
@@ -9,6 +11,7 @@ from brewgis.workspace.built_forms.models import PlaceType
 from brewgis.workspace.built_forms.models import PlaceTypeBuildingTypeMix
 
 
+@pytest.mark.models
 class TestBuildingType(TestCase):
     """BuildingType model tests."""
 
@@ -77,6 +80,7 @@ class TestBuildingType(TestCase):
         self.assertEqual(str(bt), "Single-Family")
 
 
+@pytest.mark.models
 class TestPlaceType(TestCase):
     """PlaceType model tests."""
 
@@ -107,6 +111,7 @@ class TestPlaceType(TestCase):
         self.assertEqual(pt.get_street_pattern_display(), "Grid")
 
 
+@pytest.mark.models
 class TestPlaceTypeBuildingTypeMix(TestCase):
     """PlaceTypeBuildingTypeMix model tests."""
 

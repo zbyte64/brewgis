@@ -1,6 +1,8 @@
 """Tests for built forms CRUD and baking views."""
 from __future__ import annotations
 
+import pytest
+
 from django.test import TestCase
 from django.urls import reverse
 from brewgis.workspace.built_forms.models import PlaceType
@@ -10,6 +12,7 @@ from tests.factories import UserFactory
 from brewgis.workspace.built_forms.models import PlaceTypeBuildingTypeMix
 
 
+@pytest.mark.views
 class TestBuildingTypeViews(TestCase):
     """BuildingType CRUD view tests."""
 
@@ -106,6 +109,7 @@ class TestBuildingTypeViews(TestCase):
         self.assertContains(response, "Visible BT")
 
 
+@pytest.mark.views
 class TestPlaceTypeViews(TestCase):
     """PlaceType CRUD view tests."""
 
@@ -177,6 +181,7 @@ class TestPlaceTypeViews(TestCase):
         self.assertContains(response, "Mix BT")
 
 
+@pytest.mark.views
 class TestBakingViews(TestCase):
     """Built form baking view tests."""
 

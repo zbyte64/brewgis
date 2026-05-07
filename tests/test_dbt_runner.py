@@ -3,6 +3,8 @@
 
 from __future__ import annotations
 
+import pytest
+
 import yaml
 from django.test import TestCase
 from unittest.mock import MagicMock
@@ -14,6 +16,7 @@ from brewgis.workspace.analysis.dbt_runner import DbtRunnerWrapper
 from brewgis.workspace.analysis.dbt_runner import run_dbt_local
 
 
+@pytest.mark.integration
 class TestDbtResult(TestCase):
     """DbtResult construction and attribute access."""
 
@@ -52,6 +55,7 @@ class TestDbtResult(TestCase):
         self.assertIsNone(result.error)
 
 
+@pytest.mark.integration
 class TestBuildProfilesYaml(TestCase):
     """_build_profiles_yaml generates valid YAML from Django DATABASES."""
 
@@ -139,6 +143,7 @@ class TestBuildProfilesYaml(TestCase):
                 _build_profiles_yaml()
 
 
+@pytest.mark.integration
 class TestDbtRunnerWrapperParseResults(TestCase):
     """_parse_results handles various dbtRunner results."""
 
@@ -214,6 +219,7 @@ class TestDbtRunnerWrapperParseResults(TestCase):
         )
 
 
+@pytest.mark.integration
 class TestDbtRunnerWrapperRun(TestCase):
     """DbtRunnerWrapper.run() error paths."""
 
@@ -225,6 +231,7 @@ class TestDbtRunnerWrapperRun(TestCase):
         self.assertIn("dbt project directory not found", result.error)
 
 
+@pytest.mark.integration
 class TestRunDbtLocal(TestCase):
     """run_dbt_local convenience function."""
 

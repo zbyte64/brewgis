@@ -8,6 +8,7 @@ deal.enable()
 from typing import TYPE_CHECKING
 
 import pytest
+from django.db import connection
 
 from tests.factories import BuildingTypeFactory
 from tests.factories import LayerFactory
@@ -39,6 +40,7 @@ def user(db) -> User:
 def workspace(db) -> Workspace:
     return WorkspaceFactory()
 
+
 @pytest.fixture
 def scenario(db, workspace: Workspace) -> Scenario:
     return ScenarioFactory(workspace=workspace)
@@ -69,3 +71,77 @@ def mix(db, place_type: PlaceType, building_type: BuildingType) -> PlaceTypeBuil
     return PlaceTypeBuildingTypeMixFactory(
         place_type=place_type, building_type=building_type
     )
+
+
+@pytest.fixture
+def base_canvas_table(db) -> str:
+    """Create a minimal base canvas table with static + paintable columns.
+
+    Creates a PostGIS-enabled table in the public schema with geometry, du,
+    pop, hh, and status columns. Returns the qualified table name.
+
+    .. note::
+
+        Requires PostgreSQL + PostGIS. The extension is enabled explicitly
+        because Django's test database template may not include it.
+    """
+    with connection.cursor() as cursor:
+        cursor.execute("CREATE EXTENSION IF NOT EXISTS postgis")
+        cursor.execute(
+            """
+            CREATE TABLE IF NOT EXISTS test_base_canvas (
+                id SERIAL PRIMARY KEY,
+                geometry GEOMETRY(POLYGON, 4326),
+                du DOUBLE PRECISION,
+                pop DOUBLE PRECISION,
+                hh DOUBLE PRECISION,
+                status VARCHAR(32)
+            )
+            """
+        )
+        cursor.execute(
+            """
+            INSERT INTO test_base_canvas (geometry, du, pop, hh, status)
+            VALUES
+                (ST_SetSRID(ST_MakeEnvelope(0, 0, 1, 1), 4326), 100.0, 250.0, 80.0, 'active'),
+                (ST_SetSRID(ST_MakeEnvelope(1, 0, 2, 1), 4326), 50.0, 120.0, 40.0, 'active')
+            """
+        )
+    yield "public.test_base_canvas"
+    with connection.cursor() as cursor:
+        cursor.execute("DROP TABLE IF EXISTS test_base_canvas CASCADE")
+
+
+@pytest.fixture
+def geometry_table(db) -> str:
+    """Create a bare PostGIS geometry table for testing.
+
+    A lighter alternative to ``base_canvas_table`` — creates a table with
+    just id + geometry columns. Useful for tests that only need a PostGIS-
+    enabled table without paint-able columns.
+
+    .. note::
+
+        Requires PostgreSQL + PostGIS. The extension is enabled explicitly.
+    """
+    with connection.cursor() as cursor:
+        cursor.execute("CREATE EXTENSION IF NOT EXISTS postgis")
+        cursor.execute(
+            """
+            CREATE TABLE IF NOT EXISTS test_geometry_table (
+                id SERIAL PRIMARY KEY,
+                geometry GEOMETRY(POLYGON, 4326)
+            )
+            """
+        )
+        cursor.execute(
+            """
+            INSERT INTO test_geometry_table (geometry)
+            VALUES
+                (ST_SetSRID(ST_MakeEnvelope(0, 0, 1, 1), 4326)),
+                (ST_SetSRID(ST_MakeEnvelope(1, 0, 2, 1), 4326))
+            """
+        )
+    yield "public.test_geometry_table"
+    with connection.cursor() as cursor:
+        cursor.execute("DROP TABLE IF EXISTS test_geometry_table CASCADE")

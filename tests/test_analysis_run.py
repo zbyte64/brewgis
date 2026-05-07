@@ -2,6 +2,8 @@
 """Tests for the AnalysisRun model."""
 from __future__ import annotations
 
+import pytest
+
 from datetime import timedelta
 
 from django.test import TestCase
@@ -13,6 +15,7 @@ from tests.factories import WorkspaceFactory
 from brewgis.workspace.models import AnalysisRun
 
 
+@pytest.mark.integration
 class TestAnalysisRunModel(TestCase):
     """Tests for the AnalysisRun model fields and methods."""
 
