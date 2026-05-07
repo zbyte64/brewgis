@@ -13,6 +13,7 @@ from django.views.generic.edit import FormView
 from sqlalchemy import create_engine
 
 from brewgis.workspace.models import Workspace
+from django.conf import settings
 
 
 class ImportGISFileForm(forms.Form):
@@ -24,9 +25,11 @@ class ImportGISFileForm(forms.Form):
 def read_gis_file_into_table(
     file_obj: BufferedReader, schema: str, table_name: str
 ) -> None:
+
     df = geopandas.read_file(file_obj)
-    # columns need to be lower case for now: https://github.com/developmentseed/tipg/issues/195
-    df.columns = map(str.lower, df.columns)
+    # columns need to be lower case for tipg: https://github.com/developmentseed/tipg/issues/195
+    if settings.TILE_SERVER_BACKEND == "tipg":
+        df.columns = map(str.lower, df.columns)
     con = create_engine(
         os.environ.get("DATABASE_URL").replace("postgres://", "postgresql://", 1),  # type: ignore[union-attr]
     )

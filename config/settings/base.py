@@ -314,3 +314,4 @@ ACCOUNT_EMAIL_VERIFICATION = "mandatory"
 
 # Your stuff...
 # ------------------------------------------------------------------------------
+TILE_SERVER_BACKEND = env("TILE_SERVER_BACKEND", default="tipg")

@@ -17,8 +17,8 @@ User Browser                    Docker Compose Stack
      ├─ Map ─► MapLibre GL JS (Lit)   │
      │          │                     │
      │          ▼                     │
-     │      Vector Tiles ◄── tipg ◄── PostGIS
-     │                                │
+     │      Vector Tiles ◄── tipg ◄───┤
+     │                   ◄── martin ◄─└── PostGIS
      ▼                                ▼
   Django (config/)              Redis ◄── Celery Worker (async tasks)
      │                                 │
@@ -29,7 +29,7 @@ User Browser                    Docker Compose Stack
               └─ GIS I/O: geopandas for file ingest, SQLAlchemy for PostGIS writes
 ```
 - **Request flow:** Browser → Django → View (FormView/CreateView/FBV) → Template (Bootstrap 5, htmx for dynamic updates, Lit for map component)
-- **Map flow:** Template renders `<brew-gis-map>` Lit component → fetches vector tiles from `/tipg/collections/{schema}.{table}/tiles/{tms}/{z}/{x}/{y}` → tipg serves tiles from PostGIS
+|- **Map flow:** Template renders `<brew-gis-map>` Lit component → fetches vector tiles from tipg (`/tipg/collections/{schema}.{table}/tiles/{tms}/{z}/{x}/{y}`) or Martin (`/martin/{schema}.{table}/{z}/{x}/{y}`) depending on `TILE_SERVER_BACKEND` setting → tile server serves tiles from PostGIS
 - **Async flow:** Celery beat (DatabaseScheduler via django-celery-beat) dispatches periodic tasks → Redis broker → Celery workers execute tasks
 - **GIS ingest:** User uploads GIS file → `ReadGISFileView` → `geopandas.read_file()` → `df.to_postgis()` via SQLAlchemy
 - **Dynamic UI:** htmx handles form submissions, partial page updates, and AJAX navigation without a JavaScript framework
@@ -55,10 +55,9 @@ User Browser                    Docker Compose Stack
 
 ## Development Commands
 
-All commands use Docker Compose. **There is no local venv workflow** — everything runs in containers.
-
+All commands use Docker Compose. **There is no local venv workflow** — everything runs in containers. Martin tile server runs alongside tipg in the local stack.
 ```bash
-# Build and start the full local stack (Django + PostGIS + Redis + tipg + Celery + Flower)
+# Build and start the full local stack (Django + PostGIS + Redis + tipg + Martin + Celery + Flower)
 docker compose -f docker-compose.local.yml up --build
 
 # Run Django management commands
@@ -115,6 +114,7 @@ docker compose -f docker-compose.docs.yml build docs
 - **Lit web component** for the map: `<brew-gis-map>` element with properties for style, viewport, layers
 - **django-allauth** for authentication (username-based, email required + verified)
 - **Celery** uses JSON serialization, Redis broker, `django-celery-beat` DatabaseScheduler
+|- **Tile server:** Martin (`ghcr.io/maplibre/martin`) and tipg (`ghcr.io/developmentseed/tipg`) both run; `TILE_SERVER_BACKEND` setting (`"tipg"` or `"martin"`) controls tile URL generation.
 - **Settings** use `django-environ` for env-var-based configuration
 
 ### Frontend

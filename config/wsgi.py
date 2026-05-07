@@ -47,6 +47,10 @@ application = ProxyMiddleware(
             "target": "http://tipg:8081/",
             "remove_prefix": True,
             "host": "localhost:8000",
+        },
+        "/martin/": {
+            "target": "http://martin:3000/",
+            "remove_prefix": True,
+            "host": "localhost:8000",
         }
-    },
 )

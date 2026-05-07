@@ -10,6 +10,7 @@ from brewgis.workspace.models import Layer
 from brewgis.workspace.models import Workspace
 from brewgis.workspace.models import SymbologyConfig
 from brewgis.workspace.symbology.generator import generate_maplibre_style
+from django.conf import settings
 
 
 class LayerSchema(ModelSchema):
@@ -24,7 +25,10 @@ def view_workspace_map(request: HttpRequest, workspace_pk: int) -> HttpResponse:
     layer_data = []
     for layer in layers:
         data = LayerSchema.model_validate(layer).model_dump()
-        data["tiles_url"] = layer.resolve_tiles_url()
+        data["source"] = layer.to_maplibre_source()
+
+        if settings.TILE_SERVER_BACKEND == "tipg":
+            data["source-layer"] = layer.db_table
 
         # Merge symbology-generated paint/layout if available
         try:

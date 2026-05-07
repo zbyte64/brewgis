@@ -46,6 +46,17 @@ services:
       - 8081
     depends_on:
       - postgres
+  
+  martin:
+    image: ghcr.io/maplibre/martin:v1.8
+    container_name: brewgis_local_martin
+    command: --base-path /martin
+    environment:
+      DATABASE_URL: postgresql://rADfmsnMjDXKephNGWFkfdPkuSAjdASF:glm5bKLmVKkfdJaM9qkDREdor4y8uSEJZKZvLVwP5jeEX6YSnw6DnNG9EYvupSlg@postgres:5432/brewgis
+    ports:
+      - 3000
+    depends_on:
+      - postgres
 
   redis:
     image: docker.io/redis:6

@@ -4,6 +4,7 @@ from brewgis.workspace.built_forms.models import PlaceType  # noqa: F401
 from brewgis.workspace.built_forms.models import PlaceTypeBuildingTypeMix  # noqa: F401
 from brewgis.workspace.built_forms.models import VintageChoices  # noqa: F401
 from brewgis.workspace.built_forms.models import StreetPatternChoices  # noqa: F401
+from django.conf import settings
 
 
 class Workspace(models.Model):
@@ -47,9 +48,27 @@ class Layer(models.Model):
     def __str__(self) -> str:
         return self.name
 
+    def _source_id(self) -> str:
+        """Return the tile server source identifier (schema.table)."""
+        return f"{self.workspace.db_schema}.{self.db_table}"
+
     def resolve_tiles_url(self, tile_matrix_set: str = "WebMercatorQuad") -> str:
-        schema = self.workspace.db_schema
-        return f"/tipg/collections/{schema}.{self.db_table}/tiles/{tile_matrix_set}"
+        """Return the raw tile URL template (tipg only; for backward compat)."""
+        if settings.TILE_SERVER_BACKEND == "martin":
+            return f"/martin/{self._source_id()}"
+        return f"/tipg/collections/{self._source_id()}/tiles/{tile_matrix_set}"
+
+    def to_maplibre_source(self) -> dict:
+        """Return a MapLibre GL JS source specification dict."""
+        if settings.TILE_SERVER_BACKEND == "martin":
+            return {
+                "type": "vector",
+                "url": f"/martin/{self._source_id()}",
+            }
+        return {
+            "type": "vector",
+            "tiles": [f"/tipg/collections/{self._source_id()}/tiles/WebMercatorQuad/{{z}}/{{x}}/{{y}}"],
+        }
 
 class SymbologyConfig(models.Model):
     layer = models.OneToOneField(
