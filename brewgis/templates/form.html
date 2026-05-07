@@ -1,6 +1,6 @@
 {% extends "base.html" %}
 
-{% load crispy_forms_tags %}
+{% load crispy_forms_tags workspace_tags %}
 
 {% block extrahead %}
   {{ form.media }}
@@ -10,7 +10,7 @@
   {% if view.object.pk %}
     {{ view.object }}
   {% else %}
-    New {{ view.form_class.Meta.model._meta.verbose_name|title }}
+    New {{ view.form_class.Meta.model|model_verbose_name|title }}
   {% endif %}
 {% endblock title %}
 

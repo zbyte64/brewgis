@@ -1,0 +1,57 @@
+{% extends "base.html" %}
+{% load i18n %}
+
+{% block title %}Place Types — Brew GIS{% endblock title %}
+
+{% block content %}
+<div class="container mt-4">
+  <div class="d-flex justify-content-between align-items-center mb-4">
+    <h1>Place Types</h1>
+    <a href="{% url 'workspace:place_type_create' %}" class="btn btn-primary">+ New Place Type</a>
+  </div>
+
+  {% if place_types %}
+    <div class="row row-cols-1 row-cols-md-2 row-cols-lg-3 g-4">
+      {% for pt in place_types %}
+        <div class="col">
+          <div class="card h-100">
+            <div class="card-body">
+              <h5 class="card-title">{{ pt.name }}</h5>
+              {% if pt.description %}
+                <p class="card-text text-muted small">{{ pt.description|truncatewords:30 }}</p>
+              {% endif %}
+              <ul class="list-unstyled small mb-0">
+                <li><strong>ROW allocation:</strong> {{ pt.row_allocation_pct }}%</li>
+                {% if pt.block_size %}
+                  <li><strong>Block size:</strong> {{ pt.block_size }} m</li>
+                {% endif %}
+                {% if pt.street_pattern %}
+                  <li><strong>Street pattern:</strong> {{ pt.get_street_pattern_display }}</li>
+                {% endif %}
+              </ul>
+              {% if pt.building_type_mixes.all %}
+                <hr>
+                <h6 class="small">Building Type Mix</h6>
+                <ul class="list-unstyled small mb-0">
+                  {% for mix in pt.building_type_mixes.all %}
+                    <li>{{ mix.building_type.name }}: {{ mix.percentage }}%</li>
+                  {% endfor %}
+                </ul>
+              {% endif %}
+            </div>
+            <div class="card-footer d-flex justify-content-between">
+              <a href="{% url 'workspace:place_type_edit' pt.pk %}" class="btn btn-sm btn-outline-primary">Edit</a>
+              <a href="{% url 'workspace:place_type_bake' pt.pk %}" class="btn btn-sm btn-outline-info">Bake</a>
+              <a href="{% url 'workspace:place_type_delete' pt.pk %}" class="btn btn-sm btn-outline-danger">Delete</a>
+            </div>
+          </div>
+        </div>
+      {% endfor %}
+    </div>
+  {% else %}
+    <div class="alert alert-info">
+      No place types yet. <a href="{% url 'workspace:place_type_create' %}">Create one</a>.
+    </div>
+  {% endif %}
+</div>
+{% endblock content %}

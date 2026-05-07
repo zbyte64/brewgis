@@ -1,4 +1,14 @@
 from django.urls import path
+from .views import building_type_bake  # noqa: F811
+from .views import building_type_create  # noqa: F811
+from .views import building_type_delete  # noqa: F811
+from .views import building_type_edit  # noqa: F811
+from .views import building_type_list  # noqa: F811
+from .views import place_type_bake  # noqa: F811
+from .views import place_type_create  # noqa: F811
+from .views import place_type_delete  # noqa: F811
+from .views import place_type_edit  # noqa: F811
+from .views import place_type_list  # noqa: F811
 
 from .views import CreateLayerView
 from .views import ReadGISFileView
@@ -28,5 +38,56 @@ urlpatterns = [
         "symbology/<int:layer_pk>/preview/",
         preview_symbology,
         name="symbology_preview",
+    ),
+    # Built Forms
+    path(
+        "built-forms/building-types/",
+        building_type_list,
+        name="building_type_list",
+    ),
+    path(
+        "built-forms/building-types/create/",
+        building_type_create.as_view(),
+        name="building_type_create",
+    ),
+    path(
+        "built-forms/building-types/<int:pk>/edit/",
+        building_type_edit.as_view(),
+        name="building_type_edit",
+    ),
+    path(
+        "built-forms/building-types/<int:pk>/delete/",
+        building_type_delete.as_view(),
+        name="building_type_delete",
+    ),
+    path(
+        "built-forms/building-types/<int:pk>/bake/",
+        building_type_bake,
+        name="building_type_bake",
+    ),
+    path(
+        "built-forms/place-types/",
+        place_type_list,
+        name="place_type_list",
+    ),
+    path(
+        "built-forms/place-types/create/",
+        place_type_create.as_view(),
+        name="place_type_create",
+    ),
+    path(
+        "built-forms/place-types/<int:pk>/edit/",
+        place_type_edit.as_view(),
+        name="place_type_edit",
+    ),
+    path(
+        "built-forms/place-types/<int:pk>/delete/",
+        place_type_delete.as_view(),
+        name="place_type_delete",
+    ),
+    path(
+        "built-forms/place-types/<int:pk>/bake/",
+        place_type_bake,
+        name="place_type_bake",
     ),
 ]

@@ -1,0 +1,1080 @@
+[
+  {
+    "model": "workspace.buildingtype",
+    "pk": 1,
+    "fields": {
+      "name": "Single-Family Detached - Large Lot",
+      "description": "Detached single-family homes on large lots (> 10,000 sqft). Typical of rural residential and estate subdivisions.",
+      "du_per_acre": 2.0,
+      "emp_per_acre": 0.0,
+      "far": 0.3,
+      "household_size": 2.8,
+      "tenure_owner_pct": 90.0,
+      "tenure_renter_pct": 10.0,
+      "vacancy_rate": 3.0,
+      "stories": 2,
+      "footprint_per_unit": 150.0,
+      "building_coverage": 15.0,
+      "jobs_by_sector": {},
+      "indoor_water_rate": 250.0,
+      "outdoor_water_rate": 500.0,
+      "irrigable_area_fraction": 0.3,
+      "electricity_eui": 80.0,
+      "gas_eui": 120.0,
+      "vintage": "post_2000",
+      "parking_spaces_per_unit": 2.0,
+      "parking_spaces_per_1000sqft": 0.0,
+      "parking_sqft_per_space": 300.0,
+      "ite_land_use_code": 210,
+      "trip_rate_override": 9.5,
+      "pass_by_trip_pct": 0.0,
+      "created_at": "2025-01-01T00:00:00Z",
+      "updated_at": "2025-01-01T00:00:00Z"
+    }
+  },
+  {
+    "model": "workspace.buildingtype",
+    "pk": 2,
+    "fields": {
+      "name": "Single-Family Detached - Standard",
+      "description": "Standard detached single-family homes on medium lots (5,000-10,000 sqft). Typical of post-war and modern subdivisions.",
+      "du_per_acre": 5.0,
+      "emp_per_acre": 0.0,
+      "far": 0.45,
+      "household_size": 2.6,
+      "tenure_owner_pct": 85.0,
+      "tenure_renter_pct": 15.0,
+      "vacancy_rate": 4.0,
+      "stories": 2,
+      "footprint_per_unit": 120.0,
+      "building_coverage": 25.0,
+      "jobs_by_sector": {},
+      "indoor_water_rate": 240.0,
+      "outdoor_water_rate": 400.0,
+      "irrigable_area_fraction": 0.25,
+      "electricity_eui": 75.0,
+      "gas_eui": 110.0,
+      "vintage": "post_2000",
+      "parking_spaces_per_unit": 2.0,
+      "parking_spaces_per_1000sqft": 0.0,
+      "parking_sqft_per_space": 300.0,
+      "ite_land_use_code": 210,
+      "trip_rate_override": 9.5,
+      "pass_by_trip_pct": 0.0,
+      "created_at": "2025-01-01T00:00:00Z",
+      "updated_at": "2025-01-01T00:00:00Z"
+    }
+  },
+  {
+    "model": "workspace.buildingtype",
+    "pk": 3,
+    "fields": {
+      "name": "Single-Family Attached (Townhouse)",
+      "description": "Attached single-family homes in row configurations. Common in compact neighborhoods and infill development.",
+      "du_per_acre": 12.0,
+      "emp_per_acre": 0.0,
+      "far": 0.7,
+      "household_size": 2.4,
+      "tenure_owner_pct": 70.0,
+      "tenure_renter_pct": 30.0,
+      "vacancy_rate": 5.0,
+      "stories": 3,
+      "footprint_per_unit": 80.0,
+      "building_coverage": 40.0,
+      "jobs_by_sector": {},
+      "indoor_water_rate": 220.0,
+      "outdoor_water_rate": 200.0,
+      "irrigable_area_fraction": 0.15,
+      "electricity_eui": 70.0,
+      "gas_eui": 100.0,
+      "vintage": "post_2000",
+      "parking_spaces_per_unit": 1.5,
+      "parking_spaces_per_1000sqft": 0.0,
+      "parking_sqft_per_space": 300.0,
+      "ite_land_use_code": 215,
+      "trip_rate_override": 6.5,
+      "pass_by_trip_pct": 0.0,
+      "created_at": "2025-01-01T00:00:00Z",
+      "updated_at": "2025-01-01T00:00:00Z"
+    }
+  },
+  {
+    "model": "workspace.buildingtype",
+    "pk": 4,
+    "fields": {
+      "name": "Duplex / Two-Flat",
+      "description": "Two-unit residential buildings, often owner-occupied. Common in older urban neighborhoods and transition zones.",
+      "du_per_acre": 18.0,
+      "emp_per_acre": 0.0,
+      "far": 0.9,
+      "household_size": 2.3,
+      "tenure_owner_pct": 50.0,
+      "tenure_renter_pct": 50.0,
+      "vacancy_rate": 5.0,
+      "stories": 2,
+      "footprint_per_unit": 130.0,
+      "building_coverage": 50.0,
+      "jobs_by_sector": {},
+      "indoor_water_rate": 210.0,
+      "outdoor_water_rate": 150.0,
+      "irrigable_area_fraction": 0.1,
+      "electricity_eui": 65.0,
+      "gas_eui": 95.0,
+      "vintage": "1970_2000",
+      "parking_spaces_per_unit": 1.0,
+      "parking_spaces_per_1000sqft": 0.0,
+      "parking_sqft_per_space": 300.0,
+      "ite_land_use_code": 220,
+      "trip_rate_override": 5.5,
+      "pass_by_trip_pct": 0.0,
+      "created_at": "2025-01-01T00:00:00Z",
+      "updated_at": "2025-01-01T00:00:00Z"
+    }
+  },
+  {
+    "model": "workspace.buildingtype",
+    "pk": 5,
+    "fields": {
+      "name": "Triplex / Fourplex",
+      "description": "Small multi-unit buildings with 3-4 units. A common missing-middle housing type.",
+      "du_per_acre": 30.0,
+      "emp_per_acre": 0.0,
+      "far": 1.2,
+      "household_size": 2.2,
+      "tenure_owner_pct": 30.0,
+      "tenure_renter_pct": 70.0,
+      "vacancy_rate": 6.0,
+      "stories": 3,
+      "footprint_per_unit": 90.0,
+      "building_coverage": 55.0,
+      "jobs_by_sector": {},
+      "indoor_water_rate": 200.0,
+      "outdoor_water_rate": 100.0,
+      "irrigable_area_fraction": 0.08,
+      "electricity_eui": 60.0,
+      "gas_eui": 90.0,
+      "vintage": "1970_2000",
+      "parking_spaces_per_unit": 1.0,
+      "parking_spaces_per_1000sqft": 0.0,
+      "parking_sqft_per_space": 300.0,
+      "ite_land_use_code": 220,
+      "trip_rate_override": 4.5,
+      "pass_by_trip_pct": 0.0,
+      "created_at": "2025-01-01T00:00:00Z",
+      "updated_at": "2025-01-01T00:00:00Z"
+    }
+  },
+  {
+    "model": "workspace.buildingtype",
+    "pk": 6,
+    "fields": {
+      "name": "Courtyard Apartment",
+      "description": "Garden-style apartments arranged around a central courtyard. 2-3 stories with surface parking.",
+      "du_per_acre": 25.0,
+      "emp_per_acre": 0.0,
+      "far": 0.8,
+      "household_size": 2.0,
+      "tenure_owner_pct": 10.0,
+      "tenure_renter_pct": 90.0,
+      "vacancy_rate": 7.0,
+      "stories": 3,
+      "footprint_per_unit": 60.0,
+      "building_coverage": 30.0,
+      "jobs_by_sector": {},
+      "indoor_water_rate": 190.0,
+      "outdoor_water_rate": 300.0,
+      "irrigable_area_fraction": 0.2,
+      "electricity_eui": 55.0,
+      "gas_eui": 80.0,
+      "vintage": "1970_2000",
+      "parking_spaces_per_unit": 1.5,
+      "parking_spaces_per_1000sqft": 0.0,
+      "parking_sqft_per_space": 300.0,
+      "ite_land_use_code": 221,
+      "trip_rate_override": 5.0,
+      "pass_by_trip_pct": 0.0,
+      "created_at": "2025-01-01T00:00:00Z",
+      "updated_at": "2025-01-01T00:00:00Z"
+    }
+  },
+  {
+    "model": "workspace.buildingtype",
+    "pk": 7,
+    "fields": {
+      "name": "Stacked Flats",
+      "description": "Mid-density apartments in multi-story buildings. 3-4 stories, common in urban neighborhoods.",
+      "du_per_acre": 45.0,
+      "emp_per_acre": 0.0,
+      "far": 1.5,
+      "household_size": 1.8,
+      "tenure_owner_pct": 20.0,
+      "tenure_renter_pct": 80.0,
+      "vacancy_rate": 7.0,
+      "stories": 4,
+      "footprint_per_unit": 55.0,
+      "building_coverage": 40.0,
+      "jobs_by_sector": {},
+      "indoor_water_rate": 180.0,
+      "outdoor_water_rate": 80.0,
+      "irrigable_area_fraction": 0.05,
+      "electricity_eui": 50.0,
+      "gas_eui": 75.0,
+      "vintage": "post_2000",
+      "parking_spaces_per_unit": 1.0,
+      "parking_spaces_per_1000sqft": 0.0,
+      "parking_sqft_per_space": 300.0,
+      "ite_land_use_code": 222,
+      "trip_rate_override": 4.0,
+      "pass_by_trip_pct": 0.0,
+      "created_at": "2025-01-01T00:00:00Z",
+      "updated_at": "2025-01-01T00:00:00Z"
+    }
+  },
+  {
+    "model": "workspace.buildingtype",
+    "pk": 8,
+    "fields": {
+      "name": "Mid-Rise Apartment (5-9 Stories)",
+      "description": "Multi-story apartment buildings with elevator access. Common along urban corridors and in downtown districts.",
+      "du_per_acre": 80.0,
+      "emp_per_acre": 0.0,
+      "far": 3.0,
+      "household_size": 1.7,
+      "tenure_owner_pct": 30.0,
+      "tenure_renter_pct": 70.0,
+      "vacancy_rate": 6.0,
+      "stories": 7,
+      "footprint_per_unit": 45.0,
+      "building_coverage": 50.0,
+      "jobs_by_sector": {},
+      "indoor_water_rate": 170.0,
+      "outdoor_water_rate": 30.0,
+      "irrigable_area_fraction": 0.03,
+      "electricity_eui": 55.0,
+      "gas_eui": 65.0,
+      "vintage": "post_2000",
+      "parking_spaces_per_unit": 0.8,
+      "parking_spaces_per_1000sqft": 0.0,
+      "parking_sqft_per_space": 300.0,
+      "ite_land_use_code": 222,
+      "trip_rate_override": 3.5,
+      "pass_by_trip_pct": 0.0,
+      "created_at": "2025-01-01T00:00:00Z",
+      "updated_at": "2025-01-01T00:00:00Z"
+    }
+  },
+  {
+    "model": "workspace.buildingtype",
+    "pk": 9,
+    "fields": {
+      "name": "High-Rise Apartment (10+ Stories)",
+      "description": "High-density residential towers. Common in downtown cores and dense urban centers.",
+      "du_per_acre": 150.0,
+      "emp_per_acre": 0.0,
+      "far": 6.0,
+      "household_size": 1.6,
+      "tenure_owner_pct": 40.0,
+      "tenure_renter_pct": 60.0,
+      "vacancy_rate": 5.0,
+      "stories": 20,
+      "footprint_per_unit": 40.0,
+      "building_coverage": 40.0,
+      "jobs_by_sector": {},
+      "indoor_water_rate": 160.0,
+      "outdoor_water_rate": 10.0,
+      "irrigable_area_fraction": 0.01,
+      "electricity_eui": 60.0,
+      "gas_eui": 55.0,
+      "vintage": "new",
+      "parking_spaces_per_unit": 0.5,
+      "parking_spaces_per_1000sqft": 0.0,
+      "parking_sqft_per_space": 300.0,
+      "ite_land_use_code": 222,
+      "trip_rate_override": 3.0,
+      "pass_by_trip_pct": 0.0,
+      "created_at": "2025-01-01T00:00:00Z",
+      "updated_at": "2025-01-01T00:00:00Z"
+    }
+  },
+  {
+    "model": "workspace.buildingtype",
+    "pk": 10,
+    "fields": {
+      "name": "Neighborhood Retail",
+      "description": "Small-scale retail and commercial serving local neighborhoods. Includes corner stores, cafes, and small shops.",
+      "du_per_acre": null,
+      "emp_per_acre": 25.0,
+      "far": 0.5,
+      "household_size": 2.5,
+      "tenure_owner_pct": null,
+      "tenure_renter_pct": null,
+      "vacancy_rate": 5.0,
+      "stories": 2,
+      "footprint_per_unit": null,
+      "building_coverage": 60.0,
+      "jobs_by_sector": {
+        "retail": 80,
+        "food_service": 20
+      },
+      "indoor_water_rate": null,
+      "outdoor_water_rate": 200.0,
+      "irrigable_area_fraction": 0.05,
+      "electricity_eui": 120.0,
+      "gas_eui": 80.0,
+      "vintage": "post_2000",
+      "parking_spaces_per_unit": null,
+      "parking_spaces_per_1000sqft": 4.0,
+      "parking_sqft_per_space": 300.0,
+      "ite_land_use_code": 820,
+      "trip_rate_override": null,
+      "pass_by_trip_pct": 20.0,
+      "created_at": "2025-01-01T00:00:00Z",
+      "updated_at": "2025-01-01T00:00:00Z"
+    }
+  },
+  {
+    "model": "workspace.buildingtype",
+    "pk": 11,
+    "fields": {
+      "name": "General Commercial",
+      "description": "Standard commercial development including strip malls, big-box retail, and services.",
+      "du_per_acre": null,
+      "emp_per_acre": 40.0,
+      "far": 0.4,
+      "household_size": 2.5,
+      "tenure_owner_pct": null,
+      "tenure_renter_pct": null,
+      "vacancy_rate": 5.0,
+      "stories": 1,
+      "footprint_per_unit": null,
+      "building_coverage": 40.0,
+      "jobs_by_sector": {
+        "retail": 60,
+        "services": 25,
+        "food_service": 15
+      },
+      "indoor_water_rate": null,
+      "outdoor_water_rate": 300.0,
+      "irrigable_area_fraction": 0.1,
+      "electricity_eui": 150.0,
+      "gas_eui": 100.0,
+      "vintage": "post_2000",
+      "parking_spaces_per_unit": null,
+      "parking_spaces_per_1000sqft": 5.0,
+      "parking_sqft_per_space": 300.0,
+      "ite_land_use_code": 820,
+      "trip_rate_override": null,
+      "pass_by_trip_pct": 25.0,
+      "created_at": "2025-01-01T00:00:00Z",
+      "updated_at": "2025-01-01T00:00:00Z"
+    }
+  },
+  {
+    "model": "workspace.buildingtype",
+    "pk": 12,
+    "fields": {
+      "name": "Office - Low Rise",
+      "description": "Low-rise office buildings (1-3 stories) in suburban office parks and business centers.",
+      "du_per_acre": null,
+      "emp_per_acre": 60.0,
+      "far": 0.5,
+      "household_size": 2.5,
+      "tenure_owner_pct": null,
+      "tenure_renter_pct": null,
+      "vacancy_rate": 5.0,
+      "stories": 2,
+      "footprint_per_unit": null,
+      "building_coverage": 25.0,
+      "jobs_by_sector": {
+        "office": 85,
+        "services": 15
+      },
+      "indoor_water_rate": null,
+      "outdoor_water_rate": 250.0,
+      "irrigable_area_fraction": 0.2,
+      "electricity_eui": 130.0,
+      "gas_eui": 70.0,
+      "vintage": "post_2000",
+      "parking_spaces_per_unit": null,
+      "parking_spaces_per_1000sqft": 4.0,
+      "parking_sqft_per_space": 300.0,
+      "ite_land_use_code": 710,
+      "trip_rate_override": null,
+      "pass_by_trip_pct": 5.0,
+      "created_at": "2025-01-01T00:00:00Z",
+      "updated_at": "2025-01-01T00:00:00Z"
+    }
+  },
+  {
+    "model": "workspace.buildingtype",
+    "pk": 13,
+    "fields": {
+      "name": "Office - Mid/High Rise",
+      "description": "Multi-story office buildings in urban cores and downtowns. 5-20+ stories.",
+      "du_per_acre": null,
+      "emp_per_acre": 200.0,
+      "far": 5.0,
+      "household_size": 2.5,
+      "tenure_owner_pct": null,
+      "tenure_renter_pct": null,
+      "vacancy_rate": 5.0,
+      "stories": 15,
+      "footprint_per_unit": null,
+      "building_coverage": 45.0,
+      "jobs_by_sector": {
+        "office": 70,
+        "professional_services": 20,
+        "technology": 10
+      },
+      "indoor_water_rate": null,
+      "outdoor_water_rate": 20.0,
+      "irrigable_area_fraction": 0.02,
+      "electricity_eui": 160.0,
+      "gas_eui": 60.0,
+      "vintage": "new",
+      "parking_spaces_per_unit": null,
+      "parking_spaces_per_1000sqft": 2.0,
+      "parking_sqft_per_space": 300.0,
+      "ite_land_use_code": 710,
+      "trip_rate_override": null,
+      "pass_by_trip_pct": 3.0,
+      "created_at": "2025-01-01T00:00:00Z",
+      "updated_at": "2025-01-01T00:00:00Z"
+    }
+  },
+  {
+    "model": "workspace.buildingtype",
+    "pk": 14,
+    "fields": {
+      "name": "Light Industrial",
+      "description": "Light industrial, warehousing, and flex space. Includes manufacturing, logistics, and R&D.",
+      "du_per_acre": null,
+      "emp_per_acre": 15.0,
+      "far": 0.4,
+      "household_size": 2.5,
+      "tenure_owner_pct": null,
+      "tenure_renter_pct": null,
+      "vacancy_rate": 5.0,
+      "stories": 1,
+      "footprint_per_unit": null,
+      "building_coverage": 50.0,
+      "jobs_by_sector": {
+        "industrial": 60,
+        "manufacturing": 25,
+        "warehousing": 15
+      },
+      "indoor_water_rate": 50.0,
+      "outdoor_water_rate": 100.0,
+      "irrigable_area_fraction": 0.05,
+      "electricity_eui": 80.0,
+      "gas_eui": 60.0,
+      "vintage": "1970_2000",
+      "parking_spaces_per_unit": null,
+      "parking_spaces_per_1000sqft": 2.0,
+      "parking_sqft_per_space": 400.0,
+      "ite_land_use_code": 130,
+      "trip_rate_override": null,
+      "pass_by_trip_pct": 5.0,
+      "created_at": "2025-01-01T00:00:00Z",
+      "updated_at": "2025-01-01T00:00:00Z"
+    }
+  },
+  {
+    "model": "workspace.buildingtype",
+    "pk": 15,
+    "fields": {
+      "name": "Civic / Institutional",
+      "description": "Public and institutional facilities including schools, libraries, community centers, government buildings, and places of worship.",
+      "du_per_acre": null,
+      "emp_per_acre": 20.0,
+      "far": 0.5,
+      "household_size": 2.5,
+      "tenure_owner_pct": null,
+      "tenure_renter_pct": null,
+      "vacancy_rate": 5.0,
+      "stories": 2,
+      "footprint_per_unit": null,
+      "building_coverage": 25.0,
+      "jobs_by_sector": {
+        "public": 50,
+        "education": 30,
+        "services": 20
+      },
+      "indoor_water_rate": 100.0,
+      "outdoor_water_rate": 400.0,
+      "irrigable_area_fraction": 0.3,
+      "electricity_eui": 100.0,
+      "gas_eui": 90.0,
+      "vintage": "1970_2000",
+      "parking_spaces_per_unit": null,
+      "parking_spaces_per_1000sqft": 3.0,
+      "parking_sqft_per_space": 300.0,
+      "ite_land_use_code": 620,
+      "trip_rate_override": null,
+      "pass_by_trip_pct": 0.0,
+      "created_at": "2025-01-01T00:00:00Z",
+      "updated_at": "2025-01-01T00:00:00Z"
+    }
+  },
+  {
+    "model": "workspace.placetype",
+    "pk": 1,
+    "fields": {
+      "name": "Rural Residential",
+      "description": "Large-lot rural residential development with minimal ROW and no sidewalks. Typical of exurban fringe areas.",
+      "row_allocation_pct": 15.0,
+      "block_size": 400.0,
+      "street_pattern": "grid",
+      "created_at": "2025-01-01T00:00:00Z",
+      "updated_at": "2025-01-01T00:00:00Z"
+    }
+  },
+  {
+    "model": "workspace.placetype",
+    "pk": 2,
+    "fields": {
+      "name": "Suburban Neighborhood",
+      "description": "Conventional suburban neighborhood with cul-de-sacs, curvilinear streets, and standard ROW.",
+      "row_allocation_pct": 25.0,
+      "block_size": 300.0,
+      "street_pattern": "cul_de_sac",
+      "created_at": "2025-01-01T00:00:00Z",
+      "updated_at": "2025-01-01T00:00:00Z"
+    }
+  },
+  {
+    "model": "workspace.placetype",
+    "pk": 3,
+    "fields": {
+      "name": "Traditional Neighborhood",
+      "description": "Grid-based neighborhood with alleys, narrow streets, and walkable block sizes. Inspired by pre-war urbanism.",
+      "row_allocation_pct": 30.0,
+      "block_size": 120.0,
+      "street_pattern": "grid",
+      "created_at": "2025-01-01T00:00:00Z",
+      "updated_at": "2025-01-01T00:00:00Z"
+    }
+  },
+  {
+    "model": "workspace.placetype",
+    "pk": 4,
+    "fields": {
+      "name": "Urban Neighborhood",
+      "description": "Dense urban neighborhood with a fine-grained street grid, minimal setbacks, and high connectivity.",
+      "row_allocation_pct": 35.0,
+      "block_size": 80.0,
+      "street_pattern": "grid",
+      "created_at": "2025-01-01T00:00:00Z",
+      "updated_at": "2025-01-01T00:00:00Z"
+    }
+  },
+  {
+    "model": "workspace.placetype",
+    "pk": 5,
+    "fields": {
+      "name": "Suburban Corridor",
+      "description": "Auto-oriented commercial corridor with wide ROW, large parking lots, and separated land uses.",
+      "row_allocation_pct": 30.0,
+      "block_size": null,
+      "street_pattern": "loop",
+      "created_at": "2025-01-01T00:00:00Z",
+      "updated_at": "2025-01-01T00:00:00Z"
+    }
+  },
+  {
+    "model": "workspace.placetype",
+    "pk": 6,
+    "fields": {
+      "name": "Urban Corridor",
+      "description": "Mixed-use urban corridor with wider sidewalks, street trees, and buildings oriented to the street.",
+      "row_allocation_pct": 35.0,
+      "block_size": 100.0,
+      "street_pattern": "grid",
+      "created_at": "2025-01-01T00:00:00Z",
+      "updated_at": "2025-01-01T00:00:00Z"
+    }
+  },
+  {
+    "model": "workspace.placetype",
+    "pk": 7,
+    "fields": {
+      "name": "Main Street",
+      "description": "Traditional main street with ground-floor retail, upper-story residential/office, on-street parking, and wide sidewalks.",
+      "row_allocation_pct": 40.0,
+      "block_size": 80.0,
+      "street_pattern": "grid",
+      "created_at": "2025-01-01T00:00:00Z",
+      "updated_at": "2025-01-01T00:00:00Z"
+    }
+  },
+  {
+    "model": "workspace.placetype",
+    "pk": 8,
+    "fields": {
+      "name": "Downtown Core",
+      "description": "High-density downtown with towers, minimal setbacks, extensive ROW, and multi-modal transportation.",
+      "row_allocation_pct": 45.0,
+      "block_size": 60.0,
+      "street_pattern": "grid",
+      "created_at": "2025-01-01T00:00:00Z",
+      "updated_at": "2025-01-01T00:00:00Z"
+    }
+  },
+  {
+    "model": "workspace.placetype",
+    "pk": 9,
+    "fields": {
+      "name": "Business Park",
+      "description": "Campus-style office park with generous landscaping, surface parking, and low building coverage.",
+      "row_allocation_pct": 20.0,
+      "block_size": null,
+      "street_pattern": "loop",
+      "created_at": "2025-01-01T00:00:00Z",
+      "updated_at": "2025-01-01T00:00:00Z"
+    }
+  },
+  {
+    "model": "workspace.placetype",
+    "pk": 10,
+    "fields": {
+      "name": "Industrial District",
+      "description": "Area zoned for industrial uses with wide ROW to accommodate truck traffic and large lot sizes.",
+      "row_allocation_pct": 20.0,
+      "block_size": null,
+      "street_pattern": "grid",
+      "created_at": "2025-01-01T00:00:00Z",
+      "updated_at": "2025-01-01T00:00:00Z"
+    }
+  },
+  {
+    "model": "workspace.placetype",
+    "pk": 11,
+    "fields": {
+      "name": "Civic Center",
+      "description": "Campus for public and institutional buildings with generous open space, wide sidewalks, and formal landscaping.",
+      "row_allocation_pct": 30.0,
+      "block_size": 150.0,
+      "street_pattern": "hybrid",
+      "created_at": "2025-01-01T00:00:00Z",
+      "updated_at": "2025-01-01T00:00:00Z"
+    }
+  },
+  {
+    "model": "workspace.placetype",
+    "pk": 12,
+    "fields": {
+      "name": "Greenfield / Master Planned Community",
+      "description": "Large-scale master-planned community with a mix of housing types, parks, and neighborhood commercial.",
+      "row_allocation_pct": 28.0,
+      "block_size": 200.0,
+      "street_pattern": "hybrid",
+      "created_at": "2025-01-01T00:00:00Z",
+      "updated_at": "2025-01-01T00:00:00Z"
+    }
+  },
+  {
+    "model": "workspace.placetypebuildingtypemix",
+    "pk": 1,
+    "fields": {
+      "place_type": 1,
+      "building_type": 1,
+      "percentage": 100.0
+    }
+  },
+  {
+    "model": "workspace.placetypebuildingtypemix",
+    "pk": 2,
+    "fields": {
+      "place_type": 2,
+      "building_type": 2,
+      "percentage": 70.0
+    }
+  },
+  {
+    "model": "workspace.placetypebuildingtypemix",
+    "pk": 3,
+    "fields": {
+      "place_type": 2,
+      "building_type": 6,
+      "percentage": 20.0
+    }
+  },
+  {
+    "model": "workspace.placetypebuildingtypemix",
+    "pk": 4,
+    "fields": {
+      "place_type": 2,
+      "building_type": 10,
+      "percentage": 10.0
+    }
+  },
+  {
+    "model": "workspace.placetypebuildingtypemix",
+    "pk": 5,
+    "fields": {
+      "place_type": 3,
+      "building_type": 2,
+      "percentage": 50.0
+    }
+  },
+  {
+    "model": "workspace.placetypebuildingtypemix",
+    "pk": 6,
+    "fields": {
+      "place_type": 3,
+      "building_type": 3,
+      "percentage": 25.0
+    }
+  },
+  {
+    "model": "workspace.placetypebuildingtypemix",
+    "pk": 7,
+    "fields": {
+      "place_type": 3,
+      "building_type": 4,
+      "percentage": 15.0
+    }
+  },
+  {
+    "model": "workspace.placetypebuildingtypemix",
+    "pk": 8,
+    "fields": {
+      "place_type": 3,
+      "building_type": 10,
+      "percentage": 10.0
+    }
+  },
+  {
+    "model": "workspace.placetypebuildingtypemix",
+    "pk": 9,
+    "fields": {
+      "place_type": 4,
+      "building_type": 3,
+      "percentage": 20.0
+    }
+  },
+  {
+    "model": "workspace.placetypebuildingtypemix",
+    "pk": 10,
+    "fields": {
+      "place_type": 4,
+      "building_type": 5,
+      "percentage": 20.0
+    }
+  },
+  {
+    "model": "workspace.placetypebuildingtypemix",
+    "pk": 11,
+    "fields": {
+      "place_type": 4,
+      "building_type": 7,
+      "percentage": 25.0
+    }
+  },
+  {
+    "model": "workspace.placetypebuildingtypemix",
+    "pk": 12,
+    "fields": {
+      "place_type": 4,
+      "building_type": 8,
+      "percentage": 20.0
+    }
+  },
+  {
+    "model": "workspace.placetypebuildingtypemix",
+    "pk": 13,
+    "fields": {
+      "place_type": 4,
+      "building_type": 11,
+      "percentage": 15.0
+    }
+  },
+  {
+    "model": "workspace.placetypebuildingtypemix",
+    "pk": 14,
+    "fields": {
+      "place_type": 5,
+      "building_type": 11,
+      "percentage": 60.0
+    }
+  },
+  {
+    "model": "workspace.placetypebuildingtypemix",
+    "pk": 15,
+    "fields": {
+      "place_type": 5,
+      "building_type": 10,
+      "percentage": 30.0
+    }
+  },
+  {
+    "model": "workspace.placetypebuildingtypemix",
+    "pk": 16,
+    "fields": {
+      "place_type": 5,
+      "building_type": 12,
+      "percentage": 10.0
+    }
+  },
+  {
+    "model": "workspace.placetypebuildingtypemix",
+    "pk": 17,
+    "fields": {
+      "place_type": 6,
+      "building_type": 7,
+      "percentage": 20.0
+    }
+  },
+  {
+    "model": "workspace.placetypebuildingtypemix",
+    "pk": 18,
+    "fields": {
+      "place_type": 6,
+      "building_type": 8,
+      "percentage": 20.0
+    }
+  },
+  {
+    "model": "workspace.placetypebuildingtypemix",
+    "pk": 19,
+    "fields": {
+      "place_type": 6,
+      "building_type": 10,
+      "percentage": 20.0
+    }
+  },
+  {
+    "model": "workspace.placetypebuildingtypemix",
+    "pk": 20,
+    "fields": {
+      "place_type": 6,
+      "building_type": 11,
+      "percentage": 20.0
+    }
+  },
+  {
+    "model": "workspace.placetypebuildingtypemix",
+    "pk": 21,
+    "fields": {
+      "place_type": 6,
+      "building_type": 12,
+      "percentage": 20.0
+    }
+  },
+  {
+    "model": "workspace.placetypebuildingtypemix",
+    "pk": 22,
+    "fields": {
+      "place_type": 7,
+      "building_type": 3,
+      "percentage": 20.0
+    }
+  },
+  {
+    "model": "workspace.placetypebuildingtypemix",
+    "pk": 23,
+    "fields": {
+      "place_type": 7,
+      "building_type": 7,
+      "percentage": 20.0
+    }
+  },
+  {
+    "model": "workspace.placetypebuildingtypemix",
+    "pk": 24,
+    "fields": {
+      "place_type": 7,
+      "building_type": 10,
+      "percentage": 25.0
+    }
+  },
+  {
+    "model": "workspace.placetypebuildingtypemix",
+    "pk": 25,
+    "fields": {
+      "place_type": 7,
+      "building_type": 12,
+      "percentage": 20.0
+    }
+  },
+  {
+    "model": "workspace.placetypebuildingtypemix",
+    "pk": 26,
+    "fields": {
+      "place_type": 7,
+      "building_type": 13,
+      "percentage": 15.0
+    }
+  },
+  {
+    "model": "workspace.placetypebuildingtypemix",
+    "pk": 27,
+    "fields": {
+      "place_type": 8,
+      "building_type": 8,
+      "percentage": 15.0
+    }
+  },
+  {
+    "model": "workspace.placetypebuildingtypemix",
+    "pk": 28,
+    "fields": {
+      "place_type": 8,
+      "building_type": 9,
+      "percentage": 25.0
+    }
+  },
+  {
+    "model": "workspace.placetypebuildingtypemix",
+    "pk": 29,
+    "fields": {
+      "place_type": 8,
+      "building_type": 13,
+      "percentage": 30.0
+    }
+  },
+  {
+    "model": "workspace.placetypebuildingtypemix",
+    "pk": 30,
+    "fields": {
+      "place_type": 8,
+      "building_type": 10,
+      "percentage": 10.0
+    }
+  },
+  {
+    "model": "workspace.placetypebuildingtypemix",
+    "pk": 31,
+    "fields": {
+      "place_type": 8,
+      "building_type": 15,
+      "percentage": 20.0
+    }
+  },
+  {
+    "model": "workspace.placetypebuildingtypemix",
+    "pk": 32,
+    "fields": {
+      "place_type": 9,
+      "building_type": 12,
+      "percentage": 60.0
+    }
+  },
+  {
+    "model": "workspace.placetypebuildingtypemix",
+    "pk": 33,
+    "fields": {
+      "place_type": 9,
+      "building_type": 13,
+      "percentage": 30.0
+    }
+  },
+  {
+    "model": "workspace.placetypebuildingtypemix",
+    "pk": 34,
+    "fields": {
+      "place_type": 9,
+      "building_type": 10,
+      "percentage": 10.0
+    }
+  },
+  {
+    "model": "workspace.placetypebuildingtypemix",
+    "pk": 35,
+    "fields": {
+      "place_type": 10,
+      "building_type": 14,
+      "percentage": 80.0
+    }
+  },
+  {
+    "model": "workspace.placetypebuildingtypemix",
+    "pk": 36,
+    "fields": {
+      "place_type": 10,
+      "building_type": 12,
+      "percentage": 20.0
+    }
+  },
+  {
+    "model": "workspace.placetypebuildingtypemix",
+    "pk": 37,
+    "fields": {
+      "place_type": 11,
+      "building_type": 15,
+      "percentage": 70.0
+    }
+  },
+  {
+    "model": "workspace.placetypebuildingtypemix",
+    "pk": 38,
+    "fields": {
+      "place_type": 11,
+      "building_type": 12,
+      "percentage": 20.0
+    }
+  },
+  {
+    "model": "workspace.placetypebuildingtypemix",
+    "pk": 39,
+    "fields": {
+      "place_type": 11,
+      "building_type": 10,
+      "percentage": 10.0
+    }
+  },
+  {
+    "model": "workspace.placetypebuildingtypemix",
+    "pk": 40,
+    "fields": {
+      "place_type": 12,
+      "building_type": 1,
+      "percentage": 10.0
+    }
+  },
+  {
+    "model": "workspace.placetypebuildingtypemix",
+    "pk": 41,
+    "fields": {
+      "place_type": 12,
+      "building_type": 2,
+      "percentage": 20.0
+    }
+  },
+  {
+    "model": "workspace.placetypebuildingtypemix",
+    "pk": 42,
+    "fields": {
+      "place_type": 12,
+      "building_type": 3,
+      "percentage": 20.0
+    }
+  },
+  {
+    "model": "workspace.placetypebuildingtypemix",
+    "pk": 43,
+    "fields": {
+      "place_type": 12,
+      "building_type": 6,
+      "percentage": 20.0
+    }
+  },
+  {
+    "model": "workspace.placetypebuildingtypemix",
+    "pk": 44,
+    "fields": {
+      "place_type": 12,
+      "building_type": 7,
+      "percentage": 15.0
+    }
+  },
+  {
+    "model": "workspace.placetypebuildingtypemix",
+    "pk": 45,
+    "fields": {
+      "place_type": 12,
+      "building_type": 10,
+      "percentage": 15.0
+    }
+  }
+]

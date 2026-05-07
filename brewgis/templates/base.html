@@ -81,6 +81,12 @@
             </li>
             {% if request.user.is_authenticated %}
               <li class="nav-item">
+                <a class="nav-link" href="{% url 'workspace:building_type_list' %}">Building Types</a>
+              </li>
+              <li class="nav-item">
+                <a class="nav-link" href="{% url 'workspace:place_type_list' %}">Place Types</a>
+              </li>
+              <li class="nav-item">
                 <a class="nav-link" href="{% url 'account_logout' %}">{% translate "Sign Out" %}</a>
             {% else %}
               {% if ACCOUNT_ALLOW_REGISTRATION %}

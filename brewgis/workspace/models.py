@@ -1,4 +1,9 @@
 from django.db import models
+from brewgis.workspace.built_forms.models import BuildingType  # noqa: F401
+from brewgis.workspace.built_forms.models import PlaceType  # noqa: F401
+from brewgis.workspace.built_forms.models import PlaceTypeBuildingTypeMix  # noqa: F401
+from brewgis.workspace.built_forms.models import VintageChoices  # noqa: F401
+from brewgis.workspace.built_forms.models import StreetPatternChoices  # noqa: F401
 
 
 class Workspace(models.Model):

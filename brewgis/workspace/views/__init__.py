@@ -5,3 +5,13 @@ from .read_gis_file import ReadGISFileView  # noqa: F401
 from .symbology import auto_generate  # noqa: F401
 from .symbology import edit_symbology  # noqa: F401
 from .symbology import preview_symbology  # noqa: F401
+from .built_forms import building_type_bake  # noqa: F401
+from .built_forms import building_type_create  # noqa: F401
+from .built_forms import building_type_delete  # noqa: F401
+from .built_forms import building_type_edit  # noqa: F401
+from .built_forms import building_type_list  # noqa: F401
+from .built_forms import place_type_bake  # noqa: F401
+from .built_forms import place_type_create  # noqa: F401
+from .built_forms import place_type_delete  # noqa: F401
+from .built_forms import place_type_edit  # noqa: F401
+from .built_forms import place_type_list  # noqa: F401
