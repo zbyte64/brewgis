@@ -38,7 +38,7 @@ services:
       - postgres
 
   martin:
-    image: ghcr.io/maplibre/martin:v1.8
+    image: ghcr.io/maplibre/martin:latest
     container_name: brewgis_local_martin
     command: --base-path /martin
     environment:
