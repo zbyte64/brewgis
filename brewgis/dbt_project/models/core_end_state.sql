@@ -51,7 +51,7 @@
 {%- set constraint_output = var('constraints_output', none) -%}
 {%- if constraint_output %}
     {%- set developable_acres_expr = "COALESCE(ec.acres_developable, ST_Area(p.geom) / 4046.86)" -%}
-    {%- set from_extra = "LEFT JOIN " ~ source_schema ~ "." ~ constraint_output ~ " ec ON p.id = ec.parcel_id" -%}
+    {%- set from_extra = "LEFT JOIN " ~ constraint_output ~ " ec ON p.id = ec.parcel_id" -%}
 {%- else %}
     {%- set developable_acres_expr = "ST_Area(p.geom) / 4046.86" -%}
     {%- set from_extra = "" -%}

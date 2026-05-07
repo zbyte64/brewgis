@@ -194,6 +194,7 @@ class Scenario(models.Model):
     )
     base_year = models.IntegerField()
     horizon_year = models.IntegerField()
+    schema_name = models.CharField(max_length=128, blank=True, default="")
     created_at = models.DateTimeField(auto_now_add=True)
     updated_at = models.DateTimeField(auto_now=True)
 
@@ -207,6 +208,8 @@ class Scenario(models.Model):
     def save(self, *args: object, **kwargs: object) -> None:
         if not self.slug:
             self.slug = slugify(self.name)[:128]
+        if not self.schema_name:
+            self.schema_name = f"scenario_{self.slug}"
         super().save(*args, **kwargs)
 
     def delete(self, *args: object, **kwargs: object) -> None:
@@ -221,7 +224,7 @@ class Scenario(models.Model):
 
     @property
     def target_schema(self) -> str:
-        return f"scenario_{self.slug}"
+        return self.schema_name or f"scenario_{self.slug}"
 
 
 class PaintedCanvas(models.Model):

@@ -1,4 +1,4 @@
-# ruff: noqa: ANN001, ANN201
+# ruff: noqa: ANN001
 """Tests for the AnalysisRun model."""
 from __future__ import annotations
 
@@ -162,3 +162,68 @@ class TestAnalysisRunModel(TestCase):
         """scenario FK should be nullable for backward compat."""
         run = AnalysisRun.objects.create(workspace=self.workspace)
         self.assertIsNone(run.scenario)
+
+@pytest.mark.integration
+class TestPipelineCrossModuleRefs(TestCase):
+    """Tests for cross-module variable resolution in the analysis pipeline."""
+
+    def test_constraints_output_fully_qualified(self) -> None:
+        """When env_constraint completed, core should get fully qualified constraints_output.
+
+        The ``constraints_output`` should include the schema prefix so
+        that ``core_end_state.sql`` can reference it without prepending
+        ``source_schema`` (which would be the wrong schema).
+        """
+        from brewgis.workspace.analysis.pipeline import _get_vars_for_module
+
+        base_vars = {
+            "scenario_id": "test-scenario",
+            "target_schema": "scenario_test-scenario",
+            "parcel_table": "parcels",
+            "completed_modules": ["env_constraint"],
+        }
+
+        core_vars = _get_vars_for_module("core", base_vars)
+
+        constraints_output = core_vars.get("constraints_output")
+        assert constraints_output is not None, (
+            "constraints_output should be set when env_constraint is completed"
+        )
+        assert constraints_output == "scenario_test-scenario.env_constraint_test-scenario", (
+            f"Expected 'scenario_test-scenario.env_constraint_test-scenario', "
+            f"got '{constraints_output}'"
+        )
+
+    def test_no_constraints_output_without_env_constraint(self) -> None:
+        """When env_constraint not completed, constraints_output should not be set."""
+        from brewgis.workspace.analysis.pipeline import _get_vars_for_module
+
+        base_vars = {
+            "scenario_id": "test-scenario",
+            "target_schema": "scenario_test-scenario",
+            "parcel_table": "parcels",
+            "completed_modules": [],
+        }
+
+        core_vars = _get_vars_for_module("core", base_vars)
+
+        assert "constraints_output" not in core_vars, (
+            "constraints_output should NOT be set when env_constraint is not completed"
+        )
+
+    def test_constraints_output_uses_default_schema_fallback(self) -> None:
+        """If target_schema is missing, constraints_output should fall back to 'public'."""
+        from brewgis.workspace.analysis.pipeline import _get_vars_for_module
+
+        base_vars = {
+            "scenario_id": "test-scenario",
+            "parcel_table": "parcels",
+            "completed_modules": ["env_constraint"],
+        }
+
+        core_vars = _get_vars_for_module("core", base_vars)
+
+        constraints_output = core_vars.get("constraints_output")
+        assert constraints_output == "public.env_constraint_test-scenario", (
+            f"Expected 'public.env_constraint_test-scenario', got '{constraints_output}'"
+        )

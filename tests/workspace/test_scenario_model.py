@@ -1,4 +1,4 @@
-# ruff: noqa: ANN001, ANN201
+# ruff: noqa: ANN001
 """Tests for the Scenario model."""
 
 from __future__ import annotations
@@ -134,3 +134,58 @@ class TestScenarioModel(TestCase):
         """horizon_year should typically be greater than base_year."""
         s = ScenarioFactory(base_year=2020, horizon_year=2050)
         self.assertGreater(s.horizon_year, s.base_year)
+@pytest.mark.models
+class TestScenarioSchemaName(TestCase):
+    """Tests for the Scenario schema_name field and target_schema property."""
+
+    def test_schema_name_defaults_on_save(self) -> None:
+        """schema_name should default to scenario_{slug} on save."""
+        s = ScenarioFactory(name="Default Schema Test", slug="")
+        s.save()
+        assert s.schema_name == f"scenario_{s.slug}", (
+            f"Expected scenario_{s.slug}, got {s.schema_name}"
+        )
+
+    def test_target_schema_uses_schema_name(self) -> None:
+        """target_schema should return schema_name."""
+        s = ScenarioFactory(slug="my-scenario")
+        s.save()
+        assert s.target_schema == s.schema_name
+        assert s.target_schema == "scenario_my-scenario"
+
+    def test_custom_schema_name(self) -> None:
+        """schema_name can be set to a custom value."""
+        custom_schema = "my_custom_schema"
+        s = ScenarioFactory(
+            name="Custom Schema",
+            slug="custom-scenario",
+            schema_name=custom_schema,
+        )
+        s.save()
+        assert s.schema_name == custom_schema
+        assert s.target_schema == custom_schema
+        assert s.target_schema != "scenario_custom-scenario"
+
+    def test_target_schema_fallback_when_blank(self) -> None:
+        """target_schema should fall back to scenario_{slug} if schema_name is blank."""
+        s = ScenarioFactory(
+            name="Blank Schema",
+            slug="blank-schema",
+            schema_name="",
+        )
+        # Manually set schema_name blank (save() would auto-default it)
+        Scenario.objects.filter(pk=s.pk).update(schema_name="")
+        s.refresh_from_db()
+        assert s.schema_name == ""
+        assert s.target_schema == "scenario_blank-schema", (
+            f"Expected 'scenario_blank-schema', got '{s.target_schema}'"
+        )
+
+    def test_existing_test_target_schema_unchanged(self) -> None:
+        """Existing test scenarios should still resolve target_schema correctly."""
+        s = ScenarioFactory(
+            name="Existing Scenario",
+            slug="existing-scenario",
+        )
+        s.save()
+        assert s.target_schema == "scenario_existing-scenario"

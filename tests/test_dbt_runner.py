@@ -1,4 +1,4 @@
-# ruff: noqa: ANN001, ANN201
+# ruff: noqa: ANN001
 """Tests for the dbt runner module."""
 
 from __future__ import annotations
@@ -6,7 +6,7 @@ from __future__ import annotations
 import pytest
 
 import yaml
-from django.test import TestCase
+from django.test import TestCase, TransactionTestCase
 from unittest.mock import MagicMock
 from unittest.mock import patch
 
@@ -232,7 +232,7 @@ class TestDbtRunnerWrapperRun(TestCase):
 
 
 @pytest.mark.integration
-class TestRunDbtLocal(TestCase):
+class TestRunDbtLocal(TransactionTestCase):
     """run_dbt_local convenience function."""
 
     @patch("brewgis.workspace.analysis.dbt_runner.DbtRunnerWrapper")
@@ -255,3 +255,95 @@ class TestRunDbtLocal(TestCase):
             full_refresh=True,
         )
         self.assertTrue(result.success)
+
+    @pytest.mark.integration
+    def test_dbt_creates_view_in_target_schema_not_public_prefix(self) -> None:
+        """dbt should create views in ``target_schema``, not ``public_target_schema``.
+
+        Creates a test parcel table with geometry, runs dbt against it
+        with a custom ``target_schema``, and verifies the view lands
+        in that schema (not the profile's ``public`` schema).
+        """
+        from django.db import connection
+
+        target_schema = "test_dbt_schema_check"
+        parcel_table = "test_dbt_parcels"
+
+        with connection.cursor() as cursor:
+            # Ensure PostGIS ext
+            cursor.execute("CREATE EXTENSION IF NOT EXISTS postgis")
+            # Create source schema and test parcel table
+            cursor.execute(f"CREATE SCHEMA IF NOT EXISTS {target_schema}")
+            cursor.execute(f"""
+                CREATE TABLE IF NOT EXISTS {parcel_table} (
+                    id SERIAL PRIMARY KEY,
+                    geom GEOMETRY(POLYGON, 4326)
+                )
+            """)
+            cursor.execute(f"""
+                INSERT INTO {parcel_table} (geom)
+                VALUES (ST_SetSRID(ST_MakeEnvelope(0, 0, 1, 1), 4326))
+            """)
+
+        try:
+            result = run_dbt_local(
+                select=["env_constraint"],
+                vars_={
+                    "target_schema": target_schema,
+                    "scenario_id": "test_dbt_schema",
+                    "parcel_table": parcel_table,
+                    "constraints": [],
+                    "source_schema": "public",
+                },
+                full_refresh=True,
+            )
+            assert result.success, f"dbt run failed: {result.error}"
+
+            # Check individual model results
+            for row in (result.results or []):
+                assert row["status"] in ("success", "pass"), (
+                    f"Model {row['node_name']} failed: {row['message']}"
+                )
+
+            # The view should be created in target_schema, NOT public_target_schema.
+            # The view name equals the model file name (env_constraint).
+            view_name = "env_constraint"
+            with connection.cursor() as cursor:
+                cursor.execute(
+                    """
+                    SELECT EXISTS (
+                        SELECT 1 FROM information_schema.views
+                        WHERE table_schema = %s
+                        AND table_name = %s
+                    )
+                    """,
+                    [target_schema, view_name],
+                )
+                exists_in_target = cursor.fetchone()[0]
+            assert exists_in_target, (
+                f"View '{view_name}' not found in schema '{target_schema}'"
+            )
+
+            # Also verify it does NOT exist in a public_ prefix schema
+            with connection.cursor() as cursor:
+                cursor.execute(
+                    """
+                    SELECT EXISTS (
+                        SELECT 1 FROM information_schema.views
+                        WHERE table_schema = %s
+                        AND table_name = %s
+                    )
+                    """,
+                    [f"public_{target_schema}", view_name],
+                )
+                exists_in_public_prefix = cursor.fetchone()[0]
+            assert not exists_in_public_prefix, (
+                f"View should NOT exist in 'public_{target_schema}' schema"
+            )
+        finally:
+            # Cleanup: drop the view and test schema
+            with connection.cursor() as cursor:
+                cursor.execute(f"DROP TABLE IF EXISTS {parcel_table} CASCADE")
+                cursor.execute(
+                    f"DROP SCHEMA IF EXISTS {target_schema} CASCADE"
+                )
