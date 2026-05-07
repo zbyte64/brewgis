@@ -14,7 +14,9 @@ env = environ.Env()
 READ_DOT_ENV_FILE = env.bool("DJANGO_READ_DOT_ENV_FILE", default=False)
 if READ_DOT_ENV_FILE:
     # OS environment variables take precedence over variables from .env
-    env.read_env(str(BASE_DIR / ".env"))
+    dotenv_path = BASE_DIR / ".env"
+    if dotenv_path.exists():
+        env.read_env(str(dotenv_path))
 
 # GENERAL
 # ------------------------------------------------------------------------------
@@ -315,3 +317,5 @@ ACCOUNT_EMAIL_VERIFICATION = "mandatory"
 # Your stuff...
 # ------------------------------------------------------------------------------
 TILE_SERVER_BACKEND = env("TILE_SERVER_BACKEND", default="tipg")
+TILE_SERVER_TIPG_URL = env("TILE_SERVER_TIPG_URL", default="http://tipg:8081")
+TILE_SERVER_MARTIN_URL = env("TILE_SERVER_MARTIN_URL", default="http://martin:3000")

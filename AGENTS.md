@@ -96,6 +96,49 @@ docker compose -f docker-compose.docs.yml build docs
 |docker compose -f docker-compose.local.yml run django sqlfluff lint brewgis/dbt_project/
 ```
 
+## Host Development Mode
+
+As an alternative to running the full stack in Docker, you can run Django (and Celery) directly on the host machine while Docker Compose provides infrastructure services (PostgreSQL/PostGIS, Redis, tipg, Martin). This enables breakpoints, hot-reload without container rebuilds, and avoids Docker filesystem overhead.
+
+```bash
+# 1. Copy the environment template and customize as needed
+cp .env.example .env
+
+# 2. Start only infrastructure services (PostGIS, Redis, tipg, Martin)
+docker compose -f docker-compose.infra.yml up -d
+
+# 3. Run Django dev server on the host (requires Python 3.12 + deps installed)
+python manage.py runserver
+
+# 4. Run Celery worker on the host (separate terminal or background)
+celery -A config.celery_app worker -l info
+```
+
+**Key differences from Docker mode:**
+|Aspect|Docker mode|Host mode|
+|---|---|---|
+|Compose file|`docker-compose.local.yml`|`docker-compose.infra.yml`|
+|Django location|Inside container|On host (`localhost:8000`)|
+|Tile servers|Docker network (`http://tipg:8081`)|Host ports (`http://localhost:8081`)|
+|Redis URL|`redis://redis:6379/0`|`redis://localhost:6379/0`|
+|Database URL|Docker service name|`localhost:5432`|
+|Breakpoints|Requires Docker attach|Works natively|
+|Settings file|`config.settings.local`|`config.settings.local`|
+|`.env` file|Not used (env from compose)|Read from project root|
+|`USE_DOCKER`|`yes`|`no`|
+|Quick start|`docker compose -f docker-compose.local.yml up`|`docker compose -f docker-compose.infra.yml up -d` then `python manage.py runserver`|
+
+**Infrastructure services** are managed via `docker-compose.infra.yml`:
+- `postgres` on `localhost:5432`
+- `redis` on `localhost:6379`
+- `tipg` on `localhost:8081`
+- `martin` on `localhost:3000`
+
+**Full Docker stack** continues to work unchanged:
+```bash
+docker compose -f docker-compose.local.yml up --build
+```
+
 ## Runtime & Tooling
 - **Python:** 3.12 (required)
 - **Package manager:** pip via `requirements/*.txt`

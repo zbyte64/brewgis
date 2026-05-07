@@ -20,6 +20,7 @@ import sys
 from pathlib import Path
 
 from django.core.wsgi import get_wsgi_application
+from django.conf import settings
 from werkzeug.middleware.http_proxy import ProxyMiddleware
 
 # This allows easy placement of apps within the interior
@@ -44,13 +45,14 @@ application = ProxyMiddleware(
     application,
     {
         "/tipg/": {
-            "target": "http://tipg:8081/",
+            "target": settings.TILE_SERVER_TIPG_URL + "/",
             "remove_prefix": True,
             "host": "localhost:8000",
         },
         "/martin/": {
-            "target": "http://martin:3000/",
+            "target": settings.TILE_SERVER_MARTIN_URL + "/",
             "remove_prefix": True,
             "host": "localhost:8000",
         }
+    },
 )
