@@ -21,10 +21,42 @@ class AuthPage(BasePage):
         self.navigate(self.base_url + "/accounts/login/")
 
     def login(self, username: str, password: str) -> None:
-        """Fill in login form and submit."""
-        self.page.fill("input[name=login]", username)
-        self.page.fill("input[name=password]", password)
-        self.page.click("button[type=submit]")
+        """Fill in login form and submit.  Handles django-allauth's default form."""
+        # Wait for the form to actually be attached to DOM
+        try:
+            self.page.wait_for_selector("form", state="attached", timeout=5000)
+        except Exception:
+            raise AssertionError(
+                f"Login form never appeared on page.\n{self.dump_state('no login form')}"
+            )
+
+        # Try multiple selector strategies for username/password
+        selectors = {
+            "login": ["input[name=login]", "#id_login", "input[autocomplete=username]"],
+            "password": ["input[name=password]", "#id_password", "input[autocomplete=current-password]"],
+        }
+
+        for field, candidates in selectors.items():
+            found = False
+            for sel in candidates:
+                if self.page.locator(sel).count() > 0:
+                    self.page.fill(sel, field == "login" and username or password)
+                    found = True
+                    break
+            if not found:
+                raise AssertionError(
+                    f"Could not find {field} field on login page.\n{self.dump_state(f'no {field} field')}"
+                )
+
+        # Submit button — try button type or role-based
+        submit = self.page.locator("button[type=submit]")
+        if submit.count() == 0:
+            submit = self.page.get_by_role("button", name="Sign In")
+        if submit.count() == 0:
+            raise AssertionError(
+                f"Could not find submit button.\n{self.dump_state('no submit button')}"
+            )
+        submit.click()
 
     def is_on_login_page(self) -> bool:
         """Check if we're on the login page."""

@@ -4,11 +4,13 @@ from __future__ import annotations
 import os
 from pathlib import Path
 from typing import TYPE_CHECKING
+from contextlib import suppress
 
 import pytest
 from django.test import override_settings
 
 from tests.factories import UserFactory
+from tests.e2e.pages.auth_page import AuthPage
 
 # Allow synchronous DB access from Playwright's async event loop
 os.environ.setdefault("DJANGO_ALLOW_ASYNC_UNSAFE", "true")
@@ -22,6 +24,16 @@ if TYPE_CHECKING:
     from playwright.sync_api import Playwright
     from pytest_django.live_server_helper import LiveServer
 
+
+# ── CLI options ────────────────────────────────────────────────────────
+
+def pytest_addoption(parser) -> None:
+    parser.addoption(
+        "--e2e-debug",
+        action="store_true",
+        default=False,
+        help="Run E2E tests in headed (visible) browser mode",
+    )
 
 # Override ALLOWED_HOSTS so Playwright can connect via Docker network
 @pytest.fixture(scope="session", autouse=True)
@@ -40,9 +52,10 @@ def playwright() -> Playwright:
 
 
 @pytest.fixture(scope="session")
-def browser(playwright: Playwright) -> Browser:
+def browser(playwright: Playwright, request) -> Browser:
     """Launch a Chromium browser for the session."""
-    browser = playwright.chromium.launch(headless=True)
+    headless = not request.config.getoption("--e2e-debug", False)
+    browser = playwright.chromium.launch(headless=headless, slow_mo=100 if not headless else 0)
     yield browser
     browser.close()
 
@@ -78,13 +91,38 @@ def logged_in_user(db) -> User:
     return UserFactory()
 
 
+@pytest.fixture(autouse=True)
+def _capture_page_errors(page: Page, screenshots_dir: Path) -> None:
+    """Capture console errors and dump page state on failure."""
+    errors: list[str] = []
+
+    def _log_error(msg) -> None:
+        errors.append(f"[{msg.type}] {msg.text}")
+
+    page.on("console", _log_error)
+
+    yield
+
+    page.remove_listener("console", _log_error)
+
+    # If test failed, dump diagnostics
+    if hasattr(page, "_diagnostic_dump"):
+        diag_path = screenshots_dir / "diagnostics.txt"
+        diag_path.write_text(page._diagnostic_dump)
+        print(f"\n[DX] Diagnostics dumped to: {diag_path}", file=sys.stderr)
+        print(f"[DX] Page URL: {page.url}", file=sys.stderr)
+        if errors:
+            print(f"[DX] Console errors: {len(errors)} captured", file=sys.stderr)
+            for e in errors[-10:]:
+                print(f"     {e}", file=sys.stderr)
+
+
 @pytest.fixture
 def logged_in_page(page: Page, live_server_url: str, logged_in_user: User) -> Page:
     """Return a page that is already logged in."""
-    page.goto(live_server_url + "/accounts/login/")
-    page.fill("input[name=login]", logged_in_user.username)
-    page.fill("input[name=password]", "testpass123")
-    page.click("button[type=submit]")
+    auth_page = AuthPage(page, live_server_url)
+    auth_page.navigate_to_login()
+    auth_page.login(logged_in_user.username, "testpass123")
     page.wait_for_url(live_server_url + "/")
     return page
 
@@ -114,13 +152,38 @@ def screenshot(page: Page, screenshots_dir: Path) -> None:
 
 @pytest.hookimpl(tryfirst=True, hookwrapper=True)
 def pytest_runtest_makereport(item, call) -> None:
-    """Capture screenshot on test failure."""
+    """Capture screenshot and DOM tree dump on test failure."""
     outcome = yield
     report = outcome.get_result()
     if report.when == "call" and report.failed:
         page = item.funcargs.get("page") or item.funcargs.get("logged_in_page")
         if page:
             node_id = item.nodeid.replace("::", "/").replace("[", "/").replace("]", "")
-            screenshot_dir = Path("tests/e2e/screenshots") / node_id
-            screenshot_dir.mkdir(parents=True, exist_ok=True)
-            page.screenshot(path=str(screenshot_dir / "failure.png"))
+            sd = Path("tests/e2e/screenshots") / node_id
+            sd.mkdir(parents=True, exist_ok=True)
+
+            # Screenshot
+            screenshot_path = sd / "failure.png"
+            page.screenshot(path=str(screenshot_path))
+
+            # DOM snapshot (visible elements via accessibility tree)
+            with suppress(Exception):
+                snapshot = page.accessibility.snapshot()
+                if snapshot:
+                    elements = []
+                    def flatten(node, depth=0):
+                        role = node.get("role", "?")
+                        name = node.get("name", "")
+                        if role not in ("none", "generic"):
+                            elements.append("  " * depth + f"[{role}] {name}"[:200])
+                        for c in node.get("children", []):
+                            flatten(c, depth + 1)
+                    flatten(snapshot)
+                    dom_path = sd / "dom_tree.txt"
+                    dom_path.write_text("\n".join(elements))
+
+            # Print locations to stderr so they're visible in CI output
+            print(f"\n=== E2E FAILURE DIAGNOSTICS [{item.nodeid}] ===", file=sys.stderr)
+            print(f"   Screenshot: {screenshot_path}", file=sys.stderr)
+            print(f"   DOM tree:   {sd / 'dom_tree.txt'}", file=sys.stderr)
+            print(f"===========================================\n", file=sys.stderr)

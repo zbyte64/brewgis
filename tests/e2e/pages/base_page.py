@@ -1,6 +1,7 @@
 """Base Page Object with common helpers for e2e tests."""
 from __future__ import annotations
 
+from contextlib import suppress
 from typing import TYPE_CHECKING
 
 from playwright.sync_api import expect
@@ -14,6 +15,51 @@ class BasePage:
 
     def __init__(self, page: Page) -> None:
         self.page = page
+
+    def dump_state(self, label: str = "") -> str:
+        """Return human-readable page state for debugging."""
+        lines = []
+        with suppress(Exception):
+            lines.append(f"URL: {self.page.url}")
+            lines.append(f"Title: {self.page.title()}")
+        with suppress(Exception):
+            snapshot = self.page.accessibility.snapshot()
+            if snapshot:
+                visible = []
+
+                def _collect(node, depth=0) -> None:
+                    role = node.get("role", "?")
+                    name = node.get("name", "")
+                    if role not in ("none", "generic", "InlineTextBox"):
+                        visible.append(f"  {'  ' * depth}[{role}] {name}"[:160])
+                    for c in node.get("children", []):
+                        _collect(c, depth + 1)
+
+                _collect(snapshot)
+                lines.append(f"--- Visible elements ({len(visible)}) ---")
+                lines.extend(visible[:60])
+        state = "\n".join(lines)
+        if label:
+            state = f"=== {label} ===\n" + state
+        return state
+
+    def fill(self, selector: str, value: str) -> None:
+        """Fill a field; on timeout, dump page state."""
+        try:
+            self.page.fill(selector, value, timeout=10000)
+        except Exception as e:
+            state = self.dump_state(f"fill('{selector}', '{value}') failed")
+            msg = f"{e}\n\nPage state:\n{state}"
+            raise type(e)(msg) from e
+
+    def click(self, selector: str) -> None:
+        """Click a locator; on timeout, dump page state."""
+        try:
+            self.page.click(selector, timeout=10000)
+        except Exception as e:
+            state = self.dump_state(f"click('{selector}') failed")
+            msg = f"{e}\n\nPage state:\n{state}"
+            raise type(e)(msg) from e
 
     def navigate(self, url: str) -> None:
         """Navigate to an absolute URL."""
