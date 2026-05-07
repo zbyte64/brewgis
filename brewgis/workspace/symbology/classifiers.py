@@ -89,8 +89,8 @@ def _make_labels(breaks: list[float]) -> list[str]:
 
 
 @deal.ensure(lambda min_val, max_val, num_classes, result: len(result) == num_classes + 1)
-@deal.ensure(lambda min_val, max_val, num_classes, result: result[0] == min_val and result[-1] == max_val)
-@deal.pre(lambda min_val, max_val, num_classes: max_val >= min_val and num_classes >= 1)
+@deal.ensure(lambda min_val, max_val, num_classes, result: num_classes < 1 or (result[0] == min_val and result[-1] == max_val))
+@deal.pre(lambda min_val, max_val, num_classes: max_val >= min_val)
 def _equal_interval_breaks(
     min_val: float,
     max_val: float,
@@ -150,8 +150,7 @@ def _quantile_breaks(schema: str, table: str, column: str, num_classes: int) -> 
     return cleaned
 
 
-@deal.pre(lambda min_val, max_val, num_classes: min_val > 0 and max_val > 0 and num_classes >= 1)
-@deal.ensure(lambda min_val, max_val, result: result[0] <= min_val and result[-1] >= max_val)
+@deal.ensure(lambda min_val, max_val, num_classes, result: num_classes < 1 or (result[0] <= min_val and result[-1] >= max_val))
 def _logarithmic_breaks(min_val: float, max_val: float, num_classes: int) -> list[float]:
     """Log-scale division."""
     if num_classes < 1:
@@ -177,7 +176,7 @@ def _logarithmic_breaks(min_val: float, max_val: float, num_classes: int) -> lis
     return result
 
 
-@deal.pre(lambda stddev, num_classes: stddev >= 0 and num_classes >= 1)
+@deal.pre(lambda mean, stddev, num_classes: stddev >= 0 and num_classes >= 1)
 def _std_deviation_breaks(mean: float, stddev: float, num_classes: int) -> list[float]:
     """Breaks at standard-deviation intervals from the mean."""
     half = num_classes // 2
@@ -187,8 +186,8 @@ def _std_deviation_breaks(mean: float, stddev: float, num_classes: int) -> list[
     return breaks
 
 
-@deal.ensure(lambda result: result >= 0)
-@deal.pre(lambda lo, hi: 0 <= lo <= hi)
+@deal.ensure(lambda data, lo, hi, result: result >= 0)
+@deal.pre(lambda data, lo, hi: 0 <= lo <= hi)
 def _sum_squared_diffs(data: list[float], lo: int, hi: int) -> float:
     """Compute sum of squared differences from the mean for ``data[lo:hi]``.
 

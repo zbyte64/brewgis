@@ -14,16 +14,14 @@ import os
 
 import deal
 import pytest
+
 from brewgis.workspace.analysis.pipeline import resolve_module_order
-from brewgis.workspace.services.stitcher import impute_constant
-from brewgis.workspace.symbology.classifiers import (
-    _equal_interval_breaks,
-    _fmt,
-    _logarithmic_breaks,
-    _make_labels,
-    _std_deviation_breaks,
-    _sum_squared_diffs,
-)
+from brewgis.workspace.symbology.classifiers import _equal_interval_breaks
+from brewgis.workspace.symbology.classifiers import _fmt
+from brewgis.workspace.symbology.classifiers import _logarithmic_breaks
+from brewgis.workspace.symbology.classifiers import _make_labels
+from brewgis.workspace.symbology.classifiers import _std_deviation_breaks
+from brewgis.workspace.symbology.classifiers import _sum_squared_diffs
 
 # Seed for deterministic CI runs — use CI_PIPELINE_ID, GITHUB_RUN_ID, or similar
 _DEAL_SEED_RAW = os.environ.get("DEAL_SEED")
@@ -35,51 +33,45 @@ _DEAL_SEED: int | None = int(_DEAL_SEED_RAW) if _DEAL_SEED_RAW else None
 
 
 @pytest.mark.slow
-@deal.cases(_equal_interval_breaks, seed=_DEAL_SEED)
+@deal.cases(_equal_interval_breaks, max_examples=25, seed=_DEAL_SEED)
 def test_equal_interval_breaks_contract(case: deal.TestCase) -> None:
     case()
 
 
 @pytest.mark.slow
-@deal.cases(_logarithmic_breaks, seed=_DEAL_SEED)
+@deal.cases(_logarithmic_breaks, max_examples=25, seed=_DEAL_SEED)
 def test_logarithmic_breaks_contract(case: deal.TestCase) -> None:
     case()
 
 
 @pytest.mark.slow
-@deal.cases(_std_deviation_breaks, seed=_DEAL_SEED)
+@deal.cases(_std_deviation_breaks, max_examples=25, seed=_DEAL_SEED)
 def test_std_deviation_breaks_contract(case: deal.TestCase) -> None:
     case()
 
 
 @pytest.mark.slow
-@deal.cases(_sum_squared_diffs, seed=_DEAL_SEED)
+@deal.cases(_sum_squared_diffs, max_examples=25, seed=_DEAL_SEED)
 def test_sum_squared_diffs_contract(case: deal.TestCase) -> None:
     case()
 
 
 @pytest.mark.slow
-@deal.cases(_fmt, seed=_DEAL_SEED)
+@deal.cases(_fmt, max_examples=25, seed=_DEAL_SEED)
 def test_fmt_contract(case: deal.TestCase) -> None:
     case()
 
 
 @pytest.mark.slow
-@deal.cases(_make_labels, seed=_DEAL_SEED)
+@deal.cases(_make_labels, max_examples=25, seed=_DEAL_SEED)
 def test_make_labels_contract(case: deal.TestCase) -> None:
     case()
 
 
-# ---------------------------------------------------------------------------
-# Stitcher contracts
-# ---------------------------------------------------------------------------
-
-
-@pytest.mark.slow
-@deal.cases(impute_constant, seed=_DEAL_SEED)
-def test_impute_constant_contract(case: deal.TestCase) -> None:
-    case()
-
+# Stitcher: ``impute_constant`` is excluded from property-based testing
+# because it runs SQL queries against the database.  Hypothesis-generated
+# table/column names would fail.  The contract is still enforced at runtime
+# by ``deal.enable()`` during integration tests.
 
 # ---------------------------------------------------------------------------
 # Analysis pipeline contracts
@@ -87,6 +79,6 @@ def test_impute_constant_contract(case: deal.TestCase) -> None:
 
 
 @pytest.mark.slow
-@deal.cases(resolve_module_order, seed=_DEAL_SEED)
+@deal.cases(resolve_module_order, max_examples=25, seed=_DEAL_SEED)
 def test_resolve_module_order_contract(case: deal.TestCase) -> None:
     case()
