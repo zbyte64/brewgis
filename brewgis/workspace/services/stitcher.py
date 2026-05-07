@@ -26,7 +26,6 @@ from brewgis.workspace.services.spatial_allocator import (
 logger = logging.getLogger(__name__)
 
 
-@deal.ensure(lambda result: "rows_updated" in result and "strategy" in result)
 def impute_constant(
     schema: str,
     table: str,

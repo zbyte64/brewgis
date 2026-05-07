@@ -24,7 +24,7 @@ if TYPE_CHECKING:
     from dbt.contracts.results import RunResultsArtifact
 
 # Path to the dbt project directory relative to this project root
-DBT_PROJECT_DIR = Path(__file__).resolve().parent.parent.parent.parent / "dbt_project"
+DBT_PROJECT_DIR = Path(__file__).resolve().parent.parent.parent / "dbt_project"
 
 
 class DbtResult:

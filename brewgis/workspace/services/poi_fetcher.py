@@ -142,9 +142,8 @@ def _build_overpass_query(
     # Build tag filter clauses
     tag_clauses: list[str] = []
     for key, value in tags_to_query:
-        tag_clauses.append(
-            f'  (node["{key}"="{value}"]({bbox}); way["{key}"="{value}"]({bbox}); )'
-        )
+        tag_clauses.append(f'  node["{key}"="{value}"]({bbox});')
+        tag_clauses.append(f'  way["{key}"="{value}"]({bbox});')
 
     tag_block = "\n".join(tag_clauses)
 

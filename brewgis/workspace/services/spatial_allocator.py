@@ -12,9 +12,22 @@ from typing import Any
 
 import geopandas as gpd
 import pandas as pd
-from django.db import connection
+from sqlalchemy import create_engine
 
+from django.conf import settings
+
+from django.db import connection
 logger = logging.getLogger(__name__)
+
+
+def _get_engine():
+    """Build a SQLAlchemy engine from Django DATABASES settings."""
+    db = settings.DATABASES["default"]
+    url = (
+        f"postgresql://{db['USER']}:{db['PASSWORD']}"
+        f"@{db['HOST']}:{db['PORT']}/{db['NAME']}"
+    )
+    return create_engine(url)
 
 
 def _load_geometries_and_values(
@@ -50,7 +63,9 @@ def _load_geometries_and_values(
         ctid_clause = ", ctid AS __ctid__" if include_ctid else ""
         query = f'SELECT *{ctid_clause} FROM "{schema}"."{table}"'
 
-    df = gpd.read_postgis(query, connection, geom_col=geom_col)
+    engine = _get_engine()
+    df = gpd.read_postgis(query, engine, geom_col=geom_col)
+    engine.dispose()
     return df
 
 
@@ -101,16 +116,13 @@ def _compute_allocation_factors(
 
     allocation_rows: list[dict[str, Any]] = []
 
-    # Spatial join: for each source, find overlapping targets
     for source_idx, source_row in source_proj.iterrows():
-        source_geom = source_row.geometry
+        source_geom = source_row[source_proj.geometry.name]
         source_area = source_areas.loc[source_idx]
         if source_area <= 0:
             continue
-
-        # Find targets that intersect this source
         for target_idx, target_row in target_proj.iterrows():
-            target_geom = target_row.geometry
+            target_geom = target_row[target_proj.geometry.name]
             if source_geom.intersects(target_geom):
                 try:
                     intersection = source_geom.intersection(target_geom)

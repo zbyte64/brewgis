@@ -77,11 +77,11 @@ def _build_census_url(state_fips: str, county_fips: str, summary_level: str) -> 
     """
     vars_ = ",".join(_all_vars())
     if summary_level == "block group":
-        geo = f"state:{state_fips}&in=county:{county_fips}&for=block%20group:*"
+        geo = f"in=state:{state_fips}&in=county:{county_fips}&for=block%20group:*"
     elif summary_level == "tract":
-        geo = f"state:{state_fips}&in=county:{county_fips}&for=tract:*"
+        geo = f"in=state:{state_fips}&in=county:{county_fips}&for=tract:*"
     else:
-        geo = f"state:{state_fips}&in=county:{county_fips}&for=block%20group:*"
+        geo = f"in=state:{state_fips}&in=county:{county_fips}&for=block%20group:*"
 
     return f"{CENSUS_BASE_URL}?get={vars_}&{geo}"
 
