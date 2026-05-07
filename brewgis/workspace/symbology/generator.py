@@ -9,6 +9,7 @@ from __future__ import annotations
 
 from typing import Any
 
+import deal
 from brewgis.workspace.models import SymbologyConfig
 
 
@@ -28,6 +29,7 @@ def _null_expression(
     return ["case", ["has", attr], inner, null_color]
 
 
+@deal.has()
 def _base_paint(symbology: SymbologyConfig) -> dict[str, Any]:
     """Return base paint properties common to all symbology types."""
     geo = symbology.layer.geometry_type
@@ -131,6 +133,7 @@ def _single_paint(symbology: SymbologyConfig) -> dict[str, Any]:
     return paint
 
 
+@deal.ensure(lambda result: "paint" in result and "layout" in result)
 def generate_maplibre_style(symbology: SymbologyConfig) -> dict[str, Any]:
     """Generate MapLibre GL ``paint`` and ``layout`` for a symbology config.
 

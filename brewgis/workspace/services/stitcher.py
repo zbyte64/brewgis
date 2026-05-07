@@ -9,6 +9,7 @@ from __future__ import annotations
 
 import logging
 from typing import Any
+import deal
 
 import geopandas as gpd
 import pandas as pd
@@ -24,6 +25,7 @@ from brewgis.workspace.services.spatial_allocator import (
 logger = logging.getLogger(__name__)
 
 
+@deal.ensure(lambda result: "rows_updated" in result and "strategy" in result)
 def impute_constant(
     schema: str,
     table: str,

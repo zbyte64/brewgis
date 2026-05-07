@@ -1,6 +1,10 @@
 """Shared pytest fixtures for Brew GIS tests."""
 from __future__ import annotations
 
+import deal
+
+deal.enable()
+
 from typing import TYPE_CHECKING
 
 import pytest

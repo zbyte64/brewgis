@@ -13,6 +13,8 @@ Celery tasks in the correct order. The pipeline:
 
 from __future__ import annotations
 
+import deal
+
 import logging
 from typing import Any
 
@@ -52,6 +54,7 @@ MODULE_RESULT_TABLES = {
 }
 
 
+@deal.ensure(lambda module_names, result: set(result) == set(module_names))
 def resolve_module_order(module_names: list[str]) -> list[str]:
     """Resolve requested modules into execution order respecting dependencies.
 

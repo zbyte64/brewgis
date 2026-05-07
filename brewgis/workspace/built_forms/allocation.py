@@ -15,6 +15,8 @@ Unit conventions:
 """
 from __future__ import annotations
 
+import deal
+
 from dataclasses import dataclass
 from dataclasses import field
 from typing import TYPE_CHECKING
@@ -82,6 +84,8 @@ class AllocationEngine:
         )
     """
 
+    @deal.pre(lambda parcel_acres, row_allocation_pct: parcel_acres >= 0 and 0 <= row_allocation_pct <= 100)
+    @deal.post(lambda result: result.developable_acres >= 0 and result.total_population >= 0)
     @staticmethod
     def allocation_building_type(
         parcel_acres: float,

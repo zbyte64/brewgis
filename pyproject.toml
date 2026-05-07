@@ -9,6 +9,7 @@ python_files = [
 ]
 markers = [
     "e2e: mark test as end-to-end test requiring Playwright browser",
+    "slow: mark test as slow (property-based, hypothesis-generated)",
 ]
 
 # ==== Coverage ====
