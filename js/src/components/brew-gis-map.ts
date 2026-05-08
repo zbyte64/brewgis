@@ -3,6 +3,7 @@ import { property } from 'lit/decorators.js'
 import maplibregl from 'maplibre-gl'
 import type { Viewport, LayerConfig, ViewportChangeEvent } from '../types/index.js'
 import { generateLayerId, diffLayers } from '../utils/maplibre-helpers.js'
+import { PaintModeController } from './paint-mode.js'
 
 export class BrewGisMap extends LitElement {
   /** @inheritdoc */
@@ -24,6 +25,14 @@ export class BrewGisMap extends LitElement {
   @property({ type: Array })
   layers: LayerConfig[] = []
 
+  /** Map mode: 'view' for read-only, 'paint' for editing. */
+  @property({ type: String })
+  mode: 'view' | 'paint' = 'view'
+
+  /** Scenario ID for paint operations (null in view mode). */
+  @property({ type: Number, attribute: 'scenario-id' })
+  scenarioId: number | null = null
+
   @property({ type: Object, attribute: 'transform-request' })
   transformRequest:
     | ((url: string, resourceType?: string) => { url: string; headers?: Record<string, string> })
@@ -31,6 +40,9 @@ export class BrewGisMap extends LitElement {
 
   /** Internal map instance. */
   private _map: maplibregl.Map | null = null
+
+  /** Paint mode controller. */
+  private _paintController: PaintModeController | null = null
 
   /** Tracks the last applied layers for diffing. */
   private _previousLayers: LayerConfig[] = []
@@ -78,12 +90,51 @@ export class BrewGisMap extends LitElement {
     if (changedProperties.has('viewport') && this.viewport && this._mapLoaded) {
       this._syncViewport(this.viewport)
     }
+
+    if (changedProperties.has('mode') && this._mapLoaded) {
+      this._syncMode()
+    }
   }
 
   /** @inheritdoc */
   override disconnectedCallback(): void {
     super.disconnectedCallback()
     this._destroyMap()
+  }
+
+  // ─── Public API ─────────────────────────────────────────
+
+  /**
+   * Highlight specified features using MapLibre feature state.
+   * Sets 'selected' = true on the specified feature IDs.
+   */
+  highlightFeatures(ids: string[]): void {
+    if (!this._map) return
+
+    // Clear previous highlights first
+    this.clearHighlight()
+
+    // Set feature state for each ID
+    for (const id of ids) {
+      try {
+        this._map.setFeatureState(
+          { source: 'composite', id: id },
+          { selected: true },
+        )
+      } catch {
+        // Feature or source may not exist yet
+      }
+    }
+  }
+
+  /** Clear all feature state highlights. */
+  clearHighlight(): void {
+    if (!this._map) return
+    try {
+      this._map.removeFeatureState({ source: 'composite' })
+    } catch {
+      // Source may not exist
+    }
   }
 
   // ─── Private Methods ──────────────────────────────────────
@@ -121,6 +172,11 @@ export class BrewGisMap extends LitElement {
 
       if (this.layers.length > 0) {
         this._syncLayers()
+      }
+
+      // Initialize paint mode if active
+      if (this.mode === 'paint') {
+        this._initPaintMode()
       }
 
       this._previousLayers = [...this.layers]
@@ -161,6 +217,88 @@ export class BrewGisMap extends LitElement {
         }),
       )
     })
+  }
+
+  private _initPaintMode(): void {
+    if (!this._map) return
+    this._paintController = new PaintModeController(this._map, this)
+
+    // Add paint indicator layer — highlights features with uf_is_painted flag
+    this._addPaintIndicatorLayer()
+
+    this._paintController.activate()
+  }
+
+  private _syncMode(): void {
+    if (this.mode === 'paint') {
+      if (!this._paintController) {
+        this._initPaintMode()
+      } else if (!this._paintController.isActive) {
+        this._paintController.activate()
+      }
+    } else {
+      if (this._paintController?.isActive) {
+        this._paintController.deactivate()
+      }
+    }
+  }
+
+  /**
+   * Add a fill layer that applies a distinct color to painted features.
+   * Uses the uf_is_painted boolean from the canvas view.
+   */
+  private _addPaintIndicatorLayer(): void {
+    if (!this._map) return
+
+    const paintLayerId = 'brew-gis-paint-indicator'
+
+    // Only add if not already present
+    if (this._map.getLayer(paintLayerId)) return
+
+    // Find the first fill layer to insert above it
+    const layers = this._map.getStyle()?.layers ?? []
+    const firstFillIdx = layers.findIndex((l) => l.type === 'fill')
+    const before = firstFillIdx >= 0 ? layers[firstFillIdx].id : undefined
+
+    this._map.addLayer(
+      {
+        id: paintLayerId,
+        type: 'fill',
+        source: 'composite',
+        'source-layer': 'default', // Will be updated by caller
+        paint: {
+          'fill-color': [
+            'case',
+            ['boolean', ['feature-state', 'selected'], false],
+            '#2196f3', // Blue for selected
+            ['boolean', ['get', 'uf_is_painted'], false],
+            '#ffeb3b', // Yellow for painted
+            'rgba(0,0,0,0)', // Transparent otherwise
+          ],
+          'fill-opacity': [
+            'case',
+            ['boolean', ['feature-state', 'selected'], false],
+            0.4,
+            ['boolean', ['get', 'uf_is_painted'], false],
+            0.3,
+            0,
+          ],
+        },
+      },
+      before,
+    )
+  }
+
+  /** Update the paint indicator source-layer for the current canvas view. */
+  setPaintSourceLayer(_sourceLayer: string): void {
+    const paintLayerId = 'brew-gis-paint-indicator'
+    if (!this._map?.getLayer(paintLayerId)) return
+    try {
+      this._map.removeLayer(paintLayerId)
+    } catch {
+      // OK
+    }
+    this._addPaintIndicatorLayer()
   }
 
   private _syncViewport(vp: Viewport): void {
@@ -252,6 +390,11 @@ export class BrewGisMap extends LitElement {
   }
 
   private _destroyMap(): void {
+    if (this._paintController?.isActive) {
+      this._paintController.deactivate()
+    }
+    this._paintController = null
+
     if (this._map) {
       this._map.remove()
       this._map = null

@@ -1,16 +1,29 @@
-import json
+"""Map view — renders workspace map with optional scenario paint mode."""
 
-from django.http import HttpRequest
-from django.http import HttpResponse
+from __future__ import annotations
+
+import json
+from typing import TYPE_CHECKING
+from typing import cast
+
+from django.conf import settings
+
+if TYPE_CHECKING:
+    from django.http import HttpRequest
+    from django.http import HttpResponse
 from django.shortcuts import get_object_or_404
 from django.shortcuts import render
 from ninja import ModelSchema
 
+from brewgis.workspace.built_forms.models import BuildingType
+from brewgis.workspace.built_forms.models import PlaceType
 from brewgis.workspace.models import Layer
-from brewgis.workspace.models import Workspace
+from brewgis.workspace.models import Scenario
 from brewgis.workspace.models import SymbologyConfig
+from brewgis.workspace.models import Workspace
+from brewgis.workspace.services.base_canvas_schema import BaseCanvasSchema
+from brewgis.workspace.services.canvas_view_manager import PAINTABLE_COLUMNS
 from brewgis.workspace.symbology.generator import generate_maplibre_style
-from django.conf import settings
 
 
 class LayerSchema(ModelSchema):
@@ -20,7 +33,68 @@ class LayerSchema(ModelSchema):
 
 
 def view_workspace_map(request: HttpRequest, workspace_pk: int) -> HttpResponse:
+    """Render the workspace map, optionally with scenario paint mode.
+
+    Supports ``?scenario=<pk>`` query parameter to enable paint mode,
+    which adds a canvas view layer and paint toolbar to the template.
+    """
     workspace = get_object_or_404(Workspace, pk=workspace_pk)
+
+    # Check for scenario query parameter
+    scenario_id = request.GET.get("scenario")
+    scenario: Scenario | None = None
+    canvas_view_name: str | None = None
+    paintable_column_meta: list[dict[str, str]] = []
+    built_forms_data: dict[str, list[dict[str, object]]] = {}
+    paint_url: str = ""
+    clear_url: str = ""
+    bf_paint_url: str = ""
+
+    if scenario_id:
+        scenario = get_object_or_404(Scenario, pk=int(scenario_id), workspace=workspace)
+        # Build canvas view source (the COALESCE view for this scenario)
+        schema = scenario.target_schema
+        view_name = f"scenario_{scenario.slug}_canvas"
+        canvas_source_id = f"{schema}.{view_name}"
+
+        if settings.TILE_SERVER_BACKEND == "martin":
+            canvas_tiles_url = f"/martin/{canvas_source_id}/{{z}}/{{x}}/{{y}}"
+        else:
+            canvas_tiles_url = (
+                f"/tipg/collections/{canvas_source_id}/tiles/WebMercatorQuad"
+                "/{z}/{x}/{y}"
+            )
+
+        # Build column metadata for the paint toolbar dropdown
+        for col_name in sorted(PAINTABLE_COLUMNS):
+            col_def = BaseCanvasSchema.get(col_name)
+            paintable_column_meta.append(
+                {
+                    "name": col_name,
+                    "label": col_def.label if col_def else col_name,
+                }
+            )
+
+        # Build built forms data for toolbar dropdowns
+        bts = BuildingType.objects.all().order_by("name")
+        pts = PlaceType.objects.all().order_by("name")
+        built_forms_data = {
+            "building_types": [{"id": bt.pk, "name": bt.name} for bt in bts],
+            "place_types": [{"id": pt.pk, "name": pt.name} for pt in pts],
+        }
+
+        # Build htmx paint URLs
+        paint_url = request.build_absolute_uri(
+            f"/workspace/{workspace_pk}/scenario/{scenario.pk}/paint/"
+        )
+        clear_url = request.build_absolute_uri(
+            f"/workspace/{workspace_pk}/scenario/{scenario.pk}/clear-paint/"
+        )
+        bf_paint_url = request.build_absolute_uri(
+            f"/workspace/{workspace_pk}/scenario/{scenario.pk}/paint-bf/"
+        )
+
+    # Build regular layer data
     layers = workspace.layers.all()
     layer_data = []
     for layer in layers:
@@ -40,7 +114,44 @@ def view_workspace_map(request: HttpRequest, workspace_pk: int) -> HttpResponse:
             pass
         layer_data.append(data)
 
-    context = {
+    # If a scenario is active, add the canvas view as the last layer
+    if scenario and canvas_view_name:
+        schema = scenario.target_schema
+        view_name = f"scenario_{scenario.slug}_canvas"
+
+        layer_data.append(
+            {
+                "key": f"scenario_{scenario.slug}_canvas",
+                "id": f"scenario_{scenario.slug}_canvas",
+                "type": "fill",
+                "source": {
+                    "type": "vector",
+                    "tiles": [canvas_tiles_url],
+                },
+                "source-layer": view_name,
+                "paint": {
+                    "fill-color": [
+                        "case",
+                        ["boolean", ["get", "uf_is_painted"], False],
+                        "#ffeb3b",
+                        "#e0e0e0",
+                    ],
+                    "fill-opacity": 0.3,
+                },
+                "layout": {
+                    "visibility": "visible",
+                },
+            }
+        )
+
+    # Build URL for the map page with scenario param
+    scenario_url = ""
+    if scenario:
+        scenario_url = request.build_absolute_uri(
+            f"/workspace/{workspace_pk}/map/?scenario={scenario.pk}"
+        )
+
+    context: dict[str, object] = {
         "layers_json": json.dumps(layer_data),
         "viewport_json": json.dumps(
             {
@@ -49,5 +160,19 @@ def view_workspace_map(request: HttpRequest, workspace_pk: int) -> HttpResponse:
             },
         ),
         "workspace": workspace,
+        "scenario": scenario,
+        "scenario_json": json.dumps(
+            {"id": scenario.pk, "name": scenario.name, "slug": scenario.slug}
+        )
+        if scenario
+        else "null",
+        "scenario_url": scenario_url,
+        "canvas_view_name": cast("str", canvas_view_name) if canvas_view_name else "",
+        "paintable_columns": paintable_column_meta,
+        "built_forms": built_forms_data,
+        "paint_url": paint_url,
+        "clear_url": clear_url,
+        "bf_paint_url": bf_paint_url,
     }
+
     return render(request, "workspace_map.html", context)

@@ -41,6 +41,18 @@ export interface LayerClickEvent {
   lngLat: { lng: number; lat: number }
   point: { x: number; y: number }
 }
+export interface FeatureSelectedEvent {
+  features: { id: string; layerId: string }[]
+  mode: 'draw' | 'select' | 'clear'
+}
+
+export interface PaintRequest {
+  features: string[]
+  column?: string
+  value?: number | null
+  bf_type?: 'building' | 'place'
+  bf_id?: number
+}
 
 declare global {
   interface HTMLElementTagNameMap {

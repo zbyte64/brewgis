@@ -13,6 +13,9 @@ from .views import home
 from .views import import_center
 from .views import import_status
 from .views import poi_fetch
+from .views import paint_built_form
+from .views import paint_features
+from .views import clear_paint
 from .views import preview_symbology
 from .views import stitch
 from .views import view_workspace_map
@@ -42,6 +45,22 @@ urlpatterns = [
     path("upload/", ReadGISFileView.as_view(), name="upload"),
     path("layers/create/", CreateLayerView.as_view(), name="create_layer"),
     path("<int:workspace_pk>/map/", view_workspace_map, name="workspace_map"),
+    # Paint Operations
+    path(
+        "<int:workspace_pk>/scenario/<int:scenario_pk>/paint/",
+        paint_features,
+        name="paint_features",
+    ),
+    path(
+        "<int:workspace_pk>/scenario/<int:scenario_pk>/paint-bf/",
+        paint_built_form,
+        name="paint_built_form",
+    ),
+    path(
+        "<int:workspace_pk>/scenario/<int:scenario_pk>/clear-paint/",
+        clear_paint,
+        name="clear_paint",
+    ),
     path(
         "symbology/<int:layer_pk>/edit/",
         edit_symbology,

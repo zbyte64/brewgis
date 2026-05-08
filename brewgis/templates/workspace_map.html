@@ -15,15 +15,39 @@
   <div class="row">
     <div class="col-12">
       <div class="card">
-        <div class="card-header d-flex justify-content-between align-items-center">
+        <div class="card-header d-flex justify-content-between align-items-center flex-wrap gap-2">
           <h5 class="card-title mb-0">{{ workspace.name }}</h5>
-          <a href="{% url 'workspace:home' %}" class="btn btn-sm btn-outline-secondary">Back</a>
+          <div class="d-flex align-items-center gap-2">
+            {% if workspace.scenarios.exists %}
+              <form method="get" class="d-flex align-items-center gap-1" id="scenario-form">
+                <select name="scenario" class="form-select form-select-sm" style="width: auto;" onchange="this.form.submit()">
+                  <option value="">View mode</option>
+                  {% for s in workspace.scenarios.all %}
+                    <option value="{{ s.pk }}" {% if scenario and scenario.pk == s.pk %}selected{% endif %}>
+                      {{ s.name }}
+                    </option>
+                  {% endfor %}
+                </select>
+                {% if scenario %}
+                  <button type="button" class="btn btn-sm btn-outline-primary" id="toggle-paint-btn">Paint Mode</button>
+                {% endif %}
+              </form>
+            {% endif %}
+            <a href="{% url 'workspace:home' %}" class="btn btn-sm btn-outline-secondary">Back</a>
+          </div>
         </div>
+        {% if scenario %}
+          {% include "workspace/partials/_paint_toolbar.html" %}
+        {% endif %}
         <div class="card-body p-0">
           <brew-gis-map
             map-style="https://raw.githubusercontent.com/go2garret/maps/main/src/assets/json/openStreetMap.json"
             viewport='{{ viewport_json|safe }}'
-            layers='{{ layers_json|safe }}'>
+            layers='{{ layers_json|safe }}'
+            {% if scenario %}
+              mode="view"
+              scenario-id="{{ scenario.pk }}"
+            {% endif %}>
           </brew-gis-map>
         </div>
       </div>
@@ -31,3 +55,102 @@
   </div>
 </div>
 {% endblock content %}
+
+{% block inline_javascript %}
+<script>
+(function() {
+  'use strict';
+
+  const mapEl = document.querySelector('brew-gis-map');
+  const toggleBtn = document.getElementById('toggle-paint-btn');
+  const toolbar = document.getElementById('paint-toolbar');
+  const featureCount = document.getElementById('paint-feature-count');
+  const featureIdsInput = document.getElementById('paint-feature-ids');
+  const applyBtn = document.getElementById('paint-apply-btn');
+  const clearBtn = document.getElementById('paint-clear-btn');
+  const paintResult = document.getElementById('paint-result');
+  const paintModeDirect = document.getElementById('paint-mode-direct');
+  const paintModeBf = document.getElementById('paint-mode-bf');
+  const directControls = document.querySelectorAll('#paint-direct-controls');
+  const bfControls = document.querySelectorAll('#paint-bf-controls');
+  const bfTypeSelect = document.getElementById('paint-bf-type');
+  const bfIdSelect = document.getElementById('paint-bf-id');
+  const bfOptgroupBuilding = document.getElementById('bf-optgroup-building');
+  const bfOptgroupPlace = document.getElementById('bf-optgroup-place');
+
+  let selectedFeatures = [];
+  let paintActive = false;
+
+  if (!mapEl || !toggleBtn || !toolbar) return;
+
+  // Toggle paint mode
+  toggleBtn.addEventListener('click', function() {
+    paintActive = !paintActive;
+    toolbar.style.display = paintActive ? 'block' : 'none';
+    toggleBtn.textContent = paintActive ? 'Exit Paint Mode' : 'Paint Mode';
+    toggleBtn.classList.toggle('btn-outline-primary', !paintActive);
+    toggleBtn.classList.toggle('btn-primary', paintActive);
+    mapEl.mode = paintActive ? 'paint' : 'view';
+  });
+
+  // Listen for feature selection changes from the map component
+  mapEl.addEventListener('paint-features-changed', function(e) {
+    selectedFeatures = e.detail.features.map(function(f) { return f.id; });
+    featureIdsInput.value = JSON.stringify(selectedFeatures);
+    featureCount.textContent = selectedFeatures.length + ' parcel(s) selected';
+    applyBtn.disabled = selectedFeatures.length === 0;
+    clearBtn.disabled = selectedFeatures.length === 0;
+  });
+
+  // Paint mode radio buttons
+  function updatePaintMode() {
+    var isDirect = paintModeDirect && paintModeDirect.checked;
+    directControls.forEach(function(el) { el.style.display = isDirect ? '' : 'none'; });
+    bfControls.forEach(function(el) { el.style.display = isDirect ? 'none' : ''; });
+  }
+
+  if (paintModeDirect) {
+    paintModeDirect.addEventListener('change', updatePaintMode);
+    paintModeBf.addEventListener('change', updatePaintMode);
+  }
+
+  // BF type selector toggles which optgroup is visible
+  if (bfTypeSelect) {
+    bfTypeSelect.addEventListener('change', function() {
+      var type = this.value;
+      if (bfOptgroupBuilding) {
+        bfOptgroupBuilding.style.display = type === 'building' ? '' : 'none';
+      }
+      if (bfOptgroupPlace) {
+        bfOptgroupPlace.style.display = type === 'place' ? '' : 'none';
+      }
+    });
+  }
+
+  // Auto-dismiss paint result after 5 seconds
+  if (paintResult) {
+    var observer = new MutationObserver(function() {
+      setTimeout(function() {
+        if (paintResult) paintResult.innerHTML = '';
+      }, 5000);
+    });
+    observer.observe(paintResult, { childList: true, subtree: true });
+  }
+
+  // Re-enable apply/clear after htmx swap
+  document.body.addEventListener('htmx:afterSwap', function(evt) {
+    if (evt.detail.target && evt.detail.target.id === 'paint-result') {
+      applyBtn.disabled = selectedFeatures.length === 0;
+      clearBtn.disabled = selectedFeatures.length === 0;
+    }
+  });
+})();
+</script>
+{% endblock inline_javascript %}
+  // htmx CSRF integration — read from meta tag
+  document.body.addEventListener('htmx:configRequest', function(evt) {
+    var meta = document.querySelector('meta[name="csrf-token"]');
+    if (meta) {
+      evt.detail.headers['X-CSRFToken'] = meta.getAttribute('content');
+    }
+  });

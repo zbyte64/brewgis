@@ -13,11 +13,17 @@ async function createAndAttach(opts?: {
   layers?: unknown[]
   viewport?: unknown
   mapStyle?: string
+  mode?: string
+  scenarioId?: number
 }): Promise<{ el: HTMLElement; mockMap: any }> {
   const el = createMapElement()
   if (opts?.layers) el.setAttribute('layers', JSON.stringify(opts.layers))
   if (opts?.viewport) el.setAttribute('viewport', JSON.stringify(opts.viewport))
   if (opts?.mapStyle) el.setAttribute('map-style', opts.mapStyle)
+  if (opts?.mode) el.setAttribute('mode', opts.mode)
+  if (opts?.scenarioId !== undefined) {
+    el.setAttribute('scenario-id', String(opts.scenarioId))
+  }
   document.body.appendChild(el)
   await (el as any).updateComplete
   // Allow one microtask for Lit's rendering to settle
@@ -172,5 +178,77 @@ describe('brew-gis-map', () => {
     el.remove()
 
     expect(mockMap.remove).toHaveBeenCalledTimes(1)
+  })
+
+  // Paint mode tests
+
+  it('initializes paint mode controller when mode is paint', async () => {
+    const { mockMap } = await createAndAttach({
+      mode: 'paint',
+      scenarioId: 1,
+    })
+
+    // Paint mode should add draw control as an additional addControl call
+    // addControl is called for: NavigationControl (1) + MapboxDraw (2)
+    expect(mockMap.addControl).toHaveBeenCalledTimes(2)
+  })
+
+  it('accepts scenarioId property', async () => {
+    const { el } = await createAndAttach({
+      mode: 'paint',
+      scenarioId: 42,
+    })
+
+    expect((el as any).scenarioId).toBe(42)
+  })
+
+  it('switching mode from view to paint activates draw control', async () => {
+    const result = await createAndAttach()
+    const brewEl = result.el as any
+
+    // Switch to paint mode
+    brewEl.mode = 'paint'
+    await brewEl.updateComplete
+    await new Promise((r) => setTimeout(r, 0))
+
+    expect(brewEl.mode).toBe('paint')
+  })
+
+  it('highlightFeatures sets feature state on specified features', async () => {
+    const { el, mockMap } = await createAndAttach()
+
+    const ids = ['feature-1', 'feature-2']
+    ;(el as any).highlightFeatures(ids)
+
+    expect(mockMap.setFeatureState).toHaveBeenCalledTimes(2)
+    expect(mockMap.setFeatureState).toHaveBeenCalledWith(
+      { source: 'composite', id: 'feature-1' },
+      { selected: true },
+    )
+  })
+
+  it('clearHighlight resets all feature states', async () => {
+    const { el, mockMap } = await createAndAttach()
+
+    ;(el as any).clearHighlight()
+
+    expect(mockMap.removeFeatureState).toHaveBeenCalledWith({ source: 'composite' })
+  })
+
+  it('dispatches featureselected event on draw.selectionchange', async () => {
+    await createAndAttach({ mode: 'paint', scenarioId: 1 })
+
+    const el = document.querySelector('brew-gis-map')!
+    const eventSpy = vi.fn()
+    el.addEventListener('featureselected', eventSpy)
+
+    // Simulate draw.selectionchange from the draw controller
+    triggerMockEvent('draw.selectionchange', {
+      features: [{ id: '1', properties: {} }],
+    })
+
+    expect(eventSpy).toHaveBeenCalled()
+    const detail = eventSpy.mock.calls[0][0].detail
+    expect(detail).toHaveProperty('features')
   })
 })

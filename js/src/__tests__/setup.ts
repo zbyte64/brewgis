@@ -42,12 +42,26 @@ const mockMap = {
   dragRotate: { enable: vi.fn(), disable: vi.fn() },
   touchZoomRotate: { enable: vi.fn(), disable: vi.fn() },
   addControl: vi.fn(),
+  removeControl: vi.fn(),
+  setFeatureState: vi.fn(),
+  removeFeatureState: vi.fn(),
 }
 
 // Helper to trigger events in tests (e.g. triggerMockEvent('moveend'))
 const triggerMockEvent = (event: string, ...args: unknown[]) => {
   const cbs = mockEventCallbacks[event] || []
   cbs.forEach((cb) => cb(...args))
+}
+
+// Mock draw instance
+const mockDrawInstance = {
+  getSelectedIds: vi.fn().mockReturnValue([]),
+  getAll: vi.fn().mockReturnValue({ features: [] }),
+  deleteAll: vi.fn(),
+  changeMode: vi.fn(),
+  onAdd: vi.fn().mockReturnValue(document.createElement('div')),
+  onRemove: vi.fn(),
+  add: vi.fn().mockReturnValue([]),
 }
 
 const mockNavControl = vi.fn()
@@ -68,4 +82,8 @@ vi.mock('maplibre-gl', () => ({
   AttributionControl: mockAttributionControl,
 }))
 
-export { mockMap, triggerMockEvent }
+vi.mock('maplibre-gl-draw', () => ({
+  default: vi.fn(() => mockDrawInstance),
+}))
+
+export { mockMap, mockDrawInstance, triggerMockEvent }
