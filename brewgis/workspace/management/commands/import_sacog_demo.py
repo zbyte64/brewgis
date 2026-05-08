@@ -103,7 +103,16 @@ class Command(BaseCommand):
         parser.add_argument(
             "--step",
             default="all",
-            choices=["all", "discover", "built_forms", "workspace", "base_canvas", "stitch", "analysis", "validate"],
+            choices=[
+                "all",
+                "discover",
+                "built_forms",
+                "workspace",
+                "base_canvas",
+                "stitch",
+                "analysis",
+                "validate",
+            ],
             help="Which step to run (default: all)",
         )
         parser.add_argument(
@@ -121,7 +130,15 @@ class Command(BaseCommand):
         self.stdout.write(f"  Import SACOG v1 Demo — step: {step}")
         self.stdout.write(f"{'=' * 60}\n")
 
-        steps_to_run = ["discover", "built_forms", "workspace", "base_canvas", "stitch", "analysis", "validate"]
+        steps_to_run = [
+            "discover",
+            "built_forms",
+            "workspace",
+            "base_canvas",
+            "stitch",
+            "analysis",
+            "validate",
+        ]
         if step != "all":
             steps_to_run = [step]
 
@@ -145,7 +162,11 @@ class Command(BaseCommand):
         print_summary(manifest)
 
         n_tables = sum(len(tables) for tables in manifest.values())
-        self.stdout.write(self.style.SUCCESS(f"  ✓ Manifest generated: {n_tables} tables across {len(manifest)} schemas"))
+        self.stdout.write(
+            self.style.SUCCESS(
+                f"  ✓ Manifest generated: {n_tables} tables across {len(manifest)} schemas"
+            )
+        )
 
     # ── Step: built_forms ─────────────────────────────────────────────
 
@@ -153,11 +174,15 @@ class Command(BaseCommand):
         """Extract v1 FlatBuiltForm → BuildingType records."""
         self.stdout.write("Phase 3: Built Form Extraction...")
 
-        from brewgis.workspace.services.sacog_built_form_extractor import extract_built_forms
+        from brewgis.workspace.services.sacog_built_form_extractor import (
+            extract_built_forms,
+        )
 
         count = extract_built_forms(overwrite=force)
         if count > 0:
-            self.stdout.write(self.style.SUCCESS(f"  ✓ Created {count} BuildingType records"))
+            self.stdout.write(
+                self.style.SUCCESS(f"  ✓ Created {count} BuildingType records")
+            )
         else:
             existing = __import__("django.db.models", fromlist=["Count"]).Count
             from brewgis.workspace.built_forms.models import BuildingType
@@ -185,7 +210,9 @@ class Command(BaseCommand):
             },
         )
         if created:
-            self.stdout.write(f"  ✓ Created workspace: {WORKSPACE_NAME} (schema: {WORKSPACE_SCHEMA})")
+            self.stdout.write(
+                f"  ✓ Created workspace: {WORKSPACE_NAME} (schema: {WORKSPACE_SCHEMA})"
+            )
         else:
             self.stdout.write(f"  ✓ Workspace already exists: {WORKSPACE_NAME}")
 
@@ -194,6 +221,7 @@ class Command(BaseCommand):
             cursor.execute(f"CREATE SCHEMA IF NOT EXISTS {WORKSPACE_SCHEMA}")
 
         from brewgis.workspace.models import ScenarioType as ScenarioTypeModel
+
         scenario, created = Scenario.objects.get_or_create(
             workspace=ws,
             name=SCENARIO_NAME,
@@ -248,14 +276,18 @@ class Command(BaseCommand):
 
         from django.db import connection
 
-        from brewgis.workspace.services.sacog_column_mapping import build_create_view_sql
+        from brewgis.workspace.services.sacog_column_mapping import (
+            build_create_view_sql,
+        )
         from brewgis.workspace.services.sacog_schema_discovery import load_manifest
 
         # Verify the v1 table exists
         manifest = load_manifest()
         public_tables = manifest.get("public", {})
         if V1_BASE_TABLE.split(".")[-1] not in public_tables:
-            raise CommandError(f"V1 base table not found: {V1_BASE_TABLE}. Run 'python manage.py restore_demo_db' first.")
+            raise CommandError(
+                f"V1 base table not found: {V1_BASE_TABLE}. Run 'python manage.py restore_demo_db' first."
+            )
 
         # Build and create the view
         sql = build_create_view_sql(
@@ -269,7 +301,9 @@ class Command(BaseCommand):
 
         # Verify row count
         with connection.cursor() as cursor:
-            cursor.execute(f'SELECT count(*) FROM "{WORKSPACE_SCHEMA}"."{CANVAS_VIEW_NAME}"')
+            cursor.execute(
+                f'SELECT count(*) FROM "{WORKSPACE_SCHEMA}"."{CANVAS_VIEW_NAME}"'
+            )
             row_count = cursor.fetchone()[0]
         self.stdout.write(f"  ✓ View has {row_count} rows")
 
@@ -285,10 +319,14 @@ class Command(BaseCommand):
             actual_cols = cursor.fetchone()[0]
         expected_cols = len(BaseCanvasSchema.COLUMN_NAMES)
         if actual_cols == expected_cols:
-            self.stdout.write(f"  ✓ View has {actual_cols}/{expected_cols} columns (correct)")
+            self.stdout.write(
+                f"  ✓ View has {actual_cols}/{expected_cols} columns (correct)"
+            )
         else:
             self.stdout.write(
-                self.style.WARNING(f"  ⚠ View has {actual_cols} columns, expected {expected_cols}")
+                self.style.WARNING(
+                    f"  ⚠ View has {actual_cols} columns, expected {expected_cols}"
+                )
             )
 
         self.stdout.write(self.style.SUCCESS("  ✓ Base canvas view ready"))
@@ -323,7 +361,9 @@ class Command(BaseCommand):
                 null_count = cursor.fetchone()[0]
                 if null_count > 0:
                     null_cols.append((col, null_count))
-                    cursor.execute(f"UPDATE {q_view} SET {col} = COALESCE({col}, 0.0) WHERE {col} IS NULL")
+                    cursor.execute(
+                        f"UPDATE {q_view} SET {col} = COALESCE({col}, 0.0) WHERE {col} IS NULL"
+                    )
 
         if null_cols:
             for col, n in null_cols:
@@ -340,7 +380,9 @@ class Command(BaseCommand):
                 FROM {q_view}"""
             )
             r = cursor.fetchone()
-            self.stdout.write(f"  Summary: pop={r[0]:.0f}, hh={r[1]:.0f}, du={r[2]:.0f}, emp={r[3]:.0f}")
+            self.stdout.write(
+                f"  Summary: pop={r[0]:.0f}, hh={r[1]:.0f}, du={r[2]:.0f}, emp={r[3]:.0f}"
+            )
 
         self.stdout.write(self.style.SUCCESS("  ✓ Imputation complete"))
 
@@ -389,7 +431,12 @@ class Command(BaseCommand):
             "water_demand": ["water_demand"],
             "energy_demand": ["energy_demand"],
             "land_consumption": ["land_consumption"],
-            "fiscal": ["fiscal_property_tax", "fiscal_sales_tax", "fiscal_service_costs", "fiscal_net_impact"],
+            "fiscal": [
+                "fiscal_property_tax",
+                "fiscal_sales_tax",
+                "fiscal_service_costs",
+                "fiscal_net_impact",
+            ],
             "agriculture": ["agriculture"],
             "trip_generation": ["trip_generation"],
             "vmt": ["vmt"],
@@ -400,9 +447,15 @@ class Command(BaseCommand):
         self._create_base_case_end_state()
         completed.append("core")
 
-        for module in ordered_modules:
+        # Modules handled by standalone scripts (dbt can't cross-adapter ref)
+        STANDALONE_MODULES = {"trip_distribution", "mode_choice"}
+        dbt_modules = [m for m in ordered_modules if m not in STANDALONE_MODULES]
+
+        for module in dbt_modules:
             model_selectors = MODULE_SELECTS.get(module, [module])
-            self.stdout.write(f"  Running module: {module} ({', '.join(model_selectors)})...")
+            self.stdout.write(
+                f"  Running module: {module} ({', '.join(model_selectors)})..."
+            )
             result = run_dbt_local(
                 select=model_selectors,
                 vars_={**svars, "completed_modules": list(completed)},
@@ -411,15 +464,39 @@ class Command(BaseCommand):
                 self.stdout.write(f"  ✓ {module} completed successfully")
                 completed.append(module)
             else:
-                self.stdout.write(self.style.ERROR(f"  ✗ {module} failed: {result.error}"))
+                self.stdout.write(
+                    self.style.ERROR(f"  ✗ {module} failed: {result.error}")
+                )
                 break
+
+        # Run standalone transport models after dbt trip_generation succeeds
+        if "trip_generation" in completed:
+            self.stdout.write("  Running standalone transport models...")
+            from brewgis.workspace.analysis.transport import run_trip_distribution
+            from brewgis.workspace.analysis.transport import run_mode_choice
+
+            td_count = run_trip_distribution(WORKSPACE_SCHEMA, SCENARIO_SLUG)
+            self.stdout.write(f"  ✓ trip_distribution completed: {td_count} rows")
+            completed.append("trip_distribution")
+
+            mc_count = run_mode_choice(WORKSPACE_SCHEMA, SCENARIO_SLUG)
+            self.stdout.write(f"  ✓ mode_choice completed: {mc_count} rows")
+            completed.append("mode_choice")
+
         if len(completed) == len(ordered_modules):
-            self.stdout.write(self.style.SUCCESS("  ✓ Analysis pipeline completed successfully"))
+            self.stdout.write(
+                self.style.SUCCESS("  ✓ Analysis pipeline completed successfully")
+            )
         else:
-            self.stdout.write(self.style.WARNING(f"  ⚠ Completed {len(completed)}/{len(ordered_modules)} modules"))
+            self.stdout.write(
+                self.style.WARNING(
+                    f"  ⚠ Completed {len(completed)}/{len(ordered_modules)} modules"
+                )
+            )
 
         # Verify output tables
         self._verify_output_tables(scenario)
+
     def _create_base_case_end_state(self) -> None:
         """Create end_state_base + increment_base as direct v1 passthrough for base case.
 
@@ -492,7 +569,10 @@ class Command(BaseCommand):
                 "CREATE OR REPLACE VIEW sacog_demo.increment_base AS "
                 "SELECT * FROM sacog_demo.end_state_base WHERE 1=0"
             )
-        self.stdout.write("  ✓ Created end_state_base + increment_base (direct v1 passthrough)")
+        self.stdout.write(
+            "  ✓ Created end_state_base + increment_base (direct v1 passthrough)"
+        )
+
     def _check_prerequisites(self) -> None:
         """Check that the environment and tables are ready for analysis."""
         from django.db import connection
@@ -519,7 +599,11 @@ class Command(BaseCommand):
         if missing:
             for m in missing:
                 self.stdout.write(self.style.WARNING(f"  ⚠ Missing: {m}"))
-            self.stdout.write(self.style.WARNING("  ⚠ Some prerequisites are missing — analysis may fail"))
+            self.stdout.write(
+                self.style.WARNING(
+                    "  ⚠ Some prerequisites are missing — analysis may fail"
+                )
+            )
 
     def _export_built_forms(self) -> None:
         """Export BuildingType records to the workspace schema for dbt."""
@@ -531,7 +615,9 @@ class Command(BaseCommand):
         with connection.cursor() as cursor:
             cursor.execute(f'SELECT count(*) FROM "{WORKSPACE_SCHEMA}"."built_forms"')
             count = cursor.fetchone()[0]
-        self.stdout.write(f"  ✓ Exported {count} built forms to {WORKSPACE_SCHEMA}.built_forms")
+        self.stdout.write(
+            f"  ✓ Exported {count} built forms to {WORKSPACE_SCHEMA}.built_forms"
+        )
 
     def _register_base_canvas_layer(self, ws) -> None:
         """Register the base canvas view as a Layer record."""
@@ -557,7 +643,11 @@ class Command(BaseCommand):
 
         all_ok = True
         for module_name, table_names in MODULE_RESULT_TABLES.items():
-            names = list(table_names) if isinstance(table_names, (list, tuple)) else [table_names]
+            names = (
+                list(table_names)
+                if isinstance(table_names, (list, tuple))
+                else [table_names]
+            )
             for table_pattern in names:
                 table_name = table_pattern.format(scenario_id=scenario.slug)
                 schema = WORKSPACE_SCHEMA
@@ -568,22 +658,31 @@ class Command(BaseCommand):
                     )
                     exists = cursor.fetchone()[0] > 0
                     if exists:
-                        cursor.execute(f'SELECT count(*) FROM "{schema}"."{table_name}"')
+                        cursor.execute(
+                            f'SELECT count(*) FROM "{schema}"."{table_name}"'
+                        )
                         row_count = cursor.fetchone()[0]
-                        self.stdout.write(f"  ✓ {schema}.{table_name}: {row_count} rows")
+                        self.stdout.write(
+                            f"  ✓ {schema}.{table_name}: {row_count} rows"
+                        )
                     else:
-                        self.stdout.write(self.style.WARNING(f"  ⚠ {schema}.{table_name}: NOT FOUND"))
+                        self.stdout.write(
+                            self.style.WARNING(f"  ⚠ {schema}.{table_name}: NOT FOUND")
+                        )
                         all_ok = False
 
         if all_ok:
             self.stdout.write(self.style.SUCCESS("  ✓ All output tables verified"))
+
     # ── Step: validate ────────────────────────────────────────────────
 
     def _step_validate(self, *, force: bool = False) -> None:
         """Run imputation validation report."""
         self.stdout.write("Phase 7: Imputation Validation...")
 
-        from brewgis.workspace.services.sacog_imputation_validator import run_validation_report
+        from brewgis.workspace.services.sacog_imputation_validator import (
+            run_validation_report,
+        )
 
         results = run_validation_report(
             scenario_schema=WORKSPACE_SCHEMA,
