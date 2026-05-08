@@ -158,7 +158,7 @@ class AnalysisLaunchView(FormView):
 
         if self.request.htmx:  # type: ignore[attr-defined]
             html = render_to_string(
-                "workspace/analysis/partials/_status.html",
+                "workspace/analysis/status.html#analysis-status",
                 {"run": run},
                 request=self.request,
             )
@@ -179,7 +179,7 @@ def analysis_status(request: HttpRequest, run_pk: int) -> HttpResponse:
     run = get_object_or_404(AnalysisRun, pk=run_pk)
     return render(
         request,
-        "workspace/analysis/partials/_status.html",
+        "workspace/analysis/status.html#analysis-status",
         {"run": run},
     )
 

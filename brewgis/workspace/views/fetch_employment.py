@@ -78,7 +78,7 @@ class EmploymentFetchView(FormView):
 
         if self.request.htmx:  # type: ignore[attr-defined]
             html = render_to_string(
-                "workspace/import/partials/_import_status.html",
+                "workspace/import/status.html#import-status",
                 {"run": run},
                 request=self.request,
             )
@@ -104,6 +104,6 @@ def employment_preview(request: HttpRequest) -> HttpResponse:
 
     return render(
         request,
-        "workspace/import/partials/_employment_preview.html",
+        "workspace/import_center.html#employment-preview",
         {"summary": summary},
     )

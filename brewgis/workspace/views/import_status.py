@@ -16,6 +16,6 @@ def import_status(request: HttpRequest, run_pk: int) -> HttpResponse:
     run = get_object_or_404(DataImportRun, pk=run_pk)
     return render(
         request,
-        "workspace/import/partials/_import_status.html",
+        "workspace/import/status.html#import-status",
         {"run": run},
     )

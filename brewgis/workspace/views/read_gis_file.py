@@ -60,7 +60,7 @@ class ReadGISFileView(FormView):
         if self.request.htmx:  # type: ignore[attr-defined]
             return render(
                 self.request,
-                "workspace/partials/_form_content.html",
+                "form.html#form-content",
                 {"form": form, "view": self},
             )
         return super().form_invalid(form)

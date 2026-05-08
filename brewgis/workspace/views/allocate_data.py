@@ -105,7 +105,7 @@ class AllocateView(FormView):
 
         if self.request.htmx:  # type: ignore[attr-defined]
             html = render_to_string(
-                "workspace/import/partials/_import_status.html",
+                "workspace/import/status.html#import-status",
                 {"run": run},
                 request=self.request,
             )

@@ -53,7 +53,7 @@ class HtmxResponseMixin:
         if getattr(self.request, "htmx", False):
             return render(
                 self.request,
-                "workspace/partials/_form_content.html",
+                "form.html#form-content",
                 {"form": form, "view": self},
             )
         return super().form_invalid(form)
@@ -217,7 +217,7 @@ def building_type_bake(request: HttpRequest, pk: int) -> HttpResponse:
 
     return render(
         request,
-        "workspace/built_forms/partials/_bake_results.html",
+        "workspace/built_forms/building_type_bake.html#bake-results",
         {
             "result": result,
             "built_form_name": building_type.name,
@@ -256,7 +256,7 @@ def place_type_bake(request: HttpRequest, pk: int) -> HttpResponse:
 
     return render(
         request,
-        "workspace/built_forms/partials/_bake_results.html",
+        "workspace/built_forms/place_type_bake.html#bake-results",
         {
             "result": result,
             "built_form_name": place_type.name,

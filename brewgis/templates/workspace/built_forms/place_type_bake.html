@@ -43,3 +43,162 @@
   </div>
 </div>
 {% endblock content %}
+{% partialdef bake-results %}
+<div class="card mt-3" id="bake-results">
+  <div class="card-header">
+    <h5 class="card-title mb-0">
+      Baking Results: {{ built_form_name }}
+      <small class="text-muted">({{ acres }} acres, {{ row_pct }}% ROW)</small>
+    </h5>
+  </div>
+  <div class="card-body">
+    <div class="row">
+      <div class="col-md-6">
+        <h6>Land</h6>
+        <table class="table table-sm small">
+          <tr>
+            <td>Gross acres</td>
+            <td class="text-end">{{ acres|floatformat:2 }}</td>
+          </tr>
+          <tr>
+            <td>ROW acres</td>
+            <td class="text-end">{{ result.row_acres|floatformat:2 }}</td>
+          </tr>
+          <tr>
+            <td>Developable acres</td>
+            <td class="text-end">{{ result.developable_acres|floatformat:2 }}</td>
+          </tr>
+        </table>
+      </div>
+      <div class="col-md-6">
+        <h6>Density</h6>
+        <table class="table table-sm small">
+          <tr>
+            <td>Dwelling units</td>
+            <td class="text-end">{{ result.total_dwelling_units|floatformat:0 }}</td>
+          </tr>
+          <tr>
+            <td>Population</td>
+            <td class="text-end">{{ result.total_population|floatformat:0 }}</td>
+          </tr>
+          <tr>
+            <td>Households</td>
+            <td class="text-end">{{ result.total_households|floatformat:0 }}</td>
+          </tr>
+          <tr>
+            <td>Employment</td>
+            <td class="text-end">{{ result.total_employment|floatformat:0 }}</td>
+          </tr>
+        </table>
+      </div>
+    </div>
+
+    <div class="row mt-3">
+      <div class="col-md-6">
+        <h6>Floor Area &amp; Parking</h6>
+        <table class="table table-sm small">
+          <tr>
+            <td>Floor area</td>
+            <td class="text-end">{{ result.floor_area_m2|floatformat:0 }} m²</td>
+          </tr>
+          <tr>
+            <td>Building footprint</td>
+            <td class="text-end">{{ result.building_footprint_m2|floatformat:0 }} m²</td>
+          </tr>
+          <tr>
+            <td>Parking spaces</td>
+            <td class="text-end">{{ result.parking_spaces|floatformat:0 }}</td>
+          </tr>
+          <tr>
+            <td>Parking area</td>
+            <td class="text-end">{{ result.parking_area_m2|floatformat:0 }} m²</td>
+          </tr>
+        </table>
+      </div>
+      <div class="col-md-6">
+        <h6>Trips &amp; Resources</h6>
+        <table class="table table-sm small">
+          <tr>
+            <td>Daily trips</td>
+            <td class="text-end">{{ result.trips_per_day|floatformat:0 }}</td>
+          </tr>
+          <tr>
+            <td>Indoor water</td>
+            <td class="text-end">{{ result.water_demand_indoor_l|floatformat:0 }} L/yr</td>
+          </tr>
+          <tr>
+            <td>Outdoor water</td>
+            <td class="text-end">{{ result.water_demand_outdoor_l|floatformat:0 }} L/yr</td>
+          </tr>
+          <tr>
+            <td>Electricity</td>
+            <td class="text-end">{{ result.energy_electricity_kwh|floatformat:0 }} kWh/yr</td>
+          </tr>
+          <tr>
+            <td>Natural gas</td>
+            <td class="text-end">{{ result.energy_gas_kwh|floatformat:0 }} kWh/yr</td>
+          </tr>
+        </table>
+      </div>
+    </div>
+
+    {% if result.employment_by_sector %}
+      <div class="row mt-3">
+        <div class="col-12">
+          <h6>Employment by Sector</h6>
+          <table class="table table-sm small">
+            <thead>
+              <tr>
+                <th>Sector</th>
+                <th class="text-end">Jobs</th>
+              </tr>
+            </thead>
+            <tbody>
+              {% for sector, jobs in result.employment_by_sector.items %}
+                <tr>
+                  <td>{{ sector|title }}</td>
+                  <td class="text-end">{{ jobs|floatformat:0 }}</td>
+                </tr>
+              {% endfor %}
+            </tbody>
+          </table>
+        </div>
+      </div>
+    {% endif %}
+
+    {% if result.per_building_type_breakdown %}
+      <div class="row mt-3">
+        <div class="col-12">
+          <h6>Per Building Type Breakdown</h6>
+          <table class="table table-sm small">
+            <thead>
+              <tr>
+                <th>Building Type</th>
+                <th class="text-end">%</th>
+                <th class="text-end">Acres</th>
+                <th class="text-end">DU</th>
+                <th class="text-end">Population</th>
+                <th class="text-end">Employment</th>
+                <th class="text-end">Floor Area m²</th>
+              </tr>
+            </thead>
+            <tbody>
+              {% for break in result.per_building_type_breakdown %}
+                <tr>
+                  <td>{{ break.building_type_name }}</td>
+                  <td class="text-end">{{ break.percentage|floatformat:0 }}</td>
+                  <td class="text-end">{{ break.acres|floatformat:2 }}</td>
+                  <td class="text-end">{{ break.dwelling_units|floatformat:0 }}</td>
+                  <td class="text-end">{{ break.population|floatformat:0 }}</td>
+                  <td class="text-end">{{ break.employment|floatformat:0 }}</td>
+                  <td class="text-end">{{ break.floor_area_m2|floatformat:0 }}</td>
+                </tr>
+              {% endfor %}
+            </tbody>
+          </table>
+        </div>
+      </div>
+    {% endif %}
+  </div>
+</div>
+{% endpartialdef %}

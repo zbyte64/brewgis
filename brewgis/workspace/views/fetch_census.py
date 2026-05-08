@@ -80,7 +80,7 @@ class CensusFetchView(FormView):
 
         if self.request.htmx:  # type: ignore[attr-defined]
             html = render_to_string(
-                "workspace/import/partials/_import_status.html",
+                "workspace/import/status.html#import-status",
                 {"run": run},
                 request=self.request,
             )
@@ -106,6 +106,6 @@ def census_preview(request: HttpRequest) -> HttpResponse:
 
     return render(
         request,
-        "workspace/import/partials/_census_preview.html",
+        "workspace/import_center.html#census-preview",
         {"summary": summary},
     )
