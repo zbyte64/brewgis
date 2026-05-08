@@ -298,3 +298,68 @@ class TestNewModuleResolution(TestCase):
             assert module in MODULE_RESULT_TABLES, (
                 f"{module} missing from MODULE_RESULT_TABLES"
             )
+
+    def test_trip_generation_depends_on_core(self) -> None:
+        """trip_generation requires core in its dependency chain."""
+        from brewgis.workspace.analysis.pipeline import resolve_module_order
+
+        ordered = resolve_module_order([
+            "env_constraint", "core", "trip_generation"
+        ])
+        assert ordered.index("core") < ordered.index("trip_generation")
+
+    def test_trip_distribution_depends_on_trip_generation(self) -> None:
+        """trip_distribution requires trip_generation in its chain."""
+        from brewgis.workspace.analysis.pipeline import resolve_module_order
+
+        ordered = resolve_module_order([
+            "env_constraint", "core", "trip_generation", "trip_distribution"
+        ])
+        assert ordered.index("trip_generation") < ordered.index("trip_distribution")
+
+    def test_mode_choice_depends_on_trip_distribution(self) -> None:
+        """mode_choice requires trip_distribution in its chain."""
+        from brewgis.workspace.analysis.pipeline import resolve_module_order
+
+        ordered = resolve_module_order([
+            "env_constraint", "core", "trip_generation",
+            "trip_distribution", "mode_choice",
+        ])
+        assert ordered.index("trip_distribution") < ordered.index("mode_choice")
+
+    def test_vmt_depends_on_mode_choice(self) -> None:
+        """vmt requires mode_choice in its chain."""
+        from brewgis.workspace.analysis.pipeline import resolve_module_order
+
+        ordered = resolve_module_order([
+            "env_constraint", "core", "trip_generation",
+            "trip_distribution", "mode_choice", "vmt",
+        ])
+        assert ordered.index("mode_choice") < ordered.index("vmt")
+
+    def test_full_pipeline_ordering(self) -> None:
+        """All modules resolve correctly: core → trip_generation → trip_distribution → mode_choice → vmt."""
+        from brewgis.workspace.analysis.pipeline import resolve_module_order
+
+        ordered = resolve_module_order([
+            "env_constraint", "core", "trip_generation",
+            "trip_distribution", "mode_choice", "vmt",
+        ])
+        core_idx = ordered.index("core")
+        tg_idx = ordered.index("trip_generation")
+        td_idx = ordered.index("trip_distribution")
+        mc_idx = ordered.index("mode_choice")
+        vm_idx = ordered.index("vmt")
+        assert core_idx < tg_idx < td_idx < mc_idx < vm_idx, (
+            f"Expected core < trip_generation < trip_distribution < mode_choice < vmt, "
+            f"got indices: core={core_idx}, tg={tg_idx}, td={td_idx}, mc={mc_idx}, vmt={vm_idx}"
+        )
+
+    def test_transport_module_result_tables_defined(self) -> None:
+        """Transport modules must have result tables in MODULE_RESULT_TABLES."""
+        from brewgis.workspace.analysis.pipeline import MODULE_RESULT_TABLES
+
+        for module in ["trip_generation", "trip_distribution", "mode_choice", "vmt"]:
+            assert module in MODULE_RESULT_TABLES, (
+                f"{module} missing from MODULE_RESULT_TABLES"
+            )

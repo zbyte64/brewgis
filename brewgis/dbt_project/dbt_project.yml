@@ -22,6 +22,19 @@ models:
   brewgis:
     +materialized: view
     +schema: "{{ var('target_schema', 'public') }}"
+    trip_distribution:
+      +materialized: table
+      +transport_impedance_exponent: "{{ var('transport_impedance_exponent', 2.0) }}"
+      +transport_attraction_employment_weight: "{{ var('transport_attraction_employment_weight', 1.0) }}"
+      +transport_attraction_du_weight: "{{ var('transport_attraction_du_weight', 0.5) }}"
+    mode_choice:
+      +materialized: table
+      +transport_asc_transit: "{{ var('transport_asc_transit', -2.0) }}"
+      +transport_asc_walk: "{{ var('transport_asc_walk', -1.5) }}"
+      +transport_asc_bike: "{{ var('transport_asc_bike', -2.5) }}"
+      +transport_beta_density: "{{ var('transport_beta_density', 0.15) }}"
+      +transport_beta_design_walk: "{{ var('transport_beta_design_walk', 0.05) }}"
+      +transport_beta_transit_dist: "{{ var('transport_beta_transit_dist', 0.02) }}"
 vars:
   # Default values for SQLFluff / dbt compilation.
   # Runtime values are provided by dbt_runner.py when executing models.
@@ -59,4 +72,21 @@ vars:
   crop_water_per_acre_af: 3.0
   crop_labor_hours_per_acre: 15
   crop_truck_trips_per_acre: 2
+
+  # Transportation — trip generation, distribution, mode choice, VMT (Phase 6a)
+  transport_nonres_trip_rate: 42.94
+  transport_pass_by_pct: 0.0
+  transport_hbw_pct: 0.18
+  transport_hbo_pct: 0.42
+  transport_nhb_pct: 0.40
+  transport_impedance_exponent: 2.0
+  transport_attraction_employment_weight: 1.0
+  transport_attraction_du_weight: 0.5
+  transport_asc_transit: -2.0
+  transport_asc_walk: -1.5
+  transport_asc_bike: -2.5
+  transport_beta_density: 0.15
+  transport_beta_design_walk: 0.05
+  transport_beta_transit_dist: 0.02
+  transport_circuity_factor: 1.2
 

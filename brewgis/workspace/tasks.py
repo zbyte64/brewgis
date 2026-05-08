@@ -598,6 +598,282 @@ def run_agriculture(
         "layer_table": None,
     }
 # ────────────────────────────────────────────────────────────
+#  Transportation module tasks (T1–T4)
+# ────────────────────────────────────────────────────────────
+
+
+@shared_task(
+    bind=True,
+    name="run_trip_generation",
+    autoretry_for=(Exception,),
+    max_retries=2,
+    default_retry_delay=60,
+)
+def run_trip_generation(
+    self,
+    workspace_id: int,
+    vars_: dict | None = None,
+) -> dict:
+    """Run the Trip Generation dbt model (T1).
+
+    Computes daily trip generation per parcel from ITE rates.
+
+    Args:
+        workspace_id: Workspace primary key.
+        vars_: dbt variables dict.
+
+    Returns:
+        Dict with keys: success, results, error, layer_schema, layer_table.
+    """
+    resolved_vars = vars_ or {}
+    logger.info(
+        "Running trip_generation for workspace %s with vars: %s",
+        workspace_id,
+        resolved_vars,
+    )
+
+    runner = DbtRunnerWrapper()
+    dbt_result = runner.run(
+        select=["trip_generation"],
+        vars_=resolved_vars,
+        full_refresh=True,
+    )
+
+    if dbt_result.success:
+        target_schema = resolved_vars.get("target_schema", "public")
+        scenario_id = resolved_vars.get("scenario_id", "default")
+        logger.info(
+            "trip_generation completed for workspace %s (scenario %s)",
+            workspace_id,
+            scenario_id,
+        )
+        return {
+            "success": True,
+            "results": dbt_result.results,
+            "error": None,
+            "layer_schema": target_schema,
+            "layer_table": f"trip_generation_{scenario_id}",
+        }
+
+    error_msg = dbt_result.error or "Unknown dbt error"
+    logger.error(
+        "trip_generation failed for workspace %s: %s",
+        workspace_id,
+        error_msg,
+    )
+    return {
+        "success": False,
+        "results": [],
+        "error": error_msg,
+        "layer_schema": None,
+        "layer_table": None,
+    }
+
+
+@shared_task(
+    bind=True,
+    name="run_trip_distribution",
+    autoretry_for=(Exception,),
+    max_retries=2,
+    default_retry_delay=60,
+)
+def run_trip_distribution(
+    self,
+    workspace_id: int,
+    vars_: dict | None = None,
+) -> dict:
+    """Run the Trip Distribution dbt Python model (T2).
+
+    Computes parcel-to-parcel trip distribution using a gravity model.
+
+    Args:
+        workspace_id: Workspace primary key.
+        vars_: dbt variables dict.
+
+    Returns:
+        Dict with keys: success, results, error, layer_schema, layer_table.
+    """
+    resolved_vars = vars_ or {}
+    logger.info(
+        "Running trip_distribution for workspace %s with vars: %s",
+        workspace_id,
+        resolved_vars,
+    )
+
+    runner = DbtRunnerWrapper()
+    dbt_result = runner.run(
+        select=["trip_distribution"],
+        vars_=resolved_vars,
+        full_refresh=True,
+    )
+
+    if dbt_result.success:
+        target_schema = resolved_vars.get("target_schema", "public")
+        scenario_id = resolved_vars.get("scenario_id", "default")
+        logger.info(
+            "trip_distribution completed for workspace %s (scenario %s)",
+            workspace_id,
+            scenario_id,
+        )
+        return {
+            "success": True,
+            "results": dbt_result.results,
+            "error": None,
+            "layer_schema": target_schema,
+            "layer_table": f"trip_distribution_{scenario_id}",
+        }
+
+    error_msg = dbt_result.error or "Unknown dbt error"
+    logger.error(
+        "trip_distribution failed for workspace %s: %s",
+        workspace_id,
+        error_msg,
+    )
+    return {
+        "success": False,
+        "results": [],
+        "error": error_msg,
+        "layer_schema": None,
+        "layer_table": None,
+    }
+
+
+@shared_task(
+    bind=True,
+    name="run_mode_choice",
+    autoretry_for=(Exception,),
+    max_retries=2,
+    default_retry_delay=60,
+)
+def run_mode_choice(
+    self,
+    workspace_id: int,
+    vars_: dict | None = None,
+) -> dict:
+    """Run the Mode Choice dbt Python model (T3).
+
+    Computes mode split (auto/transit/walk/bike) using multinomial logit.
+
+    Args:
+        workspace_id: Workspace primary key.
+        vars_: dbt variables dict.
+
+    Returns:
+        Dict with keys: success, results, error, layer_schema, layer_table.
+    """
+    resolved_vars = vars_ or {}
+    logger.info(
+        "Running mode_choice for workspace %s with vars: %s",
+        workspace_id,
+        resolved_vars,
+    )
+
+    runner = DbtRunnerWrapper()
+    dbt_result = runner.run(
+        select=["mode_choice"],
+        vars_=resolved_vars,
+        full_refresh=True,
+    )
+
+    if dbt_result.success:
+        target_schema = resolved_vars.get("target_schema", "public")
+        scenario_id = resolved_vars.get("scenario_id", "default")
+        logger.info(
+            "mode_choice completed for workspace %s (scenario %s)",
+            workspace_id,
+            scenario_id,
+        )
+        return {
+            "success": True,
+            "results": dbt_result.results,
+            "error": None,
+            "layer_schema": target_schema,
+            "layer_table": f"mode_choice_{scenario_id}",
+        }
+
+    error_msg = dbt_result.error or "Unknown dbt error"
+    logger.error(
+        "mode_choice failed for workspace %s: %s",
+        workspace_id,
+        error_msg,
+    )
+    return {
+        "success": False,
+        "results": [],
+        "error": error_msg,
+        "layer_schema": None,
+        "layer_table": None,
+    }
+
+
+@shared_task(
+    bind=True,
+    name="run_vmt",
+    autoretry_for=(Exception,),
+    max_retries=2,
+    default_retry_delay=60,
+)
+def run_vmt(
+    self,
+    workspace_id: int,
+    vars_: dict | None = None,
+) -> dict:
+    """Run the VMT dbt model (T4).
+
+    Computes vehicle miles traveled from mode choice and trip distribution.
+
+    Args:
+        workspace_id: Workspace primary key.
+        vars_: dbt variables dict.
+
+    Returns:
+        Dict with keys: success, results, error, layer_schema, layer_table.
+    """
+    resolved_vars = vars_ or {}
+    logger.info(
+        "Running vmt for workspace %s with vars: %s",
+        workspace_id,
+        resolved_vars,
+    )
+
+    runner = DbtRunnerWrapper()
+    dbt_result = runner.run(
+        select=["vmt"],
+        vars_=resolved_vars,
+        full_refresh=True,
+    )
+
+    if dbt_result.success:
+        target_schema = resolved_vars.get("target_schema", "public")
+        scenario_id = resolved_vars.get("scenario_id", "default")
+        logger.info(
+            "vmt completed for workspace %s (scenario %s)",
+            workspace_id,
+            scenario_id,
+        )
+        return {
+            "success": True,
+            "results": dbt_result.results,
+            "error": None,
+            "layer_schema": target_schema,
+            "layer_table": f"vmt_{scenario_id}",
+        }
+
+    error_msg = dbt_result.error or "Unknown dbt error"
+    logger.error(
+        "vmt failed for workspace %s: %s",
+        workspace_id,
+        error_msg,
+    )
+    return {
+        "success": False,
+        "results": [],
+        "error": error_msg,
+        "layer_schema": None,
+        "layer_table": None,
+    }
+
+# ────────────────────────────────────────────────────────────
 #  Pipeline chain callback
 # ────────────────────────────────────────────────────────────
 

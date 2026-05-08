@@ -29,6 +29,10 @@ from brewgis.workspace.tasks import run_env_constraint
 from brewgis.workspace.tasks import run_fiscal
 from brewgis.workspace.tasks import run_land_consumption
 from brewgis.workspace.tasks import run_water_demand
+from brewgis.workspace.tasks import run_trip_generation
+from brewgis.workspace.tasks import run_trip_distribution
+from brewgis.workspace.tasks import run_mode_choice
+from brewgis.workspace.tasks import run_vmt
 
 logger = logging.getLogger(__name__)
 
@@ -41,6 +45,10 @@ MODULE_DEPENDENCIES: dict[str, list[str]] = {
     "land_consumption": ["core"],
     "fiscal": ["core"],
     "agriculture": ["core"],
+    "trip_generation": ["core"],
+    "trip_distribution": ["trip_generation"],
+    "mode_choice": ["trip_distribution"],
+    "vmt": ["mode_choice"],
 }
 
 # Module → Celery task mapping
@@ -52,6 +60,10 @@ MODULE_TASKS = {
     "land_consumption": run_land_consumption,
     "fiscal": run_fiscal,
     "agriculture": run_agriculture,
+    "trip_generation": run_trip_generation,
+    "trip_distribution": run_trip_distribution,
+    "mode_choice": run_mode_choice,
+    "vmt": run_vmt,
 }
 MODULE_RESULT_TABLES = {
     "env_constraint": "env_constraint_{scenario_id}",
@@ -69,6 +81,10 @@ MODULE_RESULT_TABLES = {
         "fiscal_net_impact_{scenario_id}",
     ],
     "agriculture": "agriculture_{scenario_id}",
+    "trip_generation": "trip_generation_{scenario_id}",
+    "trip_distribution": "trip_distribution_{scenario_id}",
+    "mode_choice": "mode_choice_{scenario_id}",
+    "vmt": "vmt_{scenario_id}",
 }
 
 
