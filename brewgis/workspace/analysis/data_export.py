@@ -24,6 +24,7 @@ logger = logging.getLogger(__name__)
 # Maps dbt-expected column → BuildingType model field name (or SQL expression).
 BUILT_FORM_COLUMNS: dict[str, str] = {
     "id": "id",
+    "key": "name",
     "du_per_acre": "du_per_acre",
     "emp_per_acre": "emp_per_acre",
     "far": "far",

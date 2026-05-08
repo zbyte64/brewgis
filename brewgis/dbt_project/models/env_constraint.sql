@@ -29,6 +29,7 @@
     Materialized as: {{ var('target_schema') }}.env_constraint_{{ var('scenario_id') }}
 #}
 
+{{ config(alias='env_constraint_' ~ var('scenario_id')) }}
 {%- set source_schema = var('source_schema') -%}
 {%- set parcel_table = var('parcel_table') -%}
 {%- set constraints = var('constraints') -%}

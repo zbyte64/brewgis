@@ -92,7 +92,7 @@ WITH parcel_base AS (
         {{ source_schema }}.{{ parcel_table }} AS p
         {{ from_extra }}
     LEFT JOIN {{ source_schema }}.{{ built_form_table }} AS bf
-        ON p.{{ built_form_key }} = bf.id
+        ON p.{{ built_form_key }} = bf.key
 )
 
 SELECT
