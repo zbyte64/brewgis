@@ -10,27 +10,25 @@ from __future__ import annotations
 
 import logging
 from typing import Any
-import deal
 
 import geopandas as gpd
 import pandas as pd
 from django.db import connection
 
-from brewgis.workspace.services.spatial_allocator import (
-    _load_geometries_and_values,
-)
-from brewgis.workspace.services.spatial_allocator import (
-    _compute_allocation_factors,
-)
+from brewgis.workspace.services.spatial_allocator import _compute_allocation_factors
+from brewgis.workspace.services.spatial_allocator import _load_geometries_and_values
 
 logger = logging.getLogger(__name__)
+
+from brewgis.workspace.services.imputation_engine import ImputationEngine
+from brewgis.workspace.services.imputation_engine import ImputationRule
 
 
 def impute_constant(
     schema: str,
     table: str,
     column: str,
-    value: int | float,
+    value: float,
     target_geom_col: str = "geom",
 ) -> dict[str, Any]:
     """Fill all NULL values in a column with a constant default.
@@ -184,8 +182,8 @@ def impute_built_form_default(
     with connection.cursor() as cursor:
         # Check if the column exists in built_form_table
         cursor.execute(
-            f"SELECT column_name FROM information_schema.columns "
-            f"WHERE table_schema = %s AND table_name = %s AND column_name = %s",
+            "SELECT column_name FROM information_schema.columns "
+            "WHERE table_schema = %s AND table_name = %s AND column_name = %s",
             [schema, built_form_table, column],
         )
         if not cursor.fetchone():
@@ -210,3 +208,23 @@ def impute_built_form_default(
         "rows_updated": rows_updated,
         "column": column,
     }
+
+
+def stitch_dataframe(
+    df: pd.DataFrame,
+    rules: list[ImputationRule],
+) -> list[Any]:
+    """Apply imputation rules to a DataFrame using the ImputationEngine.
+
+    This is a convenience wrapper around
+    :meth:`ImputationEngine.apply <brewgis.workspace.services.imputation_engine.ImputationEngine.apply>`.
+
+    Args:
+        df: DataFrame with columns to impute (modified in place).
+        rules: Imputation rules to apply (highest priority first).
+
+    Returns:
+        List of ImputationResult objects, one per rule.
+    """
+    engine = ImputationEngine()
+    return engine.apply(df, rules)

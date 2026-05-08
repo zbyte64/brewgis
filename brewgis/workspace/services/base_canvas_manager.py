@@ -91,18 +91,22 @@ class BaseCanvasManager:
     @classmethod
     def ensure_table(cls) -> str:
         """Idempotent create-or-validate.
-
         Creates the table if it does not exist, then validates the schema.
-        Raises ``RuntimeError`` if expected columns are missing.
+        Drops and recreates the table if expected columns are missing
+        (handles cases where the table was created with an incomplete schema).
 
         Returns the qualified table name.
         """
         cls.create_table()
         missing = cls.validate_schema()
         if missing:
-            msg = (
-                f"Base canvas table is missing {len(missing)} expected column(s): "
-                f"{', '.join(missing)}"
-            )
-            raise RuntimeError(msg)
+            cls.drop_table()
+            cls.create_table()
+            missing = cls.validate_schema()
+            if missing:
+                msg = (
+                    f"Base canvas table is missing {len(missing)} expected column(s) "
+                    f"even after recreation: {', '.join(missing)}"
+                )
+                raise RuntimeError(msg)
         return cls.qualified_name()
