@@ -3,11 +3,12 @@ from django.contrib import admin
 from brewgis.workspace.built_forms.admin import *  # noqa: F403
 
 from .models import AnalysisRun
+from .models import PaintConstraint
 from .models import PaintedCanvas
 from .models import Scenario
+from .models import Workspace
 
 # Register your models here.
-from .models import Workspace
 
 
 class WorkspaceAdmin(admin.ModelAdmin):
@@ -69,3 +70,9 @@ class PaintedCanvasAdmin(admin.ModelAdmin):
     )
     list_filter = ("scenario", "column_name")
     search_fields = ("feature_id",)
+
+@admin.register(PaintConstraint)
+class PaintConstraintAdmin(admin.ModelAdmin):
+    list_display = ("workspace", "column", "operator", "value", "severity")
+    list_filter = ("workspace", "column", "severity")
+    search_fields = ("column",)

@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import json
 from typing import TYPE_CHECKING
+from typing import Any
 
 from django.contrib.auth.decorators import login_required
 from django.db import connection
@@ -21,6 +22,8 @@ from brewgis.workspace.models import Scenario
 from brewgis.workspace.models import Workspace
 from brewgis.workspace.services.canvas_view_manager import PAINTABLE_COLUMNS
 from brewgis.workspace.services.canvas_view_manager import refresh_canvas_view
+from brewgis.workspace.services.paint_constraints import ConstraintResult
+from brewgis.workspace.services.paint_constraints import check_paint_batch
 
 if TYPE_CHECKING:
     from django.http import HttpRequest
@@ -82,8 +85,16 @@ def paint_features(
                 },
                 status=400,
             )
-
     now = request.user
+
+    # ── Constraint checking ──────────────────────────────
+    paint_map: dict[str, dict[str, float | None]] = {
+        fid: {column: painted_value} for fid in features
+    }
+    block_response = _enforce_paint_constraints(workspace, paint_map)
+    if block_response is not None:
+        return block_response
+    # ─────────────────────────────────────────────────────
 
     with transaction.atomic():
         pc_rows = [
@@ -108,11 +119,13 @@ def paint_features(
         base_table = _resolve_base_table(scenario)
         refresh_canvas_view(scenario, base_table)
 
+    warnings = _collect_warnings()
     return JsonResponse(
         {
             "status": "ok",
             "painted_count": len(features),
             "painted_features": features,
+            "warnings": warnings,
         }
     )
 
@@ -190,92 +203,16 @@ def paint_built_form(
             {"status": "error", "message": "Invalid JSON body."}, status=400
         )
 
-    features: list[str] = body.get("features", [])
-    bf_type: str = body.get("bf_type", "")
-    bf_id: int | None = body.get("bf_id", None)
-
-    if not features:
-        return JsonResponse(
-            {"status": "error", "message": "No features selected."}, status=400
-        )
-
-    if bf_type not in ("building", "place"):
-        return JsonResponse(
-            {"status": "error", "message": "bf_type must be 'building' or 'place'."},
-            status=400,
-        )
-
-    if bf_id is None:
-        return JsonResponse(
-            {"status": "error", "message": "bf_id is required."}, status=400
-        )
-
-    # Resolve built form instance
-    if bf_type == "building":
-        built_form = get_object_or_404(BuildingType, pk=bf_id)
-    else:
-        built_form = get_object_or_404(PlaceType, pk=bf_id)
-
-    # Load base canvas data for selected features
-    base_table = _resolve_base_table(scenario)
-    feature_data = _fetch_feature_data(base_table, features)
-    if not feature_data:
-        return JsonResponse(
-            {
-                "status": "error",
-                "message": "No base canvas data found for selected features.",
-            },
-            status=400,
-        )
-
-    with transaction.atomic():
-        all_pc_rows: list[PaintedCanvas] = []
-
-        for fid, row in feature_data.items():
-            parcel_acres = float(row.get("area_gross", row.get("area_parcel", 1.0)))
-
-            if bf_type == "building":
-                result = AllocationEngine.allocation_building_type(
-                    parcel_acres=parcel_acres,
-                    building_type=built_form,
-                    row_allocation_pct=0.0,  # ROW already reflected in base data
-                )
-            else:
-                result = AllocationEngine.allocation_place_type(
-                    parcel_acres=parcel_acres,
-                    place_type=built_form,
-                )
-
-            # Map allocation result → canvas columns
-            pc_rows = _allocation_to_painted_rows(
-                scenario=scenario,
-                feature_id=fid,
-                result=result,
-                painted_by=request.user,
-            )
-            all_pc_rows.extend(pc_rows)
-
-        # Bulk upsert all painted rows
-        PaintedCanvas.objects.bulk_create(
-            all_pc_rows,
-            update_conflicts=True,
-            update_fields=["painted_value", "painted_by", "painted_at"],
-            unique_fields=["scenario", "feature_id", "column_name"],
-        )
-
-        refresh_canvas_view(scenario, base_table)
-
-    return JsonResponse(
-        {
-            "status": "ok",
-            "painted_count": len(all_pc_rows),
-            "painted_features": features,
-        }
+    return _execute_built_form_paint(
+        workspace, scenario, body, request.user,
     )
 
 
 # ─── Helpers ────────────────────────────────────────────────
 
+
+_PAINT_CONSTRAINT_RESULT: list[ConstraintResult | None] = [None]
+"""Last constraint result, cached for warning collection (mutable container for in-module mutation)."""
 
 def _resolve_base_table(scenario: Scenario) -> str:  # noqa: ARG001
     """Resolve the base canvas table name for a scenario."""
@@ -309,7 +246,7 @@ def _allocation_to_painted_rows(
     scenario: Scenario,
     feature_id: str,
     result: AllocationResult,
-    painted_by: object,
+    painted_by: Any,
 ) -> list[PaintedCanvas]:
     """Convert an AllocationResult to a list of PaintedCanvas rows.
 
@@ -356,3 +293,145 @@ def _allocation_to_painted_rows(
             )
 
     return rows
+
+
+def _enforce_paint_constraints(
+    workspace: Workspace,
+    paint_map: dict[str, dict[str, float | None]],
+) -> JsonResponse | None:
+    """Check paint constraints; return a blocking JsonResponse or None.
+
+    Violations are cached on the function for later retrieval via
+    :func:`_collect_warnings`.
+    """
+    constraint_result = check_paint_batch(workspace, paint_map)
+    _PAINT_CONSTRAINT_RESULT[0] = constraint_result
+    if constraint_result.blocked:
+        return JsonResponse(
+            {
+                "status": "error",
+                "message": "Paint operation blocked by workspace constraints.",
+                "violations": [v.to_dict() for v in constraint_result.violations],
+            },
+            status=409,
+        )
+    return None
+
+
+def _collect_warnings() -> list[dict]:
+    """Collect warning violations from the last constraint check."""
+    last_result = _PAINT_CONSTRAINT_RESULT[0]
+    if last_result is None:
+        return []
+    return [
+        v.to_dict()
+        for v in last_result.violations
+        if v.severity == "warn"
+    ]
+
+
+def _execute_built_form_paint(
+    workspace: Workspace,
+    scenario: Scenario,
+    body: dict,
+    user: Any,
+) -> JsonResponse:
+    """Execute built form painting after request validation."""
+    features: list[str] = body.get("features", [])
+    bf_type: str = body.get("bf_type", "")
+    bf_id: int | None = body.get("bf_id")
+
+    if not features:
+        return JsonResponse(
+            {"status": "error", "message": "No features selected."}, status=400
+        )
+
+    if bf_type not in ("building", "place"):
+        return JsonResponse(
+            {"status": "error", "message": "bf_type must be 'building' or 'place'."},
+            status=400,
+        )
+
+    if bf_id is None:
+        return JsonResponse(
+            {"status": "error", "message": "bf_id is required."}, status=400
+        )
+
+    # Resolve built form instance
+    built_form: BuildingType | PlaceType
+    if bf_type == "building":
+        built_form = get_object_or_404(BuildingType, pk=bf_id)
+    else:
+        built_form = get_object_or_404(PlaceType, pk=bf_id)
+
+    # Load base canvas data for selected features
+    base_table = _resolve_base_table(scenario)
+    feature_data = _fetch_feature_data(base_table, features)
+    if not feature_data:
+        return JsonResponse(
+            {
+                "status": "error",
+                "message": "No base canvas data found for selected features.",
+            },
+            status=400,
+        )
+
+    with transaction.atomic():
+        all_pc_rows: list[PaintedCanvas] = []
+
+        for fid, row in feature_data.items():
+            parcel_acres = float(row.get("area_gross", row.get("area_parcel", 1.0)))
+
+            if bf_type == "building":
+                assert isinstance(built_form, BuildingType)
+                result = AllocationEngine.allocation_building_type(
+                    parcel_acres=parcel_acres,
+                    building_type=built_form,
+                    row_allocation_pct=0.0,  # ROW already reflected in base data
+                )
+            else:
+                assert isinstance(built_form, PlaceType)
+                result = AllocationEngine.allocation_place_type(
+                    parcel_acres=parcel_acres,
+                    place_type=built_form,
+                )
+
+            # Map allocation result → canvas columns
+            pc_rows = _allocation_to_painted_rows(
+                scenario=scenario,
+                feature_id=fid,
+                result=result,
+                painted_by=user,
+            )
+            all_pc_rows.extend(pc_rows)
+
+        # ── Constraint checking ──────────────────────────
+        paint_map: dict[str, dict[str, float | None]] = {}
+        for pc_row in all_pc_rows:
+            paint_map.setdefault(pc_row.feature_id, {})[
+                pc_row.column_name
+            ] = pc_row.painted_value
+        block_response = _enforce_paint_constraints(workspace, paint_map)
+        if block_response is not None:
+            return block_response
+        bf_warnings = _collect_warnings()
+        # ─────────────────────────────────────────────────
+
+        # Bulk upsert all painted rows
+        PaintedCanvas.objects.bulk_create(
+            all_pc_rows,
+            update_conflicts=True,
+            update_fields=["painted_value", "painted_by", "painted_at"],
+            unique_fields=["scenario", "feature_id", "column_name"],
+        )
+
+        refresh_canvas_view(scenario, base_table)
+
+    return JsonResponse(
+        {
+            "status": "ok",
+            "painted_count": len(all_pc_rows),
+            "painted_features": features,
+            "warnings": bf_warnings,
+        }
+    )

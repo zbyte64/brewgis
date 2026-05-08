@@ -356,3 +356,50 @@ class DataImportRun(models.Model):
 
     def __str__(self) -> str:
         return f"DataImportRun #{self.pk} [{self.import_type}] ({self.status})"
+
+class ConstraintOperator(models.TextChoices):
+    LT = "lt", "<"
+    LTE = "lte", "<="
+    GT = "gt", ">"
+    GTE = "gte", ">="
+    EQ = "eq", "="
+    NEQ = "neq", "!="
+    NOT_NULL = "not_null", "Not Null"
+
+
+class ConstraintSeverity(models.TextChoices):
+    BLOCK = "block", "Block"
+    WARN = "warn", "Warn"
+
+
+class PaintConstraint(models.Model):
+    """Workspace-level rule governing allowed values on paintable columns."""
+
+    workspace = models.ForeignKey(
+        Workspace, on_delete=models.CASCADE, related_name="paint_constraints"
+    )
+    column = models.CharField(max_length=128)
+    operator = models.CharField(max_length=16, choices=ConstraintOperator.choices)
+    value = models.FloatField(null=True, blank=True)
+    message = models.TextField(blank=True, default="")
+    severity = models.CharField(
+        max_length=8,
+        choices=ConstraintSeverity.choices,
+        default=ConstraintSeverity.BLOCK,
+    )
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        ordering = ("column", "operator", "value")
+        verbose_name = "Paint Constraint"
+        verbose_name_plural = "Paint Constraints"
+
+    def __str__(self) -> str:
+        if self.operator == ConstraintOperator.NOT_NULL:
+            op_display = "is not null"
+            val = ""
+        else:
+            op_display = self.get_operator_display()
+            val = f" {self.value}"
+        return f"{self.column} {op_display}{val} [{self.get_severity_display()}]"
