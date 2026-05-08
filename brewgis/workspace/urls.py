@@ -26,6 +26,9 @@ from .views import poi_fetch
 from .views import preview_symbology
 from .views import stitch
 from .views import view_workspace_map
+from .views import county_options
+from .views import workspace_create
+from .views import workspace_detail
 from .views.built_forms import (
     BuildingTypeCreateView as building_type_create,  # noqa: N813
 )
@@ -46,9 +49,12 @@ from .views.built_forms import place_type_list
 app_name = "workspace"
 urlpatterns = [
     path("", home, name="home"),
+    path("new/", workspace_create.as_view(), name="workspace_create"),
+    path("new/county-options/", county_options, name="county_options"),
     path("upload/", ReadGISFileView.as_view(), name="upload"),
     path("layers/create/", CreateLayerView.as_view(), name="create_layer"),
     path("<int:workspace_pk>/map/", view_workspace_map, name="workspace_map"),
+    path("<int:pk>/", workspace_detail, name="workspace_detail"),
     # Paint Operations
     path(
         "<int:workspace_pk>/scenario/<int:scenario_pk>/paint/",

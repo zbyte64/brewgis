@@ -1,0 +1,17 @@
+<label class="form-label">Counties</label>
+{% if counties %}
+  {% for county in counties %}
+    <div class="form-check">
+      <input type="checkbox"
+             name="county_fips"
+             value="{{ county.county_fips }}"
+             class="form-check-input"
+             id="county-{{ county.county_fips }}">
+      <label class="form-check-label" for="county-{{ county.county_fips }}">
+        {{ county.name }} ({{ county.county_fips }})
+      </label>
+    </div>
+  {% endfor %}
+{% else %}
+  <p class="text-muted small">No counties found for this state.</p>
+{% endif %}

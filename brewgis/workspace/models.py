@@ -13,6 +13,11 @@ class Workspace(models.Model):
     name = models.CharField(max_length=128)
     db_connection = models.CharField(max_length=64, default="default")
     db_schema = models.CharField(max_length=64, default="public")
+    county_fips_list = models.JSONField(
+        default=list,
+        blank=True,
+        help_text="List of {state, county} FIPS objects for multi-county workspaces.",
+    )
 
     def __str__(self) -> str:
         return self.name
@@ -367,6 +372,7 @@ class DataImportRun(models.Model):
     def __str__(self) -> str:
         return f"DataImportRun #{self.pk} [{self.import_type}] ({self.status})"
 
+
 class ConstraintOperator(models.TextChoices):
     LT = "lt", "<"
     LTE = "lte", "<="
@@ -406,7 +412,6 @@ class PaintConstraint(models.Model):
         verbose_name_plural = "Paint Constraints"
 
 
-
 class MergeAudit(models.Model):
     """Audit trail for paint merge operations between scenarios.
 
@@ -433,12 +438,14 @@ class MergeAudit(models.Model):
     class Meta:
         ordering = ("-created_at",)
         verbose_name = "Merge Audit"
+
     def __str__(self) -> str:
         return (
             f"MergeAudit #{self.pk}: {self.source_scenario_id} → "
             f"{self.target_scenario_id} ({self.rows_copied} copied, "
             f"{self.rows_skipped} skipped)"
         )
+
 
 class PaintEvent(models.Model):
     """Logs every paint operation for undo/redo support.
@@ -486,3 +493,19 @@ class PaintEvent(models.Model):
             f"{self.feature_id}.{self.column_name} "
             f"{self.old_value}→{self.new_value})"
         )
+
+
+class County(models.Model):
+    """US County FIPS lookup table, seeded from Census reference data."""
+
+    state_fips = models.CharField(max_length=2)
+    county_fips = models.CharField(max_length=3)
+    name = models.CharField(max_length=128)
+
+    class Meta:
+        verbose_name_plural = "Counties"
+        unique_together = ("state_fips", "county_fips")
+        ordering = ("state_fips", "county_fips")
+
+    def __str__(self) -> str:
+        return f"{self.name} (FIPS {self.state_fips}{self.county_fips})"

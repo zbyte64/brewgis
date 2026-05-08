@@ -1,0 +1,73 @@
+{% extends "form.html" %}
+{% load i18n crispy_forms_tags %}
+
+{% block title %}Create Workspace{% endblock title %}
+
+{% block content %}
+{% partialdef form-content %}
+<div class="container mt-4" id="form-content">
+  <div class="row">
+    <div class="col-lg-8 mx-auto">
+      <div class="card">
+        <div class="card-header">
+          <h5 class="card-title mb-0">Create Workspace</h5>
+        </div>
+        <div class="card-body">
+          <form method="post"
+                action="{% url 'workspace:workspace_create' %}"
+                hx-post="{% url 'workspace:workspace_create' %}"
+                hx-target="#form-content"
+                hx-swap="outerHTML"
+                hx-trigger="submit">
+            {% csrf_token %}
+            {{ form|crispy }}
+
+            <div class="mb-3">
+              <label class="form-label">State</label>
+              <select class="form-select"
+                      id="state-select"
+                      name="state_fips"
+                      hx-get="{% url 'workspace:county_options' %}"
+                      hx-target="#county-checkboxes"
+                      hx-trigger="change"
+                      hx-vals='js:{state: document.getElementById("state-select").value}'>
+                <option value="">Select a state...</option>
+                {% for fips, name in US_STATES %}
+                  <option value="{{ fips }}">{{ name }}</option>
+                {% endfor %}
+              </select>
+            </div>
+
+            <div id="county-checkboxes" class="mb-3">
+              <label class="form-label">Counties</label>
+              {% if counties %}
+                {% for county in counties %}
+                  <div class="form-check">
+                    <input type="checkbox"
+                           name="county_fips"
+                           value="{{ county.county_fips }}"
+                           class="form-check-input"
+                           id="county-{{ county.county_fips }}">
+                    <label class="form-check-label" for="county-{{ county.county_fips }}">
+                      {{ county.name }} ({{ county.county_fips }})
+                    </label>
+                  </div>
+                {% endfor %}
+              {% else %}
+                <p class="text-muted small">Select a state to load counties.</p>
+              {% endif %}
+            </div>
+
+            <div class="mt-3">
+              <button type="submit" class="btn btn-primary">Create Workspace</button>
+              <a href="{% url 'workspace:home' %}" class="btn btn-outline-secondary">Cancel</a>
+            </div>
+          </form>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+{% endpartialdef %}
+{% partial form-content %}
+{% endblock content %}

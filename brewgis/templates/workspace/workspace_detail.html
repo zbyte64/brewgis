@@ -1,0 +1,142 @@
+{% extends "base.html" %}
+{% load i18n %}
+
+{% block title %}{{ workspace.name }} — Brew GIS{% endblock title %}
+
+{% block content %}
+<div class="container mt-4">
+  <!-- Region Header -->
+  <div class="p-4 mb-4 bg-light rounded-3">
+    <div class="container-fluid py-2">
+      <h1 class="display-5 fw-bold">{{ workspace.name }}</h1>
+      <p class="fs-5 mt-3 text-muted">{{ region_summary }}</p>
+    </div>
+  </div>
+
+  <!-- Quick Actions Bar -->
+  <div class="d-flex gap-2 mb-4">
+    <a href="{% url 'workspace:workspace_map' workspace.pk %}" class="btn btn-primary">
+      {% translate "View Map" %}
+    </a>
+    <a href="{% url 'workspace:import_center' %}?workspace={{ workspace.pk }}" class="btn btn-outline-primary">
+      {% translate "Import Data" %}
+    </a>
+    <a href="{% url 'workspace:analysis_launch' %}" class="btn btn-outline-primary">
+      {% translate "Run Analysis" %}
+    </a>
+  </div>
+
+  <div class="row">
+    <!-- Data Catalog Panel -->
+    <div class="col-md-6 mb-4">
+      <div class="card h-100">
+        <div class="card-header">
+          <h5 class="card-title mb-0">{% translate "Data Catalog" %}</h5>
+        </div>
+        <div class="card-body p-0">
+          <div class="table-responsive">
+            <table class="table table-striped mb-0">
+              <thead>
+                <tr>
+                  <th scope="col">{% translate "Source" %}</th>
+                  <th scope="col">{% translate "Description" %}</th>
+                  <th scope="col">{% translate "Status" %}</th>
+                </tr>
+              </thead>
+              <tbody>
+                {% for source in data_catalog_sources %}
+                  <tr>
+                    <td>{{ source.name }}</td>
+                    <td>{{ source.description }}</td>
+                    <td><span class="badge bg-secondary">{% translate "Not Imported" %}</span></td>
+                  </tr>
+                {% empty %}
+                  <tr>
+                    <td colspan="3" class="text-muted text-center">{% translate "No data sources configured." %}</td>
+                  </tr>
+                {% endfor %}
+              </tbody>
+            </table>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- Analysis Catalog Panel -->
+    <div class="col-md-6 mb-4">
+      <div class="card h-100">
+        <div class="card-header">
+          <h5 class="card-title mb-0">{% translate "Analysis Modules" %}</h5>
+        </div>
+        <div class="card-body">
+          {% for module in analysis_modules %}
+            <div class="mb-3 pb-3 border-bottom">
+              <div class="d-flex justify-content-between align-items-start">
+                <h6 class="mb-1">{{ module.name }}</h6>
+                {% with prereq_class=module.prereq_status %}
+                  {% if prereq_class == "ready" %}
+                    <span class="badge bg-success">{% translate "Ready" %}</span>
+                  {% elif prereq_class == "partial" %}
+                    <span class="badge bg-warning text-dark">{% translate "Partial" %}</span>
+                  {% else %}
+                    <span class="badge bg-danger">{% translate "Missing Data" %}</span>
+                  {% endif %}
+                {% endwith %}
+              </div>
+              <p class="text-muted small mb-2">{{ module.description }}</p>
+              <div class="row small">
+                {% if module.inputs %}
+                  <div class="col-6">
+                    <strong>{% translate "Inputs:" %}</strong>
+                    <ul class="list-unstyled mb-0">
+                      {% for inp in module.inputs %}
+                        <li>{{ inp }}</li>
+                      {% endfor %}
+                    </ul>
+                  </div>
+                {% endif %}
+                {% if module.outputs %}
+                  <div class="col-6">
+                    <strong>{% translate "Outputs:" %}</strong>
+                    <ul class="list-unstyled mb-0">
+                      {% for out in module.outputs %}
+                        <li>{{ out }}</li>
+                      {% endfor %}
+                    </ul>
+                  </div>
+                {% endif %}
+              </div>
+            </div>
+          {% empty %}
+            <p class="text-muted mb-0">{% translate "No analysis modules available." %}</p>
+          {% endfor %}
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Recent Runs Panel -->
+  {% if recent_runs %}
+    <div class="card mb-4">
+      <div class="card-header">
+        <h5 class="card-title mb-0">{% translate "Recent Analysis Runs" %}</h5>
+      </div>
+      <div class="card-body p-0">
+        <ul class="list-group list-group-flush">
+          {% for run in recent_runs %}
+            <li class="list-group-item d-flex justify-content-between align-items-center">
+              <div>
+                <strong>{{ run.modules|join:", " }}</strong>
+                <span class="text-muted ms-2">{{ run.created_at|date:"M j, Y H:i" }}</span>
+              </div>
+              <span class="badge {% if run.status == 'completed' %}bg-success{% elif run.status == 'running' %}bg-primary{% elif run.status == 'failed' %}bg-danger{% else %}bg-secondary{% endif %}">
+                {{ run.status|title }}
+              </span>
+            </li>
+          {% endfor %}
+        </ul>
+      </div>
+    </div>
+  {% endif %}
+</div>
+{% endblock content %}
