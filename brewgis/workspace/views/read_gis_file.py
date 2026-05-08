@@ -1,4 +1,5 @@
 import os
+import logging
 from io import BufferedReader
 
 import geopandas
@@ -14,7 +15,11 @@ from django.views.generic.edit import FormView
 from sqlalchemy import create_engine
 
 from brewgis.workspace.models import Workspace
+from brewgis.workspace.services.column_inspector import inspect_table
+from brewgis.workspace.services.staging_model import write_base_canvas_stub
+from brewgis.workspace.services.staging_model import write_parcel_staging
 
+logger = logging.getLogger(__name__)
 
 class ImportGISFileForm(forms.Form):
     file = forms.FileField(required=True)
@@ -34,6 +39,30 @@ def read_gis_file_into_table(
         os.environ.get("DATABASE_URL").replace("postgres://", "postgresql://", 1),  # type: ignore[union-attr]
     )
     df.to_postgis(table_name, con, schema, chunksize=50000)
+    # Phase 1c: generate dbt staging models for the imported table
+    try:
+        info = inspect_table(schema, table_name)
+        if info is not None and info.id_column and info.has_geom:
+            write_parcel_staging(schema, table_name, info)
+            write_base_canvas_stub(schema, table_name, info)
+            logger.info(
+                "Generated staging models for %s.%s",
+                schema,
+                table_name,
+            )
+        else:
+            logger.warning(
+                "Skipping staging model generation for %s.%s: "
+                "missing ID column or geometry",
+                schema,
+                table_name,
+            )
+    except Exception:
+        logger.exception(
+            "Failed to generate staging models for %s.%s",
+            schema,
+            table_name,
+        )
 
 
 @method_decorator(user_passes_test(lambda u: u.is_authenticated), name="dispatch")

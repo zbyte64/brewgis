@@ -22,6 +22,7 @@ from brewgis.workspace.services.lehd_fetcher import fetch_lehd_block_data
 from brewgis.workspace.services.poi_fetcher import fetch_pois
 from brewgis.workspace.services.spatial_allocator import allocate_attributes
 from brewgis.workspace.services.stitcher import impute_area_proportional
+from brewgis.workspace.services.preflight import check_analysis_prerequisites
 from brewgis.workspace.services.stitcher import impute_built_form_default
 from brewgis.workspace.services.stitcher import impute_constant
 from brewgis.workspace.symbology.auto import auto_generate_symbology
@@ -178,9 +179,34 @@ def run_core_module(
         resolved_vars,
     )
 
-    # Ensure the built_forms export table exists before running dbt
+    # Pre-dispatch validation (defense in depth)
+    parcel_table = resolved_vars.get("parcel_table", "")
     source_schema = resolved_vars.get("source_schema", "public")
     built_form_table = resolved_vars.get("built_form_table", "built_forms")
+    base_canvas_table = resolved_vars.get("base_canvas_table")
+    preflight_errors = check_analysis_prerequisites(
+        schema=source_schema,
+        parcel_table=parcel_table,
+        built_form_table=built_form_table,
+        base_canvas_table=base_canvas_table,
+    )
+    if preflight_errors:
+        error_msg = "; ".join(e.message for e in preflight_errors)
+        logger.error(
+            "Preflight validation failed for workspace %s: %s",
+            workspace_id,
+            error_msg,
+        )
+        return {
+            "success": False,
+            "results": [],
+            "error": error_msg,
+            "end_state_table": None,
+            "increment_table": None,
+            "layer_schema": None,
+        }
+
+    # Ensure the built_forms export table exists before running dbt
     try:
         export_building_types(schema=source_schema, table=built_form_table)
     except Exception:

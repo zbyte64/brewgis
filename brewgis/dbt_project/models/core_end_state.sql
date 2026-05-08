@@ -86,6 +86,7 @@ WITH parcel_base AS (
         bf.gas_eui,
         bf.vintage,
         bf.irrigable_area_fraction,
+        p.intersection_density,
         p.geom
     FROM
         {{ source_schema }}.{{ parcel_table }} AS p
@@ -148,7 +149,7 @@ SELECT
     0.0 AS parcel_acres_vacant,
 
     -- Water
-    0.0 AS intersection_density,
+    COALESCE(parcel_base.intersection_density, 0.0) AS intersection_density,
     parcel_base.geom,
 
     -- Parcel acres by type

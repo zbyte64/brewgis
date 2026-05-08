@@ -2,6 +2,7 @@ from .allocate_data import AllocateView as allocate  # noqa: F401
 from .analysis import AnalysisLaunchView as analysis_launch  # noqa: F401
 from .analysis import analysis_list  # noqa: F401
 from .analysis import analysis_status  # noqa: F401
+from .analysis import check_prerequisites  # noqa: F401
 from .create_layer import CreateLayerView  # noqa: F401
 from .fetch_census import CensusFetchView as census_fetch  # noqa: F401
 from .fetch_census import census_preview  # noqa: F401

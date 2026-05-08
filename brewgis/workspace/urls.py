@@ -6,6 +6,7 @@ from .views import allocate
 from .views import analysis_launch
 from .views import analysis_list
 from .views import analysis_status
+from .views import check_prerequisites
 from .views import auto_generate
 from .views import census_fetch
 from .views import census_preview
@@ -151,6 +152,11 @@ urlpatterns = [
     path("analysis/launch/", analysis_launch.as_view(), name="analysis_launch"),
     path("analysis/runs/", analysis_list, name="analysis_list"),
     path("analysis/runs/<int:run_pk>/", analysis_status, name="analysis_status"),
+    path(
+        "analysis/check-prerequisites/",
+        check_prerequisites,
+        name="check_prerequisites",
+    ),
     # Import Center
     path("import/", import_center, name="import_center"),
     path("import/census/", census_fetch.as_view(), name="census_fetch"),

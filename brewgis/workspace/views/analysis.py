@@ -1,8 +1,8 @@
 """Views for launching and monitoring analysis pipeline runs."""
 from __future__ import annotations
-
 import json
 
+from django.db import connection
 from django import forms
 from django.contrib.auth.decorators import user_passes_test
 from django.http import HttpRequest
@@ -12,10 +12,12 @@ from django.shortcuts import render
 from django.template.loader import render_to_string
 from django.utils.decorators import method_decorator
 from django.views.generic.edit import FormView
+from django.views.decorators.http import require_POST
 
 from brewgis.workspace.analysis.pipeline import run_analysis_pipeline
 from brewgis.workspace.models import AnalysisRun
 from brewgis.workspace.models import Workspace
+from brewgis.workspace.services.preflight import check_analysis_prerequisites
 
 _CONSTRAINTS_INITIAL = json.dumps([
     {"table": "floodplains", "discount_pct": 100, "geom_col": "geom"},
@@ -23,6 +25,27 @@ _CONSTRAINTS_INITIAL = json.dumps([
     {"table": "steep_slopes", "discount_pct": 75, "geom_col": "geom"},
 ], indent=2)
 
+def _discover_geom_tables(schema: str) -> list[tuple[str, str]]:
+    """Discover tables in *schema* that have a geometry column.
+
+    Returns a list of ``(table_name, label)`` tuples suitable for
+    a ``Select`` widget's ``choices``.
+    """
+    with connection.cursor() as cursor:
+        cursor.execute(
+            """
+            SELECT DISTINCT c.table_name
+            FROM information_schema.columns c
+            WHERE c.table_schema = %s
+              AND c.udt_name IN ('geometry', 'geography')
+              AND c.table_name NOT LIKE 'stage_%%'
+            ORDER BY c.table_name
+            """,
+            [schema],
+        )
+        return [(row[0], row[0]) for row in cursor.fetchall()]
+    # fallback
+    return []
 
 class AnalysisLaunchForm(forms.Form):
     """Form to configure and launch an analysis pipeline run."""
@@ -73,6 +96,28 @@ class AnalysisLaunchForm(forms.Form):
         initial="base_canvas",
     )
 
+    def __init__(self, *args: object, **kwargs: object) -> None:
+        """Initialize form, optionally auto-discovering parcel tables."""
+        self._workspace: Workspace | None = kwargs.pop("workspace", None)
+        super().__init__(*args, **kwargs)
+
+        if self._workspace:
+            schema = self._workspace.db_schema
+            choices = _discover_geom_tables(schema)
+            if choices:
+                self.fields["parcel_table"].widget = forms.widgets.Select(
+                    choices=[("", "--- Select a table ---")] + choices,
+                )
+                self.fields["parcel_table"].help_text = (
+                    "Select a table from the workspace schema or type a custom name."
+                )
+                # Default base_canvas_table to the first detected staging stub
+                default_stub = f"stage_{choices[0][0]}_base_canvas"
+                self.fields["base_canvas_table"].initial = default_stub
+                self.fields["base_canvas_table"].help_text = (
+                    "Auto-detected staging stub. Change to a real base canvas if available."
+                )
+
     # Constraint layers (repeating group — simplified with JSON field)
     constraints_json = forms.CharField(
         widget=forms.Textarea(attrs={"rows": 6, "class": "form-control font-monospace"}),
@@ -114,6 +159,33 @@ class AnalysisLaunchForm(forms.Form):
 
         return parsed
 
+    def clean(self) -> dict[str, object]:
+        """Validate analysis prerequisites before launching."""
+        data = super().clean()
+        if self.errors:
+            return data
+
+        workspace: Workspace | None = data.get("workspace")
+        parcel_table = data.get("parcel_table", "")
+        if workspace and parcel_table:
+            schema = workspace.db_schema
+            built_form_table = data.get("built_form_table") or "built_forms"
+            base_canvas_table = data.get("base_canvas_table")
+            # Default to staging stub if no real base canvas specified
+            if not base_canvas_table or base_canvas_table == "base_canvas":
+                base_canvas_table = f"stage_{parcel_table}_base_canvas"
+                data["base_canvas_table"] = base_canvas_table
+            errors = check_analysis_prerequisites(
+                schema=schema,
+                parcel_table=parcel_table,
+                built_form_table=built_form_table,
+                base_canvas_table=base_canvas_table,
+            )
+            if errors:
+                first = errors[0]
+                self.add_error(first.field, first.message)
+
+        return data
 
 @method_decorator(user_passes_test(lambda u: u.is_authenticated), name="dispatch")
 class AnalysisLaunchView(FormView):
@@ -192,3 +264,43 @@ def analysis_list(request: HttpRequest) -> HttpResponse:
         "workspace/analysis/list.html",
         {"runs": runs},
     )
+
+@require_POST
+def check_prerequisites(request: HttpRequest) -> HttpResponse:
+    """htmx endpoint: run preflight validation and render results inline."""
+    schema = request.POST.get("source_schema", "public")
+    parcel_table = request.POST.get("parcel_table", "")
+    built_form_table = request.POST.get("built_form_table", "built_forms")
+    base_canvas_table = request.POST.get("base_canvas_table", "")
+
+    if not parcel_table:
+        html = "<div class='alert alert-warning'>No parcel table specified.</div>"
+        return HttpResponse(html)
+
+    # Default base_canvas_table to staging stub if empty
+    if not base_canvas_table or base_canvas_table == "base_canvas":
+        base_canvas_table = f"stage_{parcel_table}_base_canvas"
+
+    errors = check_analysis_prerequisites(
+        schema=schema,
+        parcel_table=parcel_table,
+        built_form_table=built_form_table,
+        base_canvas_table=base_canvas_table,
+    )
+
+    if not errors:
+        html = (
+            "<div class='alert alert-success'>"
+            "All prerequisites met.&#8203;</div>"
+        )
+    else:
+        items = "".join(
+            f"<li>{e.message}</li>" for e in errors
+        )
+        html = (
+            f"<div class='alert alert-danger'>"
+            f"<strong>Prerequisites check failed:</strong>"
+            f"<ul>{items}</ul></div>"
+        )
+
+    return HttpResponse(html)
