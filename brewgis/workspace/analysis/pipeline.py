@@ -27,6 +27,9 @@ from brewgis.workspace.tasks import run_core_module
 from brewgis.workspace.tasks import run_env_constraint
 from brewgis.workspace.tasks import run_water_demand
 from brewgis.workspace.tasks import run_energy_demand
+from brewgis.workspace.tasks import run_land_consumption
+from brewgis.workspace.tasks import run_fiscal
+from brewgis.workspace.tasks import run_agriculture
 
 logger = logging.getLogger(__name__)
 
@@ -36,6 +39,9 @@ MODULE_DEPENDENCIES: dict[str, list[str]] = {
     "core": ["env_constraint"],
     "water_demand": ["core"],
     "energy_demand": ["core"],
+    "land_consumption": ["core"],
+    "fiscal": ["core"],
+    "agriculture": ["core"],
 }
 
 # Module → Celery task mapping
@@ -44,13 +50,26 @@ MODULE_TASKS = {
     "core": run_core_module,
     "water_demand": run_water_demand,
     "energy_demand": run_energy_demand,
+    "land_consumption": run_land_consumption,
+    "fiscal": run_fiscal,
+    "agriculture": run_agriculture,
 }
-
 MODULE_RESULT_TABLES = {
     "env_constraint": "env_constraint_{scenario_id}",
     "core": ["end_state_{scenario_id}", "increment_{scenario_id}"],
     "water_demand": "water_demand_{scenario_id}",
     "energy_demand": "energy_demand_{scenario_id}",
+    "land_consumption": [
+        "land_consumption_{scenario_id}",
+        "impervious_surface_{scenario_id}",
+    ],
+    "fiscal": [
+        "fiscal_property_tax_{scenario_id}",
+        "fiscal_sales_tax_{scenario_id}",
+        "fiscal_service_costs_{scenario_id}",
+        "fiscal_net_impact_{scenario_id}",
+    ],
+    "agriculture": "agriculture_{scenario_id}",
 }
 
 

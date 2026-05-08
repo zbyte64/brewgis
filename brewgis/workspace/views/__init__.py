@@ -20,3 +20,4 @@ from .stitch_data import StitchView as stitch  # noqa: F401
 from .symbology import auto_generate  # noqa: F401
 from .symbology import edit_symbology  # noqa: F401
 from .symbology import preview_symbology  # noqa: F401
+from .merge import merge_paint_edits  # noqa: F401

@@ -382,6 +382,223 @@ def run_energy_demand(
     }
 
 
+
+# ────────────────────────────────────────────────────────────
+#  Land Consumption, Fiscal & Agriculture tasks
+# ────────────────────────────────────────────────────────────
+
+
+@shared_task(
+    bind=True,
+    name="run_land_consumption",
+    autoretry_for=(Exception,),
+    max_retries=2,
+    default_retry_delay=60,
+)
+def run_land_consumption(
+    self,
+    workspace_id: int,
+    vars_: dict | None = None,
+) -> dict:
+    """Run the Land Consumption dbt model (L1 + L2).
+
+    Computes land use transitions and impervious surface estimates
+    from the end-state allocation table.
+
+    Args:
+        workspace_id: Workspace primary key.
+        vars_: dbt variables dict.
+
+    Returns:
+        Dict with keys: success, results, error, layer_schema, layer_table.
+    """
+    resolved_vars = vars_ or {}
+    logger.info(
+        "Running land_consumption for workspace %s with vars: %s",
+        workspace_id,
+        resolved_vars,
+    )
+
+    runner = DbtRunnerWrapper()
+    dbt_result = runner.run(
+        select=["land_consumption"],
+        vars_=resolved_vars,
+        full_refresh=True,
+    )
+
+    if dbt_result.success:
+        target_schema = resolved_vars.get("target_schema", "public")
+        scenario_id = resolved_vars.get("scenario_id", "default")
+        logger.info(
+            "land_consumption completed for workspace %s (scenario %s)",
+            workspace_id,
+            scenario_id,
+        )
+        return {
+            "success": True,
+            "results": dbt_result.results,
+            "error": None,
+            "layer_schema": target_schema,
+            "layer_table": f"land_consumption_{scenario_id}",
+        }
+
+    error_msg = dbt_result.error or "Unknown dbt error"
+    logger.error(
+        "land_consumption failed for workspace %s: %s",
+        workspace_id,
+        error_msg,
+    )
+    return {
+        "success": False,
+        "results": [],
+        "error": error_msg,
+        "layer_schema": None,
+        "layer_table": None,
+    }
+
+
+@shared_task(
+    bind=True,
+    name="run_fiscal",
+    autoretry_for=(Exception,),
+    max_retries=2,
+    default_retry_delay=60,
+)
+def run_fiscal(
+    self,
+    workspace_id: int,
+    vars_: dict | None = None,
+) -> dict:
+    """Run the Fiscal dbt models (F1–F4).
+
+    Computes property tax, sales tax, service costs, and net fiscal impact
+    from the end-state allocation table.  Uses ref() ordering so dbt
+    runs F1→F2→F3→F4 in dependency order.
+
+    Args:
+        workspace_id: Workspace primary key.
+        vars_: dbt variables dict.
+
+    Returns:
+        Dict with keys: success, results, error, layer_schema, layer_table.
+    """
+    resolved_vars = vars_ or {}
+    logger.info(
+        "Running fiscal for workspace %s with vars: %s",
+        workspace_id,
+        resolved_vars,
+    )
+
+    runner = DbtRunnerWrapper()
+    dbt_result = runner.run(
+        select=[
+            "fiscal_property_tax",
+            "fiscal_sales_tax",
+            "fiscal_service_costs",
+            "fiscal_net_impact",
+        ],
+        vars_=resolved_vars,
+        full_refresh=True,
+    )
+
+    if dbt_result.success:
+        target_schema = resolved_vars.get("target_schema", "public")
+        scenario_id = resolved_vars.get("scenario_id", "default")
+        logger.info(
+            "fiscal completed for workspace %s (scenario %s)",
+            workspace_id,
+            scenario_id,
+        )
+        return {
+            "success": True,
+            "results": dbt_result.results,
+            "error": None,
+            "layer_schema": target_schema,
+            "layer_table": f"fiscal_property_tax_{scenario_id}",
+        }
+
+    error_msg = dbt_result.error or "Unknown dbt error"
+    logger.error(
+        "fiscal failed for workspace %s: %s",
+        workspace_id,
+        error_msg,
+    )
+    return {
+        "success": False,
+        "results": [],
+        "error": error_msg,
+        "layer_schema": None,
+        "layer_table": None,
+    }
+
+
+@shared_task(
+    bind=True,
+    name="run_agriculture",
+    autoretry_for=(Exception,),
+    max_retries=2,
+    default_retry_delay=60,
+)
+def run_agriculture(
+    self,
+    workspace_id: int,
+    vars_: dict | None = None,
+) -> dict:
+    """Run the Agriculture dbt model.
+
+    Computes crop yield, market value, production costs, and resource
+    use from the end-state allocation table.
+
+    Args:
+        workspace_id: Workspace primary key.
+        vars_: dbt variables dict.
+
+    Returns:
+        Dict with keys: success, results, error, layer_schema, layer_table.
+    """
+    resolved_vars = vars_ or {}
+    logger.info(
+        "Running agriculture for workspace %s with vars: %s",
+        workspace_id,
+        resolved_vars,
+    )
+
+    runner = DbtRunnerWrapper()
+    dbt_result = runner.run(
+        select=["agriculture"],
+        vars_=resolved_vars,
+        full_refresh=True,
+    )
+
+    if dbt_result.success:
+        target_schema = resolved_vars.get("target_schema", "public")
+        scenario_id = resolved_vars.get("scenario_id", "default")
+        logger.info(
+            "agriculture completed for workspace %s (scenario %s)",
+            workspace_id,
+            scenario_id,
+        )
+        return {
+            "success": True,
+            "results": dbt_result.results,
+            "error": None,
+            "layer_schema": target_schema,
+            "layer_table": f"agriculture_{scenario_id}",
+        }
+
+    error_msg = dbt_result.error or "Unknown dbt error"
+    logger.error(
+        "agriculture failed for workspace %s: %s",
+        workspace_id,
+        error_msg,
+    )
+    return {
+        "success": False,
+        "results": [],
+        "error": error_msg,
+        "layer_schema": None,
+        "layer_table": None,
+    }
 # ────────────────────────────────────────────────────────────
 #  Pipeline chain callback
 # ────────────────────────────────────────────────────────────
@@ -465,6 +682,20 @@ def _register_module_results(
     elif module == "energy_demand":
         table_templates = [f"energy_demand_{scenario_id}"]
 
+    elif module == "land_consumption":
+        table_templates = [
+            f"land_consumption_{scenario_id}",
+            f"impervious_surface_{scenario_id}",
+        ]
+    elif module == "fiscal":
+        table_templates = [
+            f"fiscal_property_tax_{scenario_id}",
+            f"fiscal_sales_tax_{scenario_id}",
+            f"fiscal_service_costs_{scenario_id}",
+            f"fiscal_net_impact_{scenario_id}",
+        ]
+    elif module == "agriculture":
+        table_templates = [f"agriculture_{scenario_id}"]
     for table_name in table_templates:
         register_result_layer(
             workspace_id=workspace_id,

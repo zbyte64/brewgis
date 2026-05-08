@@ -35,6 +35,7 @@ wheels/
 pip-log.txt
 pip-delete-this-directory.txt
 
+brewgis/dbt_project/.user.yml
 tests/e2e/screenshots/tests/
 # Unit test / coverage reports
 htmlcov/

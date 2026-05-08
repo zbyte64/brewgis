@@ -16,6 +16,7 @@ from .views import poi_fetch
 from .views import paint_built_form
 from .views import paint_features
 from .views import clear_paint
+from .views import merge_paint_edits
 from .views import preview_symbology
 from .views import stitch
 from .views import view_workspace_map
@@ -60,6 +61,12 @@ urlpatterns = [
         "<int:workspace_pk>/scenario/<int:scenario_pk>/clear-paint/",
         clear_paint,
         name="clear_paint",
+    ),
+    # Merge Paint Edits between scenarios
+    path(
+        "<int:workspace_pk>/scenario/<int:source_pk>/merge/<int:target_pk>/",
+        merge_paint_edits,
+        name="merge_paint_edits",
     ),
     path(
         "symbology/<int:layer_pk>/edit/",

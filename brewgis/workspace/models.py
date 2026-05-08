@@ -246,6 +246,16 @@ class PaintedCanvas(models.Model):
         settings.AUTH_USER_MODEL, on_delete=models.SET_NULL, null=True
     )
     painted_at = models.DateTimeField(auto_now_add=True)
+    approval_status = models.CharField(
+        max_length=16,
+        choices=[
+            ("pending", "Pending"),
+            ("approved", "Approved"),
+            ("rejected", "Rejected"),
+        ],
+        default="pending",
+        help_text="Approval status for merge operations.",
+    )
 
     class Meta:
         unique_together = ("scenario", "feature_id", "column_name")
@@ -395,11 +405,37 @@ class PaintConstraint(models.Model):
         verbose_name = "Paint Constraint"
         verbose_name_plural = "Paint Constraints"
 
+
+
+class MergeAudit(models.Model):
+    """Audit trail for paint merge operations between scenarios.
+
+    Records each merge operation: source scenario, target scenario,
+    number of rows copied, and who performed it.
+    """
+
+    workspace = models.ForeignKey(
+        Workspace, on_delete=models.CASCADE, related_name="merge_audits"
+    )
+    source_scenario = models.ForeignKey(
+        Scenario, on_delete=models.CASCADE, related_name="source_merges"
+    )
+    target_scenario = models.ForeignKey(
+        Scenario, on_delete=models.CASCADE, related_name="target_merges"
+    )
+    rows_copied = models.IntegerField(default=0)
+    rows_skipped = models.IntegerField(default=0)
+    performed_by = models.ForeignKey(
+        settings.AUTH_USER_MODEL, on_delete=models.SET_NULL, null=True
+    )
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        ordering = ("-created_at",)
+        verbose_name = "Merge Audit"
     def __str__(self) -> str:
-        if self.operator == ConstraintOperator.NOT_NULL:
-            op_display = "is not null"
-            val = ""
-        else:
-            op_display = self.get_operator_display()
-            val = f" {self.value}"
-        return f"{self.column} {op_display}{val} [{self.get_severity_display()}]"
+        return (
+            f"MergeAudit #{self.pk}: {self.source_scenario_id} → "
+            f"{self.target_scenario_id} ({self.rows_copied} copied, "
+            f"{self.rows_skipped} skipped)"
+        )

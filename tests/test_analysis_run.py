@@ -227,3 +227,74 @@ class TestPipelineCrossModuleRefs(TestCase):
         assert constraints_output == "public.env_constraint_test-scenario", (
             f"Expected 'public.env_constraint_test-scenario', got '{constraints_output}'"
         )
+@pytest.mark.integration
+class TestNewModuleResolution(TestCase):
+    """Tests for resolution of new Phase 3 modules in the analysis pipeline."""
+
+    def test_land_consumption_depends_on_core(self) -> None:
+        """land_consumption requires core in its dependency chain."""
+        from brewgis.workspace.analysis.pipeline import resolve_module_order
+
+        ordered = resolve_module_order(["env_constraint", "core", "land_consumption"])
+        assert ordered.index("core") < ordered.index("land_consumption")
+
+    def test_fiscal_depends_on_core(self) -> None:
+        """fiscal requires core in its dependency chain."""
+        from brewgis.workspace.analysis.pipeline import resolve_module_order
+
+        ordered = resolve_module_order(["env_constraint", "core", "fiscal"])
+        assert ordered.index("core") < ordered.index("fiscal")
+
+    def test_agriculture_depends_on_core(self) -> None:
+        """agriculture requires core in its dependency chain."""
+        from brewgis.workspace.analysis.pipeline import resolve_module_order
+
+        ordered = resolve_module_order(["env_constraint", "core", "agriculture"])
+        assert ordered.index("core") < ordered.index("agriculture")
+
+    def test_all_new_modules_independent_of_each_other(self) -> None:
+        """land_consumption, fiscal, and agriculture should not depend on each other."""
+        from brewgis.workspace.analysis.pipeline import resolve_module_order
+
+        ordered = resolve_module_order(
+            ["env_constraint", "core", "land_consumption", "fiscal", "agriculture"]
+        )
+        # All three should be after core, and can be in any order among themselves
+        core_idx = ordered.index("core")
+        for mod in ["land_consumption", "fiscal", "agriculture"]:
+            assert ordered.index(mod) > core_idx, (
+                f"{mod} should run after core, got {ordered}"
+            )
+
+    def test_full_pipeline_resolution(self) -> None:
+        """All modules together should resolve in correct dependency order."""
+        from brewgis.workspace.analysis.pipeline import resolve_module_order
+
+        ordered = resolve_module_order([
+            "env_constraint",
+            "core",
+            "water_demand",
+            "energy_demand",
+            "land_consumption",
+            "fiscal",
+            "agriculture",
+        ])
+        # env_constraint must be first
+        assert ordered[0] == "env_constraint"
+        # core must be after env_constraint
+        assert ordered.index("env_constraint") < ordered.index("core")
+        # All new modules must be after core
+        core_idx = ordered.index("core")
+        for mod in ["water_demand", "energy_demand", "land_consumption", "fiscal", "agriculture"]:
+            assert ordered.index(mod) > core_idx, (
+                f"{mod} should run after core, got {ordered}"
+            )
+
+    def test_module_result_tables_defined(self) -> None:
+        """All new modules must have result table templates in MODULE_RESULT_TABLES."""
+        from brewgis.workspace.analysis.pipeline import MODULE_RESULT_TABLES
+
+        for module in ["land_consumption", "fiscal", "agriculture"]:
+            assert module in MODULE_RESULT_TABLES, (
+                f"{module} missing from MODULE_RESULT_TABLES"
+            )
