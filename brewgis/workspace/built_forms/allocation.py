@@ -15,11 +15,11 @@ Unit conventions:
 """
 from __future__ import annotations
 
-import deal
-
 from dataclasses import dataclass
 from dataclasses import field
 from typing import TYPE_CHECKING
+
+import deal
 
 if TYPE_CHECKING:
     from brewgis.workspace.built_forms.models import BuildingType

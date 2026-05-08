@@ -118,7 +118,7 @@ class BuildingType(models.Model):
     )
     vintage = models.CharField(
         max_length=32,
-        choices=VintageChoices.choices,
+        choices=VintageChoices,
         blank=True, default="",
         verbose_name="Building vintage",
         help_text="Approximate construction era for energy modeling.",
@@ -189,7 +189,7 @@ class PlaceType(models.Model):
     )
     street_pattern = models.CharField(
         max_length=32,
-        choices=StreetPatternChoices.choices,
+        choices=StreetPatternChoices,
         blank=True, default="",
         verbose_name="Street pattern",
     )

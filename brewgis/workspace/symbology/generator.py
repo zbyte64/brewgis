@@ -10,6 +10,7 @@ from __future__ import annotations
 from typing import Any
 
 import deal
+
 from brewgis.workspace.models import SymbologyConfig
 
 
@@ -133,7 +134,7 @@ def _single_paint(symbology: SymbologyConfig) -> dict[str, Any]:
     return paint
 
 
-@deal.ensure(lambda result: "paint" in result and "layout" in result)
+@deal.post(lambda result: "paint" in result and "layout" in result)
 def generate_maplibre_style(symbology: SymbologyConfig) -> dict[str, Any]:
     """Generate MapLibre GL ``paint`` and ``layout`` for a symbology config.
 

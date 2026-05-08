@@ -13,23 +13,22 @@ Celery tasks in the correct order. The pipeline:
 
 from __future__ import annotations
 
-import deal
-
 import logging
 from typing import Any
 
+import deal
 from django.utils import timezone
 
 from brewgis.workspace.analysis.layer_registry import register_result_layer
 from brewgis.workspace.models import AnalysisRun
 from brewgis.workspace.tasks import handle_module_completed
-from brewgis.workspace.tasks import run_core_module
-from brewgis.workspace.tasks import run_env_constraint
-from brewgis.workspace.tasks import run_water_demand
-from brewgis.workspace.tasks import run_energy_demand
-from brewgis.workspace.tasks import run_land_consumption
-from brewgis.workspace.tasks import run_fiscal
 from brewgis.workspace.tasks import run_agriculture
+from brewgis.workspace.tasks import run_core_module
+from brewgis.workspace.tasks import run_energy_demand
+from brewgis.workspace.tasks import run_env_constraint
+from brewgis.workspace.tasks import run_fiscal
+from brewgis.workspace.tasks import run_land_consumption
+from brewgis.workspace.tasks import run_water_demand
 
 logger = logging.getLogger(__name__)
 

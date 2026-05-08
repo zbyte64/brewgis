@@ -420,7 +420,7 @@ class Command(BaseCommand):
         col_placeholders = ", ".join(f"%({c})s" for c in insert_cols if c != "geometry")
         has_geom = "geometry" in insert_cols
         if has_geom:
-            col_list_geom = f"geometry, {col_list.replace('\"geometry\", ', '')}".strip(", ")
+            col_list_geom = f"geometry, {col_list.replace('"geometry", ', '')}".strip(", ")
         else:
             col_list_geom = col_list
 

@@ -11,11 +11,11 @@ from .models import Workspace
 # Register your models here.
 
 
+@admin.register(Workspace)
 class WorkspaceAdmin(admin.ModelAdmin):
     pass
 
 
-admin.site.register(Workspace, WorkspaceAdmin)
 
 
 @admin.register(Scenario)

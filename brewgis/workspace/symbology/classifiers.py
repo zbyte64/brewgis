@@ -14,8 +14,6 @@ Supported methods
 """
 
 from __future__ import annotations
-import deal
-
 
 import math
 from collections.abc import Callable
@@ -23,6 +21,7 @@ from dataclasses import dataclass
 from dataclasses import field
 from typing import Any
 
+import deal
 from django.db import connection
 
 

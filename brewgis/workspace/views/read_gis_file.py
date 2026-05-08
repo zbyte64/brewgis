@@ -3,6 +3,7 @@ from io import BufferedReader
 
 import geopandas
 from django import forms
+from django.conf import settings
 from django.contrib.auth.decorators import user_passes_test
 from django.http import HttpResponse
 from django.http import HttpResponseRedirect
@@ -13,7 +14,6 @@ from django.views.generic.edit import FormView
 from sqlalchemy import create_engine
 
 from brewgis.workspace.models import Workspace
-from django.conf import settings
 
 
 class ImportGISFileForm(forms.Form):

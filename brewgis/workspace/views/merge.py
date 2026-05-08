@@ -11,12 +11,17 @@ from __future__ import annotations
 import logging
 
 from django.contrib.auth.decorators import login_required
-from django.db import IntegrityError, transaction
-from django.http import HttpRequest, JsonResponse
+from django.db import IntegrityError
+from django.db import transaction
+from django.http import HttpRequest
+from django.http import JsonResponse
 from django.shortcuts import get_object_or_404
 from django.views.decorators.http import require_POST
 
-from brewgis.workspace.models import MergeAudit, PaintedCanvas, Scenario, Workspace
+from brewgis.workspace.models import MergeAudit
+from brewgis.workspace.models import PaintedCanvas
+from brewgis.workspace.models import Scenario
+from brewgis.workspace.models import Workspace
 
 logger = logging.getLogger(__name__)
 

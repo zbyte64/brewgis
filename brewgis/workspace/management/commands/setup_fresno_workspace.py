@@ -207,7 +207,7 @@ class Command(BaseCommand):
             result = fn(*args)
             self.stdout.write(f"  [{self.style.SUCCESS('OK')}] {label}")
             return result
-        except Exception as exc:  # noqa: BLE001
+        except Exception as exc:
             self.stderr.write(self.style.ERROR(f"  [FAIL] {label}: {exc}"))
             raise
 
@@ -308,7 +308,7 @@ class Command(BaseCommand):
 
     # -- Step implementations ---------------------------------------------
 
-    def _download_data(self, options: Any) -> None:  # noqa: FBT001
+    def _download_data(self, options: Any) -> None:
         args = []
         if options.get("force_download"):
             args.append("--force")

@@ -13,12 +13,12 @@ import os
 import shutil
 import tempfile
 from pathlib import Path
-from typing import Any
 from typing import TYPE_CHECKING
+from typing import Any
 from urllib.parse import urlparse
 
-from django.conf import settings
 from dbt.cli.main import dbtRunner
+from django.conf import settings
 
 if TYPE_CHECKING:
     from dbt.contracts.results import RunResultsArtifact

@@ -8,7 +8,7 @@ watchfiles==1.0.0  # https://github.com/samuelcolvin/watchfiles
 # Testing
 # ------------------------------------------------------------------------------
 mypy==1.13.0  # https://github.com/python/mypy
-django-stubs[compatible-mypy]==5.1.1  # https://github.com/typeddjango/django-stubs
+django-stubs[compatible-mypy]==6.0.3  # https://github.com/typeddjango/django-stubs
 pandas-stubs==2.2.3.241009  # https://github.com/pandas-dev/pandas-stubs
 pytest==8.3.3  # https://github.com/pytest-dev/pytest
 pytest-sugar==1.0.0  # https://github.com/Frozenball/pytest-sugar
@@ -35,8 +35,7 @@ pre-commit==4.0.1  # https://github.com/pre-commit/pre-commit
 # ------------------------------------------------------------------------------
 factory-boy==3.3.1  # https://github.com/FactoryBoy/factory_boy
 
-django-debug-toolbar==4.4.6  # https://github.com/jazzband/django-debug-toolbar
-django-extensions==3.2.3  # https://github.com/django-extensions/django-extensions
+django-debug-toolbar==6.2.0  # https://github.com/jazzband/django-debug-toolbar
 django-coverage-plugin==3.1.0  # https://github.com/nedbat/django_coverage_plugin
 pytest-django==4.9.0  # https://github.com/pytest-dev/pytest-django
 pytest-bdd==8.1.0  # https://github.com/pytest-dev/pytest-bdd

@@ -182,7 +182,7 @@ class Scenario(models.Model):
     )
     scenario_type = models.CharField(
         max_length=16,
-        choices=ScenarioType.choices,
+        choices=ScenarioType,
         default=ScenarioType.BASE,
     )
     parent = models.ForeignKey(
@@ -389,12 +389,12 @@ class PaintConstraint(models.Model):
         Workspace, on_delete=models.CASCADE, related_name="paint_constraints"
     )
     column = models.CharField(max_length=128)
-    operator = models.CharField(max_length=16, choices=ConstraintOperator.choices)
+    operator = models.CharField(max_length=16, choices=ConstraintOperator)
     value = models.FloatField(null=True, blank=True)
     message = models.TextField(blank=True, default="")
     severity = models.CharField(
         max_length=8,
-        choices=ConstraintSeverity.choices,
+        choices=ConstraintSeverity,
         default=ConstraintSeverity.BLOCK,
     )
     created_at = models.DateTimeField(auto_now_add=True)

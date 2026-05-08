@@ -12,11 +12,10 @@ from typing import Any
 
 import geopandas as gpd
 import pandas as pd
+from django.conf import settings
+from django.db import connection
 from sqlalchemy import create_engine
 
-from django.conf import settings
-
-from django.db import connection
 logger = logging.getLogger(__name__)
 
 

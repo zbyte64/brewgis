@@ -3,26 +3,26 @@ from django.urls import path
 from .views import CreateLayerView
 from .views import ReadGISFileView
 from .views import allocate
+from .views import analysis_launch
+from .views import analysis_list
+from .views import analysis_status
 from .views import auto_generate
 from .views import census_fetch
 from .views import census_preview
+from .views import clear_paint
 from .views import edit_symbology
 from .views import employment_fetch
 from .views import employment_preview
 from .views import home
 from .views import import_center
 from .views import import_status
-from .views import poi_fetch
+from .views import merge_paint_edits
 from .views import paint_built_form
 from .views import paint_features
-from .views import clear_paint
-from .views import merge_paint_edits
+from .views import poi_fetch
 from .views import preview_symbology
 from .views import stitch
 from .views import view_workspace_map
-from .views import analysis_launch
-from .views import analysis_list
-from .views import analysis_status
 from .views.built_forms import (
     BuildingTypeCreateView as building_type_create,  # noqa: N813
 )

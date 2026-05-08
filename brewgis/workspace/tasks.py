@@ -7,25 +7,23 @@ from typing import Any
 
 from celery import shared_task
 from celery.utils.log import get_task_logger
+from django.conf import settings
+from django.utils import timezone
+from sqlalchemy import create_engine
 
 from brewgis.workspace.analysis.data_export import export_building_types
 from brewgis.workspace.analysis.dbt_runner import DbtRunnerWrapper
 from brewgis.workspace.analysis.layer_registry import register_result_layer
 from brewgis.workspace.models import AnalysisRun
 from brewgis.workspace.models import DataImportRun
-from django.db import transaction
-from django.utils import timezone
-from django.conf import settings
-from sqlalchemy import create_engine
-
 from brewgis.workspace.models import Layer
 from brewgis.workspace.services.census_fetcher import fetch_acs_block_groups
 from brewgis.workspace.services.lehd_fetcher import fetch_lehd_block_data
 from brewgis.workspace.services.poi_fetcher import fetch_pois
 from brewgis.workspace.services.spatial_allocator import allocate_attributes
-from brewgis.workspace.services.stitcher import impute_constant
 from brewgis.workspace.services.stitcher import impute_area_proportional
 from brewgis.workspace.services.stitcher import impute_built_form_default
+from brewgis.workspace.services.stitcher import impute_constant
 from brewgis.workspace.symbology.auto import auto_generate_symbology
 
 logger = get_task_logger(__name__)

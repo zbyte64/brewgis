@@ -13,7 +13,6 @@ import logging
 from typing import Any
 
 import geopandas as gpd
-import pandas as pd
 import requests
 from shapely.geometry import Point
 

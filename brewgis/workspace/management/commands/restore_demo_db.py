@@ -4,7 +4,8 @@ import subprocess
 from pathlib import Path
 
 from django.conf import settings
-from django.core.management.base import BaseCommand, CommandError
+from django.core.management.base import BaseCommand
+from django.core.management.base import CommandError
 from django.db import connection
 
 DEMO_DB_FILE = Path(settings.BASE_DIR) / "planning" / "urbanfootprint-sacog-source-db.sql.gz"

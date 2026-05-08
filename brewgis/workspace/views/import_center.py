@@ -8,10 +8,10 @@ from django.shortcuts import render
 
 from brewgis.workspace.models import DataImportRun
 from brewgis.workspace.models import Workspace
+from brewgis.workspace.views.allocate_data import AllocateForm
 from brewgis.workspace.views.fetch_census import CensusFetchForm
 from brewgis.workspace.views.fetch_employment import EmploymentFetchForm
 from brewgis.workspace.views.fetch_poi import POIFetchForm
-from brewgis.workspace.views.allocate_data import AllocateForm
 from brewgis.workspace.views.stitch_data import StitchForm
 
 
