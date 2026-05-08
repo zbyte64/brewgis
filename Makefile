@@ -93,6 +93,10 @@ test-deal:  ## Run deal property-based tests only (sequential, with deal enabled
 .PHONY: test-all
 test-all:  ## Run all tests sequentially (safe for full coverage)
 	$(COMPOSE_RUN) pytest -n 0 --timeout=300
+
+.PHONY: test-dbt
+test-dbt:  ## Run dbt seed + run + test (seed-based models only)
+	$(COMPOSE_RUN) bash -c 'cd brewgis/dbt_project && dbt seed --profiles-dir . --full-refresh && dbt run --profiles-dir . --select base_canvas_geometry+ && dbt test --profiles-dir . --select base_canvas_geometry+'
 # ─────────────────────────────────────────────
 # Linting & Formatting
 # ─────────────────────────────────────────────
@@ -126,7 +130,7 @@ lint-dbt:  ## SQLFluff lint dbt models
 # ─────────────────────────────────────────────
 
 .PHONY: check
-check: lint format-check typecheck test  ## Run full CI pipeline: lint + format-check + typecheck + test
+check: lint format-check typecheck test test-dbt  ## Run full CI pipeline: lint + format-check + typecheck + test + dbt test
 
 # ─────────────────────────────────────────────
 # Development setup

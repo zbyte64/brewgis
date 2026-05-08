@@ -49,8 +49,8 @@ WORKSPACE_SCHEMA = "fresno_demo"
 STATE_FIPS = "06"
 COUNTY_FIPS = "019"
 
-# Fresno city core bounding box
-BBOX = (-119.82, 36.72, -119.72, 36.80)
+# Fresno-Clovis urban area bounding box
+BBOX = (-119.95, 36.60, -119.55, 36.90)
 MIN_LNG, MIN_LAT, MAX_LNG, MAX_LAT = BBOX
 
 # Base scenario config
@@ -122,6 +122,7 @@ class Command(BaseCommand):
                 "constraints",
                 "allocate",
                 "stitch",
+                "built_forms",
                 "scenario",
                 "analysis",
             ],
@@ -172,12 +173,14 @@ class Command(BaseCommand):
 
         if step in ("all", "stitch"):
             steps.append(("Column stitching", self._stitch_columns, ()))
+        if step in ("all", "built_forms"):
+            steps.append(("Export building types", self._export_built_forms, ()))
+            steps.append(("Assign built forms and density", self._assign_built_forms_and_density, ()))
 
         if step in ("all", "scenario"):
             steps.append(("Create base scenario", self._create_base_scenario, ()))
 
         if step in ("all", "analysis"):
-            steps.append(("Export building types", self._export_built_forms, ()))
             steps.append(("Run dbt analysis pipeline", self._run_analysis, ()))
 
         # Mark non-critical steps that should not crash the pipeline
@@ -583,6 +586,94 @@ class Command(BaseCommand):
 
         self.stdout.write(f"  Stitched {success_count}/{len(stitchees)} columns")
 
+    def _assign_built_forms_and_density(self) -> int:
+        """Assign built form keys and compute intersection density for parcels."""
+        from brewgis.workspace.built_forms.models import BuildingType
+
+        all_bts = list(BuildingType.objects.all().order_by("pk"))
+        if not all_bts:
+            self.stdout.write("  [SKIP] No BuildingTypes loaded; skipping built form assignment")
+            return 0
+
+        self.stdout.write(f"  Assigning built forms from {len(all_bts)} types...")
+        schema = WORKSPACE_SCHEMA
+
+        with connection.cursor() as cursor:
+            # Add columns if missing
+            cursor.execute(
+                "ALTER TABLE " + schema + ".fresno_parcels "
+                "ADD COLUMN IF NOT EXISTS built_form_key INTEGER"
+            )
+            cursor.execute(
+                "ALTER TABLE " + schema + ".fresno_parcels "
+                "ADD COLUMN IF NOT EXISTS intersection_density DOUBLE PRECISION"
+            )
+
+            # Assign built_form_key and intersection_density
+            # Strategy: parcel area determines base type, modulo adds commercial/other mix
+            # BuildingType PKs from fixture:
+            #   1=SFR Large Lot, 2=SFR Standard, 3=Townhouse, 4=Duplex, 5=Triplex/Fourplex
+            #   6=Courtyard Apt, 7=Stacked Flats, 8=Mid-Rise Apt, 9=High-Rise Apt
+            #   10=Neighborhood Retail, 11=General Commercial, 12=Office Low Rise
+            #   13=Office Mid/High Rise, 14=Light Industrial, 15=Civic/Institutional
+            s = schema
+            cursor.execute(
+                "UPDATE " + s + ".fresno_parcels SET\n"
+                "    built_form_key = CASE\n"
+                "        WHEN ST_Area(geom) / 4046.86 IS NULL OR ST_Area(geom) / 4046.86 <= 0 THEN 2\n"
+                "        WHEN ST_Area(geom) / 4046.86 > 3.0 AND id % 5 < 3 THEN 14\n"
+                "        WHEN ST_Area(geom) / 4046.86 > 3.0 THEN 15\n"
+                "        WHEN ST_Area(geom) / 4046.86 > 1.5 AND id % 4 = 0 THEN 11\n"
+                "        WHEN ST_Area(geom) / 4046.86 > 1.5 AND id % 4 = 1 THEN 12\n"
+                "        WHEN ST_Area(geom) / 4046.86 > 1.5 AND id % 4 = 2 THEN 10\n"
+                "        WHEN ST_Area(geom) / 4046.86 > 1.5 THEN 1\n"
+                "        WHEN ST_Area(geom) / 4046.86 > 0.4 AND id % 5 = 0 THEN 10\n"
+                "        WHEN ST_Area(geom) / 4046.86 > 0.4 THEN 2\n"
+                "        WHEN ST_Area(geom) / 4046.86 > 0.15 AND id % 7 = 0 THEN 3\n"
+                "        WHEN ST_Area(geom) / 4046.86 > 0.15 AND id % 7 = 1 THEN 4\n"
+                "        WHEN ST_Area(geom) / 4046.86 > 0.15 THEN 2\n"
+                "        WHEN ST_Area(geom) / 4046.86 > 0.08 AND id % 3 = 0 THEN 5\n"
+                "        WHEN ST_Area(geom) / 4046.86 > 0.08 AND id % 3 = 1 THEN 6\n"
+                "        WHEN ST_Area(geom) / 4046.86 > 0.08 THEN 7\n"
+                "        WHEN id % 5 = 0 THEN 8\n"
+                "        WHEN id % 5 = 1 THEN 9\n"
+                "        ELSE 7\n"
+                "    END,\n"
+                "    intersection_density = CASE\n"
+                "        WHEN ST_Area(geom) / 4046.86 > 0\n"
+                "        THEN LEAST(25.0, GREATEST(0.5, 10.0 / SQRT(ST_Area(geom) / 4046.86)))\n"
+                "        ELSE 0.5\n"
+                "    END"
+            )
+
+            # Report distribution
+            cursor.execute(
+                "SELECT bf.built_form_key, bt.name, COUNT(*) AS cnt\n"
+                "FROM " + schema + ".fresno_parcels bf\n"
+                "LEFT JOIN " + schema + ".built_forms bt ON bf.built_form_key = bt.id\n"
+                "GROUP BY bf.built_form_key, bt.name\n"
+                "ORDER BY bf.built_form_key"
+            )
+            rows = cursor.fetchall()
+            for key, name, cnt in rows:
+                label = name or f"PK {key}"
+                self.stdout.write(f"    built_form_key={key} ({label}): {cnt} parcels")
+
+        # Report intersection_density stats
+        with connection.cursor() as cursor:
+            cursor.execute(
+                "SELECT\n"
+                "    MIN(intersection_density),\n"
+                "    AVG(intersection_density),\n"
+                "    MAX(intersection_density)\n"
+                "FROM " + schema + ".fresno_parcels"
+            )
+            row = cursor.fetchone()
+            if row:
+                self.stdout.write(f"    intersection_density: min={row[0]:.1f} avg={row[1]:.1f} max={row[2]:.1f}")
+
+        return len(rows)
+
     def _create_base_scenario(self) -> Scenario:
         workspace = self._get_workspace()
         slug = "fresno_baseline"
@@ -616,7 +707,8 @@ class Command(BaseCommand):
             workspace=workspace,
             scenario=scenario,
             status="running",
-            modules=["env_constraint", "core", "water_demand", "energy_demand"],
+            modules=["env_constraint", "core", "water_demand", "energy_demand",
+                     "trip_generation", "trip_distribution", "mode_choice", "vmt"],
         )
 
         dbt_vars = dict(DBT_VARS_TEMPLATE)
@@ -730,6 +822,36 @@ class Command(BaseCommand):
             self.stdout.write("  energy_demand complete")
         else:
             self.stderr.write(self.style.ERROR(f"  energy_demand failed: {dbt_result.error}"))
+
+        # 5. transport (trip_generation -> trip_distribution -> mode_choice -> vmt)
+        self.stdout.write("  Running transport module (trip_generation -> vmt)...")
+        dbt_result = runner.run(
+            select=["trip_generation", "trip_distribution", "mode_choice", "vmt"],
+            vars_=dbt_vars,
+            full_refresh=True,
+        )
+        transport_result = {
+            "module": "transport",
+            "success": dbt_result.success,
+            "error": dbt_result.error,
+        }
+        results.append(transport_result)
+        if dbt_result.success:
+            for tbl in (
+                f"trip_generation_{scenario.id}",
+                f"trip_distribution_{scenario.id}",
+                f"mode_choice_{scenario.id}",
+                f"vmt_{scenario.id}",
+            ):
+                register_result_layer(
+                    workspace_id=workspace.pk,
+                    schema=scenario.target_schema,
+                    table=tbl,
+                    name=f"{tbl} (scenario {scenario.id})",
+                )
+            self.stdout.write("  transport module complete")
+        else:
+            self.stderr.write(self.style.ERROR(f"  transport module failed: {dbt_result.error}"))
 
         all_success = all(r.get("success") for r in results)
         run.status = "completed" if all_success else "failed"

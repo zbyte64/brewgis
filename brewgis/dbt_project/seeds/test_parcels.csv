@@ -1,0 +1,6 @@
+parcel_id,geometry,county,pop_observed,hh_observed,du_observed,emp_observed,pop,hh,du,emp,land_development_category,built_form_key,intersection_density
+1,"POLYGON ((-121.5 38.5, -121.49 38.5, -121.49 38.51, -121.5 38.51, -121.5 38.5))",Sacramento,100,40,42,30,100,40,42,30,urban,mixed_use,12.5
+2,"POLYGON ((-121.5 38.52, -121.49 38.52, -121.49 38.53, -121.5 38.53, -121.5 38.52))",Sacramento,,,10,5,,,10,5,urban,,
+3,"POLYGON ((-121.48 38.5, -121.47 38.5, -121.47 38.51, -121.48 38.51, -121.48 38.5))",Sacramento,50,20,,,50,20,,,,,8.0
+4,"POLYGON ((-121.75 38.55, -121.74 38.55, -121.74 38.56, -121.75 38.56, -121.75 38.55))",Yolo,200,80,85,60,200,80,85,60,urban,employment_center,6.2
+5,"POLYGON ((-121.78 38.58, -121.77 38.58, -121.77 38.59, -121.78 38.59, -121.78 38.58))",Yolo,,,,,,,,,,,

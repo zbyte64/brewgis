@@ -1,0 +1,2 @@
+constraint_id,geometry,constraint_type,buffer_distance
+1,"POLYGON ((-121.5 38.5, -121.45 38.5, -121.45 38.55, -121.5 38.55, -121.5 38.5))",floodplain,100

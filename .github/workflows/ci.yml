@@ -78,6 +78,8 @@ jobs:
 
       - name: Run Django Tests
         run: docker compose -f docker-compose.local.yml run django pytest
+      - name: Run dbt seed + build + test
+        run: docker compose -f docker-compose.local.yml run django bash -c 'cd brewgis/dbt_project && dbt seed --profiles-dir . && dbt run --profiles-dir . && dbt test --profiles-dir .'
 
       - name: Upload E2E screenshots on failure
         if: failure()

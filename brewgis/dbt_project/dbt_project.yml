@@ -10,8 +10,8 @@ profile: "brewgis"
 model-paths: ["models"]
 macro-paths: ["macros"]
 analysis-paths: []
-test-paths: []
-seed-paths: []
+test-paths: ["tests"]
+seed-paths: ["seeds"]
 snapshot-paths: []
 
 clean-targets:

@@ -1,0 +1,444 @@
+version: 2
+models:
+- name: env_constraint
+  description: Developable acres after applying environmental constraint discounts.
+  columns:
+  - name: parcel_id
+    tests:
+    - not_null
+    - unique
+  - name: gross_acres
+    tests:
+    - not_null
+    - non_negative
+  - name: acres_developable
+    tests:
+    - not_null
+    - non_negative
+  - name: developable_proportion
+    tests:
+    - column_between:
+        arguments:
+          min_value: 0
+          max_value: 1
+- name: core_end_state
+  description: End-state allocation for each parcel with a built form assignment.
+  columns:
+  - name: parcel_id
+    tests:
+    - not_null
+    - unique
+  - name: gross_acres
+    tests:
+    - not_null
+    - non_negative
+- name: core_increment
+  description: Delta (increment) between end-state and base canvas for each attribute.
+  columns:
+  - name: parcel_id
+    tests:
+    - not_null
+    - unique
+  - name: gross_acres
+    tests:
+    - non_negative
+- name: trip_generation
+  description: Daily trip generation per parcel using ITE trip generation rates.
+  columns:
+  - name: parcel_id
+    tests:
+    - not_null
+    - unique
+  - name: gross_acres
+    tests:
+    - non_negative
+  - name: trips_total
+    tests:
+    - not_null
+    - non_negative
+  - name: trips_res
+    tests:
+    - non_negative
+  - name: trips_nonres
+    tests:
+    - non_negative
+  - name: trips_hbw
+    tests:
+    - non_negative
+  - name: trips_hbo
+    tests:
+    - non_negative
+  - name: trips_nhb
+    tests:
+    - non_negative
+- name: trip_distribution
+  description: Gravity model trip distribution — outbound, inbound, internal trips and average trip length.
+  columns:
+  - name: parcel_id
+    tests:
+    - not_null
+    - unique
+    - relationships:
+        to: ref('trip_generation')
+        field: parcel_id
+  - name: trips_outbound
+    tests:
+    - not_null
+    - non_negative
+  - name: trips_inbound
+    tests:
+    - not_null
+    - non_negative
+  - name: trips_internal
+    tests:
+    - non_negative
+  - name: avg_trip_length_km
+    tests:
+    - non_negative
+- name: mode_choice
+  description: Multinomial logit mode split producing trips and share by mode.
+  columns:
+  - name: parcel_id
+    tests:
+    - not_null
+    - unique
+    - relationships:
+        to: ref('trip_distribution')
+        field: parcel_id
+  - name: trips_auto
+    tests:
+    - not_null
+    - non_negative
+  - name: trips_transit
+    tests:
+    - not_null
+    - non_negative
+  - name: trips_walk
+    tests:
+    - not_null
+    - non_negative
+  - name: trips_bike
+    tests:
+    - not_null
+    - non_negative
+  - name: mode_share_auto
+    tests:
+    - not_null
+    - non_negative
+    - column_between:
+        arguments:
+          min_value: 0
+          max_value: 1
+  - name: mode_share_transit
+    tests:
+    - non_negative
+    - column_between:
+        arguments:
+          min_value: 0
+          max_value: 1
+  - name: mode_share_walk
+    tests:
+    - non_negative
+    - column_between:
+        arguments:
+          min_value: 0
+          max_value: 1
+  - name: mode_share_bike
+    tests:
+    - non_negative
+    - column_between:
+        arguments:
+          min_value: 0
+          max_value: 1
+  tests:
+  - proportion_sum:
+      arguments:
+        columns:
+        - mode_share_auto
+        - mode_share_transit
+        - mode_share_walk
+        - mode_share_bike
+        tolerance: 0.01
+- name: vmt
+  description: Vehicle miles traveled computed from mode choice and trip distribution.
+  columns:
+  - name: parcel_id
+    tests:
+    - not_null
+    - unique
+  - name: vmt_total
+    tests:
+    - not_null
+    - non_negative
+  - name: vmt_per_capita
+    tests:
+    - non_negative
+  - name: auto_trips
+    tests:
+    - not_null
+    - non_negative
+  - name: avg_trip_length_mi
+    tests:
+    - non_negative
+- name: land_consumption
+  description: Land use transitions, acres consumed/preserved, impervious surface estimates.
+  columns:
+  - name: parcel_id
+    tests:
+    - not_null
+    - unique
+  - name: acres_consumed
+    tests:
+    - not_null
+    - non_negative
+  - name: acres_preserved
+    tests:
+    - non_negative
+  - name: impervious_sqft
+    tests:
+    - non_negative
+  - name: impervious_acres
+    tests:
+    - non_negative
+  - name: pervious_acres
+    tests:
+    - non_negative
+  - name: impervious_pct
+    tests:
+    - column_between:
+        arguments:
+          min_value: 0
+          max_value: 100
+- name: agriculture
+  description: Agricultural output — crop yield, value, resource use for rural parcels.
+  columns:
+  - name: parcel_id
+    tests:
+    - not_null
+    - unique
+  - name: acres_cultivated
+    tests:
+    - not_null
+    - non_negative
+  - name: crop_yield_tons
+    tests:
+    - non_negative
+  - name: market_value
+    tests:
+    - non_negative
+  - name: production_cost
+    tests:
+    - non_negative
+  - name: net_return
+    tests:
+    - non_negative
+  - name: water_consumption_af
+    tests:
+    - non_negative
+  - name: labor_hours
+    tests:
+    - non_negative
+  - name: truck_trips
+    tests:
+    - non_negative
+- name: energy_demand
+  description: Residential and non-residential energy demand (kWh/year) per parcel.
+  columns:
+  - name: parcel_id
+    tests:
+    - not_null
+    - unique
+  - name: gross_acres
+    tests:
+    - non_negative
+  - name: acres_developed
+    tests:
+    - non_negative
+  - name: energy_electricity_res
+    tests:
+    - non_negative
+  - name: energy_gas_res
+    tests:
+    - non_negative
+  - name: energy_electricity_nonres
+    tests:
+    - non_negative
+  - name: energy_gas_nonres
+    tests:
+    - non_negative
+  - name: energy_total
+    tests:
+    - not_null
+    - non_negative
+  - name: energy_intensity_kwh_per_sqft
+    tests:
+    - non_negative
+- name: water_demand
+  description: Residential and non-residential water demand (liters/year) per parcel.
+  columns:
+  - name: parcel_id
+    tests:
+    - not_null
+    - unique
+  - name: gross_acres
+    tests:
+    - non_negative
+  - name: acres_developed
+    tests:
+    - non_negative
+  - name: water_demand_res_indoor
+    tests:
+    - non_negative
+  - name: water_demand_res_outdoor
+    tests:
+    - non_negative
+  - name: water_demand_nonres_indoor
+    tests:
+    - non_negative
+  - name: water_demand_nonres_outdoor
+    tests:
+    - non_negative
+  - name: water_demand_total
+    tests:
+    - not_null
+    - non_negative
+  - name: water_demand_per_unit
+    tests:
+    - non_negative
+- name: fiscal_property_tax
+  description: Property tax revenue from residential and non-residential assessed value.
+  columns:
+  - name: parcel_id
+    tests:
+    - not_null
+    - unique
+  - name: assessed_value_res
+    tests:
+    - non_negative
+  - name: assessed_value_nonres
+    tests:
+    - non_negative
+  - name: property_tax_revenue
+    tests:
+    - not_null
+    - non_negative
+- name: fiscal_sales_tax
+  description: Sales tax revenue from retail employment.
+  columns:
+  - name: parcel_id
+    tests:
+    - not_null
+    - unique
+  - name: retail_sales
+    tests:
+    - non_negative
+  - name: sales_tax_revenue
+    tests:
+    - not_null
+    - non_negative
+- name: fiscal_service_costs
+  description: Public service costs — schools, public safety, roads/transit.
+  columns:
+  - name: parcel_id
+    tests:
+    - not_null
+    - unique
+  - name: service_cost_schools
+    tests:
+    - non_negative
+  - name: service_cost_public_safety
+    tests:
+    - non_negative
+  - name: service_cost_roads
+    tests:
+    - non_negative
+  - name: service_cost_total
+    tests:
+    - not_null
+    - non_negative
+- name: fiscal_net_impact
+  description: Net fiscal impact = property_tax_revenue + sales_tax_revenue - service_cost_total.
+  columns:
+  - name: parcel_id
+    tests:
+    - not_null
+    - unique
+    - relationships:
+        to: ref('fiscal_property_tax')
+        field: parcel_id
+    - relationships:
+        to: ref('fiscal_sales_tax')
+        field: parcel_id
+    - relationships:
+        to: ref('fiscal_service_costs')
+        field: parcel_id
+  - name: property_tax_revenue
+    tests:
+    - not_null
+    - non_negative
+  - name: sales_tax_revenue
+    tests:
+    - not_null
+    - non_negative
+  - name: service_cost_total
+    tests:
+    - not_null
+    - non_negative
+  - name: net_fiscal_impact
+    tests:
+    - not_null
+- name: base_canvas_geometry
+  description: "Base canvas geometry — computes area columns from WKT geometry using PostGIS."
+  columns:
+  - name: parcel_id
+    tests:
+    - not_null
+    - unique
+  - name: area_gross
+    tests:
+    - not_null
+    - non_negative
+  - name: area_parcel
+    tests:
+    - not_null
+    - non_negative
+  - name: area_dev_condition
+    tests:
+    - non_negative
+  - name: area_row
+    tests:
+    - non_negative
+- name: base_canvas_attributes
+  description: "Base canvas attributes — fills demographic, employment, building area defaults."
+  columns:
+  - name: parcel_id
+    tests:
+    - not_null
+    - unique
+  - name: pop
+    tests:
+    - not_null
+    - non_negative
+  - name: hh
+    tests:
+    - not_null
+    - non_negative
+  - name: du
+    tests:
+    - not_null
+    - non_negative
+  - name: emp
+    tests:
+    - not_null
+    - non_negative
+- name: base_canvas_imputed
+  description: "Base canvas imputed — three-tier cascade imputation for all numeric columns."
+  columns:
+  - name: parcel_id
+    tests:
+    - not_null
+    - unique
+  - name: intersection_density
+    tests:
+    - not_null
+    - non_negative
