@@ -3,6 +3,9 @@ from __future__ import annotations
 
 import numpy as np
 import pytest
+from hypothesis import HealthCheck, assume, given, settings, strategies as st
+
+from brewgis.dbt_project.models.mode_choice import _multinomial_logit
 
 
 @pytest.mark.integration
@@ -12,171 +15,86 @@ class TestModeChoiceLogit:
     def test_softmax_sum_to_one(self) -> None:
         """Mode shares for each parcel should sum to 1.0."""
         n = 4
-        u_auto = np.zeros(n)
-        u_transit = np.full(n, -2.0)
-        u_walk = np.full(n, -1.5)
-        u_bike = np.full(n, -2.5)
-
-        u_stack = np.column_stack([u_auto, u_transit, u_walk, u_bike])
-        u_max = np.max(u_stack, axis=1, keepdims=True)
-        exp_u = np.exp(u_stack - u_max)
-        sum_exp_u = np.sum(exp_u, axis=1, keepdims=True)
-        shares = exp_u / sum_exp_u
-
-        row_sums = np.sum(shares, axis=1)
+        trips = np.ones(n)
+        ln_dens = np.zeros(n)
+        inter_dens = np.zeros(n)
+        transit_acc = np.zeros(n)
+        *_, sa, st_, sw, sb = _multinomial_logit(trips, ln_dens, inter_dens, transit_acc)
+        row_sums = sa + st_ + sw + sb
         np.testing.assert_array_almost_equal(row_sums, np.ones(n))
 
     def test_auto_dominates_defaults(self) -> None:
         """With default parameters, auto should have highest share."""
-        n = 1
-        density = 5.0
-        ln_density = np.log(density + 1.0)
-        intersection_density = 0.0  # Rural, no intersections
-        transit_access = 0.0  # Rural, no transit
-
-        asc_transit = -2.0
-        asc_walk = -1.5
-        asc_bike = -2.5
-        beta_density = -0.15
-        beta_design_walk = 0.05
-        beta_transit_dist = 0.02
-
-        u_auto = np.zeros(n)
-        u_transit = asc_transit + beta_density * ln_density + beta_transit_dist * transit_access
-        u_walk = asc_walk + beta_density * ln_density + beta_design_walk * intersection_density
-        u_bike = asc_bike + beta_density * ln_density + beta_design_walk * intersection_density
-
-        u_stack = np.column_stack([u_auto, u_transit, u_walk, u_bike])
-        u_max = np.max(u_stack, axis=1, keepdims=True)
-        exp_u = np.exp(u_stack - u_max)
-        sum_exp_u = np.sum(exp_u, axis=1, keepdims=True)
-        shares = exp_u / sum_exp_u
-
-        assert shares[0, 0] > shares[0, 1]  # auto > transit
-        assert shares[0, 0] > shares[0, 2]  # auto > walk
-        assert shares[0, 0] > shares[0, 3]  # auto > bike
+        trips = np.array([100.0])
+        ln_density = np.log(5.0 + 1.0)
+        intersection_density = np.array([0.0])
+        transit_access = np.array([0.0])
+        *_, sa, st_, sw, sb = _multinomial_logit(
+            trips, ln_density, intersection_density, transit_access,
+        )
+        assert sa[0] > st_[0]  # auto > transit
+        assert sa[0] > sw[0]  # auto > walk
+        assert sa[0] > sb[0]  # auto > bike
 
     def test_transit_access_increases_share(self) -> None:
         """Transit access should increase transit share."""
-        # Urban parcel (high density, transit available)
-        ln_density_urban = np.log(15.0 + 1.0)
-        transit_urban = 1.0
-
-        # Rural parcel (low density, no transit)
-        ln_density_rural = np.log(2.0 + 1.0)
-        transit_rural = 0.0
-
-        asc_transit = -2.0
-        beta_density = 0.15
-        beta_transit_dist = 0.02
-        u_transit_urban = asc_transit + beta_density * ln_density_urban + beta_transit_dist * transit_urban
-        u_transit_rural = asc_transit + beta_density * ln_density_rural + beta_transit_dist * transit_rural
-
-        def _share(u_t: float) -> float:
-            u_a = 0.0
-            u_stack = np.array([u_a, u_t, -1.5, -2.5])
-            u_max = np.max(u_stack)
-            exp_u = np.exp(u_stack - u_max)
-            return exp_u[1] / np.sum(exp_u)
-
-        share_urban = _share(u_transit_urban)
-        share_rural = _share(u_transit_rural)
-
-        assert share_urban > share_rural, (
-            f"Urban transit share {share_urban:.4f} should exceed rural {share_rural:.4f}"
+        trips = np.array([100.0, 100.0])
+        # Urban (density=15, transit=1) vs rural (density=2, transit=0)
+        ln_dens = np.log(np.array([15.0, 2.0]) + 1.0)
+        inter_dens = np.zeros(2)
+        transit = np.array([1.0, 0.0])
+        *_, sa, st_, sw, sb = _multinomial_logit(trips, ln_dens, inter_dens, transit)
+        assert st_[0] > st_[1], (
+            f"Urban transit share {st_[0]:.4f} should exceed rural {st_[1]:.4f}"
         )
 
     def test_density_reduces_auto_share(self) -> None:
-        """Higher density should reduce auto share (negative beta_density)."""
+        """Higher density should reduce auto share."""
+        trips = np.array([100.0, 100.0])
         ln_dense = np.log(30.0 + 1.0)
         ln_sparse = np.log(2.0 + 1.0)
-
-        u_auto = 0.0
-
-        def _auto_share(ln_d: float) -> float:
-            u_transit = -2.0 + 0.15 * ln_d
-            u_walk = -1.5 + 0.15 * ln_d
-            u_bike = -2.5 + 0.15 * ln_d
-            u_stack = np.array([u_auto, u_transit, u_walk, u_bike])
-            u_max = np.max(u_stack)
-            exp_u = np.exp(u_stack - u_max)
-            return exp_u[0] / np.sum(exp_u)
-
-        share_dense = _auto_share(ln_dense)
-        share_sparse = _auto_share(ln_sparse)
-
-        assert share_dense < share_sparse, (
-            f"Dense auto share {share_dense:.4f} should be less than sparse {share_sparse:.4f}"
+        ln_dens = np.array([ln_dense, ln_sparse])
+        inter_dens = np.zeros(2)
+        transit = np.zeros(2)
+        *_, sa, st_, sw, sb = _multinomial_logit(trips, ln_dens, inter_dens, transit)
+        assert sa[0] < sa[1], (
+            f"Dense auto share {sa[0]:.4f} should be less than sparse {sa[1]:.4f}"
         )
 
     def test_walk_share_higher_with_design(self) -> None:
         """Higher intersection density should increase walk/bike share."""
-        ln_density = np.log(10.0 + 1.0)
-        high_design = 10.0  # Urban grid
-        low_design = 0.0  # Rural
-
-        def _walk_share(inter_dens: float) -> float:
-            u_auto = 0.0
-            u_transit = -2.0 + (-0.15) * ln_density
-            u_walk = -1.5 + (-0.15) * ln_density + 0.05 * inter_dens
-            u_bike = -2.5 + (-0.15) * ln_density + 0.05 * inter_dens
-            u_stack = np.array([u_auto, u_transit, u_walk, u_bike])
-            u_max = np.max(u_stack)
-            exp_u = np.exp(u_stack - u_max)
-            return exp_u[2] / np.sum(exp_u)
-
-        share_high = _walk_share(high_design)
-        share_low = _walk_share(low_design)
-
-        assert share_high > share_low, (
-            f"High design walk share {share_high:.4f} should exceed low {share_low:.4f}"
+        trips = np.array([100.0, 100.0])
+        ln_dens = np.log(10.0 + 1.0) * np.ones(2)
+        inter_dens = np.array([10.0, 0.0])  # Urban grid vs rural
+        transit = np.zeros(2)
+        *_, sa, st_, sw, sb = _multinomial_logit(trips, ln_dens, inter_dens, transit)
+        assert sw[0] > sw[1], (
+            f"High design walk share {sw[0]:.4f} should exceed low {sw[1]:.4f}"
         )
 
     def test_trips_by_mode_sum_to_outbound(self) -> None:
         """Sum of trips by mode should equal trips_outbound."""
         trips_outbound = np.array([100.0, 200.0, 150.0])
-        n = 3
         density = np.array([5.0, 15.0, 2.0])
         ln_density = np.log(density + 1.0)
         inter_dens = np.array([0.0, 5.0, 0.0])
         transit_access = np.array([0.0, 1.0, 0.0])
 
-        asc_transit, asc_walk, asc_bike = -2.0, -1.5, -2.5
-        beta_density, beta_design_walk, beta_transit_dist = -0.15, 0.05, 0.02
-
-        u_auto = np.zeros(n)
-        u_transit = asc_transit + beta_density * ln_density + beta_transit_dist * transit_access
-        u_walk = asc_walk + beta_density * ln_density + beta_design_walk * inter_dens
-        u_bike = asc_bike + beta_density * ln_density + beta_design_walk * inter_dens
-
-        u_stack = np.column_stack([u_auto, u_transit, u_walk, u_bike])
-        u_max = np.max(u_stack, axis=1, keepdims=True)
-        exp_u = np.exp(u_stack - u_max)
-        sum_exp_u = np.sum(exp_u, axis=1, keepdims=True)
-        shares = exp_u / sum_exp_u
-
-        trips_by_mode = trips_outbound.reshape(-1, 1) * shares
-        trips_sum = np.sum(trips_by_mode, axis=1)
-
+        ta, tt, tw, tb, *_ = _multinomial_logit(trips_outbound, ln_density, inter_dens, transit_access)
+        trips_sum = ta + tt + tw + tb
         np.testing.assert_array_almost_equal(trips_sum, trips_outbound)
 
     def test_zero_trips_parcel(self) -> None:
         """Parcel with zero outbound trips should have zero trips by all modes."""
-        trips_outbound = 0.0
+        trips_outbound = np.array([0.0])
         ln_density = np.log(10.0 + 1.0)
-
-        u_auto = 0.0
-        u_transit = -2.0 + (-0.15) * ln_density
-        u_walk = -1.5 + (-0.15) * ln_density
-        u_bike = -2.5 + (-0.15) * ln_density
-
-        u_stack = np.array([u_auto, u_transit, u_walk, u_bike])
-        u_max = np.max(u_stack)
-        exp_u = np.exp(u_stack - u_max)
-        shares = exp_u / np.sum(exp_u)
-
-        trips_by_mode = trips_outbound * shares
-        np.testing.assert_array_equal(trips_by_mode, np.zeros(4))
+        inter_dens = np.array([0.0])
+        transit_access = np.array([0.0])
+        ta, tt, tw, tb, *_ = _multinomial_logit(trips_outbound, ln_density, inter_dens, transit_access)
+        np.testing.assert_array_equal(ta, np.zeros(1))
+        np.testing.assert_array_equal(tt, np.zeros(1))
+        np.testing.assert_array_equal(tw, np.zeros(1))
+        np.testing.assert_array_equal(tb, np.zeros(1))
 
     def test_ln_density_zero_density(self) -> None:
         """ln(density + 1) should handle zero density gracefully."""
@@ -190,3 +108,147 @@ class TestModeChoiceLogit:
         expected = np.array([1.0, 1.0, 0.0, 0.0])
         result = np.where(np.isin(categories, ["urban", "compact"]), 1.0, 0.0)
         np.testing.assert_array_equal(result, expected)
+
+
+# ════════════════════════════════════════════════════════════
+#  Property-based tests for logit mode split invariants
+# ════════════════════════════════════════════════════════════
+#
+# The pure function _multinomial_logit is shared with the dbt Python model.
+# Tests the same import that dbt uses at runtime.
+#
+# Invariants verified:
+#   - Mode shares sum to 1.0 for each parcel
+#   - All shares are in [0, 1]
+#   - Trips_by_mode sum to trips_outbound (conservation)
+#   - Empty input returns empty output
+#   - Zero trips produce zero trips by all modes
+# ────────────────────────────────────────────────────────────
+
+
+# ── Hypothesis strategy ────────────────────────────────────
+
+_LOGIT_ARRAYS = st.integers(min_value=2, max_value=5).flatmap(
+    lambda n: st.tuples(
+        st.lists(
+            st.floats(min_value=0, max_value=5000, allow_nan=False, allow_infinity=False),
+            min_size=n, max_size=n,
+        ).map(np.array),  # trips_outbound
+        st.lists(
+            st.floats(min_value=0, max_value=5, allow_nan=False, allow_infinity=False),
+            min_size=n, max_size=n,
+        ).map(np.array),  # ln_density
+        st.lists(
+            st.floats(min_value=0, max_value=50, allow_nan=False, allow_infinity=False),
+            min_size=n, max_size=n,
+        ).map(np.array),  # intersection_density
+        st.lists(
+            st.integers(min_value=0, max_value=1),
+            min_size=n, max_size=n,
+        ).map(np.array),  # transit_access
+    )
+)
+
+
+@pytest.mark.slow
+@given(_LOGIT_ARRAYS)
+def test_logit_shares_sum_to_one(
+    arrays: tuple[np.ndarray, np.ndarray, np.ndarray, np.ndarray],
+) -> None:
+    """Mode shares for each parcel must sum to 1.0."""
+    trips_out, ln_dens, inter_dens, transit_acc = arrays
+    assume(np.sum(trips_out) > 0)
+    *_, sa, st_, sw, sb = _multinomial_logit(trips_out, ln_dens, inter_dens, transit_acc)
+    row_sums = sa + st_ + sw + sb
+    assert np.all(np.abs(row_sums - 1.0) < 1e-10), (
+        f"Shares don't sum to 1.0: {row_sums}"
+    )
+
+
+@pytest.mark.slow
+@given(_LOGIT_ARRAYS)
+def test_logit_shares_in_unit_interval(
+    arrays: tuple[np.ndarray, np.ndarray, np.ndarray, np.ndarray],
+) -> None:
+    """All mode shares must be in [0, 1]."""
+    trips_out, ln_dens, inter_dens, transit_acc = arrays
+    *_, sa, st_, sw, sb = _multinomial_logit(trips_out, ln_dens, inter_dens, transit_acc)
+    for name, arr in [("auto", sa), ("transit", st_), ("walk", sw), ("bike", sb)]:
+        assert np.all(arr >= 0), f"{name} shares have negatives: {arr}"
+        assert np.all(arr <= 1.0 + 1e-10), f"{name} shares exceed 1.0: {arr}"
+
+
+@pytest.mark.slow
+@given(_LOGIT_ARRAYS)
+def test_logit_trip_conservation(
+    arrays: tuple[np.ndarray, np.ndarray, np.ndarray, np.ndarray],
+) -> None:
+    """Sum of trips by mode must equal sum of outbound trips."""
+    trips_out, ln_dens, inter_dens, transit_acc = arrays
+    assume(np.sum(trips_out) > 0)
+    ta, tt, tw, tb, *_ = _multinomial_logit(trips_out, ln_dens, inter_dens, transit_acc)
+    total_by_mode = np.sum(ta) + np.sum(tt) + np.sum(tw) + np.sum(tb)
+    assert abs(total_by_mode - np.sum(trips_out)) < 1e-6, (
+        f"Trips by mode sum={total_by_mode:.4f} != outbound sum={np.sum(trips_out):.4f}"
+    )
+
+
+@pytest.mark.slow
+@given(_LOGIT_ARRAYS)
+def test_logit_non_negative_trips(
+    arrays: tuple[np.ndarray, np.ndarray, np.ndarray, np.ndarray],
+) -> None:
+    """All mode trip arrays must be non-negative."""
+    trips_out, ln_dens, inter_dens, transit_acc = arrays
+    ta, tt, tw, tb, *_ = _multinomial_logit(trips_out, ln_dens, inter_dens, transit_acc)
+    assert np.all(ta >= -1e-10), f"trips_auto has negatives: {ta}"
+    assert np.all(tt >= -1e-10), f"trips_transit has negatives: {tt}"
+    assert np.all(tw >= -1e-10), f"trips_walk has negatives: {tw}"
+    assert np.all(tb >= -1e-10), f"trips_bike has negatives: {tb}"
+
+
+@pytest.mark.slow
+@settings(suppress_health_check=[HealthCheck.filter_too_much])
+@given(_LOGIT_ARRAYS)
+def test_logit_auto_dominates_defaults(
+    arrays: tuple[np.ndarray, np.ndarray, np.ndarray, np.ndarray],
+) -> None:
+    """With default ASCs, auto should dominate at moderate intersection density.
+    At very high density (> ~25), walk can overtake auto.
+    """
+    trips_out, ln_dens, inter_dens, transit_acc = arrays
+    assume(np.sum(trips_out) > 0)
+    # Only parcels with realistic intersection density; very high walkability can beat auto
+    assume(np.all(inter_dens <= 12))
+    *_, sa, st_, sw, sb = _multinomial_logit(trips_out, ln_dens, inter_dens, transit_acc)
+    assert np.all(sa >= st_ - 1e-10), f"Auto share {sa} not >= transit share {st_}"
+    assert np.all(sa >= sw - 1e-10), f"Auto share {sa} not >= walk share {sw}"
+    assert np.all(sa >= sb - 1e-10), f"Auto share {sa} not >= bike share {sb}"
+
+
+@pytest.mark.slow
+@given(_LOGIT_ARRAYS)
+def test_logit_zero_trips(
+    arrays: tuple[np.ndarray, np.ndarray, np.ndarray, np.ndarray],
+) -> None:
+    """Parcel with zero outbound trips should have zero trips by all modes."""
+    trips_out, ln_dens, inter_dens, transit_acc = arrays
+    zero_out = np.zeros_like(trips_out)
+    ta, tt, tw, tb, *_ = _multinomial_logit(zero_out, ln_dens, inter_dens, transit_acc)
+    assert np.all(ta == 0), f"trips_auto not zero: {ta}"
+    assert np.all(tt == 0), f"trips_transit not zero: {tt}"
+    assert np.all(tw == 0), f"trips_walk not zero: {tw}"
+    assert np.all(tb == 0), f"trips_bike not zero: {tb}"
+
+
+@pytest.mark.slow
+@given(_LOGIT_ARRAYS)
+def test_logit_empty_input(
+    arrays: tuple[np.ndarray, np.ndarray, np.ndarray, np.ndarray],
+) -> None:
+    """Empty input should return empty arrays for all eight outputs."""
+    _trips, _ln, _id, _ta = arrays  # noqa: F841 — verify strategy works
+    empty = np.array([], dtype=float)
+    result = _multinomial_logit(empty, empty, empty, empty)
+    for arr in result:
+        assert len(arr) == 0, f"Expected empty array, got len {len(arr)}"

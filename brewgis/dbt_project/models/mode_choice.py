@@ -21,9 +21,73 @@ Materialized as: {target_schema}.mode_choice_{scenario_id}
 import numpy as np
 import pandas as pd
 
+# ────────────────────────────────────────────────────────────
+#  Pure logit function (shared with tests)
+# ────────────────────────────────────────────────────────────
+
+
+def _multinomial_logit(
+    trips_outbound: np.ndarray,
+    ln_density: np.ndarray,
+    intersection_density: np.ndarray,
+    transit_access: np.ndarray,
+    asc_transit: float = -2.0,
+    asc_walk: float = -1.5,
+    asc_bike: float = -2.5,
+    beta_density: float = 0.15,
+    beta_design_walk: float = 0.05,
+    beta_transit_dist: float = 0.02,
+) -> tuple[np.ndarray, np.ndarray, np.ndarray, np.ndarray, np.ndarray, np.ndarray, np.ndarray, np.ndarray]:
+    """Multinomial logit mode split (pure function).
+
+    Args:
+        trips_outbound: 1-d array of outbound trips per parcel.
+        ln_density: ln(density + 1) per parcel.
+        intersection_density: Intersection density per parcel.
+        transit_access: 1.0 if transit available, 0.0 otherwise.
+        asc_transit: Alternative-specific constant for transit.
+        asc_walk: ASC for walk.
+        asc_bike: ASC for bike.
+        beta_density: Coefficient for ln(density) in utility.
+        beta_design_walk: Coefficient for intersection density in walk/bike.
+        beta_transit_dist: Coefficient for transit access.
+
+    Returns:
+        (trips_auto, trips_transit, trips_walk, trips_bike,
+         share_auto, share_transit, share_walk, share_bike)
+    """
+    n = len(trips_outbound)
+    if n == 0:
+        empty = np.array([], dtype=float)
+        return (empty, empty, empty, empty, empty, empty, empty, empty)
+
+    # Utility functions (auto is reference, U_auto = 0)
+    u_auto = np.zeros(n)
+    u_transit = asc_transit + beta_density * ln_density + beta_transit_dist * transit_access
+    u_walk = asc_walk + beta_density * ln_density + beta_design_walk * intersection_density
+    u_bike = asc_bike + beta_density * ln_density + beta_design_walk * intersection_density
+
+    # Numerically stable softmax
+    u_stack = np.column_stack([u_auto, u_transit, u_walk, u_bike])
+    u_max = np.max(u_stack, axis=1, keepdims=True)
+    exp_u = np.exp(u_stack - u_max)
+    sum_exp_u = np.sum(exp_u, axis=1, keepdims=True)
+    shares = exp_u / sum_exp_u
+
+    # Apply to outbound trips
+    trips_by_mode = trips_outbound.reshape(-1, 1) * shares
+
+    return (
+        trips_by_mode[:, 0], trips_by_mode[:, 1], trips_by_mode[:, 2], trips_by_mode[:, 3],
+        shares[:, 0], shares[:, 1], shares[:, 2], shares[:, 3],
+    )
+
 
 def model(dbt, session):
     """Compute mode split using multinomial logit.
+
+    Reads upstream dbt models via dbt.ref(), prepares variables,
+    calls _multinomial_logit(), and builds the result DataFrame.
 
     Args:
         dbt: dbt Python model context.
@@ -67,82 +131,46 @@ def model(dbt, session):
     if len(df) == 0:
         return _empty_result()
 
-    # Logit parameters (defaults from plan)
-    # Auto is the reference alternative (U_auto = 0)
-    asc_transit = -2.0
-    asc_walk = -1.5
-    asc_bike = -2.5
-    # Density coefficient: positive means density increases utility of
-    # non-auto modes (Ewing & Cervero 2010: density reduces VMT).
-    beta_density = 0.15
-    beta_design_walk = 0.05
-    beta_transit_dist = 0.02
-
     # Compute density (du/acre), guard against zero acres
-    df["density"] = np.where(
-        df["gross_acres"] > 0,
-        df["dwelling_units_total"] / df["gross_acres"],
+    density = np.where(
+        df["gross_acres"].values > 0,
+        df["dwelling_units_total"].values / df["gross_acres"].values,
         0.0,
     )
 
     # Transit access proxy: urban/compact areas have transit
-    df["transit_access"] = np.where(
+    transit_access = np.where(
         df["land_dev_category"].isin(["urban", "compact"]),
         1.0,
         0.0,
     )
 
-    # Compute log-transformed density for utility functions
-    # ln(density + 1) to handle zero density
-    ln_density = np.log(df["density"].values + 1.0)
+    # Log-transformed density: ln(density + 1) to handle zero density
+    ln_density = np.log(density + 1.0)
 
-    # Utility functions
-    # U_auto = 0 (reference)
-    u_auto = np.zeros(len(df))
-
-    u_transit = (
-        asc_transit
-        + beta_density * ln_density
-        + beta_transit_dist * df["transit_access"].values
+    # Delegate to pure function
+    (
+        ta, tt, tw, tb,
+        sa, st_, sw, sb,
+    ) = _multinomial_logit(
+        trips_outbound=df["trips_outbound"].values,
+        ln_density=ln_density,
+        intersection_density=df["intersection_density"].values,
+        transit_access=transit_access,
     )
-
-    u_walk = (
-        asc_walk
-        + beta_density * ln_density
-        + beta_design_walk * df["intersection_density"].values
-    )
-
-    u_bike = (
-        asc_bike
-        + beta_density * ln_density
-        + beta_design_walk * df["intersection_density"].values
-    )
-
-    # Logit: P(mode) = exp(U_mode) / sum(exp(U_all))
-    u_stack = np.column_stack([u_auto, u_transit, u_walk, u_bike])
-
-    # Numerically stable softmax: subtract max per row before exp
-    u_max = np.max(u_stack, axis=1, keepdims=True)
-    exp_u = np.exp(u_stack - u_max)
-    sum_exp_u = np.sum(exp_u, axis=1, keepdims=True)
-    mode_shares = exp_u / sum_exp_u
-
-    # Apply shares to outbound trips
-    trips_outbound = df["trips_outbound"].values.reshape(-1, 1)
-    trips_by_mode = trips_outbound * mode_shares
 
     # Build result DataFrame
     result_df = pd.DataFrame(
         {
             "parcel_id": df["parcel_id"].values,
-            "trips_auto": trips_by_mode[:, 0],
-            "trips_transit": trips_by_mode[:, 1],
-            "trips_walk": trips_by_mode[:, 2],
-            "trips_bike": trips_by_mode[:, 3],
-            "mode_share_auto": mode_shares[:, 0],
-            "mode_share_transit": mode_shares[:, 1],
-            "mode_share_walk": mode_shares[:, 2],
-            "mode_share_bike": mode_shares[:, 3],
+            "trips_auto": ta,
+            "trips_transit": tt,
+            "trips_walk": tw,
+            "trips_bike": tb,
+            "mode_share_auto": sa,
+            "mode_share_transit": st_,
+            "mode_share_walk": sw,
+            "mode_share_bike": sb,
         }
     )
 

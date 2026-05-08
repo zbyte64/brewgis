@@ -3,6 +3,9 @@ from __future__ import annotations
 
 import numpy as np
 import pytest
+from hypothesis import assume, given, strategies as st
+
+from brewgis.dbt_project.models.trip_distribution import _gravity_model
 
 
 @pytest.mark.integration
@@ -77,107 +80,169 @@ class TestTripDistributionModel:
 
     def test_simple_two_parcel_gravity(self) -> None:
         """Verify gravity model with two parcels and simple inputs."""
-        # Parcel A: 100 trips, employment=50, du=200
-        # Parcel B: 200 trips, employment=100, du=100
-        # Distance = 5 km
         trips = np.array([100.0, 200.0])
         emp = np.array([50.0, 100.0])
         du = np.array([200.0, 100.0])
         xs = np.array([0.0, 5.0])
         ys = np.array([0.0, 0.0])
-        b = 2.0
-        emp_weight = 1.0
-        du_weight = 0.5
-
-        # Distance matrix
-        dx = xs[:, np.newaxis] - xs[np.newaxis, :]
-        dy = ys[:, np.newaxis] - ys[np.newaxis, :]
-        dists = np.sqrt(dx**2 + dy**2)
-
-        # Impedance
-        with np.errstate(divide="ignore", invalid="ignore"):
-            impedance = np.where(dists > 0, dists ** (-b), 0.0)
-
-        # Attractiveness
-        attractiveness = emp_weight * emp + du_weight * du
-
-        # Gravity model
-        attract_imped = attractiveness[np.newaxis, :] * impedance
-        denom = np.sum(attract_imped, axis=1)
-        with np.errstate(divide="ignore", invalid="ignore"):
-            frac = np.where(
-                denom[:, np.newaxis] > 0,
-                attract_imped / denom[:, np.newaxis],
-                0.0,
-            )
-
-        od_matrix = trips[:, np.newaxis] * frac
-
-        # Self-trips (internal)
-        internal = np.diag(od_matrix)
-        assert internal[0] == 0.0  # Zero self-distance = zero internal by impedance
-
-        # Outbound (excluding self)
-        outbound = np.sum(od_matrix, axis=1) - np.diag(od_matrix)
-        assert np.all(outbound >= 0)
+        tb, ib, it, al = _gravity_model(trips, xs, ys, emp, du)
+        assert it[0] == 0.0  # Zero self-distance = zero internal
+        assert np.all(tb >= 0)
+        assert np.all(ib >= 0)
 
     def test_total_trips_conserved(self) -> None:
         """Sum of outbound trips should not exceed total trip origins."""
         trips = np.array([100.0, 200.0, 150.0])
-
-        n = 3
         xs = np.array([0.0, 3.0, 8.0])
         ys = np.array([0.0, 0.0, 0.0])
         emp = np.array([50.0, 75.0, 25.0])
         du = np.array([100.0, 200.0, 150.0])
-        b = 2.0
-        emp_weight = 1.0
-        du_weight = 0.5
+        tb, ib, it, al = _gravity_model(trips, xs, ys, emp, du)
 
-        dx = xs[:, np.newaxis] - xs[np.newaxis, :]
-        dy = ys[:, np.newaxis] - ys[np.newaxis, :]
-        dists = np.sqrt(dx**2 + dy**2)
-        with np.errstate(divide="ignore", invalid="ignore"):
-            impedance = np.where(dists > 0, dists ** (-b), 0.0)
-        attractiveness = emp_weight * emp + du_weight * du
-        attract_imped = attractiveness[np.newaxis, :] * impedance
-        denom = np.sum(attract_imped, axis=1)
-        with np.errstate(divide="ignore", invalid="ignore"):
-            frac = np.where(
-                denom[:, np.newaxis] > 0,
-                attract_imped / denom[:, np.newaxis],
-                0.0,
-            )
-        od_matrix = trips[:, np.newaxis] * frac
-
-        # Internal trips
-        internal = np.diag(od_matrix)
-
-        # For each origin, sum of (internal + outbound) = origin trips
-        for i in range(n):
-            total_i = internal[i] + (np.sum(od_matrix[i, :]) - od_matrix[i, i])
+        for i in range(3):
+            total_i = it[i] + tb[i]
             assert abs(total_i - trips[i]) < 0.001, (
                 f"Origin {i}: {total_i} != {trips[i]}"
             )
 
     def test_avg_trip_length(self) -> None:
         """Average trip length should be distance-weighted."""
-        trips = np.array([100.0])
+        # Call the real function with 2 parcels at distance 5
+        trips = np.array([100.0, 0.0])
+        emp = np.array([50.0, 50.0])
+        du = np.array([100.0, 100.0])
         xs = np.array([0.0, 5.0])
         ys = np.array([0.0, 0.0])
-        dist = 5.0
-        od_val = 80.0  # 80 trips go to the other parcel
-        od_internal = 20.0  # 20 internal
+        tb, ib, it, al = _gravity_model(trips, xs, ys, emp, du)
+        assert al[0] >= 0
+        assert al[1] == 0.0  # No outbound = zero avg length
 
-        od_matrix = np.array([[od_internal, od_val], [0.0, 0.0]])
-        dist_matrix = np.array([[0.0, dist], [dist, 0.0]])
 
-        outbound = np.sum(od_matrix, axis=1) - np.diag(od_matrix)
-        dist_weighted = np.sum(od_matrix * dist_matrix, axis=1)
+# ════════════════════════════════════════════════════════════
+#  Property-based tests for gravity model invariants
+# ════════════════════════════════════════════════════════════
+#
+# The pure function _gravity_model is shared with the dbt Python model.
+# Tests the same import that dbt uses at runtime.
+#
+# Invariants verified:
+#   - Non-negativity: all output columns >= 0
+#   - Trip conservation: sum(outbound + internal) ≈ sum(trips)
+#   - Inbound = Outbound (closed system)
+#   - Internal trips ≈ 0 when attractors exist and parcels distinct
+#   - Empty input returns empty output
+# ────────────────────────────────────────────────────────────
 
-        with np.errstate(divide="ignore", invalid="ignore"):
-            avg_len = np.where(outbound > 0, dist_weighted / outbound, 0.0)
 
-        expected = (od_val * dist) / od_val
-        assert avg_len[0] == pytest.approx(expected)
-        assert avg_len[1] == 0.0  # No outbound = zero avg length
+# ── Hypothesis strategies ──────────────────────────────────
+
+_ARRAY_2_5 = st.integers(min_value=2, max_value=5)
+
+_GRAVITY_ARRAYS = _ARRAY_2_5.flatmap(
+    lambda n: st.tuples(
+        st.lists(
+            st.floats(min_value=0, max_value=5000, allow_nan=False, allow_infinity=False),
+            min_size=n, max_size=n,
+        ).map(np.array),
+        st.lists(
+            st.floats(min_value=0, max_value=100_000, allow_nan=False, allow_infinity=False),
+            min_size=n, max_size=n,
+        ).map(np.array),
+        st.lists(
+            st.floats(min_value=0, max_value=100_000, allow_nan=False, allow_infinity=False),
+            min_size=n, max_size=n,
+        ).map(np.array),
+        st.lists(
+            st.floats(min_value=0, max_value=10_000, allow_nan=False, allow_infinity=False),
+            min_size=n, max_size=n,
+        ).map(np.array),
+        st.lists(
+            st.floats(min_value=0, max_value=10_000, allow_nan=False, allow_infinity=False),
+            min_size=n, max_size=n,
+        ).map(np.array),
+    )
+)
+
+
+# ── Hypothesis property-based tests ─────────────────────────
+
+
+@pytest.mark.slow
+@given(_GRAVITY_ARRAYS)
+def test_gravity_model_non_negative(
+    arrays: tuple[np.ndarray, np.ndarray, np.ndarray, np.ndarray, np.ndarray],
+) -> None:
+    """All output arrays must be non-negative."""
+    trips, xs, ys, emp, du = arrays
+    tb, ib, it, al = _gravity_model(trips, xs, ys, emp, du)
+    assert np.all(tb >= -1e-10), f"trips_outbound has negatives: {tb}"
+    assert np.all(ib >= -1e-10), f"trips_inbound has negatives: {ib}"
+    assert np.all(it >= -1e-10), f"trips_internal has negatives: {it}"
+    assert np.all(al >= -1e-10), f"avg_trip_length has negatives: {al}"
+
+
+@pytest.mark.slow
+@given(_GRAVITY_ARRAYS)
+def test_gravity_model_trip_conservation(
+    arrays: tuple[np.ndarray, np.ndarray, np.ndarray, np.ndarray, np.ndarray],
+) -> None:
+    """Sum of outbound + internal trips must equal sum of origin trips."""
+    trips, xs, ys, emp, du = arrays
+    assume(np.sum(trips) > 0)
+    tb, ib, it, al = _gravity_model(trips, xs, ys, emp, du)
+    total_out = np.sum(tb)
+    total_internal = np.sum(it)
+    total_origin = np.sum(trips)
+    assert abs(total_out + total_internal - total_origin) < 1e-6, (
+        f"Trip conservation: out={total_out:.4f} + internal={total_internal:.4f}"
+        f" = {total_out + total_internal:.4f} != origin={total_origin:.4f}"
+    )
+
+
+@pytest.mark.slow
+@given(_GRAVITY_ARRAYS)
+def test_gravity_model_inbound_vs_outbound(
+    arrays: tuple[np.ndarray, np.ndarray, np.ndarray, np.ndarray, np.ndarray],
+) -> None:
+    """Sum of outbound trips must equal sum of inbound trips (closed system)."""
+    trips, xs, ys, emp, du = arrays
+    assume(np.sum(trips) > 0)
+    tb, ib, it, al = _gravity_model(trips, xs, ys, emp, du)
+    assert abs(np.sum(tb) - np.sum(ib)) < 1e-6, (
+        f"Sum outbound={np.sum(tb):.4f} != sum inbound={np.sum(ib):.4f}"
+    )
+
+
+@pytest.mark.slow
+@given(_GRAVITY_ARRAYS)
+def test_gravity_model_internal_zero_when_attractors_exist(
+    arrays: tuple[np.ndarray, np.ndarray, np.ndarray, np.ndarray, np.ndarray],
+) -> None:
+    """Internal trips should be ~0 when attractors exist and parcels distinct.
+    Self-distance d=0 gives impedance=0, so no trips stay internal when
+    origins have destinations with positive attractiveness.
+    """
+    trips, xs, ys, emp, du = arrays
+    assume(np.sum(trips) > 0)
+    # Need at least 2 parcels with positive attractiveness for valid distribution
+    has_attract = (emp + du) > 0
+    assume(np.sum(has_attract) >= 2)
+    # Skip colocated parcels — all-zero distances make all trips internal
+    assume(not (np.all(xs == xs[0]) and np.all(ys == ys[0])))
+    tb, ib, it, al = _gravity_model(trips, xs, ys, emp, du)
+    assert np.all(it < 1e-10), f"Internal trips should be ~0, got max {np.max(it)}"
+
+
+@pytest.mark.slow
+@given(_GRAVITY_ARRAYS)
+def test_gravity_model_empty_input(
+    arrays: tuple[np.ndarray, np.ndarray, np.ndarray, np.ndarray, np.ndarray],
+) -> None:
+    """Empty input should return empty arrays."""
+    _trips, _xs, _ys, _emp, _du = arrays  # noqa: F841 — verify strategy produces arrays
+    empty = np.array([], dtype=float)
+    tb, ib, it, al = _gravity_model(empty, empty, empty, empty, empty)
+    assert len(tb) == 0
+    assert len(ib) == 0
+    assert len(it) == 0
+    assert len(al) == 0

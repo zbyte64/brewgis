@@ -10,6 +10,8 @@ from hypothesis import HealthCheck
 # Only enabled when DEAL_ENABLED=1 (set by `make test-deal`).
 if os.environ.get("DEAL_ENABLED") == "1":
     deal.enable()
+else:
+    deal.disable()
 
 # Hypothesis profile selection.
 # Set HYPOTHESIS_PROFILE env var, or auto-detect CI environment.
