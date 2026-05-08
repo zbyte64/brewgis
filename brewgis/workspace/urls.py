@@ -19,6 +19,8 @@ from .views import import_status
 from .views import merge_paint_edits
 from .views import paint_built_form
 from .views import paint_features
+from .views import paint_history
+from .views import undo_paint
 from .views import poi_fetch
 from .views import preview_symbology
 from .views import stitch
@@ -61,6 +63,17 @@ urlpatterns = [
         "<int:workspace_pk>/scenario/<int:scenario_pk>/clear-paint/",
         clear_paint,
         name="clear_paint",
+    ),
+    # Paint History & Undo
+    path(
+        "<int:workspace_pk>/scenario/<int:scenario_pk>/paint-history/",
+        paint_history,
+        name="paint_history",
+    ),
+    path(
+        "<int:workspace_pk>/scenario/<int:scenario_pk>/paint/undo/",
+        undo_paint,
+        name="undo_paint",
     ),
     # Merge Paint Edits between scenarios
     path(

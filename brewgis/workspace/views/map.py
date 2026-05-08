@@ -49,6 +49,8 @@ def view_workspace_map(request: HttpRequest, workspace_pk: int) -> HttpResponse:
     paint_url: str = ""
     clear_url: str = ""
     bf_paint_url: str = ""
+    history_url: str = ""
+    undo_url: str = ""
 
     if scenario_id:
         scenario = get_object_or_404(Scenario, pk=int(scenario_id), workspace=workspace)
@@ -92,6 +94,12 @@ def view_workspace_map(request: HttpRequest, workspace_pk: int) -> HttpResponse:
         )
         bf_paint_url = request.build_absolute_uri(
             f"/workspace/{workspace_pk}/scenario/{scenario.pk}/paint-bf/"
+        )
+        history_url = request.build_absolute_uri(
+            f"/workspace/{workspace_pk}/scenario/{scenario.pk}/paint-history/"
+        )
+        undo_url = request.build_absolute_uri(
+            f"/workspace/{workspace_pk}/scenario/{scenario.pk}/paint/undo/"
         )
 
     # Build regular layer data
@@ -173,6 +181,8 @@ def view_workspace_map(request: HttpRequest, workspace_pk: int) -> HttpResponse:
         "paint_url": paint_url,
         "clear_url": clear_url,
         "bf_paint_url": bf_paint_url,
+        "history_url": history_url if scenario else "",
+        "undo_url": undo_url if scenario else "",
     }
 
     return render(request, "workspace_map.html", context)

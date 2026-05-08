@@ -439,3 +439,50 @@ class MergeAudit(models.Model):
             f"{self.target_scenario_id} ({self.rows_copied} copied, "
             f"{self.rows_skipped} skipped)"
         )
+
+class PaintEvent(models.Model):
+    """Logs every paint operation for undo/redo support.
+
+    Each row represents one column change on one feature/parcel
+    within a scenario. A batch of events (same user, same action
+    across multiple features) shares a ``batch_id`` for batch undo.
+    """
+
+    OPERATION_CHOICES = [
+        ("paint", "Paint"),
+        ("clear", "Clear"),
+        ("built_form", "Built Form Paint"),
+        ("undo", "Undo"),
+    ]
+
+    scenario = models.ForeignKey(
+        Scenario, on_delete=models.CASCADE, related_name="paint_events"
+    )
+    feature_id = models.CharField(max_length=128)
+    column_name = models.CharField(max_length=128)
+    old_value = models.FloatField(null=True, blank=True)
+    new_value = models.FloatField(null=True, blank=True)
+    painted_by = models.ForeignKey(
+        settings.AUTH_USER_MODEL, on_delete=models.SET_NULL, null=True
+    )
+    painted_at = models.DateTimeField(auto_now_add=True, db_index=True)
+    operation_type = models.CharField(max_length=16, choices=OPERATION_CHOICES)
+    batch_id = models.CharField(max_length=64, db_index=True)
+    undone_at = models.DateTimeField(null=True, blank=True)
+
+    class Meta:
+        ordering = ["-painted_at"]
+        indexes = [
+            models.Index(fields=["scenario", "-painted_at"]),
+            models.Index(fields=["batch_id"]),
+        ]
+        verbose_name = "Paint Event"
+        verbose_name_plural = "Paint Events"
+
+    def __str__(self) -> str:
+        op = self.get_operation_type_display()
+        return (
+            f"PaintEvent[{self.scenario_id}]({op}: "
+            f"{self.feature_id}.{self.column_name} "
+            f"{self.old_value}→{self.new_value})"
+        )

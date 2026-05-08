@@ -1,8 +1,9 @@
-"""Paint views — direct column painting and built form painting for scenarios."""
+"""Paint views — direct column painting, built form painting, paint history, and undo/redo."""
 
 from __future__ import annotations
 
 import json
+import uuid
 from typing import TYPE_CHECKING
 from typing import Any
 
@@ -11,6 +12,8 @@ from django.db import connection
 from django.db import transaction
 from django.http import JsonResponse
 from django.shortcuts import get_object_or_404
+from django.utils.timezone import now as tz_now
+from django.views.decorators.http import require_GET
 from django.views.decorators.http import require_POST
 
 from brewgis.workspace.built_forms.allocation import AllocationEngine
@@ -18,6 +21,7 @@ from brewgis.workspace.built_forms.allocation import AllocationResult
 from brewgis.workspace.built_forms.models import BuildingType
 from brewgis.workspace.built_forms.models import PlaceType
 from brewgis.workspace.models import PaintedCanvas
+from brewgis.workspace.models import PaintEvent
 from brewgis.workspace.models import Scenario
 from brewgis.workspace.models import Workspace
 from brewgis.workspace.services.canvas_view_manager import PAINTABLE_COLUMNS
@@ -27,6 +31,9 @@ from brewgis.workspace.services.paint_constraints import check_paint_batch
 
 if TYPE_CHECKING:
     from django.http import HttpRequest
+
+
+# ─── Paint Operations ────────────────────────────────────────────
 
 
 @require_POST
@@ -40,7 +47,7 @@ def paint_features(
         {"features": ["1", "2"], "column": "du", "value": 100.0}
 
     Validates column name against PAINTABLE_COLUMNS, bulk-upserts
-    PaintedCanvas rows, then refreshes the canvas view.
+    PaintedCanvas rows, logs PaintEvents, then refreshes the canvas view.
     """
     workspace = get_object_or_404(Workspace, pk=workspace_pk)
     scenario = get_object_or_404(Scenario, pk=scenario_pk, workspace=workspace)
@@ -85,7 +92,7 @@ def paint_features(
                 },
                 status=400,
             )
-    now = request.user
+    now_user = request.user
 
     # ── Constraint checking ──────────────────────────────
     paint_map: dict[str, dict[str, float | None]] = {
@@ -97,13 +104,16 @@ def paint_features(
     # ─────────────────────────────────────────────────────
 
     with transaction.atomic():
+        # Capture old values before upsert
+        old_values = _fetch_painted_old_values(scenario, features, column)
+
         pc_rows = [
             PaintedCanvas(
                 scenario=scenario,
                 feature_id=fid,
                 column_name=column,
                 painted_value=painted_value,
-                painted_by=now,
+                painted_by=now_user,
             )
             for fid in features
         ]
@@ -115,7 +125,23 @@ def paint_features(
             unique_fields=["scenario", "feature_id", "column_name"],
         )
 
-        # Find base canvas table from scenario
+        # Log paint events
+        batch_id = uuid.uuid4().hex
+        PaintEvent.objects.bulk_create([
+            PaintEvent(
+                scenario=scenario,
+                feature_id=fid,
+                column_name=column,
+                old_value=old_values.get(fid),
+                new_value=painted_value,
+                painted_by=now_user,
+                operation_type="paint",
+                batch_id=batch_id,
+            )
+            for fid in features
+        ])
+
+        # Refresh the canvas view
         base_table = _resolve_base_table(scenario)
         refresh_canvas_view(scenario, base_table)
 
@@ -125,6 +151,7 @@ def paint_features(
             "status": "ok",
             "painted_count": len(features),
             "painted_features": features,
+            "batch_id": batch_id,
             "warnings": warnings,
         }
     )
@@ -141,7 +168,7 @@ def clear_paint(
         {"features": ["1", "2"]}
 
     Deletes all PaintedCanvas rows for those features within the scenario,
-    then refreshes the canvas view.
+    logs PaintEvents for undo support, then refreshes the canvas view.
     """
     workspace = get_object_or_404(Workspace, pk=workspace_pk)
     scenario = get_object_or_404(Scenario, pk=scenario_pk, workspace=workspace)
@@ -161,12 +188,37 @@ def clear_paint(
         )
 
     with transaction.atomic():
+        # Capture old values before deleting
+        old_paints = list(
+            PaintedCanvas.objects.filter(
+                scenario=scenario,
+                feature_id__in=features,
+            ).values("feature_id", "column_name", "painted_value")
+        )
+
         deleted_count, _ = PaintedCanvas.objects.filter(
             scenario=scenario,
             feature_id__in=features,
         ).delete()
 
-        # Find base canvas table from scenario
+        # Log clear events
+        if old_paints:
+            batch_id = uuid.uuid4().hex
+            PaintEvent.objects.bulk_create([
+                PaintEvent(
+                    scenario=scenario,
+                    feature_id=p["feature_id"],
+                    column_name=p["column_name"],
+                    old_value=p["painted_value"],
+                    new_value=None,
+                    painted_by=request.user,
+                    operation_type="clear",
+                    batch_id=batch_id,
+                )
+                for p in old_paints
+            ])
+
+        # Refresh the canvas view
         base_table = _resolve_base_table(scenario)
         refresh_canvas_view(scenario, base_table)
 
@@ -191,7 +243,8 @@ def paint_built_form(
         {"features": ["1", "2"], "bf_type": "place", "bf_id": 1}
 
     Loads base canvas data for selected features, runs AllocationEngine,
-    writes computed fields as PaintedCanvas rows, refreshes canvas view.
+    writes computed fields as PaintedCanvas rows, logs PaintEvents,
+    refreshes canvas view.
     """
     workspace = get_object_or_404(Workspace, pk=workspace_pk)
     scenario = get_object_or_404(Scenario, pk=scenario_pk, workspace=workspace)
@@ -208,15 +261,269 @@ def paint_built_form(
     )
 
 
-# ─── Helpers ────────────────────────────────────────────────
+# ─── Undo / Redo ─────────────────────────────────────────────────
+
+
+@require_POST
+@login_required
+def undo_paint(
+    request: HttpRequest, workspace_pk: int, scenario_pk: int
+) -> JsonResponse:
+    """Undo a specific paint event by restoring its old value.
+
+    Accepts JSON body::
+        {"event_id": 42}
+    or::
+        {"batch_id": "abc123"}
+
+    If ``event_id`` is given, undoes that single event.
+    If ``batch_id`` is given, undoes all non-undone events in that batch.
+    Sets ``undone_at`` on reverted events and creates a new PaintEvent
+    recording the undo.
+    """
+    workspace = get_object_or_404(Workspace, pk=workspace_pk)
+    scenario = get_object_or_404(Scenario, pk=scenario_pk, workspace=workspace)
+
+    try:
+        body = json.loads(request.body)
+    except json.JSONDecodeError:
+        return JsonResponse(
+            {"status": "error", "message": "Invalid JSON body."}, status=400
+        )
+
+    event_id: int | None = body.get("event_id")
+    batch_id: str | None = body.get("batch_id")
+
+    if not event_id and not batch_id:
+        return JsonResponse(
+            {
+                "status": "error",
+                "message": "Provide either 'event_id' or 'batch_id'.",
+            },
+            status=400,
+        )
+
+    with transaction.atomic():
+        # Resolve events to undo
+        if event_id:
+            events = list(
+                PaintEvent.objects.filter(
+                    id=event_id,
+                    scenario=scenario,
+                    undone_at__isnull=True,
+                ).select_related("scenario")
+            )
+            if not events:
+                return JsonResponse(
+                    {
+                        "status": "error",
+                        "message": "Event not found or already undone.",
+                    },
+                    status=404,
+                )
+        else:
+            events = list(
+                PaintEvent.objects.filter(
+                    batch_id=batch_id,
+                    scenario=scenario,
+                    undone_at__isnull=True,
+                ).select_related("scenario")
+            )
+            if not events:
+                return JsonResponse(
+                    {
+                        "status": "error",
+                        "message": "No non-undone events found for this batch.",
+                    },
+                    status=404,
+                )
+
+        now_user = request.user
+        undo_now = tz_now()
+        undo_batch_id = uuid.uuid4().hex
+
+        # Process each event: restore old_value
+        for evt in events:
+            if evt.operation_type == "clear":
+                # Recreate the PaintedCanvas row that was deleted
+                PaintedCanvas.objects.update_or_create(
+                    scenario=scenario,
+                    feature_id=evt.feature_id,
+                    column_name=evt.column_name,
+                    defaults={
+                        "painted_value": evt.old_value,
+                        "painted_by": now_user,
+                    },
+                )
+            elif evt.operation_type == "paint":
+                if evt.old_value is None:
+                    # Old value was base canvas — delete our override
+                    PaintedCanvas.objects.filter(
+                        scenario=scenario,
+                        feature_id=evt.feature_id,
+                        column_name=evt.column_name,
+                    ).delete()
+                else:
+                    # Restore the old painted value
+                    PaintedCanvas.objects.update_or_create(
+                        scenario=scenario,
+                        feature_id=evt.feature_id,
+                        column_name=evt.column_name,
+                        defaults={
+                            "painted_value": evt.old_value,
+                            "painted_by": now_user,
+                        },
+                    )
+            elif evt.operation_type == "built_form":
+                if evt.old_value is None:
+                    PaintedCanvas.objects.filter(
+                        scenario=scenario,
+                        feature_id=evt.feature_id,
+                        column_name=evt.column_name,
+                    ).delete()
+                else:
+                    PaintedCanvas.objects.update_or_create(
+                        scenario=scenario,
+                        feature_id=evt.feature_id,
+                        column_name=evt.column_name,
+                        defaults={
+                            "painted_value": evt.old_value,
+                            "painted_by": now_user,
+                        },
+                    )
+
+            # Mark as undone
+            PaintEvent.objects.filter(id=evt.id).update(undone_at=undo_now)
+
+        # Log the undo event(s)
+        undo_events = [
+            PaintEvent(
+                scenario=scenario,
+                feature_id=evt.feature_id,
+                column_name=evt.column_name,
+                old_value=evt.new_value,
+                new_value=evt.old_value,
+                painted_by=now_user,
+                operation_type="undo",
+                batch_id=undo_batch_id,
+            )
+            for evt in events
+        ]
+        PaintEvent.objects.bulk_create(undo_events)
+
+        # Refresh canvas view
+        base_table = _resolve_base_table(scenario)
+        refresh_canvas_view(scenario, base_table)
+
+    return JsonResponse(
+        {
+            "status": "ok",
+            "undone_count": len(events),
+            "undo_batch_id": undo_batch_id,
+        }
+    )
+
+
+# ─── Paint History ───────────────────────────────────────────────
+
+
+@require_GET
+@login_required
+def paint_history(
+    request: HttpRequest, workspace_pk: int, scenario_pk: int
+) -> JsonResponse:
+    """Return paint event history for a scenario.
+
+    Query params::
+
+        ?limit=50&offset=0&feature_id=parcel-001
+
+    Returns JSON with event list and total count.
+    """
+    scenario = get_object_or_404(Scenario, pk=scenario_pk, workspace__pk=workspace_pk)
+
+    try:
+        limit = int(request.GET.get("limit", 50))
+    except (TypeError, ValueError):
+        limit = 50
+    try:
+        offset = int(request.GET.get("offset", 0))
+    except (TypeError, ValueError):
+        offset = 0
+
+    feature_id = request.GET.get("feature_id")
+
+    qs = PaintEvent.objects.filter(scenario=scenario)
+    if feature_id:
+        qs = qs.filter(feature_id=feature_id)
+
+    total = qs.count()
+    events_qs = qs.select_related("painted_by").order_by("-painted_at")[
+        offset : offset + limit
+    ]
+
+    return JsonResponse(
+        {
+            "status": "ok",
+            "total": total,
+            "offset": offset,
+            "limit": limit,
+            "events": [
+                {
+                    "id": e.id,
+                    "feature_id": e.feature_id,
+                    "column_name": e.column_name,
+                    "old_value": e.old_value,
+                    "new_value": e.new_value,
+                    "painted_by": e.painted_by_id,
+                    "painted_by_name": e.painted_by.get_full_name()
+                    or e.painted_by.username
+                    if e.painted_by
+                    else None,
+                    "painted_at": e.painted_at.isoformat(),
+                    "operation_type": e.operation_type,
+                    "batch_id": e.batch_id,
+                    "undone_at": e.undone_at.isoformat() if e.undone_at else None,
+                }
+                for e in events_qs
+            ],
+        }
+    )
+
+
+# ─── Helpers ─────────────────────────────────────────────────────
 
 
 _PAINT_CONSTRAINT_RESULT: list[ConstraintResult | None] = [None]
 """Last constraint result, cached for warning collection (mutable container for in-module mutation)."""
 
+
 def _resolve_base_table(scenario: Scenario) -> str:  # noqa: ARG001
     """Resolve the base canvas table name for a scenario."""
     return "public.base_canvas"
+
+
+def _fetch_painted_old_values(
+    scenario: Scenario,
+    feature_ids: list[str],
+    column_name: str,
+) -> dict[str, float | None]:
+    """Fetch current PaintedCanvas values for (scenario, features, column).
+
+    Returns a dict mapping feature_id -> painted_value (or None if no paint exists).
+    """
+    qs = PaintedCanvas.objects.filter(
+        scenario=scenario,
+        feature_id__in=feature_ids,
+        column_name=column_name,
+    ).values("feature_id", "painted_value")
+    result: dict[str, float | None] = {}
+    for row in qs:
+        result[row["feature_id"]] = row["painted_value"]
+    # Features without paint get None (they fall through to base canvas)
+    for fid in feature_ids:
+        result.setdefault(fid, None)
+    return result
 
 
 def _fetch_feature_data(base_table: str, feature_ids: list[str]) -> dict[str, dict]:
@@ -378,6 +685,8 @@ def _execute_built_form_paint(
 
     with transaction.atomic():
         all_pc_rows: list[PaintedCanvas] = []
+        # Track which feature+column combos are being painted for old-value lookup
+        feature_columns: set[tuple[str, str]] = set()
 
         for fid, row in feature_data.items():
             parcel_acres = float(row.get("area_gross", row.get("area_parcel", 1.0)))
@@ -403,6 +712,11 @@ def _execute_built_form_paint(
                 result=result,
                 painted_by=user,
             )
+
+            # Track which columns we're painting for old-value lookup
+            for pc_row in pc_rows:
+                feature_columns.add((fid, pc_row.column_name))
+
             all_pc_rows.extend(pc_rows)
 
         # ── Constraint checking ──────────────────────────
@@ -417,6 +731,12 @@ def _execute_built_form_paint(
         bf_warnings = _collect_warnings()
         # ─────────────────────────────────────────────────
 
+        # Fetch old values before upsert
+        old_values_map: dict[tuple[str, str], float | None] = {}
+        for fid, col in feature_columns:
+            old = _fetch_painted_old_values(scenario, [fid], col)
+            old_values_map[(fid, col)] = old.get(fid)
+
         # Bulk upsert all painted rows
         PaintedCanvas.objects.bulk_create(
             all_pc_rows,
@@ -425,6 +745,22 @@ def _execute_built_form_paint(
             unique_fields=["scenario", "feature_id", "column_name"],
         )
 
+        # Log built_form paint events
+        batch_id = uuid.uuid4().hex
+        PaintEvent.objects.bulk_create([
+            PaintEvent(
+                scenario=scenario,
+                feature_id=pc.feature_id,
+                column_name=pc.column_name,
+                old_value=old_values_map.get((pc.feature_id, pc.column_name)),
+                new_value=pc.painted_value,
+                painted_by=user,
+                operation_type="built_form",
+                batch_id=batch_id,
+            )
+            for pc in all_pc_rows
+        ])
+
         refresh_canvas_view(scenario, base_table)
 
     return JsonResponse(
@@ -432,6 +768,7 @@ def _execute_built_form_paint(
             "status": "ok",
             "painted_count": len(all_pc_rows),
             "painted_features": features,
+            "batch_id": batch_id,
             "warnings": bf_warnings,
         }
     )

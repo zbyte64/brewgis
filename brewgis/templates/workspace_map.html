@@ -120,14 +120,42 @@
               hx-headers='{"X-CSRFToken": "{{ csrf_token }}"}'>
         Clear
       </button>
+      <button type="button" class="btn btn-sm btn-outline-secondary" id="paint-undo-btn" disabled
+              style="margin-left: 0.25rem;"
+              hx-post="{{ undo_url }}"
+              hx-target="#paint-result"
+              hx-swap="innerHTML"
+              hx-include="#undo-event-id"
+              hx-trigger="click"
+              hx-headers='{"X-CSRFToken": "{{ csrf_token }}"}'>
+        Undo Last
+      </button>
+      <input type="hidden" id="undo-event-id" name="event_id" value="">
+      <button type="button" class="btn btn-sm btn-outline-info" id="paint-history-btn"
+              style="margin-left: 0.25rem;">
+        History
+      </button>
     </div>
   </div>
 
   <!-- Result feedback area -->
   <div id="paint-result" class="mt-1"></div>
 </div>
+
+{% partialdef paint-history-panel %}
+<div id="paint-history-panel" class="p-2 bg-light border-bottom" style="display: none;">
+  <div class="d-flex justify-content-between align-items-center mb-1">
+    <small class="text-muted fw-semibold">Paint History</small>
+    <button type="button" class="btn btn-sm btn-outline-secondary" id="paint-history-toggle" style="font-size: 0.75rem;">Refresh</button>
+  </div>
+  <div id="paint-history-list" style="max-height: 180px; overflow-y: auto; font-size: 0.75rem;">
+    <div class="text-muted">No paint history loaded.</div>
+  </div>
+</div>
+{% endpartialdef %}
 {% endpartialdef %}
 {% partial paint-toolbar %}
+{% partial paint-history-panel %}
         <div class="card-body p-0">
           <brew-gis-map
             map-style="https://raw.githubusercontent.com/go2garret/maps/main/src/assets/json/openStreetMap.json"
@@ -233,6 +261,123 @@
       clearBtn.disabled = selectedFeatures.length === 0;
     }
   });
+
+  // ── Paint History & Undo ──────────────────────────────
+  const undoBtn = document.getElementById('paint-undo-btn');
+  const undoEventId = document.getElementById('undo-event-id');
+  const historyPanel = document.getElementById('paint-history-panel');
+  const historyList = document.getElementById('paint-history-list');
+  const historyBtn = document.getElementById('paint-history-btn');
+  const historyToggle = document.getElementById('paint-history-toggle');
+
+  let historyVisible = false;
+  let lastEventId = null;
+
+  function loadPaintHistory() {
+    if (!historyList) return;
+    historyList.innerHTML = '<div class="text-muted">Loading...</div>';
+
+    fetch('{{ history_url|safe }}?limit=20')
+      .then(function(r) { return r.json(); })
+      .then(function(data) {
+        if (data.status !== 'ok' || !data.events.length) {
+          historyList.innerHTML = '<div class="text-muted">No paint events yet.</div>';
+          undoBtn.disabled = true;
+          return;
+        }
+        var html = '';
+        for (var i = 0; i < data.events.length; i++) {
+          var evt = data.events[i];
+          var isUndone = evt.undone_at !== null;
+          var opLabel = evt.operation_type === 'paint' ? 'Paint' :
+                        evt.operation_type === 'clear' ? 'Clear' :
+                        evt.operation_type === 'built_form' ? 'BF' : evt.operation_type;
+          var valStr = evt.old_value + ' → ' + evt.new_value;
+          var rowClass = isUndone ? 'text-muted' : '';
+          html += '<div class="' + rowClass + '" style="border-bottom: 1px solid #eee; padding: 2px 0;">';
+          html += '<span class="badge bg-secondary me-1" style="font-size:0.6rem;">' + opLabel + '</span>';
+          html += '<span title="' + evt.feature_id + '.' + evt.column_name + '">';
+          html += evt.column_name + '</span> ';
+          html += '<span style="font-size:0.65rem;">' + valStr + '</span>';
+          if (!isUndone && evt.operation_type !== 'undo') {
+            html += ' <a href="#" class="undo-link text-danger" data-event-id="' + evt.id + '" style="font-size:0.65rem;">↩</a>';
+          }
+          html += '</div>';
+        }
+        historyList.innerHTML = html;
+
+        // Set last event for "Undo Last" button
+        var firstEvent = data.events[0];
+        if (firstEvent && !firstEvent.undone_at && firstEvent.operation_type !== 'undo') {
+          lastEventId = firstEvent.id;
+          undoBtn.disabled = false;
+        } else {
+          lastEventId = null;
+          undoBtn.disabled = true;
+        }
+
+        // Wire undo links
+        historyList.querySelectorAll('.undo-link').forEach(function(link) {
+          link.addEventListener('click', function(e) {
+            e.preventDefault();
+            var eventId = this.getAttribute('data-event-id');
+            undoEventId.value = eventId;
+            undoBtn.click();
+          });
+        });
+      })
+      .catch(function() {
+        historyList.innerHTML = '<div class="text-muted">Failed to load history.</div>';
+      });
+  }
+
+  // Toggle history panel
+  if (historyBtn && historyPanel) {
+    historyBtn.addEventListener('click', function() {
+      historyVisible = !historyVisible;
+      historyPanel.style.display = historyVisible ? 'block' : 'none';
+      historyBtn.textContent = historyVisible ? 'Hide History' : 'History';
+      if (historyVisible) {
+        loadPaintHistory();
+      }
+    });
+  }
+
+  // Refresh history
+  if (historyToggle) {
+    historyToggle.addEventListener('click', function(e) {
+      e.preventDefault();
+      loadPaintHistory();
+    });
+  }
+
+  // "Undo Last" button: auto-fill with most recent event ID
+  if (undoBtn && undoEventId) {
+    undoBtn.addEventListener('htmx:beforeRequest', function() {
+      if (!undoEventId.value && lastEventId) {
+        undoEventId.value = lastEventId;
+      }
+    });
+  }
+
+  // Reload history after a successful paint operation
+  if (paintResult) {
+    var paintObserver = new MutationObserver(function() {
+      if (historyVisible) {
+        setTimeout(loadPaintHistory, 500);
+      }
+    });
+    paintObserver.observe(paintResult, { childList: true, subtree: true });
+  }
+
+  // Load history when paint mode activates
+  if (toggleBtn) {
+    toggleBtn.addEventListener('click', function() {
+      if (paintActive && historyVisible) {
+        setTimeout(loadPaintHistory, 300);
+      }
+    });
+  }
 })();
 </script>
 {% endblock inline_javascript %}
