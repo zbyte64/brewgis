@@ -29,6 +29,9 @@ MODULE_DEPENDENCIES: dict[str, list[str]] = {
     "health_impacts": ["physical_activity", "transport_ghg"],
     "stormwater_runoff": ["land_consumption"],
 }
+    "food_access": ["core"],
+    "housing_cost_burden": ["core"],
+    "sprawl_index": ["core"],
 
 
 
@@ -60,6 +63,9 @@ MODULE_RESULT_TABLES: dict[str, list[str]] = {
     "physical_activity": ["physical_activity_{scenario_id}"],
     "health_impacts": ["health_impacts_{scenario_id}"],
     "stormwater_runoff": ["stormwater_runoff_{scenario_id}"],
+    "food_access": ["food_access_{scenario_id}"],
+    "housing_cost_burden": ["housing_cost_burden_{scenario_id}"],
+    "sprawl_index": ["sprawl_index_{scenario_id}"],
 }
 
 
@@ -88,6 +94,9 @@ MODULE_DBT_SELECT: dict[str, list[str]] = {
     "physical_activity": ["physical_activity"],
     "health_impacts": ["health_impacts"],
     "stormwater_runoff": ["stormwater_runoff"],
+    "food_access": ["food_access"],
+    "housing_cost_burden": ["housing_cost_burden"],
+    "sprawl_index": ["sprawl_index"],
 }
 
 
@@ -111,6 +120,9 @@ MODULE_LABELS: dict[str, str] = {
     "physical_activity": "Physical Activity",
     "health_impacts": "Health Impacts",
     "stormwater_runoff": "Stormwater Runoff",
+    "food_access": "Food Access (mRFEI)",
+    "housing_cost_burden": "Housing Cost Burden",
+    "sprawl_index": "Sprawl Index",
 }
 
 

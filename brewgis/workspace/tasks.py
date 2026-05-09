@@ -95,6 +95,9 @@ MODULE_DBT_SELECT_MAP = {
     "trip_distribution": ["trip_distribution"],
     "mode_choice": ["mode_choice"],
     "vmt": ["vmt"],
+    "food_access": ["food_access"],
+    "housing_cost_burden": ["housing_cost_burden"],
+    "sprawl_index": ["sprawl_index"],
 }
 
 
@@ -256,6 +259,23 @@ def _run_internal_capture_preprocessor(vars_: dict) -> dict:
 
 
 PREPROCESSOR_MAP["internal_capture"] = _run_internal_capture_preprocessor
+
+def _run_food_access_preprocessor(vars_: dict) -> dict:
+    """Preprocessor for food_access: runs OSM POI-based mRFEI computation."""
+    from brewgis.workspace.analysis.food_access.preprocessor import FoodAccessPreprocessor  # noqa: PLC0415
+
+    preprocessor = FoodAccessPreprocessor()
+    scenario_id = vars_.get("scenario_id", "default")
+    target_schema = vars_.get("target_schema", "public")
+    end_state_table = vars_.get("end_state_table", f"end_state_{{scenario_id}}")
+    return preprocessor.compute_mrfei(
+        schema=target_schema,
+        end_state_table=end_state_table,
+        scenario_id=scenario_id,
+    )
+
+
+PREPROCESSOR_MAP["food_access"] = _run_food_access_preprocessor
 
 
 @shared_task(

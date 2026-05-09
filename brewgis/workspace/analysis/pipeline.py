@@ -38,6 +38,7 @@ logger = logging.getLogger(__name__)
 MODULE_TASKS: dict[str, Any] = dict.fromkeys(MODULE_DEPENDENCIES, run_dbt_module)
 # Modules that require a preprocessor step before dbt execution.
 MODULE_TASKS["internal_capture"] = run_preprocessor_and_dbt
+MODULE_TASKS["food_access"] = run_preprocessor_and_dbt
 
 
 @deal.ensure(lambda module_names, result: set(module_names).issubset(set(result)))

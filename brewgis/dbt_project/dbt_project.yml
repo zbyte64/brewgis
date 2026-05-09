@@ -51,6 +51,12 @@ models:
       +materialized: table
     stormwater_runoff:
       +materialized: table
+    food_access:
+      +materialized: table
+    housing_cost_burden:
+      +materialized: table
+    sprawl_index:
+      +materialized: table
 vars:
   # Default values for SQLFluff / dbt compilation.
   # Runtime values are provided by dbt_runner.py when executing models.

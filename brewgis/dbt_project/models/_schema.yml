@@ -630,3 +630,129 @@ models:
   - name: runoff_change_pct
     tests:
     - not_null
+- name: sprawl_index
+  description: Per-parcel compactness/sprawl index (0-100) from population density, intersection connectivity, and mixed-use score.
+  columns:
+  - name: parcel_id
+    tests:
+    - not_null
+    - unique
+  - name: gross_acres
+    tests:
+    - non_negative
+  - name: population
+    tests:
+    - non_negative
+  - name: population_density
+    tests:
+    - non_negative
+  - name: intersection_density
+    tests:
+    - non_negative
+  - name: sprawl_index
+    tests:
+    - not_null
+    - column_between:
+        arguments:
+          min_value: 0
+          max_value: 100
+  - name: density_score
+    tests:
+    - not_null
+    - column_between:
+        arguments:
+          min_value: 0
+          max_value: 1
+  - name: connectivity_score
+    tests:
+    - not_null
+    - column_between:
+        arguments:
+          min_value: 0
+          max_value: 1
+  - name: mixed_use_score
+    tests:
+    - not_null
+    - column_between:
+        arguments:
+          min_value: 0
+          max_value: 1
+
+- name: housing_cost_burden
+  description: Housing cost burden per parcel — cost-burdened and severely cost-burdened households using configurable ACS-derived rates.
+  columns:
+  - name: parcel_id
+    tests:
+    - not_null
+    - unique
+  - name: gross_acres
+    tests:
+    - non_negative
+  - name: population
+    tests:
+    - non_negative
+  - name: households
+    tests:
+    - non_negative
+  - name: dwelling_units_total
+    tests:
+    - non_negative
+  - name: cost_burdened_hh
+    tests:
+    - not_null
+    - non_negative
+  - name: severely_cost_burdened_hh
+    tests:
+    - not_null
+    - non_negative
+  - name: cost_burden_pct
+    tests:
+    - not_null
+    - non_negative
+    - column_between:
+        arguments:
+          min_value: 0
+          max_value: 100
+  - name: cost_burden_category
+    tests:
+    - not_null
+    - accepted_values:
+        values: ['low_burden', 'cost_burdened', 'severely_cost_burdened']
+
+- name: food_access
+  description: Modified Retail Food Environment Index (mRFEI) per parcel — healthy vs unhealthy food retailer ratio.
+  columns:
+  - name: parcel_id
+    tests:
+    - not_null
+    - unique
+  - name: gross_acres
+    tests:
+    - non_negative
+  - name: population
+    tests:
+    - non_negative
+  - name: households
+    tests:
+    - non_negative
+  - name: healthy_count
+    tests:
+    - not_null
+    - non_negative
+  - name: unhealthy_count
+    tests:
+    - not_null
+    - non_negative
+  - name: mrfei
+    tests:
+    - column_between:
+        arguments:
+          min_value: 0
+          max_value: 100
+  - name: food_desert
+    tests:
+    - not_null
+  - name: food_access_category
+    tests:
+    - accepted_values:
+        values: ['food_desert', 'low_access', 'moderate_access', 'high_access']
