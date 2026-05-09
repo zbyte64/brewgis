@@ -468,3 +468,165 @@ models:
     tests:
     - not_null
     - non_negative
+- name: transport_ghg
+  description: Greenhouse gas emissions (CO₂e) from vehicle miles traveled.
+  columns:
+  - name: parcel_id
+    tests:
+    - not_null
+    - unique
+  - name: co2e_total_kg
+    tests:
+    - not_null
+    - non_negative
+  - name: co2e_per_capita_kg
+    tests:
+    - non_negative
+  - name: vmt_total
+    tests:
+    - not_null
+    - non_negative
+  - name: avg_trip_length_mi
+    tests:
+    - non_negative
+  - name: auto_trips
+    tests:
+    - not_null
+    - non_negative
+- name: building_water_ghg
+  description: Greenhouse gas emissions (CO₂e) from building energy and water/wastewater.
+  columns:
+  - name: parcel_id
+    tests:
+    - not_null
+    - unique
+  - name: co2e_energy_total_kg
+    tests:
+    - not_null
+    - non_negative
+  - name: co2e_water_total_kg
+    tests:
+    - non_negative
+  - name: co2e_total_kg
+    tests:
+    - not_null
+    - non_negative
+  - name: co2e_per_capita_kg
+    tests:
+    - non_negative
+- name: total_ghg
+  description: Per-parcel summary of transportation and building/water GHG emissions.
+  columns:
+  - name: parcel_id
+    tests:
+    - not_null
+    - unique
+  - name: co2e_transport
+    tests:
+    - not_null
+  - name: co2e_buildings
+    tests:
+    - not_null
+  - name: co2e_water
+    tests:
+    - not_null
+  - name: co2e_total
+    tests:
+    - not_null
+    - non_negative
+- name: physical_activity
+  description: Metabolic equivalent (MET) hours from walking and cycling active transport.
+  columns:
+  - name: parcel_id
+    tests:
+    - not_null
+    - unique
+  - name: walk_met_hours
+    tests:
+    - not_null
+    - non_negative
+  - name: bike_met_hours
+    tests:
+    - non_negative
+  - name: total_met_hours
+    tests:
+    - not_null
+    - non_negative
+  - name: walk_trips
+    tests:
+    - not_null
+    - non_negative
+  - name: bike_trips
+    tests:
+    - not_null
+    - non_negative
+  - name: active_trip_share
+    tests:
+    - not_null
+    - non_negative
+    - column_between:
+        arguments:
+          min_value: 0
+          max_value: 1
+- name: health_impacts
+  description: Health impacts (DALYs) from physical activity and air quality changes. Sketch-level — not a substitute for full HIA.
+  columns:
+  - name: parcel_id
+    tests:
+    - not_null
+    - unique
+  - name: dalys_averted_pa
+    tests:
+    - non_negative
+  - name: dalys_added_air_quality
+    tests:
+    - non_negative
+  - name: net_dalys
+    tests:
+    - not_null
+  - name: deaths_averted_pa
+    tests:
+    - non_negative
+  - name: deaths_added_air_quality
+    tests:
+    - non_negative
+- name: stormwater_runoff
+  description: Stormwater runoff volume estimates from impervious surface change (Simple Method).
+  columns:
+  - name: parcel_id
+    tests:
+    - not_null
+    - unique
+  - name: impervious_acres
+    tests:
+    - not_null
+    - non_negative
+  - name: impervious_pct
+    tests:
+    - non_negative
+    - column_between:
+        arguments:
+          min_value: 0
+          max_value: 100
+  - name: runoff_coefficient
+    tests:
+    - not_null
+    - non_negative
+    - column_between:
+        arguments:
+          min_value: 0
+          max_value: 1
+  - name: runoff_volume_acre_ft
+    tests:
+    - not_null
+    - non_negative
+  - name: runoff_baseline_acre_ft
+    tests:
+    - not_null
+    - non_negative
+  - name: runoff_change_acre_ft
+    tests:
+    - not_null
+  - name: runoff_change_pct
+    tests:
+    - not_null

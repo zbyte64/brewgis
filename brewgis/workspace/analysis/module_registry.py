@@ -22,7 +22,15 @@ MODULE_DEPENDENCIES: dict[str, list[str]] = {
     "mode_choice": ["trip_distribution"],
     "vmt": ["mode_choice"],
     "internal_capture": ["trip_distribution"],
+    "transport_ghg": ["vmt"],
+    "building_water_ghg": ["energy_demand", "water_demand"],
+    "total_ghg": ["transport_ghg", "building_water_ghg"],
+    "physical_activity": ["mode_choice", "trip_distribution"],
+    "health_impacts": ["physical_activity", "transport_ghg"],
+    "stormwater_runoff": ["land_consumption"],
 }
+
+
 
 # Module → result table name templates (formatted with scenario_id)
 MODULE_RESULT_TABLES: dict[str, list[str]] = {
@@ -46,7 +54,14 @@ MODULE_RESULT_TABLES: dict[str, list[str]] = {
     "mode_choice": ["mode_choice_{scenario_id}"],
     "vmt": ["vmt_{scenario_id}"],
     "internal_capture": ["internal_capture_{scenario_id}"],
+    "transport_ghg": ["transport_ghg_{scenario_id}"],
+    "building_water_ghg": ["building_water_ghg_{scenario_id}"],
+    "total_ghg": ["total_ghg_{scenario_id}"],
+    "physical_activity": ["physical_activity_{scenario_id}"],
+    "health_impacts": ["health_impacts_{scenario_id}"],
+    "stormwater_runoff": ["stormwater_runoff_{scenario_id}"],
 }
+
 
 # Module → dbt select pattern (list of model names to run)
 MODULE_DBT_SELECT: dict[str, list[str]] = {
@@ -67,7 +82,14 @@ MODULE_DBT_SELECT: dict[str, list[str]] = {
     "mode_choice": ["mode_choice"],
     "vmt": ["vmt"],
     "internal_capture": ["internal_capture"],
+    "transport_ghg": ["transport_ghg"],
+    "building_water_ghg": ["building_water_ghg"],
+    "total_ghg": ["total_ghg"],
+    "physical_activity": ["physical_activity"],
+    "health_impacts": ["health_impacts"],
+    "stormwater_runoff": ["stormwater_runoff"],
 }
+
 
 # Module → human-readable label
 MODULE_LABELS: dict[str, str] = {
@@ -83,6 +105,12 @@ MODULE_LABELS: dict[str, str] = {
     "mode_choice": "Mode Choice",
     "vmt": "VMT",
     "internal_capture": "Internal Capture",
+    "transport_ghg": "Transportation GHG",
+    "building_water_ghg": "Buildings & Water GHG",
+    "total_ghg": "Total GHG Emissions",
+    "physical_activity": "Physical Activity",
+    "health_impacts": "Health Impacts",
+    "stormwater_runoff": "Stormwater Runoff",
 }
 
 
