@@ -1,0 +1,66 @@
+{% load i18n workspace_tags %}
+
+{% if reports %}
+  <div class="table-responsive">
+    <table class="table table-hover mb-0">
+      <thead class="table-light">
+        <tr>
+          <th scope="col">{% translate "Name" %}</th>
+          <th scope="col">{% translate "Type" %}</th>
+          <th scope="col">{% translate "Status" %}</th>
+          <th scope="col">{% translate "Created" %}</th>
+          <th scope="col">{% translate "Actions" %}</th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for report in reports %}
+          <tr>
+            <td>
+              <a href="{% url 'workspace:report_detail' report.pk %}">{{ report.name }}</a>
+            </td>
+            <td>{{ report.get_report_type_display }}</td>
+            <td>
+              {% with badge_class=report.status|report_status_badge %}
+                <span class="badge bg-{{ badge_class }}">{{ report.get_status_display }}</span>
+              {% endwith %}
+            </td>
+            <td class="small text-muted">{{ report.created_at|date:"M j, Y" }}</td>
+            <td>
+              <div class="d-flex gap-1">
+                {% if report.status == "completed" and report.report_file %}
+                  <a href="{{ report.report_file.url }}"
+                     class="btn btn-sm btn-outline-primary py-0"
+                     style="font-size: 0.7rem;">
+                    {% translate "Download" %}
+                  </a>
+                {% endif %}
+                <button type="button"
+                        class="btn btn-sm btn-outline-danger py-0"
+                        style="font-size: 0.7rem;"
+                        data-report-pk="{{ report.pk }}"
+                        data-report-name="{{ report.name }}"
+                        data-delete-url="{% url 'workspace:report_detail' report.pk %}delete/">
+                  {% translate "Delete" %}
+                </button>
+              </div>
+            </td>
+          </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+{% else %}
+  <div class="text-center py-4">
+    <p class="text-muted mb-2">{% translate "No reports generated yet." %}</p>
+    <div class="d-flex justify-content-center gap-2">
+      <a href="{% url 'workspace:generate_scenario_report' workspace.pk %}"
+         class="btn btn-sm btn-outline-primary">
+        {% translate "Generate Scenario Comparison Report" %}
+      </a>
+      <a href="{% url 'workspace:generate_map_report' workspace.pk %}"
+         class="btn btn-sm btn-outline-primary">
+        {% translate "Export Map" %}
+      </a>
+    </div>
+  </div>
+{% endif %}

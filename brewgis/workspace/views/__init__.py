@@ -34,3 +34,10 @@ from .symbology import layer_legend  # noqa: F401
 from .workspace_create import WorkspaceCreateView as workspace_create  # noqa: F401
 from .workspace_create import county_options  # noqa: F401
 from .workspace_detail import workspace_detail  # noqa: F401
+from .report import report_list  # noqa: F401
+from .report import report_detail  # noqa: F401
+from .report import report_status  # noqa: F401
+from .report import generate_scenario_report  # noqa: F401
+from .report import generate_paint_report  # noqa: F401
+from .report import generate_map_report  # noqa: F401
+from .report import report_list_partial  # noqa: F401

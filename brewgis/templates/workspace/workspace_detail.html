@@ -24,6 +24,9 @@
     <a href="{% url 'workspace:analysis_launch' %}" class="btn btn-outline-primary">
       {% translate "Run Analysis" %}
     </a>
+    <a href="{% url 'workspace:report_list' workspace.pk %}" class="btn btn-outline-primary">
+      {% translate "Reports" %}
+    </a>
   </div>
   <!-- Scenario Management Panel -->
   <div class="card mb-4">

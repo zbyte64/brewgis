@@ -26,6 +26,11 @@
     <div class="d-flex gap-2">
       <button type="button" class="btn btn-sm btn-outline-primary" id="refresh-data-btn">{% translate "Refresh" %}</button>
       <a href="{% url 'workspace:workspace_detail' workspace.pk %}" class="btn btn-sm btn-outline-secondary">{% translate "Back" %}</a>
+      <button type="button" class="btn btn-sm btn-outline-primary" id="generate-report-btn"
+              data-bs-toggle="modal" data-bs-target="#generateReportModal"
+              {% if scenarios|length < 2 %}disabled{% endif %}>
+        {% translate "Generate Report" %}
+      </button>
     </div>
   </div>
 
@@ -171,6 +176,27 @@
         </div>
       </div>
     </div>
+  <!-- Generate Report Modal -->
+  <div class="modal fade" id="generateReportModal" tabindex="-1" aria-hidden="true">
+    <div class="modal-dialog modal-sm">
+      <div class="modal-content">
+        <div class="modal-header">
+          <h6 class="modal-title">{% translate "Generate Report" %}</h6>
+          <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+        </div>
+        <div class="modal-body">
+          <div class="mb-3">
+            <label for="report-name" class="form-label">{% translate "Report Name" %}</label>
+            <input type="text" class="form-control form-control-sm" id="report-name"
+                   value="{% translate "Scenario Comparison" %} - {{ workspace.name }} - {{ scenarios|length }} {% translate "scenarios" %}">
+          </div>
+          <button type="button" class="btn btn-primary btn-sm" id="confirm-generate-report">
+            {% translate "Generate PDF" %}
+          </button>
+        </div>
+      </div>
+    </div>
+  </div>
   {% endif %}
 </div>
 {% endblock content %}
@@ -315,6 +341,39 @@
 
   // ── Load on page ready ───────────────────────────────────────────
   loadMetrics();
+
+  // ---- Generate Report ------------------------------------------------
+  const confirmGenerateBtn = document.getElementById('confirm-generate-report');
+  const reportNameInput = document.getElementById('report-name');
+  if (confirmGenerateBtn && reportNameInput) {
+    confirmGenerateBtn.addEventListener('click', function() {
+      var name = reportNameInput.value || 'Scenario Comparison';
+      fetch('{% url "workspace:generate_scenario_report" workspace.pk %}', {
+        method: 'POST',
+        headers: {
+          'X-CSRFToken': '{{ csrf_token }}',
+          'Content-Type': 'application/x-www-form-urlencoded'
+        },
+        body: 'name=' + encodeURIComponent(name)
+      })
+      .then(function(r) { return r.json(); })
+      .then(function(data) {
+        if (data.status === 'ok') {
+          var modalEl = document.getElementById('generateReportModal');
+          if (modalEl) {
+            var bsModal = bootstrap.Modal.getInstance(modalEl);
+            if (bsModal) bsModal.hide();
+          }
+          alert('Report queued for generation. Check Reports page.');
+        } else {
+          alert('Error: ' + (data.error || 'Unknown'));
+        }
+      })
+      .catch(function(err) {
+        alert('Request failed: ' + err.message);
+      });
+    });
+  }
 })();
 </script>
 {% endblock inline_javascript %}

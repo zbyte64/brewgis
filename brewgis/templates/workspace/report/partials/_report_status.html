@@ -1,0 +1,41 @@
+{% load i18n workspace_tags %}
+
+<div id="report-status-{{ report.pk }}"
+     class="card mt-3"
+     hx-get="{% url 'workspace:report_status' workspace.pk report.pk %}"
+     hx-trigger="{% if report.status == "running" %}every 2s{% endif %}"
+     hx-swap="outerHTML">
+  <div class="card-body">
+    <div class="d-flex justify-content-between align-items-center">
+      <h6 class="card-title mb-0">
+        {{ report.name }}
+        {% if report.status == "running" %}
+          <span class="spinner-border spinner-border-sm text-primary ms-2" role="status">
+            <span class="visually-hidden">{% translate "Running..." %}</span>
+          </span>
+        {% endif %}
+      </h6>
+      {% with badge_class=report.status|report_status_badge %}
+        <span class="badge bg-{{ badge_class }}">{{ report.get_status_display }}</span>
+      {% endwith %}
+    </div>
+    <dl class="row mt-2 mb-0 small">
+      <dt class="col-sm-3">{% translate "Type" %}</dt>
+      <dd class="col-sm-9">{{ report.get_report_type_display }}</dd>
+      <dt class="col-sm-3">{% translate "Started" %}</dt>
+      <dd class="col-sm-9">{{ report.created_at|default:"—" }}</dd>
+      <dt class="col-sm-3">{% translate "Completed" %}</dt>
+      <dd class="col-sm-9">{{ report.completed_at|default:"—" }}</dd>
+      {% if report.error_log %}
+        <dt class="col-sm-3">{% translate "Error" %}</dt>
+        <dd class="col-sm-9 text-danger">{{ report.error_log|linebreaksbr }}</dd>
+      {% endif %}
+    </dl>
+    {% if report.status == "running" %}
+      <div class="progress mt-2" style="height: 6px;">
+        <div class="progress-bar progress-bar-striped progress-bar-animated"
+             style="width: 100%"></div>
+      </div>
+    {% endif %}
+  </div>
+</div>

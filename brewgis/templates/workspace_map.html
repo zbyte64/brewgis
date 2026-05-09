@@ -45,6 +45,10 @@
               </small>
             {% endif %}
             <a href="{% url 'workspace:home' %}" class="btn btn-sm btn-outline-secondary">Back</a>
+            <button type="button" class="btn btn-sm btn-outline-secondary" id="export-map-btn"
+                    data-bs-toggle="modal" data-bs-target="#exportMapModal">
+              Export Map
+            </button>
           </div>
         </div>
         {% if scenario %}
@@ -240,6 +244,44 @@
                 </div>
               </div>
             {% endif %}
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+<!-- Export Map Modal -->
+<div class="modal fade" id="exportMapModal" tabindex="-1" aria-hidden="true">
+  <div class="modal-dialog modal-sm">
+    <div class="modal-content">
+      <div class="modal-header">
+        <h6 class="modal-title">Export Map</h6>
+        <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+      </div>
+      <div class="modal-body">
+        <div class="mb-3">
+          <label for="export-title" class="form-label">Title</label>
+          <input type="text" class="form-control form-control-sm" id="export-title"
+                 value="{{ workspace.name }} - {% if scenario %}{{ scenario.name }}{% else %}Map View{% endif %}">
+        </div>
+        <div class="mb-3">
+          <label for="export-dpi" class="form-label">DPI</label>
+          <select class="form-select form-select-sm" id="export-dpi">
+            <option value="1">72 DPI (Screen)</option>
+            <option value="2" selected>144 DPI (Retina)</option>
+            <option value="3">216 DPI (Print)</option>
+            <option value="4">300 DPI (High Quality Print)</option>
+          </select>
+        </div>
+        <div class="form-check mb-3">
+          <input class="form-check-input" type="checkbox" id="export-include-legend" checked>
+          <label class="form-check-label" for="export-include-legend">Include Legend</label>
+        </div>
+        <div class="mb-3">
+          <label class="form-label">Format</label>
+          <div class="d-flex gap-2">
+            <button type="button" class="btn btn-sm btn-outline-primary" id="export-png-btn">Download PNG</button>
+            <button type="button" class="btn btn-sm btn-outline-primary" id="export-pdf-btn">Generate PDF</button>
           </div>
         </div>
       </div>
@@ -451,6 +493,113 @@
       if (paintActive && historyVisible) {
         setTimeout(loadPaintHistory, 300);
       }
+    });
+  }
+
+  // ---- Map Export --------------------------------------------------
+  const exportPngBtn = document.getElementById('export-png-btn');
+  const exportPdfBtn = document.getElementById('export-pdf-btn');
+  const exportTitleInput = document.getElementById('export-title');
+  const exportDpiSelect = document.getElementById('export-dpi');
+  const exportIncludeLegend = document.getElementById('export-include-legend');
+
+  function getMapCanvas(scale) {
+    if (!mapEl || typeof mapEl.getCanvas !== 'function') return null;
+    const map = mapEl.getMap ? mapEl.getMap() : mapEl;
+    if (!map || typeof map.getCanvas !== 'function') return null;
+    const canvas = map.getCanvas();
+    if (!canvas) return null;
+    const origW = canvas.width;
+    const origH = canvas.height;
+    const scaledW = Math.round(origW * scale);
+    const scaledH = Math.round(origH * scale);
+    const offscreen = document.createElement('canvas');
+    offscreen.width = scaledW;
+    offscreen.height = scaledH;
+    const ctx = offscreen.getContext('2d');
+    ctx.scale(scale, scale);
+    ctx.drawImage(canvas, 0, 0);
+    return offscreen;
+  }
+
+  function addTitleToCanvas(canvas, scale, title) {
+    const titleHeight = Math.round(40 * scale);
+    const newCanvas = document.createElement('canvas');
+    newCanvas.width = canvas.width;
+    newCanvas.height = canvas.height + titleHeight;
+    const newCtx = newCanvas.getContext('2d');
+    newCtx.fillStyle = '#ffffff';
+    newCtx.fillRect(0, 0, newCanvas.width, newCanvas.height);
+    newCtx.drawImage(canvas, 0, titleHeight);
+    newCtx.fillStyle = '#333333';
+    newCtx.font = 'bold ' + Math.round(18 * scale) + 'px sans-serif';
+    newCtx.textAlign = 'center';
+    newCtx.fillText(title, newCanvas.width / 2, Math.round(26 * scale));
+    return newCanvas;
+  }
+
+  if (exportPngBtn) {
+    exportPngBtn.addEventListener('click', function() {
+      var scale = parseInt(exportDpiSelect.value) || 1;
+      var title = exportTitleInput.value || 'Map Export';
+      var canvas = getMapCanvas(scale);
+      if (!canvas) {
+        alert('Could not capture map canvas.');
+        return;
+      }
+      if (title) {
+        canvas = addTitleToCanvas(canvas, scale, title);
+      }
+      var link = document.createElement('a');
+      link.download = (title.replace(/\s+/g, '_') || 'map_export') + '.png';
+      link.href = canvas.toDataURL('image/png');
+      link.click();
+    });
+  }
+
+  if (exportPdfBtn) {
+    exportPdfBtn.addEventListener('click', function() {
+      var scale = parseInt(exportDpiSelect.value) || 2;
+      var title = exportTitleInput.value || 'Map Export';
+      var includeLegend = exportIncludeLegend.checked;
+      var canvas = getMapCanvas(scale);
+      if (!canvas) {
+        alert('Could not capture map canvas.');
+        return;
+      }
+      if (title) {
+        canvas = addTitleToCanvas(canvas, scale, title);
+      }
+      var mapImage = canvas.toDataURL('image/png');
+      fetch('{% url "workspace:generate_map_report" workspace.pk %}', {
+        method: 'POST',
+        headers: {
+          'X-CSRFToken': '{{ csrf_token }}',
+          'Content-Type': 'application/json'
+        },
+        body: JSON.stringify({
+          map_image: mapImage,
+          title: title,
+          dpi: scale * 72,
+          include_legend: includeLegend
+        })
+      })
+      .then(function(r) { return r.json(); })
+      .then(function(data) {
+        if (data.status === 'ok') {
+          var modalEl = document.getElementById('exportMapModal');
+          if (modalEl) {
+            var bsModal = bootstrap.Modal.getInstance(modalEl);
+            if (bsModal) bsModal.hide();
+          }
+          alert('PDF report queued for generation. Check the Reports page.');
+        } else {
+          alert('Error: ' + (data.error || 'Unknown error'));
+        }
+      })
+      .catch(function(err) {
+        alert('Request failed: ' + err.message);
+      });
     });
   }
 })();

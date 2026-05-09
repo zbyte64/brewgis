@@ -52,6 +52,13 @@ from .views.built_forms import building_type_bake
 from .views.built_forms import building_type_list
 from .views.built_forms import place_type_bake
 from .views.built_forms import place_type_list
+from .views.report import generate_map_report  # noqa: F811
+from .views.report import generate_paint_report  # noqa: F811
+from .views.report import generate_scenario_report  # noqa: F811
+from .views.report import report_detail  # noqa: F811
+from .views.report import report_list  # noqa: F811
+from .views.report import report_list_partial  # noqa: F811
+from .views.report import report_status  # noqa: F811
 
 app_name = "workspace"
 urlpatterns = [
@@ -224,4 +231,40 @@ urlpatterns = [
     path("import/allocate/", allocate.as_view(), name="allocate"),
     path("import/stitch/", stitch.as_view(), name="stitch"),
     path("import/status/<int:run_pk>/", import_status, name="import_status"),
+    # Report URLs (Phase 7b, 7f)
+    path(
+        "<int:workspace_pk>/reports/",
+        report_list,
+        name="report_list",
+    ),
+    path(
+        "<int:workspace_pk>/reports/<int:report_pk>/",
+        report_detail,
+        name="report_detail",
+    ),
+    path(
+        "<int:workspace_pk>/reports/<int:report_pk>/status/",
+        report_status,
+        name="report_status",
+    ),
+    path(
+        "<int:workspace_pk>/reports/generate/scenario/",
+        generate_scenario_report,
+        name="generate_scenario_report",
+    ),
+    path(
+        "<int:workspace_pk>/reports/generate/paint/",
+        generate_paint_report,
+        name="generate_paint_report",
+    ),
+    path(
+        "<int:workspace_pk>/reports/generate/map/",
+        generate_map_report,
+        name="generate_map_report",
+    ),
+    path(
+        "<int:workspace_pk>/reports/partial/",
+        report_list_partial,
+        name="report_list_partial",
+    ),
 ]

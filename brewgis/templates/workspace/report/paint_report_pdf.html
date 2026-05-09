@@ -1,0 +1,135 @@
+{% load i18n %}{% load workspace_tags %}<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <title>{{ report_name }}</title>
+  <style>
+    @page {
+      size: A4;
+      margin: 2cm;
+    }
+
+    * { box-sizing: border-box; }
+
+    body {
+      font-family: "Helvetica Neue", Helvetica, Arial, sans-serif;
+      font-size: 11pt;
+      line-height: 1.5;
+      color: #333;
+    }
+
+    .header {
+      text-align: center;
+      margin-bottom: 1.5em;
+      padding-bottom: 1em;
+      border-bottom: 2px solid #333;
+    }
+
+    .header h1 {
+      font-size: 18pt;
+      margin: 0 0 0.3em 0;
+    }
+
+    .header .meta {
+      font-size: 10pt;
+      color: #666;
+    }
+
+    .section {
+      margin-bottom: 1.5em;
+    }
+
+    .section h2 {
+      font-size: 14pt;
+      border-bottom: 1px solid #ccc;
+      padding-bottom: 0.3em;
+      margin-bottom: 0.5em;
+    }
+
+    table {
+      width: 100%;
+      border-collapse: collapse;
+      margin-bottom: 1em;
+    }
+
+    table th,
+    table td {
+      padding: 5pt 6pt;
+      text-align: left;
+      border: 1px solid #ccc;
+      font-size: 9pt;
+    }
+
+    table th {
+      background-color: #f5f5f5;
+      font-weight: 600;
+    }
+
+    .old-value {
+      color: #c00;
+      text-decoration: line-through;
+    }
+
+    .new-value {
+      color: #080;
+      font-weight: 600;
+    }
+
+    .footer {
+      position: fixed;
+      bottom: 0;
+      width: 100%;
+      text-align: center;
+      font-size: 8pt;
+      color: #999;
+      border-top: 1px solid #ddd;
+      padding-top: 4pt;
+    }
+  </style>
+</head>
+<body>
+  <div class="header">
+    <h1>{{ report_name }}</h1>
+    <div class="meta">
+      {% translate "Scenario" %}: {{ scenario_name }}<br />
+      {% translate "Generated" %}: {{ generated_at|date:"F j, Y g:i A" }}
+    </div>
+  </div>
+
+  <div class="section">
+    <h2>{% translate "Paint Events" %}</h2>
+    {% if paint_events %}
+      <table>
+        <thead>
+          <tr>
+            <th>{% translate "Column" %}</th>
+            <th>{% translate "Feature ID" %}</th>
+            <th>{% translate "Old Value" %}</th>
+            <th>{% translate "New Value" %}</th>
+            <th>{% translate "Painted By" %}</th>
+            <th>{% translate "Painted At" %}</th>
+            <th>{% translate "Status" %}</th>
+          </tr>
+        </thead>
+          {% for evt in paint_events %}
+            <tr>
+              <td>{{ evt.column_name }}</td>
+              <td>{{ evt.feature_id }}</td>
+              <td><span class="old-value">{{ evt.old_value|default:"—" }}</span></td>
+              <td><span class="new-value">{{ evt.new_value|default:"—" }}</span></td>
+              <td>{{ evt.painted_by|default:"—" }}</td>
+              <td>{{ evt.painted_at|date:"Y-m-d g:i A" }}</td>
+              <td>{% if evt.undone_at %}{% translate "Undone" %}{% else %}{% translate "Active" %}{% endif %}</td>
+            </tr>
+          {% endfor %}
+      </table>
+    {% else %}
+      <p>{% translate "No paint events recorded for this scenario." %}</p>
+    {% endif %}
+  </div>
+
+  <div class="footer">
+    {{ report_name }} — {% translate "Generated" %} {{ generated_at|date:"Y-m-d" }}
+  </div>
+</body>
+</html>

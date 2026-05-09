@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from django import template
+from django.template.defaultfilters import stringfilter
 
 register = template.Library()
 
@@ -51,6 +52,18 @@ def analysis_status_badge(status: str) -> str:
     }
     return badge_map.get(status, "secondary")
 
+
+@register.filter
+@stringfilter
+def report_status_badge(status: str) -> str:
+    """Return a Bootstrap badge class for a report generation status."""
+    badge_map: dict[str, str] = {
+        "pending": "secondary",
+        "running": "primary",
+        "completed": "success",
+        "failed": "danger",
+    }
+    return badge_map.get(status, "secondary")
 @register.filter
 def dictlookup(d: dict | None, key: str) -> str:
     """Look up a key in a dictionary, returning "" if missing or not a dict.

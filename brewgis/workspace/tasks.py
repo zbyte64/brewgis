@@ -876,3 +876,138 @@ def run_column_stitching(
         except DataImportRun.DoesNotExist:
             pass
         return {"success": False, "error": str(exc)}
+
+# ────────────────────────────────────────────────────────────
+#  Report generation tasks (Phase 7b, 7f)
+# ────────────────────────────────────────────────────────────
+
+
+@shared_task(bind=True, max_retries=2, default_retry_delay=30)
+def generate_report_task(self, report_pk: int) -> dict:
+    """Generate a report (scenario comparison, paint tracking, or map export) as PDF."""
+    from brewgis.workspace.models import ScenarioReport, Scenario, PaintEvent
+    from django.template.loader import render_to_string
+    from django.utils import timezone
+    from django.conf import settings
+    from pathlib import Path
+    import os
+
+    report = ScenarioReport.objects.get(pk=report_pk)
+    report.status = ScenarioReport.ReportStatus.RUNNING
+    report.save(update_fields=["status"])
+
+    try:
+        from weasyprint import HTML
+
+        context = {
+            "report_name": report.name,
+            "generated_at": timezone.now(),
+        }
+
+        if report.report_type == ScenarioReport.ReportType.SCENARIO_COMPARISON:
+            template = "workspace/report/scenario_report_pdf.html"
+            scenarios = Scenario.objects.filter(workspace=report.workspace)
+            metrics_list = []
+            for scenario in scenarios:
+                metrics_dict = _build_report_scenario_metrics(scenario)
+                metrics_list.append({
+                    "scenario": scenario,
+                    "metrics": metrics_dict,
+                })
+            context["scenarios"] = scenarios
+            context["metrics"] = metrics_list
+
+        elif report.report_type == ScenarioReport.ReportType.PAINT_TRACKING:
+            template = "workspace/report/paint_report_pdf.html"
+            scenario = report.scenario
+            context["scenario_name"] = scenario.name if scenario else "\u2014"
+            paint_events = PaintEvent.objects.filter(scenario=scenario).select_related(
+                "painted_by"
+            ).order_by("-painted_at")[:500]
+            context["paint_events"] = paint_events
+
+        elif report.report_type == ScenarioReport.ReportType.MAP_EXPORT:
+            template = "workspace/report/map_export_pdf.html"
+            opts = report.export_options or {}
+            context["title"] = opts.get("title", report.name)
+            context["map_image"] = opts.get("map_image", "")
+            context["include_legend"] = opts.get("include_legend", True)
+
+        else:
+            raise ValueError(f"Unknown report type: {report.report_type}")
+
+        html_str = render_to_string(template, context)
+        pdf_file = HTML(string=html_str).write_pdf()
+
+        reports_dir = Path(settings.MEDIA_ROOT) / "reports"
+        reports_dir.mkdir(parents=True, exist_ok=True)
+        filename = f"{report.report_type}_{report.pk}_{timezone.now():%Y%m%d_%H%M%S}.pdf"
+        filepath = reports_dir / filename
+        with open(filepath, "wb") as f:
+            f.write(pdf_file)
+
+        report.report_file.name = f"reports/{filename}"
+        report.status = ScenarioReport.ReportStatus.COMPLETED
+        report.completed_at = timezone.now()
+        report.save(update_fields=["report_file", "status", "completed_at"])
+
+        return {"success": True, "report_pk": report_pk, "file": filename}
+
+    except Exception as exc:
+        report.status = ScenarioReport.ReportStatus.FAILED
+        report.error_log = str(exc)
+        report.completed_at = timezone.now()
+        report.save(update_fields=["status", "error_log", "completed_at"])
+        return {"success": False, "report_pk": report_pk, "error": str(exc)}
+
+
+def _build_report_scenario_metrics(scenario) -> dict:
+    """Build aggregate metrics for a scenario for the report.
+    Simplified version of _build_comparison_metrics in scenarios.py.
+    Queries the scenario canvas view for key aggregate values.
+    """
+    from django.db import connection
+
+    metrics: dict[str, float | None] = {
+        "total_population": None,
+        "total_households": None,
+        "total_du": None,
+        "total_employment": None,
+        "total_vmt": None,
+        "total_water": None,
+        "total_energy": None,
+        "total_land_consumed_acres": None,
+    }
+
+    view_name = scenario.canvas_view_name
+
+    try:
+        with connection.cursor() as cursor:
+            parts = view_name.split(".")
+            table_name = parts[1] if len(parts) > 1 else view_name
+            cursor.execute(
+                "SELECT COUNT(*) FROM information_schema.tables "
+                "WHERE table_schema = %s AND table_name = %s",
+                [scenario.schema_name, table_name],
+            )
+            exists = cursor.fetchone()[0]
+            if not exists:
+                return metrics
+
+            cursor.execute(
+                "SELECT "
+                'SUM("total_population"), SUM("total_households"), SUM("total_du"), '
+                'SUM("total_employment"), SUM("vmt"), SUM("water"), SUM("energy"), '
+                'SUM("acres") '
+                f"FROM {view_name}"
+            )
+            row = cursor.fetchone()
+            if row:
+                keys = list(metrics.keys())
+                for i, key in enumerate(keys):
+                    if i < len(row) and row[i] is not None:
+                        metrics[key] = float(row[i])
+    except Exception:
+        pass
+
+    return metrics

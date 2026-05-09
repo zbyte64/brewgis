@@ -505,6 +505,48 @@ class PaintEvent(models.Model):
         )
 
 
+class ScenarioReport(models.Model):
+    """Tracks and stores generated reports (scenario comparison, paint tracking, map export)."""
+
+    class ReportType(models.TextChoices):
+        SCENARIO_COMPARISON = "scenario_comparison", "Scenario Comparison"
+        PAINT_TRACKING = "paint_tracking", "Paint Tracking"
+        MAP_EXPORT = "map_export", "Map Export"
+
+    class ReportStatus(models.TextChoices):
+        PENDING = "pending", "Pending"
+        RUNNING = "running", "Running"
+        COMPLETED = "completed", "Completed"
+        FAILED = "failed", "Failed"
+
+    workspace = models.ForeignKey(
+        "Workspace", on_delete=models.CASCADE, related_name="reports"
+    )
+    scenario = models.ForeignKey(
+        "Scenario", on_delete=models.SET_NULL, null=True, blank=True, related_name="reports"
+    )
+    name = models.CharField(max_length=255)
+    report_type = models.CharField(max_length=32, choices=ReportType.choices)
+    status = models.CharField(
+        max_length=16, choices=ReportStatus.choices, default=ReportStatus.PENDING
+    )
+    report_file = models.FileField(upload_to="reports/", null=True, blank=True)
+    error_log = models.TextField(blank=True, default="")
+    created_at = models.DateTimeField(auto_now_add=True)
+    completed_at = models.DateTimeField(null=True, blank=True)
+    created_by = models.ForeignKey(
+        settings.AUTH_USER_MODEL, on_delete=models.SET_NULL, null=True
+    )
+    export_options = models.JSONField(null=True, blank=True)
+
+    class Meta:
+        ordering = ["-created_at"]
+        verbose_name = "Scenario Report"
+        verbose_name_plural = "Scenario Reports"
+
+    def __str__(self) -> str:
+        return f"{self.get_report_type_display()}: {self.name} ({self.status})"
+
 class County(models.Model):
     """US County FIPS lookup table, seeded from Census reference data."""
 
