@@ -57,7 +57,19 @@
   <div class="row g-2 align-items-center">
     <!-- Feature count -->
     <div class="col-auto">
-      <small class="text-muted" id="paint-feature-count">0 parcels selected</small>
+      <small class="text-muted" id="paint-feature-count">0 features selected</small>
+    </div>
+
+    <!-- Selection mode buttons -->
+    <div class="col-auto">
+      <div class="btn-group btn-group-sm" role="group" aria-label="Selection mode">
+        <input type="radio" class="btn-check" name="sel-mode" id="sel-mode-click" value="click" checked>
+        <label class="btn btn-outline-secondary" for="sel-mode-click" title="Click to select features">Click</label>
+        <input type="radio" class="btn-check" name="sel-mode" id="sel-mode-box" value="box">
+        <label class="btn btn-outline-secondary" for="sel-mode-box" title="Drag to select a rectangle">Box</label>
+        <input type="radio" class="btn-check" name="sel-mode" id="sel-mode-polygon" value="polygon">
+        <label class="btn btn-outline-secondary" for="sel-mode-polygon" title="Draw a polygon to select features">Polygon</label>
+      </div>
     </div>
 
     <!-- Paint mode tabs -->
@@ -183,7 +195,9 @@
                 {% if scenario %}
                   mode="view"
                   scenario-id="{{ scenario.pk }}"
-                {% endif %}>
+                  canvas-layer-id="{{ canvas_view_layer_id }}"
+                  selection-mode="{{ selection_mode }}"
+                {% endif %}
               </brew-gis-map>
             </div>
             {% if scenario %}
@@ -343,11 +357,19 @@
   mapEl.addEventListener('paint-features-changed', function(e) {
     selectedFeatures = e.detail.features.map(function(f) { return f.id; });
     featureIdsInput.value = JSON.stringify(selectedFeatures);
-    featureCount.textContent = selectedFeatures.length + ' parcel(s) selected';
+    featureCount.textContent = selectedFeatures.length + ' feature(s) selected';
     applyBtn.disabled = selectedFeatures.length === 0;
     clearBtn.disabled = selectedFeatures.length === 0;
   });
 
+  // Selection mode radio buttons -> map component property
+  document.querySelectorAll('input[name="sel-mode"]').forEach(function(radio) {
+    radio.addEventListener('change', function() {
+      if (this.checked) {
+        mapEl.selectionMode = this.value;
+      }
+    });
+  });
   // Paint mode radio buttons
   function updatePaintMode() {
     var isDirect = paintModeDirect && paintModeDirect.checked;

@@ -3,6 +3,11 @@ import { vi } from 'vitest'
 // Mock maplibregl module before any component imports
 const mockEventCallbacks: Record<string, Array<(...args: unknown[]) => void>> = {}
 
+// Shared DOM elements for stable references across getCanvas/getContainer calls
+const _sharedCanvas = document.createElement('canvas')
+const _sharedContainer = document.createElement('div')
+_sharedContainer.style.position = 'relative'
+
 const mockMap = {
   on: vi.fn().mockImplementation((event: string, cb: (...args: unknown[]) => void) => {
     if (!mockEventCallbacks[event]) mockEventCallbacks[event] = []
@@ -28,6 +33,9 @@ const mockMap = {
   }),
   addSource: vi.fn(),
   removeSource: vi.fn(),
+  getCanvas: vi.fn(() => _sharedCanvas),
+  getContainer: vi.fn(() => _sharedContainer),
+  queryRenderedFeatures: vi.fn().mockReturnValue([]),
   addLayer: vi.fn(),
   removeLayer: vi.fn(),
   getLayer: vi.fn().mockReturnValue(null),

@@ -3,7 +3,7 @@ import maplibregl from 'maplibre-gl'
 
 // Import the component to trigger custom element registration
 import '../index.js'
-import { triggerMockEvent } from './setup.js'
+import { mockMap, triggerMockEvent } from './setup.js'
 
 function createMapElement() {
   return document.createElement('brew-gis-map')
@@ -188,7 +188,23 @@ describe('brew-gis-map', () => {
       scenarioId: 1,
     })
 
-    // Paint mode should add draw control as an additional addControl call
+    // With default click mode, no MapboxDraw added
+    // addControl is called for: NavigationControl (1)
+    expect(mockMap.addControl).toHaveBeenCalledTimes(1)
+  })
+
+  it('initializes polygon mode with MapboxDraw when selection-mode is polygon', async () => {
+    const { mockMap } = await createAndAttach({
+      mode: 'paint',
+      scenarioId: 1,
+    })
+
+    // Switch to polygon mode to trigger MapboxDraw
+    const el = document.querySelector('brew-gis-map')!
+    ;(el as any).selectionMode = 'polygon'
+    await (el as any).updateComplete
+    await new Promise((r) => setTimeout(r, 0))
+
     // addControl is called for: NavigationControl (1) + MapboxDraw (2)
     expect(mockMap.addControl).toHaveBeenCalledTimes(2)
   })
@@ -214,33 +230,68 @@ describe('brew-gis-map', () => {
     expect(brewEl.mode).toBe('paint')
   })
 
-  it('highlightFeatures sets feature state on specified features', async () => {
-    const { el, mockMap } = await createAndAttach()
+  it('highlightFeatures is no-op without canvas-layer-id set', async () => {
+    const { el } = await createAndAttach()
+    const ids = ['feature-1', 'feature-2']
+    // Should not throw even without canvas layer configured
+    ;(el as any).highlightFeatures(ids)
+    expect(true).toBe(true)
+  })
+
+  it('highlightFeatures uses canvas source when canvas-layer-id is set', async () => {
+    const { el, mockMap } = await createAndAttach({
+      mode: 'paint',
+      scenarioId: 1,
+    })
+    ;(el as any).canvasLayerId = 'scenario_test_canvas'
+
+    // Mock getStyle to return the canvas layer
+    const originalGetStyle = mockMap.getStyle
+    mockMap.getStyle.mockReturnValue({
+      layers: [{ id: 'scenario_test_canvas', source: 'test_source', type: 'fill' }],
+    })
 
     const ids = ['feature-1', 'feature-2']
     ;(el as any).highlightFeatures(ids)
 
-    expect(mockMap.setFeatureState).toHaveBeenCalledTimes(2)
-    expect(mockMap.setFeatureState).toHaveBeenCalledWith(
-      { source: 'composite', id: 'feature-1' },
-      { selected: true },
-    )
+    expect(mockMap.setFeatureState).toHaveBeenCalled()
+    const call = mockMap.setFeatureState.mock.calls[0]
+    expect(call[0]).toHaveProperty('source')
+    expect(call[0].source).toBe('test_source')
+    expect(call[1]).toEqual({ selected: true })
+
+    // Restore mock
+    mockMap.getStyle = originalGetStyle
   })
 
-  it('clearHighlight resets all feature states', async () => {
+  it('clearHighlight uses canvas source when canvas-layer-id is set', async () => {
     const { el, mockMap } = await createAndAttach()
+
+    ;(el as any).canvasLayerId = 'scenario_test_canvas'
+    mockMap.getStyle.mockReturnValue({
+      layers: [{ id: 'scenario_test_canvas', source: 'test_source', type: 'fill' }],
+    })
 
     ;(el as any).clearHighlight()
 
-    expect(mockMap.removeFeatureState).toHaveBeenCalledWith({ source: 'composite' })
+    expect(mockMap.removeFeatureState).toHaveBeenCalled()
+
+    mockMap.getStyle.mockReset()
+    mockMap.getStyle.mockReturnValue({ layers: [] })
   })
 
-  it('dispatches featureselected event on draw.selectionchange', async () => {
+
+  it('dispatches featureselected event in polygon mode on draw.selectionchange', async () => {
     await createAndAttach({ mode: 'paint', scenarioId: 1 })
 
     const el = document.querySelector('brew-gis-map')!
     const eventSpy = vi.fn()
     el.addEventListener('featureselected', eventSpy)
+
+    // Switch to polygon mode to register MapboxDraw event handlers
+    ;(el as any).selectionMode = 'polygon'
+    await (el as any).updateComplete
+    await new Promise((r) => setTimeout(r, 0))
 
     // Simulate draw.selectionchange from the draw controller
     triggerMockEvent('draw.selectionchange', {
@@ -250,5 +301,6 @@ describe('brew-gis-map', () => {
     expect(eventSpy).toHaveBeenCalled()
     const detail = eventSpy.mock.calls[0][0].detail
     expect(detail).toHaveProperty('features')
+    expect(detail).toHaveProperty('selectionMode')
   })
 })

@@ -41,12 +41,6 @@ describe('PaintModeController', () => {
     expect(ctrl.isActive).toBe(true)
   })
 
-  it('setSelectMode calls changeMode on draw instance', () => {
-    const ctrl = new PaintModeController(map, host)
-    ctrl.activate()
-    ctrl.setSelectMode()
-    // Should not throw
-  })
 
   it('isActive returns false before activation', () => {
     const ctrl = new PaintModeController(map, host)

@@ -33,6 +33,14 @@ export class BrewGisMap extends LitElement {
   @property({ type: Number, attribute: 'scenario-id' })
   scenarioId: number | null = null
 
+  /** Selection mode for paint tool: 'click', 'box', or 'polygon'. */
+  @property({ type: String, attribute: 'selection-mode' })
+  selectionMode: 'click' | 'box' | 'polygon' = 'click'
+
+  /** Canvas view layer ID for feature querying in paint mode. */
+  @property({ type: String, attribute: 'canvas-layer-id' })
+  canvasLayerId: string = ''
+
   @property({ type: Object, attribute: 'transform-request' })
   transformRequest:
     | ((url: string, resourceType?: string) => { url: string; headers?: Record<string, string> })
@@ -50,15 +58,12 @@ export class BrewGisMap extends LitElement {
   /** Tracks whether map is loaded. */
   private _mapLoaded = false
 
-  /** Creates an element. Creates the shadow root. */
   constructor() {
     super()
-    // No shadow DOM needed for map container — mapbox-gl needs a real DOM element
   }
 
   /** @inheritdoc */
   override createRenderRoot(): HTMLElement | DocumentFragment {
-    // Render into light DOM so MapLibre can find its container element
     return this
   }
 
@@ -70,7 +75,6 @@ export class BrewGisMap extends LitElement {
   /** @inheritdoc */
   override connectedCallback(): void {
     super.connectedCallback()
-    // Defer map creation to firstUpdated so the container DOM exists
   }
 
   /** @inheritdoc */
@@ -94,6 +98,14 @@ export class BrewGisMap extends LitElement {
     if (changedProperties.has('mode') && this._mapLoaded) {
       this._syncMode()
     }
+
+    if (changedProperties.has('selectionMode') && this._mapLoaded) {
+      this._syncSelectionMode()
+    }
+
+    if (changedProperties.has('canvasLayerId') && this._mapLoaded) {
+      this._syncCanvasLayer()
+    }
   }
 
   /** @inheritdoc */
@@ -110,15 +122,14 @@ export class BrewGisMap extends LitElement {
    */
   highlightFeatures(ids: string[]): void {
     if (!this._map) return
+    const sourceId = this._findCanvasSourceId()
+    if (!sourceId) return
 
-    // Clear previous highlights first
     this.clearHighlight()
-
-    // Set feature state for each ID
     for (const id of ids) {
       try {
         this._map.setFeatureState(
-          { source: 'composite', id: id },
+          { source: sourceId, id } as any,
           { selected: true },
         )
       } catch {
@@ -130,11 +141,18 @@ export class BrewGisMap extends LitElement {
   /** Clear all feature state highlights. */
   clearHighlight(): void {
     if (!this._map) return
+    const sourceId = this._findCanvasSourceId()
+    if (!sourceId) return
     try {
-      this._map.removeFeatureState({ source: 'composite' })
+      ;(this._map as any).removeFeatureState({ source: sourceId })
     } catch {
       // Source may not exist
     }
+  }
+
+  /** Get the PaintModeController instance. */
+  get paintController(): PaintModeController | null {
+    return this._paintController
   }
 
   // ─── Private Methods ──────────────────────────────────────
@@ -164,7 +182,6 @@ export class BrewGisMap extends LitElement {
     const map = new maplibregl.Map(mapOptions)
     this._map = map
 
-    // Add navigation controls
     map.addControl(new maplibregl.NavigationControl(), 'top-right')
 
     map.on('load', () => {
@@ -223,10 +240,26 @@ export class BrewGisMap extends LitElement {
     if (!this._map) return
     this._paintController = new PaintModeController(this._map, this)
 
-    // Add paint indicator layer — highlights features with uf_is_painted flag
-    this._addPaintIndicatorLayer()
+    // Wire up canvas layer info to paint controller
+    this._syncCanvasLayer()
+    this._syncSelectionMode()
+
+    // Add selection highlight overlay layer
+    this._addSelectionHighlightLayer()
 
     this._paintController.activate()
+  }
+
+  private _syncSelectionMode(): void {
+    if (this._paintController) {
+      this._paintController.setSelectionMode(this.selectionMode)
+    }
+  }
+
+  private _syncCanvasLayer(): void {
+    if (!this._paintController || !this.canvasLayerId) return
+    const sourceId = this._findCanvasSourceId()
+    this._paintController.setCanvasLayer(this.canvasLayerId, sourceId || '')
   }
 
   private _syncMode(): void {
@@ -244,61 +277,76 @@ export class BrewGisMap extends LitElement {
   }
 
   /**
-   * Add a fill layer that applies a distinct color to painted features.
-   * Uses the uf_is_painted boolean from the canvas view.
+   * Find the source ID for the canvas view layer.
    */
-  private _addPaintIndicatorLayer(): void {
+  private _findCanvasSourceId(): string | null {
+    if (!this._map || !this.canvasLayerId) return null
+
+    // Check rendered layers on the map
+    const style = this._map.getStyle()
+    if (style?.layers) {
+      const canvasLayer = style.layers.find((l) => l.id === this.canvasLayerId) as any
+      if (canvasLayer?.source) return canvasLayer.source
+    }
+
+    // Fall back to this.layers prop
+    const layerConfig = this.layers.find(
+      (l) => l.id === this.canvasLayerId || l.key === this.canvasLayerId,
+    )
+    if (layerConfig?.source) {
+      return generateLayerId(layerConfig, this.layers.indexOf(layerConfig))
+    }
+
+    return null
+  }
+
+  /**
+   * Add a fill layer that highlights selected features (blue).
+   * Uses the feature-state 'selected' set via setFeatureState.
+   */
+  private _addSelectionHighlightLayer(): void {
     if (!this._map) return
 
-    const paintLayerId = 'brew-gis-paint-indicator'
+    const layerId = 'brew-gis-selection-highlight'
+    if (this._map.getLayer(layerId)) return
 
-    // Only add if not already present
-    if (this._map.getLayer(paintLayerId)) return
+    const sourceId = this._findCanvasSourceId()
+    if (!sourceId) return
 
-    // Find the first fill layer to insert above it
-    const layers = this._map.getStyle()?.layers ?? []
-    const firstFillIdx = layers.findIndex((l) => l.type === 'fill')
-    const before = firstFillIdx >= 0 ? layers[firstFillIdx].id : undefined
+    // Find source-layer from the canvas layer config
+    const canvasConfig = this.layers.find(
+      (l) => l.id === this.canvasLayerId || l.key === this.canvasLayerId,
+    )
+    const sourceLayer = canvasConfig?.['source-layer'] || 'default'
+
+    // Insert above the canvas view layer
+    const before = this._map.getLayer(this.canvasLayerId)
+      ? this.canvasLayerId
+      : undefined
 
     this._map.addLayer(
       {
-        id: paintLayerId,
+        id: layerId,
         type: 'fill',
-        source: 'composite',
-        'source-layer': 'default', // Will be updated by caller
+        source: sourceId,
+        'source-layer': sourceLayer,
         paint: {
           'fill-color': [
             'case',
             ['boolean', ['feature-state', 'selected'], false],
             '#2196f3', // Blue for selected
-            ['boolean', ['get', 'uf_is_painted'], false],
-            '#ffeb3b', // Yellow for painted
             'rgba(0,0,0,0)', // Transparent otherwise
           ],
           'fill-opacity': [
             'case',
             ['boolean', ['feature-state', 'selected'], false],
             0.4,
-            ['boolean', ['get', 'uf_is_painted'], false],
-            0.3,
             0,
           ],
         },
       },
       before,
     )
-  }
-
-  /** Update the paint indicator source-layer for the current canvas view. */
-  setPaintSourceLayer(_sourceLayer: string): void {
-    const paintLayerId = 'brew-gis-paint-indicator'
-    if (!this._map?.getLayer(paintLayerId)) return
-    try {
-      this._map.removeLayer(paintLayerId)
-    } catch {
-      // OK
-    }
-    this._addPaintIndicatorLayer()
   }
 
   private _syncViewport(vp: Viewport): void {

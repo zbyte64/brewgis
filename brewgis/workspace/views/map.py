@@ -152,6 +152,10 @@ def view_workspace_map(request: HttpRequest, workspace_pk: int) -> HttpResponse:
             }
         )
 
+    # The map layer ID for the scenario canvas view (used by brew-gis-map for feature selection)
+    canvas_view_layer_id = f"scenario_{scenario.slug}_canvas" if scenario else ""
+    selection_mode = request.GET.get("selection_mode", "click")
+
     # Build URL for the map page with scenario param
     scenario_url = ""
     if scenario:
@@ -183,6 +187,8 @@ def view_workspace_map(request: HttpRequest, workspace_pk: int) -> HttpResponse:
         "bf_paint_url": bf_paint_url,
         "history_url": history_url if scenario else "",
         "undo_url": undo_url if scenario else "",
+        "canvas_view_layer_id": canvas_view_layer_id,
+        "selection_mode": selection_mode,
     }
 
     return render(request, "workspace_map.html", context)

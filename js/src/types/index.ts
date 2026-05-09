@@ -44,6 +44,7 @@ export interface LayerClickEvent {
 export interface FeatureSelectedEvent {
   features: { id: string; layerId: string }[]
   mode: 'draw' | 'select' | 'clear'
+  selectionMode?: 'click' | 'box' | 'polygon'
 }
 
 export interface PaintRequest {
