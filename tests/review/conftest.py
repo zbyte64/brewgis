@@ -170,12 +170,15 @@ def _capture_page_errors(page: Page, screenshots_dir: Path) -> None:
 
 
 def pytest_addoption(parser) -> None:
-    parser.addoption(
-        "--e2e-debug",
-        action="store_true",
-        default=False,
-        help="Run E2E tests in headed (visible) browser mode",
-    )
+    try:
+        parser.addoption(
+            "--e2e-debug",
+            action="store_true",
+            default=False,
+            help="Run browser tests in headed (visible) mode",
+        )
+    except ValueError:
+        pass  # Option already registered by another conftest
 
 
 # ── Failure screenshot / DOM dump ────────────────────────────────────────
