@@ -9,6 +9,8 @@ from django.shortcuts import render
 
 from brewgis.workspace.models import AnalysisRun
 from brewgis.workspace.models import County
+from brewgis.workspace.models import DataImportRun
+from brewgis.workspace.models import DataSourceCategory
 from brewgis.workspace.models import Workspace
 
 STATE_NAMES: dict[str, str] = {
@@ -65,38 +67,6 @@ STATE_NAMES: dict[str, str] = {
     "56": "Wyoming",
 }
 
-DATA_CATALOG_SOURCES: list[dict[str, str]] = [
-    {
-        "name": "Census ACS",
-        "description": "Demographics by census tract",
-        "icon": "bi-people-fill",
-    },
-    {
-        "name": "LEHD Employment",
-        "description": "Jobs by block",
-        "icon": "bi-briefcase-fill",
-    },
-    {
-        "name": "OSM Points of Interest",
-        "description": "Amenities",
-        "icon": "bi-geo-alt-fill",
-    },
-    {
-        "name": "Environmental Constraints",
-        "description": "Flood/wetland/slope",
-        "icon": "bi-exclamation-triangle-fill",
-    },
-    {
-        "name": "Parcel Fabric",
-        "description": "User uploaded parcel data",
-        "icon": "bi-map-fill",
-    },
-    {
-        "name": "County Boundary",
-        "description": "Census TIGER boundary",
-        "icon": "di-boundary",
-    },
-]
 
 ANALYSIS_MODULES: list[dict[str, object]] = [
     {
@@ -172,7 +142,12 @@ def workspace_detail(request: HttpRequest, pk: int) -> HttpResponse:
         "workspace": workspace,
         "counties": County.objects.filter(county_q),
         "region_summary": _build_region_summary(workspace),
-        "data_catalog_sources": DATA_CATALOG_SOURCES,
+        "catalog_categories": DataSourceCategory.objects.prefetch_related("sources").order_by("sort_order"),
+        "imported_types": list(
+            DataImportRun.objects.filter(workspace=workspace, status="completed")
+            .values_list("import_type", flat=True)
+            .distinct()
+        ),
         "analysis_modules": ANALYSIS_MODULES,
         "recent_runs": AnalysisRun.objects.filter(workspace=workspace).order_by(
             "-created_at"

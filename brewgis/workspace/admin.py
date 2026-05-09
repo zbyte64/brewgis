@@ -3,6 +3,8 @@ from django.contrib import admin
 from brewgis.workspace.built_forms.admin import *  # noqa: F403
 
 from .models import AnalysisRun
+from .models import DataSource
+from .models import DataSourceCategory
 from .models import PaintConstraint
 from .models import PaintedCanvas
 from .models import Scenario
@@ -75,3 +77,21 @@ class PaintConstraintAdmin(admin.ModelAdmin):
     list_display = ("workspace", "column", "operator", "value", "severity")
     list_filter = ("workspace", "column", "severity")
     search_fields = ("column",)
+
+
+
+@admin.register(DataSourceCategory)
+class DataSourceCategoryAdmin(admin.ModelAdmin):
+    list_display = ("name", "slug", "sort_order")
+    list_editable = ("sort_order",)
+    prepopulated_fields = {"slug": ("name",)}
+    search_fields = ("name",)
+
+
+@admin.register(DataSource)
+class DataSourceAdmin(admin.ModelAdmin):
+    list_display = ("name", "category", "provider", "acquisition_priority", "is_importable")
+    list_filter = ("category", "acquisition_priority", "is_importable", "data_format", "update_frequency")
+    search_fields = ("name", "provider", "description")
+    list_editable = ("is_importable",)
+    autocomplete_fields = ("category",)

@@ -322,11 +322,15 @@ class DataImportRun(models.Model):
     """Tracks execution of data import operations (Census, LEHD, POI)."""
 
     IMPORT_TYPE_CHOICES = [
-        ("census", "Census ACS Demographics"),
-        ("lehd", "LEHD Employment"),
-        ("poi", "Points of Interest"),
         ("allocate", "Spatial Allocation"),
+        ("census", "Census ACS Demographics"),
+        ("ejscreen", "EJScreen Environmental Justice"),
+        ("health_rankings", "County Health Rankings"),
+        ("lehd", "LEHD Employment"),
+        ("parkserve", "ParkServe Park Data"),
+        ("poi", "Points of Interest"),
         ("stitch", "Column Stitching"),
+        ("svi", "Social Vulnerability Index"),
     ]
 
     workspace = models.ForeignKey(
@@ -507,3 +511,67 @@ class County(models.Model):
 
     def __str__(self) -> str:
         return f"{self.name} (FIPS {self.state_fips}{self.county_fips})"
+
+class DataSourceCategory(models.Model):
+    name = models.CharField(max_length=64, unique=True)
+    slug = models.SlugField(max_length=64, unique=True)
+    description = models.TextField(blank=True, default="")
+    icon = models.CharField(max_length=64, blank=True, default="")
+    sort_order = models.IntegerField(default=0)
+
+    class Meta:
+        ordering = ("sort_order", "name")
+        verbose_name_plural = "Data Source Categories"
+
+    def __str__(self) -> str:
+        return self.name
+
+
+class DataSource(models.Model):
+    class FormatChoices(models.TextChoices):
+        PARQUET = "parquet", "GeoParquet"
+        SHAPEFILE = "shapefile", "Shapefile"
+        GEOJSON = "geojson", "GeoJSON"
+        GEOTIFF = "geotiff", "GeoTIFF"
+        CSV = "csv", "CSV"
+        API = "api", "REST API"
+        WMS = "wms", "WMS"
+        GTFS = "gtfs", "GTFS"
+
+    class UpdateChoices(models.TextChoices):
+        ANNUAL = "annual", "Annual"
+        QUARTERLY = "quarterly", "Quarterly"
+        SEMI_ANNUAL = "semi_annual", "Semi-annual"
+        CONTINUOUS = "continuous", "Continuous"
+        PERIODIC = "periodic", "Periodic"
+        BIENNIAL = "biennial", "Biennial"
+        FIVE_YEAR = "five_year", "5-Year"
+        TEN_YEAR = "ten_year", "10-Year"
+
+    class AcquisitionChoices(models.TextChoices):
+        P0 = "p0", "P0 - Ship Now"
+        P1 = "p1", "P1 - Phase 1"
+        P2 = "p2", "P2 - Phase 2"
+
+    category = models.ForeignKey(
+        DataSourceCategory, on_delete=models.CASCADE, related_name="sources"
+    )
+    name = models.CharField(max_length=128)
+    slug = models.SlugField(max_length=128, unique=True)
+    description = models.TextField(blank=True, default="")
+    provider = models.CharField(max_length=128)
+    provider_url = models.URLField(max_length=512, blank=True, default="")
+    data_format = models.CharField(max_length=16, choices=FormatChoices, blank=True, default="")
+    update_frequency = models.CharField(max_length=16, choices=UpdateChoices, blank=True, default="")
+    acquisition_priority = models.CharField(max_length=4, choices=AcquisitionChoices, blank=True, default="")
+    icon = models.CharField(max_length=64, blank=True, default="")
+    import_type = models.CharField(max_length=16, blank=True, default="", help_text="Maps to DataImportRun type")
+    is_importable = models.BooleanField(default=False)
+    sort_order = models.IntegerField(default=0)
+
+    class Meta:
+        ordering = ("category__sort_order", "sort_order", "name")
+        verbose_name = "Data Source"
+
+    def __str__(self) -> str:
+        return f"{self.name} ({self.category.name})"

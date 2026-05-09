@@ -30,33 +30,118 @@
     <!-- Data Catalog Panel -->
     <div class="col-md-6 mb-4">
       <div class="card h-100">
-        <div class="card-header">
+        <div class="card-header d-flex justify-content-between align-items-center">
           <h5 class="card-title mb-0">{% translate "Data Catalog" %}</h5>
+          <span class="badge bg-primary rounded-pill">{{ catalog_categories|length }} categories</span>
         </div>
         <div class="card-body p-0">
-          <div class="table-responsive">
-            <table class="table table-striped mb-0">
-              <thead>
-                <tr>
-                  <th scope="col">{% translate "Source" %}</th>
-                  <th scope="col">{% translate "Description" %}</th>
-                  <th scope="col">{% translate "Status" %}</th>
-                </tr>
-              </thead>
-              <tbody>
-                {% for source in data_catalog_sources %}
-                  <tr>
-                    <td>{{ source.name }}</td>
-                    <td>{{ source.description }}</td>
-                    <td><span class="badge bg-secondary">{% translate "Not Imported" %}</span></td>
-                  </tr>
-                {% empty %}
-                  <tr>
-                    <td colspan="3" class="text-muted text-center">{% translate "No data sources configured." %}</td>
-                  </tr>
-                {% endfor %}
-              </tbody>
-            </table>
+          <div class="accordion accordion-flush" id="catalogAccordion">
+            {% for category in catalog_categories %}
+              {% with source_count=category.sources.all|length %}
+                <div class="accordion-item">
+                  <h2 class="accordion-header">
+                    <button class="accordion-button collapsed py-3"
+                            type="button"
+                            data-bs-toggle="collapse"
+                            data-bs-target="#cat-{{ category.slug }}"
+                            aria-expanded="false">
+                      <span class="d-flex align-items-center gap-2 w-100">
+                        {% if category.icon %}
+                          <i class="{{ category.icon }}"></i>
+                        {% endif %}
+                        <strong>{{ category.name }}</strong>
+                        <span class="badge bg-secondary rounded-pill ms-auto">{{ source_count }}</span>
+                      </span>
+                    </button>
+                  </h2>
+                  <div id="cat-{{ category.slug }}"
+                       class="accordion-collapse collapse"
+                       data-bs-parent="#catalogAccordion">
+                    <div class="accordion-body p-0">
+                      <div class="table-responsive">
+                        <table class="table table-striped mb-0 small">
+                          <thead class="table-light">
+                            <tr>
+                              <th scope="col">{% translate "Source" %}</th>
+                              <th scope="col">{% translate "Provider" %}</th>
+                              <th scope="col">{% translate "Format" %}</th>
+                              <th scope="col">{% translate "Update" %}</th>
+                              <th scope="col">{% translate "Status" %}</th>
+                            </tr>
+                          </thead>
+                          <tbody>
+                            {% for source in category.sources.all %}
+                              <tr>
+                                <td>
+                                  <div class="d-flex align-items-center gap-1">
+                                    {% if source.icon %}
+                                      <i class="{{ source.icon }} small text-muted"></i>
+                                    {% endif %}
+                                    <div>
+                                      <span>{{ source.name }}</span>
+                                      <br>
+                                      <span class="text-muted fw-normal" style="font-size: 0.75rem;">
+                                        {% if source.acquisition_priority == "p0" %}
+                                          <span class="badge bg-success" style="font-size: 0.65rem;">P0</span>
+                                        {% elif source.acquisition_priority == "p1" %}
+                                          <span class="badge bg-warning text-dark" style="font-size: 0.65rem;">P1</span>
+                                        {% elif source.acquisition_priority == "p2" %}
+                                          <span class="badge bg-secondary" style="font-size: 0.65rem;">P2</span>
+                                        {% endif %}
+                                        {% if source.is_importable %}
+                                          <span class="badge bg-info text-dark" style="font-size: 0.65rem;">import</span>
+                                        {% endif %}
+                                      </span>
+                                    </div>
+                                  </div>
+                                </td>
+                                <td>
+                                  <a href="{{ source.provider_url }}" target="_blank" rel="noopener"
+                                     class="text-decoration-none small">
+                                    {{ source.provider }}
+                                  </a>
+                                </td>
+                                <td>
+                                  <span class="badge bg-light text-dark border">
+                                    {{ source.get_data_format_display|default:"—" }}
+                                  </span>
+                                </td>
+                                <td>
+                                  <span class="small">{{ source.get_update_frequency_display|default:"—" }}</span>
+                                </td>
+                                <td>
+                                  {% if source.import_type and source.import_type in imported_types %}
+                                    <span class="badge bg-success">{% translate "Imported" %}</span>
+                                  {% elif source.is_importable and source.import_type %}
+                                    <a href="{% url 'workspace:import_center' %}?workspace={{ workspace.pk }}"
+                                       class="btn btn-outline-primary btn-sm py-0"
+                                       style="font-size: 0.7rem;">
+                                      {% translate "Import" %}
+                                    </a>
+                                  {% else %}
+                                    <span class="badge bg-secondary">{% translate "Not Imported" %}</span>
+                                  {% endif %}
+                                </td>
+                              </tr>
+                            {% empty %}
+                              <tr>
+                                <td colspan="5" class="text-muted text-center py-3">
+                                  {% translate "No data sources in this category." %}
+                                </td>
+                              </tr>
+                            {% endfor %}
+                          </tbody>
+                        </table>
+                      </div>
+                    </div>
+                  </div>
+                </div>
+              {% endwith %}
+            {% empty %}
+              <div class="text-center text-muted py-4">
+                {% translate "No data sources configured." %}
+              </div>
+            {% endfor %}
           </div>
         </div>
       </div>
