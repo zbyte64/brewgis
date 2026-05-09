@@ -10,11 +10,11 @@ class AnalysisPipelinePage(BasePage):
 
     def navigate_to_launch(self, live_server_url: str) -> None:
         """Navigate to the analysis launch page."""
-        self.navigate(f"{live_server_url}/workspace/analysis/launch/")
+        self.navigate(f"{live_server_url}/analysis/launch/")
 
     def navigate_to_list(self, live_server_url: str) -> None:
         """Navigate to the analysis runs list page."""
-        self.navigate(f"{live_server_url}/workspace/analysis/")
+        self.navigate(f"{live_server_url}/analysis/runs/")
 
     def launch_form_fields(self) -> list[str]:
         """Return labels of all form fields on the launch page."""

@@ -22,5 +22,6 @@ Feature: Built Forms UX
 
   @review
   Scenario: Bake button is accessible
+    Given a building type named "Single Family" exists
     When I navigate to the building types page
     Then a bake button should be accessible

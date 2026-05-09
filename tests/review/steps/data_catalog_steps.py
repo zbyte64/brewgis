@@ -9,15 +9,16 @@ from pytest_bdd import scenarios
 from pytest_bdd import then
 
 from brewgis.workspace.models import Workspace
-from tests.review.pages.data_catalog_page import DataCatalogPage
 from tests.e2e.steps.common_steps import *  # noqa: F403
+from tests.review.pages.data_catalog_page import DataCatalogPage
 
 scenarios(str(Path(__file__).parent.parent / "features" / "data_catalog.feature"))
 
 
-@then("the Data Catalog table should have {count:d} source rows")
-def catalog_has_source_rows(page, count: int) -> None:
+@then(parsers.parse("the Data Catalog table should have {count} source rows"))
+def catalog_has_source_rows(page, count: str) -> None:
     """Check the data catalog table row count."""
+    count = int(count)
     catalog = DataCatalogPage(page)
     assert catalog.source_count() == count, (
         f"Expected {count} source rows, got {catalog.source_count()}"
@@ -41,14 +42,14 @@ def catalog_has_columns(page, columns: str) -> None:
         "div.card:has(h5:has-text('Data Catalog')) table thead tr th"
     )
     header_texts = [h.inner_text().strip() for h in headers.all()]
-    expected = [c.strip('"') for c in columns.split(",")]
+    expected = [c.strip().strip('"') for c in columns.split(",")]
     for col in expected:
         assert col in header_texts, (
             f"Expected column '{col}' in header, got {header_texts}"
         )
 
 
-@then("all sources should show status {status:q}")
+@then(parsers.parse('all sources should show status "{status}"'))
 def catalog_all_status(page, status: str) -> None:
     """Check every source row shows the given status."""
     rows = DataCatalogPage(page).get_source_rows()
@@ -64,14 +65,14 @@ def quick_action_bar(page, buttons: str) -> None:
     """Check the quick-action buttons match expected labels."""
     catalog = DataCatalogPage(page)
     labels = catalog.quick_action_labels()
-    expected = [b.strip('"') for b in buttons.split(",")]
+    expected = [b.strip().strip('"') for b in buttons.split(",")]
     for btn in expected:
         assert btn in labels, (
             f"Expected quick-action '{btn}' in bar, got {labels}"
         )
 
 
-@then("the workspace name in the page title")
+@then("I should see the workspace name in the page title")
 def workspace_name_in_title(page) -> None:
     """Check the workspace name appears in the page title."""
     ws = Workspace.objects.last()
@@ -82,7 +83,7 @@ def workspace_name_in_title(page) -> None:
     )
 
 
-@then("the workspace name in the page header")
+@then("I should see the workspace name in the page header")
 def workspace_name_in_header(page) -> None:
     """Check the workspace name appears in the h1 header."""
     ws = Workspace.objects.last()

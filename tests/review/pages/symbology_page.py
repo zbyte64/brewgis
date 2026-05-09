@@ -10,7 +10,7 @@ class SymbologyPage(BasePage):
 
     def navigate_to_symbology(self, layer_pk: int, live_server_url: str) -> None:
         """Navigate to the symbology editor for the given layer."""
-        self.navigate(f"{live_server_url}/workspace/layers/{layer_pk}/symbology/")
+        self.navigate(f"{live_server_url}/symbology/{layer_pk}/edit/")
 
     def symbology_type_options(self) -> list[str]:
         """Return the available symbology type options."""

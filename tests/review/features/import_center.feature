@@ -21,7 +21,7 @@ Feature: Import Center UX
   @review
   Scenario: Upload File tab shows upload link
     When I navigate to the import center
-    Then the "Upload File" tab should contain "Upload GIS File" description
+    Then the "Upload File" tab should contain "Upload GIS File"
     And the "Upload File" tab should have an "Upload File" link
 
   @review

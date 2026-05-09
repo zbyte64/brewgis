@@ -8,7 +8,7 @@ from tests.e2e.pages.base_page import BasePage
 class ImportCenterPage(BasePage):
     """UX inspection methods for the Import Center page."""
 
-    IMPORT_CENTER_PATH = "/workspace/import_center/"
+    IMPORT_CENTER_PATH = "/import/"
 
     def navigate_to(self, live_server_url: str) -> None:
         """Navigate to the import center page."""

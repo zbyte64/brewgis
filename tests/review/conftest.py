@@ -100,9 +100,14 @@ def live_server_url(live_server: LiveServer) -> str:
 
 @pytest.fixture
 def logged_in_user(db) -> User:
+    from allauth.account.models import EmailAddress  # noqa: PLC0415
     from tests.factories import UserFactory  # noqa: PLC0415
 
-    return UserFactory()
+    user = UserFactory()
+    EmailAddress.objects.create(
+        user=user, email=user.email, verified=True, primary=True
+    )
+    return user
 
 
 @pytest.fixture

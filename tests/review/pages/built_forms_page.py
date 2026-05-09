@@ -10,23 +10,23 @@ class BuiltFormsPage(BasePage):
 
     def navigate_to_building_types(self, live_server_url: str) -> None:
         """Navigate to the building types list page."""
-        self.navigate(f"{live_server_url}/workspace/building-types/")
+        self.navigate(f"{live_server_url}/built-forms/building-types/")
 
     def navigate_to_place_types(self, live_server_url: str) -> None:
         """Navigate to the place types list page."""
-        self.navigate(f"{live_server_url}/workspace/place-types/")
+        self.navigate(f"{live_server_url}/built-forms/place-types/")
 
     def card_count(self) -> int:
         """Return the number of building type or place type cards visible."""
         return self.page.locator("div.row.row-cols-1 > div.col .card").count()
 
     def card_titles(self) -> list[str]:
-        """Return the titles of all visible cards."""
+        """Return the titles of all visible cards, stripped of quotes."""
         titles: list[str] = []
         for h5 in self.page.locator("div.card h5.card-title").all():
-            titles.append(h5.inner_text().strip())
+            titles.append(h5.inner_text().strip().strip('"'))
         for h6 in self.page.locator("div.card h6.card-title").all():
-            titles.append(h6.inner_text().strip())
+            titles.append(h6.inner_text().strip().strip('"'))
         return titles
 
     def has_create_button(self) -> bool:
@@ -46,8 +46,11 @@ class BuiltFormsPage(BasePage):
 
     def navigate_to_bake(self, live_server_url: str) -> None:
         """Navigate to the bake/apply page."""
-        self.navigate(f"{live_server_url}/workspace/building-types/bake/")
+        self.navigate(f"{live_server_url}/built-forms/building-types/bake/")
 
     def has_bake_button(self) -> bool:
-        """Check if a bake/apply button is accessible."""
-        return self.page.get_by_role("button", name="Bake").is_visible()
+        """Check if a bake/apply button or link is accessible."""
+        return (
+            self.page.get_by_role("button", name="Bake").is_visible()
+            or self.page.get_by_role("link", name="Bake").is_visible()
+        )

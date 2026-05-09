@@ -9,8 +9,8 @@ from pytest_bdd import scenarios
 from pytest_bdd import then
 from pytest_bdd import when
 
-from tests.review.pages.import_center_page import ImportCenterPage
 from tests.e2e.steps.common_steps import *  # noqa: F403
+from tests.review.pages.import_center_page import ImportCenterPage
 
 scenarios(str(Path(__file__).parent.parent / "features" / "import_center.feature"))
 
@@ -24,7 +24,7 @@ def navigate_import_center(page, live_server_url) -> None:
 @then(parsers.parse("I should see import tabs {tab_list}"))
 def see_import_tabs(page, tab_list: str) -> None:
     """Check all expected tabs are present."""
-    expected = [t.strip('"') for t in tab_list.split(",")]
+    expected = [t.strip().strip('"') for t in tab_list.split(",")]
     labels = ImportCenterPage(page).tab_labels()
     for tab in expected:
         assert tab in labels, (
@@ -50,7 +50,7 @@ def see_breadcrumb(page) -> None:
 @then(parsers.parse("the breadcrumb should show {crumbs}"))
 def breadcrumb_shows(page, crumbs: str) -> None:
     """Check breadcrumb path."""
-    expected = [c.strip('"') for c in crumbs.split(",")]
+    expected = [c.strip().strip('"') for c in crumbs.split(",")]
     path = ImportCenterPage(page).breadcrumb_path()
     for crumb in expected:
         assert crumb in path, (
@@ -86,7 +86,7 @@ def tab_has_sub_tabs(page, tab: str, sub_tabs: str) -> None:
     """Check a tab pane contains the expected sub-tabs."""
     tab_id = ImportCenterPage(page).tab_id_for_label(tab)
     assert tab_id is not None, f"Unknown tab '{tab}'"
-    expected = [s.strip('"') for s in sub_tabs.split(",")]
+    expected = [s.strip().strip('"') for s in sub_tabs.split(",")]
     sub_buttons = page.locator(f"#{tab_id} ul.nav-pills button.nav-link")
     labels = [b.inner_text().strip() for b in sub_buttons.all()]
     for sub in expected:
