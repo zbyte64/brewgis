@@ -35,7 +35,7 @@ def see_symbology_form(page) -> None:
 @then(parsers.parse("the symbology type selector should include {options}"))
 def symbology_type_options(page, options: str) -> None:
     """Check the symbology type select includes the expected options."""
-    expected = [o.strip('"') for o in options.split(",")]
+    expected = [o.strip().strip('"') for o in options.split(",")]
     actual = SymbologyPage(page).symbology_type_options()
     for opt in expected:
         assert opt in actual, (

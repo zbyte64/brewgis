@@ -43,7 +43,7 @@ def workspace_exists(name: str, db) -> WorkspaceFactory:  # type: ignore[no-unty
     return WorkspaceFactory(name=name)
 
 
-@given(parsers.parse("a layer named {name} exists in workspace {ws_name}"))
+@given(parsers.parse('a layer named "{name}" exists in workspace "{ws_name}"'))
 def layer_exists(name: str, ws_name: str, db) -> None:  # type: ignore[no-untyped-def]
     """Create a layer in the named workspace."""
     ws = WorkspaceFactory(name=ws_name)
