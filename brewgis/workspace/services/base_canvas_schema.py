@@ -1,4 +1,4 @@
-"""Base Canvas Schema — single source of truth for all ~77 base canvas columns.
+"""Base Canvas Schema — single source of truth for all ~82 base canvas columns.
 
 Provides column metadata, category groupings, and classification sets used by
 the canvas view manager, ETL pipeline, dbt models, and symbology system.
@@ -13,6 +13,7 @@ Column categories (per ``planning/v2/09-base-canvas.md``):
     6. Employment
     7. Building Area
     8. Irrigation
+    9. Equity & Environmental Quality
 
 **Static columns** (passed through verbatim by the painting system):
     id, id_source, geometry_key, geometry, land_development_category,
@@ -377,6 +378,63 @@ class BaseCanvasSchema:
         unit="count",
         metatype="count",
         aggregation_hint="sum",
+        behavior_category="paintable",
+        nullable=False,
+        default_value=0.0,
+    )
+
+    # ── Equity & Environmental Quality ──────────────────────────────────
+    MEDIAN_INCOME = ColumnDef(
+        name="median_income",
+        label="Median Household Income",
+        pg_type="DOUBLE PRECISION",
+        unit="$/yr",
+        metatype="currency",
+        aggregation_hint="avg",
+        behavior_category="paintable",
+        nullable=False,
+        default_value=0.0,
+    )
+    RENT_BURDEN_PCT = ColumnDef(
+        name="rent_burden_pct",
+        label="Rent Burden (HH >30% income on rent)",
+        pg_type="DOUBLE PRECISION",
+        unit="%",
+        metatype="percentage",
+        aggregation_hint="avg",
+        behavior_category="paintable",
+        nullable=False,
+        default_value=0.0,
+    )
+    PCT_MINORITY = ColumnDef(
+        name="pct_minority",
+        label="Percent People of Color",
+        pg_type="DOUBLE PRECISION",
+        unit="%",
+        metatype="percentage",
+        aggregation_hint="avg",
+        behavior_category="paintable",
+        nullable=False,
+        default_value=0.0,
+    )
+    PCT_COLLEGE_EDUCATED = ColumnDef(
+        name="pct_college_educated",
+        label="Percent College-Educated",
+        pg_type="DOUBLE PRECISION",
+        unit="%",
+        metatype="percentage",
+        aggregation_hint="avg",
+        behavior_category="paintable",
+        nullable=False,
+        default_value=0.0,
+    )
+    COST_BURDEN_PCT = ColumnDef(
+        name="cost_burden_pct",
+        label="Cost-Burdened Households",
+        pg_type="DOUBLE PRECISION",
+        unit="%",
+        metatype="percentage",
+        aggregation_hint="avg",
         behavior_category="paintable",
         nullable=False,
         default_value=0.0,
@@ -986,6 +1044,11 @@ class BaseCanvasSchema:
         "bldg_area_medical_services",
         "bldg_area_transport_warehousing",
         "bldg_area_wholesale",
+        "cost_burden_pct",
+        "median_income",
+        "pct_college_educated",
+        "pct_minority",
+        "rent_burden_pct",
         "residential_irrigated_area",
         "commercial_irrigated_area",
     )

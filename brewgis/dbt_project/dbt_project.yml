@@ -51,6 +51,8 @@ models:
       +materialized: table
     stormwater_runoff:
       +materialized: table
+    displacement_risk:
+      +materialized: table
     food_access:
       +materialized: table
     housing_cost_burden:

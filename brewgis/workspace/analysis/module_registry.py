@@ -12,6 +12,7 @@ from typing import Any
 MODULE_DEPENDENCIES: dict[str, list[str]] = {
     "env_constraint": [],
     "core": ["env_constraint"],
+    "displacement_risk": ["core"],
     "water_demand": ["core"],
     "energy_demand": ["core"],
     "land_consumption": ["core"],
@@ -28,10 +29,10 @@ MODULE_DEPENDENCIES: dict[str, list[str]] = {
     "physical_activity": ["mode_choice", "trip_distribution"],
     "health_impacts": ["physical_activity", "transport_ghg"],
     "stormwater_runoff": ["land_consumption"],
-}
     "food_access": ["core"],
     "housing_cost_burden": ["core"],
     "sprawl_index": ["core"],
+}
 
 
 
@@ -39,6 +40,7 @@ MODULE_DEPENDENCIES: dict[str, list[str]] = {
 MODULE_RESULT_TABLES: dict[str, list[str]] = {
     "env_constraint": ["env_constraint_{scenario_id}"],
     "core": ["end_state_{scenario_id}", "increment_{scenario_id}"],
+    "displacement_risk": ["displacement_risk_{scenario_id}"],
     "water_demand": ["water_demand_{scenario_id}"],
     "energy_demand": ["energy_demand_{scenario_id}"],
     "land_consumption": [
@@ -74,6 +76,7 @@ MODULE_DBT_SELECT: dict[str, list[str]] = {
     "env_constraint": ["env_constraint"],
     "core": ["core_end_state", "core_increment"],
     "water_demand": ["water_demand"],
+    "displacement_risk": ["displacement_risk"],
     "energy_demand": ["energy_demand"],
     "land_consumption": ["land_consumption"],
     "fiscal": [
@@ -106,6 +109,7 @@ MODULE_LABELS: dict[str, str] = {
     "core": "Core Scenario Builder",
     "water_demand": "Water Demand",
     "energy_demand": "Energy Demand",
+    "displacement_risk": "Displacement Risk",
     "land_consumption": "Land Consumption",
     "fiscal": "Fiscal Impact",
     "agriculture": "Agriculture",

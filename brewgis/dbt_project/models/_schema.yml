@@ -756,3 +756,52 @@ models:
     tests:
     - accepted_values:
         values: ['food_desert', 'low_access', 'moderate_access', 'high_access']
+- name: displacement_risk
+  description: Displacement risk/gentrification typology using equity indicators from base canvas.
+  columns:
+  - name: parcel_id
+    tests:
+    - not_null
+    - unique
+  - name: gross_acres
+    tests:
+    - non_negative
+  - name: population
+    tests:
+    - non_negative
+  - name: households
+    tests:
+    - non_negative
+  - name: median_income
+    tests:
+    - non_negative
+  - name: rent_burden_pct
+    tests:
+    - column_between:
+        arguments:
+          min_value: 0
+          max_value: 100
+  - name: pct_minority
+    tests:
+    - column_between:
+        arguments:
+          min_value: 0
+          max_value: 100
+  - name: pct_college_educated
+    tests:
+    - column_between:
+        arguments:
+          min_value: 0
+          max_value: 100
+  - name: vulnerability_score
+    tests:
+    - not_null
+    - column_between:
+        arguments:
+          min_value: 0
+          max_value: 4
+  - name: displacement_risk_category
+    tests:
+    - not_null
+    - accepted_values:
+        values: ['stable', 'vulnerable', 'at_risk', 'displacement_pressure']

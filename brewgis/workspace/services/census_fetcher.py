@@ -19,7 +19,9 @@ from shapely.geometry import Point
 logger = logging.getLogger(__name__)
 
 # Census API base
-CENSUS_BASE_URL = "https://api.census.gov/data/2022/acs/acs5"
+def _census_base_url(year: int = 2022) -> str:
+    return f"https://api.census.gov/data/{year}/acs/acs5"
+
 
 # ACS variable definitions mapped to base canvas columns
 # Grouped so we can fetch them efficiently via a single call
@@ -52,6 +54,41 @@ ACS_TABLE_GROUPS = {
         "vars": ["B25008_001E", "B25008_002E", "B25008_003E"],
         # _001E = Total, _002E = Owner occupied, _003E = Renter occupied
     },
+    "B19013": {
+        "label": "Median Household Income",
+        "vars": ["B19013_001E"],  # Median household income in the past 12 months
+    },
+    "B25070": {
+        "label": "Gross Rent as Percentage of Household Income",
+        "vars": [
+            "B25070_001E",  # Total
+            "B25070_007E",  # 30.0 to 34.9 percent
+            "B25070_008E",  # 35.0 to 39.9 percent
+            "B25070_009E",  # 40.0 to 49.9 percent
+            "B25070_010E",  # 50.0 percent or more
+        ],
+    },
+    "B03002": {
+        "label": "Hispanic or Latino Origin by Race",
+        "vars": [
+            "B03002_001E",  # Total
+            "B03002_002E",  # Not Hispanic or Latino: White alone
+            "B03002_003E",  # Not Hispanic or Latino: Black or African American alone
+            "B03002_004E",  # Not Hispanic or Latino: American Indian and Alaska Native alone
+            "B03002_005E",  # Not Hispanic or Latino: Asian alone
+            "B03002_012E",  # Hispanic or Latino
+        ],
+    },
+    "B15003": {
+        "label": "Educational Attainment",
+        "vars": [
+            "B15003_001E",  # Total
+            "B15003_022E",  # Bachelor's degree
+            "B15003_023E",  # Master's degree
+            "B15003_024E",  # Professional school degree
+            "B15003_025E",  # Doctorate degree
+        ],
+    },
 }
 
 
@@ -63,7 +100,8 @@ def _all_vars() -> list[str]:
     return result
 
 
-def _build_census_url(state_fips: str, county_fips: str, summary_level: str) -> str:
+def _build_census_url(state_fips: str, county_fips: str, summary_level: str, year: int = 2022) -> str:
+
     """Build the Census API URL for the given geography.
 
     Args:
@@ -82,7 +120,8 @@ def _build_census_url(state_fips: str, county_fips: str, summary_level: str) -> 
     else:
         geo = f"in=state:{state_fips}&in=county:{county_fips}&for=block%20group:*"
 
-    return f"{CENSUS_BASE_URL}?get={vars_}&{geo}"
+    return f"{_census_base_url(year)}?get={vars_}&{geo}"
+
 
 
 def _fetch_census_data(url: str) -> list[list[str]]:
@@ -111,6 +150,14 @@ def _fetch_census_data(url: str) -> list[list[str]]:
 
     return data
 
+
+
+
+def _safe_pct(numerator: int, denominator: int) -> float:
+    """Compute percentage safely, returning 0.0 for zero denominator."""
+    if denominator > 0:
+        return round(numerator / denominator * 100.0, 2)
+    return 0.0
 
 def _compute_derived_columns(row: dict[str, int]) -> dict[str, int | float]:
     """Compute derived base canvas columns from raw ACS variables.
@@ -152,13 +199,31 @@ def _compute_derived_columns(row: dict[str, int]) -> dict[str, int | float]:
         "du_mf_10p": du_mf_10p,
         "owner_occupied": row.get("B25003_002E", 0),
         "renter_occupied": row.get("B25003_003E", 0),
+        "median_income": row.get("B19013_001E", 0),
+        "rent_burden_pct": _safe_pct(
+            row.get("B25070_007E", 0) + row.get("B25070_008E", 0)
+            + row.get("B25070_009E", 0) + row.get("B25070_010E", 0),
+            row.get("B25070_001E", 0),
+        ),
+        "total_population": row.get("B03002_001E", 0),
+        "pct_minority": _safe_pct(
+            row.get("B03002_001E", 0) - row.get("B03002_002E", 0),
+            row.get("B03002_001E", 0),
+        ),
+        "pct_college_educated": _safe_pct(
+            row.get("B15003_022E", 0) + row.get("B15003_023E", 0)
+            + row.get("B15003_024E", 0) + row.get("B15003_025E", 0),
+            row.get("B15003_001E", 0),
+        ),
     }
 
 
 def fetch_acs_block_groups(
     state_fips: str,
     county_fips: str,
+    year: int = 2022,
 ) -> gpd.GeoDataFrame:
+
     """Fetch ACS 5-year demographics at the block group level for one county.
 
     Note: The Census API's basic query endpoint returns tabular data without
@@ -169,6 +234,8 @@ def fetch_acs_block_groups(
     Args:
         state_fips: Two-digit state FIPS code.
         county_fips: Three-digit county FIPS code.
+        year: ACS data year (default 2022).
+
 
     Returns:
         GeoDataFrame with columns: state, county, tract, block_group,
@@ -178,7 +245,8 @@ def fetch_acs_block_groups(
     Raises:
         RuntimeError: On API errors or empty data.
     """
-    url = _build_census_url(state_fips, county_fips, "block group")
+    url = _build_census_url(state_fips, county_fips, "block group", year)
+
     data = _fetch_census_data(url)
 
     if len(data) < 2:
@@ -254,7 +322,8 @@ def _generate_block_group_points(records: list[dict]) -> list[Point]:
     return points
 
 
-def fetch_acs_data_summary(state_fips: str, county_fips: str) -> dict[str, Any]:
+def fetch_acs_data_summary(state_fips: str, county_fips: str, year: int = 2022) -> dict[str, Any]:
+
     """Return a summary of ACS data available for the given geography.
 
     Useful for the UI to show what data is available before importing.
@@ -262,13 +331,16 @@ def fetch_acs_data_summary(state_fips: str, county_fips: str) -> dict[str, Any]:
     Args:
         state_fips: Two-digit state FIPS code.
         county_fips: Three-digit county FIPS code.
+        year: ACS data year (default 2022).
+
 
     Returns:
         Dict with keys: table_groups (list of table IDs), row_count,
         and sample columns.
     """
     try:
-        url = _build_census_url(state_fips, county_fips, "block group")
+        url = _build_census_url(state_fips, county_fips, "block group", year)
+
         data = _fetch_census_data(url)
         row_count = max(0, len(data) - 1)
 
@@ -285,6 +357,12 @@ def fetch_acs_data_summary(state_fips: str, county_fips: str) -> dict[str, Any]:
                 "du_mf_10p",
                 "owner_occupied",
                 "renter_occupied",
+                "median_income",
+                "rent_burden_pct",
+                "total_population",
+                "pct_minority",
+                "pct_college_educated",
+
             ],
         }
     except RuntimeError as e:

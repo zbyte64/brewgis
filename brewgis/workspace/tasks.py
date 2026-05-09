@@ -82,6 +82,7 @@ MODULE_DBT_SELECT_MAP = {
     "env_constraint": ["env_constraint"],
     "core": ["core_end_state", "core_increment"],
     "water_demand": ["water_demand"],
+    "displacement_risk": ["displacement_risk"],
     "energy_demand": ["energy_demand"],
     "land_consumption": ["land_consumption"],
     "fiscal": [
@@ -496,6 +497,7 @@ def run_census_fetch(
     state_fips: str,
     county_fips: str,
     schema: str,
+    year: int = 2022,
 ) -> dict:
     """Fetch Census ACS demographics data and write to PostGIS."""
 
@@ -505,7 +507,7 @@ def run_census_fetch(
         run.started_at = timezone.now()
         run.save(update_fields=["status", "started_at"])
 
-        gdf = fetch_acs_block_groups(state_fips, county_fips)
+        gdf = fetch_acs_block_groups(state_fips, county_fips, year=year)
 
         if gdf.empty:
             msg = "Census fetch returned empty result."
@@ -515,7 +517,7 @@ def run_census_fetch(
             run.save(update_fields=["status", "error_log", "completed_at"])
             return {"success": False, "error": msg}
 
-        table_name = f"census_acs_{state_fips}_{county_fips}"
+        table_name = f"census_acs_{year}_{state_fips}_{county_fips}"
 
         # Write to PostGIS
 
@@ -535,10 +537,10 @@ def run_census_fetch(
         # Register as Layer
 
         layer, created = Layer.objects.get_or_create(
-            key=f"census_acs_{state_fips}_{county_fips}",
+            key=f"census_acs_{year}_{state_fips}_{county_fips}",
             workspace=run.workspace,
             defaults={
-                "name": f"ACS Demographics ({state_fips}-{county_fips})",
+                "name": f"ACS Demographics ({year}) ({state_fips}-{county_fips})",
                 "db_table": table_name,
                 "layer_source": "Census ACS",
                 "geometry_type": "circle",
@@ -551,7 +553,7 @@ def run_census_fetch(
         run.status = "completed"
         run.result = {
             "table_name": table_name,
-            "layer_key": f"census_acs_{state_fips}_{county_fips}",
+            "layer_key": f"census_acs_{year}_{state_fips}_{county_fips}",
             "layer_id": layer.pk,
             "row_count": len(gdf),
         }
