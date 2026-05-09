@@ -15,6 +15,7 @@ markers = [
     "views: view/HTTP tests",
     "integration: tests requiring full Docker stack (PostGIS, dbt, or external services)",
     "timeout: mark test with per-test timeout for pytest-timeout",
+    "review: UX design review tests (macro-level UX validation, not pixel/CSS checks)",
 ]
 timeout = 300
 timeout_func_only = true

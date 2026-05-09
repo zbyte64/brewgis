@@ -69,6 +69,13 @@ test-parallel:  ## Run tests in parallel (excludes slow and e2e, requires pytest
 .PHONY: test-e2e
 test-e2e:  ## Run end-to-end tests only (sequential, single worker)
 	$(COMPOSE_RUN) pytest tests/e2e/ -m e2e -n 0 --timeout=300
+.PHONY: test-review
+test-review:  ## Run UX design review tests only
+	$(COMPOSE_RUN) pytest tests/review/ -m review --timeout=300
+
+.PHONY: test-review-parallel
+test-review-parallel:  ## Run UX design review tests in parallel (requires pytest-xdist)
+	$(COMPOSE_RUN) pytest tests/review/ -m review -n auto --timeout=300 || echo "Warning: xdist not installed, install with 'pip install pytest-xdist'"
 
 .PHONY: test-models
 test-models:  ## Run model tests only
