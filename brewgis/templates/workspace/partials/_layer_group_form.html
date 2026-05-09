@@ -1,0 +1,36 @@
+{% load i18n %}
+<div id="layer-group-form">
+  {% if error %}
+    <div class="alert alert-danger py-1 px-2 mb-2" style="font-size: 0.75rem;">{{ error }}</div>
+  {% endif %}
+  <form method="post"
+        hx-post="{% if group %}{% url 'workspace:layer_group_edit' group.pk %}{% else %}{% url 'workspace:layer_group_create' workspace.pk %}{% endif %}"
+        hx-target="#layer-group-list"
+        hx-swap="outerHTML">
+    {% csrf_token %}
+    <div class="input-group input-group-sm">
+      <input type="text"
+             name="name"
+             class="form-control"
+             placeholder="{% translate 'Group name' %}"
+             value="{{ group.name|default:'' }}"
+             required
+             style="font-size: 0.75rem;">
+      <button type="submit" class="btn btn-primary" style="font-size: 0.7rem;">
+        {% if group %}
+          {% translate "Save" %}
+        {% else %}
+          {% translate "Create" %}
+        {% endif %}
+      </button>
+      <button type="button"
+              class="btn btn-outline-secondary"
+              style="font-size: 0.7rem;"
+              hx-get="{% url 'workspace:layer_group_list' workspace.pk %}"
+              hx-target="#layer-group-list"
+              hx-swap="outerHTML">
+        {% translate "Cancel" %}
+      </button>
+    </div>
+  </form>
+</div>

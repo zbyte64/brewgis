@@ -59,3 +59,4 @@ from .layer_groups import layer_group_edit  # noqa: F401
 from .layer_groups import layer_group_delete  # noqa: F401
 from .layer_groups import layer_group_move_layer  # noqa: F401
 from .data_table import layer_data_table  # noqa: F401
+from .token_auth import token_auth  # noqa: F401

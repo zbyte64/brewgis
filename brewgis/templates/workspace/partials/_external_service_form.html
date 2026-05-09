@@ -1,0 +1,91 @@
+{% load i18n %}
+<div id="external-service-form-{{ workspace.pk }}">
+  <div class="card card-body p-2 mb-2 bg-light" style="font-size: 0.7rem;">
+    <form hx-post="{% url 'workspace:external_service_add' workspace.pk %}"
+          hx-target="#external-service-list-{{ workspace.pk }}"
+          hx-swap="outerHTML"
+          class="d-flex flex-column gap-2">
+      {% csrf_token %}
+
+      {% if errors %}
+        {% for field, error in errors.items %}
+          <div class="alert alert-danger py-1 px-2 mb-0" style="font-size: 0.7rem;">{{ error }}</div>
+        {% endfor %}
+      {% endif %}
+
+      <div>
+        <label for="id_name" class="form-label mb-0" style="font-size: 0.7rem;">{% translate "Name" %}</label>
+        <input type="text" name="name" id="id_name"
+               class="form-control form-control-sm{% if errors.name %} is-invalid{% endif %}"
+               value="{{ values.name|default:'' }}"
+               placeholder="{% translate 'e.g. USGS Topo' %}"
+               required style="font-size: 0.7rem;">
+        {% if errors.name %}
+          <div class="invalid-feedback" style="font-size: 0.65rem;">{{ errors.name }}</div>
+        {% endif %}
+      </div>
+
+      <div>
+        <label for="id_service_type" class="form-label mb-0" style="font-size: 0.7rem;">{% translate "Service Type" %}</label>
+        <select name="service_type" id="id_service_type"
+                class="form-select form-select-sm{% if errors.service_type %} is-invalid{% endif %}"
+                required style="font-size: 0.7rem;">
+          <option value="">{% translate "Select type…" %}</option>
+          {% for type_val, type_label in service_types %}
+            <option value="{{ type_val }}"{% if values.service_type == type_val %} selected{% endif %}>{{ type_label }}</option>
+          {% endfor %}
+        </select>
+        {% if errors.service_type %}
+          <div class="invalid-feedback" style="font-size: 0.65rem;">{{ errors.service_type }}</div>
+        {% endif %}
+      </div>
+
+      <div>
+        <label for="id_url" class="form-label mb-0" style="font-size: 0.7rem;">{% translate "URL" %}</label>
+        <input type="url" name="url" id="id_url"
+               class="form-control form-control-sm{% if errors.url %} is-invalid{% endif %}"
+               value="{{ values.url|default:'' }}"
+               placeholder="{% translate 'https://example.com/wms' %}"
+               required style="font-size: 0.7rem;">
+        {% if errors.url %}
+          <div class="invalid-feedback" style="font-size: 0.65rem;">{{ errors.url }}</div>
+        {% endif %}
+      </div>
+
+      <div>
+        <label for="id_layers_param" class="form-label mb-0" style="font-size: 0.7rem;">{% translate "Layers" %}</label>
+        <input type="text" name="layers_param" id="id_layers_param"
+               class="form-control form-control-sm"
+               value="{{ values.layers_param|default:'' }}"
+               placeholder="{% translate 'layer_name1,layer_name2' %}"
+               style="font-size: 0.7rem;">
+        <small class="text-muted d-block mt-1" style="font-size: 0.65rem;">
+          {% translate "Comma-separated layer names (required for WMS)." %}
+        </small>
+      </div>
+
+      <div>
+        <label for="id_attribution" class="form-label mb-0" style="font-size: 0.7rem;">{% translate "Attribution" %}</label>
+        <input type="text" name="attribution" id="id_attribution"
+               class="form-control form-control-sm"
+               value="{{ values.attribution|default:'' }}"
+               placeholder="{% translate 'Map data © provider' %}"
+               style="font-size: 0.7rem;">
+      </div>
+
+      <div class="d-flex gap-1">
+        <button type="submit" class="btn btn-sm btn-primary py-0" style="font-size: 0.7rem;">
+          {% translate "Add" %}
+        </button>
+        <button type="button"
+                class="btn btn-sm btn-outline-secondary py-0"
+                style="font-size: 0.7rem;"
+                hx-get="{% url 'workspace:external_service_list' workspace.pk %}"
+                hx-target="#external-service-list-{{ workspace.pk }}"
+                hx-swap="outerHTML">
+          {% translate "Cancel" %}
+        </button>
+      </div>
+    </form>
+  </div>
+</div>

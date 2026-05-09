@@ -148,10 +148,12 @@ def _capture_page_errors(page: Page, screenshots_dir: Path) -> None:
 
 @pytest.fixture
 def logged_in_page(page: Page, live_server_url: str, logged_in_user: User) -> Page:
-    """Return a page that is already logged in."""
-    auth_page = AuthPage(page, live_server_url)
-    auth_page.navigate_to_login()
-    auth_page.login(logged_in_user.username, "testpass123")
+    """Return a page that is already logged in via token auth."""
+    page.goto(
+        f"{live_server_url}/token-auth/"
+        f"?key=test-token-key-dev-only"
+        f"&username={logged_in_user.username}"
+    )
     page.wait_for_url(live_server_url + "/")
     return page
 

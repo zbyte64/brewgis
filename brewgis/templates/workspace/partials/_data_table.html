@@ -1,0 +1,179 @@
+{% load i18n %}
+<div id="data-table-{{ layer.pk }}">
+  {# ── Header bar: stats + page-size selector ─────────────────────── #}
+  <div class="d-flex justify-content-between align-items-center mb-2">
+    <div class="d-flex align-items-center gap-2">
+      <span class="text-muted" style="font-size: 0.75rem;">
+        {% translate "Columns" %}: {{ column_count }}
+        <span class="mx-1">|</span>
+        {% translate "Rows" %}: {{ total_rows }}
+      </span>
+      {% if layer.geometry_type %}
+        <span class="badge bg-secondary" style="font-size: 0.6rem;">
+          {{ layer.get_geometry_type_display }}
+        </span>
+      {% endif %}
+    </div>
+    <div class="d-flex align-items-center gap-2">
+      <label for="page-size-{{ layer.pk }}" class="form-label mb-0" style="font-size: 0.7rem;">
+        {% translate "Page size" %}:
+      </label>
+      <select id="page-size-{{ layer.pk }}"
+              class="form-select form-select-sm"
+              style="width: auto; font-size: 0.7rem;"
+              name="page_size"
+              hx-get="{% url 'workspace:layer_data_table' layer.pk %}?page=1&amp;sort={{ sort_raw }}"
+              hx-target="#data-table-{{ layer.pk }}"
+              hx-swap="outerHTML"
+              hx-trigger="change">
+        <option value="25" {% if page_size == 25 %}selected{% endif %}>25</option>
+        <option value="50" {% if page_size == 50 %}selected{% endif %}>50</option>
+        <option value="100" {% if page_size == 100 %}selected{% endif %}>100</option>
+        <option value="250" {% if page_size == 250 %}selected{% endif %}>250</option>
+      </select>
+    </div>
+  </div>
+
+  {# ── Data table ─────────────────────────────────────────────────── #}
+  {% if columns %}
+    <div class="table-responsive">
+      <table class="table table-sm table-striped table-hover mb-0 align-middle"
+             style="font-size: 0.7rem;">
+        <thead class="table-light">
+          <tr>
+            {% for col in columns %}
+              {% if sort_field == col and not sort_desc %}
+                {% translate "Switch to descending sort" as sort_aria %}
+                <th scope="col"
+                    style="font-size: 0.75rem; white-space: nowrap; cursor: pointer; user-select: none;"
+                    hx-get="{% url 'workspace:layer_data_table' layer.pk %}?sort=-{{ col }}&amp;page_size={{ page_size }}&amp;page=1"
+                    hx-target="#data-table-{{ layer.pk }}"
+                    hx-swap="outerHTML"
+                    aria-label="{{ sort_aria }}">
+                  <span class="d-inline-flex align-items-center gap-1">
+                    {{ col }}
+                    <span class="small lh-1" style="font-size: 0.6rem;">&#9650;</span>
+                  </span>
+                </th>
+              {% elif sort_field == col and sort_desc %}
+                {% translate "Remove sort" as sort_aria %}
+                <th scope="col"
+                    style="font-size: 0.75rem; white-space: nowrap; cursor: pointer; user-select: none;"
+                    hx-get="{% url 'workspace:layer_data_table' layer.pk %}?page_size={{ page_size }}&amp;page=1"
+                    hx-target="#data-table-{{ layer.pk }}"
+                    hx-swap="outerHTML"
+                    aria-label="{{ sort_aria }}">
+                  <span class="d-inline-flex align-items-center gap-1">
+                    {{ col }}
+                    <span class="small lh-1" style="font-size: 0.6rem;">&#9660;</span>
+                  </span>
+                </th>
+              {% else %}
+                {% blocktranslate trimmed with col=col %}
+                  Sort by {{ col }} ascending
+                {% endblocktranslate as sort_aria %}
+                <th scope="col"
+                    style="font-size: 0.75rem; white-space: nowrap; cursor: pointer; user-select: none;"
+                    hx-get="{% url 'workspace:layer_data_table' layer.pk %}?sort={{ col }}&amp;page_size={{ page_size }}&amp;page=1"
+                    hx-target="#data-table-{{ layer.pk }}"
+                    hx-swap="outerHTML"
+                    aria-label="{{ sort_aria }}">
+                  <span class="d-inline-flex align-items-center gap-1">
+                    {{ col }}
+                  </span>
+                </th>
+              {% endif %}
+            {% endfor %}
+          </tr>
+        </thead>
+        <tbody>
+          {% for row in rows %}
+            <tr>
+              {% for val in row %}
+                <td class="text-nowrap"
+                    style="max-width: 300px; overflow: hidden; text-overflow: ellipsis;"
+                    title="{{ val }}">{{ val|truncatechars:80 }}</td>
+              {% endfor %}
+            </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+
+    {# ── Pagination ───────────────────────────────────────────────── #}
+    {% if paginator.num_pages > 1 %}
+      <div class="d-flex justify-content-between align-items-center mt-2 flex-wrap gap-2">
+        <small class="text-muted" style="font-size: 0.7rem;">
+          {% blocktranslate trimmed with page=page_obj.number total=paginator.num_pages %}
+            Page {{ page }} of {{ total }}
+          {% endblocktranslate %}
+        </small>
+        <nav>
+          <ul class="pagination pagination-sm mb-0">
+            {# First and Prev ───────────────────────────────────────── #}
+            {% if page_obj.has_previous %}
+              <li class="page-item">
+                <a class="page-link" href="#"
+                   style="font-size: 0.7rem;"
+                   hx-get="{% url 'workspace:layer_data_table' layer.pk %}?page=1&amp;page_size={{ page_size }}&amp;sort={{ sort_raw }}"
+                   hx-target="#data-table-{{ layer.pk }}"
+                   hx-swap="outerHTML"
+                   aria-label="{% translate 'First page' %}">{% translate "First" %}</a>
+              </li>
+              <li class="page-item">
+                <a class="page-link" href="#"
+                   style="font-size: 0.7rem;"
+                   hx-get="{% url 'workspace:layer_data_table' layer.pk %}?page={{ page_obj.previous_page_number }}&amp;page_size={{ page_size }}&amp;sort={{ sort_raw }}"
+                   hx-target="#data-table-{{ layer.pk }}"
+                   hx-swap="outerHTML"
+                   aria-label="{% translate 'Previous page' %}">&#9664;</a>
+              </li>
+            {% endif %}
+
+            {# Page numbers ─────────────────────────────────────────── #}
+            {% for p in paginator.page_range %}
+              {% if p == page_obj.number %}
+                <li class="page-item active" aria-current="page">
+                  <span class="page-link" style="font-size: 0.7rem;">{{ p }}</span>
+                </li>
+              {% elif p >= page_obj.number|add:"-3" and p <= page_obj.number|add:"3" %}
+                <li class="page-item">
+                  <a class="page-link" href="#"
+                     style="font-size: 0.7rem;"
+                     hx-get="{% url 'workspace:layer_data_table' layer.pk %}?page={{ p }}&amp;page_size={{ page_size }}&amp;sort={{ sort_raw }}"
+                     hx-target="#data-table-{{ layer.pk }}"
+                     hx-swap="outerHTML">{{ p }}</a>
+                </li>
+              {% endif %}
+            {% endfor %}
+
+            {# Next and Last ────────────────────────────────────────── #}
+            {% if page_obj.has_next %}
+              <li class="page-item">
+                <a class="page-link" href="#"
+                   style="font-size: 0.7rem;"
+                   hx-get="{% url 'workspace:layer_data_table' layer.pk %}?page={{ page_obj.next_page_number }}&amp;page_size={{ page_size }}&amp;sort={{ sort_raw }}"
+                   hx-target="#data-table-{{ layer.pk }}"
+                   hx-swap="outerHTML"
+                   aria-label="{% translate 'Next page' %}">&#9654;</a>
+              </li>
+              <li class="page-item">
+                <a class="page-link" href="#"
+                   style="font-size: 0.7rem;"
+                   hx-get="{% url 'workspace:layer_data_table' layer.pk %}?page={{ paginator.num_pages }}&amp;page_size={{ page_size }}&amp;sort={{ sort_raw }}"
+                   hx-target="#data-table-{{ layer.pk }}"
+                   hx-swap="outerHTML"
+                   aria-label="{% translate 'Last page' %}">{% translate "Last" %}</a>
+              </li>
+            {% endif %}
+          </ul>
+        </nav>
+      </div>
+    {% endif %}
+  {% else %}
+    {# ── Empty state ──────────────────────────────────────────────── #}
+    <div class="text-muted text-center py-4" style="font-size: 0.7rem;">
+      {% translate "No data columns available for this layer." %}
+    </div>
+  {% endif %}
+</div>

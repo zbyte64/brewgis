@@ -35,4 +35,6 @@ TEMPLATES[0]["OPTIONS"]["debug"] = True  # type: ignore[index]
 # https://docs.djangoproject.com/en/dev/ref/settings/#media-url
 MEDIA_URL = "http://media.testserver"
 # Your stuff...
+# Pre-shared key for token-based test auth (avoids login form in review/e2e tests)
+TOKEN_AUTH_KEY = env("TOKEN_AUTH_KEY", default="test-token-key-dev-only")
 # ------------------------------------------------------------------------------

@@ -318,3 +318,4 @@ ACCOUNT_EMAIL_VERIFICATION = "optional"
 TILE_SERVER_BACKEND = env("TILE_SERVER_BACKEND", default="tipg")
 TILE_SERVER_TIPG_URL = env("TILE_SERVER_TIPG_URL", default="http://tipg:8081")
 TILE_SERVER_MARTIN_URL = env("TILE_SERVER_MARTIN_URL", default="http://martin:3000")
+TOKEN_AUTH_KEY = env("TOKEN_AUTH_KEY", default=None)

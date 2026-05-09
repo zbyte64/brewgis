@@ -58,6 +58,7 @@ from .views.report import generate_scenario_report  # noqa: F811
 from .views.report import report_detail  # noqa: F811
 from .views.report import report_list  # noqa: F811
 from .views.report import report_list_partial  # noqa: F811
+from .views.token_auth import token_auth  # noqa: N813
 from .views.report import report_status  # noqa: F811
 from .views.filter import layer_filter_list  # noqa: N813
 from .views.filter import layer_filter_create  # noqa: N813
@@ -81,6 +82,7 @@ from .views.data_table import layer_data_table  # noqa: N813
 app_name = "workspace"
 urlpatterns = [
     path("", home, name="home"),
+    path("token-auth/", token_auth, name="token_auth"),
     path("new/", workspace_create.as_view(), name="workspace_create"),
     path("new/county-options/", county_options, name="county_options"),
     path("upload/", ReadGISFileView.as_view(), name="upload"),
