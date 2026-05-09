@@ -625,3 +625,37 @@ class DataSource(models.Model):
 
     def __str__(self) -> str:
         return f"{self.name} ({self.category.name})"
+
+class LayerFilter(models.Model):
+    """A saved filter expression for a layer.
+
+    Stores an expression tree in JSON format that can be applied to filter
+    features displayed on the map. Supports column filters, geometry filters,
+    join filters, and AND/OR composition.
+    """
+
+    layer = models.ForeignKey(
+        Layer,
+        on_delete=models.CASCADE,
+        related_name="filters",
+    )
+    name = models.CharField(max_length=255, blank=False)
+    filter_json = models.JSONField(
+        default=dict,
+        blank=True,
+        help_text="Expression tree: {\"type\": \"group\", \"operator\": \"AND\"|\"OR\", \"children\": [...]}",
+    )
+    is_active = models.BooleanField(
+        default=False,
+        help_text="When active, this filter is applied to the layer on the map.",
+    )
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        ordering = ("name",)
+        verbose_name = "Layer Filter"
+        verbose_name_plural = "Layer Filters"
+
+    def __str__(self) -> str:
+        return f"{self.name} ({self.layer.name})"

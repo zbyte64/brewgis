@@ -59,6 +59,12 @@ from .views.report import report_detail  # noqa: F811
 from .views.report import report_list  # noqa: F811
 from .views.report import report_list_partial  # noqa: F811
 from .views.report import report_status  # noqa: F811
+from .views.filter import layer_filter_list  # noqa: N813
+from .views.filter import layer_filter_create  # noqa: N813
+from .views.filter import layer_filter_edit  # noqa: N813
+from .views.filter import layer_filter_delete  # noqa: N813
+from .views.filter import layer_filter_toggle  # noqa: N813
+from .views.filter import layer_filter_preview  # noqa: N813
 
 app_name = "workspace"
 urlpatterns = [
@@ -266,5 +272,36 @@ urlpatterns = [
         "<int:workspace_pk>/reports/partial/",
         report_list_partial,
         name="report_list_partial",
+    ),
+    # Filter URLs (Phase 7d — Data Filtering UI)
+    path(
+        "filters/layer/<int:layer_pk>/",
+        layer_filter_list,
+        name="layer_filter_list",
+    ),
+    path(
+        "filters/layer/<int:layer_pk>/create/",
+        layer_filter_create,
+        name="layer_filter_create",
+    ),
+    path(
+        "filters/<int:pk>/edit/",
+        layer_filter_edit,
+        name="layer_filter_edit",
+    ),
+    path(
+        "filters/<int:pk>/delete/",
+        layer_filter_delete,
+        name="layer_filter_delete",
+    ),
+    path(
+        "filters/<int:pk>/toggle/",
+        layer_filter_toggle,
+        name="layer_filter_toggle",
+    ),
+    path(
+        "filters/<int:pk>/preview/",
+        layer_filter_preview,
+        name="layer_filter_preview",
     ),
 ]

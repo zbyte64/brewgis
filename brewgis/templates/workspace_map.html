@@ -229,15 +229,27 @@
                   <div id="legend-list">
                     {% for layer in workspace.layers.all %}
                       <div class="mb-1">
-                        <button type="button"
-                                class="btn btn-sm btn-link p-0 text-start text-decoration-none"
-                                hx-get="{% url 'workspace:layer_legend' layer.pk %}"
-                                hx-target="#legend-{{ layer.pk }}"
-                                hx-swap="innerHTML"
-                                style="font-size: 0.75rem;">
-                          {{ layer.name }}
-                        </button>
+                        <div class="d-flex align-items-center justify-content-between">
+                          <button type="button"
+                                  class="btn btn-sm btn-link p-0 text-start text-decoration-none"
+                                  hx-get="{% url 'workspace:layer_legend' layer.pk %}"
+                                  hx-target="#legend-{{ layer.pk }}"
+                                  hx-swap="innerHTML"
+                                  style="font-size: 0.75rem;">
+                            {{ layer.name }}
+                          </button>
+                          <button type="button"
+                                  class="btn btn-sm py-0 px-1 text-muted"
+                                  style="font-size: 0.65rem; line-height: 1;"
+                                  title="{% translate 'Filters' %}"
+                                  hx-get="{% url 'workspace:layer_filter_list' layer.pk %}"
+                                  hx-target="#filter-container-{{ layer.pk }}"
+                                  hx-swap="innerHTML">
+                            🔽
+                          </button>
+                        </div>
                         <div id="legend-{{ layer.pk }}" class="ps-2"></div>
+                        <div id="filter-container-{{ layer.pk }}" class="ps-2"></div>
                       </div>
                     {% endfor %}
                   </div>
