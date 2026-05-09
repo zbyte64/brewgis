@@ -90,6 +90,7 @@ def run_analysis_pipeline(
     workspace_id: int,
     module_names: list[str],
     vars_: dict[str, Any] | None = None,
+    scenario_id: int | None = None,
 ) -> AnalysisRun:
     """Create an AnalysisRun record and dispatch the first module via Celery.
 
@@ -102,21 +103,27 @@ def run_analysis_pipeline(
         workspace_id: Workspace primary key.
         module_names: Modules to execute.
         vars_: dbt variables dict.
+        scenario_id: Scenario primary key for the FK binding. When
+            provided, also used as fallback for vars_["scenario_id"].
 
     Returns:
         The AnalysisRun instance (status: pending).
     """
     base_vars = vars_ or {}
-    scenario_id = base_vars.get(
-        "scenario_id", f"run_{timezone.now().strftime('%Y%m%d_%H%M%S')}"
-    )
-    base_vars.setdefault("scenario_id", scenario_id)
+    if scenario_id is not None:
+        base_vars.setdefault("scenario_id", str(scenario_id))
+    else:
+        raw_id = base_vars.get(
+            "scenario_id", f"run_{timezone.now().strftime('%Y%m%d_%H%M%S')}"
+        )
+        base_vars.setdefault("scenario_id", raw_id)
 
     # Resolve execution order
     ordered_modules = resolve_module_order(module_names)
 
     run = AnalysisRun.objects.create(
         workspace_id=workspace_id,
+        scenario_id=scenario_id,
         modules=ordered_modules,
         status="pending",
         vars=base_vars,

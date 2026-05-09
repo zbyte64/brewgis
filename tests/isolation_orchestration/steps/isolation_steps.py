@@ -26,6 +26,7 @@ from brewgis.workspace.analysis.module_registry import get_result_table_names
 from brewgis.workspace.analysis.module_registry import resolve_module_order
 from brewgis.workspace.analysis.pipeline import run_analysis_pipeline
 from brewgis.workspace.models import AnalysisRun
+from tests.factories import ScenarioFactory
 from tests.factories import WorkspaceFactory
 
 if TYPE_CHECKING:
@@ -197,6 +198,17 @@ def run_dbt_module(  # noqa: PLR0913
     record is created synchronously and stored in scenario_context.
     """
     workspace = _resolve_workspace(scenario_context, schema)
+    # Derive a Scenario slug from sid; reuse existing if already created
+    slug = sid.replace(" ", "_").lower()[:128]
+    scenario, _ = ScenarioFactory._meta.model.objects.get_or_create(
+        workspace=workspace,
+        slug=slug,
+        defaults={
+            "name": f"BDD Scenario {sid}",
+            "base_year": 2025,
+            "horizon_year": 2050,
+        },
+    )
     vars_ = {
         "scenario_id": sid,
         "target_schema": schema,
@@ -207,6 +219,7 @@ def run_dbt_module(  # noqa: PLR0913
         workspace_id=workspace.pk,
         module_names=[module],
         vars_=vars_,
+        scenario_id=scenario.pk,
     )
 
     runs = scenario_context.setdefault("runs", [])

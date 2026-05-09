@@ -15,6 +15,7 @@ from django.urls import reverse
 from brewgis.workspace.views.analysis import AnalysisLaunchForm
 from brewgis.workspace.views.analysis import AnalysisLaunchView
 from tests.factories import AnalysisRunFactory
+from tests.factories import ScenarioFactory
 from tests.factories import UserFactory
 from tests.factories import WorkspaceFactory
 
@@ -92,6 +93,7 @@ class TestAnalysisLaunchView(TestCase):
         self.factory = RequestFactory()
         self.user = UserFactory()
         self.workspace = WorkspaceFactory()
+        self.scenario = ScenarioFactory(workspace=self.workspace)
 
     def test_unauthenticated_get_redirects(self):
         """Unauthenticated GET redirects to login (user_passes_test)."""
@@ -140,7 +142,7 @@ class TestAnalysisLaunchView(TestCase):
         expected_fields = {
             "workspace",
             "modules",
-            "scenario_id",
+            "scenario",
             "parcel_table",
             "built_form_table",
             "source_schema",
@@ -175,6 +177,7 @@ class TestAnalysisLaunchView(TestCase):
                 "workspace": self.workspace.pk,
                 "modules": ["env_constraint"],
                 "parcel_table": "parcels",
+                "scenario": self.scenario.pk,
             },
             HTTP_HX_REQUEST="true",
         )
@@ -270,6 +273,7 @@ class TestCheckPrerequisitesView(TestCase):
     def setUp(self):
         self.user = UserFactory()
         self.workspace = WorkspaceFactory()
+        self.scenario = ScenarioFactory(workspace=self.workspace)
         self.prereq_url = reverse(PREREQ_URL)
 
     def test_get_returns_405(self):

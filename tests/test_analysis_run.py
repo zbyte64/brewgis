@@ -46,7 +46,7 @@ class TestAnalysisRunModel(TestCase):
 
     def test_default_status_is_pending(self) -> None:
         """Default status should be 'pending'."""
-        run = AnalysisRun.objects.create(workspace=self.workspace)
+        run = AnalysisRun.objects.create(workspace=self.workspace, scenario=self.scenario)
         self.assertEqual(run.status, "pending")
 
     def test_status_transition_pending_to_running_to_completed(self) -> None:
@@ -111,7 +111,7 @@ class TestAnalysisRunModel(TestCase):
 
     def test_modules_defaults_to_empty_list(self) -> None:
         """modules should default to an empty list."""
-        run = AnalysisRun.objects.create(workspace=self.workspace)
+        run = AnalysisRun.objects.create(workspace=self.workspace, scenario=self.scenario)
         self.assertEqual(run.modules, [])
 
     def test_vars_accepts_dict(self) -> None:
@@ -135,13 +135,13 @@ class TestAnalysisRunModel(TestCase):
 
     def test_vars_defaults_to_empty_dict(self) -> None:
         """vars should default to an empty dict."""
-        run = AnalysisRun.objects.create(workspace=self.workspace)
+        run = AnalysisRun.objects.create(workspace=self.workspace, scenario=self.scenario)
         self.assertEqual(run.vars, {})
 
     def test_created_at_is_auto_set(self) -> None:
         """created_at should be set automatically on creation."""
         now = timezone.now()
-        run = AnalysisRun.objects.create(workspace=self.workspace)
+        run = AnalysisRun.objects.create(workspace=self.workspace, scenario=self.scenario)
 
         self.assertIsNotNone(run.created_at)
         self.assertLess(
@@ -151,7 +151,7 @@ class TestAnalysisRunModel(TestCase):
 
     def test_started_at_completed_at_nullable(self) -> None:
         """started_at and completed_at should be nullable."""
-        run = AnalysisRun.objects.create(workspace=self.workspace)
+        run = AnalysisRun.objects.create(workspace=self.workspace, scenario=self.scenario)
         self.assertIsNone(run.started_at)
         self.assertIsNone(run.completed_at)
 
@@ -159,10 +159,6 @@ class TestAnalysisRunModel(TestCase):
         """AnalysisRun can be associated with a Scenario via FK."""
         self.assertEqual(self.run.scenario, self.scenario)
 
-    def test_scenario_nullable(self) -> None:
-        """scenario FK should be nullable for backward compat."""
-        run = AnalysisRun.objects.create(workspace=self.workspace)
-        self.assertIsNone(run.scenario)
 
 
 @pytest.mark.integration

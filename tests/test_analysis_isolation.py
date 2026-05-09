@@ -57,11 +57,13 @@ class TestWorkspaceIsolation(TestCase):
     def setUp(self) -> None:
         self.workspace_a = WorkspaceFactory(db_schema="workspace_a_schema")
         self.workspace_b = WorkspaceFactory(db_schema="workspace_b_schema")
+        self.scenario_a = ScenarioFactory(workspace=self.workspace_a, slug="ws-a-scope")
+        self.scenario_b = ScenarioFactory(workspace=self.workspace_b, slug="ws-b-scope")
 
     def test_analysis_run_belongs_to_single_workspace(self) -> None:
         """An AnalysisRun FK points to exactly one workspace."""
-        run_a = AnalysisRun.objects.create(workspace=self.workspace_a)
-        run_b = AnalysisRun.objects.create(workspace=self.workspace_b)
+        run_a = AnalysisRun.objects.create(workspace=self.workspace_a, scenario=self.scenario_a)
+        run_b = AnalysisRun.objects.create(workspace=self.workspace_b, scenario=self.scenario_b)
 
         self.assertEqual(run_a.workspace, self.workspace_a)
         self.assertEqual(run_b.workspace, self.workspace_b)
@@ -69,13 +71,13 @@ class TestWorkspaceIsolation(TestCase):
     def test_filtering_by_workspace_returns_only_its_runs(self) -> None:
         """Querying runs by workspace FK returns only that workspace's runs."""
         r1 = AnalysisRun.objects.create(
-            workspace=self.workspace_a, modules=["env_constraint"],
+            workspace=self.workspace_a, scenario=self.scenario_a, modules=["env_constraint"],
         )
         r2 = AnalysisRun.objects.create(
-            workspace=self.workspace_a, modules=["core"],
+            workspace=self.workspace_a, scenario=self.scenario_a, modules=["core"],
         )
         r3 = AnalysisRun.objects.create(
-            workspace=self.workspace_b, modules=["env_constraint"],
+            workspace=self.workspace_b, scenario=self.scenario_b, modules=["env_constraint"],
         )
 
         a_pks = set(
@@ -111,6 +113,7 @@ class TestWorkspaceIsolation(TestCase):
             workspace_id=self.workspace_a.pk,
             module_names=["env_constraint"],
             vars_=vars_,
+            scenario_id=self.scenario_a.pk,
         )
 
         self.assertEqual(run.workspace_id, self.workspace_a.pk)
@@ -132,6 +135,7 @@ class TestWorkspaceIsolation(TestCase):
             workspace_id=self.workspace_a.pk,
             module_names=["env_constraint"],
             vars_=vars_,
+            scenario_id=self.scenario_a.pk,
         )
 
         self.assertEqual(run.vars.get("target_schema"), self.workspace_a.db_schema)
@@ -154,6 +158,7 @@ class TestWorkspaceIsolation(TestCase):
         run = run_analysis_pipeline(
             workspace_id=self.workspace_b.pk,
             module_names=["env_constraint"],
+            scenario_id=self.scenario_b.pk,
             vars_=vars_b,
         )
 
@@ -306,6 +311,7 @@ class TestScenarioIsolation(TestCase):
             workspace_id=self.workspace.pk,
             module_names=["env_constraint"],
             vars_=vars_,
+            scenario_id=self.scenario_a.pk,
         )
 
         self.assertEqual(run.vars.get("scenario_id"), "scenario-a")
@@ -326,6 +332,7 @@ class TestScenarioIsolation(TestCase):
             workspace_id=self.workspace.pk,
             module_names=["env_constraint"],
             vars_=vars_a,
+            scenario_id=self.scenario_a.pk,
         )
 
         vars_b = {
@@ -337,6 +344,7 @@ class TestScenarioIsolation(TestCase):
             workspace_id=self.workspace.pk,
             module_names=["env_constraint"],
             vars_=vars_b,
+            scenario_id=self.scenario_b.pk,
         )
 
         self.assertNotEqual(
@@ -432,9 +440,11 @@ class TestSingleModuleExecution(TestCase):
     ) -> None:
         """run_analysis_pipeline with one module creates AnalysisRun with only that module chain."""
         ws = WorkspaceFactory()
+        sc = ScenarioFactory(workspace=ws)
         run = run_analysis_pipeline(
             workspace_id=ws.pk,
             module_names=["env_constraint"],
+            scenario_id=sc.pk,
         )
         self.assertEqual(run.modules, ["env_constraint"])
 
@@ -446,9 +456,11 @@ class TestSingleModuleExecution(TestCase):
     def test_pipeline_water_demand_does_not_include_energy(self) -> None:
         """Requesting water_demand pipeline does not add energy_demand to run."""
         ws = WorkspaceFactory()
+        sc = ScenarioFactory(workspace=ws)
         run = run_analysis_pipeline(
             workspace_id=ws.pk,
             module_names=["water_demand"],
+            scenario_id=sc.pk,
         )
         self.assertIn("water_demand", run.modules)
         self.assertIn("env_constraint", run.modules)
@@ -469,9 +481,11 @@ class TestSingleModuleExecution(TestCase):
     def test_pipeline_core_does_not_include_downstream_modules(self) -> None:
         """Requesting only core does not add water_demand, energy_demand, or transport modules."""
         ws = WorkspaceFactory()
+        sc = ScenarioFactory(workspace=ws)
         run = run_analysis_pipeline(
             workspace_id=ws.pk,
             module_names=["core"],
+            scenario_id=sc.pk,
         )
         # core needs env_constraint as a dependency
         self.assertIn("core", run.modules)
@@ -501,6 +515,7 @@ class TestSingleModuleExecution(TestCase):
         the chain callback (handle_module_completed).
         """
         ws = WorkspaceFactory()
+        sc = ScenarioFactory(workspace=ws)
         vars_ = {
             "scenario_id": "test-dispatch",
             "target_schema": ws.db_schema,
@@ -516,6 +531,7 @@ class TestSingleModuleExecution(TestCase):
                 workspace_id=ws.pk,
                 module_names=["water_demand"],
                 vars_=vars_,
+                scenario_id=sc.pk,
             )
 
         # Only the first module in the resolved order should be dispatched
@@ -554,11 +570,13 @@ class TestNoCascadingAnalysisTriggers(TestCase):
     def test_creates_exactly_one_analysis_run(self) -> None:
         """run_analysis_pipeline creates exactly one new AnalysisRun."""
         ws = WorkspaceFactory()
+        sc = ScenarioFactory(workspace=ws)
         count_before = AnalysisRun.objects.count()
 
-        run_analysis_pipeline(
+        run = run_analysis_pipeline(
             workspace_id=ws.pk,
             module_names=["env_constraint"],
+            scenario_id=sc.pk,
         )
 
         count_after = AnalysisRun.objects.count()
@@ -577,12 +595,14 @@ class TestNoCascadingAnalysisTriggers(TestCase):
         """Running analysis in workspace A does not create runs in workspace B."""
         ws_a = WorkspaceFactory()
         ws_b = WorkspaceFactory()
+        sc = ScenarioFactory(workspace=ws_a)
 
         b_count_before = AnalysisRun.objects.filter(workspace=ws_b).count()
 
         run_analysis_pipeline(
             workspace_id=ws_a.pk,
             module_names=["env_constraint"],
+            scenario_id=sc.pk,
         )
 
         b_count_after = AnalysisRun.objects.filter(workspace=ws_b).count()
@@ -593,35 +613,17 @@ class TestNoCascadingAnalysisTriggers(TestCase):
             "running analysis in workspace A",
         )
 
-    def test_analysis_run_scenario_nullable_no_cascade(self) -> None:
-        """Creating an AnalysisRun with scenario=None does not affect scenario-scoped queries."""
-        ws = WorkspaceFactory()
-        sc = ScenarioFactory(workspace=ws)
-
-        # Run without a scenario
-        AnalysisRun.objects.create(workspace=ws)
-
-        # Run with a scenario
-        AnalysisRun.objects.create(workspace=ws, scenario=sc)
-
-        all_count = AnalysisRun.objects.filter(workspace=ws).count()
-        scoped_count = AnalysisRun.objects.filter(workspace=ws, scenario=sc).count()
-        null_count = AnalysisRun.objects.filter(
-            workspace=ws, scenario__isnull=True,
-        ).count()
-
-        self.assertEqual(all_count, 2)
-        self.assertEqual(scoped_count, 1)
-        self.assertEqual(null_count, 1)
 
     def test_querying_by_workspace_excludes_other_workspace_runs(self) -> None:
         """Workspace-scoped queries return correct, isolated result sets."""
         ws_a = WorkspaceFactory()
         ws_b = WorkspaceFactory()
+        sc_a = ScenarioFactory(workspace=ws_a)
+        sc_b = ScenarioFactory(workspace=ws_b)
 
-        run_a1 = AnalysisRun.objects.create(workspace=ws_a)
-        run_a2 = AnalysisRun.objects.create(workspace=ws_a)
-        run_b = AnalysisRun.objects.create(workspace=ws_b)
+        run_a1 = AnalysisRun.objects.create(workspace=ws_a, scenario=sc_a)
+        run_a2 = AnalysisRun.objects.create(workspace=ws_a, scenario=sc_a)
+        run_b = AnalysisRun.objects.create(workspace=ws_b, scenario=sc_b)
 
         a_pks = set(
             AnalysisRun.objects.filter(workspace=ws_a).values_list("pk", flat=True)

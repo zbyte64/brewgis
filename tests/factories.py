@@ -12,6 +12,7 @@ from brewgis.workspace.models import Layer
 from brewgis.workspace.models import StyleClass
 from brewgis.workspace.models import SymbologyConfig
 from brewgis.workspace.models import Workspace
+from brewgis.workspace.models import AnalysisRun
 
 
 class UserFactory(factory.django.DjangoModelFactory):
@@ -81,14 +82,15 @@ class ScenarioFactory(factory.django.DjangoModelFactory):
 
 class AnalysisRunFactory(factory.django.DjangoModelFactory):
     class Meta:
-        model = "workspace.AnalysisRun"
-
+        model = AnalysisRun
     workspace = factory.SubFactory(WorkspaceFactory)
+    scenario = factory.SubFactory(
+        ScenarioFactory,
+        workspace=factory.SelfAttribute("..workspace"),
+    )
     modules = ["env_constraint"]
     status = "pending"
     vars = {}
-    scenario = None
-
 
 class PaintedCanvasFactory(factory.django.DjangoModelFactory):
     class Meta:

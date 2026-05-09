@@ -18,6 +18,7 @@ from django.views.generic.edit import FormView
 
 from brewgis.workspace.analysis.pipeline import run_analysis_pipeline
 from brewgis.workspace.models import AnalysisRun
+from brewgis.workspace.models import Scenario
 from brewgis.workspace.models import Workspace
 from brewgis.workspace.services.preflight import check_analysis_prerequisites
 
@@ -70,11 +71,11 @@ class AnalysisLaunchForm(forms.Form):
         label="Analysis Modules",
         help_text="Select the modules to run. Dependencies are resolved automatically.",
     )
-    scenario_id = forms.CharField(
-        max_length=64,
-        required=False,
-        label="Scenario ID",
-        help_text="Optional unique identifier for this run. Auto-generated if blank.",
+    scenario = forms.ModelChoiceField(
+        queryset=Scenario.objects.all(),
+        required=True,
+        label="Scenario",
+        help_text="Select a scenario for this analysis run.",
     )
     parcel_table = forms.CharField(
         max_length=128,
@@ -126,6 +127,11 @@ class AnalysisLaunchForm(forms.Form):
                 self.fields[
                     "base_canvas_table"
                 ].help_text = "Auto-detected staging stub. Change to a real base canvas if available."
+
+            # Filter scenario queryset to the selected workspace
+            self.fields["scenario"].queryset = Scenario.objects.filter(
+                workspace=self._workspace,
+            )
 
     # Constraint layers (repeating group — simplified with JSON field)
     constraints_json = forms.CharField(
@@ -215,7 +221,7 @@ class AnalysisLaunchView(FormView):
         data = form.cleaned_data
         workspace: Workspace = data["workspace"]
         modules: list[str] = data["modules"]
-        scenario_id = data.get("scenario_id") or None
+        scenario: Scenario = data["scenario"]
 
         # Build dbt vars dict
         vars_: dict = {
@@ -224,10 +230,8 @@ class AnalysisLaunchView(FormView):
             "built_form_table": data.get("built_form_table", "built_forms"),
             "base_canvas_table": data.get("base_canvas_table", "base_canvas"),
             "target_schema": workspace.db_schema,
+            "scenario_id": scenario.slug,
         }
-
-        if scenario_id:
-            vars_["scenario_id"] = scenario_id
 
         constraints = data.get("constraints_json")
         if constraints:
@@ -238,6 +242,7 @@ class AnalysisLaunchView(FormView):
             workspace_id=workspace.pk,
             module_names=modules,
             vars_=vars_,
+            scenario_id=scenario.pk,
         )
 
         if self.request.htmx:  # type: ignore[attr-defined]
