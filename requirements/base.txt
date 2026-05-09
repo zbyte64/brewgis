@@ -29,3 +29,5 @@ pandas==2.2.3
 GeoAlchemy2==0.16.0
 dbt-core>=1.8,<2.0  # https://github.com/dbt-labs/dbt-core
 dbt-postgres>=1.8,<2.0  # https://github.com/dbt-labs/dbt-postgres
+osmnx>=2.0,<3.0  # https://github.com/gboeing/osmnx — OSM network extraction for transport analysis
+statsmodels>=0.14,<1.0  # https://github.com/statsmodels/statsmodels — logit/regression for transport calibration

@@ -30,11 +30,14 @@ from brewgis.workspace.analysis.module_registry import (
 from brewgis.workspace.models import AnalysisRun
 from brewgis.workspace.tasks import handle_module_completed
 from brewgis.workspace.tasks import run_dbt_module
+from brewgis.workspace.tasks import run_preprocessor_and_dbt
 
 logger = logging.getLogger(__name__)
 
-# All modules use the parameterized ``run_dbt_module`` task.
+# All modules use the parameterized ``run_dbt_module`` task by default.
 MODULE_TASKS: dict[str, Any] = dict.fromkeys(MODULE_DEPENDENCIES, run_dbt_module)
+# Modules that require a preprocessor step before dbt execution.
+MODULE_TASKS["internal_capture"] = run_preprocessor_and_dbt
 
 
 @deal.ensure(lambda module_names, result: set(module_names).issubset(set(result)))

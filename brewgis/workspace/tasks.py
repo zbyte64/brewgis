@@ -224,6 +224,106 @@ def run_dbt_module(
         "layer_table": None,
     }
 
+# ────────────────────────────────────────────────────────────
+#  Preprocessor tasks — run before dbt for transport modules
+# ────────────────────────────────────────────────────────────
+
+# Module → preprocessor function: maps module names to their preprocessor
+# callback. Each preprocessor receives (vars_: dict) and returns dict with
+# keys: success, error.
+PREPROCESSOR_MAP: dict[str, Any] = {}
+
+
+def _run_internal_capture_preprocessor(vars_: dict) -> dict:
+    """Preprocessor for internal_capture: creates capture input table."""
+    from brewgis.workspace.analysis.transport.preprocessors import (  # noqa: PLC0415
+        DistanceMatrixPreprocessor,
+    )
+
+    scenario_id = vars_.get("scenario_id", "default")
+    target_schema = vars_.get("target_schema", "public")
+    end_state_table = vars_.get(
+        "end_state_table", "end_state_{scenario_id}"
+    )
+
+    preprocessor = DistanceMatrixPreprocessor()
+    return preprocessor.compute_distance_matrix(
+        schema=target_schema,
+        end_state_table=end_state_table,
+        edge_table="network_edges",
+        scenario_id=scenario_id,
+    )
+
+
+PREPROCESSOR_MAP["internal_capture"] = _run_internal_capture_preprocessor
+
+
+@shared_task(
+    bind=True,
+    name="run_preprocessor_and_dbt",
+    autoretry_for=(Exception,),
+    max_retries=2,
+    default_retry_delay=60,
+)
+def run_preprocessor_and_dbt(
+    self,
+    workspace_id: int,
+    module: str,
+    vars_: dict | None = None,
+) -> dict:
+    """Run a preprocessor, then execute the corresponding dbt module.
+
+    This task wraps the standard `run_dbt_module` with a preprocessor
+    step that creates input tables before dbt runs.
+
+    Args:
+        workspace_id: Workspace primary key.
+        module: Module name.
+        vars_: dbt variables dict.
+
+    Returns:
+        Same shape as run_dbt_module.
+    """
+    resolved_vars = vars_ or {}
+    logger.info(
+        "Running preprocessor + dbt for module '%s' (workspace %s)",
+        module,
+        workspace_id,
+    )
+
+    # Run preprocessor if one is registered
+    preprocessor_fn = PREPROCESSOR_MAP.get(module)
+    if preprocessor_fn:
+        preproc_result = preprocessor_fn(resolved_vars)
+        if not preproc_result.get("success"):
+            error_msg = preproc_result.get(
+                "error", f"Preprocessor for '{module}' failed"
+            )
+            logger.error(
+                "Preprocessor failed for module '%s': %s",
+                module,
+                error_msg,
+            )
+            return {
+                "success": False,
+                "results": [],
+                "error": error_msg,
+                "layer_schema": None,
+                "layer_table": None,
+            }
+        logger.info(
+            "Preprocessor for '%s' succeeded: %s",
+            module,
+            preproc_result,
+        )
+
+    # Delegate to the standard dbt runner
+    return run_dbt_module(
+        self,
+        workspace_id=workspace_id,
+        module=module,
+        vars_=resolved_vars,
+    )
 
 # ────────────────────────────────────────────────────────────
 #  Pipeline chain callback

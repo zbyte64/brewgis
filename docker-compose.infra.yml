@@ -5,7 +5,9 @@ volumes:
 
 services:
   postgres:
-    image: postgis/postgis:17-3.5
+    build:
+      context: .
+      dockerfile: ./compose/local/postgres/Dockerfile
     container_name: brewgis_local_postgres
     volumes:
       - brewgis_local_postgres_data:/var/lib/postgresql/data

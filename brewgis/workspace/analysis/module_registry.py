@@ -21,6 +21,7 @@ MODULE_DEPENDENCIES: dict[str, list[str]] = {
     "trip_distribution": ["trip_generation"],
     "mode_choice": ["trip_distribution"],
     "vmt": ["mode_choice"],
+    "internal_capture": ["trip_distribution"],
 }
 
 # Module → result table name templates (formatted with scenario_id)
@@ -44,6 +45,7 @@ MODULE_RESULT_TABLES: dict[str, list[str]] = {
     "trip_distribution": ["trip_distribution_{scenario_id}"],
     "mode_choice": ["mode_choice_{scenario_id}"],
     "vmt": ["vmt_{scenario_id}"],
+    "internal_capture": ["internal_capture_{scenario_id}"],
 }
 
 # Module → dbt select pattern (list of model names to run)
@@ -64,6 +66,7 @@ MODULE_DBT_SELECT: dict[str, list[str]] = {
     "trip_distribution": ["trip_distribution"],
     "mode_choice": ["mode_choice"],
     "vmt": ["vmt"],
+    "internal_capture": ["internal_capture"],
 }
 
 # Module → human-readable label
@@ -79,6 +82,7 @@ MODULE_LABELS: dict[str, str] = {
     "trip_distribution": "Trip Distribution",
     "mode_choice": "Mode Choice",
     "vmt": "VMT",
+    "internal_capture": "Internal Capture",
 }
 
 

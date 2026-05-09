@@ -442,3 +442,29 @@ models:
     tests:
     - not_null
     - non_negative
+- name: internal_capture
+  description: "Internal capture — trips staying within the study area boundary."
+  columns:
+  - name: parcel_id
+    tests:
+    - not_null
+    - unique
+    - relationships:
+        to: ref('trip_generation')
+        field: parcel_id
+  - name: trips_internal
+    tests:
+    - not_null
+    - non_negative
+  - name: internal_capture_pct
+    tests:
+    - not_null
+    - non_negative
+    - column_between:
+        arguments:
+          min_value: 0
+          max_value: 1
+  - name: trips_external
+    tests:
+    - not_null
+    - non_negative
