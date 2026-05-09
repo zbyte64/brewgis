@@ -172,6 +172,12 @@ def generate_maplibre_style(symbology: SymbologyConfig) -> dict[str, Any]:
             paint.get(opacity_key, symbology.default_opacity),
         ]
 
+
+    # Zoom-level adaptation
+    if symbology.min_zoom > 0:
+        layout["minzoom"] = symbology.min_zoom
+    if symbology.max_zoom < 22:
+        layout["maxzoom"] = symbology.max_zoom
     return {"paint": paint, "layout": layout}
 
 

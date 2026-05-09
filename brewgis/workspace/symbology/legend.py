@@ -49,6 +49,8 @@ class SymbologyLegend:
     attribute_column: str = ""
     items: list[LegendItem] = field(default_factory=list)
     null_info: NullHandlingInfo | None = None
+    zoom_min: float | None = None
+    zoom_max: float | None = None
 
 
 def _resolve_type_hint(geometry_type: str) -> str:
@@ -126,4 +128,23 @@ def generate_legend(config: SymbologyConfig) -> SymbologyLegend:
             zero_transparent=config.zero_transparent,
         )
 
+    # Count null values in the attribute column (if applicable)
+    if config.attribute_column and legend.null_info is not None:
+        try:
+            from django.db import connection
+            schema = config.layer.workspace.db_schema
+            table = config.layer.db_table
+            col = config.attribute_column
+            sql = f'SELECT COUNT(*) FROM "{schema}"."{table}" WHERE "{col}" IS NULL'
+            with connection.cursor() as cursor:
+                cursor.execute(sql)
+                (count,) = cursor.fetchone()
+                legend.null_info.null_count = count
+        except Exception:
+            pass  # Non-fatal — table may not exist
+
+    # Zoom-level info for legend
+    if config.min_zoom > 0 or config.max_zoom < 22:
+        legend.zoom_min = config.min_zoom
+        legend.zoom_max = config.max_zoom
     return legend

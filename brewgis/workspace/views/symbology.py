@@ -92,6 +92,8 @@ def _save_symbology(
     config.stroke_width = float(request.POST.get("stroke_width", "1.0"))
     config.line_width = float(request.POST.get("line_width", "1.0"))
     config.circle_radius = float(request.POST.get("circle_radius", "4.0"))
+    config.min_zoom = float(request.POST.get("min_zoom", "0.0"))
+    config.max_zoom = float(request.POST.get("max_zoom", "22.0"))
     config.save()
 
     # Update style classes from POST

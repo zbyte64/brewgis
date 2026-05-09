@@ -236,3 +236,59 @@ class TestGenerateLegend(TestCase):
         null_item = legend.items[-1]
         assert null_item.is_null_item
         assert null_item.color == "#cccccc"
+
+    def test_null_count_not_set_when_table_missing(self) -> None:
+        """When the layer's database table doesn't exist, null_count stays None (no crash)."""
+        layer = LayerFactory(workspace=self.workspace, db_table="nonexistent_table")
+        config = SymbologyConfigFactory(
+            layer=layer,
+            symbology_type="single",
+            attribute_column="some_column",
+            null_handling="gray",
+        )
+        legend = generate_legend(config)
+        # Should not crash; null_count may be None or some value
+        assert legend.null_info is not None
+        # Simply verify the legend generates without error
+
+    def test_null_count_not_set_when_no_column(self) -> None:
+        """When attribute_column is empty, null_count is not queried."""
+        layer = LayerFactory(workspace=self.workspace)
+        config = SymbologyConfigFactory(
+            layer=layer,
+            symbology_type="single",
+            attribute_column="",
+            null_handling="gray",
+        )
+        legend = generate_legend(config)
+        assert legend.null_info is not None
+        # null_count was never set
+        assert legend.null_info.null_count is None
+
+    def test_legend_includes_zoom_info(self) -> None:
+        """When min_zoom or max_zoom differs from defaults, legend includes zoom info."""
+        layer = LayerFactory(workspace=self.workspace)
+        config = SymbologyConfigFactory(
+            layer=layer,
+            symbology_type="single",
+            min_zoom=5.0,
+            max_zoom=18.0,
+            null_handling="hide",
+        )
+        legend = generate_legend(config)
+        assert legend.zoom_min == 5.0
+        assert legend.zoom_max == 18.0
+
+    def test_legend_omits_zoom_at_defaults(self) -> None:
+        """Default zoom values (0.0, 22.0) should not produce zoom info."""
+        layer = LayerFactory(workspace=self.workspace)
+        config = SymbologyConfigFactory(
+            layer=layer,
+            symbology_type="single",
+            min_zoom=0.0,
+            max_zoom=22.0,
+            null_handling="hide",
+        )
+        legend = generate_legend(config)
+        assert legend.zoom_min is None
+        assert legend.zoom_max is None

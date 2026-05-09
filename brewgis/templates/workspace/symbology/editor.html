@@ -61,6 +61,22 @@
                        value="{{ config.stroke_width }}" step="0.5" min="0">
               </div>
             </div>
+            <div class="row mb-3">
+              <div class="col-md-3">
+                <label class="form-label">Min Zoom</label>
+                <input type="number" name="min_zoom" class="form-control"
+                       value="{{ config.min_zoom|default:'0.0' }}"
+                       min="0" max="22" step="0.5">
+                <small class="text-muted" style="font-size: 0.65rem;">Layer not visible below this zoom</small>
+              </div>
+              <div class="col-md-3">
+                <label class="form-label">Max Zoom</label>
+                <input type="number" name="max_zoom" class="form-control"
+                       value="{{ config.max_zoom|default:'22.0' }}"
+                       min="0" max="22" step="0.5">
+                <small class="text-muted" style="font-size: 0.65rem;">Layer not visible above this zoom</small>
+              </div>
+            </div>
 
             {% if config.symbology_type != 'single' %}
             <div class="row mb-3">
@@ -103,6 +119,7 @@
               </div>
             </div>
 
+
             <div class="row mb-3">
               <div class="col-md-4">
                 <label class="form-label">Null Handling</label>
@@ -118,6 +135,21 @@
                        value="{{ config.null_color|default:'#cccccc' }}">
               </div>
             </div>
+
+            {% if classes %}
+            <div class="mb-3">
+              <label class="form-label">Color Preview</label>
+              <div class="d-flex rounded overflow-hidden" style="height: 24px; border: 1px solid #dee2e6;">
+                {% for cls in classes %}
+                <div class="flex-fill" style="background-color: {{ cls.color }};
+                     {% if forloop.first %}border-radius: 2px 0 0 2px;
+                     {% elif forloop.last %}border-radius: 0 2px 2px 0;{% endif %}
+                     opacity: {{ cls.opacity|default:config.default_opacity }};"></div>
+                {% endfor %}
+              </div>
+              <small class="text-muted" style="font-size: 0.65rem;">Preview of {{ classes|length }} color class(es)</small>
+            </div>
+            {% endif %}
             {% endif %}
 
             {% if config.symbology_type != 'single' and classes %}
@@ -157,6 +189,9 @@
             {% endif %}
 
             <div class="mt-4 d-flex gap-2">
+              <button type="button" class="btn btn-outline-success" id="live-preview-btn">
+                Live Preview
+              </button>
               <button type="submit" class="btn btn-primary">Save Symbology</button>
               <button type="submit"
                       class="btn btn-outline-info"
@@ -166,10 +201,53 @@
                  class="btn btn-outline-secondary"
                  target="_blank">Preview Style</a>
             </div>
+            <div id="live-preview-area" class="mt-3" style="display: none;">
+              <div class="card">
+                <div class="card-header py-1">
+                  <small class="fw-semibold">Live Preview — Generated Style</small>
+                </div>
+                <div class="card-body py-2">
+                  <pre id="live-preview-content" class="mb-0" style="font-size: 0.7rem; max-height: 300px; overflow-y: auto; white-space: pre-wrap;"></pre>
+                </div>
+              </div>
+            </div>
           </form>
         </div>
       </div>
     </div>
   </div>
 </div>
+
+{% block inline_javascript %}
+<script>
+(function() {
+  const previewBtn = document.getElementById('live-preview-btn');
+  const previewArea = document.getElementById('live-preview-area');
+  const previewContent = document.getElementById('live-preview-content');
+
+  if (!previewBtn || !previewArea || !previewContent) return;
+
+  previewBtn.addEventListener('click', function() {
+    if (previewArea.style.display !== 'none') {
+      previewArea.style.display = 'none';
+      previewBtn.textContent = 'Live Preview';
+      return;
+    }
+
+    previewArea.style.display = 'block';
+    previewContent.textContent = 'Loading...';
+    previewBtn.textContent = 'Hide Preview';
+
+    fetch('{% url "workspace:symbology_preview" layer.pk %}')
+      .then(function(r) { return r.json(); })
+      .then(function(data) {
+        previewContent.textContent = JSON.stringify(data, null, 2);
+      })
+      .catch(function() {
+        previewContent.textContent = 'Failed to load preview.';
+      });
+  });
+})();
+</script>
+{% endblock inline_javascript %}
 {% endblock content %}

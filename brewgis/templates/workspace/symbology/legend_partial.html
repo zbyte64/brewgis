@@ -41,6 +41,9 @@
       {% if legend.null_info.zero_transparent %}
         <div class="text-muted">{% translate "Zero values are transparent" %}</div>
       {% endif %}
+      {% if legend.null_info.null_count is not None %}
+        <div class="text-muted">{% blocktranslate %}{{ legend.null_info.null_count }} null value(s){% endblocktranslate %}</div>
+      {% endif %}
     </div>
   {% endif %}
 </div>

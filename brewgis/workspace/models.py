@@ -146,6 +146,14 @@ class SymbologyConfig(models.Model):
         default=True,
         help_text="Was this auto-generated from column statistics?",
     )
+    min_zoom = models.FloatField(
+        default=0.0,
+        help_text="Minimum zoom level at which this layer is visible (MapLibre minzoom).",
+    )
+    max_zoom = models.FloatField(
+        default=22.0,
+        help_text="Maximum zoom level at which this layer is visible (MapLibre maxzoom).",
+    )
 
     def __str__(self) -> str:
         return f"Symbology for {self.layer.name}"
