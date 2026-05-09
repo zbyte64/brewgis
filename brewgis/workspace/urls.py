@@ -18,6 +18,7 @@ from .views import employment_preview
 from .views import home
 from .views import import_center
 from .views import import_status
+from .views import layer_legend
 from .views import merge_paint_edits
 from .views import paint_built_form
 from .views import paint_features
@@ -139,6 +140,11 @@ urlpatterns = [
         "symbology/<int:layer_pk>/preview/",
         preview_symbology,
         name="symbology_preview",
+    ),
+    path(
+        "symbology/<int:layer_pk>/legend/",
+        layer_legend,
+        name="layer_legend",
     ),
     # Built Forms
     path(

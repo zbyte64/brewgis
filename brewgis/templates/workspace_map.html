@@ -220,6 +220,23 @@
                       {% endfor %}
                     </div>
                   {% endif %}
+                  <hr class="my-2">
+                  <h6 class="mb-2 text-muted" style="font-size: 0.8rem;">{% translate "Legends" %}</h6>
+                  <div id="legend-list">
+                    {% for layer in workspace.layers.all %}
+                      <div class="mb-1">
+                        <button type="button"
+                                class="btn btn-sm btn-link p-0 text-start text-decoration-none"
+                                hx-get="{% url 'workspace:layer_legend' layer.pk %}"
+                                hx-target="#legend-{{ layer.pk }}"
+                                hx-swap="innerHTML"
+                                style="font-size: 0.75rem;">
+                          {{ layer.name }}
+                        </button>
+                        <div id="legend-{{ layer.pk }}" class="ps-2"></div>
+                      </div>
+                    {% endfor %}
+                  </div>
                 </div>
               </div>
             {% endif %}
