@@ -16,8 +16,7 @@ are in acres. The mapping handles the /43560 conversion.
 from __future__ import annotations
 
 import logging
-from dataclasses import dataclass, field
-from typing import Any
+from dataclasses import dataclass
 
 logger = logging.getLogger(__name__)
 
@@ -25,23 +24,25 @@ logger = logging.getLogger(__name__)
 V1_BASE_TABLE = "public.elk_grove_base_canvas"
 
 # Columns that exist in v1 but have no BaseCanvasSchema equivalent (kept for reference)
-V1_EXTRA_COLUMNS = frozenset({
-    "geography_id",
-    "source_id",
-    "region_lu_code",
-    "sqft_parcel",
-    "acres_parcel",
-    "developable_proportion",
-    "dev_pct",
-    "density_pct",
-    "gross_net_pct",
-    "dirty_flag",
-    "jurisdiction",
-    "county",
-    "clear_flag",
-    "created",
-    "updated",
-})
+V1_EXTRA_COLUMNS = frozenset(
+    {
+        "geography_id",
+        "source_id",
+        "region_lu_code",
+        "sqft_parcel",
+        "acres_parcel",
+        "developable_proportion",
+        "dev_pct",
+        "density_pct",
+        "gross_net_pct",
+        "dirty_flag",
+        "jurisdiction",
+        "county",
+        "clear_flag",
+        "created",
+        "updated",
+    }
+)
 
 
 @dataclass(frozen=True)
@@ -67,11 +68,29 @@ class ColumnMapping:
 # ── Column Mapping Definitions ──────────────────────────────────────
 
 IDENTITY_MAPPINGS = [
-    ColumnMapping(v1_column="geography_id", v3_column="id", sql_expr="ROW_NUMBER() OVER (ORDER BY geography_id)", default=None),
-    ColumnMapping(v1_column="geography_id", v3_column="id_source", sql_expr="'sacog_v1'", default=None),
-    ColumnMapping(v1_column="source_id", v3_column="geometry_key", sql_expr="source_id || '@sacog'"),
-    ColumnMapping(v1_column="wkb_geometry", v3_column="geometry", sql_expr="wkb_geometry"),
-    ColumnMapping(v1_column="land_development_category", v3_column="land_development_category"),
+    ColumnMapping(
+        v1_column="geography_id",
+        v3_column="id",
+        sql_expr="ROW_NUMBER() OVER (ORDER BY geography_id)",
+        default=None,
+    ),
+    ColumnMapping(
+        v1_column="geography_id",
+        v3_column="id_source",
+        sql_expr="'sacog_v1'",
+        default=None,
+    ),
+    ColumnMapping(
+        v1_column="source_id",
+        v3_column="geometry_key",
+        sql_expr="source_id || '@sacog'",
+    ),
+    ColumnMapping(
+        v1_column="wkb_geometry", v3_column="geometry", sql_expr="wkb_geometry"
+    ),
+    ColumnMapping(
+        v1_column="land_development_category", v3_column="land_development_category"
+    ),
     ColumnMapping(v1_column="built_form_key", v3_column="built_form_key"),
 ]
 
@@ -79,8 +98,16 @@ AREA_MAPPINGS = [
     # acres_* → area_*
     ColumnMapping("acres_gross", "area_gross"),
     ColumnMapping("acres_parcel", "area_parcel"),
-    ColumnMapping("residential_irrigated_sqft", "residential_irrigated_area", sql_expr="residential_irrigated_sqft / 43560.0"),
-    ColumnMapping("commercial_irrigated_sqft", "commercial_irrigated_area", sql_expr="commercial_irrigated_sqft / 43560.0"),
+    ColumnMapping(
+        "residential_irrigated_sqft",
+        "residential_irrigated_area",
+        sql_expr="residential_irrigated_sqft / 43560.0",
+    ),
+    ColumnMapping(
+        "commercial_irrigated_sqft",
+        "commercial_irrigated_area",
+        sql_expr="commercial_irrigated_sqft / 43560.0",
+    ),
     ColumnMapping("acres_parcel_res_detsf", "area_parcel_res_detsf"),
     ColumnMapping("acres_parcel_res_detsf_sl", "area_parcel_res_detsf_sl"),
     ColumnMapping("acres_parcel_res_detsf_ll", "area_parcel_res_detsf_ll"),
@@ -168,11 +195,18 @@ MISSING_COLUMNS = [
 
 # All mappings combined, in BaseCanvasSchema column order
 ALL_MAPPINGS: list[ColumnMapping] = (
-    IDENTITY_MAPPINGS + AREA_MAPPINGS + DEMOGRAPHIC_MAPPINGS + EMPLOYMENT_MAPPINGS + BUILDING_AREA_MAPPINGS + MISSING_COLUMNS
+    IDENTITY_MAPPINGS
+    + AREA_MAPPINGS
+    + DEMOGRAPHIC_MAPPINGS
+    + EMPLOYMENT_MAPPINGS
+    + BUILDING_AREA_MAPPINGS
+    + MISSING_COLUMNS
 )
 
 # Fast lookup: v3_column → ColumnMapping
-V3_TO_MAPPING: dict[str, ColumnMapping] = {m.v3_column: m for m in ALL_MAPPINGS if m.v3_column}
+V3_TO_MAPPING: dict[str, ColumnMapping] = {
+    m.v3_column: m for m in ALL_MAPPINGS if m.v3_column
+}
 
 
 def get_mapping(v3_column: str) -> ColumnMapping | None:
@@ -182,7 +216,11 @@ def get_mapping(v3_column: str) -> ColumnMapping | None:
 
 def v1_columns_present() -> list[str]:
     """Return list of v1 column names that successfully map to BaseCanvasSchema."""
-    return [m.v1_column for m in ALL_MAPPINGS if m.v1_column and m.v1_column != "geography_id"]
+    return [
+        m.v1_column
+        for m in ALL_MAPPINGS
+        if m.v1_column and m.v1_column != "geography_id"
+    ]
 
 
 def build_create_view_sql(
@@ -215,9 +253,13 @@ def build_create_view_sql(
         elif mapping.default is not None and mapping.v1_column is None:
             # Hard-coded default for missing column
             if isinstance(mapping.default, str):
-                select_parts.append(f"CAST({mapping.default!r} AS DOUBLE PRECISION) AS {v3_col}")
+                select_parts.append(
+                    f"CAST({mapping.default!r} AS DOUBLE PRECISION) AS {v3_col}"
+                )
             else:
-                select_parts.append(f"CAST({mapping.default!r} AS DOUBLE PRECISION) AS {v3_col}")
+                select_parts.append(
+                    f"CAST({mapping.default!r} AS DOUBLE PRECISION) AS {v3_col}"
+                )
         elif mapping.v1_column:
             # Direct passthrough
             select_parts.append(f"{mapping.v1_column} AS {v3_col}")
@@ -242,6 +284,10 @@ def get_v1_columns_for_verification() -> dict[str, str]:
     """
     result: dict[str, str] = {}
     for mapping in ALL_MAPPINGS:
-        if mapping.v1_column and mapping.v3_column and mapping.v1_column not in ("geography_id", "source_id", "wkb_geometry"):
+        if (
+            mapping.v1_column
+            and mapping.v3_column
+            and mapping.v1_column not in ("geography_id", "source_id", "wkb_geometry")
+        ):
             result[mapping.v3_column] = mapping.v1_column
     return result

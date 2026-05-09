@@ -1,14 +1,14 @@
 """Tests for the allocation engine."""
+
 from __future__ import annotations
 
 import pytest
-
 from django.test import TestCase
-from tests.factories import BuildingTypeFactory
-from tests.factories import PlaceTypeFactory
 
 from brewgis.workspace.built_forms.allocation import AllocationEngine
 from brewgis.workspace.built_forms.models import PlaceTypeBuildingTypeMix
+from tests.factories import BuildingTypeFactory
+from tests.factories import PlaceTypeFactory
 
 
 @pytest.mark.integration

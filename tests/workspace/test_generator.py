@@ -184,3 +184,32 @@ class TestGenerator(TestCase):
         assert isinstance(expr, list)
         # Should wrap in ["case", ["has", "cat"], ...]
         assert "has" in str(expr)
+
+    def test_generate_style_empty_classes(self) -> None:
+        """Empty style classes should produce a valid dict."""
+        config = self._make_config(
+            symbology_type="graduated",
+            attribute_column="population",
+        )
+        result = generate_maplibre_style(config)
+        assert "paint" in result
+        assert "layout" in result
+        assert isinstance(result["paint"], dict)
+
+    def test_generate_style_single_class(self) -> None:
+        """Single style class should produce a valid paint layer."""
+        config = self._make_config(
+            symbology_type="categorical",
+            attribute_column="category",
+        )
+        StyleClass.objects.create(
+            symbology=config,
+            label="A",
+            color="#ff0000",
+            sort_order=0,
+        )
+        result = generate_maplibre_style(config)
+        assert "paint" in result
+        assert "layout" in result
+        paint = result["paint"]
+        assert isinstance(paint, dict)

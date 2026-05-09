@@ -127,19 +127,21 @@ def paint_features(
 
         # Log paint events
         batch_id = uuid.uuid4().hex
-        PaintEvent.objects.bulk_create([
-            PaintEvent(
-                scenario=scenario,
-                feature_id=fid,
-                column_name=column,
-                old_value=old_values.get(fid),
-                new_value=painted_value,
-                painted_by=now_user,
-                operation_type="paint",
-                batch_id=batch_id,
-            )
-            for fid in features
-        ])
+        PaintEvent.objects.bulk_create(
+            [
+                PaintEvent(
+                    scenario=scenario,
+                    feature_id=fid,
+                    column_name=column,
+                    old_value=old_values.get(fid),
+                    new_value=painted_value,
+                    painted_by=now_user,
+                    operation_type="paint",
+                    batch_id=batch_id,
+                )
+                for fid in features
+            ]
+        )
 
         # Refresh the canvas view
         base_table = _resolve_base_table(scenario)
@@ -204,19 +206,21 @@ def clear_paint(
         # Log clear events
         if old_paints:
             batch_id = uuid.uuid4().hex
-            PaintEvent.objects.bulk_create([
-                PaintEvent(
-                    scenario=scenario,
-                    feature_id=p["feature_id"],
-                    column_name=p["column_name"],
-                    old_value=p["painted_value"],
-                    new_value=None,
-                    painted_by=request.user,
-                    operation_type="clear",
-                    batch_id=batch_id,
-                )
-                for p in old_paints
-            ])
+            PaintEvent.objects.bulk_create(
+                [
+                    PaintEvent(
+                        scenario=scenario,
+                        feature_id=p["feature_id"],
+                        column_name=p["column_name"],
+                        old_value=p["painted_value"],
+                        new_value=None,
+                        painted_by=request.user,
+                        operation_type="clear",
+                        batch_id=batch_id,
+                    )
+                    for p in old_paints
+                ]
+            )
 
         # Refresh the canvas view
         base_table = _resolve_base_table(scenario)
@@ -257,7 +261,10 @@ def paint_built_form(
         )
 
     return _execute_built_form_paint(
-        workspace, scenario, body, request.user,
+        workspace,
+        scenario,
+        body,
+        request.user,
     )
 
 
@@ -630,11 +637,7 @@ def _collect_warnings() -> list[dict]:
     last_result = _PAINT_CONSTRAINT_RESULT[0]
     if last_result is None:
         return []
-    return [
-        v.to_dict()
-        for v in last_result.violations
-        if v.severity == "warn"
-    ]
+    return [v.to_dict() for v in last_result.violations if v.severity == "warn"]
 
 
 def _execute_built_form_paint(
@@ -722,9 +725,9 @@ def _execute_built_form_paint(
         # ── Constraint checking ──────────────────────────
         paint_map: dict[str, dict[str, float | None]] = {}
         for pc_row in all_pc_rows:
-            paint_map.setdefault(pc_row.feature_id, {})[
-                pc_row.column_name
-            ] = pc_row.painted_value
+            paint_map.setdefault(pc_row.feature_id, {})[pc_row.column_name] = (
+                pc_row.painted_value
+            )
         block_response = _enforce_paint_constraints(workspace, paint_map)
         if block_response is not None:
             return block_response
@@ -747,19 +750,21 @@ def _execute_built_form_paint(
 
         # Log built_form paint events
         batch_id = uuid.uuid4().hex
-        PaintEvent.objects.bulk_create([
-            PaintEvent(
-                scenario=scenario,
-                feature_id=pc.feature_id,
-                column_name=pc.column_name,
-                old_value=old_values_map.get((pc.feature_id, pc.column_name)),
-                new_value=pc.painted_value,
-                painted_by=user,
-                operation_type="built_form",
-                batch_id=batch_id,
-            )
-            for pc in all_pc_rows
-        ])
+        PaintEvent.objects.bulk_create(
+            [
+                PaintEvent(
+                    scenario=scenario,
+                    feature_id=pc.feature_id,
+                    column_name=pc.column_name,
+                    old_value=old_values_map.get((pc.feature_id, pc.column_name)),
+                    new_value=pc.painted_value,
+                    painted_by=user,
+                    operation_type="built_form",
+                    batch_id=batch_id,
+                )
+                for pc in all_pc_rows
+            ]
+        )
 
         refresh_canvas_view(scenario, base_table)
 

@@ -32,7 +32,11 @@ def _suggest_palette(
     """Suggest a palette name based on the column statistics."""
     if stats.is_categorical:
         return "material_set1"
-    if stats.mean is not None and stats.min_value is not None and stats.max_value is not None:
+    if (
+        stats.mean is not None
+        and stats.min_value is not None
+        and stats.max_value is not None
+    ):
         # Diverging palettes work well when the mean is near the middle of the range
         mid = (stats.min_value + stats.max_value) / 2.0
         range_pct = abs(stats.mean - mid) / (stats.max_value - stats.min_value + 1e-12)
@@ -127,11 +131,19 @@ def auto_generate_symbology(
     else:
         # Auto-pick the first suitable column
 
-
         cols = list_columns(schema, table)
-        numeric_cols = [c for c in cols if c["type"] in {
-            "int4", "int8", "float4", "float8", "numeric",
-        }]
+        numeric_cols = [
+            c
+            for c in cols
+            if c["type"]
+            in {
+                "int4",
+                "int8",
+                "float4",
+                "float8",
+                "numeric",
+            }
+        ]
         if numeric_cols:
             col = numeric_cols[0]["name"]
         elif cols:
@@ -159,13 +171,15 @@ def auto_generate_symbology(
         )
         if stats.frequencies:
             for i, val in enumerate(stats.frequencies):
-                class_rows.append({
-                    "label": str(val),
-                    "color": palette[i % len(palette)],
-                    "sort_order": i,
-                    "min_value": None,
-                    "max_value": None,
-                })
+                class_rows.append(
+                    {
+                        "label": str(val),
+                        "color": palette[i % len(palette)],
+                        "sort_order": i,
+                        "min_value": None,
+                        "max_value": None,
+                    }
+                )
     else:
         # Graduated: run classification
         result = classify(
@@ -181,13 +195,15 @@ def auto_generate_symbology(
             len(result.breaks) - 1,
         )
         for i in range(len(result.breaks) - 1):
-            class_rows.append({
-                "label": result.labels[i] if i < len(result.labels) else "",
-                "color": palette[i % len(palette)],
-                "sort_order": i,
-                "min_value": result.breaks[i],
-                "max_value": result.breaks[i + 1],
-            })
+            class_rows.append(
+                {
+                    "label": result.labels[i] if i < len(result.labels) else "",
+                    "color": palette[i % len(palette)],
+                    "sort_order": i,
+                    "min_value": result.breaks[i],
+                    "max_value": result.breaks[i + 1],
+                }
+            )
 
     # Create or update SymbologyConfig
     config, created = SymbologyConfig.objects.update_or_create(

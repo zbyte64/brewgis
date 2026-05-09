@@ -174,7 +174,9 @@ def _build_url(info: dict[str, Any], offset: int = 0) -> str:
                 parts.append(f"resultOffset={offset}")
                 parts.append(f"resultRecordCount={val}")
         else:
-            parts.append(f"{urllib.parse.quote(key, safe='')}={urllib.parse.quote(str(val), safe='')}")
+            parts.append(
+                f"{urllib.parse.quote(key, safe='')}={urllib.parse.quote(str(val), safe='')}"
+            )
     return f"{base}?{'&'.join(parts)}"
 
 
@@ -245,7 +247,7 @@ class Command(BaseCommand):
     ) -> dict[str, Any]:
         filename = info["filename"]
         filepath = cache_dir / filename
-        self.stdout.write(f"\n{'='*60}")
+        self.stdout.write(f"\n{'=' * 60}")
         self.stdout.write(f"Dataset: {key} — {info['description']}")
         self.stdout.write(f"Source:  {info['source']}")
         self.stdout.write(f"File:    {filepath}")
@@ -265,10 +267,20 @@ class Command(BaseCommand):
                 self._download_arcgis(info, filepath)
             size = filepath.stat().st_size
             self.stdout.write(f"  [OK] {self._format_size(size)} saved")
-            return {"key": key, "status": "downloaded", "file": str(filepath), "size": size}
+            return {
+                "key": key,
+                "status": "downloaded",
+                "file": str(filepath),
+                "size": size,
+            }
         except Exception as exc:  # noqa: BLE001
             self.stderr.write(f"  [FAIL] {exc}")
-            return {"key": key, "status": "failed", "file": str(filepath), "error": str(exc)}
+            return {
+                "key": key,
+                "status": "failed",
+                "file": str(filepath),
+                "error": str(exc),
+            }
 
     def _download_arcgis(self, info: dict[str, Any], filepath: Path) -> None:
         """Download data from an ArcGIS REST API FeatureServer with pagination."""
@@ -343,7 +355,9 @@ class Command(BaseCommand):
                 if attempt == retries - 1:
                     raise
                 wait = 2 * (attempt + 1)
-                self.stdout.write(f"  Retry {attempt + 1}/{retries} after {wait}s: {exc}")
+                self.stdout.write(
+                    f"  Retry {attempt + 1}/{retries} after {wait}s: {exc}"
+                )
                 time.sleep(wait)
         return b""
 
@@ -362,7 +376,7 @@ class Command(BaseCommand):
         cached = [s for s in summary if s["status"] == "cached"]
         failed = [s for s in summary if s["status"] == "failed"]
 
-        self.stdout.write(f"\n{'='*60}")
+        self.stdout.write(f"\n{'=' * 60}")
         self.stdout.write("Summary:")
         if downloaded:
             self.stdout.write(f"  Downloaded: {len(downloaded)} datasets")
@@ -371,7 +385,9 @@ class Command(BaseCommand):
         if failed:
             self.stdout.write(f"  Failed: {len(failed)} datasets")
             for s in failed:
-                self.stdout.write(f"    - {s['key']}: {s.get('error', 'unknown error')}")
+                self.stdout.write(
+                    f"    - {s['key']}: {s.get('error', 'unknown error')}"
+                )
 
         total = sum(
             s.get("size", 0) for s in summary if s["status"] in ("downloaded", "cached")

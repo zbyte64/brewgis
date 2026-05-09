@@ -220,6 +220,34 @@ class TestPaintFeaturesView(TestCase):
         assert PaintedCanvas.objects.filter(scenario=self.scenario).count() == 1
         assert PaintedCanvas.objects.filter(scenario=other_scenario).count() == 0
 
+    def test_post_no_scenario(self) -> None:
+        """Post paint to a non-existent scenario PK, assert 404."""
+        self.client.force_login(self.user)
+        url = reverse(
+            PAINT_URL_NAME,
+            kwargs={"workspace_pk": self.workspace.pk, "scenario_pk": 99999},
+        )
+        response = self.client.post(
+            url,
+            json.dumps({"features": ["1"], "column": "du", "value": 100.0}),
+            content_type="application/json",
+        )
+        assert response.status_code == 404
+
+    def test_post_no_workspace(self) -> None:
+        """Post paint to a non-existent workspace PK, assert 404."""
+        self.client.force_login(self.user)
+        url = reverse(
+            PAINT_URL_NAME,
+            kwargs={"workspace_pk": 99999, "scenario_pk": self.scenario.pk},
+        )
+        response = self.client.post(
+            url,
+            json.dumps({"features": ["1"], "column": "du", "value": 100.0}),
+            content_type="application/json",
+        )
+        assert response.status_code == 404
+
 
 @pytest.mark.views
 class TestPaintBuiltFormView(TestCase):
@@ -410,3 +438,31 @@ class TestPaintBuiltFormView(TestCase):
             content_type="application/json",
         )
         assert response.status_code == 302
+
+    def test_post_no_scenario(self) -> None:
+        """Post built form paint to non-existent scenario PK, assert 404."""
+        self.client.force_login(self.user)
+        url = reverse(
+            BF_PAINT_URL_NAME,
+            kwargs={"workspace_pk": self.workspace.pk, "scenario_pk": 99999},
+        )
+        response = self.client.post(
+            url,
+            json.dumps({"features": ["1"], "bf_type": "building", "bf_id": 1}),
+            content_type="application/json",
+        )
+        assert response.status_code == 404
+
+    def test_post_no_workspace(self) -> None:
+        """Post built form paint to non-existent workspace PK, assert 404."""
+        self.client.force_login(self.user)
+        url = reverse(
+            BF_PAINT_URL_NAME,
+            kwargs={"workspace_pk": 99999, "scenario_pk": self.scenario.pk},
+        )
+        response = self.client.post(
+            url,
+            json.dumps({"features": ["1"], "bf_type": "building", "bf_id": 1}),
+            content_type="application/json",
+        )
+        assert response.status_code == 404

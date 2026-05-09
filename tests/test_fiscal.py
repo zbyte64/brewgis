@@ -49,6 +49,12 @@ class TestFiscalPropertyTaxTemplate:
         for col in ["dwelling_units_total", "building_sqft_total"]:
             assert col in f1_template
 
+    def test_has_ref(self, f1_template: str) -> None:
+        assert "{{ ref('core_end_state') }}" in f1_template
+
+    def test_no_hardcoded_schema(self, f1_template: str) -> None:
+        assert "public." not in f1_template
+
 
 @pytest.mark.integration
 class TestFiscalSalesTaxTemplate:
@@ -60,6 +66,12 @@ class TestFiscalSalesTaxTemplate:
 
     def test_has_input_columns(self, f2_template: str) -> None:
         assert "employment_total" in f2_template
+
+    def test_has_ref(self, f2_template: str) -> None:
+        assert "{{ ref('core_end_state') }}" in f2_template
+
+    def test_no_hardcoded_schema(self, f2_template: str) -> None:
+        assert "public." not in f2_template
 
 
 @pytest.mark.integration
@@ -75,6 +87,12 @@ class TestFiscalServiceCostsTemplate:
             "geom",
         ]:
             assert col in f3_template
+
+    def test_has_ref(self, f3_template: str) -> None:
+        assert "{{ ref('core_end_state') }}" in f3_template
+
+    def test_no_hardcoded_schema(self, f3_template: str) -> None:
+        assert "public." not in f3_template
 
     def test_has_input_columns(self, f3_template: str) -> None:
         for col in [
@@ -103,6 +121,9 @@ class TestFiscalNetImpactTemplate:
         """F4 must ref() its upstream models."""
         for ref in ["fiscal_property_tax", "fiscal_sales_tax", "fiscal_service_costs"]:
             assert f"ref('{ref}')" in f4_template
+
+    def test_no_hardcoded_schema(self, f4_template: str) -> None:
+        assert "public." not in f4_template
 
 
 @pytest.mark.integration
@@ -154,3 +175,30 @@ class TestFiscalFormula:
         costs = 100_000.0
         result = tax + sales_tax - costs
         assert result < 0
+
+    def test_large_values(self) -> None:
+        du = 1e6
+        sqft = 1e6
+        res_val = 350_000.0
+        nonres_val = 150.0
+        rate = 1.0
+        result = (du * res_val + sqft * nonres_val) * rate / 100.0
+        assert result == pytest.approx(3.5e9 + 1.5e6, rel=0.01)
+
+    def test_zero_dwelling_units(self) -> None:
+        du = 0.0
+        sqft = 0.0
+        res_val = 350_000.0
+        nonres_val = 150.0
+        rate = 1.0
+        result = (0.0 * 350000 + 0.0 * 150) * 1.0 / 100.0
+        assert result == 0.0
+
+    def test_negative_nonres_value(self) -> None:
+        du = 50.0
+        sqft = -10_000.0
+        res_val = 350_000.0
+        nonres_val = 150.0
+        rate = 1.0
+        result = (50 * 350000 + -10000 * 150) * 1.0 / 100.0
+        assert result == pytest.approx(160000.0)

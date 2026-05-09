@@ -16,8 +16,6 @@ class WorkspaceAdmin(admin.ModelAdmin):
     pass
 
 
-
-
 @admin.register(Scenario)
 class ScenarioAdmin(admin.ModelAdmin):
     list_display = (
@@ -70,6 +68,7 @@ class PaintedCanvasAdmin(admin.ModelAdmin):
     )
     list_filter = ("scenario", "column_name")
     search_fields = ("feature_id",)
+
 
 @admin.register(PaintConstraint)
 class PaintConstraintAdmin(admin.ModelAdmin):

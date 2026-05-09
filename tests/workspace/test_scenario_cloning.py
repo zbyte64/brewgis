@@ -7,7 +7,6 @@ Requires a PostgreSQL+PostGIS database for SQL view operations.
 from __future__ import annotations
 
 import pytest
-
 from django.db import connection
 
 from brewgis.workspace.models import Layer

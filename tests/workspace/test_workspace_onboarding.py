@@ -137,6 +137,35 @@ class TestWorkspaceCreateView(TestCase):
             "workspace:workspace_detail", kwargs={"pk": ws.pk}
         )
 
+    def test_post_empty_name(self) -> None:
+        """POST with empty name should re-render form with error."""
+        self.client.force_login(self.user)
+        url = reverse("workspace:workspace_create")
+        response = self.client.post(
+            url,
+            {
+                "name": "",
+                "state_fips": "06",
+                "county_fips": ["019"],
+            },
+        )
+        assert response.status_code == 200
+        assert b"error" in response.content.lower()
+
+    def test_post_no_counties(self) -> None:
+        """POST with no counties should re-render form with error."""
+        self.client.force_login(self.user)
+        url = reverse("workspace:workspace_create")
+        response = self.client.post(
+            url,
+            {
+                "name": "Fresno Analysis",
+                "state_fips": "06",
+            },
+        )
+        assert response.status_code == 200
+        assert b"error" in response.content.lower()
+
 
 @pytest.mark.views
 class TestWorkspaceDetailView(TestCase):
@@ -214,6 +243,14 @@ class TestWorkspaceDetailView(TestCase):
         url = reverse("workspace:workspace_detail", kwargs={"pk": ws.pk})
         response = self.client.get(url)
         assert response.status_code == 200
+
+    def test_get_non_existent(self) -> None:
+        """GET detail for non-existent PK should return 404."""
+        non_existent_pk = Workspace.objects.last().pk + 9999
+        self.client.force_login(self.user)
+        url = reverse("workspace:workspace_detail", kwargs={"pk": non_existent_pk})
+        response = self.client.get(url)
+        assert response.status_code == 404
 
 
 @pytest.mark.views

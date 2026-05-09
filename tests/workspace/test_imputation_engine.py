@@ -9,11 +9,9 @@ import numpy as np
 import pandas as pd
 import pytest
 
-from brewgis.workspace.services.imputation_engine import (
-    ImputationEngine,
-    ImputationRule,
-    ImputationStrategy,
-)
+from brewgis.workspace.services.imputation_engine import ImputationEngine
+from brewgis.workspace.services.imputation_engine import ImputationRule
+from brewgis.workspace.services.imputation_engine import ImputationStrategy
 
 
 class TestImputationEngine:
@@ -99,10 +97,12 @@ class TestImputationEngine:
     def test_direct_observation_copies_source(self) -> None:
         """DIRECT_OBSERVATION should copy source column values."""
         engine = ImputationEngine()
-        df = pd.DataFrame({
-            "pop_observed": [150.0, np.nan, 250.0],
-            "pop": [np.nan, np.nan, np.nan],
-        })
+        df = pd.DataFrame(
+            {
+                "pop_observed": [150.0, np.nan, 250.0],
+                "pop": [np.nan, np.nan, np.nan],
+            }
+        )
         rules = [
             ImputationRule(
                 target_column="pop",
@@ -135,10 +135,12 @@ class TestImputationEngine:
     def test_regional_estimate_computes_group_mean(self) -> None:
         """REGIONAL_ESTIMATE should fill NULLs with the group mean."""
         engine = ImputationEngine()
-        df = pd.DataFrame({
-            "pop": [100.0, np.nan, 200.0, np.nan],
-            "county": ["a", "a", "b", "b"],
-        })
+        df = pd.DataFrame(
+            {
+                "pop": [100.0, np.nan, 200.0, np.nan],
+                "county": ["a", "a", "b", "b"],
+            }
+        )
         rules = [
             ImputationRule(
                 target_column="pop",
@@ -155,10 +157,12 @@ class TestImputationEngine:
     def test_regional_estimate_unknown_group_falls_back(self) -> None:
         """When a whole group is NULL, REGIONAL_ESTIMATE should fall back."""
         engine = ImputationEngine()
-        df = pd.DataFrame({
-            "pop": [np.nan, np.nan],
-            "county": ["a", "b"],
-        })
+        df = pd.DataFrame(
+            {
+                "pop": [np.nan, np.nan],
+                "county": ["a", "b"],
+            }
+        )
         rules = [
             ImputationRule(
                 target_column="pop",
@@ -175,9 +179,11 @@ class TestImputationEngine:
     def test_regional_estimate_missing_groupby_col(self) -> None:
         """When groupby column is missing, REGIONAL_ESTIMATE falls through."""
         engine = ImputationEngine()
-        df = pd.DataFrame({
-            "pop": [np.nan, 100.0],
-        })
+        df = pd.DataFrame(
+            {
+                "pop": [np.nan, 100.0],
+            }
+        )
         rules = [
             ImputationRule(
                 target_column="pop",
@@ -195,11 +201,13 @@ class TestImputationEngine:
     def test_cascade_direct_then_regional_then_default(self) -> None:
         """Full cascade: direct -> regional -> national default."""
         engine = ImputationEngine()
-        df = pd.DataFrame({
-            "pop_observed": [np.nan, 500.0, np.nan, np.nan],
-            "pop": [np.nan, np.nan, np.nan, np.nan],
-            "county": ["a", "a", "a", "b"],
-        })
+        df = pd.DataFrame(
+            {
+                "pop_observed": [np.nan, 500.0, np.nan, np.nan],
+                "pop": [np.nan, np.nan, np.nan, np.nan],
+                "county": ["a", "a", "a", "b"],
+            }
+        )
         rules = [
             ImputationRule(
                 target_column="pop",
@@ -223,11 +231,13 @@ class TestImputationEngine:
     def test_result_counts(self) -> None:
         """ImputationResult should correctly count rows per strategy."""
         engine = ImputationEngine()
-        df = pd.DataFrame({
-            "pop_observed": [100.0, np.nan, np.nan],
-            "pop": [np.nan, np.nan, np.nan],
-            "county": ["a", "a", "b"],
-        })
+        df = pd.DataFrame(
+            {
+                "pop_observed": [100.0, np.nan, np.nan],
+                "pop": [np.nan, np.nan, np.nan],
+                "county": ["a", "a", "b"],
+            }
+        )
         rules = [
             ImputationRule(
                 target_column="pop",
@@ -275,10 +285,12 @@ class TestImputationEngine:
     def test_multiple_columns_independent(self) -> None:
         """Applying rules to different columns should not interfere."""
         engine = ImputationEngine()
-        df = pd.DataFrame({
-            "pop": [np.nan, 100.0],
-            "hh": [50.0, np.nan],
-        })
+        df = pd.DataFrame(
+            {
+                "pop": [np.nan, 100.0],
+                "hh": [50.0, np.nan],
+            }
+        )
         rules = [
             ImputationRule(
                 target_column="pop",

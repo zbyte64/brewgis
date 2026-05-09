@@ -49,12 +49,8 @@ class DbtModelTemplateTest:
 
     def test_jinja_braces_balanced(self, sql_template: str) -> None:
         """Jinja {{ and {% must be balanced."""
-        assert sql_template.count("{{") == sql_template.count("}}"), (
-            "Unbalanced {{ }}"
-        )
-        assert sql_template.count("{%") == sql_template.count("%}"), (
-            "Unbalanced {% %}"
-        )
+        assert sql_template.count("{{") == sql_template.count("}}"), "Unbalanced {{ }}"
+        assert sql_template.count("{%") == sql_template.count("%}"), "Unbalanced {% %}"
 
     def test_templated_from_statement(self, sql_template: str) -> None:
         """FROM should reference the upstream dbt model via ref()."""

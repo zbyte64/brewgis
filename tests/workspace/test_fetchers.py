@@ -1,32 +1,25 @@
 """Tests for data fetcher services (Census, LEHD, POI)."""
+
 from __future__ import annotations
 
 from unittest.mock import patch
 
 import pytest
 
-from brewgis.workspace.services.census_fetcher import (
-    ACS_TABLE_GROUPS,
-    _all_vars,
-    _build_census_url,
-    _compute_derived_columns,
-    fetch_acs_block_groups,
-    fetch_acs_data_summary,
-)
-from brewgis.workspace.services.lehd_fetcher import (
-    WAC_VARIABLES,
-    _all_wac_vars,
-    _build_wac_url,
-    fetch_lehd_block_data,
-    fetch_lehd_data_summary,
-)
-from brewgis.workspace.services.poi_fetcher import (
-    POI_CATEGORIES,
-    _build_overpass_query,
-    _categorize_element,
-    fetch_pois,
-)
-
+from brewgis.workspace.services.census_fetcher import ACS_TABLE_GROUPS
+from brewgis.workspace.services.census_fetcher import _all_vars
+from brewgis.workspace.services.census_fetcher import _build_census_url
+from brewgis.workspace.services.census_fetcher import _compute_derived_columns
+from brewgis.workspace.services.census_fetcher import fetch_acs_block_groups
+from brewgis.workspace.services.census_fetcher import fetch_acs_data_summary
+from brewgis.workspace.services.lehd_fetcher import WAC_VARIABLES
+from brewgis.workspace.services.lehd_fetcher import _all_wac_vars
+from brewgis.workspace.services.lehd_fetcher import _build_wac_url
+from brewgis.workspace.services.lehd_fetcher import fetch_lehd_block_data
+from brewgis.workspace.services.lehd_fetcher import fetch_lehd_data_summary
+from brewgis.workspace.services.poi_fetcher import POI_CATEGORIES
+from brewgis.workspace.services.poi_fetcher import _build_overpass_query
+from brewgis.workspace.services.poi_fetcher import _categorize_element
 
 # ── Census Fetcher Tests ─────────────────────────────────────────────
 
@@ -37,9 +30,7 @@ class TestCensusFetcher:
     def test_all_vars_returns_all_codes(self) -> None:
         """_all_vars should return every variable code across all table groups."""
         vars_ = _all_vars()
-        expected_count = sum(
-            len(g["vars"]) for g in ACS_TABLE_GROUPS.values()
-        )
+        expected_count = sum(len(g["vars"]) for g in ACS_TABLE_GROUPS.values())
         assert len(vars_) == expected_count
         assert "B01001_001E" in vars_
         assert "B25024_001E" in vars_
@@ -66,13 +57,13 @@ class TestCensusFetcher:
             "B25003_003E": 800,
             "B25024_001E": 2200,
             "B25024_002E": 1500,  # detached SF
-            "B25024_003E": 200,   # attached SF
-            "B25024_004E": 100,   # 2 units
-            "B25024_005E": 50,    # 3-4
-            "B25024_006E": 100,   # 5-9
-            "B25024_007E": 100,   # 10-19
-            "B25024_008E": 100,   # 20-49
-            "B25024_009E": 50,    # 50+
+            "B25024_003E": 200,  # attached SF
+            "B25024_004E": 100,  # 2 units
+            "B25024_005E": 50,  # 3-4
+            "B25024_006E": 100,  # 5-9
+            "B25024_007E": 100,  # 10-19
+            "B25024_008E": 100,  # 20-49
+            "B25024_009E": 50,  # 50+
         }
         result = _compute_derived_columns(row)
         assert result["pop"] == 5000
@@ -223,18 +214,14 @@ class TestPOIFetcher:
 
     def test_build_overpass_query_all_categories(self) -> None:
         """Query with None categories should include all tags."""
-        query = _build_overpass_query(
-            -121.5, 38.4, -121.2, 38.7, categories=None
-        )
+        query = _build_overpass_query(-121.5, 38.4, -121.2, 38.7, categories=None)
         # Should include many different tag filters
         assert query.count("amenity") > 3
         assert query.count("leisure") > 1
 
     def test_build_overpass_query_empty_categories(self) -> None:
         """Empty categories list should fall back to restaurants."""
-        query = _build_overpass_query(
-            -121.5, 38.4, -121.2, 38.7, categories=[]
-        )
+        query = _build_overpass_query(-121.5, 38.4, -121.2, 38.7, categories=[])
         assert "restaurant" in query
 
     def test_categorize_element_restaurant(self) -> None:

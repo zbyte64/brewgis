@@ -273,6 +273,32 @@ docker compose -f docker-compose.local.yml up --build
 - **State:** Over 50 tests across model, view, and analysis modules. Key test files: `tests/test_water_demand.py`, `tests/test_energy_demand.py`, `tests/test_dbt_runner.py`, `tests/test_layer_registry.py`, `tests/test_analysis_run.py`, `tests/workspace/test_built_forms_models.py`, `tests/workspace/test_built_forms_views.py`.
 - **CI:** GitHub Actions runs `pre-commit` and `pytest` in Docker on PRs/pushes to `master`/`main`
 
+### Test Architecture
+
+The test suite follows a taxonomy based on test weight and external dependencies:
+
+|Marker|Purpose|Dependencies|When to use|
+|---|---|---|---|
+|`@pytest.mark.models`|Django model unit tests|`django.test.TestCase`, DB|Model methods, validation, defaults|
+|`@pytest.mark.views`|View/HTTP tests|`django.test.TestCase`, DB, `self.client`|Form submissions, auth guards, redirects|
+|`@pytest.mark.integration`|PostGIS-dependent tests|Running PostGIS instance, raw SQL fixtures|dbt model templates, DB queries, compute statistics|
+|`@pytest.mark.slow`|Property-based or long-running|hypothesis, external services|Hypothesis fuzz tests, expensive model runners|
+|`@pytest.mark.e2e`|Browser end-to-end tests|Playwright/browser, full stack|Full user workflows across Django + JS|
+
+**When to use `TestCase` vs plain classes:**
+- Use `TestCase` (from `django.test`) when tests need database access via the ORM, `self.client` for HTTP, or Django transaction management.
+- Use plain `unittest.TestCase` or bare `class TestX:` for pure functions (formulas, module registry, template string checks).
+
+**Database fixture strategy:**
+- Tests run with `--reuse-db` (configured in `pyproject.toml`) — the test DB is created once and reused across runs.
+- Use `@pytest.mark.django_db` on individual test functions that need DB access but don't use `TestCase`.
+- Raw SQL fixtures (creating/dropping tables in `setUp`/`tearDown`) are used for PostGIS-dependent integration tests.
+- PostGIS extension must be enabled explicitly in raw SQL fixtures (`CREATE EXTENSION IF NOT EXISTS postgis`).
+
+**User fixtures and factories:**
+- `tests/conftest.py` provides `user`, `workspace`, `scenario`, `layer`, `building_type`, `place_type`, `mix` fixtures using Factory Boy.
+- `brewgis/conftest.py` provides a separate `user` fixture via `UserModel.objects.create_user()` (no email). These may diverge — use `tests/conftest.py` fixtures for all pytest-based tests.
+
 ### Running Tests
 ```bash
 docker compose -f docker-compose.local.yml run django pytest

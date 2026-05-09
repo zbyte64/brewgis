@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from pathlib import Path
 from typing import TYPE_CHECKING
 
 from pytest_bdd import parsers
@@ -10,10 +11,7 @@ from pytest_bdd import then
 from pytest_bdd import when
 
 from tests.e2e.pages.auth_page import AuthPage
-
-
-from pathlib import Path
-from tests.e2e.steps.common_steps import *  # noqa: F403, F401
+from tests.e2e.steps.common_steps import *  # noqa: F403
 
 if TYPE_CHECKING:
     from playwright.sync_api import Page

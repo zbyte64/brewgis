@@ -1,4 +1,5 @@
 """Tests for the Merge Module (paint edit copying between scenarios)."""
+
 from __future__ import annotations
 
 import json

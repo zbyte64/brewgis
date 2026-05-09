@@ -1,0 +1,522 @@
+# ruff: noqa: ARG002
+"""Tests for Celery tasks in the analysis pipeline."""
+
+from __future__ import annotations
+
+from unittest.mock import MagicMock
+from unittest.mock import patch
+
+from brewgis.workspace.models import AnalysisRun
+from brewgis.workspace.models import DataImportRun
+from brewgis.workspace.tasks import export_building_types_task
+from brewgis.workspace.tasks import handle_module_completed
+from brewgis.workspace.tasks import run_census_fetch
+from brewgis.workspace.tasks import run_lehd_fetch
+from brewgis.workspace.tasks import run_poi_fetch
+from brewgis.workspace.tasks import run_spatial_allocation
+
+# ── export_building_types_task ──────────────────────────────────────
+
+
+class TestExportBuildingTypesTask:
+    """Tests for :func:`export_building_types_task`."""
+
+    @patch("brewgis.workspace.tasks.export_building_types")
+    def test_success(self, mock_export: MagicMock) -> None:
+        """Successful export returns count in result dict."""
+        mock_export.return_value = 42
+
+        result = export_building_types_task(schema="test_schema", table="bt")
+
+        assert result == {"success": True, "count": 42, "error": None}
+        mock_export.assert_called_once_with(schema="test_schema", table="bt")
+
+    @patch("brewgis.workspace.tasks.export_building_types")
+    def test_error(self, mock_export: MagicMock) -> None:
+        """Exception during export returns error in result dict."""
+        mock_export.side_effect = RuntimeError("DB connection lost")
+
+        result = export_building_types_task(schema="public", table="built_forms")
+
+        assert result == {
+            "success": False,
+            "count": 0,
+            "error": "DB connection lost",
+        }
+        mock_export.assert_called_once_with(schema="public", table="built_forms")
+
+    @patch("brewgis.workspace.tasks.export_building_types")
+    def test_default_params(self, mock_export: MagicMock) -> None:
+        """Default parameters should be used when none are provided."""
+        mock_export.return_value = 0
+
+        export_building_types_task()
+
+        mock_export.assert_called_once_with(schema="public", table="built_forms")
+
+
+# ── run_spatial_allocation ──────────────────────────────────────────
+
+
+class TestRunSpatialAllocation:
+    """Tests for :func:`run_spatial_allocation`."""
+
+    def test_does_not_exist(self) -> None:
+        """Missing DataImportRun returns error dict."""
+        with patch(
+            "brewgis.workspace.tasks.DataImportRun.objects.get",
+            side_effect=DataImportRun.DoesNotExist,
+        ):
+            result = run_spatial_allocation(
+                999,
+                source_schema="public",
+                source_table="src",
+                target_schema="public",
+                target_table="tgt",
+                columns=["pop"],
+            )
+
+        assert result == {"success": False, "error": "DataImportRun 999 not found"}
+
+    @patch("brewgis.workspace.tasks.DataImportRun.objects.get")
+    def test_success(self, mock_get: MagicMock) -> None:
+        """Successful allocation returns success + result keys."""
+        run_mock = MagicMock()
+        mock_get.return_value = run_mock
+
+        mock_alloc = MagicMock(return_value={"rows_affected": 150})
+        with patch("brewgis.workspace.tasks.allocate_attributes", mock_alloc):
+            result = run_spatial_allocation(
+                1,
+                source_schema="public",
+                source_table="census_data",
+                target_schema="public",
+                target_table="parcels",
+                columns=["pop", "hh"],
+                column_prefix="acs_",
+            )
+
+        assert result == {"success": True, "rows_affected": 150}
+        mock_alloc.assert_called_once_with(
+            source_schema="public",
+            source_table="census_data",
+            target_schema="public",
+            target_table="parcels",
+            columns=["pop", "hh"],
+            target_column_prefix="acs_",
+            source_geom_col="geom",
+            target_geom_col="geom",
+        )
+        assert run_mock.status == "completed"
+        assert run_mock.result == {"rows_affected": 150}
+        run_mock.save.assert_called()
+
+    @patch("brewgis.workspace.tasks.DataImportRun.objects.get")
+    def test_error_exception(self, mock_get: MagicMock) -> None:
+        """Exception during allocation returns error dict."""
+        run_mock = MagicMock()
+        mock_get.return_value = run_mock
+
+        with patch(
+            "brewgis.workspace.tasks.allocate_attributes",
+            side_effect=ValueError("Invalid geometry"),
+        ):
+            result = run_spatial_allocation(
+                1,
+                source_schema="public",
+                source_table="src",
+                target_schema="public",
+                target_table="tgt",
+                columns=["x"],
+            )
+
+        assert result == {"success": False, "error": "Invalid geometry"}
+        assert run_mock.status == "failed"
+        run_mock.save.assert_called()
+
+
+# ── run_census_fetch ────────────────────────────────────────────────
+
+
+class TestRunCensusFetch:
+    """Tests for :func:`run_census_fetch`."""
+
+    @patch("brewgis.workspace.tasks.auto_generate_symbology")
+    @patch("brewgis.workspace.tasks.DataImportRun.objects.get")
+    @patch("brewgis.workspace.tasks.fetch_acs_block_groups")
+    @patch("brewgis.workspace.tasks.Layer.objects.get_or_create")
+    @patch("brewgis.workspace.tasks.create_engine")
+    def test_success(
+        self,
+        mock_engine: MagicMock,
+        mock_get_or_create: MagicMock,
+        mock_fetch: MagicMock,
+        mock_run_get: MagicMock,
+        mock_symbology: MagicMock,
+    ) -> None:
+        """Successful census fetch returns count."""
+        run_mock = MagicMock()
+        mock_run_get.return_value = run_mock
+
+        gdf_mock = MagicMock()
+        gdf_mock.empty = False
+        gdf_mock.__len__ = MagicMock(return_value=500)
+        mock_fetch.return_value = gdf_mock
+
+        layer_mock = MagicMock(pk=7)
+        mock_get_or_create.return_value = (layer_mock, True)
+
+        result = run_census_fetch(
+            run_pk=1,
+            state_fips="06",
+            county_fips="067",
+            schema="public",
+        )
+
+        assert result == {"success": True, "count": 500}
+        assert run_mock.status == "completed"
+        assert run_mock.result["row_count"] == 500
+        gdf_mock.to_postgis.assert_called_once()
+
+    @patch("brewgis.workspace.tasks.DataImportRun.objects.get")
+    @patch("brewgis.workspace.tasks.fetch_acs_block_groups")
+    @patch("brewgis.workspace.tasks.create_engine")
+    def test_empty_result(
+        self,
+        mock_engine: MagicMock,
+        mock_fetch: MagicMock,
+        mock_run_get: MagicMock,
+    ) -> None:
+        """Empty GeoDataFrame returns failure dict."""
+        run_mock = MagicMock()
+        mock_run_get.return_value = run_mock
+
+        gdf_mock = MagicMock()
+        gdf_mock.empty = True
+        mock_fetch.return_value = gdf_mock
+
+        result = run_census_fetch(
+            run_pk=1,
+            state_fips="06",
+            county_fips="067",
+            schema="public",
+        )
+
+        assert result == {
+            "success": False,
+            "error": "Census fetch returned empty result.",
+        }
+        assert run_mock.status == "failed"
+        gdf_mock.to_postgis.assert_not_called()
+
+    @patch("brewgis.workspace.tasks.DataImportRun.objects.get")
+    def test_does_not_exist(self, mock_run_get: MagicMock) -> None:
+        """Missing DataImportRun returns error dict."""
+        mock_run_get.side_effect = DataImportRun.DoesNotExist
+
+        result = run_census_fetch(
+            run_pk=999,
+            state_fips="06",
+            county_fips="067",
+            schema="public",
+        )
+
+        assert result == {"success": False, "error": "DataImportRun 999 not found"}
+
+
+# ── run_lehd_fetch ──────────────────────────────────────────────────
+
+
+class TestRunLehdFetch:
+    """Tests for :func:`run_lehd_fetch`."""
+
+    @patch("brewgis.workspace.tasks.auto_generate_symbology")
+    @patch("brewgis.workspace.tasks.DataImportRun.objects.get")
+    @patch("brewgis.workspace.tasks.fetch_lehd_block_data")
+    @patch("brewgis.workspace.tasks.Layer.objects.get_or_create")
+    @patch("brewgis.workspace.tasks.create_engine")
+    def test_success(
+        self,
+        mock_engine: MagicMock,
+        mock_get_or_create: MagicMock,
+        mock_fetch: MagicMock,
+        mock_run_get: MagicMock,
+        mock_symbology: MagicMock,
+    ) -> None:
+        """Successful LEHD fetch returns count."""
+        run_mock = MagicMock()
+        mock_run_get.return_value = run_mock
+
+        gdf_mock = MagicMock()
+        gdf_mock.empty = False
+        gdf_mock.__len__ = MagicMock(return_value=300)
+        mock_fetch.return_value = gdf_mock
+
+        layer_mock = MagicMock(pk=8)
+        mock_get_or_create.return_value = (layer_mock, True)
+
+        result = run_lehd_fetch(
+            run_pk=2,
+            state_fips="06",
+            county_fips="067",
+            schema="public",
+        )
+
+        assert result == {"success": True, "count": 300}
+        assert run_mock.status == "completed"
+        assert run_mock.result["row_count"] == 300
+
+    @patch("brewgis.workspace.tasks.DataImportRun.objects.get")
+    @patch("brewgis.workspace.tasks.fetch_lehd_block_data")
+    def test_empty_result(
+        self,
+        mock_fetch: MagicMock,
+        mock_run_get: MagicMock,
+    ) -> None:
+        """Empty GeoDataFrame returns failure dict."""
+        run_mock = MagicMock()
+        mock_run_get.return_value = run_mock
+
+        gdf_mock = MagicMock()
+        gdf_mock.empty = True
+        mock_fetch.return_value = gdf_mock
+
+        result = run_lehd_fetch(
+            run_pk=2,
+            state_fips="06",
+            county_fips="067",
+            schema="public",
+        )
+
+        assert result == {
+            "success": False,
+            "error": "LEHD fetch returned empty result.",
+        }
+        assert run_mock.status == "failed"
+
+    @patch("brewgis.workspace.tasks.DataImportRun.objects.get")
+    def test_does_not_exist(self, mock_run_get: MagicMock) -> None:
+        """Missing DataImportRun returns error dict."""
+        mock_run_get.side_effect = DataImportRun.DoesNotExist
+
+        result = run_lehd_fetch(
+            run_pk=999,
+            state_fips="06",
+            county_fips="067",
+            schema="public",
+        )
+
+        assert result == {"success": False, "error": "DataImportRun 999 not found"}
+
+
+# ── run_poi_fetch ───────────────────────────────────────────────────
+
+
+class TestRunPoiFetch:
+    """Tests for :func:`run_poi_fetch`."""
+
+    @patch("brewgis.workspace.tasks.uuid4", create=True)
+    @patch("brewgis.workspace.tasks.auto_generate_symbology")
+    @patch("brewgis.workspace.tasks.DataImportRun.objects.get")
+    @patch("brewgis.workspace.tasks.fetch_pois")
+    @patch("brewgis.workspace.tasks.Layer.objects.get_or_create")
+    @patch("brewgis.workspace.tasks.create_engine")
+    def test_success(  # noqa: PLR0913
+        self,
+        mock_engine: MagicMock,
+        mock_get_or_create: MagicMock,
+        mock_fetch: MagicMock,
+        mock_run_get: MagicMock,
+        mock_symbology: MagicMock,
+        mock_uuid: MagicMock,
+    ) -> None:
+        """Successful POI fetch returns count."""
+        run_mock = MagicMock()
+        mock_run_get.return_value = run_mock
+
+        gdf_mock = MagicMock()
+        gdf_mock.empty = False
+        gdf_mock.__len__ = MagicMock(return_value=120)
+        mock_fetch.return_value = gdf_mock
+
+        layer_mock = MagicMock(pk=9)
+        mock_get_or_create.return_value = (layer_mock, True)
+
+        result = run_poi_fetch(
+            run_pk=3,
+            min_lng=-122.5,
+            min_lat=37.5,
+            max_lng=-122.0,
+            max_lat=38.0,
+            categories=["school", "hospital"],
+            schema="public",
+        )
+
+        assert result == {"success": True, "count": 120}
+        assert run_mock.status == "completed"
+        assert run_mock.result["row_count"] == 120
+
+    @patch("brewgis.workspace.tasks.DataImportRun.objects.get")
+    @patch("brewgis.workspace.tasks.fetch_pois")
+    def test_empty_result(
+        self,
+        mock_fetch: MagicMock,
+        mock_run_get: MagicMock,
+    ) -> None:
+        """Empty GeoDataFrame returns failure dict."""
+        run_mock = MagicMock()
+        mock_run_get.return_value = run_mock
+
+        gdf_mock = MagicMock()
+        gdf_mock.empty = True
+        mock_fetch.return_value = gdf_mock
+
+        result = run_poi_fetch(
+            run_pk=3,
+            min_lng=-122.5,
+            min_lat=37.5,
+            max_lng=-122.0,
+            max_lat=38.0,
+            categories=None,
+            schema="public",
+        )
+
+        assert result == {"success": False, "error": "POI fetch returned empty result."}
+        assert run_mock.status == "failed"
+
+    @patch("brewgis.workspace.tasks.DataImportRun.objects.get")
+    def test_does_not_exist(self, mock_run_get: MagicMock) -> None:
+        """Missing DataImportRun returns error dict."""
+        mock_run_get.side_effect = DataImportRun.DoesNotExist
+
+        result = run_poi_fetch(
+            run_pk=999,
+            min_lng=-122.5,
+            min_lat=37.5,
+            max_lng=-122.0,
+            max_lat=38.0,
+            categories=None,
+            schema="public",
+        )
+
+        assert result == {"success": False, "error": "DataImportRun 999 not found"}
+
+
+# ── handle_module_completed ─────────────────────────────────────────
+
+
+class TestHandleModuleCompleted:
+    """Tests for :func:`handle_module_completed`."""
+
+    @patch("brewgis.workspace.tasks._register_module_results")
+    @patch("brewgis.workspace.tasks.AnalysisRun.objects.get")
+    @patch("brewgis.workspace.tasks._dispatch_next_in_task")
+    def test_success_dispatches_next(
+        self,
+        mock_dispatch: MagicMock,
+        mock_get: MagicMock,
+        mock_register: MagicMock,
+    ) -> None:
+        """Successful module result should dispatch next in pipeline."""
+        run_mock = MagicMock()
+        mock_get.return_value = run_mock
+
+        handle_module_completed(
+            task_result={
+                "success": True,
+                "layer_schema": "public",
+                "layer_table": "core_end_state_default",
+            },
+            run_id=1,
+            workspace_id=10,
+            remaining=["water_demand", "energy_demand"],
+            base_vars={"scenario_id": "growth"},
+            completed_modules=["env_constraint", "core"],
+            scenario_id="growth",
+        )
+
+        mock_dispatch.assert_called_once_with(
+            run_mock,
+            ["water_demand", "energy_demand"],
+            {"scenario_id": "growth"},
+            ["env_constraint", "core"],
+        )
+        assert run_mock.status != "failed"
+
+    @patch("brewgis.workspace.tasks.AnalysisRun.objects.get")
+    @patch("brewgis.workspace.tasks._dispatch_next_in_task")
+    def test_failure_marks_run_failed(
+        self,
+        mock_dispatch: MagicMock,
+        mock_get: MagicMock,
+    ) -> None:
+        """Failed module result should mark the run as failed."""
+        run_mock = MagicMock()
+        mock_get.return_value = run_mock
+
+        handle_module_completed(
+            task_result={"success": False, "error": "dbt model failed"},
+            run_id=1,
+            workspace_id=10,
+            remaining=[],
+            base_vars={},
+            completed_modules=["core"],
+            scenario_id="baseline",
+        )
+
+        assert run_mock.status == "failed"
+        assert run_mock.error_log == "dbt model failed"
+        mock_dispatch.assert_not_called()
+
+    @patch("brewgis.workspace.tasks.AnalysisRun.objects.get")
+    @patch("brewgis.workspace.tasks._dispatch_next_in_task")
+    def test_missing_run_returns_quietly(
+        self,
+        mock_dispatch: MagicMock,
+        mock_get: MagicMock,
+    ) -> None:
+        """Missing AnalysisRun should return silently without dispatching."""
+        mock_get.side_effect = AnalysisRun.DoesNotExist
+
+        # Should not raise
+        handle_module_completed(
+            task_result={"success": True},
+            run_id=999,
+            workspace_id=10,
+            remaining=["water_demand"],
+            base_vars={},
+            completed_modules=["core"],
+            scenario_id="baseline",
+        )
+
+        mock_dispatch.assert_not_called()
+
+    @patch("brewgis.workspace.tasks.AnalysisRun.objects.get")
+    @patch("brewgis.workspace.tasks._dispatch_next_in_task")
+    def test_last_module_completes_run(
+        self,
+        mock_dispatch: MagicMock,
+        mock_get: MagicMock,
+    ) -> None:
+        """Completed module with empty remaining list should not dispatch next."""
+        run_mock = MagicMock()
+        mock_get.return_value = run_mock
+
+        handle_module_completed(
+            task_result={"success": True, "layer_schema": None},
+            run_id=1,
+            workspace_id=10,
+            remaining=[],
+            base_vars={"scenario_id": "baseline"},
+            completed_modules=["env_constraint", "core", "water_demand"],
+            scenario_id="baseline",
+        )
+
+        # _dispatch_next_in_task handles the empty-remaining case internally
+        # (sets run status to completed). We just verify it's called.
+        mock_dispatch.assert_called_once_with(
+            run_mock,
+            [],
+            {"scenario_id": "baseline"},
+            ["env_constraint", "core", "water_demand"],
+        )

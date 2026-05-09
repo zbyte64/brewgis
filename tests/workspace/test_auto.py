@@ -12,8 +12,8 @@ from brewgis.workspace.symbology.auto import _suggest_classification_method
 from brewgis.workspace.symbology.auto import _suggest_palette
 from brewgis.workspace.symbology.auto import _suggest_symbology_type
 from brewgis.workspace.symbology.auto import auto_generate_symbology
-from brewgis.workspace.symbology.stats import ColumnStatistics
 from brewgis.workspace.symbology.classifiers import ClassificationResult
+from brewgis.workspace.symbology.stats import ColumnStatistics
 
 
 def _make_stats(
@@ -107,7 +107,13 @@ class TestAutoGenerate(TestCase):
         mock_classify.return_value = ClassificationResult(
             method="quantile",
             breaks=[0, 2000, 4000, 6000, 8000, 10000],
-            labels=["0 - 2000", "2000 - 4000", "4000 - 6000", "6000 - 8000", "8000 - 10000"],
+            labels=[
+                "0 - 2000",
+                "2000 - 4000",
+                "4000 - 6000",
+                "6000 - 8000",
+                "8000 - 10000",
+            ],
         )
         config = auto_generate_symbology(self.layer, attribute_column="population")
 

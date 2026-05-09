@@ -1,4 +1,5 @@
 """Page object for building type and place type pages."""
+
 from __future__ import annotations
 
 from typing import TYPE_CHECKING

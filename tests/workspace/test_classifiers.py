@@ -2,19 +2,17 @@
 
 from __future__ import annotations
 
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 
 import pytest
 
-from brewgis.workspace.symbology.classifiers import (
-    ClassificationResult,
-    classify,
-    _equal_interval_breaks,
-    _logarithmic_breaks,
-    _make_labels,
-    _natural_breaks_jenks,
-    _std_deviation_breaks,
-)
+from brewgis.workspace.symbology.classifiers import ClassificationResult
+from brewgis.workspace.symbology.classifiers import _equal_interval_breaks
+from brewgis.workspace.symbology.classifiers import _logarithmic_breaks
+from brewgis.workspace.symbology.classifiers import _make_labels
+from brewgis.workspace.symbology.classifiers import _natural_breaks_jenks
+from brewgis.workspace.symbology.classifiers import _std_deviation_breaks
+from brewgis.workspace.symbology.classifiers import classify
 
 
 @dataclass
@@ -164,7 +162,9 @@ class TestClassifyFunction:
     def test_manual_breaks(self) -> None:
         stats = FakeStats(min_value=0, max_value=100)
         result = classify(
-            stats, method="manual", num_classes=3,
+            stats,
+            method="manual",
+            num_classes=3,
             manual_breaks=[0, 33, 66, 100],
         )
         assert result.breaks == [0, 33, 66, 100]
@@ -173,3 +173,29 @@ class TestClassifyFunction:
         stats = FakeStats()
         with pytest.raises(ValueError, match="Unknown"):
             classify(stats, method="bogus", num_classes=5)
+
+
+class TestEdgeCases:
+    """Edge cases for classification functions."""
+
+    def test_identical_values(self) -> None:
+        """All-identical values handled by natural breaks and equal interval."""
+        breaks = _natural_breaks_jenks([5, 5, 5, 5, 5], 3)
+        assert len(breaks) >= 1
+        assert all(b == 5 for b in breaks)
+
+        breaks = _equal_interval_breaks(42, 42, 5)
+        assert len(breaks) == 6
+        assert all(b == 42 for b in breaks)
+
+    def test_negative_values(self) -> None:
+        """Negative values handled by logarithmic classifier."""
+        breaks = _logarithmic_breaks(-50, 100, 5)
+        assert len(breaks) == 6
+        assert breaks[0] == -50
+        assert breaks[-1] == 100
+
+    def test_empty_values(self) -> None:
+        """Empty value list handled by natural breaks classifier."""
+        breaks = _natural_breaks_jenks([], 5)
+        assert isinstance(breaks, list)

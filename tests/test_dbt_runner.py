@@ -1,18 +1,18 @@
-# ruff: noqa: ANN001
 """Tests for the dbt runner module."""
 
 from __future__ import annotations
 
-import pytest
-
-import yaml
-from django.test import TestCase, TransactionTestCase
 from unittest.mock import MagicMock
 from unittest.mock import patch
 
-from brewgis.workspace.analysis.dbt_runner import _build_profiles_yaml
+import pytest
+import yaml
+from django.test import TestCase
+from django.test import TransactionTestCase
+
 from brewgis.workspace.analysis.dbt_runner import DbtResult
 from brewgis.workspace.analysis.dbt_runner import DbtRunnerWrapper
+from brewgis.workspace.analysis.dbt_runner import _build_profiles_yaml
 from brewgis.workspace.analysis.dbt_runner import run_dbt_local
 
 
@@ -120,12 +120,14 @@ class TestBuildProfilesYaml(TestCase):
         self.assertIsNone(dev["pass"])
 
     def test_falls_back_to_database_url_when_user_empty(self) -> None:
-        with self.settings(DATABASES=self.db_config_empty_url_fallback):
-            with patch(
+        with (
+            self.settings(DATABASES=self.db_config_empty_url_fallback),
+            patch(
                 "brewgis.workspace.analysis.dbt_runner._env_db_url",
                 return_value="postgres://url_user:url_pass@url.host:7777/url_db",
-            ):
-                raw = _build_profiles_yaml()
+            ),
+        ):
+            raw = _build_profiles_yaml()
         parsed = yaml.safe_load(raw)
         dev = parsed["brewgis"]["outputs"]["dev"]
 
@@ -136,11 +138,13 @@ class TestBuildProfilesYaml(TestCase):
         self.assertEqual(dev["dbname"], "url_db")
 
     def test_raises_on_unsupported_engine(self) -> None:
-        with self.settings(
-            DATABASES={"default": {"ENGINE": "django.db.backends.sqlite3"}}
+        with (
+            self.settings(
+                DATABASES={"default": {"ENGINE": "django.db.backends.sqlite3"}}
+            ),
+            self.assertRaises(ValueError, msg="Unsupported database engine for dbt"),
         ):
-            with self.assertRaises(ValueError, msg="Unsupported database engine for dbt"):
-                _build_profiles_yaml()
+            _build_profiles_yaml()
 
 
 @pytest.mark.integration
@@ -300,7 +304,7 @@ class TestRunDbtLocal(TransactionTestCase):
             assert result.success, f"dbt run failed: {result.error}"
 
             # Check individual model results
-            for row in (result.results or []):
+            for row in result.results or []:
                 assert row["status"] in ("success", "pass"), (
                     f"Model {row['node_name']} failed: {row['message']}"
                 )
@@ -344,6 +348,4 @@ class TestRunDbtLocal(TransactionTestCase):
             # Cleanup: drop the view and test schema
             with connection.cursor() as cursor:
                 cursor.execute(f"DROP TABLE IF EXISTS {parcel_table} CASCADE")
-                cursor.execute(
-                    f"DROP SCHEMA IF EXISTS {target_schema} CASCADE"
-                )
+                cursor.execute(f"DROP SCHEMA IF EXISTS {target_schema} CASCADE")

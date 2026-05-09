@@ -1,5 +1,6 @@
 # ruff: noqa: ANN001, ARG001
 """Celery tasks for analysis pipeline execution."""
+
 from __future__ import annotations
 
 import logging
@@ -324,7 +325,7 @@ def _dispatch_next_in_task(
         return
 
     # Avoid circular import: tasks → pipeline → tasks
-    from brewgis.workspace.analysis.module_registry import (  # noqa: PLC0415, I001
+    from brewgis.workspace.analysis.module_registry import (  # noqa: PLC0415
         get_vars_for_module,
     )
 
@@ -361,6 +362,8 @@ def _dispatch_next_in_task(
             scenario_id=scenario_id,
         ),
     )
+
+
 # ────────────────────────────────────────────────────────────
 #  Data import tasks (Census, LEHD, POI, Allocation, Stitching)
 # ────────────────────────────────────────────────────────────
@@ -404,7 +407,9 @@ def run_census_fetch(
         engine = create_engine(
             f"postgresql://{db_user}:{db_pass}@{db_host}:{db_port}/{db_url}"
         )
-        gdf.to_postgis(table_name, engine, schema=schema, if_exists="replace", index=False)
+        gdf.to_postgis(
+            table_name, engine, schema=schema, if_exists="replace", index=False
+        )
         engine.dispose()
 
         # Register as Layer
@@ -465,7 +470,6 @@ def run_lehd_fetch(
         run.started_at = timezone.now()
         run.save(update_fields=["status", "started_at"])
 
-
         gdf = fetch_lehd_block_data(state_fips, county_fips)
 
         if gdf.empty:
@@ -478,7 +482,6 @@ def run_lehd_fetch(
 
         table_name = f"lehd_{state_fips}_{county_fips}"
 
-
         db_url = settings.DATABASES["default"]["NAME"]
         db_user = settings.DATABASES["default"]["USER"]
         db_pass = settings.DATABASES["default"]["PASSWORD"]
@@ -487,9 +490,10 @@ def run_lehd_fetch(
         engine = create_engine(
             f"postgresql://{db_user}:{db_pass}@{db_host}:{db_port}/{db_url}"
         )
-        gdf.to_postgis(table_name, engine, schema=schema, if_exists="replace", index=False)
+        gdf.to_postgis(
+            table_name, engine, schema=schema, if_exists="replace", index=False
+        )
         engine.dispose()
-
 
         layer, created = Layer.objects.get_or_create(
             key=f"lehd_{state_fips}_{county_fips}",
@@ -550,7 +554,6 @@ def run_poi_fetch(
         run.started_at = timezone.now()
         run.save(update_fields=["status", "started_at"])
 
-
         gdf = fetch_pois(min_lng, min_lat, max_lng, max_lat, categories)
 
         if gdf.empty:
@@ -565,7 +568,6 @@ def run_poi_fetch(
         table_name = f"poi_{suffix}"
         layer_key = f"poi_{suffix}"
 
-
         db_url = settings.DATABASES["default"]["NAME"]
         db_user = settings.DATABASES["default"]["USER"]
         db_pass = settings.DATABASES["default"]["PASSWORD"]
@@ -574,9 +576,10 @@ def run_poi_fetch(
         engine = create_engine(
             f"postgresql://{db_user}:{db_pass}@{db_host}:{db_port}/{db_url}"
         )
-        gdf.to_postgis(table_name, engine, schema=schema, if_exists="replace", index=False)
+        gdf.to_postgis(
+            table_name, engine, schema=schema, if_exists="replace", index=False
+        )
         engine.dispose()
-
 
         cat_label = ",".join(categories) if categories else "all"
         layer, created = Layer.objects.get_or_create(
@@ -640,7 +643,6 @@ def run_spatial_allocation(
         run.started_at = timezone.now()
         run.save(update_fields=["status", "started_at"])
 
-
         result = allocate_attributes(
             source_schema=source_schema,
             source_table=source_table,
@@ -693,7 +695,6 @@ def run_column_stitching(
         run.started_at = timezone.now()
         run.save(update_fields=["status", "started_at"])
 
-
         if strategy == "constant":
             if default_value is None:
                 msg = "Default value required for constant strategy."
@@ -715,8 +716,12 @@ def run_column_stitching(
                 return {"success": False, "error": msg}
 
             result = impute_area_proportional(
-                schema, table, target_column,
-                schema, source_table, source_column,
+                schema,
+                table,
+                target_column,
+                schema,
+                source_table,
+                source_column,
             )
 
         elif strategy == "built_form_default":

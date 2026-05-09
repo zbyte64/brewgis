@@ -1,4 +1,3 @@
-# ruff: noqa: ANN001
 """Tests for dbt schema name generation.
 
 Verifies that the ``generate_schema_name`` macro override produces
@@ -12,7 +11,6 @@ test database) as a minimal parcel table for dbt to compile against.
 from __future__ import annotations
 
 import logging
-from pathlib import Path
 
 import pytest
 from django.test import TestCase
@@ -21,8 +19,7 @@ from brewgis.workspace.analysis.dbt_runner import run_dbt_local
 
 logger = logging.getLogger(__name__)
 
-# Path to the dbt project
-DBT_PROJECT_DIR = Path(__file__).resolve().parent.parent.parent / "brewgis" / "dbt_project"
+from brewgis.workspace.analysis.dbt_runner import DBT_PROJECT_DIR
 
 TEST_VARS: dict[str, str | list] = {
     "parcel_table": "test_geometry_table",
@@ -71,7 +68,9 @@ class TestGenerateSchemaNameMacro(TestCase):
 
         # The macro must NOT concatenate schema names with underscore
         assert "{{ target.schema }}_{{ custom_schema_name }}" not in macro_content
-        assert "{{ target.schema }}_{{ custom_schema_name | trim }}" not in macro_content
+        assert (
+            "{{ target.schema }}_{{ custom_schema_name | trim }}" not in macro_content
+        )
         assert "{{ target.schema }}~" not in macro_content
 
         # The macro must return custom_schema_name verbatim

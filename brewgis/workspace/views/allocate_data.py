@@ -1,4 +1,5 @@
 """View for spatial allocation between layers."""
+
 from __future__ import annotations
 
 from crispy_forms.helper import FormHelper
@@ -17,6 +18,7 @@ from brewgis.workspace.tasks import run_spatial_allocation
 
 class AllocateForm(forms.Form):
     """Form to configure a spatial allocation operation."""
+
     def __init__(self, *args: object, **kwargs: object) -> None:
         super().__init__(*args, **kwargs)
         self.helper = FormHelper()

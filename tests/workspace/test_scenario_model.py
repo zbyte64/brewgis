@@ -1,18 +1,17 @@
-# ruff: noqa: ANN001
 """Tests for the Scenario model."""
 
 from __future__ import annotations
 
-import pytest
-
 from datetime import timedelta
 
+import pytest
 from django.test import TestCase
 from django.utils import timezone
 
-from brewgis.workspace.models import Scenario, ScenarioType
-
-from tests.factories import ScenarioFactory, WorkspaceFactory
+from brewgis.workspace.models import Scenario
+from brewgis.workspace.models import ScenarioType
+from tests.factories import ScenarioFactory
+from tests.factories import WorkspaceFactory
 
 
 @pytest.mark.models
@@ -61,6 +60,7 @@ class TestScenarioModel(TestCase):
         s = ScenarioFactory(name="My New Scenario", slug="")
         s.save()
         self.assertEqual(s.slug, "my-new-scenario")
+
     def test_workspace_fk(self) -> None:
         """Scenario should belong to a workspace."""
         ws = WorkspaceFactory()
@@ -134,6 +134,8 @@ class TestScenarioModel(TestCase):
         """horizon_year should typically be greater than base_year."""
         s = ScenarioFactory(base_year=2020, horizon_year=2050)
         self.assertGreater(s.horizon_year, s.base_year)
+
+
 @pytest.mark.models
 class TestScenarioSchemaName(TestCase):
     """Tests for the Scenario schema_name field and target_schema property."""

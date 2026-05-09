@@ -109,7 +109,9 @@ class Command(BaseCommand):
         truncate: bool = options.get("truncate", False)
 
         # ── Step 0: Validate source ──────────────────────────────
-        source_count = sum(1 for x in [source_table, source_geojson, synthetic_n] if x is not None)
+        source_count = sum(
+            1 for x in [source_table, source_geojson, synthetic_n] if x is not None
+        )
         if source_count != 1:
             msg = (
                 "Exactly one source must be specified: "
@@ -124,7 +126,9 @@ class Command(BaseCommand):
         if truncate:
             self._log("Truncating existing data")
             with connection.cursor() as cursor:
-                cursor.execute("TRUNCATE TABLE public.base_canvas RESTART IDENTITY CASCADE")
+                cursor.execute(
+                    "TRUNCATE TABLE public.base_canvas RESTART IDENTITY CASCADE"
+                )
 
         # ── Step 2: Load parcel features ──────────────────────────
         self._step("2/11", "Loading parcel features")
@@ -181,7 +185,9 @@ class Command(BaseCommand):
         self._validate()
 
         elapsed = time.time() - self._start_time
-        self.stdout.write(self.style.SUCCESS(f"ETL pipeline complete in {elapsed:.1f}s"))
+        self.stdout.write(
+            self.style.SUCCESS(f"ETL pipeline complete in {elapsed:.1f}s")
+        )
         return None
 
     # ------------------------------------------------------------------
@@ -345,23 +351,27 @@ class Command(BaseCommand):
         """Classify land use if not already set."""
         if "land_development_category" in gdf.columns:
             gdf["land_development_category"] = (
-                gdf["land_development_category"]
-                .fillna("urban")
-                .astype(str)
+                gdf["land_development_category"].fillna("urban").astype(str)
             )
         if "built_form_key" in gdf.columns:
-            gdf["built_form_key"] = gdf["built_form_key"].fillna(_DEFAULT_BUILT_FORM_KEY)
+            gdf["built_form_key"] = gdf["built_form_key"].fillna(
+                _DEFAULT_BUILT_FORM_KEY
+            )
         return gdf
 
     def _estimate_irrigation(self, gdf: gpd.GeoDataFrame) -> gpd.GeoDataFrame:
         """Estimate irrigated areas from land use and area."""
         if "residential_irrigated_area" in gdf.columns:
-            gdf["residential_irrigated_area"] = gdf["residential_irrigated_area"].fillna(
-                gdf.get("area_parcel_res", gdf["area_gross"]) * _DEFAULT_IRRIGATION_RES_FRAC
+            gdf["residential_irrigated_area"] = gdf[
+                "residential_irrigated_area"
+            ].fillna(
+                gdf.get("area_parcel_res", gdf["area_gross"])
+                * _DEFAULT_IRRIGATION_RES_FRAC
             )
         if "commercial_irrigated_area" in gdf.columns:
             gdf["commercial_irrigated_area"] = gdf["commercial_irrigated_area"].fillna(
-                gdf.get("area_parcel_emp", gdf["area_gross"]) * _DEFAULT_IRRIGATION_COM_FRAC
+                gdf.get("area_parcel_emp", gdf["area_gross"])
+                * _DEFAULT_IRRIGATION_COM_FRAC
             )
         return gdf
 
@@ -369,7 +379,9 @@ class Command(BaseCommand):
         """Compute or default intersection density."""
         if "intersection_density" in gdf.columns:
             gdf["intersection_density"] = (
-                gdf["intersection_density"].fillna(_DEFAULT_INTERSECTION_DENSITY).round(2)
+                gdf["intersection_density"]
+                .fillna(_DEFAULT_INTERSECTION_DENSITY)
+                .round(2)
             )
         return gdf
 
@@ -409,18 +421,21 @@ class Command(BaseCommand):
 
         if truncate:
             with django_connection.cursor() as cursor:
-                cursor.execute("TRUNCATE TABLE public.base_canvas RESTART IDENTITY CASCADE")
+                cursor.execute(
+                    "TRUNCATE TABLE public.base_canvas RESTART IDENTITY CASCADE"
+                )
 
         # Build column list for INSERT (exclude id which is SERIAL)
         insert_cols = [
-            c for c in BaseCanvasSchema.COLUMN_NAMES
-            if c in gdf.columns and c != "id"
+            c for c in BaseCanvasSchema.COLUMN_NAMES if c in gdf.columns and c != "id"
         ]
         col_list = ", ".join(f'"{c}"' for c in insert_cols)
         col_placeholders = ", ".join(f"%({c})s" for c in insert_cols if c != "geometry")
         has_geom = "geometry" in insert_cols
         if has_geom:
-            col_list_geom = f"geometry, {col_list.replace('"geometry", ', '')}".strip(", ")
+            col_list_geom = f"geometry, {col_list.replace('"geometry", ', '')}".strip(
+                ", "
+            )
         else:
             col_list_geom = col_list
 
@@ -432,7 +447,9 @@ class Command(BaseCommand):
                 for col in insert_cols:
                     if col == "geometry":
                         val = row.get(col)
-                        if val is not None and not (isinstance(val, float) and pd.isna(val)):
+                        if val is not None and not (
+                            isinstance(val, float) and pd.isna(val)
+                        ):
                             geometry_wkt = val.wkt if hasattr(val, "wkt") else str(val)
                         continue
                     val = row.get(col)
@@ -459,6 +476,7 @@ class Command(BaseCommand):
 
         rows = len(gdf)
         self._log(f"Wrote {rows} rows to public.base_canvas")
+
     def _validate(self) -> None:
         """Validate the base canvas after ETL."""
         missing = BaseCanvasManager.validate_schema()
@@ -470,7 +488,7 @@ class Command(BaseCommand):
             cursor.execute(
                 f"""
                 SELECT COUNT(*) FROM public.base_canvas
-                WHERE { ' IS NULL OR '.join(f'"{c}" IS NULL' for c in BaseCanvasSchema.NON_NULL_COLUMNS) }
+                WHERE {" IS NULL OR ".join(f'"{c}" IS NULL' for c in BaseCanvasSchema.NON_NULL_COLUMNS)}
                 """
             )
             null_count = cursor.fetchone()[0]

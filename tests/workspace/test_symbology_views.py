@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 import pytest
-
 from django.contrib.auth.models import User
 from django.test import TestCase
 from django.urls import reverse
@@ -51,15 +50,18 @@ class TestSymbologyViews(TestCase):
     def test_edit_symbology_post_saves_config(self) -> None:
         """POST should save symbology config and redirect."""
         url = reverse("workspace:symbology_edit", args=[self.layer.pk])
-        response = self.client.post(url, {
-            "symbology_type": "single",
-            "attribute_column": "",
-            "default_color": "#ff0000",
-            "default_opacity": "0.8",
-            "num_classes": "5",
-            "classification_method": "quantile",
-            "null_handling": "gray",
-        })
+        response = self.client.post(
+            url,
+            {
+                "symbology_type": "single",
+                "attribute_column": "",
+                "default_color": "#ff0000",
+                "default_opacity": "0.8",
+                "num_classes": "5",
+                "classification_method": "quantile",
+                "null_handling": "gray",
+            },
+        )
         # Should redirect to map
         self.assertIn(response.status_code, [302, 200])
         config = SymbologyConfig.objects.get(layer=self.layer)
@@ -69,9 +71,12 @@ class TestSymbologyViews(TestCase):
     def test_auto_generate_endpoint(self) -> None:
         """POST to auto-generate should redirect."""
         url = reverse("workspace:symbology_auto", args=[self.layer.pk])
-        response = self.client.post(url, {
-            "attribute_column": "test_col",
-        })
+        response = self.client.post(
+            url,
+            {
+                "attribute_column": "test_col",
+            },
+        )
         self.assertIn(response.status_code, [302, 200])
 
     def test_preview_endpoint(self) -> None:

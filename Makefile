@@ -97,6 +97,11 @@ test-all:  ## Run all tests sequentially (safe for full coverage)
 .PHONY: test-dbt
 test-dbt:  ## Run dbt seed + run + test (seed-based models only)
 	$(COMPOSE_RUN) bash -c 'cd brewgis/dbt_project && dbt seed --profiles-dir . --full-refresh && dbt run --profiles-dir . --select base_canvas_geometry+ && dbt test --profiles-dir . --select base_canvas_geometry+'
+
+.PHONY: coverage
+coverage:  ## Run tests with coverage report and fail if below threshold
+	$(COMPOSE_RUN) bash -c 'coverage run -m pytest -m "not e2e" --timeout=300 && coverage report --fail-under=60'
+
 # ─────────────────────────────────────────────
 # Linting & Formatting
 # ─────────────────────────────────────────────

@@ -81,9 +81,15 @@ def _find_numeric_column(columns: list[dict[str, Any]]) -> str | None:
     the first numeric column that isn't an id or geometry column.
     """
     preferred = {
-        "acres_developable", "developable_proportion", "population",
-        "households", "dwelling_units_total", "employment_total",
-        "employment", "total_population", "total_households",
+        "acres_developable",
+        "developable_proportion",
+        "population",
+        "households",
+        "dwelling_units_total",
+        "employment_total",
+        "employment",
+        "total_population",
+        "total_households",
     }
     for col in columns:
         if col["numeric"] and col["column_name"] in preferred:

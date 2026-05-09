@@ -15,6 +15,7 @@ from brewgis.workspace.services.base_canvas_manager import BaseCanvasManager
 from brewgis.workspace.services.base_canvas_schema import BaseCanvasSchema
 
 
+@pytest.mark.integration
 class TestETLPipeline:
     """End-to-end tests for the ETL pipeline."""
 
@@ -54,7 +55,9 @@ class TestETLPipeline:
     def _query_sum(self, column: str) -> float:
         """Return the column sum from the base canvas."""
         with connection.cursor() as cursor:
-            cursor.execute(f'SELECT COALESCE(SUM("{column}"), 0) FROM public.base_canvas')
+            cursor.execute(
+                f'SELECT COALESCE(SUM("{column}"), 0) FROM public.base_canvas'
+            )
             return float(cursor.fetchone()[0])
 
     # ── Tests ─────────────────────────────────────────────────────────

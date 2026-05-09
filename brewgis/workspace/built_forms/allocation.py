@@ -13,6 +13,7 @@ Unit conventions:
     - Energy: kWh
     - Parking area: m²
 """
+
 from __future__ import annotations
 
 from dataclasses import dataclass
@@ -84,8 +85,14 @@ class AllocationEngine:
         )
     """
 
-    @deal.pre(lambda parcel_acres, building_type, row_allocation_pct: parcel_acres >= 0 and 0 <= row_allocation_pct <= 100)
-    @deal.post(lambda result: result.developable_acres >= 0 and result.total_population >= 0)
+    @deal.pre(
+        lambda parcel_acres, building_type, row_allocation_pct: (
+            parcel_acres >= 0 and 0 <= row_allocation_pct <= 100
+        )
+    )
+    @deal.post(
+        lambda result: result.developable_acres >= 0 and result.total_population >= 0
+    )
     @staticmethod
     def allocation_building_type(
         parcel_acres: float,
@@ -140,7 +147,9 @@ class AllocationEngine:
             sector_total = sum(jobs_by_sector.values())
             if sector_total > 0:
                 for sector, pct in jobs_by_sector.items():
-                    result.employment_by_sector[sector] = total_jobs * (pct / sector_total)
+                    result.employment_by_sector[sector] = total_jobs * (
+                        pct / sector_total
+                    )
 
         # 5. Floor area
         far = building_type.far
@@ -163,7 +172,9 @@ class AllocationEngine:
             # Use coverage ratio if available
             if building_type.building_coverage:
                 site_area_m2 = developable_sqft * SQFT_TO_SQM
-                result.building_footprint_m2 = site_area_m2 * (building_type.building_coverage / 100.0)
+                result.building_footprint_m2 = site_area_m2 * (
+                    building_type.building_coverage / 100.0
+                )
 
         # 6. Water
         indoor_rate = building_type.indoor_water_rate
@@ -175,11 +186,15 @@ class AllocationEngine:
             site_area_m2 = developable_sqft * SQFT_TO_SQM
             irrigable_frac = building_type.irrigable_area_fraction or 0.0
             non_building_area = site_area_m2 - result.building_footprint_m2
-            result.water_demand_outdoor_l = non_building_area * irrigable_frac * outdoor_rate
+            result.water_demand_outdoor_l = (
+                non_building_area * irrigable_frac * outdoor_rate
+            )
 
         # 7. Energy
         if building_type.electricity_eui is not None and result.floor_area_m2 > 0:
-            result.energy_electricity_kwh = result.floor_area_m2 * building_type.electricity_eui
+            result.energy_electricity_kwh = (
+                result.floor_area_m2 * building_type.electricity_eui
+            )
         if building_type.gas_eui is not None and result.floor_area_m2 > 0:
             result.energy_gas_kwh = result.floor_area_m2 * building_type.gas_eui
 
@@ -195,7 +210,9 @@ class AllocationEngine:
         # 9. Parking
         floor_area_1000sqft = (result.floor_area_m2 / SQFT_TO_SQM) / 1000.0
         spaces_from_units = (building_type.parking_spaces_per_unit or 0.0) * units
-        spaces_from_floor = (building_type.parking_spaces_per_1000sqft or 0.0) * floor_area_1000sqft
+        spaces_from_floor = (
+            building_type.parking_spaces_per_1000sqft or 0.0
+        ) * floor_area_1000sqft
         result.parking_spaces = spaces_from_units + spaces_from_floor
         parking_sqft_per = building_type.parking_sqft_per_space or 300.0
         result.parking_area_m2 = result.parking_spaces * parking_sqft_per * SQFT_TO_SQM
@@ -225,7 +242,9 @@ class AllocationEngine:
             row_acres=row_acres,
         )
 
-        mixes = list(place_type.building_type_mixes.select_related("building_type").all())
+        mixes = list(
+            place_type.building_type_mixes.select_related("building_type").all()
+        )
         total_pct = sum(m.percentage for m in mixes) if mixes else 100.0
 
         for mix in mixes:
@@ -259,16 +278,18 @@ class AllocationEngine:
                     result.employment_by_sector.get(sector, 0.0) + val
                 )
 
-            result.per_building_type_breakdown.append({
-                "building_type_name": bt.name,
-                "building_type_id": bt.pk,
-                "percentage": mix.percentage,
-                "acres": bt_acres,
-                "dwelling_units": sub.total_dwelling_units,
-                "population": sub.total_population,
-                "employment": sub.total_employment,
-                "floor_area_m2": sub.floor_area_m2,
-            })
+            result.per_building_type_breakdown.append(
+                {
+                    "building_type_name": bt.name,
+                    "building_type_id": bt.pk,
+                    "percentage": mix.percentage,
+                    "acres": bt_acres,
+                    "dwelling_units": sub.total_dwelling_units,
+                    "population": sub.total_population,
+                    "employment": sub.total_employment,
+                    "floor_area_m2": sub.floor_area_m2,
+                }
+            )
 
         return result
 

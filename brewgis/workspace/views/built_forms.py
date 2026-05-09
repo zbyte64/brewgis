@@ -1,4 +1,5 @@
 """CRUD and baking views for BuildingTypes and PlaceTypes."""
+
 from __future__ import annotations
 
 from typing import Any
@@ -68,15 +69,31 @@ class BuildingTypeForm(forms.ModelForm):
     class Meta:
         model = BuildingType
         fields = [
-            "name", "description",
-            "du_per_acre", "emp_per_acre", "far",
-            "household_size", "tenure_owner_pct", "tenure_renter_pct", "vacancy_rate",
-            "stories", "footprint_per_unit", "building_coverage",
+            "name",
+            "description",
+            "du_per_acre",
+            "emp_per_acre",
+            "far",
+            "household_size",
+            "tenure_owner_pct",
+            "tenure_renter_pct",
+            "vacancy_rate",
+            "stories",
+            "footprint_per_unit",
+            "building_coverage",
             "jobs_by_sector",
-            "indoor_water_rate", "outdoor_water_rate", "irrigable_area_fraction",
-            "electricity_eui", "gas_eui", "vintage",
-            "parking_spaces_per_unit", "parking_spaces_per_1000sqft", "parking_sqft_per_space",
-            "ite_land_use_code", "trip_rate_override", "pass_by_trip_pct",
+            "indoor_water_rate",
+            "outdoor_water_rate",
+            "irrigable_area_fraction",
+            "electricity_eui",
+            "gas_eui",
+            "vintage",
+            "parking_spaces_per_unit",
+            "parking_spaces_per_1000sqft",
+            "parking_sqft_per_space",
+            "ite_land_use_code",
+            "trip_rate_override",
+            "pass_by_trip_pct",
         ]
         widgets = {
             "description": forms.Textarea(attrs={"rows": 3}),
@@ -92,9 +109,11 @@ class PlaceTypeForm(forms.ModelForm):
     class Meta:
         model = PlaceType
         fields = [
-            "name", "description",
+            "name",
+            "description",
             "row_allocation_pct",
-            "block_size", "street_pattern",
+            "block_size",
+            "street_pattern",
         ]
         widgets = {
             "description": forms.Textarea(attrs={"rows": 3}),

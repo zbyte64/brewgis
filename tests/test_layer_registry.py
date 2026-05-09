@@ -1,23 +1,19 @@
 """Tests for the layer registry."""
-# ruff: noqa: ANN001, ANN201
 
 from __future__ import annotations
-
-import pytest
 
 from unittest.mock import MagicMock
 from unittest.mock import patch
 
+import pytest
 from django.test import TestCase
+
+from brewgis.workspace.analysis.layer_registry import _find_numeric_column
+from brewgis.workspace.analysis.layer_registry import _get_geometry_type
+from brewgis.workspace.analysis.layer_registry import register_result_layer
+from brewgis.workspace.models import Layer
 from tests.factories import LayerFactory
 from tests.factories import WorkspaceFactory
-from brewgis.workspace.models import Layer
-
-from brewgis.workspace.analysis.layer_registry import (
-    _find_numeric_column,
-    _get_geometry_type,
-    register_result_layer,
-)
 
 
 @pytest.mark.integration

@@ -164,5 +164,3 @@ def preview_symbology(request: HttpRequest, layer_pk: int) -> JsonResponse:
 
     style = generate_maplibre_style(config)
     return JsonResponse(style)
-
-

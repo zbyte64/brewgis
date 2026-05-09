@@ -1,15 +1,15 @@
 """Tests for built forms CRUD and baking views."""
+
 from __future__ import annotations
 
 import pytest
-
 from django.test import TestCase
 from django.urls import reverse
-from brewgis.workspace.built_forms.models import PlaceType
-from brewgis.workspace.built_forms.models import BuildingType
-from tests.factories import UserFactory
 
+from brewgis.workspace.built_forms.models import BuildingType
+from brewgis.workspace.built_forms.models import PlaceType
 from brewgis.workspace.built_forms.models import PlaceTypeBuildingTypeMix
+from tests.factories import UserFactory
 
 
 @pytest.mark.views
@@ -43,12 +43,15 @@ class TestBuildingTypeViews(TestCase):
         """POST with valid data should create a BuildingType."""
         self.client.force_login(self.user)
         url = reverse("workspace:building_type_create")
-        response = self.client.post(url, {
-            "name": "Test BT",
-            "du_per_acre": "10.0",
-            "emp_per_acre": "0",
-            "far": "0.8",
-        })
+        response = self.client.post(
+            url,
+            {
+                "name": "Test BT",
+                "du_per_acre": "10.0",
+                "emp_per_acre": "0",
+                "far": "0.8",
+            },
+        )
         self.assertIn(response.status_code, [302, 200])
         self.assertTrue(
             BuildingType.objects.filter(name="Test BT").exists(),
@@ -58,9 +61,12 @@ class TestBuildingTypeViews(TestCase):
         """Successful create should redirect to building type list."""
         self.client.force_login(self.user)
         url = reverse("workspace:building_type_create")
-        response = self.client.post(url, {
-            "name": "BT Redirect Test",
-        })
+        response = self.client.post(
+            url,
+            {
+                "name": "BT Redirect Test",
+            },
+        )
         self.assertIn(response.status_code, [302, 200])
         if response.status_code == 302:
             self.assertEqual(
@@ -81,10 +87,13 @@ class TestBuildingTypeViews(TestCase):
         self.client.force_login(self.user)
         bt = BuildingType.objects.create(name="Original")
         url = reverse("workspace:building_type_edit", args=[bt.pk])
-        self.client.post(url, {
-            "name": "Updated",
-            "du_per_acre": "15.0",
-        })
+        self.client.post(
+            url,
+            {
+                "name": "Updated",
+                "du_per_acre": "15.0",
+            },
+        )
         bt.refresh_from_db()
         self.assertEqual(bt.name, "Updated")
         self.assertEqual(bt.du_per_acre, 15.0)
@@ -107,6 +116,34 @@ class TestBuildingTypeViews(TestCase):
         url = reverse("workspace:building_type_list")
         response = self.client.get(url)
         self.assertContains(response, "Visible BT")
+
+    def test_create_post_empty_name(self) -> None:
+        """POST with empty name should re-render with form error."""
+        self.client.force_login(self.user)
+        url = reverse("workspace:building_type_create")
+        response = self.client.post(
+            url,
+            {
+                "name": "",
+                "du_per_acre": "10.0",
+            },
+        )
+        self.assertEqual(response.status_code, 200)
+        self.assertContains(response, "This field is required")
+
+    def test_create_post_negative_du(self) -> None:
+        """POST with negative du_per_acre is accepted (no MinValueValidator on model)."""
+        self.client.force_login(self.user)
+        url = reverse("workspace:building_type_create")
+        response = self.client.post(
+            url,
+            {
+                "name": "Neg BT",
+                "du_per_acre": "-5.0",
+            },
+        )
+        assert response.status_code == 302
+        assert BuildingType.objects.filter(name="Neg BT", du_per_acre=-5.0).exists()
 
 
 @pytest.mark.views
@@ -133,10 +170,13 @@ class TestPlaceTypeViews(TestCase):
         """POST with valid data should create a PlaceType."""
         self.client.force_login(self.user)
         url = reverse("workspace:place_type_create")
-        response = self.client.post(url, {
-            "name": "Test PT",
-            "row_allocation_pct": "30.0",
-        })
+        response = self.client.post(
+            url,
+            {
+                "name": "Test PT",
+                "row_allocation_pct": "30.0",
+            },
+        )
         self.assertIn(response.status_code, [302, 200])
         self.assertTrue(
             PlaceType.objects.filter(name="Test PT").exists(),
@@ -147,10 +187,13 @@ class TestPlaceTypeViews(TestCase):
         self.client.force_login(self.user)
         pt = PlaceType.objects.create(name="Original PT")
         url = reverse("workspace:place_type_edit", args=[pt.pk])
-        self.client.post(url, {
-            "name": "Updated PT",
-            "row_allocation_pct": "35.0",
-        })
+        self.client.post(
+            url,
+            {
+                "name": "Updated PT",
+                "row_allocation_pct": "35.0",
+            },
+        )
         pt.refresh_from_db()
         self.assertEqual(pt.name, "Updated PT")
         self.assertEqual(pt.row_allocation_pct, 35.0)
@@ -179,6 +222,20 @@ class TestPlaceTypeViews(TestCase):
         response = self.client.get(url)
         self.assertContains(response, "Mix PT")
         self.assertContains(response, "Mix BT")
+
+    def test_create_post_empty_name(self) -> None:
+        """POST with empty name should re-render with form error."""
+        self.client.force_login(self.user)
+        url = reverse("workspace:place_type_create")
+        response = self.client.post(
+            url,
+            {
+                "name": "",
+                "row_allocation_pct": "30.0",
+            },
+        )
+        self.assertEqual(response.status_code, 200)
+        self.assertContains(response, "This field is required")
 
 
 @pytest.mark.views

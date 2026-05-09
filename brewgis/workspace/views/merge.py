@@ -95,7 +95,9 @@ def merge_paint_edits(
                         feature_id=paint["feature_id"],
                         column_name=paint["column_name"],
                         painted_value=paint["painted_value"],
-                        painted_by=request.user if request.user.is_authenticated else None,
+                        painted_by=request.user
+                        if request.user.is_authenticated
+                        else None,
                     )
                 rows_copied += 1
             except IntegrityError:

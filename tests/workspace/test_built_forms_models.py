@@ -1,8 +1,8 @@
 """Tests for built forms models."""
+
 from __future__ import annotations
 
 import pytest
-
 from django.db import IntegrityError
 from django.test import TestCase
 

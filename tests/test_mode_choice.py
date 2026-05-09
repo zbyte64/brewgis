@@ -1,9 +1,14 @@
 """Tests for the mode_choice dbt Python model (logit mode split logic)."""
+
 from __future__ import annotations
 
 import numpy as np
 import pytest
-from hypothesis import HealthCheck, assume, given, settings, strategies as st
+from hypothesis import HealthCheck
+from hypothesis import assume
+from hypothesis import given
+from hypothesis import settings
+from hypothesis import strategies as st
 
 from brewgis.dbt_project.models.mode_choice import _multinomial_logit
 
@@ -19,7 +24,9 @@ class TestModeChoiceLogit:
         ln_dens = np.zeros(n)
         inter_dens = np.zeros(n)
         transit_acc = np.zeros(n)
-        *_, sa, st_, sw, sb = _multinomial_logit(trips, ln_dens, inter_dens, transit_acc)
+        *_, sa, st_, sw, sb = _multinomial_logit(
+            trips, ln_dens, inter_dens, transit_acc
+        )
         row_sums = sa + st_ + sw + sb
         np.testing.assert_array_almost_equal(row_sums, np.ones(n))
 
@@ -30,7 +37,10 @@ class TestModeChoiceLogit:
         intersection_density = np.array([0.0])
         transit_access = np.array([0.0])
         *_, sa, st_, sw, sb = _multinomial_logit(
-            trips, ln_density, intersection_density, transit_access,
+            trips,
+            ln_density,
+            intersection_density,
+            transit_access,
         )
         assert sa[0] > st_[0]  # auto > transit
         assert sa[0] > sw[0]  # auto > walk
@@ -80,7 +90,9 @@ class TestModeChoiceLogit:
         inter_dens = np.array([0.0, 5.0, 0.0])
         transit_access = np.array([0.0, 1.0, 0.0])
 
-        ta, tt, tw, tb, *_ = _multinomial_logit(trips_outbound, ln_density, inter_dens, transit_access)
+        ta, tt, tw, tb, *_ = _multinomial_logit(
+            trips_outbound, ln_density, inter_dens, transit_access
+        )
         trips_sum = ta + tt + tw + tb
         np.testing.assert_array_almost_equal(trips_sum, trips_outbound)
 
@@ -90,7 +102,9 @@ class TestModeChoiceLogit:
         ln_density = np.log(10.0 + 1.0)
         inter_dens = np.array([0.0])
         transit_access = np.array([0.0])
-        ta, tt, tw, tb, *_ = _multinomial_logit(trips_outbound, ln_density, inter_dens, transit_access)
+        ta, tt, tw, tb, *_ = _multinomial_logit(
+            trips_outbound, ln_density, inter_dens, transit_access
+        )
         np.testing.assert_array_equal(ta, np.zeros(1))
         np.testing.assert_array_equal(tt, np.zeros(1))
         np.testing.assert_array_equal(tw, np.zeros(1))
@@ -131,20 +145,26 @@ class TestModeChoiceLogit:
 _LOGIT_ARRAYS = st.integers(min_value=2, max_value=5).flatmap(
     lambda n: st.tuples(
         st.lists(
-            st.floats(min_value=0, max_value=5000, allow_nan=False, allow_infinity=False),
-            min_size=n, max_size=n,
+            st.floats(
+                min_value=0, max_value=5000, allow_nan=False, allow_infinity=False
+            ),
+            min_size=n,
+            max_size=n,
         ).map(np.array),  # trips_outbound
         st.lists(
             st.floats(min_value=0, max_value=5, allow_nan=False, allow_infinity=False),
-            min_size=n, max_size=n,
+            min_size=n,
+            max_size=n,
         ).map(np.array),  # ln_density
         st.lists(
             st.floats(min_value=0, max_value=50, allow_nan=False, allow_infinity=False),
-            min_size=n, max_size=n,
+            min_size=n,
+            max_size=n,
         ).map(np.array),  # intersection_density
         st.lists(
             st.integers(min_value=0, max_value=1),
-            min_size=n, max_size=n,
+            min_size=n,
+            max_size=n,
         ).map(np.array),  # transit_access
     )
 )
@@ -158,7 +178,9 @@ def test_logit_shares_sum_to_one(
     """Mode shares for each parcel must sum to 1.0."""
     trips_out, ln_dens, inter_dens, transit_acc = arrays
     assume(np.sum(trips_out) > 0)
-    *_, sa, st_, sw, sb = _multinomial_logit(trips_out, ln_dens, inter_dens, transit_acc)
+    *_, sa, st_, sw, sb = _multinomial_logit(
+        trips_out, ln_dens, inter_dens, transit_acc
+    )
     row_sums = sa + st_ + sw + sb
     assert np.all(np.abs(row_sums - 1.0) < 1e-10), (
         f"Shares don't sum to 1.0: {row_sums}"
@@ -172,7 +194,9 @@ def test_logit_shares_in_unit_interval(
 ) -> None:
     """All mode shares must be in [0, 1]."""
     trips_out, ln_dens, inter_dens, transit_acc = arrays
-    *_, sa, st_, sw, sb = _multinomial_logit(trips_out, ln_dens, inter_dens, transit_acc)
+    *_, sa, st_, sw, sb = _multinomial_logit(
+        trips_out, ln_dens, inter_dens, transit_acc
+    )
     for name, arr in [("auto", sa), ("transit", st_), ("walk", sw), ("bike", sb)]:
         assert np.all(arr >= 0), f"{name} shares have negatives: {arr}"
         assert np.all(arr <= 1.0 + 1e-10), f"{name} shares exceed 1.0: {arr}"
@@ -213,6 +237,10 @@ def test_logit_non_negative_trips(
 def test_logit_auto_dominates_defaults(
     arrays: tuple[np.ndarray, np.ndarray, np.ndarray, np.ndarray],
 ) -> None:
+    # With default ASCs (auto = 0.0, transit = -0.35, walk = -0.50, bike = -0.40),
+    # the auto utility has no built-in penalty while other modes do.
+    # The assume(inter_dens <= 12) keeps walkability low enough that walk's
+    # coefficient on ln_dens (~0.15) cannot overcome its ASC deficit.
     """With default ASCs, auto should dominate at moderate intersection density.
     At very high density (> ~25), walk can overtake auto.
     """
@@ -220,7 +248,10 @@ def test_logit_auto_dominates_defaults(
     assume(np.sum(trips_out) > 0)
     # Only parcels with realistic intersection density; very high walkability can beat auto
     assume(np.all(inter_dens <= 12))
-    *_, sa, st_, sw, sb = _multinomial_logit(trips_out, ln_dens, inter_dens, transit_acc)
+    *_, sa, st_, sw, sb = _multinomial_logit(
+        trips_out, ln_dens, inter_dens, transit_acc
+    )
+    assume(np.max(sa) < 1e6)
     assert np.all(sa >= st_ - 1e-10), f"Auto share {sa} not >= transit share {st_}"
     assert np.all(sa >= sw - 1e-10), f"Auto share {sa} not >= walk share {sw}"
     assert np.all(sa >= sb - 1e-10), f"Auto share {sa} not >= bike share {sb}"
@@ -247,7 +278,7 @@ def test_logit_empty_input(
     arrays: tuple[np.ndarray, np.ndarray, np.ndarray, np.ndarray],
 ) -> None:
     """Empty input should return empty arrays for all eight outputs."""
-    _trips, _ln, _id, _ta = arrays  # noqa: F841 — verify strategy works
+    _trips, _ln, _id, _ta = arrays
     empty = np.array([], dtype=float)
     result = _multinomial_logit(empty, empty, empty, empty)
     for arr in result:

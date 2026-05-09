@@ -77,6 +77,12 @@ class TestEnergyDemandTemplate(DbtModelTemplateTest):
     def test_has_input_columns(self, sql_template: str, col: str) -> None:
         assert col in sql_template
 
+    def test_uses_ref_for_dependency(self, sql_template: str) -> None:
+        assert "{{ ref('core_end_state') }}" in sql_template
+
+    def test_no_hardcoded_schema_names(self, sql_template: str) -> None:
+        assert all(h not in sql_template for h in ["public.", ' "schema"'])
+
 
 @pytest.mark.integration
 class TestEnergyDemandFormula:
@@ -119,3 +125,21 @@ class TestEnergyDemandFormula:
     def test_intensity_zero_denom(self) -> None:
         result = 0.0
         assert result == 0.0
+
+    def test_large_values(self) -> None:
+        sqft = 1e7
+        eui = 15.0
+        result = sqft * 0.092903 * eui
+        assert result == pytest.approx(13935450.0, rel=0.01)
+
+    def test_zero_area(self) -> None:
+        sqft = 0.0
+        eui = 15.0
+        result = 0.0 * 0.092903 * 15.0
+        assert result == 0.0
+
+    def test_large_eui(self) -> None:
+        sqft = 1000.0
+        eui = 1e6
+        result = sqft * 0.092903 * eui
+        assert result == pytest.approx(9.2903e7, rel=0.01)

@@ -1,4 +1,5 @@
 """View for importing Census ACS demographics data."""
+
 from __future__ import annotations
 
 from crispy_forms.helper import FormHelper
@@ -19,6 +20,7 @@ from brewgis.workspace.tasks import run_census_fetch
 
 class CensusFetchForm(forms.Form):
     """Form to configure a Census ACS data import."""
+
     def __init__(self, *args: object, **kwargs: object) -> None:
         super().__init__(*args, **kwargs)
         self.helper = FormHelper()

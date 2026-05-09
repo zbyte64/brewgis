@@ -59,6 +59,13 @@ class TestLandConsumptionTemplate(DbtModelTemplateTest):
         ]:
             assert col in sql_template
 
+    def test_uses_ref_for_dependency(self, sql_template: str) -> None:
+        assert "{{ ref('core_end_state') }}" in sql_template
+
+    def test_no_hardcoded_schema_names(self, sql_template: str) -> None:
+        for h in ["public.", ' "schema"']:
+            assert h not in sql_template
+
 
 @pytest.mark.integration
 class TestLandConsumptionFormula:
@@ -96,3 +103,21 @@ class TestLandConsumptionFormula:
         impervious_sqft = gross_acres * 43560.0
         result = gross_acres - impervious_sqft / 43560.0
         assert result == pytest.approx(0.0)
+
+    def test_large_acres(self) -> None:
+        acres = 1e6
+        row_frac = 0.15
+        result = acres * row_frac * 43560.0
+        assert result == pytest.approx(6.534e9, rel=0.01)
+
+    def test_zero_coverage(self) -> None:
+        sqft = 100_000.0
+        coverage = 0.0
+        result = sqft * 0.0
+        assert result == 0.0
+
+    def test_negative_sqft(self) -> None:
+        sqft = -5000.0
+        coverage = 0.6
+        result = sqft * coverage
+        assert result < 0

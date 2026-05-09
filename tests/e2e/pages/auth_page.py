@@ -1,4 +1,5 @@
 """Page object for authentication pages."""
+
 from __future__ import annotations
 
 from typing import TYPE_CHECKING
@@ -32,7 +33,11 @@ class AuthPage(BasePage):
         # Try multiple selector strategies for username/password
         selectors = {
             "login": ["input[name=login]", "#id_login", "input[autocomplete=username]"],
-            "password": ["input[name=password]", "#id_password", "input[autocomplete=current-password]"],
+            "password": [
+                "input[name=password]",
+                "#id_password",
+                "input[autocomplete=current-password]",
+            ],
         }
 
         for field, candidates in selectors.items():
@@ -51,7 +56,9 @@ class AuthPage(BasePage):
         if submit.count() == 0:
             submit = self.page.get_by_role("button", name="Sign In")
         if submit.count() == 0:
-            msg = f"Could not find submit button.\n{self.dump_state('no submit button')}"
+            msg = (
+                f"Could not find submit button.\n{self.dump_state('no submit button')}"
+            )
             raise AssertionError(msg)
         submit.click()
 

@@ -116,7 +116,9 @@ def export_building_types(
         cursor.execute("SELECT COUNT(*) FROM public.workspace_buildingtype")
         row_count = cursor.fetchone()[0]
         if row_count == 0:
-            logger.warning("No BuildingType records found — export will produce an empty table.")
+            logger.warning(
+                "No BuildingType records found — export will produce an empty table."
+            )
 
         cols = _column_defs(BUILT_FORM_COLUMNS)
         source_table = "public.workspace_buildingtype"
@@ -178,9 +180,7 @@ def ensure_export_exists(
         exists = cursor.fetchone()[0] > 0
 
         if exists:
-            cursor.execute(
-                f'SELECT COUNT(*) FROM "{schema}"."{table}"'
-            )
+            cursor.execute(f'SELECT COUNT(*) FROM "{schema}"."{table}"')
             count = cursor.fetchone()[0]
             if count > 0:
                 logger.info(

@@ -7,7 +7,8 @@ out in a test table, runs the imputation cascade, and reports accuracy metrics.
 from __future__ import annotations
 
 import logging
-from dataclasses import dataclass, field
+from dataclasses import dataclass
+from dataclasses import field
 from typing import Any
 
 import numpy as np
@@ -21,14 +22,54 @@ logger = logging.getLogger(__name__)
 # has strategies to fill them. We test a representative subset.
 VALIDATION_COLUMNS: list[dict[str, Any]] = [
     # {v3_column, v1_column, strategy, description}
-    {"v3": "pop", "v1": "pop", "strategy": "direct", "description": "Population (direct observation)"},
-    {"v3": "hh", "v1": "hh", "strategy": "direct", "description": "Households (direct observation)"},
-    {"v3": "du", "v1": "du", "strategy": "direct", "description": "Dwelling units (direct observation)"},
-    {"v3": "emp", "v1": "emp", "strategy": "direct", "description": "Total employment (direct observation)"},
-    {"v3": "du_detsf_sl", "v1": "du_detsf_sl", "strategy": "direct", "description": "SF small lot DU (area-proportional)"},
-    {"v3": "emp_ret", "v1": "emp_ret", "strategy": "direct", "description": "Retail employment"},
-    {"v3": "bldg_area_detsf_sl", "v1": "bldg_sqft_detsf_sl", "strategy": "direct", "description": "SF small lot building area"},
-    {"v3": "bldg_area_retail_services", "v1": "bldg_sqft_retail_services", "strategy": "direct", "description": "Retail building area"},
+    {
+        "v3": "pop",
+        "v1": "pop",
+        "strategy": "direct",
+        "description": "Population (direct observation)",
+    },
+    {
+        "v3": "hh",
+        "v1": "hh",
+        "strategy": "direct",
+        "description": "Households (direct observation)",
+    },
+    {
+        "v3": "du",
+        "v1": "du",
+        "strategy": "direct",
+        "description": "Dwelling units (direct observation)",
+    },
+    {
+        "v3": "emp",
+        "v1": "emp",
+        "strategy": "direct",
+        "description": "Total employment (direct observation)",
+    },
+    {
+        "v3": "du_detsf_sl",
+        "v1": "du_detsf_sl",
+        "strategy": "direct",
+        "description": "SF small lot DU (area-proportional)",
+    },
+    {
+        "v3": "emp_ret",
+        "v1": "emp_ret",
+        "strategy": "direct",
+        "description": "Retail employment",
+    },
+    {
+        "v3": "bldg_area_detsf_sl",
+        "v1": "bldg_sqft_detsf_sl",
+        "strategy": "direct",
+        "description": "SF small lot building area",
+    },
+    {
+        "v3": "bldg_area_retail_services",
+        "v1": "bldg_sqft_retail_services",
+        "strategy": "direct",
+        "description": "Retail building area",
+    },
 ]
 
 
@@ -84,7 +125,9 @@ def validate_imputation(
         strategy = col_def["strategy"]
         description = col_def["description"]
 
-        logger.info("Validating %s (%s) via %s strategy...", v3_col, description, strategy)
+        logger.info(
+            "Validating %s (%s) via %s strategy...", v3_col, description, strategy
+        )
 
         result = _validate_column(
             q_view=q_view,
@@ -151,7 +194,12 @@ def _validate_column(
     # MAPE: mean absolute percentage error
     nonzero_mask = gt > 1e-10
     if np.any(nonzero_mask):
-        mape = float(np.mean(np.abs((gt[nonzero_mask] - imputed[nonzero_mask]) / gt[nonzero_mask]) * 100))
+        mape = float(
+            np.mean(
+                np.abs((gt[nonzero_mask] - imputed[nonzero_mask]) / gt[nonzero_mask])
+                * 100
+            )
+        )
     else:
         mape = 0.0
 
@@ -182,7 +230,9 @@ def print_validation_report(results: list[ValidationResult]) -> None:
     print("=" * 90)
     print("SACOG Imputation Validation Report")
     print("=" * 90)
-    print(f"{'Column':30s} {'Strategy':15s} {'MAE':>10s} {'RMSE':>10s} {'MAPE':>8s} {'Corr':>8s} {'Coverage':>10s}")
+    print(
+        f"{'Column':30s} {'Strategy':15s} {'MAE':>10s} {'RMSE':>10s} {'MAPE':>8s} {'Corr':>8s} {'Coverage':>10s}"
+    )
     print("-" * 90)
 
     for r in results:
@@ -194,7 +244,9 @@ def print_validation_report(results: list[ValidationResult]) -> None:
     print("-" * 90)
     avg_mae = np.mean([r.mae for r in results]) if results else 0
     avg_corr = np.mean([r.correlation for r in results]) if results else 0
-    print(f"{'AVERAGE':30s} {'':15s} {avg_mae:>10.4f} {'':>10s} {'':>8s} {avg_corr:>7.4f} {'':>10s}")
+    print(
+        f"{'AVERAGE':30s} {'':15s} {avg_mae:>10.4f} {'':>10s} {'':>8s} {avg_corr:>7.4f} {'':>10s}"
+    )
     print()
 
     # Note about results
@@ -210,7 +262,9 @@ def print_validation_report(results: list[ValidationResult]) -> None:
     print("These can be validated against aggregated census totals where available.")
 
 
-def run_validation_report(scenario_schema: str, base_canvas_view: str) -> list[ValidationResult]:
+def run_validation_report(
+    scenario_schema: str, base_canvas_view: str
+) -> list[ValidationResult]:
     """Run full validation and print report. Returns results for programmatic use."""
     results = validate_imputation(scenario_schema, base_canvas_view)
     print_validation_report(results)

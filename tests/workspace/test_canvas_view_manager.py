@@ -5,8 +5,8 @@ Requires a PostgreSQL+PostGIS database.
 """
 
 from __future__ import annotations
-import pytest
 
+import pytest
 from django.db import connection
 
 from brewgis.workspace.services.canvas_view_manager import create_canvas_view

@@ -1,4 +1,5 @@
 """Base Page Object with common helpers for e2e tests."""
+
 from __future__ import annotations
 
 from contextlib import suppress

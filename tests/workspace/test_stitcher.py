@@ -1,7 +1,6 @@
 """Tests for the column stitching / imputation service."""
-from __future__ import annotations
 
-import pytest
+from __future__ import annotations
 
 from brewgis.workspace.services.stitcher import impute_constant
 
@@ -14,10 +13,9 @@ class TestImputeConstant:
         # We can't easily test the database interaction without a DB,
         # but we can verify the return type and expected keys.
         # Full integration tests require a running PostGIS instance.
-        pass
 
     def test_impute_constant_contract(self) -> None:
-        """Verify the function signature and return contract."""
+        """Verify the return type is a dict with expected keys."""
         import inspect
 
         sig = inspect.signature(impute_constant)
@@ -27,8 +25,12 @@ class TestImputeConstant:
         assert "column" in params
         assert "value" in params
 
-        return_annotation = sig.return_annotation
-        assert "rows_updated" in str(return_annotation) or return_annotation is not None
+        # Verify return type hint is dict[str, Any] (not checking type hints only)
+        import typing
+        hints = typing.get_type_hints(impute_constant)
+        assert "return" in hints
+        return_hint = hints["return"]
+        assert "dict" in str(return_hint).lower() or "dict" in str(return_hint)  # type: ignore[union-attr]
 
 
 class TestImputeAreaProportional:
@@ -36,9 +38,9 @@ class TestImputeAreaProportional:
 
     def test_function_signature(self) -> None:
         """Verify the function accepts expected parameters."""
-        from brewgis.workspace.services.stitcher import impute_area_proportional
-
         import inspect
+
+        from brewgis.workspace.services.stitcher import impute_area_proportional
 
         sig = inspect.signature(impute_area_proportional)
         param_names = list(sig.parameters.keys())
@@ -55,9 +57,9 @@ class TestImputeBuiltFormDefault:
 
     def test_function_signature(self) -> None:
         """Verify the function accepts expected parameters."""
-        from brewgis.workspace.services.stitcher import impute_built_form_default
-
         import inspect
+
+        from brewgis.workspace.services.stitcher import impute_built_form_default
 
         sig = inspect.signature(impute_built_form_default)
         param_names = list(sig.parameters.keys())
@@ -72,11 +74,9 @@ class TestStitcherModule:
 
     def test_module_imports(self) -> None:
         """All public functions should be importable."""
-        from brewgis.workspace.services.stitcher import (
-            impute_area_proportional,
-            impute_built_form_default,
-            impute_constant,
-        )
+        from brewgis.workspace.services.stitcher import impute_area_proportional
+        from brewgis.workspace.services.stitcher import impute_built_form_default
+        from brewgis.workspace.services.stitcher import impute_constant
 
         assert callable(impute_constant)
         assert callable(impute_area_proportional)

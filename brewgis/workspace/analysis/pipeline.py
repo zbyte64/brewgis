@@ -20,11 +20,11 @@ import deal
 from django.utils import timezone
 
 from brewgis.workspace.analysis.layer_registry import register_result_layer
+from brewgis.workspace.analysis.module_registry import MODULE_DEPENDENCIES
+from brewgis.workspace.analysis.module_registry import get_module_label
+from brewgis.workspace.analysis.module_registry import get_result_table_names
+from brewgis.workspace.analysis.module_registry import get_vars_for_module
 from brewgis.workspace.analysis.module_registry import (
-    MODULE_DEPENDENCIES,
-    get_module_label,
-    get_result_table_names,
-    get_vars_for_module,
     resolve_module_order as _resolve_module_order,
 )
 from brewgis.workspace.tasks import handle_module_completed
@@ -35,6 +35,7 @@ logger = logging.getLogger(__name__)
 # All modules use the parameterized ``run_dbt_module`` task.
 MODULE_TASKS: dict[str, Any] = dict.fromkeys(MODULE_DEPENDENCIES, run_dbt_module)
 
+
 @deal.ensure(lambda module_names, result: set(result) == set(module_names))
 @deal.raises(ValueError)
 def resolve_module_order(module_names: list[str]) -> list[str]:
@@ -44,7 +45,6 @@ def resolve_module_order(module_names: list[str]) -> list[str]:
     implementation.
     """
     return _resolve_module_order(module_names)
-
 
 
 def _get_vars_for_module(module: str, base_vars: dict[str, Any]) -> dict[str, Any]:
@@ -106,7 +106,9 @@ def run_analysis_pipeline(
         The AnalysisRun instance (status: pending).
     """
     base_vars = vars_ or {}
-    scenario_id = base_vars.get("scenario_id", f"run_{timezone.now().strftime('%Y%m%d_%H%M%S')}")
+    scenario_id = base_vars.get(
+        "scenario_id", f"run_{timezone.now().strftime('%Y%m%d_%H%M%S')}"
+    )
     base_vars.setdefault("scenario_id", scenario_id)
 
     # Resolve execution order

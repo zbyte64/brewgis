@@ -1089,14 +1089,17 @@ class BaseCanvasSchema:
 # names, so we populate these after the class is fully defined.
 
 BaseCanvasSchema.SUMMABLE_COLUMNS = frozenset(
-    name for name in BaseCanvasSchema.COLUMN_NAMES
+    name
+    for name in BaseCanvasSchema.COLUMN_NAMES
     if name not in BaseCanvasSchema.STATIC_COLUMNS
 )
 BaseCanvasSchema.PAINTABLE_COLUMNS = frozenset(
-    name for name in BaseCanvasSchema.COLUMN_NAMES
+    name
+    for name in BaseCanvasSchema.COLUMN_NAMES
     if name not in BaseCanvasSchema.STATIC_COLUMNS
 )
 BaseCanvasSchema.NON_NULL_COLUMNS = frozenset(
-    name for name in BaseCanvasSchema.COLUMN_NAMES
+    name
+    for name in BaseCanvasSchema.COLUMN_NAMES
     if name not in {"id_source", "geometry_key", "built_form_key"}
 )

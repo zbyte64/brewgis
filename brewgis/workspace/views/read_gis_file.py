@@ -1,5 +1,5 @@
-import os
 import logging
+import os
 from io import BufferedReader
 
 import geopandas
@@ -20,6 +20,7 @@ from brewgis.workspace.services.staging_model import write_base_canvas_stub
 from brewgis.workspace.services.staging_model import write_parcel_staging
 
 logger = logging.getLogger(__name__)
+
 
 class ImportGISFileForm(forms.Form):
     file = forms.FileField(required=True)

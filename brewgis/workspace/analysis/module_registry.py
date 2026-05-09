@@ -141,6 +141,8 @@ def get_vars_for_module(module: str, base_vars: dict[str, Any]) -> dict[str, Any
         scenario_id = base_vars.get("scenario_id", "default")
         if "env_constraint" in base_vars.get("completed_modules", []):
             target_schema = base_vars.get("target_schema", "public")
-            vars_["constraints_output"] = f"{target_schema}.env_constraint_{scenario_id}"
+            vars_["constraints_output"] = (
+                f"{target_schema}.env_constraint_{scenario_id}"
+            )
 
     return vars_

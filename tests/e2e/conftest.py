@@ -1,4 +1,5 @@
 """Playwright + Django live_server fixtures for e2e tests."""
+
 from __future__ import annotations
 
 import os
@@ -16,8 +17,12 @@ from tests.factories import UserFactory
 # Allow synchronous DB access from Playwright's async event loop
 os.environ.setdefault("DJANGO_ALLOW_ASYNC_UNSAFE", "true")
 # Enforce single worker for e2e tests — multiple browser instances cause memory exhaustion.
-if os.environ.get("PYTEST_XDIST_WORKER") and os.environ.get("E2E_WORKERS", "1") != "auto":
+if (
+    os.environ.get("PYTEST_XDIST_WORKER")
+    and os.environ.get("E2E_WORKERS", "1") != "auto"
+):
     import warnings
+
     warnings.warn(
         "E2E tests should run with a single worker (-n 0). "
         "Use `make test-e2e` which sets this automatically.",
@@ -37,6 +42,7 @@ if TYPE_CHECKING:
 
 # ── CLI options ────────────────────────────────────────────────────────
 
+
 def pytest_addoption(parser) -> None:
     parser.addoption(
         "--e2e-debug",
@@ -44,6 +50,7 @@ def pytest_addoption(parser) -> None:
         default=False,
         help="Run E2E tests in headed (visible) browser mode",
     )
+
 
 # Override ALLOWED_HOSTS so Playwright can connect via Docker network
 @pytest.fixture(scope="session", autouse=True)
@@ -185,6 +192,7 @@ def pytest_runtest_makereport(item, call) -> None:
                 snapshot = page.accessibility.snapshot()
                 if snapshot:
                     elements = []
+
                     def flatten(node: dict, depth: int = 0) -> None:
                         role = node.get("role", "?")
                         name = node.get("name", "")
@@ -192,6 +200,7 @@ def pytest_runtest_makereport(item, call) -> None:
                             elements.append("  " * depth + f"[{role}] {name}"[:200])
                         for c in node.get("children", []):
                             flatten(c, depth + 1)
+
                     flatten(snapshot)
                     dom_path = sd / "dom_tree.txt"
                     dom_path.write_text("\n".join(elements))
@@ -201,4 +210,3 @@ def pytest_runtest_makereport(item, call) -> None:
             print(f"   Screenshot: {screenshot_path}", file=sys.stderr)  # noqa: T201
             print(f"   DOM tree:   {sd / 'dom_tree.txt'}", file=sys.stderr)  # noqa: T201
             print("===========================================\n", file=sys.stderr)  # noqa: T201
-

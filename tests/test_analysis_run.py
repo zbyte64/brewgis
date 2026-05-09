@@ -1,18 +1,17 @@
-# ruff: noqa: ANN001
 """Tests for the AnalysisRun model."""
-from __future__ import annotations
 
-import pytest
+from __future__ import annotations
 
 from datetime import timedelta
 
+import pytest
 from django.test import TestCase
 from django.utils import timezone
+
+from brewgis.workspace.models import AnalysisRun
 from tests.factories import AnalysisRunFactory
 from tests.factories import ScenarioFactory
 from tests.factories import WorkspaceFactory
-
-from brewgis.workspace.models import AnalysisRun
 
 
 @pytest.mark.integration
@@ -32,9 +31,7 @@ class TestAnalysisRunModel(TestCase):
 
     def test_str_default(self) -> None:
         """__str__ should return format with pk, status, and modules."""
-        expected = (
-            f"AnalysisRun #{self.run.pk} [pending] (env_constraint, core)"
-        )
+        expected = f"AnalysisRun #{self.run.pk} [pending] (env_constraint, core)"
         self.assertEqual(str(self.run), expected)
 
     def test_str_empty_modules(self) -> None:
@@ -129,7 +126,11 @@ class TestAnalysisRunModel(TestCase):
         run = AnalysisRun.objects.get(pk=self.run.pk)
         self.assertEqual(
             run.vars,
-            {"target_year": 2040, "scenario": "aggressive", "tags": ["growth", "infill"]},
+            {
+                "target_year": 2040,
+                "scenario": "aggressive",
+                "tags": ["growth", "infill"],
+            },
         )
 
     def test_vars_defaults_to_empty_dict(self) -> None:
@@ -163,6 +164,7 @@ class TestAnalysisRunModel(TestCase):
         run = AnalysisRun.objects.create(workspace=self.workspace)
         self.assertIsNone(run.scenario)
 
+
 @pytest.mark.integration
 class TestPipelineCrossModuleRefs(TestCase):
     """Tests for cross-module variable resolution in the analysis pipeline."""
@@ -189,7 +191,9 @@ class TestPipelineCrossModuleRefs(TestCase):
         assert constraints_output is not None, (
             "constraints_output should be set when env_constraint is completed"
         )
-        assert constraints_output == "scenario_test-scenario.env_constraint_test-scenario", (
+        assert (
+            constraints_output == "scenario_test-scenario.env_constraint_test-scenario"
+        ), (
             f"Expected 'scenario_test-scenario.env_constraint_test-scenario', "
             f"got '{constraints_output}'"
         )
@@ -227,6 +231,8 @@ class TestPipelineCrossModuleRefs(TestCase):
         assert constraints_output == "public.env_constraint_test-scenario", (
             f"Expected 'public.env_constraint_test-scenario', got '{constraints_output}'"
         )
+
+
 @pytest.mark.integration
 class TestNewModuleResolution(TestCase):
     """Tests for resolution of new Phase 3 modules in the analysis pipeline."""
@@ -270,22 +276,30 @@ class TestNewModuleResolution(TestCase):
         """All modules together should resolve in correct dependency order."""
         from brewgis.workspace.analysis.pipeline import resolve_module_order
 
-        ordered = resolve_module_order([
-            "env_constraint",
-            "core",
-            "water_demand",
-            "energy_demand",
-            "land_consumption",
-            "fiscal",
-            "agriculture",
-        ])
+        ordered = resolve_module_order(
+            [
+                "env_constraint",
+                "core",
+                "water_demand",
+                "energy_demand",
+                "land_consumption",
+                "fiscal",
+                "agriculture",
+            ]
+        )
         # env_constraint must be first
         assert ordered[0] == "env_constraint"
         # core must be after env_constraint
         assert ordered.index("env_constraint") < ordered.index("core")
         # All new modules must be after core
         core_idx = ordered.index("core")
-        for mod in ["water_demand", "energy_demand", "land_consumption", "fiscal", "agriculture"]:
+        for mod in [
+            "water_demand",
+            "energy_demand",
+            "land_consumption",
+            "fiscal",
+            "agriculture",
+        ]:
             assert ordered.index(mod) > core_idx, (
                 f"{mod} should run after core, got {ordered}"
             )
@@ -303,48 +317,63 @@ class TestNewModuleResolution(TestCase):
         """trip_generation requires core in its dependency chain."""
         from brewgis.workspace.analysis.pipeline import resolve_module_order
 
-        ordered = resolve_module_order([
-            "env_constraint", "core", "trip_generation"
-        ])
+        ordered = resolve_module_order(["env_constraint", "core", "trip_generation"])
         assert ordered.index("core") < ordered.index("trip_generation")
 
     def test_trip_distribution_depends_on_trip_generation(self) -> None:
         """trip_distribution requires trip_generation in its chain."""
         from brewgis.workspace.analysis.pipeline import resolve_module_order
 
-        ordered = resolve_module_order([
-            "env_constraint", "core", "trip_generation", "trip_distribution"
-        ])
+        ordered = resolve_module_order(
+            ["env_constraint", "core", "trip_generation", "trip_distribution"]
+        )
         assert ordered.index("trip_generation") < ordered.index("trip_distribution")
 
     def test_mode_choice_depends_on_trip_distribution(self) -> None:
         """mode_choice requires trip_distribution in its chain."""
         from brewgis.workspace.analysis.pipeline import resolve_module_order
 
-        ordered = resolve_module_order([
-            "env_constraint", "core", "trip_generation",
-            "trip_distribution", "mode_choice",
-        ])
+        ordered = resolve_module_order(
+            [
+                "env_constraint",
+                "core",
+                "trip_generation",
+                "trip_distribution",
+                "mode_choice",
+            ]
+        )
         assert ordered.index("trip_distribution") < ordered.index("mode_choice")
 
     def test_vmt_depends_on_mode_choice(self) -> None:
         """vmt requires mode_choice in its chain."""
         from brewgis.workspace.analysis.pipeline import resolve_module_order
 
-        ordered = resolve_module_order([
-            "env_constraint", "core", "trip_generation",
-            "trip_distribution", "mode_choice", "vmt",
-        ])
+        ordered = resolve_module_order(
+            [
+                "env_constraint",
+                "core",
+                "trip_generation",
+                "trip_distribution",
+                "mode_choice",
+                "vmt",
+            ]
+        )
         assert ordered.index("mode_choice") < ordered.index("vmt")
 
     def test_full_pipeline_ordering(self) -> None:
         """All modules resolve correctly: core → trip_generation → trip_distribution → mode_choice → vmt."""
         from brewgis.workspace.analysis.pipeline import resolve_module_order
 
-        ordered = resolve_module_order([
-            "env_constraint", "core", "trip_generation",
-            "trip_distribution", "mode_choice", "vmt",
-        ])
+        ordered = resolve_module_order(
+            [
+                "env_constraint",
+                "core",
+                "trip_generation",
+                "trip_distribution",
+                "mode_choice",
+                "vmt",
+            ]
+        )
         core_idx = ordered.index("core")
         tg_idx = ordered.index("trip_generation")
         td_idx = ordered.index("trip_distribution")

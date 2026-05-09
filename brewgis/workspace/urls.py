@@ -6,11 +6,12 @@ from .views import allocate
 from .views import analysis_launch
 from .views import analysis_list
 from .views import analysis_status
-from .views import check_prerequisites
 from .views import auto_generate
 from .views import census_fetch
 from .views import census_preview
+from .views import check_prerequisites
 from .views import clear_paint
+from .views import county_options
 from .views import edit_symbology
 from .views import employment_fetch
 from .views import employment_preview
@@ -21,12 +22,11 @@ from .views import merge_paint_edits
 from .views import paint_built_form
 from .views import paint_features
 from .views import paint_history
-from .views import undo_paint
 from .views import poi_fetch
 from .views import preview_symbology
 from .views import stitch
+from .views import undo_paint
 from .views import view_workspace_map
-from .views import county_options
 from .views import workspace_create
 from .views import workspace_detail
 from .views.built_forms import (

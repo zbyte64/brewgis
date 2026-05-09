@@ -1,29 +1,35 @@
 """Views for launching and monitoring analysis pipeline runs."""
+
 from __future__ import annotations
+
 import json
 
-from django.db import connection
 from django import forms
 from django.contrib.auth.decorators import user_passes_test
+from django.db import connection
 from django.http import HttpRequest
 from django.http import HttpResponse
 from django.shortcuts import get_object_or_404
 from django.shortcuts import render
 from django.template.loader import render_to_string
 from django.utils.decorators import method_decorator
-from django.views.generic.edit import FormView
 from django.views.decorators.http import require_POST
+from django.views.generic.edit import FormView
 
 from brewgis.workspace.analysis.pipeline import run_analysis_pipeline
 from brewgis.workspace.models import AnalysisRun
 from brewgis.workspace.models import Workspace
 from brewgis.workspace.services.preflight import check_analysis_prerequisites
 
-_CONSTRAINTS_INITIAL = json.dumps([
-    {"table": "floodplains", "discount_pct": 100, "geom_col": "geom"},
-    {"table": "wetlands", "discount_pct": 100, "geom_col": "geom"},
-    {"table": "steep_slopes", "discount_pct": 75, "geom_col": "geom"},
-], indent=2)
+_CONSTRAINTS_INITIAL = json.dumps(
+    [
+        {"table": "floodplains", "discount_pct": 100, "geom_col": "geom"},
+        {"table": "wetlands", "discount_pct": 100, "geom_col": "geom"},
+        {"table": "steep_slopes", "discount_pct": 75, "geom_col": "geom"},
+    ],
+    indent=2,
+)
+
 
 def _discover_geom_tables(schema: str) -> list[tuple[str, str]]:
     """Discover tables in *schema* that have a geometry column.
@@ -46,6 +52,7 @@ def _discover_geom_tables(schema: str) -> list[tuple[str, str]]:
         return [(row[0], row[0]) for row in cursor.fetchall()]
     # fallback
     return []
+
 
 class AnalysisLaunchForm(forms.Form):
     """Form to configure and launch an analysis pipeline run."""
@@ -108,23 +115,27 @@ class AnalysisLaunchForm(forms.Form):
                 self.fields["parcel_table"].widget = forms.widgets.Select(
                     choices=[("", "--- Select a table ---")] + choices,
                 )
-                self.fields["parcel_table"].help_text = (
+                self.fields[
+                    "parcel_table"
+                ].help_text = (
                     "Select a table from the workspace schema or type a custom name."
                 )
                 # Default base_canvas_table to the first detected staging stub
                 default_stub = f"stage_{choices[0][0]}_base_canvas"
                 self.fields["base_canvas_table"].initial = default_stub
-                self.fields["base_canvas_table"].help_text = (
-                    "Auto-detected staging stub. Change to a real base canvas if available."
-                )
+                self.fields[
+                    "base_canvas_table"
+                ].help_text = "Auto-detected staging stub. Change to a real base canvas if available."
 
     # Constraint layers (repeating group — simplified with JSON field)
     constraints_json = forms.CharField(
-        widget=forms.Textarea(attrs={"rows": 6, "class": "form-control font-monospace"}),
+        widget=forms.Textarea(
+            attrs={"rows": 6, "class": "form-control font-monospace"}
+        ),
         required=False,
         label="Constraints Configuration (JSON)",
         help_text=(
-            'JSON array of constraint layer definitions. '
+            "JSON array of constraint layer definitions. "
             'Example: [{"table": "floodplains", "discount_pct": 100}]'
         ),
         initial=_CONSTRAINTS_INITIAL,
@@ -186,6 +197,7 @@ class AnalysisLaunchForm(forms.Form):
                 self.add_error(first.field, first.message)
 
         return data
+
 
 @method_decorator(user_passes_test(lambda u: u.is_authenticated), name="dispatch")
 class AnalysisLaunchView(FormView):
@@ -265,6 +277,7 @@ def analysis_list(request: HttpRequest) -> HttpResponse:
         {"runs": runs},
     )
 
+
 @require_POST
 def check_prerequisites(request: HttpRequest) -> HttpResponse:
     """htmx endpoint: run preflight validation and render results inline."""
@@ -289,14 +302,9 @@ def check_prerequisites(request: HttpRequest) -> HttpResponse:
     )
 
     if not errors:
-        html = (
-            "<div class='alert alert-success'>"
-            "All prerequisites met.&#8203;</div>"
-        )
+        html = "<div class='alert alert-success'>All prerequisites met.&#8203;</div>"
     else:
-        items = "".join(
-            f"<li>{e.message}</li>" for e in errors
-        )
+        items = "".join(f"<li>{e.message}</li>" for e in errors)
         html = (
             f"<div class='alert alert-danger'>"
             f"<strong>Prerequisites check failed:</strong>"

@@ -6,10 +6,9 @@ and appropriate distributions of land use categories.
 
 from __future__ import annotations
 
-import pytest
 from shapely.geometry import Polygon
-from brewgis.workspace.services.base_canvas_schema import BaseCanvasSchema
 
+from brewgis.workspace.services.base_canvas_schema import BaseCanvasSchema
 from brewgis.workspace.services.synthetic_parcel_generator import (
     generate_synthetic_parcels,
 )
@@ -71,8 +70,14 @@ class TestSyntheticParcelGenerator:
         """land_development_category should be one of the known values."""
         gdf = generate_synthetic_parcels(100, seed=42)
         known_categories = {
-            "urban", "suburban", "rural_residential", "commercial",
-            "industrial", "agricultural", "park", "vacant",
+            "urban",
+            "suburban",
+            "rural_residential",
+            "commercial",
+            "industrial",
+            "agricultural",
+            "park",
+            "vacant",
         }
         actual = set(gdf["land_development_category"].unique())
         assert actual.issubset(known_categories)
@@ -93,7 +98,6 @@ class TestSyntheticParcelGenerator:
 
     def test_all_schema_columns_present(self) -> None:
         """Should include all base canvas schema columns."""
-
 
         gdf = generate_synthetic_parcels(10, seed=42)
         schema_cols = set(BaseCanvasSchema.COLUMN_NAMES)

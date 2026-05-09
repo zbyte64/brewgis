@@ -1,9 +1,12 @@
 """Tests for the trip_distribution dbt Python model (gravity model logic)."""
+
 from __future__ import annotations
 
 import numpy as np
 import pytest
-from hypothesis import assume, given, strategies as st
+from hypothesis import assume
+from hypothesis import given
+from hypothesis import strategies as st
 
 from brewgis.dbt_project.models.trip_distribution import _gravity_model
 
@@ -65,11 +68,13 @@ class TestTripDistributionModel:
         """Denominator sums attract * impedance over destinations."""
         n = 3
         attractiveness = np.array([1.0, 2.0, 3.0])
-        dists = np.array([
-            [0.0, 1.0, 2.0],
-            [1.0, 0.0, 3.0],
-            [2.0, 3.0, 0.0],
-        ])
+        dists = np.array(
+            [
+                [0.0, 1.0, 2.0],
+                [1.0, 0.0, 3.0],
+                [2.0, 3.0, 0.0],
+            ]
+        )
         b = 2.0
         with np.errstate(divide="ignore", invalid="ignore"):
             impedance = np.where(dists > 0, dists ** (-b), 0.0)
@@ -141,24 +146,39 @@ _ARRAY_2_5 = st.integers(min_value=2, max_value=5)
 _GRAVITY_ARRAYS = _ARRAY_2_5.flatmap(
     lambda n: st.tuples(
         st.lists(
-            st.floats(min_value=0, max_value=5000, allow_nan=False, allow_infinity=False),
-            min_size=n, max_size=n,
+            st.floats(
+                min_value=0, max_value=5000, allow_nan=False, allow_infinity=False
+            ),
+            min_size=n,
+            max_size=n,
         ).map(np.array),
         st.lists(
-            st.floats(min_value=0, max_value=100_000, allow_nan=False, allow_infinity=False),
-            min_size=n, max_size=n,
+            st.floats(
+                min_value=0, max_value=100_000, allow_nan=False, allow_infinity=False
+            ),
+            min_size=n,
+            max_size=n,
         ).map(np.array),
         st.lists(
-            st.floats(min_value=0, max_value=100_000, allow_nan=False, allow_infinity=False),
-            min_size=n, max_size=n,
+            st.floats(
+                min_value=0, max_value=100_000, allow_nan=False, allow_infinity=False
+            ),
+            min_size=n,
+            max_size=n,
         ).map(np.array),
         st.lists(
-            st.floats(min_value=0, max_value=10_000, allow_nan=False, allow_infinity=False),
-            min_size=n, max_size=n,
+            st.floats(
+                min_value=0, max_value=10_000, allow_nan=False, allow_infinity=False
+            ),
+            min_size=n,
+            max_size=n,
         ).map(np.array),
         st.lists(
-            st.floats(min_value=0, max_value=10_000, allow_nan=False, allow_infinity=False),
-            min_size=n, max_size=n,
+            st.floats(
+                min_value=0, max_value=10_000, allow_nan=False, allow_infinity=False
+            ),
+            min_size=n,
+            max_size=n,
         ).map(np.array),
     )
 )
@@ -239,7 +259,7 @@ def test_gravity_model_empty_input(
     arrays: tuple[np.ndarray, np.ndarray, np.ndarray, np.ndarray, np.ndarray],
 ) -> None:
     """Empty input should return empty arrays."""
-    _trips, _xs, _ys, _emp, _du = arrays  # noqa: F841 — verify strategy produces arrays
+    _trips, _xs, _ys, _emp, _du = arrays
     empty = np.array([], dtype=float)
     tb, ib, it, al = _gravity_model(empty, empty, empty, empty, empty)
     assert len(tb) == 0

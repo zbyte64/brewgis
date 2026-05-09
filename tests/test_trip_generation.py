@@ -69,6 +69,14 @@ class TestTripGenerationTemplate(DbtModelTemplateTest):
     def test_has_input_columns(self, sql_template: str, col: str) -> None:
         assert col in sql_template
 
+    def test_uses_ref_for_dependency(self, sql_template: str) -> None:
+        """Verify the template refs the core_end_state dependency."""
+        assert "{{ ref('core_end_state') }}" in sql_template
+
+    def test_no_hardcoded_schema_names(self, sql_template: str) -> None:
+        """Verify the template avoids hardcoded schema references."""
+        assert all(h not in sql_template for h in ["public.", ' "schema"'])
+
 
 @pytest.mark.integration
 class TestTripGenerationFormula:
@@ -142,3 +150,24 @@ class TestTripGenerationFormula:
         nonres = (sqft / 1000.0) * rate
         assert res == 0.0
         assert nonres > 0
+
+    def test_large_employment(self) -> None:
+        """Verify calculation with large employment values."""
+        emp = 1e6
+        emp_rate = 4.0
+        result = emp * emp_rate
+        assert result == pytest.approx(4e6)
+
+    def test_zero_res_rate(self) -> None:
+        """Verify calculation with zero residential rate."""
+        du = 100.0
+        res_rate = 0.0
+        result = du * res_rate
+        assert result == 0.0
+
+    def test_negative_dwelling_units(self) -> None:
+        """Verify calculation with negative dwelling units stays negative."""
+        du = -100.0
+        res_rate = 4.0
+        result = du * res_rate
+        assert result < 0

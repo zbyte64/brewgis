@@ -1,4 +1,5 @@
 """Template tags and filters for the workspace app."""
+
 from __future__ import annotations
 
 from django import template
@@ -16,6 +17,8 @@ def model_verbose_name(model_class: type) -> str:
     template engine forbids for attributes starting with underscore.
     """
     return model_class._meta.verbose_name  # noqa: SLF001
+
+
 @register.filter
 def analysis_status_badge(status: str) -> str:
     """Return a Bootstrap badge class for an analysis run status."""

@@ -133,10 +133,7 @@ class TestPaintEventModel:
             operation_type="paint",
             batch_id="batch-007",
         )
-        expected = (
-            f"PaintEvent[{scenario.pk}](Paint: "
-            f"parcel-001.du 100.0→150.0)"
-        )
+        expected = f"PaintEvent[{scenario.pk}](Paint: parcel-001.du 100.0→150.0)"
         assert str(event) == expected
 
     def test_scenario_delete_cascades(self, db, scenario, user):
@@ -359,6 +356,15 @@ class TestPaintHistoryView(TestCase):
         data = response.json()
         assert data["events"][0]["undone_at"] is not None
 
+    def test_get_no_scenario(self) -> None:
+        """Get history for a non-existent scenario PK returns 404."""
+        bad_url = reverse(
+            HISTORY_URL_NAME,
+            args=[self.workspace.pk, 99999],
+        )
+        response = self.client.get(bad_url)
+        assert response.status_code == 404
+
 
 # ── Undo Paint View Tests ───────────────────────────────────────
 
@@ -400,9 +406,13 @@ class TestUndoPaintView(TestCase):
             content_type="application/json",
         )
         # Get the event for the second paint
-        event = PaintEvent.objects.filter(
-            scenario=self.scenario, feature_id="p1", column_name="du"
-        ).order_by("-painted_at").first()
+        event = (
+            PaintEvent.objects.filter(
+                scenario=self.scenario, feature_id="p1", column_name="du"
+            )
+            .order_by("-painted_at")
+            .first()
+        )
         assert event.old_value == 100.0
         assert event.new_value == 200.0
 
@@ -508,9 +518,7 @@ class TestUndoPaintView(TestCase):
         )
 
         # Get the batch_id from either event
-        batch_id = PaintEvent.objects.filter(
-            scenario=self.scenario
-        ).first().batch_id
+        batch_id = PaintEvent.objects.filter(scenario=self.scenario).first().batch_id
 
         # Undo by batch_id
         response = self.client.post(
@@ -572,3 +580,29 @@ class TestUndoPaintView(TestCase):
             content_type="application/json",
         )
         assert response.status_code == 400
+
+    def test_undo_no_scenario(self) -> None:
+        """Post undo for a non-existent scenario PK returns 404."""
+        bad_url = reverse(
+            UNDO_URL_NAME,
+            args=[self.workspace.pk, 99999],
+        )
+        response = self.client.post(
+            bad_url,
+            json.dumps({"event_id": 1}),
+            content_type="application/json",
+        )
+        assert response.status_code == 404
+
+    def test_undo_no_workspace(self) -> None:
+        """Post undo for a non-existent workspace PK returns 404."""
+        bad_url = reverse(
+            UNDO_URL_NAME,
+            args=[99999, self.scenario.pk],
+        )
+        response = self.client.post(
+            bad_url,
+            json.dumps({"event_id": 1}),
+            content_type="application/json",
+        )
+        assert response.status_code == 404

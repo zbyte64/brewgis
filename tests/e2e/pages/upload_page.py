@@ -1,4 +1,5 @@
 """Page object for the GIS file upload page."""
+
 from __future__ import annotations
 
 from typing import TYPE_CHECKING

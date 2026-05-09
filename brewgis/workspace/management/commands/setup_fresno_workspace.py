@@ -164,18 +164,20 @@ class Command(BaseCommand):
             steps.append(("Ingest constraint layers", self._ingest_constraints, ()))
 
         if step in ("all", "allocate"):
-            steps.append(
-                ("Spatial allocation (Census", self._allocate_census, ())
-            )
-            steps.append(
-                ("Spatial allocation (LEHD", self._allocate_lehd, ())
-            )
+            steps.append(("Spatial allocation (Census", self._allocate_census, ()))
+            steps.append(("Spatial allocation (LEHD", self._allocate_lehd, ()))
 
         if step in ("all", "stitch"):
             steps.append(("Column stitching", self._stitch_columns, ()))
         if step in ("all", "built_forms"):
             steps.append(("Export building types", self._export_built_forms, ()))
-            steps.append(("Assign built forms and density", self._assign_built_forms_and_density, ()))
+            steps.append(
+                (
+                    "Assign built forms and density",
+                    self._assign_built_forms_and_density,
+                    (),
+                )
+            )
 
         if step in ("all", "scenario"):
             steps.append(("Create base scenario", self._create_base_scenario, ()))
@@ -184,10 +186,14 @@ class Command(BaseCommand):
             steps.append(("Run dbt analysis pipeline", self._run_analysis, ()))
 
         # Mark non-critical steps that should not crash the pipeline
-        nonfatal_labels = {"Import LEHD employment", "Import POIs",
-                           "Ingest constraint layers", "Spatial allocation (LEHD",
-                           "Spatial allocation (Census",
-                           "Ingest city boundary"}
+        nonfatal_labels = {
+            "Import LEHD employment",
+            "Import POIs",
+            "Ingest constraint layers",
+            "Spatial allocation (LEHD",
+            "Spatial allocation (Census",
+            "Ingest city boundary",
+        }
 
         for label, fn, args in steps:
             if any(label.startswith(nf) for nf in nonfatal_labels):
@@ -200,9 +206,9 @@ class Command(BaseCommand):
     # -- helpers ----------------------------------------------------------
 
     def _run_step(self, label: str, fn: Any, *args: Any) -> Any:
-        self.stdout.write(f"\n{'─'*60}")
+        self.stdout.write(f"\n{'─' * 60}")
         self.stdout.write(f"Step: {label}")
-        self.stdout.write(f"{'─'*60}")
+        self.stdout.write(f"{'─' * 60}")
         if self.dry_run:
             self.stdout.write(f"  [DRY RUN] Would execute: {fn.__name__}")
             return None
@@ -216,9 +222,9 @@ class Command(BaseCommand):
 
     def _run_step_nonfatal(self, label: str, fn: Any, *args: Any) -> Any:
         """Run a step; on failure log warning but do not crash."""
-        self.stdout.write(f"\n{'─'*60}")
+        self.stdout.write(f"\n{'─' * 60}")
         self.stdout.write(f"Step: {label}")
-        self.stdout.write(f"{'─'*60}")
+        self.stdout.write(f"{'─' * 60}")
         if self.dry_run:
             self.stdout.write(f"  [DRY RUN] Would execute: {fn.__name__}")
             return None
@@ -281,7 +287,9 @@ class Command(BaseCommand):
         if df.crs is None or df.crs.to_string() != "EPSG:4326":
             df = df.to_crs("EPSG:4326")
         engine = create_engine(self._get_db_url())
-        df.to_postgis(table, engine, schema=schema, if_exists="replace", chunksize=50000)
+        df.to_postgis(
+            table, engine, schema=schema, if_exists="replace", chunksize=50000
+        )
         engine.dispose()
 
     def _register_layer(
@@ -320,7 +328,9 @@ class Command(BaseCommand):
     def _create_workspace(self) -> Workspace:
         self._create_db_schema(WORKSPACE_SCHEMA)
         workspace = self._get_workspace()
-        self.stdout.write(f"  Workspace: {workspace.name} (schema: {workspace.db_schema})")
+        self.stdout.write(
+            f"  Workspace: {workspace.name} (schema: {workspace.db_schema})"
+        )
 
         from brewgis.workspace.built_forms.models import BuildingType
 
@@ -340,7 +350,9 @@ class Command(BaseCommand):
         workspace = self._get_workspace()
         df = self._read_geojson("fresno_parcels.geojson")
         self._write_to_postgis(df, "fresno_parcels", WORKSPACE_SCHEMA)
-        self._register_layer("fresno_parcels", "Fresno County Parcels", workspace, "fill")
+        self._register_layer(
+            "fresno_parcels", "Fresno County Parcels", workspace, "fill"
+        )
         count = len(df)
         self.stdout.write(f"  Ingested {count} parcels")
         return count
@@ -429,7 +441,9 @@ class Command(BaseCommand):
         for filename, target_table in constraint_files.items():
             filepath = CACHE_DIR / filename
             if not filepath.exists():
-                self.stdout.write(f"  [SKIP] {filename} not cached; skipping {target_table}")
+                self.stdout.write(
+                    f"  [SKIP] {filename} not cached; skipping {target_table}"
+                )
                 continue
 
             self.stdout.write(f"  Ingesting {filename} -> {target_table}...")
@@ -474,9 +488,13 @@ class Command(BaseCommand):
             self.stdout.write("  [SKIP] Census table does not exist")
             return {"success": False, "error": "Census table missing"}
 
-        numeric_cols = self._get_numeric_columns(census_table, exclusions=("id", "geoid", "statefp", "countyfp"))
+        numeric_cols = self._get_numeric_columns(
+            census_table, exclusions=("id", "geoid", "statefp", "countyfp")
+        )
 
-        self.stdout.write(f"  Allocating {len(numeric_cols)} columns from {census_table}...")
+        self.stdout.write(
+            f"  Allocating {len(numeric_cols)} columns from {census_table}..."
+        )
         result = allocate_attributes(
             source_schema=WORKSPACE_SCHEMA,
             source_table=census_table,
@@ -495,9 +513,13 @@ class Command(BaseCommand):
             self.stdout.write("  [SKIP] LEHD table does not exist")
             return {"success": False, "error": "LEHD table missing"}
 
-        numeric_cols = self._get_numeric_columns(lehd_table, exclusions=("id", "geoid", "statefp", "countyfp"))
+        numeric_cols = self._get_numeric_columns(
+            lehd_table, exclusions=("id", "geoid", "statefp", "countyfp")
+        )
 
-        self.stdout.write(f"  Allocating {len(numeric_cols)} columns from {lehd_table}...")
+        self.stdout.write(
+            f"  Allocating {len(numeric_cols)} columns from {lehd_table}..."
+        )
         result = allocate_attributes(
             source_schema=WORKSPACE_SCHEMA,
             source_table=lehd_table,
@@ -592,7 +614,9 @@ class Command(BaseCommand):
 
         all_bts = list(BuildingType.objects.all().order_by("pk"))
         if not all_bts:
-            self.stdout.write("  [SKIP] No BuildingTypes loaded; skipping built form assignment")
+            self.stdout.write(
+                "  [SKIP] No BuildingTypes loaded; skipping built form assignment"
+            )
             return 0
 
         self.stdout.write(f"  Assigning built forms from {len(all_bts)} types...")
@@ -670,7 +694,9 @@ class Command(BaseCommand):
             )
             row = cursor.fetchone()
             if row:
-                self.stdout.write(f"    intersection_density: min={row[0]:.1f} avg={row[1]:.1f} max={row[2]:.1f}")
+                self.stdout.write(
+                    f"    intersection_density: min={row[0]:.1f} avg={row[1]:.1f} max={row[2]:.1f}"
+                )
 
         return len(rows)
 
@@ -689,14 +715,18 @@ class Command(BaseCommand):
             },
         )
         if created:
-            self.stdout.write(f"  Created scenario: {scenario.name} (slug: {scenario.slug})")
+            self.stdout.write(
+                f"  Created scenario: {scenario.name} (slug: {scenario.slug})"
+            )
         else:
             self.stdout.write(f"  Scenario already exists: {scenario.name}")
         return scenario
 
     def _export_built_forms(self) -> int:
         count = export_building_types(schema=WORKSPACE_SCHEMA, table="built_forms")
-        self.stdout.write(f"  Exported {count} building types to {WORKSPACE_SCHEMA}.built_forms")
+        self.stdout.write(
+            f"  Exported {count} building types to {WORKSPACE_SCHEMA}.built_forms"
+        )
         return count
 
     def _run_analysis(self) -> list[dict[str, Any]]:  # noqa: PLR0915
@@ -707,8 +737,16 @@ class Command(BaseCommand):
             workspace=workspace,
             scenario=scenario,
             status="running",
-            modules=["env_constraint", "core", "water_demand", "energy_demand",
-                     "trip_generation", "trip_distribution", "mode_choice", "vmt"],
+            modules=[
+                "env_constraint",
+                "core",
+                "water_demand",
+                "energy_demand",
+                "trip_generation",
+                "trip_distribution",
+                "mode_choice",
+                "vmt",
+            ],
         )
 
         dbt_vars = dict(DBT_VARS_TEMPLATE)
@@ -742,7 +780,9 @@ class Command(BaseCommand):
             )
             self.stdout.write("  env_constraint complete")
         else:
-            self.stderr.write(self.style.ERROR(f"  env_constraint failed: {dbt_result.error}"))
+            self.stderr.write(
+                self.style.ERROR(f"  env_constraint failed: {dbt_result.error}")
+            )
             run.status = "failed"
             run.save(update_fields=["status"])
             return results
@@ -770,7 +810,9 @@ class Command(BaseCommand):
                 )
             self.stdout.write("  core module complete")
         else:
-            self.stderr.write(self.style.ERROR(f"  core module failed: {dbt_result.error}"))
+            self.stderr.write(
+                self.style.ERROR(f"  core module failed: {dbt_result.error}")
+            )
             run.status = "failed"
             run.save(update_fields=["status"])
             return results
@@ -797,7 +839,9 @@ class Command(BaseCommand):
             )
             self.stdout.write("  water_demand complete")
         else:
-            self.stderr.write(self.style.ERROR(f"  water_demand failed: {dbt_result.error}"))
+            self.stderr.write(
+                self.style.ERROR(f"  water_demand failed: {dbt_result.error}")
+            )
 
         # 4. energy_demand
         self.stdout.write("  Running energy_demand...")
@@ -821,7 +865,9 @@ class Command(BaseCommand):
             )
             self.stdout.write("  energy_demand complete")
         else:
-            self.stderr.write(self.style.ERROR(f"  energy_demand failed: {dbt_result.error}"))
+            self.stderr.write(
+                self.style.ERROR(f"  energy_demand failed: {dbt_result.error}")
+            )
 
         # 5. transport (trip_generation -> trip_distribution -> mode_choice -> vmt)
         self.stdout.write("  Running transport module (trip_generation -> vmt)...")
@@ -851,7 +897,9 @@ class Command(BaseCommand):
                 )
             self.stdout.write("  transport module complete")
         else:
-            self.stderr.write(self.style.ERROR(f"  transport module failed: {dbt_result.error}"))
+            self.stderr.write(
+                self.style.ERROR(f"  transport module failed: {dbt_result.error}")
+            )
 
         all_success = all(r.get("success") for r in results)
         run.status = "completed" if all_success else "failed"

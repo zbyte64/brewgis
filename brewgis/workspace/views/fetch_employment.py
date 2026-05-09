@@ -1,4 +1,5 @@
 """View for importing LEHD employment data."""
+
 from __future__ import annotations
 
 from crispy_forms.helper import FormHelper
@@ -19,6 +20,7 @@ from brewgis.workspace.tasks import run_lehd_fetch
 
 class EmploymentFetchForm(forms.Form):
     """Form to configure a LEHD employment data import."""
+
     def __init__(self, *args: object, **kwargs: object) -> None:
         super().__init__(*args, **kwargs)
         self.helper = FormHelper()

@@ -210,11 +210,14 @@ def generate_synthetic_parcels(
     """
     if n <= 0:
         return gpd.GeoDataFrame(
-            {col: [] for col in BaseCanvasSchema.COLUMN_NAMES if col not in ("id", "geometry")},
+            {
+                col: []
+                for col in BaseCanvasSchema.COLUMN_NAMES
+                if col not in ("id", "geometry")
+            },
             geometry=[],
             crs="EPSG:4326",
         )
-
 
     rng = random.Random(seed)
     np_rng = np.random.default_rng(seed)
@@ -260,7 +263,9 @@ def generate_synthetic_parcels(
         du_sub = _compute_du_subtypes(du, rng)
 
         # Employment
-        emp_ratio = rng.uniform(0.0, 0.6) if category == "urban" else rng.uniform(0.0, 0.3)
+        emp_ratio = (
+            rng.uniform(0.0, 0.6) if category == "urban" else rng.uniform(0.0, 0.3)
+        )
         total_emp = round(pop * emp_ratio, 1)
         emp_sub = _compute_emp_subtypes(total_emp, rng)
 
@@ -277,7 +282,9 @@ def generate_synthetic_parcels(
             emp_details["emp_education"] = round(emp_sub["emp_pub"] * 0.3, 1)
             emp_details["emp_manufacturing"] = round(emp_sub["emp_ind"] * 0.3, 1)
             emp_details["emp_wholesale"] = round(emp_sub["emp_ind"] * 0.2, 1)
-            emp_details["emp_transport_warehousing"] = round(emp_sub["emp_ind"] * 0.2, 1)
+            emp_details["emp_transport_warehousing"] = round(
+                emp_sub["emp_ind"] * 0.2, 1
+            )
             emp_details["emp_utilities"] = round(emp_sub["emp_ind"] * 0.1, 1)
             emp_details["emp_construction"] = round(emp_sub["emp_ind"] * 0.1, 1)
             emp_details["emp_agriculture"] = round(emp_sub["emp_ag"] * 0.6, 1)
@@ -304,7 +311,9 @@ def generate_synthetic_parcels(
             emp_details.update((k, 0.0) for k in keys)
 
         area_subtypes = _compute_area_subtypes(area_gross, category, rng)
-        bldg_area = _compute_building_area(du_sub, {**emp_sub, **emp_details}, area_gross, rng)
+        bldg_area = _compute_building_area(
+            du_sub, {**emp_sub, **emp_details}, area_gross, rng
+        )
         irrigation = _compute_irrigation(area_gross, category, rng)
 
         row: dict = {
@@ -376,8 +385,7 @@ def _compute_area_subtypes(
         result["area_parcel_res_detsf"] * rng.uniform(0.3, 0.6), 4
     )
     result["area_parcel_res_detsf_ll"] = round(
-        result["area_parcel_res_detsf"]
-        - result["area_parcel_res_detsf_sl"],
+        result["area_parcel_res_detsf"] - result["area_parcel_res_detsf_sl"],
         4,
     )
     result["area_parcel_res_attsf"] = round(res_area * rng.uniform(0.05, 0.15), 4)

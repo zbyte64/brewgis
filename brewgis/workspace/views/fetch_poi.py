@@ -1,4 +1,5 @@
 """View for importing OpenStreetMap Points of Interest."""
+
 from __future__ import annotations
 
 from crispy_forms.helper import FormHelper
@@ -18,6 +19,7 @@ from brewgis.workspace.tasks import run_poi_fetch
 
 class POIFetchForm(forms.Form):
     """Form to configure a POI import from OpenStreetMap."""
+
     def __init__(self, *args: object, **kwargs: object) -> None:
         super().__init__(*args, **kwargs)
         self.helper = FormHelper()

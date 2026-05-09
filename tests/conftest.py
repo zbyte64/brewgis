@@ -1,5 +1,7 @@
 """Shared pytest fixtures for Brew GIS tests."""
+
 from __future__ import annotations
+
 import os
 
 import deal
@@ -21,11 +23,15 @@ _HYPOTHESIS_PROFILE = os.environ.get(
 )
 
 hypothesis.settings.register_profile(
-    "ci", deadline=2000, max_examples=10,
+    "ci",
+    deadline=2000,
+    max_examples=10,
     suppress_health_check=[HealthCheck.too_slow],
 )
 hypothesis.settings.register_profile(
-    "local", deadline=None, max_examples=50,
+    "local",
+    deadline=None,
+    max_examples=50,
     suppress_health_check=[HealthCheck.too_slow],
 )
 hypothesis.settings.load_profile(_HYPOTHESIS_PROFILE)
@@ -38,10 +44,10 @@ from tests.factories import BuildingTypeFactory
 from tests.factories import LayerFactory
 from tests.factories import PlaceTypeBuildingTypeMixFactory
 from tests.factories import PlaceTypeFactory
+from tests.factories import ScenarioFactory
 from tests.factories import SymbologyConfigFactory
 from tests.factories import UserFactory
 from tests.factories import WorkspaceFactory
-from tests.factories import ScenarioFactory
 
 if TYPE_CHECKING:
     from django.contrib.auth.models import User
@@ -50,11 +56,23 @@ if TYPE_CHECKING:
     from brewgis.workspace.built_forms.models import PlaceType
     from brewgis.workspace.built_forms.models import PlaceTypeBuildingTypeMix
     from brewgis.workspace.models import Layer
+    from brewgis.workspace.models import Scenario
     from brewgis.workspace.models import SymbologyConfig
     from brewgis.workspace.models import Workspace
-    from brewgis.workspace.models import Scenario
 
 
+# NOTE: This fixture differs from brewgis/conftest.py's `user` fixture.
+#
+# brewgis/conftest.py creates a user directly:
+#   UserModel.objects.create_user(username="testuser", password="testpass")
+#
+# This fixture uses UserFactory (from tests/factories.py), which sets password
+# via _generate and may set email differently.
+#
+# These are intentionally separate — the brewgis fixture is used by management
+# commands and production-like workflows; the tests fixture is the standard for
+# pytest-based tests. If email-related issues arise with allauth, migrate both
+# to a shared factory pattern.
 @pytest.fixture
 def user(db) -> User:
     return UserFactory()
@@ -91,10 +109,14 @@ def place_type(db) -> PlaceType:
 
 
 @pytest.fixture
-def mix(db, place_type: PlaceType, building_type: BuildingType) -> PlaceTypeBuildingTypeMix:
+def mix(
+    db, place_type: PlaceType, building_type: BuildingType
+) -> PlaceTypeBuildingTypeMix:
     return PlaceTypeBuildingTypeMixFactory(
         place_type=place_type, building_type=building_type
     )
+
+
 @pytest.fixture
 def base_canvas_table(db) -> str:
     """Create a base canvas table with the full schema + synthetic data.
@@ -115,11 +137,7 @@ def base_canvas_table(db) -> str:
     BaseCanvasManager.create_table()
 
     # Build column list for INSERT — all non-geometry columns, include id for stable ids
-    insert_cols = [
-        name
-        for name in BaseCanvasSchema.COLUMN_NAMES
-        if name != "geometry"
-    ]
+    insert_cols = [name for name in BaseCanvasSchema.COLUMN_NAMES if name != "geometry"]
     col_list = ", ".join(insert_cols)
     placeholders = ", ".join(f"%({name})s" for name in insert_cols)
 
@@ -221,6 +239,7 @@ def base_canvas_table(db) -> str:
     yield "public.base_canvas"
     with connection.cursor() as cursor:
         cursor.execute("DROP TABLE IF EXISTS public.base_canvas CASCADE")
+
 
 @pytest.fixture
 def geometry_table(db) -> str:

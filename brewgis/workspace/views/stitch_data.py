@@ -1,4 +1,5 @@
 """View for column stitching / imputation."""
+
 from __future__ import annotations
 
 from crispy_forms.helper import FormHelper
@@ -17,6 +18,7 @@ from brewgis.workspace.tasks import run_column_stitching
 
 class StitchForm(forms.Form):
     """Form to configure column stitching / imputation."""
+
     def __init__(self, *args: object, **kwargs: object) -> None:
         super().__init__(*args, **kwargs)
         self.helper = FormHelper()

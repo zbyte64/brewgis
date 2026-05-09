@@ -43,7 +43,9 @@ def extract_built_forms(overwrite: bool = False) -> int:
     for key, bf_id, name in _get_parcel_built_form_keys():
         profile = _aggregate_built_form_profile(bf_id)
         if profile is None:
-            logger.debug("No FlatBuiltForm rows for built_form_id=%s (key=%s)", bf_id, key)
+            logger.debug(
+                "No FlatBuiltForm rows for built_form_id=%s (key=%s)", bf_id, key
+            )
             profile = _default_profile()
 
         profile["name"] = name or key

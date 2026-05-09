@@ -8,7 +8,9 @@ from django.core.management.base import BaseCommand
 from django.core.management.base import CommandError
 from django.db import connection
 
-DEMO_DB_FILE = Path(settings.BASE_DIR) / "planning" / "urbanfootprint-sacog-source-db.sql.gz"
+DEMO_DB_FILE = (
+    Path(settings.BASE_DIR) / "planning" / "urbanfootprint-sacog-source-db.sql.gz"
+)
 
 MISSING_SCHEMAS = [
     "urbanfootprint_reference_datasets",
@@ -70,8 +72,11 @@ class Command(BaseCommand):
                 check=True,
             )
         except (FileNotFoundError, subprocess.CalledProcessError):
-            msg = "psql not found. Install postgresql-client or rebuild the Docker image."
+            msg = (
+                "psql not found. Install postgresql-client or rebuild the Docker image."
+            )
             raise CommandError(msg) from None
+
     def _clean_existing_objects(self) -> None:
         """Drop existing objects from previous restores.
 
@@ -102,7 +107,9 @@ class Command(BaseCommand):
                     END LOOP;
                 END $$;
             """)
-            self.stdout.write("  ✓ Dropped existing non-extension tables in public schema")
+            self.stdout.write(
+                "  ✓ Dropped existing non-extension tables in public schema"
+            )
 
             # Drop all non-extension functions in public schema
             cursor.execute("""
@@ -128,12 +135,17 @@ class Command(BaseCommand):
                     END LOOP;
                 END $$;
             """)
-            self.stdout.write("  ✓ Dropped existing non-extension functions in public schema")
+            self.stdout.write(
+                "  ✓ Dropped existing non-extension functions in public schema"
+            )
 
             # Drop custom schemas if they exist (will be recreated)
             for schema in MISSING_SCHEMAS:
                 cursor.execute(f"DROP SCHEMA IF EXISTS {schema} CASCADE")
-            self.stdout.write(f"  ✓ Dropped schemas if they existed: {', '.join(MISSING_SCHEMAS)}")
+            self.stdout.write(
+                f"  ✓ Dropped schemas if they existed: {', '.join(MISSING_SCHEMAS)}"
+            )
+
     def _create_missing_schemas(self) -> None:
         """Create schemas and roles referenced by the dump."""
         self.stdout.write("Creating missing schemas...")
@@ -149,6 +161,7 @@ class Command(BaseCommand):
                     f"DO $$ BEGIN CREATE ROLE {role}; EXCEPTION WHEN duplicate_object THEN NULL; END $$"
                 )
                 self.stdout.write(f"  ✓ Role '{role}' created or already exists")
+
     def _get_database_url(self) -> str:
         """Get database URL from environment (set by Docker Compose)."""
         db_url = os.environ.get("DATABASE_URL")
@@ -193,7 +206,9 @@ class Command(BaseCommand):
                     # Check for COPY statements targeting extension-owned tables
                     if line.startswith("COPY "):
                         table_part = line.split()[1]  # e.g. "public.spatial_ref_sys"
-                        table_name = table_part.rsplit(".", 1)[-1]  # just "spatial_ref_sys"
+                        table_name = table_part.rsplit(".", 1)[
+                            -1
+                        ]  # just "spatial_ref_sys"
                         if table_name in SKIP_COPY_TABLES:
                             if line.strip().endswith("FROM stdin;"):
                                 in_skip_copy = True

@@ -175,7 +175,9 @@ def generate_maplibre_style(symbology: SymbologyConfig) -> dict[str, Any]:
     return {"paint": paint, "layout": layout}
 
 
-def auto_generate_style_from_layer(layer: Any, palette_name: str = "viridis") -> dict[str, Any]:
+def auto_generate_style_from_layer(
+    layer: Any, palette_name: str = "viridis"
+) -> dict[str, Any]:
     """Auto-generate a MapLibre style dict for a layer.
 
     This is a convenience method that creates a ``SymbologyConfig`` from

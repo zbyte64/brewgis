@@ -40,9 +40,7 @@ def built_forms_table(db) -> str:
             )
             """
         )
-        cursor.execute(
-            "INSERT INTO test_preflight_bt (name) VALUES ('SFR Standard')"
-        )
+        cursor.execute("INSERT INTO test_preflight_bt (name) VALUES ('SFR Standard')")
     yield "public.test_preflight_bt"
     with connection.cursor() as cursor:
         cursor.execute("DROP TABLE IF EXISTS test_preflight_bt CASCADE")
@@ -69,9 +67,7 @@ def base_canvas_table(db) -> str:
 class TestCheckAnalysisPrerequisites:
     """Tests for :func:`check_analysis_prerequisites`."""
 
-    def test_all_checks_pass(
-        self, parcel_table, built_forms_table, base_canvas_table
-    ):
+    def test_all_checks_pass(self, parcel_table, built_forms_table, base_canvas_table):
         """When all prerequisites are met, returns empty list."""
         errors = check_analysis_prerequisites(
             schema="public",

@@ -11,7 +11,13 @@ from django.db import connection
 
 logger = logging.getLogger(__name__)
 
-MANIFEST_PATH = Path(settings.BASE_DIR) / "brewgis" / "workspace" / "services" / "sacog_schema_manifest.json"
+MANIFEST_PATH = (
+    Path(settings.BASE_DIR)
+    / "brewgis"
+    / "workspace"
+    / "services"
+    / "sacog_schema_manifest.json"
+)
 
 # Tables whose schemas describe SACOG v1 parcel data
 KEY_V1_TABLES = {
@@ -60,7 +66,9 @@ def discover_schema() -> dict:
     with open(MANIFEST_PATH, "w") as f:
         json.dump(manifest, f, indent=2, default=str)
 
-    logger.info("Schema manifest written to %s (%d schemas)", MANIFEST_PATH, len(manifest))
+    logger.info(
+        "Schema manifest written to %s (%d schemas)", MANIFEST_PATH, len(manifest)
+    )
     return manifest
 
 
@@ -110,7 +118,8 @@ def _inspect_table(cursor, schema: str, table_name: str) -> dict:
 def _table_row_count(cursor, schema: str, table_name: str) -> int:
     try:
         cursor.execute(
-            'SELECT count(*) FROM "%s"."%s"' % (schema.replace('"', '""'), table_name.replace('"', '""'))
+            'SELECT count(*) FROM "%s"."%s"'
+            % (schema.replace('"', '""'), table_name.replace('"', '""'))
         )
         return cursor.fetchone()[0]
     except Exception:

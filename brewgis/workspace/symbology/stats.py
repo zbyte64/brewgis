@@ -47,15 +47,24 @@ class ColumnStatistics:
     is_categorical: bool = False
 
 
-_NUMERIC_TYPES = frozenset({
-    "smallint",
-    "integer",
-    "bigint",
-    "real",
-    "double precision",
-    "numeric",
-    "decimal",
-})
+_NUMERIC_TYPES = frozenset(
+    {
+        # SQL-standard names (udt_name from information_schema)
+        "smallint",
+        "integer",
+        "bigint",
+        "real",
+        "double precision",
+        "numeric",
+        "decimal",
+        # PostgreSQL internal names
+        "int2",
+        "int4",
+        "int8",
+        "float4",
+        "float8",
+    }
+)
 
 
 def _column_data_type(schema: str, table: str, column: str) -> str | None:
@@ -201,11 +210,13 @@ def compute_statistics(
         with connection.cursor() as cursor:
             cursor.execute(hist_sql)
             for row in cursor.fetchall():
-                histogram.append(HistogramBin(
-                    min_val=float(row[0]),
-                    max_val=float(row[1]),
-                    count=int(row[2]),
-                ))
+                histogram.append(
+                    HistogramBin(
+                        min_val=float(row[0]),
+                        max_val=float(row[1]),
+                        count=int(row[2]),
+                    )
+                )
 
     # Heuristic: if distinct count is small (<20), treat as categorical
     is_cat = distincts < 20

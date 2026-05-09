@@ -1,13 +1,12 @@
 """Tests for the spatial allocation engine."""
+
 from __future__ import annotations
 
 import geopandas as gpd
 import pytest
 from shapely.geometry import Polygon
 
-from brewgis.workspace.services.spatial_allocator import (
-    _compute_allocation_factors,
-)
+from brewgis.workspace.services.spatial_allocator import _compute_allocation_factors
 
 
 class TestSpatialAllocation:
@@ -15,12 +14,14 @@ class TestSpatialAllocation:
 
     def _make_square(self, x: float, y: float, size: float = 1.0) -> Polygon:
         """Create a square polygon at (x, y) with given size."""
-        return Polygon([
-            (x, y),
-            (x + size, y),
-            (x + size, y + size),
-            (x, y + size),
-        ])
+        return Polygon(
+            [
+                (x, y),
+                (x + size, y),
+                (x + size, y + size),
+                (x, y + size),
+            ]
+        )
 
     def test_compute_allocation_factors_simple(self) -> None:
         """A source fully overlapping a target should have weight=1."""
@@ -97,8 +98,8 @@ class TestSpatialAllocation:
         target = gpd.GeoDataFrame(
             {"name": ["left", "right"]},
             geometry=[
-                self._make_square(0, 0, 5),   # left quarter
-                self._make_square(5, 0, 5),   # right quarter
+                self._make_square(0, 0, 5),  # left quarter
+                self._make_square(5, 0, 5),  # right quarter
             ],
             crs="EPSG:4326",
         )

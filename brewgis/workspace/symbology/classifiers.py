@@ -90,9 +90,23 @@ def _make_labels(breaks: list[float]) -> list[str]:
 # --------------------------------------------------------------------------
 
 
-@deal.ensure(lambda min_val, max_val, num_classes, result: num_classes < 1 or len(result) == num_classes + 1)
-@deal.ensure(lambda min_val, max_val, num_classes, result: num_classes < 1 or (result[0] == min_val and math.isclose(result[-1], max_val)))
-@deal.pre(lambda min_val, max_val, num_classes: max_val >= min_val and all(math.isfinite(v) for v in [min_val, max_val]) and num_classes <= 100)
+@deal.ensure(
+    lambda min_val, max_val, num_classes, result: (
+        num_classes < 1 or len(result) == num_classes + 1
+    )
+)
+@deal.ensure(
+    lambda min_val, max_val, num_classes, result: (
+        num_classes < 1 or (result[0] == min_val and math.isclose(result[-1], max_val))
+    )
+)
+@deal.pre(
+    lambda min_val, max_val, num_classes: (
+        max_val >= min_val
+        and all(math.isfinite(v) for v in [min_val, max_val])
+        and num_classes <= 100
+    )
+)
 def _equal_interval_breaks(
     min_val: float,
     max_val: float,
@@ -109,7 +123,9 @@ def _equal_interval_breaks(
     return breaks
 
 
-def _quantile_breaks(schema: str, table: str, column: str, num_classes: int) -> list[float]:
+def _quantile_breaks(
+    schema: str, table: str, column: str, num_classes: int
+) -> list[float]:
     """NTILE-based quantile classification using a single SQL query."""
     if num_classes < 1:
         sql = (
@@ -154,9 +170,19 @@ def _quantile_breaks(schema: str, table: str, column: str, num_classes: int) -> 
     return cleaned
 
 
-@deal.ensure(lambda min_val, max_val, num_classes, result: num_classes < 1 or (result[0] <= min_val and result[-1] >= max_val))
-@deal.pre(lambda min_val, max_val, num_classes: all(math.isfinite(v) for v in [min_val, max_val]) and num_classes <= 100)
-def _logarithmic_breaks(min_val: float, max_val: float, num_classes: int) -> list[float]:
+@deal.ensure(
+    lambda min_val, max_val, num_classes, result: (
+        num_classes < 1 or (result[0] <= min_val and result[-1] >= max_val)
+    )
+)
+@deal.pre(
+    lambda min_val, max_val, num_classes: (
+        all(math.isfinite(v) for v in [min_val, max_val]) and num_classes <= 100
+    )
+)
+def _logarithmic_breaks(
+    min_val: float, max_val: float, num_classes: int
+) -> list[float]:
     """Log-scale division."""
     if num_classes < 1:
         return [min_val]
@@ -179,8 +205,13 @@ def _logarithmic_breaks(min_val: float, max_val: float, num_classes: int) -> lis
     result[0] = min_val
     result[-1] = max_val
     return result
-@deal.pre(lambda mean, stddev, num_classes: stddev >= 0 and num_classes >= 1 and num_classes <= 100)
 
+
+@deal.pre(
+    lambda mean, stddev, num_classes: (
+        stddev >= 0 and num_classes >= 1 and num_classes <= 100
+    )
+)
 def _std_deviation_breaks(mean: float, stddev: float, num_classes: int) -> list[float]:
     """Breaks at standard-deviation intervals from the mean."""
     half = num_classes // 2
@@ -199,7 +230,7 @@ def _sum_squared_diffs(data: list[float], lo: int, hi: int) -> float:
     """
     if hi <= lo:
         return 0.0
-    segment = data[lo - 1:hi]
+    segment = data[lo - 1 : hi]
     if not segment:
         return 0.0
     mu = sum(segment) / len(segment)
@@ -313,12 +344,17 @@ def classify(
             if lo == hi:
                 vals = [lo]
             else:
-                vals = [lo + (hi - lo) * i / (num_classes * 5 - 1) for i in range(num_classes * 5)]
+                vals = [
+                    lo + (hi - lo) * i / (num_classes * 5 - 1)
+                    for i in range(num_classes * 5)
+                ]
         breaks = _natural_breaks_jenks(vals, num_classes)
 
     elif method == "equal_interval":
         breaks = _equal_interval_breaks(
-            stats.min_value or 0, stats.max_value or 0, num_classes,
+            stats.min_value or 0,
+            stats.max_value or 0,
+            num_classes,
         )
 
     elif method == "quantile":
@@ -329,12 +365,16 @@ def classify(
 
     elif method == "logarithmic":
         breaks = _logarithmic_breaks(
-            stats.min_value or 0, stats.max_value or 0, num_classes,
+            stats.min_value or 0,
+            stats.max_value or 0,
+            num_classes,
         )
 
     elif method == "std_deviation":
         breaks = _std_deviation_breaks(
-            stats.mean or 0, stats.stddev or 1, num_classes,
+            stats.mean or 0,
+            stats.stddev or 1,
+            num_classes,
         )
 
     elif method == "manual":

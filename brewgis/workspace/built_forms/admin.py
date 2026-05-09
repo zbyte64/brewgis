@@ -1,4 +1,5 @@
 """Admin registration for built forms models."""
+
 from __future__ import annotations
 
 from django.contrib import admin
@@ -26,15 +27,47 @@ class BuildingTypeAdmin(admin.ModelAdmin):
     fieldsets = (
         ("Identity", {"fields": ("name", "description")}),
         ("Density", {"fields": ("du_per_acre", "emp_per_acre", "far")}),
-        ("Housing / Household", {"fields": (
-            "household_size", "tenure_owner_pct", "tenure_renter_pct", "vacancy_rate",
-        )}),
-        ("Physical Form", {"fields": ("stories", "footprint_per_unit", "building_coverage")}),
+        (
+            "Housing / Household",
+            {
+                "fields": (
+                    "household_size",
+                    "tenure_owner_pct",
+                    "tenure_renter_pct",
+                    "vacancy_rate",
+                )
+            },
+        ),
+        (
+            "Physical Form",
+            {"fields": ("stories", "footprint_per_unit", "building_coverage")},
+        ),
         ("Employment", {"fields": ("jobs_by_sector",)}),
-        ("Water", {"fields": ("indoor_water_rate", "outdoor_water_rate", "irrigable_area_fraction")}),
+        (
+            "Water",
+            {
+                "fields": (
+                    "indoor_water_rate",
+                    "outdoor_water_rate",
+                    "irrigable_area_fraction",
+                )
+            },
+        ),
         ("Energy", {"fields": ("electricity_eui", "gas_eui", "vintage")}),
-        ("Parking", {"fields": ("parking_spaces_per_unit", "parking_spaces_per_1000sqft", "parking_sqft_per_space")}),
-        ("Trip Generation", {"fields": ("ite_land_use_code", "trip_rate_override", "pass_by_trip_pct")}),
+        (
+            "Parking",
+            {
+                "fields": (
+                    "parking_spaces_per_unit",
+                    "parking_spaces_per_1000sqft",
+                    "parking_sqft_per_space",
+                )
+            },
+        ),
+        (
+            "Trip Generation",
+            {"fields": ("ite_land_use_code", "trip_rate_override", "pass_by_trip_pct")},
+        ),
     )
 
 

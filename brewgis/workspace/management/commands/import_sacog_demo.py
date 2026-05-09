@@ -196,7 +196,6 @@ class Command(BaseCommand):
         """Create workspace, scenario, and register layers."""
         self.stdout.write("Phase 4: Workspace & Scenario Bootstrap...")
 
-        from django.contrib.gis.geos import Polygon
         from django.db import connection
 
         from brewgis.workspace.models import Scenario
@@ -284,7 +283,7 @@ class Command(BaseCommand):
         # Verify the v1 table exists
         manifest = load_manifest()
         public_tables = manifest.get("public", {})
-        if V1_BASE_TABLE.split(".")[-1] not in public_tables:
+        if V1_BASE_TABLE.rsplit(".", maxsplit=1)[-1] not in public_tables:
             raise CommandError(
                 f"V1 base table not found: {V1_BASE_TABLE}. Run 'python manage.py restore_demo_db' first."
             )
@@ -332,11 +331,11 @@ class Command(BaseCommand):
         self.stdout.write(self.style.SUCCESS("  ✓ Base canvas view ready"))
         # Create dbt compatibility view (renames geometry→geom)
         with connection.cursor() as cursor:
-            cursor.execute(f'''
+            cursor.execute(f"""
                 CREATE OR REPLACE VIEW "{WORKSPACE_SCHEMA}".parcels AS
                 SELECT *, geometry AS geom
                 FROM "{WORKSPACE_SCHEMA}"."{CANVAS_VIEW_NAME}"
-            ''')
+            """)
         self.stdout.write(f"  ✓ Created dbt compat view: {WORKSPACE_SCHEMA}.parcels")
         self.stdout.write(self.style.SUCCESS("  ✓ Base canvas + dbt views ready"))
 
@@ -450,7 +449,6 @@ class Command(BaseCommand):
         completed.append("core")
 
         for module in ordered_modules:
-
             model_selectors = MODULE_SELECTS.get(module, [module])
             self.stdout.write(
                 f"  Running module: {module} ({', '.join(model_selectors)})..."
@@ -467,7 +465,6 @@ class Command(BaseCommand):
                     self.style.ERROR(f"  ✗ {module} failed: {result.error}")
                 )
                 break
-
 
         if len(completed) == len(ordered_modules):
             self.stdout.write(

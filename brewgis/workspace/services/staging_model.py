@@ -59,7 +59,7 @@ def generate_parcel_staging(
     lines.append("{{ config(materialized='view') }}")
     lines.append("")
     lines.append("WITH raw AS (")
-    lines.append(  # noqa: S608 — dbt template generation, not SQL execution
+    lines.append(
         "    SELECT * FROM {{ var('source_schema', 'public') }}"
         ".{{ var('raw_table', '" + table_name + "') }}"
     )
@@ -75,8 +75,7 @@ def generate_parcel_staging(
         lines.append("    built_form_key,")
     else:
         lines.append(
-            f"    {_DEFAULT_BUILT_FORM_KEY} AS built_form_key,"
-            "  -- SFR Standard default"
+            f"    {_DEFAULT_BUILT_FORM_KEY} AS built_form_key,  -- SFR Standard default"
         )
 
     # intersection_density — compute from geometry if missing
@@ -84,9 +83,7 @@ def generate_parcel_staging(
         lines.append("    intersection_density,")
     else:
         lines.append("    CASE")
-        lines.append(
-            "        WHEN ST_Area(" + geom_col + ") / 4046.86 > 0"
-        )
+        lines.append("        WHEN ST_Area(" + geom_col + ") / 4046.86 > 0")
         lines.append(
             "            THEN LEAST(25.0,"
             " GREATEST(0.5,"
@@ -116,10 +113,7 @@ def generate_parcel_staging(
         "geom",
     }
     used_lower = {c.lower() for c in excluded}
-    other_cols = [
-        col for col in info.columns
-        if col.lower() not in used_lower
-    ]
+    other_cols = [col for col in info.columns if col.lower() not in used_lower]
     for i, col in enumerate(other_cols):
         suffix = "," if i < len(other_cols) - 1 else ""
         lines.append(f"    {col}{suffix}")
@@ -168,17 +162,13 @@ def generate_base_canvas_stub(
     if info.has_built_form_key:
         lines.append("    built_form_key,")
     else:
-        lines.append(
-            f"    {_DEFAULT_BUILT_FORM_KEY} AS built_form_key,"
-        )
+        lines.append(f"    {_DEFAULT_BUILT_FORM_KEY} AS built_form_key,")
 
     if info.has_intersection_density:
         lines.append("    intersection_density,")
     else:
         lines.append("    CASE")
-        lines.append(
-            "        WHEN ST_Area(" + geom_col + ") / 4046.86 > 0"
-        )
+        lines.append("        WHEN ST_Area(" + geom_col + ") / 4046.86 > 0")
         lines.append(
             "            THEN LEAST(25.0,"
             " GREATEST(0.5,"
@@ -187,24 +177,25 @@ def generate_base_canvas_stub(
         lines.append("        ELSE 0.5")
         lines.append("    END AS intersection_density,")
 
-    lines.append(
-        "    ST_Area(" + geom_col + ") / 4046.86 AS area_gross,"
-    )
+    lines.append("    ST_Area(" + geom_col + ") / 4046.86 AS area_gross,")
 
     # Zero out all remaining numeric base canvas columns
     skip = {
-        "id", "id_source", "geometry_key", "geometry",
-        "land_development_category", "built_form_key",
-        "intersection_density", "area_gross",
+        "id",
+        "id_source",
+        "geometry_key",
+        "geometry",
+        "land_development_category",
+        "built_form_key",
+        "intersection_density",
+        "area_gross",
     }
-    numeric_cols = [
-        c for c in _base_canvas_column_names() if c not in skip
-    ]
+    numeric_cols = [c for c in _base_canvas_column_names() if c not in skip]
     for i, col in enumerate(numeric_cols):
         suffix = "," if i < len(numeric_cols) - 1 else ""
         lines.append(f"    0.0 AS {col}{suffix}")
 
-    lines.append(  # noqa: S608 — dbt template generation, not SQL execution
+    lines.append(
         "FROM {{ var('source_schema', 'public') }}"
         ".{{ var('raw_table', '" + table_name + "') }}"
     )

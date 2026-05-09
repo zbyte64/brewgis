@@ -47,6 +47,12 @@ class TestVmtTemplate(DbtModelTemplateTest):
     def test_has_input_columns(self, sql_template: str, col: str) -> None:
         assert col in sql_template
 
+    def test_uses_ref_for_dependency(self, sql_template: str) -> None:
+        assert "{{ ref('core_end_state') }}" in sql_template
+
+    def test_no_hardcoded_schema_names(self, sql_template: str) -> None:
+        assert all(h not in sql_template for h in ["public.", ' "schema"'])
+
 
 @pytest.mark.integration
 class TestVmtFormula:
@@ -82,4 +88,14 @@ class TestVmtFormula:
         assert vmt == 0.0
 
     def test_circuity_factor_default(self) -> None:
-        assert 1.2 == pytest.approx(1.2)
+        """VMT with non-default circuity factor."""
+        auto_trips = 1000.0
+        avg_trip_km = 10.0
+        default_circuity = 1.2
+        override_circuity = 1.5
+        default_vmt = auto_trips * avg_trip_km * 0.621371 * default_circuity
+        override_vmt = auto_trips * avg_trip_km * 0.621371 * override_circuity
+        assert override_vmt > default_vmt
+        assert override_vmt == pytest.approx(
+            auto_trips * avg_trip_km * 0.621371 * override_circuity
+        )

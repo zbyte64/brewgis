@@ -56,7 +56,16 @@ class TestAgricultureTemplate(DbtModelTemplateTest):
 
     def test_has_where_clause(self, sql_template: str) -> None:
         assert "WHERE" in sql_template
-        assert "parcel_acres_agriculture > 0" in sql_template or "land_dev_category = 'rural'" in sql_template
+        assert (
+            "parcel_acres_agriculture > 0" in sql_template
+            or "land_dev_category = 'rural'" in sql_template
+        )
+
+    def test_uses_ref_for_dependency(self, sql_template: str) -> None:
+        assert "{{ ref('core_end_state') }}" in sql_template
+
+    def test_no_hardcoded_schema_names(self, sql_template: str) -> None:
+        assert all(h not in sql_template for h in ["public.", ' "schema"'])
 
 
 @pytest.mark.integration
@@ -103,3 +112,13 @@ class TestAgricultureFormula:
         assert acres == 0.0
         assert acres * 8.0 == 0.0
         assert acres * 200.0 == 0.0
+
+    def test_large_acres(self) -> None:
+        acres = 1e6
+        result = acres * 200.0
+        assert result == pytest.approx(2e8)
+
+    def test_negative_acres(self) -> None:
+        acres = -100.0
+        result = acres * 200.0
+        assert result < 0

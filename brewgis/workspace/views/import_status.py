@@ -1,4 +1,5 @@
 """Status polling view for data import runs."""
+
 from __future__ import annotations
 
 from django.contrib.auth.decorators import user_passes_test
