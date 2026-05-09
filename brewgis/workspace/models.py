@@ -48,6 +48,14 @@ class Layer(models.Model):
         max_length=64,
     )  # TODO ask tipg or pg for list of options
 
+    group = models.ForeignKey(
+        "LayerGroup",
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name="layers",
+    )
+
     class Meta:
         ordering = ("display_order",)
         unique_together = [("workspace", "key")]
@@ -659,3 +667,143 @@ class LayerFilter(models.Model):
 
     def __str__(self) -> str:
         return f"{self.name} ({self.layer.name})"
+
+
+class LayerGroup(models.Model):
+    """A logical grouping of layers within a workspace."""
+
+    workspace = models.ForeignKey(
+        Workspace,
+        on_delete=models.CASCADE,
+        related_name="layer_groups",
+    )
+    name = models.CharField(max_length=128)
+    display_order = models.IntegerField(default=0)
+
+    class Meta:
+        ordering = ("display_order", "name")
+        unique_together = [("workspace", "name")]
+
+    def __str__(self) -> str:
+        return self.name
+
+
+class ExternalMapService(models.Model):
+    """An external map service (WMS/WMTS/WFS/XYZ) added to a workspace."""
+
+    class ServiceType(models.TextChoices):
+        WMS = "wms", "WMS"
+        WMTS = "wmts", "WMTS"
+        WFS = "wfs", "WFS"
+        XYZ = "xyz", "XYZ Tiles"
+
+    workspace = models.ForeignKey(
+        Workspace,
+        on_delete=models.CASCADE,
+        related_name="external_services",
+    )
+    name = models.CharField(max_length=128)
+    service_type = models.CharField(
+        max_length=4,
+        choices=ServiceType.choices,
+        default=ServiceType.WMS,
+    )
+    url = models.URLField(max_length=1024)
+    layers_param = models.CharField(
+        max_length=512, blank=True, default="",
+        help_text="Layers parameter for WMS (comma-separated)",
+    )
+    attribution = models.CharField(max_length=512, blank=True, default="")
+    is_active = models.BooleanField(default=True)
+    display_order = models.IntegerField(default=0)
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        ordering = ("display_order", "name")
+        unique_together = [("workspace", "name")]
+        verbose_name = "External Map Service"
+
+    def __str__(self) -> str:
+        return f"{self.name} ({self.get_service_type_display()})"
+
+    def to_maplibre_source(self) -> dict:
+        """Return a MapLibre GL JS source spec for this service."""
+        if self.service_type in (self.ServiceType.WMS, self.ServiceType.WMTS, self.ServiceType.XYZ):
+            if self.service_type == self.ServiceType.WMS:
+                params = "?service=WMS&request=GetMap&layers=" + self.layers_param + "&format=image/png&transparent=true"
+                return {
+                    "type": "raster",
+                    "tiles": [self.url + params + "&width=256&height=256&bbox={bbox-epsg-3857}"],
+                    "attribution": self.attribution,
+                    "tileSize": 256,
+                }
+            return {
+                "type": "raster",
+                "tiles": [self.url],
+                "attribution": self.attribution,
+                "tileSize": 256,
+            }
+        # WFS returns vector data — use as vector source
+        return {
+            "type": "vector",
+            "tiles": [self.url],
+            "attribution": self.attribution,
+        }
+
+
+class Basemap(models.Model):
+    """A basemap style definition available for map rendering."""
+
+    class TypeChoices(models.TextChoices):
+        VECTOR = "vector", "Vector"
+        RASTER = "raster", "Raster"
+
+    name = models.CharField(max_length=128, unique=True)
+    basemap_type = models.CharField(
+        max_length=8,
+        choices=TypeChoices.choices,
+        default=TypeChoices.VECTOR,
+    )
+    style_url = models.URLField(
+        max_length=1024, blank=True, default="",
+        help_text="MapLibre style JSON URL (for vector basemaps)",
+    )
+    tile_url = models.URLField(
+        max_length=1024, blank=True, default="",
+        help_text="Tile URL template with {z}/{x}/{y} (for raster basemaps)",
+    )
+    attribution = models.CharField(max_length=512, blank=True, default="")
+    thumbnail_url = models.URLField(max_length=1024, blank=True, default="")
+    is_default = models.BooleanField(default=False)
+    sort_order = models.IntegerField(default=0)
+
+    class Meta:
+        ordering = ("sort_order", "name")
+
+    def __str__(self) -> str:
+        return self.name
+
+    def resolve_style(self) -> str | dict:
+        """Return the MapLibre-compatible style value."""
+        if self.basemap_type == self.TypeChoices.RASTER and self.tile_url:
+            return {
+                "version": 8,
+                "sources": {
+                    "basemap": {
+                        "type": "raster",
+                        "tiles": [self.tile_url],
+                        "tileSize": 256,
+                        "attribution": self.attribution,
+                    },
+                },
+                "layers": [
+                    {
+                        "id": "basemap-layer",
+                        "type": "raster",
+                        "source": "basemap",
+                        "minzoom": 0,
+                        "maxzoom": 22,
+                    },
+                ],
+            }
+        return self.style_url

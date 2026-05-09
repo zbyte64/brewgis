@@ -47,3 +47,15 @@ from .filter import layer_filter_edit  # noqa: F401
 from .filter import layer_filter_delete  # noqa: F401
 from .filter import layer_filter_toggle  # noqa: F401
 from .filter import layer_filter_preview  # noqa: F401
+from .external_services import external_service_list  # noqa: F401
+from .external_services import external_service_add  # noqa: F401
+from .external_services import external_service_toggle  # noqa: F401
+from .external_services import external_service_delete  # noqa: F401
+from .basemaps import basemap_list  # noqa: F401
+from .basemaps import basemap_select  # noqa: F401
+from .layer_groups import layer_group_list  # noqa: F401
+from .layer_groups import layer_group_create  # noqa: F401
+from .layer_groups import layer_group_edit  # noqa: F401
+from .layer_groups import layer_group_delete  # noqa: F401
+from .layer_groups import layer_group_move_layer  # noqa: F401
+from .data_table import layer_data_table  # noqa: F401

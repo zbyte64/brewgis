@@ -20,7 +20,7 @@ class TestDataSourceCategoryModel(TestCase):
             slug="test-boundaries",
             description="Administrative boundaries",
             icon="bi-bounding-box-circles",
-            sort_order=1,
+            sort_order=100,
         )
 
     def test_category_str(self) -> None:
@@ -38,12 +38,13 @@ class TestDataSourceCategoryModel(TestCase):
     def test_category_ordering(self) -> None:
         """Categories are ordered by sort_order then name."""
         DataSourceCategory.objects.create(
-            name="Test People", slug="test-people", sort_order=2,
+            name="Test People", slug="test-people", sort_order=101,
         )
         DataSourceCategory.objects.create(
-            name="Test Land Use", slug="test-land-use", sort_order=3,
+            name="Test Land Use", slug="test-land-use", sort_order=102,
         )
-        cats = list(DataSourceCategory.objects.all())
+        cats = list(DataSourceCategory.objects.filter(slug__startswith="test-"))
+        assert len(cats) == 3
         assert cats[0].slug == "test-boundaries"
         assert cats[1].slug == "test-people"
         assert cats[2].slug == "test-land-use"

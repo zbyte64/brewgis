@@ -20,6 +20,7 @@ from brewgis.workspace.built_forms.models import PlaceType
 from brewgis.workspace.models import Layer
 from brewgis.workspace.models import Scenario
 from brewgis.workspace.models import SymbologyConfig
+from brewgis.workspace.models import Basemap
 from brewgis.workspace.models import Workspace
 from brewgis.workspace.services.base_canvas_schema import BaseCanvasSchema
 from brewgis.workspace.services.canvas_view_manager import PAINTABLE_COLUMNS
@@ -163,6 +164,25 @@ def view_workspace_map(request: HttpRequest, workspace_pk: int) -> HttpResponse:
             f"/workspace/{workspace_pk}/map/?scenario={scenario.pk}"
         )
 
+    # Resolve current basemap from session or default
+    session_key = f"ws_{workspace_pk}_basemap_id"
+    basemap_id_sel = request.session.get(session_key)
+    basemap_style = None
+    if basemap_id_sel:
+        try:
+            basemap_instance = Basemap.objects.get(pk=basemap_id_sel)
+            resolved = basemap_instance.resolve_style()
+            basemap_style = json.dumps(resolved) if isinstance(resolved, dict) else resolved
+        except Basemap.DoesNotExist:
+            basemap_style = None
+    if not basemap_style:
+        default_basemap = Basemap.objects.filter(is_default=True).first()
+        if default_basemap:
+            resolved = default_basemap.resolve_style()
+            basemap_style = json.dumps(resolved) if isinstance(resolved, dict) else resolved
+        else:
+            basemap_style = "https://raw.githubusercontent.com/go2garret/maps/main/src/assets/json/openStreetMap.json"
+
     context: dict[str, object] = {
         "layers_json": json.dumps(layer_data),
         "viewport_json": json.dumps(
@@ -189,6 +209,7 @@ def view_workspace_map(request: HttpRequest, workspace_pk: int) -> HttpResponse:
         "undo_url": undo_url if scenario else "",
         "canvas_view_layer_id": canvas_view_layer_id,
         "selection_mode": selection_mode,
+        "basemap_style": basemap_style,
     }
 
     return render(request, "workspace_map.html", context)

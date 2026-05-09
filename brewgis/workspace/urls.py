@@ -65,6 +65,18 @@ from .views.filter import layer_filter_edit  # noqa: N813
 from .views.filter import layer_filter_delete  # noqa: N813
 from .views.filter import layer_filter_toggle  # noqa: N813
 from .views.filter import layer_filter_preview  # noqa: N813
+from .views.external_services import external_service_list  # noqa: N813
+from .views.external_services import external_service_add  # noqa: N813
+from .views.external_services import external_service_toggle  # noqa: N813
+from .views.external_services import external_service_delete  # noqa: N813
+from .views.basemaps import basemap_list  # noqa: N813
+from .views.basemaps import basemap_select  # noqa: N813
+from .views.layer_groups import layer_group_list  # noqa: N813
+from .views.layer_groups import layer_group_create  # noqa: N813
+from .views.layer_groups import layer_group_edit  # noqa: N813
+from .views.layer_groups import layer_group_delete  # noqa: N813
+from .views.layer_groups import layer_group_move_layer  # noqa: N813
+from .views.data_table import layer_data_table  # noqa: N813
 
 app_name = "workspace"
 urlpatterns = [
@@ -303,5 +315,69 @@ urlpatterns = [
         "filters/<int:pk>/preview/",
         layer_filter_preview,
         name="layer_filter_preview",
+    ),
+    # External Map Services
+    path(
+        "<int:workspace_pk>/external-services/",
+        external_service_list,
+        name="external_service_list",
+    ),
+    path(
+        "<int:workspace_pk>/external-services/add/",
+        external_service_add,
+        name="external_service_add",
+    ),
+    path(
+        "external-services/<int:pk>/toggle/",
+        external_service_toggle,
+        name="external_service_toggle",
+    ),
+    path(
+        "external-services/<int:pk>/delete/",
+        external_service_delete,
+        name="external_service_delete",
+    ),
+    # Basemaps
+    path(
+        "basemaps/",
+        basemap_list,
+        name="basemap_list",
+    ),
+    path(
+        "<int:workspace_pk>/basemaps/select/",
+        basemap_select,
+        name="basemap_select",
+    ),
+    # Layer Groups
+    path(
+        "<int:workspace_pk>/layer-groups/",
+        layer_group_list,
+        name="layer_group_list",
+    ),
+    path(
+        "<int:workspace_pk>/layer-groups/create/",
+        layer_group_create,
+        name="layer_group_create",
+    ),
+    path(
+        "layer-groups/<int:pk>/edit/",
+        layer_group_edit,
+        name="layer_group_edit",
+    ),
+    path(
+        "layer-groups/<int:pk>/delete/",
+        layer_group_delete,
+        name="layer_group_delete",
+    ),
+    path(
+        "layers/<int:layer_pk>/move-group/",
+        layer_group_move_layer,
+        name="layer_group_move_layer",
+    ),
+    # Data Table
+    path(
+        "layers/<int:layer_pk>/data/",
+        layer_data_table,
+        name="layer_data_table",
     ),
 ]
