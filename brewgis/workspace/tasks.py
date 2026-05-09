@@ -14,15 +14,17 @@ from sqlalchemy import create_engine
 from brewgis.workspace.analysis.data_export import export_building_types
 from brewgis.workspace.analysis.dbt_runner import DbtRunnerWrapper
 from brewgis.workspace.analysis.layer_registry import register_result_layer
+from brewgis.workspace.analysis.module_registry import get_module_label
+from brewgis.workspace.analysis.module_registry import get_result_table_names
 from brewgis.workspace.models import AnalysisRun
 from brewgis.workspace.models import DataImportRun
 from brewgis.workspace.models import Layer
 from brewgis.workspace.services.census_fetcher import fetch_acs_block_groups
 from brewgis.workspace.services.lehd_fetcher import fetch_lehd_block_data
 from brewgis.workspace.services.poi_fetcher import fetch_pois
+from brewgis.workspace.services.preflight import check_analysis_prerequisites
 from brewgis.workspace.services.spatial_allocator import allocate_attributes
 from brewgis.workspace.services.stitcher import impute_area_proportional
-from brewgis.workspace.services.preflight import check_analysis_prerequisites
 from brewgis.workspace.services.stitcher import impute_built_form_default
 from brewgis.workspace.services.stitcher import impute_constant
 from brewgis.workspace.symbology.auto import auto_generate_symbology
@@ -72,160 +74,116 @@ def export_building_types_task(
 
 
 # ────────────────────────────────────────────────────────────
-#  Analysis module tasks
+#  Analysis module tasks (consolidated)
 # ────────────────────────────────────────────────────────────
+
+MODULE_DBT_SELECT_MAP = {
+    "env_constraint": ["env_constraint"],
+    "core": ["core_end_state", "core_increment"],
+    "water_demand": ["water_demand"],
+    "energy_demand": ["energy_demand"],
+    "land_consumption": ["land_consumption"],
+    "fiscal": [
+        "fiscal_property_tax",
+        "fiscal_sales_tax",
+        "fiscal_service_costs",
+        "fiscal_net_impact",
+    ],
+    "agriculture": ["agriculture"],
+    "trip_generation": ["trip_generation"],
+    "trip_distribution": ["trip_distribution"],
+    "mode_choice": ["mode_choice"],
+    "vmt": ["vmt"],
+}
 
 
 @shared_task(
     bind=True,
-    name="run_env_constraint",
+    name="run_dbt_module",
     autoretry_for=(Exception,),
     max_retries=2,
     default_retry_delay=60,
 )
-def run_env_constraint(
+def run_dbt_module(
     self,
     workspace_id: int,
+    module: str,
     vars_: dict | None = None,
 ) -> dict:
-    """Run the Environmental Constraint dbt model.
+    """Run a dbt analysis module.
+
+    Single parameterized task for all analysis modules.  The ``module``
+    argument selects the set of dbt models to run.
 
     Args:
         workspace_id: Workspace primary key (used for layer registration).
-        vars_: dbt variables dict. Expected keys:
-            - source_schema: Schema containing source tables.
-            - parcel_table: Table name for parcels.
-            - constraints: JSON list of constraint layer definitions.
-            - target_schema: Schema for output.
-            - scenario_id: Unique scenario identifier.
+        module: Module name (e.g. ``water_demand``, ``fiscal``, ``core``).
+        vars_: dbt variables dict.
 
     Returns:
         Dict with keys: success, results, error, layer_schema, layer_table.
     """
     resolved_vars = vars_ or {}
     logger.info(
-        "Running env_constraint for workspace %s with vars: %s",
+        "Running module '%s' for workspace %s with vars: %s",
+        module,
         workspace_id,
         resolved_vars,
     )
 
-    runner = DbtRunnerWrapper()
-    dbt_result = runner.run(
-        select=["env_constraint"],
-        vars_=resolved_vars,
-        full_refresh=True,
-    )
-
-    if dbt_result.success:
-        target_schema = resolved_vars.get("target_schema", "public")
-        scenario_id = resolved_vars.get("scenario_id", "default")
-        logger.info(
-            "env_constraint completed for workspace %s (scenario %s)",
-            workspace_id,
-            scenario_id,
+    # ── Core module: preflight + export ──────────────────────
+    if module == "core":
+        source_schema = resolved_vars.get("source_schema", "public")
+        built_form_table = resolved_vars.get("built_form_table", "built_forms")
+        parcel_table = resolved_vars.get("parcel_table", "")
+        base_canvas_table = resolved_vars.get("base_canvas_table")
+        preflight_errors = check_analysis_prerequisites(
+            schema=source_schema,
+            parcel_table=parcel_table,
+            built_form_table=built_form_table,
+            base_canvas_table=base_canvas_table,
         )
-        return {
-            "success": True,
-            "results": dbt_result.results,
-            "error": None,
-            "layer_schema": target_schema,
-            "layer_table": f"env_constraint_{scenario_id}",
-        }
+        if preflight_errors:
+            error_msg = "; ".join(e.message for e in preflight_errors)
+            logger.error(
+                "Preflight validation failed for workspace %s: %s",
+                workspace_id,
+                error_msg,
+            )
+            return {
+                "success": False,
+                "results": [],
+                "error": error_msg,
+                "layer_schema": None,
+            }
 
-    error_msg = dbt_result.error or "Unknown dbt error"
-    logger.error(
-        "env_constraint failed for workspace %s: %s",
-        workspace_id,
-        error_msg,
-    )
-    return {
-        "success": False,
-        "results": [],
-        "error": error_msg,
-        "layer_schema": None,
-        "layer_table": None,
-    }
+        try:
+            export_building_types(schema=source_schema, table=built_form_table)
+        except Exception:
+            logger.exception(
+                "Built form export failed before core module run (workspace %s)",
+                workspace_id,
+            )
+            return {
+                "success": False,
+                "results": [],
+                "error": "Failed to export built form data from Django models",
+                "layer_schema": None,
+            }
 
-
-@shared_task(
-    bind=True,
-    name="run_core_module",
-    autoretry_for=(Exception,),
-    max_retries=2,
-    default_retry_delay=60,
-)
-def run_core_module(
-    self,
-    workspace_id: int,
-    vars_: dict | None = None,
-) -> dict:
-    """Run the Core / Scenario Builder dbt models (end_state + increment).
-
-    Before running dbt, ensures the built_forms export table exists by
-    calling :func:`export_building_types`.
-
-    Args:
-        workspace_id: Workspace primary key.
-        vars_: dbt variables dict.
-
-    Returns:
-        Dict with keys: success, results, error, end_state_table,
-        increment_table, layer_schema.
-    """
-    resolved_vars = vars_ or {}
-    logger.info(
-        "Running core module for workspace %s with vars: %s",
-        workspace_id,
-        resolved_vars,
-    )
-
-    # Pre-dispatch validation (defense in depth)
-    parcel_table = resolved_vars.get("parcel_table", "")
-    source_schema = resolved_vars.get("source_schema", "public")
-    built_form_table = resolved_vars.get("built_form_table", "built_forms")
-    base_canvas_table = resolved_vars.get("base_canvas_table")
-    preflight_errors = check_analysis_prerequisites(
-        schema=source_schema,
-        parcel_table=parcel_table,
-        built_form_table=built_form_table,
-        base_canvas_table=base_canvas_table,
-    )
-    if preflight_errors:
-        error_msg = "; ".join(e.message for e in preflight_errors)
-        logger.error(
-            "Preflight validation failed for workspace %s: %s",
-            workspace_id,
-            error_msg,
-        )
+    # ── Run dbt ──────────────────────────────────────────────
+    select = MODULE_DBT_SELECT_MAP.get(module)
+    if not select:
         return {
             "success": False,
             "results": [],
-            "error": error_msg,
-            "end_state_table": None,
-            "increment_table": None,
-            "layer_schema": None,
-        }
-
-    # Ensure the built_forms export table exists before running dbt
-    try:
-        export_building_types(schema=source_schema, table=built_form_table)
-    except Exception:
-        logger.exception(
-            "Built form export failed before core module run (workspace %s)",
-            workspace_id,
-        )
-        return {
-            "success": False,
-            "results": [],
-            "error": "Failed to export built form data from Django models",
-            "end_state_table": None,
-            "increment_table": None,
+            "error": f"Unknown module: {module}",
             "layer_schema": None,
         }
 
     runner = DbtRunnerWrapper()
     dbt_result = runner.run(
-        select=["core_end_state", "core_increment"],
+        select=select,
         vars_=resolved_vars,
         full_refresh=True,
     )
@@ -234,97 +192,26 @@ def run_core_module(
         target_schema = resolved_vars.get("target_schema", "public")
         scenario_id = resolved_vars.get("scenario_id", "default")
         logger.info(
-            "Core module completed for workspace %s (scenario %s)",
+            "Module '%s' completed for workspace %s (scenario %s)",
+            module,
             workspace_id,
             scenario_id,
         )
-        return {
-            "success": True,
-            "results": dbt_result.results,
-            "error": None,
-            "end_state_table": f"end_state_{scenario_id}",
-            "increment_table": f"increment_{scenario_id}",
-            "layer_schema": target_schema,
-        }
-
-    error_msg = dbt_result.error or "Unknown dbt error"
-    logger.error(
-        "Core module failed for workspace %s: %s",
-        workspace_id,
-        error_msg,
-    )
-    return {
-        "success": False,
-        "results": [],
-        "error": error_msg,
-        "end_state_table": None,
-        "increment_table": None,
-        "layer_schema": None,
-    }
-
-
-# ────────────────────────────────────────────────────────────
-#  Water & Energy Demand tasks
-# ────────────────────────────────────────────────────────────
-
-
-@shared_task(
-    bind=True,
-    name="run_water_demand",
-    autoretry_for=(Exception,),
-    max_retries=2,
-    default_retry_delay=60,
-)
-def run_water_demand(
-    self,
-    workspace_id: int,
-    vars_: dict | None = None,
-) -> dict:
-    """Run the Water Demand dbt model.
-
-    Computes residential and non-residential water demand from the
-    end-state allocation table.
-
-    Args:
-        workspace_id: Workspace primary key.
-        vars_: dbt variables dict.
-
-    Returns:
-        Dict with keys: success, results, error, layer_schema, layer_table.
-    """
-    resolved_vars = vars_ or {}
-    logger.info(
-        "Running water_demand for workspace %s with vars: %s",
-        workspace_id,
-        resolved_vars,
-    )
-
-    runner = DbtRunnerWrapper()
-    dbt_result = runner.run(
-        select=["water_demand"],
-        vars_=resolved_vars,
-        full_refresh=True,
-    )
-
-    if dbt_result.success:
-        target_schema = resolved_vars.get("target_schema", "public")
-        scenario_id = resolved_vars.get("scenario_id", "default")
-        logger.info(
-            "water_demand completed for workspace %s (scenario %s)",
-            workspace_id,
-            scenario_id,
-        )
+        # First table in the select list is the "primary" result table
+        primary_table = select[0]
+        table_name = f"{primary_table}_{scenario_id}"
         return {
             "success": True,
             "results": dbt_result.results,
             "error": None,
             "layer_schema": target_schema,
-            "layer_table": f"water_demand_{scenario_id}",
+            "layer_table": table_name,
         }
 
     error_msg = dbt_result.error or "Unknown dbt error"
     logger.error(
-        "water_demand failed for workspace %s: %s",
+        "Module '%s' failed for workspace %s: %s",
+        module,
         workspace_id,
         error_msg,
     )
@@ -336,568 +223,6 @@ def run_water_demand(
         "layer_table": None,
     }
 
-
-@shared_task(
-    bind=True,
-    name="run_energy_demand",
-    autoretry_for=(Exception,),
-    max_retries=2,
-    default_retry_delay=60,
-)
-def run_energy_demand(
-    self,
-    workspace_id: int,
-    vars_: dict | None = None,
-) -> dict:
-    """Run the Energy Demand dbt model.
-
-    Computes residential and non-residential energy demand (electricity + gas)
-    from the end-state allocation table.
-
-    Args:
-        workspace_id: Workspace primary key.
-        vars_: dbt variables dict.
-
-    Returns:
-        Dict with keys: success, results, error, layer_schema, layer_table.
-    """
-    resolved_vars = vars_ or {}
-    logger.info(
-        "Running energy_demand for workspace %s with vars: %s",
-        workspace_id,
-        resolved_vars,
-    )
-
-    runner = DbtRunnerWrapper()
-    dbt_result = runner.run(
-        select=["energy_demand"],
-        vars_=resolved_vars,
-        full_refresh=True,
-    )
-
-    if dbt_result.success:
-        target_schema = resolved_vars.get("target_schema", "public")
-        scenario_id = resolved_vars.get("scenario_id", "default")
-        logger.info(
-            "energy_demand completed for workspace %s (scenario %s)",
-            workspace_id,
-            scenario_id,
-        )
-        return {
-            "success": True,
-            "results": dbt_result.results,
-            "error": None,
-            "layer_schema": target_schema,
-            "layer_table": f"energy_demand_{scenario_id}",
-        }
-
-    error_msg = dbt_result.error or "Unknown dbt error"
-    logger.error(
-        "energy_demand failed for workspace %s: %s",
-        workspace_id,
-        error_msg,
-    )
-    return {
-        "success": False,
-        "results": [],
-        "error": error_msg,
-        "layer_schema": None,
-        "layer_table": None,
-    }
-
-
-
-# ────────────────────────────────────────────────────────────
-#  Land Consumption, Fiscal & Agriculture tasks
-# ────────────────────────────────────────────────────────────
-
-
-@shared_task(
-    bind=True,
-    name="run_land_consumption",
-    autoretry_for=(Exception,),
-    max_retries=2,
-    default_retry_delay=60,
-)
-def run_land_consumption(
-    self,
-    workspace_id: int,
-    vars_: dict | None = None,
-) -> dict:
-    """Run the Land Consumption dbt model (L1 + L2).
-
-    Computes land use transitions and impervious surface estimates
-    from the end-state allocation table.
-
-    Args:
-        workspace_id: Workspace primary key.
-        vars_: dbt variables dict.
-
-    Returns:
-        Dict with keys: success, results, error, layer_schema, layer_table.
-    """
-    resolved_vars = vars_ or {}
-    logger.info(
-        "Running land_consumption for workspace %s with vars: %s",
-        workspace_id,
-        resolved_vars,
-    )
-
-    runner = DbtRunnerWrapper()
-    dbt_result = runner.run(
-        select=["land_consumption"],
-        vars_=resolved_vars,
-        full_refresh=True,
-    )
-
-    if dbt_result.success:
-        target_schema = resolved_vars.get("target_schema", "public")
-        scenario_id = resolved_vars.get("scenario_id", "default")
-        logger.info(
-            "land_consumption completed for workspace %s (scenario %s)",
-            workspace_id,
-            scenario_id,
-        )
-        return {
-            "success": True,
-            "results": dbt_result.results,
-            "error": None,
-            "layer_schema": target_schema,
-            "layer_table": f"land_consumption_{scenario_id}",
-        }
-
-    error_msg = dbt_result.error or "Unknown dbt error"
-    logger.error(
-        "land_consumption failed for workspace %s: %s",
-        workspace_id,
-        error_msg,
-    )
-    return {
-        "success": False,
-        "results": [],
-        "error": error_msg,
-        "layer_schema": None,
-        "layer_table": None,
-    }
-
-
-@shared_task(
-    bind=True,
-    name="run_fiscal",
-    autoretry_for=(Exception,),
-    max_retries=2,
-    default_retry_delay=60,
-)
-def run_fiscal(
-    self,
-    workspace_id: int,
-    vars_: dict | None = None,
-) -> dict:
-    """Run the Fiscal dbt models (F1–F4).
-
-    Computes property tax, sales tax, service costs, and net fiscal impact
-    from the end-state allocation table.  Uses ref() ordering so dbt
-    runs F1→F2→F3→F4 in dependency order.
-
-    Args:
-        workspace_id: Workspace primary key.
-        vars_: dbt variables dict.
-
-    Returns:
-        Dict with keys: success, results, error, layer_schema, layer_table.
-    """
-    resolved_vars = vars_ or {}
-    logger.info(
-        "Running fiscal for workspace %s with vars: %s",
-        workspace_id,
-        resolved_vars,
-    )
-
-    runner = DbtRunnerWrapper()
-    dbt_result = runner.run(
-        select=[
-            "fiscal_property_tax",
-            "fiscal_sales_tax",
-            "fiscal_service_costs",
-            "fiscal_net_impact",
-        ],
-        vars_=resolved_vars,
-        full_refresh=True,
-    )
-
-    if dbt_result.success:
-        target_schema = resolved_vars.get("target_schema", "public")
-        scenario_id = resolved_vars.get("scenario_id", "default")
-        logger.info(
-            "fiscal completed for workspace %s (scenario %s)",
-            workspace_id,
-            scenario_id,
-        )
-        return {
-            "success": True,
-            "results": dbt_result.results,
-            "error": None,
-            "layer_schema": target_schema,
-            "layer_table": f"fiscal_property_tax_{scenario_id}",
-        }
-
-    error_msg = dbt_result.error or "Unknown dbt error"
-    logger.error(
-        "fiscal failed for workspace %s: %s",
-        workspace_id,
-        error_msg,
-    )
-    return {
-        "success": False,
-        "results": [],
-        "error": error_msg,
-        "layer_schema": None,
-        "layer_table": None,
-    }
-
-
-@shared_task(
-    bind=True,
-    name="run_agriculture",
-    autoretry_for=(Exception,),
-    max_retries=2,
-    default_retry_delay=60,
-)
-def run_agriculture(
-    self,
-    workspace_id: int,
-    vars_: dict | None = None,
-) -> dict:
-    """Run the Agriculture dbt model.
-
-    Computes crop yield, market value, production costs, and resource
-    use from the end-state allocation table.
-
-    Args:
-        workspace_id: Workspace primary key.
-        vars_: dbt variables dict.
-
-    Returns:
-        Dict with keys: success, results, error, layer_schema, layer_table.
-    """
-    resolved_vars = vars_ or {}
-    logger.info(
-        "Running agriculture for workspace %s with vars: %s",
-        workspace_id,
-        resolved_vars,
-    )
-
-    runner = DbtRunnerWrapper()
-    dbt_result = runner.run(
-        select=["agriculture"],
-        vars_=resolved_vars,
-        full_refresh=True,
-    )
-
-    if dbt_result.success:
-        target_schema = resolved_vars.get("target_schema", "public")
-        scenario_id = resolved_vars.get("scenario_id", "default")
-        logger.info(
-            "agriculture completed for workspace %s (scenario %s)",
-            workspace_id,
-            scenario_id,
-        )
-        return {
-            "success": True,
-            "results": dbt_result.results,
-            "error": None,
-            "layer_schema": target_schema,
-            "layer_table": f"agriculture_{scenario_id}",
-        }
-
-    error_msg = dbt_result.error or "Unknown dbt error"
-    logger.error(
-        "agriculture failed for workspace %s: %s",
-        workspace_id,
-        error_msg,
-    )
-    return {
-        "success": False,
-        "results": [],
-        "error": error_msg,
-        "layer_schema": None,
-        "layer_table": None,
-    }
-# ────────────────────────────────────────────────────────────
-#  Transportation module tasks (T1–T4)
-# ────────────────────────────────────────────────────────────
-
-
-@shared_task(
-    bind=True,
-    name="run_trip_generation",
-    autoretry_for=(Exception,),
-    max_retries=2,
-    default_retry_delay=60,
-)
-def run_trip_generation(
-    self,
-    workspace_id: int,
-    vars_: dict | None = None,
-) -> dict:
-    """Run the Trip Generation dbt model (T1).
-
-    Computes daily trip generation per parcel from ITE rates.
-
-    Args:
-        workspace_id: Workspace primary key.
-        vars_: dbt variables dict.
-
-    Returns:
-        Dict with keys: success, results, error, layer_schema, layer_table.
-    """
-    resolved_vars = vars_ or {}
-    logger.info(
-        "Running trip_generation for workspace %s with vars: %s",
-        workspace_id,
-        resolved_vars,
-    )
-
-    runner = DbtRunnerWrapper()
-    dbt_result = runner.run(
-        select=["trip_generation"],
-        vars_=resolved_vars,
-        full_refresh=True,
-    )
-
-    if dbt_result.success:
-        target_schema = resolved_vars.get("target_schema", "public")
-        scenario_id = resolved_vars.get("scenario_id", "default")
-        logger.info(
-            "trip_generation completed for workspace %s (scenario %s)",
-            workspace_id,
-            scenario_id,
-        )
-        return {
-            "success": True,
-            "results": dbt_result.results,
-            "error": None,
-            "layer_schema": target_schema,
-            "layer_table": f"trip_generation_{scenario_id}",
-        }
-
-    error_msg = dbt_result.error or "Unknown dbt error"
-    logger.error(
-        "trip_generation failed for workspace %s: %s",
-        workspace_id,
-        error_msg,
-    )
-    return {
-        "success": False,
-        "results": [],
-        "error": error_msg,
-        "layer_schema": None,
-        "layer_table": None,
-    }
-
-
-@shared_task(
-    bind=True,
-    name="run_trip_distribution",
-    autoretry_for=(Exception,),
-    max_retries=2,
-    default_retry_delay=60,
-)
-def run_trip_distribution(
-    self,
-    workspace_id: int,
-    vars_: dict | None = None,
-) -> dict:
-    """Run the Trip Distribution dbt Python model (T2).
-
-    Computes parcel-to-parcel trip distribution using a gravity model.
-
-    Args:
-        workspace_id: Workspace primary key.
-        vars_: dbt variables dict.
-
-    Returns:
-        Dict with keys: success, results, error, layer_schema, layer_table.
-    """
-    resolved_vars = vars_ or {}
-    logger.info(
-        "Running trip_distribution for workspace %s with vars: %s",
-        workspace_id,
-        resolved_vars,
-    )
-
-    runner = DbtRunnerWrapper()
-    dbt_result = runner.run(
-        select=["trip_distribution"],
-        vars_=resolved_vars,
-        full_refresh=True,
-    )
-
-    if dbt_result.success:
-        target_schema = resolved_vars.get("target_schema", "public")
-        scenario_id = resolved_vars.get("scenario_id", "default")
-        logger.info(
-            "trip_distribution completed for workspace %s (scenario %s)",
-            workspace_id,
-            scenario_id,
-        )
-        return {
-            "success": True,
-            "results": dbt_result.results,
-            "error": None,
-            "layer_schema": target_schema,
-            "layer_table": f"trip_distribution_{scenario_id}",
-        }
-
-    error_msg = dbt_result.error or "Unknown dbt error"
-    logger.error(
-        "trip_distribution failed for workspace %s: %s",
-        workspace_id,
-        error_msg,
-    )
-    return {
-        "success": False,
-        "results": [],
-        "error": error_msg,
-        "layer_schema": None,
-        "layer_table": None,
-    }
-
-
-@shared_task(
-    bind=True,
-    name="run_mode_choice",
-    autoretry_for=(Exception,),
-    max_retries=2,
-    default_retry_delay=60,
-)
-def run_mode_choice(
-    self,
-    workspace_id: int,
-    vars_: dict | None = None,
-) -> dict:
-    """Run the Mode Choice dbt Python model (T3).
-
-    Computes mode split (auto/transit/walk/bike) using multinomial logit.
-
-    Args:
-        workspace_id: Workspace primary key.
-        vars_: dbt variables dict.
-
-    Returns:
-        Dict with keys: success, results, error, layer_schema, layer_table.
-    """
-    resolved_vars = vars_ or {}
-    logger.info(
-        "Running mode_choice for workspace %s with vars: %s",
-        workspace_id,
-        resolved_vars,
-    )
-
-    runner = DbtRunnerWrapper()
-    dbt_result = runner.run(
-        select=["mode_choice"],
-        vars_=resolved_vars,
-        full_refresh=True,
-    )
-
-    if dbt_result.success:
-        target_schema = resolved_vars.get("target_schema", "public")
-        scenario_id = resolved_vars.get("scenario_id", "default")
-        logger.info(
-            "mode_choice completed for workspace %s (scenario %s)",
-            workspace_id,
-            scenario_id,
-        )
-        return {
-            "success": True,
-            "results": dbt_result.results,
-            "error": None,
-            "layer_schema": target_schema,
-            "layer_table": f"mode_choice_{scenario_id}",
-        }
-
-    error_msg = dbt_result.error or "Unknown dbt error"
-    logger.error(
-        "mode_choice failed for workspace %s: %s",
-        workspace_id,
-        error_msg,
-    )
-    return {
-        "success": False,
-        "results": [],
-        "error": error_msg,
-        "layer_schema": None,
-        "layer_table": None,
-    }
-
-
-@shared_task(
-    bind=True,
-    name="run_vmt",
-    autoretry_for=(Exception,),
-    max_retries=2,
-    default_retry_delay=60,
-)
-def run_vmt(
-    self,
-    workspace_id: int,
-    vars_: dict | None = None,
-) -> dict:
-    """Run the VMT dbt model (T4).
-
-    Computes vehicle miles traveled from mode choice and trip distribution.
-
-    Args:
-        workspace_id: Workspace primary key.
-        vars_: dbt variables dict.
-
-    Returns:
-        Dict with keys: success, results, error, layer_schema, layer_table.
-    """
-    resolved_vars = vars_ or {}
-    logger.info(
-        "Running vmt for workspace %s with vars: %s",
-        workspace_id,
-        resolved_vars,
-    )
-
-    runner = DbtRunnerWrapper()
-    dbt_result = runner.run(
-        select=["vmt"],
-        vars_=resolved_vars,
-        full_refresh=True,
-    )
-
-    if dbt_result.success:
-        target_schema = resolved_vars.get("target_schema", "public")
-        scenario_id = resolved_vars.get("scenario_id", "default")
-        logger.info(
-            "vmt completed for workspace %s (scenario %s)",
-            workspace_id,
-            scenario_id,
-        )
-        return {
-            "success": True,
-            "results": dbt_result.results,
-            "error": None,
-            "layer_schema": target_schema,
-            "layer_table": f"vmt_{scenario_id}",
-        }
-
-    error_msg = dbt_result.error or "Unknown dbt error"
-    logger.error(
-        "vmt failed for workspace %s: %s",
-        workspace_id,
-        error_msg,
-    )
-    return {
-        "success": False,
-        "results": [],
-        "error": error_msg,
-        "layer_schema": None,
-        "layer_table": None,
-    }
 
 # ────────────────────────────────────────────────────────────
 #  Pipeline chain callback
@@ -964,44 +289,18 @@ def _register_module_results(
     scenario_id: str,
 ) -> None:
     """Register dbt result views as Layers (lightweight, no django import cycle)."""
+
     layer_schema = task_result.get("layer_schema")
     if not layer_schema:
         return
 
-    # Module → result table name templates (mirrors pipeline.MODULE_RESULT_TABLES)
-    table_templates: list[str] = []
-    if module == "env_constraint":
-        table_templates = [f"env_constraint_{scenario_id}"]
-    elif module == "core":
-        table_templates = [
-            f"end_state_{scenario_id}",
-            f"increment_{scenario_id}",
-        ]
-    elif module == "water_demand":
-        table_templates = [f"water_demand_{scenario_id}"]
-    elif module == "energy_demand":
-        table_templates = [f"energy_demand_{scenario_id}"]
-
-    elif module == "land_consumption":
-        table_templates = [
-            f"land_consumption_{scenario_id}",
-            f"impervious_surface_{scenario_id}",
-        ]
-    elif module == "fiscal":
-        table_templates = [
-            f"fiscal_property_tax_{scenario_id}",
-            f"fiscal_sales_tax_{scenario_id}",
-            f"fiscal_service_costs_{scenario_id}",
-            f"fiscal_net_impact_{scenario_id}",
-        ]
-    elif module == "agriculture":
-        table_templates = [f"agriculture_{scenario_id}"]
-    for table_name in table_templates:
+    label = get_module_label(module)
+    for table_name in get_result_table_names(module, scenario_id):
         register_result_layer(
             workspace_id=workspace_id,
             schema=layer_schema,
             table=table_name,
-            name=f"{module.replace('_', ' ').title()} — {scenario_id}",
+            name=f"{label} — {scenario_id}",
             description=f"Analysis result for module '{module}' (scenario: {scenario_id})",
         )
 
@@ -1025,13 +324,12 @@ def _dispatch_next_in_task(
         return
 
     # Avoid circular import: tasks → pipeline → tasks
-    from brewgis.workspace.analysis.pipeline import (  # noqa: PLC0415, I001
-        _get_vars_for_module,
-        MODULE_TASKS,
+    from brewgis.workspace.analysis.module_registry import (  # noqa: PLC0415, I001
+        get_vars_for_module,
     )
 
     module = remaining[0]
-    module_vars = _get_vars_for_module(
+    module_vars = get_vars_for_module(
         module,
         {**base_vars, "completed_modules": list(completed_modules)},
     )
@@ -1042,23 +340,16 @@ def _dispatch_next_in_task(
 
     scenario_id = base_vars.get("scenario_id", "default")
 
-    task_func = MODULE_TASKS.get(module)
-    if task_func is None:
-        run.status = "failed"
-        run.error_log = f"Unknown module: {module}"
-        run.completed_at = __import__("django").utils.timezone.now()
-        run.save(update_fields=["status", "error_log", "completed_at"])
-        return
-
     _plain_logger.info(
         "Dispatching next module '%s' for AnalysisRun #%s",
         module,
         run.pk,
     )
 
-    task_func.apply_async(
+    run_dbt_module.apply_async(
         kwargs={
             "workspace_id": run.workspace_id,
+            "module": module,
             "vars_": module_vars,
         },
         link=handle_module_completed.s(

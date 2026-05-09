@@ -44,4 +44,4 @@ SELECT
     + COALESCE(es.employment_total * {{ cost_per_employee }}, 0.0)
     AS service_cost_total,
     es.geom
-FROM {{ var('target_schema') }}.end_state_{{ var('scenario_id') }} AS es
+FROM {{ ref('core_end_state') }} AS es

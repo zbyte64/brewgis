@@ -2,14 +2,8 @@
     Core Increment Model — Scenario Builder Delta
 
     Computes the delta between the end-state allocation and the existing
-    (base canvas) condition for each attribute. This shows the change
+    (base canvas) condition for each attribute.  This shows the change
     from baseline for every output metric.
-
-    Inputs (via dbt vars):
-        source_schema: Schema containing source tables.
-        base_canvas_table: Existing condition table (must match end_state schema).
-        target_schema: Schema for output.
-        scenario_id: Unique scenario identifier.
 
     The increment is computed as:
 
@@ -27,14 +21,27 @@
 
 {{ config(alias='increment_' ~ var('scenario_id')) }}
 
-
 {%- set source_schema = var('source_schema') -%}
 {%- set base_canvas = var('base_canvas_table', 'base_canvas') -%}
-{%- set target_schema = var('target_schema') -%}
-{%- set scenario_id = var('scenario_id') -%}
+
+{%- set all_cols = [
+    "population", "households", "dwelling_units_total",
+    "dwelling_units_sf_ll", "dwelling_units_sf_sl",
+    "dwelling_units_attached_sf", "dwelling_units_mf_2_4", "dwelling_units_mf_5p",
+    "employment_total",
+    "building_sqft_total", "building_sqft_residential", "building_sqft_commercial",
+    "building_sqft_office", "building_sqft_industrial", "building_sqft_public",
+    "building_sqft_retail", "building_sqft_wholesale", "building_sqft_education",
+    "building_sqft_healthcare", "building_sqft_hotel_lodging", "building_sqft_entertainment",
+    "building_sqft_other",
+    "res_irrigated_sqft", "com_irrigated_sqft",
+    "parcel_acres_developed", "parcel_acres_agriculture",
+    "parcel_acres_open_space", "parcel_acres_vacant",
+    "intersection_density",
+] -%}
 
 WITH end_state AS (
-    SELECT * FROM {{ target_schema }}.end_state_{{ scenario_id }}
+    SELECT * FROM {{ ref('core_end_state') }}
 ),
 
 base AS (
@@ -43,62 +50,17 @@ base AS (
 
 SELECT
     -- Parcel ID for joining
-    b.gross_acres,
+    COALESCE(es.parcel_id, b.parcel_id) AS parcel_id,
 
     -- Base acres (from base canvas, same for all scenarios)
+    b.gross_acres,
+
     es.acres_developable,
     es.acres_developed,
     es.land_dev_category,
 
-    -- Population & Households deltas
-    COALESCE(es.parcel_id, b.parcel_id) AS parcel_id,
-    COALESCE(es.population, 0.0) - COALESCE(b.population, 0.0) AS population,
-
-    -- Dwelling unit deltas
-    COALESCE(es.households, 0.0) - COALESCE(b.households, 0.0) AS households,
-    COALESCE(es.dwelling_units_total, 0.0) - COALESCE(b.dwelling_units_total, 0.0) AS dwelling_units_total,
-    COALESCE(es.dwelling_units_sf_ll, 0.0) - COALESCE(b.dwelling_units_sf_ll, 0.0) AS dwelling_units_sf_ll,
-    COALESCE(es.dwelling_units_sf_sl, 0.0) - COALESCE(b.dwelling_units_sf_sl, 0.0) AS dwelling_units_sf_sl,
-    COALESCE(es.dwelling_units_attached_sf, 0.0)
-    - COALESCE(b.dwelling_units_attached_sf, 0.0) AS dwelling_units_attached_sf,
-    COALESCE(es.dwelling_units_mf_2_4, 0.0) - COALESCE(b.dwelling_units_mf_2_4, 0.0) AS dwelling_units_mf_2_4,
-
-    -- Employment deltas
-    COALESCE(es.dwelling_units_mf_5p, 0.0) - COALESCE(b.dwelling_units_mf_5p, 0.0) AS dwelling_units_mf_5p,
-
-    -- Building square footage deltas
-    COALESCE(es.employment_total, 0.0) - COALESCE(b.employment_total, 0.0) AS employment_total,
-    COALESCE(es.building_sqft_total, 0.0) - COALESCE(b.building_sqft_total, 0.0) AS building_sqft_total,
-    COALESCE(es.building_sqft_residential, 0.0)
-    - COALESCE(b.building_sqft_residential, 0.0) AS building_sqft_residential,
-    COALESCE(es.building_sqft_commercial, 0.0) - COALESCE(b.building_sqft_commercial, 0.0) AS building_sqft_commercial,
-    COALESCE(es.building_sqft_office, 0.0) - COALESCE(b.building_sqft_office, 0.0) AS building_sqft_office,
-    COALESCE(es.building_sqft_industrial, 0.0) - COALESCE(b.building_sqft_industrial, 0.0) AS building_sqft_industrial,
-    COALESCE(es.building_sqft_public, 0.0) - COALESCE(b.building_sqft_public, 0.0) AS building_sqft_public,
-    COALESCE(es.building_sqft_retail, 0.0) - COALESCE(b.building_sqft_retail, 0.0) AS building_sqft_retail,
-    COALESCE(es.building_sqft_wholesale, 0.0) - COALESCE(b.building_sqft_wholesale, 0.0) AS building_sqft_wholesale,
-    COALESCE(es.building_sqft_education, 0.0) - COALESCE(b.building_sqft_education, 0.0) AS building_sqft_education,
-    COALESCE(es.building_sqft_healthcare, 0.0) - COALESCE(b.building_sqft_healthcare, 0.0) AS building_sqft_healthcare,
-    COALESCE(es.building_sqft_hotel_lodging, 0.0)
-    - COALESCE(b.building_sqft_hotel_lodging, 0.0) AS building_sqft_hotel_lodging,
-    COALESCE(es.building_sqft_entertainment, 0.0)
-    - COALESCE(b.building_sqft_entertainment, 0.0) AS building_sqft_entertainment,
-
-    -- Water deltas
-    COALESCE(es.building_sqft_other, 0.0) - COALESCE(b.building_sqft_other, 0.0) AS building_sqft_other,
-    COALESCE(es.res_irrigated_sqft, 0.0) - COALESCE(b.res_irrigated_sqft, 0.0) AS res_irrigated_sqft,
-
-    -- Parcel acres deltas
-    COALESCE(es.com_irrigated_sqft, 0.0) - COALESCE(b.com_irrigated_sqft, 0.0) AS com_irrigated_sqft,
-    COALESCE(es.parcel_acres_developed, 0.0) - COALESCE(b.parcel_acres_developed, 0.0) AS parcel_acres_developed,
-    COALESCE(es.parcel_acres_agriculture, 0.0) - COALESCE(b.parcel_acres_agriculture, 0.0) AS parcel_acres_agriculture,
-    COALESCE(es.parcel_acres_open_space, 0.0) - COALESCE(b.parcel_acres_open_space, 0.0) AS parcel_acres_open_space,
-
-    -- Network deltas
-    COALESCE(es.parcel_acres_vacant, 0.0) - COALESCE(b.parcel_acres_vacant, 0.0) AS parcel_acres_vacant,
-
-    -- Land development category (from end state, not a delta)
-    COALESCE(es.intersection_density, 0.0) - COALESCE(b.intersection_density, 0.0) AS intersection_density,
+    -- All attribute deltas
+    {{ delta_columns(all_cols, "es", "b") }},
 
     -- Geometry (from end state — use base if no end state)
     COALESCE(es.geom, b.geom) AS geom

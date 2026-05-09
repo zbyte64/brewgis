@@ -1,19 +1,17 @@
-"""Standalone transport model runners.
-
-Each runner reads input from Postgres (via ``django.db.connection``),
-calls the pure computation function from the corresponding dbt Python model,
-and writes results back to a Postgres output table.
-
-This avoids the cross-adapter ``dbt.ref()`` limitation: DuckDB Python models
-cannot reference Postgres-based dbt models. Instead we run the same pure
-functions outside dbt, then let the downstream SQL-only ``vmt`` model read
-via direct Postgres table references.
+"""
+Transport model runners have been consolidated into dbt Python models.  The
+pure computation functions (``_gravity_model``, ``_multinomial_logit``) live
+in ``brewgis/dbt_project/models/trip_distribution.py`` and
+``brewgis/dbt_project/models/mode_choice.py`` respectively, and are re-exported
+here for test use.
 """
 
-from brewgis.workspace.analysis.transport.mode_choice import run_mode_choice
-from brewgis.workspace.analysis.transport.trip_distribution import run_trip_distribution
+from __future__ import annotations
+
+from brewgis.dbt_project.models.mode_choice import _multinomial_logit
+from brewgis.dbt_project.models.trip_distribution import _gravity_model
 
 __all__ = [
-    "run_mode_choice",
-    "run_trip_distribution",
+    "_gravity_model",
+    "_multinomial_logit",
 ]

@@ -75,4 +75,4 @@ SELECT
     es.employment_total,
     es.geom
 
-FROM {{ var('target_schema') }}.end_state_{{ var('scenario_id') }} AS es
+FROM {{ ref('core_end_state') }} AS es

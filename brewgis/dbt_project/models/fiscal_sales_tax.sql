@@ -40,4 +40,4 @@ SELECT
         0.0
     ) AS sales_tax_revenue,
     es.geom
-FROM {{ var('target_schema') }}.end_state_{{ var('scenario_id') }} AS es
+FROM {{ ref('core_end_state') }} AS es

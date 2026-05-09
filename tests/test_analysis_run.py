@@ -292,7 +292,7 @@ class TestNewModuleResolution(TestCase):
 
     def test_module_result_tables_defined(self) -> None:
         """All new modules must have result table templates in MODULE_RESULT_TABLES."""
-        from brewgis.workspace.analysis.pipeline import MODULE_RESULT_TABLES
+        from brewgis.workspace.analysis.module_registry import MODULE_RESULT_TABLES
 
         for module in ["land_consumption", "fiscal", "agriculture"]:
             assert module in MODULE_RESULT_TABLES, (
@@ -357,7 +357,7 @@ class TestNewModuleResolution(TestCase):
 
     def test_transport_module_result_tables_defined(self) -> None:
         """Transport modules must have result tables in MODULE_RESULT_TABLES."""
-        from brewgis.workspace.analysis.pipeline import MODULE_RESULT_TABLES
+        from brewgis.workspace.analysis.module_registry import MODULE_RESULT_TABLES
 
         for module in ["trip_generation", "trip_distribution", "mode_choice", "vmt"]:
             assert module in MODULE_RESULT_TABLES, (

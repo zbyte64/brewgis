@@ -20,111 +20,31 @@ import deal
 from django.utils import timezone
 
 from brewgis.workspace.analysis.layer_registry import register_result_layer
-from brewgis.workspace.models import AnalysisRun
+from brewgis.workspace.analysis.module_registry import (
+    MODULE_DEPENDENCIES,
+    get_module_label,
+    get_result_table_names,
+    get_vars_for_module,
+    resolve_module_order as _resolve_module_order,
+)
 from brewgis.workspace.tasks import handle_module_completed
-from brewgis.workspace.tasks import run_agriculture
-from brewgis.workspace.tasks import run_core_module
-from brewgis.workspace.tasks import run_energy_demand
-from brewgis.workspace.tasks import run_env_constraint
-from brewgis.workspace.tasks import run_fiscal
-from brewgis.workspace.tasks import run_land_consumption
-from brewgis.workspace.tasks import run_water_demand
-from brewgis.workspace.tasks import run_trip_generation
-from brewgis.workspace.tasks import run_trip_distribution
-from brewgis.workspace.tasks import run_mode_choice
-from brewgis.workspace.tasks import run_vmt
+from brewgis.workspace.tasks import run_dbt_module
 
 logger = logging.getLogger(__name__)
 
-# Module dependency graph: later modules depend on earlier ones
-MODULE_DEPENDENCIES: dict[str, list[str]] = {
-    "env_constraint": [],
-    "core": ["env_constraint"],
-    "water_demand": ["core"],
-    "energy_demand": ["core"],
-    "land_consumption": ["core"],
-    "fiscal": ["core"],
-    "agriculture": ["core"],
-    "trip_generation": ["core"],
-    "trip_distribution": ["trip_generation"],
-    "mode_choice": ["trip_distribution"],
-    "vmt": ["mode_choice"],
-}
-
-# Module → Celery task mapping
-MODULE_TASKS = {
-    "env_constraint": run_env_constraint,
-    "core": run_core_module,
-    "water_demand": run_water_demand,
-    "energy_demand": run_energy_demand,
-    "land_consumption": run_land_consumption,
-    "fiscal": run_fiscal,
-    "agriculture": run_agriculture,
-    "trip_generation": run_trip_generation,
-    "trip_distribution": run_trip_distribution,
-    "mode_choice": run_mode_choice,
-    "vmt": run_vmt,
-}
-MODULE_RESULT_TABLES = {
-    "env_constraint": "env_constraint_{scenario_id}",
-    "core": ["end_state_{scenario_id}", "increment_{scenario_id}"],
-    "water_demand": "water_demand_{scenario_id}",
-    "energy_demand": "energy_demand_{scenario_id}",
-    "land_consumption": [
-        "land_consumption_{scenario_id}",
-        "impervious_surface_{scenario_id}",
-    ],
-    "fiscal": [
-        "fiscal_property_tax_{scenario_id}",
-        "fiscal_sales_tax_{scenario_id}",
-        "fiscal_service_costs_{scenario_id}",
-        "fiscal_net_impact_{scenario_id}",
-    ],
-    "agriculture": "agriculture_{scenario_id}",
-    "trip_generation": "trip_generation_{scenario_id}",
-    "trip_distribution": "trip_distribution_{scenario_id}",
-    "mode_choice": "mode_choice_{scenario_id}",
-    "vmt": "vmt_{scenario_id}",
-}
-
+# All modules use the parameterized ``run_dbt_module`` task.
+MODULE_TASKS: dict[str, Any] = dict.fromkeys(MODULE_DEPENDENCIES, run_dbt_module)
 
 @deal.ensure(lambda module_names, result: set(result) == set(module_names))
 @deal.raises(ValueError)
 def resolve_module_order(module_names: list[str]) -> list[str]:
     """Resolve requested modules into execution order respecting dependencies.
 
-    If module A depends on module B, B must run first. Missing dependencies
-    are automatically prepended.
-
-    Args:
-        module_names: List of requested module names.
-
-    Returns:
-        Ordered list of modules in execution sequence.
-
-    Raises:
-        ValueError: If an unknown module name is provided.
+    This wrapper adds deal contract checking on top of the module_registry
+    implementation.
     """
-    unknown = set(module_names) - set(MODULE_DEPENDENCIES)
-    if unknown:
-        msg = f"Unknown modules: {', '.join(sorted(unknown))}"
-        raise ValueError(msg)
+    return _resolve_module_order(module_names)
 
-    ordered: list[str] = []
-    seen: set[str] = set()
-
-    for module in module_names:
-        # Add dependencies first
-        for dep in MODULE_DEPENDENCIES.get(module, []):
-            if dep not in seen:
-                ordered.append(dep)
-                seen.add(dep)
-
-        if module not in seen:
-            ordered.append(module)
-            seen.add(module)
-
-    return ordered
 
 
 def _get_vars_for_module(module: str, base_vars: dict[str, Any]) -> dict[str, Any]:
@@ -133,16 +53,7 @@ def _get_vars_for_module(module: str, base_vars: dict[str, Any]) -> dict[str, An
     For modules that depend on env_constraint, inject the constraint output
     table name so the core module can reference it.
     """
-    vars_ = dict(base_vars)
-
-    if module == "core":
-        scenario_id = base_vars.get("scenario_id", "default")
-        # If env_constraint ran first, reference its output
-        if "env_constraint" in base_vars.get("completed_modules", []):
-            target_schema = base_vars.get("target_schema", "public")
-            vars_["constraints_output"] = f"{target_schema}.env_constraint_{scenario_id}"
-
-    return vars_
+    return get_vars_for_module(module, base_vars)
 
 
 def _register_results(
@@ -163,17 +74,13 @@ def _register_results(
     if not layer_schema:
         return
 
-    table_templates = MODULE_RESULT_TABLES.get(module, [])
-    if isinstance(table_templates, str):
-        table_templates = [table_templates]
-
-    for template in table_templates:
-        table_name = template.format(scenario_id=scenario_id)
+    label = get_module_label(module)
+    for table_name in get_result_table_names(module, scenario_id):
         register_result_layer(
             workspace_id=workspace_id,
             schema=layer_schema,
             table=table_name,
-            name=f"{module.replace('_', ' ').title()} — {scenario_id}",
+            name=f"{label} — {scenario_id}",
             description=f"Analysis result for module '{module}' (scenario: {scenario_id})",
         )
 
@@ -238,7 +145,6 @@ def _dispatch_next(
     handles result registration and dispatching subsequent modules.
     """
     if not remaining:
-        # All modules complete
         run.status = "completed"
         run.completed_at = timezone.now()
         run.save(update_fields=["status", "completed_at"])
@@ -276,6 +182,7 @@ def _dispatch_next(
     task_func.apply_async(
         kwargs={
             "workspace_id": run.workspace_id,
+            "module": module,
             "vars_": module_vars,
         },
         link=handle_module_completed.s(

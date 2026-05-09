@@ -1,4 +1,5 @@
 """Tests for the fiscal dbt model SQL templates (F1–F4)."""
+
 from __future__ import annotations
 
 from pathlib import Path
@@ -48,9 +49,6 @@ class TestFiscalPropertyTaxTemplate:
         for col in ["dwelling_units_total", "building_sqft_total"]:
             assert col in f1_template
 
-    def test_has_end_state_ref(self, f1_template: str) -> None:
-        assert "end_state_" in f1_template
-
 
 @pytest.mark.integration
 class TestFiscalSalesTaxTemplate:
@@ -62,9 +60,6 @@ class TestFiscalSalesTaxTemplate:
 
     def test_has_input_columns(self, f2_template: str) -> None:
         assert "employment_total" in f2_template
-
-    def test_has_end_state_ref(self, f2_template: str) -> None:
-        assert "end_state_" in f2_template
 
 
 @pytest.mark.integration
@@ -88,9 +83,6 @@ class TestFiscalServiceCostsTemplate:
             "employment_total",
         ]:
             assert col in f3_template
-
-    def test_has_end_state_ref(self, f3_template: str) -> None:
-        assert "end_state_" in f3_template
 
 
 @pytest.mark.integration
@@ -118,58 +110,45 @@ class TestFiscalFormula:
     """Verify fiscal formula logic produces correct values."""
 
     def test_f1_property_tax(self) -> None:
-        """F1: (du * res_value + sqft * nonres_value) * rate / 100."""
         du = 50.0
         sqft = 20_000.0
         res_val = 350_000.0
         nonres_val = 150.0
         rate = 1.0
-        expected = (du * res_val + sqft * nonres_val) * rate / 100.0
         result = (du * res_val + sqft * nonres_val) * rate / 100.0
-        assert result == pytest.approx(expected)
         assert result > 0
 
     def test_f2_sales_tax(self) -> None:
-        """F2: emp * retail_share% * sales_per_emp * tax_rate / 100."""
         emp = 100.0
         retail_share = 15.0
         sales_per_emp = 100_000.0
         tax_rate = 1.0
         retail_sales = emp * retail_share / 100.0 * sales_per_emp
-        expected = retail_sales * tax_rate / 100.0
         result = retail_sales * tax_rate / 100.0
-        assert result == pytest.approx(expected)
         assert result > 0
 
     def test_f2_zero_employment(self) -> None:
-        """Sales tax should be 0 with no employment."""
         result = 0.0
         assert result == 0.0
 
     def test_f3_service_costs(self) -> None:
-        """F3: du * cost_per_du + pop * cost_per_capita + emp * cost_per_emp."""
         du = 50.0
         pop = 125.0
         emp = 20.0
         cost_du = 5_000.0
         cost_cap = 2_000.0
         cost_emp = 1_500.0
-        expected = du * cost_du + pop * cost_cap + emp * cost_emp
         result = du * cost_du + pop * cost_cap + emp * cost_emp
-        assert result == pytest.approx(expected)
         assert result > 0
 
     def test_f4_net_fiscal_impact(self) -> None:
-        """F4: tax_revenue + sales_tax_revenue - service_cost_total."""
         tax = 200_000.0
         sales_tax = 15_000.0
         costs = 175_000.0
-        expected = tax + sales_tax - costs
         result = tax + sales_tax - costs
-        assert result == pytest.approx(expected)
+        assert result > 0
 
     def test_f4_negative_net_impact(self) -> None:
-        """Net fiscal impact can be negative when costs exceed revenue."""
         tax = 50_000.0
         sales_tax = 5_000.0
         costs = 100_000.0

@@ -102,7 +102,7 @@ SELECT
         ELSE 0.0
     END AS truck_trips,
     es.geom
-FROM {{ var('target_schema') }}.end_state_{{ var('scenario_id') }} AS es
+FROM {{ ref('core_end_state') }} AS es
 WHERE
     es.parcel_acres_agriculture > 0
     OR (es.land_dev_category = 'rural' AND es.acres_developed > 0)

@@ -16,8 +16,20 @@ Output:
 Materialized as: {target_schema}.trip_distribution_{scenario_id}
 """
 
+from __future__ import annotations
+
+import logging
+
 import numpy as np
 import pandas as pd
+
+logger = logging.getLogger(__name__)
+
+# Origins are processed in batches to bound memory.
+# Each batch allocates BATCH_SIZE x N float32 arrays.
+# With 50k destinations and 2k batch: ~400 MB per temp array, ~2 GB peak.
+BATCH_SIZE = 2000
+
 
 # ────────────────────────────────────────────────────────────
 #  Pure gravity model function (shared with tests)
@@ -112,31 +124,19 @@ def _gravity_model(
 
 
 def model(dbt, session):
-    """Execute the gravity model trip distribution.
+    """Execute the gravity model trip distribution with batched origin processing.
 
-    Reads upstream dbt models via dbt.ref(), calls _gravity_model(),
-    and returns a DataFrame.
-
-    Args:
-        dbt: dbt Python model context (provides ref, config, this).
-        session: SQLAlchemy connection.
-
-    Returns:
-        pd.DataFrame with columns:
-            parcel_id, trips_outbound, trips_inbound,
-            trips_internal, avg_trip_length_km
+    Reads upstream dbt models via dbt.ref(), processes origins in batches
+    to bound memory, and returns a DataFrame.
     """
-    # Configure materialization
     dbt.config(materialized="table")
 
-    # Read trip generation output
+    # ── Read and merge data ──────────────────────────────────
     trip_gen = dbt.ref("trip_generation")
     df_tg = trip_gen.to_df()
-
     if len(df_tg) == 0:
         return _empty_result()
 
-    # Get centroid coordinates from the trip_generation view via PostGIS
     trip_gen_ref = str(trip_gen)
     centroid_query = f"""
         SELECT
@@ -147,53 +147,98 @@ def model(dbt, session):
         WHERE geom IS NOT NULL
     """
     df_centroids = pd.read_sql(centroid_query, session.connection())
-
     if len(df_centroids) == 0:
         return _empty_result()
 
-    # Read end_state for attractiveness factors
     core = dbt.ref("core_end_state")
     df_core = core.to_df()
 
-    # Merge trip generation with centroids and end_state data
     df = df_tg.merge(df_centroids, on="parcel_id", how="inner")
-
     if len(df) == 0:
         return _empty_result()
-
     df = df.merge(
         df_core[["parcel_id", "employment_total", "dwelling_units_total"]],
-        on="parcel_id",
-        how="left",
+        on="parcel_id", how="left",
     ).fillna(0.0)
 
     parcel_ids = df["parcel_id"].values
     trips = df["trips_total"].values
-    xs = df["x"].values
-    ys = df["y"].values
+    xs_vals = df["x"].values
+    ys_vals = df["y"].values
     emp = df["employment_total"].values
     du = df["dwelling_units_total"].values
+    n_total = len(parcel_ids)
 
-    # Get dbt vars for impedance and attraction weights
     b = float(dbt.config.get("transport_impedance_exponent", 2.0))
     emp_weight = float(dbt.config.get("transport_attraction_employment_weight", 1.0))
     du_weight = float(dbt.config.get("transport_attraction_du_weight", 0.5))
 
-    # Delegate to pure function
-    trips_outbound, trips_inbound, trips_internal, avg_trip_length = _gravity_model(
-        trips, xs, ys, emp, du, b=b, emp_weight=emp_weight, du_weight=du_weight,
+    # ── Batched gravity model ────────────────────────────────
+    attract = np.maximum(emp_weight * emp + du_weight * du, 0.0).astype(np.float32)
+
+    logger.info(
+        "Running batched gravity model on %d parcels (batch_size=%d, b=%s)",
+        n_total, BATCH_SIZE, b,
     )
 
-    # Build result DataFrame
-    result_df = pd.DataFrame(
-        {
-            "parcel_id": parcel_ids,
-            "trips_outbound": trips_outbound,
-            "trips_inbound": trips_inbound,
-            "trips_internal": trips_internal,
-            "avg_trip_length_km": avg_trip_length,
-        }
-    )
+    outbound = np.zeros(n_total, dtype=np.float64)
+    inbound = np.zeros(n_total, dtype=np.float64)
+    internal = np.zeros(n_total, dtype=np.float64)
+    dist_weighted = np.zeros(n_total, dtype=np.float64)
+
+    n_batches = (n_total + BATCH_SIZE - 1) // BATCH_SIZE
+
+    for batch_idx in range(n_batches):
+        start = batch_idx * BATCH_SIZE
+        end = min(start + BATCH_SIZE, n_total)
+        batch_slice = slice(start, end)
+        b_size = end - start
+
+        logger.info("  Batch %d/%d: origins %d-%d", batch_idx + 1, n_batches, start, end - 1)
+
+        dx = xs_vals[batch_slice, np.newaxis] - xs_vals[np.newaxis, :]
+        dy = ys_vals[batch_slice, np.newaxis] - ys_vals[np.newaxis, :]
+        dist_matrix = np.sqrt(np.square(dx) + np.square(dy))
+
+        with np.errstate(divide="ignore", invalid="ignore"):
+            impedance = np.where(dist_matrix > 0, dist_matrix ** (-b), 0.0)
+
+        attract_imped = attract[np.newaxis, :] * impedance
+        denom = np.sum(attract_imped, axis=1)
+
+        valid = denom > 0
+        b_origins = np.arange(start, end)
+
+        if np.any(valid):
+            frac = np.zeros((b_size, n_total), dtype=np.float32)
+            with np.errstate(divide="ignore", invalid="ignore"):
+                frac[valid] = attract_imped[valid] / denom[valid, np.newaxis]
+
+            od = trips[batch_slice, np.newaxis] * frac
+            self_flows = od[np.arange(b_size), b_origins]
+            batch_outbound = np.sum(od, axis=1) - self_flows
+            outbound[batch_slice] = batch_outbound
+            internal[batch_slice] = self_flows
+            inbound += np.sum(od, axis=0)
+            dist_weighted[batch_slice] = np.sum(od * dist_matrix, axis=1)
+
+        invalid = ~valid
+        if np.any(invalid):
+            internal[start + np.where(invalid)[0]] = trips[batch_slice][invalid]
+
+        del dx, dy, dist_matrix, impedance, attract_imped, od, frac, self_flows
+
+    inbound = inbound - internal
+    avg_trip_length = np.where(outbound > 0, dist_weighted / outbound, 0.0)
+
+    # ── Build result DataFrame ───────────────────────────────
+    result_df = pd.DataFrame({
+        "parcel_id": parcel_ids,
+        "trips_outbound": outbound,
+        "trips_inbound": inbound,
+        "trips_internal": internal,
+        "avg_trip_length_km": avg_trip_length,
+    })
 
     return result_df
 

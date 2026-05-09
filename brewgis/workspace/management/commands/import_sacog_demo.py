@@ -439,6 +439,8 @@ class Command(BaseCommand):
             ],
             "agriculture": ["agriculture"],
             "trip_generation": ["trip_generation"],
+            "trip_distribution": ["trip_distribution"],
+            "mode_choice": ["mode_choice"],
             "vmt": ["vmt"],
         }
 
@@ -447,11 +449,8 @@ class Command(BaseCommand):
         self._create_base_case_end_state()
         completed.append("core")
 
-        # Modules handled by standalone scripts (dbt can't cross-adapter ref)
-        STANDALONE_MODULES = {"trip_distribution", "mode_choice"}
-        dbt_modules = [m for m in ordered_modules if m not in STANDALONE_MODULES]
+        for module in ordered_modules:
 
-        for module in dbt_modules:
             model_selectors = MODULE_SELECTS.get(module, [module])
             self.stdout.write(
                 f"  Running module: {module} ({', '.join(model_selectors)})..."
@@ -469,19 +468,6 @@ class Command(BaseCommand):
                 )
                 break
 
-        # Run standalone transport models after dbt trip_generation succeeds
-        if "trip_generation" in completed:
-            self.stdout.write("  Running standalone transport models...")
-            from brewgis.workspace.analysis.transport import run_trip_distribution
-            from brewgis.workspace.analysis.transport import run_mode_choice
-
-            td_count = run_trip_distribution(WORKSPACE_SCHEMA, SCENARIO_SLUG)
-            self.stdout.write(f"  ✓ trip_distribution completed: {td_count} rows")
-            completed.append("trip_distribution")
-
-            mc_count = run_mode_choice(WORKSPACE_SCHEMA, SCENARIO_SLUG)
-            self.stdout.write(f"  ✓ mode_choice completed: {mc_count} rows")
-            completed.append("mode_choice")
 
         if len(completed) == len(ordered_modules):
             self.stdout.write(

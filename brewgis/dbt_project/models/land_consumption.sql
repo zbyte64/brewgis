@@ -50,7 +50,7 @@ WITH parcel_data AS (
         es.parcel_acres_open_space,
         es.parcel_acres_vacant,
         es.geom
-    FROM {{ var('target_schema') }}.end_state_{{ var('scenario_id') }} AS es
+    FROM {{ ref('core_end_state') }} AS es
 ),
 
 -- L1: Land use change classification

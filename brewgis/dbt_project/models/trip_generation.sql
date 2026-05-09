@@ -51,7 +51,7 @@ WITH parcel_base AS (
         es.geom,
         bf.trip_rate_override,
         bf.pass_by_trip_pct
-    FROM {{ var('target_schema') }}.end_state_{{ var('scenario_id') }} AS es
+    FROM {{ ref('core_end_state') }} AS es
     LEFT JOIN {{ source_schema }}.{{ built_form_table }} AS bf
         ON es.built_form_id = bf.key
 ),

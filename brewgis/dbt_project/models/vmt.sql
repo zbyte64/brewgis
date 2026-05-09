@@ -31,10 +31,10 @@ WITH mode_trips AS (
         td.avg_trip_length_km,
         es.population,
         es.geom
-    FROM {{ var('target_schema') }}.mode_choice_{{ var('scenario_id') }} AS mc
-    LEFT JOIN {{ var('target_schema') }}.trip_distribution_{{ var('scenario_id') }} AS td
+    FROM {{ ref('mode_choice') }} AS mc
+    LEFT JOIN {{ ref('trip_distribution') }} AS td
         ON mc.parcel_id = td.parcel_id
-    LEFT JOIN {{ var('target_schema') }}.end_state_{{ var('scenario_id') }} AS es
+    LEFT JOIN {{ ref('core_end_state') }} AS es
         ON mc.parcel_id = es.parcel_id
 )
 
