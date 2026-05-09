@@ -45,10 +45,11 @@ def import_center(request: HttpRequest) -> HttpResponse:
         except Workspace.DoesNotExist:
             pass
 
-    # Recent imports
-    recent_imports = DataImportRun.objects.select_related("workspace").order_by(
-        "-created_at"
-    )[:20]
+    # Recent imports (scoped to workspace if specified)
+    recent_imports = DataImportRun.objects.select_related("workspace")
+    if workspace_pk:
+        recent_imports = recent_imports.filter(workspace_id=workspace_pk)
+    recent_imports = recent_imports.order_by("-created_at")[:20]
 
     context = {
         "active_tab": active_tab,

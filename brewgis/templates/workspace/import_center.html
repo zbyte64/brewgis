@@ -75,7 +75,8 @@
           </p>
           <form id="poi-form" hx-post="{% url 'workspace:poi_fetch' %}" hx-target="#poi-result" hx-swap="innerHTML">
             {% crispy poi_form %}
-            <button type="submit" class="btn btn-primary mt-2">Import POIs</button>
+            <button type="submit" class="btn btn-primary mt-2" hx-indicator="#spinner-poi">Import POIs</button>
+            <span id="spinner-poi" class="htmx-indicator spinner-border spinner-border-sm ms-2"></span>
           </form>
           <div id="poi-result" class="mt-3"></div>
         </div>
@@ -113,7 +114,8 @@
                     hx-target="#census-result"
                     hx-swap="innerHTML">
                 {% crispy census_form %}
-                <button type="submit" class="btn btn-primary mt-2">Import ACS Data</button>
+                <button type="submit" class="btn btn-primary mt-2" hx-indicator="#spinner-acs">Import ACS Data</button>
+                <span id="spinner-acs" class="htmx-indicator spinner-border spinner-border-sm ms-2"></span>
               </form>
               <div id="census-result" class="mt-3"></div>
             </div>
@@ -125,7 +127,8 @@
                     hx-target="#employment-result"
                     hx-swap="innerHTML">
                 {% crispy employment_form %}
-                <button type="submit" class="btn btn-primary mt-2">Import LEHD Data</button>
+                <button type="submit" class="btn btn-primary mt-2" hx-indicator="#spinner-lehd">Import LEHD Data</button>
+                <span id="spinner-lehd" class="htmx-indicator spinner-border spinner-border-sm ms-2"></span>
               </form>
               <div id="employment-result" class="mt-3"></div>
             </div>
@@ -165,7 +168,8 @@
                     hx-target="#allocate-result"
                     hx-swap="innerHTML">
                 {% crispy allocate_form %}
-                <button type="submit" class="btn btn-primary mt-2">Run Allocation</button>
+                <button type="submit" class="btn btn-primary mt-2" hx-indicator="#spinner-allocate">Run Allocation</button>
+                <span id="spinner-allocate" class="htmx-indicator spinner-border spinner-border-sm ms-2"></span>
               </form>
               <div id="allocate-result" class="mt-3"></div>
             </div>
@@ -177,7 +181,8 @@
                     hx-target="#stitch-result"
                     hx-swap="innerHTML">
                 {% crispy stitch_form %}
-                <button type="submit" class="btn btn-primary mt-2">Run Stitch</button>
+                <button type="submit" class="btn btn-primary mt-2" hx-indicator="#spinner-stitch">Run Stitch</button>
+                <span id="spinner-stitch" class="htmx-indicator spinner-border spinner-border-sm ms-2"></span>
               </form>
               <div id="stitch-result" class="mt-3"></div>
             </div>

@@ -4,7 +4,14 @@
 {% block title %}Symbology - {{ layer.name }}{% endblock title %}
 
 {% block content %}
-<div class="container mt-3">
+<nav aria-label="breadcrumb">
+  <ol class="breadcrumb">
+    <li class="breadcrumb-item"><a href="{% url 'workspace:home' %}">{% translate "Home" %}</a></li>
+    <li class="breadcrumb-item"><a href="{% url 'workspace:workspace_map' layer.workspace.pk %}">{% translate "Map" %} - {{ layer.workspace.name }}</a></li>
+    <li class="breadcrumb-item active" aria-current="page">{% translate "Symbology" %}: {{ layer.name }}</li>
+  </ol>
+</nav>
+<div class="container mt-4">
   <div class="row">
     <div class="col-lg-10 mx-auto">
       <div class="card">

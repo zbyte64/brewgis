@@ -4,6 +4,13 @@
 {% block title %}{{ workspace.name }} — Brew GIS{% endblock title %}
 
 {% block content %}
+<nav aria-label="breadcrumb">
+  <ol class="breadcrumb">
+    <li class="breadcrumb-item"><a href="{% url 'workspace:home' %}">{% translate "Home" %}</a></li>
+    <li class="breadcrumb-item active" aria-current="page">{{ workspace.name }}</li>
+  </ol>
+</nav>
+
 <div class="container mt-4">
   <!-- Region Header -->
   <div class="p-4 mb-4 bg-light rounded-3">

@@ -4,9 +4,15 @@
 {% block title %}Building Types — Brew GIS{% endblock title %}
 
 {% block content %}
+<nav aria-label="breadcrumb">
+  <ol class="breadcrumb">
+    <li class="breadcrumb-item"><a href="{% url 'workspace:home' %}">{% translate "Home" %}</a></li>
+    <li class="breadcrumb-item active" aria-current="page">{% translate "Building Types" %}</li>
+  </ol>
+</nav>
 <div class="container mt-4">
   <div class="d-flex justify-content-between align-items-center mb-4">
-    <h1>Building Types</h1>
+    <h1 class="display-5 fw-bold">{% translate "Building Types" %}</h1>
     <a href="{% url 'workspace:building_type_create' %}" class="btn btn-primary">+ New Building Type</a>
   </div>
 
@@ -40,7 +46,7 @@
             </div>
             <div class="card-footer d-flex justify-content-between">
               <a href="{% url 'workspace:building_type_edit' bt.pk %}" class="btn btn-sm btn-outline-primary">Edit</a>
-              <a href="{% url 'workspace:building_type_bake' bt.pk %}" class="btn btn-sm btn-outline-info">Bake</a>
+              <a href="{% url 'workspace:building_type_bake' bt.pk %}" class="btn btn-sm btn-outline-info" title="{% translate 'Apply this building type as a painted layer in the workspace' %}">Bake</a>
               <a href="{% url 'workspace:building_type_delete' bt.pk %}" class="btn btn-sm btn-outline-danger">Delete</a>
             </div>
           </div>

@@ -11,7 +11,14 @@
 {% endblock title %}
 
 {% block content %}
-<div class="container-fluid mt-2">
+<nav aria-label="breadcrumb">
+  <ol class="breadcrumb">
+    <li class="breadcrumb-item"><a href="{% url 'workspace:home' %}">{% translate "Home" %}</a></li>
+    <li class="breadcrumb-item active" aria-current="page">{% translate "Map" %} - {{ workspace.name }}</li>
+  </ol>
+</nav>
+
+<div class="container mt-4">
   <div class="row">
     <div class="col-12">
       <div class="card">
@@ -95,7 +102,7 @@
     </div>
 
     <!-- Direct Paint Controls -->
-    <div class="col-auto" id="paint-direct-controls">
+    <div class="col-auto paint-control-group" id="paint-direct-controls">
       <select class="form-select form-select-sm" id="paint-column" name="column" aria-label="Column">
         <option value="">Select column...</option>
         {% for column in paintable_columns %}
@@ -103,18 +110,18 @@
         {% endfor %}
       </select>
     </div>
-    <div class="col-auto" id="paint-direct-controls">
+    <div class="col-auto paint-control-group" id="paint-direct-value">
       <input type="number" class="form-control form-control-sm" id="paint-value" name="value" placeholder="Value" step="any">
     </div>
 
     <!-- Built Form Controls (hidden by default, shown via JS) -->
-    <div class="col-auto" id="paint-bf-controls" style="display: none;">
+    <div class="col-auto paint-bf-group" id="paint-bf-controls" style="display: none;">
       <select class="form-select form-select-sm" id="paint-bf-type" name="bf_type" aria-label="Built Form Type">
         <option value="building">Building Type</option>
         <option value="place">Place Type</option>
       </select>
     </div>
-    <div class="col-auto" id="paint-bf-controls" style="display: none;">
+    <div class="col-auto paint-bf-group" id="paint-bf-id-wrapper" style="display: none;">
       <select class="form-select form-select-sm" id="paint-bf-id" name="bf_id" aria-label="Built Form">
         <option value="">Select...</option>
         {% if built_forms %}
@@ -284,12 +291,17 @@
                                   hx-target="#legend-{{ layer.pk }}"
                                   hx-swap="innerHTML"
                                   style="font-size: 0.75rem;">
-                            {{ layer.name }}
+                            <a href="{% url 'workspace:symbology_edit' layer.pk %}"
+                               class="text-decoration-none"
+                               style="font-size: 0.75rem; color: inherit;">
+                              {{ layer.name }}
+                            </a>
                           </button>
                           <button type="button"
                                   class="btn btn-sm py-0 px-1 text-muted"
                                   style="font-size: 0.65rem; line-height: 1;"
                                   title="{% translate 'Filters' %}"
+                                  aria-label="{% translate 'Filters' %}"
                                   hx-get="{% url 'workspace:layer_filter_list' layer.pk %}"
                                   hx-target="#filter-container-{{ layer.pk }}"
                                   hx-swap="innerHTML">
@@ -299,6 +311,7 @@
                              class="btn btn-sm py-0 px-1 text-muted text-decoration-none"
                              style="font-size: 0.65rem; line-height: 1;"
                              title="{% translate 'View Data' %}"
+                             aria-label="{% translate 'View Data' %}"
                              target="_blank">
                             📋
                           </a>
@@ -373,8 +386,8 @@
   const paintResult = document.getElementById('paint-result');
   const paintModeDirect = document.getElementById('paint-mode-direct');
   const paintModeBf = document.getElementById('paint-mode-bf');
-  const directControls = document.querySelectorAll('#paint-direct-controls');
-  const bfControls = document.querySelectorAll('#paint-bf-controls');
+  const directControls = document.querySelectorAll('.paint-control-group');
+  const bfControls = document.querySelectorAll('.paint-bf-group');
   const bfTypeSelect = document.getElementById('paint-bf-type');
   const bfIdSelect = document.getElementById('paint-bf-id');
   const bfOptgroupBuilding = document.getElementById('bf-optgroup-building');
@@ -437,12 +450,15 @@
     });
   }
 
-  // Auto-dismiss paint result after 5 seconds
+  // Auto-dismiss paint result after 5 seconds (skip errors)
   if (paintResult) {
     var observer = new MutationObserver(function() {
-      setTimeout(function() {
-        if (paintResult) paintResult.innerHTML = '';
-      }, 5000);
+      var hasError = paintResult.querySelector('.alert-danger');
+      if (!hasError) {
+        setTimeout(function() {
+          if (paintResult) paintResult.innerHTML = '';
+        }, 5000);
+      }
     });
     observer.observe(paintResult, { childList: true, subtree: true });
   }
