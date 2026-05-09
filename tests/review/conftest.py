@@ -194,36 +194,38 @@ def pytest_addoption(parser) -> None:
 def pytest_runtest_makereport(item, call) -> None:
     outcome = yield
     report = outcome.get_result()
-    if report.when == "call" and report.failed:
-        page = item.funcargs.get("page") or item.funcargs.get("logged_in_page")
-        if page:
-            node_id = item.nodeid.replace("::", "/").replace("[", "/").replace("]", "")
-            sd = Path("tests/review/screenshots") / node_id
-            sd.mkdir(parents=True, exist_ok=True)
-
-            # Screenshot
-            screenshot_path = sd / "failure.png"
-            page.screenshot(path=str(screenshot_path))
-
-            # DOM snapshot
-            with suppress(Exception):
-                snapshot = page.accessibility.snapshot()
-                if snapshot:
-                    elements: list[str] = []
-
-                    def flatten(node: dict, depth: int = 0) -> None:
-                        role = node.get("role", "?")
-                        name = node.get("name", "")
-                        if role not in ("none", "generic"):
-                            elements.append("  " * depth + f"[{role}] {name}"[:200])
-                        for c in node.get("children", []):
-                            flatten(c, depth + 1)
-
-                    flatten(snapshot)
-                    dom_path = sd / "dom_tree.txt"
-                    dom_path.write_text("\n".join(elements))
-
-            print(f"\n=== REVIEW FAILURE DIAGNOSTICS [{item.nodeid}] ===", file=sys.stderr)  # noqa: T201
-            print(f"   Screenshot: {screenshot_path}", file=sys.stderr)  # noqa: T201
-            print(f"   DOM tree:   {sd / 'dom_tree.txt'}", file=sys.stderr)  # noqa: T201
-            print("===========================================\n", file=sys.stderr)  # noqa: T201
+    if report.when != "call":
+        return
+    page = item.funcargs.get("page") or item.funcargs.get("logged_in_page")
+    if not page:
+        return
+    node_id = item.nodeid.replace("::", "/").replace("[", "/").replace("]", "")
+    sd = Path("tests/review/screenshots") / node_id
+    sd.mkdir(parents=True, exist_ok=True)
+    if report.passed:
+        screenshot_path = sd / "page.png"
+        page.screenshot(path=str(screenshot_path), full_page=True)
+        print(f"\n=== REVIEW SCREENSHOT [{item.nodeid}] ===", file=sys.stderr)
+        print(f"   Screenshot: {screenshot_path}", file=sys.stderr)
+        print("===========================================\n", file=sys.stderr)
+    else:
+        screenshot_path = sd / "failure.png"
+        page.screenshot(path=str(screenshot_path))
+        with suppress(Exception):
+            snapshot = page.accessibility.snapshot()
+            if snapshot:
+                elements: list[str] = []
+                def flatten(node: dict, depth: int = 0) -> None:
+                    role = node.get("role", "?")
+                    name = node.get("name", "")
+                    if role not in ("none", "generic"):
+                        elements.append("  " * depth + f"[{role}] {name}"[:200])
+                    for c in node.get("children", []):
+                        flatten(c, depth + 1)
+                flatten(snapshot)
+                dom_path = sd / "dom_tree.txt"
+                dom_path.write_text("\n".join(elements))
+        print(f"\n=== REVIEW FAILURE DIAGNOSTICS [{item.nodeid}] ===", file=sys.stderr)
+        print(f"   Screenshot: {screenshot_path}", file=sys.stderr)
+        print(f"   DOM tree:   {sd / 'dom_tree.txt'}", file=sys.stderr)
+        print("===========================================\n", file=sys.stderr)

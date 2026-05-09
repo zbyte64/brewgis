@@ -77,6 +77,10 @@ test-review:  ## Run UX design review tests only
 test-review-parallel:  ## Run UX design review tests in parallel (requires pytest-xdist)
 	$(COMPOSE_RUN) pytest tests/review/ -m review -n auto --timeout=300 || echo "Warning: xdist not installed, install with 'pip install pytest-xdist'"
 
+.PHONY: clean-review-screenshots
+clean-review-screenshots:  ## Remove stale review test screenshots
+	rm -rf tests/review/screenshots
+
 .PHONY: test-models
 test-models:  ## Run model tests only
 	$(COMPOSE_RUN) pytest -m models --reuse-db
