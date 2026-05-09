@@ -14,21 +14,35 @@ class DataCatalogPage(BasePage):
             "div.card:has(h5:has-text('Data Catalog')) table tbody"
         )
 
+    def category_count(self) -> int:
+        """Return the number of accordion items (categories) in the catalog."""
+        return self.page.locator(
+            "div.card:has(h5:has-text('Data Catalog')) .accordion-item"
+        ).count()
+
     def get_source_rows(self) -> list[dict[str, str]]:
-        """Return list of {source_name, description, status} dicts for catalog rows."""
-        rows = self._catalog_table().locator("tr")
-        row_count = rows.count()
+        """Return list of {source_name, description, status} dicts for catalog rows.
+        Iterates across all accordion sections to find all source rows.
+        """
         result: list[dict[str, str]] = []
-        for i in range(row_count):
-            cells = rows.nth(i).locator("td")
-            if cells.count() >= 3:
-                result.append(
-                    {
-                        "source_name": cells.nth(0).inner_text().strip(),
-                        "description": cells.nth(1).inner_text().strip(),
-                        "status": cells.nth(2).inner_text().strip(),
-                    }
-                )
+        accordion_items = self.page.locator(
+            "div.card:has(h5:has-text('Data Catalog')) .accordion-item"
+        )
+        for i in range(accordion_items.count()):
+            tbody = accordion_items.nth(i).locator("table tbody")
+            if tbody.count() == 0:
+                continue
+            rows = tbody.locator("tr")
+            for j in range(rows.count()):
+                cells = rows.nth(j).locator("td")
+                if cells.count() >= 5:
+                    result.append(
+                        {
+                            "source_name": cells.nth(0).text_content().strip().split("\n")[0].strip(),
+                            "description": cells.nth(1).text_content().strip(),
+                            "status": cells.nth(4).text_content().strip(),
+                        }
+                    )
         return result
 
     def source_count(self) -> int:

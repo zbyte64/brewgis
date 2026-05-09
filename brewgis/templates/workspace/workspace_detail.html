@@ -228,8 +228,11 @@
             {% empty %}
               <div class="text-center text-muted py-4">
                 {% translate "No data sources configured." %}
+                <div class="mt-2">
+                  <a href="{% url 'workspace:import_center' %}?workspace={{ workspace.pk }}" class="btn btn-sm btn-outline-primary">{% translate "Import Data →" %}</a>
+                </div>
               </div>
-            {% endfor %}
+{% endfor %}
           </div>
         </div>
       </div>
@@ -252,7 +255,8 @@
                   {% elif prereq_class == "partial" %}
                     <span class="badge bg-warning text-dark">{% translate "Partial" %}</span>
                   {% else %}
-                    <span class="badge bg-danger">{% translate "Missing Data" %}</span>
+                    <a href="{% url 'workspace:import_center' %}?workspace={{ workspace.pk }}"
+                       class="badge bg-danger text-decoration-none">{% translate "Missing Data" %}</a>
                   {% endif %}
                 {% endwith %}
               </div>

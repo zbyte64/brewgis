@@ -9,8 +9,12 @@
 {% block title %}
   {% if view.object.pk %}
     {{ view.object }}
-  {% else %}
+  {% elif title %}
+    {{ title }}
+  {% elif view.form_class.Meta.model|model_verbose_name %}
     New {{ view.form_class.Meta.model|model_verbose_name|title }}
+  {% else %}
+    New {{ view.form_class|model_verbose_name|title }}
   {% endif %}
 {% endblock title %}
 

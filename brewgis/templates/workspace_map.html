@@ -25,7 +25,7 @@
             </span>
           {% endif %}
           <div class="d-flex align-items-center gap-2">
-            {% if workspace.scenarios.exists %}
+{% if workspace.scenarios.exists %}
               <form method="get" class="d-flex align-items-center gap-1" id="scenario-form">
                 <select name="scenario" class="form-select form-select-sm" style="width: auto;" onchange="this.form.submit()">
                   <option value="">View mode</option>
@@ -39,6 +39,10 @@
                   <button type="button" class="btn btn-sm btn-outline-primary" id="toggle-paint-btn">Paint Mode</button>
                 {% endif %}
               </form>
+            {% else %}
+              <small class="text-muted">No scenarios yet.
+                <a href="{% url 'workspace:scenario_create' workspace.pk %}" class="text-decoration-none">Create one</a>
+              </small>
             {% endif %}
             <a href="{% url 'workspace:home' %}" class="btn btn-sm btn-outline-secondary">Back</a>
           </div>

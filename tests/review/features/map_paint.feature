@@ -17,4 +17,4 @@ Feature: Map + Paint UX
   Scenario: Map page has scenario selector
     Given a workspace named "Scenario WS" exists
     When I navigate to the map page
-    Then the scenario dropdown should be visible
+    Then I should see a scenario empty state

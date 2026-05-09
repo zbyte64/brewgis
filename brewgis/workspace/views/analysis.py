@@ -273,6 +273,7 @@ def analysis_status(request: HttpRequest, run_pk: int) -> HttpResponse:
     )
 
 
+@user_passes_test(lambda u: u.is_authenticated)
 def analysis_list(request: HttpRequest) -> HttpResponse:
     """List recent analysis runs for the current user's workspaces."""
     runs = AnalysisRun.objects.select_related("workspace").order_by("-created_at")[:50]

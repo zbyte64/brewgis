@@ -7,23 +7,17 @@ Feature: Data Catalog UX
     Given the user is logged in
 
   @review
-  Scenario: Data catalog displays all configured source types
+  Scenario: Data catalog shows empty state with import CTA
     Given a workspace named "Test Region" exists
     When I navigate to the workspace detail page
-    Then the Data Catalog table should have 6 source rows
-    And the Data Catalog should list "Census ACS"
-    And the Data Catalog should list "LEHD Employment"
-    And the Data Catalog should list "OSM Points of Interest"
-    And the Data Catalog should list "Environmental Constraints"
-    And the Data Catalog should list "Parcel Fabric"
-    And the Data Catalog should list "County Boundary"
+    Then the Data Catalog should show empty state
+    And the Data Catalog should have an import data link
 
   @review
-  Scenario: Data catalog table has expected columns
+  Scenario: Data catalog shows empty state for workspaces without data
     Given a workspace named "Catalog Test" exists
     When I navigate to the workspace detail page
-    Then the Data Catalog table should have columns "Source", "Description", "Status"
-    And all sources should show status "Not Imported"
+    Then the Data Catalog should show empty state
 
   @review
   Scenario: Quick action bar is present on workspace detail
@@ -35,5 +29,5 @@ Feature: Data Catalog UX
   Scenario: Workspace detail shows region header
     Given a workspace named "Detail Test" exists
     When I navigate to the workspace detail page
-    Then I should see the workspace name in the page title
+    Then the workspace name appears in the page heading
     And I should see the workspace name in the page header

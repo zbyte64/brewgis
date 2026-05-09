@@ -22,5 +22,5 @@ Feature: Analysis Modules UX
     When I navigate to the workspace detail page
     Then the "Environmental Constraint" module should have description "Overlay environmental constraints on base parcels"
     And the "Environmental Constraint" module should list inputs "Base parcels", "Constraint layers"
-    And the "Environmental Constraint" module should list outputs "env_constraint_{scenario_id}"
+    And the "Environmental Constraint" module should list outputs "Environmental constraint overlay"
     And the "Core Allocation" module should show input "Scenario parameters"

@@ -25,6 +25,15 @@ def catalog_has_source_rows(page, count: str) -> None:
     )
 
 
+@then(parsers.parse("the Data Catalog should have {count} source categories"))
+def catalog_has_categories(page, count: str) -> None:
+    """Check the data catalog accordion item count matches expected categories."""
+    count = int(count)
+    catalog = DataCatalogPage(page)
+    assert catalog.category_count() == count, (
+        f"Expected {count} source categories, got {catalog.category_count()}"
+    )
+
 @then(parsers.parse('the Data Catalog should list "{name}"'))
 def catalog_lists_source(page, name: str) -> None:
     """Check a specific source appears in the catalog."""
@@ -38,10 +47,11 @@ def catalog_lists_source(page, name: str) -> None:
 @then(parsers.parse("the Data Catalog table should have columns {columns}"))
 def catalog_has_columns(page, columns: str) -> None:
     """Check the table header columns match expected."""
-    headers = page.locator(
-        "div.card:has(h5:has-text('Data Catalog')) table thead tr th"
-    )
-    header_texts = [h.inner_text().strip() for h in headers.all()]
+    data_catalog = page.locator("div.card:has(h5:has-text('Data Catalog'))")
+    # Get first table headers (use text_content to read DOM regardless of accordion visibility)
+    first_table = data_catalog.locator("table").first
+    headers = first_table.locator("thead tr th")
+    header_texts = [h.text_content().strip() for h in headers.all()]
     expected = [c.strip().strip('"') for c in columns.split(",")]
     for col in expected:
         assert col in header_texts, (
@@ -72,7 +82,7 @@ def quick_action_bar(page, buttons: str) -> None:
         )
 
 
-@then("I should see the workspace name in the page title")
+@then("the workspace name appears in the page heading")
 def workspace_name_in_title(page) -> None:
     """Check the workspace name appears in the page title."""
     ws = Workspace.objects.last()
@@ -94,3 +104,20 @@ def workspace_name_in_header(page) -> None:
     assert ws.name in header_text, (
         f"Expected '{ws.name}' in header, got '{header_text}'"
     )
+
+
+@then("the Data Catalog should show empty state")
+def catalog_empty_state(page) -> None:
+    """Check that the Data Catalog shows the empty state message."""
+    empty = page.locator("div.card:has(h5:has-text('Data Catalog'))").locator(
+        "text=No data sources configured."
+    )
+    assert empty.is_visible(), "Expected empty state: 'No data sources configured.'"
+
+
+@then("the Data Catalog should have an import data link")
+def catalog_import_link(page) -> None:
+    """Check the empty state has an Import Data link."""
+    catalog_card = page.locator("div.card:has(h5:has-text('Data Catalog'))")
+    link = catalog_card.locator("a:has-text('Import Data')")
+    assert link.is_visible(), "Expected Import Data link in Data Catalog empty state"

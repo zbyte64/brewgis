@@ -73,14 +73,14 @@ ANALYSIS_MODULES: list[dict[str, object]] = [
         "name": "Environmental Constraint",
         "description": "Overlay environmental constraints on base parcels",
         "inputs": ["Base parcels", "Constraint layers"],
-        "outputs": ["env_constraint_{scenario_id}"],
+        "outputs": ["Environmental constraint overlay"],
         "prereq_status": "",
     },
     {
         "name": "Core Allocation",
         "description": "End-state allocation plus increment analysis",
         "inputs": ["Scenario parameters", "Base allocation"],
-        "outputs": ["end_state_{scenario_id}", "increment_{scenario_id}"],
+        "outputs": ["End-state allocation", "Increment from base"],
         "prereq_status": "",
     },
     {

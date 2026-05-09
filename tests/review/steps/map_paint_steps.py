@@ -10,8 +10,8 @@ from pytest_bdd import then
 from pytest_bdd import when
 
 from brewgis.workspace.models import Workspace
-from tests.review.pages.map_page import MapReviewPage
 from tests.e2e.steps.common_steps import *  # noqa: F403
+from tests.review.pages.map_page import MapReviewPage
 
 scenarios(str(Path(__file__).parent.parent / "features" / "map_paint.feature"))
 
@@ -40,9 +40,9 @@ def back_button_visible(page) -> None:
     )
 
 
-@then("the scenario dropdown should be visible")
-def scenario_dropdown_visible(page) -> None:
-    """Check the scenario selector is present."""
-    assert MapReviewPage(page).scenario_dropdown_is_visible(), (
-        "Expected scenario dropdown to be visible"
+@then("I should see a scenario empty state")
+def scenario_empty_state_visible(page) -> None:
+    """Check the scenario empty state message is visible."""
+    assert MapReviewPage(page).scenario_empty_state_visible(), (
+        "Expected scenario empty state to be visible"
     )
