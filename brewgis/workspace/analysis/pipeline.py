@@ -27,6 +27,7 @@ from brewgis.workspace.analysis.module_registry import get_vars_for_module
 from brewgis.workspace.analysis.module_registry import (
     resolve_module_order as _resolve_module_order,
 )
+from brewgis.workspace.models import AnalysisRun
 from brewgis.workspace.tasks import handle_module_completed
 from brewgis.workspace.tasks import run_dbt_module
 
@@ -36,7 +37,7 @@ logger = logging.getLogger(__name__)
 MODULE_TASKS: dict[str, Any] = dict.fromkeys(MODULE_DEPENDENCIES, run_dbt_module)
 
 
-@deal.ensure(lambda module_names, result: set(result) == set(module_names))
+@deal.ensure(lambda module_names, result: set(module_names).issubset(set(result)))
 @deal.raises(ValueError)
 def resolve_module_order(module_names: list[str]) -> list[str]:
     """Resolve requested modules into execution order respecting dependencies.

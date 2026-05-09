@@ -86,13 +86,13 @@ def resolve_module_order(module_names: list[str]) -> list[str]:
     """Resolve requested modules into execution order respecting dependencies.
 
     If module A depends on module B, B must run first. Missing dependencies
-    are automatically prepended.
+    are automatically prepended, including transitive dependencies.
 
     Args:
         module_names: List of requested module names.
 
     Returns:
-        Ordered list of modules in execution sequence.
+        Ordered list of modules in execution sequence (topologically sorted).
 
     Raises:
         ValueError: If an unknown module name is provided.
@@ -104,16 +104,25 @@ def resolve_module_order(module_names: list[str]) -> list[str]:
 
     ordered: list[str] = []
     seen: set[str] = set()
+    in_progress: set[str] = set()
 
-    for module in module_names:
+    def _add_with_deps(module: str) -> None:
+        """Post-order traversal: add deps first, then the module."""
+        if module in seen:
+            return
+        if module in in_progress:
+            msg = f"Circular dependency detected involving module '{module}'"
+            raise ValueError(msg)
+        in_progress.add(module)
         for dep in MODULE_DEPENDENCIES.get(module, []):
-            if dep not in seen:
-                ordered.append(dep)
-                seen.add(dep)
-
+            _add_with_deps(dep)
+        in_progress.discard(module)
         if module not in seen:
             ordered.append(module)
             seen.add(module)
+
+    for module in module_names:
+        _add_with_deps(module)
 
     return ordered
 
