@@ -1,5 +1,6 @@
 {% extends "base.html" %}
 {% load static %}
+{% load i18n %}
 
 {% block extrahead %}
   <link href="https://unpkg.com/maplibre-gl@^4.7.1/dist/maplibre-gl.css" rel="stylesheet" />
@@ -228,7 +229,7 @@
             {% if scenario %}
               <div class="col-3 border-start" style="max-height: 600px; overflow-y: auto;">
                 <div class="p-2">
-                  <h6 class="mb-2 text-muted" style="font-size: 0.8rem;">{% load i18n %}{% translate "Scenario Layers" %}</h6>
+                  <h6 class="mb-2 text-muted" style="font-size: 0.8rem;">{% translate "Scenario Layers" %}</h6>
 
                   <div class="list-group list-group-flush" style="font-size: 0.75rem;">
                     <div class="list-group-item d-flex align-items-center gap-2 py-1 px-0 border-0">
