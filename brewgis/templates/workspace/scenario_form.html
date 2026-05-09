@@ -1,0 +1,50 @@
+{% extends "form.html" %}
+{% load i18n crispy_forms_tags %}
+
+{% block title %}
+  {% if scenario %}{% translate "Edit Scenario" %} — {{ scenario.name }}{% else %}{% translate "Create Scenario" %} — {{ workspace.name }}{% endif %} — Brew GIS
+{% endblock title %}
+
+{% block content %}
+{% partialdef form-content %}
+<div class="container mt-4" id="form-content">
+  <nav aria-label="breadcrumb">
+    <ol class="breadcrumb">
+      <li class="breadcrumb-item"><a href="{% url 'workspace:home' %}">{% translate "Home" %}</a></li>
+      <li class="breadcrumb-item"><a href="{% url 'workspace:workspace_detail' workspace.pk %}">{{ workspace.name }}</a></li>
+      <li class="breadcrumb-item active" aria-current="page">
+        {% if scenario %}{% translate "Edit Scenario" %}{% else %}{% translate "Create Scenario" %}{% endif %}
+      </li>
+    </ol>
+  </nav>
+
+  <div class="card">
+    <div class="card-header">
+      <h5 class="card-title mb-0">
+        {% if scenario %}{% translate "Edit Scenario" %}{% else %}{% translate "Create Scenario" %}{% endif %}
+      </h5>
+    </div>
+    <div class="card-body">
+      <form method="post"
+            {% if scenario %}
+              action="{% url 'workspace:scenario_edit' workspace.pk scenario.pk %}"
+            {% else %}
+              action="{% url 'workspace:scenario_create' workspace.pk %}"
+            {% endif %}>
+        {% csrf_token %}
+        {{ form|crispy }}
+        <div class="d-flex gap-2 mt-3">
+          <button type="submit" class="btn btn-primary">
+            {% if scenario %}{% translate "Save Changes" %}{% else %}{% translate "Create Scenario" %}{% endif %}
+          </button>
+          <a href="{% url 'workspace:workspace_detail' workspace.pk %}" class="btn btn-outline-secondary">
+            {% translate "Cancel" %}
+          </a>
+        </div>
+      </form>
+    </div>
+  </div>
+</div>
+{% endpartialdef %}
+{% partial form-content %}
+{% endblock content %}

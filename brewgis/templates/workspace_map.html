@@ -17,6 +17,13 @@
       <div class="card">
         <div class="card-header d-flex justify-content-between align-items-center flex-wrap gap-2">
           <h5 class="card-title mb-0">{{ workspace.name }}</h5>
+          {% if scenario %}
+            <span class="badge bg-{% if scenario.scenario_type == 'base' %}success{% else %}warning text-dark{% endif %} ms-2"
+                  style="font-size: 0.75rem;">
+              {{ scenario.name }}
+              <small class="ms-1">({{ scenario.get_scenario_type_display }})</small>
+            </span>
+          {% endif %}
           <div class="d-flex align-items-center gap-2">
             {% if workspace.scenarios.exists %}
               <form method="get" class="d-flex align-items-center gap-1" id="scenario-form">
@@ -159,15 +166,60 @@
 {% endif %}
 
         <div class="card-body p-0">
-          <brew-gis-map
-            map-style="https://raw.githubusercontent.com/go2garret/maps/main/src/assets/json/openStreetMap.json"
-            viewport='{{ viewport_json|safe }}'
-            layers='{{ layers_json|safe }}'
+          <div class="row g-0">
+            <div class="col{% if scenario %}-9{% endif %}">
+              <brew-gis-map
+                map-style="https://raw.githubusercontent.com/go2garret/maps/main/src/assets/json/openStreetMap.json"
+                viewport='{{ viewport_json|safe }}'
+                layers='{{ layers_json|safe }}'
+                {% if scenario %}
+                  mode="view"
+                  scenario-id="{{ scenario.pk }}"
+                {% endif %}>
+              </brew-gis-map>
+            </div>
             {% if scenario %}
-              mode="view"
-              scenario-id="{{ scenario.pk }}"
-            {% endif %}>
-          </brew-gis-map>
+              <div class="col-3 border-start" style="max-height: 600px; overflow-y: auto;">
+                <div class="p-2">
+                  <h6 class="mb-2 text-muted" style="font-size: 0.8rem;">{% load i18n %}{% translate "Scenario Layers" %}</h6>
+
+                  <div class="list-group list-group-flush" style="font-size: 0.75rem;">
+                    <div class="list-group-item d-flex align-items-center gap-2 py-1 px-0 border-0">
+                      <input type="checkbox" class="form-check-input m-0" checked disabled style="width: 0.9rem; height: 0.9rem;">
+                      <span class="d-flex align-items-center gap-1">
+                        <span class="badge" style="background-color: #e0e0e0; width: 12px; height: 12px;">&nbsp;</span>
+                        {% translate "Base Canvas" %}
+                      </span>
+                    </div>
+                    <div class="list-group-item d-flex align-items-center gap-2 py-1 px-0 border-0">
+                      <input type="checkbox" class="form-check-input m-0" checked disabled style="width: 0.9rem; height: 0.9rem;">
+                      <span class="d-flex align-items-center gap-1">
+                        <span class="badge" style="background-color: #ffeb3b; width: 12px; height: 12px;">&nbsp;</span>
+                        {% translate "Painted Features" %}
+                      </span>
+                    </div>
+                  </div>
+
+                  {% if scenario.analysis_runs.exists %}
+                    <hr class="my-2">
+                    <h6 class="mb-2 text-muted" style="font-size: 0.8rem;">{% translate "Analysis Results" %}</h6>
+                    <div class="list-group list-group-flush" style="font-size: 0.75rem;">
+                      {% for run in scenario.analysis_runs.all %}
+                        {% if run.status == "completed" %}
+                          {% for module in run.modules %}
+                            <div class="list-group-item d-flex align-items-center gap-2 py-1 px-0 border-0">
+                              <input type="checkbox" class="form-check-input m-0" checked disabled style="width: 0.9rem; height: 0.9rem;">
+                              <span>{{ module|title }}</span>
+                            </div>
+                          {% endfor %}
+                        {% endif %}
+                      {% endfor %}
+                    </div>
+                  {% endif %}
+                </div>
+              </div>
+            {% endif %}
+          </div>
         </div>
       </div>
     </div>
@@ -383,10 +435,3 @@
 })();
 </script>
 {% endblock inline_javascript %}
-  // htmx CSRF integration — read from meta tag
-  document.body.addEventListener('htmx:configRequest', function(evt) {
-    var meta = document.querySelector('meta[name="csrf-token"]');
-    if (meta) {
-      evt.detail.headers['X-CSRFToken'] = meta.getAttribute('content');
-    }
-  });

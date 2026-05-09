@@ -50,3 +50,16 @@ def analysis_status_badge(status: str) -> str:
         "failed": "danger",
     }
     return badge_map.get(status, "secondary")
+
+@register.filter
+def dictlookup(d: dict | None, key: str) -> str:
+    """Look up a key in a dictionary, returning "" if missing or not a dict.
+
+    Usage in templates: ``{{ data|dictlookup:"key" }}``
+    """
+    if isinstance(d, dict):
+        value = d.get(key, "")
+        return str(value) if value is not None else ""
+    return ""
+
+

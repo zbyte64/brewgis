@@ -24,6 +24,12 @@ from .views import paint_features
 from .views import paint_history
 from .views import poi_fetch
 from .views import preview_symbology
+from .views import scenario_clone
+from .views import scenario_comparison
+from .views import scenario_comparison_data
+from .views import scenario_create
+from .views import scenario_delete
+from .views import scenario_edit
 from .views import stitch
 from .views import undo_paint
 from .views import view_workspace_map
@@ -55,6 +61,37 @@ urlpatterns = [
     path("layers/create/", CreateLayerView.as_view(), name="create_layer"),
     path("<int:workspace_pk>/map/", view_workspace_map, name="workspace_map"),
     path("<int:pk>/", workspace_detail, name="workspace_detail"),
+    # Scenario Management
+    path(
+        "<int:workspace_pk>/scenario/create/",
+        scenario_create,
+        name="scenario_create",
+    ),
+    path(
+        "<int:workspace_pk>/scenario/<int:scenario_pk>/edit/",
+        scenario_edit,
+        name="scenario_edit",
+    ),
+    path(
+        "<int:workspace_pk>/scenario/<int:scenario_pk>/delete/",
+        scenario_delete,
+        name="scenario_delete",
+    ),
+    path(
+        "<int:workspace_pk>/scenario/<int:scenario_pk>/clone/",
+        scenario_clone,
+        name="scenario_clone",
+    ),
+    path(
+        "<int:workspace_pk>/scenarios/compare/",
+        scenario_comparison,
+        name="scenario_comparison",
+    ),
+    path(
+        "<int:workspace_pk>/scenarios/compare/data/",
+        scenario_comparison_data,
+        name="scenario_comparison_data",
+    ),
     # Paint Operations
     path(
         "<int:workspace_pk>/scenario/<int:scenario_pk>/paint/",

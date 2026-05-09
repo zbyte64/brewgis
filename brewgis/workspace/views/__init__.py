@@ -20,6 +20,12 @@ from .paint import paint_features  # noqa: F401
 from .paint import paint_history  # noqa: F401
 from .paint import undo_paint  # noqa: F401
 from .read_gis_file import ReadGISFileView  # noqa: F401
+from .scenarios import scenario_clone  # noqa: F401
+from .scenarios import scenario_comparison  # noqa: F401
+from .scenarios import scenario_comparison_data  # noqa: F401
+from .scenarios import scenario_create  # noqa: F401
+from .scenarios import scenario_delete  # noqa: F401
+from .scenarios import scenario_edit  # noqa: F401
 from .stitch_data import StitchView as stitch  # noqa: F401
 from .symbology import auto_generate  # noqa: F401
 from .symbology import edit_symbology  # noqa: F401
