@@ -76,8 +76,11 @@ def _gravity_model(
     dist_matrix = np.sqrt(dx**2 + dy**2)
 
     # Impedance: f(d) = d^(-b)
+    # Clamp minimum distance to prevent overflow of tiny squared reciprocals.
+    MIN_DIST = 1e-10
     with np.errstate(divide="ignore", invalid="ignore"):
-        impedance = np.where(dist_matrix > 0, dist_matrix ** (-b), 0.0)
+        safe_dist = np.where(dist_matrix > MIN_DIST, dist_matrix, 0.0)
+        impedance = np.where(safe_dist > 0, safe_dist ** (-b), 0.0)
 
     # Attractiveness (clamped to non-negative)
     attract = emp_weight * emp + du_weight * du

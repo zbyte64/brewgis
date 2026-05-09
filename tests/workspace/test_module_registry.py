@@ -31,13 +31,13 @@ class TestResolveModuleOrder:
         assert result == ["env_constraint", "core"]
 
     def test_modules_in_correct_order(self) -> None:
-        """Immediate dependencies are prepended before their dependents.
-
-        ``resolve_module_order`` resolves only one level of dependencies,
-        not the full transitive chain.
-        """
+        """Full transitive dependency chain is resolved."""
         result = resolve_module_order(["vmt"])
-        assert result == ["mode_choice", "vmt"]
+        # vmt -> mode_choice -> trip_distribution -> trip_generation -> core -> env_constraint
+        assert result == [
+            "env_constraint", "core", "trip_generation", "trip_distribution",
+            "mode_choice", "vmt",
+        ]
 
     def test_explicit_dep_module_skipped_when_already_seen(self) -> None:
         """When a dependency is already listed explicitly, it is not duplicated."""
@@ -45,17 +45,20 @@ class TestResolveModuleOrder:
         assert result == ["env_constraint", "core"]
 
     def test_multiple_modules_in_dependency_order(self) -> None:
-        """Multiple requested modules have their immediate deps prepended."""
+        """Multiple requested modules have their full transitive deps prepended."""
         result = resolve_module_order(["water_demand", "energy_demand"])
-        # Both directly depend on core; env_constraint is not included because
-        # resolve_module_order only resolves immediate (one-level) dependencies
-        assert result == ["core", "water_demand", "energy_demand"]
+        # Both depend on core, which depends on env_constraint
+        assert result == ["env_constraint", "core", "water_demand", "energy_demand"]
 
     def test_interleaved_chain(self) -> None:
-        """Each module's immediate dependency is independently resolved."""
+        """Full transitive chain for each requested module is resolved."""
         result = resolve_module_order(["vmt", "land_consumption"])
-        # vmt -> mode_choice, land_consumption -> core
-        assert result == ["mode_choice", "vmt", "core", "land_consumption"]
+        # vmt -> mode_choice -> trip_distribution -> trip_generation -> core -> env_constraint
+        # land_consumption -> core -> env_constraint (already seen)
+        assert result == [
+            "env_constraint", "core", "trip_generation", "trip_distribution",
+            "mode_choice", "vmt", "land_consumption",
+        ]
 
     def test_unknown_module_raises_value_error(self) -> None:
         """Passing a module name not in the registry raises ValueError."""

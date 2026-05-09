@@ -164,7 +164,7 @@ class TestWorkspaceCreateView(TestCase):
             },
         )
         assert response.status_code == 200
-        assert b"error" in response.content.lower()
+        assert b"Please select at least one county." in response.content
 
 
 @pytest.mark.views

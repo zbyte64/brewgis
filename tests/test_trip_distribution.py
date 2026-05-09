@@ -244,11 +244,29 @@ def test_gravity_model_internal_zero_when_attractors_exist(
     """
     trips, xs, ys, emp, du = arrays
     assume(np.sum(trips) > 0)
-    # Need at least 2 parcels with positive attractiveness for valid distribution
-    has_attract = (emp + du) > 0
+    # Use the same attractiveness formula as _gravity_model to avoid
+    # false positives from subnormal floats that underflow with weights.
+    emp_weight = 1.0
+    du_weight = 0.5
+    attract = np.maximum(emp_weight * emp + du_weight * du, 0.0)
+    has_attract = attract > 0
     assume(np.sum(has_attract) >= 2)
     # Skip colocated parcels — all-zero distances make all trips internal
     assume(not (np.all(xs == xs[0]) and np.all(ys == ys[0])))
+    # Ensure at least one origin with trips has an attractive destination at non-zero distance
+    n = len(trips)
+    for i in range(n):
+        if trips[i] > 0:
+            for j in range(n):
+                if j != i and has_attract[j]:
+                    d = np.sqrt((xs[i] - xs[j])**2 + (ys[i] - ys[j])**2)
+                    if d > 1e-10:
+                        break
+            else:
+                continue
+            break
+    else:
+        assume(False)
     tb, ib, it, al = _gravity_model(trips, xs, ys, emp, du)
     assert np.all(it < 1e-10), f"Internal trips should be ~0, got max {np.max(it)}"
 

@@ -107,6 +107,9 @@ class WorkspaceCreateView(FormView):
         name = form.cleaned_data["name"]
         state_fips = self.request.POST.get("state_fips", "")
         county_fips_values = self.request.POST.getlist("county_fips")
+        if not county_fips_values:
+            form.add_error(None, "Please select at least one county.")
+            return self.render_to_response(self.get_context_data(form=form))
         county_fips = [{"state": state_fips, "county": c} for c in county_fips_values]
         workspace = Workspace.objects.create(
             name=name,
