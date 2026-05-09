@@ -20,7 +20,7 @@
             {% endif %}
             {% if basemap.id == selected_basemap_id %}
               <span class="badge bg-success d-block" style="font-size: 0.7rem;">{% translate "Active" %}</span>
-            {% else %}
+            {% elif workspace_pk %}
               <button type="button"
                       class="btn btn-sm btn-outline-primary w-100"
                       hx-post="{% url 'workspace:basemap_select' workspace_pk %}"
@@ -30,7 +30,10 @@
                       style="font-size: 0.7rem;">
                 {% translate "Select" %}
               </button>
+            {% else %}
+              <span class="badge bg-secondary d-block" style="font-size: 0.7rem;">{% translate "Available" %}</span>
             {% endif %}
+
           </div>
         </div>
       </div>

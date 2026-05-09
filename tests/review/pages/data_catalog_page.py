@@ -73,3 +73,14 @@ class DataCatalogPage(BasePage):
         """Return the visible quick-action button labels."""
         bar = self.page.locator(".d-flex.gap-2.mb-4")
         return [btn.inner_text().strip() for btn in bar.locator("a, button").all()]
+
+    def get_column_headers(self) -> list[str]:
+        """Return the column header texts from the first data catalog table."""
+        headers = self.page.locator(
+            "div.card:has(h5:has-text('Data Catalog')) table thead tr th"
+        )
+        return [h.inner_text().strip() for h in headers.all()]
+
+    def has_source_rows(self) -> bool:
+        """Check if the catalog has any source rows."""
+        return self.source_count() > 0
