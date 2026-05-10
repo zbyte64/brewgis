@@ -292,10 +292,13 @@ _TIGER_YEAR = 2023
 
 
 def _tiger_block_url(state_fips: str, county_fips: str) -> str:
-    """Build the TIGER/Line tabblock shapefile URL for one county."""
+    """Build the TIGER/Line tabblock shapefile URL for one county.
+
+    Note: TIGER 2023+ TABBLOCK files are state-level.
+    """
     return (
         f"https://www2.census.gov/geo/tiger/TIGER{_TIGER_YEAR}/TABBLOCK/"
-        f"tl_{_TIGER_YEAR}_{state_fips}{county_fips}_tabblock.zip"
+        f"tl_{_TIGER_YEAR}_{state_fips}_tabblock.zip"
     )
 
 

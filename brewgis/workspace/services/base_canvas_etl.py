@@ -407,18 +407,15 @@ class BaseCanvasETL:
         source: DemographicSource | EmploymentSource,
         columns: list[str],
     ) -> gpd.GeoDataFrame:
-        """Allocate attributes from a source to parcels via spatial allocation.
-
-        Writes source data to a temporary PostGIS table, runs the spatial
-        allocator, then loads results back.
-        """
-        # Determine which columns the source actually provides
-        if isinstance(source, DemographicSource):
-            src_gdf = source.fetch_block_group_data("00", "000")
+        """Allocate attributes from source polygons to parcels via
+        area-weighted geospatial overlay."""
+        if hasattr(source, "fetch_block_group_data"):
+            src_gdf = source.fetch_block_group_data()
         else:
-            src_gdf = source.fetch_block_data("00", "000")
+            src_gdf = source.fetch_block_data()
 
         available_cols = [c for c in columns if c in src_gdf.columns]
+        available_cols = [c for c in available_cols if c != "geometry"]
         if not available_cols or src_gdf.empty:
             self._log("Source returned no data; falling back to fillna 0.0")
             for col in columns:
@@ -426,69 +423,35 @@ class BaseCanvasETL:
                     gdf[col] = gdf[col].fillna(0.0)
             return gdf
 
-        # Write source to temp table and allocate
-        temp_schema = "public"
-        temp_source = "_etl_alloc_source"
-        temp_target = "_etl_alloc_target"
-
-        with connection.cursor() as cursor:
-            cursor.execute(f"DROP TABLE IF EXISTS {temp_schema}.{temp_source} CASCADE")
-            cursor.execute(f"DROP TABLE IF EXISTS {temp_schema}.{temp_target} CASCADE")
-
-        src_gdf.to_postgis(
-            temp_source,
-            connection,
-            schema=temp_schema,
-            if_exists="replace",
-            index=False,
-        )
-
-        gdf.to_postgis(
-            temp_target,
-            connection,
-            schema=temp_schema,
-            if_exists="replace",
-            index=False,
-        )
-
         try:
-            result = allocate_attributes(
-                source_schema=temp_schema,
-                source_table=temp_source,
-                target_schema=temp_schema,
-                target_table=temp_target,
-                columns=available_cols,
-                source_geom_col="geometry",
-                target_geom_col="geometry",
-            )
-            self._log(
-                f"Allocated {len(result.get('allocated_columns', []))} columns "
-                f"across {result.get('total_features', 0)} features"
-            )
-            if result.get("errors"):
-                for err in result["errors"][:5]:
-                    self._log(f"Allocation error: {err}")
+            src_proj = src_gdf[["geometry"] + available_cols].to_crs("EPSG:6933")
+            tgt_proj = gdf[["geometry"]].to_crs("EPSG:6933")
+            src_proj["area_src"] = src_proj.geometry.area.clip(lower=1e-10)
 
-            # Reload target with allocated values
-            updated = gpd.GeoDataFrame.from_postgis(
-                f"SELECT * FROM {temp_schema}.{temp_target}",
-                connection,
-                geom_col="geometry",
+            intersected = gpd.overlay(
+                tgt_proj, src_proj, how="intersection", keep_geom_type=False
             )
-            # Copy allocated columns back
+            if intersected.empty:
+                raise RuntimeError("No spatial overlaps")
+
+            intersected["weight"] = intersected.geometry.area / intersected["area_src"]
+            intersected["weight"] = intersected["weight"].fillna(0.0).clip(0, 1)
+
             for col in available_cols:
-                if col in updated.columns and col in gdf.columns:
-                    gdf[col] = updated[col]
+                intersected["_v"] = intersected[col].fillna(0.0).astype(float) * intersected["weight"]
+                result = intersected.groupby(level=0)["_v"].sum()
+                gdf[col] = gdf[col].fillna(result)
+
+            cnt = int((gdf[available_cols[0]] > 0).sum()) if available_cols[0] in gdf.columns else 0
+            self._log(f"Area-weighted alloc: {cnt}/{len(gdf)} matched, {len(available_cols)} cols")
+            col_sums = {c: float(gdf[c].sum()) for c in available_cols[:4]}
+            self._log(f"Alloc sums: {col_sums}")
+
         except Exception as exc:
-            self._log(f"Allocation failed: {exc}; falling back to fillna 0.0")
+            self._log(f"Allocation failed: {exc}; falling back")
             for col in columns:
                 if col in gdf.columns:
                     gdf[col] = gdf[col].fillna(0.0)
-        finally:
-            with connection.cursor() as cursor:
-                cursor.execute(f"DROP TABLE IF EXISTS {temp_schema}.{temp_source} CASCADE")
-                cursor.execute(f"DROP TABLE IF EXISTS {temp_schema}.{temp_target} CASCADE")
-
         return gdf
 
     def _estimate_building_areas(self, gdf: gpd.GeoDataFrame) -> gpd.GeoDataFrame:

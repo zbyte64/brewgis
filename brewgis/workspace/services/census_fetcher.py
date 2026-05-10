@@ -406,10 +406,15 @@ _DU_DETSF_TO_SL_RATIO = 0.40       # 40% of detached SF → small lot
 
 
 def _tiger_bg_url(state_fips: str, county_fips: str) -> str:
-    """Build the TIGER/Line block group shapefile URL for one county."""
+    """Build the TIGER/Line block group shapefile URL for one county.
+
+    Note: TIGER 2023+ BG files are state-level (one file per state).
+    The county param is kept for compatibility but the download is
+    per-state.
+    """
     return (
         f"https://www2.census.gov/geo/tiger/TIGER{_TIGER_YEAR}/BG/"
-        f"tl_{_TIGER_YEAR}_{state_fips}{county_fips}_bg.zip"
+        f"tl_{_TIGER_YEAR}_{state_fips}_bg.zip"
     )
 
 
@@ -523,6 +528,8 @@ def fetch_acs_block_group_polygons(
                 cache_dir.mkdir(parents=True, exist_ok=True)
                 tiger_gdf.to_file(str(cache_path), driver="GeoJSON")
                 tiger_bytes = raw  # used for fallback below
+            else:
+                tiger_gdf = None
     else:
         raw = _download_tiger_shapefile(url)
         if raw is not None:
