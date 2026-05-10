@@ -12,6 +12,20 @@ from typing import Any
 import deal
 
 from brewgis.workspace.models import SymbologyConfig
+__all__ = ["generate_maplibre_style", "auto_generate_style_from_layer"]
+
+
+def _normalize_geo(geometry_type: str) -> str:
+    """Normalize geometry type to MapLibre paint type (fill/line/circle)."""
+    geo = geometry_type.lower().replace("multi", "").replace("string", "")
+    if "polygon" in geo or "fill" in geo:
+        return "fill"
+    if "line" in geo:
+        return "line"
+    if "circle" in geo or "point" in geo:
+        return "circle"
+    return "fill"
+
 
 
 def _null_expression(
@@ -33,7 +47,7 @@ def _null_expression(
 @deal.has()
 def _base_paint(symbology: SymbologyConfig) -> dict[str, Any]:
     """Return base paint properties common to all symbology types."""
-    geo = symbology.layer.geometry_type
+    geo = _normalize_geo(symbology.layer.geometry_type)
     paint: dict[str, Any] = {}
 
     if geo == "fill":
@@ -55,7 +69,7 @@ def _base_paint(symbology: SymbologyConfig) -> dict[str, Any]:
 
 def _base_layout(symbology: SymbologyConfig) -> dict[str, Any]:
     """Return base layout properties."""
-    geo = symbology.layer.geometry_type
+    geo = _normalize_geo(symbology.layer.geometry_type)
     layout: dict[str, Any] = {}
 
     if geo == "fill":
@@ -67,7 +81,7 @@ def _categorical_paint(symbology: SymbologyConfig) -> dict[str, Any]:
     """Generate a ``match`` paint expression for categorical symbology."""
     attr = symbology.attribute_column
     classes = list(symbology.classes.all().order_by("sort_order"))
-    geo = symbology.layer.geometry_type
+    geo = _normalize_geo(symbology.layer.geometry_type)
 
     color_key = {
         "fill": "fill-color",
@@ -89,7 +103,7 @@ def _graduated_paint(symbology: SymbologyConfig) -> dict[str, Any]:
     """Generate a ``step`` paint expression for graduated symbology."""
     attr = symbology.attribute_column
     classes = list(symbology.classes.all().order_by("sort_order"))
-    geo = symbology.layer.geometry_type
+    geo = _normalize_geo(symbology.layer.geometry_type)
 
     color_key = {
         "fill": "fill-color",
@@ -114,7 +128,7 @@ def _graduated_paint(symbology: SymbologyConfig) -> dict[str, Any]:
 
 def _single_paint(symbology: SymbologyConfig) -> dict[str, Any]:
     """Generate simple flat paint properties for single-symbol symbology."""
-    geo = symbology.layer.geometry_type
+    geo = _normalize_geo(symbology.layer.geometry_type)
     paint: dict[str, Any] = {}
 
     if geo == "fill":
@@ -159,7 +173,7 @@ def generate_maplibre_style(symbology: SymbologyConfig) -> dict[str, Any]:
 
     # Zero-transparent handling
     if symbology.zero_transparent and symbology.attribute_column:
-        geo = symbology.layer.geometry_type
+        geo = _normalize_geo(symbology.layer.geometry_type)
         opacity_key = {
             "fill": "fill-opacity",
             "line": "line-opacity",

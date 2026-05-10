@@ -14,9 +14,15 @@ def _home(request: HttpRequest) -> HttpResponse:
         layer_count = ws.layers.count()
         county_names = []
         for entry in ws.county_fips_list:
+            if isinstance(entry, dict):
+                state_fips = entry.get("state", "")
+                county_fips = entry.get("county", "")
+            else:
+                state_fips = str(entry)
+                county_fips = ""
             c = County.objects.filter(
-                state_fips=entry.get("state", ""),
-                county_fips=entry.get("county", ""),
+                state_fips=state_fips,
+                county_fips=county_fips,
             ).first()
             if c:
                 county_names.append(c.name)
