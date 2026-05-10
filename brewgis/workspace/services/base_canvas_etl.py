@@ -677,7 +677,13 @@ class BaseCanvasETL:
         return gdf
 
     def _write_to_db(self, gdf: gpd.GeoDataFrame, truncate: bool) -> int:
-        """Write the GeoDataFrame to ``public.base_canvas``."""
+        """Write the GeoDataFrame to ``public.base_canvas`` using bulk INSERT.
+
+        Uses ``psycopg2.extras.execute_values`` for a single multi-row
+        INSERT (~100× faster than row-by-row ``cursor.execute``).
+        """
+        import psycopg2.extras  # noqa: PLC0415 — bundled with psycopg2
+
         if truncate:
             with connection.cursor() as cursor:
                 cursor.execute(
@@ -687,53 +693,57 @@ class BaseCanvasETL:
         insert_cols = [
             c for c in BaseCanvasSchema.COLUMN_NAMES if c in gdf.columns and c != "id"
         ]
-        col_list = ", ".join(f'"{c}"' for c in insert_cols)
-        col_placeholders = ", ".join(f"%({c})s" for c in insert_cols if c != "geometry")
+        col_names = ", ".join(f'"{c}"' for c in insert_cols)
         has_geom = "geometry" in insert_cols
-        col_list_geom = (
-            f"geometry, {col_list.replace('"geometry", ', '')}".strip(", ")
-            if has_geom
-            else col_list
-        )
 
-        with connection.cursor() as cursor:
-            for _, row in gdf.iterrows():
-                params: dict[str, object] = {}
-                geometry_wkt = None
-                for col in insert_cols:
-                    if col == "geometry":
-                        val = row.get(col)
-                        if val is not None and not (
-                            isinstance(val, float) and pd.isna(val)
-                        ):
-                            geometry_wkt = val.wkt if hasattr(val, "wkt") else str(val)
-                        continue
+        # Build a template string.  Geometry values are WKT strings wrapped
+        # in ST_GeomFromText — execute_values substitutes %s for each value.
+        if has_geom:
+            template = "(" + ", ".join(
+                "ST_GeomFromText(%s, 4326)" if c == "geometry" else "%s"
+                for c in insert_cols
+            ) + ")"
+        else:
+            template = "(" + ", ".join("%s" for _ in insert_cols) + ")"
+
+        sql = f"INSERT INTO public.base_canvas ({col_names}) VALUES %s"
+        rows: list[tuple[object, ...]] = []
+
+        for _, row in gdf.iterrows():
+            vals: list[object] = []
+            for col in insert_cols:
+                if col == "geometry":
+                    val = row.get(col)
+                    if val is not None and not (
+                        isinstance(val, float) and pd.isna(val)
+                    ):
+                        wkt = val.wkt if hasattr(val, "wkt") else str(val)
+                    else:
+                        wkt = None
+                    vals.append(wkt)
+                else:
                     val = row.get(col)
                     if val is None or (isinstance(val, float) and pd.isna(val)):
-                        params[col] = None
+                        vals.append(None)
                     elif isinstance(val, (np.floating,)):
-                        params[col] = float(val)
+                        vals.append(float(val))
                     elif isinstance(val, (np.integer,)):
-                        params[col] = int(val)
+                        vals.append(int(val))
                     else:
-                        params[col] = val
+                        vals.append(val)
+            rows.append(tuple(vals))
+        # Force Django to open the connection, then grab the raw psycopg2
+        # connection for execute_values (which needs it to determine encoding).
+        connection.ensure_connection()
+        raw_conn = connection.connection
+        with raw_conn.cursor() as cur:
+            psycopg2.extras.execute_values(
+                cur, sql, rows, template=template, page_size=5000
+            )
 
-                if geometry_wkt:
-                    geom_placeholder = "ST_GeomFromText(%(__geom__)s, 4326)"
-                    params["__geom__"] = geometry_wkt
-                else:
-                    geom_placeholder = "ST_SetSRID(ST_MakeEnvelope(0,0,1,1), 4326)::GEOMETRY(POLYGON, 4326)"
-
-                stmt = (
-                    f"INSERT INTO public.base_canvas ({col_list_geom}) "
-                    f"VALUES ({geom_placeholder}, {col_placeholders})"
-                )
-                cursor.execute(stmt, params)
-
-        rows = len(gdf)
-        self._log(f"Wrote {rows} rows to public.base_canvas")
-        return rows
-
+        rows_written = len(gdf)
+        self._log(f"Wrote {rows_written} rows to public.base_canvas")
+        return rows_written
     def _validate(self) -> None:
         """Validate the base canvas after ETL."""
         missing = BaseCanvasManager.validate_schema()

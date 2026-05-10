@@ -157,7 +157,7 @@ class Command(BaseCommand):
         self._log("Loading from PostGIS (no cached GeoJSON found)")
         limit_clause = f"LIMIT {limit}" if limit > 0 else ""
         sql = f"""
-            SELECT *, ST_AsText(wkb_geometry) AS geometry_wkt
+            SELECT *, wkb_geometry AS geometry
             FROM {V1_PARCELS}
             {limit_clause}
         """
