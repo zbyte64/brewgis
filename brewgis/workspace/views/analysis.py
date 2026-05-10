@@ -211,6 +211,15 @@ class AnalysisLaunchView(FormView):
 
     form_class = AnalysisLaunchForm
     template_name = "form.html"
+    def get_form_kwargs(self) -> dict[str, object]:
+        kwargs = super().get_form_kwargs()
+        workspace_pk = self.request.GET.get("workspace")
+        if workspace_pk:
+            try:
+                kwargs["workspace"] = Workspace.objects.get(pk=workspace_pk)
+            except Workspace.DoesNotExist:
+                pass
+        return kwargs
 
     def get_context_data(self, **kwargs: object) -> dict[str, object]:
         context = super().get_context_data(**kwargs)
