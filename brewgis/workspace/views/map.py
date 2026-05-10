@@ -58,6 +58,7 @@ def view_workspace_map(request: HttpRequest, workspace_pk: int) -> HttpResponse:
         # Build canvas view source (the COALESCE view for this scenario)
         schema = scenario.target_schema
         view_name = f"scenario_{scenario.slug}_canvas"
+        canvas_view_name = view_name
         canvas_source_id = f"{schema}.{view_name}"
 
         if settings.TILE_SERVER_BACKEND == "martin":
@@ -184,7 +185,7 @@ def view_workspace_map(request: HttpRequest, workspace_pk: int) -> HttpResponse:
             basemap_style = "https://raw.githubusercontent.com/go2garret/maps/main/src/assets/json/openStreetMap.json"
 
     context: dict[str, object] = {
-        "layers_json": json.dumps(layer_data),
+        "layers_json": json.dumps(layer_data).replace("'", "\\u0027"),
         "viewport_json": json.dumps(
             {
                 "center": [0, 0],

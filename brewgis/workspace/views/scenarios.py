@@ -265,7 +265,7 @@ def scenario_clone(request: HttpRequest, workspace_pk: int, scenario_pk: int) ->
         return JsonResponse({"error": "name is required"}, status=400)
 
     description = body.get("description", "")
-    new_scenario = clone_scenario(source, name=name, description=description)
+    new_scenario = clone_scenario(source=source, name=name, description=description)
 
     return JsonResponse({
         "status": "ok",
