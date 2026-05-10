@@ -374,6 +374,14 @@
 
 {% block inline_javascript %}
 <script>
+  document.body.addEventListener('htmx:configRequest', function(evt) {
+    var csrfToken = document.querySelector('meta[name="csrf-token"]');
+    if (csrfToken) {
+      evt.detail.headers['X-CSRFToken'] = csrfToken.getAttribute('content');
+    }
+  });
+</script>
+<script>
 (function() {
   'use strict';
 

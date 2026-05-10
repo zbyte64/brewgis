@@ -52,10 +52,7 @@
 
   
   <script defer src="{% static 'js/project.js' %}"></script>
-  <script src="https://unpkg.com/htmx.org@2.0.4"
-          integrity="sha384-HGfztofotFshcF9FJisMMWj73TmfFeoknS2Cj4h3sD6KzDE42wC2xwKjLbJ4Gbg"
-          crossorigin="anonymous"
-          defer></script>
+  <script src="https://unpkg.com/htmx.org@2.0.4"></script>
 
 
 {% endblock javascript %}
@@ -139,6 +136,14 @@
       });
     </script>
     {% endcomment %}
+    <script>
+      document.body.addEventListener('htmx:configRequest', function(evt) {
+        var csrfToken = document.querySelector('meta[name="csrf-token"]');
+        if (csrfToken) {
+          evt.detail.headers['X-CSRFToken'] = csrfToken.getAttribute('content');
+        }
+      });
+    </script>
   {% endblock inline_javascript %}
 </body>
 </html>
