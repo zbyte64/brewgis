@@ -224,7 +224,7 @@ def view_workspace_map(request: HttpRequest, workspace_pk: int) -> HttpResponse:
 def view_public_scenario_map(request: HttpRequest, token: str) -> HttpResponse:
     """Public read-only map view for a published scenario."""
     try:
-        token_uuid = uuid.UUID(token)
+        token_uuid = uuid.UUID(str(token))
     except (ValueError, AttributeError):
         raise Http404("Invalid token.")
 
