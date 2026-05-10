@@ -228,7 +228,7 @@ docker compose -f docker-compose.local.yml up --build
 - **Template linter:** djLint (profile: `django`, indent: 2 spaces)
 - **Type checker:** mypy 1.13 with `django-stubs` and `mypy_django_plugin`
 - **CI:** GitHub Actions — pre-commit linting + pytest in Docker
-- **Pre-commit hooks (18 total):** `trailing-whitespace`, `end-of-file-fixer`, `check-json`, `check-toml`, `check-yaml`, `check-xml`, `debug-statements`, `builtin-literals`, `case-conflict`, `docstring-first`, `detect-private-key`, `django-upgrade` (target 6.0), `ruff`, `ruff-format`, `djlint-reformat-django`, `djlint-django`, `sqlfluff-lint`, `codespell`, `prettier` (js/ts/json/yaml/css/md), `eslint` (ts/js), local `tsc --noEmit`, local check-method-decorator script
+- **Pre-commit hooks (19 total):** `trailing-whitespace`, `end-of-file-fixer`, `check-json`, `check-toml`, `check-yaml`, `check-xml`, `debug-statements`, `builtin-literals`, `case-conflict`, `docstring-first`, `detect-private-key`, `django-upgrade` (target 6.0), `ruff`, `ruff-format`, `djlint-reformat-django`, `djlint-django`, `sqlfluff-lint`, `codespell`, `prettier` (js/ts/json/yaml/css/md), `eslint` (ts/js), local `tsc --noEmit`, local `mypy`, local check-method-decorator script
 |-
 |- **SQL linter (dbt):** SQLFluff (`sqlfluff` + `sqlfluff-templater-dbt`, dialect: `postgres`, templater: `dbt`) — runs in Django container via `docker compose run django sqlfluff lint brewgis/dbt_project/`
 |- **dbt LSP:** `j-clemons/dbt-language-server` (Go binary, v0.4.2) — installed on host at `~/.local/bin/dbt-language-server`. Resolves dbt refs, sources, macros, and variables in SQL/YAML files. Does not include Postgres function docs.
@@ -244,6 +244,7 @@ docker compose -f docker-compose.local.yml up --build
 - **Template indent:** 2 spaces (djLint)
 - **Imports:** `from`-imports within app preferred. Ruff enforces isort via `I` rule with `force-single-line = true`
 - **Type annotations:** mypy strict mode with `disallow_untyped_defs`. Per-module exceptions for Alembic, dbt, and similar files.
+- **Keyword arguments for 3+ params:** Functions with three or more required parameters **MUST** be called with keyword arguments at all call sites to prevent positional-arg mismatches when signatures change. Defining functions with positional-only params is discouraged beyond 2 params. New functions **SHOULD** default to keyword-only for 3+ required params.
 
 ### Django Patterns
 - **No REST Framework** — no DRF serializers or API views. django-ninja `ModelSchema` is used for data serialization in the map FBV.
@@ -255,6 +256,7 @@ docker compose -f docker-compose.local.yml up --build
 - **Settings** use `django-environ` for env-var-based configuration
 - **Django partials** (`django-partial` library): `{% partialdef name %}` blocks for htmx fragment swapping, self-replacing forms via `hx-target="this" hx-swap="outerHTML"`
 - **View patterns:** FBVs for map/read_gis_file, FormViews for upload, CreateViews for model creation, auth-guarded via `@user_passes_test` or `LoginRequiredMixin`
+|- **JSON in template attributes:** Use the `{{ value|json_attr }}` filter (defined in `workspace_tags.py`) when embedding JSON in HTML attributes. The filter escapes single quotes and null bytes, preventing broken attribute delimiters. Applies to Lit component properties (`layers='{{ layer_data|json_attr }}'`), `data-*` attributes, and any other attribute context. Do **NOT** use raw `json.dumps()` in views for template consumption — pass Python objects and apply `json_attr` in the template.
 
 ### Frontend
 - **CSS framework:** Bootstrap 5 (via CDN)
@@ -324,6 +326,7 @@ docker compose -f docker-compose.local.yml up --build
 - **BDD:** Gherkin `.feature` files in `tests/e2e/features/`, `tests/review/features/`, `tests/features/` with pytest-bdd step definitions
 - **Property-based:** Hypothesis for numerical invariants (mode choice shares sum to 1, trip conservation, etc.)
 - **CI:** GitHub Actions runs `pre-commit` (all hooks) and `pytest` (test suite) in Docker on PRs/pushes to `master`/`main`
+|- **Test-first for new features:** Every new view, model method, task, or template include **MUST** have a corresponding test written before or alongside the feature commit. Guard-rail tests (validation, auth, CRUD completeness, edge cases) are not optional — they catch the majority of bugs found in QA sweeps. If a bug is found post-commit, backfill the missing test in the same fix commit.
 
 ### Test Architecture
 
@@ -455,3 +458,10 @@ implementation.
 - **Test fixture review**: When creating test fixtures that depend on external
   systems (PostGIS, Redis, external APIs), verify the test environment can
   satisfy those dependencies.
+- **Pre-ship checklist** (run through before marking any feature complete):
+  - **(a) Route completeness** — Does every new object/feature have create, read, update, and delete routes? (Missing delete routes are a common gap found in QA.)
+  - **(b) Auth & CSRF** — Are new views properly auth-guarded? If htmx is involved, is the CSRF token wired via `htmx:configRequest` event?
+  - **(c) Settings / config** — Are there new tunable values (upload limits, defaults, timeouts) that should be in `config/settings/base.py`?
+  - **(d) Callsite audit** — Are all callers of changed functions/signatures updated? Search for every `def` change's usages.
+  - **(e) Template deps** — If template blocks were moved between files or partials restructured, verify `{% load %}` statements followed the moved code.
+  - **(f) JSON in template attributes** — If the template contains `attr='{{ ...|safe }}'`, the value must have single quotes escaped. Use `{{ value|json_attr }}` from `workspace_tags.py`.

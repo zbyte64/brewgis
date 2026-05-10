@@ -2,11 +2,12 @@
 
 from __future__ import annotations
 
+import json
+
 from django import template
 from django.template.defaultfilters import stringfilter
 
 register = template.Library()
-
 
 @register.filter
 def model_verbose_name(model_class: object) -> str:
@@ -75,4 +76,17 @@ def dictlookup(d: dict | None, key: str) -> str:
         return str(value) if value is not None else ""
     return ""
 
+@register.filter
+def json_attr(value: object) -> str:
+    """Serialize to JSON, safe for embedding in an HTML attribute.
 
+    Escapes single quotes (which would break ``attr='{{ value|json_attr }}'``)
+    and strips null bytes that could truncate the attribute value.
+
+    Usage: ``<div data-config='{{ config|json_attr }}'>``
+    or       ``<brew-gis-map layers='{{ layer_data|json_attr }}'>``
+    """
+    raw = json.dumps(value, default=str)
+    # Escape single quotes — HTML attribute delimiters,
+    # and strip null bytes that truncate in some parsers.
+    return raw.replace("'", "\\u0027").replace("\x00", "")

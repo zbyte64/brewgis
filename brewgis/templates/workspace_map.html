@@ -1,6 +1,7 @@
 {% extends "base.html" %}
 {% load static %}
 {% load i18n %}
+{% load workspace_tags %}
 
 {% block extrahead %}
   <link href="https://unpkg.com/maplibre-gl@^4.7.1/dist/maplibre-gl.css" rel="stylesheet" />
@@ -211,7 +212,7 @@
               <brew-gis-map
                 map-style="{{ basemap_style }}"
                 viewport='{{ viewport_json|safe }}'
-                layers='{{ layers_json|safe }}'
+                layers='{{ layer_data|json_attr }}'
                 {% if scenario %}
                   mode="view"
                   scenario-id="{{ scenario.pk }}"

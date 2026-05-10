@@ -308,6 +308,17 @@ class TestHomeView(TestCase):
         response = self.client.get(url)
         assert b"Your First Workspace" in response.content
 
+    def test_workspace_with_county_fips_strings(self) -> None:
+        """Workspaces with legacy string-based county_fips_list should render."""
+        ws = WorkspaceFactory(
+            name="Legacy Workspace",
+            county_fips_list=["06019", "06031"],
+        )
+        self.client.force_login(self.user)
+        url = reverse("workspace:home")
+        response = self.client.get(url)
+        assert response.status_code == 200
+
 
 @pytest.mark.views
 class TestDataCatalogScoping(TestCase):

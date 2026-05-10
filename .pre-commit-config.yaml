@@ -107,6 +107,20 @@ repos:
         language: python
         files: ^brewgis/.*\.py$
         pass_filenames: false
+  # Python type checking via mypy
+  - repo: local
+    hooks:
+      - id: mypy
+        name: mypy
+        entry: mypy brewgis
+        language: python
+        files: ^brewgis/.*\.py$
+        pass_filenames: false
+        additional_dependencies:
+          - django-stubs
+          - mypy
+          - mypy_django_plugin
+          - djangorestframework-stubs
 # sets up .pre-commit-ci.yaml to ensure pre-commit dependencies stay up to date
 ci:
   autoupdate_schedule: weekly

@@ -186,6 +186,7 @@ def view_workspace_map(request: HttpRequest, workspace_pk: int) -> HttpResponse:
 
     context: dict[str, object] = {
         "layers_json": json.dumps(layer_data).replace("'", "\\u0027"),
+        "layer_data": layer_data,
         "viewport_json": json.dumps(
             {
                 "center": [0, 0],

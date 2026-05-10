@@ -8,6 +8,7 @@ from brewgis.workspace.models import Layer
 from brewgis.workspace.models import StyleClass
 from brewgis.workspace.models import SymbologyConfig
 from brewgis.workspace.models import Workspace
+from brewgis.workspace.symbology.generator import _normalize_geo
 from brewgis.workspace.symbology.generator import generate_maplibre_style
 
 
@@ -25,6 +26,39 @@ class TestGenerator(TestCase):
             layer_source="test",
             geometry_type="fill",
         )
+
+    def test_normalize_geo_polygon(self) -> None:
+        """Polygon → fill."""
+        assert _normalize_geo("Polygon") == "fill"
+
+    def test_normalize_geo_multipolygon(self) -> None:
+        """MultiPolygon → fill."""
+        assert _normalize_geo("MultiPolygon") == "fill"
+
+    def test_normalize_geo_line(self) -> None:
+        """LineString → line."""
+        assert _normalize_geo("LineString") == "line"
+
+    def test_normalize_geo_multilinestring(self) -> None:
+        """MultiLineString → line."""
+        assert _normalize_geo("MultiLineString") == "line"
+
+    def test_normalize_geo_point(self) -> None:
+        """Point → circle."""
+        assert _normalize_geo("Point") == "circle"
+
+    def test_normalize_geo_multipoint(self) -> None:
+        """MultiPoint → circle."""
+        assert _normalize_geo("MultiPoint") == "circle"
+
+    def test_normalize_geo_case_insensitive(self) -> None:
+        """Lowercase input should still normalize."""
+        assert _normalize_geo("multilinestring") == "line"
+        assert _normalize_geo("multipoint") == "circle"
+
+    def test_normalize_geo_unknown_defaults_to_fill(self) -> None:
+        """Unknown geometry type → fill."""
+        assert _normalize_geo("GeometryCollection") == "fill"
 
     def _make_config(
         self,
