@@ -239,3 +239,48 @@ class TestETLPipeline:
         assert result.loc[2, "pop"] == pytest.approx(100, abs=5), "T3 allocation"
         # Sum should equal total source pop
         assert result["pop"].sum() == pytest.approx(300, abs=10), "Total population"
+def test_compute_areas_equal_area() -> None:
+    """_compute_areas uses EPSG:6933 equal-area projection, not inflated EPSG:3857."""
+    import geopandas as gpd  # noqa: PLC0415
+    import numpy as np  # noqa: PLC0415
+    from shapely.geometry import box  # noqa: PLC0415
+
+    from brewgis.workspace.services.base_canvas_etl import BaseCanvasETL  # noqa: PLC0415
+
+    # 0.1° × 0.1° box near Sacramento (38.5°N, -121.5°W)
+    poly = box(-121.5, 38.5, -121.4, 38.6)
+    gdf = gpd.GeoDataFrame({"id": [1]}, geometry=[poly], crs="EPSG:4326")
+
+    etl = BaseCanvasETL()
+    result = etl._compute_areas(gdf.copy())
+
+    # Expected: ~23,900 acres for a 0.1° box at this latitude
+    # 0.1° lat ≈ 11,132 m, 0.1° lon ≈ 8,712 m (cos 38.5°)
+    # Area ≈ 96,982,000 m² ≈ 23,965 acres — allow ±5% tolerance
+    assert result.loc[0, "area_gross"] == pytest.approx(23965, rel=0.05)
+
+    # Derived columns should be proportional
+    assert result.loc[0, "area_parcel"] == pytest.approx(23965 * 0.85, rel=0.01)
+    assert result.loc[0, "area_dev_condition"] == pytest.approx(23965 * 0.7, rel=0.01)
+    assert result.loc[0, "area_row"] == pytest.approx(23965 * 0.15, rel=0.01)
+
+
+def test_compute_areas_preserves_crs() -> None:
+    """_compute_areas does not mutate the original GeoDataFrame CRS."""
+    import geopandas as gpd  # noqa: PLC0415
+    from shapely.geometry import box  # noqa: PLC0415
+
+    from brewgis.workspace.services.base_canvas_etl import BaseCanvasETL  # noqa: PLC0415
+
+    poly = box(-121.5, 38.5, -121.4, 38.6)
+    gdf = gpd.GeoDataFrame({"id": [1]}, geometry=[poly], crs="EPSG:4326")
+    original_crs = gdf.crs
+
+    etl = BaseCanvasETL()
+    result = etl._compute_areas(gdf)
+
+    # Original GDF CRS is preserved
+    assert gdf.crs == original_crs
+    # Resulting GDF should still have area columns in acres
+    assert "area_gross" in result.columns
+    assert result.loc[0, "area_gross"] > 0

@@ -12,9 +12,9 @@ from brewgis.workspace.services.census_fetcher import _build_census_url
 from brewgis.workspace.services.census_fetcher import _compute_derived_columns
 from brewgis.workspace.services.census_fetcher import fetch_acs_block_groups
 from brewgis.workspace.services.census_fetcher import fetch_acs_data_summary
-from brewgis.workspace.services.lehd_fetcher import WAC_VARIABLES
-from brewgis.workspace.services.lehd_fetcher import _all_wac_vars
-from brewgis.workspace.services.lehd_fetcher import _build_wac_url
+from brewgis.workspace.services.lehd_fetcher import LODES_WAC_VARIABLES
+from brewgis.workspace.services.lehd_fetcher import _all_lodes_wac_vars
+from brewgis.workspace.services.lehd_fetcher import _build_lodes_wac_url
 from brewgis.workspace.services.lehd_fetcher import fetch_lehd_block_data
 from brewgis.workspace.services.lehd_fetcher import fetch_lehd_data_summary
 from brewgis.workspace.services.poi_fetcher import POI_CATEGORIES
@@ -131,46 +131,48 @@ class TestCensusFetcher:
 class TestLEHDFetcher:
     """Unit tests for the LEHD employment fetcher service."""
 
-    def test_all_wac_vars(self) -> None:
-        """_all_wac_vars should return all WAC variable codes."""
-        vars_ = _all_wac_vars()
+    def test_all_lodes_wac_vars(self) -> None:
+        """_all_lodes_wac_vars should return all LODES WAC variable codes."""
+        vars_ = _all_lodes_wac_vars()
         assert "C000" in vars_
-        assert len(vars_) == len(WAC_VARIABLES)
+        assert len(vars_) == len(LODES_WAC_VARIABLES)
 
-    def test_build_wac_url(self) -> None:
+    def test_build_lodes_wac_url(self) -> None:
         """URL should be correctly formatted."""
-        url = _build_wac_url("06", "067")
-        assert "api.census.gov/data/2021/lehd/wac" in url
-        assert "state:06" in url
-        assert "county:067" in url
-        assert "for=block" in url
+        url = _build_lodes_wac_url("06", "067")
+        assert "lehd.ces.census.gov/data/lodes/LODES7" in url
+        assert "06" in url
+        assert "067" in url
+        assert "wac" in url
 
     @patch("brewgis.workspace.services.lehd_fetcher.requests.get")
     def test_fetch_lehd_api_error(self, mock_get) -> None:
         """API HTTP errors should raise RuntimeError."""
         mock_get.return_value.status_code = 500
         mock_get.return_value.text = "Error"
-
-        with pytest.raises(RuntimeError, match="LEHD API returned HTTP 500"):
+        with pytest.raises(RuntimeError, match="LODES download returned HTTP 500"):
             fetch_lehd_block_data("06", "067")
-
     @patch("brewgis.workspace.services.lehd_fetcher.requests.get")
     def test_fetch_lehd_empty_response(self, mock_get) -> None:
-        """Empty API response should raise RuntimeError."""
+        """Empty CSV (header only) should raise RuntimeError."""
+        import gzip, io, csv
+        buf = io.BytesIO()
+        with gzip.GzipFile(fileobj=buf, mode="w") as gz:
+            gz.write(b"w_geocode,C000,CA01,CA02,CA03,CE01,CE02,CE03\n")
         mock_get.return_value.status_code = 200
-        mock_get.return_value.json.return_value = [["C000", "state"]]
-
-        with pytest.raises(RuntimeError, match="LEHD API returned no data rows"):
+        mock_get.return_value.content = buf.getvalue()
+        with pytest.raises(RuntimeError, match="LODES WAC CSV returned no data"):
             fetch_lehd_block_data("06", "067")
 
     @patch("brewgis.workspace.services.lehd_fetcher.requests.get")
     def test_fetch_lehd_data_summary_success(self, mock_get) -> None:
         """Data summary should return expected structure."""
+        import gzip, io, csv
+        buf = io.BytesIO()
+        with gzip.GzipFile(fileobj=buf, mode="w") as gz:
+            gz.write(b"w_geocode,C000,CA01\n060670001001000,500,100\n")
         mock_get.return_value.status_code = 200
-        mock_get.return_value.json.return_value = [
-            ["C000", "state", "county", "tract", "block"],
-            ["500", "06", "067", "100100", "1000"],
-        ]
+        mock_get.return_value.content = buf.getvalue()
 
         summary = fetch_lehd_data_summary("06", "067")
         assert summary["row_count"] == 1

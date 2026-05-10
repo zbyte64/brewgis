@@ -310,13 +310,14 @@ class BaseCanvasETL:
     def _compute_areas(self, gdf: gpd.GeoDataFrame) -> gpd.GeoDataFrame:
         """Compute area columns from parcel geometry.
 
-        Uses ST_Area (in meters^2) converted to acres.
+        Uses EPSG:6933 equal-area projection for accurate geodesic area.
         """
-        if gdf.crs is None or gdf.crs.to_string() == "EPSG:4326":
-            gdf_utm = gdf.to_crs("EPSG:3857")
-            area_sq_m = gdf_utm.geometry.area
-        else:
-            area_sq_m = gdf.geometry.area
+        gdf_eq = (
+            gdf.to_crs("EPSG:6933")
+            if gdf.crs is None or gdf.crs.to_string() != "EPSG:6933"
+            else gdf
+        )
+        area_sq_m = gdf_eq.geometry.area
 
         sq_m_per_acre = 4046.86
         gdf["area_gross"] = (area_sq_m / sq_m_per_acre).round(4)
@@ -581,7 +582,13 @@ class BaseCanvasETL:
         return gdf
 
     def _classify_land_use(self, gdf: gpd.GeoDataFrame) -> gpd.GeoDataFrame:
-        """Classify land use if not already set."""
+        """Classify land use if not already set.
+
+        Delegates to the configured land-use source which may use:
+        - Assessor use codes from parcel attributes (CA Standard codes)
+        - NLCD land cover zonal statistics
+        - Default fallback to ``"urban"``
+        """
         if self._land_use_source.available:
             self._log("Using real land-use source")
             gdf = self._land_use_source.classify_parcels(gdf)

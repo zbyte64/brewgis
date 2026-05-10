@@ -19,6 +19,7 @@ import logging
 from typing import Protocol
 
 import geopandas as gpd
+import pandas as pd
 
 logger = logging.getLogger(__name__)
 
@@ -116,6 +117,74 @@ class IrrigationSource(Protocol):
         ...
 
 
+# ── Assessor Use Code Classification ──────────────────────────────────
+# Maps common CA Standard Land Use Coding Manual codes to development_categories
+
+_ASSESSOR_USE_CODE_MAP: dict[str, str] = {
+    # Residential
+    "10": "urban",      # Single-family residential
+    "11": "urban",      # Single-family residential
+    "12": "urban",      # Two-family residential
+    "13": "urban",      # Three-family residential
+    "14": "urban",      # Four-family residential
+    "15": "urban",      # Five+ family residential
+    "16": "urban",      # Mixed residential/commercial
+    "17": "urban",      # Mobile home parks
+    "18": "urban",      # Residential hotels
+    # Commercial
+    "20": "urban",      # General commercial
+    "21": "urban",      # Retail
+    "22": "urban",      # Office
+    "23": "urban",      # Financial services
+    "24": "urban",      # Medical
+    # Industrial
+    "30": "urban",      # General industrial
+    "31": "urban",      # Light industrial
+    "32": "urban",      # Heavy industrial
+    # Agricultural
+    "40": "agricultural",  # General agriculture
+    "41": "agricultural",  # Crops
+    "42": "agricultural",  # Orchards
+    "43": "agricultural",  # Vineyards
+    "44": "agricultural",  # Livestock
+    "45": "agricultural",  # Dairy
+    "46": "agricultural",  # Poultry
+    # Vacant / Undeveloped
+    "50": "undeveloped",  # Vacant residential
+    "51": "undeveloped",  # Vacant commercial
+    "52": "undeveloped",  # Vacant industrial
+    "53": "undeveloped",  # Vacant agricultural
+    # Open Space / Recreation
+    "60": "undeveloped",  # Parks / Recreation
+    "61": "undeveloped",  # Golf courses
+    "62": "undeveloped",  # Cemeteries
+    "63": "undeveloped",  # Open space
+    # Water / Wetlands
+    "70": "undeveloped",  # Water
+    "71": "undeveloped",  # Wetlands
+    # Public / Institutional
+    "80": "urban",      # Public services
+    "81": "urban",      # Education
+    "82": "urban",      # Religious
+    "83": "urban",      # Government
+    # Other
+    "90": "urban",      # Other
+}
+
+
+def classify_by_assessor_code(assessor_use_code: str | None) -> str | None:
+    """Classify a parcel's land development category using assessor use code.
+
+    Looks up the first two digits of the assessor code in the mapping.
+    Returns None if no match is found.
+    """
+    if not assessor_use_code or pd.isna(assessor_use_code):
+        return None
+    code = str(assessor_use_code).strip()
+    prefix = code[:2] if len(code) >= 2 else code  # noqa: PLR2004
+    return _ASSESSOR_USE_CODE_MAP.get(prefix)
+
+
 # ── Null / Default Adapters ────────────────────────────────────────────
 # These preserve the current fillna(default) behaviour when real data
 # sources are not configured or unavailable.
@@ -152,15 +221,29 @@ class NullEmploymentSource:
 
 
 class NullLandUseSource:
-    """Default land-use source — all parcels classified as ``"urban"``."""
+    """Default land-use source — tries assessor codes, then defaults to ``"urban"``."""
 
     @property
     def available(self) -> bool:
-        return False
+        return False  # Still marks as "default" source
 
     def classify_parcels(self, parcels: gpd.GeoDataFrame) -> gpd.GeoDataFrame:
-        return parcels
+        """Classify using assessor use codes from parcel attributes if available."""
+        # Check for assessor code columns
+        code_col = None
+        for col in ("assessor_use_code", "land_use", "use_code", "lu_code"):
+            if col in parcels.columns:
+                code_col = col
+                break
 
+        if code_col is not None and "land_development_category" in parcels.columns:
+            # Apply assessor code classification where not already set
+            mask = parcels["land_development_category"].isna()
+            parcels.loc[mask, "land_development_category"] = parcels.loc[mask, code_col].apply(
+                classify_by_assessor_code
+            )
+
+        return parcels
 
 class NullIntersectionDensitySource:
     """Default intersection-density source — returns default 12.5."""
@@ -216,7 +299,9 @@ class CensusDemographicSource:
         county_fips: str = "",
     ) -> gpd.GeoDataFrame:
         """Return block-group-level demographics with polygon geometry."""
-        from brewgis.workspace.services.census_fetcher import fetch_acs_block_group_polygons  # noqa: PLC0415
+        from brewgis.workspace.services.census_fetcher import (
+            fetch_acs_block_group_polygons,
+        )
 
         if self._data is not None:
             return self._data
@@ -263,7 +348,7 @@ class LEHDEmploymentSource:
         county_fips: str = "",
     ) -> gpd.GeoDataFrame:
         """Return block-level employment data with polygon geometry."""
-        from brewgis.workspace.services.lehd_fetcher import fetch_lehd_block_polygons  # noqa: PLC0415
+        from brewgis.workspace.services.lehd_fetcher import fetch_lehd_block_polygons
 
         if self._data is not None:
             return self._data
@@ -303,13 +388,39 @@ class NLCDFetcher:
         return True
 
     def classify_parcels(self, parcels: gpd.GeoDataFrame) -> gpd.GeoDataFrame:
-        """Classify parcels using NLCD zonal statistics."""
-        from brewgis.workspace.services.nlcd_fetcher import compute_nlcd_zonal_stats  # noqa: PLC0415
+        """Classify parcels using NLCD zonal statistics.
+
+        Computes the bounding box from parcel geometries with a 5 %
+        buffer to avoid edge effects during raster subset download.
+        """
+        from brewgis.workspace.services.nlcd_fetcher import compute_nlcd_zonal_stats
 
         if self._parcels_cached is not None:
             return self._parcels_cached
 
-        result = compute_nlcd_zonal_stats(parcels, self._bbox, self._year)
+        # Compute bbox from parcels with 5 % buffer
+        bounds = parcels.total_bounds  # [minx, miny, maxx, maxy]
+        west, south, east, north = bounds
+        x_pad = (east - west) * 0.05
+        y_pad = (north - south) * 0.05
+        bbox = (west - x_pad, south - y_pad, east + x_pad, north + y_pad)
+
+        # First pass: try assessor use codes
+        code_col = None
+        for col in ("assessor_use_code", "land_use", "use_code", "lu_code"):
+            if col in parcels.columns:
+                code_col = col
+                break
+
+        if code_col is not None:
+            if "land_development_category" not in parcels.columns:
+                parcels["land_development_category"] = None
+            mask = parcels["land_development_category"].isna()
+            parcels.loc[mask, "land_development_category"] = parcels.loc[mask, code_col].apply(
+                classify_by_assessor_code
+            )
+
+        result = compute_nlcd_zonal_stats(parcels, bbox, self._year)
         self._parcels_cached = result
         return result
 
@@ -350,8 +461,8 @@ class NLCDFetcher:
 class OSMIntersectionDensitySource:
     """Intersection density source that uses OSM road network data.
 
-    Extracts the road network for the bounding box using osmnx, counts
-    intersections per parcel, and normalizes by parcel area.
+    Computes density at jurisdiction level for efficiency and consistency.
+    Falls back to per-parcel computation when no jurisdiction column exists.
     """
 
     DEFAULT_DENSITY = 12.5  # intersections/km^2
@@ -365,16 +476,57 @@ class OSMIntersectionDensitySource:
 
     @property
     def available(self) -> bool:
-        return True
+        try:
+            import osmnx  # noqa: F401
+            return True
+        except ImportError:
+            return False
 
-    def compute_density(self, parcels: gpd.GeoDataFrame) -> gpd.GeoDataFrame:
-        """Compute intersection density from OSM road network.
-
-        Falls back to default density if osmnx is not available.
-        """
+    def _compute_jurisdiction_density(
+        self, jurisdiction_parcels: gpd.GeoDataFrame
+    ) -> float | None:
+        """Compute intersection density for a jurisdiction's geometry union."""
         try:
             import osmnx as ox  # noqa: PLC0415
-        except ImportError:
+
+            # Union all parcel geometries in the jurisdiction
+            # Buffer slightly to avoid edge disconnects
+            boundary = jurisdiction_parcels.union_all().buffer(0.001)
+
+            # Get the road network within the boundary
+            graph = ox.graph_from_polygon(
+                boundary,
+                network_type="drive",
+                simplify=True,
+                retain_all=True,
+            )
+
+            # Count intersections (nodes with street_count >= 3)
+            nodes, _ = ox.graph_to_gdfs(graph)
+            intersections = nodes[nodes["street_count"] >= 3]
+
+            # Compute area in km²
+            area_sq_km = (
+                jurisdiction_parcels.to_crs("EPSG:6933").area.sum() / 1e6
+            )
+
+            if area_sq_km > 0:
+                return len(intersections) / area_sq_km
+            return None
+        except Exception as exc:
+            logger.warning(
+                "OSM intersection density computation failed: %s", exc
+            )
+            return None
+
+    def compute_density(self, parcels: gpd.GeoDataFrame) -> gpd.GeoDataFrame:
+        """Compute intersection density at jurisdiction level.
+
+        If parcels have a 'jurisdiction' column, groups by it and computes
+        one density per jurisdiction. Otherwise computes per-parcel.
+        Falls back to DEFAULT_DENSITY on failure.
+        """
+        if not self.available:
             logger.warning(
                 "osmnx not available; using default intersection density %.1f",
                 self.DEFAULT_DENSITY,
@@ -385,7 +537,31 @@ class OSMIntersectionDensitySource:
                 ].fillna(self.DEFAULT_DENSITY)
             return parcels
 
+        if "jurisdiction" not in parcels.columns:
+            return self._compute_per_parcel(parcels)
+
+        jurisdictions = parcels["jurisdiction"].unique()
+        jurisdiction_density: dict[str, float] = {}
+
+        for juris in jurisdictions:
+            mask = parcels["jurisdiction"] == juris
+            juris_parcels = parcels[mask]
+            density = self._compute_jurisdiction_density(juris_parcels)
+            if density is not None:
+                jurisdiction_density[juris] = density
+
+        parcels = parcels.copy()
+        parcels["intersection_density"] = parcels["jurisdiction"].map(
+            jurisdiction_density
+        ).fillna(self.DEFAULT_DENSITY).round(2)
+
+        return parcels
+
+    def _compute_per_parcel(self, parcels: gpd.GeoDataFrame) -> gpd.GeoDataFrame:
+        """Fall back to per-parcel intersection density computation."""
         try:
+            import osmnx as ox  # noqa: PLC0415
+
             bbox_north = self._bbox[3]
             bbox_south = self._bbox[1]
             bbox_east = self._bbox[2]
@@ -409,7 +585,6 @@ class OSMIntersectionDensitySource:
                 return parcels
 
             # Count intersections per parcel
-            from shapely import wkt  # noqa: PLC0415
             import pandas as pd  # noqa: PLC0415
 
             intersection_counts: list[int] = []

@@ -26,6 +26,64 @@ logger = logging.getLogger(__name__)
 _NLCD_BASE_URL = "https://s3-us-west-2.amazonaws.com/mrlcdata"
 _NLCD_YEAR = 2021
 _NLCD_CACHE_DIR = Path.home() / ".cache" / "brewgis" / "nlcd"
+_MRLC_WCS_URL = "https://www.mrlc.gov/geoserver/wcs"
+
+
+def _download_nlcd_subset(  # noqa: PLR0913
+    west: float,
+    south: float,
+    east: float,
+    north: float,
+    year: int = 2021,
+    cache_dir: Path = _NLCD_CACHE_DIR,
+    *,
+    refresh_cache: bool = False,
+) -> str | None:
+    """Download an NLCD bounding-box subset via MRLC WCS.
+
+    Args:
+        west: Western longitude (EPSG:4326).
+        south: Southern latitude (EPSG:4326).
+        east: Eastern longitude (EPSG:4326).
+        north: Northern latitude (EPSG:4326).
+        year: NLCD year (default 2021).
+        cache_dir: Directory for cached GeoTIFFs.
+        refresh_cache: If True, delete cached file and re-download.
+
+    Returns:
+        Path to cached GeoTIFF, or None on failure.
+        The GeoTIFF is clipped to the specified bounding box.
+    """
+    coverage_id = f"nlcd_{year}_land_cover_l48"
+
+    params: dict[str, str | list[str]] = {
+        "service": "WCS",
+        "version": "2.0.1",
+        "request": "GetCoverage",
+        "CoverageId": coverage_id,
+        "subset": [f"X({west},{east})", f"Y({south},{north})"],
+        "format": "image/geotiff",
+    }
+
+    cache_key = f"nlcd_{year}_{west}_{south}_{east}_{north}".replace(".", "_")
+    cache_path = cache_dir / f"{cache_key}.tif"
+
+    if cache_path.exists() and not refresh_cache:
+        if _verify_cached_file(cache_path):
+            return str(cache_path)
+
+    if refresh_cache:
+        cache_path.unlink(missing_ok=True)
+
+    try:
+        response = requests.get(_MRLC_WCS_URL, params=params, timeout=300)
+        response.raise_for_status()
+        cache_dir.mkdir(parents=True, exist_ok=True)
+        cache_path.write_bytes(response.content)
+        return str(cache_path)
+    except requests.RequestException as exc:
+        logger.warning("Failed to download NLCD subset via WCS: %s", exc)
+        return None
 
 # NLCD land cover classes mapped to development categories
 # See https://www.mrlc.gov/data/legends/national-land-cover-database-2021-nlcd2021-legend
@@ -175,32 +233,44 @@ def _verify_cached_bytes(path: Path, size_path: Path, crc32_path: Path) -> bool:
 
     return True
 def download_nlcd_raster(
-    bbox: tuple[float, float, float, float],
+    bbox: tuple[float, float, float, float] | None = None,
     year: int = _NLCD_YEAR,
     *,
     refresh_cache: bool = False,
 ) -> str | None:
-    """Download the NLCD land cover raster for a given bounding box.
+    """Download the NLCD land cover raster.
 
-    Downloads the CONUS-wide NLCD raster if not already cached, then
-    extracts the bounding box subset.
+    When a bounding box is provided, uses the MRLC WCS endpoint to
+    download only the subset covering that area (much faster for
+    county-sized analyses).  Falls back to the full CONUS download
+    (S3) when bbox is ``None``.
 
     Cached files have companion .size and .crc32 files for integrity
     verification. On verification failure the corrupt file is removed
     and re-downloaded.
 
     Args:
-        bbox: Bounding box ``(min_x, min_y, max_x, max_y)`` in EPSG:4326.
+        bbox: Optional bounding box ``(west, south, east, north)`` in
+            EPSG:4326.  When provided, uses WCS subset download.
         year: NLCD year (default 2021).
         refresh_cache: If True, delete cached files and re-download.
 
     Returns:
-        Path to the clipped GeoTIFF, or ``None`` if download fails.
+        Path to the (potentially clipped) GeoTIFF, or ``None`` if
+        download fails.
     """
+    if bbox is not None:
+        west, south, east, north = bbox
+        return _download_nlcd_subset(
+            west, south, east, north,
+            year=year,
+            refresh_cache=refresh_cache,
+        )
+
+    # ── Fallback: full CONUS download (S3) ──────────────────────
     cache_dir = _NLCD_CACHE_DIR / str(year)
     cache_dir.mkdir(parents=True, exist_ok=True)
 
-    # NLCD CONUS raster file pattern
     raster_name = f"nlcd_{year}_land_cover_l48_20230630.img"
     raster_path = cache_dir / raster_name
     size_path = cache_dir / f"{raster_name}.size"
@@ -230,28 +300,7 @@ def download_nlcd_raster(
             logger.warning("Failed to download NLCD raster: %s", exc)
             return None
 
-    # Clip to bounding box using gdalwarp or rasterio
-    clipped_path = (
-        cache_dir / f"clip_{bbox[0]:.3f}_{bbox[1]:.3f}_{bbox[2]:.3f}_{bbox[3]:.3f}.tif"
-    )
-    if clipped_path.exists():
-        return str(clipped_path)
-
-    try:
-        import subprocess
-        cmd = [
-            "gdalwarp",
-            "-te", str(bbox[0]), str(bbox[1]), str(bbox[2]), str(bbox[3]),
-            "-te_srs", "EPSG:4326",
-            "-of", "GTiff",
-            str(raster_path),
-            str(clipped_path),
-        ]
-        subprocess.run(cmd, check=True, capture_output=True, timeout=300)
-        return str(clipped_path)
-    except Exception as exc:
-        logger.warning("Failed to clip NLCD raster: %s", exc)
-        return None
+    return str(raster_path)
 
 
 def compute_nlcd_zonal_stats(
@@ -316,7 +365,14 @@ def compute_nlcd_zonal_stats(
                 categories.append("unknown")
                 impervious.append(0.0)
 
-    parcels["land_development_category"] = categories
+    # Fill NLCD categories into parcels — preserve any existing assessor-code values
+    existing = parcels.get("land_development_category", None)
+    if existing is not None and existing.notna().any():
+        parcels["land_development_category"] = parcels["land_development_category"].fillna(
+            pd.Series(categories, index=parcels.index)
+        )
+    else:
+        parcels["land_development_category"] = categories
     parcels["impervious_fraction"] = impervious
     return parcels
 
