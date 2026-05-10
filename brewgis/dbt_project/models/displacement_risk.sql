@@ -4,6 +4,8 @@
     Computes per-parcel displacement risk using the Urban Displacement
     Project (UDP) methodology adapted for scenario analysis. Uses four
     equity indicators from the base canvas to assign a risk category:
+    Equity data (median_income, rent_burden_pct, pct_minority, pct_college_educated)
+    is provided by the ACS Equity Data Wrapper preprocessor (Phase 1c).
 
         1. Median income below threshold         → +1 vulnerability point
         2. Percent minority above threshold      → +1 vulnerability point

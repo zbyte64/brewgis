@@ -98,6 +98,17 @@
                          class="btn btn-sm btn-outline-secondary py-0" style="font-size: 0.7rem;">
                         {% translate "Edit" %}
                       </a>
+                      <form method="post" action="{% url 'workspace:scenario_toggle_publish' workspace.pk s.pk %}" style="display: inline;">
+                        {% csrf_token %}
+                        <button type="submit" class="btn btn-sm {% if s.published %}btn-success{% else %}btn-outline-success{% endif %} py-0" style="font-size: 0.7rem;">
+                          {% if s.published %}{% translate "Published" %}{% else %}{% translate "Publish" %}{% endif %}
+                        </button>
+                      </form>
+                      {% if s.published and s.public_token %}
+                        <a href="{% url 'workspace:public_scenario_map' s.public_token %}" target="_blank" class="btn btn-sm btn-outline-info py-0" style="font-size: 0.7rem;" title="{% translate 'Shareable link' %}">
+                          {% translate "Share" %}
+                        </a>
+                      {% endif %}
                       <button type="button"
                               class="btn btn-sm btn-outline-danger py-0 scenario-delete-btn"
                               style="font-size: 0.7rem;"

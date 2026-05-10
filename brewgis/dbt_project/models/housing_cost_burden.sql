@@ -5,6 +5,8 @@
     cost-burden rates applied to household counts.
 
     Formula:
+    Equity data (median_income, rent_burden_pct, pct_minority, pct_college_educated)
+    is provided by the ACS Equity Data Wrapper preprocessor (Phase 1c).
         cost_burdened_hh = households × cost_burden_rate
         severely_cost_burdened_hh = households × severe_burden_rate
         cost_burden_pct = cost_burdened_hh / NULLIF(households, 0) × 100

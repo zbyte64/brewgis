@@ -65,6 +65,34 @@
              style="width: 100%"></div>
       </div>
     {% endif %}
+
+    {% if vmt_fee_data %}
+    <div class="mt-3 pt-3 border-top">
+      <h6 class="mb-2">VMT Mitigation Fee</h6>
+      <table class="table table-sm table-bordered mb-0 small">
+        <thead class="table-light">
+          <tr>
+            <th>Metric</th>
+            <th class="text-end">Value</th>
+          </tr>
+        </thead>
+        <tbody>
+          <tr>
+            <td>Fee Revenue</td>
+            <td class="text-end">${{ vmt_fee_data.revenue|floatformat:2 }}</td>
+          </tr>
+          <tr>
+            <td>Revenue Forgone (Exempt)</td>
+            <td class="text-end">${{ vmt_fee_data.revenue_forgone|floatformat:2 }}</td>
+          </tr>
+          <tr>
+            <td>Exempt VMT</td>
+            <td class="text-end">{{ vmt_fee_data.vmt_exempt|floatformat:2 }}</td>
+          </tr>
+        </tbody>
+      </table>
+    </div>
+    {% endif %}
   </div>
 </div>
 {% endpartialdef %}

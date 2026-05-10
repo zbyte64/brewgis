@@ -4,18 +4,22 @@ models:
   description: Developable acres after applying environmental constraint discounts.
   columns:
   - name: parcel_id
+    description: "Unique parcel identifier"
     tests:
     - not_null
     - unique
   - name: gross_acres
+    description: "Total parcel area in acres"
     tests:
     - not_null
     - non_negative
   - name: acres_developable
+    description: "Developable acres after constraint discounts"
     tests:
     - not_null
     - non_negative
   - name: developable_proportion
+    description: "Ratio of developable to gross acres"
     tests:
     - column_between:
         arguments:
@@ -805,3 +809,62 @@ models:
     - not_null
     - accepted_values:
         values: ['stable', 'vulnerable', 'at_risk', 'displacement_pressure']
+- name: tree_canopy
+  description: "Tree canopy cover and urban heat island exposure per parcel."
+  columns:
+  - name: parcel_id
+    tests: [not_null, unique]
+  - name: gross_acres
+    tests: [not_null, non_negative]
+  - name: canopy_pct
+    tests: [non_negative]
+  - name: surface_temp_f
+    tests: [non_negative]
+  - name: heat_exposure_score
+    tests: [non_negative]
+
+- name: vmt_fee
+  description: "VMT mitigation fee calculator — multiplies VMT by configurable fee rates."
+  columns:
+  - name: parcel_id
+    tests: [not_null, unique]
+  - name: vmt_total
+    tests: [non_negative]
+  - name: fee_revenue_total
+    tests: [non_negative]
+  - name: revenue_forgone
+    tests: [non_negative]
+
+- name: displacement_risk_dynamic
+  description: "Scenario-responsive displacement risk with change vs. baseline."
+  columns:
+  - name: parcel_id
+    tests: [not_null, unique]
+  - name: vulnerability_score
+    tests: [not_null]
+  - name: displacement_risk_category
+    tests: [not_null]
+  - name: risk_change_vs_base
+
+- name: scenario_summary
+  description: "Single-row scenario summary aggregating all module outputs."
+  columns:
+  - name: scenario_id
+    tests: [not_null, unique]
+  - name: population
+    tests: [non_negative]
+  - name: households
+    tests: [non_negative]
+  - name: vmt_total
+    tests: [non_negative]
+  - name: co2e_total_kg
+    tests: [non_negative]
+  - name: net_dalys
+
+- name: sprawl_cost
+  description: "Cost of sprawl per household — infrastructure cost metrics."
+  columns:
+  - name: parcel_id
+    tests: [not_null, unique]
+  - name: infrastructure_cost_per_hh_annual
+    tests: [non_negative]

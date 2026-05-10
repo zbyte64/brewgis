@@ -14,6 +14,7 @@ from .home import home  # noqa: F401
 from .import_center import import_center  # noqa: F401
 from .import_status import import_status  # noqa: F401
 from .map import view_workspace_map  # noqa: F401
+from .map import view_public_scenario_map  # noqa: F401
 from .merge import merge_paint_edits  # noqa: F401
 from .paint import clear_paint  # noqa: F401
 from .paint import paint_built_form  # noqa: F401
@@ -22,6 +23,7 @@ from .paint import paint_history  # noqa: F401
 from .paint import undo_paint  # noqa: F401
 from .read_gis_file import ReadGISFileView  # noqa: F401
 from .scenarios import scenario_clone  # noqa: F401
+from .scenarios import scenario_toggle_publish  # noqa: F401
 from .scenarios import scenario_comparison  # noqa: F401
 from .scenarios import scenario_comparison_data  # noqa: F401
 from .scenarios import scenario_create  # noqa: F401

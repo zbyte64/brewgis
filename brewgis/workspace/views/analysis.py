@@ -146,6 +146,18 @@ class AnalysisLaunchForm(forms.Form):
         ),
         initial=_CONSTRAINTS_INITIAL,
     )
+    column_mapping = forms.CharField(
+        widget=forms.Textarea(
+            attrs={"rows": 4, "class": "form-control font-monospace"}
+        ),
+        required=False,
+        label="Column Mapping (JSON)",
+        help_text=(
+            "Optional JSON mapping of canonical column names to actual table "
+            'column names. Example: {"pop": "population", "hh": "households"}'
+        ),
+    )
+
 
     def clean_constraints_json(self) -> list[dict] | None:
         """Parse and validate the constraints JSON field."""
@@ -174,6 +186,24 @@ class AnalysisLaunchForm(forms.Form):
                 msg = f"Item {i} missing required 'discount_pct' key."
                 raise forms.ValidationError(msg)
 
+        return parsed
+
+    def clean_column_mapping(self) -> dict[str, str] | None:
+        """Parse and validate the column mapping JSON field."""
+        data = self.cleaned_data.get("column_mapping")
+        if not data:
+            return None
+        try:
+            parsed = json.loads(data)
+        except json.JSONDecodeError as e:
+            raise forms.ValidationError(f"Invalid JSON: {e}") from e
+        if not isinstance(parsed, dict):
+            raise forms.ValidationError("Column mapping must be a JSON object.")
+        for key, value in parsed.items():
+            if not isinstance(key, str) or not isinstance(value, str):
+                raise forms.ValidationError(
+                    "All keys and values in column mapping must be strings."
+                )
         return parsed
 
     def clean(self) -> dict[str, object]:
@@ -245,6 +275,9 @@ class AnalysisLaunchView(FormView):
         constraints = data.get("constraints_json")
         if constraints:
             vars_["constraints"] = constraints
+        column_mapping = data.get("column_mapping")
+        if column_mapping:
+            vars_["column_mapping"] = column_mapping
 
         # Launch the pipeline
         run = run_analysis_pipeline(
@@ -275,10 +308,33 @@ class AnalysisLaunchView(FormView):
 def analysis_status(request: HttpRequest, run_pk: int) -> HttpResponse:
     """htmx-polled status partial for an analysis run."""
     run = get_object_or_404(AnalysisRun, pk=run_pk)
+
+    vmt_fee_data = None
+    if run.status == "completed" and "vmt_fee" in (run.modules or []):
+        vmt_fee_table = f"vmt_fee_{run.scenario.slug}"
+        schema = run.workspace.db_schema
+        try:
+            with connection.cursor() as cursor:
+                cursor.execute(
+                    f'SELECT COALESCE(SUM(fee_revenue_total), 0), '
+                    f'COALESCE(SUM(revenue_forgone), 0), '
+                    f'COALESCE(SUM(vmt_exempt), 0) '
+                    f'FROM "{schema}"."{vmt_fee_table}"'
+                )
+                row = cursor.fetchone()
+                if row:
+                    vmt_fee_data = {
+                        "revenue": round(row[0], 2),
+                        "revenue_forgone": round(row[1], 2),
+                        "vmt_exempt": round(row[2], 2),
+                    }
+        except Exception:
+            pass
+
     return render(
         request,
         "workspace/analysis/status.html#analysis-status",
-        {"run": run},
+        {"run": run, "vmt_fee_data": vmt_fee_data},
     )
 
 

@@ -3,8 +3,11 @@
 from __future__ import annotations
 
 import json
+import uuid
 from typing import TYPE_CHECKING
 from typing import cast
+from django.http import Http404
+from django.views.decorators.http import require_safe
 
 from django.conf import settings
 
@@ -212,6 +215,45 @@ def view_workspace_map(request: HttpRequest, workspace_pk: int) -> HttpResponse:
         "canvas_view_layer_id": canvas_view_layer_id,
         "selection_mode": selection_mode,
         "basemap_style": basemap_style,
+    }
+
+    return render(request, "workspace_map.html", context)
+
+
+@require_safe
+def view_public_scenario_map(request: HttpRequest, token: str) -> HttpResponse:
+    """Public read-only map view for a published scenario."""
+    try:
+        token_uuid = uuid.UUID(token)
+    except (ValueError, AttributeError):
+        raise Http404("Invalid token.")
+
+    scenario = get_object_or_404(
+        Scenario,
+        public_token=token_uuid,
+        published=True,
+    )
+    workspace = scenario.workspace
+
+    layers = Layer.objects.filter(workspace=workspace).order_by("display_order")
+
+    layer_data = []
+    for layer in layers:
+        layer_data.append({
+            "key": layer.key,
+            "name": layer.name,
+            "source": layer.to_maplibre_source(),
+            "symbology": layer.symbology if hasattr(layer, "symbology") else None,
+        })
+
+    context = {
+        "workspace": workspace,
+        "layers": layers,
+        "layer_data": layer_data,
+        "scenario": scenario,
+        "is_public_view": True,
+        "disable_paint": True,
+        "public_token": token,
     }
 
     return render(request, "workspace_map.html", context)

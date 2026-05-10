@@ -4,9 +4,11 @@ from __future__ import annotations
 
 import json
 from typing import TYPE_CHECKING
+import uuid
 
 from django import forms
 from django.contrib.auth.decorators import user_passes_test
+from django.views.decorators.http import require_POST
 from django.db import ProgrammingError, connection, transaction
 from django.http import HttpRequest
 from django.http import HttpResponse
@@ -347,3 +349,18 @@ def _build_county_q(workspace: Workspace) -> object:
             county_fips=entry["county"],
         )
     return county_q
+
+@require_POST
+@user_passes_test(lambda u: u.is_authenticated)
+def scenario_toggle_publish(request: HttpRequest, workspace_pk: int, scenario_pk: int) -> JsonResponse:
+    """Toggle the published state of a scenario."""
+    scenario = get_object_or_404(Scenario, pk=scenario_pk, workspace_id=workspace_pk)
+    scenario.published = not scenario.published
+    if scenario.published and scenario.public_token is None:
+        scenario.public_token = uuid.uuid4()
+    scenario.save(update_fields=["published", "public_token"])
+    return JsonResponse({
+        "status": "ok",
+        "published": scenario.published,
+        "public_token": str(scenario.public_token) if scenario.public_token else None,
+    })

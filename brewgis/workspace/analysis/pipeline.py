@@ -39,6 +39,7 @@ MODULE_TASKS: dict[str, Any] = dict.fromkeys(MODULE_DEPENDENCIES, run_dbt_module
 # Modules that require a preprocessor step before dbt execution.
 MODULE_TASKS["internal_capture"] = run_preprocessor_and_dbt
 MODULE_TASKS["food_access"] = run_preprocessor_and_dbt
+MODULE_TASKS["acs_equity"] = run_preprocessor_and_dbt
 
 
 @deal.ensure(lambda module_names, result: set(module_names).issubset(set(result)))
@@ -124,6 +125,9 @@ def run_analysis_pipeline(
 
     # Resolve execution order
     ordered_modules = resolve_module_order(module_names)
+    # Extract column_mapping for separate storage, keep in vars for dbt flow
+    column_mapping = base_vars.get("column_mapping", {})
+
 
     run = AnalysisRun.objects.create(
         workspace_id=workspace_id,
@@ -131,6 +135,7 @@ def run_analysis_pipeline(
         modules=ordered_modules,
         status="pending",
         vars=base_vars,
+    column_mapping=column_mapping,
     )
 
     logger.info(

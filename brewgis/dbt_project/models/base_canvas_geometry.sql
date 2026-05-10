@@ -17,6 +17,10 @@
 #}
 {{ config(materialized='view') }}
 
+{%- set area_srid = var('projected_srid', 3857) -%}
+
+{%- import 'geometry.sql' as geom -%}
+
 WITH parcel_geom AS (
     SELECT
         parcel_id,
@@ -40,7 +44,7 @@ parcel_area AS (
         land_development_category,
         built_form_key,
         intersection_density,
-        ROUND((ST_Area(ST_Transform(geometry, 3857)) / 4046.86)::numeric, 4) AS area_gross,
+        ROUND((ST_Area(ST_Transform(geometry, {{ area_srid }})) / 4046.86)::numeric, 4) AS area_gross,
         pop,
         hh,
         du,

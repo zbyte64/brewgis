@@ -8,6 +8,8 @@ and returns structured results for Celery task consumption.
 
 from __future__ import annotations
 
+from brewgis.workspace.analysis.module_registry import get_column_mapping_vars
+
 import json
 import os
 import shutil
@@ -166,6 +168,13 @@ class DbtRunnerWrapper:
             args.extend(select)
         if full_refresh:
             args.append("--full-refresh")
+        # Expand column_mapping into canonical_{name} vars for dbt
+        if vars_ and "column_mapping" in vars_:
+            column_mapping = vars_.pop("column_mapping")
+            if column_mapping:
+                canonical_vars = get_column_mapping_vars(column_mapping)
+                vars_.update(canonical_vars)
+
         if vars_:
             args.extend(["--vars", json.dumps(vars_)])
 

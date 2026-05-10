@@ -1,6 +1,7 @@
 from django.conf import settings
 from django.db import models
 from django.utils.text import slugify
+import uuid
 
 from brewgis.workspace.built_forms.models import BuildingType  # noqa: F401
 from brewgis.workspace.built_forms.models import PlaceType  # noqa: F401
@@ -216,6 +217,14 @@ class Scenario(models.Model):
     base_year = models.IntegerField()
     horizon_year = models.IntegerField()
     schema_name = models.CharField(max_length=128, blank=True, default="")
+    published = models.BooleanField(default=False, help_text="Make this scenario publicly viewable.")
+    public_token = models.UUIDField(
+        default=uuid.uuid4,
+        editable=False,
+        null=True,
+        blank=True,
+        help_text="UUID token for public sharing link.",
+    )
     created_at = models.DateTimeField(auto_now_add=True)
     updated_at = models.DateTimeField(auto_now=True)
 
@@ -320,6 +329,11 @@ class AnalysisRun(models.Model):
         blank=True,
         help_text="dbt variables used for this run.",
     )
+    column_mapping = models.JSONField(
+        blank=True,
+        default=dict,
+        help_text="User-specified column name mappings (e.g. {'pop': 'population'}).",
+    )
     started_at = models.DateTimeField(null=True, blank=True)
     completed_at = models.DateTimeField(null=True, blank=True)
     error_log = models.TextField(blank=True, default="")
@@ -389,6 +403,37 @@ class DataImportRun(models.Model):
 
     def __str__(self) -> str:
         return f"DataImportRun #{self.pk} [{self.import_type}] ({self.status})"
+
+
+
+class POICache(models.Model):
+    """GeoJSON cache of last successful POI fetch for offline fallback."""
+    workspace = models.ForeignKey(
+        Workspace,
+        on_delete=models.CASCADE,
+        related_name="poi_caches",
+    )
+    name = models.CharField(
+        max_length=128,
+        help_text="Cache identifier (e.g. 'food_poi').",
+    )
+    geojson_data = models.JSONField(
+        help_text="GeoJSON FeatureCollection of POI data.",
+    )
+    source = models.CharField(
+        max_length=64,
+        default="osm",
+        help_text="Original data source.",
+    )
+    fetched_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        unique_together = ("workspace", "name")
+        verbose_name = "POI Cache"
+
+    def __str__(self) -> str:
+        return f"POICache[{self.workspace_id}]({self.name})"
+
 
 
 class ConstraintOperator(models.TextChoices):

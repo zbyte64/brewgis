@@ -51,13 +51,22 @@ models:
       +materialized: table
     stormwater_runoff:
       +materialized: table
+    tree_canopy:
+      +materialized: table
     displacement_risk:
+      +materialized: table
+    displacement_risk_dynamic:
       +materialized: table
     food_access:
       +materialized: table
     housing_cost_burden:
-      +materialized: table
     sprawl_index:
+      +materialized: table
+    scenario_summary:
+      +materialized: table
+    sprawl_cost:
+      +materialized: table
+    vmt_fee:
       +materialized: table
 vars:
   # Default values for SQLFluff / dbt compilation.
@@ -114,6 +123,8 @@ vars:
   transport_beta_transit_dist: 0.02
   transport_circuity_factor: 1.2
   transport_distance_source: euclidean  # "euclidean" or "network"
+  # Transport Chain Quick Start (ROADMAP_2 Phase 1d)
+  transport_quick_start: false  # Set true to use Euclidean distances + default rates
   transport_study_area_geometry: ""  # WKT polygon for internal capture
   transport_intrazonal_friction: 0.15
 
@@ -142,4 +153,24 @@ vars:
   stormwater_annual_precipitation_in: 12.0
   stormwater_method: simple  # "simple" or "rational"
   stormwater_runoff_coefficients: ""  # JSON: {"urban": 0.7, "compact": 0.85, ...}
+
+  # Tree Canopy / Urban Heat Island (ROADMAP_2 Phase 2a)
+  tree_canopy_baseline_temp: 95.0
+  tree_canopy_temp_per_10pct: 1.0
+  # Geometry Projection (ROADMAP_2 Phase 1b)
+  projected_srid: null  # Set to e.g. 32611 (UTM zone 11N) for correct area calculations
  
+  # VMT Mitigation Fee (ROADMAP_2 Phase 2b)
+  vmt_fee_rate_dollars_per_vmt: 295.0
+  vmt_exempt_pct: 0.0
+ 
+  # Cost of Sprawl per Household (ROADMAP_2 Phase 2e)
+  sprawl_infrastructure_cost_per_du: 15000  # Annual infrastructure cost per DU
+  sprawl_capital_cost_per_du: 50000  # One-time capital cost per DU
+
+seeds:
+  brewgis:
+    +schema: "{{ var('target_schema', 'public') }}"
+    test_parcels:
+      +column_types:
+        geometry: text

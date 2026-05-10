@@ -268,15 +268,19 @@ def _run_food_access_preprocessor(vars_: dict) -> dict:
     preprocessor = FoodAccessPreprocessor()
     scenario_id = vars_.get("scenario_id", "default")
     target_schema = vars_.get("target_schema", "public")
+    workspace_id = vars_.get("workspace_id")
     end_state_table = vars_.get("end_state_table", f"end_state_{{scenario_id}}")
     return preprocessor.compute_mrfei(
         schema=target_schema,
         end_state_table=end_state_table,
         scenario_id=scenario_id,
+        workspace_id=workspace_id,
     )
 
 
 PREPROCESSOR_MAP["food_access"] = _run_food_access_preprocessor
+from brewgis.workspace.analysis.equity.preprocessor import run_acs_equity_preprocessor
+PREPROCESSOR_MAP["acs_equity"] = run_acs_equity_preprocessor
 
 
 @shared_task(
@@ -306,6 +310,7 @@ def run_preprocessor_and_dbt(
         Same shape as run_dbt_module.
     """
     resolved_vars = vars_ or {}
+    resolved_vars.setdefault("workspace_id", workspace_id)
     logger.info(
         "Running preprocessor + dbt for module '%s' (workspace %s)",
         module,
@@ -1007,6 +1012,37 @@ def _build_report_scenario_metrics(scenario) -> dict:
                 for i, key in enumerate(keys):
                     if i < len(row) and row[i] is not None:
                         metrics[key] = float(row[i])
+    except Exception:
+        pass
+
+    # VMT Fee metrics (Phase 2b) — if vmt_fee table exists
+    try:
+        vmt_fee_table = f"vmt_fee_{scenario.slug}"
+        target_schema = scenario.workspace.db_schema
+        with connection.cursor() as cursor:
+            cursor.execute(
+                """
+                SELECT EXISTS (
+                    SELECT FROM information_schema.tables
+                    WHERE table_schema = %s AND table_name = %s
+                )
+                """,
+                [target_schema, vmt_fee_table],
+            )
+            if cursor.fetchone()[0]:
+                cursor.execute(
+                    f'SELECT COALESCE(SUM(fee_revenue_total), 0), '
+                    f'COALESCE(SUM(revenue_forgone), 0), '
+                    f'COALESCE(SUM(vmt_exempt), 0) '
+                    f'FROM "{target_schema}"."{vmt_fee_table}"'
+                )
+                row = cursor.fetchone()
+                metrics["vmt_fee_revenue"] = round(row[0], 2)
+                metrics["vmt_fee_revenue_forgone"] = round(row[1], 2)
+                metrics["vmt_fee_vmt_exempt"] = round(row[2], 2)
+                metrics["vmt_fee_rate"] = scenario.vars.get(
+                    "vmt_fee_rate_dollars_per_vmt", 295.0
+                )
     except Exception:
         pass
 

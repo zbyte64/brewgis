@@ -33,6 +33,7 @@ from sqlalchemy import create_engine, text
 
 from brewgis.workspace.analysis.transport.preprocessors.distance_matrix import _get_db_url
 from brewgis.workspace.services.poi_fetcher import fetch_pois
+from brewgis.workspace.models import POICache
 
 logger = logging.getLogger(__name__)
 
@@ -111,6 +112,7 @@ class FoodAccessPreprocessor:
         schema: str,
         end_state_table: str,
         scenario_id: str,
+        workspace_id: int | None = None,
     ) -> dict[str, Any]:
         """Compute mRFEI for all parcels in the end-state table.
 
@@ -150,7 +152,7 @@ class FoodAccessPreprocessor:
             logger.exception(msg)
             return {"success": False, "error": msg}
 
-        # Step 2: Fetch food-related POIs
+        # Step 2: Fetch food-related POIs with cache fallback
         try:
             pois = fetch_pois(
                 min_lng=min_lng,
@@ -160,25 +162,33 @@ class FoodAccessPreprocessor:
                 categories=_REQUESTED_CATEGORIES,
             )
             logger.info("Fetched %d POIs from Overpass", len(pois))
-        except RuntimeError:
-            logger.warning("No POIs returned from Overpass API")
-            pois = gpd.GeoDataFrame(
-                pd.DataFrame(
-                    columns=[
-                        "osm_id",
-                        "osm_type",
-                        "name",
-                        "category",
-                        "subcategory",
-                        "amenity",
-                        "shop",
-                        "leisure",
-                        "tourism",
-                    ]
-                ),
-                geometry=[],
-                crs="EPSG:4326",
-            )
+            # Cache the successful POI fetch for offline fallback
+            if workspace_id is not None:
+                try:
+                    POICache.objects.update_or_create(
+                        workspace_id=workspace_id,
+                        name="food_poi",
+                        defaults={"geojson_data": pois.__geo_interface__, "source": "osm"},
+                    )
+                except Exception as cache_err:
+                    logger.warning("Failed to cache POI data: %s", cache_err)
+        except Exception as fetch_err:
+            logger.warning("POI fetch failed: %s. Attempting cache fallback.", fetch_err)
+            # Try cache fallback
+            try:
+                cached = POICache.objects.filter(
+                    workspace_id=workspace_id,
+                    name="food_poi",
+                ).first() if workspace_id is not None else None
+                if cached:
+                    pois = gpd.GeoDataFrame.from_features(cached.geojson_data)
+                    logger.info("Using cached POI data from %s", cached.fetched_at)
+                else:
+                    logger.warning("No POI cache available. Food access will use ACS proxy.")
+                    return {"success": True, "method": "no_poi_data"}
+            except Exception as cache_read_err:
+                logger.warning("Failed to read POI cache: %s", cache_read_err)
+                return {"success": True, "method": "no_poi_data"}
 
         # Step 3: Classify POIs
         pois["is_healthy"] = pois["subcategory"].isin(_HEALTHY_TAGS)

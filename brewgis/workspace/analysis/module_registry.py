@@ -7,12 +7,13 @@ to avoid duplicated MODULE_DEPENDENCIES, MODULE_RESULT_TABLES, and related mappi
 from __future__ import annotations
 
 from typing import Any
+import warnings
 
 # Module dependency graph: later modules depend on earlier ones
 MODULE_DEPENDENCIES: dict[str, list[str]] = {
     "env_constraint": [],
     "core": ["env_constraint"],
-    "displacement_risk": ["core"],
+    "displacement_risk": ["core", "acs_equity"],
     "water_demand": ["core"],
     "energy_demand": ["core"],
     "land_consumption": ["core"],
@@ -30,8 +31,18 @@ MODULE_DEPENDENCIES: dict[str, list[str]] = {
     "health_impacts": ["physical_activity", "transport_ghg"],
     "stormwater_runoff": ["land_consumption"],
     "food_access": ["core"],
-    "housing_cost_burden": ["core"],
+    "acs_equity": [],
+    "housing_cost_burden": ["core", "acs_equity"],
     "sprawl_index": ["core"],
+    "tree_canopy": ["core"],
+    "vmt_fee": ["vmt"],
+    "displacement_risk_dynamic": ["displacement_risk", "acs_equity"],
+    "scenario_summary": [
+        "core", "vmt", "transport_ghg", "total_ghg",
+        "health_impacts", "housing_cost_burden", "sprawl_index",
+        "water_demand", "energy_demand", "land_consumption",
+    ],
+    "sprawl_cost": ["core", "fiscal"],
 }
 
 
@@ -66,8 +77,14 @@ MODULE_RESULT_TABLES: dict[str, list[str]] = {
     "health_impacts": ["health_impacts_{scenario_id}"],
     "stormwater_runoff": ["stormwater_runoff_{scenario_id}"],
     "food_access": ["food_access_{scenario_id}"],
+    "acs_equity": [],
     "housing_cost_burden": ["housing_cost_burden_{scenario_id}"],
     "sprawl_index": ["sprawl_index_{scenario_id}"],
+    "tree_canopy": ["tree_canopy_{scenario_id}"],
+    "vmt_fee": ["vmt_fee_{scenario_id}"],
+    "displacement_risk_dynamic": ["displacement_risk_dynamic_{scenario_id}"],
+    "scenario_summary": ["scenario_summary_{scenario_id}"],
+    "sprawl_cost": ["sprawl_cost_{scenario_id}"],
 }
 
 
@@ -98,8 +115,14 @@ MODULE_DBT_SELECT: dict[str, list[str]] = {
     "health_impacts": ["health_impacts"],
     "stormwater_runoff": ["stormwater_runoff"],
     "food_access": ["food_access"],
+    "acs_equity": [],
     "housing_cost_burden": ["housing_cost_burden"],
     "sprawl_index": ["sprawl_index"],
+    "tree_canopy": ["tree_canopy"],
+    "vmt_fee": ["vmt_fee"],
+    "displacement_risk_dynamic": ["displacement_risk_dynamic"],
+    "scenario_summary": ["scenario_summary"],
+    "sprawl_cost": ["sprawl_cost"],
 }
 
 
@@ -125,8 +148,14 @@ MODULE_LABELS: dict[str, str] = {
     "health_impacts": "Health Impacts",
     "stormwater_runoff": "Stormwater Runoff",
     "food_access": "Food Access (mRFEI)",
+    "acs_equity": "ACS Equity Data Wrapper",
     "housing_cost_burden": "Housing Cost Burden",
     "sprawl_index": "Sprawl Index",
+    "tree_canopy": "Tree Canopy / Urban Heat Island",
+    "vmt_fee": "VMT Mitigation Fee",
+    "displacement_risk_dynamic": "Dynamic Displacement Risk",
+    "scenario_summary": "Per-Scenario Summary",
+    "sprawl_cost": "Cost of Sprawl per Household",
 }
 
 
@@ -185,6 +214,48 @@ def get_module_label(module: str) -> str:
     """Return the human-readable label for a module."""
     return MODULE_LABELS.get(module, module.replace("_", " ").title())
 
+CANONICAL_COLUMN_NAMES: list[str] = [
+    "pop",
+    "hh",
+    "du",
+    "emp",
+    "county",
+    "geometry",
+    "median_income",
+    "rent_burden_pct",
+    "pct_minority",
+    "pct_college_educated",
+    "intersection_density",
+    "land_development_category",
+    "built_form_key",
+]
+
+
+def get_column_mapping_vars(
+    column_mapping: dict[str, str],
+) -> dict[str, str]:
+    """Convert user column mapping into canonical_{name} dbt vars.
+
+    Args:
+        column_mapping: User-specified mapping like {'pop': 'population',
+            'hh': 'households'}.
+
+    Returns:
+        Dict of canonical_{name}: user_column_name for each known name
+        found in the mapping. Unknown names are ignored with a warning.
+    """
+    valid = set(CANONICAL_COLUMN_NAMES)
+    vars_: dict[str, str] = {}
+    for canonical_name, user_column in column_mapping.items():
+        canonical_name = canonical_name.strip().lower()
+        if canonical_name in valid:
+            vars_[f"canonical_{canonical_name}"] = user_column
+        else:
+            warnings.warn(
+                f"Unknown canonical column name '{canonical_name}' in "
+                f"column_mapping. Valid names: {CANONICAL_COLUMN_NAMES}"
+            )
+    return vars_
 
 def get_vars_for_module(module: str, base_vars: dict[str, Any]) -> dict[str, Any]:
     """Prepare the vars dict for a specific module, inheriting global vars.

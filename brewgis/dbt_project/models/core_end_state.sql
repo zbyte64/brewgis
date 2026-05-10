@@ -38,6 +38,7 @@
 #}
 
 {{ config(alias='end_state_' ~ var('scenario_id')) }}
+{%- import 'geometry.sql' as geom -%}
 
 {%- set source_schema = var('source_schema') -%}
 {%- set parcel_table = var('parcel_table') -%}
@@ -52,16 +53,16 @@
 #}
 {%- set constraint_output = var('constraints_output', none) -%}
 {%- if constraint_output %}
-    {%- set developable_acres_expr = "COALESCE(ec.acres_developable, ST_Area(p.geom) / 4046.86)" -%}
+    {%- set developable_acres_expr = "COALESCE(ec.acres_developable, " ~ geom.st_area_projected('p.geom') ~ ")" -%}
     {%- set from_extra = "LEFT JOIN " ~ constraint_output ~ " ec ON p.id = ec.parcel_id" -%}
 {%- else %}
-    {%- set developable_acres_expr = "ST_Area(p.geom) / 4046.86" -%}
+    {%- set developable_acres_expr = geom.st_area_projected('p.geom') -%}
     {%- set from_extra = "" -%}
 {%- endif -%}
 
 {%- set applied_acres = compute_applied_acres(developable_acres_expr, dev_pct, gross_net_pct) -%}
 {%- set density_adj_acres = "(" ~ applied_acres ~ " * " ~ density_pct ~ " / 100.0)" -%}
-{%- set gross_acres = "ST_Area(p.geom) / 4046.86" -%}
+{%- set gross_acres = geom.st_area_projected('p.geom') -%}
 
 WITH parcel_base AS (
     SELECT

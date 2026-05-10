@@ -60,6 +60,8 @@ from .views.report import report_detail  # noqa: F811
 from .views.report import report_list  # noqa: F811
 from .views.report import report_list_partial  # noqa: F811
 from .views.token_auth import token_auth  # noqa: N813
+from .views.map import view_public_scenario_map  # noqa: F401
+from .views.scenarios import scenario_toggle_publish  # noqa: F401
 from .views.report import report_status  # noqa: F811
 from .views.filter import layer_filter_list  # noqa: N813
 from .views.filter import layer_filter_create  # noqa: N813
@@ -90,6 +92,7 @@ urlpatterns = [
     path("layers/create/", CreateLayerView.as_view(), name="create_layer"),
     path("layers/<int:pk>/delete/", layer_delete, name="layer_delete"),
     path("<int:workspace_pk>/map/", view_workspace_map, name="workspace_map"),
+    path("public/<uuid:token>/", view_public_scenario_map, name="public_scenario_map"),
     path("<int:pk>/", workspace_detail, name="workspace_detail"),
     # Scenario Management
     path(
@@ -111,6 +114,11 @@ urlpatterns = [
         "<int:workspace_pk>/scenario/<int:scenario_pk>/clone/",
         scenario_clone,
         name="scenario_clone",
+    ),
+    path(
+        "<int:workspace_pk>/scenario/<int:scenario_pk>/toggle-publish/",
+        scenario_toggle_publish,
+        name="scenario_toggle_publish",
     ),
     path(
         "<int:workspace_pk>/scenarios/compare/",

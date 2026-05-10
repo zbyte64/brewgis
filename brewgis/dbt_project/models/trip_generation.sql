@@ -16,6 +16,13 @@
         transport_hbw_pct: Home-based work share (default: 0.18).
         transport_hbo_pct: Home-based other share (default: 0.42).
         transport_nhb_pct: Non-home-based share (default: 0.40).
+bd|
+bd|    Quick Start Mode (transport_quick_start = true):
+bd|        - When enabled, ITE default trip generation rates are used directly
+bd|        - No custom built_form trip_rate_overrides or pass_by_trip_pct needed
+bd|        - Seeds for ITE default rates are loaded from seeds/test_parcels.csv
+bd|        - Production: requires built_forms table with trip_rate_override and
+bd|          pass_by_trip_pct columns, or ITE rate seeds pre-loaded
 
     Source table: {{ var('target_schema') }}.end_state_{{ var('scenario_id') }}
 
