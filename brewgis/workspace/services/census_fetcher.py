@@ -9,7 +9,12 @@ Supported tables (mapped to base canvas columns):
 
 from __future__ import annotations
 
+import io
 import logging
+import os
+import tempfile
+import zipfile
+from pathlib import Path
 from typing import Any
 
 import geopandas as gpd
@@ -66,6 +71,18 @@ ACS_TABLE_GROUPS = {
             "B25070_008E",  # 35.0 to 39.9 percent
             "B25070_009E",  # 40.0 to 49.9 percent
             "B25070_010E",  # 50.0 percent or more
+        ],
+    },
+    "B25091": {
+        "label": "Mortgage Status by Selected Monthly Owner Costs",
+        "vars": [
+            "B25091_001E",  # Total owner-occupied
+            "B25091_005E",  # With mortgage: 30.0 to 34.9%
+            "B25091_006E",  # With mortgage: 35.0 to 49.9%
+            "B25091_007E",  # With mortgage: 50.0%+
+            "B25091_011E",  # Not mortgaged: 30.0 to 34.9%
+            "B25091_012E",  # Not mortgaged: 35.0 to 49.9%
+            "B25091_013E",  # Not mortgaged: 50.0%+
         ],
     },
     "B03002": {
@@ -189,6 +206,19 @@ def _compute_derived_columns(row: dict[str, int]) -> dict[str, int | float]:
         + row.get("B25024_009E", 0)
     )
 
+    # Combined cost burden (owners + renters)
+    owner_cost_burdened = (
+        row.get("B25091_005E", 0) + row.get("B25091_006E", 0)
+        + row.get("B25091_007E", 0) + row.get("B25091_011E", 0)
+        + row.get("B25091_012E", 0) + row.get("B25091_013E", 0)
+    )
+    renter_cost_burdened = (
+        row.get("B25070_007E", 0) + row.get("B25070_008E", 0)
+        + row.get("B25070_009E", 0) + row.get("B25070_010E", 0)
+    )
+    total_cost_burdened = owner_cost_burdened + renter_cost_burdened
+    total_households = row.get("B25003_001E", 0)
+
     return {
         "pop": pop,
         "hh": hh,
@@ -200,11 +230,8 @@ def _compute_derived_columns(row: dict[str, int]) -> dict[str, int | float]:
         "owner_occupied": row.get("B25003_002E", 0),
         "renter_occupied": row.get("B25003_003E", 0),
         "median_income": row.get("B19013_001E", 0),
-        "rent_burden_pct": _safe_pct(
-            row.get("B25070_007E", 0) + row.get("B25070_008E", 0)
-            + row.get("B25070_009E", 0) + row.get("B25070_010E", 0),
-            row.get("B25070_001E", 0),
-        ),
+        "rent_burden_pct": _safe_pct(renter_cost_burdened, row.get("B25070_001E", 0)),
+        "cost_burden_pct": _safe_pct(total_cost_burdened, total_households),
         "total_population": row.get("B03002_001E", 0),
         "pct_minority": _safe_pct(
             row.get("B03002_001E", 0) - row.get("B03002_002E", 0),
@@ -367,3 +394,165 @@ def fetch_acs_data_summary(state_fips: str, county_fips: str, year: int = 2022) 
         }
     except RuntimeError as e:
         return {"error": str(e), "table_groups": [], "row_count": 0, "columns": []}
+
+
+# ── TIGER/Line polygon geometry ───────────────────────────────────────
+
+_TIGER_CACHE_DIR = Path.home() / ".cache" / "brewgis" / "tiger"
+_TIGER_YEAR = 2023
+# National proportions for splitting ACS DU subtypes
+_DU_MF_2_9_TO_MF2TO4_RATIO = 0.40  # 40% of 2-9 units → 2-4 units
+_DU_DETSF_TO_SL_RATIO = 0.40       # 40% of detached SF → small lot
+
+
+def _tiger_bg_url(state_fips: str, county_fips: str) -> str:
+    """Build the TIGER/Line block group shapefile URL for one county."""
+    return (
+        f"https://www2.census.gov/geo/tiger/TIGER{_TIGER_YEAR}/BG/"
+        f"tl_{_TIGER_YEAR}_{state_fips}{county_fips}_bg.zip"
+    )
+
+
+def _download_tiger_shapefile(url: str) -> bytes | None:
+    """Download a TIGER/Line shapefile ZIP, returning raw bytes."""
+    try:
+        response = requests.get(url, timeout=120)
+        response.raise_for_status()
+        return response.content
+    except requests.RequestException as exc:
+        logger.warning("Failed to download TIGER shapefile: %s", exc)
+        return None
+
+
+def _read_tiger_bg_polygons(zip_bytes: bytes) -> gpd.GeoDataFrame:
+    """Read block-group polygon geometry from TIGER/Line ZIP bytes."""
+    with tempfile.TemporaryDirectory() as tmpdir:
+        zip_path = os.path.join(tmpdir, "tiger_bg.zip")
+        with open(zip_path, "wb") as tmp:
+            tmp.write(zip_bytes)
+        gdf = gpd.read_file(f"zip://{zip_path}")
+    if gdf.crs is None:
+        gdf.set_crs("EPSG:4269", inplace=True)
+    gdf = gdf.to_crs("EPSG:4326")
+    # Build GEOID from TIGER fields
+    gdf["geoid"] = (
+        gdf["STATEFP"].str.zfill(2)
+        + gdf["COUNTYFP"].str.zfill(3)
+        + gdf["TRACTCE"].str.zfill(6)
+        + gdf["BLKGRPCE"].str.zfill(1)
+    )
+    return gdf[["geoid", "geometry"]]
+
+
+def _apply_acs_column_mapping(
+    block_groups: gpd.GeoDataFrame,
+) -> gpd.GeoDataFrame:
+    """Map ACS-derived column names to BaseCanvasSchema equivalents.
+
+    Resolves the differences between ACS DU subtypes and the schema:
+        * du_mf_2_9 → split into du_mf2to4 (40%) and du_mf5p (60%)
+        * du_mf_10p → added to du_mf5p
+        * du_detsf → split into du_detsf_sl (40%) and du_detsf_ll (60%)
+    """
+    if "du_mf_2_9" in block_groups.columns:
+        mf_2_9 = block_groups["du_mf_2_9"].fillna(0.0)
+        block_groups["du_mf2to4"] = (mf_2_9 * _DU_MF_2_9_TO_MF2TO4_RATIO).round(1)
+        block_groups["du_mf5p"] = (mf_2_9 * (1 - _DU_MF_2_9_TO_MF2TO4_RATIO)).round(1)
+        if "du_mf_10p" in block_groups.columns:
+            block_groups["du_mf5p"] += block_groups["du_mf_10p"].fillna(0.0)
+        block_groups.drop(columns=["du_mf_2_9", "du_mf_10p"], inplace=True, errors="ignore")
+    else:
+        block_groups["du_mf2to4"] = 0.0
+        block_groups["du_mf5p"] = 0.0
+
+    if "du_detsf" in block_groups.columns:
+        detsf = block_groups["du_detsf"].fillna(0.0)
+        block_groups["du_detsf_sl"] = (detsf * _DU_DETSF_TO_SL_RATIO).round(1)
+        block_groups["du_detsf_ll"] = (detsf * (1 - _DU_DETSF_TO_SL_RATIO)).round(1)
+        block_groups.drop(columns=["du_detsf"], inplace=True, errors="ignore")
+    else:
+        block_groups["du_detsf_sl"] = 0.0
+        block_groups["du_detsf_ll"] = 0.0
+
+    return block_groups
+
+
+def fetch_acs_block_group_polygons(
+    state_fips: str,
+    county_fips: str,
+    year: int = 2022,
+    use_cache: bool = True,
+) -> gpd.GeoDataFrame:
+    """Fetch ACS demographics with real polygon geometry.
+
+    Downloads TIGER/Line block-group shapefiles from the Census FTP server,
+    joins ACS attribute data from the Census API, and applies column
+    mappings to match the BaseCanvasSchema.
+
+    Falls back to point-in-parcel assignment (the existing point-based
+    geometry from fetch_acs_block_groups) if TIGER shapefiles are
+    unavailable.
+
+    Args:
+        state_fips: Two-digit state FIPS code.
+        county_fips: Three-digit county FIPS code.
+        year: ACS data year (default 2022).
+        use_cache: Cache TIGER shapefiles on disk (default True).
+
+    Returns:
+        GeoDataFrame with polygon geometry, geoid, and all
+        demographic columns mapped to BaseCanvasSchema names.
+    """
+    # 1. Fetch ACS attribute data
+    acs_gdf = fetch_acs_block_groups(state_fips, county_fips, year)
+
+    # 2. Try to get TIGER polygon geometry
+    url = _tiger_bg_url(state_fips, county_fips)
+    tiger_bytes: bytes | None = None
+
+    if use_cache:
+        cache_dir = _TIGER_CACHE_DIR / state_fips / county_fips
+        cache_path = cache_dir / "bg.geojson"
+        if cache_path.exists():
+            logger.info("Loading cached TIGER polygons from %s", cache_path)
+            tiger_gdf = gpd.read_file(str(cache_path))
+        else:
+            raw = _download_tiger_shapefile(url)
+            if raw is not None:
+                tiger_gdf = _read_tiger_bg_polygons(raw)
+                cache_dir.mkdir(parents=True, exist_ok=True)
+                tiger_gdf.to_file(str(cache_path), driver="GeoJSON")
+                tiger_bytes = raw  # used for fallback below
+    else:
+        raw = _download_tiger_shapefile(url)
+        if raw is not None:
+            tiger_gdf = _read_tiger_bg_polygons(raw)
+            tiger_bytes = raw
+        else:
+            tiger_gdf = None
+
+    if tiger_gdf is not None and not tiger_gdf.empty:
+        # 3. Join ACS attributes to polygon geometry on GEOID
+        acs_attrs = acs_gdf.drop(columns=["geometry"], errors="ignore")
+        joined = tiger_gdf.merge(acs_attrs, on="geoid", how="inner")
+        if joined.empty:
+            logger.warning(
+                "ACS data did not match TIGER polygons for %s/%s; falling back to point geometry",
+                state_fips,
+                county_fips,
+            )
+            result = acs_gdf.copy()
+        else:
+            result = joined
+    else:
+        logger.warning(
+            "TIGER polygons unavailable for %s/%s; using point-based geometry",
+            state_fips,
+            county_fips,
+        )
+        result = acs_gdf.copy()
+
+    # 4. Apply column mapping
+    result = _apply_acs_column_mapping(result)
+
+    return result
