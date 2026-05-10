@@ -28,7 +28,22 @@ logger = logging.getLogger(__name__)
 
 # ── LODES WAC (Workplace Area Characteristics) ─────────────────────────
 
-LODES_WAC_BASE = "https://lehd.ces.census.gov/data/lodes/LODES7"
+LODES_WAC_BASE = "https://lehd.ces.census.gov/data/lodes/LODES8"
+# FIPS → state abbreviation mapping for LODES URL
+_FIPS_TO_STATE: dict[str, str] = {
+    "01": "al", "02": "ak", "04": "az", "05": "ar", "06": "ca",
+    "08": "co", "09": "ct", "10": "de", "11": "dc", "12": "fl",
+    "13": "ga", "15": "hi", "16": "id", "17": "il", "18": "in",
+    "19": "ia", "20": "ks", "21": "ky", "22": "la", "23": "me",
+    "24": "md", "25": "ma", "26": "mi", "27": "mn", "28": "ms",
+    "29": "mo", "30": "mt", "31": "ne", "32": "nv", "33": "nh",
+    "34": "nj", "35": "nm", "36": "ny", "37": "nc", "38": "nd",
+    "39": "oh", "40": "ok", "41": "or", "42": "pa", "44": "ri",
+    "45": "sc", "46": "sd", "47": "tn", "48": "tx", "49": "ut",
+    "50": "vt", "51": "va", "53": "wa", "54": "wv", "55": "wi",
+    "56": "wy", "72": "pr",
+}
+
 
 # LODES WAC columns: w_geocode (15-digit GEOID), C000 (total jobs),
 # CNS01-CNS17 (NAICS sector aggregates per block)
@@ -173,10 +188,10 @@ def _build_lodes_wac_url(state_fips: str, county_fips: str, year: int = 2021) ->
         URL to the gzipped CSV file.
     """
     state_fips_clean = state_fips.zfill(2)
-    county_fips_clean = county_fips.zfill(3)
+    state_abbr = _FIPS_TO_STATE.get(state_fips_clean, "zz")
     return (
-        f"{LODES_WAC_BASE}/{state_fips_clean}/{county_fips_clean}/wac/"
-        f"{state_fips_clean}_wac_S000_JT00_{year}.csv.gz"
+        f"{LODES_WAC_BASE}/{state_abbr}/wac/"
+        f"{state_abbr}_wac_S000_JT00_{year}.csv.gz"
     )
 
 
@@ -571,11 +586,11 @@ _TIGER_YEAR = 2023
 def _tiger_block_url(state_fips: str, _county_fips: str) -> str:
     """Build the TIGER/Line tabblock shapefile URL for one county.
 
-    Note: TIGER 2023+ TABBLOCK files are state-level.
+    Uses TIGER2020 TABBLOCK (2010 Census vintage) to match LEHD LODES geographies.
     """
     return (
-        f"https://www2.census.gov/geo/tiger/TIGER{_TIGER_YEAR}/TABBLOCK/"
-        f"tl_{_TIGER_YEAR}_{state_fips}_tabblock.zip"
+        f"https://www2.census.gov/geo/tiger/TIGER2020/TABBLOCK/"
+        f"tl_2020_{state_fips}_tabblock10.zip"
     )
 
 
@@ -599,12 +614,17 @@ def _read_tiger_block_polygons(zip_bytes: bytes) -> gpd.GeoDataFrame:
     if gdf.crs is None:
         gdf.set_crs("EPSG:4269", inplace=True)
     gdf = gdf.to_crs("EPSG:4326")
-    # Build GEOID from TIGER fields (15 digits: 2+3+6+4)
+    # Handle TIGER column naming: 2020-vintage uses STATEFP10/COUNTYFP10/...
+    # (TABBLOCK20) vs 2019-vintage uses STATEFP/COUNTYFP/... (TABBLOCK).
+    sf_col = "STATEFP10" if "STATEFP10" in gdf.columns else "STATEFP"
+    cf_col = "COUNTYFP10" if "COUNTYFP10" in gdf.columns else "COUNTYFP"
+    tc_col = "TRACTCE10" if "TRACTCE10" in gdf.columns else "TRACTCE"
+    bc_col = "BLOCKCE10" if "BLOCKCE10" in gdf.columns else "BLOCKCE"
     gdf["geoid"] = (
-        gdf["STATEFP"].str.zfill(2)
-        + gdf["COUNTYFP"].str.zfill(3)
-        + gdf["TRACTCE"].str.zfill(6)
-        + gdf["BLOCKCE"].str.zfill(4)
+        gdf[sf_col].str.zfill(2)
+        + gdf[cf_col].str.zfill(3)
+        + gdf[tc_col].str.zfill(6)
+        + gdf[bc_col].str.zfill(4)
     )
     return gdf[["geoid", "geometry"]]
 
@@ -633,6 +653,18 @@ def fetch_lehd_block_polygons(
     """
     # 1. Fetch LODES attribute data
     lehd_gdf = fetch_lehd_block_data(state_fips, county_fips)
+    # Filter state-level LODES data to this county (GEOID prefix = state_fips + county_fips)
+    county_geoid_prefix = state_fips.zfill(2) + county_fips.zfill(3)
+    pre_count = len(lehd_gdf)
+    lehd_gdf = lehd_gdf[lehd_gdf["geoid"].str.startswith(county_geoid_prefix)].copy()
+    logger.info(
+        "Filtered LODES from %d to %d blocks for county %s",
+        pre_count, len(lehd_gdf), county_fips,
+    )
+    if lehd_gdf.empty:
+        logger.warning("No LODES blocks match county FIPS %s", county_fips)
+        return lehd_gdf
+
 
     # 2. Try to get TIGER polygon geometry
     url = _tiger_block_url(state_fips, county_fips)

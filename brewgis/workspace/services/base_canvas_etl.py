@@ -418,9 +418,10 @@ class BaseCanvasETL:
         Raises RuntimeError if no spatial overlaps are found.
         """
         with connection.cursor() as cursor:
-            # ── Create temp tables ───────────────────────────────────
+            # ── Create temp tables (drop first to allow reuse) ──────
             col_defs = ", ".join(f'"{c}" DOUBLE PRECISION' for c in available_cols)
             cursor.execute(f"""
+                DROP TABLE IF EXISTS _etl_src;
                 CREATE TEMP TABLE _etl_src (
                     rid SERIAL PRIMARY KEY,
                     geometry geometry,
@@ -428,6 +429,7 @@ class BaseCanvasETL:
                 )
             """)
             cursor.execute("""
+                DROP TABLE IF EXISTS _etl_tgt;
                 CREATE TEMP TABLE _etl_tgt (
                     rid SERIAL PRIMARY KEY,
                     idx BIGINT,
