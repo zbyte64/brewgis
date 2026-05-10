@@ -143,3 +143,20 @@ class TestScenarioCloning:
                 [view_schema, view_name],
             )
             assert cursor.fetchone() is None
+
+    def test_auto_creates_symbology_config(self, base_canvas_table, scenario):
+        """Cloning auto-generates a SymbologyConfig for the canvas layer."""
+        cloned = clone_scenario(
+            source=scenario,
+            name="Symbology Test",
+            base_canvas_table=base_canvas_table,
+        )
+
+        layer = Layer.objects.get(
+            workspace=scenario.workspace,
+            key=f"scenario_{cloned.slug}_canvas",
+        )
+
+        assert hasattr(layer, "symbology")
+        assert layer.symbology is not None
+        assert layer.symbology.auto_generated is True

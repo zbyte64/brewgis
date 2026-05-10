@@ -98,6 +98,15 @@ class TestWorkspaceCreateView(TestCase):
         assert response.status_code == 200
         assert b"No counties found" in response.content
 
+
+    def test_county_checkboxes_target_exists(self) -> None:
+        """Initial HTML has #county-checkboxes div for htmx to swap into."""
+        self.client.force_login(self.user)
+        url = reverse("workspace:workspace_create")
+        response = self.client.get(url)
+        assert response.status_code == 200
+        assert b'id="county-checkboxes"' in response.content
+        assert b"Select a state to load counties" in response.content
     def test_post_creates_workspace_with_counties(self) -> None:
         """POST should create workspace with county_fips_list."""
         self.client.force_login(self.user)

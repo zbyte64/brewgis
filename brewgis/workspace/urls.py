@@ -1,6 +1,7 @@
 from django.urls import path
 
 from .views import CreateLayerView
+from .views import layer_delete
 from .views import ReadGISFileView
 from .views import allocate
 from .views import analysis_launch
@@ -87,6 +88,7 @@ urlpatterns = [
     path("new/county-options/", county_options, name="county_options"),
     path("upload/", ReadGISFileView.as_view(), name="upload"),
     path("layers/create/", CreateLayerView.as_view(), name="create_layer"),
+    path("layers/<int:pk>/delete/", layer_delete, name="layer_delete"),
     path("<int:workspace_pk>/map/", view_workspace_map, name="workspace_map"),
     path("<int:pk>/", workspace_detail, name="workspace_detail"),
     # Scenario Management

@@ -7,7 +7,7 @@ from typing import TYPE_CHECKING
 
 from django import forms
 from django.contrib.auth.decorators import user_passes_test
-from django.db import connection
+from django.db import ProgrammingError, connection, transaction
 from django.http import HttpRequest
 from django.http import HttpResponse
 from django.http import JsonResponse
@@ -112,27 +112,28 @@ def _build_comparison_metrics(scenario: Scenario) -> dict[str, float | int | Non
     q_view = f'"{schema}"."{view_name}"'
 
     try:
-        with connection.cursor() as cursor:
-            cursor.execute(
-                f"""
-                SELECT
-                    COALESCE(SUM(pop), 0),
-                    COALESCE(SUM(hh), 0),
-                    COALESCE(SUM(du), 0),
-                    COALESCE(SUM(emp), 0),
-                    COALESCE(SUM(area_acres), 0)
-                FROM {q_view}
-                """
-            )
-            row = cursor.fetchone()
-            if row:
-                metrics["total_population"] = row[0] or 0
-                metrics["total_households"] = row[1] or 0
-                metrics["total_du"] = row[2] or 0
-                metrics["total_employment"] = row[3] or 0
-                metrics["total_land_consumed_acres"] = row[4] or 0
-    except ProgrammingError:
-        pass  # view does not exist yet
+        with transaction.savepoint(using="default"):
+            with connection.cursor() as cursor:
+                cursor.execute(
+                    f"""
+                    SELECT
+                        COALESCE(SUM(pop), 0),
+                        COALESCE(SUM(hh), 0),
+                        COALESCE(SUM(du), 0),
+                        COALESCE(SUM(emp), 0),
+                        COALESCE(SUM(area_acres), 0)
+                    FROM {q_view}
+                    """
+                )
+                row = cursor.fetchone()
+                if row:
+                    metrics["total_population"] = row[0] or 0
+                    metrics["total_households"] = row[1] or 0
+                    metrics["total_du"] = row[2] or 0
+                    metrics["total_employment"] = row[3] or 0
+                    metrics["total_land_consumed_acres"] = row[4] or 0
+    except Exception:
+        pass  # view does not exist yet — keep zero defaults
 
     # Analysis-run metrics from the most recent completed run
     latest_run = (

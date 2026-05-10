@@ -26,6 +26,35 @@ class ImportGISFileForm(forms.Form):
     file = forms.FileField(required=True)
     workspace = forms.ModelChoiceField(queryset=Workspace.objects.all())
     table_name = forms.CharField(max_length=63)
+    def clean_file(self) -> forms.FileField:
+        file = self.cleaned_data.get("file")
+        if file is None:
+            return file
+
+        # Validate file extension
+        ext = os.path.splitext(file.name)[1].lower()
+        allowed = settings.GIS_FILE_EXTENSIONS
+        if ext not in allowed:
+            # Also check for compound extensions like .shp.zip
+            name_lower = file.name.lower()
+            compound_match = any(
+                name_lower.endswith(ae) for ae in allowed if "." in ae[1:]
+            )
+            if not compound_match:
+                raise forms.ValidationError(
+                    "Unsupported file type '%s'. Allowed: %s"
+                    % (ext, ", ".join(allowed))
+                )
+
+        # Validate file size
+        if file.size > settings.MAX_UPLOAD_SIZE:
+            max_mb = settings.MAX_UPLOAD_SIZE / (1024 * 1024)
+            raise forms.ValidationError(
+                "File too large (%.1f MB). Maximum: %.0f MB."
+                % (file.size / (1024 * 1024), max_mb)
+            )
+
+        return file
 
 
 def read_gis_file_into_table(

@@ -319,3 +319,28 @@ TILE_SERVER_BACKEND = env("TILE_SERVER_BACKEND", default="tipg")
 TILE_SERVER_TIPG_URL = env("TILE_SERVER_TIPG_URL", default="http://tipg:8081")
 TILE_SERVER_MARTIN_URL = env("TILE_SERVER_MARTIN_URL", default="http://martin:3000")
 TOKEN_AUTH_KEY = env("TOKEN_AUTH_KEY", default=None)
+# GIS File Upload — validation limits for the GIS file ingest endpoint.
+# ------------------------------------------------------------------------------
+# Allowed file extensions for GIS file import.
+GIS_FILE_EXTENSIONS = env.list(
+    "GIS_FILE_EXTENSIONS",
+    default=[
+        ".geojson",
+        ".json",
+        ".gpkg",
+        ".gpkg.zip",
+        ".shp",
+        ".shp.zip",
+        ".zip",
+        ".csv",
+        ".tsv",
+        ".kml",
+        ".kmz",
+        ".gpx",
+        ".fgb",
+        ".parquet",
+        ".topojson",
+    ],
+)
+# Maximum upload file size in bytes (default: 100 MB).
+MAX_UPLOAD_SIZE = env.int("MAX_UPLOAD_SIZE", default=100 * 1024 * 1024)

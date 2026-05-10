@@ -9,6 +9,7 @@ so tile servers see the (initially transparent) canvas.
 
 from __future__ import annotations
 
+import contextlib
 import logging
 from typing import TYPE_CHECKING
 
@@ -76,8 +77,7 @@ def clone_scenario(
 
     # Register a Layer so the tile server picks up the view.
     view_qualifier = f"{new_scenario.target_schema}.scenario_{new_scenario.slug}_canvas"
-    layer_model = _get_layer_model()
-    layer_model.objects.get_or_create(
+    layer, created = layer_model.objects.get_or_create(
         workspace=source.workspace,
         key=f"scenario_{new_scenario.slug}_canvas",
         defaults={
@@ -93,6 +93,12 @@ def clone_scenario(
             "db_table": view_qualifier,
         },
     )
+    # Auto-generate symbology for newly created canvas layers.
+    if created:
+        from brewgis.workspace.symbology.auto import auto_generate_symbology
+
+        with contextlib.suppress(Exception):
+            auto_generate_symbology(layer)
 
     return new_scenario
 
