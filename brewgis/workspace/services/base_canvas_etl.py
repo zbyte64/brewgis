@@ -29,24 +29,24 @@ import geopandas as gpd
 import numpy as np
 import pandas as pd
 from django.db import connection
+from django.db import transaction
 
+from brewgis.workspace.services.base_canvas_adapters import DemographicSource
+from brewgis.workspace.services.base_canvas_adapters import EmploymentSource
+from brewgis.workspace.services.base_canvas_adapters import IntersectionDensitySource
+from brewgis.workspace.services.base_canvas_adapters import IrrigationSource
+from brewgis.workspace.services.base_canvas_adapters import LandUseSource
+from brewgis.workspace.services.base_canvas_adapters import NullDemographicSource
+from brewgis.workspace.services.base_canvas_adapters import NullEmploymentSource
 from brewgis.workspace.services.base_canvas_adapters import (
-    DemographicSource,
-    EmploymentSource,
-    IntersectionDensitySource,
-    IrrigationSource,
-    LandUseSource,
-    NullDemographicSource,
-    NullEmploymentSource,
     NullIntersectionDensitySource,
-    NullIrrigationSource,
-    NullLandUseSource,
 )
+from brewgis.workspace.services.base_canvas_adapters import NullIrrigationSource
+from brewgis.workspace.services.base_canvas_adapters import NullLandUseSource
 from brewgis.workspace.services.base_canvas_manager import BaseCanvasManager
 from brewgis.workspace.services.base_canvas_schema import BaseCanvasSchema
 from brewgis.workspace.services.imputation_engine import ImputationEngine
 from brewgis.workspace.services.imputation_engine import ImputationRule
-from brewgis.workspace.services.spatial_allocator import allocate_attributes
 from brewgis.workspace.services.synthetic_parcel_generator import (
     generate_synthetic_parcels,
 )
@@ -199,7 +199,10 @@ class BaseCanvasETL:
             gdf = self._load_parcels(source_table, source_geojson, synthetic_n)
             self._log(f"Loaded {len(gdf)} parcels")
             if gdf.empty:
-                return {"status": "error", "error": "No parcels loaded from the specified source"}
+                return {
+                    "status": "error",
+                    "error": "No parcels loaded from the specified source",
+                }
 
             gdf = self._ensure_columns(gdf)
 
@@ -401,6 +404,104 @@ class BaseCanvasETL:
                     gdf[col] = gdf[col].fillna(default)
         return gdf
 
+    def _allocate_via_postgis(
+        self,
+        gdf: gpd.GeoDataFrame,
+        src_gdf: gpd.GeoDataFrame,
+        available_cols: list[str],
+    ) -> None:
+        """Run PostGIS area-weighted allocation, modifying gdf in place.
+
+        Creates temp tables for source and target, runs a single batch SQL
+        query for area-weighted allocation, and writes results back to gdf.
+        Raises RuntimeError if no spatial overlaps are found.
+        """
+        with connection.cursor() as cursor:
+            # ── Create temp tables ───────────────────────────────────
+            col_defs = ", ".join(f'"{c}" DOUBLE PRECISION' for c in available_cols)
+            cursor.execute(f"""
+                CREATE TEMP TABLE _etl_src (
+                    rid SERIAL PRIMARY KEY,
+                    geometry geometry,
+                    {col_defs}
+                )
+            """)
+            cursor.execute("""
+                CREATE TEMP TABLE _etl_tgt (
+                    rid SERIAL PRIMARY KEY,
+                    idx BIGINT,
+                    geometry geometry
+                )
+            """)
+
+            # ── Insert source geometries (4326 -> 6933 in SQL) ─────
+            geom_expr = "ST_Transform(ST_SetSRID(ST_GeomFromText(%s), 4326), 6933)"
+            col_names = ", ".join(f'"{c}"' for c in available_cols)
+            val_placeholders = ", ".join(["%s"] * len(available_cols))
+
+            for _, row in src_gdf.iterrows():
+                params = [row.geometry.wkt] + [
+                    None if pd.isna(row[c]) else float(row[c]) for c in available_cols
+                ]
+                cursor.execute(
+                    f"INSERT INTO _etl_src (geometry, {col_names}) "
+                    f"VALUES ({geom_expr}, {val_placeholders})",
+                    params,
+                )
+
+            # ── Insert target geometries with index tracking ────────
+            idx_map: dict[int, int] = {}
+            for rid, (orig_idx, row) in enumerate(
+                gdf[["geometry"]].iterrows(), start=1
+            ):
+                cursor.execute(
+                    "INSERT INTO _etl_tgt (idx, geometry) "
+                    "VALUES (%s, " + geom_expr + ")",
+                    [orig_idx, row.geometry.wkt],
+                )
+                idx_map[rid] = orig_idx
+
+            # ── Batch SQL query for all columns ─────────────────────
+            col_raw_exprs = ", ".join(f's."{c}" AS "{c}_raw"' for c in available_cols)
+            col_sum_exprs = ", ".join(
+                f'SUM(COALESCE("{c}_raw", 0) * weight) AS "{c}"' for c in available_cols
+            )
+            cursor.execute(f"""
+                WITH intersections AS (
+                    SELECT
+                        t.rid AS target_rid,
+                        {col_raw_exprs},
+                        ST_Area(ST_Intersection(t.geometry, s.geometry))
+                            / GREATEST(ST_Area(s.geometry), 1e-10) AS weight
+                    FROM _etl_tgt t
+                    JOIN _etl_src s ON ST_Intersects(t.geometry, s.geometry)
+                )
+                SELECT target_rid, {col_sum_exprs}
+                FROM intersections
+                GROUP BY target_rid
+            """)
+
+            rows = cursor.fetchall()
+            if not rows:
+                no_overlaps_msg = "No spatial overlaps"
+                raise RuntimeError(no_overlaps_msg)
+
+            # ── Apply results back to GeoDataFrame ──────────────────
+            col_values: dict[str, dict[int, float]] = {
+                col: {} for col in available_cols
+            }
+            for row in rows:
+                target_rid = row[0]
+                orig_idx = idx_map[target_rid]
+                for i, col in enumerate(available_cols):
+                    val = row[i + 1]
+                    if val is not None:
+                        col_values[col][orig_idx] = val
+
+            for col in available_cols:
+                if col_values[col]:
+                    gdf[col] = gdf[col].fillna(pd.Series(col_values[col]))
+
     def _allocate_from_source(
         self,
         gdf: gpd.GeoDataFrame,
@@ -424,29 +525,20 @@ class BaseCanvasETL:
             return gdf
 
         try:
-            src_proj = src_gdf[["geometry"] + available_cols].to_crs("EPSG:6933")
-            tgt_proj = gdf[["geometry"]].to_crs("EPSG:6933")
-            src_proj["area_src"] = src_proj.geometry.area.clip(lower=1e-10)
+            with transaction.atomic():
+                self._allocate_via_postgis(gdf, src_gdf, available_cols)
 
-            intersected = gpd.overlay(
-                tgt_proj, src_proj, how="intersection", keep_geom_type=False
-            )
-            if intersected.empty:
-                raise RuntimeError("No spatial overlaps")
-
-            intersected["weight"] = intersected.geometry.area / intersected["area_src"]
-            intersected["weight"] = intersected["weight"].fillna(0.0).clip(0, 1)
-
-            for col in available_cols:
-                intersected["_v"] = intersected[col].fillna(0.0).astype(float) * intersected["weight"]
-                result = intersected.groupby(level=0)["_v"].sum()
-                gdf[col] = gdf[col].fillna(result)
-
-            cnt = int((gdf[available_cols[0]] > 0).sum()) if available_cols[0] in gdf.columns else 0
-            self._log(f"Area-weighted alloc: {cnt}/{len(gdf)} matched, {len(available_cols)} cols")
-            col_sums = {c: float(gdf[c].sum()) for c in available_cols[:4]}
-            self._log(f"Alloc sums: {col_sums}")
-
+                cnt = (
+                    int((gdf[available_cols[0]] > 0).sum())
+                    if available_cols[0] in gdf.columns
+                    else 0
+                )
+                self._log(
+                    f"Area-weighted alloc: {cnt}/{len(gdf)} matched, "
+                    f"{len(available_cols)} cols"
+                )
+                col_sums = {c: float(gdf[c].sum()) for c in available_cols[:4]}
+                self._log(f"Alloc sums: {col_sums}")
         except Exception as exc:
             self._log(f"Allocation failed: {exc}; falling back")
             for col in columns:
@@ -523,9 +615,7 @@ class BaseCanvasETL:
                 * _DEFAULT_IRRIGATION_RES_FRAC
             )
         if "commercial_irrigated_area" in gdf.columns:
-            gdf["commercial_irrigated_area"] = gdf[
-                "commercial_irrigated_area"
-            ].fillna(
+            gdf["commercial_irrigated_area"] = gdf["commercial_irrigated_area"].fillna(
                 gdf.get("area_parcel_emp", gdf["area_gross"])
                 * _DEFAULT_IRRIGATION_COM_FRAC
             )
@@ -556,9 +646,7 @@ class BaseCanvasETL:
         rules: list[ImputationRule] = []
 
         for col in BaseCanvasSchema.COLUMN_NAMES:
-            if col in (
-                "id", "id_source", "geometry_key", "geometry", "built_form_key"
-            ):
+            if col in ("id", "id_source", "geometry_key", "geometry", "built_form_key"):
                 continue
 
             column_def = BaseCanvasSchema.get(col)
@@ -591,12 +679,10 @@ class BaseCanvasETL:
             c for c in BaseCanvasSchema.COLUMN_NAMES if c in gdf.columns and c != "id"
         ]
         col_list = ", ".join(f'"{c}"' for c in insert_cols)
-        col_placeholders = ", ".join(
-            f"%({c})s" for c in insert_cols if c != "geometry"
-        )
+        col_placeholders = ", ".join(f"%({c})s" for c in insert_cols if c != "geometry")
         has_geom = "geometry" in insert_cols
         col_list_geom = (
-            f"geometry, {col_list.replace('\"geometry\", ', '')}".strip(", ")
+            f"geometry, {col_list.replace('"geometry", ', '')}".strip(", ")
             if has_geom
             else col_list
         )
@@ -627,9 +713,7 @@ class BaseCanvasETL:
                     geom_placeholder = "ST_GeomFromText(%(__geom__)s, 4326)"
                     params["__geom__"] = geometry_wkt
                 else:
-                    geom_placeholder = (
-                        "ST_SetSRID(ST_MakeEnvelope(0,0,1,1), 4326)::GEOMETRY(POLYGON, 4326)"
-                    )
+                    geom_placeholder = "ST_SetSRID(ST_MakeEnvelope(0,0,1,1), 4326)::GEOMETRY(POLYGON, 4326)"
 
                 stmt = (
                     f"INSERT INTO public.base_canvas ({col_list_geom}) "

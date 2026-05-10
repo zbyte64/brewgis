@@ -1,15 +1,19 @@
 """Tests for NLCD and OSM adapters (land classification, irrigation, intersection density)."""
 from __future__ import annotations
 
-import geopandas as gpd
+from typing import TYPE_CHECKING
+
 import numpy as np
-from shapely.geometry import Point, Polygon
 
 from brewgis.workspace.services.base_canvas_adapters import (
     NullIntersectionDensitySource,
-    NullIrrigationSource,
-    NullLandUseSource,
 )
+from brewgis.workspace.services.base_canvas_adapters import NullIrrigationSource
+from brewgis.workspace.services.base_canvas_adapters import NullLandUseSource
+from brewgis.workspace.services.nlcd_fetcher import _verify_cached_file
+
+if TYPE_CHECKING:
+    from pathlib import Path
 
 
 class TestNullLandUseSource:
@@ -55,7 +59,9 @@ class TestNLCDClassification:
         assert _nlcd_majority_class(np.array([])) == "unknown"
 
     def test_impervious_fraction_computed(self) -> None:
-        from brewgis.workspace.services.nlcd_fetcher import _estimate_nlcd_impervious_fraction
+        from brewgis.workspace.services.nlcd_fetcher import (
+            _estimate_nlcd_impervious_fraction,
+        )
 
         pixels = np.array([21, 22, 23, 24], dtype=np.uint8)
         expected = (0.10 + 0.30 + 0.60 + 0.85) / 4
@@ -63,7 +69,9 @@ class TestNLCDClassification:
         assert abs(result - expected) < 0.01
 
     def test_impervious_empty_returns_zero(self) -> None:
-        from brewgis.workspace.services.nlcd_fetcher import _estimate_nlcd_impervious_fraction
+        from brewgis.workspace.services.nlcd_fetcher import (
+            _estimate_nlcd_impervious_fraction,
+        )
 
         assert _estimate_nlcd_impervious_fraction(None) == 0.0
         assert _estimate_nlcd_impervious_fraction(np.array([])) == 0.0
@@ -112,3 +120,28 @@ class TestAssessorClassification:
 
         result = classify_land_development(nlcd_majority="agricultural")
         assert result == "agricultural"
+
+class TestVerifyCachedFile:
+    """Tests for _verify_cached_file integrity check."""
+
+    def test_missing_file(self, tmp_path: Path) -> None:
+        missing = tmp_path / "does_not_exist.img"
+        assert _verify_cached_file(missing) is False
+
+    def test_empty_file_removed(self, tmp_path: Path) -> None:
+        empty = tmp_path / "empty.img"
+        empty.write_bytes(b"")
+        assert _verify_cached_file(empty) is False
+        assert not empty.exists()
+
+    def test_size_mismatch_removed(self, tmp_path: Path) -> None:
+        f = tmp_path / "test.img"
+        f.write_bytes(b"some data")
+        assert _verify_cached_file(f, expected_size=999) is False
+        assert not f.exists()
+
+    def test_valid_file(self, tmp_path: Path) -> None:
+        f = tmp_path / "valid.img"
+        f.write_bytes(b"valid content")
+        assert _verify_cached_file(f) is True
+        assert f.exists()

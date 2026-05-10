@@ -9,11 +9,11 @@ Supported tables (mapped to base canvas columns):
 
 from __future__ import annotations
 
-import io
+import contextlib
 import logging
 import os
 import tempfile
-import zipfile
+import zlib
 from pathlib import Path
 from typing import Any
 
@@ -402,6 +402,64 @@ _TIGER_CACHE_DIR = Path.home() / ".cache" / "brewgis" / "tiger"
 _TIGER_YEAR = 2023
 # National proportions for splitting ACS DU subtypes
 _DU_MF_2_9_TO_MF2TO4_RATIO = 0.40  # 40% of 2-9 units → 2-4 units
+
+def _verify_cached_file(path: Path, expected_size: int | None = None) -> bool:
+    """Verify a cached file exists, has positive size, and optionally matches expected size.
+
+    Returns True if file appears valid.
+    Logs a warning and returns False for corrupt/missing files.
+    """
+    if not path.exists():
+        return False
+    if path.stat().st_size == 0:
+        logger.warning("Cached file %s is empty, removing", path)
+        path.unlink(missing_ok=True)
+        return False
+    if expected_size is not None and path.stat().st_size != expected_size:
+        logger.warning(
+            "Cached file %s size mismatch: expected %d, got %d",
+            path,
+            expected_size,
+            path.stat().st_size,
+        )
+        path.unlink(missing_ok=True)
+        return False
+    return True
+
+def _verify_cached_bytes(path: Path, size_path: Path, crc32_path: Path) -> bool:
+    """Verify cached file size and CRC32 against companion files.
+
+    Returns True if verification passes and the file can be used.
+    On failure, removes the corrupt file and returns False so the
+    caller re-downloads.
+    """
+    expected_size: int | None = None
+    with contextlib.suppress(ValueError, OSError):
+        expected_size = int(size_path.read_text().strip())
+
+    if not _verify_cached_file(path, expected_size):
+        path.unlink(missing_ok=True)
+        return False
+
+    if crc32_path.exists():
+        try:
+            expected_crc = int(crc32_path.read_text().strip())
+            actual_crc = zlib.crc32(path.read_bytes())
+            if actual_crc != expected_crc:
+                logger.warning(
+                    "Cached file %s CRC32 mismatch: expected %d, got %d",
+                    path,
+                    expected_crc,
+                    actual_crc,
+                )
+                path.unlink(missing_ok=True)
+                return False
+        except (ValueError, OSError) as exc:
+            logger.warning("Failed to read CRC32 for %s: %s", path, exc)
+            path.unlink(missing_ok=True)
+            return False
+
+    return True
 _DU_DETSF_TO_SL_RATIO = 0.40       # 40% of detached SF → small lot
 
 
@@ -418,15 +476,56 @@ def _tiger_bg_url(state_fips: str, county_fips: str) -> str:
     )
 
 
-def _download_tiger_shapefile(url: str) -> bytes | None:
-    """Download a TIGER/Line shapefile ZIP, returning raw bytes."""
+def _download_tiger_shapefile(
+    url: str,
+    *,
+    refresh_cache: bool = False,
+    cache_dir: Path | None = None,
+) -> bytes | None:
+    """Download a TIGER/Line shapefile ZIP, returning raw bytes.
+
+    Caches the raw ZIP bytes locally with companion .size and .crc32
+    files for integrity verification. On verification failure the
+    cached file is removed and re-downloaded.
+
+    Args:
+        url: TIGER/Line shapefile ZIP URL.
+        refresh_cache: If True, delete cached files and re-download.
+        cache_dir: Override cache directory (defaults to _TIGER_CACHE_DIR).
+
+    Returns:
+        Raw ZIP bytes, or None if download failed.
+    """
+    cache_dir = cache_dir or _TIGER_CACHE_DIR
+    filename = url.rstrip("/").rsplit("/", 1)[-1]
+    cache_path = cache_dir / filename
+    size_path = cache_dir / f"{filename}.size"
+    crc32_path = cache_dir / f"{filename}.crc32"
+
+    if refresh_cache:
+        for p in [cache_path, size_path, crc32_path]:
+            p.unlink(missing_ok=True)
+
+    if cache_path.exists() and _verify_cached_bytes(cache_path, size_path, crc32_path):
+        logger.info("Loading cached TIGER shapefile from %s", cache_path)
+        return cache_path.read_bytes()
+
     try:
         response = requests.get(url, timeout=120)
         response.raise_for_status()
-        return response.content
+        data = response.content
     except requests.RequestException as exc:
         logger.warning("Failed to download TIGER shapefile: %s", exc)
         return None
+
+    cache_dir.mkdir(parents=True, exist_ok=True)
+    cache_path.write_bytes(data)
+    content_length = response.headers.get("Content-Length")
+    if content_length is not None:
+        size_path.write_text(content_length)
+    crc32_path.write_text(str(zlib.crc32(data)))
+    logger.info("Cached TIGER shapefile at %s", cache_path)
+    return data
 
 
 def _read_tiger_bg_polygons(zip_bytes: bytes) -> gpd.GeoDataFrame:
@@ -513,7 +612,6 @@ def fetch_acs_block_group_polygons(
 
     # 2. Try to get TIGER polygon geometry
     url = _tiger_bg_url(state_fips, county_fips)
-    tiger_bytes: bytes | None = None
 
     if use_cache:
         cache_dir = _TIGER_CACHE_DIR / state_fips / county_fips
@@ -527,16 +625,11 @@ def fetch_acs_block_group_polygons(
                 tiger_gdf = _read_tiger_bg_polygons(raw)
                 cache_dir.mkdir(parents=True, exist_ok=True)
                 tiger_gdf.to_file(str(cache_path), driver="GeoJSON")
-                tiger_bytes = raw  # used for fallback below
             else:
                 tiger_gdf = None
     else:
         raw = _download_tiger_shapefile(url)
-        if raw is not None:
-            tiger_gdf = _read_tiger_bg_polygons(raw)
-            tiger_bytes = raw
-        else:
-            tiger_gdf = None
+        tiger_gdf = _read_tiger_bg_polygons(raw) if raw is not None else None
 
     if tiger_gdf is not None and not tiger_gdf.empty:
         # 3. Join ACS attributes to polygon geometry on GEOID
@@ -560,6 +653,5 @@ def fetch_acs_block_group_polygons(
         result = acs_gdf.copy()
 
     # 4. Apply column mapping
-    result = _apply_acs_column_mapping(result)
+    return _apply_acs_column_mapping(result)
 
-    return result

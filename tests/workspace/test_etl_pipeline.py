@@ -188,3 +188,54 @@ class TestETLPipeline:
                     f'SELECT COUNT(*) FROM public.base_canvas WHERE "{col}" IS NULL'
                 )
                 assert cursor.fetchone()[0] == 0, f"NULLs in {col}"
+
+    def test_spatial_allocation_postgis(self, db) -> None:
+        """Area-weighted allocation via PostGIS produces correct proportions."""
+        import geopandas as gpd  # noqa: PLC0415
+        import numpy as np  # noqa: PLC0415
+        from shapely.geometry import box  # noqa: PLC0415
+
+        from brewgis.workspace.services.base_canvas_etl import BaseCanvasETL  # noqa: PLC0415
+
+        # ── Source: two adjacent rectangles with known values ──────────
+        src_data = gpd.GeoDataFrame(
+            {"pop": [100, 200], "geometry": [box(0, 0, 10, 10), box(10, 0, 20, 10)]},
+            crs="EPSG:4326",
+        )
+
+        # ── Targets overlapping both sources ───────────────────────────
+        # T1: left half of source A
+        # T2: straddles both
+        # T3: right half of source B
+        tgt_data = gpd.GeoDataFrame(
+            {
+                "pop": [np.nan, np.nan, np.nan],
+                "geometry": [
+                    box(0, 0, 5, 10),
+                    box(5, 0, 15, 10),
+                    box(15, 0, 20, 10),
+                ],
+            },
+            crs="EPSG:4326",
+        )
+
+        class MockAllocSource:
+            available = True
+
+            def fetch_block_group_data(
+                self, state_fips: str = "", county_fips: str = ""
+            ) -> gpd.GeoDataFrame:
+                return src_data
+
+        etl = BaseCanvasETL()
+        result = etl._allocate_from_source(tgt_data.copy(), MockAllocSource(), ["pop"])
+
+        # Verify area-weighted proportions
+        # T1 ~50% of Source A (100 * 0.5 ≈ 50)
+        assert result.loc[0, "pop"] == pytest.approx(50, abs=5), "T1 allocation"
+        # T2 ~50% of A + ~50% of B (100*0.5 + 200*0.5 ≈ 150)
+        assert result.loc[1, "pop"] == pytest.approx(150, abs=5), "T2 allocation"
+        # T3 ~50% of Source B (200 * 0.5 ≈ 100)
+        assert result.loc[2, "pop"] == pytest.approx(100, abs=5), "T3 allocation"
+        # Sum should equal total source pop
+        assert result["pop"].sum() == pytest.approx(300, abs=10), "Total population"

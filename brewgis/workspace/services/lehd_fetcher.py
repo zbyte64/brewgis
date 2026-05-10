@@ -1,245 +1,509 @@
-"""LEHD (Longitudinal Employer-Household Dynamics) employment data fetcher.
+"""LEHD → LODES employment data fetcher with CBP-based sub-sector splitting.
 
-Queries the Census LED (Longitudinal Employer Dynamics) API for Workplace Area
-Characteristics (WAC) data at the Census block level.
+Downloads LODES (Longitudinal Employer-Household Dynamics) Workplace Area
+Characteristics (WAC) data from the CES FTP server, and County Business
+Patterns (CBP) data from the Census API for detailed sub-sector proportional
+splitting.
 
-Data available: 2002–2021 (lagging indicator).
-See https://lehd.ces.census.gov/data/ for documentation.
+Data available: 2002-2021.
+See https://lehd.ces.census.gov/data/lodes/LODES7/ for documentation.
 """
 
 from __future__ import annotations
 
+import gzip
 import io
 import logging
-import os
+import re
 import tempfile
-import zipfile
 from pathlib import Path
 from typing import Any
 
 import geopandas as gpd
+import pandas as pd
 import requests
 from shapely.geometry import Point
 
 logger = logging.getLogger(__name__)
 
-# LEHD WAC API base — RAC (Residence Area Characteristics) and WAC (Workplace)
-LEHD_BASE = "https://api.census.gov/data/2021/lehd"
+# ── LODES WAC (Workplace Area Characteristics) ─────────────────────────
 
-# WAC variable groups mapped to base canvas employment columns
-# S000 = Total jobs
-# SA01 = Age 29 or younger
-# SA02 = Age 30 to 54
-# SA03 = Age 55 or older
-# SE01 = Earnings $1250/month or less
-# SE02 = Earnings $1251/month to $3333/month
-# SE03 = Earnings $3334/month or more
-# SI01 = Goods producing
-# SI02 = Trade, transportation, utilities
-# SI03 = All other services
-WAC_VARIABLES = {
-    "C000": "emp",  # Total jobs
-    "CA01": "emp_ag",  # Agriculture, forestry, fishing, hunting
-    "CA02": "emp_mining",  # Mining, quarrying, oil/gas
-    "CA03": "emp_util",  # Utilities
-    "CA04": "emp_constr",  # Construction
-    "CA05": "emp_mfg",  # Manufacturing
-    "CA06": "emp_wholesale",  # Wholesale trade
-    "CA07": "emp_retail",  # Retail trade
-    "CA08": "emp_trans",  # Transportation/warehousing
-    "CA09": "emp_info",  # Information
-    "CA10": "emp_finance",  # Finance/insurance
-    "CA11": "emp_realestate",  # Real estate
-    "CA12": "emp_professional",  # Professional/scientific/technical services
-    "CA13": "emp_management",  # Management of companies
-    "CA14": "emp_admin",  # Administrative/support/waste mgmt
-    "CA15": "emp_edu",  # Educational services
-    "CA16": "emp_healthcare",  # Healthcare/social assistance
-    "CA17": "emp_arts",  # Arts/entertainment/recreation
-    "CA18": "emp_accomodation",  # Accommodation/food services
-    "CA19": "emp_other",  # Other services
-    "CA20": "emp_pub_admin",  # Public administration
+LODES_WAC_BASE = "https://lehd.ces.census.gov/data/lodes/LODES7"
+
+# LODES WAC columns: w_geocode (15-digit GEOID), C000 (total jobs),
+# CNS01-CNS17 (NAICS sector aggregates per block)
+
+LODES_WAC_VARIABLES: dict[str, str] = {
+    "C000": "emp",
+    "CNS01": "cns_goods_producing",
+    "CNS02": "cns_manufacturing",
+    "CNS03": "cns_trade_transport_utilities",
+    "CNS04": "cns_information",
+    "CNS05": "cns_finance_insurance",
+    "CNS06": "cns_real_estate",
+    "CNS07": "cns_professional_services",
+    "CNS08": "cns_management",
+    "CNS09": "cns_admin_support",
+    "CNS10": "cns_educational_services",
+    "CNS11": "cns_health_care",
+    "CNS12": "cns_arts_entertainment",
+    "CNS13": "cns_accommodation_food",
+    "CNS14": "cns_other_services",
+    "CNS15": "cns_public_administration",
+    "CNS16": "cns_unclassified",
+    "CNS17": "cns_armed_forces",
+}
+
+# ── CBP-Based Sub-Sector Splitting Rules ──────────────────────────────
+#
+# Each key is a LODES CNS column name. The value is a list of (target_sub_sector, source_spec)
+# tuples where source_spec is:
+#   * A string (NAICS regex pattern) — proportion is derived from CBP employment
+#   * A float — fixed fraction of the CNS total
+#   * None — takes the remainder after all previous non-None entries in the list
+#
+# CBP proportions are computed per-county from Census CBP API data.
+
+_NAICS_SPLIT_RULES: dict[str, list[tuple[str, str | float | None]]] = {
+    # CNS01 (Goods producing NAICS 11-23) → CBP-based split
+    "CNS01": [
+        ("emp_agriculture", r"^11\s*-*"),
+        ("emp_extraction", r"^21\s*-*"),
+        ("emp_construction", None),  # remainder (NAICS 23)
+    ],
+    # CNS02 (Manufacturing 31-33) → fixed national ratio
+    "CNS02": [
+        ("emp_manufacturing", 0.7),
+        ("emp_wholesale", 0.3),
+    ],
+    # CNS03 (Trade, Transport, Utilities) → CBP split
+    "CNS03": [
+        ("emp_transport_warehousing", r"^(48|49)\s*-*"),
+        ("emp_utilities", r"^22\s*-*"),
+        ("emp_retail_services", None),  # remainder (wholesale 42 + retail 44-45)
+    ],
+    # CNS04-09 → all map to office services
+    "CNS04": [("emp_office_services", 1.0)],  # Information (51)
+    "CNS05": [("emp_office_services", 1.0)],  # Finance & Insurance (52)
+    "CNS06": [("emp_office_services", 1.0)],  # Real Estate (53)
+    "CNS07": [("emp_office_services", 1.0)],  # Professional Services (54)
+    "CNS08": [("emp_office_services", 1.0)],  # Management (55)
+    "CNS09": [("emp_office_services", 1.0)],  # Admin & Support (56)
+    # CNS10-12 → direct mappings
+    "CNS10": [("emp_education", 1.0)],              # Educational Services (61)
+    "CNS11": [("emp_medical_services", 1.0)],         # Health Care (62)
+    "CNS12": [("emp_arts_entertainment", 1.0)],       # Arts, Entertainment (71)
+    # CNS13 (Accommodation/Food 72) → CBP split
+    "CNS13": [
+        ("emp_accommodation", r"^721\s*-*"),
+        ("emp_restaurant", None),  # remainder (722)
+    ],
+    "CNS14": [("emp_other_services", 1.0)],   # Other Services (81)
+    "CNS15": [("emp_public_admin", 1.0)],     # Public Administration (92)
+    "CNS17": [("emp_military", 1.0)],          # Armed Forces
 }
 
 # Aggregate employment columns used in base canvas
 AGGREGATE_MAPPINGS: dict[str, list[str]] = {
+    "emp": [
+        "emp_retail_services",
+        "emp_restaurant",
+        "emp_accommodation",
+        "emp_arts_entertainment",
+        "emp_other_services",
+        "emp_office_services",
+        "emp_medical_services",
+        "emp_public_admin",
+        "emp_education",
+        "emp_manufacturing",
+        "emp_wholesale",
+        "emp_transport_warehousing",
+        "emp_utilities",
+        "emp_construction",
+        "emp_agriculture",
+        "emp_extraction",
+        "emp_military",
+    ],
     "emp_ret": [
-        "emp_retail",
+        "emp_retail_services",
     ],
     "emp_off": [
-        "emp_professional",
-        "emp_finance",
-        "emp_realestate",
-        "emp_management",
-        "emp_admin",
-        "emp_info",
+        "emp_office_services",
     ],
     "emp_pub": [
-        "emp_edu",
-        "emp_healthcare",
-        "emp_pub_admin",
+        "emp_education",
+        "emp_medical_services",
+        "emp_public_admin",
     ],
     "emp_ind": [
-        "emp_mfg",
-        "emp_mining",
-        "emp_util",
-        "emp_constr",
-        "emp_trans",
+        "emp_manufacturing",
         "emp_wholesale",
+        "emp_transport_warehousing",
+        "emp_utilities",
+        "emp_construction",
+        "emp_extraction",
+        "emp_agriculture",
     ],
     "emp_ag": [
-        "emp_ag",
+        "emp_agriculture",
     ],
-    "emp_military": [],  # Not directly available from LEHD WAC
+    "emp_military": [
+        "emp_military",
+    ],
 }
 
 
-def _all_wac_vars() -> list[str]:
-    """Return all LEHD WAC variable codes."""
-    return list(WAC_VARIABLES.keys())
+def _all_lodes_wac_vars() -> list[str]:
+    """Return all LODES WAC variable codes (C000 + CNS codes)."""
+    return list(LODES_WAC_VARIABLES.keys())
 
 
-def _build_wac_url(state_fips: str, county_fips: str) -> str:
-    """Build the LEHD WAC API URL.
+# ── LODES CSV Download ────────────────────────────────────────────────
 
-    LEHD WAC data is at the Census block level. We query blocks within the
-    given county.
+
+def _build_lodes_wac_url(state_fips: str, county_fips: str, year: int = 2021) -> str:
+    """Build the LODES WAC CSV URL for one state-county.
 
     Args:
         state_fips: Two-digit state FIPS code.
         county_fips: Three-digit county FIPS code.
+        year: Data year (default 2021).
 
     Returns:
-        URL string to query.
+        URL to the gzipped CSV file.
     """
-    vars_ = ",".join(_all_wac_vars())
-    return f"{LEHD_BASE}/wac?get={vars_}&state:{state_fips}&in=county:{county_fips}&for=block:*"
+    state_fips_clean = state_fips.zfill(2)
+    county_fips_clean = county_fips.zfill(3)
+    return (
+        f"{LODES_WAC_BASE}/{state_fips_clean}/{county_fips_clean}/wac/"
+        f"{state_fips_clean}_wac_S000_JT00_{year}.csv.gz"
+    )
 
 
-def _fetch_lehd_data(url: str) -> list[list[str]]:
-    """Fetch data from the LEHD API and return raw rows.
+def _fetch_lodes_csv(url: str) -> pd.DataFrame:
+    """Download a LODES gzipped CSV and return as a DataFrame.
 
     Args:
-        url: Fully qualified LEHD API URL.
+        url: Fully qualified URL to a .csv.gz file.
 
     Returns:
-        List of rows, where each row is a list of string values.
+        DataFrame with LODES columns.
 
     Raises:
-        RuntimeError: On HTTP or parse errors.
+        RuntimeError: On download or parse errors.
     """
-    response = requests.get(url, timeout=60)
-    if response.status_code != 200:
-        msg = f"LEHD API returned HTTP {response.status_code}: {response.text}"
+    response = requests.get(url, timeout=120)
+    if response.status_code != 200:  # noqa: PLR2004
+        msg = f"LODES download returned HTTP {response.status_code}: {response.text[:500]}"
         raise RuntimeError(msg)
 
     try:
-        data: list[list[str]] = response.json()
-    except ValueError as e:
-        msg = f"LEHD API returned non-JSON response: {e}"
+        decompressed = gzip.decompress(response.content)
+    except Exception as e:
+        msg = f"Failed to decompress gzipped LODES CSV: {e}"
         raise RuntimeError(msg) from e
 
-    return data
+    try:
+        df = pd.read_csv(io.BytesIO(decompressed), dtype={"w_geocode": str})
+    except Exception as e:
+        msg = f"Failed to parse LODES CSV: {e}"
+        raise RuntimeError(msg) from e
+
+    return df
+
+
+# ── CBP Proportion Computation ────────────────────────────────────────
+
+
+
+def _parse_cbp_naics_emp(
+    rows: list[list[str]],
+    header: list[str],
+) -> dict[str, float]:
+    """Parse CBP API rows into a dict of NAICS code to employment count."""
+    naics_emp: dict[str, float] = {}
+    for row in rows:
+        raw = dict(zip(header, row, strict=False))
+        naics_raw = raw.get("NAICS2017", "").strip()
+        emp_raw = raw.get("EMP", "").strip()
+        if not naics_raw or not emp_raw or emp_raw in ("", "D", "S", "N"):
+            continue
+        try:
+            emp_val = float(emp_raw)
+        except (ValueError, TypeError):
+            continue
+        naics_clean = naics_raw.replace("-", "").replace(" ", "")
+        if naics_clean in {"", "----"}:
+            continue
+        naics_emp[naics_clean] = emp_val
+    return naics_emp
+
+
+def _group_naics_by_prefix(
+    naics_emp: dict[str, float],
+    width: int = 2,
+) -> dict[str, float]:
+    """Group NAICS employment counts by prefix of ``width`` characters."""
+    grouped: dict[str, float] = {}
+    for code, val in naics_emp.items():
+        prefix = code[:width]
+        grouped[prefix] = grouped.get(prefix, 0) + val
+    return grouped
+
+
+def _cbp_proportion_in(
+    naics_prefix: str,
+    parent_prefixes: list[str],
+    sector_emp: dict[str, float],
+) -> float:
+    """Return proportion of ``naics_prefix`` within ``parent_prefixes``."""
+    total = sum(sector_emp.get(p, 0) for p in parent_prefixes)
+    if total == 0:
+        return 0.0
+    return sector_emp.get(naics_prefix, 0) / total
+
+
+def _build_cbp_proportions(
+    state_fips: str,
+    county_fips: str,
+    year: int = 2021,
+) -> dict[str, float]:
+    """Fetch CBP employment by NAICS code and compute within-sector proportions.
+
+    Downloads County Business Patterns data for the given county, groups NAICS
+    employment at the 2-6 digit level, and returns proportion of employment
+    within each NAICS-parent group that each sub-sector accounts for.
+
+    Args:
+        state_fips: Two-digit state FIPS code.
+        county_fips: Three-digit county FIPS code.
+        year: Data year (default 2021).
+
+    Returns:
+        Dict mapping NAICS code prefix to proportion of employment within
+        that NAICS sector. For example: "11" -> 0.15 (agriculture's share
+        of goods-producing sectors).
+    """
+    state_fips_clean = state_fips.zfill(2)
+    county_fips_clean = county_fips.zfill(3)
+
+    url = (
+        f"https://api.census.gov/data/{year}/cbp"
+        f"?get=EMP,NAICS2017&for=county:{county_fips_clean}"
+        f"&in=state:{state_fips_clean}"
+    )
+
+    try:
+        response = requests.get(url, timeout=120)
+        response.raise_for_status()
+        raw_data: list[list[str]] = response.json()
+    except requests.RequestException as exc:
+        logger.warning("CBP API request failed: %s", exc)
+        return {}
+    except (ValueError, TypeError) as exc:
+        logger.warning("CBP API returned non-JSON: %s", exc)
+        return {}
+
+    if len(raw_data) < 2:  # noqa: PLR2004
+        logger.warning("CBP API returned no data rows.")
+        return {}
+
+    header = raw_data[0]
+    rows = raw_data[1:]
+    naics_emp = _parse_cbp_naics_emp(rows, header)
+
+    sector_emp = _group_naics_by_prefix(naics_emp, 2)
+    naics3_emp = _group_naics_by_prefix(naics_emp, 3)
+
+    proportions: dict[str, float] = {}
+
+    # CNS01 parent: NAICS 11, 21, 23
+    goods_prefixes = ["11", "21", "23"]
+    for pfx in goods_prefixes:
+        proportions[pfx] = _cbp_proportion_in(pfx, goods_prefixes, sector_emp)
+
+    # CNS03 parent: NAICS 22, 42, 44, 45, 48, 49
+    ttu_prefixes = ["22", "42", "44", "45", "48", "49"]
+    for pfx in ttu_prefixes:
+        proportions[pfx] = _cbp_proportion_in(pfx, ttu_prefixes, sector_emp)
+
+    # CNS13 parent: NAICS 721, 722 (3-digit accommodation/food)
+    acc_food_total = naics3_emp.get("721", 0) + naics3_emp.get("722", 0)
+    if acc_food_total > 0:
+        proportions["721"] = naics3_emp.get("721", 0) / acc_food_total
+        proportions["722"] = naics3_emp.get("722", 0) / acc_food_total
+    else:
+        proportions["721"] = 0.4
+        proportions["722"] = 0.6
+
+    return proportions
+
+
+# ── Sub-Sector Column Splitting ───────────────────────────────────────
+
+
+
+def _resolve_split_source(
+    source_spec: str | float | None,
+    total: float,
+    cbp_proportions: dict[str, float],
+) -> float:
+    """Resolve a split rule source spec to a value."""
+    if isinstance(source_spec, float):
+        return total * source_spec
+    if isinstance(source_spec, str):
+        proportion = 0.0
+        for naics_key, naics_prop in cbp_proportions.items():
+            if re.match(source_spec, naics_key):
+                proportion += naics_prop
+        return total * proportion
+    return 0.0
+
+
+def _apply_naics_splits(
+    row_cns: dict[str, int | float],
+    cbp_proportions: dict[str, float],
+) -> dict[str, float]:
+    """Apply NAICS splitting rules to produce sub-sector column values.
+
+    Args:
+        row_cns: Dict mapping CNS column to job count for one block.
+        cbp_proportions: Dict from ``_build_cbp_proportions``.
+
+    Returns:
+        Dict mapping sub-sector column name to computed value.
+    """
+    result: dict[str, float] = {}
+
+    for cns_col, rules in _NAICS_SPLIT_RULES.items():
+        total = float(row_cns.get(cns_col, 0))
+        if total == 0:
+            for target_col, _ in rules:
+                result.setdefault(target_col, 0.0)
+            continue
+
+        fixed_totals: float = 0.0
+        remainder_rule_idx: int | None = None
+
+        for i, (target_col, source_spec) in enumerate(rules):
+            if source_spec is None:
+                remainder_rule_idx = i
+            else:
+                val = _resolve_split_source(source_spec, total, cbp_proportions)
+                result[target_col] = result.get(target_col, 0.0) + val
+                fixed_totals += val
+
+        # Apply remainder if applicable
+        if remainder_rule_idx is not None:
+            target_col = rules[remainder_rule_idx][0]
+            remainder = max(0.0, total - fixed_totals)
+            result[target_col] = result.get(target_col, 0.0) + remainder
+
+    return result
+
+
+# ── Aggregate Column Computation ──────────────────────────────────────
 
 
 def _compute_aggregate_employment(
-    row: dict[str, int],
-) -> dict[str, int | float]:
-    """Compute aggregate employment columns from detailed NAICS categories.
+    row: dict[str, float],
+) -> dict[str, float]:
+    """Compute aggregate employment columns from sub-sector columns.
 
     Args:
-        row: Dict mapping LEHD variable → integer count.
+        row: Dict mapping sub-sector column name → value.
 
     Returns:
         Dict mapping aggregate column name → computed value.
     """
-    result: dict[str, int | float] = {}
+    result: dict[str, float] = {}
     for agg_col, detail_cols in AGGREGATE_MAPPINGS.items():
         total = sum(row.get(col, 0) for col in detail_cols)
         result[agg_col] = total
     return result
 
 
+# ── Main Data Fetching Functions ──────────────────────────────────────
+
+
 def fetch_lehd_block_data(
     state_fips: str,
     county_fips: str,
+    year: int = 2021,
 ) -> gpd.GeoDataFrame:
-    """Fetch LEHD WAC employment data at the Census block level.
+    """Fetch LODES WAC employment data at the Census block level.
+
+    Downloads the LODES WAC CSV and returns a GeoDataFrame with point
+    geometry (placeholder centroids). For real polygon geometry, use
+    ``fetch_lehd_block_polygons``.
 
     Args:
         state_fips: Two-digit state FIPS code.
         county_fips: Three-digit county FIPS code.
+        year: Data year (default 2021).
 
     Returns:
-        GeoDataFrame with columns: state, county, tract, block,
-        emp, emp_ret, emp_off, emp_pub, emp_ind, emp_ag, emp_military,
-        and detailed industry columns, geometry (point centroid).
+        GeoDataFrame with columns: geoid, emp, aggregate columns,
+        sub-sector columns, geometry (point centroid, EPSG:4326).
 
     Raises:
-        RuntimeError: On API errors or empty data.
+        RuntimeError: On download errors or empty data.
     """
-    url = _build_wac_url(state_fips, county_fips)
-    data = _fetch_lehd_data(url)
+    url = _build_lodes_wac_url(state_fips, county_fips, year)
+    df = _fetch_lodes_csv(url)
 
-    if len(data) < 2:
-        msg = "LEHD API returned no data rows."
+    if df.empty:
+        msg = "LODES WAC CSV returned no data."
         raise RuntimeError(msg)
 
-    header = data[0]
-    rows = data[1:]
+    # Rename w_geocode → geoid
+    df = df.rename(columns={"w_geocode": "geoid"})
+
+    # Fetch CBP proportions once
+    cbp_props = _build_cbp_proportions(state_fips, county_fips, year)
 
     records: list[dict[str, Any]] = []
-    for r in rows:
-        raw = dict(zip(header, r, strict=False))
 
-        int_row: dict[str, int] = {}
-        for var in _all_wac_vars():
-            try:
-                int_row[var] = int(raw.get(var, 0)) if raw.get(var) else 0
-            except (ValueError, TypeError):
-                int_row[var] = 0
+    for _, row in df.iterrows():
+        geoid = str(row.get("geoid", ""))
+        total_jobs = int(row.get("C000", 0)) if pd.notna(row.get("C000")) else 0
 
-        record: dict[str, Any] = {
-            "state": raw.get("state", ""),
-            "county": raw.get("county", ""),
-            "tract": raw.get("tract", ""),
-            "block": raw.get("block", ""),
-            "geoid": f"{raw.get('state', '')}{raw.get('county', '')}{raw.get('tract', '')}{raw.get('block', '')}",
-        }
+        # Build CNS column values
+        cns_row: dict[str, int | float] = {}
+        for cns_col in _NAICS_SPLIT_RULES:
+            val = int(row.get(cns_col, 0)) if pd.notna(row.get(cns_col)) else 0
+            cns_row[cns_col] = val
 
-        # Map WAC variables to columns
-        for var, col in WAC_VARIABLES.items():
-            record[col] = int_row.get(var, 0)
+        # Apply sub-sector splitting
+        subsectors = _apply_naics_splits(cns_row, cbp_props)
 
         # Compute aggregates
-        aggregates = _compute_aggregate_employment(int_row)
-        record.update(aggregates)
+        aggregates = _compute_aggregate_employment(subsectors)
 
-        # Default military (not available from LEHD WAC)
-        record["emp_military"] = 0
+        record: dict[str, Any] = {
+            "geoid": geoid,
+        }
+        record.update(subsectors)
+        record.update(aggregates)
+        record["emp"] = total_jobs
 
         records.append(record)
 
     if not records:
-        msg = "No LEHD records parsed from API response."
+        msg = "No LODES records parsed."
         raise RuntimeError(msg)
 
-    df = gpd.GeoDataFrame(records, geometry=_generate_block_points(records))
-    df.crs = "EPSG:4326"
+    gdf = gpd.GeoDataFrame(records, geometry=_generate_block_points(records))
+    gdf.crs = "EPSG:4326"
 
-    # Drop raw variable columns that aren't canvas columns
-    drop_cols = [c for c in df.columns if c.upper() in _all_wac_vars()]
-    if drop_cols:
-        df = df.drop(columns=drop_cols)
-
-    return df
+    return gdf
 
 
 def _generate_block_points(records: list[dict]) -> list[Point]:
     """Generate placeholder point geometry for Census blocks.
 
-    The LEHD API doesn't return geometry. For real block geometry, users
-    should import TIGER/Line block shapefiles.
+    The LODES CSV doesn't include geometry. For real block geometry, use
+    ``fetch_lehd_block_polygons`` which joins with TIGER/Line.
 
     Args:
         records: List of record dicts.
@@ -249,30 +513,42 @@ def _generate_block_points(records: list[dict]) -> list[Point]:
     """
     points: list[Point] = []
     for rec in records:
-        h = hash(rec.get("geoid", f"{rec.get('tract', '')}_{rec.get('block', '')}"))
+        h = hash(rec.get("geoid", ""))
         lng = -120.0 + (h % 1000) / 1000.0
         lat = 35.0 + ((h // 1000) % 1000) / 1000.0
         points.append(Point(lng, lat))
     return points
 
 
-def fetch_lehd_data_summary(state_fips: str, county_fips: str) -> dict[str, Any]:
-    """Return a summary of LEHD data available for the given geography.
+def fetch_lehd_data_summary(
+    state_fips: str,
+    county_fips: str,
+    year: int = 2021,
+) -> dict[str, Any]:
+    """Return a summary of available employment data for the given geography.
 
     Args:
         state_fips: Two-digit state FIPS code.
         county_fips: Three-digit county FIPS code.
+        year: Data year (default 2021).
 
     Returns:
-        Dict with keys: variables (list), row_count, aggregate_columns.
+        Dict with keys: variables (list), row_count, aggregate_columns,
+        sub_sector_columns.
     """
     try:
-        url = _build_wac_url(state_fips, county_fips)
-        data = _fetch_lehd_data(url)
-        row_count = max(0, len(data) - 1)
+        url = _build_lodes_wac_url(state_fips, county_fips, year)
+        df = _fetch_lodes_csv(url)
+        row_count = len(df)
+
+        # Collect all sub-sector columns from split rules
+        sub_sector_cols = sorted(
+            {col for rules in _NAICS_SPLIT_RULES.values() for col, _ in rules}
+        )
 
         return {
-            "variables": list(WAC_VARIABLES.values()),
+            "variables": list(LODES_WAC_VARIABLES.values()),
+            "sub_sector_columns": sub_sector_cols,
             "aggregate_columns": list(AGGREGATE_MAPPINGS.keys()),
             "row_count": row_count,
         }
@@ -280,6 +556,7 @@ def fetch_lehd_data_summary(state_fips: str, county_fips: str) -> dict[str, Any]
         return {
             "error": str(e),
             "variables": [],
+            "sub_sector_columns": [],
             "aggregate_columns": [],
             "row_count": 0,
         }
@@ -291,7 +568,7 @@ _TIGER_CACHE_DIR = Path.home() / ".cache" / "brewgis" / "tiger_lehd"
 _TIGER_YEAR = 2023
 
 
-def _tiger_block_url(state_fips: str, county_fips: str) -> str:
+def _tiger_block_url(state_fips: str, _county_fips: str) -> str:
     """Build the TIGER/Line tabblock shapefile URL for one county.
 
     Note: TIGER 2023+ TABBLOCK files are state-level.
@@ -307,18 +584,17 @@ def _download_tiger_shapefile(url: str) -> bytes | None:
     try:
         response = requests.get(url, timeout=120)
         response.raise_for_status()
-        return response.content
     except requests.RequestException as exc:
         logger.warning("Failed to download TIGER block shapefile: %s", exc)
         return None
+    return response.content
 
 
 def _read_tiger_block_polygons(zip_bytes: bytes) -> gpd.GeoDataFrame:
     """Read block polygon geometry from TIGER/Line ZIP bytes."""
     with tempfile.TemporaryDirectory() as tmpdir:
-        zip_path = os.path.join(tmpdir, "tiger_block.zip")
-        with open(zip_path, "wb") as tmp:
-            tmp.write(zip_bytes)
+        zip_path = Path(tmpdir) / "tiger_block.zip"
+        zip_path.write_bytes(zip_bytes)
         gdf = gpd.read_file(f"zip://{zip_path}")
     if gdf.crs is None:
         gdf.set_crs("EPSG:4269", inplace=True)
@@ -336,12 +612,12 @@ def _read_tiger_block_polygons(zip_bytes: bytes) -> gpd.GeoDataFrame:
 def fetch_lehd_block_polygons(
     state_fips: str,
     county_fips: str,
-    use_cache: bool = True,
+    use_cache: bool = True,  # noqa: FBT001, FBT002
 ) -> gpd.GeoDataFrame:
-    """Fetch LEHD WAC employment data with real block polygon geometry.
+    """Fetch LODES employment data with real block polygon geometry.
 
-    Downloads TIGER/Line tabblock shapefiles from the Census FTP server,
-    joins LEHD WAC attribute data from the Census API.
+    Downloads LODES WAC CSV for employment attributes and TIGER/Line
+    tabblock shapefiles for polygon geometry, then joins on GEOID.
 
     Falls back to point-based geometry (from ``fetch_lehd_block_data``) if
     TIGER shapefiles are unavailable.
@@ -355,7 +631,7 @@ def fetch_lehd_block_polygons(
         GeoDataFrame with polygon geometry, ``geoid``, and all
         employment columns mapped to BaseCanvasSchema names.
     """
-    # 1. Fetch LEHD attribute data
+    # 1. Fetch LODES attribute data
     lehd_gdf = fetch_lehd_block_data(state_fips, county_fips)
 
     # 2. Try to get TIGER polygon geometry
@@ -375,7 +651,7 @@ def fetch_lehd_block_polygons(
                     tiger_gdf = _read_tiger_block_polygons(raw)
                     cache_dir.mkdir(parents=True, exist_ok=True)
                     tiger_gdf.to_file(str(cache_path), driver="GeoJSON")
-                except Exception as exc:
+                except Exception as exc:  # noqa: BLE001
                     logger.warning("Failed to parse TIGER blocks: %s", exc)
                     tiger_gdf = None
     else:
@@ -383,17 +659,17 @@ def fetch_lehd_block_polygons(
         if raw is not None:
             try:
                 tiger_gdf = _read_tiger_block_polygons(raw)
-            except Exception as exc:
+            except Exception as exc:  # noqa: BLE001
                 logger.warning("Failed to parse TIGER blocks: %s", exc)
                 tiger_gdf = None
 
     if tiger_gdf is not None and not tiger_gdf.empty:
-        # 3. Join LEHD attributes to polygon geometry on GEOID
+        # 3. Join LODES attributes to polygon geometry on GEOID
         lehd_attrs = lehd_gdf.drop(columns=["geometry"], errors="ignore")
         joined = tiger_gdf.merge(lehd_attrs, on="geoid", how="inner")
         if joined.empty:
             logger.warning(
-                "LEHD data did not match TIGER blocks for %s/%s; "
+                "LODES data did not match TIGER blocks for %s/%s; "
                 "falling back to point geometry",
                 state_fips,
                 county_fips,

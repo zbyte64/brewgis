@@ -50,7 +50,7 @@ class DemographicSource(Protocol):
 
 
 class EmploymentSource(Protocol):
-    """Protocol for employment data sources (LEHD WAC)."""
+    """Protocol for employment data sources (LEHD/LODES)."""
 
     @property
     def available(self) -> bool:
@@ -235,10 +235,11 @@ class CensusDemographicSource:
 
 
 class LEHDEmploymentSource:
-    """Real employment source — fetches LEHD WAC block data with polygon geometry.
+    """Real employment source — fetches LODES WAC block data with polygon geometry.
 
-    Downloads TIGER/Line tabblock shapefiles for polygon geometry and joins
-    LEHD WAC attribute data from the Census API.
+    Downloads LODES WAC CSV from CES FTP server for employment attributes,
+    TIGER/Line tabblock shapefiles for polygon geometry, and CBP data
+    from the Census API for sub-sector proportional splitting.
     """
 
     def __init__(

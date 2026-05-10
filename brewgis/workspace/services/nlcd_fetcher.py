@@ -6,15 +6,19 @@ for land use classification and impervious surface fraction.
 
 from __future__ import annotations
 
+import contextlib
 import logging
 import tempfile
+import zlib
 from pathlib import Path
-from typing import Any
+from typing import TYPE_CHECKING
 
-import geopandas as gpd
 import numpy as np
 import pandas as pd
 import requests
+
+if TYPE_CHECKING:
+    import geopandas as gpd
 
 logger = logging.getLogger(__name__)
 
@@ -112,20 +116,83 @@ def _estimate_nlcd_impervious_fraction(
     return total_impervious / len(values)
 
 
+
+def _verify_cached_file(path: Path, expected_size: int | None = None) -> bool:
+    """Verify a cached file exists, has positive size, and optionally matches expected size.
+
+    Returns True if file appears valid.
+    Logs a warning and returns False for corrupt/missing files.
+    """
+    if not path.exists():
+        return False
+    if path.stat().st_size == 0:
+        logger.warning("Cached file %s is empty, removing", path)
+        path.unlink(missing_ok=True)
+        return False
+    if expected_size is not None and path.stat().st_size != expected_size:
+        logger.warning(
+            "Cached file %s size mismatch: expected %d, got %d",
+            path,
+            expected_size,
+            path.stat().st_size,
+        )
+        path.unlink(missing_ok=True)
+        return False
+    return True
+
+def _verify_cached_bytes(path: Path, size_path: Path, crc32_path: Path) -> bool:
+    """Verify cached file size and CRC32 against companion files.
+
+    Returns True if verification passes and the file can be used.
+    On failure, removes the corrupt file and returns False so the
+    caller re-downloads.
+    """
+    expected_size: int | None = None
+    with contextlib.suppress(ValueError, OSError):
+        expected_size = int(size_path.read_text().strip())
+
+    if not _verify_cached_file(path, expected_size):
+        path.unlink(missing_ok=True)
+        return False
+
+    if crc32_path.exists():
+        try:
+            expected_crc = int(crc32_path.read_text().strip())
+            actual_crc = zlib.crc32(path.read_bytes())
+            if actual_crc != expected_crc:
+                logger.warning(
+                    "Cached file %s CRC32 mismatch: expected %d, got %d",
+                    path,
+                    expected_crc,
+                    actual_crc,
+                )
+                path.unlink(missing_ok=True)
+                return False
+        except (ValueError, OSError) as exc:
+            logger.warning("Failed to read CRC32 for %s: %s", path, exc)
+            path.unlink(missing_ok=True)
+            return False
+
+    return True
 def download_nlcd_raster(
     bbox: tuple[float, float, float, float],
     year: int = _NLCD_YEAR,
-    use_cache: bool = True,
+    *,
+    refresh_cache: bool = False,
 ) -> str | None:
     """Download the NLCD land cover raster for a given bounding box.
 
     Downloads the CONUS-wide NLCD raster if not already cached, then
     extracts the bounding box subset.
 
+    Cached files have companion .size and .crc32 files for integrity
+    verification. On verification failure the corrupt file is removed
+    and re-downloaded.
+
     Args:
         bbox: Bounding box ``(min_x, min_y, max_x, max_y)`` in EPSG:4326.
         year: NLCD year (default 2021).
-        use_cache: Cache the full CONUS raster on disk.
+        refresh_cache: If True, delete cached files and re-download.
 
     Returns:
         Path to the clipped GeoTIFF, or ``None`` if download fails.
@@ -136,27 +203,37 @@ def download_nlcd_raster(
     # NLCD CONUS raster file pattern
     raster_name = f"nlcd_{year}_land_cover_l48_20230630.img"
     raster_path = cache_dir / raster_name
+    size_path = cache_dir / f"{raster_name}.size"
+    crc32_path = cache_dir / f"{raster_name}.crc32"
 
-    # Check if already cached
-    if not raster_path.exists():
+    if refresh_cache:
+        for p in [raster_path, size_path, crc32_path]:
+            p.unlink(missing_ok=True)
+
+    if not raster_path.exists() or not _verify_cached_bytes(raster_path, size_path, crc32_path):
         url = f"{_NLCD_BASE_URL}/nlcd/{year}/land_cover/l48/{raster_name}"
         logger.info("Downloading NLCD CONUS raster from %s ...", url)
         try:
             response = requests.get(url, timeout=600)
             response.raise_for_status()
+            import shutil
             with tempfile.NamedTemporaryFile(delete=False, suffix=".img") as tmp:
                 tmp.write(response.content)
                 tmp_path = tmp.name
-            # Move to cache
-            import shutil
             shutil.move(tmp_path, str(raster_path))
+            content_length = response.headers.get("Content-Length")
+            if content_length is not None:
+                size_path.write_text(content_length)
+            crc32_path.write_text(str(zlib.crc32(response.content)))
             logger.info("NLCD raster cached at %s", raster_path)
         except requests.RequestException as exc:
             logger.warning("Failed to download NLCD raster: %s", exc)
             return None
 
     # Clip to bounding box using gdalwarp or rasterio
-    clipped_path = cache_dir / f"clip_{bbox[0]:.3f}_{bbox[1]:.3f}_{bbox[2]:.3f}_{bbox[3]:.3f}.tif"
+    clipped_path = (
+        cache_dir / f"clip_{bbox[0]:.3f}_{bbox[1]:.3f}_{bbox[2]:.3f}_{bbox[3]:.3f}.tif"
+    )
     if clipped_path.exists():
         return str(clipped_path)
 
@@ -278,16 +355,16 @@ def classify_land_development(
             return "urban"
         if len(code) > 1 and code[0] == "R" and code[1].isdigit():
             return "urban"
-        if code in ("R",):
+        if code == "R":
             return "urban"
         # Single-letter broad categories (after specific checks)
         if code in ("C", "I"):
             return "industrial"
-        if code in ("A",):
+        if code == "A":
             return "agricultural"
-        if code in ("P",):
+        if code == "P":
             return "urban"
-        if code in ("V",):
+        if code == "V":
             return "natural"
 
     if nlcd_majority:

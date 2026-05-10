@@ -1,15 +1,18 @@
 """Tests for Census ACS polygon geometry fetching and adapter."""
 from __future__ import annotations
 
+from typing import TYPE_CHECKING
 from unittest.mock import patch
 
 import geopandas as gpd
 from shapely.geometry import Point
 
-from brewgis.workspace.services.base_canvas_adapters import (
-    CensusDemographicSource,
-    NullDemographicSource,
-)
+from brewgis.workspace.services.base_canvas_adapters import CensusDemographicSource
+from brewgis.workspace.services.base_canvas_adapters import NullDemographicSource
+from brewgis.workspace.services.census_fetcher import _verify_cached_file
+
+if TYPE_CHECKING:
+    from pathlib import Path
 
 
 class TestNullDemographicSource:
@@ -152,3 +155,28 @@ class TestACSColumnMapping:
         }
         result = _compute_derived_columns(row)
         assert result["cost_burden_pct"] == 25.0
+
+class TestVerifyCachedFile:
+    """Tests for _verify_cached_file integrity check."""
+
+    def test_missing_file(self, tmp_path: Path) -> None:
+        missing = tmp_path / "does_not_exist.zip"
+        assert _verify_cached_file(missing) is False
+
+    def test_empty_file_removed(self, tmp_path: Path) -> None:
+        empty = tmp_path / "empty.zip"
+        empty.write_bytes(b"")
+        assert _verify_cached_file(empty) is False
+        assert not empty.exists()
+
+    def test_size_mismatch_removed(self, tmp_path: Path) -> None:
+        f = tmp_path / "test.zip"
+        f.write_bytes(b"some data")
+        assert _verify_cached_file(f, expected_size=999) is False
+        assert not f.exists()
+
+    def test_valid_file(self, tmp_path: Path) -> None:
+        f = tmp_path / "valid.zip"
+        f.write_bytes(b"valid content")
+        assert _verify_cached_file(f) is True
+        assert f.exists()
