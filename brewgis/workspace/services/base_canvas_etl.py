@@ -60,6 +60,28 @@ _DEFAULT_BLDG_SQFT_PER_DU = 1200.0
 _DEFAULT_BLDG_SQFT_PER_EMP = 300.0
 _DEFAULT_IRRIGATION_RES_FRAC = 0.1  # 10% of residential area irrigated
 _DEFAULT_IRRIGATION_COM_FRAC = 0.05  # 5% of employment area irrigated
+# ── SACOG-calibrated category-specific defaults ─────────────────
+_SACOG_IRRIGATION_FRAC_BY_CATEGORY: dict[str, dict[str, float]] = {
+    "urban": {"residential": 0.25, "commercial": 0.035},
+    "agricultural": {"residential": 0.34, "commercial": 0.029},
+    "industrial": {"residential": 0.25, "commercial": 0.035},
+    "undeveloped": {"residential": 0.0, "commercial": 0.0},
+    "mixed_use": {"residential": 0.25, "commercial": 0.035},
+}
+_SACOG_SQFT_PER_DU_BY_CATEGORY: dict[str, float] = {
+    "urban": 1200.0,
+    "agricultural": 1200.0,
+    "industrial": 1200.0,
+    "undeveloped": 0.0,
+    "mixed_use": 1500.0,
+}
+_SACOG_SQFT_PER_EMP_BY_CATEGORY: dict[str, float] = {
+    "urban": 400.0,
+    "agricultural": 300.0,
+    "industrial": 500.0,
+    "undeveloped": 0.0,
+    "mixed_use": 400.0,
+}
 
 # Demographic columns that can be allocated from Census block groups
 _DEMOGRAPHIC_COLUMNS = [
@@ -524,6 +546,13 @@ class BaseCanvasETL:
             for col in available_cols:
                 if col_values[col]:
                     gdf[col] = gdf[col].fillna(pd.Series(col_values[col]))
+        # Clamp negative equity values (known issue)
+        for col in ("median_income",):
+            if col in gdf.columns:
+                neg_count = int((gdf[col] < 0).sum())
+                if neg_count > 0:
+                    gdf.loc[gdf[col] < 0, col] = 0.0
+                    logger.warning('Clamped %d negative values in "%s" to 0.0', neg_count, col)
 
     def _allocate_from_source(
         self,
@@ -577,10 +606,17 @@ class BaseCanvasETL:
             ("bldg_area_attsf", "du_attsf", 0.9),
             ("bldg_area_mf", "du_mf", 0.7),
         ]
+        if "land_development_category" in gdf.columns:
+            cat = gdf["land_development_category"].fillna("urban")
+            default_sqft_per_du = cat.map(_SACOG_SQFT_PER_DU_BY_CATEGORY).fillna(1200.0)
+            default_sqft_per_emp = cat.map(_SACOG_SQFT_PER_EMP_BY_CATEGORY).fillna(300.0)
+        else:
+            default_sqft_per_du = pd.Series(_DEFAULT_BLDG_SQFT_PER_DU, index=gdf.index)
+            default_sqft_per_emp = pd.Series(_DEFAULT_BLDG_SQFT_PER_EMP, index=gdf.index)
         for bldg_col, du_col, factor in du_cols:
             if bldg_col in gdf.columns and du_col in gdf.columns:
                 gdf[bldg_col] = gdf[bldg_col].fillna(
-                    gdf[du_col] * _DEFAULT_BLDG_SQFT_PER_DU * factor
+                    gdf[du_col] * default_sqft_per_du * factor
                 )
 
         emp_bldg_map: dict[str, str] = {
@@ -599,7 +635,7 @@ class BaseCanvasETL:
         for bldg_col, emp_col in emp_bldg_map.items():
             if bldg_col in gdf.columns and emp_col in gdf.columns:
                 gdf[bldg_col] = gdf[bldg_col].fillna(
-                    gdf[emp_col] * _DEFAULT_BLDG_SQFT_PER_EMP
+                    gdf[emp_col] * default_sqft_per_emp
                 )
         return gdf
 
@@ -639,6 +675,7 @@ class BaseCanvasETL:
             "urban": "area_parcel_res",
             "agricultural": "area_parcel_emp_ag",
             "industrial": "area_parcel_emp",
+            "mixed_use": "area_parcel_mixed_use",
             "undeveloped": "area_parcel_no_use",
         }
 
@@ -670,15 +707,33 @@ class BaseCanvasETL:
             self._log("Using default irrigation estimates")
 
         if "residential_irrigated_area" in gdf.columns:
+            cat = gdf.get("land_development_category", None)
             res_area = gdf["area_parcel_res"].fillna(gdf["area_gross"])
-            gdf["residential_irrigated_area"] = gdf[
-                "residential_irrigated_area"
-            ].fillna(res_area * _DEFAULT_IRRIGATION_RES_FRAC)
+            if cat is not None:
+                cat = cat.fillna("urban")
+                for c, vals in _SACOG_IRRIGATION_FRAC_BY_CATEGORY.items():
+                    mask = cat == c
+                    gdf.loc[mask, "residential_irrigated_area"] = gdf.loc[
+                        mask, "residential_irrigated_area"
+                    ].fillna(res_area.loc[mask] * vals["residential"])
+            else:
+                gdf["residential_irrigated_area"] = gdf[
+                    "residential_irrigated_area"
+                ].fillna(res_area * _DEFAULT_IRRIGATION_RES_FRAC)
         if "commercial_irrigated_area" in gdf.columns:
+            cat = gdf.get("land_development_category", None)
             emp_area = gdf["area_parcel_emp"].fillna(gdf["area_gross"])
-            gdf["commercial_irrigated_area"] = gdf["commercial_irrigated_area"].fillna(
-                emp_area * _DEFAULT_IRRIGATION_COM_FRAC
-            )
+            if cat is not None:
+                cat = cat.fillna("urban")
+                for c, vals in _SACOG_IRRIGATION_FRAC_BY_CATEGORY.items():
+                    mask = cat == c
+                    gdf.loc[mask, "commercial_irrigated_area"] = gdf.loc[
+                        mask, "commercial_irrigated_area"
+                    ].fillna(emp_area.loc[mask] * vals["commercial"])
+            else:
+                gdf["commercial_irrigated_area"] = gdf[
+                    "commercial_irrigated_area"
+                ].fillna(emp_area * _DEFAULT_IRRIGATION_COM_FRAC)
         return gdf
 
     def _compute_intersection_density(self, gdf: gpd.GeoDataFrame) -> gpd.GeoDataFrame:
@@ -817,6 +872,38 @@ class BaseCanvasETL:
             cursor.execute("SELECT COUNT(*) FROM public.base_canvas")
             row_count = cursor.fetchone()[0]
             self._log(f"Total rows: {row_count}")
+        # Irrigation unit sanity check: irrigated area should not exceed parcel area
+        with connection.cursor() as cursor:
+            cursor.execute("""
+                SELECT COUNT(*) FROM public.base_canvas
+                WHERE residential_irrigated_area > area_parcel
+                   OR commercial_irrigated_area > area_parcel
+            """)
+            overflow = cursor.fetchone()[0]
+            if overflow > 0:
+                self._log(
+                    f"WARNING: {overflow} row(s) have irrigated area exceeding parcel area"
+                )
+            else:
+                self._log("Irrigation units OK — no area overflow")
+
+        # Equity column sanity check: must be non-negative
+        with connection.cursor() as cursor:
+            cursor.execute("""
+                SELECT COUNT(*) FROM public.base_canvas
+                WHERE median_income < 0
+                   OR rent_burden_pct < 0
+                   OR pct_minority < 0
+                   OR pct_college_educated < 0
+                   OR cost_burden_pct < 0
+            """)
+            neg_equity = cursor.fetchone()[0]
+            if neg_equity > 0:
+                self._log(
+                    f"WARNING: {neg_equity} row(s) have negative equity column values"
+                )
+            else:
+                self._log("Equity columns OK — all non-negative")
 
     # ── Helpers ─────────────────────────────────────────────────────────
 

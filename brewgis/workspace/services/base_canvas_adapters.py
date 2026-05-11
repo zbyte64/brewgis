@@ -221,8 +221,8 @@ _SACOG_LAND_USE_MAP: dict[str, str] = {
     "Airport": "industrial",
     "Agricultural Processing/Retail Employment": "industrial",
     # Mixed Use
-    "Residential/Retail Mixed Use Low": "urban",
-    "Residential/Retail Mixed Use High": "urban",
+    "Residential/Retail Mixed Use Low": "mixed_use",
+    "Residential/Retail Mixed Use High": "mixed_use",
     # Agricultural — classified as undeveloped in reference (emp_ag = 0)
     "Agriculture": "undeveloped",
     "Farm Home": "undeveloped",

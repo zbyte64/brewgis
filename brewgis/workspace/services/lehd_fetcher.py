@@ -158,6 +158,34 @@ _NAICS_SPLIT_RULES: dict[str, list[tuple[str, str | float | None]]] = {
     "CNS15": [("emp_public_admin", 1.0)],  # Public Administration (92)
     "CNS17": [("emp_military", 1.0)],  # Armed Forces
 }
+# SACOG-calibrated employment sub-sector proportions (from base canvas)
+# Each key is an aggregate sector; values are sub-sector proportions summing to 1.
+# Derived from reference database table sac_cnty_region_base_canvas.
+_SACOG_SUBSECTOR_PROPORTIONS: dict[str, dict[str, float]] = {
+    "emp_ret": {
+        "emp_retail_services": 76395 / 163859,
+        "emp_restaurant": 42520 / 163859,
+        "emp_accommodation": 3827 / 163859,
+        "emp_arts_entertainment": 7567 / 163859,
+        "emp_other_services": 33330 / 163859,
+    },
+    "emp_off": {
+        "emp_office_services": 236721 / 259466,
+        "emp_medical_services": 22745 / 259466,
+    },
+    "emp_pub": {
+        "emp_public_admin": 16924 / 44285,
+        "emp_education": 27361 / 44285,
+    },
+    "emp_ind": {
+        "emp_manufacturing": 46244 / 74702,
+        "emp_wholesale": 10672 / 74702,
+        "emp_transport_warehousing": 14229 / 74702,
+        "emp_utilities": 719 / 74702,
+        "emp_construction": 2838 / 74702,
+    },
+}
+
 
 # Aggregate employment columns used in base canvas
 AGGREGATE_MAPPINGS: dict[str, list[str]] = {
@@ -608,6 +636,25 @@ def _apply_naics_splits(
 
     return result
 
+def _apply_sacog_calibrated_splits(row: dict[str, float]) -> dict[str, float]:
+    """Apply SACOG-calibrated sub-sector proportions to aggregate columns.
+
+    Overrides CBP-based proportions with SACOG base canvas calibrated values
+    for aggregate sectors that have sub-sector breakdowns.
+
+    Args:
+        row: Dict with aggregate employment columns (emp_ret, emp_off, etc.).
+
+    Returns:
+        Dict mapping sub-sector column name to the SACOG-calibrated value.
+    """
+    result: dict[str, float] = {}
+    for agg_sector, sub_sectors in _SACOG_SUBSECTOR_PROPORTIONS.items():
+        agg_val = row.get(agg_sector, 0.0)
+        if agg_val > 0:
+            for sub_col, proportion in sub_sectors.items():
+                result[sub_col] = agg_val * proportion
+    return result
 
 # ── Aggregate Column Computation ──────────────────────────────────────
 
@@ -695,6 +742,18 @@ def fetch_lehd_block_data(
         record["emp"] = total_jobs
 
         records.append(record)
+    # SACOG region (Sacramento County, CA) override: use calibrated sub-sector proportions
+    # derived from the sac_cnty_region_base_canvas reference table.
+    # For other regions, the generic NAICS-based splits are used.
+    _IS_SACOG_REGION = state_fips == "06" and county_fips == "067"
+    if _IS_SACOG_REGION:
+        for record in records:
+            sacog_subs = _apply_sacog_calibrated_splits(record)
+            for col, val in sacog_subs.items():
+                record[col] = val
+            # Zero out sub-sectors with no SACOG reference (reference totals are 0)
+            for col in ("emp_agriculture", "emp_extraction", "emp_military"):
+                record[col] = 0.0
 
     if not records:
         msg = "No LODES records parsed."
