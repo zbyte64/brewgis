@@ -32,6 +32,14 @@ COUNTY_FIPS = "067"
 # Reference table names
 V1_BASE_CANVAS = "sac_cnty_region_base_canvas"
 V1_PARCELS = "sac_cnty_region_existing_land_use_parcels"
+# Density/rate columns — raw sums are not meaningful
+BREWGIS_ONLY_COLUMNS: list[str] = [
+    "median_income",
+    "rent_burden_pct",
+    "pct_minority",
+    "pct_college_educated",
+    "cost_burden_pct",
+]
 
 
 class Command(BaseCommand):
@@ -740,7 +748,15 @@ class Command(BaseCommand):
                 lines.append(
                     f"- **{col}**: {val:,.1f} (brewGIS only — no v1 equivalent)"
                 )
+
         lines.append("")
+        lines.append(
+            "> **Note:** median_income and percentage columns (rent_burden_pct, pct_minority, etc.) "
+            "are density/rate measures. Their raw summed values are not meaningful — they should be "
+            "compared as area-weighted averages, not totals."
+        )
+        lines.append("")
+
 
         # ── Equity Column Validation ────────────────────────────────────
         lines.append("## 5. Equity Column Validation (vs ACS County Estimates)")
@@ -772,33 +788,39 @@ class Command(BaseCommand):
             },
         }
 
+        density_rate_cols = set(BREWGIS_ONLY_COLUMNS)
+
         for col, info in acs_estimates.items():
             brew_val = brew.get(col)
             if brew_val is None:
                 continue
- 
+
             acs_val = info["value"]
-            note = info['source']
- 
-            # Flag anomalous values
-            anomaly = ""
-            if col == "median_income" and brew_val < 1000000:
-                anomaly = " ⚠"
-            elif brew_val < 100.0 and col != "median_income":
-                anomaly = " ⚠"
- 
-            if col == "median_income":
-                avg_str = f"${brew_val:,.0f}"
-                if isinstance(acs_val, float):
+            note = info["source"]
+
+            if col in density_rate_cols:
+                avg_str = "Sum not meaningful"
+                anomaly = ""
+            else:
+                anomaly = ""
+                if col == "median_income" and brew_val < 1000000:
+                    anomaly = " ⚠"
+                elif brew_val < 100.0:
+                    anomaly = " ⚠"
+
+                if col == "median_income":
+                    avg_str = f"${brew_val:,.0f}"
+                else:
+                    avg_str = f"{brew_val:,.1f}"
+
+            if isinstance(acs_val, float):
+                if col == "median_income":
                     acs_str = f"${acs_val:,.0f}"
                 else:
-                    acs_str = str(acs_val)
-            else:
-                avg_str = f"{brew_val:,.1f}"
-                if isinstance(acs_val, float):
                     acs_str = f"{acs_val:,.1f}%"
-                else:
-                    acs_str = str(acs_val)
+            else:
+                acs_str = str(acs_val)
+
             lines.append(f"| {col}{anomaly} | {avg_str} | {acs_str} | {note} |")
         # Check for anomalous equity values
         pct_min = brew.get("pct_minority", 0.0)

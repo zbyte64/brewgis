@@ -373,6 +373,26 @@ class BaseCanvasETL:
                 self._employment_source,
                 _EMPLOYMENT_COLUMNS,
             )
+            # Employment calibration: scale allocated values to match
+            # county-level totals from the source data.
+            try:
+                src_gdf = self._employment_source.fetch_block_data()
+                if not src_gdf.empty and "emp" in src_gdf.columns:
+                    county_total = float(src_gdf["emp"].sum())
+                    allocated_total = float(gdf["emp"].sum())
+                    if allocated_total > 0 and county_total > allocated_total:
+                        scale_factor = county_total / allocated_total
+                        emp_cols = [c for c in _EMPLOYMENT_COLUMNS if c in gdf.columns]
+                        for col in emp_cols:
+                            mask = gdf[col].notna() & (gdf[col] != 0)
+                            gdf.loc[mask, col] = gdf.loc[mask, col] * scale_factor
+                        scaled_total = float(gdf["emp"].sum())
+                        self._log(
+                            f"Employment calibration: {allocated_total:,.0f} → "
+                            f"{scaled_total:,.0f} (×{scale_factor:.3f})"
+                        )
+            except Exception:
+                self._log("Employment calibration skipped (source unavailable)")
         else:
             self._log("Using default employment values (fillna 0.0)")
             fill_map: dict[str, float] = {

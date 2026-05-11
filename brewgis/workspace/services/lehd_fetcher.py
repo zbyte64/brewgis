@@ -182,6 +182,10 @@ AGGREGATE_MAPPINGS: dict[str, list[str]] = {
     ],
     "emp_ret": [
         "emp_retail_services",
+        "emp_restaurant",
+        "emp_accommodation",
+        "emp_arts_entertainment",
+        "emp_other_services",
     ],
     "emp_off": [
         "emp_office_services",
