@@ -584,17 +584,17 @@ class BaseCanvasETL:
                 )
 
         emp_bldg_map: dict[str, str] = {
-            "bldg_area_retail_services": "emp_ret",
-            "bldg_area_restaurant": "emp_ret",
-            "bldg_area_accommodation": "emp_ret",
-            "bldg_area_arts_entertainment": "emp_ret",
-            "bldg_area_other_services": "emp_ret",
-            "bldg_area_office_services": "emp_off",
-            "bldg_area_public_admin": "emp_pub",
-            "bldg_area_education": "emp_pub",
-            "bldg_area_medical_services": "emp_off",
-            "bldg_area_transport_warehousing": "emp_ind",
-            "bldg_area_wholesale": "emp_ind",
+            "bldg_area_retail_services": "emp_retail_services",
+            "bldg_area_restaurant": "emp_restaurant",
+            "bldg_area_accommodation": "emp_accommodation",
+            "bldg_area_arts_entertainment": "emp_arts_entertainment",
+            "bldg_area_other_services": "emp_other_services",
+            "bldg_area_office_services": "emp_office_services",
+            "bldg_area_public_admin": "emp_public_admin",
+            "bldg_area_education": "emp_education",
+            "bldg_area_medical_services": "emp_medical_services",
+            "bldg_area_transport_warehousing": "emp_transport_warehousing",
+            "bldg_area_wholesale": "emp_wholesale",
         }
         for bldg_col, emp_col in emp_bldg_map.items():
             if bldg_col in gdf.columns and emp_col in gdf.columns:

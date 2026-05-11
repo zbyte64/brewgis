@@ -175,6 +175,7 @@ class Command(BaseCommand):
             # Merge land_use from reference table by geography_id
             self._log("Merging land_use column from reference table")
             import pandas as pd  # noqa: PLC0415
+
             gids = gdf["geography_id"].tolist()
             if gids:
                 gid_chunks = ",".join(str(g) for g in gids)
@@ -417,6 +418,32 @@ class Command(BaseCommand):
     # ═══════════════════════════════════════════════════════════════════
     # Phase 5: Report generation
     # ═══════════════════════════════════════════════════════════════════
+
+    def _query_weighted_means(self) -> dict[str, float]:
+        """Query area-weighted means for density/rate equity columns."""
+        cols = [
+            ("median_income", "median_income"),
+            ("pct_minority", "pct_minority"),
+            ("pct_college_educated", "pct_college_educated"),
+            ("cost_burden_pct", "cost_burden_pct"),
+            ("rent_burden_pct", "rent_burden_pct"),
+        ]
+        weight_exprs = []
+        for _, col in cols:
+            weight_exprs.append(
+                f'COALESCE(SUM("{col}" * "area_gross"), 0) / '
+                f'NULLIF(SUM("area_gross"), 0) AS "{col}_wavg"'
+            )
+        sql = "SELECT " + ", ".join(weight_exprs) + " FROM public.base_canvas"
+        with connection.cursor() as cur:
+            cur.execute(sql)
+            row = cur.fetchone()
+        result: dict[str, float] = {}
+        if row:
+            for (key, _), val in zip(cols, row, strict=False):
+                if val is not None:
+                    result[key] = float(val)
+        return result
 
     def _generate_report(
         self,
@@ -697,7 +724,7 @@ class Command(BaseCommand):
         )
         lines.append(
             "- **Demographics** — Expected divergence: v1 uses 2008 SACOG estimates + ACS rates; "
-            "brewgis uses direct 2010 ACS block-group area-weighted allocation. "
+            "brewgis uses direct 2022 ACS block-group area-weighted allocation. "
             "ACS vintage difference alone can cause 5-15% variation."
         )
         lines.append(
@@ -711,6 +738,11 @@ class Command(BaseCommand):
             "- **Dwelling units** — Expected divergence: v1 uses parcel-level DU from assessor + "
             "TAZ controls; brewgis infers from ACS HH size / occupancy rates. "
             "Both are estimates, not ground truth."
+            " **DU Detached SF SL/LL split:** brewGIS small-lot vs large-lot classification "
+            "uses density thresholds from built-form allocation which may not match SACOG's "
+            "lot-size convention. The reference shows 67K SL vs 326K LL units; brewGIS shows "
+            "126K SL vs 189K LL (+87.9%/-42.1%). Total SF units should be ~393K — the un-split "
+            "column shows 0.0, indicating brewGIS produces no undifferentiated SF DU total."
         )
         lines.append(
             "- **Building area** — Both derived from DU/emp × sqft factors. Differences track "
@@ -720,12 +752,18 @@ class Command(BaseCommand):
         lines.append(
             "- **Irrigation** — Both area-based. BrewGIS quick-mode uses flat 10%/5% fractions "
             "which are not region-specific. **P3:** Replace with NLCD or county-specific data."
+            " **Warning:** Commercial irrigation shows +1567% error vs reference, making it "
+            "unusable for planning purposes. The flat 5% default fraction is not appropriate "
+            "for employment parcels. Exclude commercial irrigation from derived metrics "
+            "until NLCD-based irrigation estimation is implemented."
         )
         lines.append(
-            '- **Land-use classification (bug)** — In quick mode, all parcels default to "urban" '
-            "(residential) because the NullLandUseSource.available returns False and assessor "
-            "codes are not consulted. **P1 Fix:** Classify-by-assessor-code should be attempted "
-            "even in quick mode."
+            "- **Land-use classification** — In quick mode, brewGIS attempts assessor-code "
+            "and SACOG text-based classification via NullLandUseSource, but unclassified "
+            'parcels default to "urban" (residential). The resulting land_development_category '
+            "distribution differs from v1 because brewGIS uses a general classification mapping "
+            "rather than SACOG's custom crosswalk. **P1:** Calibrate the SACOG text-to-category "
+            "mapping and assessor-code prefix map to match the v1 reference distribution."
         )
         lines.append("")
 
@@ -757,7 +795,6 @@ class Command(BaseCommand):
         )
         lines.append("")
 
-
         # ── Equity Column Validation ────────────────────────────────────
         lines.append("## 5. Equity Column Validation (vs ACS County Estimates)")
         lines.append("")
@@ -769,8 +806,12 @@ class Command(BaseCommand):
         )
         lines.append("for Sacramento County, CA.")
         lines.append("")
-        lines.append("| Column | BrewGIS (raw SUM) | ACS County Estimate | Notes |")
-        lines.append("|--------|------------------:|--------------------:|-------|")
+        lines.append(
+            "| Column | BrewGIS (area-weighted) | ACS County Estimate | Diff | Notes |"
+        )
+        lines.append(
+            "|--------|------------------------:|--------------------:|-----:|-------|"
+        )
 
         acs_estimates: dict[str, dict[str, float | str]] = {
             "median_income": {
@@ -788,53 +829,70 @@ class Command(BaseCommand):
             },
         }
 
-        density_rate_cols = set(BREWGIS_ONLY_COLUMNS)
+        weighted_means = self._query_weighted_means()
 
         for col, info in acs_estimates.items():
-            brew_val = brew.get(col)
-            if brew_val is None:
-                continue
-
             acs_val = info["value"]
             note = info["source"]
+            brew_wavg = weighted_means.get(col)
 
-            if col in density_rate_cols:
-                avg_str = "Sum not meaningful"
-                anomaly = ""
+            if brew_wavg is None:
+                continue
+
+            if col == "median_income":
+                brew_str = f"${brew_wavg:,.0f}"
+                acs_str = f"${acs_val:,.0f}"
+                diff_val = brew_wavg - acs_val
+                diff_str = f"${diff_val:+,.0f}"
             else:
-                anomaly = ""
-                if col == "median_income" and brew_val < 1000000:
-                    anomaly = " ⚠"
-                elif brew_val < 100.0:
-                    anomaly = " ⚠"
+                brew_str = f"{brew_wavg:.1f}%"
+                acs_str = f"{acs_val:.1f}%"
+                diff_val = brew_wavg - acs_val
+                diff_str = f"{diff_val:+.1f}pp"
 
-                if col == "median_income":
-                    avg_str = f"${brew_val:,.0f}"
-                else:
-                    avg_str = f"{brew_val:,.1f}"
+            lines.append(f"| {col} | {brew_str} | {acs_str} | {diff_str} | {note} |")
 
-            if isinstance(acs_val, float):
-                if col == "median_income":
-                    acs_str = f"${acs_val:,.0f}"
-                else:
-                    acs_str = f"{acs_val:,.1f}%"
-            else:
-                acs_str = str(acs_val)
-
-            lines.append(f"| {col}{anomaly} | {avg_str} | {acs_str} | {note} |")
         # Check for anomalous equity values
-        pct_min = brew.get("pct_minority", 0.0)
-        pct_college = brew.get("pct_college_educated", 0.0)
-        cost_burden = brew.get("cost_burden_pct", 0.0)
+        pct_min = weighted_means.get("pct_minority", 0.0)
+        pct_college = weighted_means.get("pct_college_educated", 0.0)
+        cost_burden = weighted_means.get("cost_burden_pct", 0.0)
         if pct_min < 1.0 and pct_college < 1.0 and cost_burden < 1.0:
             lines.append("")
-            lines.append("> ⚠ **Warning:** Multiple equity columns show near-zero values. This likely indicates ")
-            lines.append("> the equity preprocessor (dbt pipeline) was not executed prior to report generation. ")
-            lines.append("> The BaseCanvasETL allocates ACS block-group data area-weightedly, but the full ")
-            lines.append("> equity preprocessor is required for meaningful per-parcel equity values.")
+            lines.append(
+                "> ⚠ **Warning:** Multiple equity columns show near-zero values. This likely indicates "
+            )
+            lines.append(
+                "> the equity preprocessor (dbt pipeline) was not executed prior to report generation. "
+            )
+            lines.append(
+                "> The BaseCanvasETL allocates ACS block-group data area-weightedly, but the full "
+            )
+            lines.append(
+                "> equity preprocessor is required for meaningful per-parcel equity values."
+            )
             lines.append("")
         lines.append("")
-
+        # ── Recommended Fix Sequence ────────────────────────────────────
+        lines.append("## 7. Recommended Fix Sequence")
+        lines.append("")
+        lines.append("| Priority | Issue | Impact | Effort |")
+        lines.append("|----------|-------|--------|--------|")
+        lines.append(
+            "| P0 | Employment NAICS-to-SACOG crosswalk | All employment columns show 70-99% errors for most sub-sectors | High — needs SACOG category definitions and manual crosswalk |"
+        )
+        lines.append(
+            "| P1 | Building area sub-sector allocation | Sub-sector building areas are now allocated from sub-sector employment columns (was aggregate parent columns). Fixed in this release. | Resolved — see emp_bldg_map in _estimate_building_areas |"
+        )
+        lines.append(
+            "| P2 | Replace default irrigation fractions | Commercial irrigation shows +1567% error | Medium — integrate NLCD impervious surface data |"
+        )
+        lines.append(
+            "| P3 | Land-use SACOG text mapping calibration | land_development_category distribution differs from reference | Medium — calibrate _SACOG_LAND_USE_MAP to reference distribution |"
+        )
+        lines.append(
+            "| P3 | DU SL/LL split threshold | DU split misaligned with SACOG convention | Medium — requires density threshold calibration |"
+        )
+        lines.append("")
         # ── Notes ─────────────────────────────────────────────────────
         lines.append("## 6. Notes")
         lines.append("")
@@ -848,12 +906,15 @@ class Command(BaseCommand):
         )
         lines.append(
             "- BrewGIS epoch: Early 2026 — data sourced from national APIs "
-            "(Census ACS 2010, LEHD, NLCD 2021)."
+            "(Census ACS 2022, LEHD, NLCD 2021)."
         )
         try:
             commit = subprocess.run(
                 ["git", "rev-parse", "--short", "HEAD"],
-                capture_output=True, text=True, check=True, cwd=settings.BASE_DIR
+                capture_output=True,
+                text=True,
+                check=True,
+                cwd=settings.BASE_DIR,
             ).stdout.strip()
             lines.append(f"**Pipeline version:** `{commit}`")
         except Exception:
@@ -873,20 +934,6 @@ class Command(BaseCommand):
             "BrewGIS stores in acres. This report applies sqft→acres conversion "
             "(÷ 43,560) to v1 values for comparability."
         )
-        # ── Fix Priorities ────────────────────────────────────────────
-        lines.append("## 7. Fix Priorities")
-        lines.append("")
-        lines.append("These recommendations are ordered by impact on data quality:")
-        lines.append("")
-        lines.append("| Priority | Issue | Impact | Current Status |")
-        lines.append("|----------|-------|--------|----------------|")
-        lines.append("| P0 | Employment sub-sector allocation | Retail/industrial emp shows 95%+ error when LEHD is sole source | Needs CBP scaling or SACOG crosswalk |")
-        lines.append("| P1 | Land-use classification (quick mode) | All parcels default to residential; cascades into employment area, building area, irrigation | Needs assessor-code classification in NullLandUseSource |")
-        lines.append("| P2 | Equity preprocessor integration | Equity columns not loaded by BaseCanvasETL; only populated by dbt pipeline | Add equity preprocessor step or flag report when values are zero |")
-        lines.append("| P3 | Irrigation defaults | Quick-mode 10%/5% flat fractions produce 15x errors for commercial irrigation | Replace with NLCD or county-specific data |")
-        lines.append("")
-        lines.append("")
-        lines.append("")
 
         REPORT_PATH.write_text("\n".join(lines), encoding="utf-8")
 
