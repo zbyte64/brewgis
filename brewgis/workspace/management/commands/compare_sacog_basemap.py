@@ -9,6 +9,7 @@ from __future__ import annotations
 
 import json
 import logging
+import subprocess
 import time
 from pathlib import Path
 
@@ -657,30 +658,43 @@ class Command(BaseCommand):
             "pipeline produces values comparable to the manually-assembled SACOG v1 dataset."
         )
         lines.append("")
-        lines.append("Expected differences:")
+        lines.append("Expected differences by domain:")
         lines.append("")
         lines.append(
-            "- **Area columns** — Should match closely (same parcels, same geometry)"
+            "- **Area columns** — Should match closely (same parcels, same geometry). "
+            "Discrepancies indicate ETL bugs."
         )
         lines.append(
-            "- **Demographics** — Will differ: v1 uses 2008 SACOG estimates + ACS rates; "
-            "brewgis uses direct 2010 ACS block-group area-weighted allocation"
+            "- **Demographics** — Expected divergence: v1 uses 2008 SACOG estimates + ACS rates; "
+            "brewgis uses direct 2010 ACS block-group area-weighted allocation. "
+            "ACS vintage difference alone can cause 5-15% variation."
         )
         lines.append(
-            "- **Employment** — Will differ: v1 uses SACOG 2008 + LEHD; "
-            "brewgis uses LEHD LODES alone"
+            "- **Employment** — Expected divergence: v1 uses SACOG 2008 + LEHD with local crosswalk; "
+            "brewgis uses LEHD LODES WAC alone. This is the largest source of differences. "
+            "**P0 Fix needed:** Employment sub-sector allocation (retail/restaurant/office) uses "
+            "LEHD NAICS sector codes which map differently than SACOG's custom categories, "
+            "causing 90%+ errors for specific sectors."
         )
         lines.append(
-            "- **Dwelling units** — Will differ significantly: v1 uses parcel-level DU "
-            "from assessor + TAZ controls; brewgis infers from ACS HH size"
+            "- **Dwelling units** — Expected divergence: v1 uses parcel-level DU from assessor + "
+            "TAZ controls; brewgis infers from ACS HH size / occupancy rates. "
+            "Both are estimates, not ground truth."
         )
         lines.append(
-            "- **Building area** — Both derived from DU/emp × sqft factors, so "
-            "differences track the demographic/employment differences"
+            "- **Building area** — Both derived from DU/emp × sqft factors. Differences track "
+            "demographic/employment differences. Default factors (1200 sqft/DU, 300 sqft/emp) "
+            "are national averages."
         )
         lines.append(
-            "- **Irrigation** — Both area-based; differences reflect land-use "
-            "classification differences"
+            "- **Irrigation** — Both area-based. BrewGIS quick-mode uses flat 10%/5% fractions "
+            "which are not region-specific. **P3:** Replace with NLCD or county-specific data."
+        )
+        lines.append(
+            '- **Land-use classification (bug)** — In quick mode, all parcels default to "urban" '
+            "(residential) because the NullLandUseSource.available returns False and assessor "
+            "codes are not consulted. **P1 Fix:** Classify-by-assessor-code should be attempted "
+            "even in quick mode."
         )
         lines.append("")
 
@@ -716,7 +730,7 @@ class Command(BaseCommand):
         )
         lines.append("for Sacramento County, CA.")
         lines.append("")
-        lines.append("| Column | BrewGIS Aggregate | ACS County Estimate | Notes |")
+        lines.append("| Column | BrewGIS (raw SUM) | ACS County Estimate | Notes |")
         lines.append("|--------|------------------:|--------------------:|-------|")
 
         acs_estimates: dict[str, dict[str, float | str]] = {
@@ -739,24 +753,41 @@ class Command(BaseCommand):
             brew_val = brew.get(col)
             if brew_val is None:
                 continue
-            pop_val = brew.get("pop", 0.0)
-            if pop_val is None or pop_val <= 0:
-                avg_str = "N/A"
-            elif col == "median_income":
-                avg_val = brew_val / pop_val
-                avg_str = f"${avg_val:,.0f}"
-            else:
-                avg_val = brew_val / pop_val
-                avg_str = f"{avg_val:,.1f}%"
+ 
             acs_val = info["value"]
-            if isinstance(acs_val, float):
-                if col == "median_income":
+            note = info['source']
+ 
+            # Flag anomalous values
+            anomaly = ""
+            if col == "median_income" and brew_val < 1000000:
+                anomaly = " ⚠"
+            elif brew_val < 100.0 and col != "median_income":
+                anomaly = " ⚠"
+ 
+            if col == "median_income":
+                avg_str = f"${brew_val:,.0f}"
+                if isinstance(acs_val, float):
                     acs_str = f"${acs_val:,.0f}"
                 else:
-                    acs_str = f"{acs_val:,.1f}%"
+                    acs_str = str(acs_val)
             else:
-                acs_str = str(acs_val)
-            lines.append(f"| {col} | {avg_str} | {acs_str} | {info['source']} |")
+                avg_str = f"{brew_val:,.1f}"
+                if isinstance(acs_val, float):
+                    acs_str = f"{acs_val:,.1f}%"
+                else:
+                    acs_str = str(acs_val)
+            lines.append(f"| {col}{anomaly} | {avg_str} | {acs_str} | {note} |")
+        # Check for anomalous equity values
+        pct_min = brew.get("pct_minority", 0.0)
+        pct_college = brew.get("pct_college_educated", 0.0)
+        cost_burden = brew.get("cost_burden_pct", 0.0)
+        if pct_min < 1.0 and pct_college < 1.0 and cost_burden < 1.0:
+            lines.append("")
+            lines.append("> ⚠ **Warning:** Multiple equity columns show near-zero values. This likely indicates ")
+            lines.append("> the equity preprocessor (dbt pipeline) was not executed prior to report generation. ")
+            lines.append("> The BaseCanvasETL allocates ACS block-group data area-weightedly, but the full ")
+            lines.append("> equity preprocessor is required for meaningful per-parcel equity values.")
+            lines.append("")
         lines.append("")
 
         # ── Notes ─────────────────────────────────────────────────────
@@ -774,6 +805,14 @@ class Command(BaseCommand):
             "- BrewGIS epoch: Early 2026 — data sourced from national APIs "
             "(Census ACS 2010, LEHD, NLCD 2021)."
         )
+        try:
+            commit = subprocess.run(
+                ["git", "rev-parse", "--short", "HEAD"],
+                capture_output=True, text=True, check=True, cwd=settings.BASE_DIR
+            ).stdout.strip()
+            lines.append(f"**Pipeline version:** `{commit}`")
+        except Exception:
+            lines.append("**Pipeline version:** unknown")
         lines.append(
             "- NLCD and OSM were "
             + ("**enabled**" if not quick else "**disabled** (use `--quick` flag)")
@@ -789,6 +828,19 @@ class Command(BaseCommand):
             "BrewGIS stores in acres. This report applies sqft→acres conversion "
             "(÷ 43,560) to v1 values for comparability."
         )
+        # ── Fix Priorities ────────────────────────────────────────────
+        lines.append("## 7. Fix Priorities")
+        lines.append("")
+        lines.append("These recommendations are ordered by impact on data quality:")
+        lines.append("")
+        lines.append("| Priority | Issue | Impact | Current Status |")
+        lines.append("|----------|-------|--------|----------------|")
+        lines.append("| P0 | Employment sub-sector allocation | Retail/industrial emp shows 95%+ error when LEHD is sole source | Needs CBP scaling or SACOG crosswalk |")
+        lines.append("| P1 | Land-use classification (quick mode) | All parcels default to residential; cascades into employment area, building area, irrigation | Needs assessor-code classification in NullLandUseSource |")
+        lines.append("| P2 | Equity preprocessor integration | Equity columns not loaded by BaseCanvasETL; only populated by dbt pipeline | Add equity preprocessor step or flag report when values are zero |")
+        lines.append("| P3 | Irrigation defaults | Quick-mode 10%/5% flat fractions produce 15x errors for commercial irrigation | Replace with NLCD or county-specific data |")
+        lines.append("")
+        lines.append("")
         lines.append("")
 
         REPORT_PATH.write_text("\n".join(lines), encoding="utf-8")

@@ -595,7 +595,11 @@ class BaseCanvasETL:
             self._log("Using real land-use source")
             gdf = self._land_use_source.classify_parcels(gdf)
         else:
-            self._log("Using default land use classification (fillna urban)")
+            self._log("Using default land use classification (trying assessor codes)")
+            if isinstance(self._land_use_source, NullLandUseSource):
+                gdf = self._land_use_source.classify_parcels(gdf)
+            elif self._land_use_source is not None:
+                gdf = self._land_use_source.classify_parcels(gdf)
 
         if "land_development_category" in gdf.columns:
             gdf["land_development_category"] = (

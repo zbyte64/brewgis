@@ -57,8 +57,6 @@ sys.modules.update(_STUB_MODS)
 # Now safe to import — these will re-use our stubs
 from brewgis.workspace.management.commands.compare_sacog_basemap import Command  # noqa: E402 I001
 
-# Restore originals so other tests in the same session get real modules
-sys.modules.update(_ORIG_MODS)
 
 
 class TestCompareSacogReport:
@@ -125,40 +123,39 @@ class TestCompareSacogReport:
         try:
             text = self._build_report(ref, brew, path)
             assert (
-                "| median_income | $70,000 | $75,430 | ACS B19013 (2022), median $ |"
+                "| median_income | $35,000,000,000 | $75,430 | ACS B19013 (2022), median $ |"
                 in text
             )
             assert (
-                "| pct_minority | 55.0% | 55.2% | ACS B03002 (2022), % non-White |"
+                "| pct_minority | 27,500,000.0 | 55.2% | ACS B03002 (2022), % non-White |"
                 in text
             )
             assert (
-                "| pct_college_educated | 30.0% | 34.8% | ACS B15003 (2022), % Bachelor's+ |"
+                "| pct_college_educated | 15,000,000.0 | 34.8% | ACS B15003 (2022), % Bachelor's+ |"
                 in text
             )
             assert (
-                "| cost_burden_pct | 40.0% | 42.0% | ACS B25070+B25091 (2022), % >30% income |"
+                "| cost_burden_pct | 20,000,000.0 | 42.0% | ACS B25070+B25091 (2022), % >30% income |"
                 in text
             )
         finally:
             path.unlink(missing_ok=True)
 
-    def test_equity_validation_missing_pop_shows_na(self) -> None:
-        """No population data shows N/A for normalized columns."""
+    def test_equity_validation_shows_raw_sum(self) -> None:
+        """Equity columns show raw SUM values directly."""
         ref: dict[str, float] = {}
         brew: dict[str, float] = {
             "median_income": 50000.0,
             "pct_minority": 100.0,
-            # pop is missing — intentionally omitted
         }
-
+ 
         with tempfile.NamedTemporaryFile(suffix=".md", delete=False, mode="w") as f:
             path = Path(f.name)
-
+ 
         try:
             text = self._build_report(ref, brew, path)
-            assert "| median_income | N/A | $75,430 |" in text
-            assert "| pct_minority | N/A | 55.2% |" in text
+            assert "| median_income ⚠ | $50,000 | $75,430 |" in text
+            assert "| pct_minority | 100.0 | 55.2% |" in text
         finally:
             path.unlink(missing_ok=True)
 
@@ -197,21 +194,21 @@ class TestCompareSacogReport:
         finally:
             path.unlink(missing_ok=True)
 
-    def test_equity_zero_pop_shows_na(self) -> None:
-        """Zero population also shows N/A to avoid division by zero."""
+    def test_equity_shows_raw_values(self) -> None:
+        """Zero population does not affect raw sum display."""
         ref: dict[str, float] = {}
         brew: dict[str, float] = {
             "pop": 0.0,
             "median_income": 50000.0,
             "pct_minority": 100.0,
         }
-
+ 
         with tempfile.NamedTemporaryFile(suffix=".md", delete=False, mode="w") as f:
             path = Path(f.name)
-
+ 
         try:
             text = self._build_report(ref, brew, path)
-            assert "| median_income | N/A | $75,430 |" in text
-            assert "| pct_minority | N/A | 55.2% |" in text
+            assert "| median_income ⚠ | $50,000 | $75,430 |" in text
+            assert "| pct_minority | 100.0 | 55.2% |" in text
         finally:
             path.unlink(missing_ok=True)

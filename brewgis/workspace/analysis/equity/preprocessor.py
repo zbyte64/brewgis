@@ -73,10 +73,26 @@ def run_acs_equity_preprocessor(vars_: dict) -> dict:
                 f"""
                 UPDATE {target_schema}.{base_canvas_table} AS bc
                 SET
-                    median_income = COALESCE(bc.median_income, acs.median_income, {FALLBACK_EQUITY['median_income']}),
-                    rent_burden_pct = COALESCE(bc.rent_burden_pct, acs.rent_burden_pct, {FALLBACK_EQUITY['rent_burden_pct']}),
-                    pct_minority = COALESCE(bc.pct_minority, acs.pct_minority, {FALLBACK_EQUITY['pct_minority']}),
-                    pct_college_educated = COALESCE(bc.pct_college_educated, acs.pct_college_educated, {FALLBACK_EQUITY['pct_college_educated']})
+                    median_income = CASE
+                        WHEN bc.median_income IS NULL OR bc.median_income = 0
+                        THEN COALESCE(acs.median_income, {FALLBACK_EQUITY['median_income']})
+                        ELSE bc.median_income
+                    END,
+                    rent_burden_pct = CASE
+                        WHEN bc.rent_burden_pct IS NULL OR bc.rent_burden_pct = 0
+                        THEN COALESCE(acs.rent_burden_pct, {FALLBACK_EQUITY['rent_burden_pct']})
+                        ELSE bc.rent_burden_pct
+                    END,
+                    pct_minority = CASE
+                        WHEN bc.pct_minority IS NULL OR bc.pct_minority = 0
+                        THEN COALESCE(acs.pct_minority, {FALLBACK_EQUITY['pct_minority']})
+                        ELSE bc.pct_minority
+                    END,
+                    pct_college_educated = CASE
+                        WHEN bc.pct_college_educated IS NULL OR bc.pct_college_educated = 0
+                        THEN COALESCE(acs.pct_college_educated, {FALLBACK_EQUITY['pct_college_educated']})
+                        ELSE bc.pct_college_educated
+                    END
                 FROM {source_schema}.{acs_table} AS acs
                 WHERE ST_Intersects(bc.geometry, acs.geom)
                 """
@@ -102,14 +118,30 @@ def _apply_uniform_equity_defaults(target_schema: str, base_canvas_table: str, v
             f"""
             UPDATE {target_schema}.{base_canvas_table}
             SET
-                median_income = COALESCE(median_income, {FALLBACK_EQUITY['median_income']}),
-                rent_burden_pct = COALESCE(rent_burden_pct, {FALLBACK_EQUITY['rent_burden_pct']}),
-                pct_minority = COALESCE(pct_minority, {FALLBACK_EQUITY['pct_minority']}),
-                pct_college_educated = COALESCE(pct_college_educated, {FALLBACK_EQUITY['pct_college_educated']})
-            WHERE median_income IS NULL
-               OR rent_burden_pct IS NULL
-               OR pct_minority IS NULL
-               OR pct_college_educated IS NULL
+                median_income = CASE
+                    WHEN median_income IS NULL OR median_income = 0
+                    THEN {FALLBACK_EQUITY['median_income']}
+                    ELSE median_income
+                END,
+                rent_burden_pct = CASE
+                    WHEN rent_burden_pct IS NULL OR rent_burden_pct = 0
+                    THEN {FALLBACK_EQUITY['rent_burden_pct']}
+                    ELSE rent_burden_pct
+                END,
+                pct_minority = CASE
+                    WHEN pct_minority IS NULL OR pct_minority = 0
+                    THEN {FALLBACK_EQUITY['pct_minority']}
+                    ELSE pct_minority
+                END,
+                pct_college_educated = CASE
+                    WHEN pct_college_educated IS NULL OR pct_college_educated = 0
+                    THEN {FALLBACK_EQUITY['pct_college_educated']}
+                    ELSE pct_college_educated
+                END
+            WHERE median_income IS NULL OR median_income = 0
+               OR rent_burden_pct IS NULL OR rent_burden_pct = 0
+               OR pct_minority IS NULL OR pct_minority = 0
+               OR pct_college_educated IS NULL OR pct_college_educated = 0
             """
         )
         filled = cursor.rowcount
