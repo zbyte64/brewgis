@@ -141,6 +141,37 @@ class Command(BaseCommand):
         brew_totals = self._query_brewgis_totals()
         if brew_totals:
             self._print_totals(brew_totals, "BrewGIS")
+        # ── Phase 4.5: Populate geography_id in base_canvas for correlation join ──
+        self.stdout.write("\n── Phase 4.5: Populating geography_id in base_canvas ──")
+        if parcel_ids:
+            with connection.cursor() as cur:
+                cur.execute(
+                    "ALTER TABLE public.base_canvas ADD COLUMN IF NOT EXISTS geography_id INTEGER"
+                )
+                gid_list = ", ".join(str(g) for g in parcel_ids)
+                cur.execute(
+                    f"""
+                    WITH bc_ranked AS (
+                        SELECT id, ROW_NUMBER() OVER (ORDER BY id) AS rn
+                        FROM public.base_canvas
+                    ),
+                    ref_ranked AS (
+                        SELECT geography_id, ROW_NUMBER() OVER (ORDER BY geography_id) AS rn
+                        FROM {V1_PARCELS}
+                        WHERE geography_id IN ({gid_list})
+                    )
+                    UPDATE public.base_canvas bc
+                    SET geography_id = ref_ranked.geography_id
+                    FROM ref_ranked
+                    INNER JOIN bc_ranked ON ref_ranked.rn = bc_ranked.rn
+                    WHERE bc.id = bc_ranked.id
+                    """
+                )
+                self.stdout.write(
+                    f"  Populated geography_id for {len(parcel_ids):,} parcels"
+                )
+        else:
+            self.stdout.write("  Skipping (no geography_ids available)")
 
         # ── Phase 5: Generate comparison report ────────────────────────
         self.stdout.write("\n── Phase 5: Generating comparison report ──")
@@ -199,6 +230,7 @@ class Command(BaseCommand):
         sql = f"""
             SELECT *, wkb_geometry AS geometry
             FROM {V1_PARCELS}
+            ORDER BY geography_id
             {limit_clause}
         """
         gdf = gpd.GeoDataFrame.from_postgis(sql, connection, geom_col="geometry")
@@ -454,21 +486,23 @@ class Command(BaseCommand):
         )
 
         v3_to_v1 = get_v1_columns_for_verification()
-        # Filter to columns that exist in both tables
+        # Filter to numeric columns that exist in both tables
+        numeric_types = {
+            "numeric", "double precision", "real", "integer", "bigint", "smallint",
+        }
         with connection.cursor() as cur:
-            # Get v3 columns present in brewgis base_canvas
+            # Get v3 column names and types from brewgis base_canvas
             cur.execute(
-                "SELECT column_name FROM information_schema.columns "
+                "SELECT column_name, data_type FROM information_schema.columns "
                 "WHERE table_schema = 'public' AND table_name = 'base_canvas'"
             )
-            brew_cols = {r[0] for r in cur.fetchall()}
-            # Get v1 columns present in reference
+            brew_cols = {r[0] for r in cur.fetchall() if r[1] in numeric_types}
+            # Get v1 column names and types from reference
             cur.execute(
-                "SELECT column_name FROM information_schema.columns "
+                "SELECT column_name, data_type FROM information_schema.columns "
                 "WHERE table_schema = 'public' AND table_name = 'sac_cnty_region_base_canvas'"
             )
-            ref_cols = {r[0] for r in cur.fetchall()}
-
+            ref_cols = {r[0] for r in cur.fetchall() if r[1] in numeric_types}
         corr_exprs: list[str] = []
         valid_v3_cols: list[str] = []
         for v3_col, v1_col in v3_to_v1.items():
@@ -477,10 +511,8 @@ class Command(BaseCommand):
                     f'    CORR(bc."{v3_col}", ref."{v1_col}") AS "{v3_col}"'
                 )
                 valid_v3_cols.append(v3_col)
-
         if not corr_exprs:
             return {}
-
         corr_sql = (
             "SELECT\n"
             + ",\n".join(corr_exprs)
@@ -490,7 +522,6 @@ class Command(BaseCommand):
         with connection.cursor() as cur:
             cur.execute(corr_sql)
             row = cur.fetchone()
-
         result: dict[str, float] = {}
         if row:
             for v3_col, val in zip(valid_v3_cols, row, strict=False):
