@@ -109,6 +109,13 @@ test-all:  ## Run all tests sequentially (safe for full coverage)
 test-dbt:  ## Run dbt seed + run + test (seed-based models only)
 	$(COMPOSE_RUN) bash -c 'cd brewgis/dbt_project && dbt seed --profiles-dir . --full-refresh && dbt run --profiles-dir . --select base_canvas_geometry+ && dbt test --profiles-dir . --select base_canvas_geometry+'
 
+.PHONY: test-mcp
+test-mcp:  ## Run MCP server tests (models marker only)
+	$(COMPOSE_RUN) pytest tests/workspace/test_mcp_server.py -m models -v
+
+.PHONY: mcp-up
+mcp-up:  ## Start MCP server in Docker
+	$(COMPOSE_RUN) mcp
 .PHONY: coverage
 coverage:  ## Run tests with coverage report and fail if below threshold
 	$(COMPOSE_RUN) bash -c 'coverage run -m pytest -m "not e2e" --timeout=300 && coverage report --fail-under=60'

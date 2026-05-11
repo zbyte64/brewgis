@@ -104,3 +104,12 @@ services:
     ports:
       - '5555:5555'
     command: /start-flower
+  mcp:
+    <<: *django
+    image: brewgis_local_mcp
+    container_name: brewgis_local_mcp
+    depends_on:
+      - redis
+      - postgres
+    ports: []
+    command: /start-mcp
