@@ -677,13 +677,11 @@ class BaseCanvasETL:
         return gdf
 
     def _write_to_db(self, gdf: gpd.GeoDataFrame, truncate: bool) -> int:
-        """Write the GeoDataFrame to ``public.base_canvas`` using bulk INSERT.
-
-        Uses ``psycopg2.extras.execute_values`` for a single multi-row
-        INSERT (~100× faster than row-by-row ``cursor.execute``).
+        """Write the GeoDataFrame to ``public.base_canvas`` using a multi-row INSERT.
+        Bulk INSERT using a single ``cursor.execute`` with a multi-row VALUES clause,
+        batched in pages of 5000 rows to keep the query size manageable.
+        Works with both psycopg2 and psycopg v3 (psycopg[c]) backends.
         """
-        import psycopg2.extras  # noqa: PLC0415 — bundled with psycopg2
-
         if truncate:
             with connection.cursor() as cursor:
                 cursor.execute(
@@ -694,19 +692,7 @@ class BaseCanvasETL:
             c for c in BaseCanvasSchema.COLUMN_NAMES if c in gdf.columns and c != "id"
         ]
         col_names = ", ".join(f'"{c}"' for c in insert_cols)
-        has_geom = "geometry" in insert_cols
 
-        # Build a template string.  Geometry values are WKT strings wrapped
-        # in ST_GeomFromText — execute_values substitutes %s for each value.
-        if has_geom:
-            template = "(" + ", ".join(
-                "ST_GeomFromText(%s, 4326)" if c == "geometry" else "%s"
-                for c in insert_cols
-            ) + ")"
-        else:
-            template = "(" + ", ".join("%s" for _ in insert_cols) + ")"
-
-        sql = f"INSERT INTO public.base_canvas ({col_names}) VALUES %s"
         rows: list[tuple[object, ...]] = []
 
         for _, row in gdf.iterrows():
@@ -732,14 +718,19 @@ class BaseCanvasETL:
                     else:
                         vals.append(val)
             rows.append(tuple(vals))
-        # Force Django to open the connection, then grab the raw psycopg2
-        # connection for execute_values (which needs it to determine encoding).
-        connection.ensure_connection()
-        raw_conn = connection.connection
-        with raw_conn.cursor() as cur:
-            psycopg2.extras.execute_values(
-                cur, sql, rows, template=template, page_size=5000
-            )
+        # Build a single-row placeholder: ( %s, %s, ST_GeomFromText(%s, 4326), ... )
+        row_placeholder = "(" + ", ".join(
+            "ST_GeomFromText(%s, 4326)" if c == "geometry" else "%s"
+            for c in insert_cols
+        ) + ")"
+        sql_base = f"INSERT INTO public.base_canvas ({col_names}) VALUES "
+        page_size = 5000
+        with connection.cursor() as cursor:
+            for i in range(0, len(rows), page_size):
+                batch = rows[i : i + page_size]
+                values_clause = ", ".join(row_placeholder for _ in batch)
+                flat_values = [val for row in batch for val in row]
+                cursor.execute(sql_base + values_clause, flat_values)
 
         rows_written = len(gdf)
         self._log(f"Wrote {rows_written} rows to public.base_canvas")
