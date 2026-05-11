@@ -16,6 +16,7 @@ from django.db import connection
 from django.db import transaction
 
 from brewgis.workspace.services.base_canvas_schema import BaseCanvasSchema
+from sqlalchemy import DDL
 
 if TYPE_CHECKING:
     from brewgis.workspace.models import Scenario
@@ -138,8 +139,11 @@ def create_canvas_view(scenario: Scenario, base_table: str) -> str:
         scenario_id=scenario.pk,
     )
 
+    ddl = DDL(
+        "CREATE SCHEMA IF NOT EXISTS {schema}"
+    )
     with transaction.atomic(), connection.cursor() as cursor:
-        cursor.execute(f"CREATE SCHEMA IF NOT EXISTS {_qi(view_schema)}")
+        cursor.execute(ddl.statement.format(schema=_qi(view_schema)))
         cursor.execute(sql)
 
     return f"{view_schema}.{view_name}"
@@ -159,5 +163,9 @@ def drop_canvas_view(scenario: Scenario) -> None:
     view_schema = scenario.target_schema
     q_view = _qi(f"{view_schema}.{view_name}")
 
+    ddl = DDL(
+        "DROP VIEW IF EXISTS {view} CASCADE"
+    )
+
     with connection.cursor() as cursor:
-        cursor.execute(f"DROP VIEW IF EXISTS {q_view} CASCADE")
+        cursor.execute(ddl.statement.format(view=q_view))

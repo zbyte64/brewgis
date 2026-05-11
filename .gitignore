@@ -288,3 +288,7 @@ brewgis/media/
 brewgis/static/js/brew-gis-map.js
 brewgis/static/js/brew-gis-map.js.map
 .cache/
+
+# JupySQL notebooks — track source, ignore output cells
+notebooks/
+!notebooks/*.ipynb

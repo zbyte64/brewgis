@@ -33,38 +33,44 @@
 
     Materialized as: {{ var('target_schema') }}.scenario_summary_{{ var('scenario_id') }}
 #}
-{%- set scenario_id = var('scenario_id') -%}
-{{ config(alias='scenario_summary_' ~ scenario_id) }}
+{{ set_vars({'scenario_id': 'demo'}) }}
+{{ config(alias='scenario_summary_' ~ var('scenario_id')) }}
+
+{% set metrics = [
+    ('core_end_state', 'population'),
+    ('core_end_state', 'households'),
+    ('core_end_state', 'dwelling_units_total'),
+    ('core_end_state', 'employment_total'),
+    ('vmt', 'vmt_total'),
+    ('total_ghg', 'co2e_total'),
+    ('water_demand', 'water_demand_af'),
+    ('land_consumption', 'acres_consumed'),
+    ('health_impacts', 'net_dalys'),
+] %}
 
 WITH metrics AS (
     SELECT
-        (SELECT COALESCE(SUM(population), 0) FROM {{ ref('core_end_state') }}) AS total_population,
-        (SELECT COALESCE(SUM(households), 0) FROM {{ ref('core_end_state') }}) AS total_households,
-        (SELECT COALESCE(SUM(dwelling_units_total), 0) FROM {{ ref('core_end_state') }}) AS total_du,
-        (SELECT COALESCE(SUM(employment_total), 0) FROM {{ ref('core_end_state') }}) AS total_employment,
-        (SELECT COALESCE(SUM(vmt_total), 0) FROM {{ ref('vmt') }}) AS total_vmt,
-        (SELECT COALESCE(AVG(vmt_per_capita), 0) FROM {{ ref('vmt') }} WHERE population > 0) AS avg_vmt_per_capita,
-        (SELECT COALESCE(SUM(co2e_total), 0) FROM {{ ref('total_ghg') }}) AS total_co2e,
-        (SELECT COALESCE(AVG(cost_burden_pct), 0) FROM {{ ref('housing_cost_burden') }}) AS avg_cost_burden_pct,
+        {% for table, col in metrics %}
+        {{ summarize_metric(table, col) }}{% if not loop.last %},{% endif %}
+        {% endfor %},
         (SELECT COALESCE(SUM(population), 0) FROM {{ ref('core_end_state') }}
             WHERE geom IS NOT NULL
         ) AS total_pop_for_co2e_per_capita,
-        (SELECT COALESCE(AVG(sprawl_index), 0) FROM {{ ref('sprawl_index') }}) AS avg_sprawl_index,
-        (SELECT COALESCE(SUM(water_demand_af), 0) FROM {{ ref('water_demand') }}) AS total_water_demand,
         (SELECT COALESCE(SUM(electricity_mwh + gas_mwh), 0) FROM {{ ref('energy_demand') }}) AS total_energy_demand,
-        (SELECT COALESCE(SUM(acres_consumed), 0) FROM {{ ref('land_consumption') }}) AS total_land_consumed,
+        (SELECT COALESCE(AVG(vmt_per_capita), 0) FROM {{ ref('vmt') }} WHERE population > 0) AS avg_vmt_per_capita,
+        (SELECT COALESCE(AVG(cost_burden_pct), 0) FROM {{ ref('housing_cost_burden') }}) AS avg_cost_burden_pct,
+        (SELECT COALESCE(AVG(sprawl_index), 0) FROM {{ ref('sprawl_index') }}) AS avg_sprawl_index,
         (SELECT COALESCE(AVG(impervious_pct), 0) FROM {{ ref('land_consumption') }} WHERE gross_acres > 0) AS avg_impervious_pct,
-        (SELECT COALESCE(SUM(net_dalys), 0) FROM {{ ref('health_impacts') }}) AS total_net_dalys,
         (SELECT COALESCE(AVG(displacement_risk_category), 0)
             FROM {{ ref('displacement_risk') }}
             WHERE displacement_risk_category IN ('at_risk', 'displacement_pressure')
         ) AS displacement_risk_parcels
 )
 SELECT
-    '{{ scenario_id }}'::text AS scenario_id,
+    '{{ var('scenario_id') }}'::text AS scenario_id,
     total_population,
     total_households,
-    total_du AS dwelling_units_total,
+    total_dwelling_units_total AS dwelling_units_total,
     total_employment,
     total_vmt AS vmt_total,
     ROUND((total_vmt / NULLIF(total_population, 0))::numeric, 2) AS vmt_per_capita,

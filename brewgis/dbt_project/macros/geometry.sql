@@ -15,10 +15,10 @@
 {% macro st_area_projected(geom) %}
     {%- set srid = var('projected_srid', none) -%}
     {%- if srid %}
-        ST_Area(ST_Transform({{ geom }}, {{ srid }})) / 4046.86
+        public.acres(ST_Transform({{ geom }}, {{ srid }}))
     {%- else %}
         -- WARNING: projected_srid not set. Area calculations in SRID 4326 are meaningless.
         -- Set projected_srid to a projected CRS (e.g. 32611 for UTM zone 11N).
-        ST_Area({{ geom }}) / 4046.86
+        public.acres({{ geom }})
     {%- endif %}
 {% endmacro %}

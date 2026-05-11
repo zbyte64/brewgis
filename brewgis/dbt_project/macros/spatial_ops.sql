@@ -15,7 +15,7 @@
 {% macro constraint_acres(table_name, geom_col="geom", schema=var("source_schema")) %}
     COALESCE(
         (
-            SELECT SUM(ST_Area(ST_Intersection(p.geom, c.{{ geom_col }}))) / 4046.86
+            SELECT SUM(public.intersection_acres(p.geom, c.{{ geom_col }}))
             FROM {{ schema }}.{{ table_name }} c
             WHERE ST_Intersects(p.geom, c.{{ geom_col }})
         ),
@@ -36,13 +36,12 @@
     developable acreage (e.g., 100 for total loss, 50 for partial).
 #}
 {% macro apply_constraint(acres_before_expr, table_name, geom_col, discount_pct, schema=var("source_schema")) %}
-    GREATEST(
-        0,
+    public.clamp_non_negative(
         {{ acres_before_expr }}
         - (
             COALESCE(
                 (
-                    SELECT SUM(ST_Area(ST_Intersection(p.geom, c.{{ geom_col }}))) / 4046.86
+                    SELECT SUM(public.intersection_acres(p.geom, c.{{ geom_col }}))
                     FROM {{ schema }}.{{ table_name }} c
                     WHERE ST_Intersects(p.geom, c.{{ geom_col }})
                 ),

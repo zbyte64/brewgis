@@ -41,3 +41,7 @@ pytest-django==4.9.0  # https://github.com/pytest-dev/pytest-django
 pytest-bdd==8.1.0  # https://github.com/pytest-dev/pytest-bdd
 pytest-playwright==0.7.0  # https://github.com/microsoft/pytest-playwright
 playwright==1.52.0  # https://github.com/microsoft/playwright-python
+
+# Interactive analysis
+# ------------------------------------------------------------------------------
+jupysql>=0.10,<1.0  # https://github.com/ploomber/jupysql — SQL magics for notebooks
