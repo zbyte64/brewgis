@@ -458,13 +458,25 @@ class BaseCanvasETL:
     ) -> None:
         """Run PostGIS area-weighted allocation, modifying gdf in place.
 
-        Creates temp tables for source and target, runs a single batch SQL
-        query for area-weighted allocation, and writes results back to gdf.
-        Raises RuntimeError if no spatial overlaps are found.
+        For columns with ``aggregation_hint="sum"`` (default): spreads source
+        polygon totals across target parcels proportionally by overlap area.
+        For columns with ``aggregation_hint="avg"`` (rates, percentages, medians):
+        computes area-weighted averages of source values per target parcel.
         """
+        # ── Split columns by aggregation hint ─────────────────────────
+        sum_cols: list[str] = []
+        avg_cols: list[str] = []
+        for col in available_cols:
+            col_def = BaseCanvasSchema.get(col)
+            if col_def and col_def.aggregation_hint == "avg":
+                avg_cols.append(col)
+            else:
+                sum_cols.append(col)
+
         with connection.cursor() as cursor:
             # ── Create temp tables (drop first to allow reuse) ──────
-            col_defs = ", ".join(f'"{c}" DOUBLE PRECISION' for c in available_cols)
+            all_cols = sum_cols + avg_cols
+            col_defs = ", ".join(f'"{c}" DOUBLE PRECISION' for c in all_cols)
             cursor.execute(f"""
                 DROP TABLE IF EXISTS _etl_src;
                 CREATE TEMP TABLE _etl_src (
@@ -484,12 +496,12 @@ class BaseCanvasETL:
 
             # ── Insert source geometries (4326 -> 6933 in SQL) ─────
             geom_expr = "ST_Transform(ST_SetSRID(ST_GeomFromText(%s), 4326), 6933)"
-            col_names = ", ".join(f'"{c}"' for c in available_cols)
-            val_placeholders = ", ".join(["%s"] * len(available_cols))
+            col_names = ", ".join(f'"{c}"' for c in all_cols)
+            val_placeholders = ", ".join(["%s"] * len(all_cols))
 
             for _, row in src_gdf.iterrows():
                 params = [row.geometry.wkt] + [
-                    None if pd.isna(row[c]) else float(row[c]) for c in available_cols
+                    None if pd.isna(row[c]) else float(row[c]) for c in all_cols
                 ]
                 cursor.execute(
                     f"INSERT INTO _etl_src (geometry, {col_names}) "
@@ -509,26 +521,48 @@ class BaseCanvasETL:
                 )
                 idx_map[rid] = orig_idx
 
-            # ── Batch SQL query for all columns ─────────────────────
-            col_raw_exprs = ", ".join(f's."{c}" AS "{c}_raw"' for c in available_cols)
-            col_sum_exprs = ", ".join(
-                f'SUM(COALESCE("{c}_raw", 0) * weight) AS "{c}"' for c in available_cols
-            )
+            # ── Intersection CTE — compute weights for all columns ──
+            # Sum cols: weight = overlap_area / source_area (spread totals)
+            # Avg cols: intersect_area directly (for weighted average denominator)
+            raw_exprs: list[str] = []
+            for c in sum_cols:
+                raw_exprs.append(f's."{c}" AS "{c}_raw"')
+            for c in avg_cols:
+                raw_exprs.append(f's."{c}" AS "{c}_raw"')
+            col_raw_exprs = ", ".join(raw_exprs)
+
+            intersect_area_expr = "ST_Area(ST_Intersection(t.geometry, s.geometry))"
+            source_area_expr = "GREATEST(ST_Area(s.geometry), 1e-10)"
+
             cursor.execute(f"""
-                WITH intersections AS (
-                    SELECT
-                        t.rid AS target_rid,
-                        {col_raw_exprs},
-                        ST_Area(ST_Intersection(t.geometry, s.geometry))
-                            / GREATEST(ST_Area(s.geometry), 1e-10) AS weight
-                    FROM _etl_tgt t
-                    JOIN _etl_src s ON ST_Intersects(t.geometry, s.geometry)
-                )
-                SELECT target_rid, {col_sum_exprs}
-                FROM intersections
-                GROUP BY target_rid
+                DROP TABLE IF EXISTS _etl_intersections;
+                CREATE TEMP TABLE _etl_intersections AS
+                SELECT
+                    t.rid AS target_rid,
+                    {col_raw_exprs},
+                    {intersect_area_expr} AS intersect_area,
+                    {intersect_area_expr} / {source_area_expr} AS weight
+                FROM _etl_tgt t
+                JOIN _etl_src s ON ST_Intersects(t.geometry, s.geometry)
             """)
 
+            # ── Aggregate: sum columns use area-weighted sums ─────────
+            sum_exprs: list[str] = []
+            for c in sum_cols:
+                sum_exprs.append(
+                    f'SUM(COALESCE("{c}_raw", 0) * weight) AS "{c}"'
+                )
+            for c in avg_cols:
+                sum_exprs.append(
+                    f'SUM(COALESCE("{c}_raw", 0) * intersect_area)'
+                    f' / NULLIF(SUM(intersect_area), 0) AS "{c}"'
+                )
+
+            cursor.execute(f"""
+                SELECT target_rid, {", ".join(sum_exprs)}
+                FROM _etl_intersections
+                GROUP BY target_rid
+            """)
             rows = cursor.fetchall()
             if not rows:
                 no_overlaps_msg = "No spatial overlaps"
@@ -536,17 +570,17 @@ class BaseCanvasETL:
 
             # ── Apply results back to GeoDataFrame ──────────────────
             col_values: dict[str, dict[int, float]] = {
-                col: {} for col in available_cols
+                col: {} for col in all_cols
             }
             for row in rows:
                 target_rid = row[0]
                 orig_idx = idx_map[target_rid]
-                for i, col in enumerate(available_cols):
+                for i, col in enumerate(all_cols):
                     val = row[i + 1]
                     if val is not None:
                         col_values[col][orig_idx] = val
 
-            for col in available_cols:
+            for col in all_cols:
                 if col_values[col]:
                     gdf[col] = gdf[col].fillna(pd.Series(col_values[col]))
         # Clamp negative equity values (known issue)
@@ -793,31 +827,47 @@ class BaseCanvasETL:
         return gdf
 
     def _reconcile_aggregates(self, gdf: gpd.GeoDataFrame) -> gpd.GeoDataFrame:
-        """Backfill aggregate columns from sub-columns when parent is NaN.
+        """Recompute aggregate columns from sub-columns when all parts are present.
 
-        Reconciliation rules fill parent only if parent is NaN AND at least one
-        sub-column has a non-NaN value. Does NOT overwrite existing aggregate values.
+        Unconditionally overwrites the aggregate with the sum of its sub-columns
+        when ALL sub-columns are present and have non-zero values. This ensures
+        consistency when different allocation paths populate the aggregate vs
+        sub-columns (e.g., ACS block groups populate du_detsf while built-form
+        allocation populates du_detsf_sl / du_detsf_ll separately).
         """
         # ── Dwelling unit aggregates ────────────────────────────────────
         if "du_detsf" in gdf.columns and all(
             c in gdf.columns for c in ("du_detsf_sl", "du_detsf_ll")
         ):
             sub_sum = gdf[["du_detsf_sl", "du_detsf_ll"]].sum(axis=1)
-            valid_mask = gdf["du_detsf"].isna() & sub_sum.notna() & (sub_sum > 0)
+            valid_mask = (
+                gdf["du_detsf_sl"].notna()
+                & gdf["du_detsf_ll"].notna()
+                & (sub_sum > 0)
+            )
             gdf.loc[valid_mask, "du_detsf"] = sub_sum
 
         if "du_mf" in gdf.columns and all(
             c in gdf.columns for c in ("du_mf2to4", "du_mf5p")
         ):
             sub_sum = gdf[["du_mf2to4", "du_mf5p"]].sum(axis=1)
-            valid_mask = gdf["du_mf"].isna() & sub_sum.notna() & (sub_sum > 0)
+            valid_mask = (
+                gdf["du_mf2to4"].notna()
+                & gdf["du_mf5p"].notna()
+                & (sub_sum > 0)
+            )
             gdf.loc[valid_mask, "du_mf"] = sub_sum
 
         if "du" in gdf.columns and all(
             c in gdf.columns for c in ("du_detsf", "du_attsf", "du_mf")
         ):
             sub_sum = gdf[["du_detsf", "du_attsf", "du_mf"]].sum(axis=1)
-            valid_mask = gdf["du"].isna() & sub_sum.notna() & (sub_sum > 0)
+            valid_mask = (
+                gdf["du_detsf"].notna()
+                & gdf["du_attsf"].notna()
+                & gdf["du_mf"].notna()
+                & (sub_sum > 0)
+            )
             gdf.loc[valid_mask, "du"] = sub_sum
 
         # ── Employment retail aggregate ──────────────────────────────────
@@ -840,7 +890,14 @@ class BaseCanvasETL:
                     "emp_other_services",
                 ]
             ].sum(axis=1)
-            valid_mask = gdf["emp_ret"].isna() & sub_sum.notna() & (sub_sum > 0)
+            valid_mask = (
+                gdf["emp_retail_services"].notna()
+                & gdf["emp_restaurant"].notna()
+                & gdf["emp_accommodation"].notna()
+                & gdf["emp_arts_entertainment"].notna()
+                & gdf["emp_other_services"].notna()
+                & (sub_sum > 0)
+            )
             gdf.loc[valid_mask, "emp_ret"] = sub_sum
 
         # ── Employment office aggregate ──────────────────────────────────
@@ -848,7 +905,11 @@ class BaseCanvasETL:
             c in gdf.columns for c in ("emp_office_services", "emp_medical_services")
         ):
             sub_sum = gdf[["emp_office_services", "emp_medical_services"]].sum(axis=1)
-            valid_mask = gdf["emp_off"].isna() & sub_sum.notna() & (sub_sum > 0)
+            valid_mask = (
+                gdf["emp_office_services"].notna()
+                & gdf["emp_medical_services"].notna()
+                & (sub_sum > 0)
+            )
             gdf.loc[valid_mask, "emp_off"] = sub_sum
 
         # ── Employment public aggregate ──────────────────────────────────
@@ -856,7 +917,11 @@ class BaseCanvasETL:
             c in gdf.columns for c in ("emp_public_admin", "emp_education")
         ):
             sub_sum = gdf[["emp_public_admin", "emp_education"]].sum(axis=1)
-            valid_mask = gdf["emp_pub"].isna() & sub_sum.notna() & (sub_sum > 0)
+            valid_mask = (
+                gdf["emp_public_admin"].notna()
+                & gdf["emp_education"].notna()
+                & (sub_sum > 0)
+            )
             gdf.loc[valid_mask, "emp_pub"] = sub_sum
 
         # ── Employment industrial aggregate ──────────────────────────────
@@ -879,7 +944,14 @@ class BaseCanvasETL:
                     "emp_construction",
                 ]
             ].sum(axis=1)
-            valid_mask = gdf["emp_ind"].isna() & sub_sum.notna() & (sub_sum > 0)
+            valid_mask = (
+                gdf["emp_manufacturing"].notna()
+                & gdf["emp_wholesale"].notna()
+                & gdf["emp_transport_warehousing"].notna()
+                & gdf["emp_utilities"].notna()
+                & gdf["emp_construction"].notna()
+                & (sub_sum > 0)
+            )
             gdf.loc[valid_mask, "emp_ind"] = sub_sum
 
         # ── Employment agriculture aggregate ─────────────────────────────
@@ -887,7 +959,11 @@ class BaseCanvasETL:
             c in gdf.columns for c in ("emp_agriculture", "emp_extraction")
         ):
             sub_sum = gdf[["emp_agriculture", "emp_extraction"]].sum(axis=1)
-            valid_mask = gdf["emp_ag"].isna() & sub_sum.notna() & (sub_sum > 0)
+            valid_mask = (
+                gdf["emp_agriculture"].notna()
+                & gdf["emp_extraction"].notna()
+                & (sub_sum > 0)
+            )
             gdf.loc[valid_mask, "emp_ag"] = sub_sum
 
         # ── Total employment aggregate ───────────────────────────────────
@@ -912,7 +988,15 @@ class BaseCanvasETL:
                     "emp_military",
                 ]
             ].sum(axis=1)
-            valid_mask = gdf["emp"].isna() & sub_sum.notna() & (sub_sum > 0)
+            valid_mask = (
+                gdf["emp_ret"].notna()
+                & gdf["emp_off"].notna()
+                & gdf["emp_pub"].notna()
+                & gdf["emp_ind"].notna()
+                & gdf["emp_ag"].notna()
+                & gdf["emp_military"].notna()
+                & (sub_sum > 0)
+            )
             gdf.loc[valid_mask, "emp"] = sub_sum
 
         return gdf

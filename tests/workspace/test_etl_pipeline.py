@@ -241,6 +241,130 @@ class TestETLPipeline:
         assert result["pop"].sum() == pytest.approx(300, abs=10), "Total population"
 
 
+def test_reconcile_du_aggregates() -> None:
+    """_reconcile_aggregates overwrites du_detsf when SL+LL are populated from built-form allocation."""
+    import numpy as np  # noqa: PLC0415
+    import pandas as pd  # noqa: PLC0415
+
+    from brewgis.workspace.services.base_canvas_etl import BaseCanvasETL  # noqa: PLC0415
+
+    # ── Simulate ACS pre-population: du_detsf has a value, SL/LL got filled later ──
+    gdf = pd.DataFrame({
+        "du_detsf": [100.0, 0.0, np.nan, 50.0, np.nan],
+        "du_detsf_sl": [40.0, 0.0, 60.0, 30.0, 0.0],
+        "du_detsf_ll": [60.0, 0.0, 40.0, 15.0, 0.0],
+    })
+    etl = BaseCanvasETL()
+    result = etl._reconcile_aggregates(gdf)
+
+    # Row 0: both SL and LL filled → aggregate overwritten from ACS value to sum
+    assert result.loc[0, "du_detsf"] == 100.0, "Aggregate should be sum of SL+LL"
+
+    # Row 1: SL=0, LL=0 → sub_sum == 0 → not overwritten (sub_sum > 0 guard)
+    assert result.loc[1, "du_detsf"] == 0.0, "Zero-sum sub-columns not reconciled"
+
+    # Row 2: ACS no value, SL+LL filled → aggregate should be sum
+    assert result.loc[2, "du_detsf"] == 100.0, "Null aggregate filled from sub-components"
+
+    # Row 3: both SL and LL filled → aggregate should be sum, not original ACS value
+    assert result.loc[3, "du_detsf"] == 45.0, "Existing aggregate overwritten by correct sum"
+
+    # Row 4: SL and LL both zero → sub_sum == 0 → stays NaN (sub_sum > 0 guard)
+    assert pd.isna(result.loc[4, "du_detsf"]), "Zero-sum sub-columns should not change aggregate"
+    # ── Test du aggregate from components ─────────────────────────────────
+    gdf2 = pd.DataFrame({
+        "du": [200.0, np.nan, np.nan],
+        "du_detsf": [100.0, 50.0, 0.0],
+        "du_attsf": [30.0, 20.0, np.nan],
+        "du_mf": [70.0, 30.0, np.nan],
+    })
+    result2 = etl._reconcile_aggregates(gdf2)
+    # Row 0: du already set, should stay
+    assert result2.loc[0, "du"] == 200.0, "Existing du not overwritten when sub-columns match"
+    # Row 1: null du, all sub-columns present → sum
+    assert result2.loc[1, "du"] == 100.0, "Null du filled from sub-columns"
+    # Row 2: du null, but attsf and mf are NaN → sub_sum not all valid → skip
+    assert pd.isna(result2.loc[2, "du"]), "du stays NaN when sub-columns missing"
+
+
+def test_equity_avg_allocation(db) -> None:
+    import geopandas as gpd  # noqa: PLC0415
+    import numpy as np  # noqa: PLC0415
+    from shapely.geometry import box  # noqa: PLC0415
+
+    from brewgis.workspace.services.base_canvas_etl import BaseCanvasETL  # noqa: PLC0415
+    from brewgis.workspace.services.base_canvas_schema import BaseCanvasSchema  # noqa: PLC0415
+
+    # ── Source: three rectangles with known rates ──────────────────────
+    # Source A: 10x10 box with pct_minority=10%, median_income=50000
+    # Source B: 10x10 box with pct_minority=50%, median_income=80000
+    src_data = gpd.GeoDataFrame(
+        {
+            "pct_minority": [10.0, 50.0],
+            "median_income": [50000.0, 80000.0],
+            "pop": [100, 200],  # sum column — should use area-weighted sum
+            "geometry": [box(0, 0, 10, 10), box(10, 0, 20, 10)],
+        },
+        crs="EPSG:4326",
+    )
+    # Verify schema has correct aggregation_hint for these columns
+    assert BaseCanvasSchema.get("pct_minority").aggregation_hint == "avg"
+    assert BaseCanvasSchema.get("median_income").aggregation_hint == "avg"
+    assert BaseCanvasSchema.get("pop").aggregation_hint == "sum"
+
+    # ── Targets overlapping both sources ───────────────────────────────
+    # T1: left half of Source A (x: 0-5)
+    # T2: straddles both (x: 5-15) — 50% A, 50% B
+    # T3: right half of Source B (x: 15-20)
+    tgt_data = gpd.GeoDataFrame(
+        {
+            "pct_minority": [np.nan, np.nan, np.nan],
+            "median_income": [np.nan, np.nan, np.nan],
+            "pop": [np.nan, np.nan, np.nan],
+            "geometry": [
+                box(0, 0, 5, 10),
+                box(5, 0, 15, 10),
+                box(15, 0, 20, 10),
+            ],
+        },
+        crs="EPSG:4326",
+    )
+
+    class MockDemographicSource:
+        available = True
+        def fetch_block_group_data(
+            self, state_fips: str = "", county_fips: str = ""
+        ) -> gpd.GeoDataFrame:
+            return src_data
+
+    etl = BaseCanvasETL()
+    result = etl._allocate_from_source(
+        tgt_data.copy(),
+        MockDemographicSource(),
+        ["pct_minority", "median_income", "pop"],
+    )
+
+    # ── Verify area-weighted averages for AVG columns ───────────────────
+    # T1: 100% of Source A → pct_minority = 10.0, median_income = 50000
+    assert result.loc[0, "pct_minority"] == pytest.approx(10.0, abs=0.5), "T1 pct_minority avg"
+    assert result.loc[0, "median_income"] == pytest.approx(50000, abs=1000), "T1 median_income avg"
+    # T1 pop (sum column): 50% of Source A = 50
+    assert result.loc[0, "pop"] == pytest.approx(50, abs=5), "T1 pop sum"
+
+    # T2: straddles both → pct_minority avg = (10*0.5 + 50*0.5) / (0.5 + 0.5) = 30
+    # Note: intersection areas are equal (5x10 = 50 sq deg each, same area in 6933 too)
+    assert result.loc[1, "pct_minority"] == pytest.approx(30.0, abs=2), "T2 pct_minority avg"
+    # T2 median_income avg = (50000*0.5 + 80000*0.5) / (0.5 + 0.5) = 65000
+    assert result.loc[1, "median_income"] == pytest.approx(65000, abs=2000), "T2 median_income avg"
+    # T2 pop (sum): 50% of A + 50% of B = 50 + 100 = 150
+    assert result.loc[1, "pop"] == pytest.approx(150, abs=10), "T2 pop sum"
+
+    # T3: 100% of Source B → pct_minority = 50.0, median_income = 80000
+    assert result.loc[2, "pct_minority"] == pytest.approx(50.0, abs=2), "T3 pct_minority avg"
+    assert result.loc[2, "median_income"] == pytest.approx(80000, abs=2000), "T3 median_income avg"
+    # T3 pop (sum): 50% of Source B = 100
+    assert result.loc[2, "pop"] == pytest.approx(100, abs=5), "T3 pop sum"
+
 def test_compute_areas_equal_area() -> None:
     """_compute_areas uses EPSG:6933 equal-area projection, not inflated EPSG:3857."""
     import geopandas as gpd  # noqa: PLC0415

@@ -3,6 +3,8 @@
 Creates a base canvas via ``BaseCanvasETL`` using the same parcel geometries as
 the reference ``sac_cnty_region_base_canvas``, then produces a structured
 comparison report at ``planning/sacog_comparison_report.md``.
+
+Only displays results, never makes recommendations.
 """
 
 from __future__ import annotations
@@ -562,8 +564,8 @@ class Command(BaseCommand):
         # ── Summary comparison table ──────────────────────────────────
         lines.append("## 1. Aggregate Comparison")
         lines.append("")
-        lines.append("| Column | Reference (v1) | BrewGIS | Diff | % Diff | Corr (R) |")
-        lines.append("|--------|--------:|------:|-----:|------:|---------:|")
+        lines.append("| Column | Reference (v1) | BrewGIS | Diff | % Diff | Corr (R) | Status |")
+        lines.append("|--------|--------:|------:|-----:|------:|---------:|:-------|")
 
         # Ordered groups of columns
         col_groups: list[tuple[str, list[tuple[str, str, str]]]] = [
@@ -751,12 +753,35 @@ class Command(BaseCommand):
 
                 corr_val = correlations.get(v3_col) if correlations else None
                 corr_str = f"{corr_val:.3f}" if corr_val is not None else "N/A"
+                # Quality status based on correlation
+                if corr_val is None:
+                    status = "N/A"
+                elif corr_val >= 0.70:
+                    status = "GOOD"
+                elif corr_val >= 0.50:
+                    status = "OK"
+                elif corr_val >= 0.30:
+                    status = "WARN"
+                elif corr_val >= 0.10:
+                    status = "POOR"
+                else:
+                    status = "FAIL"
                 lines.append(
-                    f"| {label:25s} | {ref_str} | {brew_str} | {diff_str} | {pct_str} | {corr_str:>9s} |"
+                    f"| {label:25s} | {ref_str} | {brew_str} | {diff_str} | {pct_str} | {corr_str:>9s} | {status:>7s} |"
                 )
 
-        lines.append(f"\n\n**Columns matched:** {matched_count}")
+        lines.append(f"\n**Columns matched:** {matched_count}")
 
+        # ── Correlation quality summary ─────────────────────────────────
+        if correlations:
+            corr_vals = [v for v in correlations.values() if v is not None]
+            if corr_vals:
+                good = sum(1 for v in corr_vals if v >= 0.70)
+                ok = sum(1 for v in corr_vals if 0.50 <= v < 0.70)
+                warn = sum(1 for v in corr_vals if 0.30 <= v < 0.50)
+                poor = sum(1 for v in corr_vals if 0.10 <= v < 0.30)
+                fail = sum(1 for v in corr_vals if v < 0.10)
+                lines.append(f"\n**Correlation quality:** {good} GOOD, {ok} OK, {warn} WARN, {poor} POOR, {fail} FAIL (based on {len(corr_vals)} columns with R values)")
         # ── Adapter configuration ─────────────────────────────────────
         lines.append("\n## 2. Data Sources Used")
         lines.append("")
@@ -803,6 +828,21 @@ class Command(BaseCommand):
             "pipeline produces values comparable to the manually-assembled SACOG v1 dataset."
         )
         lines.append("")
+        lines.append(
+            "**Correlation interpretation (per-column Pearson R):** "
+            "R \u2265 0.70 = GOOD, \u2265 0.50 = OK, \u2265 0.30 = WARN, \u2265 0.10 = POOR, < 0.10 = FAIL. "
+            "The Corr (R) and Status columns in the table above show each column\u2019s "
+            "parcel-level alignment with the v1 reference."
+        )
+        lines.append("")
+        lines.append(
+            "- **Correlation warning:** Most domains show FAIL-status parcel-level "
+            "correlation (R < 0.10). The pipeline produces aggregate totals in the right "
+            "order of magnitude for some columns but does not yet produce believable "
+            "parcel-level distributions. This is a known limitation that successive "
+            "improvements to allocation methods will address."
+        )
+        lines.append("")
         lines.append("Expected differences by domain:")
         lines.append("")
         lines.append(
@@ -828,8 +868,9 @@ class Command(BaseCommand):
             " **DU Detached SF SL/LL split:** brewGIS small-lot vs large-lot classification "
             "uses density thresholds from built-form allocation which may not match SACOG's "
             "lot-size convention. The reference shows 67,001.6 SL vs 326,105.1 LL units; brewGIS shows "
-            "25,109.3 SL (-62.5%) vs 289,621.7 LL (-11.2%). Note that du_detsf shows 0.0 while the sum of "
-            "SL+LL is 314,731 — a reconciliation gap."
+            "25,109.3 SL (-62.5%) vs 289,621.7 LL (-11.2%). "
+            "The du_detsf aggregate is now reconciled from du_detsf_sl + du_detsf_ll "
+            "so the aggregate always reflects the sum of its components."
         )
         lines.append(
             "- **Building area** — Both derived from DU/emp × sqft factors. Differences track "
@@ -946,67 +987,24 @@ class Command(BaseCommand):
         if pct_min < 1.0 and pct_college < 1.0 and cost_burden < 1.0:
             lines.append("")
             lines.append(
-                "> ⚠ **Warning:** Multiple equity columns show near-zero values. "
+                "> ⚠ **Warning:** Multiple equity columns still show near-zero values. "
             )
             lines.append(
-                "> Median income is a median, not a sum — area-weighting block-group "
-            )
-            lines.append("> medians and summing produces meaningless totals. ")
-            lines.append(
-                "> Percentage columns (pct_minority, etc.) are density/rate measures — "
+                "> The ETL allocation now uses area-weighted averages for rate/percentage/median "
             )
             lines.append(
-                "> area-weighted sum produces near-zero values. The equity preprocessor "
+                "> columns (aggregation_hint=\"avg\"), so this should not occur if the source "
             )
             lines.append(
-                "> (dbt) is a separate step that would compute environmental justice "
+                "> ACS data was correctly fetched and allocated. Check that Census ACS block-group "
             )
-            lines.append(
-                "> indices; it is NOT responsible for basic ACS allocation correctness. "
-            )
-            lines.append(
-                "> **Fix:** Implement a separate allocation path for rate/percentage/median "
-            )
-            lines.append(
-                "> columns that computes area-weighted averages instead of sums."
-            )
+            lines.append("> data was available and the spatial allocation ran successfully.")
             lines.append("")
         lines.append("")
         # ── Recommended Fix Sequence ────────────────────────────────────
-        lines.append("## 6. Recommended Fix Sequence")
-        lines.append("")
-        lines.append("| Priority | Issue | Impact | Effort |")
-        lines.append("|----------|-------|--------|--------|")
-        lines.append(
-            "| P0 | Employment NAICS-to-SACOG crosswalk | All employment columns show 70-99% errors | "
-            "for most sub-sectors | High — needs SACOG category definitions and manual crosswalk |"
-        )
-        lines.append(
-            "| P1 | Equity column allocation methodology | median_income, pct_minority, "
-            "pct_college_educated, cost_burden_pct show near-zero values — area-weighted sum of "
-            "medians/percentages is incorrect. Need rate/percentage-specific allocation (avg not "
-            "sum). | Medium — separate allocation path for density/rate columns |"
-        )
-        lines.append(
-            "| P2 | Building area sub-sector allocation | Sub-sector building areas are now allocated from "
-            "sub-sector employment columns (was aggregate parent columns). Still shows 55-98% error for "
-            "most sub-sectors. | Mitigated — see emp_bldg_map in _estimate_building_areas |"
-        )
-        lines.append(
-            "| P3 | Replace default irrigation fractions | Commercial irrigation shows +230% error | "
-            "Medium — integrate NLCD impervious surface data |"
-        )
-        lines.append(
-            "| P4 | Land-use SACOG text mapping calibration | land_development_category distribution "
-            "differs from reference | Medium — calibrate _SACOG_LAND_USE_MAP to reference distribution |"
-        )
-        lines.append(
-            "| P4 | DU SL/LL split threshold | DU split misaligned with SACOG convention | "
-            "Medium — requires density threshold calibration |"
-        )
-        lines.append("")
+        # never do this, the LLM should read the report and advise, the script does not
         # ── Notes ─────────────────────────────────────────────────────
-        lines.append("## 7. Notes")
+        lines.append("## 6. Notes")
         lines.append("")
         lines.append(
             f"- This report compares **aggregate totals** across all "
