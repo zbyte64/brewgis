@@ -9,6 +9,7 @@ from unittest.mock import patch
 import geopandas as gpd
 import pandas as pd
 import requests
+import pytest
 from shapely.geometry import Point
 
 from brewgis.workspace.services.base_canvas_adapters import LEHDEmploymentSource
@@ -19,6 +20,9 @@ from brewgis.workspace.services.lehd_fetcher import LODES_WAC_VARIABLES
 from brewgis.workspace.services.lehd_fetcher import _apply_naics_splits
 from brewgis.workspace.services.lehd_fetcher import _build_cbp_proportions
 from brewgis.workspace.services.lehd_fetcher import fetch_lehd_block_data
+from brewgis.workspace.services.lehd_fetcher import fetch_county_employment_scaling
+from brewgis.workspace.services.lehd_fetcher import _cbp_url
+from brewgis.workspace.services.lehd_fetcher import _fetch_cbp_county_emp
 
 _FAKE_CBP_JSON: list[list[str]] = [
     ["EMP", "NAICS2017", "state", "county"],
@@ -107,13 +111,76 @@ class TestLEHDEmploymentSource:
         assert not result2.empty
         assert result2.iloc[0]["emp"] == 500
 
+    def test_cbp_scaling_applied_when_enabled(self) -> None:
+        """When use_cbp_scaling=True, scaling should be applied to aggregate columns."""
+        sf = "06"
+        cf = "019"
+        # Realistic GDF with all sub-sector and aggregate columns
+        lehd_gdf = gpd.GeoDataFrame(
+            {
+                "geoid": [f"{sf}{cf}001001000"],
+                "emp": [100],
+                # sub-sector columns (AGGREGATE_MAPPINGS["emp"])
+                "emp_retail_services": [10],
+                "emp_restaurant": [0],
+                "emp_accommodation": [0],
+                "emp_arts_entertainment": [0],
+                "emp_other_services": [0],
+                "emp_office_services": [20],
+                "emp_medical_services": [10],
+                "emp_public_admin": [5],
+                "emp_education": [0],
+                "emp_manufacturing": [15],
+                "emp_wholesale": [5],
+                "emp_transport_warehousing": [5],
+                "emp_utilities": [5],
+                "emp_construction": [0],
+                "emp_agriculture": [0],
+                "emp_extraction": [0],
+                "emp_military": [0],
+                "emp_ret": [10],
+                "emp_off": [20],
+                "emp_pub": [15],
+                "emp_ind": [30],
+                "emp_ag": [0],
+            },
+            geometry=[Point(-119.5, 36.5)],
+        )
+        with patch(
+            "brewgis.workspace.services.lehd_fetcher.fetch_lehd_block_polygons",
+            return_value=lehd_gdf,
+        ):
+            with patch(
+                "brewgis.workspace.services.lehd_fetcher.fetch_county_employment_scaling",
+            ) as mock_scaling:
+                mock_scaling.return_value = {
+                    "emp_ret": 2.0,
+                    "emp_off": 1.0,
+                    "emp_pub": 1.0,
+                    "emp_ind": 3.0,
+                }
+                source = LEHDEmploymentSource(
+                    state_fips=sf,
+                    county_fips=cf,
+                    use_cbp_scaling=True,
+                )
+                result = source.fetch_block_data()
+
+        # emp_ret scaled: 10 * 2.0 = 20
+        assert result.iloc[0]["emp_ret"] == 20.0
+        # emp_off not scaled (1.0)
+        assert result.iloc[0]["emp_off"] == 20.0
+        # emp_ind scaled: 30 * 3.0 = 90
+        assert result.iloc[0]["emp_ind"] == 90.0
+        # emp recomputed: 20 + 20 + 15 + 90 = 145
+        assert result.iloc[0]["emp"] == 145.0
+
 
 class TestLODESWACVariables:
     """Tests that LODES WAC variables are defined correctly."""
 
     def test_lodes_wac_variables_defined(self) -> None:
         """LODES_WAC_VARIABLES should contain C000 and CNS codes."""
-
 
         assert "C000" in LODES_WAC_VARIABLES
         assert "CNS01" in LODES_WAC_VARIABLES
@@ -123,13 +190,18 @@ class TestLODESWACVariables:
     def test_agg_mappings_produce_aggregates(self) -> None:
         """AGGREGATE_MAPPINGS should contain all aggregate employment columns."""
 
-
-        expected = {"emp_ret", "emp_off", "emp_pub", "emp_ind", "emp_ag", "emp_military"}
+        expected = {
+            "emp_ret",
+            "emp_off",
+            "emp_pub",
+            "emp_ind",
+            "emp_ag",
+            "emp_military",
+        }
         assert expected.issubset(AGGREGATE_MAPPINGS.keys())
 
     def test_agg_mappings_sub_sector_columns(self) -> None:
         """AGGREGATE_MAPPINGS detail lists should all have entries."""
-
 
         for agg_key, detail_cols in AGGREGATE_MAPPINGS.items():
             assert len(detail_cols) > 0, f"{agg_key} has empty detail list"
@@ -141,7 +213,6 @@ class TestNAICSSplitRules:
     def test_split_rules_defined(self) -> None:
         """All CNS codes should have split rules."""
 
-
         assert "CNS01" in _NAICS_SPLIT_RULES
         assert "CNS05" in _NAICS_SPLIT_RULES
         assert "CNS11" in _NAICS_SPLIT_RULES
@@ -149,7 +220,6 @@ class TestNAICSSplitRules:
 
     def test_split_rules_cover_all_sub_sectors(self) -> None:
         """Split rules should produce all expected employment sub-sector columns."""
-
 
         produced = set()
         for rules in _NAICS_SPLIT_RULES.values():
@@ -184,7 +254,6 @@ class TestCBPProportions:
     def test_cbp_proportions_parse(self) -> None:
         """_build_cbp_proportions should parse CBP JSON and return proportions."""
 
-
         with patch("requests.get") as mock_get:
             mock_response = MagicMock()
             mock_response.json.return_value = _FAKE_CBP_JSON
@@ -210,7 +279,6 @@ class TestCBPProportions:
     def test_cbp_proportions_returns_empty_on_http_error(self) -> None:
         """_build_cbp_proportions should return empty dict on HTTP error."""
 
-
         with patch("requests.get") as mock_get:
             mock_get.side_effect = requests.RequestException("HTTP error")
             props = _build_cbp_proportions("06", "019")
@@ -218,7 +286,6 @@ class TestCBPProportions:
 
     def test_cbp_proportions_returns_empty_on_bad_json(self) -> None:
         """_build_cbp_proportions should return empty dict on bad JSON."""
-
 
         with patch("requests.get") as mock_get:
             mock_response = MagicMock()
@@ -236,14 +303,12 @@ class TestApplyNAICSSplits:
     def test_direct_mapping(self) -> None:
         """A rule with fraction=1.0 should map the full CNS value."""
 
-
         # CNS11 (Health Care) → emp_medical_services (1.0)
         result = _apply_naics_splits({"CNS11": 100}, {})
         assert result.get("emp_medical_services", 0) == 100.0
 
     def test_fractional_split(self) -> None:
         """CNS02 (Manufacturing) → 1.0 emp_manufacturing."""
-
 
         # CNS02 (Manufacturing) → 1.0 emp_manufacturing (was 0.7/0.3 wholesale)
         result = _apply_naics_splits({"CNS02": 100}, {})
@@ -252,7 +317,6 @@ class TestApplyNAICSSplits:
 
     def test_remainder_split(self) -> None:
         """Last rule with None should absorb the remainder."""
-
 
         # CNS03 with CBP: transport=0.2, utilities=0.1, wholesale=0.15 → remainder=0.55 for retail
         cbp = {"48": 0.15, "49": 0.05, "22": 0.10, "42": 0.15}
@@ -265,14 +329,17 @@ class TestApplyNAICSSplits:
     def test_zero_cns_produces_zeros(self) -> None:
         """Zero CNS values should produce zero for all related sub-sectors."""
 
-
         result = _apply_naics_splits({}, {})
-        for key in ("emp_agriculture", "emp_extraction", "emp_construction", "emp_military"):
+        for key in (
+            "emp_agriculture",
+            "emp_extraction",
+            "emp_construction",
+            "emp_military",
+        ):
             assert result.get(key, 0) == 0.0
 
     def test_cbp_proportion_used(self) -> None:
         """A NAICS regex rule should pull the CBP proportion."""
-
 
         # CNS01: CBP says agriculture (11) = 0.1, extraction (21) = 0.2
         cbp = {"11": 0.1, "21": 0.2, "23": 0.7}
@@ -283,7 +350,6 @@ class TestApplyNAICSSplits:
 
     def test_same_target_accumulates(self) -> None:
         """Multiple CNS codes mapping to the same target should accumulate."""
-
 
         # CNS04 + CNS05 + CNS06 all → emp_office_services
         result = _apply_naics_splits({"CNS04": 10, "CNS05": 15, "CNS06": 5}, {})
@@ -304,12 +370,19 @@ class TestFetchLODESBlockData:
     ) -> None:
         """fetch_lehd_block_data should produce all sub-sector and aggregate columns."""
 
-
         mock_url.return_value = "https://fake.url/lodes.csv.gz"
         mock_cbp.return_value = {
-            "11": 0.1, "21": 0.05, "23": 0.85,
-            "48": 0.1, "49": 0.05, "22": 0.08, "42": 0.15, "44": 0.4, "45": 0.07,
-            "721": 0.35, "722": 0.65,
+            "11": 0.1,
+            "21": 0.05,
+            "23": 0.85,
+            "48": 0.1,
+            "49": 0.05,
+            "22": 0.08,
+            "42": 0.15,
+            "44": 0.4,
+            "45": 0.07,
+            "721": 0.35,
+            "722": 0.65,
         }
 
         csv_str = (
@@ -317,7 +390,9 @@ class TestFetchLODESBlockData:
             "CNS08,CNS09,CNS10,CNS11,CNS12,CNS13,CNS14,CNS15,CNS16,CNS17\n"
             "060190001001000,500,50,100,80,10,15,5,20,8,12,30,40,5,15,10,25,0,3"
         )
-        mock_csv.return_value = pd.read_csv(io.StringIO(csv_str), dtype={"w_geocode": str})
+        mock_csv.return_value = pd.read_csv(
+            io.StringIO(csv_str), dtype={"w_geocode": str}
+        )
 
         result = fetch_lehd_block_data("06", "019")
 
@@ -327,18 +402,37 @@ class TestFetchLODESBlockData:
 
         # Check sub-sector columns exist
         sub_sector_cols = [
-            "emp_retail_services", "emp_restaurant", "emp_accommodation",
-            "emp_arts_entertainment", "emp_other_services", "emp_office_services",
-            "emp_medical_services", "emp_public_admin", "emp_education",
-            "emp_manufacturing", "emp_wholesale", "emp_transport_warehousing",
-            "emp_utilities", "emp_construction", "emp_agriculture",
-            "emp_extraction", "emp_military",
+            "emp_retail_services",
+            "emp_restaurant",
+            "emp_accommodation",
+            "emp_arts_entertainment",
+            "emp_other_services",
+            "emp_office_services",
+            "emp_medical_services",
+            "emp_public_admin",
+            "emp_education",
+            "emp_manufacturing",
+            "emp_wholesale",
+            "emp_transport_warehousing",
+            "emp_utilities",
+            "emp_construction",
+            "emp_agriculture",
+            "emp_extraction",
+            "emp_military",
         ]
         for col in sub_sector_cols:
             assert col in result.columns, f"Missing column: {col}"
 
         # Check aggregate columns exist
-        for col in ("emp", "emp_ret", "emp_off", "emp_pub", "emp_ind", "emp_ag", "emp_military"):
+        for col in (
+            "emp",
+            "emp_ret",
+            "emp_off",
+            "emp_pub",
+            "emp_ind",
+            "emp_ag",
+            "emp_military",
+        ):
             assert col in result.columns, f"Missing aggregate column: {col}"
 
     @patch("brewgis.workspace.services.lehd_fetcher._fetch_lodes_csv")
@@ -352,12 +446,17 @@ class TestFetchLODESBlockData:
     ) -> None:
         """Sub-sector columns should have non-zero values when CNS data is non-zero."""
 
-
         mock_url.return_value = "https://fake.url/lodes.csv.gz"
         mock_cbp.return_value = {
-            "11": 0.2, "21": 0.1, "23": 0.7,
-            "48": 0.15, "49": 0.05, "22": 0.1, "42": 0.07,
-            "721": 0.35, "722": 0.65,
+            "11": 0.2,
+            "21": 0.1,
+            "23": 0.7,
+            "48": 0.15,
+            "49": 0.05,
+            "22": 0.1,
+            "42": 0.07,
+            "721": 0.35,
+            "722": 0.65,
         }
 
         csv_data = (
@@ -365,7 +464,9 @@ class TestFetchLODESBlockData:
             "CNS08,CNS09,CNS10,CNS11,CNS12,CNS13,CNS14,CNS15,CNS16,CNS17\n"
             "060190001001000,500,50,100,80,10,15,5,20,8,12,30,40,5,15,10,25,0,3"
         )
-        mock_csv.return_value = pd.read_csv(io.StringIO(csv_data), dtype={"w_geocode": str})
+        mock_csv.return_value = pd.read_csv(
+            io.StringIO(csv_data), dtype={"w_geocode": str}
+        )
 
         result = fetch_lehd_block_data("06", "019")
 
@@ -373,24 +474,40 @@ class TestFetchLODESBlockData:
 
         # All CNS columns should produce non-zero sub-sector values
         non_zero_expected = [
-            "emp_agriculture", "emp_extraction", "emp_construction",  # CNS01
-            "emp_manufacturing",                                     # CNS02
-            "emp_retail_services", "emp_transport_warehousing", "emp_utilities", "emp_wholesale",  # CNS03
-            "emp_office_services",   # CNS04-09
-            "emp_education",         # CNS10
+            "emp_agriculture",
+            "emp_extraction",
+            "emp_construction",  # CNS01
+            "emp_manufacturing",  # CNS02
+            "emp_retail_services",
+            "emp_transport_warehousing",
+            "emp_utilities",
+            "emp_wholesale",  # CNS03
+            "emp_office_services",  # CNS04-09
+            "emp_education",  # CNS10
             "emp_medical_services",  # CNS11
             "emp_arts_entertainment",  # CNS12
-            "emp_accommodation", "emp_restaurant",  # CNS13
-            "emp_other_services",    # CNS14
-            "emp_public_admin",      # CNS15
-            "emp_military",          # CNS17
+            "emp_accommodation",
+            "emp_restaurant",  # CNS13
+            "emp_other_services",  # CNS14
+            "emp_public_admin",  # CNS15
+            "emp_military",  # CNS17
         ]
         for col in non_zero_expected:
             assert row[col] > 0, f"Column {col} should be > 0 but was {row[col]}"
 
         # Aggregate columns should be non-zero
-        for agg_col in ("emp", "emp_ret", "emp_off", "emp_pub", "emp_ind", "emp_ag", "emp_military"):
-            assert row[agg_col] > 0, f"Aggregate column {agg_col} should be > 0 but was {row[agg_col]}"
+        for agg_col in (
+            "emp",
+            "emp_ret",
+            "emp_off",
+            "emp_pub",
+            "emp_ind",
+            "emp_ag",
+            "emp_military",
+        ):
+            assert row[agg_col] > 0, (
+                f"Aggregate column {agg_col} should be > 0 but was {row[agg_col]}"
+            )
 
     @patch("brewgis.workspace.services.lehd_fetcher._fetch_lodes_csv")
     @patch("brewgis.workspace.services.lehd_fetcher._build_cbp_proportions")
@@ -403,12 +520,17 @@ class TestFetchLODESBlockData:
     ) -> None:
         """emp (C000 total jobs) should be self-consistent."""
 
-
         mock_url.return_value = "https://fake.url/lodes.csv.gz"
         mock_cbp.return_value = {
-            "11": 0.2, "21": 0.1, "23": 0.7,
-            "48": 0.15, "49": 0.05, "22": 0.1, "42": 0.07,
-            "721": 0.35, "722": 0.65,
+            "11": 0.2,
+            "21": 0.1,
+            "23": 0.7,
+            "48": 0.15,
+            "49": 0.05,
+            "22": 0.1,
+            "42": 0.07,
+            "721": 0.35,
+            "722": 0.65,
         }
 
         csv_data = (
@@ -416,10 +538,227 @@ class TestFetchLODESBlockData:
             "CNS08,CNS09,CNS10,CNS11,CNS12,CNS13,CNS14,CNS15,CNS16,CNS17\n"
             "060190001001000,500,50,100,80,10,15,5,20,8,12,30,40,5,15,10,25,0,3"
         )
-        mock_csv.return_value = pd.read_csv(io.StringIO(csv_data), dtype={"w_geocode": str})
+        mock_csv.return_value = pd.read_csv(
+            io.StringIO(csv_data), dtype={"w_geocode": str}
+        )
 
         result = fetch_lehd_block_data("06", "019")
         row = result.iloc[0]
 
         # emp (C000) is the ground truth
         assert row["emp"] == 500
+
+
+class TestCBPCountyScaling:
+    """Tests for the CBP county-level employment scaling computation."""
+
+    def test_cbp_url_construction(self) -> None:
+        """_cbp_url should build the correct API URL."""
+        url = _cbp_url("06", "019", "44")
+        assert "NAICS2017=44----" in url
+        assert "county:019" in url
+        assert "state:06" in url
+        assert "EMP" in url
+
+    def test_fetch_cbp_county_emp_parses_response(self) -> None:
+        """_fetch_cbp_county_emp should parse EMP from API response."""
+        with patch("requests.get") as mock_get:
+            mock_response = MagicMock()
+            mock_response.json.return_value = [
+                ["EMP", "NAICS2017", "state", "county"],
+                ["500", "44----", "06", "019"],
+            ]
+            mock_response.raise_for_status.return_value = None
+            mock_get.return_value = mock_response
+            result = _fetch_cbp_county_emp("06", "019", {"retail": "44"})
+        assert result["retail"] == 500.0
+
+    def test_fetch_cbp_county_emp_suppressed_data(self) -> None:
+        """Suppressed values (D, S, N) should return 0.0."""
+        for suppressed in ("D", "S", "N", ""):
+            with patch("requests.get") as mock_get:
+                mock_response = MagicMock()
+                mock_response.json.return_value = [
+                    ["EMP", "NAICS2017", "state", "county"],
+                    [suppressed, "44----", "06", "019"],
+                ]
+                mock_response.raise_for_status.return_value = None
+                mock_get.return_value = mock_response
+                result = _fetch_cbp_county_emp("06", "019", {"retail": "44"})
+            assert result["retail"] == 0.0, f"Expected 0.0 for {suppressed!r}"
+
+    def test_fetch_cbp_county_emp_http_error(self) -> None:
+        """HTTP errors should return 0.0 gracefully."""
+        with patch("requests.get") as mock_get:
+            mock_get.side_effect = requests.RequestException("fail")
+            result = _fetch_cbp_county_emp("06", "019", {"retail": "44"})
+        assert result["retail"] == 0.0
+
+    def test_cbp_scaling_all_sectors_above_one(self) -> None:
+        """Scaling factor should be >1 when CBP exceeds LEHD."""
+        lehd_gdf = gpd.GeoDataFrame(
+            {
+                "geoid": ["060190001001000"],
+                "emp": [100],
+                "emp_ret": [10],
+                "emp_off": [20],
+                "emp_pub": [15],
+                "emp_ind": [30],
+            },
+            geometry=[Point(-119.5, 36.5)],
+        )
+        with patch(
+            "brewgis.workspace.services.lehd_fetcher.fetch_lehd_block_data",
+            return_value=lehd_gdf,
+        ):
+            with patch(
+                "brewgis.workspace.services.lehd_fetcher._fetch_cbp_county_emp",
+            ) as mock_cbp:
+                # CBP totals per code aggregated per sector:
+                # emp_ret: 44=500, 45=0     → 500 total
+                # emp_off: 51=0, 52=0, 53=0, 54=0, 55=0, 56=0 → 0
+                # emp_pub: 61=0, 62=0, 92=0 → 0
+                # emp_ind: 11=100, 21=0, 22=0, 23=0, 31=0, 32=0,
+                #          33=0, 42=0, 48=0, 49=0 → 100 total
+                mock_cbp.return_value = {
+                    "emp_ret_44": 500.0,
+                    "emp_ret_45": 0.0,
+                    "emp_off_51": 0.0,
+                    "emp_off_52": 0.0,
+                    "emp_off_53": 0.0,
+                    "emp_off_54": 0.0,
+                    "emp_off_55": 0.0,
+                    "emp_off_56": 0.0,
+                    "emp_pub_61": 0.0,
+                    "emp_pub_62": 0.0,
+                    "emp_pub_92": 0.0,
+                    "emp_ind_11": 100.0,
+                    "emp_ind_21": 0.0,
+                    "emp_ind_22": 0.0,
+                    "emp_ind_23": 0.0,
+                    "emp_ind_31": 0.0,
+                    "emp_ind_32": 0.0,
+                    "emp_ind_33": 0.0,
+                    "emp_ind_42": 0.0,
+                    "emp_ind_48": 0.0,
+                    "emp_ind_49": 0.0,
+                }
+                scale = fetch_county_employment_scaling("06", "019")
+
+        # emp_ret: CBP=500, LEHD=10 → scale=50.0
+        assert scale["emp_ret"] == 50.0
+        # emp_off: CBP=0 → no change
+        assert scale["emp_off"] == 1.0
+        # emp_pub: CBP=0 → no change
+        assert scale["emp_pub"] == 1.0
+        # emp_ind: CBP=100, LEHD=30 → scale=3.33...
+        assert scale["emp_ind"] == pytest.approx(100.0 / 30.0)
+
+    def test_cbp_scaling_never_scales_down(self) -> None:
+        """Scaling factor should never be below 1.0."""
+        lehd_gdf = gpd.GeoDataFrame(
+            {
+                "geoid": ["060190001001000"],
+                "emp": [100],
+                "emp_ret": [50],
+                "emp_off": [50],
+                "emp_pub": [50],
+                "emp_ind": [50],
+            },
+            geometry=[Point(-119.5, 36.5)],
+        )
+        with patch(
+            "brewgis.workspace.services.lehd_fetcher.fetch_lehd_block_data",
+            return_value=lehd_gdf,
+        ):
+            with patch(
+                "brewgis.workspace.services.lehd_fetcher._fetch_cbp_county_emp",
+            ) as mock_cbp:
+                # CBP data is LOWER than LEHD for all sectors
+                mock_cbp.return_value = {
+                    "emp_ret_44": 10.0,
+                    "emp_ret_45": 0.0,
+                    "emp_off_51": 10.0,
+                    "emp_off_52": 0.0,
+                    "emp_off_53": 0.0,
+                    "emp_off_54": 0.0,
+                    "emp_off_55": 0.0,
+                    "emp_off_56": 0.0,
+                    "emp_pub_61": 10.0,
+                    "emp_pub_62": 0.0,
+                    "emp_pub_92": 0.0,
+                    "emp_ind_11": 10.0,
+                    "emp_ind_21": 0.0,
+                    "emp_ind_22": 0.0,
+                    "emp_ind_23": 0.0,
+                    "emp_ind_31": 0.0,
+                    "emp_ind_32": 0.0,
+                    "emp_ind_33": 0.0,
+                    "emp_ind_42": 0.0,
+                    "emp_ind_48": 0.0,
+                    "emp_ind_49": 0.0,
+                }
+                scale = fetch_county_employment_scaling("06", "019")
+
+        # All should be 1.0 (never scale down)
+        assert scale["emp_ret"] == 1.0
+        assert scale["emp_off"] == 1.0
+        assert scale["emp_pub"] == 1.0
+        assert scale["emp_ind"] == 1.0
+
+    def test_cbp_scaling_lehd_unavailable(self) -> None:
+        """When LEHD data fetch fails, all factors should be 1.0."""
+        with patch(
+            "brewgis.workspace.services.lehd_fetcher.fetch_lehd_block_data",
+            side_effect=RuntimeError("No data"),
+        ):
+            scale = fetch_county_employment_scaling("06", "019")
+        assert scale == {"emp_ret": 1.0, "emp_off": 1.0, "emp_pub": 1.0, "emp_ind": 1.0}
+
+    def test_cbp_scaling_zero_lehd_sector(self) -> None:
+        """When LEHD sector total is 0, should return 1.0 (avoid division by zero)."""
+        lehd_gdf = gpd.GeoDataFrame(
+            {
+                "geoid": ["060190001001000"],
+                "emp": [100],
+                "emp_ret": [0],
+                "emp_off": [0],
+                "emp_pub": [0],
+                "emp_ind": [0],
+            },
+            geometry=[Point(-119.5, 36.5)],
+        )
+        with patch(
+            "brewgis.workspace.services.lehd_fetcher.fetch_lehd_block_data",
+            return_value=lehd_gdf,
+        ):
+            with patch(
+                "brewgis.workspace.services.lehd_fetcher._fetch_cbp_county_emp",
+            ) as mock_cbp:
+                mock_cbp.return_value = {
+                    "emp_ret_44": 100.0,
+                    "emp_ret_45": 0.0,
+                    "emp_off_51": 100.0,
+                    "emp_off_52": 0.0,
+                    "emp_off_53": 0.0,
+                    "emp_off_54": 0.0,
+                    "emp_off_55": 0.0,
+                    "emp_off_56": 0.0,
+                    "emp_pub_61": 100.0,
+                    "emp_pub_62": 0.0,
+                    "emp_pub_92": 0.0,
+                    "emp_ind_11": 100.0,
+                    "emp_ind_21": 0.0,
+                    "emp_ind_22": 0.0,
+                    "emp_ind_23": 0.0,
+                    "emp_ind_31": 0.0,
+                    "emp_ind_32": 0.0,
+                    "emp_ind_33": 0.0,
+                    "emp_ind_42": 0.0,
+                    "emp_ind_48": 0.0,
+                    "emp_ind_49": 0.0,
+                }
+                scale = fetch_county_employment_scaling("06", "019")
+
+        # Division by zero avoided → all default to 1.0
+        assert scale == {"emp_ret": 1.0, "emp_off": 1.0, "emp_pub": 1.0, "emp_ind": 1.0}

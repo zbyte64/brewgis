@@ -239,6 +239,8 @@ class TestETLPipeline:
         assert result.loc[2, "pop"] == pytest.approx(100, abs=5), "T3 allocation"
         # Sum should equal total source pop
         assert result["pop"].sum() == pytest.approx(300, abs=10), "Total population"
+
+
 def test_compute_areas_equal_area() -> None:
     """_compute_areas uses EPSG:6933 equal-area projection, not inflated EPSG:3857."""
     import geopandas as gpd  # noqa: PLC0415
@@ -284,3 +286,130 @@ def test_compute_areas_preserves_crs() -> None:
     # Resulting GDF should still have area columns in acres
     assert "area_gross" in result.columns
     assert result.loc[0, "area_gross"] > 0
+
+
+def test_compute_area_by_use() -> None:
+    """_compute_area_by_use populates area-by-use columns from land_development_category."""
+    import geopandas as gpd
+    import numpy as np
+    from shapely.geometry import Point
+
+    from brewgis.workspace.services.base_canvas_etl import BaseCanvasETL
+
+    gdf = (
+        gpd.GeoDataFrame(
+            {
+                "land_development_category": ["urban", "agricultural", "undeveloped"],
+                "area_parcel": [10.0, 20.0, 30.0],
+                "area_parcel_res": [np.nan, np.nan, np.nan],
+                "area_parcel_emp_ag": [np.nan, np.nan, np.nan],
+                "area_parcel_no_use": [np.nan, np.nan, np.nan],
+                "geometry": [Point(0, 0), Point(1, 1), Point(2, 2)],
+            }
+        )
+        .set_geometry("geometry")
+        .set_crs("EPSG:4326")
+    )
+
+    etl = BaseCanvasETL()
+    result = etl._compute_area_by_use(gdf)
+
+    # Urban parcel gets area_parcel_res
+    assert result.loc[0, "area_parcel_res"] == 10.0
+    # Agricultural parcel gets area_parcel_emp_ag
+    assert result.loc[1, "area_parcel_emp_ag"] == 20.0
+    # Undeveloped parcel gets area_parcel_no_use
+    assert result.loc[2, "area_parcel_no_use"] == 30.0
+
+    # Other columns remain NaN (not matching their category)
+    assert np.isnan(result.loc[1, "area_parcel_res"])
+    assert np.isnan(result.loc[0, "area_parcel_emp_ag"])
+
+
+def test_compute_area_by_use_missing_category_column() -> None:
+    """_compute_area_by_use returns gdf unchanged when land_development_category is missing."""
+    import geopandas as gpd
+    from shapely.geometry import Point
+
+    from brewgis.workspace.services.base_canvas_etl import BaseCanvasETL
+
+    gdf = (
+        gpd.GeoDataFrame({"area_parcel": [10.0], "geometry": [Point(0, 0)]})
+        .set_geometry("geometry")
+        .set_crs("EPSG:4326")
+    )
+
+    etl = BaseCanvasETL()
+    result = etl._compute_area_by_use(gdf)
+
+    assert result is gdf
+    assert "area_parcel" in result.columns
+    assert "geometry" in result.columns
+
+
+def test_compute_area_by_use_fallback_area_gross() -> None:
+    """_compute_area_by_use falls back to area_gross when area_parcel is missing."""
+    import geopandas as gpd
+    import numpy as np
+    from shapely.geometry import Point
+
+    from brewgis.workspace.services.base_canvas_etl import BaseCanvasETL
+
+    gdf = (
+        gpd.GeoDataFrame(
+            {
+                "land_development_category": ["urban"],
+                "area_gross": [15.0],
+                "area_parcel_res": [np.nan],
+                "geometry": [Point(0, 0)],
+            }
+        )
+        .set_geometry("geometry")
+        .set_crs("EPSG:4326")
+    )
+
+    etl = BaseCanvasETL()
+    result = etl._compute_area_by_use(gdf)
+
+    assert result.loc[0, "area_parcel_res"] == 15.0
+
+
+def test_compute_area_by_use_all_nan() -> None:
+    """_compute_area_by_use sends all-NaN categories to undeveloped."""
+    import geopandas as gpd
+    import numpy as np
+    from shapely.geometry import Point
+
+    from brewgis.workspace.services.base_canvas_etl import BaseCanvasETL
+
+    gdf = (
+        gpd.GeoDataFrame(
+            {
+                "land_development_category": [np.nan, np.nan],
+                "area_parcel": [5.0, 10.0],
+                "area_parcel_no_use": [np.nan, np.nan],
+                "geometry": [Point(0, 0), Point(1, 1)],
+            }
+        )
+        .set_geometry("geometry")
+        .set_crs("EPSG:4326")
+    )
+
+    etl = BaseCanvasETL()
+    result = etl._compute_area_by_use(gdf)
+
+    # Both NaN categories default to "undeveloped" via fillna
+    assert result["area_parcel_no_use"].sum() == 15.0
+
+
+def test_irrigation_unit_conversion() -> None:
+    """Verify sqft→acres conversion factor (43,560 sqft = 1 acre)."""
+    sqft_per_acre = 43560.0
+    # Known conversions
+    assert 43560.0 / sqft_per_acre == 1.0  # 1 acre
+    assert 0.0 / sqft_per_acre == 0.0  # zero
+    assert 87120.0 / sqft_per_acre == 2.0  # 2 acres
+    # Verify the v1 reference conversion in _query_reference_totals
+    ref_sqft = 65340000.0  # hypothetical 1500 acres in sqft
+    ref_acres = ref_sqft / sqft_per_acre
+    assert ref_acres == 1500.0

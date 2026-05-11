@@ -31,17 +31,58 @@ logger = logging.getLogger(__name__)
 LODES_WAC_BASE = "https://lehd.ces.census.gov/data/lodes/LODES8"
 # FIPS → state abbreviation mapping for LODES URL
 _FIPS_TO_STATE: dict[str, str] = {
-    "01": "al", "02": "ak", "04": "az", "05": "ar", "06": "ca",
-    "08": "co", "09": "ct", "10": "de", "11": "dc", "12": "fl",
-    "13": "ga", "15": "hi", "16": "id", "17": "il", "18": "in",
-    "19": "ia", "20": "ks", "21": "ky", "22": "la", "23": "me",
-    "24": "md", "25": "ma", "26": "mi", "27": "mn", "28": "ms",
-    "29": "mo", "30": "mt", "31": "ne", "32": "nv", "33": "nh",
-    "34": "nj", "35": "nm", "36": "ny", "37": "nc", "38": "nd",
-    "39": "oh", "40": "ok", "41": "or", "42": "pa", "44": "ri",
-    "45": "sc", "46": "sd", "47": "tn", "48": "tx", "49": "ut",
-    "50": "vt", "51": "va", "53": "wa", "54": "wv", "55": "wi",
-    "56": "wy", "72": "pr",
+    "01": "al",
+    "02": "ak",
+    "04": "az",
+    "05": "ar",
+    "06": "ca",
+    "08": "co",
+    "09": "ct",
+    "10": "de",
+    "11": "dc",
+    "12": "fl",
+    "13": "ga",
+    "15": "hi",
+    "16": "id",
+    "17": "il",
+    "18": "in",
+    "19": "ia",
+    "20": "ks",
+    "21": "ky",
+    "22": "la",
+    "23": "me",
+    "24": "md",
+    "25": "ma",
+    "26": "mi",
+    "27": "mn",
+    "28": "ms",
+    "29": "mo",
+    "30": "mt",
+    "31": "ne",
+    "32": "nv",
+    "33": "nh",
+    "34": "nj",
+    "35": "nm",
+    "36": "ny",
+    "37": "nc",
+    "38": "nd",
+    "39": "oh",
+    "40": "ok",
+    "41": "or",
+    "42": "pa",
+    "44": "ri",
+    "45": "sc",
+    "46": "sd",
+    "47": "tn",
+    "48": "tx",
+    "49": "ut",
+    "50": "vt",
+    "51": "va",
+    "53": "wa",
+    "54": "wv",
+    "55": "wi",
+    "56": "wy",
+    "72": "pr",
 }
 
 
@@ -94,8 +135,8 @@ _NAICS_SPLIT_RULES: dict[str, list[tuple[str, str | float | None]]] = {
     "CNS03": [
         ("emp_transport_warehousing", r"^(48|49)\s*-*"),
         ("emp_utilities", r"^22\s*-*"),
-        ("emp_wholesale", r"^42\s*-*"),              # split wholesale via CBP
-        ("emp_retail_services", None),                # remainder = retail (44-45) only
+        ("emp_wholesale", r"^42\s*-*"),  # split wholesale via CBP
+        ("emp_retail_services", None),  # remainder = retail (44-45) only
     ],
     # CNS04-09 → all map to office services
     "CNS04": [("emp_office_services", 1.0)],  # Information (51)
@@ -105,17 +146,17 @@ _NAICS_SPLIT_RULES: dict[str, list[tuple[str, str | float | None]]] = {
     "CNS08": [("emp_office_services", 1.0)],  # Management (55)
     "CNS09": [("emp_office_services", 1.0)],  # Admin & Support (56)
     # CNS10-12 → direct mappings
-    "CNS10": [("emp_education", 1.0)],              # Educational Services (61)
-    "CNS11": [("emp_medical_services", 1.0)],         # Health Care (62)
-    "CNS12": [("emp_arts_entertainment", 1.0)],       # Arts, Entertainment (71)
+    "CNS10": [("emp_education", 1.0)],  # Educational Services (61)
+    "CNS11": [("emp_medical_services", 1.0)],  # Health Care (62)
+    "CNS12": [("emp_arts_entertainment", 1.0)],  # Arts, Entertainment (71)
     # CNS13 (Accommodation/Food 72) → CBP split
     "CNS13": [
         ("emp_accommodation", r"^721\s*-*"),
         ("emp_restaurant", None),  # remainder (722)
     ],
-    "CNS14": [("emp_other_services", 1.0)],   # Other Services (81)
-    "CNS15": [("emp_public_admin", 1.0)],     # Public Administration (92)
-    "CNS17": [("emp_military", 1.0)],          # Armed Forces
+    "CNS14": [("emp_other_services", 1.0)],  # Other Services (81)
+    "CNS15": [("emp_public_admin", 1.0)],  # Public Administration (92)
+    "CNS17": [("emp_military", 1.0)],  # Armed Forces
 }
 
 # Aggregate employment columns used in base canvas
@@ -189,10 +230,7 @@ def _build_lodes_wac_url(state_fips: str, county_fips: str, year: int = 2021) ->
     """
     state_fips_clean = state_fips.zfill(2)
     state_abbr = _FIPS_TO_STATE.get(state_fips_clean, "zz")
-    return (
-        f"{LODES_WAC_BASE}/{state_abbr}/wac/"
-        f"{state_abbr}_wac_S000_JT00_{year}.csv.gz"
-    )
+    return f"{LODES_WAC_BASE}/{state_abbr}/wac/{state_abbr}_wac_S000_JT00_{year}.csv.gz"
 
 
 def _fetch_lodes_csv(url: str) -> pd.DataFrame:
@@ -228,7 +266,6 @@ def _fetch_lodes_csv(url: str) -> pd.DataFrame:
 
 
 # ── CBP Proportion Computation ────────────────────────────────────────
-
 
 
 def _parse_cbp_naics_emp(
@@ -354,8 +391,159 @@ def _build_cbp_proportions(
     return proportions
 
 
-# ── Sub-Sector Column Splitting ───────────────────────────────────────
+# ── CBP County-Scale Calibration ──────────────────────────────────────
 
+
+# NAICS 2-digit codes per broad employment sector for county-level scaling.
+# These mirror the AGGREGATE_MAPPINGS groupings.
+_SECTOR_NAICS: dict[str, list[str]] = {
+    "emp_ret": ["44", "45"],
+    "emp_off": ["51", "52", "53", "54", "55", "56"],
+    "emp_pub": ["61", "62", "92"],
+    "emp_ind": ["11", "21", "22", "23", "31", "32", "33", "42", "48", "49"],
+}
+
+
+def _cbp_url(state_fips: str, county_fips: str, naics_code: str) -> str:
+    """Build CBP API URL for a single 2-digit NAICS code in a county.
+
+    Args:
+        state_fips: Two-digit state FIPS code.
+        county_fips: Three-digit county FIPS code.
+        naics_code: Two-digit NAICS code.
+
+    Returns:
+        Census CBP API URL string.
+    """
+    sf = state_fips.zfill(2)
+    cf = county_fips.zfill(3)
+    return (
+        f"https://api.census.gov/data/2021/cbp"
+        f"?get=EMP,NAICS2017&for=county:{cf}"
+        f"&in=state:{sf}&NAICS2017={naics_code}----"
+    )
+
+
+def _fetch_cbp_county_emp(
+    state_fips: str,
+    county_fips: str,
+    naics_codes: dict[str, str],
+) -> dict[str, float]:
+    """Fetch CBP employment for specified 2-digit NAICS codes.
+
+    Queries the Census CBP API for each NAICS code individually and
+    returns a dict mapping each key to its employment count (0.0 if
+    the code has no data or the API call fails).
+
+    Args:
+        state_fips: Two-digit state FIPS code.
+        county_fips: Three-digit county FIPS code.
+        naics_codes: Dict mapping a key name to a 2-digit NAICS code.
+
+    Returns:
+        Dict mapping each input key to its CBP employment (float).
+    """
+    result: dict[str, float] = {}
+    for key, naics_code in naics_codes.items():
+        url = _cbp_url(state_fips, county_fips, naics_code)
+        try:
+            response = requests.get(url, timeout=120)
+            response.raise_for_status()
+            raw_data: list[list[str]] = response.json()
+            if len(raw_data) >= 2:  # at least header + one data row
+                emp_raw = raw_data[1][0]  # EMP is the first column
+                if emp_raw not in ("", "D", "S", "N"):
+                    result[key] = float(emp_raw)
+                else:
+                    result[key] = 0.0
+            else:
+                result[key] = 0.0
+        except requests.RequestException:
+            result[key] = 0.0
+        except (ValueError, TypeError):
+            result[key] = 0.0
+    return result
+
+
+def fetch_county_employment_scaling(
+    state_fips: str,
+    county_fips: str,
+) -> dict[str, float]:
+    """Compute CBP-based county-level employment scaling factors.
+
+    Fetches LEHD block employment data and CBP county totals for each
+    broad sector (retail, office, public, industrial) and returns
+    scaling factors that only scale up (never down) where CBP reports
+    more employment than LEHD captures.
+
+    Scaling factor per sector = max(CBP_total / LEHD_total, 1.0).
+
+    Args:
+        state_fips: Two-digit state FIPS code.
+        county_fips: Three-digit county FIPS code.
+
+    Returns:
+        Dict with keys ``emp_ret``, ``emp_off``, ``emp_pub``, ``emp_ind``
+        mapped to float scaling factors (default 1.0).
+    """
+    scale_factors: dict[str, float] = {
+        "emp_ret": 1.0,
+        "emp_off": 1.0,
+        "emp_pub": 1.0,
+        "emp_ind": 1.0,
+    }
+
+    # 1. Compute LEHD county-level totals per sector
+    try:
+        lehd_gdf = fetch_lehd_block_data(state_fips, county_fips)
+    except RuntimeError:
+        logger.warning(
+            "LEHD data unavailable for county %s/%s; cannot compute scaling",
+            state_fips,
+            county_fips,
+        )
+        return scale_factors
+
+    if lehd_gdf.empty:
+        return scale_factors
+
+    lehd_totals: dict[str, float] = {}
+    for sector in _SECTOR_NAICS:
+        lehd_totals[sector] = (
+            float(lehd_gdf[sector].sum()) if sector in lehd_gdf.columns else 0.0
+        )
+
+    # 2. Fetch CBP county totals per NAICS 2-digit code
+    flat_naics: dict[str, str] = {}
+    for sector, codes in _SECTOR_NAICS.items():
+        for naics_code in codes:
+            flat_naics[f"{sector}_{naics_code}"] = naics_code
+
+    cbp_results = _fetch_cbp_county_emp(state_fips, county_fips, flat_naics)
+
+    # 3. Aggregate CBP per sector
+    sector_cbp: dict[str, float] = {s: 0.0 for s in _SECTOR_NAICS}
+    for flat_key, emp in cbp_results.items():
+        for sector in _SECTOR_NAICS:
+            if flat_key.startswith(f"{sector}_"):
+                sector_cbp[sector] += emp
+                break
+
+    # 4. Compute scaling factor = max(CBP / LEHD, 1.0)
+    for sector in scale_factors:
+        lehd_total = lehd_totals.get(sector, 0.0)
+        cbp_total = sector_cbp.get(sector, 0.0)
+        if lehd_total > 0 and cbp_total > 0:
+            ratio = cbp_total / lehd_total
+            if ratio > 1.0:
+                scale_factors[sector] = ratio
+            # else keep 1.0 (never scale down)
+        # else keep 1.0 (no data or zero LEHD)
+
+    return scale_factors
+
+
+# ── Sub-Sector Column Splitting ───────────────────────────────────────
 
 
 def _resolve_split_source(
@@ -659,12 +847,13 @@ def fetch_lehd_block_polygons(
     lehd_gdf = lehd_gdf[lehd_gdf["geoid"].str.startswith(county_geoid_prefix)].copy()
     logger.info(
         "Filtered LODES from %d to %d blocks for county %s",
-        pre_count, len(lehd_gdf), county_fips,
+        pre_count,
+        len(lehd_gdf),
+        county_fips,
     )
     if lehd_gdf.empty:
         logger.warning("No LODES blocks match county FIPS %s", county_fips)
         return lehd_gdf
-
 
     # 2. Try to get TIGER polygon geometry
     url = _tiger_block_url(state_fips, county_fips)

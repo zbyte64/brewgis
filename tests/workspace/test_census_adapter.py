@@ -1,8 +1,11 @@
 """Tests for Census ACS polygon geometry fetching and adapter."""
+
 from __future__ import annotations
 
 from typing import TYPE_CHECKING
 from unittest.mock import patch
+import importlib
+import os
 
 import geopandas as gpd
 from shapely.geometry import Point
@@ -155,6 +158,110 @@ class TestACSColumnMapping:
         }
         result = _compute_derived_columns(row)
         assert result["cost_burden_pct"] == 25.0
+
+
+class TestDetachedSFRatio:
+    """Tests for _DU_DETSF_TO_SL_RATIO and env var override."""
+
+    def test_default_ratio(self) -> None:
+        """Default ratio should be 0.40 when no env var is set."""
+        from brewgis.workspace.services import census_fetcher
+
+        # Ensure env var not set
+        os.environ.pop("BREWGIS_DETSF_SL_RATIO", None)
+        importlib.reload(census_fetcher)
+
+        assert census_fetcher._DU_DETSF_TO_SL_RATIO == 0.40
+
+    def test_env_var_override(self) -> None:
+        """BREWGIS_DETSF_SL_RATIO=0.33 should split detsf accordingly."""
+        from brewgis.workspace.services import census_fetcher
+
+        os.environ["BREWGIS_DETSF_SL_RATIO"] = "0.33"
+        importlib.reload(census_fetcher)
+        try:
+            assert census_fetcher._DU_DETSF_TO_SL_RATIO == 0.33
+            gdf = gpd.GeoDataFrame(
+                {"geoid": ["001"], "du_detsf": [200.0]},
+                geometry=[Point(-119.5, 36.5)],
+            )
+            result = census_fetcher._apply_acs_column_mapping(gdf)
+            # 200 * 0.33 = 66.0 small lot, 200 * 0.67 = 134.0 large lot
+            assert result.iloc[0]["du_detsf_sl"] == 66.0
+            assert result.iloc[0]["du_detsf_ll"] == 134.0
+        finally:
+            del os.environ["BREWGIS_DETSF_SL_RATIO"]
+            importlib.reload(census_fetcher)
+
+    def test_ratio_zero(self) -> None:
+        """Ratio of 0.0 should allocate all to large lot."""
+        from brewgis.workspace.services import census_fetcher
+
+        os.environ["BREWGIS_DETSF_SL_RATIO"] = "0.0"
+        importlib.reload(census_fetcher)
+        try:
+            assert census_fetcher._DU_DETSF_TO_SL_RATIO == 0.0
+            gdf = gpd.GeoDataFrame(
+                {"geoid": ["001"], "du_detsf": [200.0]},
+                geometry=[Point(-119.5, 36.5)],
+            )
+            result = census_fetcher._apply_acs_column_mapping(gdf)
+            assert result.iloc[0]["du_detsf_sl"] == 0.0
+            assert result.iloc[0]["du_detsf_ll"] == 200.0
+        finally:
+            del os.environ["BREWGIS_DETSF_SL_RATIO"]
+            importlib.reload(census_fetcher)
+
+    def test_ratio_one(self) -> None:
+        """Ratio of 1.0 should allocate all to small lot."""
+        from brewgis.workspace.services import census_fetcher
+
+        os.environ["BREWGIS_DETSF_SL_RATIO"] = "1.0"
+        importlib.reload(census_fetcher)
+        try:
+            assert census_fetcher._DU_DETSF_TO_SL_RATIO == 1.0
+            gdf = gpd.GeoDataFrame(
+                {"geoid": ["001"], "du_detsf": [200.0]},
+                geometry=[Point(-119.5, 36.5)],
+            )
+            result = census_fetcher._apply_acs_column_mapping(gdf)
+            assert result.iloc[0]["du_detsf_sl"] == 200.0
+            assert result.iloc[0]["du_detsf_ll"] == 0.0
+        finally:
+            del os.environ["BREWGIS_DETSF_SL_RATIO"]
+            importlib.reload(census_fetcher)
+
+    def test_invalid_env_var_falls_back(self) -> None:
+        """Invalid/unparseable env var should fall back to 0.40."""
+        from brewgis.workspace.services import census_fetcher
+
+        os.environ["BREWGIS_DETSF_SL_RATIO"] = "not-a-float"
+        importlib.reload(census_fetcher)
+        try:
+            assert census_fetcher._DU_DETSF_TO_SL_RATIO == 0.40
+        finally:
+            del os.environ["BREWGIS_DETSF_SL_RATIO"]
+            importlib.reload(census_fetcher)
+
+    def test_negative_ratio_clamped_to_zero(self) -> None:
+        """Negative env var value should be clamped to 0.0."""
+        from brewgis.workspace.services import census_fetcher
+
+        os.environ["BREWGIS_DETSF_SL_RATIO"] = "-0.5"
+        importlib.reload(census_fetcher)
+        try:
+            assert census_fetcher._DU_DETSF_TO_SL_RATIO == 0.0
+            gdf = gpd.GeoDataFrame(
+                {"geoid": ["001"], "du_detsf": [200.0]},
+                geometry=[Point(-119.5, 36.5)],
+            )
+            result = census_fetcher._apply_acs_column_mapping(gdf)
+            assert result.iloc[0]["du_detsf_sl"] == 0.0
+            assert result.iloc[0]["du_detsf_ll"] == 200.0
+        finally:
+            del os.environ["BREWGIS_DETSF_SL_RATIO"]
+            importlib.reload(census_fetcher)
+
 
 class TestVerifyCachedFile:
     """Tests for _verify_cached_file integrity check."""

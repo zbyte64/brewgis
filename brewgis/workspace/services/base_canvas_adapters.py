@@ -54,8 +54,7 @@ class EmploymentSource(Protocol):
     """Protocol for employment data sources (LEHD/LODES)."""
 
     @property
-    def available(self) -> bool:
-        ...
+    def available(self) -> bool: ...
 
     def fetch_block_data(
         self,
@@ -76,8 +75,7 @@ class LandUseSource(Protocol):
     """Protocol for land-use / land-cover sources."""
 
     @property
-    def available(self) -> bool:
-        ...
+    def available(self) -> bool: ...
 
     def classify_parcels(
         self,
@@ -91,8 +89,7 @@ class IntersectionDensitySource(Protocol):
     """Protocol for intersection-density computation sources."""
 
     @property
-    def available(self) -> bool:
-        ...
+    def available(self) -> bool: ...
 
     def compute_density(
         self,
@@ -106,8 +103,7 @@ class IrrigationSource(Protocol):
     """Protocol for irrigation estimation sources."""
 
     @property
-    def available(self) -> bool:
-        ...
+    def available(self) -> bool: ...
 
     def estimate_irrigation(
         self,
@@ -122,25 +118,25 @@ class IrrigationSource(Protocol):
 
 _ASSESSOR_USE_CODE_MAP: dict[str, str] = {
     # Residential
-    "10": "urban",      # Single-family residential
-    "11": "urban",      # Single-family residential
-    "12": "urban",      # Two-family residential
-    "13": "urban",      # Three-family residential
-    "14": "urban",      # Four-family residential
-    "15": "urban",      # Five+ family residential
-    "16": "urban",      # Mixed residential/commercial
-    "17": "urban",      # Mobile home parks
-    "18": "urban",      # Residential hotels
+    "10": "urban",  # Single-family residential
+    "11": "urban",  # Single-family residential
+    "12": "urban",  # Two-family residential
+    "13": "urban",  # Three-family residential
+    "14": "urban",  # Four-family residential
+    "15": "urban",  # Five+ family residential
+    "16": "urban",  # Mixed residential/commercial
+    "17": "urban",  # Mobile home parks
+    "18": "urban",  # Residential hotels
     # Commercial
-    "20": "urban",      # General commercial
-    "21": "urban",      # Retail
-    "22": "urban",      # Office
-    "23": "urban",      # Financial services
-    "24": "urban",      # Medical
+    "20": "urban",  # General commercial
+    "21": "urban",  # Retail
+    "22": "urban",  # Office
+    "23": "urban",  # Financial services
+    "24": "urban",  # Medical
     # Industrial
-    "30": "urban",      # General industrial
-    "31": "urban",      # Light industrial
-    "32": "urban",      # Heavy industrial
+    "30": "urban",  # General industrial
+    "31": "urban",  # Light industrial
+    "32": "urban",  # Heavy industrial
     # Agricultural
     "40": "agricultural",  # General agriculture
     "41": "agricultural",  # Crops
@@ -163,12 +159,12 @@ _ASSESSOR_USE_CODE_MAP: dict[str, str] = {
     "70": "undeveloped",  # Water
     "71": "undeveloped",  # Wetlands
     # Public / Institutional
-    "80": "urban",      # Public services
-    "81": "urban",      # Education
-    "82": "urban",      # Religious
-    "83": "urban",      # Government
+    "80": "urban",  # Public services
+    "81": "urban",  # Education
+    "82": "urban",  # Religious
+    "83": "urban",  # Government
     # Other
-    "90": "urban",      # Other
+    "90": "urban",  # Other
 }
 
 
@@ -231,7 +227,13 @@ class NullLandUseSource:
         """Classify using assessor use codes from parcel attributes if available."""
         # Check for assessor code columns
         code_col = None
-        for col in ("assessor_use_code", "land_use", "use_code", "lu_code"):
+        for col in (
+            "assessor_use_code",
+            "land_use",
+            "use_code",
+            "region_lu_code",
+            "lu_code",
+        ):
             if col in parcels.columns:
                 code_col = col
                 break
@@ -239,11 +241,12 @@ class NullLandUseSource:
         if code_col is not None and "land_development_category" in parcels.columns:
             # Apply assessor code classification where not already set
             mask = parcels["land_development_category"].isna()
-            parcels.loc[mask, "land_development_category"] = parcels.loc[mask, code_col].apply(
-                classify_by_assessor_code
-            )
+            parcels.loc[mask, "land_development_category"] = parcels.loc[
+                mask, code_col
+            ].apply(classify_by_assessor_code)
 
         return parcels
+
 
 class NullIntersectionDensitySource:
     """Default intersection-density source — returns default 12.5."""
@@ -265,6 +268,7 @@ class NullIrrigationSource:
 
     def estimate_irrigation(self, parcels: gpd.GeoDataFrame) -> gpd.GeoDataFrame:
         return parcels
+
 
 # ── Real Data Adapters ────────────────────────────────────────────────
 
@@ -332,10 +336,12 @@ class LEHDEmploymentSource:
         state_fips: str,
         county_fips: str,
         use_cache: bool = True,
+        use_cbp_scaling: bool = False,
     ) -> None:
         self._state_fips = state_fips
         self._county_fips = county_fips
         self._use_cache = use_cache
+        self._use_cbp_scaling = use_cbp_scaling
         self._data: gpd.GeoDataFrame | None = None
 
     @property
@@ -362,6 +368,35 @@ class LEHDEmploymentSource:
             logger.warning("LEHD fetch failed: %s", exc)
             gdf = gpd.GeoDataFrame()
 
+        if self._use_cbp_scaling and not gdf.empty:
+            from brewgis.workspace.services.lehd_fetcher import (
+                fetch_county_employment_scaling,
+            )
+
+            scale = fetch_county_employment_scaling(sf, cf)
+            agg_sectors = ["emp_ret", "emp_off", "emp_pub", "emp_ind"]
+            actual_sectors = [s for s in agg_sectors if s in scale and scale[s] > 1.0]
+            if actual_sectors:
+                logger.info(
+                    "Applying CBP scaling factors: %s",
+                    {s: f"{scale[s]:.2f}" for s in actual_sectors},
+                )
+                from brewgis.workspace.services.lehd_fetcher import AGGREGATE_MAPPINGS
+
+                # Scale aggregate columns AND their sub-sector components
+                for sector in actual_sectors:
+                    if sector in gdf.columns:
+                        gdf[sector] = gdf[sector] * scale[sector]
+                    # Scale constituent sub-sector columns
+                    sub_cols = AGGREGATE_MAPPINGS.get(sector, [])
+                    for col in sub_cols:
+                        if col in gdf.columns:
+                            gdf[col] = gdf[col] * scale[sector]
+                # Recompute total emp from scaled sub-sector columns
+                emp_agg_cols = AGGREGATE_MAPPINGS.get("emp", [])
+                present_agg = [c for c in emp_agg_cols if c in gdf.columns]
+                if "emp" in gdf.columns and present_agg:
+                    gdf["emp"] = gdf[present_agg].sum(axis=1)
         self._data = gdf
         return gdf
 
@@ -416,9 +451,9 @@ class NLCDFetcher:
             if "land_development_category" not in parcels.columns:
                 parcels["land_development_category"] = None
             mask = parcels["land_development_category"].isna()
-            parcels.loc[mask, "land_development_category"] = parcels.loc[mask, code_col].apply(
-                classify_by_assessor_code
-            )
+            parcels.loc[mask, "land_development_category"] = parcels.loc[
+                mask, code_col
+            ].apply(classify_by_assessor_code)
 
         result = compute_nlcd_zonal_stats(parcels, bbox, self._year)
         self._parcels_cached = result
@@ -478,6 +513,7 @@ class OSMIntersectionDensitySource:
     def available(self) -> bool:
         try:
             import osmnx  # noqa: F401
+
             return True
         except ImportError:
             return False
@@ -506,17 +542,13 @@ class OSMIntersectionDensitySource:
             intersections = nodes[nodes["street_count"] >= 3]
 
             # Compute area in km²
-            area_sq_km = (
-                jurisdiction_parcels.to_crs("EPSG:6933").area.sum() / 1e6
-            )
+            area_sq_km = jurisdiction_parcels.to_crs("EPSG:6933").area.sum() / 1e6
 
             if area_sq_km > 0:
                 return len(intersections) / area_sq_km
             return None
         except Exception as exc:
-            logger.warning(
-                "OSM intersection density computation failed: %s", exc
-            )
+            logger.warning("OSM intersection density computation failed: %s", exc)
             return None
 
     def compute_density(self, parcels: gpd.GeoDataFrame) -> gpd.GeoDataFrame:
@@ -551,9 +583,12 @@ class OSMIntersectionDensitySource:
                 jurisdiction_density[juris] = density
 
         parcels = parcels.copy()
-        parcels["intersection_density"] = parcels["jurisdiction"].map(
-            jurisdiction_density
-        ).fillna(self.DEFAULT_DENSITY).round(2)
+        parcels["intersection_density"] = (
+            parcels["jurisdiction"]
+            .map(jurisdiction_density)
+            .fillna(self.DEFAULT_DENSITY)
+            .round(2)
+        )
 
         return parcels
 
@@ -569,7 +604,10 @@ class OSMIntersectionDensitySource:
 
             logger.info("Downloading OSM road network for bounding box ...")
             graph = ox.graph_from_bbox(
-                bbox_north, bbox_south, bbox_east, bbox_west,
+                bbox_north,
+                bbox_south,
+                bbox_east,
+                bbox_west,
                 network_type="drive",
                 simplify=True,
             )

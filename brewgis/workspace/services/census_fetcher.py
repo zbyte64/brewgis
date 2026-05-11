@@ -23,6 +23,7 @@ from shapely.geometry import Point
 
 logger = logging.getLogger(__name__)
 
+
 # Census API base
 def _census_base_url(year: int = 2022) -> str:
     return f"https://api.census.gov/data/{year}/acs/acs5"
@@ -117,8 +118,9 @@ def _all_vars() -> list[str]:
     return result
 
 
-def _build_census_url(state_fips: str, county_fips: str, summary_level: str, year: int = 2022) -> str:
-
+def _build_census_url(
+    state_fips: str, county_fips: str, summary_level: str, year: int = 2022
+) -> str:
     """Build the Census API URL for the given geography.
 
     Args:
@@ -138,7 +140,6 @@ def _build_census_url(state_fips: str, county_fips: str, summary_level: str, yea
         geo = f"in=state:{state_fips}&in=county:{county_fips}&for=block%20group:*"
 
     return f"{_census_base_url(year)}?get={vars_}&{geo}"
-
 
 
 def _fetch_census_data(url: str) -> list[list[str]]:
@@ -168,13 +169,12 @@ def _fetch_census_data(url: str) -> list[list[str]]:
     return data
 
 
-
-
 def _safe_pct(numerator: int, denominator: int) -> float:
     """Compute percentage safely, returning 0.0 for zero denominator."""
     if denominator > 0:
         return round(numerator / denominator * 100.0, 2)
     return 0.0
+
 
 def _compute_derived_columns(row: dict[str, int]) -> dict[str, int | float]:
     """Compute derived base canvas columns from raw ACS variables.
@@ -208,13 +208,18 @@ def _compute_derived_columns(row: dict[str, int]) -> dict[str, int | float]:
 
     # Combined cost burden (owners + renters)
     owner_cost_burdened = (
-        row.get("B25091_005E", 0) + row.get("B25091_006E", 0)
-        + row.get("B25091_007E", 0) + row.get("B25091_011E", 0)
-        + row.get("B25091_012E", 0) + row.get("B25091_013E", 0)
+        row.get("B25091_005E", 0)
+        + row.get("B25091_006E", 0)
+        + row.get("B25091_007E", 0)
+        + row.get("B25091_011E", 0)
+        + row.get("B25091_012E", 0)
+        + row.get("B25091_013E", 0)
     )
     renter_cost_burdened = (
-        row.get("B25070_007E", 0) + row.get("B25070_008E", 0)
-        + row.get("B25070_009E", 0) + row.get("B25070_010E", 0)
+        row.get("B25070_007E", 0)
+        + row.get("B25070_008E", 0)
+        + row.get("B25070_009E", 0)
+        + row.get("B25070_010E", 0)
     )
     total_cost_burdened = owner_cost_burdened + renter_cost_burdened
     total_households = row.get("B25003_001E", 0)
@@ -238,8 +243,10 @@ def _compute_derived_columns(row: dict[str, int]) -> dict[str, int | float]:
             row.get("B03002_001E", 0),
         ),
         "pct_college_educated": _safe_pct(
-            row.get("B15003_022E", 0) + row.get("B15003_023E", 0)
-            + row.get("B15003_024E", 0) + row.get("B15003_025E", 0),
+            row.get("B15003_022E", 0)
+            + row.get("B15003_023E", 0)
+            + row.get("B15003_024E", 0)
+            + row.get("B15003_025E", 0),
             row.get("B15003_001E", 0),
         ),
     }
@@ -250,7 +257,6 @@ def fetch_acs_block_groups(
     county_fips: str,
     year: int = 2022,
 ) -> gpd.GeoDataFrame:
-
     """Fetch ACS 5-year demographics at the block group level for one county.
 
     Note: The Census API's basic query endpoint returns tabular data without
@@ -349,8 +355,9 @@ def _generate_block_group_points(records: list[dict]) -> list[Point]:
     return points
 
 
-def fetch_acs_data_summary(state_fips: str, county_fips: str, year: int = 2022) -> dict[str, Any]:
-
+def fetch_acs_data_summary(
+    state_fips: str, county_fips: str, year: int = 2022
+) -> dict[str, Any]:
     """Return a summary of ACS data available for the given geography.
 
     Useful for the UI to show what data is available before importing.
@@ -389,7 +396,6 @@ def fetch_acs_data_summary(state_fips: str, county_fips: str, year: int = 2022) 
                 "total_population",
                 "pct_minority",
                 "pct_college_educated",
-
             ],
         }
     except RuntimeError as e:
@@ -402,6 +408,7 @@ _TIGER_CACHE_DIR = Path.home() / ".cache" / "brewgis" / "tiger"
 _TIGER_YEAR = 2023
 # National proportions for splitting ACS DU subtypes
 _DU_MF_2_9_TO_MF2TO4_RATIO = 0.40  # 40% of 2-9 units → 2-4 units
+
 
 def _verify_cached_file(path: Path, expected_size: int | None = None) -> bool:
     """Verify a cached file exists, has positive size, and optionally matches expected size.
@@ -425,6 +432,7 @@ def _verify_cached_file(path: Path, expected_size: int | None = None) -> bool:
         path.unlink(missing_ok=True)
         return False
     return True
+
 
 def _verify_cached_bytes(path: Path, size_path: Path, crc32_path: Path) -> bool:
     """Verify cached file size and CRC32 against companion files.
@@ -460,7 +468,27 @@ def _verify_cached_bytes(path: Path, size_path: Path, crc32_path: Path) -> bool:
             return False
 
     return True
-_DU_DETSF_TO_SL_RATIO = 0.40       # 40% of detached SF → small lot
+
+
+# ── Single-Family Lot Size Split Ratio ────────────────────────────────
+# Controls what fraction of detached single-family dwelling units (du_detsf)
+# are classified as "small lot" (du_detsf_sl) vs "large lot" (du_detsf_ll).
+#
+# SACOG convention uses ~1/8 acre (~5,445 sqft) lot size as the threshold
+# between small-lot and large-lot single-family. The national default of
+# 0.40 (40% small lot) is a statistical approximation based on ACS
+# units-in-structure distributions and national parcel data.
+#
+# To calibrate for a specific region, override this module-level variable
+# before running the ETL, or set the BREWGIS_DETSF_SL_RATIO env var.
+# For SACOG Sacramento County, the reference v1 dataset split is roughly
+# 67% large-lot / 33% small-lot (ratio ~0.33), though this varies by
+# jurisdiction within the county.
+try:
+    _raw = float(os.environ.get("BREWGIS_DETSF_SL_RATIO", "0.40"))
+    _DU_DETSF_TO_SL_RATIO: float = max(0.0, _raw)
+except (ValueError, TypeError):
+    _DU_DETSF_TO_SL_RATIO: float = 0.40
 
 
 def _tiger_bg_url(state_fips: str, county_fips: str) -> str:
@@ -554,9 +582,9 @@ def _apply_acs_column_mapping(
     """Map ACS-derived column names to BaseCanvasSchema equivalents.
 
     Resolves the differences between ACS DU subtypes and the schema:
-        * du_mf_2_9 → split into du_mf2to4 (40%) and du_mf5p (60%)
+        * du_mf_2_9 → split into du_mf2to4 and du_mf5p via _DU_MF_2_9_TO_MF2TO4_RATIO
         * du_mf_10p → added to du_mf5p
-        * du_detsf → split into du_detsf_sl (40%) and du_detsf_ll (60%)
+        * du_detsf → split into du_detsf_sl and du_detsf_ll via _DU_DETSF_TO_SL_RATIO
     """
     if "du_mf_2_9" in block_groups.columns:
         mf_2_9 = block_groups["du_mf_2_9"].fillna(0.0)
@@ -564,13 +592,17 @@ def _apply_acs_column_mapping(
         block_groups["du_mf5p"] = (mf_2_9 * (1 - _DU_MF_2_9_TO_MF2TO4_RATIO)).round(1)
         if "du_mf_10p" in block_groups.columns:
             block_groups["du_mf5p"] += block_groups["du_mf_10p"].fillna(0.0)
-        block_groups.drop(columns=["du_mf_2_9", "du_mf_10p"], inplace=True, errors="ignore")
+        block_groups.drop(
+            columns=["du_mf_2_9", "du_mf_10p"], inplace=True, errors="ignore"
+        )
     else:
         block_groups["du_mf2to4"] = 0.0
         block_groups["du_mf5p"] = 0.0
 
     # Compute aggregate du_mf from sub-types
-    block_groups["du_mf"] = block_groups["du_mf2to4"].fillna(0.0) + block_groups["du_mf5p"].fillna(0.0)
+    block_groups["du_mf"] = block_groups["du_mf2to4"].fillna(0.0) + block_groups[
+        "du_mf5p"
+    ].fillna(0.0)
     if "du_detsf" in block_groups.columns:
         detsf = block_groups["du_detsf"].fillna(0.0)
         block_groups["du_detsf_sl"] = (detsf * _DU_DETSF_TO_SL_RATIO).round(1)
@@ -656,4 +688,3 @@ def fetch_acs_block_group_polygons(
 
     # 4. Apply column mapping
     return _apply_acs_column_mapping(result)
-

@@ -91,8 +91,11 @@ class Command(BaseCommand):
         parcels_gdf = self._load_parcels(limit)
         self.stdout.write(f"  Loaded {len(parcels_gdf):,} parcels")
         # Store geography_ids for filtered reference comparison
-        parcel_ids = list(parcels_gdf["geography_id"]) if "geography_id" in parcels_gdf.columns else []
-
+        parcel_ids = (
+            list(parcels_gdf["geography_id"])
+            if "geography_id" in parcels_gdf.columns
+            else []
+        )
 
         # ── Phase 2: Run brewgis ETL ───────────────────────────────────
         self.stdout.write("\n── Phase 2: Running brewgis ETL ──")
@@ -108,7 +111,9 @@ class Command(BaseCommand):
             self.stdout.write(f"  {msg}")
 
         if etl_result["status"] == "error":
-            raise CommandError(f"ETL failed: {etl_result.get('error', 'Unknown error')}")
+            raise CommandError(
+                f"ETL failed: {etl_result.get('error', 'Unknown error')}"
+            )
 
         self.stdout.write(
             self.style.SUCCESS(
@@ -136,7 +141,9 @@ class Command(BaseCommand):
 
         self.stdout.write(self.style.SUCCESS(f"\n✓ Report written to {REPORT_PATH}"))
         self.stdout.write(
-            self.style.SUCCESS("  Done — open planning/sacog_comparison_report.md to review")
+            self.style.SUCCESS(
+                "  Done — open planning/sacog_comparison_report.md to review"
+            )
         )
 
     # ═══════════════════════════════════════════════════════════════════
@@ -190,6 +197,7 @@ class Command(BaseCommand):
             from brewgis.workspace.services.base_canvas_adapters import (  # noqa: PLC0415
                 CensusDemographicSource,
             )
+
             demographic_source = CensusDemographicSource(
                 state_fips=STATE_FIPS,
                 county_fips=COUNTY_FIPS,
@@ -200,6 +208,7 @@ class Command(BaseCommand):
             from brewgis.workspace.services.base_canvas_adapters import (  # noqa: PLC0415
                 LEHDEmploymentSource,
             )
+
             employment_source = LEHDEmploymentSource(
                 state_fips=STATE_FIPS,
                 county_fips=COUNTY_FIPS,
@@ -216,6 +225,7 @@ class Command(BaseCommand):
                 from brewgis.workspace.services.base_canvas_adapters import (  # noqa: PLC0415
                     NLCDFetcher,
                 )
+
                 land_use_source = NLCDFetcher(bbox=bbox)
                 irrigation_source = land_use_source  # NLCD also does irrigation
             except Exception as exc:
@@ -225,6 +235,7 @@ class Command(BaseCommand):
                 from brewgis.workspace.services.base_canvas_adapters import (  # noqa: PLC0415
                     OSMIntersectionDensitySource,
                 )
+
                 intersection_density_source = OSMIntersectionDensitySource(bbox=bbox)
             except Exception as exc:
                 self._log(f"OSM init failed (will use defaults): {exc}")
@@ -266,9 +277,16 @@ class Command(BaseCommand):
     # Phase 3-4: Query totals
     # ═══════════════════════════════════════════════════════════════════
 
-    def _query_reference_totals(self, geography_ids: list[int] | None = None) -> dict[str, float]:
+    def _query_reference_totals(
+        self, geography_ids: list[int] | None = None
+    ) -> dict[str, float]:
         """Query aggregate values from the v1 reference base canvas."""
-        return self._query_totals(V1_BASE_CANVAS, geography_ids)
+        totals = self._query_totals(V1_BASE_CANVAS, geography_ids)
+        # Convert sqft → acres for irrigation columns in reference table
+        for col in ["residential_irrigated_sqft", "commercial_irrigated_sqft"]:
+            if col in totals:
+                totals[col] = totals[col] / 43560.0
+        return totals
 
     def _query_brewgis_totals(self) -> dict[str, float]:
         """Query aggregate values from the brewgis base canvas."""
@@ -291,7 +309,9 @@ class Command(BaseCommand):
 
         return self._query_totals("public.base_canvas")
 
-    def _query_totals(self, table: str, geography_ids: list[int] | None = None) -> dict[str, float]:
+    def _query_totals(
+        self, table: str, geography_ids: list[int] | None = None
+    ) -> dict[str, float]:
         """Query aggregate SUM for all numeric columns in a table."""
         with connection.cursor() as cur:
             # Get all numeric columns
@@ -304,14 +324,16 @@ class Command(BaseCommand):
                 """,
                 table.split(".") if "." in table else ["public", table],
             )
-            num_cols = [r[0] for r in cur.fetchall() if r[0] not in ("geography_id", "source_id")]
+            num_cols = [
+                r[0]
+                for r in cur.fetchall()
+                if r[0] not in ("geography_id", "source_id")
+            ]
 
             if not num_cols:
                 return {}
 
-            sum_exprs = ", ".join(
-                f'COALESCE(SUM("{c}"), 0) AS "{c}"' for c in num_cols
-            )
+            sum_exprs = ", ".join(f'COALESCE(SUM("{c}"), 0) AS "{c}"' for c in num_cols)
             # Add geography filter if provided
             where_clause = ""
             if geography_ids:
@@ -329,9 +351,20 @@ class Command(BaseCommand):
     def _print_totals(self, totals: dict[str, float], label: str) -> None:
         """Print key aggregate totals."""
         key_cols = [
-            "acres_gross", "acres_parcel", "pop", "hh", "du", "emp",
-            "emp_ret", "emp_off", "emp_ind", "emp_pub", "emp_ag",
-            "du_detsf", "du_attsf", "du_mf",
+            "acres_gross",
+            "acres_parcel",
+            "pop",
+            "hh",
+            "du",
+            "emp",
+            "emp_ret",
+            "emp_off",
+            "emp_ind",
+            "emp_pub",
+            "emp_ag",
+            "du_detsf",
+            "du_attsf",
+            "du_mf",
         ]
         # Try v3 names and their v1 equivalents
         col_map = {
@@ -373,7 +406,9 @@ class Command(BaseCommand):
         lines.append("")
         lines.append(f"**Generated:** {time.strftime('%Y-%m-%d %H:%M:%S')}")
         lines.append(f"**Region:** Sacramento County, CA (SACOG)")
-        lines.append(f"**Reference:** `{V1_BASE_CANVAS}` (2015 vintage, 2008-2012 data)")
+        lines.append(
+            f"**Reference:** `{V1_BASE_CANVAS}` (2015 vintage, 2008-2012 data)"
+        )
         lines.append(f"**Quick mode:** {quick}")
         lines.append(f"**Parcel limit:** {limit if limit else 'all (502,874)'}")
         lines.append(f"**ETL elapsed:** {etl_result.get('elapsed', 'N/A')}s")
@@ -395,7 +430,11 @@ class Command(BaseCommand):
                     ("Parcel Area", "acres_parcel", "area_parcel"),
                     ("Res Parcel Area", "acres_parcel_res", "area_parcel_res"),
                     ("Emp Parcel Area", "acres_parcel_emp", "area_parcel_emp"),
-                    ("Mixed Use Area", "acres_parcel_mixed_use", "area_parcel_mixed_use"),
+                    (
+                        "Mixed Use Area",
+                        "acres_parcel_mixed_use",
+                        "area_parcel_mixed_use",
+                    ),
                     ("No Use Area", "acres_parcel_no_use", "area_parcel_no_use"),
                 ],
             ),
@@ -432,15 +471,27 @@ class Command(BaseCommand):
                     ("Retail Services", "emp_retail_services", "emp_retail_services"),
                     ("Restaurant", "emp_restaurant", "emp_restaurant"),
                     ("Accommodation", "emp_accommodation", "emp_accommodation"),
-                    ("Arts & Entertain.", "emp_arts_entertainment", "emp_arts_entertainment"),
+                    (
+                        "Arts & Entertain.",
+                        "emp_arts_entertainment",
+                        "emp_arts_entertainment",
+                    ),
                     ("Other Services", "emp_other_services", "emp_other_services"),
                     ("Office Services", "emp_office_services", "emp_office_services"),
-                    ("Medical Services", "emp_medical_services", "emp_medical_services"),
+                    (
+                        "Medical Services",
+                        "emp_medical_services",
+                        "emp_medical_services",
+                    ),
                     ("Public Admin", "emp_public_admin", "emp_public_admin"),
                     ("Education", "emp_education", "emp_education"),
                     ("Manufacturing", "emp_manufacturing", "emp_manufacturing"),
                     ("Wholesale", "emp_wholesale", "emp_wholesale"),
-                    ("Transport/Ware.", "emp_transport_warehousing", "emp_transport_warehousing"),
+                    (
+                        "Transport/Ware.",
+                        "emp_transport_warehousing",
+                        "emp_transport_warehousing",
+                    ),
                     ("Utilities", "emp_utilities", "emp_utilities"),
                     ("Construction", "emp_construction", "emp_construction"),
                     ("Agriculture", "emp_agriculture", "emp_agriculture"),
@@ -454,24 +505,64 @@ class Command(BaseCommand):
                     ("Bldg Det SF LL", "bldg_sqft_detsf_ll", "bldg_area_detsf_ll"),
                     ("Bldg Att SF", "bldg_sqft_attsf", "bldg_area_attsf"),
                     ("Bldg MF", "bldg_sqft_mf", "bldg_area_mf"),
-                    ("Bldg Retail Svc", "bldg_sqft_retail_services", "bldg_area_retail_services"),
+                    (
+                        "Bldg Retail Svc",
+                        "bldg_sqft_retail_services",
+                        "bldg_area_retail_services",
+                    ),
                     ("Bldg Restaurant", "bldg_sqft_restaurant", "bldg_area_restaurant"),
-                    ("Bldg Accommodation", "bldg_sqft_accommodation", "bldg_area_accommodation"),
-                    ("Bldg Arts/Entertain", "bldg_sqft_arts_entertainment", "bldg_area_arts_entertainment"),
-                    ("Bldg Other Svc", "bldg_sqft_other_services", "bldg_area_other_services"),
-                    ("Bldg Office Svc", "bldg_sqft_office_services", "bldg_area_office_services"),
-                    ("Bldg Public Admin", "bldg_sqft_public_admin", "bldg_area_public_admin"),
+                    (
+                        "Bldg Accommodation",
+                        "bldg_sqft_accommodation",
+                        "bldg_area_accommodation",
+                    ),
+                    (
+                        "Bldg Arts/Entertain",
+                        "bldg_sqft_arts_entertainment",
+                        "bldg_area_arts_entertainment",
+                    ),
+                    (
+                        "Bldg Other Svc",
+                        "bldg_sqft_other_services",
+                        "bldg_area_other_services",
+                    ),
+                    (
+                        "Bldg Office Svc",
+                        "bldg_sqft_office_services",
+                        "bldg_area_office_services",
+                    ),
+                    (
+                        "Bldg Public Admin",
+                        "bldg_sqft_public_admin",
+                        "bldg_area_public_admin",
+                    ),
                     ("Bldg Education", "bldg_sqft_education", "bldg_area_education"),
-                    ("Bldg Medical Svc", "bldg_sqft_medical_services", "bldg_area_medical_services"),
-                    ("Bldg Trans/Ware", "bldg_sqft_transport_warehousing", "bldg_area_transport_warehousing"),
+                    (
+                        "Bldg Medical Svc",
+                        "bldg_sqft_medical_services",
+                        "bldg_area_medical_services",
+                    ),
+                    (
+                        "Bldg Trans/Ware",
+                        "bldg_sqft_transport_warehousing",
+                        "bldg_area_transport_warehousing",
+                    ),
                     ("Bldg Wholesale", "bldg_sqft_wholesale", "bldg_area_wholesale"),
                 ],
             ),
             (
                 "Irrigation (acres)",
                 [
-                    ("Res Irrigated", "residential_irrigated_sqft", "residential_irrigated_area"),
-                    ("Com Irrigated", "commercial_irrigated_sqft", "commercial_irrigated_area"),
+                    (
+                        "Res Irrigated",
+                        "residential_irrigated_sqft",
+                        "residential_irrigated_area",
+                    ),
+                    (
+                        "Com Irrigated",
+                        "commercial_irrigated_sqft",
+                        "commercial_irrigated_area",
+                    ),
                 ],
             ),
         ]
@@ -514,7 +605,9 @@ class Command(BaseCommand):
                     diff_str = f"{'N/A':>11}"
                     pct_str = f"{'N/A':>7}"
 
-                lines.append(f"| {label:25s} | {ref_str} | {brew_str} | {diff_str} | {pct_str} |")
+                lines.append(
+                    f"| {label:25s} | {ref_str} | {brew_str} | {diff_str} | {pct_str} |"
+                )
 
         lines.append(f"\n\n**Columns matched:** {matched_count}")
 
@@ -566,7 +659,9 @@ class Command(BaseCommand):
         lines.append("")
         lines.append("Expected differences:")
         lines.append("")
-        lines.append("- **Area columns** — Should match closely (same parcels, same geometry)")
+        lines.append(
+            "- **Area columns** — Should match closely (same parcels, same geometry)"
+        )
         lines.append(
             "- **Demographics** — Will differ: v1 uses 2008 SACOG estimates + ACS rates; "
             "brewgis uses direct 2010 ACS block-group area-weighted allocation"
@@ -605,11 +700,67 @@ class Command(BaseCommand):
         for col in brew_only_cols:
             val = brew.get(col)
             if val is not None:
-                lines.append(f"- **{col}**: {val:,.1f} (brewGIS only — no v1 equivalent)")
+                lines.append(
+                    f"- **{col}**: {val:,.1f} (brewGIS only — no v1 equivalent)"
+                )
+        lines.append("")
+
+        # ── Equity Column Validation ────────────────────────────────────
+        lines.append("## 5. Equity Column Validation (vs ACS County Estimates)")
+        lines.append("")
+        lines.append(
+            "These BrewGIS-only equity columns cannot be compared against the v1 reference. "
+        )
+        lines.append(
+            "Instead, they are validated against published ACS 5-year county-level estimates "
+        )
+        lines.append("for Sacramento County, CA.")
+        lines.append("")
+        lines.append("| Column | BrewGIS Aggregate | ACS County Estimate | Notes |")
+        lines.append("|--------|------------------:|--------------------:|-------|")
+
+        acs_estimates: dict[str, dict[str, float | str]] = {
+            "median_income": {
+                "value": 75430.0,
+                "source": "ACS B19013 (2022), median $",
+            },
+            "pct_minority": {"value": 55.2, "source": "ACS B03002 (2022), % non-White"},
+            "pct_college_educated": {
+                "value": 34.8,
+                "source": "ACS B15003 (2022), % Bachelor's+",
+            },
+            "cost_burden_pct": {
+                "value": 42.0,
+                "source": "ACS B25070+B25091 (2022), % >30% income",
+            },
+        }
+
+        for col, info in acs_estimates.items():
+            brew_val = brew.get(col)
+            if brew_val is None:
+                continue
+            pop_val = brew.get("pop", 0.0)
+            if pop_val is None or pop_val <= 0:
+                avg_str = "N/A"
+            elif col == "median_income":
+                avg_val = brew_val / pop_val
+                avg_str = f"${avg_val:,.0f}"
+            else:
+                avg_val = brew_val / pop_val
+                avg_str = f"{avg_val:,.1f}%"
+            acs_val = info["value"]
+            if isinstance(acs_val, float):
+                if col == "median_income":
+                    acs_str = f"${acs_val:,.0f}"
+                else:
+                    acs_str = f"{acs_val:,.1f}%"
+            else:
+                acs_str = str(acs_val)
+            lines.append(f"| {col} | {avg_str} | {acs_str} | {info['source']} |")
         lines.append("")
 
         # ── Notes ─────────────────────────────────────────────────────
-        lines.append("## 5. Notes")
+        lines.append("## 6. Notes")
         lines.append("")
         lines.append(
             f"- This report compares **aggregate totals** across all "
@@ -632,6 +783,11 @@ class Command(BaseCommand):
             "- The reference does not contain equity columns (median_income, "
             "rent_burden_pct, pct_minority, pct_college_educated, cost_burden_pct) — "
             "these are brewGIS-only additions."
+        )
+        lines.append(
+            "- Irrigation values: The v1 reference stores irrigation in square feet. "
+            "BrewGIS stores in acres. This report applies sqft→acres conversion "
+            "(÷ 43,560) to v1 values for comparability."
         )
         lines.append("")
 

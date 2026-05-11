@@ -606,6 +606,34 @@ class BaseCanvasETL:
             gdf["built_form_key"] = gdf["built_form_key"].fillna(
                 _DEFAULT_BUILT_FORM_KEY
             )
+        gdf = self._compute_area_by_use(gdf)
+        return gdf
+
+    def _compute_area_by_use(self, gdf: gpd.GeoDataFrame) -> gpd.GeoDataFrame:
+        """Derive area-by-use columns from land_development_category."""
+        category_map = {
+            "urban": "area_parcel_res",
+            "agricultural": "area_parcel_emp_ag",
+            "undeveloped": "area_parcel_no_use",
+        }
+
+        if "land_development_category" not in gdf.columns:
+            return gdf
+
+        if "area_parcel" not in gdf.columns:
+            area_col = "area_gross"
+        else:
+            area_col = "area_parcel"
+
+        categories = gdf["land_development_category"].fillna("undeveloped")
+
+        for cat, target_col in category_map.items():
+            if target_col in gdf.columns:
+                mask = categories == cat
+                gdf[target_col] = gdf[target_col].fillna(
+                    gdf.loc[mask, area_col] if mask.any() else 0.0
+                )
+
         return gdf
 
     def _estimate_irrigation(self, gdf: gpd.GeoDataFrame) -> gpd.GeoDataFrame:
@@ -620,15 +648,11 @@ class BaseCanvasETL:
             res_area = gdf["area_parcel_res"].fillna(gdf["area_gross"])
             gdf["residential_irrigated_area"] = gdf[
                 "residential_irrigated_area"
-            ].fillna(
-                res_area
-                * _DEFAULT_IRRIGATION_RES_FRAC
-            )
+            ].fillna(res_area * _DEFAULT_IRRIGATION_RES_FRAC)
         if "commercial_irrigated_area" in gdf.columns:
             emp_area = gdf["area_parcel_emp"].fillna(gdf["area_gross"])
             gdf["commercial_irrigated_area"] = gdf["commercial_irrigated_area"].fillna(
-                emp_area
-                * _DEFAULT_IRRIGATION_COM_FRAC
+                emp_area * _DEFAULT_IRRIGATION_COM_FRAC
             )
         return gdf
 
@@ -721,10 +745,14 @@ class BaseCanvasETL:
                         vals.append(val)
             rows.append(tuple(vals))
         # Build a single-row placeholder: ( %s, %s, ST_GeomFromText(%s, 4326), ... )
-        row_placeholder = "(" + ", ".join(
-            "ST_GeomFromText(%s, 4326)" if c == "geometry" else "%s"
-            for c in insert_cols
-        ) + ")"
+        row_placeholder = (
+            "("
+            + ", ".join(
+                "ST_GeomFromText(%s, 4326)" if c == "geometry" else "%s"
+                for c in insert_cols
+            )
+            + ")"
+        )
         sql_base = f"INSERT INTO public.base_canvas ({col_names}) VALUES "
         page_size = 5000
         with connection.cursor() as cursor:
@@ -737,6 +765,7 @@ class BaseCanvasETL:
         rows_written = len(gdf)
         self._log(f"Wrote {rows_written} rows to public.base_canvas")
         return rows_written
+
     def _validate(self) -> None:
         """Validate the base canvas after ETL."""
         missing = BaseCanvasManager.validate_schema()
