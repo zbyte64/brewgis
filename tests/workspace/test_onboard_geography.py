@@ -1,4 +1,5 @@
 """Tests for the onboard_geography management command."""
+
 from __future__ import annotations
 
 from unittest.mock import patch
@@ -61,13 +62,15 @@ class TestOnboardGeography:
                     "properties": {},
                     "geometry": {
                         "type": "Polygon",
-                        "coordinates": [[
-                            [-119.8, 36.7],
-                            [-119.8, 36.8],
-                            [-119.7, 36.8],
-                            [-119.7, 36.7],
-                            [-119.8, 36.7],
-                        ]],
+                        "coordinates": [
+                            [
+                                [-119.8, 36.7],
+                                [-119.8, 36.8],
+                                [-119.7, 36.8],
+                                [-119.7, 36.7],
+                                [-119.8, 36.7],
+                            ]
+                        ],
                     },
                 }
             ],
@@ -96,11 +99,11 @@ class TestOnboardGeography:
 
         assert mock_etl_run.called
 
-    @patch("brewgis.workspace.management.commands.onboard_geography.Command._print_summary")
+    @patch(
+        "brewgis.workspace.management.commands.onboard_geography.Command._print_summary"
+    )
     @patch("brewgis.workspace.services.base_canvas_etl.BaseCanvasETL.run")
-    def test_onboarding_with_synthetic(
-        self, mock_etl_run, mock_summary
-    ) -> None:
+    def test_onboarding_with_synthetic(self, mock_etl_run, mock_summary) -> None:
         """Onboarding should work with synthetic parcels (testing ETL integration)."""
         # Create synthetic GeoJSON
         import json
@@ -115,13 +118,15 @@ class TestOnboardGeography:
                     "properties": {},
                     "geometry": {
                         "type": "Polygon",
-                        "coordinates": [[
-                            [-119.8, 36.7],
-                            [-119.8, 36.8],
-                            [-119.7, 36.8],
-                            [-119.7, 36.7],
-                            [-119.8, 36.7],
-                        ]],
+                        "coordinates": [
+                            [
+                                [-119.8, 36.7],
+                                [-119.8, 36.8],
+                                [-119.7, 36.8],
+                                [-119.7, 36.7],
+                                [-119.8, 36.7],
+                            ]
+                        ],
                     },
                 }
             ],

@@ -83,7 +83,9 @@ def external_service_add(request: HttpRequest, workspace_pk: int) -> HttpRespons
 
         # Return the updated list partial
         context = _list_context(workspace)
-        response = render(request, "workspace/partials/_external_service_list.html", context)
+        response = render(
+            request, "workspace/partials/_external_service_list.html", context
+        )
         response["HX-Redirect"] = ""
         return response
 

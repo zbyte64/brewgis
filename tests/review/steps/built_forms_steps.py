@@ -31,18 +31,14 @@ def navigate_place_types(page, live_server_url) -> None:
 def see_cards(page) -> None:
     """Check that card elements are visible."""
     count = BuiltFormsPage(page).card_count()
-    assert count > 0, (
-        f"Expected built form cards, got count {count}"
-    )
+    assert count > 0, f"Expected built form cards, got count {count}"
 
 
 @then(parsers.parse('I should see "{name}" in the cards'))
 def see_card_title(page, name: str) -> None:
     """Check a specific name appears in card titles."""
     titles = BuiltFormsPage(page).card_titles()
-    assert name in titles, (
-        f"Expected '{name}' in card titles, got {titles}"
-    )
+    assert name in titles, f"Expected '{name}' in card titles, got {titles}"
 
 
 @then("a bake button should be accessible")

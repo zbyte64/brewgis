@@ -150,7 +150,9 @@ def register_tools(server: object) -> None:
             except ValueError:
                 return {"error": "Invalid clone_from_slug"}
             source = get_object_or_404(Scenario, pk=source_pk, workspace=workspace)
-            new_scenario = clone_scenario(source=source, name=name, description=description)
+            new_scenario = clone_scenario(
+                source=source, name=name, description=description
+            )
         else:
             new_scenario = Scenario.objects.create(
                 workspace=workspace,
@@ -182,7 +184,9 @@ def register_tools(server: object) -> None:
         return {"deleted": True, "slug": scenario_slug}
 
     @server.tool()  # type: ignore[misc]
-    def rename_scenario(workspace_slug: str, scenario_slug: str, new_name: str) -> dict[str, Any]:
+    def rename_scenario(
+        workspace_slug: str, scenario_slug: str, new_name: str
+    ) -> dict[str, Any]:
         """Rename a scenario."""
         try:
             ws_pk = int(workspace_slug)

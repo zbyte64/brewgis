@@ -259,7 +259,7 @@ def test_gravity_model_internal_zero_when_attractors_exist(
         if trips[i] > 0:
             for j in range(n):
                 if j != i and has_attract[j]:
-                    d = np.sqrt((xs[i] - xs[j])**2 + (ys[i] - ys[j])**2)
+                    d = np.sqrt((xs[i] - xs[j]) ** 2 + (ys[i] - ys[j]) ** 2)
                     if d > 1e-10:
                         break
             else:

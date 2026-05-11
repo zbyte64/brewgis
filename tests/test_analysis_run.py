@@ -46,7 +46,9 @@ class TestAnalysisRunModel(TestCase):
 
     def test_default_status_is_pending(self) -> None:
         """Default status should be 'pending'."""
-        run = AnalysisRun.objects.create(workspace=self.workspace, scenario=self.scenario)
+        run = AnalysisRun.objects.create(
+            workspace=self.workspace, scenario=self.scenario
+        )
         self.assertEqual(run.status, "pending")
 
     def test_status_transition_pending_to_running_to_completed(self) -> None:
@@ -111,7 +113,9 @@ class TestAnalysisRunModel(TestCase):
 
     def test_modules_defaults_to_empty_list(self) -> None:
         """modules should default to an empty list."""
-        run = AnalysisRun.objects.create(workspace=self.workspace, scenario=self.scenario)
+        run = AnalysisRun.objects.create(
+            workspace=self.workspace, scenario=self.scenario
+        )
         self.assertEqual(run.modules, [])
 
     def test_vars_accepts_dict(self) -> None:
@@ -135,13 +139,17 @@ class TestAnalysisRunModel(TestCase):
 
     def test_vars_defaults_to_empty_dict(self) -> None:
         """vars should default to an empty dict."""
-        run = AnalysisRun.objects.create(workspace=self.workspace, scenario=self.scenario)
+        run = AnalysisRun.objects.create(
+            workspace=self.workspace, scenario=self.scenario
+        )
         self.assertEqual(run.vars, {})
 
     def test_created_at_is_auto_set(self) -> None:
         """created_at should be set automatically on creation."""
         now = timezone.now()
-        run = AnalysisRun.objects.create(workspace=self.workspace, scenario=self.scenario)
+        run = AnalysisRun.objects.create(
+            workspace=self.workspace, scenario=self.scenario
+        )
 
         self.assertIsNotNone(run.created_at)
         self.assertLess(
@@ -151,14 +159,15 @@ class TestAnalysisRunModel(TestCase):
 
     def test_started_at_completed_at_nullable(self) -> None:
         """started_at and completed_at should be nullable."""
-        run = AnalysisRun.objects.create(workspace=self.workspace, scenario=self.scenario)
+        run = AnalysisRun.objects.create(
+            workspace=self.workspace, scenario=self.scenario
+        )
         self.assertIsNone(run.started_at)
         self.assertIsNone(run.completed_at)
 
     def test_scenario_fk(self) -> None:
         """AnalysisRun can be associated with a Scenario via FK."""
         self.assertEqual(self.run.scenario, self.scenario)
-
 
 
 @pytest.mark.integration
@@ -396,15 +405,25 @@ class TestNewModuleResolution(TestCase):
             f"Expected core < trip_generation < trip_distribution, "
             f"got indices: core={core_idx}, tg={tg_idx}, td={td_idx}"
         )
-        assert td_idx < mc_idx, f"Expected trip_distribution < mode_choice, got {ordered}"
-        assert td_idx < ic_idx, f"Expected trip_distribution < internal_capture, got {ordered}"
+        assert td_idx < mc_idx, (
+            f"Expected trip_distribution < mode_choice, got {ordered}"
+        )
+        assert td_idx < ic_idx, (
+            f"Expected trip_distribution < internal_capture, got {ordered}"
+        )
         assert mc_idx < vm_idx, f"Expected mode_choice < vmt, got {ordered}"
 
     def test_transport_module_result_tables_defined(self) -> None:
         """Transport modules must have result tables in MODULE_RESULT_TABLES."""
         from brewgis.workspace.analysis.module_registry import MODULE_RESULT_TABLES
 
-        for module in ["trip_generation", "trip_distribution", "mode_choice", "vmt", "internal_capture"]:
+        for module in [
+            "trip_generation",
+            "trip_distribution",
+            "mode_choice",
+            "vmt",
+            "internal_capture",
+        ]:
             assert module in MODULE_RESULT_TABLES, (
                 f"{module} missing from MODULE_RESULT_TABLES"
             )

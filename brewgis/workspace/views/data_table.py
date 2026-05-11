@@ -1,4 +1,5 @@
 """View for displaying layer data as a paginated/sortable HTML table."""
+
 from __future__ import annotations
 
 import logging
@@ -96,18 +97,14 @@ def layer_data_table(request: HttpRequest, layer_pk: int) -> HttpResponse:
         # ── Data rows ────────────────────────────────────────────────
         rows: list[list[str]] = []
         if data_columns:
-            quoted_cols = ", ".join(
-                connection.ops.quote_name(c) for c in data_columns
-            )
+            quoted_cols = ", ".join(connection.ops.quote_name(c) for c in data_columns)
             cursor.execute(
                 f"SELECT {quoted_cols} FROM {quoted_schema}.{quoted_table} "
                 f"{order_clause} LIMIT %s OFFSET %s",
                 [page_size, offset],
             )
             for db_row in cursor.fetchall():
-                rows.append(
-                    [str(v) if v is not None else "" for v in db_row]
-                )
+                rows.append([str(v) if v is not None else "" for v in db_row])
 
     context: dict[str, Any] = {
         "layer": layer,

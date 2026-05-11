@@ -26,9 +26,7 @@ class TestPOICacheModel(TestCase):
     def test_poicache_created(self):
         from brewgis.workspace.models import POICache
 
-        cached = POICache.objects.get(
-            workspace=self.workspace, name="food_poi"
-        )
+        cached = POICache.objects.get(workspace=self.workspace, name="food_poi")
         assert cached.geojson_data["type"] == "FeatureCollection"
         assert cached.source == "osm"
 
@@ -57,9 +55,7 @@ class TestPOICacheModel(TestCase):
     def test_poicache_str(self):
         from brewgis.workspace.models import POICache
 
-        poicache = POICache.objects.get(
-            workspace=self.workspace, name="food_poi"
-        )
+        poicache = POICache.objects.get(workspace=self.workspace, name="food_poi")
         assert "POICache" in str(poicache)
         assert str(self.workspace.pk) in str(poicache)
 

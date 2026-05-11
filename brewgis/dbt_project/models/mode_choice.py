@@ -37,7 +37,16 @@ def _multinomial_logit(
     beta_density: float = 0.15,
     beta_design_walk: float = 0.05,
     beta_transit_dist: float = 0.02,
-) -> tuple[np.ndarray, np.ndarray, np.ndarray, np.ndarray, np.ndarray, np.ndarray, np.ndarray, np.ndarray]:
+) -> tuple[
+    np.ndarray,
+    np.ndarray,
+    np.ndarray,
+    np.ndarray,
+    np.ndarray,
+    np.ndarray,
+    np.ndarray,
+    np.ndarray,
+]:
     """Multinomial logit mode split (pure function).
 
     Args:
@@ -63,9 +72,15 @@ def _multinomial_logit(
 
     # Utility functions (auto is reference, U_auto = 0)
     u_auto = np.zeros(n)
-    u_transit = asc_transit + beta_density * ln_density + beta_transit_dist * transit_access
-    u_walk = asc_walk + beta_density * ln_density + beta_design_walk * intersection_density
-    u_bike = asc_bike + beta_density * ln_density + beta_design_walk * intersection_density
+    u_transit = (
+        asc_transit + beta_density * ln_density + beta_transit_dist * transit_access
+    )
+    u_walk = (
+        asc_walk + beta_density * ln_density + beta_design_walk * intersection_density
+    )
+    u_bike = (
+        asc_bike + beta_density * ln_density + beta_design_walk * intersection_density
+    )
 
     # Numerically stable softmax
     u_stack = np.column_stack([u_auto, u_transit, u_walk, u_bike])
@@ -78,8 +93,14 @@ def _multinomial_logit(
     trips_by_mode = trips_outbound.reshape(-1, 1) * shares
 
     return (
-        trips_by_mode[:, 0], trips_by_mode[:, 1], trips_by_mode[:, 2], trips_by_mode[:, 3],
-        shares[:, 0], shares[:, 1], shares[:, 2], shares[:, 3],
+        trips_by_mode[:, 0],
+        trips_by_mode[:, 1],
+        trips_by_mode[:, 2],
+        trips_by_mode[:, 3],
+        shares[:, 0],
+        shares[:, 1],
+        shares[:, 2],
+        shares[:, 3],
     )
 
 
@@ -150,8 +171,14 @@ def model(dbt, session):
 
     # Delegate to pure function
     (
-        ta, tt, tw, tb,
-        sa, st_, sw, sb,
+        ta,
+        tt,
+        tw,
+        tb,
+        sa,
+        st_,
+        sw,
+        sb,
     ) = _multinomial_logit(
         trips_outbound=df["trips_outbound"].values,
         ln_density=ln_density,

@@ -78,7 +78,7 @@ def register_tools(server: object) -> None:
                 qs = connection.ops.quote_name
                 with connection.cursor() as cursor:
                     cursor.execute(
-                        f'SELECT COUNT(*) FROM {qs(workspace.db_schema)}.{qs(layer.db_table)}'
+                        f"SELECT COUNT(*) FROM {qs(workspace.db_schema)}.{qs(layer.db_table)}"
                     )
                     feat_count = cursor.fetchone()[0]
             except Exception:
@@ -184,14 +184,22 @@ def register_tools(server: object) -> None:
             if clauses:
                 where_clause = " WHERE " + " AND ".join(clauses)
 
-        sql = f"SELECT {col_expr} FROM {schema}.{table}{where_clause} LIMIT %s OFFSET %s"
+        sql = (
+            f"SELECT {col_expr} FROM {schema}.{table}{where_clause} LIMIT %s OFFSET %s"
+        )
         params.extend([limit, offset])
 
         try:
             with connection.cursor() as cursor:
                 cursor.execute(sql, params)
                 rows = cursor.fetchall()
-                return {"count": len(rows), "rows": [dict(zip([col[0] for col in cursor.description], row)) for row in rows]}
+                return {
+                    "count": len(rows),
+                    "rows": [
+                        dict(zip([col[0] for col in cursor.description], row))
+                        for row in rows
+                    ],
+                }
         except Exception as e:
             return {"error": str(e), "rows": []}
 
@@ -211,13 +219,15 @@ def register_tools(server: object) -> None:
 
         classes = []
         for cls in config.classes.all().order_by("sort_order"):
-            classes.append({
-                "label": cls.label,
-                "value": cls.value,
-                "color": cls.color,
-                "opacity": cls.opacity,
-                "sort_order": cls.sort_order,
-            })
+            classes.append(
+                {
+                    "label": cls.label,
+                    "value": cls.value,
+                    "color": cls.color,
+                    "opacity": cls.opacity,
+                    "sort_order": cls.sort_order,
+                }
+            )
         return SymbologyConfigSchema(
             symbology_type=config.symbology_type,
             default_color=config.default_color,
@@ -295,13 +305,20 @@ def register_tools(server: object) -> None:
         workspace = get_object_or_404(Workspace, pk=ws_pk)
         layer = get_object_or_404(Layer, key=layer_key, workspace=workspace)
         try:
-            config = auto_generate_symbology(layer, method=method, num_classes=num_classes, palette=palette)
-            return {"status": "generated", "symbology_type": config.symbology_type if config else "unknown"}
+            config = auto_generate_symbology(
+                layer, method=method, num_classes=num_classes, palette=palette
+            )
+            return {
+                "status": "generated",
+                "symbology_type": config.symbology_type if config else "unknown",
+            }
         except Exception as e:
             return {"error": str(e)}
 
     @server.tool()  # type: ignore[misc]
-    def preview_symbology_style(workspace_slug: str, layer_key: str, symbology_type: str = "single") -> dict[str, Any]:
+    def preview_symbology_style(
+        workspace_slug: str, layer_key: str, symbology_type: str = "single"
+    ) -> dict[str, Any]:
         """Preview the MapLibre GL Style JSON for a layer's symbology."""
         try:
             ws_pk = int(workspace_slug)

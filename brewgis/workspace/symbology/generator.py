@@ -12,6 +12,7 @@ from typing import Any
 import deal
 
 from brewgis.workspace.models import SymbologyConfig
+
 __all__ = ["generate_maplibre_style", "auto_generate_style_from_layer"]
 
 
@@ -25,7 +26,6 @@ def _normalize_geo(geometry_type: str) -> str:
     if "circle" in geo or "point" in geo:
         return "circle"
     return "fill"
-
 
 
 def _null_expression(
@@ -185,7 +185,6 @@ def generate_maplibre_style(symbology: SymbologyConfig) -> dict[str, Any]:
             0,
             paint.get(opacity_key, symbology.default_opacity),
         ]
-
 
     # Zoom-level adaptation
     if symbology.min_zoom > 0:

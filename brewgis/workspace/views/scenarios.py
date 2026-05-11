@@ -61,7 +61,9 @@ class ScenarioCreateForm(forms.Form):
         widget=forms.NumberInput(attrs={"class": "form-control"}),
     )
 
-    def __init__(self, *args: object, workspace: Workspace | None = None, **kwargs: object) -> None:
+    def __init__(
+        self, *args: object, workspace: Workspace | None = None, **kwargs: object
+    ) -> None:
         super().__init__(*args, **kwargs)
         if workspace is not None:
             self.fields["parent"].queryset = Scenario.objects.filter(
@@ -76,11 +78,17 @@ class ScenarioCreateForm(forms.Form):
         scenario_type = cleaned.get("scenario_type")
         parent = cleaned.get("parent")
 
-        if base_year is not None and horizon_year is not None and base_year >= horizon_year:
+        if (
+            base_year is not None
+            and horizon_year is not None
+            and base_year >= horizon_year
+        ):
             self.add_error("horizon_year", "Horizon year must be after base year.")
 
         if scenario_type == ScenarioType.ALTERNATIVE and parent is None:
-            self.add_error("parent", "Alternative scenarios must have a parent base scenario.")
+            self.add_error(
+                "parent", "Alternative scenarios must have a parent base scenario."
+            )
 
         if scenario_type == ScenarioType.BASE and parent is not None:
             cleaned["parent"] = None
@@ -145,8 +153,12 @@ def _build_comparison_metrics(scenario: Scenario) -> dict[str, float | int | Non
     )
     if latest_run is not None and latest_run.vars:
         metrics["total_vmt"] = latest_run.vars.get("total_vmt")
-        metrics["total_water"] = latest_run.vars.get("total_water") or latest_run.vars.get("total_water_demand")
-        metrics["total_energy"] = latest_run.vars.get("total_energy") or latest_run.vars.get("total_energy_demand")
+        metrics["total_water"] = latest_run.vars.get(
+            "total_water"
+        ) or latest_run.vars.get("total_water_demand")
+        metrics["total_energy"] = latest_run.vars.get(
+            "total_energy"
+        ) or latest_run.vars.get("total_energy_demand")
 
     return metrics
 
@@ -208,7 +220,9 @@ def scenario_create(request: HttpRequest, workspace_pk: int) -> HttpResponse:
 
 
 @user_passes_test(lambda u: u.is_authenticated)
-def scenario_edit(request: HttpRequest, workspace_pk: int, scenario_pk: int) -> HttpResponse:
+def scenario_edit(
+    request: HttpRequest, workspace_pk: int, scenario_pk: int
+) -> HttpResponse:
     """Edit an existing scenario's metadata."""
     workspace = get_object_or_404(Workspace, pk=workspace_pk)
     scenario = get_object_or_404(Scenario, pk=scenario_pk, workspace=workspace)
@@ -242,7 +256,9 @@ def scenario_edit(request: HttpRequest, workspace_pk: int, scenario_pk: int) -> 
 
 
 @user_passes_test(lambda u: u.is_authenticated)
-def scenario_delete(request: HttpRequest, workspace_pk: int, scenario_pk: int) -> JsonResponse | HttpResponse:
+def scenario_delete(
+    request: HttpRequest, workspace_pk: int, scenario_pk: int
+) -> JsonResponse | HttpResponse:
     """Delete a scenario. POST only; returns JSON."""
     if request.method != "POST":
         return JsonResponse({"error": "Method not allowed"}, status=405)
@@ -254,7 +270,9 @@ def scenario_delete(request: HttpRequest, workspace_pk: int, scenario_pk: int) -
 
 
 @user_passes_test(lambda u: u.is_authenticated)
-def scenario_clone(request: HttpRequest, workspace_pk: int, scenario_pk: int) -> JsonResponse | HttpResponse:
+def scenario_clone(
+    request: HttpRequest, workspace_pk: int, scenario_pk: int
+) -> JsonResponse | HttpResponse:
     """Clone a scenario. POST only; accepts JSON body with name (required) and description."""
     if request.method != "POST":
         return JsonResponse({"error": "Method not allowed"}, status=405)
@@ -270,14 +288,16 @@ def scenario_clone(request: HttpRequest, workspace_pk: int, scenario_pk: int) ->
     description = body.get("description", "")
     new_scenario = clone_scenario(source=source, name=name, description=description)
 
-    return JsonResponse({
-        "status": "ok",
-        "scenario": {
-            "pk": new_scenario.pk,
-            "name": new_scenario.name,
-            "slug": new_scenario.slug,
-        },
-    })
+    return JsonResponse(
+        {
+            "status": "ok",
+            "scenario": {
+                "pk": new_scenario.pk,
+                "name": new_scenario.name,
+                "slug": new_scenario.slug,
+            },
+        }
+    )
 
 
 @user_passes_test(lambda u: u.is_authenticated)
@@ -286,7 +306,9 @@ def scenario_comparison(request: HttpRequest, workspace_pk: int) -> HttpResponse
     workspace = get_object_or_404(Workspace, pk=workspace_pk)
 
     scenario_pks_param = request.GET.get("scenarios", "")
-    scenario_pks = [int(pk.strip()) for pk in scenario_pks_param.split(",") if pk.strip()]
+    scenario_pks = [
+        int(pk.strip()) for pk in scenario_pks_param.split(",") if pk.strip()
+    ]
 
     scenarios = list(Scenario.objects.filter(pk__in=scenario_pks, workspace=workspace))
 
@@ -305,10 +327,17 @@ def scenario_comparison(request: HttpRequest, workspace_pk: int) -> HttpResponse
     context: dict[str, object] = {
         "workspace": workspace,
         "scenarios": scenarios,
-        "scenarios_json": json.dumps([
-            {"id": s.pk, "name": s.name, "slug": s.slug, "scenario_type": s.scenario_type}
-            for s in scenarios
-        ]),
+        "scenarios_json": json.dumps(
+            [
+                {
+                    "id": s.pk,
+                    "name": s.name,
+                    "slug": s.slug,
+                    "scenario_type": s.scenario_type,
+                }
+                for s in scenarios
+            ]
+        ),
         "layer_data": layer_data,
         "counties": counties,
     }
@@ -321,19 +350,23 @@ def scenario_comparison_data(request: HttpRequest, workspace_pk: int) -> JsonRes
     workspace = get_object_or_404(Workspace, pk=workspace_pk)
 
     scenario_pks_param = request.GET.get("scenarios", "")
-    scenario_pks = [int(pk.strip()) for pk in scenario_pks_param.split(",") if pk.strip()]
+    scenario_pks = [
+        int(pk.strip()) for pk in scenario_pks_param.split(",") if pk.strip()
+    ]
 
     scenarios = list(Scenario.objects.filter(pk__in=scenario_pks, workspace=workspace))
 
     result_scenarios: list[dict[str, object]] = []
     for sc in scenarios:
         metrics = _build_comparison_metrics(sc)
-        result_scenarios.append({
-            "id": sc.pk,
-            "name": sc.name,
-            "slug": sc.slug,
-            "metrics": metrics,
-        })
+        result_scenarios.append(
+            {
+                "id": sc.pk,
+                "name": sc.name,
+                "slug": sc.slug,
+                "metrics": metrics,
+            }
+        )
 
     return JsonResponse({"status": "ok", "scenarios": result_scenarios})
 
@@ -350,17 +383,24 @@ def _build_county_q(workspace: Workspace) -> object:
         )
     return county_q
 
+
 @require_POST
 @user_passes_test(lambda u: u.is_authenticated)
-def scenario_toggle_publish(request: HttpRequest, workspace_pk: int, scenario_pk: int) -> JsonResponse:
+def scenario_toggle_publish(
+    request: HttpRequest, workspace_pk: int, scenario_pk: int
+) -> JsonResponse:
     """Toggle the published state of a scenario."""
     scenario = get_object_or_404(Scenario, pk=scenario_pk, workspace_id=workspace_pk)
     scenario.published = not scenario.published
     if scenario.published and scenario.public_token is None:
         scenario.public_token = uuid.uuid4()
     scenario.save(update_fields=["published", "public_token"])
-    return JsonResponse({
-        "status": "ok",
-        "published": scenario.published,
-        "public_token": str(scenario.public_token) if scenario.public_token else None,
-    })
+    return JsonResponse(
+        {
+            "status": "ok",
+            "published": scenario.published,
+            "public_token": str(scenario.public_token)
+            if scenario.public_token
+            else None,
+        }
+    )

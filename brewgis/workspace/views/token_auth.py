@@ -38,9 +38,7 @@ def token_auth(request: HttpRequest) -> HttpResponseForbidden | HttpResponseRedi
     try:
         user = User.objects.get(username=username)
     except User.DoesNotExist:
-        return HttpResponseForbidden(
-            f"User '{username}' not found - create it first"
-        )
+        return HttpResponseForbidden(f"User '{username}' not found - create it first")
 
     login(
         request,

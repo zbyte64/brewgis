@@ -115,9 +115,7 @@ class TestDistanceMatrixPreprocessor(TestCase):
             cursor.execute(
                 f"DROP TABLE IF EXISTS {self.SCHEMA}.{self.end_state_table} CASCADE"
             )
-            cursor.execute(
-                f"DROP TABLE IF EXISTS {self.output_table} CASCADE"
-            )
+            cursor.execute(f"DROP TABLE IF EXISTS {self.output_table} CASCADE")
 
     def _get_network_distances(self) -> list[dict]:
         """Fetch computed distance matrix from output table."""
@@ -131,9 +129,7 @@ class TestDistanceMatrixPreprocessor(TestCase):
                 for r in cursor.fetchall()
             ]
 
-    def _get_euclidean_distance_km(
-        self, pid1: int, pid2: int
-    ) -> float | None:
+    def _get_euclidean_distance_km(self, pid1: int, pid2: int) -> float | None:
         """Compute Euclidean distance between two test parcels."""
         with connection.cursor() as cursor:
             cursor.execute(
@@ -155,9 +151,7 @@ class TestDistanceMatrixPreprocessor(TestCase):
             scenario_id="test",
             output_table=self.output_table,
         )
-        self.assertTrue(
-            result["success"], msg=f"Failed: {result.get('error')}"
-        )
+        self.assertTrue(result["success"], msg=f"Failed: {result.get('error')}")
         self.assertGreater(result["pair_count"], 0)
 
     def test_all_distances_positive(self) -> None:
@@ -174,8 +168,7 @@ class TestDistanceMatrixPreprocessor(TestCase):
             self.assertGreater(
                 d["distance_km"],
                 0,
-                f"Distance from parcel {d['origin']} to {d['dest']} "
-                f"must be positive",
+                f"Distance from parcel {d['origin']} to {d['dest']} must be positive",
             )
 
     def test_zero_distance_self_to_self(self) -> None:
@@ -194,8 +187,7 @@ class TestDistanceMatrixPreprocessor(TestCase):
                     d["distance_km"],
                     0.0,
                     delta=0.001,
-                    msg=f"Self-pair ({d['origin']}, {d['dest']}) "
-                    f"should be 0 km",
+                    msg=f"Self-pair ({d['origin']}, {d['dest']}) should be 0 km",
                 )
 
     def test_network_distance_ge_euclidean(self) -> None:
@@ -327,6 +319,5 @@ class TestDistanceMatrixPreprocessor(TestCase):
                     f"DROP TABLE IF EXISTS {self.SCHEMA}.{empty_table} CASCADE"
                 )
                 cursor.execute(
-                    f"DROP TABLE IF EXISTS "
-                    f"{self.SCHEMA}.test_dm_empty_output CASCADE"
+                    f"DROP TABLE IF EXISTS {self.SCHEMA}.test_dm_empty_output CASCADE"
                 )

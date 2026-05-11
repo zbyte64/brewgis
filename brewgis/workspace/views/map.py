@@ -176,14 +176,18 @@ def view_workspace_map(request: HttpRequest, workspace_pk: int) -> HttpResponse:
         try:
             basemap_instance = Basemap.objects.get(pk=basemap_id_sel)
             resolved = basemap_instance.resolve_style()
-            basemap_style = json.dumps(resolved) if isinstance(resolved, dict) else resolved
+            basemap_style = (
+                json.dumps(resolved) if isinstance(resolved, dict) else resolved
+            )
         except Basemap.DoesNotExist:
             basemap_style = None
     if not basemap_style:
         default_basemap = Basemap.objects.filter(is_default=True).first()
         if default_basemap:
             resolved = default_basemap.resolve_style()
-            basemap_style = json.dumps(resolved) if isinstance(resolved, dict) else resolved
+            basemap_style = (
+                json.dumps(resolved) if isinstance(resolved, dict) else resolved
+            )
         else:
             basemap_style = "https://raw.githubusercontent.com/go2garret/maps/main/src/assets/json/openStreetMap.json"
 
@@ -239,12 +243,14 @@ def view_public_scenario_map(request: HttpRequest, token: str) -> HttpResponse:
 
     layer_data = []
     for layer in layers:
-        layer_data.append({
-            "key": layer.key,
-            "name": layer.name,
-            "source": layer.to_maplibre_source(),
-            "symbology": layer.symbology if hasattr(layer, "symbology") else None,
-        })
+        layer_data.append(
+            {
+                "key": layer.key,
+                "name": layer.name,
+                "source": layer.to_maplibre_source(),
+                "symbology": layer.symbology if hasattr(layer, "symbology") else None,
+            }
+        )
 
     context = {
         "workspace": workspace,

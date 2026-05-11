@@ -27,6 +27,7 @@ class TestImputeConstant:
 
         # Verify return type hint is dict[str, Any] (not checking type hints only)
         import typing
+
         hints = typing.get_type_hints(impute_constant)
         assert "return" in hints
         return_hint = hints["return"]

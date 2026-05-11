@@ -31,9 +31,7 @@ def navigate_list(page, live_server_url) -> None:
 def see_form_fields(page) -> None:
     """Check the launch page has form fields."""
     fields = AnalysisPipelinePage(page).launch_form_fields()
-    assert len(fields) > 0, (
-        f"Expected form fields on launch page, got: {fields}"
-    )
+    assert len(fields) > 0, f"Expected form fields on launch page, got: {fields}"
 
 
 @then(parsers.parse('I should see a "{button_text}" button'))
@@ -52,9 +50,7 @@ def shows_runs_or_empty(page) -> None:
     pipeline = AnalysisPipelinePage(page)
     has_empty = pipeline.has_empty_message()
     has_runs = pipeline.run_count() > 0
-    assert has_empty or has_runs, (
-        "Expected either runs or empty state message"
-    )
+    assert has_empty or has_runs, "Expected either runs or empty state message"
 
 
 @then("status badges should be visible for listed runs")
@@ -62,6 +58,4 @@ def status_badges_visible(page) -> None:
     """Check that status badges are present for any listed runs."""
     badges = AnalysisPipelinePage(page).status_badges()
     if AnalysisPipelinePage(page).run_count() > 0:
-        assert len(badges) > 0, (
-            "Expected status badges for listed runs"
-        )
+        assert len(badges) > 0, "Expected status badges for listed runs"

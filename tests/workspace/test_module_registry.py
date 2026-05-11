@@ -35,8 +35,12 @@ class TestResolveModuleOrder:
         result = resolve_module_order(["vmt"])
         # vmt -> mode_choice -> trip_distribution -> trip_generation -> core -> env_constraint
         assert result == [
-            "env_constraint", "core", "trip_generation", "trip_distribution",
-            "mode_choice", "vmt",
+            "env_constraint",
+            "core",
+            "trip_generation",
+            "trip_distribution",
+            "mode_choice",
+            "vmt",
         ]
 
     def test_explicit_dep_module_skipped_when_already_seen(self) -> None:
@@ -56,8 +60,13 @@ class TestResolveModuleOrder:
         # vmt -> mode_choice -> trip_distribution -> trip_generation -> core -> env_constraint
         # land_consumption -> core -> env_constraint (already seen)
         assert result == [
-            "env_constraint", "core", "trip_generation", "trip_distribution",
-            "mode_choice", "vmt", "land_consumption",
+            "env_constraint",
+            "core",
+            "trip_generation",
+            "trip_distribution",
+            "mode_choice",
+            "vmt",
+            "land_consumption",
         ]
 
     def test_unknown_module_raises_value_error(self) -> None:

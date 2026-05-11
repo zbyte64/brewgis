@@ -33,7 +33,9 @@ def report_list(request: HttpRequest, workspace_pk: int) -> HttpResponse:
 
 
 @user_passes_test(lambda u: u.is_authenticated)
-def report_detail(request: HttpRequest, workspace_pk: int, report_pk: int) -> HttpResponse:
+def report_detail(
+    request: HttpRequest, workspace_pk: int, report_pk: int
+) -> HttpResponse:
     """View a single report. Returns the file if completed, otherwise renders detail."""
     workspace = get_object_or_404(Workspace, pk=workspace_pk)
     report = get_object_or_404(ScenarioReport, pk=report_pk, workspace=workspace)
@@ -54,7 +56,9 @@ def report_detail(request: HttpRequest, workspace_pk: int, report_pk: int) -> Ht
 
 @require_safe
 @user_passes_test(lambda u: u.is_authenticated)
-def report_status(request: HttpRequest, workspace_pk: int, report_pk: int) -> HttpResponse:
+def report_status(
+    request: HttpRequest, workspace_pk: int, report_pk: int
+) -> HttpResponse:
     """htmx-polled status partial for a report."""
     report = get_object_or_404(ScenarioReport, pk=report_pk, workspace_id=workspace_pk)
     return render(

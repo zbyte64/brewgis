@@ -14,12 +14,9 @@ class MapReviewPage(BasePage):
 
     def scenario_dropdown_is_visible(self) -> bool:
         """Check the scenario selector dropdown is present."""
-        return (
-            self.page.locator(
-                "select[name='scenario'], select#scenario-select, select.scenario-select"
-            )
-            .first.is_visible()
-        )
+        return self.page.locator(
+            "select[name='scenario'], select#scenario-select, select.scenario-select"
+        ).first.is_visible()
 
     def paint_toolbar_is_present(self) -> bool:
         """Check the paint toolbar section exists."""
@@ -35,7 +32,9 @@ class MapReviewPage(BasePage):
 
     def layer_list_visible(self) -> bool:
         """Check the layer list/panel is visible."""
-        return self.page.locator("#layer-list, .layer-list, [data-testid='layer-list']").first.is_visible()
+        return self.page.locator(
+            "#layer-list, .layer-list, [data-testid='layer-list']"
+        ).first.is_visible()
 
     def built_forms_dropdown_visible(self) -> bool:
         """Check the built forms dropdown (building/place type selector) is visible."""

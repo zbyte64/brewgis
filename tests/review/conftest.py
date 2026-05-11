@@ -215,6 +215,7 @@ def pytest_runtest_makereport(item, call) -> None:
             snapshot = page.accessibility.snapshot()
             if snapshot:
                 elements: list[str] = []
+
                 def flatten(node: dict, depth: int = 0) -> None:
                     role = node.get("role", "?")
                     name = node.get("name", "")
@@ -222,6 +223,7 @@ def pytest_runtest_makereport(item, call) -> None:
                         elements.append("  " * depth + f"[{role}] {name}"[:200])
                     for c in node.get("children", []):
                         flatten(c, depth + 1)
+
                 flatten(snapshot)
                 dom_path = sd / "dom_tree.txt"
                 dom_path.write_text("\n".join(elements))

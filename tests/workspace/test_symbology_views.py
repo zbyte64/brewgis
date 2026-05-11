@@ -159,8 +159,13 @@ class TestSymbologyViews(TestCase):
             attribute_column="test_col",
         )
         from brewgis.workspace.models import StyleClass
-        StyleClass.objects.create(symbology=config, label="Low", color="#00ff00", sort_order=0)
-        StyleClass.objects.create(symbology=config, label="High", color="#ff0000", sort_order=1)
+
+        StyleClass.objects.create(
+            symbology=config, label="Low", color="#00ff00", sort_order=0
+        )
+        StyleClass.objects.create(
+            symbology=config, label="High", color="#ff0000", sort_order=1
+        )
 
         url = reverse("workspace:symbology_edit", args=[self.layer.pk])
         response = self.client.get(url)

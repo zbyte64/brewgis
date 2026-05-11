@@ -132,6 +132,7 @@ def generate_legend(config: SymbologyConfig) -> SymbologyLegend:
     if config.attribute_column and legend.null_info is not None:
         try:
             from django.db import connection
+
             schema = config.layer.workspace.db_schema
             table = config.layer.db_table
             col = config.attribute_column

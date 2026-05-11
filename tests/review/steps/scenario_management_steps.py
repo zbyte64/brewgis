@@ -14,7 +14,9 @@ from tests.e2e.steps.common_steps import *  # noqa: F403
 if TYPE_CHECKING:
     from playwright.sync_api import Page
 
-scenarios(str(Path(__file__).parent.parent / "features" / "scenario_management.feature"))
+scenarios(
+    str(Path(__file__).parent.parent / "features" / "scenario_management.feature")
+)
 
 
 @when("I navigate to the create scenario page for that workspace")

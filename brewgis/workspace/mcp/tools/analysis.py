@@ -35,12 +35,16 @@ def register_tools(server: object) -> None:
 
         modules = []
         for module_key in MODULE_DEPENDENCIES:
-            modules.append({
-                "key": module_key,
-                "label": get_module_label(module_key),
-                "prerequisites": MODULE_DEPENDENCIES[module_key],
-                "result_tables": get_result_table_names(module_key, "{scenario_id}"),
-            })
+            modules.append(
+                {
+                    "key": module_key,
+                    "label": get_module_label(module_key),
+                    "prerequisites": MODULE_DEPENDENCIES[module_key],
+                    "result_tables": get_result_table_names(
+                        module_key, "{scenario_id}"
+                    ),
+                }
+            )
         return modules
 
     @server.tool()  # type: ignore[misc]

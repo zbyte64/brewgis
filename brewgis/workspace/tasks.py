@@ -228,6 +228,7 @@ def run_dbt_module(
         "layer_table": None,
     }
 
+
 # ────────────────────────────────────────────────────────────
 #  Preprocessor tasks — run before dbt for transport modules
 # ────────────────────────────────────────────────────────────
@@ -246,9 +247,7 @@ def _run_internal_capture_preprocessor(vars_: dict) -> dict:
 
     scenario_id = vars_.get("scenario_id", "default")
     target_schema = vars_.get("target_schema", "public")
-    end_state_table = vars_.get(
-        "end_state_table", "end_state_{scenario_id}"
-    )
+    end_state_table = vars_.get("end_state_table", "end_state_{scenario_id}")
 
     preprocessor = DistanceMatrixPreprocessor()
     return preprocessor.compute_distance_matrix(
@@ -261,9 +260,12 @@ def _run_internal_capture_preprocessor(vars_: dict) -> dict:
 
 PREPROCESSOR_MAP["internal_capture"] = _run_internal_capture_preprocessor
 
+
 def _run_food_access_preprocessor(vars_: dict) -> dict:
     """Preprocessor for food_access: runs OSM POI-based mRFEI computation."""
-    from brewgis.workspace.analysis.food_access.preprocessor import FoodAccessPreprocessor  # noqa: PLC0415
+    from brewgis.workspace.analysis.food_access.preprocessor import (
+        FoodAccessPreprocessor,
+    )  # noqa: PLC0415
 
     preprocessor = FoodAccessPreprocessor()
     scenario_id = vars_.get("scenario_id", "default")
@@ -280,6 +282,7 @@ def _run_food_access_preprocessor(vars_: dict) -> dict:
 
 PREPROCESSOR_MAP["food_access"] = _run_food_access_preprocessor
 from brewgis.workspace.analysis.equity.preprocessor import run_acs_equity_preprocessor
+
 PREPROCESSOR_MAP["acs_equity"] = run_acs_equity_preprocessor
 
 
@@ -350,6 +353,7 @@ def run_preprocessor_and_dbt(
         module=module,
         vars_=resolved_vars,
     )
+
 
 # ────────────────────────────────────────────────────────────
 #  Pipeline chain callback
@@ -882,6 +886,7 @@ def run_column_stitching(
             pass
         return {"success": False, "error": str(exc)}
 
+
 # ────────────────────────────────────────────────────────────
 #  Report generation tasks (Phase 7b, 7f)
 # ────────────────────────────────────────────────────────────
@@ -915,10 +920,12 @@ def generate_report_task(self, report_pk: int) -> dict:
             metrics_list = []
             for scenario in scenarios:
                 metrics_dict = _build_report_scenario_metrics(scenario)
-                metrics_list.append({
-                    "scenario": scenario,
-                    "metrics": metrics_dict,
-                })
+                metrics_list.append(
+                    {
+                        "scenario": scenario,
+                        "metrics": metrics_dict,
+                    }
+                )
             context["scenarios"] = scenarios
             context["metrics"] = metrics_list
 
@@ -926,9 +933,11 @@ def generate_report_task(self, report_pk: int) -> dict:
             template = "workspace/report/paint_report_pdf.html"
             scenario = report.scenario
             context["scenario_name"] = scenario.name if scenario else "\u2014"
-            paint_events = PaintEvent.objects.filter(scenario=scenario).select_related(
-                "painted_by"
-            ).order_by("-painted_at")[:500]
+            paint_events = (
+                PaintEvent.objects.filter(scenario=scenario)
+                .select_related("painted_by")
+                .order_by("-painted_at")[:500]
+            )
             context["paint_events"] = paint_events
 
         elif report.report_type == ScenarioReport.ReportType.MAP_EXPORT:
@@ -946,7 +955,9 @@ def generate_report_task(self, report_pk: int) -> dict:
 
         reports_dir = Path(settings.MEDIA_ROOT) / "reports"
         reports_dir.mkdir(parents=True, exist_ok=True)
-        filename = f"{report.report_type}_{report.pk}_{timezone.now():%Y%m%d_%H%M%S}.pdf"
+        filename = (
+            f"{report.report_type}_{report.pk}_{timezone.now():%Y%m%d_%H%M%S}.pdf"
+        )
         filepath = reports_dir / filename
         with open(filepath, "wb") as f:
             f.write(pdf_file)
@@ -1031,9 +1042,9 @@ def _build_report_scenario_metrics(scenario) -> dict:
             )
             if cursor.fetchone()[0]:
                 cursor.execute(
-                    f'SELECT COALESCE(SUM(fee_revenue_total), 0), '
-                    f'COALESCE(SUM(revenue_forgone), 0), '
-                    f'COALESCE(SUM(vmt_exempt), 0) '
+                    f"SELECT COALESCE(SUM(fee_revenue_total), 0), "
+                    f"COALESCE(SUM(revenue_forgone), 0), "
+                    f"COALESCE(SUM(vmt_exempt), 0) "
                     f'FROM "{target_schema}"."{vmt_fee_table}"'
                 )
                 row = cursor.fetchone()

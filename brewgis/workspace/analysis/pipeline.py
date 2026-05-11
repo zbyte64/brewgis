@@ -128,14 +128,13 @@ def run_analysis_pipeline(
     # Extract column_mapping for separate storage, keep in vars for dbt flow
     column_mapping = base_vars.get("column_mapping", {})
 
-
     run = AnalysisRun.objects.create(
         workspace_id=workspace_id,
         scenario_id=scenario_id,
         modules=ordered_modules,
         status="pending",
         vars=base_vars,
-    column_mapping=column_mapping,
+        column_mapping=column_mapping,
     )
 
     logger.info(

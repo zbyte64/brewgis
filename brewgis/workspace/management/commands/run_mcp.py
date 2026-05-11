@@ -31,7 +31,9 @@ class Command(BaseCommand):
         if auth_token:
             logger.info("MCP auth token configured (auth itself is Phase 5)")
         else:
-            logger.warning("MCP_AUTH_TOKEN not set — running without authentication (dev mode only)")
+            logger.warning(
+                "MCP_AUTH_TOKEN not set — running without authentication (dev mode only)"
+            )
 
         logger.info("Starting BrewGIS MCP server over stdio...")
         run_stdio()

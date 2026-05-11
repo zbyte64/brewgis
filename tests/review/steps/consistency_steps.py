@@ -34,9 +34,7 @@ def see_navbar(page) -> None:
 def see_nav_links(page) -> None:
     """Check navbar has navigation links."""
     links = ConsistencyPage(page, "").navbar_links()
-    assert len(links) > 0, (
-        f"Expected navigation links, got {links}"
-    )
+    assert len(links) > 0, f"Expected navigation links, got {links}"
 
 
 @then("the Analysis Modules panel should show empty state or modules")

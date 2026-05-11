@@ -636,6 +636,7 @@ def _apply_naics_splits(
 
     return result
 
+
 def _apply_sacog_calibrated_splits(row: dict[str, float]) -> dict[str, float]:
     """Apply SACOG-calibrated sub-sector proportions to aggregate columns.
 
@@ -655,6 +656,7 @@ def _apply_sacog_calibrated_splits(row: dict[str, float]) -> dict[str, float]:
             for sub_col, proportion in sub_sectors.items():
                 result[sub_col] = agg_val * proportion
     return result
+
 
 # ── Aggregate Column Computation ──────────────────────────────────────
 

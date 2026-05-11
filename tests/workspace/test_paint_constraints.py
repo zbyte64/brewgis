@@ -332,9 +332,7 @@ class TestCheckPaintBatch(TestCase):
             value=100.0,
             severity=ConstraintSeverity.BLOCK,
         )
-        result = check_paint_batch(
-            self.workspace, {"f1": {col: 50.0}}
-        )
+        result = check_paint_batch(self.workspace, {"f1": {col: 50.0}})
         assert result.blocked
 
     def test_warn_severity_does_not_block(self) -> None:
@@ -347,8 +345,6 @@ class TestCheckPaintBatch(TestCase):
             value=100.0,
             severity=ConstraintSeverity.WARN,
         )
-        result = check_paint_batch(
-            self.workspace, {"f1": {col: 50.0}}
-        )
+        result = check_paint_batch(self.workspace, {"f1": {col: 50.0}})
         assert not result.blocked
         assert len(result.violations) == 1

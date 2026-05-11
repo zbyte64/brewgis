@@ -83,6 +83,7 @@ class ScenarioFactory(factory.django.DjangoModelFactory):
 class AnalysisRunFactory(factory.django.DjangoModelFactory):
     class Meta:
         model = AnalysisRun
+
     workspace = factory.SubFactory(WorkspaceFactory)
     scenario = factory.SubFactory(
         ScenarioFactory,
@@ -91,6 +92,7 @@ class AnalysisRunFactory(factory.django.DjangoModelFactory):
     modules = ["env_constraint"]
     status = "pending"
     vars = {}
+
 
 class PaintedCanvasFactory(factory.django.DjangoModelFactory):
     class Meta:

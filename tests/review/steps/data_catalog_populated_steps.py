@@ -11,7 +11,9 @@ from pytest_bdd import then
 
 from tests.e2e.steps.common_steps import *  # noqa: F403
 
-scenarios(str(Path(__file__).parent.parent / "features" / "data_catalog_populated.feature"))
+scenarios(
+    str(Path(__file__).parent.parent / "features" / "data_catalog_populated.feature")
+)
 
 
 @given(parsers.parse('the workspace has a data source category "{name}"'))
@@ -25,7 +27,11 @@ def _workspace_has_data_source_category(name: str, db) -> None:  # type: ignore[
     )
 
 
-@given(parsers.parse('the workspace has a data source named "{name}" in category "{cat_name}"'))
+@given(
+    parsers.parse(
+        'the workspace has a data source named "{name}" in category "{cat_name}"'
+    )
+)
 def _workspace_has_data_source(name: str, cat_name: str, db) -> None:  # type: ignore[no-untyped-def]
     """Create a data source in the given category."""
     from brewgis.workspace.models import DataSource  # noqa: PLC0415

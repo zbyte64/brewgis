@@ -496,7 +496,11 @@ _SACOG_SL_DENSITY_THRESHOLD: float = 8.0  # DU per residential acre
 _BREWGIS_SL_DENSITY_THRESHOLD_ENV_VAR: str = "BREWGIS_SL_DENSITY_THRESHOLD"
 
 try:
-    _raw_threshold = float(os.environ.get(_BREWGIS_SL_DENSITY_THRESHOLD_ENV_VAR, str(_SACOG_SL_DENSITY_THRESHOLD)))
+    _raw_threshold = float(
+        os.environ.get(
+            _BREWGIS_SL_DENSITY_THRESHOLD_ENV_VAR, str(_SACOG_SL_DENSITY_THRESHOLD)
+        )
+    )
     _SL_DENSITY_THRESHOLD: float = max(0.0, _raw_threshold)
 except (ValueError, TypeError):
     _SL_DENSITY_THRESHOLD: float = _SACOG_SL_DENSITY_THRESHOLD
@@ -624,11 +628,19 @@ def _apply_acs_column_mapping(
             density = block_groups["du_detsf"].fillna(0.0) / area_acres.clip(lower=0.01)
             # Sigmoid around threshold for smooth transition
             sl_ratio = 1.0 / (1.0 + np.exp(-0.5 * (density - _SL_DENSITY_THRESHOLD)))
-            block_groups["du_detsf_sl"] = (block_groups["du_detsf"].fillna(0.0) * sl_ratio).round(1)
-            block_groups["du_detsf_ll"] = (block_groups["du_detsf"].fillna(0.0) * (1 - sl_ratio)).round(1)
+            block_groups["du_detsf_sl"] = (
+                block_groups["du_detsf"].fillna(0.0) * sl_ratio
+            ).round(1)
+            block_groups["du_detsf_ll"] = (
+                block_groups["du_detsf"].fillna(0.0) * (1 - sl_ratio)
+            ).round(1)
         else:
-            block_groups["du_detsf_sl"] = (block_groups["du_detsf"].fillna(0.0) * _DU_DETSF_TO_SL_RATIO).round(1)
-            block_groups["du_detsf_ll"] = (block_groups["du_detsf"].fillna(0.0) * (1 - _DU_DETSF_TO_SL_RATIO)).round(1)
+            block_groups["du_detsf_sl"] = (
+                block_groups["du_detsf"].fillna(0.0) * _DU_DETSF_TO_SL_RATIO
+            ).round(1)
+            block_groups["du_detsf_ll"] = (
+                block_groups["du_detsf"].fillna(0.0) * (1 - _DU_DETSF_TO_SL_RATIO)
+            ).round(1)
         block_groups.drop(columns=["du_detsf"], inplace=True, errors="ignore")
     else:
         block_groups["du_detsf_sl"] = 0.0

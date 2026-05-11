@@ -55,9 +55,7 @@ def see_color_controls(page) -> None:
 def see_button(page, button_text: str) -> None:
     """Check a button with the exact text is present."""
     btn = page.get_by_role("button", name=button_text)
-    assert btn.is_visible(), (
-        f"Expected button '{button_text}' to be visible"
-    )
+    assert btn.is_visible(), f"Expected button '{button_text}' to be visible"
 
 
 @then("I should see an auto-generate button")

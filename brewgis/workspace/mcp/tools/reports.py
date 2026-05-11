@@ -108,7 +108,9 @@ def register_tools(server: object) -> None:
         workspace = _get_workspace(workspace_slug)
         if workspace is None:
             return []
-        reports = ScenarioReport.objects.filter(workspace=workspace).order_by("-created_at")[:limit]
+        reports = ScenarioReport.objects.filter(workspace=workspace).order_by(
+            "-created_at"
+        )[:limit]
         return [
             {
                 "id": r.pk,
@@ -149,7 +151,9 @@ def register_tools(server: object) -> None:
             return {"error": f"Invalid base64 data: {e}"}
 
         if len(raw) > settings.MAX_UPLOAD_SIZE:
-            return {"error": f"File too large. Max size: {settings.MAX_UPLOAD_SIZE / 1024 / 1024:.0f}MB"}
+            return {
+                "error": f"File too large. Max size: {settings.MAX_UPLOAD_SIZE / 1024 / 1024:.0f}MB"
+            }
 
         with tempfile.NamedTemporaryFile(suffix=ext, delete=False) as tmp:
             tmp.write(raw)

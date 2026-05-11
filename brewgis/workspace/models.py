@@ -217,7 +217,9 @@ class Scenario(models.Model):
     base_year = models.IntegerField()
     horizon_year = models.IntegerField()
     schema_name = models.CharField(max_length=128, blank=True, default="")
-    published = models.BooleanField(default=False, help_text="Make this scenario publicly viewable.")
+    published = models.BooleanField(
+        default=False, help_text="Make this scenario publicly viewable."
+    )
     public_token = models.UUIDField(
         default=uuid.uuid4,
         editable=False,
@@ -405,9 +407,9 @@ class DataImportRun(models.Model):
         return f"DataImportRun #{self.pk} [{self.import_type}] ({self.status})"
 
 
-
 class POICache(models.Model):
     """GeoJSON cache of last successful POI fetch for offline fallback."""
+
     workspace = models.ForeignKey(
         Workspace,
         on_delete=models.CASCADE,
@@ -433,7 +435,6 @@ class POICache(models.Model):
 
     def __str__(self) -> str:
         return f"POICache[{self.workspace_id}]({self.name})"
-
 
 
 class ConstraintOperator(models.TextChoices):
@@ -576,7 +577,11 @@ class ScenarioReport(models.Model):
         "Workspace", on_delete=models.CASCADE, related_name="reports"
     )
     scenario = models.ForeignKey(
-        "Scenario", on_delete=models.SET_NULL, null=True, blank=True, related_name="reports"
+        "Scenario",
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name="reports",
     )
     name = models.CharField(max_length=255)
     report_type = models.CharField(max_length=32, choices=ReportType.choices)
@@ -600,6 +605,7 @@ class ScenarioReport(models.Model):
     def __str__(self) -> str:
         return f"{self.get_report_type_display()}: {self.name} ({self.status})"
 
+
 class County(models.Model):
     """US County FIPS lookup table, seeded from Census reference data."""
 
@@ -614,6 +620,7 @@ class County(models.Model):
 
     def __str__(self) -> str:
         return f"{self.name} (FIPS {self.state_fips}{self.county_fips})"
+
 
 class DataSourceCategory(models.Model):
     name = models.CharField(max_length=64, unique=True)
@@ -664,11 +671,19 @@ class DataSource(models.Model):
     description = models.TextField(blank=True, default="")
     provider = models.CharField(max_length=128)
     provider_url = models.URLField(max_length=512, blank=True, default="")
-    data_format = models.CharField(max_length=16, choices=FormatChoices, blank=True, default="")
-    update_frequency = models.CharField(max_length=16, choices=UpdateChoices, blank=True, default="")
-    acquisition_priority = models.CharField(max_length=4, choices=AcquisitionChoices, blank=True, default="")
+    data_format = models.CharField(
+        max_length=16, choices=FormatChoices, blank=True, default=""
+    )
+    update_frequency = models.CharField(
+        max_length=16, choices=UpdateChoices, blank=True, default=""
+    )
+    acquisition_priority = models.CharField(
+        max_length=4, choices=AcquisitionChoices, blank=True, default=""
+    )
     icon = models.CharField(max_length=64, blank=True, default="")
-    import_type = models.CharField(max_length=16, blank=True, default="", help_text="Maps to DataImportRun type")
+    import_type = models.CharField(
+        max_length=16, blank=True, default="", help_text="Maps to DataImportRun type"
+    )
     is_importable = models.BooleanField(default=False)
     sort_order = models.IntegerField(default=0)
 
@@ -678,6 +693,7 @@ class DataSource(models.Model):
 
     def __str__(self) -> str:
         return f"{self.name} ({self.category.name})"
+
 
 class LayerFilter(models.Model):
     """A saved filter expression for a layer.
@@ -696,7 +712,7 @@ class LayerFilter(models.Model):
     filter_json = models.JSONField(
         default=dict,
         blank=True,
-        help_text="Expression tree: {\"type\": \"group\", \"operator\": \"AND\"|\"OR\", \"children\": [...]}",
+        help_text='Expression tree: {"type": "group", "operator": "AND"|"OR", "children": [...]}',
     )
     is_active = models.BooleanField(
         default=False,
@@ -755,7 +771,9 @@ class ExternalMapService(models.Model):
     )
     url = models.URLField(max_length=1024)
     layers_param = models.CharField(
-        max_length=512, blank=True, default="",
+        max_length=512,
+        blank=True,
+        default="",
         help_text="Layers parameter for WMS (comma-separated)",
     )
     attribution = models.CharField(max_length=512, blank=True, default="")
@@ -773,12 +791,24 @@ class ExternalMapService(models.Model):
 
     def to_maplibre_source(self) -> dict:
         """Return a MapLibre GL JS source spec for this service."""
-        if self.service_type in (self.ServiceType.WMS, self.ServiceType.WMTS, self.ServiceType.XYZ):
+        if self.service_type in (
+            self.ServiceType.WMS,
+            self.ServiceType.WMTS,
+            self.ServiceType.XYZ,
+        ):
             if self.service_type == self.ServiceType.WMS:
-                params = "?service=WMS&request=GetMap&layers=" + self.layers_param + "&format=image/png&transparent=true"
+                params = (
+                    "?service=WMS&request=GetMap&layers="
+                    + self.layers_param
+                    + "&format=image/png&transparent=true"
+                )
                 return {
                     "type": "raster",
-                    "tiles": [self.url + params + "&width=256&height=256&bbox={bbox-epsg-3857}"],
+                    "tiles": [
+                        self.url
+                        + params
+                        + "&width=256&height=256&bbox={bbox-epsg-3857}"
+                    ],
                     "attribution": self.attribution,
                     "tileSize": 256,
                 }
@@ -810,11 +840,15 @@ class Basemap(models.Model):
         default=TypeChoices.VECTOR,
     )
     style_url = models.URLField(
-        max_length=1024, blank=True, default="",
+        max_length=1024,
+        blank=True,
+        default="",
         help_text="MapLibre style JSON URL (for vector basemaps)",
     )
     tile_url = models.URLField(
-        max_length=1024, blank=True, default="",
+        max_length=1024,
+        blank=True,
+        default="",
         help_text="Tile URL template with {z}/{x}/{y} (for raster basemaps)",
     )
     attribution = models.CharField(max_length=512, blank=True, default="")

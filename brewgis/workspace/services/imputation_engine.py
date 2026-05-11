@@ -261,6 +261,7 @@ class ImputationEngine:
         if count:
             df.loc[filled_mask, col] = fill_values[filled_mask]
         return count
+
     # ------------------------------------------------------------------
     # Polars implementations
     # ------------------------------------------------------------------
@@ -315,7 +316,9 @@ class ImputationEngine:
         if rule.strategy.value <= ImputationStrategy.DIRECT_OBSERVATION.value:
             if rule.source_column and rule.source_column in df.columns:
                 src_null_count = df[rule.source_column].null_count()
-                direct_count = null_count - src_null_count if src_null_count < null_count else 0
+                direct_count = (
+                    null_count - src_null_count if src_null_count < null_count else 0
+                )
                 if direct_count > 0:
                     df = df.with_columns(
                         pl.when(pl.col(col).is_null())
@@ -337,7 +340,9 @@ class ImputationEngine:
         if rule.strategy.value <= ImputationStrategy.REGIONAL_ESTIMATE.value:
             if remaining_null_count > 0 and rule.groupby_column:
                 if rule.groupby_column in df.columns:
-                    region_filled = self._impute_regional_average_polars(df, col, rule.groupby_column)
+                    region_filled = self._impute_regional_average_polars(
+                        df, col, rule.groupby_column
+                    )
                     result.rows_imputed_regional = region_filled
                     remaining_null_count = df[col].null_count()
                 else:
@@ -350,9 +355,7 @@ class ImputationEngine:
         # Tier 3: NATIONAL_DEFAULT
         if rule.strategy.value <= ImputationStrategy.NATIONAL_DEFAULT.value:
             if remaining_null_count > 0 and rule.fallback_value is not None:
-                df = df.with_columns(
-                    pl.col(col).fill_null(rule.fallback_value)
-                )
+                df = df.with_columns(pl.col(col).fill_null(rule.fallback_value))
                 filled = remaining_null_count
                 result.rows_imputed_national = filled
                 remaining_null_count = 0
@@ -385,21 +388,29 @@ class ImputationEngine:
         """
         # Compute per-group mean
         global_mean = df[col].mean()
-        if global_mean is None or (isinstance(global_mean, float) and global_mean != global_mean):
+        if global_mean is None or (
+            isinstance(global_mean, float) and global_mean != global_mean
+        ):
             global_mean = 0.0
 
-        group_means = df.group_by(groupby_column).agg(pl.col(col).mean().alias("_group_mean"))
+        group_means = df.group_by(groupby_column).agg(
+            pl.col(col).mean().alias("_group_mean")
+        )
 
         # Join group means back and fill NULLs
         before_null = df[col].null_count()
-        df = df.join(group_means, on=groupby_column, how="left").with_columns(
-            pl.when(pl.col(col).is_null() & pl.col("_group_mean").is_not_null())
-            .then(pl.col("_group_mean"))
-            .when(pl.col(col).is_null())
-            .then(global_mean)
-            .otherwise(pl.col(col))
-            .alias(col)
-        ).drop("_group_mean")
+        df = (
+            df.join(group_means, on=groupby_column, how="left")
+            .with_columns(
+                pl.when(pl.col(col).is_null() & pl.col("_group_mean").is_not_null())
+                .then(pl.col("_group_mean"))
+                .when(pl.col(col).is_null())
+                .then(global_mean)
+                .otherwise(pl.col(col))
+                .alias(col)
+            )
+            .drop("_group_mean")
+        )
 
         after_null = df[col].null_count()
         return before_null - after_null

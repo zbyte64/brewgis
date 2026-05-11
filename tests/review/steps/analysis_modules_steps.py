@@ -31,10 +31,10 @@ def modules_include(page, name: str) -> None:
     assert name in names, f"Expected module '{name}' in list, got {names}"
 
 
-@then(parsers.parse('the "{module_name}" module should have description "{description}"'))
-def module_has_description(
-    page, module_name: str, description: str
-) -> None:
+@then(
+    parsers.parse('the "{module_name}" module should have description "{description}"')
+)
+def module_has_description(page, module_name: str, description: str) -> None:
     """Check a module's description text."""
     data = AnalysisModulesPage(page).get_module_data(module_name)
     assert data is not None, f"Module '{module_name}' not found"
@@ -78,6 +78,5 @@ def module_shows_input(page, module_name: str, input_text: str) -> None:
     assert data is not None, f"Module '{module_name}' not found"
     actual = data.get("inputs", [])
     assert input_text in actual, (
-        f"Expected input '{input_text}' in module "
-        f"'{module_name}', got {actual}"
+        f"Expected input '{input_text}' in module '{module_name}', got {actual}"
     )

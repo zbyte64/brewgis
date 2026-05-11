@@ -21,7 +21,9 @@ class TestWorkspaceDetailCatalog(TestCase):
     def setUp(self) -> None:
         self.user = UserFactory()
         self.workspace = WorkspaceFactory()
-        self.url = reverse("workspace:workspace_detail", kwargs={"pk": self.workspace.pk})
+        self.url = reverse(
+            "workspace:workspace_detail", kwargs={"pk": self.workspace.pk}
+        )
 
     def test_catalog_categories_in_context(self) -> None:
         """Workspace detail includes catalog_categories in context."""

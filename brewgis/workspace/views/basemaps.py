@@ -111,9 +111,7 @@ def _get_basemap_config(request: HttpRequest, workspace_pk: int) -> JsonResponse
     )
 
 
-def _post_basemap_select(
-    request: HttpRequest, workspace_pk: int
-) -> HttpResponse:
+def _post_basemap_select(request: HttpRequest, workspace_pk: int) -> HttpResponse:
     """Save basemap selection and return re-rendered picker partial."""
     raw_id = request.POST.get("basemap_id")
     basemaps = Basemap.objects.all().order_by("sort_order")

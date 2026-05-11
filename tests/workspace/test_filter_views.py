@@ -21,7 +21,9 @@ class TestLayerFilterList(TestCase):
         self.user = UserFactory()
         self.client.force_login(self.user)
         self.layer = LayerFactory()
-        self.url = reverse("workspace:layer_filter_list", kwargs={"layer_pk": self.layer.pk})
+        self.url = reverse(
+            "workspace:layer_filter_list", kwargs={"layer_pk": self.layer.pk}
+        )
 
     def test_list_requires_auth(self) -> None:
         """Unauthenticated users should be redirected."""
@@ -63,7 +65,9 @@ class TestLayerFilterCreate(TestCase):
         self.user = UserFactory()
         self.client.force_login(self.user)
         self.layer = LayerFactory()
-        self.url = reverse("workspace:layer_filter_create", kwargs={"layer_pk": self.layer.pk})
+        self.url = reverse(
+            "workspace:layer_filter_create", kwargs={"layer_pk": self.layer.pk}
+        )
 
     def test_create_get_returns_form(self) -> None:
         """GET should return the editor form."""
@@ -80,14 +84,24 @@ class TestLayerFilterCreate(TestCase):
 
     def test_create_valid(self) -> None:
         """POST with valid data should create a filter."""
-        expression = json.dumps({
-            "type": "group",
-            "operator": "AND",
-            "children": [
-                {"type": "column", "field": "existing_du", "operator": "gt", "value": "0", "value_type": "number"}
-            ],
-        })
-        response = self.client.post(self.url, {"name": "My Filter", "filter_json": expression})
+        expression = json.dumps(
+            {
+                "type": "group",
+                "operator": "AND",
+                "children": [
+                    {
+                        "type": "column",
+                        "field": "existing_du",
+                        "operator": "gt",
+                        "value": "0",
+                        "value_type": "number",
+                    }
+                ],
+            }
+        )
+        response = self.client.post(
+            self.url, {"name": "My Filter", "filter_json": expression}
+        )
         self.assertEqual(response.status_code, 200)
         self.assertEqual(LayerFilter.objects.count(), 1)
         flt = LayerFilter.objects.first()
@@ -103,7 +117,9 @@ class TestLayerFilterCreate(TestCase):
 
     def test_create_invalid_json_rejected(self) -> None:
         """POST with invalid JSON should show error."""
-        response = self.client.post(self.url, {"name": "Bad", "filter_json": "not valid json"})
+        response = self.client.post(
+            self.url, {"name": "Bad", "filter_json": "not valid json"}
+        )
         self.assertEqual(response.status_code, 200)
         self.assertContains(response, "Invalid filter JSON")
         self.assertEqual(LayerFilter.objects.count(), 0)
@@ -126,7 +142,12 @@ class TestLayerFilterEdit(TestCase):
         self.filter = LayerFilter.objects.create(
             layer=self.layer,
             name="Original",
-            filter_json={"type": "column", "field": "x", "operator": "eq", "value": "1"},
+            filter_json={
+                "type": "column",
+                "field": "x",
+                "operator": "eq",
+                "value": "1",
+            },
         )
         self.url = reverse("workspace:layer_filter_edit", kwargs={"pk": self.filter.pk})
 
@@ -138,8 +159,12 @@ class TestLayerFilterEdit(TestCase):
 
     def test_edit_update(self) -> None:
         """POST should update the filter."""
-        expression = json.dumps({"type": "column", "field": "y", "operator": "neq", "value": "2"})
-        response = self.client.post(self.url, {"name": "Updated", "filter_json": expression})
+        expression = json.dumps(
+            {"type": "column", "field": "y", "operator": "neq", "value": "2"}
+        )
+        response = self.client.post(
+            self.url, {"name": "Updated", "filter_json": expression}
+        )
         self.assertEqual(response.status_code, 200)
         self.filter.refresh_from_db()
         self.assertEqual(self.filter.name, "Updated")
@@ -161,7 +186,9 @@ class TestLayerFilterDelete(TestCase):
         self.client.force_login(self.user)
         self.layer = LayerFactory()
         self.filter = LayerFilter.objects.create(layer=self.layer, name="To Delete")
-        self.url = reverse("workspace:layer_filter_delete", kwargs={"pk": self.filter.pk})
+        self.url = reverse(
+            "workspace:layer_filter_delete", kwargs={"pk": self.filter.pk}
+        )
 
     def test_delete_removes_filter(self) -> None:
         """POST should delete the filter."""
@@ -196,8 +223,12 @@ class TestLayerFilterToggle(TestCase):
         self.user = UserFactory()
         self.client.force_login(self.user)
         self.layer = LayerFactory()
-        self.filter = LayerFilter.objects.create(layer=self.layer, name="Toggle Me", is_active=False)
-        self.url = reverse("workspace:layer_filter_toggle", kwargs={"pk": self.filter.pk})
+        self.filter = LayerFilter.objects.create(
+            layer=self.layer, name="Toggle Me", is_active=False
+        )
+        self.url = reverse(
+            "workspace:layer_filter_toggle", kwargs={"pk": self.filter.pk}
+        )
 
     def test_toggle_active(self) -> None:
         """POST should toggle is_active from False to True."""
@@ -240,9 +271,16 @@ class TestLayerFilterPreview(TestCase):
         self.filter = LayerFilter.objects.create(
             layer=self.layer,
             name="Preview Me",
-            filter_json={"type": "column", "field": "x", "operator": "gt", "value": "100"},
+            filter_json={
+                "type": "column",
+                "field": "x",
+                "operator": "gt",
+                "value": "100",
+            },
         )
-        self.url = reverse("workspace:layer_filter_preview", kwargs={"pk": self.filter.pk})
+        self.url = reverse(
+            "workspace:layer_filter_preview", kwargs={"pk": self.filter.pk}
+        )
 
     def test_preview_returns_json(self) -> None:
         """GET should return JSON with filter details."""

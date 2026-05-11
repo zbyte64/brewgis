@@ -31,7 +31,9 @@ import geopandas as gpd
 import pandas as pd
 from sqlalchemy import create_engine, text
 
-from brewgis.workspace.analysis.transport.preprocessors.distance_matrix import _get_db_url
+from brewgis.workspace.analysis.transport.preprocessors.distance_matrix import (
+    _get_db_url,
+)
 from brewgis.workspace.services.poi_fetcher import fetch_pois
 from brewgis.workspace.models import POICache
 
@@ -94,9 +96,7 @@ class FoodAccessPreprocessor:
             )
 
         # ST_Extent returns "BOX(minx miny, maxx maxy)" in the text format
-        match = re.search(
-            r"BOX\(([\d.-]+) ([\d.-]+), ([\d.-]+) ([\d.-]+)\)", extent
-        )
+        match = re.search(r"BOX\(([\d.-]+) ([\d.-]+), ([\d.-]+) ([\d.-]+)\)", extent)
         if not match:
             raise RuntimeError(f"Could not parse ST_Extent result: {extent}")
 
@@ -128,15 +128,11 @@ class FoodAccessPreprocessor:
                 input_table (str, on success): Fully qualified output table name.
                 error (str, on failure): Error message.
         """
-        resolved_end_state = end_state_table.replace(
-            "{scenario_id}", scenario_id
-        )
+        resolved_end_state = end_state_table.replace("{scenario_id}", scenario_id)
         output_table = f"{schema}.food_access_inputs_{scenario_id}"
         temp_poi_table = f"{schema}.food_pois_{scenario_id}"
 
-        logger.info(
-            "Computing mRFEI: %s -> %s", resolved_end_state, output_table
-        )
+        logger.info("Computing mRFEI: %s -> %s", resolved_end_state, output_table)
 
         # Step 1: Get parcel bounding box
         try:
@@ -145,7 +141,10 @@ class FoodAccessPreprocessor:
             )
             logger.debug(
                 "Parcel bbox: (%.6f, %.6f) -> (%.6f, %.6f)",
-                min_lng, min_lat, max_lng, max_lat,
+                min_lng,
+                min_lat,
+                max_lng,
+                max_lat,
             )
         except Exception as exc:
             msg = f"Failed to get bounding box: {exc}"
@@ -168,23 +167,34 @@ class FoodAccessPreprocessor:
                     POICache.objects.update_or_create(
                         workspace_id=workspace_id,
                         name="food_poi",
-                        defaults={"geojson_data": pois.__geo_interface__, "source": "osm"},
+                        defaults={
+                            "geojson_data": pois.__geo_interface__,
+                            "source": "osm",
+                        },
                     )
                 except Exception as cache_err:
                     logger.warning("Failed to cache POI data: %s", cache_err)
         except Exception as fetch_err:
-            logger.warning("POI fetch failed: %s. Attempting cache fallback.", fetch_err)
+            logger.warning(
+                "POI fetch failed: %s. Attempting cache fallback.", fetch_err
+            )
             # Try cache fallback
             try:
-                cached = POICache.objects.filter(
-                    workspace_id=workspace_id,
-                    name="food_poi",
-                ).first() if workspace_id is not None else None
+                cached = (
+                    POICache.objects.filter(
+                        workspace_id=workspace_id,
+                        name="food_poi",
+                    ).first()
+                    if workspace_id is not None
+                    else None
+                )
                 if cached:
                     pois = gpd.GeoDataFrame.from_features(cached.geojson_data)
                     logger.info("Using cached POI data from %s", cached.fetched_at)
                 else:
-                    logger.warning("No POI cache available. Food access will use ACS proxy.")
+                    logger.warning(
+                        "No POI cache available. Food access will use ACS proxy."
+                    )
                     return {"success": True, "method": "no_poi_data"}
             except Exception as cache_read_err:
                 logger.warning("Failed to read POI cache: %s", cache_read_err)
@@ -224,9 +234,7 @@ class FoodAccessPreprocessor:
         finally:
             # Clean up temp table
             with self.engine.begin() as conn:
-                conn.execute(
-                    text(f"DROP TABLE IF EXISTS {temp_poi_table} CASCADE")
-                )
+                conn.execute(text(f"DROP TABLE IF EXISTS {temp_poi_table} CASCADE"))
 
         logger.info("mRFEI written to %s", output_table)
         return {"success": True, "input_table": output_table}
@@ -240,9 +248,7 @@ class FoodAccessPreprocessor:
         """Create and populate a temporary table with classified food POIs."""
         with self.engine.begin() as conn:
             conn.execute(text(f"CREATE SCHEMA IF NOT EXISTS {schema}"))
-            conn.execute(
-                text(f"DROP TABLE IF EXISTS {table_name} CASCADE")
-            )
+            conn.execute(text(f"DROP TABLE IF EXISTS {table_name} CASCADE"))
             conn.execute(
                 text(
                     f"CREATE TABLE {table_name} ("
@@ -288,9 +294,7 @@ class FoodAccessPreprocessor:
         """Compute mRFEI per parcel via spatial join and write the output table."""
         with self.engine.begin() as conn:
             conn.execute(text(f"CREATE SCHEMA IF NOT EXISTS {schema}"))
-            conn.execute(
-                text(f"DROP TABLE IF EXISTS {output_table} CASCADE")
-            )
+            conn.execute(text(f"DROP TABLE IF EXISTS {output_table} CASCADE"))
             conn.execute(
                 text(
                     f"CREATE TABLE {output_table} AS "

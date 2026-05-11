@@ -85,6 +85,7 @@ def _download_nlcd_subset(  # noqa: PLR0913
         logger.warning("Failed to download NLCD subset via WCS: %s", exc)
         return None
 
+
 # NLCD land cover classes mapped to development categories
 # See https://www.mrlc.gov/data/legends/national-land-cover-database-2021-nlcd2021-legend
 _NLCD_URBAN_CLASSES = frozenset({21, 22, 23, 24})  # Developed
@@ -94,7 +95,9 @@ _NLCD_FOREST_CLASSES = frozenset({41, 42, 43})  # Deciduous, Evergreen, Mixed
 _NLCD_SHRUB_CLASSES = frozenset({51, 52})  # Shrub/Scrub
 _NLCD_HERBACEOUS_CLASSES = frozenset({71, 72, 73, 74})  # Herbaceous
 _NLCD_WATER_CLASSES = frozenset({11, 12})  # Open Water, Perennial Ice/Snow
-_NLCD_WETLAND_CLASSES = frozenset({90, 95})  # Woody Wetlands, Emergent Herbaceous Wetlands
+_NLCD_WETLAND_CLASSES = frozenset(
+    {90, 95}
+)  # Woody Wetlands, Emergent Herbaceous Wetlands
 
 
 def _nlcd_majority_class(zonal_result: np.ndarray | None) -> str:
@@ -174,7 +177,6 @@ def _estimate_nlcd_impervious_fraction(
     return total_impervious / len(values)
 
 
-
 def _verify_cached_file(path: Path, expected_size: int | None = None) -> bool:
     """Verify a cached file exists, has positive size, and optionally matches expected size.
 
@@ -197,6 +199,7 @@ def _verify_cached_file(path: Path, expected_size: int | None = None) -> bool:
         path.unlink(missing_ok=True)
         return False
     return True
+
 
 def _verify_cached_bytes(path: Path, size_path: Path, crc32_path: Path) -> bool:
     """Verify cached file size and CRC32 against companion files.
@@ -232,6 +235,8 @@ def _verify_cached_bytes(path: Path, size_path: Path, crc32_path: Path) -> bool:
             return False
 
     return True
+
+
 def download_nlcd_raster(
     bbox: tuple[float, float, float, float] | None = None,
     year: int = _NLCD_YEAR,
@@ -262,7 +267,10 @@ def download_nlcd_raster(
     if bbox is not None:
         west, south, east, north = bbox
         return _download_nlcd_subset(
-            west, south, east, north,
+            west,
+            south,
+            east,
+            north,
             year=year,
             refresh_cache=refresh_cache,
         )
@@ -280,13 +288,16 @@ def download_nlcd_raster(
         for p in [raster_path, size_path, crc32_path]:
             p.unlink(missing_ok=True)
 
-    if not raster_path.exists() or not _verify_cached_bytes(raster_path, size_path, crc32_path):
+    if not raster_path.exists() or not _verify_cached_bytes(
+        raster_path, size_path, crc32_path
+    ):
         url = f"{_NLCD_BASE_URL}/nlcd/{year}/land_cover/l48/{raster_name}"
         logger.info("Downloading NLCD CONUS raster from %s ...", url)
         try:
             response = requests.get(url, timeout=600)
             response.raise_for_status()
             import shutil
+
             with tempfile.NamedTemporaryFile(delete=False, suffix=".img") as tmp:
                 tmp.write(response.content)
                 tmp_path = tmp.name
@@ -333,9 +344,7 @@ def compute_nlcd_zonal_stats(
         from rasterio.mask import mask
         from shapely.geometry import mapping
     except ImportError:
-        logger.warning(
-            "rasterio not available; install with: pip install rasterio"
-        )
+        logger.warning("rasterio not available; install with: pip install rasterio")
         parcels["land_development_category"] = parcels.get(
             "land_development_category", pd.Series(index=parcels.index)
         ).fillna("urban")
@@ -368,9 +377,9 @@ def compute_nlcd_zonal_stats(
     # Fill NLCD categories into parcels — preserve any existing assessor-code values
     existing = parcels.get("land_development_category", None)
     if existing is not None and existing.notna().any():
-        parcels["land_development_category"] = parcels["land_development_category"].fillna(
-            pd.Series(categories, index=parcels.index)
-        )
+        parcels["land_development_category"] = parcels[
+            "land_development_category"
+        ].fillna(pd.Series(categories, index=parcels.index))
     else:
         parcels["land_development_category"] = categories
     parcels["impervious_fraction"] = impervious
@@ -398,7 +407,9 @@ def classify_land_development(
     if assessor_use_code:
         code = assessor_use_code.strip().upper()
         # Check commercial/industrial first to avoid "R" false matches
-        if any(x in code for x in ("COM", "RET", "OFF", "IND", "MFG", "WARE", "INDUST")):
+        if any(
+            x in code for x in ("COM", "RET", "OFF", "IND", "MFG", "WARE", "INDUST")
+        ):
             return "industrial"
         if any(x in code for x in ("AG", "FARM", "RANCH", "AGR")):
             return "agricultural"

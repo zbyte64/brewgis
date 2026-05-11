@@ -19,7 +19,9 @@ from tests.factories import WorkspaceFactory
 if TYPE_CHECKING:
     from playwright.sync_api import Page
 
-scenarios(str(Path(__file__).parent.parent / "features" / "scenario_management.feature"))
+scenarios(
+    str(Path(__file__).parent.parent / "features" / "scenario_management.feature")
+)
 
 
 # Store workspace PK for use across steps within a test function

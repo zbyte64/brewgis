@@ -168,10 +168,13 @@ def preview_symbology(request: HttpRequest, layer_pk: int) -> JsonResponse:
     style = generate_maplibre_style(config)
     return JsonResponse(style)
 
+
 @require_GET
 @user_passes_test(lambda u: u.is_authenticated)
 def layer_legend(request: HttpRequest, layer_pk: int) -> HttpResponse:
     """Return legend HTML partial for a layer's symbology."""
     config = get_object_or_404(SymbologyConfig, layer__pk=layer_pk)
     legend = generate_legend(config)
-    return render(request, "workspace/symbology/legend_partial.html", {"legend": legend})
+    return render(
+        request, "workspace/symbology/legend_partial.html", {"legend": legend}
+    )

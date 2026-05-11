@@ -110,9 +110,7 @@ class DistanceMatrixPreprocessor:
                 {"parcel_id": row[0], "node_id": row[1], "distance_m": float(row[2])}
                 for row in result
             ]
-        logger.info(
-            "Snapped %d parcels to nearest network node", len(rows)
-        )
+        logger.info("Snapped %d parcels to nearest network node", len(rows))
         return rows
 
     def _compute_od_batch(
@@ -177,12 +175,9 @@ class DistanceMatrixPreprocessor:
         Returns:
             Dict with keys: success, pair_count, error.
         """
-        resolved_end_state = end_state_table.replace(
-            "{scenario_id}", scenario_id
-        )
+        resolved_end_state = end_state_table.replace("{scenario_id}", scenario_id)
         resolved_output = (
-            output_table
-            or f"{schema}.trip_distribution_inputs_{scenario_id}"
+            output_table or f"{schema}.trip_distribution_inputs_{scenario_id}"
         )
 
         logger.info(
@@ -298,11 +293,7 @@ class DistanceMatrixPreprocessor:
 
         with self.engine.begin() as conn:
             conn.execute(text(f"CREATE SCHEMA IF NOT EXISTS {schema}"))
-            conn.execute(
-                text(
-                    f"DROP TABLE IF EXISTS {schema}.{table} CASCADE"
-                )
-            )
+            conn.execute(text(f"DROP TABLE IF EXISTS {schema}.{table} CASCADE"))
             conn.execute(
                 text(
                     f"CREATE TABLE {schema}.{table} ("
@@ -331,10 +322,7 @@ class DistanceMatrixPreprocessor:
         output_table: str | None = None,
     ) -> None:
         """Drop the inputs table for scenario teardown."""
-        resolved = (
-            output_table
-            or f"{schema}.trip_distribution_inputs_{scenario_id}"
-        )
+        resolved = output_table or f"{schema}.trip_distribution_inputs_{scenario_id}"
         with self.engine.begin() as conn:
             conn.execute(text(f"DROP TABLE IF EXISTS {resolved} CASCADE"))
         logger.info("Dropped inputs table: %s", resolved)

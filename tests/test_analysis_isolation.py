@@ -62,8 +62,12 @@ class TestWorkspaceIsolation(TestCase):
 
     def test_analysis_run_belongs_to_single_workspace(self) -> None:
         """An AnalysisRun FK points to exactly one workspace."""
-        run_a = AnalysisRun.objects.create(workspace=self.workspace_a, scenario=self.scenario_a)
-        run_b = AnalysisRun.objects.create(workspace=self.workspace_b, scenario=self.scenario_b)
+        run_a = AnalysisRun.objects.create(
+            workspace=self.workspace_a, scenario=self.scenario_a
+        )
+        run_b = AnalysisRun.objects.create(
+            workspace=self.workspace_b, scenario=self.scenario_b
+        )
 
         self.assertEqual(run_a.workspace, self.workspace_a)
         self.assertEqual(run_b.workspace, self.workspace_b)
@@ -71,23 +75,31 @@ class TestWorkspaceIsolation(TestCase):
     def test_filtering_by_workspace_returns_only_its_runs(self) -> None:
         """Querying runs by workspace FK returns only that workspace's runs."""
         r1 = AnalysisRun.objects.create(
-            workspace=self.workspace_a, scenario=self.scenario_a, modules=["env_constraint"],
+            workspace=self.workspace_a,
+            scenario=self.scenario_a,
+            modules=["env_constraint"],
         )
         r2 = AnalysisRun.objects.create(
-            workspace=self.workspace_a, scenario=self.scenario_a, modules=["core"],
+            workspace=self.workspace_a,
+            scenario=self.scenario_a,
+            modules=["core"],
         )
         r3 = AnalysisRun.objects.create(
-            workspace=self.workspace_b, scenario=self.scenario_b, modules=["env_constraint"],
+            workspace=self.workspace_b,
+            scenario=self.scenario_b,
+            modules=["env_constraint"],
         )
 
         a_pks = set(
             AnalysisRun.objects.filter(workspace=self.workspace_a).values_list(
-                "pk", flat=True,
+                "pk",
+                flat=True,
             )
         )
         b_pks = set(
             AnalysisRun.objects.filter(workspace=self.workspace_b).values_list(
-                "pk", flat=True,
+                "pk",
+                flat=True,
             )
         )
 
@@ -224,19 +236,23 @@ class TestScenarioIsolation(TestCase):
 
         a_pks = set(
             AnalysisRun.objects.filter(scenario=self.scenario_a).values_list(
-                "pk", flat=True,
+                "pk",
+                flat=True,
             )
         )
         b_pks = set(
             AnalysisRun.objects.filter(scenario=self.scenario_b).values_list(
-                "pk", flat=True,
+                "pk",
+                flat=True,
             )
         )
 
         self.assertEqual(a_pks, {r1.pk})
         self.assertEqual(b_pks, {r2.pk})
         self.assertNotIn(
-            r2.pk, a_pks, "Scenario B's run leaked into scenario A",
+            r2.pk,
+            a_pks,
+            "Scenario B's run leaked into scenario A",
         )
 
     def test_different_scenario_ids_produce_different_table_names(self) -> None:
@@ -612,7 +628,6 @@ class TestNoCascadingAnalysisTriggers(TestCase):
             "Workspace B should have no new AnalysisRun records after "
             "running analysis in workspace A",
         )
-
 
     def test_querying_by_workspace_excludes_other_workspace_runs(self) -> None:
         """Workspace-scoped queries return correct, isolated result sets."""

@@ -7,6 +7,7 @@ Each step manages its own connection via a shared ``db_conn`` fixture
 so that tables and views created by one step are immediately visible
 to dbt (which uses its own connection) and to subsequent steps.
 """
+
 from __future__ import annotations
 
 from typing import TYPE_CHECKING
@@ -76,13 +77,9 @@ def _run_cleanup(ctx: dict[str, Any]) -> None:
                 if kind == "schema":
                     cursor.execute(f"DROP SCHEMA IF EXISTS {name} CASCADE")
                 elif kind == "view":
-                    cursor.execute(
-                        f"DROP VIEW IF EXISTS {schema}.{name} CASCADE"
-                    )
+                    cursor.execute(f"DROP VIEW IF EXISTS {schema}.{name} CASCADE")
                 elif kind == "table":
-                    cursor.execute(
-                        f"DROP TABLE IF EXISTS {schema}.{name} CASCADE"
-                    )
+                    cursor.execute(f"DROP TABLE IF EXISTS {schema}.{name} CASCADE")
             except Exception:  # noqa: S110, BLE001
                 pass
     conn.close()

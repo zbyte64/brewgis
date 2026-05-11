@@ -4,6 +4,7 @@ Each step interacts with PostGIS via a raw psycopg connection
 (``db_conn`` fixture, autocommit=True) so that tables are immediately
 visible to dbt's separate database connection.
 """
+
 from __future__ import annotations
 
 from pathlib import Path
@@ -161,9 +162,7 @@ def run_dbt_module(
     scenario_context: dict,
 ) -> None:
     """Run a single dbt model with the given vars."""
-    _run_dbt_and_store_result(
-        module, scenario_id, target_schema, scenario_context
-    )
+    _run_dbt_and_store_result(module, scenario_id, target_schema, scenario_context)
 
 
 @when(
@@ -179,19 +178,13 @@ def run_dbt_module_second(
     scenario_context: dict,
 ) -> None:
     """Run the same dbt model a second time (idempotency check)."""
-    _run_dbt_and_store_result(
-        module, scenario_id, target_schema, scenario_context
-    )
+    _run_dbt_and_store_result(module, scenario_id, target_schema, scenario_context)
 
 
 # ── Then steps ─────────────────────────────────────────────────────────
 
 
-@then(
-    parsers.parse(
-        'a view named "{view_name}" should exist in schema "{schema}"'
-    )
-)
+@then(parsers.parse('a view named "{view_name}" should exist in schema "{schema}"'))
 def view_exists(
     view_name: str,
     schema: str,
@@ -213,11 +206,7 @@ def view_exists(
     assert exists, f"View '{view_name}' not found in schema '{schema}'"
 
 
-@then(
-    parsers.parse(
-        'no view named "{view_name}" should exist in schema "{schema}"'
-    )
-)
+@then(parsers.parse('no view named "{view_name}" should exist in schema "{schema}"'))
 def view_does_not_exist(
     view_name: str,
     schema: str,
@@ -236,9 +225,7 @@ def view_does_not_exist(
             [schema, view_name],
         )
         exists = cursor.fetchone()[0]
-    assert not exists, (
-        f"View '{view_name}' unexpectedly found in schema '{schema}'"
-    )
+    assert not exists, f"View '{view_name}' unexpectedly found in schema '{schema}'"
 
 
 @then("the dbt run should have succeeded")

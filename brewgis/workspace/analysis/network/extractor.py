@@ -194,14 +194,10 @@ class NetworkExtractor:
 
                 # Drop existing tables for idempotent refresh
                 conn.execute(
-                    text(
-                        f"DROP TABLE IF EXISTS {schema}.{edge_table} CASCADE"
-                    )
+                    text(f"DROP TABLE IF EXISTS {schema}.{edge_table} CASCADE")
                 )
                 conn.execute(
-                    text(
-                        f"DROP TABLE IF EXISTS {schema}.{node_table} CASCADE"
-                    )
+                    text(f"DROP TABLE IF EXISTS {schema}.{node_table} CASCADE")
                 )
 
             edges_out.to_sql(
@@ -225,20 +221,12 @@ class NetworkExtractor:
             # Add primary keys and geometry columns
             with self.engine.begin() as conn:
                 conn.execute(
-                    text(
-                        f"ALTER TABLE {schema}.{edge_table} "
-                        f"ADD PRIMARY KEY (id)"
-                    )
+                    text(f"ALTER TABLE {schema}.{edge_table} ADD PRIMARY KEY (id)")
                 )
                 conn.execute(
-                    text(
-                        f"ALTER TABLE {schema}.{node_table} "
-                        f"ADD PRIMARY KEY (id)"
-                    )
+                    text(f"ALTER TABLE {schema}.{node_table} ADD PRIMARY KEY (id)")
                 )
-                _ensure_geometry_columns(
-                    conn, schema, edge_table, node_table, srid
-                )
+                _ensure_geometry_columns(conn, schema, edge_table, node_table, srid)
 
         except Exception as exc:
             msg = f"Failed to write network to PostGIS: {exc}"

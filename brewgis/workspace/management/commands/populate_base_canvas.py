@@ -125,6 +125,7 @@ class Command(BaseCommand):
             from brewgis.workspace.services.base_canvas_adapters import (  # noqa: PLC0415
                 CensusDemographicSource,
             )
+
             demographic_source = CensusDemographicSource(
                 state_fips=state_fips,
                 county_fips=county_fips,
@@ -139,6 +140,7 @@ class Command(BaseCommand):
             from brewgis.workspace.services.base_canvas_adapters import (  # noqa: PLC0415
                 LEHDEmploymentSource,
             )
+
             employment_source = LEHDEmploymentSource(
                 state_fips=state_fips,
                 county_fips=county_fips,
@@ -166,8 +168,6 @@ class Command(BaseCommand):
             raise CommandError(result.get("error", "Unknown error"))
 
         self.stdout.write(
-            self.style.SUCCESS(
-                f"ETL pipeline complete in {result['elapsed']}s"
-            )
+            self.style.SUCCESS(f"ETL pipeline complete in {result['elapsed']}s")
         )
         return None

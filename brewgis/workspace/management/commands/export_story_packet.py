@@ -69,16 +69,12 @@ class Command(BaseCommand):
                 zf.writestr("aggregate_metrics.csv", metrics_csv)
 
             # 2. Parcel-level deltas from increment table
-            deltas_csv = self._export_table_to_csv(
-                schema, f"increment_{scenario_id}"
-            )
+            deltas_csv = self._export_table_to_csv(schema, f"increment_{scenario_id}")
             if deltas_csv:
                 zf.writestr("parcel_deltas.csv", deltas_csv)
 
             # 3. VMT fee data (available when Phase 2b models have run)
-            vmt_fee_csv = self._export_table_to_csv(
-                schema, f"vmt_fee_{scenario_id}"
-            )
+            vmt_fee_csv = self._export_table_to_csv(schema, f"vmt_fee_{scenario_id}")
             if vmt_fee_csv:
                 zf.writestr("vmt_fee.csv", vmt_fee_csv)
 

@@ -39,9 +39,7 @@ class TestInternalCaptureLogic(TestCase):
         if study_area_fraction <= 0:
             return 0.0
         attenuation = math.exp(
-            -intrazonal_friction
-            * avg_trip_length_km
-            / max(study_area_radius_km, 0.001)
+            -intrazonal_friction * avg_trip_length_km / max(study_area_radius_km, 0.001)
         )
         return min(1.0, study_area_fraction * attenuation)
 

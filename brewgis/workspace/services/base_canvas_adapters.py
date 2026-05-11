@@ -234,6 +234,7 @@ _SACOG_LAND_USE_MAP: dict[str, str] = {
     "Road": "undeveloped",
 }
 
+
 def classify_by_sacog_land_use(land_use_text: str | None) -> str:
     """Classify a parcel using SACOG text-based land use categories.
 
@@ -242,6 +243,7 @@ def classify_by_sacog_land_use(land_use_text: str | None) -> str:
     if not land_use_text or pd.isna(land_use_text):
         return "urban"
     return _SACOG_LAND_USE_MAP.get(str(land_use_text).strip(), "urban")
+
 
 class NullDemographicSource:
     """Default demographic source — returns nothing; ETL fills with 0.0."""
@@ -286,9 +288,9 @@ class NullLandUseSource:
             return parcels
 
         # Ensure string-compatible dtype for land_development_category
-        parcels["land_development_category"] = (
-            parcels["land_development_category"].astype(object)
-        )
+        parcels["land_development_category"] = parcels[
+            "land_development_category"
+        ].astype(object)
 
         # Pass 1: Try assessor codes (numeric prefix lookup)
         code_col = None

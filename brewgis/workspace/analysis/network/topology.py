@@ -102,7 +102,6 @@ class NetworkTopology:
                         ),
                     }
 
-
                 sql = text(
                     f"SELECT pgr_createTopology("
                     f"  '{schema}.{edge_table}', "
@@ -124,9 +123,7 @@ class NetworkTopology:
 
                 # Get vertex count
                 vertex_count = conn.execute(
-                    text(
-                        f"SELECT COUNT(*) FROM {schema}.{edge_table}_vertices_pgr"
-                    )
+                    text(f"SELECT COUNT(*) FROM {schema}.{edge_table}_vertices_pgr")
                 ).scalar()
 
                 # Get edge count with valid topology
@@ -159,15 +156,12 @@ class NetworkTopology:
             return {"success": False, "error": msg}
 
         logger.info(
-            "Topology built: %d vertices, %d/%d edges valid, "
-            "%d dead ends, %d gaps",
+            "Topology built: %d vertices, %d/%d edges valid, %d dead ends, %d gaps",
             vertex_count,
             valid_edges,
             (
                 conn.execute(
-                    text(
-                        f"SELECT COUNT(*) FROM {schema}.{edge_table}"
-                    )
+                    text(f"SELECT COUNT(*) FROM {schema}.{edge_table}")
                 ).scalar()
                 if conn
                 else 0
@@ -192,8 +186,5 @@ class NetworkTopology:
         """Drop the vertex table created by pgr_createTopology."""
         with self.engine.begin() as conn:
             conn.execute(
-                text(
-                    f"DROP TABLE IF EXISTS "
-                    f"{schema}.{edge_table}_vertices_pgr CASCADE"
-                )
+                text(f"DROP TABLE IF EXISTS {schema}.{edge_table}_vertices_pgr CASCADE")
             )

@@ -10,7 +10,6 @@ if TYPE_CHECKING:
     from playwright.sync_api import Page  # noqa: F401
 
 
-
 class WorkspaceCreationPage(BasePage):
     """Page object for the workspace creation form."""
 

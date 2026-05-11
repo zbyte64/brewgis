@@ -1,4 +1,5 @@
 """Tests for NLCD and OSM adapters (land classification, irrigation, intersection density)."""
+
 from __future__ import annotations
 
 from pathlib import Path
@@ -119,6 +120,7 @@ class TestAssessorClassification:
 
         result = classify_land_development(nlcd_majority="agricultural")
         assert result == "agricultural"
+
 
 class TestAssessorCodeClassification:
     """Tests for ``classify_by_assessor_code`` (numerical CA codes)."""
@@ -374,13 +376,19 @@ class TestNlcdFetcherBbox:
         parcels = gpd.GeoDataFrame(
             {"parcel_id": [1, 2]},
             geometry=[
-                wkt.loads("POLYGON ((-121.5 38.0, -121.0 38.0, -121.0 38.5, -121.5 38.5, -121.5 38.0))"),
-                wkt.loads("POLYGON ((-121.0 38.5, -120.5 38.5, -120.5 39.0, -121.0 39.0, -121.0 38.5))"),
+                wkt.loads(
+                    "POLYGON ((-121.5 38.0, -121.0 38.0, -121.0 38.5, -121.5 38.5, -121.5 38.0))"
+                ),
+                wkt.loads(
+                    "POLYGON ((-121.0 38.5, -120.5 38.5, -120.5 39.0, -121.0 39.0, -121.0 38.5))"
+                ),
             ],
             crs="EPSG:4326",
         )
 
-        fetcher = NLCDFetcher(bbox=(-999, -999, 999, 999))  # bogus default, should be overridden
+        fetcher = NLCDFetcher(
+            bbox=(-999, -999, 999, 999)
+        )  # bogus default, should be overridden
 
         with patch(
             "brewgis.workspace.services.nlcd_fetcher.compute_nlcd_zonal_stats",
@@ -394,13 +402,19 @@ class TestNlcdFetcherBbox:
         # Expected: total_bounds = [-121.5, 38.0, -120.5, 39.0]
         # With 5 % buffer: x_pad = 1.0 * 0.05 = 0.05, y_pad = 1.0 * 0.05 = 0.05
         # bbox = (-121.55, 37.95, -120.45, 39.05)
-        expected_west, expected_south, expected_east, expected_north = (-121.55, 37.95, -120.45, 39.05)
+        expected_west, expected_south, expected_east, expected_north = (
+            -121.55,
+            37.95,
+            -120.45,
+            39.05,
+        )
         actual_west, actual_south, actual_east, actual_north = call_bbox
 
         assert abs(actual_west - expected_west) < 0.001
         assert abs(actual_south - expected_south) < 0.001
         assert abs(actual_east - expected_east) < 0.001
         assert abs(actual_north - expected_north) < 0.001
+
 
 class TestOSMIntersectionDensityJurisdiction:
     """Tests for jurisdiction-level intersection density computation."""
@@ -437,11 +451,18 @@ class TestOSMIntersectionDensityJurisdiction:
         )
         source = OSMIntersectionDensitySource(bbox=(-122, 37, -121, 39))
 
-        with patch.object(
-            OSMIntersectionDensitySource, "available", return_value=True,
-        ), patch.object(
-            source, "_compute_jurisdiction_density",
-        ) as mock_jd:
+        with (
+            patch.object(
+                OSMIntersectionDensitySource,
+                "available",
+                return_value=True,
+            ),
+            patch.object(
+                source,
+                "_compute_jurisdiction_density",
+            ) as mock_jd,
+        ):
+
             def side_effect(jp: gpd.GeoDataFrame) -> float | None:
                 juris = jp["jurisdiction"].iloc[0]
                 return {"UrbanCity": 40.0, "SuburbTown": 10.0}.get(juris)
@@ -481,15 +502,25 @@ class TestOSMIntersectionDensityJurisdiction:
         )
         source = OSMIntersectionDensitySource(bbox=(-122, 37, -121, 39))
 
-        with patch.object(
-            OSMIntersectionDensitySource, "available", return_value=True,
-        ), patch.object(
-            source, "_compute_jurisdiction_density", return_value=None,
+        with (
+            patch.object(
+                OSMIntersectionDensitySource,
+                "available",
+                return_value=True,
+            ),
+            patch.object(
+                source,
+                "_compute_jurisdiction_density",
+                return_value=None,
+            ),
         ):
             result = source.compute_density(parcels)
 
         assert "intersection_density" in result.columns
-        assert result.loc[0, "intersection_density"] == OSMIntersectionDensitySource.DEFAULT_DENSITY
+        assert (
+            result.loc[0, "intersection_density"]
+            == OSMIntersectionDensitySource.DEFAULT_DENSITY
+        )
 
     def test_fallback_to_per_parcel_when_no_jurisdiction(self) -> None:
         """Verify fallback to per-parcel computation when no jurisdiction column."""
@@ -516,11 +547,17 @@ class TestOSMIntersectionDensityJurisdiction:
         )
         source = OSMIntersectionDensitySource(bbox=(-122, 37, -121, 39))
 
-        with patch.object(
-            OSMIntersectionDensitySource, "available", return_value=True,
-        ), patch.object(
-            source, "_compute_per_parcel",
-        ) as mock_per_parcel:
+        with (
+            patch.object(
+                OSMIntersectionDensitySource,
+                "available",
+                return_value=True,
+            ),
+            patch.object(
+                source,
+                "_compute_per_parcel",
+            ) as mock_per_parcel,
+        ):
             mock_per_parcel.return_value = parcels
             source.compute_density(parcels)
 
@@ -553,7 +590,9 @@ class TestOSMIntersectionDensityJurisdiction:
         source = OSMIntersectionDensitySource(bbox=(-122, 37, -121, 39))
 
         with patch.object(
-            OSMIntersectionDensitySource, "available", False,
+            OSMIntersectionDensitySource,
+            "available",
+            False,
         ):
             result = source.compute_density(parcels)
 

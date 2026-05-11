@@ -28,4 +28,3 @@ def submit_empty_form(page: Page) -> None:
     """Submit the create layer form without filling it."""
     page.click("button[type=submit]")
     page.wait_for_load_state("networkidle")
-

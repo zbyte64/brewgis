@@ -80,7 +80,6 @@ class PaintConstraintAdmin(admin.ModelAdmin):
     search_fields = ("column",)
 
 
-
 @admin.register(DataSourceCategory)
 class DataSourceCategoryAdmin(admin.ModelAdmin):
     list_display = ("name", "slug", "sort_order")
@@ -91,8 +90,20 @@ class DataSourceCategoryAdmin(admin.ModelAdmin):
 
 @admin.register(DataSource)
 class DataSourceAdmin(admin.ModelAdmin):
-    list_display = ("name", "category", "provider", "acquisition_priority", "is_importable")
-    list_filter = ("category", "acquisition_priority", "is_importable", "data_format", "update_frequency")
+    list_display = (
+        "name",
+        "category",
+        "provider",
+        "acquisition_priority",
+        "is_importable",
+    )
+    list_filter = (
+        "category",
+        "acquisition_priority",
+        "is_importable",
+        "data_format",
+        "update_frequency",
+    )
     search_fields = ("name", "provider", "description")
     list_editable = ("is_importable",)
     autocomplete_fields = ("category",)

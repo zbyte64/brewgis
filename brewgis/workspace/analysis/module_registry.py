@@ -38,13 +38,19 @@ MODULE_DEPENDENCIES: dict[str, list[str]] = {
     "vmt_fee": ["vmt"],
     "displacement_risk_dynamic": ["displacement_risk", "acs_equity"],
     "scenario_summary": [
-        "core", "vmt", "transport_ghg", "total_ghg",
-        "health_impacts", "housing_cost_burden", "sprawl_index",
-        "water_demand", "energy_demand", "land_consumption",
+        "core",
+        "vmt",
+        "transport_ghg",
+        "total_ghg",
+        "health_impacts",
+        "housing_cost_burden",
+        "sprawl_index",
+        "water_demand",
+        "energy_demand",
+        "land_consumption",
     ],
     "sprawl_cost": ["core", "fiscal"],
 }
-
 
 
 # Module → result table name templates (formatted with scenario_id)
@@ -214,6 +220,7 @@ def get_module_label(module: str) -> str:
     """Return the human-readable label for a module."""
     return MODULE_LABELS.get(module, module.replace("_", " ").title())
 
+
 CANONICAL_COLUMN_NAMES: list[str] = [
     "pop",
     "hh",
@@ -256,6 +263,7 @@ def get_column_mapping_vars(
                 f"column_mapping. Valid names: {CANONICAL_COLUMN_NAMES}"
             )
     return vars_
+
 
 def get_vars_for_module(module: str, base_vars: dict[str, Any]) -> dict[str, Any]:
     """Prepare the vars dict for a specific module, inheriting global vars.

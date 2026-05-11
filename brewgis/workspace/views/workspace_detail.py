@@ -142,7 +142,9 @@ def workspace_detail(request: HttpRequest, pk: int) -> HttpResponse:
         "workspace": workspace,
         "counties": County.objects.filter(county_q),
         "region_summary": _build_region_summary(workspace),
-        "catalog_categories": DataSourceCategory.objects.prefetch_related("sources").order_by("sort_order"),
+        "catalog_categories": DataSourceCategory.objects.prefetch_related(
+            "sources"
+        ).order_by("sort_order"),
         "imported_types": list(
             DataImportRun.objects.filter(workspace=workspace, status="completed")
             .values_list("import_type", flat=True)

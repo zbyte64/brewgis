@@ -159,6 +159,5 @@ def drop_canvas_view(scenario: Scenario) -> None:
     view_schema = scenario.target_schema
     q_view = _qi(f"{view_schema}.{view_name}")
 
-
     with connection.cursor() as cursor:
         cursor.execute(f"DROP VIEW IF EXISTS {q_view} CASCADE")

@@ -15,10 +15,7 @@ class SymbologyPage(BasePage):
     def symbology_type_options(self) -> list[str]:
         """Return the available symbology type options."""
         select = self.page.locator("select[name='symbology_type']")
-        return [
-            opt.inner_text().strip()
-            for opt in select.locator("option").all()
-        ]
+        return [opt.inner_text().strip() for opt in select.locator("option").all()]
 
     def selected_symbology_type(self) -> str:
         """Return the currently selected symbology type."""
@@ -27,9 +24,7 @@ class SymbologyPage(BasePage):
 
     def has_color_controls(self) -> bool:
         """Check if color inputs are present (default color, stroke color)."""
-        return (
-            self.page.locator("input[type='color']").count() >= 2
-        )
+        return self.page.locator("input[type='color']").count() >= 2
 
     def has_editor_form(self) -> bool:
         """Check if the symbology edit form is present."""

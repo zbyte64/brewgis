@@ -158,7 +158,6 @@ class AnalysisLaunchForm(forms.Form):
         ),
     )
 
-
     def clean_constraints_json(self) -> list[dict] | None:
         """Parse and validate the constraints JSON field."""
         data = self.cleaned_data.get("constraints_json")
@@ -241,6 +240,7 @@ class AnalysisLaunchView(FormView):
 
     form_class = AnalysisLaunchForm
     template_name = "form.html"
+
     def get_form_kwargs(self) -> dict[str, object]:
         kwargs = super().get_form_kwargs()
         workspace_pk = self.request.GET.get("workspace")
@@ -316,9 +316,9 @@ def analysis_status(request: HttpRequest, run_pk: int) -> HttpResponse:
         try:
             with connection.cursor() as cursor:
                 cursor.execute(
-                    f'SELECT COALESCE(SUM(fee_revenue_total), 0), '
-                    f'COALESCE(SUM(revenue_forgone), 0), '
-                    f'COALESCE(SUM(vmt_exempt), 0) '
+                    f"SELECT COALESCE(SUM(fee_revenue_total), 0), "
+                    f"COALESCE(SUM(revenue_forgone), 0), "
+                    f"COALESCE(SUM(vmt_exempt), 0) "
                     f'FROM "{schema}"."{vmt_fee_table}"'
                 )
                 row = cursor.fetchone()

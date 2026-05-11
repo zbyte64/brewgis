@@ -64,12 +64,14 @@ def register_tools(server: object) -> None:
             PaintEvent.objects.create(
                 scenario=scenario,
                 action="paint",
-                details=json.dumps({
-                    "features": feature_ids,
-                    "column": column,
-                    "value": value,
-                    "note": note,
-                }),
+                details=json.dumps(
+                    {
+                        "features": feature_ids,
+                        "column": column,
+                        "value": value,
+                        "note": note,
+                    }
+                ),
             )
 
         return {"painted": painted, "errors": errors}
@@ -148,9 +150,9 @@ def register_tools(server: object) -> None:
         workspace = get_object_or_404(Workspace, pk=ws_pk)
         scenario = get_object_or_404(Scenario, pk=s_pk, workspace=workspace)
 
-        events = PaintEvent.objects.filter(
-            scenario=scenario, action="paint"
-        ).order_by("-created_at")[:count]
+        events = PaintEvent.objects.filter(scenario=scenario, action="paint").order_by(
+            "-created_at"
+        )[:count]
 
         reverted = 0
         for event in events:
@@ -205,6 +207,9 @@ def register_tools(server: object) -> None:
 
         try:
             validation = check_paint_batch(scenario, features)
-            return {"valid": validation.get("valid", True), "errors": validation.get("errors", [])}
+            return {
+                "valid": validation.get("valid", True),
+                "errors": validation.get("errors", []),
+            }
         except Exception as e:
             return {"valid": False, "errors": [str(e)]}

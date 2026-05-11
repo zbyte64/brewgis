@@ -18,4 +18,5 @@ register_tools(server)
 def run_stdio() -> None:
     """Run the MCP server over stdio transport."""
     from mcp import run
+
     run(transport="stdio")

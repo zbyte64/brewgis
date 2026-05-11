@@ -28,7 +28,9 @@ class TestLayerDeleteView(TestCase):
         self.layer = LayerFactory(workspace=self.workspace)
 
     def _delete_url(self, layer_pk: int | None = None) -> str:
-        return reverse("workspace:layer_delete", kwargs={"pk": layer_pk or self.layer.pk})
+        return reverse(
+            "workspace:layer_delete", kwargs={"pk": layer_pk or self.layer.pk}
+        )
 
     def test_requires_auth(self):
         """Unauthenticated POST should redirect to login."""

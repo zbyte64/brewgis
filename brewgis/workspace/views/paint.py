@@ -595,11 +595,18 @@ def _allocation_to_painted_rows(
                 bt_lower = bt_name.lower()
                 if "2-4" in bt_name or "2to4" in bt_lower or "2_to_4" in bt_lower:
                     field_map["du_mf2to4"] = field_map.get("du_mf2to4", 0.0) + bt_du
-                elif "5+" in bt_name or "5p" in bt_lower or "5_plus" in bt_lower or "5plus" in bt_lower:
+                elif (
+                    "5+" in bt_name
+                    or "5p" in bt_lower
+                    or "5_plus" in bt_lower
+                    or "5plus" in bt_lower
+                ):
                     field_map["du_mf5p"] = field_map.get("du_mf5p", 0.0) + bt_du
                 else:
                     # Generic MF — default split 40% 2-4, 60% 5+
-                    field_map["du_mf2to4"] = field_map.get("du_mf2to4", 0.0) + bt_du * 0.4
+                    field_map["du_mf2to4"] = (
+                        field_map.get("du_mf2to4", 0.0) + bt_du * 0.4
+                    )
                     field_map["du_mf5p"] = field_map.get("du_mf5p", 0.0) + bt_du * 0.6
                 # Also populate aggregate du_mf for backward compatibility
                 field_map["du_mf"] = field_map.get("du_mf", 0.0) + bt_du

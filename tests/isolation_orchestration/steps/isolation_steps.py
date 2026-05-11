@@ -36,7 +36,9 @@ if TYPE_CHECKING:
 logger = logging.getLogger(__name__)
 
 # Register the same feature file used by the real (psycopg-level) BDD tests.
-scenarios(str(Path(__file__).parent.parent / ".." / "features" / "dbt_isolation.feature"))
+scenarios(
+    str(Path(__file__).parent.parent / ".." / "features" / "dbt_isolation.feature")
+)
 
 
 # ── Helpers ──────────────────────────────────────────────────────────────
@@ -102,7 +104,6 @@ def _assert_run_matches(
         assert expected_mod in run.modules, msg
 
 
-
 def _find_module_by_table_prefix(view_name: str) -> str | None:
     """Find a module that produces a table whose name starts with ``view_name``.
 
@@ -129,6 +130,8 @@ def _find_module_by_table_prefix(view_name: str) -> str | None:
         "vmt": "vmt",
     }
     return known_prefix_to_module.get(view_name)
+
+
 # ── Given steps ──────────────────────────────────────────────────────────
 
 
@@ -149,7 +152,9 @@ def schema_exists(schema_name: str, scenario_context: dict[str, Any], db) -> Non
 
 
 @given(parsers.parse('schema "{schema_name}" does not exist'))
-def schema_does_not_exist(schema_name: str, scenario_context: dict[str, Any], db) -> None:  # type: ignore[no-untyped-def]
+def schema_does_not_exist(
+    schema_name: str, scenario_context: dict[str, Any], db
+) -> None:  # type: ignore[no-untyped-def]
     """Create a reference workspace to verify no runs leaked into it.
 
     Despite the Gherkin phrasing (which describes the PostGIS-level
@@ -179,8 +184,7 @@ def parcel_table_exists() -> None:
 
 @when(
     parsers.parse(
-        'I run dbt module "{module}" with scenario_id "{sid}" in schema '
-        '"{schema}"',
+        'I run dbt module "{module}" with scenario_id "{sid}" in schema "{schema}"',
     ),
 )
 def run_dbt_module(  # noqa: PLR0913
@@ -330,8 +334,7 @@ def view_does_not_exist(
     bare_module = _find_module_by_table_prefix(view_name)
     if bare_module is not None:
         logger.info(
-            "Interpreting bare view name '%s' as module '%s' "
-            "(no scenario_id suffix)",
+            "Interpreting bare view name '%s' as module '%s' (no scenario_id suffix)",
             view_name,
             bare_module,
         )
@@ -397,7 +400,7 @@ def _derive_scenario_id_from_view(view_name: str) -> str:
     )
     for prefix in known_prefixes:
         if view_name.startswith(prefix):
-            return view_name[len(prefix):]
+            return view_name[len(prefix) :]
 
     msg = (
         f"Cannot derive scenario_id from view name '{view_name}'. "

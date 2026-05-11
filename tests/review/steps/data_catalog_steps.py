@@ -34,6 +34,7 @@ def catalog_has_categories(page, count: str) -> None:
         f"Expected {count} source categories, got {catalog.category_count()}"
     )
 
+
 @then(parsers.parse('the Data Catalog should list "{name}"'))
 def catalog_lists_source(page, name: str) -> None:
     """Check a specific source appears in the catalog."""
@@ -77,9 +78,7 @@ def quick_action_bar(page, buttons: str) -> None:
     labels = catalog.quick_action_labels()
     expected = [b.strip().strip('"') for b in buttons.split(",")]
     for btn in expected:
-        assert btn in labels, (
-            f"Expected quick-action '{btn}' in bar, got {labels}"
-        )
+        assert btn in labels, f"Expected quick-action '{btn}' in bar, got {labels}"
 
 
 @then("the workspace name appears in the page heading")
@@ -88,9 +87,7 @@ def workspace_name_in_title(page) -> None:
     ws = Workspace.objects.last()
     assert ws is not None
     title = page.title()
-    assert ws.name in title, (
-        f"Expected '{ws.name}' in page title, got '{title}'"
-    )
+    assert ws.name in title, f"Expected '{ws.name}' in page title, got '{title}'"
 
 
 @then("I should see the workspace name in the page header")

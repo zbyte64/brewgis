@@ -23,7 +23,9 @@ def _list_context(workspace: Workspace) -> dict[str, Any]:
         .prefetch_related("layers")
         .order_by("display_order")
     )
-    ungrouped = Layer.objects.filter(workspace=workspace, group__isnull=True).order_by("display_order")
+    ungrouped = Layer.objects.filter(workspace=workspace, group__isnull=True).order_by(
+        "display_order"
+    )
     return {
         "workspace": workspace,
         "groups": groups,
@@ -57,7 +59,9 @@ def layer_group_create(request: HttpRequest, workspace_pk: int) -> HttpResponse:
             max_order=Max("display_order")
         )
         next_order = (max_order.get("max_order") or 0) + 1
-        LayerGroup.objects.create(workspace=workspace, name=name, display_order=next_order)
+        LayerGroup.objects.create(
+            workspace=workspace, name=name, display_order=next_order
+        )
         context = _list_context(workspace)
         return render(request, "workspace/partials/_layer_group_list.html", context)
     return render(

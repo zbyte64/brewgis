@@ -152,10 +152,12 @@ class TestLEHDFetcher:
         mock_get.return_value.text = "Error"
         with pytest.raises(RuntimeError, match="LODES download returned HTTP 500"):
             fetch_lehd_block_data("06", "067")
+
     @patch("brewgis.workspace.services.lehd_fetcher.requests.get")
     def test_fetch_lehd_empty_response(self, mock_get) -> None:
         """Empty CSV (header only) should raise RuntimeError."""
         import gzip, io, csv
+
         buf = io.BytesIO()
         with gzip.GzipFile(fileobj=buf, mode="w") as gz:
             gz.write(b"w_geocode,C000,CA01,CA02,CA03,CE01,CE02,CE03\n")
@@ -168,6 +170,7 @@ class TestLEHDFetcher:
     def test_fetch_lehd_data_summary_success(self, mock_get) -> None:
         """Data summary should return expected structure."""
         import gzip, io, csv
+
         buf = io.BytesIO()
         with gzip.GzipFile(fileobj=buf, mode="w") as gz:
             gz.write(b"w_geocode,C000,CA01\n060670001001000,500,100\n")

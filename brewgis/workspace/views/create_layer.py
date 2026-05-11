@@ -53,9 +53,7 @@ def layer_delete(request: HttpRequest, pk: int) -> HttpResponse:
     layer = get_object_or_404(Layer, pk=pk)
     workspace_pk = layer.workspace.pk
     layer.delete()
-    redirect_url = reverse(
-        "workspace:workspace_detail", kwargs={"pk": workspace_pk}
-    )
+    redirect_url = reverse("workspace:workspace_detail", kwargs={"pk": workspace_pk})
     if getattr(request, "htmx", None):
         response = HttpResponse()
         response["HX-Redirect"] = redirect_url

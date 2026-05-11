@@ -85,7 +85,11 @@ def layer_filter_edit(request: HttpRequest, pk: int) -> HttpResponse:
             return render(
                 request,
                 "workspace/filter/editor.html",
-                {"layer": flt.layer, "filter": flt, "error": "Filter name is required."},
+                {
+                    "layer": flt.layer,
+                    "filter": flt,
+                    "error": "Filter name is required.",
+                },
             )
         raw_json = request.POST.get("filter_json", "{}")
         try:
@@ -94,7 +98,11 @@ def layer_filter_edit(request: HttpRequest, pk: int) -> HttpResponse:
             return render(
                 request,
                 "workspace/filter/editor.html",
-                {"layer": flt.layer, "filter": flt, "error": f"Invalid filter JSON: {e}"},
+                {
+                    "layer": flt.layer,
+                    "filter": flt,
+                    "error": f"Invalid filter JSON: {e}",
+                },
             )
         flt.name = name
         flt.filter_json = parsed
@@ -141,13 +149,15 @@ def layer_filter_preview(request: HttpRequest, pk: int) -> JsonResponse:
     is linked to the layer.
     """
     flt = get_object_or_404(LayerFilter, pk=pk)
-    return JsonResponse({
-        "id": flt.pk,
-        "name": flt.name,
-        "is_active": flt.is_active,
-        "filter_json": flt.filter_json,
-        "expression": _human_readable_expression(flt.filter_json),
-    })
+    return JsonResponse(
+        {
+            "id": flt.pk,
+            "name": flt.name,
+            "is_active": flt.is_active,
+            "filter_json": flt.filter_json,
+            "expression": _human_readable_expression(flt.filter_json),
+        }
+    )
 
 
 def _human_readable_expression(filter_json: dict) -> str:
@@ -166,7 +176,17 @@ def _human_readable_expression(filter_json: dict) -> str:
         field = filter_json.get("field", "?")
         op = filter_json.get("operator", "?")
         value = filter_json.get("value", "")
-        op_display = {"eq": "=", "neq": "!=", "gt": ">", "gte": ">=", "lt": "<", "lte": "<=", "contains": "contains", "is_null": "is null", "is_not_null": "is not null"}
+        op_display = {
+            "eq": "=",
+            "neq": "!=",
+            "gt": ">",
+            "gte": ">=",
+            "lt": "<",
+            "lte": "<=",
+            "contains": "contains",
+            "is_null": "is null",
+            "is_not_null": "is not null",
+        }
         display_op = op_display.get(op, op)
         if op in ("is_null", "is_not_null"):
             return f"{field} {display_op}"

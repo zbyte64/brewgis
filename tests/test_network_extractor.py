@@ -149,9 +149,7 @@ class TestNetworkTopology(TestCase):
             self.fail(f"Network extraction failed in setUp: {result.get('error')}")
 
     def tearDown(self) -> None:
-        self.topology.drop_vertex_table(
-            schema=self.schema, edge_table=self.edge_table
-        )
+        self.topology.drop_vertex_table(schema=self.schema, edge_table=self.edge_table)
         with connection.cursor() as cursor:
             cursor.execute(
                 f"DROP TABLE IF EXISTS {self.schema}.{self.edge_table} CASCADE"
@@ -189,8 +187,7 @@ class TestNetworkTopology(TestCase):
         # Run a shortest-path query between two random nodes
         with connection.cursor() as cursor:
             cursor.execute(
-                f"SELECT id FROM {self.schema}.{self.edge_table}_vertices_pgr "
-                f"LIMIT 2"
+                f"SELECT id FROM {self.schema}.{self.edge_table}_vertices_pgr LIMIT 2"
             )
             nodes = [row[0] for row in cursor.fetchall()]
 
@@ -207,9 +204,7 @@ class TestNetworkTopology(TestCase):
             )
             path = cursor.fetchall()
 
-        self.assertGreater(
-            len(path), 0, "pgr_dijkstra should return at least one edge"
-        )
+        self.assertGreater(len(path), 0, "pgr_dijkstra should return at least one edge")
 
     def test_build_nonexistent_table_returns_error(self) -> None:
         """Building topology on a nonexistent table returns failure."""

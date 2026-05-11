@@ -26,6 +26,7 @@ class ImportGISFileForm(forms.Form):
     file = forms.FileField(required=True)
     workspace = forms.ModelChoiceField(queryset=Workspace.objects.all())
     table_name = forms.CharField(max_length=63)
+
     def clean_file(self) -> forms.FileField:
         file = self.cleaned_data.get("file")
         if file is None:

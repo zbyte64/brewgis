@@ -49,8 +49,7 @@ class AnalysisModulesPage(BasePage):
             if strong.count() > 0:
                 label = strong.inner_text().strip().rstrip(":")
                 items = [
-                    li.inner_text().strip()
-                    for li in section.locator("ul li").all()
+                    li.inner_text().strip() for li in section.locator("ul li").all()
                 ]
                 result[label.lower()] = items
 

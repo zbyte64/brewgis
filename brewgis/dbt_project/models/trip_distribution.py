@@ -103,8 +103,7 @@ def _gravity_model(
         frac = np.zeros((n, n))
         with np.errstate(divide="ignore", invalid="ignore"):
             frac[valid_origins] = (
-                attract_imped[valid_origins]
-                / denom[valid_origins, np.newaxis]
+                attract_imped[valid_origins] / denom[valid_origins, np.newaxis]
             )
 
         od_matrix = trips[:, np.newaxis] * frac
@@ -166,8 +165,7 @@ def model(dbt, session):
     # ── Distance source selection ────────────────────────────
     if distance_source == "network":
         logger.info(
-            "Using network distances for trip distribution "
-            "(scenario %s, schema %s)",
+            "Using network distances for trip distribution (scenario %s, schema %s)",
             scenario_id,
             target_schema,
         )
@@ -183,9 +181,7 @@ def model(dbt, session):
             target_schema=target_schema,
         )
     else:
-        logger.info(
-            "Using Euclidean (crow-flies) distances for trip distribution"
-        )
+        logger.info("Using Euclidean (crow-flies) distances for trip distribution")
         result_df = _run_with_euclidean_distances(
             dbt=dbt,
             session=session,
@@ -233,7 +229,8 @@ def _run_with_euclidean_distances(
         return _empty_result()
     df = df.merge(
         df_core[["parcel_id", "employment_total", "dwelling_units_total"]],
-        on="parcel_id", how="left",
+        on="parcel_id",
+        how="left",
     ).fillna(0.0)
 
     xs_vals = df["x"].values
@@ -245,7 +242,9 @@ def _run_with_euclidean_distances(
 
     logger.info(
         "Running batched Euclidean gravity model on %d parcels (batch_size=%d, b=%s)",
-        n_total, BATCH_SIZE, b,
+        n_total,
+        BATCH_SIZE,
+        b,
     )
 
     outbound = np.zeros(n_total, dtype=np.float64)
@@ -264,7 +263,10 @@ def _run_with_euclidean_distances(
 
         logger.info(
             "  Batch %d/%d: origins %d-%d",
-            batch_idx + 1, n_batches, start, end - 1,
+            batch_idx + 1,
+            n_batches,
+            start,
+            end - 1,
         )
 
         dx = xs_vals[batch_slice, np.newaxis] - xs_vals[np.newaxis, :]
@@ -292,13 +294,15 @@ def _run_with_euclidean_distances(
     inbound = inbound - internal
     avg_trip_length = np.where(outbound > 0, dist_weighted / outbound, 0.0)
 
-    return pd.DataFrame({
-        "parcel_id": parcel_ids,
-        "trips_outbound": outbound,
-        "trips_inbound": inbound,
-        "trips_internal": internal,
-        "avg_trip_length_km": avg_trip_length,
-    })
+    return pd.DataFrame(
+        {
+            "parcel_id": parcel_ids,
+            "trips_outbound": outbound,
+            "trips_inbound": inbound,
+            "trips_internal": internal,
+            "avg_trip_length_km": avg_trip_length,
+        }
+    )
 
 
 def _run_with_network_distances(
@@ -351,7 +355,9 @@ def _run_with_network_distances(
 
     logger.info(
         "Running batched network-distances gravity model on %d parcels (batch_size=%d, b=%s)",
-        n_total, BATCH_SIZE, b,
+        n_total,
+        BATCH_SIZE,
+        b,
     )
 
     outbound = np.zeros(n_total, dtype=np.float64)
@@ -370,7 +376,10 @@ def _run_with_network_distances(
 
         logger.info(
             "  Batch %d/%d: origins %d-%d",
-            batch_idx + 1, n_batches, start, end - 1,
+            batch_idx + 1,
+            n_batches,
+            start,
+            end - 1,
         )
 
         batch_dists = dist_matrix[batch_slice, :]
@@ -395,13 +404,15 @@ def _run_with_network_distances(
     inbound = inbound - internal
     avg_trip_length = np.where(outbound > 0, dist_weighted / outbound, 0.0)
 
-    return pd.DataFrame({
-        "parcel_id": parcel_ids,
-        "trips_outbound": outbound,
-        "trips_inbound": inbound,
-        "trips_internal": internal,
-        "avg_trip_length_km": avg_trip_length,
-    })
+    return pd.DataFrame(
+        {
+            "parcel_id": parcel_ids,
+            "trips_outbound": outbound,
+            "trips_inbound": inbound,
+            "trips_internal": internal,
+            "avg_trip_length_km": avg_trip_length,
+        }
+    )
 
 
 def _accumulate_batch(
@@ -428,17 +439,17 @@ def _accumulate_batch(
         with np.errstate(divide="ignore", invalid="ignore"):
             frac[valid] = attract_imped[valid] / denom[valid, np.newaxis]
 
-        od = trips[start:start + b_size, np.newaxis] * frac
+        od = trips[start : start + b_size, np.newaxis] * frac
         self_flows = od[np.arange(b_size), b_origins]
         batch_outbound = np.sum(od, axis=1) - self_flows
-        outbound[start:start + b_size] = batch_outbound
-        internal[start:start + b_size] = self_flows
+        outbound[start : start + b_size] = batch_outbound
+        internal[start : start + b_size] = self_flows
         inbound += np.sum(od, axis=0)
-        dist_weighted[start:start + b_size] = np.sum(od * dist_matrix, axis=1)
+        dist_weighted[start : start + b_size] = np.sum(od * dist_matrix, axis=1)
 
     invalid_idx = np.where(~valid)[0]
     if len(invalid_idx) > 0:
-        internal[start + invalid_idx] = trips[start:start + b_size][invalid_idx]
+        internal[start + invalid_idx] = trips[start : start + b_size][invalid_idx]
 
 
 def _empty_result():

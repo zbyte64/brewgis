@@ -33,10 +33,18 @@ class TestLayerFilterModel(TestCase):
             "type": "group",
             "operator": "AND",
             "children": [
-                {"type": "column", "field": "existing_du", "operator": "gt", "value": "0", "value_type": "number"}
+                {
+                    "type": "column",
+                    "field": "existing_du",
+                    "operator": "gt",
+                    "value": "0",
+                    "value_type": "number",
+                }
             ],
         }
-        flt = LayerFilter.objects.create(layer=self.layer, name="DU > 0", filter_json=expression)
+        flt = LayerFilter.objects.create(
+            layer=self.layer, name="DU > 0", filter_json=expression
+        )
         self.assertEqual(flt.filter_json, expression)
         self.assertEqual(flt.filter_json["type"], "group")
         self.assertEqual(flt.filter_json["operator"], "AND")
@@ -44,7 +52,9 @@ class TestLayerFilterModel(TestCase):
 
     def test_is_active_flag(self) -> None:
         """A filter should be togglable between active and inactive."""
-        flt = LayerFilter.objects.create(layer=self.layer, name="Active Filter", is_active=True)
+        flt = LayerFilter.objects.create(
+            layer=self.layer, name="Active Filter", is_active=True
+        )
         self.assertTrue(flt.is_active)
         flt.is_active = False
         flt.save()

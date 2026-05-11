@@ -9,6 +9,7 @@ from django.template.defaultfilters import stringfilter
 
 register = template.Library()
 
+
 @register.filter
 def model_verbose_name(model_class: object) -> str:
     """Return the verbose_name of a model class.
@@ -65,6 +66,8 @@ def report_status_badge(status: str) -> str:
         "failed": "danger",
     }
     return badge_map.get(status, "secondary")
+
+
 @register.filter
 def dictlookup(d: dict | None, key: str) -> str:
     """Look up a key in a dictionary, returning "" if missing or not a dict.
@@ -75,6 +78,7 @@ def dictlookup(d: dict | None, key: str) -> str:
         value = d.get(key, "")
         return str(value) if value is not None else ""
     return ""
+
 
 @register.filter
 def json_attr(value: object) -> str:

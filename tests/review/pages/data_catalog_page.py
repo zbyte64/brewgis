@@ -38,7 +38,11 @@ class DataCatalogPage(BasePage):
                 if cells.count() >= 5:
                     result.append(
                         {
-                            "source_name": cells.nth(0).text_content().strip().split("\n")[0].strip(),
+                            "source_name": cells.nth(0)
+                            .text_content()
+                            .strip()
+                            .split("\n")[0]
+                            .strip(),
                             "description": cells.nth(1).text_content().strip(),
                             "status": cells.nth(4).text_content().strip(),
                         }
@@ -51,9 +55,7 @@ class DataCatalogPage(BasePage):
 
     def source_status(self, source_name: str) -> str:
         """Return status badge text for a given source name."""
-        row = self._catalog_table().locator(
-            f"tr:has(td:text-is('{source_name}'))"
-        )
+        row = self._catalog_table().locator(f"tr:has(td:text-is('{source_name}'))")
         if row.count() == 0:
             return ""
         cells = row.locator("td")

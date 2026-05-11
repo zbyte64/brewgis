@@ -34,7 +34,9 @@ class ScenarioPage(BasePage):
 
     def has_scenario_action_buttons(self) -> bool:
         """Check for View and Edit action buttons in scenario table rows."""
-        actions = self.page.locator(".card:has(h5:has-text('Scenarios')) table tbody tr td:last-child")
+        actions = self.page.locator(
+            ".card:has(h5:has-text('Scenarios')) table tbody tr td:last-child"
+        )
         if actions.count() == 0:
             return False
         has_view = False

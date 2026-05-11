@@ -131,6 +131,7 @@ class Command(BaseCommand):
             from brewgis.workspace.services.base_canvas_adapters import (  # noqa: PLC0415
                 CensusDemographicSource,
             )
+
             demographic_source = CensusDemographicSource(
                 state_fips=state_fips,
                 county_fips=county_fips,
@@ -140,6 +141,7 @@ class Command(BaseCommand):
             from brewgis.workspace.services.base_canvas_adapters import (  # noqa: PLC0415
                 LEHDEmploymentSource,
             )
+
             employment_source = LEHDEmploymentSource(
                 state_fips=state_fips,
                 county_fips=county_fips,
@@ -160,6 +162,7 @@ class Command(BaseCommand):
                 from brewgis.workspace.services.base_canvas_adapters import (  # noqa: PLC0415
                     NLCDFetcher,
                 )
+
                 nlcd_source = NLCDFetcher(bbox=bbox)
                 land_use_source = nlcd_source
                 irrigation_source = nlcd_source
@@ -178,10 +181,12 @@ class Command(BaseCommand):
         if not skip_osm:
             try:
                 import geopandas as gpd_ref  # noqa: PLC0415, F811
+
                 bbox_ref = bbox  # noqa: F821  # from NLCD block if available
                 from brewgis.workspace.services.base_canvas_adapters import (  # noqa: PLC0415
                     OSMIntersectionDensitySource,
                 )
+
                 intersection_density_source = OSMIntersectionDensitySource(
                     bbox=bbox_ref,
                 )
@@ -251,23 +256,17 @@ class Command(BaseCommand):
             return
 
         with db_conn.cursor() as cursor:
-            cursor.execute(
-                "SELECT COALESCE(SUM(pop), 0) FROM public.base_canvas"
-            )
+            cursor.execute("SELECT COALESCE(SUM(pop), 0) FROM public.base_canvas")
             pop_total = cursor.fetchone()[0]
             self.stdout.write(f"  Population: {pop_total:,.0f}")
 
         with db_conn.cursor() as cursor:
-            cursor.execute(
-                "SELECT COALESCE(SUM(hh), 0) FROM public.base_canvas"
-            )
+            cursor.execute("SELECT COALESCE(SUM(hh), 0) FROM public.base_canvas")
             hh_total = cursor.fetchone()[0]
             self.stdout.write(f"  Households: {hh_total:,.0f}")
 
         with db_conn.cursor() as cursor:
-            cursor.execute(
-                "SELECT COALESCE(SUM(emp), 0) FROM public.base_canvas"
-            )
+            cursor.execute("SELECT COALESCE(SUM(emp), 0) FROM public.base_canvas")
             emp_total = cursor.fetchone()[0]
             self.stdout.write(f"  Employment: {emp_total:,.0f}")
 
