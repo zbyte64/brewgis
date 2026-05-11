@@ -321,7 +321,7 @@ class BaseCanvasETL:
 
         sq_m_per_acre = 4046.86
         gdf["area_gross"] = (area_sq_m / sq_m_per_acre).round(4)
-        gdf["area_parcel"] = (area_sq_m / sq_m_per_acre * 0.85).round(4)
+        gdf["area_parcel"] = (area_sq_m / sq_m_per_acre).round(4)
         gdf["area_dev_condition"] = (area_sq_m / sq_m_per_acre * 0.7).round(4)
         gdf["area_row"] = (area_sq_m / sq_m_per_acre * 0.15).round(4)
         return gdf
@@ -618,6 +618,7 @@ class BaseCanvasETL:
         category_map = {
             "urban": "area_parcel_res",
             "agricultural": "area_parcel_emp_ag",
+            "industrial": "area_parcel_emp",
             "undeveloped": "area_parcel_no_use",
         }
 

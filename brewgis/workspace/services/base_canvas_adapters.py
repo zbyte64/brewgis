@@ -185,6 +185,62 @@ def classify_by_assessor_code(assessor_use_code: str | None) -> str | None:
 # These preserve the current fillna(default) behaviour when real data
 # sources are not configured or unavailable.
 
+_SACOG_LAND_USE_MAP: dict[str, str] = {
+    # Residential (all density/type variants)
+    "Low Density Detached Residential": "urban",
+    "Medium Density Detached Residential": "urban",
+    "Very Low Density Detached Residential": "urban",
+    "Rural Residential": "urban",
+    "Medium-High Density Detached Residential": "urban",
+    "Medium Density Attached Residential": "urban",
+    "Medium-High Density Attached Residential": "urban",
+    "High Density Attached Residential": "urban",
+    "Very High Density Attached Residential": "urban",
+    "Mobile Home Park": "urban",
+    "Urban Attached Residential": "urban",
+    "Urban Mid-Rise Residential": "urban",
+    "Blank Place Type": "urban",
+    # Employment / Commercial
+    "Community/Neighborhood Retail": "industrial",
+    "Community/Neighborhood Commercial": "industrial",
+    "Community/Neighborhood Commercial/Office": "industrial",
+    "Regional Retail": "industrial",
+    "Moderate-Intensity Office": "industrial",
+    "High-Intensity Office": "industrial",
+    "CBD Office": "industrial",
+    "Light Industrial": "industrial",
+    "Heavy Industrial": "industrial",
+    "Light Industrial-Office": "industrial",
+    "Medical Facility": "industrial",
+    "Hotel": "industrial",
+    "Public/Quasi-Public": "industrial",
+    "Civic/Institution": "industrial",
+    "K-12 School": "industrial",
+    "Colleges and Universities": "industrial",
+    "Airport": "industrial",
+    "Agricultural Processing/Retail Employment": "industrial",
+    # Mixed Use
+    "Residential/Retail Mixed Use Low": "urban",
+    "Residential/Retail Mixed Use High": "urban",
+    # Agricultural
+    "Agriculture": "agricultural",
+    "Farm Home": "agricultural",
+    # Undeveloped / Open Space
+    "Park and/or Open Space": "undeveloped",
+    "Parking Lot": "undeveloped",
+    "Parking Structure": "urban",  # built but functional parking
+    "Water": "undeveloped",
+    "Road": "undeveloped",
+}
+
+def classify_by_sacog_land_use(land_use_text: str | None) -> str:
+    """Classify a parcel using SACOG text-based land use categories.
+
+    Returns land_development_category or ``"urban"`` if no match.
+    """
+    if not land_use_text or pd.isna(land_use_text):
+        return "urban"
+    return _SACOG_LAND_USE_MAP.get(str(land_use_text).strip(), "urban")
 
 class NullDemographicSource:
     """Default demographic source — returns nothing; ETL fills with 0.0."""
@@ -224,12 +280,19 @@ class NullLandUseSource:
         return False  # Still marks as "default" source
 
     def classify_parcels(self, parcels: gpd.GeoDataFrame) -> gpd.GeoDataFrame:
-        """Classify using assessor use codes from parcel attributes if available."""
-        # Check for assessor code columns
+        """Classify using assessor codes or SACOG text land_use if available."""
+        if "land_development_category" not in parcels.columns:
+            return parcels
+
+        # Ensure string-compatible dtype for land_development_category
+        parcels["land_development_category"] = (
+            parcels["land_development_category"].astype(object)
+        )
+
+        # Pass 1: Try assessor codes (numeric prefix lookup)
         code_col = None
         for col in (
             "assessor_use_code",
-            "land_use",
             "use_code",
             "region_lu_code",
             "lu_code",
@@ -238,12 +301,18 @@ class NullLandUseSource:
                 code_col = col
                 break
 
-        if code_col is not None and "land_development_category" in parcels.columns:
-            # Apply assessor code classification where not already set
+        if code_col is not None:
             mask = parcels["land_development_category"].isna()
             parcels.loc[mask, "land_development_category"] = parcels.loc[
                 mask, code_col
             ].apply(classify_by_assessor_code)
+
+        # Pass 2: Try SACOG text-based land_use categories
+        if "land_use" in parcels.columns:
+            mask = parcels["land_development_category"].isna()
+            parcels.loc[mask, "land_development_category"] = parcels.loc[
+                mask, "land_use"
+            ].apply(classify_by_sacog_land_use)
 
         return parcels
 

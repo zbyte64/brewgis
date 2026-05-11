@@ -152,7 +152,11 @@ class Command(BaseCommand):
     # ═══════════════════════════════════════════════════════════════════
 
     def _load_parcels(self, limit: int):
-        """Load parcel geometries from the reference existing_land_use_parcels table."""
+        """Load parcel geometries from the reference existing_land_use_parcels table.
+
+        Includes ``land_use`` column from the reference table so the ETL can
+        classify parcels by use in quick mode (via NullLandUseSource + SACOG mapping).
+        """
         import geopandas as gpd  # noqa: PLC0415
 
         if SACOG_PARCELS_GEOJSON.exists():
@@ -160,6 +164,24 @@ class Command(BaseCommand):
             gdf = gpd.read_file(str(SACOG_PARCELS_GEOJSON))
             if limit > 0 and len(gdf) > limit:
                 gdf = gdf.head(limit)
+            # Merge land_use from reference table by geography_id
+            self._log("Merging land_use column from reference table")
+            import pandas as pd  # noqa: PLC0415
+            gids = gdf["geography_id"].tolist()
+            if gids:
+                gid_chunks = ",".join(str(g) for g in gids)
+                lu_sql = f"""
+                    SELECT geography_id, land_use
+                    FROM {V1_PARCELS}
+                    WHERE geography_id IN ({gid_chunks})
+                """
+                lu_df = pd.read_sql(lu_sql, connection)
+                if not lu_df.empty:
+                    gdf = gdf.merge(
+                        lu_df[["geography_id", "land_use"]],
+                        on="geography_id",
+                        how="left",
+                    )
             return gdf
 
         self._log("Loading from PostGIS (no cached GeoJSON found)")
@@ -213,6 +235,7 @@ class Command(BaseCommand):
             employment_source = LEHDEmploymentSource(
                 state_fips=STATE_FIPS,
                 county_fips=COUNTY_FIPS,
+                use_cbp_scaling=True,
             )
 
         if not quick and not skip_census:
