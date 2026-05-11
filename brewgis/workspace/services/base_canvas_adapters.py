@@ -186,11 +186,9 @@ def classify_by_assessor_code(assessor_use_code: str | None) -> str | None:
 # sources are not configured or unavailable.
 
 _SACOG_LAND_USE_MAP: dict[str, str] = {
-    # Residential (all density/type variants)
+    # Residential (all density/type variants) — urban = developed res
     "Low Density Detached Residential": "urban",
     "Medium Density Detached Residential": "urban",
-    "Very Low Density Detached Residential": "urban",
-    "Rural Residential": "urban",
     "Medium-High Density Detached Residential": "urban",
     "Medium Density Attached Residential": "urban",
     "Medium-High Density Attached Residential": "urban",
@@ -200,6 +198,9 @@ _SACOG_LAND_USE_MAP: dict[str, str] = {
     "Urban Attached Residential": "urban",
     "Urban Mid-Rise Residential": "urban",
     "Blank Place Type": "urban",
+    # Very low density / rural — mostly undeveloped land area
+    "Rural Residential": "undeveloped",
+    "Very Low Density Detached Residential": "undeveloped",
     # Employment / Commercial
     "Community/Neighborhood Retail": "industrial",
     "Community/Neighborhood Commercial": "industrial",
@@ -222,13 +223,13 @@ _SACOG_LAND_USE_MAP: dict[str, str] = {
     # Mixed Use
     "Residential/Retail Mixed Use Low": "urban",
     "Residential/Retail Mixed Use High": "urban",
-    # Agricultural
-    "Agriculture": "agricultural",
-    "Farm Home": "agricultural",
+    # Agricultural — classified as undeveloped in reference (emp_ag = 0)
+    "Agriculture": "undeveloped",
+    "Farm Home": "undeveloped",
     # Undeveloped / Open Space
     "Park and/or Open Space": "undeveloped",
     "Parking Lot": "undeveloped",
-    "Parking Structure": "urban",  # built but functional parking
+    "Parking Structure": "undeveloped",
     "Water": "undeveloped",
     "Road": "undeveloped",
 }
