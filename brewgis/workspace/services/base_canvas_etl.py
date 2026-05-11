@@ -617,15 +617,17 @@ class BaseCanvasETL:
             self._log("Using default irrigation estimates")
 
         if "residential_irrigated_area" in gdf.columns:
+            res_area = gdf["area_parcel_res"].fillna(gdf["area_gross"])
             gdf["residential_irrigated_area"] = gdf[
                 "residential_irrigated_area"
             ].fillna(
-                gdf.get("area_parcel_res", gdf["area_gross"])
+                res_area
                 * _DEFAULT_IRRIGATION_RES_FRAC
             )
         if "commercial_irrigated_area" in gdf.columns:
+            emp_area = gdf["area_parcel_emp"].fillna(gdf["area_gross"])
             gdf["commercial_irrigated_area"] = gdf["commercial_irrigated_area"].fillna(
-                gdf.get("area_parcel_emp", gdf["area_gross"])
+                emp_area
                 * _DEFAULT_IRRIGATION_COM_FRAC
             )
         return gdf

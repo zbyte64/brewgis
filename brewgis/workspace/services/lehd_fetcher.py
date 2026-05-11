@@ -88,14 +88,14 @@ _NAICS_SPLIT_RULES: dict[str, list[tuple[str, str | float | None]]] = {
     ],
     # CNS02 (Manufacturing 31-33) → fixed national ratio
     "CNS02": [
-        ("emp_manufacturing", 0.7),
-        ("emp_wholesale", 0.3),
+        ("emp_manufacturing", 1.0),
     ],
     # CNS03 (Trade, Transport, Utilities) → CBP split
     "CNS03": [
         ("emp_transport_warehousing", r"^(48|49)\s*-*"),
         ("emp_utilities", r"^22\s*-*"),
-        ("emp_retail_services", None),  # remainder (wholesale 42 + retail 44-45)
+        ("emp_wholesale", r"^42\s*-*"),              # split wholesale via CBP
+        ("emp_retail_services", None),                # remainder = retail (44-45) only
     ],
     # CNS04-09 → all map to office services
     "CNS04": [("emp_office_services", 1.0)],  # Information (51)

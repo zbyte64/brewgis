@@ -569,6 +569,8 @@ def _apply_acs_column_mapping(
         block_groups["du_mf2to4"] = 0.0
         block_groups["du_mf5p"] = 0.0
 
+    # Compute aggregate du_mf from sub-types
+    block_groups["du_mf"] = block_groups["du_mf2to4"].fillna(0.0) + block_groups["du_mf5p"].fillna(0.0)
     if "du_detsf" in block_groups.columns:
         detsf = block_groups["du_detsf"].fillna(0.0)
         block_groups["du_detsf_sl"] = (detsf * _DU_DETSF_TO_SL_RATIO).round(1)

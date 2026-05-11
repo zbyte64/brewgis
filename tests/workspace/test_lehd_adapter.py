@@ -242,24 +242,25 @@ class TestApplyNAICSSplits:
         assert result.get("emp_medical_services", 0) == 100.0
 
     def test_fractional_split(self) -> None:
-        """Fixed fraction should split CNS total proportionally."""
+        """CNS02 (Manufacturing) → 1.0 emp_manufacturing."""
 
 
-        # CNS02 (Manufacturing) → 0.7 emp_manufacturing, 0.3 emp_wholesale
+        # CNS02 (Manufacturing) → 1.0 emp_manufacturing (was 0.7/0.3 wholesale)
         result = _apply_naics_splits({"CNS02": 100}, {})
-        assert result.get("emp_manufacturing", 0) == 70.0
-        assert result.get("emp_wholesale", 0) == 30.0
+        assert result.get("emp_manufacturing", 0) == 100.0
+        assert result.get("emp_wholesale", 0) == 0  # wholesale no longer from CNS02
 
     def test_remainder_split(self) -> None:
         """Last rule with None should absorb the remainder."""
 
 
-        # CNS03 with CBP: transport=0.2, utilities=0.1 → remainder=0.7 for retail
-        cbp = {"48": 0.15, "49": 0.05, "22": 0.10}
+        # CNS03 with CBP: transport=0.2, utilities=0.1, wholesale=0.15 → remainder=0.55 for retail
+        cbp = {"48": 0.15, "49": 0.05, "22": 0.10, "42": 0.15}
         result = _apply_naics_splits({"CNS03": 100}, cbp)
         assert result.get("emp_transport_warehousing", 0) == 20.0
         assert result.get("emp_utilities", 0) == 10.0
-        assert result.get("emp_retail_services", 0) == 70.0
+        assert result.get("emp_wholesale", 0) == 15.0  # wholesale from CBP (42)
+        assert result.get("emp_retail_services", 0) == 55.0
 
     def test_zero_cns_produces_zeros(self) -> None:
         """Zero CNS values should produce zero for all related sub-sectors."""
@@ -355,7 +356,7 @@ class TestFetchLODESBlockData:
         mock_url.return_value = "https://fake.url/lodes.csv.gz"
         mock_cbp.return_value = {
             "11": 0.2, "21": 0.1, "23": 0.7,
-            "48": 0.15, "49": 0.05, "22": 0.1,
+            "48": 0.15, "49": 0.05, "22": 0.1, "42": 0.07,
             "721": 0.35, "722": 0.65,
         }
 
@@ -373,8 +374,8 @@ class TestFetchLODESBlockData:
         # All CNS columns should produce non-zero sub-sector values
         non_zero_expected = [
             "emp_agriculture", "emp_extraction", "emp_construction",  # CNS01
-            "emp_manufacturing", "emp_wholesale",                     # CNS02
-            "emp_retail_services", "emp_transport_warehousing", "emp_utilities",  # CNS03
+            "emp_manufacturing",                                     # CNS02
+            "emp_retail_services", "emp_transport_warehousing", "emp_utilities", "emp_wholesale",  # CNS03
             "emp_office_services",   # CNS04-09
             "emp_education",         # CNS10
             "emp_medical_services",  # CNS11
@@ -406,7 +407,7 @@ class TestFetchLODESBlockData:
         mock_url.return_value = "https://fake.url/lodes.csv.gz"
         mock_cbp.return_value = {
             "11": 0.2, "21": 0.1, "23": 0.7,
-            "48": 0.15, "49": 0.05, "22": 0.1,
+            "48": 0.15, "49": 0.05, "22": 0.1, "42": 0.07,
             "721": 0.35, "722": 0.65,
         }
 
