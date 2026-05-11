@@ -263,6 +263,9 @@ class BaseCanvasETL:
             else:
                 self._step("10/11", "Skipping imputation pass (--skip-imputation)")
 
+            # Step 10b: Reconcile aggregate columns
+            self._step("10b/11", "Reconciling aggregate columns from sub-columns")
+            gdf = self._reconcile_aggregates(gdf)
             # Write to database
             self._step("--", "Writing data to public.base_canvas")
             row_count = self._write_to_db(gdf, truncate)
@@ -552,7 +555,9 @@ class BaseCanvasETL:
                 neg_count = int((gdf[col] < 0).sum())
                 if neg_count > 0:
                     gdf.loc[gdf[col] < 0, col] = 0.0
-                    logger.warning('Clamped %d negative values in "%s" to 0.0', neg_count, col)
+                    logger.warning(
+                        'Clamped %d negative values in "%s" to 0.0', neg_count, col
+                    )
 
     def _allocate_from_source(
         self,
@@ -609,10 +614,14 @@ class BaseCanvasETL:
         if "land_development_category" in gdf.columns:
             cat = gdf["land_development_category"].fillna("urban")
             default_sqft_per_du = cat.map(_SACOG_SQFT_PER_DU_BY_CATEGORY).fillna(1200.0)
-            default_sqft_per_emp = cat.map(_SACOG_SQFT_PER_EMP_BY_CATEGORY).fillna(300.0)
+            default_sqft_per_emp = cat.map(_SACOG_SQFT_PER_EMP_BY_CATEGORY).fillna(
+                300.0
+            )
         else:
             default_sqft_per_du = pd.Series(_DEFAULT_BLDG_SQFT_PER_DU, index=gdf.index)
-            default_sqft_per_emp = pd.Series(_DEFAULT_BLDG_SQFT_PER_EMP, index=gdf.index)
+            default_sqft_per_emp = pd.Series(
+                _DEFAULT_BLDG_SQFT_PER_EMP, index=gdf.index
+            )
         for bldg_col, du_col, factor in du_cols:
             if bldg_col in gdf.columns and du_col in gdf.columns:
                 gdf[bldg_col] = gdf[bldg_col].fillna(
@@ -652,9 +661,10 @@ class BaseCanvasETL:
             gdf = self._land_use_source.classify_parcels(gdf)
         else:
             self._log("Using default land use classification (trying assessor codes)")
-            if isinstance(self._land_use_source, NullLandUseSource):
-                gdf = self._land_use_source.classify_parcels(gdf)
-            elif self._land_use_source is not None:
+            if (
+                isinstance(self._land_use_source, NullLandUseSource)
+                or self._land_use_source is not None
+            ):
                 gdf = self._land_use_source.classify_parcels(gdf)
 
         if "land_development_category" in gdf.columns:
@@ -780,6 +790,131 @@ class BaseCanvasETL:
             )
 
         engine.apply(gdf, rules)
+        return gdf
+
+    def _reconcile_aggregates(self, gdf: gpd.GeoDataFrame) -> gpd.GeoDataFrame:
+        """Backfill aggregate columns from sub-columns when parent is NaN.
+
+        Reconciliation rules fill parent only if parent is NaN AND at least one
+        sub-column has a non-NaN value. Does NOT overwrite existing aggregate values.
+        """
+        # ── Dwelling unit aggregates ────────────────────────────────────
+        if "du_detsf" in gdf.columns and all(
+            c in gdf.columns for c in ("du_detsf_sl", "du_detsf_ll")
+        ):
+            sub_sum = gdf[["du_detsf_sl", "du_detsf_ll"]].sum(axis=1)
+            valid_mask = gdf["du_detsf"].isna() & sub_sum.notna() & (sub_sum > 0)
+            gdf.loc[valid_mask, "du_detsf"] = sub_sum
+
+        if "du_mf" in gdf.columns and all(
+            c in gdf.columns for c in ("du_mf2to4", "du_mf5p")
+        ):
+            sub_sum = gdf[["du_mf2to4", "du_mf5p"]].sum(axis=1)
+            valid_mask = gdf["du_mf"].isna() & sub_sum.notna() & (sub_sum > 0)
+            gdf.loc[valid_mask, "du_mf"] = sub_sum
+
+        if "du" in gdf.columns and all(
+            c in gdf.columns for c in ("du_detsf", "du_attsf", "du_mf")
+        ):
+            sub_sum = gdf[["du_detsf", "du_attsf", "du_mf"]].sum(axis=1)
+            valid_mask = gdf["du"].isna() & sub_sum.notna() & (sub_sum > 0)
+            gdf.loc[valid_mask, "du"] = sub_sum
+
+        # ── Employment retail aggregate ──────────────────────────────────
+        if "emp_ret" in gdf.columns and all(
+            c in gdf.columns
+            for c in (
+                "emp_retail_services",
+                "emp_restaurant",
+                "emp_accommodation",
+                "emp_arts_entertainment",
+                "emp_other_services",
+            )
+        ):
+            sub_sum = gdf[
+                [
+                    "emp_retail_services",
+                    "emp_restaurant",
+                    "emp_accommodation",
+                    "emp_arts_entertainment",
+                    "emp_other_services",
+                ]
+            ].sum(axis=1)
+            valid_mask = gdf["emp_ret"].isna() & sub_sum.notna() & (sub_sum > 0)
+            gdf.loc[valid_mask, "emp_ret"] = sub_sum
+
+        # ── Employment office aggregate ──────────────────────────────────
+        if "emp_off" in gdf.columns and all(
+            c in gdf.columns for c in ("emp_office_services", "emp_medical_services")
+        ):
+            sub_sum = gdf[["emp_office_services", "emp_medical_services"]].sum(axis=1)
+            valid_mask = gdf["emp_off"].isna() & sub_sum.notna() & (sub_sum > 0)
+            gdf.loc[valid_mask, "emp_off"] = sub_sum
+
+        # ── Employment public aggregate ──────────────────────────────────
+        if "emp_pub" in gdf.columns and all(
+            c in gdf.columns for c in ("emp_public_admin", "emp_education")
+        ):
+            sub_sum = gdf[["emp_public_admin", "emp_education"]].sum(axis=1)
+            valid_mask = gdf["emp_pub"].isna() & sub_sum.notna() & (sub_sum > 0)
+            gdf.loc[valid_mask, "emp_pub"] = sub_sum
+
+        # ── Employment industrial aggregate ──────────────────────────────
+        if "emp_ind" in gdf.columns and all(
+            c in gdf.columns
+            for c in (
+                "emp_manufacturing",
+                "emp_wholesale",
+                "emp_transport_warehousing",
+                "emp_utilities",
+                "emp_construction",
+            )
+        ):
+            sub_sum = gdf[
+                [
+                    "emp_manufacturing",
+                    "emp_wholesale",
+                    "emp_transport_warehousing",
+                    "emp_utilities",
+                    "emp_construction",
+                ]
+            ].sum(axis=1)
+            valid_mask = gdf["emp_ind"].isna() & sub_sum.notna() & (sub_sum > 0)
+            gdf.loc[valid_mask, "emp_ind"] = sub_sum
+
+        # ── Employment agriculture aggregate ─────────────────────────────
+        if "emp_ag" in gdf.columns and all(
+            c in gdf.columns for c in ("emp_agriculture", "emp_extraction")
+        ):
+            sub_sum = gdf[["emp_agriculture", "emp_extraction"]].sum(axis=1)
+            valid_mask = gdf["emp_ag"].isna() & sub_sum.notna() & (sub_sum > 0)
+            gdf.loc[valid_mask, "emp_ag"] = sub_sum
+
+        # ── Total employment aggregate ───────────────────────────────────
+        if "emp" in gdf.columns and all(
+            c in gdf.columns
+            for c in (
+                "emp_ret",
+                "emp_off",
+                "emp_pub",
+                "emp_ind",
+                "emp_ag",
+                "emp_military",
+            )
+        ):
+            sub_sum = gdf[
+                [
+                    "emp_ret",
+                    "emp_off",
+                    "emp_pub",
+                    "emp_ind",
+                    "emp_ag",
+                    "emp_military",
+                ]
+            ].sum(axis=1)
+            valid_mask = gdf["emp"].isna() & sub_sum.notna() & (sub_sum > 0)
+            gdf.loc[valid_mask, "emp"] = sub_sum
+
         return gdf
 
     def _write_to_db(self, gdf: gpd.GeoDataFrame, truncate: bool) -> int:

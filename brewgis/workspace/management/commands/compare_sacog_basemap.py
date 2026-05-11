@@ -7,17 +7,15 @@ comparison report at ``planning/sacog_comparison_report.md``.
 
 from __future__ import annotations
 
-import json
 import logging
 import subprocess
 import time
 from pathlib import Path
 
-import numpy as np
 from django.conf import settings
-from django.db import connection
 from django.core.management.base import BaseCommand
 from django.core.management.base import CommandError
+from django.db import connection
 
 logger = logging.getLogger(__name__)
 
@@ -91,7 +89,7 @@ class Command(BaseCommand):
         self.stdout.write("  SACOG Base Canvas Comparison: BrewGIS vs v1 Reference")
         self.stdout.write("=" * 70)
         self.stdout.write(f"  Quick mode: {quick}")
-        self.stdout.write(f"  Parcel limit: {limit if limit else 'all'}")
+        self.stdout.write(f"  Parcel limit: {limit or 'all'}")
         self.stdout.write(f"  Census: {'skip' if skip_census else 'on'}")
         self.stdout.write(f"  LEHD: {'skip' if skip_lehd else 'on'}")
 
@@ -146,7 +144,10 @@ class Command(BaseCommand):
 
         # ── Phase 5: Generate comparison report ────────────────────────
         self.stdout.write("\n── Phase 5: Generating comparison report ──")
-        self._generate_report(ref_totals, brew_totals, etl_result, quick, limit)
+        correlations = self._compute_correlations()
+        self._generate_report(
+            ref_totals, brew_totals, etl_result, quick, limit, correlations=correlations
+        )
 
         self.stdout.write(self.style.SUCCESS(f"\n✓ Report written to {REPORT_PATH}"))
         self.stdout.write(
@@ -217,7 +218,7 @@ class Command(BaseCommand):
         truncate: bool,
     ) -> dict:
         """Run the brewgis base canvas ETL on the given parcel geometries."""
-        from brewgis.workspace.services.base_canvas_etl import BaseCanvasETL  # noqa: PLC0415
+        from brewgis.workspace.services.base_canvas_etl import BaseCanvasETL
 
         demographic_source = None
         employment_source = None
@@ -323,9 +324,6 @@ class Command(BaseCommand):
 
     def _query_brewgis_totals(self) -> dict[str, float]:
         """Query aggregate values from the brewgis base canvas."""
-        from brewgis.workspace.services.base_canvas_schema import (  # noqa: PLC0415
-            BaseCanvasSchema,
-        )
 
         # Check if brewgis base_canvas table exists and has data
         with connection.cursor() as cur:
@@ -349,7 +347,7 @@ class Command(BaseCommand):
         with connection.cursor() as cur:
             # Get all numeric columns
             cur.execute(
-                f"""
+                """
                 SELECT column_name FROM information_schema.columns
                 WHERE table_schema = %s AND table_name = %s
                   AND data_type IN ('numeric', 'double precision', 'real', 'integer', 'bigint')
@@ -445,6 +443,61 @@ class Command(BaseCommand):
                     result[key] = float(val)
         return result
 
+    def _compute_correlations(self) -> dict[str, float]:
+        """Compute Pearson R correlation between brewgis and reference base canvas columns.
+
+        Queries PostgreSQL CORR() for each numeric column pair between brewgis base_canvas
+        and the v1 reference table, joined on geography_id.
+        """
+        from brewgis.workspace.services.sacog_column_mapping import (  # noqa: PLC0415
+            get_v1_columns_for_verification,
+        )
+
+        v3_to_v1 = get_v1_columns_for_verification()
+        # Filter to columns that exist in both tables
+        with connection.cursor() as cur:
+            # Get v3 columns present in brewgis base_canvas
+            cur.execute(
+                "SELECT column_name FROM information_schema.columns "
+                "WHERE table_schema = 'public' AND table_name = 'base_canvas'"
+            )
+            brew_cols = {r[0] for r in cur.fetchall()}
+            # Get v1 columns present in reference
+            cur.execute(
+                "SELECT column_name FROM information_schema.columns "
+                "WHERE table_schema = 'public' AND table_name = 'sac_cnty_region_base_canvas'"
+            )
+            ref_cols = {r[0] for r in cur.fetchall()}
+
+        corr_exprs: list[str] = []
+        valid_v3_cols: list[str] = []
+        for v3_col, v1_col in v3_to_v1.items():
+            if v3_col in brew_cols and v1_col in ref_cols:
+                corr_exprs.append(
+                    f'    CORR(bc."{v3_col}", ref."{v1_col}") AS "{v3_col}"'
+                )
+                valid_v3_cols.append(v3_col)
+
+        if not corr_exprs:
+            return {}
+
+        corr_sql = (
+            "SELECT\n"
+            + ",\n".join(corr_exprs)
+            + "\nFROM public.base_canvas bc\n"
+            + f"INNER JOIN {V1_BASE_CANVAS} ref ON bc.geography_id = ref.geography_id"
+        )
+        with connection.cursor() as cur:
+            cur.execute(corr_sql)
+            row = cur.fetchone()
+
+        result: dict[str, float] = {}
+        if row:
+            for v3_col, val in zip(valid_v3_cols, row, strict=False):
+                if val is not None:
+                    result[v3_col] = float(val)
+        return result
+
     def _generate_report(
         self,
         ref: dict[str, float],
@@ -452,6 +505,7 @@ class Command(BaseCommand):
         etl_result: dict,
         quick: bool,
         limit: int,
+        correlations: dict[str, float] | None = None,
     ) -> None:
         """Generate the markdown comparison report."""
         from brewgis.workspace.services.sacog_column_mapping import (  # noqa: PLC0415
@@ -464,12 +518,12 @@ class Command(BaseCommand):
         lines.append("# SACOG Base Canvas Comparison Report")
         lines.append("")
         lines.append(f"**Generated:** {time.strftime('%Y-%m-%d %H:%M:%S')}")
-        lines.append(f"**Region:** Sacramento County, CA (SACOG)")
+        lines.append("**Region:** Sacramento County, CA (SACOG)")
         lines.append(
             f"**Reference:** `{V1_BASE_CANVAS}` (2015 vintage, 2008-2012 data)"
         )
         lines.append(f"**Quick mode:** {quick}")
-        lines.append(f"**Parcel limit:** {limit if limit else 'all (502,874)'}")
+        lines.append(f"**Parcel limit:** {limit or 'all (502,874)'}")
         lines.append(f"**ETL elapsed:** {etl_result.get('elapsed', 'N/A')}s")
         lines.append(f"**ETL rows:** {etl_result.get('rows', 'N/A'):,}")
         lines.append("")
@@ -477,8 +531,8 @@ class Command(BaseCommand):
         # ── Summary comparison table ──────────────────────────────────
         lines.append("## 1. Aggregate Comparison")
         lines.append("")
-        lines.append("| Column | Reference (v1) | BrewGIS | Diff | % Diff |")
-        lines.append("|--------|--------:|------:|-----:|------:|")
+        lines.append("| Column | Reference (v1) | BrewGIS | Diff | % Diff | Corr (R) |")
+        lines.append("|--------|--------:|------:|-----:|------:|---------:|")
 
         # Ordered groups of columns
         col_groups: list[tuple[str, list[tuple[str, str, str]]]] = [
@@ -664,8 +718,10 @@ class Command(BaseCommand):
                     diff_str = f"{'N/A':>11}"
                     pct_str = f"{'N/A':>7}"
 
+                corr_val = correlations.get(v3_col) if correlations else None
+                corr_str = f"{corr_val:.3f}" if corr_val is not None else "N/A"
                 lines.append(
-                    f"| {label:25s} | {ref_str} | {brew_str} | {diff_str} | {pct_str} |"
+                    f"| {label:25s} | {ref_str} | {brew_str} | {diff_str} | {pct_str} | {corr_str:>9s} |"
                 )
 
         lines.append(f"\n\n**Columns matched:** {matched_count}")
@@ -740,9 +796,9 @@ class Command(BaseCommand):
             "Both are estimates, not ground truth."
             " **DU Detached SF SL/LL split:** brewGIS small-lot vs large-lot classification "
             "uses density thresholds from built-form allocation which may not match SACOG's "
-            "lot-size convention. The reference shows 67K SL vs 326K LL units; brewGIS shows "
-            "126K SL vs 189K LL (+87.9%/-42.1%). Total SF units should be ~393K — the un-split "
-            "column shows 0.0, indicating brewGIS produces no undifferentiated SF DU total."
+            "lot-size convention. The reference shows 67,001.6 SL vs 326,105.1 LL units; brewGIS shows "
+            "25,109.3 SL (-62.5%) vs 289,621.7 LL (-11.2%). Note that du_detsf shows 0.0 while the sum of "
+            "SL+LL is 314,731 — a reconciliation gap."
         )
         lines.append(
             "- **Building area** — Both derived from DU/emp × sqft factors. Differences track "
@@ -752,7 +808,7 @@ class Command(BaseCommand):
         lines.append(
             "- **Irrigation** — Both area-based. BrewGIS quick-mode uses flat 10%/5% fractions "
             "which are not region-specific. **P3:** Replace with NLCD or county-specific data."
-            " **Warning:** Commercial irrigation shows +1567% error vs reference, making it "
+            " **Warning:** Commercial irrigation shows +230% error vs reference, making it "
             "unusable for planning purposes. The flat 5% default fraction is not appropriate "
             "for employment parcels. Exclude commercial irrigation from derived metrics "
             "until NLCD-based irrigation estimation is implemented."
@@ -859,46 +915,71 @@ class Command(BaseCommand):
         if pct_min < 1.0 and pct_college < 1.0 and cost_burden < 1.0:
             lines.append("")
             lines.append(
-                "> ⚠ **Warning:** Multiple equity columns show near-zero values. This likely indicates "
+                "> ⚠ **Warning:** Multiple equity columns show near-zero values. "
             )
             lines.append(
-                "> the equity preprocessor (dbt pipeline) was not executed prior to report generation. "
+                "> Median income is a median, not a sum — area-weighting block-group "
+            )
+            lines.append("> medians and summing produces meaningless totals. ")
+            lines.append(
+                "> Percentage columns (pct_minority, etc.) are density/rate measures — "
             )
             lines.append(
-                "> The BaseCanvasETL allocates ACS block-group data area-weightedly, but the full "
+                "> area-weighted sum produces near-zero values. The equity preprocessor "
             )
             lines.append(
-                "> equity preprocessor is required for meaningful per-parcel equity values."
+                "> (dbt) is a separate step that would compute environmental justice "
+            )
+            lines.append(
+                "> indices; it is NOT responsible for basic ACS allocation correctness. "
+            )
+            lines.append(
+                "> **Fix:** Implement a separate allocation path for rate/percentage/median "
+            )
+            lines.append(
+                "> columns that computes area-weighted averages instead of sums."
             )
             lines.append("")
         lines.append("")
         # ── Recommended Fix Sequence ────────────────────────────────────
-        lines.append("## 7. Recommended Fix Sequence")
+        lines.append("## 6. Recommended Fix Sequence")
         lines.append("")
         lines.append("| Priority | Issue | Impact | Effort |")
         lines.append("|----------|-------|--------|--------|")
         lines.append(
-            "| P0 | Employment NAICS-to-SACOG crosswalk | All employment columns show 70-99% errors for most sub-sectors | High — needs SACOG category definitions and manual crosswalk |"
+            "| P0 | Employment NAICS-to-SACOG crosswalk | All employment columns show 70-99% errors | "
+            "for most sub-sectors | High — needs SACOG category definitions and manual crosswalk |"
         )
         lines.append(
-            "| P1 | Building area sub-sector allocation | Sub-sector building areas are now allocated from sub-sector employment columns (was aggregate parent columns). Fixed in this release. | Resolved — see emp_bldg_map in _estimate_building_areas |"
+            "| P1 | Equity column allocation methodology | median_income, pct_minority, "
+            "pct_college_educated, cost_burden_pct show near-zero values — area-weighted sum of "
+            "medians/percentages is incorrect. Need rate/percentage-specific allocation (avg not "
+            "sum). | Medium — separate allocation path for density/rate columns |"
         )
         lines.append(
-            "| P2 | Replace default irrigation fractions | Commercial irrigation shows +1567% error | Medium — integrate NLCD impervious surface data |"
+            "| P2 | Building area sub-sector allocation | Sub-sector building areas are now allocated from "
+            "sub-sector employment columns (was aggregate parent columns). Still shows 55-98% error for "
+            "most sub-sectors. | Mitigated — see emp_bldg_map in _estimate_building_areas |"
         )
         lines.append(
-            "| P3 | Land-use SACOG text mapping calibration | land_development_category distribution differs from reference | Medium — calibrate _SACOG_LAND_USE_MAP to reference distribution |"
+            "| P3 | Replace default irrigation fractions | Commercial irrigation shows +230% error | "
+            "Medium — integrate NLCD impervious surface data |"
         )
         lines.append(
-            "| P3 | DU SL/LL split threshold | DU split misaligned with SACOG convention | Medium — requires density threshold calibration |"
+            "| P4 | Land-use SACOG text mapping calibration | land_development_category distribution "
+            "differs from reference | Medium — calibrate _SACOG_LAND_USE_MAP to reference distribution |"
+        )
+        lines.append(
+            "| P4 | DU SL/LL split threshold | DU split misaligned with SACOG convention | "
+            "Medium — requires density threshold calibration |"
         )
         lines.append("")
         # ── Notes ─────────────────────────────────────────────────────
-        lines.append("## 6. Notes")
+        lines.append("## 7. Notes")
         lines.append("")
         lines.append(
             f"- This report compares **aggregate totals** across all "
-            f"{limit if limit else '502,874'} parcels."
+            f"{limit or '502,874'} parcels."
         )
         lines.append(
             "- The reference `sac_cnty_region_base_canvas` was created from the "
@@ -916,7 +997,14 @@ class Command(BaseCommand):
                 check=True,
                 cwd=settings.BASE_DIR,
             ).stdout.strip()
-            lines.append(f"**Pipeline version:** `{commit}`")
+            subject = subprocess.run(
+                ["git", "log", "-1", "--format=%s"],
+                capture_output=True,
+                text=True,
+                check=True,
+                cwd=settings.BASE_DIR,
+            ).stdout.strip()
+            lines.append(f"**Pipeline version:** `{commit}` ({subject})")
         except Exception:
             lines.append("**Pipeline version:** unknown")
         lines.append(
