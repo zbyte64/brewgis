@@ -492,7 +492,7 @@ def _verify_cached_bytes(path: Path, size_path: Path, crc32_path: Path) -> bool:
 # To calibrate for a specific region, override this module-level variable
 # before running the ETL, or set the BREWGIS_DETSF_SL_RATIO env var.
 # For SACOG Sacramento County, the reference v1 dataset split is roughly
-# 67% large-lot / 33% small-lot (ratio ~0.33), though this varies by
+# 83% large-lot / 17% small-lot (ratio ~0.17), though this varies by
 # jurisdiction within the county.
 try:
     _raw = float(os.environ.get("BREWGIS_DETSF_SL_RATIO", "0.40"))

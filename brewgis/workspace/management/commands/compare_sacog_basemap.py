@@ -110,6 +110,12 @@ class Command(BaseCommand):
         self.stdout.write(f"  Parcel limit: {limit or 'all'}")
         self.stdout.write(f"  Census: {'skip' if skip_census else 'on'}")
         self.stdout.write(f"  LEHD: {'skip' if skip_lehd else 'on'}")
+        if not settings.CENSUS_API_KEY:
+            self.stdout.write(self.style.WARNING(
+                "  WARNING: CENSUS_API_KEY is not set. Census ACS and CBP API calls will fail. "
+                "Set CENSUS_API_KEY in your .env file. Get a free key at "
+                "https://api.census.gov/data/key_signup.html"
+            ))
 
         # ── Phase 1: Load parcels from reference ──────────────────────
         self.stdout.write("\n── Phase 1: Loading reference parcel geometries ──")
@@ -275,7 +281,7 @@ class Command(BaseCommand):
         truncate: bool,
     ) -> dict:
         """Run the brewgis base canvas ETL on the given parcel geometries."""
-        os.environ["BREWGIS_DETSF_SL_RATIO"] = "0.33"
+        os.environ["BREWGIS_DETSF_SL_RATIO"] = "0.17"
         from brewgis.workspace.services.base_canvas_etl import BaseCanvasETL
 
         demographic_source = None
@@ -664,14 +670,26 @@ class Command(BaseCommand):
                 [
                     ("Gross Area", "acres_gross", "area_gross"),
                     ("Parcel Area", "acres_parcel", "area_parcel"),
-                    ("Res Parcel Area", "acres_parcel_res", "area_parcel_res"),
-                    ("Emp Parcel Area", "acres_parcel_emp", "area_parcel_emp"),
                     (
-                        "Mixed Use Area",
+                        "Res Parcel Area *",
+                        "acres_parcel_res",
+                        "area_parcel_res",
+                    ),
+                    (
+                        "Emp Parcel Area *",
+                        "acres_parcel_emp",
+                        "area_parcel_emp",
+                    ),
+                    (
+                        "Mixed Use Area *",
                         "acres_parcel_mixed_use",
                         "area_parcel_mixed_use",
                     ),
-                    ("No Use Area", "acres_parcel_no_use", "area_parcel_no_use"),
+                    (
+                        "No Use Area *",
+                        "acres_parcel_no_use",
+                        "area_parcel_no_use",
+                    ),
                 ],
             ),
             (
@@ -927,6 +945,17 @@ class Command(BaseCommand):
             "parcel-level alignment with the v1 reference."
         )
         lines.append("")
+        lines.append(
+            "- **Area-by-use columns (Res/Emp/Mixed/No Use):** These columns compare "
+            "fundamentally different data models. The reference v1 splits each parcel's "
+            "area across multiple use types (residential + employment + no use sum to "
+            "total area within each development category). BrewGIS assigns each parcel "
+            "entirely to a single land_development_category (urban/agricultural/"
+            "industrial/mixed_use/undeveloped). This means area-by-use totals will "
+            "diverge even when the underlying land use classification is correct. "
+            "The POOR/FAIL status on these columns reflects this schema mismatch, not "
+            "necessarily a pipeline error."
+        )
         lines.append(
             "- **Correlation warning:** Most domains show FAIL-status parcel-level "
             "correlation (R < 0.10). The pipeline produces aggregate totals in the right "
