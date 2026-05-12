@@ -61,8 +61,12 @@ _DEFAULT_INTERSECTION_DENSITY = 12.5  # intersections/km^2
 _DEFAULT_BUILT_FORM_KEY = "mixed_use"
 _DEFAULT_BLDG_SQFT_PER_DU = 1200.0
 _DEFAULT_BLDG_SQFT_PER_EMP = 300.0
-_DEFAULT_IRRIGATION_RES_FRAC = 0.25  # 25% of residential area irrigated (SACOG urban calibration)
-_DEFAULT_IRRIGATION_COM_FRAC = 0.035  # 3.5% of employment area irrigated (SACOG urban calibration)
+_DEFAULT_IRRIGATION_RES_FRAC = (
+    0.25  # 25% of residential area irrigated (SACOG urban calibration)
+)
+_DEFAULT_IRRIGATION_COM_FRAC = (
+    0.035  # 3.5% of employment area irrigated (SACOG urban calibration)
+)
 
 # Demographic columns that can be allocated from Census block groups
 _DEMOGRAPHIC_COLUMNS = [
@@ -494,8 +498,12 @@ class BaseCanvasETL:
             """)
 
             # ── Insert source geometries (4326 -> 6933 in SQL) ─────
-            src_geom_expr = f"ST_Transform(ST_SetSRID(ST_GeomFromText(%s), {source_srid}), 6933)"
-            tgt_geom_expr = f"ST_Transform(ST_SetSRID(ST_GeomFromText(%s), {target_srid}), 6933)"
+            src_geom_expr = (
+                f"ST_Transform(ST_SetSRID(ST_GeomFromText(%s), {source_srid}), 6933)"
+            )
+            tgt_geom_expr = (
+                f"ST_Transform(ST_SetSRID(ST_GeomFromText(%s), {target_srid}), 6933)"
+            )
             col_names = ", ".join(f'"{c}"' for c in all_cols)
             val_placeholders = ", ".join(["%s"] * len(all_cols))
 
@@ -582,7 +590,11 @@ class BaseCanvasETL:
         # Clamp negative values for currency/percentage/count columns
         clamp_metatypes = {"currency", "percentage", "count"}
         for col_def in BaseCanvasSchema.columns().values():
-            if col_def.metatype in clamp_metatypes and col_def.name in gdf.columns:
+            if (
+                col_def.metatype in clamp_metatypes
+                and col_def.name in gdf.columns
+                and col_def.aggregation_hint != "avg"
+            ):
                 neg_count = int((gdf[col_def.name] < 0).sum())
                 if neg_count > 0:
                     gdf.loc[gdf[col_def.name] < 0, col_def.name] = 0.0
@@ -786,13 +798,13 @@ class BaseCanvasETL:
                         mask, "commercial_irrigated_area"
                     ].fillna(emp_area.loc[mask] * cat_cal.irrigation_com_frac)
             # Fallback: fill remaining NaN (unmatched categories) with default fractions
-            gdf["commercial_irrigated_area"] = gdf[
-                "commercial_irrigated_area"
-            ].fillna(emp_area * _DEFAULT_IRRIGATION_COM_FRAC)
+            gdf["commercial_irrigated_area"] = gdf["commercial_irrigated_area"].fillna(
+                emp_area * _DEFAULT_IRRIGATION_COM_FRAC
+            )
         else:
-            gdf["commercial_irrigated_area"] = gdf[
-                "commercial_irrigated_area"
-            ].fillna(emp_area * _DEFAULT_IRRIGATION_COM_FRAC)
+            gdf["commercial_irrigated_area"] = gdf["commercial_irrigated_area"].fillna(
+                emp_area * _DEFAULT_IRRIGATION_COM_FRAC
+            )
         return gdf
 
     def _compute_intersection_density(self, gdf: gpd.GeoDataFrame) -> gpd.GeoDataFrame:
@@ -854,175 +866,91 @@ class BaseCanvasETL:
         return gdf
 
     def _reconcile_aggregates(self, gdf: gpd.GeoDataFrame) -> gpd.GeoDataFrame:
-        """Recompute aggregate columns from sub-columns when all parts are present.
+        """Recompute aggregate columns from sub-columns using available data.
 
-        Unconditionally overwrites the aggregate with the sum of its sub-columns
-        when ALL sub-columns are present and have non-zero values. This ensures
-        consistency when different allocation paths populate the aggregate vs
-        sub-columns (e.g., ACS block groups populate du_detsf while built-form
-        allocation populates du_detsf_sl / du_detsf_ll separately).
+        Overwrites each aggregate with the sum of its sub-columns whenever at
+        least one sub-column has positive data.  Falls back to the original
+        aggregate value when no sub-column data is available.  Logs a warning
+        when sub-columns are missing so the caller can investigate.
         """
         # ── Dwelling unit aggregates ────────────────────────────────────
-        if "du_detsf" in gdf.columns and all(
-            c in gdf.columns for c in ("du_detsf_sl", "du_detsf_ll")
-        ):
-            sub_sum = gdf[["du_detsf_sl", "du_detsf_ll"]].sum(axis=1)
-            valid_mask = (
-                gdf["du_detsf_sl"].notna() & gdf["du_detsf_ll"].notna() & (sub_sum > 0)
-            )
-            gdf.loc[valid_mask, "du_detsf"] = sub_sum
+        self._reconcile_one(gdf, "du_detsf", ["du_detsf_sl", "du_detsf_ll"])
+        self._reconcile_one(gdf, "du_mf", ["du_mf2to4", "du_mf5p"])
+        self._reconcile_one(gdf, "du", ["du_detsf", "du_attsf", "du_mf"])
 
-        if "du_mf" in gdf.columns and all(
-            c in gdf.columns for c in ("du_mf2to4", "du_mf5p")
-        ):
-            sub_sum = gdf[["du_mf2to4", "du_mf5p"]].sum(axis=1)
-            valid_mask = (
-                gdf["du_mf2to4"].notna() & gdf["du_mf5p"].notna() & (sub_sum > 0)
-            )
-            gdf.loc[valid_mask, "du_mf"] = sub_sum
-
-        if "du" in gdf.columns and all(
-            c in gdf.columns for c in ("du_detsf", "du_attsf", "du_mf")
-        ):
-            sub_sum = gdf[["du_detsf", "du_attsf", "du_mf"]].sum(axis=1)
-            valid_mask = (
-                gdf["du_detsf"].notna()
-                & gdf["du_attsf"].notna()
-                & gdf["du_mf"].notna()
-                & (sub_sum > 0)
-            )
-            gdf.loc[valid_mask, "du"] = sub_sum
-
-        # ── Employment retail aggregate ──────────────────────────────────
-        if "emp_ret" in gdf.columns and all(
-            c in gdf.columns
-            for c in (
+        # ── Employment aggregates ───────────────────────────────────────
+        self._reconcile_one(
+            gdf,
+            "emp_ret",
+            [
                 "emp_retail_services",
                 "emp_restaurant",
                 "emp_accommodation",
                 "emp_arts_entertainment",
                 "emp_other_services",
-            )
-        ):
-            sub_sum = gdf[
-                [
-                    "emp_retail_services",
-                    "emp_restaurant",
-                    "emp_accommodation",
-                    "emp_arts_entertainment",
-                    "emp_other_services",
-                ]
-            ].sum(axis=1)
-            valid_mask = (
-                gdf["emp_retail_services"].notna()
-                & gdf["emp_restaurant"].notna()
-                & gdf["emp_accommodation"].notna()
-                & gdf["emp_arts_entertainment"].notna()
-                & gdf["emp_other_services"].notna()
-                & (sub_sum > 0)
-            )
-            gdf.loc[valid_mask, "emp_ret"] = sub_sum
-
-        # ── Employment office aggregate ──────────────────────────────────
-        if "emp_off" in gdf.columns and all(
-            c in gdf.columns for c in ("emp_office_services", "emp_medical_services")
-        ):
-            sub_sum = gdf[["emp_office_services", "emp_medical_services"]].sum(axis=1)
-            valid_mask = (
-                gdf["emp_office_services"].notna()
-                & gdf["emp_medical_services"].notna()
-                & (sub_sum > 0)
-            )
-            gdf.loc[valid_mask, "emp_off"] = sub_sum
-
-        # ── Employment public aggregate ──────────────────────────────────
-        if "emp_pub" in gdf.columns and all(
-            c in gdf.columns for c in ("emp_public_admin", "emp_education")
-        ):
-            sub_sum = gdf[["emp_public_admin", "emp_education"]].sum(axis=1)
-            valid_mask = (
-                gdf["emp_public_admin"].notna()
-                & gdf["emp_education"].notna()
-                & (sub_sum > 0)
-            )
-            gdf.loc[valid_mask, "emp_pub"] = sub_sum
-
-        # ── Employment industrial aggregate ──────────────────────────────
-        if "emp_ind" in gdf.columns and all(
-            c in gdf.columns
-            for c in (
+            ],
+        )
+        self._reconcile_one(
+            gdf, "emp_off", ["emp_office_services", "emp_medical_services"]
+        )
+        self._reconcile_one(gdf, "emp_pub", ["emp_public_admin", "emp_education"])
+        self._reconcile_one(
+            gdf,
+            "emp_ind",
+            [
                 "emp_manufacturing",
                 "emp_wholesale",
                 "emp_transport_warehousing",
                 "emp_utilities",
                 "emp_construction",
-            )
-        ):
-            sub_sum = gdf[
-                [
-                    "emp_manufacturing",
-                    "emp_wholesale",
-                    "emp_transport_warehousing",
-                    "emp_utilities",
-                    "emp_construction",
-                ]
-            ].sum(axis=1)
-            valid_mask = (
-                gdf["emp_manufacturing"].notna()
-                & gdf["emp_wholesale"].notna()
-                & gdf["emp_transport_warehousing"].notna()
-                & gdf["emp_utilities"].notna()
-                & gdf["emp_construction"].notna()
-                & (sub_sum > 0)
-            )
-            gdf.loc[valid_mask, "emp_ind"] = sub_sum
-
-        # ── Employment agriculture aggregate ─────────────────────────────
-        if "emp_ag" in gdf.columns and all(
-            c in gdf.columns for c in ("emp_agriculture", "emp_extraction")
-        ):
-            sub_sum = gdf[["emp_agriculture", "emp_extraction"]].sum(axis=1)
-            valid_mask = (
-                gdf["emp_agriculture"].notna()
-                & gdf["emp_extraction"].notna()
-                & (sub_sum > 0)
-            )
-            gdf.loc[valid_mask, "emp_ag"] = sub_sum
-
-        # ── Total employment aggregate ───────────────────────────────────
-        if "emp" in gdf.columns and all(
-            c in gdf.columns
-            for c in (
+            ],
+        )
+        self._reconcile_one(gdf, "emp_ag", ["emp_agriculture", "emp_extraction"])
+        self._reconcile_one(
+            gdf,
+            "emp",
+            [
                 "emp_ret",
                 "emp_off",
                 "emp_pub",
                 "emp_ind",
                 "emp_ag",
                 "emp_military",
-            )
-        ):
-            sub_sum = gdf[
-                [
-                    "emp_ret",
-                    "emp_off",
-                    "emp_pub",
-                    "emp_ind",
-                    "emp_ag",
-                    "emp_military",
-                ]
-            ].sum(axis=1)
-            valid_mask = (
-                gdf["emp_ret"].notna()
-                & gdf["emp_off"].notna()
-                & gdf["emp_pub"].notna()
-                & gdf["emp_ind"].notna()
-                & gdf["emp_ag"].notna()
-                & gdf["emp_military"].notna()
-                & (sub_sum > 0)
-            )
-            gdf.loc[valid_mask, "emp"] = sub_sum
-
+            ],
+        )
         return gdf
+
+    @staticmethod
+    def _reconcile_one(
+        gdf: gpd.GeoDataFrame,
+        aggregate_col: str,
+        sub_cols: list[str],
+    ) -> None:
+        """Reconcile *aggregate_col* from *sub_cols*, tolerating missing columns.
+
+        Uses only the sub-columns that exist in *gdf*.  Logs a warning when
+        sub-columns are absent so the caller can investigate incomplete data
+        sources.  Overwrites the aggregate only on rows where at least one
+        available sub-column has a positive value.
+        """
+        if aggregate_col not in gdf.columns:
+            return
+        available = [c for c in sub_cols if c in gdf.columns]
+        if not available:
+            return
+        missing = [c for c in sub_cols if c not in gdf.columns]
+        if missing:
+            logger.warning(
+                "Reconciling %s: missing sub-columns %s",
+                aggregate_col,
+                missing,
+            )
+        sub_sum = gdf[available].sum(axis=1, min_count=1)
+        # min_count=1 means NaN if ALL values are NaN; otherwise sum available
+        valid_mask = sub_sum.notna() & (sub_sum > 0)
+        cnt = int(valid_mask.sum())
+        if cnt > 0:
+            gdf.loc[valid_mask, aggregate_col] = sub_sum
 
     def _write_to_db(self, gdf: gpd.GeoDataFrame, truncate: bool) -> int:
         """Write the GeoDataFrame to ``public.base_canvas`` using a multi-row INSERT.

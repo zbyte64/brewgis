@@ -263,7 +263,9 @@ class Command(BaseCommand):
             ORDER BY geography_id
             {limit_clause}
         """
-        gdf = gpd.GeoDataFrame.from_postgis(sql, self._get_engine(), geom_col="geometry")
+        gdf = gpd.GeoDataFrame.from_postgis(
+            sql, self._get_engine(), geom_col="geometry"
+        )
         gdf.to_file(str(cache_path), driver="GeoJSON")
         return gdf
 
@@ -308,7 +310,6 @@ class Command(BaseCommand):
             employment_source = LEHDEmploymentSource(
                 state_fips=STATE_FIPS,
                 county_fips=COUNTY_FIPS,
-                use_cbp_scaling=True,
             )
 
         if not quick and not skip_census:

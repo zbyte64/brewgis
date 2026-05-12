@@ -202,24 +202,24 @@ _SACOG_LAND_USE_MAP: dict[str, str] = {
     "Rural Residential": "undeveloped",
     "Very Low Density Detached Residential": "undeveloped",
     # Employment / Commercial
-    "Community/Neighborhood Retail": "industrial",
-    "Community/Neighborhood Commercial": "industrial",
-    "Community/Neighborhood Commercial/Office": "industrial",
-    "Regional Retail": "industrial",
-    "Moderate-Intensity Office": "industrial",
-    "High-Intensity Office": "industrial",
-    "CBD Office": "industrial",
-    "Light Industrial": "industrial",
-    "Heavy Industrial": "industrial",
-    "Light Industrial-Office": "industrial",
-    "Medical Facility": "industrial",
-    "Hotel": "industrial",
-    "Public/Quasi-Public": "industrial",
-    "Civic/Institution": "industrial",
-    "K-12 School": "industrial",
-    "Colleges and Universities": "industrial",
-    "Airport": "industrial",
-    "Agricultural Processing/Retail Employment": "industrial",
+    "Community/Neighborhood Retail": "urban",
+    "Community/Neighborhood Commercial": "urban",
+    "Community/Neighborhood Commercial/Office": "urban",
+    "Regional Retail": "urban",
+    "Moderate-Intensity Office": "urban",
+    "High-Intensity Office": "urban",
+    "CBD Office": "urban",
+    "Light Industrial": "urban",
+    "Heavy Industrial": "urban",
+    "Light Industrial-Office": "urban",
+    "Medical Facility": "urban",
+    "Hotel": "urban",
+    "Public/Quasi-Public": "urban",
+    "Civic/Institution": "urban",
+    "K-12 School": "urban",
+    "Colleges and Universities": "urban",
+    "Airport": "urban",
+    "Agricultural Processing/Retail Employment": "urban",
     # Mixed Use
     "Residential/Retail Mixed Use Low": "mixed_use",
     "Residential/Retail Mixed Use High": "mixed_use",
@@ -399,8 +399,7 @@ class LEHDEmploymentSource:
     """Real employment source — fetches LODES WAC block data with polygon geometry.
 
     Downloads LODES WAC CSV from CES FTP server for employment attributes,
-    TIGER/Line tabblock shapefiles for polygon geometry, and CBP data
-    from the Census API for sub-sector proportional splitting.
+    TIGER/Line tabblock shapefiles for polygon geometry.
     """
 
     def __init__(
@@ -408,12 +407,10 @@ class LEHDEmploymentSource:
         state_fips: str,
         county_fips: str,
         use_cache: bool = True,
-        use_cbp_scaling: bool = False,
     ) -> None:
         self._state_fips = state_fips
         self._county_fips = county_fips
         self._use_cache = use_cache
-        self._use_cbp_scaling = use_cbp_scaling
         self._data: gpd.GeoDataFrame | None = None
 
     @property
@@ -440,35 +437,6 @@ class LEHDEmploymentSource:
             logger.warning("LEHD fetch failed: %s", exc)
             gdf = gpd.GeoDataFrame()
 
-        if self._use_cbp_scaling and not gdf.empty:
-            from brewgis.workspace.services.lehd_fetcher import (
-                fetch_county_employment_scaling,
-            )
-
-            scale = fetch_county_employment_scaling(sf, cf)
-            agg_sectors = ["emp_ret", "emp_off", "emp_pub", "emp_ind"]
-            actual_sectors = [s for s in agg_sectors if s in scale and scale[s] > 1.0]
-            if actual_sectors:
-                logger.info(
-                    "Applying CBP scaling factors: %s",
-                    {s: f"{scale[s]:.2f}" for s in actual_sectors},
-                )
-                from brewgis.workspace.services.lehd_fetcher import AGGREGATE_MAPPINGS
-
-                # Scale aggregate columns AND their sub-sector components
-                for sector in actual_sectors:
-                    if sector in gdf.columns:
-                        gdf[sector] = gdf[sector] * scale[sector]
-                    # Scale constituent sub-sector columns
-                    sub_cols = AGGREGATE_MAPPINGS.get(sector, [])
-                    for col in sub_cols:
-                        if col in gdf.columns:
-                            gdf[col] = gdf[col] * scale[sector]
-                # Recompute total emp from scaled sub-sector columns
-                emp_agg_cols = AGGREGATE_MAPPINGS.get("emp", [])
-                present_agg = [c for c in emp_agg_cols if c in gdf.columns]
-                if "emp" in gdf.columns and present_agg:
-                    gdf["emp"] = gdf[present_agg].sum(axis=1)
         self._data = gdf
         return gdf
 

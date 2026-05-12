@@ -24,6 +24,9 @@ from brewgis.workspace.symbology.classifiers import _std_deviation_breaks
 from brewgis.workspace.symbology.classifiers import _sum_squared_diffs
 from brewgis.workspace.symbology.generator import _normalize_geo
 from brewgis.workspace.services.paint_constraints import _evaluate
+from brewgis.workspace.services.lehd_fetcher import _apply_naics_splits
+from brewgis.workspace.services.lehd_fetcher import _apply_sacog_calibrated_splits
+from brewgis.workspace.services.lehd_fetcher import _compute_aggregate_employment
 
 # Seed for deterministic CI runs — use CI_PIPELINE_ID, GITHUB_RUN_ID, or similar
 _DEAL_SEED_RAW = os.environ.get("DEAL_SEED")
@@ -107,4 +110,27 @@ def test_normalize_geo_contract(case: deal.TestCase) -> None:
 @pytest.mark.slow
 @deal.cases(_evaluate, count=_DEAL_CASE_COUNT, seed=_DEAL_SEED)
 def test_evaluate_contract(case: deal.TestCase) -> None:
+    case()
+
+
+# ---------------------------------------------------------------------------
+# LEHD fetcher contracts
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.slow
+@deal.cases(_apply_naics_splits, count=_DEAL_CASE_COUNT, seed=_DEAL_SEED)
+def test_apply_naics_splits_contract(case: deal.TestCase) -> None:
+    case()
+
+
+@pytest.mark.slow
+@deal.cases(_apply_sacog_calibrated_splits, count=_DEAL_CASE_COUNT, seed=_DEAL_SEED)
+def test_apply_sacog_calibrated_splits_contract(case: deal.TestCase) -> None:
+    case()
+
+
+@pytest.mark.slow
+@deal.cases(_compute_aggregate_employment, count=_DEAL_CASE_COUNT, seed=_DEAL_SEED)
+def test_compute_aggregate_employment_contract(case: deal.TestCase) -> None:
     case()

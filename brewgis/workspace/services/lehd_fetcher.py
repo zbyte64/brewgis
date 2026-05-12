@@ -19,6 +19,7 @@ import tempfile
 from pathlib import Path
 from typing import Any
 
+import deal
 import geopandas as gpd
 import pandas as pd
 import requests
@@ -217,10 +218,10 @@ AGGREGATE_MAPPINGS: dict[str, list[str]] = {
     ],
     "emp_off": [
         "emp_office_services",
+        "emp_medical_services",
     ],
     "emp_pub": [
         "emp_education",
-        "emp_medical_services",
         "emp_public_admin",
     ],
     "emp_ind": [
@@ -430,8 +431,8 @@ def _build_cbp_proportions(
 # These mirror the AGGREGATE_MAPPINGS groupings.
 _SECTOR_NAICS: dict[str, list[str]] = {
     "emp_ret": ["44", "45"],
-    "emp_off": ["51", "52", "53", "54", "55", "56"],
-    "emp_pub": ["61", "62", "92"],
+    "emp_off": ["51", "52", "53", "54", "55", "56", "62"],
+    "emp_pub": ["61", "92"],
     "emp_ind": ["11", "21", "22", "23", "31", "32", "33", "42", "48", "49"],
 }
 
@@ -595,6 +596,7 @@ def _resolve_split_source(
     return 0.0
 
 
+@deal.ensure(lambda _row, result: all(v >= 0 for v in result.values()))
 def _apply_naics_splits(
     row_cns: dict[str, int | float],
     cbp_proportions: dict[str, float],
@@ -637,6 +639,7 @@ def _apply_naics_splits(
     return result
 
 
+@deal.ensure(lambda _row, result: all(v >= 0 for v in result.values()))
 def _apply_sacog_calibrated_splits(row: dict[str, float]) -> dict[str, float]:
     """Apply SACOG-calibrated sub-sector proportions to aggregate columns.
 
@@ -661,6 +664,7 @@ def _apply_sacog_calibrated_splits(row: dict[str, float]) -> dict[str, float]:
 # ── Aggregate Column Computation ──────────────────────────────────────
 
 
+@deal.ensure(lambda _row, result: all(v >= 0 for v in result.values()))
 def _compute_aggregate_employment(
     row: dict[str, float],
 ) -> dict[str, float]:
