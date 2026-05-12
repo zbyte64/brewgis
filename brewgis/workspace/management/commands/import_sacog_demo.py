@@ -391,9 +391,9 @@ class Command(BaseCommand):
         """Run the full analysis pipeline."""
         self.stdout.write("Phase 6: Analysis Pipeline...")
 
-        from brewgis.workspace.analysis.dbt_runner import run_dbt_local
         from brewgis.workspace.analysis.pipeline import MODULE_RESULT_TABLES
         from brewgis.workspace.analysis.pipeline import resolve_module_order
+        from brewgis.workspace.analysis.pipeline import run_modules_sync
         from brewgis.workspace.models import Scenario
         from brewgis.workspace.models import Workspace
 
@@ -423,7 +423,6 @@ class Command(BaseCommand):
 
         # Run dbt SQL models + create end_state passthrough for base case
         svars = dict(DBT_VARS)
-        completed: list[str] = []
 
         MODULE_SELECTS: dict[str, list[str]] = {
             "env_constraint": ["env_constraint"],
@@ -446,36 +445,19 @@ class Command(BaseCommand):
         # Create end_state and increment as direct v1 passthrough for base case
         # (ships dbt core models which require proper built form key matching)
         self._create_base_case_end_state()
-        completed.append("core")
 
-        for module in ordered_modules:
-            model_selectors = MODULE_SELECTS.get(module, [module])
-            self.stdout.write(
-                f"  Running module: {module} ({', '.join(model_selectors)})..."
-            )
-            result = run_dbt_local(
-                select=model_selectors,
-                vars_={**svars, "completed_modules": list(completed)},
-            )
-            if result.success:
-                self.stdout.write(f"  ✓ {module} completed successfully")
-                completed.append(module)
-            else:
-                self.stdout.write(
-                    self.style.ERROR(f"  ✗ {module} failed: {result.error}")
-                )
-                break
-
-        if len(completed) == len(ordered_modules):
-            self.stdout.write(
-                self.style.SUCCESS("  ✓ Analysis pipeline completed successfully")
-            )
+        result = run_modules_sync(
+            modules=ordered_modules,
+            base_vars={**svars, "completed_modules": ["core"]},
+            target_schema=WORKSPACE_SCHEMA,
+            workspace_id=ws.pk,
+            scenario_id=SCENARIO_SLUG,
+            module_selects=MODULE_SELECTS,
+        )
+        if result["success"]:
+            self.stdout.write(self.style.SUCCESS("  ✓ Analysis pipeline completed successfully"))
         else:
-            self.stdout.write(
-                self.style.WARNING(
-                    f"  ⚠ Completed {len(completed)}/{len(ordered_modules)} modules"
-                )
-            )
+            self.stdout.write(self.style.WARNING(f"  ⚠ Completed {len(result['completed'])}/{len(ordered_modules)} modules"))
 
         # Verify output tables
         self._verify_output_tables(scenario)

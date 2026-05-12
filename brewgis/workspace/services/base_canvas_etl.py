@@ -1,3 +1,4 @@
+# ruff: noqa: S608  # table/schema names are controlled values, not user input
 """Base Canvas ETL — orchestrates the 11-step ETL pipeline for ``public.base_canvas``.
 
 This service extracts the full pipeline from the management command into
@@ -117,7 +118,7 @@ _EMPLOYMENT_COLUMNS = [
 
 
 class BaseCanvasETL:
-    """Orchestrate the full 11-step ETL pipeline for ``public.base_canvas``.
+    """Orchestrate the full 11-step ETL pipeline for a base canvas table.
 
     Args:
         demographic_source: Source for Census ACS demographic data.
@@ -131,6 +132,8 @@ class BaseCanvasETL:
         irrigation_source: Source for irrigation estimation.
             Default: ``NullIrrigationSource`` (hardcoded fractions).
         verbosity: Logging verbosity level (0=silent, 1=normal, 2=verbose).
+        target_table: Target database table name (``schema.table``).
+            Default: ``"public.base_canvas"``.
     """
 
     def __init__(
@@ -142,6 +145,7 @@ class BaseCanvasETL:
         intersection_density_source: IntersectionDensitySource | None = None,
         irrigation_source: IrrigationSource | None = None,
         calibration: CalibrationPreset | None = None,
+        target_table: str | None = None,
         verbosity: int = 1,
     ) -> None:
         self._demographic_source = demographic_source or NullDemographicSource()
@@ -154,6 +158,7 @@ class BaseCanvasETL:
         self._verbosity = verbosity
         self._calibration = calibration or NATIONAL_DEFAULT
         self._messages: list[str] = []
+        self._target_table = target_table or "public.base_canvas"
         self._start_time: float = 0.0
 
     # ── Public API ──────────────────────────────────────────────────────
@@ -194,13 +199,13 @@ class BaseCanvasETL:
         try:
             # Step 1
             self._step("1/11", "Ensuring base_canvas table")
-            BaseCanvasManager.ensure_table()
+            BaseCanvasManager.ensure_table(self._target_table)
 
             if truncate:
                 self._log("Truncating existing data")
                 with connection.cursor() as cursor:
                     cursor.execute(
-                        "TRUNCATE TABLE public.base_canvas RESTART IDENTITY CASCADE"
+                        f"TRUNCATE TABLE {self._target_table} RESTART IDENTITY CASCADE"
                     )
 
             # Step 2
@@ -254,7 +259,7 @@ class BaseCanvasETL:
             self._step("10b/11", "Reconciling aggregate columns from sub-columns")
             gdf = self._reconcile_aggregates(gdf)
             # Write to database
-            self._step("--", "Writing data to public.base_canvas")
+            self._step("--", f"Writing data to {self._target_table}")
             row_count = self._write_to_db(gdf, truncate)
 
             # Step 11
@@ -953,7 +958,7 @@ class BaseCanvasETL:
             gdf.loc[valid_mask, aggregate_col] = sub_sum
 
     def _write_to_db(self, gdf: gpd.GeoDataFrame, truncate: bool) -> int:
-        """Write the GeoDataFrame to ``public.base_canvas`` using a multi-row INSERT.
+        f"""Write the GeoDataFrame to ``{self._target_table}`` using a multi-row INSERT.
         Bulk INSERT using a single ``cursor.execute`` with a multi-row VALUES clause,
         batched in pages of 5000 rows to keep the query size manageable.
         Works with both psycopg2 and psycopg v3 (psycopg[c]) backends.
@@ -961,7 +966,7 @@ class BaseCanvasETL:
         if truncate:
             with connection.cursor() as cursor:
                 cursor.execute(
-                    "TRUNCATE TABLE public.base_canvas RESTART IDENTITY CASCADE"
+                    f"TRUNCATE TABLE {self._target_table} RESTART IDENTITY CASCADE"
                 )
 
         insert_cols = [
@@ -1003,7 +1008,7 @@ class BaseCanvasETL:
             )
             + ")"
         )
-        sql_base = f"INSERT INTO public.base_canvas ({col_names}) VALUES "
+        sql_base = f"INSERT INTO {self._target_table} ({col_names}) VALUES "
         page_size = 5000
         with connection.cursor() as cursor:
             for i in range(0, len(rows), page_size):
@@ -1013,12 +1018,12 @@ class BaseCanvasETL:
                 cursor.execute(sql_base + values_clause, flat_values)
 
         rows_written = len(gdf)
-        self._log(f"Wrote {rows_written} rows to public.base_canvas")
+        self._log(f"Wrote {rows_written} rows to {self._target_table}")
         return rows_written
 
     def _validate(self) -> None:
         """Validate the base canvas after ETL."""
-        missing = BaseCanvasManager.validate_schema()
+        missing = BaseCanvasManager.validate_schema(self._target_table)
         if missing:
             msg = f"Base canvas is missing columns: {missing}"
             raise RuntimeError(msg)
@@ -1028,7 +1033,7 @@ class BaseCanvasETL:
                 f'"{c}" IS NULL' for c in BaseCanvasSchema.NON_NULL_COLUMNS
             )
             cursor.execute(
-                f"SELECT COUNT(*) FROM public.base_canvas WHERE {non_null_checks}"
+                f"SELECT COUNT(*) FROM {self._target_table} WHERE {non_null_checks}"
             )
             null_count = cursor.fetchone()[0]
             if null_count > 0:
@@ -1039,13 +1044,13 @@ class BaseCanvasETL:
                 self._log("No NULLs in required columns")
 
         with connection.cursor() as cursor:
-            cursor.execute("SELECT COUNT(*) FROM public.base_canvas")
+            cursor.execute(f"SELECT COUNT(*) FROM {self._target_table}")
             row_count = cursor.fetchone()[0]
             self._log(f"Total rows: {row_count}")
         # Irrigation unit sanity check: irrigated area should not exceed parcel area
         with connection.cursor() as cursor:
-            cursor.execute("""
-                SELECT COUNT(*) FROM public.base_canvas
+            cursor.execute(f"""
+                SELECT COUNT(*) FROM {self._target_table}
                 WHERE residential_irrigated_area > area_parcel
                    OR commercial_irrigated_area > area_parcel
             """)
@@ -1059,8 +1064,8 @@ class BaseCanvasETL:
 
         # Equity column sanity check: must be non-negative
         with connection.cursor() as cursor:
-            cursor.execute("""
-                SELECT COUNT(*) FROM public.base_canvas
+            cursor.execute(f"""
+                SELECT COUNT(*) FROM {self._target_table}
                 WHERE median_income < 0
                    OR rent_burden_pct < 0
                    OR pct_minority < 0

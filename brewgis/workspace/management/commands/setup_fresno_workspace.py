@@ -8,6 +8,7 @@ Usage:
 
 from __future__ import annotations
 
+import contextlib
 import logging
 import sys
 from pathlib import Path
@@ -18,22 +19,24 @@ import geopandas as gpd
 from django.conf import settings
 from django.core.management import call_command
 from django.core.management.base import BaseCommand
+from django.core.management.base import CommandError
 from django.core.management.base import CommandParser
 from django.db import connection
 from django.utils import timezone
+from sqlalchemy import create_engine
 
 from brewgis.workspace.analysis.data_export import export_building_types
-from brewgis.workspace.analysis.dbt_runner import DbtRunnerWrapper
-from brewgis.workspace.analysis.layer_registry import register_result_layer
+from brewgis.workspace.analysis.pipeline import run_modules_sync
+from brewgis.workspace.built_forms.models import BuildingType
 from brewgis.workspace.models import AnalysisRun
 from brewgis.workspace.models import Layer
 from brewgis.workspace.models import Scenario
 from brewgis.workspace.models import Workspace
-from brewgis.workspace.services.census_fetcher import fetch_acs_block_groups
-from brewgis.workspace.services.lehd_fetcher import fetch_lehd_block_data
+from brewgis.workspace.services.base_canvas_adapters import CensusDemographicSource
+from brewgis.workspace.services.base_canvas_adapters import LEHDEmploymentSource
+from brewgis.workspace.services.base_canvas_etl import BaseCanvasETL
+from brewgis.workspace.services.built_form_classifier import BuiltFormClassifier
 from brewgis.workspace.services.poi_fetcher import fetch_pois
-from brewgis.workspace.services.spatial_allocator import allocate_attributes
-from brewgis.workspace.services.stitcher import impute_constant
 from brewgis.workspace.symbology.auto import auto_generate_symbology
 
 # ═══════════════════════════════════════════════════════════════════════
@@ -60,15 +63,22 @@ HORIZON_YEAR = 2050
 # DBT vars template
 DBT_VARS_TEMPLATE: dict[str, Any] = {
     "source_schema": WORKSPACE_SCHEMA,
-    "parcel_table": "fresno_parcels",
+    "base_table_schema": WORKSPACE_SCHEMA,
+    "base_table_name": "fresno_parcels",
+    "parcel_table": "parcels",
+    "scenario_slug": "fresno_baseline",
     "constraints": [
         {"table": "floodplains", "discount_pct": 100, "geom_col": "geom"},
         {"table": "wetlands", "discount_pct": 100, "geom_col": "geom"},
         {"table": "steep_slopes", "discount_pct": 75, "geom_col": "geom"},
         {"table": "farmland", "discount_pct": 50, "geom_col": "geom"},
     ],
-    "target_schema": None,  # set per scenario
-    "scenario_id": None,  # set per scenario
+    "target_schema": None,
+    "scenario_id": None,
+    "built_forms_schema": WORKSPACE_SCHEMA,
+    "built_forms_table": "built_forms",
+    "base_year": BASE_YEAR,
+    "horizon_year": HORIZON_YEAR,
 }
 
 CACHE_DIR = Path(settings.BASE_DIR) / "planning" / "fresno_demo"
@@ -120,8 +130,6 @@ class Command(BaseCommand):
                 "lehd",
                 "poi",
                 "constraints",
-                "allocate",
-                "stitch",
                 "built_forms",
                 "scenario",
                 "analysis",
@@ -135,7 +143,7 @@ class Command(BaseCommand):
             help="Print what would be done without doing it.",
         )
 
-    def handle(self, **options: Any) -> None:  # noqa: C901
+    def handle(self, **options: Any) -> None:  # noqa: C901, PLR0912
         self.dry_run = options["dry_run"]
         step = options["step"]
 
@@ -148,14 +156,16 @@ class Command(BaseCommand):
             steps.append(("Create workspace", self._create_workspace, ()))
 
         if step in ("all", "parcels"):
-            steps.append(("Ingest parcels", self._ingest_parcels, ()))
+            steps.append(("Ingest parcels (ETL pipeline)", self._ingest_parcels, ()))
             steps.append(("Ingest city boundary", self._ingest_city_boundary, ()))
 
         if step in ("all", "census"):
-            steps.append(("Import Census ACS data", self._import_census, ()))
+            steps.append(("Validate Census ACS data", self._import_census, ()))
 
         if step in ("all", "lehd"):
-            steps.append(("Import LEHD employment", self._import_lehd, ()))
+            steps.append(
+                ("Validate LEHD employment data", self._import_lehd, ())
+            )
 
         if step in ("all", "poi"):
             steps.append(("Import POIs", self._import_poi, ()))
@@ -163,12 +173,6 @@ class Command(BaseCommand):
         if step in ("all", "constraints"):
             steps.append(("Ingest constraint layers", self._ingest_constraints, ()))
 
-        if step in ("all", "allocate"):
-            steps.append(("Spatial allocation (Census", self._allocate_census, ()))
-            steps.append(("Spatial allocation (LEHD", self._allocate_lehd, ()))
-
-        if step in ("all", "stitch"):
-            steps.append(("Column stitching", self._stitch_columns, ()))
         if step in ("all", "built_forms"):
             steps.append(("Export building types", self._export_built_forms, ()))
             steps.append(
@@ -183,15 +187,14 @@ class Command(BaseCommand):
             steps.append(("Create base scenario", self._create_base_scenario, ()))
 
         if step in ("all", "analysis"):
-            steps.append(("Run dbt analysis pipeline", self._run_analysis, ()))
+            steps.append(("Run analysis pipeline", self._run_analysis, ()))
 
         # Mark non-critical steps that should not crash the pipeline
         nonfatal_labels = {
-            "Import LEHD employment",
+            "Validate LEHD employment data",
+            "Validate Census ACS data",
             "Import POIs",
             "Ingest constraint layers",
-            "Spatial allocation (LEHD",
-            "Spatial allocation (Census",
             "Ingest city boundary",
         }
 
@@ -214,11 +217,12 @@ class Command(BaseCommand):
             return None
         try:
             result = fn(*args)
-            self.stdout.write(f"  [{self.style.SUCCESS('OK')}] {label}")
-            return result
         except Exception as exc:
             self.stderr.write(self.style.ERROR(f"  [FAIL] {label}: {exc}"))
             raise
+        else:
+            self.stdout.write(f"  [{self.style.SUCCESS('OK')}] {label}")
+            return result
 
     def _run_step_nonfatal(self, label: str, fn: Any, *args: Any) -> Any:
         """Run a step; on failure log warning but do not crash."""
@@ -230,12 +234,12 @@ class Command(BaseCommand):
             return None
         try:
             result = fn(*args)
-            self.stdout.write(f"  [{self.style.SUCCESS('OK')}] {label}")
-            return result
         except Exception as exc:  # noqa: BLE001
             self.stderr.write(self.style.WARNING(f"  [WARN] {label}: {exc}"))
             return None
-
+        else:
+            self.stdout.write(f"  [{self.style.SUCCESS('OK')}] {label}")
+            return result
     def _get_workspace(self) -> Workspace:
         workspace, _ = Workspace.objects.get_or_create(
             name=WORKSPACE_NAME,
@@ -276,7 +280,6 @@ class Command(BaseCommand):
         return df
 
     def _write_to_postgis(self, df: gpd.GeoDataFrame, table: str, schema: str) -> None:
-        from sqlalchemy import create_engine
 
         # Ensure geometry column is named 'geom' for allocator/tile server consistency
         if df.geometry.name != "geom":
@@ -311,10 +314,8 @@ class Command(BaseCommand):
             },
         )
         if created:
-            try:
+            with contextlib.suppress(Exception):
                 auto_generate_symbology(layer)
-            except Exception:  # noqa: S110, BLE001
-                pass
         return layer
 
     # -- Step implementations ---------------------------------------------
@@ -332,7 +333,6 @@ class Command(BaseCommand):
             f"  Workspace: {workspace.name} (schema: {workspace.db_schema})"
         )
 
-        from brewgis.workspace.built_forms.models import BuildingType
 
         if BuildingType.objects.count() == 0 and FIXTURE_PATH.exists():
             call_command("loaddata", str(FIXTURE_PATH))
@@ -347,15 +347,70 @@ class Command(BaseCommand):
         return workspace
 
     def _ingest_parcels(self) -> int:
+        """Ingest parcels via BaseCanvasETL pipeline."""
         workspace = self._get_workspace()
         df = self._read_geojson("fresno_parcels.geojson")
-        self._write_to_postgis(df, "fresno_parcels", WORKSPACE_SCHEMA)
+
+        # Write to staging table, preserving geometry column name for ETL
+
+        staging_table = "raw_parcels"
+        df.columns = [c.lower() for c in df.columns]
+        if df.crs is None or df.crs.to_string() != "EPSG:4326":
+            df = df.to_crs("EPSG:4326")
+        engine = create_engine(self._get_db_url())
+        df.to_postgis(
+            staging_table,
+            engine,
+            schema=WORKSPACE_SCHEMA,
+            if_exists="replace",
+            chunksize=50000,
+        )
+        engine.dispose()
+        self.stdout.write(f"  Wrote {len(df)} parcels to staging table")
+
+        # Create data source adapters
+        demographic_source = CensusDemographicSource(STATE_FIPS, COUNTY_FIPS)
+        employment_source = LEHDEmploymentSource(STATE_FIPS, COUNTY_FIPS)
+
+        # Run the ETL pipeline
+        etl = BaseCanvasETL(
+            demographic_source=demographic_source,
+            employment_source=employment_source,
+            target_table=f"{WORKSPACE_SCHEMA}.fresno_parcels",
+        )
+        result = etl.run(
+            source_table=f"{WORKSPACE_SCHEMA}.{staging_table}",
+            truncate=True,
+        )
+
+        for msg in result.get("messages", []):
+            self.stdout.write(f"  {msg}")
+
+        if result["status"] == "error":
+            self.stderr.write(
+                self.style.ERROR(f"  ETL failed: {result.get('error')}")
+            )
+            raise CommandError(result.get("error", "ETL pipeline failed"))
+
+        self.stdout.write(
+            f"  ETL complete: {result['rows']} rows in {result['elapsed']}s"
+        )
+
+        # Create dbt compat view (aliases geometry → geom)
+        with connection.cursor() as cursor:
+            cursor.execute(
+                f'CREATE OR REPLACE VIEW "{WORKSPACE_SCHEMA}".parcels AS '  # noqa: S608
+                f"SELECT *, geometry AS geom "
+                f'FROM "{WORKSPACE_SCHEMA}"."fresno_parcels"'
+            )
+        self.stdout.write(f"  Created dbt compat view: {WORKSPACE_SCHEMA}.parcels")
+
+        # Register layer
         self._register_layer(
             "fresno_parcels", "Fresno County Parcels", workspace, "fill"
         )
-        count = len(df)
-        self.stdout.write(f"  Ingested {count} parcels")
-        return count
+
+        return result["rows"]
 
     def _ingest_city_boundary(self) -> int:
         filepath = CACHE_DIR / "fresno_city_boundary.geojson"
@@ -373,41 +428,35 @@ class Command(BaseCommand):
         return count
 
     def _import_census(self) -> int:
-        workspace = self._get_workspace()
-        self.stdout.write("  Fetching ACS block group data from Census API...")
-        gdf = fetch_acs_block_groups(STATE_FIPS, COUNTY_FIPS)
+        """Validate census demographic data is accessible via the adapter."""
+        self.stdout.write("  Validating Census ACS data source...")
+        source = CensusDemographicSource(STATE_FIPS, COUNTY_FIPS)
+        if not source.available:
+            self.stdout.write("  [SKIP] Census source not available")
+            return 0
+        gdf = source.fetch_block_group_data()
         count = len(gdf)
-        self.stdout.write(f"  Fetched {count} block groups")
-
-        table_name = f"census_acs_{STATE_FIPS}_{COUNTY_FIPS}"
-        self._write_to_postgis(gdf, table_name, WORKSPACE_SCHEMA)
-        self._register_layer(
-            f"census_acs_{STATE_FIPS}_{COUNTY_FIPS}",
-            f"ACS Demographics ({STATE_FIPS}-{COUNTY_FIPS})",
-            workspace,
-            geometry_type="circle",
-            layer_source="Census ACS",
-        )
-        self.stdout.write(f"  Census data written to {WORKSPACE_SCHEMA}.{table_name}")
+        if count > 0:
+            self.stdout.write(f"  Census ACS data accessible ({count} block groups)")
+        else:
+            self.stdout.write("  [WARN] Census fetch returned empty result")
         return count
 
     def _import_lehd(self) -> int:
-        workspace = self._get_workspace()
-        self.stdout.write("  Fetching LEHD employment data from Census API...")
-        gdf = fetch_lehd_block_data(STATE_FIPS, COUNTY_FIPS)
+        """Validate LEHD employment data is accessible via the adapter."""
+        self.stdout.write("  Validating LEHD employment data source...")
+        source = LEHDEmploymentSource(STATE_FIPS, COUNTY_FIPS)
+        if not source.available:
+            self.stdout.write("  [SKIP] LEHD source not available")
+            return 0
+        gdf = source.fetch_block_data()
         count = len(gdf)
-        self.stdout.write(f"  Fetched {count} census blocks with employment data")
-
-        table_name = f"lehd_{STATE_FIPS}_{COUNTY_FIPS}"
-        self._write_to_postgis(gdf, table_name, WORKSPACE_SCHEMA)
-        self._register_layer(
-            f"lehd_{STATE_FIPS}_{COUNTY_FIPS}",
-            f"LEHD Employment ({STATE_FIPS}-{COUNTY_FIPS})",
-            workspace,
-            geometry_type="circle",
-            layer_source="Census LEHD",
-        )
-        self.stdout.write(f"  LEHD data written to {WORKSPACE_SCHEMA}.{table_name}")
+        if count > 0:
+            self.stdout.write(
+                f"  LEHD employment data accessible ({count} blocks)"
+            )
+        else:
+            self.stdout.write("  [WARN] LEHD fetch returned empty result")
         return count
 
     def _import_poi(self) -> int:
@@ -481,202 +530,51 @@ class Command(BaseCommand):
                 "Environmental Constraints",
             )
 
-    def _allocate_census(self) -> dict[str, Any]:
-        """Spatial allocation: census block groups -> parcels."""
-        census_table = f"census_acs_{STATE_FIPS}_{COUNTY_FIPS}"
-        if not self._table_exists(WORKSPACE_SCHEMA, census_table):
-            self.stdout.write("  [SKIP] Census table does not exist")
-            return {"success": False, "error": "Census table missing"}
-
-        numeric_cols = self._get_numeric_columns(
-            census_table, exclusions=("id", "geoid", "statefp", "countyfp")
-        )
-
-        self.stdout.write(
-            f"  Allocating {len(numeric_cols)} columns from {census_table}..."
-        )
-        result = allocate_attributes(
-            source_schema=WORKSPACE_SCHEMA,
-            source_table=census_table,
-            target_schema=WORKSPACE_SCHEMA,
-            target_table="fresno_parcels",
-            columns=numeric_cols,
-            target_column_prefix="acs_",
-        )
-        self.stdout.write(f"  Allocation result: {result}")
-        return result
-
-    def _allocate_lehd(self) -> dict[str, Any]:
-        """Spatial allocation: LEHD blocks -> parcels."""
-        lehd_table = f"lehd_{STATE_FIPS}_{COUNTY_FIPS}"
-        if not self._table_exists(WORKSPACE_SCHEMA, lehd_table):
-            self.stdout.write("  [SKIP] LEHD table does not exist")
-            return {"success": False, "error": "LEHD table missing"}
-
-        numeric_cols = self._get_numeric_columns(
-            lehd_table, exclusions=("id", "geoid", "statefp", "countyfp")
-        )
-
-        self.stdout.write(
-            f"  Allocating {len(numeric_cols)} columns from {lehd_table}..."
-        )
-        result = allocate_attributes(
-            source_schema=WORKSPACE_SCHEMA,
-            source_table=lehd_table,
-            target_schema=WORKSPACE_SCHEMA,
-            target_table="fresno_parcels",
-            columns=numeric_cols,
-            target_column_prefix="lehd_",
-        )
-        self.stdout.write(f"  Allocation result: {result}")
-        return result
-
-    @staticmethod
-    def _get_numeric_columns(
-        table: str,
-        schema: str = WORKSPACE_SCHEMA,
-        exclusions: tuple[str, ...] = (),
-    ) -> list[str]:
-        with connection.cursor() as cursor:
-            cursor.execute(
-                "SELECT column_name FROM information_schema.columns "
-                "WHERE table_schema = %s AND table_name = %s "
-                "AND data_type IN ('integer', 'numeric', 'double precision', 'real', 'bigint')",
-                [schema, table],
-            )
-            return [row[0] for row in cursor.fetchall() if row[0] not in exclusions]
-
-    def _stitch_columns(self) -> None:
-        """Impute missing values on parcels table."""
-        # First, ensure base canvas columns exist on the table
-        column_defs: list[dict[str, str]] = [
-            {"col": "land_use_code", "type": "double precision"},
-            {"col": "land_use_category", "type": "double precision"},
-            {"col": "dwelling_units", "type": "double precision"},
-            {"col": "households", "type": "double precision"},
-            {"col": "population", "type": "double precision"},
-            {"col": "employment", "type": "double precision"},
-            {"col": "sqft_per_unit", "type": "double precision"},
-            {"col": "lot_sqft", "type": "double precision"},
-            {"col": "year_built", "type": "double precision"},
-            {"col": "stories", "type": "double precision"},
-            {"col": "building_sqft", "type": "double precision"},
-            {"col": "residential_sqft", "type": "double precision"},
-            {"col": "non_residential_sqft", "type": "double precision"},
-            {"col": "irrigated_area_sqft", "type": "double precision"},
-            {"col": "total_area_sqft", "type": "double precision"},
-        ]
-        with connection.cursor() as cursor:
-            for col_def in column_defs:
-                col_name = col_def["col"]
-                col_type = col_def["type"]
-                cursor.execute(
-                    f"ALTER TABLE {WORKSPACE_SCHEMA}.fresno_parcels "
-                    f"ADD COLUMN IF NOT EXISTS {col_name} {col_type}"
-                )
-
-        stitchees: list[dict[str, Any]] = [
-            {"col": "land_use_code", "default": 0.0},
-            {"col": "land_use_category", "default": 0.0},
-            {"col": "dwelling_units", "default": 1.0},
-            {"col": "households", "default": 1.0},
-            {"col": "population", "default": 2.5},
-            {"col": "employment", "default": 0.0},
-            {"col": "sqft_per_unit", "default": 1500.0},
-            {"col": "lot_sqft", "default": 7000.0},
-            {"col": "year_built", "default": 1990.0},
-            {"col": "stories", "default": 1.0},
-            {"col": "building_sqft", "default": 1500.0},
-            {"col": "residential_sqft", "default": 1500.0},
-            {"col": "non_residential_sqft", "default": 0.0},
-            {"col": "irrigated_area_sqft", "default": 2000.0},
-            {"col": "total_area_sqft", "default": 7000.0},
-        ]
-
-        success_count = 0
-        for item in stitchees:
-            try:
-                impute_constant(
-                    schema=WORKSPACE_SCHEMA,
-                    table="fresno_parcels",
-                    column=item["col"],
-                    value=item["default"],
-                )
-                success_count += 1
-            except Exception:  # noqa: S110, BLE001
-                pass
-
-        self.stdout.write(f"  Stitched {success_count}/{len(stitchees)} columns")
-
     def _assign_built_forms_and_density(self) -> int:
-        """Assign built form keys and compute intersection density for parcels."""
-        from brewgis.workspace.built_forms.models import BuildingType
+        """Assign built_form_key and intersection_density via BuiltFormClassifier."""
 
-        all_bts = list(BuildingType.objects.all().order_by("pk"))
-        if not all_bts:
-            self.stdout.write(
-                "  [SKIP] No BuildingTypes loaded; skipping built form assignment"
-            )
-            return 0
-
-        self.stdout.write(f"  Assigning built forms from {len(all_bts)} types...")
         schema = WORKSPACE_SCHEMA
+        table = "fresno_parcels"
 
+        # Load parcels from the ETL-produced table
+        self.stdout.write("  Loading parcels for built form classification...")
         with connection.cursor() as cursor:
-            # Add columns if missing
             cursor.execute(
-                "ALTER TABLE " + schema + ".fresno_parcels "
-                "ADD COLUMN IF NOT EXISTS built_form_key INTEGER"
+                f'SELECT count(*) FROM "{schema}"."{table}"'  # noqa: S608
             )
-            cursor.execute(
-                "ALTER TABLE " + schema + ".fresno_parcels "
-                "ADD COLUMN IF NOT EXISTS intersection_density DOUBLE PRECISION"
-            )
+            total = cursor.fetchone()[0]
 
-            # Assign built_form_key and intersection_density
-            # Strategy: parcel area determines base type, modulo adds commercial/other mix
-            # BuildingType PKs from fixture:
-            #   1=SFR Large Lot, 2=SFR Standard, 3=Townhouse, 4=Duplex, 5=Triplex/Fourplex
-            #   6=Courtyard Apt, 7=Stacked Flats, 8=Mid-Rise Apt, 9=High-Rise Apt
-            #   10=Neighborhood Retail, 11=General Commercial, 12=Office Low Rise
-            #   13=Office Mid/High Rise, 14=Light Industrial, 15=Civic/Institutional
-            s = schema
-            cursor.execute(
-                "UPDATE " + s + ".fresno_parcels SET\n"
-                "    built_form_key = CASE\n"
-                "        WHEN ST_Area(geom) / 4046.86 IS NULL OR ST_Area(geom) / 4046.86 <= 0 THEN 2\n"
-                "        WHEN ST_Area(geom) / 4046.86 > 3.0 AND id % 5 < 3 THEN 14\n"
-                "        WHEN ST_Area(geom) / 4046.86 > 3.0 THEN 15\n"
-                "        WHEN ST_Area(geom) / 4046.86 > 1.5 AND id % 4 = 0 THEN 11\n"
-                "        WHEN ST_Area(geom) / 4046.86 > 1.5 AND id % 4 = 1 THEN 12\n"
-                "        WHEN ST_Area(geom) / 4046.86 > 1.5 AND id % 4 = 2 THEN 10\n"
-                "        WHEN ST_Area(geom) / 4046.86 > 1.5 THEN 1\n"
-                "        WHEN ST_Area(geom) / 4046.86 > 0.4 AND id % 5 = 0 THEN 10\n"
-                "        WHEN ST_Area(geom) / 4046.86 > 0.4 THEN 2\n"
-                "        WHEN ST_Area(geom) / 4046.86 > 0.15 AND id % 7 = 0 THEN 3\n"
-                "        WHEN ST_Area(geom) / 4046.86 > 0.15 AND id % 7 = 1 THEN 4\n"
-                "        WHEN ST_Area(geom) / 4046.86 > 0.15 THEN 2\n"
-                "        WHEN ST_Area(geom) / 4046.86 > 0.08 AND id % 3 = 0 THEN 5\n"
-                "        WHEN ST_Area(geom) / 4046.86 > 0.08 AND id % 3 = 1 THEN 6\n"
-                "        WHEN ST_Area(geom) / 4046.86 > 0.08 THEN 7\n"
-                "        WHEN id % 5 = 0 THEN 8\n"
-                "        WHEN id % 5 = 1 THEN 9\n"
-                "        ELSE 7\n"
-                "    END,\n"
-                "    intersection_density = CASE\n"
-                "        WHEN ST_Area(geom) / 4046.86 > 0\n"
-                "        THEN LEAST(25.0, GREATEST(0.5, 10.0 / SQRT(ST_Area(geom) / 4046.86)))\n"
-                "        ELSE 0.5\n"
-                "    END"
-            )
+        gdf = gpd.GeoDataFrame.from_postgis(
+            f'SELECT * FROM "{schema}"."{table}"',  # noqa: S608
+            connection,
+            geom_col="geometry",
+        )
+        self.stdout.write(f"  Loaded {total} parcels ({len(gdf)} in GeoDataFrame) for classification")
 
-            # Report distribution
+        # Run classifier
+        classifier = BuiltFormClassifier(strategy="heuristic")
+        gdf = classifier.assign(gdf)
+
+        # Write classified data back
+        engine = create_engine(self._get_db_url())
+        gdf.to_postgis(
+            table,
+            engine,
+            schema=schema,
+            if_exists="replace",
+            chunksize=50000,
+        )
+        engine.dispose()
+        self.stdout.write(f"  Written {len(gdf)} classified parcels back to {schema}.{table}")
+
+        # Report distribution
+        with connection.cursor() as cursor:
             cursor.execute(
-                "SELECT bf.built_form_key, bt.name, COUNT(*) AS cnt\n"
-                "FROM " + schema + ".fresno_parcels bf\n"
-                "LEFT JOIN " + schema + ".built_forms bt ON bf.built_form_key = bt.id\n"
-                "GROUP BY bf.built_form_key, bt.name\n"
-                "ORDER BY bf.built_form_key"
+                f"SELECT bf.built_form_key, bt.name, COUNT(*) AS cnt\n"
+                f"FROM {schema}.{table} bf\n"
+                f"LEFT JOIN {schema}.built_forms bt ON bf.built_form_key = bt.id\n"
+                f"GROUP BY bf.built_form_key, bt.name\n"
+                f"ORDER BY bf.built_form_key"
             )
             rows = cursor.fetchall()
             for key, name, cnt in rows:
@@ -686,19 +584,18 @@ class Command(BaseCommand):
         # Report intersection_density stats
         with connection.cursor() as cursor:
             cursor.execute(
-                "SELECT\n"
-                "    MIN(intersection_density),\n"
-                "    AVG(intersection_density),\n"
-                "    MAX(intersection_density)\n"
-                "FROM " + schema + ".fresno_parcels"
+                f"SELECT MIN(intersection_density), AVG(intersection_density), "  # noqa: S608
+                f"MAX(intersection_density) "
+                f"FROM {schema}.{table}"
             )
             row = cursor.fetchone()
             if row:
                 self.stdout.write(
-                    f"    intersection_density: min={row[0]:.1f} avg={row[1]:.1f} max={row[2]:.1f}"
+                    f"    intersection_density: min={row[0]:.1f} "
+                    f"avg={row[1]:.1f} max={row[2]:.1f}"
                 )
 
-        return len(rows)
+        return len(gdf)
 
     def _create_base_scenario(self) -> Scenario:
         workspace = self._get_workspace()
@@ -729,7 +626,8 @@ class Command(BaseCommand):
         )
         return count
 
-    def _run_analysis(self) -> list[dict[str, Any]]:  # noqa: PLR0915
+    def _run_analysis(self) -> dict[str, Any]:
+        """Run the analysis pipeline via run_modules_sync."""
         workspace = self._get_workspace()
         scenario = Scenario.objects.get(slug="fresno_baseline", workspace=workspace)
 
@@ -755,157 +653,32 @@ class Command(BaseCommand):
 
         self._create_db_schema(scenario.target_schema)
 
-        runner = DbtRunnerWrapper()
-        results: list[dict[str, Any]] = []
-
-        # 1. env_constraint
-        self.stdout.write("  Running env_constraint...")
-        dbt_result = runner.run(
-            select=["env_constraint"],
-            vars_=dbt_vars,
-            full_refresh=True,
+        result = run_modules_sync(
+            modules=[
+                "env_constraint",
+                "core",
+                "water_demand",
+                "energy_demand",
+                "trip_generation",
+                "trip_distribution",
+                "mode_choice",
+                "vmt",
+            ],
+            base_vars=dbt_vars,
+            target_schema=scenario.target_schema,
+            workspace_id=workspace.pk,
+            scenario_id=scenario.slug,
         )
-        env_result = {
-            "module": "env_constraint",
-            "success": dbt_result.success,
-            "error": dbt_result.error,
-        }
-        results.append(env_result)
-        if dbt_result.success:
-            register_result_layer(
-                workspace_id=workspace.pk,
-                schema=scenario.target_schema,
-                table=f"env_constraint_{scenario.id}",
-                name=f"Environmental Constraints (scenario {scenario.id})",
-            )
-            self.stdout.write("  env_constraint complete")
-        else:
-            self.stderr.write(
-                self.style.ERROR(f"  env_constraint failed: {dbt_result.error}")
-            )
-            run.status = "failed"
-            run.save(update_fields=["status"])
-            return results
 
-        # 2. core (end_state + increment)
-        self.stdout.write("  Running core module...")
-        dbt_result = runner.run(
-            select=["core_end_state", "core_increment"],
-            vars_=dbt_vars,
-            full_refresh=True,
-        )
-        core_result = {
-            "module": "core",
-            "success": dbt_result.success,
-            "error": dbt_result.error,
-        }
-        results.append(core_result)
-        if dbt_result.success:
-            for tbl in (f"end_state_{scenario.id}", f"increment_{scenario.id}"):
-                register_result_layer(
-                    workspace_id=workspace.pk,
-                    schema=scenario.target_schema,
-                    table=tbl,
-                    name=f"{tbl} (scenario {scenario.id})",
-                )
-            self.stdout.write("  core module complete")
-        else:
-            self.stderr.write(
-                self.style.ERROR(f"  core module failed: {dbt_result.error}")
-            )
-            run.status = "failed"
-            run.save(update_fields=["status"])
-            return results
-
-        # 3. water_demand
-        self.stdout.write("  Running water_demand...")
-        dbt_result = runner.run(
-            select=["water_demand"],
-            vars_=dbt_vars,
-            full_refresh=True,
-        )
-        water_result = {
-            "module": "water_demand",
-            "success": dbt_result.success,
-            "error": dbt_result.error,
-        }
-        results.append(water_result)
-        if dbt_result.success:
-            register_result_layer(
-                workspace_id=workspace.pk,
-                schema=scenario.target_schema,
-                table=f"water_demand_{scenario.id}",
-                name=f"Water Demand (scenario {scenario.id})",
-            )
-            self.stdout.write("  water_demand complete")
-        else:
-            self.stderr.write(
-                self.style.ERROR(f"  water_demand failed: {dbt_result.error}")
-            )
-
-        # 4. energy_demand
-        self.stdout.write("  Running energy_demand...")
-        dbt_result = runner.run(
-            select=["energy_demand"],
-            vars_=dbt_vars,
-            full_refresh=True,
-        )
-        energy_result = {
-            "module": "energy_demand",
-            "success": dbt_result.success,
-            "error": dbt_result.error,
-        }
-        results.append(energy_result)
-        if dbt_result.success:
-            register_result_layer(
-                workspace_id=workspace.pk,
-                schema=scenario.target_schema,
-                table=f"energy_demand_{scenario.id}",
-                name=f"Energy Demand (scenario {scenario.id})",
-            )
-            self.stdout.write("  energy_demand complete")
-        else:
-            self.stderr.write(
-                self.style.ERROR(f"  energy_demand failed: {dbt_result.error}")
-            )
-
-        # 5. transport (trip_generation -> trip_distribution -> mode_choice -> vmt)
-        self.stdout.write("  Running transport module (trip_generation -> vmt)...")
-        dbt_result = runner.run(
-            select=["trip_generation", "trip_distribution", "mode_choice", "vmt"],
-            vars_=dbt_vars,
-            full_refresh=True,
-        )
-        transport_result = {
-            "module": "transport",
-            "success": dbt_result.success,
-            "error": dbt_result.error,
-        }
-        results.append(transport_result)
-        if dbt_result.success:
-            for tbl in (
-                f"trip_generation_{scenario.id}",
-                f"trip_distribution_{scenario.id}",
-                f"mode_choice_{scenario.id}",
-                f"vmt_{scenario.id}",
-            ):
-                register_result_layer(
-                    workspace_id=workspace.pk,
-                    schema=scenario.target_schema,
-                    table=tbl,
-                    name=f"{tbl} (scenario {scenario.id})",
-                )
-            self.stdout.write("  transport module complete")
-        else:
-            self.stderr.write(
-                self.style.ERROR(f"  transport module failed: {dbt_result.error}")
-            )
-
-        all_success = all(r.get("success") for r in results)
+        all_success = result.get("success", False)
         run.status = "completed" if all_success else "failed"
         run.completed_at = timezone.now()
-        run.vars = {"modules": results}
+        run.vars = {"modules": result.get("results", [])}
         run.save(update_fields=["status", "completed_at", "vars"])
 
         self.stdout.write(f"  Analysis pipeline: {run.status}")
-        return results
+        for res in result.get("results", []):
+            status = self.style.SUCCESS("OK") if res.get("success") else self.style.ERROR("FAIL")
+            self.stdout.write(f"    {res['module']}: {status}")
+
+        return result

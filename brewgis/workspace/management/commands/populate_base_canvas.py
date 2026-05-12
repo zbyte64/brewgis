@@ -74,6 +74,12 @@ class Command(BaseCommand):
             default=False,
             help="Truncate existing data before inserting",
         )
+        parser.add_argument(
+            "--target-table",
+            type=str,
+            default="public.base_canvas",
+            help="Target table for ETL output (schema.table)",
+        )
         # ── Real data source options ───────────────────────────────
         parser.add_argument(
             "--fetch-census",
@@ -115,6 +121,7 @@ class Command(BaseCommand):
         fetch_lehd: bool = bool(options.get("fetch_lehd", False))
         state_fips: str | None = options.get("state_fips")  # type: ignore[assignment]
         county_fips: str | None = options.get("county_fips")  # type: ignore[assignment]
+        target_table: str = options.get("target_table", "public.base_canvas")  # type: ignore[assignment]
 
         # Build adapters based on flags
         demographic_source = None
@@ -152,6 +159,7 @@ class Command(BaseCommand):
             calibration=SACOG_CALIBRATION,
             demographic_source=demographic_source,
             employment_source=employment_source,
+            target_table=target_table,
         )
 
         result = etl.run(

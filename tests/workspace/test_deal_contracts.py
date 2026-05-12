@@ -16,6 +16,11 @@ import deal
 import pytest
 
 from brewgis.workspace.analysis.pipeline import resolve_module_order
+from brewgis.workspace.services.base_canvas_schema import BaseCanvasSchema
+from brewgis.workspace.services.lehd_fetcher import _apply_naics_splits
+from brewgis.workspace.services.lehd_fetcher import _apply_sacog_calibrated_splits
+from brewgis.workspace.services.lehd_fetcher import _compute_aggregate_employment
+from brewgis.workspace.services.paint_constraints import _evaluate
 from brewgis.workspace.symbology.classifiers import _equal_interval_breaks
 from brewgis.workspace.symbology.classifiers import _fmt
 from brewgis.workspace.symbology.classifiers import _logarithmic_breaks
@@ -23,10 +28,6 @@ from brewgis.workspace.symbology.classifiers import _make_labels
 from brewgis.workspace.symbology.classifiers import _std_deviation_breaks
 from brewgis.workspace.symbology.classifiers import _sum_squared_diffs
 from brewgis.workspace.symbology.generator import _normalize_geo
-from brewgis.workspace.services.paint_constraints import _evaluate
-from brewgis.workspace.services.lehd_fetcher import _apply_naics_splits
-from brewgis.workspace.services.lehd_fetcher import _apply_sacog_calibrated_splits
-from brewgis.workspace.services.lehd_fetcher import _compute_aggregate_employment
 
 # Seed for deterministic CI runs — use CI_PIPELINE_ID, GITHUB_RUN_ID, or similar
 _DEAL_SEED_RAW = os.environ.get("DEAL_SEED")
@@ -134,3 +135,27 @@ def test_apply_sacog_calibrated_splits_contract(case: deal.TestCase) -> None:
 @deal.cases(_compute_aggregate_employment, count=_DEAL_CASE_COUNT, seed=_DEAL_SEED)
 def test_compute_aggregate_employment_contract(case: deal.TestCase) -> None:
     case()
+def test_create_table_sql_contains_table_name() -> None:
+    """Verify create_table_sql embeds the table_name."""
+    sql = BaseCanvasSchema.create_table_sql("fresno_demo.test_canvas")
+    assert "fresno_demo.test_canvas" in sql
+
+
+def test_create_table_sql_defaults_to_public_base_canvas() -> None:
+    """Verify create_table_sql defaults to public.base_canvas."""
+    sql = BaseCanvasSchema.create_table_sql()
+    assert "public.base_canvas" in sql
+
+
+def test_create_indexes_sql_contains_table_name() -> None:
+    """Verify create_indexes_sql embeds the table_name in all statements."""
+    stmts = BaseCanvasSchema.create_indexes_sql("fresno_demo.test_canvas")
+    for stmt in stmts:
+        assert "fresno_demo.test_canvas" in stmt
+
+
+def test_create_indexes_sql_defaults_to_public_base_canvas() -> None:
+    """Verify create_indexes_sql defaults to public.base_canvas."""
+    stmts = BaseCanvasSchema.create_indexes_sql()
+    for stmt in stmts:
+        assert "public.base_canvas" in stmt

@@ -1,5 +1,7 @@
 """Service layer for data fetching, allocation, stitching, and imputation."""
 
+from brewgis.workspace.services.built_form_classifier import BuiltFormAssignment
+from brewgis.workspace.services.built_form_classifier import BuiltFormClassifier
 from brewgis.workspace.services.base_canvas_manager import BaseCanvasManager
 from brewgis.workspace.services.base_canvas_schema import BaseCanvasSchema
 from brewgis.workspace.services.imputation_engine import ImputationEngine
@@ -17,6 +19,8 @@ from brewgis.workspace.services.synthetic_parcel_generator import (
 
 __all__ = [
     "BaseCanvasManager",
+    "BuiltFormAssignment",
+    "BuiltFormClassifier",
     "BaseCanvasSchema",
     "ImputationEngine",
     "ImputationResult",

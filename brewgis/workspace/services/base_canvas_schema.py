@@ -1125,8 +1125,12 @@ class BaseCanvasSchema:
         return col.default_value if col is not None else 0.0
 
     @classmethod
-    def create_table_sql(cls) -> str:
-        """Generate the ``CREATE TABLE`` DDL for ``public.base_canvas``."""
+    def create_table_sql(cls, table_name: str = "public.base_canvas") -> str:
+        """Generate the ``CREATE TABLE`` DDL for the base canvas table.
+
+        Args:
+            table_name: Fully qualified target table name (default ``public.base_canvas``).
+        """
         col_defs: list[str] = []
         for name in cls.COLUMN_NAMES:
             col = cls.get(name)
@@ -1142,21 +1146,25 @@ class BaseCanvasSchema:
             col_defs.append(f"    {name} {col.pg_type}{nullable}")
 
         joined = ",\n".join(col_defs)
-        return f"""CREATE TABLE IF NOT EXISTS public.base_canvas (
+        return f"""CREATE TABLE IF NOT EXISTS {table_name} (
 {joined}
 );
 """
 
     @classmethod
-    def create_indexes_sql(cls) -> list[str]:
-        """Return SQL statements for recommended indexes."""
+    def create_indexes_sql(cls, table_name: str = "public.base_canvas") -> list[str]:
+        """Return SQL statements for recommended indexes on the base canvas table.
+
+        Args:
+            table_name: Fully qualified target table name (default ``public.base_canvas``).
+        """
         gist_idx = (
             "CREATE INDEX IF NOT EXISTS idx_base_canvas_geometry "
-            "ON public.base_canvas USING GIST (geometry)"
+            f"ON {table_name} USING GIST (geometry)"
         )
         btree_idx = (
             "CREATE INDEX IF NOT EXISTS idx_base_canvas_land_development_category "
-            "ON public.base_canvas (land_development_category)"
+            f"ON {table_name} (land_development_category)"
         )
         return [gist_idx, btree_idx]
 

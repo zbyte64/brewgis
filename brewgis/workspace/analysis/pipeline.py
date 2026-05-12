@@ -13,14 +13,17 @@ Celery tasks in the correct order. The pipeline:
 
 from __future__ import annotations
 
+import contextlib
 import logging
 from typing import Any
 
 import deal
 from django.utils import timezone
 
+from brewgis.workspace.analysis.dbt_runner import run_dbt_local
 from brewgis.workspace.analysis.layer_registry import register_result_layer
 from brewgis.workspace.analysis.module_registry import MODULE_DEPENDENCIES
+from brewgis.workspace.analysis.module_registry import MODULE_RESULT_TABLES
 from brewgis.workspace.analysis.module_registry import get_module_label
 from brewgis.workspace.analysis.module_registry import get_result_table_names
 from brewgis.workspace.analysis.module_registry import get_vars_for_module
@@ -212,3 +215,63 @@ def _dispatch_next(
             scenario_id=scenario_id,
         ),
     )
+
+def run_modules_sync(  # noqa: PLR0913
+    *,
+    modules: list[str],
+    base_vars: dict[str, Any],
+    target_schema: str,
+    workspace_id: int,
+    scenario_id: str,
+    module_selects: dict[str, list[str]] | None = None,
+) -> dict[str, Any]:
+    """Run dbt modules in dependency order, registering result layers.
+
+    Args:
+        modules: Module names to run (e.g. ["env_constraint", "core", "water_demand"]).
+        base_vars: Base dbt vars dict (scenario_id, target_schema, etc.).
+        target_schema: Schema where result tables are created.
+        workspace_id: Workspace PK for layer registration.
+        scenario_id: Scenario slug/ID for table name formatting.
+        module_selects: Optional per-module dbt select overrides.
+            If omitted, each module name is used as the select.
+
+    Returns:
+        Dict with keys:
+            "success": bool — whether all modules completed
+            "completed": list[str] — modules that succeeded
+            "results": list[dict] — per-module {module, success, error}
+    """
+    ordered = resolve_module_order(modules)
+    completed: list[str] = []
+    results: list[dict[str, Any]] = []
+
+    for module in ordered:
+        select = module_selects.get(module, [module]) if module_selects else [module]
+        dbt_result = run_dbt_local(
+            select=select,
+            vars_={**base_vars, "completed_modules": list(completed)},
+        )
+        if dbt_result.success:
+            completed.append(module)
+            # Register result layers
+            table_names = MODULE_RESULT_TABLES.get(module, [])
+            for pattern in table_names:
+                table = pattern.format(scenario_id=scenario_id)
+                with contextlib.suppress(Exception):
+                    register_result_layer(
+                        workspace_id=workspace_id,
+                        schema=target_schema,
+                        table=table,
+                    )
+        results.append({
+            "module": module,
+            "success": dbt_result.success,
+            "error": dbt_result.error,
+        })
+
+    return {
+        "success": len(completed) == len(ordered),
+        "completed": completed,
+        "results": results,
+    }
