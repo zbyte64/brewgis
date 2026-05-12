@@ -1,6 +1,6 @@
 """Tool registration aggregator — imports and registers all tool modules."""
 
-from __future__ import annotations
+
 
 import logging
 

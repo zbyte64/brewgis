@@ -11,15 +11,13 @@ from __future__ import annotations
 
 import contextlib
 import logging
-from typing import TYPE_CHECKING
 
 from brewgis.workspace.models import Scenario
 from brewgis.workspace.models import ScenarioType
+from brewgis.workspace.models import Layer
 from brewgis.workspace.services.base_canvas_manager import DEFAULT_BASE_CANVAS_TABLE
 from brewgis.workspace.services.canvas_view_manager import create_canvas_view
 
-if TYPE_CHECKING:
-    from brewgis.workspace.models import Layer
 
 logger = logging.getLogger(__name__)
 
@@ -77,7 +75,7 @@ def clone_scenario(
 
     # Register a Layer so the tile server picks up the view.
     view_qualifier = f"{new_scenario.target_schema}.scenario_{new_scenario.slug}_canvas"
-    layer, created = layer_model.objects.get_or_create(
+    layer, created = Layer.objects.get_or_create(
         workspace=source.workspace,
         key=f"scenario_{new_scenario.slug}_canvas",
         defaults={

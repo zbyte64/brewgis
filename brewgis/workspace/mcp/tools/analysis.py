@@ -1,6 +1,6 @@
 """MCP tools for dbt analysis operations (Celery-backed)."""
 
-from __future__ import annotations
+
 
 import logging
 from typing import Any

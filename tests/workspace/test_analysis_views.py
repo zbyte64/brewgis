@@ -260,10 +260,10 @@ class TestAnalysisListView(TestCase):
         assert response.status_code == 200
         assert list(response.context["runs"]) == []
 
-    def test_unauthenticated_returns_200(self):
-        """Unauthenticated GET returns list (no login decorator)."""
+    def test_unauthenticated_returns_302(self):
+        """Unauthenticated GET is redirected to login (login required)."""
         response = self.client.get(self.list_url)
-        assert response.status_code == 200
+        assert response.status_code == 302
 
 
 @pytest.mark.views

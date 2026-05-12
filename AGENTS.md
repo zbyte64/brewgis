@@ -155,7 +155,7 @@ docker compose -f docker-compose.local.yml run django sqlfluff lint brewgis/dbt_
 - **Settings** use `django-environ` for env-var-based configuration
 - **View patterns:** FBVs for map/read_gis_file, FormViews for upload, CreateViews with `HtmxResponseMixin` for model creation, auth-guarded via `@user_passes_test` or `LoginRequiredMixin`
 - **JSON in template attributes:** Use the `{{ value|json_attr }}` filter (defined in `workspace_tags.py`) when embedding JSON in HTML attributes. Do **NOT** use raw `json.dumps()` in views for template consumption — pass Python objects and apply `json_attr` in the template.
-- **@deal contracts** on critical functions (classifiers, generator, pipeline): pre/post condition design-by-contract style
+- **@deal contracts** on all applicable functions (classifiers, generator, pipeline): pre/post condition design-by-contract style
 - **Protocol-based adapters:** `DemographicSource`, `EmploymentSource`, `LandUseSource` as Protocols with Null/default implementations and real implementations (Census, LEHD, NLCD, OSM)
 - **EAV paint overrides:** `PaintedCanvas` model stores per-feature, per-column overrides with undo/redo via `PaintEvent` log
 - **Per-scenario SQL views:** `canvas_view_manager` creates per-scenario views that LEFT JOIN paint overrides onto base canvas

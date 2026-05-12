@@ -222,6 +222,7 @@ def _std_deviation_breaks(mean: float, stddev: float, num_classes: int) -> list[
 
 
 @deal.ensure(lambda data, lo, hi, result: result >= 0)
+@deal.pre(lambda data, lo, hi: all(math.isfinite(x) for x in data[lo-1:hi]))
 @deal.pre(lambda data, lo, hi: 1 <= lo <= hi)
 def _sum_squared_diffs(data: list[float], lo: int, hi: int) -> float:
     """Compute sum of squared differences from the mean for ``data[lo:hi]``.

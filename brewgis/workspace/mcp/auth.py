@@ -1,6 +1,6 @@
 """Auth stub — Phase 5 will implement real authentication."""
 
-from __future__ import annotations
+
 
 import logging
 

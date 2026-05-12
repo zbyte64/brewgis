@@ -1,6 +1,6 @@
 """MCP tools for report generation and GIS file import."""
 
-from __future__ import annotations
+
 
 import base64
 import json

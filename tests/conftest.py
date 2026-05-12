@@ -117,6 +117,8 @@ def mix(
     )
 
 
+
+
 @pytest.fixture
 def base_canvas_table(db) -> str:
     """Create a base canvas table with the full schema + synthetic data.
@@ -132,6 +134,10 @@ def base_canvas_table(db) -> str:
         because Django's test database template may not include it.
     """
     from brewgis.workspace.services.base_canvas_manager import BaseCanvasManager
+    # Ensure any stale DDL artifacts from previous tests are cleaned up
+    from django.db import connection
+    with connection.cursor() as cursor:
+        cursor.execute("DROP TABLE IF EXISTS public.base_canvas CASCADE")
     from brewgis.workspace.services.base_canvas_schema import BaseCanvasSchema
 
     BaseCanvasManager.create_table()
@@ -216,6 +222,11 @@ def base_canvas_table(db) -> str:
             "bldg_area_wholesale": 2000.0,
             "residential_irrigated_area": 0.5,
             "commercial_irrigated_area": 0.2,
+            "cost_burden_pct": 30.0,
+            "median_income": 55000,
+            "pct_college_educated": 25.0,
+            "pct_minority": 40.0,
+            "rent_burden_pct": 35.0,
         }
         # Nullable columns
         row["id_source"] = None

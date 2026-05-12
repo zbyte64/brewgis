@@ -1,6 +1,6 @@
 """MCP tools for data import operations (Celery-backed) and job management."""
 
-from __future__ import annotations
+
 
 import logging
 from typing import Any

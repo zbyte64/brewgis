@@ -1,6 +1,6 @@
 """MCP tools for scenario CRUD and comparison operations."""
 
-from __future__ import annotations
+
 
 import logging
 from typing import Any
