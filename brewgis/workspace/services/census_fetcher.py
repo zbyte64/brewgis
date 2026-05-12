@@ -25,6 +25,14 @@ from shapely.geometry import Point
 logger = logging.getLogger(__name__)
 
 
+def _census_api_key() -> str:
+    """Return Census API key from Django settings, or empty string."""
+    try:
+        from django.conf import settings as django_settings
+        return django_settings.CENSUS_API_KEY or ""
+    except Exception:
+        return ""
+
 # Census API base
 def _census_base_url(year: int = 2022) -> str:
     return f"https://api.census.gov/data/{year}/acs/acs5"
@@ -140,7 +148,8 @@ def _build_census_url(
     else:
         geo = f"in=state:{state_fips}&in=county:{county_fips}&for=block%20group:*"
 
-    return f"{_census_base_url(year)}?get={vars_}&{geo}"
+    key_param = f"&key={_census_api_key()}" if _census_api_key() else ""
+    return f"{_census_base_url(year)}?get={vars_}&{geo}{key_param}"
 
 
 def _fetch_census_data(url: str) -> list[list[str]]:

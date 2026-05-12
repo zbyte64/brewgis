@@ -27,6 +27,16 @@ from shapely.geometry import Point
 
 logger = logging.getLogger(__name__)
 
+def _census_api_key() -> str:
+    """Return Census API key from Django settings, or empty string."""
+    try:
+        from django.conf import settings as django_settings
+        return django_settings.CENSUS_API_KEY or ""
+    except Exception:
+        return ""
+
+
+
 # ── LODES WAC (Workplace Area Characteristics) ─────────────────────────
 
 LODES_WAC_BASE = "https://lehd.ces.census.gov/data/lodes/LODES8"
@@ -372,10 +382,12 @@ def _build_cbp_proportions(
     state_fips_clean = state_fips.zfill(2)
     county_fips_clean = county_fips.zfill(3)
 
+    key = _census_api_key()
+    key_param = f"&key={key}" if key else ""
     url = (
         f"https://api.census.gov/data/{year}/cbp"
         f"?get=EMP,NAICS2017&for=county:{county_fips_clean}"
-        f"&in=state:{state_fips_clean}"
+        f"&in=state:{state_fips_clean}{key_param}"
     )
 
     try:
@@ -450,10 +462,12 @@ def _cbp_url(state_fips: str, county_fips: str, naics_code: str) -> str:
     """
     sf = state_fips.zfill(2)
     cf = county_fips.zfill(3)
+    key = _census_api_key()
+    key_param = f"&key={key}" if key else ""
     return (
         f"https://api.census.gov/data/2021/cbp"
         f"?get=EMP,NAICS2017&for=county:{cf}"
-        f"&in=state:{sf}&NAICS2017={naics_code}----"
+        f"&in=state:{sf}&NAICS2017={naics_code}----{key_param}"
     )
 
 
@@ -596,7 +610,6 @@ def _resolve_split_source(
     return 0.0
 
 
-@deal.ensure(lambda _row, result: all(v >= 0 for v in result.values()))
 def _apply_naics_splits(
     row_cns: dict[str, int | float],
     cbp_proportions: dict[str, float],
@@ -636,6 +649,9 @@ def _apply_naics_splits(
             remainder = max(0.0, total - fixed_totals)
             result[target_col] = result.get(target_col, 0.0) + remainder
 
+    # Ensure non-negative values (vaa does not wrap bare lambdas, so deal.ensure is unusable here)
+    for _v in result.values():
+        assert _v >= 0, f"Negative value in _apply_naics_splits result: {_v}"
     return result
 
 

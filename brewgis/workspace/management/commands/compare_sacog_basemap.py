@@ -13,6 +13,7 @@ import hashlib
 import logging
 import subprocess
 import time
+import os
 from pathlib import Path
 
 import geopandas as gpd
@@ -274,6 +275,7 @@ class Command(BaseCommand):
         truncate: bool,
     ) -> dict:
         """Run the brewgis base canvas ETL on the given parcel geometries."""
+        os.environ["BREWGIS_DETSF_SL_RATIO"] = "0.33"
         from brewgis.workspace.services.base_canvas_etl import BaseCanvasETL
 
         demographic_source = None
