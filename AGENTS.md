@@ -24,9 +24,10 @@ User Browser                    Docker Compose Stack
      │                                 │
      └── brewgis.workspace ────────────┘
               │
-              ├─ Models: 20 model classes (Workspace, Layer, Scenario, etc.)
-              ├─ Views: 33 view modules (FormViews, CreateViews, FBVs)
+              ├─ Models: 22 model classes (Workspace, Layer, Scenario, etc.)
+              ├─ Views: 38 view modules (~65 callbacks)
               ├─ Analysis: dbt pipeline (40 models, 17 macros, Python + SQL)
+              ├─ MCP server: 30+ tools (FastMCP stdio)
               └─ GIS I/O: geopandas for file ingest, SQLAlchemy for PostGIS writes
 ```
 
@@ -35,22 +36,25 @@ User Browser                    Docker Compose Stack
 - **Async flow:** Celery beat (DatabaseScheduler via django-celery-beat) dispatches periodic tasks → Redis broker → Celery workers execute tasks
 - **GIS ingest:** User uploads GIS file → `ReadGISFileView` → `geopandas.read_file()` → `df.to_postgis()` via SQLAlchemy
 - **Dynamic UI:** htmx handles form submissions, partial page updates, and AJAX navigation without a JavaScript framework
-- **Analysis pipeline:** dbt models execute in dependency order: `env_constraint` → `core` (end_state) → `water_demand` / `energy_demand` (parallel). Module outputs are registered as Layers in the workspace
+- **Analysis pipeline:** dbt models execute in dependency order: `env_constraint` → `core` (end_state) → `water_demand` / `energy_demand` → `land` / `ghg` / `transport_chain` (parallel). Module outputs are registered as Layers in the workspace
 - **dbt orchestration:** AnalysisRun model tracks pipeline state (PENDING→RUNNING→SUCCESS/FAILURE). Celery tasks invoke `dbt run` per module with scenario-scoped `--vars`. Python dbt models (trip_distribution.py, mode_choice.py) run numpy-based computation inside dbt's Python model framework
+- **MCP server:** FastMCP stdio server mirrors the view layer, exposing 30+ tools for AI assistant integration (workspace, scenario, layer, paint, analysis, data import, reports, job management)
+- **Base canvas ETL:** Framework for spatial data ingestion with adapters, schema management, and validation (Protocol-based DemographicSource/EmploymentSource/LandUseSource adapters)
 
 ## Key Directories
 
 | Directory | Purpose |
 |---|---|
-| `brewgis/workspace/` | The sole Django app — models, views, tasks, templates, services, analysis modules, symbology, built_forms, management commands |
-| `brewgis/workspace/views/` | 30+ view modules split by feature (home, map, paint, symbology, analysis, import, filter, etc.) |
-| `brewgis/workspace/models.py` | 20 model classes (Workspace, Layer, Scenario, PaintedCanvas, AnalysisRun, etc.) |
-| `brewgis/workspace/tasks.py` | 10 Celery shared tasks for analysis pipeline, data fetching, spatial allocation, reports |
-| `brewgis/workspace/analysis/` | Pipeline orchestrator, dbt runner, module/layer registries, transport/food/equity preprocessors, network extractor |
+| `brewgis/workspace/` | The sole Django app — models, views, tasks, templates, services, analysis modules, symbology, built_forms, MCP server, management commands |
+| `brewgis/workspace/views/` | 38 view modules split by feature (home, map, paint, symbology, analysis, import, filter, scenario, report, etc.) |
+| `brewgis/workspace/models.py` | 22 model classes (Workspace, Layer, Scenario, PaintedCanvas, AnalysisRun, PaintConstraint, PaintEvent, MergeAudit, ScenarioReport, etc.) |
+| `brewgis/workspace/tasks.py` | 11 Celery shared tasks for analysis pipeline, data fetching, spatial allocation, reports |
+| `brewgis/workspace/analysis/` | Pipeline orchestrator, dbt runner, module/layer registries, transport/food/equity preprocessors, network extractor, distance matrix |
 | `brewgis/workspace/symbology/` | Map style generation (classifiers, generator, auto-config, legend, stats), color palettes |
 | `brewgis/workspace/built_forms/` | Built form sub-app: BuildingType, PlaceType, PlaceTypeBuildingTypeMix models, allocation engine, fixture data |
-| `brewgis/workspace/services/` | 25+ service modules: base canvas adapters/ETL, census/LEHD/POI/NLCD fetchers, spatial allocator, stitcher, imputation engine, paint constraints, scenario cloner, canvas view manager, SACOG migration tooling |
-| `brewgis/workspace/management/commands/` | 7 management commands: onboarding, base canvas population, demo setup, story packet export |
+| `brewgis/workspace/services/` | ~22 service modules: base canvas adapters/ETL, census/LEHD/POI/NLCD fetchers, spatial allocator, stitcher, imputation engine, paint constraints, scenario cloner, canvas view manager, calibration registry, preflight, staging model, SACOG migration tooling |
+| `brewgis/workspace/mcp/` | MCP server: FastMCP stdio entrypoint, auth stub, 7 tool modules (workspace, scene, layer, paint, analysis, data_import, reports) |
+| `brewgis/workspace/management/commands/` | 10 management commands: setup_fresno_workspace, import_sacog_demo, populate_base_canvas, compare_sacog_basemap, onboard_geography, run_mcp, export_story_packet, restore_demo_db, download_fresno_demo |
 | `brewgis/dbt_project/` | dbt project: 40 models (36 SQL, 2 Python, 4 staging), 17 macros, 4 seeds, 8 custom tests |
 | `brewgis/templates/` | Django templates: base.html, form.html, workspace_map.html, workspace_detail.html, scenario_comparison.html, partials |
 | `brewgis/templates/workspace/partials/` | htmx partial templates for dynamic updates (data tables, layer groups, filters, symbology editor, etc.) |
@@ -60,6 +64,7 @@ User Browser                    Docker Compose Stack
 | `compose/` | Docker build contexts: `local/` and `production/` for each service |
 | `requirements/` | Pip requirements: `base.txt`, `local.txt`, `production.txt` |
 | `tests/` | Root-level test directory with subdirectories per feature |
+| `js/src/` | TypeScript source for the Lit web component (brew-gis-map, paint-mode, maplibre-helpers) |
 | `.github/workflows/` | CI pipeline (pre-commit linting + pytest via Docker) |
 
 ## Development Commands
@@ -91,6 +96,9 @@ make test-integration      # PostGIS/dbt-dependent tests
 make test-e2e              # Playwright BDD end-to-end tests
 make test-review           # UX design review tests
 make test-dbt              # dbt seed + run + test
+make test-deal             # Deal property-based tests (sequential, DEAL_ENABLED=1)
+make test-mcp              # MCP server tests (models marker only)
+make test-all              # All tests sequentially
 make coverage              # Tests with coverage report (60% threshold)
 make clean-review-screenshots  # Remove stale review screenshots
 ```
@@ -135,13 +143,14 @@ docker compose -f docker-compose.local.yml run django sqlfluff lint brewgis/dbt_
 
 ### Python Style
 
-- **Linter:** Ruff with 49 rule sets (F, E, W, C90, I, N, UP, ANN, ASYNC, S, B, DJ, SIM, PERF, RUF, and more — see `pyproject.toml`)
+- **Linter:** Ruff with 49+ rule sets (F, E, W, C90, I, N, UP, ANN, ASYNC, S, B, DJ, SIM, PERF, FURB, LOG, RUF, and more — see `pyproject.toml`)
 - **Formatter:** Ruff format (replaces Black), double quotes, 119 character line length
 - **Naming:** Standard Django conventions — `snake_case` for functions/variables, `PascalCase` for classes
 - **Imports:** `from`-imports within app preferred; Ruff enforces isort with `force-single-line = true`
 - **Type annotations:** mypy strict mode with `disallow_untyped_defs`. Per-module exceptions for Alembic, dbt, and similar files.
 - **Keyword arguments for 3+ params:** Functions with three or more required parameters **MUST** be called with keyword arguments at all call sites. New functions **SHOULD** default to keyword-only for 3+ required params.
 - **Template indent:** 2 spaces (djLint)
+- **@deal contracts** — pre/post condition design-by-contract style. Preferred over conventional unit tests wherever ergonomic, as they encode invariants closer to the logic they constrain.
 
 ### Django Patterns
 
@@ -149,13 +158,12 @@ docker compose -f docker-compose.local.yml run django sqlfluff lint brewgis/dbt_
 - **htmx** for dynamic HTML: form submissions, partial updates via `HX-Redirect` header, `hx-trigger="every 2s"` for status polling, self-replacing forms via `hx-target="this" hx-swap="outerHTML"`
 - **Django partials** (`django-template-partials`): `{% partialdef name %}` blocks for htmx fragment swapping
 - **Lit web component** for the map: `<brew-gis-map>` element with properties for style, viewport, layers, mode (view/paint)
-- **django-allauth** for authentication (username-based, email required + verified)
+- **django-allauth** for authentication (username-based, email optional verification)
 - **Celery** uses JSON serialization, Redis broker, `django-celery-beat` DatabaseScheduler
 - **Tile server:** Both tipg and Martin run; `TILE_SERVER_BACKEND` setting controls tile URL generation
 - **Settings** use `django-environ` for env-var-based configuration
 - **View patterns:** FBVs for map/read_gis_file, FormViews for upload, CreateViews with `HtmxResponseMixin` for model creation, auth-guarded via `@user_passes_test` or `LoginRequiredMixin`
 - **JSON in template attributes:** Use the `{{ value|json_attr }}` filter (defined in `workspace_tags.py`) when embedding JSON in HTML attributes. Do **NOT** use raw `json.dumps()` in views for template consumption — pass Python objects and apply `json_attr` in the template.
-- **@deal contracts** on all applicable functions (classifiers, generator, pipeline): pre/post condition design-by-contract style
 - **Protocol-based adapters:** `DemographicSource`, `EmploymentSource`, `LandUseSource` as Protocols with Null/default implementations and real implementations (Census, LEHD, NLCD, OSM)
 - **EAV paint overrides:** `PaintedCanvas` model stores per-feature, per-column overrides with undo/redo via `PaintEvent` log
 - **Per-scenario SQL views:** `canvas_view_manager` creates per-scenario views that LEFT JOIN paint overrides onto base canvas
@@ -194,14 +202,15 @@ docker compose -f docker-compose.local.yml run django sqlfluff lint brewgis/dbt_
 
 | File | Role |
 |---|---|
-| `brewgis/workspace/models.py` | 20 model classes: Workspace, Layer, SymbologyConfig, StyleClass, Scenario, PaintedCanvas, AnalysisRun, DataImportRun, PaintConstraint, MergeAudit, PaintEvent, ScenarioReport, County, DataSourceCategory, DataSource, LayerFilter, LayerGroup, ExternalMapService, Basemap, POICache |
+| `brewgis/workspace/models.py` | 22 model classes: Workspace, Layer, SymbologyConfig, StyleClass, Scenario (enum ScenarioType), PaintedCanvas, AnalysisRun, DataImportRun, POICache, PaintConstraint (ConstraintOperator/ConstraintSeverity enums), MergeAudit, PaintEvent, ScenarioReport, County, DataSourceCategory, DataSource, LayerFilter, LayerGroup, ExternalMapService, Basemap |
 | `brewgis/workspace/built_forms/models.py` | Built form models: BuildingType, PlaceType, PlaceTypeBuildingTypeMix (plus VintageChoices, StreetPatternChoices) |
-| `brewgis/workspace/urls.py` | ~70 URL patterns under namespace `workspace` — home, workspace CRUD, paint operations, symbology, built forms, analysis pipeline, import center, filters, layer groups, reports, external services, basemaps |
-| `brewgis/workspace/views/__init__.py` | Exports all 33 view modules |
-| `brewgis/workspace/tasks.py` | 10 Celery tasks: export_building_types, run_dbt_module, run_preprocessor_and_dbt, handle_module_completed, run_census_fetch, run_lehd_fetch, run_poi_fetch, run_spatial_allocation, run_column_stitching, generate_report_task |
+| `brewgis/workspace/urls.py` | ~90 URL patterns under namespace `workspace` — home, token auth, workspace CRUD, paint operations, symbology, built forms, analysis pipeline, import center, filters, layer groups, reports, external services, basemaps |
+| `brewgis/workspace/views/__init__.py` | Exports all 38 view modules |
+| `brewgis/workspace/tasks.py` | 11 Celery tasks: export_building_types_task, run_dbt_module, run_preprocessor_and_dbt, handle_module_completed, run_census_fetch, run_lehd_fetch, run_poi_fetch, run_spatial_allocation, run_column_stitching, generate_report_task (plus internal helpers) |
 | `brewgis/workspace/admin.py` | Admin registrations for Workspace, Scenario, AnalysisRun, PaintedCanvas, PaintConstraint, DataSourceCategory, DataSource, POICache (plus built forms) |
 | `brewgis/workspace/palettes.py` | Color palette registry: QUALITATIVE, SEQUENTIAL, DIVERGING palettes |
 | `brewgis/workspace/templatetags/workspace_tags.py` | Template filters: model_verbose_name, analysis_status_badge, report_status_badge, dictlookup, json_attr |
+| `brewgis/workspace/mcp/server.py` | FastMCP stdio server entrypoint with 7 tool modules (workspace, scenario, layer, paint, analysis, data_import, reports) |
 
 ### Templates
 
@@ -219,15 +228,17 @@ docker compose -f docker-compose.local.yml run django sqlfluff lint brewgis/dbt_
 
 | File | Role |
 |---|---|
-| `config/settings/base.py` | Base Django settings — database, cache, Celery, tile server, upload limits, installed apps, middleware |
-| `config/settings/local.py` | Dev overrides — debug toolbar, eager Celery, locmem cache |
-| `config/settings/test.py` | Test overrides — MD5 hasher, locmem email, token auth key |
+| `config/settings/base.py` | Base Django settings — PostgreSQL via DATABASE_URL, Redis broker, Celery config, tile server, upload limits, allauth, installed apps, middleware |
+| `config/settings/local.py` | Dev overrides — debug toolbar, eager Celery (CELERY_TASK_ALWAYS_EAGER=True), locmem cache |
+| `config/settings/test.py` | Test overrides — MD5 hasher, locmem email, token auth key (`test-token-key-dev-only`) |
 | `config/settings/production.py` | Production overrides — SSL/HSTS, anymail, S3 static/media |
 | `config/urls.py` | Root URLconf: admin, allauth accounts, workspace app (`/`), debug toolbar |
 | `config/celery_app.py` | Celery app bootstrap with `DJANGO_SETTINGS_MODULE=config.settings.local` |
-| `pyproject.toml` | Tool configuration (pytest, coverage, mypy, ruff, djLint) |
-| `.pre-commit-config.yaml` | Pre-commit hook configuration (ruff, djlint, sqlfluff, prettier, eslint, tsc, mypy) |
+| `pyproject.toml` | Tool configuration (pytest, coverage, mypy, ruff, djLint, isort) |
+| `.pre-commit-config.yaml` | Pre-commit hook configuration (ruff, djlint, sqlfluff, prettier 3.5, eslint 9.22, tsc --noEmit, mypy, django-upgrade 6.0, codespell, check-method-decorator) |
 | `.sqlfluff` | SQLFluff config: postgres dialect, dbt templater, UPPER keywords, 119 line length |
+| `package.json` | Frontend: lit, maplibre-gl, vite 6, vitest 3, typescript 5, eslint, prettier |
+| `vite.config.ts` | Builds `js/src/index.ts` → `brew-gis-map.js` ES module → `brewgis/static/js/` with sourcemaps |
 
 ### dbt
 
@@ -243,7 +254,7 @@ docker compose -f docker-compose.local.yml run django sqlfluff lint brewgis/dbt_
 
 | File | Role |
 |---|---|
-| `docker-compose.local.yml` | Full local stack: django, postgres, redis, tipg, martin, celeryworker, celerybeat, flower |
+| `docker-compose.local.yml` | Full local stack: django, postgres, redis, tipg, martin, celeryworker, celerybeat, flower, mcp |
 | `docker-compose.infra.yml` | Infrastructure-only: postgres, redis, tipg, martin |
 | `docker-compose.production.yml` | Production stack (includes Traefik, Nginx) |
 
@@ -252,15 +263,17 @@ docker compose -f docker-compose.local.yml run django sqlfluff lint brewgis/dbt_
 - **Python:** 3.12 (required)
 - **Package manager:** pip via `requirements/*.txt` (no pipenv, no poetry, no conda)
 - **Runtime:** Docker (docker compose v2) — primary workflow. Host-mode available for breakpoints/hot-reload.
-- **Database:** PostgreSQL 17 + PostGIS 3.5 (`psycopg2` on server, `psycopg[c]` for local dev)
-- **Cache/Queue:** Redis 6 (`django-redis`, `redis-py` 5.2.0)
+- **Database:** PostgreSQL 17 + PostGIS 3.5 + pgRouting (`psycopg2` on server, `psycopg[c]` for local dev)
+- **Cache/Queue:** Redis 6 (`django-redis`, `redis-py` 5.2.0, `hiredis` 3.0)
 - **Linter/Formatter:** Ruff (`ruff` for linting, `ruff format` for formatting). 119 char line length.
 - **Template linter:** djLint (profile: `django`, indent: 2 spaces)
 - **SQL linter (dbt):** SQLFluff (postgres dialect, dbt templater, UPPER keywords)
 - **Type checker:** mypy strict mode with `django-stubs` and `mypy_django_plugin`
-- **CI:** GitHub Actions — pre-commit linting + pytest in Docker
-- **Pre-commit hooks:** trailing-whitespace, end-of-file-fixer, check-json, check-toml, check-yaml, check-xml, debug-statements, builtin-literals, case-conflict, docstring-first, detect-private-key, django-upgrade (target 6.0), ruff, ruff-format, djlint (reformat + lint), sqlfluff-lint, codespell, prettier, eslint, tsc --noEmit, mypy, check-method-decorator
+- **CI:** GitHub Actions — pre-commit linting + Docker-based pytest + dbt seed/run/test
+- **Pre-commit hooks:** trailing-whitespace, end-of-file-fixer, check-json/toml/yaml/xml, debug-statements, builtin-literals, case-conflict, docstring-first, detect-private-key, django-upgrade (target 6.0), ruff, ruff-format, djlint (reformat + lint), sqlfluff-lint, codespell, prettier (JS/TS/JSON/YAML/CSS/MD), eslint (JS/TS), tsc --noEmit, mypy, check-method-decorator
 - **dbt LSP:** `j-clemons/dbt-language-server` (Go binary, v0.4.2) on host at `~/.local/bin/dbt-language-server`
+- **Frontend build:** Vite 6 + TypeScript 5, compiled to ES module in `brewgis/static/js/`
+- **JS tests:** vitest 3 with jsdom
 
 ## Testing & QA
 
@@ -269,10 +282,10 @@ docker compose -f docker-compose.local.yml run django sqlfluff lint brewgis/dbt_
 - **Config:** `pyproject.toml` — `--ds=config.settings.test --reuse-db --import-mode=importlib`, 300s timeout
 - **Coverage:** `coverage` with `django_coverage_plugin`, includes `brewgis/**`, excludes `*/migrations/*` and `*/tests/*`, **60% threshold**
 - **BDD:** Gherkin `.feature` files in `tests/e2e/features/`, `tests/review/features/`, `tests/features/` with pytest-bdd step definitions
-- **Property-based:** Hypothesis for numerical invariants (mode choice shares sum to 1, trip conservation, etc.)
-- **@deal pre/post contracts:** `deal` library for design-by-contract on critical functions (classifiers, generator, pipeline)
+- **Property-based:** Hypothesis for numerical invariants (mode choice shares sum to 1, trip conservation, SQL math parity)
+- **@deal pre/post contracts:** `deal` library for design-by-contract. Use wherever ergonomic — superior to equivalently scoped unit tests because contracts are checked at call/return boundaries automatically and encode invariants declaratively. Conditionally enabled via `DEAL_ENABLED=1`.
 - **Test-first for new features:** Every new view, model method, task, or template include **MUST** have a corresponding test. Guard-rail tests (validation, auth, CRUD completeness, edge cases) are not optional.
-- **CI:** GitHub Actions runs `pre-commit` (all hooks) and `pytest` (test suite) in Docker on PRs/pushes to `master`/`main`
+- **CI:** GitHub Actions runs `pre-commit` (all hooks) and `pytest` (test suite) plus `dbt seed + run + test` in Docker on PRs/pushes to `master`/`main`
 
 ### Test Architecture
 
@@ -299,19 +312,34 @@ The test suite follows a taxonomy based on test weight and external dependencies
 - Base canvas tables and geometry tables are created as PostGIS fixtures in `tests/conftest.py`.
 
 **User fixtures and factories:**
-- `tests/conftest.py` provides `user`, `workspace`, `scenario`, `layer`, `building_type`, `place_type`, `mix` fixtures using Factory Boy.
-- `tests/factories.py` defines 12+ DjangoModelFactory classes: `UserFactory`, `WorkspaceFactory`, `LayerFactory`, `SymbologyConfigFactory`, `StyleClassFactory`, `ScenarioFactory`, `AnalysisRunFactory`, `PaintedCanvasFactory`, `BuildingTypeFactory`, `PlaceTypeFactory`, `PlaceTypeBuildingTypeMixFactory`.
+- `tests/conftest.py` provides 9 factory-based fixtures (user, workspace, scenario, layer, symbology_config, building_type, place_type, mix) plus 2 PostGIS fixtures (base_canvas_table, geometry_table).
+- `tests/factories.py` defines 11 DjangoModelFactory classes: `UserFactory`, `WorkspaceFactory`, `LayerFactory`, `SymbologyConfigFactory`, `StyleClassFactory`, `ScenarioFactory`, `AnalysisRunFactory`, `PaintedCanvasFactory`, `BuildingTypeFactory`, `PlaceTypeFactory`, `PlaceTypeBuildingTypeMixFactory`.
 - `brewgis/conftest.py` provides a separate `user` fixture via `UserModel.objects.create_user()` (no email). These may diverge — use `tests/conftest.py` fixtures for all pytest-based tests.
 
 **E2E/BDD fixtures:**
 - `tests/e2e/conftest.py`: session-scoped Chromium browser, per-test context/page, `logged_in_user`/`logged_in_page` helpers, automatic screenshot+DOM dump on failure.
 - `tests/review/conftest.py`: mirrors e2e conftest with dedicated screenshots directory.
 - `tests/features/conftest.py`: raw psycopg `db_conn`, `scenario_context` dict for step state, cleanup registry.
+- `tests/isolation_orchestration/conftest.py`: mocked MODULE_TASKS (MagicMock), `default_workspace` fixture.
 
-## Key Architecture Patterns
+**Test directory layout:**
+```
+tests/
+├── conftest.py              # Root: hypothesis, deal, fixtures
+├── factories.py             # 11 Factory Boy factories
+├── test_*.py                # ~15 root-level integration tests
+├── workspace/               # ~45 files — models, views, paint, adapters, ETL, MCP
+├── dbt_math/                # Property-based dbt SQL math: pure ref + SQL parity
+├── features/                # BDD — PostGIS-level isolation (psycopg)
+├── isolation_orchestration/ # BDD — orchestration-level isolation (mocked Celery)
+├── e2e/                     # Playwright BDD — 10 feature files
+└── review/                  # UX design review — 13 feature files
+```
+
+### Key Architecture Patterns
 
 1. **Protocol-based adapters** — `DemographicSource`/`EmploymentSource`/`LandUseSource` as Protocols with Null implementations and real implementations (Census, LEHD, NLCD, OSM). Located in `services/base_canvas_adapters.py`.
-2. **Design-by-contract (@deal)** — pre/post conditions on critical functions in classifiers, generator, pipeline.
+2. **Design-by-contract (@deal)** — pre/post contracts on pure functions and state transitions. Preferred over equivalently scoped unit tests wherever ergonomic, since contracts are checked automatically at every call/return.
 3. **EAV paint overrides** — `PaintedCanvas` model stores per-feature, per-column overrides with undo/redo via `PaintEvent` log (separate model).
 4. **Per-scenario SQL views** — `canvas_view_manager` dynamically creates views that LEFT JOIN paint overrides onto the base canvas.
 5. **Analysis DAG** — `module_registry.py` defines dependency graph; `pipeline.py` resolves topological order and dispatches via Celery chain callbacks.
@@ -319,6 +347,7 @@ The test suite follows a taxonomy based on test weight and external dependencies
 7. **Three-tier cascade imputation** — `ImputationEngine` with strategies: direct value, area-proportional, built-form default.
 8. **dbt Python models** — encapsulate compute-heavy transport logic (gravity model, MNL) with pure functions extracted for testability.
 9. **SACOG migration tooling** — dedicated service modules for v1→v3 column mapping, schema discovery, imputation validation.
+10. **MCP server** — FastMCP stdio transport mirrors view layer; 30+ tools for AI assistant integration.
 
 ## Gotchas & Patterns
 
@@ -380,13 +409,14 @@ Before implementing, verify:
 | Service | Image | Purpose |
 |---|---|---|
 | `django` | Custom Dockerfile | Django dev server (port 8000, CPU/Mem limits 8c/8G) |
-| `postgres` | Custom Dockerfile | PostgreSQL 17 + PostGIS 3.5 (persisted volumes + backups) |
-| `redis` | `redis:6` | Cache/queue broker (persisted data) |
-| `tipg` | `ghcr.io/developmentseed/tipg:latest` | OGC Features API tile server (port 8081) |
-| `martin` | `ghcr.io/maplibre/martin:v1.8` | MVT tile server (port 3000) |
+| `postgres` | Custom Dockerfile | PostgreSQL 17 + PostGIS 3.5 + pgRouting (persisted volumes + backups) |
+| `redis` | `docker.io/redis:6` | Cache/queue broker (persisted data) |
+| `tipg` | `ghcr.io/developmentseed/tipg:latest` | OGC Features API tile server (port 8081, exposed) |
+| `martin` | `ghcr.io/maplibre/martin:v1.8.2` | MVT tile server (port 3000, exposed) |
 | `celeryworker` | extends django | Celery task worker |
 | `celerybeat` | extends django | Celery beat scheduler (DatabaseScheduler) |
 | `flower` | extends django | Celery monitoring UI (port 5555) |
+| `mcp` | extends django | MCP stdio server (no ports) |
 
 ## Key Python Dependencies
 
@@ -396,16 +426,19 @@ Before implementing, verify:
 | django-ninja | 1.6.2 | REST API framework (lightweight, not DRF) |
 | django-allauth | 65.16.0 | Auth with MFA |
 | django-htmx | 1.27.0 | htmx integration |
-| celery | 5.4.0 | Task queue |
+| celery | >=5.4,<6.0 | Task queue |
 | django-celery-beat | 2.9.0 | DB-backed periodic tasks |
-| geopandas | 1.0.1 | Geospatial data processing |
+| geopandas[all] | 1.0.1 | Geospatial data processing |
+| polars[pyarrow] | >=1.0,<2.0 | Columnar data processing (optional pattern) |
 | GeoAlchemy2 | 0.16.0 | SQLAlchemy PostGIS toolkit |
 | dbt-core | >=1.8,<2.0 | Analytics transformations |
 | osmnx | >=2.0,<3.0 | OSM network extraction |
 | statsmodels | >=0.14,<1.0 | Statistical modeling |
 | weasyprint | >=62,<64 | PDF report generation |
-| psycopg2 | 2.9.10 | PostgreSQL adapter (server) |
+| psycopg2-binary | 2.9.10 | PostgreSQL adapter (server) |
 | psycopg[c] | 3.2.3 | PostgreSQL adapter (local dev) |
 | django-crispy-forms | 2.6 | Form rendering |
 | crispy-bootstrap5 | 2026.3 | Bootstrap 5 template pack |
 | whitenoise | 6.8.2 | Static file serving |
+| MCP | >=1.0.0 | Model Context Protocol SDK |
+| pydantic | 2.10.3 | Data validation |
