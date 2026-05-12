@@ -128,15 +128,15 @@ _ASSESSOR_USE_CODE_MAP: dict[str, str] = {
     "17": "urban",  # Mobile home parks
     "18": "urban",  # Residential hotels
     # Commercial
-    "20": "urban",  # General commercial
-    "21": "urban",  # Retail
-    "22": "urban",  # Office
-    "23": "urban",  # Financial services
-    "24": "urban",  # Medical
+    "20": "industrial",  # General commercial
+    "21": "industrial",  # Retail
+    "22": "industrial",  # Office
+    "23": "industrial",  # Financial services
+    "24": "industrial",  # Medical
     # Industrial
-    "30": "urban",  # General industrial
-    "31": "urban",  # Light industrial
-    "32": "urban",  # Heavy industrial
+    "30": "industrial",  # General industrial
+    "31": "industrial",  # Light industrial
+    "32": "industrial",  # Heavy industrial
     # Agricultural
     "40": "agricultural",  # General agriculture
     "41": "agricultural",  # Crops
@@ -159,12 +159,12 @@ _ASSESSOR_USE_CODE_MAP: dict[str, str] = {
     "70": "undeveloped",  # Water
     "71": "undeveloped",  # Wetlands
     # Public / Institutional
-    "80": "urban",  # Public services
-    "81": "urban",  # Education
-    "82": "urban",  # Religious
-    "83": "urban",  # Government
+    "80": "industrial",  # Public services
+    "81": "industrial",  # Education
+    "82": "industrial",  # Religious
+    "83": "industrial",  # Government
     # Other
-    "90": "urban",  # Other
+    "90": "industrial",  # Other
 }
 
 

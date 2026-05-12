@@ -61,8 +61,8 @@ _DEFAULT_INTERSECTION_DENSITY = 12.5  # intersections/km^2
 _DEFAULT_BUILT_FORM_KEY = "mixed_use"
 _DEFAULT_BLDG_SQFT_PER_DU = 1200.0
 _DEFAULT_BLDG_SQFT_PER_EMP = 300.0
-_DEFAULT_IRRIGATION_RES_FRAC = 0.1  # 10% of residential area irrigated
-_DEFAULT_IRRIGATION_COM_FRAC = 0.05  # 5% of employment area irrigated
+_DEFAULT_IRRIGATION_RES_FRAC = 0.25  # 25% of residential area irrigated (SACOG urban calibration)
+_DEFAULT_IRRIGATION_COM_FRAC = 0.035  # 3.5% of employment area irrigated (SACOG urban calibration)
 
 # Demographic columns that can be allocated from Census block groups
 _DEMOGRAPHIC_COLUMNS = [
@@ -468,6 +468,10 @@ class BaseCanvasETL:
         ]
         sum_cols.extend(unclassified)
 
+        # ── Extract actual SRID from each GeoDataFrame ─────────────
+        target_srid = gdf.crs.to_epsg() if gdf.crs is not None else 4326
+        source_srid = src_gdf.crs.to_epsg() if src_gdf.crs is not None else 4326
+
         with connection.cursor() as cursor:
             # ── Create temp tables (drop first to allow reuse) ──────
             all_cols = sum_cols + avg_cols
@@ -490,7 +494,8 @@ class BaseCanvasETL:
             """)
 
             # ── Insert source geometries (4326 -> 6933 in SQL) ─────
-            geom_expr = "ST_Transform(ST_SetSRID(ST_GeomFromText(%s), 4326), 6933)"
+            src_geom_expr = f"ST_Transform(ST_SetSRID(ST_GeomFromText(%s), {source_srid}), 6933)"
+            tgt_geom_expr = f"ST_Transform(ST_SetSRID(ST_GeomFromText(%s), {target_srid}), 6933)"
             col_names = ", ".join(f'"{c}"' for c in all_cols)
             val_placeholders = ", ".join(["%s"] * len(all_cols))
 
@@ -500,7 +505,7 @@ class BaseCanvasETL:
                 ]
                 cursor.execute(
                     f"INSERT INTO _etl_src (geometry, {col_names}) "
-                    f"VALUES ({geom_expr}, {val_placeholders})",
+                    f"VALUES ({src_geom_expr}, {val_placeholders})",
                     params,
                 )
 
@@ -511,7 +516,7 @@ class BaseCanvasETL:
             ):
                 cursor.execute(
                     "INSERT INTO _etl_tgt (idx, geometry) "
-                    "VALUES (%s, " + geom_expr + ")",
+                    "VALUES (%s, " + tgt_geom_expr + ")",
                     [orig_idx, row.geometry.wkt],
                 )
                 idx_map[rid] = orig_idx
@@ -762,10 +767,14 @@ class BaseCanvasETL:
                     gdf.loc[mask, "residential_irrigated_area"] = gdf.loc[
                         mask, "residential_irrigated_area"
                     ].fillna(res_area.loc[mask] * cat_cal.irrigation_res_frac)
-            else:
-                gdf["residential_irrigated_area"] = gdf[
-                    "residential_irrigated_area"
-                ].fillna(res_area * _DEFAULT_IRRIGATION_RES_FRAC)
+            # Fallback: fill remaining NaN (unmatched categories) with default fractions
+            gdf["residential_irrigated_area"] = gdf[
+                "residential_irrigated_area"
+            ].fillna(res_area * _DEFAULT_IRRIGATION_RES_FRAC)
+        else:
+            gdf["residential_irrigated_area"] = gdf[
+                "residential_irrigated_area"
+            ].fillna(res_area * _DEFAULT_IRRIGATION_RES_FRAC)
         if "commercial_irrigated_area" in gdf.columns:
             cat = gdf.get("land_development_category", None)
             emp_area = gdf["area_parcel_emp"].fillna(gdf["area_gross"])
@@ -776,10 +785,14 @@ class BaseCanvasETL:
                     gdf.loc[mask, "commercial_irrigated_area"] = gdf.loc[
                         mask, "commercial_irrigated_area"
                     ].fillna(emp_area.loc[mask] * cat_cal.irrigation_com_frac)
-            else:
-                gdf["commercial_irrigated_area"] = gdf[
-                    "commercial_irrigated_area"
-                ].fillna(emp_area * _DEFAULT_IRRIGATION_COM_FRAC)
+            # Fallback: fill remaining NaN (unmatched categories) with default fractions
+            gdf["commercial_irrigated_area"] = gdf[
+                "commercial_irrigated_area"
+            ].fillna(emp_area * _DEFAULT_IRRIGATION_COM_FRAC)
+        else:
+            gdf["commercial_irrigated_area"] = gdf[
+                "commercial_irrigated_area"
+            ].fillna(emp_area * _DEFAULT_IRRIGATION_COM_FRAC)
         return gdf
 
     def _compute_intersection_density(self, gdf: gpd.GeoDataFrame) -> gpd.GeoDataFrame:

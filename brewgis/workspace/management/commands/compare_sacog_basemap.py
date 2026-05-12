@@ -20,6 +20,7 @@ from django.conf import settings
 from django.core.management.base import BaseCommand
 from django.core.management.base import CommandError
 from django.db import connection
+from sqlalchemy import create_engine
 
 from brewgis.workspace.services.base_canvas_schema import BaseCanvasSchema
 from brewgis.workspace.services.calibration_registry import SACOG_CALIBRATION
@@ -61,6 +62,14 @@ class Command(BaseCommand):
         "Create a brewgis base canvas for the SACOG/Sacramento region using the "
         "same parcel geometries as the v1 reference, then produce a comparison report."
     )
+
+    @staticmethod
+    def _get_engine():
+        """Build a SQLAlchemy engine from Django DB settings for pandas/geopandas use."""
+        db = settings.DATABASES["default"]
+        return create_engine(
+            f"postgresql://{db['USER']}:{db['PASSWORD']}@{db['HOST']}:{db['PORT']}/{db['NAME']}"
+        )
 
     def add_arguments(self, parser):
         parser.add_argument(
@@ -237,7 +246,7 @@ class Command(BaseCommand):
                     FROM {V1_PARCELS}
                     WHERE geography_id IN ({gid_chunks})
                 """
-                lu_df = pd.read_sql(lu_sql, connection)
+                lu_df = pd.read_sql(lu_sql, self._get_engine())
                 if not lu_df.empty:
                     gdf = gdf.merge(
                         lu_df[["geography_id", "land_use"]],
@@ -254,7 +263,7 @@ class Command(BaseCommand):
             ORDER BY geography_id
             {limit_clause}
         """
-        gdf = gpd.GeoDataFrame.from_postgis(sql, connection, geom_col="geometry")
+        gdf = gpd.GeoDataFrame.from_postgis(sql, self._get_engine(), geom_col="geometry")
         gdf.to_file(str(cache_path), driver="GeoJSON")
         return gdf
 
@@ -904,7 +913,7 @@ class Command(BaseCommand):
         )
         lines.append(
             "| Irrigation | Parcel area-based fractions | "
-            + ("NLCD impervious" if not quick else "Default (10%/5%)")
+            + ("NLCD impervious" if not quick else "Default (25%/3.5%)")
             + " |"
         )
         lines.append("")
@@ -945,10 +954,10 @@ class Command(BaseCommand):
         )
         lines.append(
             "- **Employment** — Expected divergence: v1 uses SACOG 2008 + LEHD with local crosswalk; "
-            "brewgis uses LEHD LODES WAC alone. This is the largest source of differences. "
-            "**P0 Fix needed:** Employment sub-sector allocation (retail/restaurant/office) uses "
-            "LEHD NAICS sector codes which map differently than SACOG's custom categories, "
-            "causing 90%+ errors for specific sectors."
+            "brewgis uses LEHD LODES WAC alone. Spatial allocation now works (CRS fix applied), "
+            "but NAICS sector codes map differently than SACOG's custom categories, "
+            "causing large errors in sub-sector distributions. The CBP scaling factor (applied to "
+            "match county totals) distorts parcel-level values when spatial overlap is partial."
         )
         lines.append(
             "- **Dwelling units** — Expected divergence: v1 uses parcel-level DU from assessor + "
@@ -967,12 +976,9 @@ class Command(BaseCommand):
             "are national averages."
         )
         lines.append(
-            "- **Irrigation** — Both area-based. BrewGIS quick-mode uses flat 10%/5% fractions "
-            "which are not region-specific. **P3:** Replace with NLCD or county-specific data."
-            " **Warning:** Commercial irrigation shows +230% error vs reference, making it "
-            "unusable for planning purposes. The flat 5% default fraction is not appropriate "
-            "for employment parcels. Exclude commercial irrigation from derived metrics "
-            "until NLCD-based irrigation estimation is implemented."
+            "- **Irrigation** — Both area-based. BrewGIS quick-mode uses per-category fractions "
+            "from the SACOG calibration (urban: 25%/3.5%, agriculture: 34%/2.9%). "
+            "**P3:** Replace with NLCD impervious-surface data for more accurate estimates."
         )
         lines.append(
             "- **Land-use classification** — In quick mode, brewGIS attempts assessor-code "

@@ -68,6 +68,18 @@ class BaseCanvasSchema:
         nullable=True,
         default_value=None,
     )
+    GEOGRAPHY_ID = ColumnDef(
+        name="geography_id",
+        label="Geography ID",
+        pg_type="INTEGER",
+        unit="—",
+        metatype="identity",
+        aggregation_hint="first",
+        behavior_category="static",
+        nullable=True,
+        default_value=None,
+    )
+
     GEOMETRY_KEY = ColumnDef(
         name="geometry_key",
         label="Geometry Key",
@@ -971,6 +983,7 @@ class BaseCanvasSchema:
     COLUMN_NAMES: tuple[str, ...] = (
         "id",
         "id_source",
+        "geography_id",
         "geometry_key",
         "geometry",
         "land_development_category",
@@ -1065,6 +1078,7 @@ class BaseCanvasSchema:
         {
             "id",
             "id_source",
+            "geography_id",
             "geometry_key",
             "geometry",
             "land_development_category",
