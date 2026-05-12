@@ -234,7 +234,8 @@ def run_dbt_local(
     vars_: dict[str, Any] | None = None,
     *,
     full_refresh: bool = False,
+    db_name: str | None = None,
 ) -> DbtResult:
     """Convenience function for invoking dbt from Celery tasks."""
     runner = DbtRunnerWrapper()
-    return runner.run(select=select, vars_=vars_, full_refresh=full_refresh)
+    return runner.run(select=select, vars_=vars_, full_refresh=full_refresh, db_name=db_name)

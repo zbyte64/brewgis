@@ -131,8 +131,8 @@ class DistanceMatrixPreprocessor:
         sql = text(
             f"""
             SELECT
-                source AS origin_node,
-                target AS dest_node,
+                start_vid AS origin_node,
+                end_vid AS dest_node,
                 agg_cost AS distance_m
             FROM pgr_dijkstraCost(
                 'SELECT id, source, target, {_COST_COLUMN} AS cost

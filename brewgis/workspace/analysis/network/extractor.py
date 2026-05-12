@@ -104,6 +104,10 @@ class NetworkExtractor:
             bbox,
         )
 
+        # Set a reasonable timeout for OSM Overpass API calls to prevent
+        # hanging indefinitely when OSM is slow or unreachable.
+        _saved_timeout = getattr(ox.settings, "requests_timeout", None)
+        ox.settings.requests_timeout = 120
         try:
             graph = ox.graph_from_bbox(
                 bbox=bbox,
@@ -115,6 +119,9 @@ class NetworkExtractor:
             msg = f"Failed to download OSM network: {exc}"
             logger.exception(msg)
             return {"success": False, "error": msg}
+        finally:
+            if _saved_timeout is not None:
+                ox.settings.requests_timeout = _saved_timeout
 
         if graph.number_of_edges() == 0:
             return {

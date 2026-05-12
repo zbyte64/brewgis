@@ -236,8 +236,10 @@ def base_canvas_table(db) -> str:
 
     row1 = _row(du=100.0, pop=250.0, hh=80.0)
     row1["id"] = 1
+    row1["geography_id"] = 1
     row2 = _row(du=50.0, pop=120.0, hh=40.0)
     row2["id"] = 2
+    row2["geography_id"] = 2
 
     with connection.cursor() as cursor:
         for row in [row1, row2]:

@@ -60,7 +60,7 @@ test:  ## Run all tests (excludes e2e)
 
 .PHONY: test-fast
 test-fast:  ## Run tests with fast-fail and reuse-db
-	$(COMPOSE_RUN) pytest -x --reuse-db
+	$(COMPOSE_RUN) pytest -x --reuse-db -m "not e2e and not integration" --timeout=300
 
 .PHONY: test-parallel
 test-parallel:  ## Run tests in parallel (excludes slow and e2e, requires pytest-xdist)
