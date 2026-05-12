@@ -40,7 +40,6 @@ class WorkspaceDetail(BaseModel):
 
 def register_tools(server: object) -> None:
     """Register workspace tools with the MCP server."""
-    import mcp.server as mcp_server
 
     @server.tool()  # type: ignore[misc]
     def list_workspaces(query: str | None = None) -> list[dict[str, Any]]:

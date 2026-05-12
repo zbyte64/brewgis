@@ -23,7 +23,8 @@ import logging
 from typing import Any
 
 from django.conf import settings
-from sqlalchemy import create_engine, text
+from sqlalchemy import create_engine
+from sqlalchemy import text
 
 logger = logging.getLogger(__name__)
 

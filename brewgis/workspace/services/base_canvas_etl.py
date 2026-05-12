@@ -25,6 +25,7 @@ import logging
 import time
 from typing import Any
 
+import deal
 import geopandas as gpd
 import numpy as np
 import pandas as pd
@@ -45,14 +46,12 @@ from brewgis.workspace.services.base_canvas_adapters import NullIrrigationSource
 from brewgis.workspace.services.base_canvas_adapters import NullLandUseSource
 from brewgis.workspace.services.base_canvas_manager import BaseCanvasManager
 from brewgis.workspace.services.base_canvas_schema import BaseCanvasSchema
+from brewgis.workspace.services.calibration_registry import NATIONAL_DEFAULT
+from brewgis.workspace.services.calibration_registry import CalibrationPreset
 from brewgis.workspace.services.imputation_engine import ImputationEngine
 from brewgis.workspace.services.imputation_engine import ImputationRule
 from brewgis.workspace.services.synthetic_parcel_generator import (
     generate_synthetic_parcels,
-)
-from brewgis.workspace.services.calibration_registry import (
-    CalibrationPreset,
-    NATIONAL_DEFAULT,
 )
 
 logger = logging.getLogger(__name__)
@@ -316,6 +315,14 @@ class BaseCanvasETL:
                 gdf[col] = np.nan
         return gdf
 
+    @deal.post(
+        lambda result: (
+            (result["area_gross"] >= 0).all()
+            and (result["area_parcel"] >= 0).all()
+            and (result["area_dev_condition"] >= 0).all()
+            and (result["area_row"] >= 0).all()
+        )
+    )
     def _compute_areas(self, gdf: gpd.GeoDataFrame) -> gpd.GeoDataFrame:
         """Compute area columns from parcel geometry.
 

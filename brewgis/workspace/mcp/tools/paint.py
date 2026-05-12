@@ -7,10 +7,9 @@ import logging
 from typing import Any
 
 from django.shortcuts import get_object_or_404
-from django.utils.timezone import now as tz_now
 
-from brewgis.workspace.models import PaintedCanvas
 from brewgis.workspace.models import PaintConstraint
+from brewgis.workspace.models import PaintedCanvas
 from brewgis.workspace.models import PaintEvent
 from brewgis.workspace.models import Scenario
 from brewgis.workspace.models import Workspace

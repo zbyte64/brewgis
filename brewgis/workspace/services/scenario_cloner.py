@@ -12,12 +12,11 @@ from __future__ import annotations
 import contextlib
 import logging
 
+from brewgis.workspace.models import Layer
 from brewgis.workspace.models import Scenario
 from brewgis.workspace.models import ScenarioType
-from brewgis.workspace.models import Layer
 from brewgis.workspace.services.base_canvas_manager import DEFAULT_BASE_CANVAS_TABLE
 from brewgis.workspace.services.canvas_view_manager import create_canvas_view
-
 
 logger = logging.getLogger(__name__)
 

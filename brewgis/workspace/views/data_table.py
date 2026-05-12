@@ -8,8 +8,10 @@ from typing import Any
 from django.contrib.auth.decorators import user_passes_test
 from django.core.paginator import Paginator
 from django.db import connection
-from django.http import HttpRequest, HttpResponse
-from django.shortcuts import get_object_or_404, render
+from django.http import HttpRequest
+from django.http import HttpResponse
+from django.shortcuts import get_object_or_404
+from django.shortcuts import render
 from django.views.decorators.http import require_GET
 
 from brewgis.workspace.models import Layer

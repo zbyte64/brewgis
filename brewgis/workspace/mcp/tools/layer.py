@@ -2,7 +2,6 @@
 
 
 
-import json
 import logging
 from typing import Any
 
@@ -12,7 +11,6 @@ from pydantic import BaseModel
 
 from brewgis.workspace.models import Layer
 from brewgis.workspace.models import LayerFilter
-from brewgis.workspace.models import StyleClass
 from brewgis.workspace.models import SymbologyConfig
 from brewgis.workspace.models import Workspace
 from brewgis.workspace.services.column_inspector import get_table_schema

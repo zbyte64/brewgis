@@ -5,11 +5,16 @@ from __future__ import annotations
 from typing import Any
 
 from django.contrib.auth.decorators import user_passes_test
-from django.http import HttpRequest, HttpResponse
-from django.shortcuts import get_object_or_404, render
-from django.views.decorators.http import require_GET, require_http_methods, require_POST
+from django.http import HttpRequest
+from django.http import HttpResponse
+from django.shortcuts import get_object_or_404
+from django.shortcuts import render
+from django.views.decorators.http import require_GET
+from django.views.decorators.http import require_http_methods
+from django.views.decorators.http import require_POST
 
-from brewgis.workspace.models import ExternalMapService, Workspace
+from brewgis.workspace.models import ExternalMapService
+from brewgis.workspace.models import Workspace
 
 
 def _list_context(workspace: Workspace) -> dict[str, Any]:

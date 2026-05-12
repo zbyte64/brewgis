@@ -10,6 +10,7 @@ from __future__ import annotations
 import logging
 from typing import Any
 
+import deal
 import geopandas as gpd
 import pandas as pd
 from django.conf import settings
@@ -68,6 +69,9 @@ def _load_geometries_and_values(
     return df
 
 
+@deal.pre(lambda source_gdf, target_gdf: len(source_gdf) > 0 and len(target_gdf) > 0)
+@deal.post(lambda result: result["weight"].min() >= 0 if len(result) > 0 else True)
+@deal.post(lambda result: result["weight"].max() <= 1.0 if len(result) > 0 else True)
 def _compute_allocation_factors(
     source_gdf: gpd.GeoDataFrame,
     target_gdf: gpd.GeoDataFrame,

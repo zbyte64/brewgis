@@ -22,6 +22,8 @@ from brewgis.workspace.symbology.classifiers import _logarithmic_breaks
 from brewgis.workspace.symbology.classifiers import _make_labels
 from brewgis.workspace.symbology.classifiers import _std_deviation_breaks
 from brewgis.workspace.symbology.classifiers import _sum_squared_diffs
+from brewgis.workspace.symbology.generator import _normalize_geo
+from brewgis.workspace.services.paint_constraints import _evaluate
 
 # Seed for deterministic CI runs — use CI_PIPELINE_ID, GITHUB_RUN_ID, or similar
 _DEAL_SEED_RAW = os.environ.get("DEAL_SEED")
@@ -83,4 +85,26 @@ def test_make_labels_contract(case: deal.TestCase) -> None:
 @pytest.mark.slow
 @deal.cases(resolve_module_order, count=_DEAL_CASE_COUNT, seed=_DEAL_SEED)
 def test_resolve_module_order_contract(case: deal.TestCase) -> None:
+    case()
+
+
+# ---------------------------------------------------------------------------
+# Symbology generator contracts
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.slow
+@deal.cases(_normalize_geo, count=_DEAL_CASE_COUNT, seed=_DEAL_SEED)
+def test_normalize_geo_contract(case: deal.TestCase) -> None:
+    case()
+
+
+# ---------------------------------------------------------------------------
+# Paint constraint contracts
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.slow
+@deal.cases(_evaluate, count=_DEAL_CASE_COUNT, seed=_DEAL_SEED)
+def test_evaluate_contract(case: deal.TestCase) -> None:
     case()

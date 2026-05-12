@@ -1,7 +1,6 @@
 from django.urls import path
 
 from .views import CreateLayerView
-from .views import layer_delete
 from .views import ReadGISFileView
 from .views import allocate
 from .views import analysis_launch
@@ -19,6 +18,7 @@ from .views import employment_preview
 from .views import home
 from .views import import_center
 from .views import import_status
+from .views import layer_delete
 from .views import layer_legend
 from .views import merge_paint_edits
 from .views import paint_built_form
@@ -37,6 +37,8 @@ from .views import undo_paint
 from .views import view_workspace_map
 from .views import workspace_create
 from .views import workspace_detail
+from .views.basemaps import basemap_list
+from .views.basemaps import basemap_select
 from .views.built_forms import (
     BuildingTypeCreateView as building_type_create,  # noqa: N813
 )
@@ -53,34 +55,32 @@ from .views.built_forms import building_type_bake
 from .views.built_forms import building_type_list
 from .views.built_forms import place_type_bake
 from .views.built_forms import place_type_list
-from .views.report import generate_map_report  # noqa: F811
-from .views.report import generate_paint_report  # noqa: F811
-from .views.report import generate_scenario_report  # noqa: F811
-from .views.report import report_detail  # noqa: F811
-from .views.report import report_list  # noqa: F811
-from .views.report import report_list_partial  # noqa: F811
-from .views.token_auth import token_auth  # noqa: N813
-from .views.map import view_public_scenario_map  # noqa: F401
-from .views.scenarios import scenario_toggle_publish  # noqa: F401
-from .views.report import report_status  # noqa: F811
-from .views.filter import layer_filter_list  # noqa: N813
-from .views.filter import layer_filter_create  # noqa: N813
-from .views.filter import layer_filter_edit  # noqa: N813
-from .views.filter import layer_filter_delete  # noqa: N813
-from .views.filter import layer_filter_toggle  # noqa: N813
-from .views.filter import layer_filter_preview  # noqa: N813
-from .views.external_services import external_service_list  # noqa: N813
-from .views.external_services import external_service_add  # noqa: N813
-from .views.external_services import external_service_toggle  # noqa: N813
-from .views.external_services import external_service_delete  # noqa: N813
-from .views.basemaps import basemap_list  # noqa: N813
-from .views.basemaps import basemap_select  # noqa: N813
-from .views.layer_groups import layer_group_list  # noqa: N813
-from .views.layer_groups import layer_group_create  # noqa: N813
-from .views.layer_groups import layer_group_edit  # noqa: N813
-from .views.layer_groups import layer_group_delete  # noqa: N813
-from .views.layer_groups import layer_group_move_layer  # noqa: N813
-from .views.data_table import layer_data_table  # noqa: N813
+from .views.data_table import layer_data_table
+from .views.external_services import external_service_add
+from .views.external_services import external_service_delete
+from .views.external_services import external_service_list
+from .views.external_services import external_service_toggle
+from .views.filter import layer_filter_create
+from .views.filter import layer_filter_delete
+from .views.filter import layer_filter_edit
+from .views.filter import layer_filter_list
+from .views.filter import layer_filter_preview
+from .views.filter import layer_filter_toggle
+from .views.layer_groups import layer_group_create
+from .views.layer_groups import layer_group_delete
+from .views.layer_groups import layer_group_edit
+from .views.layer_groups import layer_group_list
+from .views.layer_groups import layer_group_move_layer
+from .views.map import view_public_scenario_map
+from .views.report import generate_map_report
+from .views.report import generate_paint_report
+from .views.report import generate_scenario_report
+from .views.report import report_detail
+from .views.report import report_list
+from .views.report import report_list_partial
+from .views.report import report_status
+from .views.scenarios import scenario_toggle_publish
+from .views.token_auth import token_auth
 
 app_name = "workspace"
 urlpatterns = [

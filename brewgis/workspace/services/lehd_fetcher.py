@@ -554,7 +554,7 @@ def fetch_county_employment_scaling(
     cbp_results = _fetch_cbp_county_emp(state_fips, county_fips, flat_naics)
 
     # 3. Aggregate CBP per sector
-    sector_cbp: dict[str, float] = {s: 0.0 for s in _SECTOR_NAICS}
+    sector_cbp: dict[str, float] = dict.fromkeys(_SECTOR_NAICS, 0.0)
     for flat_key, emp in cbp_results.items():
         for sector in _SECTOR_NAICS:
             if flat_key.startswith(f"{sector}_"):

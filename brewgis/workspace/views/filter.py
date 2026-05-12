@@ -6,12 +6,17 @@ import json
 from typing import Any
 
 from django.contrib.auth.decorators import user_passes_test
-from django.db.models import Count, Q
-from django.http import HttpRequest, HttpResponse, JsonResponse
-from django.shortcuts import get_object_or_404, render
-from django.views.decorators.http import require_GET, require_http_methods, require_POST
+from django.http import HttpRequest
+from django.http import HttpResponse
+from django.http import JsonResponse
+from django.shortcuts import get_object_or_404
+from django.shortcuts import render
+from django.views.decorators.http import require_GET
+from django.views.decorators.http import require_http_methods
+from django.views.decorators.http import require_POST
 
-from brewgis.workspace.models import Layer, LayerFilter
+from brewgis.workspace.models import Layer
+from brewgis.workspace.models import LayerFilter
 
 
 def _filter_list_context(layer: Layer) -> dict[str, Any]:

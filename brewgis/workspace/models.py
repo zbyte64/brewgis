@@ -1,7 +1,8 @@
+import uuid
+
 from django.conf import settings
 from django.db import models
 from django.utils.text import slugify
-import uuid
 
 from brewgis.workspace.built_forms.models import BuildingType  # noqa: F401
 from brewgis.workspace.built_forms.models import PlaceType  # noqa: F401

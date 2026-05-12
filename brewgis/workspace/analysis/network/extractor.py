@@ -19,7 +19,8 @@ from typing import Any
 
 import osmnx as ox
 from django.conf import settings
-from sqlalchemy import create_engine, text
+from sqlalchemy import create_engine
+from sqlalchemy import text
 
 logger = logging.getLogger(__name__)
 

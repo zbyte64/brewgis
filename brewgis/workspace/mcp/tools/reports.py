@@ -3,7 +3,6 @@
 
 
 import base64
-import json
 import logging
 import tempfile
 from pathlib import Path
@@ -136,6 +135,7 @@ def register_tools(server: object) -> None:
             return {"error": "Invalid workspace slug"}
 
         from django.conf import settings
+
         from brewgis.workspace.models import Layer
 
         # Validate extension

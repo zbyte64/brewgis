@@ -13,4 +13,4 @@ def resolve_user(token: str | None = None) -> None:
     Currently returns None (no auth). Phase 5 will implement
     real token-to-user resolution.
     """
-    return None
+    return

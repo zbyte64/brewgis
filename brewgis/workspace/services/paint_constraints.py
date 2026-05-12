@@ -10,6 +10,8 @@ from dataclasses import dataclass
 from dataclasses import field
 from typing import TYPE_CHECKING
 
+import deal
+
 from brewgis.workspace.models import ConstraintOperator
 from brewgis.workspace.models import PaintConstraint
 from brewgis.workspace.services.canvas_view_manager import PAINTABLE_COLUMNS
@@ -56,6 +58,21 @@ class ConstraintResult:
         }
 
 
+@deal.pre(
+    lambda operator, constraint_value, painted_value: (
+        isinstance(operator, str)
+        and len(operator) > 0
+        and (
+            constraint_value is None
+            or isinstance(constraint_value, (int, float))
+        )
+        and (
+            painted_value is None
+            or isinstance(painted_value, (int, float))
+        )
+    )
+)
+@deal.post(lambda result: isinstance(result, bool))
 def _evaluate(
     operator: str,
     constraint_value: float | None,

@@ -6,8 +6,8 @@ to avoid duplicated MODULE_DEPENDENCIES, MODULE_RESULT_TABLES, and related mappi
 
 from __future__ import annotations
 
-from typing import Any
 import warnings
+from typing import Any
 
 # Module dependency graph: later modules depend on earlier ones
 MODULE_DEPENDENCIES: dict[str, list[str]] = {

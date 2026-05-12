@@ -6,10 +6,10 @@ import json
 import uuid
 from typing import TYPE_CHECKING
 from typing import cast
-from django.http import Http404
-from django.views.decorators.http import require_safe
 
 from django.conf import settings
+from django.http import Http404
+from django.views.decorators.http import require_safe
 
 if TYPE_CHECKING:
     from django.http import HttpRequest
@@ -20,10 +20,10 @@ from ninja import ModelSchema
 
 from brewgis.workspace.built_forms.models import BuildingType
 from brewgis.workspace.built_forms.models import PlaceType
+from brewgis.workspace.models import Basemap
 from brewgis.workspace.models import Layer
 from brewgis.workspace.models import Scenario
 from brewgis.workspace.models import SymbologyConfig
-from brewgis.workspace.models import Basemap
 from brewgis.workspace.models import Workspace
 from brewgis.workspace.services.base_canvas_schema import BaseCanvasSchema
 from brewgis.workspace.services.canvas_view_manager import PAINTABLE_COLUMNS

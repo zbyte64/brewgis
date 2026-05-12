@@ -180,9 +180,8 @@ class Command(BaseCommand):
 
         if not skip_osm:
             try:
-                import geopandas as gpd_ref  # noqa: PLC0415, F811
 
-                bbox_ref = bbox  # noqa: F821  # from NLCD block if available
+                bbox_ref = bbox  # from NLCD block if available
                 from brewgis.workspace.services.base_canvas_adapters import (  # noqa: PLC0415
                     OSMIntersectionDensitySource,
                 )
@@ -194,7 +193,7 @@ class Command(BaseCommand):
                 logger.debug("OSM init failed: %s", exc)
 
         # ── Run ETL ─────────────────────────────────────────────────
-        from brewgis.workspace.services.base_canvas_etl import BaseCanvasETL  # noqa: PLC0415
+        from brewgis.workspace.services.base_canvas_etl import BaseCanvasETL
 
         etl = BaseCanvasETL(
             demographic_source=demographic_source,
@@ -230,7 +229,6 @@ class Command(BaseCommand):
 
     def _print_summary(self) -> None:
         """Print a summary of the base canvas contents."""
-        from django.db import connection  # noqa: PLC0415
 
         from django.db import connection as db_conn
         from django.db import transaction
@@ -246,11 +244,10 @@ class Command(BaseCommand):
                 return
 
         try:
-            with transaction.atomic():
-                with db_conn.cursor() as cursor:
-                    cursor.execute("SELECT COUNT(*) FROM public.base_canvas")
-                    row_count = cursor.fetchone()[0]
-                    self.stdout.write(f"\n  Rows: {row_count}")
+            with transaction.atomic(), db_conn.cursor() as cursor:
+                cursor.execute("SELECT COUNT(*) FROM public.base_canvas")
+                row_count = cursor.fetchone()[0]
+                self.stdout.write(f"\n  Rows: {row_count}")
         except Exception:
             self.stdout.write("\n  (Table query failed - no data?)")
             return

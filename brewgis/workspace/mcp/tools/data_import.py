@@ -131,7 +131,7 @@ def register_tools(server: object) -> None:
         return {
             "task_id": task.id,
             "status": "PENDING",
-            "message": f"POI fetch launched for area",
+            "message": "POI fetch launched for area",
         }
 
     @server.tool()  # type: ignore[misc]
@@ -156,7 +156,7 @@ def register_tools(server: object) -> None:
         return {
             "task_id": task.id,
             "status": "PENDING",
-            "message": f"Spatial allocation launched",
+            "message": "Spatial allocation launched",
         }
 
     @server.tool()  # type: ignore[misc]

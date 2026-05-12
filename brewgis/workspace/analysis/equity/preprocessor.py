@@ -8,7 +8,6 @@ from __future__ import annotations
 
 import logging
 
-from django.conf import settings
 from django.db import connection
 
 logger = logging.getLogger(__name__)
@@ -34,7 +33,7 @@ def run_acs_equity_preprocessor(vars_: dict) -> dict:
     target_schema = vars_.get("target_schema", "public")
     base_canvas_table = vars_.get("base_canvas_table", "base_canvas")
     source_schema = vars_.get("source_schema", target_schema)
-    acs_table = vars_.get("acs_equity_table", None)
+    acs_table = vars_.get("acs_equity_table")
 
     if not acs_table:
         logger.warning(

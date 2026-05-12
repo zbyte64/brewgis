@@ -8,8 +8,6 @@ and returns structured results for Celery task consumption.
 
 from __future__ import annotations
 
-from brewgis.workspace.analysis.module_registry import get_column_mapping_vars
-
 import json
 import os
 import shutil
@@ -21,6 +19,8 @@ from urllib.parse import urlparse
 
 from dbt.cli.main import dbtRunner
 from django.conf import settings
+
+from brewgis.workspace.analysis.module_registry import get_column_mapping_vars
 
 if TYPE_CHECKING:
     from dbt.contracts.results import RunResultsArtifact

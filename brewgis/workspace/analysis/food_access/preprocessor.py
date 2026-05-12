@@ -28,14 +28,14 @@ import re
 from typing import Any
 
 import geopandas as gpd
-import pandas as pd
-from sqlalchemy import create_engine, text
+from sqlalchemy import create_engine
+from sqlalchemy import text
 
 from brewgis.workspace.analysis.transport.preprocessors.distance_matrix import (
     _get_db_url,
 )
-from brewgis.workspace.services.poi_fetcher import fetch_pois
 from brewgis.workspace.models import POICache
+from brewgis.workspace.services.poi_fetcher import fetch_pois
 
 logger = logging.getLogger(__name__)
 

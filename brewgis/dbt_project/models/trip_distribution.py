@@ -20,6 +20,7 @@ from __future__ import annotations
 
 import logging
 
+import deal
 import numpy as np
 import pandas as pd
 
@@ -36,6 +37,18 @@ BATCH_SIZE = 2000
 # ────────────────────────────────────────────────────────────
 
 
+@deal.pre(
+    lambda trips, xs, ys, emp, du: (
+        len(trips) == len(xs) == len(ys) == len(emp) == len(du)
+    )
+)
+@deal.pre(lambda trips: len(trips) >= 0)
+@deal.post(lambda result: all(len(r) == len(result[0]) for r in result))
+@deal.post(
+    lambda result: all(
+        np.all(arr >= -1e-10) if len(arr) > 0 else True for arr in result
+    )
+)
 def _gravity_model(
     trips: np.ndarray,
     xs: np.ndarray,
@@ -415,6 +428,12 @@ def _run_with_network_distances(
     )
 
 
+@deal.pre(
+    lambda b_size, start, n_total: (
+        start >= 0 and b_size > 0 and start + b_size <= n_total
+    )
+)
+@deal.pre(lambda b_origins, b_size: len(b_origins) == b_size)
 def _accumulate_batch(
     b_origins,
     b_size: int,

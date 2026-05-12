@@ -18,6 +18,9 @@ Output:
 Materialized as: {target_schema}.mode_choice_{scenario_id}
 """
 
+from __future__ import annotations
+
+import deal
 import numpy as np
 import pandas as pd
 
@@ -26,6 +29,21 @@ import pandas as pd
 # ────────────────────────────────────────────────────────────
 
 
+@deal.pre(
+    lambda trips_outbound, ln_density, intersection_density, transit_access: (
+        len(trips_outbound)
+        == len(ln_density)
+        == len(intersection_density)
+        == len(transit_access)
+    )
+)
+@deal.post(lambda result: len(result) == 8)
+@deal.post(
+    lambda result: (
+        len(result[0]) == 0
+        or np.all(result[4] + result[5] + result[6] + result[7] - 1.0 < 1e-10)
+    )
+)
 def _multinomial_logit(
     trips_outbound: np.ndarray,
     ln_density: np.ndarray,

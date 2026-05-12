@@ -16,9 +16,9 @@ import tempfile
 import zlib
 from pathlib import Path
 from typing import Any
-import numpy as np
 
 import geopandas as gpd
+import numpy as np
 import requests
 from shapely.geometry import Point
 

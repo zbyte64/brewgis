@@ -25,6 +25,7 @@ class Command(BaseCommand):
 
     def handle(self, *args: object, **options: object) -> None:
         import os
+
         from brewgis.workspace.mcp.server import run_stdio
 
         auth_token = options.get("auth_token") or os.environ.get("MCP_AUTH_TOKEN")

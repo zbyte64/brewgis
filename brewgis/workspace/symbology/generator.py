@@ -13,9 +13,10 @@ import deal
 
 from brewgis.workspace.models import SymbologyConfig
 
-__all__ = ["generate_maplibre_style", "auto_generate_style_from_layer"]
+__all__ = ["auto_generate_style_from_layer", "generate_maplibre_style"]
 
 
+@deal.post(lambda result: result in ("fill", "line", "circle"))
 def _normalize_geo(geometry_type: str) -> str:
     """Normalize geometry type to MapLibre paint type (fill/line/circle)."""
     geo = geometry_type.lower().replace("multi", "").replace("string", "")

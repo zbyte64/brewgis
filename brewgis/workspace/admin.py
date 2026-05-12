@@ -5,9 +5,9 @@ from brewgis.workspace.built_forms.admin import *  # noqa: F403
 from .models import AnalysisRun
 from .models import DataSource
 from .models import DataSourceCategory
-from .models import POICache
 from .models import PaintConstraint
 from .models import PaintedCanvas
+from .models import POICache
 from .models import Scenario
 from .models import Workspace
 

@@ -86,7 +86,7 @@ class AllocationEngine:
     """
 
     @deal.pre(
-        lambda parcel_acres, building_type, row_allocation_pct: (
+        lambda parcel_acres, row_allocation_pct: (
             parcel_acres >= 0 and 0 <= row_allocation_pct <= 100
         )
     )
@@ -219,6 +219,10 @@ class AllocationEngine:
 
         return result
 
+    @deal.pre(lambda parcel_acres: parcel_acres >= 0)
+    @deal.post(
+        lambda result: result.developable_acres >= 0 and result.total_population >= 0
+    )
     @staticmethod
     def allocation_place_type(
         parcel_acres: float,
@@ -293,6 +297,9 @@ class AllocationEngine:
 
         return result
 
+    @deal.post(
+        lambda result: result.developable_acres >= 0 and result.total_population >= 0
+    )
     @staticmethod
     def allocation_building_type_on_parcel(
         parcel_acres: float,

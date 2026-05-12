@@ -13,7 +13,8 @@ import zipfile
 from datetime import datetime
 from io import StringIO
 
-from django.core.management.base import BaseCommand, CommandError
+from django.core.management.base import BaseCommand
+from django.core.management.base import CommandError
 from django.db import connection
 
 from brewgis.workspace.models import AnalysisRun

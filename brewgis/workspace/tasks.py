@@ -265,13 +265,13 @@ def _run_food_access_preprocessor(vars_: dict) -> dict:
     """Preprocessor for food_access: runs OSM POI-based mRFEI computation."""
     from brewgis.workspace.analysis.food_access.preprocessor import (
         FoodAccessPreprocessor,
-    )  # noqa: PLC0415
+    )
 
     preprocessor = FoodAccessPreprocessor()
     scenario_id = vars_.get("scenario_id", "default")
     target_schema = vars_.get("target_schema", "public")
     workspace_id = vars_.get("workspace_id")
-    end_state_table = vars_.get("end_state_table", f"end_state_{{scenario_id}}")
+    end_state_table = vars_.get("end_state_table", "end_state_{scenario_id}")
     return preprocessor.compute_mrfei(
         schema=target_schema,
         end_state_table=end_state_table,
@@ -895,12 +895,15 @@ def run_column_stitching(
 @shared_task(bind=True, max_retries=2, default_retry_delay=30)
 def generate_report_task(self, report_pk: int) -> dict:
     """Generate a report (scenario comparison, paint tracking, or map export) as PDF."""
-    from brewgis.workspace.models import ScenarioReport, Scenario, PaintEvent
+    from pathlib import Path
+
+    from django.conf import settings
     from django.template.loader import render_to_string
     from django.utils import timezone
-    from django.conf import settings
-    from pathlib import Path
-    import os
+
+    from brewgis.workspace.models import PaintEvent
+    from brewgis.workspace.models import Scenario
+    from brewgis.workspace.models import ScenarioReport
 
     report = ScenarioReport.objects.get(pk=report_pk)
     report.status = ScenarioReport.ReportStatus.RUNNING
