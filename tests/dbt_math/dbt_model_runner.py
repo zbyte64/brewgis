@@ -41,7 +41,8 @@ from typing import Any
 
 import numpy as np
 import pandas as pd
-from django.db import connection
+import psycopg
+from django.conf import settings
 
 from brewgis.workspace.analysis.dbt_runner import DbtRunnerWrapper
 
@@ -94,9 +95,14 @@ def run_model(
     _ensure_schema(test_schema)
 
     # ── 2. Write upstream tables ───────────────────────────────────
+    # dbt resolves ref('name') using the model's alias, not the model
+    # filename.  We must write each upstream table with the alias name
+    # dbt will look for.
     _ref_table_map: dict[str, str] = {}
+    sid = base_vars["scenario_id"]
     for ref_name, df in upstream.items():
-        tbl = _write_df(test_schema, ref_name, df)
+        alias_name = _upstream_alias(ref_name, sid)
+        tbl = _write_df(test_schema, alias_name, df)
         _ref_table_map[ref_name] = tbl
 
     # ── 3. Write source tables ─────────────────────────────────────
@@ -117,6 +123,7 @@ def run_model(
         select=[model_name],
         vars_=base_vars,
         full_refresh=full_refresh,
+        db_name=settings.DATABASES["default"]["NAME"],
     )
     if not result.success:
         _drop_schema(test_schema)
@@ -127,7 +134,7 @@ def run_model(
         )
 
     # ── 6. Read output table ───────────────────────────────────────
-    output_table = base_vars.get("alias", f"{model_name}_{base_vars['scenario_id']}")
+    output_table = base_vars.get("alias", f"{model_name}_{sid}")
     out_df = _read_table(test_schema, output_table)
 
     # ── 7. Cleanup temp schema ─────────────────────────────────────
@@ -141,23 +148,76 @@ def run_model(
 # ── Internal helpers ────────────────────────────────────────────────
 
 
+def _get_conn() -> psycopg.Connection:
+    """Return a raw psycopg connection (outside Django's transaction).
+
+    The ``@pytest.mark.django_db`` marker wraps tests in a transaction.
+    dbt connects via its own connection and cannot see uncommitted data
+    written through Django's ``connection`` cursor.  Using a raw psycopg
+    connection ensures data is visible to dbt's separate connection.
+    """
+    db = settings.DATABASES["default"]
+    return psycopg.connect(
+        host=db.get("HOST", "localhost"),
+        port=db.get("PORT", "5432"),
+        user=db.get("USER", ""),
+        password=db.get("PASSWORD", ""),
+        dbname=db.get("NAME", "brewgis"),
+    )
+
+
 def _ensure_schema(schema: str) -> None:
     """Create schema if it doesn't exist."""
-    with connection.cursor() as cur:
+    conn = _get_conn()
+    with conn.cursor() as cur:
         cur.execute(f'CREATE SCHEMA IF NOT EXISTS "{schema}"')
+    conn.commit()
+    conn.close()
 
 
 def _drop_schema(schema: str) -> None:
     """Drop schema and all its objects (CASCADE)."""
-    with connection.cursor() as cur:
+    conn = _get_conn()
+    with conn.cursor() as cur:
         cur.execute(f'DROP SCHEMA IF EXISTS "{schema}" CASCADE')
+    conn.commit()
+    conn.close()
+
+
+def _upstream_alias(ref_name: str, scenario_id: str) -> str:
+    """Return the dbt alias for an upstream model, given a scenario_id.
+
+    dbt resolves ``ref('model_name')`` using the resolved alias from the
+    model's ``{{ config(alias=…) }}``, not the model filename.  When a test
+    writes upstream data manually, the table must use the alias name.
+
+    Known alias patterns:
+        ``core_end_state``   → ``end_state_{scenario_id}``
+                            (custom SQL alias config)
+        ``mode_choice``       → ``mode_choice``
+                            (no custom alias — uses filename)
+        ``trip_distribution`` → ``trip_distribution``
+                            (no custom alias — uses filename)
+
+    All other SQL models follow the convention ``{model_name}_{scenario_id}``.
+    """
+    # Models with no custom alias — dbt uses the model filename.
+    if ref_name in ("mode_choice", "trip_distribution"):
+        return ref_name
+    # Special-case: core_end_state uses a different prefix from its filename.
+    if ref_name == "core_end_state":
+        return f"end_state_{scenario_id}"
+    return f"{ref_name}_{scenario_id}"
 
 
 def _clean_schema(schema: str, table_names: list[str]) -> None:
     """Drop specific tables from a schema (cleanup shared schema)."""
-    with connection.cursor() as cur:
+    conn = _get_conn()
+    with conn.cursor() as cur:
         for tbl in table_names:
             cur.execute(f'DROP TABLE IF EXISTS "{schema}"."{tbl}" CASCADE')
+    conn.commit()
+    conn.close()
 
 
 def _write_df(schema: str, table: str, df: pd.DataFrame) -> str:
@@ -178,7 +238,8 @@ def _write_df(schema: str, table: str, df: pd.DataFrame) -> str:
             col_defs.append(f'"{col}" BOOLEAN')
         else:
             col_defs.append(f'"{col}" TEXT')
-    with connection.cursor() as cur:
+    conn = _get_conn()
+    with conn.cursor() as cur:
         cur.execute(f"DROP TABLE IF EXISTS {qualified}")
         cur.execute(f"CREATE UNLOGGED TABLE {qualified} ({', '.join(col_defs)})")
         # Batch insert
@@ -198,14 +259,18 @@ def _write_df(schema: str, table: str, df: pd.DataFrame) -> str:
                     f"INSERT INTO {qualified} ({cols}) VALUES ({placeholders})",
                     vals,
                 )
+    conn.commit()
+    conn.close()
     return qualified
 
 
 def _read_table(schema: str, table: str) -> pd.DataFrame:
     """Read a PostGIS table into a DataFrame."""
     qualified = f'"{schema}"."{table}"'
-    with connection.cursor() as cur:
+    conn = _get_conn()
+    with conn.cursor() as cur:
         cur.execute(f"SELECT * FROM {qualified}")
         cols = [desc[0] for desc in cur.description]
         rows = cur.fetchall()
+    conn.close()
     return pd.DataFrame(rows, columns=cols)

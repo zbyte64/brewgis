@@ -68,6 +68,7 @@ def _core_es_df(
         "building_coverage": np.full(n, 30.0),
         "irrigable_area_fraction": np.full(n, 0.5),
         "far": np.full(n, 0.5),
+        "geom": np.full(n, "POINT(0 0)"),
     }
     data.update(extra)
     return pd.DataFrame(data)

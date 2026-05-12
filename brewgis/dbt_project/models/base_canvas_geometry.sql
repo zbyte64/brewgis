@@ -19,7 +19,6 @@
 
 {%- set area_srid = var('projected_srid', 3857) -%}
 
-{%- import 'geometry.sql' as geom -%}
 
 WITH parcel_geom AS (
     SELECT

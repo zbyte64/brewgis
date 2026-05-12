@@ -44,8 +44,16 @@ class DbtResult:
         self.error = error
 
 
-def _build_profiles_yaml() -> str:
+def _build_profiles_yaml(db_name: str | None = None) -> str:
     """Generate a dbt profiles.yml string from Django DATABASES settings.
+
+    Args:
+        db_name: Override for the database name.  When running under Django's
+            test runner the active connection uses a ``test_``-prefixed name,
+            while ``settings.DATABASES`` still has the original value.
+            Callers that create connections directly (``django.db.connection``)
+            should pass ``connection.settings_dict["NAME"]`` here so dbt
+            connects to the same database.
 
     Reads DATABASE_URL and produces a single 'brewgis' profile targeting
     the default PostGIS connection.
@@ -60,7 +68,7 @@ def _build_profiles_yaml() -> str:
 
     host = db_config.get("HOST", "localhost")
     port = db_config.get("PORT", "5432")
-    name = db_config.get("NAME", "brewgis")
+    name = db_name or db_config.get("NAME", "brewgis")
     user = db_config.get("USER", "")
     password = db_config.get("PASSWORD", "")
 
@@ -73,7 +81,8 @@ def _build_profiles_yaml() -> str:
             password = parsed.password or ""
             host = parsed.hostname or host
             port = str(parsed.port) if parsed.port else port
-            name = parsed.path.lstrip("/") if parsed.path else name
+            if db_name is None:
+                name = parsed.path.lstrip("/") if parsed.path else name
 
     return f"""brewgis:
   target: dev
@@ -146,6 +155,23 @@ class DbtRunnerWrapper:
             }
             for r in artifact
         ]
+
+        # Determine overall success: all runs must have succeeded or skipped.
+        all_ok = all(
+            r["status"] == "success" or r["status"] == "skipped"
+            for r in rows
+        )
+        if not all_ok:
+            errors = [r for r in rows if r["status"] not in ("success", "skipped")]
+            error_msgs = "; ".join(
+                f"{e['node_name']}: {e['message']}" for e in errors
+            )
+            return DbtResult(
+                success=False,
+                results=rows,
+                error=f"dbt run failed: {error_msgs}" if error_msgs else "dbt run returned errors",
+            )
+
         return DbtResult(success=True, results=rows)
 
     def run(
@@ -154,6 +180,7 @@ class DbtRunnerWrapper:
         vars_: dict[str, Any] | None = None,
         *,
         full_refresh: bool = False,
+        db_name: str | None = None,
     ) -> DbtResult:
         """Run dbt models with the given selectors and variables.
 
@@ -189,7 +216,7 @@ class DbtRunnerWrapper:
             args.extend(["--vars", json.dumps(vars_)])
 
         # Create temporary profiles.yml
-        profiles_content = _build_profiles_yaml()
+        profiles_content = _build_profiles_yaml(db_name=db_name)
         profiles_dir = Path(tempfile.mkdtemp(prefix="dbt_profiles_"))
         profiles_path = profiles_dir / "profiles.yml"
         profiles_path.write_text(profiles_content)
