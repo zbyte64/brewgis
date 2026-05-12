@@ -353,7 +353,7 @@ class TestNlcdWcsDownload:
                 "service": "WCS",
                 "version": "2.0.1",
                 "request": "GetCoverage",
-                "CoverageId": "nlcd_2021_land_cover_l48",
+                "CoverageId": "mrlc_download__NLCD_2021_Land_Cover_L48",
                 "subset": ["X(-120.0,-119.5)", "Y(37.0,37.5)"],
                 "format": "image/geotiff",
             },

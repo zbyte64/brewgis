@@ -14,6 +14,7 @@ from pathlib import Path
 from typing import TYPE_CHECKING
 
 import numpy as np
+import pyproj
 import pandas as pd
 import requests
 
@@ -38,23 +39,41 @@ def _download_nlcd_subset(  # noqa: PLR0913
     cache_dir: Path = _NLCD_CACHE_DIR,
     *,
     refresh_cache: bool = False,
+    source_crs: str | None = None,
 ) -> str | None:
     """Download an NLCD bounding-box subset via MRLC WCS.
 
+    The WCS coverage is stored in EPSG:5070 (USA Contiguous Albers
+    Equal Area Conic).  Coordinates are reprojected to EPSG:5070
+    when *source_crs* is provided.
+
     Args:
-        west: Western longitude (EPSG:4326).
-        south: Southern latitude (EPSG:4326).
-        east: Eastern longitude (EPSG:4326).
-        north: Northern latitude (EPSG:4326).
+        west: Western bound in *source_crs* (or EPSG:5070 if None).
+        south: Southern bound in *source_crs* (or EPSG:5070 if None).
+        east: Eastern bound in *source_crs* (or EPSG:5070 if None).
+        north: Northern bound in *source_crs* (or EPSG:5070 if None).
         year: NLCD year (default 2021).
         cache_dir: Directory for cached GeoTIFFs.
         refresh_cache: If True, delete cached file and re-download.
+        source_crs: CRS of the input coordinates (e.g. "EPSG:4326").
+            When provided and not EPSG:5070, coordinates are reprojected.
 
     Returns:
         Path to cached GeoTIFF, or None on failure.
         The GeoTIFF is clipped to the specified bounding box.
     """
-    coverage_id = f"nlcd_{year}_land_cover_l48"
+    _NLCD_NATIVE_CRS = "EPSG:5070"
+
+    # Reproject to the coverage native CRS if needed
+    if source_crs is not None and source_crs.upper() != _NLCD_NATIVE_CRS:
+        transformer = pyproj.Transformer.from_crs(
+            source_crs, _NLCD_NATIVE_CRS, always_xy=True
+        )
+        (west, south), (east, north) = transformer.transform(
+            [(west, south), (east, north)],
+        )
+
+    coverage_id = f"mrlc_download__NLCD_{year}_Land_Cover_L48"
 
     params: dict[str, str | list[str]] = {
         "service": "WCS",
@@ -242,6 +261,7 @@ def download_nlcd_raster(
     year: int = _NLCD_YEAR,
     *,
     refresh_cache: bool = False,
+    source_crs: str | None = None,
 ) -> str | None:
     """Download the NLCD land cover raster.
 
@@ -255,10 +275,13 @@ def download_nlcd_raster(
     and re-downloaded.
 
     Args:
-        bbox: Optional bounding box ``(west, south, east, north)`` in
-            EPSG:4326.  When provided, uses WCS subset download.
+        bbox: Optional bounding box ``(west, south, east, north)``.
+            When provided, uses WCS subset download.  Coordinates are
+            interpreted in *source_crs* (or EPSG:5070 if None).
         year: NLCD year (default 2021).
         refresh_cache: If True, delete cached files and re-download.
+        source_crs: CRS of the bbox coordinates.  Passed through to
+            the WCS subset downloader.
 
     Returns:
         Path to the (potentially clipped) GeoTIFF, or ``None`` if
@@ -273,6 +296,7 @@ def download_nlcd_raster(
             north,
             year=year,
             refresh_cache=refresh_cache,
+            source_crs=source_crs,
         )
 
     # ── Fallback: full CONUS download (S3) ──────────────────────
@@ -322,15 +346,18 @@ def compute_nlcd_zonal_stats(
     """Compute NLCD zonal statistics for each parcel.
 
     Args:
-        parcels: Parcels GeoDataFrame with polygon geometry in EPSG:4326.
-        bbox: Bounding box ``(min_x, min_y, max_x, max_y)`` in EPSG:4326.
+        parcels: Parcels GeoDataFrame with polygon geometry.
+            The CRS is extracted for WCS coordinate reprojection.
+        bbox: Bounding box ``(min_x, min_y, max_x, max_y)`` in the
+            same CRS as *parcels*.
         year: NLCD year (default 2021).
 
     Returns:
         Parcels with ``land_development_category`` and
         ``impervious_fraction`` columns populated.
     """
-    raster_path = download_nlcd_raster(bbox, year)
+    source_crs = parcels.crs.to_string() if parcels.crs is not None else None
+    raster_path = download_nlcd_raster(bbox, year, source_crs=source_crs)
     if raster_path is None:
         logger.warning("NLCD raster not available; using defaults")
         parcels["land_development_category"] = parcels.get(
