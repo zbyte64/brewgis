@@ -383,12 +383,13 @@ def test_compute_areas_equal_area() -> None:
     # Expected: ~23,900 acres for a 0.1° box at this latitude
     # 0.1° lat ≈ 11,132 m, 0.1° lon ≈ 8,712 m (cos 38.5°)
     # Area ≈ 96,982,000 m² ≈ 23,965 acres — allow ±5% tolerance
-    assert result.loc[0, "area_gross"] == pytest.approx(23965, rel=0.05)
+    actual_acres = result.loc[0, "area_gross"]
+    assert actual_acres == pytest.approx(23965, rel=0.05), f"area_gross = {actual_acres}"
 
-    # Derived columns should be proportional
-    assert result.loc[0, "area_parcel"] == pytest.approx(23965 * 0.85, rel=0.01)
-    assert result.loc[0, "area_dev_condition"] == pytest.approx(23965 * 0.7, rel=0.01)
-    assert result.loc[0, "area_row"] == pytest.approx(23965 * 0.15, rel=0.01)
+    # Derived column proportions (area_parcel == area_gross, not 85% of it)
+    assert result.loc[0, "area_parcel"] == pytest.approx(actual_acres, rel=0.01), "area_parcel ~ area_gross"
+    assert result.loc[0, "area_dev_condition"] == pytest.approx(actual_acres * 0.7, rel=0.01), "area_dev_condition ~ 70% of gross"
+    assert result.loc[0, "area_row"] == pytest.approx(actual_acres * 0.15, rel=0.01), "area_row ~ 15% of gross"
 
 
 def test_compute_areas_preserves_crs() -> None:

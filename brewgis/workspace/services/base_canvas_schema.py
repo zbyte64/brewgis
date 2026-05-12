@@ -1215,5 +1215,5 @@ BaseCanvasSchema.PAINTABLE_COLUMNS = frozenset(
 BaseCanvasSchema.NON_NULL_COLUMNS = frozenset(
     name
     for name in BaseCanvasSchema.COLUMN_NAMES
-    if name not in {"id_source", "geometry_key", "built_form_key"}
+    if name not in {"id_source", "geography_id", "geometry_key", "built_form_key"}
 )

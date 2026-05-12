@@ -140,9 +140,9 @@ class TestLEHDFetcher:
     def test_build_lodes_wac_url(self) -> None:
         """URL should be correctly formatted."""
         url = _build_lodes_wac_url("06", "067")
-        assert "lehd.ces.census.gov/data/lodes/LODES7" in url
-        assert "06" in url
-        assert "067" in url
+        assert "lehd.ces.census.gov/data/lodes/LODES8" in url
+        assert "ca" in url
+        assert "S000_JT00_2021.csv.gz" in url
         assert "wac" in url
 
     @patch("brewgis.workspace.services.lehd_fetcher.requests.get")

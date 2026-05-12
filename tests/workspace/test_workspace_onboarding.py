@@ -2,21 +2,180 @@
 
 from __future__ import annotations
 
+import csv
+
 import pytest
+from django.conf import settings
 from django.db.utils import IntegrityError
 from django.test import TestCase
 from django.urls import reverse
 from django.utils.text import slugify
 
 from brewgis.workspace.models import County
+from brewgis.workspace.models import DataSource
+from brewgis.workspace.models import DataSourceCategory
 from brewgis.workspace.models import Workspace
 from tests.factories import UserFactory
 from tests.factories import WorkspaceFactory
 
 
+_SEEDED = False
+
+
+def _seed_all_counties() -> None:
+    """Seed all counties from the fixture CSV (for model tests that need
+    comprehensive data)."""
+    from brewgis.workspace.models import County as CountyModel
+
+    csv_path = (
+        settings.BASE_DIR / "brewgis" / "workspace" / "fixtures" / "county_fips.csv"
+    )
+    with csv_path.open(newline="") as f:
+        reader = csv.DictReader(f)
+        batch = [CountyModel(**row) for row in reader]
+    CountyModel.objects.bulk_create(batch, ignore_conflicts=True)
+
+
+def _seed_basic_counties() -> None:
+    """Seed specific counties needed by view-level tests."""
+    if County.objects.filter(state_fips="06", county_fips="019").exists():
+        return
+    County.objects.create(state_fips="06", county_fips="019", name="Fresno County")
+    County.objects.create(
+        state_fips="06", county_fips="037", name="Los Angeles County"
+    )
+    County.objects.create(state_fips="06", county_fips="001", name="Alameda County")
+    County.objects.create(state_fips="17", county_fips="031", name="Cook County")
+
+
+def _seed_data_catalog() -> None:
+    """Seed DataSourceCategory and DataSource records (normally from migration
+    0019_seed_default_data_sources)."""
+    if DataSourceCategory.objects.exists():
+        return
+
+    census = DataSourceCategory.objects.create(
+        name="Census Data",
+        slug="census-data",
+        sort_order=1,
+    )
+    poi = DataSourceCategory.objects.create(
+        name="Points of Interest",
+        slug="points-of-interest",
+        sort_order=2,
+    )
+    env = DataSourceCategory.objects.create(
+        name="Environmental Constraints",
+        slug="environmental-constraints",
+        sort_order=3,
+    )
+    parcel = DataSourceCategory.objects.create(
+        name="Parcel Data",
+        slug="parcel-data",
+        sort_order=4,
+    )
+    boundaries = DataSourceCategory.objects.create(
+        name="Boundary Data",
+        slug="boundary-data",
+        sort_order=5,
+    )
+
+    sources = [
+        DataSource(
+            category=census,
+            name="Census ACS",
+            slug="census-acs",
+            provider="US Census Bureau",
+            acquisition_priority="p0",
+            is_importable=True,
+            data_format="api",
+            update_frequency="annual",
+            description="Demographics by census tract",
+        ),
+        DataSource(
+            category=census,
+            name="LEHD Employment",
+            slug="lehd-employment",
+            provider="US Census Bureau (LEHD)",
+            acquisition_priority="p0",
+            is_importable=True,
+            data_format="api",
+            update_frequency="annual",
+            description="Jobs by block",
+        ),
+        DataSource(
+            category=poi,
+            name="OSM Points of Interest",
+            slug="osm-points-of-interest",
+            provider="OpenStreetMap",
+            acquisition_priority="p1",
+            is_importable=True,
+            data_format="api",
+            update_frequency="quarterly",
+            description="Amenities",
+        ),
+        DataSource(
+            category=env,
+            name="Floodplains",
+            slug="floodplains",
+            provider="FEMA",
+            acquisition_priority="p0",
+            is_importable=False,
+            data_format="raster",
+            description="Flood/wetland/slope",
+        ),
+        DataSource(
+            category=env,
+            name="Wetlands",
+            slug="wetlands",
+            provider="USFWS",
+            acquisition_priority="p0",
+            is_importable=False,
+            data_format="vector",
+            description="Wetland areas",
+        ),
+        DataSource(
+            category=env,
+            name="Steep Slopes",
+            slug="steep-slopes",
+            provider="USGS",
+            acquisition_priority="p1",
+            is_importable=False,
+            data_format="raster",
+            description="Slopes > 15%",
+        ),
+        DataSource(
+            category=parcel,
+            name="Parcel Fabric",
+            slug="parcel-fabric",
+            provider="Uploaded by user",
+            acquisition_priority="p0",
+            is_importable=True,
+            data_format="shapefile",
+            description="User uploaded parcel data",
+        ),
+        DataSource(
+            category=boundaries,
+            name="County Boundary",
+            slug="county-boundary",
+            provider="US Census Bureau (TIGER)",
+            acquisition_priority="p0",
+            is_importable=False,
+            data_format="vector",
+            description="Census TIGER boundary",
+        ),
+    ]
+    DataSource.objects.bulk_create(sources)
+
+
 @pytest.mark.models
 class TestCountyModel(TestCase):
     """Tests for the County model and seed data."""
+
+    @classmethod
+    def setUpClass(cls):
+        super().setUpClass()
+        _seed_all_counties()
 
     def test_counties_seeded(self) -> None:
         """Counties should be seeded from migration."""
@@ -45,12 +204,19 @@ class TestCountyModel(TestCase):
         """Duplicate state_fips + county_fips should raise."""
         County.objects.create(state_fips="99", county_fips="999", name="Test")
         with pytest.raises(IntegrityError):
-            County.objects.create(state_fips="99", county_fips="999", name="Duplicate")
+            County.objects.create(
+                state_fips="99", county_fips="999", name="Duplicate"
+            )
 
 
 @pytest.mark.views
 class TestWorkspaceCreateView(TestCase):
     """Tests for the workspace creation view."""
+
+    @classmethod
+    def setUpClass(cls):
+        super().setUpClass()
+        _seed_basic_counties()
 
     def setUp(self) -> None:
         self.user = UserFactory()
@@ -179,6 +345,12 @@ class TestWorkspaceCreateView(TestCase):
 @pytest.mark.views
 class TestWorkspaceDetailView(TestCase):
     """Tests for the workspace detail view."""
+
+    @classmethod
+    def setUpClass(cls):
+        super().setUpClass()
+        _seed_basic_counties()
+        _seed_data_catalog()
 
     def setUp(self) -> None:
         self.user = UserFactory()
@@ -323,6 +495,12 @@ class TestHomeView(TestCase):
 @pytest.mark.views
 class TestDataCatalogScoping(TestCase):
     """Tests that data catalog context is properly scoped."""
+
+    @classmethod
+    def setUpClass(cls):
+        super().setUpClass()
+        _seed_basic_counties()
+        _seed_data_catalog()
 
     def setUp(self) -> None:
         self.user = UserFactory()

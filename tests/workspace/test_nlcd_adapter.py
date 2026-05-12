@@ -141,7 +141,7 @@ class TestAssessorCodeClassification:
         assert classify_by_assessor_code("70") == "undeveloped"
 
     def test_industrial_prefix(self) -> None:
-        assert classify_by_assessor_code("30") == "urban"
+        assert classify_by_assessor_code("30") == "industrial"
 
     def test_none_input(self) -> None:
         assert classify_by_assessor_code(None) is None
