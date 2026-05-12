@@ -51,27 +51,6 @@ def _get_db_url() -> str:
     )
 
 
-def _ensure_geometry_columns(
-    conn: Any,
-    schema: str,
-    edge_table: str,
-    node_table: str,
-    srid: int,
-) -> None:
-    """Ensure geometry columns have PostGIS type registration for pgRouting."""
-    conn.execute(
-        text(
-            f"SELECT public.ST_AddGeometryColumn("
-            f"'{schema}', '{edge_table}', 'geom', {srid}, 'LINESTRING', 2)"
-        )
-    )
-    conn.execute(
-        text(
-            f"SELECT public.ST_AddGeometryColumn("
-            f"'{schema}', '{node_table}', 'geom', {srid}, 'POINT', 2)"
-        )
-    )
-    conn.commit()
 
 
 class NetworkExtractor:
@@ -174,6 +153,7 @@ class NetworkExtractor:
         if "highway" in edges_gdf.columns:
             edge_cols.append("highway")
         edges_out = edges_gdf[edge_cols].copy()
+        edges_out = edges_out.set_geometry("geom")
         edges_out["id"] = range(1, len(edges_out) + 1)
 
         # Normalize node columns
@@ -185,6 +165,7 @@ class NetworkExtractor:
         if "x" in nodes_gdf.columns:
             node_cols.append("x")
         nodes_out = nodes_gdf[node_cols].copy()
+        nodes_out = nodes_out.set_geometry("geom")
         nodes_out["id"] = range(1, len(nodes_out) + 1)
 
         # Write to PostGIS
@@ -201,22 +182,20 @@ class NetworkExtractor:
                     text(f"DROP TABLE IF EXISTS {schema}.{node_table} CASCADE")
                 )
 
-            edges_out.to_sql(
+            edges_out.to_postgis(
                 edge_table,
                 self.engine,
                 schema=schema,
                 if_exists="replace",
                 index=False,
-                method="multi",
             )
 
-            nodes_out.to_sql(
+            nodes_out.to_postgis(
                 node_table,
                 self.engine,
                 schema=schema,
                 if_exists="replace",
                 index=False,
-                method="multi",
             )
 
             # Add primary keys and geometry columns
@@ -227,7 +206,6 @@ class NetworkExtractor:
                 conn.execute(
                     text(f"ALTER TABLE {schema}.{node_table} ADD PRIMARY KEY (id)")
                 )
-                _ensure_geometry_columns(conn, schema, edge_table, node_table, srid)
 
         except Exception as exc:
             msg = f"Failed to write network to PostGIS: {exc}"
