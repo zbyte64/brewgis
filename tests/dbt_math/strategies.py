@@ -49,6 +49,41 @@ def nullable_float_array(
     )
 
 
+def _np(lst):
+    import numpy as np
+    return np.array(lst, dtype=float)
+
+
+def float_array_pair(
+    min_value_1=0.0, max_value_1=1e6,
+    min_value_2=0.0, max_value_2=1e6,
+    min_size=1, max_size=50,
+):
+    """Two float arrays of the same (random) length."""
+    return st.integers(min_value=min_size, max_value=max_size).flatmap(
+        lambda n: st.tuples(
+            st.lists(st.floats(min_value=min_value_1, max_value=max_value_1, allow_nan=False, allow_infinity=False), min_size=n, max_size=n).map(_np),
+            st.lists(st.floats(min_value=min_value_2, max_value=max_value_2, allow_nan=False, allow_infinity=False), min_size=n, max_size=n).map(_np),
+        )
+    )
+
+
+def float_array_triple(
+    min_value_1=0.0, max_value_1=1e6,
+    min_value_2=0.0, max_value_2=1e6,
+    min_value_3=0.0, max_value_3=1e6,
+    min_size=1, max_size=50,
+):
+    """Three float arrays of the same (random) length."""
+    return st.integers(min_value=min_size, max_value=max_size).flatmap(
+        lambda n: st.tuples(
+            st.lists(st.floats(min_value=min_value_1, max_value=max_value_1, allow_nan=False, allow_infinity=False), min_size=n, max_size=n).map(_np),
+            st.lists(st.floats(min_value=min_value_2, max_value=max_value_2, allow_nan=False, allow_infinity=False), min_size=n, max_size=n).map(_np),
+            st.lists(st.floats(min_value=min_value_3, max_value=max_value_3, allow_nan=False, allow_infinity=False), min_size=n, max_size=n).map(_np),
+        )
+    )
+
+
 # ── Named strategies matching common dbt column patterns ──────────────
 
 DWELLING_UNITS = float_array(min_value=0, max_value=5000, max_size=50)
