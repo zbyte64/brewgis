@@ -20,7 +20,7 @@ from django.conf import settings
 from django.core.management.base import BaseCommand
 from django.core.management.base import CommandError
 from django.db import connection
-from sqlalchemy import create_engine
+from brewgis.workspace.services._db import get_engine
 
 from brewgis.workspace.services.base_canvas_schema import BaseCanvasSchema
 from brewgis.workspace.services.calibration_registry import SACOG_CALIBRATION
@@ -62,14 +62,6 @@ class Command(BaseCommand):
         "Create a brewgis base canvas for the SACOG/Sacramento region using the "
         "same parcel geometries as the v1 reference, then produce a comparison report."
     )
-
-    @staticmethod
-    def _get_engine():
-        """Build a SQLAlchemy engine from Django DB settings for pandas/geopandas use."""
-        db = settings.DATABASES["default"]
-        return create_engine(
-            f"postgresql://{db['USER']}:{db['PASSWORD']}@{db['HOST']}:{db['PORT']}/{db['NAME']}"
-        )
 
     def add_arguments(self, parser):
         parser.add_argument(
@@ -244,9 +236,8 @@ class Command(BaseCommand):
                 lu_sql = f"""
                     SELECT geography_id, land_use
                     FROM {V1_PARCELS}
-                    WHERE geography_id IN ({gid_chunks})
                 """
-                lu_df = pd.read_sql(lu_sql, self._get_engine())
+                lu_df = pd.read_sql(lu_sql, get_engine())
                 if not lu_df.empty:
                     gdf = gdf.merge(
                         lu_df[["geography_id", "land_use"]],
@@ -264,7 +255,7 @@ class Command(BaseCommand):
             {limit_clause}
         """
         gdf = gpd.GeoDataFrame.from_postgis(
-            sql, self._get_engine(), geom_col="geometry"
+            sql, get_engine(), geom_col="geometry"
         )
         gdf.to_file(str(cache_path), driver="GeoJSON")
         return gdf

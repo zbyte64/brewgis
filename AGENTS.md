@@ -283,6 +283,7 @@ docker compose -f docker-compose.local.yml run django sqlfluff lint brewgis/dbt_
 - **Coverage:** `coverage` with `django_coverage_plugin`, includes `brewgis/**`, excludes `*/migrations/*` and `*/tests/*`, **60% threshold**
 - **BDD:** Gherkin `.feature` files in `tests/e2e/features/`, `tests/review/features/`, `tests/features/` with pytest-bdd step definitions
 - **Property-based:** Hypothesis for numerical invariants (mode choice shares sum to 1, trip conservation, SQL math parity)
+- **pytestarch (architecture guards):** `pytestarch` enforces import-level constraints in `tests/test_architecture.py`. Rules prevent regression to eliminated patterns (e.g., direct SQLAlchemy `create_engine` calls outside `brewgis.workspace.services._db`). Run with `pytest tests/test_architecture.py -v`.
 - **@deal pre/post contracts:** `deal` library for design-by-contract. Use wherever ergonomic — superior to equivalently scoped unit tests because contracts are checked at call/return boundaries automatically and encode invariants declaratively. Conditionally enabled via `DEAL_ENABLED=1`.
 - **Test-first for new features:** Every new view, model method, task, or template include **MUST** have a corresponding test. Guard-rail tests (validation, auth, CRUD completeness, edge cases) are not optional.
 - **CI:** GitHub Actions runs `pre-commit` (all hooks) and `pytest` (test suite) plus `dbt seed + run + test` in Docker on PRs/pushes to `master`/`main`
@@ -342,12 +343,13 @@ tests/
 2. **Design-by-contract (@deal)** — pre/post contracts on pure functions and state transitions. Preferred over equivalently scoped unit tests wherever ergonomic, since contracts are checked automatically at every call/return.
 3. **EAV paint overrides** — `PaintedCanvas` model stores per-feature, per-column overrides with undo/redo via `PaintEvent` log (separate model).
 4. **Per-scenario SQL views** — `canvas_view_manager` dynamically creates views that LEFT JOIN paint overrides onto the base canvas.
-5. **Analysis DAG** — `module_registry.py` defines dependency graph; `pipeline.py` resolves topological order and dispatches via Celery chain callbacks.
-6. **HtmxResponseMixin** — used across CBVs for htmx-driven partial page updates.
-7. **Three-tier cascade imputation** — `ImputationEngine` with strategies: direct value, area-proportional, built-form default.
-8. **dbt Python models** — encapsulate compute-heavy transport logic (gravity model, MNL) with pure functions extracted for testability.
-9. **SACOG migration tooling** — dedicated service modules for v1→v3 column mapping, schema discovery, imputation validation.
-10. **MCP server** — FastMCP stdio transport mirrors view layer; 30+ tools for AI assistant integration.
+5. **Centralized database connection** — `brewgis/workspace/services/_db.py` is the sole module that imports from `sqlalchemy` directly. All other modules obtain engines via `get_engine()` and raw SQL via `text()` from `_db`. Enforced by `tests/test_architecture.py` (pytestarch rules).
+6. **Analysis DAG** — `module_registry.py` defines dependency graph; `pipeline.py` resolves topological order and dispatches via Celery chain callbacks.
+7. **HtmxResponseMixin** — used across CBVs for htmx-driven partial page updates.
+8. **Three-tier cascade imputation** — `ImputationEngine` with strategies: direct value, area-proportional, built-form default.
+9. **dbt Python models** — encapsulate compute-heavy transport logic (gravity model, MNL) with pure functions extracted for testability.
+10. **SACOG migration tooling** — dedicated service modules for v1→v3 column mapping, schema discovery, imputation validation.
+11. **MCP server** — FastMCP stdio transport mirrors view layer; 30+ tools for AI assistant integration.
 
 ## Gotchas & Patterns
 

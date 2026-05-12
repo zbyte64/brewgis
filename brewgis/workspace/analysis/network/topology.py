@@ -16,9 +16,8 @@ from __future__ import annotations
 import logging
 from typing import Any
 
-from django.conf import settings
-from sqlalchemy import create_engine
-from sqlalchemy import text
+from brewgis.workspace.services._db import get_engine
+from brewgis.workspace.services._db import text
 
 logger = logging.getLogger(__name__)
 
@@ -26,19 +25,6 @@ logger = logging.getLogger(__name__)
 class TopologyError(Exception):
     """Raised when topology building fails."""
 
-
-def _get_db_url() -> str:
-    """Return the DATABASE_URL from Django settings."""
-    db_url = getattr(settings, "DATABASE_URL", None)
-    if db_url:
-        return db_url
-    from django.conf import settings as dj_settings  # noqa: PLC0415
-
-    db_conf = dj_settings.DATABASES["default"]
-    return (
-        f"postgresql://{db_conf['USER']}:{db_conf['PASSWORD']}"
-        f"@{db_conf['HOST']}:{db_conf['PORT']}/{db_conf['NAME']}"
-    )
 
 
 class NetworkTopology:
@@ -50,7 +36,7 @@ class NetworkTopology:
     @property
     def engine(self):
         if self._engine is None:
-            self._engine = create_engine(_get_db_url())
+            self._engine = get_engine()
         return self._engine
 
     def build(

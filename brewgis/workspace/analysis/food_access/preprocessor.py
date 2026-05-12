@@ -26,14 +26,9 @@ from __future__ import annotations
 import logging
 import re
 from typing import Any
-
 import geopandas as gpd
-from sqlalchemy import create_engine
-from sqlalchemy import text
-
-from brewgis.workspace.analysis.transport.preprocessors.distance_matrix import (
-    _get_db_url,
-)
+from brewgis.workspace.services._db import get_engine
+from brewgis.workspace.services._db import text
 from brewgis.workspace.models import POICache
 from brewgis.workspace.services.poi_fetcher import fetch_pois
 
@@ -70,9 +65,9 @@ class FoodAccessPreprocessor:
 
     @property
     def engine(self):
-        """Lazy-initialized SQLAlchemy engine from Django DATABASE_URL."""
+        """Lazy-initialized SQLAlchemy engine from centralized _db module."""
         if self._engine is None:
-            self._engine = create_engine(_get_db_url())
+            self._engine = get_engine()
         return self._engine
 
     def _get_bbox(

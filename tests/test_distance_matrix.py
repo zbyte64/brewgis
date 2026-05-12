@@ -17,7 +17,6 @@ import pytest
 
 
 from django.db import connection
-from django.conf import settings
 from django.test import TransactionTestCase
 
 from brewgis.workspace.analysis.network.extractor import NetworkExtractor
@@ -37,18 +36,6 @@ class TestDistanceMatrixPreprocessor(TransactionTestCase):
     def setUpClass(cls) -> None:
         """Extract a network once for all tests (expensive)."""
         super().setUpClass()
-
-        # Override DATABASE_URL to point to test database (Django updates
-        # DATABASES["default"]["NAME"] for test DB, but _get_db_url() reads
-        # the env-var-driven DATABASE_URL setting first, which still points
-        # to the production database).
-        db = settings.DATABASES["default"]
-        cls._test_db_url = (
-            f"postgresql://{db['USER']}:{db['PASSWORD']}"
-            f"@{db['HOST']}:{db['PORT']}/{db['NAME']}"
-        )
-        cls._original_db_url = getattr(settings, "DATABASE_URL", None)
-        settings.DATABASE_URL = cls._test_db_url
         with connection.cursor() as cursor:
             cursor.execute("CREATE EXTENSION IF NOT EXISTS postgis")
 
@@ -95,12 +82,6 @@ class TestDistanceMatrixPreprocessor(TransactionTestCase):
                 f"DROP TABLE IF EXISTS {cls.SCHEMA}.{cls.node_table} CASCADE"
             )
         super().tearDownClass()
-        # Restore original DATABASE_URL
-        if cls._original_db_url is None:
-            if hasattr(settings, "DATABASE_URL"):
-                del settings.DATABASE_URL
-        else:
-            settings.DATABASE_URL = cls._original_db_url
 
     def setUp(self) -> None:
         self.preprocessor = DistanceMatrixPreprocessor(batch_size=100)

@@ -13,21 +13,11 @@ from typing import Any
 import deal
 import geopandas as gpd
 import pandas as pd
-from django.conf import settings
 from django.db import connection
-from sqlalchemy import create_engine
+from brewgis.workspace.services._db import get_engine
 
 logger = logging.getLogger(__name__)
 
-
-def _get_engine():
-    """Build a SQLAlchemy engine from Django DATABASES settings."""
-    db = settings.DATABASES["default"]
-    url = (
-        f"postgresql://{db['USER']}:{db['PASSWORD']}"
-        f"@{db['HOST']}:{db['PORT']}/{db['NAME']}"
-    )
-    return create_engine(url)
 
 
 def _load_geometries_and_values(
@@ -63,7 +53,7 @@ def _load_geometries_and_values(
         ctid_clause = ", ctid AS __ctid__" if include_ctid else ""
         query = f'SELECT *{ctid_clause} FROM "{schema}"."{table}"'
 
-    engine = _get_engine()
+    engine = get_engine()
     df = gpd.read_postgis(query, engine, geom_col=geom_col)
     engine.dispose()
     return df

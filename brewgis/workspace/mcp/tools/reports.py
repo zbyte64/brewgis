@@ -10,7 +10,7 @@ from typing import Any
 
 import geopandas as gpd
 from django.shortcuts import get_object_or_404
-from sqlalchemy import create_engine
+from brewgis.workspace.services._db import get_engine
 
 from brewgis.workspace.models import ScenarioReport
 from brewgis.workspace.models import Workspace
@@ -27,15 +27,6 @@ def _get_workspace(workspace_slug: str) -> Workspace | None:
     except (ValueError, TypeError):
         return None
 
-
-def _get_engine() -> create_engine:
-    """Build a SQLAlchemy engine from Django DB settings."""
-    from django.conf import settings
-
-    db = settings.DATABASES["default"]
-    return create_engine(
-        f"postgresql://{db['USER']}:{db['PASSWORD']}@{db['HOST']}:{db['PORT']}/{db['NAME']}"
-    )
 
 
 def register_tools(server: object) -> None:
@@ -164,8 +155,7 @@ def register_tools(server: object) -> None:
             layer_key = (layer_name or Path(file_name).stem).lower().replace(" ", "_")
             schema = workspace.db_schema
             table_name = layer_key
-
-            engine = _get_engine()
+            engine = get_engine()
             gdf.to_postgis(
                 name=table_name,
                 schema=schema,
@@ -173,7 +163,7 @@ def register_tools(server: object) -> None:
                 if_exists="replace",
                 index=False,
             )
-            engine.dispose()
+
 
             # Determine geometry type
             geom_types = gdf.geometry.type.unique()

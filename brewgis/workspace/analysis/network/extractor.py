@@ -18,9 +18,8 @@ import logging
 from typing import Any
 
 import osmnx as ox
-from django.conf import settings
-from sqlalchemy import create_engine
-from sqlalchemy import text
+from brewgis.workspace.services._db import get_engine
+from brewgis.workspace.services._db import text
 
 logger = logging.getLogger(__name__)
 
@@ -34,21 +33,6 @@ _REQUIRED_EDGE_COLS = {"id", "source", "target", "length", "geom"}
 class NetworkExtractionError(Exception):
     """Raised when network extraction fails."""
 
-
-def _get_db_url() -> str:
-    """Return the DATABASE_URL from Django settings."""
-    db_url = getattr(settings, "DATABASE_URL", None)
-    if db_url:
-        return db_url
-
-    # Fall back to building from DATABASES
-    from django.conf import settings as dj_settings  # noqa: PLC0415
-
-    db_conf = dj_settings.DATABASES["default"]
-    return (
-        f"postgresql://{db_conf['USER']}:{db_conf['PASSWORD']}"
-        f"@{db_conf['HOST']}:{db_conf['PORT']}/{db_conf['NAME']}"
-    )
 
 
 
@@ -68,7 +52,7 @@ class NetworkExtractor:
     @property
     def engine(self):
         if self._engine is None:
-            self._engine = create_engine(_get_db_url())
+            self._engine = get_engine()
         return self._engine
 
     def extract_for_bbox(

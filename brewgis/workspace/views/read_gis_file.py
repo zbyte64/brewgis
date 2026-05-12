@@ -12,7 +12,7 @@ from django.shortcuts import render
 from django.urls import reverse
 from django.utils.decorators import method_decorator
 from django.views.generic.edit import FormView
-from sqlalchemy import create_engine
+from brewgis.workspace.services._db import get_engine
 
 from brewgis.workspace.models import Workspace
 from brewgis.workspace.services.column_inspector import inspect_table
@@ -66,9 +66,7 @@ def read_gis_file_into_table(
     # columns need to be lower case for tipg: https://github.com/developmentseed/tipg/issues/195
     if settings.TILE_SERVER_BACKEND == "tipg":
         df.columns = map(str.lower, df.columns)
-    con = create_engine(
-        os.environ.get("DATABASE_URL").replace("postgres://", "postgresql://", 1),  # type: ignore[union-attr]
-    )
+    con = get_engine()
     df.to_postgis(table_name, con, schema, chunksize=50000)
     # Phase 1c: generate dbt staging models for the imported table
     try:

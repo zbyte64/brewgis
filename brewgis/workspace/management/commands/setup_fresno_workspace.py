@@ -23,7 +23,7 @@ from django.core.management.base import CommandError
 from django.core.management.base import CommandParser
 from django.db import connection
 from django.utils import timezone
-from sqlalchemy import create_engine
+from brewgis.workspace.services._db import get_engine
 
 from brewgis.workspace.analysis.data_export import export_building_types
 from brewgis.workspace.analysis.pipeline import run_modules_sync
@@ -262,13 +262,6 @@ class Command(BaseCommand):
             )
             return cursor.fetchone()[0]
 
-    def _get_db_url(self) -> str:
-        db = settings.DATABASES["default"]
-        return (
-            f"postgresql://{db['USER']}:{db['PASSWORD']}"
-            f"@{db['HOST']}:{db['PORT']}/{db['NAME']}"
-        )
-
     def _read_geojson(self, filename: str) -> gpd.GeoDataFrame:
         filepath = CACHE_DIR / filename
         if not filepath.exists():
@@ -287,13 +280,11 @@ class Command(BaseCommand):
         if "geometry" in df.columns and "geom" in df.columns:
             df = df.drop(columns=["geometry"])
         df.columns = [c.lower() for c in df.columns]
-        if df.crs is None or df.crs.to_string() != "EPSG:4326":
-            df = df.to_crs("EPSG:4326")
-        engine = create_engine(self._get_db_url())
+        engine = get_engine()
         df.to_postgis(
             table, engine, schema=schema, if_exists="replace", chunksize=50000
         )
-        engine.dispose()
+
 
     def _register_layer(
         self,
@@ -353,11 +344,7 @@ class Command(BaseCommand):
 
         # Write to staging table, preserving geometry column name for ETL
 
-        staging_table = "raw_parcels"
-        df.columns = [c.lower() for c in df.columns]
-        if df.crs is None or df.crs.to_string() != "EPSG:4326":
-            df = df.to_crs("EPSG:4326")
-        engine = create_engine(self._get_db_url())
+        engine = get_engine()
         df.to_postgis(
             staging_table,
             engine,
@@ -365,7 +352,7 @@ class Command(BaseCommand):
             if_exists="replace",
             chunksize=50000,
         )
-        engine.dispose()
+
         self.stdout.write(f"  Wrote {len(df)} parcels to staging table")
 
         # Create data source adapters
@@ -554,9 +541,8 @@ class Command(BaseCommand):
         # Run classifier
         classifier = BuiltFormClassifier(strategy="heuristic")
         gdf = classifier.assign(gdf)
-
         # Write classified data back
-        engine = create_engine(self._get_db_url())
+        engine = get_engine()
         gdf.to_postgis(
             table,
             engine,
@@ -564,7 +550,7 @@ class Command(BaseCommand):
             if_exists="replace",
             chunksize=50000,
         )
-        engine.dispose()
+
         self.stdout.write(f"  Written {len(gdf)} classified parcels back to {schema}.{table}")
 
         # Report distribution

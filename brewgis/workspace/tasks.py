@@ -10,7 +10,7 @@ from celery import shared_task
 from celery.utils.log import get_task_logger
 from django.conf import settings
 from django.utils import timezone
-from sqlalchemy import create_engine
+from brewgis.workspace.services._db import get_engine
 
 from brewgis.workspace.analysis.data_export import export_building_types
 from brewgis.workspace.analysis.dbt_runner import DbtRunnerWrapper
@@ -529,19 +529,11 @@ def run_census_fetch(
         table_name = f"census_acs_{year}_{state_fips}_{county_fips}"
 
         # Write to PostGIS
-
-        db_url = settings.DATABASES["default"]["NAME"]
-        db_user = settings.DATABASES["default"]["USER"]
-        db_pass = settings.DATABASES["default"]["PASSWORD"]
-        db_host = settings.DATABASES["default"]["HOST"]
-        db_port = settings.DATABASES["default"]["PORT"]
-        engine = create_engine(
-            f"postgresql://{db_user}:{db_pass}@{db_host}:{db_port}/{db_url}"
-        )
+        engine = get_engine()
         gdf.to_postgis(
             table_name, engine, schema=schema, if_exists="replace", index=False
         )
-        engine.dispose()
+
 
         # Register as Layer
 
@@ -610,21 +602,12 @@ def run_lehd_fetch(
             run.completed_at = timezone.now()
             run.save(update_fields=["status", "error_log", "completed_at"])
             return {"success": False, "error": msg}
-
         table_name = f"lehd_{state_fips}_{county_fips}"
-
-        db_url = settings.DATABASES["default"]["NAME"]
-        db_user = settings.DATABASES["default"]["USER"]
-        db_pass = settings.DATABASES["default"]["PASSWORD"]
-        db_host = settings.DATABASES["default"]["HOST"]
-        db_port = settings.DATABASES["default"]["PORT"]
-        engine = create_engine(
-            f"postgresql://{db_user}:{db_pass}@{db_host}:{db_port}/{db_url}"
-        )
+        engine = get_engine()
         gdf.to_postgis(
             table_name, engine, schema=schema, if_exists="replace", index=False
         )
-        engine.dispose()
+
 
         layer, created = Layer.objects.get_or_create(
             key=f"lehd_{state_fips}_{county_fips}",
@@ -698,19 +681,11 @@ def run_poi_fetch(
         suffix = uuid4().hex[:8]
         table_name = f"poi_{suffix}"
         layer_key = f"poi_{suffix}"
-
-        db_url = settings.DATABASES["default"]["NAME"]
-        db_user = settings.DATABASES["default"]["USER"]
-        db_pass = settings.DATABASES["default"]["PASSWORD"]
-        db_host = settings.DATABASES["default"]["HOST"]
-        db_port = settings.DATABASES["default"]["PORT"]
-        engine = create_engine(
-            f"postgresql://{db_user}:{db_pass}@{db_host}:{db_port}/{db_url}"
-        )
+        engine = get_engine()
         gdf.to_postgis(
             table_name, engine, schema=schema, if_exists="replace", index=False
         )
-        engine.dispose()
+
 
         cat_label = ",".join(categories) if categories else "all"
         layer, created = Layer.objects.get_or_create(

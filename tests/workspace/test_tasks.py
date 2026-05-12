@@ -145,7 +145,7 @@ class TestRunCensusFetch:
     @patch("brewgis.workspace.tasks.DataImportRun.objects.get")
     @patch("brewgis.workspace.tasks.fetch_acs_block_groups")
     @patch("brewgis.workspace.tasks.Layer.objects.get_or_create")
-    @patch("brewgis.workspace.tasks.create_engine")
+    @patch("brewgis.workspace.services._db.get_engine")
     def test_success(
         self,
         mock_engine: MagicMock,
@@ -180,7 +180,7 @@ class TestRunCensusFetch:
 
     @patch("brewgis.workspace.tasks.DataImportRun.objects.get")
     @patch("brewgis.workspace.tasks.fetch_acs_block_groups")
-    @patch("brewgis.workspace.tasks.create_engine")
+    @patch("brewgis.workspace.services._db.get_engine")
     def test_empty_result(
         self,
         mock_engine: MagicMock,
@@ -234,7 +234,7 @@ class TestRunLehdFetch:
     @patch("brewgis.workspace.tasks.DataImportRun.objects.get")
     @patch("brewgis.workspace.tasks.fetch_lehd_block_data")
     @patch("brewgis.workspace.tasks.Layer.objects.get_or_create")
-    @patch("brewgis.workspace.tasks.create_engine")
+    @patch("brewgis.workspace.services._db.get_engine")
     def test_success(
         self,
         mock_engine: MagicMock,
@@ -320,7 +320,7 @@ class TestRunPoiFetch:
     @patch("brewgis.workspace.tasks.DataImportRun.objects.get")
     @patch("brewgis.workspace.tasks.fetch_pois")
     @patch("brewgis.workspace.tasks.Layer.objects.get_or_create")
-    @patch("brewgis.workspace.tasks.create_engine")
+    @patch("brewgis.workspace.services._db.get_engine")
     def test_success(  # noqa: PLR0913
         self,
         mock_engine: MagicMock,
