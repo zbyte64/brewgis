@@ -72,7 +72,7 @@ def test_dbt_runner_expands_column_mapping(tmp_path):
 
     runner = DbtRunnerWrapper(project_dir=str(project_dir))
 
-    with patch("dbt.cli.main.dbtRunner") as MockDbtRunner:
+    with patch("brewgis.workspace.analysis.dbt_runner.dbtRunner") as MockDbtRunner:
         mock_instance = MockDbtRunner.return_value
         mock_result = MagicMock()
         mock_result.result = None  # triggers _parse_results fallback, avoids iteration

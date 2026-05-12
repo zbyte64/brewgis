@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
+from typing import Any
 
 from django.db import connection
 
@@ -110,3 +111,49 @@ def _quote_identifier(name: str) -> str:
     """Quote a PostgreSQL identifier (schema.table)."""
     parts = name.split(".")
     return ".".join(f'"{part}"' for part in parts)
+
+def get_table_schema(schema: str, table_name: str) -> list[dict[str, Any]]:
+    """Return column metadata for a PostGIS table.
+
+    Returns a list of dicts with keys: name, data_type, nullable, sample_values.
+    Returns an empty list if the table does not exist.
+    """
+    with connection.cursor() as cursor:
+        cursor.execute(
+            """
+            SELECT column_name, data_type, is_nullable
+            FROM information_schema.columns
+            WHERE table_schema = %s AND table_name = %s
+            ORDER BY ordinal_position
+            """,
+            [schema, table_name],
+        )
+        rows = cursor.fetchall()
+        if not rows:
+            return []
+
+        columns: list[dict[str, Any]] = []
+        for name, data_type, nullable in rows:
+            col_info: dict[str, Any] = {
+                "name": name,
+                "data_type": data_type,
+                "nullable": nullable == "YES",
+                "sample_values": [],
+            }
+            # Fetch sample values for non-geometry columns
+            if data_type not in ("USER-DEFINED", "geometry", "geography"):
+                try:
+                    cursor.execute(
+                        f"""
+                        SELECT DISTINCT {_quote_identifier(name)}
+                        FROM {_quote_identifier(f"{schema}.{table_name}")}
+                        WHERE {_quote_identifier(name)} IS NOT NULL
+                        LIMIT 5
+                        """,
+                    )
+                    samples = cursor.fetchall()
+                    col_info["sample_values"] = [row[0] for row in samples if row[0] is not None]
+                except Exception:
+                    col_info["sample_values"] = []
+            columns.append(col_info)
+    return columns

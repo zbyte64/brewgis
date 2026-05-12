@@ -117,6 +117,16 @@ class DbtRunnerWrapper:
 
     def __init__(self, project_dir: str | Path | None = None) -> None:
         self.project_dir = Path(project_dir) if project_dir else DBT_PROJECT_DIR
+        # Install dbt packages if needed
+        self._ensure_deps()
+
+    def _ensure_deps(self) -> None:
+        """Run ``dbt deps`` if dbt_packages directory does not exist and packages.yml is present."""
+        packages_dir = self.project_dir / "dbt_packages"
+        packages_yml = self.project_dir / "packages.yml"
+        if not packages_dir.exists() and packages_yml.exists():
+            from dbt.cli.main import dbtRunner as DepsRunner
+            DepsRunner().invoke(["deps", "--project-dir", str(self.project_dir)])
 
     def _parse_results(self, result: Any) -> DbtResult:
         """Extract structured results from a dbtRunner result object."""

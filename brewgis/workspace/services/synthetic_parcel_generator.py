@@ -341,6 +341,15 @@ def generate_synthetic_parcels(
         row.update(emp_details)
         row.update(bldg_area)
         row.update(irrigation)
+        row.update(
+            {
+                "cost_burden_pct": round(rng.uniform(15, 45), 1),
+                "median_income": round(rng.uniform(25000, 120000)),
+                "pct_college_educated": round(rng.uniform(5, 60), 1),
+                "pct_minority": round(rng.uniform(10, 90), 1),
+                "rent_burden_pct": round(rng.uniform(15, 50), 1),
+            }
+        )
 
         rows_data.append(row)
 

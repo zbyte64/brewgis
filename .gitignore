@@ -37,6 +37,8 @@ pip-delete-this-directory.txt
 
 planning/
 tests/review/screenshots/
+brewgis/dbt_project/dbt_packages/
+brewgis/dbt_project/package-lock.yml
 brewgis/dbt_project/models/staging/
 brewgis/dbt_project/.user.yml
 tests/e2e/screenshots/tests/
@@ -280,6 +282,7 @@ dump.rdb
 brewgis/media/
 
 .pytest_cache/
+cache/
 .ipython/
 .env
 .envs/*

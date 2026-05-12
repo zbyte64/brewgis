@@ -9,7 +9,7 @@ import pytest
 from django.db import connection
 
 
-pytestmark = [pytest.mark.integration]
+pytestmark = [pytest.mark.integration, pytest.mark.django_db]
 
 
 class TestAcresFunction:
