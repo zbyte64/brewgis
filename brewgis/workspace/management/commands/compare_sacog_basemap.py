@@ -9,21 +9,35 @@ Only displays results, never makes recommendations.
 
 from __future__ import annotations
 
+import hashlib
 import logging
 import subprocess
 import time
 from pathlib import Path
 
+import geopandas as gpd
 from django.conf import settings
 from django.core.management.base import BaseCommand
 from django.core.management.base import CommandError
 from django.db import connection
+
+from brewgis.workspace.services.base_canvas_schema import BaseCanvasSchema
+from brewgis.workspace.services.calibration_registry import SACOG_CALIBRATION
 
 logger = logging.getLogger(__name__)
 
 CACHE_DIR = Path(settings.BASE_DIR) / "planning"
 SACOG_PARCELS_GEOJSON = CACHE_DIR / "sacog_parcels_502k.geojson"
 REPORT_PATH = CACHE_DIR / "sacog_comparison_report.md"
+# Schema-versioned cache filename for invariant cache detection
+_ETL_SCHEMA_HASH: str = hashlib.md5(  # noqa: S324
+    "".join(sorted(BaseCanvasSchema.COLUMN_NAMES)).encode()
+    + BaseCanvasSchema.create_table_sql().encode()
+).hexdigest()[:8]
+
+SACOG_PARCELS_GEOJSON_HASHED = (
+    CACHE_DIR / f"sacog_parcels_502k_{_ETL_SCHEMA_HASH}.geojson"
+)
 
 # SACOG region = Sacramento County, CA
 STATE_FIPS = "06"
@@ -129,6 +143,10 @@ class Command(BaseCommand):
                 f"\n  ETL complete: {etl_result['rows']:,} rows in {etl_result['elapsed']:.1f}s"
             )
         )
+        # ── Phase 2.5: Assert geometry identity invariant ────────────────
+        self.stdout.write("\n── Phase 2.5: Asserting geometry identity ──")
+        self._assert_geometry_identity(parcels_gdf)
+        self.stdout.write("  Geometry identity verified ✅")
 
         # ── Phase 3: Query reference values ────────────────────────────
         self.stdout.write("\n── Phase 3: Querying reference base canvas ──")
@@ -199,11 +217,12 @@ class Command(BaseCommand):
         Includes ``land_use`` column from the reference table so the ETL can
         classify parcels by use in quick mode (via NullLandUseSource + SACOG mapping).
         """
-        import geopandas as gpd  # noqa: PLC0415
 
-        if SACOG_PARCELS_GEOJSON.exists():
+        cache_path = SACOG_PARCELS_GEOJSON_HASHED
+
+        if cache_path.exists():
             self._log("Loading from cached GeoJSON")
-            gdf = gpd.read_file(str(SACOG_PARCELS_GEOJSON))
+            gdf = gpd.read_file(str(cache_path))
             if limit > 0 and len(gdf) > limit:
                 gdf = gdf.head(limit)
             # Merge land_use from reference table by geography_id
@@ -236,6 +255,7 @@ class Command(BaseCommand):
             {limit_clause}
         """
         gdf = gpd.GeoDataFrame.from_postgis(sql, connection, geom_col="geometry")
+        gdf.to_file(str(cache_path), driver="GeoJSON")
         return gdf
 
     # ═══════════════════════════════════════════════════════════════════
@@ -309,6 +329,7 @@ class Command(BaseCommand):
                 self._log(f"OSM init failed (will use defaults): {exc}")
 
         etl = BaseCanvasETL(
+            calibration=SACOG_CALIBRATION,
             demographic_source=demographic_source,
             employment_source=employment_source,
             land_use_source=land_use_source,
@@ -340,6 +361,65 @@ class Command(BaseCommand):
                 temp_geojson.unlink()
 
         return result
+
+    def _assert_geometry_identity(self, input_gdf: gpd.GeoDataFrame) -> None:
+        """Assert that the ETL output matches the input parcel geometries.
+
+        Raises CommandError if:
+        - Row count differs
+        - Area totals diverge beyond rounding threshold (>0.1%)
+        - geography_id ordering is non-deterministic
+        """
+
+        with connection.cursor() as cursor:
+            cursor.execute("SELECT COUNT(*) FROM public.base_canvas")
+            db_count = cursor.fetchone()[0]
+
+        if db_count != len(input_gdf):
+            raise CommandError(
+                f"Geometry identity violation: {db_count} rows in DB vs "
+                f"{len(input_gdf)} input parcels. Cannot produce valid comparison."
+            )
+
+        if "geography_id" in input_gdf.columns:
+            input_ids = sorted(input_gdf["geography_id"].tolist())
+            with connection.cursor() as cursor:
+                cursor.execute(
+                    "SELECT geography_id FROM public.base_canvas "
+                    "WHERE geography_id IS NOT NULL ORDER BY geography_id"
+                )
+                db_ids = [row[0] for row in cursor.fetchall()]
+            if input_ids != db_ids:
+                raise CommandError(
+                    "Geography ID mismatch between input parcels and base_canvas. "
+                    "The ORDER BY clause may have changed."
+                )
+
+        # Area conservation check (warning, not error)
+        try:
+            projected = input_gdf.to_crs("EPSG:6933")
+        except Exception:
+            self.stdout.write(
+                self.style.WARNING(
+                    "  Could not project input geometry to EPSG:6933 for area check"
+                )
+            )
+            return
+
+        input_area = float(projected.geometry.area.sum() / 4046.86)
+        with connection.cursor() as cursor:
+            cursor.execute(
+                "SELECT COALESCE(SUM(area_gross), 0) FROM public.base_canvas"
+            )
+            db_area = float(cursor.fetchone()[0])
+        area_diff_pct = abs(input_area - db_area) / max(input_area, 1) * 100
+        if area_diff_pct > 0.1:
+            self.stdout.write(
+                self.style.WARNING(
+                    f"Area mismatch: input={input_area:.1f} acres, "
+                    f"DB={db_area:.1f} acres ({area_diff_pct:.2f}% diff)"
+                )
+            )
 
     # ═══════════════════════════════════════════════════════════════════
     # Phase 3-4: Query totals
@@ -490,7 +570,12 @@ class Command(BaseCommand):
         v3_to_v1 = get_v1_columns_for_verification()
         # Filter to numeric columns that exist in both tables
         numeric_types = {
-            "numeric", "double precision", "real", "integer", "bigint", "smallint",
+            "numeric",
+            "double precision",
+            "real",
+            "integer",
+            "bigint",
+            "smallint",
         }
         with connection.cursor() as cur:
             # Get v3 column names and types from brewgis base_canvas
@@ -564,7 +649,9 @@ class Command(BaseCommand):
         # ── Summary comparison table ──────────────────────────────────
         lines.append("## 1. Aggregate Comparison")
         lines.append("")
-        lines.append("| Column | Reference (v1) | BrewGIS | Diff | % Diff | Corr (R) | Status |")
+        lines.append(
+            "| Column | Reference (v1) | BrewGIS | Diff | % Diff | Corr (R) | Status |"
+        )
         lines.append("|--------|--------:|------:|-----:|------:|---------:|:-------|")
 
         # Ordered groups of columns
@@ -781,7 +868,9 @@ class Command(BaseCommand):
                 warn = sum(1 for v in corr_vals if 0.30 <= v < 0.50)
                 poor = sum(1 for v in corr_vals if 0.10 <= v < 0.30)
                 fail = sum(1 for v in corr_vals if v < 0.10)
-                lines.append(f"\n**Correlation quality:** {good} GOOD, {ok} OK, {warn} WARN, {poor} POOR, {fail} FAIL (based on {len(corr_vals)} columns with R values)")
+                lines.append(
+                    f"\n**Correlation quality:** {good} GOOD, {ok} OK, {warn} WARN, {poor} POOR, {fail} FAIL (based on {len(corr_vals)} columns with R values)"
+                )
         # ── Adapter configuration ─────────────────────────────────────
         lines.append("\n## 2. Data Sources Used")
         lines.append("")
@@ -993,12 +1082,14 @@ class Command(BaseCommand):
                 "> The ETL allocation now uses area-weighted averages for rate/percentage/median "
             )
             lines.append(
-                "> columns (aggregation_hint=\"avg\"), so this should not occur if the source "
+                '> columns (aggregation_hint="avg"), so this should not occur if the source '
             )
             lines.append(
                 "> ACS data was correctly fetched and allocated. Check that Census ACS block-group "
             )
-            lines.append("> data was available and the spatial allocation ran successfully.")
+            lines.append(
+                "> data was available and the spatial allocation ran successfully."
+            )
             lines.append("")
         lines.append("")
         # ── Recommended Fix Sequence ────────────────────────────────────

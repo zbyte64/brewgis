@@ -31,6 +31,7 @@ from django.core.management.base import CommandError
 from django.core.management.base import CommandParser
 
 from brewgis.workspace.services.base_canvas_etl import BaseCanvasETL
+from brewgis.workspace.services.calibration_registry import SACOG_CALIBRATION
 
 logger = logging.getLogger(__name__)
 
@@ -148,6 +149,7 @@ class Command(BaseCommand):
 
         # Create the ETL service with configured adapters
         etl = BaseCanvasETL(
+            calibration=SACOG_CALIBRATION,
             demographic_source=demographic_source,
             employment_source=employment_source,
         )

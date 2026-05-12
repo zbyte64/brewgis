@@ -50,6 +50,10 @@ from brewgis.workspace.services.imputation_engine import ImputationRule
 from brewgis.workspace.services.synthetic_parcel_generator import (
     generate_synthetic_parcels,
 )
+from brewgis.workspace.services.calibration_registry import (
+    CalibrationPreset,
+    NATIONAL_DEFAULT,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -60,28 +64,6 @@ _DEFAULT_BLDG_SQFT_PER_DU = 1200.0
 _DEFAULT_BLDG_SQFT_PER_EMP = 300.0
 _DEFAULT_IRRIGATION_RES_FRAC = 0.1  # 10% of residential area irrigated
 _DEFAULT_IRRIGATION_COM_FRAC = 0.05  # 5% of employment area irrigated
-# ── SACOG-calibrated category-specific defaults ─────────────────
-_SACOG_IRRIGATION_FRAC_BY_CATEGORY: dict[str, dict[str, float]] = {
-    "urban": {"residential": 0.25, "commercial": 0.035},
-    "agricultural": {"residential": 0.34, "commercial": 0.029},
-    "industrial": {"residential": 0.25, "commercial": 0.035},
-    "undeveloped": {"residential": 0.0, "commercial": 0.0},
-    "mixed_use": {"residential": 0.25, "commercial": 0.035},
-}
-_SACOG_SQFT_PER_DU_BY_CATEGORY: dict[str, float] = {
-    "urban": 1200.0,
-    "agricultural": 1200.0,
-    "industrial": 1200.0,
-    "undeveloped": 0.0,
-    "mixed_use": 1500.0,
-}
-_SACOG_SQFT_PER_EMP_BY_CATEGORY: dict[str, float] = {
-    "urban": 400.0,
-    "agricultural": 300.0,
-    "industrial": 500.0,
-    "undeveloped": 0.0,
-    "mixed_use": 400.0,
-}
 
 # Demographic columns that can be allocated from Census block groups
 _DEMOGRAPHIC_COLUMNS = [
@@ -156,6 +138,7 @@ class BaseCanvasETL:
         land_use_source: LandUseSource | None = None,
         intersection_density_source: IntersectionDensitySource | None = None,
         irrigation_source: IrrigationSource | None = None,
+        calibration: CalibrationPreset | None = None,
         verbosity: int = 1,
     ) -> None:
         self._demographic_source = demographic_source or NullDemographicSource()
@@ -166,6 +149,7 @@ class BaseCanvasETL:
         )
         self._irrigation_source = irrigation_source or NullIrrigationSource()
         self._verbosity = verbosity
+        self._calibration = calibration or NATIONAL_DEFAULT
         self._messages: list[str] = []
         self._start_time: float = 0.0
 
@@ -464,14 +448,18 @@ class BaseCanvasETL:
         computes area-weighted averages of source values per target parcel.
         """
         # ── Split columns by aggregation hint ─────────────────────────
-        sum_cols: list[str] = []
-        avg_cols: list[str] = []
-        for col in available_cols:
-            col_def = BaseCanvasSchema.get(col)
-            if col_def and col_def.aggregation_hint == "avg":
-                avg_cols.append(col)
-            else:
-                sum_cols.append(col)
+        # Only include columns that are actually available in the source
+        schema_sum_cols = set(BaseCanvasSchema.sum_columns())
+        schema_avg_cols = set(BaseCanvasSchema.avg_columns())
+        sum_cols = [c for c in available_cols if c in schema_sum_cols]
+        avg_cols = [c for c in available_cols if c in schema_avg_cols]
+        # Fallback: if a column isn't classified in schema, default to sum
+        unclassified = [
+            c
+            for c in available_cols
+            if c not in schema_sum_cols and c not in schema_avg_cols
+        ]
+        sum_cols.extend(unclassified)
 
         with connection.cursor() as cursor:
             # ── Create temp tables (drop first to allow reuse) ──────
@@ -549,9 +537,7 @@ class BaseCanvasETL:
             # ── Aggregate: sum columns use area-weighted sums ─────────
             sum_exprs: list[str] = []
             for c in sum_cols:
-                sum_exprs.append(
-                    f'SUM(COALESCE("{c}_raw", 0) * weight) AS "{c}"'
-                )
+                sum_exprs.append(f'SUM(COALESCE("{c}_raw", 0) * weight) AS "{c}"')
             for c in avg_cols:
                 sum_exprs.append(
                     f'SUM(COALESCE("{c}_raw", 0) * intersect_area)'
@@ -569,9 +555,7 @@ class BaseCanvasETL:
                 raise RuntimeError(no_overlaps_msg)
 
             # ── Apply results back to GeoDataFrame ──────────────────
-            col_values: dict[str, dict[int, float]] = {
-                col: {} for col in all_cols
-            }
+            col_values: dict[str, dict[int, float]] = {col: {} for col in all_cols}
             for row in rows:
                 target_rid = row[0]
                 orig_idx = idx_map[target_rid]
@@ -583,14 +567,17 @@ class BaseCanvasETL:
             for col in all_cols:
                 if col_values[col]:
                     gdf[col] = gdf[col].fillna(pd.Series(col_values[col]))
-        # Clamp negative equity values (known issue)
-        for col in ("median_income",):
-            if col in gdf.columns:
-                neg_count = int((gdf[col] < 0).sum())
+        # Clamp negative values for currency/percentage/count columns
+        clamp_metatypes = {"currency", "percentage", "count"}
+        for col_def in BaseCanvasSchema.columns().values():
+            if col_def.metatype in clamp_metatypes and col_def.name in gdf.columns:
+                neg_count = int((gdf[col_def.name] < 0).sum())
                 if neg_count > 0:
-                    gdf.loc[gdf[col] < 0, col] = 0.0
+                    gdf.loc[gdf[col_def.name] < 0, col_def.name] = 0.0
                     logger.warning(
-                        'Clamped %d negative values in "%s" to 0.0', neg_count, col
+                        'Clamped %d negative values in "%s" to 0.0',
+                        neg_count,
+                        col_def.name,
                     )
 
     def _allocate_from_source(
@@ -647,10 +634,18 @@ class BaseCanvasETL:
         ]
         if "land_development_category" in gdf.columns:
             cat = gdf["land_development_category"].fillna("urban")
-            default_sqft_per_du = cat.map(_SACOG_SQFT_PER_DU_BY_CATEGORY).fillna(1200.0)
-            default_sqft_per_emp = cat.map(_SACOG_SQFT_PER_EMP_BY_CATEGORY).fillna(
-                300.0
-            )
+            default_sqft_per_du = cat.map(
+                {
+                    cat_name: cal.sqft_per_du
+                    for cat_name, cal in self._calibration.categories.items()
+                }
+            ).fillna(_DEFAULT_BLDG_SQFT_PER_DU)
+            default_sqft_per_emp = cat.map(
+                {
+                    cat_name: cal.sqft_per_emp
+                    for cat_name, cal in self._calibration.categories.items()
+                }
+            ).fillna(_DEFAULT_BLDG_SQFT_PER_EMP)
         else:
             default_sqft_per_du = pd.Series(_DEFAULT_BLDG_SQFT_PER_DU, index=gdf.index)
             default_sqft_per_emp = pd.Series(
@@ -755,11 +750,11 @@ class BaseCanvasETL:
             res_area = gdf["area_parcel_res"].fillna(gdf["area_gross"])
             if cat is not None:
                 cat = cat.fillna("urban")
-                for c, vals in _SACOG_IRRIGATION_FRAC_BY_CATEGORY.items():
+                for c, cat_cal in self._calibration.categories.items():
                     mask = cat == c
                     gdf.loc[mask, "residential_irrigated_area"] = gdf.loc[
                         mask, "residential_irrigated_area"
-                    ].fillna(res_area.loc[mask] * vals["residential"])
+                    ].fillna(res_area.loc[mask] * cat_cal.irrigation_res_frac)
             else:
                 gdf["residential_irrigated_area"] = gdf[
                     "residential_irrigated_area"
@@ -769,11 +764,11 @@ class BaseCanvasETL:
             emp_area = gdf["area_parcel_emp"].fillna(gdf["area_gross"])
             if cat is not None:
                 cat = cat.fillna("urban")
-                for c, vals in _SACOG_IRRIGATION_FRAC_BY_CATEGORY.items():
+                for c, cat_cal in self._calibration.categories.items():
                     mask = cat == c
                     gdf.loc[mask, "commercial_irrigated_area"] = gdf.loc[
                         mask, "commercial_irrigated_area"
-                    ].fillna(emp_area.loc[mask] * vals["commercial"])
+                    ].fillna(emp_area.loc[mask] * cat_cal.irrigation_com_frac)
             else:
                 gdf["commercial_irrigated_area"] = gdf[
                     "commercial_irrigated_area"
@@ -789,11 +784,23 @@ class BaseCanvasETL:
             self._log("Using default intersection density")
 
         if "intersection_density" in gdf.columns:
-            gdf["intersection_density"] = (
-                gdf["intersection_density"]
-                .fillna(_DEFAULT_INTERSECTION_DENSITY)
-                .round(2)
-            )
+            # Apply per-category defaults if land_development_category is available
+            if "land_development_category" in gdf.columns:
+                cat = gdf["land_development_category"].fillna("urban")
+                cat_defaults = cat.map(
+                    {
+                        cat_name: cal.intersection_density
+                        for cat_name, cal in self._calibration.categories.items()
+                    }
+                ).fillna(_DEFAULT_INTERSECTION_DENSITY)
+                gdf["intersection_density"] = gdf["intersection_density"].fillna(
+                    cat_defaults
+                )
+            else:
+                gdf["intersection_density"] = gdf["intersection_density"].fillna(
+                    _DEFAULT_INTERSECTION_DENSITY
+                )
+            gdf["intersection_density"] = gdf["intersection_density"].round(2)
         return gdf
 
     def _impute_nulls(self, gdf: gpd.GeoDataFrame) -> gpd.GeoDataFrame:
@@ -841,9 +848,7 @@ class BaseCanvasETL:
         ):
             sub_sum = gdf[["du_detsf_sl", "du_detsf_ll"]].sum(axis=1)
             valid_mask = (
-                gdf["du_detsf_sl"].notna()
-                & gdf["du_detsf_ll"].notna()
-                & (sub_sum > 0)
+                gdf["du_detsf_sl"].notna() & gdf["du_detsf_ll"].notna() & (sub_sum > 0)
             )
             gdf.loc[valid_mask, "du_detsf"] = sub_sum
 
@@ -852,9 +857,7 @@ class BaseCanvasETL:
         ):
             sub_sum = gdf[["du_mf2to4", "du_mf5p"]].sum(axis=1)
             valid_mask = (
-                gdf["du_mf2to4"].notna()
-                & gdf["du_mf5p"].notna()
-                & (sub_sum > 0)
+                gdf["du_mf2to4"].notna() & gdf["du_mf5p"].notna() & (sub_sum > 0)
             )
             gdf.loc[valid_mask, "du_mf"] = sub_sum
 

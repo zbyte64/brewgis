@@ -52,6 +52,9 @@ module = [
     "celery",
     "environ",
     "geopandas",
+    "pandas",
+    "shapely",
+    "shapely.*",
     "werkzeug.*",
 ]
 ignore_missing_imports = true

@@ -1146,6 +1146,35 @@ class BaseCanvasSchema:
         )
         return [gist_idx, btree_idx]
 
+    @classmethod
+    def group_by_aggregation_hint(cls) -> dict[str, list[str]]:
+        """Return ``{hint: [column_names]}`` for all non-geometry, non-identity columns."""
+        groups: dict[str, list[str]] = {}
+        for col_def in cls.columns().values():
+            if col_def.metatype in ("identity", "geometry"):
+                continue
+            groups.setdefault(col_def.aggregation_hint, []).append(col_def.name)
+        return groups
+
+    @classmethod
+    def sum_columns(cls) -> list[str]:
+        """Columns that should be area-weighted summed during spatial allocation."""
+        return cls.group_by_aggregation_hint().get("sum", [])
+
+    @classmethod
+    def avg_columns(cls) -> list[str]:
+        """Columns that should be area-weighted averaged during spatial allocation."""
+        return cls.group_by_aggregation_hint().get("avg", [])
+
+    @classmethod
+    def by_metatype(cls, metatype: str) -> list[str]:
+        """Return column names matching the given metatype."""
+        return [
+            col_def.name
+            for col_def in cls.columns().values()
+            if col_def.metatype == metatype
+        ]
+
 
 # ── Computed classification sets ────────────────────────────────────
 # Generator expressions in the class body can't reference class-level
