@@ -1,8 +1,7 @@
 """dlt pipeline for LEHD LODES WAC data extraction.
 
 Downloads gzipped CSVs from the US Census LEHD API and loads them into
-a PostgreSQL staging table via dlt. Supports incremental loading based
-on year so re-runs only download missing years.
+a PostgreSQL staging table via dlt.
 """
 
 from __future__ import annotations
@@ -31,15 +30,14 @@ __all__ = [
 def lehd_source(
     state_fips: str = "06",
     county_fips: str = "067",
-    year: int = dlt.sources.incremental[int]("year"),  # type: ignore[assignment]
+    year: int,
 ) -> list[Any]:
     """dlt source for LEHD LODES WAC data extraction.
 
     Args:
         state_fips: Two-digit state FIPS code.
         county_fips: Three-digit county FIPS code.
-        year: Incremental year — only downloads data for years not yet
-            loaded on re-run.
+        year: LEHD LODES release year.
 
     Returns:
         List with a single :class:`dlt.Resource` yielding WAC records
@@ -58,10 +56,10 @@ def lehd_source(
 def lehd_lodes_resource(
     state_fips: str,
     county_fips: str,
-    year: int = dlt.sources.incremental[int]("year"),  # type: ignore[assignment]
+    year: int,
 ) -> Any:
     """Download LODES WAC gzipped CSV and yield rows as dicts."""
-    year_val: int = year.last_value if isinstance(year, dlt.sources.incremental) else year  # type: ignore[assignment]
+    year_val: int = year
     state_abbr = _FIPS_TO_STATE.get(state_fips, "")
     if not state_abbr:
         raise ValueError(f"Unknown state FIPS: {state_fips}")
