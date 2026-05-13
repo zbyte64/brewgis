@@ -63,13 +63,22 @@ def get_gx_context() -> "gx.DataContext":  # type: ignore[name-defined]
     project_dir = getattr(settings, "GX_PROJECT_DIR", None)
     if project_dir is None:
         project_dir = Path(__file__).resolve().parent
+    gx_config = project_dir / "great_expectations.yml"
+    if not gx_config.exists():
+        msg = (
+            f"Great Expectations config not found at {gx_config}. "
+            "Run `great_expectations init` or check GX_PROJECT_DIR setting."
+        )
+        raise FileNotFoundError(msg)
     return gx.data_context.FileDataContext(str(project_dir))  # type: ignore[arg-type]
 
 
 # ── Checkpoint runner ──────────────────────────────────────────────
 
 
-def run_checkpoint(checkpoint_name: str, schema: str | None = None, table: str | None = None) -> dict[str, Any]:
+def run_checkpoint(
+    checkpoint_name: str, schema: str | None = None, table: str | None = None
+) -> dict[str, Any]:
     """Run a named checkpoint and return its result summary.
 
     If *both* *schema* and *table* are provided the checkpoint is run
@@ -97,12 +106,16 @@ def run_checkpoint(checkpoint_name: str, schema: str | None = None, table: str |
 # ── Convenience validators ─────────────────────────────────────────
 
 
-def validate_base_canvas(schema: str = "public", table: str = "base_canvas") -> dict[str, Any]:
+def validate_base_canvas(
+    schema: str = "public", table: str = "base_canvas"
+) -> dict[str, Any]:
     """Validate a base canvas table against the ``base_canvas`` expectation suite."""
     return run_checkpoint("base_canvas_etl", schema=schema, table=table)
 
 
-def validate_census_acs(schema: str = "public", table: str = "census_acs") -> dict[str, Any]:
+def validate_census_acs(
+    schema: str = "public", table: str = "census_acs"
+) -> dict[str, Any]:
     """Validate a Census ACS staging table."""
     return run_checkpoint("census_ingest", schema=schema, table=table)
 
@@ -132,22 +145,30 @@ def validate_dbt_table(schema: str, table: str, suite_name: str) -> dict[str, An
     return run_checkpoint("dbt_module_run")
 
 
-def validate_synthetic_parcels(schema: str = "public", table: str = "synthetic_parcels") -> dict[str, Any]:
+def validate_synthetic_parcels(
+    schema: str = "public", table: str = "synthetic_parcels"
+) -> dict[str, Any]:
     """Validate a synthetic parcels table."""
     return run_checkpoint("synthetic_parcels", schema=schema, table=table)
 
 
-def validate_spatial_allocation(schema: str = "public", table: str = "spatial_allocation") -> dict[str, Any]:
+def validate_spatial_allocation(
+    schema: str = "public", table: str = "spatial_allocation"
+) -> dict[str, Any]:
     """Validate a spatial allocation output table."""
     return run_checkpoint("spatial_allocation", schema=schema, table=table)
 
 
-def validate_column_stitching(schema: str = "public", table: str = "column_stitching") -> dict[str, Any]:
+def validate_column_stitching(
+    schema: str = "public", table: str = "column_stitching"
+) -> dict[str, Any]:
     """Validate a column stitching / imputation output table."""
     return run_checkpoint("column_stitching", schema=schema, table=table)
 
 
-def validate_built_form_export(schema: str = "public", table: str = "built_forms") -> dict[str, Any]:
+def validate_built_form_export(
+    schema: str = "public", table: str = "built_forms"
+) -> dict[str, Any]:
     """Validate a built form export table."""
     return run_checkpoint("built_form_export", schema=schema, table=table)
 
@@ -186,7 +207,9 @@ def _build_batch_request(
     return data_asset.build_batch_request()
 
 
-def _summarise_run(result: Any, checkpoint_name: str, severity: str | None = None) -> dict[str, Any]:
+def _summarise_run(
+    result: Any, checkpoint_name: str, severity: str | None = None
+) -> dict[str, Any]:
     """Convert a CheckpointResult to a plain dict summary."""
     success = result.success
     failures: list[str] = []

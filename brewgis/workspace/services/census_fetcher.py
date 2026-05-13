@@ -334,11 +334,7 @@ def fetch_acs_block_group_polygons(
         GeoDataFrame with polygon geometry, geoid, and all
         demographic columns mapped to BaseCanvasSchema names.
     """
-    try:
-        engine = get_engine()
-    except Exception:
-        logger.exception("Failed to get database engine")
-        return gpd.GeoDataFrame()
+    engine = get_engine()
 
     query = text("""
         SELECT a.*, t.geometry
@@ -350,22 +346,13 @@ def fetch_acs_block_group_polygons(
           AND a.county = :county_fips
     """)
 
-    try:
-        with engine.connect() as conn:
-            rows = conn.execute(
-                query,
-                {"year": year, "state_fips": state_fips, "county_fips": county_fips},
-            ).fetchall()
-            columns = list(rows[0]._fields) if rows else []
-            data = [dict(zip(columns, row, strict=False)) for row in rows]
-    except Exception:
-        logger.exception(
-            "Failed to query staging tables for %s/%s year %s",
-            state_fips,
-            county_fips,
-            year,
-        )
-        return gpd.GeoDataFrame()
+    with engine.connect() as conn:
+        rows = conn.execute(
+            query,
+            {"year": year, "state_fips": state_fips, "county_fips": county_fips},
+        ).fetchall()
+        columns = list(rows[0]._fields) if rows else []
+        data = [dict(zip(columns, row, strict=False)) for row in rows]
 
     if not data:
         logger.warning(

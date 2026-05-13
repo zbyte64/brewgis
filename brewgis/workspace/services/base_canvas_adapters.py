@@ -385,11 +385,7 @@ class CensusDemographicSource:
         sf = state_fips or self._state_fips
         cf = county_fips or self._county_fips
 
-        try:
-            gdf = fetch_acs_block_group_polygons(sf, cf, self._year, self._use_cache)
-        except Exception as exc:
-            logger.warning("Census fetch failed: %s", exc)
-            gdf = gpd.GeoDataFrame()
+        gdf = fetch_acs_block_group_polygons(sf, cf, self._year, self._use_cache)
 
         self._data = gdf
         return gdf
@@ -431,11 +427,7 @@ class LEHDEmploymentSource:
         sf = state_fips or self._state_fips
         cf = county_fips or self._county_fips
 
-        try:
-            gdf = fetch_lehd_block_polygons(sf, cf, self._use_cache)
-        except Exception as exc:
-            logger.warning("LEHD fetch failed: %s", exc)
-            gdf = gpd.GeoDataFrame()
+        gdf = fetch_lehd_block_polygons(sf, cf, self._use_cache)
 
         self._data = gdf
         return gdf
@@ -587,7 +579,7 @@ class OSMIntersectionDensitySource:
             if area_sq_km > 0:
                 return len(intersections) / area_sq_km  # type: ignore[no-any-return]
             return None
-        except Exception as exc:
+        except (ValueError, KeyError, OSError) as exc:
             logger.warning("OSM intersection density computation failed: %s", exc)
             return None
 
