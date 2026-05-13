@@ -20,6 +20,7 @@ from brewgis.workspace.dagster.configs import BaseCanvasETLConfig
 from brewgis.workspace.dagster.configs import CreateFresnoScenarioConfig
 from brewgis.workspace.dagster.configs import FresnoConstraintsConfig
 from brewgis.workspace.dagster.configs import OnboardGeographyConfig
+from brewgis.gx import run_checkpoint
 
 # ═══════════════════════════════════════════════════════════════════════
 # Assets
@@ -46,6 +47,16 @@ def spatial_allocation(
     # Placeholder — Phase 2 will wire the actual service
     # from brewgis.workspace.services.spatial_allocator import allocate_attributes
     context.log.info("spatial_allocation asset invoked (not yet wired)")
+    # GX gate: validate spatial allocation output
+    try:
+        gx_result = run_checkpoint("spatial_allocation")
+        if not gx_result["success"] and gx_result.get("severity") == "warning":
+            context.log.warning(
+                "GX warning for spatial_allocation: %s",
+                ", ".join(gx_result["failures"][:3]),
+            )
+    except Exception as exc:
+        context.log.warning("GX checkpoint error for spatial_allocation: %s", exc)
     return MaterializeResult(metadata={"status": "placeholder"})
 
 
@@ -67,6 +78,16 @@ def imputation(
     built-form-default imputation strategies.
     """
     context.log.info("imputation asset invoked (not yet wired)")
+    # GX gate: validate imputation output
+    try:
+        gx_result = run_checkpoint("column_stitching")
+        if not gx_result["success"] and gx_result.get("severity") == "warning":
+            context.log.warning(
+                "GX warning for column_stitching: %s",
+                ", ".join(gx_result["failures"][:3]),
+            )
+    except Exception as exc:
+        context.log.warning("GX checkpoint error for column_stitching: %s", exc)
     return MaterializeResult(metadata={"status": "placeholder"})
 
 
@@ -144,6 +165,18 @@ def base_canvas_etl(
         result.get("rows", 0),
         result.get("elapsed", 0),
     )
+    # GX gate: validate base canvas ETL output
+    try:
+        gx_result = run_checkpoint("base_canvas_etl")
+        if not gx_result["success"] and gx_result.get("severity") == "critical":
+            raise RuntimeError(
+                "GX gate failed for base_canvas_etl: %s"
+                % ", ".join(gx_result["failures"][:5]),
+            )
+    except RuntimeError:
+        raise
+    except Exception as exc:
+        context.log.warning("GX checkpoint error for base_canvas_etl: %s", exc)
 
     return MaterializeResult(
         metadata={

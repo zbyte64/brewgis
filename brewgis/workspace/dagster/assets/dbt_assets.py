@@ -17,6 +17,7 @@ from brewgis.workspace.dagster.resources.dbt_resource import DbtCliResource
 from brewgis.workspace.dagster.resources.postgres_resource import PostgresResource
 from brewgis.workspace.analysis.module_registry import MODULE_DBT_SELECT
 from brewgis.workspace.analysis.module_registry import MODULE_DEPENDENCIES
+from brewgis.gx import run_checkpoint
 
 
 @asset(
@@ -123,6 +124,16 @@ def building_types_export(
     """Export BuildingType Django records to a flat PostGIS table for dbt."""
     from brewgis.workspace.analysis.data_export import export_building_types
     count = export_building_types(schema="public", table="built_forms")
+    # GX gate: validate built form export table
+    try:
+        gx_result = run_checkpoint("built_form_export")
+        if not gx_result["success"] and gx_result.get("severity") == "critical":
+            context.log.warning(
+                "GX critical gate failed for built_form_export: %s",
+                ", ".join(gx_result["failures"][:3]),
+            )
+    except Exception as exc:
+        context.log.warning("GX checkpoint error for built_form_export: %s", exc)
     return MaterializeResult(metadata={"rows": count})
 
 

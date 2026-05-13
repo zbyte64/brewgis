@@ -6,7 +6,6 @@ Usage::
     python manage.py validate_data_quality                    # all checkpoints
     python manage.py validate_data_quality --checkpoint base_canvas_etl  # single
     python manage.py validate_data_quality --checkpoint dbt_*  # glob
-    python manage.py validate_data_quality --severity critical  # filter
     python manage.py validate_data_quality --list              # list available
 """
 
@@ -35,12 +34,6 @@ class Command(BaseCommand):
             help="Checkpoint name or glob pattern (e.g. 'base_canvas_*').",
         )
         parser.add_argument(
-            "--severity",
-            choices=["critical", "warning"],
-            default=None,
-            help="Filter checkpoints by severity tag.",
-        )
-        parser.add_argument(
             "--list",
             action="store_true",
             dest="list_checkpoints",
@@ -64,12 +57,6 @@ class Command(BaseCommand):
         else:
             selected = all_checkpoints
 
-        if options["severity"]:
-            selected = [
-                name
-                for name in selected
-                if self._checkpoint_severity(context, name) == options["severity"]
-            ]
 
         if not selected:
             msg = "No checkpoints matched the given criteria."
@@ -80,16 +67,10 @@ class Command(BaseCommand):
     # ── Internal helpers ─────────────────────────────────────────────────
 
     def _list_checkpoints(self, names: list[str], context: Any) -> None:
-        """Print a table of available checkpoints with severity."""
+        """Print a list of available checkpoints."""
         self.stdout.write(self.style.MIGRATE_HEADING("Available checkpoints:"))
         for name in sorted(names):
-            severity = self._checkpoint_severity(context, name)
-            label = f"  {name}"
-            if severity:
-                label += f"  [{severity}]"
-            else:
-                label += "  [no severity]"
-            self.stdout.write(label)
+            self.stdout.write(f"  {name}")
 
     def _resolve_checkpoints(self, all_names: list[str], pattern: str) -> list[str]:
         """Resolve a name or glob pattern to a list of checkpoint names."""
@@ -101,14 +82,6 @@ class Command(BaseCommand):
             raise CommandError(msg)
         return matched
 
-    def _checkpoint_severity(self, context: Any, name: str) -> str | None:
-        """Return the severity tag of a checkpoint, if set."""
-        try:
-            cp = context.checkpoints.get(name)
-            meta = getattr(cp, "meta", None) or {}
-            return meta.get("severity")
-        except Exception:  # noqa: BLE001
-            return None
 
     def _run_selected(self, names: list[str], context: Any) -> str:
         """Run selected checkpoints and report results."""
