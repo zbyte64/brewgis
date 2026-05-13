@@ -34,6 +34,7 @@ from django.db import connection
 from django.db import transaction
 
 from brewgis.gx import validate_base_canvas
+from brewgis.gx import validate_synthetic_parcels
 from brewgis.workspace.services.base_canvas_adapters import DemographicSource
 from brewgis.workspace.services.base_canvas_adapters import EmploymentSource
 from brewgis.workspace.services.base_canvas_adapters import IntersectionDensitySource
@@ -160,6 +161,7 @@ class BaseCanvasETL:
         self._calibration = calibration or NATIONAL_DEFAULT
         self._messages: list[str] = []
         self._target_table = target_table or "public.base_canvas"
+        self._using_synthetic = False
         self._start_time: float = 0.0
 
     # ── Public API ──────────────────────────────────────────────────────
@@ -266,6 +268,22 @@ class BaseCanvasETL:
             # Step 11
             self._step("11/11", "Validating base canvas")
             self._validate()
+            # Post-validate synthetic parcels if applicable (warning severity)
+            if self._using_synthetic:
+                schema_name, table_name = self._target_table.split(".")
+                try:
+                    gx_result = validate_synthetic_parcels(
+                        schema=schema_name, table=table_name
+                    )
+                    if gx_result["success"]:
+                        self._log("GX synthetic_parcels validation passed")
+                    else:
+                        self._log(
+                            "GX synthetic_parcels warning: %s"
+                            % "; ".join(gx_result["failures"][:3])
+                        )
+                except Exception:
+                    self._log("GX synthetic_parcels validation failed (non-fatal)")
 
             elapsed = time.time() - self._start_time
 
@@ -312,6 +330,7 @@ class BaseCanvasETL:
 
         if synthetic_n is not None:
             self._log(f"Generating {synthetic_n} synthetic parcels")
+            self._using_synthetic = True
             return generate_synthetic_parcels(synthetic_n)
 
         return gpd.GeoDataFrame()

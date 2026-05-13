@@ -15,6 +15,9 @@ from brewgis.gx import validate_census_acs
 from brewgis.gx import validate_dbt_table
 from brewgis.gx import validate_lehd
 from brewgis.gx import validate_poi
+from brewgis.gx import validate_built_form_export
+from brewgis.gx import validate_column_stitching
+from brewgis.gx import validate_spatial_allocation
 from brewgis.workspace.analysis.data_export import export_building_types
 from brewgis.workspace.analysis.dbt_runner import DbtRunnerWrapper
 from brewgis.workspace.analysis.layer_registry import register_result_layer
@@ -72,6 +75,22 @@ def export_building_types_task(  # type: ignore[no-untyped-def]
             schema,
             table,
         )
+
+        # Post-export GX validation (warning severity — don't block pipeline)
+        try:
+            gx_result = validate_built_form_export(schema=schema, table=table)
+            if gx_result["success"]:
+                logger.info("GX validation passed for built_form_export")
+            else:
+                logger.warning(
+                    "GX validation warning for built_form_export (%s.%s): %s",
+                    schema,
+                    table,
+                    "; ".join(gx_result["failures"][:5]),
+                )
+        except Exception:
+            logger.exception("GX validation failed for built_form_export")
+
         return {"success": True, "count": count, "error": None}
     except Exception as e:
         logger.exception("Built form export failed")
@@ -108,6 +127,13 @@ MODULE_DBT_SELECT_MAP = {
     "food_access": ["food_access"],
     "housing_cost_burden": ["housing_cost_burden"],
     "sprawl_index": ["sprawl_index"],
+}
+MODULE_TO_SUITE = {
+    "core": "dbt_core_end_state",
+    "env_constraint": "dbt_env_constraint",
+    "trip_generation": "dbt_trip_generation",
+    "trip_distribution": "dbt_trip_distribution",
+    "mode_choice": "dbt_mode_choice",
 }
 
 
@@ -216,7 +242,7 @@ def run_dbt_module(  # type: ignore[no-untyped-def]
         table_name = f"{primary_table}_{scenario_id}"
 
         # Optional post-dbt GX validation (warning severity — don't block pipeline)
-        suite_name = f"dbt_{module}"
+        suite_name = MODULE_TO_SUITE.get(module, f"dbt_{module}")
         validation_result = validate_dbt_table(
             schema=target_schema,
             table=table_name,
@@ -899,6 +925,23 @@ def run_spatial_allocation(  # type: ignore[no-untyped-def]
         run.completed_at = timezone.now()
         run.save(update_fields=["status", "result", "completed_at"])
 
+        # Post-allocation GX validation (warning severity — don't block pipeline)
+        try:
+            gx_result = validate_spatial_allocation(
+                schema=target_schema,
+                table=target_table,
+            )
+            if gx_result["success"]:
+                logger.info("GX validation passed for spatial_allocation")
+            else:
+                logger.warning(
+                    "GX validation warning for spatial_allocation (%s.%s): %s",
+                    target_schema,
+                    target_table,
+                    "; ".join(gx_result["failures"][:5]),
+                )
+        except Exception:
+            logger.exception("GX validation failed for spatial_allocation")
         return {"success": True, **result}
 
     except DataImportRun.DoesNotExist:
@@ -980,6 +1023,20 @@ def run_column_stitching(  # type: ignore[no-untyped-def]
         run.completed_at = timezone.now()
         run.save(update_fields=["status", "result", "completed_at"])
 
+        # Post-stitching GX validation (warning severity — don't block pipeline)
+        try:
+            gx_result = validate_column_stitching(schema=schema, table=table)
+            if gx_result["success"]:
+                logger.info("GX validation passed for column_stitching")
+            else:
+                logger.warning(
+                    "GX validation warning for column_stitching (%s.%s): %s",
+                    schema,
+                    table,
+                    "; ".join(gx_result["failures"][:5]),
+                )
+        except Exception:
+            logger.exception("GX validation failed for column_stitching")
         return {"success": True, **result}
 
     except DataImportRun.DoesNotExist:

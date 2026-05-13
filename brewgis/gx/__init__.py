@@ -36,11 +36,14 @@ __all__ = [
     "run_all_checkpoints",
     "run_checkpoint",
     "validate_base_canvas",
+    "validate_built_form_export",
     "validate_census_acs",
+    "validate_column_stitching",
     "validate_dbt_table",
     "validate_lehd",
     "validate_nlcd",
     "validate_poi",
+    "validate_spatial_allocation",
     "validate_synthetic_parcels",
 ]
 
@@ -158,8 +161,7 @@ def validate_dbt_table(schema: str, table: str, suite_name: str) -> dict[str, An
 
     ``suite_name`` should be one of:
     ``dbt_core_end_state``, ``dbt_env_constraint``, ``dbt_trip_generation``,
-    ``dbt_trip_distribution``, ``dbt_mode_choice``, ``dbt_scenario_summary``,
-    or ``built_form_export``, ``spatial_allocation``, ``column_stitching``.
+    ``dbt_trip_distribution``, ``dbt_mode_choice``, ``dbt_scenario_summary``.
     """
     context = get_gx_context()
     return _run_suite(context, suite_name, schema, table)
@@ -169,6 +171,24 @@ def validate_synthetic_parcels(schema: str = "public", table: str = "synthetic_p
     """Validate a synthetic parcels table."""
     context = get_gx_context()
     return _run_suite(context, "synthetic_parcels", schema, table)
+
+
+def validate_spatial_allocation(schema: str = "public", table: str = "spatial_allocation") -> dict[str, Any]:
+    """Validate a spatial allocation output table."""
+    context = get_gx_context()
+    return _run_suite(context, "spatial_allocation", schema, table)
+
+
+def validate_column_stitching(schema: str = "public", table: str = "column_stitching") -> dict[str, Any]:
+    """Validate a column stitching / imputation output table."""
+    context = get_gx_context()
+    return _run_suite(context, "column_stitching", schema, table)
+
+
+def validate_built_form_export(schema: str = "public", table: str = "built_forms") -> dict[str, Any]:
+    """Validate a built form export table."""
+    context = get_gx_context()
+    return _run_suite(context, "built_form_export", schema, table)
 
 
 # ── Internal helpers ───────────────────────────────────────────────

@@ -35,6 +35,20 @@
         "datasource_name": "brewgis_postgis",
         "data_asset_name": "public.built_forms"
       }
+    },
+    {
+      "expectation_suite_name": "dbt_trip_distribution",
+      "batch_request": {
+        "datasource_name": "brewgis_postgis",
+        "data_asset_name": "public.dbt_trip_distribution"
+      }
+    },
+    {
+      "expectation_suite_name": "dbt_scenario_summary",
+      "batch_request": {
+        "datasource_name": "brewgis_postgis",
+        "data_asset_name": "public.dbt_scenario_summary"
+      }
     }
   ],
   "meta": {
