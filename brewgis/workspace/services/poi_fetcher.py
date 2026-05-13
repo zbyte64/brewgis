@@ -10,8 +10,9 @@ import logging
 from typing import Any
 
 import geopandas as gpd
-import requests
-from shapely.geometry import shape
+from shapely.geometry import Point
+from brewgis.workspace.services._db import get_engine
+from brewgis.workspace.services._db import text
 
 logger = logging.getLogger(__name__)
 
@@ -157,40 +158,6 @@ out center;
     return query
 
 
-def _execute_overpass_query(query: str) -> list[dict[str, Any]]:
-    """Execute an Overpass QL query and return parsed elements.
-
-    Args:
-        query: Overpass QL query string.
-
-    Returns:
-        List of element dicts (each with id, type, tags, center, or lat/lng).
-
-    Raises:
-        RuntimeError: On HTTP or parse errors.
-    """
-    response = requests.post(
-        OVERPASS_URL,
-        data={"data": query},
-        timeout=90,
-        headers={"User-Agent": "BrewGIS/1.0"},
-    )
-
-    if response.status_code != 200:
-        msg = f"Overpass API returned HTTP {response.status_code}: {response.text}"
-        raise RuntimeError(msg)
-
-    try:
-        result: dict[str, Any] = response.json()
-    except ValueError as e:
-        msg = f"Overpass API returned non-JSON: {e}"
-        raise RuntimeError(msg) from e
-
-    if "elements" not in result:
-        msg = "Overpass API response missing 'elements' key."
-        raise RuntimeError(msg)
-
-    return result["elements"]  # type: ignore[no-any-return]
 
 
 def _categorize_element(tags: dict[str, str]) -> tuple[str, str]:
@@ -216,52 +183,64 @@ def fetch_pois(
     max_lat: float,
     categories: list[str] | None = None,
 ) -> gpd.GeoDataFrame:
-    """Fetch POIs from OpenStreetMap Overpass API within a bounding box.
+    """Fetch POIs from the poi_raw staging table (loaded by dlt pipeline).
 
-    Args:
-        min_lng: Western bound.
-        min_lat: Southern bound.
-        max_lng: Eastern bound.
-        max_lat: Northern bound.
-        categories: List of POI category names to include. None = all.
+    Reads raw Overpass elements from the staging table, then processes
+    them into a categorized GeoDataFrame with geometry.
 
-    Returns:
-        GeoDataFrame with columns: osm_id, name, category, subcategory,
-        amenity, shop, leisure, tourism, geometry (Point).
-
-    Raises:
-        RuntimeError: On API errors or empty results.
+    The dlt pipeline must have been run before calling this function.
     """
-    query = _build_overpass_query(min_lng, min_lat, max_lng, max_lat, categories)
-    elements = _execute_overpass_query(query)
+    engine = get_engine()
+
+    query = text("""
+        SELECT * FROM public.poi_raw
+    """)
+
+    with engine.connect() as conn:
+        result = conn.execute(query)
+        rows = result.fetchall()
+        columns = list(result.keys())
+
+    elements = [dict(zip(columns, row, strict=False)) for row in rows]
 
     if not elements:
-        msg = "Overpass API returned no elements in the bounding box."
+        msg = "No POI data in staging table. Run the dlt pipeline first."
         raise RuntimeError(msg)
 
     records: list[dict[str, Any]] = []
     for elem in elements:
-        elem_type = elem.get("type", "")
-        osm_id = elem.get("id", 0)
-        tags: dict[str, str] = elem.get("tags", {})
+        elem_type = elem.get("type", "") or ""
+        osm_id = elem.get("id", 0) or 0
+        tags_raw = elem.get("tags", {})
+        if isinstance(tags_raw, str):
+            import json
+            try:
+                tags_raw = json.loads(tags_raw)
+            except (json.JSONDecodeError, TypeError):
+                tags_raw = {}
+        tags: dict[str, str] = tags_raw if isinstance(tags_raw, dict) else {}
 
         name = tags.get("name", "")
-
         category, subcategory = _categorize_element(tags)
+
+        if categories is not None and category not in categories:
+            continue
 
         # Get geometry
         if elem_type == "node":
-            geom = {
-                "type": "Point",
-                "coordinates": [elem.get("lng", 0), elem.get("lat", 0)],
-            }
+            lng = elem.get("lng", 0) or 0
+            lat = elem.get("lat", 0) or 0
         else:
-            # Way or relation — use center point
-            center = elem.get("center", {})
-            geom = {
-                "type": "Point",
-                "coordinates": [center.get("lng", 0), center.get("lat", 0)],
-            }
+            center_raw = elem.get("center", {})
+            if isinstance(center_raw, str):
+                import json
+                try:
+                    center_raw = json.loads(center_raw)
+                except (json.JSONDecodeError, TypeError):
+                    center_raw = {}
+            center = center_raw if isinstance(center_raw, dict) else {}
+            lng = center.get("lng", 0) or 0
+            lat = center.get("lat", 0) or 0
 
         record = {
             "osm_id": osm_id,
@@ -273,12 +252,12 @@ def fetch_pois(
             "shop": tags.get("shop", ""),
             "leisure": tags.get("leisure", ""),
             "tourism": tags.get("tourism", ""),
-            "geometry": shape(geom),
+            "geometry": Point(lng, lat),
         }
         records.append(record)
 
     if not records:
-        msg = "No POI records parsed from Overpass response."
+        msg = "No POI records matched the requested categories."
         raise RuntimeError(msg)
 
     df = gpd.GeoDataFrame(records, geometry="geometry")

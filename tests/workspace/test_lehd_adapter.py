@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import io
+import csv
 from unittest.mock import MagicMock
 from unittest.mock import patch
 
@@ -295,18 +296,15 @@ class TestApplyNAICSSplits:
 class TestFetchLODESBlockData:
     """Tests for the LODES block data fetching with sub-sector columns."""
 
-    @patch("brewgis.workspace.services.lehd_fetcher._fetch_lodes_csv")
     @patch("brewgis.workspace.services.lehd_fetcher._build_cbp_proportions")
-    @patch("brewgis.workspace.services.lehd_fetcher._build_lodes_wac_url")
+    @patch("brewgis.workspace.services.lehd_fetcher.get_engine")
     def test_fetch_lodes_block_data_produces_all_columns(
         self,
-        mock_url: MagicMock,
+        mock_engine: MagicMock,
         mock_cbp: MagicMock,
-        mock_csv: MagicMock,
     ) -> None:
         """fetch_lehd_block_data should produce all sub-sector and aggregate columns."""
 
-        mock_url.return_value = "https://fake.url/lodes.csv.gz"
         mock_cbp.return_value = {
             "11": 0.1,
             "21": 0.05,
@@ -321,15 +319,12 @@ class TestFetchLODESBlockData:
             "722": 0.65,
         }
 
-        csv_str = (
-            "w_geocode,C000,CNS01,CNS02,CNS03,CNS04,CNS05,CNS06,CNS07,"
-            "CNS08,CNS09,CNS10,CNS11,CNS12,CNS13,CNS14,CNS15,CNS16,CNS17\n"
-            "060190001001000,500,50,100,80,10,15,5,20,8,12,30,40,5,15,10,25,0,3"
-        )
-        mock_csv.return_value = pd.read_csv(
-            io.StringIO(csv_str), dtype={"w_geocode": str}
-        )
-
+        reader = csv.DictReader(io.StringIO(_fake_lodes_csv()))
+        keys = reader.fieldnames + ["year"]
+        rows = [tuple(row[col] for col in reader.fieldnames) + (2021,) for row in reader]
+        mock_result = mock_engine.return_value.connect.return_value.__enter__.return_value.execute.return_value
+        mock_result.fetchall.return_value = rows
+        mock_result.keys.return_value = keys
         result = fetch_lehd_block_data("06", "019")
 
         assert not result.empty
@@ -371,18 +366,15 @@ class TestFetchLODESBlockData:
         ):
             assert col in result.columns, f"Missing aggregate column: {col}"
 
-    @patch("brewgis.workspace.services.lehd_fetcher._fetch_lodes_csv")
     @patch("brewgis.workspace.services.lehd_fetcher._build_cbp_proportions")
-    @patch("brewgis.workspace.services.lehd_fetcher._build_lodes_wac_url")
+    @patch("brewgis.workspace.services.lehd_fetcher.get_engine")
     def test_non_zero_sub_sectors(
         self,
-        mock_url: MagicMock,
+        mock_engine: MagicMock,
         mock_cbp: MagicMock,
-        mock_csv: MagicMock,
     ) -> None:
         """Sub-sector columns should have non-zero values when CNS data is non-zero."""
 
-        mock_url.return_value = "https://fake.url/lodes.csv.gz"
         mock_cbp.return_value = {
             "11": 0.2,
             "21": 0.1,
@@ -395,14 +387,12 @@ class TestFetchLODESBlockData:
             "722": 0.65,
         }
 
-        csv_data = (
-            "w_geocode,C000,CNS01,CNS02,CNS03,CNS04,CNS05,CNS06,CNS07,"
-            "CNS08,CNS09,CNS10,CNS11,CNS12,CNS13,CNS14,CNS15,CNS16,CNS17\n"
-            "060190001001000,500,50,100,80,10,15,5,20,8,12,30,40,5,15,10,25,0,3"
-        )
-        mock_csv.return_value = pd.read_csv(
-            io.StringIO(csv_data), dtype={"w_geocode": str}
-        )
+        reader = csv.DictReader(io.StringIO(_fake_lodes_csv()))
+        keys = reader.fieldnames + ["year"]
+        rows = [tuple(row[col] for col in reader.fieldnames) + (2021,) for row in reader]
+        mock_result = mock_engine.return_value.connect.return_value.__enter__.return_value.execute.return_value
+        mock_result.fetchall.return_value = rows
+        mock_result.keys.return_value = keys
 
         result = fetch_lehd_block_data("06", "019")
 
@@ -444,19 +434,15 @@ class TestFetchLODESBlockData:
             assert row[agg_col] > 0, (
                 f"Aggregate column {agg_col} should be > 0 but was {row[agg_col]}"
             )
-
-    @patch("brewgis.workspace.services.lehd_fetcher._fetch_lodes_csv")
     @patch("brewgis.workspace.services.lehd_fetcher._build_cbp_proportions")
-    @patch("brewgis.workspace.services.lehd_fetcher._build_lodes_wac_url")
+    @patch("brewgis.workspace.services.lehd_fetcher.get_engine")
     def test_total_emp_consistency(
         self,
-        mock_url: MagicMock,
+        mock_engine: MagicMock,
         mock_cbp: MagicMock,
-        mock_csv: MagicMock,
     ) -> None:
         """emp (C000 total jobs) should be self-consistent."""
 
-        mock_url.return_value = "https://fake.url/lodes.csv.gz"
         mock_cbp.return_value = {
             "11": 0.2,
             "21": 0.1,
@@ -469,21 +455,18 @@ class TestFetchLODESBlockData:
             "722": 0.65,
         }
 
-        csv_data = (
-            "w_geocode,C000,CNS01,CNS02,CNS03,CNS04,CNS05,CNS06,CNS07,"
-            "CNS08,CNS09,CNS10,CNS11,CNS12,CNS13,CNS14,CNS15,CNS16,CNS17\n"
-            "060190001001000,500,50,100,80,10,15,5,20,8,12,30,40,5,15,10,25,0,3"
-        )
-        mock_csv.return_value = pd.read_csv(
-            io.StringIO(csv_data), dtype={"w_geocode": str}
-        )
+        reader = csv.DictReader(io.StringIO(_fake_lodes_csv()))
+        keys = reader.fieldnames + ["year"]
+        rows = [tuple(row[col] for col in reader.fieldnames) + (2021,) for row in reader]
+        mock_result = mock_engine.return_value.connect.return_value.__enter__.return_value.execute.return_value
+        mock_result.fetchall.return_value = rows
+        mock_result.keys.return_value = keys
 
         result = fetch_lehd_block_data("06", "019")
         row = result.iloc[0]
 
         # emp (C000) is the ground truth
         assert row["emp"] == 500
-
 
 class TestCBPCountyScaling:
     """Tests for the CBP county-level employment scaling computation."""

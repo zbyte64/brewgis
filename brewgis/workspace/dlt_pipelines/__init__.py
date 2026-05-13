@@ -16,6 +16,10 @@ from brewgis.workspace.dlt_pipelines.poi import run_poi_pipeline
 from brewgis.workspace.dlt_pipelines.raster import raster_band_source
 from brewgis.workspace.dlt_pipelines.raster import raster_metadata_source
 from brewgis.workspace.dlt_pipelines.raster import run_raster_pipeline
+from brewgis.workspace.dlt_pipelines.tiger_bg import tiger_bg_source
+from brewgis.workspace.dlt_pipelines.tiger_bg import run_tiger_bg_pipeline
+from brewgis.workspace.dlt_pipelines.tiger_block import tiger_block_source
+from brewgis.workspace.dlt_pipelines.tiger_block import run_tiger_block_pipeline
 
 __all__ = [
     "census_source",
@@ -23,8 +27,12 @@ __all__ = [
     "poi_source",
     "raster_band_source",
     "raster_metadata_source",
+    "tiger_bg_source",
+    "tiger_block_source",
     "run_census_pipeline",
     "run_lehd_pipeline",
     "run_poi_pipeline",
     "run_raster_pipeline",
+    "run_tiger_bg_pipeline",
+    "run_tiger_block_pipeline",
 ]

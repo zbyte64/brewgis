@@ -8,9 +8,7 @@ import pytest
 
 from brewgis.workspace.services.census_fetcher import ACS_TABLE_GROUPS
 from brewgis.workspace.services.census_fetcher import _all_vars
-from brewgis.workspace.services.census_fetcher import _build_census_url
 from brewgis.workspace.services.census_fetcher import _compute_derived_columns
-from brewgis.workspace.services.census_fetcher import fetch_acs_block_groups
 from brewgis.workspace.services.census_fetcher import fetch_acs_data_summary
 from brewgis.workspace.services.lehd_fetcher import LODES_WAC_VARIABLES
 from brewgis.workspace.services.lehd_fetcher import _all_lodes_wac_vars
@@ -35,18 +33,6 @@ class TestCensusFetcher:
         assert "B01001_001E" in vars_
         assert "B25024_001E" in vars_
 
-    def test_build_census_url_block_group(self) -> None:
-        """URL should be correctly formatted for block group level."""
-        url = _build_census_url("06", "067", "block group")
-        assert "api.census.gov/data/2022/acs/acs5" in url
-        assert "state:06" in url
-        assert "county:067" in url
-        assert "block%20group" in url
-
-    def test_build_census_url_tract(self) -> None:
-        """URL should be correctly formatted for tract level."""
-        url = _build_census_url("06", "067", "tract")
-        assert "tract" in url
 
     def test_compute_derived_columns(self) -> None:
         """Derived canvas columns should be computed correctly."""
@@ -81,48 +67,15 @@ class TestCensusFetcher:
         assert result["hh"] == 0
         assert result["du"] == 0
 
-    @patch("brewgis.workspace.services.census_fetcher.requests.get")
-    def test_fetch_acs_census_api_error(self, mock_get) -> None:
-        """API HTTP errors should raise RuntimeError."""
-        mock_get.return_value.status_code = 500
-        mock_get.return_value.text = "Internal Server Error"
-
-        with pytest.raises(RuntimeError, match="Census API returned HTTP 500"):
-            fetch_acs_block_groups("06", "067")
-
-    @patch("brewgis.workspace.services.census_fetcher.requests.get")
-    def test_fetch_acs_data_summary_success(self, mock_get) -> None:
-        """Data summary should return expected structure on success."""
-        mock_get.return_value.status_code = 200
-        mock_get.return_value.json.return_value = [
-            # header + data rows
-            ["B01001_001E", "state", "county", "tract", "block group"],
-            ["100", "06", "067", "100100", "1"],
-            ["200", "06", "067", "100200", "2"],
-        ]
-
-        summary = fetch_acs_data_summary("06", "067")
-        assert summary["row_count"] == 2
+    def test_fetch_acs_data_summary_from_staging(self) -> None:
+        """Data summary should return expected structure from staging."""
+        with patch("brewgis.workspace.services.census_fetcher.get_engine") as mock_get_engine:
+            mock_conn = mock_get_engine.return_value.connect.return_value.__enter__.return_value
+            mock_conn.execute.return_value.scalar.return_value = 42
+            summary = fetch_acs_data_summary("06", "067")
+        assert summary["row_count"] == 42
         assert "B01001" in summary["table_groups"]
         assert "pop" in summary["columns"]
-
-    @patch("brewgis.workspace.services.census_fetcher.requests.get")
-    def test_fetch_acs_data_summary_api_error(self, mock_get) -> None:
-        """Data summary should return error dict on API failure."""
-        mock_get.return_value.status_code = 500
-        mock_get.return_value.text = "Error"
-
-        summary = fetch_acs_data_summary("06", "067")
-        assert "error" in summary
-
-    @patch("brewgis.workspace.services.census_fetcher.requests.get")
-    def test_fetch_acs_empty_response(self, mock_get) -> None:
-        """Empty API response should raise RuntimeError."""
-        mock_get.return_value.status_code = 200
-        mock_get.return_value.json.return_value = [["header", "cols"]]
-
-        with pytest.raises(RuntimeError, match="Census API returned no data rows"):
-            fetch_acs_block_groups("06", "067")
 
 
 # ── LEHD Fetcher Tests ────────────────────────────────────────────────
@@ -145,52 +98,15 @@ class TestLEHDFetcher:
         assert "S000_JT00_2021.csv.gz" in url
         assert "wac" in url
 
-    @patch("brewgis.workspace.services.lehd_fetcher.requests.get")
-    def test_fetch_lehd_api_error(self, mock_get) -> None:
-        """API HTTP errors should raise RuntimeError."""
-        mock_get.return_value.status_code = 500
-        mock_get.return_value.text = "Error"
-        with pytest.raises(RuntimeError, match="LODES download returned HTTP 500"):
-            fetch_lehd_block_data("06", "067")
-
-    @patch("brewgis.workspace.services.lehd_fetcher.requests.get")
-    def test_fetch_lehd_empty_response(self, mock_get) -> None:
-        """Empty CSV (header only) should raise RuntimeError."""
-        import gzip, io, csv
-
-        buf = io.BytesIO()
-        with gzip.GzipFile(fileobj=buf, mode="w") as gz:
-            gz.write(b"w_geocode,C000,CA01,CA02,CA03,CE01,CE02,CE03\n")
-        mock_get.return_value.status_code = 200
-        mock_get.return_value.content = buf.getvalue()
-        with pytest.raises(RuntimeError, match="LODES WAC CSV returned no data"):
-            fetch_lehd_block_data("06", "067")
-
-    @patch("brewgis.workspace.services.lehd_fetcher.requests.get")
-    def test_fetch_lehd_data_summary_success(self, mock_get) -> None:
-        """Data summary should return expected structure."""
-        import gzip, io, csv
-
-        buf = io.BytesIO()
-        with gzip.GzipFile(fileobj=buf, mode="w") as gz:
-            gz.write(b"w_geocode,C000,CA01\n060670001001000,500,100\n")
-        mock_get.return_value.status_code = 200
-        mock_get.return_value.content = buf.getvalue()
-
-        summary = fetch_lehd_data_summary("06", "067")
-        assert summary["row_count"] == 1
-        assert "emp" in summary["variables"]
+    def test_fetch_lehd_data_summary_from_staging(self) -> None:
+        """Data summary should return expected structure from staging."""
+        with patch("brewgis.workspace.services.lehd_fetcher.get_engine") as mock_get_engine:
+            mock_conn = mock_get_engine.return_value.connect.return_value.__enter__.return_value
+            mock_conn.execute.return_value.scalar.return_value = 100
+            summary = fetch_lehd_data_summary("06", "067")
+        assert summary["row_count"] == 100
+        assert "C000" in summary["variables"]
         assert "emp_ret" in summary["aggregate_columns"]
-
-    @patch("brewgis.workspace.services.lehd_fetcher.requests.get")
-    def test_fetch_lehd_data_summary_api_error(self, mock_get) -> None:
-        """Data summary should return error dict on API failure."""
-        mock_get.return_value.status_code = 500
-        mock_get.return_value.text = "Error"
-
-        summary = fetch_lehd_data_summary("06", "067")
-        assert "error" in summary
-
 
 # ── POI Fetcher Tests ─────────────────────────────────────────────────
 

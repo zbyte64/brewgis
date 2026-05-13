@@ -11,19 +11,17 @@ See https://lehd.ces.census.gov/data/lodes/LODES7/ for documentation.
 
 from __future__ import annotations
 
-import gzip
-import io
 import logging
 import re
-import tempfile
-from pathlib import Path
 from typing import Any
+import requests
 
 import deal
 import geopandas as gpd
 import pandas as pd
-import requests
-from shapely.geometry import Point
+from shapely import wkt as geom
+
+from brewgis.workspace.services._db import get_engine, text
 
 logger = logging.getLogger(__name__)
 
@@ -275,37 +273,6 @@ def _build_lodes_wac_url(state_fips: str, county_fips: str, year: int = 2021) ->
     state_abbr = _FIPS_TO_STATE.get(state_fips_clean, "zz")
     return f"{LODES_WAC_BASE}/{state_abbr}/wac/{state_abbr}_wac_S000_JT00_{year}.csv.gz"
 
-
-def _fetch_lodes_csv(url: str) -> pd.DataFrame:
-    """Download a LODES gzipped CSV and return as a DataFrame.
-
-    Args:
-        url: Fully qualified URL to a .csv.gz file.
-
-    Returns:
-        DataFrame with LODES columns.
-
-    Raises:
-        RuntimeError: On download or parse errors.
-    """
-    response = requests.get(url, timeout=120)
-    if response.status_code != 200:  # noqa: PLR2004
-        msg = f"LODES download returned HTTP {response.status_code}: {response.text[:500]}"
-        raise RuntimeError(msg)
-
-    try:
-        decompressed = gzip.decompress(response.content)
-    except Exception as e:
-        msg = f"Failed to decompress gzipped LODES CSV: {e}"
-        raise RuntimeError(msg) from e
-
-    try:
-        df = pd.read_csv(io.BytesIO(decompressed), dtype={"w_geocode": str})
-    except Exception as e:
-        msg = f"Failed to parse LODES CSV: {e}"
-        raise RuntimeError(msg) from e
-
-    return df
 
 
 # ── CBP Proportion Computation ────────────────────────────────────────
@@ -707,11 +674,7 @@ def fetch_lehd_block_data(
     county_fips: str,
     year: int = 2021,
 ) -> gpd.GeoDataFrame:
-    """Fetch LODES WAC employment data at the Census block level.
-
-    Downloads the LODES WAC CSV and returns a GeoDataFrame with point
-    geometry (placeholder centroids). For real polygon geometry, use
-    ``fetch_lehd_block_polygons``.
+    """Fetch LODES WAC employment data from the lodes_raw staging table.
 
     Args:
         state_fips: Two-digit state FIPS code.
@@ -720,92 +683,70 @@ def fetch_lehd_block_data(
 
     Returns:
         GeoDataFrame with columns: geoid, emp, aggregate columns,
-        sub-sector columns, geometry (point centroid, EPSG:4326).
+        sub-sector columns. No geometry.
 
     Raises:
-        RuntimeError: On download errors or empty data.
+        RuntimeError: On empty staging data.
     """
-    url = _build_lodes_wac_url(state_fips, county_fips, year)
-    df = _fetch_lodes_csv(url)
+    engine = get_engine()
+    query = text("""
+        SELECT * FROM public.lodes_raw
+        WHERE year = :year
+    """)
+    with engine.connect() as conn:
+        result = conn.execute(query, {"year": year})
+        rows = result.fetchall()
+        columns = list(result.keys())
+        records_df = pd.DataFrame(
+            (dict(zip(columns, row, strict=False)) for row in rows)
+        )
 
-    if df.empty:
-        msg = "LODES WAC CSV returned no data."
+    if records_df.empty:
+        msg = f"No LODES data in staging table for year {year}."
         raise RuntimeError(msg)
 
-    # Rename w_geocode → geoid
-    df = df.rename(columns={"w_geocode": "geoid"})
+    # Rename w_geocode to geoid
+    records_df = records_df.rename(columns={"w_geocode": "geoid"})
 
     # Fetch CBP proportions once
     cbp_props = _build_cbp_proportions(state_fips, county_fips, year)
 
-    records: list[dict[str, Any]] = []
-
-    for _, row in df.iterrows():
+    lodes_records: list[dict[str, Any]] = []
+    for _, row in records_df.iterrows():
         geoid = str(row.get("geoid", ""))
         total_jobs = int(row.get("C000", 0)) if pd.notna(row.get("C000")) else 0
 
-        # Build CNS column values
         cns_row: dict[str, int | float] = {}
         for cns_col in _NAICS_SPLIT_RULES:
             val = int(row.get(cns_col, 0)) if pd.notna(row.get(cns_col)) else 0
             cns_row[cns_col] = val
 
-        # Apply sub-sector splitting
         subsectors = _apply_naics_splits(cns_row, cbp_props)
-
-        # Compute aggregates
         aggregates = _compute_aggregate_employment(subsectors)
 
-        record: dict[str, Any] = {
-            "geoid": geoid,
-        }
+        record: dict[str, Any] = {"geoid": geoid}
         record.update(subsectors)
         record.update(aggregates)
         record["emp"] = total_jobs
+        lodes_records.append(record)
 
-        records.append(record)
-    # SACOG region (Sacramento County, CA) override: use calibrated sub-sector proportions
-    # derived from the sac_cnty_region_base_canvas reference table.
-    # For other regions, the generic NAICS-based splits are used.
+    # SACOG region (Sacramento County, CA) override
     _IS_SACOG_REGION = state_fips == "06" and county_fips == "067"
     if _IS_SACOG_REGION:
-        for record in records:
+        for record in lodes_records:
             sacog_subs = _apply_sacog_calibrated_splits(record)
             for col in sacog_subs:
                 record[col] = sacog_subs[col]
-            # Zero out sub-sectors with no SACOG reference (reference totals are 0)
             for col in ("emp_agriculture", "emp_extraction", "emp_military"):
                 record[col] = 0.0
 
-    if not records:
+    if not lodes_records:
         msg = "No LODES records parsed."
         raise RuntimeError(msg)
 
-    gdf = gpd.GeoDataFrame(records, geometry=_generate_block_points(records))
-    gdf.crs = "EPSG:4326"
-
+    gdf = gpd.GeoDataFrame(lodes_records)
     return gdf
 
-
-def _generate_block_points(records: list[dict]) -> list[Point]:
-    """Generate placeholder point geometry for Census blocks.
-
-    The LODES CSV doesn't include geometry. For real block geometry, use
-    ``fetch_lehd_block_polygons`` which joins with TIGER/Line.
-
-    Args:
-        records: List of record dicts.
-
-    Returns:
-        List of Point geometries (EPSG:4326).
-    """
-    points: list[Point] = []
-    for rec in records:
-        h = hash(rec.get("geoid", ""))
-        lng = -120.0 + (h % 1000) / 1000.0
-        lat = 35.0 + ((h // 1000) % 1000) / 1000.0
-        points.append(Point(lng, lat))
-    return points
 
 
 def fetch_lehd_data_summary(
@@ -813,182 +754,86 @@ def fetch_lehd_data_summary(
     county_fips: str,
     year: int = 2021,
 ) -> dict[str, Any]:
-    """Return a summary of available employment data for the given geography.
-
-    Args:
-        state_fips: Two-digit state FIPS code.
-        county_fips: Three-digit county FIPS code.
-        year: Data year (default 2021).
-
-    Returns:
-        Dict with keys: variables (list), row_count, aggregate_columns,
-        sub_sector_columns.
-    """
-    try:
-        url = _build_lodes_wac_url(state_fips, county_fips, year)
-        df = _fetch_lodes_csv(url)
-        row_count = len(df)
-
-        # Collect all sub-sector columns from split rules
-        sub_sector_cols = sorted(
-            {col for rules in _NAICS_SPLIT_RULES.values() for col, _ in rules}
-        )
-
-        return {
-            "variables": list(LODES_WAC_VARIABLES.values()),
-            "sub_sector_columns": sub_sector_cols,
-            "aggregate_columns": list(AGGREGATE_MAPPINGS.keys()),
-            "row_count": row_count,
-        }
-    except RuntimeError as e:
-        return {
-            "error": str(e),
-            "variables": [],
-            "sub_sector_columns": [],
-            "aggregate_columns": [],
-            "row_count": 0,
-        }
-
-
-# ── TIGER/Line polygon geometry ───────────────────────────────────────
-
-_TIGER_CACHE_DIR = Path.home() / ".cache" / "brewgis" / "tiger_lehd"
-_TIGER_YEAR = 2023
-
-
-def _tiger_block_url(state_fips: str, _county_fips: str) -> str:
-    """Build the TIGER/Line tabblock shapefile URL for one county.
-
-    Uses TIGER2020 TABBLOCK (2010 Census vintage) to match LEHD LODES geographies.
-    """
-    return (
-        f"https://www2.census.gov/geo/tiger/TIGER2020/TABBLOCK/"
-        f"tl_2020_{state_fips}_tabblock10.zip"
-    )
-
-
-def _download_tiger_shapefile(url: str) -> bytes | None:
-    """Download a TIGER/Line shapefile ZIP, returning raw bytes."""
-    try:
-        response = requests.get(url, timeout=120)
-        response.raise_for_status()
-    except requests.RequestException as exc:
-        logger.warning("Failed to download TIGER block shapefile: %s", exc)
-        return None
-    return response.content
-
-
-def _read_tiger_block_polygons(zip_bytes: bytes) -> gpd.GeoDataFrame:
-    """Read block polygon geometry from TIGER/Line ZIP bytes."""
-    with tempfile.TemporaryDirectory() as tmpdir:
-        zip_path = Path(tmpdir) / "tiger_block.zip"
-        zip_path.write_bytes(zip_bytes)
-        gdf = gpd.read_file(f"zip://{zip_path}")
-    if gdf.crs is None:
-        gdf.set_crs("EPSG:4269", inplace=True)
-    gdf = gdf.to_crs("EPSG:4326")
-    # Handle TIGER column naming: 2020-vintage uses STATEFP10/COUNTYFP10/...
-    # (TABBLOCK20) vs 2019-vintage uses STATEFP/COUNTYFP/... (TABBLOCK).
-    sf_col = "STATEFP10" if "STATEFP10" in gdf.columns else "STATEFP"
-    cf_col = "COUNTYFP10" if "COUNTYFP10" in gdf.columns else "COUNTYFP"
-    tc_col = "TRACTCE10" if "TRACTCE10" in gdf.columns else "TRACTCE"
-    bc_col = "BLOCKCE10" if "BLOCKCE10" in gdf.columns else "BLOCKCE"
-    gdf["geoid"] = (
-        gdf[sf_col].str.zfill(2)
-        + gdf[cf_col].str.zfill(3)
-        + gdf[tc_col].str.zfill(6)
-        + gdf[bc_col].str.zfill(4)
-    )
-    return gdf[["geoid", "geometry"]]
-
+    """Return a summary of available employment data from staging."""
+    engine = get_engine()
+    query = text("""
+        SELECT COUNT(*) as row_count
+        FROM public.lodes_raw
+        WHERE year = :year
+    """)
+    with engine.connect() as conn:
+        result = conn.execute(query, {"year": year}).scalar()
+        row_count = result if result else 0
+    return {
+        "row_count": row_count,
+        "variables": list(LODES_WAC_VARIABLES.keys()),
+        "aggregate_columns": list(AGGREGATE_MAPPINGS.keys()),
+        "sub_sector_count": len(_NAICS_SPLIT_RULES),
+    }
 
 def fetch_lehd_block_polygons(
     state_fips: str,
     county_fips: str,
-    use_cache: bool = True,  # noqa: FBT001, FBT002
+    use_cache: bool = True,
 ) -> gpd.GeoDataFrame:
     """Fetch LODES employment data with real block polygon geometry.
 
-    Downloads LODES WAC CSV for employment attributes and TIGER/Line
-    tabblock shapefiles for polygon geometry, then joins on GEOID.
+    Reads LODES attributes from the lodes_raw staging table and joins
+    with polygon geometry from the tiger_blocks staging table.
 
-    Falls back to point-based geometry (from ``fetch_lehd_block_data``) if
-    TIGER shapefiles are unavailable.
+    Falls back to data without geometry if tiger_blocks data is unavailable.
 
     Args:
         state_fips: Two-digit state FIPS code.
         county_fips: Three-digit county FIPS code.
-        use_cache: Cache TIGER shapefiles on disk (default True).
+        use_cache: Kept for backward compatibility (unused).
 
     Returns:
         GeoDataFrame with polygon geometry, ``geoid``, and all
         employment columns mapped to BaseCanvasSchema names.
     """
-    # 1. Fetch LODES attribute data
+    # 1. Fetch LODES attribute data (now from staging)
     lehd_gdf = fetch_lehd_block_data(state_fips, county_fips)
-    # Filter state-level LODES data to this county (GEOID prefix = state_fips + county_fips)
     county_geoid_prefix = state_fips.zfill(2) + county_fips.zfill(3)
-    pre_count = len(lehd_gdf)
     lehd_gdf = lehd_gdf[lehd_gdf["geoid"].str.startswith(county_geoid_prefix)].copy()
-    logger.info(
-        "Filtered LODES from %d to %d blocks for county %s",
-        pre_count,
-        len(lehd_gdf),
-        county_fips,
-    )
+
     if lehd_gdf.empty:
         logger.warning("No LODES blocks match county FIPS %s", county_fips)
         return lehd_gdf
 
-    # 2. Try to get TIGER polygon geometry
-    url = _tiger_block_url(state_fips, county_fips)
-    tiger_gdf: gpd.GeoDataFrame | None = None
+    # 2. Read TIGER block geometry from staging
+    engine = get_engine()
+    geo_query = text("""
+        SELECT geoid, geometry FROM public.tiger_blocks
+        WHERE state_fips = :state_fips
+    """)
+    with engine.connect() as conn:
+        result = conn.execute(geo_query, {"state_fips": state_fips})
+        geo_rows = result.fetchall()
+        geo_columns = list(result.keys())
 
-    if use_cache:
-        cache_dir = _TIGER_CACHE_DIR / state_fips / county_fips
-        cache_path = cache_dir / "block.geojson"
-        if cache_path.exists():
-            logger.info("Loading cached TIGER blocks from %s", cache_path)
-            tiger_gdf = gpd.read_file(str(cache_path))
-        else:
-            raw = _download_tiger_shapefile(url)
-            if raw is not None:
-                try:
-                    tiger_gdf = _read_tiger_block_polygons(raw)
-                    cache_dir.mkdir(parents=True, exist_ok=True)
-                    tiger_gdf.to_file(str(cache_path), driver="GeoJSON")
-                except Exception as exc:  # noqa: BLE001
-                    logger.warning("Failed to parse TIGER blocks: %s", exc)
-                    tiger_gdf = None
-    else:
-        raw = _download_tiger_shapefile(url)
-        if raw is not None:
-            try:
-                tiger_gdf = _read_tiger_block_polygons(raw)
-            except Exception as exc:  # noqa: BLE001
-                logger.warning("Failed to parse TIGER blocks: %s", exc)
-                tiger_gdf = None
+    # Build geoid to geometry map
+    geo_map = {}
+    for row in geo_rows:
+        row_dict = dict(zip(geo_columns, row, strict=False))
+        wkt_geom = row_dict.get("geometry")
+        if wkt_geom:
+            geo_map[row_dict["geoid"]] = geom.loads(str(wkt_geom))
 
-    if tiger_gdf is not None and not tiger_gdf.empty:
-        # 3. Join LODES attributes to polygon geometry on GEOID
-        lehd_attrs = lehd_gdf.drop(columns=["geometry"], errors="ignore")
-        joined = tiger_gdf.merge(lehd_attrs, on="geoid", how="inner")
-        if joined.empty:
-            logger.warning(
-                "LODES data did not match TIGER blocks for %s/%s; "
-                "falling back to point geometry",
-                state_fips,
-                county_fips,
-            )
-            result = lehd_gdf.copy()
-        else:
-            result = joined
-    else:
+    # 3. Join attributes to geometry
+    lehd_attrs = lehd_gdf.drop(columns=["geometry"], errors="ignore")
+    lehd_gdf["geometry"] = lehd_gdf["geoid"].map(geo_map)
+
+    # Filter out rows without geometry
+    result = lehd_gdf[~lehd_gdf.geometry.isna()].copy()
+
+    if result.empty:
         logger.warning(
-            "TIGER blocks unavailable for %s/%s; using point-based geometry",
+            "LODES data did not match TIGER blocks for %s/%s; "
+            "returning data without geometry",
             state_fips,
             county_fips,
         )
-        result = lehd_gdf.copy()
+        return lehd_gdf.copy()
 
     return result

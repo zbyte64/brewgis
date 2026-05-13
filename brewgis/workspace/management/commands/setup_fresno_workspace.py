@@ -450,10 +450,24 @@ class Command(BaseCommand):
     def _import_poi(self) -> int:
         workspace = self._get_workspace()
         self.stdout.write("  Fetching POIs from OpenStreetMap Overpass...")
+ 
+        from brewgis.workspace.dlt_pipelines.poi import run_poi_pipeline
+ 
+        dlt_result = run_poi_pipeline(
+            MIN_LNG, MIN_LAT, MAX_LNG, MAX_LAT,
+            categories=POI_CATEGORIES,
+            schema=WORKSPACE_SCHEMA,
+        )
+        if not dlt_result["success"]:
+            self.stdout.write(f"  [WARN] POI pipeline failed: {dlt_result.get('error', 'unknown')}")
+            return 0
+ 
+        self.stdout.write(f"  dlt pipeline loaded {dlt_result.get('row_count', 0)} raw POIs")
+ 
         gdf = fetch_pois(MIN_LNG, MIN_LAT, MAX_LNG, MAX_LAT, POI_CATEGORIES)
         count = len(gdf)
         self.stdout.write(f"  Fetched {count} POIs")
-
+ 
         suffix = uuid4().hex[:8]
         table_name = f"poi_{suffix}"
         self._write_to_postgis(gdf, table_name, WORKSPACE_SCHEMA)

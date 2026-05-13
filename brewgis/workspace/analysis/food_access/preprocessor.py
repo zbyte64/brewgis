@@ -146,8 +146,19 @@ class FoodAccessPreprocessor:
             logger.exception(msg)
             return {"success": False, "error": msg}
 
-        # Step 2: Fetch food-related POIs with cache fallback
+        # Step 2: Fetch food-related POIs via dlt pipeline + staging
         try:
+            from brewgis.workspace.dlt_pipelines.poi import run_poi_pipeline
+            dlt_result = run_poi_pipeline(
+                min_lng, min_lat, max_lng, max_lat,
+                categories=_REQUESTED_CATEGORIES,
+                schema=schema,
+            )
+            if not dlt_result.get("success"):
+                logger.warning("POI dlt pipeline failed: %s", dlt_result.get("error"))
+            else:
+                logger.info("dlt pipeline loaded %d raw POIs", dlt_result.get("row_count", 0))
+
             pois = fetch_pois(
                 min_lng=min_lng,
                 min_lat=min_lat,
