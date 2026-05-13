@@ -121,12 +121,11 @@ def run_tiger_bg_pipeline(
         )
 
         row_count = 0
-        if load_info.packages:  # type: ignore[attr-defined]
-            last_pkg = load_info.packages[-1]  # type: ignore[attr-defined]
-            for table_name, table_meta in last_pkg.tables.items():
-                if table_name == "tiger_block_groups":
-                    row_count = table_meta.get("row_count", 0)
-                    break
+        for step in pipeline.last_trace.steps:
+            si = step.step_info
+            if hasattr(si, "row_counts") and si.row_counts:
+                row_count = si.row_counts.get("tiger_block_groups", 0)
+                break
 
         return {
             "success": True,

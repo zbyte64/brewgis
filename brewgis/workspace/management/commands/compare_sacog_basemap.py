@@ -128,6 +128,23 @@ class Command(BaseCommand):
             else []
         )
 
+        # Populate TIGER/Line block group polygons (needed by ACS reader)
+        if not skip_census:
+            self.stdout.write("\n── Populating TIGER/Line block group staging table ──")
+            from brewgis.workspace.dlt_pipelines.tiger_bg import (  # noqa: PLC0415, C0415
+                run_tiger_bg_pipeline,
+            )
+            tiger_result = run_tiger_bg_pipeline(STATE_FIPS)
+            if not tiger_result["success"]:
+                raise CommandError(
+                    f"TIGER/Line BG fetch failed: {tiger_result.get('error')}. "
+                    "Use --skip-census or --skip-data-fetch to skip."
+                )
+            else:
+                self.stdout.write(
+                    f"  TIGER/Line BG loaded: {tiger_result.get('row_count', 0)} rows "
+                    f"in {tiger_result.get('table_name', '?')}"
+                )
         # Populate ACS staging table before ETL
         if not skip_census:
             self.stdout.write("\n── Populating Census ACS staging table ──")

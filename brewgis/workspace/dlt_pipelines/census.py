@@ -47,8 +47,7 @@ def census_source(
 
 @dlt.resource(
     name="acs_raw",
-    write_disposition="merge",
-    primary_key="year",
+    write_disposition="append",
     columns={
         "year": {"data_type": "bigint", "nullable": False},
     },
@@ -125,12 +124,11 @@ def run_census_pipeline(
         )
 
         row_count = 0
-        if load_info.packages:  # type: ignore[attr-defined]
-            last_pkg = load_info.packages[-1]  # type: ignore[attr-defined]
-            for table_name, table_meta in last_pkg.tables.items():
-                if table_name == "acs_raw":
-                    row_count = table_meta.get("row_count", 0)
-                    break
+        for step in pipeline.last_trace.steps:
+            si = step.step_info
+            if hasattr(si, "row_counts") and si.row_counts:
+                row_count = si.row_counts.get("acs_raw", 0)
+                break
 
         return {
             "success": True,

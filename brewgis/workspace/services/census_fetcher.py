@@ -340,7 +340,7 @@ def fetch_acs_block_group_polygons(
         SELECT a.*, t.geometry
         FROM public.acs_raw a
         JOIN public.tiger_block_groups t
-            ON t.geoid = a.state || a.county || a.tract || a."block group"
+            ON t.geoid = a.state || a.county || a.tract || a."block_group"
         WHERE a.year = :year
           AND a.state = :state_fips
           AND a.county = :county_fips
@@ -389,7 +389,7 @@ def fetch_acs_block_group_polygons(
             "state": row.get("state", ""),
             "county": row.get("county", ""),
             "tract": row.get("tract", ""),
-            "block_group": row.get("block group", ""),
+            "block_group": row.get("block_group", ""),
         }
         record.update(derived)
         geoid = f"{record['state']}{record['county']}{record['tract']}{record['block_group']}"
