@@ -112,11 +112,13 @@ class Command(BaseCommand):
         self.stdout.write(f"  Census: {'skip' if skip_census else 'on'}")
         self.stdout.write(f"  LEHD: {'skip' if skip_lehd else 'on'}")
         if not settings.CENSUS_API_KEY:
-            self.stdout.write(self.style.WARNING(
-                "  WARNING: CENSUS_API_KEY is not set. Census ACS and CBP API calls will fail. "
-                "Set CENSUS_API_KEY in your .env file. Get a free key at "
-                "https://api.census.gov/data/key_signup.html"
-            ))
+            self.stdout.write(
+                self.style.WARNING(
+                    "  WARNING: CENSUS_API_KEY is not set. Census ACS and CBP API calls will fail. "
+                    "Set CENSUS_API_KEY in your .env file. Get a free key at "
+                    "https://api.census.gov/data/key_signup.html"
+                )
+            )
 
         # ── Phase 1: Load parcels from reference ──────────────────────
         self.stdout.write("\n── Phase 1: Loading reference parcel geometries ──")
@@ -262,9 +264,7 @@ class Command(BaseCommand):
             ORDER BY geography_id
             {limit_clause}
         """
-        gdf = gpd.GeoDataFrame.from_postgis(
-            sql, get_engine(), geom_col="geometry"
-        )
+        gdf = gpd.GeoDataFrame.from_postgis(sql, get_engine(), geom_col="geometry")
         gdf.to_file(str(cache_path), driver="GeoJSON")
         return gdf
 
@@ -301,6 +301,27 @@ class Command(BaseCommand):
                 county_fips=COUNTY_FIPS,
                 year=2022,  # ACS 2022 — note: 2010 API doesn't support block group queries
             )
+            # Populate ACS staging table before the ETL queries it
+            self._log("Populating census ACS staging table...")
+            from brewgis.workspace.dlt_pipelines.census import (  # noqa: PLC0415
+                run_census_pipeline,
+            )
+
+            census_result = run_census_pipeline(
+                STATE_FIPS,
+                COUNTY_FIPS,
+                2022,
+            )
+            if not census_result["success"]:
+                self._log(
+                    f"Census ACS fetch failed: {census_result.get('error')}; "
+                    f"demographics will be zero-filled"
+                )
+            else:
+                self._log(
+                    f"Census ACS loaded: {census_result.get('row_count', 0)} rows "
+                    f"in {census_result.get('table_name', '?')}"
+                )
 
         if not skip_lehd:
             from brewgis.workspace.services.base_canvas_adapters import (  # noqa: PLC0415
@@ -311,6 +332,27 @@ class Command(BaseCommand):
                 state_fips=STATE_FIPS,
                 county_fips=COUNTY_FIPS,
             )
+            # Populate LODES staging table before the ETL queries it
+            self._log("Populating LEHD LODES staging table...")
+            from brewgis.workspace.dlt_pipelines.lehd import (  # noqa: PLC0415
+                run_lehd_pipeline,
+            )
+
+            lehd_result = run_lehd_pipeline(
+                STATE_FIPS,
+                COUNTY_FIPS,
+                2021,
+            )
+            if not lehd_result["success"]:
+                self._log(
+                    f"LEHD fetch failed: {lehd_result.get('error')}; "
+                    f"employment will be zero-filled"
+                )
+            else:
+                self._log(
+                    f"LEHD LODES loaded: {lehd_result.get('row_count', 0)} rows "
+                    f"in {lehd_result.get('table_name', '?')}"
+                )
 
         if not quick and not skip_census:
             try:
