@@ -1,0 +1,20 @@
+# Soda Core contract: built_form_export validation
+checks for __TABLE__:
+  - row_count > 0:
+      name: Table has rows
+  - missing_count(parcel_id) = 0:
+      name: parcel_id has no missing values
+  - missing_count(building_type_id) = 0:
+      name: building_type_id has no missing values
+  - missing_count(place_type_id) = 0:
+      name: place_type_id has no missing values
+  - min(du_per_acre) >= 0:
+      name: du_per_acre >= 0
+  - min(pop_per_acre) >= 0:
+      name: pop_per_acre >= 0
+  - min(building_sqft) >= 0:
+      name: building_sqft >= 0
+  - min(FAR) >= 0:
+      name: FAR >= 0
+  - duplicate_count(parcel_id) = 0:
+      name: parcel_id is unique

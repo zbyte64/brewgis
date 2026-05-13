@@ -1,0 +1,34 @@
+# Soda Core contract: LEHD LODES staging validation
+checks for __TABLE__:
+  - row_count > 0:
+      name: Table has rows
+  - missing_count(geoid) = 0:
+      name: geoid has no missing values
+  - missing_count(c000) = 0:
+      name: c000 has no missing values
+  - missing_count(geometry) = 0:
+      name: geometry has no missing values
+  - min(c000) >= 0:
+      name: c000 >= 0
+  - min(cns01) >= 0: {name: "cns01 >= 0"}
+  - min(cns02) >= 0: {name: "cns02 >= 0"}
+  - min(cns03) >= 0: {name: "cns03 >= 0"}
+  - min(cns04) >= 0: {name: "cns04 >= 0"}
+  - min(cns05) >= 0: {name: "cns05 >= 0"}
+  - min(cns06) >= 0: {name: "cns06 >= 0"}
+  - min(cns07) >= 0: {name: "cns07 >= 0"}
+  - min(cns08) >= 0: {name: "cns08 >= 0"}
+  - min(cns09) >= 0: {name: "cns09 >= 0"}
+  - min(cns10) >= 0: {name: "cns10 >= 0"}
+  - min(cns11) >= 0: {name: "cns11 >= 0"}
+  - min(cns12) >= 0: {name: "cns12 >= 0"}
+  - min(cns13) >= 0: {name: "cns13 >= 0"}
+  - min(cns14) >= 0: {name: "cns14 >= 0"}
+  - min(cns15) >= 0: {name: "cns15 >= 0"}
+  - min(cns16) >= 0: {name: "cns16 >= 0"}
+  - min(cns17) >= 0: {name: "cns17 >= 0"}
+  - min(cns18) >= 0: {name: "cns18 >= 0"}
+  - min(cns19) >= 0: {name: "cns19 >= 0"}
+  - min(cns20) >= 0: {name: "cns20 >= 0"}
+  - duplicate_count(geoid) = 0:
+      name: geoid is unique

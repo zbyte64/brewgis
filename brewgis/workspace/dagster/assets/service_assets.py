@@ -20,7 +20,7 @@ from brewgis.workspace.dagster.configs import BaseCanvasETLConfig
 from brewgis.workspace.dagster.configs import CreateFresnoScenarioConfig
 from brewgis.workspace.dagster.configs import FresnoConstraintsConfig
 from brewgis.workspace.dagster.configs import OnboardGeographyConfig
-from brewgis.gx import run_checkpoint
+from brewgis.soda import run_scan
 
 # ═══════════════════════════════════════════════════════════════════════
 # Assets
@@ -49,7 +49,7 @@ def spatial_allocation(
     context.log.info("spatial_allocation asset invoked (not yet wired)")
     # GX gate: validate spatial allocation output
     try:
-        gx_result = run_checkpoint("spatial_allocation")
+        gx_result = run_scan("spatial_allocation")
         if not gx_result["success"] and gx_result.get("severity") == "warning":
             context.log.warning(
                 "GX warning for spatial_allocation: %s",
@@ -80,7 +80,7 @@ def imputation(
     context.log.info("imputation asset invoked (not yet wired)")
     # GX gate: validate imputation output
     try:
-        gx_result = run_checkpoint("column_stitching")
+        gx_result = run_scan("column_stitching")
         if not gx_result["success"] and gx_result.get("severity") == "warning":
             context.log.warning(
                 "GX warning for column_stitching: %s",
@@ -167,7 +167,7 @@ def base_canvas_etl(
     )
     # GX gate: validate base canvas ETL output
     try:
-        gx_result = run_checkpoint("base_canvas_etl")
+        gx_result = run_scan("base_canvas_etl")
         if not gx_result["success"] and gx_result.get("severity") == "critical":
             raise RuntimeError(
                 "GX gate failed for base_canvas_etl: %s"

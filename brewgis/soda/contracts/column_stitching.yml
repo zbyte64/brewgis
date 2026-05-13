@@ -1,0 +1,16 @@
+# Soda Core contract: column_stitching / imputation validation
+checks for __TABLE__:
+  - row_count > 0:
+      name: Table has rows
+  - missing_count(parcel_id) = 0:
+      name: parcel_id has no missing values
+  - min(imputed_population) >= 0:
+      name: imputed_population >= 0
+  - min(imputed_households) >= 0:
+      name: imputed_households >= 0
+  - min(imputed_employment) >= 0:
+      name: imputed_employment >= 0
+  - min(imputed_du) >= 0:
+      name: imputed_du >= 0
+  - duplicate_count(parcel_id) = 0:
+      name: parcel_id is unique

@@ -83,7 +83,7 @@ THIRD_PARTY_APPS = [
 
 LOCAL_APPS = [
     "brewgis.workspace",
-    # Your stuff: custom apps go here
+    "brewgis.soda",
 ]
 # https://docs.djangoproject.com/en/dev/ref/settings/#installed-apps
 INSTALLED_APPS = DJANGO_APPS + THIRD_PARTY_APPS + LOCAL_APPS
@@ -355,8 +355,8 @@ TILE_SERVER_TIPG_URL = env("TILE_SERVER_TIPG_URL", default="http://tipg:8081")
 TILE_SERVER_MARTIN_URL = env("TILE_SERVER_MARTIN_URL", default="http://martin:3000")
 TOKEN_AUTH_KEY = env("TOKEN_AUTH_KEY", default=None)
 CENSUS_API_KEY = env("CENSUS_API_KEY", default=None)
-# Great Expectations — data quality framework
+# Soda — data quality framework
 # ------------------------------------------------------------------------------
-GX_PROJECT_DIR = APPS_DIR / "gx"
+SODA_PROJECT_DIR = APPS_DIR / "soda"
 # Maximum upload file size in bytes (default: 100 MB).
 MAX_UPLOAD_SIZE = env.int("MAX_UPLOAD_SIZE", default=100 * 1024 * 1024)

@@ -17,7 +17,7 @@ from brewgis.workspace.dagster.resources.dbt_resource import DbtCliResource
 from brewgis.workspace.dagster.resources.postgres_resource import PostgresResource
 from brewgis.workspace.analysis.module_registry import MODULE_DBT_SELECT
 from brewgis.workspace.analysis.module_registry import MODULE_DEPENDENCIES
-from brewgis.gx import run_checkpoint
+from brewgis.soda import run_scan
 
 
 @asset(
@@ -126,7 +126,7 @@ def building_types_export(
     count = export_building_types(schema="public", table="built_forms")
     # GX gate: validate built form export table
     try:
-        gx_result = run_checkpoint("built_form_export")
+        gx_result = run_scan("built_form_export")
         if not gx_result["success"] and gx_result.get("severity") == "critical":
             context.log.warning(
                 "GX critical gate failed for built_form_export: %s",

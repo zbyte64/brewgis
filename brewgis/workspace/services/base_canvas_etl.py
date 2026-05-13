@@ -33,8 +33,8 @@ import pandas as pd
 from django.db import connection
 from django.db import transaction
 
-from brewgis.gx import validate_base_canvas
-from brewgis.gx import validate_synthetic_parcels
+from brewgis.soda import validate_base_canvas
+from brewgis.soda import validate_synthetic_parcels
 from brewgis.workspace.services.base_canvas_adapters import DemographicSource
 from brewgis.workspace.services.base_canvas_adapters import EmploymentSource
 from brewgis.workspace.services.base_canvas_adapters import IntersectionDensitySource
@@ -1046,18 +1046,9 @@ class BaseCanvasETL:
         if missing:
             msg = f"Base canvas is missing columns: {missing}"
             raise RuntimeError(msg)
-
-        # Run GX validation on the target table — optional, not a data integrity failure
-        try:
-            schema, table = self._target_table.split(".")
-            result = validate_base_canvas(schema=schema, table=table)
-        except FileNotFoundError:
-            self._log("GX validation skipped (Great Expectations not configured)")
-            return
-        except KeyError:
-            self._log("GX validation skipped (checkpoint not found)")
-            return
-
+        # Run GX validation on the target table
+        schema, table = self._target_table.split(".")
+        result = validate_base_canvas(schema=schema, table=table)
         if not result["success"]:
             for failure in result["failures"]:
                 self._log(f"  GX FAIL: {failure}")

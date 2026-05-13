@@ -83,7 +83,7 @@ class Command(BaseCommand):
         )
 
     def handle(self, **options: Any) -> None:
-        # Lazy imports — avoid loading great_expectations at module import time
+        # Lazy imports — avoid loading dagster assets at module import time
         # which conflicts with test stubs for pandas/geopandas.
         from brewgis.workspace.dagster.assets.comparison_assets import (  # noqa: PLC0415, C0415
             _generate_report_markdown,
@@ -536,7 +536,7 @@ class Command(BaseCommand):
         Legacy method expected by test suite. Delegates to
         ``_generate_report_markdown`` with internal helpers for weighted means.
         """
-        # Lazy imports — avoid loading great_expectations at module import time
+        # Lazy imports — avoid loading dagster assets at module import time
         from brewgis.workspace.dagster.assets.comparison_assets import (  # noqa: PLC0415, C0415
             _generate_report_markdown,
         )

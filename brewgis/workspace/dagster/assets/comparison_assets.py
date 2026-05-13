@@ -25,7 +25,7 @@ from brewgis.workspace.dagster.configs import SacogReportConfig
 from brewgis.workspace.dagster.resources.dbt_resource import DbtCliResource
 from brewgis.workspace.dagster.resources.postgres_resource import PostgresResource
 
-# import deferred: from brewgis.gx import validate_base_canvas  # noqa: F401
+# import deferred: from brewgis.soda import validate_base_canvas  # noqa: F401
 from brewgis.workspace.services._db import get_engine
 
 CACHE_DIR = Path(settings.BASE_DIR) / "planning"
@@ -251,7 +251,7 @@ def sacog_verify_geometry(
 
     # Run GX checkpoint
     try:
-        from brewgis.gx import validate_base_canvas  # noqa: PLC0415, C0415
+        from brewgis.soda import validate_base_canvas  # noqa: PLC0415, C0415
 
         gx_result = validate_base_canvas(schema="public", table="base_canvas")
     except ImportError:

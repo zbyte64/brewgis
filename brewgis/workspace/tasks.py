@@ -11,12 +11,12 @@ from celery.utils.log import get_task_logger
 from django.conf import settings
 from django.utils import timezone
 
-from brewgis.gx import validate_census_acs
-from brewgis.gx import validate_lehd
-from brewgis.gx import validate_poi
-from brewgis.gx import validate_built_form_export
-from brewgis.gx import validate_column_stitching
-from brewgis.gx import validate_spatial_allocation
+from brewgis.soda import validate_census_acs
+from brewgis.soda import validate_lehd
+from brewgis.soda import validate_poi
+from brewgis.soda import validate_built_form_export
+from brewgis.soda import validate_column_stitching
+from brewgis.soda import validate_spatial_allocation
 from brewgis.workspace.analysis.data_export import export_building_types
 from brewgis.workspace.dlt_pipelines import run_census_pipeline
 from brewgis.workspace.dlt_pipelines import run_lehd_pipeline
