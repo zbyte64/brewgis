@@ -22,7 +22,7 @@ class CensusFetchForm(forms.Form):
     """Form to configure a Census ACS data import."""
 
     def __init__(self, *args: object, **kwargs: object) -> None:
-        super().__init__(*args, **kwargs)
+        super().__init__(*args, **kwargs)  # type: ignore[arg-type]
         self.helper = FormHelper()
         self.helper.form_tag = False
         self.helper.disable_csrf = True

@@ -260,7 +260,7 @@ class Command(BaseCommand):
                 "WHERE table_schema = %s AND table_name = %s)",
                 [schema, table],
             )
-            return cursor.fetchone()[0]
+            return cursor.fetchone()[0]  # type: ignore[no-any-return]
 
     def _read_geojson(self, filename: str) -> gpd.GeoDataFrame:
         filepath = CACHE_DIR / filename
@@ -345,6 +345,7 @@ class Command(BaseCommand):
         # Write to staging table, preserving geometry column name for ETL
 
         engine = get_engine()
+        staging_table = "fresno_parcels_staging"
         df.to_postgis(
             staging_table,
             engine,
@@ -397,7 +398,7 @@ class Command(BaseCommand):
             "fresno_parcels", "Fresno County Parcels", workspace, "fill"
         )
 
-        return result["rows"]
+        return result["rows"]  # type: ignore[no-any-return]
 
     def _ingest_city_boundary(self) -> int:
         filepath = CACHE_DIR / "fresno_city_boundary.geojson"

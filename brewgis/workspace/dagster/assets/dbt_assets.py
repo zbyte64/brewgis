@@ -77,7 +77,7 @@ _MODULE_SPECS: list[tuple[str, list[str]]] = [
 ]
 
 
-def _make_module_asset(module: str, deps_modules: list[str]):
+def _make_module_asset(module: str, deps_modules: list[str]) -> Any:
     """Create a per-module dbt analysis asset for *module*.
 
     Translates dependency module names into Dagster asset keys,
@@ -105,8 +105,8 @@ def _make_module_asset(module: str, deps_modules: list[str]):
             raise RuntimeError(f"{module} failed: {result.error}")
         return MaterializeResult(metadata={"success": True})
 
-    _asset.__name__ = fn_name
-    _asset.__qualname__ = fn_name
+    _asset.__name__ = fn_name  # type: ignore[attr-defined]
+    _asset.__qualname__ = fn_name  # type: ignore[attr-defined]
     return _asset
 
 

@@ -49,7 +49,7 @@ _plain_logger = logging.getLogger(__name__)
     max_retries=2,
     default_retry_delay=30,
 )
-def export_building_types_task(
+def export_building_types_task(  # type: ignore[no-untyped-def]
     self,
     schema: str = "public",
     table: str = "built_forms",
@@ -117,7 +117,7 @@ MODULE_DBT_SELECT_MAP = {
     max_retries=2,
     default_retry_delay=60,
 )
-def run_dbt_module(
+def run_dbt_module(  # type: ignore[no-untyped-def]
     self,
     workspace_id: int,
     module: str,
@@ -319,7 +319,7 @@ PREPROCESSOR_MAP["acs_equity"] = run_acs_equity_preprocessor
     max_retries=2,
     default_retry_delay=60,
 )
-def run_preprocessor_and_dbt(
+def run_preprocessor_and_dbt(  # type: ignore[no-untyped-def]
     self,
     workspace_id: int,
     module: str,
@@ -373,7 +373,7 @@ def run_preprocessor_and_dbt(
         )
 
     # Delegate to the standard dbt runner
-    return run_dbt_module(
+    return run_dbt_module(  # type: ignore[no-any-return]
         self,
         workspace_id=workspace_id,
         module=module,
@@ -526,7 +526,7 @@ def _dispatch_next_in_task(
 
 
 @shared_task(bind=True, max_retries=2, default_retry_delay=30)
-def run_census_fetch(
+def run_census_fetch(  # type: ignore[no-untyped-def]
     self,
     run_pk: int,
     state_fips: str,
@@ -613,26 +613,25 @@ def run_census_fetch(
 
 
 @shared_task(bind=True, max_retries=2, default_retry_delay=30)
-def run_lehd_fetch(
+def run_lehd_fetch(  # type: ignore[no-untyped-def]
     self,
     run_pk: int,
     state_fips: str,
     county_fips: str,
     schema: str,
+    year: int = 2022,
 ) -> dict:
     """Fetch LEHD employment data via dlt and register as Layer.
-
     The dlt pipeline writes raw data to the staging table
     ``{schema}.lodes_raw``. No geopandas re-read is performed.
     """
-
     try:
         run = DataImportRun.objects.get(pk=run_pk)
         run.status = "running"
         run.started_at = timezone.now()
         run.save(update_fields=["status", "started_at"])
 
-        dlt_result = run_lehd_pipeline(state_fips, county_fips, schema=schema)
+        dlt_result = run_lehd_pipeline(state_fips, county_fips, year, schema=schema)
         if not dlt_result["success"]:
             msg = f"dlt extraction failed: {dlt_result['error']}"
             run.status = "failed"
@@ -699,7 +698,7 @@ def run_lehd_fetch(
 
 
 @shared_task(bind=True, max_retries=2, default_retry_delay=30)
-def run_poi_fetch(
+def run_poi_fetch(  # type: ignore[no-untyped-def]
     self,
     run_pk: int,
     min_lng: float,
@@ -790,7 +789,7 @@ def run_poi_fetch(
 
 
 @shared_task(bind=True, max_retries=2, default_retry_delay=30)
-def run_spatial_allocation(
+def run_spatial_allocation(  # type: ignore[no-untyped-def]
     self,
     run_pk: int,
     source_schema: str,
@@ -843,7 +842,7 @@ def run_spatial_allocation(
 
 
 @shared_task(bind=True, max_retries=2, default_retry_delay=30)
-def run_column_stitching(
+def run_column_stitching(  # type: ignore[no-untyped-def]
     self,
     run_pk: int,
     schema: str,
@@ -929,7 +928,7 @@ def run_column_stitching(
 
 
 @shared_task(bind=True, max_retries=2, default_retry_delay=30)
-def generate_report_task(self, report_pk: int) -> dict:
+def generate_report_task(self, report_pk: int) -> dict:  # type: ignore[no-untyped-def]
     """Generate a report (scenario comparison, paint tracking, or map export) as PDF."""
     from pathlib import Path
 
@@ -970,10 +969,10 @@ def generate_report_task(self, report_pk: int) -> dict:
 
         elif report.report_type == ScenarioReport.ReportType.PAINT_TRACKING:
             template = "workspace/report/paint_report_pdf.html"
-            scenario = report.scenario
-            context["scenario_name"] = scenario.name if scenario else "\u2014"
+            paint_scenario: Scenario | None = report.scenario
+            context["scenario_name"] = paint_scenario.name if paint_scenario else "\u2014"
             paint_events = (
-                PaintEvent.objects.filter(scenario=scenario)
+                PaintEvent.objects.filter(scenario=paint_scenario)
                 .select_related("painted_by")
                 .order_by("-painted_at")[:500]
             )
@@ -1016,7 +1015,7 @@ def generate_report_task(self, report_pk: int) -> dict:
         return {"success": False, "report_pk": report_pk, "error": str(exc)}
 
 
-def _build_report_scenario_metrics(scenario) -> dict:
+def _build_report_scenario_metrics(scenario: Any) -> dict[str, Any]:
     """Build aggregate metrics for a scenario for the report.
     Simplified version of _build_comparison_metrics in scenarios.py.
     Queries the scenario canvas view for key aggregate values.

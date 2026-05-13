@@ -5,6 +5,8 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 
+from typing import Any
+
 from django.db import connection
 
 
@@ -124,7 +126,7 @@ def check_analysis_prerequisites(
     return errors
 
 
-def _table_exists(cursor, schema: str, table: str) -> bool:
+def _table_exists(cursor: Any, schema: str, table: str) -> bool:
     """Check if a table exists in the given schema."""
     cursor.execute(
         """
@@ -139,7 +141,7 @@ def _table_exists(cursor, schema: str, table: str) -> bool:
     return bool(exists)
 
 
-def _get_columns(cursor, schema: str, table: str) -> list[str]:
+def _get_columns(cursor: Any, schema: str, table: str) -> list[str]:
     """Return column names for a table."""
     cursor.execute(
         """

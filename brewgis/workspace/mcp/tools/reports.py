@@ -32,7 +32,7 @@ def _get_workspace(workspace_slug: str) -> Workspace | None:
 def register_tools(server: object) -> None:
     """Register report tools with the MCP server."""
 
-    @server.tool()  # type: ignore[misc]
+    @server.tool()  # type: ignore[attr-defined]
     def list_report_templates(workspace_slug: str) -> list[dict[str, Any]]:
         """List available report types."""
         _get_workspace(workspace_slug)
@@ -42,7 +42,7 @@ def register_tools(server: object) -> None:
             {"key": "map_export", "label": "Map Export"},
         ]
 
-    @server.tool()  # type: ignore[misc]
+    @server.tool()  # type: ignore[attr-defined]
     def generate_report(
         workspace_slug: str,
         scenario_slug: str | None = None,
@@ -74,7 +74,7 @@ def register_tools(server: object) -> None:
             "message": f"Report '{report.name}' generation launched",
         }
 
-    @server.tool()  # type: ignore[misc]
+    @server.tool()  # type: ignore[attr-defined]
     def get_report_download_url(workspace_slug: str, report_id: int) -> dict[str, Any]:
         """Get the download URL for a completed report."""
         workspace = _get_workspace(workspace_slug)
@@ -92,7 +92,7 @@ def register_tools(server: object) -> None:
         except ScenarioReport.DoesNotExist:
             return {"error": "Report not found"}
 
-    @server.tool()  # type: ignore[misc]
+    @server.tool()  # type: ignore[attr-defined]
     def list_reports(workspace_slug: str, limit: int = 10) -> list[dict[str, Any]]:
         """List recent reports for a workspace."""
         workspace = _get_workspace(workspace_slug)
@@ -112,7 +112,7 @@ def register_tools(server: object) -> None:
             for r in reports
         ]
 
-    @server.tool()  # type: ignore[misc]
+    @server.tool()  # type: ignore[attr-defined]
     def import_gis_file(
         workspace_slug: str,
         file_data_base64: str,

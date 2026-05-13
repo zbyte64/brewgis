@@ -250,16 +250,6 @@ def build_create_view_sql(
         elif mapping.sql_expr:
             # Custom SQL expression
             select_parts.append(f"{mapping.sql_expr} AS {v3_col}")
-        elif mapping.default is not None and mapping.v1_column is None:
-            # Hard-coded default for missing column
-            if isinstance(mapping.default, str):
-                select_parts.append(
-                    f"CAST({mapping.default!r} AS DOUBLE PRECISION) AS {v3_col}"
-                )
-            else:
-                select_parts.append(
-                    f"CAST({mapping.default!r} AS DOUBLE PRECISION) AS {v3_col}"
-                )
         elif mapping.v1_column:
             # Direct passthrough
             select_parts.append(f"{mapping.v1_column} AS {v3_col}")

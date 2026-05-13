@@ -6,6 +6,8 @@ cached database engine from :mod:`brewgis.workspace.services._db`.
 
 from __future__ import annotations
 
+from typing import Any
+
 from dagster import ConfigurableResource
 
 from brewgis.workspace.services._db import get_engine
@@ -23,6 +25,6 @@ class PostgresResource(ConfigurableResource):
     """
 
     @property
-    def engine(self):  # type: ignore[return]  # noqa: ANN201
+    def engine(self) -> Any:
         """Return the cached SQLAlchemy engine."""
         return get_engine()

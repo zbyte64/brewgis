@@ -41,7 +41,7 @@ class WorkspaceDetail(BaseModel):
 def register_tools(server: object) -> None:
     """Register workspace tools with the MCP server."""
 
-    @server.tool()  # type: ignore[misc]
+    @server.tool()  # type: ignore[attr-defined]
     def list_workspaces(query: str | None = None) -> list[dict[str, Any]]:
         """List workspaces accessible to the authenticated user."""
         qs = Workspace.objects.all()
@@ -60,7 +60,7 @@ def register_tools(server: object) -> None:
             )
         return results
 
-    @server.tool()  # type: ignore[misc]
+    @server.tool()  # type: ignore[attr-defined]
     def get_workspace(slug: str) -> dict[str, Any]:
         """Get detailed workspace information by slug (pk as string)."""
         try:

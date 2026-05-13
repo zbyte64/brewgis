@@ -131,6 +131,7 @@ def run_analysis_pipeline(
     # Extract column_mapping for separate storage, keep in vars for dbt flow
     column_mapping = base_vars.get("column_mapping", {})
 
+    assert scenario_id is not None, "scenario_id is required to create an AnalysisRun"
     run = AnalysisRun.objects.create(
         workspace_id=workspace_id,
         scenario_id=scenario_id,

@@ -32,7 +32,7 @@ def register_tools(server: object) -> None:
 
     # ── Job Management ──────────────────────────────────────────
 
-    @server.tool()  # type: ignore[misc]
+    @server.tool()  # type: ignore[attr-defined]
     def get_job_status(task_id: str) -> dict[str, Any]:
         """Get the status of a Celery task by task ID."""
         try:
@@ -50,7 +50,7 @@ def register_tools(server: object) -> None:
         except Exception as e:
             return {"task_id": task_id, "status": "UNKNOWN", "error": str(e)}
 
-    @server.tool()  # type: ignore[misc]
+    @server.tool()  # type: ignore[attr-defined]
     def cancel_job(task_id: str) -> dict[str, Any]:
         """Cancel a running Celery task."""
         try:
@@ -61,7 +61,7 @@ def register_tools(server: object) -> None:
 
     # ── Data Import Tools ───────────────────────────────────────
 
-    @server.tool()  # type: ignore[misc]
+    @server.tool()  # type: ignore[attr-defined]
     def run_census_fetch_tool(
         workspace_slug: str,
         state_fips: str,
@@ -87,7 +87,7 @@ def register_tools(server: object) -> None:
             "message": f"Census fetch launched for state {state_fips}",
         }
 
-    @server.tool()  # type: ignore[misc]
+    @server.tool()  # type: ignore[attr-defined]
     def run_lehd_fetch_tool(
         workspace_slug: str,
         state_fips: str,
@@ -111,7 +111,7 @@ def register_tools(server: object) -> None:
             "message": f"LEHD fetch launched for state {state_fips}",
         }
 
-    @server.tool()  # type: ignore[misc]
+    @server.tool()  # type: ignore[attr-defined]
     def run_poi_fetch_tool(
         workspace_slug: str,
         geometry_wkt: str,
@@ -134,7 +134,7 @@ def register_tools(server: object) -> None:
             "message": "POI fetch launched for area",
         }
 
-    @server.tool()  # type: ignore[misc]
+    @server.tool()  # type: ignore[attr-defined]
     def run_spatial_allocation_tool(
         workspace_slug: str,
         source_layer_key: str,
@@ -159,7 +159,7 @@ def register_tools(server: object) -> None:
             "message": "Spatial allocation launched",
         }
 
-    @server.tool()  # type: ignore[misc]
+    @server.tool()  # type: ignore[attr-defined]
     def run_column_stitching_tool(
         workspace_slug: str,
         target_table: str,
@@ -180,7 +180,7 @@ def register_tools(server: object) -> None:
             "message": f"Column stitching launched for {target_table}",
         }
 
-    @server.tool()  # type: ignore[misc]
+    @server.tool()  # type: ignore[attr-defined]
     def get_import_status(workspace_slug: str, import_run_id: int) -> dict[str, Any]:
         """Get import operation status."""
         workspace = _get_workspace(workspace_slug)
@@ -191,8 +191,8 @@ def register_tools(server: object) -> None:
             return {
                 "id": run.pk,
                 "status": run.status,
-                "rows_imported": run.rows_imported,
-                "error": run.error_message or None,
+                "rows_imported": run.result.get("rows_imported"),
+                "error": run.error_log or None,
                 "created_at": str(run.created_at),
             }
         except DataImportRun.DoesNotExist:

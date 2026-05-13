@@ -50,7 +50,7 @@ class NetworkExtractor:
         self._engine: Any = None
 
     @property
-    def engine(self):
+    def engine(self) -> Any:
         if self._engine is None:
             self._engine = get_engine()
         return self._engine

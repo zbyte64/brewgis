@@ -69,8 +69,8 @@ def _download_nlcd_subset(  # noqa: PLR0913
         transformer = pyproj.Transformer.from_crs(
             source_crs, _NLCD_NATIVE_CRS, always_xy=True
         )
-        (west, south), (east, north) = transformer.transform(
-            [(west, south), (east, north)],
+        (west, east), (south, north) = transformer.transform(
+            [west, east], [south, north],
         )
 
     coverage_id = f"mrlc_download__NLCD_{year}_Land_Cover_L48"

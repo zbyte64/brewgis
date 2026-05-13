@@ -35,7 +35,7 @@ def report_list(request: HttpRequest, workspace_pk: int) -> HttpResponse:
 @user_passes_test(lambda u: u.is_authenticated)
 def report_detail(
     request: HttpRequest, workspace_pk: int, report_pk: int
-) -> HttpResponse:
+) -> FileResponse | HttpResponse:
     """View a single report. Returns the file if completed, otherwise renders detail."""
     workspace = get_object_or_404(Workspace, pk=workspace_pk)
     report = get_object_or_404(ScenarioReport, pk=report_pk, workspace=workspace)
@@ -44,7 +44,7 @@ def report_detail(
         return FileResponse(
             report.report_file.open("rb"),
             content_type="application/pdf",
-            filename=report.report_file.name,
+            filename=report.report_file.name or "",
         )
 
     context: dict[str, object] = {

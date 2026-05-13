@@ -64,7 +64,7 @@ class FoodAccessPreprocessor:
         self._engine: Any = None
 
     @property
-    def engine(self):
+    def engine(self) -> Any:
         """Lazy-initialized SQLAlchemy engine from centralized _db module."""
         if self._engine is None:
             self._engine = get_engine()

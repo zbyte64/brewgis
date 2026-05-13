@@ -15,6 +15,7 @@ import subprocess
 import time
 import os
 from pathlib import Path
+from typing import Any
 
 import geopandas as gpd
 from django.conf import settings
@@ -64,7 +65,7 @@ class Command(BaseCommand):
         "same parcel geometries as the v1 reference, then produce a comparison report."
     )
 
-    def add_arguments(self, parser):
+    def add_arguments(self, parser: Any) -> None:
         parser.add_argument(
             "--quick",
             action="store_true",
@@ -96,7 +97,7 @@ class Command(BaseCommand):
             help="Truncate existing base_canvas before inserting",
         )
 
-    def handle(self, **options):
+    def handle(self, **options: Any) -> None:
         quick = bool(options.get("quick", False))
         limit = int(options.get("limit", 0))
         skip_census = bool(options.get("skip_census", False))
@@ -219,7 +220,7 @@ class Command(BaseCommand):
     # Phase 1: Load parcels
     # ═══════════════════════════════════════════════════════════════════
 
-    def _load_parcels(self, limit: int):
+    def _load_parcels(self, limit: int) -> gpd.GeoDataFrame:
         """Load parcel geometries from the reference existing_land_use_parcels table.
 
         Includes ``land_use`` column from the reference table so the ETL can
@@ -273,7 +274,7 @@ class Command(BaseCommand):
 
     def _run_etl(
         self,
-        parcels_gdf,
+        parcels_gdf: gpd.GeoDataFrame,
         *,
         quick: bool,
         skip_census: bool,
@@ -1088,12 +1089,12 @@ class Command(BaseCommand):
             if col == "median_income":
                 brew_str = f"${brew_wavg:,.0f}"
                 acs_str = f"${acs_val:,.0f}"
-                diff_val = brew_wavg - acs_val
+                diff_val = brew_wavg - acs_val  # type: ignore[operator]
                 diff_str = f"${diff_val:+,.0f}"
             else:
                 brew_str = f"{brew_wavg:.1f}%"
                 acs_str = f"{acs_val:.1f}%"
-                diff_val = brew_wavg - acs_val
+                diff_val = brew_wavg - acs_val  # type: ignore[operator]
                 diff_str = f"{diff_val:+.1f}pp"
 
             lines.append(f"| {col} | {brew_str} | {acs_str} | {diff_str} | {note} |")

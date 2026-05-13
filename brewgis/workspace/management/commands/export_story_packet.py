@@ -12,6 +12,7 @@ import os
 import zipfile
 from datetime import datetime
 from io import StringIO
+from typing import Any
 
 from django.core.management.base import BaseCommand
 from django.core.management.base import CommandError
@@ -25,7 +26,7 @@ logger = logging.getLogger(__name__)
 class Command(BaseCommand):
     help = "Export a story packet ZIP for an analysis run."
 
-    def add_arguments(self, parser):
+    def add_arguments(self, parser: Any) -> None:
         parser.add_argument(
             "--analysis-run",
             type=int,
@@ -39,7 +40,7 @@ class Command(BaseCommand):
             help="Directory to write the ZIP file.",
         )
 
-    def handle(self, *args, **options):
+    def handle(self, *args: Any, **options: Any) -> None:
         run_pk = options["analysis_run"]
         output_dir = options["output_dir"]
 

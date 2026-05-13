@@ -585,7 +585,7 @@ class OSMIntersectionDensitySource:
             area_sq_km = jurisdiction_parcels.to_crs("EPSG:6933").area.sum() / 1e6
 
             if area_sq_km > 0:
-                return len(intersections) / area_sq_km
+                return len(intersections) / area_sq_km  # type: ignore[no-any-return]
             return None
         except Exception as exc:
             logger.warning("OSM intersection density computation failed: %s", exc)
@@ -643,11 +643,11 @@ class OSMIntersectionDensitySource:
             bbox_west = self._bbox[0]
 
             logger.info("Downloading OSM road network for bounding box ...")
-            graph = ox.graph_from_bbox(
-                bbox_north,
-                bbox_south,
-                bbox_east,
-                bbox_west,
+            graph = ox.graph_from_bbox(  # type: ignore[misc]
+                bbox_north,  # type: ignore[arg-type]
+                bbox_south,  # type: ignore[arg-type]
+                bbox_east,  # type: ignore[arg-type]
+                bbox_west,  # type: ignore[arg-type]
                 network_type="drive",
                 simplify=True,
             )

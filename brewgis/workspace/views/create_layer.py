@@ -32,6 +32,7 @@ class CreateLayerView(HtmxResponseMixin, CreateView):
     success_url_name = "workspace:workspace_map"
 
     def get_redirect_url(self) -> str:
+        assert self.object is not None
         return reverse(self.success_url_name, args=[self.object.workspace.pk])
 
     def form_valid(self, form: Any) -> HttpResponse:

@@ -208,7 +208,7 @@ def view_workspace_map(request: HttpRequest, workspace_pk: int) -> HttpResponse:
         if scenario
         else "null",
         "scenario_url": scenario_url,
-        "canvas_view_name": cast("str", canvas_view_name) if canvas_view_name else "",
+        "canvas_view_name": canvas_view_name if canvas_view_name else "",
         "paintable_columns": paintable_column_meta,
         "built_forms": built_forms_data,
         "paint_url": paint_url,

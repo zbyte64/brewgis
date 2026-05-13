@@ -15,6 +15,7 @@ __all__ = [
     "run_census_pipeline",
 ]
 
+from typing import Any
 import dlt
 import requests
 
@@ -25,10 +26,10 @@ from brewgis.workspace.services.census_fetcher import _census_base_url
 
 @dlt.source(name="census_acs", max_table_nesting=0)
 def census_source(
-    state_fips: str,
-    county_fips: str,
-    year: int = dlt.sources.incremental[int]("year"),  # type: ignore[valid-type]
-) -> list[dlt.Resource]:
+    state_fips: str = "06",
+    county_fips: str = "067",
+    year: int = dlt.sources.incremental[int]("year"),  # type: ignore[assignment]
+) -> list[Any]:
     """dlt source for Census ACS 5-year data extraction.
 
     Args:
@@ -55,14 +56,14 @@ def census_source(
 def census_acs_resource(
     state_fips: str,
     county_fips: str,
-    year: int = dlt.sources.incremental[int]("year"),  # type: ignore[valid-type]
-) -> dlt.Resource:
+    year: int = dlt.sources.incremental[int]("year"),  # type: ignore[assignment]
+) -> Any:
     """Yield raw ACS data from Census API, one dict per block group.
 
     dlt's incremental tracking ensures that already-loaded years are
     skipped on subsequent runs. The ``year`` field is the merge key.
     """
-    year_val: int = year.last_value if isinstance(year, dlt.sources.incremental) else year  # type: ignore[attr-defined]
+    year_val: int = year.last_value if isinstance(year, dlt.sources.incremental) else year  # type: ignore[assignment]
     vars_ = _all_vars()
     vars_str = ",".join(vars_)
     base = _census_base_url(year_val)
@@ -125,8 +126,8 @@ def run_census_pipeline(
         )
 
         row_count = 0
-        if load_info.packages:
-            last_pkg = load_info.packages[-1]
+        if load_info.packages:  # type: ignore[attr-defined]
+            last_pkg = load_info.packages[-1]  # type: ignore[attr-defined]
             for table_name, table_meta in last_pkg.tables.items():
                 if table_name == "acs_raw":
                     row_count = table_meta.get("row_count", 0)

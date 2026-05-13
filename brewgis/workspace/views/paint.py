@@ -113,7 +113,6 @@ def paint_features(
                 feature_id=fid,
                 column_name=column,
                 painted_value=painted_value,
-                painted_by=now_user,
             )
             for fid in features
         ]
@@ -135,7 +134,6 @@ def paint_features(
                     column_name=column,
                     old_value=old_values.get(fid),
                     new_value=painted_value,
-                    painted_by=now_user,
                     operation_type="paint",
                     batch_id=batch_id,
                 )
@@ -214,7 +212,6 @@ def clear_paint(
                         column_name=p["column_name"],
                         old_value=p["painted_value"],
                         new_value=None,
-                        painted_by=request.user,
                         operation_type="clear",
                         batch_id=batch_id,
                     )
@@ -410,7 +407,6 @@ def undo_paint(
                 column_name=evt.column_name,
                 old_value=evt.new_value,
                 new_value=evt.old_value,
-                painted_by=now_user,
                 operation_type="undo",
                 batch_id=undo_batch_id,
             )

@@ -15,7 +15,7 @@ __all__ = [
 ]
 
 
-def add_postgres_datasource(context: gx.DataContext) -> str:
+def add_postgres_datasource(context: "gx.DataContext") -> str:  # type: ignore[name-defined]
     """Add (or retrieve) the ``brewgis_postgis`` Postgres datasource.
 
     Returns the datasource name (``"brewgis_postgis"``).

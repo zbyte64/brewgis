@@ -28,7 +28,7 @@ if TYPE_CHECKING:
 try:
     import polars as pl
 except ImportError:
-    pl = None
+    pl: Any = None  # type: ignore[no-redef]
 
 logger = logging.getLogger(__name__)
 

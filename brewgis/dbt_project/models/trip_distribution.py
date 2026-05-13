@@ -24,6 +24,7 @@ import deal
 import numpy as np
 import pandas as pd
 
+from typing import Any
 logger = logging.getLogger(__name__)
 
 # Origins are processed in batches to bound memory.
@@ -138,7 +139,7 @@ def _gravity_model(
     return trips_outbound, trips_inbound, trips_internal, avg_trip_length
 
 
-def model(dbt, session):
+def model(dbt: Any, session: Any) -> pd.DataFrame:
     """Execute the gravity model trip distribution with batched origin processing.
 
     Reads upstream dbt models via dbt.ref(), processes origins in batches
@@ -212,8 +213,8 @@ def model(dbt, session):
 
 
 def _run_with_euclidean_distances(
-    dbt,
-    session,
+    dbt: Any,
+    session: Any,
     df_tg: pd.DataFrame,
     df_core: pd.DataFrame,
     parcel_ids: np.ndarray,
@@ -251,7 +252,7 @@ def _run_with_euclidean_distances(
     emp = df["employment_total"].values
     du = df["dwelling_units_total"].values
 
-    attract = np.maximum(emp_weight * emp + du_weight * du, 0.0).astype(np.float32)
+    attract = np.maximum(emp_weight * emp + du_weight * du, 0.0).astype(np.float32)  # type: ignore[operator]
 
     logger.info(
         "Running batched Euclidean gravity model on %d parcels (batch_size=%d, b=%s)",
@@ -319,8 +320,8 @@ def _run_with_euclidean_distances(
 
 
 def _run_with_network_distances(
-    dbt,
-    session,
+    dbt: Any,
+    session: Any,
     parcel_ids: np.ndarray,
     trips: np.ndarray,
     b: float,
@@ -435,7 +436,7 @@ def _run_with_network_distances(
 )
 @deal.pre(lambda b_origins, b_size: len(b_origins) == b_size)
 def _accumulate_batch(
-    b_origins,
+    b_origins: np.ndarray,
     b_size: int,
     trips: np.ndarray,
     attract: np.ndarray,
@@ -471,7 +472,7 @@ def _accumulate_batch(
         internal[start + invalid_idx] = trips[start : start + b_size][invalid_idx]
 
 
-def _empty_result():
+def _empty_result() -> pd.DataFrame:
     """Return an empty DataFrame with the expected schema."""
     return pd.DataFrame(
         columns=[

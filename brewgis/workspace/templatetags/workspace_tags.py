@@ -32,14 +32,14 @@ def model_verbose_name(model_class: object) -> str:
             # Try to find the model by name across all registered apps
             for app_config in apps.get_app_configs():
                 try:
-                    model_class = app_config.get_model(model_class, require_ready=False)
+                    model_class = app_config.get_model(model_class, require_ready=False)  # type: ignore[arg-type]
                     break
                 except LookupError:
                     continue
     if isinstance(model_class, str):
         return model_class.split(".")[-1] if "." in model_class else model_class
     if hasattr(model_class, "_meta"):
-        return model_class._meta.verbose_name  # noqa: SLF001
+        return model_class._meta.verbose_name  # type: ignore[no-any-return]  # noqa: SLF001
     return str(model_class)
 
 

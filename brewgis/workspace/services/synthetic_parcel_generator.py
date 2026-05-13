@@ -42,7 +42,7 @@ def _select_category(rng: random.Random) -> str:
     if not LAND_USE_CATEGORIES:
         return "urban"
     categories, weights = zip(*LAND_USE_CATEGORIES, strict=True)
-    return rng.choices(categories, weights=weights, k=1)[0]
+    return rng.choices(categories, weights=weights, k=1)[0]  # type: ignore[no-any-return]
 
 
 def _generate_parcel_geometry(

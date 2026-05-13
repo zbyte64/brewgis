@@ -136,9 +136,15 @@ module = "*.migrations.*"
 ignore_errors = true
 
 [[tool.mypy.overrides]]
+# Generated/compiled dbt output:
+module = "brewgis.dbt_project.target.*"
+ignore_errors = true
+
+[[tool.mypy.overrides]]
 # Packages without stubs:
 module = [
     "celery",
+    "celery.*",
     "environ",
     "geopandas",
     "great_expectations",
@@ -146,6 +152,12 @@ module = [
     "shapely",
     "shapely.*",
     "werkzeug.*",
+    "crispy_forms.*",
+    "weasyprint",
+    "rasterio",
+    "rasterio.*",
+    "dlt",
+    "dlt.*",
 ]
 ignore_missing_imports = true
 

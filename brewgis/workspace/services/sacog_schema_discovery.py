@@ -3,6 +3,8 @@
 from __future__ import annotations
 
 import json
+from typing import Any
+
 import logging
 from pathlib import Path
 
@@ -72,7 +74,7 @@ def discover_schema() -> dict:
     return manifest
 
 
-def _discover_schema_tables(cursor, schema: str) -> dict:
+def _discover_schema_tables(cursor: Any, schema: str) -> dict:
     """Introspect all tables in *schema*."""
     cursor.execute(
         "SELECT table_name, table_type FROM information_schema.tables WHERE table_schema = %s ORDER BY table_name",
@@ -88,7 +90,7 @@ def _discover_schema_tables(cursor, schema: str) -> dict:
     return result
 
 
-def _inspect_table(cursor, schema: str, table_name: str) -> dict:
+def _inspect_table(cursor: Any, schema: str, table_name: str) -> dict:
     """Return column metadata and row count for a table."""
     row_count = _table_row_count(cursor, schema, table_name)
 
@@ -115,13 +117,13 @@ def _inspect_table(cursor, schema: str, table_name: str) -> dict:
     }
 
 
-def _table_row_count(cursor, schema: str, table_name: str) -> int:
+def _table_row_count(cursor: Any, schema: str, table_name: str) -> int:
     try:
         cursor.execute(
             'SELECT count(*) FROM "%s"."%s"'
             % (schema.replace('"', '""'), table_name.replace('"', '""'))
         )
-        return cursor.fetchone()[0]
+        return cursor.fetchone()[0]  # type: ignore[no-any-return]
     except Exception:
         return -1
 

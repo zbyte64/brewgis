@@ -11,6 +11,7 @@ import csv
 import gzip
 import io
 
+from typing import Any
 import dlt
 import requests
 
@@ -28,10 +29,10 @@ __all__ = [
 
 @dlt.source(name="lehd_lodes", max_table_nesting=0)
 def lehd_source(
-    state_fips: str,
-    county_fips: str,
-    year: int = dlt.sources.incremental[int]("year"),  # type: ignore[valid-type]
-) -> list[dlt.Resource]:
+    state_fips: str = "06",
+    county_fips: str = "067",
+    year: int = dlt.sources.incremental[int]("year"),  # type: ignore[assignment]
+) -> list[Any]:
     """dlt source for LEHD LODES WAC data extraction.
 
     Args:
@@ -58,10 +59,10 @@ def lehd_source(
 def lehd_lodes_resource(
     state_fips: str,
     county_fips: str,
-    year: int = dlt.sources.incremental[int]("year"),  # type: ignore[valid-type]
-) -> dlt.Resource:
+    year: int = dlt.sources.incremental[int]("year"),  # type: ignore[assignment]
+) -> Any:
     """Download LODES WAC gzipped CSV and yield rows as dicts."""
-    year_val: int = year.last_value if isinstance(year, dlt.sources.incremental) else year  # type: ignore[attr-defined]
+    year_val: int = year.last_value if isinstance(year, dlt.sources.incremental) else year  # type: ignore[assignment]
     state_abbr = _FIPS_TO_STATE.get(state_fips, "")
     if not state_abbr:
         raise ValueError(f"Unknown state FIPS: {state_fips}")
@@ -80,7 +81,12 @@ def lehd_lodes_resource(
             yield cleaned
 
 
-def run_lehd_pipeline(state_fips, county_fips, year=2021, schema="public"):
+def run_lehd_pipeline(
+    state_fips: str,
+    county_fips: str,
+    year: int,
+    schema: str = "public",
+) -> dict[str, Any]:
     """Run dlt pipeline to extract raw LEHD LODES data to a staging table.
 
     Parameters
@@ -112,8 +118,8 @@ def run_lehd_pipeline(state_fips, county_fips, year=2021, schema="public"):
         )
 
         row_count = 0
-        if load_info.packages:
-            last_pkg = load_info.packages[-1]
+        if load_info.packages:  # type: ignore[attr-defined]
+            last_pkg = load_info.packages[-1]  # type: ignore[attr-defined]
             for table_name, table_meta in last_pkg.tables.items():
                 if table_name == "lodes_raw":
                     row_count = table_meta.get("row_count", 0)

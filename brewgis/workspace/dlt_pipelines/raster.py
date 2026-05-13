@@ -9,7 +9,7 @@ module-level import does not fail when rasterio is not installed).
 from __future__ import annotations
 
 from pathlib import Path
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Any
 
 import dlt
 
@@ -23,7 +23,7 @@ __all__ = [
 ]
 
 
-def _open_raster(path: str) -> rasterio.io.DatasetReader:  # type: ignore[name-defined]  # noqa: ANN202
+def _open_raster(path: str) -> Any:
     """Lazy-import rasterio and open the file."""
     import rasterio  # noqa: PLC0415 — imported lazily to avoid hard dependency
 
@@ -40,7 +40,7 @@ def _read_raster(path: str, band: int) -> tuple:
 
 
 @dlt.source(name="raster_ingest", max_table_nesting=0)
-def raster_metadata_source(file_path: str) -> list[dlt.Resource]:
+def raster_metadata_source(file_path: str) -> list[Any]:
     """dlt source for raster metadata extraction.
 
     Args:
@@ -69,7 +69,7 @@ def raster_metadata_source(file_path: str) -> list[dlt.Resource]:
         "driver": {"data_type": "text", "nullable": True},
     },
 )
-def raster_metadata_resource(file_path: str) -> dlt.Resource:
+def raster_metadata_resource(file_path: str) -> Any:
     """Read GeoTIFF metadata and yield a single record."""
     path = Path(file_path)
     if not path.exists():
@@ -95,7 +95,7 @@ def raster_metadata_resource(file_path: str) -> dlt.Resource:
 
 
 @dlt.source(name="raster_bands", max_table_nesting=0)
-def raster_band_source(file_path: str) -> list[dlt.Resource]:
+def raster_band_source(file_path: str) -> list[Any]:
     """dlt source for raster band statistics extraction.
 
     Args:
@@ -123,7 +123,7 @@ def raster_band_source(file_path: str) -> list[dlt.Resource]:
         "description": {"data_type": "text", "nullable": True},
     },
 )
-def raster_band_resource(file_path: str) -> dlt.Resource:
+def raster_band_resource(file_path: str) -> Any:
     """Read per-band statistics from a GeoTIFF and yield one record per band."""
     path = Path(file_path)
     if not path.exists():
@@ -175,8 +175,8 @@ def run_raster_pipeline(
         )
 
         row_count = 0
-        if load_info.packages:
-            last_pkg = load_info.packages[-1]
+        if load_info.packages:  # type: ignore[attr-defined]
+            last_pkg = load_info.packages[-1]  # type: ignore[attr-defined]
             for table_name, table_meta in last_pkg.tables.items():
                 if table_name == "raster_metadata":
                     row_count = table_meta.get("row_count", 0)

@@ -24,6 +24,7 @@ import deal
 import numpy as np
 import pandas as pd
 
+from typing import Any
 # ────────────────────────────────────────────────────────────
 #  Pure logit function (shared with tests)
 # ────────────────────────────────────────────────────────────
@@ -122,7 +123,7 @@ def _multinomial_logit(
     )
 
 
-def model(dbt, session):
+def model(dbt: Any, session: Any) -> pd.DataFrame:
     """Compute mode split using multinomial logit.
 
     Reads upstream dbt models via dbt.ref(), prepares variables,
@@ -222,7 +223,7 @@ def model(dbt, session):
     return result_df
 
 
-def _empty_result():
+def _empty_result() -> pd.DataFrame:
     """Return an empty DataFrame with the expected schema."""
     return pd.DataFrame(
         columns=[

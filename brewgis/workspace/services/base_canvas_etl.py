@@ -402,7 +402,7 @@ class BaseCanvasETL:
             # Employment calibration: scale allocated values to match
             # county-level totals from the source data.
             try:
-                src_gdf = self._employment_source.fetch_block_data()
+                src_gdf = self._employment_source.fetch_block_data("", "")
                 if not src_gdf.empty and "emp" in src_gdf.columns:
                     county_total = float(src_gdf["emp"].sum())
                     allocated_total = float(gdf["emp"].sum())
@@ -619,9 +619,9 @@ class BaseCanvasETL:
         """Allocate attributes from source polygons to parcels via
         area-weighted geospatial overlay."""
         if hasattr(source, "fetch_block_group_data"):
-            src_gdf = source.fetch_block_group_data()
+            src_gdf = source.fetch_block_group_data("", "")
         else:
-            src_gdf = source.fetch_block_data()
+            src_gdf = source.fetch_block_data("", "")
 
         available_cols = [c for c in columns if c in src_gdf.columns]
         available_cols = [c for c in available_cols if c != "geometry"]
@@ -775,9 +775,9 @@ class BaseCanvasETL:
         else:
             self._log("Using default irrigation estimates")
 
+        res_area = gdf["area_parcel_res"].fillna(gdf["area_gross"])
         if "residential_irrigated_area" in gdf.columns:
             cat = gdf.get("land_development_category", None)
-            res_area = gdf["area_parcel_res"].fillna(gdf["area_gross"])
             if cat is not None:
                 cat = cat.fillna("urban")
                 for c, cat_cal in self._calibration.categories.items():
@@ -793,9 +793,9 @@ class BaseCanvasETL:
             gdf["residential_irrigated_area"] = gdf[
                 "residential_irrigated_area"
             ].fillna(res_area * _DEFAULT_IRRIGATION_RES_FRAC)
+        emp_area = gdf["area_parcel_emp"].fillna(gdf["area_gross"])
         if "commercial_irrigated_area" in gdf.columns:
             cat = gdf.get("land_development_category", None)
-            emp_area = gdf["area_parcel_emp"].fillna(gdf["area_gross"])
             if cat is not None:
                 cat = cat.fillna("urban")
                 for c, cat_cal in self._calibration.categories.items():
@@ -1016,7 +1016,7 @@ class BaseCanvasETL:
                 batch = rows[i : i + page_size]
                 values_clause = ", ".join(row_placeholder for _ in batch)
                 flat_values = [val for row in batch for val in row]
-                cursor.execute(sql_base + values_clause, flat_values)
+                cursor.execute(sql_base + values_clause, flat_values)  # type: ignore[arg-type]
 
         rows_written = len(gdf)
         self._log(f"Wrote {rows_written} rows to {self._target_table}")

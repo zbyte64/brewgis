@@ -47,8 +47,8 @@ class SymbologyConfigSchema(BaseModel):
     num_classes: int
     classes: list[dict[str, Any]]
     null_color: str | None
-    zoom_min: int | None
-    zoom_max: int | None
+    zoom_min: float | None
+    zoom_max: float | None
 
 
 # ── Tool Registration ─────────────────────────────────────────
@@ -57,7 +57,7 @@ class SymbologyConfigSchema(BaseModel):
 def register_tools(server: object) -> None:
     """Register layer tools with the MCP server."""
 
-    @server.tool()  # type: ignore[misc]
+    @server.tool()  # type: ignore[attr-defined]
     def list_layers(
         workspace_slug: str,
         scenario_slug: str | None = None,
@@ -97,7 +97,7 @@ def register_tools(server: object) -> None:
             )
         return results
 
-    @server.tool()  # type: ignore[misc]
+    @server.tool()  # type: ignore[attr-defined]
     def get_layer_schema(workspace_slug: str, layer_key: str) -> dict[str, Any]:
         """Get column schema for a layer's backing PostGIS table."""
         try:
@@ -124,7 +124,7 @@ def register_tools(server: object) -> None:
             )
         return {"columns": columns}
 
-    @server.tool()  # type: ignore[misc]
+    @server.tool()  # type: ignore[attr-defined]
     def query_layer_data(
         workspace_slug: str,
         layer_key: str,
@@ -201,7 +201,7 @@ def register_tools(server: object) -> None:
         except Exception as e:
             return {"error": str(e), "rows": []}
 
-    @server.tool()  # type: ignore[misc]
+    @server.tool()  # type: ignore[attr-defined]
     def get_symbology(workspace_slug: str, layer_key: str) -> dict[str, Any]:
         """Get symbology configuration for a layer."""
         try:
@@ -220,7 +220,7 @@ def register_tools(server: object) -> None:
             classes.append(
                 {
                     "label": cls.label,
-                    "value": cls.value,
+                    "min_value": cls.min_value,
                     "color": cls.color,
                     "opacity": cls.opacity,
                     "sort_order": cls.sort_order,
@@ -235,11 +235,11 @@ def register_tools(server: object) -> None:
             num_classes=config.num_classes,
             classes=classes,
             null_color=config.null_color,
-            zoom_min=config.zoom_min,
-            zoom_max=config.zoom_max,
+            zoom_min=config.min_zoom,
+            zoom_max=config.max_zoom,
         ).model_dump()
 
-    @server.tool()  # type: ignore[misc]
+    @server.tool()  # type: ignore[attr-defined]
     def list_layer_filters(workspace_slug: str, layer_key: str) -> list[dict[str, Any]]:
         """List saved filters for a layer."""
         try:
@@ -259,7 +259,7 @@ def register_tools(server: object) -> None:
             for f in filters
         ]
 
-    @server.tool()  # type: ignore[misc]
+    @server.tool()  # type: ignore[attr-defined]
     def update_symbology(
         workspace_slug: str,
         layer_key: str,
@@ -287,7 +287,7 @@ def register_tools(server: object) -> None:
         config.save()
         return {"status": "updated", "symbology_type": symbology_type}
 
-    @server.tool()  # type: ignore[misc]
+    @server.tool()  # type: ignore[attr-defined]
     def auto_generate_symbology_tool(
         workspace_slug: str,
         layer_key: str,
@@ -304,7 +304,7 @@ def register_tools(server: object) -> None:
         layer = get_object_or_404(Layer, key=layer_key, workspace=workspace)
         try:
             config = auto_generate_symbology(
-                layer, method=method, num_classes=num_classes, palette=palette
+                layer, classification_method=method, num_classes=num_classes, palette_name=palette
             )
             return {
                 "status": "generated",
@@ -313,7 +313,7 @@ def register_tools(server: object) -> None:
         except Exception as e:
             return {"error": str(e)}
 
-    @server.tool()  # type: ignore[misc]
+    @server.tool()  # type: ignore[attr-defined]
     def preview_symbology_style(
         workspace_slug: str, layer_key: str, symbology_type: str = "single"
     ) -> dict[str, Any]:
@@ -325,12 +325,12 @@ def register_tools(server: object) -> None:
         workspace = get_object_or_404(Workspace, pk=ws_pk)
         layer = get_object_or_404(Layer, key=layer_key, workspace=workspace)
         try:
-            style = generate_maplibre_style(layer)
+            style = generate_maplibre_style(layer.symbology)
             return {"style": style}
         except Exception as e:
             return {"error": str(e)}
 
-    @server.tool()  # type: ignore[misc]
+    @server.tool()  # type: ignore[attr-defined]
     def create_layer(
         workspace_slug: str,
         name: str,
@@ -360,7 +360,7 @@ def register_tools(server: object) -> None:
             pass
         return {"key": layer.key, "name": layer.name, "pk": layer.pk}
 
-    @server.tool()  # type: ignore[misc]
+    @server.tool()  # type: ignore[attr-defined]
     def delete_layer_tool(workspace_slug: str, layer_key: str) -> dict[str, Any]:
         """Delete a layer."""
         try:
@@ -372,7 +372,7 @@ def register_tools(server: object) -> None:
         layer.delete()
         return {"deleted": True, "key": layer_key}
 
-    @server.tool()  # type: ignore[misc]
+    @server.tool()  # type: ignore[attr-defined]
     def create_filter(
         workspace_slug: str,
         layer_key: str,
@@ -394,7 +394,7 @@ def register_tools(server: object) -> None:
         )
         return {"id": f.pk, "name": f.name}
 
-    @server.tool()  # type: ignore[misc]
+    @server.tool()  # type: ignore[attr-defined]
     def toggle_filter(
         workspace_slug: str,
         layer_key: str,
@@ -413,7 +413,7 @@ def register_tools(server: object) -> None:
         f.save()
         return {"id": f.pk, "is_active": f.is_active}
 
-    @server.tool()  # type: ignore[misc]
+    @server.tool()  # type: ignore[attr-defined]
     def delete_filter_tool(
         workspace_slug: str,
         layer_key: str,

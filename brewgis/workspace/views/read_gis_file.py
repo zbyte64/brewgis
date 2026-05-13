@@ -1,6 +1,7 @@
 import logging
 import os
 from io import BufferedReader
+from typing import cast
 
 import geopandas
 from django import forms
@@ -27,7 +28,7 @@ class ImportGISFileForm(forms.Form):
     workspace = forms.ModelChoiceField(queryset=Workspace.objects.all())
     table_name = forms.CharField(max_length=63)
 
-    def clean_file(self) -> forms.FileField:
+    def clean_file(self) -> forms.FileField | None:
         file = self.cleaned_data.get("file")
         if file is None:
             return file
@@ -55,7 +56,7 @@ class ImportGISFileForm(forms.Form):
                 % (file.size / (1024 * 1024), max_mb)
             )
 
-        return file
+        return cast(forms.FileField, file)
 
 
 def read_gis_file_into_table(

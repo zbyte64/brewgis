@@ -164,7 +164,7 @@ def _build_url(info: dict[str, Any], offset: int = 0) -> str:
     base = info["base_url"]
     params = info.get("params")
     if params is None:
-        return base
+        return base  # type: ignore[no-any-return]
     parts: list[str] = []
     for key, val in params.items():
         if key == "resultRecordCount":
@@ -298,7 +298,7 @@ class Command(BaseCommand):
                 parsed = json.loads(data)
             except json.JSONDecodeError as exc:
                 self.stderr.write(f"  JSON parse error: {exc}")
-                self.stderr.write(f"  Response preview: {data[:200]}")
+                self.stderr.write(f"  Response preview: {data[:200].decode('utf-8', errors='replace')}")
                 if not all_features:
                     raise
                 break
@@ -344,7 +344,7 @@ class Command(BaseCommand):
             },
         )
         with urllib.request.urlopen(req, timeout=120) as resp:
-            return resp.read()
+            return resp.read()  # type: ignore[no-any-return]
 
     def _fetch_url_retry(self, url: str, retries: int = 3) -> bytes:
         """Fetch a URL with retries for transient failures."""

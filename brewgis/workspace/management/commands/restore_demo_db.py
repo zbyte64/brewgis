@@ -2,6 +2,7 @@ import gzip
 import os
 import subprocess
 from pathlib import Path
+from typing import Any
 
 from django.conf import settings
 from django.core.management.base import BaseCommand
@@ -30,7 +31,7 @@ SKIP_COPY_TABLES = {"spatial_ref_sys"}
 class Command(BaseCommand):
     help = "Restore the UrbanFootprint SACOG demo database from .sql.gz dump"
 
-    def handle(self, *args, **options):
+    def handle(self, *args: Any, **options: Any) -> None:
         self._check_prerequisites()
 
         sql_file = DEMO_DB_FILE
@@ -220,15 +221,15 @@ class Command(BaseCommand):
                     if OWNER_PATTERN in line:
                         lines_stripped += 1
                         continue
-                    psql.stdin.write(line)
+                    if psql.stdin: psql.stdin.write(line)
         except (OSError, EOFError) as e:
             # Close stdin so psql can finish processing what it has
-            psql.stdin.close()
+            if psql.stdin: psql.stdin.close()
             psql.wait()
             msg = f"Error reading dump file: {e}"
             raise CommandError(msg) from e
 
-        psql.stdin.close()
+        if psql.stdin: psql.stdin.close()
         psql.wait()
 
         if lines_stripped:

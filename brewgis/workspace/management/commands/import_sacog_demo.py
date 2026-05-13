@@ -19,6 +19,7 @@ from __future__ import annotations
 import json
 import logging
 from pathlib import Path
+from typing import Any
 
 from django.conf import settings
 from django.core.management.base import BaseCommand
@@ -72,7 +73,7 @@ DBT_VARS: dict[str, object] = {
     "target_schema": WORKSPACE_SCHEMA,
 }
 
-CONSTRAINT_LAYER_TABLES: dict[str, dict[str, str]] = {
+CONSTRAINT_LAYER_TABLES: dict[str, dict[str, str | None]] = {
     "sacog_floodplains": {
         "table": "parcel_tag",
         "filter": "flood IS NOT NULL AND flood != ''",
@@ -99,7 +100,7 @@ CONSTRAINT_LAYER_TABLES: dict[str, dict[str, str]] = {
 class Command(BaseCommand):
     help = "Import SACOG v1 demo database and run the full analysis pipeline."
 
-    def add_arguments(self, parser):
+    def add_arguments(self, parser: Any) -> None:
         parser.add_argument(
             "--step",
             default="all",
@@ -122,7 +123,7 @@ class Command(BaseCommand):
             help="Force re-execution of steps that would otherwise be skipped",
         )
 
-    def handle(self, *args, **options):
+    def handle(self, *args: Any, **options: Any) -> None:
         step = options["step"]
         force = options["force"]
 
@@ -248,7 +249,7 @@ class Command(BaseCommand):
 
         self.stdout.write(self.style.SUCCESS("  ✓ Workspace bootstrap complete"))
 
-    def _register_constraint_layers(self, ws) -> int:
+    def _register_constraint_layers(self, ws: Any) -> int:
         """Register constraint tables as Layer records in the workspace."""
         from brewgis.workspace.models import Layer
 
@@ -584,7 +585,7 @@ class Command(BaseCommand):
             f"  ✓ Exported {count} built forms to {WORKSPACE_SCHEMA}.built_forms"
         )
 
-    def _register_base_canvas_layer(self, ws) -> None:
+    def _register_base_canvas_layer(self, ws: Any) -> None:
         """Register the base canvas view as a Layer record."""
         from brewgis.workspace.models import Layer
 
@@ -600,7 +601,7 @@ class Command(BaseCommand):
             },
         )
 
-    def _verify_output_tables(self, scenario) -> None:
+    def _verify_output_tables(self, scenario: Any) -> None:
         """Verify that all analysis modules produced output tables."""
         from django.db import connection
 
@@ -608,11 +609,7 @@ class Command(BaseCommand):
 
         all_ok = True
         for module_name, table_names in MODULE_RESULT_TABLES.items():
-            names = (
-                list(table_names)
-                if isinstance(table_names, (list, tuple))
-                else [table_names]
-            )
+            names = table_names  # MODULE_RESULT_TABLES is dict[str, list[str]]
             for table_pattern in names:
                 table_name = table_pattern.format(scenario_id=scenario.slug)
                 schema = WORKSPACE_SCHEMA

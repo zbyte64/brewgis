@@ -494,25 +494,26 @@ def _verify_cached_bytes(path: Path, size_path: Path, crc32_path: Path) -> bool:
 # For SACOG Sacramento County, the reference v1 dataset split is roughly
 # 83% large-lot / 17% small-lot (ratio ~0.17), though this varies by
 # jurisdiction within the county.
+_DU_DETSF_TO_SL_RATIO: float
 try:
     _raw = float(os.environ.get("BREWGIS_DETSF_SL_RATIO", "0.40"))
-    _DU_DETSF_TO_SL_RATIO: float = max(0.0, _raw)
+    _DU_DETSF_TO_SL_RATIO = max(0.0, _raw)
 except (ValueError, TypeError):
-    _DU_DETSF_TO_SL_RATIO: float = 0.40
+    _DU_DETSF_TO_SL_RATIO = 0.40
 # SACOG-calibrated density threshold for small-lot vs large-lot single-family
 # SACOG convention uses ~1/8 acre (5,445 sqft) lot size as threshold
 _SACOG_SL_DENSITY_THRESHOLD: float = 8.0  # DU per residential acre
 _BREWGIS_SL_DENSITY_THRESHOLD_ENV_VAR: str = "BREWGIS_SL_DENSITY_THRESHOLD"
-
+_SL_DENSITY_THRESHOLD: float
 try:
     _raw_threshold = float(
         os.environ.get(
             _BREWGIS_SL_DENSITY_THRESHOLD_ENV_VAR, str(_SACOG_SL_DENSITY_THRESHOLD)
         )
     )
-    _SL_DENSITY_THRESHOLD: float = max(0.0, _raw_threshold)
+    _SL_DENSITY_THRESHOLD = max(0.0, _raw_threshold)
 except (ValueError, TypeError):
-    _SL_DENSITY_THRESHOLD: float = _SACOG_SL_DENSITY_THRESHOLD
+    _SL_DENSITY_THRESHOLD = _SACOG_SL_DENSITY_THRESHOLD
 
 
 def _tiger_bg_url(state_fips: str, county_fips: str) -> str:

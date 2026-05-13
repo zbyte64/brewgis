@@ -12,6 +12,7 @@ from __future__ import annotations
 import logging
 import time
 
+from typing import Any
 import dlt
 import requests
 
@@ -33,12 +34,12 @@ _last_overpass_request: float = 0.0
 
 @dlt.source(name="overpass_poi", max_table_nesting=0)
 def poi_source(
-    min_lng: float,
-    min_lat: float,
-    max_lng: float,
-    max_lat: float,
+    min_lng: float = -121.5,
+    min_lat: float = 38.0,
+    max_lng: float = -121.0,
+    max_lat: float = 38.4,
     categories: list[str] | None = None,
-) -> list[dlt.Resource]:
+) -> list[Any]:
     """dlt source for Overpass POI extraction.
 
     Args:
@@ -65,7 +66,7 @@ def poi_resource(
     max_lng: float,
     max_lat: float,
     categories: list[str] | None = None,
-) -> dlt.Resource:
+) -> Any:
     """Query Overpass API and yield raw POI elements.
 
     Rate-limits to one request per ``_OVERPASS_RATE_LIMIT_S`` seconds
@@ -141,8 +142,8 @@ def run_poi_pipeline(  # noqa: PLR0913
         return {"success": False, "error": str(exc)}
 
     row_count = 0
-    if load_info.packages:
-        last_pkg = load_info.packages[-1]
+    if load_info.packages:  # type: ignore[attr-defined]
+        last_pkg = load_info.packages[-1]  # type: ignore[attr-defined]
         for table_name, table_meta in last_pkg.tables.items():
             if table_name == "poi_raw":
                 row_count = table_meta.get("row_count", 0)

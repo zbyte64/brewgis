@@ -64,10 +64,6 @@ class AllocationResult:
 
     def __post_init__(self) -> None:
         """Coerce lists to avoid shared-reference issues."""
-        if self.per_building_type_breakdown is None:
-            self.per_building_type_breakdown = []
-        if self.employment_by_sector is None:
-            self.employment_by_sector = {}
 
 
 class AllocationEngine:

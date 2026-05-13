@@ -1,6 +1,7 @@
 """Views for scenario management and comparison."""
 
 from __future__ import annotations
+from typing import cast
 
 import json
 import uuid
@@ -60,15 +61,15 @@ class ScenarioCreateForm(forms.Form):
     def __init__(
         self, *args: object, workspace: Workspace | None = None, **kwargs: object
     ) -> None:
-        super().__init__(*args, **kwargs)
+        super().__init__(*args, **kwargs)  # type: ignore[arg-type]
         if workspace is not None:
-            self.fields["parent"].queryset = Scenario.objects.filter(
+            self.fields["parent"].queryset = Scenario.objects.filter(  # type: ignore[attr-defined]
                 workspace=workspace,
                 scenario_type=ScenarioType.BASE,
             )
 
     def clean(self) -> dict[str, object]:
-        cleaned = super().clean()
+        cleaned = cast(dict[str, object], super().clean())
         base_year = cleaned.get("base_year")
         horizon_year = cleaned.get("horizon_year")
         scenario_type = cleaned.get("scenario_type")
@@ -77,7 +78,7 @@ class ScenarioCreateForm(forms.Form):
         if (
             base_year is not None
             and horizon_year is not None
-            and base_year >= horizon_year
+            and base_year >= horizon_year  # type: ignore[operator]
         ):
             self.add_error("horizon_year", "Horizon year must be after base year.")
 
@@ -97,10 +98,10 @@ class ScenarioCreateForm(forms.Form):
 # ---------------------------------------------------------------------------
 
 
-def _build_comparison_metrics(scenario: Scenario) -> dict[str, float | int | None]:
+def _build_comparison_metrics(scenario: Scenario) -> dict[str, object]:
     """Query aggregate metrics for a *scenario* via its canvas view."""
 
-    metrics: dict[str, float | int | None] = {
+    metrics: dict[str, object] = {
         "total_population": 0,
         "total_households": 0,
         "total_du": 0,
@@ -117,7 +118,7 @@ def _build_comparison_metrics(scenario: Scenario) -> dict[str, float | int | Non
     q_view = f'"{schema}"."{view_name}"'
 
     try:
-        with transaction.savepoint(using="default"), connection.cursor() as cursor:
+        with transaction.atomic(using="default"), connection.cursor() as cursor:
             cursor.execute(
                 f"""
                     SELECT

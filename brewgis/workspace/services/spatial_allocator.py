@@ -199,7 +199,7 @@ def allocate_attributes(
     )
 
     # For each column, compute allocated values per target
-    target_values: dict[int, dict[str, float]] = {}
+    target_values: dict[str, dict[int, float]] = {}
     for col in columns:
         if col not in source_gdf.columns:
             continue

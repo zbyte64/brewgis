@@ -33,6 +33,7 @@ class HtmxResponseMixin:
 
     success_url_name: str
     success_url_args: tuple = ()
+    request: HttpRequest
 
     def get_redirect_url(self) -> str:
         return reverse(self.success_url_name, args=self.success_url_args)
@@ -43,7 +44,7 @@ class HtmxResponseMixin:
 
     def form_valid(self, form: Any) -> HttpResponse:
         """Delegate actual work to parent, then intercept redirect for htmx."""
-        response = super().form_valid(form)
+        response: HttpResponse = super().form_valid(form)  # type: ignore[misc]
         if getattr(self.request, "htmx", False):
             htmx_response = HttpResponse()
             htmx_response["HX-Redirect"] = self.get_redirect_url()
@@ -57,7 +58,7 @@ class HtmxResponseMixin:
                 "form.html#form-content",
                 {"form": form, "view": self},
             )
-        return super().form_invalid(form)
+        return super().form_invalid(form)  # type: ignore[misc, no-any-return]
 
 
 # ── ModelForms ──────────────────────────────────────────────────────────
@@ -146,7 +147,7 @@ class BuildingTypeUpdateView(HtmxResponseMixin, UpdateView):
 
 
 @method_decorator(auth_method, name="dispatch")
-class BuildingTypeDeleteView(HtmxResponseMixin, DeleteView):
+class BuildingTypeDeleteView(HtmxResponseMixin, DeleteView):  # type: ignore[misc]
     """Delete a BuildingType."""
 
     model = BuildingType
@@ -176,7 +177,7 @@ class PlaceTypeUpdateView(HtmxResponseMixin, UpdateView):
 
 
 @method_decorator(auth_method, name="dispatch")
-class PlaceTypeDeleteView(HtmxResponseMixin, DeleteView):
+class PlaceTypeDeleteView(HtmxResponseMixin, DeleteView):  # type: ignore[misc]
     """Delete a PlaceType."""
 
     model = PlaceType

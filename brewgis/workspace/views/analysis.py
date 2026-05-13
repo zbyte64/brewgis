@@ -3,6 +3,9 @@
 from __future__ import annotations
 
 import json
+from typing import Any
+from typing import cast
+
 
 from django import forms
 from django.contrib.auth.decorators import user_passes_test
@@ -51,8 +54,6 @@ def _discover_geom_tables(schema: str) -> list[tuple[str, str]]:
             [schema],
         )
         return [(row[0], row[0]) for row in cursor.fetchall()]
-    # fallback
-    return []
 
 
 class AnalysisLaunchForm(forms.Form):
@@ -106,8 +107,8 @@ class AnalysisLaunchForm(forms.Form):
 
     def __init__(self, *args: object, **kwargs: object) -> None:
         """Initialize form, optionally auto-discovering parcel tables."""
-        self._workspace: Workspace | None = kwargs.pop("workspace", None)
-        super().__init__(*args, **kwargs)
+        self._workspace: Workspace | None = cast(Workspace | None, kwargs.pop("workspace", None))
+        super().__init__(*args, **kwargs)  # type: ignore[arg-type]
 
         if self._workspace:
             schema = self._workspace.db_schema
@@ -129,7 +130,7 @@ class AnalysisLaunchForm(forms.Form):
                 ].help_text = "Auto-detected staging stub. Change to a real base canvas if available."
 
             # Filter scenario queryset to the selected workspace
-            self.fields["scenario"].queryset = Scenario.objects.filter(
+            self.fields["scenario"].queryset = Scenario.objects.filter(  # type: ignore[attr-defined]
                 workspace=self._workspace,
             )
 
@@ -205,11 +206,13 @@ class AnalysisLaunchForm(forms.Form):
                 )
         return parsed
 
-    def clean(self) -> dict[str, object]:
+    def clean(self) -> dict[str, Any] | None:
         """Validate analysis prerequisites before launching."""
         data = super().clean()
         if self.errors:
             return data
+        if data is None:
+            return None
 
         workspace: Workspace | None = data.get("workspace")
         parcel_table = data.get("parcel_table", "")

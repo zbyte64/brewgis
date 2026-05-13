@@ -47,7 +47,7 @@ __all__ = [
 logger = logging.getLogger(__name__)
 
 
-def get_gx_context() -> gx.DataContext:
+def get_gx_context() -> "gx.DataContext":  # type: ignore[name-defined]
     """Return the file-backed Great Expectations Data Context.
 
     Uses the directory configured in settings.GX_PROJECT_DIR
@@ -59,7 +59,7 @@ def get_gx_context() -> gx.DataContext:
     project_dir = getattr(settings, "GX_PROJECT_DIR", None)
     if project_dir is None:
         project_dir = Path(__file__).resolve().parent
-    return gx.data_context.FileDataContext(str(project_dir))
+    return gx.data_context.FileDataContext(str(project_dir))  # type: ignore[arg-type]
 
 
 # ── Checkpoint runner ──────────────────────────────────────────────
@@ -101,7 +101,7 @@ def run_all_checkpoints(severity: str | None = None) -> list[dict[str, Any]]:
 # ── Convenience validators ─────────────────────────────────────────
 
 
-def _run_suite(context: gx.DataContext, suite_name: str, schema: str, table: str) -> dict[str, Any]:
+def _run_suite(context: "gx.DataContext", suite_name: str, schema: str, table: str) -> dict[str, Any]:  # type: ignore[name-defined]
     """Run a named Expectation Suite against ``schema.table``.
 
     Returns the checkpoint-style summary dict.
@@ -175,7 +175,7 @@ def validate_synthetic_parcels(schema: str = "public", table: str = "synthetic_p
 
 
 def _build_batch_request(
-    context: gx.DataContext,
+    context: "gx.DataContext",  # type: ignore[name-defined]
     schema: str,
     table: str,
 ) -> Any:
@@ -245,7 +245,7 @@ def _summarise_suite_results(suite_name: str, results: Any) -> dict[str, Any]:
     }
 
 
-def _is_critical_checkpoint(context: gx.DataContext, name: str) -> bool:
+def _is_critical_checkpoint(context: "gx.DataContext", name: str) -> bool:  # type: ignore[name-defined]
     """Check whether a checkpoint is tagged as severity=critical."""
     try:
         cp = context.checkpoints.get(name)

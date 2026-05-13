@@ -22,7 +22,7 @@ logger = logging.getLogger(__name__)
 def register_tools(server: object) -> None:
     """Register paint tools with the MCP server."""
 
-    @server.tool()  # type: ignore[misc]
+    @server.tool()  # type: ignore[attr-defined]
     def paint_features(
         workspace_slug: str,
         scenario_slug: str,
@@ -62,8 +62,8 @@ def register_tools(server: object) -> None:
         if note:
             PaintEvent.objects.create(
                 scenario=scenario,
-                action="paint",
-                details=json.dumps(
+                operation_type="paint",
+                batch_id=json.dumps(
                     {
                         "features": feature_ids,
                         "column": column,
@@ -75,7 +75,7 @@ def register_tools(server: object) -> None:
 
         return {"painted": painted, "errors": errors}
 
-    @server.tool()  # type: ignore[misc]
+    @server.tool()  # type: ignore[attr-defined]
     def clear_paint(
         workspace_slug: str,
         scenario_slug: str,
@@ -100,7 +100,7 @@ def register_tools(server: object) -> None:
         count, _ = qs.delete()
         return {"cleared": count}
 
-    @server.tool()  # type: ignore[misc]
+    @server.tool()  # type: ignore[attr-defined]
     def get_painted_values(
         workspace_slug: str,
         scenario_slug: str,
@@ -134,7 +134,7 @@ def register_tools(server: object) -> None:
             results.append(row)
         return results
 
-    @server.tool()  # type: ignore[misc]
+    @server.tool()  # type: ignore[attr-defined]
     def undo_paint(
         workspace_slug: str,
         scenario_slug: str,
@@ -149,14 +149,14 @@ def register_tools(server: object) -> None:
         workspace = get_object_or_404(Workspace, pk=ws_pk)
         scenario = get_object_or_404(Scenario, pk=s_pk, workspace=workspace)
 
-        events = PaintEvent.objects.filter(scenario=scenario, action="paint").order_by(
-            "-created_at"
+        events = PaintEvent.objects.filter(scenario=scenario, operation_type="paint").order_by(
+            "-painted_at"
         )[:count]
 
         reverted = 0
         for event in events:
             try:
-                details = json.loads(event.details)
+                details = json.loads(event.batch_id)
                 feature_ids = details.get("features", [])
                 column = details.get("column")
                 if feature_ids and column:
@@ -169,7 +169,7 @@ def register_tools(server: object) -> None:
                 pass
         return {"reverted": reverted}
 
-    @server.tool()  # type: ignore[misc]
+    @server.tool()  # type: ignore[attr-defined]
     def list_paint_constraints(workspace_slug: str) -> list[dict[str, Any]]:
         """List paint constraints for a workspace."""
         try:
@@ -182,14 +182,14 @@ def register_tools(server: object) -> None:
             {
                 "id": c.pk,
                 "column": c.column,
-                "min_value": c.min_value,
-                "max_value": c.max_value,
-                "description": c.description,
+                "min_value": c.value,
+                "max_value": None,
+                "description": c.message,
             }
             for c in constraints
         ]
 
-    @server.tool()  # type: ignore[misc]
+    @server.tool()  # type: ignore[attr-defined]
     def validate_paint_batch(
         workspace_slug: str,
         scenario_slug: str,
@@ -205,10 +205,10 @@ def register_tools(server: object) -> None:
         scenario = get_object_or_404(Scenario, pk=s_pk, workspace=workspace)
 
         try:
-            validation = check_paint_batch(scenario, features)
+            result = check_paint_batch(workspace, {f["feature_id"]: {f["column"]: f["value"]} for f in features})
             return {
-                "valid": validation.get("valid", True),
-                "errors": validation.get("errors", []),
+                "valid": not result.blocked,
+                "errors": result.violations,
             }
         except Exception as e:
             return {"valid": False, "errors": [str(e)]}

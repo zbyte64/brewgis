@@ -158,7 +158,7 @@ def export_building_types(
             schema,
             table,
         )
-        return row_count
+        return row_count  # type: ignore[no-any-return]
 
 
 def ensure_export_exists(
@@ -189,6 +189,6 @@ def ensure_export_exists(
                     table,
                     count,
                 )
-                return count
+                return count  # type: ignore[no-any-return]
 
     return export_building_types(schema, table, **kwargs)

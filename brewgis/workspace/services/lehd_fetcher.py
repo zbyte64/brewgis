@@ -771,8 +771,8 @@ def fetch_lehd_block_data(
     if _IS_SACOG_REGION:
         for record in records:
             sacog_subs = _apply_sacog_calibrated_splits(record)
-            for col, val in sacog_subs.items():
-                record[col] = val
+            for col in sacog_subs:
+                record[col] = sacog_subs[col]
             # Zero out sub-sectors with no SACOG reference (reference totals are 0)
             for col in ("emp_agriculture", "emp_extraction", "emp_military"):
                 record[col] = 0.0

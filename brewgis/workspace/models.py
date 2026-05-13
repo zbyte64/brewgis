@@ -243,9 +243,9 @@ class Scenario(models.Model):
             self.slug = slugify(self.name)[:128]
         if not self.schema_name:
             self.schema_name = f"scenario_{self.slug}"
-        super().save(*args, **kwargs)
+        super().save(*args, **kwargs)  # type: ignore[arg-type]
 
-    def delete(self, *args: object, **kwargs: object) -> None:
+    def delete(self, *args: object, **kwargs: object) -> tuple[int, dict[str, int]]:
         """Drop the canvas view then delete the model."""
         from brewgis.workspace.services.canvas_view_manager import drop_canvas_view
 
@@ -253,7 +253,7 @@ class Scenario(models.Model):
             drop_canvas_view(self)
         except Exception:  # noqa: BLE001
             pass  # view may not exist
-        super().delete(*args, **kwargs)
+        return super().delete(*args, **kwargs)  # type: ignore[arg-type]
 
     @property
     def target_schema(self) -> str:

@@ -93,13 +93,13 @@ def _find_numeric_column(columns: list[dict[str, Any]]) -> str | None:
     }
     for col in columns:
         if col["numeric"] and col["column_name"] in preferred:
-            return col["column_name"]
+            return col["column_name"]  # type: ignore[no-any-return]
 
     # Fallback: first numeric column that looks like a data column
     skip_patterns = {"id", "pk", "parcel_id", "geom"}
     for col in columns:
         if col["numeric"] and col["column_name"] not in skip_patterns:
-            return col["column_name"]
+            return col["column_name"]  # type: ignore[no-any-return]
 
     return None
 

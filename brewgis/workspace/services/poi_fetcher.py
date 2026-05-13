@@ -190,7 +190,7 @@ def _execute_overpass_query(query: str) -> list[dict[str, Any]]:
         msg = "Overpass API response missing 'elements' key."
         raise RuntimeError(msg)
 
-    return result["elements"]
+    return result["elements"]  # type: ignore[no-any-return]
 
 
 def _categorize_element(tags: dict[str, str]) -> tuple[str, str]:

@@ -52,7 +52,7 @@ class ScenarioDetail(BaseModel):
 def register_tools(server: object) -> None:
     """Register scenario tools with the MCP server."""
 
-    @server.tool()  # type: ignore[misc]
+    @server.tool()  # type: ignore[attr-defined]
     def list_scenarios(workspace_slug: str) -> list[dict[str, Any]]:
         """List scenarios for a workspace."""
         try:
@@ -70,14 +70,14 @@ def register_tools(server: object) -> None:
                     scenario_type=s.scenario_type,
                     base_year=s.base_year,
                     horizon_year=s.horizon_year,
-                    paint_count=s.painted_canvas.count(),
+                    paint_count=s.painted_features.count(),
                     analysis_run_count=s.analysis_runs.count(),
                     is_published=s.published if hasattr(s, "published") else False,
                 ).model_dump()
             )
         return results
 
-    @server.tool()  # type: ignore[misc]
+    @server.tool()  # type: ignore[attr-defined]
     def get_scenario(workspace_slug: str, scenario_slug: str) -> dict[str, Any]:
         """Get detailed scenario information."""
         try:
@@ -97,15 +97,15 @@ def register_tools(server: object) -> None:
             total_population=None,
             total_du=None,
             total_employment=None,
-            paint_count=s.painted_canvas.count(),
+            paint_count=s.painted_features.count(),
             last_analysis_status=last_run.status if last_run else None,
             is_published=s.published if hasattr(s, "published") else False,
-            public_token=str(s.public_token)
-            if hasattr(s, "public_token") and s.public_token
+            public_token=str(getattr(s, "public_token", ""))
+            if getattr(s, "public_token", None)
             else None,
         ).model_dump()
 
-    @server.tool()  # type: ignore[misc]
+    @server.tool()  # type: ignore[attr-defined]
     def compare_scenarios(
         workspace_slug: str,
         scenario_slugs: list[str],
@@ -128,7 +128,7 @@ def register_tools(server: object) -> None:
             }
         return result
 
-    @server.tool()  # type: ignore[misc]
+    @server.tool()  # type: ignore[attr-defined]
     def create_scenario(
         workspace_slug: str,
         name: str,
@@ -171,7 +171,7 @@ def register_tools(server: object) -> None:
             "horizon_year": new_scenario.horizon_year,
         }
 
-    @server.tool()  # type: ignore[misc]
+    @server.tool()  # type: ignore[attr-defined]
     def delete_scenario(workspace_slug: str, scenario_slug: str) -> dict[str, Any]:
         """Delete a scenario."""
         try:
@@ -183,7 +183,7 @@ def register_tools(server: object) -> None:
         s.delete()
         return {"deleted": True, "slug": scenario_slug}
 
-    @server.tool()  # type: ignore[misc]
+    @server.tool()  # type: ignore[attr-defined]
     def rename_scenario(
         workspace_slug: str, scenario_slug: str, new_name: str
     ) -> dict[str, Any]:
