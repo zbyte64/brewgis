@@ -69,9 +69,8 @@ def census_acs_resource(
     base = _census_base_url(year_val)
     url = (
         f"{base}?get={vars_str}"
-        f"&in=state:{state_fips}"
-        f"&in=county:{county_fips}"
-        f"&for=block%20group:*"
+        f"&for=block+group:*"
+        f"&in=state:{state_fips}+county:{county_fips}"
     )
     api_key = _census_api_key()
     if api_key:

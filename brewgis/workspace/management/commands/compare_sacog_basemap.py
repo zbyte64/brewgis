@@ -70,6 +70,12 @@ class Command(BaseCommand):
             help="Skip LEHD employment fetching",
         )
         parser.add_argument(
+            "--skip-data-fetch",
+            action="store_true",
+            default=False,
+            help="Skip all data fetching (Census ACS + LEHD)",
+        )
+        parser.add_argument(
             "--truncate",
             action="store_true",
             default=False,
@@ -91,8 +97,9 @@ class Command(BaseCommand):
 
         quick = bool(options.get("quick", False))
         limit = int(options.get("limit", 0))
-        skip_census = bool(options.get("skip_census", False))
-        skip_lehd = bool(options.get("skip_lehd", False))
+        skip_data_fetch = bool(options.get("skip_data_fetch", False))
+        skip_census = skip_data_fetch or bool(options.get("skip_census", False))
+        skip_lehd = skip_data_fetch or bool(options.get("skip_lehd", False))
         truncate = bool(options.get("truncate", False))
 
         self.stdout.write("\n" + "=" * 70)
@@ -130,11 +137,9 @@ class Command(BaseCommand):
 
             census_result = run_census_pipeline(STATE_FIPS, COUNTY_FIPS, 2022)
             if not census_result["success"]:
-                self.stdout.write(
-                    self.style.WARNING(
-                        f"  Census ACS fetch failed: {census_result.get('error')}; "
-                        "demographics will be zero-filled"
-                    )
+                raise CommandError(
+                    f"Census ACS fetch failed: {census_result.get('error')}. "
+                    "Use --skip-census or --skip-data-fetch to skip."
                 )
             else:
                 self.stdout.write(
@@ -151,11 +156,9 @@ class Command(BaseCommand):
 
             lehd_result = run_lehd_pipeline(STATE_FIPS, COUNTY_FIPS, 2021)
             if not lehd_result["success"]:
-                self.stdout.write(
-                    self.style.WARNING(
-                        f"  LEHD fetch failed: {lehd_result.get('error')}; "
-                        "employment will be zero-filled"
-                    )
+                raise CommandError(
+                    f"LEHD LODES fetch failed: {lehd_result.get('error')}. "
+                    "Use --skip-lehd or --skip-data-fetch to skip."
                 )
             else:
                 self.stdout.write(
