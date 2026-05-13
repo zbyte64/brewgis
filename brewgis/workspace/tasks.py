@@ -5,6 +5,7 @@ from __future__ import annotations
 
 import logging
 from typing import Any
+import warnings
 
 from celery import shared_task
 from celery.utils.log import get_task_logger
@@ -72,9 +73,13 @@ def export_building_types_task(
         logger.exception("Built form export failed")
         return {"success": False, "count": 0, "error": str(e)}
 
-
 # ────────────────────────────────────────────────────────────
 #  Analysis module tasks (consolidated)
+# ────────────────────────────────────────────────────────────
+#
+# DEPRECATED: Analysis pipeline Celery tasks. Use the Dagster-based
+# pipeline in brewgis.workspace.dagster instead. These tasks remain
+# for backward compatibility during the transition period.
 # ────────────────────────────────────────────────────────────
 
 MODULE_DBT_SELECT_MAP = {
@@ -127,6 +132,11 @@ def run_dbt_module(
     Returns:
         Dict with keys: success, results, error, layer_schema, layer_table.
     """
+    warnings.warn(
+        f"{__name__} is deprecated. Use the Dagster-based analysis pipeline instead.",
+        DeprecationWarning,
+        stacklevel=2,
+    )
     resolved_vars = vars_ or {}
     logger.info(
         "Running module '%s' for workspace %s with vars: %s",
@@ -311,6 +321,11 @@ def run_preprocessor_and_dbt(
     Returns:
         Same shape as run_dbt_module.
     """
+    warnings.warn(
+        f"{__name__} is deprecated. Use the Dagster-based analysis pipeline instead.",
+        DeprecationWarning,
+        stacklevel=2,
+    )
     resolved_vars = vars_ or {}
     resolved_vars.setdefault("workspace_id", workspace_id)
     logger.info(
@@ -382,6 +397,11 @@ def handle_module_completed(
     module is dispatched.  On failure, the AnalysisRun is marked as
     failed.
     """
+    warnings.warn(
+        f"{__name__} is deprecated. Use the Dagster-based analysis pipeline instead.",
+        DeprecationWarning,
+        stacklevel=2,
+    )
     try:
         run = AnalysisRun.objects.get(pk=run_id)
     except AnalysisRun.DoesNotExist:

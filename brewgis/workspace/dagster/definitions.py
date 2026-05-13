@@ -9,11 +9,12 @@ from __future__ import annotations
 from dagster import Definitions
 from dagster import ScheduleDefinition
 
-from brewgis.workspace.dagster.assets.dbt_assets import dbt_core_allocation
-from brewgis.workspace.dagster.assets.dbt_assets import dbt_env_constraint
-from brewgis.workspace.dagster.assets.dbt_assets import dbt_impact_modules
+from brewgis.workspace.dagster.assets.dbt_assets import ANALYSIS_ASSETS
+from brewgis.workspace.dagster.assets.dbt_assets import acs_equity_preprocessor
+from brewgis.workspace.dagster.assets.dbt_assets import building_types_export
 from brewgis.workspace.dagster.assets.dbt_assets import dbt_staging_models
-from brewgis.workspace.dagster.assets.dbt_assets import dbt_transport
+from brewgis.workspace.dagster.assets.dbt_assets import food_access_preprocessor
+from brewgis.workspace.dagster.assets.dbt_assets import internal_capture_preprocessor
 from brewgis.workspace.dagster.assets.dlt_assets import census_acs_assets
 from brewgis.workspace.dagster.assets.dlt_assets import lehd_lodes_assets
 from brewgis.workspace.dagster.assets.dlt_assets import overpass_poi_assets
@@ -53,12 +54,14 @@ _ASSETS = [
     spatial_allocation,
     imputation,
     base_canvas_etl,
+    # preprocessing assets
+    building_types_export,
+    internal_capture_preprocessor,
+    food_access_preprocessor,
+    acs_equity_preprocessor,
     # dbt model assets
     dbt_staging_models,
-    dbt_env_constraint,
-    dbt_core_allocation,
-    dbt_transport,
-    dbt_impact_modules,
+    *ANALYSIS_ASSETS,
 ]
 
 # ---------------------------------------------------------------------------
