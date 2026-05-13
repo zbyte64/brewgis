@@ -868,3 +868,77 @@ models:
     tests: [not_null, unique]
   - name: infrastructure_cost_per_hh_annual
     tests: [non_negative]
+- name: sacog_reference_totals
+  description: "Aggregate sums from the SACOG v1 reference base canvas (sac_cnty_region_base_canvas). Per-column COALESCE(SUM, 0)."
+  columns:
+  - name: source
+    tests:
+    - not_null
+  - name: pop
+    tests:
+    - not_null
+    - non_negative
+  - name: hh
+    tests:
+    - not_null
+    - non_negative
+  - name: du
+    tests:
+    - not_null
+    - non_negative
+  - name: emp
+    tests:
+    - not_null
+    - non_negative
+  - name: acres_gross
+    tests:
+    - not_null
+    - non_negative
+- name: sacog_brewgis_totals
+  description: "Aggregate sums from the brewgis base canvas (public.base_canvas). Per-column COALESCE(SUM, 0)."
+  columns:
+  - name: source
+    tests:
+    - not_null
+  - name: pop
+    tests:
+    - not_null
+    - non_negative
+  - name: hh
+    tests:
+    - not_null
+    - non_negative
+  - name: du
+    tests:
+    - not_null
+    - non_negative
+  - name: emp
+    tests:
+    - not_null
+    - non_negative
+  - name: area_gross
+    tests:
+    - not_null
+    - non_negative
+- name: sacog_correlations
+  description: "Per-column Pearson R correlation between brewgis base_canvas and v1 reference, joined on geography_id."
+  columns:
+  - name: pop
+  - name: hh
+  - name: du
+  - name: emp
+- name: sacog_weighted_means
+  description: "Area-weighted averages for density/rate equity columns."
+  columns:
+  - name: source
+    tests:
+    - not_null
+  - name: median_income_wavg
+    tests:
+    - non_negative
+- name: sacog_summary
+  description: "Single-row comparison view joining reference totals, brewgis totals, correlations, and weighted means."
+  columns:
+  - name: generated_at
+    tests:
+    - not_null

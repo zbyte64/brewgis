@@ -117,19 +117,39 @@ class CreateFresnoScenarioConfig(Config):
     """Horizon year for the scenario."""
 
 
-class SacogComparisonConfig(Config):
-    """Config for the ``sacog_comparison`` asset.
+class SacogLoadParcelsConfig(Config):
+    """Config for the ``sacog_load_parcels`` asset.
 
-    Controls data sources, parcel limit, and which adapters to enable.
+    Controls caching and parcel limit for reference parcel loading.
+    """
+
+    limit: int = 0
+    """Limit parcel count for fast test runs (0 = all)."""
+    cache_dir: str = ""
+    """Directory to store cached GeoJSON. Empty = default planning/ cache dir."""
+
+
+class SacogComparisonETLConfig(Config):
+    """Config for ``sacog_run_comparison_etl`` asset.
+
+    Controls data sources and which adapters to enable.
     """
 
     quick: bool = False
     """Skip NLCD/OSM (use default null sources); only Census + LEHD."""
-    limit: int = 0
-    """Limit parcel count for fast test runs (0 = all)."""
     skip_census: bool = False
     """Skip Census ACS demographic fetching."""
     skip_lehd: bool = False
     """Skip LEHD employment fetching."""
     truncate: bool = False
     """Truncate existing base_canvas before inserting."""
+
+
+class SacogReportConfig(Config):
+    """Config for the ``sacog_generate_report`` asset.
+
+    Controls where the comparison report is written.
+    """
+
+    output_path: str = ""
+    """File path for the generated markdown report. Empty = default planning/sacog_comparison_report.md."""

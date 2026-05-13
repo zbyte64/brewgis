@@ -9,7 +9,14 @@ from __future__ import annotations
 from dagster import Definitions
 from dagster import ScheduleDefinition
 
-from brewgis.workspace.dagster.assets.calibration_assets import sacog_comparison
+from brewgis.workspace.dagster.assets.comparison_assets import sacog_dbt_comparison
+from brewgis.workspace.dagster.assets.comparison_assets import sacog_generate_report
+from brewgis.workspace.dagster.assets.comparison_assets import sacog_load_parcels
+from brewgis.workspace.dagster.assets.comparison_assets import (
+    sacog_populate_geography_id,
+)
+from brewgis.workspace.dagster.assets.comparison_assets import sacog_run_comparison_etl
+from brewgis.workspace.dagster.assets.comparison_assets import sacog_verify_geometry
 from brewgis.workspace.dagster.assets.dbt_assets import ANALYSIS_ASSETS
 from brewgis.workspace.dagster.assets.dbt_assets import acs_equity_preprocessor
 from brewgis.workspace.dagster.assets.dbt_assets import building_types_export
@@ -68,8 +75,13 @@ _ASSETS = [
     fresno_constraints,
     assign_built_forms,
     create_fresno_scenario,
-    # calibration assets
-    sacog_comparison,
+    # comparison assets
+    sacog_load_parcels,
+    sacog_run_comparison_etl,
+    sacog_verify_geometry,
+    sacog_populate_geography_id,
+    sacog_dbt_comparison,
+    sacog_generate_report,
     # preprocessing assets
     building_types_export,
     internal_capture_preprocessor,

@@ -68,6 +68,9 @@ models:
       +materialized: table
     vmt_fee:
       +materialized: table
+    comparison:
+      +materialized: table
+      +schema: "{{ var('target_schema', 'public') }}"
 vars:
   # Default values for SQLFluff / dbt compilation.
   # Runtime values are provided by dbt_runner.py when executing models.
