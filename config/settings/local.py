@@ -69,5 +69,10 @@ if env("USE_DOCKER") == "yes":
 # https://docs.celeryq.dev/en/stable/userguide/configuration.html#task-eager-propagates
 CELERY_TASK_EAGER_PROPAGATES = True
 CELERY_TASK_ALWAYS_EAGER = True
+# Dagster
+# ------------------------------------------------------------------------------
+# Local dev: use sqlite for dagster metadata so dagster-postgres isn't required.
+DAGSTER_HOME = str(BASE_DIR / ".dagster_home")
+
 # Your stuff...
 # ------------------------------------------------------------------------------

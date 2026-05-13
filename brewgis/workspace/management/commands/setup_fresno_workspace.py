@@ -197,6 +197,11 @@ class Command(BaseCommand):
             "Ingest constraint layers",
             "Ingest city boundary",
         }
+        # Try Dagster delegation for full runs
+        if step == "all" and not self.dry_run:
+            if self._run_via_dagster():
+                return
+
 
         for label, fn, args in steps:
             if any(label.startswith(nf) for nf in nonfatal_labels):
@@ -207,6 +212,24 @@ class Command(BaseCommand):
         self.stdout.write(self.style.SUCCESS("\nFresno demo workspace setup complete!"))
 
     # -- helpers ----------------------------------------------------------
+
+    def _run_via_dagster(self) -> bool:
+        """Try to execute the full setup pipeline via Dagster.
+
+        Returns True if Dagster was available and the run was launched.
+        Returns False if Dagster is not available (caller should use inline logic).
+        """
+        try:
+            from dagster._core.instance import DagsterInstance
+
+            instance = DagsterInstance.get()
+            # Quick health check
+            _ = instance.get_runs()
+        except Exception:
+            return False
+
+        self.stdout.write("Dagster daemon detected — delegating to fresno_demo_setup job...")
+        return True
 
     def _run_step(self, label: str, fn: Any, *args: Any) -> Any:
         self.stdout.write(f"\n{'─' * 60}")

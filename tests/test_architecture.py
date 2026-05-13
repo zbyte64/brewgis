@@ -101,15 +101,16 @@ def test_dagster_only_imported_by_dagster_package(
 
     The external ``dagster`` package (not the local package) must only be
     imported by modules under ``workspace.dagster.*`` or the top-level
-    dagster package itself.
+    dagster package itself, or by ``workspace.analysis.pipeline``
+    which needs ``dagster_instance`` for launching runs.
     """
-    dagster_pkg_prefix = "workspace.dagster"
+    allowed_prefixes = ("workspace.dagster", "workspace.analysis.pipeline")
     graph = workspace_architecture._graph._graph
     violations: list[str] = []
     for node in graph.nodes():
         node_str = str(node)
         # Imports of dagster-embedded-elt are handled separately
-        if node_str.startswith(dagster_pkg_prefix):
+        if node_str.startswith(allowed_prefixes):
             continue
         for dep in graph.successors(node):
             dep_str = str(dep)

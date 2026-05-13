@@ -21,6 +21,7 @@ from brewgis.workspace.dagster.assets.dlt_assets import lehd_lodes_assets
 from brewgis.workspace.dagster.assets.dlt_assets import overpass_poi_assets
 from brewgis.workspace.dagster.assets.dlt_assets import raster_band_assets
 from brewgis.workspace.dagster.assets.dlt_assets import raster_metadata_assets
+from brewgis.workspace.dagster.schedules import SCHEDULES
 from brewgis.workspace.dagster.assets.download_assets import fresno_demo_data
 from brewgis.workspace.dagster.assets.service_assets import assign_built_forms
 from brewgis.workspace.dagster.assets.service_assets import base_canvas_etl
@@ -91,7 +92,7 @@ _JOBS = [
 # Schedules
 # ---------------------------------------------------------------------------
 
-_SCHEDULES: list[ScheduleDefinition] = []
+_SCHEDULES: list[ScheduleDefinition] = list(SCHEDULES)
 
 # ---------------------------------------------------------------------------
 # Sensors

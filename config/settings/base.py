@@ -294,6 +294,13 @@ CELERY_BEAT_SCHEDULER = "django_celery_beat.schedulers:DatabaseScheduler"
 CELERY_WORKER_SEND_TASK_EVENTS = True
 # https://docs.celeryq.dev/en/stable/userguide/configuration.html#std-setting-task_send_sent_event
 CELERY_TASK_SEND_SENT_EVENT = True
+# Dagster
+# ------------------------------------------------------------------------------
+DAGSTER_HOME = env("DAGSTER_HOME", default="/app/dagster_home")
+# Dagster metadata store — runs on the same PostGIS cluster but a separate DB.
+# Override in production env. When not set, Dagster uses the default database.
+DAGSTER_POSTGRES_DSN = env("DAGSTER_POSTGRES_DSN", default=None)
+
 # django-allauth
 # ------------------------------------------------------------------------------
 ACCOUNT_ALLOW_REGISTRATION = env.bool("DJANGO_ACCOUNT_ALLOW_REGISTRATION", True)

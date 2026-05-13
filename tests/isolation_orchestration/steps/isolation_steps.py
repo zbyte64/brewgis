@@ -197,9 +197,10 @@ def run_dbt_module(  # noqa: PLR0913
 ) -> None:
     """Invoke the analysis pipeline with the given module and scenario_id.
 
-    MODULE_TASKS are already patched to MagicMock by the ``mock_module_tasks``
-    fixture in conftest.py, so Celery dispatch is a no-op. The AnalysisRun
-    record is created synchronously and stored in scenario_context.
+    run_modules_sync is already patched by the ``mock_module_tasks``
+    fixture in conftest.py, so pipeline dispatch completes without
+    running actual dbt. The AnalysisRun record is created synchronously
+    and stored in scenario_context.
     """
     workspace = _resolve_workspace(scenario_context, schema)
     # Derive a Scenario slug from sid; reuse existing if already created

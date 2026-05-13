@@ -1,4 +1,4 @@
-"""MCP tools for dbt analysis operations (Celery-backed)."""
+"""MCP tools for dbt analysis operations."""
 
 
 
@@ -14,7 +14,7 @@ from brewgis.workspace.models import AnalysisRun
 from brewgis.workspace.models import Scenario
 from brewgis.workspace.models import Workspace
 from brewgis.workspace.services.preflight import check_analysis_prerequisites
-from brewgis.workspace.tasks import run_preprocessor_and_dbt
+from brewgis.workspace.analysis.pipeline import run_analysis_pipeline
 
 logger = logging.getLogger(__name__)
 
@@ -76,15 +76,26 @@ def register_tools(server: object) -> None:
                 "message": f"Prerequisites not met: {errors_str}",
             }
 
-        # Launch Celery task
-        task = run_preprocessor_and_dbt.delay(
+        # Launch via pipeline (dispatches to Dagster or sync)
+        from brewgis.workspace.analysis.module_registry import resolve_module_order
+        from django.utils import timezone
+
+        ordered = resolve_module_order(modules or list(MODULE_DEPENDENCIES))
+        scenario_id_str = str(scenario.pk)
+
+        run = run_analysis_pipeline(
+            workspace_id=ws_pk,
+            module_names=ordered,
+            vars_={
+                "scenario_id": scenario_id_str,
+                "target_schema": workspace.db_schema,
+                **(params or {}),
+            },
             scenario_id=scenario.pk,
-            modules=modules,
-            params=params or {},
         )
         return {
-            "task_id": task.id,
-            "status": "PENDING",
+            "run_id": run.pk,
+            "status": run.status,
             "message": f"Analysis launched for scenario '{scenario.name}'",
         }
 

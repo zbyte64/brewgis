@@ -63,3 +63,4 @@ from .token_auth import token_auth  # noqa: F401
 from .workspace_create import WorkspaceCreateView as workspace_create  # noqa: F401
 from .workspace_create import county_options  # noqa: F401
 from .workspace_detail import workspace_detail  # noqa: F401
+from .pipeline_callback import pipeline_callback  # noqa: F401

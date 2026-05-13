@@ -81,6 +81,7 @@ from .views.report import report_list_partial
 from .views.report import report_status
 from .views.scenarios import scenario_toggle_publish
 from .views.token_auth import token_auth
+from .views.pipeline_callback import pipeline_callback as pipeline_callback  # noqa: N813
 
 app_name = "workspace"
 urlpatterns = [
@@ -392,4 +393,5 @@ urlpatterns = [
         layer_data_table,
         name="layer_data_table",
     ),
+    path("api/v1/pipeline-callback/", pipeline_callback, name="pipeline-callback"),
 ]

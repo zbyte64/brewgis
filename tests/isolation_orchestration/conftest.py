@@ -1,12 +1,12 @@
 """pytest fixtures for orchestration-level isolation BDD tests.
 
-These tests verify that the analysis pipeline (run_analysis_pipeline +
-_dispatch_next) correctly creates AnalysisRun records with the right
-workspace, scenario_id, and module isolation — without running real dbt.
+These tests verify that the analysis pipeline (run_analysis_pipeline)
+correctly creates AnalysisRun records with the right workspace,
+scenario_id, and module isolation — without running real dbt.
 
-MODULE_TASKS are patched with MagicMocks so Celery dispatch is a no-op.
-Assertions check AnalysisRun records and their properties rather than
-PostGIS views or schemas.
+run_modules_sync is patched with a MagicMock so pipeline dispatch
+completes without executing dbt. Assertions check AnalysisRun records
+and their properties rather than PostGIS views or schemas.
 """
 
 from __future__ import annotations
@@ -17,7 +17,6 @@ from unittest.mock import patch
 
 import pytest
 
-from brewgis.workspace.analysis.module_registry import MODULE_DEPENDENCIES
 from tests.factories import WorkspaceFactory
 
 if TYPE_CHECKING:
@@ -49,21 +48,22 @@ def scenario_context() -> dict[str, Any]:
 
 
 @pytest.fixture
-def mock_module_tasks() -> Generator[dict[str, MagicMock], None, None]:
-    """Replace all MODULE_TASKS with MagicMocks for the duration of a test.
+def mock_module_tasks() -> Generator[MagicMock, None, None]:  # type: ignore[misc]
+    """Patch run_modules_sync so pipeline dispatch completes without running dbt.
 
-    Each mock provides ``apply_async`` so ``_dispatch_next`` succeeds
-    without a Celery broker. Real dbt runs are NOT executed — the analysis
-    pipeline creates the AnalysisRun record synchronously and attempts
-    async dispatch, which this fixture absorbs.
+    When Dagster is unavailable (as in tests), run_analysis_pipeline falls
+    back to run_modules_sync(). This fixture replaces it with a MagicMock
+    so no real dbt is executed.
     """
-    mock_tasks = {m: MagicMock() for m in MODULE_DEPENDENCIES}
-    with patch.dict(
-        "brewgis.workspace.analysis.pipeline.MODULE_TASKS",
-        mock_tasks,
-        clear=True,
-    ) as patched:
-        yield patched
+    with patch(
+        "brewgis.workspace.analysis.pipeline.run_modules_sync",
+    ) as mock_sync:
+        mock_sync.return_value = {
+            "success": True,
+            "completed": [],
+            "results": [],
+        }
+        yield mock_sync
 
 
 @pytest.fixture

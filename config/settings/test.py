@@ -37,4 +37,9 @@ MEDIA_URL = "http://media.testserver"
 # Your stuff...
 # Pre-shared key for token-based test auth (avoids login form in review/e2e tests)
 TOKEN_AUTH_KEY = env("TOKEN_AUTH_KEY", default="test-token-key-dev-only")
+# Dagster
+# ------------------------------------------------------------------------------
+# Dagster is disabled in tests — tests use Definitions directly, no daemon needed.
+DAGSTER_HOME = None
+
 # ------------------------------------------------------------------------------

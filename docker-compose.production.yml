@@ -82,11 +82,23 @@ services:
     volumes:
       - production_django_media:/usr/share/nginx/media:ro
   
-  dagster:
+  dagster-daemon:
     <<: *django
-    image: brewgis_production_dagster
-    container_name: brewgis_production_dagster
+    image: brewgis_production_dagster_daemon
+    container_name: brewgis_production_dagster_daemon
+    depends_on:
+      - redis
+      - postgres
+    ports: []
+    command: /start-dagster-daemon
+
+  dagster-webserver:
+    <<: *django
+    image: brewgis_production_dagster_webserver
+    container_name: brewgis_production_dagster_webserver
+    depends_on:
+      - redis
+      - postgres
     ports:
       - '3001:3000'
-    command: dagster dev -h 0.0.0.0 -p 3000 -f brewgis/workspace/dagster/definitions.py
-
+    command: /start-dagster-webserver

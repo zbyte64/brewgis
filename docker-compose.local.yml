@@ -114,10 +114,25 @@ services:
     ports: []
     command: /start-mcp
 
-  dagster:
+  dagster-daemon:
     <<: *django
-    image: brewgis_local_dagster
-    container_name: brewgis_local_dagster
+    image: brewgis_local_dagster_daemon
+    container_name: brewgis_local_dagster_daemon
+    depends_on:
+      - redis
+      - postgres
+      - tipg
+    ports: []
+    command: /start-dagster-daemon
+
+  dagster-webserver:
+    <<: *django
+    image: brewgis_local_dagster_webserver
+    container_name: brewgis_local_dagster_webserver
+    depends_on:
+      - redis
+      - postgres
+      - tipg
     ports:
       - '3001:3000'
-    command: dagster dev -h 0.0.0.0 -p 3000 -f brewgis/workspace/dagster/definitions.py
+    command: /start-dagster-webserver

@@ -20,7 +20,6 @@ from unittest.mock import patch
 import pytest
 from django.test import TestCase
 
-from brewgis.workspace.analysis.module_registry import MODULE_DEPENDENCIES
 from brewgis.workspace.analysis.module_registry import MODULE_RESULT_TABLES
 from brewgis.workspace.analysis.module_registry import get_result_table_names
 from brewgis.workspace.analysis.module_registry import resolve_module_order
@@ -32,13 +31,6 @@ from tests.factories import WorkspaceFactory
 # ── Helpers ───────────────────────────────────────────────────────────────────
 
 
-def _mock_all_module_tasks() -> dict:
-    """Return a MODULE_TASKS replacement where every entry is a MagicMock.
-
-    Each mock has ``apply_async`` so Celery dispatch succeeds in tests
-    without a broker.
-    """
-    return {m: MagicMock() for m in MODULE_DEPENDENCIES}
 
 
 # ═══════════════════════════════════════════════════════════════════════════════
@@ -109,13 +101,10 @@ class TestWorkspaceIsolation(TestCase):
         self.assertNotIn(r1.pk, b_pks, "Workspace A's run leaked into workspace B")
         self.assertNotIn(r2.pk, b_pks, "Workspace A's run leaked into workspace B")
 
-    @patch.dict(
-        "brewgis.workspace.analysis.pipeline.MODULE_TASKS",
-        _mock_all_module_tasks(),
-        clear=True,
-    )
-    def test_pipeline_creates_run_with_correct_workspace(self) -> None:
+    @patch("brewgis.workspace.analysis.pipeline.run_modules_sync")
+    def test_pipeline_creates_run_with_correct_workspace(self, mock_sync: MagicMock) -> None:
         """run_analysis_pipeline creates an AnalysisRun for the given workspace."""
+        mock_sync.return_value = {"success": True, "completed": [], "results": []}
         vars_ = {
             "scenario_id": "test-ws-a",
             "target_schema": self.workspace_a.db_schema,
@@ -131,13 +120,10 @@ class TestWorkspaceIsolation(TestCase):
         self.assertEqual(run.workspace_id, self.workspace_a.pk)
         self.assertNotEqual(run.workspace_id, self.workspace_b.pk)
 
-    @patch.dict(
-        "brewgis.workspace.analysis.pipeline.MODULE_TASKS",
-        _mock_all_module_tasks(),
-        clear=True,
-    )
-    def test_pipeline_vars_carry_correct_workspace_schema(self) -> None:
+    @patch("brewgis.workspace.analysis.pipeline.run_modules_sync")
+    def test_pipeline_vars_carry_correct_workspace_schema(self, mock_sync: MagicMock) -> None:
         """target_schema in vars matches the launching workspace's schema."""
+        mock_sync.return_value = {"success": True, "completed": [], "results": []}
         vars_ = {
             "scenario_id": "test-schema",
             "target_schema": self.workspace_a.db_schema,
@@ -152,13 +138,10 @@ class TestWorkspaceIsolation(TestCase):
 
         self.assertEqual(run.vars.get("target_schema"), self.workspace_a.db_schema)
 
-    @patch.dict(
-        "brewgis.workspace.analysis.pipeline.MODULE_TASKS",
-        _mock_all_module_tasks(),
-        clear=True,
-    )
-    def test_pipeline_workspace_b_isolation(self) -> None:
+    @patch("brewgis.workspace.analysis.pipeline.run_modules_sync")
+    def test_pipeline_workspace_b_isolation(self, mock_sync: MagicMock) -> None:
         """Pipeline for workspace B uses B's schema, not A's."""
+        mock_sync.return_value = {"success": True, "completed": [], "results": []}
         ws_a_schema = self.workspace_a.db_schema
         ws_b_schema = self.workspace_b.db_schema
 
@@ -311,13 +294,10 @@ class TestScenarioIsolation(TestCase):
                     f"output would not be scoped by scenario",
                 )
 
-    @patch.dict(
-        "brewgis.workspace.analysis.pipeline.MODULE_TASKS",
-        _mock_all_module_tasks(),
-        clear=True,
-    )
-    def test_pipeline_stores_scenario_id(self) -> None:
+    @patch("brewgis.workspace.analysis.pipeline.run_modules_sync")
+    def test_pipeline_stores_scenario_id(self, mock_sync: MagicMock) -> None:
         """run_analysis_pipeline persists scenario_id in the run's vars."""
+        mock_sync.return_value = {"success": True, "completed": [], "results": []}
         vars_ = {
             "scenario_id": "scenario-a",
             "target_schema": "public",
@@ -332,13 +312,10 @@ class TestScenarioIsolation(TestCase):
 
         self.assertEqual(run.vars.get("scenario_id"), "scenario-a")
 
-    @patch.dict(
-        "brewgis.workspace.analysis.pipeline.MODULE_TASKS",
-        _mock_all_module_tasks(),
-        clear=True,
-    )
-    def test_two_scenarios_parallel_runs_are_separate_records(self) -> None:
+    @patch("brewgis.workspace.analysis.pipeline.run_modules_sync")
+    def test_two_scenarios_parallel_runs_are_separate_records(self, mock_sync: MagicMock) -> None:
         """Running analysis for two scenarios produces separate AnalysisRun records."""
+        mock_sync.return_value = {"success": True, "completed": [], "results": []}
         vars_a = {
             "scenario_id": "scenario-a",
             "target_schema": self.workspace.db_schema,
@@ -446,15 +423,13 @@ class TestSingleModuleExecution(TestCase):
         self.assertNotIn("energy_demand", ordered)
         self.assertNotIn("land_consumption", ordered)
 
-    @patch.dict(
-        "brewgis.workspace.analysis.pipeline.MODULE_TASKS",
-        _mock_all_module_tasks(),
-        clear=True,
-    )
+    @patch("brewgis.workspace.analysis.pipeline.run_modules_sync")
     def test_pipeline_with_single_module_creates_run_with_correct_modules(
         self,
+        mock_sync: MagicMock,
     ) -> None:
         """run_analysis_pipeline with one module creates AnalysisRun with only that module chain."""
+        mock_sync.return_value = {"success": True, "completed": [], "results": []}
         ws = WorkspaceFactory()
         sc = ScenarioFactory(workspace=ws)
         run = run_analysis_pipeline(
@@ -464,13 +439,10 @@ class TestSingleModuleExecution(TestCase):
         )
         self.assertEqual(run.modules, ["env_constraint"])
 
-    @patch.dict(
-        "brewgis.workspace.analysis.pipeline.MODULE_TASKS",
-        _mock_all_module_tasks(),
-        clear=True,
-    )
-    def test_pipeline_water_demand_does_not_include_energy(self) -> None:
+    @patch("brewgis.workspace.analysis.pipeline.run_modules_sync")
+    def test_pipeline_water_demand_does_not_include_energy(self, mock_sync: MagicMock) -> None:
         """Requesting water_demand pipeline does not add energy_demand to run."""
+        mock_sync.return_value = {"success": True, "completed": [], "results": []}
         ws = WorkspaceFactory()
         sc = ScenarioFactory(workspace=ws)
         run = run_analysis_pipeline(
@@ -489,13 +461,30 @@ class TestSingleModuleExecution(TestCase):
         self.assertNotIn("mode_choice", run.modules)
         self.assertNotIn("vmt", run.modules)
 
-    @patch.dict(
-        "brewgis.workspace.analysis.pipeline.MODULE_TASKS",
-        _mock_all_module_tasks(),
-        clear=True,
-    )
-    def test_pipeline_core_does_not_include_downstream_modules(self) -> None:
+    @patch("brewgis.workspace.analysis.pipeline.run_modules_sync")
+    def test_pipeline_dispatches_all_modules_via_sync(self, mock_sync: MagicMock) -> None:
+        """run_analysis_pipeline dispatches all resolved modules via run_modules_sync."""
+        mock_sync.return_value = {"success": True, "completed": [], "results": []}
+        ws = WorkspaceFactory()
+        sc = ScenarioFactory(workspace=ws)
+        vars_ = {
+            "scenario_id": "test-dispatch",
+            "target_schema": ws.db_schema,
+            "parcel_table": "parcels",
+        }
+        run_analysis_pipeline(
+            workspace_id=ws.pk,
+            module_names=["water_demand"],
+            vars_=vars_,
+            scenario_id=sc.pk,
+        )
+
+        mock_sync.assert_called_once()
+
+    @patch("brewgis.workspace.analysis.pipeline.run_modules_sync")
+    def test_pipeline_core_does_not_include_downstream_modules(self, mock_sync: MagicMock) -> None:
         """Requesting only core does not add water_demand, energy_demand, or transport modules."""
+        mock_sync.return_value = {"success": True, "completed": [], "results": []}
         ws = WorkspaceFactory()
         sc = ScenarioFactory(workspace=ws)
         run = run_analysis_pipeline(
@@ -524,43 +513,6 @@ class TestSingleModuleExecution(TestCase):
                 f"Unrequested downstream module '{downstream}' should not appear "
                 f"when only core was requested",
             )
-        """run_analysis_pipeline dispatches via apply_async for exactly the first module.
-
-        The pipeline dispatches only the first module in execution order,
-        not all modules upfront. Subsequent modules are dispatched by
-        the chain callback (handle_module_completed).
-        """
-        ws = WorkspaceFactory()
-        sc = ScenarioFactory(workspace=ws)
-        vars_ = {
-            "scenario_id": "test-dispatch",
-            "target_schema": ws.db_schema,
-            "parcel_table": "parcels",
-        }
-
-        with patch.dict(
-            "brewgis.workspace.analysis.pipeline.MODULE_TASKS",
-            _mock_all_module_tasks(),
-            clear=True,
-        ) as mocked_tasks:
-            run_analysis_pipeline(
-                workspace_id=ws.pk,
-                module_names=["water_demand"],
-                vars_=vars_,
-                scenario_id=sc.pk,
-            )
-
-        # Only the first module in the resolved order should be dispatched
-        first_module = "env_constraint"
-        mocked_tasks[first_module].apply_async.assert_called_once()
-
-        # Subsequent modules should NOT have been dispatched yet
-        for later_module in ["core", "water_demand"]:
-            self.assertFalse(
-                mocked_tasks[later_module].apply_async.called,
-                f"'{later_module}' should not be dispatched yet — "
-                f"it should be dispatched by handle_module_completed callback",
-            )
 
 
 # ═══════════════════════════════════════════════════════════════════════════════
@@ -578,13 +530,10 @@ class TestNoCascadingAnalysisTriggers(TestCase):
     - No unintended extra records are created
     """
 
-    @patch.dict(
-        "brewgis.workspace.analysis.pipeline.MODULE_TASKS",
-        _mock_all_module_tasks(),
-        clear=True,
-    )
-    def test_creates_exactly_one_analysis_run(self) -> None:
+    @patch("brewgis.workspace.analysis.pipeline.run_modules_sync")
+    def test_creates_exactly_one_analysis_run(self, mock_sync: MagicMock) -> None:
         """run_analysis_pipeline creates exactly one new AnalysisRun."""
+        mock_sync.return_value = {"success": True, "completed": [], "results": []}
         ws = WorkspaceFactory()
         sc = ScenarioFactory(workspace=ws)
         count_before = AnalysisRun.objects.count()
@@ -602,13 +551,10 @@ class TestNoCascadingAnalysisTriggers(TestCase):
             "Expected exactly one new AnalysisRun record",
         )
 
-    @patch.dict(
-        "brewgis.workspace.analysis.pipeline.MODULE_TASKS",
-        _mock_all_module_tasks(),
-        clear=True,
-    )
-    def test_other_workspace_untouched(self) -> None:
+    @patch("brewgis.workspace.analysis.pipeline.run_modules_sync")
+    def test_other_workspace_untouched(self, mock_sync: MagicMock) -> None:
         """Running analysis in workspace A does not create runs in workspace B."""
+        mock_sync.return_value = {"success": True, "completed": [], "results": []}
         ws_a = WorkspaceFactory()
         ws_b = WorkspaceFactory()
         sc = ScenarioFactory(workspace=ws_a)
