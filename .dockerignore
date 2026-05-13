@@ -23,3 +23,12 @@ htmlcov/
 .tox/
 docs/_build/
 *.log
+planning/
+.venv/
+.omp/
+.pytest_cache
+.hypothesis
+.mypy_cache
+.agents
+cache/
+notebooks/
