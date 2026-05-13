@@ -20,6 +20,9 @@ from brewgis.workspace.analysis.module_registry import get_result_table_names
 from brewgis.workspace.models import AnalysisRun
 from brewgis.workspace.models import DataImportRun
 from brewgis.workspace.models import Layer
+from brewgis.workspace.dlt_pipelines import run_census_pipeline
+from brewgis.workspace.dlt_pipelines import run_lehd_pipeline
+from brewgis.workspace.dlt_pipelines import run_poi_pipeline
 from brewgis.workspace.services.census_fetcher import fetch_acs_block_groups
 from brewgis.workspace.services.lehd_fetcher import fetch_lehd_block_data
 from brewgis.workspace.services.poi_fetcher import fetch_pois
@@ -515,6 +518,15 @@ def run_census_fetch(
         run.status = "running"
         run.started_at = timezone.now()
         run.save(update_fields=["status", "started_at"])
+        # Run dlt pipeline for reliable extraction (handles retries, backoff)
+        dlt_result = run_census_pipeline(state_fips, county_fips, year, schema)
+        if not dlt_result["success"]:
+            msg = f"dlt extraction failed: {dlt_result['error']}"
+            run.status = "failed"
+            run.error_log = msg
+            run.completed_at = timezone.now()
+            run.save(update_fields=["status", "error_log", "completed_at"])
+            return {"success": False, "error": msg}
 
         gdf = fetch_acs_block_groups(state_fips, county_fips, year=year)
 
@@ -533,7 +545,6 @@ def run_census_fetch(
         gdf.to_postgis(
             table_name, engine, schema=schema, if_exists="replace", index=False
         )
-
 
         # Register as Layer
 
@@ -592,6 +603,15 @@ def run_lehd_fetch(
         run.status = "running"
         run.started_at = timezone.now()
         run.save(update_fields=["status", "started_at"])
+        # Run dlt pipeline for reliable extraction (handles retries, backoff)
+        dlt_result = run_lehd_pipeline(state_fips, county_fips, schema=schema)
+        if not dlt_result["success"]:
+            msg = f"dlt extraction failed: {dlt_result['error']}"
+            run.status = "failed"
+            run.error_log = msg
+            run.completed_at = timezone.now()
+            run.save(update_fields=["status", "error_log", "completed_at"])
+            return {"success": False, "error": msg}
 
         gdf = fetch_lehd_block_data(state_fips, county_fips)
 
@@ -607,7 +627,6 @@ def run_lehd_fetch(
         gdf.to_postgis(
             table_name, engine, schema=schema, if_exists="replace", index=False
         )
-
 
         layer, created = Layer.objects.get_or_create(
             key=f"lehd_{state_fips}_{county_fips}",
@@ -667,6 +686,17 @@ def run_poi_fetch(
         run.status = "running"
         run.started_at = timezone.now()
         run.save(update_fields=["status", "started_at"])
+        # Run dlt pipeline for reliable extraction (handles retries, backoff)
+        dlt_result = run_poi_pipeline(
+            min_lng, min_lat, max_lng, max_lat, categories, schema=schema
+        )
+        if not dlt_result["success"]:
+            msg = f"dlt extraction failed: {dlt_result['error']}"
+            run.status = "failed"
+            run.error_log = msg
+            run.completed_at = timezone.now()
+            run.save(update_fields=["status", "error_log", "completed_at"])
+            return {"success": False, "error": msg}
 
         gdf = fetch_pois(min_lng, min_lat, max_lng, max_lat, categories)
 
@@ -685,7 +715,6 @@ def run_poi_fetch(
         gdf.to_postgis(
             table_name, engine, schema=schema, if_exists="replace", index=False
         )
-
 
         cat_label = ",".join(categories) if categories else "all"
         layer, created = Layer.objects.get_or_create(
