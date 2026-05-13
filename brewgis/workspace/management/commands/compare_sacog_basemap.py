@@ -34,6 +34,8 @@ REPORT_PATH = CACHE_DIR / "sacog_comparison_report.md"
 V1_BASE_CANVAS = "sac_cnty_region_base_canvas"
 V1_PARCELS = "sac_cnty_region_existing_land_use_parcels"
 logger = logging.getLogger(__name__)
+STATE_FIPS = "06"
+COUNTY_FIPS = "067"
 
 
 class Command(BaseCommand):
@@ -119,6 +121,47 @@ class Command(BaseCommand):
             else []
         )
 
+        # Populate ACS staging table before ETL
+        if not skip_census:
+            self.stdout.write("\n── Populating Census ACS staging table ──")
+            from brewgis.workspace.dlt_pipelines.census import (  # noqa: PLC0415, C0415
+                run_census_pipeline,
+            )
+
+            census_result = run_census_pipeline(STATE_FIPS, COUNTY_FIPS, 2022)
+            if not census_result["success"]:
+                self.stdout.write(
+                    self.style.WARNING(
+                        f"  Census ACS fetch failed: {census_result.get('error')}; "
+                        "demographics will be zero-filled"
+                    )
+                )
+            else:
+                self.stdout.write(
+                    f"  Census ACS loaded: {census_result.get('row_count', 0)} rows "
+                    f"in {census_result.get('table_name', '?')}"
+                )
+
+        # Populate LEHD staging table before ETL
+        if not skip_lehd:
+            self.stdout.write("\n── Populating LEHD LODES staging table ──")
+            from brewgis.workspace.dlt_pipelines.lehd import (  # noqa: PLC0415, C0415
+                run_lehd_pipeline,
+            )
+
+            lehd_result = run_lehd_pipeline(STATE_FIPS, COUNTY_FIPS, 2021)
+            if not lehd_result["success"]:
+                self.stdout.write(
+                    self.style.WARNING(
+                        f"  LEHD fetch failed: {lehd_result.get('error')}; "
+                        "employment will be zero-filled"
+                    )
+                )
+            else:
+                self.stdout.write(
+                    f"  LEHD LODES loaded: {lehd_result.get('row_count', 0)} rows "
+                    f"in {lehd_result.get('table_name', '?')}"
+                )
         # ── Phase 2: Run brewgis ETL ───────────────────────────────────
         self.stdout.write("\n── Phase 2: Running brewgis ETL ──")
         run_id = str(int(time.time()))
