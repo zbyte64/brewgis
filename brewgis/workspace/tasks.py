@@ -23,6 +23,7 @@ from brewgis.workspace.analysis.module_registry import get_result_table_names
 from brewgis.workspace.dlt_pipelines import run_census_pipeline
 from brewgis.workspace.dlt_pipelines import run_lehd_pipeline
 from brewgis.workspace.dlt_pipelines import run_poi_pipeline
+from brewgis.workspace.dlt_pipelines import run_raster_pipeline
 from brewgis.workspace.models import AnalysisRun
 from brewgis.workspace.models import DataImportRun
 from brewgis.workspace.models import Layer
@@ -787,6 +788,79 @@ def run_poi_fetch(  # type: ignore[no-untyped-def]
             pass
         raise self.retry(exc=exc)
 
+@shared_task(bind=True, max_retries=2, default_retry_delay=30)
+def run_raster_fetch(  # type: ignore[no-untyped-def]
+    self,
+    run_pk: int,
+    file_path: str,
+    schema: str,
+) -> dict:
+    """Extract raster metadata and band statistics from GeoTIFF via dlt.
+
+    The dlt pipeline reads the file and writes to staging tables
+    ``{schema}.raster_metadata`` and ``{schema}.raster_bands``.
+    A Layer is registered pointing to the metadata table.
+    """
+
+    try:
+        run = DataImportRun.objects.get(pk=run_pk)
+        run.status = "running"
+        run.started_at = timezone.now()
+        run.save(update_fields=["status", "started_at"])
+
+        dlt_result = run_raster_pipeline(file_path, schema)
+        if not dlt_result["success"]:
+            msg = f"dlt extraction failed: {dlt_result['error']}"
+            run.status = "failed"
+            run.error_log = msg
+            run.completed_at = timezone.now()
+            run.save(update_fields=["status", "error_log", "completed_at"])
+            return {"success": False, "error": msg}
+
+        metadata_table = dlt_result["metadata_table"]
+        bands_table = dlt_result["bands_table"]
+        row_count = dlt_result["row_count"]
+        fname = file_path.rsplit("/", 1)[-1] if "/" in file_path else file_path
+        layer_key = f"raster_{fname}"
+
+        layer, created = Layer.objects.get_or_create(
+            key=layer_key,
+            workspace=run.workspace,
+            defaults={
+                "name": f"Raster ({fname})",
+                "db_table": metadata_table,
+                "layer_source": "Raster",
+                "geometry_type": "raster",
+            },
+        )
+
+        if created:
+            auto_generate_symbology(layer)
+
+        run.status = "completed"
+        run.result = {
+            "metadata_table": metadata_table,
+            "bands_table": bands_table,
+            "layer_key": layer_key,
+            "layer_id": layer.pk,
+            "row_count": row_count,
+        }
+        run.completed_at = timezone.now()
+        run.save(update_fields=["status", "result", "completed_at"])
+
+        return {"success": True, "count": row_count}
+    except DataImportRun.DoesNotExist:
+        return {"success": False, "error": f"DataImportRun {run_pk} not found"}
+    except Exception as exc:
+        try:
+            run = DataImportRun.objects.get(pk=run_pk)
+            run.status = "failed"
+            run.error_log = str(exc)
+            run.completed_at = timezone.now()
+            run.save(update_fields=["status", "error_log", "completed_at"])
+        except DataImportRun.DoesNotExist:
+            pass
+        raise self.retry(exc=exc)
 
 @shared_task(bind=True, max_retries=2, default_retry_delay=30)
 def run_spatial_allocation(  # type: ignore[no-untyped-def]

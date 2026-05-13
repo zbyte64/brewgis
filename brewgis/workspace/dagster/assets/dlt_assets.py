@@ -11,6 +11,7 @@ from typing import Any
 
 import dlt
 from dagster import AssetExecutionContext
+from dagster import Config
 from dagster_embedded_elt.dlt import DagsterDltResource
 from dagster_embedded_elt.dlt import dlt_assets
 
@@ -23,9 +24,19 @@ from brewgis.workspace.dlt_pipelines.raster import raster_metadata_source
 _STAGING_SCHEMA = "public"
 
 
+class RasterIngestConfig(Config):
+    """Configuration for raster ingestion assets.
+
+    Requires a ``file_path`` pointing to the GeoTIFF/COG file to ingest.
+    """
+
+    file_path: str
+
+
 # ---------------------------------------------------------------------------
 # Census ACS
 # ---------------------------------------------------------------------------
+
 
 @dlt_assets(
     dlt_source=census_source(),
@@ -45,6 +56,7 @@ def census_acs_assets(context: AssetExecutionContext, dlt: DagsterDltResource) -
 # LEHD LODES WAC
 # ---------------------------------------------------------------------------
 
+
 @dlt_assets(
     dlt_source=lehd_source(),
     dlt_pipeline=dlt.pipeline(
@@ -62,6 +74,7 @@ def lehd_lodes_assets(context: AssetExecutionContext, dlt: DagsterDltResource) -
 # ---------------------------------------------------------------------------
 # Overpass POI
 # ---------------------------------------------------------------------------
+
 
 @dlt_assets(
     dlt_source=poi_source(),
@@ -81,6 +94,7 @@ def overpass_poi_assets(context: AssetExecutionContext, dlt: DagsterDltResource)
 # Raster metadata
 # ---------------------------------------------------------------------------
 
+
 @dlt_assets(
     dlt_source=raster_metadata_source(file_path=""),
     dlt_pipeline=dlt.pipeline(
@@ -90,14 +104,24 @@ def overpass_poi_assets(context: AssetExecutionContext, dlt: DagsterDltResource)
     ),
     group_name="raster",
 )
-def raster_metadata_assets(context: AssetExecutionContext, dlt: DagsterDltResource) -> Any:
-    """Extract GeoTIFF/COG metadata (width, height, CRS, bounds) to staging."""
-    yield from dlt.run(context=context)
+def raster_metadata_assets(
+    context: AssetExecutionContext, dlt: DagsterDltResource, config: RasterIngestConfig
+) -> Any:
+    """Extract GeoTIFF/COG metadata (width, height, CRS, bounds) to staging.
+
+    Requires ``RasterIngestConfig`` with a ``file_path`` pointing to the
+    GeoTIFF/COG file to ingest.
+    """
+    yield from dlt.run(
+        context=context,
+        source=raster_metadata_source(file_path=config.file_path),
+    )
 
 
 # ---------------------------------------------------------------------------
 # Raster band statistics
 # ---------------------------------------------------------------------------
+
 
 @dlt_assets(
     dlt_source=raster_band_source(file_path=""),
@@ -108,6 +132,15 @@ def raster_metadata_assets(context: AssetExecutionContext, dlt: DagsterDltResour
     ),
     group_name="raster",
 )
-def raster_band_assets(context: AssetExecutionContext, dlt: DagsterDltResource) -> Any:
-    """Extract per-band statistics (min, max, mean, stddev) from GeoTIFF."""
-    yield from dlt.run(context=context)
+def raster_band_assets(
+    context: AssetExecutionContext, dlt: DagsterDltResource, config: RasterIngestConfig
+) -> Any:
+    """Extract per-band statistics (min, max, mean, stddev) from GeoTIFF.
+
+    Requires ``RasterIngestConfig`` with a ``file_path`` pointing to the
+    GeoTIFF/COG file to ingest.
+    """
+    yield from dlt.run(
+        context=context,
+        source=raster_band_source(file_path=config.file_path),
+    )

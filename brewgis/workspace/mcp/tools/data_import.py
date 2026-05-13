@@ -1,7 +1,6 @@
 """MCP tools for data import operations (Celery-backed) and job management."""
 
 
-
 import logging
 from typing import Any
 
@@ -14,6 +13,7 @@ from brewgis.workspace.tasks import run_census_fetch
 from brewgis.workspace.tasks import run_column_stitching
 from brewgis.workspace.tasks import run_lehd_fetch
 from brewgis.workspace.tasks import run_poi_fetch
+from brewgis.workspace.tasks import run_raster_fetch
 from brewgis.workspace.tasks import run_spatial_allocation
 
 logger = logging.getLogger(__name__)
@@ -25,6 +25,20 @@ def _get_workspace(workspace_slug: str) -> Workspace | None:
         return get_object_or_404(Workspace, pk=int(workspace_slug))
     except (ValueError, TypeError):
         return None
+
+
+def _create_import_run(
+    workspace: Workspace,
+    import_type: str,
+    params: dict[str, Any],
+) -> DataImportRun:
+    """Create a DataImportRun record and return it."""
+    return DataImportRun.objects.create(
+        workspace=workspace,
+        import_type=import_type,
+        params=params,
+        status="pending",
+    )
 
 
 def register_tools(server: object) -> None:
@@ -65,119 +79,247 @@ def register_tools(server: object) -> None:
     def run_census_fetch_tool(
         workspace_slug: str,
         state_fips: str,
-        tables: list[str] | None = None,
-        year: int | None = None,
-        geography: str | None = None,
+        county_fips: str,
+        year: int = 2022,
     ) -> dict[str, Any]:
-        """Fetch Census ACS data for a geography."""
+        """Fetch Census ACS data for a geography. Creates a DataImportRun and dispatches a Celery task."""
         workspace = _get_workspace(workspace_slug)
         if workspace is None:
             return {"error": "Invalid workspace slug"}
 
+        run = _create_import_run(
+            workspace=workspace,
+            import_type="census",
+            params={
+                "state_fips": state_fips,
+                "county_fips": county_fips,
+                "year": year,
+            },
+        )
+
         task = run_census_fetch.delay(
+            run_pk=run.pk,
             state_fips=state_fips,
-            county_fips=None,
-            tables=tables,
+            county_fips=county_fips,
+            schema=workspace.db_schema,
             year=year,
-            geography=geography or "block group",
         )
         return {
             "task_id": task.id,
-            "status": "PENDING",
-            "message": f"Census fetch launched for state {state_fips}",
+            "run_id": run.pk,
+            "status": run.status,
+            "message": f"Census fetch launched for state {state_fips}, county {county_fips}",
         }
 
     @server.tool()  # type: ignore[attr-defined]
     def run_lehd_fetch_tool(
         workspace_slug: str,
         state_fips: str,
-        job_types: list[str] | None = None,
-        year: int | None = None,
+        county_fips: str,
+        year: int = 2022,
     ) -> dict[str, Any]:
-        """Fetch LEHD/LODES employment data for a geography."""
+        """Fetch LEHD/LODES employment data for a geography. Creates a DataImportRun and dispatches a Celery task."""
         workspace = _get_workspace(workspace_slug)
         if workspace is None:
             return {"error": "Invalid workspace slug"}
 
+        run = _create_import_run(
+            workspace=workspace,
+            import_type="lehd",
+            params={
+                "state_fips": state_fips,
+                "county_fips": county_fips,
+                "year": year,
+            },
+        )
+
         task = run_lehd_fetch.delay(
+            run_pk=run.pk,
             state_fips=state_fips,
-            county_fips=None,
-            job_types=job_types,
+            county_fips=county_fips,
+            schema=workspace.db_schema,
             year=year,
         )
         return {
             "task_id": task.id,
-            "status": "PENDING",
-            "message": f"LEHD fetch launched for state {state_fips}",
+            "run_id": run.pk,
+            "status": run.status,
+            "message": f"LEHD fetch launched for state {state_fips}, county {county_fips}",
         }
 
     @server.tool()  # type: ignore[attr-defined]
     def run_poi_fetch_tool(
         workspace_slug: str,
-        geometry_wkt: str,
+        min_lng: float,
+        min_lat: float,
+        max_lng: float,
+        max_lat: float,
         categories: list[str] | None = None,
-        radius_m: int | None = None,
     ) -> dict[str, Any]:
-        """Fetch POIs from OpenStreetMap for an area."""
+        """Fetch POIs from OpenStreetMap for an area. Creates a DataImportRun and dispatches a Celery task."""
         workspace = _get_workspace(workspace_slug)
         if workspace is None:
             return {"error": "Invalid workspace slug"}
 
+        run = _create_import_run(
+            workspace=workspace,
+            import_type="poi",
+            params={
+                "min_lng": min_lng,
+                "min_lat": min_lat,
+                "max_lng": max_lng,
+                "max_lat": max_lat,
+                "categories": categories,
+            },
+        )
+
         task = run_poi_fetch.delay(
-            geometry_wkt=geometry_wkt,
+            run_pk=run.pk,
+            min_lng=min_lng,
+            min_lat=min_lat,
+            max_lng=max_lng,
+            max_lat=max_lat,
             categories=categories,
-            radius_m=radius_m,
+            schema=workspace.db_schema,
         )
         return {
             "task_id": task.id,
-            "status": "PENDING",
+            "run_id": run.pk,
+            "status": run.status,
             "message": "POI fetch launched for area",
+        }
+
+    @server.tool()  # type: ignore[attr-defined]
+    def run_raster_fetch_tool(
+        workspace_slug: str,
+        file_path: str,
+    ) -> dict[str, Any]:
+        """Extract raster metadata and band statistics from a GeoTIFF
+        file. Creates a DataImportRun and dispatches a Celery task."""
+        workspace = _get_workspace(workspace_slug)
+        if workspace is None:
+            return {"error": "Invalid workspace slug"}
+
+        run = _create_import_run(
+            workspace=workspace,
+            import_type="raster",
+            params={
+                "file_path": file_path,
+            },
+        )
+
+        task = run_raster_fetch.delay(
+            run_pk=run.pk,
+            file_path=file_path,
+            schema=workspace.db_schema,
+        )
+        return {
+            "task_id": task.id,
+            "run_id": run.pk,
+            "status": run.status,
+            "message": f"Raster fetch launched for {file_path}",
         }
 
     @server.tool()  # type: ignore[attr-defined]
     def run_spatial_allocation_tool(
         workspace_slug: str,
-        source_layer_key: str,
-        target_layer_key: str,
-        method: str = "area_weighted",
-        columns: list[str] | None = None,
+        source_schema: str,
+        source_table: str,
+        target_schema: str,
+        target_table: str,
+        columns: list[str],
+        column_prefix: str = "",
+        source_geom_col: str = "geom",
+        target_geom_col: str = "geom",
     ) -> dict[str, Any]:
-        """Run spatial allocation from source to target layer."""
+        """Run spatial allocation from source to target layer. Creates a DataImportRun and dispatches a Celery task."""
         workspace = _get_workspace(workspace_slug)
         if workspace is None:
             return {"error": "Invalid workspace slug"}
 
+        run = _create_import_run(
+            workspace=workspace,
+            import_type="allocate",
+            params={
+                "source_schema": source_schema,
+                "source_table": source_table,
+                "target_schema": target_schema,
+                "target_table": target_table,
+                "columns": columns,
+                "column_prefix": column_prefix,
+                "source_geom_col": source_geom_col,
+                "target_geom_col": target_geom_col,
+            },
+        )
+
         task = run_spatial_allocation.delay(
-            source_layer_key=source_layer_key,
-            target_layer_key=target_layer_key,
-            method=method,
+            run_pk=run.pk,
+            source_schema=source_schema,
+            source_table=source_table,
+            target_schema=target_schema,
+            target_table=target_table,
             columns=columns,
+            column_prefix=column_prefix,
+            source_geom_col=source_geom_col,
+            target_geom_col=target_geom_col,
         )
         return {
             "task_id": task.id,
-            "status": "PENDING",
-            "message": "Spatial allocation launched",
+            "run_id": run.pk,
+            "status": run.status,
+            "message": (
+                f"Spatial allocation launched from "
+                f"{source_schema}.{source_table} to "
+                f"{target_schema}.{target_table}"
+            ),
         }
 
     @server.tool()  # type: ignore[attr-defined]
     def run_column_stitching_tool(
         workspace_slug: str,
-        target_table: str,
-        mappings: list[dict[str, Any]] | None = None,
+        schema: str,
+        table: str,
+        target_column: str,
+        strategy: str,
+        default_value: float | None = None,
+        source_table: str | None = None,
+        source_column: str | None = None,
     ) -> dict[str, Any]:
-        """Run column stitching/imputation on a target table."""
+        """Run column stitching/imputation on a target table. Creates
+        a DataImportRun and dispatches a Celery task."""
         workspace = _get_workspace(workspace_slug)
         if workspace is None:
             return {"error": "Invalid workspace slug"}
 
+        run = _create_import_run(
+            workspace=workspace,
+            import_type="stitch",
+            params={
+                "schema": schema,
+                "table": table,
+                "target_column": target_column,
+                "strategy": strategy,
+                "default_value": default_value,
+                "source_table": source_table,
+                "source_column": source_column,
+            },
+        )
+
         task = run_column_stitching.delay(
-            target_table=target_table,
-            mappings=mappings,
+            run_pk=run.pk,
+            schema=schema,
+            table=table,
+            target_column=target_column,
+            strategy=strategy,
+            default_value=default_value,
+            source_table=source_table,
+            source_column=source_column,
         )
         return {
             "task_id": task.id,
-            "status": "PENDING",
-            "message": f"Column stitching launched for {target_table}",
+            "run_id": run.pk,
+            "status": run.status,
+            "message": f"Column stitching launched for {schema}.{table}.{target_column} ({strategy})",
         }
 
     @server.tool()  # type: ignore[attr-defined]
@@ -191,7 +333,7 @@ def register_tools(server: object) -> None:
             return {
                 "id": run.pk,
                 "status": run.status,
-                "rows_imported": run.result.get("rows_imported"),
+                "rows_imported": run.result.get("row_count") if run.result else None,
                 "error": run.error_log or None,
                 "created_at": str(run.created_at),
             }

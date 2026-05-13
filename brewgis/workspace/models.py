@@ -362,6 +362,7 @@ class DataImportRun(models.Model):
         ("lehd", "LEHD Employment"),
         ("parkserve", "ParkServe Park Data"),
         ("poi", "Points of Interest"),
+        ("raster", "Raster Data"),
         ("stitch", "Column Stitching"),
         ("svi", "Social Vulnerability Index"),
     ]
