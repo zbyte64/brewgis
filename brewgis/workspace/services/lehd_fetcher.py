@@ -825,9 +825,9 @@ def fetch_lehd_block_polygons(
     lehd_gdf["geometry"] = lehd_gdf["geoid"].map(geo_map)
 
     # Filter out rows without geometry
-    result = lehd_gdf[~lehd_gdf.geometry.isna()].copy()
+    filtered = lehd_gdf[~lehd_gdf.geometry.isna()].copy()
 
-    if result.empty:
+    if filtered.empty:
         logger.warning(
             "LODES data did not match TIGER blocks for %s/%s; "
             "returning data without geometry",
@@ -836,4 +836,4 @@ def fetch_lehd_block_polygons(
         )
         return lehd_gdf.copy()
 
-    return result
+    return filtered

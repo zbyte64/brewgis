@@ -16,7 +16,7 @@ from dagster import job
         "creates a scenario, and runs the full dbt analysis pipeline."
     ),
 )
-def fresno_demo_setup():
+def fresno_demo_setup() -> None:
     """Execute the full Fresno demo setup pipeline.
 
     Asset dependencies are declared via ``ins`` parameters on each

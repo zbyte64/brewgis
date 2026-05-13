@@ -35,9 +35,9 @@ from brewgis.gx import run_checkpoint
     },
 )
 def spatial_allocation(
-    context,
+    context: AssetExecutionContext,
     postgres: PostgresResource,
-    raw_parcels,
+    raw_parcels: Any,
 ) -> MaterializeResult:
     """Run the spatial allocator to allocate attributes to parcels.
 
@@ -68,9 +68,9 @@ def spatial_allocation(
     },
 )
 def imputation(
-    context,
+    context: AssetExecutionContext,
     postgres: PostgresResource,
-    allocated_parcels,
+    allocated_parcels: Any,
 ) -> MaterializeResult:
     """Run imputation engine to fill missing attribute values.
 

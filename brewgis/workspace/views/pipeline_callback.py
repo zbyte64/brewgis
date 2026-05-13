@@ -10,6 +10,7 @@ from __future__ import annotations
 import json
 import logging
 
+from django.http import HttpRequest
 from django.http import HttpResponse
 from django.http import JsonResponse
 from django.views.decorators.csrf import csrf_exempt
@@ -23,7 +24,7 @@ logger = logging.getLogger(__name__)
 
 @require_POST
 @csrf_exempt  # Dagster loopback on internal Docker network — not user-facing
-def pipeline_callback(request):
+def pipeline_callback(request: HttpRequest) -> HttpResponse:
     """Accept pipeline completion callbacks from Dagster.
 
     Expected JSON payload:
