@@ -379,65 +379,41 @@ class Command(BaseCommand):
         self.stdout.write(f"  Row count: {db_count} matched ✅")
 
     def _populate_geography_id(self, parcel_ids: list[int]) -> None:
-        """Populate geography_id in base_canvas using deterministic join."""
+        """Populate geography_id in base_canvas via ordered row alignment.
+
+        The reference parcels are loaded ``ORDER BY geography_id`` and the ETL
+        writes them in insert-order, preserving sequence.  ``ROW_NUMBER()``
+        alignment on both sides produces a correct 1:1 mapping.
+        """
         from django.db import connection  # noqa: PLC0415
 
         with connection.cursor() as cur:
             cur.execute(
                 "ALTER TABLE public.base_canvas ADD COLUMN IF NOT EXISTS geography_id INTEGER"
             )
+
+            if not parcel_ids:
+                return
+
+            gid_list = ", ".join(str(g) for g in parcel_ids)
             cur.execute(
-                "ALTER TABLE public.base_canvas ADD COLUMN IF NOT EXISTS geometry_key TEXT"
-            )
-
-            # If geometry_key already populated, use it for join
-            cur.execute(
-                "SELECT COUNT(*) FROM public.base_canvas WHERE geometry_key IS NOT NULL"
-            )
-            has_keys = cur.fetchone()[0] > 0
-
-            if not has_keys:
-                cur.execute("""
-                    UPDATE public.base_canvas bc
-                    SET geometry_key = COALESCE(bc.source_id, '') || '@sacog'
-                    WHERE bc.geometry_key IS NULL AND bc.source_id IS NOT NULL
-                """)
-
-            # Try key-based join first
-            cur.execute("""
-                UPDATE public.base_canvas bc
-                SET geography_id = sp.geography_id
-                FROM sac_cnty_region_existing_land_use_parcels sp
-                WHERE bc.geometry_key = (sp.source_id || '@sacog')
-                  AND bc.geography_id IS NULL
-            """)
-
-            cur.execute(
-                "SELECT COUNT(*) FROM public.base_canvas WHERE geography_id IS NOT NULL"
-            )
-            populated = cur.fetchone()[0]
-
-            if populated == 0:
-                # Fall back to ROW_NUMBER-based alignment
-                gid_list = ", ".join(str(g) for g in parcel_ids)
-                cur.execute(
-                    f"""
-                    WITH bc_ranked AS (
-                        SELECT id, ROW_NUMBER() OVER (ORDER BY id) AS rn
-                        FROM public.base_canvas
-                    ),
-                    ref_ranked AS (
-                        SELECT geography_id, ROW_NUMBER() OVER (ORDER BY geography_id) AS rn
-                        FROM {V1_PARCELS}
-                        WHERE geography_id IN ({gid_list})
-                    )
-                    UPDATE public.base_canvas bc
-                    SET geography_id = ref_ranked.geography_id
-                    FROM ref_ranked
-                    INNER JOIN bc_ranked ON ref_ranked.rn = bc_ranked.rn
-                    WHERE bc.id = bc_ranked.id
-                    """
+                f"""
+                WITH bc_ranked AS (
+                    SELECT id, ROW_NUMBER() OVER (ORDER BY id) AS rn
+                    FROM public.base_canvas
+                ),
+                ref_ranked AS (
+                    SELECT geography_id, ROW_NUMBER() OVER (ORDER BY geography_id) AS rn
+                    FROM {V1_PARCELS}
+                    WHERE geography_id IN ({gid_list})
                 )
+                UPDATE public.base_canvas bc
+                SET geography_id = ref_ranked.geography_id
+                FROM ref_ranked
+                INNER JOIN bc_ranked ON ref_ranked.rn = bc_ranked.rn
+                WHERE bc.id = bc_ranked.id
+                """
+            )
 
         self.stdout.write(f"  Populated geography_id for {len(parcel_ids):,} parcels")
 
