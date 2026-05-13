@@ -10,7 +10,6 @@ from celery import shared_task
 from celery.utils.log import get_task_logger
 from django.conf import settings
 from django.utils import timezone
-from brewgis.workspace.services._db import get_engine
 
 from brewgis.workspace.analysis.data_export import export_building_types
 from brewgis.workspace.analysis.dbt_runner import DbtRunnerWrapper
@@ -23,9 +22,6 @@ from brewgis.workspace.models import Layer
 from brewgis.workspace.dlt_pipelines import run_census_pipeline
 from brewgis.workspace.dlt_pipelines import run_lehd_pipeline
 from brewgis.workspace.dlt_pipelines import run_poi_pipeline
-from brewgis.workspace.services.census_fetcher import fetch_acs_block_groups
-from brewgis.workspace.services.lehd_fetcher import fetch_lehd_block_data
-from brewgis.workspace.services.poi_fetcher import fetch_pois
 from brewgis.workspace.services.preflight import check_analysis_prerequisites
 from brewgis.workspace.services.spatial_allocator import allocate_attributes
 from brewgis.workspace.services.stitcher import impute_area_proportional
@@ -511,14 +507,19 @@ def run_census_fetch(
     schema: str,
     year: int = 2022,
 ) -> dict:
-    """Fetch Census ACS demographics data and write to PostGIS."""
+    """Fetch Census ACS demographics data via dlt and register as Layer.
+
+    The dlt pipeline writes raw data to the staging table
+    ``{schema}.acs_raw``.  No geopandas re-read is performed — the
+    dlt-loaded table IS the source of truth for downstream processing.
+    """
 
     try:
         run = DataImportRun.objects.get(pk=run_pk)
         run.status = "running"
         run.started_at = timezone.now()
         run.save(update_fields=["status", "started_at"])
-        # Run dlt pipeline for reliable extraction (handles retries, backoff)
+
         dlt_result = run_census_pipeline(state_fips, county_fips, year, schema)
         if not dlt_result["success"]:
             msg = f"dlt extraction failed: {dlt_result['error']}"
@@ -528,28 +529,12 @@ def run_census_fetch(
             run.save(update_fields=["status", "error_log", "completed_at"])
             return {"success": False, "error": msg}
 
-        gdf = fetch_acs_block_groups(state_fips, county_fips, year=year)
-
-        if gdf.empty:
-            msg = "Census fetch returned empty result."
-            run.status = "failed"
-            run.error_log = msg
-            run.completed_at = timezone.now()
-            run.save(update_fields=["status", "error_log", "completed_at"])
-            return {"success": False, "error": msg}
-
-        table_name = f"census_acs_{year}_{state_fips}_{county_fips}"
-
-        # Write to PostGIS
-        engine = get_engine()
-        gdf.to_postgis(
-            table_name, engine, schema=schema, if_exists="replace", index=False
-        )
-
-        # Register as Layer
+        table_name = dlt_result["table_name"]
+        row_count = dlt_result["row_count"]
+        layer_key = f"census_acs_{year}_{state_fips}_{county_fips}"
 
         layer, created = Layer.objects.get_or_create(
-            key=f"census_acs_{year}_{state_fips}_{county_fips}",
+            key=layer_key,
             workspace=run.workspace,
             defaults={
                 "name": f"ACS Demographics ({year}) ({state_fips}-{county_fips})",
@@ -565,15 +550,14 @@ def run_census_fetch(
         run.status = "completed"
         run.result = {
             "table_name": table_name,
-            "layer_key": f"census_acs_{year}_{state_fips}_{county_fips}",
+            "layer_key": layer_key,
             "layer_id": layer.pk,
-            "row_count": len(gdf),
+            "row_count": row_count,
         }
         run.completed_at = timezone.now()
         run.save(update_fields=["status", "result", "completed_at"])
 
-        return {"success": True, "count": len(gdf)}
-
+        return {"success": True, "count": row_count}
     except DataImportRun.DoesNotExist:
         return {"success": False, "error": f"DataImportRun {run_pk} not found"}
     except Exception as exc:
@@ -596,14 +580,18 @@ def run_lehd_fetch(
     county_fips: str,
     schema: str,
 ) -> dict:
-    """Fetch LEHD employment data and write to PostGIS."""
+    """Fetch LEHD employment data via dlt and register as Layer.
+
+    The dlt pipeline writes raw data to the staging table
+    ``{schema}.lodes_raw``. No geopandas re-read is performed.
+    """
 
     try:
         run = DataImportRun.objects.get(pk=run_pk)
         run.status = "running"
         run.started_at = timezone.now()
         run.save(update_fields=["status", "started_at"])
-        # Run dlt pipeline for reliable extraction (handles retries, backoff)
+
         dlt_result = run_lehd_pipeline(state_fips, county_fips, schema=schema)
         if not dlt_result["success"]:
             msg = f"dlt extraction failed: {dlt_result['error']}"
@@ -613,23 +601,12 @@ def run_lehd_fetch(
             run.save(update_fields=["status", "error_log", "completed_at"])
             return {"success": False, "error": msg}
 
-        gdf = fetch_lehd_block_data(state_fips, county_fips)
-
-        if gdf.empty:
-            msg = "LEHD fetch returned empty result."
-            run.status = "failed"
-            run.error_log = msg
-            run.completed_at = timezone.now()
-            run.save(update_fields=["status", "error_log", "completed_at"])
-            return {"success": False, "error": msg}
-        table_name = f"lehd_{state_fips}_{county_fips}"
-        engine = get_engine()
-        gdf.to_postgis(
-            table_name, engine, schema=schema, if_exists="replace", index=False
-        )
+        table_name = dlt_result["table_name"]
+        row_count = dlt_result["row_count"]
+        layer_key = f"lehd_{state_fips}_{county_fips}"
 
         layer, created = Layer.objects.get_or_create(
-            key=f"lehd_{state_fips}_{county_fips}",
+            key=layer_key,
             workspace=run.workspace,
             defaults={
                 "name": f"LEHD Employment ({state_fips}-{county_fips})",
@@ -645,14 +622,14 @@ def run_lehd_fetch(
         run.status = "completed"
         run.result = {
             "table_name": table_name,
-            "layer_key": f"lehd_{state_fips}_{county_fips}",
+            "layer_key": layer_key,
             "layer_id": layer.pk,
-            "row_count": len(gdf),
+            "row_count": row_count,
         }
         run.completed_at = timezone.now()
         run.save(update_fields=["status", "result", "completed_at"])
 
-        return {"success": True, "count": len(gdf)}
+        return {"success": True, "count": row_count}
 
     except DataImportRun.DoesNotExist:
         return {"success": False, "error": f"DataImportRun {run_pk} not found"}
@@ -679,14 +656,18 @@ def run_poi_fetch(
     categories: list[str] | None,
     schema: str,
 ) -> dict:
-    """Fetch POIs from OpenStreetMap Overpass and write to PostGIS."""
+    """Fetch POIs from OpenStreetMap Overpass via dlt and register as Layer.
+
+    The dlt pipeline writes raw data to the staging table
+    ``{schema}.poi_raw``. No geopandas re-read is performed.
+    """
 
     try:
         run = DataImportRun.objects.get(pk=run_pk)
         run.status = "running"
         run.started_at = timezone.now()
         run.save(update_fields=["status", "started_at"])
-        # Run dlt pipeline for reliable extraction (handles retries, backoff)
+
         dlt_result = run_poi_pipeline(
             min_lng, min_lat, max_lng, max_lat, categories, schema=schema
         )
@@ -698,25 +679,11 @@ def run_poi_fetch(
             run.save(update_fields=["status", "error_log", "completed_at"])
             return {"success": False, "error": msg}
 
-        gdf = fetch_pois(min_lng, min_lat, max_lng, max_lat, categories)
-
-        if gdf.empty:
-            msg = "POI fetch returned empty result."
-            run.status = "failed"
-            run.error_log = msg
-            run.completed_at = timezone.now()
-            run.save(update_fields=["status", "error_log", "completed_at"])
-            return {"success": False, "error": msg}
-
-        suffix = uuid4().hex[:8]
-        table_name = f"poi_{suffix}"
-        layer_key = f"poi_{suffix}"
-        engine = get_engine()
-        gdf.to_postgis(
-            table_name, engine, schema=schema, if_exists="replace", index=False
-        )
-
+        table_name = dlt_result["table_name"]
+        row_count = dlt_result["row_count"]
         cat_label = ",".join(categories) if categories else "all"
+        layer_key = f"poi_{min_lng}_{min_lat}_{max_lng}_{max_lat}_{cat_label}"
+
         layer, created = Layer.objects.get_or_create(
             key=layer_key,
             workspace=run.workspace,
@@ -736,13 +703,12 @@ def run_poi_fetch(
             "table_name": table_name,
             "layer_key": layer_key,
             "layer_id": layer.pk,
-            "row_count": len(gdf),
+            "row_count": row_count,
         }
         run.completed_at = timezone.now()
         run.save(update_fields=["status", "result", "completed_at"])
 
-        return {"success": True, "count": len(gdf)}
-
+        return {"success": True, "count": row_count}
     except DataImportRun.DoesNotExist:
         return {"success": False, "error": f"DataImportRun {run_pk} not found"}
     except Exception as exc:

@@ -113,3 +113,11 @@ services:
       - postgres
     ports: []
     command: /start-mcp
+
+  dagster:
+    <<: *django
+    image: brewgis_local_dagster
+    container_name: brewgis_local_dagster
+    ports:
+      - '3000:3000'
+    command: dagster dev -h 0.0.0.0 -p 3000 -f brewgis/workspace/dagster/definitions.py

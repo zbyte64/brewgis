@@ -138,31 +138,30 @@ class TestRunSpatialAllocation:
 # ── run_census_fetch ────────────────────────────────────────────────
 
 
+
 class TestRunCensusFetch:
     """Tests for :func:`run_census_fetch`."""
 
     @patch("brewgis.workspace.tasks.auto_generate_symbology")
     @patch("brewgis.workspace.tasks.DataImportRun.objects.get")
-    @patch("brewgis.workspace.tasks.fetch_acs_block_groups")
+    @patch("brewgis.workspace.tasks.run_census_pipeline")
     @patch("brewgis.workspace.tasks.Layer.objects.get_or_create")
-    @patch("brewgis.workspace.services._db.get_engine")
     def test_success(
         self,
-        mock_engine: MagicMock,
         mock_get_or_create: MagicMock,
-        mock_fetch: MagicMock,
+        mock_dlt_pipeline: MagicMock,
         mock_run_get: MagicMock,
         mock_symbology: MagicMock,
     ) -> None:
         """Successful census fetch returns count."""
         run_mock = MagicMock()
         mock_run_get.return_value = run_mock
-
-        gdf_mock = MagicMock()
-        gdf_mock.empty = False
-        gdf_mock.__len__ = MagicMock(return_value=500)
-        mock_fetch.return_value = gdf_mock
-
+        mock_dlt_pipeline.return_value = {
+            "success": True,
+            "table_name": "public.acs_raw",
+            "row_count": 500,
+            "load_info": "ok",
+        }
         layer_mock = MagicMock(pk=7)
         mock_get_or_create.return_value = (layer_mock, True)
 
@@ -176,24 +175,22 @@ class TestRunCensusFetch:
         assert result == {"success": True, "count": 500}
         assert run_mock.status == "completed"
         assert run_mock.result["row_count"] == 500
-        gdf_mock.to_postgis.assert_called_once()
+        mock_dlt_pipeline.assert_called_once_with("06", "067", 2022, "public")
 
     @patch("brewgis.workspace.tasks.DataImportRun.objects.get")
-    @patch("brewgis.workspace.tasks.fetch_acs_block_groups")
-    @patch("brewgis.workspace.services._db.get_engine")
-    def test_empty_result(
+    @patch("brewgis.workspace.tasks.run_census_pipeline")
+    def test_dlt_failure(
         self,
-        mock_engine: MagicMock,
-        mock_fetch: MagicMock,
+        mock_dlt_pipeline: MagicMock,
         mock_run_get: MagicMock,
     ) -> None:
-        """Empty GeoDataFrame returns failure dict."""
+        """dlt pipeline failure returns error dict."""
         run_mock = MagicMock()
         mock_run_get.return_value = run_mock
-
-        gdf_mock = MagicMock()
-        gdf_mock.empty = True
-        mock_fetch.return_value = gdf_mock
+        mock_dlt_pipeline.return_value = {
+            "success": False,
+            "error": "connection timeout",
+        }
 
         result = run_census_fetch(
             run_pk=1,
@@ -202,12 +199,8 @@ class TestRunCensusFetch:
             schema="public",
         )
 
-        assert result == {
-            "success": False,
-            "error": "Census fetch returned empty result.",
-        }
+        assert result == {"success": False, "error": "dlt extraction failed: connection timeout"}
         assert run_mock.status == "failed"
-        gdf_mock.to_postgis.assert_not_called()
 
     @patch("brewgis.workspace.tasks.DataImportRun.objects.get")
     def test_does_not_exist(self, mock_run_get: MagicMock) -> None:
@@ -222,9 +215,8 @@ class TestRunCensusFetch:
         )
 
         assert result == {"success": False, "error": "DataImportRun 999 not found"}
-
-
 # ── run_lehd_fetch ──────────────────────────────────────────────────
+
 
 
 class TestRunLehdFetch:
@@ -232,26 +224,24 @@ class TestRunLehdFetch:
 
     @patch("brewgis.workspace.tasks.auto_generate_symbology")
     @patch("brewgis.workspace.tasks.DataImportRun.objects.get")
-    @patch("brewgis.workspace.tasks.fetch_lehd_block_data")
+    @patch("brewgis.workspace.tasks.run_lehd_pipeline")
     @patch("brewgis.workspace.tasks.Layer.objects.get_or_create")
-    @patch("brewgis.workspace.services._db.get_engine")
     def test_success(
         self,
-        mock_engine: MagicMock,
         mock_get_or_create: MagicMock,
-        mock_fetch: MagicMock,
+        mock_dlt_pipeline: MagicMock,
         mock_run_get: MagicMock,
         mock_symbology: MagicMock,
     ) -> None:
         """Successful LEHD fetch returns count."""
         run_mock = MagicMock()
         mock_run_get.return_value = run_mock
-
-        gdf_mock = MagicMock()
-        gdf_mock.empty = False
-        gdf_mock.__len__ = MagicMock(return_value=300)
-        mock_fetch.return_value = gdf_mock
-
+        mock_dlt_pipeline.return_value = {
+            "success": True,
+            "table_name": "public.lodes_raw",
+            "row_count": 300,
+            "load_info": "ok",
+        }
         layer_mock = MagicMock(pk=8)
         mock_get_or_create.return_value = (layer_mock, True)
 
@@ -267,19 +257,19 @@ class TestRunLehdFetch:
         assert run_mock.result["row_count"] == 300
 
     @patch("brewgis.workspace.tasks.DataImportRun.objects.get")
-    @patch("brewgis.workspace.tasks.fetch_lehd_block_data")
-    def test_empty_result(
+    @patch("brewgis.workspace.tasks.run_lehd_pipeline")
+    def test_dlt_failure(
         self,
-        mock_fetch: MagicMock,
+        mock_dlt_pipeline: MagicMock,
         mock_run_get: MagicMock,
     ) -> None:
-        """Empty GeoDataFrame returns failure dict."""
+        """dlt pipeline failure returns error dict."""
         run_mock = MagicMock()
         mock_run_get.return_value = run_mock
-
-        gdf_mock = MagicMock()
-        gdf_mock.empty = True
-        mock_fetch.return_value = gdf_mock
+        mock_dlt_pipeline.return_value = {
+            "success": False,
+            "error": "connection timeout",
+        }
 
         result = run_lehd_fetch(
             run_pk=2,
@@ -288,10 +278,7 @@ class TestRunLehdFetch:
             schema="public",
         )
 
-        assert result == {
-            "success": False,
-            "error": "LEHD fetch returned empty result.",
-        }
+        assert result == {"success": False, "error": "dlt extraction failed: connection timeout"}
         assert run_mock.status == "failed"
 
     @patch("brewgis.workspace.tasks.DataImportRun.objects.get")
@@ -307,38 +294,33 @@ class TestRunLehdFetch:
         )
 
         assert result == {"success": False, "error": "DataImportRun 999 not found"}
-
-
 # ── run_poi_fetch ───────────────────────────────────────────────────
+
 
 
 class TestRunPoiFetch:
     """Tests for :func:`run_poi_fetch`."""
 
-    @patch("brewgis.workspace.tasks.uuid4", create=True)
     @patch("brewgis.workspace.tasks.auto_generate_symbology")
     @patch("brewgis.workspace.tasks.DataImportRun.objects.get")
-    @patch("brewgis.workspace.tasks.fetch_pois")
+    @patch("brewgis.workspace.tasks.run_poi_pipeline")
     @patch("brewgis.workspace.tasks.Layer.objects.get_or_create")
-    @patch("brewgis.workspace.services._db.get_engine")
-    def test_success(  # noqa: PLR0913
+    def test_success(
         self,
-        mock_engine: MagicMock,
         mock_get_or_create: MagicMock,
-        mock_fetch: MagicMock,
+        mock_dlt_pipeline: MagicMock,
         mock_run_get: MagicMock,
         mock_symbology: MagicMock,
-        mock_uuid: MagicMock,
     ) -> None:
         """Successful POI fetch returns count."""
         run_mock = MagicMock()
         mock_run_get.return_value = run_mock
-
-        gdf_mock = MagicMock()
-        gdf_mock.empty = False
-        gdf_mock.__len__ = MagicMock(return_value=120)
-        mock_fetch.return_value = gdf_mock
-
+        mock_dlt_pipeline.return_value = {
+            "success": True,
+            "table_name": "public.poi_raw",
+            "row_count": 120,
+            "load_info": "ok",
+        }
         layer_mock = MagicMock(pk=9)
         mock_get_or_create.return_value = (layer_mock, True)
 
@@ -357,19 +339,19 @@ class TestRunPoiFetch:
         assert run_mock.result["row_count"] == 120
 
     @patch("brewgis.workspace.tasks.DataImportRun.objects.get")
-    @patch("brewgis.workspace.tasks.fetch_pois")
-    def test_empty_result(
+    @patch("brewgis.workspace.tasks.run_poi_pipeline")
+    def test_dlt_failure(
         self,
-        mock_fetch: MagicMock,
+        mock_dlt_pipeline: MagicMock,
         mock_run_get: MagicMock,
     ) -> None:
-        """Empty GeoDataFrame returns failure dict."""
+        """dlt pipeline failure returns error dict."""
         run_mock = MagicMock()
         mock_run_get.return_value = run_mock
-
-        gdf_mock = MagicMock()
-        gdf_mock.empty = True
-        mock_fetch.return_value = gdf_mock
+        mock_dlt_pipeline.return_value = {
+            "success": False,
+            "error": "connection timeout",
+        }
 
         result = run_poi_fetch(
             run_pk=3,
@@ -381,7 +363,7 @@ class TestRunPoiFetch:
             schema="public",
         )
 
-        assert result == {"success": False, "error": "POI fetch returned empty result."}
+        assert result == {"success": False, "error": "dlt extraction failed: connection timeout"}
         assert run_mock.status == "failed"
 
     @patch("brewgis.workspace.tasks.DataImportRun.objects.get")
@@ -400,8 +382,6 @@ class TestRunPoiFetch:
         )
 
         assert result == {"success": False, "error": "DataImportRun 999 not found"}
-
-
 # ── handle_module_completed ─────────────────────────────────────────
 
 

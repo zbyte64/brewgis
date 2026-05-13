@@ -85,3 +85,81 @@ def test_no_direct_sqlalchemy_in_tests(
                 if "sqlalchemy" in str(dep):
                     violations.append(f"{node} imports {dep}")
     assert not violations, "\n".join(violations)
+
+# ──────────────────────────────────────────────────────────────
+#  Rule C — Dagster imports only within the dagster package
+# ──────────────────────────────────────────────────────────────
+#  dagster must only be imported from brewgis.workspace.dagster
+#  (and its submodules). All other workspace modules must not
+#  couple to Dagster directly.
+# ──────────────────────────────────────────────────────────────
+
+def test_dagster_only_imported_by_dagster_package(
+    workspace_architecture: EvaluableArchitecture,
+) -> None:
+    """Verify dagster is only imported from within the dagster package.
+
+    The external ``dagster`` package (not the local package) must only be
+    imported by modules under ``workspace.dagster.*`` or the top-level
+    dagster package itself.
+    """
+    dagster_pkg_prefix = "workspace.dagster"
+    graph = workspace_architecture._graph._graph
+    violations: list[str] = []
+    for node in graph.nodes():
+        node_str = str(node)
+        # Imports of dagster-embedded-elt are handled separately
+        if node_str.startswith(dagster_pkg_prefix):
+            continue
+        for dep in graph.successors(node):
+            dep_str = str(dep)
+            # Only flag imports of the external "dagster" package itself
+            if dep_str == "dagster":
+                violations.append(f"{node_str} imports {dep_str}")
+    assert not violations, "\n".join(violations)
+
+def test_dagster_embedded_elt_only_in_dagster(
+    workspace_architecture: EvaluableArchitecture,
+) -> None:
+    """Verify dagster_embedded_elt is only imported from the dagster package."""
+    dagster_pkg_prefix = "workspace.dagster"
+    graph = workspace_architecture._graph._graph
+    violations: list[str] = []
+    for node in graph.nodes():
+        node_str = str(node)
+        if node_str.startswith(dagster_pkg_prefix):
+            continue
+        # Skip dagster_embedded_elt's own internal submodule resolution
+        if "dagster_embedded_elt" in node_str:
+            continue
+        for dep in graph.successors(node):
+            dep_str = str(dep)
+            if "dagster_embedded_elt" in dep_str:
+                violations.append(f"{node_str} imports {dep_str}")
+    assert not violations, "\n".join(violations)
+def test_dlt_pipeline_only_in_pipelines_and_dagster() -> None:
+    """Verify dlt.pipeline( calls are limited to dlt_pipelines/ and dagster/.
+
+    Direct file scan since dlt.pipeline is a function call, not a
+    module-level import.
+    """
+    allowed_dirs = {"dlt_pipelines", "dagster/assets"}
+    violations: list[str] = []
+    repo_root = Path(__file__).resolve().parent.parent
+    workspace_dir = repo_root / "brewgis" / "workspace"
+    for pyfile in workspace_dir.rglob("*.py"):
+        if "__pycache__" in pyfile.parts:
+            continue
+        relative = pyfile.relative_to(workspace_dir)
+        if any(
+            str(relative).startswith(d)
+            for d in allowed_dirs
+        ):
+            continue
+        content = pyfile.read_text(encoding="utf-8")
+        if "dlt.pipeline(" in content:
+            violations.append(str(relative))
+    assert not violations, (
+        f"dlt.pipeline( calls found outside allowed dirs {allowed_dirs}:\n"
+        + "\n".join(violations)
+    )

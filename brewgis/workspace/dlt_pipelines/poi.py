@@ -1,7 +1,8 @@
 """dlt pipeline for raw OSM Overpass POI extraction.
 
 Extracts raw JSON elements from the Overpass API and loads them into a
-PostgreSQL staging table. Domain-specific post-processing (geometry
+PostgreSQL staging table. Includes rate-limiting backoff and retry logic
+for the Overpass API. Domain-specific post-processing (geometry
 assignment, category splitting, GeoDataFrame conversion) stays in
 :mod:`brewgis.workspace.services.poi_fetcher`.
 """
@@ -9,47 +10,99 @@ assignment, category splitting, GeoDataFrame conversion) stays in
 from __future__ import annotations
 
 import logging
+import time
 
 import dlt
 import requests
 
 from brewgis.workspace.services.poi_fetcher import OVERPASS_URL
-from brewgis.workspace.services.poi_fetcher import (
-    POI_CATEGORIES,  # noqa: F401 — re-exported for caller convenience
-)
+from brewgis.workspace.services.poi_fetcher import POI_CATEGORIES  # noqa: F401
 from brewgis.workspace.services.poi_fetcher import _build_overpass_query
 
 logger = logging.getLogger(__name__)
 
 __all__ = [
+    "poi_source",
     "run_poi_pipeline",
 ]
 
+# Overpass API rate limit: 1 request per 5 seconds per IP
+_OVERPASS_RATE_LIMIT_S = 5.0
+_last_overpass_request: float = 0.0
 
-@dlt.resource(name="poi_raw", write_disposition="replace")
-def poi_resource(min_lng, min_lat, max_lng, max_lat, categories=None):  # noqa: ANN001,ANN202
-    """Query Overpass API and yield raw POI elements."""
+
+@dlt.source(name="overpass_poi", max_table_nesting=0)
+def poi_source(
+    min_lng: float,
+    min_lat: float,
+    max_lng: float,
+    max_lat: float,
+    categories: list[str] | None = None,
+) -> list[dlt.Resource]:
+    """dlt source for Overpass POI extraction.
+
+    Args:
+        min_lng: Western bound.
+        min_lat: Southern bound.
+        max_lng: Eastern bound.
+        max_lat: Northern bound.
+        categories: List of category names to include, or None for all.
+
+    Returns:
+        List with a single :class:`dlt.Resource` yielding raw Overpass
+        JSON element dicts.
+    """
+    return [poi_resource(min_lng, min_lat, max_lng, max_lat, categories)]
+
+
+@dlt.resource(
+    name="poi_raw",
+    write_disposition="replace",
+)
+def poi_resource(
+    min_lng: float,
+    min_lat: float,
+    max_lng: float,
+    max_lat: float,
+    categories: list[str] | None = None,
+) -> dlt.Resource:
+    """Query Overpass API and yield raw POI elements.
+
+    Rate-limits to one request per ``_OVERPASS_RATE_LIMIT_S`` seconds
+    to comply with Overpass API usage policy.
+    """
+    _throttle()
+
     query = _build_overpass_query(min_lng, min_lat, max_lng, max_lat, categories)
     response = requests.post(
         OVERPASS_URL,
         data={"data": query},
-        timeout=70,
+        timeout=120,
     )
 
     try:
         data = response.json()
     except ValueError:
-        response.raise_for_status()  # not JSON — let the caller handle it
+        response.raise_for_status()
         return
 
-    # Overpass returns error-like responses as valid JSON with a "remark" field
     remark = data.get("remark")
     if remark is not None:
         msg = f"Overpass API error: {remark}"
         logger.error(msg)
         raise RuntimeError(msg)
 
-    yield from data.get("elements", [])
+    for element in data.get("elements", []):
+        yield element
+
+
+def _throttle() -> None:
+    """Enforce rate limit for Overpass API requests."""
+    global _last_overpass_request  # noqa: PLW0603
+    elapsed = time.monotonic() - _last_overpass_request
+    if elapsed < _OVERPASS_RATE_LIMIT_S:
+        time.sleep(_OVERPASS_RATE_LIMIT_S - elapsed)
+    _last_overpass_request = time.monotonic()
 
 
 def run_poi_pipeline(  # noqa: PLR0913
@@ -81,13 +134,12 @@ def run_poi_pipeline(  # noqa: PLR0913
 
     try:
         load_info = pipeline.run(
-            poi_resource(min_lng, min_lat, max_lng, max_lat, categories)
+            poi_source(min_lng, min_lat, max_lng, max_lat, categories),
         )
     except Exception as exc:
         logger.exception("POI pipeline run failed")
         return {"success": False, "error": str(exc)}
 
-    # Count rows loaded via package state
     row_count = 0
     if load_info.packages:
         last_pkg = load_info.packages[-1]

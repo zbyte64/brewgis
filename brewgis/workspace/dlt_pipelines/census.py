@@ -1,14 +1,19 @@
 """dlt pipeline for Census ACS 5-year raw data extraction.
 
-Replaces the raw API download portion of census_fetcher. Writes raw
-Census JSON (column-name-keyed dicts per block group) to a Postgres
-staging table. Domain-specific post-processing (geometry, column
-mapping, NAICS splitting) stays in the existing fetcher modules.
+Writes raw Census JSON (column-name-keyed dicts per block group) to a
+PostgreSQL staging table via dlt. Supports incremental loading based on
+the ACS year so that re-runs only fetch new survey years.
+
+Domain-specific post-processing (geometry, column mapping, NAICS
+splitting) stays in :mod:`brewgis.workspace.services.census_fetcher`.
 """
 
 from __future__ import annotations
 
-__all__ = ["run_census_pipeline"]
+__all__ = [
+    "census_source",
+    "run_census_pipeline",
+]
 
 import dlt
 import requests
@@ -18,16 +23,49 @@ from brewgis.workspace.services.census_fetcher import _census_api_key
 from brewgis.workspace.services.census_fetcher import _census_base_url
 
 
-@dlt.resource(name="acs_raw", write_disposition="replace")
-def census_acs_resource(state_fips, county_fips, year=2022):  # noqa: ANN001, ANN202
-    """Fetch raw ACS data from Census API, yielding one dict per block group.
+@dlt.source(name="census_acs", max_table_nesting=0)
+def census_source(
+    state_fips: str,
+    county_fips: str,
+    year: int = dlt.sources.incremental[int]("year"),  # type: ignore[valid-type]
+) -> list[dlt.Resource]:
+    """dlt source for Census ACS 5-year data extraction.
 
-    No type annotations on parameters — dlt uses inspect and type hints
-    conflict with its runtime signature introspection.
+    Args:
+        state_fips: Two-digit state FIPS code.
+        county_fips: Three-digit county FIPS code.
+        year: Incremental year — tracks the maximum year already loaded
+            and only fetches new years on re-run.
+
+    Returns:
+        List with a single :class:`dlt.Resource` yielding block-group-level
+        dicts keyed by Census variable name.
     """
+    return [census_acs_resource(state_fips, county_fips, year)]
+
+
+@dlt.resource(
+    name="acs_raw",
+    write_disposition="merge",
+    primary_key="year",
+    columns={
+        "year": {"data_type": "bigint", "nullable": False},
+    },
+)
+def census_acs_resource(
+    state_fips: str,
+    county_fips: str,
+    year: int = dlt.sources.incremental[int]("year"),  # type: ignore[valid-type]
+) -> dlt.Resource:
+    """Yield raw ACS data from Census API, one dict per block group.
+
+    dlt's incremental tracking ensures that already-loaded years are
+    skipped on subsequent runs. The ``year`` field is the merge key.
+    """
+    year_val: int = year.last_value if isinstance(year, dlt.sources.incremental) else year  # type: ignore[attr-defined]
     vars_ = _all_vars()
     vars_str = ",".join(vars_)
-    base = _census_base_url(year)
+    base = _census_base_url(year_val)
     url = (
         f"{base}?get={vars_str}"
         f"&in=state:{state_fips}"
@@ -38,13 +76,15 @@ def census_acs_resource(state_fips, county_fips, year=2022):  # noqa: ANN001, AN
     if api_key:
         url += f"&key={api_key}"
 
-    response = requests.get(url, timeout=60)
+    response = requests.get(url, timeout=120)
     response.raise_for_status()
+
     data = response.json()
-    # Census returns [["header1","header2"],[val1,val2],...]
     headers = data[0]
     for row in data[1:]:
-        yield dict(zip(headers, row, strict=False))
+        record = dict(zip(headers, row, strict=False))
+        record["year"] = year_val
+        yield record
 
 
 def run_census_pipeline(
@@ -69,8 +109,9 @@ def run_census_pipeline(
     Returns
     -------
     dict
-        ``{"success": True, "table_name": str, "row_count": int, "load_info": str}``
-        on success, or ``{"success": False, "error": str}`` on failure.
+        ``{"success": True, "table_name": str, "row_count": int,
+        "load_info": str}`` on success, or ``{"success": False,
+        "error": str}`` on failure.
     """
     pipeline = dlt.pipeline(
         pipeline_name=f"census_acs_{state_fips}_{county_fips}_{year}",
@@ -79,11 +120,17 @@ def run_census_pipeline(
     )
 
     try:
-        load_info = pipeline.run(census_acs_resource(state_fips, county_fips, year))
+        load_info = pipeline.run(
+            census_source(state_fips, county_fips, year),
+        )
 
-        stats = load_info.load_packages[0].job_metrics
-        metrics = stats.get("acs_raw", [])
-        row_count = sum(m.total_rows for m in metrics if hasattr(m, "total_rows"))
+        row_count = 0
+        if load_info.packages:
+            last_pkg = load_info.packages[-1]
+            for table_name, table_meta in last_pkg.tables.items():
+                if table_name == "acs_raw":
+                    row_count = table_meta.get("row_count", 0)
+                    break
 
         return {
             "success": True,

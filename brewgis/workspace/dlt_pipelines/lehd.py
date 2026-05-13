@@ -1,8 +1,8 @@
 """dlt pipeline for LEHD LODES WAC data extraction.
 
-Replaces the raw CSV download portion of
-``brewgis.workspace.services.lehd_fetcher`` with a dlt-based
-pipeline that writes directly to a PostgreSQL staging table.
+Downloads gzipped CSVs from the US Census LEHD API and loads them into
+a PostgreSQL staging table via dlt. Supports incremental loading based
+on year so re-runs only download missing years.
 """
 
 from __future__ import annotations
@@ -21,18 +21,52 @@ from brewgis.workspace.services.lehd_fetcher import (
 )
 
 __all__ = [
+    "lehd_source",
     "run_lehd_pipeline",
 ]
 
 
-@dlt.resource(name="lodes_raw", write_disposition="replace")
-def lehd_lodes_resource(state_fips, county_fips, year=2021):
+@dlt.source(name="lehd_lodes", max_table_nesting=0)
+def lehd_source(
+    state_fips: str,
+    county_fips: str,
+    year: int = dlt.sources.incremental[int]("year"),  # type: ignore[valid-type]
+) -> list[dlt.Resource]:
+    """dlt source for LEHD LODES WAC data extraction.
+
+    Args:
+        state_fips: Two-digit state FIPS code.
+        county_fips: Three-digit county FIPS code.
+        year: Incremental year — only downloads data for years not yet
+            loaded on re-run.
+
+    Returns:
+        List with a single :class:`dlt.Resource` yielding WAC records
+        as dicts keyed by CSV column name.
+    """
+    return [lehd_lodes_resource(state_fips, county_fips, year)]
+
+
+@dlt.resource(
+    name="lodes_raw",
+    write_disposition="merge",
+    primary_key="year",
+    columns={
+        "year": {"data_type": "bigint", "nullable": False},
+    },
+)
+def lehd_lodes_resource(
+    state_fips: str,
+    county_fips: str,
+    year: int = dlt.sources.incremental[int]("year"),  # type: ignore[valid-type]
+) -> dlt.Resource:
     """Download LODES WAC gzipped CSV and yield rows as dicts."""
+    year_val: int = year.last_value if isinstance(year, dlt.sources.incremental) else year  # type: ignore[attr-defined]
     state_abbr = _FIPS_TO_STATE.get(state_fips, "")
     if not state_abbr:
         raise ValueError(f"Unknown state FIPS: {state_fips}")
 
-    url = f"{LODES_WAC_BASE}/{state_abbr}/wac/{state_abbr}_wac_S000_JT00_{year}.csv.gz"
+    url = f"{LODES_WAC_BASE}/{state_abbr}/wac/{state_abbr}_wac_S000_JT00_{year_val}.csv.gz"
 
     response = requests.get(url, timeout=120)
     response.raise_for_status()
@@ -42,6 +76,7 @@ def lehd_lodes_resource(state_fips, county_fips, year=2021):
         reader = csv.DictReader(text)
         for row in reader:
             cleaned = {k.strip(): v.strip() for k, v in row.items()}
+            cleaned["year"] = year_val
             yield cleaned
 
 
@@ -73,13 +108,21 @@ def run_lehd_pipeline(state_fips, county_fips, year=2021, schema="public"):
         )
 
         load_info = pipeline.run(
-            lehd_lodes_resource(state_fips, county_fips, year),
+            lehd_source(state_fips, county_fips, year),
         )
+
+        row_count = 0
+        if load_info.packages:
+            last_pkg = load_info.packages[-1]
+            for table_name, table_meta in last_pkg.tables.items():
+                if table_name == "lodes_raw":
+                    row_count = table_meta.get("row_count", 0)
+                    break
 
         return {
             "success": True,
             "table_name": f"{schema}.lodes_raw",
-            "row_count": 0,
+            "row_count": row_count,
             "load_info": str(load_info),
         }
     except Exception as e:
