@@ -146,7 +146,7 @@ format-check:  ## Check formatting without changes
 
 .PHONY: typecheck
 typecheck:  ## Run mypy type checker
-	$(COMPOSE_RUN) mypy brewgis
+	$(COMPOSE_RUN) mypy --cache-dir /tmp/.mypy_cache brewgis
 
 .PHONY: lint-dbt
 lint-dbt:  ## SQLFluff lint dbt models
