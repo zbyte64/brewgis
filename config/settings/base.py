@@ -343,5 +343,13 @@ GIS_FILE_EXTENSIONS = env.list(
         ".topojson",
     ],
 )
+TILE_SERVER_BACKEND = env("TILE_SERVER_BACKEND", default="tipg")
+TILE_SERVER_TIPG_URL = env("TILE_SERVER_TIPG_URL", default="http://tipg:8081")
+TILE_SERVER_MARTIN_URL = env("TILE_SERVER_MARTIN_URL", default="http://martin:3000")
+TOKEN_AUTH_KEY = env("TOKEN_AUTH_KEY", default=None)
+CENSUS_API_KEY = env("CENSUS_API_KEY", default=None)
+# Great Expectations — data quality framework
+# ------------------------------------------------------------------------------
+GX_PROJECT_DIR = APPS_DIR / "gx"
 # Maximum upload file size in bytes (default: 100 MB).
 MAX_UPLOAD_SIZE = env.int("MAX_UPLOAD_SIZE", default=100 * 1024 * 1024)

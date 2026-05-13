@@ -33,6 +33,7 @@ import pandas as pd
 from django.db import connection
 from django.db import transaction
 
+from brewgis.gx import validate_base_canvas
 from brewgis.workspace.services.base_canvas_adapters import DemographicSource
 from brewgis.workspace.services.base_canvas_adapters import EmploymentSource
 from brewgis.workspace.services.base_canvas_adapters import IntersectionDensitySource
@@ -1020,66 +1021,25 @@ class BaseCanvasETL:
         rows_written = len(gdf)
         self._log(f"Wrote {rows_written} rows to {self._target_table}")
         return rows_written
-
     def _validate(self) -> None:
-        """Validate the base canvas after ETL."""
+        """Validate the base canvas after ETL using Great Expectations."""
         missing = BaseCanvasManager.validate_schema(self._target_table)
         if missing:
             msg = f"Base canvas is missing columns: {missing}"
             raise RuntimeError(msg)
 
-        with connection.cursor() as cursor:
-            non_null_checks = " OR ".join(
-                f'"{c}" IS NULL' for c in BaseCanvasSchema.NON_NULL_COLUMNS
+        # Run GX validation on the target table
+        schema, table = self._target_table.split(".")
+        result = validate_base_canvas(schema=schema, table=table)
+        if not result["success"]:
+            for failure in result["failures"]:
+                self._log(f"  GX FAIL: {failure}")
+            msg = (
+                f"GX validation failed for {self._target_table}: "
+                f"{len(result['failures'])} expectation(s) failed"
             )
-            cursor.execute(
-                f"SELECT COUNT(*) FROM {self._target_table} WHERE {non_null_checks}"
-            )
-            null_count = cursor.fetchone()[0]
-            if null_count > 0:
-                self._log(
-                    f"WARNING: {null_count} row(s) have NULL values in NON_NULL_COLUMNS"
-                )
-            else:
-                self._log("No NULLs in required columns")
-
-        with connection.cursor() as cursor:
-            cursor.execute(f"SELECT COUNT(*) FROM {self._target_table}")
-            row_count = cursor.fetchone()[0]
-            self._log(f"Total rows: {row_count}")
-        # Irrigation unit sanity check: irrigated area should not exceed parcel area
-        with connection.cursor() as cursor:
-            cursor.execute(f"""
-                SELECT COUNT(*) FROM {self._target_table}
-                WHERE residential_irrigated_area > area_parcel
-                   OR commercial_irrigated_area > area_parcel
-            """)
-            overflow = cursor.fetchone()[0]
-            if overflow > 0:
-                self._log(
-                    f"WARNING: {overflow} row(s) have irrigated area exceeding parcel area"
-                )
-            else:
-                self._log("Irrigation units OK — no area overflow")
-
-        # Equity column sanity check: must be non-negative
-        with connection.cursor() as cursor:
-            cursor.execute(f"""
-                SELECT COUNT(*) FROM {self._target_table}
-                WHERE median_income < 0
-                   OR rent_burden_pct < 0
-                   OR pct_minority < 0
-                   OR pct_college_educated < 0
-                   OR cost_burden_pct < 0
-            """)
-            neg_equity = cursor.fetchone()[0]
-            if neg_equity > 0:
-                self._log(
-                    f"WARNING: {neg_equity} row(s) have negative equity column values"
-                )
-            else:
-                self._log("Equity columns OK — all non-negative")
-
+            raise RuntimeError(msg)
+        self._log("GX validation passed")
     # ── Helpers ─────────────────────────────────────────────────────────
 
     def _step(self, label: str, description: str) -> None:

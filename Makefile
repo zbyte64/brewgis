@@ -113,6 +113,10 @@ test-dbt:  ## Run dbt seed + run + test (seed-based models only)
 test-mcp:  ## Run MCP server tests (models marker only)
 	$(COMPOSE_RUN) pytest tests/workspace/test_mcp_server.py -m models -v
 
+.PHONY: test-gx
+test-gx:  ## Run Great Expectations data quality validation
+	$(COMPOSE_RUN) python manage.py validate_data_quality
+
 .PHONY: mcp-up
 mcp-up:  ## Start MCP server in Docker
 	$(COMPOSE_RUN) mcp
@@ -153,7 +157,7 @@ lint-dbt:  ## SQLFluff lint dbt models
 # ─────────────────────────────────────────────
 
 .PHONY: check
-check: lint format-check typecheck test test-dbt  ## Run full CI pipeline: lint + format-check + typecheck + test + dbt test
+check: lint format-check typecheck test test-dbt test-gx  ## Run full CI pipeline: lint + format-check + typecheck + test + dbt + GX data quality
 
 # ─────────────────────────────────────────────
 # Development setup

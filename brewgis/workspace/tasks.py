@@ -11,17 +11,21 @@ from celery.utils.log import get_task_logger
 from django.conf import settings
 from django.utils import timezone
 
+from brewgis.gx import validate_census_acs
+from brewgis.gx import validate_dbt_table
+from brewgis.gx import validate_lehd
+from brewgis.gx import validate_poi
 from brewgis.workspace.analysis.data_export import export_building_types
 from brewgis.workspace.analysis.dbt_runner import DbtRunnerWrapper
 from brewgis.workspace.analysis.layer_registry import register_result_layer
 from brewgis.workspace.analysis.module_registry import get_module_label
 from brewgis.workspace.analysis.module_registry import get_result_table_names
-from brewgis.workspace.models import AnalysisRun
-from brewgis.workspace.models import DataImportRun
-from brewgis.workspace.models import Layer
 from brewgis.workspace.dlt_pipelines import run_census_pipeline
 from brewgis.workspace.dlt_pipelines import run_lehd_pipeline
 from brewgis.workspace.dlt_pipelines import run_poi_pipeline
+from brewgis.workspace.models import AnalysisRun
+from brewgis.workspace.models import DataImportRun
+from brewgis.workspace.models import Layer
 from brewgis.workspace.services.preflight import check_analysis_prerequisites
 from brewgis.workspace.services.spatial_allocator import allocate_attributes
 from brewgis.workspace.services.stitcher import impute_area_proportional
@@ -209,6 +213,24 @@ def run_dbt_module(
         # First table in the select list is the "primary" result table
         primary_table = select[0]
         table_name = f"{primary_table}_{scenario_id}"
+
+        # Optional post-dbt GX validation (warning severity — don't block pipeline)
+        suite_name = f"dbt_{module}"
+        validation_result = validate_dbt_table(
+            schema=target_schema,
+            table=table_name,
+            suite_name=suite_name,
+        )
+        if validation_result["success"]:
+            logger.info("GX validation passed for module '%s'", module)
+        else:
+            logger.warning(
+                "GX validation warning for module '%s' (table %s.%s): %s",
+                module,
+                target_schema,
+                table_name,
+                "; ".join(validation_result["failures"][:5]),
+            )
         return {
             "success": True,
             "results": dbt_result.results,
@@ -562,6 +584,19 @@ def run_census_fetch(
         run.completed_at = timezone.now()
         run.save(update_fields=["status", "result", "completed_at"])
 
+        # Optional GX validation on ingested data (warning severity)
+        try:
+            result = validate_census_acs(schema=schema, table=table_name)
+            if not result["success"]:
+                logger.warning(
+                    "GX validation warning for census data (table %s.%s): %s",
+                    schema,
+                    table_name,
+                    "; ".join(result["failures"][:5]),
+                )
+        except Exception:
+            logger.warning("GX validation skipped for census data", exc_info=True)
+
         return {"success": True, "count": row_count}
     except DataImportRun.DoesNotExist:
         return {"success": False, "error": f"DataImportRun {run_pk} not found"}
@@ -633,6 +668,19 @@ def run_lehd_fetch(
         }
         run.completed_at = timezone.now()
         run.save(update_fields=["status", "result", "completed_at"])
+
+        # Optional GX validation on ingested data (warning severity)
+        try:
+            result = validate_lehd(schema=schema, table=table_name)
+            if not result["success"]:
+                logger.warning(
+                    "GX validation warning for LEHD data (table %s.%s): %s",
+                    schema,
+                    table_name,
+                    "; ".join(result["failures"][:5]),
+                )
+        except Exception:
+            logger.warning("GX validation skipped for LEHD data", exc_info=True)
 
         return {"success": True, "count": row_count}
 
@@ -712,6 +760,19 @@ def run_poi_fetch(
         }
         run.completed_at = timezone.now()
         run.save(update_fields=["status", "result", "completed_at"])
+
+        # Optional GX validation on ingested data (warning severity)
+        try:
+            result = validate_poi(schema=schema, table=table_name)
+            if not result["success"]:
+                logger.warning(
+                    "GX validation warning for POI data (table %s.%s): %s",
+                    schema,
+                    table_name,
+                    "; ".join(result["failures"][:5]),
+                )
+        except Exception:
+            logger.warning("GX validation skipped for POI data", exc_info=True)
 
         return {"success": True, "count": row_count}
     except DataImportRun.DoesNotExist:

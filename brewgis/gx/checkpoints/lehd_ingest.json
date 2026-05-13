@@ -1,0 +1,15 @@
+{
+  "name": "lehd_ingest",
+  "validations": [
+    {
+      "expectation_suite_name": "lehd_staging",
+      "batch_request": {
+        "datasource_name": "brewgis_postgis",
+        "data_asset_name": "public.lehd_lodes"
+      }
+    }
+  ],
+  "meta": {
+    "severity": "warning"
+  }
+}

@@ -297,3 +297,6 @@ brewgis/static/js/brew-gis-map.js.map
 # JupySQL notebooks — track source, ignore output cells
 notebooks/
 !notebooks/*.ipynb
+
+# Great Expectations validation results
+brewgis/gx/validation_results/

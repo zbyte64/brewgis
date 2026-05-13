@@ -160,6 +160,7 @@ module = [
     "celery",
     "environ",
     "geopandas",
+    "great_expectations",
     "pandas",
     "shapely",
     "shapely.*",

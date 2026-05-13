@@ -1,0 +1,15 @@
+{
+  "name": "poi_ingest",
+  "validations": [
+    {
+      "expectation_suite_name": "poi_staging",
+      "batch_request": {
+        "datasource_name": "brewgis_postgis",
+        "data_asset_name": "public.poi"
+      }
+    }
+  ],
+  "meta": {
+    "severity": "warning"
+  }
+}

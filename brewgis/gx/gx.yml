@@ -1,0 +1,28 @@
+# Great Expectations Data Context configuration.
+# https://docs.greatexpectations.io/docs/core/configure_project/
+#
+# The connection string is supplied via the DATABASE_URL environment variable.
+# No inline secrets.
+
+config_version: 1.0
+
+datasources: {}
+
+expectations_store:
+  type: GXFileStore
+  base_directory: expectations/
+
+validation_results_store:
+  type: GXFileStore
+  base_directory: validation_results/
+
+checkpoints_store:
+  type: GXFileStore
+  base_directory: checkpoints/
+
+plugins:
+  enabled: true
+  base_directory: plugins/
+
+anonymous_usage_statistics:
+  enabled: false
