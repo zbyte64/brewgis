@@ -112,13 +112,11 @@ repos:
     hooks:
       - id: mypy
         name: mypy
-        entry: mypy brewgis
-        language: python
+        entry: docker compose -f docker-compose.local.yml run --rm django mypy --cache-dir /tmp/.mypy_cache brewgis
+        language: system
         files: ^brewgis/.*\.py$
         pass_filenames: false
-        additional_dependencies:
-          - django-stubs[compatible-mypy]==6.0.3
-          - mypy==1.13.0
+        require_serial: true
 # sets up .pre-commit-ci.yaml to ensure pre-commit dependencies stay up to date
 ci:
   autoupdate_schedule: weekly
