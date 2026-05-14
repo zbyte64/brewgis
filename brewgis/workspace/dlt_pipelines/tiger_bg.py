@@ -109,32 +109,26 @@ def run_tiger_bg_pipeline(
         Keys: ``success``, ``table_name``, ``row_count``, ``load_info``
         (or ``error`` on failure).
     """
-    try:
-        pipeline = dlt.pipeline(
-            pipeline_name=f"tiger_bg_{state_fips}",
-            destination="postgres",
-            dataset_name=schema,
-        )
+    pipeline = dlt.pipeline(
+        pipeline_name=f"tiger_bg_{state_fips}",
+        destination="postgres",
+        dataset_name=schema,
+    )
 
-        load_info = pipeline.run(
-            tiger_bg_source(state_fips),
-        )
+    load_info = pipeline.run(
+        tiger_bg_source(state_fips),
+    )
 
-        row_count = 0
-        for step in pipeline.last_trace.steps:
-            si = step.step_info
-            if hasattr(si, "row_counts") and si.row_counts:
-                row_count = si.row_counts.get("tiger_block_groups", 0)
-                break
+    row_count = 0
+    for step in pipeline.last_trace.steps:
+        si = step.step_info
+        if hasattr(si, "row_counts") and si.row_counts:
+            row_count = si.row_counts.get("tiger_block_groups", 0)
+            break
 
-        return {
-            "success": True,
-            "table_name": f"{schema}.tiger_block_groups",
-            "row_count": row_count,
-            "load_info": str(load_info),
-        }
-    except Exception as e:
-        return {
-            "success": False,
-            "error": str(e),
-        }
+    return {
+        "success": True,
+        "table_name": f"{schema}.tiger_block_groups",
+        "row_count": row_count,
+        "load_info": str(load_info),
+    }

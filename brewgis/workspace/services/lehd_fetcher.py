@@ -460,21 +460,16 @@ def _fetch_cbp_county_emp(
     result: dict[str, float] = {}
     for key, naics_code in naics_codes.items():
         url = _cbp_url(state_fips, county_fips, naics_code)
-        try:
-            response = requests.get(url, timeout=120)
-            response.raise_for_status()
-            raw_data: list[list[str]] = response.json()
-            if len(raw_data) >= 2:  # at least header + one data row
-                emp_raw = raw_data[1][0]  # EMP is the first column
-                if emp_raw not in ("", "D", "S", "N"):
-                    result[key] = float(emp_raw)
-                else:
-                    result[key] = 0.0
+        response = requests.get(url, timeout=120)
+        response.raise_for_status()
+        raw_data: list[list[str]] = response.json()
+        if len(raw_data) >= 2:  # at least header + one data row
+            emp_raw = raw_data[1][0]  # EMP is the first column
+            if emp_raw not in ("", "D", "S", "N"):
+                result[key] = float(emp_raw)
             else:
                 result[key] = 0.0
-        except requests.RequestException:
-            result[key] = 0.0
-        except (ValueError, TypeError):
+        else:
             result[key] = 0.0
     return result
 
@@ -508,15 +503,7 @@ def fetch_county_employment_scaling(
     }
 
     # 1. Compute LEHD county-level totals per sector
-    try:
-        lehd_gdf = fetch_lehd_block_data(state_fips, county_fips)
-    except RuntimeError:
-        logger.warning(
-            "LEHD data unavailable for county %s/%s; cannot compute scaling",
-            state_fips,
-            county_fips,
-        )
-        return scale_factors
+    lehd_gdf = fetch_lehd_block_data(state_fips, county_fips)
 
     if lehd_gdf.empty:
         return scale_factors

@@ -87,7 +87,6 @@ class NetworkExtractor:
             self.network_type,
             bbox,
         )
-
         # Set a reasonable timeout for OSM Overpass API calls to prevent
         # hanging indefinitely when OSM is slow or unreachable.
         _saved_timeout = getattr(ox.settings, "requests_timeout", None)
@@ -102,10 +101,10 @@ class NetworkExtractor:
         except Exception as exc:
             msg = f"Failed to download OSM network: {exc}"
             logger.exception(msg)
+            ox.settings.requests_timeout = _saved_timeout
             return {"success": False, "error": msg}
-        finally:
-            if _saved_timeout is not None:
-                ox.settings.requests_timeout = _saved_timeout
+        if _saved_timeout is not None:
+            ox.settings.requests_timeout = _saved_timeout
 
         if graph.number_of_edges() == 0:
             return {
@@ -160,48 +159,42 @@ class NetworkExtractor:
         nodes_out["id"] = range(1, len(nodes_out) + 1)
 
         # Write to PostGIS
-        try:
-            with self.engine.begin() as conn:
-                # Create schema if needed
-                conn.execute(text(f"CREATE SCHEMA IF NOT EXISTS {schema}"))
+        with self.engine.begin() as conn:
+            # Create schema if needed
+            conn.execute(text(f"CREATE SCHEMA IF NOT EXISTS {schema}"))
 
-                # Drop existing tables for idempotent refresh
-                conn.execute(
-                    text(f"DROP TABLE IF EXISTS {schema}.{edge_table} CASCADE")
-                )
-                conn.execute(
-                    text(f"DROP TABLE IF EXISTS {schema}.{node_table} CASCADE")
-                )
-
-            edges_out.to_postgis(
-                edge_table,
-                self.engine,
-                schema=schema,
-                if_exists="replace",
-                index=False,
+            # Drop existing tables for idempotent refresh
+            conn.execute(
+                text(f"DROP TABLE IF EXISTS {schema}.{edge_table} CASCADE")
+            )
+            conn.execute(
+                text(f"DROP TABLE IF EXISTS {schema}.{node_table} CASCADE")
             )
 
-            nodes_out.to_postgis(
-                node_table,
-                self.engine,
-                schema=schema,
-                if_exists="replace",
-                index=False,
+        edges_out.to_postgis(
+            edge_table,
+            self.engine,
+            schema=schema,
+            if_exists="replace",
+            index=False,
+        )
+
+        nodes_out.to_postgis(
+            node_table,
+            self.engine,
+            schema=schema,
+            if_exists="replace",
+            index=False,
+        )
+
+        # Add primary keys and geometry columns
+        with self.engine.begin() as conn:
+            conn.execute(
+                text(f"ALTER TABLE {schema}.{edge_table} ADD PRIMARY KEY (id)")
             )
-
-            # Add primary keys and geometry columns
-            with self.engine.begin() as conn:
-                conn.execute(
-                    text(f"ALTER TABLE {schema}.{edge_table} ADD PRIMARY KEY (id)")
-                )
-                conn.execute(
-                    text(f"ALTER TABLE {schema}.{node_table} ADD PRIMARY KEY (id)")
-                )
-
-        except Exception as exc:
-            msg = f"Failed to write network to PostGIS: {exc}"
-            logger.exception(msg)
-            return {"success": False, "error": msg}
+            conn.execute(
+                text(f"ALTER TABLE {schema}.{node_table} ADD PRIMARY KEY (id)")
+            )
 
         logger.info(
             "Network written to %s.%s (%d edges) and %s.%s (%d nodes)",
@@ -225,8 +218,4 @@ def _crs_to_srid(crs: Any) -> int:
     """Extract EPSG SRID from a CRS object."""
     if crs is None:
         return 4326
-    try:
-        return int(crs.to_epsg())
-    except Exception:
-        # Fall back to WGS84
-        return 4326
+    return int(crs.to_epsg())

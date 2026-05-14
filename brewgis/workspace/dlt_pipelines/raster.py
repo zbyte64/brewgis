@@ -166,27 +166,24 @@ def run_raster_pipeline(
         dataset_name=schema,
     )
 
-    try:
-        load_info = pipeline.run(
-            [
-                raster_metadata_source(file_path),
-                raster_band_source(file_path),
-            ],
-        )
+    load_info = pipeline.run(
+        [
+            raster_metadata_source(file_path),
+            raster_band_source(file_path),
+        ],
+    )
 
-        row_count = 0
-        for step in pipeline.last_trace.steps:
-            si = step.step_info
-            if hasattr(si, "row_counts") and si.row_counts:
-                row_count = si.row_counts.get("raster_metadata", 0)
-                break
+    row_count = 0
+    for step in pipeline.last_trace.steps:
+        si = step.step_info
+        if hasattr(si, "row_counts") and si.row_counts:
+            row_count = si.row_counts.get("raster_metadata", 0)
+            break
 
-        return {
-            "success": True,
-            "metadata_table": f"{schema}.raster_metadata",
-            "bands_table": f"{schema}.raster_bands",
-            "row_count": row_count,
-            "load_info": str(load_info),
-        }
-    except Exception as e:  # noqa: BLE001
-        return {"success": False, "error": str(e)}
+    return {
+        "success": True,
+        "metadata_table": f"{schema}.raster_metadata",
+        "bands_table": f"{schema}.raster_bands",
+        "row_count": row_count,
+        "load_info": str(load_info),
+    }

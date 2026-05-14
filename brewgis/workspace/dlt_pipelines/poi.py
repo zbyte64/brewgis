@@ -81,11 +81,7 @@ def poi_resource(
         timeout=120,
     )
 
-    try:
-        data = response.json()
-    except ValueError:
-        response.raise_for_status()
-        return
+    data = response.json()
 
     remark = data.get("remark")
     if remark is not None:
@@ -133,13 +129,9 @@ def run_poi_pipeline(  # noqa: PLR0913
         dataset_name=schema,
     )
 
-    try:
-        load_info = pipeline.run(
-            poi_source(min_lng, min_lat, max_lng, max_lat, categories),
-        )
-    except Exception as exc:
-        logger.exception("POI pipeline run failed")
-        return {"success": False, "error": str(exc)}
+    load_info = pipeline.run(
+        poi_source(min_lng, min_lat, max_lng, max_lat, categories),
+    )
 
     row_count = 0
     for step in pipeline.last_trace.steps:

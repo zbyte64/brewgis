@@ -543,45 +543,38 @@ class OSMIntersectionDensitySource:
 
     @property
     def available(self) -> bool:
-        try:
-            import osmnx  # noqa: F401
+        import osmnx  # noqa: F401
 
-            return True
-        except ImportError:
-            return False
+        return True
 
     def _compute_jurisdiction_density(
         self, jurisdiction_parcels: gpd.GeoDataFrame
     ) -> float | None:
         """Compute intersection density for a jurisdiction's geometry union."""
-        try:
-            import osmnx as ox  # noqa: PLC0415
+        import osmnx as ox  # noqa: PLC0415
 
-            # Union all parcel geometries in the jurisdiction
-            # Buffer slightly to avoid edge disconnects
-            boundary = jurisdiction_parcels.union_all().buffer(0.001)
+        # Union all parcel geometries in the jurisdiction
+        # Buffer slightly to avoid edge disconnects
+        boundary = jurisdiction_parcels.union_all().buffer(0.001)
 
-            # Get the road network within the boundary
-            graph = ox.graph_from_polygon(
-                boundary,
-                network_type="drive",
-                simplify=True,
-                retain_all=True,
-            )
+        # Get the road network within the boundary
+        graph = ox.graph_from_polygon(
+            boundary,
+            network_type="drive",
+            simplify=True,
+            retain_all=True,
+        )
 
-            # Count intersections (nodes with street_count >= 3)
-            nodes, _ = ox.graph_to_gdfs(graph)
-            intersections = nodes[nodes["street_count"] >= 3]
+        # Count intersections (nodes with street_count >= 3)
+        nodes, _ = ox.graph_to_gdfs(graph)
+        intersections = nodes[nodes["street_count"] >= 3]
 
-            # Compute area in km²
-            area_sq_km = jurisdiction_parcels.to_crs("EPSG:6933").area.sum() / 1e6
+        # Compute area in km²
+        area_sq_km = jurisdiction_parcels.to_crs("EPSG:6933").area.sum() / 1e6
 
-            if area_sq_km > 0:
-                return len(intersections) / area_sq_km  # type: ignore[no-any-return]
-            return None
-        except (ValueError, KeyError, OSError) as exc:
-            logger.warning("OSM intersection density computation failed: %s", exc)
-            return None
+        if area_sq_km > 0:
+            return len(intersections) / area_sq_km  # type: ignore[no-any-return]
+        return None
 
     def compute_density(self, parcels: gpd.GeoDataFrame) -> gpd.GeoDataFrame:
         """Compute intersection density at jurisdiction level.
@@ -626,63 +619,52 @@ class OSMIntersectionDensitySource:
 
     def _compute_per_parcel(self, parcels: gpd.GeoDataFrame) -> gpd.GeoDataFrame:
         """Fall back to per-parcel intersection density computation."""
-        try:
-            import osmnx as ox  # noqa: PLC0415
+        import osmnx as ox  # noqa: PLC0415
 
-            bbox_north = self._bbox[3]
-            bbox_south = self._bbox[1]
-            bbox_east = self._bbox[2]
-            bbox_west = self._bbox[0]
+        bbox_north = self._bbox[3]
+        bbox_south = self._bbox[1]
+        bbox_east = self._bbox[2]
+        bbox_west = self._bbox[0]
 
-            logger.info("Downloading OSM road network for bounding box ...")
-            graph = ox.graph_from_bbox(  # type: ignore[misc]
-                bbox_north,  # type: ignore[arg-type]
-                bbox_south,  # type: ignore[arg-type]
-                bbox_east,  # type: ignore[arg-type]
-                bbox_west,  # type: ignore[arg-type]
-                network_type="drive",
-                simplify=True,
-            )
+        logger.info("Downloading OSM road network for bounding box ...")
+        graph = ox.graph_from_bbox(  # type: ignore[misc]
+            bbox_north,  # type: ignore[arg-type]
+            bbox_south,  # type: ignore[arg-type]
+            bbox_east,  # type: ignore[arg-type]
+            bbox_west,  # type: ignore[arg-type]
+            network_type="drive",
+            simplify=True,
+        )
 
-            # Get intersection nodes
-            intersections = ox.graph_to_gdfs(graph, nodes=True, edges=False)
-            if intersections.empty:
-                logger.warning("No intersections found in OSM data; using defaults")
-                if "intersection_density" in parcels.columns:
-                    parcels["intersection_density"] = parcels[
-                        "intersection_density"
-                    ].fillna(self.DEFAULT_DENSITY)
-                return parcels
-
-            # Count intersections per parcel
-            import pandas as pd  # noqa: PLC0415
-
-            intersection_counts: list[int] = []
-            for _, parcel in parcels.iterrows():
-                geom = parcel.geometry
-                if geom is None:
-                    intersection_counts.append(0)
-                    continue
-                count = intersections.sindex.query(geom, predicate="intersects").size
-                intersection_counts.append(count)
-
-            parcels = parcels.copy()
-            # Area in km^2 (area_gross is in acres)
-            area_km2 = parcels["area_gross"].fillna(0.01) * 0.00404686
-            densities = pd.Series(intersection_counts, index=parcels.index) / area_km2
-            parcels["intersection_density"] = parcels.get(
-                "intersection_density", pd.Series(index=parcels.index)
-            ).fillna(densities.round(2))
-
-        except Exception as exc:
-            logger.warning(
-                "OSM intersection density failed: %s; using default %.1f",
-                exc,
-                self.DEFAULT_DENSITY,
-            )
+        # Get intersection nodes
+        intersections = ox.graph_to_gdfs(graph, nodes=True, edges=False)
+        if intersections.empty:
+            logger.warning("No intersections found in OSM data; using defaults")
             if "intersection_density" in parcels.columns:
                 parcels["intersection_density"] = parcels[
                     "intersection_density"
                 ].fillna(self.DEFAULT_DENSITY)
+            return parcels
+
+        # Count intersections per parcel
+        import pandas as pd  # noqa: PLC0415
+
+        intersection_counts: list[int] = []
+        for _, parcel in parcels.iterrows():
+            geom = parcel.geometry
+            if geom is None:
+                intersection_counts.append(0)
+                continue
+            count = intersections.sindex.query(geom, predicate="intersects").size
+            intersection_counts.append(count)
+
+        parcels = parcels.copy()
+        # Area in km^2 (area_gross is in acres)
+        area_km2 = parcels["area_gross"].fillna(0.01) * 0.00404686
+        densities = pd.Series(intersection_counts, index=parcels.index) / area_km2
+        parcels["intersection_density"] = parcels.get(
+            "intersection_density", pd.Series(index=parcels.index)
+        ).fillna(densities.round(2))
+
 
         return parcels

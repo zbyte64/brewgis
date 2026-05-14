@@ -113,23 +113,20 @@ def run_tiger_block_pipeline(
         dataset_name=schema,
     )
 
-    try:
-        load_info = pipeline.run(
-            tiger_block_source(state_fips),
-        )
+    load_info = pipeline.run(
+        tiger_block_source(state_fips),
+    )
 
-        row_count = 0
-        for step in pipeline.last_trace.steps:
-            si = step.step_info
-            if hasattr(si, "row_counts") and si.row_counts:
-                row_count = si.row_counts.get("tiger_blocks", 0)
-                break
+    row_count = 0
+    for step in pipeline.last_trace.steps:
+        si = step.step_info
+        if hasattr(si, "row_counts") and si.row_counts:
+            row_count = si.row_counts.get("tiger_blocks", 0)
+            break
 
-        return {
-            "success": True,
-            "table_name": f"{schema}.tiger_blocks",
-            "row_count": row_count,
-            "load_info": str(load_info),
-        }
-    except Exception as e:  # noqa: BLE001
-        return {"success": False, "error": str(e)}
+    return {
+        "success": True,
+        "table_name": f"{schema}.tiger_blocks",
+        "row_count": row_count,
+        "load_info": str(load_info),
+    }

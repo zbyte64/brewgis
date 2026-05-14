@@ -65,117 +65,112 @@ class NetworkTopology:
             tolerance,
         )
 
-        try:
-            with self.engine.begin() as conn:
-                conn.execute(
-                    text(
-                        "CREATE EXTENSION IF NOT EXISTS pgrouting "
-                        "WITH SCHEMA public"
-                    )
+        with self.engine.begin() as conn:
+            conn.execute(
+                text(
+                    "CREATE EXTENSION IF NOT EXISTS pgrouting "
+                    "WITH SCHEMA public"
                 )
-
-                # Verify edge table exists
-                result = conn.execute(
-                    text(
-                        f"SELECT EXISTS ("
-                        f"  SELECT FROM information_schema.tables "
-                        f"  WHERE table_schema = '{schema}' "
-                        f"  AND table_name = '{edge_table}'"
-                        f")"
-                    )
-                ).scalar()
-                if not result:
-                    return {
-                        "success": False,
-                        "error": (
-                            f"Edge table {schema}.{edge_table} does not exist. "
-                            "Run NetworkExtractor first."
-                        ),
-                    }
-
-                # Ensure source/target columns exist and are nullable
-                conn.execute(
-                    text(
-                        f"ALTER TABLE {schema}.{edge_table} "
-                        f"ALTER COLUMN source TYPE BIGINT USING source::BIGINT, "
-                        f"ALTER COLUMN target TYPE BIGINT USING target::BIGINT"
-                    )
+            )
+            
+            # Verify edge table exists
+            result = conn.execute(
+                text(
+                    f"SELECT EXISTS ("
+                    f"  SELECT FROM information_schema.tables "
+                    f"  WHERE table_schema = '{schema}' "
+                    f"  AND table_name = '{edge_table}'"
+                    f")"
                 )
-
-                # Manually create topology instead of pgr_createTopology:
-                #   1. Build vertex table from unique edge endpoint geometries
-                #   2. Assign contiguous vertex IDs
-                #   3. Update source/target in the edge table
-                vertex_table = f"{schema}.{edge_table}_vertices_pgr"
-                conn.execute(
-                    text(
-                        f"DROP TABLE IF EXISTS {vertex_table} CASCADE"
-                    )
+            ).scalar()
+            if not result:
+                return {
+                    "success": False,
+                    "error": (
+                        f"Edge table {schema}.{edge_table} does not exist. "
+                        "Run NetworkExtractor first."
+                    ),
+                }
+            
+            # Ensure source/target columns exist and are nullable
+            conn.execute(
+                text(
+                    f"ALTER TABLE {schema}.{edge_table} "
+                    f"ALTER COLUMN source TYPE BIGINT USING source::BIGINT, "
+                    f"ALTER COLUMN target TYPE BIGINT USING target::BIGINT"
                 )
-                conn.execute(
-                    text(
-                        f"CREATE TABLE {vertex_table} ("
-                        f"  id BIGSERIAL PRIMARY KEY,"
-                        f"  geom GEOMETRY(POINT, 4326)"
-                        f")"
-                    )
+            )
+            
+            # Manually create topology instead of pgr_createTopology:
+            #   1. Build vertex table from unique edge endpoint geometries
+            #   2. Assign contiguous vertex IDs
+            #   3. Update source/target in the edge table
+            vertex_table = f"{schema}.{edge_table}_vertices_pgr"
+            conn.execute(
+                text(
+                    f"DROP TABLE IF EXISTS {vertex_table} CASCADE"
                 )
-                conn.execute(
-                    text(
-                        f"INSERT INTO {vertex_table} (geom) "
-                        f"SELECT DISTINCT ST_StartPoint(geom) FROM {schema}.{edge_table} "
-                        f"UNION "
-                        f"SELECT DISTINCT ST_EndPoint(geom) FROM {schema}.{edge_table}"
-                    )
+            )
+            conn.execute(
+                text(
+                    f"CREATE TABLE {vertex_table} ("
+                    f"  id BIGSERIAL PRIMARY KEY,"
+                    f"  geom GEOMETRY(POINT, 4326)"
+                    f")"
                 )
-                # Update source — match start point of edge to vertex
-                conn.execute(
-                    text(
-                        f"UPDATE {schema}.{edge_table} e "
-                        f"SET source = v.id "
-                        f"FROM {vertex_table} v "
-                        f"WHERE ST_DWithin("
-                        f"  ST_StartPoint(e.geom), v.geom, {tolerance}"
-                        f")"
-                    )
+            )
+            conn.execute(
+                text(
+                    f"INSERT INTO {vertex_table} (geom) "
+                    f"SELECT DISTINCT ST_StartPoint(geom) FROM {schema}.{edge_table} "
+                    f"UNION "
+                    f"SELECT DISTINCT ST_EndPoint(geom) FROM {schema}.{edge_table}"
                 )
-                # Update target — match end point to vertex
-                conn.execute(
-                    text(
-                        f"UPDATE {schema}.{edge_table} e "
-                        f"SET target = v.id "
-                        f"FROM {vertex_table} v "
-                        f"WHERE ST_DWithin("
-                        f"  ST_EndPoint(e.geom), v.geom, {tolerance}"
-                        f")"
-                    )
+            )
+            # Update source — match start point of edge to vertex
+            conn.execute(
+                text(
+                    f"UPDATE {schema}.{edge_table} e "
+                    f"SET source = v.id "
+                    f"FROM {vertex_table} v "
+                    f"WHERE ST_DWithin("
+                    f"  ST_StartPoint(e.geom), v.geom, {tolerance}"
+                    f")"
                 )
-
-                # Get vertex count
-                vertex_count = conn.execute(
-                    text(f"SELECT COUNT(*) FROM {schema}.{edge_table}_vertices_pgr")
-                ).scalar()
-
-                # Get total edge count for logging
-                total_edges = conn.execute(
-                    text(f"SELECT COUNT(*) FROM {schema}.{edge_table}")
-                ).scalar()
-
-                # Get edge count with valid topology
-                valid_edges = conn.execute(
-                    text(
-                        f"SELECT COUNT(*) FROM {schema}.{edge_table} "
-                        f"WHERE source IS NOT NULL AND target IS NOT NULL"
-                    )
-                ).scalar()
-
-                dead_ends = 0
-                gaps = 0
-
-        except Exception as exc:
-            msg = f"Failed to build pgRouting topology: {exc}"
-            logger.exception(msg)
-            return {"success": False, "error": msg}
+            )
+            # Update target — match end point to vertex
+            conn.execute(
+                text(
+                    f"UPDATE {schema}.{edge_table} e "
+                    f"SET target = v.id "
+                    f"FROM {vertex_table} v "
+                    f"WHERE ST_DWithin("
+                    f"  ST_EndPoint(e.geom), v.geom, {tolerance}"
+                    f")"
+                )
+            )
+            
+            # Get vertex count
+            vertex_count = conn.execute(
+                text(f"SELECT COUNT(*) FROM {schema}.{edge_table}_vertices_pgr")
+            ).scalar()
+            
+            # Get total edge count for logging
+            total_edges = conn.execute(
+                text(f"SELECT COUNT(*) FROM {schema}.{edge_table}")
+            ).scalar()
+            
+            # Get edge count with valid topology
+            valid_edges = conn.execute(
+                text(
+                    f"SELECT COUNT(*) FROM {schema}.{edge_table} "
+                    f"WHERE source IS NOT NULL AND target IS NOT NULL"
+                )
+            ).scalar()
+            
+            dead_ends = 0
+            gaps = 0
+            
 
         logger.info(
             "Topology built: %d vertices, %d/%d edges valid, %d dead ends, %d gaps",

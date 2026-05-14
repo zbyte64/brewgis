@@ -94,12 +94,8 @@ def _compute_allocation_factors(
         # Reproject to a projected CRS for accurate area calculations
         # Use UTM zone if possible, or fall back to web mercator
         projected_crs = "EPSG:3857"
-        try:
-            source_proj = source_gdf.to_crs(projected_crs)
-            target_proj = target_gdf.to_crs(projected_crs)
-        except Exception:
-            source_proj = source_gdf
-            target_proj = target_gdf
+        source_proj = source_gdf.to_crs(projected_crs)
+        target_proj = target_gdf.to_crs(projected_crs)
     else:
         source_proj = source_gdf
         target_proj = target_gdf
@@ -117,11 +113,8 @@ def _compute_allocation_factors(
         for target_idx, target_row in target_proj.iterrows():
             target_geom = target_row[target_proj.geometry.name]
             if source_geom.intersects(target_geom):
-                try:
-                    intersection = source_geom.intersection(target_geom)
-                    intersection_area = intersection.area
-                except Exception:
-                    continue
+                intersection = source_geom.intersection(target_geom)
+                intersection_area = intersection.area
 
                 if intersection_area > 0:
                     weight = intersection_area / source_area
@@ -231,27 +224,20 @@ def allocate_attributes(
             new_column_names.append(new_col)
 
             # Add column if it doesn't exist
-            try:
-                cursor.execute(
-                    f'ALTER TABLE "{target_schema}"."{target_table}" '
-                    f'ADD COLUMN IF NOT EXISTS "{new_col}" DOUBLE PRECISION DEFAULT 0'
-                )
-            except Exception as e:
-                errors.append(f"Failed to add column {new_col}: {e}")
-                continue
+            cursor.execute(
+                f'ALTER TABLE "{target_schema}"."{target_table}" '
+                f'ADD COLUMN IF NOT EXISTS "{new_col}" DOUBLE PRECISION DEFAULT 0'
+            )
 
             for tid, value in target_values[col].items():
-                try:
-                    ctid = tid_to_ctid[tid]
-                    cursor.execute(
-                        f'UPDATE "{target_schema}"."{target_table}" '
-                        f'SET "{new_col}" = %s '
-                        f"WHERE ctid = %s",
-                        [value, ctid],
-                    )
-                    updated_count += 1
-                except Exception as e:
-                    errors.append(f"Failed to update {new_col} for row {tid}: {e}")
+                ctid = tid_to_ctid[tid]
+                cursor.execute(
+                    f'UPDATE "{target_schema}"."{target_table}" '
+                    f'SET "{new_col}" = %s '
+                    f"WHERE ctid = %s",
+                    [value, ctid],
+                )
+                updated_count += 1
 
     return {
         "total_features": updated_count,

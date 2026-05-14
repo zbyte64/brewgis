@@ -32,13 +32,15 @@ class TestTigerBGPipeline:
         assert "table_name" in result
 
     def test_run_pipeline_error(self) -> None:
-        """run_tiger_bg_pipeline should return error dict on failure."""
+        """run_tiger_bg_pipeline should propagate on failure."""
         with patch("brewgis.workspace.dlt_pipelines.tiger_bg.dlt.pipeline") as mock_pipeline:
             mock_pipe = mock_pipeline.return_value
             mock_pipe.run.side_effect = RuntimeError("Download failed")
-            result = run_tiger_bg_pipeline("06")
-        assert result["success"] is False
-        assert "error" in result
+            try:
+                run_tiger_bg_pipeline("06")
+                assert False, "Expected RuntimeError"
+            except RuntimeError:
+                pass
 
 
 class TestTigerBlockPipeline:
@@ -60,10 +62,12 @@ class TestTigerBlockPipeline:
         assert "table_name" in result
 
     def test_run_pipeline_error(self) -> None:
-        """run_tiger_block_pipeline should return error dict on failure."""
+        """run_tiger_block_pipeline should propagate on failure."""
         with patch("brewgis.workspace.dlt_pipelines.tiger_block.dlt.pipeline") as mock_pipeline:
             mock_pipe = mock_pipeline.return_value
             mock_pipe.run.side_effect = RuntimeError("Download failed")
-            result = run_tiger_block_pipeline("06")
-        assert result["success"] is False
-        assert "error" in result
+            try:
+                run_tiger_block_pipeline("06")
+                assert False, "Expected RuntimeError"
+            except RuntimeError:
+                pass

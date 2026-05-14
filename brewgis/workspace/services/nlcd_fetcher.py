@@ -366,17 +366,9 @@ def compute_nlcd_zonal_stats(
         parcels["impervious_fraction"] = 0.0
         return parcels
 
-    try:
-        import rasterio
-        from rasterio.mask import mask
-        from shapely.geometry import mapping
-    except ImportError:
-        logger.warning("rasterio not available; install with: pip install rasterio")
-        parcels["land_development_category"] = parcels.get(
-            "land_development_category", pd.Series(index=parcels.index)
-        ).fillna("urban")
-        parcels["impervious_fraction"] = 0.0
-        return parcels
+    import rasterio
+    from rasterio.mask import mask
+    from shapely.geometry import mapping
 
     with rasterio.open(raster_path) as src:
         categories: list[str] = []
@@ -389,17 +381,12 @@ def compute_nlcd_zonal_stats(
                 impervious.append(0.0)
                 continue
 
-            try:
-                out_image, _ = mask(src, [mapping(geom)], crop=True, nodata=0)
-                pixels = out_image[0]
-                cat = _nlcd_majority_class(pixels)
-                imp = _estimate_nlcd_impervious_fraction(pixels)
-                categories.append(cat)
-                impervious.append(imp)
-            except Exception as exc:
-                logger.debug("Zonal stats failed for parcel: %s", exc)
-                categories.append("unknown")
-                impervious.append(0.0)
+            out_image, _ = mask(src, [mapping(geom)], crop=True, nodata=0)
+            pixels = out_image[0]
+            cat = _nlcd_majority_class(pixels)
+            imp = _estimate_nlcd_impervious_fraction(pixels)
+            categories.append(cat)
+            impervious.append(imp)
 
     # Fill NLCD categories into parcels — preserve any existing assessor-code values
     existing = parcels.get("land_development_category", None)

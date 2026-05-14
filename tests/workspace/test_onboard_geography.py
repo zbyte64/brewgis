@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import pyogrio
 from unittest.mock import patch
 
 import pytest
@@ -30,7 +31,7 @@ class TestOnboardGeography:
 
     def test_invalid_parcels_path(self) -> None:
         """Command should error with invalid parcel file path."""
-        with pytest.raises(CommandError):
+        with pytest.raises(pyogrio.errors.DataSourceError):
             call_command(
                 "onboard_geography",
                 name="Test Geography",
@@ -38,7 +39,6 @@ class TestOnboardGeography:
                 state_fips="06",
                 county_fips="019",
             )
-
     @patch("brewgis.workspace.services.base_canvas_etl.BaseCanvasETL.run")
     def test_successful_onboarding(self, mock_etl_run) -> None:
         """Successful ETL should produce summary output."""

@@ -115,25 +115,22 @@ class TestNetworkExtractor(TestCase):
 
     @patch.object(NetworkExtractor, "engine")
     def test_extract_db_write_failure(self, mock_engine) -> None:
-        """If PostGIS write fails, the method returns a failure dict."""
+        """If PostGIS write fails, the exception propagates."""
         mock_engine.begin.side_effect = RuntimeError("Connection lost")
         # engine is a property returning self._engine, need to wire it
         self.extractor._engine = mock_engine
 
         # Use a very small dummy area — real OSM download still happens but write fails
-        result = self.extractor.extract_for_bbox(
-            minx=-119.80,
-            miny=36.73,
-            maxx=-119.79,
-            maxy=36.74,
-            schema=self.schema,
-            edge_table=self.edge_table,
-            node_table=self.node_table,
-        )
-        # Write failure should still return a result dict (could be success or failure
-        # depending on whether OSM download itself succeeded)
-        self.assertIn("success", result)
-
+        with self.assertRaises(RuntimeError):
+            self.extractor.extract_for_bbox(
+                minx=-119.80,
+                miny=36.73,
+                maxx=-119.79,
+                maxy=36.74,
+                schema=self.schema,
+                edge_table=self.edge_table,
+                node_table=self.node_table,
+            )
 
 @pytest.mark.integration
 class TestNetworkTopology(TestCase):

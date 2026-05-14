@@ -130,7 +130,6 @@ def run_analysis_pipeline(
     dagster_available = False
     try:
         instance = DagsterInstance.get()
-        # Check if instance is usable by listing runs
         _ = instance.get_runs()
         dagster_available = True
     except Exception:
@@ -146,30 +145,16 @@ def run_analysis_pipeline(
             run.pk,
             ordered_modules,
         )
-    else:
-        # Fall back to synchronous execution
-        logger.info(
-            "Running AnalysisRun #%s synchronously (no Dagster daemon)",
-            run.pk,
-        )
-        run.status = "running"
-        run.started_at = timezone.now()
-        run.save(update_fields=["status", "started_at"])
+        return run
 
-        result = run_modules_sync(
-            modules=ordered_modules,
-            base_vars=base_vars,
-            target_schema=f"run_{run.pk}",
-            workspace_id=workspace_id,
-            scenario_id=str(scenario_id),
-        )
-
-        run.status = "completed" if result["success"] else "failed"
-        run.completed_at = timezone.now()
-        if not result["success"]:
-            run.error_log = str(result.get("results", []))
-        run.save(update_fields=["status", "completed_at", "error_log"])
-
+    run_modules_sync(
+        modules=ordered_modules,
+        base_vars=base_vars,
+        target_schema=base_vars.get("target_schema", "public"),
+        workspace_id=workspace_id,
+        scenario_id=scenario_id,
+        module_selects=base_vars.get("module_selects"),
+    )
     return run
 
 

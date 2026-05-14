@@ -199,110 +199,99 @@ class BaseCanvasETL:
                 "--source-table, --source-geojson, or --synthetic N",
             }
 
-        try:
-            # Step 1
-            self._step("1/11", "Ensuring base_canvas table")
-            BaseCanvasManager.ensure_table(self._target_table)
+        # Step 1
+        self._step("1/11", "Ensuring base_canvas table")
+        BaseCanvasManager.ensure_table(self._target_table)
 
-            if truncate:
-                self._log("Truncating existing data")
-                with connection.cursor() as cursor:
-                    cursor.execute(
-                        f"TRUNCATE TABLE {self._target_table} RESTART IDENTITY CASCADE"
-                    )
+        if truncate:
+            self._log("Truncating existing data")
+            with connection.cursor() as cursor:
+                cursor.execute(
+                    f"TRUNCATE TABLE {self._target_table} RESTART IDENTITY CASCADE"
+                )
 
-            # Step 2
-            self._step("2/11", "Loading parcel features")
-            gdf = self._load_parcels(source_table, source_geojson, synthetic_n)
-            self._log(f"Loaded {len(gdf)} parcels")
-            if gdf.empty:
-                return {
-                    "status": "error",
-                    "error": "No parcels loaded from the specified source",
-                }
-
-            gdf = self._ensure_columns(gdf)
-
-            # Step 3
-            self._step("3/11", "Computing area columns from geometry")
-            gdf = self._compute_areas(gdf)
-
-            # Step 4
-            self._step("4/11", "Allocating demographics")
-            gdf = self._allocate_demographics(gdf)
-
-            # Step 5
-            self._step("5/11", "Allocating employment")
-            gdf = self._allocate_employment(gdf)
-
-            # Step 6
-            self._step("6/11", "Estimating building areas")
-            gdf = self._estimate_building_areas(gdf)
-
-            # Step 7
-            self._step("7/11", "Classifying land use")
-            gdf = self._classify_land_use(gdf)
-
-            # Step 8
-            self._step("8/11", "Estimating irrigation")
-            gdf = self._estimate_irrigation(gdf)
-
-            # Step 9
-            self._step("9/11", "Computing intersection density")
-            gdf = self._compute_intersection_density(gdf)
-
-            # Step 10
-            if not skip_imputation:
-                self._step("10/11", "Running imputation pass")
-                gdf = self._impute_nulls(gdf)
-            else:
-                self._step("10/11", "Skipping imputation pass (--skip-imputation)")
-
-            # Step 10b: Reconcile aggregate columns
-            self._step("10b/11", "Reconciling aggregate columns from sub-columns")
-            gdf = self._reconcile_aggregates(gdf)
-            # Write to database
-            self._step("--", f"Writing data to {self._target_table}")
-            row_count = self._write_to_db(gdf, truncate)
-
-            # Step 11
-            self._step("11/11", "Validating base canvas")
-            self._validate()
-            # Post-validate synthetic parcels if applicable (warning severity)
-            if self._using_synthetic:
-                schema_name, table_name = self._target_table.split(".")
-                try:
-                    gx_result = validate_synthetic_parcels(
-                        schema=schema_name, table=table_name
-                    )
-                    if gx_result["success"]:
-                        self._log("GX synthetic_parcels validation passed")
-                    else:
-                        self._log(
-                            "GX synthetic_parcels warning: %s"
-                            % "; ".join(gx_result["failures"][:3])
-                        )
-                except Exception:
-                    self._log("GX synthetic_parcels validation failed (non-fatal)")
-
-            elapsed = time.time() - self._start_time
-
-            return {
-                "status": "success",
-                "rows": row_count,
-                "elapsed": round(elapsed, 1),
-                "messages": list(self._messages),
-            }
-
-        except Exception as exc:
-            elapsed = time.time() - self._start_time
-            logger.exception("ETL pipeline failed")
+        # Step 2
+        self._step("2/11", "Loading parcel features")
+        gdf = self._load_parcels(source_table, source_geojson, synthetic_n)
+        self._log(f"Loaded {len(gdf)} parcels")
+        if gdf.empty:
             return {
                 "status": "error",
-                "error": str(exc),
-                "elapsed": round(elapsed, 1),
-                "messages": list(self._messages),
+                "error": "No parcels loaded from the specified source",
             }
+
+        gdf = self._ensure_columns(gdf)
+
+        # Step 3
+        self._step("3/11", "Computing area columns from geometry")
+        gdf = self._compute_areas(gdf)
+
+        # Step 4
+        self._step("4/11", "Allocating demographics")
+        gdf = self._allocate_demographics(gdf)
+
+        # Step 5
+        self._step("5/11", "Allocating employment")
+        gdf = self._allocate_employment(gdf)
+
+        # Step 6
+        self._step("6/11", "Estimating building areas")
+        gdf = self._estimate_building_areas(gdf)
+
+        # Step 7
+        self._step("7/11", "Classifying land use")
+        gdf = self._classify_land_use(gdf)
+
+        # Step 8
+        self._step("8/11", "Estimating irrigation")
+        gdf = self._estimate_irrigation(gdf)
+
+        # Step 9
+        self._step("9/11", "Computing intersection density")
+        gdf = self._compute_intersection_density(gdf)
+
+        # Step 10
+        if not skip_imputation:
+            self._step("10/11", "Running imputation pass")
+            gdf = self._impute_nulls(gdf)
+        else:
+            self._step("10/11", "Skipping imputation pass (--skip-imputation)")
+
+        # Step 10b: Reconcile aggregate columns
+        self._step("10b/11", "Reconciling aggregate columns from sub-columns")
+        gdf = self._reconcile_aggregates(gdf)
+        # Write to database
+        self._step("--", f"Writing data to {self._target_table}")
+        row_count = self._write_to_db(gdf, truncate)
+
+        # Step 11
+        self._step("11/11", "Validating base canvas")
+        self._validate()
+        # Post-validate synthetic parcels if applicable (warning severity)
+        if self._using_synthetic:
+            schema_name, table_name = self._target_table.split(".")
+            try:
+                gx_result = validate_synthetic_parcels(
+                    schema=schema_name, table=table_name
+                )
+                if gx_result["success"]:
+                    self._log("GX synthetic_parcels validation passed")
+                else:
+                    self._log(
+                        "GX synthetic_parcels warning: %s"
+                        % "; ".join(gx_result["failures"][:3])
+                    )
+            except Exception:
+                self._log("GX synthetic_parcels validation failed (non-fatal)")
+
+        elapsed = time.time() - self._start_time
+
+        return {
+            "status": "success",
+            "rows": row_count,
+            "elapsed": round(elapsed, 1),
+            "messages": list(self._messages),
+        }
 
     # ── Step implementations ────────────────────────────────────────────
 
@@ -651,26 +640,20 @@ class BaseCanvasETL:
                     gdf[col] = gdf[col].fillna(0.0)
             return gdf
 
-        try:
-            with transaction.atomic():
-                self._allocate_via_postgis(gdf, src_gdf, available_cols)
+        with transaction.atomic():
+            self._allocate_via_postgis(gdf, src_gdf, available_cols)
 
-                cnt = (
-                    int((gdf[available_cols[0]] > 0).sum())
-                    if available_cols[0] in gdf.columns
-                    else 0
-                )
-                self._log(
-                    f"Area-weighted alloc: {cnt}/{len(gdf)} matched, "
-                    f"{len(available_cols)} cols"
-                )
-                col_sums = {c: float(gdf[c].sum()) for c in available_cols[:4]}
-                self._log(f"Alloc sums: {col_sums}")
-        except Exception as exc:
-            self._log(f"Allocation failed: {exc}; falling back")
-            for col in columns:
-                if col in gdf.columns:
-                    gdf[col] = gdf[col].fillna(0.0)
+            cnt = (
+                int((gdf[available_cols[0]] > 0).sum())
+                if available_cols[0] in gdf.columns
+                else 0
+            )
+            self._log(
+                f"Area-weighted alloc: {cnt}/{len(gdf)} matched, "
+                f"{len(available_cols)} cols"
+            )
+            col_sums = {c: float(gdf[c].sum()) for c in available_cols[:4]}
+            self._log(f"Alloc sums: {col_sums}")
         return gdf
 
     def _estimate_building_areas(self, gdf: gpd.GeoDataFrame) -> gpd.GeoDataFrame:

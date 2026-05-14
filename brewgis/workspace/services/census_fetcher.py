@@ -28,12 +28,9 @@ logger = logging.getLogger(__name__)
 
 def _census_api_key() -> str:
     """Return Census API key from Django settings, or empty string."""
-    try:
-        from django.conf import settings as django_settings
+    from django.conf import settings as django_settings
 
-        return django_settings.CENSUS_API_KEY or ""
-    except Exception:
-        return ""
+    return django_settings.CENSUS_API_KEY or ""
 
 
 # Census API base
@@ -368,10 +365,7 @@ def fetch_acs_block_group_polygons(
     for row in data:
         wkt_val = row.pop("geometry", None)
         if wkt_val:
-            try:
-                wkt_geoms.append(geom.from_wkt(wkt_val))
-            except Exception:
-                wkt_geoms.append(None)
+            wkt_geoms.append(geom.from_wkt(wkt_val))
         else:
             wkt_geoms.append(None)
 
@@ -418,10 +412,7 @@ def fetch_acs_data_summary(
         Dict with keys: table_groups (list of table IDs), row_count,
         and columns (list of derived column names).
     """
-    try:
-        engine = get_engine()
-    except Exception as e:
-        return {"error": str(e), "table_groups": [], "row_count": 0, "columns": []}
+    engine = get_engine()
 
     query = text("""
         SELECT COUNT(*) as row_count
@@ -430,19 +421,16 @@ def fetch_acs_data_summary(
           AND county = :county_fips
           AND year = :year
     """)
-    try:
-        with engine.connect() as conn:
-            result = conn.execute(
-                query,
-                {
-                    "state_fips": state_fips,
-                    "county_fips": county_fips,
-                    "year": year,
-                },
-            ).scalar()
-            row_count = result if result else 0
-    except Exception as e:
-        return {"error": str(e), "table_groups": [], "row_count": 0, "columns": []}
+    with engine.connect() as conn:
+        result = conn.execute(
+            query,
+            {
+                "state_fips": state_fips,
+                "county_fips": county_fips,
+                "year": year,
+            },
+        ).scalar()
+        row_count = result if result else 0
 
     return {
         "table_groups": list(ACS_TABLE_GROUPS.keys()),

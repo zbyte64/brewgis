@@ -142,18 +142,15 @@ def get_table_schema(schema: str, table_name: str) -> list[dict[str, Any]]:
             }
             # Fetch sample values for non-geometry columns
             if data_type not in ("USER-DEFINED", "geometry", "geography"):
-                try:
-                    cursor.execute(
-                        f"""
-                        SELECT DISTINCT {_quote_identifier(name)}
-                        FROM {_quote_identifier(f"{schema}.{table_name}")}
-                        WHERE {_quote_identifier(name)} IS NOT NULL
-                        LIMIT 5
-                        """,
-                    )
-                    samples = cursor.fetchall()
-                    col_info["sample_values"] = [row[0] for row in samples if row[0] is not None]
-                except Exception:
-                    col_info["sample_values"] = []
+                cursor.execute(
+                    f"""
+                    SELECT DISTINCT {_quote_identifier(name)}
+                    FROM {_quote_identifier(f"{schema}.{table_name}")}
+                    WHERE {_quote_identifier(name)} IS NOT NULL
+                    LIMIT 5
+                    """,
+                )
+                samples = cursor.fetchall()
+                col_info["sample_values"] = [row[0] for row in samples if row[0] is not None]
             columns.append(col_info)
     return columns

@@ -507,11 +507,11 @@ class TestCBPCountyScaling:
             assert result["retail"] == 0.0, f"Expected 0.0 for {suppressed!r}"
 
     def test_fetch_cbp_county_emp_http_error(self) -> None:
-        """HTTP errors should return 0.0 gracefully."""
+        """HTTP errors should propagate, not be swallowed."""
         with patch("requests.get") as mock_get:
             mock_get.side_effect = requests.RequestException("fail")
-            result = _fetch_cbp_county_emp("06", "019", {"retail": "44"})
-        assert result["retail"] == 0.0
+            with pytest.raises(requests.RequestException):
+                _fetch_cbp_county_emp("06", "019", {"retail": "44"})
 
     def test_cbp_scaling_all_sectors_above_one(self) -> None:
         """Scaling factor should be >1 when CBP exceeds LEHD."""
@@ -626,13 +626,13 @@ class TestCBPCountyScaling:
         assert scale["emp_ind"] == 1.0
 
     def test_cbp_scaling_lehd_unavailable(self) -> None:
-        """When LEHD data fetch fails, all factors should be 1.0."""
+        """When LEHD data fetch fails, the RuntimeError propagates."""
         with patch(
             "brewgis.workspace.services.lehd_fetcher.fetch_lehd_block_data",
             side_effect=RuntimeError("No data"),
         ):
-            scale = fetch_county_employment_scaling("06", "019")
-        assert scale == {"emp_ret": 1.0, "emp_off": 1.0, "emp_pub": 1.0, "emp_ind": 1.0}
+            with pytest.raises(RuntimeError):
+                fetch_county_employment_scaling("06", "019")
 
     def test_cbp_scaling_zero_lehd_sector(self) -> None:
         """When LEHD sector total is 0, should return 1.0 (avoid division by zero)."""

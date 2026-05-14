@@ -25,10 +25,7 @@ from typing import Any
 
 if TYPE_CHECKING:
     import pandas as pd
-try:
-    import polars as pl
-except ImportError:
-    pl: Any = None  # type: ignore[no-redef]
+import polars as pl
 
 logger = logging.getLogger(__name__)
 

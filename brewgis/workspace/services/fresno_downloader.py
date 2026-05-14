@@ -286,30 +286,21 @@ def download_dataset(
         logger.info("[SKIP] Already cached (%s)", format_size(size))
         return {"key": key, "status": "cached", "file": str(filepath), "size": size}
 
-    try:
-        if info.get("params") is None:
-            url = info["base_url"]
-            logger.info("Downloading from %s...", url[:80])
-            data = fetch_url(url)
-            filepath.write_bytes(data)
-        else:
-            download_arcgis(info, filepath)
-        size = filepath.stat().st_size
-        logger.info("[OK] %s saved", format_size(size))
-        return {
-            "key": key,
-            "status": "downloaded",
-            "file": str(filepath),
-            "size": size,
-        }
-    except Exception:
-        logger.exception("[FAIL] %s", key)
-        return {
-            "key": key,
-            "status": "failed",
-            "file": str(filepath),
-            "error": "unknown error",
-        }
+    if info.get("params") is None:
+        url = info["base_url"]
+        logger.info("Downloading from %s...", url[:80])
+        data = fetch_url(url)
+        filepath.write_bytes(data)
+    else:
+        download_arcgis(info, filepath)
+    size = filepath.stat().st_size
+    logger.info("[OK] %s saved", format_size(size))
+    return {
+        "key": key,
+        "status": "downloaded",
+        "file": str(filepath),
+        "size": size,
+    }
 
 
 def download_all_datasets(

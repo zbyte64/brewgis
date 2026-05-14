@@ -241,16 +241,11 @@ class DistanceMatrixPreprocessor:
             )
 
         # Step 4: Write to output table
-        try:
-            self._write_output_table(
-                schema=schema,
-                output_table=resolved_output,
-                rows=output_rows,
-            )
-        except Exception as exc:
-            msg = f"Failed to write distance matrix: {exc}"
-            logger.exception(msg)
-            return {"success": False, "pair_count": 0, "error": msg}
+        self._write_output_table(
+            schema=schema,
+            output_table=resolved_output,
+            rows=output_rows,
+        )
 
         logger.info(
             "Distance matrix written: %d OD pairs to %s",

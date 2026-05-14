@@ -118,14 +118,11 @@ def _inspect_table(cursor: Any, schema: str, table_name: str) -> dict:
 
 
 def _table_row_count(cursor: Any, schema: str, table_name: str) -> int:
-    try:
-        cursor.execute(
-            'SELECT count(*) FROM "%s"."%s"'
-            % (schema.replace('"', '""'), table_name.replace('"', '""'))
-        )
-        return cursor.fetchone()[0]  # type: ignore[no-any-return]
-    except Exception:
-        return -1
+    cursor.execute(
+        'SELECT count(*) FROM "%s"."%s"'
+        % (schema.replace('"', '""'), table_name.replace('"', '""'))
+    )
+    return cursor.fetchone()[0]  # type: ignore[no-any-return]
 
 
 def load_manifest() -> dict:

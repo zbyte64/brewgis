@@ -130,81 +130,50 @@ class FoodAccessPreprocessor:
         logger.info("Computing mRFEI: %s -> %s", resolved_end_state, output_table)
 
         # Step 1: Get parcel bounding box
-        try:
-            min_lng, min_lat, max_lng, max_lat = self._get_bbox(
-                schema=schema, end_state_table=resolved_end_state
-            )
-            logger.debug(
-                "Parcel bbox: (%.6f, %.6f) -> (%.6f, %.6f)",
-                min_lng,
-                min_lat,
-                max_lng,
-                max_lat,
-            )
-        except Exception as exc:
-            msg = f"Failed to get bounding box: {exc}"
-            logger.exception(msg)
-            return {"success": False, "error": msg}
+        min_lng, min_lat, max_lng, max_lat = self._get_bbox(
+            schema=schema, end_state_table=resolved_end_state
+        )
+        logger.debug(
+            "Parcel bbox: (%.6f, %.6f) -> (%.6f, %.6f)",
+            min_lng,
+            min_lat,
+            max_lng,
+            max_lat,
+        )
 
         # Step 2: Fetch food-related POIs via dlt pipeline + staging
-        try:
-            from brewgis.workspace.dlt_pipelines.poi import run_poi_pipeline
-            dlt_result = run_poi_pipeline(
-                min_lng, min_lat, max_lng, max_lat,
-                categories=_REQUESTED_CATEGORIES,
-                schema=schema,
-            )
-            if not dlt_result.get("success"):
-                logger.warning("POI dlt pipeline failed: %s", dlt_result.get("error"))
-            else:
-                logger.info("dlt pipeline loaded %d raw POIs", dlt_result.get("row_count", 0))
+        from brewgis.workspace.dlt_pipelines.poi import run_poi_pipeline
+        dlt_result = run_poi_pipeline(
+            min_lng, min_lat, max_lng, max_lat,
+            categories=_REQUESTED_CATEGORIES,
+            schema=schema,
+        )
+        if not dlt_result.get("success"):
+            logger.warning("POI dlt pipeline failed: %s", dlt_result.get("error"))
+        else:
+            logger.info("dlt pipeline loaded %d raw POIs", dlt_result.get("row_count", 0))
 
-            pois = fetch_pois(
-                min_lng=min_lng,
-                min_lat=min_lat,
-                max_lng=max_lng,
-                max_lat=max_lat,
-                categories=_REQUESTED_CATEGORIES,
-            )
-            logger.info("Fetched %d POIs from Overpass", len(pois))
-            # Cache the successful POI fetch for offline fallback
-            if workspace_id is not None:
-                try:
-                    POICache.objects.update_or_create(
-                        workspace_id=workspace_id,
-                        name="food_poi",
-                        defaults={
-                            "geojson_data": pois.__geo_interface__,
-                            "source": "osm",
-                        },
-                    )
-                except Exception as cache_err:
-                    logger.warning("Failed to cache POI data: %s", cache_err)
-        except Exception as fetch_err:
-            logger.warning(
-                "POI fetch failed: %s. Attempting cache fallback.", fetch_err
-            )
-            # Try cache fallback
+        pois = fetch_pois(
+            min_lng=min_lng,
+            min_lat=min_lat,
+            max_lng=max_lng,
+            max_lat=max_lat,
+            categories=_REQUESTED_CATEGORIES,
+        )
+        logger.info("Fetched %d POIs from Overpass", len(pois))
+        # Cache the successful POI fetch for offline fallback
+        if workspace_id is not None:
             try:
-                cached = (
-                    POICache.objects.filter(
-                        workspace_id=workspace_id,
-                        name="food_poi",
-                    ).first()
-                    if workspace_id is not None
-                    else None
+                POICache.objects.update_or_create(
+                    workspace_id=workspace_id,
+                    name="food_poi",
+                    defaults={
+                        "geojson_data": pois.__geo_interface__,
+                        "source": "osm",
+                    },
                 )
-                if cached:
-                    pois = gpd.GeoDataFrame.from_features(cached.geojson_data)
-                    logger.info("Using cached POI data from %s", cached.fetched_at)
-                else:
-                    logger.warning(
-                        "No POI cache available. Food access will use ACS proxy."
-                    )
-                    return {"success": True, "method": "no_poi_data"}
-            except Exception as cache_read_err:
-                logger.warning("Failed to read POI cache: %s", cache_read_err)
-                return {"success": True, "method": "no_poi_data"}
+            except Exception as cache_err:
+                logger.warning("Failed to cache POI data: %s", cache_err)
 
         # Step 3: Classify POIs
         pois["is_healthy"] = pois["subcategory"].isin(_HEALTHY_TAGS)
@@ -226,21 +195,15 @@ class FoodAccessPreprocessor:
         )
 
         # Step 5: Compute and write mRFEI
-        try:
-            self._compute_and_write(
-                schema=schema,
-                end_state_table=resolved_end_state,
-                output_table=output_table,
-                temp_poi_table=temp_poi_table,
-            )
-        except Exception as exc:
-            msg = f"Failed to compute mRFEI: {exc}"
-            logger.exception(msg)
-            return {"success": False, "error": msg}
-        finally:
-            # Clean up temp table
-            with self.engine.begin() as conn:
-                conn.execute(text(f"DROP TABLE IF EXISTS {temp_poi_table} CASCADE"))
+        self._compute_and_write(
+            schema=schema,
+            end_state_table=resolved_end_state,
+            output_table=output_table,
+            temp_poi_table=temp_poi_table,
+        )
+        # Clean up temp table
+        with self.engine.begin() as conn:
+            conn.execute(text(f"DROP TABLE IF EXISTS {temp_poi_table} CASCADE"))
 
         logger.info("mRFEI written to %s", output_table)
         return {"success": True, "input_table": output_table}

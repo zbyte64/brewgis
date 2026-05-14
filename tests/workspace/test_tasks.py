@@ -31,16 +31,14 @@ class TestExportBuildingTypesTask:
 
     @patch("brewgis.workspace.tasks.export_building_types")
     def test_error(self, mock_export: MagicMock) -> None:
-        """Exception during export returns error in result dict."""
+        """Exception during export propagates to the caller."""
         mock_export.side_effect = RuntimeError("DB connection lost")
 
-        result = export_building_types_task(schema="public", table="built_forms")
-
-        assert result == {
-            "success": False,
-            "count": 0,
-            "error": "DB connection lost",
-        }
+        try:
+            export_building_types_task(schema="public", table="built_forms")
+            assert False, "Expected RuntimeError"
+        except RuntimeError:
+            pass
         mock_export.assert_called_once_with(schema="public", table="built_forms")
 
     @patch("brewgis.workspace.tasks.export_building_types")
@@ -111,7 +109,7 @@ class TestRunSpatialAllocation:
 
     @patch("brewgis.workspace.tasks.DataImportRun.objects.get")
     def test_error_exception(self, mock_get: MagicMock) -> None:
-        """Exception during allocation returns error dict."""
+        """Exception during allocation propagates to the caller."""
         run_mock = MagicMock()
         mock_get.return_value = run_mock
 
@@ -119,18 +117,18 @@ class TestRunSpatialAllocation:
             "brewgis.workspace.tasks.allocate_attributes",
             side_effect=ValueError("Invalid geometry"),
         ):
-            result = run_spatial_allocation(
-                1,
-                source_schema="public",
-                source_table="src",
-                target_schema="public",
-                target_table="tgt",
-                columns=["x"],
-            )
-
-        assert result == {"success": False, "error": "Invalid geometry"}
-        assert run_mock.status == "failed"
-        run_mock.save.assert_called()
+            try:
+                run_spatial_allocation(
+                    1,
+                    source_schema="public",
+                    source_table="src",
+                    target_schema="public",
+                    target_table="tgt",
+                    columns=["x"],
+                )
+                assert False, "Expected ValueError"
+            except ValueError:
+                pass
 
 
 # ── run_census_fetch ────────────────────────────────────────────────

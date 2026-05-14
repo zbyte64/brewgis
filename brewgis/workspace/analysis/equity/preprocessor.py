@@ -44,76 +44,71 @@ def run_acs_equity_preprocessor(vars_: dict) -> dict:
         _apply_uniform_equity_defaults(target_schema, base_canvas_table, vars_)
         return {"success": True, "method": "uniform_defaults"}
 
-    try:
-        with connection.cursor() as cursor:
-            # Check if ACS table exists
-            cursor.execute(
-                """
-                SELECT EXISTS (
-                    SELECT FROM information_schema.tables
-                    WHERE table_schema = %s AND table_name = %s
-                )
-                """,
-                [source_schema, acs_table],
+    with connection.cursor() as cursor:
+        # Check if ACS table exists
+        cursor.execute(
+            """
+            SELECT EXISTS (
+                SELECT FROM information_schema.tables
+                WHERE table_schema = %s AND table_name = %s
             )
-            table_exists = cursor.fetchone()[0]
+            """,
+            [source_schema, acs_table],
+        )
+        table_exists = cursor.fetchone()[0]
 
-            if not table_exists:
-                logger.warning(
-                    "ACS equity table %s.%s not found. Using uniform defaults.",
-                    source_schema,
-                    acs_table,
-                )
-                _apply_uniform_equity_defaults(target_schema, base_canvas_table, vars_)
-                return {"success": True, "method": "uniform_defaults"}
-
-            # Run the join: update base_canvas with ACS equity values
-            # Using parcel-to-block-group spatial join
-            cursor.execute(
-                f"""
-                UPDATE {target_schema}.{base_canvas_table} AS bc
-                SET
-                    median_income = CASE
-                        WHEN bc.median_income IS NULL OR bc.median_income = 0
-                        THEN COALESCE(acs.median_income, {FALLBACK_EQUITY["median_income"]})
-                        ELSE bc.median_income
-                    END,
-                    rent_burden_pct = CASE
-                        WHEN bc.rent_burden_pct IS NULL OR bc.rent_burden_pct = 0
-                        THEN COALESCE(acs.rent_burden_pct, {FALLBACK_EQUITY["rent_burden_pct"]})
-                        ELSE bc.rent_burden_pct
-                    END,
-                    pct_minority = CASE
-                        WHEN bc.pct_minority IS NULL OR bc.pct_minority = 0
-                        THEN COALESCE(acs.pct_minority, {FALLBACK_EQUITY["pct_minority"]})
-                        ELSE bc.pct_minority
-                    END,
-                    pct_college_educated = CASE
-                        WHEN bc.pct_college_educated IS NULL OR bc.pct_college_educated = 0
-                        THEN COALESCE(acs.pct_college_educated, {FALLBACK_EQUITY["pct_college_educated"]})
-                        ELSE bc.pct_college_educated
-                    END
-                FROM {source_schema}.{acs_table} AS acs
-                WHERE ST_Intersects(bc.geometry, acs.geom)
-                """
-            )
-            updated = cursor.rowcount
-            logger.info(
-                "Updated %s parcels with ACS equity data from %s.%s",
-                updated,
+        if not table_exists:
+            logger.warning(
+                "ACS equity table %s.%s not found. Using uniform defaults.",
                 source_schema,
                 acs_table,
             )
-
-            # Fill remaining nulls with defaults
             _apply_uniform_equity_defaults(target_schema, base_canvas_table, vars_)
+            return {"success": True, "method": "uniform_defaults"}
 
-            return {"success": True, "method": "acs_join", "updated": updated}
+        # Run the join: update base_canvas with ACS equity values
+        # Using parcel-to-block-group spatial join
+        cursor.execute(
+            f"""
+            UPDATE {target_schema}.{base_canvas_table} AS bc
+            SET
+                median_income = CASE
+                    WHEN bc.median_income IS NULL OR bc.median_income = 0
+                    THEN COALESCE(acs.median_income, {FALLBACK_EQUITY["median_income"]})
+                    ELSE bc.median_income
+                END,
+                rent_burden_pct = CASE
+                    WHEN bc.rent_burden_pct IS NULL OR bc.rent_burden_pct = 0
+                    THEN COALESCE(acs.rent_burden_pct, {FALLBACK_EQUITY["rent_burden_pct"]})
+                    ELSE bc.rent_burden_pct
+                END,
+                pct_minority = CASE
+                    WHEN bc.pct_minority IS NULL OR bc.pct_minority = 0
+                    THEN COALESCE(acs.pct_minority, {FALLBACK_EQUITY["pct_minority"]})
+                    ELSE bc.pct_minority
+                END,
+                pct_college_educated = CASE
+                    WHEN bc.pct_college_educated IS NULL OR bc.pct_college_educated = 0
+                    THEN COALESCE(acs.pct_college_educated, {FALLBACK_EQUITY["pct_college_educated"]})
+                    ELSE bc.pct_college_educated
+                END
+            FROM {source_schema}.{acs_table} AS acs
+            WHERE ST_Intersects(bc.geometry, acs.geom)
+            """
+        )
+        updated = cursor.rowcount
+        logger.info(
+            "Updated %s parcels with ACS equity data from %s.%s",
+            updated,
+            source_schema,
+            acs_table,
+        )
 
-    except Exception as exc:
-        logger.warning("ACS equity join failed: %s. Using uniform defaults.", exc)
+        # Fill remaining nulls with defaults
         _apply_uniform_equity_defaults(target_schema, base_canvas_table, vars_)
-        return {"success": True, "method": "uniform_defaults_fallback"}
+
+        return {"success": True, "method": "acs_join", "updated": updated}
+
 
 
 def _apply_uniform_equity_defaults(

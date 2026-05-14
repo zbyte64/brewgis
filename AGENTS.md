@@ -42,6 +42,7 @@ User Browser                    Docker Compose Stack
 - **MCP server:** FastMCP stdio server mirrors the view layer, exposing 30+ tools for AI assistant integration (workspace, scenario, layer, paint, analysis, data import, reports, job management)
 - **Base canvas ETL:** Framework for spatial data ingestion with Protocol-based adapters (DemographicSource/EmploymentSource/LandUseSource), schema management, and validation
 - **Data quality:** Soda Core contracts validate every pipeline stage (census, LEHD, POI, built forms, spatial allocation, column stitching)
+- **Transparency** Never pass off a data failure as success or empty data. Fail early.
 
 ## Key Directories
 
