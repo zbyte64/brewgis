@@ -14,25 +14,27 @@ from __future__ import annotations
 import logging
 import re
 from typing import Any
-import requests
 
 import deal
 import geopandas as gpd
 import pandas as pd
+import requests
 from shapely import wkt as geom
 
-from brewgis.workspace.services._db import get_engine, text
+from brewgis.workspace.services._db import get_engine
+from brewgis.workspace.services._db import text
 
 logger = logging.getLogger(__name__)
+
 
 def _census_api_key() -> str:
     """Return Census API key from Django settings, or empty string."""
     try:
         from django.conf import settings as django_settings
+
         return django_settings.CENSUS_API_KEY or ""
     except Exception:
         return ""
-
 
 
 # ── LODES WAC (Workplace Area Characteristics) ─────────────────────────
@@ -272,7 +274,6 @@ def _build_lodes_wac_url(state_fips: str, county_fips: str, year: int = 2021) ->
     state_fips_clean = state_fips.zfill(2)
     state_abbr = _FIPS_TO_STATE.get(state_fips_clean, "zz")
     return f"{LODES_WAC_BASE}/{state_abbr}/wac/{state_abbr}_wac_S000_JT00_{year}.csv.gz"
-
 
 
 # ── CBP Proportion Computation ────────────────────────────────────────
@@ -660,7 +661,7 @@ def fetch_lehd_block_data(
     state_fips: str,
     county_fips: str,
     year: int = 2021,
-) -> gpd.GeoDataFrame:
+) -> pd.DataFrame:
     """Fetch LODES WAC employment data from the lodes_raw staging table.
 
     Args:
@@ -669,9 +670,8 @@ def fetch_lehd_block_data(
         year: Data year (default 2021).
 
     Returns:
-        GeoDataFrame with columns: geoid, emp, aggregate columns,
+        pd.DataFrame with columns: geoid, emp, aggregate columns,
         sub-sector columns. No geometry.
-
     Raises:
         RuntimeError: On empty staging data.
     """
@@ -684,9 +684,7 @@ def fetch_lehd_block_data(
         result = conn.execute(query, {"year": year})
         rows = result.fetchall()
         columns = list(result.keys())
-        records_df = pd.DataFrame(
-            (dict(zip(columns, row, strict=False)) for row in rows)
-        )
+        records_df = pd.DataFrame(dict(zip(columns, row, strict=False)) for row in rows)
 
     if records_df.empty:
         msg = f"No LODES data in staging table for year {year}."
@@ -731,9 +729,7 @@ def fetch_lehd_block_data(
         msg = "No LODES records parsed."
         raise RuntimeError(msg)
 
-    gdf = gpd.GeoDataFrame(lodes_records)
-    return gdf
-
+    return pd.DataFrame(lodes_records)
 
 
 def fetch_lehd_data_summary(
@@ -757,6 +753,7 @@ def fetch_lehd_data_summary(
         "aggregate_columns": list(AGGREGATE_MAPPINGS.keys()),
         "sub_sector_count": len(_NAICS_SPLIT_RULES),
     }
+
 
 def fetch_lehd_block_polygons(
     state_fips: str,
@@ -785,13 +782,14 @@ def fetch_lehd_block_polygons(
     lehd_gdf = lehd_gdf[lehd_gdf["geoid"].str.startswith(county_geoid_prefix)].copy()
 
     if lehd_gdf.empty:
-        logger.warning("No LODES blocks match county FIPS %s", county_fips)
-        return lehd_gdf
+        raise RuntimeError(
+            f"No LODES blocks match county FIPS {county_fips}"
+        )
 
     # 2. Read TIGER block geometry from staging
     engine = get_engine()
     geo_query = text("""
-        SELECT geoid, geometry FROM public.tiger_blocks
+        SELECT geoid, geometry FROM public.tiger_block_groups
         WHERE state_fips = :state_fips
     """)
     with engine.connect() as conn:
@@ -808,19 +806,20 @@ def fetch_lehd_block_polygons(
             geo_map[row_dict["geoid"]] = geom.loads(str(wkt_geom))
 
     # 3. Join attributes to geometry
+    # LODES w_geocode is 15-digit block GEOID (SS CC TTTTTT BBBB).
+    # TIGER block_groups has 12-digit GEOID (SS CC TTTTTT B).
+    # Truncate to match at block-group level.
+    lehd_gdf["bg_geoid"] = lehd_gdf["geoid"].str[:12]
     lehd_attrs = lehd_gdf.drop(columns=["geometry"], errors="ignore")
-    lehd_gdf["geometry"] = lehd_gdf["geoid"].map(geo_map)
-
+    lehd_gdf["geometry"] = lehd_gdf["bg_geoid"].map(geo_map)
     # Filter out rows without geometry
     filtered = lehd_gdf[~lehd_gdf.geometry.isna()].copy()
-
-    if filtered.empty:
-        logger.warning(
-            "LODES data did not match TIGER blocks for %s/%s; "
-            "returning data without geometry",
-            state_fips,
-            county_fips,
+    # Explicitly construct GeoDataFrame with geometry and CRS
+    if not filtered.empty:
+        result = gpd.GeoDataFrame(
+            filtered, geometry="geometry", crs="EPSG:4326"
         )
-        return lehd_gdf.copy()
-
-    return filtered
+        return result
+    raise RuntimeError(
+        f"LODES data did not match TIGER blocks for {state_fips}/{county_fips}"
+    )

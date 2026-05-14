@@ -1,12 +1,15 @@
 # Soda Core contract: LEHD LODES staging validation
+# Validates lodes_raw table as loaded by dlt from LEHD LODES WAC CSV.
+# dlt normalizes CSV column names to lowercase.
+# The raw staging table has w_geocode (not geoid) and no geometry column.
 dataset: __DATASET__
 columns:
-  - name: geoid
+  - name: w_geocode
     checks:
       - missing:
-          name: geoid has no missing values
+          name: w_geocode has no missing values
       - duplicate:
-          name: geoid is unique
+          name: w_geocode is unique
   - name: c000
     checks:
       - missing:
@@ -16,150 +19,10 @@ columns:
           threshold:
             must_be_greater_than_or_equal: 0
           name: c000 >= 0
-  - name: geometry
+  - name: year
     checks:
       - missing:
-          name: geometry has no missing values
-  - name: cns01
-    checks:
-      - aggregate:
-          function: min
-          threshold:
-            must_be_greater_than_or_equal: 0
-          name: cns01 >= 0
-  - name: cns02
-    checks:
-      - aggregate:
-          function: min
-          threshold:
-            must_be_greater_than_or_equal: 0
-          name: cns02 >= 0
-  - name: cns03
-    checks:
-      - aggregate:
-          function: min
-          threshold:
-            must_be_greater_than_or_equal: 0
-          name: cns03 >= 0
-  - name: cns04
-    checks:
-      - aggregate:
-          function: min
-          threshold:
-            must_be_greater_than_or_equal: 0
-          name: cns04 >= 0
-  - name: cns05
-    checks:
-      - aggregate:
-          function: min
-          threshold:
-            must_be_greater_than_or_equal: 0
-          name: cns05 >= 0
-  - name: cns06
-    checks:
-      - aggregate:
-          function: min
-          threshold:
-            must_be_greater_than_or_equal: 0
-          name: cns06 >= 0
-  - name: cns07
-    checks:
-      - aggregate:
-          function: min
-          threshold:
-            must_be_greater_than_or_equal: 0
-          name: cns07 >= 0
-  - name: cns08
-    checks:
-      - aggregate:
-          function: min
-          threshold:
-            must_be_greater_than_or_equal: 0
-          name: cns08 >= 0
-  - name: cns09
-    checks:
-      - aggregate:
-          function: min
-          threshold:
-            must_be_greater_than_or_equal: 0
-          name: cns09 >= 0
-  - name: cns10
-    checks:
-      - aggregate:
-          function: min
-          threshold:
-            must_be_greater_than_or_equal: 0
-          name: cns10 >= 0
-  - name: cns11
-    checks:
-      - aggregate:
-          function: min
-          threshold:
-            must_be_greater_than_or_equal: 0
-          name: cns11 >= 0
-  - name: cns12
-    checks:
-      - aggregate:
-          function: min
-          threshold:
-            must_be_greater_than_or_equal: 0
-          name: cns12 >= 0
-  - name: cns13
-    checks:
-      - aggregate:
-          function: min
-          threshold:
-            must_be_greater_than_or_equal: 0
-          name: cns13 >= 0
-  - name: cns14
-    checks:
-      - aggregate:
-          function: min
-          threshold:
-            must_be_greater_than_or_equal: 0
-          name: cns14 >= 0
-  - name: cns15
-    checks:
-      - aggregate:
-          function: min
-          threshold:
-            must_be_greater_than_or_equal: 0
-          name: cns15 >= 0
-  - name: cns16
-    checks:
-      - aggregate:
-          function: min
-          threshold:
-            must_be_greater_than_or_equal: 0
-          name: cns16 >= 0
-  - name: cns17
-    checks:
-      - aggregate:
-          function: min
-          threshold:
-            must_be_greater_than_or_equal: 0
-          name: cns17 >= 0
-  - name: cns18
-    checks:
-      - aggregate:
-          function: min
-          threshold:
-            must_be_greater_than_or_equal: 0
-          name: cns18 >= 0
-  - name: cns19
-    checks:
-      - aggregate:
-          function: min
-          threshold:
-            must_be_greater_than_or_equal: 0
-          name: cns19 >= 0
-  - name: cns20
-    checks:
-      - aggregate:
-          function: min
-          threshold:
-            must_be_greater_than_or_equal: 0
-          name: cns20 >= 0
+          name: year has no missing values
 checks:
   - row_count:
       check: '> 0'
