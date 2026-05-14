@@ -365,7 +365,7 @@ def fetch_acs_block_group_polygons(
     for row in data:
         wkt_val = row.pop("geometry", None)
         if wkt_val:
-            wkt_geoms.append(geom.from_wkt(wkt_val))
+            wkt_geoms.append(geom.loads(wkt_val))
         else:
             wkt_geoms.append(None)
 
@@ -393,8 +393,8 @@ def fetch_acs_block_group_polygons(
     if not records:
         return gpd.GeoDataFrame()
 
-    gdf = gpd.GeoDataFrame(records, geometry=wkt_geoms, crs="EPSG:4326")
-    gdf = gdf[~gdf.geometry.isna()]
+    gdf: gpd.GeoDataFrame = gpd.GeoDataFrame(records, geometry=wkt_geoms, crs="EPSG:4326")
+    gdf = gdf[~gdf.geometry.isna()] # type: ignore
     return _apply_acs_column_mapping(gdf)
 
 
