@@ -1,116 +1,142 @@
 # Soda Core contract: synthetic_parcels validation
 dataset: __DATASET__
-columns: []
+columns:
+  - name: parcel_id
+    checks:
+      - missing:
+          name: parcel_id has no missing values
+      - duplicate:
+          name: parcel_id is unique
+  - name: geometry
+    checks:
+      - missing:
+          name: geometry has no missing values
+  - name: population
+    checks:
+      - missing:
+          name: population has no missing values
+      - aggregate:
+          function: min
+          threshold:
+            must_be_greater_than_or_equal: 0
+          name: population >= 0
+  - name: du
+    checks:
+      - missing:
+          name: du has no missing values
+      - aggregate:
+          function: min
+          threshold:
+            must_be_greater_than_or_equal: 0
+          name: du >= 0
+  - name: area_parcel
+    checks:
+      - missing:
+          name: area_parcel has no missing values
+      - aggregate:
+          function: min
+          threshold:
+            must_be_greater_than_or_equal: 0
+          name: area_parcel >= 0
+  - name: households
+    checks:
+      - aggregate:
+          function: min
+          threshold:
+            must_be_greater_than_or_equal: 0
+          name: households >= 0
+  - name: housing_units
+    checks:
+      - aggregate:
+          function: min
+          threshold:
+            must_be_greater_than_or_equal: 0
+          name: housing_units >= 0
+  - name: res_sqft
+    checks:
+      - aggregate:
+          function: min
+          threshold:
+            must_be_greater_than_or_equal: 0
+          name: res_sqft >= 0
+  - name: com_sqft
+    checks:
+      - aggregate:
+          function: min
+          threshold:
+            must_be_greater_than_or_equal: 0
+          name: com_sqft >= 0
+  - name: ind_sqft
+    checks:
+      - aggregate:
+          function: min
+          threshold:
+            must_be_greater_than_or_equal: 0
+          name: ind_sqft >= 0
+  - name: median_income
+    checks:
+      - aggregate:
+          function: min
+          threshold:
+            must_be_greater_than_or_equal: 0
+          name: median_income >= 0
+  - name: rent_burden_pct
+    checks:
+      - aggregate:
+          function: min
+          qualifier: min
+          threshold:
+            must_be_greater_than_or_equal: 0
+          name: rent_burden_pct >= 0
+      - aggregate:
+          function: max
+          qualifier: max
+          threshold:
+            must_be_less_than_or_equal: 100
+          name: rent_burden_pct <= 100
+  - name: pct_minority
+    checks:
+      - aggregate:
+          function: min
+          qualifier: min
+          threshold:
+            must_be_greater_than_or_equal: 0
+          name: pct_minority >= 0
+      - aggregate:
+          function: max
+          qualifier: max
+          threshold:
+            must_be_less_than_or_equal: 100
+          name: pct_minority <= 100
+  - name: pct_college_educated
+    checks:
+      - aggregate:
+          function: min
+          qualifier: min
+          threshold:
+            must_be_greater_than_or_equal: 0
+          name: pct_college_educated >= 0
+      - aggregate:
+          function: max
+          qualifier: max
+          threshold:
+            must_be_less_than_or_equal: 100
+          name: pct_college_educated <= 100
+  - name: cost_burden_pct
+    checks:
+      - aggregate:
+          function: min
+          qualifier: min
+          threshold:
+            must_be_greater_than_or_equal: 0
+          name: cost_burden_pct >= 0
+      - aggregate:
+          function: max
+          qualifier: max
+          threshold:
+            must_be_less_than_or_equal: 100
+          name: cost_burden_pct <= 100
 checks:
   - row_count:
       check: '> 0'
       name: Table has rows
-  - missing:
-      column: parcel_id
-      check: '= 0'
-      name: parcel_id has no missing values
-  - missing:
-      column: geometry
-      check: '= 0'
-      name: geometry has no missing values
-  - missing:
-      column: population
-      check: '= 0'
-      name: population has no missing values
-  - missing:
-      column: du
-      check: '= 0'
-      name: du has no missing values
-  - missing:
-      column: area_parcel
-      check: '= 0'
-      name: area_parcel has no missing values
-  - aggregate:
-      column: population
-      function: min
-      check: '>= 0'
-      name: population >= 0
-  - aggregate:
-      column: du
-      function: min
-      check: '>= 0'
-      name: du >= 0
-  - aggregate:
-      column: area_parcel
-      function: min
-      check: '>= 0'
-      name: area_parcel >= 0
-  - aggregate:
-      column: households
-      function: min
-      check: '>= 0'
-      name: households >= 0
-  - aggregate:
-      column: housing_units
-      function: min
-      check: '>= 0'
-      name: housing_units >= 0
-  - aggregate:
-      column: res_sqft
-      function: min
-      check: '>= 0'
-      name: res_sqft >= 0
-  - aggregate:
-      column: com_sqft
-      function: min
-      check: '>= 0'
-      name: com_sqft >= 0
-  - aggregate:
-      column: ind_sqft
-      function: min
-      check: '>= 0'
-      name: ind_sqft >= 0
-  - aggregate:
-      column: median_income
-      function: min
-      check: '>= 0'
-      name: median_income >= 0
-  - aggregate:
-      column: rent_burden_pct
-      function: min
-      check: '>= 0'
-      name: rent_burden_pct >= 0
-  - aggregate:
-      column: rent_burden_pct
-      function: max
-      check: '<= 100'
-      name: rent_burden_pct <= 100
-  - aggregate:
-      column: pct_minority
-      function: min
-      check: '>= 0'
-      name: pct_minority >= 0
-  - aggregate:
-      column: pct_minority
-      function: max
-      check: '<= 100'
-      name: pct_minority <= 100
-  - aggregate:
-      column: pct_college_educated
-      function: min
-      check: '>= 0'
-      name: pct_college_educated >= 0
-  - aggregate:
-      column: pct_college_educated
-      function: max
-      check: '<= 100'
-      name: pct_college_educated <= 100
-  - aggregate:
-      column: cost_burden_pct
-      function: min
-      check: '>= 0'
-      name: cost_burden_pct >= 0
-  - aggregate:
-      column: cost_burden_pct
-      function: max
-      check: '<= 100'
-      name: cost_burden_pct <= 100
-  - duplicate:
-      column: parcel_id
-      check: '= 0'
-      name: parcel_id is unique

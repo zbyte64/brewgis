@@ -76,20 +76,20 @@ def _soda_dir() -> Path:
 
 
 # Default table names for contracts that use ``__DATASET__`` placeholders.
-# Maps ``contract_name`` → ``schema/table`` so that management-command runs
-# (which do not supply schema/table) resolve correctly.
-# Uses slash-separated dataset paths for soda_core v4.
+# Maps ``contract_name`` → ``datasource/schema/table`` so that management-command
+# runs (which do not supply schema/table) resolve to a valid dataset path
+# including the registered datasource name.
 _DEFAULT_TABLE: dict[str, str] = {
-    "base_canvas": "public/base_canvas",
-    "census_acs": "public/census_acs",
-    "lehd": "public/lehd_lodes",
-    "poi": "public/poi",
-    "nlcd": "public/nlcd",
-    "synthetic_parcels": "public/synthetic_parcels",
-    "spatial_allocation": "public/spatial_allocation",
-    "column_stitching": "public/column_stitching",
-    "built_form_export": "public/built_forms",
-    "dbt_module_run": "public/dbt_module_run",
+    "base_canvas": "brewgis_postgis/public/base_canvas",
+    "census_acs": "brewgis_postgis/public/census_acs",
+    "lehd": "brewgis_postgis/public/lehd_lodes",
+    "poi": "brewgis_postgis/public/poi",
+    "nlcd": "brewgis_postgis/public/nlcd",
+    "synthetic_parcels": "brewgis_postgis/public/synthetic_parcels",
+    "spatial_allocation": "brewgis_postgis/public/spatial_allocation",
+    "column_stitching": "brewgis_postgis/public/column_stitching",
+    "built_form_export": "brewgis_postgis/public/built_forms",
+    "dbt_module_run": "brewgis_postgis/public/dbt_module_run",
 }
 # ── Scan runner ─────────────────────────────────────────────────────
 

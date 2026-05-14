@@ -1,51 +1,53 @@
 # Soda Core contract: NLCD staging validation
 dataset: __DATASET__
-columns: []
+columns:
+  - name: geoid
+    checks:
+      - missing:
+          name: geoid has no missing values
+      - duplicate:
+          name: geoid is unique
+  - name: impervious_pct
+    checks:
+      - missing:
+          name: impervious_pct has no missing values
+      - aggregate:
+          function: min
+          qualifier: min
+          threshold:
+            must_be_greater_than_or_equal: 0
+          name: impervious_pct >= 0
+      - aggregate:
+          function: max
+          qualifier: max
+          threshold:
+            must_be_less_than_or_equal: 100
+          name: impervious_pct <= 100
+  - name: canopy_pct
+    checks:
+      - missing:
+          name: canopy_pct has no missing values
+      - aggregate:
+          function: min
+          qualifier: min
+          threshold:
+            must_be_greater_than_or_equal: 0
+          name: canopy_pct >= 0
+      - aggregate:
+          function: max
+          qualifier: max
+          threshold:
+            must_be_less_than_or_equal: 100
+          name: canopy_pct <= 100
+  - name: land_cover_class
+    checks:
+      - missing:
+          name: land_cover_class has no missing values
+  - name: geometry
+    checks:
+      - missing:
+          name: geometry has no missing values
 checks:
   - row_count:
       check: '> 0'
       name: Table has rows
-  - missing:
-      column: geoid
-      check: '= 0'
-      name: geoid has no missing values
-  - missing:
-      column: impervious_pct
-      check: '= 0'
-      name: impervious_pct has no missing values
-  - missing:
-      column: canopy_pct
-      check: '= 0'
-      name: canopy_pct has no missing values
-  - missing:
-      column: land_cover_class
-      check: '= 0'
-      name: land_cover_class has no missing values
-  - missing:
-      column: geometry
-      check: '= 0'
-      name: geometry has no missing values
-  - aggregate:
-      column: impervious_pct
-      function: min
-      check: '>= 0'
-      name: impervious_pct >= 0
-  - aggregate:
-      column: impervious_pct
-      function: max
-      check: '<= 100'
-      name: impervious_pct <= 100
-  - aggregate:
-      column: canopy_pct
-      function: min
-      check: '>= 0'
-      name: canopy_pct >= 0
-  - aggregate:
-      column: canopy_pct
-      function: max
-      check: '<= 100'
-      name: canopy_pct <= 100
-  - duplicate:
-      column: geoid
-      check: '= 0'
-      name: geoid is unique

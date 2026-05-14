@@ -61,7 +61,7 @@ class TestContractDiscovery:
             assert "dataset: __DATASET__" in raw, (
                 f"{path.name} is missing 'dataset: __DATASET__' (expected v4 format)"
             )
-            assert "columns: []" in raw, f"{path.name} is missing 'columns: []'"
+            assert "columns:" in raw, f"{path.name} is missing 'columns:' section"
             assert "checks:" in raw, f"{path.name} is missing 'checks:'"
 
 

@@ -1,47 +1,49 @@
 # Soda Core contract: spatial_allocation validation
 dataset: __DATASET__
-columns: []
+columns:
+  - name: target_geoid
+    checks:
+      - missing:
+          name: target_geoid has no missing values
+  - name: source_geoid
+    checks:
+      - missing:
+          name: source_geoid has no missing values
+  - name: allocated_population
+    checks:
+      - missing:
+          name: allocated_population has no missing values
+      - aggregate:
+          function: min
+          threshold:
+            must_be_greater_than_or_equal: 0
+          name: allocated_population >= 0
+  - name: allocated_employment
+    checks:
+      - missing:
+          name: allocated_employment has no missing values
+      - aggregate:
+          function: min
+          threshold:
+            must_be_greater_than_or_equal: 0
+          name: allocated_employment >= 0
+  - name: allocation_weight
+    checks:
+      - missing:
+          name: allocation_weight has no missing values
+      - aggregate:
+          function: min
+          qualifier: min
+          threshold:
+            must_be_greater_than_or_equal: 0
+          name: allocation_weight >= 0
+      - aggregate:
+          function: max
+          qualifier: max
+          threshold:
+            must_be_less_than_or_equal: 1
+          name: allocation_weight <= 1
 checks:
   - row_count:
       check: '> 0'
       name: Table has rows
-  - missing:
-      column: target_geoid
-      check: '= 0'
-      name: target_geoid has no missing values
-  - missing:
-      column: source_geoid
-      check: '= 0'
-      name: source_geoid has no missing values
-  - missing:
-      column: allocated_population
-      check: '= 0'
-      name: allocated_population has no missing values
-  - missing:
-      column: allocated_employment
-      check: '= 0'
-      name: allocated_employment has no missing values
-  - missing:
-      column: allocation_weight
-      check: '= 0'
-      name: allocation_weight has no missing values
-  - aggregate:
-      column: allocated_population
-      function: min
-      check: '>= 0'
-      name: allocated_population >= 0
-  - aggregate:
-      column: allocated_employment
-      function: min
-      check: '>= 0'
-      name: allocated_employment >= 0
-  - aggregate:
-      column: allocation_weight
-      function: min
-      check: '>= 0'
-      name: allocation_weight >= 0
-  - aggregate:
-      column: allocation_weight
-      function: max
-      check: '<= 1'
-      name: allocation_weight <= 1

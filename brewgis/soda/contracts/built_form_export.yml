@@ -1,43 +1,49 @@
 # Soda Core contract: built_form_export validation
 dataset: __DATASET__
-columns: []
+columns:
+  - name: parcel_id
+    checks:
+      - missing:
+          name: parcel_id has no missing values
+      - duplicate:
+          name: parcel_id is unique
+  - name: building_type_id
+    checks:
+      - missing:
+          name: building_type_id has no missing values
+  - name: place_type_id
+    checks:
+      - missing:
+          name: place_type_id has no missing values
+  - name: du_per_acre
+    checks:
+      - aggregate:
+          function: min
+          threshold:
+            must_be_greater_than_or_equal: 0
+          name: du_per_acre >= 0
+  - name: pop_per_acre
+    checks:
+      - aggregate:
+          function: min
+          threshold:
+            must_be_greater_than_or_equal: 0
+          name: pop_per_acre >= 0
+  - name: building_sqft
+    checks:
+      - aggregate:
+          function: min
+          threshold:
+            must_be_greater_than_or_equal: 0
+          name: building_sqft >= 0
+  - name: FAR
+    checks:
+      - aggregate:
+          function: min
+          threshold:
+            must_be_greater_than_or_equal: 0
+          name: FAR >= 0
 checks:
   - row_count:
       check: '> 0'
       name: Table has rows
-  - missing:
-      column: parcel_id
-      check: '= 0'
-      name: parcel_id has no missing values
-  - missing:
-      column: building_type_id
-      check: '= 0'
-      name: building_type_id has no missing values
-  - missing:
-      column: place_type_id
-      check: '= 0'
-      name: place_type_id has no missing values
-  - aggregate:
-      column: du_per_acre
-      function: min
-      check: '>= 0'
-      name: du_per_acre >= 0
-  - aggregate:
-      column: pop_per_acre
-      function: min
-      check: '>= 0'
-      name: pop_per_acre >= 0
-  - aggregate:
-      column: building_sqft
-      function: min
-      check: '>= 0'
-      name: building_sqft >= 0
-  - aggregate:
-      column: FAR
-      function: min
-      check: '>= 0'
-      name: FAR >= 0
-  - duplicate:
-      column: parcel_id
-      check: '= 0'
-      name: parcel_id is unique

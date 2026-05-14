@@ -1,47 +1,53 @@
 # Soda Core contract: POI staging validation
 dataset: __DATASET__
-columns: []
+columns:
+  - name: osm_id
+    checks:
+      - missing:
+          name: osm_id has no missing values
+      - duplicate:
+          name: osm_id is unique
+  - name: name
+    checks:
+      - missing:
+          name: name has no missing values
+  - name: category
+    checks:
+      - missing:
+          name: category has no missing values
+  - name: geometry
+    checks:
+      - missing:
+          name: geometry has no missing values
+  - name: lat
+    checks:
+      - aggregate:
+          function: min
+          qualifier: min
+          threshold:
+            must_be_greater_than_or_equal: -90
+          name: lat >= -90
+      - aggregate:
+          function: max
+          qualifier: max
+          threshold:
+            must_be_less_than_or_equal: 90
+          name: lat <= 90
+  - name: lon
+    checks:
+      - aggregate:
+          function: min
+          qualifier: min
+          threshold:
+            must_be_greater_than_or_equal: -180
+          name: lon >= -180
+      - aggregate:
+          function: max
+          qualifier: max
+          threshold:
+            must_be_less_than_or_equal: 180
+          name: lon <= 180
 checks:
   - row_count:
       check: '> 0'
       name: Table has rows
-  - missing:
-      column: osm_id
-      check: '= 0'
-      name: osm_id has no missing values
-  - missing:
-      column: name
-      check: '= 0'
-      name: name has no missing values
-  - missing:
-      column: category
-      check: '= 0'
-      name: category has no missing values
-  - missing:
-      column: geometry
-      check: '= 0'
-      name: geometry has no missing values
-  - aggregate:
-      column: lat
-      function: min
-      check: '>= -90'
-      name: lat >= -90
-  - aggregate:
-      column: lat
-      function: max
-      check: '<= 90'
-      name: lat <= 90
-  - aggregate:
-      column: lon
-      function: min
-      check: '>= -180'
-      name: lon >= -180
-  - aggregate:
-      column: lon
-      function: max
-      check: '<= 180'
-      name: lon <= 180
-  - duplicate:
-      column: osm_id
-      check: '= 0'
-      name: osm_id is unique
