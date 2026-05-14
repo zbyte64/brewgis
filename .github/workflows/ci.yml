@@ -37,8 +37,10 @@ jobs:
           cache-dependency-path: 'requirements/*.txt'
 
       # Consider using pre-commit.ci for open source project
-      - name: Run pre-commit
+      - name: Run pre-commit (skip mypy — needs Docker infra)
         uses: pre-commit/action@v3.0.1
+        env:
+          SKIP: mypy
 
   pytest:
     strategy:
@@ -75,6 +77,9 @@ jobs:
 
       - name: Run DB Migrations
         run: docker compose -f docker-compose.local.yml run --rm django python manage.py migrate
+
+      - name: Run type check
+        run: docker compose -f docker-compose.local.yml run --rm django mypy --cache-dir /tmp/.mypy_cache brewgis
 
       - name: Run Django Tests
         run: docker compose -f docker-compose.local.yml run django pytest
