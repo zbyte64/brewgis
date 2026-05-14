@@ -16,13 +16,13 @@ import subprocess
 import sys
 from dataclasses import dataclass
 from pathlib import Path
-from typing import TYPE_CHECKING, Any
+from typing import TYPE_CHECKING
 
 import django
 import yaml
 
 if TYPE_CHECKING:
-    from collections.abc import Callable, Mapping
+    from collections.abc import Callable
 
     from dagster import AssetKey
     from dagster import Definitions
@@ -128,7 +128,7 @@ def resolve_baseschema() -> frozenset[str]:
 
     This is the 82-column canon of the base canvas schema.
     """
-    from brewgis.workspace.services.base_canvas_schema import BaseCanvasSchema  # noqa: I001
+    from brewgis.workspace.services.base_canvas_schema import BaseCanvasSchema  # noqa: I001, PLC0415
 
     return frozenset(BaseCanvasSchema.COLUMN_NAMES)
 
@@ -144,34 +144,74 @@ def resolve_inline(columns: frozenset[str]) -> frozenset[str]:
     return columns
 
 
-def resolve_dbt_manifest(
-    manifest_path: str | Path | None = None,
+def _build_alias_map(manifest_nodes: dict) -> dict[str, str]:
+    """Build mapping of table alias/name → dbt model name from manifest nodes."""
+    alias_map: dict[str, str] = {}
+    for node in manifest_nodes.values():
+        if node.get("resource_type") != "model":
+            continue
+        model_name = node["name"]
+        alias = node.get("alias", model_name)
+        alias_map[alias] = model_name
+        alias_map[model_name] = model_name
+    return alias_map
+
+
+def _parse_column_deps_from_sql(
+    down_name: str,
+    sql: str,
+    alias_to_model: dict[str, str],
+    _compiled_dir: Path,
+) -> dict[tuple[str, str], set[str]]:
+    """Parse compiled SQL to extract column-level dependencies.
+
+    Uses sqlglot to find which columns a model selects from its upstream refs.
+    """
+    result: dict[tuple[str, str], set[str]] = {}
+    try:
+        import sqlglot  # noqa: PLC0415
+
+        ast = sqlglot.parse_one(sql)
+    except Exception:  # noqa: BLE001
+        return result
+
+    # Find all table references and their aliases
+    table_map: dict[str, str] = {}  # alias → actual table name
+    for table in ast.find_all(sqlglot.exp.Table):
+        table_name = table.name
+        table_alias = table.alias or table_name
+        table_map[table_alias] = table_name
+
+    # Find column references: look for qualified columns (alias.col_name)
+    col_refs: dict[str, set[str]] = {}
+    for col in ast.find_all(sqlglot.exp.Column):
+        if col.table:
+            alias = col.table
+            table_name = table_map.get(alias)
+            if table_name and table_name in alias_to_model:
+                up_name = alias_to_model[table_name]
+                col_refs.setdefault(up_name, set()).add(col.name)
+
+    # Build (down, up) → columns mapping
+    for up_name, columns in col_refs.items():
+        result[(down_name, up_name)] = columns
+
+    return result
+
+
+def _load_dbt_manifest(
+    manifest_path: str | Path | None,
     *,
     auto_generate: bool = False,
-) -> dict[str, frozenset[str]]:
-    """Parse dbt's ``manifest.json`` and return column-level dependency info.
+) -> dict | None:
+    """Resolve the manifest path, optionally auto-generate, and load it.
 
-    Returns a mapping ``(downstream_node_id, upstream_node_id) →
-    frozenset[column_name]`` representing which columns each dbt model
-    reads from its upstream refs.
-
-    Parameters
-    ----------
-    manifest_path:
-        Path to ``manifest.json``. Defaults to
-        ``brewgis/dbt_project/target/manifest.json``.
-    auto_generate:
-        If ``True`` and the manifest is stale or missing, runs
-        ``dbt docs generate --no-populate-cache`` to produce it.
-
-    Returns
-    -------
-    dict[str, frozenset[str]]
-        Empty dict if the manifest is not found.
+    Returns the manifest dict on success, or ``None`` if it could not be loaded.
+    Side-effect: emits warnings on failure.
     """
-    manifest_path = _DBT_MANIFEST_PATH if manifest_path is None else Path(manifest_path)
+    path = _DBT_MANIFEST_PATH if manifest_path is None else Path(manifest_path)
 
-    if not manifest_path.exists():
+    if not path.exists():
         if auto_generate:
             logger.info("Generating dbt manifest via `dbt docs generate`...")
             result = subprocess.run(
@@ -195,39 +235,98 @@ def resolve_dbt_manifest(
                     result.returncode,
                     result.stderr[:500],
                 )
-                return {}
+                return None
         else:
             logger.info(
                 "dbt manifest not found at %s; pass auto_generate=True or run "
                 "`dbt docs generate` first",
-                manifest_path,
+                path,
             )
-            return {}
+            return None
 
-    with manifest_path.open(encoding="utf-8") as f:
-        manifest = yaml.safe_load(f)
+    with path.open(encoding="utf-8") as f:
+        return yaml.safe_load(f)
 
+
+def resolve_dbt_manifest(
+    manifest_path: str | Path | None = None,
+    *,
+    auto_generate: bool = False,
+) -> dict[tuple[str, str], frozenset[str]]:
+    """Parse dbt's ``manifest.json`` and return column-level dependency info.
+
+    Returns a mapping ``(downstream_node_id, upstream_node_id) →
+    frozenset[column_name]`` representing which columns each dbt model
+    reads from its upstream refs.
+
+    Parameters
+    ----------
+    manifest_path:
+        Path to ``manifest.json``. Defaults to
+        ``brewgis/dbt_project/target/manifest.json``.
+    auto_generate:
+        If ``True`` and the manifest is stale or missing, runs
+        ``dbt docs generate --no-populate-cache`` to produce it.
+
+    Returns
+    -------
+    dict[tuple[str, str], frozenset[str]]
+        Empty dict if the manifest is not found.
+    """
+    manifest = _load_dbt_manifest(manifest_path, auto_generate=auto_generate)
     if not manifest or "nodes" not in manifest:
         return {}
 
-    # Build: node_id → frozenset of column names (output columns)
-    node_columns: dict[str, frozenset[str]] = {}
-    for node_id, node in manifest["nodes"].items():
-        if node.get("resource_type") == "model":
-            cols = node.get("columns", {})
-            node_columns[node_id] = frozenset(cols.keys())
+    alias_to_model = _build_alias_map(manifest["nodes"])
+    column_deps: dict[tuple[str, str], frozenset[str]] = {}
+    compiled_dir = _DBT_PROJECT_DIR / "target" / "compiled" / "brewgis" / "models"
+    if not compiled_dir.exists():
+        logger.warning("Compiled SQL directory not found: %s", compiled_dir)
+        return column_deps
 
-    # Build: (downstream_node_id, upstream_ref_name) → frozenset of column deps
-    # For simplicity: if model A refs model B and A's compiled SQL references
-    # column B.x, that's a column dep.  The manifest's "depends_on" includes
-    # node-level deps; column-level deps live in "depends_on.columns".
-    column_deps: dict[str, frozenset[str]] = {}
-    # Not implemented fully — see Phase 5 for full manifest integration.
-    # For now, return the node-level column map.
-    _ = column_deps  # placeholder
-    _ = node_columns  # placeholder
+    for node in manifest["nodes"].values():
+        if node.get("resource_type") != "model":
+            continue
+        if node.get("language") == "python":
+            continue  # Skip Python models — no compiled SQL
 
-    return node_columns
+        down_name = node["name"]
+        sql_path = compiled_dir / f"{down_name}.sql"
+        if not sql_path.exists():
+            continue
+
+        try:
+            sql = sql_path.read_text(encoding="utf-8")
+        except OSError:
+            logger.warning("Could not read compiled SQL for %s", down_name)
+            continue
+
+        deps = _parse_column_deps_from_sql(down_name, sql, alias_to_model, compiled_dir)
+        for key, cols in deps.items():
+            column_deps[key] = frozenset(cols)
+
+    logger.info("Resolved %d column-level deps from dbt manifest", len(column_deps))
+    return column_deps
+
+
+# ---------------------------------------------------------------------------
+# Helpers for dbt contract integration
+# ---------------------------------------------------------------------------
+
+
+def _contract_is_dbt(contract: ColumnContract) -> bool:
+    """Check if a contract source is a dbt model."""
+    return contract.source.startswith("dbt:")
+
+
+def _dbt_model_name_from_asset(contract: ColumnContract) -> str | None:
+    """Extract the dbt model name from a contract source.
+
+    Returns None if the contract is not from dbt.
+    """
+    if not _contract_is_dbt(contract):
+        return None
+    return contract.source.removeprefix("dbt:")
 
 
 # ═══════════════════════════════════════════════════════════════════════════
@@ -372,7 +471,7 @@ def _unpack_metadata(metadata: dict) -> dict:
     ``AssetSpec.metadata`` values may be ``MetadataValue`` objects.
     This unwraps them to plain Python types.
     """
-    from dagster import MetadataValue
+    from dagster import MetadataValue  # noqa: PLC0415
 
     plain: dict = {}
     for mk, mv in metadata.items():
@@ -433,7 +532,7 @@ def make_contract_registry(defs: Definitions) -> dict[AssetKey, ColumnContract]:
     """
     contracts: dict[AssetKey, ColumnContract] = {}
 
-    for item in (defs.assets or []):
+    for item in defs.assets or []:
         if hasattr(item, "metadata_by_key") and hasattr(item, "asset_keys"):
             for asset_key, md_map in item.metadata_by_key.items():
                 metadata = _unpack_metadata(dict(md_map))
@@ -473,6 +572,7 @@ def check_provenance(defs: Definitions) -> list[ProvenanceError]:
 
     errors: list[ProvenanceError] = []
     checked_edges: set[tuple[AssetKey, AssetKey]] = set()
+    manifest_deps = resolve_dbt_manifest(auto_generate=False)
 
     for asset_key in graph.get_all_asset_keys():
         contract = contracts.get(asset_key)
@@ -499,6 +599,7 @@ def check_provenance(defs: Definitions) -> list[ProvenanceError]:
                 parent_key,
                 contract,
                 parent_contract,
+                manifest_deps=manifest_deps,
             )
 
             if not needed:
@@ -528,25 +629,36 @@ def check_provenance(defs: Definitions) -> list[ProvenanceError]:
 
 def _columns_needed_from(
     _down_key: AssetKey,
-    up_key: AssetKey,
+    _up_key: AssetKey,
     down_contract: ColumnContract,
     _up_contract: ColumnContract,
+    manifest_deps: dict[tuple[str, str], frozenset[str]] | None = None,
 ) -> frozenset[str]:
     """Determine what columns *down_key* needs from *up_key*.
 
     Resolution order:
-      1. dbt manifest column deps (Phase 5) — not yet wired.
+      1. dbt manifest column deps (Phase 5) — narrows to column deps for
+         dbt→dbt edges when manifest data is available.
       2. ``TableColumnLineage`` annotation on Python assets — not yet wired.
       3. **Fallback**: return the downstream's own output columns. This
          catches alias mismatches (``gross_acres`` declared downstream but
          only ``area_gross`` exists upstream).
     """
-    # TODO(jkraus): Wire Phase 5 manifest.json column deps here for dbt→dbt
-    # edges. Until then, use the fallback.
-    #
+    # Phase 5: dbt manifest column deps for dbt→dbt edges
+    if (
+        manifest_deps is not None
+        and _contract_is_dbt(down_contract)
+        and _contract_is_dbt(_up_contract)
+    ):
+        down_model = _dbt_model_name_from_asset(down_contract)
+        up_model = _dbt_model_name_from_asset(_up_contract)
+        if down_model is not None and up_model is not None:
+            deps = manifest_deps.get((down_model, up_model))
+            if deps is not None:
+                return deps
+
     # TODO: Wire TableColumnLineage metadata for Python assets with explicit
     # column mapping.
-    _ = up_key  # placeholder (needed for manifest lookup)
 
     return down_contract.columns
 
@@ -584,7 +696,7 @@ def main() -> int:
       1 — one or more provenance errors found
       2 — configuration/import error
     """
-    import argparse
+    import argparse  # noqa: PLC0415
 
     parser = argparse.ArgumentParser(
         description="Static column provenance checker for Brew GIS asset graph",
@@ -613,7 +725,7 @@ def main() -> int:
     django.setup()
 
     # Import the Definitions object
-    import importlib
+    import importlib  # noqa: PLC0415
 
     module_path, _, obj_name = args.definitions.rpartition(".")
     if not obj_name:
