@@ -35,13 +35,19 @@ from typing import Any
 from urllib.parse import urlparse
 
 from django.conf import settings
+
+# Import soda_core first to trigger its __init__.py plugin discovery before
+# any soda_postgres module is loaded. This avoids the warning from
+# load_plugins() trying to import PostgresDataSourceImpl via entry point
+# while soda_postgres is partially initialized.
+from soda_core.contracts import verify_contract_locally
+
 from soda_postgres.common.data_sources.postgres_data_source import (
     PostgresDataSourceImpl,
 )
 from soda_postgres.common.data_sources.postgres_data_source_connection import (
     PostgresDataSource,
 )
-from soda_core.contracts import verify_contract_locally
 
 
 logger = logging.getLogger(__name__)
