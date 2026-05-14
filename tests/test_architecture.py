@@ -525,3 +525,50 @@ def _has_exists_call_before(
                 if hasattr(node, "lineno") and node.lineno < before_line:
                     return True
     return False
+
+
+# ══════════════════════════════════════════════════════════════
+#  Rule F — No exception handling in validation/linting code
+# ══════════════════════════════════════════════════════════════
+#  In validation and linting routines (brewgis/soda/) an
+#  exception means the target is misconfigured — missing
+#  table, missing column, wrong schema.  Catching it and
+#  returning a success would silently mask the failure.
+#  The exception **must** propagate.
+# ══════════════════════════════════════════════════════════════
+
+_SODA_DIR = REPO_ROOT / "brewgis" / "soda"
+
+
+def _find_try_nodes(filepath: Path) -> list[int]:
+    """Return line numbers of every ``try`` statement in *filepath*."""
+    tree = ast.parse(filepath.read_text(encoding="utf-8"))
+    return [node.lineno for node in ast.walk(tree) if isinstance(node, ast.Try)]
+
+
+def test_no_exception_handling_in_soda() -> None:
+    """Verify ``brewgis/soda/`` has zero ``try`` statements.
+
+    Exception handling in validation/linting code would
+    silently mask upstream misconfiguration (missing tables,
+    wrong columns, etc.) as successful passes.
+    """
+    if not _SODA_DIR.exists():
+        return
+
+    violations: dict[str, list[int]] = {}
+    for pyfile in _SODA_DIR.rglob("*.py"):
+        if "__pycache__" in pyfile.parts:
+            continue
+        lines = _find_try_nodes(pyfile)
+        if lines:
+            violations[str(pyfile.relative_to(REPO_ROOT))] = lines
+
+    assert not violations, (
+        "Exception handling found in validation/linting code (try/except masks"
+        " misconfiguration — let the exception propagate):\n"
+        + "\n".join(
+            f"  {path}:{','.join(str(ln) for ln in lines)}"
+            for path, lines in violations.items()
+        )
+    )

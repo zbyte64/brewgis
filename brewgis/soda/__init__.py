@@ -28,7 +28,6 @@ All return ``dict[str, Any]`` with keys:
 from __future__ import annotations
 
 import logging
-import os
 import tempfile
 from pathlib import Path
 from typing import Any
@@ -41,14 +40,12 @@ from django.conf import settings
 # load_plugins() trying to import PostgresDataSourceImpl via entry point
 # while soda_postgres is partially initialized.
 from soda_core.contracts import verify_contract_locally
-
 from soda_postgres.common.data_sources.postgres_data_source import (
     PostgresDataSourceImpl,
 )
 from soda_postgres.common.data_sources.postgres_data_source_connection import (
     PostgresDataSource,
 )
-
 
 logger = logging.getLogger(__name__)
 
@@ -148,30 +145,18 @@ def run_scan(
 
     yaml_content = yaml_content.replace("__DATASET__", dataset_id)
 
-    tmp = tempfile.NamedTemporaryFile(
+    with tempfile.NamedTemporaryFile(
         mode="w", suffix=".yml", delete=False, encoding="utf-8"
-    )
-    try:
+    ) as tmp:
         tmp.write(yaml_content)
-    finally:
-        tmp.close()
 
-    try:
-        result = verify_contract_locally(
-            data_sources=[ds],
-            contract_file_path=tmp.name,
-        )
-    except Exception:
-        logger.exception(
-            "Contract verification failed for '%s'", contract_name
-        )
-        try:
-            os.unlink(tmp.name)
-        except OSError:
-            pass
-        return _empty_result(contract_name)
+    result = verify_contract_locally(
+        data_sources=[ds],
+        contract_file_path=tmp.name,
+    )
+    Path(tmp.name).unlink(missing_ok=True)
 
-    return _summarise_result(result, contract_name, tmp.name)
+    return _summarise_result(result, contract_name)
 
 
 # ── Convenience validators ─────────────────────────────────────────
@@ -260,20 +245,15 @@ def _empty_result(contract_name: str) -> dict[str, Any]:
     }
 
 
-def _summarise_result(
-    result: Any, contract_name: str, tmp_path: str
-) -> dict[str, Any]:
+def _summarise_result(result: Any, contract_name: str) -> dict[str, Any]:
     """Convert a ``verify_contract_locally`` result to the dict shape callers expect."""
-    try:
-        os.unlink(tmp_path)
-    except OSError:
-        pass
 
-    failures = []
-    for cvr in result.contract_verification_results:
-        for c in cvr.check_results:
-            if c.is_failed:
-                failures.append(f"{c.check.name}: {c.check.definition}")
+    failures = [
+        f"{c.check.name}: {c.check.definition}"
+        for cvr in result.contract_verification_results
+        for c in cvr.check_results
+        if c.is_failed
+    ]
 
     return {
         "success": result.is_passed,

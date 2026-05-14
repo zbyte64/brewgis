@@ -1,15 +1,15 @@
 # Soda Core contract: base_canvas validation
 dataset: __DATASET__
 columns:
-  - name: parcel_id
+  - name: geography_id
     checks:
       - missing:
-          name: parcel_id has no missing values
+          name: geography_id has no missing values
   - name: geometry
     checks:
       - missing:
           name: geometry has no missing values
-  - name: population
+  - name: pop
     checks:
       - missing:
           name: population has no missing values
@@ -17,7 +17,7 @@ columns:
           function: min
           threshold:
             must_be_greater_than_or_equal: 0
-          name: population >= 0
+          name: pop >= 0
   - name: du
     checks:
       - missing:

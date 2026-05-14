@@ -94,13 +94,9 @@ class Command(BaseCommand):
         all_ok = True
         for name in names:
             self.stdout.write(f"\n── {name} ──")
-            try:
-                result = run_scan(name)
-                self._report_result(name, result)
-                if not result["success"]:
-                    all_ok = False
-            except Exception as e:  # noqa: BLE001
-                self.stderr.write(self.style.ERROR(f"  ERROR: {e}"))
+            result = run_scan(name)
+            self._report_result(name, result)
+            if not result["success"]:
                 all_ok = False
 
         if all_ok:
