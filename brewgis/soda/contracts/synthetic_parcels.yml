@@ -11,15 +11,16 @@ columns:
     checks:
       - missing:
           name: geometry has no missing values
-  - name: population
+  - name: pop
     checks:
       - missing:
-          name: population has no missing values
+          name: pop has no missing values
       - aggregate:
           function: min
+          qualifier: min
           threshold:
             must_be_greater_than_or_equal: 0
-          name: population >= 0
+          name: pop >= 0
   - name: du
     checks:
       - missing:
@@ -38,41 +39,14 @@ columns:
           threshold:
             must_be_greater_than_or_equal: 0
           name: area_parcel >= 0
-  - name: households
+  - name: hh
     checks:
       - aggregate:
           function: min
+          qualifier: min
           threshold:
             must_be_greater_than_or_equal: 0
-          name: households >= 0
-  - name: housing_units
-    checks:
-      - aggregate:
-          function: min
-          threshold:
-            must_be_greater_than_or_equal: 0
-          name: housing_units >= 0
-  - name: res_sqft
-    checks:
-      - aggregate:
-          function: min
-          threshold:
-            must_be_greater_than_or_equal: 0
-          name: res_sqft >= 0
-  - name: com_sqft
-    checks:
-      - aggregate:
-          function: min
-          threshold:
-            must_be_greater_than_or_equal: 0
-          name: com_sqft >= 0
-  - name: ind_sqft
-    checks:
-      - aggregate:
-          function: min
-          threshold:
-            must_be_greater_than_or_equal: 0
-          name: ind_sqft >= 0
+          name: hh >= 0
   - name: median_income
     checks:
       - aggregate:

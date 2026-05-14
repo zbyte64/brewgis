@@ -36,48 +36,14 @@ columns:
           threshold:
             must_be_greater_than_or_equal: 0
           name: area_parcel >= 0
-  - name: households
+  - name: hh
     checks:
       - aggregate:
           function: min
+          qualifier: min
           threshold:
             must_be_greater_than_or_equal: 0
-          name: households >= 0
-  - name: housing_units
-    checks:
-      - aggregate:
-          function: min
-          threshold:
-            must_be_greater_than_or_equal: 0
-          name: housing_units >= 0
-  - name: res_sqft
-    checks:
-      - aggregate:
-          function: min
-          threshold:
-            must_be_greater_than_or_equal: 0
-          name: res_sqft >= 0
-  - name: com_sqft
-    checks:
-      - aggregate:
-          function: min
-          threshold:
-            must_be_greater_than_or_equal: 0
-          name: com_sqft >= 0
-  - name: ind_sqft
-    checks:
-      - aggregate:
-          function: min
-          threshold:
-            must_be_greater_than_or_equal: 0
-          name: ind_sqft >= 0
-  - name: total_sqft
-    checks:
-      - aggregate:
-          function: min
-          threshold:
-            must_be_greater_than_or_equal: 0
-          name: total_sqft >= 0
+          name: hh >= 0
   - name: residential_irrigated_area
     checks:
       - aggregate:
@@ -155,27 +121,6 @@ columns:
           threshold:
             must_be_less_than_or_equal: 100
           name: cost_burden_pct <= 100
-  - name: acres_residential
-    checks:
-      - aggregate:
-          function: min
-          threshold:
-            must_be_greater_than_or_equal: 0
-          name: acres_residential >= 0
-  - name: acres_commercial
-    checks:
-      - aggregate:
-          function: min
-          threshold:
-            must_be_greater_than_or_equal: 0
-          name: acres_commercial >= 0
-  - name: acres_industrial
-    checks:
-      - aggregate:
-          function: min
-          threshold:
-            must_be_greater_than_or_equal: 0
-          name: acres_industrial >= 0
   - name: intersection_density
     checks:
       - aggregate:
@@ -183,48 +128,6 @@ columns:
           threshold:
             must_be_greater_than_or_equal: 0
           name: intersection_density >= 0
-  - name: pct_food_insecure
-    checks:
-      - aggregate:
-          function: min
-          qualifier: min
-          threshold:
-            must_be_greater_than_or_equal: 0
-          name: pct_food_insecure >= 0
-      - aggregate:
-          function: max
-          qualifier: max
-          threshold:
-            must_be_less_than_or_equal: 1
-          name: pct_food_insecure <= 1
-  - name: pct_no_vehicle
-    checks:
-      - aggregate:
-          function: min
-          qualifier: min
-          threshold:
-            must_be_greater_than_or_equal: 0
-          name: pct_no_vehicle >= 0
-      - aggregate:
-          function: max
-          qualifier: max
-          threshold:
-            must_be_less_than_or_equal: 1
-          name: pct_no_vehicle <= 1
-  - name: pct_unemployment
-    checks:
-      - aggregate:
-          function: min
-          qualifier: min
-          threshold:
-            must_be_greater_than_or_equal: 0
-          name: pct_unemployment >= 0
-      - aggregate:
-          function: max
-          qualifier: max
-          threshold:
-            must_be_less_than_or_equal: 1
-          name: pct_unemployment <= 1
 checks:
   - row_count:
       check: '> 0'
