@@ -10,17 +10,19 @@ from typing import Any
 from dagster import AssetExecutionContext
 from dagster import AssetIn
 from dagster import AssetKey
-
 from dagster import MaterializeResult
 from dagster import asset
 
-from brewgis.workspace.dagster.resources.postgres_resource import PostgresResource
+from brewgis.soda import run_scan
+from brewgis.workspace.dagster.check_provenance import METADATA_CONTRACT_INLINE_COLUMNS
+from brewgis.workspace.dagster.check_provenance import METADATA_CONTRACT_PATH
+from brewgis.workspace.dagster.check_provenance import METADATA_CONTRACT_SOURCE
 from brewgis.workspace.dagster.configs import AssignBuiltFormsConfig
 from brewgis.workspace.dagster.configs import BaseCanvasETLConfig
 from brewgis.workspace.dagster.configs import CreateFresnoScenarioConfig
 from brewgis.workspace.dagster.configs import FresnoConstraintsConfig
 from brewgis.workspace.dagster.configs import OnboardGeographyConfig
-from brewgis.soda import run_scan
+from brewgis.workspace.dagster.resources.postgres_resource import PostgresResource
 
 # ═══════════════════════════════════════════════════════════════════════
 # Assets
@@ -32,6 +34,10 @@ from brewgis.soda import run_scan
     compute_kind="python",
     ins={
         "raw_parcels": AssetIn(key=AssetKey("raw_parcels")),
+    },
+    metadata={
+        METADATA_CONTRACT_SOURCE: "soda",
+        METADATA_CONTRACT_PATH: "spatial_allocation",
     },
 )
 def spatial_allocation(
@@ -66,6 +72,10 @@ def spatial_allocation(
     ins={
         "allocated_parcels": AssetIn(key=AssetKey("spatial_allocation")),
     },
+    metadata={
+        METADATA_CONTRACT_SOURCE: "soda",
+        METADATA_CONTRACT_PATH: "column_stitching",
+    },
 )
 def imputation(
     context: AssetExecutionContext,
@@ -94,6 +104,7 @@ def imputation(
 @asset(
     group_name="etl",
     compute_kind="python",
+    metadata={METADATA_CONTRACT_SOURCE: "baseschema"},
 )
 def base_canvas_etl(
     context: AssetExecutionContext,
@@ -111,16 +122,14 @@ def base_canvas_etl(
       ``fetch_census``/``fetch_lehd`` plus ``state_fips``/``county_fips``
     """
     from brewgis.workspace.services.base_canvas_etl import BaseCanvasETL
-    from brewgis.workspace.services.calibration_registry import (  # noqa: PLC0415
-        NATIONAL_DEFAULT,
-    )
+    from brewgis.workspace.services.calibration_registry import NATIONAL_DEFAULT
 
     # Build adapters based on config
     demographic_source = None
     if config.fetch_census:
         if not config.state_fips or not config.county_fips:
             raise ValueError("--fetch-census requires state_fips and county_fips")
-        from brewgis.workspace.services.base_canvas_adapters import (  # noqa: PLC0415
+        from brewgis.workspace.services.base_canvas_adapters import (
             CensusDemographicSource,
         )
 
@@ -133,9 +142,7 @@ def base_canvas_etl(
     if config.fetch_lehd:
         if not config.state_fips or not config.county_fips:
             raise ValueError("--fetch-lehd requires state_fips and county_fips")
-        from brewgis.workspace.services.base_canvas_adapters import (  # noqa: PLC0415
-            LEHDEmploymentSource,
-        )
+        from brewgis.workspace.services.base_canvas_adapters import LEHDEmploymentSource
 
         employment_source = LEHDEmploymentSource(
             state_fips=config.state_fips,
@@ -190,6 +197,7 @@ def base_canvas_etl(
 @asset(
     group_name="etl",
     compute_kind="python",
+    metadata={METADATA_CONTRACT_SOURCE: "baseschema"},
 )
 def onboard_geography(
     context: AssetExecutionContext,
@@ -202,7 +210,7 @@ def onboard_geography(
     from a GeoJSON file, optionally fetching Census/LEHD/NLCD/OSM data,
     and running the full ETL pipeline.
     """
-    from django.db import connection  # noqa: PLC0415
+    from django.db import connection
 
     demographic_source = None
     employment_source = None
@@ -211,7 +219,7 @@ def onboard_geography(
     irrigation_source = None
 
     if not config.skip_census:
-        from brewgis.workspace.services.base_canvas_adapters import (  # noqa: PLC0415
+        from brewgis.workspace.services.base_canvas_adapters import (
             CensusDemographicSource,
         )
 
@@ -221,9 +229,7 @@ def onboard_geography(
         )
 
     if not config.skip_lehd:
-        from brewgis.workspace.services.base_canvas_adapters import (  # noqa: PLC0415
-            LEHDEmploymentSource,
-        )
+        from brewgis.workspace.services.base_canvas_adapters import LEHDEmploymentSource
 
         employment_source = LEHDEmploymentSource(
             state_fips=config.state_fips,
@@ -231,7 +237,7 @@ def onboard_geography(
         )
 
     if not config.skip_nlcd:
-        import geopandas as gpd  # noqa: PLC0415
+        import geopandas as gpd
 
         try:
             sample_gdf = gpd.read_file(config.parcels_path)
@@ -241,9 +247,7 @@ def onboard_geography(
                 float(sample_gdf.total_bounds[2]),
                 float(sample_gdf.total_bounds[3]),
             )
-            from brewgis.workspace.services.base_canvas_adapters import (  # noqa: PLC0415
-                NLCDFetcher,
-            )
+            from brewgis.workspace.services.base_canvas_adapters import NLCDFetcher
 
             nlcd_source = NLCDFetcher(bbox=bbox)
             land_use_source = nlcd_source
@@ -253,7 +257,7 @@ def onboard_geography(
 
     if not config.skip_osm:
         try:
-            import geopandas as gpd  # noqa: PLC0415
+            import geopandas as gpd
 
             sample_gdf = gpd.read_file(config.parcels_path)
             bbox = (
@@ -262,7 +266,7 @@ def onboard_geography(
                 float(sample_gdf.total_bounds[2]),
                 float(sample_gdf.total_bounds[3]),
             )
-            from brewgis.workspace.services.base_canvas_adapters import (  # noqa: PLC0415
+            from brewgis.workspace.services.base_canvas_adapters import (
                 OSMIntersectionDensitySource,
             )
 
@@ -320,6 +324,10 @@ def onboard_geography(
 @asset(
     group_name="etl",
     compute_kind="python",
+    metadata={
+        METADATA_CONTRACT_SOURCE: "inline",
+        METADATA_CONTRACT_INLINE_COLUMNS: ["id", "geom", "geometry"],
+    },
 )
 def fresno_constraints(
     context: AssetExecutionContext,
@@ -331,13 +339,13 @@ def fresno_constraints(
     Reads cached GeoJSON files from the Fresno demo cache directory and
     writes them as PostGIS tables in the target schema.
     """
-    from pathlib import Path  # noqa: PLC0415
+    from pathlib import Path
 
-    import geopandas as gpd  # noqa: PLC0415
-    from django.db import connection  # noqa: PLC0415
+    import geopandas as gpd
+    from django.db import connection
 
-    from brewgis.workspace.services._db import get_engine  # noqa: PLC0415
-    from brewgis.workspace.services.fresno_downloader import CACHE_DIR  # noqa: PLC0415
+    from brewgis.workspace.services._db import get_engine
+    from brewgis.workspace.services.fresno_downloader import CACHE_DIR
 
     cache_dir = Path(config.cache_dir) if config.cache_dir else CACHE_DIR
     schema = config.target_schema
@@ -411,6 +419,10 @@ def fresno_constraints(
 @asset(
     group_name="etl",
     compute_kind="python",
+    metadata={
+        METADATA_CONTRACT_SOURCE: "soda",
+        METADATA_CONTRACT_PATH: "built_form_export",
+    },
 )
 def assign_built_forms(
     context: AssetExecutionContext,
@@ -422,13 +434,11 @@ def assign_built_forms(
     Reads parcels from the ETL-produced table, runs the heuristic classifier,
     and writes classified data back.
     """
-    import geopandas as gpd  # noqa: PLC0415
-    from django.db import connection  # noqa: PLC0415
+    import geopandas as gpd
+    from django.db import connection
 
-    from brewgis.workspace.services._db import get_engine  # noqa: PLC0415
-    from brewgis.workspace.services.built_form_classifier import (  # noqa: PLC0415
-        BuiltFormClassifier,
-    )
+    from brewgis.workspace.services._db import get_engine
+    from brewgis.workspace.services.built_form_classifier import BuiltFormClassifier
 
     schema = config.db_schema
     table = config.table
@@ -491,10 +501,10 @@ def create_fresno_scenario(
     Creates a Scenario model instance linked to a Workspace and sets up
     the dbt variables needed for analysis.
     """
-    from django.db import connection as db_conn  # noqa: PLC0415
+    from django.db import connection as db_conn
 
-    from brewgis.workspace.models import Scenario  # noqa: PLC0415
-    from brewgis.workspace.models import Workspace  # noqa: PLC0415
+    from brewgis.workspace.models import Scenario
+    from brewgis.workspace.models import Workspace
 
     # Ensure schema exists
     with db_conn.cursor() as cursor:

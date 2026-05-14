@@ -19,13 +19,15 @@ from dagster import multi_asset
 from django.conf import settings
 from django.db import connection
 
+from brewgis.soda import validate_base_canvas
+from brewgis.workspace.dagster.check_provenance import METADATA_CONTRACT_INLINE_COLUMNS
+from brewgis.workspace.dagster.check_provenance import METADATA_CONTRACT_PATH
+from brewgis.workspace.dagster.check_provenance import METADATA_CONTRACT_SOURCE
 from brewgis.workspace.dagster.configs import SacogComparisonETLConfig
 from brewgis.workspace.dagster.configs import SacogLoadParcelsConfig
 from brewgis.workspace.dagster.configs import SacogReportConfig
 from brewgis.workspace.dagster.resources.dbt_resource import DbtCliResource
 from brewgis.workspace.dagster.resources.postgres_resource import PostgresResource
-
-from brewgis.soda import validate_base_canvas  # noqa: F401
 from brewgis.workspace.services._db import get_engine
 
 CACHE_DIR = Path(settings.BASE_DIR) / "planning"
@@ -46,6 +48,10 @@ COUNTY_FIPS = "067"
     group_name="comparison",
     compute_kind="python",
     deps=["census_acs_assets", "lehd_lodes_assets"],
+    metadata={
+        METADATA_CONTRACT_SOURCE: "inline",
+        METADATA_CONTRACT_INLINE_COLUMNS: ["parcel_id", "geometry", "land_use"],
+    },
 )
 def sacog_load_parcels(
     context: AssetExecutionContext,
@@ -114,6 +120,7 @@ def sacog_load_parcels(
     group_name="comparison",
     compute_kind="python",
     deps=["sacog_load_parcels", "census_acs_assets", "lehd_lodes_assets"],
+    metadata={METADATA_CONTRACT_SOURCE: "baseschema"},
 )
 def sacog_run_comparison_etl(
     context: AssetExecutionContext,
@@ -193,6 +200,14 @@ def sacog_run_comparison_etl(
     group_name="comparison",
     compute_kind="python",
     deps=["sacog_run_comparison_etl"],
+    metadata={
+        METADATA_CONTRACT_SOURCE: "inline",
+        METADATA_CONTRACT_INLINE_COLUMNS: [
+            "parcel_id",
+            "geometry_match",
+            "centroid_distance",
+        ],
+    },
 )
 def sacog_verify_geometry(
     context: AssetExecutionContext,
@@ -273,6 +288,10 @@ def sacog_verify_geometry(
     group_name="comparison",
     compute_kind="python",
     deps=["sacog_verify_geometry"],
+    metadata={
+        METADATA_CONTRACT_SOURCE: "inline",
+        METADATA_CONTRACT_INLINE_COLUMNS: ["parcel_id", "geography_id"],
+    },
 )
 def sacog_populate_geography_id(
     context: AssetExecutionContext,
@@ -350,7 +369,12 @@ _COMPARISON_DBT_SELECT = "comparison.*"
     compute_kind="dbt",
     deps=["sacog_populate_geography_id"],
     outs={
-        "sacog_reference_totals": AssetOut(),
+        "sacog_reference_totals": AssetOut(
+            metadata={
+                METADATA_CONTRACT_SOURCE: "dbt",
+                METADATA_CONTRACT_PATH: "sacog_reference_totals",
+            },
+        ),
         "sacog_brewgis_totals": AssetOut(),
         "sacog_correlations": AssetOut(),
         "sacog_weighted_means": AssetOut(),
@@ -458,11 +482,9 @@ def sacog_generate_report(
 
 def _load_parcels(limit: int, cache_dir: str | None = None) -> gpd.GeoDataFrame:
     """Load parcel geometries from reference table or cache."""
-    import hashlib  # noqa: PLC0415
+    import hashlib
 
-    from brewgis.workspace.services.base_canvas_schema import (  # noqa: PLC0415
-        BaseCanvasSchema,
-    )
+    from brewgis.workspace.services.base_canvas_schema import BaseCanvasSchema
 
     _etl_schema_hash: str = hashlib.md5(  # noqa: S324
         "".join(sorted(BaseCanvasSchema.COLUMN_NAMES)).encode()
@@ -500,16 +522,10 @@ def _run_etl(
     temp_geojson: Path,
 ) -> dict[str, Any]:
     """Run the brewgis base canvas ETL on the given parcel geometries."""
-    from brewgis.workspace.services.base_canvas_adapters import (  # noqa: PLC0415
-        CensusDemographicSource,
-    )
-    from brewgis.workspace.services.base_canvas_adapters import (  # noqa: PLC0415
-        LEHDEmploymentSource,
-    )
-    from brewgis.workspace.services.base_canvas_adapters import (  # noqa: PLC0415
-        NLCDFetcher,
-    )
-    from brewgis.workspace.services.base_canvas_adapters import (  # noqa: PLC0415
+    from brewgis.workspace.services.base_canvas_adapters import CensusDemographicSource
+    from brewgis.workspace.services.base_canvas_adapters import LEHDEmploymentSource
+    from brewgis.workspace.services.base_canvas_adapters import NLCDFetcher
+    from brewgis.workspace.services.base_canvas_adapters import (
         OSMIntersectionDensitySource,
     )
     from brewgis.workspace.services.base_canvas_etl import BaseCanvasETL
@@ -640,7 +656,7 @@ def _generate_report_markdown(
     management command, but reads from pre-computed dbt tables instead of
     running ad-hoc queries.
     """
-    import time  # noqa: PLC0415
+    import time
 
     lines: list[str] = []
 

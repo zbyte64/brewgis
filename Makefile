@@ -152,12 +152,15 @@ typecheck:  ## Run mypy type checker
 lint-dbt:  ## SQLFluff lint dbt models
 	$(COMPOSE_RUN) sqlfluff lint brewgis/dbt_project/
 
+.PHONY: check-columns
+check-columns:  ## Static column provenance check (no DB needed)
+	docker compose -f $(COMPOSE_FILE) run --rm -e YEAR=2022 django python -m brewgis.workspace.dagster.check_provenance
 # ─────────────────────────────────────────────
 # CI pipeline (mirrors CI workflow)
 # ─────────────────────────────────────────────
 
 .PHONY: check
-check: lint format-check typecheck test test-dbt test-soda  ## Run full CI pipeline: lint + format-check + typecheck + test + dbt + Soda data quality
+check: lint format-check typecheck check-columns test test-dbt test-soda  ## Run full CI pipeline: lint + format-check + typecheck + column-provenance + test + dbt + Soda data quality
 
 # ─────────────────────────────────────────────
 # Development setup

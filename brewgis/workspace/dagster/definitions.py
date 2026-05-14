@@ -6,8 +6,10 @@ data orchestration platform.
 
 from __future__ import annotations
 
+from dagster import AssetSpec
 from dagster import Definitions
 from dagster import ScheduleDefinition
+from dagster_embedded_elt.dlt import DagsterDltResource
 
 from brewgis.workspace.dagster.assets.comparison_assets import sacog_dbt_comparison
 from brewgis.workspace.dagster.assets.comparison_assets import sacog_generate_report
@@ -28,7 +30,6 @@ from brewgis.workspace.dagster.assets.dlt_assets import lehd_lodes_assets
 from brewgis.workspace.dagster.assets.dlt_assets import overpass_poi_assets
 from brewgis.workspace.dagster.assets.dlt_assets import raster_band_assets
 from brewgis.workspace.dagster.assets.dlt_assets import raster_metadata_assets
-from brewgis.workspace.dagster.schedules import SCHEDULES
 from brewgis.workspace.dagster.assets.download_assets import fresno_demo_data
 from brewgis.workspace.dagster.assets.service_assets import assign_built_forms
 from brewgis.workspace.dagster.assets.service_assets import base_canvas_etl
@@ -40,6 +41,7 @@ from brewgis.workspace.dagster.assets.service_assets import spatial_allocation
 from brewgis.workspace.dagster.jobs.fresno_demo import fresno_demo_setup
 from brewgis.workspace.dagster.resources.dbt_resource import DbtCliResource
 from brewgis.workspace.dagster.resources.postgres_resource import PostgresResource
+from brewgis.workspace.dagster.schedules import SCHEDULES
 
 # ---------------------------------------------------------------------------
 # Resources
@@ -47,9 +49,11 @@ from brewgis.workspace.dagster.resources.postgres_resource import PostgresResour
 
 _dbt_cli_resource = DbtCliResource()
 _postgres_resource = PostgresResource()
+_dlt_resource = DagsterDltResource()
 
 _RESOURCES = {
     "dbt_cli": _dbt_cli_resource,
+    "dlt": _dlt_resource,
     "postgres": _postgres_resource,
 }
 
@@ -59,6 +63,7 @@ _RESOURCES = {
 
 _ASSETS = [
     # dlt extraction assets
+    AssetSpec(key="raw_parcels"),
     census_acs_assets,
     lehd_lodes_assets,
     overpass_poi_assets,

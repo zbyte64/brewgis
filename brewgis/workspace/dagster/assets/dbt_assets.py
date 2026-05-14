@@ -6,25 +6,27 @@ All 40 existing dbt models (SQL + 2 Python) are available for
 Dagster-managed materialization.
 """
 
-
 from typing import Any
 
 from dagster import AssetExecutionContext
 from dagster import MaterializeResult
 from dagster import asset
 
+from brewgis.workspace.analysis.module_registry import MODULE_DBT_SELECT
+from brewgis.workspace.dagster.check_provenance import METADATA_CONTRACT_INLINE_COLUMNS
+from brewgis.workspace.dagster.check_provenance import METADATA_CONTRACT_PATH
+from brewgis.workspace.dagster.check_provenance import METADATA_CONTRACT_SOURCE
 from brewgis.workspace.dagster.resources.dbt_resource import DbtCliResource
 from brewgis.workspace.dagster.resources.postgres_resource import PostgresResource
-from brewgis.workspace.analysis.module_registry import MODULE_DBT_SELECT
-from brewgis.workspace.analysis.module_registry import MODULE_DEPENDENCIES
-
 
 
 @asset(
     group_name="dbt_staging",
     compute_kind="dbt",
 )
-def dbt_staging_models(context: AssetExecutionContext, dbt_cli: DbtCliResource) -> MaterializeResult:
+def dbt_staging_models(
+    context: AssetExecutionContext, dbt_cli: DbtCliResource
+) -> MaterializeResult:
     """Materialize all dbt staging models (``staging.*``).
 
     These wrap imported tables (parcels, base canvas, census, LEHD, POI)
@@ -69,11 +71,21 @@ _MODULE_SPECS: list[tuple[str, list[str]]] = [
     ("tree_canopy", ["core"]),
     ("vmt_fee", ["vmt"]),
     ("displacement_risk_dynamic", ["displacement_risk", "acs_equity"]),
-    ("scenario_summary", [
-        "core", "vmt", "transport_ghg", "total_ghg", "health_impacts",
-        "housing_cost_burden", "sprawl_index", "water_demand",
-        "energy_demand", "land_consumption",
-    ]),
+    (
+        "scenario_summary",
+        [
+            "core",
+            "vmt",
+            "transport_ghg",
+            "total_ghg",
+            "health_impacts",
+            "housing_cost_burden",
+            "sprawl_index",
+            "water_demand",
+            "energy_demand",
+            "land_consumption",
+        ],
+    ),
     ("sprawl_cost", ["core", "fiscal"]),
 ]
 
@@ -91,16 +103,25 @@ def _make_module_asset(module: str, deps_modules: list[str]) -> Any:
         else:
             dep_asset_keys.append(f"{dep}_analysis")
 
+    from brewgis.workspace.analysis.module_registry import MODULE_DBT_SELECT
+
     select = MODULE_DBT_SELECT[module]
     fn_name = f"{module}_analysis"
+    primary_model = select[0] if select else module  # first dbt model name
 
     @asset(
         deps=dep_asset_keys,
         group_name="analysis",
         compute_kind="dbt",
         name=fn_name,
+        metadata={
+            METADATA_CONTRACT_SOURCE: "dbt",
+            METADATA_CONTRACT_PATH: primary_model,
+        },
     )
-    def _asset(context: AssetExecutionContext, dbt_cli: DbtCliResource) -> MaterializeResult:
+    def _asset(
+        context: AssetExecutionContext, dbt_cli: DbtCliResource
+    ) -> MaterializeResult:
         result = dbt_cli.run(select=select)
         if not result.success:
             raise RuntimeError(f"{module} failed: {result.error}")
@@ -112,17 +133,33 @@ def _make_module_asset(module: str, deps_modules: list[str]) -> Any:
 
 
 ANALYSIS_ASSETS = [
-    _make_module_asset(m, d)
-    for m, d in _MODULE_SPECS
-    if MODULE_DBT_SELECT.get(m, [])
+    _make_module_asset(m, d) for m, d in _MODULE_SPECS if MODULE_DBT_SELECT.get(m, [])
 ]
-@asset(group_name="preprocessing", compute_kind="python")
+
+
+@asset(
+    group_name="preprocessing",
+    compute_kind="python",
+    metadata={
+        METADATA_CONTRACT_SOURCE: "inline",
+        METADATA_CONTRACT_INLINE_COLUMNS: [
+            "parcel_id",
+            "building_type_id",
+            "place_type_id",
+            "du_per_acre",
+            "pop_per_acre",
+            "building_sqft",
+            "FAR",
+        ],
+    },
+)
 def building_types_export(
     context: AssetExecutionContext,
     postgres: PostgresResource,
 ) -> MaterializeResult:
     """Export BuildingType Django records to a flat PostGIS table for dbt."""
     from brewgis.workspace.analysis.data_export import export_building_types
+
     count = export_building_types(schema="public", table="built_forms")
 
     return MaterializeResult(metadata={"rows": count})
@@ -132,6 +169,15 @@ def building_types_export(
     group_name="preprocessing",
     compute_kind="python",
     deps=["trip_distribution_analysis"],
+    metadata={
+        METADATA_CONTRACT_SOURCE: "inline",
+        METADATA_CONTRACT_INLINE_COLUMNS: [
+            "parcel_id",
+            "trips_internal",
+            "internal_capture_pct",
+            "trips_external",
+        ],
+    },
 )
 def internal_capture_preprocessor(
     context: AssetExecutionContext,
@@ -142,9 +188,10 @@ def internal_capture_preprocessor(
     Creates ``trip_distribution_inputs`` table consumed by downstream
     transport dbt models (mode choice, assignment).
     """
-    from brewgis.workspace.analysis.transport.preprocessors import (  # noqa: PLC0415
+    from brewgis.workspace.analysis.transport.preprocessors import (
         DistanceMatrixPreprocessor,
     )
+
     preprocessor = DistanceMatrixPreprocessor()
     result = preprocessor.compute_distance_matrix(
         schema="public",
@@ -161,6 +208,19 @@ def internal_capture_preprocessor(
     group_name="preprocessing",
     compute_kind="python",
     deps=["core_analysis"],
+    metadata={
+        METADATA_CONTRACT_SOURCE: "inline",
+        METADATA_CONTRACT_INLINE_COLUMNS: [
+            "parcel_id",
+            "gross_acres",
+            "population",
+            "households",
+            "healthy_count",
+            "unhealthy_count",
+            "mrfei",
+            "food_desert",
+        ],
+    },
 )
 def food_access_preprocessor(
     context: AssetExecutionContext,
@@ -171,9 +231,10 @@ def food_access_preprocessor(
     Creates ``food_access_inputs`` table consumed by the food_access
     dbt module.
     """
-    from brewgis.workspace.analysis.food_access.preprocessor import (  # noqa: PLC0415
+    from brewgis.workspace.analysis.food_access.preprocessor import (
         FoodAccessPreprocessor,
     )
+
     preprocessor = FoodAccessPreprocessor()
     result = preprocessor.compute_mrfei(
         schema="public",
@@ -189,6 +250,17 @@ def food_access_preprocessor(
     group_name="preprocessing",
     compute_kind="python",
     deps=["core_analysis"],
+    metadata={
+        METADATA_CONTRACT_SOURCE: "inline",
+        METADATA_CONTRACT_INLINE_COLUMNS: [
+            "parcel_id",
+            "median_income",
+            "rent_burden_pct",
+            "cost_burden_pct",
+            "pct_minority",
+            "pct_college_educated",
+        ],
+    },
 )
 def acs_equity_preprocessor(
     context: AssetExecutionContext,
@@ -200,13 +272,16 @@ def acs_equity_preprocessor(
     minority percentage, and education level from ACS block-group data.
     Falls back to uniform national defaults when ACS data is unavailable.
     """
-    from brewgis.workspace.analysis.equity.preprocessor import (  # noqa: PLC0415
+    from brewgis.workspace.analysis.equity.preprocessor import (
         run_acs_equity_preprocessor,
     )
-    result = run_acs_equity_preprocessor({
-        "target_schema": "public",
-        "base_canvas_table": "base_canvas",
-    })
+
+    result = run_acs_equity_preprocessor(
+        {
+            "target_schema": "public",
+            "base_canvas_table": "base_canvas",
+        }
+    )
     if not result.get("success"):
         raise RuntimeError(result.get("error", "ACS equity preprocessing failed"))
     return MaterializeResult(metadata={"method": result.get("method", "unknown")})
