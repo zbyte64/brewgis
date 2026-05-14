@@ -17,6 +17,7 @@ import dlt
 import requests
 
 from brewgis.workspace.services.poi_fetcher import OVERPASS_URL
+from brewgis.soda import validate_poi
 from brewgis.workspace.services.poi_fetcher import POI_CATEGORIES  # noqa: F401
 from brewgis.workspace.services.poi_fetcher import _build_overpass_query
 
@@ -140,9 +141,18 @@ def run_poi_pipeline(  # noqa: PLR0913
             row_count = si.row_counts.get("poi_raw", 0)
             break
 
+    # Run Soda Core validation
+    validation = validate_poi(schema=schema, table="poi_raw")
+    if validation["success"]:
+        logger.info("Validation passed for %s.poi_raw", schema)
+    else:
+        for failure in validation["failures"]:
+            logger.warning("Validation failure for %s.poi_raw: %s", schema, failure)
+
     return {
         "success": True,
         "table_name": f"{schema}.poi_raw",
         "row_count": row_count,
         "load_info": str(load_info),
+        "validation": validation,
     }

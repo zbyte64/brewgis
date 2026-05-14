@@ -19,6 +19,7 @@ from typing import Any
 import deal
 from django.utils import timezone
 
+from brewgis.soda import validate_dbt_table
 from brewgis.workspace.analysis.dbt_runner import run_dbt_local
 from brewgis.workspace.analysis.layer_registry import register_result_layer
 from brewgis.workspace.analysis.module_registry import MODULE_DEPENDENCIES
@@ -195,6 +196,7 @@ def run_modules_sync(  # noqa: PLR0913
             select=select,
             vars_={**base_vars, "completed_modules": list(completed)},
         )
+        validation: dict[str, Any] | None = None
         if dbt_result.success:
             completed.append(module)
             # Register result layers
@@ -207,10 +209,18 @@ def run_modules_sync(  # noqa: PLR0913
                         schema=target_schema,
                         table=table,
                     )
+                # Validate each module result table
+                validation = validate_dbt_table(schema=target_schema, table=table)
+                if validation["success"]:
+                    logger.info("Validation passed for %s.%s", target_schema, table)
+                else:
+                    for failure in validation["failures"]:
+                        logger.warning("Validation failure for %s.%s: %s", target_schema, table, failure)
         results.append({
             "module": module,
             "success": dbt_result.success,
             "error": dbt_result.error,
+            "validation": validation,
         })
 
     return {

@@ -14,6 +14,7 @@ from typing import Any
 import dlt
 import requests
 
+from brewgis.soda import validate_lehd
 from brewgis.workspace.services.lehd_fetcher import (
     _FIPS_TO_STATE,
     LODES_WAC_BASE,
@@ -120,9 +121,18 @@ def run_lehd_pipeline(
             row_count = si.row_counts.get("lodes_raw", 0)
             break
 
+    # Run Soda Core validation
+    validation = validate_lehd(schema=schema, table="lodes_raw")
+    if validation["success"]:
+        logger.info("Validation passed for %s.lodes_raw", schema)
+    else:
+        for failure in validation["failures"]:
+            logger.warning("Validation failure for %s.lodes_raw: %s", schema, failure)
+
     return {
         "success": True,
         "table_name": f"{schema}.lodes_raw",
         "row_count": row_count,
         "load_info": str(load_info),
+        "validation": validation,
     }

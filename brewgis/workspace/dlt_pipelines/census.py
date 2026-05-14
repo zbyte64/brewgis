@@ -21,6 +21,7 @@ import requests
 
 from brewgis.workspace.services.census_fetcher import _all_vars
 from brewgis.workspace.services.census_fetcher import _census_api_key
+from brewgis.soda import validate_census_acs
 from brewgis.workspace.services.census_fetcher import _census_base_url
 
 
@@ -129,9 +130,18 @@ def run_census_pipeline(
             row_count = si.row_counts.get("acs_raw", 0)
             break
 
+    # Run Soda Core validation
+    validation = validate_census_acs(schema=schema, table="acs_raw")
+    if validation["success"]:
+        logger.info("Validation passed for %s.acs_raw", schema)
+    else:
+        for failure in validation["failures"]:
+            logger.warning("Validation failure for %s.acs_raw: %s", schema, failure)
+
     return {
         "success": True,
         "table_name": f"{schema}.acs_raw",
         "row_count": row_count,
         "load_info": str(load_info),
+        "validation": validation,
     }

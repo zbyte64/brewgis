@@ -11,12 +11,7 @@ from celery.utils.log import get_task_logger
 from django.conf import settings
 from django.utils import timezone
 
-from brewgis.soda import validate_census_acs
-from brewgis.soda import validate_lehd
-from brewgis.soda import validate_poi
-from brewgis.soda import validate_built_form_export
 from brewgis.soda import validate_column_stitching
-from brewgis.soda import validate_spatial_allocation
 from brewgis.workspace.analysis.data_export import export_building_types
 from brewgis.workspace.dlt_pipelines import run_census_pipeline
 from brewgis.workspace.dlt_pipelines import run_lehd_pipeline
@@ -67,18 +62,6 @@ def export_building_types_task(  # type: ignore[no-untyped-def]
         schema,
         table,
     )
-
-    # Post-export GX validation (warning severity — don't block pipeline)
-    gx_result = validate_built_form_export(schema=schema, table=table)
-    if gx_result["success"]:
-        logger.info("GX validation passed for built_form_export")
-    else:
-        logger.warning(
-            "GX validation warning for built_form_export (%s.%s): %s",
-            schema,
-            table,
-            "; ".join(gx_result["failures"][:5]),
-        )
 
     return {"success": True, "count": count, "error": None}
 
@@ -136,26 +119,16 @@ def run_census_fetch(  # type: ignore[no-untyped-def]
 
         if created:
             auto_generate_symbology(layer)
-
         run.status = "completed"
         run.result = {
             "table_name": table_name,
             "layer_key": layer_key,
             "layer_id": layer.pk,
             "row_count": row_count,
+            "validation": dlt_result.get("validation"),
         }
         run.completed_at = timezone.now()
         run.save(update_fields=["status", "result", "completed_at"])
-
-        # Optional GX validation on ingested data (warning severity)
-        result = validate_census_acs(schema=schema, table=table_name)
-        if not result["success"]:
-            logger.warning(
-                "GX validation warning for census data (table %s.%s): %s",
-                schema,
-                table_name,
-                "; ".join(result["failures"][:5]),
-            )
 
         return {"success": True, "count": row_count}
     except DataImportRun.DoesNotExist:
@@ -209,26 +182,16 @@ def run_lehd_fetch(  # type: ignore[no-untyped-def]
 
         if created:
             auto_generate_symbology(layer)
-
         run.status = "completed"
         run.result = {
             "table_name": table_name,
             "layer_key": layer_key,
             "layer_id": layer.pk,
             "row_count": row_count,
+            "validation": dlt_result.get("validation"),
         }
         run.completed_at = timezone.now()
         run.save(update_fields=["status", "result", "completed_at"])
-
-        # Optional GX validation on ingested data (warning severity)
-        result = validate_lehd(schema=schema, table=table_name)
-        if not result["success"]:
-            logger.warning(
-                "GX validation warning for LEHD data (table %s.%s): %s",
-                schema,
-                table_name,
-                "; ".join(result["failures"][:5]),
-            )
 
         return {"success": True, "count": row_count}
 
@@ -290,26 +253,16 @@ def run_poi_fetch(  # type: ignore[no-untyped-def]
 
         if created:
             auto_generate_symbology(layer)
-
         run.status = "completed"
         run.result = {
             "table_name": table_name,
             "layer_key": layer_key,
             "layer_id": layer.pk,
             "row_count": row_count,
+            "validation": dlt_result.get("validation"),
         }
         run.completed_at = timezone.now()
         run.save(update_fields=["status", "result", "completed_at"])
-
-        # Optional GX validation on ingested data (warning severity)
-        result = validate_poi(schema=schema, table=table_name)
-        if not result["success"]:
-            logger.warning(
-                "GX validation warning for POI data (table %s.%s): %s",
-                schema,
-                table_name,
-                "; ".join(result["failures"][:5]),
-            )
 
         return {"success": True, "count": row_count}
     except DataImportRun.DoesNotExist:
@@ -365,7 +318,6 @@ def run_raster_fetch(  # type: ignore[no-untyped-def]
 
         if created:
             auto_generate_symbology(layer)
-
         run.status = "completed"
         run.result = {
             "metadata_table": metadata_table,
@@ -373,6 +325,7 @@ def run_raster_fetch(  # type: ignore[no-untyped-def]
             "layer_key": layer_key,
             "layer_id": layer.pk,
             "row_count": row_count,
+            "validation": dlt_result.get("validation"),
         }
         run.completed_at = timezone.now()
         run.save(update_fields=["status", "result", "completed_at"])
@@ -419,23 +372,7 @@ def run_spatial_allocation(  # type: ignore[no-untyped-def]
         run.result = result
         run.completed_at = timezone.now()
         run.save(update_fields=["status", "result", "completed_at"])
-
-        # Post-allocation GX validation (warning severity — don't block pipeline)
-        gx_result = validate_spatial_allocation(
-            schema=target_schema,
-            table=target_table,
-        )
-        if gx_result["success"]:
-            logger.info("GX validation passed for spatial_allocation")
-        else:
-            logger.warning(
-                "GX validation warning for spatial_allocation (%s.%s): %s",
-                target_schema,
-                target_table,
-                "; ".join(gx_result["failures"][:5]),
-            )
         return {"success": True, **result}
-
     except DataImportRun.DoesNotExist:
         return {"success": False, "error": f"DataImportRun {run_pk} not found"}
 
@@ -505,7 +442,7 @@ def run_column_stitching(  # type: ignore[no-untyped-def]
         run.completed_at = timezone.now()
         run.save(update_fields=["status", "result", "completed_at"])
 
-        # Post-stitching GX validation (warning severity — don't block pipeline)
+        # Default validation after stitching — full context needed here
         gx_result = validate_column_stitching(schema=schema, table=table)
         if gx_result["success"]:
             logger.info("GX validation passed for column_stitching")

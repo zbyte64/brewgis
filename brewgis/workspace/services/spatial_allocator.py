@@ -14,6 +14,7 @@ import deal
 import geopandas as gpd
 import pandas as pd
 from django.db import connection
+from brewgis.soda import validate_spatial_allocation
 from brewgis.workspace.services._db import get_engine
 
 logger = logging.getLogger(__name__)
@@ -239,8 +240,17 @@ def allocate_attributes(
                 )
                 updated_count += 1
 
+    # Run Soda Core validation on the target table
+    validation = validate_spatial_allocation(schema=target_schema, table=target_table)
+    if validation["success"]:
+        logger.info("Validation passed for %s.%s", target_schema, target_table)
+    else:
+        for failure in validation["failures"]:
+            logger.warning("Validation failure for %s.%s: %s", target_schema, target_table, failure)
+
     return {
         "total_features": updated_count,
         "allocated_columns": new_column_names,
         "errors": errors,
+        "validation": validation,
     }

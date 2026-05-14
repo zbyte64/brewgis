@@ -17,6 +17,7 @@ from typing import Any
 
 from django.db import connection
 from django.db import transaction
+from brewgis.soda import validate_built_form_export
 
 logger = logging.getLogger(__name__)
 
@@ -152,13 +153,15 @@ def export_building_types(
             """
         )
 
-        logger.info(
-            "Exported %d BuildingType rows to %s.%s",
-            row_count,
-            schema,
-            table,
-        )
-        return row_count  # type: ignore[no-any-return]
+    # Run Soda Core validation
+    validation = validate_built_form_export(schema=schema, table=table)
+    if validation["success"]:
+        logger.info("Validation passed for %s.%s", schema, table)
+    else:
+        for failure in validation["failures"]:
+            logger.warning("Validation failure for %s.%s: %s", schema, table, failure)
+
+    return row_count  # type: ignore[no-any-return]
 
 
 def ensure_export_exists(
