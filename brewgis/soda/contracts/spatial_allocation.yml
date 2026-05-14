@@ -1,22 +1,47 @@
 # Soda Core contract: spatial_allocation validation
-checks for __TABLE__:
-  - row_count > 0:
+dataset: __DATASET__
+columns: []
+checks:
+  - row_count:
+      check: '> 0'
       name: Table has rows
-  - missing_count(target_geoid) = 0:
+  - missing:
+      column: target_geoid
+      check: '= 0'
       name: target_geoid has no missing values
-  - missing_count(source_geoid) = 0:
+  - missing:
+      column: source_geoid
+      check: '= 0'
       name: source_geoid has no missing values
-  - missing_count(allocated_population) = 0:
+  - missing:
+      column: allocated_population
+      check: '= 0'
       name: allocated_population has no missing values
-  - missing_count(allocated_employment) = 0:
+  - missing:
+      column: allocated_employment
+      check: '= 0'
       name: allocated_employment has no missing values
-  - missing_count(allocation_weight) = 0:
+  - missing:
+      column: allocation_weight
+      check: '= 0'
       name: allocation_weight has no missing values
-  - min(allocated_population) >= 0:
+  - aggregate:
+      column: allocated_population
+      function: min
+      check: '>= 0'
       name: allocated_population >= 0
-  - min(allocated_employment) >= 0:
+  - aggregate:
+      column: allocated_employment
+      function: min
+      check: '>= 0'
       name: allocated_employment >= 0
-  - min(allocation_weight) >= 0:
+  - aggregate:
+      column: allocation_weight
+      function: min
+      check: '>= 0'
       name: allocation_weight >= 0
-  - max(allocation_weight) <= 1:
+  - aggregate:
+      column: allocation_weight
+      function: max
+      check: '<= 1'
       name: allocation_weight <= 1

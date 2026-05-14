@@ -58,9 +58,11 @@ class TestContractDiscovery:
             except yaml.YAMLError as exc:
                 pytest.fail(f"{path.name} is not valid YAML: {exc}")
             assert data is not None, f"{path.name} is empty"
-            assert "checks for __TABLE__" in raw or "checks for " in raw, (
-                f"{path.name} is missing 'checks for' header"
+            assert "dataset: __DATASET__" in raw, (
+                f"{path.name} is missing 'dataset: __DATASET__' (expected v4 format)"
             )
+            assert "columns: []" in raw, f"{path.name} is missing 'columns: []'"
+            assert "checks:" in raw, f"{path.name} is missing 'checks:'"
 
 
 class TestRunScan:

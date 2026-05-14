@@ -1,74 +1,177 @@
 # Soda Core contract: base_canvas validation
-checks for __TABLE__:
-  - row_count > 0:
+dataset: __DATASET__
+columns: []
+checks:
+  - row_count:
+      check: '> 0'
       name: Table has rows
-  - missing_count(parcel_id) = 0:
+  - missing:
+      column: parcel_id
+      check: '= 0'
       name: parcel_id has no missing values
-  - missing_count(geometry) = 0:
+  - missing:
+      column: geometry
+      check: '= 0'
       name: geometry has no missing values
-  - missing_count(population) = 0:
+  - missing:
+      column: population
+      check: '= 0'
       name: population has no missing values
-  - missing_count(du) = 0:
+  - missing:
+      column: du
+      check: '= 0'
       name: du has no missing values
-  - missing_count(area_parcel) = 0:
+  - missing:
+      column: area_parcel
+      check: '= 0'
       name: area_parcel has no missing values
-  - min(population) >= 0:
+  - aggregate:
+      column: population
+      function: min
+      check: '>= 0'
       name: population >= 0
-  - min(households) >= 0:
+  - aggregate:
+      column: households
+      function: min
+      check: '>= 0'
       name: households >= 0
-  - min(housing_units) >= 0:
+  - aggregate:
+      column: housing_units
+      function: min
+      check: '>= 0'
       name: housing_units >= 0
-  - min(du) >= 0:
+  - aggregate:
+      column: du
+      function: min
+      check: '>= 0'
       name: du >= 0
-  - min(res_sqft) >= 0:
+  - aggregate:
+      column: res_sqft
+      function: min
+      check: '>= 0'
       name: res_sqft >= 0
-  - min(com_sqft) >= 0:
+  - aggregate:
+      column: com_sqft
+      function: min
+      check: '>= 0'
       name: com_sqft >= 0
-  - min(ind_sqft) >= 0:
+  - aggregate:
+      column: ind_sqft
+      function: min
+      check: '>= 0'
       name: ind_sqft >= 0
-  - min(total_sqft) >= 0:
+  - aggregate:
+      column: total_sqft
+      function: min
+      check: '>= 0'
       name: total_sqft >= 0
-  - min(residential_irrigated_area) >= 0:
+  - aggregate:
+      column: residential_irrigated_area
+      function: min
+      check: '>= 0'
       name: residential_irrigated_area >= 0
-  - min(commercial_irrigated_area) >= 0:
+  - aggregate:
+      column: commercial_irrigated_area
+      function: min
+      check: '>= 0'
       name: commercial_irrigated_area >= 0
-  - min(area_parcel) >= 0:
+  - aggregate:
+      column: area_parcel
+      function: min
+      check: '>= 0'
       name: area_parcel >= 0
-  - min(median_income) >= 0:
+  - aggregate:
+      column: median_income
+      function: min
+      check: '>= 0'
       name: median_income >= 0
-  - min(rent_burden_pct) >= 0:
+  - aggregate:
+      column: rent_burden_pct
+      function: min
+      check: '>= 0'
       name: rent_burden_pct >= 0
-  - max(rent_burden_pct) <= 100:
+  - aggregate:
+      column: rent_burden_pct
+      function: max
+      check: '<= 100'
       name: rent_burden_pct <= 100
-  - min(pct_minority) >= 0:
+  - aggregate:
+      column: pct_minority
+      function: min
+      check: '>= 0'
       name: pct_minority >= 0
-  - max(pct_minority) <= 100:
+  - aggregate:
+      column: pct_minority
+      function: max
+      check: '<= 100'
       name: pct_minority <= 100
-  - min(pct_college_educated) >= 0:
+  - aggregate:
+      column: pct_college_educated
+      function: min
+      check: '>= 0'
       name: pct_college_educated >= 0
-  - max(pct_college_educated) <= 100:
+  - aggregate:
+      column: pct_college_educated
+      function: max
+      check: '<= 100'
       name: pct_college_educated <= 100
-  - min(cost_burden_pct) >= 0:
+  - aggregate:
+      column: cost_burden_pct
+      function: min
+      check: '>= 0'
       name: cost_burden_pct >= 0
-  - max(cost_burden_pct) <= 100:
+  - aggregate:
+      column: cost_burden_pct
+      function: max
+      check: '<= 100'
       name: cost_burden_pct <= 100
-  - min(acres_residential) >= 0:
+  - aggregate:
+      column: acres_residential
+      function: min
+      check: '>= 0'
       name: acres_residential >= 0
-  - min(acres_commercial) >= 0:
+  - aggregate:
+      column: acres_commercial
+      function: min
+      check: '>= 0'
       name: acres_commercial >= 0
-  - min(acres_industrial) >= 0:
+  - aggregate:
+      column: acres_industrial
+      function: min
+      check: '>= 0'
       name: acres_industrial >= 0
-  - min(intersection_density) >= 0:
+  - aggregate:
+      column: intersection_density
+      function: min
+      check: '>= 0'
       name: intersection_density >= 0
-  - min(pct_food_insecure) >= 0:
+  - aggregate:
+      column: pct_food_insecure
+      function: min
+      check: '>= 0'
       name: pct_food_insecure >= 0
-  - max(pct_food_insecure) <= 1:
+  - aggregate:
+      column: pct_food_insecure
+      function: max
+      check: '<= 1'
       name: pct_food_insecure <= 1
-  - min(pct_no_vehicle) >= 0:
+  - aggregate:
+      column: pct_no_vehicle
+      function: min
+      check: '>= 0'
       name: pct_no_vehicle >= 0
-  - max(pct_no_vehicle) <= 1:
+  - aggregate:
+      column: pct_no_vehicle
+      function: max
+      check: '<= 1'
       name: pct_no_vehicle <= 1
-  - min(pct_unemployment) >= 0:
+  - aggregate:
+      column: pct_unemployment
+      function: min
+      check: '>= 0'
       name: pct_unemployment >= 0
-  - max(pct_unemployment) <= 1:
+  - aggregate:
+      column: pct_unemployment
+      function: max
+      check: '<= 1'
       name: pct_unemployment <= 1

@@ -28,10 +28,21 @@ All return ``dict[str, Any]`` with keys:
 from __future__ import annotations
 
 import logging
+import os
+import tempfile
 from pathlib import Path
 from typing import Any
+from urllib.parse import urlparse
 
 from django.conf import settings
+from soda_postgres.common.data_sources.postgres_data_source import (
+    PostgresDataSourceImpl,
+)
+from soda_postgres.common.data_sources.postgres_data_source_connection import (
+    PostgresDataSource,
+)
+from soda_core.contracts import verify_contract_locally
+
 
 logger = logging.getLogger(__name__)
 
@@ -58,30 +69,23 @@ def _soda_dir() -> Path:
     return Path(getattr(settings, "SODA_PROJECT_DIR", settings.APPS_DIR / "soda"))
 
 
-# Default table names for contracts that use ``__TABLE__`` placeholders.
-# Maps ``contract_name`` → ``schema.table`` so that management-command runs
+# Default table names for contracts that use ``__DATASET__`` placeholders.
+# Maps ``contract_name`` → ``schema/table`` so that management-command runs
 # (which do not supply schema/table) resolve correctly.
+# Uses slash-separated dataset paths for soda_core v4.
 _DEFAULT_TABLE: dict[str, str] = {
-    "base_canvas": "public.base_canvas",
-    "census_acs": "public.census_acs",
-    "lehd": "public.lehd_lodes",
-    "poi": "public.poi",
-    "nlcd": "public.nlcd",
-    "synthetic_parcels": "public.synthetic_parcels",
-    "spatial_allocation": "public.spatial_allocation",
-    "column_stitching": "public.column_stitching",
-    "built_form_export": "public.built_forms",
-    "dbt_module_run": "public.dbt_module_run",
+    "base_canvas": "public/base_canvas",
+    "census_acs": "public/census_acs",
+    "lehd": "public/lehd_lodes",
+    "poi": "public/poi",
+    "nlcd": "public/nlcd",
+    "synthetic_parcels": "public/synthetic_parcels",
+    "spatial_allocation": "public/spatial_allocation",
+    "column_stitching": "public/column_stitching",
+    "built_form_export": "public/built_forms",
+    "dbt_module_run": "public/dbt_module_run",
 }
 # ── Scan runner ─────────────────────────────────────────────────────
-
-SODA_AVAILABLE: bool = True
-try:
-    from soda.scan import Scan
-except ImportError:
-    Scan = None  # type: ignore[assignment,misc]
-    SODA_AVAILABLE = False
-    logger.warning("soda-core not installed — data quality validation is disabled")
 
 
 def run_scan(
@@ -98,33 +102,70 @@ def run_scan(
     dataset name baked into the contract YAML (useful for dbt-module runs
     where the table name is known statically).
     """
-    if not SODA_AVAILABLE:
-        logger.warning("soda-core unavailable; skipping scan for '%s'", contract_name)
-        return _empty_result(contract_name)
+    # Build DATABASE_URL from Django settings.
+    db_conf = settings.DATABASES["default"]
+    user = db_conf["USER"]
+    password = db_conf["PASSWORD"]
+    host = db_conf.get("HOST", "localhost")
+    port = db_conf.get("PORT", "5432")
+    name = db_conf["NAME"]
+    database_url = f"postgresql://{user}:{password}@{host}:{port}/{name}"
+
+    parsed = urlparse(database_url)
+    connection = {
+        "host": parsed.hostname or "localhost",
+        "port": parsed.port or 5432,
+        "database": parsed.path.lstrip("/"),
+        "user": parsed.username or "",
+        "password": parsed.password or "",
+    }
+
+    ds_model = PostgresDataSource(
+        name="brewgis_postgis",
+        connection=connection,
+    )
+    ds = PostgresDataSourceImpl(data_source_model=ds_model)
 
     soda_dir = _soda_dir()
-    config_path = soda_dir / "configuration.yml"
     contract_path = soda_dir / "contracts" / f"{contract_name}.yml"
 
     if not contract_path.exists():
         logger.warning("Contract '%s' not found at %s", contract_name, contract_path)
         return _empty_result(contract_name)
 
-    # Read the contract YAML and inject the target dataset
     yaml_content = contract_path.read_text(encoding="utf-8")
+
     if schema is not None and table is not None:
-        qualified = f"{schema}.{table}"
+        dataset_id = f"brewgis_postgis/{schema}/{table}"
     else:
-        qualified = _DEFAULT_TABLE.get(contract_name, f"public.{contract_name}")
-    yaml_content = yaml_content.replace("__TABLE__", qualified)
+        dataset_id = _DEFAULT_TABLE.get(contract_name, f"public/{contract_name}")
 
-    scan = Scan()  # type: ignore[union-attr]
-    scan.add_configuration_yaml_file(str(config_path))
-    scan.add_sodacl_yaml_str(yaml_content)
-    scan.set_is_local(True)
-    scan.execute()
+    yaml_content = yaml_content.replace("__DATASET__", dataset_id)
 
-    return _summarise_scan(scan, contract_name)
+    tmp = tempfile.NamedTemporaryFile(
+        mode="w", suffix=".yml", delete=False, encoding="utf-8"
+    )
+    try:
+        tmp.write(yaml_content)
+    finally:
+        tmp.close()
+
+    try:
+        result = verify_contract_locally(
+            data_sources=[ds],
+            contract_file_path=tmp.name,
+        )
+    except Exception:
+        logger.exception(
+            "Contract verification failed for '%s'", contract_name
+        )
+        try:
+            os.unlink(tmp.name)
+        except OSError:
+            pass
+        return _empty_result(contract_name)
+
+    return _summarise_result(result, contract_name, tmp.name)
 
 
 # ── Convenience validators ─────────────────────────────────────────
@@ -213,17 +254,23 @@ def _empty_result(contract_name: str) -> dict[str, Any]:
     }
 
 
-def _summarise_scan(scan: Any, contract_name: str) -> dict[str, Any]:
-    """Convert a Soda ``Scan`` result to the dict shape callers expect."""
-    has_failures = scan.has_check_fails()
+def _summarise_result(
+    result: Any, contract_name: str, tmp_path: str
+) -> dict[str, Any]:
+    """Convert a ``verify_contract_locally`` result to the dict shape callers expect."""
+    try:
+        os.unlink(tmp_path)
+    except OSError:
+        pass
 
-    failures = [
-        f"{check.name}: {check.outcome_reason or 'failed'}"
-        for check in scan.get_checks_fail()
-    ]
+    failures = []
+    for cvr in result.contract_verification_results:
+        for c in cvr.check_results:
+            if c.is_failed:
+                failures.append(f"{c.check.name}: {c.check.definition}")
 
     return {
-        "success": not has_failures,
+        "success": result.is_passed,
         "checkpoint": contract_name,
         "failures": failures,
         "results_url": None,

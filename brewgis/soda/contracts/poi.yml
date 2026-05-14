@@ -1,22 +1,47 @@
 # Soda Core contract: POI staging validation
-checks for __TABLE__:
-  - row_count > 0:
+dataset: __DATASET__
+columns: []
+checks:
+  - row_count:
+      check: '> 0'
       name: Table has rows
-  - missing_count(osm_id) = 0:
+  - missing:
+      column: osm_id
+      check: '= 0'
       name: osm_id has no missing values
-  - missing_count(name) = 0:
+  - missing:
+      column: name
+      check: '= 0'
       name: name has no missing values
-  - missing_count(category) = 0:
+  - missing:
+      column: category
+      check: '= 0'
       name: category has no missing values
-  - missing_count(geometry) = 0:
+  - missing:
+      column: geometry
+      check: '= 0'
       name: geometry has no missing values
-  - min(lat) >= -90:
+  - aggregate:
+      column: lat
+      function: min
+      check: '>= -90'
       name: lat >= -90
-  - max(lat) <= 90:
+  - aggregate:
+      column: lat
+      function: max
+      check: '<= 90'
       name: lat <= 90
-  - min(lon) >= -180:
+  - aggregate:
+      column: lon
+      function: min
+      check: '>= -180'
       name: lon >= -180
-  - max(lon) <= 180:
+  - aggregate:
+      column: lon
+      function: max
+      check: '<= 180'
       name: lon <= 180
-  - duplicate_count(osm_id) = 0:
+  - duplicate:
+      column: osm_id
+      check: '= 0'
       name: osm_id is unique

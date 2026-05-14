@@ -1,6 +1,9 @@
 # Soda Core contract: generic dbt module output validation
 # Used by validate_dbt_table() — generic checks that apply to
 # any dbt model output table.
-checks for __TABLE__:
-  - row_count > 0:
+dataset: __DATASET__
+columns: []
+checks:
+  - row_count:
+      check: '> 0'
       name: Table has rows
