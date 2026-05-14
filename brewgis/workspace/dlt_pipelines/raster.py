@@ -8,14 +8,14 @@ module-level import does not fail when rasterio is not installed).
 
 from __future__ import annotations
 
+import logging
+
 from pathlib import Path
-from typing import TYPE_CHECKING, Any
+from typing import Any
 
 import dlt
 
 from brewgis.soda import validate_nlcd
-if TYPE_CHECKING:
-    import rasterio
 
 __all__ = [
     "raster_band_source",
@@ -24,16 +24,17 @@ __all__ = [
 ]
 
 
+logger = logging.getLogger(__name__)
 def _open_raster(path: str) -> Any:
     """Lazy-import rasterio and open the file."""
-    import rasterio  # noqa: PLC0415 — imported lazily to avoid hard dependency
+    import rasterio
 
     return rasterio.open(path)
 
 
 def _read_raster(path: str, band: int) -> tuple:
     """Lazy-import rasterio and read a band array."""
-    import rasterio  # noqa: PLC0415
+    import rasterio
 
     with rasterio.open(path) as src:
         data = src.read(band)
@@ -144,7 +145,9 @@ def raster_band_resource(file_path: str) -> Any:
                 "stddev": float(masked.std()) if len(masked) > 0 else None,
                 "nodata": float(nodata),
                 "unit": src.units[band_idx - 1] if src.units else None,
-                "description": src.descriptions[band_idx - 1] if src.descriptions else None,
+                "description": src.descriptions[band_idx - 1]
+                if src.descriptions
+                else None,
             }
 
 
@@ -177,7 +180,7 @@ def run_raster_pipeline(
     row_count = 0
     for step in pipeline.last_trace.steps:
         si = step.step_info
-        if hasattr(si, "row_counts") and si.row_counts:
+        if si is not None and hasattr(si, "row_counts") and si.row_counts:
             row_count = si.row_counts.get("raster_metadata", 0)
             break
 
@@ -187,7 +190,9 @@ def run_raster_pipeline(
         logger.info("Validation passed for %s.raster_metadata", schema)
     else:
         for failure in validation["failures"]:
-            logger.warning("Validation failure for %s.raster_metadata: %s", schema, failure)
+            logger.warning(
+                "Validation failure for %s.raster_metadata: %s", schema, failure
+            )
 
     return {
         "success": True,

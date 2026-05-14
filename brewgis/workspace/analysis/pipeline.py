@@ -17,12 +17,12 @@ import logging
 from typing import Any
 
 import deal
+from dagster._core.instance import DagsterInstance
 from django.utils import timezone
 
 from brewgis.soda import validate_dbt_table
 from brewgis.workspace.analysis.dbt_runner import run_dbt_local
 from brewgis.workspace.analysis.layer_registry import register_result_layer
-from brewgis.workspace.analysis.module_registry import MODULE_DEPENDENCIES
 from brewgis.workspace.analysis.module_registry import MODULE_RESULT_TABLES
 from brewgis.workspace.analysis.module_registry import get_module_label
 from brewgis.workspace.analysis.module_registry import get_result_table_names
@@ -31,10 +31,8 @@ from brewgis.workspace.analysis.module_registry import (
     resolve_module_order as _resolve_module_order,
 )
 from brewgis.workspace.models import AnalysisRun
-from dagster._core.instance import DagsterInstance
-from dagster._core.storage.dagster_run import DagsterRunStatus
-logger = logging.getLogger(__name__)
 
+logger = logging.getLogger(__name__)
 
 
 @deal.ensure(lambda module_names, result: set(module_names).issubset(set(result)))
@@ -153,11 +151,10 @@ def run_analysis_pipeline(
         base_vars=base_vars,
         target_schema=base_vars.get("target_schema", "public"),
         workspace_id=workspace_id,
-        scenario_id=scenario_id,
+        scenario_id=str(scenario_id),
         module_selects=base_vars.get("module_selects"),
     )
     return run
-
 
 
 def run_modules_sync(  # noqa: PLR0913
@@ -215,13 +212,20 @@ def run_modules_sync(  # noqa: PLR0913
                     logger.info("Validation passed for %s.%s", target_schema, table)
                 else:
                     for failure in validation["failures"]:
-                        logger.warning("Validation failure for %s.%s: %s", target_schema, table, failure)
-        results.append({
-            "module": module,
-            "success": dbt_result.success,
-            "error": dbt_result.error,
-            "validation": validation,
-        })
+                        logger.warning(
+                            "Validation failure for %s.%s: %s",
+                            target_schema,
+                            table,
+                            failure,
+                        )
+        results.append(
+            {
+                "module": module,
+                "success": dbt_result.success,
+                "error": dbt_result.error,
+                "validation": validation,
+            }
+        )
 
     return {
         "success": len(completed) == len(ordered),

@@ -101,7 +101,7 @@ class NetworkExtractor:
         except Exception as exc:
             msg = f"Failed to download OSM network: {exc}"
             logger.exception(msg)
-            ox.settings.requests_timeout = _saved_timeout
+            ox.settings.requests_timeout = _saved_timeout  # type: ignore[assignment]
             return {"success": False, "error": msg}
         if _saved_timeout is not None:
             ox.settings.requests_timeout = _saved_timeout

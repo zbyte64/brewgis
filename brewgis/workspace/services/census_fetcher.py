@@ -394,7 +394,7 @@ def fetch_acs_block_group_polygons(
         return gpd.GeoDataFrame()
 
     gdf: gpd.GeoDataFrame = gpd.GeoDataFrame(records, geometry=wkt_geoms, crs="EPSG:4326")
-    gdf = gdf[~gdf.geometry.isna()] # type: ignore
+    gdf = gdf[~gdf.geometry.isna()]
     return _apply_acs_column_mapping(gdf)
 
 

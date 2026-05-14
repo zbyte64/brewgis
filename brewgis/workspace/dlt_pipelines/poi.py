@@ -11,13 +11,13 @@ from __future__ import annotations
 
 import logging
 import time
-
 from typing import Any
+
 import dlt
 import requests
 
-from brewgis.workspace.services.poi_fetcher import OVERPASS_URL
 from brewgis.soda import validate_poi
+from brewgis.workspace.services.poi_fetcher import OVERPASS_URL
 from brewgis.workspace.services.poi_fetcher import POI_CATEGORIES  # noqa: F401
 from brewgis.workspace.services.poi_fetcher import _build_overpass_query
 
@@ -137,7 +137,7 @@ def run_poi_pipeline(  # noqa: PLR0913
     row_count = 0
     for step in pipeline.last_trace.steps:
         si = step.step_info
-        if hasattr(si, "row_counts") and si.row_counts:
+        if si is not None and hasattr(si, "row_counts") and si.row_counts:
             row_count = si.row_counts.get("poi_raw", 0)
             break
 

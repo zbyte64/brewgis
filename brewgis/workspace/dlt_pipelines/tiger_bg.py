@@ -122,7 +122,7 @@ def run_tiger_bg_pipeline(
     row_count = 0
     for step in pipeline.last_trace.steps:
         si = step.step_info
-        if hasattr(si, "row_counts") and si.row_counts:
+        if si is not None and hasattr(si, "row_counts") and si.row_counts:
             row_count = si.row_counts.get("tiger_block_groups", 0)
             break
 

@@ -6,20 +6,19 @@ a PostgreSQL staging table via dlt.
 
 from __future__ import annotations
 
+import logging
+
 import csv
 import gzip
 import io
-
 from typing import Any
+
 import dlt
 import requests
 
 from brewgis.soda import validate_lehd
-from brewgis.workspace.services.lehd_fetcher import (
-    _FIPS_TO_STATE,
-    LODES_WAC_BASE,
-    LODES_WAC_VARIABLES,
-)
+from brewgis.workspace.services.lehd_fetcher import _FIPS_TO_STATE
+from brewgis.workspace.services.lehd_fetcher import LODES_WAC_BASE
 
 __all__ = [
     "lehd_source",
@@ -27,6 +26,7 @@ __all__ = [
 ]
 
 
+logger = logging.getLogger(__name__)
 @dlt.source(name="lehd_lodes", max_table_nesting=0)
 def lehd_source(
     state_fips: str = "06",
@@ -117,7 +117,7 @@ def run_lehd_pipeline(
     row_count = 0
     for step in pipeline.last_trace.steps:
         si = step.step_info
-        if hasattr(si, "row_counts") and si.row_counts:
+        if si is not None and hasattr(si, "row_counts") and si.row_counts:
             row_count = si.row_counts.get("lodes_raw", 0)
             break
 

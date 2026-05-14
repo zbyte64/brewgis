@@ -369,16 +369,16 @@ def sacog_dbt_comparison(
     context.log.info("Running dbt comparison models: %s", _COMPARISON_DBT_SELECT)
 
     result = dbt_cli.run(
-        select=_COMPARISON_DBT_SELECT,
+        select=[_COMPARISON_DBT_SELECT],
         full_refresh=False,
     )
 
-    context.log.info("dbt comparison run complete: status=%s", result.get("status"))
+    context.log.info("dbt comparison run complete: status=%s", result.success)
 
     return MaterializeResult(
         metadata={
-            "dbt_status": result.get("status", "unknown"),
-            "dbt_elapsed_s": result.get("elapsed", 0),
+            "dbt_status": "success" if result.success else "failed",
+            "dbt_elapsed_s": 0,
         }
     )
 

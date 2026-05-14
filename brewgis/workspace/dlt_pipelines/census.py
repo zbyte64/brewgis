@@ -10,20 +10,24 @@ splitting) stays in :mod:`brewgis.workspace.services.census_fetcher`.
 
 from __future__ import annotations
 
+import logging
+
 __all__ = [
     "census_source",
     "run_census_pipeline",
 ]
 
 from typing import Any
+
 import dlt
 import requests
 
+from brewgis.soda import validate_census_acs
 from brewgis.workspace.services.census_fetcher import _all_vars
 from brewgis.workspace.services.census_fetcher import _census_api_key
-from brewgis.soda import validate_census_acs
 from brewgis.workspace.services.census_fetcher import _census_base_url
 
+logger = logging.getLogger(__name__)
 
 @dlt.source(name="census_acs", max_table_nesting=0)
 def census_source(
@@ -63,7 +67,9 @@ def census_acs_resource(
     dlt's incremental tracking ensures that already-loaded years are
     skipped on subsequent runs. The ``year`` field is the merge key.
     """
-    year_val: int = year.last_value if isinstance(year, dlt.sources.incremental) else year  # type: ignore[assignment]
+    year_val: int = (
+        year.last_value if isinstance(year, dlt.sources.incremental) else year  # type: ignore[assignment]
+    )
     vars_ = _all_vars()
     vars_str = ",".join(vars_)
     base = _census_base_url(year_val)
@@ -126,7 +132,7 @@ def run_census_pipeline(
     row_count = 0
     for step in pipeline.last_trace.steps:
         si = step.step_info
-        if hasattr(si, "row_counts") and si.row_counts:
+        if si is not None and hasattr(si, "row_counts") and si.row_counts:
             row_count = si.row_counts.get("acs_raw", 0)
             break
 
