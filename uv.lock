@@ -296,7 +296,7 @@ requires-dist = [
     { name = "dagster-embedded-elt", specifier = ">=0.21,<0.30" },
     { name = "dagster-postgres", specifier = ">=0.21,<0.30" },
     { name = "dagster-webserver", specifier = ">=1.10,<2.0" },
-    { name = "dbt-core", specifier = ">=1.8,<2.0" },
+    { name = "dbt-core", specifier = ">=1.9,<2.0" },
     { name = "dbt-postgres", specifier = ">=1.8,<2.0" },
     { name = "deal", specifier = ">=4.24" },
     { name = "django", specifier = ">=6.0,<6.1" },

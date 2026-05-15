@@ -30,7 +30,7 @@ pandas==2.2.3
 polars[lazy,pyarrow]>=1.0,<2.0  # https://github.com/pola-rs/polars — fast DataFrame library for non-spatial pipelines
 GeoAlchemy2==0.16.0
 dlt[postgres]>=1.0,<2.0  # https://github.com/dlt-hub/dlt — reliable data extraction from external APIs
-dbt-core>=1.8,<2.0  # https://github.com/dbt-labs/dbt-core
+dbt-core>=1.9,<2.0  # https://github.com/dbt-labs/dbt-core
 dbt-postgres>=1.8,<2.0  # https://github.com/dbt-labs/dbt-postgres
 osmnx>=2.0,<3.0  # https://github.com/gboeing/osmnx — OSM network extraction for transport analysis
 statsmodels>=0.14,<1.0  # https://github.com/statsmodels/statsmodels — logit/regression for transport calibration
