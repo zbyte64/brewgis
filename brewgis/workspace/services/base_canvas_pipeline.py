@@ -424,7 +424,7 @@ def _load_from_table(source_table: str, target_table: str) -> None:
     with connection.cursor() as cursor:
         cursor.execute(f"""
             INSERT INTO {_q(tgt_schema)}.{_q(tgt_name)} (geometry)
-            SELECT ST_Multi(geometry)
+            SELECT ST_Transform(ST_Multi(geometry), 4326)
             FROM {_q(src_schema)}.{_q(src_table)}
         """)
 
