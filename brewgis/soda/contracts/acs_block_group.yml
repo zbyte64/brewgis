@@ -22,8 +22,8 @@ columns:
       - aggregate:
           function: sum
           threshold:
-            must_be_greater_than_or_equal: 1
-          name: sum(pop) >= 1
+            must_be_greater_than_or_equal: 1000
+          name: sum(pop) >= 1000
   - name: hh
     checks:
       - missing:
@@ -53,8 +53,3 @@ checks:
   - row_count:
       check: '> 0'
       name: Table has rows
-  - metric:
-      expression: SUM(pop)
-      threshold:
-        must_be_greater_than_or_equal: 1000
-      name: sum(pop) >= 1000 for county-scale

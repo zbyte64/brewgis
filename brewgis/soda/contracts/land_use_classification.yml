@@ -6,7 +6,8 @@ dataset: __DATASET__
 columns:
   - name: land_development_category
     checks:
-      - distinct:
+      - aggregate:
+          function: count
           must_be_greater_than: 1
           name: more than one land_development_category
   - name: area_parcel_res

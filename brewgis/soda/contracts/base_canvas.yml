@@ -133,16 +133,20 @@ columns:
           threshold:
             must_be_greater_than_or_equal: 0
           name: intersection_density >= 0
+  - name: emp
+    checks:
+      - missing:
+          name: emp has reasonable values
+      - aggregate:
+          function: sum
+          threshold:
+            must_be_greater_than_or_equal: 100000
+            must_be_less_than_or_equal: 5000000
+          name: sum(emp) within reasonable range for US county
 checks:
   - row_count:
       check: '> 0'
       name: Table has rows
-  - metric:
-      expression: SUM(emp)
-      threshold:
-        must_be_greater_than_or_equal: 10000
-        must_be_less_than_or_equal: 50000000
-      name: sum(emp) within reasonable range for US county
   - metric:
       expression: SUM(emp) / GREATEST(NULLIF(SUM(pop), 0), 1e-10)
       threshold:
