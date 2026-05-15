@@ -42,7 +42,28 @@ User Browser                    Docker Compose Stack
 - **MCP server:** FastMCP stdio server mirrors the view layer, exposing 30+ tools for AI assistant integration (workspace, scenario, layer, paint, analysis, data import, reports, job management)
 - **Base canvas ETL:** Framework for spatial data ingestion with Protocol-based adapters (DemographicSource/EmploymentSource/LandUseSource), schema management, and validation
 - **Data quality:** Soda Core contracts validate every pipeline stage (census, LEHD, POI, built forms, spatial allocation, column stitching)
+|- **Django orchestrates data tooling** (dbt runner, dlt pipelines, Dagster assets) but does not implement data processing logic.
 - **Transparency** Never pass off a data failure as success or empty data. Fail early.
+|
+fq|## Tool Boundaries — Who Does What
+|
+ut|Coding agents must route work to the correct tool. This section defines ownership boundaries explicitly.
+|
+ht||Tool|Owns|Does NOT|
+dq||---|---|---|
+tq||**dlt**|Data ingestion/loading from external sources|Transformation, business logic|
+ff||**dbt**|Data transformation, testing, documentation, lineage|Ingestion, orchestration, UI|
+af||**Dagster**|Pipeline orchestration, scheduling, asset lineage|Transformation logic, ingestion logic|
+iy||**Django**|Business rules, user experience, auth, UI routing|Data processing, ETL, transformation|
+qy||**Python** (Django services)|Thin glue between tools, protocol adapters, API helpers|Reimplementing dbt models, building SQL strings for ETL|
+xe||**Soda**|Data quality contracts at pipeline boundaries|Transformation logic|
+ns|
+qq|Key rules:
+dq|- Data transformations live in dbt SQL models. NOT in Python services.
+vn|- Use dbt's native `schema.yml` tests and singular tests for data quality assertions. Prefer over pytest-based data tests.
+gg|- dbt Python models are for compute that SQL cannot express (numpy gravity model). They are the exception, not the pattern.
+pe|- Django services call tools (dbt runner, dlt pipelines, Dagster assets). They do not implement the data work.
+fu|
 
 ## Key Directories
 
@@ -356,7 +377,7 @@ tests/
 ├── factories.py             # 11 Factory Boy factories
 ├── test_*.py                # ~15 root-level integration tests
 ├── workspace/               # ~60 files — models, views, paint, adapters, ETL, MCP
-├── dbt_math/                # Property-based dbt SQL math: pure ref + SQL parity
+├── dbt_math/                # Property-based dbt SQL math: pure ref + SQL parity. Verification tool, NOT a pattern to extend — new models should use dbt native testing (schema tests, singular tests, dbt_expectations)
 ├── features/                # BDD — PostGIS-level isolation (psycopg)
 ├── isolation_orchestration/ # BDD — orchestration-level isolation (mocked Celery)
 ├── e2e/                     # Playwright BDD — 10 feature files, 7 POMs
@@ -418,3 +439,11 @@ Before implementing, verify:
 - **Auth & CSRF**: New views must be auth-guarded. htmx CSRF is wired via `htmx:configRequest` event in base.html.
 - **Callsite audit**: Search for every `def` change's usages. Update all callers.
 - **JSON in template attributes**: Use `{{ value|json_attr }}`, not raw `json.dumps()`.
+|
+sb|### Anti-Patterns — What NOT to Do
+hm|
+bp|These patterns have been eliminated or must be actively avoided. Do not reintroduce them.
+al|
+kr|1. **Python string-SQL ETL** — do not build ETL pipelines by concatenating SQL strings in Python services. Use dbt models for all data transformations.
+dd|2. **Python reference implementations of dbt SQL** — do not write Python code that reimplements dbt model logic for testing. Use dbt's native tests (schema.yml tests, singular tests) and Soda contracts instead.
+qr|3. **Django views/models for data processing** — Django owns business rules and UX. Data processing, transformation, and analytics belong in dbt, dlt, or Dagster.
