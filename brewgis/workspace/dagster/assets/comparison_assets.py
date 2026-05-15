@@ -307,15 +307,6 @@ def sacog_populate_geography_id(
     """
     context.log.info("Populating geography_id")
 
-    # Add geography_id and geometry_key columns if they don't exist
-    with connection.cursor() as cur:
-        cur.execute(
-            "ALTER TABLE public.base_canvas ADD COLUMN IF NOT EXISTS geography_id INTEGER"
-        )
-        cur.execute(
-            "ALTER TABLE public.base_canvas ADD COLUMN IF NOT EXISTS geometry_key TEXT"
-        )
-
     # Update base_canvas.geometry_key from source_id
     with connection.cursor() as cur:
         cur.execute("""

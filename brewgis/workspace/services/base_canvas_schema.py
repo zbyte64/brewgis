@@ -94,7 +94,7 @@ class BaseCanvasSchema:
     GEOMETRY = ColumnDef(
         name="geometry",
         label="Geometry",
-        pg_type="GEOMETRY(POLYGON, 4326)",
+        pg_type="GEOMETRY(MultiPolygon, 4326)",
         unit="—",
         metatype="geometry",
         aggregation_hint="first",
@@ -1140,7 +1140,7 @@ class BaseCanvasSchema:
                 col_defs.append("    id SERIAL PRIMARY KEY")
                 continue
             if name == "geometry":
-                col_defs.append("    geometry GEOMETRY(POLYGON, 4326) NOT NULL")
+                col_defs.append("    geometry GEOMETRY(MultiPolygon, 4326) NOT NULL")
                 continue
             nullable = " NOT NULL" if name in cls.NON_NULL_COLUMNS else ""
             col_defs.append(f"    {name} {col.pg_type}{nullable}")

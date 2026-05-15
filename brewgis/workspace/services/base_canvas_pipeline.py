@@ -384,10 +384,10 @@ def _ensure_target_table(target_table: str) -> None:
     for col in BaseCanvasSchema.COLUMN_NAMES:
         if col in ("id", "geometry"):
             continue
-        if col in ("land_development_category", "built_form_key"):
-            col_defs.append(f"{_q(col)} VARCHAR(64)")
-        else:
-            col_defs.append(f"{_q(col)} DOUBLE PRECISION")
+        col_def = BaseCanvasSchema.get(col)
+        if col_def is None:
+            continue
+        col_defs.append(f"{_q(col)} {col_def.pg_type}")
 
     schema_name, table_name = target_table.split(".")
     with connection.cursor() as cursor:
@@ -496,13 +496,11 @@ def _ensure_columns(target_table: str) -> None:
         for col in BaseCanvasSchema.COLUMN_NAMES:
             if col in ("id", "geometry") or col in existing:
                 continue
-            sql_type = (
-                "VARCHAR(64)"
-                if col in ("land_development_category", "built_form_key")
-                else "DOUBLE PRECISION"
-            )
+            col_def = BaseCanvasSchema.get(col)
+            if col_def is None:
+                continue
             cursor.execute(
-                f"ALTER TABLE {_q(schema)}.{_q(table)} ADD COLUMN {_q(col)} {sql_type}"
+                f"ALTER TABLE {_q(schema)}.{_q(table)} ADD COLUMN {_q(col)} {col_def.pg_type}"
             )
 
 
