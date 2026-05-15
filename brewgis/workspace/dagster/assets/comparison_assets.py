@@ -507,16 +507,14 @@ def sacog_dbt_comparison(
     ]
     schema = "public"
     for tbl in comparison_tables:
-        soda_result = validate_dbt_table(schema=schema, table=tbl)
-        if not soda_result.get("success", False):
-            context.log.warning(
-                "  Soda validation failed for %s.%s: %s",
-                schema,
-                tbl,
-                soda_result.get("failures", []),
+        result = validate_dbt_table(schema=schema, table=tbl)
+        if not result.get("success", False):
+            msg = (
+                f"Comparison dbt table {tbl} validation failed: "
+                f"{'; '.join(result.get('failures', []))}"
             )
-        else:
-            context.log.info("  Soda validation passed for %s.%s", schema, tbl)
+            raise RuntimeError(msg)
+        context.log.info("  Soda validation passed for %s.%s", schema, tbl)
 
     return MaterializeResult(
         metadata={

@@ -811,10 +811,10 @@ def _populate_wac_block(
         raise RuntimeError(msg)
 
     # Soda validation — validates wac_block quality
-    wac_result = validate_wac_block(schema="lehd", table="wac_block")
-    if not wac_result.get("success", False):
-        logger.warning(
-            "  WAC block validation warnings: %s",
-            wac_result.get("failures", []),
+    result = validate_wac_block(schema="lehd", table="wac_block")
+    if not result.get("success", False):
+        raise RuntimeError(
+            "WAC block validation failed: "
+            + "; ".join(result.get("failures", []))
         )
     return row_count

@@ -280,10 +280,10 @@ def _populate_acs_block_group(
         raise RuntimeError(msg)
 
     # Soda validation — validates acs_block_group quality
-    acs_result = validate_acs_block_group(schema="census", table="acs_block_group")
-    if not acs_result.get("success", False):
-        logger.warning(
-            "  ACS block group validation warnings: %s",
-            acs_result.get("failures", []),
+    result = validate_acs_block_group(schema="census", table="acs_block_group")
+    if not result.get("success", False):
+        raise RuntimeError(
+            "ACS block group validation failed: "
+            + "; ".join(result.get("failures", []))
         )
     return row_count

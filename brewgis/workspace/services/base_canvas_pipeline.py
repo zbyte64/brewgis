@@ -309,12 +309,14 @@ def run_pipeline(
         _log("[7/11] Classifying land use")
         _classify_land_use(target_table)
         schema_name, table_name = target_table.split(".")
-        land_use_result = validate_land_use_classification(
+        result = validate_land_use_classification(
             schema=schema_name, table=table_name
         )
-        if not land_use_result.get("success", False):
-            failures = land_use_result.get("failures", [])
-            logger.warning("  Land use classification warnings: %s", failures)
+        if not result.get("success", False):
+            raise RuntimeError(
+                "Land use classification validation failed: "
+                + "; ".join(result.get("failures", []))
+            )
 
         _log("[8/11] Estimating irrigation")
         _estimate_irrigation(target_table)
