@@ -83,8 +83,9 @@ models:
     - not_null
     - unique
     - relationships:
-        to: ref('trip_generation')
-        field: parcel_id
+        arguments:
+          to: ref('trip_generation')
+          field: parcel_id
   - name: trips_outbound
     tests:
     - not_null
@@ -107,8 +108,9 @@ models:
     - not_null
     - unique
     - relationships:
-        to: ref('trip_distribution')
-        field: parcel_id
+        arguments:
+          to: ref('trip_distribution')
+          field: parcel_id
   - name: trips_auto
     tests:
     - not_null
@@ -368,14 +370,17 @@ models:
     - not_null
     - unique
     - relationships:
-        to: ref('fiscal_property_tax')
-        field: parcel_id
+        arguments:
+          to: ref('fiscal_property_tax')
+          field: parcel_id
     - relationships:
-        to: ref('fiscal_sales_tax')
-        field: parcel_id
+        arguments:
+          to: ref('fiscal_sales_tax')
+          field: parcel_id
     - relationships:
-        to: ref('fiscal_service_costs')
-        field: parcel_id
+        arguments:
+          to: ref('fiscal_service_costs')
+          field: parcel_id
   - name: property_tax_revenue
     tests:
     - not_null
@@ -454,8 +459,9 @@ models:
     - not_null
     - unique
     - relationships:
-        to: ref('trip_generation')
-        field: parcel_id
+        arguments:
+          to: ref('trip_generation')
+          field: parcel_id
   - name: trips_internal
     tests:
     - not_null
@@ -721,7 +727,8 @@ models:
     tests:
     - not_null
     - accepted_values:
-        values: ['low_burden', 'cost_burdened', 'severely_cost_burdened']
+        arguments:
+          values: ['low_burden', 'cost_burdened', 'severely_cost_burdened']
 
 - name: food_access
   description: Modified Retail Food Environment Index (mRFEI) per parcel — healthy vs unhealthy food retailer ratio.
@@ -759,7 +766,8 @@ models:
   - name: food_access_category
     tests:
     - accepted_values:
-        values: ['food_desert', 'low_access', 'moderate_access', 'high_access']
+        arguments:
+          values: ['food_desert', 'low_access', 'moderate_access', 'high_access']
 - name: displacement_risk
   description: Displacement risk/gentrification typology using equity indicators from base canvas.
   columns:
@@ -808,7 +816,8 @@ models:
     tests:
     - not_null
     - accepted_values:
-        values: ['stable', 'vulnerable', 'at_risk', 'displacement_pressure']
+        arguments:
+          values: ['stable', 'vulnerable', 'at_risk', 'displacement_pressure']
 - name: tree_canopy
   description: "Tree canopy cover and urban heat island exposure per parcel."
   columns:

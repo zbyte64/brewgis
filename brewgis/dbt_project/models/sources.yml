@@ -9,28 +9,23 @@ sources:
     description: "Dynamic analysis sources resolved via dbt vars."
     freshness: null
     loader: django
+    schema: "{{ var('source_schema', 'public') }}"
     tables:
       - name: parcels
         description: "Parcel data with built form assignments."
         identifier: "{{ var('parcel_table') }}"
-        schema: "{{ var('source_schema', 'public') }}"
       - name: constraints
         description: "Environmental constraint layers."
         identifier: "{{ var('constraint_table') }}"
-        schema: "{{ var('source_schema', 'public') }}"
       - name: built_forms
         description: "Building type assignments on parcels."
         identifier: "{{ var('built_form_table') }}"
-        schema: "{{ var('source_schema', 'public') }}"
       - name: lodes_raw
         description: "LEHD LODES WAC employment data — raw staging table loaded by dlt."
         identifier: "{{ var('lodes_raw_table', 'lodes_raw') }}"
-        schema: "{{ var('source_schema', 'public') }}"
       - name: acs_raw
         description: "Census ACS 5-year raw data — staging table loaded by dlt."
         identifier: "{{ var('acs_raw_table', 'acs_raw') }}"
-        schema: "{{ var('source_schema', 'public') }}"
       - name: tiger_block_groups
         description: "TIGER/Line block group polygons with WKT geometry — loaded by dlt."
         identifier: "{{ var('tiger_bg_table', 'tiger_block_groups') }}"
-        schema: "{{ var('source_schema', 'public') }}"

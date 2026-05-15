@@ -248,6 +248,9 @@ def _populate_acs_block_group(
         RuntimeError: If dbt fails or the table is empty.
     """
     dbt_vars: dict[str, object] = {
+        "source_schema": "public",
+        "acs_raw_table": "acs_raw",
+        "tiger_bg_table": "tiger_block_groups",
         "year": year,
         "state_fips": state_fips,
         "county_fips": county_fips,

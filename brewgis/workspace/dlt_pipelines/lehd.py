@@ -50,8 +50,28 @@ def lehd_source(
 
 @dlt.resource(
     name="lodes_raw",
+    write_disposition="replace",
     columns={
         "year": {"data_type": "bigint", "nullable": False},
+        "w_geocode": {"data_type": "text", "nullable": False},
+        "c000": {"data_type": "bigint", "nullable": True},
+        "cns01": {"data_type": "bigint", "nullable": True},
+        "cns02": {"data_type": "bigint", "nullable": True},
+        "cns03": {"data_type": "bigint", "nullable": True},
+        "cns04": {"data_type": "bigint", "nullable": True},
+        "cns05": {"data_type": "bigint", "nullable": True},
+        "cns06": {"data_type": "bigint", "nullable": True},
+        "cns07": {"data_type": "bigint", "nullable": True},
+        "cns08": {"data_type": "bigint", "nullable": True},
+        "cns09": {"data_type": "bigint", "nullable": True},
+        "cns10": {"data_type": "bigint", "nullable": True},
+        "cns11": {"data_type": "bigint", "nullable": True},
+        "cns12": {"data_type": "bigint", "nullable": True},
+        "cns13": {"data_type": "bigint", "nullable": True},
+        "cns14": {"data_type": "bigint", "nullable": True},
+        "cns15": {"data_type": "bigint", "nullable": True},
+        "cns16": {"data_type": "bigint", "nullable": True},
+        "cns17": {"data_type": "bigint", "nullable": True},
     },
     primary_key=("year", "w_geocode"),
 )
@@ -105,7 +125,6 @@ def run_lehd_pipeline(
         Keys: ``success``, ``table_name``, ``row_count``, ``load_info``
         (or ``error`` on failure).
     """
-    # TODO purge entries that would cause duplicates, ie select matching fips & year then delete
     pipeline = dlt.pipeline(
         pipeline_name=f"lehd_lodes_{state_fips}_{county_fips}_{year}",
         destination="postgres",
