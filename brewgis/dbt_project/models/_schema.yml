@@ -1094,3 +1094,37 @@ models:
   - name: cost_burden_pct
     tests:
     - non_negative
+
+- name: allocation_factors
+  description: "Area-weighted allocation factors between source and target geometries per overlapping pair."
+  columns:
+  - name: source_id
+    description: "Source feature identifier"
+    tests:
+    - not_null
+  - name: target_id
+    description: "Target feature identifier"
+    tests:
+    - not_null
+  - name: weight
+    description: "Fraction of source area intersecting target (0, 1]"
+    tests:
+    - not_null
+    - non_negative
+    - column_between:
+        arguments:
+          min_value: 0
+          max_value: 1
+
+- name: allocation_apply
+  description: "Allocated source column value per target row using area-weighted proportional allocation."
+  columns:
+  - name: target_ctid
+    description: "Target row ctid for UPDATE matching"
+    tests:
+    - not_null
+    - unique
+  - name: allocated_value
+    description: "Area-weighted sum of source column values allocated to this target row"
+    tests:
+    - not_null

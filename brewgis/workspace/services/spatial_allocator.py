@@ -10,128 +10,10 @@ from __future__ import annotations
 import logging
 from typing import Any
 
-import deal
-import geopandas as gpd
-import pandas as pd
-from django.db import connection
-
-from brewgis.soda import validate_spatial_allocation
 from brewgis.workspace.services._db import get_engine
+from brewgis.workspace.services._db import text
 
 logger = logging.getLogger(__name__)
-
-
-def _load_geometries_and_values(
-    schema: str,
-    table: str,
-    geom_col: str,
-    value_columns: list[str] | None = None,
-    include_ctid: bool = False,
-) -> gpd.GeoDataFrame:
-    """Load geometries and optional value columns from a PostGIS table.
-
-    Args:
-        schema: Database schema name.
-        table: Table name.
-        geom_col: Geometry column name (typically 'geom' or 'geometry').
-        value_columns: List of numeric columns to load. None = load all.
-        include_ctid: If True, include ctid AS __ctid__ for row identity.
-
-    Returns:
-        GeoDataFrame with geometry and value columns, plus __ctid__ if requested.
-    """
-    extra_cols = []
-    if include_ctid:
-        extra_cols.append("ctid AS __ctid__")
-
-    if value_columns:
-        if extra_cols:
-            cols = ", ".join(extra_cols + value_columns)
-        else:
-            cols = ", ".join(value_columns)
-        query = f'SELECT "{geom_col}", {cols} FROM "{schema}"."{table}"'
-    else:
-        ctid_clause = ", ctid AS __ctid__" if include_ctid else ""
-        query = f'SELECT *{ctid_clause} FROM "{schema}"."{table}"'
-
-    engine = get_engine()
-    df = gpd.read_postgis(query, engine, geom_col=geom_col)
-    engine.dispose()
-    return df
-
-
-@deal.pre(lambda source_gdf, target_gdf: len(source_gdf) > 0 and len(target_gdf) > 0)
-@deal.post(lambda result: result["weight"].min() >= 0 if len(result) > 0 else True)
-@deal.post(lambda result: result["weight"].max() <= 1.0 if len(result) > 0 else True)
-def _compute_allocation_factors(
-    source_gdf: gpd.GeoDataFrame,
-    target_gdf: gpd.GeoDataFrame,
-    source_id_col: str = "__sid__",
-    target_id_col: str = "__tid__",
-) -> pd.DataFrame:
-    """Compute area-weighted allocation factors between source and target.
-
-    For each source-target pair, computes the intersection area as a fraction
-    of the source geometry area. This gives the weight for distributing source
-    values to each intersecting target.
-
-    Args:
-        source_gdf: Source layer GeoDataFrame. Must have __sid__ index column.
-        target_gdf: Target layer GeoDataFrame. Must have __tid__ index column.
-        source_id_col: Name of the source ID column (default: __sid__).
-        target_id_col: Name of the target ID column (default: __tid__).
-
-    Returns:
-        DataFrame with columns: {source_id_col}, {target_id_col}, weight.
-    """
-    # Ensure both are in the same CRS and projected for area calculation
-    if source_gdf.crs != target_gdf.crs:
-        if source_gdf.crs is None and target_gdf.crs is not None:
-            source_gdf = source_gdf.set_crs(target_gdf.crs)
-        elif target_gdf.crs is None and source_gdf.crs is not None:
-            target_gdf = target_gdf.set_crs(source_gdf.crs)
-
-    if source_gdf.crs:
-        # Reproject to a projected CRS for accurate area calculations
-        # Use UTM zone if possible, or fall back to web mercator
-        projected_crs = "EPSG:3857"
-        source_proj = source_gdf.to_crs(projected_crs)
-        target_proj = target_gdf.to_crs(projected_crs)
-    else:
-        source_proj = source_gdf
-        target_proj = target_gdf
-
-    # Compute total source areas
-    source_areas = source_proj.geometry.area
-
-    allocation_rows: list[dict[str, Any]] = []
-
-    for source_idx, source_row in source_proj.iterrows():
-        source_geom = source_row[source_proj.geometry.name]
-        source_area = source_areas.loc[source_idx]
-        if source_area <= 0:
-            continue
-        for target_idx, target_row in target_proj.iterrows():
-            target_geom = target_row[target_proj.geometry.name]
-            if source_geom.intersects(target_geom):
-                intersection = source_geom.intersection(target_geom)
-                intersection_area = intersection.area
-
-                if intersection_area > 0:
-                    weight = intersection_area / source_area
-                    allocation_rows.append(
-                        {
-                            source_id_col: source_idx,
-                            target_id_col: target_idx,
-                            "weight": weight,
-                        }
-                    )
-
-    if not allocation_rows:
-        msg = "No spatial overlaps found between source and target layers."
-        raise RuntimeError(msg)
-
-    return pd.DataFrame(allocation_rows)
 
 
 def allocate_attributes(
@@ -149,6 +31,9 @@ def allocate_attributes(
     For each target feature, the allocated value is the sum across all
     intersecting source features of (source_value * intersection_area / source_area).
 
+    Uses direct SQL with the PostGIS ``public.intersection_acres`` and
+    ``public.acres`` functions — no GeoDataFrame round-trip.
+
     Args:
         source_schema: Schema of the source table.
         source_table: Source table (e.g., census block groups).
@@ -161,98 +46,63 @@ def allocate_attributes(
 
     Returns:
         Dict with keys:
-            total_features: Number of target features updated.
+            total_features: Number of target feature-column pairs updated.
             allocated_columns: List of column names written.
             errors: List of any per-column errors.
     """
-    # Load source data
-    source_gdf = _load_geometries_and_values(
-        source_schema,
-        source_table,
-        source_geom_col,
-        columns,
-    )
-    source_gdf["__sid__"] = source_gdf.index
-
-    target_gdf = _load_geometries_and_values(
-        target_schema,
-        target_table,
-        target_geom_col,
-        include_ctid=True,
-    )
-    target_gdf["__tid__"] = target_gdf.index
-    # Map tid to physical row identity
-    tid_to_ctid = target_gdf["__ctid__"].to_dict()
-
-    # Compute allocation weights
-    allocation_df = _compute_allocation_factors(
-        source_gdf,
-        target_gdf,
-        source_id_col="__sid__",
-        target_id_col="__tid__",
-    )
-
-    # For each column, compute allocated values per target
-    target_values: dict[str, dict[int, float]] = {}
-    for col in columns:
-        if col not in source_gdf.columns:
-            continue
-
-        col_values: dict[int, float] = {}
-        for _, row in allocation_df.iterrows():
-            sid = int(row["__sid__"])
-            tid = int(row["__tid__"])
-            weight = row["weight"]
-            source_val = source_gdf.loc[sid, col]
-            if pd.isna(source_val):
-                source_val = 0.0
-            allocated = float(source_val) * weight
-            col_values[tid] = col_values.get(tid, 0.0) + allocated
-
-        target_values[col] = col_values
-
-    # Write results back to target table
+    engine = get_engine()
     errors: list[str] = []
-    updated_count = 0
     new_column_names: list[str] = []
+    updated_count = 0
 
-    with connection.cursor() as cursor:
+    with engine.begin() as conn:
         for col in columns:
-            if col not in target_values:
-                continue
-
             new_col = f"{target_column_prefix}{col}" if target_column_prefix else col
             new_column_names.append(new_col)
 
             # Add column if it doesn't exist
-            cursor.execute(
-                f'ALTER TABLE "{target_schema}"."{target_table}" '
-                f'ADD COLUMN IF NOT EXISTS "{new_col}" DOUBLE PRECISION DEFAULT 0'
-            )
-
-            for tid, value in target_values[col].items():
-                ctid = tid_to_ctid[tid]
-                cursor.execute(
-                    f'UPDATE "{target_schema}"."{target_table}" '
-                    f'SET "{new_col}" = %s '
-                    f"WHERE ctid = %s",
-                    [value, ctid],
+            conn.execute(
+                text(
+                    f'ALTER TABLE "{target_schema}"."{target_table}" '
+                    f'ADD COLUMN IF NOT EXISTS "{new_col}" DOUBLE PRECISION DEFAULT 0'
                 )
-                updated_count += 1
-
-    # Run Soda Core validation on the target table
-    validation = validate_spatial_allocation(schema=target_schema, table=target_table)
-    if validation["success"]:
-        logger.info("Validation passed for %s.%s", target_schema, target_table)
-    else:
-        for failure in validation["failures"]:
-            logger.warning(
-                "Validation failure for %s.%s: %s", target_schema, target_table, failure
             )
+
+            # Single UPDATE from allocation weight subquery
+            sql = text(f"""
+                UPDATE "{target_schema}"."{target_table}" AS t
+                SET "{new_col}" = sub.allocated_value
+                FROM (
+                    SELECT
+                        t2.ctid,
+                        SUM(
+                            COALESCE(s."{col}", 0)
+                            * public.intersection_acres(
+                                ST_Transform(s."{source_geom_col}", 3857),
+                                ST_Transform(t2."{target_geom_col}", 3857)
+                            )
+                            / NULLIF(public.acres(ST_Transform(s."{source_geom_col}", 3857)), 0)
+                        ) AS allocated_value
+                    FROM "{source_schema}"."{source_table}" s
+                    JOIN "{target_schema}"."{target_table}" t2
+                        ON ST_Intersects(
+                            ST_Transform(s."{source_geom_col}", 3857),
+                            ST_Transform(t2."{target_geom_col}", 3857)
+                        )
+                    WHERE public.acres(ST_Transform(s."{source_geom_col}", 3857)) > 0
+                      AND public.intersection_acres(
+                          ST_Transform(s."{source_geom_col}", 3857),
+                          ST_Transform(t2."{target_geom_col}", 3857)
+                      ) > 0
+                    GROUP BY t2.ctid
+                ) sub
+                WHERE t.ctid = sub.ctid
+            """)
+            result = conn.execute(sql)
+            updated_count += result.rowcount
 
     return {
         "total_features": updated_count,
         "allocated_columns": new_column_names,
         "errors": errors,
-        "validation": validation,
     }

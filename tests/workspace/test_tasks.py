@@ -75,8 +75,10 @@ class TestRunSpatialAllocation:
         assert result == {"success": False, "error": "DataImportRun 999 not found"}
 
     @patch("brewgis.workspace.tasks.DataImportRun.objects.get")
-    def test_success(self, mock_get: MagicMock) -> None:
+    @patch("brewgis.workspace.tasks.validate_spatial_allocation")
+    def test_success(self, mock_soda: MagicMock, mock_get: MagicMock) -> None:
         """Successful allocation returns success + result keys."""
+        mock_soda.return_value = {"success": True, "failures": []}
         run_mock = MagicMock()
         mock_get.return_value = run_mock
 
@@ -92,7 +94,11 @@ class TestRunSpatialAllocation:
                 column_prefix="acs_",
             )
 
-        assert result == {"success": True, "rows_affected": 150}
+        assert result == {
+            "success": True,
+            "rows_affected": 150,
+            "validation": {"success": True, "failures": []},
+        }
         mock_alloc.assert_called_once_with(
             source_schema="public",
             source_table="census_data",
@@ -103,8 +109,12 @@ class TestRunSpatialAllocation:
             source_geom_col="geom",
             target_geom_col="geom",
         )
+        mock_soda.assert_called_once_with(schema="public", table="parcels")
         assert run_mock.status == "completed"
-        assert run_mock.result == {"rows_affected": 150}
+        assert run_mock.result == {
+            "rows_affected": 150,
+            "validation": {"success": True, "failures": []},
+        }
         run_mock.save.assert_called()
 
     @patch("brewgis.workspace.tasks.DataImportRun.objects.get")
@@ -132,7 +142,6 @@ class TestRunSpatialAllocation:
 
 
 # ── run_census_fetch ────────────────────────────────────────────────
-
 
 
 class TestRunCensusFetch:
@@ -195,7 +204,10 @@ class TestRunCensusFetch:
             schema="public",
         )
 
-        assert result == {"success": False, "error": "dlt extraction failed: connection timeout"}
+        assert result == {
+            "success": False,
+            "error": "dlt extraction failed: connection timeout",
+        }
         assert run_mock.status == "failed"
 
     @patch("brewgis.workspace.tasks.DataImportRun.objects.get")
@@ -211,8 +223,9 @@ class TestRunCensusFetch:
         )
 
         assert result == {"success": False, "error": "DataImportRun 999 not found"}
-# ── run_lehd_fetch ──────────────────────────────────────────────────
 
+
+# ── run_lehd_fetch ──────────────────────────────────────────────────
 
 
 class TestRunLehdFetch:
@@ -274,7 +287,10 @@ class TestRunLehdFetch:
             schema="public",
         )
 
-        assert result == {"success": False, "error": "dlt extraction failed: connection timeout"}
+        assert result == {
+            "success": False,
+            "error": "dlt extraction failed: connection timeout",
+        }
         assert run_mock.status == "failed"
 
     @patch("brewgis.workspace.tasks.DataImportRun.objects.get")
@@ -290,8 +306,9 @@ class TestRunLehdFetch:
         )
 
         assert result == {"success": False, "error": "DataImportRun 999 not found"}
-# ── run_poi_fetch ───────────────────────────────────────────────────
 
+
+# ── run_poi_fetch ───────────────────────────────────────────────────
 
 
 class TestRunPoiFetch:
@@ -359,7 +376,10 @@ class TestRunPoiFetch:
             schema="public",
         )
 
-        assert result == {"success": False, "error": "dlt extraction failed: connection timeout"}
+        assert result == {
+            "success": False,
+            "error": "dlt extraction failed: connection timeout",
+        }
         assert run_mock.status == "failed"
 
     @patch("brewgis.workspace.tasks.DataImportRun.objects.get")

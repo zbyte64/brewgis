@@ -50,3 +50,25 @@
         )
     )
 {% endmacro %}
+
+
+{#
+    Compute the area-weighted allocation factor between source and target geometries.
+
+    Returns a SQL expression producing the ratio of intersection area to source
+    area — i.e., the fraction of each source geometry's area that overlaps a target
+    geometry. Both geometries are projected to SRID 3857 for area measurement.
+    The 4046.86 acre-conversion factor cancels out in the division, so the result
+    is a pure ratio in [0, 1].
+
+    Usage:
+        SELECT {{ compute_allocation_weight('s', 't', 'geom', 'geom') }} AS weight
+        FROM source_table s
+        JOIN target_table t ON ST_Intersects(ST_Transform(s.geom, 3857), ST_Transform(t.geom, 3857))
+#}
+{% macro compute_allocation_weight(source_alias, target_alias, source_geom='geom', target_geom='geom') %}
+    public.intersection_acres(
+        ST_Transform({{ source_alias }}.{{ source_geom }}, 3857),
+        ST_Transform({{ target_alias }}.{{ target_geom }}, 3857)
+    ) / NULLIF(public.acres(ST_Transform({{ source_alias }}.{{ source_geom }}, 3857)), 0)
+{% endmacro %}

@@ -2,200 +2,192 @@
 
 from __future__ import annotations
 
-import geopandas as gpd
 import pytest
-from shapely.geometry import Polygon
 
-from brewgis.workspace.services.spatial_allocator import _compute_allocation_factors
+from brewgis.workspace.services._db import get_engine, text
+from brewgis.workspace.services.spatial_allocator import allocate_attributes
 
 
-class TestSpatialAllocation:
-    """Unit tests for area-weighted spatial allocation."""
+@pytest.mark.django_db
+class TestSpatialAllocationIntegration:
+    """Integration tests for allocate_attributes using real PostGIS tables."""
 
-    def _make_square(self, x: float, y: float, size: float = 1.0) -> Polygon:
-        """Create a square polygon at (x, y) with given size."""
-        return Polygon(
-            [
-                (x, y),
-                (x + size, y),
-                (x + size, y + size),
-                (x, y + size),
-            ]
+    @property
+    def _engine(self):
+        return get_engine()
+
+    def _create_source_table(
+        self, table_name: str, values: list[tuple[float, float, float, float, float]]
+    ) -> None:
+        """Create a source table with geometry + value columns.
+
+        Args:
+            values: list of (x, y, size, val1, val2) tuples
+        """
+        engine = self._engine
+        with engine.begin() as conn:
+            conn.execute(text("CREATE EXTENSION IF NOT EXISTS postgis"))
+            conn.execute(text(f"DROP TABLE IF EXISTS {table_name} CASCADE"))
+            conn.execute(
+                text(f"""
+                CREATE TABLE {table_name} (
+                    id SERIAL PRIMARY KEY,
+                    geom GEOMETRY(POLYGON, 4326),
+                    val1 DOUBLE PRECISION,
+                    val2 DOUBLE PRECISION
+                )
+            """)
+            )
+            for x, y, size, v1, v2 in values:
+                conn.execute(
+                    text(f"""
+                        INSERT INTO {table_name} (geom, val1, val2)
+                        VALUES (ST_SetSRID(ST_MakeEnvelope(:x, :y, :x2, :y2), 4326), :v1, :v2)
+                    """),
+                    {
+                        "x": x,
+                        "y": y,
+                        "x2": x + size,
+                        "y2": y + size,
+                        "v1": v1,
+                        "v2": v2,
+                    },
+                )
+
+    def _create_target_table(
+        self, table_name: str, geometries: list[tuple[float, float, float, float]]
+    ) -> None:
+        """Create a bare target table with only geometry.
+
+        Args:
+            geometries: list of (x, y, x2, y2) envelope corners
+        """
+        engine = self._engine
+        with engine.begin() as conn:
+            conn.execute(text("CREATE EXTENSION IF NOT EXISTS postgis"))
+            conn.execute(text(f"DROP TABLE IF EXISTS {table_name} CASCADE"))
+            conn.execute(
+                text(f"""
+                CREATE TABLE {table_name} (
+                    id SERIAL PRIMARY KEY,
+                    geom GEOMETRY(POLYGON, 4326)
+                )
+            """)
+            )
+            for x1, y1, x2, y2 in geometries:
+                conn.execute(
+                    text(f"""
+                        INSERT INTO {table_name} (geom)
+                        VALUES (ST_SetSRID(ST_MakeEnvelope(:x1, :y1, :x2, :y2), 4326))
+                    """),
+                    {"x1": x1, "y1": y1, "x2": x2, "y2": y2},
+                )
+
+    def _read_target_value(
+        self, schema: str, table: str, column: str, row_id: int
+    ) -> float | None:
+        engine = self._engine
+        with engine.begin() as conn:
+            row = conn.execute(
+                text(f'SELECT "{column}" FROM "{schema}"."{table}" WHERE id = :rid'),
+                {"rid": row_id},
+            ).fetchone()
+        return float(row[0]) if row else None
+
+    def test_full_overlap_single_column(self) -> None:
+        """Source fully covering target allocates all of source value."""
+        schema = "public"
+        self._create_source_table("test_alloc_src_single", [(0, 0, 10, 100.0, 200.0)])
+        self._create_target_table("test_alloc_tgt_single", [(0, 0, 10, 10)])
+
+        result = allocate_attributes(
+            source_schema=schema,
+            source_table="test_alloc_src_single",
+            target_schema=schema,
+            target_table="test_alloc_tgt_single",
+            columns=["val1"],
         )
 
-    def test_compute_allocation_factors_simple(self) -> None:
-        """A source fully overlapping a target should have weight=1."""
-        source = gpd.GeoDataFrame(
-            {"val": [100]},
-            geometry=[self._make_square(0, 0, 10)],
-            crs="EPSG:4326",
+        assert result["allocated_columns"] == ["val1"]
+        assert result["total_features"] >= 1
+        assert not result["errors"]
+
+        value = self._read_target_value(schema, "test_alloc_tgt_single", "val1", 1)
+        # Full overlap → weight ≈ 1.0 → allocated ≈ 100
+        assert value is not None
+        assert value == pytest.approx(100.0, rel=0.1)
+
+    def test_half_overlap_multiple_columns(self) -> None:
+        """Half-overlapping source distributes proportionally for multiple columns."""
+        schema = "public"
+        self._create_source_table("test_alloc_src_half", [(0, 0, 10, 100.0, 200.0)])
+        self._create_target_table("test_alloc_tgt_half", [(5, 0, 15, 10)])
+
+        result = allocate_attributes(
+            source_schema=schema,
+            source_table="test_alloc_src_half",
+            target_schema=schema,
+            target_table="test_alloc_tgt_half",
+            columns=["val1", "val2"],
         )
-        source["__sid__"] = source.index
 
-        target = gpd.GeoDataFrame(
-            {"name": ["parcel"]},
-            geometry=[self._make_square(0, 0, 10)],
-            crs="EPSG:4326",
+        assert result["allocated_columns"] == ["val1", "val2"]
+        assert result["total_features"] >= 2
+
+        v1 = self._read_target_value(schema, "test_alloc_tgt_half", "val1", 1)
+        v2 = self._read_target_value(schema, "test_alloc_tgt_half", "val2", 1)
+        # Half overlap → weight ≈ 0.5 → allocated ≈ 50
+        assert v1 is not None
+        assert v1 == pytest.approx(50.0, rel=0.2)
+        # val2 = 200 → allocated ≈ 100
+        assert v2 is not None
+        assert v2 == pytest.approx(100.0, rel=0.2)
+
+    def test_column_prefix_applied(self) -> None:
+        """Custom column prefix is applied to output columns."""
+        schema = "public"
+        self._create_source_table("test_alloc_src_pre", [(0, 0, 10, 100.0, 200.0)])
+        self._create_target_table("test_alloc_tgt_pre", [(0, 0, 10, 10)])
+
+        result = allocate_attributes(
+            source_schema=schema,
+            source_table="test_alloc_src_pre",
+            target_schema=schema,
+            target_table="test_alloc_tgt_pre",
+            columns=["val1"],
+            target_column_prefix="alloc_",
         )
-        target["__tid__"] = target.index
 
-        result = _compute_allocation_factors(source, target)
+        assert result["allocated_columns"] == ["alloc_val1"]
 
-        assert len(result) == 1
-        assert result.iloc[0]["weight"] == pytest.approx(1.0, rel=0.1)
+        engine = self._engine
+        with engine.begin() as conn:
+            cols = conn.execute(
+                text("""
+                    SELECT column_name FROM information_schema.columns
+                    WHERE table_schema = 'public' AND table_name = 'test_alloc_tgt_pre'
+                    AND column_name = 'alloc_val1'
+                """),
+            ).fetchall()
+            assert len(cols) == 1
 
-    def test_compute_allocation_factors_half_overlap(self) -> None:
-        """Half overlap should give weight=0.5."""
-        source = gpd.GeoDataFrame(
-            {"val": [100]},
-            geometry=[self._make_square(0, 0, 10)],
-            crs="EPSG:4326",
+    def test_no_spatial_overlap_sets_zero(self) -> None:
+        """Non-overlapping geometries result in zero allocated values (DEFAULT 0)."""
+        schema = "public"
+        self._create_source_table("test_alloc_src_no", [(0, 0, 10, 100.0, 200.0)])
+        self._create_target_table("test_alloc_tgt_no", [(50, 50, 60, 60)])
+
+        result = allocate_attributes(
+            source_schema=schema,
+            source_table="test_alloc_src_no",
+            target_schema=schema,
+            target_table="test_alloc_tgt_no",
+            columns=["val1"],
         )
-        source["__sid__"] = source.index
 
-        # Target overlaps half of source
-        target = gpd.GeoDataFrame(
-            {"name": ["parcel"]},
-            geometry=[self._make_square(5, 0, 10)],
-            crs="EPSG:4326",
-        )
-        target["__tid__"] = target.index
+        # No overlap → UPDATE affects zero rows → rowcount = 0
+        assert result["total_features"] == 0
 
-        result = _compute_allocation_factors(source, target)
-
-        assert len(result) == 1
-        assert result.iloc[0]["weight"] == pytest.approx(0.5, rel=0.1)
-
-    def test_compute_allocation_factors_no_overlap(self) -> None:
-        """Non-overlapping geometries should raise RuntimeError."""
-        source = gpd.GeoDataFrame(
-            {"val": [100]},
-            geometry=[self._make_square(0, 0, 10)],
-            crs="EPSG:4326",
-        )
-        source["__sid__"] = source.index
-
-        target = gpd.GeoDataFrame(
-            {"name": ["parcel"]},
-            geometry=[self._make_square(100, 100, 10)],
-            crs="EPSG:4326",
-        )
-        target["__tid__"] = target.index
-
-        with pytest.raises(RuntimeError, match="No spatial overlaps found"):
-            _compute_allocation_factors(source, target)
-
-    def test_compute_allocation_factors_multiple_targets(self) -> None:
-        """Multiple targets should each get correct weights."""
-        source = gpd.GeoDataFrame(
-            {"val": [200]},
-            geometry=[self._make_square(0, 0, 10)],
-            crs="EPSG:4326",
-        )
-        source["__sid__"] = source.index
-
-        # Two targets covering different quarters of source
-        target = gpd.GeoDataFrame(
-            {"name": ["left", "right"]},
-            geometry=[
-                self._make_square(0, 0, 5),  # left quarter
-                self._make_square(5, 0, 5),  # right quarter
-            ],
-            crs="EPSG:4326",
-        )
-        target["__tid__"] = target.index
-
-        result = _compute_allocation_factors(source, target)
-
-        assert len(result) == 2
-        weights = sorted(result["weight"].tolist())
-        assert weights[0] == pytest.approx(0.25, rel=0.1)
-        assert weights[1] == pytest.approx(0.25, rel=0.1)
-
-    def test_compute_allocation_factors_different_crs(self) -> None:
-        """Different CRS should be handled (both converted to projected)."""
-        source = gpd.GeoDataFrame(
-            {"val": [100]},
-            geometry=[self._make_square(0, 0, 10)],
-            crs="EPSG:4326",
-        )
-        source["__sid__"] = source.index
-
-        target = gpd.GeoDataFrame(
-            {"name": ["parcel"]},
-            geometry=[self._make_square(0, 0, 10)],
-        )
-        target["__tid__"] = target.index
-
-        result = _compute_allocation_factors(source, target)
-
-        assert len(result) == 1
-
-    def test_allocate_value_correctness(self) -> None:
-        """Allocated values should be correctly proportioned."""
-        source = gpd.GeoDataFrame(
-            {"pop": [1000]},
-            geometry=[self._make_square(0, 0, 10)],
-            crs="EPSG:4326",
-        )
-        source["__sid__"] = source.index
-
-        target = gpd.GeoDataFrame(
-            {"name": ["p1"]},
-            geometry=[self._make_square(0, 0, 5)],  # 25% of source
-            crs="EPSG:4326",
-        )
-        target["__tid__"] = target.index
-
-        allocation = _compute_allocation_factors(source, target)
-
-        # Compute expected value
-        weight = allocation.iloc[0]["weight"]
-        expected = 1000.0 * weight
-
-        # With 25% area overlap, weight ≈ 0.25
-        assert expected == pytest.approx(250.0, rel=0.2)
-
-
-class TestSpatialAllocationEdgeCases:
-    """Edge case tests for spatial allocation."""
-
-    def test_zero_area_source(self) -> None:
-        """A source feature with zero area should raise error."""
-        source = gpd.GeoDataFrame(
-            {"val": [100]},
-            geometry=[Polygon()],  # empty geometry
-            crs="EPSG:4326",
-        )
-        source["__sid__"] = source.index
-
-        target = gpd.GeoDataFrame(
-            {"name": ["p1"]},
-            geometry=[Polygon([(0, 0), (1, 0), (1, 1), (0, 1)])],
-            crs="EPSG:4326",
-        )
-        target["__tid__"] = target.index
-
-        with pytest.raises(RuntimeError, match="No spatial overlaps found"):
-            _compute_allocation_factors(source, target)
-
-    def test_point_geometries(self) -> None:
-        """Point geometries should produce no overlaps (area = 0)."""
-        from shapely.geometry import Point
-
-        source = gpd.GeoDataFrame(
-            {"val": [100]},
-            geometry=[Point(0, 0)],
-            crs="EPSG:4326",
-        )
-        source["__sid__"] = source.index
-
-        target = gpd.GeoDataFrame(
-            {"name": ["p1"]},
-            geometry=[Point(1, 1)],
-            crs="EPSG:4326",
-        )
-        target["__tid__"] = target.index
-
-        with pytest.raises(RuntimeError, match="No spatial overlaps found"):
-            _compute_allocation_factors(source, target)
+        value = self._read_target_value(schema, "test_alloc_tgt_no", "val1", 1)
+        # DEFAULT 0
+        assert value == pytest.approx(0.0)

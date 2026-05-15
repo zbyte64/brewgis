@@ -12,6 +12,7 @@ from django.conf import settings
 from django.utils import timezone
 
 from brewgis.soda import validate_column_stitching
+from brewgis.soda import validate_spatial_allocation
 from brewgis.workspace.analysis.data_export import export_building_types
 from brewgis.workspace.dlt_pipelines import run_census_pipeline
 from brewgis.workspace.dlt_pipelines import run_lehd_pipeline
@@ -369,6 +370,21 @@ def run_spatial_allocation(  # type: ignore[no-untyped-def]
             source_geom_col=source_geom_col,
             target_geom_col=target_geom_col,
         )
+
+        # Validate allocation output with Soda
+        validation = validate_spatial_allocation(
+            schema=target_schema,
+            table=target_table,
+        )
+        if not validation["success"]:
+            logger.warning(
+                "Spatial allocation validation failed for %s.%s: %s",
+                target_schema,
+                target_table,
+                "; ".join(validation.get("failures", [])),
+            )
+
+        result["validation"] = validation
 
         run.status = "completed"
         run.result = result

@@ -11,12 +11,10 @@ from __future__ import annotations
 import logging
 from typing import Any
 
-import geopandas as gpd
 import pandas as pd
 from django.db import connection
+from brewgis.workspace.services._db import get_engine, text
 
-from brewgis.workspace.services.spatial_allocator import _compute_allocation_factors
-from brewgis.workspace.services.spatial_allocator import _load_geometries_and_values
 
 logger = logging.getLogger(__name__)
 
@@ -84,69 +82,45 @@ def impute_area_proportional(
     Returns:
         Dict with keys: rows_updated, source_column, target_column.
     """
-    # Load source data
-    source_gdf = _load_geometries_and_values(
-        source_schema,
-        source_table,
-        source_geom_col,
-        [source_column],
-    )
-    source_gdf["__sid__"] = source_gdf.index
+    engine = get_engine()
 
-    query = (
-        f'SELECT "{target_geom_col}", '
-        f"ctid AS __ctid__, "
-        f'"{target_column}" FROM "{schema}"."{target_table}" '
-        f'WHERE "{target_column}" IS NULL'
-    )
-    null_targets = gpd.read_postgis(
-        query,
-        connection,
-        geom_col=target_geom_col,
-    )
-
-    if null_targets.empty:
-        return {
-            "rows_updated": 0,
-            "source_column": source_column,
-            "target_column": target_column,
-        }
-
-    null_targets["__tid__"] = null_targets.index
-    tid_to_ctid = null_targets["__ctid__"].to_dict()
-    # Compute allocation weights
-    allocation_df = _compute_allocation_factors(
-        source_gdf,
-        null_targets,
-        source_id_col="__sid__",
-        target_id_col="__tid__",
-    )
-
-    # Compute values per target row
-    target_values: dict[int, float] = {}
-    for _, row in allocation_df.iterrows():
-        sid = int(row["__sid__"])
-        tid = int(row["__tid__"])
-        weight = row["weight"]
-        source_val = source_gdf.loc[sid, source_column]
-        if pd.isna(source_val):
-            source_val = 0.0
-        allocated = float(source_val) * weight
-        target_values[tid] = target_values.get(tid, 0.0) + allocated
-
-    # Write back using stored ctid values
-    rows_updated = 0
-    with connection.cursor() as cursor:
-        for tid, value in target_values.items():
-            if tid in tid_to_ctid:
-                ctid = tid_to_ctid[tid]
-                cursor.execute(
-                    f'UPDATE "{schema}"."{target_table}" '
-                    f'SET "{target_column}" = %s '
-                    f"WHERE ctid = %s",
-                    [value, ctid],
-                )
-                rows_updated += 1
+    with engine.begin() as conn:
+        result = conn.execute(
+            text(f"""
+                UPDATE "{schema}"."{target_table}" AS t
+                SET "{target_column}" = sub.allocated_value
+                FROM (
+                    SELECT
+                        nt.ctid,
+                        SUM(
+                            COALESCE(s."{source_column}", 0)
+                            * public.intersection_acres(
+                                ST_Transform(s."{source_geom_col}", 3857),
+                                ST_Transform(nt."{target_geom_col}", 3857)
+                            )
+                            / NULLIF(public.acres(ST_Transform(s."{source_geom_col}", 3857)), 0)
+                        ) AS allocated_value
+                    FROM (
+                        SELECT ctid, "{target_geom_col}"
+                        FROM "{schema}"."{target_table}"
+                        WHERE "{target_column}" IS NULL
+                    ) nt
+                    JOIN "{source_schema}"."{source_table}" s
+                        ON ST_Intersects(
+                            ST_Transform(s."{source_geom_col}", 3857),
+                            ST_Transform(nt."{target_geom_col}", 3857)
+                        )
+                    WHERE public.acres(ST_Transform(s."{source_geom_col}", 3857)) > 0
+                      AND public.intersection_acres(
+                          ST_Transform(s."{source_geom_col}", 3857),
+                          ST_Transform(nt."{target_geom_col}", 3857)
+                      ) > 0
+                    GROUP BY nt.ctid
+                ) sub
+                WHERE t.ctid = sub.ctid
+            """)
+        )
+        rows_updated = result.rowcount
 
     return {
         "rows_updated": rows_updated,
