@@ -9,6 +9,12 @@ columns:
     checks:
       - missing:
           name: geometry has no missing values
+      - metric:
+          expression: MIN(public.ST_SRID(geometry))
+          threshold:
+            must_be: 4326
+          name: geometry SRID is 4326
+
   - name: pop
     checks:
       - missing:

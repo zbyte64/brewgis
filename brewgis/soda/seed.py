@@ -4,8 +4,9 @@ Each function creates the target table (if absent) and inserts minimal seed rows
 that satisfy the contract's checks (non-null identifiers, non-negative numerics,
 row_count > 0).  Idempotent — skips if the table already exists.
 
-Geometry columns use a simple ``POINT(0 0)`` WKT text representation; the Soda
-contracts only check for NULL, not geometry validity.
+Geometry columns use real ``GEOMETRY(GEOMETRY, 4326)`` PostGIS types populated
+via ``ST_GeomFromText`` so that SRID and geometry-type checks work against
+seed data.
 """
 
 from __future__ import annotations
@@ -20,7 +21,7 @@ if TYPE_CHECKING:
 
 def seed_all() -> None:
     """Create and populate every table that Soda contracts expect to exist."""
-    seeders: dict[str, tuple[str, list[tuple]]] = {
+    seeders: dict[str, tuple[str, ...]] = {
         "base_canvas": _base_canvas(),
         "census_acs": _census_acs(),
         "lehd_lodes": _lehd_lodes(),
@@ -32,18 +33,23 @@ def seed_all() -> None:
         "census.acs_block_group": _acs_block_group(),
         "lehd.wac_block": _wac_block(),
     }
-    for table, (ddl, rows) in seeders.items():
-        _ensure_table(table, ddl, rows)
+    for table, seeder in seeders.items():
+        ddl, *rest = seeder
+        if len(rest) == 2:
+            dml_template, rows = rest
+        else:
+            dml_template, rows = None, rest[0]
+        _ensure_table(table, ddl, rows, dml_template)
 
 
 # ── Concrete table definitions ──────────────────────────────────────────
 
 
-def _base_canvas() -> tuple[str, list[tuple]]:
+def _base_canvas() -> tuple[str, str, list[tuple[str, ...]]]:
     ddl = """
         CREATE TABLE IF NOT EXISTS public.base_canvas (
             geography_id VARCHAR(32) NOT NULL,
-            geometry TEXT NOT NULL,
+            geometry GEOMETRY(GEOMETRY, 4326) NOT NULL,
             pop DOUBLE PRECISION NOT NULL,
             du DOUBLE PRECISION NOT NULL,
             area_parcel DOUBLE PRECISION NOT NULL,
@@ -58,6 +64,11 @@ def _base_canvas() -> tuple[str, list[tuple]]:
             intersection_density DOUBLE PRECISION NOT NULL
         )
     """
+    dml_template = (
+        'INSERT INTO {schema}."{table}" '
+        "VALUES (%s, ST_GeomFromText(%s, 4326), %s, %s, %s, %s, "
+        "%s, %s, %s, %s, %s, %s, %s, %s)"
+    )
     rows = [
         (
             "GEO001",
@@ -76,7 +87,7 @@ def _base_canvas() -> tuple[str, list[tuple]]:
             12.0,  # intersection_density
         ),
     ]
-    return ddl, rows
+    return ddl, dml_template, rows
 
 
 def _census_acs() -> tuple[str, list[tuple]]:
@@ -111,33 +122,41 @@ def _lehd_lodes() -> tuple[str, list[tuple]]:
     return ddl, rows
 
 
-def _poi() -> tuple[str, list[tuple]]:
+def _poi() -> tuple[str, str, list[tuple[str, ...]]]:
     ddl = """
         CREATE TABLE IF NOT EXISTS public.poi (
             osm_id BIGINT NOT NULL,
             name VARCHAR(256) NOT NULL,
             category VARCHAR(64) NOT NULL,
-            geometry TEXT NOT NULL,
+            geometry GEOMETRY(GEOMETRY, 4326) NOT NULL,
             lat DOUBLE PRECISION NOT NULL,
             lon DOUBLE PRECISION NOT NULL
         )
     """
+    dml_template = (
+        'INSERT INTO {schema}."{table}" '
+        "VALUES (%s, %s, %s, ST_GeomFromText(%s, 4326), %s, %s)"
+    )
     rows = [
         (123456, "Test Park", "park", "POINT(-119.5 36.5)", 36.5, -119.5),
     ]
-    return ddl, rows
+    return ddl, dml_template, rows
 
 
-def _nlcd() -> tuple[str, list[tuple]]:
+def _nlcd() -> tuple[str, str, list[tuple[str, ...]]]:
     ddl = """
         CREATE TABLE IF NOT EXISTS public.nlcd (
             geoid VARCHAR(15) NOT NULL,
             impervious_pct DOUBLE PRECISION NOT NULL,
             canopy_pct DOUBLE PRECISION NOT NULL,
             land_cover_class VARCHAR(64) NOT NULL,
-            geometry TEXT NOT NULL
+            geometry GEOMETRY(GEOMETRY, 4326) NOT NULL
         )
     """
+    dml_template = (
+        'INSERT INTO {schema}."{table}" '
+        "VALUES (%s, %s, %s, %s, ST_GeomFromText(%s, 4326))"
+    )
     rows = [
         (
             "060190001001000",
@@ -147,14 +166,14 @@ def _nlcd() -> tuple[str, list[tuple]]:
             "POINT(-119.5 36.5)",
         ),
     ]
-    return ddl, rows
+    return ddl, dml_template, rows
 
 
-def _synthetic_parcels() -> tuple[str, list[tuple]]:
+def _synthetic_parcels() -> tuple[str, str, list[tuple[str, ...]]]:
     ddl = """
         CREATE TABLE IF NOT EXISTS public.synthetic_parcels (
             parcel_id VARCHAR(32) NOT NULL,
-            geometry TEXT NOT NULL,
+            geometry GEOMETRY(GEOMETRY, 4326) NOT NULL,
             pop DOUBLE PRECISION NOT NULL,
             du DOUBLE PRECISION NOT NULL,
             area_parcel DOUBLE PRECISION NOT NULL,
@@ -166,6 +185,11 @@ def _synthetic_parcels() -> tuple[str, list[tuple]]:
             cost_burden_pct DOUBLE PRECISION NOT NULL
         )
     """
+    dml_template = (
+        'INSERT INTO {schema}."{table}" '
+        "VALUES (%s, ST_GeomFromText(%s, 4326), %s, %s, %s, %s, "
+        "%s, %s, %s, %s, %s)"
+    )
     rows = [
         (
             "PARCEL001",
@@ -181,7 +205,7 @@ def _synthetic_parcels() -> tuple[str, list[tuple]]:
             25.0,  # cost_burden_pct
         ),
     ]
-    return ddl, rows
+    return ddl, dml_template, rows
 
 
 def _spatial_allocation() -> tuple[str, list[tuple]]:
@@ -216,17 +240,21 @@ def _column_stitching() -> tuple[str, list[tuple]]:
     return ddl, rows
 
 
-def _acs_block_group() -> tuple[str, list[tuple]]:
+def _acs_block_group() -> tuple[str, str, list[tuple[str, ...]]]:
     ddl = """
         CREATE TABLE IF NOT EXISTS census.acs_block_group (
             geoid VARCHAR(15) NOT NULL,
-            geometry TEXT NOT NULL,
+            geometry GEOMETRY(GEOMETRY, 4326) NOT NULL,
             pop DOUBLE PRECISION NOT NULL,
             hh DOUBLE PRECISION NOT NULL,
             du DOUBLE PRECISION NOT NULL,
             median_income DOUBLE PRECISION NOT NULL
         )
     """
+    dml_template = (
+        'INSERT INTO {schema}."{table}" '
+        "VALUES (%s, ST_GeomFromText(%s, 4326), %s, %s, %s, %s)"
+    )
     rows = [
         (
             "060190001001001",
@@ -237,18 +265,21 @@ def _acs_block_group() -> tuple[str, list[tuple]]:
             55000.0,  # median_income
         ),
     ]
-    return ddl, rows
+    return ddl, dml_template, rows
 
 
-def _wac_block() -> tuple[str, list[tuple]]:
+def _wac_block() -> tuple[str, str, list[tuple[str, ...]]]:
     ddl = """
         CREATE TABLE IF NOT EXISTS lehd.wac_block (
             geoid VARCHAR(15) NOT NULL,
-            geometry TEXT NOT NULL,
+            geometry GEOMETRY(GEOMETRY, 4326) NOT NULL,
             emp DOUBLE PRECISION NOT NULL,
             emp_ret DOUBLE PRECISION NOT NULL
         )
     """
+    dml_template = (
+        'INSERT INTO {schema}."{table}" VALUES (%s, ST_GeomFromText(%s, 4326), %s, %s)'
+    )
     rows = [
         (
             "060190001001001",
@@ -257,16 +288,27 @@ def _wac_block() -> tuple[str, list[tuple]]:
             300.0,  # emp_ret
         ),
     ]
-    return ddl, rows
+    return ddl, dml_template, rows
 
 
 # ── Helpers ─────────────────────────────────────────────────────────────
 
 
-def _ensure_table(table: str, ddl: str, rows: Iterable[tuple]) -> None:
+def _ensure_table(
+    table: str,
+    ddl: str,
+    rows: Iterable[tuple],
+    dml_template: str | None = None,
+) -> None:
     """Create *table* if missing and insert *rows*.
 
     *table* may be ``schema.table`` or just ``table`` (defaults to ``public``).
+
+    When *dml_template* is provided, the table is always dropped and recreated
+    so that schema changes (e.g. ``TEXT`` → ``GEOMETRY``) take effect on
+    existing seed databases.  The template uses ``{schema}`` and ``{table}``
+    placeholders substituted at execution time to support PostGIS function
+    calls (``ST_GeomFromText``) for geometry columns.
     """
     parts = table.split(".", 1)
     if len(parts) == 2:
@@ -275,24 +317,33 @@ def _ensure_table(table: str, ddl: str, rows: Iterable[tuple]) -> None:
         schema, tbl = "public", parts[0]
 
     with connection.cursor() as cursor:
-        cursor.execute(
-            "SELECT EXISTS (SELECT 1 FROM information_schema.tables "
-            "WHERE table_schema = %s AND table_name = %s)",
-            [schema, tbl],
-        )
-        if cursor.fetchone()[0]:
-            return
+        if dml_template:
+            cursor.execute(
+                f'DROP TABLE IF EXISTS {connection.ops.quote_name(schema)}."{tbl}" CASCADE'
+            )
+        else:
+            cursor.execute(
+                "SELECT EXISTS (SELECT 1 FROM information_schema.tables "
+                "WHERE table_schema = %s AND table_name = %s)",
+                [schema, tbl],
+            )
+            if cursor.fetchone()[0]:
+                return
         if schema != "public":
             cursor.execute(
                 f"CREATE SCHEMA IF NOT EXISTS {connection.ops.quote_name(schema)}"
             )
         cursor.execute(ddl)
         if rows:
-            placeholders = ", ".join(["%s"] * len(next(iter(rows))))
-            # table is a trusted contract name, not user input
-            stmt = 'INSERT INTO {}."{}" VALUES ({})'.format(  # noqa: S608 — table is a trusted contract name, not user input
-                connection.ops.quote_name(schema),
-                tbl,
-                placeholders,
-            )
+            if dml_template:
+                stmt = dml_template.format(
+                    schema=connection.ops.quote_name(schema), table=tbl
+                )
+            else:
+                placeholders = ", ".join(["%s"] * len(next(iter(rows))))
+                stmt = 'INSERT INTO {}."{}" VALUES ({})'.format(  # noqa: S608
+                    connection.ops.quote_name(schema),
+                    tbl,
+                    placeholders,
+                )
             cursor.executemany(stmt, rows)
