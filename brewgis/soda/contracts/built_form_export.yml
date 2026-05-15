@@ -1,20 +1,18 @@
 # Soda Core contract: built_form_export validation
+# Validates the public.built_forms table created by export_building_types().
+# Columns match the BUILT_FORM_COLUMNS mapping in data_export.py.
 dataset: __DATASET__
 columns:
-  - name: parcel_id
+  - name: id
     checks:
       - missing:
-          name: parcel_id has no missing values
+          name: id has no missing values
       - duplicate:
-          name: parcel_id is unique
-  - name: building_type_id
+          name: id is unique
+  - name: key
     checks:
       - missing:
-          name: building_type_id has no missing values
-  - name: place_type_id
-    checks:
-      - missing:
-          name: place_type_id has no missing values
+          name: key has no missing values
   - name: du_per_acre
     checks:
       - aggregate:
@@ -22,27 +20,20 @@ columns:
           threshold:
             must_be_greater_than_or_equal: 0
           name: du_per_acre >= 0
-  - name: pop_per_acre
+  - name: emp_per_acre
     checks:
       - aggregate:
           function: min
           threshold:
             must_be_greater_than_or_equal: 0
-          name: pop_per_acre >= 0
-  - name: building_sqft
+          name: emp_per_acre >= 0
+  - name: far
     checks:
       - aggregate:
           function: min
           threshold:
             must_be_greater_than_or_equal: 0
-          name: building_sqft >= 0
-  - name: FAR
-    checks:
-      - aggregate:
-          function: min
-          threshold:
-            must_be_greater_than_or_equal: 0
-          name: FAR >= 0
+          name: far >= 0
 checks:
   - row_count:
       check: '> 0'

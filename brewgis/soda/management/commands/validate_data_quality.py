@@ -1,4 +1,4 @@
-# ruff: noqa: ARG002, PLC0415
+# ruff: noqa: ARG002, PLC0415, S608
 """Django management command to run Soda Core data quality validation.
 
 Usage::
@@ -94,6 +94,7 @@ class Command(BaseCommand):
         all_ok = True
         for name in names:
             self.stdout.write(f"\n── {name} ──")
+            self._ensure_table(name)
             result = run_scan(name)
             self._report_result(name, result)
             if not result["success"]:
@@ -104,6 +105,73 @@ class Command(BaseCommand):
             return ""
         msg = "Some contracts failed."
         raise CommandError(msg)
+
+    def _ensure_table(self, name: str) -> None:
+        """Seed data for contracts that need it."""
+        if name == "built_form_export":
+            from django.conf import settings
+            from django.core.management import call_command
+            from django.db import connection
+
+            fixture_path = (
+                settings.APPS_DIR
+                / "workspace"
+                / "built_forms"
+                / "fixtures"
+                / "default_library.json"
+            )
+
+            # Load BuildingType fixture if the table is empty
+            with connection.cursor() as cursor:
+                cursor.execute("SELECT COUNT(*) FROM public.workspace_buildingtype")
+                (count,) = cursor.fetchone()
+            if count == 0:
+                self.stdout.write("  Loading building type fixture...")
+                call_command("loaddata", str(fixture_path), format="json")
+                self.stdout.write("  Building types seeded.")
+
+            # Check if built_forms table already exists and has data
+            with connection.cursor() as cursor:
+                cursor.execute(
+                    "SELECT EXISTS (SELECT 1 FROM information_schema.tables "
+                    "WHERE table_schema = 'public' AND table_name = 'built_forms')"
+                )
+                exists = cursor.fetchone()[0]
+            if exists:
+                return
+
+            self.stdout.write("  Seeding built_forms table...")
+
+            from brewgis.workspace.analysis.data_export import _NULLABLE_TO_ZERO
+            from brewgis.workspace.analysis.data_export import BUILT_FORM_COLUMNS
+
+            # Build column expressions matching export_building_types logic
+            col_parts: list[str] = []
+            for out_name, source_expr in BUILT_FORM_COLUMNS.items():
+                if out_name in _NULLABLE_TO_ZERO:
+                    col_parts.append(f"COALESCE({source_expr}, 0.0) AS {out_name}")
+                else:
+                    col_parts.append(f"{source_expr} AS {out_name}")
+            cols = ",\n            ".join(col_parts)
+
+            with connection.cursor() as cursor:
+                cursor.execute(
+                    f"""
+                    CREATE TABLE IF NOT EXISTS public.built_forms AS
+                    SELECT {cols}
+                    FROM public.workspace_buildingtype
+                    WITH NO DATA
+                    """
+                )
+                cursor.execute("TRUNCATE TABLE public.built_forms")
+                cursor.execute(
+                    f"""
+                    INSERT INTO public.built_forms
+                    SELECT {cols}
+                    FROM public.workspace_buildingtype
+                    """
+                )
+            self.stdout.write("  built_forms table seeded.")
 
     def _report_result(self, name: str, result: dict[str, Any]) -> None:
         """Print a human-readable result summary."""
