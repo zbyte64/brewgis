@@ -542,7 +542,11 @@ class BaseCanvasETL:
                     [orig_idx, row.geometry.wkt],
                 )
                 idx_map[rid] = orig_idx
+            self._log(
+                f"Temp tables populated: {len(src_gdf)} source, {len(gdf)} target rows"
+            )
 
+            self._log(f"Running spatial intersection ({len(src_gdf)} x {len(gdf)})")
             # ── Intersection CTE — compute weights for all columns ──
             # Sum cols: weight = overlap_area / source_area (spread totals)
             # Avg cols: intersect_area directly (for weighted average denominator)
@@ -567,6 +571,9 @@ class BaseCanvasETL:
                 FROM _etl_tgt t
                 JOIN _etl_src s ON ST_Intersects(t.geometry, s.geometry)
             """)
+            cursor.execute("SELECT COUNT(*) FROM _etl_intersections")
+            intersection_count = cursor.fetchone()[0]
+            self._log(f"Intersection CTE produced {intersection_count} overlap rows")
 
             # ── Aggregate: sum columns use area-weighted sums ─────────
             sum_exprs: list[str] = []
@@ -583,6 +590,7 @@ class BaseCanvasETL:
                 FROM _etl_intersections
                 GROUP BY target_rid
             """)
+            self._log("Aggregating allocation results...")
             rows = cursor.fetchall()
             if not rows:
                 no_overlaps_msg = "No spatial overlaps"
@@ -641,6 +649,10 @@ class BaseCanvasETL:
             return gdf
 
         with transaction.atomic():
+            self._log(
+                f"Spatial alloc: {len(src_gdf)} source rows x {len(gdf)} target rows, "
+                f"{len(available_cols)} cols"
+            )
             self._allocate_via_postgis(gdf, src_gdf, available_cols)
 
             cnt = (
@@ -1013,6 +1025,10 @@ class BaseCanvasETL:
         )
         sql_base = f"INSERT INTO {self._target_table} ({col_names}) VALUES "
         page_size = 5000
+        self._log(
+            f"Inserting {len(rows)} rows into {self._target_table} "
+            f"(batch size {page_size})"
+        )
         with connection.cursor() as cursor:
             for i in range(0, len(rows), page_size):
                 batch = rows[i : i + page_size]
@@ -1023,6 +1039,7 @@ class BaseCanvasETL:
         rows_written = len(gdf)
         self._log(f"Wrote {rows_written} rows to {self._target_table}")
         return rows_written
+
     def _validate(self) -> None:
         """Validate the base canvas after ETL using Great Expectations."""
         missing = BaseCanvasManager.validate_schema(self._target_table)
@@ -1041,12 +1058,19 @@ class BaseCanvasETL:
             )
             raise RuntimeError(msg)
         self._log("GX validation passed")
+
     # ── Helpers ─────────────────────────────────────────────────────────
 
     def _step(self, label: str, description: str) -> None:
-        """Log a step header."""
-        self._messages.append(f"[{label}] {description}")
+        """Log a step header with elapsed timing."""
+        elapsed = time.time() - self._start_time
+        msg = f"[{label}] {description} (elapsed: {elapsed:.1f}s)"
+        self._messages.append(msg)
+        if self._verbosity > 0:
+            logger.info(msg)
 
     def _log(self, message: str) -> None:
         """Log an indented info message."""
         self._messages.append(f"  {message}")
+        if self._verbosity > 0:
+            logger.info("  %s", message)

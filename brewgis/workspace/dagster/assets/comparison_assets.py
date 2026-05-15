@@ -5,6 +5,7 @@ assets with clear dependency edges. Aggregation and correlation queries
 are delegated to dbt models (``comparison/*``).
 """
 
+import logging
 import os
 import time
 from pathlib import Path
@@ -29,6 +30,8 @@ from brewgis.workspace.dagster.configs import SacogReportConfig
 from brewgis.workspace.dagster.resources.dbt_resource import DbtCliResource
 from brewgis.workspace.dagster.resources.postgres_resource import PostgresResource
 from brewgis.workspace.services._db import get_engine
+
+logger = logging.getLogger(__name__)
 
 CACHE_DIR = Path(settings.BASE_DIR) / "planning"
 V1_PARCELS = "sac_cnty_region_existing_land_use_parcels"
@@ -512,6 +515,7 @@ def _load_parcels(limit: int, cache_dir: str | None = None) -> gpd.GeoDataFrame:
     return gdf
 
 
+# TODO using data should not be optional, refreshing it should be
 def _run_etl(
     parcels_gdf: gpd.GeoDataFrame,
     *,
@@ -551,28 +555,22 @@ def _run_etl(
         )
 
     if not quick:
-        try:
-            bbox = (
-                float(parcels_gdf.total_bounds[0]),
-                float(parcels_gdf.total_bounds[1]),
-                float(parcels_gdf.total_bounds[2]),
-                float(parcels_gdf.total_bounds[3]),
-            )
-            land_use_source = NLCDFetcher(bbox=bbox)
-            irrigation_source = land_use_source
-        except Exception:
-            pass
+        bbox = (
+            float(parcels_gdf.total_bounds[0]),
+            float(parcels_gdf.total_bounds[1]),
+            float(parcels_gdf.total_bounds[2]),
+            float(parcels_gdf.total_bounds[3]),
+        )
+        land_use_source = NLCDFetcher(bbox=bbox)
+        irrigation_source = land_use_source
 
-        try:
-            bbox = (
-                float(parcels_gdf.total_bounds[0]),
-                float(parcels_gdf.total_bounds[1]),
-                float(parcels_gdf.total_bounds[2]),
-                float(parcels_gdf.total_bounds[3]),
-            )
-            intersection_density_source = OSMIntersectionDensitySource(bbox=bbox)
-        except Exception:
-            pass
+        bbox = (
+            float(parcels_gdf.total_bounds[0]),
+            float(parcels_gdf.total_bounds[1]),
+            float(parcels_gdf.total_bounds[2]),
+            float(parcels_gdf.total_bounds[3]),
+        )
+        intersection_density_source = OSMIntersectionDensitySource(bbox=bbox)
 
     etl = BaseCanvasETL(
         calibration=SACOG_CALIBRATION,
@@ -592,6 +590,14 @@ def _run_etl(
             USING ST_Multi(geometry)
         """)
 
+    logger.info(
+        "ETL start: %d parcels, quick=%s, skip_census=%s, skip_lehd=%s, truncate=%s",
+        len(parcels_gdf),
+        quick,
+        skip_census,
+        skip_lehd,
+        truncate,
+    )
     try:
         result = etl.run(
             source_geojson=str(temp_geojson),
