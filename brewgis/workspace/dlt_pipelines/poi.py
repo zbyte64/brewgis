@@ -146,8 +146,8 @@ def run_poi_pipeline(  # noqa: PLR0913
     if validation["success"]:
         logger.info("Validation passed for %s.poi_raw", schema)
     else:
-        for failure in validation["failures"]:
-            logger.warning("Validation failure for %s.poi_raw: %s", schema, failure)
+        msg = "; ".join(validation["failures"])
+        raise RuntimeError(f"Validation failed for {schema}.poi_raw: {msg}")
 
     return {
         "success": True,

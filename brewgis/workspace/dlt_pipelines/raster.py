@@ -190,10 +190,8 @@ def run_raster_pipeline(
     if validation["success"]:
         logger.info("Validation passed for %s.raster_metadata", schema)
     else:
-        for failure in validation["failures"]:
-            logger.warning(
-                "Validation failure for %s.raster_metadata: %s", schema, failure
-            )
+        msg = "; ".join(validation["failures"])
+        raise RuntimeError(f"Validation failed for {schema}.raster_metadata: {msg}")
 
     return {
         "success": True,

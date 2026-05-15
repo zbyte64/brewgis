@@ -1,0 +1,31 @@
+# Soda Core contract: wac_block staging table validation
+dataset: __DATASET__
+columns:
+  - name: geoid
+    checks:
+      - missing:
+          name: geoid has no missing values
+  - name: geometry
+    checks:
+      - missing:
+          name: geometry has no missing values
+  - name: emp
+    checks:
+      - missing:
+          name: emp has no missing values
+      - aggregate:
+          function: sum
+          threshold:
+            must_be_greater_than_or_equal: 1
+          name: sum(emp) >= 1
+  - name: emp_ret
+    checks:
+      - aggregate:
+          function: min
+          threshold:
+            must_be_greater_than_or_equal: 0
+          name: emp_ret >= 0
+checks:
+  - row_count:
+      check: '> 0'
+      name: Table has rows

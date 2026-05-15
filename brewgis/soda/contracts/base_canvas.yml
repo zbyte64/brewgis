@@ -14,10 +14,10 @@ columns:
       - missing:
           name: population has no missing values
       - aggregate:
-          function: min
+          function: sum
           threshold:
-            must_be_greater_than_or_equal: 0
-          name: pop >= 0
+            must_be_greater_than_or_equal: 1
+          name: sum(pop) >= 1
   - name: du
     checks:
       - missing:
@@ -39,11 +39,10 @@ columns:
   - name: hh
     checks:
       - aggregate:
-          function: min
-          qualifier: min
+          function: sum
           threshold:
-            must_be_greater_than_or_equal: 0
-          name: hh >= 0
+            must_be_greater_than_or_equal: 1
+          name: sum(hh) >= 1
   - name: residential_irrigated_area
     checks:
       - aggregate:

@@ -34,7 +34,7 @@ logger = logging.getLogger(__name__)
 def census_source(
     state_fips: str = "06",
     county_fips: str = "067",
-    year: int = dlt.sources.incremental[int]("year"),
+    year: int | dlt.sources.incremental[int] = dlt.sources.incremental[int]("year"),
 ) -> list[Any]:
     """dlt source for Census ACS 5-year data extraction.
 
@@ -61,7 +61,7 @@ def census_source(
 def census_acs_resource(
     state_fips: str,
     county_fips: str,
-    year: int = dlt.sources.incremental[int]("year"),
+    year: int | dlt.sources.incremental[int] = dlt.sources.incremental[int]("year"),
 ) -> Any:
     """Yield raw ACS data from Census API, one dict per block group.
 
@@ -144,8 +144,8 @@ def run_census_pipeline(
     if validation["success"]:
         logger.info("Validation passed for %s.acs_raw", schema)
     else:
-        for failure in validation["failures"]:
-            logger.warning("Validation failure for %s.acs_raw: %s", schema, failure)
+        msg = "; ".join(validation["failures"])
+        raise RuntimeError(f"Validation failed for {schema}.acs_raw: {msg}")
 
     return {
         "success": True,

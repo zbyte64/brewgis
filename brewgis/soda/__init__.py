@@ -51,6 +51,7 @@ logger = logging.getLogger(__name__)
 
 __all__ = [
     "run_scan",
+    "validate_acs_block_group",
     "validate_base_canvas",
     "validate_built_form_export",
     "validate_census_acs",
@@ -61,6 +62,7 @@ __all__ = [
     "validate_poi",
     "validate_spatial_allocation",
     "validate_synthetic_parcels",
+    "validate_wac_block",
 ]
 
 
@@ -77,6 +79,7 @@ def _soda_dir() -> Path:
 # runs (which do not supply schema/table) resolve to a valid dataset path
 # including the registered datasource name.
 _DEFAULT_TABLE: dict[str, str] = {
+    "acs_block_group": "brewgis_postgis/census/acs_block_group",
     "base_canvas": "brewgis_postgis/public/base_canvas",
     "census_acs": "brewgis_postgis/public/census_acs",
     "lehd": "brewgis_postgis/public/lehd_lodes",
@@ -87,6 +90,7 @@ _DEFAULT_TABLE: dict[str, str] = {
     "column_stitching": "brewgis_postgis/public/column_stitching",
     "built_form_export": "brewgis_postgis/public/built_forms",
     "dbt_module_run": "brewgis_postgis/public/dbt_module_run",
+    "wac_block": "brewgis_postgis/lehd/wac_block",
 }
 # ── Scan runner ─────────────────────────────────────────────────────
 
@@ -229,6 +233,20 @@ def validate_built_form_export(
 ) -> dict[str, Any]:
     """Validate a built form export table."""
     return run_scan("built_form_export", schema=schema, table=table)
+
+
+def validate_acs_block_group(
+    schema: str = "census", table: str = "acs_block_group"
+) -> dict[str, Any]:
+    """Validate an ACS block group staging table."""
+    return run_scan("acs_block_group", schema=schema, table=table)
+
+
+def validate_wac_block(
+    schema: str = "lehd", table: str = "wac_block"
+) -> dict[str, Any]:
+    """Validate a LEHD WAC block staging table."""
+    return run_scan("wac_block", schema=schema, table=table)
 
 
 # ── Internal helpers ───────────────────────────────────────────────

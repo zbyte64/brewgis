@@ -14,19 +14,19 @@ columns:
       - missing:
           name: allocated_population has no missing values
       - aggregate:
-          function: min
+          function: sum
           threshold:
-            must_be_greater_than_or_equal: 0
-          name: allocated_population >= 0
+            must_be_greater_than_or_equal: 1
+          name: sum(allocated_population) >= 1
   - name: allocated_employment
     checks:
       - missing:
           name: allocated_employment has no missing values
       - aggregate:
-          function: min
+          function: sum
           threshold:
-            must_be_greater_than_or_equal: 0
-          name: allocated_employment >= 0
+            must_be_greater_than_or_equal: 1
+          name: sum(allocated_employment) >= 1
   - name: allocation_weight
     checks:
       - missing:

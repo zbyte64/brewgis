@@ -186,11 +186,6 @@ class Command(BaseCommand):
             )
         )
 
-        # ── Phase 2.5: Assert geometry identity ────────────────────────
-        self.stdout.write("\n── Phase 2.5: Asserting geometry identity ──")
-        self._assert_geometry_identity(parcels_gdf)
-        self.stdout.write("  Geometry identity verified ✅")
-
         # ── Phase 3: Query reference values ────────────────────────────
         self.stdout.write("\n── Phase 3: Querying reference base canvas ──")
         ref_totals = self._query_reference_totals(parcel_ids)
@@ -210,6 +205,10 @@ class Command(BaseCommand):
         else:
             self.stdout.write("  Skipping (no geography_ids available)")
 
+        # ── Phase 4.75: Assert geometry identity ────────────────────────
+        self.stdout.write("\n── Phase 4.75: Asserting geometry identity ──")
+        self._assert_geometry_identity(parcels_gdf)
+        self.stdout.write("  Geometry identity verified ✅")
         # ── Phase 5: Generate comparison report ────────────────────────
         self.stdout.write("\n── Phase 5: Generating comparison report ──")
         correlations = self._compute_correlations()

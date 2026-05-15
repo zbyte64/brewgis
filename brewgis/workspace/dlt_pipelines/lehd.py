@@ -54,6 +54,7 @@ def lehd_source(
     columns={
         "year": {"data_type": "bigint", "nullable": False},
     },
+    merge_key="w_geocode",
 )
 def lehd_lodes_resource(
     state_fips: str,
@@ -128,8 +129,8 @@ def run_lehd_pipeline(
     if validation["success"]:
         logger.info("Validation passed for %s.lodes_raw", schema)
     else:
-        for failure in validation["failures"]:
-            logger.warning("Validation failure for %s.lodes_raw: %s", schema, failure)
+        msg = "; ".join(validation["failures"])
+        raise RuntimeError(f"Validation failed for {schema}.lodes_raw: {msg}")
 
     return {
         "success": True,

@@ -449,11 +449,9 @@ def run_column_stitching(  # type: ignore[no-untyped-def]
         if gx_result["success"]:
             logger.info("GX validation passed for column_stitching")
         else:
-            logger.warning(
-                "GX validation warning for column_stitching (%s.%s): %s",
-                schema,
-                table,
-                "; ".join(gx_result["failures"][:5]),
+            msg = "; ".join(gx_result["failures"][:5])
+            raise RuntimeError(
+                f"GX validation failed for column_stitching ({schema}.{table}): {msg}"
             )
         return {"success": True, **result}
 

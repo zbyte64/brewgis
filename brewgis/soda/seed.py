@@ -29,12 +29,15 @@ def seed_all() -> None:
         "synthetic_parcels": _synthetic_parcels(),
         "spatial_allocation": _spatial_allocation(),
         "column_stitching": _column_stitching(),
+        "census.acs_block_group": _acs_block_group(),
+        "lehd.wac_block": _wac_block(),
     }
     for table, (ddl, rows) in seeders.items():
         _ensure_table(table, ddl, rows)
 
 
 # ── Concrete table definitions ──────────────────────────────────────────
+
 
 def _base_canvas() -> tuple[str, list[tuple]]:
     ddl = """
@@ -59,21 +62,22 @@ def _base_canvas() -> tuple[str, list[tuple]]:
         (
             "GEO001",
             "POINT(-119.5 36.5)",
-            5000.0,   # pop
-            1800.0,   # du
-            850.0,    # area_parcel
-            1700.0,   # hh
-            200.0,    # residential_irrigated_area
-            50.0,     # commercial_irrigated_area
+            5000.0,  # pop
+            1800.0,  # du
+            850.0,  # area_parcel
+            1700.0,  # hh
+            200.0,  # residential_irrigated_area
+            50.0,  # commercial_irrigated_area
             65000.0,  # median_income
-            30.0,     # rent_burden_pct
-            40.0,     # pct_minority
-            35.0,     # pct_college_educated
-            25.0,     # cost_burden_pct
-            12.0,     # intersection_density
+            30.0,  # rent_burden_pct
+            40.0,  # pct_minority
+            35.0,  # pct_college_educated
+            25.0,  # cost_burden_pct
+            12.0,  # intersection_density
         ),
     ]
     return ddl, rows
+
 
 def _census_acs() -> tuple[str, list[tuple]]:
     ddl = """
@@ -135,7 +139,13 @@ def _nlcd() -> tuple[str, list[tuple]]:
         )
     """
     rows = [
-        ("060190001001000", 35.0, 15.0, "Developed, Medium Intensity", "POINT(-119.5 36.5)"),
+        (
+            "060190001001000",
+            35.0,
+            15.0,
+            "Developed, Medium Intensity",
+            "POINT(-119.5 36.5)",
+        ),
     ]
     return ddl, rows
 
@@ -206,25 +216,83 @@ def _column_stitching() -> tuple[str, list[tuple]]:
     return ddl, rows
 
 
+def _acs_block_group() -> tuple[str, list[tuple]]:
+    ddl = """
+        CREATE TABLE IF NOT EXISTS census.acs_block_group (
+            geoid VARCHAR(15) NOT NULL,
+            geometry TEXT NOT NULL,
+            pop DOUBLE PRECISION NOT NULL,
+            hh DOUBLE PRECISION NOT NULL,
+            du DOUBLE PRECISION NOT NULL,
+            median_income DOUBLE PRECISION NOT NULL
+        )
+    """
+    rows = [
+        (
+            "060190001001001",
+            "POINT(-119.5 36.5)",
+            2500.0,  # pop
+            950.0,  # hh
+            1050.0,  # du
+            55000.0,  # median_income
+        ),
+    ]
+    return ddl, rows
+
+
+def _wac_block() -> tuple[str, list[tuple]]:
+    ddl = """
+        CREATE TABLE IF NOT EXISTS lehd.wac_block (
+            geoid VARCHAR(15) NOT NULL,
+            geometry TEXT NOT NULL,
+            emp DOUBLE PRECISION NOT NULL,
+            emp_ret DOUBLE PRECISION NOT NULL
+        )
+    """
+    rows = [
+        (
+            "060190001001001",
+            "POINT(-119.5 36.5)",
+            1200.0,  # emp
+            300.0,  # emp_ret
+        ),
+    ]
+    return ddl, rows
+
+
 # ── Helpers ─────────────────────────────────────────────────────────────
 
 
 def _ensure_table(table: str, ddl: str, rows: Iterable[tuple]) -> None:
-    """Create *table* if missing and insert *rows*."""
+    """Create *table* if missing and insert *rows*.
+
+    *table* may be ``schema.table`` or just ``table`` (defaults to ``public``).
+    """
+    parts = table.split(".", 1)
+    if len(parts) == 2:
+        schema, tbl = parts
+    else:
+        schema, tbl = "public", parts[0]
+
     with connection.cursor() as cursor:
         cursor.execute(
             "SELECT EXISTS (SELECT 1 FROM information_schema.tables "
-            "WHERE table_schema = 'public' AND table_name = %s)",
-            [table],
+            "WHERE table_schema = %s AND table_name = %s)",
+            [schema, tbl],
         )
         if cursor.fetchone()[0]:
             return
-
+        if schema != "public":
+            cursor.execute(
+                f"CREATE SCHEMA IF NOT EXISTS {connection.ops.quote_name(schema)}"
+            )
         cursor.execute(ddl)
         if rows:
             placeholders = ", ".join(["%s"] * len(next(iter(rows))))
             # table is a trusted contract name, not user input
-            stmt = 'INSERT INTO public."{}" VALUES ({})'.format(  # noqa: S608 — table is a trusted contract name, not user input
-                table, placeholders,
+            stmt = 'INSERT INTO {}."{}" VALUES ({})'.format(  # noqa: S608 — table is a trusted contract name, not user input
+                connection.ops.quote_name(schema),
+                tbl,
+                placeholders,
             )
             cursor.executemany(stmt, rows)

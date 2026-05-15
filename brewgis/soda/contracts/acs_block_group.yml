@@ -1,40 +1,48 @@
-# Soda Core contract: column_stitching / imputation validation
+# Soda Core contract: acs_block_group staging table validation
 dataset: __DATASET__
 columns:
-  - name: parcel_id
+  - name: geoid
     checks:
       - missing:
-          name: parcel_id has no missing values
-      - duplicate:
-          name: parcel_id is unique
-  - name: imputed_population
+          name: geoid has no missing values
+  - name: geometry
     checks:
+      - missing:
+          name: geometry has no missing values
+  - name: pop
+    checks:
+      - missing:
+          name: pop has no missing values
       - aggregate:
           function: sum
           threshold:
             must_be_greater_than_or_equal: 1
-          name: sum(imputed_population) >= 1
-  - name: imputed_households
+          name: sum(pop) >= 1
+  - name: hh
+    checks:
+      - missing:
+          name: hh has no missing values
+      - aggregate:
+          function: min
+          threshold:
+            must_be_greater_than_or_equal: 0
+          name: hh >= 0
+  - name: du
+    checks:
+      - missing:
+          name: du has no missing values
+      - aggregate:
+          function: min
+          threshold:
+            must_be_greater_than_or_equal: 0
+          name: du >= 0
+  - name: median_income
     checks:
       - aggregate:
           function: min
           threshold:
             must_be_greater_than_or_equal: 0
-          name: imputed_households >= 0
-  - name: imputed_employment
-    checks:
-      - aggregate:
-          function: min
-          threshold:
-            must_be_greater_than_or_equal: 0
-          name: imputed_employment >= 0
-  - name: imputed_du
-    checks:
-      - aggregate:
-          function: min
-          threshold:
-            must_be_greater_than_or_equal: 0
-          name: imputed_du >= 0
+          name: median_income >= 0
 checks:
   - row_count:
       check: '> 0'
