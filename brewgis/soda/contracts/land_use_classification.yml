@@ -1,0 +1,54 @@
+# Soda Core contract: land_use_classification validation
+# Runs after _classify_land_use() to verify land development categories
+# are diverse, area-by-use allocations are sane, and not all parcels
+# defaulted to a single category.
+dataset: __DATASET__
+columns:
+  - name: land_development_category
+    checks:
+      - distinct:
+          must_be_greater_than: 1
+          name: more than one land_development_category
+  - name: area_parcel_res
+    checks:
+      - aggregate:
+          function: min
+          qualifier: min
+          threshold:
+            must_be_greater_than_or_equal: 0
+          name: area_parcel_res >= 0
+  - name: area_parcel_emp
+    checks:
+      - aggregate:
+          function: sum
+          threshold:
+            must_be_greater_than_or_equal: 0
+          name: sum(area_parcel_emp) >= 0
+  - name: area_parcel_no_use
+    checks:
+      - aggregate:
+          function: sum
+          threshold:
+            must_be_greater_than_or_equal: 0
+          name: sum(area_parcel_no_use) >= 0
+  - name: area_gross
+    checks:
+      - aggregate:
+          function: sum
+          threshold:
+            must_be_greater_than: 0
+          name: sum(area_gross) > 0
+checks:
+  - row_count:
+      check: "> 0"
+      name: Table has rows
+  - metric:
+      expression: SUM(area_parcel_res) / GREATEST(NULLIF(SUM(area_gross), 0), 1e-10)
+      threshold:
+        must_be_less_than: 1.0
+      name: residential area fraction < 1.0
+  - metric:
+      expression: SUM(area_parcel_emp) + SUM(area_parcel_no_use)
+      threshold:
+        must_be_greater_than: 0
+      name: non-residential area > 0

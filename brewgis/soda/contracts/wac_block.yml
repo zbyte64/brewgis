@@ -35,3 +35,9 @@ checks:
   - row_count:
       check: '> 0'
       name: Table has rows
+  - metric:
+      expression: SUM(emp)
+      threshold:
+        must_be_greater_than_or_equal: 100000
+        must_be_less_than_or_equal: 5000000
+      name: sum(emp) within reasonable range for US county

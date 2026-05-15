@@ -19,6 +19,7 @@ import deal
 import pandas as pd
 import requests
 
+from brewgis.soda import validate_wac_block
 from brewgis.workspace.analysis.dbt_runner import run_dbt_local
 from brewgis.workspace.services._db import get_engine
 from brewgis.workspace.services._db import text
@@ -809,4 +810,11 @@ def _populate_wac_block(
         )
         raise RuntimeError(msg)
 
+    # Soda validation — validates wac_block quality
+    wac_result = validate_wac_block(schema="lehd", table="wac_block")
+    if not wac_result.get("success", False):
+        logger.warning(
+            "  WAC block validation warnings: %s",
+            wac_result.get("failures", []),
+        )
     return row_count

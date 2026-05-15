@@ -972,6 +972,8 @@ class BaseCanvas(models.Model):
 
     # ── Land Use & Built Form ──────────────────────────────────────
     land_development_category = models.CharField(max_length=64, default="")
+    land_use = models.CharField(max_length=255, blank=True, null=True)
+    assessor_use_code = models.CharField(max_length=32, blank=True, null=True)
     built_form_key = models.CharField(max_length=128, blank=True, null=True)
     intersection_density = models.FloatField(default=0.0)
 

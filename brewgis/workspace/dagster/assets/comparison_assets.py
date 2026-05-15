@@ -21,6 +21,7 @@ from django.conf import settings
 from django.db import connection
 
 from brewgis.soda import validate_base_canvas
+from brewgis.soda import validate_dbt_table
 from brewgis.workspace.dagster.check_provenance import METADATA_CONTRACT_INLINE_COLUMNS
 from brewgis.workspace.dagster.check_provenance import METADATA_CONTRACT_PATH
 from brewgis.workspace.dagster.check_provenance import METADATA_CONTRACT_SOURCE
@@ -495,6 +496,27 @@ def sacog_dbt_comparison(
     )
 
     context.log.info("dbt comparison run complete: status=%s", result.success)
+
+    # Run Soda validation on each comparison output table (warning-only)
+    comparison_tables = [
+        "sacog_reference_totals",
+        "sacog_brewgis_totals",
+        "sacog_correlations",
+        "sacog_weighted_means",
+        "sacog_summary",
+    ]
+    schema = "public"
+    for tbl in comparison_tables:
+        soda_result = validate_dbt_table(schema=schema, table=tbl)
+        if not soda_result.get("success", False):
+            context.log.warning(
+                "  Soda validation failed for %s.%s: %s",
+                schema,
+                tbl,
+                soda_result.get("failures", []),
+            )
+        else:
+            context.log.info("  Soda validation passed for %s.%s", schema, tbl)
 
     return MaterializeResult(
         metadata={

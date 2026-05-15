@@ -33,6 +33,7 @@ from typing import Any
 from django.db import connection
 
 from brewgis.soda import validate_base_canvas
+from brewgis.soda import validate_land_use_classification
 from brewgis.soda import validate_synthetic_parcels
 from brewgis.workspace.services.base_canvas_manager import BaseCanvasManager
 from brewgis.workspace.services.base_canvas_schema import BaseCanvasSchema
@@ -229,6 +230,8 @@ _IMPUTATION_EXCLUDE = frozenset(
         "geometry_key",
         "geometry",
         "built_form_key",
+        "land_use",
+        "assessor_use_code",
     }
 )
 
@@ -305,6 +308,13 @@ def run_pipeline(
 
         _log("[7/11] Classifying land use")
         _classify_land_use(target_table)
+        schema_name, table_name = target_table.split(".")
+        land_use_result = validate_land_use_classification(
+            schema=schema_name, table=table_name
+        )
+        if not land_use_result.get("success", False):
+            failures = land_use_result.get("failures", [])
+            logger.warning("  Land use classification warnings: %s", failures)
 
         _log("[8/11] Estimating irrigation")
         _estimate_irrigation(target_table)
@@ -386,6 +396,7 @@ def _geom_transform_to_6933(schema: str, table: str) -> str:
         return "ST_Transform(ST_SetSRID(geometry::geometry, 4326), 6933)"
     return "ST_Transform(geometry, 6933)"
 
+
 def _truncate_table(target_table: str) -> None:
     with connection.cursor() as cursor:
         cursor.execute(f"TRUNCATE TABLE {_q(target_table)} RESTART IDENTITY CASCADE")
@@ -432,20 +443,31 @@ def _ensure_target_table(target_table: str) -> None:
 
 
 def _load_from_table(source_table: str, target_table: str) -> None:
-    """Load parcels from an existing PostGIS table."""
+    """Load parcels from an existing PostGIS table, preserving input columns."""
     src_parts = source_table.split(".")
     tgt_parts = target_table.split(".")
-    src_schema, src_table = (
-        src_parts if len(src_parts) > 1 else ("public", src_parts[0])
-    )
+    src_schema, src_tbl = src_parts if len(src_parts) > 1 else ("public", src_parts[0])
     tgt_schema, tgt_name = tgt_parts if len(tgt_parts) > 1 else ("public", tgt_parts[0])
 
+    # Dynamically detect input-only columns (land_use, assessor_use_code) in source
+    extra_cols = _available_columns(
+        ["land_use", "assessor_use_code"], src_schema, src_tbl
+    )
+    col_list = ", ".join(_q(c) for c in extra_cols) if extra_cols else ""
+
     with connection.cursor() as cursor:
-        cursor.execute(f"""
-            INSERT INTO {_q(tgt_schema)}.{_q(tgt_name)} (geometry)
-            SELECT ST_Transform(ST_Multi(geometry), 4326)
-            FROM {_q(src_schema)}.{_q(src_table)}
-        """)
+        if col_list:
+            cursor.execute(f"""
+                INSERT INTO {_q(tgt_schema)}.{_q(tgt_name)} (geometry, {col_list})
+                SELECT ST_Transform(ST_Multi(geometry), 4326), {col_list}
+                FROM {_q(src_schema)}.{_q(src_tbl)}
+            """)
+        else:
+            cursor.execute(f"""
+                INSERT INTO {_q(tgt_schema)}.{_q(tgt_name)} (geometry)
+                SELECT ST_Transform(ST_Multi(geometry), 4326)
+                FROM {_q(src_schema)}.{_q(src_tbl)}
+            """)
 
 
 def _load_from_geojson(geojson_path: str, target_table: str) -> None:
@@ -586,6 +608,7 @@ def _allocate_demographics(target_table: str, census_schema: str) -> None:
     _allocate_via_spatial_join(target_table, staging_table, _DEMOGRAPHIC_COLUMNS)
     _check_allocation_result(target_table, _DEMOGRAPHIC_COLUMNS, "demographic")
     _fill_defaults(target_table, _DEMOGRAPHIC_COLUMNS, 0.0)
+
 
 def _allocate_employment(target_table: str, lehd_schema: str) -> None:
     """Allocate employment data: spatial allocation from LEHD, or defaults."""
@@ -735,9 +758,7 @@ def _available_columns(
     return [c for c in columns if c in existing and c != "geometry"]
 
 
-def _check_allocation_result(
-    target_table: str, columns: list[str], label: str
-) -> None:
+def _check_allocation_result(target_table: str, columns: list[str], label: str) -> None:
     """Raise if all target columns are zero after spatial allocation."""
     schema, table = target_table.split(".")
     with connection.cursor() as cursor:

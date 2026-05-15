@@ -16,6 +16,7 @@ import logging
 import os
 from typing import Any
 
+from brewgis.soda import validate_acs_block_group
 from brewgis.workspace.analysis.dbt_runner import run_dbt_local
 from brewgis.workspace.services._db import get_engine
 from brewgis.workspace.services._db import text
@@ -278,4 +279,11 @@ def _populate_acs_block_group(
         )
         raise RuntimeError(msg)
 
+    # Soda validation — validates acs_block_group quality
+    acs_result = validate_acs_block_group(schema="census", table="acs_block_group")
+    if not acs_result.get("success", False):
+        logger.warning(
+            "  ACS block group validation warnings: %s",
+            acs_result.get("failures", []),
+        )
     return row_count

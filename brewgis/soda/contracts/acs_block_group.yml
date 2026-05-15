@@ -53,3 +53,8 @@ checks:
   - row_count:
       check: '> 0'
       name: Table has rows
+  - metric:
+      expression: SUM(pop)
+      threshold:
+        must_be_greater_than_or_equal: 1000
+      name: sum(pop) >= 1000 for county-scale

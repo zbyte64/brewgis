@@ -137,3 +137,15 @@ checks:
   - row_count:
       check: '> 0'
       name: Table has rows
+  - metric:
+      expression: SUM(emp)
+      threshold:
+        must_be_greater_than_or_equal: 10000
+        must_be_less_than_or_equal: 50000000
+      name: sum(emp) within reasonable range for US county
+  - metric:
+      expression: SUM(emp) / GREATEST(NULLIF(SUM(pop), 0), 1e-10)
+      threshold:
+        must_be_greater_than: 0.05
+        must_be_less_than_or_equal: 2.0
+      name: employment-to-population ratio within range

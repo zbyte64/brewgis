@@ -57,6 +57,7 @@ __all__ = [
     "validate_census_acs",
     "validate_column_stitching",
     "validate_dbt_table",
+    "validate_land_use_classification",
     "validate_lehd",
     "validate_nlcd",
     "validate_poi",
@@ -247,6 +248,13 @@ def validate_wac_block(
 ) -> dict[str, Any]:
     """Validate a LEHD WAC block staging table."""
     return run_scan("wac_block", schema=schema, table=table)
+
+
+def validate_land_use_classification(
+    schema: str = "public", table: str = "base_canvas"
+) -> dict[str, Any]:
+    """Validate land use classification output."""
+    return run_scan("land_use_classification", schema=schema, table=table)
 
 
 # ── Internal helpers ───────────────────────────────────────────────
