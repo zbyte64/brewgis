@@ -107,71 +107,14 @@ class Command(BaseCommand):
         raise CommandError(msg)
 
     def _ensure_table(self, name: str) -> None:
-        """Seed data for contracts that need it."""
+        """Seed data for contracts whose tables are produced by ETL pipelines.
+
+        Each target table is created on first call (idempotent — skips if
+        the table already exists).
+        """
         if name == "built_form_export":
-            from django.conf import settings
-            from django.core.management import call_command
-            from django.db import connection
-
-            fixture_path = (
-                settings.APPS_DIR
-                / "workspace"
-                / "built_forms"
-                / "fixtures"
-                / "default_library.json"
-            )
-
-            # Load BuildingType fixture if the table is empty
-            with connection.cursor() as cursor:
-                cursor.execute("SELECT COUNT(*) FROM public.workspace_buildingtype")
-                (count,) = cursor.fetchone()
-            if count == 0:
-                self.stdout.write("  Loading building type fixture...")
-                call_command("loaddata", str(fixture_path), format="json")
-                self.stdout.write("  Building types seeded.")
-
-            # Check if built_forms table already exists and has data
-            with connection.cursor() as cursor:
-                cursor.execute(
-                    "SELECT EXISTS (SELECT 1 FROM information_schema.tables "
-                    "WHERE table_schema = 'public' AND table_name = 'built_forms')"
-                )
-                exists = cursor.fetchone()[0]
-            if exists:
-                return
-
-            self.stdout.write("  Seeding built_forms table...")
-
-            from brewgis.workspace.analysis.data_export import _NULLABLE_TO_ZERO
-            from brewgis.workspace.analysis.data_export import BUILT_FORM_COLUMNS
-
-            # Build column expressions matching export_building_types logic
-            col_parts: list[str] = []
-            for out_name, source_expr in BUILT_FORM_COLUMNS.items():
-                if out_name in _NULLABLE_TO_ZERO:
-                    col_parts.append(f"COALESCE({source_expr}, 0.0) AS {out_name}")
-                else:
-                    col_parts.append(f"{source_expr} AS {out_name}")
-            cols = ",\n            ".join(col_parts)
-
-            with connection.cursor() as cursor:
-                cursor.execute(
-                    f"""
-                    CREATE TABLE IF NOT EXISTS public.built_forms AS
-                    SELECT {cols}
-                    FROM public.workspace_buildingtype
-                    WITH NO DATA
-                    """
-                )
-                cursor.execute("TRUNCATE TABLE public.built_forms")
-                cursor.execute(
-                    f"""
-                    INSERT INTO public.built_forms
-                    SELECT {cols}
-                    FROM public.workspace_buildingtype
-                    """
-                )
-            self.stdout.write("  built_forms table seeded.")
+            _seed_built_form_export()
+        _seed_remaining_contracts()
 
     def _report_result(self, name: str, result: dict[str, Any]) -> None:
         """Print a human-readable result summary."""
@@ -184,3 +127,65 @@ class Command(BaseCommand):
         if not result["success"]:
             for failure in result.get("failures", []):
                 self.stdout.write(f"    - {failure}")
+def _seed_built_form_export() -> None:
+    """Seed ``built_forms`` from Django BuildingType records."""
+    from django.conf import settings
+    from django.core.management import call_command
+    from django.db import connection
+
+    with connection.cursor() as cursor:
+        cursor.execute("SELECT COUNT(*) FROM public.workspace_buildingtype")
+        (count,) = cursor.fetchone()
+    if count == 0:
+        fixture_path = (
+            settings.APPS_DIR
+            / "workspace"
+            / "built_forms"
+            / "fixtures"
+            / "default_library.json"
+        )
+        call_command("loaddata", str(fixture_path), format="json")
+
+    with connection.cursor() as cursor:
+        cursor.execute(
+            "SELECT EXISTS (SELECT 1 FROM information_schema.tables "
+            "WHERE table_schema = 'public' AND table_name = 'built_forms')"
+        )
+        if cursor.fetchone()[0]:
+            return
+
+    from brewgis.workspace.analysis.data_export import _NULLABLE_TO_ZERO
+    from brewgis.workspace.analysis.data_export import BUILT_FORM_COLUMNS
+
+    col_parts: list[str] = []
+    for out_name, source_expr in BUILT_FORM_COLUMNS.items():
+        if out_name in _NULLABLE_TO_ZERO:
+            col_parts.append(f"COALESCE({source_expr}, 0.0) AS {out_name}")
+        else:
+            col_parts.append(f"{source_expr} AS {out_name}")
+    cols = ",\n            ".join(col_parts)
+
+    with connection.cursor() as cursor:
+        cursor.execute(
+            f"""
+            CREATE TABLE IF NOT EXISTS public.built_forms AS
+            SELECT {cols}
+            FROM public.workspace_buildingtype
+            WITH NO DATA
+            """
+        )
+        cursor.execute("TRUNCATE TABLE public.built_forms")
+        cursor.execute(
+            f"""
+            INSERT INTO public.built_forms
+            SELECT {cols}
+            FROM public.workspace_buildingtype
+            """
+        )
+
+
+def _seed_remaining_contracts() -> None:
+    """Seed ETL pipeline staging/output tables used by Soda contracts."""
+    from brewgis.soda.seed import seed_all
+
+    seed_all()
