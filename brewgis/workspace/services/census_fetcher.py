@@ -16,6 +16,7 @@ import logging
 import os
 from typing import Any
 
+from brewgis.workspace.analysis.dbt_runner import run_dbt_local
 from brewgis.workspace.services._db import get_engine
 from brewgis.workspace.services._db import text
 
@@ -230,11 +231,10 @@ def _populate_acs_block_group(
     county_fips: str,
     year: int = 2022,
 ) -> int:
-    """Fetch ACS data, join with TIGER BG geometry, and write to ``census.acs_block_group`` via a single SQL statement.
+    """Fetch ACS data, join with TIGER BG geometry via the ``acs_block_group`` dbt model.
 
-    Replaces the previous pandas→geopandas round-trip with an
-    all-SQL approach. Derived columns, safe percentage computations,
-    and DU sub-type splitting are all computed in PostgreSQL.
+    Invokes dbt to materialize ``census.acs_block_group`` with derived
+    columns, safe percentage computations, and DU sub-type splitting.
 
     Args:
         state_fips: Two-digit state FIPS code.
@@ -245,132 +245,28 @@ def _populate_acs_block_group(
         Number of rows written.
 
     Raises:
-        RuntimeError: If the query returns no data.
+        RuntimeError: If dbt fails or the table is empty.
     """
-    detsf_sl_ratio = _DU_DETSF_TO_SL_RATIO
-    sl_density_threshold = _SL_DENSITY_THRESHOLD
-    mf_2_9_to_mf2to4_ratio = _DU_MF_2_9_TO_MF2TO4_RATIO
+    dbt_vars: dict[str, object] = {
+        "year": year,
+        "state_fips": state_fips,
+        "county_fips": county_fips,
+        "detsf_sl_ratio": _DU_DETSF_TO_SL_RATIO,
+        "sl_density_threshold": _SL_DENSITY_THRESHOLD,
+        "mf_2_9_to_mf2to4_ratio": _DU_MF_2_9_TO_MF2TO4_RATIO,
+    }
 
-    sql = text("""
-        CREATE TABLE census.acs_block_group AS
-        WITH raw_derived AS (
-            SELECT
-                a.state || a.county || a.tract || a."block_group" AS geoid,
-                ST_Multi(ST_GeomFromText(tbg.geometry, 4326)) AS geometry,
-                COALESCE(a.b01001_001_e, 0)::numeric AS pop,
-                COALESCE(a.b25003_001_e, 0)::numeric AS hh,
-                COALESCE(a.b25024_001_e, 0)::numeric AS du,
-                -- DU types
-                COALESCE(a.b25024_002_e, 0)::numeric AS du_detsf,
-                COALESCE(a.b25024_003_e, 0)::numeric AS du_attsf,
-                (COALESCE(a.b25024_004_e, 0) + COALESCE(a.b25024_005_e, 0)
-                    + COALESCE(a.b25024_006_e, 0))::numeric AS du_mf_2_9,
-                (COALESCE(a.b25024_007_e, 0) + COALESCE(a.b25024_008_e, 0)
-                    + COALESCE(a.b25024_009_e, 0))::numeric AS du_mf_10p,
-                -- Tenure
-                COALESCE(a.b25003_002_e, 0)::numeric AS owner_occupied,
-                COALESCE(a.b25003_003_e, 0)::numeric AS renter_occupied,
-                -- Income
-                COALESCE(a.b19013_001_e, 0)::numeric AS median_income,
-                -- Rent burden
-                COALESCE(a.b25070_001_e, 0)::numeric AS rent_total,
-                (COALESCE(a.b25070_007_e, 0) + COALESCE(a.b25070_008_e, 0)
-                 + COALESCE(a.b25070_009_e, 0) + COALESCE(a.b25070_010_e, 0))::numeric AS renter_cost_burdened,
-                -- Owner cost burden
-                (COALESCE(a.b25091_005_e, 0) + COALESCE(a.b25091_006_e, 0)
-                    + COALESCE(a.b25091_007_e, 0) + COALESCE(a.b25091_011_e, 0)
-                    + COALESCE(a.b25091_012_e, 0)
-                    + COALESCE(a.b25091_013_e, 0))::numeric AS owner_cost_burdened,
-                -- Demographics
-                COALESCE(a.b03002_001_e, 0)::numeric AS total_population,
-                COALESCE(a.b03002_002_e, 0)::numeric AS white_alone_pop,
-                -- Education
-                COALESCE(a.b15003_001_e, 0)::numeric AS edu_total,
-                (COALESCE(a.b15003_022_e, 0) + COALESCE(a.b15003_023_e, 0)
-                 + COALESCE(a.b15003_024_e, 0) + COALESCE(a.b15003_025_e, 0))::numeric AS college_educated
-            FROM public.acs_raw a
-            JOIN public.tiger_block_groups tbg
-                ON tbg.geoid = a.state || a.county || a.tract || a."block_group"
-            WHERE a.year = :year
-              AND a.state = :state_fips
-              AND a.county = :county_fips
-        ),
-        derived_with_pcts AS (
-            SELECT
-                *,
-                -- Safe percentages
-                CASE WHEN rent_total > 0
-                    THEN ROUND(renter_cost_burdened / NULLIF(rent_total, 0) * 100.0, 2)
-                    ELSE 0 END AS rent_burden_pct,
-                CASE WHEN hh > 0
-                    THEN ROUND((owner_cost_burdened + renter_cost_burdened) / NULLIF(hh, 0) * 100.0, 2)
-                    ELSE 0 END AS cost_burden_pct,
-                CASE WHEN total_population > 0
-                    THEN ROUND((total_population - white_alone_pop) / NULLIF(total_population, 0) * 100.0, 2)
-                    ELSE 0 END AS pct_minority,
-                CASE WHEN edu_total > 0
-                    THEN ROUND(college_educated / NULLIF(edu_total, 0) * 100.0, 2)
-                    ELSE 0 END AS pct_college_educated,
-                -- DU sub-type splits (fixed ratios)
-                ROUND(du_mf_2_9 * :mf_2_9_to_mf2to4_ratio, 1) AS du_mf2to4,
-                ROUND(du_mf_2_9 * (1 - :mf_2_9_to_mf2to4_ratio) + du_mf_10p, 1) AS du_mf5p,
-                -- Density-calibrated single-family lot split
-                CASE
-                    WHEN du_detsf > 0 AND geometry IS NOT NULL AND ST_IsValid(geometry)
-                    THEN LEAST(1.0, GREATEST(0.0,
-                        1.0 / (1.0 + EXP(-0.5 * (
-                            (du_detsf / NULLIF(ST_Area(ST_Transform(geometry, 6933)) / 4046.86, 0))
-                            - :sl_density_threshold
-                        )))
-                    ))
-                    ELSE :detsf_sl_ratio
-                END AS sl_ratio
-            FROM raw_derived
-        )
-        SELECT
-            geoid,
-            geometry,
-            pop,
-            hh,
-            du,
-            du_attsf,
-            du_mf2to4,
-            du_mf5p,
-            ROUND(du_mf2to4 + du_mf5p, 1) AS du_mf,
-            ROUND(du_detsf * sl_ratio, 1) AS du_detsf_sl,
-            ROUND(du_detsf * (1 - sl_ratio), 1) AS du_detsf_ll,
-            owner_occupied,
-            renter_occupied,
-            median_income,
-            rent_burden_pct,
-            cost_burden_pct,
-            total_population,
-            pct_minority,
-            pct_college_educated
-        FROM derived_with_pcts
-    """)
+    result = run_dbt_local(select=["acs_block_group"], vars_=dbt_vars)
+    if not result.success:
+        msg = f"dbt acs_block_group failed: {result.error}"
+        raise RuntimeError(msg)
 
     engine = get_engine()
     with engine.connect() as conn:
-        conn.execute(text("CREATE SCHEMA IF NOT EXISTS census"))
-        conn.execute(text("DROP TABLE IF EXISTS census.acs_block_group"))
-        conn.execute(
-            sql,
-            {
-                "year": year,
-                "state_fips": state_fips,
-                "county_fips": county_fips,
-                "detsf_sl_ratio": detsf_sl_ratio,
-                "sl_density_threshold": sl_density_threshold,
-                "mf_2_9_to_mf2to4_ratio": mf_2_9_to_mf2to4_ratio,
-            },
+        row_count = (
+            conn.execute(text("SELECT COUNT(*) FROM census.acs_block_group")).scalar()
+            or 0
         )
-        conn.commit()
-
-        result = conn.execute(
-            text("SELECT COUNT(*) FROM census.acs_block_group")
-        ).scalar()
-        row_count = result or 0
 
     if row_count == 0:
         msg = (
@@ -378,4 +274,5 @@ def _populate_acs_block_group(
             f"{state_fips}/{county_fips} year {year}"
         )
         raise RuntimeError(msg)
+
     return row_count

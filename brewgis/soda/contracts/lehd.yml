@@ -8,8 +8,9 @@ columns:
     checks:
       - missing:
           name: w_geocode has no missing values
-      - duplicate:
-          name: w_geocode is unique
+      # todo unique with year
+      #- duplicate:
+      #    name: w_geocode is unique
   - name: c000
     checks:
       - missing:

@@ -942,3 +942,146 @@ models:
   - name: generated_at
     tests:
     - not_null
+- name: wac_block
+  description: "LEHD LODES WAC employment by block group — CNS split into sub-sectors via CBP proportions, with SACOG calibration support."
+  columns:
+  - name: geoid
+    description: "12-digit block group GEOID"
+    tests:
+    - not_null
+  - name: emp
+    description: "Total jobs (C000)"
+    tests:
+    - not_null
+    - non_negative
+  - name: emp_retail_services
+    tests:
+    - non_negative
+  - name: emp_restaurant
+    tests:
+    - non_negative
+  - name: emp_accommodation
+    tests:
+    - non_negative
+  - name: emp_arts_entertainment
+    tests:
+    - non_negative
+  - name: emp_other_services
+    tests:
+    - non_negative
+  - name: emp_office_services
+    tests:
+    - non_negative
+  - name: emp_medical_services
+    tests:
+    - non_negative
+  - name: emp_public_admin
+    tests:
+    - non_negative
+  - name: emp_education
+    tests:
+    - non_negative
+  - name: emp_manufacturing
+    tests:
+    - non_negative
+  - name: emp_wholesale
+    tests:
+    - non_negative
+  - name: emp_transport_warehousing
+    tests:
+    - non_negative
+  - name: emp_utilities
+    tests:
+    - non_negative
+  - name: emp_construction
+    tests:
+    - non_negative
+  - name: emp_agriculture
+    tests:
+    - non_negative
+  - name: emp_extraction
+    tests:
+    - non_negative
+  - name: emp_military
+    tests:
+    - non_negative
+  - name: emp_ret
+    description: "Retail aggregate employment"
+    tests:
+    - not_null
+    - non_negative
+  - name: emp_off
+    description: "Office aggregate employment"
+    tests:
+    - not_null
+    - non_negative
+  - name: emp_pub
+    description: "Public aggregate employment"
+    tests:
+    - not_null
+    - non_negative
+  - name: emp_ind
+    description: "Industrial aggregate employment"
+    tests:
+    - not_null
+    - non_negative
+  - name: emp_ag
+    description: "Agriculture aggregate employment"
+    tests:
+    - non_negative
+- name: acs_block_group
+  description: "Census ACS demographics by block group — derived columns, DU sub-type splits, safe percentage computations."
+  columns:
+  - name: geoid
+    description: "12-digit block group GEOID"
+    tests:
+    - not_null
+  - name: pop
+    description: "Total population"
+    tests:
+    - not_null
+    - non_negative
+  - name: hh
+    description: "Total households"
+    tests:
+    - not_null
+    - non_negative
+  - name: du
+    description: "Total dwelling units"
+    tests:
+    - not_null
+    - non_negative
+  - name: du_detsf_sl
+    tests:
+    - non_negative
+  - name: du_detsf_ll
+    tests:
+    - non_negative
+  - name: du_attsf
+    tests:
+    - non_negative
+  - name: du_mf
+    description: "Total multi-family dwelling units"
+    tests:
+    - non_negative
+  - name: du_mf2to4
+    tests:
+    - non_negative
+  - name: du_mf5p
+    tests:
+    - non_negative
+  - name: median_income
+    tests:
+    - non_negative
+  - name: rent_burden_pct
+    tests:
+    - non_negative
+  - name: pct_minority
+    tests:
+    - non_negative
+  - name: pct_college_educated
+    tests:
+    - non_negative
+  - name: cost_burden_pct
+    tests:
+    - non_negative

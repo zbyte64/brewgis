@@ -9,7 +9,6 @@ import pytest
 from django.core.management import call_command
 from django.core.management.base import CommandError
 
-from brewgis.workspace.services.base_canvas_manager import BaseCanvasManager
 
 
 @pytest.mark.integration
@@ -17,11 +16,14 @@ class TestOnboardGeography:
     """Integration tests for the onboard_geography command."""
 
     @pytest.fixture(autouse=True)
-    def _cleanup(self) -> None:
+    def _cleanup(self, db) -> None:
         """Ensure clean state before and after each test."""
-        BaseCanvasManager.drop_table()
+        from django.db import connection
+        with connection.cursor() as cursor:
+            cursor.execute("TRUNCATE TABLE public.base_canvas RESTART IDENTITY CASCADE")
         yield
-        BaseCanvasManager.drop_table()
+        with connection.cursor() as cursor:
+            cursor.execute("TRUNCATE TABLE public.base_canvas RESTART IDENTITY CASCADE")
 
     def test_missing_required_args(self) -> None:
         """Command should error without required arguments."""
@@ -35,6 +37,8 @@ class TestOnboardGeography:
                 "onboard_geography",
                 name="Test Geography",
                 parcels="/nonexistent/file.geojson",
+                state_fips="06",
+                county_fips="019",
             )
 
     @patch("brewgis.workspace.services.base_canvas_pipeline.run_pipeline")
@@ -85,6 +89,8 @@ class TestOnboardGeography:
                 "onboard_geography",
                 name="Test Geography",
                 parcels=tmp_path,
+                state_fips="06",
+                county_fips="019",
             )
         finally:
             os.unlink(tmp_path)
@@ -141,6 +147,8 @@ class TestOnboardGeography:
                 "onboard_geography",
                 name="Test Geography",
                 parcels=tmp_path,
+                state_fips="06",
+                county_fips="019",
             )
         finally:
             os.unlink(tmp_path)

@@ -367,6 +367,25 @@ def _col_list(cols: list[str]) -> str:
     return ", ".join(_q(c) for c in cols)
 
 
+def _geom_transform_to_6933(schema: str, table: str) -> str:
+    """Return a SQL expression that transforms ``geometry`` to EPSG:6933.
+
+    Handles both proper PostGIS ``geometry`` columns and ``TEXT`` columns
+    that store raw WKT.  TEXT-sourced geometries are assumed to be in EPSG:4326
+    (WGS84) — the standard for census TIGER/Line and LEHD staging tables.
+    """
+    with connection.cursor() as cursor:
+        cursor.execute(
+            "SELECT data_type FROM information_schema.columns "
+            "WHERE table_schema = %s AND table_name = %s AND column_name = 'geometry'",
+            [schema, table],
+        )
+        row = cursor.fetchone()
+    data_type = row[0] if row else "geometry"
+    if data_type in ("text", "character varying"):
+        return "ST_Transform(ST_SetSRID(geometry::geometry, 4326), 6933)"
+    return "ST_Transform(geometry, 6933)"
+
 def _truncate_table(target_table: str) -> None:
     with connection.cursor() as cursor:
         cursor.execute(f"TRUNCATE TABLE {_q(target_table)} RESTART IDENTITY CASCADE")
@@ -465,14 +484,14 @@ def _load_synthetic(n: int, target_table: str) -> None:
     schema, table = target_table.split(".")
 
     with connection.cursor() as cursor:
-        for _, row in gdf.iterrows():
+        for i, (_, row) in enumerate(gdf.iterrows()):
             wkt = (
                 row.geometry.wkt if hasattr(row.geometry, "wkt") else str(row.geometry)
             )
             cursor.execute(
-                f"INSERT INTO {_q(schema)}.{_q(table)} (geometry) "
-                "VALUES (ST_Multi(ST_GeomFromText(%s, 4326)))",
-                [wkt],
+                f"INSERT INTO {_q(schema)}.{_q(table)} (geography_id, geometry) "
+                "VALUES (%s, ST_Multi(ST_GeomFromText(%s, 4326)))",
+                [i, wkt],
             )
 
 
@@ -559,20 +578,27 @@ def _allocate_demographics(target_table: str, census_schema: str) -> None:
     """Allocate demographic data: spatial allocation from census ACS, or defaults."""
     staging_table = f"{census_schema}.acs_block_group"
 
-    if _table_exists(census_schema, "acs_block_group"):
-        _allocate_via_spatial_join(target_table, staging_table, _DEMOGRAPHIC_COLUMNS)
-
+    if not _table_exists(census_schema, "acs_block_group"):
+        raise RuntimeError(
+            f"Census staging table {staging_table} does not exist — "
+            "cannot allocate demographics. Run the census dlt pipeline first."
+        )
+    _allocate_via_spatial_join(target_table, staging_table, _DEMOGRAPHIC_COLUMNS)
+    _check_allocation_result(target_table, _DEMOGRAPHIC_COLUMNS, "demographic")
     _fill_defaults(target_table, _DEMOGRAPHIC_COLUMNS, 0.0)
-
 
 def _allocate_employment(target_table: str, lehd_schema: str) -> None:
     """Allocate employment data: spatial allocation from LEHD, or defaults."""
     staging_table = f"{lehd_schema}.wac_block"
 
-    if _table_exists(lehd_schema, "wac_block"):
-        _allocate_via_spatial_join(target_table, staging_table, _EMPLOYMENT_COLUMNS)
-        _calibrate_employment(target_table, staging_table)
-
+    if not _table_exists(lehd_schema, "wac_block"):
+        raise RuntimeError(
+            f"LEHD staging table {staging_table} does not exist — "
+            "cannot allocate employment. Run the LEHD dlt pipeline first."
+        )
+    _allocate_via_spatial_join(target_table, staging_table, _EMPLOYMENT_COLUMNS)
+    _check_allocation_result(target_table, _EMPLOYMENT_COLUMNS, "employment")
+    _calibrate_employment(target_table, staging_table)
     _fill_defaults(target_table, _EMPLOYMENT_COLUMNS, 0.0)
 
 
@@ -653,7 +679,7 @@ def _allocate_via_spatial_join(
             DROP TABLE IF EXISTS _alloc_src;
             CREATE TEMP TABLE _alloc_src AS
             SELECT
-                ST_Transform(geometry, 6933) AS geom,
+                {_geom_transform_to_6933(src_schema, src_table)} AS geom,
                 {_col_list(available)}
             FROM {_q(src_schema)}.{_q(src_table)}
             WHERE geometry IS NOT NULL
@@ -707,6 +733,25 @@ def _available_columns(
         )
         existing = {row[0] for row in cursor.fetchall()}
     return [c for c in columns if c in existing and c != "geometry"]
+
+
+def _check_allocation_result(
+    target_table: str, columns: list[str], label: str
+) -> None:
+    """Raise if all target columns are zero after spatial allocation."""
+    schema, table = target_table.split(".")
+    with connection.cursor() as cursor:
+        for col in columns:
+            cursor.execute(
+                f"SELECT COALESCE(SUM({_q(col)}), 0) FROM {_q(schema)}.{_q(table)}"
+            )
+            total = float(cursor.fetchone()[0])
+            if total > 0:
+                return  # at least one column has data
+    raise RuntimeError(
+        f"Spatial allocation produced all-zero {label} columns in "
+        f"{target_table} — no data transferred from the staging table."
+    )
 
 
 # ═══════════════════════════════════════════════════════════════════════
@@ -1017,16 +1062,13 @@ def _validate(target_table: str) -> None:
 
 
 def _validate_synthetic(target_table: str) -> None:
-    """Post-validate synthetic parcels (warning severity)."""
+    """Post-validate synthetic parcels (raises on failure)."""
     schema_name, table_name = target_table.split(".")
-    try:
-        gx_result = validate_synthetic_parcels(schema=schema_name, table=table_name)
-        if gx_result["success"]:
-            logger.info("  GX synthetic_parcels validation passed")
-        else:
-            logger.warning(
-                "  GX synthetic_parcels warning: %s",
-                "; ".join(gx_result["failures"][:3]),
-            )
-    except Exception:
-        logger.warning("  GX synthetic_parcels validation failed (non-fatal)")
+    gx_result = validate_synthetic_parcels(schema=schema_name, table=table_name)
+    if gx_result["success"]:
+        logger.info("  GX synthetic_parcels validation passed")
+    else:
+        msg = "; ".join(gx_result["failures"][:5])
+        raise RuntimeError(
+            f"GX synthetic_parcels validation failed for {target_table}: {msg}"
+        )

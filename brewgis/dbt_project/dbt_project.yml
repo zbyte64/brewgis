@@ -71,6 +71,12 @@ models:
     comparison:
       +materialized: table
       +schema: "{{ var('target_schema', 'public') }}"
+    wac_block:
+      +materialized: table
+      +schema: lehd
+    acs_block_group:
+      +materialized: table
+      +schema: census
 vars:
   # Default values for SQLFluff / dbt compilation.
   # Runtime values are provided by dbt_runner.py when executing models.
@@ -139,7 +145,7 @@ vars:
   ghg_gas_co2_per_kwh: 0.181  # kg CO₂e/kWh — natural gas
   ghg_water_supply_kwh_per_mg: 1427
   ghg_wastewater_kwh_per_mg: 1911
- 
+
   # Public Health — physical activity, health impacts (Phase 6c)
   health_walk_met: 3.5
   health_bike_met: 6.0
@@ -151,7 +157,7 @@ vars:
   health_pm25_concentration_response: 0.0062
   health_background_dalys_per_capita: 0.013
   health_background_death_rate: 0.008
- 
+
   # Stormwater Runoff (Phase 6d)
   stormwater_annual_precipitation_in: 12.0
   stormwater_method: simple  # "simple" or "rational"
@@ -162,11 +168,11 @@ vars:
   tree_canopy_temp_per_10pct: 1.0
   # Geometry Projection (ROADMAP_2 Phase 1b)
   projected_srid: null  # Set to e.g. 32611 (UTM zone 11N) for correct area calculations
- 
+
   # VMT Mitigation Fee (ROADMAP_2 Phase 2b)
   vmt_fee_rate_dollars_per_vmt: 295.0
   vmt_exempt_pct: 0.0
- 
+
   # Cost of Sprawl per Household (ROADMAP_2 Phase 2e)
   sprawl_infrastructure_cost_per_du: 15000  # Annual infrastructure cost per DU
   sprawl_capital_cost_per_du: 50000  # One-time capital cost per DU

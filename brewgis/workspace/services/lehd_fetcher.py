@@ -19,6 +19,7 @@ import deal
 import pandas as pd
 import requests
 
+from brewgis.workspace.analysis.dbt_runner import run_dbt_local
 from brewgis.workspace.services._db import get_engine
 from brewgis.workspace.services._db import text
 
@@ -758,11 +759,11 @@ def _populate_wac_block(
     county_fips: str,
     year: int = 2021,
 ) -> int:
-    """Join LEHD LODES WAC data with TIGER BG geometry via a single SQL statement.
+    """Join LEHD LODES WAC data with TIGER BG geometry via the ``wac_block`` dbt model.
 
-    Replaces the previous pandas→iterrows→geopandas round-trip with an
-    all-SQL approach. CBP proportions are still fetched via the Census API
-    and passed as SQL parameters.
+    Fetches CBP proportions from the Census API, then invokes dbt to
+    materialize ``lehd.wac_block``. The SACOG calibration is applied
+    via a numeric dbt var (``is_sacog``) and CASE expressions in SQL.
 
     Args:
         state_fips: Two-digit state FIPS code.
@@ -773,172 +774,33 @@ def _populate_wac_block(
         Number of rows written.
 
     Raises:
-        RuntimeError: If the query returns no data.
+        RuntimeError: If dbt fails or the table is empty.
     """
     cbp_props = _build_cbp_proportions(state_fips, county_fips, year)
-    is_sacog = state_fips == "06" and county_fips == "067"
+    is_sacog = 1 if state_fips == "06" and county_fips == "067" else 0
 
-    sql = text("""
-        CREATE TABLE lehd.wac_block AS
-        WITH cbp_sub_sectors AS (
-            SELECT
-                LEFT(lr.w_geocode, 12) AS geoid,
-                ST_Multi(ST_GeomFromText(tbg.geometry, 4326)) AS geometry,
-                lr.c000,
-                -- CNS01 -> goods producing: agriculture (11), extraction (21), remainder construction (23)
-                CASE WHEN COALESCE(lr.cns01, 0) > 0
-                    THEN GREATEST(0, ROUND(COALESCE(lr.cns01, 0)::numeric * :cbp_11, 1))
-                    ELSE 0 END AS emp_agriculture_cbp,
-                CASE WHEN COALESCE(lr.cns01, 0) > 0
-                    THEN GREATEST(0, ROUND(COALESCE(lr.cns01, 0)::numeric * :cbp_21, 1))
-                    ELSE 0 END AS emp_extraction_cbp,
-                CASE WHEN COALESCE(lr.cns01, 0) > 0
-                    THEN GREATEST(0, COALESCE(lr.cns01, 0)::numeric
-                        - ROUND(COALESCE(lr.cns01, 0)::numeric * :cbp_11, 1)
-                        - ROUND(COALESCE(lr.cns01, 0)::numeric * :cbp_21, 1))
-                    ELSE 0 END AS emp_construction_cbp,
-                -- CNS02 -> manufacturing
-                COALESCE(lr.cns02, 0)::numeric AS emp_manufacturing_cbp,
-                -- CNS03 -> trade/transport/utilities
-                CASE WHEN COALESCE(lr.cns03, 0) > 0
-                    THEN GREATEST(0, ROUND(COALESCE(lr.cns03, 0)::numeric * (:cbp_48 + :cbp_49), 1))
-                    ELSE 0 END AS emp_transport_warehousing_cbp,
-                CASE WHEN COALESCE(lr.cns03, 0) > 0
-                    THEN GREATEST(0, ROUND(COALESCE(lr.cns03, 0)::numeric * :cbp_22, 1))
-                    ELSE 0 END AS emp_utilities_cbp,
-                CASE WHEN COALESCE(lr.cns03, 0) > 0
-                    THEN GREATEST(0, ROUND(COALESCE(lr.cns03, 0)::numeric * :cbp_42, 1))
-                    ELSE 0 END AS emp_wholesale_cbp,
-                CASE WHEN COALESCE(lr.cns03, 0) > 0
-                    THEN GREATEST(0, COALESCE(lr.cns03, 0)::numeric
-                        - ROUND(COALESCE(lr.cns03, 0)::numeric * (:cbp_48 + :cbp_49), 1)
-                        - ROUND(COALESCE(lr.cns03, 0)::numeric * :cbp_22, 1)
-                        - ROUND(COALESCE(lr.cns03, 0)::numeric * :cbp_42, 1))
-                    ELSE 0 END AS emp_retail_services_cbp,
-                -- CNS04-CNS09 -> office services (info, finance, real estate, prof, mgmt, admin)
-                (COALESCE(lr.cns04, 0) + COALESCE(lr.cns05, 0) + COALESCE(lr.cns06, 0)
-                    + COALESCE(lr.cns07, 0) + COALESCE(lr.cns08, 0)
-                    + COALESCE(lr.cns09, 0)
-                )::numeric AS emp_office_services_cbp,
-                -- CNS10 -> education
-                COALESCE(lr.cns10, 0)::numeric AS emp_education_cbp,
-                -- CNS11 -> medical
-                COALESCE(lr.cns11, 0)::numeric AS emp_medical_services_cbp,
-                -- CNS12 -> arts/entertainment
-                COALESCE(lr.cns12, 0)::numeric AS emp_arts_entertainment_cbp,
-                -- CNS13 -> accommodation/food: accommodation (721), remainder restaurant (722)
-                CASE WHEN COALESCE(lr.cns13, 0) > 0
-                    THEN GREATEST(0, ROUND(COALESCE(lr.cns13, 0)::numeric * :cbp_721, 1))
-                    ELSE 0 END AS emp_accommodation_cbp,
-                CASE WHEN COALESCE(lr.cns13, 0) > 0
-                    THEN GREATEST(0, COALESCE(lr.cns13, 0)::numeric
-                        - ROUND(COALESCE(lr.cns13, 0)::numeric * :cbp_721, 1))
-                    ELSE 0 END AS emp_restaurant_cbp,
-                -- CNS14 -> other services
-                COALESCE(lr.cns14, 0)::numeric AS emp_other_services_cbp,
-                -- CNS15 -> public admin
-                COALESCE(lr.cns15, 0)::numeric AS emp_public_admin_cbp,
-                -- CNS17 -> military (CNS16 unclassified, excluded)
-                COALESCE(lr.cns17, 0)::numeric AS emp_military_cbp
-            FROM public.lodes_raw lr
-            JOIN public.tiger_block_groups tbg
-                ON LEFT(lr.w_geocode, 12) = tbg.geoid
-            WHERE lr.year = :year
-        ),
-        cbp_aggregates AS (
-            SELECT
-                *,
-                (emp_retail_services_cbp + emp_restaurant_cbp + emp_accommodation_cbp
-                 + emp_arts_entertainment_cbp + emp_other_services_cbp) AS emp_ret,
-                (emp_office_services_cbp + emp_medical_services_cbp) AS emp_off,
-                (emp_education_cbp + emp_public_admin_cbp) AS emp_pub,
-                (emp_manufacturing_cbp + emp_wholesale_cbp + emp_transport_warehousing_cbp
-                 + emp_utilities_cbp + emp_construction_cbp + emp_extraction_cbp + emp_agriculture_cbp) AS emp_ind,
-                emp_agriculture_cbp AS emp_ag
-            FROM cbp_sub_sectors
-        )
-        SELECT
-            geoid,
-            geometry,
-            c000 AS emp,
-            -- Sub-sector: SACOG-calibrated or CBP-based
-            CASE WHEN :is_sacog AND emp_ret > 0
-                THEN ROUND(emp_ret * 76395.0 / 163859.0, 1) ELSE emp_retail_services_cbp
-            END AS emp_retail_services,
-            CASE WHEN :is_sacog AND emp_ret > 0
-                THEN ROUND(emp_ret * 42520.0 / 163859.0, 1) ELSE emp_restaurant_cbp
-            END AS emp_restaurant,
-            CASE WHEN :is_sacog AND emp_ret > 0
-                THEN ROUND(emp_ret * 3827.0 / 163859.0, 1) ELSE emp_accommodation_cbp
-            END AS emp_accommodation,
-            CASE WHEN :is_sacog AND emp_ret > 0
-                THEN ROUND(emp_ret * 7567.0 / 163859.0, 1) ELSE emp_arts_entertainment_cbp
-            END AS emp_arts_entertainment,
-            CASE WHEN :is_sacog AND emp_ret > 0
-                THEN ROUND(emp_ret * 33330.0 / 163859.0, 1) ELSE emp_other_services_cbp
-            END AS emp_other_services,
-            CASE WHEN :is_sacog AND emp_off > 0
-                THEN ROUND(emp_off * 236721.0 / 259466.0, 1) ELSE emp_office_services_cbp
-            END AS emp_office_services,
-            CASE WHEN :is_sacog AND emp_off > 0
-                THEN ROUND(emp_off * 22745.0 / 259466.0, 1) ELSE emp_medical_services_cbp
-            END AS emp_medical_services,
-            CASE WHEN :is_sacog AND emp_pub > 0
-                THEN ROUND(emp_pub * 16924.0 / 44285.0, 1) ELSE emp_public_admin_cbp
-            END AS emp_public_admin,
-            CASE WHEN :is_sacog AND emp_pub > 0
-                THEN ROUND(emp_pub * 27361.0 / 44285.0, 1) ELSE emp_education_cbp
-            END AS emp_education,
-            CASE WHEN :is_sacog AND emp_ind > 0
-                THEN ROUND(emp_ind * 46244.0 / 74702.0, 1) ELSE emp_manufacturing_cbp
-            END AS emp_manufacturing,
-            CASE WHEN :is_sacog AND emp_ind > 0
-                THEN ROUND(emp_ind * 10672.0 / 74702.0, 1) ELSE emp_wholesale_cbp
-            END AS emp_wholesale,
-            CASE WHEN :is_sacog AND emp_ind > 0
-                THEN ROUND(emp_ind * 14229.0 / 74702.0, 1) ELSE emp_transport_warehousing_cbp
-            END AS emp_transport_warehousing,
-            CASE WHEN :is_sacog AND emp_ind > 0
-                THEN ROUND(emp_ind * 719.0 / 74702.0, 1) ELSE emp_utilities_cbp
-            END AS emp_utilities,
-            CASE WHEN :is_sacog AND emp_ind > 0
-                THEN ROUND(emp_ind * 2838.0 / 74702.0, 1) ELSE emp_construction_cbp
-            END AS emp_construction,
-            -- SACOG zeros out agriculture, extraction, military
-            CASE WHEN :is_sacog THEN 0 ELSE emp_agriculture_cbp END AS emp_agriculture,
-            CASE WHEN :is_sacog THEN 0 ELSE emp_extraction_cbp END AS emp_extraction,
-            CASE WHEN :is_sacog THEN 0 ELSE emp_military_cbp END AS emp_military,
-            -- Aggregate columns (CBP-based for emp_ret/off/pub/ind/ag; emp_military matches sub-sector)
-            emp_ret,
-            emp_off,
-            emp_pub,
-            emp_ind,
-            emp_ag
-        FROM cbp_aggregates
-    """)
+    dbt_vars: dict[str, object] = {
+        "year": year,
+        "is_sacog": is_sacog,
+        "cbp_11": cbp_props.get("11", 0.0),
+        "cbp_21": cbp_props.get("21", 0.0),
+        "cbp_48": cbp_props.get("48", 0.0),
+        "cbp_49": cbp_props.get("49", 0.0),
+        "cbp_22": cbp_props.get("22", 0.0),
+        "cbp_42": cbp_props.get("42", 0.0),
+        "cbp_721": cbp_props.get("721", 0.0),
+    }
+
+    result = run_dbt_local(select=["wac_block"], vars_=dbt_vars)
+    if not result.success:
+        msg = f"dbt wac_block failed: {result.error}"
+        raise RuntimeError(msg)
 
     engine = get_engine()
     with engine.connect() as conn:
-        conn.execute(text("CREATE SCHEMA IF NOT EXISTS lehd"))
-        conn.execute(text("DROP TABLE IF EXISTS lehd.wac_block"))
-        conn.execute(
-            sql,
-            {
-                "year": year,
-                "cbp_11": cbp_props.get("11", 0.0),
-                "cbp_21": cbp_props.get("21", 0.0),
-                "cbp_48": cbp_props.get("48", 0.0),
-                "cbp_49": cbp_props.get("49", 0.0),
-                "cbp_22": cbp_props.get("22", 0.0),
-                "cbp_42": cbp_props.get("42", 0.0),
-                "cbp_721": cbp_props.get("721", 0.0),
-                "is_sacog": is_sacog,
-            },
+        row_count = (
+            conn.execute(text("SELECT COUNT(*) FROM lehd.wac_block")).scalar() or 0
         )
-        conn.commit()
-
-        result = conn.execute(text("SELECT COUNT(*) FROM lehd.wac_block")).scalar()
-        row_count = result or 0
 
     if row_count == 0:
         msg = (

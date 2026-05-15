@@ -14,6 +14,7 @@ from django.db import connection
 from brewgis.workspace.services.base_canvas_manager import BaseCanvasManager
 from brewgis.workspace.services.base_canvas_schema import BaseCanvasSchema
 
+from brewgis.workspace.services.base_canvas_pipeline import run_pipeline
 
 @pytest.mark.integration
 @pytest.mark.django_db(transaction=True)
@@ -23,9 +24,12 @@ class TestETLPipeline:
     @pytest.fixture(autouse=True)
     def _cleanup(self) -> None:
         """Ensure clean state before and after each test."""
-        BaseCanvasManager.drop_table()
+        from django.db import connection
+        with connection.cursor() as cursor:
+            cursor.execute("TRUNCATE TABLE public.base_canvas RESTART IDENTITY CASCADE")
         yield
-        BaseCanvasManager.drop_table()
+        with connection.cursor() as cursor:
+            cursor.execute("TRUNCATE TABLE public.base_canvas RESTART IDENTITY CASCADE")
 
     def _validate_base_canvas(self, expected_rows: int) -> None:
         """Assert the base canvas table meets post-ETL expectations."""
@@ -189,3 +193,14 @@ class TestETLPipeline:
                     f'SELECT COUNT(*) FROM public.base_canvas WHERE "{col}" IS NULL'
                 )
                 assert cursor.fetchone()[0] == 0, f"NULLs in {col}"
+
+    def test_missing_census_table_raises(self) -> None:
+        """run_pipeline should raise RuntimeError when census staging table is missing."""
+        result = run_pipeline(
+            synthetic_n=10,
+            census_schema="nonexistent_schema",
+        )
+        assert result["status"] == "error"
+        assert "does not exist" in result["error"]
+        assert "census" in result["error"].lower()
+

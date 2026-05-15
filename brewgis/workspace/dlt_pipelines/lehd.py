@@ -50,11 +50,10 @@ def lehd_source(
 
 @dlt.resource(
     name="lodes_raw",
-    write_disposition="append",
     columns={
         "year": {"data_type": "bigint", "nullable": False},
     },
-    merge_key="w_geocode",
+    primary_key=("year", "w_geocode"),
 )
 def lehd_lodes_resource(
     state_fips: str,

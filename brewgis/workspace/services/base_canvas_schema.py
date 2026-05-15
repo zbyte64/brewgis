@@ -34,6 +34,7 @@ from dataclasses import dataclass
 
 from django.db.models import Field
 
+
 @dataclass(frozen=True, slots=True)
 class ColumnDef:
     """Definition of a single base canvas column."""
@@ -89,7 +90,11 @@ def _build_hardcoded_state() -> dict:
     for field in BaseCanvas._meta.get_fields():
         if not isinstance(field, Field):
             continue
-        if (field.auto_created and not field.primary_key) or field.is_relation or field.column is None:  # type: ignore[union-attr]
+        if (
+            (field.auto_created and not field.primary_key)
+            or field.is_relation
+            or field.column is None
+        ):  # type: ignore[union-attr]
             continue
 
         name: str = field.column  # type: ignore[assignment]
@@ -178,7 +183,9 @@ def _derive_nullable(field: Field, internal_type: str, name_lower: str) -> bool:
     return field.null
 
 
-def _derive_default(field: Field, internal_type: str, name_lower: str) -> float | str | None:
+def _derive_default(
+    field: Field, internal_type: str, name_lower: str
+) -> float | str | None:
     """Derive a sensible default value for a column."""
     if name_lower in ("id_source", "built_form_key", "geography_id", "geometry_key"):
         return None

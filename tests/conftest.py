@@ -123,24 +123,22 @@ def mix(
 def base_canvas_table(db) -> str:
     """Create a base canvas table with the full schema + synthetic data.
 
-    Creates ``public.base_canvas`` using
-    :class:`~brewgis.workspace.services.base_canvas_manager.BaseCanvasManager`,
-    then inserts two rows of synthetic data for tests that query the table
-    (canvas view manager, scenario cloning).
+    Uses the Django-managed ``public.base_canvas`` table created by
+    migrations, then inserts two rows of synthetic data for tests that
+    query the table (canvas view manager, scenario cloning).
 
     .. note::
 
         Requires PostgreSQL + PostGIS. The extension is enabled explicitly
         because Django's test database template may not include it.
     """
-    from brewgis.workspace.services.base_canvas_manager import BaseCanvasManager
-    # Ensure any stale DDL artifacts from previous tests are cleaned up
+    # Clean any stale data and ensure PostGIS
     from django.db import connection
     with connection.cursor() as cursor:
-        cursor.execute("DROP TABLE IF EXISTS public.base_canvas CASCADE")
-    from brewgis.workspace.services.base_canvas_schema import BaseCanvasSchema
+        cursor.execute("CREATE EXTENSION IF NOT EXISTS postgis")
+        cursor.execute("TRUNCATE TABLE public.base_canvas RESTART IDENTITY CASCADE")
 
-    BaseCanvasManager.create_table()
+    from brewgis.workspace.services.base_canvas_schema import BaseCanvasSchema
 
     # Build column list for INSERT — all non-geometry columns, include id for stable ids
     insert_cols = [name for name in BaseCanvasSchema.COLUMN_NAMES if name != "geometry"]
@@ -251,7 +249,7 @@ def base_canvas_table(db) -> str:
 
     yield "public.base_canvas"
     with connection.cursor() as cursor:
-        cursor.execute("DROP TABLE IF EXISTS public.base_canvas CASCADE")
+        cursor.execute("TRUNCATE TABLE public.base_canvas RESTART IDENTITY CASCADE")
 
 
 @pytest.fixture

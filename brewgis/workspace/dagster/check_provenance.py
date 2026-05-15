@@ -16,7 +16,8 @@ import subprocess
 import sys
 from dataclasses import dataclass
 from pathlib import Path
-from typing import TYPE_CHECKING, cast
+from typing import TYPE_CHECKING
+from typing import cast
 
 import django
 import yaml
@@ -128,7 +129,7 @@ def resolve_baseschema() -> frozenset[str]:
 
     This is the 82-column canon of the base canvas schema.
     """
-    from brewgis.workspace.services.base_canvas_schema import BaseCanvasSchema  # noqa: I001, PLC0415
+    from brewgis.workspace.services.base_canvas_schema import BaseCanvasSchema  # noqa: I001
 
     return frozenset(BaseCanvasSchema.COLUMN_NAMES)
 
@@ -169,7 +170,7 @@ def _parse_column_deps_from_sql(
     """
     result: dict[tuple[str, str], set[str]] = {}
     try:
-        import sqlglot  # noqa: PLC0415
+        import sqlglot
 
         ast = sqlglot.parse_one(sql)
     except Exception:  # noqa: BLE001
@@ -471,7 +472,7 @@ def _unpack_metadata(metadata: dict) -> dict:
     ``AssetSpec.metadata`` values may be ``MetadataValue`` objects.
     This unwraps them to plain Python types.
     """
-    from dagster import MetadataValue  # noqa: PLC0415
+    from dagster import MetadataValue
 
     plain: dict = {}
     for mk, mv in metadata.items():
@@ -696,7 +697,7 @@ def main() -> int:
       1 — one or more provenance errors found
       2 — configuration/import error
     """
-    import argparse  # noqa: PLC0415
+    import argparse
 
     parser = argparse.ArgumentParser(
         description="Static column provenance checker for Brew GIS asset graph",
@@ -725,7 +726,7 @@ def main() -> int:
     django.setup()
 
     # Import the Definitions object
-    import importlib  # noqa: PLC0415
+    import importlib
 
     module_path, _, obj_name = args.definitions.rpartition(".")
     if not obj_name:
