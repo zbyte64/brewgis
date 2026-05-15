@@ -16,10 +16,6 @@ import logging
 import os
 from typing import Any
 
-import geopandas as gpd
-import numpy as np
-from shapely import wkt as geom
-
 from brewgis.workspace.services._db import get_engine
 from brewgis.workspace.services._db import text
 
@@ -249,157 +245,6 @@ except (ValueError, TypeError):
 _DU_MF_2_9_TO_MF2TO4_RATIO = 0.40  # 40% of 2-9 units → 2-4 units
 
 
-def _apply_acs_column_mapping(
-    block_groups: gpd.GeoDataFrame,
-) -> gpd.GeoDataFrame:
-    """Map ACS-derived column names to BaseCanvasSchema equivalents.
-
-    Resolves the differences between ACS DU subtypes and the schema:
-        * du_mf_2_9 → split into du_mf2to4 and du_mf5p via _DU_MF_2_9_TO_MF2TO4_RATIO
-        * du_mf_10p → added to du_mf5p
-        * du_detsf → split into du_detsf_sl and du_detsf_ll via _DU_DETSF_TO_SL_RATIO
-    """
-    if "du_mf_2_9" in block_groups.columns:
-        mf_2_9 = block_groups["du_mf_2_9"].fillna(0.0)
-        block_groups["du_mf2to4"] = (mf_2_9 * _DU_MF_2_9_TO_MF2TO4_RATIO).round(1)
-        block_groups["du_mf5p"] = (mf_2_9 * (1 - _DU_MF_2_9_TO_MF2TO4_RATIO)).round(1)
-        if "du_mf_10p" in block_groups.columns:
-            block_groups["du_mf5p"] += block_groups["du_mf_10p"].fillna(0.0)
-        block_groups.drop(
-            columns=["du_mf_2_9", "du_mf_10p"], inplace=True, errors="ignore"
-        )
-    else:
-        block_groups["du_mf2to4"] = 0.0
-        block_groups["du_mf5p"] = 0.0
-
-    # Compute aggregate du_mf from sub-types
-    block_groups["du_mf"] = block_groups["du_mf2to4"].fillna(0.0) + block_groups[
-        "du_mf5p"
-    ].fillna(0.0)
-    if "du_detsf" in block_groups.columns:
-        # Density-calibrated SL/LL split using block-group geometry
-        bg_geo = block_groups.geometry
-        has_crs = block_groups.crs is not None
-        if bg_geo is not None and not bg_geo.is_empty.all() and has_crs:
-            bg_6933 = block_groups.to_crs("EPSG:6933")
-            area_acres = bg_6933.geometry.area / 4046.86
-            density = block_groups["du_detsf"].fillna(0.0) / area_acres.clip(lower=0.01)
-            # Sigmoid around threshold for smooth transition
-            sl_ratio = 1.0 / (1.0 + np.exp(-0.5 * (density - _SL_DENSITY_THRESHOLD)))
-            block_groups["du_detsf_sl"] = (
-                block_groups["du_detsf"].fillna(0.0) * sl_ratio
-            ).round(1)
-            block_groups["du_detsf_ll"] = (
-                block_groups["du_detsf"].fillna(0.0) * (1 - sl_ratio)
-            ).round(1)
-        else:
-            block_groups["du_detsf_sl"] = (
-                block_groups["du_detsf"].fillna(0.0) * _DU_DETSF_TO_SL_RATIO
-            ).round(1)
-            block_groups["du_detsf_ll"] = (
-                block_groups["du_detsf"].fillna(0.0) * (1 - _DU_DETSF_TO_SL_RATIO)
-            ).round(1)
-        block_groups.drop(columns=["du_detsf"], inplace=True, errors="ignore")
-    else:
-        block_groups["du_detsf_sl"] = 0.0
-        block_groups["du_detsf_ll"] = 0.0
-
-    return block_groups
-
-
-def fetch_acs_block_group_polygons(
-    state_fips: str,
-    county_fips: str,
-    year: int = 2022,
-    use_cache: bool = True,  # kept for backward compat, ignored
-) -> gpd.GeoDataFrame:
-    """Fetch ACS demographics with polygon geometry from staging tables.
-
-    Reads ACS attributes from ``public.acs_raw`` staging table (loaded by the
-    census dlt pipeline) and polygon geometry from ``public.tiger_block_groups``
-    (loaded by the TIGER/Line BG dlt pipeline), then joins on GEOID.
-
-    Derived columns and column mapping are applied post-join.
-
-    Args:
-        state_fips: Two-digit state FIPS code.
-        county_fips: Three-digit county FIPS code.
-        year: ACS data year (default 2022).
-        use_cache: Kept for backward compatibility, ignored.
-
-    Returns:
-        GeoDataFrame with polygon geometry, geoid, and all
-        demographic columns mapped to BaseCanvasSchema names.
-    """
-    engine = get_engine()
-
-    query = text("""
-        SELECT a.*, t.geometry
-        FROM public.acs_raw a
-        JOIN public.tiger_block_groups t
-            ON t.geoid = a.state || a.county || a.tract || a."block_group"
-        WHERE a.year = :year
-          AND a.state = :state_fips
-          AND a.county = :county_fips
-    """)
-
-    with engine.connect() as conn:
-        rows = conn.execute(
-            query,
-            {"year": year, "state_fips": state_fips, "county_fips": county_fips},
-        ).fetchall()
-        columns = list(rows[0]._fields) if rows else []
-        data = [dict(zip(columns, row, strict=False)) for row in rows]
-
-    if not data:
-        logger.warning(
-            "No ACS data found in staging for %s/%s year %s",
-            state_fips,
-            county_fips,
-            year,
-        )
-        return gpd.GeoDataFrame()
-
-    # Parse WKT geometry column
-    wkt_geoms = []
-    for row in data:
-        wkt_val = row.pop("geometry", None)
-        if wkt_val:
-            wkt_geoms.append(geom.loads(wkt_val))
-        else:
-            wkt_geoms.append(None)
-
-    # Compute derived columns from raw ACS variables
-    records = []
-    for row in data:
-        int_row = {}
-        for var in _all_vars():
-            try:
-                int_row[var] = int(row.get(var, 0)) if row.get(var) is not None else 0
-            except (ValueError, TypeError):
-                int_row[var] = 0
-        derived = _compute_derived_columns(int_row)
-        record = {
-            "state": row.get("state", ""),
-            "county": row.get("county", ""),
-            "tract": row.get("tract", ""),
-            "block_group": row.get("block_group", ""),
-        }
-        record.update(derived)
-        geoid = f"{record['state']}{record['county']}{record['tract']}{record['block_group']}"
-        record["geoid"] = geoid
-        records.append(record)
-
-    if not records:
-        return gpd.GeoDataFrame()
-
-    gdf: gpd.GeoDataFrame = gpd.GeoDataFrame(
-        records, geometry=wkt_geoms, crs="EPSG:4326"
-    )
-    gdf = gdf[~gdf.geometry.isna()]
-    return _apply_acs_column_mapping(gdf)
-
-
 def fetch_acs_data_summary(
     state_fips: str, county_fips: str, year: int = 2022
 ) -> dict[str, Any]:
@@ -432,7 +277,7 @@ def fetch_acs_data_summary(
                 "year": year,
             },
         ).scalar()
-        row_count = result if result else 0
+        row_count = result or 0
 
     return {
         "table_groups": list(ACS_TABLE_GROUPS.keys()),
@@ -461,12 +306,11 @@ def _populate_acs_block_group(
     county_fips: str,
     year: int = 2022,
 ) -> int:
-    """Fetch ACS data, join with TIGER BG geometry, and write to ``census.acs_block_group``.
+    """Fetch ACS data, join with TIGER BG geometry, and write to ``census.acs_block_group`` via a single SQL statement.
 
-    The pipeline's ``_allocate_demographics`` step reads from
-    ``census.acs_block_group``.  This helper creates it by running the
-    existing ``fetch_acs_block_group_polygons`` query and persisting the
-    result as a PostGIS table.
+    Replaces the previous pandas→geopandas round-trip with an
+    all-SQL approach. Derived columns, safe percentage computations,
+    and DU sub-type splitting are all computed in PostgreSQL.
 
     Args:
         state_fips: Two-digit state FIPS code.
@@ -479,25 +323,135 @@ def _populate_acs_block_group(
     Raises:
         RuntimeError: If the query returns no data.
     """
-    gdf = fetch_acs_block_group_polygons(state_fips, county_fips, year)
+    detsf_sl_ratio = _DU_DETSF_TO_SL_RATIO
+    sl_density_threshold = _SL_DENSITY_THRESHOLD
+    mf_2_9_to_mf2to4_ratio = _DU_MF_2_9_TO_MF2TO4_RATIO
 
-    if gdf.empty:
-        raise RuntimeError(
-            f"No ACS block-group data returned for {state_fips}/{county_fips} year {year}"
+    sql = text("""
+        CREATE TABLE census.acs_block_group AS
+        WITH raw_derived AS (
+            SELECT
+                a.state || a.county || a.tract || a."block_group" AS geoid,
+                ST_Multi(ST_GeomFromText(tbg.geometry, 4326)) AS geometry,
+                COALESCE(a.b01001_001_e, 0)::numeric AS pop,
+                COALESCE(a.b25003_001_e, 0)::numeric AS hh,
+                COALESCE(a.b25024_001_e, 0)::numeric AS du,
+                -- DU types
+                COALESCE(a.b25024_002_e, 0)::numeric AS du_detsf,
+                COALESCE(a.b25024_003_e, 0)::numeric AS du_attsf,
+                (COALESCE(a.b25024_004_e, 0) + COALESCE(a.b25024_005_e, 0)
+                    + COALESCE(a.b25024_006_e, 0))::numeric AS du_mf_2_9,
+                (COALESCE(a.b25024_007_e, 0) + COALESCE(a.b25024_008_e, 0)
+                    + COALESCE(a.b25024_009_e, 0))::numeric AS du_mf_10p,
+                -- Tenure
+                COALESCE(a.b25003_002_e, 0)::numeric AS owner_occupied,
+                COALESCE(a.b25003_003_e, 0)::numeric AS renter_occupied,
+                -- Income
+                COALESCE(a.b19013_001_e, 0)::numeric AS median_income,
+                -- Rent burden
+                COALESCE(a.b25070_001_e, 0)::numeric AS rent_total,
+                (COALESCE(a.b25070_007_e, 0) + COALESCE(a.b25070_008_e, 0)
+                 + COALESCE(a.b25070_009_e, 0) + COALESCE(a.b25070_010_e, 0))::numeric AS renter_cost_burdened,
+                -- Owner cost burden
+                (COALESCE(a.b25091_005_e, 0) + COALESCE(a.b25091_006_e, 0)
+                    + COALESCE(a.b25091_007_e, 0) + COALESCE(a.b25091_011_e, 0)
+                    + COALESCE(a.b25091_012_e, 0)
+                    + COALESCE(a.b25091_013_e, 0))::numeric AS owner_cost_burdened,
+                -- Demographics
+                COALESCE(a.b03002_001_e, 0)::numeric AS total_population,
+                COALESCE(a.b03002_002_e, 0)::numeric AS white_alone_pop,
+                -- Education
+                COALESCE(a.b15003_001_e, 0)::numeric AS edu_total,
+                (COALESCE(a.b15003_022_e, 0) + COALESCE(a.b15003_023_e, 0)
+                 + COALESCE(a.b15003_024_e, 0) + COALESCE(a.b15003_025_e, 0))::numeric AS college_educated
+            FROM public.acs_raw a
+            JOIN public.tiger_block_groups tbg
+                ON tbg.geoid = a.state || a.county || a.tract || a."block_group"
+            WHERE a.year = :year
+              AND a.state = :state_fips
+              AND a.county = :county_fips
+        ),
+        derived_with_pcts AS (
+            SELECT
+                *,
+                -- Safe percentages
+                CASE WHEN rent_total > 0
+                    THEN ROUND(renter_cost_burdened / NULLIF(rent_total, 0) * 100.0, 2)
+                    ELSE 0 END AS rent_burden_pct,
+                CASE WHEN hh > 0
+                    THEN ROUND((owner_cost_burdened + renter_cost_burdened) / NULLIF(hh, 0) * 100.0, 2)
+                    ELSE 0 END AS cost_burden_pct,
+                CASE WHEN total_population > 0
+                    THEN ROUND((total_population - white_alone_pop) / NULLIF(total_population, 0) * 100.0, 2)
+                    ELSE 0 END AS pct_minority,
+                CASE WHEN edu_total > 0
+                    THEN ROUND(college_educated / NULLIF(edu_total, 0) * 100.0, 2)
+                    ELSE 0 END AS pct_college_educated,
+                -- DU sub-type splits (fixed ratios)
+                ROUND(du_mf_2_9 * :mf_2_9_to_mf2to4_ratio, 1) AS du_mf2to4,
+                ROUND(du_mf_2_9 * (1 - :mf_2_9_to_mf2to4_ratio) + du_mf_10p, 1) AS du_mf5p,
+                -- Density-calibrated single-family lot split
+                CASE
+                    WHEN du_detsf > 0 AND geometry IS NOT NULL AND ST_IsValid(geometry)
+                    THEN LEAST(1.0, GREATEST(0.0,
+                        1.0 / (1.0 + EXP(-0.5 * (
+                            (du_detsf / NULLIF(ST_Area(ST_Transform(geometry, 6933)) / 4046.86, 0))
+                            - :sl_density_threshold
+                        )))
+                    ))
+                    ELSE :detsf_sl_ratio
+                END AS sl_ratio
+            FROM raw_derived
         )
+        SELECT
+            geoid,
+            geometry,
+            pop,
+            hh,
+            du,
+            du_attsf,
+            du_mf2to4,
+            du_mf5p,
+            ROUND(du_mf2to4 + du_mf5p, 1) AS du_mf,
+            ROUND(du_detsf * sl_ratio, 1) AS du_detsf_sl,
+            ROUND(du_detsf * (1 - sl_ratio), 1) AS du_detsf_ll,
+            owner_occupied,
+            renter_occupied,
+            median_income,
+            rent_burden_pct,
+            cost_burden_pct,
+            total_population,
+            pct_minority,
+            pct_college_educated
+        FROM derived_with_pcts
+    """)
 
     engine = get_engine()
     with engine.connect() as conn:
         conn.execute(text("CREATE SCHEMA IF NOT EXISTS census"))
+        conn.execute(text("DROP TABLE IF EXISTS census.acs_block_group"))
+        conn.execute(
+            sql,
+            {
+                "year": year,
+                "state_fips": state_fips,
+                "county_fips": county_fips,
+                "detsf_sl_ratio": detsf_sl_ratio,
+                "sl_density_threshold": sl_density_threshold,
+                "mf_2_9_to_mf2to4_ratio": mf_2_9_to_mf2to4_ratio,
+            },
+        )
         conn.commit()
 
-    gdf.to_postgis(
-        "acs_block_group",
-        engine,
-        schema="census",
-        if_exists="replace",
-        index=False,
-        dtype={"geometry": "geometry(MultiPolygon, 4326)"},
-    )
+        result = conn.execute(
+            text("SELECT COUNT(*) FROM census.acs_block_group")
+        ).scalar()
+        row_count = result or 0
 
-    return len(gdf)
+    if row_count == 0:
+        msg = (
+            f"No ACS block-group data returned for "
+            f"{state_fips}/{county_fips} year {year}"
+        )
+        raise RuntimeError(msg)
+    return row_count
