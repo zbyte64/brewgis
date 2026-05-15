@@ -34,7 +34,7 @@ logger = logging.getLogger(__name__)
 def census_source(
     state_fips: str = "06",
     county_fips: str = "067",
-    year: int = dlt.sources.incremental[int]("year"),  # type: ignore[assignment]
+    year: int = dlt.sources.incremental[int]("year"),
 ) -> list[Any]:
     """dlt source for Census ACS 5-year data extraction.
 
@@ -61,7 +61,7 @@ def census_source(
 def census_acs_resource(
     state_fips: str,
     county_fips: str,
-    year: int = dlt.sources.incremental[int]("year"),  # type: ignore[assignment]
+    year: int = dlt.sources.incremental[int]("year"),
 ) -> Any:
     """Yield raw ACS data from Census API, one dict per block group.
 
@@ -69,7 +69,7 @@ def census_acs_resource(
     skipped on subsequent runs. The ``year`` field is the merge key.
     """
     year_val: int = (
-        year.last_value if isinstance(year, dlt.sources.incremental) else year  # type: ignore[assignment]
+        year.last_value if isinstance(year, dlt.sources.incremental) else year
     )
     vars_ = _all_vars()
     vars_str = ",".join(vars_)
@@ -99,7 +99,7 @@ def run_census_pipeline(
     county_fips: str,
     year: int = 2022,
     schema: str = "public",
-    **kwargs,
+    **kwargs: Any,
 ) -> dict:
     """Run dlt pipeline to extract raw Census ACS data to a staging table.
 

@@ -521,13 +521,6 @@ def _run_etl(
 
     parcels_gdf.to_postgis(temp_table, engine, if_exists="replace")
 
-    with connection.cursor() as cur:
-        cur.execute("""
-            ALTER TABLE public.base_canvas
-            ALTER COLUMN geometry TYPE geometry(MultiPolygon, 4326)
-            USING ST_Multi(geometry)
-        """)
-
     logger.info(
         "ETL start: %d parcels, quick=%s, skip_census=%s, skip_lehd=%s, truncate=%s",
         len(parcels_gdf),

@@ -16,7 +16,7 @@ import subprocess
 import sys
 from dataclasses import dataclass
 from pathlib import Path
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, cast
 
 import django
 import yaml
@@ -187,9 +187,9 @@ def _parse_column_deps_from_sql(
     for col in ast.find_all(sqlglot.exp.Column):
         if col.table:
             alias = col.table
-            table_name = table_map.get(alias)
-            if table_name and table_name in alias_to_model:
-                up_name = alias_to_model[table_name]
+            resolved_name = table_map.get(alias)
+            if resolved_name and resolved_name in alias_to_model:
+                up_name = alias_to_model[resolved_name]
                 col_refs.setdefault(up_name, set()).add(col.name)
 
     # Build (down, up) → columns mapping
@@ -245,7 +245,7 @@ def _load_dbt_manifest(
             return None
 
     with path.open(encoding="utf-8") as f:
-        return yaml.safe_load(f)
+        return cast("dict | None", yaml.safe_load(f))
 
 
 def resolve_dbt_manifest(

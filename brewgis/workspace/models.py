@@ -1,6 +1,7 @@
 import uuid
 
 from django.conf import settings
+from django.contrib.gis.db import models as gis_models
 from django.db import models
 from django.utils.text import slugify
 
@@ -888,3 +889,192 @@ class Basemap(models.Model):
                 ],
             }
         return self.style_url
+
+
+class BaseCanvasColumn(models.Model):
+    """Stores column metadata for the ``public.base_canvas`` table.
+
+    Each row represents one column definition: its name, data type, category,
+    aggregation behavior, and display metadata.  This replaces the hardcoded
+    ``ColumnDef`` instances previously defined in ``base_canvas_schema.py``.
+    """
+
+    name = models.CharField(max_length=64, unique=True)
+    display_order = models.IntegerField()
+    category = models.CharField(
+        max_length=64,
+        blank=True,
+        default="",
+        help_text="Column category (e.g. 'Identification & Geometry', 'Demographics')",
+    )
+    label = models.CharField(max_length=255, blank=True, default="")
+    pg_type = models.CharField(max_length=64, blank=True, default="DOUBLE PRECISION")
+    unit = models.CharField(max_length=32, blank=True, default="")
+    metatype = models.CharField(
+        max_length=32,
+        blank=True,
+        default="count",
+        choices=[
+            ("identity", "Identity"),
+            ("geometry", "Geometry"),
+            ("classification", "Classification"),
+            ("density", "Density"),
+            ("area", "Area"),
+            ("count", "Count"),
+            ("currency", "Currency"),
+            ("percentage", "Percentage"),
+        ],
+    )
+    aggregation_hint = models.CharField(
+        max_length=16,
+        blank=True,
+        default="sum",
+        choices=[
+            ("first", "First"),
+            ("sum", "Sum"),
+            ("avg", "Average"),
+        ],
+    )
+    behavior_category = models.CharField(
+        max_length=16,
+        blank=True,
+        default="paintable",
+        choices=[
+            ("static", "Static"),
+            ("paintable", "Paintable"),
+        ],
+    )
+    nullable = models.BooleanField(default=False)
+    default_value = models.CharField(max_length=64, blank=True, default="", null=True)  # noqa: DJ001
+
+    class Meta:
+        ordering = ("display_order",)
+        verbose_name = "base canvas column"
+        verbose_name_plural = "base canvas columns"
+
+    def __str__(self) -> str:
+        return self.name
+
+
+class BaseCanvas(models.Model):
+    """The public.base_canvas table — existing conditions spatial layer.
+
+    This is a raw PostGIS table with ~82 columns, one row per parcel/feature.
+    It is the ETL target for existing-conditions spatial data and the
+    foundation for per-scenario canvas SQL views (copy-on-write).
+    """
+
+    # ── Identification & Geometry ──────────────────────────────────
+    id_source = models.CharField(max_length=64, blank=True, null=True)
+    geography_id = models.IntegerField(blank=True, null=True)
+    geometry_key = models.CharField(max_length=128, blank=True, null=True)
+    geometry = gis_models.GeometryField(srid=4326, dim=2)
+
+    # ── Land Use & Built Form ──────────────────────────────────────
+    land_development_category = models.CharField(max_length=64, default="")
+    built_form_key = models.CharField(max_length=128, blank=True, null=True)
+    intersection_density = models.FloatField(default=0.0)
+
+    # ── Area & Parcel Geometry ─────────────────────────────────────
+    area_gross = models.FloatField(default=0.0)
+    area_parcel = models.FloatField(default=0.0)
+    area_dev_condition = models.FloatField(default=0.0)
+    area_row = models.FloatField(default=0.0)
+    area_parcel_res_detsf = models.FloatField(default=0.0)
+    area_parcel_res_detsf_sl = models.FloatField(default=0.0)
+    area_parcel_res_detsf_ll = models.FloatField(default=0.0)
+    area_parcel_res_attsf = models.FloatField(default=0.0)
+    area_parcel_res_mf = models.FloatField(default=0.0)
+    area_parcel_res = models.FloatField(default=0.0)
+    area_parcel_emp = models.FloatField(default=0.0)
+    area_parcel_emp_ret = models.FloatField(default=0.0)
+    area_parcel_emp_off = models.FloatField(default=0.0)
+    area_parcel_emp_pub = models.FloatField(default=0.0)
+    area_parcel_emp_ind = models.FloatField(default=0.0)
+    area_parcel_emp_ag = models.FloatField(default=0.0)
+    area_parcel_emp_military = models.FloatField(default=0.0)
+    area_parcel_mixed_use = models.FloatField(default=0.0)
+    area_parcel_no_use = models.FloatField(default=0.0)
+
+    # ── Demographics ───────────────────────────────────────────────
+    pop = models.FloatField(default=0.0)
+    pop_groupquarter = models.FloatField(default=0.0)
+    hh = models.FloatField(default=0.0)
+    du = models.FloatField(default=0.0)
+
+    # ── Equity & Environmental Quality ──────────────────────────────
+    median_income = models.FloatField(default=0.0)
+    rent_burden_pct = models.FloatField(default=0.0)
+    pct_minority = models.FloatField(default=0.0)
+    pct_college_educated = models.FloatField(default=0.0)
+    cost_burden_pct = models.FloatField(default=0.0)
+
+    # ── Housing by Type ────────────────────────────────────────────
+    du_detsf = models.FloatField(default=0.0)
+    du_detsf_sl = models.FloatField(default=0.0)
+    du_detsf_ll = models.FloatField(default=0.0)
+    du_attsf = models.FloatField(default=0.0)
+    du_mf = models.FloatField(default=0.0)
+    du_mf2to4 = models.FloatField(default=0.0)
+    du_mf5p = models.FloatField(default=0.0)
+
+    # ── Employment ─────────────────────────────────────────────────
+    emp = models.FloatField(default=0.0)
+    emp_ret = models.FloatField(default=0.0)
+    emp_retail_services = models.FloatField(default=0.0)
+    emp_restaurant = models.FloatField(default=0.0)
+    emp_accommodation = models.FloatField(default=0.0)
+    emp_arts_entertainment = models.FloatField(default=0.0)
+    emp_other_services = models.FloatField(default=0.0)
+    emp_off = models.FloatField(default=0.0)
+    emp_office_services = models.FloatField(default=0.0)
+    emp_medical_services = models.FloatField(default=0.0)
+    emp_pub = models.FloatField(default=0.0)
+    emp_public_admin = models.FloatField(default=0.0)
+    emp_education = models.FloatField(default=0.0)
+    emp_ind = models.FloatField(default=0.0)
+    emp_manufacturing = models.FloatField(default=0.0)
+    emp_wholesale = models.FloatField(default=0.0)
+    emp_transport_warehousing = models.FloatField(default=0.0)
+    emp_utilities = models.FloatField(default=0.0)
+    emp_construction = models.FloatField(default=0.0)
+    emp_ag = models.FloatField(default=0.0)
+    emp_agriculture = models.FloatField(default=0.0)
+    emp_extraction = models.FloatField(default=0.0)
+    emp_military = models.FloatField(default=0.0)
+
+    # ── Building Area ──────────────────────────────────────────────
+    bldg_area_detsf_sl = models.FloatField(default=0.0)
+    bldg_area_detsf_ll = models.FloatField(default=0.0)
+    bldg_area_attsf = models.FloatField(default=0.0)
+    bldg_area_mf = models.FloatField(default=0.0)
+    bldg_area_retail_services = models.FloatField(default=0.0)
+    bldg_area_restaurant = models.FloatField(default=0.0)
+    bldg_area_accommodation = models.FloatField(default=0.0)
+    bldg_area_arts_entertainment = models.FloatField(default=0.0)
+    bldg_area_other_services = models.FloatField(default=0.0)
+    bldg_area_office_services = models.FloatField(default=0.0)
+    bldg_area_public_admin = models.FloatField(default=0.0)
+    bldg_area_education = models.FloatField(default=0.0)
+    bldg_area_medical_services = models.FloatField(default=0.0)
+    bldg_area_transport_warehousing = models.FloatField(default=0.0)
+    bldg_area_wholesale = models.FloatField(default=0.0)
+
+    # ── Irrigation ─────────────────────────────────────────────────
+    residential_irrigated_area = models.FloatField(default=0.0)
+    commercial_irrigated_area = models.FloatField(default=0.0)
+
+    class Meta:
+        managed = True
+        db_table = "base_canvas"
+        verbose_name = "base canvas"
+        verbose_name_plural = "base canvases"
+        indexes = [
+            models.Index(
+                fields=["land_development_category"],
+                name="idx_base_canvas_land_development_category",
+            ),
+        ]
+
+    def __str__(self) -> str:
+        return f"BaseCanvas #{self.pk}"

@@ -22,6 +22,8 @@ from dagster_embedded_elt.dlt import dlt_assets
 
 if TYPE_CHECKING:
     from collections.abc import Mapping
+    from dlt import DltResource
+    from dagster import OpExecutionContext
 
 from brewgis.workspace.dagster.check_provenance import METADATA_CONTRACT_INLINE_COLUMNS
 from brewgis.workspace.dagster.check_provenance import METADATA_CONTRACT_PATH
@@ -93,7 +95,7 @@ class _ContractDltTranslator(DagsterDltTranslator):
         }
 
     def get_metadata(
-        self, resource: dlt.extract.resource.DltResource
+        self, resource: DltResource
     ) -> Mapping[str, Any]:
         """Return contract metadata for *resource* based on its pipeline name."""
         pipeline_name = resource.source_name or ""
@@ -118,7 +120,7 @@ _CONTRACT_TRANSLATOR = _ContractDltTranslator()
     group_name="raw_data",
     dagster_dlt_translator=_CONTRACT_TRANSLATOR,
 )
-def census_acs_assets(context, dlt: DagsterDltResource) -> Any:
+def census_acs_assets(context: OpExecutionContext, dlt: DagsterDltResource) -> Any:
     """Materialize raw Census ACS 5-year data into PostGIS staging."""
     yield from dlt.run(context=context)
 
@@ -138,7 +140,7 @@ def census_acs_assets(context, dlt: DagsterDltResource) -> Any:
     group_name="raw_data",
     dagster_dlt_translator=_CONTRACT_TRANSLATOR,
 )
-def lehd_lodes_assets(context, dlt: DagsterDltResource) -> Any:
+def lehd_lodes_assets(context: OpExecutionContext, dlt: DagsterDltResource) -> Any:
     """Materialize raw LEHD LODES WAC data into PostGIS staging."""
     yield from dlt.run(context=context)
 
@@ -158,7 +160,7 @@ def lehd_lodes_assets(context, dlt: DagsterDltResource) -> Any:
     group_name="raw_data",
     dagster_dlt_translator=_CONTRACT_TRANSLATOR,
 )
-def overpass_poi_assets(context, dlt: DagsterDltResource) -> Any:
+def overpass_poi_assets(context: OpExecutionContext, dlt: DagsterDltResource) -> Any:
     """Materialize raw Overpass POI data into PostGIS staging."""
     yield from dlt.run(context=context)
 
@@ -178,7 +180,7 @@ def overpass_poi_assets(context, dlt: DagsterDltResource) -> Any:
     group_name="raster",
     dagster_dlt_translator=_CONTRACT_TRANSLATOR,
 )
-def raster_metadata_assets(context, dlt: DagsterDltResource) -> Any:
+def raster_metadata_assets(context: OpExecutionContext, dlt: DagsterDltResource) -> Any:
     """Extract GeoTIFF/COG metadata (width, height, CRS, bounds) to staging."""
     yield from dlt.run(context=context)
 
@@ -198,6 +200,6 @@ def raster_metadata_assets(context, dlt: DagsterDltResource) -> Any:
     group_name="raster",
     dagster_dlt_translator=_CONTRACT_TRANSLATOR,
 )
-def raster_band_assets(context, dlt: DagsterDltResource) -> Any:
+def raster_band_assets(context: OpExecutionContext, dlt: DagsterDltResource) -> Any:
     """Extract per-band statistics (min, max, mean, stddev) from GeoTIFF."""
     yield from dlt.run(context=context)

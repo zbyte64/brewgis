@@ -439,7 +439,7 @@ class Command(BaseCommand):
             return 0
         with connection.cursor() as cursor:
             cursor.execute("SELECT COUNT(*) FROM census.acs_block_group")
-            count: int = cursor.fetchone()[0]  # type: ignore[no-any-return]
+            count: int = cursor.fetchone()[0]
         self.stdout.write(f"  Census ACS data accessible ({count} block groups)")
         return count
 
@@ -459,7 +459,7 @@ class Command(BaseCommand):
             return 0
         with connection.cursor() as cursor:
             cursor.execute("SELECT COUNT(*) FROM lehd.wac_block")
-            count: int = cursor.fetchone()[0]  # type: ignore[no-any-return]
+            count: int = cursor.fetchone()[0]
         self.stdout.write(f"  LEHD employment data accessible ({count} blocks)")
         return count
 
