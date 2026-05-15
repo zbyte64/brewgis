@@ -30,6 +30,9 @@ from brewgis.workspace.services.census_fetcher import _census_base_url
 logger = logging.getLogger(__name__)
 
 
+_SENTINELS = frozenset({"-666666666", "-555555555", "-333333333"})
+
+
 @dlt.source(name="census_acs", max_table_nesting=0)
 def census_source(
     state_fips: str = "06",
@@ -132,6 +135,9 @@ def census_acs_resource(
     for row in data[1:]:
         record = dict(zip(headers, row, strict=False))
         record["year"] = year_val
+        for k, v in record.items():
+            if v in _SENTINELS:
+                record[k] = None
         yield record
 
 
