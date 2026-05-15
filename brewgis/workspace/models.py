@@ -1072,7 +1072,7 @@ class BaseCanvas(models.Model):
         indexes = [
             models.Index(
                 fields=["land_development_category"],
-                name="idx_base_canvas_land_development_category",
+                name="idx_base_canvas_land_dev_cat",
             ),
         ]
 
