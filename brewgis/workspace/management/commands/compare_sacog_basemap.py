@@ -10,24 +10,14 @@ Delegates to the refactored ``comparison_assets`` module for the actual work.
 from __future__ import annotations
 
 import logging
-import time
+from pathlib import Path
+
+# Functions imported lazily in handle() — kept here for TYPE_CHECKING
 from typing import Any
 
 from django.conf import settings
 from django.core.management.base import BaseCommand
 from django.core.management.base import CommandError
-
-# Functions imported lazily in handle() — kept here for TYPE_CHECKING
-from typing import TYPE_CHECKING
-
-if TYPE_CHECKING:
-    from brewgis.workspace.dagster.assets.comparison_assets import (
-        _generate_report_markdown,
-    )
-    from brewgis.workspace.dagster.assets.comparison_assets import _load_parcels
-    from brewgis.workspace.dagster.assets.comparison_assets import _run_etl
-
-from pathlib import Path
 
 CACHE_DIR = Path(settings.BASE_DIR) / "planning"
 REPORT_PATH = CACHE_DIR / "sacog_comparison_report.md"
@@ -85,15 +75,12 @@ class Command(BaseCommand):
     def handle(self, **options: Any) -> None:
         # Lazy imports — avoid loading dagster assets at module import time
         # which conflicts with test stubs for pandas/geopandas.
-        from brewgis.workspace.dagster.assets.comparison_assets import (  # noqa: PLC0415, C0415
+        from brewgis.workspace.dagster.assets.comparison_assets import REPORT_PATH
+        from brewgis.workspace.dagster.assets.comparison_assets import (
             _generate_report_markdown,
         )
-        from brewgis.workspace.dagster.assets.comparison_assets import _load_parcels  # noqa: PLC0415, C0415
-        from brewgis.workspace.dagster.assets.comparison_assets import _run_etl  # noqa: PLC0415, C0415
-        from brewgis.workspace.dagster.assets.comparison_assets import CACHE_DIR  # noqa: PLC0415, C0415
-        from brewgis.workspace.dagster.assets.comparison_assets import REPORT_PATH  # noqa: PLC0415, C0415
-        from brewgis.workspace.dagster.assets.comparison_assets import V1_BASE_CANVAS  # noqa: PLC0415, C0415
-        from brewgis.workspace.dagster.assets.comparison_assets import V1_PARCELS  # noqa: PLC0415, C0415
+        from brewgis.workspace.dagster.assets.comparison_assets import _load_parcels
+        from brewgis.workspace.dagster.assets.comparison_assets import _run_etl
 
         quick = bool(options.get("quick", False))
         limit = int(options.get("limit", 0))
@@ -131,26 +118,22 @@ class Command(BaseCommand):
         # Populate TIGER/Line block group polygons (needed by ACS reader)
         if not skip_census:
             self.stdout.write("\n── Populating TIGER/Line block group staging table ──")
-            from brewgis.workspace.dlt_pipelines.tiger_bg import (  # noqa: PLC0415, C0415
-                run_tiger_bg_pipeline,
-            )
+            from brewgis.workspace.dlt_pipelines.tiger_bg import run_tiger_bg_pipeline
+
             tiger_result = run_tiger_bg_pipeline(STATE_FIPS)
             if not tiger_result["success"]:
                 raise CommandError(
                     f"TIGER/Line BG fetch failed: {tiger_result.get('error')}. "
                     "Use --skip-census or --skip-data-fetch to skip."
                 )
-            else:
-                self.stdout.write(
-                    f"  TIGER/Line BG loaded: {tiger_result.get('row_count', 0)} rows "
-                    f"in {tiger_result.get('table_name', '?')}"
-                )
+            self.stdout.write(
+                f"  TIGER/Line BG loaded: {tiger_result.get('row_count', 0)} rows "
+                f"in {tiger_result.get('table_name', '?')}"
+            )
         # Populate ACS staging table before ETL
         if not skip_census:
             self.stdout.write("\n── Populating Census ACS staging table ──")
-            from brewgis.workspace.dlt_pipelines.census import (  # noqa: PLC0415, C0415
-                run_census_pipeline,
-            )
+            from brewgis.workspace.dlt_pipelines.census import run_census_pipeline
 
             census_result = run_census_pipeline(STATE_FIPS, COUNTY_FIPS, 2022)
             if not census_result["success"]:
@@ -158,18 +141,15 @@ class Command(BaseCommand):
                     f"Census ACS fetch failed: {census_result.get('error')}. "
                     "Use --skip-census or --skip-data-fetch to skip."
                 )
-            else:
-                self.stdout.write(
-                    f"  Census ACS loaded: {census_result.get('row_count', 0)} rows "
-                    f"in {census_result.get('table_name', '?')}"
-                )
+            self.stdout.write(
+                f"  Census ACS loaded: {census_result.get('row_count', 0)} rows "
+                f"in {census_result.get('table_name', '?')}"
+            )
 
         # Populate LEHD staging table before ETL
         if not skip_lehd:
             self.stdout.write("\n── Populating LEHD LODES staging table ──")
-            from brewgis.workspace.dlt_pipelines.lehd import (  # noqa: PLC0415, C0415
-                run_lehd_pipeline,
-            )
+            from brewgis.workspace.dlt_pipelines.lehd import run_lehd_pipeline
 
             lehd_result = run_lehd_pipeline(STATE_FIPS, COUNTY_FIPS, 2021)
             if not lehd_result["success"]:
@@ -177,17 +157,12 @@ class Command(BaseCommand):
                     f"LEHD LODES fetch failed: {lehd_result.get('error')}. "
                     "Use --skip-lehd or --skip-data-fetch to skip."
                 )
-            else:
-                self.stdout.write(
-                    f"  LEHD LODES loaded: {lehd_result.get('row_count', 0)} rows "
-                    f"in {lehd_result.get('table_name', '?')}"
-                )
+            self.stdout.write(
+                f"  LEHD LODES loaded: {lehd_result.get('row_count', 0)} rows "
+                f"in {lehd_result.get('table_name', '?')}"
+            )
         # ── Phase 2: Run brewgis ETL ───────────────────────────────────
         self.stdout.write("\n── Phase 2: Running brewgis ETL ──")
-        run_id = str(int(time.time()))
-        temp_dir = CACHE_DIR / f"_comparison_etl_{run_id}"
-        temp_dir.mkdir(parents=True, exist_ok=True)
-        temp_geojson = temp_dir / "parcels.geojson"
 
         etl_result = _run_etl(
             parcels_gdf,
@@ -195,16 +170,7 @@ class Command(BaseCommand):
             skip_census=skip_census,
             skip_lehd=skip_lehd,
             truncate=truncate,
-            temp_geojson=temp_geojson,
         )
-
-        # Clean up temp directory
-        if temp_geojson.exists():
-            temp_geojson.unlink()
-        try:
-            temp_dir.rmdir()
-        except OSError:
-            pass
 
         for msg in etl_result.get("messages", []):
             self.stdout.write(f"  {msg}")
@@ -277,7 +243,6 @@ class Command(BaseCommand):
         Returns v3-named columns (acres_* → area_*) for compatibility with
         the report generator.
         """
-        from django.db import connection  # noqa: PLC0415
 
         ref_table = "sac_cnty_region_base_canvas"
         totals = self._query_totals(ref_table, geography_ids)
@@ -296,7 +261,7 @@ class Command(BaseCommand):
 
     def _query_brewgis_totals(self) -> dict[str, float]:
         """Query aggregate values from the brewgis base canvas."""
-        from django.db import connection  # noqa: PLC0415
+        from django.db import connection
 
         with connection.cursor() as cur:
             cur.execute(
@@ -316,7 +281,7 @@ class Command(BaseCommand):
         self, table: str, geography_ids: list[int] | None = None
     ) -> dict[str, float]:
         """Query aggregate SUM for all numeric columns in a table."""
-        from django.db import connection  # noqa: PLC0415
+        from django.db import connection
 
         with connection.cursor() as cur:
             parts = table.split(".") if "." in table else ["public", table]
@@ -371,7 +336,7 @@ class Command(BaseCommand):
 
     def _assert_geometry_identity(self, input_gdf: Any) -> None:
         """Assert that the ETL output matches the input parcel geometries."""
-        from django.db import connection  # noqa: PLC0415
+        from django.db import connection
 
         with connection.cursor() as cursor:
             cursor.execute("SELECT COUNT(*) FROM public.base_canvas")
@@ -405,7 +370,7 @@ class Command(BaseCommand):
         writes them in insert-order, preserving sequence.  ``ROW_NUMBER()``
         alignment on both sides produces a correct 1:1 mapping.
         """
-        from django.db import connection  # noqa: PLC0415
+        from django.db import connection
 
         with connection.cursor() as cur:
             cur.execute(
@@ -439,8 +404,9 @@ class Command(BaseCommand):
 
     def _compute_correlations(self) -> dict[str, float]:
         """Compute Pearson R correlation between brewgis and reference columns."""
-        from django.db import connection  # noqa: PLC0415
-        from brewgis.workspace.services.sacog_column_mapping import (  # noqa: PLC0415
+        from django.db import connection
+
+        from brewgis.workspace.services.sacog_column_mapping import (
             get_v1_columns_for_verification,
         )
 
@@ -496,7 +462,7 @@ class Command(BaseCommand):
 
     def _query_weighted_means(self) -> dict[str, float]:
         """Query area-weighted means for density/rate equity columns."""
-        from django.db import connection  # noqa: PLC0415
+        from django.db import connection
 
         cols = [
             ("median_income", "median_income"),
@@ -537,12 +503,11 @@ class Command(BaseCommand):
         ``_generate_report_markdown`` with internal helpers for weighted means.
         """
         # Lazy imports — avoid loading dagster assets at module import time
-        from brewgis.workspace.dagster.assets.comparison_assets import (  # noqa: PLC0415, C0415
+        # Use the module's own REPORT_PATH (can be patched by tests)
+        import brewgis.workspace.management.commands.compare_sacog_basemap as _cmd_mod
+        from brewgis.workspace.dagster.assets.comparison_assets import (
             _generate_report_markdown,
         )
-
-        # Use the module's own REPORT_PATH (can be patched by tests)
-        import brewgis.workspace.management.commands.compare_sacog_basemap as _cmd_mod  # noqa: PLC0415, C0415
 
         report_path = _cmd_mod.REPORT_PATH
 

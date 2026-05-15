@@ -166,7 +166,6 @@ def sacog_run_comparison_etl(
         skip_census=config.skip_census,
         skip_lehd=config.skip_lehd,
         truncate=config.truncate,
-        temp_geojson=temp_geojson,
     )
 
     # Clean up temp directory
@@ -524,7 +523,6 @@ def _run_etl(
     skip_census: bool,
     skip_lehd: bool,
     truncate: bool,
-    temp_geojson: Path,
 ) -> dict[str, Any]:
     """Run the brewgis base canvas ETL on the given parcel geometries."""
     temp_table = f"_temp_etl_parcels_{int(time.time() * 1_000_000)}"
@@ -553,8 +551,8 @@ def _run_etl(
             truncate=truncate,
         )
     finally:
-        with engine.connect() as conn:
-            conn.execute(f"DROP TABLE IF EXISTS {temp_table}")
+        with connection.cursor() as cur:
+            cur.execute(f"DROP TABLE IF EXISTS {temp_table}")
 
     return result
 
