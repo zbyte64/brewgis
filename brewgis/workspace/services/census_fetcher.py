@@ -454,3 +454,50 @@ def fetch_acs_data_summary(
             "pct_college_educated",
         ],
     }
+
+
+def _populate_acs_block_group(
+    state_fips: str,
+    county_fips: str,
+    year: int = 2022,
+) -> int:
+    """Fetch ACS data, join with TIGER BG geometry, and write to ``census.acs_block_group``.
+
+    The pipeline's ``_allocate_demographics`` step reads from
+    ``census.acs_block_group``.  This helper creates it by running the
+    existing ``fetch_acs_block_group_polygons`` query and persisting the
+    result as a PostGIS table.
+
+    Args:
+        state_fips: Two-digit state FIPS code.
+        county_fips: Three-digit county FIPS code.
+        year: ACS data year (default 2022).
+
+    Returns:
+        Number of rows written.
+
+    Raises:
+        RuntimeError: If the query returns no data.
+    """
+    gdf = fetch_acs_block_group_polygons(state_fips, county_fips, year)
+
+    if gdf.empty:
+        raise RuntimeError(
+            f"No ACS block-group data returned for {state_fips}/{county_fips} year {year}"
+        )
+
+    engine = get_engine()
+    with engine.connect() as conn:
+        conn.execute(text("CREATE SCHEMA IF NOT EXISTS census"))
+        conn.commit()
+
+    gdf.to_postgis(
+        "acs_block_group",
+        engine,
+        schema="census",
+        if_exists="replace",
+        index=False,
+        dtype={"geometry": "geometry(MultiPolygon, 4326)"},
+    )
+
+    return len(gdf)

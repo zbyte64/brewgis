@@ -15,10 +15,15 @@ from brewgis.workspace.dagster.assets.comparison_assets import sacog_dbt_compari
 from brewgis.workspace.dagster.assets.comparison_assets import sacog_generate_report
 from brewgis.workspace.dagster.assets.comparison_assets import sacog_load_parcels
 from brewgis.workspace.dagster.assets.comparison_assets import (
+    sacog_populate_acs_block_group,
+)
+from brewgis.workspace.dagster.assets.comparison_assets import (
     sacog_populate_geography_id,
 )
+from brewgis.workspace.dagster.assets.comparison_assets import sacog_populate_wac_block
 from brewgis.workspace.dagster.assets.comparison_assets import sacog_run_comparison_etl
 from brewgis.workspace.dagster.assets.comparison_assets import sacog_verify_geometry
+from brewgis.workspace.dagster.assets.comparison_assets import tiger_bg_asset
 from brewgis.workspace.dagster.assets.dbt_assets import ANALYSIS_ASSETS
 from brewgis.workspace.dagster.assets.dbt_assets import acs_equity_preprocessor
 from brewgis.workspace.dagster.assets.dbt_assets import building_types_export
@@ -82,6 +87,9 @@ _ASSETS = [
     create_fresno_scenario,
     # comparison assets
     sacog_load_parcels,
+    tiger_bg_asset,
+    sacog_populate_acs_block_group,
+    sacog_populate_wac_block,
     sacog_run_comparison_etl,
     sacog_verify_geometry,
     sacog_populate_geography_id,

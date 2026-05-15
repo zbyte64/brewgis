@@ -782,9 +782,7 @@ def fetch_lehd_block_polygons(
     lehd_gdf = lehd_gdf[lehd_gdf["geoid"].str.startswith(county_geoid_prefix)].copy()
 
     if lehd_gdf.empty:
-        raise RuntimeError(
-            f"No LODES blocks match county FIPS {county_fips}"
-        )
+        raise RuntimeError(f"No LODES blocks match county FIPS {county_fips}")
 
     # 2. Read TIGER block geometry from staging
     engine = get_engine()
@@ -816,10 +814,55 @@ def fetch_lehd_block_polygons(
     filtered = lehd_gdf[~lehd_gdf.geometry.isna()].copy()
     # Explicitly construct GeoDataFrame with geometry and CRS
     if not filtered.empty:
-        result = gpd.GeoDataFrame(
-            filtered, geometry="geometry", crs="EPSG:4326"
-        )
+        result = gpd.GeoDataFrame(filtered, geometry="geometry", crs="EPSG:4326")
         return result
     raise RuntimeError(
         f"LODES data did not match TIGER blocks for {state_fips}/{county_fips}"
     )
+
+
+def _populate_wac_block(
+    state_fips: str,
+    county_fips: str,
+    year: int = 2021,
+) -> int:
+    """Fetch LEHD LODES WAC data, join with TIGER BG geometry, and write to ``lehd.wac_block``.
+
+    The pipeline's ``_allocate_employment`` step reads from
+    ``lehd.wac_block``.  This helper creates it by running the
+    existing ``fetch_lehd_block_polygons`` query and persisting the
+    result as a PostGIS table.
+
+    Args:
+        state_fips: Two-digit state FIPS code.
+        county_fips: Three-digit county FIPS code.
+        year: LEHD data year (default 2021).
+
+    Returns:
+        Number of rows written.
+
+    Raises:
+        RuntimeError: If the query returns no data.
+    """
+    gdf = fetch_lehd_block_polygons(state_fips, county_fips)
+
+    if gdf.empty:
+        raise RuntimeError(
+            f"No LEHD WAC block data returned for {state_fips}/{county_fips} year {year}"
+        )
+
+    engine = get_engine()
+    with engine.connect() as conn:
+        conn.execute(text("CREATE SCHEMA IF NOT EXISTS lehd"))
+        conn.commit()
+
+    gdf.to_postgis(
+        "wac_block",
+        engine,
+        schema="lehd",
+        if_exists="replace",
+        index=False,
+        dtype={"geometry": "geometry(MultiPolygon, 4326)"},
+    )
+
+    return len(gdf)

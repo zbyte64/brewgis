@@ -145,6 +145,16 @@ class Command(BaseCommand):
                 f"  Census ACS loaded: {census_result.get('row_count', 0)} rows "
                 f"in {census_result.get('table_name', '?')}"
             )
+            # Populate census.acs_block_group from ACS staging + TIGER BG geometry
+            self.stdout.write("\n── Populating census.acs_block_group ──")
+            from brewgis.workspace.services.census_fetcher import (
+                _populate_acs_block_group,
+            )
+
+            acs_bg_count = _populate_acs_block_group(STATE_FIPS, COUNTY_FIPS, 2022)
+            self.stdout.write(
+                f"  census.acs_block_group populated: {acs_bg_count:,} rows"
+            )
 
         # Populate LEHD staging table before ETL
         if not skip_lehd:
@@ -161,6 +171,12 @@ class Command(BaseCommand):
                 f"  LEHD LODES loaded: {lehd_result.get('row_count', 0)} rows "
                 f"in {lehd_result.get('table_name', '?')}"
             )
+            # Populate lehd.wac_block from LEHD staging + TIGER BG geometry
+            self.stdout.write("\n── Populating lehd.wac_block ──")
+            from brewgis.workspace.services.lehd_fetcher import _populate_wac_block
+
+            lehd_wac_count = _populate_wac_block(STATE_FIPS, COUNTY_FIPS, 2021)
+            self.stdout.write(f"  lehd.wac_block populated: {lehd_wac_count:,} rows")
         # ── Phase 2: Run brewgis ETL ───────────────────────────────────
         self.stdout.write("\n── Phase 2: Running brewgis ETL ──")
 
