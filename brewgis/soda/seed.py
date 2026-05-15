@@ -21,6 +21,7 @@ if TYPE_CHECKING:
 def seed_all() -> None:
     """Create and populate every table that Soda contracts expect to exist."""
     seeders: dict[str, tuple[str, list[tuple]]] = {
+        "base_canvas": _base_canvas(),
         "census_acs": _census_acs(),
         "lehd_lodes": _lehd_lodes(),
         "poi": _poi(),
@@ -35,6 +36,44 @@ def seed_all() -> None:
 
 # ── Concrete table definitions ──────────────────────────────────────────
 
+def _base_canvas() -> tuple[str, list[tuple]]:
+    ddl = """
+        CREATE TABLE IF NOT EXISTS public.base_canvas (
+            geography_id VARCHAR(32) NOT NULL,
+            geometry TEXT NOT NULL,
+            pop DOUBLE PRECISION NOT NULL,
+            du DOUBLE PRECISION NOT NULL,
+            area_parcel DOUBLE PRECISION NOT NULL,
+            hh DOUBLE PRECISION NOT NULL,
+            residential_irrigated_area DOUBLE PRECISION NOT NULL,
+            commercial_irrigated_area DOUBLE PRECISION NOT NULL,
+            median_income DOUBLE PRECISION NOT NULL,
+            rent_burden_pct DOUBLE PRECISION NOT NULL,
+            pct_minority DOUBLE PRECISION NOT NULL,
+            pct_college_educated DOUBLE PRECISION NOT NULL,
+            cost_burden_pct DOUBLE PRECISION NOT NULL,
+            intersection_density DOUBLE PRECISION NOT NULL
+        )
+    """
+    rows = [
+        (
+            "GEO001",
+            "POINT(-119.5 36.5)",
+            5000.0,   # pop
+            1800.0,   # du
+            850.0,    # area_parcel
+            1700.0,   # hh
+            200.0,    # residential_irrigated_area
+            50.0,     # commercial_irrigated_area
+            65000.0,  # median_income
+            30.0,     # rent_burden_pct
+            40.0,     # pct_minority
+            35.0,     # pct_college_educated
+            25.0,     # cost_burden_pct
+            12.0,     # intersection_density
+        ),
+    ]
+    return ddl, rows
 
 def _census_acs() -> tuple[str, list[tuple]]:
     ddl = """
