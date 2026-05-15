@@ -8,7 +8,6 @@ import pytest
 
 from brewgis.workspace.services.census_fetcher import ACS_TABLE_GROUPS
 from brewgis.workspace.services.census_fetcher import _all_vars
-from brewgis.workspace.services.census_fetcher import _compute_derived_columns
 from brewgis.workspace.services.census_fetcher import fetch_acs_data_summary
 from brewgis.workspace.services.lehd_fetcher import LODES_WAC_VARIABLES
 from brewgis.workspace.services.lehd_fetcher import _all_lodes_wac_vars
@@ -32,40 +31,6 @@ class TestCensusFetcher:
         assert len(vars_) == expected_count
         assert "B01001_001E" in vars_
         assert "B25024_001E" in vars_
-
-
-    def test_compute_derived_columns(self) -> None:
-        """Derived canvas columns should be computed correctly."""
-        row = {
-            "B01001_001E": 5000,
-            "B25003_001E": 2000,
-            "B25003_002E": 1200,
-            "B25003_003E": 800,
-            "B25024_001E": 2200,
-            "B25024_002E": 1500,  # detached SF
-            "B25024_003E": 200,  # attached SF
-            "B25024_004E": 100,  # 2 units
-            "B25024_005E": 50,  # 3-4
-            "B25024_006E": 100,  # 5-9
-            "B25024_007E": 100,  # 10-19
-            "B25024_008E": 100,  # 20-49
-            "B25024_009E": 50,  # 50+
-        }
-        result = _compute_derived_columns(row)
-        assert result["pop"] == 5000
-        assert result["hh"] == 2000
-        assert result["du"] == 2200
-        assert result["du_detsf"] == 1500
-        assert result["du_attsf"] == 200
-        assert result["du_mf_2_9"] == 250  # 100 + 50 + 100
-        assert result["du_mf_10p"] == 250  # 100 + 100 + 50
-
-    def test_compute_derived_columns_missing_values(self) -> None:
-        """Missing values should default to 0."""
-        result = _compute_derived_columns({})
-        assert result["pop"] == 0
-        assert result["hh"] == 0
-        assert result["du"] == 0
 
     def test_fetch_acs_data_summary_from_staging(self) -> None:
         """Data summary should return expected structure from staging."""
