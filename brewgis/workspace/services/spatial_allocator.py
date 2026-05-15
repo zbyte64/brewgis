@@ -14,11 +14,11 @@ import deal
 import geopandas as gpd
 import pandas as pd
 from django.db import connection
+
 from brewgis.soda import validate_spatial_allocation
 from brewgis.workspace.services._db import get_engine
 
 logger = logging.getLogger(__name__)
-
 
 
 def _load_geometries_and_values(
@@ -246,7 +246,9 @@ def allocate_attributes(
         logger.info("Validation passed for %s.%s", target_schema, target_table)
     else:
         for failure in validation["failures"]:
-            logger.warning("Validation failure for %s.%s: %s", target_schema, target_table, failure)
+            logger.warning(
+                "Validation failure for %s.%s: %s", target_schema, target_table, failure
+            )
 
     return {
         "total_features": updated_count,

@@ -12,7 +12,9 @@ from dagster import Config
 class BaseCanvasETLConfig(Config):
     """Config for the ``base_canvas_etl`` asset.
 
-    Controls the source of parcel data and which adapters to enable.
+    Controls the source of parcel data for the SQL-native pipeline.
+    External data sources (Census ACS, LEHD) are expected in their
+    staging schemas before this asset runs.
     """
 
     source_table: str = ""
@@ -25,14 +27,6 @@ class BaseCanvasETLConfig(Config):
     """Skip the imputation pass (leave NULLs as-is)."""
     truncate: bool = False
     """Truncate existing data before inserting."""
-    fetch_census: bool = False
-    """Fetch real Census ACS demographic data."""
-    fetch_lehd: bool = False
-    """Fetch real LEHD WAC employment data."""
-    state_fips: str = ""
-    """Two-digit state FIPS code (required with fetch_census/fetch_lehd)."""
-    county_fips: str = ""
-    """Three-digit county FIPS code (required with fetch_census/fetch_lehd)."""
     target_table: str = "public.base_canvas"
     """Target table for ETL output (schema.table)."""
 
@@ -40,25 +34,13 @@ class BaseCanvasETLConfig(Config):
 class OnboardGeographyConfig(Config):
     """Config for the ``onboard_geography`` asset.
 
-    Controls the geography name, parcel source, and which data sources to skip.
+    Controls the geography name and parcel source.
     """
 
     name: str
     """Human-readable name for the geography."""
     parcels_path: str
     """Path to GeoJSON file containing parcel geometries."""
-    state_fips: str
-    """Two-digit state FIPS code."""
-    county_fips: str
-    """Three-digit county FIPS code."""
-    skip_census: bool = False
-    """Skip Census ACS data fetching."""
-    skip_lehd: bool = False
-    """Skip LEHD WAC data fetching."""
-    skip_nlcd: bool = False
-    """Skip NLCD land cover classification."""
-    skip_osm: bool = False
-    """Skip OSM intersection density computation."""
     skip_imputation: bool = False
     """Skip the imputation pass (leave NULLs as-is)."""
     truncate: bool = False

@@ -19,7 +19,6 @@ Modes:
     ``--source-table``: read from an existing PostGIS parcel table.
     ``--source-geojson``: read from a GeoJSON file.
     ``--skip-imputation``: leave NULLs as-is (debugging).
-    ``--fetch-census``: fetch real Census ACS data (requires --state-fips, --county-fips).
 """
 
 from __future__ import annotations
@@ -30,8 +29,7 @@ from django.core.management.base import BaseCommand
 from django.core.management.base import CommandError
 from django.core.management.base import CommandParser
 
-from brewgis.workspace.services.base_canvas_etl import BaseCanvasETL
-from brewgis.workspace.services.calibration_registry import SACOG_CALIBRATION
+from brewgis.workspace.services.base_canvas_pipeline import run_pipeline
 
 logger = logging.getLogger(__name__)
 
@@ -80,31 +78,6 @@ class Command(BaseCommand):
             default="public.base_canvas",
             help="Target table for ETL output (schema.table)",
         )
-        # ── Real data source options ───────────────────────────────
-        parser.add_argument(
-            "--fetch-census",
-            action="store_true",
-            default=False,
-            help="Fetch real Census ACS demographic data",
-        )
-        parser.add_argument(
-            "--state-fips",
-            type=str,
-            default=None,
-            help="Two-digit state FIPS code (required with --fetch-census)",
-        )
-        parser.add_argument(
-            "--county-fips",
-            type=str,
-            default=None,
-            help="Three-digit county FIPS code (required with --fetch-census)",
-        )
-        parser.add_argument(
-            "--fetch-lehd",
-            action="store_true",
-            default=False,
-            help="Fetch real LEHD WAC employment data",
-        )
 
     # ------------------------------------------------------------------
     # Entry point
@@ -117,57 +90,15 @@ class Command(BaseCommand):
         synthetic_n: int | None = options.get("synthetic")  # type: ignore[assignment]
         skip_imputation: bool = bool(options.get("skip_imputation", False))
         truncate: bool = bool(options.get("truncate", False))
-        fetch_census: bool = bool(options.get("fetch_census", False))
-        fetch_lehd: bool = bool(options.get("fetch_lehd", False))
-        state_fips: str | None = options.get("state_fips")  # type: ignore[assignment]
-        county_fips: str | None = options.get("county_fips")  # type: ignore[assignment]
         target_table: str = options.get("target_table", "public.base_canvas")  # type: ignore[assignment]
 
-        # Build adapters based on flags
-        demographic_source = None
-        if fetch_census:
-            if not state_fips or not county_fips:
-                raise CommandError(
-                    "--fetch-census requires --state-fips and --county-fips"
-                )
-            from brewgis.workspace.services.base_canvas_adapters import (  # noqa: PLC0415
-                CensusDemographicSource,
-            )
-
-            demographic_source = CensusDemographicSource(
-                state_fips=state_fips,
-                county_fips=county_fips,
-            )
-
-        employment_source = None
-        if fetch_lehd:
-            if not state_fips or not county_fips:
-                raise CommandError(
-                    "--fetch-lehd requires --state-fips and --county-fips"
-                )
-            from brewgis.workspace.services.base_canvas_adapters import (  # noqa: PLC0415
-                LEHDEmploymentSource,
-            )
-
-            employment_source = LEHDEmploymentSource(
-                state_fips=state_fips,
-                county_fips=county_fips,
-            )
-
-        # Create the ETL service with configured adapters
-        etl = BaseCanvasETL(
-            calibration=SACOG_CALIBRATION,
-            demographic_source=demographic_source,
-            employment_source=employment_source,
-            target_table=target_table,
-        )
-
-        result = etl.run(
+        result = run_pipeline(
             source_table=source_table,
             source_geojson=source_geojson,
             synthetic_n=synthetic_n,
             skip_imputation=skip_imputation,
             truncate=truncate,
+            target_table=target_table,
         )
 
         # Print messages

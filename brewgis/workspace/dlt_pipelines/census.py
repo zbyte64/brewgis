@@ -29,6 +29,7 @@ from brewgis.workspace.services.census_fetcher import _census_base_url
 
 logger = logging.getLogger(__name__)
 
+
 @dlt.source(name="census_acs", max_table_nesting=0)
 def census_source(
     state_fips: str = "06",
@@ -98,6 +99,7 @@ def run_census_pipeline(
     county_fips: str,
     year: int = 2022,
     schema: str = "public",
+    **kwargs,
 ) -> dict:
     """Run dlt pipeline to extract raw Census ACS data to a staging table.
 
@@ -123,6 +125,7 @@ def run_census_pipeline(
         pipeline_name=f"census_acs_{state_fips}_{county_fips}_{year}",
         destination="postgres",
         dataset_name=schema,
+        **kwargs,
     )
 
     load_info = pipeline.run(

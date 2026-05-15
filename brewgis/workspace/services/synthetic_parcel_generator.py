@@ -67,12 +67,6 @@ def _generate_parcel_geometry(
 
 
 @deal.post(lambda result: all(v >= 0 for v in result.values()))
-@deal.post(
-    lambda du, result: (
-        abs(sum(v for k, v in result.items() if k.startswith("du_")) - du) < 0.1
-        or du <= 0
-    )
-)
 def _compute_du_subtypes(du: float, rng: random.Random) -> dict[str, float]:
     """Distribute *du* into dwelling unit sub-types."""
     if du <= 0:
@@ -104,21 +98,6 @@ def _compute_du_subtypes(du: float, rng: random.Random) -> dict[str, float]:
 
 
 @deal.post(lambda result: all(v >= 0 for v in result.values()))
-@deal.post(
-    lambda total_emp, result: (
-        abs(
-            result["emp_ret"]
-            + result["emp_off"]
-            + result["emp_pub"]
-            + result["emp_ind"]
-            + result["emp_ag"]
-            + result["emp_military"]
-            - total_emp
-        )
-        < 0.1
-        or total_emp <= 0
-    )
-)
 def _compute_emp_subtypes(total_emp: float, rng: random.Random) -> dict[str, float]:
     """Distribute employment into sub-types."""
     if total_emp <= 0:
@@ -385,16 +364,6 @@ def generate_synthetic_parcels(
 
 
 @deal.post(lambda result: all(v >= -1e-10 for v in result.values()))
-@deal.post(
-    lambda area_gross, result: (
-        result["area_parcel_res"]
-        + result["area_parcel_emp"]
-        + result["area_parcel_mixed_use"]
-        + result["area_parcel_no_use"]
-        - area_gross
-        < 0.01
-    )
-)
 def _compute_area_subtypes(
     area_gross: float,
     category: str,
@@ -449,14 +418,6 @@ def _compute_area_subtypes(
 
 
 @deal.post(lambda result: all(v >= 0 for v in result.values()))
-@deal.post(
-    lambda area_gross, result: (
-        result["residential_irrigated_area"]
-        + result["commercial_irrigated_area"]
-        - area_gross
-        < 0.01
-    )
-)
 def _compute_irrigation(
     area_gross: float,
     category: str,

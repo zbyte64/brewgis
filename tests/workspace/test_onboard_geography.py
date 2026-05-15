@@ -2,13 +2,12 @@
 
 from __future__ import annotations
 
-import pyogrio
 from unittest.mock import patch
 
+import pyogrio
 import pytest
 from django.core.management import call_command
 from django.core.management.base import CommandError
-from django.db import connection
 
 from brewgis.workspace.services.base_canvas_manager import BaseCanvasManager
 
@@ -18,7 +17,7 @@ class TestOnboardGeography:
     """Integration tests for the onboard_geography command."""
 
     @pytest.fixture(autouse=True)
-    def _cleanup(self, db) -> None:
+    def _cleanup(self) -> None:
         """Ensure clean state before and after each test."""
         BaseCanvasManager.drop_table()
         yield
@@ -36,10 +35,9 @@ class TestOnboardGeography:
                 "onboard_geography",
                 name="Test Geography",
                 parcels="/nonexistent/file.geojson",
-                state_fips="06",
-                county_fips="019",
             )
-    @patch("brewgis.workspace.services.base_canvas_etl.BaseCanvasETL.run")
+
+    @patch("brewgis.workspace.services.base_canvas_pipeline.run_pipeline")
     def test_successful_onboarding(self, mock_etl_run) -> None:
         """Successful ETL should produce summary output."""
         mock_etl_run.return_value = {
@@ -87,12 +85,6 @@ class TestOnboardGeography:
                 "onboard_geography",
                 name="Test Geography",
                 parcels=tmp_path,
-                state_fips="06",
-                county_fips="019",
-                skip_census=True,
-                skip_lehd=True,
-                skip_nlcd=True,
-                skip_osm=True,
             )
         finally:
             os.unlink(tmp_path)
@@ -102,7 +94,7 @@ class TestOnboardGeography:
     @patch(
         "brewgis.workspace.management.commands.onboard_geography.Command._print_summary"
     )
-    @patch("brewgis.workspace.services.base_canvas_etl.BaseCanvasETL.run")
+    @patch("brewgis.workspace.services.base_canvas_pipeline.run_pipeline")
     def test_onboarding_with_synthetic(self, mock_etl_run, mock_summary) -> None:
         """Onboarding should work with synthetic parcels (testing ETL integration)."""
         # Create synthetic GeoJSON
@@ -144,18 +136,11 @@ class TestOnboardGeography:
             "elapsed": 2.5,
             "messages": ["  [1/11] ..."],
         }
-
         try:
             call_command(
                 "onboard_geography",
                 name="Test Geography",
                 parcels=tmp_path,
-                state_fips="06",
-                county_fips="019",
-                skip_census=True,
-                skip_lehd=True,
-                skip_nlcd=True,
-                skip_osm=True,
             )
         finally:
             os.unlink(tmp_path)

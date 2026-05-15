@@ -14,10 +14,6 @@ Usage::
 
 Optional::
 
-    --skip-census        Skip Census ACS data fetching (fillna 0.0).
-    --skip-lehd          Skip LEHD WAC data fetching (fillna 0.0).
-    --skip-nlcd          Skip NLCD land cover classification (defaults).
-    --skip-osm           Skip OSM intersection density (defaults).
     --skip-imputation    Leave NULL values as-is.
     --truncate           Truncate existing base canvas before writing.
 """
@@ -29,6 +25,8 @@ import logging
 from django.core.management.base import BaseCommand
 from django.core.management.base import CommandError
 from django.core.management.base import CommandParser
+
+from brewgis.workspace.services.base_canvas_pipeline import run_pipeline
 
 logger = logging.getLogger(__name__)
 
@@ -65,30 +63,6 @@ class Command(BaseCommand):
             help="Three-digit county FIPS code (e.g. '019' for Fresno)",
         )
         parser.add_argument(
-            "--skip-census",
-            action="store_true",
-            default=False,
-            help="Skip Census ACS data fetching",
-        )
-        parser.add_argument(
-            "--skip-lehd",
-            action="store_true",
-            default=False,
-            help="Skip LEHD WAC data fetching",
-        )
-        parser.add_argument(
-            "--skip-nlcd",
-            action="store_true",
-            default=False,
-            help="Skip NLCD land cover classification",
-        )
-        parser.add_argument(
-            "--skip-osm",
-            action="store_true",
-            default=False,
-            help="Skip OSM intersection density computation",
-        )
-        parser.add_argument(
             "--skip-imputation",
             action="store_true",
             default=False,
@@ -109,102 +83,15 @@ class Command(BaseCommand):
         """Execute onboarding workflow."""
         name: str = str(options.get("name", ""))
         parcels_path: str = str(options.get("parcels", ""))
-        state_fips: str = str(options.get("state_fips", ""))
-        county_fips: str = str(options.get("county_fips", ""))
-        skip_census: bool = bool(options.get("skip_census", False))
-        skip_lehd: bool = bool(options.get("skip_lehd", False))
-        skip_nlcd: bool = bool(options.get("skip_nlcd", False))
-        skip_osm: bool = bool(options.get("skip_osm", False))
+
         skip_imputation: bool = bool(options.get("skip_imputation", False))
         truncate: bool = bool(options.get("truncate", False))
 
         self.stdout.write(f"=== Onboarding Geography: {name} ===\n")
 
-        # ── Build adapters ──────────────────────────────────────────
-        demographic_source = None
-        employment_source = None
-        land_use_source = None
-        intersection_density_source = None
-        irrigation_source = None
-
-        if not skip_census:
-            from brewgis.workspace.services.base_canvas_adapters import (  # noqa: PLC0415
-                CensusDemographicSource,
-            )
-
-            demographic_source = CensusDemographicSource(
-                state_fips=state_fips,
-                county_fips=county_fips,
-            )
-
-        if not skip_lehd:
-            from brewgis.workspace.services.base_canvas_adapters import (  # noqa: PLC0415
-                LEHDEmploymentSource,
-            )
-
-            employment_source = LEHDEmploymentSource(
-                state_fips=state_fips,
-                county_fips=county_fips,
-            )
-
-        if not skip_nlcd:
-            # Compute bounding box from parcels for NLCD/OSM
-            import geopandas as gpd  # noqa: PLC0415
-
-            try:
-                sample_gdf = gpd.read_file(parcels_path)
-                bbox = (
-                    float(sample_gdf.total_bounds[0]),
-                    float(sample_gdf.total_bounds[1]),
-                    float(sample_gdf.total_bounds[2]),
-                    float(sample_gdf.total_bounds[3]),
-                )
-                from brewgis.workspace.services.base_canvas_adapters import (  # noqa: PLC0415
-                    NLCDFetcher,
-                )
-
-                nlcd_source = NLCDFetcher(bbox=bbox)
-                land_use_source = nlcd_source
-                irrigation_source = nlcd_source
-                self.stdout.write(
-                    f"  Bounding box: {bbox[0]:.4f}, {bbox[1]:.4f}, "
-                    f"{bbox[2]:.4f}, {bbox[3]:.4f}"
-                )
-            except Exception as exc:
-                self.stdout.write(
-                    self.style.WARNING(
-                        f"  Could not read parcels to compute bbox: {exc}; "
-                        "NLCD/OSM skipped"
-                    )
-                )
-
-        if not skip_osm:
-            try:
-
-                bbox_ref = bbox  # from NLCD block if available
-                from brewgis.workspace.services.base_canvas_adapters import (  # noqa: PLC0415
-                    OSMIntersectionDensitySource,
-                )
-
-                intersection_density_source = OSMIntersectionDensitySource(
-                    bbox=bbox_ref,
-                )
-            except Exception as exc:
-                logger.debug("OSM init failed: %s", exc)
-
         # ── Run ETL ─────────────────────────────────────────────────
-        from brewgis.workspace.services.base_canvas_etl import BaseCanvasETL
-
-        etl = BaseCanvasETL(
-            demographic_source=demographic_source,
-            employment_source=employment_source,
-            land_use_source=land_use_source,
-            irrigation_source=irrigation_source,
-            intersection_density_source=intersection_density_source,
-        )
-
         self.stdout.write("Running base canvas ETL pipeline ...")
-        result = etl.run(
+        result = run_pipeline(
             source_geojson=parcels_path,
             skip_imputation=skip_imputation,
             truncate=truncate,

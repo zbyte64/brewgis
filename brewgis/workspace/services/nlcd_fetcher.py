@@ -14,8 +14,8 @@ from pathlib import Path
 from typing import TYPE_CHECKING
 
 import numpy as np
-import pyproj
 import pandas as pd
+import pyproj
 import requests
 
 if TYPE_CHECKING:
@@ -70,7 +70,8 @@ def _download_nlcd_subset(  # noqa: PLR0913
             source_crs, _NLCD_NATIVE_CRS, always_xy=True
         )
         (west, east), (south, north) = transformer.transform(
-            [west, east], [south, north],
+            [west, east],
+            [south, north],
         )
 
     coverage_id = f"mrlc_download__NLCD_{year}_Land_Cover_L48"
@@ -381,6 +382,8 @@ def compute_nlcd_zonal_stats(
                 impervious.append(0.0)
                 continue
 
+            # likely means our pojection is wrong
+            # ValueError: Input shapes do not overlap raster.
             out_image, _ = mask(src, [mapping(geom)], crop=True, nodata=0)
             pixels = out_image[0]
             cat = _nlcd_majority_class(pixels)

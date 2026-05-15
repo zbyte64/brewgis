@@ -23,7 +23,6 @@ from django.core.management.base import CommandError
 from django.core.management.base import CommandParser
 from django.db import connection
 from django.utils import timezone
-from brewgis.workspace.services._db import get_engine
 
 from brewgis.workspace.analysis.data_export import export_building_types
 from brewgis.workspace.analysis.pipeline import run_modules_sync
@@ -32,9 +31,8 @@ from brewgis.workspace.models import AnalysisRun
 from brewgis.workspace.models import Layer
 from brewgis.workspace.models import Scenario
 from brewgis.workspace.models import Workspace
-from brewgis.workspace.services.base_canvas_adapters import CensusDemographicSource
-from brewgis.workspace.services.base_canvas_adapters import LEHDEmploymentSource
-from brewgis.workspace.services.base_canvas_etl import BaseCanvasETL
+from brewgis.workspace.services._db import get_engine
+from brewgis.workspace.services.base_canvas_pipeline import run_pipeline
 from brewgis.workspace.services.built_form_classifier import BuiltFormClassifier
 from brewgis.workspace.services.poi_fetcher import fetch_pois
 from brewgis.workspace.symbology.auto import auto_generate_symbology
@@ -163,9 +161,7 @@ class Command(BaseCommand):
             steps.append(("Validate Census ACS data", self._import_census, ()))
 
         if step in ("all", "lehd"):
-            steps.append(
-                ("Validate LEHD employment data", self._import_lehd, ())
-            )
+            steps.append(("Validate LEHD employment data", self._import_lehd, ()))
 
         if step in ("all", "poi"):
             steps.append(("Import POIs", self._import_poi, ()))
@@ -202,7 +198,6 @@ class Command(BaseCommand):
             if self._run_via_dagster():
                 return
 
-
         for label, fn, args in steps:
             if any(label.startswith(nf) for nf in nonfatal_labels):
                 self._run_step_nonfatal(label, fn, *args)
@@ -228,7 +223,9 @@ class Command(BaseCommand):
         except Exception:
             return False
 
-        self.stdout.write("Dagster daemon detected — delegating to fresno_demo_setup job...")
+        self.stdout.write(
+            "Dagster daemon detected — delegating to fresno_demo_setup job..."
+        )
         return True
 
     def _run_step(self, label: str, fn: Any, *args: Any) -> Any:
@@ -263,6 +260,7 @@ class Command(BaseCommand):
         else:
             self.stdout.write(f"  [{self.style.SUCCESS('OK')}] {label}")
             return result
+
     def _get_workspace(self) -> Workspace:
         workspace, _ = Workspace.objects.get_or_create(
             name=WORKSPACE_NAME,
@@ -296,7 +294,6 @@ class Command(BaseCommand):
         return df
 
     def _write_to_postgis(self, df: gpd.GeoDataFrame, table: str, schema: str) -> None:
-
         # Ensure geometry column is named 'geom' for allocator/tile server consistency
         if df.geometry.name != "geom":
             df = df.rename_geometry("geom")
@@ -307,7 +304,6 @@ class Command(BaseCommand):
         df.to_postgis(
             table, engine, schema=schema, if_exists="replace", chunksize=50000
         )
-
 
     def _register_layer(
         self,
@@ -347,7 +343,6 @@ class Command(BaseCommand):
             f"  Workspace: {workspace.name} (schema: {workspace.db_schema})"
         )
 
-
         if BuildingType.objects.count() == 0 and FIXTURE_PATH.exists():
             call_command("loaddata", str(FIXTURE_PATH))
             self.stdout.write(
@@ -361,7 +356,7 @@ class Command(BaseCommand):
         return workspace
 
     def _ingest_parcels(self) -> int:
-        """Ingest parcels via BaseCanvasETL pipeline."""
+        """Ingest parcels via SQL pipeline."""
         workspace = self._get_workspace()
         df = self._read_geojson("fresno_parcels.geojson")
 
@@ -379,18 +374,10 @@ class Command(BaseCommand):
 
         self.stdout.write(f"  Wrote {len(df)} parcels to staging table")
 
-        # Create data source adapters
-        demographic_source = CensusDemographicSource(STATE_FIPS, COUNTY_FIPS)
-        employment_source = LEHDEmploymentSource(STATE_FIPS, COUNTY_FIPS)
-
-        # Run the ETL pipeline
-        etl = BaseCanvasETL(
-            demographic_source=demographic_source,
-            employment_source=employment_source,
-            target_table=f"{WORKSPACE_SCHEMA}.fresno_parcels",
-        )
-        result = etl.run(
+        # Run the SQL pipeline
+        result = run_pipeline(
             source_table=f"{WORKSPACE_SCHEMA}.{staging_table}",
+            target_table=f"{WORKSPACE_SCHEMA}.fresno_parcels",
             truncate=True,
         )
 
@@ -398,9 +385,7 @@ class Command(BaseCommand):
             self.stdout.write(f"  {msg}")
 
         if result["status"] == "error":
-            self.stderr.write(
-                self.style.ERROR(f"  ETL failed: {result.get('error')}")
-            )
+            self.stderr.write(self.style.ERROR(f"  ETL failed: {result.get('error')}"))
             raise CommandError(result.get("error", "ETL pipeline failed"))
 
         self.stdout.write(
@@ -439,58 +424,73 @@ class Command(BaseCommand):
         return count
 
     def _import_census(self) -> int:
-        """Validate census demographic data is accessible via the adapter."""
+        """Validate census demographic data is accessible."""
         self.stdout.write("  Validating Census ACS data source...")
-        source = CensusDemographicSource(STATE_FIPS, COUNTY_FIPS)
-        if not source.available:
-            self.stdout.write("  [SKIP] Census source not available")
+        from django.db import connection
+
+        with connection.cursor() as cursor:
+            cursor.execute(
+                "SELECT EXISTS (SELECT FROM information_schema.tables "
+                "WHERE table_schema = 'census' AND table_name = 'acs_block_group')"
+            )
+            available = cursor.fetchone()[0]
+        if not available:
+            self.stdout.write("  [SKIP] Census ACS table not found")
             return 0
-        gdf = source.fetch_block_group_data()
-        count = len(gdf)
-        if count > 0:
-            self.stdout.write(f"  Census ACS data accessible ({count} block groups)")
-        else:
-            self.stdout.write("  [WARN] Census fetch returned empty result")
+        with connection.cursor() as cursor:
+            cursor.execute("SELECT COUNT(*) FROM census.acs_block_group")
+            count: int = cursor.fetchone()[0]  # type: ignore[no-any-return]
+        self.stdout.write(f"  Census ACS data accessible ({count} block groups)")
         return count
 
     def _import_lehd(self) -> int:
-        """Validate LEHD employment data is accessible via the adapter."""
+        """Validate LEHD employment data is accessible."""
         self.stdout.write("  Validating LEHD employment data source...")
-        source = LEHDEmploymentSource(STATE_FIPS, COUNTY_FIPS)
-        if not source.available:
-            self.stdout.write("  [SKIP] LEHD source not available")
-            return 0
-        gdf = source.fetch_block_data()
-        count = len(gdf)
-        if count > 0:
-            self.stdout.write(
-                f"  LEHD employment data accessible ({count} blocks)"
+        from django.db import connection
+
+        with connection.cursor() as cursor:
+            cursor.execute(
+                "SELECT EXISTS (SELECT FROM information_schema.tables "
+                "WHERE table_schema = 'lehd' AND table_name = 'wac_block')"
             )
-        else:
-            self.stdout.write("  [WARN] LEHD fetch returned empty result")
+            available = cursor.fetchone()[0]
+        if not available:
+            self.stdout.write("  [SKIP] LEHD table not found")
+            return 0
+        with connection.cursor() as cursor:
+            cursor.execute("SELECT COUNT(*) FROM lehd.wac_block")
+            count: int = cursor.fetchone()[0]  # type: ignore[no-any-return]
+        self.stdout.write(f"  LEHD employment data accessible ({count} blocks)")
         return count
 
     def _import_poi(self) -> int:
         workspace = self._get_workspace()
         self.stdout.write("  Fetching POIs from OpenStreetMap Overpass...")
- 
+
         from brewgis.workspace.dlt_pipelines.poi import run_poi_pipeline
- 
+
         dlt_result = run_poi_pipeline(
-            MIN_LNG, MIN_LAT, MAX_LNG, MAX_LAT,
+            MIN_LNG,
+            MIN_LAT,
+            MAX_LNG,
+            MAX_LAT,
             categories=POI_CATEGORIES,
             schema=WORKSPACE_SCHEMA,
         )
         if not dlt_result["success"]:
-            self.stdout.write(f"  [WARN] POI pipeline failed: {dlt_result.get('error', 'unknown')}")
+            self.stdout.write(
+                f"  [WARN] POI pipeline failed: {dlt_result.get('error', 'unknown')}"
+            )
             return 0
- 
-        self.stdout.write(f"  dlt pipeline loaded {dlt_result.get('row_count', 0)} raw POIs")
- 
+
+        self.stdout.write(
+            f"  dlt pipeline loaded {dlt_result.get('row_count', 0)} raw POIs"
+        )
+
         gdf = fetch_pois(MIN_LNG, MIN_LAT, MAX_LNG, MAX_LAT, POI_CATEGORIES)
         count = len(gdf)
         self.stdout.write(f"  Fetched {count} POIs")
- 
+
         suffix = uuid4().hex[:8]
         table_name = f"poi_{suffix}"
         self._write_to_postgis(gdf, table_name, WORKSPACE_SCHEMA)
@@ -574,7 +574,9 @@ class Command(BaseCommand):
             connection,
             geom_col="geometry",
         )
-        self.stdout.write(f"  Loaded {total} parcels ({len(gdf)} in GeoDataFrame) for classification")
+        self.stdout.write(
+            f"  Loaded {total} parcels ({len(gdf)} in GeoDataFrame) for classification"
+        )
 
         # Run classifier
         classifier = BuiltFormClassifier(strategy="heuristic")
@@ -589,7 +591,9 @@ class Command(BaseCommand):
             chunksize=50000,
         )
 
-        self.stdout.write(f"  Written {len(gdf)} classified parcels back to {schema}.{table}")
+        self.stdout.write(
+            f"  Written {len(gdf)} classified parcels back to {schema}.{table}"
+        )
 
         # Report distribution
         with connection.cursor() as cursor:
@@ -702,7 +706,11 @@ class Command(BaseCommand):
 
         self.stdout.write(f"  Analysis pipeline: {run.status}")
         for res in result.get("results", []):
-            status = self.style.SUCCESS("OK") if res.get("success") else self.style.ERROR("FAIL")
+            status = (
+                self.style.SUCCESS("OK")
+                if res.get("success")
+                else self.style.ERROR("FAIL")
+            )
             self.stdout.write(f"    {res['module']}: {status}")
 
         return result

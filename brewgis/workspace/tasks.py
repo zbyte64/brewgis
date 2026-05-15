@@ -270,6 +270,7 @@ def run_poi_fetch(  # type: ignore[no-untyped-def]
     except Exception:
         raise
 
+
 @shared_task(bind=True, max_retries=2, default_retry_delay=30)
 def run_raster_fetch(  # type: ignore[no-untyped-def]
     self,
@@ -335,6 +336,7 @@ def run_raster_fetch(  # type: ignore[no-untyped-def]
         return {"success": False, "error": f"DataImportRun {run_pk} not found"}
     except Exception:
         raise
+
 
 @shared_task(bind=True, max_retries=2, default_retry_delay=30)
 def run_spatial_allocation(  # type: ignore[no-untyped-def]
@@ -469,7 +471,6 @@ def generate_report_task(self, report_pk: int) -> dict:  # type: ignore[no-untyp
     """Generate a report (scenario comparison, paint tracking, or map export) as PDF."""
     from pathlib import Path
 
-    from django.conf import settings
     from django.template.loader import render_to_string
     from django.utils import timezone
 
@@ -529,9 +530,7 @@ def generate_report_task(self, report_pk: int) -> dict:  # type: ignore[no-untyp
 
     reports_dir = Path(settings.MEDIA_ROOT) / "reports"
     reports_dir.mkdir(parents=True, exist_ok=True)
-    filename = (
-        f"{report.report_type}_{report.pk}_{timezone.now():%Y%m%d_%H%M%S}.pdf"
-    )
+    filename = f"{report.report_type}_{report.pk}_{timezone.now():%Y%m%d_%H%M%S}.pdf"
     filepath = reports_dir / filename
     with open(filepath, "wb") as f:
         f.write(pdf_file)

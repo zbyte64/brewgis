@@ -9,7 +9,6 @@ module-level import does not fail when rasterio is not installed).
 from __future__ import annotations
 
 import logging
-
 from pathlib import Path
 from typing import Any
 
@@ -25,6 +24,8 @@ __all__ = [
 
 
 logger = logging.getLogger(__name__)
+
+
 def _open_raster(path: str) -> Any:
     """Lazy-import rasterio and open the file."""
     import rasterio

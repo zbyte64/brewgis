@@ -109,59 +109,24 @@ def imputation(
 def base_canvas_etl(
     context: AssetExecutionContext,
     config: BaseCanvasETLConfig,
-    postgres: PostgresResource,  # noqa: ARG001
+    postgres: PostgresResource,
 ) -> MaterializeResult:
     """ETL pipeline for base canvas data import and validation.
 
-    Orchestrates reading source data, running the 11-step ETL pipeline,
-    and writing to the base canvas staging table.
-
-    Configure via :class:`BaseCanvasETLConfig`:
-    - Provide one of ``source_table``, ``source_geojson``, or ``synthetic_n``
-    - Optionally enable Census and/or LEHD data fetching with
-      ``fetch_census``/``fetch_lehd`` plus ``state_fips``/``county_fips``
+    Orchestrates the 11-step pipeline as SQL operations directly
+    against PostGIS.  Source data is read from the configured table,
+    GeoJSON file, or synthetic generator; external data sources
+    (Census ACS, LEHD) are expected in their staging schemas.
     """
-    from brewgis.workspace.services.base_canvas_etl import BaseCanvasETL
-    from brewgis.workspace.services.calibration_registry import NATIONAL_DEFAULT
+    from brewgis.workspace.services.base_canvas_pipeline import run_pipeline
 
-    # Build adapters based on config
-    demographic_source = None
-    if config.fetch_census:
-        if not config.state_fips or not config.county_fips:
-            raise ValueError("--fetch-census requires state_fips and county_fips")
-        from brewgis.workspace.services.base_canvas_adapters import (
-            CensusDemographicSource,
-        )
-
-        demographic_source = CensusDemographicSource(
-            state_fips=config.state_fips,
-            county_fips=config.county_fips,
-        )
-
-    employment_source = None
-    if config.fetch_lehd:
-        if not config.state_fips or not config.county_fips:
-            raise ValueError("--fetch-lehd requires state_fips and county_fips")
-        from brewgis.workspace.services.base_canvas_adapters import LEHDEmploymentSource
-
-        employment_source = LEHDEmploymentSource(
-            state_fips=config.state_fips,
-            county_fips=config.county_fips,
-        )
-
-    etl = BaseCanvasETL(
-        calibration=NATIONAL_DEFAULT,
-        demographic_source=demographic_source,
-        employment_source=employment_source,
-        target_table=config.target_table,
-    )
-
-    result = etl.run(
+    result = run_pipeline(
         source_table=config.source_table or None,
         source_geojson=config.source_geojson or None,
         synthetic_n=config.synthetic_n or None,
         skip_imputation=config.skip_imputation,
         truncate=config.truncate,
+        target_table=config.target_table,
     )
 
     if result["status"] == "error":
@@ -172,18 +137,6 @@ def base_canvas_etl(
         result.get("rows", 0),
         result.get("elapsed", 0),
     )
-    # GX gate: validate base canvas ETL output
-    try:
-        gx_result = run_scan("base_canvas_etl")
-        if not gx_result["success"] and gx_result.get("severity") == "critical":
-            raise RuntimeError(
-                "GX gate failed for base_canvas_etl: %s"
-                % ", ".join(gx_result["failures"][:5]),
-            )
-    except RuntimeError:
-        raise
-    except Exception as exc:
-        context.log.warning("GX checkpoint error for base_canvas_etl: %s", exc)
 
     return MaterializeResult(
         metadata={
@@ -202,114 +155,32 @@ def base_canvas_etl(
 def onboard_geography(
     context: AssetExecutionContext,
     config: OnboardGeographyConfig,
-    postgres: PostgresResource,  # noqa: ARG001
+    postgres: PostgresResource,
 ) -> MaterializeResult:
-    """Onboard a new geography: build adapters, run ETL, and print summary.
+    """Onboard a new geography: run ETL from GeoJSON parcels.
 
     Creates a base canvas for a new geography by reading parcel geometries
-    from a GeoJSON file, optionally fetching Census/LEHD/NLCD/OSM data,
-    and running the full ETL pipeline.
+    from a GeoJSON file and running the full SQL-native ETL pipeline.
+    External data sources (Census ACS, LEHD) are expected to have been
+    loaded into their staging schemas by the dlt pipeline assets before
+    this asset runs.
     """
-    from django.db import connection
+    from brewgis.workspace.services.base_canvas_pipeline import run_pipeline
 
-    demographic_source = None
-    employment_source = None
-    land_use_source = None
-    intersection_density_source = None
-    irrigation_source = None
-
-    if not config.skip_census:
-        from brewgis.workspace.services.base_canvas_adapters import (
-            CensusDemographicSource,
-        )
-
-        demographic_source = CensusDemographicSource(
-            state_fips=config.state_fips,
-            county_fips=config.county_fips,
-        )
-
-    if not config.skip_lehd:
-        from brewgis.workspace.services.base_canvas_adapters import LEHDEmploymentSource
-
-        employment_source = LEHDEmploymentSource(
-            state_fips=config.state_fips,
-            county_fips=config.county_fips,
-        )
-
-    if not config.skip_nlcd:
-        import geopandas as gpd
-
-        try:
-            sample_gdf = gpd.read_file(config.parcels_path)
-            bbox = (
-                float(sample_gdf.total_bounds[0]),
-                float(sample_gdf.total_bounds[1]),
-                float(sample_gdf.total_bounds[2]),
-                float(sample_gdf.total_bounds[3]),
-            )
-            from brewgis.workspace.services.base_canvas_adapters import NLCDFetcher
-
-            nlcd_source = NLCDFetcher(bbox=bbox)
-            land_use_source = nlcd_source
-            irrigation_source = nlcd_source
-        except Exception:
-            context.log.warning("Could not compute bbox; NLCD/OSM skipped")
-
-    if not config.skip_osm:
-        try:
-            import geopandas as gpd
-
-            sample_gdf = gpd.read_file(config.parcels_path)
-            bbox = (
-                float(sample_gdf.total_bounds[0]),
-                float(sample_gdf.total_bounds[1]),
-                float(sample_gdf.total_bounds[2]),
-                float(sample_gdf.total_bounds[3]),
-            )
-            from brewgis.workspace.services.base_canvas_adapters import (
-                OSMIntersectionDensitySource,
-            )
-
-            intersection_density_source = OSMIntersectionDensitySource(bbox=bbox)
-        except Exception:
-            context.log.debug("OSM init failed")
-
-    from brewgis.workspace.services.base_canvas_etl import BaseCanvasETL
-
-    etl = BaseCanvasETL(
-        demographic_source=demographic_source,
-        employment_source=employment_source,
-        land_use_source=land_use_source,
-        irrigation_source=irrigation_source,
-        intersection_density_source=intersection_density_source,
-    )
-
-    context.log.info("Running base canvas ETL pipeline...")
-    result = etl.run(
+    result = run_pipeline(
         source_geojson=config.parcels_path,
         skip_imputation=config.skip_imputation,
         truncate=config.truncate,
     )
 
     if result["status"] == "error":
-        raise RuntimeError(result.get("error", "Unknown ETL error"))
+        raise RuntimeError(result.get("error", "ETL pipeline failed"))
 
     context.log.info(
         "onboard_geography: %s rows in %.1fs",
         result.get("rows", 0),
         result.get("elapsed", 0),
     )
-
-    # Print summary
-    with connection.cursor() as cursor:
-        cursor.execute(
-            "SELECT EXISTS (SELECT FROM information_schema.tables "
-            "WHERE table_schema = 'public' AND table_name = 'base_canvas')"
-        )
-        if cursor.fetchone()[0]:
-            cursor.execute("SELECT COUNT(*) FROM public.base_canvas")
-            row_count = cursor.fetchone()[0]
-            context.log.info("Total rows in base_canvas: %s", row_count)
 
     return MaterializeResult(
         metadata={

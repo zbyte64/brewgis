@@ -30,6 +30,7 @@ from brewgis.workspace.dagster.configs import SacogReportConfig
 from brewgis.workspace.dagster.resources.dbt_resource import DbtCliResource
 from brewgis.workspace.dagster.resources.postgres_resource import PostgresResource
 from brewgis.workspace.services._db import get_engine
+from brewgis.workspace.services.base_canvas_pipeline import run_pipeline
 
 logger = logging.getLogger(__name__)
 
@@ -526,62 +527,10 @@ def _run_etl(
     temp_geojson: Path,
 ) -> dict[str, Any]:
     """Run the brewgis base canvas ETL on the given parcel geometries."""
-    from brewgis.workspace.services.base_canvas_adapters import CensusDemographicSource
-    from brewgis.workspace.services.base_canvas_adapters import LEHDEmploymentSource
-    from brewgis.workspace.services.base_canvas_adapters import NLCDFetcher
-    from brewgis.workspace.services.base_canvas_adapters import (
-        OSMIntersectionDensitySource,
-    )
-    from brewgis.workspace.services.base_canvas_etl import BaseCanvasETL
-    from brewgis.workspace.services.calibration_registry import SACOG_CALIBRATION
+    temp_table = f"_temp_etl_parcels_{int(time.time() * 1_000_000)}"
+    engine = get_engine()
 
-    demographic_source = None
-    employment_source = None
-    land_use_source = None
-    intersection_density_source = None
-    irrigation_source = None
-
-    if not skip_census:
-        demographic_source = CensusDemographicSource(
-            state_fips=STATE_FIPS,
-            county_fips=COUNTY_FIPS,
-            year=2022,
-        )
-
-    if not skip_lehd:
-        employment_source = LEHDEmploymentSource(
-            state_fips=STATE_FIPS,
-            county_fips=COUNTY_FIPS,
-        )
-
-    if not quick:
-        bbox = (
-            float(parcels_gdf.total_bounds[0]),
-            float(parcels_gdf.total_bounds[1]),
-            float(parcels_gdf.total_bounds[2]),
-            float(parcels_gdf.total_bounds[3]),
-        )
-        land_use_source = NLCDFetcher(bbox=bbox)
-        irrigation_source = land_use_source
-
-        bbox = (
-            float(parcels_gdf.total_bounds[0]),
-            float(parcels_gdf.total_bounds[1]),
-            float(parcels_gdf.total_bounds[2]),
-            float(parcels_gdf.total_bounds[3]),
-        )
-        intersection_density_source = OSMIntersectionDensitySource(bbox=bbox)
-
-    etl = BaseCanvasETL(
-        calibration=SACOG_CALIBRATION,
-        demographic_source=demographic_source,
-        employment_source=employment_source,
-        land_use_source=land_use_source,
-        irrigation_source=irrigation_source,
-        intersection_density_source=intersection_density_source,
-    )
-
-    parcels_gdf.to_file(str(temp_geojson), driver="GeoJSON")
+    parcels_gdf.to_postgis(temp_table, engine, if_exists="replace")
 
     with connection.cursor() as cur:
         cur.execute("""
@@ -599,15 +548,13 @@ def _run_etl(
         truncate,
     )
     try:
-        result = etl.run(
-            source_geojson=str(temp_geojson),
-            skip_imputation=False,
+        result = run_pipeline(
+            source_table=temp_table,
             truncate=truncate,
         )
-    except Exception:
-        if temp_geojson.exists():
-            temp_geojson.unlink()
-        raise
+    finally:
+        with engine.connect() as conn:
+            conn.execute(f"DROP TABLE IF EXISTS {temp_table}")
 
     return result
 

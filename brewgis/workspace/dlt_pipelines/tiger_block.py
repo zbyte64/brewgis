@@ -9,16 +9,15 @@ employment data to spatial units.
 from __future__ import annotations
 
 import tempfile
-
 from typing import Any
+
 import dlt
 import geopandas as gpd
 import requests
 
-
 __all__ = [
-    "tiger_block_source",
     "run_tiger_block_pipeline",
+    "tiger_block_source",
 ]
 
 

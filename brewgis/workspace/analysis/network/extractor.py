@@ -18,6 +18,7 @@ import logging
 from typing import Any
 
 import osmnx as ox
+
 from brewgis.workspace.services._db import get_engine
 from brewgis.workspace.services._db import text
 
@@ -32,9 +33,6 @@ _REQUIRED_EDGE_COLS = {"id", "source", "target", "length", "geom"}
 
 class NetworkExtractionError(Exception):
     """Raised when network extraction fails."""
-
-
-
 
 
 class NetworkExtractor:
@@ -164,12 +162,8 @@ class NetworkExtractor:
             conn.execute(text(f"CREATE SCHEMA IF NOT EXISTS {schema}"))
 
             # Drop existing tables for idempotent refresh
-            conn.execute(
-                text(f"DROP TABLE IF EXISTS {schema}.{edge_table} CASCADE")
-            )
-            conn.execute(
-                text(f"DROP TABLE IF EXISTS {schema}.{node_table} CASCADE")
-            )
+            conn.execute(text(f"DROP TABLE IF EXISTS {schema}.{edge_table} CASCADE"))
+            conn.execute(text(f"DROP TABLE IF EXISTS {schema}.{node_table} CASCADE"))
 
         edges_out.to_postgis(
             edge_table,

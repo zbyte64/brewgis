@@ -6,11 +6,10 @@ a PostgreSQL staging table via dlt.
 
 from __future__ import annotations
 
-import logging
-
 import csv
 import gzip
 import io
+import logging
 from typing import Any
 
 import dlt
@@ -27,6 +26,8 @@ __all__ = [
 
 
 logger = logging.getLogger(__name__)
+
+
 @dlt.source(name="lehd_lodes", max_table_nesting=0)
 def lehd_source(
     state_fips: str = "06",
@@ -104,6 +105,7 @@ def run_lehd_pipeline(
         Keys: ``success``, ``table_name``, ``row_count``, ``load_info``
         (or ``error`` on failure).
     """
+    # TODO purge entries that would cause duplicates, ie select matching fips & year then delete
     pipeline = dlt.pipeline(
         pipeline_name=f"lehd_lodes_{state_fips}_{county_fips}_{year}",
         destination="postgres",
