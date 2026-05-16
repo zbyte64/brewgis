@@ -107,7 +107,7 @@ test-all:  ## Run all tests sequentially (safe for full coverage)
 
 .PHONY: test-dbt
 test-dbt:  ## Run dbt seed + run + test (seed-based models only)
-	$(COMPOSE_RUN) bash -c 'cd brewgis/dbt_project && dbt seed --profiles-dir . --full-refresh && dbt run --profiles-dir . --select base_canvas_geometry+ && dbt test --profiles-dir . --select base_canvas_geometry+'
+	$(COMPOSE_RUN) bash brewgis/dbt_project/scripts/run_test_dbt.sh
 
 .PHONY: test-mcp
 test-mcp:  ## Run MCP server tests (models marker only)

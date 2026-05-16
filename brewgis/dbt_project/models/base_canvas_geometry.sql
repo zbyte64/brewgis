@@ -15,7 +15,9 @@
     Output columns:
         parcel_id, geometry, county, land_development_category, built_form_key,
         intersection_density, area_gross, area_parcel, area_dev_condition,
-        area_row, pop, hh, du, emp (raw values preserving NULLs for imputation)
+        area_row, pop, hh, du, emp, land_use, assessor_use_code,
+        bldg_area_* (building area by sub-type), residential_irrigated_area,
+        commercial_irrigated_area (raw values preserving NULLs for imputation)
 
     Materialized as: view
 #}
@@ -40,7 +42,24 @@ WITH parcel_geom AS (
         du,
         emp,
         land_use,
-        assessor_use_code
+        assessor_use_code,
+        bldg_area_detsf_sl,
+        bldg_area_detsf_ll,
+        bldg_area_attsf,
+        bldg_area_mf,
+        bldg_area_retail_services,
+        bldg_area_restaurant,
+        bldg_area_accommodation,
+        bldg_area_arts_entertainment,
+        bldg_area_other_services,
+        bldg_area_office_services,
+        bldg_area_public_admin,
+        bldg_area_education,
+        bldg_area_medical_services,
+        bldg_area_transport_warehousing,
+        bldg_area_wholesale,
+        residential_irrigated_area,
+        commercial_irrigated_area
     FROM {{ source('brewgis', 'parcels') }}
 ),
 
@@ -58,7 +77,24 @@ parcel_area AS (
         du,
         emp,
         land_use,
-        assessor_use_code
+        assessor_use_code,
+        bldg_area_detsf_sl,
+        bldg_area_detsf_ll,
+        bldg_area_attsf,
+        bldg_area_mf,
+        bldg_area_retail_services,
+        bldg_area_restaurant,
+        bldg_area_accommodation,
+        bldg_area_arts_entertainment,
+        bldg_area_other_services,
+        bldg_area_office_services,
+        bldg_area_public_admin,
+        bldg_area_education,
+        bldg_area_medical_services,
+        bldg_area_transport_warehousing,
+        bldg_area_wholesale,
+        residential_irrigated_area,
+        commercial_irrigated_area
     FROM parcel_geom
 )
 
@@ -78,5 +114,22 @@ SELECT
     du,
     emp,
     land_use,
-    assessor_use_code
+    assessor_use_code,
+    bldg_area_detsf_sl,
+    bldg_area_detsf_ll,
+    bldg_area_attsf,
+    bldg_area_mf,
+    bldg_area_retail_services,
+    bldg_area_restaurant,
+    bldg_area_accommodation,
+    bldg_area_arts_entertainment,
+    bldg_area_other_services,
+    bldg_area_office_services,
+    bldg_area_public_admin,
+    bldg_area_education,
+    bldg_area_medical_services,
+    bldg_area_transport_warehousing,
+    bldg_area_wholesale,
+    residential_irrigated_area,
+    commercial_irrigated_area
 FROM parcel_area
