@@ -22,25 +22,23 @@
 
 {{ config(materialized='view', alias='allocation_apply_' ~ var('scenario_id')) }}
 
-SELECT
-    t.ctid AS target_ctid,
-    SUM(
-        COALESCE(s."{{ var('source_column') }}", 0)
-        * {{ compute_allocation_weight(
+WITH spatial_join AS (
+    SELECT
+        t.ctid AS target_ctid,
+        s."{{ var('source_column') }}" AS source_value,
+        {{ compute_allocation_weight(
             's', 't',
             var('source_geom_col', 'geom'),
             var('target_geom_col', 'geom')
-        ) }}
-    ) AS allocated_value
-FROM {{ var('source_schema') }}."{{ var('source_table') }}" s
-JOIN {{ var('target_schema') }}."{{ var('target_table') }}" t
-    ON ST_Intersects(
-        ST_Transform(s."{{ var('source_geom_col', 'geom') }}", 3857),
-        ST_Transform(t."{{ var('target_geom_col', 'geom') }}", 3857)
-    )
-WHERE {{ compute_allocation_weight(
-    's', 't',
-    var('source_geom_col', 'geom'),
-    var('target_geom_col', 'geom')
-) }} > 0
-GROUP BY t.ctid
+        ) }} AS weight
+    FROM {{ var('source_schema') }}."{{ var('source_table') }}" s
+    JOIN {{ var('target_schema') }}."{{ var('target_table') }}" t
+        ON ST_Intersects(
+            ST_Transform(s."{{ var('source_geom_col', 'geom') }}", 3857),
+            ST_Transform(t."{{ var('target_geom_col', 'geom') }}", 3857)
+        )
+)
+SELECT target_ctid, SUM(COALESCE(source_value, 0) * weight) AS allocated_value
+FROM spatial_join
+WHERE weight > 0
+GROUP BY target_ctid

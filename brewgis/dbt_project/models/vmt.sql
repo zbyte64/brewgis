@@ -23,6 +23,7 @@
 {{ config(alias='vmt_' ~ scenario_id) }}
 
 {%- set circuity_factor = var('transport_circuity_factor', 1.2) -%}
+{%- set km_to_mi = var('transport_km_to_mi', 0.621371) -%}
 
 WITH mode_trips AS (
     SELECT
@@ -30,7 +31,9 @@ WITH mode_trips AS (
         mc.trips_auto AS auto_trips,
         td.avg_trip_length_km,
         es.population,
-        es.geom
+        es.geom,
+        mc.trips_auto * td.avg_trip_length_km * {{ km_to_mi }} * {{ circuity_factor }}
+            AS vmt_total
     FROM {{ ref('mode_choice') }} AS mc
     LEFT JOIN {{ ref('trip_distribution') }} AS td
         ON mc.parcel_id = td.parcel_id
@@ -40,19 +43,13 @@ WITH mode_trips AS (
 
 SELECT
     parcel_id,
-
-    -- VMT total: auto_trips * avg_trip_length_km * 0.621371 (km→mi) * circuity_factor
-    auto_trips * avg_trip_length_km * 0.621371 * {{ circuity_factor }}
-        AS vmt_total,
-
+    vmt_total,
     -- VMT per capita
     CASE WHEN population > 0
-        THEN (auto_trips * avg_trip_length_km * 0.621371 * {{ circuity_factor }})
-             / population
+        THEN vmt_total / population
         ELSE 0.0
     END AS vmt_per_capita,
-
     auto_trips,
-    avg_trip_length_km * 0.621371 AS avg_trip_length_mi,
+    avg_trip_length_km * {{ km_to_mi }} AS avg_trip_length_mi,
     geom
 FROM mode_trips

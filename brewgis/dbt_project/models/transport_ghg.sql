@@ -24,7 +24,6 @@
 {{ config(alias='transport_ghg_' ~ scenario_id) }}
 
 {%- set co2_per_mile = var('transport_ghg_co2_per_mile', 0.411) -%}
-{%- set fleet_mix_raw = var('transport_ghg_fleet_mix', none) -%}
 {%- set speed_adjust = var('transport_ghg_speed_adjust', false) -%}
 
 WITH vmt_data AS (
@@ -44,24 +43,17 @@ SELECT
     parcel_id,
 
     -- CO₂e total (kg): VMT × emission factor
-    -- Speed adjustment increases emissions at low (< 25 mph) and high (> 55 mph) speeds
-    -- Currently a simplified factor: 1.0 = no adjustment, > 1.0 increases emissions
     vmt_total * {{ co2_per_mile }}
-    * CASE
-        WHEN {{ speed_adjust }} THEN 1.15
-        ELSE 1.0
-    END AS co2e_total_kg,
+    {%- if speed_adjust %} * 1.15{% endif %}
+        AS co2e_total_kg,
 
     -- CO₂e per capita
     CASE
         WHEN population > 0
-            THEN (
-                vmt_total * {{ co2_per_mile }}
-                * CASE
-                    WHEN {{ speed_adjust }} THEN 1.15
-                    ELSE 1.0
-                END
-            ) / population
+        THEN (
+            vmt_total * {{ co2_per_mile }}
+            {%- if speed_adjust %} * 1.15{% endif %}
+        ) / population
         ELSE 0.0
     END AS co2e_per_capita_kg,
 

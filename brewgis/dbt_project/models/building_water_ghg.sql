@@ -30,6 +30,7 @@
 {%- set gas_co2_per_kwh = var('ghg_gas_co2_per_kwh', 0.181) -%}
 {%- set water_supply_kwh_per_mg = var('ghg_water_supply_kwh_per_mg', 1427) -%}
 {%- set wastewater_kwh_per_mg = var('ghg_wastewater_kwh_per_mg', 1911) -%}
+{%- set liters_per_mg = var('ghg_liters_per_million_gallons', 3785411.8) -%}
 
 WITH energy_data AS (
     SELECT
@@ -40,7 +41,21 @@ WITH energy_data AS (
         ed.energy_gas_nonres,
         wd.water_demand_total,
         es.population,
-        es.geom
+        es.geom,
+        -- Energy CO₂e (kg): electric kWh × eGRID factor + gas kWh × gas factor
+        COALESCE(
+            (ed.energy_electricity_res + ed.energy_electricity_nonres) * {{ egrid_co2_per_kwh }}
+            + (ed.energy_gas_res + ed.energy_gas_nonres) * {{ gas_co2_per_kwh }},
+            0.0
+        ) AS co2e_energy_kg,
+        -- Water/wastewater CO₂e (kg): L → MG × (supply + wastewater kWh/MG) × eGRID factor
+        CASE
+            WHEN COALESCE(wd.water_demand_total, 0.0) > 0
+            THEN wd.water_demand_total / {{ liters_per_mg }}
+                * ({{ water_supply_kwh_per_mg }} + {{ wastewater_kwh_per_mg }})
+                * {{ egrid_co2_per_kwh }}
+            ELSE 0.0
+        END AS co2e_water_kg
     FROM {{ ref('energy_demand') }} AS ed
     LEFT JOIN {{ ref('water_demand') }} AS wd
         ON ed.parcel_id = wd.parcel_id
@@ -51,58 +66,19 @@ WITH energy_data AS (
 SELECT
     parcel_id,
 
-    -- Building energy CO₂e (kg): electric kWh × eGRID factor + gas kWh × gas factor
-    COALESCE(
-        (energy_electricity_res + energy_electricity_nonres) * {{ egrid_co2_per_kwh }}
-        + (energy_gas_res + energy_gas_nonres) * {{ gas_co2_per_kwh }},
-        0.0
-    ) AS co2e_energy_total_kg,
+    -- Building energy CO₂e (kg)
+    co2e_energy_kg AS co2e_energy_total_kg,
 
-    -- Water/wastewater CO₂e (kg):
-    -- Water demand (L) → MG × (supply + wastewater kWh/MG) × eGRID factor
-    -- 1 MG = 3,785,411.8 L
-    CASE
-        WHEN COALESCE(water_demand_total, 0.0) > 0
-            THEN
-                water_demand_total / 3785411.8
-                * ({{ water_supply_kwh_per_mg }} + {{ wastewater_kwh_per_mg }})
-                * {{ egrid_co2_per_kwh }}
-        ELSE 0.0
-    END AS co2e_water_total_kg,
+    -- Water/wastewater CO₂e (kg)
+    co2e_water_kg AS co2e_water_total_kg,
 
     -- Total CO₂e
-    COALESCE(
-        (energy_electricity_res + energy_electricity_nonres) * {{ egrid_co2_per_kwh }}
-        + (energy_gas_res + energy_gas_nonres) * {{ gas_co2_per_kwh }},
-        0.0
-    )
-    + CASE
-        WHEN COALESCE(water_demand_total, 0.0) > 0
-            THEN
-                water_demand_total / 3785411.8
-                * ({{ water_supply_kwh_per_mg }} + {{ wastewater_kwh_per_mg }})
-                * {{ egrid_co2_per_kwh }}
-        ELSE 0.0
-    END AS co2e_total_kg,
+    co2e_energy_kg + co2e_water_kg AS co2e_total_kg,
 
     -- Per-capita CO₂e
     CASE
         WHEN population > 0
-            THEN (
-                COALESCE(
-                    (energy_electricity_res + energy_electricity_nonres) * {{ egrid_co2_per_kwh }}
-                    + (energy_gas_res + energy_gas_nonres) * {{ gas_co2_per_kwh }},
-                    0.0
-                )
-                + CASE
-                    WHEN COALESCE(water_demand_total, 0.0) > 0
-                        THEN
-                            water_demand_total / 3785411.8
-                            * ({{ water_supply_kwh_per_mg }} + {{ wastewater_kwh_per_mg }})
-                            * {{ egrid_co2_per_kwh }}
-                    ELSE 0.0
-                END
-            ) / population
+        THEN (co2e_energy_kg + co2e_water_kg) / population
         ELSE 0.0
     END AS co2e_per_capita_kg,
 

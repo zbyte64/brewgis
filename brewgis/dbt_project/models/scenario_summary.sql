@@ -33,38 +33,69 @@
 
     Materialized as: {{ var('target_schema') }}.scenario_summary_{{ var('scenario_id') }}
 #}
-{{ set_vars({'scenario_id': 'demo'}) }}
 {{ config(alias='scenario_summary_' ~ var('scenario_id')) }}
 
-{% set metrics = [
-    ('core_end_state', 'population'),
-    ('core_end_state', 'households'),
-    ('core_end_state', 'dwelling_units_total'),
-    ('core_end_state', 'employment_total'),
-    ('vmt', 'vmt_total'),
-    ('total_ghg', 'co2e_total'),
-    ('water_demand', 'water_demand_af'),
-    ('land_consumption', 'acres_consumed'),
-    ('health_impacts', 'net_dalys'),
-] %}
-
-WITH metrics AS (
+WITH
+core_agg AS (
     SELECT
-        {% for table, col in metrics %}
-        {{ summarize_metric(table, col) }}{% if not loop.last %},{% endif %}
-        {% endfor %},
-        (SELECT COALESCE(SUM(population), 0) FROM {{ ref('core_end_state') }}
-            WHERE geom IS NOT NULL
-        ) AS total_pop_for_co2e_per_capita,
-        (SELECT COALESCE(SUM(electricity_mwh + gas_mwh), 0) FROM {{ ref('energy_demand') }}) AS total_energy_demand,
-        (SELECT COALESCE(AVG(vmt_per_capita), 0) FROM {{ ref('vmt') }} WHERE population > 0) AS avg_vmt_per_capita,
-        (SELECT COALESCE(AVG(cost_burden_pct), 0) FROM {{ ref('housing_cost_burden') }}) AS avg_cost_burden_pct,
-        (SELECT COALESCE(AVG(sprawl_index), 0) FROM {{ ref('sprawl_index') }}) AS avg_sprawl_index,
-        (SELECT COALESCE(AVG(impervious_pct), 0) FROM {{ ref('land_consumption') }} WHERE gross_acres > 0) AS avg_impervious_pct,
-        (SELECT COALESCE(AVG(displacement_risk_category), 0)
-            FROM {{ ref('displacement_risk') }}
-            WHERE displacement_risk_category IN ('at_risk', 'displacement_pressure')
-        ) AS displacement_risk_parcels
+        COALESCE(SUM(population), 0) AS total_population,
+        COALESCE(SUM(households), 0) AS total_households,
+        COALESCE(SUM(dwelling_units_total), 0) AS total_dwelling_units_total,
+        COALESCE(SUM(employment_total), 0) AS total_employment,
+        COALESCE(SUM(population) FILTER (WHERE geom IS NOT NULL), 0) AS total_pop_for_co2e_per_capita
+    FROM {{ ref('core_end_state') }}
+),
+vmt_agg AS (
+    SELECT
+        COALESCE(SUM(vmt_total), 0) AS total_vmt,
+        COALESCE(AVG(vmt_per_capita) FILTER (WHERE population > 0), 0) AS avg_vmt_per_capita
+    FROM {{ ref('vmt') }}
+),
+total_ghg_agg AS (
+    SELECT COALESCE(SUM(co2e_total), 0) AS total_co2e FROM {{ ref('total_ghg') }}
+),
+water_demand_agg AS (
+    SELECT COALESCE(SUM(water_demand_af), 0) AS total_water_demand FROM {{ ref('water_demand') }}
+),
+land_consumption_agg AS (
+    SELECT
+        COALESCE(SUM(acres_consumed), 0) AS total_land_consumed,
+        COALESCE(AVG(impervious_pct) FILTER (WHERE gross_acres > 0), 0) AS avg_impervious_pct
+    FROM {{ ref('land_consumption') }}
+),
+health_agg AS (
+    SELECT COALESCE(SUM(net_dalys), 0) AS total_net_dalys FROM {{ ref('health_impacts') }}
+),
+energy_agg AS (
+    SELECT COALESCE(SUM(electricity_mwh + gas_mwh), 0) AS total_energy_demand FROM {{ ref('energy_demand') }}
+),
+housing_agg AS (
+    SELECT COALESCE(AVG(cost_burden_pct), 0) AS avg_cost_burden_pct FROM {{ ref('housing_cost_burden') }}
+),
+sprawl_agg AS (
+    SELECT COALESCE(AVG(sprawl_index), 0) AS avg_sprawl_index FROM {{ ref('sprawl_index') }}
+),
+displacement_agg AS (
+    SELECT
+        CASE
+            WHEN COUNT(*) > 0
+            THEN COUNT(*) FILTER (WHERE displacement_risk_category IN ('at_risk', 'displacement_pressure')) * 100.0 / COUNT(*)
+            ELSE 0.0
+        END AS displacement_risk_pct
+    FROM {{ ref('displacement_risk') }}
+),
+metrics AS (
+    SELECT *
+    FROM core_agg
+    CROSS JOIN vmt_agg
+    CROSS JOIN total_ghg_agg
+    CROSS JOIN water_demand_agg
+    CROSS JOIN land_consumption_agg
+    CROSS JOIN health_agg
+    CROSS JOIN energy_agg
+    CROSS JOIN housing_agg
+    CROSS JOIN sprawl_agg
+    CROSS JOIN displacement_agg
 )
 SELECT
     '{{ var('scenario_id') }}'::text AS scenario_id,
@@ -82,5 +113,6 @@ SELECT
     total_energy_demand AS energy_demand_total_mwh,
     total_land_consumed AS land_consumed_acres,
     ROUND(avg_impervious_pct::numeric, 1) AS land_consumed_pct,
-    total_net_dalys AS net_dalys
+    total_net_dalys AS net_dalys,
+    ROUND(displacement_risk_pct::numeric, 1) AS displacement_risk_pct
 FROM metrics

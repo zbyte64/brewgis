@@ -88,31 +88,22 @@ land_use AS (
         dwelling_units_total,
         employment_total,
         parcel_acres_developed,
-        geom
-    FROM parcel_data
-),
-
--- L2: Impervious surface estimation
-impervious AS (
-    SELECT
-        parcel_id,
-        -- Building footprint: building_sqft_total × ground_coverage_factor
+        geom,
+        -- L2: Impervious surface estimation
         COALESCE(building_sqft_total * {{ ground_coverage_factor }}, 0.0) AS building_footprint_sqft,
-        -- Parking: (DU × spaces/DU + employment × spaces/employee) × sqft/space
         COALESCE(
             (dwelling_units_total * {{ parking_per_unit }}
              + employment_total * {{ parking_per_employee }})
             * {{ parking_space_sqft }},
             0.0
         ) AS parking_sqft,
-        -- ROW: developed acres × fraction (converted to sqft)
         COALESCE(
             acres_developed * {{ row_fraction }} * 43560.0,
             0.0
-        ) AS row_sqft,
-        geom
-    FROM land_use
-)
+        ) AS row_sqft
+    FROM parcel_data
+),
+
 
 SELECT
     lu.parcel_id,
@@ -121,33 +112,32 @@ SELECT
     lu.acres_preserved,
     lu.development_type,
     -- L2 impervious surface outputs
-    COALESCE(imp.building_footprint_sqft, 0.0)
-        + COALESCE(imp.parking_sqft, 0.0)
-        + COALESCE(imp.row_sqft, 0.0)
+    COALESCE(lu.building_footprint_sqft, 0.0)
+        + COALESCE(lu.parking_sqft, 0.0)
+        + COALESCE(lu.row_sqft, 0.0)
     AS impervious_sqft,
-    (COALESCE(imp.building_footprint_sqft, 0.0)
-        + COALESCE(imp.parking_sqft, 0.0)
-        + COALESCE(imp.row_sqft, 0.0)) / 43560.0
+    (COALESCE(lu.building_footprint_sqft, 0.0)
+        + COALESCE(lu.parking_sqft, 0.0)
+        + COALESCE(lu.row_sqft, 0.0)) / 43560.0
     AS impervious_acres,
     CASE
         WHEN lu.gross_acres > 0
-            THEN GREATEST(
-                lu.gross_acres
-                - (COALESCE(imp.building_footprint_sqft, 0.0)
-                    + COALESCE(imp.parking_sqft, 0.0)
-                    + COALESCE(imp.row_sqft, 0.0)) / 43560.0,
-                0.0
-            )
+        THEN GREATEST(
+            lu.gross_acres
+            - (COALESCE(lu.building_footprint_sqft, 0.0)
+                + COALESCE(lu.parking_sqft, 0.0)
+                + COALESCE(lu.row_sqft, 0.0)) / 43560.0,
+            0.0
+        )
         ELSE 0.0
     END AS pervious_acres,
     CASE
         WHEN lu.gross_acres > 0
-            THEN ((COALESCE(imp.building_footprint_sqft, 0.0)
-                + COALESCE(imp.parking_sqft, 0.0)
-                + COALESCE(imp.row_sqft, 0.0)) / 43560.0)
-                / lu.gross_acres * 100.0
+        THEN ((COALESCE(lu.building_footprint_sqft, 0.0)
+            + COALESCE(lu.parking_sqft, 0.0)
+            + COALESCE(lu.row_sqft, 0.0)) / 43560.0)
+            / lu.gross_acres * 100.0
         ELSE 0.0
     END AS impervious_pct,
     lu.geom
 FROM land_use AS lu
-LEFT JOIN impervious AS imp USING (parcel_id)

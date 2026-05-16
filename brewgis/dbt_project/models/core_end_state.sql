@@ -85,7 +85,9 @@ WITH parcel_base AS (
         bf.vintage,
         bf.irrigable_area_fraction,
         p.intersection_density,
-        p.geom
+        p.geom,
+        p.du_per_acre IS NOT NULL AND p.du_per_acre > 0 AS is_residential,
+        bf.emp_per_acre IS NOT NULL AND bf.emp_per_acre > 0 AS is_nonresidential
     FROM
         {{ source_schema }}.{{ parcel_table }} AS p
         {{ from_extra }}
@@ -127,7 +129,7 @@ SELECT
     0.0 AS building_sqft_entertainment,
     0.0 AS building_sqft_other,
     CASE
-        WHEN parcel_base.du_per_acre IS NOT NULL AND parcel_base.du_per_acre > 0
+        WHEN parcel_base.is_residential
             THEN parcel_base.density_adjusted_acres * 43560.0
                 * (1.0 - COALESCE(parcel_base.building_coverage, 30.0) / 100.0)
                 * COALESCE(parcel_base.irrigable_area_fraction, 0.0)
@@ -135,7 +137,7 @@ SELECT
     END AS res_irrigated_sqft
 ,
     CASE
-        WHEN parcel_base.emp_per_acre IS NOT NULL AND parcel_base.emp_per_acre > 0
+        WHEN parcel_base.is_nonresidential
             THEN parcel_base.density_adjusted_acres * 43560.0
                 * (1.0 - COALESCE(parcel_base.building_coverage, 30.0) / 100.0)
                 * COALESCE(parcel_base.irrigable_area_fraction, 0.0)
@@ -152,7 +154,7 @@ SELECT
 
     -- Parcel acres by type
     CASE
-        WHEN parcel_base.du_per_acre IS NOT NULL AND parcel_base.du_per_acre > 0
+        WHEN parcel_base.is_residential
             THEN {{ compute_dwelling_units("parcel_base.density_adjusted_acres", "parcel_base.du_per_acre") }}
         ELSE 0.0
     END AS dwelling_units_total,
@@ -175,7 +177,7 @@ SELECT
 
     -- Network indicators
     CASE
-        WHEN parcel_base.emp_per_acre IS NOT NULL AND parcel_base.emp_per_acre > 0
+        WHEN parcel_base.is_nonresidential
             THEN {{ compute_employment("parcel_base.density_adjusted_acres", "parcel_base.emp_per_acre") }}
         ELSE 0.0
     END AS employment_total,

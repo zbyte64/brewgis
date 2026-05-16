@@ -24,21 +24,10 @@ models:
     +schema: "{{ var('target_schema', 'public') }}"
     trip_distribution:
       +materialized: table
-      +transport_impedance_exponent: "{{ var('transport_impedance_exponent', 2.0) }}"
-      +transport_attraction_employment_weight: "{{ var('transport_attraction_employment_weight', 1.0) }}"
-      +transport_attraction_du_weight: "{{ var('transport_attraction_du_weight', 0.5) }}"
-      +transport_distance_source: "{{ var('transport_distance_source', 'euclidean') }}"
     mode_choice:
       +materialized: table
-      +transport_asc_transit: "{{ var('transport_asc_transit', -2.0) }}"
-      +transport_asc_walk: "{{ var('transport_asc_walk', -1.5) }}"
-      +transport_asc_bike: "{{ var('transport_asc_bike', -2.5) }}"
-      +transport_beta_density: "{{ var('transport_beta_density', 0.15) }}"
-      +transport_beta_design_walk: "{{ var('transport_beta_design_walk', 0.05) }}"
-      +transport_beta_transit_dist: "{{ var('transport_beta_transit_dist', 0.02) }}"
     internal_capture:
       +materialized: table
-      +transport_intrazonal_friction: "{{ var('transport_intrazonal_friction', 0.15) }}"
     transport_ghg:
       +materialized: table
     building_water_ghg:

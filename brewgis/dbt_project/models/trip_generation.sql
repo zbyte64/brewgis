@@ -80,33 +80,24 @@ trip_rates AS (
         COALESCE((building_sqft_total / 1000.0) * {{ nonres_rate }}, 0.0)
             AS trips_nonres_raw,
 
-        COALESCE(pass_by_trip_pct, 0.0) AS pass_by_trip_pct
+        COALESCE(pass_by_trip_pct, 0.0) AS pass_by_trip_pct,
+        -- Total primary trips with pass-by reduction
+        (trips_res + trips_nonres_raw * (1.0 - pass_by_trip_pct))
+            AS trips_total
     FROM parcel_base
 )
 
 SELECT
     parcel_id,
     gross_acres,
-
-    -- Total primary trips with pass-by reduction
-    (trips_res + trips_nonres_raw * (1.0 - pass_by_trip_pct))
-        AS trips_total,
-
+    trips_total,
     trips_res,
-
     -- Non-residential trips after pass-by reduction
     trips_nonres_raw * (1.0 - pass_by_trip_pct)
         AS trips_nonres,
-
     -- Trip purpose split
-    (trips_res + trips_nonres_raw * (1.0 - pass_by_trip_pct)) * {{ hbw_pct }}
-        AS trips_hbw,
-
-    (trips_res + trips_nonres_raw * (1.0 - pass_by_trip_pct)) * {{ hbo_pct }}
-        AS trips_hbo,
-
-    (trips_res + trips_nonres_raw * (1.0 - pass_by_trip_pct)) * {{ nhb_pct }}
-        AS trips_nhb,
-
+    trips_total * {{ hbw_pct }} AS trips_hbw,
+    trips_total * {{ hbo_pct }} AS trips_hbo,
+    trips_total * {{ nhb_pct }} AS trips_nhb,
     geom
 FROM trip_rates

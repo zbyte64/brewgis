@@ -63,7 +63,12 @@ parcel_base AS (
         b.id AS parcel_id,
         ST_Area(b.geom) / 4046.86 AS gross_acres,
         b.geom,
-        cu.constraint_geom
+        cu.constraint_geom,
+        CASE
+            WHEN cu.constraint_geom IS NOT NULL
+            THEN ST_Area(ST_Intersection(b.geom, cu.constraint_geom)) / 4046.86
+            ELSE 0.0
+        END AS intersection_acres
     FROM {{ source_schema }}.{{ parcel_table }} b
     LEFT JOIN constraint_union cu ON b.id = cu.parcel_id
 )
@@ -75,8 +80,7 @@ SELECT
         WHEN parcel_base.constraint_geom IS NOT NULL
         THEN GREATEST(0,
             parcel_base.gross_acres
-            - (ST_Area(ST_Intersection(parcel_base.geom, parcel_base.constraint_geom)) / 4046.86)
-              * {{ max_discount }} / 100.0
+            - parcel_base.intersection_acres * {{ max_discount }} / 100.0
         )
         ELSE parcel_base.gross_acres
     END AS acres_developable,
@@ -84,8 +88,7 @@ SELECT
         WHEN parcel_base.gross_acres > 0
         THEN GREATEST(0,
             parcel_base.gross_acres
-            - (ST_Area(ST_Intersection(parcel_base.geom, parcel_base.constraint_geom)) / 4046.86)
-              * {{ max_discount }} / 100.0
+            - parcel_base.intersection_acres * {{ max_discount }} / 100.0
         ) / parcel_base.gross_acres
         ELSE 0.0
     END AS developable_proportion,

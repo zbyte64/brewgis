@@ -113,16 +113,18 @@ building_areas AS (
 classified AS (
     SELECT
         b.*,
-        CASE
-            WHEN LEFT(COALESCE(b.assessor_use_code, ''), 2) IN (SELECT use_code FROM assessor_codes)
-            THEN (SELECT a.category FROM assessor_codes a WHERE a.use_code = LEFT(COALESCE(b.assessor_use_code, ''), 2) LIMIT 1)
-            WHEN TRIM(COALESCE(b.land_use, '')) IN (SELECT land_use_label FROM sacog_use)
-            THEN (SELECT s.category FROM sacog_use s WHERE s.land_use_label = TRIM(COALESCE(b.land_use, '')) LIMIT 1)
-            ELSE 'urban'
-        END AS lnd_v,
+        COALESCE(
+            ac.category,
+            su.category,
+            'urban'
+        ) AS lnd_v,
         COALESCE(NULLIF(b.built_form_key, ''), 'mixed_use') AS bf_v
     FROM building_areas b
-),
+    LEFT JOIN assessor_codes ac
+        ON LEFT(COALESCE(b.assessor_use_code, ''), 2) = ac.use_code
+    LEFT JOIN sacog_use su
+        ON TRIM(COALESCE(b.land_use, '')) = su.land_use_label
+)
 
 -- Area by use from land_development_category
 area_by_use AS (
