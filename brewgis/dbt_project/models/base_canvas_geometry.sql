@@ -28,11 +28,7 @@
 WITH parcel_geom AS (
     SELECT
         parcel_id,
-        {% if var('parcel_geometry_type', 'wkt') == 'geometry' %}
-            geometry
-        {% else %}
-            ST_GeomFromText(geometry, 4326) AS geometry
-        {% endif %},
+        geometry,
         county,
         COALESCE(NULLIF(land_development_category, ''), '') AS land_development_category,
         built_form_key,
@@ -59,7 +55,12 @@ WITH parcel_geom AS (
         bldg_area_transport_warehousing,
         bldg_area_wholesale,
         residential_irrigated_area,
-        commercial_irrigated_area
+        commercial_irrigated_area,
+        area_parcel_res,
+        area_parcel_emp_ag,
+        area_parcel_emp,
+        area_parcel_mixed_use,
+        area_parcel_no_use
     FROM {{ source('brewgis', 'parcels') }}
 ),
 
@@ -94,7 +95,12 @@ parcel_area AS (
         bldg_area_transport_warehousing,
         bldg_area_wholesale,
         residential_irrigated_area,
-        commercial_irrigated_area
+        commercial_irrigated_area,
+        area_parcel_res,
+        area_parcel_emp_ag,
+        area_parcel_emp,
+        area_parcel_mixed_use,
+        area_parcel_no_use
     FROM parcel_geom
 )
 
@@ -131,5 +137,10 @@ SELECT
     bldg_area_transport_warehousing,
     bldg_area_wholesale,
     residential_irrigated_area,
-    commercial_irrigated_area
+    commercial_irrigated_area,
+    area_parcel_res,
+    area_parcel_emp_ag,
+    area_parcel_emp,
+    area_parcel_mixed_use,
+    area_parcel_no_use
 FROM parcel_area

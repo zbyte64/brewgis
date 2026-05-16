@@ -222,7 +222,6 @@ class Command(BaseCommand):
         dbt_vars: dict[str, Any] = {
             "parcel_table": "sacog_parcel_shim",
             "base_canvas_materialized": "table",
-            "parcel_geometry_type": "geometry",
             "projected_srid": 6933,
         }
         result = run_dbt_local(

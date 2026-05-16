@@ -70,5 +70,10 @@ SELECT
     NULL::double precision AS bldg_area_transport_warehousing,
     NULL::double precision AS bldg_area_wholesale,
     NULL::double precision AS residential_irrigated_area,
-    NULL::double precision AS commercial_irrigated_area
+    NULL::double precision AS commercial_irrigated_area,
+    NULL::double precision AS area_parcel_res,
+    NULL::double precision AS area_parcel_emp_ag,
+    NULL::double precision AS area_parcel_emp,
+    NULL::double precision AS area_parcel_mixed_use,
+    NULL::double precision AS area_parcel_no_use
 FROM {{ var('comparison_parcel_table', 'public.sacog_comparison_parcels') }}

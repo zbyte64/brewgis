@@ -121,7 +121,7 @@ classified AS (
         COALESCE(NULLIF(b.built_form_key, ''), 'mixed_use') AS bf_v
     FROM building_areas b
     LEFT JOIN assessor_codes ac
-        ON LEFT(COALESCE(b.assessor_use_code, ''), 2) = ac.use_code
+        ON LEFT(COALESCE(b.assessor_use_code, ''), 2) = ac.use_code::text
     LEFT JOIN sacog_use su
         ON TRIM(COALESCE(b.land_use, '')) = su.land_use_label
 ),
@@ -130,8 +130,8 @@ classified AS (
 area_by_use AS (
     SELECT
         *,
-        lnd_v AS land_development_category,
-        bf_v AS built_form_key,
+        lnd_v AS lnd_category,
+        bf_v AS bf_key,
         CASE WHEN lnd_v = 'urban'
             THEN COALESCE(area_parcel, area_gross, 0) ELSE area_parcel_res END AS area_parcel_res_v,
         CASE WHEN lnd_v = 'agricultural'
@@ -174,8 +174,8 @@ SELECT
     parcel_id,
     geometry,
     county,
-    land_development_category,
-    built_form_key,
+    lnd_category AS land_development_category,
+    bf_key AS built_form_key,
     int_dens_v AS intersection_density,
     area_gross,
     area_parcel,

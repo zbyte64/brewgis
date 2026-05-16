@@ -35,7 +35,7 @@ sources:
     tables:
       - name: acs_block_group
         description: "Census ACS block group demographics with geometry — populated by SACOG comparison pipeline."
-        identifier: acs_block_group
+        identifier: "{{ var('acs_block_group_table', 'acs_block_group') }}"
 
   - name: lehd
     description: "LEHD LODES employment data sources — fixed schema."
@@ -43,4 +43,4 @@ sources:
     tables:
       - name: wac_block
         description: "LEHD LODES WAC employment by block group with geometry — populated by SACOG comparison pipeline."
-        identifier: wac_block
+        identifier: "{{ var('wac_block_table', 'wac_block') }}"

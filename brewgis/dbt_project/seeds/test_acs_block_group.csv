@@ -1,0 +1,2 @@
+geoid,pop,hh,du,du_detsf,du_detsf_sl,du_detsf_ll,du_attsf,du_mf,du_mf2to4,du_mf5p,median_income,rent_burden_pct,pct_minority,pct_college_educated,cost_burden_pct,geometry
+060670011001,5000,2000,2100,1500,500,500,200,400,150,250,75000,30.0,45.0,35.0,25.0,"POLYGON ((-121.51 38.49, -121.48 38.49, -121.48 38.52, -121.51 38.52, -121.51 38.49))"

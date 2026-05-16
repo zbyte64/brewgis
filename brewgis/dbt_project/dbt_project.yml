@@ -173,9 +173,19 @@ seeds:
     +schema: "{{ var('target_schema', 'public') }}"
     test_parcels:
       +column_types:
-        geometry: text
+        geometry: geometry(Geometry,4326)
     test_sacog_parcels:
       +column_types:
-        geometry: text
+        geometry: geometry(Geometry,4326)
         census_blockgroup: text
         census_block: text
+    test_acs_block_group:
+      +schema: census
+      +column_types:
+        geoid: text
+        geometry: geometry(Geometry,4326)
+    test_wac_block:
+      +schema: lehd
+      +column_types:
+        geoid: text
+        geometry: geometry(Geometry,4326)
