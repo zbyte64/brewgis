@@ -17,3 +17,10 @@ dbt run --profiles-dir . --select base_canvas_geometry --vars "$DBT_VARS"
 
 echo "=== dbt test (base_canvas_geometry) ==="
 dbt test --profiles-dir . --select base_canvas_geometry --vars "$DBT_VARS"
+echo ""
+echo "=== dbt run (sacog_parcel_shim) ==="
+SACOG_VARS='{"comparison_parcel_table": "test_sacog_parcels"}'
+dbt run --profiles-dir . --select sacog_parcel_shim --vars "$SACOG_VARS"
+echo ""
+echo "=== dbt test (sacog_parcel_shim) ==="
+dbt test --profiles-dir . --select sacog_parcel_shim --vars "$SACOG_VARS"

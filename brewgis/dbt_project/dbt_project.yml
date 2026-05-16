@@ -174,3 +174,8 @@ seeds:
     test_parcels:
       +column_types:
         geometry: text
+    test_sacog_parcels:
+      +column_types:
+        geometry: text
+        census_blockgroup: text
+        census_block: text

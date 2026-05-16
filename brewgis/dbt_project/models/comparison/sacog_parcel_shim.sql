@@ -1,7 +1,7 @@
 {#
     SACOG Parcel Column Shim — maps SACOG v1 columns to brewgis-standard column names.
 
-    Reads raw SACOG parcel data from ``public.sacog_comparison_parcels`` (populated
+    Reads raw SACOG parcel data from ``{{ var('comparison_parcel_table', 'public.sacog_comparison_parcels') }}`` (populated
     by the compare_sacog_basemap management command) and produces a table with
     brewgis-compatible column names so that ``base_canvas_geometry`` and the rest of
     the base_canvas chain can consume SACOG v1 data without column-name failures.
@@ -53,5 +53,22 @@ SELECT
     gluc,
     census_blockgroup,
     census_block,
-    notes
-FROM public.sacog_comparison_parcels
+    notes,
+    NULL::double precision AS bldg_area_detsf_sl,
+    NULL::double precision AS bldg_area_detsf_ll,
+    NULL::double precision AS bldg_area_attsf,
+    NULL::double precision AS bldg_area_mf,
+    NULL::double precision AS bldg_area_retail_services,
+    NULL::double precision AS bldg_area_restaurant,
+    NULL::double precision AS bldg_area_accommodation,
+    NULL::double precision AS bldg_area_arts_entertainment,
+    NULL::double precision AS bldg_area_other_services,
+    NULL::double precision AS bldg_area_office_services,
+    NULL::double precision AS bldg_area_public_admin,
+    NULL::double precision AS bldg_area_education,
+    NULL::double precision AS bldg_area_medical_services,
+    NULL::double precision AS bldg_area_transport_warehousing,
+    NULL::double precision AS bldg_area_wholesale,
+    NULL::double precision AS residential_irrigated_area,
+    NULL::double precision AS commercial_irrigated_area
+FROM {{ var('comparison_parcel_table', 'public.sacog_comparison_parcels') }}
