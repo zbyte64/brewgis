@@ -21,7 +21,7 @@
     Output: lehd.wac_block — persistent table read by _allocate_employment
 #}
 
-{{ config(materialized='table', schema='lehd') }}
+{{ config(materialized='table', schema='lehd', indexes=[{'columns': ['geometry'], 'type': 'gist'}]) }}
 
 {% set year = var('year', 2021) %}
 {% set is_sacog = var('is_sacog', 0) %}

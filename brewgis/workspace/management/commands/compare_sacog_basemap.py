@@ -121,6 +121,14 @@ class Command(BaseCommand):
         parcels_gdf = _load_parcels(limit)
         self.stdout.write(f"  Loaded {len(parcels_gdf):,} parcels")
 
+        # Normalize SACOG column names to dbt contract
+        # SACOG source uses geography_id; dbt models expect parcel_id and id.
+        parcels_gdf["parcel_id"] = parcels_gdf["geography_id"]
+        parcels_gdf["id"] = parcels_gdf["geography_id"]
+        self.stdout.write(
+            f"  Normalized {len(parcels_gdf):,} rows: geography_id → parcel_id, id"
+        )
+
         # Write to dbt source table (sacog_comparison_parcels)
         parcels_gdf.to_postgis(
             "sacog_comparison_parcels",
@@ -196,11 +204,26 @@ class Command(BaseCommand):
             lehd_wac_count = _populate_wac_block(STATE_FIPS, COUNTY_FIPS, 2021)
             self.stdout.write(f"  lehd.wac_block populated: {lehd_wac_count:,} rows")
 
-        # ── Phase 2: Run dbt base_canvas models ────────────────────────
-        self.stdout.write("\n── Phase 2: Running dbt base_canvas models ──")
-        dbt_vars: dict[str, Any] = {
-            "parcel_table": "sacog_comparison_parcels",
+        # ── Phase 2a: Materialize SACOG parcel shim ────────────────────
+        self.stdout.write("\n── Phase 2a: Materializing SACOG parcel shim ──")
+        shim_vars: dict[str, Any] = {
             "base_canvas_materialized": "table",
+        }
+        shim_result = run_dbt_local(
+            select=["sacog_parcel_shim"],
+            vars_=shim_vars,
+        )
+        if not shim_result.success:
+            raise CommandError(f"dbt sacog_parcel_shim run failed: {shim_result.error}")
+        self.stdout.write(self.style.SUCCESS("  sacog_parcel_shim materialized"))
+
+        # ── Phase 2b: Run dbt base_canvas models ────────────────────────
+        self.stdout.write("\n── Phase 2b: Running dbt base_canvas models ──")
+        dbt_vars: dict[str, Any] = {
+            "parcel_table": "sacog_parcel_shim",
+            "base_canvas_materialized": "table",
+            "parcel_geometry_type": "geometry",
+            "projected_srid": 6933,
         }
         result = run_dbt_local(
             select=[

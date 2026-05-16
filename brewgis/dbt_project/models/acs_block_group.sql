@@ -19,7 +19,7 @@
     Output: census.acs_block_group — persistent table read by _allocate_demographics
 #}
 
-{{ config(materialized='table', schema='census') }}
+{{ config(materialized='table', schema='census', indexes=[{'columns': ['geometry'], 'type': 'gist'}]) }}
 
 {% set year = var('year', 2022) %}
 {% set state_fips = var('state_fips') %}
@@ -107,6 +107,7 @@ SELECT
     pop,
     hh,
     du,
+    ROUND(du_detsf::numeric, 1) AS du_detsf,
     du_attsf,
     du_mf2to4,
     du_mf5p,

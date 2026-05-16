@@ -124,7 +124,7 @@ classified AS (
         ON LEFT(COALESCE(b.assessor_use_code, ''), 2) = ac.use_code
     LEFT JOIN sacog_use su
         ON TRIM(COALESCE(b.land_use, '')) = su.land_use_label
-)
+),
 
 -- Area by use from land_development_category
 area_by_use AS (

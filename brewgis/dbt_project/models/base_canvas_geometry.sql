@@ -19,7 +19,7 @@
 
     Materialized as: view
 #}
-{{ config(materialized=var('base_canvas_materialized', 'view')) }}
+{{ config(materialized=var('base_canvas_materialized', 'view'), indexes=[{'columns': ['geometry'], 'type': 'gist'}]) }}
 
 {%- set area_srid = var('projected_srid', 3857) -%}
 
@@ -38,7 +38,9 @@ WITH parcel_geom AS (
         pop,
         hh,
         du,
-        emp
+        emp,
+        land_use,
+        assessor_use_code
     FROM {{ source('brewgis', 'parcels') }}
 ),
 
@@ -54,7 +56,9 @@ parcel_area AS (
         pop,
         hh,
         du,
-        emp
+        emp,
+        land_use,
+        assessor_use_code
     FROM parcel_geom
 )
 
@@ -72,5 +76,7 @@ SELECT
     pop,
     hh,
     du,
-    emp
+    emp,
+    land_use,
+    assessor_use_code
 FROM parcel_area

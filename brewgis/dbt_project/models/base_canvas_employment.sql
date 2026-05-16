@@ -51,6 +51,7 @@ wac_data AS (
         w.emp_pub,
         w.emp_ind,
         w.emp_ag,
+        w.geometry,
         ST_Transform(w.geometry, {{ area_srid }}) AS geom_proj,
         GREATEST(ST_Area(ST_Transform(w.geometry, {{ area_srid }})), 1e-10) AS wac_area
     FROM {{ source('lehd', 'wac_block') }} w
@@ -61,7 +62,6 @@ wac_data AS (
 intersections AS (
     SELECT
         p.parcel_id,
-        p.geom_proj AS p_geom,
         w.emp,
         w.emp_retail_services,
         w.emp_restaurant,
@@ -85,37 +85,38 @@ intersections AS (
         w.emp_pub,
         w.emp_ind,
         w.emp_ag,
-        ST_Area(ST_Intersection(p.geom_proj, w.geom_proj)) / w.wac_area AS weight
+        w.wac_area,
+        ST_Area(ST_Intersection(p.geom_proj, w.geom_proj)) AS intersect_area
     FROM parcel_geom p
-    JOIN wac_data w ON ST_Intersects(p.geom_proj, w.geom_proj)
+    JOIN wac_data w ON ST_Intersects(p.geometry, w.geometry)
 ),
 
 allocated AS (
     SELECT
         parcel_id,
-        SUM(emp * weight) AS emp,
-        SUM(emp_retail_services * weight) AS emp_retail_services,
-        SUM(emp_restaurant * weight) AS emp_restaurant,
-        SUM(emp_accommodation * weight) AS emp_accommodation,
-        SUM(emp_arts_entertainment * weight) AS emp_arts_entertainment,
-        SUM(emp_other_services * weight) AS emp_other_services,
-        SUM(emp_office_services * weight) AS emp_office_services,
-        SUM(emp_medical_services * weight) AS emp_medical_services,
-        SUM(emp_public_admin * weight) AS emp_public_admin,
-        SUM(emp_education * weight) AS emp_education,
-        SUM(emp_manufacturing * weight) AS emp_manufacturing,
-        SUM(emp_wholesale * weight) AS emp_wholesale,
-        SUM(emp_transport_warehousing * weight) AS emp_transport_warehousing,
-        SUM(emp_utilities * weight) AS emp_utilities,
-        SUM(emp_construction * weight) AS emp_construction,
-        SUM(emp_agriculture * weight) AS emp_agriculture,
-        SUM(emp_extraction * weight) AS emp_extraction,
-        SUM(emp_military * weight) AS emp_military,
-        SUM(emp_ret * weight) AS emp_ret,
-        SUM(emp_off * weight) AS emp_off,
-        SUM(emp_pub * weight) AS emp_pub,
-        SUM(emp_ind * weight) AS emp_ind,
-        SUM(emp_ag * weight) AS emp_ag
+        SUM(emp * intersect_area / wac_area) AS emp,
+        SUM(emp_retail_services * intersect_area / wac_area) AS emp_retail_services,
+        SUM(emp_restaurant * intersect_area / wac_area) AS emp_restaurant,
+        SUM(emp_accommodation * intersect_area / wac_area) AS emp_accommodation,
+        SUM(emp_arts_entertainment * intersect_area / wac_area) AS emp_arts_entertainment,
+        SUM(emp_other_services * intersect_area / wac_area) AS emp_other_services,
+        SUM(emp_office_services * intersect_area / wac_area) AS emp_office_services,
+        SUM(emp_medical_services * intersect_area / wac_area) AS emp_medical_services,
+        SUM(emp_public_admin * intersect_area / wac_area) AS emp_public_admin,
+        SUM(emp_education * intersect_area / wac_area) AS emp_education,
+        SUM(emp_manufacturing * intersect_area / wac_area) AS emp_manufacturing,
+        SUM(emp_wholesale * intersect_area / wac_area) AS emp_wholesale,
+        SUM(emp_transport_warehousing * intersect_area / wac_area) AS emp_transport_warehousing,
+        SUM(emp_utilities * intersect_area / wac_area) AS emp_utilities,
+        SUM(emp_construction * intersect_area / wac_area) AS emp_construction,
+        SUM(emp_agriculture * intersect_area / wac_area) AS emp_agriculture,
+        SUM(emp_extraction * intersect_area / wac_area) AS emp_extraction,
+        SUM(emp_military * intersect_area / wac_area) AS emp_military,
+        SUM(emp_ret * intersect_area / wac_area) AS emp_ret,
+        SUM(emp_off * intersect_area / wac_area) AS emp_off,
+        SUM(emp_pub * intersect_area / wac_area) AS emp_pub,
+        SUM(emp_ind * intersect_area / wac_area) AS emp_ind,
+        SUM(emp_ag * intersect_area / wac_area) AS emp_ag
     FROM intersections
     GROUP BY parcel_id
 )
@@ -135,6 +136,7 @@ SELECT
     p.pop_groupquarter,
     p.hh,
     p.du,
+    p.du_detsf,
     p.du_detsf_sl,
     p.du_detsf_ll,
     p.du_attsf,

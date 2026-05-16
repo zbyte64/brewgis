@@ -45,6 +45,7 @@ acs_data AS (
         a.pop,
         a.hh,
         a.du,
+        a.du_detsf,
         a.du_detsf_sl,
         a.du_detsf_ll,
         a.du_attsf,
@@ -56,6 +57,7 @@ acs_data AS (
         a.pct_minority,
         a.pct_college_educated,
         a.cost_burden_pct,
+        a.geometry,
         ST_Transform(a.geometry, {{ area_srid }}) AS geom_proj,
         GREATEST(ST_Area(ST_Transform(a.geometry, {{ area_srid }})), 1e-10) AS bg_area
     FROM {{ source('census', 'acs_block_group') }} a
@@ -66,11 +68,10 @@ acs_data AS (
 intersections AS (
     SELECT
         p.parcel_id,
-        p.geom_proj AS p_geom,
-        a.geom_proj AS a_geom,
         a.pop,
         a.hh,
         a.du,
+        a.du_detsf,
         a.du_detsf_sl,
         a.du_detsf_ll,
         a.du_attsf,
@@ -83,31 +84,31 @@ intersections AS (
         a.pct_college_educated,
         a.cost_burden_pct,
         a.bg_area,
-        ST_Area(ST_Intersection(p.geom_proj, a.geom_proj)) / a.bg_area AS weight,
-        ST_Area(ST_Intersection(p.geom_proj, a.geom_proj)) AS int_area
+        ST_Area(ST_Intersection(p.geom_proj, a.geom_proj)) AS intersect_area
     FROM parcel_geom p
-    JOIN acs_data a ON ST_Intersects(p.geom_proj, a.geom_proj)
+    JOIN acs_data a ON ST_Intersects(p.geometry, a.geometry)
 ),
 
 allocated AS (
     SELECT
         parcel_id,
         -- Sum columns: weighted by intersection fraction
-        SUM(pop * weight) AS pop,
-        SUM(hh * weight) AS hh,
-        SUM(du * weight) AS du,
-        SUM(du_detsf_sl * weight) AS du_detsf_sl,
-        SUM(du_detsf_ll * weight) AS du_detsf_ll,
-        SUM(du_attsf * weight) AS du_attsf,
-        SUM(du_mf * weight) AS du_mf,
-        SUM(du_mf2to4 * weight) AS du_mf2to4,
-        SUM(du_mf5p * weight) AS du_mf5p,
+        SUM(pop * intersect_area / bg_area) AS pop,
+        SUM(hh * intersect_area / bg_area) AS hh,
+        SUM(du * intersect_area / bg_area) AS du,
+        SUM(du_detsf * intersect_area / bg_area) AS du_detsf,
+        SUM(du_detsf_sl * intersect_area / bg_area) AS du_detsf_sl,
+        SUM(du_detsf_ll * intersect_area / bg_area) AS du_detsf_ll,
+        SUM(du_attsf * intersect_area / bg_area) AS du_attsf,
+        SUM(du_mf * intersect_area / bg_area) AS du_mf,
+        SUM(du_mf2to4 * intersect_area / bg_area) AS du_mf2to4,
+        SUM(du_mf5p * intersect_area / bg_area) AS du_mf5p,
         -- Average columns: area-weighted mean across intersecting BGs
-        SUM(median_income * int_area) / NULLIF(SUM(int_area), 0) AS median_income,
-        SUM(rent_burden_pct * int_area) / NULLIF(SUM(int_area), 0) AS rent_burden_pct,
-        SUM(pct_minority * int_area) / NULLIF(SUM(int_area), 0) AS pct_minority,
-        SUM(pct_college_educated * int_area) / NULLIF(SUM(int_area), 0) AS pct_college_educated,
-        SUM(cost_burden_pct * int_area) / NULLIF(SUM(int_area), 0) AS cost_burden_pct
+        SUM(median_income * intersect_area) / NULLIF(SUM(intersect_area), 0) AS median_income,
+        SUM(rent_burden_pct * intersect_area) / NULLIF(SUM(intersect_area), 0) AS rent_burden_pct,
+        SUM(pct_minority * intersect_area) / NULLIF(SUM(intersect_area), 0) AS pct_minority,
+        SUM(pct_college_educated * intersect_area) / NULLIF(SUM(intersect_area), 0) AS pct_college_educated,
+        SUM(cost_burden_pct * intersect_area) / NULLIF(SUM(intersect_area), 0) AS cost_burden_pct
     FROM intersections
     GROUP BY parcel_id
 )
@@ -128,6 +129,7 @@ SELECT
     NULL::double precision AS pop_groupquarter,
     COALESCE(a.hh, p.bg_hh) AS hh,
     COALESCE(a.du, p.bg_du) AS du,
+    a.du_detsf,
     a.du_detsf_sl,
     a.du_detsf_ll,
     a.du_attsf,
