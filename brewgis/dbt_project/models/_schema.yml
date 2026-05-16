@@ -1940,74 +1940,818 @@ models:
   - name: source
     tests:
     - not_null
+    - accepted_values:
+        arguments:
+          values: ['reference']
   - name: pop
-    tests:
-    - not_null
-    - non_negative
+    tests: [not_null, non_negative]
   - name: hh
-    tests:
-    - not_null
-    - non_negative
+    tests: [not_null, non_negative]
   - name: du
-    tests:
-    - not_null
-    - non_negative
+    tests: [not_null, non_negative]
   - name: emp
-    tests:
-    - not_null
-    - non_negative
+    tests: [not_null, non_negative]
   - name: acres_gross
-    tests:
-    - not_null
-    - non_negative
+    tests: [not_null, non_negative]
+  - name: acres_parcel
+    tests: [not_null, non_negative]
+  - name: acres_parcel_res
+    tests: [not_null, non_negative]
+  - name: acres_parcel_emp
+    tests: [not_null, non_negative]
+  - name: acres_parcel_mixed_use
+    tests: [not_null, non_negative]
+  - name: acres_parcel_no_use
+    tests: [not_null, non_negative]
+  - name: du_detsf
+    tests: [non_negative]
+  - name: du_detsf_sl
+    tests: [non_negative]
+  - name: du_detsf_ll
+    tests: [non_negative]
+  - name: du_attsf
+    tests: [non_negative]
+  - name: du_mf
+    tests: [non_negative]
+  - name: du_mf2to4
+    tests: [non_negative]
+  - name: du_mf5p
+    tests: [non_negative]
+  - name: emp_ret
+    tests: [non_negative]
+  - name: emp_off
+    tests: [non_negative]
+  - name: emp_pub
+    tests: [non_negative]
+  - name: emp_ind
+    tests: [non_negative]
+  - name: emp_ag
+    tests: [non_negative]
+  - name: emp_military
+    tests: [non_negative]
+  - name: emp_retail_services
+    tests: [non_negative]
+  - name: emp_restaurant
+    tests: [non_negative]
+  - name: emp_accommodation
+    tests: [non_negative]
+  - name: emp_arts_entertainment
+    tests: [non_negative]
+  - name: emp_other_services
+    tests: [non_negative]
+  - name: emp_office_services
+    tests: [non_negative]
+  - name: emp_medical_services
+    tests: [non_negative]
+  - name: emp_public_admin
+    tests: [non_negative]
+  - name: emp_education
+    tests: [non_negative]
+  - name: emp_manufacturing
+    tests: [non_negative]
+  - name: emp_wholesale
+    tests: [non_negative]
+  - name: emp_transport_warehousing
+    tests: [non_negative]
+  - name: emp_utilities
+    tests: [non_negative]
+  - name: emp_construction
+    tests: [non_negative]
+  - name: emp_agriculture
+    tests: [non_negative]
+  - name: emp_extraction
+    tests: [non_negative]
+  - name: bldg_sqft_detsf_sl
+    tests: [non_negative]
+  - name: bldg_sqft_detsf_ll
+    tests: [non_negative]
+  - name: bldg_sqft_attsf
+    tests: [non_negative]
+  - name: bldg_sqft_mf
+    tests: [non_negative]
+  - name: bldg_sqft_retail_services
+    tests: [non_negative]
+  - name: bldg_sqft_restaurant
+    tests: [non_negative]
+  - name: bldg_sqft_accommodation
+    tests: [non_negative]
+  - name: bldg_sqft_arts_entertainment
+    tests: [non_negative]
+  - name: bldg_sqft_other_services
+    tests: [non_negative]
+  - name: bldg_sqft_office_services
+    tests: [non_negative]
+  - name: bldg_sqft_public_admin
+    tests: [non_negative]
+  - name: bldg_sqft_education
+    tests: [non_negative]
+  - name: bldg_sqft_medical_services
+    tests: [non_negative]
+  - name: bldg_sqft_transport_warehousing
+    tests: [non_negative]
+  - name: bldg_sqft_wholesale
+    tests: [non_negative]
+  - name: residential_irrigated_sqft
+    tests: [non_negative]
+  - name: commercial_irrigated_sqft
+    tests: [non_negative]
+  - name: intersection_density_sqmi
+    tests: [non_negative]
 - name: sacog_brewgis_totals
   description: "Aggregate sums from the brewgis base canvas (public.base_canvas). Per-column COALESCE(SUM, 0)."
   columns:
   - name: source
     tests:
     - not_null
+    - accepted_values:
+        arguments:
+          values: ['brewgis']
   - name: pop
-    tests:
-    - not_null
-    - non_negative
+    tests: [not_null, non_negative]
   - name: hh
-    tests:
-    - not_null
-    - non_negative
+    tests: [not_null, non_negative]
   - name: du
-    tests:
-    - not_null
-    - non_negative
+    tests: [not_null, non_negative]
   - name: emp
-    tests:
-    - not_null
-    - non_negative
+    tests: [not_null, non_negative]
   - name: area_gross
-    tests:
-    - not_null
-    - non_negative
+    tests: [not_null, non_negative]
+  - name: area_parcel
+    tests: [not_null, non_negative]
+  - name: area_parcel_res
+    tests: [not_null, non_negative]
+  - name: area_parcel_emp
+    tests: [not_null, non_negative]
+  - name: area_parcel_mixed_use
+    tests: [not_null, non_negative]
+  - name: area_parcel_no_use
+    tests: [not_null, non_negative]
+  - name: du_detsf
+    tests: [non_negative]
+  - name: du_detsf_sl
+    tests: [non_negative]
+  - name: du_detsf_ll
+    tests: [non_negative]
+  - name: du_attsf
+    tests: [non_negative]
+  - name: du_mf
+    tests: [non_negative]
+  - name: du_mf2to4
+    tests: [non_negative]
+  - name: du_mf5p
+    tests: [non_negative]
+  - name: emp_ret
+    tests: [non_negative]
+  - name: emp_off
+    tests: [non_negative]
+  - name: emp_pub
+    tests: [non_negative]
+  - name: emp_ind
+    tests: [non_negative]
+  - name: emp_ag
+    tests: [non_negative]
+  - name: emp_military
+    tests: [non_negative]
+  - name: emp_retail_services
+    tests: [non_negative]
+  - name: emp_restaurant
+    tests: [non_negative]
+  - name: emp_accommodation
+    tests: [non_negative]
+  - name: emp_arts_entertainment
+    tests: [non_negative]
+  - name: emp_other_services
+    tests: [non_negative]
+  - name: emp_office_services
+    tests: [non_negative]
+  - name: emp_medical_services
+    tests: [non_negative]
+  - name: emp_public_admin
+    tests: [non_negative]
+  - name: emp_education
+    tests: [non_negative]
+  - name: emp_manufacturing
+    tests: [non_negative]
+  - name: emp_wholesale
+    tests: [non_negative]
+  - name: emp_transport_warehousing
+    tests: [non_negative]
+  - name: emp_utilities
+    tests: [non_negative]
+  - name: emp_construction
+    tests: [non_negative]
+  - name: emp_agriculture
+    tests: [non_negative]
+  - name: emp_extraction
+    tests: [non_negative]
+  - name: bldg_area_detsf_sl
+    tests: [non_negative]
+  - name: bldg_area_detsf_ll
+    tests: [non_negative]
+  - name: bldg_area_attsf
+    tests: [non_negative]
+  - name: bldg_area_mf
+    tests: [non_negative]
+  - name: bldg_area_retail_services
+    tests: [non_negative]
+  - name: bldg_area_restaurant
+    tests: [non_negative]
+  - name: bldg_area_accommodation
+    tests: [non_negative]
+  - name: bldg_area_arts_entertainment
+    tests: [non_negative]
+  - name: bldg_area_other_services
+    tests: [non_negative]
+  - name: bldg_area_office_services
+    tests: [non_negative]
+  - name: bldg_area_public_admin
+    tests: [non_negative]
+  - name: bldg_area_education
+    tests: [non_negative]
+  - name: bldg_area_medical_services
+    tests: [non_negative]
+  - name: bldg_area_transport_warehousing
+    tests: [non_negative]
+  - name: bldg_area_wholesale
+    tests: [non_negative]
+  - name: residential_irrigated_area
+    tests: [non_negative]
+  - name: commercial_irrigated_area
+    tests: [non_negative]
+  - name: intersection_density
+    tests: [non_negative]
+  - name: median_income
+    tests: [non_negative]
+  - name: pct_minority
+    tests: [non_negative]
+  - name: pct_college_educated
+    tests: [non_negative]
+  - name: cost_burden_pct
+    tests: [non_negative]
+  - name: rent_burden_pct
+    tests: [non_negative]
 - name: sacog_correlations
   description: "Per-column Pearson R correlation between brewgis base_canvas and v1 reference, joined on geography_id."
   columns:
+  - name: area_gross
+    tests: [non_negative, column_between: {arguments: {min_value: -1, max_value: 1}}]
+  - name: area_parcel
+    tests: [non_negative, column_between: {arguments: {min_value: -1, max_value: 1}}]
+  - name: area_parcel_res_detsf
+    tests: [column_between: {arguments: {min_value: -1, max_value: 1}}]
+  - name: area_parcel_res_detsf_sl
+    tests: [column_between: {arguments: {min_value: -1, max_value: 1}}]
+  - name: area_parcel_res_detsf_ll
+    tests: [column_between: {arguments: {min_value: -1, max_value: 1}}]
+  - name: area_parcel_res_attsf
+    tests: [column_between: {arguments: {min_value: -1, max_value: 1}}]
+  - name: area_parcel_res_mf
+    tests: [column_between: {arguments: {min_value: -1, max_value: 1}}]
+  - name: area_parcel_res
+    tests: [column_between: {arguments: {min_value: -1, max_value: 1}}]
+  - name: area_parcel_emp
+    tests: [column_between: {arguments: {min_value: -1, max_value: 1}}]
+  - name: area_parcel_emp_ret
+    tests: [column_between: {arguments: {min_value: -1, max_value: 1}}]
+  - name: area_parcel_emp_off
+    tests: [column_between: {arguments: {min_value: -1, max_value: 1}}]
+  - name: area_parcel_emp_pub
+    tests: [column_between: {arguments: {min_value: -1, max_value: 1}}]
+  - name: area_parcel_emp_ind
+    tests: [column_between: {arguments: {min_value: -1, max_value: 1}}]
+  - name: area_parcel_emp_ag
+    tests: [column_between: {arguments: {min_value: -1, max_value: 1}}]
+  - name: area_parcel_emp_military
+    tests: [column_between: {arguments: {min_value: -1, max_value: 1}}]
+  - name: area_parcel_mixed_use
+    tests: [column_between: {arguments: {min_value: -1, max_value: 1}}]
+  - name: area_parcel_no_use
+    tests: [column_between: {arguments: {min_value: -1, max_value: 1}}]
+  - name: intersection_density
+    tests: [column_between: {arguments: {min_value: -1, max_value: 1}}]
   - name: pop
+    tests: [non_negative, column_between: {arguments: {min_value: -1, max_value: 1}}]
   - name: hh
+    tests: [non_negative, column_between: {arguments: {min_value: -1, max_value: 1}}]
   - name: du
+    tests: [non_negative, column_between: {arguments: {min_value: -1, max_value: 1}}]
+  - name: du_detsf
+    tests: [column_between: {arguments: {min_value: -1, max_value: 1}}]
+  - name: du_detsf_sl
+    tests: [column_between: {arguments: {min_value: -1, max_value: 1}}]
+  - name: du_detsf_ll
+    tests: [column_between: {arguments: {min_value: -1, max_value: 1}}]
+  - name: du_attsf
+    tests: [column_between: {arguments: {min_value: -1, max_value: 1}}]
+  - name: du_mf
+    tests: [column_between: {arguments: {min_value: -1, max_value: 1}}]
+  - name: du_mf2to4
+    tests: [column_between: {arguments: {min_value: -1, max_value: 1}}]
+  - name: du_mf5p
+    tests: [column_between: {arguments: {min_value: -1, max_value: 1}}]
   - name: emp
+    tests: [non_negative, column_between: {arguments: {min_value: -1, max_value: 1}}]
+  - name: emp_ret
+    tests: [column_between: {arguments: {min_value: -1, max_value: 1}}]
+  - name: emp_retail_services
+    tests: [column_between: {arguments: {min_value: -1, max_value: 1}}]
+  - name: emp_restaurant
+    tests: [column_between: {arguments: {min_value: -1, max_value: 1}}]
+  - name: emp_accommodation
+    tests: [column_between: {arguments: {min_value: -1, max_value: 1}}]
+  - name: emp_arts_entertainment
+    tests: [column_between: {arguments: {min_value: -1, max_value: 1}}]
+  - name: emp_other_services
+    tests: [column_between: {arguments: {min_value: -1, max_value: 1}}]
+  - name: emp_off
+    tests: [column_between: {arguments: {min_value: -1, max_value: 1}}]
+  - name: emp_office_services
+    tests: [column_between: {arguments: {min_value: -1, max_value: 1}}]
+  - name: emp_medical_services
+    tests: [column_between: {arguments: {min_value: -1, max_value: 1}}]
+  - name: emp_pub
+    tests: [column_between: {arguments: {min_value: -1, max_value: 1}}]
+  - name: emp_public_admin
+    tests: [column_between: {arguments: {min_value: -1, max_value: 1}}]
+  - name: emp_education
+    tests: [column_between: {arguments: {min_value: -1, max_value: 1}}]
+  - name: emp_ind
+    tests: [column_between: {arguments: {min_value: -1, max_value: 1}}]
+  - name: emp_manufacturing
+    tests: [column_between: {arguments: {min_value: -1, max_value: 1}}]
+  - name: emp_wholesale
+    tests: [column_between: {arguments: {min_value: -1, max_value: 1}}]
+  - name: emp_transport_warehousing
+    tests: [column_between: {arguments: {min_value: -1, max_value: 1}}]
+  - name: emp_utilities
+    tests: [column_between: {arguments: {min_value: -1, max_value: 1}}]
+  - name: emp_construction
+    tests: [column_between: {arguments: {min_value: -1, max_value: 1}}]
+  - name: emp_ag
+    tests: [column_between: {arguments: {min_value: -1, max_value: 1}}]
+  - name: emp_agriculture
+    tests: [column_between: {arguments: {min_value: -1, max_value: 1}}]
+  - name: emp_extraction
+    tests: [column_between: {arguments: {min_value: -1, max_value: 1}}]
+  - name: emp_military
+    tests: [column_between: {arguments: {min_value: -1, max_value: 1}}]
+  - name: bldg_area_detsf_sl
+    tests: [column_between: {arguments: {min_value: -1, max_value: 1}}]
+  - name: bldg_area_detsf_ll
+    tests: [column_between: {arguments: {min_value: -1, max_value: 1}}]
+  - name: bldg_area_attsf
+    tests: [column_between: {arguments: {min_value: -1, max_value: 1}}]
+  - name: bldg_area_mf
+    tests: [column_between: {arguments: {min_value: -1, max_value: 1}}]
+  - name: bldg_area_retail_services
+    tests: [column_between: {arguments: {min_value: -1, max_value: 1}}]
+  - name: bldg_area_restaurant
+    tests: [column_between: {arguments: {min_value: -1, max_value: 1}}]
+  - name: bldg_area_accommodation
+    tests: [column_between: {arguments: {min_value: -1, max_value: 1}}]
+  - name: bldg_area_arts_entertainment
+    tests: [column_between: {arguments: {min_value: -1, max_value: 1}}]
+  - name: bldg_area_other_services
+    tests: [column_between: {arguments: {min_value: -1, max_value: 1}}]
+  - name: bldg_area_office_services
+    tests: [column_between: {arguments: {min_value: -1, max_value: 1}}]
+  - name: bldg_area_public_admin
+    tests: [column_between: {arguments: {min_value: -1, max_value: 1}}]
+  - name: bldg_area_education
+    tests: [column_between: {arguments: {min_value: -1, max_value: 1}}]
+  - name: bldg_area_medical_services
+    tests: [column_between: {arguments: {min_value: -1, max_value: 1}}]
+  - name: bldg_area_transport_warehousing
+    tests: [column_between: {arguments: {min_value: -1, max_value: 1}}]
+  - name: bldg_area_wholesale
+    tests: [column_between: {arguments: {min_value: -1, max_value: 1}}]
+  - name: residential_irrigated_area
+    tests: [column_between: {arguments: {min_value: -1, max_value: 1}}]
+  - name: commercial_irrigated_area
+    tests: [column_between: {arguments: {min_value: -1, max_value: 1}}]
 - name: sacog_weighted_means
   description: "Area-weighted averages for density/rate equity columns."
   columns:
   - name: source
     tests:
     - not_null
+    - accepted_values:
+        arguments:
+          values: ['brewgis']
   - name: median_income_wavg
-    tests:
-    - non_negative
+    tests: [non_negative]
+  - name: pct_minority_wavg
+    tests: [non_negative]
+  - name: pct_college_educated_wavg
+    tests: [non_negative]
+  - name: cost_burden_pct_wavg
+    tests: [non_negative]
+  - name: rent_burden_pct_wavg
+    tests: [non_negative]
 - name: sacog_summary
   description: "Single-row comparison view joining reference totals, brewgis totals, correlations, and weighted means."
   columns:
   - name: generated_at
+    tests: [not_null]
+  - name: ref_acres_gross
+    tests: [not_null, non_negative]
+  - name: ref_acres_parcel
+    tests: [non_negative]
+  - name: ref_acres_parcel_res
+    tests: [non_negative]
+  - name: ref_acres_parcel_emp
+    tests: [non_negative]
+  - name: ref_acres_parcel_mixed_use
+    tests: [non_negative]
+  - name: ref_acres_parcel_no_use
+    tests: [non_negative]
+  - name: ref_pop
+    tests: [not_null, non_negative]
+  - name: ref_hh
+    tests: [not_null, non_negative]
+  - name: ref_du
+    tests: [not_null, non_negative]
+  - name: ref_du_detsf
+    tests: [non_negative]
+  - name: ref_du_detsf_sl
+    tests: [non_negative]
+  - name: ref_du_detsf_ll
+    tests: [non_negative]
+  - name: ref_du_attsf
+    tests: [non_negative]
+  - name: ref_du_mf
+    tests: [non_negative]
+  - name: ref_du_mf2to4
+    tests: [non_negative]
+  - name: ref_du_mf5p
+    tests: [non_negative]
+  - name: ref_emp
+    tests: [not_null, non_negative]
+  - name: ref_emp_ret
+    tests: [non_negative]
+  - name: ref_emp_off
+    tests: [non_negative]
+  - name: ref_emp_pub
+    tests: [non_negative]
+  - name: ref_emp_ind
+    tests: [non_negative]
+  - name: ref_emp_ag
+    tests: [non_negative]
+  - name: ref_emp_military
+    tests: [non_negative]
+  - name: ref_emp_retail_services
+    tests: [non_negative]
+  - name: ref_emp_restaurant
+    tests: [non_negative]
+  - name: ref_emp_accommodation
+    tests: [non_negative]
+  - name: ref_emp_arts_entertainment
+    tests: [non_negative]
+  - name: ref_emp_other_services
+    tests: [non_negative]
+  - name: ref_emp_office_services
+    tests: [non_negative]
+  - name: ref_emp_medical_services
+    tests: [non_negative]
+  - name: ref_emp_public_admin
+    tests: [non_negative]
+  - name: ref_emp_education
+    tests: [non_negative]
+  - name: ref_emp_manufacturing
+    tests: [non_negative]
+  - name: ref_emp_wholesale
+    tests: [non_negative]
+  - name: ref_emp_transport_warehousing
+    tests: [non_negative]
+  - name: ref_emp_utilities
+    tests: [non_negative]
+  - name: ref_emp_construction
+    tests: [non_negative]
+  - name: ref_emp_agriculture
+    tests: [non_negative]
+  - name: ref_emp_extraction
+    tests: [non_negative]
+  - name: ref_bldg_sqft_detsf_sl
+    tests: [non_negative]
+  - name: ref_bldg_sqft_detsf_ll
+    tests: [non_negative]
+  - name: ref_bldg_sqft_attsf
+    tests: [non_negative]
+  - name: ref_bldg_sqft_mf
+    tests: [non_negative]
+  - name: ref_bldg_sqft_retail_services
+    tests: [non_negative]
+  - name: ref_bldg_sqft_restaurant
+    tests: [non_negative]
+  - name: ref_bldg_sqft_accommodation
+    tests: [non_negative]
+  - name: ref_bldg_sqft_arts_entertainment
+    tests: [non_negative]
+  - name: ref_bldg_sqft_other_services
+    tests: [non_negative]
+  - name: ref_bldg_sqft_office_services
+    tests: [non_negative]
+  - name: ref_bldg_sqft_public_admin
+    tests: [non_negative]
+  - name: ref_bldg_sqft_education
+    tests: [non_negative]
+  - name: ref_bldg_sqft_medical_services
+    tests: [non_negative]
+  - name: ref_bldg_sqft_transport_warehousing
+    tests: [non_negative]
+  - name: ref_bldg_sqft_wholesale
+    tests: [non_negative]
+  - name: ref_residential_irrigated_sqft
+    tests: [non_negative]
+  - name: ref_commercial_irrigated_sqft
+    tests: [non_negative]
+  - name: ref_intersection_density_sqmi
+    tests: [non_negative]
+  - name: brew_area_gross
+    tests: [not_null, non_negative]
+  - name: brew_area_parcel
+    tests: [non_negative]
+  - name: brew_area_parcel_res
+    tests: [non_negative]
+  - name: brew_area_parcel_emp
+    tests: [non_negative]
+  - name: brew_area_parcel_mixed_use
+    tests: [non_negative]
+  - name: brew_area_parcel_no_use
+    tests: [non_negative]
+  - name: brew_pop
+    tests: [not_null, non_negative]
+  - name: brew_hh
+    tests: [not_null, non_negative]
+  - name: brew_du
+    tests: [not_null, non_negative]
+  - name: brew_du_detsf
+    tests: [non_negative]
+  - name: brew_du_detsf_sl
+    tests: [non_negative]
+  - name: brew_du_detsf_ll
+    tests: [non_negative]
+  - name: brew_du_attsf
+    tests: [non_negative]
+  - name: brew_du_mf
+    tests: [non_negative]
+  - name: brew_du_mf2to4
+    tests: [non_negative]
+  - name: brew_du_mf5p
+    tests: [non_negative]
+  - name: brew_emp
+    tests: [not_null, non_negative]
+  - name: brew_emp_ret
+    tests: [non_negative]
+  - name: brew_emp_off
+    tests: [non_negative]
+  - name: brew_emp_pub
+    tests: [non_negative]
+  - name: brew_emp_ind
+    tests: [non_negative]
+  - name: brew_emp_ag
+    tests: [non_negative]
+  - name: brew_emp_military
+    tests: [non_negative]
+  - name: brew_emp_retail_services
+    tests: [non_negative]
+  - name: brew_emp_restaurant
+    tests: [non_negative]
+  - name: brew_emp_accommodation
+    tests: [non_negative]
+  - name: brew_emp_arts_entertainment
+    tests: [non_negative]
+  - name: brew_emp_other_services
+    tests: [non_negative]
+  - name: brew_emp_office_services
+    tests: [non_negative]
+  - name: brew_emp_medical_services
+    tests: [non_negative]
+  - name: brew_emp_public_admin
+    tests: [non_negative]
+  - name: brew_emp_education
+    tests: [non_negative]
+  - name: brew_emp_manufacturing
+    tests: [non_negative]
+  - name: brew_emp_wholesale
+    tests: [non_negative]
+  - name: brew_emp_transport_warehousing
+    tests: [non_negative]
+  - name: brew_emp_utilities
+    tests: [non_negative]
+  - name: brew_emp_construction
+    tests: [non_negative]
+  - name: brew_emp_agriculture
+    tests: [non_negative]
+  - name: brew_emp_extraction
+    tests: [non_negative]
+  - name: brew_bldg_area_detsf_sl
+    tests: [non_negative]
+  - name: brew_bldg_area_detsf_ll
+    tests: [non_negative]
+  - name: brew_bldg_area_attsf
+    tests: [non_negative]
+  - name: brew_bldg_area_mf
+    tests: [non_negative]
+  - name: brew_bldg_area_retail_services
+    tests: [non_negative]
+  - name: brew_bldg_area_restaurant
+    tests: [non_negative]
+  - name: brew_bldg_area_accommodation
+    tests: [non_negative]
+  - name: brew_bldg_area_arts_entertainment
+    tests: [non_negative]
+  - name: brew_bldg_area_other_services
+    tests: [non_negative]
+  - name: brew_bldg_area_office_services
+    tests: [non_negative]
+  - name: brew_bldg_area_public_admin
+    tests: [non_negative]
+  - name: brew_bldg_area_education
+    tests: [non_negative]
+  - name: brew_bldg_area_medical_services
+    tests: [non_negative]
+  - name: brew_bldg_area_transport_warehousing
+    tests: [non_negative]
+  - name: brew_bldg_area_wholesale
+    tests: [non_negative]
+  - name: brew_residential_irrigated_area
+    tests: [non_negative]
+  - name: brew_commercial_irrigated_area
+    tests: [non_negative]
+  - name: brew_intersection_density
+    tests: [non_negative]
+  - name: brew_median_income
+    tests: [non_negative]
+  - name: brew_pct_minority
+    tests: [non_negative]
+  - name: brew_pct_college_educated
+    tests: [non_negative]
+  - name: brew_cost_burden_pct
+    tests: [non_negative]
+  - name: brew_rent_burden_pct
+    tests: [non_negative]
+  - name: corr_area_gross
+    tests: [column_between: {arguments: {min_value: -1, max_value: 1}}]
+  - name: corr_area_parcel
+    tests: [column_between: {arguments: {min_value: -1, max_value: 1}}]
+  - name: corr_area_parcel_res_detsf
+    tests: [column_between: {arguments: {min_value: -1, max_value: 1}}]
+  - name: corr_area_parcel_res_detsf_sl
+    tests: [column_between: {arguments: {min_value: -1, max_value: 1}}]
+  - name: corr_area_parcel_res_detsf_ll
+    tests: [column_between: {arguments: {min_value: -1, max_value: 1}}]
+  - name: corr_area_parcel_res_attsf
+    tests: [column_between: {arguments: {min_value: -1, max_value: 1}}]
+  - name: corr_area_parcel_res_mf
+    tests: [column_between: {arguments: {min_value: -1, max_value: 1}}]
+  - name: corr_area_parcel_res
+    tests: [column_between: {arguments: {min_value: -1, max_value: 1}}]
+  - name: corr_area_parcel_emp
+    tests: [column_between: {arguments: {min_value: -1, max_value: 1}}]
+  - name: corr_area_parcel_emp_ret
+    tests: [column_between: {arguments: {min_value: -1, max_value: 1}}]
+  - name: corr_area_parcel_emp_off
+    tests: [column_between: {arguments: {min_value: -1, max_value: 1}}]
+  - name: corr_area_parcel_emp_pub
+    tests: [column_between: {arguments: {min_value: -1, max_value: 1}}]
+  - name: corr_area_parcel_emp_ind
+    tests: [column_between: {arguments: {min_value: -1, max_value: 1}}]
+  - name: corr_area_parcel_emp_ag
+    tests: [column_between: {arguments: {min_value: -1, max_value: 1}}]
+  - name: corr_area_parcel_emp_military
+    tests: [column_between: {arguments: {min_value: -1, max_value: 1}}]
+  - name: corr_area_parcel_mixed_use
+    tests: [column_between: {arguments: {min_value: -1, max_value: 1}}]
+  - name: corr_area_parcel_no_use
+    tests: [column_between: {arguments: {min_value: -1, max_value: 1}}]
+  - name: corr_intersection_density
+    tests: [column_between: {arguments: {min_value: -1, max_value: 1}}]
+  - name: corr_pop
+    tests: [column_between: {arguments: {min_value: -1, max_value: 1}}]
+  - name: corr_hh
+    tests: [column_between: {arguments: {min_value: -1, max_value: 1}}]
+  - name: corr_du
+    tests: [column_between: {arguments: {min_value: -1, max_value: 1}}]
+  - name: corr_du_detsf
+    tests: [column_between: {arguments: {min_value: -1, max_value: 1}}]
+  - name: corr_du_detsf_sl
+    tests: [column_between: {arguments: {min_value: -1, max_value: 1}}]
+  - name: corr_du_detsf_ll
+    tests: [column_between: {arguments: {min_value: -1, max_value: 1}}]
+  - name: corr_du_attsf
+    tests: [column_between: {arguments: {min_value: -1, max_value: 1}}]
+  - name: corr_du_mf
+    tests: [column_between: {arguments: {min_value: -1, max_value: 1}}]
+  - name: corr_du_mf2to4
+    tests: [column_between: {arguments: {min_value: -1, max_value: 1}}]
+  - name: corr_du_mf5p
+    tests: [column_between: {arguments: {min_value: -1, max_value: 1}}]
+  - name: corr_emp
+    tests: [column_between: {arguments: {min_value: -1, max_value: 1}}]
+  - name: corr_emp_ret
+    tests: [column_between: {arguments: {min_value: -1, max_value: 1}}]
+  - name: corr_emp_retail_services
+    tests: [column_between: {arguments: {min_value: -1, max_value: 1}}]
+  - name: corr_emp_restaurant
+    tests: [column_between: {arguments: {min_value: -1, max_value: 1}}]
+  - name: corr_emp_accommodation
+    tests: [column_between: {arguments: {min_value: -1, max_value: 1}}]
+  - name: corr_emp_arts_entertainment
+    tests: [column_between: {arguments: {min_value: -1, max_value: 1}}]
+  - name: corr_emp_other_services
+    tests: [column_between: {arguments: {min_value: -1, max_value: 1}}]
+  - name: corr_emp_off
+    tests: [column_between: {arguments: {min_value: -1, max_value: 1}}]
+  - name: corr_emp_office_services
+    tests: [column_between: {arguments: {min_value: -1, max_value: 1}}]
+  - name: corr_emp_medical_services
+    tests: [column_between: {arguments: {min_value: -1, max_value: 1}}]
+  - name: corr_emp_pub
+    tests: [column_between: {arguments: {min_value: -1, max_value: 1}}]
+  - name: corr_emp_public_admin
+    tests: [column_between: {arguments: {min_value: -1, max_value: 1}}]
+  - name: corr_emp_education
+    tests: [column_between: {arguments: {min_value: -1, max_value: 1}}]
+  - name: corr_emp_ind
+    tests: [column_between: {arguments: {min_value: -1, max_value: 1}}]
+  - name: corr_emp_manufacturing
+    tests: [column_between: {arguments: {min_value: -1, max_value: 1}}]
+  - name: corr_emp_wholesale
+    tests: [column_between: {arguments: {min_value: -1, max_value: 1}}]
+  - name: corr_emp_transport_warehousing
+    tests: [column_between: {arguments: {min_value: -1, max_value: 1}}]
+  - name: corr_emp_utilities
+    tests: [column_between: {arguments: {min_value: -1, max_value: 1}}]
+  - name: corr_emp_construction
+    tests: [column_between: {arguments: {min_value: -1, max_value: 1}}]
+  - name: corr_emp_ag
+    tests: [column_between: {arguments: {min_value: -1, max_value: 1}}]
+  - name: corr_emp_agriculture
+    tests: [column_between: {arguments: {min_value: -1, max_value: 1}}]
+  - name: corr_emp_extraction
+    tests: [column_between: {arguments: {min_value: -1, max_value: 1}}]
+  - name: corr_emp_military
+    tests: [column_between: {arguments: {min_value: -1, max_value: 1}}]
+  - name: corr_bldg_area_detsf_sl
+    tests: [column_between: {arguments: {min_value: -1, max_value: 1}}]
+  - name: corr_bldg_area_detsf_ll
+    tests: [column_between: {arguments: {min_value: -1, max_value: 1}}]
+  - name: corr_bldg_area_attsf
+    tests: [column_between: {arguments: {min_value: -1, max_value: 1}}]
+  - name: corr_bldg_area_mf
+    tests: [column_between: {arguments: {min_value: -1, max_value: 1}}]
+  - name: corr_bldg_area_retail_services
+    tests: [column_between: {arguments: {min_value: -1, max_value: 1}}]
+  - name: corr_bldg_area_restaurant
+    tests: [column_between: {arguments: {min_value: -1, max_value: 1}}]
+  - name: corr_bldg_area_accommodation
+    tests: [column_between: {arguments: {min_value: -1, max_value: 1}}]
+  - name: corr_bldg_area_arts_entertainment
+    tests: [column_between: {arguments: {min_value: -1, max_value: 1}}]
+  - name: corr_bldg_area_other_services
+    tests: [column_between: {arguments: {min_value: -1, max_value: 1}}]
+  - name: corr_bldg_area_office_services
+    tests: [column_between: {arguments: {min_value: -1, max_value: 1}}]
+  - name: corr_bldg_area_public_admin
+    tests: [column_between: {arguments: {min_value: -1, max_value: 1}}]
+  - name: corr_bldg_area_education
+    tests: [column_between: {arguments: {min_value: -1, max_value: 1}}]
+  - name: corr_bldg_area_medical_services
+    tests: [column_between: {arguments: {min_value: -1, max_value: 1}}]
+  - name: corr_bldg_area_transport_warehousing
+    tests: [column_between: {arguments: {min_value: -1, max_value: 1}}]
+  - name: corr_bldg_area_wholesale
+    tests: [column_between: {arguments: {min_value: -1, max_value: 1}}]
+  - name: corr_residential_irrigated_area
+    tests: [column_between: {arguments: {min_value: -1, max_value: 1}}]
+  - name: corr_commercial_irrigated_area
+    tests: [column_between: {arguments: {min_value: -1, max_value: 1}}]
+  - name: median_income_wavg
+    tests: [non_negative]
+  - name: pct_minority_wavg
+    tests: [non_negative]
+  - name: pct_college_educated_wavg
+    tests: [non_negative]
+  - name: cost_burden_pct_wavg
+    tests: [non_negative]
+  - name: rent_burden_pct_wavg
+    tests: [non_negative]
+- name: sacog_parcel_shim
+  description: "Maps SACOG v1 parcel columns to brewgis-compatible names for comparison geometry/demographics processing."
+  columns:
+  - name: parcel_id
     tests:
     - not_null
+  - name: acres
+    tests:
+    - non_negative
+  - name: du
+    tests:
+    - non_negative
+  - name: emp
+    tests:
+    - non_negative
 - name: wac_block
   description: "LEHD LODES WAC employment by block group — CNS split into sub-sectors via CBP proportions, with SACOG calibration support."
   columns:
