@@ -21,7 +21,6 @@ from brewgis.workspace.dlt_pipelines import run_raster_pipeline
 from brewgis.workspace.models import DataImportRun
 from brewgis.workspace.models import Layer
 from brewgis.workspace.services.spatial_allocator import allocate_attributes
-from brewgis.workspace.services.stitcher import impute_area_proportional
 from brewgis.workspace.services.stitcher import impute_built_form_default
 from brewgis.workspace.services.stitcher import impute_constant
 from brewgis.workspace.symbology.auto import auto_generate_symbology
@@ -425,24 +424,6 @@ def run_column_stitching(  # type: ignore[no-untyped-def]
                 return {"success": False, "error": msg}
 
             result = impute_constant(schema, table, target_column, default_value)
-
-        elif strategy == "area_proportional":
-            if not source_table or not source_column:
-                msg = "Source table and column required for area_proportional strategy."
-                run.status = "failed"
-                run.error_log = msg
-                run.completed_at = timezone.now()
-                run.save(update_fields=["status", "error_log", "completed_at"])
-                return {"success": False, "error": msg}
-
-            result = impute_area_proportional(
-                schema,
-                table,
-                target_column,
-                schema,
-                source_table,
-                source_column,
-            )
 
         elif strategy == "built_form_default":
             result = impute_built_form_default(schema, table, target_column)

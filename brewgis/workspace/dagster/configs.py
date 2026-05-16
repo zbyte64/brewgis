@@ -135,3 +135,26 @@ class SacogReportConfig(Config):
 
     output_path: str = ""
     """File path for the generated markdown report. Empty = default planning/sacog_comparison_report.md."""
+
+
+class ImputeAreaProportionalConfig(Config):
+    """Config for the ``impute_area_proportional_asset``."""
+
+    source_schema: str
+    """Schema containing the source table."""
+    source_table: str
+    """Source table with values to allocate."""
+    source_column: str
+    """Numeric column on source to use for filling."""
+    target_schema: str
+    """Schema containing the target table."""
+    target_table: str
+    """Target table with missing values to fill."""
+    target_column: str
+    """Column to fill with imputed values."""
+    source_geom_col: str = "geom"
+    """Geometry column on source table."""
+    target_geom_col: str = "geom"
+    """Geometry column on target table."""
+    scenario_id: str
+    """Unique identifier for this run, used in the view alias."""

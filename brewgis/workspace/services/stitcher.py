@@ -13,8 +13,6 @@ from typing import Any
 
 import pandas as pd
 from django.db import connection
-from brewgis.workspace.services._db import get_engine, text
-
 
 logger = logging.getLogger(__name__)
 
@@ -51,81 +49,6 @@ def impute_constant(
     return {
         "rows_updated": rows_updated,
         "column": column,
-    }
-
-
-def impute_area_proportional(
-    schema: str,
-    target_table: str,
-    target_column: str,
-    source_schema: str,
-    source_table: str,
-    source_column: str,
-    source_geom_col: str = "geom",
-    target_geom_col: str = "geom",
-) -> dict[str, Any]:
-    """Fill NULL values in target column using area-weighted values from source.
-
-    For each target row with NULL in target_column, computes the area-weighted
-    sum of source_column from intersecting source features.
-
-    Args:
-        schema: Shared schema for source and target.
-        target_table: Target table with missing values.
-        target_column: Column to fill.
-        source_schema: Source layer schema.
-        source_table: Source layer table.
-        source_column: Numeric column on source to use for filling.
-        source_geom_col: Geometry column on source.
-        target_geom_col: Geometry column on target.
-
-    Returns:
-        Dict with keys: rows_updated, source_column, target_column.
-    """
-    engine = get_engine()
-
-    with engine.begin() as conn:
-        result = conn.execute(
-            text(f"""
-                UPDATE "{schema}"."{target_table}" AS t
-                SET "{target_column}" = sub.allocated_value
-                FROM (
-                    SELECT
-                        nt.ctid,
-                        SUM(
-                            COALESCE(s."{source_column}", 0)
-                            * public.intersection_acres(
-                                ST_Transform(s."{source_geom_col}", 3857),
-                                ST_Transform(nt."{target_geom_col}", 3857)
-                            )
-                            / NULLIF(public.acres(ST_Transform(s."{source_geom_col}", 3857)), 0)
-                        ) AS allocated_value
-                    FROM (
-                        SELECT ctid, "{target_geom_col}"
-                        FROM "{schema}"."{target_table}"
-                        WHERE "{target_column}" IS NULL
-                    ) nt
-                    JOIN "{source_schema}"."{source_table}" s
-                        ON ST_Intersects(
-                            ST_Transform(s."{source_geom_col}", 3857),
-                            ST_Transform(nt."{target_geom_col}", 3857)
-                        )
-                    WHERE public.acres(ST_Transform(s."{source_geom_col}", 3857)) > 0
-                      AND public.intersection_acres(
-                          ST_Transform(s."{source_geom_col}", 3857),
-                          ST_Transform(nt."{target_geom_col}", 3857)
-                      ) > 0
-                    GROUP BY nt.ctid
-                ) sub
-                WHERE t.ctid = sub.ctid
-            """)
-        )
-        rows_updated = result.rowcount
-
-    return {
-        "rows_updated": rows_updated,
-        "source_column": source_column,
-        "target_column": target_column,
     }
 
 

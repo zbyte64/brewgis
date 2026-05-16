@@ -66,6 +66,8 @@ models:
       +materialized: table
     sprawl_cost:
       +materialized: table
+    impute_area_proportional:
+      +materialized: view
     vmt_fee:
       +materialized: table
     comparison:

@@ -34,25 +34,6 @@ class TestImputeConstant:
         assert "dict" in str(return_hint).lower() or "dict" in str(return_hint)  # type: ignore[union-attr]
 
 
-class TestImputeAreaProportional:
-    """Tests for the area-proportional imputation strategy."""
-
-    def test_function_signature(self) -> None:
-        """Verify the function accepts expected parameters."""
-        import inspect
-
-        from brewgis.workspace.services.stitcher import impute_area_proportional
-
-        sig = inspect.signature(impute_area_proportional)
-        param_names = list(sig.parameters.keys())
-        assert "schema" in param_names
-        assert "target_table" in param_names
-        assert "target_column" in param_names
-        assert "source_schema" in param_names
-        assert "source_table" in param_names
-        assert "source_column" in param_names
-
-
 class TestImputeBuiltFormDefault:
     """Tests for the built-form default imputation strategy."""
 
@@ -75,12 +56,10 @@ class TestStitcherModule:
 
     def test_module_imports(self) -> None:
         """All public functions should be importable."""
-        from brewgis.workspace.services.stitcher import impute_area_proportional
         from brewgis.workspace.services.stitcher import impute_built_form_default
         from brewgis.workspace.services.stitcher import impute_constant
 
         assert callable(impute_constant)
-        assert callable(impute_area_proportional)
         assert callable(impute_built_form_default)
 
     def test_impute_constant_value_type(self) -> None:

@@ -118,21 +118,21 @@ repos:
         pass_filenames: false
         require_serial: true
   # Detect anchor tag artifacts accidentally left in code by agent editing tools
-- repo: local
-  hooks:
-    - id: no-anchor-tags
-      name: Check for anchor tag artifacts in code
-      description: Fails if any text file contains lines matching ^\\w\\w\\| (anchor tag artifacts from agent edit tools)
-      entry: bash -c '! grep -Pn "^\w\w\|" "$@"' detect-anchor-tags
-      language: system
-      types: [text]
-      exclude: >
-        (?x)^(
-          .*\.lock|
-          .*\.svg|
-          .*\.map|
-          .*\.min\.js
-        )$
+  - repo: local
+    hooks:
+      - id: no-anchor-tags
+        name: Check for anchor tag artifacts in code
+        description: Fails if any text file contains lines matching ^\\w\\w\\| (anchor tag artifacts from agent edit tools)
+        entry: bash -c '! grep -Pn "^\w\w\|" "$@"' detect-anchor-tags
+        language: system
+        types: [text]
+        exclude: >
+          (?x)^(
+            .*\.lock|
+            .*\.svg|
+            .*\.map|
+            .*\.min\.js
+          )$
 # sets up .pre-commit-ci.yaml to ensure pre-commit dependencies stay up to date
 ci:
   autoupdate_schedule: weekly

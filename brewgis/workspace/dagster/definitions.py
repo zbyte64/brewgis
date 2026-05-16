@@ -36,6 +36,9 @@ from brewgis.workspace.dagster.assets.dlt_assets import overpass_poi_assets
 from brewgis.workspace.dagster.assets.dlt_assets import raster_band_assets
 from brewgis.workspace.dagster.assets.dlt_assets import raster_metadata_assets
 from brewgis.workspace.dagster.assets.download_assets import fresno_demo_data
+from brewgis.workspace.dagster.assets.impute_assets import (
+    impute_area_proportional_asset,
+)
 from brewgis.workspace.dagster.assets.service_assets import assign_built_forms
 from brewgis.workspace.dagster.assets.service_assets import base_canvas_etl
 from brewgis.workspace.dagster.assets.service_assets import create_fresno_scenario
@@ -44,6 +47,7 @@ from brewgis.workspace.dagster.assets.service_assets import imputation
 from brewgis.workspace.dagster.assets.service_assets import onboard_geography
 from brewgis.workspace.dagster.assets.service_assets import spatial_allocation
 from brewgis.workspace.dagster.jobs.fresno_demo import fresno_demo_setup
+from brewgis.workspace.dagster.jobs.impute_jobs import impute_area_proportional_job
 from brewgis.workspace.dagster.resources.dbt_resource import DbtCliResource
 from brewgis.workspace.dagster.resources.postgres_resource import PostgresResource
 from brewgis.workspace.dagster.schedules import SCHEDULES
@@ -80,6 +84,7 @@ _ASSETS = [
     # service-layer ETL assets
     spatial_allocation,
     imputation,
+    impute_area_proportional_asset,
     base_canvas_etl,
     onboard_geography,
     fresno_constraints,
@@ -110,6 +115,7 @@ _ASSETS = [
 # ---------------------------------------------------------------------------
 
 _JOBS = [
+    impute_area_proportional_job,
     fresno_demo_setup,
 ]
 

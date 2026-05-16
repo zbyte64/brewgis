@@ -1128,3 +1128,15 @@ models:
     description: "Area-weighted sum of source column values allocated to this target row"
     tests:
     - not_null
+- name: impute_area_proportional
+  description: >
+    Area-proportional imputation view. For each row in the target table,
+    COALESCEs the existing value with an area-weighted allocation from
+    intersecting source features. Returns (target_ctid, imputed_value) for
+    every row — downstream consumers reference this view instead of an
+    UPDATE'd table.
+  columns:
+  - name: target_ctid
+    description: "Target row ctid for matching"
+  - name: imputed_value
+    description: "COALESCE of original value (if non-NULL) and area-weighted allocation"

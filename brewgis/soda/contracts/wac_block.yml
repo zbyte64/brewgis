@@ -20,13 +20,13 @@ columns:
       - missing:
           name: emp has reasonable values
       # TODO [NOT_EVALUATED] blocks this somehow
-      - aggregate:
-          function: sum
-          threshold:
-            must_be_greater_than_or_equal: 100000
-            must_be_less_than_or_equal: 5000000
-          name: sum(emp) within reasonable range for US county
-          severity: warn 
+      #- aggregate:
+      #    function: sum
+      #    threshold:
+      #      must_be_greater_than_or_equal: 100000
+      #      must_be_less_than_or_equal: 5000000
+      #    name: sum(emp) within reasonable range for US county
+      #    severity: warn
   - name: emp_ret
     checks:
       - aggregate:

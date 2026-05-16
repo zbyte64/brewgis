@@ -13,6 +13,7 @@ from django.views.generic.edit import FormView
 
 from brewgis.workspace.models import DataImportRun
 from brewgis.workspace.models import Workspace
+from brewgis.workspace.services.dagster_client import submit_impute_run
 from brewgis.workspace.tasks import run_column_stitching
 
 
@@ -100,16 +101,31 @@ class StitchView(FormView):
             status="pending",
         )
 
-        run_column_stitching.delay(
-            run_pk=run.pk,
-            schema=workspace.db_schema,
-            table=data["table"],
-            target_column=data["target_column"],
-            strategy=data["strategy"],
-            default_value=data.get("default_value"),
-            source_table=data.get("source_table"),
-            source_column=data.get("source_column"),
-        )
+        if data["strategy"] == "area_proportional":
+            dagster_run_id = submit_impute_run(
+                {
+                    "source_schema": workspace.db_schema,
+                    "source_table": data["source_table"],
+                    "source_column": data["source_column"],
+                    "target_schema": workspace.db_schema,
+                    "target_table": data["table"],
+                    "target_column": data["target_column"],
+                    "scenario_id": f"stitch_{run.pk}",
+                }
+            )
+            run.params["dagster_run_id"] = dagster_run_id
+            run.save(update_fields=["params"])
+        else:
+            run_column_stitching.delay(
+                run_pk=run.pk,
+                schema=workspace.db_schema,
+                table=data["table"],
+                target_column=data["target_column"],
+                strategy=data["strategy"],
+                default_value=data.get("default_value"),
+                source_table=data.get("source_table"),
+                source_column=data.get("source_column"),
+            )
 
         if self.request.htmx:  # type: ignore[attr-defined]
             html = render_to_string(
