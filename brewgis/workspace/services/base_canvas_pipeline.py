@@ -2,24 +2,12 @@
 # long SQL strings are intentional
 """Base Canvas Pipeline — 11-step ETL as PostGIS SQL operations.
 
-Replaces the pandas-driven ``BaseCanvasETL`` class with pure SQL
-operations executed directly against PostGIS.  Edge data sources
-(Census ACS, LEHD, NLCD, OSM) are loaded into staging tables by
-their respective fetchers; this pipeline transforms them into the
-``public.base_canvas`` table using area-weighted spatial allocation,
-calibration lookups, COALESCE defaults, and column reconciliation.
+**DEPRECATED**: Steps 3-11 have been ported to dbt models
+(``brewgis/dbt_project/models/base_canvas_*.sql``). Only steps 1-2
+(DDL + ingestion) are still used for loading parcels into staging tables.
 
-Usage::
-
-    from brewgis.workspace.services.base_canvas_pipeline import run_pipeline
-
-    result = run_pipeline(
-        source_table="staging.parcels",
-        target_table="public.base_canvas",
-    )
-
-The pipeline accepts the same call signature as the old
-``BaseCanvasETL.run()`` so callers can be migrated one by one.
+All data transformation logic should be implemented in dbt models,
+not Python SQL. This module is kept for backward compatibility.
 """
 
 from __future__ import annotations
@@ -309,9 +297,7 @@ def run_pipeline(
         _log("[7/11] Classifying land use")
         _classify_land_use(target_table)
         schema_name, table_name = target_table.split(".")
-        result = validate_land_use_classification(
-            schema=schema_name, table=table_name
-        )
+        result = validate_land_use_classification(schema=schema_name, table=table_name)
         if not result.get("success", False):
             raise RuntimeError(
                 "Land use classification validation failed: "

@@ -1,12 +1,16 @@
 {#
-    Base Canvas Geometry — first ETL step
+    Base Canvas Geometry — first ETL step.
 
-    Reads raw parcel data from the test_parcels seed, casts WKT geometry to
-    PostGIS geometry (EPSG:4326), computes area columns from Web Mercator
-    projection, and passes through demographic and classification columns.
+    Reads raw parcel data from the configured source table (via dbt vars),
+    casts geometry to PostGIS geometry (EPSG:4326), computes area columns
+    from the configured projected SRID, and passes through source columns.
+
+    Source table is resolved via ``source('brewgis', 'parcels')`` which uses
+    the ``parcel_table`` var.  In the SACOG comparison context, this resolves
+    to ``public.sacog_comparison_parcels``.
 
     Inputs:
-        test_parcels (seed): Raw parcel data with WKT geometry.
+        {{ source('brewgis', 'parcels') }} (dynamic — configured via dbt vars)
 
     Output columns:
         parcel_id, geometry, county, land_development_category, built_form_key,
@@ -15,15 +19,18 @@
 
     Materialized as: view
 #}
-{{ config(materialized='view') }}
+{{ config(materialized=var('base_canvas_materialized', 'view')) }}
 
 {%- set area_srid = var('projected_srid', 3857) -%}
-
 
 WITH parcel_geom AS (
     SELECT
         parcel_id,
-        ST_GeomFromText(geometry, 4326) AS geometry,
+        {% if var('parcel_geometry_type', 'wkt') == 'geometry' %}
+            geometry
+        {% else %}
+            ST_GeomFromText(geometry, 4326) AS geometry
+        {% endif %},
         county,
         COALESCE(NULLIF(land_development_category, ''), '') AS land_development_category,
         built_form_key,
@@ -32,7 +39,7 @@ WITH parcel_geom AS (
         hh,
         du,
         emp
-    FROM {{ ref('test_parcels') }}
+    FROM {{ source('brewgis', 'parcels') }}
 ),
 
 parcel_area AS (

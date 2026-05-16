@@ -20,7 +20,7 @@ clean-targets:
 
 models:
   brewgis:
-    +materialized: view
+    +materialized: "{{ var('base_canvas_materialized', 'view') }}"
     +schema: "{{ var('target_schema', 'public') }}"
     trip_distribution:
       +materialized: table

@@ -1,0 +1,41 @@
+land_use_label,category
+Low Density Detached Residential,urban
+Medium Density Detached Residential,urban
+Medium-High Density Detached Residential,urban
+Medium Density Attached Residential,urban
+Medium-High Density Attached Residential,urban
+High Density Attached Residential,urban
+Very High Density Attached Residential,urban
+Mobile Home Park,urban
+Urban Attached Residential,urban
+Urban Mid-Rise Residential,urban
+Blank Place Type,urban
+Rural Residential,undeveloped
+Very Low Density Detached Residential,undeveloped
+Community/Neighborhood Retail,industrial
+Community/Neighborhood Commercial,industrial
+Community/Neighborhood Commercial/Office,industrial
+Regional Retail,industrial
+Moderate-Intensity Office,industrial
+High-Intensity Office,industrial
+CBD Office,industrial
+Light Industrial,industrial
+Heavy Industrial,industrial
+Light Industrial-Office,industrial
+Medical Facility,industrial
+Hotel,industrial
+Public/Quasi-Public,industrial
+Civic/Institution,industrial
+K-12 School,industrial
+Colleges and Universities,industrial
+Airport,industrial
+Agricultural Processing/Retail Employment,industrial
+Residential/Retail Mixed Use Low,mixed_use
+Residential/Retail Mixed Use High,mixed_use
+Agriculture,undeveloped
+Farm Home,undeveloped
+Park and/or Open Space,undeveloped
+Parking Lot,undeveloped
+Parking Structure,undeveloped
+Water,undeveloped
+Road,undeveloped

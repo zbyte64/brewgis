@@ -2,18 +2,19 @@
     SACOG BrewGIS Totals — aggregate sums from the brewgis base canvas.
 
     Computes COALESCE(SUM(col), 0) for every numeric BaseCanvasSchema column
-    in the brewgis public.base_canvas table. Column list matches the v3 column
-    names from BaseCanvasSchema.
+    in the brewgis base_canvas_reconciled output. Column list matches the v3
+    column names from BaseCanvasSchema.
 
-    Vars:
-        comparison_brewgis_table: Schema-qualified brewgis table name.
-                                 Default: "public.base_canvas"
+    Reads from ``ref('base_canvas_reconciled')`` (the final dbt ETL output),
+    not a raw table — this ensures correct dependency chaining.
 
     Materialized as: table (persisted for report generation)
 #}
 {{ config(materialized='table') }}
 
-{% set brew_table = var('comparison_brewgis_table', 'public.base_canvas') %}
+{% set brew_table = ref('base_canvas_reconciled') %}
+
+
 
 WITH totals AS (
     SELECT

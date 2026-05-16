@@ -45,11 +45,13 @@ checks:
       check: "> 0"
       name: Table has rows
   - metric:
+      qualifier: res_area_frac
       expression: SUM(area_parcel_res) / GREATEST(NULLIF(SUM(area_gross), 0), 1e-10)
       threshold:
         must_be_less_than: 1.0
       name: residential area fraction < 1.0
   - metric:
+      qualifier: non_res_area_frac
       expression: SUM(area_parcel_emp) + SUM(area_parcel_no_use)
       threshold:
         must_be_greater_than: 0

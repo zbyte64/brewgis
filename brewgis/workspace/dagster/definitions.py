@@ -46,6 +46,7 @@ from brewgis.workspace.dagster.assets.service_assets import fresno_constraints
 from brewgis.workspace.dagster.assets.service_assets import imputation
 from brewgis.workspace.dagster.assets.service_assets import onboard_geography
 from brewgis.workspace.dagster.assets.service_assets import spatial_allocation
+from brewgis.workspace.dagster.jobs.comparison_jobs import sacog_comparison
 from brewgis.workspace.dagster.jobs.fresno_demo import fresno_demo_setup
 from brewgis.workspace.dagster.jobs.impute_jobs import impute_area_proportional_job
 from brewgis.workspace.dagster.resources.dbt_resource import DbtCliResource
@@ -117,6 +118,7 @@ _ASSETS = [
 _JOBS = [
     impute_area_proportional_job,
     fresno_demo_setup,
+    sacog_comparison,
 ]
 
 # ---------------------------------------------------------------------------

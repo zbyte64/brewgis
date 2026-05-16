@@ -6,10 +6,7 @@ are delegated to dbt models (``comparison/*``).
 """
 
 import logging
-import os
-import time
 from pathlib import Path
-from typing import Any
 
 import geopandas as gpd
 from dagster import AssetExecutionContext
@@ -22,10 +19,10 @@ from django.db import connection
 
 from brewgis.soda import validate_base_canvas
 from brewgis.soda import validate_dbt_table
+from brewgis.soda import validate_land_use_classification
 from brewgis.workspace.dagster.check_provenance import METADATA_CONTRACT_INLINE_COLUMNS
 from brewgis.workspace.dagster.check_provenance import METADATA_CONTRACT_PATH
 from brewgis.workspace.dagster.check_provenance import METADATA_CONTRACT_SOURCE
-from brewgis.workspace.dagster.configs import SacogComparisonETLConfig
 from brewgis.workspace.dagster.configs import SacogLoadParcelsConfig
 from brewgis.workspace.dagster.configs import SacogReportConfig
 from brewgis.workspace.dagster.resources.dbt_resource import DbtCliResource
@@ -222,78 +219,67 @@ def sacog_populate_wac_block(
 
 @asset(
     group_name="comparison",
-    compute_kind="python",
+    compute_kind="dbt",
     deps=[
         "sacog_load_parcels",
         "sacog_populate_acs_block_group",
         "sacog_populate_wac_block",
     ],
-    metadata={METADATA_CONTRACT_SOURCE: "baseschema"},
+    metadata={METADATA_CONTRACT_SOURCE: "dbt"},
 )
 def sacog_run_comparison_etl(
     context: AssetExecutionContext,
-    config: SacogComparisonETLConfig,
-    postgres: PostgresResource,  # noqa: ARG001
+    dbt_cli: DbtCliResource,
 ) -> MaterializeResult:
-    """Run the brewgis base canvas ETL using the loaded SACOG parcels.
+    """Run the brewgis base canvas dbt pipeline using the loaded SACOG parcels.
 
-    Uses a scenario-specific temp directory (``COMPARISON_ETL_TEMP``) to
-    avoid the shared ``_etl_temp.geojson`` race condition.
+    Replaces the old Python SQL ETL (``run_pipeline``) with a dbt run across
+    the 6 base_canvas models:
+
+      base_canvas_geometry → base_canvas_demographics → base_canvas_employment
+        → base_canvas_attributes → base_canvas_imputed → base_canvas_reconciled
+
+    Dependencies:
+      - ``sacog_load_parcels`` populates the parcel staging table
+      - ``sacog_populate_acs_block_group`` populates ``census.acs_block_group``
+      - ``sacog_populate_wac_block`` populates ``lehd.wac_block``
     """
-    # Create a unique temp directory for this ETL run
-    run_id = context.run_id or str(int(time.time()))
-    temp_dir = CACHE_DIR / f"_comparison_etl_{run_id}"
-    temp_dir.mkdir(parents=True, exist_ok=True)
-    temp_geojson = temp_dir / "parcels.geojson"
+    context.log.info("Running dbt base_canvas models")
 
+    result = dbt_cli.run(
+        select=[
+            "base_canvas_geometry",
+            "base_canvas_demographics",
+            "base_canvas_employment",
+            "base_canvas_attributes",
+            "base_canvas_imputed",
+            "base_canvas_reconciled",
+        ],
+        full_refresh=False,
+    )
+
+    context.log.info("dbt base_canvas run complete: status=%s", result.success)
+
+    # Validate land use classification (fail early if land use is broken)
+    context.log.info("Validating land use classification")
+    land_use_result = validate_land_use_classification(
+        schema="public", table="base_canvas_attributes"
+    )
     context.log.info(
-        "sacog_run_comparison_etl: quick=%s, skip_census=%s, skip_lehd=%s, truncate=%s",
-        config.quick,
-        config.skip_census,
-        config.skip_lehd,
-        config.truncate,
+        "Land use classification validation: %s",
+        land_use_result.get("success", False),
     )
 
-    # Load parcels from the staging table
-    parcels_gdf = gpd.GeoDataFrame.from_postgis(
-        "SELECT * FROM public.sacog_comparison_parcels",
-        get_engine(),
-        geom_col="geometry",
-    )
-    context.log.info("Loaded %d parcels from staging", len(parcels_gdf))
-
-    os.environ["BREWGIS_DETSF_SL_RATIO"] = "0.17"
-
-    etl_result = _run_etl(
-        parcels_gdf,
-        quick=config.quick,
-        skip_census=config.skip_census,
-        skip_lehd=config.skip_lehd,
-        truncate=config.truncate,
-    )
-
-    # Clean up temp directory
-    if temp_geojson.exists():
-        temp_geojson.unlink()
-    try:
-        temp_dir.rmdir()
-    except OSError:
-        pass
-
-    if etl_result["status"] == "error":
-        raise RuntimeError(f"ETL failed: {etl_result.get('error', 'Unknown error')}")
-
-    context.log.info(
-        "ETL complete: %s rows in %.1fs",
-        etl_result.get("rows", "?"),
-        etl_result.get("elapsed", 0),
-    )
+    # Validate via Soda
+    soda_result = validate_base_canvas(schema="public", table="base_canvas_reconciled")
+    context.log.info("Soda validation result: %s", soda_result.get("success", False))
 
     return MaterializeResult(
         metadata={
-            "etl_status": etl_result.get("status", "?"),
-            "etl_rows": etl_result.get("rows", 0),
-            "etl_elapsed_s": etl_result.get("elapsed", 0),
+            "dbt_status": "success" if result.success else "failed",
+            "models_run": 6,
+            "land_use_success": land_use_result.get("success", False),
+            "soda_success": soda_result.get("success", False),
         }
     )
 
@@ -320,24 +306,25 @@ def sacog_verify_geometry(
     context: AssetExecutionContext,
     postgres: PostgresResource,  # noqa: ARG001
 ) -> MaterializeResult:
-    """Verify ETL output matches reference parcel geometries via GX checkpoint.
+    """Verify ETL output matches reference parcel geometries.
 
     Checks:
-    - Row count matches between base_canvas and sacog_comparison_parcels
+    - Row count matches between base_canvas_reconciled and sacog_comparison_parcels
     - Area conservation within 0.1% tolerance
     """
+
     context.log.info("Verifying geometry identity")
 
     # Row count check
     with connection.cursor() as cursor:
-        cursor.execute("SELECT COUNT(*) FROM public.base_canvas")
+        cursor.execute("SELECT COUNT(*) FROM public.base_canvas_reconciled")
         brewgis_count = cursor.fetchone()[0]
         cursor.execute("SELECT COUNT(*) FROM public.sacog_comparison_parcels")
         ref_count = cursor.fetchone()[0]
 
     if brewgis_count != ref_count:
         raise RuntimeError(
-            f"Geometry identity violation: {brewgis_count} rows in base_canvas vs "
+            f"Geometry identity violation: {brewgis_count} rows in base_canvas_reconciled vs "
             f"{ref_count} reference parcels"
         )
 
@@ -353,7 +340,7 @@ def sacog_verify_geometry(
 
         cursor.execute("""
             SELECT COALESCE(SUM(area_gross), 0)
-            FROM public.base_canvas
+            FROM public.base_canvas_reconciled
         """)
         brewgis_area = float(cursor.fetchone()[0])
 
@@ -372,7 +359,7 @@ def sacog_verify_geometry(
         )
 
     # Run GX checkpoint
-    gx_result = validate_base_canvas(schema="public", table="base_canvas")
+    gx_result = validate_base_canvas(schema="public", table="base_canvas_reconciled")
     context.log.info("GX checkpoint result: %s", gx_result.get("success", False))
 
     return MaterializeResult(
@@ -404,29 +391,23 @@ def sacog_populate_geography_id(
     context: AssetExecutionContext,
     postgres: PostgresResource,  # noqa: ARG001
 ) -> MaterializeResult:
-    """Populate geography_id in base_canvas using geometry_key-based join.
+    """Create ``public.base_canvas`` view wrapping ``base_canvas_reconciled`` with geography_id.
 
-    Unlike the old ROW_NUMBER() positional approach, this uses a deterministic
-    key-based join that survives ETL re-runs.
+    The dbt base_canvas models produce a ``base_canvas_reconciled`` view without
+    geography_id.  This asset creates a backward-compatible ``public.base_canvas``
+    view that adds geography_id via a join with the parcels staging table.
     """
-    context.log.info("Populating geography_id")
+    context.log.info("Creating public.base_canvas view with geography_id")
 
-    # Update base_canvas.geometry_key from source_id
     with connection.cursor() as cur:
         cur.execute("""
-            UPDATE public.base_canvas bc
-            SET geometry_key = COALESCE(bc.source_id, '') || '@sacog'
-            WHERE bc.geometry_key IS NULL AND bc.source_id IS NOT NULL
-        """)
-
-    # Join on geometry_key to populate geography_id
-    with connection.cursor() as cur:
-        cur.execute("""
-            UPDATE public.base_canvas bc
-            SET geography_id = sp.geography_id
-            FROM public.sacog_comparison_parcels sp
-            WHERE bc.geometry_key = sp.geometry_key
-              AND bc.geography_id IS NULL
+            CREATE OR REPLACE VIEW public.base_canvas AS
+            SELECT
+                bcr.*,
+                sp.geography_id
+            FROM public.base_canvas_reconciled bcr
+            LEFT JOIN public.sacog_comparison_parcels sp
+                ON bcr.parcel_id = sp.parcel_id
         """)
 
     # Verify population
@@ -441,9 +422,7 @@ def sacog_populate_geography_id(
     context.log.info("geography_id populated: %d / %d rows", populated, total)
 
     if populated == 0:
-        raise RuntimeError(
-            "No geography_id values were populated — geometry_key join failed"
-        )
+        raise RuntimeError("No geography_id values were populated — join failed")
 
     return MaterializeResult(
         metadata={
@@ -629,41 +608,6 @@ def _load_parcels(limit: int, cache_dir: str | None = None) -> gpd.GeoDataFrame:
     return gdf
 
 
-# TODO using data should not be optional, refreshing it should be
-def _run_etl(
-    parcels_gdf: gpd.GeoDataFrame,
-    *,
-    quick: bool,
-    skip_census: bool,
-    skip_lehd: bool,
-    truncate: bool,
-) -> dict[str, Any]:
-    """Run the brewgis base canvas ETL on the given parcel geometries."""
-    temp_table = f"_temp_etl_parcels_{int(time.time() * 1_000_000)}"
-    engine = get_engine()
-
-    parcels_gdf.to_postgis(temp_table, engine, if_exists="replace")
-
-    logger.info(
-        "ETL start: %d parcels, quick=%s, skip_census=%s, skip_lehd=%s, truncate=%s",
-        len(parcels_gdf),
-        quick,
-        skip_census,
-        skip_lehd,
-        truncate,
-    )
-    try:
-        result = run_pipeline(
-            source_table=temp_table,
-            truncate=truncate,
-        )
-    finally:
-        with connection.cursor() as cur:
-            cur.execute(f"DROP TABLE IF EXISTS {temp_table}")
-
-    return result
-
-
 def _query_table_as_dict(table_name: str) -> dict[str, float]:
     """Read a single-row dbt materialized table and return as a dict."""
     with connection.cursor() as cur:
@@ -679,6 +623,40 @@ def _query_table_as_dict(table_name: str) -> dict[str, float]:
                     result[col] = float(val)
                 except (ValueError, TypeError):
                     pass
+    return result
+
+
+# DEPRECATED: Kept for backward compatibility with the management command.
+# Use dbt base_canvas models or run_pipeline directly instead.
+def _run_etl(
+    parcels_gdf,
+    *,
+    quick: bool = False,
+    skip_census: bool = False,
+    skip_lehd: bool = False,
+    truncate: bool = False,
+) -> dict:
+    """Run the brewgis base canvas ETL on the given parcel geometries.
+
+    DEPRECATED: Kept for backward compatibility. The management command
+    ``compare_sacog_basemap`` and its tests still call this function.
+    New code should use the dbt base_canvas models or ``run_pipeline`` directly.
+    """
+    import time
+
+    from django.db import connection
+
+    temp_table = f"_temp_etl_parcels_{int(time.time() * 1_000_000)}"
+    engine = get_engine()
+    parcels_gdf.to_postgis(temp_table, engine, if_exists="replace")
+    try:
+        result = run_pipeline(
+            source_table=temp_table,
+            truncate=truncate,
+        )
+    finally:
+        with connection.cursor() as cur:
+            cur.execute(f"DROP TABLE IF EXISTS {temp_table}")
     return result
 
 

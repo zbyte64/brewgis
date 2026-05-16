@@ -1,18 +1,21 @@
 """Compare brewgis base canvas vs SACOG v1 reference — per-column report with aggregate + correlation stats.
 
-Creates a base canvas via ``BaseCanvasETL`` using the same parcel geometries as
-the reference ``sac_cnty_region_base_canvas``, then produces a structured
-comparison report at ``planning/sacog_comparison_report.md``.
+The pipeline now uses dbt models for the ETL and comparison stages,
+with Soda validation checkpoints to catch data quality issues early.
 
-Delegates to the refactored ``comparison_assets`` module for the actual work.
+**DEPRECATED**: Use the Dagster ``sacog_comparison`` job instead:
+
+    dagster job run sacog_comparison
+
+This management command is kept for backward compatibility. New development
+should use the Dagster pipeline (``brewgis/workspace/dagster/jobs/comparison_jobs.py``).
+
 """
 
 from __future__ import annotations
 
 import logging
 from pathlib import Path
-
-# Functions imported lazily in handle() — kept here for TYPE_CHECKING
 from typing import Any
 
 from django.conf import settings
@@ -69,25 +72,33 @@ class Command(BaseCommand):
             "--truncate",
             action="store_true",
             default=False,
-            help="Truncate existing base_canvas before inserting",
+            help="Ignored in dbt mode — kept for backward compatibility",
         )
 
     def handle(self, **options: Any) -> None:
         # Lazy imports — avoid loading dagster assets at module import time
         # which conflicts with test stubs for pandas/geopandas.
+        from brewgis.soda import validate_base_canvas
+        from brewgis.soda import validate_land_use_classification
+        from brewgis.workspace.analysis.dbt_runner import run_dbt_local
         from brewgis.workspace.dagster.assets.comparison_assets import REPORT_PATH
+        from brewgis.workspace.dagster.assets.comparison_assets import (
+            _convert_reference_totals,
+        )
         from brewgis.workspace.dagster.assets.comparison_assets import (
             _generate_report_markdown,
         )
         from brewgis.workspace.dagster.assets.comparison_assets import _load_parcels
-        from brewgis.workspace.dagster.assets.comparison_assets import _run_etl
+        from brewgis.workspace.dagster.assets.comparison_assets import (
+            _query_table_as_dict,
+        )
+        from brewgis.workspace.services._db import get_engine
 
         quick = bool(options.get("quick", False))
         limit = int(options.get("limit", 0))
         skip_data_fetch = bool(options.get("skip_data_fetch", False))
         skip_census = skip_data_fetch or bool(options.get("skip_census", False))
         skip_lehd = skip_data_fetch or bool(options.get("skip_lehd", False))
-        truncate = bool(options.get("truncate", False))
 
         self.stdout.write("\n" + "=" * 70)
         self.stdout.write("  SACOG Base Canvas Comparison: BrewGIS vs v1 Reference")
@@ -105,15 +116,22 @@ class Command(BaseCommand):
                 )
             )
 
-        # ── Phase 1: Load parcels from reference ──────────────────────
+        # ── Phase 1: Load parcels into dbt source table ────────────────
         self.stdout.write("\n── Phase 1: Loading reference parcel geometries ──")
         parcels_gdf = _load_parcels(limit)
         self.stdout.write(f"  Loaded {len(parcels_gdf):,} parcels")
-        parcel_ids = (
-            list(parcels_gdf["geography_id"])
-            if "geography_id" in parcels_gdf.columns
-            else []
+
+        # Write to dbt source table (sacog_comparison_parcels)
+        parcels_gdf.to_postgis(
+            "sacog_comparison_parcels",
+            get_engine(),
+            schema="public",
+            if_exists="replace",
+            index=False,
+            dtype={"geometry": "geometry(MultiPolygon, 4326)"},
         )
+
+        self.stdout.write("  Written to public.sacog_comparison_parcels")
 
         # Populate TIGER/Line block group polygons (needed by ACS reader)
         if not skip_census:
@@ -177,58 +195,78 @@ class Command(BaseCommand):
 
             lehd_wac_count = _populate_wac_block(STATE_FIPS, COUNTY_FIPS, 2021)
             self.stdout.write(f"  lehd.wac_block populated: {lehd_wac_count:,} rows")
-        # ── Phase 2: Run brewgis ETL ───────────────────────────────────
-        self.stdout.write("\n── Phase 2: Running brewgis ETL ──")
 
-        etl_result = _run_etl(
-            parcels_gdf,
-            quick=quick,
-            skip_census=skip_census,
-            skip_lehd=skip_lehd,
-            truncate=truncate,
+        # ── Phase 2: Run dbt base_canvas models ────────────────────────
+        self.stdout.write("\n── Phase 2: Running dbt base_canvas models ──")
+        dbt_vars: dict[str, Any] = {
+            "parcel_table": "sacog_comparison_parcels",
+            "base_canvas_materialized": "table",
+        }
+        result = run_dbt_local(
+            select=[
+                "base_canvas_geometry",
+                "base_canvas_demographics",
+                "base_canvas_employment",
+                "base_canvas_attributes",
+                "base_canvas_imputed",
+                "base_canvas_reconciled",
+            ],
+            vars_=dbt_vars,
         )
+        if not result.success:
+            raise CommandError(f"dbt base_canvas run failed: {result.error}")
+        self.stdout.write(self.style.SUCCESS("  dbt base_canvas models complete"))
 
-        for msg in etl_result.get("messages", []):
-            self.stdout.write(f"  {msg}")
-
-        if etl_result["status"] == "error":
-            raise CommandError(
-                f"ETL failed: {etl_result.get('error', 'Unknown error')}"
-            )
-
-        self.stdout.write(
-            self.style.SUCCESS(
-                f"\n  ETL complete: {etl_result['rows']:,} rows in {etl_result['elapsed']:.1f}s"
-            )
+        # ── Phase 2.5: Validate land use classification ────────────────
+        self.stdout.write("\n── Phase 2.5: Validating land use classification ──")
+        soda_result = validate_land_use_classification(
+            schema="public", table="base_canvas_attributes"
         )
+        if not soda_result.get("success", False):
+            self.stdout.write(
+                self.style.WARNING("  Land use classification validation issues found")
+            )
+        else:
+            self.stdout.write("  Land use classification validated ✓")
 
-        # ── Phase 3: Query reference values ────────────────────────────
-        self.stdout.write("\n── Phase 3: Querying reference base canvas ──")
-        ref_totals = self._query_reference_totals(parcel_ids)
+        # ── Phase 3: Run dbt comparison models ─────────────────────────
+        self.stdout.write("\n── Phase 3: Running dbt comparison models ──")
+        result = run_dbt_local(select=["comparison.*"], vars_=dbt_vars)
+        if not result.success:
+            raise CommandError(f"dbt comparison run failed: {result.error}")
+        self.stdout.write(self.style.SUCCESS("  dbt comparison models complete"))
+
+        # ── Phase 3.5: Validate base canvas ────────────────────────────
+        self.stdout.write("\n── Phase 3.5: Validating base canvas ──")
+        soda_result = validate_base_canvas(
+            schema="public", table="base_canvas_reconciled"
+        )
+        if not soda_result.get("success", False):
+            self.stdout.write(
+                self.style.WARNING("  Base canvas validation issues found")
+            )
+        else:
+            self.stdout.write("  Base canvas validated ✓")
+
+        # ── Phase 4: Read results from dbt-materialized tables ─────────
+        self.stdout.write("\n── Phase 4: Reading comparison data from dbt ──")
+        summary = _query_table_as_dict("sacog_summary")
+
+        # Split summary columns by prefix
+        ref_totals = {k[4:]: v for k, v in summary.items() if k.startswith("ref_")}
+        brew_totals = {k[5:]: v for k, v in summary.items() if k.startswith("brew_")}
+        correlations = {k[5:]: v for k, v in summary.items() if k.startswith("corr_")}
+        weighted_means = {k: v for k, v in summary.items() if k.endswith("_wavg")}
+
+        _convert_reference_totals(ref_totals)
+
         if ref_totals:
             self._print_totals(ref_totals, "Reference v1")
-
-        # ── Phase 4: Query brewgis values ──────────────────────────────
-        self.stdout.write("\n── Phase 4: Querying brewgis base canvas ──")
-        brew_totals = self._query_brewgis_totals()
         if brew_totals:
             self._print_totals(brew_totals, "BrewGIS")
 
-        # ── Phase 4.5: Populate geography_id ───────────────────────────
-        self.stdout.write("\n── Phase 4.5: Populating geography_id in base_canvas ──")
-        if parcel_ids:
-            self._populate_geography_id(parcel_ids)
-        else:
-            self.stdout.write("  Skipping (no geography_ids available)")
-
-        # ── Phase 4.75: Assert geometry identity ────────────────────────
-        self.stdout.write("\n── Phase 4.75: Asserting geometry identity ──")
-        self._assert_geometry_identity(parcels_gdf)
-        self.stdout.write("  Geometry identity verified ✅")
         # ── Phase 5: Generate comparison report ────────────────────────
         self.stdout.write("\n── Phase 5: Generating comparison report ──")
-        correlations = self._compute_correlations()
-        weighted_means = self._query_weighted_means()
         _generate_report_markdown(
             ref_totals,
             brew_totals,
@@ -250,88 +288,6 @@ class Command(BaseCommand):
     # Internal helpers
     # ═══════════════════════════════════════════════════════════════════
 
-    def _query_reference_totals(
-        self, geography_ids: list[int] | None = None
-    ) -> dict[str, float]:
-        """Query aggregate values from the v1 reference base canvas.
-
-        Returns v3-named columns (acres_* → area_*) for compatibility with
-        the report generator.
-        """
-
-        ref_table = "sac_cnty_region_base_canvas"
-        totals = self._query_totals(ref_table, geography_ids)
-
-        # Convert sqft → acres for irrigation columns
-        for col in ["residential_irrigated_sqft", "commercial_irrigated_sqft"]:
-            if col in totals:
-                totals[col.replace("_sqft", "_area")] = totals[col] / 43560.0
-
-        # Add area_* aliases for acres_* columns
-        for k in list(totals.keys()):
-            if k.startswith("acres_"):
-                totals[k.replace("acres_", "area_", 1)] = totals[k]
-
-        return totals
-
-    def _query_brewgis_totals(self) -> dict[str, float]:
-        """Query aggregate values from the brewgis base canvas."""
-        from django.db import connection
-
-        with connection.cursor() as cur:
-            cur.execute(
-                "SELECT EXISTS (SELECT FROM information_schema.tables "
-                "WHERE table_schema = 'public' AND table_name = 'base_canvas')"
-            )
-            if not cur.fetchone()[0]:
-                return {}
-            cur.execute("SELECT count(*) FROM public.base_canvas")
-            count = cur.fetchone()[0]
-            if count == 0:
-                return {}
-
-        return self._query_totals("public.base_canvas")
-
-    def _query_totals(
-        self, table: str, geography_ids: list[int] | None = None
-    ) -> dict[str, float]:
-        """Query aggregate SUM for all numeric columns in a table."""
-        from django.db import connection
-
-        with connection.cursor() as cur:
-            parts = table.split(".") if "." in table else ["public", table]
-            cur.execute(
-                """
-                SELECT column_name FROM information_schema.columns
-                WHERE table_schema = %s AND table_name = %s
-                  AND data_type IN ('numeric', 'double precision', 'real', 'integer', 'bigint')
-                ORDER BY ordinal_position
-                """,
-                parts,
-            )
-            num_cols = [
-                r[0]
-                for r in cur.fetchall()
-                if r[0] not in ("geography_id", "source_id")
-            ]
-            if not num_cols:
-                return {}
-
-            sum_exprs = ", ".join(f'COALESCE(SUM("{c}"), 0) AS "{c}"' for c in num_cols)
-            where_clause = ""
-            if geography_ids:
-                ids_str = ", ".join(str(i) for i in geography_ids)
-                where_clause = f" WHERE geography_id IN ({ids_str})"
-            cur.execute(f"SELECT {sum_exprs} FROM {table}{where_clause}")
-            row = cur.fetchone()
-            totals: dict[str, float] = {}
-            if row:
-                for i, col in enumerate(num_cols):
-                    val = row[i]
-                    if val is not None:
-                        totals[col] = float(val)
-            return totals
-
     def _print_totals(self, totals: dict[str, float], label: str) -> None:
         """Print key aggregate totals."""
         col_map = {
@@ -349,160 +305,6 @@ class Command(BaseCommand):
             if val is not None:
                 self.stdout.write(f"    {label_name:25s} {val:>14,.0f}")
 
-    def _assert_geometry_identity(self, input_gdf: Any) -> None:
-        """Assert that the ETL output matches the input parcel geometries."""
-        from django.db import connection
-
-        with connection.cursor() as cursor:
-            cursor.execute("SELECT COUNT(*) FROM public.base_canvas")
-            db_count = cursor.fetchone()[0]
-
-        if db_count != len(input_gdf):
-            raise CommandError(
-                f"Geometry identity violation: {db_count} rows in DB vs "
-                f"{len(input_gdf)} input parcels. Cannot produce valid comparison."
-            )
-
-        if hasattr(input_gdf, "columns") and "geography_id" in input_gdf.columns:
-            input_ids = sorted(input_gdf["geography_id"].tolist())
-            with connection.cursor() as cursor:
-                cursor.execute(
-                    "SELECT geography_id FROM public.base_canvas "
-                    "WHERE geography_id IS NOT NULL ORDER BY geography_id"
-                )
-                db_ids = [row[0] for row in cursor.fetchall()]
-            if input_ids != db_ids:
-                raise CommandError(
-                    "Geography ID mismatch between input parcels and base_canvas."
-                )
-
-        self.stdout.write(f"  Row count: {db_count} matched ✅")
-
-    def _populate_geography_id(self, parcel_ids: list[int]) -> None:
-        """Populate geography_id in base_canvas via ordered row alignment.
-
-        The reference parcels are loaded ``ORDER BY geography_id`` and the ETL
-        writes them in insert-order, preserving sequence.  ``ROW_NUMBER()``
-        alignment on both sides produces a correct 1:1 mapping.
-        """
-        from django.db import connection
-
-        with connection.cursor() as cur:
-            cur.execute(
-                "ALTER TABLE public.base_canvas ADD COLUMN IF NOT EXISTS geography_id INTEGER"
-            )
-
-            if not parcel_ids:
-                return
-
-            gid_list = ", ".join(str(g) for g in parcel_ids)
-            cur.execute(
-                f"""
-                WITH bc_ranked AS (
-                    SELECT id, ROW_NUMBER() OVER (ORDER BY id) AS rn
-                    FROM public.base_canvas
-                ),
-                ref_ranked AS (
-                    SELECT geography_id, ROW_NUMBER() OVER (ORDER BY geography_id) AS rn
-                    FROM {V1_PARCELS}
-                    WHERE geography_id IN ({gid_list})
-                )
-                UPDATE public.base_canvas bc
-                SET geography_id = ref_ranked.geography_id
-                FROM ref_ranked
-                INNER JOIN bc_ranked ON ref_ranked.rn = bc_ranked.rn
-                WHERE bc.id = bc_ranked.id
-                """
-            )
-
-        self.stdout.write(f"  Populated geography_id for {len(parcel_ids):,} parcels")
-
-    def _compute_correlations(self) -> dict[str, float]:
-        """Compute Pearson R correlation between brewgis and reference columns."""
-        from django.db import connection
-
-        from brewgis.workspace.services.sacog_column_mapping import (
-            get_v1_columns_for_verification,
-        )
-
-        v3_to_v1 = get_v1_columns_for_verification()
-        numeric_types = {
-            "numeric",
-            "double precision",
-            "real",
-            "integer",
-            "bigint",
-            "smallint",
-        }
-
-        with connection.cursor() as cur:
-            cur.execute(
-                "SELECT column_name, data_type FROM information_schema.columns "
-                "WHERE table_schema = 'public' AND table_name = 'base_canvas'"
-            )
-            brew_cols = {r[0] for r in cur.fetchall() if r[1] in numeric_types}
-            cur.execute(
-                "SELECT column_name, data_type FROM information_schema.columns "
-                "WHERE table_schema = 'public' AND table_name = 'sac_cnty_region_base_canvas'"
-            )
-            ref_cols = {r[0] for r in cur.fetchall() if r[1] in numeric_types}
-
-        corr_exprs: list[str] = []
-        valid_v3_cols: list[str] = []
-        for v3_col, v1_col in v3_to_v1.items():
-            if v3_col in brew_cols and v1_col in ref_cols:
-                corr_exprs.append(
-                    f'    CORR(bc."{v3_col}", ref."{v1_col}") AS "{v3_col}"'
-                )
-                valid_v3_cols.append(v3_col)
-
-        if not corr_exprs:
-            return {}
-
-        corr_sql = (
-            "SELECT\n"
-            + ",\n".join(corr_exprs)
-            + "\nFROM public.base_canvas bc\n"
-            + f"INNER JOIN {V1_BASE_CANVAS} ref ON bc.geography_id = ref.geography_id"
-        )
-        with connection.cursor() as cur:
-            cur.execute(corr_sql)
-            row = cur.fetchone()
-        result: dict[str, float] = {}
-        if row:
-            for v3_col, val in zip(valid_v3_cols, row, strict=False):
-                if val is not None:
-                    result[v3_col] = float(val)
-        return result
-
-    def _query_weighted_means(self) -> dict[str, float]:
-        """Query area-weighted means for density/rate equity columns."""
-        from django.db import connection
-
-        cols = [
-            ("median_income", "median_income"),
-            ("pct_minority", "pct_minority"),
-            ("pct_college_educated", "pct_college_educated"),
-            ("cost_burden_pct", "cost_burden_pct"),
-            ("rent_burden_pct", "rent_burden_pct"),
-        ]
-        weight_exprs = []
-        for _, col in cols:
-            weight_exprs.append(
-                f'COALESCE(SUM("{col}" * "area_gross"), 0) / '
-                f'NULLIF(SUM("area_gross"), 0) AS "{col}_wavg"'
-            )
-        sql = "SELECT " + ", ".join(weight_exprs) + " FROM public.base_canvas"
-        with connection.cursor() as cur:
-            cur.execute(sql)
-            row = cur.fetchone()
-        result: dict[str, float] = {}
-        if row:
-            for (key, _), val in zip(cols, row, strict=False):
-                if val is not None:
-                    result[key] = float(val)
-        return result
-
     def _generate_report(
         self,
         ref: dict[str, float],
@@ -511,14 +313,14 @@ class Command(BaseCommand):
         quick: bool,
         limit: int,
         correlations: dict[str, float] | None = None,
-    ) -> None:
+        weighted_means: dict[str, float] | None = None,
+    ):
         """Generate the markdown comparison report (thin wrapper for backward compat).
 
         Legacy method expected by test suite. Delegates to
-        ``_generate_report_markdown`` with internal helpers for weighted means.
+        ``_generate_report_markdown``.
         """
         # Lazy imports — avoid loading dagster assets at module import time
-        # Use the module's own REPORT_PATH (can be patched by tests)
         import brewgis.workspace.management.commands.compare_sacog_basemap as _cmd_mod
         from brewgis.workspace.dagster.assets.comparison_assets import (
             _generate_report_markdown,
@@ -526,15 +328,11 @@ class Command(BaseCommand):
 
         report_path = _cmd_mod.REPORT_PATH
 
-        if correlations is None:
-            correlations = self._compute_correlations()
-        weighted_means = self._query_weighted_means()
-
         _generate_report_markdown(
             ref,
             brew,
-            correlations=correlations,
-            weighted_means=weighted_means,
+            correlations=correlations or {},
+            weighted_means=weighted_means or {},
             output_path=report_path,
             quick=quick,
             limit=limit,

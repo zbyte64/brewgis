@@ -1,81 +1,189 @@
 {#
-    Base Canvas Attributes — second ETL step (SQL)
+    Base Canvas Attributes — building areas, land-use classification, irrigation, intersection density.
 
-    Reads from ``base_canvas_geometry``, fills computed defaults for
-    demographics, employment, building areas, land-use classification,
-    irrigation, and intersection density.
+    Reads from ``base_canvas_employment``, applies calibration parameters
+    from seeds, and computes:
 
-    Follows ``populate_base_canvas.py`` steps 4-9.
+      1. Demographic sub-type defaults (pop_groupquarter, du subtypes)
+      2. Building areas from dwelling units (using calibration sqft_per_du)
+      3. Building areas from employment (using calibration sqft_per_emp)
+      4. Land development category from assessor use codes or SACOG text labels
+      5. Area-by-use columns from land_development_category
+      6. Irrigation (residential and commercial irrigated area)
+      7. Intersection density (from calibration or default)
+
+    Calibration seeds:
+      - calibration_parameters: per-category (sqft_per_du, sqft_per_emp, res_irrigation_frac, com_irrigation_frac, intersection_density)
+      - assessor_use_codes: 2-digit assessor code -> category
+      - sacog_land_use: text land-use label -> category
+
+    Materialized as: view
 #}
-{{ config(materialized='view') }}
+{{ config(materialized=var('base_canvas_materialized', 'view')) }}
 
-WITH geometry_data AS (
-    SELECT * FROM {{ ref('base_canvas_geometry') }}
+WITH source_data AS (
+    SELECT * FROM {{ ref('base_canvas_employment') }}
 ),
 
+calibration AS (
+    SELECT * FROM {{ ref('calibration_parameters') }}
+),
+
+assessor_codes AS (
+    SELECT use_code, category FROM {{ ref('assessor_use_codes') }}
+),
+
+sacog_use AS (
+    SELECT land_use_label, category FROM {{ ref('sacog_land_use') }}
+),
+
+-- Build per-row calibration join key
+with_cal AS (
+    SELECT
+        s.*,
+        COALESCE(NULLIF(s.land_development_category, ''), 'urban') AS lc_key,
+        c.sqft_per_du,
+        c.sqft_per_emp,
+        c.res_irrigation_frac,
+        c.com_irrigation_frac,
+        c.intersection_density AS calib_int_density
+    FROM source_data s
+    LEFT JOIN calibration c
+        ON COALESCE(NULLIF(s.land_development_category, ''), 'urban') = c.land_development_category
+),
+
+-- Demographics with defaults
 demographics AS (
     SELECT
         *,
-        COALESCE(pop, 0.0) AS pop_v,
-        COALESCE(pop * 0.0, 0.0) AS pop_groupquarter_v,
-        COALESCE(hh, 0.0) AS hh_v,
-        COALESCE(du, 0.0) AS du_v,
-        COALESCE(du * 0.4, 0.0) AS du_detsf_v,
-        COALESCE(du * 0.4 * 0.5, 0.0) AS du_detsf_sl_v,
-        COALESCE(du * 0.4 * 0.5, 0.0) AS du_detsf_ll_v,
-        COALESCE(du * 0.2, 0.0) AS du_attsf_v,
-        COALESCE(du * 0.4, 0.0) AS du_mf_v,
-        COALESCE(du * 0.4 * 0.3, 0.0) AS du_mf2to4_v,
-        COALESCE(du * 0.4 * 0.7, 0.0) AS du_mf5p_v,
-        COALESCE(emp, 0.0) AS emp_v,
-        COALESCE(emp * 0.2, 0.0) AS emp_ret_v,
-        COALESCE(emp * 0.35, 0.0) AS emp_off_v,
-        COALESCE(emp * 0.15, 0.0) AS emp_pub_v,
-        COALESCE(emp * 0.3, 0.0) AS emp_ind_v
-    FROM geometry_data
+        COALESCE(pop_groupquarter, 0.0) AS pop_groupquarter_v,
+        COALESCE(du_detsf, du * 0.4) AS du_detsf_v,
+        COALESCE(du_detsf_sl, du * 0.4 * 0.5) AS du_detsf_sl_v,
+        COALESCE(du_detsf_ll, du * 0.4 * 0.5) AS du_detsf_ll_v,
+        COALESCE(du_attsf, du * 0.2) AS du_attsf_v,
+        COALESCE(du_mf, du * 0.4) AS du_mf_v,
+        COALESCE(du_mf2to4, du * 0.4 * 0.3) AS du_mf2to4_v,
+        COALESCE(du_mf5p, du * 0.4 * 0.7) AS du_mf5p_v,
+        COALESCE(emp_ret, emp * 0.2) AS emp_ret_v,
+        COALESCE(emp_off, emp * 0.35) AS emp_off_v,
+        COALESCE(emp_pub, emp * 0.15) AS emp_pub_v,
+        COALESCE(emp_ind, emp * 0.3) AS emp_ind_v,
+        COALESCE(emp_retail_services, emp_ret * 0.3) AS emp_retail_services_v,
+        COALESCE(emp_restaurant, emp_ret * 0.2) AS emp_restaurant_v,
+        COALESCE(emp_accommodation, emp_ret * 0.15) AS emp_accommodation_v,
+        COALESCE(emp_arts_entertainment, emp_ret * 0.15) AS emp_arts_entertainment_v,
+        COALESCE(emp_other_services, emp_ret * 0.2) AS emp_other_services_v,
+        COALESCE(emp_office_services, emp_off * 0.6) AS emp_office_services_v,
+        COALESCE(emp_medical_services, emp_off * 0.4) AS emp_medical_services_v,
+        COALESCE(emp_public_admin, emp_pub * 0.5) AS emp_public_admin_v,
+        COALESCE(emp_education, emp_pub * 0.5) AS emp_education_v,
+        COALESCE(emp_manufacturing, emp_ind * 0.3) AS emp_manufacturing_v,
+        COALESCE(emp_wholesale, emp_ind * 0.15) AS emp_wholesale_v,
+        COALESCE(emp_transport_warehousing, emp_ind * 0.25) AS emp_transport_warehousing_v,
+        COALESCE(emp_utilities, emp_ind * 0.1) AS emp_utilities_v,
+        COALESCE(emp_construction, emp_ind * 0.2) AS emp_construction_v,
+        COALESCE(emp_agriculture, emp_ag * 0.7) AS emp_agriculture_v,
+        COALESCE(emp_extraction, emp_ag * 0.3) AS emp_extraction_v
+    FROM with_cal
 ),
 
+-- Building areas from DU * calibration.sqft_per_du * factor
 building_areas AS (
     SELECT
         *,
-        COALESCE(du_detsf_sl_v * 1200.0 * 0.8, 0.0) AS bldg_area_detsf_sl_v,
-        COALESCE(du_detsf_ll_v * 1200.0 * 1.2, 0.0) AS bldg_area_detsf_ll_v,
-        COALESCE(du_attsf_v * 1200.0 * 0.9, 0.0) AS bldg_area_attsf_v,
-        COALESCE(du_mf_v * 1200.0 * 0.7, 0.0) AS bldg_area_mf_v,
-        COALESCE(emp_ret_v * 300.0, 0.0) AS bldg_area_retail_services_v,
-        COALESCE(emp_off_v * 300.0, 0.0) AS bldg_area_office_services_v,
-        COALESCE(emp_pub_v * 300.0, 0.0) AS bldg_area_public_admin_v,
-        COALESCE(emp_ind_v * 300.0, 0.0) AS bldg_area_transport_warehousing_v
+        COALESCE(bldg_area_detsf_sl, du_detsf_sl_v * COALESCE(sqft_per_du, 1200.0) * 0.8) AS bldg_area_detsf_sl_v,
+        COALESCE(bldg_area_detsf_ll, du_detsf_ll_v * COALESCE(sqft_per_du, 1200.0) * 1.2) AS bldg_area_detsf_ll_v,
+        COALESCE(bldg_area_attsf, du_attsf_v * COALESCE(sqft_per_du, 1200.0) * 0.9) AS bldg_area_attsf_v,
+        COALESCE(bldg_area_mf, du_mf_v * COALESCE(sqft_per_du, 1200.0) * 0.7) AS bldg_area_mf_v,
+        COALESCE(bldg_area_retail_services, emp_retail_services_v * COALESCE(sqft_per_emp, 300.0)) AS bldg_area_retail_services_v,
+        COALESCE(bldg_area_restaurant, emp_restaurant_v * COALESCE(sqft_per_emp, 300.0)) AS bldg_area_restaurant_v,
+        COALESCE(bldg_area_accommodation, emp_accommodation_v * COALESCE(sqft_per_emp, 300.0)) AS bldg_area_accommodation_v,
+        COALESCE(bldg_area_arts_entertainment, emp_arts_entertainment_v * COALESCE(sqft_per_emp, 300.0)) AS bldg_area_arts_entertainment_v,
+        COALESCE(bldg_area_other_services, emp_other_services_v * COALESCE(sqft_per_emp, 300.0)) AS bldg_area_other_services_v,
+        COALESCE(bldg_area_office_services, emp_office_services_v * COALESCE(sqft_per_emp, 300.0)) AS bldg_area_office_services_v,
+        COALESCE(bldg_area_public_admin, emp_public_admin_v * COALESCE(sqft_per_emp, 300.0)) AS bldg_area_public_admin_v,
+        COALESCE(bldg_area_education, emp_education_v * COALESCE(sqft_per_emp, 300.0)) AS bldg_area_education_v,
+        COALESCE(bldg_area_medical_services, emp_medical_services_v * COALESCE(sqft_per_emp, 300.0)) AS bldg_area_medical_services_v,
+        COALESCE(bldg_area_transport_warehousing, emp_transport_warehousing_v * COALESCE(sqft_per_emp, 300.0)) AS bldg_area_transport_warehousing_v,
+        COALESCE(bldg_area_wholesale, emp_wholesale_v * COALESCE(sqft_per_emp, 300.0)) AS bldg_area_wholesale_v
     FROM demographics
 ),
 
-defaults AS (
+-- Land use classification derived from assessor codes or SACOG text
+classified AS (
+    SELECT
+        b.*,
+        CASE
+            WHEN LEFT(COALESCE(b.assessor_use_code, ''), 2) IN (SELECT use_code FROM assessor_codes)
+            THEN (SELECT a.category FROM assessor_codes a WHERE a.use_code = LEFT(COALESCE(b.assessor_use_code, ''), 2) LIMIT 1)
+            WHEN TRIM(COALESCE(b.land_use, '')) IN (SELECT land_use_label FROM sacog_use)
+            THEN (SELECT s.category FROM sacog_use s WHERE s.land_use_label = TRIM(COALESCE(b.land_use, '')) LIMIT 1)
+            ELSE 'urban'
+        END AS lnd_v,
+        COALESCE(NULLIF(b.built_form_key, ''), 'mixed_use') AS bf_v
+    FROM building_areas b
+),
+
+-- Area by use from land_development_category
+area_by_use AS (
     SELECT
         *,
-        COALESCE(NULLIF(land_development_category, ''), 'urban') AS lnd_v,
-        COALESCE(built_form_key, 'mixed_use') AS bf_v,
-        ROUND(COALESCE(intersection_density, 12.5)::numeric, 2) AS int_dens_v,
-        COALESCE(area_gross * 0.1, 0.0) AS res_irr_v,
-        COALESCE(area_gross * 0.05, 0.0) AS com_irr_v
-    FROM building_areas
+        lnd_v AS land_development_category,
+        bf_v AS built_form_key,
+        CASE WHEN lnd_v = 'urban'
+            THEN COALESCE(area_parcel, area_gross, 0) ELSE area_parcel_res END AS area_parcel_res_v,
+        CASE WHEN lnd_v = 'agricultural'
+            THEN COALESCE(area_parcel, area_gross, 0) ELSE area_parcel_emp_ag END AS area_parcel_emp_ag_v,
+        CASE WHEN lnd_v = 'industrial'
+            THEN COALESCE(area_parcel, area_gross, 0) ELSE area_parcel_emp END AS area_parcel_emp_v,
+        CASE WHEN lnd_v = 'mixed_use'
+            THEN COALESCE(area_parcel, area_gross, 0) ELSE area_parcel_mixed_use END AS area_parcel_mixed_use_v,
+        CASE WHEN lnd_v = 'undeveloped'
+            THEN COALESCE(area_parcel, area_gross, 0) ELSE area_parcel_no_use END AS area_parcel_no_use_v
+    FROM classified
+),
+
+-- Irrigation
+irrigation AS (
+    SELECT
+        *,
+        COALESCE(residential_irrigated_area,
+            COALESCE(area_parcel_res_v, area_gross, 0) * COALESCE(res_irrigation_frac, 0.25)
+        ) AS residential_irrigated_area_v,
+        COALESCE(commercial_irrigated_area,
+            COALESCE(area_parcel_emp_v, area_gross, 0) * COALESCE(com_irrigation_frac, 0.035)
+        ) AS commercial_irrigated_area_v
+    FROM area_by_use
+),
+
+-- Intersection density
+int_density AS (
+    SELECT
+        *,
+        ROUND(COALESCE(
+            NULLIF(intersection_density, 0),
+            COALESCE(calib_int_density, 12.5)
+        )::numeric, 2) AS int_dens_v
+    FROM irrigation
 )
 
+-- Final output
 SELECT
     parcel_id,
     geometry,
     county,
-    lnd_v AS land_development_category,
-    bf_v AS built_form_key,
+    land_development_category,
+    built_form_key,
     int_dens_v AS intersection_density,
     area_gross,
     area_parcel,
     area_dev_condition,
     area_row,
     -- Demographics
-    pop_v AS pop,
+    COALESCE(pop, 0.0) AS pop,
     pop_groupquarter_v AS pop_groupquarter,
-    hh_v AS hh,
-    du_v AS du,
+    COALESCE(hh, 0.0) AS hh,
+    COALESCE(du, 0.0) AS du,
     du_detsf_v AS du_detsf,
     du_detsf_sl_v AS du_detsf_sl,
     du_detsf_ll_v AS du_detsf_ll,
@@ -84,21 +192,53 @@ SELECT
     du_mf2to4_v AS du_mf2to4,
     du_mf5p_v AS du_mf5p,
     -- Employment
-    emp_v AS emp,
+    COALESCE(emp, 0.0) AS emp,
     emp_ret_v AS emp_ret,
     emp_off_v AS emp_off,
     emp_pub_v AS emp_pub,
     emp_ind_v AS emp_ind,
+    emp_ag AS emp_ag,
+    emp_military AS emp_military,
+    -- Employment sub-sectors
+    emp_retail_services_v AS emp_retail_services,
+    emp_restaurant_v AS emp_restaurant,
+    emp_accommodation_v AS emp_accommodation,
+    emp_arts_entertainment_v AS emp_arts_entertainment,
+    emp_other_services_v AS emp_other_services,
+    emp_office_services_v AS emp_office_services,
+    emp_medical_services_v AS emp_medical_services,
+    emp_public_admin_v AS emp_public_admin,
+    emp_education_v AS emp_education,
+    emp_manufacturing_v AS emp_manufacturing,
+    emp_wholesale_v AS emp_wholesale,
+    emp_transport_warehousing_v AS emp_transport_warehousing,
+    emp_utilities_v AS emp_utilities,
+    emp_construction_v AS emp_construction,
+    emp_agriculture_v AS emp_agriculture,
+    emp_extraction_v AS emp_extraction,
     -- Building areas
     bldg_area_detsf_sl_v AS bldg_area_detsf_sl,
     bldg_area_detsf_ll_v AS bldg_area_detsf_ll,
     bldg_area_attsf_v AS bldg_area_attsf,
     bldg_area_mf_v AS bldg_area_mf,
     bldg_area_retail_services_v AS bldg_area_retail_services,
+    bldg_area_restaurant_v AS bldg_area_restaurant,
+    bldg_area_accommodation_v AS bldg_area_accommodation,
+    bldg_area_arts_entertainment_v AS bldg_area_arts_entertainment,
+    bldg_area_other_services_v AS bldg_area_other_services,
     bldg_area_office_services_v AS bldg_area_office_services,
     bldg_area_public_admin_v AS bldg_area_public_admin,
+    bldg_area_education_v AS bldg_area_education,
+    bldg_area_medical_services_v AS bldg_area_medical_services,
     bldg_area_transport_warehousing_v AS bldg_area_transport_warehousing,
-    -- Irrigation & intersection density
-    res_irr_v AS residential_irrigated_area,
-    com_irr_v AS commercial_irrigated_area
-FROM defaults
+    bldg_area_wholesale_v AS bldg_area_wholesale,
+    -- Irrigation
+    residential_irrigated_area_v AS residential_irrigated_area,
+    commercial_irrigated_area_v AS commercial_irrigated_area,
+    -- Equity columns
+    median_income,
+    rent_burden_pct,
+    pct_minority,
+    pct_college_educated,
+    cost_burden_pct
+FROM int_density

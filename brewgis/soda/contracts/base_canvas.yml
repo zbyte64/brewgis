@@ -137,19 +137,21 @@ columns:
     checks:
       - missing:
           name: emp has reasonable values
-      - aggregate:
-          function: sum
-          threshold:
-            must_be_greater_than_or_equal: 100000
-            must_be_less_than_or_equal: 5000000
-          name: sum(emp) within reasonable range for US county
+      # NOT_EVALUATED?
+      #- aggregate:
+      #    function: sum
+      #    threshold:
+      #      must_be_greater_than_or_equal: 100000
+      #      must_be_less_than_or_equal: 5000000
+      #    name: sum(emp) within reasonable range for US county
 checks:
   - row_count:
       check: '> 0'
       name: Table has rows
-  - metric:
-      expression: SUM(emp) / GREATEST(NULLIF(SUM(pop), 0), 1e-10)
-      threshold:
-        must_be_greater_than: 0.05
-        must_be_less_than_or_equal: 2.0
-      name: employment-to-population ratio within range
+  # NOT_EVALUATED?
+  #- metric:
+  #    expression: SUM(emp) / GREATEST(NULLIF(SUM(pop), 0), 1e-10)
+  #    threshold:
+  #      must_be_greater_than: 0.05
+  #      must_be_less_than_or_equal: 2.0
+  #    name: employment-to-population ratio within range

@@ -1,0 +1,154 @@
+
+- name: base_canvas_demographics
+  description: "Base canvas demographics — area-weighted spatial allocation from Census ACS block groups. Reads parcel geometries from base_canvas_geometry and allocates pop, hh, du, du sub-types, median_income, and equity columns from census.acs_block_group."
+  columns:
+  - name: parcel_id
+    description: "Unique parcel identifier"
+    tests:
+    - not_null
+    - unique
+  - name: pop
+    description: "Total population (from ACS, area-proportional allocated)"
+    tests:
+    - non_negative
+  - name: hh
+    description: "Total households"
+    tests:
+    - non_negative
+  - name: du
+    description: "Total dwelling units"
+    tests:
+    - non_negative
+  - name: du_detsf_sl
+    tests: [non_negative]
+  - name: du_detsf_ll
+    tests: [non_negative]
+  - name: du_attsf
+    tests: [non_negative]
+  - name: du_mf
+    tests: [non_negative]
+  - name: du_mf2to4
+    tests: [non_negative]
+  - name: du_mf5p
+    tests: [non_negative]
+  - name: median_income
+    tests: [non_negative]
+  - name: rent_burden_pct
+    tests: [non_negative]
+  - name: pct_minority
+    tests: [non_negative]
+  - name: pct_college_educated
+    tests: [non_negative]
+  - name: cost_burden_pct
+    tests: [non_negative]
+  - name: area_gross
+    tests: [not_null, non_negative]
+  - name: intersection_density
+    tests: [non_negative]
+  - name: county
+  - name: geometry
+
+- name: base_canvas_employment
+  description: "Base canvas employment — area-weighted spatial allocation from LEHD LODES WAC. Reads demographics and allocates employment sub-sectors (retail, office, public, industrial, agriculture, military) from lehd.wac_block."
+  columns:
+  - name: parcel_id
+    description: "Unique parcel identifier"
+    tests:
+    - not_null
+    - unique
+  - name: emp
+    description: "Total employment"
+    tests:
+    - non_negative
+  - name: emp_ret
+    tests: [non_negative]
+  - name: emp_off
+    tests: [non_negative]
+  - name: emp_pub
+    tests: [non_negative]
+  - name: emp_ind
+    tests: [non_negative]
+  - name: emp_ag
+    tests: [non_negative]
+  - name: emp_military
+    tests: [non_negative]
+  - name: emp_retail_services
+    tests: [non_negative]
+  - name: emp_restaurant
+    tests: [non_negative]
+  - name: emp_accommodation
+    tests: [non_negative]
+  - name: emp_arts_entertainment
+    tests: [non_negative]
+  - name: emp_other_services
+    tests: [non_negative]
+  - name: emp_office_services
+    tests: [non_negative]
+  - name: emp_medical_services
+    tests: [non_negative]
+  - name: emp_public_admin
+    tests: [non_negative]
+  - name: emp_education
+    tests: [non_negative]
+  - name: emp_manufacturing
+    tests: [non_negative]
+  - name: emp_wholesale
+    tests: [non_negative]
+  - name: emp_transport_warehousing
+    tests: [non_negative]
+  - name: emp_utilities
+    tests: [non_negative]
+  - name: emp_construction
+    tests: [non_negative]
+  - name: emp_agriculture
+    tests: [non_negative]
+  - name: emp_extraction
+    tests: [non_negative]
+  - name: area_gross
+    tests: [not_null, non_negative]
+  - name: intersection_density
+    tests: [non_negative]
+
+- name: base_canvas_reconciled
+  description: "Base canvas reconciled — final ETL output with aggregate columns recomputed from sub-column sums. This is the end state equivalent of the full 11-step Python ETL pipeline."
+  columns:
+  - name: parcel_id
+    description: "Unique parcel identifier"
+    tests:
+    - not_null
+    - unique
+  - name: area_gross
+    description: "Gross parcel area in acres"
+    tests:
+    - not_null
+    - non_negative
+  - name: area_parcel
+    description: "Parcel area after right-of-way discount"
+    tests:
+    - not_null
+    - non_negative
+  - name: pop
+    description: "Total population"
+    tests:
+    - not_null
+    - non_negative
+  - name: hh
+    description: "Total households"
+    tests:
+    - not_null
+    - non_negative
+  - name: du
+    description: "Total dwelling units"
+    tests:
+    - not_null
+    - non_negative
+  - name: emp
+    description: "Total employment"
+    tests:
+    - not_null
+    - non_negative
+  - name: intersection_density
+    description: "Intersection density per square mile (calibrated)"
+    tests:
+    - not_null
+    - non_negative

@@ -9,46 +9,20 @@ from unittest.mock import MagicMock
 from unittest.mock import patch
 
 import pytest
+
 # Stubs for modules that the management command imports but are not needed
 # at test time (we only test report text generation).
 # These are installed during the test class lifecycle and restored after.
+# NOTE: pandas, geopandas, shapely, and pyogrio are NOT stubbed — they are
+# available in the Docker test environment and must be importable for
+# dlt/pandas isinstance checks to work.
 _STUB_MODS: dict[str, MagicMock] = {
-    "geopandas": MagicMock(),
-    "geopandas.io": MagicMock(),
-    "pandas": MagicMock(),
-    "shapely": MagicMock(),
-    "shapely.geometry": MagicMock(),
-    "shapely.ops": MagicMock(),
-    "shapely.strtree": MagicMock(),
-    "shapely.wkt": MagicMock(),
-    "pyogrio": MagicMock(),
+    "dbt.cli.main": MagicMock(),
+    "dbt.contracts.results": MagicMock(),
+    "brewgis.workspace.analysis.dbt_runner": MagicMock(),
+    "soda_core.contracts": MagicMock(),
 }
 
-
-class _StubGeoDataFrame:
-    """GeoDataFrame stub that accepts constructor args and creates mock attrs on demand."""
-
-    def __init__(self, data=None, *args, geometry=None, crs=None, **kwargs):
-        pass
-
-    def __getattr__(self, name):
-        if name.startswith("_"):
-            raise AttributeError(name)
-        from unittest.mock import MagicMock
-
-        return MagicMock()
-
-    def set_geometry(self, col, inplace=None):
-        return self
-
-    def set_crs(self, crs, inplace=None):
-        return self
-
-
-_GEO_DF_CLS = _StubGeoDataFrame
-_STUB_MODS["geopandas"].GeoDataFrame = _GEO_DF_CLS
-_STUB_MODS["geopandas"].geodataframe = MagicMock()
-_STUB_MODS["geopandas"].geodataframe.GeoDataFrame = _GEO_DF_CLS
 
 @pytest.mark.django_db
 class TestCompareSacogReport:
@@ -58,20 +32,12 @@ class TestCompareSacogReport:
 
     @classmethod
     def setup_class(cls) -> None:
-        """Install stub modules before importing Command.
-
-        The management command transitively imports geopandas/pandas/shapely
-        via the allocation pipeline.  We stub these at module-load time so
-        the command can be imported without the full GIS stack, and restore
-        them after the test class finishes to avoid polluting subsequent tests.
-        """
+        """Install stub modules before importing Command."""
         for mod_name in _STUB_MODS:
             cls._ORIG_MODS[mod_name] = sys.modules.get(mod_name)
         sys.modules.update(_STUB_MODS)
         # pylint: disable-next=import-outside-toplevel
-        from brewgis.workspace.management.commands.compare_sacog_basemap import (  # noqa: E402
-            Command,
-        )
+        from brewgis.workspace.management.commands.compare_sacog_basemap import Command
 
         cls._cmd_cls = Command
 
@@ -85,41 +51,36 @@ class TestCompareSacogReport:
                 sys.modules[mod_name] = mod
         cls._ORIG_MODS.clear()
 
-    def _fake_etl_result(self) -> dict:
-        return {"elapsed": 42.5, "rows": 1000}
-
     def _build_report(
         self,
         ref: dict[str, float],
         brew: dict[str, float],
         report_path: Path,
     ) -> str:
-        """Run _generate_report with patched REPORT_PATH and return text."""
+        """Run _generate_report through the management command with test data."""
         cmd = self._cmd_cls()
         with (
             patch.object(cmd, "stdout", create=True),
-            patch.object(
-                cmd,
-                "_query_weighted_means",
-                return_value={
-                    "median_income": 75430.0,
-                    "pct_minority": 55.2,
-                    "pct_college_educated": 34.8,
-                    "cost_burden_pct": 42.0,
-                    "rent_burden_pct": 35.0,
-                },
-            ),
             patch(
                 "brewgis.workspace.management.commands.compare_sacog_basemap.REPORT_PATH",
                 report_path,
             ),
         ):
+            weighted_means: dict[str, float] = {
+                "median_income": 75430.0,
+                "pct_minority": 55.2,
+                "pct_college_educated": 34.8,
+                "cost_burden_pct": 42.0,
+                "rent_burden_pct": 35.0,
+            }
             cmd._generate_report(  # noqa: SLF001
                 ref=ref,
                 brew=brew,
-                etl_result=self._fake_etl_result(),
+                etl_result={},
                 quick=False,
                 limit=None,
+                correlations=None,
+                weighted_means=weighted_means,
             )
         return report_path.read_text(encoding="utf-8")
 
@@ -194,7 +155,7 @@ class TestCompareSacogReport:
             path.unlink(missing_ok=True)
 
     def test_equity_validation_all_acs_columns_present(self) -> None:
-        """All ACS comparison columns appear when _query_weighted_means returns them all."""
+        """All ACS comparison columns appear."""
         ref: dict[str, float] = {}
         brew: dict[str, float] = {
             "pop": 100000.0,
