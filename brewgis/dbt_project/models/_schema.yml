@@ -417,6 +417,319 @@ models:
   - name: area_row
     tests:
     - non_negative
+- name: base_canvas_demographics
+  description: "Base canvas demographics — area-weighted allocation from ACS block groups onto parcels."
+  columns:
+  - name: parcel_id
+    description: "Unique parcel identifier"
+    tests:
+    - not_null
+    - unique
+  - name: geometry
+    description: "Parcel geometry (PostGIS geometry)"
+  - name: county
+    description: "County name"
+  - name: land_development_category
+    description: "Land development category (urban, agricultural, etc.)"
+  - name: built_form_key
+    description: "Built form key for default assignment"
+  - name: intersection_density
+    description: "Intersection density (intersections per area)"
+    tests:
+    - non_negative
+  - name: area_gross
+    description: "Gross parcel area"
+    tests:
+    - not_null
+    - non_negative
+  - name: area_parcel
+    description: "Parcel area"
+    tests:
+    - not_null
+    - non_negative
+  - name: area_dev_condition
+    description: "Developable condition area"
+    tests:
+    - non_negative
+  - name: area_row
+    description: "Right-of-way area"
+    tests:
+    - non_negative
+  - name: pop
+    description: "Total population"
+    tests:
+    - not_null
+    - non_negative
+  - name: pop_groupquarter
+    description: "Group quarters population"
+    tests:
+    - non_negative
+  - name: hh
+    description: "Total households"
+    tests:
+    - not_null
+    - non_negative
+  - name: du
+    description: "Total dwelling units"
+    tests:
+    - not_null
+    - non_negative
+  - name: du_detsf
+    description: "Single-family detached dwelling units"
+    tests:
+    - non_negative
+  - name: du_detsf_sl
+    description: "Single-family detached small lot"
+    tests:
+    - non_negative
+  - name: du_detsf_ll
+    description: "Single-family detached large lot"
+    tests:
+    - non_negative
+  - name: du_attsf
+    description: "Attached single-family dwelling units"
+    tests:
+    - non_negative
+  - name: du_mf
+    description: "Multi-family dwelling units"
+    tests:
+    - non_negative
+  - name: du_mf2to4
+    description: "Multi-family 2-to-4 unit buildings"
+    tests:
+    - non_negative
+  - name: du_mf5p
+    description: "Multi-family 5+ unit buildings"
+    tests:
+    - non_negative
+  - name: median_income
+    description: "Median household income"
+    tests:
+    - non_negative
+  - name: rent_burden_pct
+    description: "Rent burden percentage"
+    tests:
+    - non_negative
+  - name: pct_minority
+    description: "Percent minority population"
+    tests:
+    - non_negative
+  - name: pct_college_educated
+    description: "Percent college-educated population"
+    tests:
+    - non_negative
+  - name: cost_burden_pct
+    description: "Cost burden percentage"
+    tests:
+    - non_negative
+  - name: emp
+    description: "Total employment"
+    tests:
+    - non_negative
+
+- name: base_canvas_employment
+  description: "Base canvas employment — area-weighted allocation from LEHD LODES WAC onto parcels."
+  columns:
+  - name: parcel_id
+    description: "Unique parcel identifier"
+    tests:
+    - not_null
+    - unique
+  - name: geometry
+    description: "Parcel geometry (PostGIS geometry)"
+  - name: county
+    description: "County name"
+  - name: land_development_category
+    description: "Land development category"
+  - name: built_form_key
+    description: "Built form key"
+  - name: intersection_density
+    description: "Intersection density"
+    tests:
+    - non_negative
+  - name: area_gross
+    description: "Gross parcel area"
+    tests:
+    - not_null
+    - non_negative
+  - name: area_parcel
+    description: "Parcel area"
+    tests:
+    - not_null
+    - non_negative
+  - name: area_dev_condition
+    description: "Developable condition area"
+    tests:
+    - non_negative
+  - name: area_row
+    description: "Right-of-way area"
+    tests:
+    - non_negative
+  - name: pop
+    description: "Total population"
+    tests:
+    - not_null
+    - non_negative
+  - name: pop_groupquarter
+    description: "Group quarters population"
+    tests:
+    - non_negative
+  - name: hh
+    description: "Total households"
+    tests:
+    - not_null
+    - non_negative
+  - name: du
+    description: "Total dwelling units"
+    tests:
+    - not_null
+    - non_negative
+  - name: du_detsf
+    description: "Single-family detached dwelling units"
+    tests:
+    - non_negative
+  - name: du_detsf_sl
+    description: "Single-family detached small lot"
+    tests:
+    - non_negative
+  - name: du_detsf_ll
+    description: "Single-family detached large lot"
+    tests:
+    - non_negative
+  - name: du_attsf
+    description: "Attached single-family dwelling units"
+    tests:
+    - non_negative
+  - name: du_mf
+    description: "Multi-family dwelling units"
+    tests:
+    - non_negative
+  - name: du_mf2to4
+    description: "Multi-family 2-to-4 unit buildings"
+    tests:
+    - non_negative
+  - name: du_mf5p
+    description: "Multi-family 5+ unit buildings"
+    tests:
+    - non_negative
+  - name: median_income
+    description: "Median household income"
+    tests:
+    - non_negative
+  - name: rent_burden_pct
+    description: "Rent burden percentage"
+    tests:
+    - non_negative
+  - name: pct_minority
+    description: "Percent minority population"
+    tests:
+    - non_negative
+  - name: pct_college_educated
+    description: "Percent college-educated population"
+    tests:
+    - non_negative
+  - name: cost_burden_pct
+    description: "Cost burden percentage"
+    tests:
+    - non_negative
+  - name: emp
+    description: "Total employment"
+    tests:
+    - not_null
+    - non_negative
+  - name: emp_ret
+    description: "Retail aggregate employment"
+    tests:
+    - not_null
+    - non_negative
+  - name: emp_retail_services
+    description: "Retail services employment"
+    tests:
+    - non_negative
+  - name: emp_restaurant
+    description: "Restaurant employment"
+    tests:
+    - non_negative
+  - name: emp_accommodation
+    description: "Accommodation employment"
+    tests:
+    - non_negative
+  - name: emp_arts_entertainment
+    description: "Arts/entertainment employment"
+    tests:
+    - non_negative
+  - name: emp_other_services
+    description: "Other services employment"
+    tests:
+    - non_negative
+  - name: emp_off
+    description: "Office aggregate employment"
+    tests:
+    - not_null
+    - non_negative
+  - name: emp_office_services
+    description: "Office services employment"
+    tests:
+    - non_negative
+  - name: emp_medical_services
+    description: "Medical services employment"
+    tests:
+    - non_negative
+  - name: emp_pub
+    description: "Public aggregate employment"
+    tests:
+    - not_null
+    - non_negative
+  - name: emp_public_admin
+    description: "Public administration employment"
+    tests:
+    - non_negative
+  - name: emp_education
+    description: "Education employment"
+    tests:
+    - non_negative
+  - name: emp_ind
+    description: "Industrial aggregate employment"
+    tests:
+    - not_null
+    - non_negative
+  - name: emp_manufacturing
+    description: "Manufacturing employment"
+    tests:
+    - non_negative
+  - name: emp_wholesale
+    description: "Wholesale employment"
+    tests:
+    - non_negative
+  - name: emp_transport_warehousing
+    description: "Transport/warehousing employment"
+    tests:
+    - non_negative
+  - name: emp_utilities
+    description: "Utilities employment"
+    tests:
+    - non_negative
+  - name: emp_construction
+    description: "Construction employment"
+    tests:
+    - non_negative
+  - name: emp_ag
+    description: "Agriculture aggregate employment"
+    tests:
+    - non_negative
+  - name: emp_agriculture
+    description: "Agriculture employment"
+    tests:
+    - non_negative
+  - name: emp_extraction
+    description: "Extraction employment"
+    tests:
+    - non_negative
+  - name: emp_military
+    description: "Military employment"
+    tests:
+    - non_negative
+
 - name: base_canvas_attributes
   description: "Base canvas attributes — fills demographic, employment, building area defaults."
   columns:
@@ -440,6 +753,242 @@ models:
     tests:
     - not_null
     - non_negative
+  - name: du_detsf
+    description: "Single-family detached dwelling units"
+    tests:
+    - not_null
+    - non_negative
+  - name: du_detsf_sl
+    description: "Single-family detached small lot"
+    tests:
+    - not_null
+    - non_negative
+  - name: du_detsf_ll
+    description: "Single-family detached large lot"
+    tests:
+    - not_null
+    - non_negative
+  - name: du_attsf
+    description: "Attached single-family dwelling units"
+    tests:
+    - not_null
+    - non_negative
+  - name: du_mf
+    description: "Multi-family dwelling units"
+    tests:
+    - not_null
+    - non_negative
+  - name: du_mf2to4
+    description: "Multi-family 2-to-4 unit buildings"
+    tests:
+    - not_null
+    - non_negative
+  - name: du_mf5p
+    description: "Multi-family 5+ unit buildings"
+    tests:
+    - not_null
+    - non_negative
+  - name: emp_ret
+    description: "Retail aggregate employment"
+    tests:
+    - not_null
+    - non_negative
+  - name: emp_off
+    description: "Office aggregate employment"
+    tests:
+    - not_null
+    - non_negative
+  - name: emp_pub
+    description: "Public aggregate employment"
+    tests:
+    - not_null
+    - non_negative
+  - name: emp_ind
+    description: "Industrial aggregate employment"
+    tests:
+    - not_null
+    - non_negative
+  - name: emp_ag
+    description: "Agriculture aggregate employment"
+    tests:
+    - not_null
+    - non_negative
+  - name: emp_military
+    description: "Military employment"
+    tests:
+    - not_null
+    - non_negative
+  - name: emp_retail_services
+    description: "Retail services employment"
+    tests:
+    - non_negative
+  - name: emp_restaurant
+    description: "Restaurant employment"
+    tests:
+    - non_negative
+  - name: emp_accommodation
+    description: "Accommodation employment"
+    tests:
+    - non_negative
+  - name: emp_arts_entertainment
+    description: "Arts/entertainment employment"
+    tests:
+    - non_negative
+  - name: emp_other_services
+    description: "Other services employment"
+    tests:
+    - non_negative
+  - name: emp_office_services
+    description: "Office services employment"
+    tests:
+    - non_negative
+  - name: emp_medical_services
+    description: "Medical services employment"
+    tests:
+    - non_negative
+  - name: emp_public_admin
+    description: "Public administration employment"
+    tests:
+    - non_negative
+  - name: emp_education
+    description: "Education employment"
+    tests:
+    - non_negative
+  - name: emp_manufacturing
+    description: "Manufacturing employment"
+    tests:
+    - non_negative
+  - name: emp_wholesale
+    description: "Wholesale employment"
+    tests:
+    - non_negative
+  - name: emp_transport_warehousing
+    description: "Transport/warehousing employment"
+    tests:
+    - non_negative
+  - name: emp_utilities
+    description: "Utilities employment"
+    tests:
+    - non_negative
+  - name: emp_construction
+    description: "Construction employment"
+    tests:
+    - non_negative
+  - name: emp_agriculture
+    description: "Agriculture employment"
+    tests:
+    - non_negative
+  - name: emp_extraction
+    description: "Extraction employment"
+    tests:
+    - non_negative
+  - name: bldg_area_detsf_sl
+    description: "Building area single-family detached small lot"
+    tests:
+    - not_null
+    - non_negative
+  - name: bldg_area_detsf_ll
+    description: "Building area single-family detached large lot"
+    tests:
+    - not_null
+    - non_negative
+  - name: bldg_area_attsf
+    description: "Building area attached single-family"
+    tests:
+    - not_null
+    - non_negative
+  - name: bldg_area_mf
+    description: "Building area multi-family"
+    tests:
+    - not_null
+    - non_negative
+  - name: bldg_area_retail_services
+    description: "Building area retail services"
+    tests:
+    - not_null
+    - non_negative
+  - name: bldg_area_restaurant
+    description: "Building area restaurant"
+    tests:
+    - not_null
+    - non_negative
+  - name: bldg_area_accommodation
+    description: "Building area accommodation"
+    tests:
+    - not_null
+    - non_negative
+  - name: bldg_area_arts_entertainment
+    description: "Building area arts/entertainment"
+    tests:
+    - not_null
+    - non_negative
+  - name: bldg_area_other_services
+    description: "Building area other services"
+    tests:
+    - not_null
+    - non_negative
+  - name: bldg_area_office_services
+    description: "Building area office services"
+    tests:
+    - not_null
+    - non_negative
+  - name: bldg_area_public_admin
+    description: "Building area public administration"
+    tests:
+    - not_null
+    - non_negative
+  - name: bldg_area_education
+    description: "Building area education"
+    tests:
+    - not_null
+    - non_negative
+  - name: bldg_area_medical_services
+    description: "Building area medical services"
+    tests:
+    - not_null
+    - non_negative
+  - name: bldg_area_transport_warehousing
+    description: "Building area transport/warehousing"
+    tests:
+    - not_null
+    - non_negative
+  - name: bldg_area_wholesale
+    description: "Building area wholesale"
+    tests:
+    - not_null
+    - non_negative
+  - name: residential_irrigated_area
+    description: "Residential irrigated area"
+    tests:
+    - not_null
+    - non_negative
+  - name: commercial_irrigated_area
+    description: "Commercial irrigated area"
+    tests:
+    - not_null
+    - non_negative
+  - name: median_income
+    description: "Median household income"
+    tests:
+    - non_negative
+  - name: rent_burden_pct
+    description: "Rent burden percentage"
+    tests:
+    - non_negative
+  - name: pct_minority
+    description: "Percent minority population"
+    tests:
+    - non_negative
+  - name: pct_college_educated
+    description: "Percent college-educated population"
+    tests:
+    - non_negative
+  - name: cost_burden_pct
+    description: "Cost burden percentage"
+    tests:
+    - non_negative
+
+
 - name: base_canvas_imputed
   description: "Base canvas imputed — three-tier cascade imputation for all numeric columns."
   columns:
@@ -451,6 +1000,514 @@ models:
     tests:
     - not_null
     - non_negative
+  - name: pop
+    description: "Total population"
+    tests:
+    - not_null
+    - non_negative
+  - name: pop_groupquarter
+    description: "Group quarters population"
+    tests:
+    - not_null
+    - non_negative
+  - name: hh
+    description: "Total households"
+    tests:
+    - not_null
+    - non_negative
+  - name: du
+    description: "Total dwelling units"
+    tests:
+    - not_null
+    - non_negative
+  - name: emp
+    description: "Total employment"
+    tests:
+    - not_null
+    - non_negative
+  - name: du_detsf
+    description: "Single-family detached dwelling units"
+    tests:
+    - non_negative
+  - name: du_detsf_sl
+    description: "Single-family detached small lot"
+    tests:
+    - non_negative
+  - name: du_detsf_ll
+    description: "Single-family detached large lot"
+    tests:
+    - non_negative
+  - name: du_attsf
+    description: "Attached single-family dwelling units"
+    tests:
+    - non_negative
+  - name: du_mf
+    description: "Multi-family dwelling units"
+    tests:
+    - non_negative
+  - name: du_mf2to4
+    description: "Multi-family 2-to-4 unit buildings"
+    tests:
+    - non_negative
+  - name: du_mf5p
+    description: "Multi-family 5+ unit buildings"
+    tests:
+    - non_negative
+  - name: emp_ret
+    description: "Retail aggregate employment"
+    tests:
+    - non_negative
+  - name: emp_retail_services
+    description: "Retail services employment"
+    tests:
+    - non_negative
+  - name: emp_restaurant
+    description: "Restaurant employment"
+    tests:
+    - non_negative
+  - name: emp_accommodation
+    description: "Accommodation employment"
+    tests:
+    - non_negative
+  - name: emp_arts_entertainment
+    description: "Arts/entertainment employment"
+    tests:
+    - non_negative
+  - name: emp_other_services
+    description: "Other services employment"
+    tests:
+    - non_negative
+  - name: emp_off
+    description: "Office aggregate employment"
+    tests:
+    - non_negative
+  - name: emp_office_services
+    description: "Office services employment"
+    tests:
+    - non_negative
+  - name: emp_medical_services
+    description: "Medical services employment"
+    tests:
+    - non_negative
+  - name: emp_pub
+    description: "Public aggregate employment"
+    tests:
+    - non_negative
+  - name: emp_public_admin
+    description: "Public administration employment"
+    tests:
+    - non_negative
+  - name: emp_education
+    description: "Education employment"
+    tests:
+    - non_negative
+  - name: emp_ind
+    description: "Industrial aggregate employment"
+    tests:
+    - non_negative
+  - name: emp_manufacturing
+    description: "Manufacturing employment"
+    tests:
+    - non_negative
+  - name: emp_wholesale
+    description: "Wholesale employment"
+    tests:
+    - non_negative
+  - name: emp_transport_warehousing
+    description: "Transport/warehousing employment"
+    tests:
+    - non_negative
+  - name: emp_utilities
+    description: "Utilities employment"
+    tests:
+    - non_negative
+  - name: emp_construction
+    description: "Construction employment"
+    tests:
+    - non_negative
+  - name: emp_ag
+    description: "Agriculture aggregate employment"
+    tests:
+    - non_negative
+  - name: emp_agriculture
+    description: "Agriculture employment"
+    tests:
+    - non_negative
+  - name: emp_extraction
+    description: "Extraction employment"
+    tests:
+    - non_negative
+  - name: emp_military
+    description: "Military employment"
+    tests:
+    - non_negative
+  - name: bldg_area_detsf_sl
+    description: "Building area single-family detached small lot"
+    tests:
+    - non_negative
+  - name: bldg_area_detsf_ll
+    description: "Building area single-family detached large lot"
+    tests:
+    - non_negative
+  - name: bldg_area_attsf
+    description: "Building area attached single-family"
+    tests:
+    - non_negative
+  - name: bldg_area_mf
+    description: "Building area multi-family"
+    tests:
+    - non_negative
+  - name: bldg_area_retail_services
+    description: "Building area retail services"
+    tests:
+    - non_negative
+  - name: bldg_area_restaurant
+    description: "Building area restaurant"
+    tests:
+    - non_negative
+  - name: bldg_area_accommodation
+    description: "Building area accommodation"
+    tests:
+    - non_negative
+  - name: bldg_area_arts_entertainment
+    description: "Building area arts/entertainment"
+    tests:
+    - non_negative
+  - name: bldg_area_other_services
+    description: "Building area other services"
+    tests:
+    - non_negative
+  - name: bldg_area_office_services
+    description: "Building area office services"
+    tests:
+    - non_negative
+  - name: bldg_area_public_admin
+    description: "Building area public administration"
+    tests:
+    - non_negative
+  - name: bldg_area_education
+    description: "Building area education"
+    tests:
+    - non_negative
+  - name: bldg_area_medical_services
+    description: "Building area medical services"
+    tests:
+    - non_negative
+  - name: bldg_area_transport_warehousing
+    description: "Building area transport/warehousing"
+    tests:
+    - non_negative
+  - name: bldg_area_wholesale
+    description: "Building area wholesale"
+    tests:
+    - non_negative
+  - name: residential_irrigated_area
+    description: "Residential irrigated area"
+    tests:
+    - non_negative
+  - name: commercial_irrigated_area
+    description: "Commercial irrigated area"
+    tests:
+    - non_negative
+  - name: median_income
+    description: "Median household income"
+    tests:
+    - non_negative
+  - name: rent_burden_pct
+    description: "Rent burden percentage"
+    tests:
+    - non_negative
+  - name: pct_minority
+    description: "Percent minority population"
+    tests:
+    - non_negative
+  - name: pct_college_educated
+    description: "Percent college-educated population"
+    tests:
+    - non_negative
+  - name: cost_burden_pct
+    description: "Cost burden percentage"
+    tests:
+    - non_negative
+
+
+- name: base_canvas_reconciled
+  description: "Base canvas reconciled — aggregate columns recomputed from sub-column sums."
+  columns:
+  - name: parcel_id
+    description: "Unique parcel identifier"
+    tests:
+    - not_null
+    - unique
+  - name: geometry
+    description: "Parcel geometry (PostGIS geometry)"
+  - name: county
+    description: "County name"
+  - name: land_development_category
+    description: "Land development category"
+  - name: built_form_key
+    description: "Built form key"
+  - name: intersection_density
+    description: "Intersection density"
+    tests:
+    - non_negative
+  - name: area_gross
+    description: "Gross parcel area"
+    tests:
+    - non_negative
+  - name: area_parcel
+    description: "Parcel area"
+    tests:
+    - non_negative
+  - name: area_dev_condition
+    description: "Developable condition area"
+    tests:
+    - non_negative
+  - name: area_row
+    description: "Right-of-way area"
+    tests:
+    - non_negative
+  - name: pop
+    description: "Total population"
+    tests:
+    - not_null
+    - non_negative
+  - name: pop_groupquarter
+    description: "Group quarters population"
+    tests:
+    - non_negative
+  - name: hh
+    description: "Total households"
+    tests:
+    - not_null
+    - non_negative
+  - name: du
+    description: "Total dwelling units"
+    tests:
+    - not_null
+    - non_negative
+  - name: du_detsf
+    description: "Single-family detached dwelling units"
+    tests:
+    - not_null
+    - non_negative
+  - name: du_detsf_sl
+    description: "Single-family detached small lot"
+    tests:
+    - not_null
+    - non_negative
+  - name: du_detsf_ll
+    description: "Single-family detached large lot"
+    tests:
+    - not_null
+    - non_negative
+  - name: du_attsf
+    description: "Attached single-family dwelling units"
+    tests:
+    - not_null
+    - non_negative
+  - name: du_mf
+    description: "Multi-family dwelling units"
+    tests:
+    - not_null
+    - non_negative
+  - name: du_mf2to4
+    description: "Multi-family 2-to-4 unit buildings"
+    tests:
+    - not_null
+    - non_negative
+  - name: du_mf5p
+    description: "Multi-family 5+ unit buildings"
+    tests:
+    - not_null
+    - non_negative
+  - name: emp
+    description: "Total employment"
+    tests:
+    - not_null
+    - non_negative
+  - name: emp_ret
+    description: "Retail aggregate employment"
+    tests:
+    - not_null
+    - non_negative
+  - name: emp_retail_services
+    description: "Retail services employment"
+    tests:
+    - non_negative
+  - name: emp_restaurant
+    description: "Restaurant employment"
+    tests:
+    - non_negative
+  - name: emp_accommodation
+    description: "Accommodation employment"
+    tests:
+    - non_negative
+  - name: emp_arts_entertainment
+    description: "Arts/entertainment employment"
+    tests:
+    - non_negative
+  - name: emp_other_services
+    description: "Other services employment"
+    tests:
+    - non_negative
+  - name: emp_off
+    description: "Office aggregate employment"
+    tests:
+    - not_null
+    - non_negative
+  - name: emp_office_services
+    description: "Office services employment"
+    tests:
+    - non_negative
+  - name: emp_medical_services
+    description: "Medical services employment"
+    tests:
+    - non_negative
+  - name: emp_pub
+    description: "Public aggregate employment"
+    tests:
+    - not_null
+    - non_negative
+  - name: emp_public_admin
+    description: "Public administration employment"
+    tests:
+    - non_negative
+  - name: emp_education
+    description: "Education employment"
+    tests:
+    - non_negative
+  - name: emp_ind
+    description: "Industrial aggregate employment"
+    tests:
+    - not_null
+    - non_negative
+  - name: emp_manufacturing
+    description: "Manufacturing employment"
+    tests:
+    - non_negative
+  - name: emp_wholesale
+    description: "Wholesale employment"
+    tests:
+    - non_negative
+  - name: emp_transport_warehousing
+    description: "Transport/warehousing employment"
+    tests:
+    - non_negative
+  - name: emp_utilities
+    description: "Utilities employment"
+    tests:
+    - non_negative
+  - name: emp_construction
+    description: "Construction employment"
+    tests:
+    - non_negative
+  - name: emp_ag
+    description: "Agriculture aggregate employment"
+    tests:
+    - not_null
+    - non_negative
+  - name: emp_agriculture
+    description: "Agriculture employment"
+    tests:
+    - non_negative
+  - name: emp_extraction
+    description: "Extraction employment"
+    tests:
+    - non_negative
+  - name: emp_military
+    description: "Military employment"
+    tests:
+    - non_negative
+  - name: bldg_area_detsf_sl
+    description: "Building area single-family detached small lot"
+    tests:
+    - non_negative
+  - name: bldg_area_detsf_ll
+    description: "Building area single-family detached large lot"
+    tests:
+    - non_negative
+  - name: bldg_area_attsf
+    description: "Building area attached single-family"
+    tests:
+    - non_negative
+  - name: bldg_area_mf
+    description: "Building area multi-family"
+    tests:
+    - non_negative
+  - name: bldg_area_retail_services
+    description: "Building area retail services"
+    tests:
+    - non_negative
+  - name: bldg_area_restaurant
+    description: "Building area restaurant"
+    tests:
+    - non_negative
+  - name: bldg_area_accommodation
+    description: "Building area accommodation"
+    tests:
+    - non_negative
+  - name: bldg_area_arts_entertainment
+    description: "Building area arts/entertainment"
+    tests:
+    - non_negative
+  - name: bldg_area_other_services
+    description: "Building area other services"
+    tests:
+    - non_negative
+  - name: bldg_area_office_services
+    description: "Building area office services"
+    tests:
+    - non_negative
+  - name: bldg_area_public_admin
+    description: "Building area public administration"
+    tests:
+    - non_negative
+  - name: bldg_area_education
+    description: "Building area education"
+    tests:
+    - non_negative
+  - name: bldg_area_medical_services
+    description: "Building area medical services"
+    tests:
+    - non_negative
+  - name: bldg_area_transport_warehousing
+    description: "Building area transport/warehousing"
+    tests:
+    - non_negative
+  - name: bldg_area_wholesale
+    description: "Building area wholesale"
+    tests:
+    - non_negative
+  - name: residential_irrigated_area
+    description: "Residential irrigated area"
+    tests:
+    - non_negative
+  - name: commercial_irrigated_area
+    description: "Commercial irrigated area"
+    tests:
+    - non_negative
+  - name: median_income
+    description: "Median household income"
+    tests:
+    - non_negative
+  - name: rent_burden_pct
+    description: "Rent burden percentage"
+    tests:
+    - non_negative
+  - name: pct_minority
+    description: "Percent minority population"
+    tests:
+    - non_negative
+  - name: pct_college_educated
+    description: "Percent college-educated population"
+    tests:
+    - non_negative
+  - name: cost_burden_pct
+    description: "Cost burden percentage"
+    tests:
+    - non_negative
+
 - name: internal_capture
   description: "Internal capture — trips staying within the study area boundary."
   columns:
@@ -1057,6 +2114,11 @@ models:
     - non_negative
   - name: du
     description: "Total dwelling units"
+    tests:
+    - not_null
+    - non_negative
+  - name: du_detsf
+    description: "Total single-family detached dwelling units (ACS b25024_002_e)"
     tests:
     - not_null
     - non_negative
