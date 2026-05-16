@@ -29,11 +29,18 @@ sources:
       - name: tiger_block_groups
         description: "TIGER/Line block group polygons with WKT geometry — loaded by dlt."
         identifier: "{{ var('tiger_bg_table', 'tiger_block_groups') }}"
+  - name: census
+    description: "Census ACS data sources — fixed schema."
+    schema: census
+    tables:
       - name: acs_block_group
         description: "Census ACS block group demographics with geometry — populated by SACOG comparison pipeline."
-        schema: census
         identifier: acs_block_group
+
+  - name: lehd
+    description: "LEHD LODES employment data sources — fixed schema."
+    schema: lehd
+    tables:
       - name: wac_block
         description: "LEHD LODES WAC employment by block group with geometry — populated by SACOG comparison pipeline."
-        schema: lehd
         identifier: wac_block

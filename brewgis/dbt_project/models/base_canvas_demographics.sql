@@ -58,7 +58,7 @@ acs_data AS (
         a.cost_burden_pct,
         ST_Transform(a.geometry, {{ area_srid }}) AS geom_proj,
         GREATEST(ST_Area(ST_Transform(a.geometry, {{ area_srid }})), 1e-10) AS bg_area
-    FROM {{ source('brewgis', 'acs_block_group') }} a
+    FROM {{ source('census', 'acs_block_group') }} a
     WHERE a.geometry IS NOT NULL
 ),
 

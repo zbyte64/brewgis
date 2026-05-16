@@ -53,7 +53,7 @@ wac_data AS (
         w.emp_ag,
         ST_Transform(w.geometry, {{ area_srid }}) AS geom_proj,
         GREATEST(ST_Area(ST_Transform(w.geometry, {{ area_srid }})), 1e-10) AS wac_area
-    FROM {{ source('brewgis', 'wac_block') }} w
+    FROM {{ source('lehd', 'wac_block') }} w
     WHERE w.geometry IS NOT NULL
 ),
 
