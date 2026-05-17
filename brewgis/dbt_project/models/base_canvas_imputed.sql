@@ -44,6 +44,11 @@ SELECT
     a.area_parcel,
     a.area_dev_condition,
     a.area_row,
+    a.area_parcel_res,
+    a.area_parcel_emp_ag,
+    a.area_parcel_emp,
+    a.area_parcel_mixed_use,
+    a.area_parcel_no_use,
     -- Demographics: COALESCE(a_value, regional_avg, 0.0)
     COALESCE(NULLIF(a.pop, 0), r.county_avg_pop, 0.0) AS pop,
     COALESCE(NULLIF(a.pop_groupquarter, 0), 0.0) AS pop_groupquarter,

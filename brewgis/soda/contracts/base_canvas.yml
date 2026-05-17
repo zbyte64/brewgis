@@ -1,10 +1,10 @@
 # Soda Core contract: base_canvas validation
 dataset: __DATASET__
 columns:
-  - name: geography_id
+  - name: parcel_id
     checks:
       - missing:
-          name: geography_id has no missing values
+          name: parcel_id has no missing values
   - name: geometry
     checks:
       - missing:

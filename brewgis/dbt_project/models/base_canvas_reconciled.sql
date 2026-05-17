@@ -39,6 +39,11 @@ SELECT
     area_parcel,
     area_dev_condition,
     area_row,
+    area_parcel_res,
+    area_parcel_emp_ag,
+    area_parcel_emp,
+    area_parcel_mixed_use,
+    area_parcel_no_use,
     -- Demographics
     pop,
     pop_groupquarter,
