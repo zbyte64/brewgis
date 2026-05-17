@@ -8,7 +8,7 @@
 
     Column mapping:
         parcel_id            → geography_id (via Phase1 normalization)
-        geometry             → geometry (PostGIS MultiPolygon, 4326)
+        geometry             → ST_Transform(SACOG CA Albers → 4326)
         county               → 'Sacramento' (constant — all parcels in Sacramento County)
         land_development_category → NULL (let base_canvas_attributes classify from land_use/assessor_use_code)
         built_form_key       → NULL (let base_canvas_attributes set default 'mixed_use')
@@ -31,7 +31,7 @@
 
 SELECT
     parcel_id,
-    geometry,
+    ST_Transform(geometry, 4326) AS geometry,
     'Sacramento'::text AS county,
     NULL::text AS land_development_category,
     NULL::text AS built_form_key,
