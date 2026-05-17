@@ -203,10 +203,7 @@ with_intersection AS (
             COALESCE(calib_int_density, 12.5)
         )::numeric, 2) AS int_dens_v
     FROM int_density
-),
-
-
-
+)
 
 -- Final output
 SELECT

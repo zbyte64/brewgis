@@ -60,7 +60,7 @@ wac_data AS (
     SELECT
         w.*,
         GREATEST(ST_Area(w.local_geometry), 1e-10) AS wac_area,
-        ST_Envelope(w.local_geometry) AS wac_envelope,
+        ST_Envelope(w.local_geometry) AS wac_envelope
     FROM pre_wac_data w
 ),
 
