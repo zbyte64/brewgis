@@ -173,6 +173,7 @@ int_density AS (
 SELECT
     parcel_id,
     geometry,
+    local_geometry,
     county,
     lnd_category AS land_development_category,
     bf_key AS built_form_key,

@@ -24,14 +24,7 @@
 
 {%- set area_srid = var('projected_srid', 3857) -%}
 
-WITH parcel_geom AS (
-    SELECT
-        d.*,
-        d.local_geometry AS geom_proj
-    FROM {{ ref('base_canvas_demographics') }} d
-),
-
-pre_wac_data AS (
+WITH pre_wac_data AS (
     SELECT
         w.geoid,
         w.emp,
@@ -58,15 +51,17 @@ pre_wac_data AS (
         w.emp_ind,
         w.emp_ag,
         w.geometry,
-        ST_Transform(w.geometry, {{ area_srid }}) AS geom_proj
+        ST_Transform(w.geometry, {{ area_srid }}) AS local_geometry
     FROM {{ source('lehd', 'wac_block') }} w
     WHERE w.geometry IS NOT NULL
 ),
 
 wac_data AS (
-    w.*,
-    GREATEST(ST_Area(w.geom_proj), 1e-10) AS wac_area
-    FROM pre_wac_data
+    SELECT
+        w.*,
+        GREATEST(ST_Area(w.local_geometry), 1e-10) AS wac_area,
+        ST_Envelope(w.local_geometry) AS wac_envelope,
+    FROM pre_wac_data w
 ),
 
 -- Area-weighted spatial allocation
@@ -97,8 +92,9 @@ intersections AS (
         w.emp_ind,
         w.emp_ag,
         w.wac_area,
-        ST_Area(ST_Intersection(p.geom_proj, w.geom_proj)) AS intersect_area
-    FROM parcel_geom p
+        -- more accurate but 3x slower: ST_Area(ST_Intersection(p.local_geometry, w.local_geometry)) AS intersect_area
+        ST_Area(ST_ClipByBox2D(p.local_geometry, w.wac_envelope)) AS intersect_area
+    FROM {{ ref('base_canvas_demographics') }} p
     JOIN wac_data w ON ST_Intersects(p.geometry, w.geometry)
 ),
 
@@ -135,6 +131,7 @@ allocated AS (
 SELECT
     p.parcel_id,
     p.geometry,
+    p.local_geometry,
     p.county,
     p.land_development_category,
     p.built_form_key,
@@ -208,5 +205,5 @@ SELECT
     a.emp_agriculture,
     a.emp_extraction,
     a.emp_military
-FROM parcel_geom p
+FROM {{ ref('base_canvas_demographics') }} p
 LEFT JOIN allocated a ON p.parcel_id = a.parcel_id

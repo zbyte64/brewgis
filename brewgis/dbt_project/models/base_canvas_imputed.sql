@@ -38,6 +38,7 @@ regional_avg AS (
 SELECT
     a.parcel_id,
     a.geometry,
+    a.local_geometry,
     a.county,
     a.land_development_category,
     a.built_form_key,
@@ -58,7 +59,7 @@ SELECT
     a.area_parcel_no_use,
     -- Demographics: COALESCE(a_value, regional_avg, 0.0)
     COALESCE(a.pop, r.county_avg_pop, 0.0) AS pop,
-    COALESCE(a.pop_groupquarter, 0), 0.0) AS pop_groupquarter,
+    COALESCE(a.pop_groupquarter, 0.0) AS pop_groupquarter,
     COALESCE(a.hh, r.county_avg_hh, 0.0) AS hh,
     COALESCE(a.du, r.county_avg_du, 0.0) AS du,
     a.du_detsf,

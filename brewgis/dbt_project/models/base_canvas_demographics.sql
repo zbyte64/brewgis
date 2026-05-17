@@ -82,7 +82,8 @@ pre_acs_data AS (
 acs_data AS (
     SELECT
         a.*,
-        GREATEST(ST_Area(a.geom_proj), 1e-10) AS bg_area
+        GREATEST(ST_Area(a.geom_proj), 1e-10) AS bg_area,
+        ST_Envelope(a.geom_proj) AS local_envelope
     FROM pre_acs_data a
 ),
 
@@ -106,7 +107,8 @@ intersections AS (
         a.pct_college_educated,
         a.cost_burden_pct,
         a.bg_area,
-        ST_Area(ST_Intersection(p.geom_proj, a.geom_proj)) AS intersect_area
+        -- More accurate but 3x slower: ST_Area(ST_Intersection(p.geom_proj, a.geom_proj)) AS intersect_area
+        ST_Area(ST_ClipByBox2D(p.geom_proj, a.local_envelope)) AS intersect_area
     FROM parcel_geom p
     -- JOIN is on two indexed intersections
     JOIN acs_data a ON ST_Intersects(p.geometry, a.geometry)
