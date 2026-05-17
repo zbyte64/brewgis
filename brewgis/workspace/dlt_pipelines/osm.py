@@ -13,6 +13,7 @@ import logging
 import geopandas as gpd
 import numpy as np
 import osmnx as ox
+import shapely
 
 from brewgis.workspace.services._db import get_engine
 from brewgis.workspace.services._db import text
@@ -44,8 +45,13 @@ def _compute_jurisdiction_density(
         Intersections per square mile, or ``0.0`` when no intersections found.
         Exceptions propagate to the caller — no exception is swallowed.
     """
-    # Union all parcel geometries in the boundary and buffer slightly
-    geom = boundary.union_all().buffer(0.001)
+    # osmnx expects geos to be EPSG:4326
+    # Union all parcel geometries in the boundary then fix self-intersections
+    # and simplify micro-vertices that can become degenerate on reprojection.
+    geom = boundary.to_crs('EPSG:4326').union_all().buffer(0.001)
+    geom = shapely.make_valid(geom)
+    # handled by osmnx?
+    # geom = geom.simplify(tolerance=15.0, preserve_topology=True)
 
     # Get the road network within the boundary
     graph = ox.graph_from_polygon(
@@ -56,11 +62,13 @@ def _compute_jurisdiction_density(
     )
 
     # Count intersections (nodes with street_count >= 3)
+    # ValueError: Graph with no edges means ...?
     nodes, _ = ox.graph_to_gdfs(graph)
     intersections = nodes[nodes["street_count"] >= 3]
 
     # Compute area in square miles
-    boundary_aea = boundary.to_crs("EPSG:6933")
+    # TODO projection should be keyed to the workspace's local projection setting
+    boundary_aea = boundary.to_crs("EPSG:6933") 
     area_sq_m = boundary_aea.area.sum()
     area_sq_mi = area_sq_m / _SQ_METERS_PER_SQ_MILE
 
@@ -141,6 +149,7 @@ def run_osm_pipeline(
             parcels = gpd.GeoDataFrame.from_postgis(
                 sql_juris, get_engine(), geom_col="geometry"
             )
+            # Needed? parcels.to_crs(src.crs)
 
             jurisdictions = parcels["jurisdiction"].unique()
             juris_density_map: dict[str, float] = {}

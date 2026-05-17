@@ -380,6 +380,13 @@ def compute_nlcd_zonal_stats(
     from shapely.geometry import mapping
 
     with rasterio.open(raster_path) as src:
+        # Reproject parcels to the raster's CRS — mask() expects
+        # geometries in the dataset's coordinate system.  The NLCD
+        # raster is in EPSG:5070 (USA Contiguous Albers) regardless
+        # of the download bbox CRS.
+        if parcels.crs is not None and parcels.crs != src.crs:
+            parcels = parcels.to_crs(src.crs)
+
         categories: list[str] = []
         impervious: list[float] = []
 
@@ -390,8 +397,6 @@ def compute_nlcd_zonal_stats(
                 impervious.append(0.0)
                 continue
 
-            # likely means our pojection is wrong
-            # ValueError: Input shapes do not overlap raster.
             out_image, _ = mask(src, [mapping(geom)], crop=True, nodata=0)
             pixels = out_image[0]
             cat = _nlcd_majority_class(pixels)
