@@ -3,7 +3,7 @@
 
     These columns (median_income, pct_minority, etc.) are density/rate measures
     where raw SUM is meaningless. This model computes area-weighted averages:
-    SUM(col * area_gross) / SUM(area_gross).
+    SUM(col * pop) / SUM(pop).
 
     Vars:
         comparison_brewgis_table: BrewGIS base canvas table name.
@@ -16,11 +16,11 @@
 
 WITH weighted AS (
     SELECT
-        COALESCE(SUM("median_income" * "area_gross"), 0) / NULLIF(SUM("area_gross"), 0) AS median_income_wavg,
-        COALESCE(SUM("pct_minority" * "area_gross"), 0) / NULLIF(SUM("area_gross"), 0) AS pct_minority_wavg,
-        COALESCE(SUM("pct_college_educated" * "area_gross"), 0) / NULLIF(SUM("area_gross"), 0) AS pct_college_educated_wavg,
-        COALESCE(SUM("cost_burden_pct" * "area_gross"), 0) / NULLIF(SUM("area_gross"), 0) AS cost_burden_pct_wavg,
-        COALESCE(SUM("rent_burden_pct" * "area_gross"), 0) / NULLIF(SUM("area_gross"), 0) AS rent_burden_pct_wavg
+        COALESCE(SUM("median_income" * "pop"), 0) / NULLIF(SUM("pop"), 0) AS median_income_wavg,
+        COALESCE(SUM("pct_minority" * "pop"), 0) / NULLIF(SUM("pop"), 0) AS pct_minority_wavg,
+        COALESCE(SUM("pct_college_educated" * "pop"), 0) / NULLIF(SUM("pop"), 0) AS pct_college_educated_wavg,
+        COALESCE(SUM("cost_burden_pct" * "pop"), 0) / NULLIF(SUM("pop"), 0) AS cost_burden_pct_wavg,
+        COALESCE(SUM("rent_burden_pct" * "pop"), 0) / NULLIF(SUM("pop"), 0) AS rent_burden_pct_wavg
     FROM {{ brew_table }}
 )
 SELECT
