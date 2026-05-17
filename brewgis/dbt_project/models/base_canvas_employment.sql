@@ -12,20 +12,26 @@
     When LEHD data is unavailable or the spatial join produces no match,
     columns are left NULL for downstream imputation.
 
-    Materialized as: view
+    Materialized as: table
 #}
-{{ config(materialized=var('base_canvas_materialized', 'view')) }}
+{{ config(materialized=var('base_canvas_materialized', 'table'), 
+    indexes=[
+        {'columns': ['geometry'], 'type': 'gist'}, 
+        {'columns': ['local_geometry'], 'type': 'gist'},
+        {'columns': ['parcel_id'], 'unique': True},
+    ]) 
+}}
 
 {%- set area_srid = var('projected_srid', 3857) -%}
 
 WITH parcel_geom AS (
     SELECT
         d.*,
-        ST_Transform(d.geometry, {{ area_srid }}) AS geom_proj
+        d.local_geometry AS geom_proj
     FROM {{ ref('base_canvas_demographics') }} d
 ),
 
-wac_data AS (
+pre_wac_data AS (
     SELECT
         w.geoid,
         w.emp,
@@ -52,10 +58,15 @@ wac_data AS (
         w.emp_ind,
         w.emp_ag,
         w.geometry,
-        ST_Transform(w.geometry, {{ area_srid }}) AS geom_proj,
-        GREATEST(ST_Area(ST_Transform(w.geometry, {{ area_srid }})), 1e-10) AS wac_area
+        ST_Transform(w.geometry, {{ area_srid }}) AS geom_proj
     FROM {{ source('lehd', 'wac_block') }} w
     WHERE w.geometry IS NOT NULL
+),
+
+wac_data AS (
+    w.*,
+    GREATEST(ST_Area(w.geom_proj), 1e-10) AS wac_area
+    FROM pre_wac_data
 ),
 
 -- Area-weighted spatial allocation

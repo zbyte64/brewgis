@@ -13,9 +13,16 @@
     When ACS data is unavailable or the spatial join produces no match,
     columns are left NULL for downstream imputation.
 
-    Materialized as: view
+    Materialized as: table
 #}
-{{ config(materialized=var('base_canvas_materialized', 'view')) }}
+{{ config(
+    materialized=var('base_canvas_materialized', 'table'), 
+    indexes=[
+        {'columns': ['geometry'], 'type': 'gist'}, 
+        {'columns': ['local_geometry'], 'type': 'gist'},
+        {'columns': ['parcel_id'], 'unique': True},
+    ]) 
+}}
 
 {%- set area_srid = var('projected_srid', 3857) -%}
 
@@ -23,6 +30,7 @@ WITH parcel_geom AS (
     SELECT
         bg.parcel_id,
         bg.geometry,
+        bg.local_geometry,
         bg.county,
         bg.land_development_category,
         bg.built_form_key,
@@ -59,33 +67,23 @@ WITH parcel_geom AS (
         bg.area_parcel_emp,
         bg.area_parcel_mixed_use,
         bg.area_parcel_no_use,
-        ST_Transform(bg.geometry, {{ area_srid }}) AS geom_proj
+        bg.local_geometry AS geom_proj
     FROM {{ ref('base_canvas_geometry') }} bg
+),
+
+pre_acs_data AS (
+    SELECT
+        a.*,
+        ST_Transform(a.geometry, {{ area_srid }}) AS geom_proj
+    FROM {{ source('census', 'acs_block_group') }} a
+    WHERE a.geometry IS NOT NULL
 ),
 
 acs_data AS (
     SELECT
-        a.geoid,
-        a.pop,
-        a.hh,
-        a.du,
-        a.du_detsf,
-        a.du_detsf_sl,
-        a.du_detsf_ll,
-        a.du_attsf,
-        a.du_mf,
-        a.du_mf2to4,
-        a.du_mf5p,
-        a.median_income,
-        a.rent_burden_pct,
-        a.pct_minority,
-        a.pct_college_educated,
-        a.cost_burden_pct,
-        a.geometry,
-        ST_Transform(a.geometry, {{ area_srid }}) AS geom_proj,
-        GREATEST(ST_Area(ST_Transform(a.geometry, {{ area_srid }})), 1e-10) AS bg_area
-    FROM {{ source('census', 'acs_block_group') }} a
-    WHERE a.geometry IS NOT NULL
+        a.*,
+        GREATEST(ST_Area(a.geom_proj), 1e-10) AS bg_area
+    FROM pre_acs_data a
 ),
 
 -- Area-weighted spatial allocation: one row per overlapping parcel-acs pair
@@ -110,6 +108,7 @@ intersections AS (
         a.bg_area,
         ST_Area(ST_Intersection(p.geom_proj, a.geom_proj)) AS intersect_area
     FROM parcel_geom p
+    -- JOIN is on two indexed intersections
     JOIN acs_data a ON ST_Intersects(p.geometry, a.geometry)
 ),
 
@@ -140,6 +139,7 @@ allocated AS (
 SELECT
     p.parcel_id,
     p.geometry,
+    p.local_geometry,
     p.county,
     p.land_development_category,
     p.built_form_key,

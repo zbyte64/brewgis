@@ -29,6 +29,7 @@ V1_PARCELS = "sac_cnty_region_existing_land_use_parcels"
 logger = logging.getLogger(__name__)
 STATE_FIPS = "06"
 COUNTY_FIPS = "067"
+LOCAL_SRID = 3310
 
 
 class Command(BaseCommand):
@@ -136,7 +137,7 @@ class Command(BaseCommand):
             schema="public",
             if_exists="replace",
             index=False,
-            dtype={"geometry": "geometry(MultiPolygon, 4326)"},
+            dtype={"geometry": f"geometry(MultiPolygon, {LOCAL_SRID})"},
         )
 
         self.stdout.write("  Written to public.sacog_comparison_parcels")
@@ -156,8 +157,8 @@ class Command(BaseCommand):
                 f"  TIGER/Line BG loaded: {tiger_result.get('row_count', 0)} rows "
                 f"in {tiger_result.get('table_name', '?')}"
             )
-        # Populate ACS staging table before ETL
-        if not skip_census:
+
+            # Populate ACS staging table before ETL
             self.stdout.write("\n── Populating Census ACS staging table ──")
             from brewgis.workspace.dlt_pipelines.census import run_census_pipeline
 
@@ -208,6 +209,7 @@ class Command(BaseCommand):
         self.stdout.write("\n── Phase 2a: Materializing SACOG parcel shim ──")
         shim_vars: dict[str, Any] = {
             "base_canvas_materialized": "table",
+            "projected_srid": LOCAL_SRID,
         }
         shim_result = run_dbt_local(
             select=["sacog_parcel_shim"],
@@ -222,7 +224,7 @@ class Command(BaseCommand):
         dbt_vars: dict[str, Any] = {
             "parcel_table": "sacog_parcel_shim",
             "base_canvas_materialized": "table",
-            "projected_srid": 6933,
+            "projected_srid": LOCAL_SRID,
         }
         result = run_dbt_local(
             select=[

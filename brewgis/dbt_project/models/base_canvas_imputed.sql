@@ -4,12 +4,19 @@
     Tier 1: Direct value from ``base_canvas_attributes`` (preserves existing values)
     Tier 2: County average for remaining NULLs (window function)
     Tier 3: National default constant as final fallback
+    Always treat 0 as 0, NULLs are what we fill in.
 
     Reads from ``base_canvas_attributes``.
 
-    Materialized as: view
+    Materialized as: table
 #}
-{{ config(materialized=var('base_canvas_materialized', 'view')) }}
+{{ config(materialized=var('base_canvas_materialized', 'table'), 
+    indexes=[
+        {'columns': ['geometry'], 'type': 'gist'}, 
+        {'columns': ['local_geometry'], 'type': 'gist'},
+        {'columns': ['parcel_id'], 'unique': True},
+    ]) 
+}}
 
 WITH attributes AS (
     SELECT * FROM {{ ref('base_canvas_attributes') }}
@@ -36,7 +43,7 @@ SELECT
     a.built_form_key,
     -- Intersection density: COALESCE(a_value, regional_avg, national_default)
     ROUND(COALESCE(
-        NULLIF(a.intersection_density, 0),
+        a.intersection_density,
         r.county_avg_int_density,
         12.5
     )::numeric, 2) AS intersection_density,
@@ -50,10 +57,10 @@ SELECT
     a.area_parcel_mixed_use,
     a.area_parcel_no_use,
     -- Demographics: COALESCE(a_value, regional_avg, 0.0)
-    COALESCE(NULLIF(a.pop, 0), r.county_avg_pop, 0.0) AS pop,
-    COALESCE(NULLIF(a.pop_groupquarter, 0), 0.0) AS pop_groupquarter,
-    COALESCE(NULLIF(a.hh, 0), r.county_avg_hh, 0.0) AS hh,
-    COALESCE(NULLIF(a.du, 0), r.county_avg_du, 0.0) AS du,
+    COALESCE(a.pop, r.county_avg_pop, 0.0) AS pop,
+    COALESCE(a.pop_groupquarter, 0), 0.0) AS pop_groupquarter,
+    COALESCE(a.hh, r.county_avg_hh, 0.0) AS hh,
+    COALESCE(a.du, r.county_avg_du, 0.0) AS du,
     a.du_detsf,
     a.du_detsf_sl,
     a.du_detsf_ll,
@@ -61,7 +68,7 @@ SELECT
     a.du_mf,
     a.du_mf2to4,
     a.du_mf5p,
-    COALESCE(NULLIF(a.emp, 0), r.county_avg_emp, 0.0) AS emp,
+    COALESCE(a.emp, r.county_avg_emp, 0.0) AS emp,
     a.emp_ret,
     a.emp_retail_services,
     a.emp_restaurant,

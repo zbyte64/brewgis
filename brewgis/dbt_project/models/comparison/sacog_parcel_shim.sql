@@ -27,11 +27,18 @@
     Materialized as: table
 #}
 
-{{ config(materialized='table') }}
+{{ config(materialized='table', 
+    indexes=[
+        {'columns': ['geometry'], 'type': 'gist'}, 
+        {'columns': ['local_geometry'], 'type': 'gist'},
+        {'columns': ['parcel_id'], 'unique': True},
+    ]) 
+}}
 
 SELECT
     parcel_id,
     ST_Transform(geometry, 4326) AS geometry,
+    geometry AS local_geometry,
     'Sacramento'::text AS county,
     NULL::text AS land_development_category,
     NULL::text AS built_form_key,
