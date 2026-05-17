@@ -117,8 +117,10 @@ class SacogComparisonETLConfig(Config):
     Controls data sources and which adapters to enable.
     """
 
-    quick: bool = False
-    """Skip NLCD/OSM (use default null sources); only Census + LEHD."""
+    run_nlcd: bool = False
+    """Enable NLCD land cover classification and irrigation estimation."""
+    run_osm: bool = False
+    """Enable OSM intersection density estimation."""
     skip_census: bool = False
     """Skip Census ACS demographic fetching."""
     skip_lehd: bool = False

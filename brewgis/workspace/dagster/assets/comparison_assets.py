@@ -23,6 +23,7 @@ from brewgis.soda import validate_land_use_classification
 from brewgis.workspace.dagster.check_provenance import METADATA_CONTRACT_INLINE_COLUMNS
 from brewgis.workspace.dagster.check_provenance import METADATA_CONTRACT_PATH
 from brewgis.workspace.dagster.check_provenance import METADATA_CONTRACT_SOURCE
+from brewgis.workspace.dagster.configs import SacogComparisonETLConfig
 from brewgis.workspace.dagster.configs import SacogLoadParcelsConfig
 from brewgis.workspace.dagster.configs import SacogReportConfig
 from brewgis.workspace.dagster.resources.dbt_resource import DbtCliResource
@@ -229,6 +230,7 @@ def sacog_populate_wac_block(
 )
 def sacog_run_comparison_etl(
     context: AssetExecutionContext,
+    config: SacogComparisonETLConfig,
     dbt_cli: DbtCliResource,
 ) -> MaterializeResult:
     """Run the brewgis base canvas dbt pipeline using the loaded SACOG parcels.
@@ -243,9 +245,51 @@ def sacog_run_comparison_etl(
       - ``sacog_load_parcels`` populates the parcel staging table
       - ``sacog_populate_acs_block_group`` populates ``census.acs_block_group``
       - ``sacog_populate_wac_block`` populates ``lehd.wac_block``
-    """
-    context.log.info("Running dbt base_canvas models")
 
+    Optional data sources (controlled by config):
+      - NLCD: land cover classification + impervious fraction for irrigation
+      - OSM: intersection density from road network
+    """
+    dbt_vars: dict[str, object] = {
+        "parcel_table": "sacog_parcel_shim",
+        "base_canvas_materialized": "table",
+    }
+
+    # Run NLCD pipeline if enabled
+    if config.run_nlcd:
+        context.log.info("Running NLCD zonal stats pipeline")
+        from brewgis.workspace.dlt_pipelines.nlcd import run_nlcd_pipeline
+
+        nlcd_result = run_nlcd_pipeline(parcel_table="sacog_comparison_parcels")
+        if not nlcd_result.get("success"):
+            raise RuntimeError(f"NLCD zonal stats failed: {nlcd_result.get('error')}")
+        nlcd_table = nlcd_result.get("table_name", "public.nlcd_parcel_stats")
+        dbt_vars["nlcd_parcel_table"] = nlcd_table
+        context.log.info(
+            "NLCD stats loaded: %s rows in %s",
+            nlcd_result.get("row_count", 0),
+            nlcd_table,
+        )
+
+    # Run OSM pipeline if enabled
+    if config.run_osm:
+        context.log.info("Running OSM intersection density pipeline")
+        from brewgis.workspace.dlt_pipelines.osm import run_osm_pipeline
+
+        osm_result = run_osm_pipeline(parcel_table="sacog_comparison_parcels")
+        if not osm_result.get("success"):
+            raise RuntimeError(
+                f"OSM intersection density failed: {osm_result.get('error')}"
+            )
+        osm_table = osm_result.get("table_name", "public.osm_intersection_density")
+        dbt_vars["osm_intersection_table"] = osm_table
+        context.log.info(
+            "OSM intersection density loaded: %s rows in %s",
+            osm_result.get("row_count", 0),
+            osm_table,
+        )
+
+    context.log.info("Running dbt base_canvas models")
     result = dbt_cli.run(
         select=[
             "base_canvas_geometry",
@@ -255,6 +299,7 @@ def sacog_run_comparison_etl(
             "base_canvas_imputed",
             "base_canvas_reconciled",
         ],
+        vars_=dbt_vars,
         full_refresh=False,
     )
 
@@ -278,6 +323,8 @@ def sacog_run_comparison_etl(
         metadata={
             "dbt_status": "success" if result.success else "failed",
             "models_run": 6,
+            "nlcd_enabled": config.run_nlcd,
+            "osm_enabled": config.run_osm,
             "land_use_success": land_use_result.get("success", False),
             "soda_success": soda_result.get("success", False),
         }

@@ -40,10 +40,16 @@ class Command(BaseCommand):
 
     def add_arguments(self, parser: Any) -> None:
         parser.add_argument(
-            "--quick",
+            "--nlcd",
             action="store_true",
             default=False,
-            help="Skip NLCD/OSM (use default null sources); only Census + LEHD for demographics",
+            help="Enable NLCD land cover classification and irrigation estimation",
+        )
+        parser.add_argument(
+            "--osm",
+            action="store_true",
+            default=False,
+            help="Enable OSM intersection density estimation",
         )
         parser.add_argument(
             "--limit",
@@ -95,7 +101,9 @@ class Command(BaseCommand):
         )
         from brewgis.workspace.services._db import get_engine
 
-        quick = bool(options.get("quick", False))
+        nlcd = bool(options.get("nlcd", False))
+        osm = bool(options.get("osm", False))
+        quick = not (nlcd or osm)
         limit = int(options.get("limit", 0))
         skip_data_fetch = bool(options.get("skip_data_fetch", False))
         skip_census = skip_data_fetch or bool(options.get("skip_census", False))
@@ -104,7 +112,8 @@ class Command(BaseCommand):
         self.stdout.write("\n" + "=" * 70)
         self.stdout.write("  SACOG Base Canvas Comparison: BrewGIS vs v1 Reference")
         self.stdout.write("=" * 70)
-        self.stdout.write(f"  Quick mode: {quick}")
+        self.stdout.write(f"  NLCD: {'on' if nlcd else 'off'}")
+        self.stdout.write(f"  OSM: {'on' if osm else 'off'}")
         self.stdout.write(f"  Parcel limit: {limit or 'all'}")
         self.stdout.write(f"  Census: {'skip' if skip_census else 'on'}")
         self.stdout.write(f"  LEHD: {'skip' if skip_lehd else 'on'}")
@@ -205,6 +214,46 @@ class Command(BaseCommand):
             lehd_wac_count = _populate_wac_block(STATE_FIPS, COUNTY_FIPS, 2021)
             self.stdout.write(f"  lehd.wac_block populated: {lehd_wac_count:,} rows")
 
+        # ── Phase 1.5: Run NLCD pipeline (optional) ──────────────────────
+        nlcd_table = ""
+        if nlcd:
+            self.stdout.write("\n── Phase 1.5a: Computing NLCD zonal stats ──")
+            from brewgis.workspace.dlt_pipelines.nlcd import run_nlcd_pipeline
+
+            nlcd_result = run_nlcd_pipeline(
+                parcel_table="sacog_comparison_parcels",
+            )
+            if not nlcd_result.get("success"):
+                raise CommandError(
+                    f"NLCD zonal stats failed: {nlcd_result.get('error')}. "
+                    "Use --no-nlcd to skip."
+                )
+            nlcd_table = nlcd_result.get("table_name", "public.nlcd_parcel_stats")
+            self.stdout.write(
+                f"  NLCD stats loaded: {nlcd_result.get('row_count', 0)} rows "
+                f"in {nlcd_table}"
+            )
+
+        # ── Phase 1.5b: Run OSM pipeline (optional) ──────────────────────
+        osm_table = ""
+        if osm:
+            self.stdout.write("\n── Phase 1.5b: Computing OSM intersection density ──")
+            from brewgis.workspace.dlt_pipelines.osm import run_osm_pipeline
+
+            osm_result = run_osm_pipeline(
+                parcel_table="sacog_comparison_parcels",
+            )
+            if not osm_result.get("success"):
+                raise CommandError(
+                    f"OSM intersection density failed: {osm_result.get('error')}. "
+                    "Use --no-osm to skip."
+                )
+            osm_table = osm_result.get("table_name", "public.osm_intersection_density")
+            self.stdout.write(
+                f"  OSM intersection density loaded: {osm_result.get('row_count', 0)} rows "
+                f"in {osm_table}"
+            )
+
         # ── Phase 2a: Materialize SACOG parcel shim ────────────────────
         self.stdout.write("\n── Phase 2a: Materializing SACOG parcel shim ──")
         shim_vars: dict[str, Any] = {
@@ -226,6 +275,10 @@ class Command(BaseCommand):
             "base_canvas_materialized": "table",
             "projected_srid": LOCAL_SRID,
         }
+        if nlcd_table:
+            dbt_vars["nlcd_parcel_table"] = nlcd_table
+        if osm_table:
+            dbt_vars["osm_intersection_table"] = osm_table
         result = run_dbt_local(
             select=[
                 "base_canvas_geometry",

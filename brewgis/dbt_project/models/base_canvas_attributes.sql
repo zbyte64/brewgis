@@ -7,19 +7,26 @@
       1. Demographic sub-type defaults (pop_groupquarter, du subtypes)
       2. Building areas from dwelling units (using calibration sqft_per_du)
       3. Building areas from employment (using calibration sqft_per_emp)
-      4. Land development category from assessor use codes or SACOG text labels
+      4. Land development category from assessor use codes, SACOG text labels, or NLCD (optional)
       5. Area-by-use columns from land_development_category
-      6. Irrigation (residential and commercial irrigated area)
-      7. Intersection density (from calibration or default)
+      6. Irrigation (residential and commercial irrigated area) — uses NLCD impervious fraction when available
+      7. Intersection density — uses OSM when available, falls back to calibration or default
+
 
     Calibration seeds:
       - calibration_parameters: per-category (sqft_per_du, sqft_per_emp, res_irrigation_frac, com_irrigation_frac, intersection_density)
       - assessor_use_codes: 2-digit assessor code -> category
       - sacog_land_use: text land-use label -> category
+      - nlcd_parcel_table var: NLCD zonal stats (land_development_category, impervious_fraction)
+      - osm_intersection_table var: OSM intersection density
+
 
     Materialized as: view
 #}
 {{ config(materialized=var('base_canvas_materialized', 'view')) }}
+{% set nlcd_table = var('nlcd_parcel_table', '') %}
+{% set osm_table = var('osm_intersection_table', '') %}
+
 
 WITH source_data AS (
     SELECT * FROM {{ ref('base_canvas_employment') }}
@@ -116,15 +123,24 @@ classified AS (
         COALESCE(
             ac.category,
             su.category,
+            {% if nlcd_table %}nlcd.land_development_category,{% endif %}
             'urban'
         ) AS lnd_v,
         COALESCE(NULLIF(b.built_form_key, ''), 'mixed_use') AS bf_v
+    {% if nlcd_table %},
+        nlcd.impervious_fraction
+    {% endif %}
     FROM building_areas b
+
     LEFT JOIN assessor_codes ac
         ON LEFT(COALESCE(b.assessor_use_code, ''), 2) = ac.use_code::text
     LEFT JOIN sacog_use su
         ON TRIM(COALESCE(b.land_use, '')) = su.land_use_label
+    {% if nlcd_table %}LEFT JOIN {{ nlcd_table }} nlcd
+        ON b.parcel_id = nlcd.parcel_id
+    {% endif %}
 ),
+
 
 -- Area by use from land_development_category
 area_by_use AS (
@@ -150,10 +166,18 @@ irrigation AS (
     SELECT
         *,
         COALESCE(residential_irrigated_area,
+            {% if nlcd_table %}
+            COALESCE(area_parcel_res_v, area_gross, 0) * (1 - COALESCE(impervious_fraction, 0)) * COALESCE(res_irrigation_frac, 0.25)
+            {% else %}
             COALESCE(area_parcel_res_v, area_gross, 0) * COALESCE(res_irrigation_frac, 0.25)
+            {% endif %}
         ) AS residential_irrigated_area_v,
         COALESCE(commercial_irrigated_area,
+            {% if nlcd_table %}
+            COALESCE(area_parcel_emp_v, area_gross, 0) * (1 - COALESCE(impervious_fraction, 0)) * COALESCE(com_irrigation_frac, 0.035)
+            {% else %}
             COALESCE(area_parcel_emp_v, area_gross, 0) * COALESCE(com_irrigation_frac, 0.035)
+            {% endif %}
         ) AS commercial_irrigated_area_v
     FROM area_by_use
 ),
@@ -161,13 +185,28 @@ irrigation AS (
 -- Intersection density
 int_density AS (
     SELECT
+        i.*
+        {% if osm_table %},
+        osm.intersection_density AS osm_intersection_density
+        {% endif %}
+    FROM irrigation i
+    {% if osm_table %}LEFT JOIN {{ osm_table }} osm
+        ON i.parcel_id = osm.parcel_id
+    {% endif %}
+),
+with_intersection AS (
+    SELECT
         *,
         ROUND(COALESCE(
+            {% if osm_table %}NULLIF(osm_intersection_density, 0),{% endif %}
             NULLIF(intersection_density, 0),
             COALESCE(calib_int_density, 12.5)
         )::numeric, 2) AS int_dens_v
-    FROM irrigation
-)
+    FROM int_density
+),
+
+
+
 
 -- Final output
 SELECT
@@ -249,4 +288,4 @@ SELECT
     pct_minority,
     pct_college_educated,
     cost_burden_pct
-FROM int_density
+FROM with_intersection

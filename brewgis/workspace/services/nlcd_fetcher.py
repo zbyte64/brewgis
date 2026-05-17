@@ -69,10 +69,18 @@ def _download_nlcd_subset(  # noqa: PLR0913
         transformer = pyproj.Transformer.from_crs(
             source_crs, _NLCD_NATIVE_CRS, always_xy=True
         )
-        (west, east), (south, north) = transformer.transform(
-            [west, east],
-            [south, north],
-        )
+        # Transform all four corners; Albers conic projection can invert
+        # the Y-axis ordering vs latitude, so take the axis-aligned envelope.
+        corners = [
+            transformer.transform(west, south),
+            transformer.transform(east, south),
+            transformer.transform(west, north),
+            transformer.transform(east, north),
+        ]
+        xs = [c[0] for c in corners]
+        ys = [c[1] for c in corners]
+        west, east = min(xs), max(xs)
+        south, north = min(ys), max(ys)
 
     coverage_id = f"mrlc_download__NLCD_{year}_Land_Cover_L48"
 

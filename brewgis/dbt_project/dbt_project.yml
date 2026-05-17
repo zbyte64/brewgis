@@ -79,6 +79,9 @@ vars:
   scenario_id: lint
   base_canvas_table: base_canvas
   constraints: []
+  nlcd_parcel_table: ""
+  osm_intersection_table: ""
+
 
   # Land Consumption — parking and impervious defaults
   parking_per_unit: 0.5
