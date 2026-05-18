@@ -167,6 +167,18 @@ try:
 except (ValueError, TypeError):
     _SL_DENSITY_THRESHOLD = _SACOG_SL_DENSITY_THRESHOLD
 
+# SACOG-calibrated sigmoid steepness for small-lot vs large-lot single-family
+# Reference fit: k=4.5, t=8.4. Default k=0.5 is the national default.
+# Fit derived from SACOG v1 reference dataset: density vs sl_ratio per parcel.
+_SACOG_K_STEEPNESS: float = 4.5
+_BREWGIS_K_STEEPNESS_ENV_VAR: str = "BREWGIS_K_STEEPNESS"
+_K_STEEPNESS: float
+try:
+    _raw_k = float(os.environ.get(_BREWGIS_K_STEEPNESS_ENV_VAR, "0.5"))
+    _K_STEEPNESS = max(0.01, _raw_k)
+except (ValueError, TypeError):
+    _K_STEEPNESS = 0.5
+
 # National proportions for splitting ACS DU subtypes
 _DU_MF_2_9_TO_MF2TO4_RATIO = 0.40  # 40% of 2-9 units → 2-4 units
 
@@ -258,6 +270,7 @@ def _populate_acs_block_group(
         "detsf_sl_ratio": _DU_DETSF_TO_SL_RATIO,
         "sl_density_threshold": _SL_DENSITY_THRESHOLD,
         "mf_2_9_to_mf2to4_ratio": _DU_MF_2_9_TO_MF2TO4_RATIO,
+        "k_steepness": _K_STEEPNESS,
     }
 
     result = run_dbt_local(select=["acs_block_group"], vars_=dbt_vars)

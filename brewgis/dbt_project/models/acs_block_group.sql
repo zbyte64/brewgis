@@ -32,6 +32,7 @@
 {% set detsf_sl_ratio = var('detsf_sl_ratio', 0.40) %}
 {% set sl_density_threshold = var('sl_density_threshold', 8.0) %}
 {% set mf_2_9_to_mf2to4_ratio = var('mf_2_9_to_mf2to4_ratio', 0.40) %}
+{% set k_steepness = var('k_steepness', 0.5) %}
 
 WITH raw_derived AS (
     SELECT
@@ -97,7 +98,7 @@ derived_with_pcts AS (
         CASE
             WHEN du_detsf > 0 AND geometry IS NOT NULL AND ST_IsValid(geometry)
             THEN LEAST(1.0, GREATEST(0.0,
-                1.0 / (1.0 + EXP(-0.5 * (
+                1.0 / (1.0 + EXP(-{{ k_steepness }} * (
                     (du_detsf / NULLIF(ST_Area(ST_Transform(geometry, 6933)) / 4046.86, 0))
                     - {{ sl_density_threshold }}
                 )))
