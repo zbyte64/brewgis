@@ -21,8 +21,8 @@
     Output: lehd.wac_block — persistent table read by _allocate_employment
 #}
 
-{{ config(materialized='table', schema='lehd', 
-    indexes=[{'columns': ['geometry'], 'type': 'gist'}]) 
+{{ config(materialized='table', schema='lehd',
+    indexes=[{'columns': ['geometry'], 'type': 'gist'}])
 }}
 
 {% set year = var('year', 2021) %}
@@ -34,6 +34,8 @@
 {% set cbp_22 = var('cbp_22', 0.0) %}
 {% set cbp_42 = var('cbp_42', 0.0) %}
 {% set cbp_721 = var('cbp_721', 0.0) %}
+{% set state_fips = var('state_fips', '06') %}
+{% set county_fips = var('county_fips', '067') %}
 
 WITH cbp_sub_sectors AS (
     SELECT
@@ -97,7 +99,7 @@ WITH cbp_sub_sectors AS (
     FROM {{ source('brewgis', 'lodes_raw') }} lr
     JOIN {{ source('brewgis', 'tiger_block_groups') }} tbg
         ON LEFT(lr.w_geocode, 12) = tbg.geoid
-    WHERE lr.year = {{ year }}
+    WHERE lr.year = {{ year }} AND LEFT(lr.w_geocode, 5) = '{{ state_fips }}' || '{{county_fips }}'
 ),
 cbp_aggregates AS (
     SELECT
@@ -162,10 +164,10 @@ SELECT
     CASE WHEN {{ is_sacog }} = 1 THEN 0 ELSE emp_agriculture_cbp END AS emp_agriculture,
     CASE WHEN {{ is_sacog }} = 1 THEN 0 ELSE emp_extraction_cbp END AS emp_extraction,
     CASE WHEN {{ is_sacog }} = 1 THEN 0 ELSE emp_military_cbp END AS emp_military,
+    CASE WHEN {{ is_sacog }} = 1 THEN 0 ELSE emp_ag END AS emp_ag,
     -- Aggregate columns (CBP-based)
     emp_ret,
     emp_off,
     emp_pub,
-    emp_ind,
-    emp_ag
+    emp_ind
 FROM cbp_aggregates

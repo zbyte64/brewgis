@@ -19,11 +19,11 @@
     Output: census.acs_block_group — persistent table read by _allocate_demographics
 #}
 
-{{ config(materialized='table', schema='census', 
+{{ config(materialized='table', schema='census',
     indexes=[
         {'columns': ['geometry'], 'type': 'gist'},
         {'columns': ['geoid'], 'unique': True},
-    ]) 
+    ])
 }}
 
 {% set year = var('year', 2022) %}

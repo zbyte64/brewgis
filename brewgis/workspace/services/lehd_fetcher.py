@@ -781,6 +781,8 @@ def _populate_wac_block(
     is_sacog = 1 if state_fips == "06" and county_fips == "067" else 0
 
     dbt_vars: dict[str, object] = {
+        "state_fips": state_fips,
+        "county_fips": county_fips,
         "year": year,
         "is_sacog": is_sacog,
         "cbp_11": cbp_props.get("11", 0.0),
@@ -814,7 +816,6 @@ def _populate_wac_block(
     result = validate_wac_block(schema="lehd", table="wac_block")
     if not result.get("success", False):
         raise RuntimeError(
-            "WAC block validation failed: "
-            + "; ".join(result.get("failures", []))
+            "WAC block validation failed: " + "; ".join(result.get("failures", []))
         )
     return row_count

@@ -882,12 +882,12 @@ def _generate_report_markdown(
             [
                 (
                     "Res Irrigated",
-                    "residential_irrigated_sqft",
+                    "residential_irrigated_area",
                     "residential_irrigated_area",
                 ),
                 (
                     "Com Irrigated",
-                    "commercial_irrigated_sqft",
+                    "commercial_irrigated_area",
                     "commercial_irrigated_area",
                 ),
             ],

@@ -48,7 +48,7 @@ def _compute_jurisdiction_density(
     # osmnx expects geos to be EPSG:4326
     # Union all parcel geometries in the boundary then fix self-intersections
     # and simplify micro-vertices that can become degenerate on reprojection.
-    geom = boundary.to_crs('EPSG:4326').union_all().buffer(0.001)
+    geom = boundary.to_crs("EPSG:4326").union_all().buffer(0.001)
     geom = shapely.make_valid(geom)
     # handled by osmnx?
     # geom = geom.simplify(tolerance=15.0, preserve_topology=True)
@@ -68,7 +68,7 @@ def _compute_jurisdiction_density(
 
     # Compute area in square miles
     # TODO projection should be keyed to the workspace's local projection setting
-    boundary_aea = boundary.to_crs("EPSG:6933") 
+    boundary_aea = boundary.to_crs("EPSG:6933")
     area_sq_m = boundary_aea.area.sum()
     area_sq_mi = area_sq_m / _SQ_METERS_PER_SQ_MILE
 
