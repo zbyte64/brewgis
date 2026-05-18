@@ -1,9 +1,13 @@
 """Set up the Fresno Demo workspace end-to-end.
 
+Uses dbt base_canvas models for ETL (instead of the deprecated Python SQL
+pipeline), dlt for data ingestion, and Soda for data quality validation.
+
 Usage:
     python manage.py setup_fresno_workspace
     python manage.py setup_fresno_workspace --skip-download   # use cached data only
     python manage.py setup_fresno_workspace --force-download   # re-download everything
+    python manage.py setup_fresno_workspace --nlcd             # include NLCD land cover
 """
 
 from __future__ import annotations
@@ -32,8 +36,6 @@ from brewgis.workspace.models import Layer
 from brewgis.workspace.models import Scenario
 from brewgis.workspace.models import Workspace
 from brewgis.workspace.services._db import get_engine
-from brewgis.workspace.services.base_canvas_pipeline import run_pipeline
-from brewgis.workspace.services.built_form_classifier import BuiltFormClassifier
 from brewgis.workspace.services.poi_fetcher import fetch_pois
 from brewgis.workspace.symbology.auto import auto_generate_symbology
 
@@ -50,6 +52,9 @@ WORKSPACE_SCHEMA = "fresno_demo"
 STATE_FIPS = "06"
 COUNTY_FIPS = "019"
 
+# CA Teale Albers (projected SRID for area computations)
+LOCAL_SRID = 3310
+
 # Fresno-Clovis urban area bounding box
 BBOX = (-119.95, 36.60, -119.55, 36.90)
 MIN_LNG, MIN_LAT, MAX_LNG, MAX_LAT = BBOX
@@ -58,12 +63,13 @@ MIN_LNG, MIN_LAT, MAX_LNG, MAX_LAT = BBOX
 BASE_YEAR = 2022
 HORIZON_YEAR = 2050
 
-# DBT vars template
+# DBT vars template — used by the analysis pipeline (not base canvas dbt)
 DBT_VARS_TEMPLATE: dict[str, Any] = {
     "source_schema": WORKSPACE_SCHEMA,
     "base_table_schema": WORKSPACE_SCHEMA,
-    "base_table_name": "fresno_parcels",
+    "base_table_name": "base_canvas_reconciled",
     "parcel_table": "parcels",
+    "base_canvas_table": "base_canvas_reconciled",
     "scenario_slug": "fresno_baseline",
     "constraints": [
         {"table": "floodplains", "discount_pct": 100, "geom_col": "geom"},
@@ -102,6 +108,16 @@ POI_CATEGORIES: list[str] = [
     "places_of_worship",
 ]
 
+# ── dbt base_canvas model names (in dependency order) ────────────────
+BASE_CANVAS_MODELS = [
+    "base_canvas_geometry",
+    "base_canvas_demographics",
+    "base_canvas_employment",
+    "base_canvas_attributes",
+    "base_canvas_imputed",
+    "base_canvas_reconciled",
+]
+
 
 class Command(BaseCommand):
     help = "Set up the Fresno Demo workspace end-to-end."
@@ -118,22 +134,46 @@ class Command(BaseCommand):
             help="Re-download all data even if cached.",
         )
         parser.add_argument(
-            "--step",
-            choices=[
-                "all",
-                "download",
-                "workspace",
-                "parcels",
-                "census",
-                "lehd",
-                "poi",
-                "constraints",
-                "built_forms",
-                "scenario",
-                "analysis",
-            ],
-            default="all",
-            help="Run a specific step.",
+            "--skip-census",
+            action="store_true",
+            default=False,
+            help="Skip Census ACS population data fetch and staging.",
+        )
+        parser.add_argument(
+            "--skip-lehd",
+            action="store_true",
+            default=False,
+            help="Skip LEHD employment data fetch and staging.",
+        )
+        parser.add_argument(
+            "--skip-poi",
+            action="store_true",
+            default=False,
+            help="Skip POI import from OpenStreetMap.",
+        )
+        parser.add_argument(
+            "--skip-constraints",
+            action="store_true",
+            default=False,
+            help="Skip environmental constraint layer ingest.",
+        )
+        parser.add_argument(
+            "--skip-city-boundary",
+            action="store_true",
+            default=False,
+            help="Skip city boundary ingest.",
+        )
+        parser.add_argument(
+            "--nlcd",
+            action="store_true",
+            default=False,
+            help="Enable NLCD land cover classification (zonal stats per parcel).",
+        )
+        parser.add_argument(
+            "--osm",
+            action="store_true",
+            default=False,
+            help="Enable OSM intersection density computation.",
         )
         parser.add_argument(
             "--dry-run",
@@ -141,92 +181,116 @@ class Command(BaseCommand):
             help="Print what would be done without doing it.",
         )
 
-    def handle(self, **options: Any) -> None:  # noqa: C901, PLR0912
+    def handle(self, **options: Any) -> None:  # noqa: PLR0912, PLR0915
         self.dry_run = options["dry_run"]
-        step = options["step"]
+        skip_census = bool(options.get("skip_census", False))
+        skip_lehd = bool(options.get("skip_lehd", False))
+        skip_poi = bool(options.get("skip_poi", False))
+        skip_constraints = bool(options.get("skip_constraints", False))
+        skip_city_boundary = bool(options.get("skip_city_boundary", False))
+        nlcd = bool(options.get("nlcd", False))
+        osm = bool(options.get("osm", False))
 
-        steps: list[tuple[str, Any, tuple]] = []
+        # ── Step 1: Download data ──────────────────────────────────────
+        if not options.get("skip_download"):
+            self._run_step("Download data", self._download_data, (options,))
+        else:
+            self.stdout.write("  [SKIP] Download data")
 
-        if step in ("all", "download"):
-            steps.append(("Download data", self._download_data, (options,)))
+        # ── Step 2: Create workspace + load built form fixtures ────────
+        workspace = self._run_step("Create workspace", self._create_workspace, ())
 
-        if step in ("all", "workspace"):
-            steps.append(("Create workspace", self._create_workspace, ()))
+        # ── Step 3: Ingest parcels (GeoJSON → table) ──────────────────
+        self._run_step("Ingest parcels", self._ingest_parcels, ())
 
-        if step in ("all", "parcels"):
-            steps.append(("Ingest parcels (ETL pipeline)", self._ingest_parcels, ()))
-            steps.append(("Ingest city boundary", self._ingest_city_boundary, ()))
+        # ── Step 4: Ingest city boundary ──────────────────────────────
+        if not skip_city_boundary:
+            self._run_step("Ingest city boundary", self._ingest_city_boundary, ())
+        else:
+            self.stdout.write("  [SKIP] Ingest city boundary")
 
-        if step in ("all", "census"):
-            steps.append(("Validate Census ACS data", self._import_census, ()))
-
-        if step in ("all", "lehd"):
-            steps.append(("Validate LEHD employment data", self._import_lehd, ()))
-
-        if step in ("all", "poi"):
-            steps.append(("Import POIs", self._import_poi, ()))
-
-        if step in ("all", "constraints"):
-            steps.append(("Ingest constraint layers", self._ingest_constraints, ()))
-
-        if step in ("all", "built_forms"):
-            steps.append(("Export building types", self._export_built_forms, ()))
-            steps.append(
-                (
-                    "Assign built forms and density",
-                    self._assign_built_forms_and_density,
-                    (),
-                )
+        # ── Step 5: Census — TIGER → ACS dlt → acs_block_group ─────────
+        if not skip_census:
+            self._run_step(
+                "Census ACS data (dlt → dbt acs_block_group)",
+                self._populate_census,
+                (),
             )
+        else:
+            self.stdout.write("  [SKIP] Census ACS data")
 
-        if step in ("all", "scenario"):
-            steps.append(("Create base scenario", self._create_base_scenario, ()))
+        # ── Step 6: LEHD — dlt → wac_block ────────────────────────────
+        if not skip_lehd:
+            self._run_step(
+                "LEHD employment data (dlt → dbt wac_block)",
+                self._populate_lehd,
+                (),
+            )
+        else:
+            self.stdout.write("  [SKIP] LEHD employment data")
 
-        if step in ("all", "analysis"):
-            steps.append(("Run analysis pipeline", self._run_analysis, ()))
+        # ── Step 7: NLCD pipeline (opt-in) ────────────────────────────
+        nlcd_table = ""
+        if nlcd:
+            self._run_step(
+                "NLCD land cover pipeline",
+                self._run_nlcd_pipeline,
+                (workspace,),
+            )
+            nlcd_table = self._last_nlcd_table
+        else:
+            self.stdout.write("  [SKIP] NLCD (not enabled)")
 
-        # Mark non-critical steps that should not crash the pipeline
-        nonfatal_labels = {
-            "Validate LEHD employment data",
-            "Validate Census ACS data",
-            "Import POIs",
-            "Ingest constraint layers",
-            "Ingest city boundary",
-        }
-        # Try Dagster delegation for full runs
-        if step == "all" and not self.dry_run:
-            if self._run_via_dagster():
-                return
+        # ── Step 8: OSM pipeline (opt-in) ─────────────────────────────
+        osm_table = ""
+        if osm:
+            self._run_step(
+                "OSM intersection density pipeline",
+                self._run_osm_pipeline,
+                (workspace,),
+            )
+            osm_table = self._last_osm_table
+        else:
+            self.stdout.write("  [SKIP] OSM (not enabled)")
 
-        for label, fn, args in steps:
-            if any(label.startswith(nf) for nf in nonfatal_labels):
-                self._run_step_nonfatal(label, fn, *args)
-            else:
-                self._run_step(label, fn, *args)
+        # ── Step 9: dbt base_canvas models ────────────────────────────
+        self._run_step(
+            "dbt base_canvas models",
+            self._run_dbt_base_canvas,
+            (workspace, nlcd_table, osm_table),
+        )
+
+        # ── Step 10: Soda validation ──────────────────────────────────
+        self._run_step(
+            "Soda validation (land use + base canvas)",
+            self._run_soda_validation,
+            (),
+        )
+
+        # ── Step 11: Import POIs ──────────────────────────────────────
+        if not skip_poi:
+            self._run_step("Import POIs", self._import_poi, ())
+        else:
+            self.stdout.write("  [SKIP] Import POIs")
+
+        # ── Step 12: Ingest constraint layers ─────────────────────────
+        if not skip_constraints:
+            self._run_step("Ingest constraint layers", self._ingest_constraints, ())
+        else:
+            self.stdout.write("  [SKIP] Ingest constraint layers")
+
+        # ── Step 13: Export building types ────────────────────────────
+        self._run_step("Export building types", self._export_built_forms, ())
+
+        # ── Step 14: Create base scenario ─────────────────────────────
+        self._run_step("Create base scenario", self._create_base_scenario, ())
+
+        # ── Step 15: Run analysis pipeline ────────────────────────────
+        self._run_step("Run analysis pipeline", self._run_analysis, ())
 
         self.stdout.write(self.style.SUCCESS("\nFresno demo workspace setup complete!"))
 
     # -- helpers ----------------------------------------------------------
-
-    def _run_via_dagster(self) -> bool:
-        """Try to execute the full setup pipeline via Dagster.
-
-        Returns True if Dagster was available and the run was launched.
-        Returns False if Dagster is not available (caller should use inline logic).
-        """
-        try:
-            from dagster._core.instance import DagsterInstance
-
-            instance = DagsterInstance.get()
-            # Quick health check
-            _ = instance.get_runs()
-        except Exception:
-            return False
-
-        self.stdout.write(
-            "Dagster daemon detected — delegating to fresno_demo_setup job..."
-        )
-        return True
 
     def _run_step(self, label: str, fn: Any, *args: Any) -> Any:
         self.stdout.write(f"\n{'─' * 60}")
@@ -240,23 +304,6 @@ class Command(BaseCommand):
         except Exception as exc:
             self.stderr.write(self.style.ERROR(f"  [FAIL] {label}: {exc}"))
             raise
-        else:
-            self.stdout.write(f"  [{self.style.SUCCESS('OK')}] {label}")
-            return result
-
-    def _run_step_nonfatal(self, label: str, fn: Any, *args: Any) -> Any:
-        """Run a step; on failure log warning but do not crash."""
-        self.stdout.write(f"\n{'─' * 60}")
-        self.stdout.write(f"Step: {label}")
-        self.stdout.write(f"{'─' * 60}")
-        if self.dry_run:
-            self.stdout.write(f"  [DRY RUN] Would execute: {fn.__name__}")
-            return None
-        try:
-            result = fn(*args)
-        except Exception as exc:  # noqa: BLE001
-            self.stderr.write(self.style.WARNING(f"  [WARN] {label}: {exc}"))
-            return None
         else:
             self.stdout.write(f"  [{self.style.SUCCESS('OK')}] {label}")
             return result
@@ -294,7 +341,7 @@ class Command(BaseCommand):
         return df
 
     def _write_to_postgis(self, df: gpd.GeoDataFrame, table: str, schema: str) -> None:
-        # Ensure geometry column is named 'geom' for allocator/tile server consistency
+        # Ensure geometry column is named 'geom' for tile server consistency
         if df.geometry.name != "geom":
             df = df.rename_geometry("geom")
         if "geometry" in df.columns and "geom" in df.columns:
@@ -328,7 +375,7 @@ class Command(BaseCommand):
                 auto_generate_symbology(layer)
         return layer
 
-    # -- Step implementations ---------------------------------------------
+    # -- Step implementations --------------------------------------------
 
     def _download_data(self, options: Any) -> None:
         args = []
@@ -356,57 +403,44 @@ class Command(BaseCommand):
         return workspace
 
     def _ingest_parcels(self) -> int:
-        """Ingest parcels via SQL pipeline."""
+        """Ingest parcels from GeoJSON directly to fresno_parcels."""
         workspace = self._get_workspace()
         df = self._read_geojson("fresno_parcels.geojson")
 
-        # Write to staging table, preserving geometry column name for ETL
+        # Normalize parcel ID column to dbt contract
+        if "parcel_id" not in df.columns:
+            if "apn" in df.columns:
+                df["parcel_id"] = df["apn"]
+            elif "geography_id" in df.columns:
+                df["parcel_id"] = df["geography_id"]
+            else:
+                df["parcel_id"] = df.index.astype(str)
 
+        self.stdout.write(
+            f"  Normalized parcel_id column ({df['parcel_id'].nunique()} unique)"
+        )
+
+        # Write directly to the target table (no staging/ETL pipeline)
         engine = get_engine()
-        staging_table = "fresno_parcels_staging"
         df.to_postgis(
-            staging_table,
+            "fresno_parcels",
             engine,
             schema=WORKSPACE_SCHEMA,
             if_exists="replace",
             chunksize=50000,
         )
 
-        self.stdout.write(f"  Wrote {len(df)} parcels to staging table")
-
-        # Run the SQL pipeline
-        result = run_pipeline(
-            source_table=f"{WORKSPACE_SCHEMA}.{staging_table}",
-            target_table=f"{WORKSPACE_SCHEMA}.fresno_parcels",
-            truncate=True,
-        )
-
-        for msg in result.get("messages", []):
-            self.stdout.write(f"  {msg}")
-
-        if result["status"] == "error":
-            self.stderr.write(self.style.ERROR(f"  ETL failed: {result.get('error')}"))
-            raise CommandError(result.get("error", "ETL pipeline failed"))
-
+        count = len(df)
         self.stdout.write(
-            f"  ETL complete: {result['rows']} rows in {result['elapsed']}s"
+            f"  Wrote {count} parcels to {WORKSPACE_SCHEMA}.fresno_parcels"
         )
-
-        # Create dbt compat view (aliases geometry → geom)
-        with connection.cursor() as cursor:
-            cursor.execute(
-                f'CREATE OR REPLACE VIEW "{WORKSPACE_SCHEMA}".parcels AS '  # noqa: S608
-                f"SELECT *, geometry AS geom "
-                f'FROM "{WORKSPACE_SCHEMA}"."fresno_parcels"'
-            )
-        self.stdout.write(f"  Created dbt compat view: {WORKSPACE_SCHEMA}.parcels")
 
         # Register layer
         self._register_layer(
             "fresno_parcels", "Fresno County Parcels", workspace, "fill"
         )
 
-        return result["rows"]  # type: ignore[no-any-return]
+        return count
 
     def _ingest_city_boundary(self) -> int:
         filepath = CACHE_DIR / "fresno_city_boundary.geojson"
@@ -417,51 +451,185 @@ class Command(BaseCommand):
         df = gpd.read_file(str(filepath))
         self._write_to_postgis(df, "fresno_city_boundary", WORKSPACE_SCHEMA)
         self._register_layer(
-            "fresno_city_boundary", "Fresno City Boundary", workspace, "fill"
+            "fresno_city_boundary",
+            "Fresno City Boundary",
+            workspace,
+            "fill",
         )
         count = len(df)
         self.stdout.write(f"  Ingested city boundary ({count} features)")
         return count
 
-    def _import_census(self) -> int:
-        """Validate census demographic data is accessible."""
-        self.stdout.write("  Validating Census ACS data source...")
-        from django.db import connection
+    def _populate_census(self) -> int:
+        """Run TIGER BG + Census ACS dlt pipelines, then populate acs_block_group."""
+        from brewgis.workspace.dlt_pipelines.census import run_census_pipeline
+        from brewgis.workspace.dlt_pipelines.tiger_bg import run_tiger_bg_pipeline
+        from brewgis.workspace.services.census_fetcher import _populate_acs_block_group
 
+        # TIGER/Line block group geometry
+        self.stdout.write("  Populating TIGER/Line block group staging...")
+        tiger_result = run_tiger_bg_pipeline(STATE_FIPS)
+        if not tiger_result["success"]:
+            raise CommandError(
+                f"TIGER/Line BG fetch failed: {tiger_result.get('error')}"
+            )
+        self.stdout.write(f"  TIGER/BG loaded: {tiger_result.get('row_count', 0)} rows")
+
+        # Census ACS raw data
+        self.stdout.write("  Fetching Census ACS data...")
+        census_result = run_census_pipeline(STATE_FIPS, COUNTY_FIPS, BASE_YEAR)
+        if not census_result["success"]:
+            msg = "Census ACS fetch failed: {census_result.get('error')}"
+        raise CommandError(msg)
+        self.stdout.write(
+            f"  Census ACS loaded: {census_result.get('row_count', 0)} rows"
+        )
+
+        # Materialize census.acs_block_group via dbt
+        self.stdout.write("  Materializing census.acs_block_group via dbt...")
+        acs_bg_count = _populate_acs_block_group(STATE_FIPS, COUNTY_FIPS, BASE_YEAR)
+        self.stdout.write(f"  census.acs_block_group populated: {acs_bg_count:,} rows")
+        return acs_bg_count
+
+    def _populate_lehd(self) -> int:
+        """Run LEHD dlt pipeline, then populate lehd.wac_block."""
+        from brewgis.workspace.dlt_pipelines.lehd import run_lehd_pipeline
+        from brewgis.workspace.services.lehd_fetcher import _populate_wac_block
+
+        # LEHD LODES raw data
+        self.stdout.write("  Fetching LEHD employment data...")
+        lehd_result = run_lehd_pipeline(STATE_FIPS, COUNTY_FIPS, 2021)
+        if not lehd_result["success"]:
+            msg = "LEHD LODES fetch failed: {lehd_result.get('error')}"
+        raise CommandError(msg)
+        self.stdout.write(
+            f"  LEHD LODES loaded: {lehd_result.get('row_count', 0)} rows"
+        )
+
+        # Materialize lehd.wac_block via dbt
+        self.stdout.write("  Materializing lehd.wac_block via dbt...")
+        lehd_wac_count = _populate_wac_block(STATE_FIPS, COUNTY_FIPS, 2021)
+        self.stdout.write(f"  lehd.wac_block populated: {lehd_wac_count:,} rows")
+        return lehd_wac_count
+
+    _last_nlcd_table: str = ""
+
+    def _run_nlcd_pipeline(self, _workspace: Workspace) -> None:
+        """Run NLCD zonal stats pipeline."""
+        from brewgis.workspace.dlt_pipelines.nlcd import run_nlcd_pipeline
+
+        result = run_nlcd_pipeline(
+            parcel_table="fresno_parcels",
+            schema=WORKSPACE_SCHEMA,
+        )
+        if not result.get("success"):
+            msg = "NLCD pipeline failed: {result.get('error')}"
+        raise CommandError(msg)
+        self._last_nlcd_table = result.get(
+            "table_name", f"{WORKSPACE_SCHEMA}.nlcd_parcel_stats"
+        )
+        self.stdout.write(
+            f"  NLCD stats loaded: {result.get('row_count', 0)} rows "
+            f"in {self._last_nlcd_table}"
+        )
+
+    _last_osm_table: str = ""
+
+    def _run_osm_pipeline(self, _workspace: Workspace) -> None:
+        """Run OSM intersection density pipeline."""
+        from brewgis.workspace.dlt_pipelines.osm import run_osm_pipeline
+
+        result = run_osm_pipeline(
+            parcel_table="fresno_parcels",
+            schema=WORKSPACE_SCHEMA,
+        )
+        if not result.get("success"):
+            msg = "OSM pipeline failed: {result.get('error')}"
+        raise CommandError(msg)
+        self._last_osm_table = result.get(
+            "table_name", f"{WORKSPACE_SCHEMA}.osm_intersection_density"
+        )
+        self.stdout.write(
+            f"  OSM intersection density loaded: {result.get('row_count', 0)} rows "
+            f"in {self._last_osm_table}"
+        )
+
+    def _run_dbt_base_canvas(
+        self,
+        workspace: Workspace,
+        nlcd_table: str,
+        osm_table: str,
+    ) -> None:
+        """Run dbt base_canvas models to produce the final base canvas table."""
+        from brewgis.workspace.analysis.dbt_runner import run_dbt_local
+
+        dbt_vars: dict[str, Any] = {
+            "parcel_table": "fresno_parcels",
+            "source_schema": WORKSPACE_SCHEMA,
+            "target_schema": WORKSPACE_SCHEMA,
+            "base_canvas_materialized": "table",
+            "projected_srid": LOCAL_SRID,
+        }
+        if nlcd_table:
+            dbt_vars["nlcd_parcel_table"] = nlcd_table
+        if osm_table:
+            dbt_vars["osm_intersection_table"] = osm_table
+
+        self.stdout.write(f"  dbt vars: {dbt_vars}")
+        result = run_dbt_local(
+            select=BASE_CANVAS_MODELS,
+            vars_=dbt_vars,
+        )
+        if not result.success:
+            msg = "dbt base_canvas models failed: {result.error}"
+        raise CommandError(msg)
+        self.stdout.write(self.style.SUCCESS("  dbt base_canvas models complete"))
+
+        # Create analysis compat view: maps dbt column names to legacy names
+        # expected by the analysis pipeline dbt models (id, geom, etc.)
         with connection.cursor() as cursor:
             cursor.execute(
-                "SELECT EXISTS (SELECT FROM information_schema.tables "
-                "WHERE table_schema = 'census' AND table_name = 'acs_block_group')"
+                f'CREATE OR REPLACE VIEW "{WORKSPACE_SCHEMA}".parcels AS '  # noqa: S608
+                f"SELECT parcel_id AS id, geometry AS geom, * "
+                f'FROM "{WORKSPACE_SCHEMA}"."base_canvas_reconciled"'
             )
-            available = cursor.fetchone()[0]
-        if not available:
-            self.stdout.write("  [SKIP] Census ACS table not found")
-            return 0
-        with connection.cursor() as cursor:
-            cursor.execute("SELECT COUNT(*) FROM census.acs_block_group")
-            count: int = cursor.fetchone()[0]
-        self.stdout.write(f"  Census ACS data accessible ({count} block groups)")
-        return count
+        self.stdout.write(f"  Created analysis compat view: {WORKSPACE_SCHEMA}.parcels")
 
-    def _import_lehd(self) -> int:
-        """Validate LEHD employment data is accessible."""
-        self.stdout.write("  Validating LEHD employment data source...")
-        from django.db import connection
+        # Register the final base canvas as a Layer
+        self._register_layer(
+            "base_canvas_reconciled",
+            "Fresno Base Canvas (dbt)",
+            workspace,
+            "fill",
+        )
+        self.stdout.write("  Registered base_canvas_reconciled as Layer")
 
-        with connection.cursor() as cursor:
-            cursor.execute(
-                "SELECT EXISTS (SELECT FROM information_schema.tables "
-                "WHERE table_schema = 'lehd' AND table_name = 'wac_block')"
+    def _run_soda_validation(self) -> None:
+        """Run Soda validation on base_canvas_attributes and base_canvas_reconciled."""
+        from brewgis.soda import validate_base_canvas
+        from brewgis.soda import validate_land_use_classification
+
+        self.stdout.write("  Validating land use classification...")
+        result = validate_land_use_classification(
+            schema=WORKSPACE_SCHEMA, table="base_canvas_attributes"
+        )
+        if not result.get("success", False):
+            raise CommandError(
+                "Land use classification validation failed: "
+                + "; ".join(result.get("failures", []))
             )
-            available = cursor.fetchone()[0]
-        if not available:
-            self.stdout.write("  [SKIP] LEHD table not found")
-            return 0
-        with connection.cursor() as cursor:
-            cursor.execute("SELECT COUNT(*) FROM lehd.wac_block")
-            count: int = cursor.fetchone()[0]
-        self.stdout.write(f"  LEHD employment data accessible ({count} blocks)")
-        return count
+        self.stdout.write(self.style.SUCCESS("  Land use classification validated"))
+
+        self.stdout.write("  Validating base canvas reconciliation...")
+        result = validate_base_canvas(
+            schema=WORKSPACE_SCHEMA, table="base_canvas_reconciled"
+        )
+        if not result.get("success", False):
+            raise CommandError(
+                "Base canvas validation failed: "
+                + "; ".join(result.get("failures", []))
+            )
+        self.stdout.write(self.style.SUCCESS("  Base canvas validated"))
 
     def _import_poi(self) -> int:
         workspace = self._get_workspace()
@@ -478,10 +646,9 @@ class Command(BaseCommand):
             schema=WORKSPACE_SCHEMA,
         )
         if not dlt_result["success"]:
-            self.stdout.write(
-                f"  [WARN] POI pipeline failed: {dlt_result.get('error', 'unknown')}"
+            raise CommandError(
+                f"POI dlt pipeline failed: {dlt_result.get('error', 'unknown')}"
             )
-            return 0
 
         self.stdout.write(
             f"  dlt pipeline loaded {dlt_result.get('row_count', 0)} raw POIs"
@@ -554,76 +721,6 @@ class Command(BaseCommand):
                 "fill",
                 "Environmental Constraints",
             )
-
-    def _assign_built_forms_and_density(self) -> int:
-        """Assign built_form_key and intersection_density via BuiltFormClassifier."""
-
-        schema = WORKSPACE_SCHEMA
-        table = "fresno_parcels"
-
-        # Load parcels from the ETL-produced table
-        self.stdout.write("  Loading parcels for built form classification...")
-        with connection.cursor() as cursor:
-            cursor.execute(
-                f'SELECT count(*) FROM "{schema}"."{table}"'  # noqa: S608
-            )
-            total = cursor.fetchone()[0]
-
-        gdf = gpd.GeoDataFrame.from_postgis(
-            f'SELECT * FROM "{schema}"."{table}"',  # noqa: S608
-            connection,
-            geom_col="geometry",
-        )
-        self.stdout.write(
-            f"  Loaded {total} parcels ({len(gdf)} in GeoDataFrame) for classification"
-        )
-
-        # Run classifier
-        classifier = BuiltFormClassifier(strategy="heuristic")
-        gdf = classifier.assign(gdf)
-        # Write classified data back
-        engine = get_engine()
-        gdf.to_postgis(
-            table,
-            engine,
-            schema=schema,
-            if_exists="replace",
-            chunksize=50000,
-        )
-
-        self.stdout.write(
-            f"  Written {len(gdf)} classified parcels back to {schema}.{table}"
-        )
-
-        # Report distribution
-        with connection.cursor() as cursor:
-            cursor.execute(
-                f"SELECT bf.built_form_key, bt.name, COUNT(*) AS cnt\n"
-                f"FROM {schema}.{table} bf\n"
-                f"LEFT JOIN {schema}.built_forms bt ON bf.built_form_key = bt.id\n"
-                f"GROUP BY bf.built_form_key, bt.name\n"
-                f"ORDER BY bf.built_form_key"
-            )
-            rows = cursor.fetchall()
-            for key, name, cnt in rows:
-                label = name or f"PK {key}"
-                self.stdout.write(f"    built_form_key={key} ({label}): {cnt} parcels")
-
-        # Report intersection_density stats
-        with connection.cursor() as cursor:
-            cursor.execute(
-                f"SELECT MIN(intersection_density), AVG(intersection_density), "  # noqa: S608
-                f"MAX(intersection_density) "
-                f"FROM {schema}.{table}"
-            )
-            row = cursor.fetchone()
-            if row:
-                self.stdout.write(
-                    f"    intersection_density: min={row[0]:.1f} "
-                    f"avg={row[1]:.1f} max={row[2]:.1f}"
-                )
-
-        return len(gdf)
 
     def _create_base_scenario(self) -> Scenario:
         workspace = self._get_workspace()
