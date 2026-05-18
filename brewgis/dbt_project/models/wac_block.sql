@@ -94,8 +94,10 @@ WITH cbp_sub_sectors AS (
         COALESCE(lr.cns14, 0)::numeric AS emp_other_services_cbp,
         -- CNS15 -> public admin
         COALESCE(lr.cns15, 0)::numeric AS emp_public_admin_cbp,
-        -- CNS17 -> military (CNS16 unclassified, excluded)
-        COALESCE(lr.cns17, 0)::numeric AS emp_military_cbp
+        -- CNS17 -> military
+        COALESCE(lr.cns17, 0)::numeric AS emp_military_cbp,
+        -- CNS16 unclassified (distributed proportionally in final SELECT)
+        COALESCE(lr.cns16, 0)::numeric AS cns16_unclassified
     FROM {{ source('brewgis', 'lodes_raw') }} lr
     JOIN {{ source('brewgis', 'tiger_block_groups') }} tbg
         ON LEFT(lr.w_geocode, 12) = tbg.geoid
@@ -110,64 +112,160 @@ cbp_aggregates AS (
         (emp_education_cbp + emp_public_admin_cbp) AS emp_pub,
         (emp_manufacturing_cbp + emp_wholesale_cbp + emp_transport_warehousing_cbp
          + emp_utilities_cbp + emp_construction_cbp + emp_extraction_cbp + emp_agriculture_cbp) AS emp_ind,
-        emp_agriculture_cbp AS emp_ag
+        emp_agriculture_cbp AS emp_ag,
+        -- Total classified employment (excludes CNS16 and C000)
+        (emp_retail_services_cbp + emp_restaurant_cbp + emp_accommodation_cbp
+         + emp_arts_entertainment_cbp + emp_other_services_cbp
+         + emp_office_services_cbp + emp_medical_services_cbp
+         + emp_public_admin_cbp + emp_education_cbp
+         + emp_manufacturing_cbp + emp_wholesale_cbp + emp_transport_warehousing_cbp
+         + emp_utilities_cbp + emp_construction_cbp + emp_extraction_cbp
+         + emp_agriculture_cbp + emp_military_cbp) AS classified_total
     FROM cbp_sub_sectors
+),
+classified_with_sacog AS (
+    SELECT
+        geoid,
+        geometry,
+        c000 AS emp,
+        -- Sub-sector: SACOG-calibrated or CBP-based (determined by :is_sacog flag)
+        CASE WHEN {{ is_sacog }} = 1 AND emp_ret > 0
+            THEN ROUND(emp_ret * 76395.0 / 163859.0, 1) ELSE emp_retail_services_cbp
+        END AS emp_retail_services_calibrated,
+        CASE WHEN {{ is_sacog }} = 1 AND emp_ret > 0
+            THEN ROUND(emp_ret * 42520.0 / 163859.0, 1) ELSE emp_restaurant_cbp
+        END AS emp_restaurant_calibrated,
+        CASE WHEN {{ is_sacog }} = 1 AND emp_ret > 0
+            THEN ROUND(emp_ret * 3827.0 / 163859.0, 1) ELSE emp_accommodation_cbp
+        END AS emp_accommodation_calibrated,
+        CASE WHEN {{ is_sacog }} = 1 AND emp_ret > 0
+            THEN ROUND(emp_ret * 7567.0 / 163859.0, 1) ELSE emp_arts_entertainment_cbp
+        END AS emp_arts_entertainment_calibrated,
+        CASE WHEN {{ is_sacog }} = 1 AND emp_ret > 0
+            THEN ROUND(emp_ret * 33330.0 / 163859.0, 1) ELSE emp_other_services_cbp
+        END AS emp_other_services_calibrated,
+        CASE WHEN {{ is_sacog }} = 1 AND emp_off > 0
+            THEN ROUND(emp_off * 236721.0 / 259466.0, 1) ELSE emp_office_services_cbp
+        END AS emp_office_services_calibrated,
+        CASE WHEN {{ is_sacog }} = 1 AND emp_off > 0
+            THEN ROUND(emp_off * 22745.0 / 259466.0, 1) ELSE emp_medical_services_cbp
+        END AS emp_medical_services_calibrated,
+        CASE WHEN {{ is_sacog }} = 1 AND emp_pub > 0
+            THEN ROUND(emp_pub * 16924.0 / 44285.0, 1) ELSE emp_public_admin_cbp
+        END AS emp_public_admin_calibrated,
+        CASE WHEN {{ is_sacog }} = 1 AND emp_pub > 0
+            THEN ROUND(emp_pub * 27361.0 / 44285.0, 1) ELSE emp_education_cbp
+        END AS emp_education_calibrated,
+        CASE WHEN {{ is_sacog }} = 1 AND emp_ind > 0
+            THEN ROUND(emp_ind * 46244.0 / 74702.0, 1) ELSE emp_manufacturing_cbp
+        END AS emp_manufacturing_calibrated,
+        CASE WHEN {{ is_sacog }} = 1 AND emp_ind > 0
+            THEN ROUND(emp_ind * 10672.0 / 74702.0, 1) ELSE emp_wholesale_cbp
+        END AS emp_wholesale_calibrated,
+        CASE WHEN {{ is_sacog }} = 1 AND emp_ind > 0
+            THEN ROUND(emp_ind * 14229.0 / 74702.0, 1) ELSE emp_transport_warehousing_cbp
+        END AS emp_transport_warehousing_calibrated,
+        CASE WHEN {{ is_sacog }} = 1 AND emp_ind > 0
+            THEN ROUND(emp_ind * 719.0 / 74702.0, 1) ELSE emp_utilities_cbp
+        END AS emp_utilities_calibrated,
+        CASE WHEN {{ is_sacog }} = 1 AND emp_ind > 0
+            THEN ROUND(emp_ind * 2838.0 / 74702.0, 1) ELSE emp_construction_cbp
+        END AS emp_construction_calibrated,
+        -- SACOG zeros out agriculture, extraction, military
+        CASE WHEN {{ is_sacog }} = 1 THEN 0 ELSE emp_agriculture_cbp
+        END AS emp_agriculture_calibrated,
+        CASE WHEN {{ is_sacog }} = 1 THEN 0 ELSE emp_extraction_cbp
+        END AS emp_extraction_calibrated,
+        CASE WHEN {{ is_sacog }} = 1 THEN 0 ELSE emp_military_cbp
+        END AS emp_military_calibrated,
+        CASE WHEN {{ is_sacog }} = 1 THEN 0 ELSE emp_ag END AS emp_ag,
+        -- Aggregate columns (CBP-based)
+        emp_ret,
+        emp_off,
+        emp_pub,
+        emp_ind,
+        classified_total,
+        cns16_unclassified
+    FROM cbp_aggregates
 )
 SELECT
     geoid,
     geometry,
-    c000 AS emp,
-    -- Sub-sector: SACOG-calibrated or CBP-based (determined by :is_sacog flag)
-    CASE WHEN {{ is_sacog }} = 1 AND emp_ret > 0
-        THEN ROUND(emp_ret * 76395.0 / 163859.0, 1) ELSE emp_retail_services_cbp
-    END AS emp_retail_services,
-    CASE WHEN {{ is_sacog }} = 1 AND emp_ret > 0
-        THEN ROUND(emp_ret * 42520.0 / 163859.0, 1) ELSE emp_restaurant_cbp
-    END AS emp_restaurant,
-    CASE WHEN {{ is_sacog }} = 1 AND emp_ret > 0
-        THEN ROUND(emp_ret * 3827.0 / 163859.0, 1) ELSE emp_accommodation_cbp
-    END AS emp_accommodation,
-    CASE WHEN {{ is_sacog }} = 1 AND emp_ret > 0
-        THEN ROUND(emp_ret * 7567.0 / 163859.0, 1) ELSE emp_arts_entertainment_cbp
-    END AS emp_arts_entertainment,
-    CASE WHEN {{ is_sacog }} = 1 AND emp_ret > 0
-        THEN ROUND(emp_ret * 33330.0 / 163859.0, 1) ELSE emp_other_services_cbp
-    END AS emp_other_services,
-    CASE WHEN {{ is_sacog }} = 1 AND emp_off > 0
-        THEN ROUND(emp_off * 236721.0 / 259466.0, 1) ELSE emp_office_services_cbp
-    END AS emp_office_services,
-    CASE WHEN {{ is_sacog }} = 1 AND emp_off > 0
-        THEN ROUND(emp_off * 22745.0 / 259466.0, 1) ELSE emp_medical_services_cbp
-    END AS emp_medical_services,
-    CASE WHEN {{ is_sacog }} = 1 AND emp_pub > 0
-        THEN ROUND(emp_pub * 16924.0 / 44285.0, 1) ELSE emp_public_admin_cbp
-    END AS emp_public_admin,
-    CASE WHEN {{ is_sacog }} = 1 AND emp_pub > 0
-        THEN ROUND(emp_pub * 27361.0 / 44285.0, 1) ELSE emp_education_cbp
-    END AS emp_education,
-    CASE WHEN {{ is_sacog }} = 1 AND emp_ind > 0
-        THEN ROUND(emp_ind * 46244.0 / 74702.0, 1) ELSE emp_manufacturing_cbp
-    END AS emp_manufacturing,
-    CASE WHEN {{ is_sacog }} = 1 AND emp_ind > 0
-        THEN ROUND(emp_ind * 10672.0 / 74702.0, 1) ELSE emp_wholesale_cbp
-    END AS emp_wholesale,
-    CASE WHEN {{ is_sacog }} = 1 AND emp_ind > 0
-        THEN ROUND(emp_ind * 14229.0 / 74702.0, 1) ELSE emp_transport_warehousing_cbp
-    END AS emp_transport_warehousing,
-    CASE WHEN {{ is_sacog }} = 1 AND emp_ind > 0
-        THEN ROUND(emp_ind * 719.0 / 74702.0, 1) ELSE emp_utilities_cbp
-    END AS emp_utilities,
-    CASE WHEN {{ is_sacog }} = 1 AND emp_ind > 0
-        THEN ROUND(emp_ind * 2838.0 / 74702.0, 1) ELSE emp_construction_cbp
-    END AS emp_construction,
-    -- SACOG zeros out agriculture, extraction, military
-    CASE WHEN {{ is_sacog }} = 1 THEN 0 ELSE emp_agriculture_cbp END AS emp_agriculture,
-    CASE WHEN {{ is_sacog }} = 1 THEN 0 ELSE emp_extraction_cbp END AS emp_extraction,
-    CASE WHEN {{ is_sacog }} = 1 THEN 0 ELSE emp_military_cbp END AS emp_military,
-    CASE WHEN {{ is_sacog }} = 1 THEN 0 ELSE emp_ag END AS emp_ag,
-    -- Aggregate columns (CBP-based)
+    emp,
+    -- Distribute CNS16 proportionally across all classified sub-sectors
+    ROUND(emp_retail_services_calibrated +
+        CASE WHEN cns16_unclassified > 0 AND classified_total > 0
+        THEN cns16_unclassified * emp_retail_services_calibrated / classified_total
+        ELSE 0 END, 1) AS emp_retail_services,
+    ROUND(emp_restaurant_calibrated +
+        CASE WHEN cns16_unclassified > 0 AND classified_total > 0
+        THEN cns16_unclassified * emp_restaurant_calibrated / classified_total
+        ELSE 0 END, 1) AS emp_restaurant,
+    ROUND(emp_accommodation_calibrated +
+        CASE WHEN cns16_unclassified > 0 AND classified_total > 0
+        THEN cns16_unclassified * emp_accommodation_calibrated / classified_total
+        ELSE 0 END, 1) AS emp_accommodation,
+    ROUND(emp_arts_entertainment_calibrated +
+        CASE WHEN cns16_unclassified > 0 AND classified_total > 0
+        THEN cns16_unclassified * emp_arts_entertainment_calibrated / classified_total
+        ELSE 0 END, 1) AS emp_arts_entertainment,
+    ROUND(emp_other_services_calibrated +
+        CASE WHEN cns16_unclassified > 0 AND classified_total > 0
+        THEN cns16_unclassified * emp_other_services_calibrated / classified_total
+        ELSE 0 END, 1) AS emp_other_services,
+    ROUND(emp_office_services_calibrated +
+        CASE WHEN cns16_unclassified > 0 AND classified_total > 0
+        THEN cns16_unclassified * emp_office_services_calibrated / classified_total
+        ELSE 0 END, 1) AS emp_office_services,
+    ROUND(emp_medical_services_calibrated +
+        CASE WHEN cns16_unclassified > 0 AND classified_total > 0
+        THEN cns16_unclassified * emp_medical_services_calibrated / classified_total
+        ELSE 0 END, 1) AS emp_medical_services,
+    ROUND(emp_public_admin_calibrated +
+        CASE WHEN cns16_unclassified > 0 AND classified_total > 0
+        THEN cns16_unclassified * emp_public_admin_calibrated / classified_total
+        ELSE 0 END, 1) AS emp_public_admin,
+    ROUND(emp_education_calibrated +
+        CASE WHEN cns16_unclassified > 0 AND classified_total > 0
+        THEN cns16_unclassified * emp_education_calibrated / classified_total
+        ELSE 0 END, 1) AS emp_education,
+    ROUND(emp_manufacturing_calibrated +
+        CASE WHEN cns16_unclassified > 0 AND classified_total > 0
+        THEN cns16_unclassified * emp_manufacturing_calibrated / classified_total
+        ELSE 0 END, 1) AS emp_manufacturing,
+    ROUND(emp_wholesale_calibrated +
+        CASE WHEN cns16_unclassified > 0 AND classified_total > 0
+        THEN cns16_unclassified * emp_wholesale_calibrated / classified_total
+        ELSE 0 END, 1) AS emp_wholesale,
+    ROUND(emp_transport_warehousing_calibrated +
+        CASE WHEN cns16_unclassified > 0 AND classified_total > 0
+        THEN cns16_unclassified * emp_transport_warehousing_calibrated / classified_total
+        ELSE 0 END, 1) AS emp_transport_warehousing,
+    ROUND(emp_utilities_calibrated +
+        CASE WHEN cns16_unclassified > 0 AND classified_total > 0
+        THEN cns16_unclassified * emp_utilities_calibrated / classified_total
+        ELSE 0 END, 1) AS emp_utilities,
+    ROUND(emp_construction_calibrated +
+        CASE WHEN cns16_unclassified > 0 AND classified_total > 0
+        THEN cns16_unclassified * emp_construction_calibrated / classified_total
+        ELSE 0 END, 1) AS emp_construction,
+    ROUND(emp_agriculture_calibrated +
+        CASE WHEN cns16_unclassified > 0 AND classified_total > 0
+        THEN cns16_unclassified * emp_agriculture_calibrated / classified_total
+        ELSE 0 END, 1) AS emp_agriculture,
+    ROUND(emp_extraction_calibrated +
+        CASE WHEN cns16_unclassified > 0 AND classified_total > 0
+        THEN cns16_unclassified * emp_extraction_calibrated / classified_total
+        ELSE 0 END, 1) AS emp_extraction,
+    ROUND(emp_military_calibrated +
+        CASE WHEN cns16_unclassified > 0 AND classified_total > 0
+        THEN cns16_unclassified * emp_military_calibrated / classified_total
+        ELSE 0 END, 1) AS emp_military,
+    -- emp_ag (SACOG zeroed in inner query)
+    emp_ag,
+    -- Aggregate columns (CBP-based, unchanged)
     emp_ret,
     emp_off,
     emp_pub,
     emp_ind
-FROM cbp_aggregates
+FROM classified_with_sacog

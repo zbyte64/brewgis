@@ -686,9 +686,12 @@ def fetch_lehd_block_data(
     query = text("""
         SELECT * FROM public.lodes_raw
         WHERE year = :year
+          AND LEFT(w_geocode, 5) = :county_fips
     """)
     with engine.connect() as conn:
-        result = conn.execute(query, {"year": year})
+        result = conn.execute(
+            query, {"year": year, "county_fips": state_fips + county_fips}
+        )
         rows = result.fetchall()
         columns = list(result.keys())
         records_df = pd.DataFrame(dict(zip(columns, row, strict=False)) for row in rows)
