@@ -417,13 +417,16 @@ _SECTOR_NAICS: dict[str, list[str]] = {
 }
 
 
-def _cbp_url(state_fips: str, county_fips: str, naics_code: str) -> str:
+def _cbp_url(
+    state_fips: str, county_fips: str, naics_code: str, year: int = 2021
+) -> str:
     """Build CBP API URL for a single 2-digit NAICS code in a county.
 
     Args:
         state_fips: Two-digit state FIPS code.
         county_fips: Three-digit county FIPS code.
         naics_code: Two-digit NAICS code.
+        year: CBP data year (default 2021).
 
     Returns:
         Census CBP API URL string.
@@ -433,7 +436,7 @@ def _cbp_url(state_fips: str, county_fips: str, naics_code: str) -> str:
     key = _census_api_key()
     key_param = f"&key={key}" if key else ""
     return (
-        f"https://api.census.gov/data/2021/cbp"
+        f"https://api.census.gov/data/{year}/cbp"
         f"?get=EMP,NAICS2017&for=county:{cf}"
         f"&in=state:{sf}&NAICS2017={naics_code}----{key_param}"
     )
@@ -443,6 +446,7 @@ def _fetch_cbp_county_emp(
     state_fips: str,
     county_fips: str,
     naics_codes: dict[str, str],
+    year: int = 2021,
 ) -> dict[str, float]:
     """Fetch CBP employment for specified 2-digit NAICS codes.
 
@@ -454,13 +458,14 @@ def _fetch_cbp_county_emp(
         state_fips: Two-digit state FIPS code.
         county_fips: Three-digit county FIPS code.
         naics_codes: Dict mapping a key name to a 2-digit NAICS code.
+        year: CBP data year (default 2021).
 
     Returns:
         Dict mapping each input key to its CBP employment (float).
     """
     result: dict[str, float] = {}
     for key, naics_code in naics_codes.items():
-        url = _cbp_url(state_fips, county_fips, naics_code)
+        url = _cbp_url(state_fips, county_fips, naics_code, year=year)
         response = requests.get(url, timeout=120)
         response.raise_for_status()
         raw_data: list[list[str]] = response.json()
@@ -478,6 +483,7 @@ def _fetch_cbp_county_emp(
 def fetch_county_employment_scaling(
     state_fips: str,
     county_fips: str,
+    year: int = 2021,
 ) -> dict[str, float]:
     """Compute CBP-based county-level employment scaling factors.
 
@@ -491,6 +497,7 @@ def fetch_county_employment_scaling(
     Args:
         state_fips: Two-digit state FIPS code.
         county_fips: Three-digit county FIPS code.
+        year: CBP data year (default 2021).
 
     Returns:
         Dict with keys ``emp_ret``, ``emp_off``, ``emp_pub``, ``emp_ind``
@@ -521,7 +528,7 @@ def fetch_county_employment_scaling(
         for naics_code in codes:
             flat_naics[f"{sector}_{naics_code}"] = naics_code
 
-    cbp_results = _fetch_cbp_county_emp(state_fips, county_fips, flat_naics)
+    cbp_results = _fetch_cbp_county_emp(state_fips, county_fips, flat_naics, year=year)
 
     # 3. Aggregate CBP per sector
     sector_cbp: dict[str, float] = dict.fromkeys(_SECTOR_NAICS, 0.0)
@@ -755,6 +762,165 @@ def fetch_lehd_data_summary(
     }
 
 
+_HYBRID_PRESERVE_FRACTION = 0.50
+
+
+def _compute_industrial_cbp_totals(
+    state_fips: str,
+    county_fips: str,
+    year: int = 2021,
+) -> dict[str, float]:
+    """Fetch CBP employment for industrial NAICS from full county data.
+
+    Queries the Census CBP API for ALL NAICS codes in the county (no
+    NAICS filter — the ``NAICS2017=XX----`` filter pattern returns 204
+    No Content), then extracts the industrial sub-sector totals from the
+    full response. This mirrors the fetch pattern used by
+    ``_build_cbp_proportions``.
+
+    Args:
+        state_fips: Two-digit state FIPS code.
+        county_fips: Three-digit county FIPS code.
+        year: CBP data year (default 2021).
+
+    Returns:
+        Dict with keys ``emp_manufacturing``, ``emp_wholesale``,
+        ``emp_transport_warehousing``, ``emp_utilities``, ``emp_construction``
+        mapped to float CBP totals.
+    """
+    sf = state_fips.zfill(2)
+    cf = county_fips.zfill(3)
+    key = _census_api_key()
+    key_param = f"&key={key}" if key else ""
+    url = (
+        f"https://api.census.gov/data/{year}/cbp"
+        f"?get=EMP,NAICS2017&for=county:{cf}"
+        f"&in=state:{sf}{key_param}"
+    )
+
+    try:
+        response = requests.get(url, timeout=120)
+        response.raise_for_status()
+        raw_data: list[list[str]] = response.json()
+    except requests.RequestException:
+        return {}
+    except (ValueError, TypeError):
+        return {}
+
+    if len(raw_data) < 2:
+        return {}
+
+    header = raw_data[0]
+    rows = raw_data[1:]
+    naics_emp = _parse_cbp_naics_emp(rows, header)
+    sector_emp = _group_naics_by_prefix(naics_emp, 2)
+
+    return {
+        "emp_construction": sector_emp.get("23", 0),
+        "emp_manufacturing": sector_emp.get("31", 0)
+        + sector_emp.get("32", 0)
+        + sector_emp.get("33", 0),
+        "emp_wholesale": sector_emp.get("42", 0),
+        "emp_transport_warehousing": sector_emp.get("48", 0) + sector_emp.get("49", 0),
+        "emp_utilities": sector_emp.get("22", 0),
+    }
+
+
+# ── Hybrid Industrial Employment Distribution ─────────────────────────
+
+
+_INDUSTRIAL_SUB_COLUMNS = [
+    "emp_manufacturing",
+    "emp_wholesale",
+    "emp_transport_warehousing",
+    "emp_utilities",
+    "emp_construction",
+]
+
+
+def _apply_hybrid_industrial(
+    cbp_totals: dict[str, float],
+    preserve_fraction: float = _HYBRID_PRESERVE_FRACTION,
+) -> dict[str, float]:
+    """Apply Option C hybrid industrial distribution to lehd.wac_block.
+
+    For each industrial sub-sector:
+    1. Query LODES totals from the current wac_block
+    2. Scale blocks with non-zero LODES to reach preserve_fraction of CBP total
+    3. Distribute residual across ALL blocks proportional to total employment
+    4. Recompute emp_ind aggregate to match new sub-column totals
+
+    Args:
+        cbp_totals: Dict of sub-sector name to CBP county total.
+        preserve_fraction: Fraction of CBP total to preserve via LODES-scaling
+            (default 0.50). The remainder is distributed proportionally.
+
+    Returns:
+        Dict of per-column scaling factors for logging (empty if no work done).
+    """
+    engine = get_engine()
+
+    with engine.connect() as conn:
+        # Get total proxy employment for residual distribution
+        total_proxy = float(
+            conn.execute(
+                text("SELECT COALESCE(SUM(emp), 0) FROM lehd.wac_block")
+            ).scalar()
+            or 0
+        )
+
+        if total_proxy <= 0:
+            return {}
+
+        factors: dict[str, float] = {}
+
+        for col in _INDUSTRIAL_SUB_COLUMNS:
+            cbp_total = cbp_totals.get(col, 0)
+            if cbp_total <= 0:
+                continue
+
+            # Current LODES total for this sub-sector in the county
+            lodes_total = float(
+                conn.execute(
+                    text(f"SELECT COALESCE(SUM({col}), 0) FROM lehd.wac_block")  # noqa: S608
+                ).scalar()
+                or 0
+            )
+
+            if lodes_total <= 0 or cbp_total <= lodes_total:
+                continue
+
+            preserved_target = cbp_total * preserve_fraction
+            scale_factor = preserved_target / lodes_total
+            residual = cbp_total - preserved_target
+
+            # Step 1: Scale blocks that LODES identified as industrial
+            conn.execute(
+                text(f"UPDATE lehd.wac_block SET {col} = {col} * :s WHERE {col} > 0"),  # noqa: S608
+                {"s": scale_factor},
+            )
+
+            # Step 2: Distribute residual proportional to total employment
+            if residual > 0:
+                conn.execute(
+                    text(
+                        f"UPDATE lehd.wac_block "  # noqa: S608
+                        f"SET {col} = {col} + (:residual * emp / :total)"
+                    ),
+                    {"residual": residual, "total": total_proxy},
+                )
+
+            factors[col] = scale_factor
+
+        # Recompute emp_ind to match corrected sub-columns
+        sub_sum = " + ".join(f"COALESCE({c}, 0)" for c in _INDUSTRIAL_SUB_COLUMNS)
+        conn.execute(text(f"UPDATE lehd.wac_block SET emp_ind = {sub_sum}"))  # noqa: S608
+
+        conn.commit()
+
+    return factors
+
+
 def _populate_wac_block(
     state_fips: str,
     county_fips: str,
@@ -799,6 +965,15 @@ def _populate_wac_block(
         msg = f"dbt wac_block failed: {result.error}"
         raise RuntimeError(msg)
 
+    # Apply hybrid industrial distribution for regions with suppressed
+    # LODES industrial employment
+    cbp_ind_totals = _compute_industrial_cbp_totals(state_fips, county_fips, year=year)
+    ind_factors = _apply_hybrid_industrial(cbp_ind_totals)
+    if ind_factors:
+        logger.info(
+            "  Hybrid industrial applied: %s",
+            {k: round(v, 2) for k, v in ind_factors.items()},
+        )
     engine = get_engine()
     with engine.connect() as conn:
         row_count = (
