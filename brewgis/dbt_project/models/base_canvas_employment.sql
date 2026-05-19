@@ -64,7 +64,12 @@ wac_data AS (
     FROM pre_wac_data w
 ),
 
--- Area-weighted spatial allocation
+-- Area-weighted spatial allocation (unfiltered — no land-use constraints)
+-- Land-use filtering was removed because area-weighted block-to-parcel
+-- allocation distributes block-group employment proportionally.  A parcel's
+-- share represents jobs at nearby parcels within the same block, not jobs
+-- on the parcel itself, so land-use constraints would silently discard
+-- legitimate allocations.
 intersections AS (
     SELECT
         p.parcel_id,
@@ -181,27 +186,42 @@ SELECT
     p.area_parcel_emp,
     p.area_parcel_mixed_use,
     p.area_parcel_no_use,
-    -- Employment (from LEHD allocation, or fall through from demographics)
-    COALESCE(a.emp, p.emp) AS emp,
-    a.emp_ret,
+    -- Employment (area-weighted from LEHD LODES WAC — no land-use constraints)
+    CASE WHEN a.parcel_id IS NOT NULL
+        THEN COALESCE(a.emp_retail_services, 0) + COALESCE(a.emp_restaurant, 0)
+            + COALESCE(a.emp_accommodation, 0) + COALESCE(a.emp_arts_entertainment, 0)
+            + COALESCE(a.emp_other_services, 0) + COALESCE(a.emp_office_services, 0)
+            + COALESCE(a.emp_medical_services, 0) + COALESCE(a.emp_public_admin, 0)
+            + COALESCE(a.emp_education, 0) + COALESCE(a.emp_manufacturing, 0)
+            + COALESCE(a.emp_wholesale, 0) + COALESCE(a.emp_transport_warehousing, 0)
+            + COALESCE(a.emp_utilities, 0) + COALESCE(a.emp_construction, 0)
+            + COALESCE(a.emp_agriculture, 0) + COALESCE(a.emp_extraction, 0)
+            + COALESCE(a.emp_military, 0)
+        ELSE p.emp
+    END AS emp,
+    COALESCE(a.emp_retail_services, 0) + COALESCE(a.emp_restaurant, 0)
+        + COALESCE(a.emp_accommodation, 0) + COALESCE(a.emp_arts_entertainment, 0)
+        + COALESCE(a.emp_other_services, 0) AS emp_ret,
     a.emp_retail_services,
     a.emp_restaurant,
     a.emp_accommodation,
     a.emp_arts_entertainment,
     a.emp_other_services,
-    a.emp_off,
+    COALESCE(a.emp_office_services, 0) + COALESCE(a.emp_medical_services, 0) AS emp_off,
     a.emp_office_services,
     a.emp_medical_services,
-    a.emp_pub,
+    COALESCE(a.emp_public_admin, 0) + COALESCE(a.emp_education, 0) AS emp_pub,
     a.emp_public_admin,
     a.emp_education,
-    a.emp_ind,
+    COALESCE(a.emp_manufacturing, 0) + COALESCE(a.emp_wholesale, 0)
+        + COALESCE(a.emp_transport_warehousing, 0) + COALESCE(a.emp_utilities, 0)
+        + COALESCE(a.emp_construction, 0) AS emp_ind,
     a.emp_manufacturing,
     a.emp_wholesale,
     a.emp_transport_warehousing,
     a.emp_utilities,
     a.emp_construction,
-    a.emp_ag,
+    COALESCE(a.emp_agriculture, 0) AS emp_ag,
     a.emp_agriculture,
     a.emp_extraction,
     a.emp_military

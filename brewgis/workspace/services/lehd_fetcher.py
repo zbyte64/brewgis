@@ -839,6 +839,22 @@ _INDUSTRIAL_SUB_COLUMNS = [
     "emp_utilities",
     "emp_construction",
 ]
+_ALL_SUB_COLUMNS = [
+    "emp_retail_services",
+    "emp_restaurant",
+    "emp_accommodation",
+    "emp_arts_entertainment",
+    "emp_other_services",
+    "emp_office_services",
+    "emp_medical_services",
+    "emp_public_admin",
+    "emp_education",
+] + _INDUSTRIAL_SUB_COLUMNS + [
+    "emp_agriculture",
+    "emp_extraction",
+    "emp_military",
+]
+
 
 
 def _apply_hybrid_industrial(
@@ -852,6 +868,7 @@ def _apply_hybrid_industrial(
     2. Scale blocks with non-zero LODES to reach preserve_fraction of CBP total
     3. Distribute residual across ALL blocks proportional to total employment
     4. Recompute emp_ind aggregate to match new sub-column totals
+    5. Recompute emp as sum of all sub-sector columns (close accounting gap)
 
     Args:
         cbp_totals: Dict of sub-sector name to CBP county total.
@@ -918,6 +935,9 @@ def _apply_hybrid_industrial(
         # Recompute emp_ind to match corrected sub-columns
         sub_sum = " + ".join(f"COALESCE({c}, 0)" for c in _INDUSTRIAL_SUB_COLUMNS)
         conn.execute(text(f"UPDATE lehd.wac_block SET emp_ind = {sub_sum}"))  # noqa: S608
+        # Recompute emp as sum of all sub-sectors (close accounting gap from CBP inflation)
+        all_sub_sum = " + ".join(f"COALESCE({c}, 0)" for c in _ALL_SUB_COLUMNS)
+        conn.execute(text(f"UPDATE lehd.wac_block SET emp = {all_sub_sum}"))  # noqa: S608
 
         conn.commit()
 
@@ -969,14 +989,20 @@ def _populate_wac_block(
         raise RuntimeError(msg)
 
     # Apply hybrid industrial distribution for regions with suppressed
-    # LODES industrial employment
-    cbp_ind_totals = _compute_industrial_cbp_totals(state_fips, county_fips, year=year)
-    ind_factors = _apply_hybrid_industrial(cbp_ind_totals)
-    if ind_factors:
-        logger.info(
-            "  Hybrid industrial applied: %s",
-            {k: round(v, 2) for k, v in ind_factors.items()},
-        )
+    # LODES industrial employment.
+    # SACOG regions skip this — the dbt model's SACOG calibration (is_sacog=1)
+    # already provides the correct sub-sector proportions from the reference
+    # dataset.  Applying hybrid industrial on top would inflate industrial
+    # sub-sectors to 50 % of CBP county totals, which are far higher than
+    # the SACOG reference values.
+    if not is_sacog:
+        cbp_ind_totals = _compute_industrial_cbp_totals(state_fips, county_fips, year=year)
+        ind_factors = _apply_hybrid_industrial(cbp_ind_totals)
+        if ind_factors:
+            logger.info(
+                "  Hybrid industrial applied: %s",
+                {k: round(v, 2) for k, v in ind_factors.items()},
+            )
     engine = get_engine()
     with engine.connect() as conn:
         row_count = (
