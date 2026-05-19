@@ -24,10 +24,10 @@ User Browser                    Docker Compose Stack
      │                                 │
      └── brewgis.workspace ────────────┘
               │
-              ├─ Models: 22 model classes (Workspace, Layer, Scenario, etc.)
+              ├─ Models: 24 model classes (Workspace, Layer, Scenario, etc.)
               ├─ Views: 38 view modules (~68 callbacks)
-              ├─ Analysis: dbt pipeline (40 models, 17 macros, 4 seeds + custom tests)
-              ├─ Dagster: orchestration assets + resources + jobs
+              ├─ Analysis: dbt pipeline (48 models, 7 macros, 10 seeds + custom tests)
+              ├─ Dagster: ~35 orchestration assets + resources + jobs
               ├─ MCP server: 30+ tools (FastMCP stdio)
               └─ GIS I/O: geopandas for file ingest, SQLAlchemy for PostGIS writes
 ```
@@ -36,7 +36,7 @@ User Browser                    Docker Compose Stack
 - **Map flow:** Template renders `<brew-gis-map>` Lit component → fetches vector tiles from tipg or Martin depending on `TILE_SERVER_BACKEND` setting → tile server serves tiles from PostGIS
 - **Async flow:** Celery beat (DatabaseScheduler via django-celery-beat) dispatches periodic tasks → Redis broker → Celery workers execute tasks
 - **GIS ingest:** User uploads GIS file → geopandas reads → `df.to_postgis()` via SQLAlchemy
-- **Data pipeline (dlt → dbt):** dlt pipelines (Census, LEHD, POI, Raster) load raw data → Dagster orchestrates dbt models → scenario output summary tables
+- **Data pipeline (dlt → dbt):** dlt pipelines (Census, LEHD, POI, Raster, Tiger) load raw data → Dagster orchestrates dbt models → scenario output summary tables
 - **Analysis pipeline:** dbt models execute in dependency order: `env_constraint` → `core` (end_state) → `water_demand` / `energy_demand` → `land` / `ghg` / `transport_chain` (parallel). Module outputs are registered as Layers in the workspace
 - **dbt orchestration:** AnalysisRun model tracks pipeline state (PENDING→RUNNING→SUCCESS/FAILURE). Celery tasks invoke `dbt run` per module with scenario-scoped `--vars`. Python dbt models (trip_distribution.py, mode_choice.py) run numpy-based computation inside dbt's Python model framework
 - **MCP server:** FastMCP stdio server mirrors the view layer, exposing 30+ tools for AI assistant integration (workspace, scenario, layer, paint, analysis, data import, reports, job management)
@@ -63,15 +63,13 @@ Key rules:
 - Use dbt's native `schema.yml` tests and singular tests for data quality assertions. Prefer over pytest-based data tests.
 - dbt Python models are for compute that SQL cannot express (numpy gravity model). They are the exception, not the pattern.
 - Django services call tools (dbt runner, dlt pipelines, Dagster assets). They do not implement the data work.
-
-
 ## Key Directories
 
 |Directory|Purpose|
 |---|---|
 |`brewgis/workspace/`|The sole Django app — models, views, tasks, templates, services, analysis modules, symbology, built_forms, MCP server, management commands|
 |`brewgis/workspace/views/`|38 view modules split by feature (home, map, paint, symbology, analysis, import, filter, scenario, report, etc.)|
-|`brewgis/workspace/models.py`|22 model classes (Workspace, Layer, Scenario, PaintedCanvas, AnalysisRun, PaintConstraint, PaintEvent, MergeAudit, ScenarioReport, etc.)|
+|`brewgis/workspace/models.py`|24 model classes (Workspace, Layer, Scenario, PaintedCanvas, AnalysisRun, PaintConstraint, PaintEvent, MergeAudit, ScenarioReport, etc.)|
 |`brewgis/workspace/tasks.py`|11 Celery shared tasks for analysis pipeline, data fetching, spatial allocation, reports|
 |`brewgis/workspace/analysis/`|Pipeline orchestrator, dbt runner, module/layer registries, transport/food/equity preprocessors, network extractor, distance matrix|
 |`brewgis/workspace/symbology/`|Map style generation (classifiers, generator, auto-config, legend, stats), color palettes|
@@ -79,13 +77,13 @@ Key rules:
 |`brewgis/workspace/services/`|~34 service modules: base canvas adapters/ETL, census/LEHD/POI/NLCD fetchers, spatial allocator, stitcher, imputation engine, paint constraints, scenario cloner, canvas view manager, calibration registry, preflight, staging model, SACOG migration tooling|
 |`brewgis/workspace/mcp/`|MCP server: FastMCP stdio entrypoint, auth stub, 7 tool modules (workspace, scene, layer, paint, analysis, data_import, reports)|
 |`brewgis/workspace/management/commands/`|9 management commands: setup_fresno_workspace, import_sacog_demo, populate_base_canvas, compare_sacog_basemap, onboard_geography, run_mcp, export_story_packet, restore_demo_db, download_fresno_demo|
-|`brewgis/dbt_project/`|dbt project: 40 models (36 SQL, 2 Python, 4 staging), 17 macros, 4 seeds, 8 custom tests|
-|`brewgis/templates/`|Django templates: base.html, form.html, workspace_map.html, workspace_detail.html, scenario_comparison.html, partials|
+|`brewgis/dbt_project/`|dbt project: 48 models (46 SQL, 2 Python, 4 staging), 7 macros, 10 seeds, custom tests|
+|`brewgis/templates/`|~49 Django templates: base.html, form.html, workspace_map.html, workspace_detail.html, scenario_comparison.html, partials, report PDFs|
 |`brewgis/templates/workspace/partials/`|htmx partial templates for dynamic updates (data tables, layer groups, filters, symbology editor, etc.)|
-|`brewgis/static/js/`|Bundled frontend: brew-gis-map.js (24KB Lit+MapLibre output from Vite+TS)|
-|`brewgis/workspace/dagster/`|Dagster orchestration: assets (dbt, dlt, comparison, calibration, download, service), resources, jobs, schedules, sensors|
-|`brewgis/workspace/dlt_pipelines/`|dlt data ingestion pipelines: tiger_block, tiger_bg, raster, census, lehd, poi|
-|`brewgis/soda/`|Soda Core data quality: context, 9 validator functions, 9 contracts|
+|`brewgis/static/js/`|Bundled frontend: brew-gis-map.js (1.3MB Lit+MapLibre output from Vite+TS)|
+|`brewgis/workspace/dagster/`|Dagster orchestration: ~35 assets (dbt, dlt, comparison, calibration, download, service), resources, jobs, schedules, sensors|
+|`brewgis/workspace/dlt_pipelines/`|dlt data ingestion pipelines: tiger_block, tiger_bg, raster, census, lehd, poi, nlcd, osm|
+|`brewgis/soda/`|Soda Core data quality: context, 12 validator functions, 12 contracts|
 |`config/settings/`|Django settings: base.py, local.py, production.py, test.py|
 |`config/urls.py`|Root URLconf: admin, allauth accounts, workspace app, debug toolbar|
 |`config/celery_app.py`|Celery app bootstrap with DJANGO_SETTINGS_MODULE default|
@@ -154,7 +152,7 @@ python manage.py runserver
 celery -A config.celery_app worker -l info
 ```
 
-Key differences: `USE_DOCKER=no`, Django on `localhost:8000`, tile servers on `localhost:8081`/`:3000`, Redis on `localhost:6379`, Postgres on `localhost:5432`.
+Key differences: `USE_DOCKER=no`, Django on `localhost:8000`, tile servers on `localhost:8081`/:3000`, Redis on `localhost:6379`, Postgres on `localhost:5432`.
 
 ### Raw Docker Commands
 
@@ -178,7 +176,7 @@ npm run test      # vitest
 
 ### Python Style
 
-- **Linter:** Ruff with 50+ rule sets (F, E, W, C90, I, N, UP, ANN, ASYNC, S, B, DJ, SIM, PERF, FURB, LOG, RUF, and more — see `pyproject.toml`)
+- **Linter:** Ruff with 40+ rule sets (F, E, W, C90, I, N, UP, ANN, ASYNC, S, B, DJ, SIM, PERF, FURB, LOG, RUF, and more — see `pyproject.toml`)
 - **Formatter:** Ruff format (replaces Black), double quotes, 119 character line length
 - **Naming:** Standard Django conventions — `snake_case` for functions/variables, `PascalCase` for classes
 - **Imports:** `from`-imports within app preferred; Ruff enforces isort with `force-single-line = true`
@@ -211,7 +209,7 @@ npm run test      # vitest
 ### Frontend
 
 - **CSS framework:** Bootstrap 5.2.3 (via CDN)
-- **Map library:** MapLibre GL JS v4.7 wrapped in a Lit web component (`brew-gis-map.js`, ~24KB compiled bundle).
+- **Map library:** MapLibre GL JS v4.7 wrapped in a Lit web component (`brew-gis-map.js`, ~1.3MB compiled bundle with MapLibre + Lit + maplibre-gl-draw inlined).
 - **Dynamic HTML:** htmx 2.0.4 for AJAX form submission, partial page updates, and redirect handling.
 - **Chart.js 4.4.7** on the scenario comparison page.
 - **Lit component** (`<brew-gis-map>`): LitElement rendering into light DOM (`createRenderRoot` returns `this`), `delegatesFocus: true`. Properties: `map-style`, `viewport`, `layers`, `mode` (view/paint), `scenario-id`, `selection-mode` (click/box/polygon), `canvas-layer-id`, `transform-request`. Events: `mapready`, `mapidle`, `viewportchange`, `paint-features-changed`.
@@ -232,9 +230,9 @@ npm run test      # vitest
 - **Sources:** Dynamic `sources.yml` with table names/schemas resolved via dbt vars at runtime, loaded by Django
 - **Vars:** 60+ scenario parameters defined in `dbt_project.yml` with defaults, overridden by AnalysisRun via `--vars`
 - **Python models:** dbt's `python` materialization with numpy/pandas — batch processing (2000-origin batches for trip_distribution, BATCH_SIZE=2000 param). Pure functions extracted for testability (`_gravity_model`, `_multinomial_logit`).
-- **Macros (17 total):** allocation (8: compute_applied_acres, compute_dwelling_units, compute_population, compute_households, compute_employment, compute_floor_area, classify_land_dev_category, distribute_employment), spatial_ops (2: constraint_acres, apply_constraint — PostGIS overlap/discount), geometry (1: st_area_projected), delta_columns (1: COALESCE diff for increment model), generic_tests (4: test_non_negative, test_proportion_sum, test_acres_consumed_le_gross, test_column_between), generate_schema_name (1: schema override), utility (3: summarize_metric, coalesce_zero, set_vars)
-- **Seeds (4):** test_parcels.csv, test_base_canvas.csv, test_constraints.csv, test_built_forms.csv
-- **Singular tests (4):** assert_energy_non_negative, assert_mode_share_sum, assert_fiscal_identity, assert_total_trips_conserved
+- **Macros (7 allocation + spatial + delta + tests + utility):** allocation (compute_applied_acres, compute_dwelling_units, compute_population, etc.), spatial_ops (constraint_acres, apply_constraint — PostGIS overlap/discount), geometry (st_area_projected), delta_columns (COALESCE diff for increment model), generic_tests (test_non_negative, test_proportion_sum, test_acres_consumed_le_gross, test_column_between), generate_schema_name, utility (summarize_metric, coalesce_zero, set_vars)
+- **Seeds (10):** test_parcels, test_base_canvas, test_constraints, test_built_forms, and SACOG reference data
+- **Singular tests (7):** assert_energy_non_negative, assert_mode_share_sum, assert_fiscal_identity, assert_total_trips_conserved, and comparison assertions
 - **Packages:** dbt-labs/dbt_utils, calogica/dbt_expectations, dbt_date (transitive)
 - **Module organization:** staging (4 models) → env_constraint → core_allocation → transport_chain (trip_generation → trip_distribution.py → mode_choice.py → vmt → internal_capture) → land/energy/water/fiscal → GHG/health/stormwater → equity modules → scenario_summary
 - **Naming:** Lowercase snake_case SQL files, prefixed by module (core_, env_constraint, transport_, energy_, water_, etc.)
@@ -245,18 +243,18 @@ npm run test      # vitest
 
 |File|Role|
 |---|---|
-|`brewgis/workspace/models.py`|22 model classes: Workspace, Layer, SymbologyConfig, StyleClass, Scenario (enum ScenarioType), PaintedCanvas, AnalysisRun, DataImportRun, POICache, PaintConstraint (ConstraintOperator/ConstraintSeverity enums), MergeAudit, PaintEvent, ScenarioReport, County, DataSourceCategory, DataSource, LayerFilter, LayerGroup, ExternalMapService, Basemap|
+|`brewgis/workspace/models.py`|24 model classes: Workspace, Layer, SymbologyConfig, StyleClass, Scenario (enum ScenarioType), PaintedCanvas, AnalysisRun, DataImportRun, POICache, PaintConstraint (ConstraintOperator/ConstraintSeverity enums), MergeAudit, PaintEvent, ScenarioReport, County, DataSourceCategory, DataSource, LayerFilter, LayerGroup, ExternalMapService, Basemap, BaseCanvasColumn, BaseCanvas|
 |`brewgis/workspace/built_forms/models.py`|Built form models: BuildingType, PlaceType, PlaceTypeBuildingTypeMix (plus VintageChoices, StreetPatternChoices)|
-|`brewgis/workspace/urls.py`|~70 URL patterns under namespace `workspace` — home, token auth, workspace CRUD, paint operations, symbology, built forms, analysis pipeline, import center, filters, layer groups, reports, external services, basemaps|
+|`brewgis/workspace/urls.py`|~60 URL patterns under namespace `workspace` — home, token auth, workspace CRUD, paint operations, symbology, built forms, analysis pipeline, import center, filters, layer groups, reports, external services, basemaps, pipeline callback API|
 |`brewgis/workspace/views/__init__.py`|Exports all 38 view modules (~68 view callbacks)|
 |`brewgis/workspace/tasks.py`|11 Celery tasks: export_building_types_task, run_dbt_module, run_preprocessor_and_dbt, handle_module_completed, run_census_fetch, run_lehd_fetch, run_poi_fetch, run_raster_fetch, run_spatial_allocation, run_column_stitching, generate_report_task (plus internal helpers)|
 |`brewgis/workspace/admin.py`|Admin registrations for Workspace, Scenario, AnalysisRun, PaintedCanvas, PaintConstraint, DataSourceCategory, DataSource, POICache (plus built forms)|
 |`brewgis/workspace/palettes.py`|Color palette registry: QUALITATIVE, SEQUENTIAL, DIVERGING palettes + helpers (get_palette, interpolate_color, sample_palette, etc.)|
 |`brewgis/workspace/templatetags/workspace_tags.py`|Template filters: model_verbose_name, analysis_status_badge, report_status_badge, dictlookup, json_attr|
 |`brewgis/workspace/mcp/server.py`|FastMCP stdio server entrypoint with 7 tool modules (workspace, scenario, layer, paint, analysis, data_import, reports)|
-|`brewgis/workspace/dagster/definitions.py`|Top-level Dagster Definitions wiring all assets, resources, jobs, schedules, sensors|
-|`brewgis/workspace/dlt_pipelines/__init__.py`|Exports run_* functions for 6 dlt pipelines (census, lehd, poi, raster, tiger_block, tiger_bg)|
-|`brewgis/soda/__init__.py`|Soda Core context and 9 validator functions per pipeline stage (validate_base_canvas, validate_census_acs, validate_lehd, validate_poi, validate_nlcd, validate_synthetic_parcels, validate_spatial_allocation, validate_column_stitching, validate_built_form_export)|
+|`brewgis/workspace/dagster/definitions.py`|Top-level Dagster Definitions wiring all ~35 assets, resources, jobs, schedules, sensors|
+|`brewgis/workspace/dlt_pipelines/__init__.py`|Exports run_* functions for 8 dlt pipelines (census, lehd, poi, raster, tiger_block, tiger_bg, nlcd, osm)|
+|`brewgis/soda/__init__.py`|Soda Core context and 12 validator functions per pipeline stage (validate_base_canvas, validate_census_acs, validate_lehd, validate_poi, validate_nlcd, validate_synthetic_parcels, validate_spatial_allocation, validate_column_stitching, validate_built_form_export, validate_land_use_classification, validate_wac_block, validate_dbt_module_run)|
 
 ### Templates
 
@@ -282,7 +280,7 @@ npm run test      # vitest
 |`config/celery_app.py`|Celery app bootstrap with `DJANGO_SETTINGS_MODULE=config.settings.local`|
 |`config/wsgi.py`|WSGI with werkzeug ProxyMiddleware for /tipg/ and /martin/ tile server proxying|
 |`pyproject.toml`|Tool configuration (pytest, coverage, mypy, ruff, djlint, isort)|
-|`.pre-commit-config.yaml`|Pre-commit hook configuration (14 hooks: ruff, djlint, sqlfluff, prettier 3.5, eslint 9.22, tsc --noEmit, mypy, django-upgrade 6.0, codespell, check-method-decorator)|
+|`.pre-commit-config.yaml`|Pre-commit hook configuration (19 hooks: ruff, djlint, sqlfluff, prettier 3.5, eslint 9.22, tsc --noEmit, mypy, django-upgrade 6.0, codespell, check-method-decorator, no-anchor-tags)|
 |`.sqlfluff`|SQLFluff config: postgres dialect, dbt templater, UPPER keywords, 119 line length|
 |`package.json`|Frontend: lit, maplibre-gl, vite 6, vitest 3, typescript 5, eslint, prettier|
 |`vite.config.ts`|Builds `js/src/index.ts` → `brew-gis-map.js` ES module → `brewgis/static/js/` with sourcemaps|
@@ -291,9 +289,9 @@ npm run test      # vitest
 
 |File|Role|
 |---|---|
-|`brewgis/dbt_project/dbt_project.yml`|Project config: 40 models, 17 macros, 4 seeds, 60+ vars across all modules|
-|`brewgis/dbt_project/models/sources.yml`|3 dynamic sources (parcels, constraints, built_forms) resolved via dbt vars|
-|`brewgis/dbt_project/models/_schema.yml`|30 models documented with 12 test types (not_null, unique, non_negative, column_between, relationships, accepted_values, proportion_sum)|
+|`brewgis/dbt_project/dbt_project.yml`|Project config: 48 models, 7 macros, 10 seeds, 60+ vars across all modules|
+|`brewgis/dbt_project/models/sources.yml`|Dynamic sources (parcels, constraints, built_forms, lodes_raw, acs_raw, tiger_block_groups) resolved via dbt vars|
+|`brewgis/dbt_project/models/_schema.yml`|48 models documented with 12 test types (not_null, unique, non_negative, column_between, relationships, accepted_values, proportion_sum)|
 |`brewgis/dbt_project/models/trip_distribution.py`|Python dbt model: batched numpy gravity model with pure `_gravity_model` function|
 |`brewgis/dbt_project/models/mode_choice.py`|Python dbt model: multinomial logit mode split with pure `_multinomial_logit` function|
 
@@ -317,7 +315,7 @@ npm run test      # vitest
 - **SQL linter (dbt):** SQLFluff (postgres dialect, dbt templater, UPPER keywords)
 - **Type checker:** mypy strict mode with `django-stubs` and `mypy_django_plugin`
 - **CI:** GitHub Actions — pre-commit linting + Docker-based pytest + dbt seed/run/test + Soda validation
-- **Pre-commit hooks:** trailing-whitespace, end-of-file-fixer, check-json/toml/yaml/xml, debug-statements, builtin-literals, case-conflict, docstring-first, detect-private-key, django-upgrade (target 6.0), ruff, ruff-format, djlint (reformat + lint), sqlfluff-lint, codespell, prettier (JS/TS/JSON/YAML/CSS/MD), eslint (JS/TS), tsc --noEmit, mypy, check-method-decorator
+- **Pre-commit hooks:** trailing-whitespace, end-of-file-fixer, check-json/toml/yaml/xml, debug-statements, builtin-literals, case-conflict, docstring-first, detect-private-key, django-upgrade (target 6.0), ruff, ruff-format, djlint (reformat + lint), sqlfluff-lint, codespell, prettier (JS/TS/JSON/YAML/CSS/MD), eslint (JS/TS), tsc --noEmit, mypy, check-method-decorator, no-anchor-tags
 - **Frontend build:** Vite 6 + TypeScript 5.7, compiled to ES module in `brewgis/static/js/`
 - **JS tests:** vitest 3 with jsdom
 
@@ -327,11 +325,11 @@ npm run test      # vitest
 - **Runner:** Django's `DiscoverRunner` (Django `TestCase` available)
 - **Config:** `pyproject.toml` — `--ds=config.settings.test --reuse-db --import-mode=importlib`, 300s timeout
 - **Coverage:** `coverage` with `django_coverage_plugin`, includes `brewgis/**`, excludes `*/migrations/*` and `*/tests/*`, **60% threshold**
-- **BDD:** Gherkin `.feature` files in `tests/e2e/features/` (10), `tests/review/features/` (15), `tests/features/` (1) with pytest-bdd step definitions and Page Object Models
+- **BDD:** Gherkin `.feature` files in `tests/e2e/features/` (10), `tests/review/features/` (12), `tests/features/` (1) with pytest-bdd step definitions and Page Object Models
 - **Property-based:** Hypothesis for numerical invariants (mode choice shares sum to 1, trip conservation, SQL math parity)
 - **pytestarch (architecture guards):** `pytestarch` enforces import-level constraints in `tests/test_architecture.py`. Rules prevent regression to eliminated patterns (e.g., direct SQLAlchemy `create_engine` calls outside `brewgis.workspace.services._db`). Run with `pytest tests/test_architecture.py -v`.
 - **@deal pre/post contracts:** `deal` library for design-by-contract. Use wherever ergonomic — superior to equivalently scoped unit tests because contracts are checked at call/return boundaries automatically and encode invariants declaratively. Conditionally enabled via `DEAL_ENABLED=1`.
-- **Soda Core:** `brewgis/soda/` has 9 contracts validating ETL pipeline stages. Validator functions (validate_census_acs, validate_lehd, etc.) called within Celery tasks after dlt pipeline completion. Warning-only — never blocks, always logged.
+- **Soda Core:** `brewgis/soda/` has 12 contracts validating ETL pipeline stages. Validator functions (validate_census_acs, validate_lehd, etc.) called within Celery tasks after dlt pipeline completion. Warning-only — never blocks, always logged.
 - **Test-first for new features:** Every new view, model method, task, or template include **MUST** have a corresponding test. Guard-rail tests (validation, auth, CRUD completeness, edge cases) are not optional.
 - **CI:** GitHub Actions runs `pre-commit` (all hooks) and `pytest` (test suite) plus `dbt seed + run + test` in Docker on PRs/pushes to `master`/`main`
 
@@ -375,13 +373,13 @@ The test suite follows a taxonomy based on test weight and external dependencies
 tests/
 ├── conftest.py              # Root: hypothesis, deal, fixtures
 ├── factories.py             # 11 Factory Boy factories
-├── test_*.py                # ~15 root-level integration tests
+├── test_*.py                # ~24 root-level integration tests
 ├── workspace/               # ~60 files — models, views, paint, adapters, ETL, MCP
 ├── dbt_math/                # Property-based dbt SQL math: pure ref + SQL parity. Verification tool, NOT a pattern to extend — new models should use dbt native testing (schema tests, singular tests, dbt_expectations)
 ├── features/                # BDD — PostGIS-level isolation (psycopg)
 ├── isolation_orchestration/ # BDD — orchestration-level isolation (mocked Celery)
 ├── e2e/                     # Playwright BDD — 10 feature files, 7 POMs
-├── review/                  # UX design review — 15+ feature files, 11 POMs
+├── review/                  # UX design review — 12+ feature files, 10 POMs
 └── soda/                     # Soda Core contract validation (2 test files)
 ```
 
@@ -448,3 +446,4 @@ These patterns have been eliminated or must be actively avoided. Do not reintrod
 2. **Python reference implementations of dbt SQL** — do not write Python code that reimplements dbt model logic for testing. Use dbt's native tests (schema.yml tests, singular tests) and Soda contracts instead.
 3. **Django views/models for data processing** — Django owns business rules and UX. Data processing, transformation, and analytics belong in dbt, dlt, or Dagster.
 4. **Swallowing validation runtime errors** - never add a try/except in the context of running validation, if running validation is broken then stop.
+5. **Modifying imported data** - do not write python code that manipulates imported data, that is the role of a dbt model to reshape.
