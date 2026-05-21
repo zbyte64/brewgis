@@ -121,7 +121,7 @@ def census_acs_resource(
     url = (
         f"{base}?get={vars_str}"
         f"&for=block+group:*"
-        f"&in=state:{state_fips}+county:{county_fips}"
+        f"&in=state:{state_fips}+county:{county_fips}+tract:*"
     )
     api_key = _census_api_key()
     if api_key:

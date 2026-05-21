@@ -29,6 +29,11 @@ V1_PARCELS = "sac_cnty_region_existing_land_use_parcels"
 logger = logging.getLogger(__name__)
 STATE_FIPS = "06"
 COUNTY_FIPS = "067"
+# Vintage data years matching the SACOG v1 reference (2008-2012 era)
+ACS_YEAR = 2013  # ACS 5-year 2009-2013 (earliest with block group API support)
+LEHD_YEAR = 2011  # LODES 2011
+NLCD_YEAR = 2011  # NLCD 2011 (closest to 2008-2012)
+
 LOCAL_SRID = 3310
 
 
@@ -156,7 +161,7 @@ class Command(BaseCommand):
             self.stdout.write("\n── Populating TIGER/Line block group staging table ──")
             from brewgis.workspace.dlt_pipelines.tiger_bg import run_tiger_bg_pipeline
 
-            tiger_result = run_tiger_bg_pipeline(STATE_FIPS)
+            tiger_result = run_tiger_bg_pipeline(STATE_FIPS, year="2013")
             if not tiger_result["success"]:
                 raise CommandError(
                     f"TIGER/Line BG fetch failed: {tiger_result.get('error')}. "
@@ -171,7 +176,7 @@ class Command(BaseCommand):
             self.stdout.write("\n── Populating Census ACS staging table ──")
             from brewgis.workspace.dlt_pipelines.census import run_census_pipeline
 
-            census_result = run_census_pipeline(STATE_FIPS, COUNTY_FIPS, 2022)
+            census_result = run_census_pipeline(STATE_FIPS, COUNTY_FIPS, ACS_YEAR)
             if not census_result["success"]:
                 raise CommandError(
                     f"Census ACS fetch failed: {census_result.get('error')}. "
@@ -187,7 +192,7 @@ class Command(BaseCommand):
                 _populate_acs_block_group,
             )
 
-            acs_bg_count = _populate_acs_block_group(STATE_FIPS, COUNTY_FIPS, 2022)
+            acs_bg_count = _populate_acs_block_group(STATE_FIPS, COUNTY_FIPS, ACS_YEAR)
             self.stdout.write(
                 f"  census.acs_block_group populated: {acs_bg_count:,} rows"
             )
@@ -197,7 +202,7 @@ class Command(BaseCommand):
             self.stdout.write("\n── Populating LEHD LODES staging table ──")
             from brewgis.workspace.dlt_pipelines.lehd import run_lehd_pipeline
 
-            lehd_result = run_lehd_pipeline(STATE_FIPS, COUNTY_FIPS, 2021)
+            lehd_result = run_lehd_pipeline(STATE_FIPS, COUNTY_FIPS, LEHD_YEAR)
             if not lehd_result["success"]:
                 raise CommandError(
                     f"LEHD LODES fetch failed: {lehd_result.get('error')}. "
@@ -211,7 +216,7 @@ class Command(BaseCommand):
             self.stdout.write("\n── Populating lehd.wac_block ──")
             from brewgis.workspace.services.lehd_fetcher import _populate_wac_block
 
-            lehd_wac_count = _populate_wac_block(STATE_FIPS, COUNTY_FIPS, 2021)
+            lehd_wac_count = _populate_wac_block(STATE_FIPS, COUNTY_FIPS, LEHD_YEAR)
             self.stdout.write(f"  lehd.wac_block populated: {lehd_wac_count:,} rows")
 
         # ── Phase 1.5: Run NLCD pipeline (optional) ──────────────────────
@@ -222,6 +227,7 @@ class Command(BaseCommand):
 
             nlcd_result = run_nlcd_pipeline(
                 parcel_table="sacog_comparison_parcels",
+                year=NLCD_YEAR,
             )
             if not nlcd_result.get("success"):
                 raise CommandError(

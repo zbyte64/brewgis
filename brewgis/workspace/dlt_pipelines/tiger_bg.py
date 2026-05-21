@@ -27,18 +27,20 @@ __all__ = [
 def tiger_bg_source(
     state_fips: str = "06",
     county_fips: str = "067",
+    year: str = "2023",
 ) -> list[Any]:
     """dlt source for TIGER/Line block group shapefile extraction.
 
     Args:
         state_fips: Two-digit state FIPS code.
         county_fips: Three-digit county FIPS code (reserved for future use).
+        year: TIGER/Line release year (default "2023").
 
     Returns:
         List with a single :class:`dlt.Resource` yielding block-group
         geometry dicts.
     """
-    return [tiger_bg_resource(state_fips)]
+    return [tiger_bg_resource(state_fips, year=year)]
 
 
 @dlt.resource(
@@ -46,23 +48,22 @@ def tiger_bg_source(
     write_disposition="merge",
     primary_key="geoid",
 )
-def tiger_bg_resource(state_fips: str) -> Any:
+def tiger_bg_resource(state_fips: str, year: str = "2023") -> Any:
     """Download TIGER/Line BG shapefile ZIP and yield one dict per row.
 
     Downloads the state-level block-group shapefile from the Census
-    TIGER/Line 2023 feed, reads it with GeoPandas, reprojects to
+    TIGER/Line feed, reads it with GeoPandas, reprojects to
     EPSG:4326, builds the 12-digit GEOID from component FIPS codes,
     and yields a flat dict with WKT geometry for dlt compatibility.
     """
-    url = f"https://www2.census.gov/geo/tiger/TIGER2023/BG/tl_2023_{state_fips}_bg.zip"
+    import urllib.request
 
-    response = requests.get(url, timeout=120)
-    response.raise_for_status()
+    url = f"ftp://ftp2.census.gov/geo/tiger/TIGER{year}/BG/tl_{year}_{state_fips}_bg.zip"
+
 
     with tempfile.TemporaryDirectory() as tmpdir:
         zip_path = f"{tmpdir}/bg.zip"
-        with open(zip_path, "wb") as f:
-            f.write(response.content)
+        urllib.request.urlretrieve(url, zip_path)
 
         gdf = gpd.read_file(f"zip://{zip_path}")
 
@@ -92,6 +93,7 @@ def tiger_bg_resource(state_fips: str) -> Any:
 def run_tiger_bg_pipeline(
     state_fips: str,
     schema: str = "public",
+    year: str = "2023",
 ) -> dict:
     """Run dlt pipeline to extract TIGER/Line BG data to a staging table.
 
@@ -101,6 +103,8 @@ def run_tiger_bg_pipeline(
         Two-digit state FIPS code.
     schema : str, optional
         PostgreSQL schema for the destination table (default ``"public"``).
+    year : str, optional
+        TIGER/Line release year (default ``"2023"``).
 
     Returns
     -------
@@ -115,7 +119,7 @@ def run_tiger_bg_pipeline(
     )
 
     load_info = pipeline.run(
-        tiger_bg_source(state_fips),
+        tiger_bg_source(state_fips, year=year),
     )
 
     row_count = 0
