@@ -155,6 +155,15 @@ lint-dbt:  ## SQLFluff lint dbt models
 .PHONY: check-columns
 check-columns:  ## Static column provenance check (no DB needed)
 	docker compose -f $(COMPOSE_FILE) run --rm -e YEAR=2022 django python -m brewgis.workspace.dagster.check_provenance
+
+
+.PHONY: dead-code
+dead-code:  ## Find dead Python code (vulture)
+	$(COMPOSE_RUN) vulture brewgis/
+
+.PHONY: dead-code-host
+dead-code-host:  ## Find dead Python code (vulture, host mode)
+	vulture brewgis/
 # ─────────────────────────────────────────────
 # CI pipeline (mirrors CI workflow)
 # ─────────────────────────────────────────────

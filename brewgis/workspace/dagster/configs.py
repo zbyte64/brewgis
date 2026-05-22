@@ -121,10 +121,8 @@ class SacogComparisonETLConfig(Config):
     """Enable NLCD land cover classification and irrigation estimation."""
     run_osm: bool = False
     """Enable OSM intersection density estimation."""
-    skip_census: bool = False
-    """Skip Census ACS demographic fetching."""
-    skip_lehd: bool = False
-    """Skip LEHD employment fetching."""
+    force_data_fetch: bool = False
+    """Ignore cached data and re-download."""
     truncate: bool = False
     """Truncate existing base_canvas before inserting."""
 

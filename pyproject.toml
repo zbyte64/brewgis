@@ -296,3 +296,29 @@ ignore = [
 "tests/**/*.py" = ["PLR2004", "ANN001", "ARG001"]
 [tool.ruff.lint.isort]
 force-single-line = true
+
+# ==== Vulture (dead code detection) ====
+[tool.vulture]
+paths = ["brewgis"]
+exclude = [
+    "*/migrations/*",
+    "brewgis/dbt_project/target/*",
+]
+ignore_names = [
+    "app_name",
+    "objects",
+    "urlpatterns",
+    "Meta",
+    "__all__",
+    "Command",
+    "defs",
+]
+ignore_decorators = [
+    "@shared_task",
+    "@admin.register",
+    "@asset",
+    "@pytest.fixture",
+    "@tool",
+]
+min_confidence = 60
+sort_by_size = true

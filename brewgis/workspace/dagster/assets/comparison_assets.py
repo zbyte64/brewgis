@@ -679,8 +679,7 @@ def _run_etl(
     parcels_gdf,
     *,
     quick: bool = False,
-    skip_census: bool = False,
-    skip_lehd: bool = False,
+    force_data_fetch: bool = False,
     truncate: bool = False,
 ) -> dict:
     """Run the brewgis base canvas ETL on the given parcel geometries.
@@ -688,6 +687,12 @@ def _run_etl(
     DEPRECATED: Kept for backward compatibility. The management command
     ``compare_sacog_basemap`` and its tests still call this function.
     New code should use the dbt base_canvas models or ``run_pipeline`` directly.
+
+    Args:
+        parcels_gdf: Parcel geometries to process.
+        quick: Skip optional heavy post-processing steps.
+        force_data_fetch: Ignore cached data and re-download.
+        truncate: Truncate existing base_canvas before inserting.
     """
     import time
 

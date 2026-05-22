@@ -4,15 +4,12 @@ from __future__ import annotations
 
 from unittest.mock import patch
 
-import pytest
-
 from brewgis.workspace.services.census_fetcher import ACS_TABLE_GROUPS
 from brewgis.workspace.services.census_fetcher import _all_vars
 from brewgis.workspace.services.census_fetcher import fetch_acs_data_summary
 from brewgis.workspace.services.lehd_fetcher import LODES_WAC_VARIABLES
 from brewgis.workspace.services.lehd_fetcher import _all_lodes_wac_vars
 from brewgis.workspace.services.lehd_fetcher import _build_lodes_wac_url
-from brewgis.workspace.services.lehd_fetcher import fetch_lehd_block_data
 from brewgis.workspace.services.lehd_fetcher import fetch_lehd_data_summary
 from brewgis.workspace.services.poi_fetcher import POI_CATEGORIES
 from brewgis.workspace.services.poi_fetcher import _build_overpass_query
@@ -34,8 +31,12 @@ class TestCensusFetcher:
 
     def test_fetch_acs_data_summary_from_staging(self) -> None:
         """Data summary should return expected structure from staging."""
-        with patch("brewgis.workspace.services.census_fetcher.get_engine") as mock_get_engine:
-            mock_conn = mock_get_engine.return_value.connect.return_value.__enter__.return_value
+        with patch(
+            "brewgis.workspace.services.census_fetcher.get_engine"
+        ) as mock_get_engine:
+            mock_conn = (
+                mock_get_engine.return_value.connect.return_value.__enter__.return_value
+            )
             mock_conn.execute.return_value.scalar.return_value = 42
             summary = fetch_acs_data_summary("06", "067")
         assert summary["row_count"] == 42
@@ -65,13 +66,153 @@ class TestLEHDFetcher:
 
     def test_fetch_lehd_data_summary_from_staging(self) -> None:
         """Data summary should return expected structure from staging."""
-        with patch("brewgis.workspace.services.lehd_fetcher.get_engine") as mock_get_engine:
-            mock_conn = mock_get_engine.return_value.connect.return_value.__enter__.return_value
+        with patch(
+            "brewgis.workspace.services.lehd_fetcher.get_engine"
+        ) as mock_get_engine:
+            mock_conn = (
+                mock_get_engine.return_value.connect.return_value.__enter__.return_value
+            )
             mock_conn.execute.return_value.scalar.return_value = 100
             summary = fetch_lehd_data_summary("06", "067")
         assert summary["row_count"] == 100
         assert "C000" in summary["variables"]
         assert "emp_ret" in summary["aggregate_columns"]
+
+    def test_compute_all_cbp_totals_parses_api_response(self) -> None:
+        """_compute_all_cbp_totals should correctly map NAICS codes to sub-sector columns."""
+        from unittest.mock import MagicMock
+        from unittest.mock import patch as _patch
+
+        from brewgis.workspace.services.lehd_fetcher import _compute_all_cbp_totals
+
+        # Simulate CBP API response with various NAICS codes and employment counts
+        mock_response = MagicMock()
+        mock_response.json.return_value = [
+            ["EMP", "NAICS2017", "state", "county"],
+            ["50000", "31----", "06", "067"],
+            ["30000", "32----", "06", "067"],
+            ["20000", "33----", "06", "067"],
+            ["8000", "42----", "06", "067"],
+            ["12000", "44----", "06", "067"],
+            ["5000", "45----", "06", "067"],
+            ["15000", "48----", "06", "067"],
+            ["3000", "49----", "06", "067"],
+            ["4000", "22----", "06", "067"],
+            ["6000", "23----", "06", "067"],
+            ["7000", "721---", "06", "067"],
+            ["25000", "722---", "06", "067"],
+            ["55000", "51----", "06", "067"],
+            ["35000", "52----", "06", "067"],
+            ["90000", "62----", "06", "067"],
+            ["40000", "61----", "06", "067"],
+            ["30000", "92----", "06", "067"],
+            ["10000", "11----", "06", "067"],
+            ["2000", "21----", "06", "067"],
+            ["8000", "71----", "06", "067"],
+            ["12000", "81----", "06", "067"],
+        ]
+        mock_response.raise_for_status = MagicMock()
+        mock_response.status_code = 200
+
+        with _patch(
+            "brewgis.workspace.services.lehd_fetcher.requests.get",
+            return_value=mock_response,
+        ):
+            with _patch(
+                "brewgis.workspace.services.lehd_fetcher._census_api_key",
+                return_value="test_key",
+            ):
+                result = _compute_all_cbp_totals("06", "067", year=2011)
+
+        assert "emp_manufacturing" in result
+        assert result["emp_manufacturing"] == 100000  # 31+32+33
+        assert result["emp_retail_services"] == 17000  # 44+45
+        assert result["emp_wholesale"] == 8000
+        assert result["emp_transport_warehousing"] == 18000  # 48+49
+        assert result["emp_utilities"] == 4000
+        assert result["emp_construction"] == 6000
+        assert result["emp_accommodation"] == 7000
+        assert result["emp_restaurant"] == 25000
+        assert result["emp_office_services"] == 90000  # 51+52
+        assert result["emp_medical_services"] == 90000
+        assert result["emp_education"] == 40000
+        assert result["emp_public_admin"] == 30000
+        assert result["emp_agriculture"] == 10000
+        assert result["emp_extraction"] == 2000
+        assert result["emp_arts_entertainment"] == 8000
+        assert result["emp_other_services"] == 12000
+        assert "emp_military" not in result
+        assert abs(sum(result.values()) - 467000) < 0.01
+
+    def test_compute_all_cbp_totals_returns_empty_on_api_failure(self) -> None:
+        """_compute_all_cbp_totals should return empty dict on API failure."""
+        from unittest.mock import patch as _patch
+
+        import requests
+
+        from brewgis.workspace.services.lehd_fetcher import _compute_all_cbp_totals
+
+        with _patch(
+            "brewgis.workspace.services.lehd_fetcher.requests.get",
+            side_effect=requests.RequestException("API down"),
+        ):
+            result = _compute_all_cbp_totals("06", "067", year=2011)
+        assert result == {}
+
+    def test_apply_cbp_county_scaling_scales_above_local(self) -> None:
+        """_apply_cbp_county_scaling should scale up sub-sectors where CBP >> LEHD."""
+        from unittest.mock import MagicMock
+        from unittest.mock import patch as _patch
+
+        from brewgis.workspace.services.lehd_fetcher import _ALL_SUB_COLUMNS
+        from brewgis.workspace.services.lehd_fetcher import _SUBSECTOR_CBP_NAICS
+        from brewgis.workspace.services.lehd_fetcher import _apply_cbp_county_scaling
+
+        mock_conn = MagicMock()
+        mock_engine = MagicMock()
+        mock_engine.connect.return_value.__enter__.return_value = mock_conn
+
+        # Determine the exact iteration order of cols_to_scale in the function
+        cols_to_scale = [c for c in _ALL_SUB_COLUMNS if c in _SUBSECTOR_CBP_NAICS]
+        # 16 sub-sector columns (all except emp_military)
+
+        # Build scalar return sequence: [total_proxy, lodes_1, lodes_2, ..., lodes_16]
+        scalar_values = [100000]  # total_proxy
+        for col in cols_to_scale:
+            if col == "emp_manufacturing":
+                scalar_values.append(5000)  # LEHD total heavily suppressed
+            else:
+                scalar_values.append(80000)  # High enough to avoid scaling
+
+        scalar_mock = MagicMock()
+        scalar_mock.side_effect = scalar_values
+        mock_conn.execute.return_value.scalar = scalar_mock
+
+        # CBP totals: only manufacturing has CBP >> LEHD
+        # All other columns: set CBP <= LEHD (80000) so they don't scale
+        cbp_totals: dict[str, float] = {}
+        for col in cols_to_scale:
+            if col == "emp_manufacturing":
+                cbp_totals[col] = 100000  # CBP >> LEHD (5000)
+            else:
+                cbp_totals[col] = 50000  # CBP < LEHD (80000) → no scaling
+
+        with _patch(
+            "brewgis.workspace.services.lehd_fetcher.get_engine",
+            return_value=mock_engine,
+        ):
+            factors = _apply_cbp_county_scaling(cbp_totals)
+
+        # Only manufacturing should have a scaling factor
+        assert "emp_manufacturing" in factors
+        assert factors["emp_manufacturing"] == 10.0
+        # preserved_target = 100000 * 0.5 = 50000, scale_factor = 50000 / 5000 = 10.0
+
+        # Other sub-sectors should NOT be in factors (CBP <= LEHD)
+        for col in cols_to_scale:
+            if col != "emp_manufacturing":
+                assert col not in factors, f"{col} should not be scaled"
+
 
 # ── POI Fetcher Tests ─────────────────────────────────────────────────
 

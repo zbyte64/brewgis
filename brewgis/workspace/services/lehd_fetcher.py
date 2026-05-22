@@ -407,149 +407,27 @@ def _build_cbp_proportions(
 # ── CBP County-Scale Calibration ──────────────────────────────────────
 
 
-# NAICS 2-digit codes per broad employment sector for county-level scaling.
-# These mirror the AGGREGATE_MAPPINGS groupings.
-_SECTOR_NAICS: dict[str, list[str]] = {
-    "emp_ret": ["44", "45"],
-    "emp_off": ["51", "52", "53", "54", "55", "56", "62"],
-    "emp_pub": ["61", "92"],
-    "emp_ind": ["11", "21", "22", "23", "31", "32", "33", "42", "48", "49"],
+# NAICS 2-digit (or 3-digit for accommodation/restaurant) codes per
+# sub-sector column for county-level CBP scaling.
+# Maps each sub-sector column to the CBP NAICS codes that comprise it.
+_SUBSECTOR_CBP_NAICS: dict[str, list[str]] = {
+    "emp_retail_services": ["44", "45"],
+    "emp_restaurant": ["722"],  # 3-digit NAICS
+    "emp_accommodation": ["721"],  # 3-digit NAICS
+    "emp_arts_entertainment": ["71"],
+    "emp_other_services": ["81"],
+    "emp_office_services": ["51", "52", "53", "54", "55", "56"],
+    "emp_medical_services": ["62"],
+    "emp_public_admin": ["92"],
+    "emp_education": ["61"],
+    "emp_manufacturing": ["31", "32", "33"],
+    "emp_wholesale": ["42"],
+    "emp_transport_warehousing": ["48", "49"],
+    "emp_utilities": ["22"],
+    "emp_construction": ["23"],
+    "emp_agriculture": ["11"],
+    "emp_extraction": ["21"],
 }
-
-
-def _cbp_url(
-    state_fips: str, county_fips: str, naics_code: str, year: int = 2021
-) -> str:
-    """Build CBP API URL for a single 2-digit NAICS code in a county.
-
-    Args:
-        state_fips: Two-digit state FIPS code.
-        county_fips: Three-digit county FIPS code.
-        naics_code: Two-digit NAICS code.
-        year: CBP data year (default 2021).
-
-    Returns:
-        Census CBP API URL string.
-    """
-    sf = state_fips.zfill(2)
-    cf = county_fips.zfill(3)
-    key = _census_api_key()
-    key_param = f"&key={key}" if key else ""
-    return (
-        f"https://api.census.gov/data/{year}/cbp"
-        f"?get=EMP,NAICS2017&for=county:{cf}"
-        f"&in=state:{sf}&NAICS2017={naics_code}----{key_param}"
-    )
-
-
-def _fetch_cbp_county_emp(
-    state_fips: str,
-    county_fips: str,
-    naics_codes: dict[str, str],
-    year: int = 2021,
-) -> dict[str, float]:
-    """Fetch CBP employment for specified 2-digit NAICS codes.
-
-    Queries the Census CBP API for each NAICS code individually and
-    returns a dict mapping each key to its employment count (0.0 if
-    the code has no data or the API call fails).
-
-    Args:
-        state_fips: Two-digit state FIPS code.
-        county_fips: Three-digit county FIPS code.
-        naics_codes: Dict mapping a key name to a 2-digit NAICS code.
-        year: CBP data year (default 2021).
-
-    Returns:
-        Dict mapping each input key to its CBP employment (float).
-    """
-    result: dict[str, float] = {}
-    for key, naics_code in naics_codes.items():
-        url = _cbp_url(state_fips, county_fips, naics_code, year=year)
-        response = requests.get(url, timeout=120)
-        response.raise_for_status()
-        raw_data: list[list[str]] = response.json()
-        if len(raw_data) >= 2:  # at least header + one data row
-            emp_raw = raw_data[1][0]  # EMP is the first column
-            if emp_raw not in ("", "D", "S", "N"):
-                result[key] = float(emp_raw)
-            else:
-                result[key] = 0.0
-        else:
-            result[key] = 0.0
-    return result
-
-
-def fetch_county_employment_scaling(
-    state_fips: str,
-    county_fips: str,
-    year: int = 2021,
-) -> dict[str, float]:
-    """Compute CBP-based county-level employment scaling factors.
-
-    Fetches LEHD block employment data and CBP county totals for each
-    broad sector (retail, office, public, industrial) and returns
-    scaling factors that only scale up (never down) where CBP reports
-    more employment than LEHD captures.
-
-    Scaling factor per sector = max(CBP_total / LEHD_total, 1.0).
-
-    Args:
-        state_fips: Two-digit state FIPS code.
-        county_fips: Three-digit county FIPS code.
-        year: CBP data year (default 2021).
-
-    Returns:
-        Dict with keys ``emp_ret``, ``emp_off``, ``emp_pub``, ``emp_ind``
-        mapped to float scaling factors (default 1.0).
-    """
-    scale_factors: dict[str, float] = {
-        "emp_ret": 1.0,
-        "emp_off": 1.0,
-        "emp_pub": 1.0,
-        "emp_ind": 1.0,
-    }
-
-    # 1. Compute LEHD county-level totals per sector
-    lehd_gdf = fetch_lehd_block_data(state_fips, county_fips)
-
-    if lehd_gdf.empty:
-        return scale_factors
-
-    lehd_totals: dict[str, float] = {}
-    for sector in _SECTOR_NAICS:
-        lehd_totals[sector] = (
-            float(lehd_gdf[sector].sum()) if sector in lehd_gdf.columns else 0.0
-        )
-
-    # 2. Fetch CBP county totals per NAICS 2-digit code
-    flat_naics: dict[str, str] = {}
-    for sector, codes in _SECTOR_NAICS.items():
-        for naics_code in codes:
-            flat_naics[f"{sector}_{naics_code}"] = naics_code
-
-    cbp_results = _fetch_cbp_county_emp(state_fips, county_fips, flat_naics, year=year)
-
-    # 3. Aggregate CBP per sector
-    sector_cbp: dict[str, float] = dict.fromkeys(_SECTOR_NAICS, 0.0)
-    for flat_key, emp in cbp_results.items():
-        for sector in _SECTOR_NAICS:
-            if flat_key.startswith(f"{sector}_"):
-                sector_cbp[sector] += emp
-                break
-
-    # 4. Compute scaling factor = max(CBP / LEHD, 1.0)
-    for sector in scale_factors:
-        lehd_total = lehd_totals.get(sector, 0.0)
-        cbp_total = sector_cbp.get(sector, 0.0)
-        if lehd_total > 0 and cbp_total > 0:
-            ratio = cbp_total / lehd_total
-            if ratio > 1.0:
-                scale_factors[sector] = ratio
-            # else keep 1.0 (never scale down)
-        # else keep 1.0 (no data or zero LEHD)
-
-    return scale_factors
 
 
 # ── Sub-Sector Column Splitting ───────────────────────────────────────
@@ -768,18 +646,16 @@ def fetch_lehd_data_summary(
 _HYBRID_PRESERVE_FRACTION = 0.50
 
 
-def _compute_industrial_cbp_totals(
+def _compute_all_cbp_totals(
     state_fips: str,
     county_fips: str,
     year: int = 2021,
 ) -> dict[str, float]:
-    """Fetch CBP employment for industrial NAICS from full county data.
+    """Fetch CBP employment for ALL sub-sector columns from full county data.
 
-    Queries the Census CBP API for ALL NAICS codes in the county (no
-    NAICS filter — the ``NAICS2017=XX----`` filter pattern returns 204
-    No Content), then extracts the industrial sub-sector totals from the
-    full response. This mirrors the fetch pattern used by
-    ``_build_cbp_proportions``.
+    Queries the Census CBP API for ALL NAICS codes in the county (no NAICS
+    filter), then extracts every sub-sector total using _SUBSECTOR_CBP_NAICS
+    mapping. This mirrors the fetch pattern used by _build_cbp_proportions.
 
     Args:
         state_fips: Two-digit state FIPS code.
@@ -787,9 +663,9 @@ def _compute_industrial_cbp_totals(
         year: CBP data year (default 2021).
 
     Returns:
-        Dict with keys ``emp_manufacturing``, ``emp_wholesale``,
-        ``emp_transport_warehousing``, ``emp_utilities``, ``emp_construction``
-        mapped to float CBP totals.
+        Dict mapping every sub-sector column name (except emp_military) to
+        its CBP county-level employment total (float). Returns empty dict on
+        API failure.
     """
     sf = state_fips.zfill(2)
     cf = county_fips.zfill(3)
@@ -816,21 +692,23 @@ def _compute_industrial_cbp_totals(
     header = raw_data[0]
     rows = raw_data[1:]
     naics_emp = _parse_cbp_naics_emp(rows, header)
-    sector_emp = _group_naics_by_prefix(naics_emp, 2)
+    sector_emp_2 = _group_naics_by_prefix(naics_emp, 2)
+    sector_emp_3 = _group_naics_by_prefix(naics_emp, 3)
 
-    return {
-        "emp_construction": sector_emp.get("23", 0),
-        "emp_manufacturing": sector_emp.get("31", 0)
-        + sector_emp.get("32", 0)
-        + sector_emp.get("33", 0),
-        "emp_wholesale": sector_emp.get("42", 0),
-        "emp_transport_warehousing": sector_emp.get("48", 0) + sector_emp.get("49", 0),
-        "emp_utilities": sector_emp.get("22", 0),
-    }
+    cbp_totals: dict[str, float] = {}
+    for sub_col, naics_codes in _SUBSECTOR_CBP_NAICS.items():
+        total = 0.0
+        for code in naics_codes:
+            if len(code) == 2:
+                total += sector_emp_2.get(code, 0)
+            else:
+                total += sector_emp_3.get(code, 0)
+        cbp_totals[sub_col] = total
+
+    return cbp_totals
 
 
-# ── Hybrid Industrial Employment Distribution ─────────────────────────
-
+# ── CBP County Scaling ──────────────────────────────────────────
 
 _INDUSTRIAL_SUB_COLUMNS = [
     "emp_manufacturing",
@@ -839,39 +717,46 @@ _INDUSTRIAL_SUB_COLUMNS = [
     "emp_utilities",
     "emp_construction",
 ]
-_ALL_SUB_COLUMNS = [
-    "emp_retail_services",
-    "emp_restaurant",
-    "emp_accommodation",
-    "emp_arts_entertainment",
-    "emp_other_services",
-    "emp_office_services",
-    "emp_medical_services",
-    "emp_public_admin",
-    "emp_education",
-] + _INDUSTRIAL_SUB_COLUMNS + [
-    "emp_agriculture",
-    "emp_extraction",
-    "emp_military",
-]
+_ALL_SUB_COLUMNS = (
+    [
+        "emp_retail_services",
+        "emp_restaurant",
+        "emp_accommodation",
+        "emp_arts_entertainment",
+        "emp_other_services",
+        "emp_office_services",
+        "emp_medical_services",
+        "emp_public_admin",
+        "emp_education",
+    ]
+    + _INDUSTRIAL_SUB_COLUMNS
+    + [
+        "emp_agriculture",
+        "emp_extraction",
+        "emp_military",
+    ]
+)
 
 
-
-def _apply_hybrid_industrial(
+def _apply_cbp_county_scaling(
     cbp_totals: dict[str, float],
     preserve_fraction: float = _HYBRID_PRESERVE_FRACTION,
 ) -> dict[str, float]:
-    """Apply Option C hybrid industrial distribution to lehd.wac_block.
+    """Apply CBP county-level scaling to all sub-sector columns in wac_block.
 
-    For each industrial sub-sector:
-    1. Query LODES totals from the current wac_block
-    2. Scale blocks with non-zero LODES to reach preserve_fraction of CBP total
+    For each sub-sector column with CBP data:
+    1. Query LODES county total from wac_block
+    2. If CBP > LODES (Census disclosure suppression):
+       Scale blocks with non-zero LODES to reach preserve_fraction of CBP total
     3. Distribute residual across ALL blocks proportional to total employment
-    4. Recompute emp_ind aggregate to match new sub-column totals
+    4. Recompute all aggregate columns (emp_ret, emp_off, emp_pub, emp_ind, etc.)
     5. Recompute emp as sum of all sub-sector columns (close accounting gap)
 
+    Sub-sectors without CBP data (e.g. emp_military) are left untouched.
+    Sub-sectors where CBP <= LODES (no suppression) are also left untouched.
+
     Args:
-        cbp_totals: Dict of sub-sector name to CBP county total.
+        cbp_totals: Dict of sub-sector column name to CBP county total.
         preserve_fraction: Fraction of CBP total to preserve via LODES-scaling
             (default 0.50). The remainder is distributed proportionally.
 
@@ -894,7 +779,9 @@ def _apply_hybrid_industrial(
 
         factors: dict[str, float] = {}
 
-        for col in _INDUSTRIAL_SUB_COLUMNS:
+        # Iterate over all sub-sector columns that have CBP mapping
+        cols_to_scale = [c for c in _ALL_SUB_COLUMNS if c in _SUBSECTOR_CBP_NAICS]
+        for col in cols_to_scale:
             cbp_total = cbp_totals.get(col, 0)
             if cbp_total <= 0:
                 continue
@@ -914,7 +801,7 @@ def _apply_hybrid_industrial(
             scale_factor = preserved_target / lodes_total
             residual = cbp_total - preserved_target
 
-            # Step 1: Scale blocks that LODES identified as industrial
+            # Step 1: Scale blocks that LODES identified with this sub-sector
             conn.execute(
                 text(f"UPDATE lehd.wac_block SET {col} = {col} * :s WHERE {col} > 0"),  # noqa: S608
                 {"s": scale_factor},
@@ -932,12 +819,10 @@ def _apply_hybrid_industrial(
 
             factors[col] = scale_factor
 
-        # Recompute emp_ind to match corrected sub-columns
-        sub_sum = " + ".join(f"COALESCE({c}, 0)" for c in _INDUSTRIAL_SUB_COLUMNS)
-        conn.execute(text(f"UPDATE lehd.wac_block SET emp_ind = {sub_sum}"))  # noqa: S608
-        # Recompute emp as sum of all sub-sectors (close accounting gap from CBP inflation)
-        all_sub_sum = " + ".join(f"COALESCE({c}, 0)" for c in _ALL_SUB_COLUMNS)
-        conn.execute(text(f"UPDATE lehd.wac_block SET emp = {all_sub_sum}"))  # noqa: S608
+        # Recompute all aggregate columns to match corrected sub-columns
+        for agg_col, detail_cols in AGGREGATE_MAPPINGS.items():
+            sub_sum = " + ".join(f"COALESCE({c}, 0)" for c in detail_cols)
+            conn.execute(text(f"UPDATE lehd.wac_block SET {agg_col} = {sub_sum}"))  # noqa: S608
 
         conn.commit()
 
@@ -988,21 +873,17 @@ def _populate_wac_block(
         msg = f"dbt wac_block failed: {result.error}"
         raise RuntimeError(msg)
 
-    # Apply hybrid industrial distribution for regions with suppressed
-    # LODES industrial employment.
-    # SACOG regions skip this — the dbt model's SACOG calibration (is_sacog=1)
-    # already provides the correct sub-sector proportions from the reference
-    # dataset.  Applying hybrid industrial on top would inflate industrial
-    # sub-sectors to 50 % of CBP county totals, which are far higher than
-    # the SACOG reference values.
-    if not is_sacog:
-        cbp_ind_totals = _compute_industrial_cbp_totals(state_fips, county_fips, year=year)
-        ind_factors = _apply_hybrid_industrial(cbp_ind_totals)
-        if ind_factors:
-            logger.info(
-                "  Hybrid industrial applied: %s",
-                {k: round(v, 2) for k, v in ind_factors.items()},
-            )
+    # Apply CBP county-level scaling to correct suppressed LEHD sub-sector
+    # employment totals. Uses County Business Patterns (CBP) county totals
+    # as control targets — CBP is not subject to the same disclosure avoidance
+    # suppression as LEHD CNS data.
+    cbp_totals = _compute_all_cbp_totals(state_fips, county_fips, year=year)
+    scaling_factors = _apply_cbp_county_scaling(cbp_totals)
+    if scaling_factors:
+        logger.info(
+            "  CBP county scaling applied: %s",
+            {k: round(v, 2) for k, v in scaling_factors.items()},
+        )
     engine = get_engine()
     with engine.connect() as conn:
         row_count = (

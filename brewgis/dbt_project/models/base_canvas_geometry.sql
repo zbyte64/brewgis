@@ -23,12 +23,12 @@
 
     Materialized as: table
 #}
-{{ config(materialized=var('base_canvas_materialized', 'table'), 
+{{ config(materialized=var('base_canvas_materialized', 'table'),
     indexes=[
-        {'columns': ['geometry'], 'type': 'gist'}, 
+        {'columns': ['geometry'], 'type': 'gist'},
         {'columns': ['local_geometry'], 'type': 'gist'},
         {'columns': ['parcel_id'], 'unique': True},
-    ])  
+    ])
 }}
 
 {%- set area_srid = var('projected_srid', 3857) -%}
@@ -92,7 +92,7 @@ parcel_area AS (
 
 SELECT
     parcel_area.*,
-    ROUND((area_gross * 0.85)::numeric, 4) AS area_parcel,
+    ROUND((area_gross * 0.85)::numeric, 4) AS area_parcel, {# reference doesnt do this... #}
     ROUND((area_gross * 0.7)::numeric, 4) AS area_dev_condition,
     ROUND((area_gross * 0.15)::numeric, 4) AS area_row
 FROM parcel_area

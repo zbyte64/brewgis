@@ -22,6 +22,9 @@ from django.conf import settings
 from django.core.management.base import BaseCommand
 from django.core.management.base import CommandError
 
+from brewgis.workspace.services._db import get_engine
+from brewgis.workspace.services._db import text
+
 CACHE_DIR = Path(settings.BASE_DIR) / "planning"
 REPORT_PATH = CACHE_DIR / "sacog_comparison_report.md"
 V1_BASE_CANVAS = "sac_cnty_region_base_canvas"
@@ -63,28 +66,10 @@ class Command(BaseCommand):
             help="Limit parcel count for fast test runs (0 = all)",
         )
         parser.add_argument(
-            "--skip-census",
+            "--force-data-fetch",
             action="store_true",
             default=False,
-            help="Skip Census ACS demographic fetching",
-        )
-        parser.add_argument(
-            "--skip-lehd",
-            action="store_true",
-            default=False,
-            help="Skip LEHD employment fetching",
-        )
-        parser.add_argument(
-            "--skip-data-fetch",
-            action="store_true",
-            default=False,
-            help="Skip all data fetching (Census ACS + LEHD)",
-        )
-        parser.add_argument(
-            "--truncate",
-            action="store_true",
-            default=False,
-            help="Ignored in dbt mode — kept for backward compatibility",
+            help="Ignore cached data and re-download",
         )
 
     def handle(self, **options: Any) -> None:
@@ -104,15 +89,11 @@ class Command(BaseCommand):
         from brewgis.workspace.dagster.assets.comparison_assets import (
             _query_table_as_dict,
         )
-        from brewgis.workspace.services._db import get_engine
 
         nlcd = bool(options.get("nlcd", False))
         osm = bool(options.get("osm", False))
-        quick = not (nlcd or osm)
         limit = int(options.get("limit", 0))
-        skip_data_fetch = bool(options.get("skip_data_fetch", False))
-        skip_census = skip_data_fetch or bool(options.get("skip_census", False))
-        skip_lehd = skip_data_fetch or bool(options.get("skip_lehd", False))
+        force_data_fetch = bool(options.get("force_data_fetch", False))
 
         self.stdout.write("\n" + "=" * 70)
         self.stdout.write("  SACOG Base Canvas Comparison: BrewGIS vs v1 Reference")
@@ -120,8 +101,9 @@ class Command(BaseCommand):
         self.stdout.write(f"  NLCD: {'on' if nlcd else 'off'}")
         self.stdout.write(f"  OSM: {'on' if osm else 'off'}")
         self.stdout.write(f"  Parcel limit: {limit or 'all'}")
-        self.stdout.write(f"  Census: {'skip' if skip_census else 'on'}")
-        self.stdout.write(f"  LEHD: {'skip' if skip_lehd else 'on'}")
+        self.stdout.write(
+            f"  Force re-download: {'yes' if force_data_fetch else 'no (use cached data if available)'}"
+        )
         if not settings.CENSUS_API_KEY:
             self.stdout.write(
                 self.style.WARNING(
@@ -157,21 +139,23 @@ class Command(BaseCommand):
         self.stdout.write("  Written to public.sacog_comparison_parcels")
 
         # Populate TIGER/Line block group polygons (needed by ACS reader)
-        if not skip_census:
+        if force_data_fetch or not self._table_has_rows("public", "tiger_block_groups"):
             self.stdout.write("\n── Populating TIGER/Line block group staging table ──")
             from brewgis.workspace.dlt_pipelines.tiger_bg import run_tiger_bg_pipeline
 
             tiger_result = run_tiger_bg_pipeline(STATE_FIPS, year="2013")
             if not tiger_result["success"]:
                 raise CommandError(
-                    f"TIGER/Line BG fetch failed: {tiger_result.get('error')}. "
-                    "Use --skip-census or --skip-data-fetch to skip."
+                    f"TIGER/Line BG fetch failed: {tiger_result.get('error')}."
                 )
             self.stdout.write(
                 f"  TIGER/Line BG loaded: {tiger_result.get('row_count', 0)} rows "
                 f"in {tiger_result.get('table_name', '?')}"
             )
+        else:
+            self.stdout.write("  Using cached data in public.tiger_block_groups")
 
+        if force_data_fetch or not self._table_has_rows("census", "acs_block_group"):
             # Populate ACS staging table before ETL
             self.stdout.write("\n── Populating Census ACS staging table ──")
             from brewgis.workspace.dlt_pipelines.census import run_census_pipeline
@@ -179,8 +163,7 @@ class Command(BaseCommand):
             census_result = run_census_pipeline(STATE_FIPS, COUNTY_FIPS, ACS_YEAR)
             if not census_result["success"]:
                 raise CommandError(
-                    f"Census ACS fetch failed: {census_result.get('error')}. "
-                    "Use --skip-census or --skip-data-fetch to skip."
+                    f"Census ACS fetch failed: {census_result.get('error')}."
                 )
             self.stdout.write(
                 f"  Census ACS loaded: {census_result.get('row_count', 0)} rows "
@@ -196,17 +179,17 @@ class Command(BaseCommand):
             self.stdout.write(
                 f"  census.acs_block_group populated: {acs_bg_count:,} rows"
             )
-
+        else:
+            self.stdout.write("  Using cached data in census.acs_block_group")
         # Populate LEHD staging table before ETL
-        if not skip_lehd:
+        if force_data_fetch or not self._table_has_rows("lehd", "wac_block"):
             self.stdout.write("\n── Populating LEHD LODES staging table ──")
             from brewgis.workspace.dlt_pipelines.lehd import run_lehd_pipeline
 
             lehd_result = run_lehd_pipeline(STATE_FIPS, COUNTY_FIPS, LEHD_YEAR)
             if not lehd_result["success"]:
                 raise CommandError(
-                    f"LEHD LODES fetch failed: {lehd_result.get('error')}. "
-                    "Use --skip-lehd or --skip-data-fetch to skip."
+                    f"LEHD LODES fetch failed: {lehd_result.get('error')}."
                 )
             self.stdout.write(
                 f"  LEHD LODES loaded: {lehd_result.get('row_count', 0)} rows "
@@ -218,7 +201,8 @@ class Command(BaseCommand):
 
             lehd_wac_count = _populate_wac_block(STATE_FIPS, COUNTY_FIPS, LEHD_YEAR)
             self.stdout.write(f"  lehd.wac_block populated: {lehd_wac_count:,} rows")
-
+        else:
+            self.stdout.write("  Using cached data in lehd.wac_block")
         # ── Phase 1.5: Run NLCD pipeline (optional) ──────────────────────
         nlcd_table = ""
         if nlcd:
@@ -356,7 +340,7 @@ class Command(BaseCommand):
             correlations=correlations,
             weighted_means=weighted_means,
             output_path=REPORT_PATH,
-            quick=quick,
+            quick=not (nlcd or osm),
             limit=limit,
         )
 
@@ -370,6 +354,16 @@ class Command(BaseCommand):
     # ═══════════════════════════════════════════════════════════════════
     # Internal helpers
     # ═══════════════════════════════════════════════════════════════════
+
+    @staticmethod
+    def _table_has_rows(schema: str, table: str) -> bool:
+        """Check if a table exists and has at least one row."""
+        engine = get_engine()
+        with engine.connect() as conn:
+            count = conn.execute(
+                text(f"SELECT COUNT(*) FROM {schema}.{table}")  # noqa: S608 — schema/table are hardcoded literals
+            ).scalar()
+        return count > 0
 
     def _print_totals(self, totals: dict[str, float], label: str) -> None:
         """Print key aggregate totals."""
