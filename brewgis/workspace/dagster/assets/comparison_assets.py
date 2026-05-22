@@ -36,7 +36,7 @@ from brewgis.workspace.services.lehd_fetcher import _populate_wac_block
 
 logger = logging.getLogger(__name__)
 
-CACHE_DIR = Path(settings.BASE_DIR) / "planning"
+CACHE_DIR: Path = settings.DATA_DOWNLOAD_CACHE_DIR
 V1_PARCELS = "sac_cnty_region_existing_land_use_parcels"
 V1_BASE_CANVAS = "sac_cnty_region_base_canvas"
 REPORT_PATH = CACHE_DIR / "sacog_comparison_report.md"

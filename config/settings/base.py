@@ -362,3 +362,5 @@ CENSUS_API_KEY = env("CENSUS_API_KEY", default=None)
 SODA_PROJECT_DIR = APPS_DIR / "soda"
 # Maximum upload file size in bytes (default: 100 MB).
 MAX_UPLOAD_SIZE = env.int("MAX_UPLOAD_SIZE", default=100 * 1024 * 1024)
+
+DATA_DOWNLOAD_CACHE_DIR = Path(BASE_DIR) / "planning"

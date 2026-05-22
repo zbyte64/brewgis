@@ -10,12 +10,14 @@ downstream transforms.
 
 from __future__ import annotations
 
-import tempfile
+from pathlib import Path
 from typing import Any
 
 import dlt
 import geopandas as gpd
-import requests
+from django.conf import settings
+
+CACHE_DIR: Path = settings.DATA_DOWNLOAD_CACHE_DIR
 
 __all__ = [
     "run_tiger_bg_pipeline",
@@ -28,6 +30,7 @@ def tiger_bg_source(
     state_fips: str = "06",
     county_fips: str = "067",
     year: str = "2023",
+    ignore_cache: bool = False,
 ) -> list[Any]:
     """dlt source for TIGER/Line block group shapefile extraction.
 
@@ -40,7 +43,7 @@ def tiger_bg_source(
         List with a single :class:`dlt.Resource` yielding block-group
         geometry dicts.
     """
-    return [tiger_bg_resource(state_fips, year=year)]
+    return [tiger_bg_resource(state_fips, year=year, ignore_cache=ignore_cache)]
 
 
 @dlt.resource(
@@ -48,7 +51,7 @@ def tiger_bg_source(
     write_disposition="merge",
     primary_key="geoid",
 )
-def tiger_bg_resource(state_fips: str, year: str = "2023") -> Any:
+def tiger_bg_resource(state_fips: str, year: str = "2023", ignore_cache=False) -> Any:
     """Download TIGER/Line BG shapefile ZIP and yield one dict per row.
 
     Downloads the state-level block-group shapefile from the Census
@@ -58,11 +61,12 @@ def tiger_bg_resource(state_fips: str, year: str = "2023") -> Any:
     """
     import urllib.request
 
-    url = f"ftp://ftp2.census.gov/geo/tiger/TIGER{year}/BG/tl_{year}_{state_fips}_bg.zip"
+    url = (
+        f"ftp://ftp2.census.gov/geo/tiger/TIGER{year}/BG/tl_{year}_{state_fips}_bg.zip"
+    )
+    zip_path = CACHE_DIR / f"TIGER{year}" / "BG" / f"tl_{year}_{state_fips}_bg.zip"
 
-
-    with tempfile.TemporaryDirectory() as tmpdir:
-        zip_path = f"{tmpdir}/bg.zip"
+    if ignore_cache or not zip_path.exists():
         urllib.request.urlretrieve(url, zip_path)
 
         gdf = gpd.read_file(f"zip://{zip_path}")
@@ -94,6 +98,7 @@ def run_tiger_bg_pipeline(
     state_fips: str,
     schema: str = "public",
     year: str = "2023",
+    ignore_cache: bool = False,
 ) -> dict:
     """Run dlt pipeline to extract TIGER/Line BG data to a staging table.
 
@@ -119,7 +124,7 @@ def run_tiger_bg_pipeline(
     )
 
     load_info = pipeline.run(
-        tiger_bg_source(state_fips, year=year),
+        tiger_bg_source(state_fips, year=year, ignore_cache=ignore_cache),
     )
 
     row_count = 0

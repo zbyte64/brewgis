@@ -10,6 +10,7 @@ splitting) stays in :mod:`brewgis.workspace.services.census_fetcher`.
 
 from __future__ import annotations
 
+import json
 import logging
 
 __all__ = [
@@ -17,10 +18,12 @@ __all__ = [
     "run_census_pipeline",
 ]
 
+from pathlib import Path
 from typing import Any
 
 import dlt
 import requests
+from django.conf import settings
 
 from brewgis.soda import validate_census_acs
 from brewgis.workspace.services.census_fetcher import _all_vars
@@ -29,6 +32,7 @@ from brewgis.workspace.services.census_fetcher import _census_base_url
 
 logger = logging.getLogger(__name__)
 
+CACHE_DIR: Path = settings.DATA_DOWNLOAD_CACHE_DIR
 
 _SENTINELS = frozenset({"-666666666", "-555555555", "-333333333"})
 
@@ -38,6 +42,7 @@ def census_source(
     state_fips: str = "06",
     county_fips: str = "067",
     year: int | dlt.sources.incremental[int] = dlt.sources.incremental[int]("year"),
+    ignore_cache: bool = False,
 ) -> list[Any]:
     """dlt source for Census ACS 5-year data extraction.
 
@@ -51,7 +56,7 @@ def census_source(
         List with a single :class:`dlt.Resource` yielding block-group-level
         dicts keyed by Census variable name.
     """
-    return [census_acs_resource(state_fips, county_fips, year)]
+    return [census_acs_resource(state_fips, county_fips, year, ignore_cache)]
 
 
 @dlt.resource(
@@ -106,6 +111,7 @@ def census_acs_resource(
     state_fips: str,
     county_fips: str,
     year: int | dlt.sources.incremental[int] = dlt.sources.incremental[int]("year"),
+    ignore_cache: bool = False,
 ) -> Any:
     """Yield raw ACS data from Census API, one dict per block group.
 
@@ -115,22 +121,33 @@ def census_acs_resource(
     year_val: int = (
         year.last_value if isinstance(year, dlt.sources.incremental) else year
     )
-    vars_ = _all_vars()
-    vars_str = ",".join(vars_)
-    base = _census_base_url(year_val)
-    url = (
-        f"{base}?get={vars_str}"
-        f"&for=block+group:*"
-        f"&in=state:{state_fips}+county:{county_fips}+tract:*"
+    dl_path = (
+        CACHE_DIR
+        / "census_acs_resource"
+        / str(year)
+        / state_fips
+        / f"{county_fips}.json"
     )
-    api_key = _census_api_key()
-    if api_key:
-        url += f"&key={api_key}"
+    if ignore_cache or not dl_path.exists():
+        vars_ = _all_vars()
+        vars_str = ",".join(vars_)
+        base = _census_base_url(year_val)
+        url = (
+            f"{base}?get={vars_str}"
+            f"&for=block+group:*"
+            f"&in=state:{state_fips}+county:{county_fips}+tract:*"
+        )
+        api_key = _census_api_key()
+        if api_key:
+            url += f"&key={api_key}"
 
-    response = requests.get(url, timeout=120)
-    response.raise_for_status()
+        response = requests.get(url, timeout=120)
+        response.raise_for_status()
+        data = response.json()
+        dl_path.open("wb").write(response.content)
+    else:
+        data = json.load(dl_path.open())
 
-    data = response.json()
     headers = data[0]
     for row in data[1:]:
         record = dict(zip(headers, row, strict=False))
@@ -146,6 +163,7 @@ def run_census_pipeline(
     county_fips: str,
     year: int = 2022,
     schema: str = "public",
+    ignore_cache: bool = False,
     **kwargs: Any,
 ) -> dict:
     """Run dlt pipeline to extract raw Census ACS data to a staging table.
@@ -176,7 +194,7 @@ def run_census_pipeline(
     )
 
     load_info = pipeline.run(
-        census_source(state_fips, county_fips, year),
+        census_source(state_fips, county_fips, year, ignore_cache=ignore_cache),
     )
 
     row_count = 0

@@ -11,15 +11,15 @@ import logging
 import tempfile
 import zlib
 from pathlib import Path
-from typing import TYPE_CHECKING
 
+import geopandas as gpd
 import numpy as np
 import pandas as pd
 import pyproj
+import rasterio
 import requests
-
-if TYPE_CHECKING:
-    import geopandas as gpd
+from rasterio.mask import mask
+from shapely.geometry import mapping
 
 logger = logging.getLogger(__name__)
 
@@ -40,7 +40,7 @@ def _download_nlcd_subset(  # noqa: PLR0913
     *,
     refresh_cache: bool = False,
     source_crs: str | None = None,
-) -> str | None:
+) -> str:
     """Download an NLCD bounding-box subset via MRLC WCS.
 
     The WCS coverage is stored in EPSG:5070 (USA Contiguous Albers
@@ -103,15 +103,11 @@ def _download_nlcd_subset(  # noqa: PLR0913
     if refresh_cache:
         cache_path.unlink(missing_ok=True)
 
-    try:
-        response = requests.get(_MRLC_WCS_URL, params=params, timeout=300)
-        response.raise_for_status()
-        cache_dir.mkdir(parents=True, exist_ok=True)
-        cache_path.write_bytes(response.content)
-        return str(cache_path)
-    except requests.RequestException as exc:
-        logger.warning("Failed to download NLCD subset via WCS: %s", exc)
-        return None
+    response = requests.get(_MRLC_WCS_URL, params=params, timeout=300)
+    response.raise_for_status()
+    cache_dir.mkdir(parents=True, exist_ok=True)
+    cache_path.write_bytes(response.content)
+    return str(cache_path)
 
 
 # NLCD land cover classes mapped to development categories
@@ -271,7 +267,7 @@ def download_nlcd_raster(
     *,
     refresh_cache: bool = False,
     source_crs: str | None = None,
-) -> str | None:
+) -> str:
     """Download the NLCD land cover raster.
 
     When a bounding box is provided, uses the MRLC WCS endpoint to
@@ -326,23 +322,19 @@ def download_nlcd_raster(
     ):
         url = f"{_NLCD_BASE_URL}/nlcd/{year}/land_cover/l48/{raster_name}"
         logger.info("Downloading NLCD CONUS raster from %s ...", url)
-        try:
-            response = requests.get(url, timeout=600)
-            response.raise_for_status()
-            import shutil
+        response = requests.get(url, timeout=600)
+        response.raise_for_status()
+        import shutil
 
-            with tempfile.NamedTemporaryFile(delete=False, suffix=".img") as tmp:
-                tmp.write(response.content)
-                tmp_path = tmp.name
-            shutil.move(tmp_path, str(raster_path))
-            content_length = response.headers.get("Content-Length")
-            if content_length is not None:
-                size_path.write_text(content_length)
-            crc32_path.write_text(str(zlib.crc32(response.content)))
-            logger.info("NLCD raster cached at %s", raster_path)
-        except requests.RequestException as exc:
-            logger.warning("Failed to download NLCD raster: %s", exc)
-            return None
+        with tempfile.NamedTemporaryFile(delete=False, suffix=".img") as tmp:
+            tmp.write(response.content)
+            tmp_path = tmp.name
+        shutil.move(tmp_path, str(raster_path))
+        content_length = response.headers.get("Content-Length")
+        if content_length is not None:
+            size_path.write_text(content_length)
+        crc32_path.write_text(str(zlib.crc32(response.content)))
+        logger.info("NLCD raster cached at %s", raster_path)
 
     return str(raster_path)
 
@@ -351,6 +343,7 @@ def compute_nlcd_zonal_stats(
     parcels: gpd.GeoDataFrame,
     bbox: tuple[float, float, float, float],
     year: int = _NLCD_YEAR,
+    ignore_cache: bool = False,
 ) -> gpd.GeoDataFrame:
     """Compute NLCD zonal statistics for each parcel.
 
@@ -366,18 +359,9 @@ def compute_nlcd_zonal_stats(
         ``impervious_fraction`` columns populated.
     """
     source_crs = parcels.crs.to_string() if parcels.crs is not None else None
-    raster_path = download_nlcd_raster(bbox, year, source_crs=source_crs)
-    if raster_path is None:
-        logger.warning("NLCD raster not available; using defaults")
-        parcels["land_development_category"] = parcels.get(
-            "land_development_category", pd.Series(index=parcels.index)
-        ).fillna("urban")
-        parcels["impervious_fraction"] = 0.0
-        return parcels
-
-    import rasterio
-    from rasterio.mask import mask
-    from shapely.geometry import mapping
+    raster_path = download_nlcd_raster(
+        bbox, year, source_crs=source_crs, refresh_cache=ignore_cache
+    )
 
     with rasterio.open(raster_path) as src:
         # Reproject parcels to the raster's CRS — mask() expects

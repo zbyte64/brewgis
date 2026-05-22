@@ -89,6 +89,13 @@ class Command(BaseCommand):
         from brewgis.workspace.dagster.assets.comparison_assets import (
             _query_table_as_dict,
         )
+        from brewgis.workspace.dlt_pipelines.census import run_census_pipeline
+        from brewgis.workspace.dlt_pipelines.lehd import run_lehd_pipeline
+        from brewgis.workspace.dlt_pipelines.nlcd import run_nlcd_pipeline
+        from brewgis.workspace.dlt_pipelines.osm import run_osm_pipeline
+        from brewgis.workspace.dlt_pipelines.tiger_bg import run_tiger_bg_pipeline
+        from brewgis.workspace.services.census_fetcher import _populate_acs_block_group
+        from brewgis.workspace.services.lehd_fetcher import _populate_wac_block
 
         nlcd = bool(options.get("nlcd", False))
         osm = bool(options.get("osm", False))
@@ -139,79 +146,64 @@ class Command(BaseCommand):
         self.stdout.write("  Written to public.sacog_comparison_parcels")
 
         # Populate TIGER/Line block group polygons (needed by ACS reader)
-        if force_data_fetch or not self._table_has_rows("public", "tiger_block_groups"):
-            self.stdout.write("\n── Populating TIGER/Line block group staging table ──")
-            from brewgis.workspace.dlt_pipelines.tiger_bg import run_tiger_bg_pipeline
+        self.stdout.write("\n── Populating TIGER/Line block group staging table ──")
 
-            tiger_result = run_tiger_bg_pipeline(STATE_FIPS, year="2013")
-            if not tiger_result["success"]:
-                raise CommandError(
-                    f"TIGER/Line BG fetch failed: {tiger_result.get('error')}."
-                )
-            self.stdout.write(
-                f"  TIGER/Line BG loaded: {tiger_result.get('row_count', 0)} rows "
-                f"in {tiger_result.get('table_name', '?')}"
+        tiger_result = run_tiger_bg_pipeline(
+            STATE_FIPS, year="2013", ignore_cache=force_data_fetch
+        )
+        if not tiger_result["success"]:
+            raise CommandError(
+                f"TIGER/Line BG fetch failed: {tiger_result.get('error')}."
             )
-        else:
-            self.stdout.write("  Using cached data in public.tiger_block_groups")
+        self.stdout.write(
+            f"  TIGER/Line BG loaded: {tiger_result.get('row_count', 0)} rows "
+            f"in {tiger_result.get('table_name', '?')}"
+        )
 
-        if force_data_fetch or not self._table_has_rows("census", "acs_block_group"):
-            # Populate ACS staging table before ETL
-            self.stdout.write("\n── Populating Census ACS staging table ──")
-            from brewgis.workspace.dlt_pipelines.census import run_census_pipeline
+        self.stdout.write("\n── Populating Census ACS staging table ──")
 
-            census_result = run_census_pipeline(STATE_FIPS, COUNTY_FIPS, ACS_YEAR)
-            if not census_result["success"]:
-                raise CommandError(
-                    f"Census ACS fetch failed: {census_result.get('error')}."
-                )
-            self.stdout.write(
-                f"  Census ACS loaded: {census_result.get('row_count', 0)} rows "
-                f"in {census_result.get('table_name', '?')}"
+        census_result = run_census_pipeline(
+            STATE_FIPS, COUNTY_FIPS, ACS_YEAR, ignore_cache=force_data_fetch
+        )
+        if not census_result["success"]:
+            raise CommandError(
+                f"Census ACS fetch failed: {census_result.get('error')}."
             )
-            # Populate census.acs_block_group from ACS staging + TIGER BG geometry
-            self.stdout.write("\n── Populating census.acs_block_group ──")
-            from brewgis.workspace.services.census_fetcher import (
-                _populate_acs_block_group,
-            )
+        self.stdout.write(
+            f"  Census ACS loaded: {census_result.get('row_count', 0)} rows "
+            f"in {census_result.get('table_name', '?')}"
+        )
+        # Populate census.acs_block_group from ACS staging + TIGER BG geometry
+        self.stdout.write("\n── Populating census.acs_block_group ──")
 
-            acs_bg_count = _populate_acs_block_group(STATE_FIPS, COUNTY_FIPS, ACS_YEAR)
-            self.stdout.write(
-                f"  census.acs_block_group populated: {acs_bg_count:,} rows"
-            )
-        else:
-            self.stdout.write("  Using cached data in census.acs_block_group")
+        acs_bg_count = _populate_acs_block_group(STATE_FIPS, COUNTY_FIPS, ACS_YEAR)
+        self.stdout.write(f"  census.acs_block_group populated: {acs_bg_count:,} rows")
         # Populate LEHD staging table before ETL
-        if force_data_fetch or not self._table_has_rows("lehd", "wac_block"):
-            self.stdout.write("\n── Populating LEHD LODES staging table ──")
-            from brewgis.workspace.dlt_pipelines.lehd import run_lehd_pipeline
+        self.stdout.write("\n── Populating LEHD LODES staging table ──")
 
-            lehd_result = run_lehd_pipeline(STATE_FIPS, COUNTY_FIPS, LEHD_YEAR)
-            if not lehd_result["success"]:
-                raise CommandError(
-                    f"LEHD LODES fetch failed: {lehd_result.get('error')}."
-                )
-            self.stdout.write(
-                f"  LEHD LODES loaded: {lehd_result.get('row_count', 0)} rows "
-                f"in {lehd_result.get('table_name', '?')}"
-            )
-            # Populate lehd.wac_block from LEHD staging + TIGER BG geometry
-            self.stdout.write("\n── Populating lehd.wac_block ──")
-            from brewgis.workspace.services.lehd_fetcher import _populate_wac_block
+        lehd_result = run_lehd_pipeline(
+            STATE_FIPS, COUNTY_FIPS, LEHD_YEAR, ignore_cache=force_data_fetch
+        )
+        if not lehd_result["success"]:
+            raise CommandError(f"LEHD LODES fetch failed: {lehd_result.get('error')}.")
+        self.stdout.write(
+            f"  LEHD LODES loaded: {lehd_result.get('row_count', 0)} rows "
+            f"in {lehd_result.get('table_name', '?')}"
+        )
+        # Populate lehd.wac_block from LEHD staging + TIGER BG geometry
+        self.stdout.write("\n── Populating lehd.wac_block ──")
 
-            lehd_wac_count = _populate_wac_block(STATE_FIPS, COUNTY_FIPS, LEHD_YEAR)
-            self.stdout.write(f"  lehd.wac_block populated: {lehd_wac_count:,} rows")
-        else:
-            self.stdout.write("  Using cached data in lehd.wac_block")
+        lehd_wac_count = _populate_wac_block(STATE_FIPS, COUNTY_FIPS, LEHD_YEAR)
+        self.stdout.write(f"  lehd.wac_block populated: {lehd_wac_count:,} rows")
         # ── Phase 1.5: Run NLCD pipeline (optional) ──────────────────────
         nlcd_table = ""
         if nlcd:
             self.stdout.write("\n── Phase 1.5a: Computing NLCD zonal stats ──")
-            from brewgis.workspace.dlt_pipelines.nlcd import run_nlcd_pipeline
 
             nlcd_result = run_nlcd_pipeline(
                 parcel_table="sacog_comparison_parcels",
                 year=NLCD_YEAR,
+                ignore_cache=force_data_fetch,
             )
             if not nlcd_result.get("success"):
                 raise CommandError(
@@ -228,7 +220,6 @@ class Command(BaseCommand):
         osm_table = ""
         if osm:
             self.stdout.write("\n── Phase 1.5b: Computing OSM intersection density ──")
-            from brewgis.workspace.dlt_pipelines.osm import run_osm_pipeline
 
             osm_result = run_osm_pipeline(
                 parcel_table="sacog_comparison_parcels",
@@ -361,9 +352,16 @@ class Command(BaseCommand):
         engine = get_engine()
         with engine.connect() as conn:
             count = conn.execute(
+                text(
+                    f"SELECT EXISTS ( SELECT 1 FROM information_schema.tables WHERE table_schema = '{schema}' AND table_name = '{table}')"
+                )
+            ).scalar()
+            if count == 0:
+                return False
+            count = conn.execute(
                 text(f"SELECT COUNT(*) FROM {schema}.{table}")  # noqa: S608 — schema/table are hardcoded literals
             ).scalar()
-        return count > 0
+            return bool(count) and count > 0
 
     def _print_totals(self, totals: dict[str, float], label: str) -> None:
         """Print key aggregate totals."""
