@@ -124,10 +124,11 @@ def census_acs_resource(
     dl_path = (
         CACHE_DIR
         / "census_acs_resource"
-        / str(year)
+        / str(year_val)
         / state_fips
         / f"{county_fips}.json"
     )
+    dl_path.parent.mkdir(exist_ok=True, parents=True)
     if ignore_cache or not dl_path.exists():
         vars_ = _all_vars()
         vars_str = ",".join(vars_)

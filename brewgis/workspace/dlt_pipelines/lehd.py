@@ -96,6 +96,7 @@ def lehd_lodes_resource(
 
     url = f"{LODES_WAC_BASE}/{state_abbr}/wac/{state_abbr}_wac_S000_JT00_{year_val}.csv.gz"
     dl_path = CACHE_DIR / "lehd_lodes" / f"{state_abbr}_wac_{year_val}.csv.gz"
+    dl_path.parent.mkdir(exist_ok=True, parents=True)
 
     if ignore_cache or not dl_path.exists():
         response = requests.get(url, timeout=120)

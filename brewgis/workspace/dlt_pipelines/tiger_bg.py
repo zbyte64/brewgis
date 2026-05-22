@@ -65,6 +65,7 @@ def tiger_bg_resource(state_fips: str, year: str = "2023", ignore_cache=False) -
         f"ftp://ftp2.census.gov/geo/tiger/TIGER{year}/BG/tl_{year}_{state_fips}_bg.zip"
     )
     zip_path = CACHE_DIR / f"TIGER{year}" / "BG" / f"tl_{year}_{state_fips}_bg.zip"
+    zip_path.parent.mkdir(exist_ok=True, parents=True)
 
     if ignore_cache or not zip_path.exists():
         urllib.request.urlretrieve(url, zip_path)
