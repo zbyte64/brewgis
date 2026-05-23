@@ -350,24 +350,21 @@ def _build_cbp_proportions(
     state_fips_clean = state_fips.zfill(2)
     county_fips_clean = county_fips.zfill(3)
 
+    naics_year = 2017
+    if year < 2017:
+        naics_year = 2007
+
     key = _census_api_key()
     key_param = f"&key={key}" if key else ""
     url = (
         f"https://api.census.gov/data/{year}/cbp"
-        f"?get=EMP,NAICS2017&for=county:{county_fips_clean}"
+        f"?get=EMP,NAICS{naics_year}&for=county:{county_fips_clean}"
         f"&in=state:{state_fips_clean}{key_param}"
     )
 
-    try:
-        response = requests.get(url, timeout=120)
-        response.raise_for_status()
-        raw_data: list[list[str]] = response.json()
-    except requests.RequestException as exc:
-        logger.warning("CBP API request failed: %s", exc)
-        return {}
-    except (ValueError, TypeError) as exc:
-        logger.warning("CBP API returned non-JSON: %s", exc)
-        return {}
+    response = requests.get(url, timeout=120)
+    response.raise_for_status()
+    raw_data: list[list[str]] = response.json()
 
     if len(raw_data) < 2:  # noqa: PLR2004
         logger.warning("CBP API returned no data rows.")
@@ -384,13 +381,40 @@ def _build_cbp_proportions(
 
     # CNS01 parent: NAICS 11, 21, 23
     goods_prefixes = ["11", "21", "23"]
-    for pfx in goods_prefixes:
-        proportions[pfx] = _cbp_proportion_in(pfx, goods_prefixes, sector_emp)
+    goods_total = sum(sector_emp.get(p, 0) for p in goods_prefixes)
+    if goods_total > 0:
+        for pfx in goods_prefixes:
+            proportions[pfx] = _cbp_proportion_in(pfx, goods_prefixes, sector_emp)
+    else:
+        logger.warning(
+            "CBP CNS01 data unavailable for %s/%s year %s — using national-average fallback proportions.",
+            state_fips_clean,
+            county_fips_clean,
+            year,
+        )
+        proportions["11"] = 0.05
+        proportions["21"] = 0.02
+        proportions["23"] = 0.93
 
     # CNS03 parent: NAICS 22, 42, 44, 45, 48, 49
     ttu_prefixes = ["22", "42", "44", "45", "48", "49"]
-    for pfx in ttu_prefixes:
-        proportions[pfx] = _cbp_proportion_in(pfx, ttu_prefixes, sector_emp)
+    ttu_total = sum(sector_emp.get(p, 0) for p in ttu_prefixes)
+    if ttu_total > 0:
+        for pfx in ttu_prefixes:
+            proportions[pfx] = _cbp_proportion_in(pfx, ttu_prefixes, sector_emp)
+    else:
+        logger.warning(
+            "CBP CNS03 data unavailable for %s/%s year %s — using national-average fallback proportions.",
+            state_fips_clean,
+            county_fips_clean,
+            year,
+        )
+        proportions["22"] = 0.02
+        proportions["42"] = 0.10
+        proportions["44"] = 0.54
+        proportions["45"] = 0.28
+        proportions["48"] = 0.04
+        proportions["49"] = 0.02
 
     # CNS13 parent: NAICS 721, 722 (3-digit accommodation/food)
     acc_food_total = naics3_emp.get("721", 0) + naics3_emp.get("722", 0)
@@ -398,6 +422,12 @@ def _build_cbp_proportions(
         proportions["721"] = naics3_emp.get("721", 0) / acc_food_total
         proportions["722"] = naics3_emp.get("722", 0) / acc_food_total
     else:
+        logger.warning(
+            "CBP CNS13 (accommodation/food) data unavailable for %s/%s year %s — using fallback proportions.",
+            state_fips_clean,
+            county_fips_clean,
+            year,
+        )
         proportions["721"] = 0.4
         proportions["722"] = 0.6
 
@@ -583,6 +613,22 @@ def fetch_lehd_block_data(
 
     # Fetch CBP proportions once
     cbp_props = _build_cbp_proportions(state_fips, county_fips, year)
+    # Validate CBP proportions: parent-group totals must be non-zero.
+    # All-zero proportions mean the CBP API returned no usable data and
+    # no fallback was generated — this is a data dependency failure.
+    cns01_sum = cbp_props.get("11", 0.0) + cbp_props.get("21", 0.0) + cbp_props.get("23", 0.0)
+    cns03_sum = (
+        cbp_props.get("22", 0.0) + cbp_props.get("42", 0.0)
+        + cbp_props.get("44", 0.0) + cbp_props.get("45", 0.0)
+        + cbp_props.get("48", 0.0) + cbp_props.get("49", 0.0)
+    )
+    if cns01_sum <= 0 or cns03_sum <= 0:
+        raise RuntimeError(
+            f"CBP proportions unavailable for {state_fips}/{county_fips} year {year}: "
+            f"CNS01 sum={cns01_sum:.3f} CNS03 sum={cns03_sum:.3f}. "
+            "The Census CBP API returned no usable employment data. "
+            "Ensure CENSUS_API_KEY is set and the requested year is available."
+        )
 
     lodes_records: list[dict[str, Any]] = []
     for _, row in records_df.iterrows():
@@ -671,9 +717,12 @@ def _compute_all_cbp_totals(
     cf = county_fips.zfill(3)
     key = _census_api_key()
     key_param = f"&key={key}" if key else ""
+    naics_year = 2017
+    if year < 2017:
+        naics_year = 2007
     url = (
         f"https://api.census.gov/data/{year}/cbp"
-        f"?get=EMP,NAICS2017&for=county:{cf}"
+        f"?get=EMP,NAICS{naics_year}&for=county:{cf}"
         f"&in=state:{sf}{key_param}"
     )
 
@@ -794,7 +843,20 @@ def _apply_cbp_county_scaling(
                 or 0
             )
 
-            if lodes_total <= 0 or cbp_total <= lodes_total:
+            if lodes_total <= 0:
+                # No LODES signal at all — distribute CBP total proportionally
+                if cbp_total > 0 and total_proxy > 0:
+                    conn.execute(
+                        text(
+                            f"UPDATE lehd.wac_block "  # noqa: S608
+                            f"SET {col} = :cbp_total * emp / :total_proxy"
+                        ),
+                        {"cbp_total": cbp_total, "total_proxy": total_proxy},
+                    )
+                    factors[col] = -1.0  # signal "full distribution" (no scale factor)
+                continue
+
+            if cbp_total <= lodes_total:
                 continue
 
             preserved_target = cbp_total * preserve_fraction
@@ -852,6 +914,22 @@ def _populate_wac_block(
         RuntimeError: If dbt fails or the table is empty.
     """
     cbp_props = _build_cbp_proportions(state_fips, county_fips, year)
+    # Validate CBP proportions: parent-group totals must be non-zero.
+    # All-zero proportions mean the CBP API returned no usable data and
+    # no fallback was generated — this is a data dependency failure.
+    cns01_sum = cbp_props.get("11", 0.0) + cbp_props.get("21", 0.0) + cbp_props.get("23", 0.0)
+    cns03_sum = (
+        cbp_props.get("22", 0.0) + cbp_props.get("42", 0.0)
+        + cbp_props.get("44", 0.0) + cbp_props.get("45", 0.0)
+        + cbp_props.get("48", 0.0) + cbp_props.get("49", 0.0)
+    )
+    if cns01_sum <= 0 or cns03_sum <= 0:
+        raise RuntimeError(
+            f"CBP proportions unavailable for {state_fips}/{county_fips} year {year}: "
+            f"CNS01 sum={cns01_sum:.3f} CNS03 sum={cns03_sum:.3f}. "
+            "The Census CBP API returned no usable employment data. "
+            "Ensure CENSUS_API_KEY is set and the requested year is available."
+        )
     is_sacog = 1 if state_fips == "06" and county_fips == "067" else 0
 
     dbt_vars: dict[str, object] = {
@@ -878,6 +956,15 @@ def _populate_wac_block(
     # as control targets — CBP is not subject to the same disclosure avoidance
     # suppression as LEHD CNS data.
     cbp_totals = _compute_all_cbp_totals(state_fips, county_fips, year=year)
+    if not cbp_totals:
+        logger.warning(
+            "  CBP county totals unavailable for %s/%s year %s — "
+            "CBP county-level employment scaling will not run. "
+            "Sub-sector employment totals may be undercounted due to LEHD disclosure suppression.",
+            state_fips,
+            county_fips,
+            year,
+        )
     scaling_factors = _apply_cbp_county_scaling(cbp_totals)
     if scaling_factors:
         logger.info(

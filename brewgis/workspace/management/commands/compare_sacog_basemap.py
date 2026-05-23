@@ -36,8 +36,9 @@ STATE_FIPS = "06"
 COUNTY_FIPS = "067"
 # Vintage data years matching the SACOG v1 reference (2008-2012 era)
 ACS_YEAR = 2013  # ACS 5-year 2009-2013 (earliest with block group API support)
-LEHD_YEAR = 2011  # LODES 2011
+LEHD_YEAR = 2008  # LODES 2011 (employment stats)
 NLCD_YEAR = 2011  # NLCD 2011 (closest to 2008-2012)
+TIGER_BLOCK_YEAR = "2013"
 
 LOCAL_SRID = 3310
 
@@ -117,12 +118,10 @@ class Command(BaseCommand):
             f"  Force re-download: {'yes' if force_data_fetch else 'no (use cached data if available)'}"
         )
         if not settings.CENSUS_API_KEY:
-            self.stdout.write(
-                self.style.WARNING(
-                    "  WARNING: CENSUS_API_KEY is not set. Census ACS and CBP API calls will fail. "
-                    "Set CENSUS_API_KEY in your .env file. Get a free key at "
-                    "https://api.census.gov/data/key_signup.html"
-                )
+            raise CommandError(
+                "  WARNING: CENSUS_API_KEY is not set. Census ACS and CBP API calls will fail. "
+                "Set CENSUS_API_KEY in your .env file. Get a free key at "
+                "https://api.census.gov/data/key_signup.html"
             )
 
         # ── Pre-flight: Ensure SACOG v1 reference tables are loaded ────
@@ -172,7 +171,7 @@ class Command(BaseCommand):
         self.stdout.write("\n── Populating TIGER/Line block group staging table ──")
 
         tiger_result = run_tiger_bg_pipeline(
-            STATE_FIPS, year="2013", ignore_cache=force_data_fetch
+            STATE_FIPS, year=TIGER_BLOCK_YEAR, ignore_cache=force_data_fetch
         )
         if not tiger_result["success"]:
             raise CommandError(

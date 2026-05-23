@@ -21,7 +21,7 @@ Celery tasks, and service modules. It adds zero new business logic.
 
 ```bash
 # Set up environment
-export DJANGO_SETTINGS_MODULE=config.settings.local
+export DJANGO_SETTINGS_MODULE=config.settings
 
 # Start the MCP server
 python manage.py run_mcp
@@ -196,7 +196,7 @@ Add to your `claude_desktop_config.json`:
       "command": "python",
       "args": ["manage.py", "run_mcp"],
       "env": {
-        "DJANGO_SETTINGS_MODULE": "config.settings.local",
+        "DJANGO_SETTINGS_MODULE": "config.settings",
         "MCP_AUTH_TOKEN": "dev-token"
       }
     }

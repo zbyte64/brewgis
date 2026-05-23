@@ -58,52 +58,34 @@ SELECT
     du_mf2to4,
     du_mf5p,
     -- Employment aggregates
-    GREATEST(
-        COALESCE(emp_retail_services, 0) + COALESCE(emp_restaurant, 0)
+    COALESCE(emp_retail_services, 0) + COALESCE(emp_restaurant, 0)
         + COALESCE(emp_accommodation, 0) + COALESCE(emp_arts_entertainment, 0)
-        + COALESCE(emp_other_services, 0),
-        emp_ret
-    ) AS emp_ret,
+        + COALESCE(emp_other_services, 0) AS emp_ret,
     emp_retail_services,
     emp_restaurant,
     emp_accommodation,
     emp_arts_entertainment,
     emp_other_services,
-    GREATEST(
-        COALESCE(emp_office_services, 0) + COALESCE(emp_medical_services, 0),
-        emp_off
-    ) AS emp_off,
+    COALESCE(emp_office_services, 0) + COALESCE(emp_medical_services, 0) AS emp_off,
     emp_office_services,
     emp_medical_services,
-    GREATEST(
-        COALESCE(emp_public_admin, 0) + COALESCE(emp_education, 0),
-        emp_pub
-    ) AS emp_pub,
+    COALESCE(emp_public_admin, 0) + COALESCE(emp_education, 0) AS emp_pub,
     emp_public_admin,
     emp_education,
-    GREATEST(
-        COALESCE(emp_manufacturing, 0) + COALESCE(emp_wholesale, 0)
+    COALESCE(emp_manufacturing, 0) + COALESCE(emp_wholesale, 0)
         + COALESCE(emp_transport_warehousing, 0) + COALESCE(emp_utilities, 0)
-        + COALESCE(emp_construction, 0),
-        emp_ind
-    ) AS emp_ind,
+        + COALESCE(emp_construction, 0) AS emp_ind,
     emp_manufacturing,
     emp_wholesale,
     emp_transport_warehousing,
     emp_utilities,
     emp_construction,
-    GREATEST(
-        COALESCE(emp_agriculture, 0) + COALESCE(emp_extraction, 0),
-        emp_ag
-    ) AS emp_ag,
+    COALESCE(emp_agriculture, 0) + COALESCE(emp_extraction, 0) AS emp_ag,
     emp_agriculture,
     emp_extraction,
     -- Total employment
-    GREATEST(
-        COALESCE(emp_ret, 0) + COALESCE(emp_off, 0) + COALESCE(emp_pub, 0)
-        + COALESCE(emp_ind, 0) + COALESCE(emp_ag, 0) + COALESCE(emp_military, 0),
-        emp
-    ) AS emp,
+    COALESCE(emp_ret, 0) + COALESCE(emp_off, 0) + COALESCE(emp_pub, 0)
+        + COALESCE(emp_ind, 0) + COALESCE(emp_ag, 0) + COALESCE(emp_military, 0) AS emp,
     emp_military,
     -- Building areas
     bldg_area_detsf_sl,

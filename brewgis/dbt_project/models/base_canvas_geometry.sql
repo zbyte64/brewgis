@@ -55,7 +55,6 @@ WITH parcel_geom AS (
         pop,
         hh,
         du,
-        emp,
         land_use,
         assessor_use_code,
         bldg_area_detsf_sl,

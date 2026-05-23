@@ -5,10 +5,19 @@
     splits CNS employment into NAICS-based sub-sectors using CBP proportions,
     and computes aggregate employment columns.
 
+    For blocks whose block group does not exist in TIGER, falls back to
+    any block group in the same census tract. Blocks whose tract also has
+    no TIGER match are excluded (their employment cannot be spatially
+    allocated without geometry).
+
     For SACOG region (CA/067), applies calibrated sub-sector proportions
     and zeros out agriculture, extraction, and military. The SACOG flag
     is a numeric var (0 or 1) used in CASE expressions — the SQL structure
     is always the same regardless of input.
+
+    CNS16 (unclassified) employment is distributed proportionally across
+    classified sub-sectors. When classified_total is zero (fully suppressed
+    block), CNS16 is distributed equally across all sub-sectors.
 
     Inputs (via dbt vars):
         source_schema: Schema containing source tables (default public)
@@ -18,7 +27,7 @@
         is_sacog: 1 for SACOG calibration, 0 for general (default 0)
         cbp_11..cbp_721: CBP NAICS proportion parameters
 
-    Output: lehd.wac_block — persistent table read by _allocate_employment
+    Output: lehd.wac_block — persistent table read by base_canvas_employment
 #}
 
 {{ config(materialized='table', schema='lehd',
@@ -37,10 +46,42 @@
 {% set state_fips = var('state_fips', '06') %}
 {% set county_fips = var('county_fips', '067') %}
 
-WITH cbp_sub_sectors AS (
+-- Pre-compute best-available TIGER geometry for each LODES block group.
+-- Tier 1: exact geoid match on block group.
+-- Tier 2: fallback to any block group in the same census tract.
+-- Blocks whose tract also has no TIGER match get NULL geometry and are
+-- excluded from the final result (cannot spatially allocate without geometry).
+WITH lodes_blocks AS (
+    SELECT DISTINCT
+        LEFT(w_geocode, 12) AS bg,
+        LEFT(w_geocode, 11) AS tract
+    FROM {{ source('brewgis', 'lodes_raw') }}
+    WHERE year = {{ year }}
+      AND LEFT(w_geocode, 5) = '{{ state_fips }}' || '{{ county_fips }}'
+),
+
+bg_geometry_map AS (
+    SELECT
+        lb.bg,
+        COALESCE(
+            tbg.geometry,
+            tbg_fallback.geometry
+        ) AS geometry
+    FROM lodes_blocks lb
+    LEFT JOIN {{ source('brewgis', 'tiger_block_groups') }} tbg
+        ON lb.bg = tbg.geoid
+    LEFT JOIN LATERAL (
+        SELECT geometry FROM {{ source('brewgis', 'tiger_block_groups') }}
+        WHERE geoid LIKE lb.tract || '%'
+        LIMIT 1
+    ) tbg_fallback ON tbg.geoid IS NULL
+    WHERE COALESCE(tbg.geometry, tbg_fallback.geometry) IS NOT NULL
+),
+
+cbp_sub_sectors AS (
     SELECT
         LEFT(lr.w_geocode, 12) AS geoid,
-        ST_Multi(ST_GeomFromText(tbg.geometry, 4326)) AS geometry,
+        ST_Multi(ST_GeomFromText(bgm.geometry, 4326)) AS geometry,
         lr.c000,
         -- CNS01 -> goods producing: agriculture (11), extraction (21), remainder construction (23)
         CASE WHEN COALESCE(lr.cns01, 0) > 0
@@ -96,13 +137,15 @@ WITH cbp_sub_sectors AS (
         COALESCE(lr.cns15, 0)::numeric AS emp_public_admin_cbp,
         -- CNS17 -> military
         COALESCE(lr.cns17, 0)::numeric AS emp_military_cbp,
-        -- CNS16 unclassified (distributed proportionally in final SELECT)
+        -- CNS16 unclassified (distributed in final SELECT)
         COALESCE(lr.cns16, 0)::numeric AS cns16_unclassified
     FROM {{ source('brewgis', 'lodes_raw') }} lr
-    JOIN {{ source('brewgis', 'tiger_block_groups') }} tbg
-        ON LEFT(lr.w_geocode, 12) = tbg.geoid
-    WHERE lr.year = {{ year }} AND LEFT(lr.w_geocode, 5) = '{{ state_fips }}' || '{{county_fips }}'
+    JOIN bg_geometry_map bgm
+        ON LEFT(lr.w_geocode, 12) = bgm.bg
+    WHERE lr.year = {{ year }}
+      AND LEFT(lr.w_geocode, 5) = '{{ state_fips }}' || '{{ county_fips }}'
 ),
+
 cbp_aggregates AS (
     SELECT
         *,
@@ -123,6 +166,7 @@ cbp_aggregates AS (
          + emp_agriculture_cbp + emp_military_cbp) AS classified_total
     FROM cbp_sub_sectors
 ),
+
 classified_with_sacog AS (
     SELECT
         geoid,
@@ -188,79 +232,148 @@ classified_with_sacog AS (
         cns16_unclassified
     FROM cbp_aggregates
 )
+
 SELECT
     geoid,
     geometry,
     emp,
-    -- Distribute CNS16 proportionally across all classified sub-sectors
+    -- Distribute CNS16: proportional when classified_total > 0, equal when fully suppressed
     ROUND(emp_retail_services_calibrated +
-        CASE WHEN cns16_unclassified > 0 AND classified_total > 0
-        THEN cns16_unclassified * emp_retail_services_calibrated / classified_total
-        ELSE 0 END, 1) AS emp_retail_services,
+        CASE
+            WHEN cns16_unclassified > 0 AND classified_total > 0
+            THEN cns16_unclassified * emp_retail_services_calibrated / classified_total
+            WHEN cns16_unclassified > 0 AND classified_total = 0
+            THEN cns16_unclassified / 17.0
+            ELSE 0
+        END, 1) AS emp_retail_services,
     ROUND(emp_restaurant_calibrated +
-        CASE WHEN cns16_unclassified > 0 AND classified_total > 0
-        THEN cns16_unclassified * emp_restaurant_calibrated / classified_total
-        ELSE 0 END, 1) AS emp_restaurant,
+        CASE
+            WHEN cns16_unclassified > 0 AND classified_total > 0
+            THEN cns16_unclassified * emp_restaurant_calibrated / classified_total
+            WHEN cns16_unclassified > 0 AND classified_total = 0
+            THEN cns16_unclassified / 17.0
+            ELSE 0
+        END, 1) AS emp_restaurant,
     ROUND(emp_accommodation_calibrated +
-        CASE WHEN cns16_unclassified > 0 AND classified_total > 0
-        THEN cns16_unclassified * emp_accommodation_calibrated / classified_total
-        ELSE 0 END, 1) AS emp_accommodation,
+        CASE
+            WHEN cns16_unclassified > 0 AND classified_total > 0
+            THEN cns16_unclassified * emp_accommodation_calibrated / classified_total
+            WHEN cns16_unclassified > 0 AND classified_total = 0
+            THEN cns16_unclassified / 17.0
+            ELSE 0
+        END, 1) AS emp_accommodation,
     ROUND(emp_arts_entertainment_calibrated +
-        CASE WHEN cns16_unclassified > 0 AND classified_total > 0
-        THEN cns16_unclassified * emp_arts_entertainment_calibrated / classified_total
-        ELSE 0 END, 1) AS emp_arts_entertainment,
+        CASE
+            WHEN cns16_unclassified > 0 AND classified_total > 0
+            THEN cns16_unclassified * emp_arts_entertainment_calibrated / classified_total
+            WHEN cns16_unclassified > 0 AND classified_total = 0
+            THEN cns16_unclassified / 17.0
+            ELSE 0
+        END, 1) AS emp_arts_entertainment,
     ROUND(emp_other_services_calibrated +
-        CASE WHEN cns16_unclassified > 0 AND classified_total > 0
-        THEN cns16_unclassified * emp_other_services_calibrated / classified_total
-        ELSE 0 END, 1) AS emp_other_services,
+        CASE
+            WHEN cns16_unclassified > 0 AND classified_total > 0
+            THEN cns16_unclassified * emp_other_services_calibrated / classified_total
+            WHEN cns16_unclassified > 0 AND classified_total = 0
+            THEN cns16_unclassified / 17.0
+            ELSE 0
+        END, 1) AS emp_other_services,
     ROUND(emp_office_services_calibrated +
-        CASE WHEN cns16_unclassified > 0 AND classified_total > 0
-        THEN cns16_unclassified * emp_office_services_calibrated / classified_total
-        ELSE 0 END, 1) AS emp_office_services,
+        CASE
+            WHEN cns16_unclassified > 0 AND classified_total > 0
+            THEN cns16_unclassified * emp_office_services_calibrated / classified_total
+            WHEN cns16_unclassified > 0 AND classified_total = 0
+            THEN cns16_unclassified / 17.0
+            ELSE 0
+        END, 1) AS emp_office_services,
     ROUND(emp_medical_services_calibrated +
-        CASE WHEN cns16_unclassified > 0 AND classified_total > 0
-        THEN cns16_unclassified * emp_medical_services_calibrated / classified_total
-        ELSE 0 END, 1) AS emp_medical_services,
+        CASE
+            WHEN cns16_unclassified > 0 AND classified_total > 0
+            THEN cns16_unclassified * emp_medical_services_calibrated / classified_total
+            WHEN cns16_unclassified > 0 AND classified_total = 0
+            THEN cns16_unclassified / 17.0
+            ELSE 0
+        END, 1) AS emp_medical_services,
     ROUND(emp_public_admin_calibrated +
-        CASE WHEN cns16_unclassified > 0 AND classified_total > 0
-        THEN cns16_unclassified * emp_public_admin_calibrated / classified_total
-        ELSE 0 END, 1) AS emp_public_admin,
+        CASE
+            WHEN cns16_unclassified > 0 AND classified_total > 0
+            THEN cns16_unclassified * emp_public_admin_calibrated / classified_total
+            WHEN cns16_unclassified > 0 AND classified_total = 0
+            THEN cns16_unclassified / 17.0
+            ELSE 0
+        END, 1) AS emp_public_admin,
     ROUND(emp_education_calibrated +
-        CASE WHEN cns16_unclassified > 0 AND classified_total > 0
-        THEN cns16_unclassified * emp_education_calibrated / classified_total
-        ELSE 0 END, 1) AS emp_education,
+        CASE
+            WHEN cns16_unclassified > 0 AND classified_total > 0
+            THEN cns16_unclassified * emp_education_calibrated / classified_total
+            WHEN cns16_unclassified > 0 AND classified_total = 0
+            THEN cns16_unclassified / 17.0
+            ELSE 0
+        END, 1) AS emp_education,
     ROUND(emp_manufacturing_calibrated +
-        CASE WHEN cns16_unclassified > 0 AND classified_total > 0
-        THEN cns16_unclassified * emp_manufacturing_calibrated / classified_total
-        ELSE 0 END, 1) AS emp_manufacturing,
+        CASE
+            WHEN cns16_unclassified > 0 AND classified_total > 0
+            THEN cns16_unclassified * emp_manufacturing_calibrated / classified_total
+            WHEN cns16_unclassified > 0 AND classified_total = 0
+            THEN cns16_unclassified / 17.0
+            ELSE 0
+        END, 1) AS emp_manufacturing,
     ROUND(emp_wholesale_calibrated +
-        CASE WHEN cns16_unclassified > 0 AND classified_total > 0
-        THEN cns16_unclassified * emp_wholesale_calibrated / classified_total
-        ELSE 0 END, 1) AS emp_wholesale,
+        CASE
+            WHEN cns16_unclassified > 0 AND classified_total > 0
+            THEN cns16_unclassified * emp_wholesale_calibrated / classified_total
+            WHEN cns16_unclassified > 0 AND classified_total = 0
+            THEN cns16_unclassified / 17.0
+            ELSE 0
+        END, 1) AS emp_wholesale,
     ROUND(emp_transport_warehousing_calibrated +
-        CASE WHEN cns16_unclassified > 0 AND classified_total > 0
-        THEN cns16_unclassified * emp_transport_warehousing_calibrated / classified_total
-        ELSE 0 END, 1) AS emp_transport_warehousing,
+        CASE
+            WHEN cns16_unclassified > 0 AND classified_total > 0
+            THEN cns16_unclassified * emp_transport_warehousing_calibrated / classified_total
+            WHEN cns16_unclassified > 0 AND classified_total = 0
+            THEN cns16_unclassified / 17.0
+            ELSE 0
+        END, 1) AS emp_transport_warehousing,
     ROUND(emp_utilities_calibrated +
-        CASE WHEN cns16_unclassified > 0 AND classified_total > 0
-        THEN cns16_unclassified * emp_utilities_calibrated / classified_total
-        ELSE 0 END, 1) AS emp_utilities,
+        CASE
+            WHEN cns16_unclassified > 0 AND classified_total > 0
+            THEN cns16_unclassified * emp_utilities_calibrated / classified_total
+            WHEN cns16_unclassified > 0 AND classified_total = 0
+            THEN cns16_unclassified / 17.0
+            ELSE 0
+        END, 1) AS emp_utilities,
     ROUND(emp_construction_calibrated +
-        CASE WHEN cns16_unclassified > 0 AND classified_total > 0
-        THEN cns16_unclassified * emp_construction_calibrated / classified_total
-        ELSE 0 END, 1) AS emp_construction,
+        CASE
+            WHEN cns16_unclassified > 0 AND classified_total > 0
+            THEN cns16_unclassified * emp_construction_calibrated / classified_total
+            WHEN cns16_unclassified > 0 AND classified_total = 0
+            THEN cns16_unclassified / 17.0
+            ELSE 0
+        END, 1) AS emp_construction,
     ROUND(emp_agriculture_calibrated +
-        CASE WHEN cns16_unclassified > 0 AND classified_total > 0
-        THEN cns16_unclassified * emp_agriculture_calibrated / classified_total
-        ELSE 0 END, 1) AS emp_agriculture,
+        CASE
+            WHEN cns16_unclassified > 0 AND classified_total > 0
+            THEN cns16_unclassified * emp_agriculture_calibrated / classified_total
+            WHEN cns16_unclassified > 0 AND classified_total = 0
+            THEN cns16_unclassified / 17.0
+            ELSE 0
+        END, 1) AS emp_agriculture,
     ROUND(emp_extraction_calibrated +
-        CASE WHEN cns16_unclassified > 0 AND classified_total > 0
-        THEN cns16_unclassified * emp_extraction_calibrated / classified_total
-        ELSE 0 END, 1) AS emp_extraction,
+        CASE
+            WHEN cns16_unclassified > 0 AND classified_total > 0
+            THEN cns16_unclassified * emp_extraction_calibrated / classified_total
+            WHEN cns16_unclassified > 0 AND classified_total = 0
+            THEN cns16_unclassified / 17.0
+            ELSE 0
+        END, 1) AS emp_extraction,
     ROUND(emp_military_calibrated +
-        CASE WHEN cns16_unclassified > 0 AND classified_total > 0
-        THEN cns16_unclassified * emp_military_calibrated / classified_total
-        ELSE 0 END, 1) AS emp_military,
+        CASE
+            WHEN cns16_unclassified > 0 AND classified_total > 0
+            THEN cns16_unclassified * emp_military_calibrated / classified_total
+            WHEN cns16_unclassified > 0 AND classified_total = 0
+            THEN cns16_unclassified / 17.0
+            ELSE 0
+        END, 1) AS emp_military,
     -- emp_ag (SACOG zeroed in inner query)
     emp_ag,
     -- Aggregate columns (CBP-based, unchanged)

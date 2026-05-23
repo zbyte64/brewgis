@@ -197,7 +197,7 @@ SELECT
             + COALESCE(a.emp_utilities, 0) + COALESCE(a.emp_construction, 0)
             + COALESCE(a.emp_agriculture, 0) + COALESCE(a.emp_extraction, 0)
             + COALESCE(a.emp_military, 0)
-        ELSE p.emp
+        ELSE 0.0
     END AS emp,
     COALESCE(a.emp_retail_services, 0) + COALESCE(a.emp_restaurant, 0)
         + COALESCE(a.emp_accommodation, 0) + COALESCE(a.emp_arts_entertainment, 0)

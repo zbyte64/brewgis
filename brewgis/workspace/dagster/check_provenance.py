@@ -721,7 +721,7 @@ def main() -> int:
     )
     args = parser.parse_args()
     # Ensure Django is configured before importing asset modules
-    os.environ.setdefault("DJANGO_SETTINGS_MODULE", "config.settings.base")
+    os.environ.setdefault("DJANGO_SETTINGS_MODULE", "config.settings")
 
     django.setup()
 

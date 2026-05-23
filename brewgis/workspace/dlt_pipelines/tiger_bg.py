@@ -25,7 +25,7 @@ __all__ = [
 ]
 
 
-@dlt.source(name="tiger_block_groups", max_table_nesting=0)
+@dlt.source(name="tiger_bg", max_table_nesting=0)
 def tiger_bg_source(
     state_fips: str = "06",
     county_fips: str = "067",
@@ -48,8 +48,7 @@ def tiger_bg_source(
 
 @dlt.resource(
     name="tiger_block_groups",
-    table_name="tiger_block_groups",
-    write_disposition="merge",
+    write_disposition="replace",
     primary_key="geoid",
 )
 def tiger_bg_resource(state_fips: str, year: str = "2023", ignore_cache=False) -> Any:

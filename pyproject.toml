@@ -90,7 +90,7 @@ include = ["brewgis", "brewgis.*", "config", "config.*"]
 # ==== pytest ====
 [tool.pytest.ini_options]
 minversion = "6.0"
-addopts = "--ds=config.settings.test --reuse-db --import-mode=importlib"
+addopts = "--ds=config.settings --reuse-db --import-mode=importlib"
 python_files = [
     "tests.py",
     "test_*.py",
@@ -181,7 +181,7 @@ module = [
 disallow_untyped_defs = false
 
 [tool.django-stubs]
-django_settings_module = "config.settings.test"
+django_settings_module = "config.settings"
 
 # ==== djLint ====
 [tool.djlint]

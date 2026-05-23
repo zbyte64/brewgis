@@ -42,7 +42,6 @@ WITH parcel_geom AS (
         bg.pop AS bg_pop,
         bg.hh AS bg_hh,
         bg.du AS bg_du,
-        bg.emp AS bg_emp,
         bg.bldg_area_detsf_sl,
         bg.bldg_area_detsf_ll,
         bg.bldg_area_attsf,
@@ -167,8 +166,8 @@ SELECT
     a.pct_minority,
     a.pct_college_educated,
     a.cost_burden_pct,
-    -- Carry-through employment from geometry
-    p.bg_emp AS emp,
+    -- Employment is sourced entirely from LEHD allocation in base_canvas_employment
+    NULL::double precision AS emp,
     -- Building areas and irrigation (pass-through to downstream models)
     p.bldg_area_detsf_sl,
     p.bldg_area_detsf_ll,

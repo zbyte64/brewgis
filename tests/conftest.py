@@ -4,6 +4,8 @@ from __future__ import annotations
 
 import os
 
+os.environ.setdefault("DJANGO_TESTING", "true")
+
 import deal
 import hypothesis
 from hypothesis import HealthCheck
@@ -117,8 +119,6 @@ def mix(
     )
 
 
-
-
 @pytest.fixture
 def base_canvas_table(db) -> str:
     """Create a base canvas table with the full schema + synthetic data.
@@ -134,6 +134,7 @@ def base_canvas_table(db) -> str:
     """
     # Clean any stale data and ensure PostGIS
     from django.db import connection
+
     with connection.cursor() as cursor:
         cursor.execute("CREATE EXTENSION IF NOT EXISTS postgis")
         cursor.execute("TRUNCATE TABLE public.base_canvas RESTART IDENTITY CASCADE")

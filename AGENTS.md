@@ -84,7 +84,7 @@ Key rules:
 |`brewgis/workspace/dagster/`|Dagster orchestration: ~35 assets (dbt, dlt, comparison, calibration, download, service), resources, jobs, schedules, sensors|
 |`brewgis/workspace/dlt_pipelines/`|dlt data ingestion pipelines: tiger_block, tiger_bg, raster, census, lehd, poi, nlcd, osm|
 |`brewgis/soda/`|Soda Core data quality: context, 12 validator functions, 12 contracts|
-|`config/settings/`|Django settings: base.py, local.py, production.py, test.py|
+|`config/settings.py`|Django settings — single file with environment-driven overrides (DEBUG, TESTING, production)|
 |`config/urls.py`|Root URLconf: admin, allauth accounts, workspace app, debug toolbar|
 |`config/celery_app.py`|Celery app bootstrap with DJANGO_SETTINGS_MODULE default|
 |`tests/`|Root-level test directory with subdirectories per feature (workspace, e2e, review, features, dbt_math, isolation_orchestration, soda)|
@@ -272,12 +272,9 @@ npm run test      # vitest
 
 |File|Role|
 |---|---|
-|`config/settings/base.py`|Base Django settings — PostgreSQL via DATABASE_URL, Redis broker, Celery config, tile server, upload limits, allauth, installed apps, middleware|
-|`config/settings/local.py`|Dev overrides — debug toolbar, eager Celery (`CELERY_TASK_ALWAYS_EAGER=True`), locmem cache|
-|`config/settings/test.py`|Test overrides — MD5 hasher, locmem email, token auth key (`test-token-key-dev-only`)|
-|`config/settings/production.py`|Production overrides — SSL/HSTS, anymail, S3 static/media|
+|`config/settings.py`|Single Django settings module — all environment-specific behavior flows from DJANGO_DEBUG, DJANGO_TESTING, and other env vars (12-factor)|
 |`config/urls.py`|Root URLconf: admin, allauth accounts, workspace app (`/`), debug toolbar|
-|`config/celery_app.py`|Celery app bootstrap with `DJANGO_SETTINGS_MODULE=config.settings.local`|
+|`config/celery_app.py`|Celery app bootstrap with `DJANGO_SETTINGS_MODULE=config.settings`|
 |`config/wsgi.py`|WSGI with werkzeug ProxyMiddleware for /tipg/ and /martin/ tile server proxying|
 |`pyproject.toml`|Tool configuration (pytest, coverage, mypy, ruff, djlint, isort)|
 |`.pre-commit-config.yaml`|Pre-commit hook configuration (19 hooks: ruff, djlint, sqlfluff, prettier 3.5, eslint 9.22, tsc --noEmit, mypy, django-upgrade 6.0, codespell, check-method-decorator, no-anchor-tags)|
@@ -323,7 +320,7 @@ npm run test      # vitest
 
 - **Framework:** pytest 8.3 + pytest-django + pytest-sugar + **Factory Boy** for fixtures + **pytest-bdd** for behavioral/e2e tests
 - **Runner:** Django's `DiscoverRunner` (Django `TestCase` available)
-- **Config:** `pyproject.toml` — `--ds=config.settings.test --reuse-db --import-mode=importlib`, 300s timeout
+- **Config:** `pyproject.toml` — `--ds=config.settings --reuse-db --import-mode=importlib` (DJANGO_TESTING=true set in conftest.py), 300s timeout
 - **Coverage:** `coverage` with `django_coverage_plugin`, includes `brewgis/**`, excludes `*/migrations/*` and `*/tests/*`, **60% threshold**
 - **BDD:** Gherkin `.feature` files in `tests/e2e/features/` (10), `tests/review/features/` (12), `tests/features/` (1) with pytest-bdd step definitions and Page Object Models
 - **Property-based:** Hypothesis for numerical invariants (mode choice shares sum to 1, trip conservation, SQL math parity)

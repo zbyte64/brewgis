@@ -1,6 +1,8 @@
 # General
 # ------------------------------------------------------------------------------
 USE_DOCKER=yes
+DJANGO_DEBUG=True
+DJANGO_SECRET_KEY=CHANGE_ME_TO_A_RANDOM_SECRET_KEY
 IPYTHONDIR=/app/.ipython
 # Redis
 # ------------------------------------------------------------------------------
