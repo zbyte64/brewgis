@@ -135,6 +135,7 @@ class DbtRunnerWrapper:
         packages_yml = self.project_dir / "packages.yml"
         if not packages_dir.exists() and packages_yml.exists():
             from dbt.cli.main import dbtRunner as DepsRunner
+
             DepsRunner().invoke(["deps", "--project-dir", str(self.project_dir)])
 
     def _parse_results(self, result: Any) -> DbtResult:
@@ -157,19 +158,16 @@ class DbtRunnerWrapper:
         ]
 
         # Determine overall success: all runs must have succeeded or skipped.
-        all_ok = all(
-            r["status"] == "success" or r["status"] == "skipped"
-            for r in rows
-        )
+        all_ok = all(r["status"] == "success" or r["status"] == "skipped" for r in rows)
         if not all_ok:
             errors = [r for r in rows if r["status"] not in ("success", "skipped")]
-            error_msgs = "; ".join(
-                f"{e['node_name']}: {e['message']}" for e in errors
-            )
+            error_msgs = "; ".join(f"{e['node_name']}: {e['message']}" for e in errors)
             return DbtResult(
                 success=False,
                 results=rows,
-                error=f"dbt run failed: {error_msgs}" if error_msgs else "dbt run returned errors",
+                error=f"dbt run failed: {error_msgs}"
+                if error_msgs
+                else "dbt run returned errors",
             )
 
         return DbtResult(success=True, results=rows)
@@ -228,6 +226,51 @@ class DbtRunnerWrapper:
         finally:
             shutil.rmtree(profiles_dir, ignore_errors=True)
 
+    def seed(
+        self,
+        select: list[str] | None = None,
+        vars_: dict[str, Any] | None = None,
+        *,
+        db_name: str | None = None,
+    ) -> DbtResult:
+        """Run ``dbt seed`` to load CSV seed files into the target database.
+
+        Args:
+            select: Optional list of seed selectors (e.g. ``["calibration_parameters"]``).
+                When omitted, all seeds in the project are loaded.
+            vars_: Dictionary of dbt variables.
+            db_name: Override for target database name.
+
+        Returns:
+            DbtResult with success flag, results list, or error message.
+        """
+        if not self.project_dir.exists():
+            return DbtResult(
+                success=False,
+                error=f"dbt project directory not found: {self.project_dir}",
+            )
+
+        # Build CLI args
+        args = ["seed", "--project-dir", str(self.project_dir)]
+        if select:
+            args.append("--select")
+            args.extend(select)
+        if vars_:
+            args.extend(["--vars", json.dumps(vars_)])
+
+        # Create temporary profiles.yml
+        profiles_content = _build_profiles_yaml(db_name=db_name)
+        profiles_dir = Path(tempfile.mkdtemp(prefix="dbt_profiles_"))
+        profiles_path = profiles_dir / "profiles.yml"
+        profiles_path.write_text(profiles_content)
+        args.extend(["--profiles-dir", str(profiles_dir)])
+
+        dbt = dbtRunner()
+        try:
+            return self._parse_results(dbt.invoke(args))
+        finally:
+            shutil.rmtree(profiles_dir, ignore_errors=True)
+
 
 def run_dbt_local(
     select: list[str] | None = None,
@@ -238,4 +281,26 @@ def run_dbt_local(
 ) -> DbtResult:
     """Convenience function for invoking dbt from Celery tasks."""
     runner = DbtRunnerWrapper()
-    return runner.run(select=select, vars_=vars_, full_refresh=full_refresh, db_name=db_name)
+    return runner.run(
+        select=select, vars_=vars_, full_refresh=full_refresh, db_name=db_name
+    )
+
+
+def run_dbt_seed(
+    select: list[str] | None = None,
+    vars_: dict[str, Any] | None = None,
+    *,
+    db_name: str | None = None,
+) -> DbtResult:
+    """Convenience function for running ``dbt seed`` from Celery tasks.
+
+    Args:
+        select: Optional list of seed selectors (e.g. ``["calibration_parameters"]``).
+        vars_: Dictionary of dbt variables.
+        db_name: Override for target database name.
+
+    Returns:
+        DbtResult with success flag, results list, or error message.
+    """
+    runner = DbtRunnerWrapper()
+    return runner.seed(select=select, vars_=vars_, db_name=db_name)

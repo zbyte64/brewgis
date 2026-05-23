@@ -33,6 +33,8 @@ from brewgis.workspace.services._db import get_engine
 from brewgis.workspace.services.base_canvas_pipeline import run_pipeline
 from brewgis.workspace.services.census_fetcher import _populate_acs_block_group
 from brewgis.workspace.services.lehd_fetcher import _populate_wac_block
+from brewgis.workspace.services.sacog_demo_db import RestoreError
+from brewgis.workspace.services.sacog_demo_db import restore_sacog_demo_db
 
 logger = logging.getLogger(__name__)
 
@@ -111,6 +113,28 @@ def sacog_load_parcels(
         config.limit or "all",
         config.cache_dir or "default",
     )
+
+    # Ensure SACOG v1 reference tables exist
+    with connection.cursor() as cur:
+        cur.execute(
+            "SELECT EXISTS ("
+            "  SELECT 1 FROM information_schema.tables"
+            "  WHERE table_schema = 'public' AND table_name = %s"
+            ")",
+            [V1_PARCELS],
+        )
+        if not cur.fetchone()[0]:
+            context.log.info(
+                "SACOG reference table %s not found — auto-restoring demo database",
+                V1_PARCELS,
+            )
+            try:
+                restore_sacog_demo_db()
+            except RestoreError as e:
+                raise RuntimeError(f"Failed to restore SACOG demo database: {e}") from e
+            context.log.info("SACOG reference tables restored successfully")
+        else:
+            context.log.info("SACOG reference tables already present")
 
     # Create the staging table if it doesn't exist
     with connection.cursor() as cur:
@@ -254,6 +278,25 @@ def sacog_run_comparison_etl(
         "parcel_table": "sacog_parcel_shim",
         "base_canvas_materialized": "table",
     }
+
+    # Ensure dbt seed tables are loaded
+    with connection.cursor() as cur:
+        cur.execute(
+            "SELECT EXISTS ("
+            "  SELECT 1 FROM information_schema.tables"
+            "  WHERE table_schema = 'public' AND table_name = 'calibration_parameters'"
+            ")",
+        )
+        if not cur.fetchone()[0]:
+            context.log.info(
+                "dbt seed table calibration_parameters not found — running dbt seed"
+            )
+            seed_result = dbt_cli.seed()
+            if not seed_result.success:
+                raise RuntimeError(f"dbt seed failed: {seed_result.error}")
+            context.log.info("dbt seed completed successfully")
+        else:
+            context.log.info("dbt seed tables already present")
 
     # Run NLCD pipeline if enabled
     if config.run_nlcd:
@@ -624,7 +667,7 @@ def sacog_generate_report(
 
 
 def _load_parcels(limit: int, cache_dir: str | None = None) -> gpd.GeoDataFrame:
-    """Load parcel geometries from reference table or cache."""
+    """Load parcel geometries from reference table or cache. Uses SACOG V1 parcels are a startining point."""
     import hashlib
 
     from brewgis.workspace.services.base_canvas_schema import BaseCanvasSchema

@@ -24,6 +24,8 @@ from django.core.management.base import CommandError
 
 from brewgis.workspace.services._db import get_engine
 from brewgis.workspace.services._db import text
+from brewgis.workspace.services.sacog_demo_db import RestoreError
+from brewgis.workspace.services.sacog_demo_db import restore_sacog_demo_db
 
 CACHE_DIR = Path(settings.BASE_DIR) / "planning"
 REPORT_PATH = CACHE_DIR / "sacog_comparison_report.md"
@@ -78,6 +80,7 @@ class Command(BaseCommand):
         from brewgis.soda import validate_base_canvas
         from brewgis.soda import validate_land_use_classification
         from brewgis.workspace.analysis.dbt_runner import run_dbt_local
+        from brewgis.workspace.analysis.dbt_runner import run_dbt_seed
         from brewgis.workspace.dagster.assets.comparison_assets import REPORT_PATH
         from brewgis.workspace.dagster.assets.comparison_assets import (
             _convert_reference_totals,
@@ -102,6 +105,8 @@ class Command(BaseCommand):
         limit = int(options.get("limit", 0))
         force_data_fetch = bool(options.get("force_data_fetch", False))
 
+        # TODO check if base_canvas exists / migrations are up to date
+
         self.stdout.write("\n" + "=" * 70)
         self.stdout.write("  SACOG Base Canvas Comparison: BrewGIS vs v1 Reference")
         self.stdout.write("=" * 70)
@@ -118,6 +123,24 @@ class Command(BaseCommand):
                     "Set CENSUS_API_KEY in your .env file. Get a free key at "
                     "https://api.census.gov/data/key_signup.html"
                 )
+            )
+
+        # ── Pre-flight: Ensure SACOG v1 reference tables are loaded ────
+        self.stdout.write("\n── Pre-flight: Checking SACOG reference tables ──")
+        if not self._table_has_rows("public", V1_PARCELS):
+            self.stdout.write(
+                "  SACOG reference tables not found. Auto-restoring demo database..."
+            )
+            try:
+                restore_sacog_demo_db(log=self.stdout)
+            except RestoreError as e:
+                raise CommandError(f"Failed to restore SACOG demo database: {e}") from e
+            self.stdout.write(
+                self.style.SUCCESS("  SACOG reference tables restored successfully")
+            )
+        else:
+            self.stdout.write(
+                "  SACOG reference tables already present, skipping restore"
             )
 
         # ── Phase 1: Load parcels into dbt source table ────────────────
@@ -248,6 +271,19 @@ class Command(BaseCommand):
         if not shim_result.success:
             raise CommandError(f"dbt sacog_parcel_shim run failed: {shim_result.error}")
         self.stdout.write(self.style.SUCCESS("  sacog_parcel_shim materialized"))
+
+        # ── Pre-flight: Ensure dbt seed tables are loaded ──────────────
+        self.stdout.write("\n── Pre-flight: Checking dbt seed tables ──")
+        if not self._table_has_rows("public", "calibration_parameters"):
+            self.stdout.write("  dbt seed tables not found. Running dbt seed...")
+            seed_result = run_dbt_seed()
+            if not seed_result.success:
+                raise CommandError(f"dbt seed failed: {seed_result.error}")
+            self.stdout.write(
+                self.style.SUCCESS("  dbt seed tables loaded successfully")
+            )
+        else:
+            self.stdout.write("  dbt seed tables already present, skipping dbt seed")
 
         # ── Phase 2b: Run dbt base_canvas models ────────────────────────
         self.stdout.write("\n── Phase 2b: Running dbt base_canvas models ──")

@@ -58,7 +58,9 @@ class DbtCliResource(ConfigurableResource):
             :class:`~brewgis.workspace.analysis.dbt_runner.DbtResult`.
         """
         runner = self._get_runner()
-        return runner.run(select=select, vars_=vars_, full_refresh=full_refresh, db_name=db_name)
+        return runner.run(
+            select=select, vars_=vars_, full_refresh=full_refresh, db_name=db_name
+        )
 
     def run_dbt_local(
         self,
@@ -69,4 +71,26 @@ class DbtCliResource(ConfigurableResource):
         db_name: str | None = None,
     ) -> DbtResult:
         """Convenience method mirroring :func:`run_dbt_local`."""
-        return self.run(select=select, vars_=vars_, full_refresh=full_refresh, db_name=db_name)
+        return self.run(
+            select=select, vars_=vars_, full_refresh=full_refresh, db_name=db_name
+        )
+
+    def seed(
+        self,
+        select: list[str] | None = None,
+        vars_: dict[str, Any] | None = None,
+        *,
+        db_name: str | None = None,
+    ) -> DbtResult:
+        """Invoke ``dbt seed`` to load CSV seed files into the target database.
+
+        Args:
+            select: Optional list of seed selectors.
+            vars_: dbt variable overrides.
+            db_name: Target database alias (defaults to Django's default).
+
+        Returns:
+            :class:`~brewgis.workspace.analysis.dbt_runner.DbtResult`.
+        """
+        runner = self._get_runner()
+        return runner.seed(select=select, vars_=vars_, db_name=db_name)
