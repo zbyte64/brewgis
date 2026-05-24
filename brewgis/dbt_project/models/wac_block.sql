@@ -1,384 +1,186 @@
 {#
-    LEHD LODES WAC → Block Group Employment Table
+    LEHD LODES WAC → Block Group Employment (CBP County Scaling)
 
-    Joins lodes_raw staging data with TIGER/Line block group geometry,
-    splits CNS employment into NAICS-based sub-sectors using CBP proportions,
-    and computes aggregate employment columns.
+    Reads CNS-split sub-sector employment from wac_block_raw and applies
+    two corrections:
 
-    For blocks whose block group does not exist in TIGER, falls back to
-    any block group in the same census tract. Blocks whose tract also has
-    no TIGER match are excluded (their employment cannot be spatially
-    allocated without geometry).
+    1. C000 gap distribution — LODES disclosure suppression means
+       SUM(CNS01..CNS17) < C000 for many blocks.  This distributes the
+       gap (C000 - SUM(sub-sectors)) proportionally across sub-sectors
+       so that emp = SUM(sub-sectors) before CBP scaling begins.
 
-    For SACOG region (CA/067), applies calibrated sub-sector proportions
-    and zeros out agriculture, extraction, and military. The SACOG flag
-    is a numeric var (0 or 1) used in CASE expressions — the SQL structure
-    is always the same regardless of input.
+    2. CBP county-level scaling — Census County Business Patterns (CBP)
+       provides county-level employment totals that are not subject to
+       disclosure suppression.  When CBP total > LODES total for a
+       sub-sector, blocks are scaled up to match the CBP control total.
+       The hybrid preserve fraction keeps a portion of the original LODES
+       spatial distribution while distributing the remainder proportional
+       to total employment.
 
-    CNS16 (unclassified) employment is distributed proportionally across
-    classified sub-sectors. When classified_total is zero (fully suppressed
-    block), CNS16 is distributed equally across all sub-sectors.
+    Aggregate columns (emp_ret, emp_off, emp_pub, emp_ind, emp_ag) and
+    total emp are recomputed from scaled sub-sectors — ensuring internal
+    consistency.
 
     Inputs (via dbt vars):
-        source_schema: Schema containing source tables (default public)
-        lodes_raw_table: lodes_raw table name (default lodes_raw)
-        tiger_bg_table: tiger_block_groups table name (default tiger_block_groups)
-        year: LEHD data year
-        is_sacog: 1 for SACOG calibration, 0 for general (default 0)
-        cbp_11..cbp_721: CBP NAICS proportion parameters
+        cbp_county_*: CBP county-level absolute employment totals per sub-sector
+        cbp_preserve_fraction: fraction of CBP total preserved via LODES scaling
+            (default 0.5). Remainder is distributed proportionally.
 
-    Output: lehd.wac_block — persistent table read by base_canvas_employment
+    Output: lehd.wac_block — persistent table consumed by base_canvas_employment
 #}
 
 {{ config(materialized='table', schema='lehd',
     indexes=[{'columns': ['geometry'], 'type': 'gist'}])
 }}
 
-{% set year = var('year', 2021) %}
-{% set is_sacog = var('is_sacog', 0) %}
-{% set cbp_11 = var('cbp_11', 0.0) %}
-{% set cbp_21 = var('cbp_21', 0.0) %}
-{% set cbp_48 = var('cbp_48', 0.0) %}
-{% set cbp_49 = var('cbp_49', 0.0) %}
-{% set cbp_22 = var('cbp_22', 0.0) %}
-{% set cbp_42 = var('cbp_42', 0.0) %}
-{% set cbp_721 = var('cbp_721', 0.0) %}
-{% set state_fips = var('state_fips', '06') %}
-{% set county_fips = var('county_fips', '067') %}
+{% set cbp_preserve_fraction = var('cbp_preserve_fraction', 0.5) %}
 
--- Pre-compute best-available TIGER geometry for each LODES block group.
--- Tier 1: exact geoid match on block group.
--- Tier 2: fallback to any block group in the same census tract.
--- Blocks whose tract also has no TIGER match get NULL geometry and are
--- excluded from the final result (cannot spatially allocate without geometry).
-WITH lodes_blocks AS (
-    SELECT DISTINCT
-        LEFT(w_geocode, 12) AS bg,
-        LEFT(w_geocode, 11) AS tract
-    FROM {{ source('brewgis', 'lodes_raw') }}
-    WHERE year = {{ year }}
-      AND LEFT(w_geocode, 5) = '{{ state_fips }}' || '{{ county_fips }}'
-),
+-- Sub-sector metadata for loop-driven CBP scaling and aggregate recomputation.
+-- cbp_var: dbt var holding the county-level CBP absolute total for this sub-sector.
+-- agg: the aggregate column this sub-sector is part of (military excluded).
+{% set sub_sectors = [
+    {'col': 'emp_agriculture',           'agg': 'emp_ind',  'cbp_var': 'cbp_county_agriculture'},
+    {'col': 'emp_extraction',            'agg': 'emp_ind',  'cbp_var': 'cbp_county_extraction'},
+    {'col': 'emp_construction',          'agg': 'emp_ind',  'cbp_var': 'cbp_county_construction'},
+    {'col': 'emp_manufacturing',         'agg': 'emp_ind',  'cbp_var': 'cbp_county_manufacturing'},
+    {'col': 'emp_transport_warehousing', 'agg': 'emp_ind',  'cbp_var': 'cbp_county_transport_warehousing'},
+    {'col': 'emp_utilities',             'agg': 'emp_ind',  'cbp_var': 'cbp_county_utilities'},
+    {'col': 'emp_wholesale',             'agg': 'emp_ind',  'cbp_var': 'cbp_county_wholesale'},
+    {'col': 'emp_retail_services',       'agg': 'emp_ret',  'cbp_var': 'cbp_county_retail_services'},
+    {'col': 'emp_office_services',       'agg': 'emp_off',  'cbp_var': 'cbp_county_office_services'},
+    {'col': 'emp_education',             'agg': 'emp_pub',  'cbp_var': 'cbp_county_education'},
+    {'col': 'emp_medical_services',      'agg': 'emp_off',  'cbp_var': 'cbp_county_medical_services'},
+    {'col': 'emp_arts_entertainment',    'agg': 'emp_ret',  'cbp_var': 'cbp_county_arts_entertainment'},
+    {'col': 'emp_accommodation',         'agg': 'emp_ret',  'cbp_var': 'cbp_county_accommodation'},
+    {'col': 'emp_restaurant',            'agg': 'emp_ret',  'cbp_var': 'cbp_county_restaurant'},
+    {'col': 'emp_other_services',        'agg': 'emp_ret',  'cbp_var': 'cbp_county_other_services'},
+    {'col': 'emp_public_admin',          'agg': 'emp_pub',  'cbp_var': 'cbp_county_public_admin'},
+    {'col': 'emp_military',              'agg': none,       'cbp_var': none},
+] %}
 
-bg_geometry_map AS (
+{% set aggregates = {
+    'emp_ret': ['emp_retail_services', 'emp_restaurant', 'emp_accommodation', 'emp_arts_entertainment', 'emp_other_services'],
+    'emp_off': ['emp_office_services', 'emp_medical_services'],
+    'emp_pub': ['emp_education', 'emp_public_admin'],
+    'emp_ind': ['emp_manufacturing', 'emp_wholesale', 'emp_transport_warehousing', 'emp_utilities', 'emp_construction', 'emp_extraction', 'emp_agriculture'],
+    'emp_ag': ['emp_agriculture'],
+} %}
+
+-- County-level LODES totals computed from wac_block_raw (post-CNS-split,
+-- pre-scaling). These are the baseline against which CBP totals are compared.
+WITH county_lodes_totals AS (
     SELECT
-        lb.bg,
-        COALESCE(
-            tbg.geometry,
-            tbg_fallback.geometry
-        ) AS geometry
-    FROM lodes_blocks lb
-    LEFT JOIN {{ source('brewgis', 'tiger_block_groups') }} tbg
-        ON lb.bg = tbg.geoid
-    LEFT JOIN LATERAL (
-        SELECT geometry FROM {{ source('brewgis', 'tiger_block_groups') }}
-        WHERE geoid LIKE lb.tract || '%'
-        LIMIT 1
-    ) tbg_fallback ON tbg.geoid IS NULL
-    WHERE COALESCE(tbg.geometry, tbg_fallback.geometry) IS NOT NULL
+        {% for s in sub_sectors %}
+        COALESCE(SUM({{ s.col }}), 0) AS lodes_{{ s.col }},
+        {% endfor %}
+        COALESCE(SUM(emp), 0) AS total_proxy
+    FROM {{ ref('wac_block_raw') }}
 ),
 
-cbp_sub_sectors AS (
-    SELECT
-        LEFT(lr.w_geocode, 12) AS geoid,
-        ST_Multi(ST_GeomFromText(bgm.geometry, 4326)) AS geometry,
-        lr.c000,
-        -- CNS01 -> goods producing: agriculture (11), extraction (21), remainder construction (23)
-        CASE WHEN COALESCE(lr.cns01, 0) > 0
-            THEN GREATEST(0, ROUND(COALESCE(lr.cns01, 0)::numeric * {{ cbp_11 }}, 1))
-            ELSE 0 END AS emp_agriculture_cbp,
-        CASE WHEN COALESCE(lr.cns01, 0) > 0
-            THEN GREATEST(0, ROUND(COALESCE(lr.cns01, 0)::numeric * {{ cbp_21 }}, 1))
-            ELSE 0 END AS emp_extraction_cbp,
-        CASE WHEN COALESCE(lr.cns01, 0) > 0
-            THEN GREATEST(0, COALESCE(lr.cns01, 0)::numeric
-                - ROUND(COALESCE(lr.cns01, 0)::numeric * {{ cbp_11 }}, 1)
-                - ROUND(COALESCE(lr.cns01, 0)::numeric * {{ cbp_21 }}, 1))
-            ELSE 0 END AS emp_construction_cbp,
-        -- CNS02 -> manufacturing
-        COALESCE(lr.cns02, 0)::numeric AS emp_manufacturing_cbp,
-        -- CNS03 -> trade/transport/utilities
-        CASE WHEN COALESCE(lr.cns03, 0) > 0
-            THEN GREATEST(0, ROUND(COALESCE(lr.cns03, 0)::numeric * ({{ cbp_48 }} + {{ cbp_49 }}), 1))
-            ELSE 0 END AS emp_transport_warehousing_cbp,
-        CASE WHEN COALESCE(lr.cns03, 0) > 0
-            THEN GREATEST(0, ROUND(COALESCE(lr.cns03, 0)::numeric * {{ cbp_22 }}, 1))
-            ELSE 0 END AS emp_utilities_cbp,
-        CASE WHEN COALESCE(lr.cns03, 0) > 0
-            THEN GREATEST(0, ROUND(COALESCE(lr.cns03, 0)::numeric * {{ cbp_42 }}, 1))
-            ELSE 0 END AS emp_wholesale_cbp,
-        CASE WHEN COALESCE(lr.cns03, 0) > 0
-            THEN GREATEST(0, COALESCE(lr.cns03, 0)::numeric
-                - ROUND(COALESCE(lr.cns03, 0)::numeric * ({{ cbp_48 }} + {{ cbp_49 }}), 1)
-                - ROUND(COALESCE(lr.cns03, 0)::numeric * {{ cbp_22 }}, 1)
-                - ROUND(COALESCE(lr.cns03, 0)::numeric * {{ cbp_42 }}, 1))
-            ELSE 0 END AS emp_retail_services_cbp,
-        -- CNS04-CNS09 -> office services
-        (COALESCE(lr.cns04, 0) + COALESCE(lr.cns05, 0) + COALESCE(lr.cns06, 0)
-            + COALESCE(lr.cns07, 0) + COALESCE(lr.cns08, 0) + COALESCE(lr.cns09, 0)
-        )::numeric AS emp_office_services_cbp,
-        -- CNS10 -> education
-        COALESCE(lr.cns10, 0)::numeric AS emp_education_cbp,
-        -- CNS11 -> medical
-        COALESCE(lr.cns11, 0)::numeric AS emp_medical_services_cbp,
-        -- CNS12 -> arts/entertainment
-        COALESCE(lr.cns12, 0)::numeric AS emp_arts_entertainment_cbp,
-        -- CNS13 -> accommodation/food: accommodation (721), remainder restaurant (722)
-        CASE WHEN COALESCE(lr.cns13, 0) > 0
-            THEN GREATEST(0, ROUND(COALESCE(lr.cns13, 0)::numeric * {{ cbp_721 }}, 1))
-            ELSE 0 END AS emp_accommodation_cbp,
-        CASE WHEN COALESCE(lr.cns13, 0) > 0
-            THEN GREATEST(0, COALESCE(lr.cns13, 0)::numeric
-                - ROUND(COALESCE(lr.cns13, 0)::numeric * {{ cbp_721 }}, 1))
-            ELSE 0 END AS emp_restaurant_cbp,
-        -- CNS14 -> other services
-        COALESCE(lr.cns14, 0)::numeric AS emp_other_services_cbp,
-        -- CNS15 -> public admin
-        COALESCE(lr.cns15, 0)::numeric AS emp_public_admin_cbp,
-        -- CNS17 -> military
-        COALESCE(lr.cns17, 0)::numeric AS emp_military_cbp,
-        -- CNS16 unclassified (distributed in final SELECT)
-        COALESCE(lr.cns16, 0)::numeric AS cns16_unclassified
-    FROM {{ source('brewgis', 'lodes_raw') }} lr
-    JOIN bg_geometry_map bgm
-        ON LEFT(lr.w_geocode, 12) = bgm.bg
-    WHERE lr.year = {{ year }}
-      AND LEFT(lr.w_geocode, 5) = '{{ state_fips }}' || '{{ county_fips }}'
-),
-
-cbp_aggregates AS (
+-- Compute total_sub (sum of all sub-sectors pre-gap) and C000 gap.
+-- The gap is C000 - SUM(sub-sectors), caused by LODES disclosure suppression
+-- where a block has a C000 total but some CNS columns are suppressed to zero.
+raw_with_gap AS (
     SELECT
         *,
-        (emp_retail_services_cbp + emp_restaurant_cbp + emp_accommodation_cbp
-         + emp_arts_entertainment_cbp + emp_other_services_cbp) AS emp_ret,
-        (emp_office_services_cbp + emp_medical_services_cbp) AS emp_off,
-        (emp_education_cbp + emp_public_admin_cbp) AS emp_pub,
-        (emp_manufacturing_cbp + emp_wholesale_cbp + emp_transport_warehousing_cbp
-         + emp_utilities_cbp + emp_construction_cbp + emp_extraction_cbp + emp_agriculture_cbp) AS emp_ind,
-        emp_agriculture_cbp AS emp_ag,
-        -- Total classified employment (excludes CNS16 and C000)
-        (emp_retail_services_cbp + emp_restaurant_cbp + emp_accommodation_cbp
-         + emp_arts_entertainment_cbp + emp_other_services_cbp
-         + emp_office_services_cbp + emp_medical_services_cbp
-         + emp_public_admin_cbp + emp_education_cbp
-         + emp_manufacturing_cbp + emp_wholesale_cbp + emp_transport_warehousing_cbp
-         + emp_utilities_cbp + emp_construction_cbp + emp_extraction_cbp
-         + emp_agriculture_cbp + emp_military_cbp) AS classified_total
-    FROM cbp_sub_sectors
+        (
+            {% for s in sub_sectors %}
+            COALESCE({{ s.col }}, 0){% if not loop.last %} + {% endif %}
+            {% endfor %}
+        ) AS total_sub,
+        emp - (
+            {% for s in sub_sectors %}
+            COALESCE({{ s.col }}, 0){% if not loop.last %} + {% endif %}
+            {% endfor %}
+        ) AS c000_gap
+    FROM {{ ref('wac_block_raw') }}
 ),
 
-classified_with_sacog AS (
+-- Apply C000 gap distribution: when c000_gap > 0, distribute the gap across
+-- all 17 sub-sectors proportional to their current values. When total_sub = 0
+-- (fully suppressed block), distribute equally.
+gap_distributed AS (
     SELECT
         geoid,
         geometry,
-        c000 AS emp,
-        -- Sub-sector: SACOG-calibrated or CBP-based (determined by :is_sacog flag)
-        CASE WHEN {{ is_sacog }} = 1 AND emp_ret > 0
-            THEN ROUND(emp_ret * 76395.0 / 163859.0, 1) ELSE emp_retail_services_cbp
-        END AS emp_retail_services_calibrated,
-        CASE WHEN {{ is_sacog }} = 1 AND emp_ret > 0
-            THEN ROUND(emp_ret * 42520.0 / 163859.0, 1) ELSE emp_restaurant_cbp
-        END AS emp_restaurant_calibrated,
-        CASE WHEN {{ is_sacog }} = 1 AND emp_ret > 0
-            THEN ROUND(emp_ret * 3827.0 / 163859.0, 1) ELSE emp_accommodation_cbp
-        END AS emp_accommodation_calibrated,
-        CASE WHEN {{ is_sacog }} = 1 AND emp_ret > 0
-            THEN ROUND(emp_ret * 7567.0 / 163859.0, 1) ELSE emp_arts_entertainment_cbp
-        END AS emp_arts_entertainment_calibrated,
-        CASE WHEN {{ is_sacog }} = 1 AND emp_ret > 0
-            THEN ROUND(emp_ret * 33330.0 / 163859.0, 1) ELSE emp_other_services_cbp
-        END AS emp_other_services_calibrated,
-        CASE WHEN {{ is_sacog }} = 1 AND emp_off > 0
-            THEN ROUND(emp_off * 236721.0 / 259466.0, 1) ELSE emp_office_services_cbp
-        END AS emp_office_services_calibrated,
-        CASE WHEN {{ is_sacog }} = 1 AND emp_off > 0
-            THEN ROUND(emp_off * 22745.0 / 259466.0, 1) ELSE emp_medical_services_cbp
-        END AS emp_medical_services_calibrated,
-        CASE WHEN {{ is_sacog }} = 1 AND emp_pub > 0
-            THEN ROUND(emp_pub * 16924.0 / 44285.0, 1) ELSE emp_public_admin_cbp
-        END AS emp_public_admin_calibrated,
-        CASE WHEN {{ is_sacog }} = 1 AND emp_pub > 0
-            THEN ROUND(emp_pub * 27361.0 / 44285.0, 1) ELSE emp_education_cbp
-        END AS emp_education_calibrated,
-        CASE WHEN {{ is_sacog }} = 1 AND emp_ind > 0
-            THEN ROUND(emp_ind * 46244.0 / 74702.0, 1) ELSE emp_manufacturing_cbp
-        END AS emp_manufacturing_calibrated,
-        CASE WHEN {{ is_sacog }} = 1 AND emp_ind > 0
-            THEN ROUND(emp_ind * 10672.0 / 74702.0, 1) ELSE emp_wholesale_cbp
-        END AS emp_wholesale_calibrated,
-        CASE WHEN {{ is_sacog }} = 1 AND emp_ind > 0
-            THEN ROUND(emp_ind * 14229.0 / 74702.0, 1) ELSE emp_transport_warehousing_cbp
-        END AS emp_transport_warehousing_calibrated,
-        CASE WHEN {{ is_sacog }} = 1 AND emp_ind > 0
-            THEN ROUND(emp_ind * 719.0 / 74702.0, 1) ELSE emp_utilities_cbp
-        END AS emp_utilities_calibrated,
-        CASE WHEN {{ is_sacog }} = 1 AND emp_ind > 0
-            THEN ROUND(emp_ind * 2838.0 / 74702.0, 1) ELSE emp_construction_cbp
-        END AS emp_construction_calibrated,
-        -- SACOG zeros out agriculture, extraction, military
-        CASE WHEN {{ is_sacog }} = 1 THEN 0 ELSE emp_agriculture_cbp
-        END AS emp_agriculture_calibrated,
-        CASE WHEN {{ is_sacog }} = 1 THEN 0 ELSE emp_extraction_cbp
-        END AS emp_extraction_calibrated,
-        CASE WHEN {{ is_sacog }} = 1 THEN 0 ELSE emp_military_cbp
-        END AS emp_military_calibrated,
-        CASE WHEN {{ is_sacog }} = 1 THEN 0 ELSE emp_ag END AS emp_ag,
-        -- Aggregate columns (CBP-based)
+        emp,
+        emp_ag,
         emp_ret,
         emp_off,
         emp_pub,
         emp_ind,
-        classified_total,
-        cns16_unclassified
-    FROM cbp_aggregates
+        {% for s in sub_sectors %}
+        COALESCE({{ s.col }}, 0) + CASE
+            WHEN c000_gap > 0 AND total_sub > 0
+            THEN c000_gap * COALESCE({{ s.col }}, 0) / total_sub
+            WHEN c000_gap > 0 AND total_sub = 0
+            THEN c000_gap / 17.0
+            ELSE 0
+        END AS {{ s.col }}{% if not loop.last %},{% endif %}
+        {% endfor %}
+    FROM raw_with_gap
+),
+
+-- Apply CBP county-level scaling to each sub-sector.
+-- Formula (per sub-sector, per the plan):
+--   C = CBP county total, L = LODES county total (from gap_distributed rows),
+--   v = block value, e = total proxy employment, T = total_proxy, p = preserve_fraction
+--   - C <= L or C <= 0: v (no scaling)
+--   - L > 0 and C > L: v * (C*p/L) + C*(1-p) * e/T
+--   - L = 0 and C > 0 and T > 0: C * e/T
+--   - T = 0: v (no data to scale against)
+scaled AS (
+    SELECT
+        c.geoid,
+        c.geometry,
+        c.emp,
+        {% for s in sub_sectors %}
+        {% set C = var(s.cbp_var, 0.0) %}
+        {% set has_cbp = s.cbp_var is not none %}
+        {% if has_cbp %}
+        CASE
+            WHEN {{ C }} <= t.lodes_{{ s.col }} OR {{ C }} <= 0 THEN c.{{ s.col }}
+            WHEN t.lodes_{{ s.col }} > 0 AND {{ C }} > t.lodes_{{ s.col }} THEN
+                CASE WHEN c.{{ s.col }} > 0
+                    THEN c.{{ s.col }} * ({{ C }} * {{ cbp_preserve_fraction }} / t.lodes_{{ s.col }})
+                        + {{ C }} * (1.0 - {{ cbp_preserve_fraction }}) * c.emp / t.total_proxy
+                    ELSE {{ C }} * (1.0 - {{ cbp_preserve_fraction }}) * c.emp / t.total_proxy
+                END
+            WHEN t.lodes_{{ s.col }} = 0 AND {{ C }} > 0 AND t.total_proxy > 0
+            THEN {{ C }} * c.emp / t.total_proxy
+            ELSE c.{{ s.col }}
+        END AS {{ s.col }},
+        {% else %}
+        c.{{ s.col }} AS {{ s.col }},
+        {% endif %}
+        {% endfor %}
+        c.emp_ag,
+        c.emp_ret,
+        c.emp_off,
+        c.emp_pub,
+        c.emp_ind,
+        t.total_proxy
+    FROM gap_distributed c
+    CROSS JOIN county_lodes_totals t
 )
 
+-- Final output: recompute all aggregate columns from scaled sub-sectors
+-- to ensure internal consistency. emp is the sum of all 17 sub-sectors.
 SELECT
     geoid,
     geometry,
-    emp,
-    -- Distribute CNS16: proportional when classified_total > 0, equal when fully suppressed
-    ROUND(emp_retail_services_calibrated +
-        CASE
-            WHEN cns16_unclassified > 0 AND classified_total > 0
-            THEN cns16_unclassified * emp_retail_services_calibrated / classified_total
-            WHEN cns16_unclassified > 0 AND classified_total = 0
-            THEN cns16_unclassified / 17.0
-            ELSE 0
-        END, 1) AS emp_retail_services,
-    ROUND(emp_restaurant_calibrated +
-        CASE
-            WHEN cns16_unclassified > 0 AND classified_total > 0
-            THEN cns16_unclassified * emp_restaurant_calibrated / classified_total
-            WHEN cns16_unclassified > 0 AND classified_total = 0
-            THEN cns16_unclassified / 17.0
-            ELSE 0
-        END, 1) AS emp_restaurant,
-    ROUND(emp_accommodation_calibrated +
-        CASE
-            WHEN cns16_unclassified > 0 AND classified_total > 0
-            THEN cns16_unclassified * emp_accommodation_calibrated / classified_total
-            WHEN cns16_unclassified > 0 AND classified_total = 0
-            THEN cns16_unclassified / 17.0
-            ELSE 0
-        END, 1) AS emp_accommodation,
-    ROUND(emp_arts_entertainment_calibrated +
-        CASE
-            WHEN cns16_unclassified > 0 AND classified_total > 0
-            THEN cns16_unclassified * emp_arts_entertainment_calibrated / classified_total
-            WHEN cns16_unclassified > 0 AND classified_total = 0
-            THEN cns16_unclassified / 17.0
-            ELSE 0
-        END, 1) AS emp_arts_entertainment,
-    ROUND(emp_other_services_calibrated +
-        CASE
-            WHEN cns16_unclassified > 0 AND classified_total > 0
-            THEN cns16_unclassified * emp_other_services_calibrated / classified_total
-            WHEN cns16_unclassified > 0 AND classified_total = 0
-            THEN cns16_unclassified / 17.0
-            ELSE 0
-        END, 1) AS emp_other_services,
-    ROUND(emp_office_services_calibrated +
-        CASE
-            WHEN cns16_unclassified > 0 AND classified_total > 0
-            THEN cns16_unclassified * emp_office_services_calibrated / classified_total
-            WHEN cns16_unclassified > 0 AND classified_total = 0
-            THEN cns16_unclassified / 17.0
-            ELSE 0
-        END, 1) AS emp_office_services,
-    ROUND(emp_medical_services_calibrated +
-        CASE
-            WHEN cns16_unclassified > 0 AND classified_total > 0
-            THEN cns16_unclassified * emp_medical_services_calibrated / classified_total
-            WHEN cns16_unclassified > 0 AND classified_total = 0
-            THEN cns16_unclassified / 17.0
-            ELSE 0
-        END, 1) AS emp_medical_services,
-    ROUND(emp_public_admin_calibrated +
-        CASE
-            WHEN cns16_unclassified > 0 AND classified_total > 0
-            THEN cns16_unclassified * emp_public_admin_calibrated / classified_total
-            WHEN cns16_unclassified > 0 AND classified_total = 0
-            THEN cns16_unclassified / 17.0
-            ELSE 0
-        END, 1) AS emp_public_admin,
-    ROUND(emp_education_calibrated +
-        CASE
-            WHEN cns16_unclassified > 0 AND classified_total > 0
-            THEN cns16_unclassified * emp_education_calibrated / classified_total
-            WHEN cns16_unclassified > 0 AND classified_total = 0
-            THEN cns16_unclassified / 17.0
-            ELSE 0
-        END, 1) AS emp_education,
-    ROUND(emp_manufacturing_calibrated +
-        CASE
-            WHEN cns16_unclassified > 0 AND classified_total > 0
-            THEN cns16_unclassified * emp_manufacturing_calibrated / classified_total
-            WHEN cns16_unclassified > 0 AND classified_total = 0
-            THEN cns16_unclassified / 17.0
-            ELSE 0
-        END, 1) AS emp_manufacturing,
-    ROUND(emp_wholesale_calibrated +
-        CASE
-            WHEN cns16_unclassified > 0 AND classified_total > 0
-            THEN cns16_unclassified * emp_wholesale_calibrated / classified_total
-            WHEN cns16_unclassified > 0 AND classified_total = 0
-            THEN cns16_unclassified / 17.0
-            ELSE 0
-        END, 1) AS emp_wholesale,
-    ROUND(emp_transport_warehousing_calibrated +
-        CASE
-            WHEN cns16_unclassified > 0 AND classified_total > 0
-            THEN cns16_unclassified * emp_transport_warehousing_calibrated / classified_total
-            WHEN cns16_unclassified > 0 AND classified_total = 0
-            THEN cns16_unclassified / 17.0
-            ELSE 0
-        END, 1) AS emp_transport_warehousing,
-    ROUND(emp_utilities_calibrated +
-        CASE
-            WHEN cns16_unclassified > 0 AND classified_total > 0
-            THEN cns16_unclassified * emp_utilities_calibrated / classified_total
-            WHEN cns16_unclassified > 0 AND classified_total = 0
-            THEN cns16_unclassified / 17.0
-            ELSE 0
-        END, 1) AS emp_utilities,
-    ROUND(emp_construction_calibrated +
-        CASE
-            WHEN cns16_unclassified > 0 AND classified_total > 0
-            THEN cns16_unclassified * emp_construction_calibrated / classified_total
-            WHEN cns16_unclassified > 0 AND classified_total = 0
-            THEN cns16_unclassified / 17.0
-            ELSE 0
-        END, 1) AS emp_construction,
-    ROUND(emp_agriculture_calibrated +
-        CASE
-            WHEN cns16_unclassified > 0 AND classified_total > 0
-            THEN cns16_unclassified * emp_agriculture_calibrated / classified_total
-            WHEN cns16_unclassified > 0 AND classified_total = 0
-            THEN cns16_unclassified / 17.0
-            ELSE 0
-        END, 1) AS emp_agriculture,
-    ROUND(emp_extraction_calibrated +
-        CASE
-            WHEN cns16_unclassified > 0 AND classified_total > 0
-            THEN cns16_unclassified * emp_extraction_calibrated / classified_total
-            WHEN cns16_unclassified > 0 AND classified_total = 0
-            THEN cns16_unclassified / 17.0
-            ELSE 0
-        END, 1) AS emp_extraction,
-    ROUND(emp_military_calibrated +
-        CASE
-            WHEN cns16_unclassified > 0 AND classified_total > 0
-            THEN cns16_unclassified * emp_military_calibrated / classified_total
-            WHEN cns16_unclassified > 0 AND classified_total = 0
-            THEN cns16_unclassified / 17.0
-            ELSE 0
-        END, 1) AS emp_military,
-    -- emp_ag (SACOG zeroed in inner query)
-    emp_ag,
-    -- Aggregate columns (CBP-based, unchanged)
-    emp_ret,
-    emp_off,
-    emp_pub,
-    emp_ind
-FROM classified_with_sacog
+    -- Total employment: sum of all 17 scaled sub-sectors
+    (
+        {% for s in sub_sectors %}
+        COALESCE({{ s.col }}, 0){% if not loop.last %} + {% endif %}
+        {% endfor %}
+    ) AS emp,
+    -- Sub-sectors (scaled)
+    {% for s in sub_sectors %}
+    {{ s.col }},
+    {% endfor %}
+    -- Aggregate columns recomputed from scaled sub-sectors
+    {% for agg, cols in aggregates.items() %}
+    ({% for c in cols %}COALESCE({{ c }}, 0){% if not loop.last %} + {% endif %}{% endfor %}) AS {{ agg }}{% if not loop.last %},{% endif %}
+    {% endfor %}
+FROM scaled

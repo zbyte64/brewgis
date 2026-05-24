@@ -159,60 +159,6 @@ class TestLEHDFetcher:
             result = _compute_all_cbp_totals("06", "067", year=2011)
         assert result == {}
 
-    def test_apply_cbp_county_scaling_scales_above_local(self) -> None:
-        """_apply_cbp_county_scaling should scale up sub-sectors where CBP >> LEHD."""
-        from unittest.mock import MagicMock
-        from unittest.mock import patch as _patch
-
-        from brewgis.workspace.services.lehd_fetcher import _ALL_SUB_COLUMNS
-        from brewgis.workspace.services.lehd_fetcher import _SUBSECTOR_CBP_NAICS
-        from brewgis.workspace.services.lehd_fetcher import _apply_cbp_county_scaling
-
-        mock_conn = MagicMock()
-        mock_engine = MagicMock()
-        mock_engine.connect.return_value.__enter__.return_value = mock_conn
-
-        # Determine the exact iteration order of cols_to_scale in the function
-        cols_to_scale = [c for c in _ALL_SUB_COLUMNS if c in _SUBSECTOR_CBP_NAICS]
-        # 16 sub-sector columns (all except emp_military)
-
-        # Build scalar return sequence: [total_proxy, lodes_1, lodes_2, ..., lodes_16]
-        scalar_values = [100000]  # total_proxy
-        for col in cols_to_scale:
-            if col == "emp_manufacturing":
-                scalar_values.append(5000)  # LEHD total heavily suppressed
-            else:
-                scalar_values.append(80000)  # High enough to avoid scaling
-
-        scalar_mock = MagicMock()
-        scalar_mock.side_effect = scalar_values
-        mock_conn.execute.return_value.scalar = scalar_mock
-
-        # CBP totals: only manufacturing has CBP >> LEHD
-        # All other columns: set CBP <= LEHD (80000) so they don't scale
-        cbp_totals: dict[str, float] = {}
-        for col in cols_to_scale:
-            if col == "emp_manufacturing":
-                cbp_totals[col] = 100000  # CBP >> LEHD (5000)
-            else:
-                cbp_totals[col] = 50000  # CBP < LEHD (80000) → no scaling
-
-        with _patch(
-            "brewgis.workspace.services.lehd_fetcher.get_engine",
-            return_value=mock_engine,
-        ):
-            factors = _apply_cbp_county_scaling(cbp_totals)
-
-        # Only manufacturing should have a scaling factor
-        assert "emp_manufacturing" in factors
-        assert factors["emp_manufacturing"] == 10.0
-        # preserved_target = 100000 * 0.5 = 50000, scale_factor = 50000 / 5000 = 10.0
-
-        # Other sub-sectors should NOT be in factors (CBP <= LEHD)
-        for col in cols_to_scale:
-            if col != "emp_manufacturing":
-                assert col not in factors, f"{col} should not be scaled"
-
 
 # ── POI Fetcher Tests ─────────────────────────────────────────────────
 

@@ -65,10 +65,49 @@ models:
     wac_block:
       +materialized: table
       +schema: lehd
+    wac_block_raw:
+      +materialized: table
+      +schema: lehd
     acs_block_group:
       +materialized: table
       +schema: census
 vars:
+  # CBP County Scaling (wac_block model)
+  cbp_preserve_fraction: 0.5
+  cbp_county_retail_services: 0.0
+  cbp_county_restaurant: 0.0
+  cbp_county_accommodation: 0.0
+  cbp_county_arts_entertainment: 0.0
+  cbp_county_other_services: 0.0
+  cbp_county_office_services: 0.0
+  cbp_county_medical_services: 0.0
+  cbp_county_public_admin: 0.0
+  cbp_county_education: 0.0
+  cbp_county_manufacturing: 0.0
+  cbp_county_wholesale: 0.0
+  cbp_county_transport_warehousing: 0.0
+  cbp_county_utilities: 0.0
+  cbp_county_construction: 0.0
+  cbp_county_agriculture: 0.0
+  cbp_county_extraction: 0.0
+  # SACOG calibration ratios (set at runtime, null = CBP proportions)
+  sacog_agriculture_ratio: null
+  sacog_extraction_ratio: null
+  sacog_construction_ratio: null
+  sacog_manufacturing_ratio: null
+  sacog_transport_warehousing_ratio: null
+  sacog_utilities_ratio: null
+  sacog_wholesale_ratio: null
+  sacog_retail_services_ratio: null
+  sacog_office_services_ratio: null
+  sacog_education_ratio: null
+  sacog_medical_services_ratio: null
+  sacog_arts_entertainment_ratio: null
+  sacog_accommodation_ratio: null
+  sacog_restaurant_ratio: null
+  sacog_other_services_ratio: null
+  sacog_public_admin_ratio: null
+  sacog_military_ratio: null
   # Default values for SQLFluff / dbt compilation.
   # Runtime values are provided by dbt_runner.py when executing models.
   parcel_table: parcels

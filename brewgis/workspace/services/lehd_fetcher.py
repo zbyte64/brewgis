@@ -34,7 +34,7 @@ def _census_api_key() -> str:
 
         return django_settings.CENSUS_API_KEY or ""
     except Exception:
-        return ""
+        return ""  # DONT FUCKING HIDE EXCEPTIONS! raise an exception instead!
 
 
 # ── LODES WAC (Workplace Area Characteristics) ─────────────────────────
@@ -616,11 +616,16 @@ def fetch_lehd_block_data(
     # Validate CBP proportions: parent-group totals must be non-zero.
     # All-zero proportions mean the CBP API returned no usable data and
     # no fallback was generated — this is a data dependency failure.
-    cns01_sum = cbp_props.get("11", 0.0) + cbp_props.get("21", 0.0) + cbp_props.get("23", 0.0)
+    cns01_sum = (
+        cbp_props.get("11", 0.0) + cbp_props.get("21", 0.0) + cbp_props.get("23", 0.0)
+    )
     cns03_sum = (
-        cbp_props.get("22", 0.0) + cbp_props.get("42", 0.0)
-        + cbp_props.get("44", 0.0) + cbp_props.get("45", 0.0)
-        + cbp_props.get("48", 0.0) + cbp_props.get("49", 0.0)
+        cbp_props.get("22", 0.0)
+        + cbp_props.get("42", 0.0)
+        + cbp_props.get("44", 0.0)
+        + cbp_props.get("45", 0.0)
+        + cbp_props.get("48", 0.0)
+        + cbp_props.get("49", 0.0)
     )
     if cns01_sum <= 0 or cns03_sum <= 0:
         raise RuntimeError(
@@ -689,7 +694,6 @@ def fetch_lehd_data_summary(
     }
 
 
-_HYBRID_PRESERVE_FRACTION = 0.50
 
 
 def _compute_all_cbp_totals(
@@ -757,150 +761,39 @@ def _compute_all_cbp_totals(
     return cbp_totals
 
 
-# ── CBP County Scaling ──────────────────────────────────────────
 
-_INDUSTRIAL_SUB_COLUMNS = [
-    "emp_manufacturing",
-    "emp_wholesale",
-    "emp_transport_warehousing",
-    "emp_utilities",
-    "emp_construction",
-]
-_ALL_SUB_COLUMNS = (
-    [
-        "emp_retail_services",
-        "emp_restaurant",
-        "emp_accommodation",
-        "emp_arts_entertainment",
-        "emp_other_services",
-        "emp_office_services",
-        "emp_medical_services",
-        "emp_public_admin",
-        "emp_education",
-    ]
-    + _INDUSTRIAL_SUB_COLUMNS
-    + [
-        "emp_agriculture",
-        "emp_extraction",
-        "emp_military",
-    ]
-)
+def _resolve_sacog_ratios() -> dict[str, float]:
+    """Resolve SACOG-calibrated sub-sector ratio vars from _SACOG_SUBSECTOR_PROPORTIONS.
 
-
-def _apply_cbp_county_scaling(
-    cbp_totals: dict[str, float],
-    preserve_fraction: float = _HYBRID_PRESERVE_FRACTION,
-) -> dict[str, float]:
-    """Apply CBP county-level scaling to all sub-sector columns in wac_block.
-
-    For each sub-sector column with CBP data:
-    1. Query LODES county total from wac_block
-    2. If CBP > LODES (Census disclosure suppression):
-       Scale blocks with non-zero LODES to reach preserve_fraction of CBP total
-    3. Distribute residual across ALL blocks proportional to total employment
-    4. Recompute all aggregate columns (emp_ret, emp_off, emp_pub, emp_ind, etc.)
-    5. Recompute emp as sum of all sub-sector columns (close accounting gap)
-
-    Sub-sectors without CBP data (e.g. emp_military) are left untouched.
-    Sub-sectors where CBP <= LODES (no suppression) are also left untouched.
-
-    Args:
-        cbp_totals: Dict of sub-sector column name to CBP county total.
-        preserve_fraction: Fraction of CBP total to preserve via LODES-scaling
-            (default 0.50). The remainder is distributed proportionally.
-
-    Returns:
-        Dict of per-column scaling factors for logging (empty if no work done).
+    Maps aggregate-level proportions to per-sub-sector dbt var names.
+    Returns a flat dict of sacog_*_ratio var names to float values.
     """
-    engine = get_engine()
-
-    with engine.connect() as conn:
-        # Get total proxy employment for residual distribution
-        total_proxy = float(
-            conn.execute(
-                text("SELECT COALESCE(SUM(emp), 0) FROM lehd.wac_block")
-            ).scalar()
-            or 0
-        )
-
-        if total_proxy <= 0:
-            return {}
-
-        factors: dict[str, float] = {}
-
-        # Iterate over all sub-sector columns that have CBP mapping
-        cols_to_scale = [c for c in _ALL_SUB_COLUMNS if c in _SUBSECTOR_CBP_NAICS]
-        for col in cols_to_scale:
-            cbp_total = cbp_totals.get(col, 0)
-            if cbp_total <= 0:
-                continue
-
-            # Current LODES total for this sub-sector in the county
-            lodes_total = float(
-                conn.execute(
-                    text(f"SELECT COALESCE(SUM({col}), 0) FROM lehd.wac_block")  # noqa: S608
-                ).scalar()
-                or 0
-            )
-
-            if lodes_total <= 0:
-                # No LODES signal at all — distribute CBP total proportionally
-                if cbp_total > 0 and total_proxy > 0:
-                    conn.execute(
-                        text(
-                            f"UPDATE lehd.wac_block "  # noqa: S608
-                            f"SET {col} = :cbp_total * emp / :total_proxy"
-                        ),
-                        {"cbp_total": cbp_total, "total_proxy": total_proxy},
-                    )
-                    factors[col] = -1.0  # signal "full distribution" (no scale factor)
-                continue
-
-            if cbp_total <= lodes_total:
-                continue
-
-            preserved_target = cbp_total * preserve_fraction
-            scale_factor = preserved_target / lodes_total
-            residual = cbp_total - preserved_target
-
-            # Step 1: Scale blocks that LODES identified with this sub-sector
-            conn.execute(
-                text(f"UPDATE lehd.wac_block SET {col} = {col} * :s WHERE {col} > 0"),  # noqa: S608
-                {"s": scale_factor},
-            )
-
-            # Step 2: Distribute residual proportional to total employment
-            if residual > 0:
-                conn.execute(
-                    text(
-                        f"UPDATE lehd.wac_block "  # noqa: S608
-                        f"SET {col} = {col} + (:residual * emp / :total)"
-                    ),
-                    {"residual": residual, "total": total_proxy},
-                )
-
-            factors[col] = scale_factor
-
-        # Recompute all aggregate columns to match corrected sub-columns
-        for agg_col, detail_cols in AGGREGATE_MAPPINGS.items():
-            sub_sum = " + ".join(f"COALESCE({c}, 0)" for c in detail_cols)
-            conn.execute(text(f"UPDATE lehd.wac_block SET {agg_col} = {sub_sum}"))  # noqa: S608
-
-        conn.commit()
-
-    return factors
-
+    ratios: dict[str, float] = {}
+    for agg_col, sub_props in _SACOG_SUBSECTOR_PROPORTIONS.items():
+        for sub_col, ratio in sub_props.items():
+            var_name = f"sacog_{sub_col}_ratio"
+            ratios[var_name] = ratio
+    # Zero out agriculture, extraction, and military (not in _SACOG_SUBSECTOR_PROPORTIONS).
+    ratios["sacog_agriculture_ratio"] = 0.0
+    ratios["sacog_extraction_ratio"] = 0.0
+    ratios["sacog_military_ratio"] = 0.0
+    return ratios
 
 def _populate_wac_block(
     state_fips: str,
     county_fips: str,
     year: int = 2021,
 ) -> int:
-    """Join LEHD LODES WAC data with TIGER BG geometry via the ``wac_block`` dbt model.
+    """Join LEHD LODES WAC data with TIGER BG geometry via a two-step dbt pipeline.
 
-    Fetches CBP proportions from the Census API, then invokes dbt to
-    materialize ``lehd.wac_block``. The SACOG calibration is applied
-    via a numeric dbt var (``is_sacog``) and CASE expressions in SQL.
+    1. ``wac_block_raw`` — CNS-to-sub-sector splitting with CBP proportions
+       and optional SACOG calibration via explicit ratio vars.
+    2. ``wac_block`` — C000 gap distribution and CBP county-level scaling
+       to correct LEHD disclosure suppression.
+
+    CBP county employment totals and the preserve fraction are passed as
+    dbt vars to ``wac_block``. SACOG ratios are passed to ``wac_block_raw``
+    only for the SACOG county (state 06, county 067).
 
     Args:
         state_fips: Two-digit state FIPS code.
@@ -917,11 +810,16 @@ def _populate_wac_block(
     # Validate CBP proportions: parent-group totals must be non-zero.
     # All-zero proportions mean the CBP API returned no usable data and
     # no fallback was generated — this is a data dependency failure.
-    cns01_sum = cbp_props.get("11", 0.0) + cbp_props.get("21", 0.0) + cbp_props.get("23", 0.0)
+    cns01_sum = (
+        cbp_props.get("11", 0.0) + cbp_props.get("21", 0.0) + cbp_props.get("23", 0.0)
+    )
     cns03_sum = (
-        cbp_props.get("22", 0.0) + cbp_props.get("42", 0.0)
-        + cbp_props.get("44", 0.0) + cbp_props.get("45", 0.0)
-        + cbp_props.get("48", 0.0) + cbp_props.get("49", 0.0)
+        cbp_props.get("22", 0.0)
+        + cbp_props.get("42", 0.0)
+        + cbp_props.get("44", 0.0)
+        + cbp_props.get("45", 0.0)
+        + cbp_props.get("48", 0.0)
+        + cbp_props.get("49", 0.0)
     )
     if cns01_sum <= 0 or cns03_sum <= 0:
         raise RuntimeError(
@@ -930,13 +828,12 @@ def _populate_wac_block(
             "The Census CBP API returned no usable employment data. "
             "Ensure CENSUS_API_KEY is set and the requested year is available."
         )
-    is_sacog = 1 if state_fips == "06" and county_fips == "067" else 0
 
-    dbt_vars: dict[str, object] = {
+    # Build dbt vars for wac_block_raw (CNS splitting + SACOG calibration).
+    raw_vars: dict[str, object] = {
         "state_fips": state_fips,
         "county_fips": county_fips,
         "year": year,
-        "is_sacog": is_sacog,
         "cbp_11": cbp_props.get("11", 0.0),
         "cbp_21": cbp_props.get("21", 0.0),
         "cbp_48": cbp_props.get("48", 0.0),
@@ -946,15 +843,20 @@ def _populate_wac_block(
         "cbp_721": cbp_props.get("721", 0.0),
     }
 
-    result = run_dbt_local(select=["wac_block"], vars_=dbt_vars)
+    # SACOG calibration: when state=06 county=067, resolve sub-sector ratios
+    # from _SACOG_SUBSECTOR_PROPORTIONS and pass as dbt vars.
+    if state_fips == "06" and county_fips == "067":
+        sacog_ratios = _resolve_sacog_ratios()
+        raw_vars.update(sacog_ratios)
+        logger.info("  SACOG calibration ratios applied for %s/%s", state_fips, county_fips)
+
+    # Step 1: CNS split → lehd.wac_block_raw
+    result = run_dbt_local(select=["wac_block_raw"], vars_=raw_vars)
     if not result.success:
-        msg = f"dbt wac_block failed: {result.error}"
+        msg = f"dbt wac_block_raw failed: {result.error}"
         raise RuntimeError(msg)
 
-    # Apply CBP county-level scaling to correct suppressed LEHD sub-sector
-    # employment totals. Uses County Business Patterns (CBP) county totals
-    # as control targets — CBP is not subject to the same disclosure avoidance
-    # suppression as LEHD CNS data.
+    # Step 2: Fetch CBP county totals for scaling
     cbp_totals = _compute_all_cbp_totals(state_fips, county_fips, year=year)
     if not cbp_totals:
         logger.warning(
@@ -965,12 +867,21 @@ def _populate_wac_block(
             county_fips,
             year,
         )
-    scaling_factors = _apply_cbp_county_scaling(cbp_totals)
-    if scaling_factors:
-        logger.info(
-            "  CBP county scaling applied: %s",
-            {k: round(v, 2) for k, v in scaling_factors.items()},
-        )
+
+    # Build dbt vars for wac_block (CBP county scaling).
+    scaling_vars: dict[str, object] = {
+        "cbp_preserve_fraction": 0.50,
+    }
+    for sub_col in _SUBSECTOR_CBP_NAICS:
+        cbp_key = f"cbp_county_{sub_col}"
+        scaling_vars[cbp_key] = cbp_totals.get(sub_col, 0.0)
+
+    # Step 3: CBP scaling → lehd.wac_block
+    result = run_dbt_local(select=["wac_block"], vars_=scaling_vars)
+    if not result.success:
+        msg = f"dbt wac_block failed: {result.error}"
+        raise RuntimeError(msg)
+
     engine = get_engine()
     with engine.connect() as conn:
         row_count = (
