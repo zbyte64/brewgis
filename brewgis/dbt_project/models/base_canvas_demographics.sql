@@ -16,12 +16,12 @@
     Materialized as: table
 #}
 {{ config(
-    materialized=var('base_canvas_materialized', 'table'), 
+    materialized=var('base_canvas_materialized', 'table'),
     indexes=[
-        {'columns': ['geometry'], 'type': 'gist'}, 
+        {'columns': ['geometry'], 'type': 'gist'},
         {'columns': ['local_geometry'], 'type': 'gist'},
         {'columns': ['parcel_id'], 'unique': True},
-    ]) 
+    ])
 }}
 
 {%- set area_srid = var('projected_srid', 3857) -%}
