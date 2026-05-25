@@ -231,3 +231,32 @@ seeds:
       +column_types:
         geoid: text
         geometry: geometry(Geometry,4326)
+    test_lodes_raw:
+      +column_types:
+        w_geocode: text
+        year: integer
+        c000: integer
+        cns01: integer
+        cns02: integer
+        cns03: integer
+        cns04: integer
+        cns05: integer
+        cns06: integer
+        cns07: integer
+        cns08: integer
+        cns09: integer
+        cns10: integer
+        cns11: integer
+        cns12: integer
+        cns13: integer
+        cns14: integer
+        cns15: integer
+        cns16: integer
+        cns17: integer
+        cns18: integer
+        cns19: integer
+        cns20: integer
+    test_tiger_block_groups:
+      +column_types:
+        geoid: text
+        geometry: geometry(Geometry,4326)
