@@ -29,12 +29,12 @@ logger = logging.getLogger(__name__)
 
 def _census_api_key() -> str:
     """Return Census API key from Django settings, or empty string."""
-    try:
-        from django.conf import settings as django_settings
+    from django.conf import settings as django_settings
 
-        return django_settings.CENSUS_API_KEY or ""
-    except Exception:
-        return ""  # DONT FUCKING HIDE EXCEPTIONS! raise an exception instead!
+    if not django_settings.CENSUS_API_KEY:
+        raise RuntimeError('CENSUS_API_KEY is required')
+
+    return django_settings.CENSUS_API_KEY
 
 
 # ── LODES WAC (Workplace Area Characteristics) ─────────────────────────
@@ -367,8 +367,7 @@ def _build_cbp_proportions(
     raw_data: list[list[str]] = response.json()
 
     if len(raw_data) < 2:  # noqa: PLR2004
-        logger.warning("CBP API returned no data rows.")
-        return {}
+        raise RuntimeError("CBP API returned no data rows.")
 
     header = raw_data[0]
     rows = raw_data[1:]
@@ -694,8 +693,6 @@ def fetch_lehd_data_summary(
     }
 
 
-
-
 def _compute_all_cbp_totals(
     state_fips: str,
     county_fips: str,
@@ -730,17 +727,11 @@ def _compute_all_cbp_totals(
         f"&in=state:{sf}{key_param}"
     )
 
-    try:
-        response = requests.get(url, timeout=120)
-        response.raise_for_status()
-        raw_data: list[list[str]] = response.json()
-    except requests.RequestException:
-        return {}
-    except (ValueError, TypeError):
-        return {}
+    response = requests.get(url, timeout=120)
+    response.raise_for_status()
+    raw_data: list[list[str]] = response.json()
 
-    if len(raw_data) < 2:
-        return {}
+    assert not len(raw_data) < 2, 'Data Malformed'
 
     header = raw_data[0]
     rows = raw_data[1:]
@@ -761,7 +752,6 @@ def _compute_all_cbp_totals(
     return cbp_totals
 
 
-
 def _resolve_sacog_ratios() -> dict[str, float]:
     """Resolve SACOG-calibrated sub-sector ratio vars from _SACOG_SUBSECTOR_PROPORTIONS.
 
@@ -778,6 +768,7 @@ def _resolve_sacog_ratios() -> dict[str, float]:
     ratios["sacog_extraction_ratio"] = 0.0
     ratios["sacog_military_ratio"] = 0.0
     return ratios
+
 
 def _populate_wac_block(
     state_fips: str,
@@ -848,7 +839,9 @@ def _populate_wac_block(
     if state_fips == "06" and county_fips == "067":
         sacog_ratios = _resolve_sacog_ratios()
         raw_vars.update(sacog_ratios)
-        logger.info("  SACOG calibration ratios applied for %s/%s", state_fips, county_fips)
+        logger.info(
+            "  SACOG calibration ratios applied for %s/%s", state_fips, county_fips
+        )
 
     # Step 1: CNS split → lehd.wac_block_raw
     result = run_dbt_local(select=["wac_block_raw"], vars_=raw_vars)

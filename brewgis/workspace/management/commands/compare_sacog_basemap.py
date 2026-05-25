@@ -36,7 +36,7 @@ STATE_FIPS = "06"
 COUNTY_FIPS = "067"
 # Vintage data years matching the SACOG v1 reference (2008-2012 era)
 ACS_YEAR = 2013  # ACS 5-year 2009-2013 (earliest with block group API support)
-LEHD_YEAR = 2008  # LODES 2011 (employment stats)
+LEHD_YEAR = 2008  # LODES 2008 (employment stats)
 NLCD_YEAR = 2011  # NLCD 2011 (closest to 2008-2012)
 TIGER_BLOCK_YEAR = "2013"
 
