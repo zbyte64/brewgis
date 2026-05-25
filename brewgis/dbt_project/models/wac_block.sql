@@ -66,21 +66,10 @@
     'emp_ag': ['emp_agriculture'],
 } %}
 
--- County-level LODES totals computed from wac_block_raw (post-CNS-split,
--- pre-scaling). These are the baseline against which CBP totals are compared.
-WITH county_lodes_totals AS (
-    SELECT
-        {% for s in sub_sectors %}
-        COALESCE(SUM({{ s.col }}), 0) AS lodes_{{ s.col }},
-        {% endfor %}
-        COALESCE(SUM(emp), 0) AS total_proxy
-    FROM {{ ref('wac_block_raw') }}
-),
-
 -- Compute total_sub (sum of all sub-sectors pre-gap) and C000 gap.
 -- The gap is C000 - SUM(sub-sectors), caused by LODES disclosure suppression
 -- where a block has a C000 total but some CNS columns are suppressed to zero.
-raw_with_gap AS (
+WITH raw_with_gap AS (
     SELECT
         *,
         (
@@ -95,7 +84,6 @@ raw_with_gap AS (
         ) AS c000_gap
     FROM {{ ref('wac_block_raw') }}
 ),
-
 -- Apply C000 gap distribution: when c000_gap > 0, distribute the gap across
 -- all 17 sub-sectors proportional to their current values. When total_sub = 0
 -- (fully suppressed block), distribute equally.
@@ -119,6 +107,16 @@ gap_distributed AS (
         END AS {{ s.col }}{% if not loop.last %},{% endif %}
         {% endfor %}
     FROM raw_with_gap
+),
+-- County-level LODES totals computed from gap_distributed (post-gap, pre-scaling).
+-- These are the baseline against which CBP totals are compared.
+county_lodes_totals AS (
+    SELECT
+        {% for s in sub_sectors %}
+        COALESCE(SUM({{ s.col }}), 0) AS lodes_{{ s.col }},
+        {% endfor %}
+        COALESCE(SUM(emp), 0) AS total_proxy
+    FROM gap_distributed
 ),
 
 -- Apply CBP county-level scaling to each sub-sector.

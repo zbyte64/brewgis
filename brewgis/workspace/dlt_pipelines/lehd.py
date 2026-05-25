@@ -79,6 +79,9 @@ def lehd_source(
         "cns15": {"data_type": "bigint", "nullable": True},
         "cns16": {"data_type": "bigint", "nullable": True},
         "cns17": {"data_type": "bigint", "nullable": True},
+        "cns18": {"data_type": "bigint", "nullable": True},
+        "cns19": {"data_type": "bigint", "nullable": True},
+        "cns20": {"data_type": "bigint", "nullable": True},
     },
     primary_key=("year", "w_geocode"),
 )

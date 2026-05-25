@@ -165,12 +165,15 @@ cbp_sub_sectors AS (
             ELSE 0 END AS emp_restaurant_cbp,
         -- CNS14 -> other services
         COALESCE(lr.cns14, 0)::numeric AS emp_other_services_cbp,
-        -- CNS15 -> public admin
-        COALESCE(lr.cns15, 0)::numeric AS emp_public_admin_cbp,
+        -- CNS15 + CNS18-20 -> public admin (all government sectors)
+        COALESCE(lr.cns15, 0)::numeric
+            + COALESCE(lr.cns18::numeric, 0)::numeric
+            + COALESCE(lr.cns19::numeric, 0)::numeric
+            + COALESCE(lr.cns20::numeric, 0)::numeric AS emp_public_admin_cbp,
         -- CNS17 -> military
-        COALESCE(lr.cns17, 0)::numeric AS emp_military_cbp,
+        COALESCE(lr.cns17::numeric, 0)::numeric AS emp_military_cbp,
         -- CNS16 unclassified (distributed in later CTE)
-        COALESCE(lr.cns16, 0)::numeric AS cns16_unclassified
+        COALESCE(lr.cns16::numeric, 0)::numeric AS cns16_unclassified
     FROM {{ source('brewgis', 'lodes_raw') }} lr
     JOIN bg_geometry_map bgm
         ON LEFT(lr.w_geocode, 12) = bgm.bg
