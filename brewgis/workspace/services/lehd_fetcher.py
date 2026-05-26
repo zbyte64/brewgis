@@ -32,7 +32,7 @@ def _census_api_key() -> str:
     from django.conf import settings as django_settings
 
     if not django_settings.CENSUS_API_KEY:
-        raise RuntimeError('CENSUS_API_KEY is required')
+        raise RuntimeError("CENSUS_API_KEY is required")
 
     return django_settings.CENSUS_API_KEY
 
@@ -731,7 +731,7 @@ def _compute_all_cbp_totals(
     response.raise_for_status()
     raw_data: list[list[str]] = response.json()
 
-    assert not len(raw_data) < 2, 'Data Malformed'
+    assert not len(raw_data) < 2, "Data Malformed"
 
     header = raw_data[0]
     rows = raw_data[1:]
@@ -832,6 +832,7 @@ def _populate_wac_block(
         "cbp_22": cbp_props.get("22", 0.0),
         "cbp_42": cbp_props.get("42", 0.0),
         "cbp_721": cbp_props.get("721", 0.0),
+        "tiger_bg_vintage": "2023",
     }
 
     # SACOG calibration: when state=06 county=067, resolve sub-sector ratios

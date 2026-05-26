@@ -48,8 +48,7 @@ def tiger_bg_source(
 
 @dlt.resource(
     name="tiger_block_groups",
-    write_disposition="replace",
-    primary_key="geoid",
+    write_disposition="append",
 )
 def tiger_bg_resource(state_fips: str, year: str = "2023", ignore_cache=False) -> Any:
     """Download TIGER/Line BG shapefile ZIP and yield one dict per row.
@@ -92,16 +91,22 @@ def tiger_bg_resource(state_fips: str, year: str = "2023", ignore_cache=False) -
             "geoid": geoid,
             "geometry": wkt_geom,
             "state_fips": state_fips,
+            "vintage": year,
         }
 
 
 def run_tiger_bg_pipeline(
     state_fips: str,
     schema: str = "public",
-    year: str = "2023",
+    vintages: list[str] | None = None,
     ignore_cache: bool = False,
 ) -> dict:
     """Run dlt pipeline to extract TIGER/Line BG data to a staging table.
+
+    Loads one or more TIGER/Line block group vintages (e.g. ``"2013"``,
+    ``"2023"``) into the same destination table, distinguished by a
+    ``vintage`` column. Existing rows for a given vintage are deleted
+    before re-loading, so re-runs are idempotent.
 
     Parameters
     ----------
@@ -109,8 +114,12 @@ def run_tiger_bg_pipeline(
         Two-digit state FIPS code.
     schema : str, optional
         PostgreSQL schema for the destination table (default ``"public"``).
-    year : str, optional
-        TIGER/Line release year (default ``"2023"``).
+    vintages : list[str] | None, optional
+        List of TIGER/Line release years to load. Each vintage is loaded
+        with ``append`` disposition. When ``None``, defaults to
+        ``["2023"]`` for backward compatibility.
+    ignore_cache : bool, optional
+        Re-download shapefile even if cached.
 
     Returns
     -------
@@ -118,96 +127,121 @@ def run_tiger_bg_pipeline(
         Keys: ``success``, ``table_name``, ``row_count``, ``load_info``
         (or ``error`` on failure).
     """
-    pipeline = dlt.pipeline(
-        pipeline_name=f"tiger_bg_{state_fips}",
-        destination="postgres",
-        dataset_name=schema,
-    )
+    if vintages is None:
+        vintages = ["2023"]
 
-    load_info = pipeline.run(
-        tiger_bg_source(state_fips, year=year, ignore_cache=ignore_cache),
-    )
-
-    row_count = 0
-    # Verify the table ended up in the expected schema.
-    # dlt's merge disposition can leave the table in a staging schema
-    # (e.g. public_staging) when dataset_name="public". If that happened,
-    # move it to the correct schema.
     from brewgis.workspace.services._db import get_engine
     from brewgis.workspace.services._db import text as _text
 
-    engine = get_engine()
-    with engine.connect() as conn:
-        # Check if table exists in the expected schema
-        exists_expected = conn.execute(
-            _text(
-                "SELECT EXISTS ("
-                "  SELECT 1 FROM information_schema.tables"
-                "  WHERE table_schema = :schema AND table_name = 'tiger_block_groups'"
-                ")"
-            ),
-            {"schema": schema},
-        ).scalar()
-        if not exists_expected:
-            staging_schema = f"{schema}_staging"
-            exists_staging = conn.execute(
+    total_rows = 0
+    load_info_strs: list[str] = []
+
+    for idx, vintage in enumerate(vintages):
+        # 1. Delete existing rows for this vintage (no-op if table doesn't exist)
+        engine = get_engine()
+        with engine.connect() as conn:
+            table_exists = conn.execute(
                 _text(
                     "SELECT EXISTS ("
                     "  SELECT 1 FROM information_schema.tables"
-                    "  WHERE table_schema = :staging AND table_name = 'tiger_block_groups'"
+                    "  WHERE table_schema = :schema AND table_name = 'tiger_block_groups'"
                     ")"
                 ),
-                {"staging": staging_schema},
+                {"schema": schema},
             ).scalar()
-            if exists_staging:
+            if table_exists:
+                # Ensure the vintage column exists (safe for tables created before this change)
                 conn.execute(
-                    _text(f"DROP TABLE IF EXISTS {schema}.tiger_block_groups CASCADE")
+                    _text(
+                        f"ALTER TABLE {schema}.tiger_block_groups ADD COLUMN IF NOT EXISTS vintage TEXT"
+                    )
                 )
                 conn.execute(
                     _text(
-                        f"ALTER TABLE {staging_schema}.tiger_block_groups SET SCHEMA {schema}"
-                    )
+                        f"DELETE FROM {schema}.tiger_block_groups WHERE vintage = :v"
+                    ),
+                    {"v": vintage},
                 )
                 conn.commit()
-            else:
-                # Table wasn't created at all — signal failure
-                return {
-                    "success": False,
-                    "table_name": f"{schema}.tiger_block_groups",
-                    "row_count": 0,
-                    "load_info": str(load_info),
-                    "error": (
-                        f"Table tiger_block_groups not found in {schema} or {staging_schema} "
-                        f"after dlt pipeline run"
+
+        # 2. Load with append
+        pipeline = dlt.pipeline(
+            pipeline_name=f"tiger_bg_{state_fips}_{vintage}",
+            destination="postgres",
+            dataset_name=schema,
+        )
+        load_info = pipeline.run(
+            tiger_bg_source(state_fips, year=vintage, ignore_cache=ignore_cache),
+        )
+        load_info_strs.append(str(load_info))
+
+        # 3. Count rows from this run
+        for step in pipeline.last_trace.steps:
+            si = step.step_info
+            if si is not None and hasattr(si, "row_counts") and si.row_counts:
+                total_rows += si.row_counts.get("tiger_block_groups", 0)
+                break
+
+        # 4. On first vintage, handle dlt's staging-schema quirk:
+        #    dlt's merge disposition can leave the table in a staging schema
+        #    (e.g. public_staging) when dataset_name="public". If that happened,
+        #    move it to the correct schema. If the table isn't found anywhere,
+        #    it will be created by the next vintage load — no error needed here.
+        if idx == 0:
+            engine = get_engine()
+            with engine.connect() as conn:
+                exists_expected = conn.execute(
+                    _text(
+                        "SELECT EXISTS ("
+                        "  SELECT 1 FROM information_schema.tables"
+                        "  WHERE table_schema = :schema AND table_name = 'tiger_block_groups'"
+                        ")"
                     ),
-                }
-        else:
-            # Clean up any stale staging-schema table from previous runs
-            conn.execute(
-                _text(
-                    f"DROP TABLE IF EXISTS {schema}_staging.tiger_block_groups CASCADE"
-                )
-            )
-            conn.commit()
+                    {"schema": schema},
+                ).scalar()
+                if not exists_expected:
+                    staging_schema = f"{schema}_staging"
+                    exists_staging = conn.execute(
+                        _text(
+                            "SELECT EXISTS ("
+                            "  SELECT 1 FROM information_schema.tables"
+                            "  WHERE table_schema = :staging AND table_name = 'tiger_block_groups'"
+                            ")"
+                        ),
+                        {"staging": staging_schema},
+                    ).scalar()
+                    if exists_staging:
+                        conn.execute(
+                            _text(
+                                f"DROP TABLE IF EXISTS {schema}.tiger_block_groups CASCADE"
+                            )
+                        )
+                        conn.execute(
+                            _text(
+                                f"ALTER TABLE {staging_schema}.tiger_block_groups SET SCHEMA {schema}"
+                            )
+                        )
+                        conn.commit()
+                else:
+                    conn.execute(
+                        _text(
+                            f"DROP TABLE IF EXISTS {schema}_staging.tiger_block_groups CASCADE"
+                        )
+                    )
+                    conn.commit()
 
-    for step in pipeline.last_trace.steps:
-        si = step.step_info
-        if si is not None and hasattr(si, "row_counts") and si.row_counts:
-            row_count = si.row_counts.get("tiger_block_groups", 0)
-            break
-
-    if row_count == 0:
+    if total_rows == 0:
         return {
             "success": False,
             "table_name": f"{schema}.tiger_block_groups",
             "row_count": 0,
-            "load_info": str(load_info),
+            "load_info": "; ".join(load_info_strs),
             "error": "TIGER/Line BG pipeline completed but loaded 0 rows",
         }
 
     return {
         "success": True,
         "table_name": f"{schema}.tiger_block_groups",
-        "row_count": row_count,
-        "load_info": str(load_info),
+        "row_count": total_rows,
+        "load_info": "; ".join(load_info_strs),
     }

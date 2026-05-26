@@ -38,7 +38,6 @@ COUNTY_FIPS = "067"
 ACS_YEAR = 2013  # ACS 5-year 2009-2013 (earliest with block group API support)
 LEHD_YEAR = 2008  # LODES 2008 (employment stats)
 NLCD_YEAR = 2011  # NLCD 2011 (closest to 2008-2012)
-TIGER_BLOCK_YEAR = "2013"
 
 LOCAL_SRID = 3310
 
@@ -171,7 +170,7 @@ class Command(BaseCommand):
         self.stdout.write("\n── Populating TIGER/Line block group staging table ──")
 
         tiger_result = run_tiger_bg_pipeline(
-            STATE_FIPS, year=TIGER_BLOCK_YEAR, ignore_cache=force_data_fetch
+            STATE_FIPS, vintages=["2013", "2023"], ignore_cache=force_data_fetch
         )
         if not tiger_result["success"]:
             raise CommandError(

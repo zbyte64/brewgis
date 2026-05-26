@@ -196,6 +196,15 @@ class DbtRunnerWrapper:
                 error=f"dbt project directory not found: {self.project_dir}",
             )
 
+        # Clear stale dbt target cache to prevent stale compiled SQL from being
+        # reused when dbt vars change between runs.  dbt may reuse compiled model
+        # files even after the partial parse cache is invalidated.
+        target_dir = self.project_dir / "target"
+        if target_dir.exists():
+            import shutil
+
+            shutil.rmtree(target_dir, ignore_errors=True)
+
         # Build CLI args
         args = ["run", "--project-dir", str(self.project_dir)]
         if select:

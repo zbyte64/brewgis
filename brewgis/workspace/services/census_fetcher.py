@@ -271,6 +271,7 @@ def _populate_acs_block_group(
         "sl_density_threshold": _SL_DENSITY_THRESHOLD,
         "mf_2_9_to_mf2to4_ratio": _DU_MF_2_9_TO_MF2TO4_RATIO,
         "k_steepness": _K_STEEPNESS,
+        "tiger_bg_vintage": "2013",
     }
 
     result = run_dbt_local(select=["acs_block_group"], vars_=dbt_vars)

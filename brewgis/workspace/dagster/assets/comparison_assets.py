@@ -67,7 +67,7 @@ def tiger_bg_asset(
     """
     context.log.info("Running TIGER/Line BG pipeline for state %s", STATE_FIPS)
 
-    result = run_tiger_bg_pipeline(STATE_FIPS)
+    result = run_tiger_bg_pipeline(STATE_FIPS, vintages=["2013", "2023"])
     if not result.get("success"):
         raise RuntimeError(
             f"TIGER/Line BG fetch failed: {result.get('error', 'Unknown error')}"

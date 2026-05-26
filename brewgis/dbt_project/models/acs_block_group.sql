@@ -33,6 +33,7 @@
 {% set sl_density_threshold = var('sl_density_threshold', 8.0) %}
 {% set mf_2_9_to_mf2to4_ratio = var('mf_2_9_to_mf2to4_ratio', 0.40) %}
 {% set k_steepness = var('k_steepness', 0.5) %}
+{% set tiger_bg_vintage = var('tiger_bg_vintage', '2013') %}
 
 WITH raw_derived AS (
     SELECT
@@ -71,6 +72,7 @@ WITH raw_derived AS (
     FROM {{ source('brewgis', 'acs_raw') }} a
     JOIN {{ source('brewgis', 'tiger_block_groups') }} tbg
         ON tbg.geoid = a.state || a.county || a.tract || a."block_group"
+        AND tbg.vintage = '{{ tiger_bg_vintage }}'
     WHERE a.year = {{ year }}
       AND a.state = '{{ state_fips }}'
       AND a.county = '{{ county_fips }}'

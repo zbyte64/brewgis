@@ -46,6 +46,7 @@
 {% set cbp_721 = var('cbp_721', 0.0) %}
 {% set state_fips = var('state_fips', '06') %}
 {% set county_fips = var('county_fips', '067') %}
+{% set tiger_bg_vintage = var('tiger_bg_vintage', '2023') %}
 
 -- Sub-sector metadata for loop-driven SACOG calibration, CNS16 distribution,
 -- and aggregate column computation. Each sub-sector's agg field indicates
@@ -102,9 +103,11 @@ bg_geometry_map AS (
     FROM lodes_blocks lb
     LEFT JOIN {{ source('brewgis', 'tiger_block_groups') }} tbg
         ON lb.bg = tbg.geoid
+        AND tbg.vintage = '{{ tiger_bg_vintage }}'
     LEFT JOIN LATERAL (
         SELECT geometry FROM {{ source('brewgis', 'tiger_block_groups') }}
         WHERE geoid LIKE lb.tract || '%'
+          AND vintage = '{{ tiger_bg_vintage }}'
         LIMIT 1
     ) tbg_fallback ON tbg.geoid IS NULL
     WHERE COALESCE(tbg.geometry, tbg_fallback.geometry) IS NOT NULL
