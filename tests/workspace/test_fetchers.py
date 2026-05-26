@@ -159,9 +159,195 @@ class TestLEHDFetcher:
             result = _compute_all_cbp_totals("06", "067", year=2011)
         assert result == {}
 
+    # ── _compute_cbp_proportions Tests ────────────────────────────
+    #
+    # _compute_cbp_proportions is a pure function: raw CBP JSON data in,
+    # proportions dict out.  No I/O, no mocks needed.
+
+    def test_compute_cbp_proportions_math(self) -> None:
+        """Proportions should sum to 1.0 within each parent group (goods, TTU, acc/food)."""
+        from brewgis.workspace.services.lehd_fetcher import _compute_cbp_proportions
+
+        raw_data = [
+            ["EMP", "NAICS2017", "state", "county"],
+            # Goods (CNS01): 11, 21, 23
+            ["10000", "11----", "06", "067"],
+            ["2000", "21----", "06", "067"],
+            ["6000", "23----", "06", "067"],
+            # TTU (CNS03): 22, 42, 44, 45, 48, 49
+            ["4000", "22----", "06", "067"],
+            ["8000", "42----", "06", "067"],
+            ["12000", "44----", "06", "067"],
+            ["5000", "45----", "06", "067"],
+            ["15000", "48----", "06", "067"],
+            ["3000", "49----", "06", "067"],
+            # Acc/Food (CNS13): 721, 722
+            ["7000", "721---", "06", "067"],
+            ["25000", "722---", "06", "067"],
+        ]
+        result = _compute_cbp_proportions(raw_data)
+
+        # CNS01: goods — 11+21+23 = 18000
+        assert abs(result["11"] - 10000 / 18000) < 1e-4
+        assert abs(result["21"] - 2000 / 18000) < 1e-4
+        assert abs(result["23"] - 6000 / 18000) < 1e-4
+        assert abs(result["11"] + result["21"] + result["23"] - 1.0) < 1e-4
+
+        # CNS03: TTU — 22+42+44+45+48+49 = 47000
+        assert abs(result["22"] - 4000 / 47000) < 1e-4
+        assert abs(result["42"] - 8000 / 47000) < 1e-4
+        assert abs(result["44"] - 12000 / 47000) < 1e-4
+        assert abs(result["45"] - 5000 / 47000) < 1e-4
+        assert abs(result["48"] - 15000 / 47000) < 1e-4
+        assert abs(result["49"] - 3000 / 47000) < 1e-4
+        cns03_sum = (
+            result["22"] + result["42"] + result["44"]
+            + result["45"] + result["48"] + result["49"]
+        )
+        assert abs(cns03_sum - 1.0) < 1e-4
+
+        # CNS13: accommodation/food — 721+722 = 32000
+        assert abs(result["721"] - 7000 / 32000) < 1e-4
+        assert abs(result["722"] - 25000 / 32000) < 1e-4
+        assert abs(result["721"] + result["722"] - 1.0) < 1e-4
+
+    def test_compute_cbp_proportions_fallback_goods(self) -> None:
+        """When goods employment data is empty, fallback proportions should be used."""
+        from brewgis.workspace.services.lehd_fetcher import _compute_cbp_proportions
+
+        raw_data = [
+            ["EMP", "NAICS2017", "state", "county"],
+            # TTU and acc/food only — no goods (11, 21, 23)
+            ["4000", "22----", "06", "067"],
+            ["8000", "42----", "06", "067"],
+            ["7000", "721---", "06", "067"],
+            ["25000", "722---", "06", "067"],
+        ]
+        result = _compute_cbp_proportions(raw_data)
+
+        assert result["11"] == 0.05
+        assert result["21"] == 0.02
+        assert result["23"] == 0.93
+        assert abs(result["11"] + result["21"] + result["23"] - 1.0) < 1e-4
+
+        # TTU still computed from real data
+        assert result["22"] > 0
+        assert result["42"] > 0
+
+    def test_compute_cbp_proportions_fallback_ttu(self) -> None:
+        """When TTU employment data is empty, fallback proportions should be used."""
+        from brewgis.workspace.services.lehd_fetcher import _compute_cbp_proportions
+
+        raw_data = [
+            ["EMP", "NAICS2017", "state", "county"],
+            # Goods and acc/food only — no TTU (22, 42, 44, 45, 48, 49)
+            ["10000", "11----", "06", "067"],
+            ["2000", "21----", "06", "067"],
+            ["6000", "23----", "06", "067"],
+            ["7000", "721---", "06", "067"],
+            ["25000", "722---", "06", "067"],
+        ]
+        result = _compute_cbp_proportions(raw_data)
+
+        assert result["22"] == 0.02
+        assert result["42"] == 0.10
+        assert result["44"] == 0.54
+        assert result["45"] == 0.28
+        assert result["48"] == 0.04
+        assert result["49"] == 0.02
+        ttu_sum = (
+            result["22"] + result["42"] + result["44"]
+            + result["45"] + result["48"] + result["49"]
+        )
+        assert abs(ttu_sum - 1.0) < 1e-4
+        assert abs(result["11"] - 10000 / 18000) < 1e-4
+
+    def test_compute_cbp_proportions_fallback_accommodation_food(self) -> None:
+        """When accommodation/food (721/722) data is empty, fallback proportions should be used."""
+        from brewgis.workspace.services.lehd_fetcher import _compute_cbp_proportions
+
+        raw_data = [
+            ["EMP", "NAICS2017", "state", "county"],
+            # Goods and TTU only — no acc/food (721, 722)
+            ["10000", "11----", "06", "067"],
+            ["2000", "21----", "06", "067"],
+            ["6000", "23----", "06", "067"],
+            ["4000", "22----", "06", "067"],
+            ["8000", "42----", "06", "067"],
+            ["12000", "44----", "06", "067"],
+            ["5000", "45----", "06", "067"],
+            ["15000", "48----", "06", "067"],
+            ["3000", "49----", "06", "067"],
+        ]
+        result = _compute_cbp_proportions(raw_data)
+
+        assert result["721"] == 0.4
+        assert result["722"] == 0.6
+        assert abs(result["721"] + result["722"] - 1.0) < 1e-4
+        assert abs(result["11"] - 10000 / 18000) < 1e-4
+        assert abs(result["22"] - 4000 / 47000) < 1e-4
+
+    def test_compute_cbp_proportions_empty_data(self) -> None:
+        """When only a header row is provided, should return empty dict."""
+        from brewgis.workspace.services.lehd_fetcher import _compute_cbp_proportions
+
+        result = _compute_cbp_proportions([["EMP", "NAICS2017", "state", "county"]])
+        assert result == {}
+
+    def test_build_cbp_proportions_cache_and_fetch(self) -> None:
+        """Integration: orchestrator caches API response and reads from cache on second call."""
+        import json
+        from unittest.mock import MagicMock
+        from unittest.mock import patch as _patch
+
+        from brewgis.workspace.services.lehd_fetcher import CACHE_DIR
+        from brewgis.workspace.services.lehd_fetcher import _build_cbp_proportions
+
+        dl_path = CACHE_DIR / "cbp_proportions" / "2021" / "06" / "067.json"
+        if dl_path.exists():
+            dl_path.unlink()
+
+        mock_get = MagicMock()
+        mock_get.return_value.json.return_value = [
+            ["EMP", "NAICS2017", "state", "county"],
+            ["10000", "11----", "06", "067"],
+            ["6000", "23----", "06", "067"],
+            ["8000", "42----", "06", "067"],
+        ]
+        mock_get.return_value.raise_for_status = MagicMock()
+        mock_get.return_value.status_code = 200
+
+        with _patch(
+            "brewgis.workspace.services.lehd_fetcher.requests.get", mock_get
+        ):
+            with _patch(
+                "brewgis.workspace.services.lehd_fetcher._census_api_key",
+                return_value="test_key",
+            ):
+                # First call — fetch from API and write cache
+                r1 = _build_cbp_proportions("06", "067")
+                assert mock_get.call_count == 1
+
+                assert dl_path.exists()
+                cached = json.loads(dl_path.read_text())
+                assert cached[1][0] == "10000"
+
+                # Second call — read from cache, no extra API call
+                r2 = _build_cbp_proportions("06", "067")
+                assert mock_get.call_count == 1  # still 1 — cache hit
+                assert r1 == r2
+
+                # Third call with ignore_cache — forces re-fetch
+                mock_get.return_value.json.return_value = [
+                    ["EMP", "NAICS2017", "state", "county"],
+                    ["5000", "11----", "06", "067"],
+                ]
+                r3 = _build_cbp_proportions("06", "067", ignore_cache=True)
+                assert mock_get.call_count == 2
+                assert r3["11"] == 1.0
+
 
 # ── POI Fetcher Tests ─────────────────────────────────────────────────
-
 
 class TestPOIFetcher:
     """Unit tests for the POI fetcher service."""

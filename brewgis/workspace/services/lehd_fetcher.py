@@ -11,8 +11,10 @@ See https://lehd.ces.census.gov/data/lodes/LODES7/ for documentation.
 
 from __future__ import annotations
 
+import json
 import logging
 import re
+from pathlib import Path
 from typing import Any
 
 import deal
@@ -24,7 +26,12 @@ from brewgis.workspace.analysis.dbt_runner import run_dbt_local
 from brewgis.workspace.services._db import get_engine
 from brewgis.workspace.services._db import text
 
+from django.conf import settings as django_settings
+
 logger = logging.getLogger(__name__)
+
+CACHE_DIR: Path = django_settings.DATA_DOWNLOAD_CACHE_DIR
+"""Disk cache directory for API responses."""
 
 
 def _census_api_key() -> str:
@@ -326,48 +333,26 @@ def _cbp_proportion_in(
     return sector_emp.get(naics_prefix, 0) / total
 
 
-def _build_cbp_proportions(
-    state_fips: str,
-    county_fips: str,
-    year: int = 2021,
+def _compute_cbp_proportions(
+    raw_data: list[list[str]],
 ) -> dict[str, float]:
-    """Fetch CBP employment by NAICS code and compute within-sector proportions.
+    """Compute within-sector proportions from raw CBP API response data.
 
-    Downloads County Business Patterns data for the given county, groups NAICS
-    employment at the 2-6 digit level, and returns proportion of employment
-    within each NAICS-parent group that each sub-sector accounts for.
+    Pure function with no I/O — takes parsed CBP JSON data (header + rows)
+    and returns the proportion dict.  The raw_data must have at least a header
+    row; empty responses produce an empty dict.
 
     Args:
-        state_fips: Two-digit state FIPS code.
-        county_fips: Three-digit county FIPS code.
-        year: Data year (default 2021).
+        raw_data: CBP API response as list of lists, where the first element
+            is the header row (``["EMP", "NAICS2017", ...]``) and subsequent
+            rows are data rows.
 
     Returns:
         Dict mapping NAICS code prefix to proportion of employment within
-        that NAICS sector. For example: "11" -> 0.15 (agriculture's share
-        of goods-producing sectors).
+        that NAICS sector.
     """
-    state_fips_clean = state_fips.zfill(2)
-    county_fips_clean = county_fips.zfill(3)
-
-    naics_year = 2017
-    if year < 2017:
-        naics_year = 2007
-
-    key = _census_api_key()
-    key_param = f"&key={key}" if key else ""
-    url = (
-        f"https://api.census.gov/data/{year}/cbp"
-        f"?get=EMP,NAICS{naics_year}&for=county:{county_fips_clean}"
-        f"&in=state:{state_fips_clean}{key_param}"
-    )
-
-    response = requests.get(url, timeout=120)
-    response.raise_for_status()
-    raw_data: list[list[str]] = response.json()
-
     if len(raw_data) < 2:  # noqa: PLR2004
-        raise RuntimeError("CBP API returned no data rows.")
+        return {}
 
     header = raw_data[0]
     rows = raw_data[1:]
@@ -385,12 +370,6 @@ def _build_cbp_proportions(
         for pfx in goods_prefixes:
             proportions[pfx] = _cbp_proportion_in(pfx, goods_prefixes, sector_emp)
     else:
-        logger.warning(
-            "CBP CNS01 data unavailable for %s/%s year %s — using national-average fallback proportions.",
-            state_fips_clean,
-            county_fips_clean,
-            year,
-        )
         proportions["11"] = 0.05
         proportions["21"] = 0.02
         proportions["23"] = 0.93
@@ -402,12 +381,6 @@ def _build_cbp_proportions(
         for pfx in ttu_prefixes:
             proportions[pfx] = _cbp_proportion_in(pfx, ttu_prefixes, sector_emp)
     else:
-        logger.warning(
-            "CBP CNS03 data unavailable for %s/%s year %s — using national-average fallback proportions.",
-            state_fips_clean,
-            county_fips_clean,
-            year,
-        )
         proportions["22"] = 0.02
         proportions["42"] = 0.10
         proportions["44"] = 0.54
@@ -421,16 +394,115 @@ def _build_cbp_proportions(
         proportions["721"] = naics3_emp.get("721", 0) / acc_food_total
         proportions["722"] = naics3_emp.get("722", 0) / acc_food_total
     else:
+        proportions["721"] = 0.4
+        proportions["722"] = 0.6
+
+    return proportions
+
+
+def _build_cbp_proportions(
+    state_fips: str,
+    county_fips: str,
+    year: int = 2021,
+    ignore_cache: bool = False,
+) -> dict[str, float]:
+    """Fetch CBP employment by NAICS code and compute within-sector proportions.
+
+    Downloads County Business Patterns data for the given county, groups NAICS
+    employment at the 2-6 digit level, and returns proportion of employment
+    within each NAICS-parent group that each sub-sector accounts for.
+
+    The raw API response is cached to disk under ``CACHE_DIR / "cbp_proportions"``.
+    Pass ``ignore_cache=True`` to force a fresh fetch.
+
+    Args:
+        state_fips: Two-digit state FIPS code.
+        county_fips: Three-digit county FIPS code.
+        year: Data year (default 2021).
+        ignore_cache: If True, re-fetch from API even if cached copy exists.
+
+    Returns:
+        Dict mapping NAICS code prefix to proportion of employment within
+        that NAICS sector. For example: "11" -> 0.15 (agriculture's share
+        of goods-producing sectors).
+
+    Raises:
+        RuntimeError: If CBP API returns no data rows.
+    """
+    state_fips_clean = state_fips.zfill(2)
+    county_fips_clean = county_fips.zfill(3)
+
+    naics_year = 2017
+    if year < 2017:
+        naics_year = 2007
+
+    # ── Disk-cached API fetch ─────────────────────────────────────
+    dl_path = CACHE_DIR / "cbp_proportions" / str(year) / state_fips_clean / f"{county_fips_clean}.json"
+    dl_path.parent.mkdir(exist_ok=True, parents=True)
+
+    if ignore_cache or not dl_path.exists():
+        key = _census_api_key()
+        key_param = f"&key={key}" if key else ""
+        url = (
+            f"https://api.census.gov/data/{year}/cbp"
+            f"?get=EMP,NAICS{naics_year}&for=county:{county_fips_clean}"
+            f"&in=state:{state_fips_clean}{key_param}"
+        )
+        response = requests.get(url, timeout=120)
+        response.raise_for_status()
+        raw_data: list[list[str]] = response.json()
+        dl_path.write_text(json.dumps(raw_data))
+        logger.info(
+            "CBP proportions fetched and cached for %s/%s year %s",
+            state_fips_clean,
+            county_fips_clean,
+            year,
+        )
+    else:
+        raw_data = json.loads(dl_path.read_text())
+        logger.info(
+            "CBP proportions loaded from cache for %s/%s year %s",
+            state_fips_clean,
+            county_fips_clean,
+            year,
+        )
+
+    if len(raw_data) < 2:  # noqa: PLR2004
+        raise RuntimeError("CBP API returned no data rows.")
+
+    result = _compute_cbp_proportions(raw_data)
+
+    # Log fallback warnings (the pure function can't log)
+    sector_emp = _group_naics_by_prefix(_parse_cbp_naics_emp(raw_data[1:], raw_data[0]), 2)
+    goods_prefixes = ["11", "21", "23"]
+    goods_total = sum(sector_emp.get(p, 0) for p in goods_prefixes)
+    if goods_total == 0:
+        logger.warning(
+            "CBP CNS01 data unavailable for %s/%s year %s — using national-average fallback proportions.",
+            state_fips_clean,
+            county_fips_clean,
+            year,
+        )
+    ttu_prefixes = ["22", "42", "44", "45", "48", "49"]
+    ttu_total = sum(sector_emp.get(p, 0) for p in ttu_prefixes)
+    if ttu_total == 0:
+        logger.warning(
+            "CBP CNS03 data unavailable for %s/%s year %s — using national-average fallback proportions.",
+            state_fips_clean,
+            county_fips_clean,
+            year,
+        )
+    naics3_emp = _group_naics_by_prefix(_parse_cbp_naics_emp(raw_data[1:], raw_data[0]), 3)
+    acc_food_total = naics3_emp.get("721", 0) + naics3_emp.get("722", 0)
+    if acc_food_total == 0:
         logger.warning(
             "CBP CNS13 (accommodation/food) data unavailable for %s/%s year %s — using fallback proportions.",
             state_fips_clean,
             county_fips_clean,
             year,
         )
-        proportions["721"] = 0.4
-        proportions["722"] = 0.6
 
-    return proportions
+    return result
 
 
 # ── CBP County-Scale Calibration ──────────────────────────────────────
