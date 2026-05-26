@@ -116,7 +116,7 @@ bg_geometry_map AS (
 cbp_sub_sectors AS (
     SELECT
         LEFT(lr.w_geocode, 12) AS geoid,
-        ST_Multi(ST_GeomFromText(bgm.geometry, 4326)) AS geometry,
+        ST_Multi(bgm.geometry) AS geometry,
         lr.c000,
         -- CNS01 -> goods producing: agriculture (11), extraction (21), remainder construction (23)
         CASE WHEN COALESCE(lr.cns01, 0) > 0

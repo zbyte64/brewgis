@@ -259,3 +259,4 @@ seeds:
     test_tiger_block_groups:
       +column_types:
         geoid: text
+        geometry: geometry(Geometry,4326)

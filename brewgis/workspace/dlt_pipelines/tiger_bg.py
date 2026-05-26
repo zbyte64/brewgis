@@ -14,6 +14,7 @@ from pathlib import Path
 from typing import Any
 
 import dlt
+from dlt.destinations.impl.postgres.postgres_adapter import postgres_adapter
 import geopandas as gpd
 from django.conf import settings
 
@@ -43,7 +44,7 @@ def tiger_bg_source(
         List with a single :class:`dlt.Resource` yielding block-group
         geometry dicts.
     """
-    return [tiger_bg_resource(state_fips, year=year, ignore_cache=ignore_cache)]
+    return [postgres_adapter(tiger_bg_resource(state_fips, year=year, ignore_cache=ignore_cache), geometry="geometry")]
 
 
 @dlt.resource(
@@ -86,10 +87,9 @@ def tiger_bg_resource(state_fips: str, year: str = "2023", ignore_cache=False) -
             + str(row["TRACTCE"]).zfill(6)
             + str(row["BLKGRPCE"]).zfill(1)
         )
-        wkt_geom = row.geometry.wkt
         yield {
             "geoid": geoid,
-            "geometry": wkt_geom,
+            "geometry": row.geometry.wkt,
             "state_fips": state_fips,
             "vintage": year,
         }
@@ -229,6 +229,7 @@ def run_tiger_bg_pipeline(
                         )
                     )
                     conn.commit()
+
 
     if total_rows == 0:
         return {
