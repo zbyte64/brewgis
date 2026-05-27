@@ -74,6 +74,13 @@ class Command(BaseCommand):
             help="Ignore cached data and re-download",
         )
 
+        parser.add_argument(
+            "--quick-parcel-clipping",
+            action="store_true",
+            default=False,
+            help="Use faster ST_ClipByBox2D instead of accurate ST_Intersection for parcel-block area allocation (default: off, uses ST_Intersection)",
+        )
+
     def handle(self, **options: Any) -> None:
         # Lazy imports — avoid loading dagster assets at module import time
         # which conflicts with test stubs for pandas/geopandas.
@@ -105,6 +112,7 @@ class Command(BaseCommand):
         osm = bool(options.get("osm", False))
         limit = int(options.get("limit", 0))
         force_data_fetch = bool(options.get("force_data_fetch", False))
+        quick_parcel_clipping = bool(options.get("quick_parcel_clipping", False))
 
         # TODO check if base_canvas exists / migrations are up to date
 
@@ -116,6 +124,9 @@ class Command(BaseCommand):
         self.stdout.write(f"  Parcel limit: {limit or 'all'}")
         self.stdout.write(
             f"  Force re-download: {'yes' if force_data_fetch else 'no (use cached data if available)'}"
+        )
+        self.stdout.write(
+            f"  Parcel clipping: {'fast (ClipByBox2D)' if quick_parcel_clipping else 'accurate (Intersection)'}"
         )
         if not settings.CENSUS_API_KEY:
             raise CommandError(
@@ -305,6 +316,7 @@ class Command(BaseCommand):
             "parcel_table": "sacog_parcel_shim",
             "base_canvas_materialized": "table",
             "projected_srid": LOCAL_SRID,
+            "quick_parcel_clipping": quick_parcel_clipping,
         }
         if nlcd_table:
             dbt_vars["nlcd_parcel_table"] = nlcd_table

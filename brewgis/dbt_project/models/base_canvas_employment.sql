@@ -23,6 +23,7 @@
 }}
 
 {%- set area_srid = var('projected_srid', 3857) -%}
+{%- set quick_parcel_clipping = var('quick_parcel_clipping', true) -%}
 
 WITH pre_wac_data AS (
     SELECT
@@ -97,8 +98,11 @@ intersections AS (
         w.emp_ind,
         w.emp_ag,
         w.wac_area,
-        -- more accurate but 3x slower: ST_Area(ST_Intersection(p.local_geometry, w.local_geometry)) AS intersect_area
+        {% if quick_parcel_clipping %}
         ST_Area(ST_ClipByBox2D(p.local_geometry, w.wac_envelope)) AS intersect_area
+        {% else %}
+        ST_Area(ST_Intersection(p.local_geometry, w.local_geometry)) AS intersect_area
+        {% endif %}
     FROM {{ ref('base_canvas_demographics') }} p
     JOIN wac_data w ON ST_Intersects(p.geometry, w.geometry)
 ),
