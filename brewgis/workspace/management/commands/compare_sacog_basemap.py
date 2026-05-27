@@ -97,6 +97,7 @@ class Command(BaseCommand):
         from brewgis.workspace.dlt_pipelines.nlcd import run_nlcd_pipeline
         from brewgis.workspace.dlt_pipelines.osm import run_osm_pipeline
         from brewgis.workspace.dlt_pipelines.tiger_bg import run_tiger_bg_pipeline
+        from brewgis.workspace.dlt_pipelines.tiger_block import run_tiger_block_pipeline
         from brewgis.workspace.services.census_fetcher import _populate_acs_block_group
         from brewgis.workspace.services.lehd_fetcher import _populate_wac_block
 
@@ -179,6 +180,21 @@ class Command(BaseCommand):
         self.stdout.write(
             f"  TIGER/Line BG loaded: {tiger_result.get('row_count', 0)} rows "
             f"in {tiger_result.get('table_name', '?')}"
+        )
+
+        # Populate TIGER/Line block polygons (needed by wac_block_raw)
+        self.stdout.write("\n── Populating TIGER/Line block staging table ──")
+
+        tiger_block_result = run_tiger_block_pipeline(
+            STATE_FIPS, vintages=["2020"], ignore_cache=force_data_fetch
+        )
+        if not tiger_block_result["success"]:
+            raise CommandError(
+                f"TIGER/Line block fetch failed: {tiger_block_result.get('error')}."
+        )
+        self.stdout.write(
+            f"  TIGER/Line blocks loaded: {tiger_block_result.get('row_count', 0)} rows "
+            f"in {tiger_block_result.get('table_name', '?')}"
         )
 
         self.stdout.write("\n── Populating Census ACS staging table ──")

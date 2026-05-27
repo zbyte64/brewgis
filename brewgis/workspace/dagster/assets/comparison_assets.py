@@ -29,6 +29,7 @@ from brewgis.workspace.dagster.configs import SacogReportConfig
 from brewgis.workspace.dagster.resources.dbt_resource import DbtCliResource
 from brewgis.workspace.dagster.resources.postgres_resource import PostgresResource
 from brewgis.workspace.dlt_pipelines.tiger_bg import run_tiger_bg_pipeline
+from brewgis.workspace.dlt_pipelines.tiger_block import run_tiger_block_pipeline
 from brewgis.workspace.services._db import get_engine
 from brewgis.workspace.services.base_canvas_pipeline import run_pipeline
 from brewgis.workspace.services.census_fetcher import _populate_acs_block_group
@@ -81,6 +82,42 @@ def tiger_bg_asset(
     )
 
     return MaterializeResult(metadata={"bg_rows": row_count})
+
+
+# ---------------------------------------------------------------------------
+# Asset 0b: TIGER/Line block geometry (15-digit GEOID)
+# ---------------------------------------------------------------------------
+
+
+@asset(
+    group_name="raw_data",
+    compute_kind="python",
+)
+def tiger_block_asset(
+    context: AssetExecutionContext,
+) -> MaterializeResult:
+    """Fetch TIGER/Line block polygons from Census and write to ``public.tiger_blocks``.
+
+    A prerequisite for ``sacog_populate_wac_block``, which joins LEHD attribute
+    data with block-level geometry (15-digit GEOID) for finer-grained spatial
+    allocation than the block-group-level (12-digit GEOID) approach.
+    """
+    context.log.info("Running TIGER/Line block pipeline for state %s", STATE_FIPS)
+
+    result = run_tiger_block_pipeline(STATE_FIPS, vintages=["2020"])
+    if not result.get("success"):
+        raise RuntimeError(
+            f"TIGER/Line block fetch failed: {result.get('error', 'Unknown error')}"
+        )
+
+    row_count = result.get("row_count", 0)
+    context.log.info(
+        "TIGER/Line blocks loaded: %s rows in %s",
+        row_count,
+        result.get("table_name", "?"),
+    )
+
+    return MaterializeResult(metadata={"block_rows": row_count})
 
 
 # ---------------------------------------------------------------------------
@@ -215,15 +252,15 @@ def sacog_populate_acs_block_group(
 @asset(
     group_name="comparison",
     compute_kind="python",
-    deps=["tiger_bg_asset", "lehd_lodes_assets"],
+    deps=["tiger_block_asset", "lehd_lodes_assets"],
 )
 def sacog_populate_wac_block(
     context: AssetExecutionContext,
 ) -> MaterializeResult:
-    """Join LEHD LODES WAC staging data with TIGER/Line BG geometry and write to ``lehd.wac_block``.
+    """Join LEHD LODES WAC staging data with TIGER/Line block geometry (15-digit GEOID) and write to ``lehd.wac_block``.
 
     The downstream ETL (``sacog_run_comparison_etl``) reads employment from
-    ``lehd.wac_block`` via area-weighted spatial allocation.
+    ``lehd.wac_block`` via area-weighted spatial allocation at block resolution.
     """
     context.log.info(
         "Populating lehd.wac_block for %s/%s",

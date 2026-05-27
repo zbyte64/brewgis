@@ -905,6 +905,7 @@ def _populate_wac_block(
         "cbp_22": cbp_props.get("22", 0.0),
         "cbp_42": cbp_props.get("42", 0.0),
         "cbp_721": cbp_props.get("721", 0.0),
+        "tiger_block_vintage": "2020",
         "tiger_bg_vintage": "2023",
     }
 

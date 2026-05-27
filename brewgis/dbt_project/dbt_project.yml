@@ -260,3 +260,7 @@ seeds:
       +column_types:
         geoid: text
         geometry: geometry(Geometry,4326)
+    test_tiger_blocks:
+      +column_types:
+        geoid: text
+        geometry: geometry(Geometry,4326)

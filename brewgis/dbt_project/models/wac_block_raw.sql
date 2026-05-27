@@ -1,15 +1,17 @@
 {#
-    LEHD LODES WAC → Block Group Employment (Raw CNS Split)
+    LEHD LODES WAC → Block-Level Employment (Raw CNS Split)
 
-    Joins lodes_raw staging data with TIGER/Line block group geometry,
-    splits CNS employment into NAICS-based sub-sectors using CBP proportions,
-    applies SACOG calibration via explicit ratio vars, and distributes
-    CNS16 (unclassified) employment proportionally across sub-sectors.
+    Joins lodes_raw staging data with TIGER/Line block geometry (15-digit
+    GEOID), splits CNS employment into NAICS-based sub-sectors using CBP
+    proportions, applies SACOG calibration via explicit ratio vars, and
+    distributes CNS16 (unclassified) employment proportionally across
+    sub-sectors.
 
-    For blocks whose block group does not exist in TIGER, falls back to
-    any block group in the same census tract. Blocks whose tract also has
-    no TIGER match are excluded (their employment cannot be spatially
-    allocated without geometry).
+    Geometry resolution — three-tier fallback:
+      Tier 1: exact 15-digit geoid match to tiger_blocks (preferred)
+      Tier 2: 12-digit block group match to tiger_block_groups
+      Tier 3: any block group in the same census tract (tiger_block_groups)
+      Excluded: blocks with no TIGER match at any tier
 
     SACOG calibration uses 17 explicit ratio vars (sacog_*_ratio). When these
     vars are provided, sub-sectors are computed as aggregate * ratio instead
@@ -23,7 +25,9 @@
     Inputs (via dbt vars):
         source_schema: Schema containing source tables (default public)
         lodes_raw_table: lodes_raw table name (default lodes_raw)
-        tiger_bg_table: tiger_block_groups table name (default tiger_block_groups)
+        tiger_block_table: tiger_blocks table name (default tiger_blocks)
+        tiger_bg_table: tiger_block_groups table name (default tiger_block_groups,
+            still used for geometric fallback)
         year: LEHD data year
         state_fips, county_fips: County identifier
         cbp_11..cbp_721: CBP NAICS proportion parameters
@@ -46,9 +50,10 @@
 {% set cbp_721 = var('cbp_721', 0.0) %}
 {% set state_fips = var('state_fips', '06') %}
 {% set county_fips = var('county_fips', '067') %}
+{% set tiger_block_vintage = var('tiger_block_vintage', '2020') %}
 {% set tiger_bg_vintage = var('tiger_bg_vintage', '2023') %}
 
--- Sub-sector metadata for loop-driven SACOG calibration, CNS16 distribution,
+-- Sub-sector metadata
 -- and aggregate column computation. Each sub-sector's agg field indicates
 -- the aggregate column used for SACOG calibration (null for military).
 -- sacog_zero indicates sub-sectors SACOG always zeros.
@@ -79,13 +84,15 @@
     'emp_ind': ['emp_manufacturing', 'emp_wholesale', 'emp_transport_warehousing', 'emp_utilities', 'emp_construction', 'emp_extraction', 'emp_agriculture'],
 } %}
 
--- Pre-compute best-available TIGER geometry for each LODES block group.
--- Tier 1: exact geoid match on block group.
--- Tier 2: fallback to any block group in the same census tract.
--- Blocks whose tract also has no TIGER match get NULL geometry and are
+-- Pre-compute best-available TIGER geometry for each LODES block.
+-- Tier 1: exact 15-digit geoid match on tiger_blocks.
+-- Tier 2: 12-digit block group match on tiger_block_groups.
+-- Tier 3: fallback to any block group in the same census tract.
+-- Blocks with no TIGER match at any tier get NULL geometry and are
 -- excluded from the final result (cannot spatially allocate without geometry).
 WITH lodes_blocks AS (
     SELECT DISTINCT
+        w_geocode AS block_geoid,
         LEFT(w_geocode, 12) AS bg,
         LEFT(w_geocode, 11) AS tract
     FROM {{ source('brewgis', 'lodes_raw') }}
@@ -93,30 +100,37 @@ WITH lodes_blocks AS (
       AND LEFT(w_geocode, 5) = '{{ state_fips }}' || '{{ county_fips }}'
 ),
 
-bg_geometry_map AS (
+block_geometry_map AS (
     SELECT
-        lb.bg,
+        lb.block_geoid,
         COALESCE(
+            tb.geometry,
             tbg.geometry,
             tbg_fallback.geometry
         ) AS geometry
     FROM lodes_blocks lb
+    -- Tier 1: exact 15-digit block match
+    LEFT JOIN {{ source('brewgis', 'tiger_blocks') }} tb
+        ON lb.block_geoid = tb.geoid
+        AND tb.vintage = '{{ tiger_block_vintage }}'
+    -- Tier 2: 12-digit block group match
     LEFT JOIN {{ source('brewgis', 'tiger_block_groups') }} tbg
         ON lb.bg = tbg.geoid
         AND tbg.vintage = '{{ tiger_bg_vintage }}'
+    -- Tier 3: any block group in the same census tract
     LEFT JOIN LATERAL (
         SELECT geometry FROM {{ source('brewgis', 'tiger_block_groups') }}
         WHERE geoid LIKE lb.tract || '%'
           AND vintage = '{{ tiger_bg_vintage }}'
         LIMIT 1
-    ) tbg_fallback ON tbg.geoid IS NULL
-    WHERE COALESCE(tbg.geometry, tbg_fallback.geometry) IS NOT NULL
+    ) tbg_fallback ON tb.geoid IS NULL AND tbg.geoid IS NULL
+    WHERE COALESCE(tb.geometry, tbg.geometry, tbg_fallback.geometry) IS NOT NULL
 ),
 
 cbp_sub_sectors AS (
     SELECT
-        LEFT(lr.w_geocode, 12) AS geoid,
-        ST_Multi(bgm.geometry) AS geometry,
+        lr.w_geocode AS geoid,
+        ST_Multi(bm.geometry) AS geometry,
         lr.c000,
         -- CNS01 -> goods producing: agriculture (11), extraction (21), remainder construction (23)
         CASE WHEN COALESCE(lr.cns01, 0) > 0
@@ -178,8 +192,8 @@ cbp_sub_sectors AS (
         -- CNS16 unclassified (distributed in later CTE)
         COALESCE(lr.cns16::numeric, 0)::numeric AS cns16_unclassified
     FROM {{ source('brewgis', 'lodes_raw') }} lr
-    JOIN bg_geometry_map bgm
-        ON LEFT(lr.w_geocode, 12) = bgm.bg
+    JOIN block_geometry_map bm
+        ON lr.w_geocode = bm.block_geoid
     WHERE lr.year = {{ year }}
       AND LEFT(lr.w_geocode, 5) = '{{ state_fips }}' || '{{ county_fips }}'
 ),
