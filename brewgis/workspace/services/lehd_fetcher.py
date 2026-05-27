@@ -833,9 +833,10 @@ def _resolve_sacog_ratios() -> dict[str, float]:
     ratios: dict[str, float] = {}
     for agg_col, sub_props in _SACOG_SUBSECTOR_PROPORTIONS.items():
         for sub_col, ratio in sub_props.items():
-            var_name = f"sacog_{sub_col}_ratio"
+            # dbt model wac_block_raw.sql expects names without emp_ prefix
+            var_name = f"sacog_{sub_col.removeprefix('emp_')}_ratio"
             ratios[var_name] = ratio
-    # Zero out agriculture, extraction, and military (not in _SACOG_SUBSECTOR_PROPORTIONS).
+    # Zero out agriculture, extraction, and military
     ratios["sacog_agriculture_ratio"] = 0.0
     ratios["sacog_extraction_ratio"] = 0.0
     ratios["sacog_military_ratio"] = 0.0
