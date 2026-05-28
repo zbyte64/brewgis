@@ -4,13 +4,13 @@ from __future__ import annotations
 
 from pathlib import Path
 
+from pytest_bdd import parsers
 from pytest_bdd import scenarios
 from pytest_bdd import then
 from pytest_bdd import when
-from pytest_bdd import parsers
 
-from tests.review.pages.analysis_pipeline_page import AnalysisPipelinePage
 from tests.e2e.steps.common_steps import *  # noqa: F403
+from tests.review.pages.analysis_pipeline_page import AnalysisPipelinePage
 
 scenarios(str(Path(__file__).parent.parent / "features" / "analysis_pipeline.feature"))
 

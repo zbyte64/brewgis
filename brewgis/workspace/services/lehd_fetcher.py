@@ -20,13 +20,12 @@ from typing import Any
 import deal
 import pandas as pd
 import requests
+from django.conf import settings as django_settings
 
 from brewgis.soda import validate_wac_block
 from brewgis.workspace.analysis.dbt_runner import run_dbt_local
 from brewgis.workspace.services._db import get_engine
 from brewgis.workspace.services._db import text
-
-from django.conf import settings as django_settings
 
 logger = logging.getLogger(__name__)
 
@@ -437,7 +436,13 @@ def _build_cbp_proportions(
         naics_year = 2007
 
     # ── Disk-cached API fetch ─────────────────────────────────────
-    dl_path = CACHE_DIR / "cbp_proportions" / str(year) / state_fips_clean / f"{county_fips_clean}.json"
+    dl_path = (
+        CACHE_DIR
+        / "cbp_proportions"
+        / str(year)
+        / state_fips_clean
+        / f"{county_fips_clean}.json"
+    )
     dl_path.parent.mkdir(exist_ok=True, parents=True)
 
     if ignore_cache or not dl_path.exists():
@@ -473,7 +478,9 @@ def _build_cbp_proportions(
     result = _compute_cbp_proportions(raw_data)
 
     # Log fallback warnings (the pure function can't log)
-    sector_emp = _group_naics_by_prefix(_parse_cbp_naics_emp(raw_data[1:], raw_data[0]), 2)
+    sector_emp = _group_naics_by_prefix(
+        _parse_cbp_naics_emp(raw_data[1:], raw_data[0]), 2
+    )
     goods_prefixes = ["11", "21", "23"]
     goods_total = sum(sector_emp.get(p, 0) for p in goods_prefixes)
     if goods_total == 0:
@@ -492,7 +499,9 @@ def _build_cbp_proportions(
             county_fips_clean,
             year,
         )
-    naics3_emp = _group_naics_by_prefix(_parse_cbp_naics_emp(raw_data[1:], raw_data[0]), 3)
+    naics3_emp = _group_naics_by_prefix(
+        _parse_cbp_naics_emp(raw_data[1:], raw_data[0]), 3
+    )
     acc_food_total = naics3_emp.get("721", 0) + naics3_emp.get("722", 0)
     if acc_food_total == 0:
         logger.warning(

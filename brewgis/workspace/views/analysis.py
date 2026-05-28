@@ -6,7 +6,6 @@ import json
 from typing import Any
 from typing import cast
 
-
 from django import forms
 from django.contrib.auth.decorators import user_passes_test
 from django.db import connection
@@ -107,7 +106,9 @@ class AnalysisLaunchForm(forms.Form):
 
     def __init__(self, *args: object, **kwargs: object) -> None:
         """Initialize form, optionally auto-discovering parcel tables."""
-        self._workspace: Workspace | None = cast(Workspace | None, kwargs.pop("workspace", None))
+        self._workspace: Workspace | None = cast(
+            "Workspace | None", kwargs.pop("workspace", None)
+        )
         super().__init__(*args, **kwargs)  # type: ignore[arg-type]
 
         if self._workspace:

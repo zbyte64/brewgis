@@ -8,11 +8,11 @@ from django.contrib.auth.models import User
 from brewgis.workspace.built_forms.models import BuildingType
 from brewgis.workspace.built_forms.models import PlaceType
 from brewgis.workspace.built_forms.models import PlaceTypeBuildingTypeMix
+from brewgis.workspace.models import AnalysisRun
 from brewgis.workspace.models import Layer
 from brewgis.workspace.models import StyleClass
 from brewgis.workspace.models import SymbologyConfig
 from brewgis.workspace.models import Workspace
-from brewgis.workspace.models import AnalysisRun
 
 
 class UserFactory(factory.django.DjangoModelFactory):

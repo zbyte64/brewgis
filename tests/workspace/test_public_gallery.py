@@ -111,7 +111,7 @@ class TestPublicScenarioMapView(TestCase):
             kwargs={"token": uuid.uuid4()},
         )
         # Replace the UUID portion with an invalid string
-        bad_url = f"/workspace/public/not-a-uuid/"
+        bad_url = "/workspace/public/not-a-uuid/"
         response = self.client.get(bad_url)
         self.assertEqual(response.status_code, 404)
 

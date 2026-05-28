@@ -302,7 +302,10 @@ export class PaintModeController {
     }
   }
 
-  private _dispatchDrawEvent(features: { id: string; layerId: string }[], mode: 'draw' | 'select' | 'clear'): void {
+  private _dispatchDrawEvent(
+    features: { id: string; layerId: string }[],
+    mode: 'draw' | 'select' | 'clear',
+  ): void {
     this._dispatchEvent({ features, mode })
   }
 
@@ -315,32 +318,29 @@ export class PaintModeController {
       const features = this._map.queryRenderedFeatures(point, {
         layers: [this._canvasLayerId],
       })
-      return features
-        .filter((f) => f.id != null)
-        .map((f) => ({ id: String(f.id) }))
+      return features.filter((f) => f.id != null).map((f) => ({ id: String(f.id) }))
     } catch {
       return []
     }
   }
 
-  private _queryFeaturesInBbox(
-    bbox: [[number, number], [number, number]],
-  ): { id: string }[] {
+  private _queryFeaturesInBbox(bbox: [[number, number], [number, number]]): { id: string }[] {
     if (!this._canvasLayerId) return []
     try {
       const features = this._map.queryRenderedFeatures(bbox, {
         layers: [this._canvasLayerId],
       })
-      return features
-        .filter((f) => f.id != null)
-        .map((f) => ({ id: String(f.id) }))
+      return features.filter((f) => f.id != null).map((f) => ({ id: String(f.id) }))
     } catch {
       return []
     }
   }
 
   private _computeBbox(features: GeoJSON.Feature[]): [[number, number], [number, number]] {
-    let minX = Infinity; let minY = Infinity; let maxX = -Infinity; let maxY = -Infinity
+    let minX = Infinity
+    let minY = Infinity
+    let maxX = -Infinity
+    let maxY = -Infinity
 
     for (const feature of features) {
       this._walkCoordinates(feature.geometry, (coord) => {
@@ -357,10 +357,7 @@ export class PaintModeController {
     ]
   }
 
-  private _walkCoordinates(
-    geo: GeoJSON.Geometry | null,
-    fn: (coord: number[]) => void,
-  ): void {
+  private _walkCoordinates(geo: GeoJSON.Geometry | null, fn: (coord: number[]) => void): void {
     if (!geo) return
     if (geo.type === 'Point') {
       fn(geo.coordinates)
@@ -382,10 +379,7 @@ export class PaintModeController {
     if (!this._canvasSourceId) return
     for (const id of ids) {
       try {
-        this._map.setFeatureState(
-          { source: this._canvasSourceId, id } as any,
-          { selected: true },
-        )
+        this._map.setFeatureState({ source: this._canvasSourceId, id } as any, { selected: true })
       } catch {
         // Feature or source may not exist
       }

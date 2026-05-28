@@ -456,9 +456,15 @@ class Command(BaseCommand):
             module_selects=MODULE_SELECTS,
         )
         if result["success"]:
-            self.stdout.write(self.style.SUCCESS("  ✓ Analysis pipeline completed successfully"))
+            self.stdout.write(
+                self.style.SUCCESS("  ✓ Analysis pipeline completed successfully")
+            )
         else:
-            self.stdout.write(self.style.WARNING(f"  ⚠ Completed {len(result['completed'])}/{len(ordered_modules)} modules"))
+            self.stdout.write(
+                self.style.WARNING(
+                    f"  ⚠ Completed {len(result['completed'])}/{len(ordered_modules)} modules"
+                )
+            )
 
         # Verify output tables
         self._verify_output_tables(scenario)

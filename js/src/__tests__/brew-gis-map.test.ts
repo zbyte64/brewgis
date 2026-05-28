@@ -271,7 +271,6 @@ describe('brew-gis-map', () => {
     mockMap.getStyle.mockReturnValue({
       layers: [{ id: 'scenario_test_canvas', source: 'test_source', type: 'fill' }],
     })
-
     ;(el as any).clearHighlight()
 
     expect(mockMap.removeFeatureState).toHaveBeenCalled()
@@ -279,7 +278,6 @@ describe('brew-gis-map', () => {
     mockMap.getStyle.mockReset()
     mockMap.getStyle.mockReturnValue({ layers: [] })
   })
-
 
   it('dispatches featureselected event in polygon mode on draw.selectionchange', async () => {
     await createAndAttach({ mode: 'paint', scenarioId: 1 })

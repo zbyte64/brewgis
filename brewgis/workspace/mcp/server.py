@@ -1,6 +1,5 @@
 """MCP Server — main server instance and stdio entrypoint."""
 
-
 import logging
 
 from mcp.server import FastMCP

@@ -13,9 +13,9 @@ from django.shortcuts import render
 from django.urls import reverse
 from django.utils.decorators import method_decorator
 from django.views.generic.edit import FormView
-from brewgis.workspace.services._db import get_engine
 
 from brewgis.workspace.models import Workspace
+from brewgis.workspace.services._db import get_engine
 from brewgis.workspace.services.column_inspector import inspect_table
 from brewgis.workspace.services.staging_model import write_base_canvas_stub
 from brewgis.workspace.services.staging_model import write_parcel_staging
@@ -56,13 +56,12 @@ class ImportGISFileForm(forms.Form):
                 % (file.size / (1024 * 1024), max_mb)
             )
 
-        return cast(forms.FileField, file)
+        return cast("forms.FileField", file)
 
 
 def read_gis_file_into_table(
     file_obj: BufferedReader, schema: str, table_name: str
 ) -> None:
-
     df = geopandas.read_file(file_obj)
     # columns need to be lower case for tipg: https://github.com/developmentseed/tipg/issues/195
     if settings.TILE_SERVER_BACKEND == "tipg":

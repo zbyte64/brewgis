@@ -19,12 +19,10 @@ import pandas as pd
 import pytest
 
 from tests.dbt_math.dbt_model_runner import run_model
-from tests.dbt_math.reference import (
-    compute_property_tax,
-    compute_service_costs,
-    compute_vmt,
-    compute_transport_ghg,
-)
+from tests.dbt_math.reference import compute_property_tax
+from tests.dbt_math.reference import compute_service_costs
+from tests.dbt_math.reference import compute_transport_ghg
+from tests.dbt_math.reference import compute_vmt
 
 pytestmark = [pytest.mark.integration, pytest.mark.django_db]
 
@@ -145,24 +143,28 @@ def test_vmt_parity() -> None:
     v_ref, vpc_ref, tl_ref, _ = compute_vmt(auto, length, pop)
 
     # VMT depends on mode_choice + trip_distribution + core_end_state
-    mc_df = pd.DataFrame({
-        "parcel_id": pid,
-        "trips_auto": auto,
-        "trips_transit": np.zeros(len(auto)),
-        "trips_walk": np.zeros(len(auto)),
-        "trips_bike": np.zeros(len(auto)),
-        "mode_share_auto": np.where(auto > 0, 1.0, 0.0),
-        "mode_share_transit": np.zeros(len(auto)),
-        "mode_share_walk": np.zeros(len(auto)),
-        "mode_share_bike": np.zeros(len(auto)),
-    })
-    td_df = pd.DataFrame({
-        "parcel_id": pid,
-        "trips_outbound": auto,
-        "trips_inbound": auto,
-        "trips_internal": np.zeros(len(auto)),
-        "avg_trip_length_km": length,
-    })
+    mc_df = pd.DataFrame(
+        {
+            "parcel_id": pid,
+            "trips_auto": auto,
+            "trips_transit": np.zeros(len(auto)),
+            "trips_walk": np.zeros(len(auto)),
+            "trips_bike": np.zeros(len(auto)),
+            "mode_share_auto": np.where(auto > 0, 1.0, 0.0),
+            "mode_share_transit": np.zeros(len(auto)),
+            "mode_share_walk": np.zeros(len(auto)),
+            "mode_share_bike": np.zeros(len(auto)),
+        }
+    )
+    td_df = pd.DataFrame(
+        {
+            "parcel_id": pid,
+            "trips_outbound": auto,
+            "trips_inbound": auto,
+            "trips_internal": np.zeros(len(auto)),
+            "avg_trip_length_km": length,
+        }
+    )
     es_df = _core_es_df(pid, pop=pop)
 
     result = run_model(
@@ -194,13 +196,15 @@ def test_transport_ghg_parity() -> None:
 
     co2e_ref, pc_ref = compute_transport_ghg(vmt, pop)
 
-    vmt_df = pd.DataFrame({
-        "parcel_id": pid,
-        "vmt_total": vmt,
-        "vmt_per_capita": np.where(pop > 0, vmt / pop, 0.0),
-        "avg_trip_length_mi": np.full(len(vmt), 5.0),
-        "auto_trips": np.full(len(vmt), 100.0),
-    })
+    vmt_df = pd.DataFrame(
+        {
+            "parcel_id": pid,
+            "vmt_total": vmt,
+            "vmt_per_capita": np.where(pop > 0, vmt / pop, 0.0),
+            "avg_trip_length_mi": np.full(len(vmt), 5.0),
+            "auto_trips": np.full(len(vmt), 100.0),
+        }
+    )
     es_df = _core_es_df(pid, pop=pop)
 
     result = run_model(

@@ -56,6 +56,7 @@ def pipeline_callback(request: HttpRequest) -> HttpResponse:
     run.status = status
     if status == "completed":
         from django.utils import timezone
+
         run.completed_at = timezone.now()
     if error:
         run.error_log = error

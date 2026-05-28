@@ -22,7 +22,7 @@ scenarios(
 @when("I navigate to the create scenario page for that workspace")
 def navigate_to_create_scenario(page: Page, live_server_url: str) -> None:
     """Navigate to the create scenario page for the most recent workspace."""
-    from brewgis.workspace.models import Workspace  # noqa: PLC0415
+    from brewgis.workspace.models import Workspace
 
     ws = Workspace.objects.latest("pk")
     page.goto(f"{live_server_url}/{ws.pk}/scenario/create/", wait_until="networkidle")

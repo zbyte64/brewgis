@@ -9,9 +9,9 @@ from pytest_bdd import then
 from pytest_bdd import when
 
 from tests.e2e.pages.home_page import HomePage
+from tests.e2e.steps.common_steps import *  # noqa: F403
 from tests.review.pages.analysis_modules_page import AnalysisModulesPage
 from tests.review.pages.consistency_page import ConsistencyPage
-from tests.e2e.steps.common_steps import *  # noqa: F403
 
 scenarios(str(Path(__file__).parent.parent / "features" / "consistency.feature"))
 

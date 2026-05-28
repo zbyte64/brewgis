@@ -20,9 +20,9 @@ from pathlib import Path
 from typing import Any
 
 import dlt
-from dlt.destinations.impl.postgres.postgres_adapter import postgres_adapter
 import geopandas as gpd
 from django.conf import settings
+from dlt.destinations.impl.postgres.postgres_adapter import postgres_adapter
 
 CACHE_DIR: Path = settings.DATA_DOWNLOAD_CACHE_DIR
 
@@ -53,9 +53,7 @@ def tiger_block_source(
     """
     return [
         postgres_adapter(
-            tiger_block_resource(
-                state_fips, year=year, ignore_cache=ignore_cache
-            ),
+            tiger_block_resource(state_fips, year=year, ignore_cache=ignore_cache),
             geometry="geometry",
         )
     ]
@@ -74,7 +72,9 @@ _TIGER_BLOCK_URLS: dict[str, str] = {
     name="tiger_blocks",
     write_disposition="append",
 )
-def tiger_block_resource(state_fips: str, year: str = "2020", ignore_cache: bool = False) -> Any:
+def tiger_block_resource(
+    state_fips: str, year: str = "2020", ignore_cache: bool = False
+) -> Any:
     """Download TIGER/Line TABBLOCK shapefile ZIP and yield block dicts.
 
     Downloads the block boundary file for the given state and vintage,
@@ -102,7 +102,9 @@ def tiger_block_resource(state_fips: str, year: str = "2020", ignore_cache: bool
         )
     url = url_template.format(state_fips=state_fips)
 
-    zip_path = CACHE_DIR / f"TIGER{year}" / "TABBLOCK" / f"tl_{year}_{state_fips}_tabblock.zip"
+    zip_path = (
+        CACHE_DIR / f"TIGER{year}" / "TABBLOCK" / f"tl_{year}_{state_fips}_tabblock.zip"
+    )
     zip_path.parent.mkdir(exist_ok=True, parents=True)
 
     if ignore_cache or not zip_path.exists():
@@ -119,7 +121,9 @@ def tiger_block_resource(state_fips: str, year: str = "2020", ignore_cache: bool
     gdf = gdf.to_crs("EPSG:4326")
 
     statefp_col = next((c for c in ("STATEFP10", "STATEFP") if c in gdf.columns), None)
-    countyfp_col = next((c for c in ("COUNTYFP10", "COUNTYFP") if c in gdf.columns), None)
+    countyfp_col = next(
+        (c for c in ("COUNTYFP10", "COUNTYFP") if c in gdf.columns), None
+    )
     tractce_col = next((c for c in ("TRACTCE10", "TRACTCE") if c in gdf.columns), None)
     blockce_col = next((c for c in ("BLOCKCE10", "BLOCKCE") if c in gdf.columns), None)
 
@@ -195,17 +199,11 @@ def run_tiger_block_pipeline(
             if table_exists:
                 conn.execute(
                     _text(
-                        "ALTER TABLE {schema}.tiger_blocks ADD COLUMN IF NOT EXISTS vintage TEXT".format(
-                            schema=schema
-                        )
+                        f"ALTER TABLE {schema}.tiger_blocks ADD COLUMN IF NOT EXISTS vintage TEXT"
                     )
                 )
                 conn.execute(
-                    _text(
-                        "DELETE FROM {schema}.tiger_blocks WHERE vintage = :v".format(
-                            schema=schema
-                        )
-                    ),
+                    _text(f"DELETE FROM {schema}.tiger_blocks WHERE vintage = :v"),
                     {"v": vintage},
                 )
                 conn.commit()
@@ -254,26 +252,18 @@ def run_tiger_block_pipeline(
                     ).scalar()
                     if exists_staging:
                         conn.execute(
-                            _text(
-                                "DROP TABLE IF EXISTS {schema}.tiger_blocks CASCADE".format(
-                                    schema=schema
-                                )
-                            )
+                            _text(f"DROP TABLE IF EXISTS {schema}.tiger_blocks CASCADE")
                         )
                         conn.execute(
                             _text(
-                                "ALTER TABLE {staging}.tiger_blocks SET SCHEMA {schema}".format(
-                                    staging=staging_schema, schema=schema
-                                )
+                                f"ALTER TABLE {staging_schema}.tiger_blocks SET SCHEMA {schema}"
                             )
                         )
                         conn.commit()
                 else:
                     conn.execute(
                         _text(
-                            "DROP TABLE IF EXISTS {schema}_staging.tiger_blocks CASCADE".format(
-                                schema=schema
-                            )
+                            f"DROP TABLE IF EXISTS {schema}_staging.tiger_blocks CASCADE"
                         )
                     )
                     conn.commit()

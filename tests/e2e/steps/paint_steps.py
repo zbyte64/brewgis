@@ -49,7 +49,7 @@ def _disable_email_verification() -> Generator[None, None, None]:
 @pytest.fixture
 def logged_in_page(page: Page, live_server_url: str, logged_in_user: User) -> Page:
     """Login and wait for success, with fallback for confirm-email redirect."""
-    from tests.e2e.pages.auth_page import AuthPage  # noqa: PLC0415
+    from tests.e2e.pages.auth_page import AuthPage
 
     auth_page = AuthPage(page, live_server_url)
     auth_page.navigate_to_login()

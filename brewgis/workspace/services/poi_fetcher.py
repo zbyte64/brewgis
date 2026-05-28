@@ -11,6 +11,7 @@ from typing import Any
 
 import geopandas as gpd
 from shapely.geometry import Point
+
 from brewgis.workspace.services._db import get_engine
 from brewgis.workspace.services._db import text
 
@@ -158,8 +159,6 @@ out center;
     return query
 
 
-
-
 def _categorize_element(tags: dict[str, str]) -> tuple[str, str]:
     """Determine the category and subcategory of a POI element from its tags.
 
@@ -214,6 +213,7 @@ def fetch_pois(
         tags_raw = elem.get("tags", {})
         if isinstance(tags_raw, str):
             import json
+
             try:
                 tags_raw = json.loads(tags_raw)
             except (json.JSONDecodeError, TypeError):
@@ -234,6 +234,7 @@ def fetch_pois(
             center_raw = elem.get("center", {})
             if isinstance(center_raw, str):
                 import json
+
                 try:
                     center_raw = json.loads(center_raw)
                 except (json.JSONDecodeError, TypeError):

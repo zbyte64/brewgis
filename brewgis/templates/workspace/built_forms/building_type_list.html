@@ -1,62 +1,78 @@
 {% extends "base.html" %}
+
 {% load i18n %}
 
-{% block title %}Building Types — Brew GIS{% endblock title %}
-
+{% block title %}
+  Building Types — Brew GIS
+{% endblock title %}
 {% block content %}
-<nav aria-label="breadcrumb">
-  <ol class="breadcrumb">
-    <li class="breadcrumb-item"><a href="{% url 'workspace:home' %}">{% translate "Home" %}</a></li>
-    <li class="breadcrumb-item active" aria-current="page">{% translate "Building Types" %}</li>
-  </ol>
-</nav>
-<div class="container mt-4">
-  <div class="d-flex justify-content-between align-items-center mb-4">
-    <h1 class="display-5 fw-bold">{% translate "Building Types" %}</h1>
-    <a href="{% url 'workspace:building_type_create' %}" class="btn btn-primary">+ New Building Type</a>
-  </div>
-
-  {% if building_types %}
-    <div class="row row-cols-1 row-cols-md-2 row-cols-lg-3 g-4">
-      {% for bt in building_types %}
-        <div class="col">
-          <div class="card h-100">
-            <div class="card-body">
-              <h5 class="card-title">{{ bt.name }}</h5>
-              {% if bt.description %}
-                <p class="card-text text-muted small">{{ bt.description|truncatewords:30 }}</p>
-              {% endif %}
-              <ul class="list-unstyled small mb-0">
-                {% if bt.du_per_acre is not None %}
-                  <li><strong>DU/acre:</strong> {{ bt.du_per_acre }}</li>
-                {% endif %}
-                {% if bt.emp_per_acre is not None %}
-                  <li><strong>Emp/acre:</strong> {{ bt.emp_per_acre }}</li>
-                {% endif %}
-                {% if bt.far is not None %}
-                  <li><strong>FAR:</strong> {{ bt.far }}</li>
-                {% endif %}
-                {% if bt.stories %}
-                  <li><strong>Stories:</strong> {{ bt.stories }}</li>
-                {% endif %}
-                {% if bt.vintage %}
-                  <li><strong>Vintage:</strong> {{ bt.get_vintage_display }}</li>
-                {% endif %}
-              </ul>
-            </div>
-            <div class="card-footer d-flex justify-content-between">
-              <a href="{% url 'workspace:building_type_edit' bt.pk %}" class="btn btn-sm btn-outline-primary">Edit</a>
-              <a href="{% url 'workspace:building_type_bake' bt.pk %}" class="btn btn-sm btn-outline-info" title="{% translate 'Apply this building type as a painted layer in the workspace' %}">Bake</a>
-              <a href="{% url 'workspace:building_type_delete' bt.pk %}" class="btn btn-sm btn-outline-danger">Delete</a>
+  <nav aria-label="breadcrumb">
+    <ol class="breadcrumb">
+      <li class="breadcrumb-item">
+        <a href="{% url 'workspace:home' %}">{% translate "Home" %}</a>
+      </li>
+      <li class="breadcrumb-item active" aria-current="page">{% translate "Building Types" %}</li>
+    </ol>
+  </nav>
+  <div class="container mt-4">
+    <div class="d-flex justify-content-between align-items-center mb-4">
+      <h1 class="display-5 fw-bold">{% translate "Building Types" %}</h1>
+      <a href="{% url 'workspace:building_type_create' %}"
+         class="btn btn-primary">+ New Building Type</a>
+    </div>
+    {% if building_types %}
+      <div class="row row-cols-1 row-cols-md-2 row-cols-lg-3 g-4">
+        {% for bt in building_types %}
+          <div class="col">
+            <div class="card h-100">
+              <div class="card-body">
+                <h5 class="card-title">{{ bt.name }}</h5>
+                {% if bt.description %}<p class="card-text text-muted small">{{ bt.description|truncatewords:30 }}</p>{% endif %}
+                <ul class="list-unstyled small mb-0">
+                  {% if bt.du_per_acre is not None %}
+                    <li>
+                      <strong>DU/acre:</strong> {{ bt.du_per_acre }}
+                    </li>
+                  {% endif %}
+                  {% if bt.emp_per_acre is not None %}
+                    <li>
+                      <strong>Emp/acre:</strong> {{ bt.emp_per_acre }}
+                    </li>
+                  {% endif %}
+                  {% if bt.far is not None %}
+                    <li>
+                      <strong>FAR:</strong> {{ bt.far }}
+                    </li>
+                  {% endif %}
+                  {% if bt.stories %}
+                    <li>
+                      <strong>Stories:</strong> {{ bt.stories }}
+                    </li>
+                  {% endif %}
+                  {% if bt.vintage %}
+                    <li>
+                      <strong>Vintage:</strong> {{ bt.get_vintage_display }}
+                    </li>
+                  {% endif %}
+                </ul>
+              </div>
+              <div class="card-footer d-flex justify-content-between">
+                <a href="{% url 'workspace:building_type_edit' bt.pk %}"
+                   class="btn btn-sm btn-outline-primary">Edit</a>
+                <a href="{% url 'workspace:building_type_bake' bt.pk %}"
+                   class="btn btn-sm btn-outline-info"
+                   title="{% translate 'Apply this building type as a painted layer in the workspace' %}">Bake</a>
+                <a href="{% url 'workspace:building_type_delete' bt.pk %}"
+                   class="btn btn-sm btn-outline-danger">Delete</a>
+              </div>
             </div>
           </div>
-        </div>
-      {% endfor %}
-    </div>
-  {% else %}
-    <div class="alert alert-info">
-      No building types yet. <a href="{% url 'workspace:building_type_create' %}">Create one</a>.
-    </div>
-  {% endif %}
-</div>
+        {% endfor %}
+      </div>
+    {% else %}
+      <div class="alert alert-info">
+        No building types yet. <a href="{% url 'workspace:building_type_create' %}">Create one</a>.
+      </div>
+    {% endif %}
+  </div>
 {% endblock content %}

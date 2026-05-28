@@ -27,12 +27,12 @@
     Materialized as: table
 #}
 
-{{ config(materialized='table', 
+{{ config(materialized='table',
     indexes=[
-        {'columns': ['geometry'], 'type': 'gist'}, 
+        {'columns': ['geometry'], 'type': 'gist'},
         {'columns': ['local_geometry'], 'type': 'gist'},
         {'columns': ['parcel_id'], 'unique': True},
-    ]) 
+    ])
 }}
 
 SELECT

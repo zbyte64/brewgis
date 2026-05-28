@@ -34,7 +34,6 @@ _BATCH_SIZE = 500
 _COST_COLUMN = "length"
 
 
-
 class DistanceMatrixPreprocessor:
     """Compute OD network distance matrix using pgRouting.
 

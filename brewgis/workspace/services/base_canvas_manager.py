@@ -82,7 +82,6 @@ class BaseCanvasManager:
             )
             return bool(cursor.fetchone()[0])
 
-
     @classmethod
     def validate_schema(cls, target_table: str | None = None) -> list[str]:
         """Diff expected vs actual columns; return missing column names.
@@ -112,7 +111,6 @@ class BaseCanvasManager:
         missing = expected_cols - actual_cols
         return sorted(missing)
 
-
     @classmethod
     def drop_table(cls, target_table: str | None = None) -> None:
         """Drop the target table if it exists (cascades to views).
@@ -123,7 +121,6 @@ class BaseCanvasManager:
         schema, table = cls._parse_table(target_table)
         with connection.cursor() as cursor:
             cursor.execute(f"DROP TABLE IF EXISTS {schema}.{table} CASCADE")
-
 
     @classmethod
     def ensure_table(cls, target_table: str | None = None) -> str:

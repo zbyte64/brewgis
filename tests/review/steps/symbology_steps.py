@@ -10,8 +10,8 @@ from pytest_bdd import then
 from pytest_bdd import when
 
 from brewgis.workspace.models import Layer
-from tests.review.pages.symbology_page import SymbologyPage
 from tests.e2e.steps.common_steps import *  # noqa: F403
+from tests.review.pages.symbology_page import SymbologyPage
 
 scenarios(str(Path(__file__).parent.parent / "features" / "symbology.feature"))
 

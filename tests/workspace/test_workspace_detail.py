@@ -7,7 +7,6 @@ from django.test import TestCase
 from django.urls import reverse
 
 from brewgis.workspace.models import DataImportRun
-from brewgis.workspace.models import DataSource
 from brewgis.workspace.models import DataSourceCategory
 from tests.factories import UserFactory
 from tests.factories import WorkspaceFactory

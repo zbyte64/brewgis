@@ -16,13 +16,13 @@ from typing import Any
 
 import dlt
 from dagster import Config
-from dagster import OpExecutionContext
 from dagster_embedded_elt.dlt import DagsterDltResource
 from dagster_embedded_elt.dlt import DagsterDltTranslator
 from dagster_embedded_elt.dlt import dlt_assets
 
 if TYPE_CHECKING:
     from collections.abc import Mapping
+
     from dlt import DltResource
 
 from brewgis.workspace.dagster.check_provenance import METADATA_CONTRACT_INLINE_COLUMNS

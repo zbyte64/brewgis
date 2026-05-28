@@ -39,6 +39,7 @@ from .paint import paint_built_form  # noqa: F401
 from .paint import paint_features  # noqa: F401
 from .paint import paint_history  # noqa: F401
 from .paint import undo_paint  # noqa: F401
+from .pipeline_callback import pipeline_callback  # noqa: F401
 from .read_gis_file import ReadGISFileView  # noqa: F401
 from .report import generate_map_report  # noqa: F401
 from .report import generate_paint_report  # noqa: F401
@@ -63,4 +64,3 @@ from .token_auth import token_auth  # noqa: F401
 from .workspace_create import WorkspaceCreateView as workspace_create  # noqa: F401
 from .workspace_create import county_options  # noqa: F401
 from .workspace_detail import workspace_detail  # noqa: F401
-from .pipeline_callback import pipeline_callback  # noqa: F401

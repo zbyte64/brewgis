@@ -30,13 +30,11 @@
                 {% if report.status == "completed" and report.report_file %}
                   <a href="{{ report.report_file.url }}"
                      class="btn btn-sm btn-outline-primary py-0"
-                     style="font-size: 0.7rem;">
-                    {% translate "Download" %}
-                  </a>
+                     style="font-size: 0.7rem">{% translate "Download" %}</a>
                 {% endif %}
                 <button type="button"
                         class="btn btn-sm btn-outline-danger py-0"
-                        style="font-size: 0.7rem;"
+                        style="font-size: 0.7rem"
                         data-report-pk="{{ report.pk }}"
                         data-report-name="{{ report.name }}"
                         data-delete-url="{% url 'workspace:report_detail' report.pk %}delete/">
@@ -54,13 +52,9 @@
     <p class="text-muted mb-2">{% translate "No reports generated yet." %}</p>
     <div class="d-flex justify-content-center gap-2">
       <a href="{% url 'workspace:generate_scenario_report' workspace.pk %}"
-         class="btn btn-sm btn-outline-primary">
-        {% translate "Generate Scenario Comparison Report" %}
-      </a>
+         class="btn btn-sm btn-outline-primary">{% translate "Generate Scenario Comparison Report" %}</a>
       <a href="{% url 'workspace:generate_map_report' workspace.pk %}"
-         class="btn btn-sm btn-outline-primary">
-        {% translate "Export Map" %}
-      </a>
+         class="btn btn-sm btn-outline-primary">{% translate "Export Map" %}</a>
     </div>
   </div>
 {% endif %}

@@ -1,10 +1,10 @@
 """Views for scenario management and comparison."""
 
 from __future__ import annotations
-from typing import cast
 
 import json
 import uuid
+from typing import cast
 
 from django import forms
 from django.contrib.auth.decorators import user_passes_test
@@ -69,7 +69,7 @@ class ScenarioCreateForm(forms.Form):
             )
 
     def clean(self) -> dict[str, object]:
-        cleaned = cast(dict[str, object], super().clean())
+        cleaned = cast("dict[str, object]", super().clean())
         base_year = cleaned.get("base_year")
         horizon_year = cleaned.get("horizon_year")
         scenario_type = cleaned.get("scenario_type")

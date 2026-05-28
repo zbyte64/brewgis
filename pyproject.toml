@@ -297,6 +297,28 @@ ignore = [
 [tool.ruff.lint.isort]
 force-single-line = true
 
+# ==== basedpyright (fast type checking) ====
+
+# basedpyright is a fast alternative to mypy, written in Go.
+# Install: pip install basedpyright
+# Run:     make typecheck-fast
+#
+# It uses the same type stubs as mypy (django-stubs) but runs 10-100x faster.
+[tool.basedpyright]
+include = ["brewgis"]
+typeCheckingMode = "standard"
+useLibraryCodeForTypes = true
+reportUnknownParameterType = "none"
+reportUnknownArgumentType = "none"
+reportUnknownVariableType = "none"
+reportUnusedCallResult = "none"
+reportUnnecessaryTypeIgnoreComment = "none"
+reportMissingTypeStubs = "none"
+reportMissingImports = "none"
+reportPrivateImportUsage = "none"
+reportMissingModuleSource = "none"
+executionEnvironments = [{ root = "brewgis", extraPaths = ["."] }]
+
 # ==== Vulture (dead code detection) ====
 [tool.vulture]
 paths = ["brewgis"]

@@ -110,7 +110,6 @@ def run_acs_equity_preprocessor(vars_: dict) -> dict:
         return {"success": True, "method": "acs_join", "updated": updated}
 
 
-
 def _apply_uniform_equity_defaults(
     target_schema: str, base_canvas_table: str, vars_: dict
 ) -> None:

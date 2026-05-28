@@ -3,10 +3,9 @@
 from __future__ import annotations
 
 import json
-from typing import Any
-
 import logging
 from pathlib import Path
+from typing import Any
 
 from django.conf import settings
 from django.db import connection

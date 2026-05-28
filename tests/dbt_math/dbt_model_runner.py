@@ -34,9 +34,7 @@ instead.
 
 from __future__ import annotations
 
-import json
 import uuid
-from pathlib import Path
 from typing import Any
 
 import numpy as np
@@ -248,11 +246,15 @@ def _write_df(schema: str, table: str, df: pd.DataFrame) -> str:
             placeholders = ", ".join(["%s"] * len(df.columns))
             for row in df.itertuples(index=False):
                 vals = tuple(
-                    None if pd.isna(v) else
-                    bool(v) if isinstance(v, (bool, np.bool_)) else
-                    int(v) if isinstance(v, (int, np.integer)) else
-                    float(v) if isinstance(v, (float, np.floating)) else
-                    v
+                    None
+                    if pd.isna(v)
+                    else bool(v)
+                    if isinstance(v, (bool, np.bool_))
+                    else int(v)
+                    if isinstance(v, (int, np.integer))
+                    else float(v)
+                    if isinstance(v, (float, np.floating))
+                    else v
                     for v in row
                 )
                 cur.execute(

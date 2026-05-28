@@ -4,7 +4,8 @@ from __future__ import annotations
 
 import pytest
 
-from brewgis.workspace.services._db import get_engine, text
+from brewgis.workspace.services._db import get_engine
+from brewgis.workspace.services._db import text
 from brewgis.workspace.services.spatial_allocator import allocate_attributes
 
 

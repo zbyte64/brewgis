@@ -311,7 +311,7 @@ class TestRunDbtLocal(TransactionTestCase):
 
             # The view should be created in target_schema, NOT public_target_schema.
             # The view name equals the model file name with scenario_id suffix.
-            view_name = f"env_constraint_test_dbt_schema"
+            view_name = "env_constraint_test_dbt_schema"
             with connection.cursor() as cursor:
                 cursor.execute(
                     """

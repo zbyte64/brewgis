@@ -41,7 +41,7 @@ def _create_workspace(name: str, db) -> None:  # type: ignore[no-untyped-def]
 @given(parsers.parse('a workspace "{ws_name}" with scenario "{scenario_name}" exists'))
 def workspace_with_scenario_exists(ws_name: str, scenario_name: str, db) -> None:  # type: ignore[no-untyped-def]
     """Create a scenario in the named workspace (workspace must already exist)."""
-    from brewgis.workspace.models import Workspace  # noqa: PLC0415
+    from brewgis.workspace.models import Workspace
 
     ws = Workspace.objects.get(name=ws_name)
     ScenarioFactory(name=scenario_name, workspace=ws)

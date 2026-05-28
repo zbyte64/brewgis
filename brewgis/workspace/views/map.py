@@ -5,7 +5,6 @@ from __future__ import annotations
 import json
 import uuid
 from typing import TYPE_CHECKING
-from typing import cast
 
 from django.conf import settings
 from django.http import Http404

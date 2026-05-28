@@ -1,296 +1,372 @@
 {% extends "base.html" %}
+
 {% load static %}
 {% load i18n %}
 {% load workspace_tags %}
 
 {% block extrahead %}
-  <link href="https://unpkg.com/maplibre-gl@^4.7.1/dist/maplibre-gl.css" rel="stylesheet" />
+  <link href="https://unpkg.com/maplibre-gl@^4.7.1/dist/maplibre-gl.css"
+        rel="stylesheet" />
   <script type="module" src="{% static 'js/brew-gis-map.js' %}"></script>
 {% endblock extrahead %}
-
 {% block title %}
   Map - {{ workspace.name }}
 {% endblock title %}
-
 {% block content %}
-<nav aria-label="breadcrumb">
-  <ol class="breadcrumb">
-    <li class="breadcrumb-item"><a href="{% url 'workspace:home' %}">{% translate "Home" %}</a></li>
-    <li class="breadcrumb-item active" aria-current="page">{% translate "Map" %} - {{ workspace.name }}</li>
-  </ol>
-
-</nav>
-
-<div class="container mt-4">
-{% if is_public_view %}
-  <div class="alert alert-info mb-3 rounded-0 text-center small" role="alert">
-    {% translate "Public view — read-only scenario display" %}
-  </div>
-{% endif %}
-  <div class="row">
-    <div class="col-12">
-      <div class="card">
-        <div class="card-header d-flex justify-content-between align-items-center flex-wrap gap-2">
-          <h5 class="card-title mb-0">{{ workspace.name }}</h5>
-          {% if scenario %}
-            <span class="badge bg-{% if scenario.scenario_type == 'base' %}success{% else %}warning text-dark{% endif %} ms-2"
-                  style="font-size: 0.75rem;">
-              {{ scenario.name }}
-              <small class="ms-1">({{ scenario.get_scenario_type_display }})</small>
-            </span>
-          {% endif %}
-{% if not is_public_view %}
-          <div class="d-flex align-items-center gap-2">
-{% if workspace.scenarios.exists %}
-              <form method="get" class="d-flex align-items-center gap-1" id="scenario-form">
-                <select name="scenario" class="form-select form-select-sm" style="width: auto;" onchange="this.form.submit()">
-                  <option value="">View mode</option>
-                  {% for s in workspace.scenarios.all %}
-                    <option value="{{ s.pk }}" {% if scenario and scenario.pk == s.pk %}selected{% endif %}>
-                      {{ s.name }}
-                    </option>
-                  {% endfor %}
-                </select>
-                {% if scenario %}
-                  <button type="button" class="btn btn-sm btn-outline-primary" id="toggle-paint-btn">Paint Mode</button>
-                {% endif %}
-              </form>
-            {% else %}
-              <small class="text-muted">No scenarios yet.
-                <a href="{% url 'workspace:scenario_create' workspace.pk %}" class="text-decoration-none">Create one</a>
-              </small>
-            {% endif %}
-            <a href="{% url 'workspace:home' %}" class="btn btn-sm btn-outline-secondary">Back</a>
-            <button type="button" class="btn btn-sm btn-outline-secondary" id="export-map-btn"
-                    data-bs-toggle="modal" data-bs-target="#exportMapModal">
-              Export Map
-            </button>
-            <button type="button" class="btn btn-sm btn-outline-secondary" id="basemap-btn"
-                    hx-get="{% url 'workspace:basemap_list' %}?workspace={{ workspace.pk }}"
-                    hx-target="#basemap-picker-container"
-                    hx-swap="innerHTML">
-              Basemap
-            </button>
-            <button type="button" class="btn btn-sm btn-outline-secondary"
-                    hx-get="{% url 'workspace:external_service_list' workspace.pk %}"
-                    hx-target="#external-services-container"
-                    hx-swap="innerHTML">
-              Services
-            </button>
-          </div>
-{% endif %}
-        </div>
-        {% if scenario and not is_public_view %}
-{% partialdef paint-toolbar %}
-<div id="paint-toolbar" class="p-2 bg-light border-bottom" style="display: none;">
-  <div class="row g-2 align-items-center">
-    <!-- Feature count -->
-    <div class="col-auto">
-      <small class="text-muted" id="paint-feature-count">0 features selected</small>
-    </div>
-
-    <!-- Selection mode buttons -->
-    <div class="col-auto">
-      <div class="btn-group btn-group-sm" role="group" aria-label="Selection mode">
-        <input type="radio" class="btn-check" name="sel-mode" id="sel-mode-click" value="click" checked>
-        <label class="btn btn-outline-secondary" for="sel-mode-click" title="Click to select features">Click</label>
-        <input type="radio" class="btn-check" name="sel-mode" id="sel-mode-box" value="box">
-        <label class="btn btn-outline-secondary" for="sel-mode-box" title="Drag to select a rectangle">Box</label>
-        <input type="radio" class="btn-check" name="sel-mode" id="sel-mode-polygon" value="polygon">
-        <label class="btn btn-outline-secondary" for="sel-mode-polygon" title="Draw a polygon to select features">Polygon</label>
-      </div>
-    </div>
-
-    <!-- Paint mode tabs -->
-    <div class="col-auto">
-      <div class="btn-group btn-group-sm" role="group">
-        <input type="radio" class="btn-check" name="paint-mode" id="paint-mode-direct" value="direct" checked>
-        <label class="btn btn-outline-secondary" for="paint-mode-direct">Direct Paint</label>
-        <input type="radio" class="btn-check" name="paint-mode" id="paint-mode-bf" value="built_form">
-        <label class="btn btn-outline-secondary" for="paint-mode-bf">Built Form</label>
-      </div>
-    </div>
-
-    <!-- Direct Paint Controls -->
-    <div class="col-auto paint-control-group" id="paint-direct-controls">
-      <select class="form-select form-select-sm" id="paint-column" name="column" aria-label="Column">
-        <option value="">Select column...</option>
-        {% for column in paintable_columns %}
-          <option value="{{ column.name }}">{{ column.label }}</option>
-        {% endfor %}
-      </select>
-    </div>
-    <div class="col-auto paint-control-group" id="paint-direct-value">
-      <input type="number" class="form-control form-control-sm" id="paint-value" name="value" placeholder="Value" step="any">
-    </div>
-
-    <!-- Built Form Controls (hidden by default, shown via JS) -->
-    <div class="col-auto paint-bf-group" id="paint-bf-controls" style="display: none;">
-      <select class="form-select form-select-sm" id="paint-bf-type" name="bf_type" aria-label="Built Form Type">
-        <option value="building">Building Type</option>
-        <option value="place">Place Type</option>
-      </select>
-    </div>
-    <div class="col-auto paint-bf-group" id="paint-bf-id-wrapper" style="display: none;">
-      <select class="form-select form-select-sm" id="paint-bf-id" name="bf_id" aria-label="Built Form">
-        <option value="">Select...</option>
-        {% if built_forms %}
-          {% if built_forms.building_types %}
-            <optgroup label="Building Types" id="bf-optgroup-building" data-type="building">
-              {% for bf in built_forms.building_types %}
-                <option value="{{ bf.id }}" data-type="building">{{ bf.name }}</option>
-              {% endfor %}
-            </optgroup>
-          {% endif %}
-          {% if built_forms.place_types %}
-            <optgroup label="Place Types" id="bf-optgroup-place" data-type="place" style="display: none;">
-              {% for bf in built_forms.place_types %}
-                <option value="{{ bf.id }}" data-type="place">{{ bf.name }}</option>
-              {% endfor %}
-            </optgroup>
-          {% endif %}
-        {% endif %}
-      </select>
-    </div>
-
-    <!-- Hidden fields for selected feature IDs -->
-    <input type="hidden" id="paint-feature-ids" name="features" value="">
-
-    <!-- Buttons -->
-    <div class="col-auto ms-auto">
-      <button type="button" class="btn btn-sm btn-primary" id="paint-apply-btn" disabled
-              hx-post="{{ paint_url }}"
-              hx-target="#paint-result"
-              hx-swap="innerHTML"
-              hx-include="#paint-toolbar select, #paint-toolbar input"
-              hx-trigger="click"
-              hx-headers='{"X-CSRFToken": "{{ csrf_token }}"}'>
-        Apply
-      </button>
-      <button type="button" class="btn btn-sm btn-outline-danger" id="paint-clear-btn" disabled
-              hx-post="{{ clear_url }}"
-              hx-target="#paint-result"
-              hx-swap="innerHTML"
-              hx-include="#paint-feature-ids"
-              hx-trigger="click"
-              hx-headers='{"X-CSRFToken": "{{ csrf_token }}"}'>
-        Clear
-      </button>
-      <button type="button" class="btn btn-sm btn-outline-secondary" id="paint-undo-btn" disabled
-              style="margin-left: 0.25rem;"
-              hx-post="{{ undo_url }}"
-              hx-target="#paint-result"
-              hx-swap="innerHTML"
-              hx-include="#undo-event-id"
-              hx-trigger="click"
-              hx-headers='{"X-CSRFToken": "{{ csrf_token }}"}'>
-        Undo Last
-      </button>
-      <input type="hidden" id="undo-event-id" name="event_id" value="">
-      <button type="button" class="btn btn-sm btn-outline-info" id="paint-history-btn"
-              style="margin-left: 0.25rem;">
-        History
-      </button>
-    </div>
-  </div>
-
-  <!-- Result feedback area -->
-  <div id="paint-result" class="mt-1"></div>
-</div>
-
-{% partialdef paint-history-panel %}
-<div id="paint-history-panel" class="p-2 bg-light border-bottom" style="display: none;">
-  <div class="d-flex justify-content-between align-items-center mb-1">
-    <small class="text-muted fw-semibold">Paint History</small>
-    <button type="button" class="btn btn-sm btn-outline-secondary" id="paint-history-toggle" style="font-size: 0.75rem;">Refresh</button>
-  </div>
-  <div id="paint-history-list" style="max-height: 180px; overflow-y: auto; font-size: 0.75rem;">
-    <div class="text-muted">No paint history loaded.</div>
-  </div>
-</div>
-{% endpartialdef %}
-{% endpartialdef %}
-{% partial paint-toolbar %}
-{% partial paint-history-panel %}
-{% endif %}
-
-        <div class="card-body p-0">
-          <div class="row g-0">
-            <div class="col{% if scenario %}-9{% endif %}">
-              <brew-gis-map
-                map-style="{{ basemap_style }}"
-                viewport='{{ viewport_json|safe }}'
-                layers='{{ layer_data|json_attr }}'
-                {% if scenario %}
-                  mode="view"
-                  scenario-id="{{ scenario.pk }}"
-                  canvas-layer-id="{{ canvas_view_layer_id }}"
-                  selection-mode="{{ selection_mode }}"
-                {% endif %}
-              </brew-gis-map>
-              <!-- Basemap Picker (hidden by default, shown via htmx) -->
-              <div id="basemap-picker-container" class="p-2" style="display: none;"></div>
-              <!-- Layer Groups Container -->
-              <div id="layer-group-container" class="p-2" style="display: none;"></div>
-              <!-- External Services Container -->
-              <div id="external-services-container" class="p-2" style="display: none;"></div>
-            </div>
+  <nav aria-label="breadcrumb">
+    <ol class="breadcrumb">
+      <li class="breadcrumb-item">
+        <a href="{% url 'workspace:home' %}">{% translate "Home" %}</a>
+      </li>
+      <li class="breadcrumb-item active" aria-current="page">{% translate "Map" %} - {{ workspace.name }}</li>
+    </ol>
+  </nav>
+  <div class="container mt-4">
+    {% if is_public_view %}
+      <div class="alert alert-info mb-3 rounded-0 text-center small"
+           role="alert">{% translate "Public view — read-only scenario display" %}</div>
+    {% endif %}
+    <div class="row">
+      <div class="col-12">
+        <div class="card">
+          <div class="card-header d-flex justify-content-between align-items-center flex-wrap gap-2">
+            <h5 class="card-title mb-0">{{ workspace.name }}</h5>
             {% if scenario %}
-              <div class="col-3 border-start" style="max-height: 600px; overflow-y: auto;">
-                <div class="p-2">
-                  <h6 class="mb-2 text-muted" style="font-size: 0.8rem;">{% translate "Scenario Layers" %}</h6>
-
-                  <div class="list-group list-group-flush" style="font-size: 0.75rem;">
-                    <div class="list-group-item d-flex align-items-center gap-2 py-1 px-0 border-0">
-                      <input type="checkbox" class="form-check-input m-0" checked disabled style="width: 0.9rem; height: 0.9rem;">
-                      <span class="d-flex align-items-center gap-1">
-                        <span class="badge" style="background-color: #e0e0e0; width: 12px; height: 12px;">&nbsp;</span>
-                        {% translate "Base Canvas" %}
-                      </span>
-                    </div>
-                    <div class="list-group-item d-flex align-items-center gap-2 py-1 px-0 border-0">
-                      <input type="checkbox" class="form-check-input m-0" checked disabled style="width: 0.9rem; height: 0.9rem;">
-                      <span class="d-flex align-items-center gap-1">
-                        <span class="badge" style="background-color: #ffeb3b; width: 12px; height: 12px;">&nbsp;</span>
-                        {% translate "Painted Features" %}
-                      </span>
-                    </div>
-                  </div>
-
-                  {% if scenario.analysis_runs.exists %}
-                    <hr class="my-2">
-                    <h6 class="mb-2 text-muted" style="font-size: 0.8rem;">{% translate "Analysis Results" %}</h6>
-                    <div class="list-group list-group-flush" style="font-size: 0.75rem;">
-                      {% for run in scenario.analysis_runs.all %}
-                        {% if run.status == "completed" %}
-                          {% for module in run.modules %}
-                            <div class="list-group-item d-flex align-items-center gap-2 py-1 px-0 border-0">
-                              <input type="checkbox" class="form-check-input m-0" checked disabled style="width: 0.9rem; height: 0.9rem;">
-                              <span>{{ module|title }}</span>
-                            </div>
-                          {% endfor %}
-                        {% endif %}
+              <span class="badge bg-{% if scenario.scenario_type == 'base' %}success{% else %}warning text-dark{% endif %} ms-2"
+                    style="font-size: 0.75rem">
+                {{ scenario.name }}
+                <small class="ms-1">({{ scenario.get_scenario_type_display }})</small>
+              </span>
+            {% endif %}
+            {% if not is_public_view %}
+              <div class="d-flex align-items-center gap-2">
+                {% if workspace.scenarios.exists %}
+                  <form method="get"
+                        class="d-flex align-items-center gap-1"
+                        id="scenario-form">
+                    <select name="scenario"
+                            class="form-select form-select-sm"
+                            style="width: auto"
+                            onchange="this.form.submit()">
+                      <option value="">View mode</option>
+                      {% for s in workspace.scenarios.all %}
+                        <option value="{{ s.pk }}"
+                                {% if scenario and scenario.pk == s.pk %}selected{% endif %}>{{ s.name }}</option>
                       {% endfor %}
-                    </div>
-                  {% endif %}
-                  <hr class="my-2">
-                  <div class="d-flex align-items-center justify-content-between">
-                    <h6 class="mb-0 text-muted" style="font-size: 0.8rem;">{% translate "Legends" %}</h6>
-                    <button type="button"
-                            class="btn btn-sm py-0 px-1 text-muted"
-                            style="font-size: 0.65rem; line-height: 1;"
-                            title="{% translate 'Layer Groups' %}"
-                            hx-get="{% url 'workspace:layer_group_list' workspace.pk %}"
-                            hx-target="#layer-group-container"
-                            hx-swap="innerHTML">
-                      Groups
-                    </button>
+                    </select>
+                    {% if scenario %}
+                      <button type="button"
+                              class="btn btn-sm btn-outline-primary"
+                              id="toggle-paint-btn">Paint Mode</button>
+                    {% endif %}
+                  </form>
+                {% else %}
+                  <small class="text-muted">No scenarios yet.
+                    <a href="{% url 'workspace:scenario_create' workspace.pk %}"
+                       class="text-decoration-none">Create one</a>
+                  </small>
+                {% endif %}
+                <a href="{% url 'workspace:home' %}"
+                   class="btn btn-sm btn-outline-secondary">Back</a>
+                <button type="button"
+                        class="btn btn-sm btn-outline-secondary"
+                        id="export-map-btn"
+                        data-bs-toggle="modal"
+                        data-bs-target="#exportMapModal">Export Map</button>
+                <button type="button"
+                        class="btn btn-sm btn-outline-secondary"
+                        id="basemap-btn"
+                        hx-get="{% url 'workspace:basemap_list' %}?workspace={{ workspace.pk }}"
+                        hx-target="#basemap-picker-container"
+                        hx-swap="innerHTML">Basemap</button>
+                <button type="button"
+                        class="btn btn-sm btn-outline-secondary"
+                        hx-get="{% url 'workspace:external_service_list' workspace.pk %}"
+                        hx-target="#external-services-container"
+                        hx-swap="innerHTML">Services</button>
+              </div>
+            {% endif %}
+          </div>
+          {% if scenario and not is_public_view %}
+            {% partialdef paint-toolbar %}
+            <div id="paint-toolbar"
+                 class="p-2 bg-light border-bottom"
+                 style="display: none">
+              <div class="row g-2 align-items-center">
+                <!-- Feature count -->
+                <div class="col-auto">
+                  <small class="text-muted" id="paint-feature-count">0 features selected</small>
+                </div>
+                <!-- Selection mode buttons -->
+                <div class="col-auto">
+                  <div class="btn-group btn-group-sm"
+                       role="group"
+                       aria-label="Selection mode">
+                    <input type="radio"
+                           class="btn-check"
+                           name="sel-mode"
+                           id="sel-mode-click"
+                           value="click"
+                           checked />
+                    <label class="btn btn-outline-secondary"
+                           for="sel-mode-click"
+                           title="Click to select features">Click</label>
+                    <input type="radio"
+                           class="btn-check"
+                           name="sel-mode"
+                           id="sel-mode-box"
+                           value="box" />
+                    <label class="btn btn-outline-secondary"
+                           for="sel-mode-box"
+                           title="Drag to select a rectangle">Box</label>
+                    <input type="radio"
+                           class="btn-check"
+                           name="sel-mode"
+                           id="sel-mode-polygon"
+                           value="polygon" />
+                    <label class="btn btn-outline-secondary"
+                           for="sel-mode-polygon"
+                           title="Draw a polygon to select features">Polygon</label>
                   </div>
-                  <div id="legend-list">
+                </div>
+                <!-- Paint mode tabs -->
+                <div class="col-auto">
+                  <div class="btn-group btn-group-sm" role="group">
+                    <input type="radio"
+                           class="btn-check"
+                           name="paint-mode"
+                           id="paint-mode-direct"
+                           value="direct"
+                           checked />
+                    <label class="btn btn-outline-secondary" for="paint-mode-direct">Direct Paint</label>
+                    <input type="radio"
+                           class="btn-check"
+                           name="paint-mode"
+                           id="paint-mode-bf"
+                           value="built_form" />
+                    <label class="btn btn-outline-secondary" for="paint-mode-bf">Built Form</label>
+                  </div>
+                </div>
+                <!-- Direct Paint Controls -->
+                <div class="col-auto paint-control-group" id="paint-direct-controls">
+                  <select class="form-select form-select-sm"
+                          id="paint-column"
+                          name="column"
+                          aria-label="Column">
+                    <option value="">Select column...</option>
+                    {% for column in paintable_columns %}<option value="{{ column.name }}">{{ column.label }}</option>{% endfor %}
+                  </select>
+                </div>
+                <div class="col-auto paint-control-group" id="paint-direct-value">
+                  <input type="number"
+                         class="form-control form-control-sm"
+                         id="paint-value"
+                         name="value"
+                         placeholder="Value"
+                         step="any" />
+                </div>
+                <!-- Built Form Controls (hidden by default, shown via JS) -->
+                <div class="col-auto paint-bf-group"
+                     id="paint-bf-controls"
+                     style="display: none">
+                  <select class="form-select form-select-sm"
+                          id="paint-bf-type"
+                          name="bf_type"
+                          aria-label="Built Form Type">
+                    <option value="building">Building Type</option>
+                    <option value="place">Place Type</option>
+                  </select>
+                </div>
+                <div class="col-auto paint-bf-group"
+                     id="paint-bf-id-wrapper"
+                     style="display: none">
+                  <select class="form-select form-select-sm"
+                          id="paint-bf-id"
+                          name="bf_id"
+                          aria-label="Built Form">
+                    <option value="">Select...</option>
+                    {% if built_forms %}
+                      {% if built_forms.building_types %}
+                        <optgroup label="Building Types" id="bf-optgroup-building" data-type="building">
+                          {% for bf in built_forms.building_types %}
+                            <option value="{{ bf.id }}" data-type="building">{{ bf.name }}</option>
+                          {% endfor %}
+                        </optgroup>
+                      {% endif %}
+                      {% if built_forms.place_types %}
+                        <optgroup label="Place Types"
+                                  id="bf-optgroup-place"
+                                  data-type="place"
+                                  style="display: none">
+                          {% for bf in built_forms.place_types %}
+                            <option value="{{ bf.id }}" data-type="place">{{ bf.name }}</option>
+                          {% endfor %}
+                        </optgroup>
+                      {% endif %}
+                    {% endif %}
+                  </select>
+                </div>
+                <!-- Hidden fields for selected feature IDs -->
+                <input type="hidden" id="paint-feature-ids" name="features" value="" />
+                <!-- Buttons -->
+                <div class="col-auto ms-auto">
+                  <button type="button"
+                          class="btn btn-sm btn-primary"
+                          id="paint-apply-btn"
+                          disabled
+                          hx-post="{{ paint_url }}"
+                          hx-target="#paint-result"
+                          hx-swap="innerHTML"
+                          hx-include="#paint-toolbar select, #paint-toolbar input"
+                          hx-trigger="click"
+                          hx-headers='{"X-CSRFToken": "{{ csrf_token }}"}'>Apply</button>
+                  <button type="button"
+                          class="btn btn-sm btn-outline-danger"
+                          id="paint-clear-btn"
+                          disabled
+                          hx-post="{{ clear_url }}"
+                          hx-target="#paint-result"
+                          hx-swap="innerHTML"
+                          hx-include="#paint-feature-ids"
+                          hx-trigger="click"
+                          hx-headers='{"X-CSRFToken": "{{ csrf_token }}"}'>Clear</button>
+                  <button type="button"
+                          class="btn btn-sm btn-outline-secondary"
+                          id="paint-undo-btn"
+                          disabled
+                          style="margin-left: 0.25rem"
+                          hx-post="{{ undo_url }}"
+                          hx-target="#paint-result"
+                          hx-swap="innerHTML"
+                          hx-include="#undo-event-id"
+                          hx-trigger="click"
+                          hx-headers='{"X-CSRFToken": "{{ csrf_token }}"}'>Undo Last</button>
+                  <input type="hidden" id="undo-event-id" name="event_id" value="" />
+                  <button type="button"
+                          class="btn btn-sm btn-outline-info"
+                          id="paint-history-btn"
+                          style="margin-left: 0.25rem">History</button>
+                </div>
+              </div>
+              <!-- Result feedback area -->
+              <div id="paint-result" class="mt-1"></div>
+            </div>
+            {% partialdef paint-history-panel %}
+            <div id="paint-history-panel"
+                 class="p-2 bg-light border-bottom"
+                 style="display: none">
+              <div class="d-flex justify-content-between align-items-center mb-1">
+                <small class="text-muted fw-semibold">Paint History</small>
+                <button type="button"
+                        class="btn btn-sm btn-outline-secondary"
+                        id="paint-history-toggle"
+                        style="font-size: 0.75rem">Refresh</button>
+              </div>
+              <div id="paint-history-list"
+                   style="max-height: 180px;
+                          overflow-y: auto;
+                          font-size: 0.75rem">
+                <div class="text-muted">No paint history loaded.</div>
+              </div>
+            </div>
+          {% endpartialdef %}
+        {% endpartialdef %}
+        {% partial paint-toolbar %}
+        {% partial paint-history-panel %}
+      {% endif %}
+      <div class="card-body p-0">
+        <div class="row g-0">
+          <div class="col{% if scenario %}-9{% endif %}">
+            <brew-gis-map map-style="{{ basemap_style }}" viewport='{{ viewport_json|safe }}' layers='{{ layer_data|json_attr }}'
+            {% if scenario %}
+              mode="view" scenario-id="{{ scenario.pk }}" canvas-layer-id="{{ canvas_view_layer_id }}" selection-mode="{{ selection_mode }}"
+            {% endif %}
+            </brew-gis-map>
+            <!-- Basemap Picker (hidden by default, shown via htmx) -->
+            <div id="basemap-picker-container" class="p-2" style="display: none;"></div>
+            <!-- Layer Groups Container -->
+            <div id="layer-group-container" class="p-2" style="display: none;"></div>
+            <!-- External Services Container -->
+            <div id="external-services-container" class="p-2" style="display: none;"></div>
+          </div>
+          {% if scenario %}
+            <div class="col-3 border-start"
+                 style="max-height: 600px;
+                        overflow-y: auto">
+              <div class="p-2">
+                <h6 class="mb-2 text-muted" style="font-size: 0.8rem;">{% translate "Scenario Layers" %}</h6>
+                <div class="list-group list-group-flush" style="font-size: 0.75rem;">
+                  <div class="list-group-item d-flex align-items-center gap-2 py-1 px-0 border-0">
+                    <input type="checkbox"
+                           class="form-check-input m-0"
+                           checked
+                           disabled
+                           style="width: 0.9rem;
+                                  height: 0.9rem" />
+                    <span class="d-flex align-items-center gap-1">
+                      <span class="badge"
+                            style="background-color: #e0e0e0;
+                                   width: 12px;
+                                   height: 12px">&nbsp;</span>
+                      {% translate "Base Canvas" %}
+                    </span>
+                  </div>
+                  <div class="list-group-item d-flex align-items-center gap-2 py-1 px-0 border-0">
+                    <input type="checkbox"
+                           class="form-check-input m-0"
+                           checked
+                           disabled
+                           style="width: 0.9rem;
+                                  height: 0.9rem" />
+                    <span class="d-flex align-items-center gap-1">
+                      <span class="badge"
+                            style="background-color: #ffeb3b;
+                                   width: 12px;
+                                   height: 12px">&nbsp;</span>
+                      {% translate "Painted Features" %}
+                    </span>
+                  </div>
+                </div>
+                {% if scenario.analysis_runs.exists %}
+                  <hr class="my-2" />
+                  <h6 class="mb-2 text-muted" style="font-size: 0.8rem;">{% translate "Analysis Results" %}</h6>
+                  <div class="list-group list-group-flush" style="font-size: 0.75rem;">
+                    {% for run in scenario.analysis_runs.all %}
+                      {% if run.status == "completed" %}
+                        {% for module in run.modules %}
+                          <div class="list-group-item d-flex align-items-center gap-2 py-1 px-0 border-0">
+                            <input type="checkbox"
+                                   class="form-check-input m-0"
+                                   checked
+                                   disabled
+                                   style="width: 0.9rem;
+                                          height: 0.9rem" />
+                            <span>{{ module|title }}</span>
+                          </div>
+                        {% endfor %}
+                      {% endif %}
+                    {% endfor %}
+                  </div>
+                {% endif %}
+                <hr class="my-2" />
+                <div class="d-flex align-items-center justify-content-between">
+                  <h6 class="mb-0 text-muted" style="font-size: 0.8rem;">{% translate "Legends" %}</h6>
+                  <button type="button"
+                          class="btn btn-sm py-0 px-1 text-muted"
+                          style="font-size: 0.65rem;
+                                 line-height: 1"
+                          title="{% translate 'Layer Groups' %}"
+                          hx-get="{% url 'workspace:layer_group_list' workspace.pk %}"
+                          hx-target="#layer-group-container"
+                          hx-swap="innerHTML">Groups</button>
+                </div>
+                <div id="legend-list">
                   {% regroup workspace.layers.all by group as layer_groups %}
                   {% for group in layer_groups %}
                     {% if group.grouper %}
-                      <div class="text-muted fw-semibold small px-1 mt-1 mb-0" style="font-size: 0.65rem; text-transform: uppercase;">{{ group.grouper.name }}</div>
+                      <div class="text-muted fw-semibold small px-1 mt-1 mb-0"
+                           style="font-size: 0.65rem;
+                                  text-transform: uppercase">{{ group.grouper.name }}</div>
                     {% endif %}
                     {% for layer in group.list %}
                       <div class="mb-1">
@@ -300,58 +376,73 @@
                                   hx-get="{% url 'workspace:layer_legend' layer.pk %}"
                                   hx-target="#legend-{{ layer.pk }}"
                                   hx-swap="innerHTML"
-                                  style="font-size: 0.75rem;">
-                            {% if not is_public_view %}<a href="{% url 'workspace:symbology_edit' layer.pk %}"
-                               class="text-decoration-none"
-                               style="font-size: 0.75rem; color: inherit;">{% endif %}{{ layer.name }}{% if not is_public_view %}</a>{% endif %}
+                                  style="font-size: 0.75rem">
+                            {% if not is_public_view %}
+                              <a href="{% url 'workspace:symbology_edit' layer.pk %}"
+                                 class="text-decoration-none"
+                                 style="font-size: 0.75rem;
+                                        color: inherit">
+                              {% endif %}
+                              {{ layer.name }}
+                              {% if not is_public_view %}</a>{% endif %}
                           </button>
-                          {% if not is_public_view %}<button type="button"
-                                  class="btn btn-sm py-0 px-1 text-muted"
-                                  style="font-size: 0.65rem; line-height: 1;"
-                                  title="{% translate 'Filters' %}"
-                                  aria-label="{% translate 'Filters' %}"
-                                  hx-get="{% url 'workspace:layer_filter_list' layer.pk %}"
-                                  hx-target="#filter-container-{{ layer.pk }}"
-                                  hx-swap="innerHTML">
-                            🔽
-                          </button>{% endif %}
-                          {% if not is_public_view %}<a href="{% url 'workspace:layer_data_table' layer.pk %}"
-                             class="btn btn-sm py-0 px-1 text-muted text-decoration-none"
-                             style="font-size: 0.65rem; line-height: 1;"
-                             title="{% translate 'View Data' %}"
-                             aria-label="{% translate 'View Data' %}"
-                             target="_blank">
-                            📋
-                          </a>{% endif %}
+                          {% if not is_public_view %}
+                            <button type="button"
+                                    class="btn btn-sm py-0 px-1 text-muted"
+                                    style="font-size: 0.65rem;
+                                           line-height: 1"
+                                    title="{% translate 'Filters' %}"
+                                    aria-label="{% translate 'Filters' %}"
+                                    hx-get="{% url 'workspace:layer_filter_list' layer.pk %}"
+                                    hx-target="#filter-container-{{ layer.pk }}"
+                                    hx-swap="innerHTML">🔽</button>
+                          {% endif %}
+                          {% if not is_public_view %}
+                            <a href="{% url 'workspace:layer_data_table' layer.pk %}"
+                               class="btn btn-sm py-0 px-1 text-muted text-decoration-none"
+                               style="font-size: 0.65rem;
+                                      line-height: 1"
+                               title="{% translate 'View Data' %}"
+                               aria-label="{% translate 'View Data' %}"
+                               target="_blank">📋</a>
+                          {% endif %}
                         </div>
                         <div id="legend-{{ layer.pk }}" class="ps-2"></div>
                         <div id="filter-container-{{ layer.pk }}" class="ps-2"></div>
                       </div>
                     {% endfor %}
-                    {% endfor %}
-                  </div>
+                  {% endfor %}
                 </div>
               </div>
-            {% endif %}
-          </div>
+            </div>
+          {% endif %}
         </div>
       </div>
     </div>
   </div>
 </div>
+</div>
 <!-- Export Map Modal -->
-<div class="modal fade" id="exportMapModal" tabindex="-1" aria-hidden="true">
+<div class="modal fade"
+     id="exportMapModal"
+     tabindex="-1"
+     aria-hidden="true">
   <div class="modal-dialog modal-sm">
     <div class="modal-content">
       <div class="modal-header">
         <h6 class="modal-title">Export Map</h6>
-        <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+        <button type="button"
+                class="btn-close"
+                data-bs-dismiss="modal"
+                aria-label="Close"></button>
       </div>
       <div class="modal-body">
         <div class="mb-3">
           <label for="export-title" class="form-label">Title</label>
-          <input type="text" class="form-control form-control-sm" id="export-title"
-                 value="{{ workspace.name }} - {% if scenario %}{{ scenario.name }}{% else %}Map View{% endif %}">
+          <input type="text"
+                 class="form-control form-control-sm"
+                 id="export-title"
+                 value="{{ workspace.name }} - {% if scenario %}{{ scenario.name }}{% else %}Map View{% endif %}" />
         </div>
         <div class="mb-3">
           <label for="export-dpi" class="form-label">DPI</label>
@@ -363,14 +454,21 @@
           </select>
         </div>
         <div class="form-check mb-3">
-          <input class="form-check-input" type="checkbox" id="export-include-legend" checked>
+          <input class="form-check-input"
+                 type="checkbox"
+                 id="export-include-legend"
+                 checked />
           <label class="form-check-label" for="export-include-legend">Include Legend</label>
         </div>
         <div class="mb-3">
           <label class="form-label">Format</label>
           <div class="d-flex gap-2">
-            <button type="button" class="btn btn-sm btn-outline-primary" id="export-png-btn">Download PNG</button>
-            <button type="button" class="btn btn-sm btn-outline-primary" id="export-pdf-btn">Generate PDF</button>
+            <button type="button"
+                    class="btn btn-sm btn-outline-primary"
+                    id="export-png-btn">Download PNG</button>
+            <button type="button"
+                    class="btn btn-sm btn-outline-primary"
+                    id="export-pdf-btn">Generate PDF</button>
           </div>
         </div>
       </div>
@@ -378,338 +476,353 @@
   </div>
 </div>
 {% endblock content %}
-
 {% block inline_javascript %}
-<script>
-  document.body.addEventListener('htmx:configRequest', function(evt) {
-    var csrfToken = document.querySelector('meta[name="csrf-token"]');
-    if (csrfToken) {
-      evt.detail.headers['X-CSRFToken'] = csrfToken.getAttribute('content');
-    }
-  });
-</script>
-<script>
-(function() {
-  'use strict';
-
-  const mapEl = document.querySelector('brew-gis-map');
-  const toggleBtn = document.getElementById('toggle-paint-btn');
-  const toolbar = document.getElementById('paint-toolbar');
-  const featureCount = document.getElementById('paint-feature-count');
-  const featureIdsInput = document.getElementById('paint-feature-ids');
-  const applyBtn = document.getElementById('paint-apply-btn');
-  const clearBtn = document.getElementById('paint-clear-btn');
-  const paintResult = document.getElementById('paint-result');
-  const paintModeDirect = document.getElementById('paint-mode-direct');
-  const paintModeBf = document.getElementById('paint-mode-bf');
-  const directControls = document.querySelectorAll('.paint-control-group');
-  const bfControls = document.querySelectorAll('.paint-bf-group');
-  const bfTypeSelect = document.getElementById('paint-bf-type');
-  const bfIdSelect = document.getElementById('paint-bf-id');
-  const bfOptgroupBuilding = document.getElementById('bf-optgroup-building');
-  const bfOptgroupPlace = document.getElementById('bf-optgroup-place');
-
-  let selectedFeatures = [];
-  let paintActive = false;
-
-  if (!mapEl || !toggleBtn || !toolbar) return;
-
-  // Toggle paint mode
-  toggleBtn.addEventListener('click', function() {
-    paintActive = !paintActive;
-    toolbar.style.display = paintActive ? 'block' : 'none';
-    toggleBtn.textContent = paintActive ? 'Exit Paint Mode' : 'Paint Mode';
-    toggleBtn.classList.toggle('btn-outline-primary', !paintActive);
-    toggleBtn.classList.toggle('btn-primary', paintActive);
-    mapEl.mode = paintActive ? 'paint' : 'view';
-  });
-
-  // Listen for feature selection changes from the map component
-  mapEl.addEventListener('paint-features-changed', function(e) {
-    selectedFeatures = e.detail.features.map(function(f) { return f.id; });
-    featureIdsInput.value = JSON.stringify(selectedFeatures);
-    featureCount.textContent = selectedFeatures.length + ' feature(s) selected';
-    applyBtn.disabled = selectedFeatures.length === 0;
-    clearBtn.disabled = selectedFeatures.length === 0;
-  });
-
-  // Selection mode radio buttons -> map component property
-  document.querySelectorAll('input[name="sel-mode"]').forEach(function(radio) {
-    radio.addEventListener('change', function() {
-      if (this.checked) {
-        mapEl.selectionMode = this.value;
+  <script>
+    document.body.addEventListener('htmx:configRequest', function(evt) {
+      var csrfToken = document.querySelector('meta[name="csrf-token"]');
+      if (csrfToken) {
+        evt.detail.headers['X-CSRFToken'] = csrfToken.getAttribute('content');
       }
     });
-  });
-  // Paint mode radio buttons
-  function updatePaintMode() {
-    var isDirect = paintModeDirect && paintModeDirect.checked;
-    directControls.forEach(function(el) { el.style.display = isDirect ? '' : 'none'; });
-    bfControls.forEach(function(el) { el.style.display = isDirect ? 'none' : ''; });
-  }
+  </script>
+  <script>
+    (function() {
+      'use strict';
 
-  if (paintModeDirect) {
-    paintModeDirect.addEventListener('change', updatePaintMode);
-    paintModeBf.addEventListener('change', updatePaintMode);
-  }
+      const mapEl = document.querySelector('brew-gis-map');
+      const toggleBtn = document.getElementById('toggle-paint-btn');
+      const toolbar = document.getElementById('paint-toolbar');
+      const featureCount = document.getElementById('paint-feature-count');
+      const featureIdsInput = document.getElementById('paint-feature-ids');
+      const applyBtn = document.getElementById('paint-apply-btn');
+      const clearBtn = document.getElementById('paint-clear-btn');
+      const paintResult = document.getElementById('paint-result');
+      const paintModeDirect = document.getElementById('paint-mode-direct');
+      const paintModeBf = document.getElementById('paint-mode-bf');
+      const directControls = document.querySelectorAll('.paint-control-group');
+      const bfControls = document.querySelectorAll('.paint-bf-group');
+      const bfTypeSelect = document.getElementById('paint-bf-type');
+      const bfIdSelect = document.getElementById('paint-bf-id');
+      const bfOptgroupBuilding = document.getElementById('bf-optgroup-building');
+      const bfOptgroupPlace = document.getElementById('bf-optgroup-place');
 
-  // BF type selector toggles which optgroup is visible
-  if (bfTypeSelect) {
-    bfTypeSelect.addEventListener('change', function() {
-      var type = this.value;
-      if (bfOptgroupBuilding) {
-        bfOptgroupBuilding.style.display = type === 'building' ? '' : 'none';
-      }
-      if (bfOptgroupPlace) {
-        bfOptgroupPlace.style.display = type === 'place' ? '' : 'none';
-      }
-    });
-  }
+      let selectedFeatures = [];
+      let paintActive = false;
 
-  // Auto-dismiss paint result after 5 seconds (skip errors)
-  if (paintResult) {
-    var observer = new MutationObserver(function() {
-      var hasError = paintResult.querySelector('.alert-danger');
-      if (!hasError) {
-        setTimeout(function() {
-          if (paintResult) paintResult.innerHTML = '';
-        }, 5000);
-      }
-    });
-    observer.observe(paintResult, { childList: true, subtree: true });
-  }
+      if (!mapEl || !toggleBtn || !toolbar) return;
 
-  // Re-enable apply/clear after htmx swap
-  document.body.addEventListener('htmx:afterSwap', function(evt) {
-    if (evt.detail.target && evt.detail.target.id === 'paint-result') {
-      applyBtn.disabled = selectedFeatures.length === 0;
-      clearBtn.disabled = selectedFeatures.length === 0;
-    }
-  });
+      // Toggle paint mode
+      toggleBtn.addEventListener('click', function() {
+        paintActive = !paintActive;
+        toolbar.style.display = paintActive ? 'block' : 'none';
+        toggleBtn.textContent = paintActive ? 'Exit Paint Mode' : 'Paint Mode';
+        toggleBtn.classList.toggle('btn-outline-primary', !paintActive);
+        toggleBtn.classList.toggle('btn-primary', paintActive);
+        mapEl.mode = paintActive ? 'paint' : 'view';
+      });
 
-  // ── Paint History & Undo ──────────────────────────────
-  const undoBtn = document.getElementById('paint-undo-btn');
-  const undoEventId = document.getElementById('undo-event-id');
-  const historyPanel = document.getElementById('paint-history-panel');
-  const historyList = document.getElementById('paint-history-list');
-  const historyBtn = document.getElementById('paint-history-btn');
-  const historyToggle = document.getElementById('paint-history-toggle');
-
-  let historyVisible = false;
-  let lastEventId = null;
-
-  function loadPaintHistory() {
-    if (!historyList) return;
-    historyList.innerHTML = '<div class="text-muted">Loading...</div>';
-
-    fetch('{{ history_url|safe }}?limit=20')
-      .then(function(r) { return r.json(); })
-      .then(function(data) {
-        if (data.status !== 'ok' || !data.events.length) {
-          historyList.innerHTML = '<div class="text-muted">No paint events yet.</div>';
-          undoBtn.disabled = true;
-          return;
-        }
-        var html = '';
-        for (var i = 0; i < data.events.length; i++) {
-          var evt = data.events[i];
-          var isUndone = evt.undone_at !== null;
-          var opLabel = evt.operation_type === 'paint' ? 'Paint' :
-                        evt.operation_type === 'clear' ? 'Clear' :
-                        evt.operation_type === 'built_form' ? 'BF' : evt.operation_type;
-          var valStr = evt.old_value + ' → ' + evt.new_value;
-          var rowClass = isUndone ? 'text-muted' : '';
-          html += '<div class="' + rowClass + '" style="border-bottom: 1px solid #eee; padding: 2px 0;">';
-          html += '<span class="badge bg-secondary me-1" style="font-size:0.6rem;">' + opLabel + '</span>';
-          html += '<span title="' + evt.feature_id + '.' + evt.column_name + '">';
-          html += evt.column_name + '</span> ';
-          html += '<span style="font-size:0.65rem;">' + valStr + '</span>';
-          if (!isUndone && evt.operation_type !== 'undo') {
-            html += ' <a href="#" class="undo-link text-danger" data-event-id="' + evt.id + '" style="font-size:0.65rem;">↩</a>';
-          }
-          html += '</div>';
-        }
-        historyList.innerHTML = html;
-
-        // Set last event for "Undo Last" button
-        var firstEvent = data.events[0];
-        if (firstEvent && !firstEvent.undone_at && firstEvent.operation_type !== 'undo') {
-          lastEventId = firstEvent.id;
-          undoBtn.disabled = false;
-        } else {
-          lastEventId = null;
-          undoBtn.disabled = true;
-        }
-
-        // Wire undo links
-        historyList.querySelectorAll('.undo-link').forEach(function(link) {
-          link.addEventListener('click', function(e) {
-            e.preventDefault();
-            var eventId = this.getAttribute('data-event-id');
-            undoEventId.value = eventId;
-            undoBtn.click();
-          });
+      // Listen for feature selection changes from the map component
+      mapEl.addEventListener('paint-features-changed', function(e) {
+        selectedFeatures = e.detail.features.map(function(f) {
+          return f.id;
         });
-      })
-      .catch(function() {
-        historyList.innerHTML = '<div class="text-muted">Failed to load history.</div>';
+        featureIdsInput.value = JSON.stringify(selectedFeatures);
+        featureCount.textContent = selectedFeatures.length + ' feature(s) selected';
+        applyBtn.disabled = selectedFeatures.length === 0;
+        clearBtn.disabled = selectedFeatures.length === 0;
       });
-  }
 
-  // Toggle history panel
-  if (historyBtn && historyPanel) {
-    historyBtn.addEventListener('click', function() {
-      historyVisible = !historyVisible;
-      historyPanel.style.display = historyVisible ? 'block' : 'none';
-      historyBtn.textContent = historyVisible ? 'Hide History' : 'History';
-      if (historyVisible) {
-        loadPaintHistory();
-      }
-    });
-  }
-
-  // Refresh history
-  if (historyToggle) {
-    historyToggle.addEventListener('click', function(e) {
-      e.preventDefault();
-      loadPaintHistory();
-    });
-  }
-
-  // "Undo Last" button: auto-fill with most recent event ID
-  if (undoBtn && undoEventId) {
-    undoBtn.addEventListener('htmx:beforeRequest', function() {
-      if (!undoEventId.value && lastEventId) {
-        undoEventId.value = lastEventId;
-      }
-    });
-  }
-
-  // Reload history after a successful paint operation
-  if (paintResult) {
-    var paintObserver = new MutationObserver(function() {
-      if (historyVisible) {
-        setTimeout(loadPaintHistory, 500);
-      }
-    });
-    paintObserver.observe(paintResult, { childList: true, subtree: true });
-  }
-
-  // Load history when paint mode activates
-  if (toggleBtn) {
-    toggleBtn.addEventListener('click', function() {
-      if (paintActive && historyVisible) {
-        setTimeout(loadPaintHistory, 300);
-      }
-    });
-  }
-
-  // ---- Map Export --------------------------------------------------
-  const exportPngBtn = document.getElementById('export-png-btn');
-  const exportPdfBtn = document.getElementById('export-pdf-btn');
-  const exportTitleInput = document.getElementById('export-title');
-  const exportDpiSelect = document.getElementById('export-dpi');
-  const exportIncludeLegend = document.getElementById('export-include-legend');
-
-  function getMapCanvas(scale) {
-    if (!mapEl || typeof mapEl.getCanvas !== 'function') return null;
-    const map = mapEl.getMap ? mapEl.getMap() : mapEl;
-    if (!map || typeof map.getCanvas !== 'function') return null;
-    const canvas = map.getCanvas();
-    if (!canvas) return null;
-    const origW = canvas.width;
-    const origH = canvas.height;
-    const scaledW = Math.round(origW * scale);
-    const scaledH = Math.round(origH * scale);
-    const offscreen = document.createElement('canvas');
-    offscreen.width = scaledW;
-    offscreen.height = scaledH;
-    const ctx = offscreen.getContext('2d');
-    ctx.scale(scale, scale);
-    ctx.drawImage(canvas, 0, 0);
-    return offscreen;
-  }
-
-  function addTitleToCanvas(canvas, scale, title) {
-    const titleHeight = Math.round(40 * scale);
-    const newCanvas = document.createElement('canvas');
-    newCanvas.width = canvas.width;
-    newCanvas.height = canvas.height + titleHeight;
-    const newCtx = newCanvas.getContext('2d');
-    newCtx.fillStyle = '#ffffff';
-    newCtx.fillRect(0, 0, newCanvas.width, newCanvas.height);
-    newCtx.drawImage(canvas, 0, titleHeight);
-    newCtx.fillStyle = '#333333';
-    newCtx.font = 'bold ' + Math.round(18 * scale) + 'px sans-serif';
-    newCtx.textAlign = 'center';
-    newCtx.fillText(title, newCanvas.width / 2, Math.round(26 * scale));
-    return newCanvas;
-  }
-
-  if (exportPngBtn) {
-    exportPngBtn.addEventListener('click', function() {
-      var scale = parseInt(exportDpiSelect.value) || 1;
-      var title = exportTitleInput.value || 'Map Export';
-      var canvas = getMapCanvas(scale);
-      if (!canvas) {
-        alert('Could not capture map canvas.');
-        return;
-      }
-      if (title) {
-        canvas = addTitleToCanvas(canvas, scale, title);
-      }
-      var link = document.createElement('a');
-      link.download = (title.replace(/\s+/g, '_') || 'map_export') + '.png';
-      link.href = canvas.toDataURL('image/png');
-      link.click();
-    });
-  }
-
-  if (exportPdfBtn) {
-    exportPdfBtn.addEventListener('click', function() {
-      var scale = parseInt(exportDpiSelect.value) || 2;
-      var title = exportTitleInput.value || 'Map Export';
-      var includeLegend = exportIncludeLegend.checked;
-      var canvas = getMapCanvas(scale);
-      if (!canvas) {
-        alert('Could not capture map canvas.');
-        return;
-      }
-      if (title) {
-        canvas = addTitleToCanvas(canvas, scale, title);
-      }
-      var mapImage = canvas.toDataURL('image/png');
-      fetch('{% url "workspace:generate_map_report" workspace.pk %}', {
-        method: 'POST',
-        headers: {
-          'X-CSRFToken': '{{ csrf_token }}',
-          'Content-Type': 'application/json'
-        },
-        body: JSON.stringify({
-          map_image: mapImage,
-          title: title,
-          dpi: scale * 72,
-          include_legend: includeLegend
-        })
-      })
-      .then(function(r) { return r.json(); })
-      .then(function(data) {
-        if (data.status === 'ok') {
-          var modalEl = document.getElementById('exportMapModal');
-          if (modalEl) {
-            var bsModal = bootstrap.Modal.getInstance(modalEl);
-            if (bsModal) bsModal.hide();
+      // Selection mode radio buttons -> map component property
+      document.querySelectorAll('input[name="sel-mode"]').forEach(function(radio) {
+        radio.addEventListener('change', function() {
+          if (this.checked) {
+            mapEl.selectionMode = this.value;
           }
-          alert('PDF report queued for generation. Check the Reports page.');
-        } else {
-          alert('Error: ' + (data.error || 'Unknown error'));
-        }
-      })
-      .catch(function(err) {
-        alert('Request failed: ' + err.message);
+        });
       });
-    });
-  }
-})();
-</script>
+      // Paint mode radio buttons
+      function updatePaintMode() {
+        var isDirect = paintModeDirect && paintModeDirect.checked;
+        directControls.forEach(function(el) {
+          el.style.display = isDirect ? '' : 'none';
+        });
+        bfControls.forEach(function(el) {
+          el.style.display = isDirect ? 'none' : '';
+        });
+      }
+
+      if (paintModeDirect) {
+        paintModeDirect.addEventListener('change', updatePaintMode);
+        paintModeBf.addEventListener('change', updatePaintMode);
+      }
+
+      // BF type selector toggles which optgroup is visible
+      if (bfTypeSelect) {
+        bfTypeSelect.addEventListener('change', function() {
+          var type = this.value;
+          if (bfOptgroupBuilding) {
+            bfOptgroupBuilding.style.display = type === 'building' ? '' : 'none';
+          }
+          if (bfOptgroupPlace) {
+            bfOptgroupPlace.style.display = type === 'place' ? '' : 'none';
+          }
+        });
+      }
+
+      // Auto-dismiss paint result after 5 seconds (skip errors)
+      if (paintResult) {
+        var observer = new MutationObserver(function() {
+          var hasError = paintResult.querySelector('.alert-danger');
+          if (!hasError) {
+            setTimeout(function() {
+              if (paintResult) paintResult.innerHTML = '';
+            }, 5000);
+          }
+        });
+        observer.observe(paintResult, {
+          childList: true,
+          subtree: true
+        });
+      }
+
+      // Re-enable apply/clear after htmx swap
+      document.body.addEventListener('htmx:afterSwap', function(evt) {
+        if (evt.detail.target && evt.detail.target.id === 'paint-result') {
+          applyBtn.disabled = selectedFeatures.length === 0;
+          clearBtn.disabled = selectedFeatures.length === 0;
+        }
+      });
+
+      // ── Paint History & Undo ──────────────────────────────
+      const undoBtn = document.getElementById('paint-undo-btn');
+      const undoEventId = document.getElementById('undo-event-id');
+      const historyPanel = document.getElementById('paint-history-panel');
+      const historyList = document.getElementById('paint-history-list');
+      const historyBtn = document.getElementById('paint-history-btn');
+      const historyToggle = document.getElementById('paint-history-toggle');
+
+      let historyVisible = false;
+      let lastEventId = null;
+
+      function loadPaintHistory() {
+        if (!historyList) return;
+        historyList.innerHTML = '<div class="text-muted">Loading...</div>';
+
+        fetch('{{ history_url|safe }}?limit=20')
+          .then(function(r) {
+            return r.json();
+          })
+          .then(function(data) {
+            if (data.status !== 'ok' || !data.events.length) {
+              historyList.innerHTML = '<div class="text-muted">No paint events yet.</div>';
+              undoBtn.disabled = true;
+              return;
+            }
+            var html = '';
+            for (var i = 0; i < data.events.length; i++) {
+              var evt = data.events[i];
+              var isUndone = evt.undone_at !== null;
+              var opLabel = evt.operation_type === 'paint' ? 'Paint' :
+                evt.operation_type === 'clear' ? 'Clear' :
+                evt.operation_type === 'built_form' ? 'BF' : evt.operation_type;
+              var valStr = evt.old_value + ' → ' + evt.new_value;
+              var rowClass = isUndone ? 'text-muted' : '';
+              html += '<div class="' + rowClass + '" style="border-bottom: 1px solid #eee; padding: 2px 0;">';
+              html += '<span class="badge bg-secondary me-1" style="font-size:0.6rem;">' + opLabel + '</span>';
+              html += '<span title="' + evt.feature_id + '.' + evt.column_name + '">';
+              html += evt.column_name + '</span> ';
+              html += '<span style="font-size:0.65rem;">' + valStr + '</span>';
+              if (!isUndone && evt.operation_type !== 'undo') {
+                html += ' <a href="#" class="undo-link text-danger" data-event-id="' + evt.id + '" style="font-size:0.65rem;">↩</a>';
+              }
+              html += '</div>';
+            }
+            historyList.innerHTML = html;
+
+            // Set last event for "Undo Last" button
+            var firstEvent = data.events[0];
+            if (firstEvent && !firstEvent.undone_at && firstEvent.operation_type !== 'undo') {
+              lastEventId = firstEvent.id;
+              undoBtn.disabled = false;
+            } else {
+              lastEventId = null;
+              undoBtn.disabled = true;
+            }
+
+            // Wire undo links
+            historyList.querySelectorAll('.undo-link').forEach(function(link) {
+              link.addEventListener('click', function(e) {
+                e.preventDefault();
+                var eventId = this.getAttribute('data-event-id');
+                undoEventId.value = eventId;
+                undoBtn.click();
+              });
+            });
+          })
+          .catch(function() {
+            historyList.innerHTML = '<div class="text-muted">Failed to load history.</div>';
+          });
+      }
+
+      // Toggle history panel
+      if (historyBtn && historyPanel) {
+        historyBtn.addEventListener('click', function() {
+          historyVisible = !historyVisible;
+          historyPanel.style.display = historyVisible ? 'block' : 'none';
+          historyBtn.textContent = historyVisible ? 'Hide History' : 'History';
+          if (historyVisible) {
+            loadPaintHistory();
+          }
+        });
+      }
+
+      // Refresh history
+      if (historyToggle) {
+        historyToggle.addEventListener('click', function(e) {
+          e.preventDefault();
+          loadPaintHistory();
+        });
+      }
+
+      // "Undo Last" button: auto-fill with most recent event ID
+      if (undoBtn && undoEventId) {
+        undoBtn.addEventListener('htmx:beforeRequest', function() {
+          if (!undoEventId.value && lastEventId) {
+            undoEventId.value = lastEventId;
+          }
+        });
+      }
+
+      // Reload history after a successful paint operation
+      if (paintResult) {
+        var paintObserver = new MutationObserver(function() {
+          if (historyVisible) {
+            setTimeout(loadPaintHistory, 500);
+          }
+        });
+        paintObserver.observe(paintResult, {
+          childList: true,
+          subtree: true
+        });
+      }
+
+      // Load history when paint mode activates
+      if (toggleBtn) {
+        toggleBtn.addEventListener('click', function() {
+          if (paintActive && historyVisible) {
+            setTimeout(loadPaintHistory, 300);
+          }
+        });
+      }
+
+      // ---- Map Export --------------------------------------------------
+      const exportPngBtn = document.getElementById('export-png-btn');
+      const exportPdfBtn = document.getElementById('export-pdf-btn');
+      const exportTitleInput = document.getElementById('export-title');
+      const exportDpiSelect = document.getElementById('export-dpi');
+      const exportIncludeLegend = document.getElementById('export-include-legend');
+
+      function getMapCanvas(scale) {
+        if (!mapEl || typeof mapEl.getCanvas !== 'function') return null;
+        const map = mapEl.getMap ? mapEl.getMap() : mapEl;
+        if (!map || typeof map.getCanvas !== 'function') return null;
+        const canvas = map.getCanvas();
+        if (!canvas) return null;
+        const origW = canvas.width;
+        const origH = canvas.height;
+        const scaledW = Math.round(origW * scale);
+        const scaledH = Math.round(origH * scale);
+        const offscreen = document.createElement('canvas');
+        offscreen.width = scaledW;
+        offscreen.height = scaledH;
+        const ctx = offscreen.getContext('2d');
+        ctx.scale(scale, scale);
+        ctx.drawImage(canvas, 0, 0);
+        return offscreen;
+      }
+
+      function addTitleToCanvas(canvas, scale, title) {
+        const titleHeight = Math.round(40 * scale);
+        const newCanvas = document.createElement('canvas');
+        newCanvas.width = canvas.width;
+        newCanvas.height = canvas.height + titleHeight;
+        const newCtx = newCanvas.getContext('2d');
+        newCtx.fillStyle = '#ffffff';
+        newCtx.fillRect(0, 0, newCanvas.width, newCanvas.height);
+        newCtx.drawImage(canvas, 0, titleHeight);
+        newCtx.fillStyle = '#333333';
+        newCtx.font = 'bold ' + Math.round(18 * scale) + 'px sans-serif';
+        newCtx.textAlign = 'center';
+        newCtx.fillText(title, newCanvas.width / 2, Math.round(26 * scale));
+        return newCanvas;
+      }
+
+      if (exportPngBtn) {
+        exportPngBtn.addEventListener('click', function() {
+          var scale = parseInt(exportDpiSelect.value) || 1;
+          var title = exportTitleInput.value || 'Map Export';
+          var canvas = getMapCanvas(scale);
+          if (!canvas) {
+            alert('Could not capture map canvas.');
+            return;
+          }
+          if (title) {
+            canvas = addTitleToCanvas(canvas, scale, title);
+          }
+          var link = document.createElement('a');
+          link.download = (title.replace(/\s+/g, '_') || 'map_export') + '.png';
+          link.href = canvas.toDataURL('image/png');
+          link.click();
+        });
+      }
+
+      if (exportPdfBtn) {
+        exportPdfBtn.addEventListener('click', function() {
+          var scale = parseInt(exportDpiSelect.value) || 2;
+          var title = exportTitleInput.value || 'Map Export';
+          var includeLegend = exportIncludeLegend.checked;
+          var canvas = getMapCanvas(scale);
+          if (!canvas) {
+            alert('Could not capture map canvas.');
+            return;
+          }
+          if (title) {
+            canvas = addTitleToCanvas(canvas, scale, title);
+          }
+          var mapImage = canvas.toDataURL('image/png');
+          fetch('{% url "workspace:generate_map_report" workspace.pk %}', {
+              method: 'POST',
+              headers: {
+                'X-CSRFToken': '{{ csrf_token }}',
+                'Content-Type': 'application/json'
+              },
+              body: JSON.stringify({
+                map_image: mapImage,
+                title: title,
+                dpi: scale * 72,
+                include_legend: includeLegend
+              })
+            })
+            .then(function(r) {
+              return r.json();
+            })
+            .then(function(data) {
+              if (data.status === 'ok') {
+                var modalEl = document.getElementById('exportMapModal');
+                if (modalEl) {
+                  var bsModal = bootstrap.Modal.getInstance(modalEl);
+                  if (bsModal) bsModal.hide();
+                }
+                alert('PDF report queued for generation. Check the Reports page.');
+              } else {
+                alert('Error: ' + (data.error || 'Unknown error'));
+              }
+            })
+            .catch(function(err) {
+              alert('Request failed: ' + err.message);
+            });
+        });
+      }
+    })();
+  </script>
 {% endblock inline_javascript %}

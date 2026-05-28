@@ -127,6 +127,8 @@ class Command(BaseCommand):
         if not result["success"]:
             for failure in result.get("failures", []):
                 self.stdout.write(f"    - {failure}")
+
+
 def _seed_built_form_export() -> None:
     """Seed ``built_forms`` from Django BuildingType records."""
     from django.conf import settings

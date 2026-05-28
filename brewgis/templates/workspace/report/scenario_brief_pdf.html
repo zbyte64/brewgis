@@ -1,92 +1,181 @@
-{% load i18n %}{% load workspace_tags %}<!DOCTYPE html>
+{% load i18n %}
+{% load workspace_tags %}
+
+<!DOCTYPE html>
 <html lang="en">
-<head>
-<meta charset="utf-8">
-<style>
-  @page {
-    size: A4;
-    margin: 2cm 2.5cm;
-  }
-  body { font-family: 'DejaVu Sans', sans-serif; font-size: 10pt; color: #333; line-height: 1.5; }
-  h1 { font-size: 18pt; color: #1a1a1a; border-bottom: 2px solid #0d6efd; padding-bottom: 6pt; }
-  h2 { font-size: 14pt; color: #444; margin-top: 20pt; }
-  h3 { font-size: 11pt; color: #555; margin-top: 14pt; }
-  table { width: 100%; border-collapse: collapse; margin: 10pt 0; }
-  th { background: #0d6efd; color: white; padding: 6pt 8pt; text-align: left; font-size: 9pt; }
-  td { padding: 4pt 8pt; border-bottom: 1px solid #ddd; font-size: 9pt; }
-  tr:nth-child(even) { background: #f8f9fa; }
-  .header { text-align: center; margin-bottom: 20pt; }
-  .header h1 { border: none; margin-bottom: 2pt; }
-  .header .subtitle { color: #666; font-size: 10pt; }
-  .metric-value { text-align: right; font-weight: bold; }
-  .metric-label { color: #555; }
-  .footer { margin-top: 30pt; font-size: 8pt; color: #999; text-align: center; border-top: 1px solid #ddd; padding-top: 8pt; }
-  .section { margin-bottom: 16pt; }
-  .summary-box { background: #e8f4f8; border: 1px solid #b8d4e3; border-radius: 4pt; padding: 10pt; margin: 10pt 0; }
-</style>
-</head>
-<body>
+  <head>
+    <meta charset="utf-8" />
+    <style>
+      @page {
+        size: A4;
+        margin: 2cm 2.5cm;
+      }
 
-<div class="header">
-  <h1>{{ scenario.name }}</h1>
-  <div class="subtitle">{{ workspace.name }} — Scenario Brief</div>
-  <div class="subtitle">Generated {{ generated_at|date:"F j, Y" }}</div>
-</div>
+      body {
+        font-family: 'DejaVu Sans', sans-serif;
+        font-size: 10pt;
+        color: #333;
+        line-height: 1.5;
+      }
 
-{% if scenario.description %}
-<div class="section">
-  <h2>{% translate "Executive Summary" %}</h2>
-  <div class="summary-box">
-    <p>{{ scenario.description }}</p>
-  </div>
-</div>
-{% endif %}
+      h1 {
+        font-size: 18pt;
+        color: #1a1a1a;
+        border-bottom: 2px solid #0d6efd;
+        padding-bottom: 6pt;
+      }
 
-<div class="section">
-  <h2>{% translate "Scenario Details" %}</h2>
-  <table>
-    <tr><td class="metric-label">{% translate "Type" %}</td><td>{{ scenario.get_scenario_type_display }}</td></tr>
-    <tr><td class="metric-label">{% translate "Base Year" %}</td><td>{{ scenario.base_year }}</td></tr>
-    <tr><td class="metric-label">{% translate "Horizon Year" %}</td><td>{{ scenario.horizon_year }}</td></tr>
-    {% if scenario.parent %}
-    <tr><td class="metric-label">{% translate "Parent Scenario" %}</td><td>{{ scenario.parent.name }}</td></tr>
+      h2 {
+        font-size: 14pt;
+        color: #444;
+        margin-top: 20pt;
+      }
+
+      h3 {
+        font-size: 11pt;
+        color: #555;
+        margin-top: 14pt;
+      }
+
+      table {
+        width: 100%;
+        border-collapse: collapse;
+        margin: 10pt 0;
+      }
+
+      th {
+        background: #0d6efd;
+        color: white;
+        padding: 6pt 8pt;
+        text-align: left;
+        font-size: 9pt;
+      }
+
+      td {
+        padding: 4pt 8pt;
+        border-bottom: 1px solid #ddd;
+        font-size: 9pt;
+      }
+
+      tr:nth-child(even) {
+        background: #f8f9fa;
+      }
+
+      .header {
+        text-align: center;
+        margin-bottom: 20pt;
+      }
+
+      .header h1 {
+        border: none;
+        margin-bottom: 2pt;
+      }
+
+      .header .subtitle {
+        color: #666;
+        font-size: 10pt;
+      }
+
+      .metric-value {
+        text-align: right;
+        font-weight: bold;
+      }
+
+      .metric-label {
+        color: #555;
+      }
+
+      .footer {
+        margin-top: 30pt;
+        font-size: 8pt;
+        color: #999;
+        text-align: center;
+        border-top: 1px solid #ddd;
+        padding-top: 8pt;
+      }
+
+      .section {
+        margin-bottom: 16pt;
+      }
+
+      .summary-box {
+        background: #e8f4f8;
+        border: 1px solid #b8d4e3;
+        border-radius: 4pt;
+        padding: 10pt;
+        margin: 10pt 0;
+      }
+    </style>
+  </head>
+  <body>
+    <div class="header">
+      <h1>{{ scenario.name }}</h1>
+      <div class="subtitle">{{ workspace.name }} — Scenario Brief</div>
+      <div class="subtitle">Generated {{ generated_at|date:"F j, Y" }}</div>
+    </div>
+    {% if scenario.description %}
+      <div class="section">
+        <h2>{% translate "Executive Summary" %}</h2>
+        <div class="summary-box">
+          <p>{{ scenario.description }}</p>
+        </div>
+      </div>
     {% endif %}
-  </table>
-</div>
-
-{% if metrics %}
-<div class="section">
-  <h2>{% translate "Key Metrics" %}</h2>
-  <table>
-    <tr>
-      <th>{% translate "Metric" %}</th>
-      <th class="metric-value">{% translate "Value" %}</th>
-    </tr>
-    {% for key, val in metrics.items %}
-    <tr>
-      <td class="metric-label">{{ key|title|cut:"_" }}</td>
-      <td class="metric-value">{{ val|floatformat:1|default:"—" }}</td>
-    </tr>
-    {% endfor %}
-  </table>
-</div>
-{% endif %}
-
-<div class="section">
-  <h2>{% translate "Methodology" %}</h2>
-  <p>{% translate "This brief was generated by Brew GIS, an open-source GIS workspace for urban planning and data science. Metrics are computed from scenario analysis models running against parcel data with built form assignments." %}</p>
-  <h3>{% translate "Data Sources" %}</h3>
-  <ul>
-    <li>{% translate "Parcel data: User-uploaded GIS data" %}</li>
-    <li>{% translate "Demographics: American Community Survey (ACS)" %}</li>
-    <li>{% translate "Employment: LEHD Origin-Destination Employment Statistics" %}</li>
-    <li>{% translate "Transportation: ITE Trip Generation + Gravity Model + MNL Mode Choice" %}</li>
-  </ul>
-</div>
-
-<div class="footer">
-  <p>{% translate "Generated by Brew GIS" %} — {{ generated_at|date:"c" }}</p>
-</div>
-
-</body>
+    <div class="section">
+      <h2>{% translate "Scenario Details" %}</h2>
+      <table>
+        <tr>
+          <td class="metric-label">{% translate "Type" %}</td>
+          <td>{{ scenario.get_scenario_type_display }}</td>
+        </tr>
+        <tr>
+          <td class="metric-label">{% translate "Base Year" %}</td>
+          <td>{{ scenario.base_year }}</td>
+        </tr>
+        <tr>
+          <td class="metric-label">{% translate "Horizon Year" %}</td>
+          <td>{{ scenario.horizon_year }}</td>
+        </tr>
+        {% if scenario.parent %}
+          <tr>
+            <td class="metric-label">{% translate "Parent Scenario" %}</td>
+            <td>{{ scenario.parent.name }}</td>
+          </tr>
+        {% endif %}
+      </table>
+    </div>
+    {% if metrics %}
+      <div class="section">
+        <h2>{% translate "Key Metrics" %}</h2>
+        <table>
+          <tr>
+            <th>{% translate "Metric" %}</th>
+            <th class="metric-value">{% translate "Value" %}</th>
+          </tr>
+          {% for key, val in metrics.items %}
+            <tr>
+              <td class="metric-label">{{ key|title|cut:"_" }}</td>
+              <td class="metric-value">{{ val|floatformat:1|default:"—" }}</td>
+            </tr>
+          {% endfor %}
+        </table>
+      </div>
+    {% endif %}
+    <div class="section">
+      <h2>{% translate "Methodology" %}</h2>
+      <p>
+        {% translate "This brief was generated by Brew GIS, an open-source GIS workspace for urban planning and data science. Metrics are computed from scenario analysis models running against parcel data with built form assignments." %}
+      </p>
+      <h3>{% translate "Data Sources" %}</h3>
+      <ul>
+        <li>{% translate "Parcel data: User-uploaded GIS data" %}</li>
+        <li>{% translate "Demographics: American Community Survey (ACS)" %}</li>
+        <li>{% translate "Employment: LEHD Origin-Destination Employment Statistics" %}</li>
+        <li>{% translate "Transportation: ITE Trip Generation + Gravity Model + MNL Mode Choice" %}</li>
+      </ul>
+    </div>
+    <div class="footer">
+      <p>{% translate "Generated by Brew GIS" %} — {{ generated_at|date:"c" }}</p>
+    </div>
+  </body>
 </html>

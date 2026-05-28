@@ -147,6 +147,9 @@ format-check:  ## Check formatting without changes
 .PHONY: typecheck
 typecheck:  ## Run mypy type checker
 	$(COMPOSE_RUN) mypy --cache-dir /tmp/.mypy_cache brewgis
+.PHONY: typecheck-fast
+typecheck-fast:  ## Run basedpyright type checker (host mode, faster)
+	basedpyright brewgis/
 
 .PHONY: lint-dbt
 lint-dbt:  ## SQLFluff lint dbt models
@@ -177,10 +180,25 @@ check: lint format-check typecheck check-columns test test-dbt test-soda  ## Run
 
 .PHONY: setup
 setup:  ## Install git hooks and local dependencies
+	@echo ""
 	@echo "==> Installing pre-commit hooks..."
+	@echo "    This configures git to auto-format code on every commit."
+	@echo "    Pre-commit hooks do NOT reject commits for style issues —"
+	@echo "    they silently auto-fix formatting and let the commit through."
+	@echo ""
 	pre-commit install
-	@echo "==> Checking pre-commit hooks are active..."
-	@pre-commit run --all-files --show-diff-on-failure || true
+	@echo ""
+	@echo "==> Running all auto-fixing pre-commit hooks to clean up the working tree..."
+	@echo "    (This will auto-format any unstaged files.)"
+	@pre-commit run --all-files || true
+	@echo ""
+	@echo "==> To also run the slow checking hooks (mypy, tsc, eslint, etc.):"
+	@echo "    pre-commit run --hook-stage manual --all-files"
+	@echo ""
+	@echo "==> For a faster type-checking alternative to mypy, install basedpyright:"
+	@echo "    pip install basedpyright"
+	@echo "    then: make typecheck-fast"
+	@echo ""
 	@echo "==> Done. Make sure to 'pip install -r requirements/local.txt' if developing on host."
 
 .PHONY: dev-host

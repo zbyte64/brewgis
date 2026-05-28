@@ -1,29 +1,25 @@
 {% load i18n %}
+
 <div class="legend-container">
   <div class="d-flex justify-content-between align-items-center mb-2">
     <strong style="font-size: 0.85rem;">{{ legend.layer_name }}</strong>
-    <span class="badge bg-secondary" style="font-size: 0.6rem;">
-      {{ legend.symbology_type|title }}
-    </span>
+    <span class="badge bg-secondary" style="font-size: 0.6rem;">{{ legend.symbology_type|title }}</span>
   </div>
   {% if legend.attribute_column %}
-    <div class="text-muted mb-1" style="font-size: 0.7rem;">
-      {% translate "Column:" %} {{ legend.attribute_column }}
-    </div>
+    <div class="text-muted mb-1" style="font-size: 0.7rem;">{% translate "Column:" %} {{ legend.attribute_column }}</div>
   {% endif %}
   <ul class="list-unstyled mb-0" style="font-size: 0.75rem;">
     {% for item in legend.items %}
       <li class="d-flex align-items-center gap-2 py-1">
-        <span class="legend-swatch" style="
-          display: inline-block;
-          width: 14px;
-          height: 14px;
-          background-color: {{ item.color }};
-          opacity: {{ item.opacity }};
-          border: 1px solid rgba(0,0,0,0.15);
-          border-radius: {% if item.type_hint == 'circle' %}50%{% else %}2px{% endif %};
-          flex-shrink: 0;
-        "></span>
+        <span class="legend-swatch"
+              style="display: inline-block;
+                     width: 14px;
+                     height: 14px;
+                     background-color: {{ item.color }};
+                     opacity: {{ item.opacity }};
+                     border: 1px solid rgba(0,0,0,0.15);
+                     border-radius: {% if item.type_hint == 'circle' %}50%{% else %}2px{% endif %};
+                     flex-shrink: 0"></span>
         <span>{{ item.label }}</span>
         {% if item.min_value is not None and item.max_value is not None %}
           <span class="text-muted" style="font-size: 0.65rem;">
@@ -36,13 +32,15 @@
     {% endfor %}
   </ul>
   {% if legend.null_info %}
-    <hr class="my-1">
+    <hr class="my-1" />
     <div style="font-size: 0.7rem;">
       {% if legend.null_info.zero_transparent %}
         <div class="text-muted">{% translate "Zero values are transparent" %}</div>
       {% endif %}
       {% if legend.null_info.null_count is not None %}
-        <div class="text-muted">{% blocktranslate %}{{ legend.null_info.null_count }} null value(s){% endblocktranslate %}</div>
+        <div class="text-muted">
+          {% blocktranslate %}{{ legend.null_info.null_count }} null value(s){% endblocktranslate %}
+        </div>
       {% endif %}
     </div>
   {% endif %}

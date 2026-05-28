@@ -27,6 +27,6 @@ def navigate_create_workspace(page: Page, live_server_url: str) -> None:
 @then('I should see a "Name" form field')
 def name_form_field(page: Page) -> None:
     """Assert the form has a Name input field."""
-    from playwright.sync_api import expect  # noqa: PLC0415
+    from playwright.sync_api import expect
 
     expect(page.get_by_label("Name")).to_be_visible()

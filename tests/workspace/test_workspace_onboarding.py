@@ -18,7 +18,6 @@ from brewgis.workspace.models import Workspace
 from tests.factories import UserFactory
 from tests.factories import WorkspaceFactory
 
-
 _SEEDED = False
 
 
@@ -41,9 +40,7 @@ def _seed_basic_counties() -> None:
     if County.objects.filter(state_fips="06", county_fips="019").exists():
         return
     County.objects.create(state_fips="06", county_fips="019", name="Fresno County")
-    County.objects.create(
-        state_fips="06", county_fips="037", name="Los Angeles County"
-    )
+    County.objects.create(state_fips="06", county_fips="037", name="Los Angeles County")
     County.objects.create(state_fips="06", county_fips="001", name="Alameda County")
     County.objects.create(state_fips="17", county_fips="031", name="Cook County")
 
@@ -204,9 +201,7 @@ class TestCountyModel(TestCase):
         """Duplicate state_fips + county_fips should raise."""
         County.objects.create(state_fips="99", county_fips="999", name="Test")
         with pytest.raises(IntegrityError):
-            County.objects.create(
-                state_fips="99", county_fips="999", name="Duplicate"
-            )
+            County.objects.create(state_fips="99", county_fips="999", name="Duplicate")
 
 
 @pytest.mark.views

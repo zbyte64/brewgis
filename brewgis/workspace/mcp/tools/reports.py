@@ -1,7 +1,5 @@
 """MCP tools for report generation and GIS file import."""
 
-
-
 import base64
 import logging
 import tempfile
@@ -10,10 +8,10 @@ from typing import Any
 
 import geopandas as gpd
 from django.shortcuts import get_object_or_404
-from brewgis.workspace.services._db import get_engine
 
 from brewgis.workspace.models import ScenarioReport
 from brewgis.workspace.models import Workspace
+from brewgis.workspace.services._db import get_engine
 from brewgis.workspace.symbology.auto import auto_generate_symbology
 from brewgis.workspace.tasks import generate_report_task
 
@@ -26,7 +24,6 @@ def _get_workspace(workspace_slug: str) -> Workspace | None:
         return get_object_or_404(Workspace, pk=int(workspace_slug))
     except (ValueError, TypeError):
         return None
-
 
 
 def register_tools(server: object) -> None:
@@ -163,7 +160,6 @@ def register_tools(server: object) -> None:
                 if_exists="replace",
                 index=False,
             )
-
 
             # Determine geometry type
             geom_types = gdf.geometry.type.unique()

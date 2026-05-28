@@ -19,7 +19,7 @@ scenarios(
 @given(parsers.parse('the workspace has a data source category "{name}"'))
 def _workspace_has_data_source_category(name: str, db) -> None:  # type: ignore[no-untyped-def]
     """Create a data source category."""
-    from brewgis.workspace.models import DataSourceCategory  # noqa: PLC0415
+    from brewgis.workspace.models import DataSourceCategory
 
     DataSourceCategory.objects.create(
         name=name,
@@ -34,8 +34,8 @@ def _workspace_has_data_source_category(name: str, db) -> None:  # type: ignore[
 )
 def _workspace_has_data_source(name: str, cat_name: str, db) -> None:  # type: ignore[no-untyped-def]
     """Create a data source in the given category."""
-    from brewgis.workspace.models import DataSource  # noqa: PLC0415
-    from brewgis.workspace.models import DataSourceCategory  # noqa: PLC0415
+    from brewgis.workspace.models import DataSource
+    from brewgis.workspace.models import DataSourceCategory
 
     cat = DataSourceCategory.objects.get(name=cat_name)
     DataSource.objects.create(
@@ -55,6 +55,6 @@ def _data_catalog_category_count(page) -> None:
 @then(parsers.parse('the data catalog source "{name}" should be present'))
 def _data_catalog_source_present(page, name: str) -> None:
     """Check source name is present in the DOM (may be hidden in accordion)."""
-    from playwright.sync_api import expect  # noqa: PLC0415
+    from playwright.sync_api import expect
 
     expect(page.get_by_text(name)).to_be_attached()

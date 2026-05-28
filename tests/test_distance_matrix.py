@@ -12,10 +12,8 @@ Reference:
 """
 
 from __future__ import annotations
+
 import pytest
-
-
-
 from django.db import connection
 from django.test import TransactionTestCase
 

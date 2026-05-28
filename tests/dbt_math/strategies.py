@@ -22,7 +22,12 @@ def float_array(
 ) -> st.SearchStrategy:
     """Strategy for a ``np.ndarray`` of floats in a plausible domain."""
     return st.lists(
-        st.floats(min_value=min_value, max_value=max_value, allow_nan=False, allow_infinity=False),
+        st.floats(
+            min_value=min_value,
+            max_value=max_value,
+            allow_nan=False,
+            allow_infinity=False,
+        ),
         min_size=min_size,
         max_size=max_size,
     ).map(lambda lst: __import__("numpy", fromlist=[""]).array(lst, dtype=float))
@@ -37,7 +42,12 @@ def nullable_float_array(
     """Float array where some entries may be NaN (simulating SQL NULLs after COALESCE becomes 0)."""
     return st.lists(
         st.one_of(
-            st.floats(min_value=min_value, max_value=max_value, allow_nan=False, allow_infinity=False),
+            st.floats(
+                min_value=min_value,
+                max_value=max_value,
+                allow_nan=False,
+                allow_infinity=False,
+            ),
             st.floats(min_value=-1.0, max_value=-1.0),  # sentinel: will be replaced
         ),
         min_size=min_size,
@@ -51,35 +61,88 @@ def nullable_float_array(
 
 def _np(lst):
     import numpy as np
+
     return np.array(lst, dtype=float)
 
 
 def float_array_pair(
-    min_value_1=0.0, max_value_1=1e6,
-    min_value_2=0.0, max_value_2=1e6,
-    min_size=1, max_size=50,
+    min_value_1=0.0,
+    max_value_1=1e6,
+    min_value_2=0.0,
+    max_value_2=1e6,
+    min_size=1,
+    max_size=50,
 ):
     """Two float arrays of the same (random) length."""
     return st.integers(min_value=min_size, max_value=max_size).flatmap(
         lambda n: st.tuples(
-            st.lists(st.floats(min_value=min_value_1, max_value=max_value_1, allow_nan=False, allow_infinity=False), min_size=n, max_size=n).map(_np),
-            st.lists(st.floats(min_value=min_value_2, max_value=max_value_2, allow_nan=False, allow_infinity=False), min_size=n, max_size=n).map(_np),
+            st.lists(
+                st.floats(
+                    min_value=min_value_1,
+                    max_value=max_value_1,
+                    allow_nan=False,
+                    allow_infinity=False,
+                ),
+                min_size=n,
+                max_size=n,
+            ).map(_np),
+            st.lists(
+                st.floats(
+                    min_value=min_value_2,
+                    max_value=max_value_2,
+                    allow_nan=False,
+                    allow_infinity=False,
+                ),
+                min_size=n,
+                max_size=n,
+            ).map(_np),
         )
     )
 
 
 def float_array_triple(
-    min_value_1=0.0, max_value_1=1e6,
-    min_value_2=0.0, max_value_2=1e6,
-    min_value_3=0.0, max_value_3=1e6,
-    min_size=1, max_size=50,
+    min_value_1=0.0,
+    max_value_1=1e6,
+    min_value_2=0.0,
+    max_value_2=1e6,
+    min_value_3=0.0,
+    max_value_3=1e6,
+    min_size=1,
+    max_size=50,
 ):
     """Three float arrays of the same (random) length."""
     return st.integers(min_value=min_size, max_value=max_size).flatmap(
         lambda n: st.tuples(
-            st.lists(st.floats(min_value=min_value_1, max_value=max_value_1, allow_nan=False, allow_infinity=False), min_size=n, max_size=n).map(_np),
-            st.lists(st.floats(min_value=min_value_2, max_value=max_value_2, allow_nan=False, allow_infinity=False), min_size=n, max_size=n).map(_np),
-            st.lists(st.floats(min_value=min_value_3, max_value=max_value_3, allow_nan=False, allow_infinity=False), min_size=n, max_size=n).map(_np),
+            st.lists(
+                st.floats(
+                    min_value=min_value_1,
+                    max_value=max_value_1,
+                    allow_nan=False,
+                    allow_infinity=False,
+                ),
+                min_size=n,
+                max_size=n,
+            ).map(_np),
+            st.lists(
+                st.floats(
+                    min_value=min_value_2,
+                    max_value=max_value_2,
+                    allow_nan=False,
+                    allow_infinity=False,
+                ),
+                min_size=n,
+                max_size=n,
+            ).map(_np),
+            st.lists(
+                st.floats(
+                    min_value=min_value_3,
+                    max_value=max_value_3,
+                    allow_nan=False,
+                    allow_infinity=False,
+                ),
+                min_size=n,
+                max_size=n,
+            ).map(_np),
         )
     )
 
@@ -96,4 +159,6 @@ TRIPS = float_array(min_value=0, max_value=50000, max_size=50)
 
 RATES = st.floats(min_value=0.0, max_value=1.0)
 PERCENTAGES = st.floats(min_value=0.0, max_value=100.0)
-POSITIVE_FLOATS = st.floats(min_value=1e-6, max_value=1e6, allow_nan=False, allow_infinity=False)
+POSITIVE_FLOATS = st.floats(
+    min_value=1e-6, max_value=1e6, allow_nan=False, allow_infinity=False
+)

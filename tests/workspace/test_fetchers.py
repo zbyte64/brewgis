@@ -201,8 +201,12 @@ class TestLEHDFetcher:
         assert abs(result["48"] - 15000 / 47000) < 1e-4
         assert abs(result["49"] - 3000 / 47000) < 1e-4
         cns03_sum = (
-            result["22"] + result["42"] + result["44"]
-            + result["45"] + result["48"] + result["49"]
+            result["22"]
+            + result["42"]
+            + result["44"]
+            + result["45"]
+            + result["48"]
+            + result["49"]
         )
         assert abs(cns03_sum - 1.0) < 1e-4
 
@@ -256,8 +260,12 @@ class TestLEHDFetcher:
         assert result["48"] == 0.04
         assert result["49"] == 0.02
         ttu_sum = (
-            result["22"] + result["42"] + result["44"]
-            + result["45"] + result["48"] + result["49"]
+            result["22"]
+            + result["42"]
+            + result["44"]
+            + result["45"]
+            + result["48"]
+            + result["49"]
         )
         assert abs(ttu_sum - 1.0) < 1e-4
         assert abs(result["11"] - 10000 / 18000) < 1e-4
@@ -317,9 +325,7 @@ class TestLEHDFetcher:
         mock_get.return_value.raise_for_status = MagicMock()
         mock_get.return_value.status_code = 200
 
-        with _patch(
-            "brewgis.workspace.services.lehd_fetcher.requests.get", mock_get
-        ):
+        with _patch("brewgis.workspace.services.lehd_fetcher.requests.get", mock_get):
             with _patch(
                 "brewgis.workspace.services.lehd_fetcher._census_api_key",
                 return_value="test_key",
@@ -348,6 +354,7 @@ class TestLEHDFetcher:
 
 
 # ── POI Fetcher Tests ─────────────────────────────────────────────────
+
 
 class TestPOIFetcher:
     """Unit tests for the POI fetcher service."""

@@ -42,7 +42,7 @@ services:
       - brewgis_local_postgres_data_backups:/backups
     env_file:
       - ./.envs/.local/.postgres
-  
+
   tipg:
     image: ghcr.io/developmentseed/tipg:latest
     container_name: brewgis_local_tipg
@@ -56,7 +56,7 @@ services:
       - 8081
     depends_on:
       - postgres
-  
+
   martin:
     image: ghcr.io/maplibre/martin:1.8.2
     container_name: brewgis_local_martin
@@ -71,10 +71,10 @@ services:
   redis:
     image: docker.io/redis:6
     container_name: brewgis_local_redis
-    
+
     volumes:
       - brewgis_local_redis_data:/data
-    
+
 
   celeryworker:
     <<: *django

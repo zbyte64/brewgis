@@ -5,7 +5,6 @@ Phase 1e — verifies the server initializes and registers tools correctly.
 
 from __future__ import annotations
 
-import json
 from unittest.mock import MagicMock
 
 import pytest
@@ -72,13 +71,13 @@ class TestMcpToolFunctions:
 
     def test_tool_module_exports(self) -> None:
         """Every tool module exports register_tools function."""
-        from brewgis.workspace.mcp.tools import workspace as ws
-        from brewgis.workspace.mcp.tools import scenario as sc
-        from brewgis.workspace.mcp.tools import layer as ly
-        from brewgis.workspace.mcp.tools import paint as pt
         from brewgis.workspace.mcp.tools import analysis as an
         from brewgis.workspace.mcp.tools import data_import as di
+        from brewgis.workspace.mcp.tools import layer as ly
+        from brewgis.workspace.mcp.tools import paint as pt
         from brewgis.workspace.mcp.tools import reports as rp
+        from brewgis.workspace.mcp.tools import scenario as sc
+        from brewgis.workspace.mcp.tools import workspace as ws
 
         assert callable(ws.register_tools)
         assert callable(sc.register_tools)

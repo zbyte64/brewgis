@@ -19,4 +19,3 @@ Feature: Data Catalog Populated State
     And the workspace has a data source named "Census Tract" in category "Demographics"
     When I navigate to the workspace detail page
     Then the data catalog source "Census Tract" should be present
-

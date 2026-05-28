@@ -128,10 +128,7 @@ export class BrewGisMap extends LitElement {
     this.clearHighlight()
     for (const id of ids) {
       try {
-        this._map.setFeatureState(
-          { source: sourceId, id } as any,
-          { selected: true },
-        )
+        this._map.setFeatureState({ source: sourceId, id } as any, { selected: true })
       } catch {
         // Feature or source may not exist yet
       }
@@ -320,9 +317,7 @@ export class BrewGisMap extends LitElement {
     const sourceLayer = canvasConfig?.['source-layer'] || 'default'
 
     // Insert above the canvas view layer
-    const before = this._map.getLayer(this.canvasLayerId)
-      ? this.canvasLayerId
-      : undefined
+    const before = this._map.getLayer(this.canvasLayerId) ? this.canvasLayerId : undefined
 
     this._map.addLayer(
       {
@@ -337,12 +332,7 @@ export class BrewGisMap extends LitElement {
             '#2196f3', // Blue for selected
             'rgba(0,0,0,0)', // Transparent otherwise
           ],
-          'fill-opacity': [
-            'case',
-            ['boolean', ['feature-state', 'selected'], false],
-            0.4,
-            0,
-          ],
+          'fill-opacity': ['case', ['boolean', ['feature-state', 'selected'], false], 0.4, 0],
         },
       },
       before,

@@ -9,8 +9,8 @@ from pytest_bdd import scenarios
 from pytest_bdd import then
 from pytest_bdd import when
 
-from tests.review.pages.built_forms_page import BuiltFormsPage
 from tests.e2e.steps.common_steps import *  # noqa: F403
+from tests.review.pages.built_forms_page import BuiltFormsPage
 
 scenarios(str(Path(__file__).parent.parent / "features" / "built_forms.feature"))
 

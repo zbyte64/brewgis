@@ -1,7 +1,5 @@
 """MCP tools for dbt analysis operations."""
 
-
-
 import logging
 from typing import Any
 
@@ -10,11 +8,11 @@ from django.shortcuts import get_object_or_404
 from brewgis.workspace.analysis.module_registry import MODULE_DEPENDENCIES
 from brewgis.workspace.analysis.module_registry import get_module_label
 from brewgis.workspace.analysis.module_registry import get_result_table_names
+from brewgis.workspace.analysis.pipeline import run_analysis_pipeline
 from brewgis.workspace.models import AnalysisRun
 from brewgis.workspace.models import Scenario
 from brewgis.workspace.models import Workspace
 from brewgis.workspace.services.preflight import check_analysis_prerequisites
-from brewgis.workspace.analysis.pipeline import run_analysis_pipeline
 
 logger = logging.getLogger(__name__)
 
@@ -77,8 +75,8 @@ def register_tools(server: object) -> None:
             }
 
         # Launch via pipeline (dispatches to Dagster or sync)
+
         from brewgis.workspace.analysis.module_registry import resolve_module_order
-        from django.utils import timezone
 
         ordered = resolve_module_order(modules or list(MODULE_DEPENDENCIES))
         scenario_id_str = str(scenario.pk)

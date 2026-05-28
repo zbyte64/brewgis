@@ -1,7 +1,5 @@
 """MCP tools for paint read/write operations."""
 
-
-
 import json
 import logging
 from typing import Any
@@ -149,9 +147,9 @@ def register_tools(server: object) -> None:
         workspace = get_object_or_404(Workspace, pk=ws_pk)
         scenario = get_object_or_404(Scenario, pk=s_pk, workspace=workspace)
 
-        events = PaintEvent.objects.filter(scenario=scenario, operation_type="paint").order_by(
-            "-painted_at"
-        )[:count]
+        events = PaintEvent.objects.filter(
+            scenario=scenario, operation_type="paint"
+        ).order_by("-painted_at")[:count]
 
         reverted = 0
         for event in events:
@@ -205,7 +203,10 @@ def register_tools(server: object) -> None:
         scenario = get_object_or_404(Scenario, pk=s_pk, workspace=workspace)
 
         try:
-            result = check_paint_batch(workspace, {f["feature_id"]: {f["column"]: f["value"]} for f in features})
+            result = check_paint_batch(
+                workspace,
+                {f["feature_id"]: {f["column"]: f["value"]} for f in features},
+            )
             return {
                 "valid": not result.blocked,
                 "errors": result.violations,

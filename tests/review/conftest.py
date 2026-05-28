@@ -52,7 +52,7 @@ def _allowed_hosts() -> None:
 
 @pytest.fixture(scope="session")
 def playwright() -> Playwright:
-    from playwright.sync_api import sync_playwright  # noqa: PLC0415
+    from playwright.sync_api import sync_playwright
 
     with sync_playwright() as pw:
         yield pw
@@ -100,8 +100,9 @@ def live_server_url(live_server: LiveServer) -> str:
 
 @pytest.fixture
 def logged_in_user(db) -> User:
-    from allauth.account.models import EmailAddress  # noqa: PLC0415
-    from tests.factories import UserFactory  # noqa: PLC0415
+    from allauth.account.models import EmailAddress
+
+    from tests.factories import UserFactory
 
     user = UserFactory()
     EmailAddress.objects.create(

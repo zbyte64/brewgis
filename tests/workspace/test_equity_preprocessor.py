@@ -13,7 +13,8 @@ class TestPOICacheModel(TestCase):
     """Tests for the POICache model."""
 
     def setUp(self):
-        from brewgis.workspace.models import POICache, Workspace
+        from brewgis.workspace.models import POICache
+        from brewgis.workspace.models import Workspace
 
         self.workspace = Workspace.objects.create(name="Test Workspace")
         POICache.objects.create(
@@ -64,7 +65,8 @@ class TestACSEquityPreprocessor(TestCase):
     """Tests for the ACS equity data wrapper preprocessor."""
 
     def setUp(self):
-        from brewgis.workspace.models import Scenario, Workspace
+        from brewgis.workspace.models import Scenario
+        from brewgis.workspace.models import Workspace
 
         self.workspace = Workspace.objects.create(name="Test")
         self.scenario = Scenario.objects.create(

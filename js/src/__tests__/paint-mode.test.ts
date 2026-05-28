@@ -41,7 +41,6 @@ describe('PaintModeController', () => {
     expect(ctrl.isActive).toBe(true)
   })
 
-
   it('isActive returns false before activation', () => {
     const ctrl = new PaintModeController(map, host)
     expect(ctrl.isActive).toBe(false)

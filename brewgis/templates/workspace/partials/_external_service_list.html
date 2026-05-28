@@ -1,19 +1,16 @@
 {% load i18n %}
+
 <div id="external-service-list-{{ workspace.pk }}">
   <div class="d-flex justify-content-between align-items-center mb-2">
     <small class="text-muted fw-semibold" style="font-size: 0.75rem;">{% translate "External Map Services" %}</small>
     <button type="button"
             class="btn btn-sm btn-outline-primary py-0"
-            style="font-size: 0.7rem;"
+            style="font-size: 0.7rem"
             hx-get="{% url 'workspace:external_service_add' workspace.pk %}"
             hx-target="#external-service-form-{{ workspace.pk }}"
-            hx-swap="innerHTML">
-      {% translate "Add Service" %}
-    </button>
+            hx-swap="innerHTML">{% translate "Add Service" %}</button>
   </div>
-
   <div id="external-service-form-{{ workspace.pk }}"></div>
-
   {% if services %}
     <div class="list-group list-group-flush" style="font-size: 0.7rem;">
       {% for svc in services %}
@@ -23,42 +20,36 @@
               <span class="fw-semibold text-truncate" style="max-width: 140px;">{{ svc.name }}</span>
               <span class="badge bg-secondary" style="font-size: 0.6rem;">{{ svc.get_service_type_display }}</span>
             </div>
-            <div class="text-muted text-truncate" style="font-size: 0.65rem; max-width: 180px;">
-              {{ svc.url|truncatechars:50 }}
-            </div>
+            <div class="text-muted text-truncate"
+                 style="font-size: 0.65rem;
+                        max-width: 180px">{{ svc.url|truncatechars:50 }}</div>
           </div>
           <div class="d-flex gap-1 flex-shrink-0">
             {% if svc.is_active %}
               <button type="button"
                       class="btn btn-sm py-0 px-1"
-                      style="font-size: 0.65rem;"
+                      style="font-size: 0.65rem"
                       title="{% translate 'Deactivate' %}"
                       hx-post="{% url 'workspace:external_service_toggle' svc.pk %}"
                       hx-target="#external-service-list-{{ workspace.pk }}"
-                      hx-swap="outerHTML">
-                {% translate "Deactivate" %}
-              </button>
+                      hx-swap="outerHTML">{% translate "Deactivate" %}</button>
             {% else %}
               <button type="button"
                       class="btn btn-sm py-0 px-1"
-                      style="font-size: 0.65rem;"
+                      style="font-size: 0.65rem"
                       title="{% translate 'Activate' %}"
                       hx-post="{% url 'workspace:external_service_toggle' svc.pk %}"
                       hx-target="#external-service-list-{{ workspace.pk }}"
-                      hx-swap="outerHTML">
-                {% translate "Activate" %}
-              </button>
+                      hx-swap="outerHTML">{% translate "Activate" %}</button>
             {% endif %}
             <button type="button"
                     class="btn btn-sm py-0 px-1 text-danger"
-                    style="font-size: 0.65rem;"
+                    style="font-size: 0.65rem"
                     title="{% translate 'Delete' %}"
                     hx-post="{% url 'workspace:external_service_delete' svc.pk %}"
                     hx-target="#external-service-list-{{ workspace.pk }}"
                     hx-swap="outerHTML"
-                    hx-confirm="{% translate 'Delete this external map service?' %}">
-              {% translate "Delete" %}
-            </button>
+                    hx-confirm="{% translate 'Delete this external map service?' %}">{% translate "Delete" %}</button>
           </div>
         </div>
       {% endfor %}

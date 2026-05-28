@@ -9,8 +9,9 @@ import pytest
 from django.test import TestCase
 from django.urls import reverse
 
-from brewgis.workspace.models import Layer, LayerFilter
-from tests.factories import LayerFactory, UserFactory, WorkspaceFactory
+from brewgis.workspace.models import LayerFilter
+from tests.factories import LayerFactory
+from tests.factories import UserFactory
 
 
 @pytest.mark.views

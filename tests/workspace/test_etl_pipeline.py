@@ -12,9 +12,9 @@ from django.core.management import call_command
 from django.db import connection
 
 from brewgis.workspace.services.base_canvas_manager import BaseCanvasManager
+from brewgis.workspace.services.base_canvas_pipeline import run_pipeline
 from brewgis.workspace.services.base_canvas_schema import BaseCanvasSchema
 
-from brewgis.workspace.services.base_canvas_pipeline import run_pipeline
 
 @pytest.mark.integration
 @pytest.mark.django_db(transaction=True)
@@ -25,6 +25,7 @@ class TestETLPipeline:
     def _cleanup(self) -> None:
         """Ensure clean state before and after each test."""
         from django.db import connection
+
         with connection.cursor() as cursor:
             cursor.execute("TRUNCATE TABLE public.base_canvas RESTART IDENTITY CASCADE")
         yield
@@ -203,4 +204,3 @@ class TestETLPipeline:
         assert result["status"] == "error"
         assert "does not exist" in result["error"]
         assert "census" in result["error"].lower()
-

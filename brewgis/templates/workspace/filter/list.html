@@ -1,24 +1,20 @@
 {% load i18n %}
+
 <div id="filter-list-{{ layer.pk }}">
   <div class="d-flex justify-content-between align-items-center mb-2">
     <small class="text-muted fw-semibold" style="font-size: 0.75rem;">{% translate "Layer Filters" %}</small>
     <button type="button"
             class="btn btn-sm btn-outline-primary py-0"
-            style="font-size: 0.7rem;"
+            style="font-size: 0.7rem"
             hx-get="{% url 'workspace:layer_filter_create' layer.pk %}"
             hx-target="#filter-editor-{{ layer.pk }}"
-            hx-swap="innerHTML">
-      {% translate "New Filter" %}
-    </button>
+            hx-swap="innerHTML">{% translate "New Filter" %}</button>
   </div>
-
   <div id="filter-editor-{{ layer.pk }}"></div>
-
   {% if filters %}
     <div class="list-group list-group-flush" style="font-size: 0.7rem;">
       {% for flt in filters %}
-        <div class="list-group-item d-flex align-items-center gap-1 py-1 px-1 border-0
-                    {% if flt.is_active %}border-start border-primary border-2{% endif %}">
+        <div class="list-group-item d-flex align-items-center gap-1 py-1 px-1 border-0 {% if flt.is_active %}border-start border-primary border-2{% endif %}">
           <div class="flex-grow-1 min-width-0">
             <div class="d-flex align-items-center gap-1">
               <span class="fw-semibold text-truncate" style="max-width: 120px;">{{ flt.name }}</span>
@@ -26,48 +22,46 @@
                 <span class="badge bg-primary" style="font-size: 0.6rem;">{% translate "Active" %}</span>
               {% endif %}
             </div>
-            <div class="text-muted text-truncate" style="font-size: 0.65rem; max-width: 180px;">
-              {{ flt.filter_json|default:"(empty)"|truncatechars:60 }}
-            </div>
+            <div class="text-muted text-truncate"
+                 style="font-size: 0.65rem;
+                        max-width: 180px">{{ flt.filter_json|default:"(empty)"|truncatechars:60 }}</div>
           </div>
           <div class="d-flex gap-1 flex-shrink-0">
             <button type="button"
                     class="btn btn-sm py-0 px-1"
-                    style="font-size: 0.65rem;"
+                    style="font-size: 0.65rem"
                     title="{% translate 'Toggle' %}"
                     hx-post="{% url 'workspace:layer_filter_toggle' flt.pk %}"
                     hx-target="#filter-list-{{ layer.pk }}"
                     hx-swap="outerHTML">
-              {% if flt.is_active %}🔴{% else %}🟢{% endif %}
+              {% if flt.is_active %}
+                🔴
+              {% else %}
+                🟢
+              {% endif %}
             </button>
             <button type="button"
                     class="btn btn-sm py-0 px-1"
-                    style="font-size: 0.65rem;"
+                    style="font-size: 0.65rem"
                     title="{% translate 'Edit' %}"
                     hx-get="{% url 'workspace:layer_filter_edit' flt.pk %}"
                     hx-target="#filter-editor-{{ layer.pk }}"
-                    hx-swap="innerHTML">
-              ✏️
-            </button>
+                    hx-swap="innerHTML">✏️</button>
             <button type="button"
                     class="btn btn-sm py-0 px-1"
-                    style="font-size: 0.65rem;"
+                    style="font-size: 0.65rem"
                     title="{% translate 'Preview' %}"
                     hx-get="{% url 'workspace:layer_filter_preview' flt.pk %}"
                     hx-target="#filter-preview-{{ layer.pk }}"
-                    hx-swap="innerHTML">
-              👁️
-            </button>
+                    hx-swap="innerHTML">👁️</button>
             <button type="button"
                     class="btn btn-sm py-0 px-1 text-danger"
-                    style="font-size: 0.65rem;"
+                    style="font-size: 0.65rem"
                     title="{% translate 'Delete' %}"
                     hx-post="{% url 'workspace:layer_filter_delete' flt.pk %}"
                     hx-target="#filter-list-{{ layer.pk }}"
                     hx-swap="outerHTML"
-                    hx-confirm="{% translate 'Delete this filter?' %}">
-              🗑️
-            </button>
+                    hx-confirm="{% translate 'Delete this filter?' %}">🗑️</button>
           </div>
         </div>
       {% endfor %}

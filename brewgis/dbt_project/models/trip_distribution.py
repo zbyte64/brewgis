@@ -19,12 +19,12 @@ Materialized as: {target_schema}.trip_distribution_{scenario_id}
 from __future__ import annotations
 
 import logging
+from typing import Any
 
 import deal
 import numpy as np
 import pandas as pd
 
-from typing import Any
 logger = logging.getLogger(__name__)
 
 # Origins are processed in batches to bound memory.

@@ -14,9 +14,9 @@ from pathlib import Path
 from typing import Any
 
 import dlt
-from dlt.destinations.impl.postgres.postgres_adapter import postgres_adapter
 import geopandas as gpd
 from django.conf import settings
+from dlt.destinations.impl.postgres.postgres_adapter import postgres_adapter
 
 CACHE_DIR: Path = settings.DATA_DOWNLOAD_CACHE_DIR
 
@@ -44,7 +44,12 @@ def tiger_bg_source(
         List with a single :class:`dlt.Resource` yielding block-group
         geometry dicts.
     """
-    return [postgres_adapter(tiger_bg_resource(state_fips, year=year, ignore_cache=ignore_cache), geometry="geometry")]
+    return [
+        postgres_adapter(
+            tiger_bg_resource(state_fips, year=year, ignore_cache=ignore_cache),
+            geometry="geometry",
+        )
+    ]
 
 
 @dlt.resource(
@@ -229,7 +234,6 @@ def run_tiger_bg_pipeline(
                         )
                     )
                     conn.commit()
-
 
     if total_rows == 0:
         return {

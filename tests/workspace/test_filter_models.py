@@ -6,7 +6,7 @@ from __future__ import annotations
 import pytest
 from django.test import TestCase
 
-from brewgis.workspace.models import Layer, LayerFilter
+from brewgis.workspace.models import LayerFilter
 from tests.factories import LayerFactory
 
 

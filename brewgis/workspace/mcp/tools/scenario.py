@@ -1,7 +1,5 @@
 """MCP tools for scenario CRUD and comparison operations."""
 
-
-
 import logging
 from typing import Any
 

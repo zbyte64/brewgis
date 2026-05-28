@@ -26,7 +26,6 @@ class TopologyError(Exception):
     """Raised when topology building fails."""
 
 
-
 class NetworkTopology:
     """Build and verify pgRouting topology on network edges/nodes."""
 
@@ -67,12 +66,9 @@ class NetworkTopology:
 
         with self.engine.begin() as conn:
             conn.execute(
-                text(
-                    "CREATE EXTENSION IF NOT EXISTS pgrouting "
-                    "WITH SCHEMA public"
-                )
+                text("CREATE EXTENSION IF NOT EXISTS pgrouting WITH SCHEMA public")
             )
-            
+
             # Verify edge table exists
             result = conn.execute(
                 text(
@@ -91,7 +87,7 @@ class NetworkTopology:
                         "Run NetworkExtractor first."
                     ),
                 }
-            
+
             # Ensure source/target columns exist and are nullable
             conn.execute(
                 text(
@@ -100,17 +96,13 @@ class NetworkTopology:
                     f"ALTER COLUMN target TYPE BIGINT USING target::BIGINT"
                 )
             )
-            
+
             # Manually create topology instead of pgr_createTopology:
             #   1. Build vertex table from unique edge endpoint geometries
             #   2. Assign contiguous vertex IDs
             #   3. Update source/target in the edge table
             vertex_table = f"{schema}.{edge_table}_vertices_pgr"
-            conn.execute(
-                text(
-                    f"DROP TABLE IF EXISTS {vertex_table} CASCADE"
-                )
-            )
+            conn.execute(text(f"DROP TABLE IF EXISTS {vertex_table} CASCADE"))
             conn.execute(
                 text(
                     f"CREATE TABLE {vertex_table} ("
@@ -149,17 +141,17 @@ class NetworkTopology:
                     f")"
                 )
             )
-            
+
             # Get vertex count
             vertex_count = conn.execute(
                 text(f"SELECT COUNT(*) FROM {schema}.{edge_table}_vertices_pgr")
             ).scalar()
-            
+
             # Get total edge count for logging
             total_edges = conn.execute(
                 text(f"SELECT COUNT(*) FROM {schema}.{edge_table}")
             ).scalar()
-            
+
             # Get edge count with valid topology
             valid_edges = conn.execute(
                 text(
@@ -167,10 +159,9 @@ class NetworkTopology:
                     f"WHERE source IS NOT NULL AND target IS NOT NULL"
                 )
             ).scalar()
-            
+
             dead_ends = 0
             gaps = 0
-            
 
         logger.info(
             "Topology built: %d vertices, %d/%d edges valid, %d dead ends, %d gaps",

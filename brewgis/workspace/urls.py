@@ -72,6 +72,7 @@ from .views.layer_groups import layer_group_edit
 from .views.layer_groups import layer_group_list
 from .views.layer_groups import layer_group_move_layer
 from .views.map import view_public_scenario_map
+from .views.pipeline_callback import pipeline_callback as pipeline_callback
 from .views.report import generate_map_report
 from .views.report import generate_paint_report
 from .views.report import generate_scenario_report
@@ -81,7 +82,6 @@ from .views.report import report_list_partial
 from .views.report import report_status
 from .views.scenarios import scenario_toggle_publish
 from .views.token_auth import token_auth
-from .views.pipeline_callback import pipeline_callback as pipeline_callback  # noqa: N813
 
 app_name = "workspace"
 urlpatterns = [

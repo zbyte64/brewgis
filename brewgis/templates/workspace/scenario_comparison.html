@@ -1,379 +1,455 @@
 {% extends "base.html" %}
+
 {% load static i18n workspace_tags %}
 
 {% block extrahead %}
-  <link href="https://unpkg.com/maplibre-gl@^4.7.1/dist/maplibre-gl.css" rel="stylesheet" />
+  <link href="https://unpkg.com/maplibre-gl@^4.7.1/dist/maplibre-gl.css"
+        rel="stylesheet" />
   <script type="module" src="{% static 'js/brew-gis-map.js' %}"></script>
   <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.7/dist/chart.umd.min.js"></script>
 {% endblock extrahead %}
-
 {% block title %}
   {% translate "Scenario Comparison" %} — {{ workspace.name }} — Brew GIS
 {% endblock title %}
-
 {% block content %}
-<div class="container-fluid mt-3">
-  <nav aria-label="breadcrumb">
-    <ol class="breadcrumb">
-      <li class="breadcrumb-item"><a href="{% url 'workspace:home' %}">{% translate "Home" %}</a></li>
-      <li class="breadcrumb-item"><a href="{% url 'workspace:workspace_detail' workspace.pk %}">{{ workspace.name }}</a></li>
-      <li class="breadcrumb-item active" aria-current="page">{% translate "Scenario Comparison" %}</li>
-    </ol>
-  </nav>
-
-  <div class="d-flex justify-content-between align-items-center mb-3">
-    <h4 class="mb-0">{% translate "Scenario Comparison" %}</h4>
-    <div class="d-flex gap-2">
-      <button type="button" class="btn btn-sm btn-outline-primary" id="refresh-data-btn">{% translate "Refresh" %}</button>
-      <a href="{% url 'workspace:workspace_detail' workspace.pk %}" class="btn btn-sm btn-outline-secondary">{% translate "Back" %}</a>
-      <button type="button" class="btn btn-sm btn-outline-primary" id="generate-report-btn"
-              data-bs-toggle="modal" data-bs-target="#generateReportModal"
-              {% if scenarios|length < 2 %}disabled{% endif %}>
-        {% translate "Generate Report" %}
-      </button>
-    </div>
-  </div>
-
-  {% if scenarios|length < 2 %}
-    <div class="alert alert-info">
-      {% translate "Select at least two scenarios to compare." %}
-    </div>
-  {% else %}
-    <!-- ============================================================ -->
-    <!-- Comparison Metric Table                                       -->
-    <!-- ============================================================ -->
-    <div class="card mb-4">
-      <div class="card-header">
-        <h5 class="card-title mb-0">{% translate "Metrics" %}</h5>
+  <div class="container-fluid mt-3">
+    <nav aria-label="breadcrumb">
+      <ol class="breadcrumb">
+        <li class="breadcrumb-item">
+          <a href="{% url 'workspace:home' %}">{% translate "Home" %}</a>
+        </li>
+        <li class="breadcrumb-item">
+          <a href="{% url 'workspace:workspace_detail' workspace.pk %}">{{ workspace.name }}</a>
+        </li>
+        <li class="breadcrumb-item active" aria-current="page">{% translate "Scenario Comparison" %}</li>
+      </ol>
+    </nav>
+    <div class="d-flex justify-content-between align-items-center mb-3">
+      <h4 class="mb-0">{% translate "Scenario Comparison" %}</h4>
+      <div class="d-flex gap-2">
+        <button type="button"
+                class="btn btn-sm btn-outline-primary"
+                id="refresh-data-btn">{% translate "Refresh" %}</button>
+        <a href="{% url 'workspace:workspace_detail' workspace.pk %}"
+           class="btn btn-sm btn-outline-secondary">{% translate "Back" %}</a>
+        <button type="button"
+                class="btn btn-sm btn-outline-primary"
+                id="generate-report-btn"
+                data-bs-toggle="modal"
+                data-bs-target="#generateReportModal"
+                {% if scenarios|length < 2 %}disabled{% endif %}>{% translate "Generate Report" %}</button>
       </div>
-      <div class="card-body p-0">
-        <div class="table-responsive">
-          <table class="table table-striped mb-0 small" id="comparison-metrics-table">
-            <thead class="table-light">
-              <tr>
-                <th scope="col" style="min-width: 180px;">{% translate "Metric" %}</th>
-                {% for s in scenarios %}
-                  <th scope="col" class="text-end" style="min-width: 120px;">
-                    {% if s.scenario_type == "base" %}
-                      <span class="badge bg-success me-1" style="font-size: 0.6rem;">BASE</span>
-                    {% endif %}
-                    {{ s.name }}
-                  </th>
-                {% endfor %}
-              </tr>
-            </thead>
-            <tbody>
-              <tr>
-                <td><strong>{% translate "Population" %}</strong></td>
-                {% for s in scenarios %}
-                  <td class="text-end metric-cell" data-scenario="{{ s.slug }}" data-metric="total_population">—</td>
-                {% endfor %}
-              </tr>
-              <tr>
-                <td><strong>{% translate "Households" %}</strong></td>
-                {% for s in scenarios %}
-                  <td class="text-end metric-cell" data-scenario="{{ s.slug }}" data-metric="total_households">—</td>
-                {% endfor %}
-              </tr>
-              <tr>
-                <td><strong>{% translate "Dwelling Units" %}</strong></td>
-                {% for s in scenarios %}
-                  <td class="text-end metric-cell" data-scenario="{{ s.slug }}" data-metric="total_du">—</td>
-                {% endfor %}
-              </tr>
-              <tr>
-                <td><strong>{% translate "Employment" %}</strong></td>
-                {% for s in scenarios %}
-                  <td class="text-end metric-cell" data-scenario="{{ s.slug }}" data-metric="total_employment">—</td>
-                {% endfor %}
-              </tr>
-              <tr>
-                <td><strong>{% translate "Land Consumed (acres)" %}</strong></td>
-                {% for s in scenarios %}
-                  <td class="text-end metric-cell" data-scenario="{{ s.slug }}" data-metric="total_land_consumed_acres">—</td>
-                {% endfor %}
-              </tr>
-              <tr>
-                <td><strong>{% translate "VMT (total)" %}</strong></td>
-                {% for s in scenarios %}
-                  <td class="text-end metric-cell" data-scenario="{{ s.slug }}" data-metric="total_vmt">—</td>
-                {% endfor %}
-              </tr>
-              <tr>
-                <td><strong>{% translate "Water Demand" %}</strong></td>
-                {% for s in scenarios %}
-                  <td class="text-end metric-cell" data-scenario="{{ s.slug }}" data-metric="total_water">—</td>
-                {% endfor %}
-              </tr>
-              <tr>
-                <td><strong>{% translate "Energy Demand" %}</strong></td>
-                {% for s in scenarios %}
-                  <td class="text-end metric-cell" data-scenario="{{ s.slug }}" data-metric="total_energy">—</td>
-                {% endfor %}
-              </tr>
-            </tbody>
-          </table>
+    </div>
+    {% if scenarios|length < 2 %}
+      <div class="alert alert-info">{% translate "Select at least two scenarios to compare." %}</div>
+    {% else %}
+      <!-- ============================================================ -->
+      <!-- Comparison Metric Table                                       -->
+      <!-- ============================================================ -->
+      <div class="card mb-4">
+        <div class="card-header">
+          <h5 class="card-title mb-0">{% translate "Metrics" %}</h5>
+        </div>
+        <div class="card-body p-0">
+          <div class="table-responsive">
+            <table class="table table-striped mb-0 small" id="comparison-metrics-table">
+              <thead class="table-light">
+                <tr>
+                  <th scope="col" style="min-width: 180px;">{% translate "Metric" %}</th>
+                  {% for s in scenarios %}
+                    <th scope="col" class="text-end" style="min-width: 120px;">
+                      {% if s.scenario_type == "base" %}
+                        <span class="badge bg-success me-1" style="font-size: 0.6rem;">BASE</span>
+                      {% endif %}
+                      {{ s.name }}
+                    </th>
+                  {% endfor %}
+                </tr>
+              </thead>
+              <tbody>
+                <tr>
+                  <td>
+                    <strong>{% translate "Population" %}</strong>
+                  </td>
+                  {% for s in scenarios %}
+                    <td class="text-end metric-cell"
+                        data-scenario="{{ s.slug }}"
+                        data-metric="total_population">—</td>
+                  {% endfor %}
+                </tr>
+                <tr>
+                  <td>
+                    <strong>{% translate "Households" %}</strong>
+                  </td>
+                  {% for s in scenarios %}
+                    <td class="text-end metric-cell"
+                        data-scenario="{{ s.slug }}"
+                        data-metric="total_households">—</td>
+                  {% endfor %}
+                </tr>
+                <tr>
+                  <td>
+                    <strong>{% translate "Dwelling Units" %}</strong>
+                  </td>
+                  {% for s in scenarios %}
+                    <td class="text-end metric-cell"
+                        data-scenario="{{ s.slug }}"
+                        data-metric="total_du">—</td>
+                  {% endfor %}
+                </tr>
+                <tr>
+                  <td>
+                    <strong>{% translate "Employment" %}</strong>
+                  </td>
+                  {% for s in scenarios %}
+                    <td class="text-end metric-cell"
+                        data-scenario="{{ s.slug }}"
+                        data-metric="total_employment">—</td>
+                  {% endfor %}
+                </tr>
+                <tr>
+                  <td>
+                    <strong>{% translate "Land Consumed (acres)" %}</strong>
+                  </td>
+                  {% for s in scenarios %}
+                    <td class="text-end metric-cell"
+                        data-scenario="{{ s.slug }}"
+                        data-metric="total_land_consumed_acres">—</td>
+                  {% endfor %}
+                </tr>
+                <tr>
+                  <td>
+                    <strong>{% translate "VMT (total)" %}</strong>
+                  </td>
+                  {% for s in scenarios %}
+                    <td class="text-end metric-cell"
+                        data-scenario="{{ s.slug }}"
+                        data-metric="total_vmt">—</td>
+                  {% endfor %}
+                </tr>
+                <tr>
+                  <td>
+                    <strong>{% translate "Water Demand" %}</strong>
+                  </td>
+                  {% for s in scenarios %}
+                    <td class="text-end metric-cell"
+                        data-scenario="{{ s.slug }}"
+                        data-metric="total_water">—</td>
+                  {% endfor %}
+                </tr>
+                <tr>
+                  <td>
+                    <strong>{% translate "Energy Demand" %}</strong>
+                  </td>
+                  {% for s in scenarios %}
+                    <td class="text-end metric-cell"
+                        data-scenario="{{ s.slug }}"
+                        data-metric="total_energy">—</td>
+                  {% endfor %}
+                </tr>
+              </tbody>
+            </table>
+          </div>
         </div>
       </div>
-    </div>
-
-    <!-- ============================================================ -->
-    <!-- Dual Maps                                                     -->
-    <!-- ============================================================ -->
-    <div class="card mb-4">
-      <div class="card-header">
-        <h5 class="card-title mb-0">{% translate "Side-by-Side Map" %}</h5>
-      </div>
-      <div class="card-body p-0">
-        <div class="row g-0">
-          {% for s in scenarios %}
-            <div class="col-md-{% if scenarios|length == 2 %}6{% elif scenarios|length == 3 %}4{% else %}3{% endif %} border{% if not forloop.first %} border-start-0{% endif %}">
-              <div class="p-1 bg-light border-bottom small text-center">
-                {% if s.scenario_type == "base" %}
-                  <span class="badge bg-success me-1" style="font-size: 0.6rem;">BASE</span>
-                {% endif %}
-                <strong>{{ s.name }}</strong>
+      <!-- ============================================================ -->
+      <!-- Dual Maps                                                     -->
+      <!-- ============================================================ -->
+      <div class="card mb-4">
+        <div class="card-header">
+          <h5 class="card-title mb-0">{% translate "Side-by-Side Map" %}</h5>
+        </div>
+        <div class="card-body p-0">
+          <div class="row g-0">
+            {% for s in scenarios %}
+              <div class="col-md-{% if scenarios|length == 2 %}6{% elif scenarios|length == 3 %}4{% else %}3{% endif %} border{% if not forloop.first %} border-start-0{% endif %}">
+                <div class="p-1 bg-light border-bottom small text-center">
+                  {% if s.scenario_type == "base" %}
+                    <span class="badge bg-success me-1" style="font-size: 0.6rem;">BASE</span>
+                  {% endif %}
+                  <strong>{{ s.name }}</strong>
+                </div>
+                <brew-gis-map map-style="https://raw.githubusercontent.com/go2garret/maps/main/src/assets/json/openStreetMap.json" viewport='{"center": [0, 0], "zoom": 1}' layers='{{ layer_data|dictlookup:s.slug|safe }}' scenario-id="{{ s.pk }}" sync-group="comparison-{{ workspace.pk }}" class="comparison-map">
+                </brew-gis-map>
               </div>
-              <brew-gis-map
-                map-style="https://raw.githubusercontent.com/go2garret/maps/main/src/assets/json/openStreetMap.json"
-                viewport='{"center": [0, 0], "zoom": 1}'
-                layers='{{ layer_data|dictlookup:s.slug|safe }}'
-                scenario-id="{{ s.pk }}"
-                sync-group="comparison-{{ workspace.pk }}"
-                class="comparison-map">
-              </brew-gis-map>
+            {% endfor %}
+          </div>
+        </div>
+        <div class="card-footer text-muted small">
+          {% translate "Maps are synchronized — pan and zoom on any map to update all." %}
+        </div>
+      </div>
+      <!-- ============================================================ -->
+      <!-- Charts                                                        -->
+      <!-- ============================================================ -->
+      <div class="row mb-4">
+        <div class="col-md-6 mb-3 mb-md-0">
+          <div class="card h-100">
+            <div class="card-header">
+              <h6 class="card-title mb-0">{% translate "Population & Housing" %}</h6>
             </div>
-          {% endfor %}
-        </div>
-      </div>
-      <div class="card-footer text-muted small">
-        {% translate "Maps are synchronized — pan and zoom on any map to update all." %}
-      </div>
-    </div>
-
-    <!-- ============================================================ -->
-    <!-- Charts                                                        -->
-    <!-- ============================================================ -->
-    <div class="row mb-4">
-      <div class="col-md-6 mb-3 mb-md-0">
-        <div class="card h-100">
-          <div class="card-header">
-            <h6 class="card-title mb-0">{% translate "Population & Housing" %}</h6>
+            <div class="card-body">
+              <canvas id="chart-pop-hh" height="250"></canvas>
+            </div>
           </div>
-          <div class="card-body">
-            <canvas id="chart-pop-hh" height="250"></canvas>
+        </div>
+        <div class="col-md-6">
+          <div class="card h-100">
+            <div class="card-header">
+              <h6 class="card-title mb-0">{% translate "Employment & Land" %}</h6>
+            </div>
+            <div class="card-body">
+              <canvas id="chart-emp-land" height="250"></canvas>
+            </div>
           </div>
         </div>
       </div>
-      <div class="col-md-6">
-        <div class="card h-100">
-          <div class="card-header">
-            <h6 class="card-title mb-0">{% translate "Employment & Land" %}</h6>
-          </div>
-          <div class="card-body">
-            <canvas id="chart-emp-land" height="250"></canvas>
+      <!-- Generate Report Modal -->
+      <div class="modal fade"
+           id="generateReportModal"
+           tabindex="-1"
+           aria-hidden="true">
+        <div class="modal-dialog modal-sm">
+          <div class="modal-content">
+            <div class="modal-header">
+              <h6 class="modal-title">{% translate "Generate Report" %}</h6>
+              <button type="button"
+                      class="btn-close"
+                      data-bs-dismiss="modal"
+                      aria-label="Close"></button>
+            </div>
+            <div class="modal-body">
+              <div class="mb-3">
+                <label for="report-name" class="form-label">{% translate "Report Name" %}</label>
+                <input type="text"
+                       class="form-control form-control-sm"
+                       id="report-name"
+                       value="{% translate "Scenario Comparison" %} - {{ workspace.name }} - {{ scenarios|length }} {% translate "scenarios" %}" />
+              </div>
+              <button type="button"
+                      class="btn btn-primary btn-sm"
+                      id="confirm-generate-report">{% translate "Generate PDF" %}</button>
+            </div>
           </div>
         </div>
       </div>
-    </div>
-  <!-- Generate Report Modal -->
-  <div class="modal fade" id="generateReportModal" tabindex="-1" aria-hidden="true">
-    <div class="modal-dialog modal-sm">
-      <div class="modal-content">
-        <div class="modal-header">
-          <h6 class="modal-title">{% translate "Generate Report" %}</h6>
-          <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
-        </div>
-        <div class="modal-body">
-          <div class="mb-3">
-            <label for="report-name" class="form-label">{% translate "Report Name" %}</label>
-            <input type="text" class="form-control form-control-sm" id="report-name"
-                   value="{% translate "Scenario Comparison" %} - {{ workspace.name }} - {{ scenarios|length }} {% translate "scenarios" %}">
-          </div>
-          <button type="button" class="btn btn-primary btn-sm" id="confirm-generate-report">
-            {% translate "Generate PDF" %}
-          </button>
-        </div>
-      </div>
-    </div>
+    {% endif %}
   </div>
-  {% endif %}
-</div>
 {% endblock content %}
-
 {% block inline_javascript %}
-<script>
-(function() {
-  'use strict';
+  <script>
+    (function() {
+      'use strict';
 
-  const scenariosJson = {{ scenarios_json|safe }};
-  if (!scenariosJson || scenariosJson.length < 2) return;
+      const scenariosJson = {
+        {
+          scenarios_json | safe
+        }
+      };
+      if (!scenariosJson || scenariosJson.length < 2) return;
 
-  // ── Load metrics from JSON data endpoint ────────────────────────
-  function loadMetrics() {
-    const scenarioIds = scenariosJson.map(function(s) { return s.id; }).join(',');
-    const url = '{% url "workspace:scenario_comparison_data" workspace.pk %}?scenarios=' + scenarioIds;
+      // ── Load metrics from JSON data endpoint ────────────────────────
+      function loadMetrics() {
+        const scenarioIds = scenariosJson.map(function(s) {
+          return s.id;
+        }).join(',');
+        const url = '{% url "workspace:scenario_comparison_data" workspace.pk %}?scenarios=' + scenarioIds;
 
-    fetch(url)
-      .then(function(r) { return r.json(); })
-      .then(function(data) {
-        if (data.status !== 'ok') return;
+        fetch(url)
+          .then(function(r) {
+            return r.json();
+          })
+          .then(function(data) {
+            if (data.status !== 'ok') return;
 
-        // Fill metric table cells
-        data.scenarios.forEach(function(sc) {
-          document.querySelectorAll('.metric-cell[data-scenario="' + sc.slug + '"]').forEach(function(cell) {
-            const metric = cell.getAttribute('data-metric');
-            const val = sc.metrics[metric];
-            if (val !== null && val !== undefined) {
-              cell.textContent = Number(val).toLocaleString(undefined, { maximumFractionDigits: 1 });
-            } else {
-              cell.textContent = '—';
-            }
+            // Fill metric table cells
+            data.scenarios.forEach(function(sc) {
+              document.querySelectorAll('.metric-cell[data-scenario="' + sc.slug + '"]').forEach(function(cell) {
+                const metric = cell.getAttribute('data-metric');
+                const val = sc.metrics[metric];
+                if (val !== null && val !== undefined) {
+                  cell.textContent = Number(val).toLocaleString(undefined, {
+                    maximumFractionDigits: 1
+                  });
+                } else {
+                  cell.textContent = '—';
+                }
+              });
+            });
+
+            // Build charts
+            buildCharts(data.scenarios);
           });
+      }
+
+      // ── Build Chart.js charts ───────────────────────────────────────
+      let charts = [];
+
+      function buildCharts(scenarios) {
+        // Destroy existing charts
+        charts.forEach(function(c) {
+          c.destroy();
+        });
+        charts = [];
+
+        const labels = scenarios.map(function(s) {
+          return s.name;
         });
 
-        // Build charts
-        buildCharts(data.scenarios);
-      });
-  }
-
-  // ── Build Chart.js charts ───────────────────────────────────────
-  let charts = [];
-
-  function buildCharts(scenarios) {
-    // Destroy existing charts
-    charts.forEach(function(c) { c.destroy(); });
-    charts = [];
-
-    const labels = scenarios.map(function(s) { return s.name; });
-
-    // Chart 1: Population & Households
-    const ctx1 = document.getElementById('chart-pop-hh');
-    if (ctx1) {
-      charts.push(new Chart(ctx1, {
-        type: 'bar',
-        data: {
-          labels: labels,
-          datasets: [
-            {
-              label: '{% translate "Population" %}',
-              data: scenarios.map(function(s) { return s.metrics.total_population || 0; }),
-              backgroundColor: 'rgba(13, 110, 253, 0.7)',
-              borderColor: 'rgba(13, 110, 253, 1)',
-              borderWidth: 1
+        // Chart 1: Population & Households
+        const ctx1 = document.getElementById('chart-pop-hh');
+        if (ctx1) {
+          charts.push(new Chart(ctx1, {
+            type: 'bar',
+            data: {
+              labels: labels,
+              datasets: [{
+                label: '{% translate "Population" %}',
+                data: scenarios.map(function(s) {
+                  return s.metrics.total_population || 0;
+                }),
+                backgroundColor: 'rgba(13, 110, 253, 0.7)',
+                borderColor: 'rgba(13, 110, 253, 1)',
+                borderWidth: 1
+              }, {
+                label: '{% translate "Households" %}',
+                data: scenarios.map(function(s) {
+                  return s.metrics.total_households || 0;
+                }),
+                backgroundColor: 'rgba(25, 135, 84, 0.7)',
+                borderColor: 'rgba(25, 135, 84, 1)',
+                borderWidth: 1
+              }, {
+                label: '{% translate "Dwelling Units" %}',
+                data: scenarios.map(function(s) {
+                  return s.metrics.total_du || 0;
+                }),
+                backgroundColor: 'rgba(111, 66, 193, 0.7)',
+                borderColor: 'rgba(111, 66, 193, 1)',
+                borderWidth: 1
+              }]
             },
-            {
-              label: '{% translate "Households" %}',
-              data: scenarios.map(function(s) { return s.metrics.total_households || 0; }),
-              backgroundColor: 'rgba(25, 135, 84, 0.7)',
-              borderColor: 'rgba(25, 135, 84, 1)',
-              borderWidth: 1
-            },
-            {
-              label: '{% translate "Dwelling Units" %}',
-              data: scenarios.map(function(s) { return s.metrics.total_du || 0; }),
-              backgroundColor: 'rgba(111, 66, 193, 0.7)',
-              borderColor: 'rgba(111, 66, 193, 1)',
-              borderWidth: 1
+            options: {
+              responsive: true,
+              maintainAspectRatio: false,
+              plugins: {
+                legend: {
+                  position: 'bottom',
+                  labels: {
+                    boxWidth: 12,
+                    padding: 8,
+                    font: {
+                      size: 11
+                    }
+                  }
+                }
+              },
+              scales: {
+                y: {
+                  beginAtZero: true
+                }
+              }
             }
-          ]
-        },
-        options: {
-          responsive: true,
-          maintainAspectRatio: false,
-          plugins: {
-            legend: { position: 'bottom', labels: { boxWidth: 12, padding: 8, font: { size: 11 } } }
-          },
-          scales: {
-            y: { beginAtZero: true }
-          }
+          }));
         }
-      }));
-    }
 
-    // Chart 2: Employment & Land
-    const ctx2 = document.getElementById('chart-emp-land');
-    if (ctx2) {
-      charts.push(new Chart(ctx2, {
-        type: 'bar',
-        data: {
-          labels: labels,
-          datasets: [
-            {
-              label: '{% translate "Employment" %}',
-              data: scenarios.map(function(s) { return s.metrics.total_employment || 0; }),
-              backgroundColor: 'rgba(255, 193, 7, 0.7)',
-              borderColor: 'rgba(255, 193, 7, 1)',
-              borderWidth: 1
+        // Chart 2: Employment & Land
+        const ctx2 = document.getElementById('chart-emp-land');
+        if (ctx2) {
+          charts.push(new Chart(ctx2, {
+            type: 'bar',
+            data: {
+              labels: labels,
+              datasets: [{
+                label: '{% translate "Employment" %}',
+                data: scenarios.map(function(s) {
+                  return s.metrics.total_employment || 0;
+                }),
+                backgroundColor: 'rgba(255, 193, 7, 0.7)',
+                borderColor: 'rgba(255, 193, 7, 1)',
+                borderWidth: 1
+              }, {
+                label: '{% translate "Land Consumed (acres)" %}',
+                data: scenarios.map(function(s) {
+                  return s.metrics.total_land_consumed_acres || 0;
+                }),
+                backgroundColor: 'rgba(220, 53, 69, 0.7)',
+                borderColor: 'rgba(220, 53, 69, 1)',
+                borderWidth: 1
+              }]
             },
-            {
-              label: '{% translate "Land Consumed (acres)" %}',
-              data: scenarios.map(function(s) { return s.metrics.total_land_consumed_acres || 0; }),
-              backgroundColor: 'rgba(220, 53, 69, 0.7)',
-              borderColor: 'rgba(220, 53, 69, 1)',
-              borderWidth: 1
+            options: {
+              responsive: true,
+              maintainAspectRatio: false,
+              plugins: {
+                legend: {
+                  position: 'bottom',
+                  labels: {
+                    boxWidth: 12,
+                    padding: 8,
+                    font: {
+                      size: 11
+                    }
+                  }
+                }
+              },
+              scales: {
+                y: {
+                  beginAtZero: true
+                }
+              }
             }
-          ]
-        },
-        options: {
-          responsive: true,
-          maintainAspectRatio: false,
-          plugins: {
-            legend: { position: 'bottom', labels: { boxWidth: 12, padding: 8, font: { size: 11 } } }
-          },
-          scales: {
-            y: { beginAtZero: true }
-          }
+          }));
         }
-      }));
-    }
-  }
+      }
 
-  // ── Refresh button ──────────────────────────────────────────────
-  const refreshBtn = document.getElementById('refresh-data-btn');
-  if (refreshBtn) {
-    refreshBtn.addEventListener('click', loadMetrics);
-  }
+      // ── Refresh button ──────────────────────────────────────────────
+      const refreshBtn = document.getElementById('refresh-data-btn');
+      if (refreshBtn) {
+        refreshBtn.addEventListener('click', loadMetrics);
+      }
 
-  // ── Map sync ────────────────────────────────────────────────────
-  // The sync-group attribute on brew-gis-map handles synchronization
-  // via BroadcastChannel or custom event bus.
+      // ── Map sync ────────────────────────────────────────────────────
+      // The sync-group attribute on brew-gis-map handles synchronization
+      // via BroadcastChannel or custom event bus.
 
-  // ── Load on page ready ───────────────────────────────────────────
-  loadMetrics();
+      // ── Load on page ready ───────────────────────────────────────────
+      loadMetrics();
 
-  // ---- Generate Report ------------------------------------------------
-  const confirmGenerateBtn = document.getElementById('confirm-generate-report');
-  const reportNameInput = document.getElementById('report-name');
-  if (confirmGenerateBtn && reportNameInput) {
-    confirmGenerateBtn.addEventListener('click', function() {
-      var name = reportNameInput.value || 'Scenario Comparison';
-      fetch('{% url "workspace:generate_scenario_report" workspace.pk %}', {
-        method: 'POST',
-        headers: {
-          'X-CSRFToken': '{{ csrf_token }}',
-          'Content-Type': 'application/x-www-form-urlencoded'
-        },
-        body: 'name=' + encodeURIComponent(name)
-      })
-      .then(function(r) { return r.json(); })
-      .then(function(data) {
-        if (data.status === 'ok') {
-          var modalEl = document.getElementById('generateReportModal');
-          if (modalEl) {
-            var bsModal = bootstrap.Modal.getInstance(modalEl);
-            if (bsModal) bsModal.hide();
-          }
-          alert('Report queued for generation. Check Reports page.');
-        } else {
-          alert('Error: ' + (data.error || 'Unknown'));
-        }
-      })
-      .catch(function(err) {
-        alert('Request failed: ' + err.message);
-      });
-    });
-  }
-})();
-</script>
+      // ---- Generate Report ------------------------------------------------
+      const confirmGenerateBtn = document.getElementById('confirm-generate-report');
+      const reportNameInput = document.getElementById('report-name');
+      if (confirmGenerateBtn && reportNameInput) {
+        confirmGenerateBtn.addEventListener('click', function() {
+          var name = reportNameInput.value || 'Scenario Comparison';
+          fetch('{% url "workspace:generate_scenario_report" workspace.pk %}', {
+              method: 'POST',
+              headers: {
+                'X-CSRFToken': '{{ csrf_token }}',
+                'Content-Type': 'application/x-www-form-urlencoded'
+              },
+              body: 'name=' + encodeURIComponent(name)
+            })
+            .then(function(r) {
+              return r.json();
+            })
+            .then(function(data) {
+              if (data.status === 'ok') {
+                var modalEl = document.getElementById('generateReportModal');
+                if (modalEl) {
+                  var bsModal = bootstrap.Modal.getInstance(modalEl);
+                  if (bsModal) bsModal.hide();
+                }
+                alert('Report queued for generation. Check Reports page.');
+              } else {
+                alert('Error: ' + (data.error || 'Unknown'));
+              }
+            })
+            .catch(function(err) {
+              alert('Request failed: ' + err.message);
+            });
+        });
+      }
+    })();
+  </script>
 {% endblock inline_javascript %}

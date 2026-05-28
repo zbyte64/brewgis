@@ -135,6 +135,8 @@ def test_apply_sacog_calibrated_splits_contract(case: deal.TestCase) -> None:
 @deal.cases(_compute_aggregate_employment, count=_DEAL_CASE_COUNT, seed=_DEAL_SEED)
 def test_compute_aggregate_employment_contract(case: deal.TestCase) -> None:
     case()
+
+
 def test_create_table_sql_contains_table_name() -> None:
     """Verify create_table_sql embeds the table_name."""
     sql = BaseCanvasSchema.create_table_sql("fresno_demo.test_canvas")

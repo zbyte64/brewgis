@@ -2,13 +2,12 @@
 
 from __future__ import annotations
 
-from dagster import ScheduleDefinition
 from dagster import DefaultScheduleStatus
+from dagster import ScheduleDefinition
 
 from brewgis.workspace.dagster.assets.dlt_assets import census_acs_assets
 from brewgis.workspace.dagster.assets.dlt_assets import lehd_lodes_assets
 from brewgis.workspace.dagster.assets.dlt_assets import overpass_poi_assets
-
 
 # Weekly refresh of Census ACS data (Sundays at 2:00 AM)
 census_acs_schedule = ScheduleDefinition(

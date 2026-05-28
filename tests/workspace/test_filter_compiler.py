@@ -102,8 +102,18 @@ class TestGroupComposition:
                 "type": "group",
                 "operator": "AND",
                 "children": [
-                    {"type": "column", "column": "land_use", "op": "=", "value": "residential"},
-                    {"type": "column", "column": "year_built", "op": ">=", "value": 2000},
+                    {
+                        "type": "column",
+                        "column": "land_use",
+                        "op": "=",
+                        "value": "residential",
+                    },
+                    {
+                        "type": "column",
+                        "column": "year_built",
+                        "op": ">=",
+                        "value": 2000,
+                    },
                 ],
             },
         )
@@ -128,14 +138,34 @@ class TestGroupComposition:
                 "type": "group",
                 "operator": "AND",
                 "children": [
-                    {"type": "column", "column": "land_use", "op": "=", "value": "residential"},
-                    {"type": "column", "column": "year_built", "op": ">=", "value": 2000},
+                    {
+                        "type": "column",
+                        "column": "land_use",
+                        "op": "=",
+                        "value": "residential",
+                    },
+                    {
+                        "type": "column",
+                        "column": "year_built",
+                        "op": ">=",
+                        "value": 2000,
+                    },
                     {
                         "type": "group",
                         "operator": "OR",
                         "children": [
-                            {"type": "column", "column": "zoning", "op": "=", "value": "R1"},
-                            {"type": "column", "column": "zoning", "op": "=", "value": "R2"},
+                            {
+                                "type": "column",
+                                "column": "zoning",
+                                "op": "=",
+                                "value": "R1",
+                            },
+                            {
+                                "type": "column",
+                                "column": "zoning",
+                                "op": "=",
+                                "value": "R2",
+                            },
                         ],
                     },
                 ],
@@ -226,14 +256,29 @@ class TestIntegrationScenario:
             "type": "group",
             "operator": "AND",
             "children": [
-                {"type": "column", "column": "land_use", "op": "=", "value": "residential"},
+                {
+                    "type": "column",
+                    "column": "land_use",
+                    "op": "=",
+                    "value": "residential",
+                },
                 {"type": "column", "column": "year_built", "op": ">=", "value": 2000},
                 {
                     "type": "group",
                     "operator": "OR",
                     "children": [
-                        {"type": "column", "column": "zoning", "op": "=", "value": "R1"},
-                        {"type": "column", "column": "zoning", "op": "=", "value": "R2"},
+                        {
+                            "type": "column",
+                            "column": "zoning",
+                            "op": "=",
+                            "value": "R1",
+                        },
+                        {
+                            "type": "column",
+                            "column": "zoning",
+                            "op": "=",
+                            "value": "R2",
+                        },
                     ],
                 },
             ],

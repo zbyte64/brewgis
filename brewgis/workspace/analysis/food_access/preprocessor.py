@@ -26,10 +26,12 @@ from __future__ import annotations
 import logging
 import re
 from typing import Any
+
 import geopandas as gpd
+
+from brewgis.workspace.models import POICache
 from brewgis.workspace.services._db import get_engine
 from brewgis.workspace.services._db import text
-from brewgis.workspace.models import POICache
 from brewgis.workspace.services.poi_fetcher import fetch_pois
 
 logger = logging.getLogger(__name__)
@@ -143,15 +145,21 @@ class FoodAccessPreprocessor:
 
         # Step 2: Fetch food-related POIs via dlt pipeline + staging
         from brewgis.workspace.dlt_pipelines.poi import run_poi_pipeline
+
         dlt_result = run_poi_pipeline(
-            min_lng, min_lat, max_lng, max_lat,
+            min_lng,
+            min_lat,
+            max_lng,
+            max_lat,
             categories=_REQUESTED_CATEGORIES,
             schema=schema,
         )
         if not dlt_result.get("success"):
             logger.warning("POI dlt pipeline failed: %s", dlt_result.get("error"))
         else:
-            logger.info("dlt pipeline loaded %d raw POIs", dlt_result.get("row_count", 0))
+            logger.info(
+                "dlt pipeline loaded %d raw POIs", dlt_result.get("row_count", 0)
+            )
 
         pois = fetch_pois(
             min_lng=min_lng,

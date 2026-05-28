@@ -10,7 +10,8 @@
       <h6 class="card-title mb-0">
         {{ report.name }}
         {% if report.status == "running" %}
-          <span class="spinner-border spinner-border-sm text-primary ms-2" role="status">
+          <span class="spinner-border spinner-border-sm text-primary ms-2"
+                role="status">
             <span class="visually-hidden">{% translate "Running..." %}</span>
           </span>
         {% endif %}
@@ -21,14 +22,22 @@
     </div>
     <dl class="row mt-2 mb-0 small">
       <dt class="col-sm-3">{% translate "Type" %}</dt>
-      <dd class="col-sm-9">{{ report.get_report_type_display }}</dd>
+      <dd class="col-sm-9">
+        {{ report.get_report_type_display }}
+      </dd>
       <dt class="col-sm-3">{% translate "Started" %}</dt>
-      <dd class="col-sm-9">{{ report.created_at|default:"—" }}</dd>
+      <dd class="col-sm-9">
+        {{ report.created_at|default:"—" }}
+      </dd>
       <dt class="col-sm-3">{% translate "Completed" %}</dt>
-      <dd class="col-sm-9">{{ report.completed_at|default:"—" }}</dd>
+      <dd class="col-sm-9">
+        {{ report.completed_at|default:"—" }}
+      </dd>
       {% if report.error_log %}
         <dt class="col-sm-3">{% translate "Error" %}</dt>
-        <dd class="col-sm-9 text-danger">{{ report.error_log|linebreaksbr }}</dd>
+        <dd class="col-sm-9 text-danger">
+          {{ report.error_log|linebreaksbr }}
+        </dd>
       {% endif %}
     </dl>
     {% if report.status == "running" %}

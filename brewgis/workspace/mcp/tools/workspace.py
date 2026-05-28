@@ -1,7 +1,5 @@
 """MCP tools for workspace CRUD operations."""
 
-
-
 import logging
 from typing import Any
 

@@ -1,7 +1,5 @@
 """MCP tools for layer CRUD, symbology, and filter operations."""
 
-
-
 import logging
 from typing import Any
 
@@ -194,7 +192,13 @@ def register_tools(server: object) -> None:
                 return {
                     "count": len(rows),
                     "rows": [
-                        dict(zip([col[0] for col in cursor.description], row))
+                        dict(
+                            zip(
+                                [col[0] for col in cursor.description],
+                                row,
+                                strict=False,
+                            )
+                        )
                         for row in rows
                     ],
                 }
@@ -304,7 +308,10 @@ def register_tools(server: object) -> None:
         layer = get_object_or_404(Layer, key=layer_key, workspace=workspace)
         try:
             config = auto_generate_symbology(
-                layer, classification_method=method, num_classes=num_classes, palette_name=palette
+                layer,
+                classification_method=method,
+                num_classes=num_classes,
+                palette_name=palette,
             )
             return {
                 "status": "generated",

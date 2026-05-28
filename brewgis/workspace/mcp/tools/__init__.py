@@ -1,7 +1,5 @@
 """Tool registration aggregator — imports and registers all tool modules."""
 
-
-
 import logging
 
 from brewgis.workspace.mcp.tools import analysis as analysis_tools

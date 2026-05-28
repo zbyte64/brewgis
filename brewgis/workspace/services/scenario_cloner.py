@@ -102,6 +102,6 @@ def clone_scenario(
 
 def _get_layer_model() -> type[Layer]:
     """Lazy import to avoid circular dependency at module level."""
-    from brewgis.workspace.models import Layer  # noqa: PLC0415
+    from brewgis.workspace.models import Layer
 
     return Layer

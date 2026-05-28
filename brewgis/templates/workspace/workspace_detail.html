@@ -1,403 +1,396 @@
 {% extends "base.html" %}
+
 {% load i18n %}
 
-{% block title %}{{ workspace.name }} — Brew GIS{% endblock title %}
-
+{% block title %}
+  {{ workspace.name }} — Brew GIS
+{% endblock title %}
 {% block content %}
-<nav aria-label="breadcrumb">
-  <ol class="breadcrumb">
-    <li class="breadcrumb-item"><a href="{% url 'workspace:home' %}">{% translate "Home" %}</a></li>
-    <li class="breadcrumb-item active" aria-current="page">{{ workspace.name }}</li>
-  </ol>
-</nav>
-
-<div class="container mt-4">
-  <!-- Region Header -->
-  <div class="p-4 mb-4 bg-light rounded-3">
-    <div class="container-fluid py-2">
-      <h1 class="display-5 fw-bold">{{ workspace.name }}</h1>
-      <p class="fs-5 mt-3 text-muted">{{ region_summary }}</p>
+  <nav aria-label="breadcrumb">
+    <ol class="breadcrumb">
+      <li class="breadcrumb-item">
+        <a href="{% url 'workspace:home' %}">{% translate "Home" %}</a>
+      </li>
+      <li class="breadcrumb-item active" aria-current="page">{{ workspace.name }}</li>
+    </ol>
+  </nav>
+  <div class="container mt-4">
+    <!-- Region Header -->
+    <div class="p-4 mb-4 bg-light rounded-3">
+      <div class="container-fluid py-2">
+        <h1 class="display-5 fw-bold">{{ workspace.name }}</h1>
+        <p class="fs-5 mt-3 text-muted">{{ region_summary }}</p>
+      </div>
     </div>
-  </div>
-
-  <!-- Quick Actions Bar -->
-  <div class="d-flex gap-2 mb-4">
-    <a href="{% url 'workspace:workspace_map' workspace.pk %}" class="btn btn-primary">
-      {% translate "View Map" %}
-    </a>
-    <a href="{% url 'workspace:import_center' %}?workspace={{ workspace.pk }}" class="btn btn-outline-primary">
-      {% translate "Import Data" %}
-    </a>
-    <a href="{% url 'workspace:analysis_launch' %}" class="btn btn-outline-primary">
-      {% translate "Run Analysis" %}
-    </a>
-    <a href="{% url 'workspace:report_list' workspace.pk %}" class="btn btn-outline-primary">
-      {% translate "Reports" %}
-    </a>
-  </div>
-  <!-- Scenario Management Panel -->
-  <div class="card mb-4">
-    <div class="card-header d-flex justify-content-between align-items-center">
-      <h5 class="card-title mb-0">{% translate "Scenarios" %}</h5>
-      <div class="d-flex gap-2">
-        <a href="{% url 'workspace:scenario_create' workspace.pk %}" class="btn btn-sm btn-primary">
-          {% translate "New Scenario" %}
-        </a>
-        {% if workspace.scenarios.count > 1 %}
-          <a href="{% url 'workspace:scenario_comparison' workspace.pk %}?scenarios={% for s in workspace.scenarios.all %}{{ s.pk }}{% if not forloop.last %},{% endif %}{% endfor %}"
-             class="btn btn-sm btn-outline-primary">
-            {% translate "Compare All" %}
-          </a>
+    <!-- Quick Actions Bar -->
+    <div class="d-flex gap-2 mb-4">
+      <a href="{% url 'workspace:workspace_map' workspace.pk %}"
+         class="btn btn-primary">{% translate "View Map" %}</a>
+      <a href="{% url 'workspace:import_center' %}?workspace={{ workspace.pk }}"
+         class="btn btn-outline-primary">{% translate "Import Data" %}</a>
+      <a href="{% url 'workspace:analysis_launch' %}"
+         class="btn btn-outline-primary">{% translate "Run Analysis" %}</a>
+      <a href="{% url 'workspace:report_list' workspace.pk %}"
+         class="btn btn-outline-primary">{% translate "Reports" %}</a>
+    </div>
+    <!-- Scenario Management Panel -->
+    <div class="card mb-4">
+      <div class="card-header d-flex justify-content-between align-items-center">
+        <h5 class="card-title mb-0">{% translate "Scenarios" %}</h5>
+        <div class="d-flex gap-2">
+          <a href="{% url 'workspace:scenario_create' workspace.pk %}"
+             class="btn btn-sm btn-primary">{% translate "New Scenario" %}</a>
+          {% if workspace.scenarios.count > 1 %}
+            <a href="{% url 'workspace:scenario_comparison' workspace.pk %}?scenarios={% for s in workspace.scenarios.all %}{{ s.pk }}{% if not forloop.last %},{% endif %}{% endfor %}"
+               class="btn btn-sm btn-outline-primary">{% translate "Compare All" %}</a>
+          {% endif %}
+        </div>
+      </div>
+      <div class="card-body p-0">
+        {% if workspace.scenarios.exists %}
+          <div class="table-responsive">
+            <table class="table table-hover mb-0">
+              <thead class="table-light">
+                <tr>
+                  <th scope="col">{% translate "Name" %}</th>
+                  <th scope="col">{% translate "Type" %}</th>
+                  <th scope="col">{% translate "Base Year" %}</th>
+                  <th scope="col">{% translate "Horizon Year" %}</th>
+                  <th scope="col">{% translate "Created" %}</th>
+                  <th scope="col">{% translate "Actions" %}</th>
+                </tr>
+              </thead>
+              <tbody>
+                {% for s in workspace.scenarios.all %}
+                  <tr>
+                    <td>
+                      <div class="d-flex align-items-center gap-1">
+                        {% if s.scenario_type == "base" %}
+                          <span class="badge bg-success me-1" style="font-size: 0.65rem;">BASE</span>
+                        {% else %}
+                          <span class="badge bg-warning text-dark me-1" style="font-size: 0.65rem;">ALT</span>
+                        {% endif %}
+                        <strong>{{ s.name }}</strong>
+                        {% if s.parent %}<small class="text-muted ms-1">← {{ s.parent.name }}</small>{% endif %}
+                      </div>
+                      {% if s.description %}<div class="text-muted small">{{ s.description|truncatewords:20 }}</div>{% endif %}
+                    </td>
+                    <td>{{ s.get_scenario_type_display }}</td>
+                    <td>{{ s.base_year }}</td>
+                    <td>{{ s.horizon_year }}</td>
+                    <td class="small text-muted">{{ s.created_at|date:"M j, Y" }}</td>
+                    <td>
+                      <div class="d-flex gap-1" style="white-space: nowrap;">
+                        <a href="{% url 'workspace:workspace_map' workspace.pk %}?scenario={{ s.pk }}"
+                           class="btn btn-sm btn-outline-primary py-0"
+                           style="font-size: 0.7rem">{% translate "View" %}</a>
+                        <a href="{% url 'workspace:scenario_edit' workspace.pk s.pk %}"
+                           class="btn btn-sm btn-outline-secondary py-0"
+                           style="font-size: 0.7rem">{% translate "Edit" %}</a>
+                        <form method="post"
+                              action="{% url 'workspace:scenario_toggle_publish' workspace.pk s.pk %}"
+                              style="display: inline">
+                          {% csrf_token %}
+                          <button type="submit"
+                                  class="btn btn-sm {% if s.published %}btn-success{% else %}btn-outline-success{% endif %} py-0"
+                                  style="font-size: 0.7rem">
+                            {% if s.published %}
+                              {% translate "Published" %}
+                            {% else %}
+                              {% translate "Publish" %}
+                            {% endif %}
+                          </button>
+                        </form>
+                        {% if s.published and s.public_token %}
+                          <a href="{% url 'workspace:public_scenario_map' s.public_token %}"
+                             target="_blank"
+                             class="btn btn-sm btn-outline-info py-0"
+                             style="font-size: 0.7rem"
+                             title="{% translate 'Shareable link' %}">{% translate "Share" %}</a>
+                        {% endif %}
+                        <button type="button"
+                                class="btn btn-sm btn-outline-danger py-0 scenario-delete-btn"
+                                style="font-size: 0.7rem"
+                                data-scenario-pk="{{ s.pk }}"
+                                data-scenario-name="{{ s.name }}"
+                                data-delete-url="{% url 'workspace:scenario_delete' workspace.pk s.pk %}">
+                          {% translate "Delete" %}
+                        </button>
+                      </div>
+                    </td>
+                  </tr>
+                {% endfor %}
+              </tbody>
+            </table>
+          </div>
+        {% else %}
+          <div class="text-center text-muted py-4">
+            <p>{% translate "No scenarios yet. Create a base scenario to get started." %}</p>
+            <a href="{% url 'workspace:scenario_create' workspace.pk %}"
+               class="btn btn-primary">{% translate "Create Base Scenario" %}</a>
+          </div>
         {% endif %}
       </div>
     </div>
-    <div class="card-body p-0">
-      {% if workspace.scenarios.exists %}
-        <div class="table-responsive">
-          <table class="table table-hover mb-0">
-            <thead class="table-light">
-              <tr>
-                <th scope="col">{% translate "Name" %}</th>
-                <th scope="col">{% translate "Type" %}</th>
-                <th scope="col">{% translate "Base Year" %}</th>
-                <th scope="col">{% translate "Horizon Year" %}</th>
-                <th scope="col">{% translate "Created" %}</th>
-                <th scope="col">{% translate "Actions" %}</th>
-              </tr>
-            </thead>
-            <tbody>
-              {% for s in workspace.scenarios.all %}
-                <tr>
-                  <td>
-                    <div class="d-flex align-items-center gap-1">
-                      {% if s.scenario_type == "base" %}
-                        <span class="badge bg-success me-1" style="font-size: 0.65rem;">BASE</span>
-                      {% else %}
-                        <span class="badge bg-warning text-dark me-1" style="font-size: 0.65rem;">ALT</span>
-                      {% endif %}
-                      <strong>{{ s.name }}</strong>
-                      {% if s.parent %}
-                        <small class="text-muted ms-1">← {{ s.parent.name }}</small>
-                      {% endif %}
-                    </div>
-                    {% if s.description %}
-                      <div class="text-muted small">{{ s.description|truncatewords:20 }}</div>
-                    {% endif %}
-                  </td>
-                  <td>{{ s.get_scenario_type_display }}</td>
-                  <td>{{ s.base_year }}</td>
-                  <td>{{ s.horizon_year }}</td>
-                  <td class="small text-muted">{{ s.created_at|date:"M j, Y" }}</td>
-                  <td>
-                    <div class="d-flex gap-1" style="white-space: nowrap;">
-                      <a href="{% url 'workspace:workspace_map' workspace.pk %}?scenario={{ s.pk }}"
-                         class="btn btn-sm btn-outline-primary py-0" style="font-size: 0.7rem;">
-                        {% translate "View" %}
-                      </a>
-                      <a href="{% url 'workspace:scenario_edit' workspace.pk s.pk %}"
-                         class="btn btn-sm btn-outline-secondary py-0" style="font-size: 0.7rem;">
-                        {% translate "Edit" %}
-                      </a>
-                      <form method="post" action="{% url 'workspace:scenario_toggle_publish' workspace.pk s.pk %}" style="display: inline;">
-                        {% csrf_token %}
-                        <button type="submit" class="btn btn-sm {% if s.published %}btn-success{% else %}btn-outline-success{% endif %} py-0" style="font-size: 0.7rem;">
-                          {% if s.published %}{% translate "Published" %}{% else %}{% translate "Publish" %}{% endif %}
-                        </button>
-                      </form>
-                      {% if s.published and s.public_token %}
-                        <a href="{% url 'workspace:public_scenario_map' s.public_token %}" target="_blank" class="btn btn-sm btn-outline-info py-0" style="font-size: 0.7rem;" title="{% translate 'Shareable link' %}">
-                          {% translate "Share" %}
-                        </a>
-                      {% endif %}
-                      <button type="button"
-                              class="btn btn-sm btn-outline-danger py-0 scenario-delete-btn"
-                              style="font-size: 0.7rem;"
-                              data-scenario-pk="{{ s.pk }}"
-                              data-scenario-name="{{ s.name }}"
-                              data-delete-url="{% url 'workspace:scenario_delete' workspace.pk s.pk %}">
-                        {% translate "Delete" %}
+    <div class="row">
+      <!-- Data Catalog Panel -->
+      <div class="col-md-6 mb-4">
+        <div class="card h-100">
+          <div class="card-header d-flex justify-content-between align-items-center">
+            <h5 class="card-title mb-0">{% translate "Data Catalog" %}</h5>
+            <span class="badge bg-primary rounded-pill">{{ catalog_categories|length }} categories</span>
+          </div>
+          <div class="card-body p-0">
+            <div class="accordion accordion-flush" id="catalogAccordion">
+              {% for category in catalog_categories %}
+                {% with source_count=category.sources.all|length %}
+                  <div class="accordion-item">
+                    <h2 class="accordion-header">
+                      <button class="accordion-button collapsed py-3"
+                              type="button"
+                              data-bs-toggle="collapse"
+                              data-bs-target="#cat-{{ category.slug }}"
+                              aria-expanded="false">
+                        <span class="d-flex align-items-center gap-2 w-100">
+                          {% if category.icon %}<i class="{{ category.icon }}"></i>{% endif %}
+                          <strong>{{ category.name }}</strong>
+                          <span class="badge bg-secondary rounded-pill ms-auto">{{ source_count }}</span>
+                        </span>
                       </button>
-                    </div>
-                  </td>
-                </tr>
-              {% endfor %}
-            </tbody>
-          </table>
-        </div>
-      {% else %}
-        <div class="text-center text-muted py-4">
-          <p>{% translate "No scenarios yet. Create a base scenario to get started." %}</p>
-          <a href="{% url 'workspace:scenario_create' workspace.pk %}" class="btn btn-primary">
-            {% translate "Create Base Scenario" %}
-          </a>
-        </div>
-      {% endif %}
-    </div>
-  </div>
-
-  <div class="row">
-    <!-- Data Catalog Panel -->
-    <div class="col-md-6 mb-4">
-      <div class="card h-100">
-        <div class="card-header d-flex justify-content-between align-items-center">
-          <h5 class="card-title mb-0">{% translate "Data Catalog" %}</h5>
-          <span class="badge bg-primary rounded-pill">{{ catalog_categories|length }} categories</span>
-        </div>
-        <div class="card-body p-0">
-          <div class="accordion accordion-flush" id="catalogAccordion">
-            {% for category in catalog_categories %}
-              {% with source_count=category.sources.all|length %}
-                <div class="accordion-item">
-                  <h2 class="accordion-header">
-                    <button class="accordion-button collapsed py-3"
-                            type="button"
-                            data-bs-toggle="collapse"
-                            data-bs-target="#cat-{{ category.slug }}"
-                            aria-expanded="false">
-                      <span class="d-flex align-items-center gap-2 w-100">
-                        {% if category.icon %}
-                          <i class="{{ category.icon }}"></i>
-                        {% endif %}
-                        <strong>{{ category.name }}</strong>
-                        <span class="badge bg-secondary rounded-pill ms-auto">{{ source_count }}</span>
-                      </span>
-                    </button>
-                  </h2>
-                  <div id="cat-{{ category.slug }}"
-                       class="accordion-collapse collapse"
-                       data-bs-parent="#catalogAccordion">
-                    <div class="accordion-body p-0">
-                      <div class="table-responsive">
-                        <table class="table table-striped mb-0 small">
-                          <thead class="table-light">
-                            <tr>
-                              <th scope="col">{% translate "Source" %}</th>
-                              <th scope="col">{% translate "Provider" %}</th>
-                              <th scope="col">{% translate "Format" %}</th>
-                              <th scope="col">{% translate "Update" %}</th>
-                              <th scope="col">{% translate "Status" %}</th>
-                            </tr>
-                          </thead>
-                          <tbody>
-                            {% for source in category.sources.all %}
+                    </h2>
+                    <div id="cat-{{ category.slug }}"
+                         class="accordion-collapse collapse"
+                         data-bs-parent="#catalogAccordion">
+                      <div class="accordion-body p-0">
+                        <div class="table-responsive">
+                          <table class="table table-striped mb-0 small">
+                            <thead class="table-light">
                               <tr>
-                                <td>
-                                  <div class="d-flex align-items-center gap-1">
-                                    {% if source.icon %}
-                                      <i class="{{ source.icon }} small text-muted"></i>
-                                    {% endif %}
-                                    <div>
-                                      <span>{{ source.name }}</span>
-                                      <br>
-                                      <span class="text-muted fw-normal" style="font-size: 0.75rem;">
-                                        {% if source.acquisition_priority == "p0" %}
-                                          <span class="badge bg-success" style="font-size: 0.65rem;">P0</span>
-                                        {% elif source.acquisition_priority == "p1" %}
-                                          <span class="badge bg-warning text-dark" style="font-size: 0.65rem;">P1</span>
-                                        {% elif source.acquisition_priority == "p2" %}
-                                          <span class="badge bg-secondary" style="font-size: 0.65rem;">P2</span>
-                                        {% endif %}
-                                        {% if source.is_importable %}
-                                          <span class="badge bg-info text-dark" style="font-size: 0.65rem;">import</span>
-                                        {% endif %}
-                                      </span>
+                                <th scope="col">{% translate "Source" %}</th>
+                                <th scope="col">{% translate "Provider" %}</th>
+                                <th scope="col">{% translate "Format" %}</th>
+                                <th scope="col">{% translate "Update" %}</th>
+                                <th scope="col">{% translate "Status" %}</th>
+                              </tr>
+                            </thead>
+                            <tbody>
+                              {% for source in category.sources.all %}
+                                <tr>
+                                  <td>
+                                    <div class="d-flex align-items-center gap-1">
+                                      {% if source.icon %}<i class="{{ source.icon }} small text-muted"></i>{% endif %}
+                                      <div>
+                                        <span>{{ source.name }}</span>
+                                        <br />
+                                        <span class="text-muted fw-normal" style="font-size: 0.75rem;">
+                                          {% if source.acquisition_priority == "p0" %}
+                                            <span class="badge bg-success" style="font-size: 0.65rem;">P0</span>
+                                          {% elif source.acquisition_priority == "p1" %}
+                                            <span class="badge bg-warning text-dark" style="font-size: 0.65rem;">P1</span>
+                                          {% elif source.acquisition_priority == "p2" %}
+                                            <span class="badge bg-secondary" style="font-size: 0.65rem;">P2</span>
+                                          {% endif %}
+                                          {% if source.is_importable %}
+                                            <span class="badge bg-info text-dark" style="font-size: 0.65rem;">import</span>
+                                          {% endif %}
+                                        </span>
+                                      </div>
                                     </div>
-                                  </div>
-                                </td>
-                                <td>
-                                  <a href="{{ source.provider_url }}" target="_blank" rel="noopener"
-                                     class="text-decoration-none small">
-                                    {{ source.provider }}
-                                  </a>
-                                </td>
-                                <td>
-                                  <span class="badge bg-light text-dark border">
-                                    {{ source.get_data_format_display|default:"—" }}
-                                  </span>
-                                </td>
-                                <td>
-                                  <span class="small">{{ source.get_update_frequency_display|default:"—" }}</span>
-                                </td>
-                                <td>
-                                  {% if source.import_type and source.import_type in imported_types %}
-                                    <span class="badge bg-success">{% translate "Imported" %}</span>
-                                  {% elif source.is_importable and source.import_type %}
-                                    <a href="{% url 'workspace:import_center' %}?workspace={{ workspace.pk }}"
-                                       class="btn btn-outline-primary btn-sm py-0"
-                                       style="font-size: 0.7rem;">
-                                      {% translate "Import" %}
-                                    </a>
-                                  {% else %}
-                                    <span class="badge bg-secondary">{% translate "Not Imported" %}</span>
-                                  {% endif %}
-                                </td>
-                              </tr>
-                            {% empty %}
-                              <tr>
-                                <td colspan="5" class="text-muted text-center py-3">
-                                  {% translate "No data sources in this category." %}
-                                </td>
-                              </tr>
-                            {% endfor %}
-                          </tbody>
-                        </table>
+                                  </td>
+                                  <td>
+                                    <a href="{{ source.provider_url }}"
+                                       target="_blank"
+                                       rel="noopener"
+                                       class="text-decoration-none small">{{ source.provider }}</a>
+                                  </td>
+                                  <td>
+                                    <span class="badge bg-light text-dark border">{{ source.get_data_format_display|default:"—" }}</span>
+                                  </td>
+                                  <td>
+                                    <span class="small">{{ source.get_update_frequency_display|default:"—" }}</span>
+                                  </td>
+                                  <td>
+                                    {% if source.import_type and source.import_type in imported_types %}
+                                      <span class="badge bg-success">{% translate "Imported" %}</span>
+                                    {% elif source.is_importable and source.import_type %}
+                                      <a href="{% url 'workspace:import_center' %}?workspace={{ workspace.pk }}"
+                                         class="btn btn-outline-primary btn-sm py-0"
+                                         style="font-size: 0.7rem">{% translate "Import" %}</a>
+                                    {% else %}
+                                      <span class="badge bg-secondary">{% translate "Not Imported" %}</span>
+                                    {% endif %}
+                                  </td>
+                                </tr>
+                              {% empty %}
+                                <tr>
+                                  <td colspan="5" class="text-muted text-center py-3">{% translate "No data sources in this category." %}</td>
+                                </tr>
+                              {% endfor %}
+                            </tbody>
+                          </table>
+                        </div>
                       </div>
                     </div>
                   </div>
+                {% endwith %}
+              {% empty %}
+                <div class="text-center text-muted py-4">
+                  {% translate "No data sources configured." %}
+                  <div class="mt-2">
+                    <a href="{% url 'workspace:import_center' %}?workspace={{ workspace.pk }}"
+                       class="btn btn-sm btn-outline-primary">{% translate "Import Data →" %}</a>
+                  </div>
                 </div>
-              {% endwith %}
-            {% empty %}
-              <div class="text-center text-muted py-4">
-                {% translate "No data sources configured." %}
-                <div class="mt-2">
-                  <a href="{% url 'workspace:import_center' %}?workspace={{ workspace.pk }}" class="btn btn-sm btn-outline-primary">{% translate "Import Data →" %}</a>
+              {% endfor %}
+            </div>
+          </div>
+        </div>
+      </div>
+      <!-- Analysis Catalog Panel -->
+      <div class="col-md-6 mb-4">
+        <div class="card h-100">
+          <div class="card-header">
+            <h5 class="card-title mb-0">{% translate "Analysis Modules" %}</h5>
+          </div>
+          <div class="card-body">
+            {% for module in analysis_modules %}
+              <div class="mb-3 pb-3 border-bottom">
+                <div class="d-flex justify-content-between align-items-start">
+                  <h6 class="mb-1">{{ module.name }}</h6>
+                  {% with prereq_class=module.prereq_status %}
+                    {% if prereq_class == "ready" %}
+                      <span class="badge bg-success">{% translate "Ready" %}</span>
+                    {% elif prereq_class == "partial" %}
+                      <span class="badge bg-warning text-dark">{% translate "Partial" %}</span>
+                    {% else %}
+                      <a href="{% url 'workspace:import_center' %}?workspace={{ workspace.pk }}"
+                         class="badge bg-danger text-decoration-none">{% translate "Missing Data" %}</a>
+                    {% endif %}
+                  {% endwith %}
+                </div>
+                <p class="text-muted small mb-2">{{ module.description }}</p>
+                <div class="row small">
+                  {% if module.inputs %}
+                    <div class="col-6">
+                      <strong>{% translate "Inputs:" %}</strong>
+                      <ul class="list-unstyled mb-0">
+                        {% for inp in module.inputs %}<li>{{ inp }}</li>{% endfor %}
+                      </ul>
+                    </div>
+                  {% endif %}
+                  {% if module.outputs %}
+                    <div class="col-6">
+                      <strong>{% translate "Outputs:" %}</strong>
+                      <ul class="list-unstyled mb-0">
+                        {% for out in module.outputs %}<li>{{ out }}</li>{% endfor %}
+                      </ul>
+                    </div>
+                  {% endif %}
                 </div>
               </div>
-{% endfor %}
+            {% empty %}
+              <p class="text-muted mb-0">{% translate "No analysis modules available." %}</p>
+            {% endfor %}
           </div>
         </div>
       </div>
     </div>
-
-    <!-- Analysis Catalog Panel -->
-    <div class="col-md-6 mb-4">
-      <div class="card h-100">
+    <!-- Recent Runs Panel -->
+    {% if recent_runs %}
+      <div class="card mb-4">
         <div class="card-header">
-          <h5 class="card-title mb-0">{% translate "Analysis Modules" %}</h5>
+          <h5 class="card-title mb-0">{% translate "Recent Analysis Runs" %}</h5>
         </div>
-        <div class="card-body">
-          {% for module in analysis_modules %}
-            <div class="mb-3 pb-3 border-bottom">
-              <div class="d-flex justify-content-between align-items-start">
-                <h6 class="mb-1">{{ module.name }}</h6>
-                {% with prereq_class=module.prereq_status %}
-                  {% if prereq_class == "ready" %}
-                    <span class="badge bg-success">{% translate "Ready" %}</span>
-                  {% elif prereq_class == "partial" %}
-                    <span class="badge bg-warning text-dark">{% translate "Partial" %}</span>
-                  {% else %}
-                    <a href="{% url 'workspace:import_center' %}?workspace={{ workspace.pk }}"
-                       class="badge bg-danger text-decoration-none">{% translate "Missing Data" %}</a>
-                  {% endif %}
-                {% endwith %}
-              </div>
-              <p class="text-muted small mb-2">{{ module.description }}</p>
-              <div class="row small">
-                {% if module.inputs %}
-                  <div class="col-6">
-                    <strong>{% translate "Inputs:" %}</strong>
-                    <ul class="list-unstyled mb-0">
-                      {% for inp in module.inputs %}
-                        <li>{{ inp }}</li>
-                      {% endfor %}
-                    </ul>
-                  </div>
-                {% endif %}
-                {% if module.outputs %}
-                  <div class="col-6">
-                    <strong>{% translate "Outputs:" %}</strong>
-                    <ul class="list-unstyled mb-0">
-                      {% for out in module.outputs %}
-                        <li>{{ out }}</li>
-                      {% endfor %}
-                    </ul>
-                  </div>
-                {% endif %}
-              </div>
-            </div>
-          {% empty %}
-            <p class="text-muted mb-0">{% translate "No analysis modules available." %}</p>
-          {% endfor %}
+        <div class="card-body p-0">
+          <ul class="list-group list-group-flush">
+            {% for run in recent_runs %}
+              <li class="list-group-item d-flex justify-content-between align-items-center">
+                <div>
+                  <strong>{{ run.modules|join:", " }}</strong>
+                  <span class="text-muted ms-2">{{ run.created_at|date:"M j, Y H:i" }}</span>
+                </div>
+                <span class="badge {% if run.status == 'completed' %}bg-success{% elif run.status == 'running' %}bg-primary{% elif run.status == 'failed' %}bg-danger{% else %}bg-secondary{% endif %}">
+                  {{ run.status|title }}
+                </span>
+              </li>
+            {% endfor %}
+          </ul>
+        </div>
+      </div>
+    {% endif %}
+  </div>
+  <!-- Delete Scenario Confirmation Modal -->
+  <div class="modal fade"
+       id="deleteScenarioModal"
+       tabindex="-1"
+       aria-hidden="true">
+    <div class="modal-dialog modal-sm">
+      <div class="modal-content">
+        <div class="modal-header">
+          <h6 class="modal-title">{% translate "Delete Scenario" %}</h6>
+          <button type="button"
+                  class="btn-close"
+                  data-bs-dismiss="modal"
+                  aria-label="Close"></button>
+        </div>
+        <div class="modal-body">
+          <p>
+            {% translate "Are you sure you want to delete" %} <strong id="delete-scenario-name"></strong>?
+          </p>
+          <p class="text-danger small mb-0">
+            {% translate "This action cannot be undone. Analysis results for this scenario will also be deleted." %}
+          </p>
+        </div>
+        <div class="modal-footer">
+          <button type="button"
+                  class="btn btn-sm btn-outline-secondary"
+                  data-bs-dismiss="modal">{% translate "Cancel" %}</button>
+          <form method="post" id="delete-scenario-form" style="display: inline;">
+            {% csrf_token %}
+            <button type="submit" class="btn btn-sm btn-danger">{% translate "Delete" %}</button>
+          </form>
         </div>
       </div>
     </div>
   </div>
+  {% block inline_javascript %}
+    <script>
+      (function() {
+        const modal = document.getElementById('deleteScenarioModal');
+        if (!modal) return;
+        const nameEl = document.getElementById('delete-scenario-name');
+        const form = document.getElementById('delete-scenario-form');
 
-  <!-- Recent Runs Panel -->
-  {% if recent_runs %}
-    <div class="card mb-4">
-      <div class="card-header">
-        <h5 class="card-title mb-0">{% translate "Recent Analysis Runs" %}</h5>
-      </div>
-      <div class="card-body p-0">
-        <ul class="list-group list-group-flush">
-          {% for run in recent_runs %}
-            <li class="list-group-item d-flex justify-content-between align-items-center">
-              <div>
-                <strong>{{ run.modules|join:", " }}</strong>
-                <span class="text-muted ms-2">{{ run.created_at|date:"M j, Y H:i" }}</span>
-              </div>
-              <span class="badge {% if run.status == 'completed' %}bg-success{% elif run.status == 'running' %}bg-primary{% elif run.status == 'failed' %}bg-danger{% else %}bg-secondary{% endif %}">
-                {{ run.status|title }}
-              </span>
-            </li>
-          {% endfor %}
-        </ul>
-      </div>
-    </div>
-  {% endif %}
-</div>
-<!-- Delete Scenario Confirmation Modal -->
-<div class="modal fade" id="deleteScenarioModal" tabindex="-1" aria-hidden="true">
-  <div class="modal-dialog modal-sm">
-    <div class="modal-content">
-      <div class="modal-header">
-        <h6 class="modal-title">{% translate "Delete Scenario" %}</h6>
-        <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
-      </div>
-      <div class="modal-body">
-        <p>{% translate "Are you sure you want to delete" %} <strong id="delete-scenario-name"></strong>?</p>
-        <p class="text-danger small mb-0">{% translate "This action cannot be undone. Analysis results for this scenario will also be deleted." %}</p>
-      </div>
-      <div class="modal-footer">
-        <button type="button" class="btn btn-sm btn-outline-secondary" data-bs-dismiss="modal">{% translate "Cancel" %}</button>
-        <form method="post" id="delete-scenario-form" style="display: inline;">
-          {% csrf_token %}
-          <button type="submit" class="btn btn-sm btn-danger">{% translate "Delete" %}</button>
-        </form>
-      </div>
-    </div>
-  </div>
-</div>
+        document.querySelectorAll('.scenario-delete-btn').forEach(function(btn) {
+          btn.addEventListener('click', function() {
+            const pk = this.getAttribute('data-scenario-pk');
+            const name = this.getAttribute('data-scenario-name');
+            const url = this.getAttribute('data-delete-url');
+            nameEl.textContent = name;
+            form.action = url;
+            form.querySelector('button[type="submit"]').dataset.scenarioPk = pk;
+            const bsModal = new bootstrap.Modal(modal);
+            bsModal.show();
+          });
+        });
 
-{% block inline_javascript %}
-<script>
-(function() {
-  const modal = document.getElementById('deleteScenarioModal');
-  if (!modal) return;
-  const nameEl = document.getElementById('delete-scenario-name');
-  const form = document.getElementById('delete-scenario-form');
-
-  document.querySelectorAll('.scenario-delete-btn').forEach(function(btn) {
-    btn.addEventListener('click', function() {
-      const pk = this.getAttribute('data-scenario-pk');
-      const name = this.getAttribute('data-scenario-name');
-      const url = this.getAttribute('data-delete-url');
-      nameEl.textContent = name;
-      form.action = url;
-      form.querySelector('button[type="submit"]').dataset.scenarioPk = pk;
-      const bsModal = new bootstrap.Modal(modal);
-      bsModal.show();
-    });
-  });
-
-  // On successful delete, redirect to workspace detail
-  form.addEventListener('submit', function(e) {
-    e.preventDefault();
-    fetch(form.action, {
-      method: 'POST',
-      headers: {
-        'X-CSRFToken': form.querySelector('[name=csrfmiddlewaretoken]').value,
-        'Content-Type': 'application/json'
-      },
-      body: '{}'
-    }).then(function(r) {
-      if (r.ok) {
-        location.reload();
-      }
-    });
-  });
-})();
-</script>
-{% endblock inline_javascript %}
+        // On successful delete, redirect to workspace detail
+        form.addEventListener('submit', function(e) {
+          e.preventDefault();
+          fetch(form.action, {
+            method: 'POST',
+            headers: {
+              'X-CSRFToken': form.querySelector('[name=csrfmiddlewaretoken]').value,
+              'Content-Type': 'application/json'
+            },
+            body: '{}'
+          }).then(function(r) {
+            if (r.ok) {
+              location.reload();
+            }
+          });
+        });
+      })();
+    </script>
+  {% endblock inline_javascript %}
 {% endblock content %}

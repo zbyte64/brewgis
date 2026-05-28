@@ -23,7 +23,7 @@ scenarios(str(Path(__file__).parent.parent / "features" / "basemaps.feature"))
 @given(parsers.parse('a basemap named "{name}" exists'))
 def _basemap_exists(name: str, db) -> None:  # type: ignore[no-untyped-def]
     """Create a basemap with the given name."""
-    from brewgis.workspace.models import Basemap  # noqa: PLC0415
+    from brewgis.workspace.models import Basemap
 
     Basemap.objects.create(
         name=name,

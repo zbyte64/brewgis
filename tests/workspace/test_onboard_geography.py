@@ -10,7 +10,6 @@ from django.core.management import call_command
 from django.core.management.base import CommandError
 
 
-
 @pytest.mark.integration
 class TestOnboardGeography:
     """Integration tests for the onboard_geography command."""
@@ -19,6 +18,7 @@ class TestOnboardGeography:
     def _cleanup(self, db) -> None:
         """Ensure clean state before and after each test."""
         from django.db import connection
+
         with connection.cursor() as cursor:
             cursor.execute("TRUNCATE TABLE public.base_canvas RESTART IDENTITY CASCADE")
         yield

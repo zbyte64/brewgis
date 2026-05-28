@@ -62,14 +62,8 @@ class ConstraintResult:
     lambda operator, constraint_value, painted_value: (
         isinstance(operator, str)
         and len(operator) > 0
-        and (
-            constraint_value is None
-            or isinstance(constraint_value, (int, float))
-        )
-        and (
-            painted_value is None
-            or isinstance(painted_value, (int, float))
-        )
+        and (constraint_value is None or isinstance(constraint_value, (int, float)))
+        and (painted_value is None or isinstance(painted_value, (int, float)))
     )
 )
 @deal.post(lambda result: isinstance(result, bool))

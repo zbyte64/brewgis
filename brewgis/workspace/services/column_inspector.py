@@ -112,6 +112,7 @@ def _quote_identifier(name: str) -> str:
     parts = name.split(".")
     return ".".join(f'"{part}"' for part in parts)
 
+
 def get_table_schema(schema: str, table_name: str) -> list[dict[str, Any]]:
     """Return column metadata for a PostGIS table.
 
@@ -151,6 +152,8 @@ def get_table_schema(schema: str, table_name: str) -> list[dict[str, Any]]:
                     """,
                 )
                 samples = cursor.fetchall()
-                col_info["sample_values"] = [row[0] for row in samples if row[0] is not None]
+                col_info["sample_values"] = [
+                    row[0] for row in samples if row[0] is not None
+                ]
             columns.append(col_info)
     return columns

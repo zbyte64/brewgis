@@ -11,7 +11,6 @@ from typing import TYPE_CHECKING
 import pytest
 from django.test import override_settings
 
-from tests.e2e.pages.auth_page import AuthPage
 from tests.factories import UserFactory
 
 # Allow synchronous DB access from Playwright's async event loop
@@ -62,7 +61,7 @@ def _allowed_hosts() -> None:
 @pytest.fixture(scope="session")
 def playwright() -> Playwright:
     """Create a Playwright instance for the session."""
-    from playwright.sync_api import sync_playwright  # noqa: PLC0415
+    from playwright.sync_api import sync_playwright
 
     with sync_playwright() as pw:
         yield pw
@@ -110,8 +109,7 @@ def logged_in_user(db) -> User:
     Passwords are set with MD5 hasher in test settings for speed.
     Email is marked verified to bypass allauth mandatory verification.
     """
-    from allauth.account.models import EmailAddress  # noqa: PLC0415
-    from tests.factories import UserFactory  # noqa: PLC0415
+    from allauth.account.models import EmailAddress
 
     user = UserFactory()
     EmailAddress.objects.create(

@@ -132,6 +132,7 @@ class TestNetworkExtractor(TestCase):
                 node_table=self.node_table,
             )
 
+
 @pytest.mark.integration
 class TestNetworkTopology(TestCase):
     """NetworkTopology — pgRouting topology building."""

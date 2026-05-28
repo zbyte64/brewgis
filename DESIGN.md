@@ -22,9 +22,9 @@ Urban Planners and Data Scientists are steered towards "enterprise" solutions (A
 
 ### Additional Considerations
 
-There is a relationship between base and future scenarios. Updating the base scenario may enque future scenario updates. 
+There is a relationship between base and future scenarios. Updating the base scenario may enque future scenario updates.
 A UDF could be multiplied across scenarios in a workspace, especially in the case of footprint anaysis.
 
 A Workspace may maintain a common mapping of scenario layers, ie a base map parcel layer or a transport layer. And those layers may need to provide a certain base set of keys.
 
-Builtforms allow for features to quickly have values assigned via an ordinal value and we should not expect incomming tables to have these defined. These values are highly corelated with the analysis offerings. 
+Builtforms allow for features to quickly have values assigned via an ordinal value and we should not expect incomming tables to have these defined. These values are highly corelated with the analysis offerings.

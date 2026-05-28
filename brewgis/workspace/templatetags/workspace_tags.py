@@ -21,7 +21,7 @@ def model_verbose_name(model_class: object) -> str:
     Handles both model classes and dotted string references.
     """
     if isinstance(model_class, str):
-        from django.apps import apps  # noqa: PLC0415
+        from django.apps import apps
 
         if "." in model_class:
             try:

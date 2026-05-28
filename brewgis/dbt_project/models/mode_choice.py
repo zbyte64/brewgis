@@ -20,11 +20,12 @@ Materialized as: {target_schema}.mode_choice_{scenario_id}
 
 from __future__ import annotations
 
+from typing import Any
+
 import deal
 import numpy as np
 import pandas as pd
 
-from typing import Any
 # ────────────────────────────────────────────────────────────
 #  Pure logit function (shared with tests)
 # ────────────────────────────────────────────────────────────

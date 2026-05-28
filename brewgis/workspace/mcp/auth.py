@@ -1,7 +1,5 @@
 """Auth stub — Phase 5 will implement real authentication."""
 
-
-
 import logging
 
 logger = logging.getLogger(__name__)

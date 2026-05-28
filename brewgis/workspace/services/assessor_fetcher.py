@@ -27,13 +27,9 @@ CACHE_DIR: Path = settings.DATA_DOWNLOAD_CACHE_DIR
 # ── ArcGIS REST API Endpoints ──────────────────────────────────────
 
 # Sacramento County GIS: Active GIS Parcel Base — 508K parcels
-PARCELS_MAP_SERVER = (
-    "https://mapservices.gis.saccounty.net/arcgis/rest/services/PARCELS/MapServer/8/query"
-)
+PARCELS_MAP_SERVER = "https://mapservices.gis.saccounty.net/arcgis/rest/services/PARCELS/MapServer/8/query"
 # Sacramento County GIS: Sales by Property Type — 55K sold parcels
-SALES_MAP_SERVER = (
-    "https://mapservices.gis.saccounty.net/arcgis/rest/services/ASSESSOR/MapServer/1/query"
-)
+SALES_MAP_SERVER = "https://mapservices.gis.saccounty.net/arcgis/rest/services/ASSESSOR/MapServer/1/query"
 
 _PAGE_SIZE = 2000
 _REQUEST_TIMEOUT = 300  # seconds
@@ -369,9 +365,7 @@ def load_to_postgis(
     def _drop_cascade(table: str) -> None:
         if if_exists == "replace":
             with engine.connect() as conn:
-                conn.execute(
-                    text(f"DROP TABLE IF EXISTS {schema}.{table} CASCADE")
-                )
+                conn.execute(text(f"DROP TABLE IF EXISTS {schema}.{table} CASCADE"))
                 conn.commit()
 
     if parcels is not None and not parcels.empty:
