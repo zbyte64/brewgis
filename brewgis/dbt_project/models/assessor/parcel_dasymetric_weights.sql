@@ -50,11 +50,32 @@ WITH assessor_parcels AS (
 sales_data AS (
     SELECT
         parcel_id,
-        living_area AS actual_living_sqft,
-        building_sf AS actual_building_sqft,
+        actual_living_sqft,
+        actual_building_sqft,
         property_type
-    FROM {{ ref('sacog_assessor_sales') }}
-    WHERE living_area IS NOT NULL OR building_sf IS NOT NULL
+    FROM (
+        SELECT
+            parcel_id,
+            living_area AS actual_living_sqft,
+            building_sf AS actual_building_sqft,
+            property_type,
+            -- Prefer rows with both living_area and building_sf, then the most
+            -- complete, then the most recent (year_built descending).
+            ROW_NUMBER() OVER (
+                PARTITION BY parcel_id
+                ORDER BY
+                    CASE
+                        WHEN living_area IS NOT NULL AND building_sf IS NOT NULL THEN 0
+                        WHEN living_area IS NOT NULL THEN 1
+                        WHEN building_sf IS NOT NULL THEN 2
+                        ELSE 3
+                    END,
+                    year_built DESC NULLS LAST
+            ) AS rn
+        FROM {{ ref('sacog_assessor_sales') }}
+        WHERE living_area IS NOT NULL OR building_sf IS NOT NULL
+    ) deduped_sales
+    WHERE rn = 1
 ),
 
 -- Per-property-type median building sizes from sales data
@@ -109,7 +130,7 @@ classified AS (
     LEFT JOIN {{ ref('sacog_assessor_parcels') }} sap
         ON ap.parcel_id = sap.parcel_id
     LEFT JOIN {{ ref('assessor_use_codes') }} auc
-        ON LEFT(COALESCE(sap.landuse, ''), 2) = auc.use_code::text
+        ON LEFT(COALESCE(sap.landuse::text, ''), 2) = auc.use_code::text
 ),
 
 -- Join NLCD impervious fraction (optional)

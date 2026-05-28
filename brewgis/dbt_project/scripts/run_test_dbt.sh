@@ -11,6 +11,19 @@ echo "=== dbt seed (full refresh) ==="
 cd "$DBT_DIR"
 dbt seed --profiles-dir . --full-refresh
 
+echo ""
+echo "=== dbt seed (test assessor parcels + sales) ==="
+dbt seed --profiles-dir . --select test_assessor_parcels test_assessor_sales
+
+echo ""
+echo "=== dbt run (assessor pipeline: parcels → sales → building medians → dasymetric weights) ==="
+ASSESSOR_VARS='{"assessor_parcels_table": "test_assessor_parcels", "assessor_sales_table": "test_assessor_sales"}'
+dbt run --profiles-dir . --select sacog_assessor_parcels sacog_assessor_sales assessor_building_medians parcel_dasymetric_weights --vars "$ASSESSOR_VARS"
+
+echo ""
+echo "=== dbt test (assessor pipeline — verifies dedup + unique index) ==="
+dbt test --profiles-dir . --select sacog_assessor_parcels sacog_assessor_sales assessor_building_medians parcel_dasymetric_weights --vars "$ASSESSOR_VARS"
+
 DBT_VARS='{"parcel_table": "test_parcels", "built_form_table": "test_built_forms", "constraint_table": "test_constraints", "base_canvas_table": "test_base_canvas", "projected_srid": 32610, "scenario_id": "test"}'
 echo "=== dbt run (base_canvas_geometry) ==="
 dbt run --profiles-dir . --select base_canvas_geometry --vars "$DBT_VARS"

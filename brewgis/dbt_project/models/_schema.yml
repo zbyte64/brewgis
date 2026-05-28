@@ -2946,3 +2946,48 @@ models:
     description: "Target row ctid for matching"
   - name: imputed_value
     description: "COALESCE of original value (if non-NULL) and area-weighted allocation"
+
+- name: sacog_assessor_parcels
+  description: >
+    Deduplicated assessor parcel geometries — one row per parcel_id (largest
+    lotsize wins). Tests verify dedup produces unique parcel_ids.
+  columns:
+  - name: parcel_id
+    description: "Assessor parcel APN"
+    tests:
+    - not_null
+    - unique
+  - name: geometry
+    description: "Parcel geometry (EPSG:4326)"
+    tests:
+    - not_null
+
+- name: sacog_assessor_sales
+  description: >
+    Assessor building characteristics from sales records.
+  columns:
+  - name: parcel_id
+    description: "Assessor parcel APN (may be duplicated for multi-sale parcels)"
+    tests:
+    - not_null
+
+- name: assessor_building_medians
+  description: >
+    Per-property-type median building characteristics from sales data.
+  columns:
+  - name: property_type
+    description: "Property type (SFR, Condo, MF, Comm, Ind, Vacant, Other)"
+    tests:
+    - not_null
+    - unique
+
+- name: parcel_dasymetric_weights
+  description: >
+    Per-parcel dasymetric population and employment weights — one row per
+    parcel_id. Tests verify the unique constraint holds.
+  columns:
+  - name: parcel_id
+    description: "Assessor parcel APN"
+    tests:
+    - not_null
+    - unique

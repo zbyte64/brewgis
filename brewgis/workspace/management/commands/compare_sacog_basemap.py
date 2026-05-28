@@ -181,6 +181,14 @@ class Command(BaseCommand):
             f"  Normalized {len(parcels_gdf):,} rows: geography_id → parcel_id, id"
         )
 
+        # Drop with CASCADE — dbt views (sacog_brewgis_comparison_view) may depend
+        # on this table from previous runs, and pandas' if_exists="replace" does not
+        # use CASCADE.
+        with get_engine().begin() as conn:
+            conn.execute(
+                text("DROP TABLE IF EXISTS public.sacog_comparison_parcels CASCADE")
+            )
+
         # Write to dbt source table (sacog_comparison_parcels)
         parcels_gdf.to_postgis(
             "sacog_comparison_parcels",

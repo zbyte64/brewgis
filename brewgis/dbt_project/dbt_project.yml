@@ -269,3 +269,13 @@ seeds:
       +column_types:
         pop_mult: double precision
         emp_mult: double precision
+    test_assessor_parcels:
+      +column_types:
+        geometry: geometry(Geometry,4326)
+        lotsize: double precision
+    test_assessor_sales:
+      +column_types:
+        living_area: double precision
+        building_sf: double precision
+        lot_size_acres: double precision
+        sales_price: double precision
