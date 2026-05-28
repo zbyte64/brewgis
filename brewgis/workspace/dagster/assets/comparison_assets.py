@@ -121,6 +121,99 @@ def tiger_block_asset(
 
 
 # ---------------------------------------------------------------------------
+# Asset: Ingest Sacramento County Assessor parcel data
+# ---------------------------------------------------------------------------
+
+
+@asset(
+    group_name="comparison",
+    compute_kind="python",
+    metadata={
+        METADATA_CONTRACT_SOURCE: "inline",
+        METADATA_CONTRACT_INLINE_COLUMNS: [
+            "parcel_id",
+            "pop_dasym_weight",
+            "emp_dasym_weight",
+        ],
+    },
+)
+def sacog_ingest_assessor(
+    context: AssetExecutionContext,
+    dbt_cli: DbtCliResource,
+) -> MaterializeResult:
+    """Fetch Sacramento County Assessor parcel + building data and compute dasymetric weights.
+
+    1. Fetch parcel geometries from PARCELS/MapServer/8 (~508K parcels)
+    2. Fetch building characteristics from ASSESSOR/MapServer/1 (~55K sales)
+    3. Run dbt staging models to produce dasymetric_weights table
+
+    The ``dasymetric_weights`` output table contains ``parcel_id``,
+    ``pop_dasym_weight``, and ``emp_dasym_weight`` for use by downstream
+    base_canvas_demographics and base_canvas_employment models.
+    """
+    from brewgis.workspace.dlt_pipelines.assessor import (
+        run_assessor_parcels_pipeline,
+        run_assessor_sales_pipeline,
+    )
+
+    # Step 1: Fetch parcel geometries
+    context.log.info("Fetching assessor parcel geometries")
+    parcels_result = run_assessor_parcels_pipeline()
+    if not parcels_result.get("success"):
+        raise RuntimeError(
+            f"Assessor parcels fetch failed: {parcels_result.get('error')}"
+        )
+    context.log.info(
+        "Assessor parcels loaded: %s rows",
+        parcels_result.get("row_count", 0),
+    )
+
+    # Step 2: Fetch sales/building data
+    context.log.info("Fetching assessor sales/building data")
+    sales_result = run_assessor_sales_pipeline()
+    if not sales_result.get("success"):
+        raise RuntimeError(f"Assessor sales fetch failed: {sales_result.get('error')}")
+    context.log.info(
+        "Assessor sales loaded: %s rows",
+        sales_result.get("row_count", 0),
+    )
+
+    # Step 3: Run dbt staging models to compute dasymetric weights
+    context.log.info("Materializing assessor dbt staging models")
+    staging_result = dbt_cli.run(
+        select=[
+            "sacog_assessor_parcels",
+            "sacog_assessor_sales",
+            "assessor_building_medians",
+            "parcel_dasymetric_weights",
+        ],
+        vars_={
+            "base_canvas_materialized": "table",
+        },
+    )
+    if not staging_result.success:
+        raise RuntimeError(f"dbt assessor staging failed: {staging_result.error}")
+
+    # Verify output exists
+    with connection.cursor() as cur:
+        cur.execute("SELECT COUNT(*) FROM public.dasymetric_weights")
+        row_count = cur.fetchone()[0]
+
+    context.log.info(
+        "Dasymetric weights computed: %d rows in public.dasymetric_weights",
+        row_count,
+    )
+
+    return MaterializeResult(
+        metadata={
+            "parcels_fetched": parcels_result.get("row_count", 0),
+            "sales_fetched": sales_result.get("row_count", 0),
+            "dasymetric_rows": row_count,
+        }
+    )
+
+
+# ---------------------------------------------------------------------------
 # Asset 1: Load reference parcels
 # ---------------------------------------------------------------------------
 
@@ -368,6 +461,52 @@ def sacog_run_comparison_etl(
             osm_result.get("row_count", 0),
             osm_table,
         )
+
+    # Detect pre-materialized dasymetric_weights table
+    # If the assessor asset was already materialized, wire the dbt var
+    # so base_canvas_demographics and base_canvas_employment use it.
+    dasymetric_weights_table: str | None = None
+    if config.run_assessor:
+        context.log.info("Running assessor staging pipeline for dasymetric weights")
+        from brewgis.workspace.dlt_pipelines.assessor import (
+            run_assessor_parcels_pipeline,
+            run_assessor_sales_pipeline,
+        )
+
+        run_assessor_parcels_pipeline()
+        run_assessor_sales_pipeline()
+
+        # Materialize assessor dbt staging models
+        context.log.info("Materializing assessor dbt staging models")
+        staging_result = dbt_cli.run(
+            select=[
+                "sacog_assessor_parcels",
+                "sacog_assessor_sales",
+                "assessor_building_medians",
+                "parcel_dasymetric_weights",
+            ],
+            vars_={
+                "base_canvas_materialized": "table",
+            },
+        )
+        if not staging_result.success:
+            raise RuntimeError(f"dbt assessor staging failed: {staging_result.error}")
+        dasymetric_weights_table = "public.parcel_dasymetric_weights"
+    else:
+        with connection.cursor() as cur:
+            cur.execute(
+                "SELECT EXISTS ("
+                "  SELECT 1 FROM information_schema.tables"
+                "  WHERE table_schema = 'public' AND table_name = 'dasymetric_weights'"
+                ")"
+            )
+            if cur.fetchone()[0]:
+                dasymetric_weights_table = "public.parcel_dasymetric_weights"
+                context.log.info("Detected existing dasymetric_weights table")
+
+    if dasymetric_weights_table:
+        dbt_vars["dasymetric_weights_table"] = dasymetric_weights_table
+        context.log.info("Dasymetric weights enabled: %s", dasymetric_weights_table)
 
     context.log.info("Running dbt base_canvas models")
     result = dbt_cli.run(

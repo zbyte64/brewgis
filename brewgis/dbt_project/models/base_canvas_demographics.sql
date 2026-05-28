@@ -1,14 +1,19 @@
 {#
     Base Canvas Demographics — spatial allocation from Census ACS.
 
-    For each parcel in ``base_canvas_geometry``, area-weight allocates
-    demographic values from intersecting ACS block groups.
+    For each parcel in ``base_canvas_geometry``, allocates demographic values
+    from intersecting ACS block groups.
 
     Sum columns (population, households, dwelling units, sub-types):
-        Allocated proportional to intersection area ÷ source area.
+        By default: proportional to intersection area ÷ source area.
+        With dasymetric weights: proportional to ``pop_dasym_weight * intersect_area``
+        per block group, enabling parcel-level refinement from assessor data.
 
     Average columns (median_income, rent_burden_pct, etc.):
-        Area-weighted average across intersecting block groups.
+        Area-weighted mean across intersecting block groups (unchanged).
+
+    Dasymetric weighting is enabled by setting the ``dasymetric_weights_table``
+    dbt var to a table containing ``parcel_id`` and ``pop_dasym_weight``.
 
     When ACS data is unavailable or the spatial join produces no match,
     columns are left NULL for downstream imputation.
@@ -25,6 +30,7 @@
 }}
 
 {%- set area_srid = var('projected_srid', 3857) -%}
+{%- set dasym_table = var('dasymetric_weights_table', none) -%}
 
 WITH parcel_geom AS (
     SELECT
@@ -67,7 +73,15 @@ WITH parcel_geom AS (
         bg.area_parcel_mixed_use,
         bg.area_parcel_no_use,
         bg.local_geometry AS geom_proj
+        {% if dasym_table %}
+        ,
+        dw.pop_dasym_weight
+        {% endif %}
     FROM {{ ref('base_canvas_geometry') }} bg
+    {% if dasym_table %}
+    LEFT JOIN {{ dasym_table }} dw
+        ON bg.parcel_id::text = dw.parcel_id
+    {% endif %}
 ),
 
 pre_acs_data AS (
@@ -86,10 +100,11 @@ acs_data AS (
     FROM pre_acs_data a
 ),
 
--- Area-weighted spatial allocation: one row per overlapping parcel-acs pair
+-- Spatial allocation: one row per overlapping parcel-acs pair
 intersections AS (
     SELECT
         p.parcel_id,
+        a.geoid,
         a.pop,
         a.hh,
         a.du,
@@ -106,17 +121,67 @@ intersections AS (
         a.pct_college_educated,
         a.cost_burden_pct,
         a.bg_area,
-        -- More accurate but 3x slower: ST_Area(ST_Intersection(p.geom_proj, a.geom_proj)) AS intersect_area
+        {% if dasym_table %}
+        COALESCE(p.pop_dasym_weight, 1.0) AS pop_dasym_weight,
+        {% endif %}
         ST_Area(ST_ClipByBox2D(p.geom_proj, a.local_envelope)) AS intersect_area
     FROM parcel_geom p
-    -- JOIN is on two indexed intersections
     JOIN acs_data a ON ST_Intersects(p.geometry, a.geometry)
-),
+)
 
-allocated AS (
+{% if dasym_table %}
+-- Per-block-group total dasymetric weight for normalization
+, bg_weights AS (
+    SELECT
+        i.geoid,
+        SUM(i.pop_dasym_weight * i.intersect_area) AS total_pop_weight
+    FROM intersections i
+    GROUP BY i.geoid
+)
+
+, allocated AS (
+    SELECT
+        i.parcel_id,
+        SUM(i.pop * i.pop_dasym_weight * i.intersect_area
+            / NULLIF(bw.total_pop_weight, 0)) AS pop,
+        SUM(i.hh * i.pop_dasym_weight * i.intersect_area
+            / NULLIF(bw.total_pop_weight, 0)) AS hh,
+        SUM(i.du * i.pop_dasym_weight * i.intersect_area
+            / NULLIF(bw.total_pop_weight, 0)) AS du,
+        SUM(i.du_detsf * i.pop_dasym_weight * i.intersect_area
+            / NULLIF(bw.total_pop_weight, 0)) AS du_detsf,
+        SUM(i.du_detsf_sl * i.pop_dasym_weight * i.intersect_area
+            / NULLIF(bw.total_pop_weight, 0)) AS du_detsf_sl,
+        SUM(i.du_detsf_ll * i.pop_dasym_weight * i.intersect_area
+            / NULLIF(bw.total_pop_weight, 0)) AS du_detsf_ll,
+        SUM(i.du_attsf * i.pop_dasym_weight * i.intersect_area
+            / NULLIF(bw.total_pop_weight, 0)) AS du_attsf,
+        SUM(i.du_mf * i.pop_dasym_weight * i.intersect_area
+            / NULLIF(bw.total_pop_weight, 0)) AS du_mf,
+        SUM(i.du_mf2to4 * i.pop_dasym_weight * i.intersect_area
+            / NULLIF(bw.total_pop_weight, 0)) AS du_mf2to4,
+        SUM(i.du_mf5p * i.pop_dasym_weight * i.intersect_area
+            / NULLIF(bw.total_pop_weight, 0)) AS du_mf5p,
+        SUM(i.median_income * i.intersect_area) / NULLIF(SUM(i.intersect_area), 0)
+            AS median_income,
+        SUM(i.rent_burden_pct * i.intersect_area) / NULLIF(SUM(i.intersect_area), 0)
+            AS rent_burden_pct,
+        SUM(i.pct_minority * i.intersect_area) / NULLIF(SUM(i.intersect_area), 0)
+            AS pct_minority,
+        SUM(i.pct_college_educated * i.intersect_area) / NULLIF(SUM(i.intersect_area), 0)
+            AS pct_college_educated,
+        SUM(i.cost_burden_pct * i.intersect_area) / NULLIF(SUM(i.intersect_area), 0)
+            AS cost_burden_pct
+    FROM intersections i
+    LEFT JOIN bg_weights bw ON i.geoid = bw.geoid
+    GROUP BY i.parcel_id
+)
+
+{% else %}
+
+, allocated AS (
     SELECT
         parcel_id,
-        -- Sum columns: weighted by intersection fraction
         SUM(pop * intersect_area / bg_area) AS pop,
         SUM(hh * intersect_area / bg_area) AS hh,
         SUM(du * intersect_area / bg_area) AS du,
@@ -127,7 +192,6 @@ allocated AS (
         SUM(du_mf * intersect_area / bg_area) AS du_mf,
         SUM(du_mf2to4 * intersect_area / bg_area) AS du_mf2to4,
         SUM(du_mf5p * intersect_area / bg_area) AS du_mf5p,
-        -- Average columns: area-weighted mean across intersecting BGs
         SUM(median_income * intersect_area) / NULLIF(SUM(intersect_area), 0) AS median_income,
         SUM(rent_burden_pct * intersect_area) / NULLIF(SUM(intersect_area), 0) AS rent_burden_pct,
         SUM(pct_minority * intersect_area) / NULLIF(SUM(intersect_area), 0) AS pct_minority,
@@ -136,6 +200,8 @@ allocated AS (
     FROM intersections
     GROUP BY parcel_id
 )
+
+{% endif %}
 
 SELECT
     p.parcel_id,
@@ -149,7 +215,6 @@ SELECT
     p.area_parcel,
     p.area_dev_condition,
     p.area_row,
-    -- Demographics (fall back to geometry pass-through if no ACS match)
     COALESCE(a.pop, p.bg_pop) AS pop,
     NULL::double precision AS pop_groupquarter,
     COALESCE(a.hh, p.bg_hh) AS hh,
@@ -166,9 +231,7 @@ SELECT
     a.pct_minority,
     a.pct_college_educated,
     a.cost_burden_pct,
-    -- Employment is sourced entirely from LEHD allocation in base_canvas_employment
     NULL::double precision AS emp,
-    -- Building areas and irrigation (pass-through to downstream models)
     p.bldg_area_detsf_sl,
     p.bldg_area_detsf_ll,
     p.bldg_area_attsf,

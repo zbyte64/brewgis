@@ -1,0 +1,6 @@
+land_development_category,pop_mult,emp_mult
+urban,1.0,0.15
+mixed_use,1.0,1.0
+industrial,0.0,2.0
+agricultural,0.05,0.5
+undeveloped,0.0,0.0

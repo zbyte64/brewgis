@@ -32,6 +32,12 @@ sources:
       - name: tiger_blocks
         description: "TIGER/Line census block polygons (15-digit GEOID) — loaded by dlt."
         identifier: "{{ var('tiger_block_table', 'tiger_blocks') }}"
+      - name: assessor_parcels
+        description: "Sacramento County Assessor parcel geometries — loaded by assessor dlt pipeline from PARCELS/MapServer/8."
+        identifier: "{{ var('assessor_parcels_table', 'sacog_assessor_parcels_raw') }}"
+      - name: assessor_sales
+        description: "Sacramento County Assessor building characteristics — loaded by assessor dlt pipeline from ASSESSOR/MapServer/1."
+        identifier: "{{ var('assessor_sales_table', 'sacog_assessor_sales_raw') }}"
   - name: census
     description: "Census ACS data sources — fixed schema."
     schema: census

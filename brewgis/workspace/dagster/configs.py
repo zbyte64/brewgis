@@ -121,6 +121,8 @@ class SacogComparisonETLConfig(Config):
     """Enable NLCD land cover classification and irrigation estimation."""
     run_osm: bool = False
     """Enable OSM intersection density estimation."""
+    run_assessor: bool = False
+    """Enable Sacramento County Assessor parcel ingestion + dasymetric weights."""
     force_data_fetch: bool = False
     """Ignore cached data and re-download."""
     truncate: bool = False

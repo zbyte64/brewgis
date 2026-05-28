@@ -81,6 +81,13 @@ class Command(BaseCommand):
             help="Use faster ST_ClipByBox2D instead of accurate ST_Intersection for parcel-block area allocation (default: off, uses ST_Intersection)",
         )
 
+        parser.add_argument(
+            "--use-assessor-geometry",
+            action="store_true",
+            default=False,
+            help="Use Sacramento County Assessor parcel geometries + building data for dasymetric weight refinement",
+        )
+
     def handle(self, **options: Any) -> None:
         # Lazy imports — avoid loading dagster assets at module import time
         # which conflicts with test stubs for pandas/geopandas.
@@ -105,6 +112,10 @@ class Command(BaseCommand):
         from brewgis.workspace.dlt_pipelines.osm import run_osm_pipeline
         from brewgis.workspace.dlt_pipelines.tiger_bg import run_tiger_bg_pipeline
         from brewgis.workspace.dlt_pipelines.tiger_block import run_tiger_block_pipeline
+        from brewgis.workspace.dlt_pipelines.assessor import (
+            run_assessor_parcels_pipeline,
+            run_assessor_sales_pipeline,
+        )
         from brewgis.workspace.services.census_fetcher import _populate_acs_block_group
         from brewgis.workspace.services.lehd_fetcher import _populate_wac_block
 
@@ -113,6 +124,7 @@ class Command(BaseCommand):
         limit = int(options.get("limit", 0))
         force_data_fetch = bool(options.get("force_data_fetch", False))
         quick_parcel_clipping = bool(options.get("quick_parcel_clipping", False))
+        use_assessor_geometry = bool(options.get("use_assessor_geometry", False))
 
         # TODO check if base_canvas exists / migrations are up to date
 
@@ -121,6 +133,7 @@ class Command(BaseCommand):
         self.stdout.write("=" * 70)
         self.stdout.write(f"  NLCD: {'on' if nlcd else 'off'}")
         self.stdout.write(f"  OSM: {'on' if osm else 'off'}")
+        self.stdout.write(f"  Assessor parcel geometry + dasymetric: {'on' if use_assessor_geometry else 'off'}")
         self.stdout.write(f"  Parcel limit: {limit or 'all'}")
         self.stdout.write(
             f"  Force re-download: {'yes' if force_data_fetch else 'no (use cached data if available)'}"
@@ -283,6 +296,70 @@ class Command(BaseCommand):
                 f"in {osm_table}"
             )
 
+        # ── Phase 1.5c: Run Assessor pipeline (optional) ────────────────
+        dasymetric_weights_table = ""
+        if use_assessor_geometry:
+            self.stdout.write(
+                "\n── Phase 1.5c: Fetching Assessor parcel geometries ──"
+            )
+
+            assessor_parcels_result = run_assessor_parcels_pipeline(
+                max_pages=0 if not limit else max(1, limit // 2000 + 1),
+                ignore_cache=force_data_fetch,
+            )
+            if not assessor_parcels_result.get("success"):
+                raise CommandError(
+                    f"Assessor parcels fetch failed: {assessor_parcels_result.get('error')}"
+                )
+            self.stdout.write(
+                f"  Assessor parcels loaded: {assessor_parcels_result.get('row_count', 0)} rows "
+                f"in {assessor_parcels_result.get('table_name', '?')}"
+            )
+
+            self.stdout.write(
+                "\n── Phase 1.5d: Fetching Assessor building characteristics ──"
+            )
+            assessor_sales_result = run_assessor_sales_pipeline(
+                max_pages=0 if not limit else max(1, limit // 2000 + 1),
+                ignore_cache=force_data_fetch,
+            )
+            if not assessor_sales_result.get("success"):
+                raise CommandError(
+                    f"Assessor sales fetch failed: {assessor_sales_result.get('error')}"
+                )
+            self.stdout.write(
+                f"  Assessor sales loaded: {assessor_sales_result.get('row_count', 0)} rows "
+                f"in {assessor_sales_result.get('table_name', '?')}"
+            )
+
+            # ── Phase 1.5e: Materialize assessor dbt staging models ──
+            self.stdout.write(
+                "\n── Phase 1.5e: Materializing assessor dbt staging models ──"
+            )
+            staging_result = run_dbt_local(
+                select=[
+                    "sacog_assessor_parcels",
+                    "sacog_assessor_sales",
+                    "assessor_building_medians",
+                    "parcel_dasymetric_weights",
+                ],
+                vars_={
+                    "base_canvas_materialized": "table",
+                    "projected_srid": LOCAL_SRID,
+                },
+            )
+            if not staging_result.success:
+                raise CommandError(
+                    f"dbt assessor staging failed: {staging_result.error}"
+                )
+            dasymetric_weights_table = "public.parcel_dasymetric_weights"
+            self.stdout.write(
+                self.style.SUCCESS(
+                    "  Assessor staging models materialized: "
+                    f"dasymetric weights in {dasymetric_weights_table}",
+                )
+            )
+
         # ── Phase 2a: Materialize SACOG parcel shim ────────────────────
         self.stdout.write("\n── Phase 2a: Materializing SACOG parcel shim ──")
         shim_vars: dict[str, Any] = {
@@ -322,6 +399,8 @@ class Command(BaseCommand):
             dbt_vars["nlcd_parcel_table"] = nlcd_table
         if osm_table:
             dbt_vars["osm_intersection_table"] = osm_table
+        if dasymetric_weights_table:
+            dbt_vars["dasymetric_weights_table"] = dasymetric_weights_table
         result = run_dbt_local(
             select=[
                 "base_canvas_geometry",

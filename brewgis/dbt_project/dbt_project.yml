@@ -120,7 +120,8 @@ vars:
   constraints: []
   nlcd_parcel_table: ""
   osm_intersection_table: ""
-
+  # Dasymetric weights (assessor parcel-based allocation refinement)
+  dasymetric_weights_table: ""
 
   # Land Consumption — parking and impervious defaults
   parking_per_unit: 0.5
@@ -264,3 +265,7 @@ seeds:
       +column_types:
         geoid: text
         geometry: geometry(Geometry,4326)
+    dasymetric_weights:
+      +column_types:
+        pop_mult: double precision
+        emp_mult: double precision

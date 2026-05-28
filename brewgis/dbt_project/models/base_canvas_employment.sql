@@ -1,16 +1,21 @@
 {#
     Base Canvas Employment — spatial allocation from LEHD LODES WAC.
 
-    For each parcel from ``base_canvas_demographics``, area-weight allocates
-    employment values from intersecting LEHD WAC blocks.
+    For each parcel from ``base_canvas_demographics``, allocates employment
+    values from intersecting LEHD WAC blocks.
 
-    Sub-sector employment columns (emp_retail_services, emp_restaurant, etc.)
-    are allocated proportionally from the WAC table.  Aggregate columns
-    (emp_ret, emp_off, emp_pub, emp_ind, emp_ag, emp_military) and total
-    emp are computed by summing their sub-sectors.
+    Sub-sector employment columns are allocated proportionally from the WAC
+    table.  Aggregate columns and total emp are computed by summing sub-sectors.
 
-    When LEHD data is unavailable or the spatial join produces no match,
-    columns are left NULL for downstream imputation.
+    By default uses area-weighted allocation.  When ``dasymetric_weights_table``
+    is set, employment is allocated proportional to ``emp_dasym_weight * intersect_area``
+    per WAC block, enabling parcel-level refinement from assessor data.
+
+    Land-use filtering was removed because area-weighted block-to-parcel
+    allocation distributes block-group employment proportionally.  A parcel's
+    share represents jobs at nearby parcels within the same block, not jobs
+    on the parcel itself, so land-use constraints would silently discard
+    legitimate allocations.
 
     Materialized as: table
 #}
@@ -23,7 +28,7 @@
 }}
 
 {%- set area_srid = var('projected_srid', 3857) -%}
-{%- set quick_parcel_clipping = var('quick_parcel_clipping', true) -%}
+{%- set dasym_table = var('dasymetric_weights_table', none) -%}
 
 WITH pre_wac_data AS (
     SELECT
@@ -65,15 +70,27 @@ wac_data AS (
     FROM pre_wac_data w
 ),
 
--- Area-weighted spatial allocation (unfiltered — no land-use constraints)
--- Land-use filtering was removed because area-weighted block-to-parcel
--- allocation distributes block-group employment proportionally.  A parcel's
--- share represents jobs at nearby parcels within the same block, not jobs
--- on the parcel itself, so land-use constraints would silently discard
--- legitimate allocations.
+-- Parcel geometry with optional dasymetric weight join
+parcel_with_weights AS (
+    SELECT
+        p.*
+        {% if dasym_table %}
+        ,
+        dw.emp_dasym_weight
+        {% endif %}
+    FROM {{ ref('base_canvas_demographics') }} p
+    {% if dasym_table %}
+    LEFT JOIN {{ dasym_table }} dw
+        ON p.parcel_id::text = dw.parcel_id
+    {% endif %}
+),
+
 intersections AS (
     SELECT
         p.parcel_id,
+        {% if dasym_table %}
+        w.geoid,
+        {% endif %}
         w.emp,
         w.emp_retail_services,
         w.emp_restaurant,
@@ -98,16 +115,85 @@ intersections AS (
         w.emp_ind,
         w.emp_ag,
         w.wac_area,
+        {% if dasym_table %}
+        COALESCE(p.emp_dasym_weight, 1.0) AS emp_dasym_weight,
+        {% endif %}
         {% if quick_parcel_clipping %}
         ST_Area(ST_ClipByBox2D(p.local_geometry, w.wac_envelope)) AS intersect_area
         {% else %}
         ST_Area(ST_Intersection(p.local_geometry, w.local_geometry)) AS intersect_area
         {% endif %}
-    FROM {{ ref('base_canvas_demographics') }} p
+    FROM parcel_with_weights p
     JOIN wac_data w ON ST_Intersects(p.geometry, w.geometry)
-),
+)
 
-allocated AS (
+{% if dasym_table %}
+-- Per-WAC-block total dasymetric weight for normalization
+, wac_weights AS (
+    SELECT
+        i.geoid,
+        SUM(i.emp_dasym_weight * i.intersect_area) AS total_emp_weight
+    FROM intersections i
+    GROUP BY i.geoid
+)
+
+, allocated AS (
+    SELECT
+        i.parcel_id,
+        SUM(i.emp * i.emp_dasym_weight * i.intersect_area
+            / NULLIF(wac_weights.total_emp_weight, 0)) AS emp,
+        SUM(i.emp_retail_services * i.emp_dasym_weight * i.intersect_area
+            / NULLIF(wac_weights.total_emp_weight, 0)) AS emp_retail_services,
+        SUM(i.emp_restaurant * i.emp_dasym_weight * i.intersect_area
+            / NULLIF(wac_weights.total_emp_weight, 0)) AS emp_restaurant,
+        SUM(i.emp_accommodation * i.emp_dasym_weight * i.intersect_area
+            / NULLIF(wac_weights.total_emp_weight, 0)) AS emp_accommodation,
+        SUM(i.emp_arts_entertainment * i.emp_dasym_weight * i.intersect_area
+            / NULLIF(wac_weights.total_emp_weight, 0)) AS emp_arts_entertainment,
+        SUM(i.emp_other_services * i.emp_dasym_weight * i.intersect_area
+            / NULLIF(wac_weights.total_emp_weight, 0)) AS emp_other_services,
+        SUM(i.emp_office_services * i.emp_dasym_weight * i.intersect_area
+            / NULLIF(wac_weights.total_emp_weight, 0)) AS emp_office_services,
+        SUM(i.emp_medical_services * i.emp_dasym_weight * i.intersect_area
+            / NULLIF(wac_weights.total_emp_weight, 0)) AS emp_medical_services,
+        SUM(i.emp_public_admin * i.emp_dasym_weight * i.intersect_area
+            / NULLIF(wac_weights.total_emp_weight, 0)) AS emp_public_admin,
+        SUM(i.emp_education * i.emp_dasym_weight * i.intersect_area
+            / NULLIF(wac_weights.total_emp_weight, 0)) AS emp_education,
+        SUM(i.emp_manufacturing * i.emp_dasym_weight * i.intersect_area
+            / NULLIF(wac_weights.total_emp_weight, 0)) AS emp_manufacturing,
+        SUM(i.emp_wholesale * i.emp_dasym_weight * i.intersect_area
+            / NULLIF(wac_weights.total_emp_weight, 0)) AS emp_wholesale,
+        SUM(i.emp_transport_warehousing * i.emp_dasym_weight * i.intersect_area
+            / NULLIF(wac_weights.total_emp_weight, 0)) AS emp_transport_warehousing,
+        SUM(i.emp_utilities * i.emp_dasym_weight * i.intersect_area
+            / NULLIF(wac_weights.total_emp_weight, 0)) AS emp_utilities,
+        SUM(i.emp_construction * i.emp_dasym_weight * i.intersect_area
+            / NULLIF(wac_weights.total_emp_weight, 0)) AS emp_construction,
+        SUM(i.emp_agriculture * i.emp_dasym_weight * i.intersect_area
+            / NULLIF(wac_weights.total_emp_weight, 0)) AS emp_agriculture,
+        SUM(i.emp_extraction * i.emp_dasym_weight * i.intersect_area
+            / NULLIF(wac_weights.total_emp_weight, 0)) AS emp_extraction,
+        SUM(i.emp_military * i.emp_dasym_weight * i.intersect_area
+            / NULLIF(wac_weights.total_emp_weight, 0)) AS emp_military,
+        SUM(i.emp_ret * i.emp_dasym_weight * i.intersect_area
+            / NULLIF(wac_weights.total_emp_weight, 0)) AS emp_ret,
+        SUM(i.emp_off * i.emp_dasym_weight * i.intersect_area
+            / NULLIF(wac_weights.total_emp_weight, 0)) AS emp_off,
+        SUM(i.emp_pub * i.emp_dasym_weight * i.intersect_area
+            / NULLIF(wac_weights.total_emp_weight, 0)) AS emp_pub,
+        SUM(i.emp_ind * i.emp_dasym_weight * i.intersect_area
+            / NULLIF(wac_weights.total_emp_weight, 0)) AS emp_ind,
+        SUM(i.emp_ag * i.emp_dasym_weight * i.intersect_area
+            / NULLIF(wac_weights.total_emp_weight, 0)) AS emp_ag
+    FROM intersections i
+    LEFT JOIN wac_weights ON i.geoid = wac_weights.geoid
+    GROUP BY i.parcel_id
+)
+
+{% else %}
+
+, allocated AS (
     SELECT
         parcel_id,
         SUM(emp * intersect_area / wac_area) AS emp,
@@ -137,6 +223,8 @@ allocated AS (
     GROUP BY parcel_id
 )
 
+{% endif %}
+
 SELECT
     p.parcel_id,
     p.geometry,
@@ -165,7 +253,6 @@ SELECT
     p.pct_minority,
     p.pct_college_educated,
     p.cost_burden_pct,
-    -- Building areas and irrigation (pass-through from demographics)
     p.bldg_area_detsf_sl,
     p.bldg_area_detsf_ll,
     p.bldg_area_attsf,
@@ -190,7 +277,6 @@ SELECT
     p.area_parcel_emp,
     p.area_parcel_mixed_use,
     p.area_parcel_no_use,
-    -- Employment (area-weighted from LEHD LODES WAC — no land-use constraints)
     CASE WHEN a.parcel_id IS NOT NULL
         THEN COALESCE(a.emp_retail_services, 0) + COALESCE(a.emp_restaurant, 0)
             + COALESCE(a.emp_accommodation, 0) + COALESCE(a.emp_arts_entertainment, 0)

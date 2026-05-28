@@ -7,6 +7,8 @@ convenience wrapper for standalone Celery-task invocation).
 
 from __future__ import annotations
 
+from brewgis.workspace.dlt_pipelines.assessor import run_assessor_parcels_pipeline
+from brewgis.workspace.dlt_pipelines.assessor import run_assessor_sales_pipeline
 from brewgis.workspace.dlt_pipelines.census import census_source
 from brewgis.workspace.dlt_pipelines.census import run_census_pipeline
 from brewgis.workspace.dlt_pipelines.lehd import lehd_source
@@ -29,6 +31,8 @@ __all__ = [
     "poi_source",
     "raster_band_source",
     "raster_metadata_source",
+    "run_assessor_parcels_pipeline",
+    "run_assessor_sales_pipeline",
     "run_census_pipeline",
     "run_lehd_pipeline",
     "run_nlcd_pipeline",
