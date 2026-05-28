@@ -9,14 +9,12 @@
 
     Vars:
         comparison_reference_table: Reference table name.
-        comparison_brewgis_table: BrewGIS base canvas table name.
 
     Materialized as: table (persisted for report generation)
 #}
 {{ config(materialized='table') }}
 
 {% set ref_table = var('comparison_reference_table', 'sac_cnty_region_base_canvas') %}
-{% set brew_table = var('comparison_brewgis_table', 'public.base_canvas') %}
 
 {# v3 → v1 column pairs from sacog_column_mapping.get_v1_columns_for_verification()
    These cover area, demographic, employment, and building area mappings #}
@@ -95,6 +93,6 @@ SELECT
 {% for v3_col, v1_col in column_pairs %}
     CORR(bc."{{ v3_col }}", ref."{{ v1_col }}") AS "{{ v3_col }}"{% if not loop.last %},{% endif %}
 {% endfor %}
-FROM {{ brew_table }} bc
+FROM {{ ref('sacog_brewgis_comparison_view') }} bc
 INNER JOIN {{ ref_table }} ref ON bc.geography_id = ref.geography_id
 WHERE bc.geography_id IS NOT NULL

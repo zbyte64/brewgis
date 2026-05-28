@@ -151,10 +151,8 @@ def sacog_ingest_assessor(
     ``pop_dasym_weight``, and ``emp_dasym_weight`` for use by downstream
     base_canvas_demographics and base_canvas_employment models.
     """
-    from brewgis.workspace.dlt_pipelines.assessor import (
-        run_assessor_parcels_pipeline,
-        run_assessor_sales_pipeline,
-    )
+    from brewgis.workspace.dlt_pipelines.assessor import run_assessor_parcels_pipeline
+    from brewgis.workspace.dlt_pipelines.assessor import run_assessor_sales_pipeline
 
     # Step 1: Fetch parcel geometries
     context.log.info("Fetching assessor parcel geometries")
@@ -470,8 +468,8 @@ def sacog_run_comparison_etl(
         context.log.info("Running assessor staging pipeline for dasymetric weights")
         from brewgis.workspace.dlt_pipelines.assessor import (
             run_assessor_parcels_pipeline,
-            run_assessor_sales_pipeline,
         )
+        from brewgis.workspace.dlt_pipelines.assessor import run_assessor_sales_pipeline
 
         run_assessor_parcels_pipeline()
         run_assessor_sales_pipeline()
@@ -1102,6 +1100,16 @@ def _generate_report_markdown(
             ],
         ),
         (
+            "Intersection Density (per sq mi)",
+            [
+                (
+                    "Intersection Density",
+                    "intersection_density_sqmi",
+                    "intersection_density",
+                ),
+            ],
+        ),
+        (
             "Irrigation (acres)",
             [
                 (
@@ -1258,20 +1266,33 @@ def _generate_report_markdown(
     # ── BrewGIS-only columns ──────────────────────────────────────
     lines.append("## 4. Columns Not in Reference (BrewGIS-only)")
     lines.append("")
-    brew_only_cols: list[str] = [
-        "median_income",
-        "rent_burden_pct",
-        "pct_minority",
-        "pct_college_educated",
-        "cost_burden_pct",
-        "area_dev_condition",
-        "area_row",
-        "pop_groupquarter",
+    brew_only_cols: list[tuple[str, bool]] = [
+        ("median_income", True),
+        ("rent_burden_pct", True),
+        ("pct_minority", True),
+        ("pct_college_educated", True),
+        ("cost_burden_pct", True),
+        ("area_dev_condition", False),
+        ("area_row", False),
+        ("pop_groupquarter", False),
     ]
-    for col in brew_only_cols:
+    for col, is_rate in brew_only_cols:
         val = brew.get(col)
         if val is not None:
-            lines.append(f"- **{col}**: {val:,.1f} (brewGIS only — no v1 equivalent)")
+            if is_rate and weighted_means:
+                wavg_key = f"{col}_wavg"
+                wavg = weighted_means.get(wavg_key)
+                line = f"- **{col}**: {val:,.1f} (brewGIS only — no v1 equivalent)"
+                if wavg is not None:
+                    if col == "median_income":
+                        line += f" — area-weighted avg: ${wavg:,.0f}"
+                    else:
+                        line += f" — area-weighted avg: {wavg:.1f}%"
+                lines.append(line)
+            else:
+                lines.append(
+                    f"- **{col}**: {val:,.1f} (brewGIS only — no v1 equivalent)"
+                )
     lines.append("")
     lines.append(
         "> **Note:** median_income and percentage columns "
@@ -1301,6 +1322,10 @@ def _generate_report_markdown(
         "median_income": {
             "value": 75430.0,
             "source": "ACS B19013 (2022), median $",
+        },
+        "rent_burden_pct": {
+            "value": 42.0,
+            "source": "ACS B25070 (2022), % >30% gross rent",
         },
         "pct_minority": {
             "value": 55.2,

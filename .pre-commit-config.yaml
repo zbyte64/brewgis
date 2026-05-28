@@ -1,46 +1,101 @@
 exclude: '^docs/|/migrations/|devcontainer.json'
-default_stages: [pre-commit]
 
 default_language_version:
   python: python3.12
 
 repos:
+  # ── Auto-fixing hooks (pre-commit stage) ──────────────────────
+  # These run on every commit: they auto-fix issues silently or fail fast on real problems.
+
   - repo: https://github.com/pre-commit/pre-commit-hooks
     rev: v5.0.0
     hooks:
+      # --- auto-fixing ---
       - id: trailing-whitespace
       - id: end-of-file-fixer
+      # --- fast structural checks (keep in pre-commit) ---
       - id: check-json
       - id: check-toml
       - id: check-xml
       - id: check-yaml
       - id: debug-statements
-      - id: check-builtin-literals
       - id: check-case-conflict
-      - id: check-docstring-first
       - id: detect-private-key
+
+  # Ruff: lint (auto-fix) + format (auto-format). No --exit-non-zero-on-fix
+  # so auto-fixes apply silently and the commit proceeds.
+  - repo: https://github.com/astral-sh/ruff-pre-commit
+    rev: v0.11.0
+    hooks:
+      - id: ruff
+        args: [--fix, --exit-zero]
+      - id: ruff-format
+
+  # Template reformatting
+  - repo: https://github.com/Riverside-Healthcare/djLint
+    rev: v1.36.1
+    hooks:
+      - id: djlint-reformat-django
+
+  # JS/TS formatting via prettier
+  - repo: https://github.com/pre-commit/mirrors-prettier
+    rev: v3.1.0
+    hooks:
+      - id: prettier
+        types_or: [javascript, jsx, ts, tsx, json, yaml, css, markdown]
+        additional_dependencies:
+          - prettier@3.5.0
+
+  # ── Local fast checks ──────────────────────────────────────
+  - repo: local
+    hooks:
+      # Prevent @method_decorator misuse on function-based views
+      - id: check-method-decorator
+        name: Check @method_decorator not used on FBVs
+        entry: python scripts/check-method-decorator.py
+        language: python
+        files: ^brewgis/.*\.py$
+        pass_filenames: false
+      # Detect anchor tag artifacts accidentally left in code by agent editing tools
+      - id: no-anchor-tags
+        name: Check for anchor tag artifacts in code
+        description: Fails if any text file contains lines matching ^\w\w\| (anchor tag artifacts from agent edit tools)
+        entry: bash -c '! grep -Pn "^\w\w\|" "$@"' detect-anchor-tags
+        language: system
+        types: [text]
+        exclude: >
+          (?x)^(
+            .*\.lock|
+            .*\.svg|
+            .*\.map|
+            .*\.min\.js
+          )$
+
+  # ── Manual-stage checks (run on demand, not on every commit) ──
+  # These are slower, non-fixing, or only needed periodically.
+  # Run them with:  pre-commit run --hook-stage manual <hook-id>
+  # Or all at once: pre-commit run --hook-stage manual
+
+  - repo: https://github.com/pre-commit/pre-commit-hooks
+    rev: v5.0.0
+    hooks:
+      - id: check-builtin-literals
+        stages: [manual]
+      - id: check-docstring-first
+        stages: [manual]
 
   - repo: https://github.com/adamchainz/django-upgrade
     rev: '1.30.0'
     hooks:
       - id: django-upgrade
         args: ['--target-version', '6.0']
-
-  # Run the Ruff linter.
-  - repo: https://github.com/astral-sh/ruff-pre-commit
-    rev: v0.11.0
-    hooks:
-      # Linter
-      - id: ruff
-        args: [--fix, --exit-non-zero-on-fix]
-      # Formatter
-      - id: ruff-format
+        stages: [manual]
 
   - repo: https://github.com/Riverside-Healthcare/djLint
     rev: v1.36.1
     hooks:
-      - id: djlint-reformat-django
       - id: djlint-django
+        stages: [manual]
 
   # SQL linting for dbt models
   - repo: https://github.com/sqlfluff/sqlfluff
@@ -51,7 +106,7 @@ repos:
           - sqlfluff-templater-dbt>=3.3.0
         files: ^brewgis/dbt_project/.*\.(sql|yml)$
         args: [--config, .sqlfluff]
-
+        stages: [manual]
 
   - repo: https://github.com/codespell-project/codespell
     rev: v2.4.1
@@ -65,15 +120,7 @@ repos:
             .*\.svg|
             .*\.map
           )$
-
-  # JS/TS formatting via prettier
-  - repo: https://github.com/pre-commit/mirrors-prettier
-    rev: v3.1.0
-    hooks:
-      - id: prettier
-        types_or: [javascript, jsx, ts, tsx, json, yaml, css, markdown]
-        additional_dependencies:
-          - prettier@3.5.0
+        stages: [manual]
 
   # JS/TS linting via eslint
   - repo: https://github.com/pre-commit/mirrors-eslint
@@ -88,6 +135,7 @@ repos:
           - typescript-eslint@8.26.0
           - eslint-config-prettier@10.1.0
           - typescript@5.7.3
+        stages: [manual]
 
   # TypeScript type checking
   - repo: local
@@ -98,16 +146,9 @@ repos:
         language: node
         files: ^js/src/.*\.ts$
         pass_filenames: false
-  # Prevent @method_decorator misuse on function-based views
-  - repo: local
-    hooks:
-      - id: check-method-decorator
-        name: Check @method_decorator not used on FBVs
-        entry: python scripts/check-method-decorator.py
-        language: python
-        files: ^brewgis/.*\.py$
-        pass_filenames: false
-  # Python type checking via mypy
+        stages: [manual]
+
+  # Python type checking via mypy (slow — runs in Docker)
   - repo: local
     hooks:
       - id: mypy
@@ -117,22 +158,8 @@ repos:
         files: ^brewgis/.*\.py$
         pass_filenames: false
         require_serial: true
-  # Detect anchor tag artifacts accidentally left in code by agent editing tools
-  - repo: local
-    hooks:
-      - id: no-anchor-tags
-        name: Check for anchor tag artifacts in code
-        description: Fails if any text file contains lines matching ^\\w\\w\\| (anchor tag artifacts from agent edit tools)
-        entry: bash -c '! grep -Pn "^\w\w\|" "$@"' detect-anchor-tags
-        language: system
-        types: [text]
-        exclude: >
-          (?x)^(
-            .*\.lock|
-            .*\.svg|
-            .*\.map|
-            .*\.min\.js
-          )$
+        stages: [manual]
+
 # sets up .pre-commit-ci.yaml to ensure pre-commit dependencies stay up to date
 ci:
   autoupdate_schedule: weekly

@@ -106,16 +106,16 @@ class Command(BaseCommand):
         from brewgis.workspace.dagster.assets.comparison_assets import (
             _query_table_as_dict,
         )
+        from brewgis.workspace.dlt_pipelines.assessor import (
+            run_assessor_parcels_pipeline,
+        )
+        from brewgis.workspace.dlt_pipelines.assessor import run_assessor_sales_pipeline
         from brewgis.workspace.dlt_pipelines.census import run_census_pipeline
         from brewgis.workspace.dlt_pipelines.lehd import run_lehd_pipeline
         from brewgis.workspace.dlt_pipelines.nlcd import run_nlcd_pipeline
         from brewgis.workspace.dlt_pipelines.osm import run_osm_pipeline
         from brewgis.workspace.dlt_pipelines.tiger_bg import run_tiger_bg_pipeline
         from brewgis.workspace.dlt_pipelines.tiger_block import run_tiger_block_pipeline
-        from brewgis.workspace.dlt_pipelines.assessor import (
-            run_assessor_parcels_pipeline,
-            run_assessor_sales_pipeline,
-        )
         from brewgis.workspace.services.census_fetcher import _populate_acs_block_group
         from brewgis.workspace.services.lehd_fetcher import _populate_wac_block
 
@@ -133,7 +133,9 @@ class Command(BaseCommand):
         self.stdout.write("=" * 70)
         self.stdout.write(f"  NLCD: {'on' if nlcd else 'off'}")
         self.stdout.write(f"  OSM: {'on' if osm else 'off'}")
-        self.stdout.write(f"  Assessor parcel geometry + dasymetric: {'on' if use_assessor_geometry else 'off'}")
+        self.stdout.write(
+            f"  Assessor parcel geometry + dasymetric: {'on' if use_assessor_geometry else 'off'}"
+        )
         self.stdout.write(f"  Parcel limit: {limit or 'all'}")
         self.stdout.write(
             f"  Force re-download: {'yes' if force_data_fetch else 'no (use cached data if available)'}"
@@ -215,7 +217,7 @@ class Command(BaseCommand):
         if not tiger_block_result["success"]:
             raise CommandError(
                 f"TIGER/Line block fetch failed: {tiger_block_result.get('error')}."
-        )
+            )
         self.stdout.write(
             f"  TIGER/Line blocks loaded: {tiger_block_result.get('row_count', 0)} rows "
             f"in {tiger_block_result.get('table_name', '?')}"
@@ -299,9 +301,7 @@ class Command(BaseCommand):
         # ── Phase 1.5c: Run Assessor pipeline (optional) ────────────────
         dasymetric_weights_table = ""
         if use_assessor_geometry:
-            self.stdout.write(
-                "\n── Phase 1.5c: Fetching Assessor parcel geometries ──"
-            )
+            self.stdout.write("\n── Phase 1.5c: Fetching Assessor parcel geometries ──")
 
             assessor_parcels_result = run_assessor_parcels_pipeline(
                 max_pages=0 if not limit else max(1, limit // 2000 + 1),
