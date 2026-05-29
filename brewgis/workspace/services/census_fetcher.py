@@ -179,9 +179,6 @@ try:
 except (ValueError, TypeError):
     _K_STEEPNESS = 0.5
 
-# National proportions for splitting ACS DU subtypes
-_DU_MF_2_9_TO_MF2TO4_RATIO = 0.40  # 40% of 2-9 units → 2-4 units
-
 
 def fetch_acs_data_summary(
     state_fips: str, county_fips: str, year: int = 2022
@@ -226,8 +223,14 @@ def fetch_acs_data_summary(
             "du",
             "du_detsf",
             "du_attsf",
-            "du_mf_2_9",
-            "du_mf_10p",
+            "du_2",
+            "du_3_4",
+            "du_5_9",
+            "du_10p",
+            "du_mf2to4",
+            "du_mf5p",
+            "du_detsf_sl",
+            "du_detsf_ll",
             "owner_occupied",
             "renter_occupied",
             "median_income",
@@ -269,7 +272,6 @@ def _populate_acs_block_group(
         "county_fips": county_fips,
         "detsf_sl_ratio": _DU_DETSF_TO_SL_RATIO,
         "sl_density_threshold": _SL_DENSITY_THRESHOLD,
-        "mf_2_9_to_mf2to4_ratio": _DU_MF_2_9_TO_MF2TO4_RATIO,
         "k_steepness": _K_STEEPNESS,
         "tiger_bg_vintage": "2013",
     }

@@ -5,6 +5,10 @@
     sqft for parcels without sales records using land-use-type medians, and computes
     ``pop_dasym_weight`` and ``emp_dasym_weight`` per parcel.
 
+    Also computes ``du_subtype`` (assessor-based dwelling unit sub-type
+    classification) and ``du_dasym_weight`` (dasymetric weight for DU
+    sub-type allocation, based on assessor ``units``).
+
     Weight formulas:
         pop_dasym_weight = pop_mult * COALESCE(
             actual_living_sqft,        -- from sales data (55K parcels)
@@ -52,13 +56,17 @@ sales_data AS (
         parcel_id,
         actual_living_sqft,
         actual_building_sqft,
-        property_type
+        property_type,
+        lot_size_acres,
+        units
     FROM (
         SELECT
             parcel_id,
             living_area AS actual_living_sqft,
             building_sf AS actual_building_sqft,
             property_type,
+            lot_size_acres,
+            units,
             -- Prefer rows with both living_area and building_sf, then the most
             -- complete, then the most recent (year_built descending).
             ROW_NUMBER() OVER (
@@ -184,7 +192,11 @@ assembled AS (
         oj.intersection_density,
         -- Dasymetric multipliers
         dw.pop_mult,
-        dw.emp_mult
+        dw.emp_mult,
+        -- Assessor sales data for DU classification
+        sd.property_type,
+        sd.lot_size_acres AS sales_lot_size_acres,
+        sd.units
     FROM assessor_parcels ap
     LEFT JOIN classified cl ON ap.parcel_id = cl.parcel_id
     LEFT JOIN sales_data sd ON ap.parcel_id = sd.parcel_id
@@ -194,30 +206,58 @@ assembled AS (
     LEFT JOIN {{ ref('dasymetric_weights') }} dw
         ON cl.land_development_category = dw.land_development_category
 )
+,
+
+-- DU sub-type classification from assessor sales data
+-- Maps property_type + units + lot_size to DU sub-type based on actual parcel characteristics.
+-- NULL when assessor data is unavailable (falls through to area-proportional allocation).
+du_classification AS (
+    SELECT
+        parcel_id,
+        CASE
+            -- SFR: split by lot size (threshold ~0.15 acres = ~6,534 sqft)
+            WHEN property_type = 'SFR' AND COALESCE(sales_lot_size_acres, lot_size_acres) < 0.15 THEN 'detsf_sl'
+            WHEN property_type = 'SFR' AND COALESCE(sales_lot_size_acres, lot_size_acres) >= 0.15 THEN 'detsf_ll'
+            -- Condo → attsf
+            WHEN property_type = 'Condo' THEN 'attsf'
+            -- MF: split by unit count
+            WHEN property_type = 'MF' AND COALESCE(units, 0) BETWEEN 2 AND 4 THEN 'mf2to4'
+            WHEN property_type = 'MF' AND COALESCE(units, 0) >= 5 THEN 'mf5p'
+            -- Parcels without sales data or non-residential: NULL
+            ELSE NULL
+        END AS du_subtype,
+        -- DU dasymetric weight: actual units when available, 1.0 fallback
+        COALESCE(NULLIF(units, 0), 1)::double precision AS du_dasym_weight
+    FROM assembled
+)
 
 SELECT
-    parcel_id,
-    geometry,
-    lot_size_acres,
-    land_development_category,
-    actual_living_sqft,
-    actual_building_sqft,
-    estimated_living_sqft,
-    estimated_building_sqft,
-    impervious_fraction,
-    intersection_density,
+    a.parcel_id,
+    a.geometry,
+    a.lot_size_acres,
+    a.land_development_category,
+    a.actual_living_sqft,
+    a.actual_building_sqft,
+    a.estimated_living_sqft,
+    a.estimated_building_sqft,
+    a.impervious_fraction,
+    a.intersection_density,
     -- Population weight
-    COALESCE(pop_mult, 1.0) * COALESCE(
-        actual_living_sqft,
-        estimated_living_sqft,
-        lot_size_acres * COALESCE(impervious_fraction, 1.0),
-        lot_size_acres
+    COALESCE(a.pop_mult, 1.0) * COALESCE(
+        a.actual_living_sqft,
+        a.estimated_living_sqft,
+        a.lot_size_acres * COALESCE(a.impervious_fraction, 1.0),
+        a.lot_size_acres
     ) AS pop_dasym_weight,
     -- Employment weight with OSM boost
-    COALESCE(emp_mult, 0.15) * COALESCE(
-        actual_building_sqft,
-        estimated_building_sqft,
-        lot_size_acres * COALESCE(impervious_fraction, 1.0),
-        lot_size_acres
-    ) * (1.0 + COALESCE(intersection_density, 0.0) / 200.0) AS emp_dasym_weight
-FROM assembled
+    COALESCE(a.emp_mult, 0.15) * COALESCE(
+        a.actual_building_sqft,
+        a.estimated_building_sqft,
+        a.lot_size_acres * COALESCE(a.impervious_fraction, 1.0),
+        a.lot_size_acres
+    ) * (1.0 + COALESCE(a.intersection_density, 0.0) / 200.0) AS emp_dasym_weight,
+    -- DU sub-type and weight from assessor data
+    dc.du_subtype,
+    dc.du_dasym_weight
+FROM assembled a
+LEFT JOIN du_classification dc ON a.parcel_id = dc.parcel_id

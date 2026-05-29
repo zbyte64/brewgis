@@ -9,6 +9,11 @@
         With dasymetric weights: proportional to ``pop_dasym_weight * intersect_area``
         per block group, enabling parcel-level refinement from assessor data.
 
+    DU sub-type columns use ``du_dasym_weight`` when available (from the dasymetric
+    weights table), falling back to ``pop_dasym_weight`` when ``du_dasym_weight`` is
+    NULL.  The ``du_dasym_weight`` is based on assessor ``units`` data, enabling
+    parcel-level refinement of dwelling unit sub-type distribution.
+
     Average columns (median_income, rent_burden_pct, etc.):
         Area-weighted mean across intersecting block groups (unchanged).
 
@@ -75,7 +80,8 @@ WITH parcel_geom AS (
         bg.local_geometry AS geom_proj
         {% if dasym_table %}
         ,
-        dw.pop_dasym_weight
+        dw.pop_dasym_weight,
+        dw.du_dasym_weight
         {% endif %}
     FROM {{ ref('base_canvas_geometry') }} bg
     {% if dasym_table %}
@@ -123,6 +129,7 @@ intersections AS (
         a.bg_area,
         {% if dasym_table %}
         COALESCE(p.pop_dasym_weight, 1.0) AS pop_dasym_weight,
+        COALESCE(p.du_dasym_weight, 1.0) AS du_dasym_weight,
         {% endif %}
         ST_Area(ST_ClipByBox2D(p.geom_proj, a.local_envelope)) AS intersect_area
     FROM parcel_geom p
@@ -134,7 +141,8 @@ intersections AS (
 , bg_weights AS (
     SELECT
         i.geoid,
-        SUM(i.pop_dasym_weight * i.intersect_area) AS total_pop_weight
+        SUM(i.pop_dasym_weight * i.intersect_area) AS total_pop_weight,
+        SUM(i.du_dasym_weight * i.intersect_area) AS total_du_weight
     FROM intersections i
     GROUP BY i.geoid
 )
@@ -144,24 +152,25 @@ intersections AS (
         i.parcel_id,
         SUM(i.pop * i.pop_dasym_weight * i.intersect_area
             / NULLIF(bw.total_pop_weight, 0)) AS pop,
-        SUM(i.hh * i.pop_dasym_weight * i.intersect_area
-            / NULLIF(bw.total_pop_weight, 0)) AS hh,
-        SUM(i.du * i.pop_dasym_weight * i.intersect_area
-            / NULLIF(bw.total_pop_weight, 0)) AS du,
-        SUM(i.du_detsf * i.pop_dasym_weight * i.intersect_area
-            / NULLIF(bw.total_pop_weight, 0)) AS du_detsf,
-        SUM(i.du_detsf_sl * i.pop_dasym_weight * i.intersect_area
-            / NULLIF(bw.total_pop_weight, 0)) AS du_detsf_sl,
-        SUM(i.du_detsf_ll * i.pop_dasym_weight * i.intersect_area
-            / NULLIF(bw.total_pop_weight, 0)) AS du_detsf_ll,
-        SUM(i.du_attsf * i.pop_dasym_weight * i.intersect_area
-            / NULLIF(bw.total_pop_weight, 0)) AS du_attsf,
-        SUM(i.du_mf * i.pop_dasym_weight * i.intersect_area
-            / NULLIF(bw.total_pop_weight, 0)) AS du_mf,
-        SUM(i.du_mf2to4 * i.pop_dasym_weight * i.intersect_area
-            / NULLIF(bw.total_pop_weight, 0)) AS du_mf2to4,
-        SUM(i.du_mf5p * i.pop_dasym_weight * i.intersect_area
-            / NULLIF(bw.total_pop_weight, 0)) AS du_mf5p,
+        SUM(i.hh * i.pop_dasym_weight * i.intersect_area / NULLIF(bw.total_pop_weight, 0)) AS hh,
+        -- DU columns use du_dasym_weight for sub-type refinement when assessor data available
+        SUM(i.du * i.du_dasym_weight * i.intersect_area
+            / NULLIF(bw.total_du_weight, 0)) AS du,
+        SUM(i.du_detsf * i.du_dasym_weight * i.intersect_area
+            / NULLIF(bw.total_du_weight, 0)) AS du_detsf,
+        SUM(i.du_detsf_sl * i.du_dasym_weight * i.intersect_area
+            / NULLIF(bw.total_du_weight, 0)) AS du_detsf_sl,
+        SUM(i.du_detsf_ll * i.du_dasym_weight * i.intersect_area
+            / NULLIF(bw.total_du_weight, 0)) AS du_detsf_ll,
+        SUM(i.du_attsf * i.du_dasym_weight * i.intersect_area
+            / NULLIF(bw.total_du_weight, 0)) AS du_attsf,
+        SUM(i.du_mf * i.du_dasym_weight * i.intersect_area
+            / NULLIF(bw.total_du_weight, 0)) AS du_mf,
+        SUM(i.du_mf2to4 * i.du_dasym_weight * i.intersect_area
+            / NULLIF(bw.total_du_weight, 0)) AS du_mf2to4,
+        SUM(i.du_mf5p * i.du_dasym_weight * i.intersect_area
+            / NULLIF(bw.total_du_weight, 0)) AS du_mf5p,
+        -- Equity/income columns remain area-weighted
         SUM(i.median_income * i.intersect_area) / NULLIF(SUM(i.intersect_area), 0)
             AS median_income,
         SUM(i.rent_burden_pct * i.intersect_area) / NULLIF(SUM(i.intersect_area), 0)

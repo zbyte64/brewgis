@@ -14,7 +14,7 @@
         county_fips: Three-digit county FIPS code
         detsf_sl_ratio: Fallback small-lot ratio when geometry unavailable (default 0.40)
         sl_density_threshold: Density threshold for small-lot sigmoid (default 8.0)
-        mf_2_9_to_mf2to4_ratio: Fraction of 2-9 unit buildings classified as 2-4 (default 0.40)
+        (removed — now uses direct ACS cell values B25024_004..B25024_009)
 
     Output: census.acs_block_group — persistent table read by _allocate_demographics
 #}
@@ -31,7 +31,6 @@
 {% set county_fips = var('county_fips') %}
 {% set detsf_sl_ratio = var('detsf_sl_ratio', 0.40) %}
 {% set sl_density_threshold = var('sl_density_threshold', 8.0) %}
-{% set mf_2_9_to_mf2to4_ratio = var('mf_2_9_to_mf2to4_ratio', 0.40) %}
 {% set k_steepness = var('k_steepness', 0.5) %}
 {% set tiger_bg_vintage = var('tiger_bg_vintage', '2013') %}
 
@@ -45,10 +44,11 @@ WITH raw_derived AS (
         -- DU types
         COALESCE(a.b25024_002_e, 0)::numeric AS du_detsf,
         COALESCE(a.b25024_003_e, 0)::numeric AS du_attsf,
-        (COALESCE(a.b25024_004_e, 0) + COALESCE(a.b25024_005_e, 0)
-            + COALESCE(a.b25024_006_e, 0))::numeric AS du_mf_2_9,
+        COALESCE(a.b25024_004_e, 0)::numeric AS du_2,
+        COALESCE(a.b25024_005_e, 0)::numeric AS du_3_4,
+        COALESCE(a.b25024_006_e, 0)::numeric AS du_5_9,
         (COALESCE(a.b25024_007_e, 0) + COALESCE(a.b25024_008_e, 0)
-            + COALESCE(a.b25024_009_e, 0))::numeric AS du_mf_10p,
+            + COALESCE(a.b25024_009_e, 0))::numeric AS du_10p,
         -- Tenure
         COALESCE(a.b25003_002_e, 0)::numeric AS owner_occupied,
         COALESCE(a.b25003_003_e, 0)::numeric AS renter_occupied,
@@ -93,9 +93,9 @@ derived_with_pcts AS (
         CASE WHEN edu_total > 0
             THEN ROUND(college_educated / NULLIF(edu_total, 0) * 100.0, 2)
             ELSE 0 END AS pct_college_educated,
-        -- DU sub-type splits (fixed ratios)
-        ROUND(du_mf_2_9 * {{ mf_2_9_to_mf2to4_ratio }}, 1) AS du_mf2to4,
-        ROUND(du_mf_2_9 * (1 - {{ mf_2_9_to_mf2to4_ratio }}) + du_mf_10p, 1) AS du_mf5p,
+        -- DU sub-type splits (direct from ACS B25024 cells)
+        ROUND(du_2 + du_3_4, 1) AS du_mf2to4,
+        ROUND(du_5_9 + du_10p, 1) AS du_mf5p,
         -- Density-calibrated single-family lot split
         CASE
             WHEN du_detsf > 0 AND geometry IS NOT NULL AND ST_IsValid(geometry)
