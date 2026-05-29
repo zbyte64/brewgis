@@ -399,6 +399,75 @@ def _compute_cbp_proportions(
     return proportions
 
 
+# ── Shared CBP Data Cache ──────────────────────────────────────────────
+
+
+def _fetch_cbp_data(
+    state_fips: str,
+    county_fips: str,
+    year: int = 2021,
+    ignore_cache: bool = False,
+) -> list[list[str]]:
+    """Fetch CBP data from Census API, caching to disk.
+
+    Returns the raw JSON response (header + data rows) for further processing.
+    Both _build_cbp_proportions and _compute_all_cbp_totals share this cache.
+
+    Args:
+        state_fips: Two-digit state FIPS code.
+        county_fips: Three-digit county FIPS code.
+        year: CBP data year (default 2021).
+        ignore_cache: If True, re-fetch from API even if cached copy exists.
+
+    Returns:
+        Raw CBP API response as list of lists (first element is header row).
+
+    Raises:
+        RuntimeError: If CBP API returns no data rows.
+    """
+    state_fips_clean = state_fips.zfill(2)
+    county_fips_clean = county_fips.zfill(3)
+    naics_year = 2017 if year >= 2017 else 2007
+    dl_path = (
+        CACHE_DIR
+        / "cbp_proportions"
+        / str(year)
+        / state_fips_clean
+        / f"{county_fips_clean}.json"
+    )
+    dl_path.parent.mkdir(exist_ok=True, parents=True)
+    if ignore_cache or not dl_path.exists():
+        key = _census_api_key()
+        key_param = f"&key={key}" if key else ""
+        url = (
+            f"https://api.census.gov/data/{year}/cbp"
+            f"?get=EMP,NAICS{naics_year}&for=county:{county_fips_clean}"
+            f"&in=state:{state_fips_clean}{key_param}"
+        )
+        response = requests.get(url, timeout=120)
+        response.raise_for_status()
+        raw_data: list[list[str]] = response.json()
+        dl_path.write_text(json.dumps(raw_data))
+        logger.info(
+            "CBP data fetched and cached for %s/%s year %s",
+            state_fips_clean,
+            county_fips_clean,
+            year,
+        )
+    else:
+        raw_data = json.loads(dl_path.read_text())
+        logger.info(
+            "CBP data loaded from cache for %s/%s year %s",
+            state_fips_clean,
+            county_fips_clean,
+            year,
+        )
+    if len(raw_data) < 2:
+        msg = "CBP API returned no data rows."
+        raise RuntimeError(msg)
+    return raw_data
+
+
 def _build_cbp_proportions(
     state_fips: str,
     county_fips: str,
@@ -430,50 +499,7 @@ def _build_cbp_proportions(
     """
     state_fips_clean = state_fips.zfill(2)
     county_fips_clean = county_fips.zfill(3)
-
-    naics_year = 2017
-    if year < 2017:
-        naics_year = 2007
-
-    # ── Disk-cached API fetch ─────────────────────────────────────
-    dl_path = (
-        CACHE_DIR
-        / "cbp_proportions"
-        / str(year)
-        / state_fips_clean
-        / f"{county_fips_clean}.json"
-    )
-    dl_path.parent.mkdir(exist_ok=True, parents=True)
-
-    if ignore_cache or not dl_path.exists():
-        key = _census_api_key()
-        key_param = f"&key={key}" if key else ""
-        url = (
-            f"https://api.census.gov/data/{year}/cbp"
-            f"?get=EMP,NAICS{naics_year}&for=county:{county_fips_clean}"
-            f"&in=state:{state_fips_clean}{key_param}"
-        )
-        response = requests.get(url, timeout=120)
-        response.raise_for_status()
-        raw_data: list[list[str]] = response.json()
-        dl_path.write_text(json.dumps(raw_data))
-        logger.info(
-            "CBP proportions fetched and cached for %s/%s year %s",
-            state_fips_clean,
-            county_fips_clean,
-            year,
-        )
-    else:
-        raw_data = json.loads(dl_path.read_text())
-        logger.info(
-            "CBP proportions loaded from cache for %s/%s year %s",
-            state_fips_clean,
-            county_fips_clean,
-            year,
-        )
-
-    if len(raw_data) < 2:  # noqa: PLR2004
-        raise RuntimeError("CBP API returned no data rows.")
+    raw_data = _fetch_cbp_data(state_fips, county_fips, year, ignore_cache)
 
     result = _compute_cbp_proportions(raw_data)
 
@@ -781,9 +807,9 @@ def _compute_all_cbp_totals(
 ) -> dict[str, float]:
     """Fetch CBP employment for ALL sub-sector columns from full county data.
 
-    Queries the Census CBP API for ALL NAICS codes in the county (no NAICS
-    filter), then extracts every sub-sector total using _SUBSECTOR_CBP_NAICS
-    mapping. This mirrors the fetch pattern used by _build_cbp_proportions.
+    Uses the shared _fetch_cbp_data cache (same as _build_cbp_proportions).
+    Extracts absolute totals from raw CBP data using _SUBSECTOR_CBP_NAICS
+    mapping and validates critical aggregate groups are non-zero.
 
     Args:
         state_fips: Two-digit state FIPS code.
@@ -792,31 +818,18 @@ def _compute_all_cbp_totals(
 
     Returns:
         Dict mapping every sub-sector column name (except emp_military) to
-        its CBP county-level employment total (float). Returns empty dict on
-        API failure.
+        its CBP county-level employment total (float).
+
+    Raises:
+        RuntimeError: If CBP data is unavailable or if critical aggregate
+            groups (emp_ind, emp_ret, emp_off) are all zero — indicating
+            a data dependency failure.
     """
     sf = state_fips.zfill(2)
     cf = county_fips.zfill(3)
-    key = _census_api_key()
-    key_param = f"&key={key}" if key else ""
-    naics_year = 2017
-    if year < 2017:
-        naics_year = 2007
-    url = (
-        f"https://api.census.gov/data/{year}/cbp"
-        f"?get=EMP,NAICS{naics_year}&for=county:{cf}"
-        f"&in=state:{sf}{key_param}"
-    )
-
-    response = requests.get(url, timeout=120)
-    response.raise_for_status()
-    raw_data: list[list[str]] = response.json()
-
-    assert not len(raw_data) < 2, "Data Malformed"
-
-    header = raw_data[0]
-    rows = raw_data[1:]
-    naics_emp = _parse_cbp_naics_emp(rows, header)
+    raw_data = _fetch_cbp_data(state_fips, county_fips, year)
+    naics_emp = _parse_cbp_naics_emp(raw_data[1:], raw_data[0])
+    assert naics_emp
     sector_emp_2 = _group_naics_by_prefix(naics_emp, 2)
     sector_emp_3 = _group_naics_by_prefix(naics_emp, 3)
 
@@ -829,6 +842,41 @@ def _compute_all_cbp_totals(
             else:
                 total += sector_emp_3.get(code, 0)
         cbp_totals[sub_col] = total
+
+    # Validate critical aggregate groups are non-zero
+    emp_ind_subs = [
+        "emp_manufacturing",
+        "emp_wholesale",
+        "emp_transport_warehousing",
+        "emp_utilities",
+        "emp_construction",
+    ]
+    emp_ret_subs = [
+        "emp_retail_services",
+        "emp_restaurant",
+        "emp_accommodation",
+        "emp_arts_entertainment",
+        "emp_other_services",
+    ]
+    emp_off_subs = ["emp_office_services", "emp_medical_services"]
+
+    emp_ind_total = sum(cbp_totals[s] for s in emp_ind_subs)
+    emp_ret_total = sum(cbp_totals[s] for s in emp_ret_subs)
+    emp_off_total = sum(cbp_totals[s] for s in emp_off_subs)
+
+    if emp_ind_total <= 0 or emp_ret_total <= 0 or emp_off_total <= 0:
+        msg = (
+            f"CBP county totals unavailable for critical sectors in "
+            f"{sf}/{cf} year {year}: "
+            f"emp_ind_total={emp_ind_total:.0f} "
+            f"emp_ret_total={emp_ret_total:.0f} "
+            f"emp_off_total={emp_off_total:.0f}. "
+            "The Census CBP API returned no usable employment data for one or "
+            "more critical sector groups. Ensure CENSUS_API_KEY is set and the "
+            "requested year is available."
+            f"{naics_emp}"
+        )
+        raise RuntimeError(msg)
 
     return cbp_totals
 
@@ -938,15 +986,29 @@ def _populate_wac_block(
 
     # Step 2: Fetch CBP county totals for scaling
     cbp_totals = _compute_all_cbp_totals(state_fips, county_fips, year=year)
-    if not cbp_totals:
-        logger.warning(
-            "  CBP county totals unavailable for %s/%s year %s — "
-            "CBP county-level employment scaling will not run. "
-            "Sub-sector employment totals may be undercounted due to LEHD disclosure suppression.",
-            state_fips,
-            county_fips,
-            year,
-        )
+
+    # Compute CNS18-20 distribution fractions from CBP sub-sector totals.
+    # CNS18 (Federal), CNS19 (State), CNS20 (Local) are government workers
+    # distributed across all sectors (teachers, doctors, admin). We split them
+    # to education, medical, and public_admin by CBP proportions.
+    cbp_61 = cbp_totals.get("emp_education", 0.0)
+    cbp_62 = cbp_totals.get("emp_medical_services", 0.0)
+    cbp_92 = cbp_totals.get("emp_public_admin", 0.0)
+
+    if cbp_61 > 0 and cbp_62 > 0 and cbp_92 > 0:
+        govt_total = cbp_61 + cbp_62 + cbp_92
+        raw_vars["cns18_20_edu_frac"] = cbp_61 / govt_total
+        raw_vars["cns18_20_med_frac"] = cbp_62 / govt_total
+        raw_vars["cns18_20_pub_frac"] = cbp_92 / govt_total
+    else:
+        # When any of the NAICS sectors (61, 62, 92) is suppressed, use
+        # economy-wide proportional approximation.
+        total_all = sum(cbp_totals.values())
+        edu_frac = cbp_61 / total_all if total_all > 0 else 0.0
+        med_frac = cbp_62 / total_all if total_all > 0 else 0.0
+        raw_vars["cns18_20_edu_frac"] = edu_frac
+        raw_vars["cns18_20_med_frac"] = med_frac
+        raw_vars["cns18_20_pub_frac"] = max(0.0, 1.0 - edu_frac - med_frac)
 
     # Build dbt vars for wac_block (CBP county scaling).
     scaling_vars: dict[str, object] = {

@@ -4,10 +4,8 @@
     The sum of allocated employment in base_canvas_employment should approximately
     equal the sum of source employment in wac_block (within 5% tolerance).
 
-    Fails because: base_canvas_employment uses ST_ClipByBox2D for area
-    approximation instead of true ST_Intersection, so the sum of ClipByBox2D
-    areas across all parcels does not equal the wac_block area, breaking
-    conservation.
+    Uses ST_Intersection (accurate) by default.  Quick_parcel_clipping flag
+    switches to ST_ClipByBox2D (faster but approximate bounding-box clip).
 #}
 
 WITH source AS (

@@ -29,6 +29,7 @@
 
 {%- set area_srid = var('projected_srid', 3857) -%}
 {%- set dasym_table = var('dasymetric_weights_table', none) -%}
+{%- set nlcd_table = var('nlcd_parcel_table', none) -%}
 {%- set constrain = var('employment_land_use_constrain', false) -%}
 
 WITH pre_wac_data AS (
@@ -86,13 +87,29 @@ parcel_with_weights AS (
     {% endif %}
 ),
 
+-- Land classification reference tables
+assessor_codes AS (
+    SELECT use_code::text, category FROM {{ ref('assessor_use_codes') }}
+),
+
+sacog_use AS (
+    SELECT land_use_label, category FROM {{ ref('sacog_land_use') }}
+),
+
 intersections AS (
     SELECT
         p.parcel_id,
         {% if dasym_table %}
         w.geoid,
         {% endif %}
-        p.land_development_category,
+        -- Compute land_development_category with multi-source classification
+        COALESCE(
+            NULLIF(p.land_development_category, ''),
+            ac.category,
+            su.category
+            {% if nlcd_table %},nlcd.land_development_category{% endif %},
+            'urban'
+        ) AS land_development_category,
         w.emp,
         w.emp_retail_services,
         w.emp_restaurant,
@@ -121,9 +138,9 @@ intersections AS (
         COALESCE(p.emp_dasym_weight, 1.0) AS emp_dasym_weight,
         {% endif %}
         {% if constrain %}
-        CASE WHEN p.land_development_category = 'undeveloped' THEN 0.0 ELSE 1.0 END AS emp_weight,
-        CASE WHEN p.land_development_category = 'industrial' OR p.land_development_category IS NULL THEN 1.0 ELSE 0.0 END AS ind_weight,
-        CASE WHEN p.land_development_category IN ('agricultural', 'industrial') OR p.land_development_category IS NULL THEN 1.0 ELSE 0.0 END AS ag_weight,
+        CASE WHEN land_development_category = 'undeveloped' THEN 0.0 ELSE 1.0 END AS emp_weight,
+        CASE WHEN land_development_category = 'industrial' OR land_development_category IS NULL THEN 1.0 ELSE 0.0 END AS ind_weight,
+        CASE WHEN land_development_category IN ('agricultural', 'industrial') OR land_development_category IS NULL THEN 1.0 ELSE 0.0 END AS ag_weight,
         {% endif %}
         {% if quick_parcel_clipping %}
         ST_Area(ST_ClipByBox2D(p.local_geometry, w.wac_envelope)) AS intersect_area
@@ -132,6 +149,14 @@ intersections AS (
         {% endif %}
     FROM parcel_with_weights p
     JOIN wac_data w ON ST_Intersects(p.geometry, w.geometry)
+    LEFT JOIN assessor_codes ac
+        ON LEFT(COALESCE(p.assessor_use_code, ''), 2) = ac.use_code::text
+    LEFT JOIN sacog_use su
+        ON TRIM(COALESCE(p.land_use, '')) = su.land_use_label
+    {% if nlcd_table %}
+    LEFT JOIN {{ nlcd_table }} nlcd
+        ON p.parcel_id::text = nlcd.parcel_id
+    {% endif %}
 )
 
 {% if dasym_table %}

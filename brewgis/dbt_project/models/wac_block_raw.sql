@@ -183,10 +183,10 @@ cbp_sub_sectors AS (
         -- CNS14 -> other services
         COALESCE(lr.cns14, 0)::numeric AS emp_other_services_cbp,
         -- CNS15 + CNS18-20 -> public admin (all government sectors)
-        COALESCE(lr.cns15, 0)::numeric
-            + COALESCE(lr.cns18::numeric, 0)::numeric
-            + COALESCE(lr.cns19::numeric, 0)::numeric
-            + COALESCE(lr.cns20::numeric, 0)::numeric AS emp_public_admin_cbp,
+        COALESCE(lr.cns15, 0)::numeric AS emp_public_admin_cbp,
+        -- CNS18-20: government workers (Federal, State, Local) distributed
+        -- to education/medical/public_admin via cns18_20_*_frac vars.
+        COALESCE(lr.cns18, 0) + COALESCE(lr.cns19, 0) + COALESCE(lr.cns20, 0) AS cns18_20_govt,
         -- CNS17 -> military
         COALESCE(lr.cns17::numeric, 0)::numeric AS emp_military_cbp,
         -- CNS16 unclassified (distributed in later CTE)
@@ -221,6 +221,7 @@ calibrated_sectors AS (
         geoid,
         geometry,
         c000 AS emp,
+        cns18_20_govt,
         cns16_unclassified,
         -- Sub-sector: SACOG-calibrated or CBP-based.
         -- When a sacog_*_ratio var is provided, the sub-sector is computed as
@@ -265,6 +266,7 @@ with_cns16 AS (
         geoid,
         geometry,
         emp,
+        cns18_20_govt,
         -- Distribute CNS16: proportional when classified_total > 0,
         -- equal division when fully suppressed (classified_total = 0).
         {% for s in sub_sectors %}
@@ -282,6 +284,34 @@ with_cns16 AS (
         {{ agg }}{% if not loop.last %},{% endif %}
         {% endfor %}
     FROM calibrated_sectors
+),
+
+-- Distribute CNS18-20 government employment across education, medical,
+-- and public_admin sub-sectors using CBP-derived fractions.
+-- The three fraction vars sum to 1.0 and are computed by _populate_wac_block
+-- from CBP NAICS totals for 61 (education), 62 (medical), 92 (public admin).
+with_govt AS (
+    SELECT
+        geoid,
+        geometry,
+        emp,
+        {% for s in sub_sectors %}
+        {% set col = s.col %}
+        {% if col == 'emp_education' %}
+        ROUND(emp_education + cns18_20_govt * {{ var('cns18_20_edu_frac', 0) }}, 1) AS emp_education,
+        {% elif col == 'emp_medical_services' %}
+        ROUND(emp_medical_services + cns18_20_govt * {{ var('cns18_20_med_frac', 0) }}, 1) AS emp_medical_services,
+        {% elif col == 'emp_public_admin' %}
+        ROUND(emp_public_admin + cns18_20_govt * {{ var('cns18_20_pub_frac', 1) }}, 1) AS emp_public_admin,
+        {% else %}
+        {{ col }},
+        {% endif %}
+        {% endfor %}
+        emp_ag,
+        {% for agg in aggregates.keys() %}
+        {{ agg }}{% if not loop.last %},{% endif %}
+        {% endfor %}
+    FROM with_cns16
 )
 
-SELECT * FROM with_cns16
+SELECT * FROM with_govt
