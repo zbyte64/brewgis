@@ -265,7 +265,7 @@ classified AS (
     LEFT JOIN sacog_use su
         ON TRIM(COALESCE(b.land_use, '')) = su.land_use_label
     {% if nlcd_table %}LEFT JOIN {{ nlcd_table }} nlcd
-        ON b.parcel_id = nlcd.parcel_id
+        ON b.parcel_id::text = nlcd.parcel_id::text
     {% endif %}
 ),
 

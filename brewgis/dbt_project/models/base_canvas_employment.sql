@@ -96,7 +96,7 @@ sacog_use AS (
     SELECT land_use_label, category FROM {{ ref('sacog_land_use') }}
 ),
 
-intersections AS (
+intersections_raw AS (
     SELECT
         p.parcel_id,
         {% if dasym_table %}
@@ -137,11 +137,6 @@ intersections AS (
         {% if dasym_table %}
         COALESCE(p.emp_dasym_weight, 1.0) AS emp_dasym_weight,
         {% endif %}
-        {% if constrain %}
-        CASE WHEN land_development_category = 'undeveloped' THEN 0.0 ELSE 1.0 END AS emp_weight,
-        CASE WHEN land_development_category = 'industrial' OR land_development_category IS NULL THEN 1.0 ELSE 0.0 END AS ind_weight,
-        CASE WHEN land_development_category IN ('agricultural', 'industrial') OR land_development_category IS NULL THEN 1.0 ELSE 0.0 END AS ag_weight,
-        {% endif %}
         {% if quick_parcel_clipping %}
         ST_Area(ST_ClipByBox2D(p.local_geometry, w.wac_envelope)) AS intersect_area
         {% else %}
@@ -155,8 +150,21 @@ intersections AS (
         ON TRIM(COALESCE(p.land_use, '')) = su.land_use_label
     {% if nlcd_table %}
     LEFT JOIN {{ nlcd_table }} nlcd
-        ON p.parcel_id::text = nlcd.parcel_id
+        ON p.parcel_id::text = nlcd.parcel_id::text
     {% endif %}
+)
+
+-- Wrapper CTE: adds land-use constraint weights from fully resolved land_development_category
+, intersections AS (
+    SELECT
+        *
+        {% if constrain %}
+        ,
+        CASE WHEN land_development_category = 'undeveloped' THEN 0.0 ELSE 1.0 END AS emp_weight,
+        CASE WHEN land_development_category = 'industrial' OR land_development_category IS NULL THEN 1.0 ELSE 0.0 END AS ind_weight,
+        CASE WHEN land_development_category IN ('agricultural', 'industrial') OR land_development_category IS NULL THEN 1.0 ELSE 0.0 END AS ag_weight
+        {% endif %}
+    FROM intersections_raw
 )
 
 {% if dasym_table %}

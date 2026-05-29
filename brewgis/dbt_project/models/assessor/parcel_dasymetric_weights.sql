@@ -153,7 +153,7 @@ nlcd_join AS (
     FROM assessor_parcels ap
     {% if nlcd_table %}
     LEFT JOIN {{ nlcd_table }} nlcd
-        ON ap.parcel_id = nlcd.parcel_id
+        ON ap.parcel_id::text = nlcd.parcel_id::text
     {% endif %}
 ),
 
