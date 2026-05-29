@@ -61,3 +61,12 @@ dbt run --profiles-dir . --select base_canvas_geometry base_canvas_demographics 
 echo ""
 echo "=== dbt test (base_canvas_attributes) ==="
 dbt test --profiles-dir . --select base_canvas_attributes --vars "$CHAIN_VARS"
+
+echo ""
+echo "=== dbt run (base_canvas_attributes with assessor dasymetric weights) ==="
+DASYM_CHAIN_VARS='{"parcel_table": "sacog_parcel_shim", "acs_block_group_table": "test_acs_block_group", "wac_block_table": "test_wac_block", "projected_srid": 32610, "scenario_id": "test", "dasymetric_weights_table": "public.parcel_dasymetric_weights"}'
+dbt run --profiles-dir . --select base_canvas_attributes --vars "$DASYM_CHAIN_VARS"
+
+echo ""
+echo "=== dbt test (assessor building area COALESCE priority) ==="
+dbt test --profiles-dir . --select assert_assessor_building_area --vars "$DASYM_CHAIN_VARS"

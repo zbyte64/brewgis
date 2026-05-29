@@ -33,21 +33,11 @@
 
 {%- set area_srid = var('projected_srid', 3857) -%}
 
-
-{% set source_relation = source('brewgis', 'parcels') %}
-{% set columns = adapter.get_columns_in_relation(source_relation) %}
-{% set column_names = columns | map(attribute='name') | list %}
-
-
 WITH parcel_geom AS (
     SELECT
         parcel_id,
         geometry,
-        {% if 'local_geometry' not in column_names %}
         ST_Transform(geometry, {{ area_srid }}) AS local_geometry,
-        {% else %}
-        local_geometry,
-        {% endif %}
         county,
         COALESCE(land_development_category, '') AS land_development_category,
         built_form_key,

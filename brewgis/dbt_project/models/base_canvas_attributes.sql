@@ -26,6 +26,7 @@
 {{ config(materialized=var('base_canvas_materialized', 'view')) }}
 {% set nlcd_table = var('nlcd_parcel_table', '') %}
 {% set osm_table = var('osm_intersection_table', '') %}
+{% set dasym_table = var('dasymetric_weights_table', '') %}
 
 
 WITH source_data AS (
@@ -94,26 +95,152 @@ demographics AS (
     FROM with_cal
 ),
 
+
+-- Assessor dasymetric building data (optional — from parcel_dasymetric_weights)
+-- Provides actual/estimated living and building sqft per parcel for building area refinement.
+{% if dasym_table %}
+dasym_source AS (
+    SELECT
+        d.*,
+        COALESCE(dw.actual_living_sqft, dw.estimated_living_sqft) AS assessor_res_sqft,
+        COALESCE(dw.actual_building_sqft, dw.estimated_building_sqft) AS assessor_emp_sqft
+    FROM demographics d
+    LEFT JOIN {{ dasym_table }} dw ON d.parcel_id::text = dw.parcel_id
+),
+{% else %}
+dasym_source AS (
+    SELECT *,
+        NULL::double precision AS assessor_res_sqft,
+        NULL::double precision AS assessor_emp_sqft
+    FROM demographics
+),
+{% endif %}
+
 -- Building areas from DU * calibration.sqft_per_du * factor
 building_areas AS (
     SELECT
         *,
-        COALESCE(bldg_area_detsf_sl, du_detsf_sl_v * COALESCE(sqft_per_du, 1200.0) * 0.8) AS bldg_area_detsf_sl_v,
-        COALESCE(bldg_area_detsf_ll, du_detsf_ll_v * COALESCE(sqft_per_du, 1200.0) * 1.2) AS bldg_area_detsf_ll_v,
-        COALESCE(bldg_area_attsf, du_attsf_v * COALESCE(sqft_per_du, 1200.0) * 0.9) AS bldg_area_attsf_v,
-        COALESCE(bldg_area_mf, du_mf_v * COALESCE(sqft_per_du, 1200.0) * 0.7) AS bldg_area_mf_v,
-        COALESCE(bldg_area_retail_services, emp_retail_services_v * COALESCE(sqft_per_emp, 300.0)) AS bldg_area_retail_services_v,
-        COALESCE(bldg_area_restaurant, emp_restaurant_v * COALESCE(sqft_per_emp, 300.0)) AS bldg_area_restaurant_v,
-        COALESCE(bldg_area_accommodation, emp_accommodation_v * COALESCE(sqft_per_emp, 300.0)) AS bldg_area_accommodation_v,
-        COALESCE(bldg_area_arts_entertainment, emp_arts_entertainment_v * COALESCE(sqft_per_emp, 300.0)) AS bldg_area_arts_entertainment_v,
-        COALESCE(bldg_area_other_services, emp_other_services_v * COALESCE(sqft_per_emp, 300.0)) AS bldg_area_other_services_v,
-        COALESCE(bldg_area_office_services, emp_office_services_v * COALESCE(sqft_per_emp, 300.0)) AS bldg_area_office_services_v,
-        COALESCE(bldg_area_public_admin, emp_public_admin_v * COALESCE(sqft_per_emp, 300.0)) AS bldg_area_public_admin_v,
-        COALESCE(bldg_area_education, emp_education_v * COALESCE(sqft_per_emp, 300.0)) AS bldg_area_education_v,
-        COALESCE(bldg_area_medical_services, emp_medical_services_v * COALESCE(sqft_per_emp, 300.0)) AS bldg_area_medical_services_v,
-        COALESCE(bldg_area_transport_warehousing, emp_transport_warehousing_v * COALESCE(sqft_per_emp, 300.0)) AS bldg_area_transport_warehousing_v,
-        COALESCE(bldg_area_wholesale, emp_wholesale_v * COALESCE(sqft_per_emp, 300.0)) AS bldg_area_wholesale_v
-    FROM demographics
+        COALESCE(
+            bldg_area_detsf_sl,
+            CASE WHEN assessor_res_sqft IS NOT NULL AND du > 0
+                THEN ROUND((assessor_res_sqft * du_detsf_sl_v / du)::numeric, 1)
+                ELSE NULL
+            END,
+            du_detsf_sl_v * COALESCE(sqft_per_du, 1200.0) * 0.8
+        ) AS bldg_area_detsf_sl_v,
+        COALESCE(
+            bldg_area_detsf_ll,
+            CASE WHEN assessor_res_sqft IS NOT NULL AND du > 0
+                THEN ROUND((assessor_res_sqft * du_detsf_ll_v / du)::numeric, 1)
+                ELSE NULL
+            END,
+            du_detsf_ll_v * COALESCE(sqft_per_du, 1200.0) * 1.2
+        ) AS bldg_area_detsf_ll_v,
+        COALESCE(
+            bldg_area_attsf,
+            CASE WHEN assessor_res_sqft IS NOT NULL AND du > 0
+                THEN ROUND((assessor_res_sqft * du_attsf_v / du)::numeric, 1)
+                ELSE NULL
+            END,
+            du_attsf_v * COALESCE(sqft_per_du, 1200.0) * 0.9
+        ) AS bldg_area_attsf_v,
+        COALESCE(
+            bldg_area_mf,
+            CASE WHEN assessor_res_sqft IS NOT NULL AND du > 0
+                THEN ROUND((assessor_res_sqft * du_mf_v / du)::numeric, 1)
+                ELSE NULL
+            END,
+            du_mf_v * COALESCE(sqft_per_du, 1200.0) * 0.7
+        ) AS bldg_area_mf_v,
+        COALESCE(
+            bldg_area_retail_services,
+            CASE WHEN assessor_emp_sqft IS NOT NULL AND emp > 0
+                THEN ROUND((assessor_emp_sqft * emp_retail_services_v / emp)::numeric, 1)
+                ELSE NULL
+            END,
+            emp_retail_services_v * COALESCE(sqft_per_emp, 300.0)
+        ) AS bldg_area_retail_services_v,
+        COALESCE(
+            bldg_area_restaurant,
+            CASE WHEN assessor_emp_sqft IS NOT NULL AND emp > 0
+                THEN ROUND((assessor_emp_sqft * emp_restaurant_v / emp)::numeric, 1)
+                ELSE NULL
+            END,
+            emp_restaurant_v * COALESCE(sqft_per_emp, 300.0)
+        ) AS bldg_area_restaurant_v,
+        COALESCE(
+            bldg_area_accommodation,
+            CASE WHEN assessor_emp_sqft IS NOT NULL AND emp > 0
+                THEN ROUND((assessor_emp_sqft * emp_accommodation_v / emp)::numeric, 1)
+                ELSE NULL
+            END,
+            emp_accommodation_v * COALESCE(sqft_per_emp, 300.0)
+        ) AS bldg_area_accommodation_v,
+        COALESCE(
+            bldg_area_arts_entertainment,
+            CASE WHEN assessor_emp_sqft IS NOT NULL AND emp > 0
+                THEN ROUND((assessor_emp_sqft * emp_arts_entertainment_v / emp)::numeric, 1)
+                ELSE NULL
+            END,
+            emp_arts_entertainment_v * COALESCE(sqft_per_emp, 300.0)
+        ) AS bldg_area_arts_entertainment_v,
+        COALESCE(
+            bldg_area_other_services,
+            CASE WHEN assessor_emp_sqft IS NOT NULL AND emp > 0
+                THEN ROUND((assessor_emp_sqft * emp_other_services_v / emp)::numeric, 1)
+                ELSE NULL
+            END,
+            emp_other_services_v * COALESCE(sqft_per_emp, 300.0)
+        ) AS bldg_area_other_services_v,
+        COALESCE(
+            bldg_area_office_services,
+            CASE WHEN assessor_emp_sqft IS NOT NULL AND emp > 0
+                THEN ROUND((assessor_emp_sqft * emp_office_services_v / emp)::numeric, 1)
+                ELSE NULL
+            END,
+            emp_office_services_v * COALESCE(sqft_per_emp, 300.0)
+        ) AS bldg_area_office_services_v,
+        COALESCE(
+            bldg_area_public_admin,
+            CASE WHEN assessor_emp_sqft IS NOT NULL AND emp > 0
+                THEN ROUND((assessor_emp_sqft * emp_public_admin_v / emp)::numeric, 1)
+                ELSE NULL
+            END,
+            emp_public_admin_v * COALESCE(sqft_per_emp, 300.0)
+        ) AS bldg_area_public_admin_v,
+        COALESCE(
+            bldg_area_education,
+            CASE WHEN assessor_emp_sqft IS NOT NULL AND emp > 0
+                THEN ROUND((assessor_emp_sqft * emp_education_v / emp)::numeric, 1)
+                ELSE NULL
+            END,
+            emp_education_v * COALESCE(sqft_per_emp, 300.0)
+        ) AS bldg_area_education_v,
+        COALESCE(
+            bldg_area_medical_services,
+            CASE WHEN assessor_emp_sqft IS NOT NULL AND emp > 0
+                THEN ROUND((assessor_emp_sqft * emp_medical_services_v / emp)::numeric, 1)
+                ELSE NULL
+            END,
+            emp_medical_services_v * COALESCE(sqft_per_emp, 300.0)
+        ) AS bldg_area_medical_services_v,
+        COALESCE(
+            bldg_area_transport_warehousing,
+            CASE WHEN assessor_emp_sqft IS NOT NULL AND emp > 0
+                THEN ROUND((assessor_emp_sqft * emp_transport_warehousing_v / emp)::numeric, 1)
+                ELSE NULL
+            END,
+            emp_transport_warehousing_v * COALESCE(sqft_per_emp, 300.0)
+        ) AS bldg_area_transport_warehousing_v,
+        COALESCE(
+            bldg_area_wholesale,
+            CASE WHEN assessor_emp_sqft IS NOT NULL AND emp > 0
+                THEN ROUND((assessor_emp_sqft * emp_wholesale_v / emp)::numeric, 1)
+                ELSE NULL
+            END,
+            emp_wholesale_v * COALESCE(sqft_per_emp, 300.0)
+        ) AS bldg_area_wholesale_v
+    FROM dasym_source
 ),
 
 -- Land use classification derived from assessor codes or SACOG text
