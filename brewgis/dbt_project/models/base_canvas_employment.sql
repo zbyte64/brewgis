@@ -11,11 +11,11 @@
     is set, employment is allocated proportional to ``emp_dasym_weight * intersect_area``
     per WAC block, enabling parcel-level refinement from assessor data.
 
-    Land-use filtering was removed because area-weighted block-to-parcel
-    allocation distributes block-group employment proportionally.  A parcel's
-    share represents jobs at nearby parcels within the same block, not jobs
-    on the parcel itself, so land-use constraints would silently discard
-    legitimate allocations.
+    When ``employment_land_use_constrain`` is true, allocates employment types
+    only to parcels with matching land development categories:
+      - emp_weight: 0 for `undeveloped`, 1 otherwise (applied to all employment)
+      - ind_weight: 1 for `industrial` or NULL, 0 otherwise (emp_ind sub-sectors)
+      - ag_weight: 1 for `agricultural`/`industrial` or NULL, 0 otherwise (emp_ag sub-sectors)
 
     Materialized as: table
 #}
@@ -29,6 +29,7 @@
 
 {%- set area_srid = var('projected_srid', 3857) -%}
 {%- set dasym_table = var('dasymetric_weights_table', none) -%}
+{%- set constrain = var('employment_land_use_constrain', false) -%}
 
 WITH pre_wac_data AS (
     SELECT
@@ -91,6 +92,7 @@ intersections AS (
         {% if dasym_table %}
         w.geoid,
         {% endif %}
+        p.land_development_category,
         w.emp,
         w.emp_retail_services,
         w.emp_restaurant,
@@ -118,6 +120,11 @@ intersections AS (
         {% if dasym_table %}
         COALESCE(p.emp_dasym_weight, 1.0) AS emp_dasym_weight,
         {% endif %}
+        {% if constrain %}
+        CASE WHEN p.land_development_category = 'undeveloped' THEN 0.0 ELSE 1.0 END AS emp_weight,
+        CASE WHEN p.land_development_category = 'industrial' OR p.land_development_category IS NULL THEN 1.0 ELSE 0.0 END AS ind_weight,
+        CASE WHEN p.land_development_category IN ('agricultural', 'industrial') OR p.land_development_category IS NULL THEN 1.0 ELSE 0.0 END AS ag_weight,
+        {% endif %}
         {% if quick_parcel_clipping %}
         ST_Area(ST_ClipByBox2D(p.local_geometry, w.wac_envelope)) AS intersect_area
         {% else %}
@@ -141,51 +148,74 @@ intersections AS (
     SELECT
         i.parcel_id,
         SUM(i.emp * i.emp_dasym_weight * i.intersect_area
-            / NULLIF(wac_weights.total_emp_weight, 0)) AS emp,
+            / NULLIF(wac_weights.total_emp_weight, 0)
+            {% if constrain %} * i.emp_weight{% endif %}) AS emp,
         SUM(i.emp_retail_services * i.emp_dasym_weight * i.intersect_area
-            / NULLIF(wac_weights.total_emp_weight, 0)) AS emp_retail_services,
+            / NULLIF(wac_weights.total_emp_weight, 0)
+            {% if constrain %} * i.emp_weight{% endif %}) AS emp_retail_services,
         SUM(i.emp_restaurant * i.emp_dasym_weight * i.intersect_area
-            / NULLIF(wac_weights.total_emp_weight, 0)) AS emp_restaurant,
+            / NULLIF(wac_weights.total_emp_weight, 0)
+            {% if constrain %} * i.emp_weight{% endif %}) AS emp_restaurant,
         SUM(i.emp_accommodation * i.emp_dasym_weight * i.intersect_area
-            / NULLIF(wac_weights.total_emp_weight, 0)) AS emp_accommodation,
+            / NULLIF(wac_weights.total_emp_weight, 0)
+            {% if constrain %} * i.emp_weight{% endif %}) AS emp_accommodation,
         SUM(i.emp_arts_entertainment * i.emp_dasym_weight * i.intersect_area
-            / NULLIF(wac_weights.total_emp_weight, 0)) AS emp_arts_entertainment,
+            / NULLIF(wac_weights.total_emp_weight, 0)
+            {% if constrain %} * i.emp_weight{% endif %}) AS emp_arts_entertainment,
         SUM(i.emp_other_services * i.emp_dasym_weight * i.intersect_area
-            / NULLIF(wac_weights.total_emp_weight, 0)) AS emp_other_services,
+            / NULLIF(wac_weights.total_emp_weight, 0)
+            {% if constrain %} * i.emp_weight{% endif %}) AS emp_other_services,
         SUM(i.emp_office_services * i.emp_dasym_weight * i.intersect_area
-            / NULLIF(wac_weights.total_emp_weight, 0)) AS emp_office_services,
+            / NULLIF(wac_weights.total_emp_weight, 0)
+            {% if constrain %} * i.emp_weight{% endif %}) AS emp_office_services,
         SUM(i.emp_medical_services * i.emp_dasym_weight * i.intersect_area
-            / NULLIF(wac_weights.total_emp_weight, 0)) AS emp_medical_services,
+            / NULLIF(wac_weights.total_emp_weight, 0)
+            {% if constrain %} * i.emp_weight{% endif %}) AS emp_medical_services,
         SUM(i.emp_public_admin * i.emp_dasym_weight * i.intersect_area
-            / NULLIF(wac_weights.total_emp_weight, 0)) AS emp_public_admin,
+            / NULLIF(wac_weights.total_emp_weight, 0)
+            {% if constrain %} * i.emp_weight{% endif %}) AS emp_public_admin,
         SUM(i.emp_education * i.emp_dasym_weight * i.intersect_area
-            / NULLIF(wac_weights.total_emp_weight, 0)) AS emp_education,
+            / NULLIF(wac_weights.total_emp_weight, 0)
+            {% if constrain %} * i.emp_weight{% endif %}) AS emp_education,
         SUM(i.emp_manufacturing * i.emp_dasym_weight * i.intersect_area
-            / NULLIF(wac_weights.total_emp_weight, 0)) AS emp_manufacturing,
+            / NULLIF(wac_weights.total_emp_weight, 0)
+            {% if constrain %} * i.ind_weight{% endif %}) AS emp_manufacturing,
         SUM(i.emp_wholesale * i.emp_dasym_weight * i.intersect_area
-            / NULLIF(wac_weights.total_emp_weight, 0)) AS emp_wholesale,
+            / NULLIF(wac_weights.total_emp_weight, 0)
+            {% if constrain %} * i.ind_weight{% endif %}) AS emp_wholesale,
         SUM(i.emp_transport_warehousing * i.emp_dasym_weight * i.intersect_area
-            / NULLIF(wac_weights.total_emp_weight, 0)) AS emp_transport_warehousing,
+            / NULLIF(wac_weights.total_emp_weight, 0)
+            {% if constrain %} * i.ind_weight{% endif %}) AS emp_transport_warehousing,
         SUM(i.emp_utilities * i.emp_dasym_weight * i.intersect_area
-            / NULLIF(wac_weights.total_emp_weight, 0)) AS emp_utilities,
+            / NULLIF(wac_weights.total_emp_weight, 0)
+            {% if constrain %} * i.ind_weight{% endif %}) AS emp_utilities,
         SUM(i.emp_construction * i.emp_dasym_weight * i.intersect_area
-            / NULLIF(wac_weights.total_emp_weight, 0)) AS emp_construction,
+            / NULLIF(wac_weights.total_emp_weight, 0)
+            {% if constrain %} * i.ind_weight{% endif %}) AS emp_construction,
         SUM(i.emp_agriculture * i.emp_dasym_weight * i.intersect_area
-            / NULLIF(wac_weights.total_emp_weight, 0)) AS emp_agriculture,
+            / NULLIF(wac_weights.total_emp_weight, 0)
+            {% if constrain %} * i.ag_weight{% endif %}) AS emp_agriculture,
         SUM(i.emp_extraction * i.emp_dasym_weight * i.intersect_area
-            / NULLIF(wac_weights.total_emp_weight, 0)) AS emp_extraction,
+            / NULLIF(wac_weights.total_emp_weight, 0)
+            {% if constrain %} * i.ag_weight{% endif %}) AS emp_extraction,
         SUM(i.emp_military * i.emp_dasym_weight * i.intersect_area
-            / NULLIF(wac_weights.total_emp_weight, 0)) AS emp_military,
+            / NULLIF(wac_weights.total_emp_weight, 0)
+            {% if constrain %} * i.emp_weight{% endif %}) AS emp_military,
         SUM(i.emp_ret * i.emp_dasym_weight * i.intersect_area
-            / NULLIF(wac_weights.total_emp_weight, 0)) AS emp_ret,
+            / NULLIF(wac_weights.total_emp_weight, 0)
+            {% if constrain %} * i.emp_weight{% endif %}) AS emp_ret,
         SUM(i.emp_off * i.emp_dasym_weight * i.intersect_area
-            / NULLIF(wac_weights.total_emp_weight, 0)) AS emp_off,
+            / NULLIF(wac_weights.total_emp_weight, 0)
+            {% if constrain %} * i.emp_weight{% endif %}) AS emp_off,
         SUM(i.emp_pub * i.emp_dasym_weight * i.intersect_area
-            / NULLIF(wac_weights.total_emp_weight, 0)) AS emp_pub,
+            / NULLIF(wac_weights.total_emp_weight, 0)
+            {% if constrain %} * i.emp_weight{% endif %}) AS emp_pub,
         SUM(i.emp_ind * i.emp_dasym_weight * i.intersect_area
-            / NULLIF(wac_weights.total_emp_weight, 0)) AS emp_ind,
+            / NULLIF(wac_weights.total_emp_weight, 0)
+            {% if constrain %} * i.ind_weight{% endif %}) AS emp_ind,
         SUM(i.emp_ag * i.emp_dasym_weight * i.intersect_area
-            / NULLIF(wac_weights.total_emp_weight, 0)) AS emp_ag
+            / NULLIF(wac_weights.total_emp_weight, 0)
+            {% if constrain %} * i.ag_weight{% endif %}) AS emp_ag
     FROM intersections i
     LEFT JOIN wac_weights ON i.geoid = wac_weights.geoid
     GROUP BY i.parcel_id
@@ -196,29 +226,51 @@ intersections AS (
 , allocated AS (
     SELECT
         parcel_id,
-        SUM(emp * intersect_area / wac_area) AS emp,
-        SUM(emp_retail_services * intersect_area / wac_area) AS emp_retail_services,
-        SUM(emp_restaurant * intersect_area / wac_area) AS emp_restaurant,
-        SUM(emp_accommodation * intersect_area / wac_area) AS emp_accommodation,
-        SUM(emp_arts_entertainment * intersect_area / wac_area) AS emp_arts_entertainment,
-        SUM(emp_other_services * intersect_area / wac_area) AS emp_other_services,
-        SUM(emp_office_services * intersect_area / wac_area) AS emp_office_services,
-        SUM(emp_medical_services * intersect_area / wac_area) AS emp_medical_services,
-        SUM(emp_public_admin * intersect_area / wac_area) AS emp_public_admin,
-        SUM(emp_education * intersect_area / wac_area) AS emp_education,
-        SUM(emp_manufacturing * intersect_area / wac_area) AS emp_manufacturing,
-        SUM(emp_wholesale * intersect_area / wac_area) AS emp_wholesale,
-        SUM(emp_transport_warehousing * intersect_area / wac_area) AS emp_transport_warehousing,
-        SUM(emp_utilities * intersect_area / wac_area) AS emp_utilities,
-        SUM(emp_construction * intersect_area / wac_area) AS emp_construction,
-        SUM(emp_agriculture * intersect_area / wac_area) AS emp_agriculture,
-        SUM(emp_extraction * intersect_area / wac_area) AS emp_extraction,
-        SUM(emp_military * intersect_area / wac_area) AS emp_military,
-        SUM(emp_ret * intersect_area / wac_area) AS emp_ret,
-        SUM(emp_off * intersect_area / wac_area) AS emp_off,
-        SUM(emp_pub * intersect_area / wac_area) AS emp_pub,
-        SUM(emp_ind * intersect_area / wac_area) AS emp_ind,
-        SUM(emp_ag * intersect_area / wac_area) AS emp_ag
+        SUM(emp * intersect_area / wac_area{% if constrain %} * emp_weight{% endif %}) AS emp,
+        SUM(emp_retail_services * intersect_area / wac_area
+            {% if constrain %} * emp_weight{% endif %}) AS emp_retail_services,
+        SUM(emp_restaurant * intersect_area / wac_area
+            {% if constrain %} * emp_weight{% endif %}) AS emp_restaurant,
+        SUM(emp_accommodation * intersect_area / wac_area
+            {% if constrain %} * emp_weight{% endif %}) AS emp_accommodation,
+        SUM(emp_arts_entertainment * intersect_area / wac_area
+            {% if constrain %} * emp_weight{% endif %}) AS emp_arts_entertainment,
+        SUM(emp_other_services * intersect_area / wac_area
+            {% if constrain %} * emp_weight{% endif %}) AS emp_other_services,
+        SUM(emp_office_services * intersect_area / wac_area
+            {% if constrain %} * emp_weight{% endif %}) AS emp_office_services,
+        SUM(emp_medical_services * intersect_area / wac_area
+            {% if constrain %} * emp_weight{% endif %}) AS emp_medical_services,
+        SUM(emp_public_admin * intersect_area / wac_area
+            {% if constrain %} * emp_weight{% endif %}) AS emp_public_admin,
+        SUM(emp_education * intersect_area / wac_area
+            {% if constrain %} * emp_weight{% endif %}) AS emp_education,
+        SUM(emp_manufacturing * intersect_area / wac_area
+            {% if constrain %} * ind_weight{% endif %}) AS emp_manufacturing,
+        SUM(emp_wholesale * intersect_area / wac_area
+            {% if constrain %} * ind_weight{% endif %}) AS emp_wholesale,
+        SUM(emp_transport_warehousing * intersect_area / wac_area
+            {% if constrain %} * ind_weight{% endif %}) AS emp_transport_warehousing,
+        SUM(emp_utilities * intersect_area / wac_area
+            {% if constrain %} * ind_weight{% endif %}) AS emp_utilities,
+        SUM(emp_construction * intersect_area / wac_area
+            {% if constrain %} * ind_weight{% endif %}) AS emp_construction,
+        SUM(emp_agriculture * intersect_area / wac_area
+            {% if constrain %} * ag_weight{% endif %}) AS emp_agriculture,
+        SUM(emp_extraction * intersect_area / wac_area
+            {% if constrain %} * ag_weight{% endif %}) AS emp_extraction,
+        SUM(emp_military * intersect_area / wac_area
+            {% if constrain %} * emp_weight{% endif %}) AS emp_military,
+        SUM(emp_ret * intersect_area / wac_area
+            {% if constrain %} * emp_weight{% endif %}) AS emp_ret,
+        SUM(emp_off * intersect_area / wac_area
+            {% if constrain %} * emp_weight{% endif %}) AS emp_off,
+        SUM(emp_pub * intersect_area / wac_area
+            {% if constrain %} * emp_weight{% endif %}) AS emp_pub,
+        SUM(emp_ind * intersect_area / wac_area
+            {% if constrain %} * ind_weight{% endif %}) AS emp_ind,
+        SUM(emp_ag * intersect_area / wac_area
+            {% if constrain %} * ag_weight{% endif %}) AS emp_ag
     FROM intersections
     GROUP BY parcel_id
 )

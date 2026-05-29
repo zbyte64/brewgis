@@ -248,6 +248,7 @@ classified AS (
     SELECT
         b.*,
         COALESCE(
+            NULLIF(b.land_development_category, ''),
             ac.category,
             su.category,
             {% if nlcd_table %}nlcd.land_development_category,{% endif %}

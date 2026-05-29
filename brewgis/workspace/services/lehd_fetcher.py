@@ -855,6 +855,7 @@ def _resolve_sacog_ratios() -> dict[str, float]:
 def _populate_wac_block(
     state_fips: str,
     county_fips: str,
+    skip_sacog_calibration: bool = False,
     year: int = 2021,
 ) -> int:
     """Join LEHD LODES WAC data with TIGER BG geometry via a two-step dbt pipeline.
@@ -871,6 +872,8 @@ def _populate_wac_block(
     Args:
         state_fips: Two-digit state FIPS code.
         county_fips: Three-digit county FIPS code.
+        skip_sacog_calibration: If True, skip the SACOG-calibrated sub-sector
+            ratio override (used by e.g. compare_sacog_basemap for fair comparison).
         year: LEHD data year (default 2021).
 
     Returns:
@@ -920,7 +923,7 @@ def _populate_wac_block(
 
     # SACOG calibration: when state=06 county=067, resolve sub-sector ratios
     # from _SACOG_SUBSECTOR_PROPORTIONS and pass as dbt vars.
-    if state_fips == "06" and county_fips == "067":
+    if state_fips == "06" and county_fips == "067" and not skip_sacog_calibration:
         sacog_ratios = _resolve_sacog_ratios()
         raw_vars.update(sacog_ratios)
         logger.info(

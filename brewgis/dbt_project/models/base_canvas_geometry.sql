@@ -33,43 +33,51 @@
 
 {%- set area_srid = var('projected_srid', 3857) -%}
 
-WITH parcel_geom AS (
+WITH assessor_categories AS (
+    SELECT use_code::text, category FROM {{ ref('assessor_use_codes') }}
+),
+
+parcel_geom AS (
     SELECT
-        parcel_id,
-        geometry,
-        ST_Transform(geometry, {{ area_srid }}) AS local_geometry,
-        county,
-        COALESCE(land_development_category, '') AS land_development_category,
-        built_form_key,
-        intersection_density,
-        pop,
-        hh,
-        du,
-        land_use,
-        assessor_use_code,
-        bldg_area_detsf_sl,
-        bldg_area_detsf_ll,
-        bldg_area_attsf,
-        bldg_area_mf,
-        bldg_area_retail_services,
-        bldg_area_restaurant,
-        bldg_area_accommodation,
-        bldg_area_arts_entertainment,
-        bldg_area_other_services,
-        bldg_area_office_services,
-        bldg_area_public_admin,
-        bldg_area_education,
-        bldg_area_medical_services,
-        bldg_area_transport_warehousing,
-        bldg_area_wholesale,
-        residential_irrigated_area,
-        commercial_irrigated_area,
-        area_parcel_res,
-        area_parcel_emp_ag,
-        area_parcel_emp,
-        area_parcel_mixed_use,
-        area_parcel_no_use
-    FROM {{ source('brewgis', 'parcels') }}
+        p.parcel_id,
+        p.geometry,
+        ST_Transform(p.geometry, {{ area_srid }}) AS local_geometry,
+        p.county,
+        COALESCE(
+            NULLIF(p.land_development_category, ''),
+            ac.category, ''
+        ) AS land_development_category,
+        p.built_form_key,
+        p.intersection_density,
+        p.pop,
+        p.hh,
+        p.du,
+        p.land_use,
+        p.assessor_use_code,
+        p.bldg_area_detsf_sl,
+        p.bldg_area_detsf_ll,
+        p.bldg_area_attsf,
+        p.bldg_area_mf,
+        p.bldg_area_retail_services,
+        p.bldg_area_restaurant,
+        p.bldg_area_accommodation,
+        p.bldg_area_arts_entertainment,
+        p.bldg_area_other_services,
+        p.bldg_area_office_services,
+        p.bldg_area_public_admin,
+        p.bldg_area_education,
+        p.bldg_area_medical_services,
+        p.bldg_area_transport_warehousing,
+        p.bldg_area_wholesale,
+        p.residential_irrigated_area,
+        p.commercial_irrigated_area,
+        p.area_parcel_res,
+        p.area_parcel_emp_ag,
+        p.area_parcel_emp,
+        p.area_parcel_mixed_use,
+        p.area_parcel_no_use
+    FROM {{ source('brewgis', 'parcels') }} p
+    LEFT JOIN assessor_categories ac ON LEFT(COALESCE(p.assessor_use_code, ''), 2) = ac.use_code
 ),
 
 parcel_area AS (

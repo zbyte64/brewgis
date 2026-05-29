@@ -264,7 +264,9 @@ class Command(BaseCommand):
         # Populate lehd.wac_block from LEHD staging + TIGER BG geometry
         self.stdout.write("\n── Populating lehd.wac_block ──")
 
-        lehd_wac_count = _populate_wac_block(STATE_FIPS, COUNTY_FIPS, LEHD_YEAR)
+        lehd_wac_count = _populate_wac_block(
+            STATE_FIPS, COUNTY_FIPS, skip_sacog_calibration=True, year=LEHD_YEAR
+        )
         self.stdout.write(f"  lehd.wac_block populated: {lehd_wac_count:,} rows")
         # ── Phase 1.5: Run NLCD pipeline (optional) ──────────────────────
         nlcd_table = ""
@@ -399,6 +401,7 @@ class Command(BaseCommand):
         self.stdout.write("\n── Phase 2b: Running dbt base_canvas models ──")
         dbt_vars: dict[str, Any] = {
             "parcel_table": "sacog_parcel_shim",
+            "employment_land_use_constrain": True,
             "base_canvas_materialized": "table",
             "projected_srid": LOCAL_SRID,
             "quick_parcel_clipping": quick_parcel_clipping,
