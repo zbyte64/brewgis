@@ -25,6 +25,10 @@ echo "=== dbt test (assessor pipeline — verifies dedup + unique index) ==="
 dbt test --profiles-dir . --select sacog_assessor_parcels sacog_assessor_sales assessor_building_medians parcel_dasymetric_weights --vars "$ASSESSOR_VARS"
 
 DBT_VARS='{"parcel_table": "test_parcels", "built_form_table": "test_built_forms", "constraint_table": "test_constraints", "base_canvas_table": "test_base_canvas", "projected_srid": 32610, "scenario_id": "test"}'
+echo ""
+echo "=== dbt test (assessor pipeline: du_subtype + estimated sqft fallback) ==="
+dbt test --profiles-dir . --select assert_du_subtype_correct assert_estimated_sqft_fallback --vars "$ASSESSOR_VARS"
+
 echo "=== dbt run (base_canvas_geometry) ==="
 dbt run --profiles-dir . --select base_canvas_geometry --vars "$DBT_VARS"
 
@@ -69,4 +73,9 @@ dbt run --profiles-dir . --select base_canvas_attributes --vars "$DASYM_CHAIN_VA
 
 echo ""
 echo "=== dbt test (assessor building area COALESCE priority) ==="
+echo ""
+echo "=== dbt run (full chain with employment_land_use_constrain=true) ==="
+CONSTRAIN_VARS='{"parcel_table":"test_parcels","built_form_table":"test_built_forms","constraint_table":"test_constraints","base_canvas_table":"test_base_canvas","projected_srid":32610,"scenario_id":"test","wac_block_table":"wac_block","lodes_raw_table":"test_lodes_raw","tiger_bg_table":"test_tiger_block_groups","tiger_block_table":"test_tiger_blocks","tiger_block_vintage":"2020","tiger_bg_vintage":"2023","year":2008,"state_fips":"06","county_fips":"067","employment_land_use_constrain":true}'
+dbt run --profiles-dir . --select base_canvas_geometry base_canvas_demographics base_canvas_employment --vars "$CONSTRAIN_VARS" --full-refresh
+dbt test --profiles-dir . --select assert_land_use_constrained_employment --vars "$CONSTRAIN_VARS"
 dbt test --profiles-dir . --select assert_assessor_building_area --vars "$DASYM_CHAIN_VARS"

@@ -97,9 +97,6 @@ building_medians AS (
     FROM {{ ref('assessor_building_medians') }}
 ),
 
--- Estimate building sqft for parcels without sales data
-
--- Use median from the most-represented property type as best estimate
 estimated AS (
     SELECT * FROM (
     SELECT
@@ -111,13 +108,17 @@ estimated AS (
         CASE
             WHEN bm.median_living_area IS NOT NULL AND bm.median_lot_size_acres > 0
             THEN bm.median_living_area * (ap.lot_size_acres / bm.median_lot_size_acres)
+            WHEN bm.median_living_area IS NOT NULL
+            THEN bm.median_living_area
             ELSE NULL
         END AS estimated_living_sqft,
         CASE
             WHEN bm.median_building_sf IS NOT NULL AND bm.median_lot_size_acres > 0
             THEN bm.median_building_sf * (ap.lot_size_acres / bm.median_lot_size_acres)
+            WHEN bm.median_building_sf IS NOT NULL
+            THEN bm.median_building_sf
             ELSE NULL
-            END AS estimated_building_sqft,
+        END AS estimated_building_sqft,
             ROW_NUMBER() OVER (
                 PARTITION BY ap.parcel_id ORDER BY bm.parcel_count DESC
             ) AS rn
@@ -127,8 +128,7 @@ estimated AS (
     WHERE rn = 1
 ),
 
--- Classify parcels into land_development_category
--- Maps 2-digit assessor land use code to category via assessor_use_codes seed
+
 classified AS (
     SELECT
         ap.parcel_id,
@@ -216,13 +216,17 @@ du_classification AS (
         parcel_id,
         CASE
             -- SFR: split by lot size (threshold ~0.15 acres = ~6,534 sqft)
-            WHEN property_type = 'SFR' AND COALESCE(sales_lot_size_acres, lot_size_acres) < 0.15 THEN 'detsf_sl'
-            WHEN property_type = 'SFR' AND COALESCE(sales_lot_size_acres, lot_size_acres) >= 0.15 THEN 'detsf_ll'
+            WHEN (property_type IN ('SFR', 'Single Family Residence') OR property_type LIKE 'Single Family%')
+                AND COALESCE(sales_lot_size_acres, lot_size_acres) < 0.15 THEN 'detsf_sl'
+            WHEN (property_type IN ('SFR', 'Single Family Residence') OR property_type LIKE 'Single Family%')
+                AND COALESCE(sales_lot_size_acres, lot_size_acres) >= 0.15 THEN 'detsf_ll'
             -- Condo → attsf
-            WHEN property_type = 'Condo' THEN 'attsf'
+            WHEN property_type IN ('Condo', 'Condominium') THEN 'attsf'
             -- MF: split by unit count
-            WHEN property_type = 'MF' AND COALESCE(units, 0) BETWEEN 2 AND 4 THEN 'mf2to4'
-            WHEN property_type = 'MF' AND COALESCE(units, 0) >= 5 THEN 'mf5p'
+            WHEN (property_type IN ('MF', 'Multiple Family Residence') OR property_type LIKE 'Multiple Family%')
+                AND COALESCE(units, 0) BETWEEN 2 AND 4 THEN 'mf2to4'
+            WHEN (property_type IN ('MF', 'Multiple Family Residence') OR property_type LIKE 'Multiple Family%')
+                AND COALESCE(units, 0) >= 5 THEN 'mf5p'
             -- Parcels without sales data or non-residential: NULL
             ELSE NULL
         END AS du_subtype,
