@@ -83,7 +83,14 @@ class TestLEHDFetcher:
         from unittest.mock import MagicMock
         from unittest.mock import patch as _patch
 
+        from brewgis.workspace.services.lehd_fetcher import CACHE_DIR
         from brewgis.workspace.services.lehd_fetcher import _compute_all_cbp_totals
+
+        # Remove cached CBP data for 2011 so the API call is actually exercised.
+        # Preceding tests may have written this cache file.
+        cache_path = CACHE_DIR / "cbp_proportions" / "2011" / "06" / "067.json"
+        if cache_path.exists():
+            cache_path.unlink()
 
         # Simulate CBP API response with various NAICS codes and employment counts
         mock_response = MagicMock()
@@ -145,19 +152,26 @@ class TestLEHDFetcher:
         assert abs(sum(result.values()) - 467000) < 0.01
 
     def test_compute_all_cbp_totals_returns_empty_on_api_failure(self) -> None:
-        """_compute_all_cbp_totals should return empty dict on API failure."""
+        """_compute_all_cbp_totals should raise RuntimeError when CBP API is unreachable."""
         from unittest.mock import patch as _patch
 
+        import pytest
         import requests
 
+        from brewgis.workspace.services.lehd_fetcher import CACHE_DIR
         from brewgis.workspace.services.lehd_fetcher import _compute_all_cbp_totals
+
+        # Remove cached CBP data so the API call is exercised.
+        cache_path = CACHE_DIR / "cbp_proportions" / "2011" / "06" / "067.json"
+        if cache_path.exists():
+            cache_path.unlink()
 
         with _patch(
             "brewgis.workspace.services.lehd_fetcher.requests.get",
             side_effect=requests.RequestException("API down"),
         ):
-            result = _compute_all_cbp_totals("06", "067", year=2011)
-        assert result == {}
+            with pytest.raises(RuntimeError):
+                _compute_all_cbp_totals("06", "067", year=2011)
 
     # ── _compute_cbp_proportions Tests ────────────────────────────
     #
@@ -354,6 +368,171 @@ class TestLEHDFetcher:
 
 
 # ── POI Fetcher Tests ─────────────────────────────────────────────────
+
+
+class TestParseCbpNaicsEmp:
+    """Unit tests for _parse_cbp_naics_emp — CBP API response parser.
+
+    The CBP API returns ``NAICS2017`` for year >= 2017 and ``NAICS2007``
+    for year < 2017. The parser must handle both column names.
+    """
+
+    def test_normal_naics2017(self) -> None:
+        """Parse a standard modern-year (>=2017) CBP response with NAICS2017 column."""
+        from brewgis.workspace.services.lehd_fetcher import _parse_cbp_naics_emp
+
+        rows = [
+            ["10000", "11----", "06", "067"],
+            ["2000", "21----", "06", "067"],
+            ["6000", "23----", "06", "067"],
+        ]
+        header = ["EMP", "NAICS2017", "state", "county"]
+        result = _parse_cbp_naics_emp(rows, header)
+        assert result == {"11": 10000, "21": 2000, "23": 6000}
+
+    def test_naics2007_column(self) -> None:
+        """Parse a pre-2017 CBP response with NAICS2007 column.
+
+        When year < 2017 the API returns NAICS2007 instead of NAICS2017.
+        This is the format used by compare_sacog_basemap (LEHD_YEAR=2008).
+        """
+        from brewgis.workspace.services.lehd_fetcher import _parse_cbp_naics_emp
+
+        rows = [
+            ["10000", "11----", "06", "067"],
+            ["2000", "21----", "06", "067"],
+            ["6000", "23----", "06", "067"],
+        ]
+        header = ["EMP", "NAICS2007", "state", "county"]
+        result = _parse_cbp_naics_emp(rows, header)
+        # CURRENT BUG: NAICS2007 rows are silently skipped because the
+        # function hard-codes "NAICS2017". Result will be {} instead.
+        assert result == {"11": 10000, "21": 2000, "23": 6000}
+
+    def test_suppression_code_d(self) -> None:
+        """Rows with EMP='D' (disclosure) should be skipped."""
+        from brewgis.workspace.services.lehd_fetcher import _parse_cbp_naics_emp
+
+        rows = [
+            ["10000", "11----", "06", "067"],
+            ["D", "21----", "06", "067"],
+            ["6000", "23----", "06", "067"],
+        ]
+        header = ["EMP", "NAICS2017", "state", "county"]
+        result = _parse_cbp_naics_emp(rows, header)
+        assert result == {"11": 10000, "23": 6000}
+        assert "21" not in result
+
+    def test_suppression_code_s(self) -> None:
+        """Rows with EMP='S' (suppressed) should be skipped."""
+        from brewgis.workspace.services.lehd_fetcher import _parse_cbp_naics_emp
+
+        rows = [["S", "31----", "06", "067"], ["20000", "32----", "06", "067"]]
+        header = ["EMP", "NAICS2017", "state", "county"]
+        result = _parse_cbp_naics_emp(rows, header)
+        assert result == {"32": 20000}
+
+    def test_suppression_code_n(self) -> None:
+        """Rows with EMP='N' (not available) should be skipped."""
+        from brewgis.workspace.services.lehd_fetcher import _parse_cbp_naics_emp
+
+        rows = [["N", "31----", "06", "067"], ["50000", "33----", "06", "067"]]
+        header = ["EMP", "NAICS2017", "state", "county"]
+        result = _parse_cbp_naics_emp(rows, header)
+        assert result == {"33": 50000}
+
+    def test_empty_emp_skipped(self) -> None:
+        """Rows with empty EMP string should be skipped."""
+        from brewgis.workspace.services.lehd_fetcher import _parse_cbp_naics_emp
+
+        rows = [["", "11----", "06", "067"], ["5000", "21----", "06", "067"]]
+        header = ["EMP", "NAICS2017", "state", "county"]
+        result = _parse_cbp_naics_emp(rows, header)
+        assert result == {"21": 5000}
+
+    def test_empty_naics_skipped(self) -> None:
+        """Rows with empty NAICS code should be skipped."""
+        from brewgis.workspace.services.lehd_fetcher import _parse_cbp_naics_emp
+
+        rows = [
+            ["10000", "", "06", "067"],
+            ["5000", "21----", "06", "067"],
+        ]
+        header = ["EMP", "NAICS2017", "state", "county"]
+        result = _parse_cbp_naics_emp(rows, header)
+        assert result == {"21": 5000}
+
+    def test_total_row_skipped(self) -> None:
+        """The total row (NAICS code '------', all hyphens) should be skipped."""
+        from brewgis.workspace.services.lehd_fetcher import _parse_cbp_naics_emp
+
+        rows = [
+            ["100000", "------", "06", "067"],
+            ["5000", "21----", "06", "067"],
+        ]
+        header = ["EMP", "NAICS2017", "state", "county"]
+        result = _parse_cbp_naics_emp(rows, header)
+        assert result == {"21": 5000}
+
+    def test_mixed_naics_lengths(self) -> None:
+        """Parse 2-digit, 3-digit, and 6-digit NAICS codes correctly."""
+        from brewgis.workspace.services.lehd_fetcher import _parse_cbp_naics_emp
+
+        rows = [
+            ["10000", "11----", "06", "067"],
+            ["7000", "721---", "06", "067"],
+            ["25000", "722---", "06", "067"],
+            ["8000", "311---", "06", "067"],
+        ]
+        header = ["EMP", "NAICS2017", "state", "county"]
+        result = _parse_cbp_naics_emp(rows, header)
+        assert result == {"11": 10000, "721": 7000, "722": 25000, "311": 8000}
+
+    def test_zero_emp_kept(self) -> None:
+        """Rows with EMP='0' should be kept (valid zero)."""
+        from brewgis.workspace.services.lehd_fetcher import _parse_cbp_naics_emp
+
+        rows = [["0", "11----", "06", "067"], ["5000", "21----", "06", "067"]]
+        header = ["EMP", "NAICS2017", "state", "county"]
+        result = _parse_cbp_naics_emp(rows, header)
+        assert result == {"11": 0, "21": 5000}
+
+    def test_no_data_rows(self) -> None:
+        """Empty rows list returns empty dict."""
+        from brewgis.workspace.services.lehd_fetcher import _parse_cbp_naics_emp
+
+        result = _parse_cbp_naics_emp([], ["EMP", "NAICS2017", "state", "county"])
+        assert result == {}
+
+    def test_no_naics_column_in_header(self) -> None:
+        """When neither NAICS2017 nor NAICS2007 exists in header, return empty dict."""
+        from brewgis.workspace.services.lehd_fetcher import _parse_cbp_naics_emp
+
+        rows = [["10000", "11----", "06", "067"]]
+        header = ["EMP", "FIPS", "state", "county"]
+        result = _parse_cbp_naics_emp(rows, header)
+        assert result == {}
+
+    def test_row_shorter_than_header(self) -> None:
+        """Row shorter than header should not crash (strict=False in zip)."""
+        from brewgis.workspace.services.lehd_fetcher import _parse_cbp_naics_emp
+
+        rows = [["10000", "11----"]]  # missing state, county
+        header = ["EMP", "NAICS2017", "state", "county"]
+        result = _parse_cbp_naics_emp(rows, header)
+        assert result == {"11": 10000}
+
+    def test_strips_trailing_hyphens_and_spaces(self) -> None:
+        """NAICS codes with hyphens and spaces are cleaned to just the prefix."""
+        from brewgis.workspace.services.lehd_fetcher import _parse_cbp_naics_emp
+
+        rows = [
+            ["10000", "11-   ---", "06", "067"],
+            ["5000", "  42     ", "06", "067"],
+        ]
+        header = ["EMP", "NAICS2017", "state", "county"]
+        result = _parse_cbp_naics_emp(rows, header)
+        assert result == {"11": 10000, "42": 5000}
 
 
 class TestPOIFetcher:

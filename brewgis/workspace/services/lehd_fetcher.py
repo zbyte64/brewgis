@@ -289,11 +289,25 @@ def _parse_cbp_naics_emp(
     rows: list[list[str]],
     header: list[str],
 ) -> dict[str, float]:
-    """Parse CBP API rows into a dict of NAICS code to employment count."""
+    """Parse CBP API rows into a dict of NAICS code to employment count.
+
+    Handles both ``NAICS2017`` (year >= 2017) and ``NAICS2007`` (year < 2017)
+    column names, since the CBP API returns the column matching the NAICS
+    taxonomy year.
+    """
+    # Resolve NAICS column: API returns NAICS2017 for year >= 2017,
+    # NAICS2007 for year < 2017. Fall back gracefully if neither is present.
+    naics_col = (
+        "NAICS2017"
+        if "NAICS2017" in header
+        else "NAICS2007"
+        if "NAICS2007" in header
+        else ""
+    )
     naics_emp: dict[str, float] = {}
     for row in rows:
         raw = dict(zip(header, row, strict=False))
-        naics_raw = raw.get("NAICS2017", "").strip()
+        naics_raw = raw.get(naics_col, "").strip() if naics_col else ""
         emp_raw = raw.get("EMP", "").strip()
         if not naics_raw or not emp_raw or emp_raw in ("", "D", "S", "N"):
             continue
