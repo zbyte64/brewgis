@@ -83,7 +83,7 @@ parcel_with_weights AS (
     FROM {{ ref('base_canvas_demographics') }} p
     {% if dasym_table %}
     LEFT JOIN {{ dasym_table }} dw
-        ON p.parcel_id::text = dw.parcel_id
+        ON p.parcel_id = dw.parcel_id
     {% endif %}
 ),
 
@@ -152,7 +152,7 @@ intersections_raw AS (
         ON TRIM(COALESCE(p.land_use, '')) = su.land_use_label
     {% if nlcd_table %}
     LEFT JOIN {{ nlcd_table }} nlcd
-        ON p.parcel_id::text = nlcd.parcel_id::text
+        ON p.parcel_id = nlcd.parcel_id
     {% endif %}
 )
 

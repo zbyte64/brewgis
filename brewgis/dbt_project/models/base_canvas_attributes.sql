@@ -105,7 +105,6 @@ dasym_source AS (
         COALESCE(dw.actual_living_sqft, dw.estimated_living_sqft) AS assessor_res_sqft,
         COALESCE(dw.actual_building_sqft, dw.estimated_building_sqft) AS assessor_emp_sqft
     FROM demographics d
-    LEFT JOIN {{ dasym_table }} dw ON d.parcel_id::text = dw.parcel_id::text
     LEFT JOIN {{ dasym_table }} dw ON d.parcel_id = dw.parcel_id
 ),
 {% else %}
