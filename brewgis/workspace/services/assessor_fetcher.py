@@ -210,9 +210,12 @@ def fetch_parcels_arcgis(
     cache_path = CACHE_DIR / f"{cache_name}.parquet"
 
     if cache_path.exists() and not ignore_cache:
-        logger.info("Loading cached parcels from %s", cache_path)
+        logger.info("Loading cached sales from %s", cache_path)
         gdf = gpd.read_parquet(cache_path)
         if not gdf.empty:
+            # Normalize column names — cached files from older code may have ``parcel_id``
+            if "parcel_id" in gdf.columns:
+                gdf = gdf.rename(columns={"parcel_id": "apn"})
             return gdf
 
     logger.info(
@@ -284,9 +287,12 @@ def fetch_sales_arcgis(
     cache_path = CACHE_DIR / f"{cache_name}.parquet"
 
     if cache_path.exists() and not ignore_cache:
-        logger.info("Loading cached sales from %s", cache_path)
+        logger.info("Loading cached parcels from %s", cache_path)
         gdf = gpd.read_parquet(cache_path)
         if not gdf.empty:
+            # Normalize column names — cached files from older code may have ``parcel_id``
+            if "parcel_id" in gdf.columns:
+                gdf = gdf.rename(columns={"parcel_id": "apn"})
             return gdf
 
     logger.info(
