@@ -236,7 +236,7 @@ def fetch_parcels_arcgis(
     # Rename columns to staging conventions
     gdf = gdf.rename(
         columns={
-            "PARCEL_NUMBER": "parcel_id",
+            "PARCEL_NUMBER": "apn",
             "LANDUSE": "landuse",
             "ZONE_": "zone",
             "LOTSIZE": "lotsize",
@@ -244,8 +244,8 @@ def fetch_parcels_arcgis(
         }
     )
 
-    # Ensure parcel_id is a string
-    gdf["parcel_id"] = gdf["parcel_id"].astype(str)
+    # Ensure apn is a string
+    gdf["apn"] = gdf["apn"].astype(str)
 
     # Cache
     CACHE_DIR.mkdir(parents=True, exist_ok=True)
@@ -307,7 +307,7 @@ def fetch_sales_arcgis(
     # Rename columns to staging conventions
     gdf = gdf.rename(
         columns={
-            "PARCEL_NUMBER": "parcel_id",
+            "PARCEL_NUMBER": "apn",
             "TOTAL_LIVING_AREA": "living_area",
             "BUILDING_SF": "building_sf",
             "EFFECTIVE_YEAR_BUILT": "year_built",
@@ -323,7 +323,7 @@ def fetch_sales_arcgis(
         }
     )
 
-    gdf["parcel_id"] = gdf["parcel_id"].astype(str)
+    gdf["apn"] = gdf["apn"].astype(str)
 
     # Cache
     CACHE_DIR.mkdir(parents=True, exist_ok=True)

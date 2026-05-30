@@ -168,7 +168,7 @@ def run_osm_pipeline(
 
     # ── Write to staging table ────────────────────────────────────
     target_table = f"{schema}.{_TARGET_TABLE}"
-    parcels[["parcel_id", "intersection_density"]].to_sql(
+    parcels[["parcel_id", "intersection_density", "geometry"]].to_sql(
         _TARGET_TABLE,
         get_engine(),
         schema=schema,

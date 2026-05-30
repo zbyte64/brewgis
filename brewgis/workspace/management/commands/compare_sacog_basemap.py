@@ -14,6 +14,7 @@ should use the Dagster pipeline (``brewgis/workspace/dagster/jobs/comparison_job
 
 from __future__ import annotations
 
+import datetime
 import logging
 from pathlib import Path
 from typing import Any
@@ -28,7 +29,9 @@ from brewgis.workspace.services.sacog_demo_db import RestoreError
 from brewgis.workspace.services.sacog_demo_db import restore_sacog_demo_db
 
 CACHE_DIR = Path(settings.BASE_DIR) / "planning"
-REPORT_PATH = CACHE_DIR / "sacog_comparison_report.md"
+_TIMESTAMP = datetime.datetime.now().strftime("%Y%m%d_%H%M%S")
+REPORT_PATH = CACHE_DIR / f"sacog_comparison_report_{_TIMESTAMP}.md"
+LOG_FILE_PATH = CACHE_DIR / f"sacog_comparison_{_TIMESTAMP}.log"
 V1_BASE_CANVAS = "sac_cnty_region_base_canvas"
 V1_PARCELS = "sac_cnty_region_existing_land_use_parcels"
 logger = logging.getLogger(__name__)
@@ -40,6 +43,38 @@ LEHD_YEAR = 2008  # LODES 2008 (employment stats)
 NLCD_YEAR = 2011  # NLCD 2011 (closest to 2008-2012)
 
 LOCAL_SRID = 3310
+
+
+class _TeeOutput:
+    """Write to both a console stdout and a log file.
+
+    All writes go to the console (styled) and the log file (unstyled).
+    Compatible with Django's ``OutputWrapper`` interface used by
+    ``BaseCommand.stdout``.
+    """
+
+    def __init__(self, console, log_file) -> None:
+        self._console = console
+        self._log_file = log_file
+
+    def write(self, msg, style_func=None, ending=None) -> None:
+        ending = (
+            ending if ending is not None else getattr(self._console, "_ending", "\n")
+        )
+        # Forward unstyled to log file first
+        self._log_file.write(msg)
+        if ending:
+            self._log_file.write(ending)
+        self._log_file.flush()
+        # Forward styled to console
+        self._console.write(msg, style_func=style_func, ending=ending)
+
+    def flush(self) -> None:
+        self._console.flush()
+        self._log_file.flush()
+
+    def __getattr__(self, name):
+        return getattr(self._console, name)
 
 
 class Command(BaseCommand):
@@ -88,14 +123,68 @@ class Command(BaseCommand):
             help="Use Sacramento County Assessor parcel geometries + building data for dasymetric weight refinement",
         )
 
+        parser.add_argument(
+            "--log-file",
+            type=str,
+            default="",
+            help="Path to log file (default: planning/sacog_comparison_<timestamp>.log)",
+        )
+        parser.add_argument(
+            "--no-log-file",
+            action="store_true",
+            default=False,
+            help="Disable file logging (default: off, file logging enabled)",
+        )
+        parser.add_argument(
+            "--report-path",
+            type=str,
+            default="",
+            help="Path for the comparison report (default: planning/sacog_comparison_report_<timestamp>.md)",
+        )
+
     def handle(self, **options: Any) -> None:
+        # ── Resolve output paths ─────────────────────────────────────
+        report_path_str = str(options.get("report_path", ""))
+        if report_path_str:
+            report_path = Path(report_path_str)
+        else:
+            import brewgis.workspace.management.commands.compare_sacog_basemap as _cmd_mod
+
+            report_path = _cmd_mod.REPORT_PATH  # timestamped default
+
+        # ── Setup file logging (tee to log file) ────────────────────
+        no_log_file = bool(options.get("no_log_file", False))
+        log_file_handle: object | None = None
+        original_stdout = self.stdout
+        log_path: Path | None = None
+
+        if not no_log_file:
+            log_path_str = str(options.get("log_file", ""))
+            if log_path_str:
+                log_path = Path(log_path_str)
+            else:
+                log_path = LOG_FILE_PATH  # timestamped default
+
+            log_path.parent.mkdir(parents=True, exist_ok=True)
+            log_file_handle = open(log_path, "w", encoding="utf-8")  # noqa: SIM115
+            self.stdout = _TeeOutput(self.stdout, log_file_handle)
+
+            file_handler = logging.FileHandler(log_path, encoding="utf-8")
+            file_handler.setFormatter(
+                logging.Formatter("%(levelname)s %(asctime)s %(module)s %(message)s")
+            )
+            logger.addHandler(file_handler)
+            logging.getLogger().addHandler(file_handler)
+            self.stdout.write(f"Log file: {log_path}")
+
+        self.stdout.write(f"Report: {report_path}")
+
         # Lazy imports — avoid loading dagster assets at module import time
         # which conflicts with test stubs for pandas/geopandas.
         from brewgis.soda import validate_base_canvas
         from brewgis.soda import validate_land_use_classification
         from brewgis.workspace.analysis.dbt_runner import run_dbt_local
         from brewgis.workspace.analysis.dbt_runner import run_dbt_seed
-        from brewgis.workspace.dagster.assets.comparison_assets import REPORT_PATH
         from brewgis.workspace.dagster.assets.comparison_assets import (
             _convert_reference_totals,
         )
@@ -499,37 +588,45 @@ class Command(BaseCommand):
 
         # ── Phase 5: Generate comparison report ────────────────────────
         self.stdout.write("\n── Phase 5: Generating comparison report ──")
-        _generate_report_markdown(
-            ref_totals,
-            brew_totals,
-            correlations=correlations,
-            weighted_means=weighted_means,
-            config={
-                "nlcd": nlcd,
-                "osm": osm,
-                "use-assessor-geometry": use_assessor_geometry,
-                "quick-parcel-clipping": quick_parcel_clipping,
-                "lehd-year": LEHD_YEAR,
-                "acs-year": ACS_YEAR,
-                "nlcd-year": NLCD_YEAR,
-            },
-            diagnostics=_collect_diagnostics(
-                engine=get_engine(),
-                dasymetric_table=dasymetric_weights_table
-                if use_assessor_geometry
-                else None,
-            ),
-            output_path=REPORT_PATH,
-            quick=not (nlcd or osm),
-            limit=limit,
-        )
-
-        self.stdout.write(self.style.SUCCESS(f"\n✓ Report written to {REPORT_PATH}"))
-        self.stdout.write(
-            self.style.SUCCESS(
-                "  Done — open planning/sacog_comparison_report.md to review"
+        try:
+            _generate_report_markdown(
+                ref_totals,
+                brew_totals,
+                correlations=correlations,
+                weighted_means=weighted_means,
+                config={
+                    "nlcd": nlcd,
+                    "osm": osm,
+                    "use-assessor-geometry": use_assessor_geometry,
+                    "quick-parcel-clipping": quick_parcel_clipping,
+                    "lehd-year": LEHD_YEAR,
+                    "acs-year": ACS_YEAR,
+                    "nlcd-year": NLCD_YEAR,
+                },
+                diagnostics=_collect_diagnostics(
+                    engine=get_engine(),
+                    dasymetric_table=dasymetric_weights_table
+                    if use_assessor_geometry
+                    else None,
+                ),
+                output_path=report_path,
+                quick=not (nlcd or osm),
+                limit=limit,
             )
-        )
+
+            self.stdout.write(
+                self.style.SUCCESS(f"\n✓ Report written to {report_path}")
+            )
+            self.stdout.write(
+                self.style.SUCCESS(f"  Done — open {report_path} to review")
+            )
+        except Exception:
+            logger.exception("Unhandled error in compare_sacog_basemap")
+            raise
+        finally:
+            if log_file_handle is not None:
+                log_file_handle.close()
+            self.stdout = original_stdout
 
     # ═══════════════════════════════════════════════════════════════════
     # Internal helpers

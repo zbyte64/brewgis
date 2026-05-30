@@ -189,7 +189,7 @@ npm run test      # vitest
 
 - **No REST Framework** — no DRF serializers or API views. django-ninja ModelSchema is used for data serialization in a few views. MCP server uses Pydantic v2 schemas.
 - **htmx** for dynamic HTML: form submissions, partial updates via `HX-Redirect` header, `hx-trigger="every 2s"` for status polling, self-replacing forms via `hx-target="this" hx-swap="outerHTML"`
-- **Django partials** (`django-template-partials`): `{% partialdef name %}` blocks for htmx fragment swapping
+- **Django partials** (https://docs.djangoproject.com/en/6.0/ref/templates/language/#template-partials): `{% partialdef name %}` blocks for htmx fragment swapping
 - **Lit web component** for the map: `<brew-gis-map>` element with properties for style, viewport, layers, mode (view/paint)
 - **django-allauth** for authentication (username-based, email optional verification)
 - **Celery** uses JSON serialization, Redis broker, `django-celery-beat` DatabaseScheduler
@@ -425,7 +425,11 @@ Before implementing, verify:
 These patterns have been eliminated or must be actively avoided. Do not reintroduce them.
 
 1. **Python string-SQL ETL** — do not build ETL pipelines by concatenating SQL strings in Python services. Use dbt models for all data transformations.
-2. **Python reference implementations of dbt SQL** — do not write Python code that reimplements dbt model logic for testing. Use dbt's native tests (schema.yml tests, singular tests) and Soda contracts instead.
+2. **Python reference implementations of dbt SQL** — do not write Python code that reimplements dbt model logic for testing. Use dbt's native tests (schema.yml tests, `make test-dbt`) and Soda contracts instead.
 3. **Django views/models for data processing** — Django owns business rules and UX. Data processing, transformation, and analytics belong in dbt, dlt, or Dagster.
-4. **Swallowing validation runtime errors** - never add a try/except in the context of running validation, if running validation is broken then stop.
+4. **Swallowing validation runtime errors** - never add a try/except in the context of running validation or loading data, if running validation or loading data is broken then stop.
 5. **Modifying imported data** - do not write python code that manipulates imported data, that is the role of a dbt model to reshape.
+6. **Adhoc Model Creation** - Only three things are allowed to create models: Django Migrations, dbt & dlt. Python that tells a SQL cursor to make a table is not allowed.
+7. **Unindexed GIS Lookups** - Never do intersectional joins on non-indexed geometries. If a join requires a different coordinate system then provide a materialized table that projects that geometry onto a new field, ie local_geometry, that is indexed.
+8. **Low-fidelity types** - Always import data in their highest fidelity. Never import geometries as text or a number as text.
+9. **Column name with mixed types** - A column name represents a singular data type. ie a parcel_id is always a number, an APN is always text, never reshape so that an APN is a parcel_id.

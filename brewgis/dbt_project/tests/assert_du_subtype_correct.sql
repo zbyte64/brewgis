@@ -40,6 +40,6 @@ SELECT
     pdw.du_subtype AS actual_du_subtype
 FROM expected e
 LEFT JOIN {{ ref('parcel_dasymetric_weights') }} pdw
-    ON e.parcel_id = pdw.parcel_id
+    ON e.parcel_id = pdw.apn
 WHERE
     pdw.du_subtype IS DISTINCT FROM e.expected_du_subtype

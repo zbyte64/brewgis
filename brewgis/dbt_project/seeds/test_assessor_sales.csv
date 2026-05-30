@@ -1,4 +1,4 @@
-parcel_id,living_area,building_sf,year_built,stories,bedrooms,baths,ground_floor_gross,land_use_code,property_type,sales_price,lot_size_acres,units
+apn,living_area,building_sf,year_built,stories,bedrooms,baths,ground_floor_gross,land_use_code,property_type,sales_price,lot_size_acres,units
 APN001,1500,1800,2005,1,3,2,1500,R1,SFR,350000,0.25,1
 APN001,1200,1500,1990,1,2,1,1200,R1,SFR,250000,0.25,1
 APN002,2000,2400,2010,2,4,3,1200,R2,SFR,450000,0.33,1

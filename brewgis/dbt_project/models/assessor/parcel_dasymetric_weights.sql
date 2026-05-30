@@ -9,6 +9,10 @@
     classification) and ``du_dasym_weight`` (dasymetric weight for DU
     sub-type allocation, based on assessor ``units``).
 
+    Identifier convention:
+        apn         — assessor parcel number (TEXT, e.g. "001-0234-005")
+        parcel_id   — SACOG geography_id (INT4) — NOT used in this model
+
     Weight formulas:
         pop_dasym_weight = pop_mult * COALESCE(
             actual_living_sqft,        -- from sales data (55K parcels)
@@ -26,7 +30,9 @@
 
     Optional dependencies (controlled by dbt vars):
         - ``nlcd_parcel_table``: adds ``impervious_fraction`` from NLCD zonal stats
+          (spatial join via ST_Intersects on geometry)
         - ``osm_intersection_table``: adds ``intersection_density`` from OSM
+          (spatial join via ST_Intersects on geometry)
 
     Dasymetric multiplier seed table: ``{{ ref('dasymetric_weights') }}``
 
@@ -35,7 +41,7 @@
 
 {{ config(materialized='table',
     indexes=[
-        {'columns': ['parcel_id'], 'unique': True},
+        {'columns': ['apn'], 'unique': True},
         {'columns': ['geometry'], 'type': 'gist'},
     ])
 }}
@@ -45,7 +51,7 @@
 
 WITH assessor_parcels AS (
     SELECT
-        parcel_id,
+        apn,
         geometry,
         COALESCE(NULLIF(lot_size_acres, 0), 0.01) AS lot_size_acres
     FROM {{ ref('sacog_assessor_parcels') }}
@@ -53,7 +59,7 @@ WITH assessor_parcels AS (
 
 sales_data AS (
     SELECT
-        parcel_id,
+        apn,
         actual_living_sqft,
         actual_building_sqft,
         property_type,
@@ -61,7 +67,7 @@ sales_data AS (
         units
     FROM (
         SELECT
-            parcel_id,
+            apn,
             living_area AS actual_living_sqft,
             building_sf AS actual_building_sqft,
             property_type,
@@ -70,7 +76,7 @@ sales_data AS (
             -- Prefer rows with both living_area and building_sf, then the most
             -- complete, then the most recent (year_built descending).
             ROW_NUMBER() OVER (
-                PARTITION BY parcel_id
+                PARTITION BY apn
                 ORDER BY
                     CASE
                         WHEN living_area IS NOT NULL AND building_sf IS NOT NULL THEN 0
@@ -100,7 +106,7 @@ building_medians AS (
 estimated AS (
     SELECT * FROM (
     SELECT
-        ap.parcel_id,
+        ap.apn,
         ap.lot_size_acres,
         bm.median_living_area,
         bm.median_building_sf,
@@ -120,7 +126,7 @@ estimated AS (
             ELSE NULL
         END AS estimated_building_sqft,
             ROW_NUMBER() OVER (
-                PARTITION BY ap.parcel_id ORDER BY bm.parcel_count DESC
+                PARTITION BY ap.apn ORDER BY bm.parcel_count DESC
             ) AS rn
     FROM assessor_parcels ap
         LEFT JOIN building_medians bm ON TRUE
@@ -131,52 +137,58 @@ estimated AS (
 
 classified AS (
     SELECT
-        ap.parcel_id,
+        ap.apn,
         ap.lot_size_acres,
         COALESCE(auc.category, 'urban') AS land_development_category
     FROM assessor_parcels ap
     LEFT JOIN {{ ref('sacog_assessor_parcels') }} sap
-        ON ap.parcel_id = sap.parcel_id
+        ON ap.apn = sap.apn
     LEFT JOIN {{ ref('assessor_use_codes') }} auc
         ON LEFT(COALESCE(sap.landuse::text, ''), 2) = auc.use_code::text
 ),
 
--- Join NLCD impervious fraction (optional)
+-- Join NLCD impervious fraction via spatial intersection (optional)
+{% if nlcd_table %}
 nlcd_join AS (
-    SELECT
-        ap.parcel_id,
-        {% if nlcd_table %}
+    SELECT DISTINCT ON (ap.apn)
+        ap.apn,
         nlcd.impervious_fraction
-        {% else %}
-        NULL::double precision AS impervious_fraction
-        {% endif %}
     FROM assessor_parcels ap
-    {% if nlcd_table %}
     LEFT JOIN {{ nlcd_table }} nlcd
-        ON ap.parcel_id::text = nlcd.parcel_id::text
-    {% endif %}
+        ON ST_Intersects(ap.geometry, nlcd.geometry)
+    ORDER BY ap.apn,
+        ST_Area(ST_Intersection(ap.geometry, nlcd.geometry)) DESC NULLS LAST
 ),
-
--- Join OSM intersection density (optional)
-osm_join AS (
-    SELECT
-        ap.parcel_id,
-        {% if osm_table %}
-        osm.intersection_density
-        {% else %}
-        NULL::double precision AS intersection_density
-        {% endif %}
+{% else %}
+nlcd_join AS (
+    SELECT ap.apn, NULL::double precision AS impervious_fraction
     FROM assessor_parcels ap
-    {% if osm_table %}
-    LEFT JOIN {{ osm_table }} osm
-        ON ap.parcel_id = osm.parcel_id
-    {% endif %}
 ),
+{% endif %}
+
+-- Join OSM intersection density via spatial intersection (optional)
+{% if osm_table %}
+osm_join AS (
+    SELECT DISTINCT ON (ap.apn)
+        ap.apn,
+        osm.intersection_density
+    FROM assessor_parcels ap
+    LEFT JOIN {{ osm_table }} osm
+        ON ST_Intersects(ap.geometry, osm.geometry)
+    ORDER BY ap.apn,
+        ST_Area(ST_Intersection(ap.geometry, osm.geometry)) DESC NULLS LAST
+),
+{% else %}
+osm_join AS (
+    SELECT ap.apn, NULL::double precision AS intersection_density
+    FROM assessor_parcels ap
+),
+{% endif %}
 
 -- Assemble final dasymetric weights
 assembled AS (
     SELECT
-        ap.parcel_id,
+        ap.apn,
         ap.geometry,
         ap.lot_size_acres,
         cl.land_development_category,
@@ -198,11 +210,11 @@ assembled AS (
         sd.lot_size_acres AS sales_lot_size_acres,
         sd.units
     FROM assessor_parcels ap
-    LEFT JOIN classified cl ON ap.parcel_id = cl.parcel_id
-    LEFT JOIN sales_data sd ON ap.parcel_id = sd.parcel_id
-    LEFT JOIN estimated est ON ap.parcel_id = est.parcel_id
-    LEFT JOIN nlcd_join nj ON ap.parcel_id = nj.parcel_id
-    LEFT JOIN osm_join oj ON ap.parcel_id = oj.parcel_id
+    LEFT JOIN classified cl ON ap.apn = cl.apn
+    LEFT JOIN sales_data sd ON ap.apn = sd.apn
+    LEFT JOIN estimated est ON ap.apn = est.apn
+    LEFT JOIN nlcd_join nj ON ap.apn = nj.apn
+    LEFT JOIN osm_join oj ON ap.apn = oj.apn
     LEFT JOIN {{ ref('dasymetric_weights') }} dw
         ON cl.land_development_category = dw.land_development_category
 )
@@ -213,7 +225,7 @@ assembled AS (
 -- NULL when assessor data is unavailable (falls through to area-proportional allocation).
 du_classification AS (
     SELECT
-        parcel_id,
+        apn,
         CASE
             -- SFR: split by lot size (threshold ~0.15 acres = ~6,534 sqft)
             WHEN (property_type IN ('SFR', 'Single Family Residence') OR property_type LIKE 'Single Family%')
@@ -236,7 +248,7 @@ du_classification AS (
 )
 
 SELECT
-    a.parcel_id,
+    a.apn,
     a.geometry,
     a.lot_size_acres,
     a.land_development_category,
@@ -264,4 +276,4 @@ SELECT
     dc.du_subtype,
     dc.du_dasym_weight
 FROM assembled a
-LEFT JOIN du_classification dc ON a.parcel_id = dc.parcel_id
+LEFT JOIN du_classification dc ON a.apn = dc.apn

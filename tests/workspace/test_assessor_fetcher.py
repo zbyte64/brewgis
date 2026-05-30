@@ -156,7 +156,7 @@ class TestCacheBehavior:
         cache_dir.mkdir(parents=True)
 
         dummy_gdf = gpd.GeoDataFrame(
-            {"parcel_id": ["001"]},
+            {"apn": ["001"]},
             geometry=[Point(-121.5, 38.5)],
             crs="EPSG:4326",
         )
@@ -172,7 +172,7 @@ class TestCacheBehavior:
             result = fetch_parcels_arcgis(ignore_cache=False)
             mock_get.assert_not_called()
             assert len(result) == 1
-            assert result["parcel_id"].iloc[0] == "001"
+            assert result["apn"].iloc[0] == "001"
 
     def test_fetch_parcels_ignores_cache_when_forced(self, tmp_path: Path) -> None:
         """When ignore_cache=True, fetch_parcels_arcgis should re-download."""
@@ -180,7 +180,7 @@ class TestCacheBehavior:
         cache_dir.mkdir(parents=True)
 
         dummy_gdf = gpd.GeoDataFrame(
-            {"parcel_id": ["001"]},
+            {"apn": ["001"]},
             geometry=[Point(-121.5, 38.5)],
             crs="EPSG:4326",
         )
@@ -204,7 +204,7 @@ class TestCacheBehavior:
         ):
             result = fetch_parcels_arcgis(ignore_cache=True)
             assert len(result) == 1
-            assert result["parcel_id"].iloc[0] == "002-0030-004"
+            assert result["apn"].iloc[0] == "002-0030-004"
 
     def test_fetch_sales_uses_cache(self, tmp_path: Path) -> None:
         """When cache exists, fetch_sales_arcgis should read from cache not API."""
@@ -212,7 +212,7 @@ class TestCacheBehavior:
         cache_dir.mkdir(parents=True)
 
         dummy_gdf = gpd.GeoDataFrame(
-            {"parcel_id": ["001"], "living_area": [1500.0]},
+            {"apn": ["001"], "living_area": [1500.0]},
             geometry=[Point(-121.5, 38.5)],
             crs="EPSG:4326",
         )
@@ -237,7 +237,7 @@ class TestLoadToPostGIS:
     def test_load_to_postgis_with_parcels(self) -> None:
         """load_to_postgis should write parcel data and return row count."""
         parcels = gpd.GeoDataFrame(
-            {"parcel_id": ["001", "002"]},
+            {"apn": ["001", "002"]},
             geometry=[Point(-121.5, 38.5), Point(-121.51, 38.51)],
             crs="EPSG:4326",
         )

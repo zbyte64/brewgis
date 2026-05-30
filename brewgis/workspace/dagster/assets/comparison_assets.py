@@ -131,7 +131,7 @@ def tiger_block_asset(
     metadata={
         METADATA_CONTRACT_SOURCE: "inline",
         METADATA_CONTRACT_INLINE_COLUMNS: [
-            "parcel_id",
+            "apn",
             "pop_dasym_weight",
             "emp_dasym_weight",
         ],

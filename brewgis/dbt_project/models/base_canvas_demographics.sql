@@ -87,7 +87,7 @@ WITH parcel_geom AS (
     FROM {{ ref('base_canvas_geometry') }} bg
     {% if dasym_table %}
     LEFT JOIN {{ dasym_table }} dw
-        ON bg.parcel_id::text = dw.parcel_id
+        ON bg.parcel_id = dw.parcel_id
     {% endif %}
 ),
 

@@ -2970,10 +2970,10 @@ models:
 
 - name: sacog_assessor_parcels
   description: >
-    Deduplicated assessor parcel geometries — one row per parcel_id (largest
-    lotsize wins). Tests verify dedup produces unique parcel_ids.
+    Deduplicated assessor parcel geometries — one row per apn (largest
+    lotsize wins). Tests verify dedup produces unique apns.
   columns:
-  - name: parcel_id
+  - name: apn
     description: "Assessor parcel APN"
     tests:
     - not_null
@@ -2987,7 +2987,7 @@ models:
   description: >
     Assessor building characteristics from sales records.
   columns:
-  - name: parcel_id
+  - name: apn
     description: "Assessor parcel APN (may be duplicated for multi-sale parcels)"
     tests:
     - not_null
@@ -3005,9 +3005,9 @@ models:
 - name: parcel_dasymetric_weights
   description: >
     Per-parcel dasymetric population and employment weights — one row per
-    parcel_id. Tests verify the unique constraint holds.
+    apn. Tests verify the unique constraint holds.
   columns:
-  - name: parcel_id
+  - name: apn
     description: "Assessor parcel APN"
     tests:
     - not_null

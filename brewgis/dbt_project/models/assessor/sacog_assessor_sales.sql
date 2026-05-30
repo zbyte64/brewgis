@@ -1,12 +1,13 @@
 {#
-    SACOG Assessor Sales — building characteristics from Sacramento County Assessor.
+    SACOG Assessor Sales — building characteristics from Sacramento County Assessor,
+    keyed by apn.
 
     Reads from ``public.sacog_assessor_sales_raw`` (populated by the assessor
     dlt pipeline from ASSESSOR/MapServer/1) and renames columns for
     downstream building median computation.
 
     Key columns:
-        parcel_id              → APN (string, joins to parcel geometry)
+        apn                    → APN (string, joins to parcel geometry)
         living_area            → TOTAL_LIVING_AREA (residential sqft)
         building_sf            → BUILDING_SF (total building sqft)
         year_built             → EFFECTIVE_YEAR_BUILT
@@ -23,7 +24,7 @@
 {{ config(materialized='view') }}
 
 SELECT
-    parcel_id,
+    apn,
     living_area,
     building_sf,
     year_built,

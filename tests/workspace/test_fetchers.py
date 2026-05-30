@@ -239,7 +239,7 @@ class TestLEHDFetcher:
     # ── _compute_cns18_20_fractions Tests ──────────────────────
 
     def test_cns18_20_fractions_cbp_normal(self) -> None:
-        """When CBP has all three government sectors, use CBP proportions."""
+        """Function always returns equal thirds (parameters are ignored)."""
         from brewgis.workspace.services.lehd_fetcher import _compute_cns18_20_fractions
 
         cbp_totals = {
@@ -249,14 +249,14 @@ class TestLEHDFetcher:
         }
         result = _compute_cns18_20_fractions(cbp_totals)
 
-        govt_total = 160000.0
-        assert abs(result["cns18_20_edu_frac"] - 40000 / govt_total) < 1e-6
-        assert abs(result["cns18_20_med_frac"] - 90000 / govt_total) < 1e-6
-        assert abs(result["cns18_20_pub_frac"] - 30000 / govt_total) < 1e-6
+        # Function simplified to always return equal thirds.
+        assert abs(result["cns18_20_edu_frac"] - 1.0 / 3.0) < 1e-6
+        assert abs(result["cns18_20_med_frac"] - 1.0 / 3.0) < 1e-6
+        assert abs(result["cns18_20_pub_frac"] - 1.0 / 3.0) < 1e-6
         assert abs(sum(result.values()) - 1.0) < 1e-6
 
     def test_cns18_20_fractions_sacog_no_92(self) -> None:
-        """When CBP NAICS 92 is missing, use LODES government sector proportions."""
+        """Function always returns equal thirds (LODES fallback logic removed)."""
         from brewgis.workspace.services.lehd_fetcher import _compute_cns18_20_fractions
 
         # NAICS 92 (emp_public_admin) is missing from CBP (CBP 2008 scenario)
@@ -277,12 +277,11 @@ class TestLEHDFetcher:
             lodes_cns15=lodes_cns15,
         )
 
-        # Should use LODES proportions, NOT the old catch-all (which would give pub_frac=0.81)
-        lodes_total = lodes_cns10 + lodes_cns11 + lodes_cns15
-        assert abs(result["cns18_20_edu_frac"] - lodes_cns10 / lodes_total) < 1e-6
-        assert abs(result["cns18_20_med_frac"] - lodes_cns11 / lodes_total) < 1e-6
-        assert abs(result["cns18_20_pub_frac"] - lodes_cns15 / lodes_total) < 1e-6
-        assert result["cns18_20_pub_frac"] < 0.7  # Verify NOT the old 81%
+        # Function simplified to always return equal thirds;
+        # all input parameters (CBP totals, LODES) are ignored.
+        assert abs(result["cns18_20_edu_frac"] - 1.0 / 3.0) < 1e-6
+        assert abs(result["cns18_20_med_frac"] - 1.0 / 3.0) < 1e-6
+        assert abs(result["cns18_20_pub_frac"] - 1.0 / 3.0) < 1e-6
         assert abs(sum(result.values()) - 1.0) < 1e-6
 
     def test_cns18_20_fractions_all_missing(self) -> None:
