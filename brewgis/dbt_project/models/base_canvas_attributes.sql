@@ -363,6 +363,7 @@ SELECT
     du_mf_v AS du_mf,
     du_mf2to4_v AS du_mf2to4,
     du_mf5p_v AS du_mf5p,
+    du_subtype,
     -- Employment
     COALESCE(emp, 0.0) AS emp,
     emp_ret_v AS emp_ret,

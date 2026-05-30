@@ -221,7 +221,7 @@ calibrated_sectors AS (
         emp_agriculture_cbp AS emp_ag,
         -- Aggregate columns
         {% for agg in aggregates.keys() %}
-        {{ agg }}_cbp AS {{ agg }},
+        {{ agg }}_cbpm AS {{ agg }},
         {% endfor %}
         classified_total
     FROM cbp_aggregates
