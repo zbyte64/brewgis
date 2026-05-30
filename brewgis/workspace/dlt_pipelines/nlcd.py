@@ -105,13 +105,12 @@ def run_nlcd_pipeline(
     target_table = f"{schema}.{_TARGET_TABLE}"
     result[
         ["parcel_id", "land_development_category", "impervious_fraction", "geometry"]
-    ].to_sql(
+    ].to_postgis(
         _TARGET_TABLE,
         get_engine(),
         schema=schema,
         if_exists="replace",
         index=False,
-        method="multi",
     )
 
     row_count = len(result)
