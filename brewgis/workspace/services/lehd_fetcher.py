@@ -1035,24 +1035,15 @@ def _populate_wac_block(
         "tiger_bg_vintage": "2023",
     }
 
-    # Build dbt vars for wac_block_raw (CNS splitting with CBP proportions only).
-    # SACOG calibration is removed — the comparison pipeline never uses it.
-
-    # Step 1: CNS split → lehd.wac_block_raw
-    result = run_dbt_local(select=["wac_block_raw"], vars_=raw_vars)
-    if not result.success:
-        msg = f"dbt wac_block_raw failed: {result.error}"
-        raise RuntimeError(msg)
-
-    # Step 2: Fetch CBP county totals for scaling
+    # Step 1: Fetch CBP county totals and compute CNS18-20 fractions
     cbp_totals = _compute_all_cbp_totals(state_fips, county_fips, year=year)
 
     # Compute CNS18-20 distribution fractions.
     # CNS18 (Federal), CNS19 (State), CNS20 (Local) are government workers
-    # distributed across all sectors (teachers, doctors, admin). We split them
-    # to education, medical, and public_admin. Uses CBP proportions when all
-    # three CBP sectors are available; falls back to LODES government sector
-    # proportions when NAICS 92 is missing (e.g. CBP 2008).
+    # distributed across education, medical, and public_admin using equal
+    # thirds (0.33/0.33/0.34). CBP proportions over-assign public_admin
+    # because NAICS 92 includes all government workers while NAICS 61/62
+    # include private + public combined.
     lodes_cns10 = 0.0
     lodes_cns11 = 0.0
     lodes_cns15 = 0.0
@@ -1089,6 +1080,12 @@ def _populate_wac_block(
         lodes_cns15=lodes_cns15,
     )
     raw_vars.update(cns18_20_fracs)
+
+    # Step 2: CNS split → lehd.wac_block_raw (now with CNS18-20 fractions)
+    result = run_dbt_local(select=["wac_block_raw"], vars_=raw_vars)
+    if not result.success:
+        msg = f"dbt wac_block_raw failed: {result.error}"
+        raise RuntimeError(msg)
 
     # Build dbt vars for wac_block (CBP county scaling).
     scaling_vars: dict[str, object] = {

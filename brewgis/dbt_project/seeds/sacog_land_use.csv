@@ -10,8 +10,8 @@ Mobile Home Park,urban
 Urban Attached Residential,urban
 Urban Mid-Rise Residential,urban
 Blank Place Type,urban
-Rural Residential,undeveloped
-Very Low Density Detached Residential,undeveloped
+Rural Residential,urban
+Very Low Density Detached Residential,urban
 Community/Neighborhood Retail,industrial
 Community/Neighborhood Commercial,industrial
 Community/Neighborhood Commercial/Office,industrial
@@ -33,7 +33,7 @@ Agricultural Processing/Retail Employment,industrial
 Residential/Retail Mixed Use Low,mixed_use
 Residential/Retail Mixed Use High,mixed_use
 Agriculture,undeveloped
-Farm Home,undeveloped
+Farm Home,urban
 Park and/or Open Space,undeveloped
 Parking Lot,undeveloped
 Parking Structure,undeveloped
