@@ -156,7 +156,8 @@ def _arcgis_features_to_gdf(features: list[dict[str, Any]]) -> gpd.GeoDataFrame:
     Returns
     -------
     gpd.GeoDataFrame
-        With CRS EPSG:4326.  The ``geometry`` key is consumed as the
+        With CRS EPSG:4326, all geometries validated via make_valid.
+        The ``geometry`` key is consumed as the
         geometry column.
     """
     records: list[dict[str, Any]] = []
@@ -175,7 +176,9 @@ def _arcgis_features_to_gdf(features: list[dict[str, Any]]) -> gpd.GeoDataFrame:
             geometries.append(None)
         records.append(feat)
 
-    return gpd.GeoDataFrame(records, geometry=geometries, crs="EPSG:4326")
+    gdf = gpd.GeoDataFrame(records, geometry=geometries, crs="EPSG:4326")
+    gdf.geometry = gdf.geometry.make_valid()
+    return gdf
 
 
 def fetch_parcels_arcgis(

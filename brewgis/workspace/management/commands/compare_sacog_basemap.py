@@ -383,64 +383,28 @@ class Command(BaseCommand):
             raise CommandError(f"dbt sacog_parcel_shim run failed: {shim_result.error}")
         self.stdout.write(self.style.SUCCESS("  sacog_parcel_shim materialized"))
 
-        # ── Phase 2a.5: Build assessor→SACOG parcel crosswalk (if assessor data loaded) ──
+        # ── Phase 2a.5: Materialize assessor→SACOG dasymetric crosswalk (if assessor data loaded) ──
         if use_assessor_geometry:
             self.stdout.write(
-                "\n── Phase 2a.5: Building assessor→SACOG parcel crosswalk ──"
+                "\n── Phase 2a.5: Materializing assessor→SACOG dasymetric crosswalk ──"
             )
-            engine = get_engine()
-            with engine.begin() as conn:
-                conn.execute(
-                    text("DROP TABLE IF EXISTS public.sacog_comparison_dasymetric")
+            crosswalk_vars: dict[str, Any] = {
+                "base_canvas_materialized": "table",
+            }
+            crosswalk_result = run_dbt_local(
+                select=["sacog_comparison_dasymetric"],
+                vars_=crosswalk_vars,
+            )
+            if not crosswalk_result.success:
+                raise CommandError(
+                    f"dbt sacog_comparison_dasymetric failed: {crosswalk_result.error}"
                 )
-                conn.execute(
-                    text("""
-                        CREATE TABLE public.sacog_comparison_dasymetric AS
-                        SELECT DISTINCT ON (sp.parcel_id)
-                            sp.parcel_id,
-                            dw.lot_size_acres,
-                            dw.land_development_category,
-                            dw.actual_living_sqft,
-                            dw.actual_building_sqft,
-                            dw.estimated_living_sqft,
-                            dw.estimated_building_sqft,
-                            dw.impervious_fraction,
-                            dw.intersection_density,
-                            dw.pop_dasym_weight,
-                            dw.emp_dasym_weight,
-                            dw.du_subtype,
-                            dw.du_dasym_weight
-                        FROM sacog_parcel_shim sp
-                        JOIN public.parcel_dasymetric_weights dw
-                            ON ST_Intersects(ST_MakeValid(sp.geometry), ST_MakeValid(ST_Transform(dw.geometry, 4326)))
-                        ORDER BY sp.parcel_id, ST_Area(ST_Intersection(ST_MakeValid(sp.geometry), ST_MakeValid(ST_Transform(dw.geometry, 4326)))) DESC
-                    """)
-                )
-                conn.execute(
-                    text(
-                        "CREATE INDEX ON public.sacog_comparison_dasymetric (parcel_id)"
-                    )
-                )
-            row_count = 0
-            with engine.connect() as conn:
-                row = conn.execute(
-                    text("SELECT COUNT(*) FROM public.sacog_comparison_dasymetric")
-                ).scalar()
-                row_count = row or 0
+            dasymetric_weights_table = "public.sacog_comparison_dasymetric"
             self.stdout.write(
                 self.style.SUCCESS(
-                    f"  Assessor→SACOG crosswalk built: {row_count} parcels matched"
+                    f"  Assessor→SACOG crosswalk materialized in {dasymetric_weights_table}"
                 )
             )
-            if row_count == 0:
-                self.stdout.write(
-                    self.style.WARNING(
-                        "  WARNING: No assessor parcels overlapped SACOG parcels — "
-                        "keeping original dasymetric table (parcel_id mismatch unresolved)"
-                    )
-                )
-            else:
-                dasymetric_weights_table = "public.sacog_comparison_dasymetric"
 
         # ── Pre-flight: Ensure dbt seed tables are loaded ──────────────
         self.stdout.write("\n── Pre-flight: Checking dbt seed tables ──")

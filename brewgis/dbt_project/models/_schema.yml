@@ -2329,6 +2329,27 @@ models:
     tests: [column_between: {arguments: {min_value: -1, max_value: 1}}]
   - name: commercial_irrigated_area
     tests: [column_between: {arguments: {min_value: -1, max_value: 1}}]
+- name: sacog_comparison_dasymetric
+  description: >
+    Area-weighted assessor→SACOG parcel dasymetric crosswalk. Selects one
+    assessor geometry per SACOG parcel_id (largest intersection area wins)
+    carrying dasymetric weights, building characteristics, and DU subtype.
+  columns:
+  - name: parcel_id
+    description: "SACOG parcel identifier"
+    tests:
+    - not_null
+    - unique
+  - name: pop_dasym_weight
+    description: "Dasymetric population weight (fraction)"
+    tests:
+    - not_null
+    - non_negative
+  - name: emp_dasym_weight
+    description: "Dasymetric employment weight (fraction)"
+    tests:
+    - not_null
+    - non_negative
 - name: sacog_weighted_means
   description: "Area-weighted averages for density/rate equity columns."
   columns:

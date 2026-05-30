@@ -37,8 +37,8 @@
 
 SELECT
     parcel_id,
-    ST_Transform(geometry, 4326) AS geometry,
-    geometry AS local_geometry,
+    ST_MakeValid(ST_Transform(geometry, 4326)) AS geometry,
+    ST_MakeValid(geometry) AS local_geometry,
     'Sacramento'::text AS county,
     NULL::text AS land_development_category,
     NULL::text AS built_form_key,
