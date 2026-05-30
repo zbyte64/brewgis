@@ -25,3 +25,4 @@ SELECT
 FROM source s, allocated a
 WHERE s.source_emp > 0
   AND ABS(a.allocated_emp - s.source_emp) / s.source_emp > 0.05
+  AND ABS(a.allocated_emp - s.source_emp) / s.source_emp > 0.005

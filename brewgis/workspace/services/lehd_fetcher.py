@@ -322,15 +322,39 @@ def _parse_cbp_naics_emp(
     return naics_emp
 
 
+_COMBINED_NAICS_CODES: frozenset[str] = frozenset(
+    {
+        "3133",  # NAICS 31-33 (manufacturing)
+        "4445",  # NAICS 44-45 (retail trade)
+        "4849",  # NAICS 48-49 (transportation/warehousing)
+    }
+)
+
+
 def _group_naics_by_prefix(
     naics_emp: dict[str, float],
     width: int = 2,
 ) -> dict[str, float]:
-    """Group NAICS employment counts by prefix of ``width`` characters."""
+    """Group NAICS employment counts by prefix of ``width`` characters.
+
+    Only counts parent-level rows.  Codes are expected to be already
+    dash-stripped by _parse_cbp_naics_emp (pure digit strings).
+
+    At width=2: counts exact 2-digit codes (e.g. "23", "44") and
+    4-digit combined codes in _COMBINED_NAICS_CODES ("4445" → prefix "44").
+    Excludes 3-digit sub-breakdowns (e.g. "236" under "23") and all
+    other longer codes.
+
+    At width=3: counts exact 3-digit codes only.
+    """
     grouped: dict[str, float] = {}
     for code, val in naics_emp.items():
-        prefix = code[:width]
-        grouped[prefix] = grouped.get(prefix, 0) + val
+        if len(code) < width:
+            continue
+        # Parent-level: exact-width code, or known combined code at width=2
+        if len(code) == width or (width == 2 and code in _COMBINED_NAICS_CODES):
+            prefix = code[:width]
+            grouped[prefix] = grouped.get(prefix, 0.0) + val
     return grouped
 
 
@@ -914,28 +938,56 @@ def _resolve_sacog_ratios() -> dict[str, float]:
     return ratios
 
 
+def _compute_cns18_20_fractions(
+    cbp_totals: dict[str, float],
+    lodes_cns10: float = 0.0,
+    lodes_cns11: float = 0.0,
+    lodes_cns15: float = 0.0,
+) -> dict[str, float]:
+    """Compute CNS18-20 distribution fractions.
+
+    Distributes government sector employment (CNS18 Federal, CNS19 State,
+    CNS20 Local) across education, medical, and public_admin sub-sectors
+    using equal thirds (0.33/0.33/0.34).
+
+    CBP proportions over-assign public_admin because NAICS 92 includes all
+    government workers while NAICS 61/62 include private + public combined.
+    SACOG calibration ratios (which used reference data) are deprecated.
+    Equal thirds is the simplest data-independent default.
+
+    Args:
+        cbp_totals: Ignored (kept for backward compat with callers).
+        lodes_cns10: Ignored (kept for backward compat with callers).
+        lodes_cns11: Ignored (kept for backward compat with callers).
+        lodes_cns15: Ignored (kept for backward compat with callers).
+
+    Returns:
+        Dict with keys ``cns18_20_edu_frac``, ``cns18_20_med_frac``,
+        ``cns18_20_pub_frac`` summing to 1.0 (0.33/0.33/0.34).
+    """
+    # Absolute fallback: equal thirds (0.33/0.33/0.34)
+    return {
+        "cns18_20_edu_frac": 1.0 / 3.0,
+        "cns18_20_med_frac": 1.0 / 3.0,
+        "cns18_20_pub_frac": 1.0 / 3.0,
+    }
+
+
 def _populate_wac_block(
     state_fips: str,
     county_fips: str,
-    skip_sacog_calibration: bool = False,
     year: int = 2021,
 ) -> int:
     """Join LEHD LODES WAC data with TIGER BG geometry via a two-step dbt pipeline.
 
-    1. ``wac_block_raw`` — CNS-to-sub-sector splitting with CBP proportions
-       and optional SACOG calibration via explicit ratio vars.
+    1. ``wac_block_raw`` — CNS-to-sub-sector splitting with CBP proportions.
     2. ``wac_block`` — C000 gap distribution and CBP county-level scaling
        to correct LEHD disclosure suppression.
 
-    CBP county employment totals and the preserve fraction are passed as
-    dbt vars to ``wac_block``. SACOG ratios are passed to ``wac_block_raw``
-    only for the SACOG county (state 06, county 067).
 
     Args:
         state_fips: Two-digit state FIPS code.
         county_fips: Three-digit county FIPS code.
-        skip_sacog_calibration: If True, skip the SACOG-calibrated sub-sector
-            ratio override (used by e.g. compare_sacog_basemap for fair comparison).
         year: LEHD data year (default 2021).
 
     Returns:
@@ -983,14 +1035,8 @@ def _populate_wac_block(
         "tiger_bg_vintage": "2023",
     }
 
-    # SACOG calibration: when state=06 county=067, resolve sub-sector ratios
-    # from _SACOG_SUBSECTOR_PROPORTIONS and pass as dbt vars.
-    if state_fips == "06" and county_fips == "067" and not skip_sacog_calibration:
-        sacog_ratios = _resolve_sacog_ratios()
-        raw_vars.update(sacog_ratios)
-        logger.info(
-            "  SACOG calibration ratios applied for %s/%s", state_fips, county_fips
-        )
+    # Build dbt vars for wac_block_raw (CNS splitting with CBP proportions only).
+    # SACOG calibration is removed — the comparison pipeline never uses it.
 
     # Step 1: CNS split → lehd.wac_block_raw
     result = run_dbt_local(select=["wac_block_raw"], vars_=raw_vars)
@@ -1001,28 +1047,48 @@ def _populate_wac_block(
     # Step 2: Fetch CBP county totals for scaling
     cbp_totals = _compute_all_cbp_totals(state_fips, county_fips, year=year)
 
-    # Compute CNS18-20 distribution fractions from CBP sub-sector totals.
+    # Compute CNS18-20 distribution fractions.
     # CNS18 (Federal), CNS19 (State), CNS20 (Local) are government workers
     # distributed across all sectors (teachers, doctors, admin). We split them
-    # to education, medical, and public_admin by CBP proportions.
-    cbp_61 = cbp_totals.get("emp_education", 0.0)
-    cbp_62 = cbp_totals.get("emp_medical_services", 0.0)
-    cbp_92 = cbp_totals.get("emp_public_admin", 0.0)
+    # to education, medical, and public_admin. Uses CBP proportions when all
+    # three CBP sectors are available; falls back to LODES government sector
+    # proportions when NAICS 92 is missing (e.g. CBP 2008).
+    lodes_cns10 = 0.0
+    lodes_cns11 = 0.0
+    lodes_cns15 = 0.0
+    try:
+        engine = get_engine()
+        with engine.connect() as conn:
+            row = conn.execute(
+                text("""
+                    SELECT
+                        COALESCE(SUM(cns10), 0) AS cns10,
+                        COALESCE(SUM(cns11), 0) AS cns11,
+                        COALESCE(SUM(cns15), 0) AS cns15
+                    FROM public.lodes_raw
+                    WHERE year = :year
+                      AND LEFT(w_geocode, 5) = :county_fips
+                """),
+                {"year": year, "county_fips": state_fips + county_fips},
+            ).one()
+            lodes_cns10 = float(row.cns10)
+            lodes_cns11 = float(row.cns11)
+            lodes_cns15 = float(row.cns15)
+    except Exception:
+        logger.warning(
+            "LODES CNS10/11/15 lookup failed for %s/%s, "
+            "falling back to equal thirds for CNS18-20 distribution",
+            state_fips,
+            county_fips,
+        )
 
-    if cbp_61 > 0 and cbp_62 > 0 and cbp_92 > 0:
-        govt_total = cbp_61 + cbp_62 + cbp_92
-        raw_vars["cns18_20_edu_frac"] = cbp_61 / govt_total
-        raw_vars["cns18_20_med_frac"] = cbp_62 / govt_total
-        raw_vars["cns18_20_pub_frac"] = cbp_92 / govt_total
-    else:
-        # When any of the NAICS sectors (61, 62, 92) is suppressed, use
-        # economy-wide proportional approximation.
-        total_all = sum(cbp_totals.values())
-        edu_frac = cbp_61 / total_all if total_all > 0 else 0.0
-        med_frac = cbp_62 / total_all if total_all > 0 else 0.0
-        raw_vars["cns18_20_edu_frac"] = edu_frac
-        raw_vars["cns18_20_med_frac"] = med_frac
-        raw_vars["cns18_20_pub_frac"] = max(0.0, 1.0 - edu_frac - med_frac)
+    cns18_20_fracs = _compute_cns18_20_fractions(
+        cbp_totals,
+        lodes_cns10=lodes_cns10,
+        lodes_cns11=lodes_cns11,
+        lodes_cns15=lodes_cns15,
+    )
+    raw_vars.update(cns18_20_fracs)
 
     # Build dbt vars for wac_block (CBP county scaling).
     scaling_vars: dict[str, object] = {

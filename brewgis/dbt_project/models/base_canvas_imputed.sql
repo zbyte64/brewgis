@@ -33,6 +33,21 @@ regional_avg AS (
         AVG(intersection_density) AS county_avg_int_density
     FROM attributes
     GROUP BY county
+),
+
+-- County average DU sub-type proportions for imputation of assessor-uncovered parcels.
+-- Computed from parcels with known sub-types; applied to total du when sub-types are NULL.
+du_subtype_proportions AS (
+    SELECT
+        county,
+        SUM(du_detsf_sl) / NULLIF(SUM(du), 0) AS pct_detsf_sl,
+        SUM(du_detsf_ll) / NULLIF(SUM(du), 0) AS pct_detsf_ll,
+        SUM(du_attsf) / NULLIF(SUM(du), 0) AS pct_attsf,
+        SUM(du_mf2to4) / NULLIF(SUM(du), 0) AS pct_mf2to4,
+        SUM(du_mf5p) / NULLIF(SUM(du), 0) AS pct_mf5p
+    FROM attributes
+    WHERE du > 0 AND du_detsf_sl IS NOT NULL
+    GROUP BY county
 )
 
 SELECT
@@ -62,13 +77,17 @@ SELECT
     COALESCE(a.pop_groupquarter, 0.0) AS pop_groupquarter,
     COALESCE(a.hh, r.county_avg_hh, 0.0) AS hh,
     COALESCE(a.du, r.county_avg_du, 0.0) AS du,
-    a.du_detsf,
-    a.du_detsf_sl,
-    a.du_detsf_ll,
-    a.du_attsf,
-    a.du_mf,
-    a.du_mf2to4,
-    a.du_mf5p,
+    -- DU sub-type imputation: use county proportions when parcel sub-types are NULL
+    COALESCE(a.du_detsf, dp.pct_detsf_sl * COALESCE(a.du, r.county_avg_du, 0.0)
+        + dp.pct_detsf_ll * COALESCE(a.du, r.county_avg_du, 0.0), 0.0) AS du_detsf,
+    COALESCE(a.du_detsf_sl, dp.pct_detsf_sl * COALESCE(a.du, r.county_avg_du, 0.0), 0.0) AS du_detsf_sl,
+    COALESCE(a.du_detsf_ll, dp.pct_detsf_ll * COALESCE(a.du, r.county_avg_du, 0.0), 0.0) AS du_detsf_ll,
+    COALESCE(a.du_attsf, dp.pct_attsf * COALESCE(a.du, r.county_avg_du, 0.0), 0.0) AS du_attsf,
+    COALESCE(a.du_mf, dp.pct_mf2to4 * COALESCE(a.du, r.county_avg_du, 0.0)
+        + dp.pct_mf5p * COALESCE(a.du, r.county_avg_du, 0.0), 0.0) AS du_mf,
+    COALESCE(a.du_mf2to4, dp.pct_mf2to4 * COALESCE(a.du, r.county_avg_du, 0.0), 0.0) AS du_mf2to4,
+    COALESCE(a.du_mf5p, dp.pct_mf5p * COALESCE(a.du, r.county_avg_du, 0.0), 0.0) AS du_mf5p,
+    a.du_subtype,
     COALESCE(a.emp, r.county_avg_emp, 0.0) AS emp,
     a.emp_ret,
     a.emp_retail_services,

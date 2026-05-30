@@ -1,26 +1,17 @@
 {#
     LEHD LODES WAC → Block-Level Employment (Raw CNS Split)
 
+
     Joins lodes_raw staging data with TIGER/Line block geometry (15-digit
     GEOID), splits CNS employment into NAICS-based sub-sectors using CBP
-    proportions, applies SACOG calibration via explicit ratio vars, and
-    distributes CNS16 (unclassified) employment proportionally across
-    sub-sectors.
+    proportions, and distributes CNS16 (unclassified) employment
+    proportionally across sub-sectors.
 
     Geometry resolution — three-tier fallback:
       Tier 1: exact 15-digit geoid match to tiger_blocks (preferred)
       Tier 2: 12-digit block group match to tiger_block_groups
       Tier 3: any block group in the same census tract (tiger_block_groups)
       Excluded: blocks with no TIGER match at any tier
-
-    SACOG calibration uses 17 explicit ratio vars (sacog_*_ratio). When these
-    vars are provided, sub-sectors are computed as aggregate * ratio instead
-    of CBP proportions. When absent (non-SACOG counties), CBP proportions
-    are used. This replaces the old is_sacog boolean + hardcoded fractions.
-
-    CNS16 distribution uses CBP-based classified_total as the denominator
-    and calibrated sub-sector values as the numerators — matching the
-    existing model's behavior.
 
     Inputs (via dbt vars):
         source_schema: Schema containing source tables (default public)
@@ -31,7 +22,6 @@
         year: LEHD data year
         state_fips, county_fips: County identifier
         cbp_11..cbp_721: CBP NAICS proportion parameters
-        sacog_*_ratio: 17 optional ratio vars (default none — use CBP proportions)
 
     Output: lehd.wac_block_raw — intermediate table consumed by wac_block
 #}
@@ -53,30 +43,30 @@
 {% set tiger_block_vintage = var('tiger_block_vintage', '2020') %}
 {% set tiger_bg_vintage = var('tiger_bg_vintage', '2023') %}
 
--- Sub-sector metadata
--- and aggregate column computation. Each sub-sector's agg field indicates
--- the aggregate column used for SACOG calibration (null for military).
--- sacog_zero indicates sub-sectors SACOG always zeros.
+-- Sub-sector metadata: maps each employment sub-sector to its aggregate column.
+-- The `agg` field is used to compute aggregate totals for scaling.
 {% set sub_sectors = [
-    {'col': 'emp_agriculture',           'agg': 'emp_ind',  'sacog_var': 'sacog_agriculture_ratio'},
-    {'col': 'emp_extraction',            'agg': 'emp_ind',  'sacog_var': 'sacog_extraction_ratio'},
-    {'col': 'emp_construction',          'agg': 'emp_ind',  'sacog_var': 'sacog_construction_ratio'},
-    {'col': 'emp_manufacturing',         'agg': 'emp_ind',  'sacog_var': 'sacog_manufacturing_ratio'},
-    {'col': 'emp_transport_warehousing', 'agg': 'emp_ind',  'sacog_var': 'sacog_transport_warehousing_ratio'},
-    {'col': 'emp_utilities',             'agg': 'emp_ind',  'sacog_var': 'sacog_utilities_ratio'},
-    {'col': 'emp_wholesale',             'agg': 'emp_ind',  'sacog_var': 'sacog_wholesale_ratio'},
-    {'col': 'emp_retail_services',       'agg': 'emp_ret',  'sacog_var': 'sacog_retail_services_ratio'},
-    {'col': 'emp_office_services',       'agg': 'emp_off',  'sacog_var': 'sacog_office_services_ratio'},
-    {'col': 'emp_education',             'agg': 'emp_pub',  'sacog_var': 'sacog_education_ratio'},
-    {'col': 'emp_medical_services',      'agg': 'emp_off',  'sacog_var': 'sacog_medical_services_ratio'},
-    {'col': 'emp_arts_entertainment',    'agg': 'emp_ret',  'sacog_var': 'sacog_arts_entertainment_ratio'},
-    {'col': 'emp_accommodation',         'agg': 'emp_ret',  'sacog_var': 'sacog_accommodation_ratio'},
-    {'col': 'emp_restaurant',            'agg': 'emp_ret',  'sacog_var': 'sacog_restaurant_ratio'},
-    {'col': 'emp_other_services',        'agg': 'emp_ret',  'sacog_var': 'sacog_other_services_ratio'},
-    {'col': 'emp_public_admin',          'agg': 'emp_pub',  'sacog_var': 'sacog_public_admin_ratio'},
-    {'col': 'emp_military',              'agg': none,       'sacog_var': 'sacog_military_ratio'},
+    {'col': 'emp_agriculture',           'agg': 'emp_ind'},
+    {'col': 'emp_extraction',            'agg': 'emp_ind'},
+    {'col': 'emp_construction',          'agg': 'emp_ind'},
+    {'col': 'emp_manufacturing',         'agg': 'emp_ind'},
+    {'col': 'emp_transport_warehousing', 'agg': 'emp_ind'},
+    {'col': 'emp_utilities',             'agg': 'emp_ind'},
+    {'col': 'emp_wholesale',             'agg': 'emp_ind'},
+    {'col': 'emp_retail_services',       'agg': 'emp_ret'},
+    {'col': 'emp_office_services',       'agg': 'emp_off'},
+    {'col': 'emp_education',             'agg': 'emp_pub'},
+    {'col': 'emp_medical_services',      'agg': 'emp_off'},
+    {'col': 'emp_arts_entertainment',    'agg': 'emp_ret'},
+    {'col': 'emp_accommodation',         'agg': 'emp_ret'},
+    {'col': 'emp_restaurant',            'agg': 'emp_ret'},
+    {'col': 'emp_other_services',        'agg': 'emp_ret'},
+    {'col': 'emp_public_admin',          'agg': 'emp_pub'},
+    {'col': 'emp_military',              'agg': none},
 ] %}
 
+-- Note: sacog_var metadata removed — SACOG calibration is deprecated.
+-- Sub-sectors use CBP proportions exclusively.
 {% set aggregates = {
     'emp_ret': ['emp_retail_services', 'emp_restaurant', 'emp_accommodation', 'emp_arts_entertainment', 'emp_other_services'],
     'emp_off': ['emp_office_services', 'emp_medical_services'],
@@ -203,11 +193,11 @@ cbp_sub_sectors AS (
 cbp_aggregates AS (
     SELECT
         *,
-        -- CBP-based aggregate columns (used as multipliers for SACOG calibration)
+        -- CBP-based aggregate columns
         {% for agg, cols in aggregates.items() %}
-        ({% for c in cols %}{{ c }}_cbp{% if not loop.last %} + {% endif %}{% endfor %}) AS {{ agg }}_cbp{% if not loop.last %},{% endif %}
+        ({% for c in cols %}{{ c }}_cbp{% if not loop.last %} + {% endif %}{% endfor %}) AS {{ agg }}_cbpm,
         {% endfor %}
-        , -- Total classified employment (excludes CNS16 and C000)
+        -- Total classified employment (excludes CNS16 and C000)
         (
             {% for s in sub_sectors %}
             {{ s.col }}_cbp{% if not loop.last %} + {% endif %}
@@ -216,6 +206,7 @@ cbp_aggregates AS (
     FROM cbp_sub_sectors
 ),
 
+-- Simplified: uses CBP proportions exclusively. SACOG calibration is removed.
 calibrated_sectors AS (
     SELECT
         geoid,
@@ -223,41 +214,16 @@ calibrated_sectors AS (
         c000 AS emp,
         cns18_20_govt,
         cns16_unclassified,
-        -- Sub-sector: SACOG-calibrated or CBP-based.
-        -- When a sacog_*_ratio var is provided, the sub-sector is computed as
-        -- aggregate_cbp * ratio. When absent (non-SACOG county), the CBP split
-        -- value is used directly.
+        -- All sub-sectors use CBP proportions directly.
         {% for s in sub_sectors %}
-        {% set r = var(s.sacog_var, none) %}
-        {% if s.agg is not none %}
-            {% if r is not none %}
-        CASE WHEN {{ s.agg }}_cbp > 0 THEN ROUND({{ s.agg }}_cbp * {{ r }}, 1) ELSE 0 END AS {{ s.col }}_calibrated{% if not loop.last %},{% endif %}
-            {% else %}
-        {{ s.col }}_cbp AS {{ s.col }}_calibrated{% if not loop.last %},{% endif %}
-            {% endif %}
-        {% else %}
-            {# Military: not part of any aggregate, zeroed out when sacog_military_ratio is set #}
-            {% if r is not none %}
-        0 AS {{ s.col }}_calibrated{% if not loop.last %},{% endif %}
-            {% else %}
-        {{ s.col }}_cbp AS {{ s.col }}_calibrated{% if not loop.last %},{% endif %}
-            {% endif %}
-        {% endif %}
+        {{ s.col }}_cbp AS {{ s.col }}_calibrated,
         {% endfor %}
-        ,
-        -- emp_ag: SACOG zeroes agriculture (and therefore emp_ag).
-        -- Non-SACOG: emp_ag = emp_agriculture_cbp.
-        {% set ag_var = var('sacog_agriculture_ratio', none) %}
-        {% if ag_var is not none %}
-        0 AS emp_ag,
-        {% else %}
         emp_agriculture_cbp AS emp_ag,
-        {% endif %}
-        -- CBP-based aggregate columns (passed through for reference)
+        -- Aggregate columns
         {% for agg in aggregates.keys() %}
-        {{ agg }}_cbp AS {{ agg }}{% if not loop.last %},{% endif %}
+        {{ agg }}_cbp AS {{ agg }},
         {% endfor %}
-        , classified_total
+        classified_total
     FROM cbp_aggregates
 ),
 

@@ -951,6 +951,8 @@ def _generate_report_markdown(
     *,
     correlations: dict[str, float] | None = None,
     weighted_means: dict[str, float] | None = None,
+    config: dict | None = None,
+    diagnostics: dict | None = None,
     output_path: Path,
     quick: bool,
     limit: int,
@@ -958,8 +960,11 @@ def _generate_report_markdown(
     """Generate the markdown comparison report.
 
     Reuses the same column grouping and report structure as the original
-    management command, but reads from pre-computed dbt tables instead of
-    running ad-hoc queries.
+    management command, but reads from pre-computed dbt tables instead.
+
+    Args:
+        config: Optional dict of configuration flags used in the run.
+        diagnostics: Optional dict of calibration diagnostics (coverage stats).
     """
     import time
 
@@ -1133,6 +1138,83 @@ def _generate_report_markdown(
     lines.append(f"**Reference:** `{V1_BASE_CANVAS}` (2015 vintage, 2008-2012 data)")
     lines.append(f"**Quick mode:** {quick}")
     lines.append(f"**Parcel limit:** {limit or 'all (502,874)'}")
+    lines.append("")
+
+    # ── Configuration section ─────────────────────────────────────
+    if config:
+        lines.append("## Configuration")
+        lines.append("")
+        lines.append("| Flag | Value |")
+        lines.append("|------|-------|")
+        for key, value in sorted(config.items()):
+            val_str = str(value).lower() if isinstance(value, bool) else str(value)
+            lines.append(f"| `--{key}` | {val_str} |")
+        lines.append("")
+
+    # ── Calibration Diagnostics section ───────────────────────────
+    if diagnostics:
+        dasym = diagnostics.get("dasymetric", {})
+        assessor = diagnostics.get("assessor", {})
+        lines.append("## Calibration Diagnostics")
+        lines.append("")
+        lines.append("### Assessor Data Coverage")
+        lines.append("")
+        lines.append("| Metric | Value |")
+        lines.append("|--------|-------|")
+        total_parcels = dasym.get("total_parcels", 0)
+        assessor_parcels = dasym.get("assessor_parcels", 0)
+        pct = (assessor_parcels / total_parcels * 100) if total_parcels > 0 else 0
+        lines.append(f"| Total parcels | {total_parcels:,} |")
+        lines.append(f"| Parcels with du_subtype | {assessor_parcels:,} ({pct:.1f}%) |")
+        lines.append(
+            f"| Parcels with pop_dasym_weight | {dasym.get('pop_weight_parcels', 0):,} |"
+        )
+        if "du_subtype_breakdown" in dasym:
+            lines.append("")
+            lines.append("**DU Sub-type Breakdown:**")
+            lines.append("")
+            lines.append("| Sub-type | Count |")
+            lines.append("|----------|-------|")
+            for st, count in sorted(dasym.get("du_subtype_breakdown", {}).items()):
+                label = st if st else "NULL (no assessor data)"
+                lines.append(f"| {label} | {count:,} |")
+        lc = assessor.get("land_development_category", {})
+        if lc:
+            lines.append("")
+            lines.append(
+                "**Land Development Category Distribution (from assessor use codes):**"
+            )
+            lines.append("")
+            lines.append("| Category | Count |")
+            lines.append("|----------|-------|")
+            for cat, count in sorted(lc.items()):
+                lines.append(f"| {cat} | {count:,} |")
+        emp = diagnostics.get("employment", {})
+        if emp:
+            lines.append("")
+            lines.append("### Employment Pipeline")
+            lines.append("")
+            lines.append("| Metric | Value |")
+            lines.append("|--------|-------|")
+            lines.append(
+                f"| WAC blocks with geometry | {emp.get('wac_blocks_with_geom', 0):,} |"
+            )
+            lines.append(f"| Total WAC blocks | {emp.get('total_wac_blocks', 0):,} |")
+            match_tier1 = emp.get("match_tier1", 0)
+            match_tier2 = emp.get("match_tier2", 0)
+            match_tier3 = emp.get("match_tier3", 0)
+            total_matched = match_tier1 + match_tier2 + match_tier3
+            lines.append(
+                f"| Tier 1 matches (exact block) | {match_tier1:,} ({match_tier1 / total_matched * 100:.1f}%)"
+                if total_matched > 0
+                else f"| Tier 1 matches (exact block) | {match_tier1:,}"
+            )
+            lines.append(
+                f"| Tier 2 matches (block group) | {match_tier2:,}"
+                if total_matched == 0
+                else f"| Tier 2 matches (block group) | {match_tier2:,} ({match_tier2 / total_matched * 100:.1f}%)"
+            )
+        lines.append("")
     lines.append("")
 
     # ── Summary comparison table ──────────────────────────────────

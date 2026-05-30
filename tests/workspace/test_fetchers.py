@@ -102,10 +102,29 @@ class TestLEHDFetcher:
             ["8000", "42----", "06", "067"],
             ["12000", "44----", "06", "067"],
             ["5000", "45----", "06", "067"],
+            [
+                "600",
+                "441---",
+                "06",
+                "067",
+            ],  # Sub-level under 44 — should NOT be counted
             ["15000", "48----", "06", "067"],
             ["3000", "49----", "06", "067"],
+            [
+                "2000",
+                "484---",
+                "06",
+                "067",
+            ],  # Sub-level under 48 — should NOT be counted
             ["4000", "22----", "06", "067"],
             ["6000", "23----", "06", "067"],
+            [
+                "1500",
+                "236---",
+                "06",
+                "067",
+            ],  # Sub-level under 23 — should NOT be counted
+            ["800", "2361--", "06", "067"],  # Sub-level — should NOT be counted
             ["7000", "721---", "06", "067"],
             ["25000", "722---", "06", "067"],
             ["55000", "51----", "06", "067"],
@@ -132,15 +151,19 @@ class TestLEHDFetcher:
                 result = _compute_all_cbp_totals("06", "067", year=2011)
 
         assert "emp_manufacturing" in result
-        assert result["emp_manufacturing"] == 100000  # 31+32+33
-        assert result["emp_retail_services"] == 17000  # 44+45
+        assert result["emp_manufacturing"] == 100000  # 31+32+33 (sub-levels excluded)
+        assert (
+            result["emp_retail_services"] == 17000
+        )  # 44+45 (sub-level 441--- excluded)
         assert result["emp_wholesale"] == 8000
-        assert result["emp_transport_warehousing"] == 18000  # 48+49
+        assert (
+            result["emp_transport_warehousing"] == 18000
+        )  # 48+49 (sub-level under 48 excluded)
         assert result["emp_utilities"] == 4000
         assert result["emp_construction"] == 6000
         assert result["emp_accommodation"] == 7000
         assert result["emp_restaurant"] == 25000
-        assert result["emp_office_services"] == 90000  # 51+52
+        assert result["emp_office_services"] == 90000
         assert result["emp_medical_services"] == 90000
         assert result["emp_education"] == 40000
         assert result["emp_public_admin"] == 30000
@@ -149,6 +172,7 @@ class TestLEHDFetcher:
         assert result["emp_arts_entertainment"] == 8000
         assert result["emp_other_services"] == 12000
         assert "emp_military" not in result
+        # Total excludes all sub-level rows: 236(1500)+2361(800)+441(600)+484(2000) excluded
         assert abs(sum(result.values()) - 467000) < 0.01
 
     def test_compute_all_cbp_totals_returns_empty_on_api_failure(self) -> None:
@@ -173,6 +197,110 @@ class TestLEHDFetcher:
             with pytest.raises(RuntimeError):
                 _compute_all_cbp_totals("06", "067", year=2011)
 
+    # ── _group_naics_by_prefix Tests ──────────────────────────
+
+    def test_group_naics_by_prefix_excludes_sub_levels(self) -> None:
+        """_group_naics_by_prefix should exclude sub-breakdown rows."""
+        from brewgis.workspace.services.lehd_fetcher import _group_naics_by_prefix
+
+        # Simulate CBP NAICS data: parent + sub-level rows (already dash-stripped)
+        naics_emp = {
+            "23": 34731.0,  # 2-digit parent
+            "236": 8976.0,  # 3-digit sub — excluded at width=2
+            "2361": 4970.0,  # 4-digit sub — excluded at width=2
+            "44": 12000.0,  # 2-digit parent
+            "441": 600.0,  # 3-digit sub — excluded at width=2
+            "721": 7000.0,  # 3-digit parent at width=3
+            "7211": 3000.0,  # 4-digit sub — excluded at width=3
+        }
+
+        result_w2 = _group_naics_by_prefix(naics_emp, width=2)
+        # Only "23" and "44" should be counted at width=2
+        assert result_w2 == {"23": 34731.0, "44": 12000.0}
+
+        result_w3 = _group_naics_by_prefix(naics_emp, width=3)
+        # "236", "441", and "721" have exactly 3 significant chars
+        assert result_w3 == {"236": 8976.0, "441": 600.0, "721": 7000.0}
+
+    def test_group_naics_by_prefix_range_codes(self) -> None:
+        """_group_naics_by_prefix counts known 4-digit combined NAICS codes at width=2."""
+        from brewgis.workspace.services.lehd_fetcher import _group_naics_by_prefix
+
+        naics_emp = {
+            "23": 6000.0,  # Standard 2-digit
+            "3133": 100000.0,  # Combined manufacturing (31-33) — should be counted at width=2
+            "4445": 17000.0,  # Combined retail (44-45) — should be counted at width=2
+            "4849": 18000.0,  # Combined transport (48-49) — should be counted at width=2
+        }
+
+        result = _group_naics_by_prefix(naics_emp, width=2)
+        assert result.get("23") == 6000.0
+
+    # ── _compute_cns18_20_fractions Tests ──────────────────────
+
+    def test_cns18_20_fractions_cbp_normal(self) -> None:
+        """When CBP has all three government sectors, use CBP proportions."""
+        from brewgis.workspace.services.lehd_fetcher import _compute_cns18_20_fractions
+
+        cbp_totals = {
+            "emp_education": 40000.0,
+            "emp_medical_services": 90000.0,
+            "emp_public_admin": 30000.0,
+        }
+        result = _compute_cns18_20_fractions(cbp_totals)
+
+        govt_total = 160000.0
+        assert abs(result["cns18_20_edu_frac"] - 40000 / govt_total) < 1e-6
+        assert abs(result["cns18_20_med_frac"] - 90000 / govt_total) < 1e-6
+        assert abs(result["cns18_20_pub_frac"] - 30000 / govt_total) < 1e-6
+        assert abs(sum(result.values()) - 1.0) < 1e-6
+
+    def test_cns18_20_fractions_sacog_no_92(self) -> None:
+        """When CBP NAICS 92 is missing, use LODES government sector proportions."""
+        from brewgis.workspace.services.lehd_fetcher import _compute_cns18_20_fractions
+
+        # NAICS 92 (emp_public_admin) is missing from CBP (CBP 2008 scenario)
+        cbp_totals = {
+            "emp_education": 40000.0,
+            "emp_medical_services": 90000.0,
+            "emp_public_admin": 0.0,  # Missing from CBP 2008
+        }
+        # LODES government sector totals for Sacramento County 2008
+        lodes_cns10 = 31130.0  # Education
+        lodes_cns11 = 8465.0  # Medical
+        lodes_cns15 = 51241.0  # Public Admin
+
+        result = _compute_cns18_20_fractions(
+            cbp_totals,
+            lodes_cns10=lodes_cns10,
+            lodes_cns11=lodes_cns11,
+            lodes_cns15=lodes_cns15,
+        )
+
+        # Should use LODES proportions, NOT the old catch-all (which would give pub_frac=0.81)
+        lodes_total = lodes_cns10 + lodes_cns11 + lodes_cns15
+        assert abs(result["cns18_20_edu_frac"] - lodes_cns10 / lodes_total) < 1e-6
+        assert abs(result["cns18_20_med_frac"] - lodes_cns11 / lodes_total) < 1e-6
+        assert abs(result["cns18_20_pub_frac"] - lodes_cns15 / lodes_total) < 1e-6
+        assert result["cns18_20_pub_frac"] < 0.7  # Verify NOT the old 81%
+        assert abs(sum(result.values()) - 1.0) < 1e-6
+
+    def test_cns18_20_fractions_all_missing(self) -> None:
+        """When both CBP and LODES are absent, fall back to equal thirds."""
+        from brewgis.workspace.services.lehd_fetcher import _compute_cns18_20_fractions
+
+        cbp_totals = {
+            "emp_education": 0.0,
+            "emp_medical_services": 0.0,
+            "emp_public_admin": 0.0,
+        }
+        # LODES also absent (all zeros)
+        result = _compute_cns18_20_fractions(cbp_totals)
+
+        assert abs(result["cns18_20_edu_frac"] - 1.0 / 3.0) < 1e-6
+        assert abs(result["cns18_20_med_frac"] - 1.0 / 3.0) < 1e-6
+        assert abs(result["cns18_20_pub_frac"] - 1.0 / 3.0) < 1e-6
+
     # ── _compute_cbp_proportions Tests ────────────────────────────
     #
     # _compute_cbp_proportions is a pure function: raw CBP JSON data in,
@@ -188,6 +316,8 @@ class TestLEHDFetcher:
             ["10000", "11----", "06", "067"],
             ["2000", "21----", "06", "067"],
             ["6000", "23----", "06", "067"],
+            ["1500", "236---", "06", "067"],  # Sub-level under 23 — should be EXCLUDED
+            ["800", "2361--", "06", "067"],  # Sub-level — should be EXCLUDED
             # TTU (CNS03): 22, 42, 44, 45, 48, 49
             ["4000", "22----", "06", "067"],
             ["8000", "42----", "06", "067"],
@@ -195,25 +325,29 @@ class TestLEHDFetcher:
             ["5000", "45----", "06", "067"],
             ["15000", "48----", "06", "067"],
             ["3000", "49----", "06", "067"],
+            ["600", "441---", "06", "067"],  # Sub-level under 44 — should be EXCLUDED
+            ["2000", "484---", "06", "067"],  # Sub-level under 48 — should be EXCLUDED
             # Acc/Food (CNS13): 721, 722
             ["7000", "721---", "06", "067"],
             ["25000", "722---", "06", "067"],
         ]
         result = _compute_cbp_proportions(raw_data)
 
-        # CNS01: goods — 11+21+23 = 18000
-        assert abs(result["11"] - 10000 / 18000) < 1e-4
-        assert abs(result["21"] - 2000 / 18000) < 1e-4
-        assert abs(result["23"] - 6000 / 18000) < 1e-4
+        # CNS01: goods — 11+21+23 = 18000 (sub-levels excluded)
+        goods_total = 18000.0
+        assert abs(result["11"] - 10000 / goods_total) < 1e-4
+        assert abs(result["21"] - 2000 / goods_total) < 1e-4
+        assert abs(result["23"] - 6000 / goods_total) < 1e-4
         assert abs(result["11"] + result["21"] + result["23"] - 1.0) < 1e-4
 
-        # CNS03: TTU — 22+42+44+45+48+49 = 47000
-        assert abs(result["22"] - 4000 / 47000) < 1e-4
-        assert abs(result["42"] - 8000 / 47000) < 1e-4
-        assert abs(result["44"] - 12000 / 47000) < 1e-4
-        assert abs(result["45"] - 5000 / 47000) < 1e-4
-        assert abs(result["48"] - 15000 / 47000) < 1e-4
-        assert abs(result["49"] - 3000 / 47000) < 1e-4
+        # CNS03: TTU — 22+42+44+45+48+49 = 47000 (sub-levels excluded)
+        ttu_total = 47000.0
+        assert abs(result["22"] - 4000 / ttu_total) < 1e-4
+        assert abs(result["42"] - 8000 / ttu_total) < 1e-4
+        assert abs(result["44"] - 12000 / ttu_total) < 1e-4
+        assert abs(result["45"] - 5000 / ttu_total) < 1e-4
+        assert abs(result["48"] - 15000 / ttu_total) < 1e-4
+        assert abs(result["49"] - 3000 / ttu_total) < 1e-4
         cns03_sum = (
             result["22"]
             + result["42"]

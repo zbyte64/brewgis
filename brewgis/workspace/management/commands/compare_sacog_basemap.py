@@ -264,9 +264,7 @@ class Command(BaseCommand):
         # Populate lehd.wac_block from LEHD staging + TIGER BG geometry
         self.stdout.write("\n── Populating lehd.wac_block ──")
 
-        lehd_wac_count = _populate_wac_block(
-            STATE_FIPS, COUNTY_FIPS, skip_sacog_calibration=True, year=LEHD_YEAR
-        )
+        lehd_wac_count = _populate_wac_block(STATE_FIPS, COUNTY_FIPS, year=LEHD_YEAR)
         self.stdout.write(f"  lehd.wac_block populated: {lehd_wac_count:,} rows")
         # ── Phase 1.5: Run NLCD pipeline (optional) ──────────────────────
         nlcd_table = ""
@@ -373,6 +371,7 @@ class Command(BaseCommand):
         # ── Phase 2a: Materialize SACOG parcel shim ────────────────────
         self.stdout.write("\n── Phase 2a: Materializing SACOG parcel shim ──")
         shim_vars: dict[str, Any] = {
+            "comparison_parcel_table": "sacog_comparison_parcels",
             "base_canvas_materialized": "table",
             "projected_srid": LOCAL_SRID,
         }
@@ -482,6 +481,21 @@ class Command(BaseCommand):
             brew_totals,
             correlations=correlations,
             weighted_means=weighted_means,
+            config={
+                "nlcd": nlcd,
+                "osm": osm,
+                "use-assessor-geometry": use_assessor_geometry,
+                "quick-parcel-clipping": quick_parcel_clipping,
+                "lehd-year": LEHD_YEAR,
+                "acs-year": ACS_YEAR,
+                "nlcd-year": NLCD_YEAR,
+            },
+            diagnostics=_collect_diagnostics(
+                engine=get_engine(),
+                dasymetric_table=dasymetric_weights_table
+                if use_assessor_geometry
+                else None,
+            ),
             output_path=REPORT_PATH,
             quick=not (nlcd or osm),
             limit=limit,
@@ -564,3 +578,103 @@ class Command(BaseCommand):
             quick=quick,
             limit=limit,
         )
+
+
+def _collect_diagnostics(
+    engine: Engine,
+    dasymetric_table: str | None = None,
+) -> dict:
+    """Collect calibration diagnostics from materialized dbt tables.
+
+    Queries the database for assessor coverage, DU sub-type breakdown,
+    and employment pipeline statistics.
+
+    Args:
+        engine: SQLAlchemy database engine.
+        dasymetric_table: Dasymetric weights table name, or None if not used.
+
+    Returns:
+        Dict with keys ``dasymetric``, ``assessor``, ``employment`` containing
+        diagnostic metrics.
+    """
+    from brewgis.workspace.services._db import text
+
+    diagnostics: dict = {
+        "dasymetric": {
+            "total_parcels": 0,
+            "assessor_parcels": 0,
+            "pop_weight_parcels": 0,
+        },
+        "assessor": {},
+        "employment": {"total_wac_blocks": 0, "wac_blocks_with_geom": 0},
+    }
+
+    if dasymetric_table:
+        with engine.connect() as conn:
+            # Total parcels
+            row = conn.execute(
+                text(f"SELECT COUNT(*) FROM {dasymetric_table}")
+            ).scalar()
+            diagnostics["dasymetric"]["total_parcels"] = row or 0
+
+            # Parcels with du_subtype
+            row = conn.execute(
+                text(
+                    f"SELECT COUNT(*) FROM {dasymetric_table} WHERE du_subtype IS NOT NULL"
+                )
+            ).scalar()
+            diagnostics["dasymetric"]["assessor_parcels"] = row or 0
+
+            # Parcels with pop_dasym_weight
+            row = conn.execute(
+                text(
+                    f"SELECT COUNT(*) FROM {dasymetric_table} WHERE pop_dasym_weight IS NOT NULL"
+                )
+            ).scalar()
+            diagnostics["dasymetric"]["pop_weight_parcels"] = row or 0
+
+            # DU sub-type breakdown
+            subtype_rows = conn.execute(
+                text(f"""
+                    SELECT COALESCE(du_subtype, 'NULL') AS st, COUNT(*) AS cnt
+                    FROM {dasymetric_table}
+                    GROUP BY du_subtype
+                    ORDER BY cnt DESC
+                """)
+            ).fetchall()
+            diagnostics["dasymetric"]["du_subtype_breakdown"] = {
+                row[0]: row[1] for row in subtype_rows
+            }
+
+            # Land development category from base_canvas_reconciled
+            try:
+                lc_rows = conn.execute(
+                    text("""
+                        SELECT COALESCE(land_development_category, 'NULL') AS cat, COUNT(*) AS cnt
+                        FROM base_canvas_reconciled
+                        GROUP BY land_development_category
+                        ORDER BY cnt DESC
+                    """)
+                ).fetchall()
+                diagnostics["assessor"]["land_development_category"] = {
+                    row[0]: row[1] for row in lc_rows
+                }
+            except Exception:
+                pass
+
+    # Employment pipeline: WAC block counts
+    with engine.connect() as conn:
+        try:
+            row = conn.execute(text("SELECT COUNT(*) FROM lehd.wac_block")).scalar()
+            diagnostics["employment"]["total_wac_blocks"] = row or 0
+        except Exception:
+            pass
+        try:
+            row = conn.execute(
+                text("SELECT COUNT(*) FROM lehd.wac_block WHERE geometry IS NOT NULL")
+            ).scalar()
+            diagnostics["employment"]["wac_blocks_with_geom"] = row or 0
+        except Exception:
+            pass
+
+    return diagnostics

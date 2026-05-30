@@ -81,6 +81,7 @@ WITH parcel_geom AS (
         {% if dasym_table %}
         ,
         dw.pop_dasym_weight,
+        dw.du_subtype,
         dw.du_dasym_weight
         {% endif %}
     FROM {{ ref('base_canvas_geometry') }} bg
@@ -129,6 +130,7 @@ intersections AS (
         a.bg_area,
         {% if dasym_table %}
         COALESCE(p.pop_dasym_weight, 1.0) AS pop_dasym_weight,
+        p.du_subtype,
         COALESCE(p.du_dasym_weight, 1.0) AS du_dasym_weight,
         {% endif %}
         ST_Area(ST_ClipByBox2D(p.geom_proj, a.local_envelope)) AS intersect_area
@@ -147,29 +149,62 @@ intersections AS (
     GROUP BY i.geoid
 )
 
+, bg_weights_by_subtype AS (
+    SELECT
+        i.geoid,
+        SUM(CASE WHEN i.du_subtype IN ('detsf_sl', 'detsf_ll', NULL)
+            THEN i.du_dasym_weight * i.intersect_area ELSE 0 END) AS total_detsf_weight,
+        SUM(CASE WHEN i.du_subtype IN ('mf2to4', 'mf5p', NULL)
+            THEN i.du_dasym_weight * i.intersect_area ELSE 0 END) AS total_mf_weight,
+        SUM(CASE WHEN i.du_subtype = 'detsf_sl' OR i.du_subtype IS NULL
+            THEN i.du_dasym_weight * i.intersect_area ELSE 0 END) AS total_detsf_sl_weight,
+        SUM(CASE WHEN i.du_subtype = 'detsf_ll' OR i.du_subtype IS NULL
+            THEN i.du_dasym_weight * i.intersect_area ELSE 0 END) AS total_detsf_ll_weight,
+        SUM(CASE WHEN i.du_subtype = 'attsf' OR i.du_subtype IS NULL
+            THEN i.du_dasym_weight * i.intersect_area ELSE 0 END) AS total_attsf_weight,
+        SUM(CASE WHEN i.du_subtype = 'mf2to4' OR i.du_subtype IS NULL
+            THEN i.du_dasym_weight * i.intersect_area ELSE 0 END) AS total_mf2to4_weight,
+        SUM(CASE WHEN i.du_subtype = 'mf5p' OR i.du_subtype IS NULL
+            THEN i.du_dasym_weight * i.intersect_area ELSE 0 END) AS total_mf5p_weight,
+        SUM(i.du_dasym_weight * i.intersect_area) AS total_du_weight
+    FROM intersections i
+    GROUP BY i.geoid
+)
+
 , allocated AS (
     SELECT
         i.parcel_id,
         SUM(i.pop * i.pop_dasym_weight * i.intersect_area
             / NULLIF(bw.total_pop_weight, 0)) AS pop,
         SUM(i.hh * i.pop_dasym_weight * i.intersect_area / NULLIF(bw.total_pop_weight, 0)) AS hh,
-        -- DU columns use du_dasym_weight for sub-type refinement when assessor data available
+        -- DU total (all parcels, no sub-type filter)
         SUM(i.du * i.du_dasym_weight * i.intersect_area
             / NULLIF(bw.total_du_weight, 0)) AS du,
-        SUM(i.du_detsf * i.du_dasym_weight * i.intersect_area
-            / NULLIF(bw.total_du_weight, 0)) AS du_detsf,
-        SUM(i.du_detsf_sl * i.du_dasym_weight * i.intersect_area
-            / NULLIF(bw.total_du_weight, 0)) AS du_detsf_sl,
-        SUM(i.du_detsf_ll * i.du_dasym_weight * i.intersect_area
-            / NULLIF(bw.total_du_weight, 0)) AS du_detsf_ll,
-        SUM(i.du_attsf * i.du_dasym_weight * i.intersect_area
-            / NULLIF(bw.total_du_weight, 0)) AS du_attsf,
-        SUM(i.du_mf * i.du_dasym_weight * i.intersect_area
-            / NULLIF(bw.total_du_weight, 0)) AS du_mf,
-        SUM(i.du_mf2to4 * i.du_dasym_weight * i.intersect_area
-            / NULLIF(bw.total_du_weight, 0)) AS du_mf2to4,
-        SUM(i.du_mf5p * i.du_dasym_weight * i.intersect_area
-            / NULLIF(bw.total_du_weight, 0)) AS du_mf5p,
+        -- DU sub-type columns use hard-filter: each ACS sub-type total goes
+        -- only to parcels with matching du_subtype (or NULL = no assessor data).
+        -- Parcels with NULL du_subtype get a share of all sub-types.
+        -- Parcels with a specific du_subtype get only their matched sub-type.
+        SUM(CASE WHEN i.du_subtype IN ('detsf_sl', 'detsf_ll', NULL)
+            THEN i.du_detsf * i.du_dasym_weight * i.intersect_area
+                / NULLIF(bws.total_detsf_weight, 0) ELSE 0 END) AS du_detsf,
+        SUM(CASE WHEN i.du_subtype IN ('detsf_sl', NULL)
+            THEN i.du_detsf_sl * i.du_dasym_weight * i.intersect_area
+                / NULLIF(bws.total_detsf_sl_weight, 0) ELSE 0 END) AS du_detsf_sl,
+        SUM(CASE WHEN i.du_subtype IN ('detsf_ll', NULL)
+            THEN i.du_detsf_ll * i.du_dasym_weight * i.intersect_area
+                / NULLIF(bws.total_detsf_ll_weight, 0) ELSE 0 END) AS du_detsf_ll,
+        SUM(CASE WHEN i.du_subtype IN ('attsf', NULL)
+            THEN i.du_attsf * i.du_dasym_weight * i.intersect_area
+                / NULLIF(bws.total_attsf_weight, 0) ELSE 0 END) AS du_attsf,
+        SUM(CASE WHEN i.du_subtype IN ('mf2to4', 'mf5p', NULL)
+            THEN i.du_mf * i.du_dasym_weight * i.intersect_area
+                / NULLIF(bws.total_mf_weight, 0) ELSE 0 END) AS du_mf,
+        SUM(CASE WHEN i.du_subtype IN ('mf2to4', NULL)
+            THEN i.du_mf2to4 * i.du_dasym_weight * i.intersect_area
+                / NULLIF(bws.total_mf2to4_weight, 0) ELSE 0 END) AS du_mf2to4,
+        SUM(CASE WHEN i.du_subtype IN ('mf5p', NULL)
+            THEN i.du_mf5p * i.du_dasym_weight * i.intersect_area
+                / NULLIF(bws.total_mf5p_weight, 0) ELSE 0 END) AS du_mf5p,
         -- Equity/income columns remain area-weighted
         SUM(i.median_income * i.intersect_area) / NULLIF(SUM(i.intersect_area), 0)
             AS median_income,
@@ -183,6 +218,7 @@ intersections AS (
             AS cost_burden_pct
     FROM intersections i
     LEFT JOIN bg_weights bw ON i.geoid = bw.geoid
+    LEFT JOIN bg_weights_by_subtype bws ON i.geoid = bws.geoid
     GROUP BY i.parcel_id
 )
 
@@ -235,6 +271,7 @@ SELECT
     a.du_mf,
     a.du_mf2to4,
     a.du_mf5p,
+    {% if dasym_table %}p.du_subtype{% else %}NULL::text{% endif %} AS du_subtype,
     a.median_income,
     a.rent_burden_pct,
     a.pct_minority,

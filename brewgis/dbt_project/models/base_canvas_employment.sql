@@ -101,7 +101,9 @@ intersections_raw AS (
         p.parcel_id,
         {% if dasym_table %}
         w.geoid,
-        {% endif %}
+        {%- else %}
+        w.geoid,
+        {%- endif %}
         -- Compute land_development_category with multi-source classification
         COALESCE(
             NULLIF(p.land_development_category, ''),
@@ -256,56 +258,67 @@ intersections_raw AS (
 
 {% else %}
 
+-- Per-WAC-block total intersection area for normalization
+, block_intersect_totals AS (
+    SELECT
+        i.geoid,
+        SUM(i.intersect_area) AS total_intersect_area
+    FROM intersections i
+    GROUP BY i.geoid
+)
+
 , allocated AS (
     SELECT
-        parcel_id,
-        SUM(emp * intersect_area / wac_area{% if constrain %} * emp_weight{% endif %}) AS emp,
-        SUM(emp_retail_services * intersect_area / wac_area
-            {% if constrain %} * emp_weight{% endif %}) AS emp_retail_services,
-        SUM(emp_restaurant * intersect_area / wac_area
-            {% if constrain %} * emp_weight{% endif %}) AS emp_restaurant,
-        SUM(emp_accommodation * intersect_area / wac_area
-            {% if constrain %} * emp_weight{% endif %}) AS emp_accommodation,
-        SUM(emp_arts_entertainment * intersect_area / wac_area
-            {% if constrain %} * emp_weight{% endif %}) AS emp_arts_entertainment,
-        SUM(emp_other_services * intersect_area / wac_area
-            {% if constrain %} * emp_weight{% endif %}) AS emp_other_services,
-        SUM(emp_office_services * intersect_area / wac_area
-            {% if constrain %} * emp_weight{% endif %}) AS emp_office_services,
-        SUM(emp_medical_services * intersect_area / wac_area
-            {% if constrain %} * emp_weight{% endif %}) AS emp_medical_services,
-        SUM(emp_public_admin * intersect_area / wac_area
-            {% if constrain %} * emp_weight{% endif %}) AS emp_public_admin,
-        SUM(emp_education * intersect_area / wac_area
-            {% if constrain %} * emp_weight{% endif %}) AS emp_education,
-        SUM(emp_manufacturing * intersect_area / wac_area
-            {% if constrain %} * ind_weight{% endif %}) AS emp_manufacturing,
-        SUM(emp_wholesale * intersect_area / wac_area
-            {% if constrain %} * ind_weight{% endif %}) AS emp_wholesale,
-        SUM(emp_transport_warehousing * intersect_area / wac_area
-            {% if constrain %} * ind_weight{% endif %}) AS emp_transport_warehousing,
-        SUM(emp_utilities * intersect_area / wac_area
-            {% if constrain %} * ind_weight{% endif %}) AS emp_utilities,
-        SUM(emp_construction * intersect_area / wac_area
-            {% if constrain %} * ind_weight{% endif %}) AS emp_construction,
-        SUM(emp_agriculture * intersect_area / wac_area
-            {% if constrain %} * ag_weight{% endif %}) AS emp_agriculture,
-        SUM(emp_extraction * intersect_area / wac_area
-            {% if constrain %} * ag_weight{% endif %}) AS emp_extraction,
-        SUM(emp_military * intersect_area / wac_area
-            {% if constrain %} * emp_weight{% endif %}) AS emp_military,
-        SUM(emp_ret * intersect_area / wac_area
-            {% if constrain %} * emp_weight{% endif %}) AS emp_ret,
-        SUM(emp_off * intersect_area / wac_area
-            {% if constrain %} * emp_weight{% endif %}) AS emp_off,
-        SUM(emp_pub * intersect_area / wac_area
-            {% if constrain %} * emp_weight{% endif %}) AS emp_pub,
-        SUM(emp_ind * intersect_area / wac_area
-            {% if constrain %} * ind_weight{% endif %}) AS emp_ind,
-        SUM(emp_ag * intersect_area / wac_area
-            {% if constrain %} * ag_weight{% endif %}) AS emp_ag
-    FROM intersections
-    GROUP BY parcel_id
+        i.parcel_id,
+        SUM(i.emp * i.intersect_area / NULLIF(bit.total_intersect_area, 0)
+            {% if constrain %} * i.emp_weight{% endif %}) AS emp,
+        SUM(i.emp_retail_services * i.intersect_area / NULLIF(bit.total_intersect_area, 0)
+            {% if constrain %} * i.emp_weight{% endif %}) AS emp_retail_services,
+        SUM(i.emp_restaurant * i.intersect_area / NULLIF(bit.total_intersect_area, 0)
+            {% if constrain %} * i.emp_weight{% endif %}) AS emp_restaurant,
+        SUM(i.emp_accommodation * i.intersect_area / NULLIF(bit.total_intersect_area, 0)
+            {% if constrain %} * i.emp_weight{% endif %}) AS emp_accommodation,
+        SUM(i.emp_arts_entertainment * i.intersect_area / NULLIF(bit.total_intersect_area, 0)
+            {% if constrain %} * i.emp_weight{% endif %}) AS emp_arts_entertainment,
+        SUM(i.emp_other_services * i.intersect_area / NULLIF(bit.total_intersect_area, 0)
+            {% if constrain %} * i.emp_weight{% endif %}) AS emp_other_services,
+        SUM(i.emp_office_services * i.intersect_area / NULLIF(bit.total_intersect_area, 0)
+            {% if constrain %} * i.emp_weight{% endif %}) AS emp_office_services,
+        SUM(i.emp_medical_services * i.intersect_area / NULLIF(bit.total_intersect_area, 0)
+            {% if constrain %} * i.emp_weight{% endif %}) AS emp_medical_services,
+        SUM(i.emp_public_admin * i.intersect_area / NULLIF(bit.total_intersect_area, 0)
+            {% if constrain %} * i.emp_weight{% endif %}) AS emp_public_admin,
+        SUM(i.emp_education * i.intersect_area / NULLIF(bit.total_intersect_area, 0)
+            {% if constrain %} * i.emp_weight{% endif %}) AS emp_education,
+        SUM(i.emp_manufacturing * i.intersect_area / NULLIF(bit.total_intersect_area, 0)
+            {% if constrain %} * i.ind_weight{% endif %}) AS emp_manufacturing,
+        SUM(i.emp_wholesale * i.intersect_area / NULLIF(bit.total_intersect_area, 0)
+            {% if constrain %} * i.ind_weight{% endif %}) AS emp_wholesale,
+        SUM(i.emp_transport_warehousing * i.intersect_area / NULLIF(bit.total_intersect_area, 0)
+            {% if constrain %} * i.ind_weight{% endif %}) AS emp_transport_warehousing,
+        SUM(i.emp_utilities * i.intersect_area / NULLIF(bit.total_intersect_area, 0)
+            {% if constrain %} * i.ind_weight{% endif %}) AS emp_utilities,
+        SUM(i.emp_construction * i.intersect_area / NULLIF(bit.total_intersect_area, 0)
+            {% if constrain %} * i.ind_weight{% endif %}) AS emp_construction,
+        SUM(i.emp_agriculture * i.intersect_area / NULLIF(bit.total_intersect_area, 0)
+            {% if constrain %} * i.ag_weight{% endif %}) AS emp_agriculture,
+        SUM(i.emp_extraction * i.intersect_area / NULLIF(bit.total_intersect_area, 0)
+            {% if constrain %} * i.ag_weight{% endif %}) AS emp_extraction,
+        SUM(i.emp_military * i.intersect_area / NULLIF(bit.total_intersect_area, 0)
+            {% if constrain %} * i.emp_weight{% endif %}) AS emp_military,
+        SUM(i.emp_ret * i.intersect_area / NULLIF(bit.total_intersect_area, 0)
+            {% if constrain %} * i.emp_weight{% endif %}) AS emp_ret,
+        SUM(i.emp_off * i.intersect_area / NULLIF(bit.total_intersect_area, 0)
+            {% if constrain %} * i.emp_weight{% endif %}) AS emp_off,
+        SUM(i.emp_pub * i.intersect_area / NULLIF(bit.total_intersect_area, 0)
+            {% if constrain %} * i.emp_weight{% endif %}) AS emp_pub,
+        SUM(i.emp_ind * i.intersect_area / NULLIF(bit.total_intersect_area, 0)
+            {% if constrain %} * i.ind_weight{% endif %}) AS emp_ind,
+        SUM(i.emp_ag * i.intersect_area / NULLIF(bit.total_intersect_area, 0)
+            {% if constrain %} * i.ag_weight{% endif %}) AS emp_ag
+    FROM intersections i
+    LEFT JOIN block_intersect_totals bit ON i.geoid = bit.geoid
+    GROUP BY i.parcel_id
 )
 
 {% endif %}
@@ -333,6 +346,7 @@ SELECT
     p.du_mf,
     p.du_mf2to4,
     p.du_mf5p,
+    p.du_subtype,
     p.median_income,
     p.rent_burden_pct,
     p.pct_minority,
