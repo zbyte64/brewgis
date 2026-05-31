@@ -1200,20 +1200,6 @@ def _generate_report_markdown(
                 f"| WAC blocks with geometry | {emp.get('wac_blocks_with_geom', 0):,} |"
             )
             lines.append(f"| Total WAC blocks | {emp.get('total_wac_blocks', 0):,} |")
-            match_tier1 = emp.get("match_tier1", 0)
-            match_tier2 = emp.get("match_tier2", 0)
-            match_tier3 = emp.get("match_tier3", 0)
-            total_matched = match_tier1 + match_tier2 + match_tier3
-            lines.append(
-                f"| Tier 1 matches (exact block) | {match_tier1:,} ({match_tier1 / total_matched * 100:.1f}%)"
-                if total_matched > 0
-                else f"| Tier 1 matches (exact block) | {match_tier1:,}"
-            )
-            lines.append(
-                f"| Tier 2 matches (block group) | {match_tier2:,}"
-                if total_matched == 0
-                else f"| Tier 2 matches (block group) | {match_tier2:,} ({match_tier2 / total_matched * 100:.1f}%)"
-            )
         lines.append("")
     lines.append("")
 

@@ -26,6 +26,23 @@
 
 WITH imputed AS (
     SELECT * FROM {{ ref('base_canvas_imputed') }}
+),
+
+-- Recompute DU sub-types proportionally to fit the imputed (ACS) du total.
+-- Imputed sub-types (du_detsf, du_attsf, du_mf) are independently estimated per
+-- parcel, so du_detsf_sl + du_detsf_ll may not equal du_detsf.  Rather than using
+-- GREATEST (which creates selection bias toward higher values), we recompute
+-- from sub-sub-types and scale proportionally so sub-types always sum to du.
+du_reconciled AS (
+    SELECT
+        *,
+        (du_detsf_sl + du_detsf_ll) AS raw_detsf,
+        (du_mf2to4 + du_mf5p) AS raw_mf,
+        CASE
+            WHEN COALESCE(du_detsf_sl + du_detsf_ll + du_attsf + du_mf2to4 + du_mf5p, 0) = 0 THEN 1.0
+            ELSE du / NULLIF(du_detsf_sl + du_detsf_ll + du_attsf + du_mf2to4 + du_mf5p, 0)
+        END AS du_scale
+    FROM imputed
 )
 
 SELECT
@@ -48,13 +65,13 @@ SELECT
     pop,
     pop_groupquarter,
     hh,
-    -- du = du_detsf + du_attsf + du_mf
-    GREATEST(du_detsf + du_attsf + du_mf, du) AS du,
-    GREATEST(du_detsf_sl + du_detsf_ll, du_detsf) AS du_detsf,
+    -- du preserved as-imputed (=ACS block-group total)
+    du AS du,
+    ROUND((COALESCE(raw_detsf, 0) * du_scale)::numeric, 4) AS du_detsf,
     du_detsf_sl,
     du_detsf_ll,
-    du_attsf,
-    GREATEST(du_mf2to4 + du_mf5p, du_mf) AS du_mf,
+    ROUND((COALESCE(du_attsf, 0) * du_scale)::numeric, 4) AS du_attsf,
+    ROUND((COALESCE(raw_mf, 0) * du_scale)::numeric, 4) AS du_mf,
     du_mf2to4,
     du_mf5p,
     -- Employment aggregates
@@ -112,4 +129,4 @@ SELECT
     pct_minority,
     pct_college_educated,
     cost_burden_pct
-FROM imputed
+FROM du_reconciled

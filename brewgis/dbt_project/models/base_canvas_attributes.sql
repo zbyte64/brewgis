@@ -281,7 +281,7 @@ area_by_use AS (
         CASE WHEN lnd_v = 'agricultural'
             THEN COALESCE(area_parcel, area_gross, 0) ELSE area_parcel_emp_ag END AS area_parcel_emp_ag_v,
         CASE WHEN lnd_v = 'industrial'
-            THEN COALESCE(area_parcel, area_gross, 0) ELSE area_parcel_emp END AS area_parcel_emp_v,
+            THEN COALESCE(area_parcel, area_gross, 0) ELSE COALESCE(area_parcel_emp, 0) END AS area_parcel_emp_v,
         CASE WHEN lnd_v = 'mixed_use'
             THEN COALESCE(area_parcel, area_gross, 0) ELSE area_parcel_mixed_use END AS area_parcel_mixed_use_v,
         CASE WHEN lnd_v = 'undeveloped'

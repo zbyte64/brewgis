@@ -89,7 +89,7 @@ parcel_area AS (
 
 SELECT
     parcel_area.*,
-    ROUND((area_gross * 0.85)::numeric, 4) AS area_parcel, {# reference doesnt do this... #}
+    ROUND(area_gross::numeric, 4) AS area_parcel,
     ROUND((area_gross * 0.7)::numeric, 4) AS area_dev_condition,
     ROUND((area_gross * 0.15)::numeric, 4) AS area_row
 FROM parcel_area
