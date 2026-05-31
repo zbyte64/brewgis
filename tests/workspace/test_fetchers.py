@@ -2,7 +2,10 @@
 
 from __future__ import annotations
 
+from pathlib import Path
 from unittest.mock import patch
+
+import pytest
 
 from brewgis.workspace.services.census_fetcher import ACS_TABLE_GROUPS
 from brewgis.workspace.services.census_fetcher import _all_vars
@@ -239,66 +242,56 @@ class TestLEHDFetcher:
     # ── _compute_cns18_20_fractions Tests ──────────────────────
 
     def test_cns18_20_fractions_cbp_normal(self) -> None:
-        """Function always returns equal thirds (parameters are ignored)."""
-        from brewgis.workspace.services.lehd_fetcher import _compute_cns18_20_fractions
+        """QCEW government fractions pass through correctly."""
+        with patch(
+            "brewgis.workspace.services.lehd_fetcher._fetch_qcew_government_split",
+        ) as mock_qcew:
+            mock_qcew.return_value = {
+                "edu_frac": 0.35,
+                "med_frac": 0.35,
+                "pub_frac": 0.30,
+            }
+            from brewgis.workspace.services.lehd_fetcher import (
+                _compute_cns18_20_fractions,
+            )
 
-        cbp_totals = {
-            "emp_education": 40000.0,
-            "emp_medical_services": 90000.0,
-            "emp_public_admin": 30000.0,
-        }
-        result = _compute_cns18_20_fractions(cbp_totals)
+            result = _compute_cns18_20_fractions({}, state_fips="06", county_fips="067")
 
-        # Function simplified to always return equal thirds.
-        assert abs(result["cns18_20_edu_frac"] - 1.0 / 3.0) < 1e-6
-        assert abs(result["cns18_20_med_frac"] - 1.0 / 3.0) < 1e-6
-        assert abs(result["cns18_20_pub_frac"] - 1.0 / 3.0) < 1e-6
+        assert abs(result["cns18_20_edu_frac"] - 0.35) < 1e-6
+        assert abs(result["cns18_20_med_frac"] - 0.35) < 1e-6
+        assert abs(result["cns18_20_pub_frac"] - 0.30) < 1e-6
         assert abs(sum(result.values()) - 1.0) < 1e-6
 
-    def test_cns18_20_fractions_sacog_no_92(self) -> None:
-        """Function always returns equal thirds (LODES fallback logic removed)."""
-        from brewgis.workspace.services.lehd_fetcher import _compute_cns18_20_fractions
+    def test_cns18_20_fractions_passes_fips_to_qcew(self) -> None:
+        """FIPS codes are passed to the QCEW fetch function."""
+        with patch(
+            "brewgis.workspace.services.lehd_fetcher._fetch_qcew_government_split",
+        ) as mock_qcew:
+            mock_qcew.return_value = {
+                "edu_frac": 0.4,
+                "med_frac": 0.3,
+                "pub_frac": 0.3,
+            }
+            from brewgis.workspace.services.lehd_fetcher import (
+                _compute_cns18_20_fractions,
+            )
 
-        # NAICS 92 (emp_public_admin) is missing from CBP (CBP 2008 scenario)
-        cbp_totals = {
-            "emp_education": 40000.0,
-            "emp_medical_services": 90000.0,
-            "emp_public_admin": 0.0,  # Missing from CBP 2008
-        }
-        # LODES government sector totals for Sacramento County 2008
-        lodes_cns10 = 31130.0  # Education
-        lodes_cns11 = 8465.0  # Medical
-        lodes_cns15 = 51241.0  # Public Admin
+            _compute_cns18_20_fractions({}, state_fips="06", county_fips="067")
 
-        result = _compute_cns18_20_fractions(
-            cbp_totals,
-            lodes_cns10=lodes_cns10,
-            lodes_cns11=lodes_cns11,
-            lodes_cns15=lodes_cns15,
-        )
+        mock_qcew.assert_called_once_with("06", "067")
 
-        # Function simplified to always return equal thirds;
-        # all input parameters (CBP totals, LODES) are ignored.
-        assert abs(result["cns18_20_edu_frac"] - 1.0 / 3.0) < 1e-6
-        assert abs(result["cns18_20_med_frac"] - 1.0 / 3.0) < 1e-6
-        assert abs(result["cns18_20_pub_frac"] - 1.0 / 3.0) < 1e-6
-        assert abs(sum(result.values()) - 1.0) < 1e-6
+    def test_cns18_20_fractions_propagates_qcew_error(self) -> None:
+        """When QCEW fetch fails, the error propagates (no silent fallback)."""
+        with patch(
+            "brewgis.workspace.services.lehd_fetcher._fetch_qcew_government_split",
+        ) as mock_qcew:
+            mock_qcew.side_effect = RuntimeError("QCEW API unavailable")
+            from brewgis.workspace.services.lehd_fetcher import (
+                _compute_cns18_20_fractions,
+            )
 
-    def test_cns18_20_fractions_all_missing(self) -> None:
-        """When both CBP and LODES are absent, fall back to equal thirds."""
-        from brewgis.workspace.services.lehd_fetcher import _compute_cns18_20_fractions
-
-        cbp_totals = {
-            "emp_education": 0.0,
-            "emp_medical_services": 0.0,
-            "emp_public_admin": 0.0,
-        }
-        # LODES also absent (all zeros)
-        result = _compute_cns18_20_fractions(cbp_totals)
-
-        assert abs(result["cns18_20_edu_frac"] - 1.0 / 3.0) < 1e-6
-        assert abs(result["cns18_20_med_frac"] - 1.0 / 3.0) < 1e-6
-        assert abs(result["cns18_20_pub_frac"] - 1.0 / 3.0) < 1e-6
+            with pytest.raises(RuntimeError, match="QCEW API unavailable"):
+                _compute_cns18_20_fractions({}, state_fips="06", county_fips="067")
 
     # ── _compute_cbp_proportions Tests ────────────────────────────
     #
@@ -498,6 +491,166 @@ class TestLEHDFetcher:
                 r3 = _build_cbp_proportions("06", "067", ignore_cache=True)
                 assert mock_get.call_count == 2
                 assert r3["11"] == 1.0
+
+    # ── QCEW Government Split Tests ─────────────────────────────
+
+
+class TestQCEWGovernmentSplit:
+    """Unit tests for _fetch_qcew_government_split."""
+
+    _QCEW_CSV_HEADER = (
+        "area_fips,own_code,industry_code,agglvl_code,"
+        "month1_emplvl,size_code,year,qtr,disclosure_code"
+    )
+
+    def _qcew_row(
+        self,
+        own_code: str,
+        industry_code: str,
+        month1_emplvl: str,
+        agglvl_code: str = "78",
+    ) -> str:
+        return (
+            f"06067,{own_code},{industry_code},{agglvl_code},{month1_emplvl},0,2008,A,"
+        )
+
+    def test_computes_correct_fractions(self) -> None:
+        """QCEW government employment fractions computed correctly."""
+        csv_lines = [
+            self._QCEW_CSV_HEADER,
+            # NAICS 611 (education): own_code=1 (Fed) × 500, own_code=2 (State) × 3000
+            self._qcew_row("1", "611", "500"),
+            self._qcew_row("2", "611", "3000"),
+            # NAICS 622 (hospitals): own_code=1 × 2000, own_code=3 (Local) × 1500
+            self._qcew_row("1", "622", "2000"),
+            self._qcew_row("3", "622", "1500"),
+            # NAICS 92 (public admin): own_code=1 × 1000, own_code=3 × 2000
+            self._qcew_row("1", "921", "600"),
+            self._qcew_row("1", "922", "400"),
+            self._qcew_row("3", "921", "2000"),
+        ]
+        csv_text = "\n".join(csv_lines)
+
+        with (
+            patch(
+                "brewgis.workspace.services.lehd_fetcher.requests.get",
+            ) as mock_get,
+            patch(
+                "brewgis.workspace.services.lehd_fetcher.CACHE_DIR",
+            ) as mock_cache,
+        ):
+            mock_cache.__truediv__.return_value = Path("/tmp/fake_cache")
+            mock_response = mock_get.return_value
+            mock_response.text = csv_text
+            mock_response.raise_for_status = lambda: None
+
+            from brewgis.workspace.services.lehd_fetcher import (
+                _fetch_qcew_government_split,
+            )
+
+            result = _fetch_qcew_government_split(
+                "06", "067", year=2008, ignore_cache=True
+            )
+
+        # govt_edu = 500 + 3000 = 3500
+        # govt_med = 2000 + 1500 = 3500
+        # govt_pub = 600 + 400 + 2000 = 3000
+        # total = 10000
+        assert abs(result["edu_frac"] - 0.35) < 1e-6
+        assert abs(result["med_frac"] - 0.35) < 1e-6
+        assert abs(result["pub_frac"] - 0.30) < 1e-6
+        assert abs(sum(result.values()) - 1.0) < 1e-6
+
+    def test_excludes_private_employment(self) -> None:
+        """Private employment (own_code=5) is excluded from government fractions."""
+        csv_lines = [
+            self._QCEW_CSV_HEADER,
+            self._qcew_row("5", "611", "90000"),  # Private education — excluded
+            self._qcew_row("1", "611", "500"),
+            self._qcew_row("3", "622", "500"),
+            self._qcew_row("2", "921", "500"),
+        ]
+        csv_text = "\n".join(csv_lines)
+
+        with (
+            patch(
+                "brewgis.workspace.services.lehd_fetcher.requests.get",
+            ) as mock_get,
+            patch(
+                "brewgis.workspace.services.lehd_fetcher.CACHE_DIR",
+            ) as mock_cache,
+        ):
+            mock_cache.__truediv__.return_value = Path("/tmp/fake_cache")
+            mock_response = mock_get.return_value
+            mock_response.text = csv_text
+            mock_response.raise_for_status = lambda: None
+
+            from brewgis.workspace.services.lehd_fetcher import (
+                _fetch_qcew_government_split,
+            )
+
+            result = _fetch_qcew_government_split(
+                "06", "067", year=2008, ignore_cache=True
+            )
+
+        # govt_edu = 500 (own_code=5 excluded), govt_med = 500, govt_pub = 500
+        # total = 1500, equal thirds
+        assert abs(result["edu_frac"] - 1.0 / 3.0) < 1e-6
+        assert abs(result["med_frac"] - 1.0 / 3.0) < 1e-6
+        assert abs(result["pub_frac"] - 1.0 / 3.0) < 1e-6
+
+    def test_raises_on_zero_total(self) -> None:
+        """RuntimeError raised when government employment total is zero."""
+        csv_lines = [
+            self._QCEW_CSV_HEADER,
+            # Only private employment — no government rows
+            self._qcew_row("5", "611", "1000"),
+            self._qcew_row("5", "622", "2000"),
+            self._qcew_row("5", "921", "3000"),
+        ]
+        csv_text = "\n".join(csv_lines)
+
+        with (
+            patch(
+                "brewgis.workspace.services.lehd_fetcher.requests.get",
+            ) as mock_get,
+            patch(
+                "brewgis.workspace.services.lehd_fetcher.CACHE_DIR",
+            ) as mock_cache,
+        ):
+            mock_cache.__truediv__.return_value = Path("/tmp/fake_cache")
+            mock_response = mock_get.return_value
+            mock_response.text = csv_text
+            mock_response.raise_for_status = lambda: None
+
+            from brewgis.workspace.services.lehd_fetcher import (
+                _fetch_qcew_government_split,
+            )
+
+            with pytest.raises(
+                RuntimeError, match="QCEW government employment total is zero"
+            ):
+                _fetch_qcew_government_split("06", "067", year=2008, ignore_cache=True)
+
+    def test_raises_on_http_error(self) -> None:
+        """HTTP errors propagate from requests.get."""
+        with (
+            patch(
+                "brewgis.workspace.services.lehd_fetcher.requests.get",
+            ) as mock_get,
+            patch(
+                "brewgis.workspace.services.lehd_fetcher.CACHE_DIR",
+            ) as mock_cache,
+        ):
+            mock_cache.__truediv__.return_value = Path("/tmp/fake_cache")
+            mock_get.return_value.raise_for_status.side_effect = Exception("HTTP 500")
+
+            from brewgis.workspace.services.lehd_fetcher import (
+                _fetch_qcew_government_split,
+            )
+
+            with pytest.raises(Exception, match="HTTP 500"):
+                _fetch_qcew_government_split("06", "067", year=2008, ignore_cache=True)
 
 
 # ── POI Fetcher Tests ─────────────────────────────────────────────────

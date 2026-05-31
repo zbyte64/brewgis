@@ -11,6 +11,8 @@ See https://lehd.ces.census.gov/data/lodes/LODES7/ for documentation.
 
 from __future__ import annotations
 
+import csv
+import io
 import json
 import logging
 import re
@@ -31,6 +33,10 @@ logger = logging.getLogger(__name__)
 
 CACHE_DIR: Path = django_settings.DATA_DOWNLOAD_CACHE_DIR
 """Disk cache directory for API responses."""
+
+
+QCEW_MIN_YEAR: int = 2014
+"""Earliest year for which QCEW area slice data is available."""
 
 
 def _census_api_key() -> str:
@@ -938,8 +944,112 @@ def _resolve_sacog_ratios() -> dict[str, float]:
     return ratios
 
 
+def _fetch_qcew_government_split(
+    state_fips: str,
+    county_fips: str,
+    year: int = 2008,
+    ignore_cache: bool = False,
+) -> dict[str, float]:
+    """Fetch QCEW government employment data and compute CNS18-20 fractions.
+
+    Downloads BLS QCEW annual area slice for the specified county, filters for
+    government-owned establishments (own_code 1/2/3) in education (NAICS 61),
+    health (NAICS 62), and public administration (NAICS 92), and returns the
+    employment fraction for each sub-sector.
+
+    The raw API response is parsed and cached to disk under
+    ``CACHE_DIR / "qcew_govt" / year / "{fips_5}.json"``.
+    Pass ``ignore_cache=True`` to force a fresh fetch.
+
+    Args:
+        state_fips: Two-digit state FIPS code.
+        county_fips: Three-digit county FIPS code.
+        year: Data year (default 2008, the LEHD base year).
+        ignore_cache: If True, re-fetch from API even if cached copy exists.
+
+    Returns:
+        Dict with keys ``edu_frac``, ``med_frac``, ``pub_frac`` summing to 1.0.
+
+    Raises:
+        RuntimeError: On network error, empty data, or zero total employment.
+    """
+    fips_5 = state_fips.zfill(2) + county_fips.zfill(3)
+    qcew_year = max(year, QCEW_MIN_YEAR)
+    dl_path = CACHE_DIR / "qcew_govt" / str(qcew_year) / f"{fips_5}.json"
+    dl_path.parent.mkdir(exist_ok=True, parents=True)
+
+    if ignore_cache or not dl_path.exists():
+        url = f"https://data.bls.gov/cew/data/api/{qcew_year}/1/area/{fips_5}.csv"
+        response = requests.get(url, timeout=120)
+        response.raise_for_status()
+
+        reader = csv.DictReader(io.StringIO(response.text))
+
+        govt_edu = 0.0  # NAICS 611 — Educational Services
+        govt_med = 0.0  # NAICS 622 — Hospitals
+        govt_pub = 0.0  # NAICS 92 — Public Administration
+
+        for row in reader:
+            own_code = row.get("own_code", "")
+            if own_code not in ("1", "2", "3"):
+                continue
+            agglvl_code = row.get("agglvl_code", "")
+            if agglvl_code != "78":
+                continue
+            industry_code = row.get("industry_code", "")
+            emp_str = (row.get("month1_emplvl") or "").strip()
+            if not emp_str:
+                continue
+            try:
+                emp = float(emp_str)
+            except (ValueError, TypeError):
+                continue
+
+            if industry_code.startswith("611"):
+                govt_edu += emp
+            elif industry_code.startswith("622"):
+                govt_med += emp
+            elif industry_code.startswith("92"):
+                govt_pub += emp
+
+        result = {
+            "govt_edu": govt_edu,
+            "govt_med": govt_med,
+            "govt_pub": govt_pub,
+        }
+        dl_path.write_text(json.dumps(result))
+        logger.info(
+            "QCEW government data fetched and cached for %s year %s",
+            fips_5,
+            year,
+        )
+    else:
+        result = json.loads(dl_path.read_text())
+        logger.info(
+            "QCEW government data loaded from cache for %s year %s",
+            fips_5,
+            year,
+        )
+
+    total = result["govt_edu"] + result["govt_med"] + result["govt_pub"]
+    if total <= 0:
+        msg = (
+            f"QCEW government employment total is zero for {fips_5} year {year}. "
+            "Cannot compute CNS18-20 fractions."
+        )
+        raise RuntimeError(msg)
+
+    return {
+        "edu_frac": result["govt_edu"] / total,
+        "med_frac": result["govt_med"] / total,
+        "pub_frac": result["govt_pub"] / total,
+    }
+
+
 def _compute_cns18_20_fractions(
     cbp_totals: dict[str, float],
+    state_fips: str,
+    county_fips: str,
     lodes_cns10: float = 0.0,
     lodes_cns11: float = 0.0,
     lodes_cns15: float = 0.0,
@@ -948,28 +1058,35 @@ def _compute_cns18_20_fractions(
 
     Distributes government sector employment (CNS18 Federal, CNS19 State,
     CNS20 Local) across education, medical, and public_admin sub-sectors
-    using equal thirds (0.33/0.33/0.34).
+    using QCEW (Quarterly Census of Employment and Wages) government
+    employment data.
 
-    CBP proportions over-assign public_admin because NAICS 92 includes all
-    government workers while NAICS 61/62 include private + public combined.
-    SACOG calibration ratios (which used reference data) are deprecated.
-    Equal thirds is the simplest data-independent default.
+    Downloads BLS QCEW data for the given county, filters for government-owned
+    establishments (own_code 1/2/3) in education (NAICS 61), health (NAICS 62),
+    and public administration (NAICS 92), and returns employment fractions
+    proportional to each sub-sector's share of government employment.
 
     Args:
         cbp_totals: Ignored (kept for backward compat with callers).
+        state_fips: Two-digit state FIPS code (used for QCEW fetch).
+        county_fips: Three-digit county FIPS code (used for QCEW fetch).
         lodes_cns10: Ignored (kept for backward compat with callers).
         lodes_cns11: Ignored (kept for backward compat with callers).
         lodes_cns15: Ignored (kept for backward compat with callers).
 
     Returns:
         Dict with keys ``cns18_20_edu_frac``, ``cns18_20_med_frac``,
-        ``cns18_20_pub_frac`` summing to 1.0 (0.33/0.33/0.34).
+        ``cns18_20_pub_frac`` summing to 1.0.
+
+    Raises:
+        RuntimeError: If QCEW data cannot be fetched (network error,
+            empty data, or zero total government employment).
     """
-    # Absolute fallback: equal thirds (0.33/0.33/0.34)
+    qcew_fracs = _fetch_qcew_government_split(state_fips, county_fips)
     return {
-        "cns18_20_edu_frac": 1.0 / 3.0,
-        "cns18_20_med_frac": 1.0 / 3.0,
-        "cns18_20_pub_frac": 1.0 / 3.0,
+        "cns18_20_edu_frac": qcew_fracs["edu_frac"],
+        "cns18_20_med_frac": qcew_fracs["med_frac"],
+        "cns18_20_pub_frac": qcew_fracs["pub_frac"],
     }
 
 
@@ -1038,46 +1155,10 @@ def _populate_wac_block(
     # Step 1: Fetch CBP county totals and compute CNS18-20 fractions
     cbp_totals = _compute_all_cbp_totals(state_fips, county_fips, year=year)
 
-    # Compute CNS18-20 distribution fractions.
-    # CNS18 (Federal), CNS19 (State), CNS20 (Local) are government workers
-    # distributed across education, medical, and public_admin using equal
-    # thirds (0.33/0.33/0.34). CBP proportions over-assign public_admin
-    # because NAICS 92 includes all government workers while NAICS 61/62
-    # include private + public combined.
-    lodes_cns10 = 0.0
-    lodes_cns11 = 0.0
-    lodes_cns15 = 0.0
-    try:
-        engine = get_engine()
-        with engine.connect() as conn:
-            row = conn.execute(
-                text("""
-                    SELECT
-                        COALESCE(SUM(cns10), 0) AS cns10,
-                        COALESCE(SUM(cns11), 0) AS cns11,
-                        COALESCE(SUM(cns15), 0) AS cns15
-                    FROM public.lodes_raw
-                    WHERE year = :year
-                      AND LEFT(w_geocode, 5) = :county_fips
-                """),
-                {"year": year, "county_fips": state_fips + county_fips},
-            ).one()
-            lodes_cns10 = float(row.cns10)
-            lodes_cns11 = float(row.cns11)
-            lodes_cns15 = float(row.cns15)
-    except Exception:
-        logger.warning(
-            "LODES CNS10/11/15 lookup failed for %s/%s, "
-            "falling back to equal thirds for CNS18-20 distribution",
-            state_fips,
-            county_fips,
-        )
-
     cns18_20_fracs = _compute_cns18_20_fractions(
         cbp_totals,
-        lodes_cns10=lodes_cns10,
-        lodes_cns11=lodes_cns11,
-        lodes_cns15=lodes_cns15,
+        state_fips=state_fips,
+        county_fips=county_fips,
     )
     raw_vars.update(cns18_20_fracs)
 
