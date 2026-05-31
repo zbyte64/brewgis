@@ -3005,10 +3005,88 @@ models:
 - name: parcel_dasymetric_weights
   description: >
     Per-parcel dasymetric population and employment weights — one row per
-    apn. Tests verify the unique constraint holds.
+    apn. Tests verify the unique constraint and du_subtype coverage.
   columns:
   - name: apn
     description: "Assessor parcel APN"
     tests:
     - not_null
     - unique
+  - name: du_subtype
+    description: "Dwelling unit sub-type classification or NULL"
+
+- name: parcel_building_footprints
+  description: >
+    Per-parcel building footprint features from Overture Maps — total
+    footprint area, building count, max height, and footprint ratio.
+  columns:
+  - name: apn
+    description: "Assessor parcel APN"
+    tests:
+    - not_null
+    - unique
+  - name: total_footprint_sqft
+    description: "Sum of building footprint areas in sqft"
+    tests:
+    - non_negative
+  - name: building_count
+    description: "Number of buildings intersecting the parcel"
+    tests:
+    - non_negative
+  - name: footprint_ratio
+    description: "Footprint area / parcel lot area (0-1)"
+    tests:
+    - column_between:
+        arguments:
+          min_value: 0
+          max_value: 1
+
+- name: parcel_block_groups
+  description: >
+    Spatial join assigning each assessor parcel to its overlapping TIGER/Line
+    block group and tract (2023 vintage).
+  columns:
+  - name: apn
+    description: "Assessor parcel APN"
+    tests:
+    - not_null
+    - unique
+  - name: block_group_geoid
+    description: "12-digit block group GEOID"
+    tests:
+    - not_null
+  - name: tract_geoid
+    description: "11-digit tract GEOID derived from block_group_geoid"
+
+- name: parcel_footprint_imputed
+  description: >
+    Three-tier k-NN imputed building characteristics for parcels without
+    assessor sales data, using Overture building footprint features.
+  columns:
+  - name: apn
+    description: "Assessor parcel APN"
+    tests:
+    - not_null
+    - unique
+  - name: imputed_property_type
+    description: "MODE-imputed property type from k nearest neighbors"
+    tests:
+    - not_null
+  - name: imputed_units
+    description: "MEDIAN-imputed dwelling units"
+    tests:
+    - non_negative
+  - name: imputed_living_sqft
+    description: "MEDIAN-imputed living area in sqft"
+    tests:
+    - non_negative
+  - name: imputed_building_sqft
+    description: "MEDIAN-imputed building sqft"
+    tests:
+    - non_negative
+  - name: imputed_from_tier
+    description: "Imputation tier (1=block group, 2=tract, 3=county)"
+  - name: block_group_geoid
+    description: "Block group GEOID for the parcel"
+  - name: tract_geoid
+    description: "Tract GEOID for the parcel"

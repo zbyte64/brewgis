@@ -199,6 +199,9 @@ class Command(BaseCommand):
             run_assessor_parcels_pipeline,
         )
         from brewgis.workspace.dlt_pipelines.assessor import run_assessor_sales_pipeline
+        from brewgis.workspace.services.building_footprints import (
+            download_overture_buildings,
+        )
         from brewgis.workspace.dlt_pipelines.census import run_census_pipeline
         from brewgis.workspace.dlt_pipelines.lehd import run_lehd_pipeline
         from brewgis.workspace.dlt_pipelines.nlcd import run_nlcd_pipeline
@@ -438,7 +441,6 @@ class Command(BaseCommand):
                     "sacog_assessor_parcels",
                     "sacog_assessor_sales",
                     "assessor_building_medians",
-                    "parcel_dasymetric_weights",
                 ],
                 vars_={
                     "base_canvas_materialized": "table",
@@ -447,12 +449,50 @@ class Command(BaseCommand):
             )
             if not staging_result.success:
                 raise CommandError(
-                    f"dbt assessor staging failed: {staging_result.error}"
+                    f"dbt assessor base model staging failed: {staging_result.error}"
+                )
+            self.stdout.write(
+                self.style.SUCCESS(
+                    "  Assessor base models materialized",
+                )
+            )
+
+            # ── Phase 1.5c.5: Download Overture building footprints ──
+            self.stdout.write(
+                "\n── Phase 1.5c.5: Downloading Overture building footprints ──"
+            )
+            footprint_result = download_overture_buildings(
+                ignore_cache=force_data_fetch
+            )
+            self.stdout.write(
+                f"  Overture buildings loaded: {footprint_result.get('row_count', 0):,} rows "
+                f"in {footprint_result.get('table_name', '?')}"
+            )
+
+            # ── Phase 1.5c.6: Materialize footprint dbt models ──
+            self.stdout.write(
+                "\n── Phase 1.5c.6: Materializing footprint + dasymetric dbt models ──"
+            )
+            footprint_dbt_result = run_dbt_local(
+                select=[
+                    "parcel_building_footprints",
+                    "parcel_block_groups",
+                    "parcel_footprint_imputed",
+                    "parcel_dasymetric_weights",
+                ],
+                vars_={
+                    "base_canvas_materialized": "table",
+                    "projected_srid": LOCAL_SRID,
+                },
+            )
+            if not footprint_dbt_result.success:
+                raise CommandError(
+                    f"dbt footprint models failed: {footprint_dbt_result.error}"
                 )
             dasymetric_weights_table = "public.parcel_dasymetric_weights"
             self.stdout.write(
                 self.style.SUCCESS(
-                    "  Assessor staging models materialized: "
+                    "  Footprint dbt models complete; "
                     f"dasymetric weights in {dasymetric_weights_table}",
                 )
             )

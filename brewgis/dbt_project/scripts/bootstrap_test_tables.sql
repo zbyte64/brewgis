@@ -58,3 +58,14 @@ CREATE TABLE IF NOT EXISTS lehd.wac_block (
     emp_ind                     DOUBLE PRECISION,
     emp_ag                      DOUBLE PRECISION
 );
+
+-- Bootstrap table for Overture building footprints (may be empty for
+-- tests that compile parcel_dasymetric_weights without footprint data).
+CREATE TABLE IF NOT EXISTS public.overture_buildings (
+    geometry     GEOMETRY(GEOMETRY, 4326),
+    height       DOUBLE PRECISION,
+    levels       INTEGER,
+    class        TEXT,
+    source       TEXT,
+    id           TEXT
+);

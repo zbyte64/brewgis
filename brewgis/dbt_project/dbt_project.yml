@@ -279,3 +279,12 @@ seeds:
         building_sf: double precision
         lot_size_acres: double precision
         sales_price: double precision
+    test_overture_buildings:
+      +column_types:
+        geometry: geometry(Geometry,4326)
+        height: double precision
+        levels: integer
+    test_assessor_parcels_extended:
+      +column_types:
+        geometry: geometry(Geometry,4326)
+        lotsize: double precision

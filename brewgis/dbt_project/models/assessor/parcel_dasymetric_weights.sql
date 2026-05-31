@@ -198,6 +198,11 @@ assembled AS (
         -- Estimated building sqft from land-use medians (good)
         est.estimated_living_sqft,
         est.estimated_building_sqft,
+        -- Footprint-imputed building sqft (good, via KNN)
+        fi.imputed_living_sqft AS footprint_imputed_living_sqft,
+        fi.imputed_building_sqft AS footprint_imputed_building_sqft,
+        fi.imputed_units AS footprint_imputed_units,
+        fi.imputed_property_type AS footprint_imputed_property_type,
         -- NLCD impervious fraction (decent)
         nj.impervious_fraction,
         -- OSM intersection density (small boost to employment)
@@ -213,6 +218,7 @@ assembled AS (
     LEFT JOIN classified cl ON ap.apn = cl.apn
     LEFT JOIN sales_data sd ON ap.apn = sd.apn
     LEFT JOIN estimated est ON ap.apn = est.apn
+    LEFT JOIN {{ ref('parcel_footprint_imputed') }} fi ON ap.apn = fi.apn
     LEFT JOIN nlcd_join nj ON ap.apn = nj.apn
     LEFT JOIN osm_join oj ON ap.apn = oj.apn
     LEFT JOIN {{ ref('dasymetric_weights') }} dw
@@ -222,11 +228,13 @@ assembled AS (
 
 -- DU sub-type classification from assessor sales data
 -- Maps property_type + units + lot_size to DU sub-type based on actual parcel characteristics.
+-- Falls back to footprint-imputed data when assessor sales data is unavailable.
 -- NULL when assessor data is unavailable (falls through to area-proportional allocation).
 du_classification AS (
     SELECT
         apn,
         CASE
+            -- Assessor-based classification (when sales data available)
             -- SFR: split by lot size (threshold ~0.15 acres = ~6,534 sqft)
             WHEN (property_type IN ('SFR', 'Single Family Residence') OR property_type LIKE 'Single Family%')
                 AND COALESCE(sales_lot_size_acres, lot_size_acres) < 0.15 THEN 'detsf_sl'
@@ -239,11 +247,25 @@ du_classification AS (
                 AND COALESCE(units, 0) BETWEEN 2 AND 4 THEN 'mf2to4'
             WHEN (property_type IN ('MF', 'Multiple Family Residence') OR property_type LIKE 'Multiple Family%')
                 AND COALESCE(units, 0) >= 5 THEN 'mf5p'
+            -- Footprint-imputed classification (when sales data unavailable)
+            WHEN footprint_imputed_property_type IN ('Single Family Residence')
+                AND COALESCE(sales_lot_size_acres, lot_size_acres) < 0.15 THEN 'detsf_sl'
+            WHEN footprint_imputed_property_type IN ('Single Family Residence')
+                AND COALESCE(sales_lot_size_acres, lot_size_acres) >= 0.15 THEN 'detsf_ll'
+            WHEN footprint_imputed_property_type IN ('Condominium') THEN 'attsf'
+            WHEN footprint_imputed_property_type IN ('Multiple Family Residence')
+                AND COALESCE(footprint_imputed_units, 0) BETWEEN 2 AND 4 THEN 'mf2to4'
+            WHEN footprint_imputed_property_type IN ('Multiple Family Residence')
+                AND COALESCE(footprint_imputed_units, 0) >= 5 THEN 'mf5p'
             -- Parcels without sales data or non-residential: NULL
             ELSE NULL
         END AS du_subtype,
         -- DU dasymetric weight: actual units when available, 1.0 fallback
-        COALESCE(NULLIF(units, 0), 1)::double precision AS du_dasym_weight
+        COALESCE(
+            NULLIF(units, 0),
+            NULLIF(footprint_imputed_units, 0),
+            1
+        )::double precision AS du_dasym_weight
     FROM assembled
 )
 
@@ -261,6 +283,7 @@ SELECT
     -- Population weight
     COALESCE(a.pop_mult, 1.0) * COALESCE(
         a.actual_living_sqft,
+        a.footprint_imputed_living_sqft,
         a.estimated_living_sqft,
         a.lot_size_acres * COALESCE(a.impervious_fraction, 1.0),
         a.lot_size_acres
@@ -268,6 +291,7 @@ SELECT
     -- Employment weight with OSM boost
     COALESCE(a.emp_mult, 0.15) * COALESCE(
         a.actual_building_sqft,
+        a.footprint_imputed_building_sqft,
         a.estimated_building_sqft,
         a.lot_size_acres * COALESCE(a.impervious_fraction, 1.0),
         a.lot_size_acres

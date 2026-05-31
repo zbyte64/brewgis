@@ -38,6 +38,9 @@ sources:
       - name: assessor_sales
         description: "Sacramento County Assessor building characteristics — loaded by assessor dlt pipeline from ASSESSOR/MapServer/1."
         identifier: "{{ var('assessor_sales_table', 'sacog_assessor_sales_raw') }}"
+      - name: overture_buildings
+        description: "Overture Maps building footprints — downloaded by building_footprints.py fetcher to public.overture_buildings."
+        identifier: "{{ var('overture_buildings_table', 'overture_buildings') }}"
   - name: census
     description: "Census ACS data sources — fixed schema."
     schema: census

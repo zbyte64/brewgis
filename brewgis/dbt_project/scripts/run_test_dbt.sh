@@ -15,17 +15,37 @@ echo ""
 echo "=== dbt seed (test assessor parcels + sales) ==="
 dbt seed --profiles-dir . --select test_assessor_parcels test_assessor_sales
 echo ""
+echo "=== dbt seed (test overture buildings + extended parcels) ==="
+dbt seed --profiles-dir . --select test_overture_buildings test_assessor_parcels_extended
+echo ""
 echo "=== dbt seed (test NLCD parcels) ==="
 dbt seed --profiles-dir . --select test_nlcd_parcels
 
 echo ""
 echo "=== dbt run (assessor pipeline: parcels → sales → building medians → dasymetric weights) ==="
 ASSESSOR_VARS='{"assessor_parcels_table": "test_assessor_parcels", "assessor_sales_table": "test_assessor_sales"}'
-dbt run --profiles-dir . --select sacog_assessor_parcels sacog_assessor_sales assessor_building_medians parcel_dasymetric_weights --vars "$ASSESSOR_VARS"
+dbt run --profiles-dir . --select sacog_assessor_parcels sacog_assessor_sales assessor_building_medians --vars "$ASSESSOR_VARS"
 
 echo ""
 echo "=== dbt test (assessor pipeline — verifies dedup + unique index) ==="
-dbt test --profiles-dir . --select sacog_assessor_parcels sacog_assessor_sales assessor_building_medians parcel_dasymetric_weights --vars "$ASSESSOR_VARS"
+dbt test --profiles-dir . --select sacog_assessor_parcels sacog_assessor_sales assessor_building_medians --vars "$ASSESSOR_VARS"
+
+echo ""
+echo "=== dbt run (footprint pipeline: building footprints → block groups → imputation → dasymetric) ==="
+FOOTPRINT_VARS='{"assessor_parcels_table": "test_assessor_parcels", "assessor_sales_table": "test_assessor_sales", "overture_buildings_table": "test_overture_buildings"}'
+dbt run --profiles-dir . --select parcel_building_footprints parcel_block_groups parcel_footprint_imputed parcel_dasymetric_weights --vars "$FOOTPRINT_VARS"
+
+echo ""
+echo "=== dbt test (footprint pipeline: schema + coverage + valid types) ==="
+dbt test --profiles-dir . --select parcel_building_footprints parcel_block_groups parcel_footprint_imputed --vars "$FOOTPRINT_VARS"
+
+echo ""
+echo "=== dbt test (footprint imputation assertions) ==="
+dbt test --profiles-dir . --select assert_footprint_imputation_coverage assert_footprint_du_subtype_valid assert_footprint_imputed_units_positive --vars "$FOOTPRINT_VARS"
+
+echo ""
+echo "=== dbt test (dasymetric du_subtype coverage with footprint imputed fallback) ==="
+dbt test --profiles-dir . --select assert_dasymetric_du_subtype_coverage --vars "$FOOTPRINT_VARS"
 
 DBT_VARS='{"parcel_table": "test_parcels", "built_form_table": "test_built_forms", "constraint_table": "test_constraints", "base_canvas_table": "test_base_canvas", "projected_srid": 32610, "scenario_id": "test"}'
 echo ""
