@@ -3014,6 +3014,10 @@ models:
     - unique
   - name: du_subtype
     description: "Dwelling unit sub-type classification or NULL"
+  - name: footprint_imputed_living_sqft
+    description: "Living sqft imputed via Overture building footprint k-NN (used when actual_living_sqft is unavailable)"
+  - name: footprint_imputed_building_sqft
+    description: "Total building sqft imputed via Overture building footprint k-NN (used when actual_building_sqft is unavailable)"
 
 - name: parcel_building_footprints
   description: >

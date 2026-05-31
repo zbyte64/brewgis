@@ -278,6 +278,8 @@ SELECT
     a.actual_building_sqft,
     a.estimated_living_sqft,
     a.estimated_building_sqft,
+    a.footprint_imputed_living_sqft,
+    a.footprint_imputed_building_sqft,
     a.impervious_fraction,
     a.intersection_density,
     -- Population weight

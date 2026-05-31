@@ -29,6 +29,8 @@ SELECT DISTINCT ON (sp.parcel_id)
     dw.actual_building_sqft,
     dw.estimated_living_sqft,
     dw.estimated_building_sqft,
+    dw.footprint_imputed_living_sqft,
+    dw.footprint_imputed_building_sqft,
     dw.impervious_fraction,
     dw.intersection_density,
     dw.pop_dasym_weight,
