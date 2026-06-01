@@ -49,9 +49,15 @@ def load_raster_to_postgis(
         success, error (on failure).
     """
     path = Path(geotiff_path)
-    assert path.exists(), f"GeoTIFF not found: {geotiff_path}"
 
-    data = path.read_bytes()
+    if not path.exists():
+        return {"success": False, "error": f"GeoTIFF not found: {geotiff_path}"}
+
+    try:
+        data = path.read_bytes()
+    except OSError as exc:
+        return {"success": False, "error": f"Failed to read GeoTIFF: {exc}"}
+
     ensure_postgis_raster()
 
     tile_w, tile_h = tile_size

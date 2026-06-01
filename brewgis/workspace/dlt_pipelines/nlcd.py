@@ -36,10 +36,9 @@ def _compute_bbox(parcel_source: str, schema: str) -> tuple | None:
                 f"WITH extent_info AS ("  # noqa: S608
                 f"  SELECT "
                 f"    ST_Extent(geometry) AS e, "
-                f"    ST_SRID(geometry) AS srid "
+                f"    MAX(ST_SRID(geometry)) AS srid "
                 f"  FROM {schema}.{parcel_source} "
                 f"  WHERE geometry IS NOT NULL "
-                f"  LIMIT 1"
                 f") "
                 f"SELECT "
                 f"  ST_XMin(ST_Transform("
