@@ -87,54 +87,42 @@ def run_census_fetch(  # type: ignore[no-untyped-def]
     dlt-loaded table IS the source of truth for downstream processing.
     """
 
-    try:
-        run = DataImportRun.objects.get(pk=run_pk)
-        run.status = "running"
-        run.started_at = timezone.now()
-        run.save(update_fields=["status", "started_at"])
+    run = DataImportRun.objects.get(pk=run_pk)
+    run.status = "running"
+    run.started_at = timezone.now()
+    run.save(update_fields=["status", "started_at"])
 
-        dlt_result = run_census_pipeline(state_fips, county_fips, year, schema)
-        if not dlt_result["success"]:
-            msg = f"dlt extraction failed: {dlt_result['error']}"
-            run.status = "failed"
-            run.error_log = msg
-            run.completed_at = timezone.now()
-            run.save(update_fields=["status", "error_log", "completed_at"])
-            return {"success": False, "error": msg}
+    dlt_result = run_census_pipeline(state_fips, county_fips, year, schema)
 
-        table_name = dlt_result["table_name"]
-        row_count = dlt_result["row_count"]
-        layer_key = f"census_acs_{year}_{state_fips}_{county_fips}"
+    table_name = dlt_result["table_name"]
+    row_count = dlt_result["row_count"]
+    layer_key = f"census_acs_{year}_{state_fips}_{county_fips}"
 
-        layer, created = Layer.objects.get_or_create(
-            key=layer_key,
-            workspace=run.workspace,
-            defaults={
-                "name": f"ACS Demographics ({year}) ({state_fips}-{county_fips})",
-                "db_table": table_name,
-                "layer_source": "Census ACS",
-                "geometry_type": "circle",
-            },
-        )
+    layer, created = Layer.objects.get_or_create(
+        key=layer_key,
+        workspace=run.workspace,
+        defaults={
+            "name": f"ACS Demographics ({year}) ({state_fips}-{county_fips})",
+            "db_table": table_name,
+            "layer_source": "Census ACS",
+            "geometry_type": "circle",
+        },
+    )
 
-        if created:
-            auto_generate_symbology(layer)
-        run.status = "completed"
-        run.result = {
-            "table_name": table_name,
-            "layer_key": layer_key,
-            "layer_id": layer.pk,
-            "row_count": row_count,
-            "validation": dlt_result.get("validation"),
-        }
-        run.completed_at = timezone.now()
-        run.save(update_fields=["status", "result", "completed_at"])
+    if created:
+        auto_generate_symbology(layer)
+    run.status = "completed"
+    run.result = {
+        "table_name": table_name,
+        "layer_key": layer_key,
+        "layer_id": layer.pk,
+        "row_count": row_count,
+        "validation": dlt_result.get("validation"),
+    }
+    run.completed_at = timezone.now()
+    run.save(update_fields=["status", "result", "completed_at"])
 
-        return {"success": True, "count": row_count}
-    except DataImportRun.DoesNotExist:
-        return {"success": False, "error": f"DataImportRun {run_pk} not found"}
-    except Exception:
-        raise
+    return {"count": row_count}
 
 
 @shared_task(bind=True, max_retries=2, default_retry_delay=30)
@@ -150,55 +138,42 @@ def run_lehd_fetch(  # type: ignore[no-untyped-def]
     The dlt pipeline writes raw data to the staging table
     ``{schema}.lodes_raw``. No geopandas re-read is performed.
     """
-    try:
-        run = DataImportRun.objects.get(pk=run_pk)
-        run.status = "running"
-        run.started_at = timezone.now()
-        run.save(update_fields=["status", "started_at"])
+    run = DataImportRun.objects.get(pk=run_pk)
+    run.status = "running"
+    run.started_at = timezone.now()
+    run.save(update_fields=["status", "started_at"])
 
-        dlt_result = run_lehd_pipeline(state_fips, county_fips, year, schema=schema)
-        if not dlt_result["success"]:
-            msg = f"dlt extraction failed: {dlt_result['error']}"
-            run.status = "failed"
-            run.error_log = msg
-            run.completed_at = timezone.now()
-            run.save(update_fields=["status", "error_log", "completed_at"])
-            return {"success": False, "error": msg}
+    dlt_result = run_lehd_pipeline(state_fips, county_fips, year, schema=schema)
 
-        table_name = dlt_result["table_name"]
-        row_count = dlt_result["row_count"]
-        layer_key = f"lehd_{state_fips}_{county_fips}"
+    table_name = dlt_result["table_name"]
+    row_count = dlt_result["row_count"]
+    layer_key = f"lehd_{state_fips}_{county_fips}"
 
-        layer, created = Layer.objects.get_or_create(
-            key=layer_key,
-            workspace=run.workspace,
-            defaults={
-                "name": f"LEHD Employment ({state_fips}-{county_fips})",
-                "db_table": table_name,
-                "layer_source": "Census LEHD",
-                "geometry_type": "circle",
-            },
-        )
+    layer, created = Layer.objects.get_or_create(
+        key=layer_key,
+        workspace=run.workspace,
+        defaults={
+            "name": f"LEHD Employment ({state_fips}-{county_fips})",
+            "db_table": table_name,
+            "layer_source": "Census LEHD",
+            "geometry_type": "circle",
+        },
+    )
 
-        if created:
-            auto_generate_symbology(layer)
-        run.status = "completed"
-        run.result = {
-            "table_name": table_name,
-            "layer_key": layer_key,
-            "layer_id": layer.pk,
-            "row_count": row_count,
-            "validation": dlt_result.get("validation"),
-        }
-        run.completed_at = timezone.now()
-        run.save(update_fields=["status", "result", "completed_at"])
+    if created:
+        auto_generate_symbology(layer)
+    run.status = "completed"
+    run.result = {
+        "table_name": table_name,
+        "layer_key": layer_key,
+        "layer_id": layer.pk,
+        "row_count": row_count,
+        "validation": dlt_result.get("validation"),
+    }
+    run.completed_at = timezone.now()
+    run.save(update_fields=["status", "result", "completed_at"])
 
-        return {"success": True, "count": row_count}
-
-    except DataImportRun.DoesNotExist:
-        return {"success": False, "error": f"DataImportRun {run_pk} not found"}
-    except Exception:
-        raise
+    return {"count": row_count}
 
 
 @shared_task(bind=True, max_retries=2, default_retry_delay=30)
@@ -218,57 +193,45 @@ def run_poi_fetch(  # type: ignore[no-untyped-def]
     ``{schema}.poi_raw``. No geopandas re-read is performed.
     """
 
-    try:
-        run = DataImportRun.objects.get(pk=run_pk)
-        run.status = "running"
-        run.started_at = timezone.now()
-        run.save(update_fields=["status", "started_at"])
+    run = DataImportRun.objects.get(pk=run_pk)
+    run.status = "running"
+    run.started_at = timezone.now()
+    run.save(update_fields=["status", "started_at"])
 
-        dlt_result = run_poi_pipeline(
-            min_lng, min_lat, max_lng, max_lat, categories, schema=schema
-        )
-        if not dlt_result["success"]:
-            msg = f"dlt extraction failed: {dlt_result['error']}"
-            run.status = "failed"
-            run.error_log = msg
-            run.completed_at = timezone.now()
-            run.save(update_fields=["status", "error_log", "completed_at"])
-            return {"success": False, "error": msg}
+    dlt_result = run_poi_pipeline(
+        min_lng, min_lat, max_lng, max_lat, categories, schema=schema
+    )
 
-        table_name = dlt_result["table_name"]
-        row_count = dlt_result["row_count"]
-        cat_label = ",".join(categories) if categories else "all"
-        layer_key = f"poi_{min_lng}_{min_lat}_{max_lng}_{max_lat}_{cat_label}"
+    table_name = dlt_result["table_name"]
+    row_count = dlt_result["row_count"]
+    cat_label = ",".join(categories) if categories else "all"
+    layer_key = f"poi_{min_lng}_{min_lat}_{max_lng}_{max_lat}_{cat_label}"
 
-        layer, created = Layer.objects.get_or_create(
-            key=layer_key,
-            workspace=run.workspace,
-            defaults={
-                "name": f"POI ({cat_label})",
-                "db_table": table_name,
-                "layer_source": "OpenStreetMap",
-                "geometry_type": "circle",
-            },
-        )
+    layer, created = Layer.objects.get_or_create(
+        key=layer_key,
+        workspace=run.workspace,
+        defaults={
+            "name": f"POI ({cat_label})",
+            "db_table": table_name,
+            "layer_source": "OpenStreetMap",
+            "geometry_type": "circle",
+        },
+    )
 
-        if created:
-            auto_generate_symbology(layer)
-        run.status = "completed"
-        run.result = {
-            "table_name": table_name,
-            "layer_key": layer_key,
-            "layer_id": layer.pk,
-            "row_count": row_count,
-            "validation": dlt_result.get("validation"),
-        }
-        run.completed_at = timezone.now()
-        run.save(update_fields=["status", "result", "completed_at"])
+    if created:
+        auto_generate_symbology(layer)
+    run.status = "completed"
+    run.result = {
+        "table_name": table_name,
+        "layer_key": layer_key,
+        "layer_id": layer.pk,
+        "row_count": row_count,
+        "validation": dlt_result.get("validation"),
+    }
+    run.completed_at = timezone.now()
+    run.save(update_fields=["status", "result", "completed_at"])
 
-        return {"success": True, "count": row_count}
-    except DataImportRun.DoesNotExist:
-        return {"success": False, "error": f"DataImportRun {run_pk} not found"}
-    except Exception:
-        raise
+    return {"count": row_count}
 
 
 @shared_task(bind=True, max_retries=2, default_retry_delay=30)
@@ -285,57 +248,45 @@ def run_raster_fetch(  # type: ignore[no-untyped-def]
     A Layer is registered pointing to the metadata table.
     """
 
-    try:
-        run = DataImportRun.objects.get(pk=run_pk)
-        run.status = "running"
-        run.started_at = timezone.now()
-        run.save(update_fields=["status", "started_at"])
+    run = DataImportRun.objects.get(pk=run_pk)
+    run.status = "running"
+    run.started_at = timezone.now()
+    run.save(update_fields=["status", "started_at"])
 
-        dlt_result = run_raster_pipeline(file_path, schema)
-        if not dlt_result["success"]:
-            msg = f"dlt extraction failed: {dlt_result['error']}"
-            run.status = "failed"
-            run.error_log = msg
-            run.completed_at = timezone.now()
-            run.save(update_fields=["status", "error_log", "completed_at"])
-            return {"success": False, "error": msg}
+    dlt_result = run_raster_pipeline(file_path, schema)
 
-        metadata_table = dlt_result["metadata_table"]
-        bands_table = dlt_result["bands_table"]
-        row_count = dlt_result["row_count"]
-        fname = file_path.rsplit("/", 1)[-1] if "/" in file_path else file_path
-        layer_key = f"raster_{fname}"
+    metadata_table = dlt_result["metadata_table"]
+    bands_table = dlt_result["bands_table"]
+    row_count = dlt_result["row_count"]
+    fname = file_path.rsplit("/", 1)[-1] if "/" in file_path else file_path
+    layer_key = f"raster_{fname}"
 
-        layer, created = Layer.objects.get_or_create(
-            key=layer_key,
-            workspace=run.workspace,
-            defaults={
-                "name": f"Raster ({fname})",
-                "db_table": metadata_table,
-                "layer_source": "Raster",
-                "geometry_type": "raster",
-            },
-        )
+    layer, created = Layer.objects.get_or_create(
+        key=layer_key,
+        workspace=run.workspace,
+        defaults={
+            "name": f"Raster ({fname})",
+            "db_table": metadata_table,
+            "layer_source": "Raster",
+            "geometry_type": "raster",
+        },
+    )
 
-        if created:
-            auto_generate_symbology(layer)
-        run.status = "completed"
-        run.result = {
-            "metadata_table": metadata_table,
-            "bands_table": bands_table,
-            "layer_key": layer_key,
-            "layer_id": layer.pk,
-            "row_count": row_count,
-            "validation": dlt_result.get("validation"),
-        }
-        run.completed_at = timezone.now()
-        run.save(update_fields=["status", "result", "completed_at"])
+    if created:
+        auto_generate_symbology(layer)
+    run.status = "completed"
+    run.result = {
+        "metadata_table": metadata_table,
+        "bands_table": bands_table,
+        "layer_key": layer_key,
+        "layer_id": layer.pk,
+        "row_count": row_count,
+        "validation": dlt_result.get("validation"),
+    }
+    run.completed_at = timezone.now()
+    run.save(update_fields=["status", "result", "completed_at"])
 
-        return {"success": True, "count": row_count}
-    except DataImportRun.DoesNotExist:
-        return {"success": False, "error": f"DataImportRun {run_pk} not found"}
-    except Exception:
-        raise
+    return {"count": row_count}
 
 
 @shared_task(bind=True, max_retries=2, default_retry_delay=30)
@@ -353,45 +304,42 @@ def run_spatial_allocation(  # type: ignore[no-untyped-def]
 ) -> dict:
     """Run spatial allocation between source and target layers."""
 
-    try:
-        run = DataImportRun.objects.get(pk=run_pk)
-        run.status = "running"
-        run.started_at = timezone.now()
-        run.save(update_fields=["status", "started_at"])
+    run = DataImportRun.objects.get(pk=run_pk)
+    run.status = "running"
+    run.started_at = timezone.now()
+    run.save(update_fields=["status", "started_at"])
 
-        result = allocate_attributes(
-            source_schema=source_schema,
-            source_table=source_table,
-            target_schema=target_schema,
-            target_table=target_table,
-            columns=columns,
-            target_column_prefix=column_prefix,
-            source_geom_col=source_geom_col,
-            target_geom_col=target_geom_col,
+    result = allocate_attributes(
+        source_schema=source_schema,
+        source_table=source_table,
+        target_schema=target_schema,
+        target_table=target_table,
+        columns=columns,
+        target_column_prefix=column_prefix,
+        source_geom_col=source_geom_col,
+        target_geom_col=target_geom_col,
+    )
+
+    # Validate allocation output with Soda
+    validation = validate_spatial_allocation(
+        schema=target_schema,
+        table=target_table,
+    )
+    if not validation["success"]:
+        logger.warning(
+            "Spatial allocation validation failed for %s.%s: %s",
+            target_schema,
+            target_table,
+            "; ".join(validation.get("failures", [])),
         )
 
-        # Validate allocation output with Soda
-        validation = validate_spatial_allocation(
-            schema=target_schema,
-            table=target_table,
-        )
-        if not validation["success"]:
-            logger.warning(
-                "Spatial allocation validation failed for %s.%s: %s",
-                target_schema,
-                target_table,
-                "; ".join(validation.get("failures", [])),
-            )
+    result["validation"] = validation
 
-        result["validation"] = validation
-
-        run.status = "completed"
-        run.result = result
-        run.completed_at = timezone.now()
-        run.save(update_fields=["status", "result", "completed_at"])
-        return {"success": True, **result}
-    except DataImportRun.DoesNotExist:
-        return {"success": False, "error": f"DataImportRun {run_pk} not found"}
+    run.status = "completed"
+    run.result = result
+    run.completed_at = timezone.now()
+    run.save(update_fields=["status", "result", "completed_at"])
+    return result
 
 
 @shared_task(bind=True, max_retries=2, default_retry_delay=30)
@@ -408,52 +356,48 @@ def run_column_stitching(  # type: ignore[no-untyped-def]
 ) -> dict:
     """Run column stitching / imputation on a table."""
 
-    try:
-        run = DataImportRun.objects.get(pk=run_pk)
-        run.status = "running"
-        run.started_at = timezone.now()
-        run.save(update_fields=["status", "started_at"])
+    run = DataImportRun.objects.get(pk=run_pk)
+    run.status = "running"
+    run.started_at = timezone.now()
+    run.save(update_fields=["status", "started_at"])
 
-        if strategy == "constant":
-            if default_value is None:
-                msg = "Default value required for constant strategy."
-                run.status = "failed"
-                run.error_log = msg
-                run.completed_at = timezone.now()
-                run.save(update_fields=["status", "error_log", "completed_at"])
-                return {"success": False, "error": msg}
-
-            result = impute_constant(schema, table, target_column, default_value)
-
-        elif strategy == "built_form_default":
-            result = impute_built_form_default(schema, table, target_column)
-
-        else:
-            msg = f"Unknown strategy: {strategy}"
+    if strategy == "constant":
+        if default_value is None:
+            msg = "Default value required for constant strategy."
             run.status = "failed"
             run.error_log = msg
             run.completed_at = timezone.now()
             run.save(update_fields=["status", "error_log", "completed_at"])
             return {"success": False, "error": msg}
 
-        run.status = "completed"
-        run.result = result
+        result = impute_constant(schema, table, target_column, default_value)
+
+    elif strategy == "built_form_default":
+        result = impute_built_form_default(schema, table, target_column)
+
+    else:
+        msg = f"Unknown strategy: {strategy}"
+        run.status = "failed"
+        run.error_log = msg
         run.completed_at = timezone.now()
-        run.save(update_fields=["status", "result", "completed_at"])
+        run.save(update_fields=["status", "error_log", "completed_at"])
+        return {"success": False, "error": msg}
 
-        # Default validation after stitching — full context needed here
-        gx_result = validate_column_stitching(schema=schema, table=table)
-        if gx_result["success"]:
-            logger.info("GX validation passed for column_stitching")
-        else:
-            msg = "; ".join(gx_result["failures"][:5])
-            raise RuntimeError(
-                f"GX validation failed for column_stitching ({schema}.{table}): {msg}"
-            )
-        return {"success": True, **result}
+    run.status = "completed"
+    run.result = result
+    run.completed_at = timezone.now()
+    run.save(update_fields=["status", "result", "completed_at"])
 
-    except DataImportRun.DoesNotExist:
-        return {"success": False, "error": f"DataImportRun {run_pk} not found"}
+    # Default validation after stitching — full context needed here
+    gx_result = validate_column_stitching(schema=schema, table=table)
+    if gx_result["success"]:
+        logger.info("GX validation passed for column_stitching")
+    else:
+        msg = "; ".join(gx_result["failures"][:5])
+        raise RuntimeError(
+            f"GX validation failed for column_stitching ({schema}.{table}): {msg}"
+        )
+    return result
 
 
 # ────────────────────────────────────────────────────────────

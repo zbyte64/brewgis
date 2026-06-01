@@ -6,6 +6,8 @@ from __future__ import annotations
 from unittest.mock import MagicMock
 from unittest.mock import patch
 
+import pytest
+
 from brewgis.workspace.models import DataImportRun
 from brewgis.workspace.tasks import export_building_types_task
 from brewgis.workspace.tasks import run_census_fetch
@@ -58,21 +60,20 @@ class TestRunSpatialAllocation:
     """Tests for :func:`run_spatial_allocation`."""
 
     def test_does_not_exist(self) -> None:
-        """Missing DataImportRun returns error dict."""
+        """Missing DataImportRun propagates exception."""
         with patch(
             "brewgis.workspace.tasks.DataImportRun.objects.get",
             side_effect=DataImportRun.DoesNotExist,
         ):
-            result = run_spatial_allocation(
-                999,
-                source_schema="public",
-                source_table="src",
-                target_schema="public",
-                target_table="tgt",
-                columns=["pop"],
-            )
-
-        assert result == {"success": False, "error": "DataImportRun 999 not found"}
+            with pytest.raises(DataImportRun.DoesNotExist):
+                run_spatial_allocation(
+                    999,
+                    source_schema="public",
+                    source_table="src",
+                    target_schema="public",
+                    target_table="tgt",
+                    columns=["pop"],
+                )
 
     @patch("brewgis.workspace.tasks.DataImportRun.objects.get")
     @patch("brewgis.workspace.tasks.validate_spatial_allocation")
@@ -95,7 +96,6 @@ class TestRunSpatialAllocation:
             )
 
         assert result == {
-            "success": True,
             "rows_affected": 150,
             "validation": {"success": True, "failures": []},
         }
@@ -177,7 +177,7 @@ class TestRunCensusFetch:
             schema="public",
         )
 
-        assert result == {"success": True, "count": 500}
+        assert result == {"count": 500}
         assert run_mock.status == "completed"
         assert run_mock.result["row_count"] == 500
         mock_dlt_pipeline.assert_called_once_with("06", "067", 2022, "public")
@@ -189,40 +189,31 @@ class TestRunCensusFetch:
         mock_dlt_pipeline: MagicMock,
         mock_run_get: MagicMock,
     ) -> None:
-        """dlt pipeline failure returns error dict."""
+        """dlt pipeline failure propagates exception."""
         run_mock = MagicMock()
         mock_run_get.return_value = run_mock
-        mock_dlt_pipeline.return_value = {
-            "success": False,
-            "error": "connection timeout",
-        }
+        mock_dlt_pipeline.side_effect = RuntimeError("connection timeout")
 
-        result = run_census_fetch(
-            run_pk=1,
-            state_fips="06",
-            county_fips="067",
-            schema="public",
-        )
-
-        assert result == {
-            "success": False,
-            "error": "dlt extraction failed: connection timeout",
-        }
-        assert run_mock.status == "failed"
+        with pytest.raises(RuntimeError, match="connection timeout"):
+            run_census_fetch(
+                run_pk=1,
+                state_fips="06",
+                county_fips="067",
+                schema="public",
+            )
 
     @patch("brewgis.workspace.tasks.DataImportRun.objects.get")
     def test_does_not_exist(self, mock_run_get: MagicMock) -> None:
-        """Missing DataImportRun returns error dict."""
+        """Missing DataImportRun propagates exception."""
         mock_run_get.side_effect = DataImportRun.DoesNotExist
 
-        result = run_census_fetch(
-            run_pk=999,
-            state_fips="06",
-            county_fips="067",
-            schema="public",
-        )
-
-        assert result == {"success": False, "error": "DataImportRun 999 not found"}
+        with pytest.raises(DataImportRun.DoesNotExist):
+            run_census_fetch(
+                run_pk=999,
+                state_fips="06",
+                county_fips="067",
+                schema="public",
+            )
 
 
 # ── run_lehd_fetch ──────────────────────────────────────────────────
@@ -261,7 +252,7 @@ class TestRunLehdFetch:
             schema="public",
         )
 
-        assert result == {"success": True, "count": 300}
+        assert result == {"count": 300}
         assert run_mock.status == "completed"
         assert run_mock.result["row_count"] == 300
 
@@ -272,40 +263,31 @@ class TestRunLehdFetch:
         mock_dlt_pipeline: MagicMock,
         mock_run_get: MagicMock,
     ) -> None:
-        """dlt pipeline failure returns error dict."""
+        """dlt pipeline failure propagates exception."""
         run_mock = MagicMock()
         mock_run_get.return_value = run_mock
-        mock_dlt_pipeline.return_value = {
-            "success": False,
-            "error": "connection timeout",
-        }
+        mock_dlt_pipeline.side_effect = RuntimeError("connection timeout")
 
-        result = run_lehd_fetch(
-            run_pk=2,
-            state_fips="06",
-            county_fips="067",
-            schema="public",
-        )
-
-        assert result == {
-            "success": False,
-            "error": "dlt extraction failed: connection timeout",
-        }
-        assert run_mock.status == "failed"
+        with pytest.raises(RuntimeError, match="connection timeout"):
+            run_lehd_fetch(
+                run_pk=2,
+                state_fips="06",
+                county_fips="067",
+                schema="public",
+            )
 
     @patch("brewgis.workspace.tasks.DataImportRun.objects.get")
     def test_does_not_exist(self, mock_run_get: MagicMock) -> None:
-        """Missing DataImportRun returns error dict."""
+        """Missing DataImportRun propagates exception."""
         mock_run_get.side_effect = DataImportRun.DoesNotExist
 
-        result = run_lehd_fetch(
-            run_pk=999,
-            state_fips="06",
-            county_fips="067",
-            schema="public",
-        )
-
-        assert result == {"success": False, "error": "DataImportRun 999 not found"}
+        with pytest.raises(DataImportRun.DoesNotExist):
+            run_lehd_fetch(
+                run_pk=999,
+                state_fips="06",
+                county_fips="067",
+                schema="public",
+            )
 
 
 # ── run_poi_fetch ───────────────────────────────────────────────────
@@ -347,7 +329,7 @@ class TestRunPoiFetch:
             schema="public",
         )
 
-        assert result == {"success": True, "count": 120}
+        assert result == {"count": 120}
         assert run_mock.status == "completed"
         assert run_mock.result["row_count"] == 120
 
@@ -358,43 +340,34 @@ class TestRunPoiFetch:
         mock_dlt_pipeline: MagicMock,
         mock_run_get: MagicMock,
     ) -> None:
-        """dlt pipeline failure returns error dict."""
+        """dlt pipeline failure propagates exception."""
         run_mock = MagicMock()
         mock_run_get.return_value = run_mock
-        mock_dlt_pipeline.return_value = {
-            "success": False,
-            "error": "connection timeout",
-        }
+        mock_dlt_pipeline.side_effect = RuntimeError("connection timeout")
 
-        result = run_poi_fetch(
-            run_pk=3,
-            min_lng=-122.5,
-            min_lat=37.5,
-            max_lng=-122.0,
-            max_lat=38.0,
-            categories=None,
-            schema="public",
-        )
-
-        assert result == {
-            "success": False,
-            "error": "dlt extraction failed: connection timeout",
-        }
-        assert run_mock.status == "failed"
+        with pytest.raises(RuntimeError, match="connection timeout"):
+            run_poi_fetch(
+                run_pk=3,
+                min_lng=-122.5,
+                min_lat=37.5,
+                max_lng=-122.0,
+                max_lat=38.0,
+                categories=None,
+                schema="public",
+            )
 
     @patch("brewgis.workspace.tasks.DataImportRun.objects.get")
     def test_does_not_exist(self, mock_run_get: MagicMock) -> None:
-        """Missing DataImportRun returns error dict."""
+        """Missing DataImportRun propagates exception."""
         mock_run_get.side_effect = DataImportRun.DoesNotExist
 
-        result = run_poi_fetch(
-            run_pk=999,
-            min_lng=-122.5,
-            min_lat=37.5,
-            max_lng=-122.0,
-            max_lat=38.0,
-            categories=None,
-            schema="public",
-        )
-
-        assert result == {"success": False, "error": "DataImportRun 999 not found"}
+        with pytest.raises(DataImportRun.DoesNotExist):
+            run_poi_fetch(
+                run_pk=999,
+                min_lng=-122.5,
+                min_lat=37.5,
+                max_lng=-122.0,
+                max_lat=38.0,
+                categories=None,
+                schema="public",
+            )

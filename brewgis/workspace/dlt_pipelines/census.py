@@ -214,7 +214,6 @@ def run_census_pipeline(
         raise RuntimeError(f"Validation failed for {schema}.acs_raw: {msg}")
 
     return {
-        "success": True,
         "table_name": f"{schema}.acs_raw",
         "row_count": row_count,
         "load_info": str(load_info),

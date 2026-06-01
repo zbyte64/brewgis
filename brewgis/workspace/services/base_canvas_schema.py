@@ -33,6 +33,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 
 from django.db.models import Field
+from django.db.utils import OperationalError
 
 
 @dataclass(frozen=True, slots=True)
@@ -262,8 +263,13 @@ def _load_from_db() -> dict | None:
             ),
             "non_null_columns": _load_non_null_column_names(col_map),
         }
-    except Exception:  # noqa: BLE001
-        # Table doesn't exist yet — caller falls back to hardcoded
+    except OperationalError:
+        # BaseCanvasColumn table doesn't exist yet (migrations not run).
+        # _get_cache falls back to hardcoded column definitions.
+        return None
+    except RuntimeError:
+        # Database access not allowed (e.g. during test collection).
+        # _get_cache falls back to hardcoded column definitions.
         return None
 
 

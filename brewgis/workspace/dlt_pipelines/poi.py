@@ -150,7 +150,6 @@ def run_poi_pipeline(  # noqa: PLR0913
         raise RuntimeError(f"Validation failed for {schema}.poi_raw: {msg}")
 
     return {
-        "success": True,
         "table_name": f"{schema}.poi_raw",
         "row_count": row_count,
         "load_info": str(load_info),

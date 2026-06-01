@@ -100,15 +100,14 @@ class NetworkExtractor:
             msg = f"Failed to download OSM network: {exc}"
             logger.exception(msg)
             ox.settings.requests_timeout = _saved_timeout  # type: ignore[assignment]
-            return {"success": False, "error": msg}
+            raise NetworkExtractionError(msg)
         if _saved_timeout is not None:
             ox.settings.requests_timeout = _saved_timeout
 
         if graph.number_of_edges() == 0:
-            return {
-                "success": False,
-                "error": "OSM network has zero edges for the given bounding box",
-            }
+            raise NetworkExtractionError(
+                "OSM network has zero edges for the given bounding box"
+            )
 
         # Convert to GeoDataFrames — osmnx auto-projects to UTM
         edges_gdf: Any = ox.graph_to_gdfs(graph, nodes=False, edges=True)
@@ -200,11 +199,9 @@ class NetworkExtractor:
             len(nodes_out),
         )
         return {
-            "success": True,
             "edge_count": len(edges_out),
             "node_count": len(nodes_out),
             "srid": srid,
-            "error": None,
         }
 
 

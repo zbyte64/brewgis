@@ -80,13 +80,10 @@ class NetworkTopology:
                 )
             ).scalar()
             if not result:
-                return {
-                    "success": False,
-                    "error": (
-                        f"Edge table {schema}.{edge_table} does not exist. "
-                        "Run NetworkExtractor first."
-                    ),
-                }
+                raise TopologyError(
+                    f"Edge table {schema}.{edge_table} does not exist. "
+                    "Run NetworkExtractor first."
+                )
 
             # Ensure source/target columns exist and are nullable
             conn.execute(
@@ -172,12 +169,10 @@ class NetworkTopology:
             gaps,
         )
         return {
-            "success": True,
             "vertex_count": vertex_count or 0,
             "edge_count": valid_edges or 0,
             "dead_end_count": dead_ends or 0,
             "gap_count": gaps or 0,
-            "error": None,
         }
 
     def drop_vertex_table(

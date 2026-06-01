@@ -54,10 +54,7 @@ def run_assessor_parcels_pipeline(
     )
 
     if parcels.empty:
-        return {
-            "success": False,
-            "error": ("No parcels returned from ArcGIS PARCELS service"),
-        }
+        raise RuntimeError("No parcels returned from ArcGIS PARCELS service")
 
     result = load_to_postgis(parcels=parcels, schema=schema)
     row_count = result.get(_PARCEL_TABLE, 0)
@@ -70,7 +67,6 @@ def run_assessor_parcels_pipeline(
     )
 
     return {
-        "success": True,
         "table_name": f"{schema}.{_PARCEL_TABLE}",
         "row_count": row_count,
     }
@@ -108,11 +104,7 @@ def run_assessor_sales_pipeline(
     )
 
     if sales.empty:
-        error_msg = "No sales data returned from ArcGIS ASSESSOR service"
-        return {
-            "success": False,
-            "error": error_msg,
-        }
+        raise RuntimeError("No sales data returned from ArcGIS ASSESSOR service")
 
     result = load_to_postgis(sales=sales, schema=schema)
     row_count = result.get(_SALES_TABLE, 0)
@@ -125,7 +117,6 @@ def run_assessor_sales_pipeline(
     )
 
     return {
-        "success": True,
         "table_name": f"{schema}.{_SALES_TABLE}",
         "row_count": row_count,
     }

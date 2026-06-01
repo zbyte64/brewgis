@@ -185,7 +185,6 @@ def run_osm_pipeline(
     )
 
     return {
-        "success": True,
         "table_name": target_table,
         "row_count": row_count,
     }

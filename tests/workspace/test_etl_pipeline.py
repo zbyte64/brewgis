@@ -197,10 +197,11 @@ class TestETLPipeline:
 
     def test_missing_census_table_raises(self) -> None:
         """run_pipeline should raise RuntimeError when census staging table is missing."""
-        result = run_pipeline(
-            synthetic_n=10,
-            census_schema="nonexistent_schema",
-        )
-        assert result["status"] == "error"
-        assert "does not exist" in result["error"]
-        assert "census" in result["error"].lower()
+        with pytest.raises(RuntimeError) as exc_info:
+            run_pipeline(
+                synthetic_n=10,
+                census_schema="nonexistent_schema",
+            )
+        error_msg = str(exc_info.value)
+        assert "does not exist" in error_msg
+        assert "census" in error_msg.lower()

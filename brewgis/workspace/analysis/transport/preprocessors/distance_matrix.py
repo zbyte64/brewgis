@@ -179,7 +179,7 @@ class DistanceMatrixPreprocessor:
             edge_table=edge_table,
         )
         if not parcel_nodes:
-            return {"success": False, "pair_count": 0, "error": "No parcels found"}
+            raise RuntimeError("No parcels found")
 
         # Build node→parcel mapping
         node_to_parcel: dict[int, int] = {}
@@ -213,11 +213,7 @@ class DistanceMatrixPreprocessor:
             all_rows.extend(batch_rows)
 
         if not all_rows:
-            return {
-                "success": False,
-                "pair_count": 0,
-                "error": "No viable OD pairs found",
-            }
+            raise RuntimeError("No viable OD pairs found")
 
         # Step 3: Map nodes back to parcel IDs and convert to km
         output_rows = []
@@ -252,9 +248,7 @@ class DistanceMatrixPreprocessor:
             resolved_output,
         )
         return {
-            "success": True,
             "pair_count": len(output_rows),
-            "error": None,
         }
 
     def _write_output_table(

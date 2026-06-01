@@ -11,8 +11,8 @@ import logging
 import subprocess
 from pathlib import Path
 
-from sqlalchemy import text
 from django.conf import settings
+from sqlalchemy import text
 
 from brewgis.workspace.services._db import get_engine
 
@@ -61,8 +61,10 @@ def load_raster_to_postgis(
 
     raster2pgsql_args = [
         "raster2pgsql",
-        "-s", str(srid),
-        "-t", f"{tile_w}x{tile_h}",
+        "-s",
+        str(srid),
+        "-t",
+        f"{tile_w}x{tile_h}",
         "-I",
         "-C",
         "-d",
@@ -72,21 +74,14 @@ def load_raster_to_postgis(
 
     psql_args = ["psql", _database_url()]
 
-    # Pipe raster2pgsql → psql
-    try:
-        raster_proc = subprocess.Popen(raster2pgsql_args, stdout=subprocess.PIPE)
-        psql_proc = subprocess.Popen(psql_args, stdin=raster_proc.stdout)
-        raster_proc.stdout.close()
-        raster_proc.wait()
-        psql_proc.wait()
+    raster_proc = subprocess.Popen(raster2pgsql_args, stdout=subprocess.PIPE)
+    psql_proc = subprocess.Popen(psql_args, stdin=raster_proc.stdout)
+    raster_proc.stdout.close()
+    raster_proc.wait()
+    psql_proc.wait()
 
-        if raster_proc.returncode != 0 or psql_proc.returncode != 0:
-            raise RuntimeError("raster2pgsql | psql pipeline failed")
-    except FileNotFoundError as exc:
-        raise RuntimeError(
-            f"Required tool not found: {exc.filename}. "
-            "Install postgis and postgresql-client packages."
-        ) from exc
+    if raster_proc.returncode != 0 or psql_proc.returncode != 0:
+        raise RuntimeError("raster2pgsql | psql pipeline failed")
 
     # Count rows
     engine = get_engine()

@@ -92,14 +92,17 @@ class Command(BaseCommand):
         truncate: bool = bool(options.get("truncate", False))
         target_table: str = options.get("target_table", "public.base_canvas")  # type: ignore[assignment]
 
-        result = run_pipeline(
-            source_table=source_table,
-            source_geojson=source_geojson,
-            synthetic_n=synthetic_n,
-            skip_imputation=skip_imputation,
-            truncate=truncate,
-            target_table=target_table,
-        )
+        try:
+            result = run_pipeline(
+                source_table=source_table,
+                source_geojson=source_geojson,
+                synthetic_n=synthetic_n,
+                skip_imputation=skip_imputation,
+                truncate=truncate,
+                target_table=target_table,
+            )
+        except RuntimeError as exc:
+            raise CommandError(str(exc)) from exc
 
         # Print messages
         for msg in result.get("messages", []):

@@ -154,12 +154,7 @@ class FoodAccessPreprocessor:
             categories=_REQUESTED_CATEGORIES,
             schema=schema,
         )
-        if not dlt_result.get("success"):
-            logger.warning("POI dlt pipeline failed: %s", dlt_result.get("error"))
-        else:
-            logger.info(
-                "dlt pipeline loaded %d raw POIs", dlt_result.get("row_count", 0)
-            )
+        logger.info("dlt pipeline loaded %d raw POIs", dlt_result.get("row_count", 0))
 
         pois = fetch_pois(
             min_lng=min_lng,

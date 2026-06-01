@@ -33,8 +33,6 @@ from brewgis.workspace.dlt_pipelines.tiger_block import run_tiger_block_pipeline
 from brewgis.workspace.services._db import get_engine
 from brewgis.workspace.services.base_canvas_pipeline import run_pipeline
 from brewgis.workspace.services.census_fetcher import _populate_acs_block_group
-from brewgis.workspace.services.lehd_fetcher import _populate_wac_block
-from brewgis.workspace.services.sacog_demo_db import RestoreError
 from brewgis.workspace.services.sacog_demo_db import restore_sacog_demo_db
 
 logger = logging.getLogger(__name__)
@@ -69,11 +67,6 @@ def tiger_bg_asset(
     context.log.info("Running TIGER/Line BG pipeline for state %s", STATE_FIPS)
 
     result = run_tiger_bg_pipeline(STATE_FIPS, vintages=["2013", "2023"])
-    if not result.get("success"):
-        raise RuntimeError(
-            f"TIGER/Line BG fetch failed: {result.get('error', 'Unknown error')}"
-        )
-
     row_count = result.get("row_count", 0)
     context.log.info(
         "TIGER/Line BG loaded: %s rows in %s",
@@ -105,11 +98,6 @@ def tiger_block_asset(
     context.log.info("Running TIGER/Line block pipeline for state %s", STATE_FIPS)
 
     result = run_tiger_block_pipeline(STATE_FIPS, vintages=["2020"])
-    if not result.get("success"):
-        raise RuntimeError(
-            f"TIGER/Line block fetch failed: {result.get('error', 'Unknown error')}"
-        )
-
     row_count = result.get("row_count", 0)
     context.log.info(
         "TIGER/Line blocks loaded: %s rows in %s",
@@ -157,10 +145,6 @@ def sacog_ingest_assessor(
     # Step 1: Fetch parcel geometries
     context.log.info("Fetching assessor parcel geometries")
     parcels_result = run_assessor_parcels_pipeline()
-    if not parcels_result.get("success"):
-        raise RuntimeError(
-            f"Assessor parcels fetch failed: {parcels_result.get('error')}"
-        )
     context.log.info(
         "Assessor parcels loaded: %s rows",
         parcels_result.get("row_count", 0),
@@ -169,8 +153,6 @@ def sacog_ingest_assessor(
     # Step 2: Fetch sales/building data
     context.log.info("Fetching assessor sales/building data")
     sales_result = run_assessor_sales_pipeline()
-    if not sales_result.get("success"):
-        raise RuntimeError(f"Assessor sales fetch failed: {sales_result.get('error')}")
     context.log.info(
         "Assessor sales loaded: %s rows",
         sales_result.get("row_count", 0),
@@ -256,10 +238,7 @@ def sacog_load_parcels(
                 "SACOG reference table %s not found — auto-restoring demo database",
                 V1_PARCELS,
             )
-            try:
-                restore_sacog_demo_db()
-            except RestoreError as e:
-                raise RuntimeError(f"Failed to restore SACOG demo database: {e}") from e
+            restore_sacog_demo_db()
             context.log.info("SACOG reference tables restored successfully")
         else:
             context.log.info("SACOG reference tables already present")
@@ -434,8 +413,6 @@ def sacog_run_comparison_etl(
         nlcd_result = run_nlcd_pipeline(
             parcel_source="sacog_comparison_parcels",
         )
-        if not nlcd_result.get("success"):
-            raise RuntimeError(f"NLCD pipeline failed: {nlcd_result.get('error')}")
         nlcd_raster_table = nlcd_result.get("raster_table", "nlcd_raster")
         dbt_vars["nlcd_enabled"] = True
         dbt_vars["nlcd_raster_table"] = f"public.{nlcd_raster_table}"
@@ -452,10 +429,6 @@ def sacog_run_comparison_etl(
         from brewgis.workspace.dlt_pipelines.osm import run_osm_pipeline
 
         osm_result = run_osm_pipeline(parcel_table="sacog_comparison_parcels")
-        if not osm_result.get("success"):
-            raise RuntimeError(
-                f"OSM intersection density failed: {osm_result.get('error')}"
-            )
         osm_table = osm_result.get("table_name", "public.osm_intersection_density")
         dbt_vars["osm_intersection_table"] = osm_table
         context.log.info(

@@ -136,8 +136,7 @@ def run_nlcd_pipeline(
         srid=5070,
     )
 
-    if not result.get("success"):
-        return result
+    # result is guaranteed success (exception propagates on failure)
 
     logger.info(
         "NLCD pipeline complete: raster loaded to %s.%s (%d tiles)",
@@ -147,7 +146,6 @@ def run_nlcd_pipeline(
     )
 
     return {
-        "success": True,
         "raster_table": _TARGET_RASTER_TABLE,
         "schema": schema,
     }

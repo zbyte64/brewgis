@@ -25,7 +25,6 @@ from django.core.management.base import CommandError
 
 from brewgis.workspace.services._db import get_engine
 from brewgis.workspace.services._db import text
-from brewgis.workspace.services.sacog_demo_db import RestoreError
 from brewgis.workspace.services.sacog_demo_db import restore_sacog_demo_db
 
 CACHE_DIR = Path(settings.BASE_DIR) / "planning"
@@ -248,10 +247,7 @@ class Command(BaseCommand):
             self.stdout.write(
                 "  SACOG reference tables not found. Auto-restoring demo database..."
             )
-            try:
-                restore_sacog_demo_db(log=self.stdout)
-            except RestoreError as e:
-                raise CommandError(f"Failed to restore SACOG demo database: {e}") from e
+            restore_sacog_demo_db(log=self.stdout)
             self.stdout.write(
                 self.style.SUCCESS("  SACOG reference tables restored successfully")
             )
@@ -299,10 +295,6 @@ class Command(BaseCommand):
         tiger_result = run_tiger_bg_pipeline(
             STATE_FIPS, vintages=["2013", "2023"], ignore_cache=force_data_fetch
         )
-        if not tiger_result["success"]:
-            raise CommandError(
-                f"TIGER/Line BG fetch failed: {tiger_result.get('error')}."
-            )
         self.stdout.write(
             f"  TIGER/Line BG loaded: {tiger_result.get('row_count', 0)} rows "
             f"in {tiger_result.get('table_name', '?')}"
@@ -314,10 +306,6 @@ class Command(BaseCommand):
         tiger_block_result = run_tiger_block_pipeline(
             STATE_FIPS, vintages=["2020"], ignore_cache=force_data_fetch
         )
-        if not tiger_block_result["success"]:
-            raise CommandError(
-                f"TIGER/Line block fetch failed: {tiger_block_result.get('error')}."
-            )
         self.stdout.write(
             f"  TIGER/Line blocks loaded: {tiger_block_result.get('row_count', 0)} rows "
             f"in {tiger_block_result.get('table_name', '?')}"
@@ -328,10 +316,6 @@ class Command(BaseCommand):
         census_result = run_census_pipeline(
             STATE_FIPS, COUNTY_FIPS, ACS_YEAR, ignore_cache=force_data_fetch
         )
-        if not census_result["success"]:
-            raise CommandError(
-                f"Census ACS fetch failed: {census_result.get('error')}."
-            )
         self.stdout.write(
             f"  Census ACS loaded: {census_result.get('row_count', 0)} rows "
             f"in {census_result.get('table_name', '?')}"
@@ -347,8 +331,6 @@ class Command(BaseCommand):
         lehd_result = run_lehd_pipeline(
             STATE_FIPS, COUNTY_FIPS, LEHD_YEAR, ignore_cache=force_data_fetch
         )
-        if not lehd_result["success"]:
-            raise CommandError(f"LEHD LODES fetch failed: {lehd_result.get('error')}.")
         self.stdout.write(
             f"  LEHD LODES loaded: {lehd_result.get('row_count', 0)} rows "
             f"in {lehd_result.get('table_name', '?')}"

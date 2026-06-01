@@ -469,10 +469,6 @@ class Command(BaseCommand):
         # TIGER/Line block group geometry
         self.stdout.write("  Populating TIGER/Line block group staging...")
         tiger_result = run_tiger_bg_pipeline(STATE_FIPS)
-        if not tiger_result["success"]:
-            raise CommandError(
-                f"TIGER/Line BG fetch failed: {tiger_result.get('error')}"
-            )
         self.stdout.write(f"  TIGER/BG loaded: {tiger_result.get('row_count', 0)} rows")
 
         # Census ACS raw data
@@ -646,11 +642,6 @@ class Command(BaseCommand):
             categories=POI_CATEGORIES,
             schema=WORKSPACE_SCHEMA,
         )
-        if not dlt_result["success"]:
-            raise CommandError(
-                f"POI dlt pipeline failed: {dlt_result.get('error', 'unknown')}"
-            )
-
         self.stdout.write(
             f"  dlt pipeline loaded {dlt_result.get('row_count', 0)} raw POIs"
         )

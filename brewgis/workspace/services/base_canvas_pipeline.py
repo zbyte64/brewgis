@@ -259,94 +259,84 @@ def run_pipeline(
         messages.append(msg)
         logger.info(msg)
 
-    try:
-        _log("[1/11] Ensuring target table exists")
-        _ensure_target_table(target_table)
+    _log("[1/11] Ensuring target table exists")
+    _ensure_target_table(target_table)
 
-        if truncate:
-            _log("  Truncating existing data")
-            _truncate_table(target_table)
+    if truncate:
+        _log("  Truncating existing data")
+        _truncate_table(target_table)
 
-        if source_table:
-            _log(f"[2/11] Loading parcels from {source_table}")
-            _load_from_table(source_table, target_table)
-        elif source_geojson:
-            _log(f"[2/11] Loading parcels from {source_geojson}")
-            _load_from_geojson(source_geojson, target_table)
-        elif synthetic_n is not None:
-            _log(f"[2/11] Generating {synthetic_n} synthetic parcels")
-            _load_synthetic(synthetic_n, target_table)
+    if source_table:
+        _log(f"[2/11] Loading parcels from {source_table}")
+        _load_from_table(source_table, target_table)
+    elif source_geojson:
+        _log(f"[2/11] Loading parcels from {source_geojson}")
+        _load_from_geojson(source_geojson, target_table)
+    elif synthetic_n is not None:
+        _log(f"[2/11] Generating {synthetic_n} synthetic parcels")
+        _load_synthetic(synthetic_n, target_table)
 
-        _log("  Parcels loaded")
+    _log("  Parcels loaded")
 
-        _log("[2/11] Ensuring all schema columns exist")
-        _ensure_columns(target_table)
+    _log("[2/11] Ensuring all schema columns exist")
+    _ensure_columns(target_table)
 
-        _log("[3/11] Computing area columns from geometry")
-        _compute_areas(target_table)
+    _log("[3/11] Computing area columns from geometry")
+    _compute_areas(target_table)
 
-        _log("[4/11] Allocating demographics")
-        _allocate_demographics(target_table, census_schema)
+    _log("[4/11] Allocating demographics")
+    _allocate_demographics(target_table, census_schema)
 
-        _log("[5/11] Allocating employment")
-        _allocate_employment(target_table, lehd_schema)
+    _log("[5/11] Allocating employment")
+    _allocate_employment(target_table, lehd_schema)
 
-        _log("[6/11] Estimating building areas")
-        _estimate_building_areas(target_table)
+    _log("[6/11] Estimating building areas")
+    _estimate_building_areas(target_table)
 
-        _log("[7/11] Classifying land use")
-        _classify_land_use(target_table)
-        schema_name, table_name = target_table.split(".")
-        result = validate_land_use_classification(schema=schema_name, table=table_name)
-        if not result.get("success", False):
-            raise RuntimeError(
-                "Land use classification validation failed: "
-                + "; ".join(result.get("failures", []))
-            )
+    _log("[7/11] Classifying land use")
+    _classify_land_use(target_table)
+    schema_name, table_name = target_table.split(".")
+    result = validate_land_use_classification(schema=schema_name, table=table_name)
+    if not result.get("success", False):
+        raise RuntimeError(
+            "Land use classification validation failed: "
+            + "; ".join(result.get("failures", []))
+        )
 
-        _log("[8/11] Estimating irrigation")
-        _estimate_irrigation(target_table)
+    _log("[8/11] Estimating irrigation")
+    _estimate_irrigation(target_table)
 
-        _log("[9/11] Computing intersection density")
-        _compute_intersection_density(target_table)
+    _log("[9/11] Computing intersection density")
+    _compute_intersection_density(target_table)
 
-        if not skip_imputation:
-            _log("[10/11] Running imputation pass")
-            _impute_nulls(target_table)
-        else:
-            _log("[10/11] Skipping imputation pass")
+    if not skip_imputation:
+        _log("[10/11] Running imputation pass")
+        _impute_nulls(target_table)
+    else:
+        _log("[10/11] Skipping imputation pass")
 
-        _log("[10b/11] Reconciling aggregate columns")
-        _reconcile_aggregates(target_table)
+    _log("[10b/11] Reconciling aggregate columns")
+    _reconcile_aggregates(target_table)
 
-        schema_name, table_name = target_table.split(".")
-        with connection.cursor() as cursor:
-            cursor.execute(f"SELECT COUNT(*) FROM {_q(schema_name)}.{_q(table_name)}")
-            row_count = cursor.fetchone()[0]
+    schema_name, table_name = target_table.split(".")
+    with connection.cursor() as cursor:
+        cursor.execute(f"SELECT COUNT(*) FROM {_q(schema_name)}.{_q(table_name)}")
+        row_count = cursor.fetchone()[0]
 
-        _log("[11/11] Validating base canvas")
-        _validate(target_table)
+    _log("[11/11] Validating base canvas")
+    _validate(target_table)
 
-        if synthetic_n is not None:
-            _validate_synthetic(target_table)
+    if synthetic_n is not None:
+        _validate_synthetic(target_table)
 
-        elapsed = round(time.time() - start, 1)
+    elapsed = round(time.time() - start, 1)
 
-        return {
-            "status": "success",
-            "rows": row_count,
-            "elapsed": elapsed,
-            "messages": messages,
-        }
-
-    except Exception as exc:
-        elapsed = round(time.time() - start, 1)
-        return {
-            "status": "error",
-            "error": str(exc),
-            "elapsed": elapsed,
-            "messages": messages,
-        }
+    return {
+        "status": "success",
+        "rows": row_count,
+        "elapsed": elapsed,
+        "messages": messages,
+    }
 
 
 # ═══════════════════════════════════════════════════════════════════════

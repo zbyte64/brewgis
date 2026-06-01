@@ -198,8 +198,6 @@ def internal_capture_preprocessor(
         end_state_table="end_state_default",
         scenario_id="default",
     )
-    if not result.get("success"):
-        raise RuntimeError(result.get("error", "Distance matrix computation failed"))
     pair_count = result.get("pair_count", 0)
     return MaterializeResult(metadata={"pair_count": pair_count})
 
@@ -241,8 +239,6 @@ def food_access_preprocessor(
         end_state_table="end_state_default",
         scenario_id="default",
     )
-    if not result.get("success"):
-        raise RuntimeError(result.get("error", "mRFEI computation failed"))
     return MaterializeResult(metadata={"method": result.get("method", "unknown")})
 
 
@@ -282,6 +278,4 @@ def acs_equity_preprocessor(
             "base_canvas_table": "base_canvas",
         }
     )
-    if not result.get("success"):
-        raise RuntimeError(result.get("error", "ACS equity preprocessing failed"))
     return MaterializeResult(metadata={"method": result.get("method", "unknown")})

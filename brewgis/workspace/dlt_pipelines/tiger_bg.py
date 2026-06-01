@@ -236,16 +236,9 @@ def run_tiger_bg_pipeline(
                     conn.commit()
 
     if total_rows == 0:
-        return {
-            "success": False,
-            "table_name": f"{schema}.tiger_block_groups",
-            "row_count": 0,
-            "load_info": "; ".join(load_info_strs),
-            "error": "TIGER/Line BG pipeline completed but loaded 0 rows",
-        }
+        raise RuntimeError("TIGER/Line BG pipeline completed but loaded 0 rows")
 
     return {
-        "success": True,
         "table_name": f"{schema}.tiger_block_groups",
         "row_count": total_rows,
         "load_info": "; ".join(load_info_strs),

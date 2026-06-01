@@ -32,7 +32,6 @@ class TestTigerBGPipeline:
             mock_step.step_info.row_counts = {"tiger_block_groups": 5}
             mock_pipe.last_trace.steps = [mock_step]
             result = run_tiger_bg_pipeline("06")
-        assert result["success"] is True
         assert "table_name" in result
         assert result["row_count"] == 5
 
@@ -66,8 +65,11 @@ class TestTigerBlockPipeline:
             mock_pipe = mock_pipeline.return_value
             mock_pipe.run.return_value = MagicMock()
             mock_pipe.run.return_value.packages = []
+            mock_step = MagicMock()
+            mock_step.step_info = MagicMock()
+            mock_step.step_info.row_counts = {"tiger_blocks": 5}
+            mock_pipe.last_trace.steps = [mock_step]
             result = run_tiger_block_pipeline("06")
-        assert result["success"] is True
         assert "table_name" in result
 
     def test_run_pipeline_error(self) -> None:

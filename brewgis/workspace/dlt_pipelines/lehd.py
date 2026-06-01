@@ -167,7 +167,6 @@ def run_lehd_pipeline(
         raise RuntimeError(f"Validation failed for {schema}.lodes_raw: {msg}")
 
     return {
-        "success": True,
         "table_name": f"{schema}.lodes_raw",
         "row_count": row_count,
         "load_info": str(load_info),
