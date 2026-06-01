@@ -26,6 +26,19 @@ def ensure_postgis_raster() -> None:
         conn.execute(text("CREATE EXTENSION IF NOT EXISTS postgis_raster"))
 
 
+def _strip_tx_control(sql: str) -> str:
+    """Strip BEGIN/END/VACUUM — SQLAlchemy manages the transaction."""
+    lines = []
+    for line in sql.splitlines():
+        stripped = line.strip()
+        if stripped in ("BEGIN;", "END;", "COMMIT;", ""):
+            continue
+        if stripped.startswith("VACUUM"):
+            continue
+        lines.append(line)
+    return "\n".join(lines)
+
+
 def load_raster_to_postgis(
     geotiff_path: str | Path,
     table_name: str,
@@ -70,7 +83,7 @@ def load_raster_to_postgis(
         subprocess.run(cmd, stdout=tmp, check=True, timeout=300)
         tmp.close()
 
-        sql = Path(sql_path).read_text()
+        sql = _strip_tx_control(Path(sql_path).read_text())
         engine = get_engine()
         with engine.begin() as conn:
             conn.execute(text(sql))
