@@ -257,7 +257,7 @@ class Command(BaseCommand):
         self._run_step(
             "dbt base_canvas models",
             self._run_dbt_base_canvas,
-            (workspace, nlcd_table, osm_table),
+            (workspace, self._last_nlcd_table, osm_table),
         )
 
         # ── Step 10: Soda validation ──────────────────────────────────
@@ -515,21 +515,20 @@ class Command(BaseCommand):
     _last_nlcd_table: str = ""
 
     def _run_nlcd_pipeline(self, _workspace: Workspace) -> None:
-        """Run NLCD zonal stats pipeline."""
+        """Run NLCD raster loading pipeline."""
         from brewgis.workspace.dlt_pipelines.nlcd import run_nlcd_pipeline
 
         result = run_nlcd_pipeline(
-            parcel_table="fresno_parcels",
+            parcel_source="fresno_parcels",
             schema=WORKSPACE_SCHEMA,
         )
         if not result.get("success"):
-            msg = "NLCD pipeline failed: {result.get('error')}"
-        raise CommandError(msg)
-        self._last_nlcd_table = result.get(
-            "table_name", f"{WORKSPACE_SCHEMA}.nlcd_parcel_stats"
-        )
+            msg = f"NLCD pipeline failed: {result.get('error')}"
+            raise CommandError(msg)
+        raster_table = result.get("raster_table", "nlcd_raster")
+        self._last_nlcd_table = f"{WORKSPACE_SCHEMA}.{raster_table}"
         self.stdout.write(
-            f"  NLCD stats loaded: {result.get('row_count', 0)} rows "
+            f"  NLCD raster loaded: {result.get('row_count', 0)} tiles "
             f"in {self._last_nlcd_table}"
         )
 
@@ -557,7 +556,7 @@ class Command(BaseCommand):
     def _run_dbt_base_canvas(
         self,
         workspace: Workspace,
-        nlcd_table: str,
+        nlcd_raster_table: str,
         osm_table: str,
     ) -> None:
         """Run dbt base_canvas models to produce the final base canvas table."""
@@ -570,8 +569,10 @@ class Command(BaseCommand):
             "base_canvas_materialized": "table",
             "projected_srid": LOCAL_SRID,
         }
-        if nlcd_table:
-            dbt_vars["nlcd_parcel_table"] = nlcd_table
+        if nlcd_raster_table:
+            dbt_vars["nlcd_enabled"] = True
+            dbt_vars["nlcd_raster_table"] = nlcd_raster_table
+            dbt_vars["nlcd_parcel_source"] = f"{WORKSPACE_SCHEMA}.fresno_parcels"
         if osm_table:
             dbt_vars["osm_intersection_table"] = osm_table
 

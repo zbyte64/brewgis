@@ -431,15 +431,19 @@ def sacog_run_comparison_etl(
         context.log.info("Running NLCD zonal stats pipeline")
         from brewgis.workspace.dlt_pipelines.nlcd import run_nlcd_pipeline
 
-        nlcd_result = run_nlcd_pipeline(parcel_table="sacog_comparison_parcels")
+        nlcd_result = run_nlcd_pipeline(
+            parcel_source="sacog_comparison_parcels",
+        )
         if not nlcd_result.get("success"):
-            raise RuntimeError(f"NLCD zonal stats failed: {nlcd_result.get('error')}")
-        nlcd_table = nlcd_result.get("table_name", "public.nlcd_parcel_stats")
-        dbt_vars["nlcd_parcel_table"] = nlcd_table
+            raise RuntimeError(f"NLCD pipeline failed: {nlcd_result.get('error')}")
+        nlcd_raster_table = nlcd_result.get("raster_table", "nlcd_raster")
+        dbt_vars["nlcd_enabled"] = True
+        dbt_vars["nlcd_raster_table"] = f"public.{nlcd_raster_table}"
+        dbt_vars["nlcd_parcel_source"] = "public.sacog_comparison_parcels"
         context.log.info(
-            "NLCD stats loaded: %s rows in %s",
+            "NLCD raster loaded: %s tiles in %s",
             nlcd_result.get("row_count", 0),
-            nlcd_table,
+            nlcd_raster_table,
         )
 
     # Run OSM pipeline if enabled

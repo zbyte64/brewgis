@@ -29,7 +29,7 @@
         ) * (1.0 + COALESCE(intersection_density, 0.0) / 200.0)
 
     Optional dependencies (controlled by dbt vars):
-        - ``nlcd_parcel_table``: adds ``impervious_fraction`` from NLCD zonal stats
+        - ``nlcd_enabled`` + ``nlcd_parcel_source``: adds ``impervious_fraction`` from NLCD zonal stats (via ``nlcd_parcel_stats`` ref)
           (spatial join via ST_Intersects on geometry)
         - ``osm_intersection_table``: adds ``intersection_density`` from OSM
           (spatial join via ST_Intersects on geometry)
@@ -46,7 +46,7 @@
     ])
 }}
 
-{%- set nlcd_table = var('nlcd_parcel_table', none) -%}
+{%- set nlcd_enabled = var('nlcd_enabled', false) -%}
 {%- set osm_table = var('osm_intersection_table', none) -%}
 
 WITH assessor_parcels AS (
@@ -148,16 +148,19 @@ classified AS (
 ),
 
 -- Join NLCD impervious fraction via spatial intersection (optional)
-{% if nlcd_table %}
+-- Join NLCD impervious fraction via parcel source spatial intersection (optional)
+{% if nlcd_enabled %}
 nlcd_join AS (
     SELECT DISTINCT ON (ap.apn)
         ap.apn,
-        nlcd.impervious_fraction
+        nls.impervious_fraction
     FROM assessor_parcels ap
-    LEFT JOIN {{ nlcd_table }} nlcd
-        ON ST_Intersects(ap.geometry, nlcd.geometry)
+    LEFT JOIN {{ var('nlcd_parcel_source') }} ps
+        ON ST_Intersects(ap.geometry, ps.geometry)
+    LEFT JOIN {{ ref('nlcd_parcel_stats') }} nls
+        ON ps.parcel_id = nls.parcel_id
     ORDER BY ap.apn,
-        ST_Area(ST_Intersection(ap.geometry, nlcd.geometry)) DESC NULLS LAST
+        ST_Area(ST_Intersection(ap.geometry, ps.geometry)) DESC NULLS LAST
 ),
 {% else %}
 nlcd_join AS (

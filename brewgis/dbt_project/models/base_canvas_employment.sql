@@ -29,7 +29,7 @@
 
 {%- set area_srid = var('projected_srid', 3857) -%}
 {%- set dasym_table = var('dasymetric_weights_table', none) -%}
-{%- set nlcd_table = var('nlcd_parcel_table', none) -%}
+{%- set nlcd_enabled = var('nlcd_enabled', false) -%}
 {%- set constrain = var('employment_land_use_constrain', false) -%}
 
 WITH pre_wac_data AS (
@@ -109,7 +109,7 @@ intersections_raw AS (
             NULLIF(p.land_development_category, ''),
             ac.category,
             su.category
-            {% if nlcd_table %},nlcd.land_development_category{% endif %},
+            {% if nlcd_enabled %},nlcd.land_development_category{% endif %},
             'urban'
         ) AS land_development_category,
         w.emp,
@@ -150,8 +150,8 @@ intersections_raw AS (
         ON LEFT(COALESCE(p.assessor_use_code, ''), 2) = ac.use_code::text
     LEFT JOIN sacog_use su
         ON TRIM(COALESCE(p.land_use, '')) = su.land_use_label
-    {% if nlcd_table %}
-    LEFT JOIN {{ nlcd_table }} nlcd
+    {% if nlcd_enabled %}
+    LEFT JOIN {{ ref('nlcd_parcel_stats') }} nlcd
         ON p.parcel_id = nlcd.parcel_id
     {% endif %}
 )

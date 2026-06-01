@@ -199,15 +199,15 @@ class Command(BaseCommand):
             run_assessor_parcels_pipeline,
         )
         from brewgis.workspace.dlt_pipelines.assessor import run_assessor_sales_pipeline
-        from brewgis.workspace.services.building_footprints import (
-            download_overture_buildings,
-        )
         from brewgis.workspace.dlt_pipelines.census import run_census_pipeline
         from brewgis.workspace.dlt_pipelines.lehd import run_lehd_pipeline
         from brewgis.workspace.dlt_pipelines.nlcd import run_nlcd_pipeline
         from brewgis.workspace.dlt_pipelines.osm import run_osm_pipeline
         from brewgis.workspace.dlt_pipelines.tiger_bg import run_tiger_bg_pipeline
         from brewgis.workspace.dlt_pipelines.tiger_block import run_tiger_block_pipeline
+        from brewgis.workspace.services.building_footprints import (
+            download_overture_buildings,
+        )
         from brewgis.workspace.services.census_fetcher import _populate_acs_block_group
         from brewgis.workspace.services.lehd_fetcher import _populate_wac_block
 
@@ -364,18 +364,19 @@ class Command(BaseCommand):
             self.stdout.write("\n── Phase 1.5a: Computing NLCD zonal stats ──")
 
             nlcd_result = run_nlcd_pipeline(
-                parcel_table="sacog_comparison_parcels",
+                parcel_source="sacog_comparison_parcels",
                 year=NLCD_YEAR,
                 ignore_cache=force_data_fetch,
             )
             if not nlcd_result.get("success"):
                 raise CommandError(
-                    f"NLCD zonal stats failed: {nlcd_result.get('error')}. "
+                    f"NLCD pipeline failed: {nlcd_result.get('error')}. "
                     "Use --no-nlcd to skip."
                 )
-            nlcd_table = nlcd_result.get("table_name", "public.nlcd_parcel_stats")
+            nlcd_raster_table = nlcd_result.get("raster_table", "nlcd_raster")
+            nlcd_table = f"public.{nlcd_raster_table}"
             self.stdout.write(
-                f"  NLCD stats loaded: {nlcd_result.get('row_count', 0)} rows "
+                f"  NLCD raster loaded: {nlcd_result.get('row_count', 0)} tiles "
                 f"in {nlcd_table}"
             )
 
@@ -558,7 +559,9 @@ class Command(BaseCommand):
             "quick_parcel_clipping": quick_parcel_clipping,
         }
         if nlcd_table:
-            dbt_vars["nlcd_parcel_table"] = nlcd_table
+            dbt_vars["nlcd_enabled"] = True
+            dbt_vars["nlcd_raster_table"] = nlcd_table
+            dbt_vars["nlcd_parcel_source"] = "public.sacog_comparison_parcels"
         if osm_table:
             dbt_vars["osm_intersection_table"] = osm_table
         if dasymetric_weights_table:

@@ -57,6 +57,9 @@ models:
       +materialized: table
     impute_area_proportional:
       +materialized: view
+    nlcd:
+      +materialized: table
+      +schema: "{{ var('target_schema', 'public') }}"
     vmt_fee:
       +materialized: table
     comparison:
@@ -118,8 +121,10 @@ vars:
   scenario_id: lint
   base_canvas_table: base_canvas
   constraints: []
-  nlcd_parcel_table: ""
-  osm_intersection_table: ""
+  nlcd_enabled: false
+  nlcd_raster_table: ""
+  nlcd_parcel_source: ""
+  osm_intersection_table:
   # Dasymetric weights (assessor parcel-based allocation refinement)
   dasymetric_weights_table: ""
 

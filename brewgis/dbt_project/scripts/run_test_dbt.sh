@@ -122,20 +122,20 @@ dbt test --profiles-dir . --select assert_du_subtype_sum_equals_du --vars "$DASY
 
 echo ""
 echo "=== dbt run (employment chain with NLCD parcel classification) ==="
-NLCD_VARS='{"parcel_table":"test_parcels","built_form_table":"test_built_forms","constraint_table":"test_constraints","base_canvas_table":"test_base_canvas","projected_srid":32610,"scenario_id":"test","wac_block_table":"wac_block","lodes_raw_table":"test_lodes_raw","tiger_bg_table":"test_tiger_block_groups","tiger_block_table":"test_tiger_blocks","tiger_block_vintage":"2020","tiger_bg_vintage":"2023","year":2008,"state_fips":"06","county_fips":"067","nlcd_parcel_table":"test_nlcd_parcels"}'
+NLCD_VARS='{"parcel_table":"test_parcels","built_form_table":"test_built_forms","constraint_table":"test_constraints","base_canvas_table":"test_base_canvas","projected_srid":32610,"scenario_id":"test","wac_block_table":"wac_block","lodes_raw_table":"test_lodes_raw","tiger_bg_table":"test_tiger_block_groups","tiger_block_table":"test_tiger_blocks","tiger_block_vintage":"2020","tiger_bg_vintage":"2023","year":2008,"state_fips":"06","county_fips":"067","nlcd_enabled":false}'
 dbt run --profiles-dir . --select base_canvas_geometry base_canvas_demographics base_canvas_employment --vars "$NLCD_VARS" --full-refresh
 echo "=== dbt test (NLCD employment chain) ==="
 dbt test --profiles-dir . --select assert_employment_conserved assert_subsector_sum_equals_emp assert_aggregate_consistency --vars "$NLCD_VARS" 2>&1 || true
 
 echo ""
 echo "=== dbt run (employment chain with NLCD + land-use constrain) ==="
-NLCD_CONSTRAIN_VARS='{"parcel_table":"test_parcels","built_form_table":"test_built_forms","constraint_table":"test_constraints","base_canvas_table":"test_base_canvas","projected_srid":32610,"scenario_id":"test","wac_block_table":"wac_block","lodes_raw_table":"test_lodes_raw","tiger_bg_table":"test_tiger_block_groups","tiger_block_table":"test_tiger_blocks","tiger_block_vintage":"2020","tiger_bg_vintage":"2023","year":2008,"state_fips":"06","county_fips":"067","nlcd_parcel_table":"test_nlcd_parcels","employment_land_use_constrain":true}'
+NLCD_CONSTRAIN_VARS='{"parcel_table":"test_parcels","built_form_table":"test_built_forms","constraint_table":"test_constraints","base_canvas_table":"test_base_canvas","projected_srid":32610,"scenario_id":"test","wac_block_table":"wac_block","lodes_raw_table":"test_lodes_raw","tiger_bg_table":"test_tiger_block_groups","tiger_block_table":"test_tiger_blocks","tiger_block_vintage":"2020","tiger_bg_vintage":"2023","year":2008,"state_fips":"06","county_fips":"067","nlcd_enabled":false,"empl...'
 dbt run --profiles-dir . --select base_canvas_geometry base_canvas_demographics base_canvas_employment --vars "$NLCD_CONSTRAIN_VARS" --full-refresh
 echo "=== dbt test (NLCD + constrain employment chain) ==="
 dbt test --profiles-dir . --select assert_land_use_constrained_employment assert_employment_conserved assert_subsector_sum_equals_emp assert_aggregate_consistency --vars "$NLCD_CONSTRAIN_VARS" 2>&1 || true
 
 echo ""
 echo "=== dbt run (base_canvas_attributes with NLCD table) ==="
-NLCD_ATTR_VARS='{"parcel_table":"test_parcels","built_form_table":"test_built_forms","constraint_table":"test_constraints","base_canvas_table":"test_base_canvas","projected_srid":32610,"scenario_id":"test","wac_block_table":"test_wac_block","nlcd_parcel_table":"test_nlcd_parcels"}'
+NLCD_ATTR_VARS='{"parcel_table":"test_parcels","built_form_table":"test_built_forms","constraint_table":"test_constraints","base_canvas_table":"test_base_canvas","projected_srid":32610,"scenario_id":"test","wac_block_table":"test_wac_block","nlcd_enabled":false}'
 dbt run --profiles-dir . --select base_canvas_attributes --vars "$NLCD_ATTR_VARS" --full-refresh
 dbt test --profiles-dir . --select base_canvas_attributes --vars "$NLCD_ATTR_VARS"

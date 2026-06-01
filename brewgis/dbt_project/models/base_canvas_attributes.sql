@@ -17,14 +17,14 @@
       - calibration_parameters: per-category (sqft_per_du, sqft_per_emp, res_irrigation_frac, com_irrigation_frac, intersection_density)
       - assessor_use_codes: 2-digit assessor code -> category
       - sacog_land_use: text land-use label -> category
-      - nlcd_parcel_table var: NLCD zonal stats (land_development_category, impervious_fraction)
+      - nlcd_enabled var + ref('nlcd_parcel_stats'): NLCD zonal stats (land_development_category, impervious_fraction)
       - osm_intersection_table var: OSM intersection density
 
 
     Materialized as: view
 #}
 {{ config(materialized=var('base_canvas_materialized', 'view')) }}
-{% set nlcd_table = var('nlcd_parcel_table', '') %}
+{% set nlcd_enabled = var('nlcd_enabled', false) %}
 {% set osm_table = var('osm_intersection_table', '') %}
 {% set dasym_table = var('dasymetric_weights_table', '') %}
 
@@ -251,11 +251,11 @@ classified AS (
             NULLIF(b.land_development_category, ''),
             ac.category,
             su.category,
-            {% if nlcd_table %}nlcd.land_development_category,{% endif %}
+            {% if nlcd_enabled %}nlcd.land_development_category,{% endif %}
             'urban'
         ) AS lnd_v,
         COALESCE(NULLIF(b.built_form_key, ''), 'mixed_use') AS bf_v
-    {% if nlcd_table %},
+    {% if nlcd_enabled %},
         nlcd.impervious_fraction
     {% endif %}
     FROM building_areas b
@@ -264,7 +264,7 @@ classified AS (
         ON LEFT(COALESCE(b.assessor_use_code, ''), 2) = ac.use_code::text
     LEFT JOIN sacog_use su
         ON TRIM(COALESCE(b.land_use, '')) = su.land_use_label
-    {% if nlcd_table %}LEFT JOIN {{ nlcd_table }} nlcd
+    {% if nlcd_enabled %}LEFT JOIN {{ ref('nlcd_parcel_stats') }} nlcd
         ON b.parcel_id = nlcd.parcel_id
     {% endif %}
 ),
@@ -294,14 +294,14 @@ irrigation AS (
     SELECT
         *,
         COALESCE(residential_irrigated_area,
-            {% if nlcd_table %}
+            {% if nlcd_enabled %}
             COALESCE(area_parcel_res_v, area_gross, 0) * (1 - COALESCE(impervious_fraction, 0)) * COALESCE(res_irrigation_frac, 0.25)
             {% else %}
             COALESCE(area_parcel_res_v, area_gross, 0) * COALESCE(res_irrigation_frac, 0.25)
             {% endif %}
         ) AS residential_irrigated_area_v,
         COALESCE(commercial_irrigated_area,
-            {% if nlcd_table %}
+            {% if nlcd_enabled %}
             COALESCE(area_parcel_emp_v, area_gross, 0) * (1 - COALESCE(impervious_fraction, 0)) * COALESCE(com_irrigation_frac, 0.035)
             {% else %}
             COALESCE(area_parcel_emp_v, area_gross, 0) * COALESCE(com_irrigation_frac, 0.035)

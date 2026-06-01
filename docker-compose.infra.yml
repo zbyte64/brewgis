@@ -10,7 +10,7 @@ services:
       dockerfile: ./compose/local/postgres/Dockerfile
     container_name: brewgis_local_postgres
     volumes:
-      - brewgis_local_postgres_data:/var/lib/postgresql/data
+      - brewgis_local_postgres_data:/var/lib/postgresql
       - brewgis_local_postgres_data_backups:/backups
     env_file:
       - ./.envs/.local/.postgres
