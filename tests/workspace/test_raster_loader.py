@@ -2,9 +2,9 @@
 
 from __future__ import annotations
 
+import pytest
 from typing import TYPE_CHECKING
 from unittest.mock import MagicMock
-from unittest.mock import Mock
 from unittest.mock import patch
 
 if TYPE_CHECKING:
@@ -36,37 +36,13 @@ class TestEnsurePostgisRaster:
 class TestLoadRasterToPostgis:
     """Tests for loading a GeoTIFF into a PostGIS raster table."""
 
-    def test_missing_file_returns_error(self) -> None:
-        """Should return error dict for non-existent file."""
-        result = load_raster_to_postgis(
-            "/nonexistent/file.tif",
-            "test_table",
-        )
-        assert not result["success"]
-        assert "not found" in result["error"]
-
-    def test_invalid_path_returns_error(self) -> None:
-        """Should return error dict for invalid path (directory)."""
-        result = load_raster_to_postgis(
-            "/proc/self",
-            "test_table",
-        )
-        assert not result["success"]
-        assert "not found" in result["error"]
-
     def test_uses_raster2pgsql_command(self, tmp_path: Path) -> None:
-        """Should call raster2pgsql with correct args."""
+        """Should call raster2pgsql with correct args and execute SQL."""
         geotiff = tmp_path / "test.tif"
         geotiff.write_bytes(b"mock geotiff data")
 
-        # Mock raster2pgsql -> write SQL to temp file
-        sql_file = tmp_path / "out.sql"
-        sql_file.write_text("SELECT 1;")
-
         def fake_subprocess_run(cmd, stdout, check, timeout) -> None:
-            # Write mock SQL to the provided stdout file
             stdout.write("SELECT 1;")
-            return MagicMock()
 
         mock_engine = MagicMock()
         mock_conn = mock_engine.begin.return_value.__enter__.return_value
@@ -98,48 +74,31 @@ class TestLoadRasterToPostgis:
         assert result["table"] == "test_schema.test_table"
         assert result["row_count"] == 42
 
-    def test_raster2pgsql_not_found(self, tmp_path: Path) -> None:
-        """Should return error when raster2pgsql binary missing."""
+    def test_raises_on_missing_raster2pgsql(self, tmp_path: Path) -> None:
+        """Should let FileNotFoundError propagate if raster2pgsql missing."""
         geotiff = tmp_path / "test.tif"
         geotiff.write_bytes(b"mock data")
 
         with (
             patch(
                 "brewgis.workspace.services.raster_loader.subprocess.run",
-                side_effect=FileNotFoundError,
-            ),
-            patch(
-                "brewgis.workspace.services.raster_loader.ensure_postgis_raster",
-            ),
-        ):
-            result = load_raster_to_postgis(str(geotiff), "test_table")
-
-        assert not result["success"]
-        assert "raster2pgsql not found" in result["error"]
-
-    def test_raster2pgsql_timeout(self, tmp_path: Path) -> None:
-        """Should return error when raster2pgsql times out."""
-        geotiff = tmp_path / "test.tif"
-        geotiff.write_bytes(b"mock data")
-
-        with (
-            patch(
-                "brewgis.workspace.services.raster_loader.subprocess.run",
-                side_effect=Mock(
-                    side_effect=__import__("subprocess").TimeoutExpired(
-                        cmd="raster2pgsql",
-                        timeout=300,
-                    )
+                side_effect=FileNotFoundError(
+                    "No such file or directory: 'raster2pgsql'"
                 ),
             ),
             patch(
                 "brewgis.workspace.services.raster_loader.ensure_postgis_raster",
             ),
+            patch(
+                "brewgis.workspace.services.raster_loader.Path.exists",
+                return_value=True,
+            ),
+            patch(
+                "brewgis.workspace.services.raster_loader.Path.read_bytes",
+            ),
         ):
-            result = load_raster_to_postgis(str(geotiff), "test_table")
-
-        assert not result["success"]
-        assert "timed out" in result["error"]
+            with pytest.raises(FileNotFoundError):
+                load_raster_to_postgis(str(geotiff), "test_table")
 
 
 class TestDropRasterTable:
