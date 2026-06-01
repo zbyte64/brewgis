@@ -33,13 +33,28 @@ def _compute_bbox(parcel_source: str, schema: str) -> tuple | None:
     with engine.connect() as conn:
         row = conn.execute(
             sql_text(
-                f"SELECT "  # noqa: S608
-                f"  ST_XMin(ST_Extent(geometry)), "
-                f"  ST_YMin(ST_Extent(geometry)), "
-                f"  ST_XMax(ST_Extent(geometry)), "
-                f"  ST_YMax(ST_Extent(geometry)) "
-                f"FROM {schema}.{parcel_source} "
-                f"WHERE geometry IS NOT NULL"
+                f"WITH extent_info AS ("  # noqa: S608
+                f"  SELECT "
+                f"    ST_Extent(geometry) AS e, "
+                f"    ST_SRID(geometry) AS srid "
+                f"  FROM {schema}.{parcel_source} "
+                f"  WHERE geometry IS NOT NULL "
+                f"  LIMIT 1"
+                f") "
+                f"SELECT "
+                f"  ST_XMin(ST_Transform("
+                f"    ST_SetSRID(ST_MakePoint(ST_XMin(e), ST_YMin(e)), srid), 4326"
+                f"  )), "
+                f"  ST_YMin(ST_Transform("
+                f"    ST_SetSRID(ST_MakePoint(ST_XMin(e), ST_YMin(e)), srid), 4326"
+                f"  )), "
+                f"  ST_XMax(ST_Transform("
+                f"    ST_SetSRID(ST_MakePoint(ST_XMax(e), ST_YMax(e)), srid), 4326"
+                f"  )), "
+                f"  ST_YMax(ST_Transform("
+                f"    ST_SetSRID(ST_MakePoint(ST_XMax(e), ST_YMax(e)), srid), 4326"
+                f"  )) "
+                f"FROM extent_info"
             )
         ).one()
 
