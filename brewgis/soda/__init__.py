@@ -137,9 +137,7 @@ def run_scan(
     soda_dir = _soda_dir()
     contract_path = soda_dir / "contracts" / f"{contract_name}.yml"
 
-    if not contract_path.exists():
-        logger.warning("Contract '%s' not found at %s", contract_name, contract_path)
-        return _empty_result(contract_name)
+    assert contract_path.exists(), f"Contract '{contract_name}' not found at {contract_path}"
 
     yaml_content = contract_path.read_text(encoding="utf-8")
 
@@ -258,17 +256,6 @@ def validate_land_use_classification(
 
 
 # ── Internal helpers ───────────────────────────────────────────────
-
-
-def _empty_result(contract_name: str) -> dict[str, Any]:
-    """Return a no-op pass result (matches old GX fallback behaviour)."""
-    return {
-        "success": True,
-        "failures": [],
-        "results_url": None,
-        "severity": None,
-        "checkpoint": contract_name,
-    }
 
 
 def _summarise_result(result: Any, contract_name: str) -> dict[str, Any]:

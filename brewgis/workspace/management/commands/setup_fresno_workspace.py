@@ -518,9 +518,6 @@ class Command(BaseCommand):
             parcel_source="fresno_parcels",
             schema=WORKSPACE_SCHEMA,
         )
-        if not result.get("success"):
-            msg = f"NLCD pipeline failed: {result.get('error')}"
-            raise CommandError(msg)
         raster_table = result.get("raster_table", "nlcd_raster")
         self._last_nlcd_table = f"{WORKSPACE_SCHEMA}.{raster_table}"
         self.stdout.write(

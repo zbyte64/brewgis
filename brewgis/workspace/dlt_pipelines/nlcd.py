@@ -107,8 +107,7 @@ def run_nlcd_pipeline(
     Returns
     -------
     dict
-        ``{"success": True, "raster_table": str, "schema": str}``
-        on success, or ``{"success": False, "error": str}`` on failure.
+        ``{"raster_table": str, "schema": str}``
     """
     # ── Derive bbox from parcel table if not provided ──────────────
     if bbox is None:

@@ -350,16 +350,31 @@ class Command(BaseCommand):
                 year=NLCD_YEAR,
                 ignore_cache=force_data_fetch,
             )
-            if not nlcd_result.get("success"):
-                raise CommandError(
-                    f"NLCD pipeline failed: {nlcd_result.get('error')}. "
-                    "Use --no-nlcd to skip."
-                )
             nlcd_raster_table = nlcd_result.get("raster_table", "nlcd_raster")
             nlcd_table = f"public.{nlcd_raster_table}"
             self.stdout.write(
                 f"  NLCD raster loaded: {nlcd_result.get('row_count', 0)} tiles "
                 f"in {nlcd_table}"
+            )
+            # Run dbt nlcd_parcel_stats model to compute per-parcel zonal stats
+            self.stdout.write(
+                "\n── Phase 1.5a.5: Materializing nlcd_parcel_stats dbt model ──"
+            )
+            nlcd_dbt_result = run_dbt_local(
+                select=["nlcd_parcel_stats"],
+                vars_={
+                    "nlcd_enabled": True,
+                    "nlcd_raster_table": nlcd_table,
+                    "nlcd_parcel_source": "public.sacog_comparison_parcels",
+                    "base_canvas_materialized": "table",
+                },
+            )
+            if not nlcd_dbt_result.success:
+                raise CommandError(
+                   f"dbt nlcd_parcel_stats failed: {nlcd_dbt_result.error}"
+                )
+            self.stdout.write(
+                self.style.SUCCESS("  nlcd_parcel_stats materialized")
             )
 
         # ── Phase 1.5b: Run OSM pipeline (optional) ──────────────────────
@@ -370,11 +385,6 @@ class Command(BaseCommand):
             osm_result = run_osm_pipeline(
                 parcel_table="sacog_comparison_parcels",
             )
-            if not osm_result.get("success"):
-                raise CommandError(
-                    f"OSM intersection density failed: {osm_result.get('error')}. "
-                    "Use --no-osm to skip."
-                )
             osm_table = osm_result.get("table_name", "public.osm_intersection_density")
             self.stdout.write(
                 f"  OSM intersection density loaded: {osm_result.get('row_count', 0)} rows "
@@ -390,10 +400,6 @@ class Command(BaseCommand):
                 max_pages=0 if not limit else max(1, limit // 2000 + 1),
                 ignore_cache=force_data_fetch,
             )
-            if not assessor_parcels_result.get("success"):
-                raise CommandError(
-                    f"Assessor parcels fetch failed: {assessor_parcels_result.get('error')}"
-                )
             self.stdout.write(
                 f"  Assessor parcels loaded: {assessor_parcels_result.get('row_count', 0)} rows "
                 f"in {assessor_parcels_result.get('table_name', '?')}"
@@ -406,10 +412,6 @@ class Command(BaseCommand):
                 max_pages=0 if not limit else max(1, limit // 2000 + 1),
                 ignore_cache=force_data_fetch,
             )
-            if not assessor_sales_result.get("success"):
-                raise CommandError(
-                    f"Assessor sales fetch failed: {assessor_sales_result.get('error')}"
-                )
             self.stdout.write(
                 f"  Assessor sales loaded: {assessor_sales_result.get('row_count', 0)} rows "
                 f"in {assessor_sales_result.get('table_name', '?')}"
@@ -451,6 +453,22 @@ class Command(BaseCommand):
                 f"  Overture buildings loaded: {footprint_result.get('row_count', 0):,} rows "
                 f"in {footprint_result.get('table_name', '?')}"
             )
+
+            # ── Pre-flight: Ensure dbt seed tables for footprint models ──
+            footprint_seeds = ["assessor_use_codes", "dasymetric_weights"]
+            missing_footprint_seeds = [
+                s for s in footprint_seeds if not self._table_has_rows("public", s)
+            ]
+            if missing_footprint_seeds:
+                self.stdout.write(
+                    f"  Missing seed tables: {', '.join(missing_footprint_seeds)}. Seeding selectively..."
+                )
+                seed_result = run_dbt_seed(select=missing_footprint_seeds)
+                if not seed_result.success:
+                    raise CommandError(f"dbt seed failed: {seed_result.error}")
+                self.stdout.write(
+                    self.style.SUCCESS("  Missing seed tables loaded successfully")
+                )
 
             # ── Phase 1.5c.6: Materialize footprint dbt models ──
             self.stdout.write(
@@ -520,13 +538,17 @@ class Command(BaseCommand):
 
         # ── Pre-flight: Ensure dbt seed tables are loaded ──────────────
         self.stdout.write("\n── Pre-flight: Checking dbt seed tables ──")
-        if not self._table_has_rows("public", "calibration_parameters"):
-            self.stdout.write("  dbt seed tables not found. Running dbt seed...")
-            seed_result = run_dbt_seed()
+        required_seeds = ["calibration_parameters", "assessor_use_codes", "dasymetric_weights", "sacog_land_use"]
+        missing_seeds = [s for s in required_seeds if not self._table_has_rows("public", s)]
+        if missing_seeds:
+            self.stdout.write(
+                f"  Missing seed tables: {', '.join(missing_seeds)}. Seeding selectively..."
+            )
+            seed_result = run_dbt_seed(select=missing_seeds)
             if not seed_result.success:
                 raise CommandError(f"dbt seed failed: {seed_result.error}")
             self.stdout.write(
-                self.style.SUCCESS("  dbt seed tables loaded successfully")
+                self.style.SUCCESS("  Missing seed tables loaded successfully")
             )
         else:
             self.stdout.write("  dbt seed tables already present, skipping dbt seed")

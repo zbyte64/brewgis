@@ -45,8 +45,7 @@ def run_assessor_parcels_pipeline(
     Returns
     -------
     dict
-        ``{"success": True, "table_name": str, "row_count": int}``
-        on success, or ``{"success": False, "error": str}`` on failure.
+        ``{"table_name": str, "row_count": int}``
     """
     parcels = fetch_parcels_arcgis(
         max_pages=max_pages,
@@ -95,8 +94,7 @@ def run_assessor_sales_pipeline(
     Returns
     -------
     dict
-        ``{"success": True, "table_name": str, "row_count": int}``
-        on success, or ``{"success": False, "error": str}`` on failure.
+        ``{"table_name": str, "row_count": int}``
     """
     sales = fetch_sales_arcgis(
         max_pages=max_pages,

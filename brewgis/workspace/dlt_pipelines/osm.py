@@ -104,8 +104,7 @@ def run_osm_pipeline(
     Returns
     -------
     dict
-        ``{"success": True, "table_name": str, "row_count": int}``
-        on success, or ``{"success": False, "error": str}`` on failure.
+        ``{"table_name": str, "row_count": int}``
     """
     # ── Read parcels as GeoDataFrame ──────────────────────────────
     sql = (
