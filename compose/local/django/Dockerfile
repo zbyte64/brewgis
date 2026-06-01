@@ -51,6 +51,7 @@ RUN apt-get update && apt-get install --no-install-recommends -y \
   libpq-dev  \
   wait-for-it \
   postgresql-client \
+  postgresql-15-postgis-3 \
   # Translations dependencies
   gettext \
   # dbt and GIS analysis dependencies

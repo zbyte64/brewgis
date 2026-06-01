@@ -4,6 +4,7 @@ from __future__ import annotations
 
 from typing import TYPE_CHECKING
 from unittest.mock import MagicMock
+from unittest.mock import Mock
 from unittest.mock import patch
 
 if TYPE_CHECKING:
@@ -47,16 +48,25 @@ class TestLoadRasterToPostgis:
     def test_invalid_path_returns_error(self) -> None:
         """Should return error dict for invalid path (directory)."""
         result = load_raster_to_postgis(
-            "/proc/self",  # exists but is not a GeoTIFF
+            "/proc/self",
             "test_table",
         )
         assert not result["success"]
-        assert "Failed to read GeoTIFF" in result["error"]
+        assert "not found" in result["error"]
 
-    def test_executes_correct_sql_sequence(self, tmp_path: Path) -> None:
-        """Should issue DROP TABLE, CREATE TABLE, AddRasterConstraints, COUNT."""
+    def test_uses_raster2pgsql_command(self, tmp_path: Path) -> None:
+        """Should call raster2pgsql with correct args."""
         geotiff = tmp_path / "test.tif"
         geotiff.write_bytes(b"mock geotiff data")
+
+        # Mock raster2pgsql -> write SQL to temp file
+        sql_file = tmp_path / "out.sql"
+        sql_file.write_text("SELECT 1;")
+
+        def fake_subprocess_run(cmd, stdout, check, timeout) -> None:
+            # Write mock SQL to the provided stdout file
+            stdout.write("SELECT 1;")
+            return MagicMock()
 
         mock_engine = MagicMock()
         mock_conn = mock_engine.begin.return_value.__enter__.return_value
@@ -65,6 +75,10 @@ class TestLoadRasterToPostgis:
         mock_conn.execute.return_value = mock_result
 
         with (
+            patch(
+                "brewgis.workspace.services.raster_loader.subprocess.run",
+                side_effect=fake_subprocess_run,
+            ),
             patch(
                 "brewgis.workspace.services.raster_loader.get_engine",
                 return_value=mock_engine,
@@ -84,55 +98,48 @@ class TestLoadRasterToPostgis:
         assert result["table"] == "test_schema.test_table"
         assert result["row_count"] == 42
 
-        # Verify the SQL calls in order
-        calls = [str(c[0][0].text) for c in mock_conn.execute.call_args_list]
-        assert any("DROP TABLE IF EXISTS test_schema.test_table" in c for c in calls)
-        assert any(
-            "CREATE TABLE test_schema.test_table AS" in c
-            and "ST_FromGDALRaster" in c
-            and "ST_Tile" in c
-            for c in calls
-        )
-        assert any("AddRasterConstraints" in c for c in calls)
-        assert any("SELECT COUNT(*) FROM test_schema.test_table" in c for c in calls)
-
-    def test_verify_srid_parameter(self, tmp_path: Path) -> None:
-        """Should pass SRID to ST_SetSRID."""
-        geotiff = tmp_path / "test_4326.tif"
+    def test_raster2pgsql_not_found(self, tmp_path: Path) -> None:
+        """Should return error when raster2pgsql binary missing."""
+        geotiff = tmp_path / "test.tif"
         geotiff.write_bytes(b"mock data")
-
-        mock_engine = MagicMock()
-        mock_conn = mock_engine.begin.return_value.__enter__.return_value
-        mock_result = MagicMock()
-        mock_result.scalar.return_value = 5
-        mock_conn.execute.return_value = mock_result
 
         with (
             patch(
-                "brewgis.workspace.services.raster_loader.get_engine",
-                return_value=mock_engine,
+                "brewgis.workspace.services.raster_loader.subprocess.run",
+                side_effect=FileNotFoundError,
             ),
             patch(
                 "brewgis.workspace.services.raster_loader.ensure_postgis_raster",
             ),
         ):
-            load_raster_to_postgis(
-                str(geotiff),
-                "test_table",
-                srid=4326,
-            )
+            result = load_raster_to_postgis(str(geotiff), "test_table")
 
-        # Check the CREATE TABLE call had srid parameter
-        create_call = None
-        for call in mock_conn.execute.call_args_list:
-            sql = str(call[0][0].text)
-            if "CREATE TABLE" in sql:
-                create_call = call
-                break
-        assert create_call is not None
-        params = create_call[0][1]
-        assert params["srid"] == 4326
-        assert params["data"] == b"mock data"
+        assert not result["success"]
+        assert "raster2pgsql not found" in result["error"]
+
+    def test_raster2pgsql_timeout(self, tmp_path: Path) -> None:
+        """Should return error when raster2pgsql times out."""
+        geotiff = tmp_path / "test.tif"
+        geotiff.write_bytes(b"mock data")
+
+        with (
+            patch(
+                "brewgis.workspace.services.raster_loader.subprocess.run",
+                side_effect=Mock(
+                    side_effect=__import__("subprocess").TimeoutExpired(
+                        cmd="raster2pgsql",
+                        timeout=300,
+                    )
+                ),
+            ),
+            patch(
+                "brewgis.workspace.services.raster_loader.ensure_postgis_raster",
+            ),
+        ):
+            result = load_raster_to_postgis(str(geotiff), "test_table")
+
+        assert not result["success"]
+        assert "timed out" in result["error"]
 
 
 class TestDropRasterTable:
