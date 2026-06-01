@@ -2,10 +2,11 @@
 
 from __future__ import annotations
 
-import pytest
 from typing import TYPE_CHECKING
 from unittest.mock import MagicMock
 from unittest.mock import patch
+
+import pytest
 
 if TYPE_CHECKING:
     from pathlib import Path
@@ -36,13 +37,16 @@ class TestEnsurePostgisRaster:
 class TestLoadRasterToPostgis:
     """Tests for loading a GeoTIFF into a PostGIS raster table."""
 
-    def test_uses_raster2pgsql_command(self, tmp_path: Path) -> None:
-        """Should call raster2pgsql with correct args and execute SQL."""
+    def test_uses_correct_commands(self, tmp_path: Path) -> None:
+        """Should invoke raster2pgsql piped to psql with correct args."""
         geotiff = tmp_path / "test.tif"
         geotiff.write_bytes(b"mock geotiff data")
 
-        def fake_subprocess_run(cmd, stdout, check, timeout) -> None:
-            stdout.write("SELECT 1;")
+        # Mock subprocess.Popen to simulate success
+        mock_raster_proc = MagicMock()
+        mock_raster_proc.returncode = 0
+        mock_psql_proc = MagicMock()
+        mock_psql_proc.returncode = 0
 
         mock_engine = MagicMock()
         mock_conn = mock_engine.begin.return_value.__enter__.return_value
@@ -50,10 +54,18 @@ class TestLoadRasterToPostgis:
         mock_result.scalar.return_value = 42
         mock_conn.execute.return_value = mock_result
 
+        popen_calls = []
+
+        def fake_popen(cmd, **kwargs):
+            popen_calls.append(cmd)
+            if "raster2pgsql" in str(cmd):
+                return mock_raster_proc
+            return mock_psql_proc
+
         with (
             patch(
-                "brewgis.workspace.services.raster_loader.subprocess.run",
-                side_effect=fake_subprocess_run,
+                "brewgis.workspace.services.raster_loader.subprocess.Popen",
+                side_effect=fake_popen,
             ),
             patch(
                 "brewgis.workspace.services.raster_loader.get_engine",
@@ -74,6 +86,19 @@ class TestLoadRasterToPostgis:
         assert result["table"] == "test_schema.test_table"
         assert result["row_count"] == 42
 
+        # Verify raster2pgsql args
+        raster_call = popen_calls[0]
+        assert "raster2pgsql" in str(raster_call[0])
+        assert "-s" in raster_call and "5070" in raster_call
+        assert "-t" in raster_call and "256x256" in raster_call
+        assert "-I" in raster_call and "-C" in raster_call and "-d" in raster_call
+        assert "test_schema.test_table" in raster_call
+        assert "-M" not in raster_call  # should NOT include VACUUM
+
+        # Verify psql args
+        psql_call = popen_calls[1]
+        assert psql_call[0] == "psql"
+
     def test_raises_on_missing_raster2pgsql(self, tmp_path: Path) -> None:
         """Should let FileNotFoundError propagate if raster2pgsql missing."""
         geotiff = tmp_path / "test.tif"
@@ -81,7 +106,7 @@ class TestLoadRasterToPostgis:
 
         with (
             patch(
-                "brewgis.workspace.services.raster_loader.subprocess.run",
+                "brewgis.workspace.services.raster_loader.subprocess.Popen",
                 side_effect=FileNotFoundError(
                     "No such file or directory: 'raster2pgsql'"
                 ),
@@ -89,16 +114,9 @@ class TestLoadRasterToPostgis:
             patch(
                 "brewgis.workspace.services.raster_loader.ensure_postgis_raster",
             ),
-            patch(
-                "brewgis.workspace.services.raster_loader.Path.exists",
-                return_value=True,
-            ),
-            patch(
-                "brewgis.workspace.services.raster_loader.Path.read_bytes",
-            ),
+            pytest.raises(RuntimeError, match="Required tool not found"),
         ):
-            with pytest.raises(FileNotFoundError):
-                load_raster_to_postgis(str(geotiff), "test_table")
+            load_raster_to_postgis(str(geotiff), "test_table")
 
 
 class TestDropRasterTable:

@@ -1,22 +1,31 @@
 """Service for loading raster data into PostGIS.
 
-Uses the standard ``raster2pgsql`` tool to generate SQL for loading
-GeoTIFF files into PostGIS raster tables. The tool comes from the
-``postgis`` Debian package (``/usr/bin/raster2pgsql``).
+Uses the standard ``raster2pgsql`` tool piped to ``psql`` to load
+GeoTIFF files into PostGIS raster tables. Both tools come from the
+``postgis`` and ``postgresql-client`` Debian packages.
 """
 
 from __future__ import annotations
 
 import logging
 import subprocess
-import tempfile
 from pathlib import Path
 
 from sqlalchemy import text
+from django.conf import settings
 
 from brewgis.workspace.services._db import get_engine
 
 logger = logging.getLogger(__name__)
+
+
+def _database_url() -> str:
+    """Build a PostgreSQL connection URL from Django DATABASES settings."""
+    db = settings.DATABASES["default"]
+    return (
+        f"postgresql://{db['USER']}:{db['PASSWORD']}"
+        f"@{db['HOST']}:{db['PORT']}/{db['NAME']}"
+    )
 
 
 def ensure_postgis_raster() -> None:
@@ -26,19 +35,6 @@ def ensure_postgis_raster() -> None:
         conn.execute(text("CREATE EXTENSION IF NOT EXISTS postgis_raster"))
 
 
-def _strip_tx_control(sql: str) -> str:
-    """Strip BEGIN/END/VACUUM — SQLAlchemy manages the transaction."""
-    lines = []
-    for line in sql.splitlines():
-        stripped = line.strip()
-        if stripped in ("BEGIN;", "END;", "COMMIT;", ""):
-            continue
-        if stripped.startswith("VACUUM"):
-            continue
-        lines.append(line)
-    return "\n".join(lines)
-
-
 def load_raster_to_postgis(
     geotiff_path: str | Path,
     table_name: str,
@@ -46,7 +42,7 @@ def load_raster_to_postgis(
     srid: int = 5070,
     tile_size: tuple[int, int] = (256, 256),
 ) -> dict:
-    """Load a GeoTIFF into a PostGIS raster table via ``raster2pgsql``.
+    """Load a GeoTIFF into a PostGIS raster table via ``raster2pgsql | psql``.
 
     Args:
         geotiff_path: Path to the GeoTIFF file.
@@ -58,46 +54,49 @@ def load_raster_to_postgis(
     Returns:
         dict with keys: success, table, row_count
     """
-    path = Path(geotiff_path)
     ensure_postgis_raster()
 
     tile_w, tile_h = tile_size
     qualified_table = f"{schema}.{table_name}"
 
-    cmd = [
+    raster2pgsql_args = [
         "raster2pgsql",
         "-s", str(srid),
         "-t", f"{tile_w}x{tile_h}",
         "-I",
         "-C",
-        "-M",
         "-d",
-        str(path),
+        str(Path(geotiff_path)),
         qualified_table,
     ]
 
-    # Generate SQL via raster2pgsql, clean up temp file on any failure
-    tmp = tempfile.NamedTemporaryFile(mode="w", suffix=".sql", delete=False)
-    sql_path = tmp.name
+    psql_args = ["psql", _database_url()]
+
+    # Pipe raster2pgsql → psql
     try:
-        subprocess.run(cmd, stdout=tmp, check=True, timeout=300)
-        tmp.close()
+        raster_proc = subprocess.Popen(raster2pgsql_args, stdout=subprocess.PIPE)
+        psql_proc = subprocess.Popen(psql_args, stdin=raster_proc.stdout)
+        raster_proc.stdout.close()
+        raster_proc.wait()
+        psql_proc.wait()
 
-        sql = _strip_tx_control(Path(sql_path).read_text())
-        engine = get_engine()
-        with engine.begin() as conn:
-            conn.execute(text(sql))
+        if raster_proc.returncode != 0 or psql_proc.returncode != 0:
+            raise RuntimeError("raster2pgsql | psql pipeline failed")
+    except FileNotFoundError as exc:
+        raise RuntimeError(
+            f"Required tool not found: {exc.filename}. "
+            "Install postgis and postgresql-client packages."
+        ) from exc
 
-        result = conn.execute(
-            text(f"SELECT COUNT(*) FROM {qualified_table}")
-        )
+    # Count rows
+    engine = get_engine()
+    with engine.begin() as conn:
+        result = conn.execute(text(f"SELECT COUNT(*) FROM {qualified_table}"))
         row_count = result.scalar()
-    finally:
-        Path(sql_path).unlink(missing_ok=True)
 
     logger.info(
-        "Loaded raster %s into %s (%d tiles via raster2pgsql)",
-        str(path),
+        "Loaded raster %s into %s (%d tiles)",
+        str(geotiff_path),
         qualified_table,
         row_count,
     )
