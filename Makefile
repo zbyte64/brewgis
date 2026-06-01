@@ -130,7 +130,11 @@ coverage:  ## Run tests with coverage report and fail if below threshold
 
 .PHONY: lint
 lint:  ## Run Ruff linter
-	$(COMPOSE_RUN) ruff check brewgis/
+	$(COMPOSE_RUN) ruffian check brewgis/
+
+.PHONY: lint-custom
+lint-custom:  ## Run custom anti-pattern rules (standalone, no Docker)
+	python3 -m brewgis._ruff_rules.check brewgis/
 
 .PHONY: lint-fix
 lint-fix:  ## Run Ruff linter with auto-fix

@@ -72,7 +72,8 @@ dependencies = [
     "python-slugify==8.0.4",
     "rasterio>=1.3,<2.0",
     "redis==5.2.0",
-    "ruff>=0.11.0",
+    "ruff>=0.15.13",
+    "ruffian>=0.10",
     "sphinx==8.1.3",
     "sphinx-autobuild==2024.10.3",
     "sqlfluff>=3.3.0",
@@ -344,3 +345,11 @@ ignore_decorators = [
 ]
 min_confidence = 60
 sort_by_size = true
+
+# ==== ruffian (custom rules plugin runner) ====
+[tool.ruffian]
+
+[[tool.ruffian.plugins]]
+name = "brewgis-antipatterns"
+executable = "brewgis/_ruff_rules/check.py"
+config = {}

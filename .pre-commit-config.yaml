@@ -70,6 +70,14 @@ repos:
             .*\.map|
             .*\.min\.js
           )$
+      # Custom anti-pattern rules (BrewGIS-specific)
+      - id: brewgis-antipatterns
+        name: Check BrewGIS anti-patterns
+        description: Fails if code matches known anti-patterns from AGENTS.md (error-return-dict, early-return-empty-data, silent-exception-swallow, python-sql-ddl)
+        entry: python3 -m brewgis._ruff_rules.check
+        language: python
+        types: [python]
+        stages: [pre-commit]
 
   # ── Manual-stage checks (run on demand, not on every commit) ──
   # These are slower, non-fixing, or only needed periodically.

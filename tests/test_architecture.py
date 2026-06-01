@@ -1,7 +1,9 @@
 """Architecture guard rules — import-level constraints enforced via pytestarch.
-
-These rules prevent regression to the pre-centralized-DB-connection pattern
-where every module built its own ``create_engine`` call from ``settings.DATABASES``.
+Rules that remain here are impractical for AST-only detection:
+complex cross-function analysis (FileDataContext guard) or tests-directory
+scope not covered by the linter (``ruffian check brewgis/``).
+All other rules have been migrated to ``brewgis/_ruff_rules/rules.py``
+and fire inline via LSP diagnostics on every edit.
 """
 
 from __future__ import annotations
@@ -11,21 +13,9 @@ from pathlib import Path
 
 import pytest
 from pytestarch import EvaluableArchitecture
-from pytestarch import Rule
 from pytestarch import get_evaluable_architecture
 
 REPO_ROOT = Path(__file__).resolve().parent.parent
-
-
-@pytest.fixture(scope="session")
-def workspace_architecture() -> EvaluableArchitecture:
-    """Scan only the workspace app — the module we own and enforce rules on."""
-    workspace_dir = REPO_ROOT / "brewgis" / "workspace"
-    return get_evaluable_architecture(
-        str(workspace_dir),
-        str(workspace_dir),
-        exclude_external_libraries=False,
-    )
 
 
 @pytest.fixture(scope="session")
@@ -36,31 +26,6 @@ def tests_architecture() -> EvaluableArchitecture:
         str(REPO_ROOT / "tests"),
         exclude_external_libraries=False,
     )
-
-
-# ──────────────────────────────────────────────────────────────
-#  Rule A — Single entry point for SQLAlchemy
-# ──────────────────────────────────────────────────────────────
-#  Only brewgis.workspace.services._db may import from sqlalchemy
-#  directly. All other modules under brewgis.workspace must obtain
-#  engines/text via _db.
-# ──────────────────────────────────────────────────────────────
-
-RULE_A_SINGLE_ENTRY_POINT = (
-    Rule()
-    .modules_that()
-    .are_named("sqlalchemy")
-    .should_only()
-    .be_imported_by_modules_that()
-    .are_named("workspace.services._db")
-)
-
-
-def test_sqlalchemy_only_imported_by_db(
-    workspace_architecture: EvaluableArchitecture,
-) -> None:
-    """Verify only _db.py within workspace imports from sqlalchemy."""
-    RULE_A_SINGLE_ENTRY_POINT.assert_applies(workspace_architecture)
 
 
 # ──────────────────────────────────────────────────────────────
@@ -86,221 +51,6 @@ def test_no_direct_sqlalchemy_in_tests(
             for dep in graph.successors(node):
                 if "sqlalchemy" in str(dep):
                     violations.append(f"{node} imports {dep}")
-    assert not violations, "\n".join(violations)
-
-
-# ──────────────────────────────────────────────────────────────
-#  Rule C — Dagster imports only within the dagster package
-# ──────────────────────────────────────────────────────────────
-#  dagster must only be imported from brewgis.workspace.dagster
-#  (and its submodules). All other workspace modules must not
-#  couple to Dagster directly.
-# ──────────────────────────────────────────────────────────────
-
-
-def test_dagster_only_imported_by_dagster_package(
-    workspace_architecture: EvaluableArchitecture,
-) -> None:
-    """Verify dagster is only imported from within the dagster package.
-
-    The external ``dagster`` package (not the local package) must only be
-    imported by modules under ``workspace.dagster.*`` or the top-level
-    dagster package itself, or by ``workspace.analysis.pipeline``
-    which needs ``dagster_instance`` for launching runs.
-    """
-    allowed_prefixes = ("workspace.dagster", "workspace.analysis.pipeline")
-    graph = workspace_architecture._graph._graph
-    violations: list[str] = []
-    for node in graph.nodes():
-        node_str = str(node)
-        # Imports of dagster-embedded-elt are handled separately
-        if node_str.startswith(allowed_prefixes):
-            continue
-        for dep in graph.successors(node):
-            dep_str = str(dep)
-            # Only flag imports of the external "dagster" package itself
-            if dep_str == "dagster":
-                violations.append(f"{node_str} imports {dep_str}")
-    assert not violations, "\n".join(violations)
-
-
-def test_dagster_embedded_elt_only_in_dagster(
-    workspace_architecture: EvaluableArchitecture,
-) -> None:
-    """Verify dagster_embedded_elt is only imported from the dagster package."""
-    dagster_pkg_prefix = "workspace.dagster"
-    graph = workspace_architecture._graph._graph
-    violations: list[str] = []
-    for node in graph.nodes():
-        node_str = str(node)
-        if node_str.startswith(dagster_pkg_prefix):
-            continue
-        # Skip dagster_embedded_elt's own internal submodule resolution
-        if "dagster_embedded_elt" in node_str:
-            continue
-        for dep in graph.successors(node):
-            dep_str = str(dep)
-            if "dagster_embedded_elt" in dep_str:
-                violations.append(f"{node_str} imports {dep_str}")
-    assert not violations, "\n".join(violations)
-
-
-def test_dlt_pipeline_only_in_pipelines_and_dagster() -> None:
-    """Verify dlt.pipeline( calls are limited to dlt_pipelines/ and dagster/.
-
-    Direct file scan since dlt.pipeline is a function call, not a
-    module-level import.
-    """
-    allowed_dirs = {"dlt_pipelines", "dagster/assets"}
-    violations: list[str] = []
-    repo_root = Path(__file__).resolve().parent.parent
-    workspace_dir = repo_root / "brewgis" / "workspace"
-    for pyfile in workspace_dir.rglob("*.py"):
-        if "__pycache__" in pyfile.parts:
-            continue
-        relative = pyfile.relative_to(workspace_dir)
-        if any(str(relative).startswith(d) for d in allowed_dirs):
-            continue
-        content = pyfile.read_text(encoding="utf-8")
-        if "dlt.pipeline(" in content:
-            violations.append(str(relative))
-    assert not violations, (
-        f"dlt.pipeline( calls found outside allowed dirs {allowed_dirs}:\n"
-        + "\n".join(violations)
-    )
-
-
-# ══════════════════════════════════════════════════════════════
-#  Rule D — No silent exception-to-empty-data pattern
-# ══════════════════════════════════════════════════════════════
-#  Catching ``Exception`` / ``BaseException`` (or bare except)
-#  and then returning an empty default (``GeoDataFrame()``,
-#  ``DataFrame()``, ``[]``, ``{}``) silently masks upstream
-#  failures — e.g. missing staging tables → zero-filled data.
-#  The handler must at minimum ``raise`` or re-raise, or the
-#  caller must explicitly handle the empty result.
-# ══════════════════════════════════════════════════════════════
-
-_SOURCE_DIRS_TO_SCAN = [
-    REPO_ROOT / "brewgis" / "workspace" / "services",
-    REPO_ROOT / "brewgis" / "workspace" / "management",
-    REPO_ROOT / "brewgis" / "workspace" / "analysis",
-    REPO_ROOT / "brewgis" / "gx",
-]
-
-# Common "empty default" constructors that signal data loss.
-_EMPTY_RETURN_PATTERNS: tuple[tuple[str, ...], ...] = (
-    # gpd.GeoDataFrame() / pd.DataFrame()
-    ("GeoDataFrame",),
-    ("DataFrame",),
-    # gpd.GeoDataFrame([]) / pd.DataFrame([])
-    ("GeoDataFrame", "list"),  # arg is []
-    # [], {}
-    ("list_empty",),
-    ("dict_empty",),
-)
-
-
-def _is_empty_value(node: ast.AST) -> bool:
-    """Return True if *node* is an empty-container expression such as
-    ``GeoDataFrame()``, ``DataFrame()``, ``[]``, or ``{}``.
-    ``None`` is excluded — it is a legitimate sentinel for
-    "no result / couldn't compute", not a data-loss signal.
-    """
-    if isinstance(node, ast.List) and len(node.elts) == 0:
-        return True
-    if isinstance(node, ast.Dict) and len(node.keys) == 0:
-        return True
-    if isinstance(node, ast.Call):
-        func = node.func
-        # GeoDataFrame() or DataFrame() — possibly qualified (gpd.GeoDataFrame)
-        if isinstance(func, ast.Name) and func.id in ("GeoDataFrame", "DataFrame"):
-            return len(node.args) == 0 and len(node.keywords) == 0
-        if isinstance(func, ast.Attribute) and func.attr in (
-            "GeoDataFrame",
-            "DataFrame",
-        ):
-            return len(node.args) == 0 and len(node.keywords) == 0
-    return False
-
-
-def _is_bare_or_broad_except(handler: ast.ExceptHandler) -> bool:
-    """Return True if the except handler catches ``Exception``,
-    ``BaseException``, or bare ``except:``."""
-    if handler.type is None:
-        return True  # bare except:
-    if isinstance(handler.type, ast.Name) and handler.type.id in (
-        "Exception",
-        "BaseException",
-    ):
-        return True
-    # Handle `except Exception as e:`
-    if isinstance(handler.type, ast.Attribute) and handler.type.attr in (
-        "Exception",
-        "BaseException",
-    ):
-        return True
-    return False
-
-
-def _find_silent_exception_violations(filepath: Path) -> list[str]:
-    """Scan a single file for the silent-exception-to-empty-data pattern.
-
-    Returns human-readable violation descriptions.
-    """
-    try:
-        tree = ast.parse(filepath.read_text(encoding="utf-8"), filename=str(filepath))
-    except SyntaxError:
-        return []
-
-    violations: list[str] = []
-    for node in ast.walk(tree):
-        if not isinstance(node, ast.Try):
-            continue
-        for handler in node.handlers:
-            if not _is_bare_or_broad_except(handler):
-                continue
-            body = handler.body
-            if not body:
-                continue
-            last_stmt = body[-1]
-            if isinstance(last_stmt, ast.Raise):
-                continue  # re-raise is fine
-            if isinstance(last_stmt, ast.Return) and _is_empty_value(last_stmt.value):
-                # Find a human-readable location
-                line = last_stmt.lineno
-                # Try to find the except clause line for a better message
-                except_line = handler.lineno if hasattr(handler, "lineno") else line
-                violations.append(
-                    f"{filepath.relative_to(REPO_ROOT)}:{except_line}: "
-                    f"except handler at line {handler.lineno} catches "
-                    f"{'bare' if handler.type is None else ast.dump(handler.type)} "
-                    f"and returns empty value at line {line}"
-                )
-    return violations
-
-
-def test_no_silent_exception_returning_empty_data() -> None:
-    """Verify no ``except Exception:``/``except BaseException:``/bare ``except:``
-    handler returns an empty default (``GeoDataFrame()``, ``DataFrame()``, ``[]``,
-    ``{}``, or ``None``).
-
-    This pattern silently masks upstream failures such as missing staging
-    tables.  Handlers that need to recover should log *and* re-raise, or
-    return a sentinel the caller explicitly handles.
-    """
-    violations: list[str] = []
-    for source_dir in _SOURCE_DIRS_TO_SCAN:
-        if not source_dir.exists():
-            continue
-        for pyfile in source_dir.rglob("*.py"):
-            if "__pycache__" in pyfile.parts:
-                continue
-            violations.extend(_find_silent_exception_violations(pyfile))
-    assert not violations, (
-        "Silent exception-to-empty-data pattern found (catch Exception/BaseException"
-        " and return empty default without re-raising):\n" + "\n".join(violations)
-    )
 
 
 # ══════════════════════════════════════════════════════════════
@@ -424,7 +174,7 @@ def test_file_data_context_guarded_by_exists() -> None:
     # If we never found a single .py file with or without FileDataContext,
     # something is wrong with the scan.
     if not found_any and not violations:
-        violations.append("No Python files scanned — check _SOURCE_DIRS_TO_SCAN paths")
+        violations.append("No Python files scanned — check target_prefixes in test")
 
     assert not violations, (
         "FileDataContext() calls must be guarded by a path.exists() check:\n"
@@ -527,48 +277,3 @@ def _has_exists_call_before(
     return False
 
 
-# ══════════════════════════════════════════════════════════════
-#  Rule F — No exception handling in validation/linting code
-# ══════════════════════════════════════════════════════════════
-#  In validation and linting routines (brewgis/soda/) an
-#  exception means the target is misconfigured — missing
-#  table, missing column, wrong schema.  Catching it and
-#  returning a success would silently mask the failure.
-#  The exception **must** propagate.
-# ══════════════════════════════════════════════════════════════
-
-_SODA_DIR = REPO_ROOT / "brewgis" / "soda"
-
-
-def _find_try_nodes(filepath: Path) -> list[int]:
-    """Return line numbers of every ``try`` statement in *filepath*."""
-    tree = ast.parse(filepath.read_text(encoding="utf-8"))
-    return [node.lineno for node in ast.walk(tree) if isinstance(node, ast.Try)]
-
-
-def test_no_exception_handling_in_soda() -> None:
-    """Verify ``brewgis/soda/`` has zero ``try`` statements.
-
-    Exception handling in validation/linting code would
-    silently mask upstream misconfiguration (missing tables,
-    wrong columns, etc.) as successful passes.
-    """
-    if not _SODA_DIR.exists():
-        return
-
-    violations: dict[str, list[int]] = {}
-    for pyfile in _SODA_DIR.rglob("*.py"):
-        if "__pycache__" in pyfile.parts:
-            continue
-        lines = _find_try_nodes(pyfile)
-        if lines:
-            violations[str(pyfile.relative_to(REPO_ROOT))] = lines
-
-    assert not violations, (
-        "Exception handling found in validation/linting code (try/except masks"
-        " misconfiguration — let the exception propagate):\n"
-        + "\n".join(
-            f"  {path}:{','.join(str(ln) for ln in lines)}"
-            for path, lines in violations.items()
-        )
-    )
