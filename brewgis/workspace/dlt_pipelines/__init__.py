@@ -24,6 +24,8 @@ from brewgis.workspace.dlt_pipelines.tiger_bg import run_tiger_bg_pipeline
 from brewgis.workspace.dlt_pipelines.tiger_bg import tiger_bg_source
 from brewgis.workspace.dlt_pipelines.tiger_block import run_tiger_block_pipeline
 from brewgis.workspace.dlt_pipelines.tiger_block import tiger_block_source
+from brewgis.workspace.dlt_pipelines.vida_buildings import run_vida_buildings_pipeline
+from brewgis.workspace.dlt_pipelines.vida_buildings import vida_buildings_source
 
 __all__ = [
     "census_source",
@@ -41,6 +43,8 @@ __all__ = [
     "run_raster_pipeline",
     "run_tiger_bg_pipeline",
     "run_tiger_block_pipeline",
+    "run_vida_buildings_pipeline",
     "tiger_bg_source",
     "tiger_block_source",
+    "vida_buildings_source",
 ]

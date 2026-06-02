@@ -69,3 +69,11 @@ CREATE TABLE IF NOT EXISTS public.overture_buildings (
     source       TEXT,
     id           TEXT
 );
+
+-- Bootstrap table for VIDA combined building footprints
+CREATE TABLE IF NOT EXISTS public.vida_combined_buildings (
+    geometry       GEOMETRY(GEOMETRY, 4326),
+    confidence     DOUBLE PRECISION,
+    bf_source      TEXT,
+    area_in_meters DOUBLE PRECISION
+);

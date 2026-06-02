@@ -41,6 +41,9 @@ sources:
       - name: overture_buildings
         description: "Overture Maps building footprints — downloaded by building_footprints.py fetcher to public.overture_buildings."
         identifier: "{{ var('overture_buildings_table', 'overture_buildings') }}"
+      - name: vida_combined_buildings
+        description: "VIDA Combined Building Footprints (Google + Microsoft + OSM) — downloaded by vida_buildings.py fetcher to public.vida_combined_buildings."
+        identifier: "{{ var('vida_buildings_table', 'vida_combined_buildings') }}"
   - name: census
     description: "Census ACS data sources — fixed schema."
     schema: census

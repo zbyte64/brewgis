@@ -204,6 +204,9 @@ class Command(BaseCommand):
         from brewgis.workspace.dlt_pipelines.osm import run_osm_pipeline
         from brewgis.workspace.dlt_pipelines.tiger_bg import run_tiger_bg_pipeline
         from brewgis.workspace.dlt_pipelines.tiger_block import run_tiger_block_pipeline
+        from brewgis.workspace.dlt_pipelines.vida_buildings import (
+            run_vida_buildings_pipeline,
+        )
         from brewgis.workspace.services.building_footprints import (
             download_overture_buildings,
         )
@@ -371,11 +374,9 @@ class Command(BaseCommand):
             )
             if not nlcd_dbt_result.success:
                 raise CommandError(
-                   f"dbt nlcd_parcel_stats failed: {nlcd_dbt_result.error}"
+                    f"dbt nlcd_parcel_stats failed: {nlcd_dbt_result.error}"
                 )
-            self.stdout.write(
-                self.style.SUCCESS("  nlcd_parcel_stats materialized")
-            )
+            self.stdout.write(self.style.SUCCESS("  nlcd_parcel_stats materialized"))
 
         # ── Phase 1.5b: Run OSM pipeline (optional) ──────────────────────
         osm_table = ""
@@ -454,6 +455,23 @@ class Command(BaseCommand):
                 f"in {footprint_result.get('table_name', '?')}"
             )
 
+            # ── Phase 1.5c.5b: Download VIDA Combined building footprints ──
+            self.stdout.write(
+                "\n── Phase 1.5c.5b: Downloading VIDA Combined building footprints ──"
+            )
+            vida_result = run_vida_buildings_pipeline()
+            vida_row_count = vida_result.get("row_count", 0)
+            self.stdout.write(
+                f"  VIDA buildings loaded: {vida_row_count:,} rows "
+                f"in {vida_result.get('table_name', '?')}"
+            )
+            if vida_row_count == 0:
+                self.stdout.write(
+                    self.style.WARNING(
+                        "  No VIDA buildings downloaded — buildings_combined will contain only Overture buildings"
+                    )
+                )
+
             # ── Pre-flight: Ensure dbt seed tables for footprint models ──
             footprint_seeds = ["assessor_use_codes", "dasymetric_weights"]
             missing_footprint_seeds = [
@@ -476,6 +494,7 @@ class Command(BaseCommand):
             )
             footprint_dbt_result = run_dbt_local(
                 select=[
+                    "buildings_combined",
                     "parcel_building_footprints",
                     "parcel_block_groups",
                     "parcel_footprint_imputed",
@@ -538,8 +557,15 @@ class Command(BaseCommand):
 
         # ── Pre-flight: Ensure dbt seed tables are loaded ──────────────
         self.stdout.write("\n── Pre-flight: Checking dbt seed tables ──")
-        required_seeds = ["calibration_parameters", "assessor_use_codes", "dasymetric_weights", "sacog_land_use"]
-        missing_seeds = [s for s in required_seeds if not self._table_has_rows("public", s)]
+        required_seeds = [
+            "calibration_parameters",
+            "assessor_use_codes",
+            "dasymetric_weights",
+            "sacog_land_use",
+        ]
+        missing_seeds = [
+            s for s in required_seeds if not self._table_has_rows("public", s)
+        ]
         if missing_seeds:
             self.stdout.write(
                 f"  Missing seed tables: {', '.join(missing_seeds)}. Seeding selectively..."

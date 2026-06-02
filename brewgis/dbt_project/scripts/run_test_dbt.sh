@@ -18,6 +18,10 @@ echo ""
 echo "=== dbt seed (test overture buildings + extended parcels) ==="
 dbt seed --profiles-dir . --select test_overture_buildings test_assessor_parcels_extended
 echo ""
+echo "=== dbt seed (test VIDA buildings) ==="
+dbt seed --profiles-dir . --select test_vida_buildings
+echo ""
+
 echo "=== dbt seed (test NLCD parcels) ==="
 dbt seed --profiles-dir . --select test_nlcd_parcels
 
@@ -30,10 +34,10 @@ echo ""
 echo "=== dbt test (assessor pipeline — verifies dedup + unique index) ==="
 dbt test --profiles-dir . --select sacog_assessor_parcels sacog_assessor_sales assessor_building_medians --vars "$ASSESSOR_VARS"
 
-echo ""
+
 echo "=== dbt run (footprint pipeline: building footprints → block groups → imputation → dasymetric) ==="
-FOOTPRINT_VARS='{"assessor_parcels_table": "test_assessor_parcels", "assessor_sales_table": "test_assessor_sales", "overture_buildings_table": "test_overture_buildings"}'
-dbt run --profiles-dir . --select parcel_building_footprints parcel_block_groups parcel_footprint_imputed parcel_dasymetric_weights --vars "$FOOTPRINT_VARS"
+FOOTPRINT_VARS='{"assessor_parcels_table": "test_assessor_parcels", "assessor_sales_table": "test_assessor_sales", "overture_buildings_table": "test_overture_buildings", "vida_buildings_table": "test_vida_buildings"}'
+dbt run --profiles-dir . --select buildings_combined parcel_building_footprints parcel_block_groups parcel_footprint_imputed parcel_dasymetric_weights --vars "$FOOTPRINT_VARS"
 
 echo ""
 echo "=== dbt test (footprint pipeline: schema + coverage + valid types) ==="
