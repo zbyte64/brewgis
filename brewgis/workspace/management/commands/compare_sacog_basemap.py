@@ -178,6 +178,79 @@ class Command(BaseCommand):
 
         self.stdout.write(f"Report: {report_path}")
 
+        nlcd = bool(options.get("nlcd", False))
+        osm = bool(options.get("osm", False))
+        limit = int(options.get("limit", 0))
+        force_data_fetch = bool(options.get("force_data_fetch", False))
+        quick_parcel_clipping = bool(options.get("quick_parcel_clipping", False))
+        use_assessor_geometry = bool(options.get("use_assessor_geometry", False))
+
+        # TODO check if base_canvas exists / migrations are up to date
+
+        self.stdout.write("\n" + "=" * 70)
+        self.stdout.write("  SACOG Base Canvas Comparison: BrewGIS vs v1 Reference")
+        self.stdout.write("=" * 70)
+        self.stdout.write(f"  NLCD: {'on' if nlcd else 'off'}")
+        self.stdout.write(f"  OSM: {'on' if osm else 'off'}")
+        self.stdout.write(
+            f"  Assessor parcel geometry + dasymetric: {'on' if use_assessor_geometry else 'off'}"
+        )
+        self.stdout.write(f"  Parcel limit: {limit or 'all'}")
+        self.stdout.write(
+            f"  Force re-download: {'yes' if force_data_fetch else 'no (use cached data if available)'}"
+        )
+        self.stdout.write(
+            f"  Parcel clipping: {'fast (ClipByBox2D)' if quick_parcel_clipping else 'accurate (Intersection)'}"
+        )
+        if not settings.CENSUS_API_KEY:
+            raise CommandError(
+                "  WARNING: CENSUS_API_KEY is not set. Census ACS and CBP API calls will fail. "
+                "Set CENSUS_API_KEY in your .env file. Get a free key at "
+                "https://api.census.gov/data/key_signup.html"
+            )
+
+        # ── Pre-flight: Ensure SACOG v1 reference tables are loaded ────
+
+        try:
+            self._run(
+                nlcd=nlcd,
+                osm=osm,
+                limit=limit,
+                force_data_fetch=force_data_fetch,
+                quick_parcel_clipping=quick_parcel_clipping,
+                use_assessor_geometry=use_assessor_geometry,
+                log_file_handle=log_file_handle,
+                report_path=report_path,
+            )
+        except Exception:
+            logger.exception("compare_sacog_basemap failed")
+            self.stderr.write(
+                self.style.ERROR(
+                    "\nCommand failed — check log file for full traceback."
+                )
+            )
+            raise
+        finally:
+            if log_file_handle is not None:
+                log_file_handle.close()
+            self.stdout = original_stdout
+
+    # ─────────────────────────────────────────────────────────────────────────────
+    # Pipeline runner
+    # ─────────────────────────────────────────────────────────────────────────────
+
+    def _run(
+        self,
+        *,
+        nlcd: bool,
+        osm: bool,
+        limit: int,
+        force_data_fetch: bool,
+        quick_parcel_clipping: bool,
+        use_assessor_geometry: bool,
+        log_file_handle: Any,
+        report_path: Path,
+    ) -> None:
         # Lazy imports — avoid loading dagster assets at module import time
         # which conflicts with test stubs for pandas/geopandas.
         from brewgis.workspace.analysis.sqlmesh_runner import run_sqlmesh_plan
@@ -211,38 +284,6 @@ class Command(BaseCommand):
         from brewgis.workspace.services.census_fetcher import _populate_acs_block_group
         from brewgis.workspace.services.lehd_fetcher import _populate_wac_block
 
-        nlcd = bool(options.get("nlcd", False))
-        osm = bool(options.get("osm", False))
-        limit = int(options.get("limit", 0))
-        force_data_fetch = bool(options.get("force_data_fetch", False))
-        quick_parcel_clipping = bool(options.get("quick_parcel_clipping", False))
-        use_assessor_geometry = bool(options.get("use_assessor_geometry", False))
-
-        # TODO check if base_canvas exists / migrations are up to date
-
-        self.stdout.write("\n" + "=" * 70)
-        self.stdout.write("  SACOG Base Canvas Comparison: BrewGIS vs v1 Reference")
-        self.stdout.write("=" * 70)
-        self.stdout.write(f"  NLCD: {'on' if nlcd else 'off'}")
-        self.stdout.write(f"  OSM: {'on' if osm else 'off'}")
-        self.stdout.write(
-            f"  Assessor parcel geometry + dasymetric: {'on' if use_assessor_geometry else 'off'}"
-        )
-        self.stdout.write(f"  Parcel limit: {limit or 'all'}")
-        self.stdout.write(
-            f"  Force re-download: {'yes' if force_data_fetch else 'no (use cached data if available)'}"
-        )
-        self.stdout.write(
-            f"  Parcel clipping: {'fast (ClipByBox2D)' if quick_parcel_clipping else 'accurate (Intersection)'}"
-        )
-        if not settings.CENSUS_API_KEY:
-            raise CommandError(
-                "  WARNING: CENSUS_API_KEY is not set. Census ACS and CBP API calls will fail. "
-                "Set CENSUS_API_KEY in your .env file. Get a free key at "
-                "https://api.census.gov/data/key_signup.html"
-            )
-
-        # ── Pre-flight: Ensure SACOG v1 reference tables are loaded ────
         self.stdout.write("\n── Pre-flight: Checking SACOG reference tables ──")
         if not self._table_has_rows("public", V1_PARCELS):
             self.stdout.write(
@@ -620,46 +661,37 @@ class Command(BaseCommand):
 
         # ── Phase 5: Generate comparison report ────────────────────────
         self.stdout.write("\n── Phase 5: Generating comparison report ──")
-        try:
-            _generate_report_markdown(
-                ref_totals,
-                brew_totals,
-                correlations=correlations,
-                weighted_means=weighted_means,
-                config={
-                    "nlcd": nlcd,
-                    "osm": osm,
-                    "use-assessor-geometry": use_assessor_geometry,
-                    "quick-parcel-clipping": quick_parcel_clipping,
-                    "lehd-year": LEHD_YEAR,
-                    "acs-year": ACS_YEAR,
-                    "nlcd-year": NLCD_YEAR,
-                },
-                diagnostics=_collect_diagnostics(
-                    engine=get_engine(),
-                    dasymetric_table=dasymetric_weights_table
-                    if use_assessor_geometry
-                    else None,
-                ),
-                output_path=report_path,
-                quick=not (nlcd or osm),
-                limit=limit,
-            )
+        _generate_report_markdown(
+            ref_totals,
+            brew_totals,
+            correlations=correlations,
+            weighted_means=weighted_means,
+            config={
+                "nlcd": nlcd,
+                "osm": osm,
+                "use-assessor-geometry": use_assessor_geometry,
+                "quick-parcel-clipping": quick_parcel_clipping,
+                "lehd-year": LEHD_YEAR,
+                "acs-year": ACS_YEAR,
+                "nlcd-year": NLCD_YEAR,
+            },
+            diagnostics=_collect_diagnostics(
+                engine=get_engine(),
+                dasymetric_table=dasymetric_weights_table
+                if use_assessor_geometry
+                else None,
+            ),
+            output_path=report_path,
+            quick=not (nlcd or osm),
+            limit=limit,
+        )
 
-            self.stdout.write(
-                self.style.SUCCESS(f"\n✓ Report written to {report_path}")
-            )
-            self.stdout.write(
-                self.style.SUCCESS(f"  Done — open {report_path} to review")
-            )
-        except Exception:
-            logger.exception("Unhandled error in compare_sacog_basemap")
-            raise
-        finally:
-            if log_file_handle is not None:
-                log_file_handle.close()
-            self.stdout = original_stdout
-
+        self.stdout.write(
+            self.style.SUCCESS(f"\n✓ Report written to {report_path}")
+        )
+        self.stdout.write(
+            self.style.SUCCESS(f"  Done — open {report_path} to review")
+        )
     # ═══════════════════════════════════════════════════════════════════
     # Internal helpers
     # ═══════════════════════════════════════════════════════════════════
