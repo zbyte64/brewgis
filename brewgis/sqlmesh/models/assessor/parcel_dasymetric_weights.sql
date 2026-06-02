@@ -36,7 +36,7 @@ WITH assessor_parcels AS (
         apn,
         geometry,
         COALESCE(NULLIF(lot_size_acres, 0), 0.01) AS lot_size_acres
-    FROM sacog_assessor_parcels
+    FROM brewgis.assessor.sacog_assessor_parcels
 ),
 
 sales_data AS (
@@ -66,7 +66,7 @@ sales_data AS (
                     END,
                     year_built DESC NULLS LAST
             ) AS rn
-        FROM sacog_assessor_sales
+        FROM public.sacog_assessor_sales_raw
         WHERE living_area IS NOT NULL OR building_sf IS NOT NULL
     ) deduped_sales
     WHERE rn = 1
@@ -80,7 +80,7 @@ building_medians AS (
         median_living_area,
         median_building_sf,
         median_lot_size_acres
-    FROM assessor_building_medians
+    FROM brewgis.assessor.assessor_building_medians
 ),
 
 estimated AS (

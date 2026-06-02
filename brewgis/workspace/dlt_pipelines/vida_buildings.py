@@ -19,11 +19,13 @@ License: ODbL (https://opendatacommons.org/licenses/odbl/)
 from __future__ import annotations
 
 import logging
+from pathlib import Path
 from typing import Any
 
 import dlt
 import pyarrow.fs
 import pyarrow.parquet
+from django.conf import settings
 from dlt.destinations.impl.postgres.postgres_adapter import postgres_adapter
 from shapely import from_wkb
 
@@ -40,6 +42,15 @@ S3_S2_PARTITION_DIR = (
 # Target PostGIS table name
 OUTPUT_TABLE = "vida_combined_buildings"
 
+# Local cache directory for downloaded parquet files
+VIDA_CACHE_DIR = (
+    Path(settings.DATA_DOWNLOAD_CACHE_DIR) / "vida_buildings" / VIDA_RELEASE_DIR
+)
+
+# Max rows to process in a single batch when reading a parquet file.
+# Prevents OOM on large S2 cells (some exceed 10M rows).
+BATCH_SIZE = 500_000
+
 __all__ = [
     "run_vida_buildings_pipeline",
     "vida_buildings_source",
@@ -47,13 +58,19 @@ __all__ = [
 
 
 @dlt.source(name="vida_buildings", max_table_nesting=0)
-def vida_buildings_source() -> list[Any]:
+def vida_buildings_source(*, ignore_cache: bool = False) -> list[Any]:
     """dlt source for VIDA combined building footprints.
 
-    Lists S2-partitioned parquet files for the USA, reads each file via
-    pyarrow, and yields every row as a dict.  Downloads ALL rows from
-    whatever S2 files exist — no spatial filtering at the pipeline level.
-    That's owned by the downstream ``buildings_combined`` dbt model.
+    Lists S2-partitioned parquet files for the USA, downloads and caches
+    each file locally, then reads in batches and yields every row as a
+    dict.  Downloads ALL rows from whatever S2 files exist — no spatial
+    filtering at the pipeline level.  That's owned by the downstream
+    ``buildings_combined`` dbt model.
+
+    Parameters
+    ----------
+    ignore_cache : bool, optional
+        If True, re-download parquet files from S3 even if cached locally.
 
     Returns:
         List with a single :class:`dlt.Resource` wrapped via
@@ -61,21 +78,93 @@ def vida_buildings_source() -> list[Any]:
     """
     return [
         postgres_adapter(
-            vida_buildings_resource(),
+            vida_buildings_resource(ignore_cache=ignore_cache),
             geometry="geometry",
         )
     ]
+
+
+def _ensure_cached(
+    s3_path: str,
+    basename: str,
+    fs: pyarrow.fs.FileSystem,
+    cache_dir: Path,
+) -> Path | None:
+    """Download an S3 parquet file to the local cache directory.
+
+    Returns the local path, or ``None`` if download failed.
+    """
+    local_path = cache_dir / basename
+    if local_path.exists():
+        logger.debug("Cache hit for %s", basename)
+        return local_path
+
+    logger.info("Downloading %s from S3 to local cache", basename)
+    try:
+        with fs.open_input_stream(s3_path) as stream:
+            data = stream.read()
+        local_path.write_bytes(data)
+        logger.info("Cached %s (%.1f MB)", basename, len(data) / (1024 * 1024))
+    except (OSError, pyarrow.ArrowException):
+        logger.exception("Failed to cache %s", basename)
+        # Clean up partial write
+        local_path.unlink(missing_ok=True)
+        return None
+
+    return local_path
+
+
+def _batch_rows(path: str) -> Any:
+    """Yield VIDA building footprint dicts from a local parquet file in batches.
+
+    Reads ``path`` in chunks of ``BATCH_SIZE``; each batch converts WKB
+    geometry to Shapely WKT and yields row dicts for dlt.
+
+    Yields dicts with keys: ``geometry`` (WKT), ``confidence``,
+    ``bf_source``, ``area_in_meters``.
+    """
+    pf = pyarrow.parquet.ParquetFile(path)
+    for batch in pf.iter_batches(
+        batch_size=BATCH_SIZE,
+        columns=["geometry", "confidence", "bf_source", "area_in_meters"],
+    ):
+        if batch.num_rows == 0:
+            continue
+
+        wkb_list = batch.column("geometry").to_pylist()
+        geometries = from_wkb(wkb_list)
+        confidence_col = batch.column("confidence").to_pylist()
+        bf_source_col = batch.column("bf_source").to_pylist()
+        area_col = batch.column("area_in_meters").to_pylist()
+
+        for i in range(batch.num_rows):
+            geom = geometries[i]
+            if geom is None or geom.is_empty:
+                continue
+            yield {
+                "geometry": geom.wkt,
+                "confidence": (
+                    float(confidence_col[i]) if confidence_col[i] is not None else None
+                ),
+                "bf_source": (
+                    str(bf_source_col[i]) if bf_source_col[i] is not None else None
+                ),
+                "area_in_meters": (
+                    float(area_col[i]) if area_col[i] is not None else None
+                ),
+            }
 
 
 @dlt.resource(
     name=OUTPUT_TABLE,
     write_disposition="replace",
 )
-def vida_buildings_resource() -> Any:
+def vida_buildings_resource(*, ignore_cache: bool = False) -> Any:
     """Yield VIDA building footprint rows from all S2 parquet files.
 
-    Lists the S2 sub-partitioned files for the USA, reads each file via
-    pyarrow, and yields every row as a dict with WKT geometry.
+    Lists the S2 sub-partitioned files for the USA, downloads and caches
+    each file to disk (unless ``ignore_cache`` is set), then reads each
+    file in batches of ``BATCH_SIZE`` to avoid OOM on large cells.
 
     Yields dicts with keys: ``geometry`` (WKT), ``confidence``,
     ``bf_source``, ``area_in_meters``.
@@ -103,62 +192,43 @@ def vida_buildings_resource() -> Any:
 
     logger.info("Found %d S2 partition files for USA", len(s2_files))
 
+    cache_dir = VIDA_CACHE_DIR
+    cache_dir.mkdir(parents=True, exist_ok=True)
+
     total_rows_yielded = 0
-    for file_path in s2_files:
-        file_basename = file_path.rsplit("/", 1)[-1]
+    for s3_path in s2_files:
+        file_basename = s3_path.rsplit("/", 1)[-1]
+
+        # Obtain a local path (cached or freshly downloaded)
         try:
-            # Use ParquetFile (not read_table) — it opens a single file and
-            # does NOT auto-detect Hive partitions from the ``country_iso=USA``
-            # directory component, which would conflict with the parquet
-            # file's internal ``country_iso`` dictionary column.
-            pf = pyarrow.parquet.ParquetFile(file_path, filesystem=fs)
-            table = pf.read(
-                columns=[
-                    "geometry",
-                    "confidence",
-                    "bf_source",
-                    "area_in_meters",
-                ],
-                use_threads=False,
-            )
+            if ignore_cache:
+                stale = cache_dir / file_basename
+                stale.unlink(missing_ok=True)
+            local_path = _ensure_cached(s3_path, file_basename, fs, cache_dir)
+            if local_path is None:
+                continue
+        except (OSError, pyarrow.ArrowException) as exc:
+            logger.warning("Failed to cache %s: %s; skipping", file_basename, exc)
+            continue
+
+        # Read the file in batches to keep peak memory bounded
+        file_rows = 0
+        try:
+            for row in _batch_rows(str(local_path)):
+                yield row
+                file_rows += 1
         except (OSError, pyarrow.ArrowException) as exc:
             logger.warning(
                 "Failed to read S2 file %s: %s; skipping", file_basename, exc
             )
             continue
 
-        if table.num_rows == 0:
-            continue
+        total_rows_yielded += file_rows
 
-        # Convert WKB geometry to Shapely, then yield WKT for PostGIS
-        wkb_list = table.column("geometry").to_pylist()
-        geometries = from_wkb(wkb_list)
-        confidence_col = table.column("confidence").to_pylist()
-        bf_source_col = table.column("bf_source").to_pylist()
-        area_col = table.column("area_in_meters").to_pylist()
-
-        for i in range(table.num_rows):
-            geom = geometries[i]
-            if geom is None or geom.is_empty:
-                continue
-            yield {
-                "geometry": geom.wkt,
-                "confidence": (
-                    float(confidence_col[i]) if confidence_col[i] is not None else None
-                ),
-                "bf_source": (
-                    str(bf_source_col[i]) if bf_source_col[i] is not None else None
-                ),
-                "area_in_meters": (
-                    float(area_col[i]) if area_col[i] is not None else None
-                ),
-            }
-
-        total_rows_yielded += table.num_rows
         logger.info(
             "Yielded %s: %d rows (%d total)",
             file_basename,
-            table.num_rows,
+            file_rows,
             total_rows_yielded,
         )
 
@@ -167,17 +237,23 @@ def vida_buildings_resource() -> Any:
 
 def run_vida_buildings_pipeline(
     schema: str = "public",
+    *,
+    ignore_cache: bool = False,
 ) -> dict:
     """Run dlt pipeline to load VIDA combined building footprints to PostGIS.
 
-    Downloads all USA S2-partitioned GeoParquet files and loads every row
-    into ``public.vida_combined_buildings`` (``OUTPUT_TABLE``).  The table
-    is replaced on each run (``write_disposition="replace"``).
+    Downloads all USA S2-partitioned GeoParquet files (with local disk
+    caching) and loads every row into ``public.vida_combined_buildings``
+    (``OUTPUT_TABLE``).  The table is replaced on each run
+    (``write_disposition="replace"``).
 
     Parameters
     ----------
     schema : str, optional
         PostgreSQL schema for the destination table (default ``"public"``).
+    ignore_cache : bool, optional
+        If True, re-download parquet files from S3 even if cached locally
+        (default ``False``).
 
     Returns
     -------
@@ -190,7 +266,7 @@ def run_vida_buildings_pipeline(
         dataset_name=schema,
     )
 
-    load_info = pipeline.run(vida_buildings_source())
+    load_info = pipeline.run(vida_buildings_source(ignore_cache=ignore_cache))
 
     total_rows = 0
     for step in pipeline.last_trace.steps:

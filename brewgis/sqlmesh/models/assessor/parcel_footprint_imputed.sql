@@ -35,9 +35,9 @@ known AS (
         COALESCE(s.units, 1) AS units,
         s.living_area AS living_sqft,
         s.building_sf AS building_sqft
-    FROM parcel_building_footprints pbf
+    FROM brewgis.assessor.parcel_building_footprints pbf
     JOIN parcel_block_groups pbg ON pbf.apn = pbg.apn
-    JOIN brewgis.assessor_sales s ON pbf.apn = s.apn
+    JOIN public.sacog_assessor_sales_raw s ON pbf.apn = s.apn
     WHERE pbf.footprint_ratio > 0
       AND s.property_type IS NOT NULL
       AND s.property_type != ''
@@ -53,7 +53,7 @@ unknown AS (
         pbf.land_development_category,
         pbg.block_group_geoid,
         pbg.tract_geoid
-    FROM parcel_building_footprints pbf
+    FROM brewgis.assessor.parcel_building_footprints pbf
     JOIN parcel_block_groups pbg ON pbf.apn = pbg.apn
     WHERE pbf.footprint_ratio > 0
       AND pbf.apn NOT IN (SELECT apn FROM known)
@@ -286,6 +286,6 @@ SELECT
     i.imputed_building_sqft,
     i.imputed_from_tier,
     i.neighbor_count
-FROM parcel_building_footprints pbf
+FROM brewgis.assessor.parcel_building_footprints pbf
 LEFT JOIN parcel_block_groups pbg ON pbf.apn = pbg.apn
 JOIN imputed i ON pbf.apn = i.apn

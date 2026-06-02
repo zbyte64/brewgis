@@ -22,7 +22,7 @@ WITH deduped AS (
             PARTITION BY apn
             ORDER BY lotsize::double precision DESC NULLS LAST
         ) AS rn
-    FROM brewgis.assessor_parcels
+    FROM public.sacog_assessor_parcels_raw
 )
 SELECT
     apn,

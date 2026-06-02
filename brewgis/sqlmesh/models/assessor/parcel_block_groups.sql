@@ -16,7 +16,7 @@ SELECT DISTINCT ON (sap.apn)
     sap.apn,
     tbg.geoid AS block_group_geoid,
     LEFT(tbg.geoid, 11) AS tract_geoid
-FROM sacog_assessor_parcels sap
+FROM brewgis.assessor.sacog_assessor_parcels sap
 JOIN public.tiger_block_groups tbg
     ON ST_Intersects(sap.geometry, tbg.geometry)
    AND tbg.vintage = '2023'

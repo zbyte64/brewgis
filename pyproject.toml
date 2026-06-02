@@ -127,12 +127,12 @@ plugins = [
 ]
 
 [[tool.mypy.overrides]]
-# Django migrations should not produce any errors:
-module = "*.migrations.*"
 ignore_errors = true
 
 # Packages without stubs:
 module = [
+    # Django migrations should not produce any errors:
+    "*.migrations.*",
     "celery",
     "celery.*",
     "environ",

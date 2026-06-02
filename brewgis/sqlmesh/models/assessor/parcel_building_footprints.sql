@@ -31,7 +31,7 @@ WITH building_stats AS (
         COUNT(*) FILTER (WHERE bc.bf_source = 'google') AS google_building_count,
         COUNT(*) FILTER (WHERE bc.bf_source = 'microsoft') AS microsoft_building_count,
         AVG(bc.confidence) AS mean_confidence
-    FROM sacog_assessor_parcels sap
+    FROM brewgis.assessor.sacog_assessor_parcels sap
     JOIN buildings_combined bc
         ON ST_Intersects(sap.geometry, bc.geometry)
     GROUP BY sap.apn
@@ -55,7 +55,7 @@ SELECT
         ELSE 0
     END AS footprint_ratio,
     COALESCE(auc.category, 'urban') AS land_development_category
-FROM sacog_assessor_parcels sap
+FROM brewgis.assessor.sacog_assessor_parcels sap
 LEFT JOIN building_stats bs ON sap.apn = bs.apn
 LEFT JOIN assessor_use_codes auc
     ON LEFT(COALESCE(sap.landuse::text, ''), 2) = auc.use_code::text

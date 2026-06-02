@@ -16,7 +16,7 @@ WITH sales_with_type AS (
             NULLIF(TRIM(s.property_type), ''),
             'Other'
         ) AS property_type_clean
-    FROM sacog_assessor_sales s
+    FROM public.sacog_assessor_sales_raw s
 )
 
 SELECT

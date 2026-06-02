@@ -254,7 +254,6 @@ class Command(BaseCommand):
         # Lazy imports — avoid loading dagster assets at module import time
         # which conflicts with test stubs for pandas/geopandas.
         from brewgis.workspace.analysis.sqlmesh_runner import run_sqlmesh_plan
-        from brewgis.workspace.analysis.sqlmesh_runner import run_sqlmesh_run
         from brewgis.workspace.dagster.assets.comparison_assets import (
             _convert_reference_totals,
         )
@@ -402,7 +401,9 @@ class Command(BaseCommand):
             self.stdout.write(
                 "\n── Phase 1.5a.5: Materializing nlcd_parcel_stats SQLMesh model ──"
             )
-            nlcd_dbt_result = run_sqlmesh_plan(environment="sacog_comparison", skip_tests=True,
+            nlcd_dbt_result = run_sqlmesh_plan(
+                environment="sacog_comparison",
+                skip_tests=True,
                 select=["brewgis.nlcd.parcels_wm", "brewgis.nlcd.nlcd_parcel_stats"],
             )
             if not nlcd_dbt_result.success:
@@ -455,7 +456,9 @@ class Command(BaseCommand):
             self.stdout.write(
                 "\n── Phase 1.5e: Materializing assessor SQLMesh staging models ──"
             )
-            staging_result = run_sqlmesh_plan(environment="sacog_comparison", skip_tests=True,
+            staging_result = run_sqlmesh_plan(
+                environment="sacog_comparison",
+                skip_tests=True,
                 select=[
                     "brewgis.assessor.sacog_assessor_parcels",
                     "brewgis.assessor.sacog_assessor_sales",
@@ -488,7 +491,7 @@ class Command(BaseCommand):
             self.stdout.write(
                 "\n── Phase 1.5c.5b: Downloading VIDA Combined building footprints ──"
             )
-            vida_result = run_vida_buildings_pipeline()
+            vida_result = run_vida_buildings_pipeline(ignore_cache=force_data_fetch)
             vida_row_count = vida_result.get("row_count", 0)
             self.stdout.write(
                 f"  VIDA buildings loaded: {vida_row_count:,} rows "
@@ -502,7 +505,10 @@ class Command(BaseCommand):
                 )
 
             # ── Pre-flight: Ensure SQLMesh seed tables for footprint models ──
-            footprint_seeds = ["brewgis.seeds.assessor_use_codes", "brewgis.seeds.dasymetric_weights"]
+            footprint_seeds = [
+                "brewgis.seeds.assessor_use_codes",
+                "brewgis.seeds.dasymetric_weights",
+            ]
             missing_footprint_seeds = [
                 s for s in footprint_seeds if not self._table_has_rows("public", s)
             ]
@@ -510,8 +516,16 @@ class Command(BaseCommand):
                 self.stdout.write(
                     f"  Missing seed tables: {', '.join(missing_footprint_seeds)}. Seeding selectively..."
                 )
-                seed_result = run_sqlmesh_plan(environment="sacog_comparison", skip_tests=True, select=missing_footprint_seeds)
-                seed_result = run_sqlmesh_plan(environment="sacog_comparison", skip_tests=True, select=missing_footprint_seeds)
+                seed_result = run_sqlmesh_plan(
+                    environment="sacog_comparison",
+                    skip_tests=True,
+                    select=missing_footprint_seeds,
+                )
+                seed_result = run_sqlmesh_plan(
+                    environment="sacog_comparison",
+                    skip_tests=True,
+                    select=missing_footprint_seeds,
+                )
                 if not seed_result.success:
                     raise CommandError(f"SQLMesh seed failed: {seed_result.error}")
                 self.stdout.write(
@@ -522,7 +536,9 @@ class Command(BaseCommand):
             self.stdout.write(
                 "\n── Phase 1.5c.6: Materializing footprint + dasymetric SQLMesh models ──"
             )
-            footprint_dbt_result = run_sqlmesh_plan(environment="sacog_comparison", skip_tests=True,
+            footprint_dbt_result = run_sqlmesh_plan(
+                environment="sacog_comparison",
+                skip_tests=True,
                 select=[
                     "brewgis.assessor.buildings_combined",
                     "brewgis.assessor.parcel_building_footprints",
@@ -550,11 +566,15 @@ class Command(BaseCommand):
             "base_canvas_materialized": "table",
             "projected_srid": LOCAL_SRID,
         }
-        shim_result = run_sqlmesh_plan(environment="sacog_comparison", skip_tests=True,
+        shim_result = run_sqlmesh_plan(
+            environment="sacog_comparison",
+            skip_tests=True,
             select=["brewgis.comparison.sacog_parcel_shim"],
         )
         if not shim_result.success:
-            raise CommandError(f"SQLMesh sacog_parcel_shim run failed: {shim_result.error}")
+            raise CommandError(
+                f"SQLMesh sacog_parcel_shim run failed: {shim_result.error}"
+            )
         self.stdout.write(self.style.SUCCESS("  sacog_parcel_shim materialized"))
 
         # ── Phase 2a.5: Materialize assessor→SACOG dasymetric crosswalk (if assessor data loaded) ──
@@ -565,7 +585,9 @@ class Command(BaseCommand):
             crosswalk_vars: dict[str, Any] = {
                 "base_canvas_materialized": "table",
             }
-            crosswalk_result = run_sqlmesh_plan(environment="sacog_comparison", skip_tests=True,
+            crosswalk_result = run_sqlmesh_plan(
+                environment="sacog_comparison",
+                skip_tests=True,
                 select=["brewgis.comparison.sacog_comparison_dasymetric"],
             )
             if not crosswalk_result.success:
@@ -594,15 +616,21 @@ class Command(BaseCommand):
             self.stdout.write(
                 f"  Missing seed tables: {', '.join(missing_seeds)}. Seeding selectively..."
             )
-            seed_result = run_sqlmesh_plan(environment="sacog_comparison", skip_tests=True, select=missing_seeds)
-            seed_result = run_sqlmesh_plan(environment="sacog_comparison", skip_tests=True, select=missing_seeds)
+            seed_result = run_sqlmesh_plan(
+                environment="sacog_comparison", skip_tests=True, select=missing_seeds
+            )
+            seed_result = run_sqlmesh_plan(
+                environment="sacog_comparison", skip_tests=True, select=missing_seeds
+            )
             if not seed_result.success:
-                    raise CommandError(f"SQLMesh seed failed: {seed_result.error}")
+                raise CommandError(f"SQLMesh seed failed: {seed_result.error}")
             self.stdout.write(
                 self.style.SUCCESS("  Missing seed tables loaded successfully")
             )
         else:
-            self.stdout.write("  SQLMesh seed tables already present, skipping SQLMesh seed")
+            self.stdout.write(
+                "  SQLMesh seed tables already present, skipping SQLMesh seed"
+            )
 
         # ── Phase 2b: Run SQLMesh base_canvas models ────────────────────────
         self.stdout.write("\n── Phase 2b: Running SQLMesh base_canvas models ──")
@@ -621,7 +649,9 @@ class Command(BaseCommand):
             dbt_vars["osm_intersection_table"] = osm_table
         if dasymetric_weights_table:
             dbt_vars["dasymetric_weights_table"] = dasymetric_weights_table
-        result = run_sqlmesh_plan(environment="sacog_comparison", skip_tests=True,
+        result = run_sqlmesh_plan(
+            environment="sacog_comparison",
+            skip_tests=True,
             select=[
                 "brewgis.base_canvas.base_canvas_geometry",
                 "brewgis.base_canvas.base_canvas_demographics",
@@ -637,7 +667,11 @@ class Command(BaseCommand):
 
         # ── Phase 3: Running SQLMesh comparison models ─────────────────────────
         self.stdout.write("\n── Phase 3: Running SQLMesh comparison models ──")
-        result = run_sqlmesh_plan(environment="sacog_comparison", skip_tests=True, select=["brewgis.comparison.*"])
+        result = run_sqlmesh_plan(
+            environment="sacog_comparison",
+            skip_tests=True,
+            select=["brewgis.comparison.*"],
+        )
         if not result.success:
             raise CommandError(f"SQLMesh comparison run failed: {result.error}")
         self.stdout.write(self.style.SUCCESS("  SQLMesh comparison models complete"))
@@ -686,12 +720,9 @@ class Command(BaseCommand):
             limit=limit,
         )
 
-        self.stdout.write(
-            self.style.SUCCESS(f"\n✓ Report written to {report_path}")
-        )
-        self.stdout.write(
-            self.style.SUCCESS(f"  Done — open {report_path} to review")
-        )
+        self.stdout.write(self.style.SUCCESS(f"\n✓ Report written to {report_path}"))
+        self.stdout.write(self.style.SUCCESS(f"  Done — open {report_path} to review"))
+
     # ═══════════════════════════════════════════════════════════════════
     # Internal helpers
     # ═══════════════════════════════════════════════════════════════════

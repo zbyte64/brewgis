@@ -24,4 +24,4 @@ SELECT
     sales_price,
     lot_size_acres,
     units
-FROM brewgis.assessor_sales
+FROM public.sacog_assessor_sales_raw
