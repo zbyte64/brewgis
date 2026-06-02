@@ -110,35 +110,6 @@ class SacogLoadParcelsConfig(Config):
     cache_dir: str = ""
     """Directory to store cached GeoJSON. Empty = default planning/ cache dir."""
 
-
-class SacogComparisonETLConfig(Config):
-    """Config for ``sacog_run_comparison_etl`` asset.
-
-    Controls data sources and which adapters to enable.
-    """
-
-    run_nlcd: bool = False
-    """Enable NLCD land cover classification and irrigation estimation."""
-    run_osm: bool = False
-    """Enable OSM intersection density estimation."""
-    run_assessor: bool = False
-    """Enable Sacramento County Assessor parcel ingestion + dasymetric weights."""
-    force_data_fetch: bool = False
-    """Ignore cached data and re-download."""
-    truncate: bool = False
-    """Truncate existing base_canvas before inserting."""
-
-
-class SacogReportConfig(Config):
-    """Config for the ``sacog_generate_report`` asset.
-
-    Controls where the comparison report is written.
-    """
-
-    output_path: str = ""
-    """File path for the generated markdown report. Empty = default planning/sacog_comparison_report.md."""
-
-
 class ImputeAreaProportionalConfig(Config):
     """Config for the ``impute_area_proportional_asset``."""
 

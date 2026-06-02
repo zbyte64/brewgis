@@ -1,13 +1,9 @@
 """Step definitions for orchestration-level isolation BDD scenarios.
-
-These steps translate the PostGIS-level isolation feature file
-(tests/features/dbt_isolation.feature) to orchestration-level assertions.
-Instead of creating real schemas/views via psycopg, they create
-Workspace/AnalysisRun records with mocked Celery dispatch and verify
-model-level isolation contracts.
-
-Each step receives the same scenario_context dict, allowing state to
-flow from Given → When → Then steps.
+These steps translate the SQL-level isolation feature file
+(tests/features/dbt_isolation.feature, kept for backward compatibility)
+to orchestration-level assertions.  Instead of creating real schemas/views
+via psycopg, they create Workspace/AnalysisRun records with mocked Celery
+dispatch and verify model-level isolation contracts.
 """
 
 from __future__ import annotations
@@ -35,7 +31,7 @@ if TYPE_CHECKING:
 
 logger = logging.getLogger(__name__)
 
-# Register the same feature file used by the real (psycopg-level) BDD tests.
+# Register the same feature file used by the real (SQL-level) BDD tests.
 scenarios(
     str(Path(__file__).parent.parent / ".." / "features" / "dbt_isolation.feature")
 )
@@ -370,7 +366,7 @@ def view_does_not_exist(
 
 
 def _derive_scenario_id_from_view(view_name: str) -> str:
-    """Extract the scenario_id from a dbt output table name.
+    """Extract the scenario_id from a SQLMesh output table name.
 
     Module result tables follow the template ``{module}_{scenario_id}``.
     For example, ``env_constraint_bdd_scenario_a`` → ``bdd_scenario_a``.
@@ -411,7 +407,7 @@ def _derive_scenario_id_from_view(view_name: str) -> str:
 
 
 def _derive_module_from_view(view_name: str) -> str:
-    """Map a dbt output view name back to the module that produces it.
+    """Map a SQLMesh output view name back to the module that produces it.
 
     Uses MODULE_RESULT_TABLES to find the module whose table template
     matches the given view name.

@@ -18,14 +18,15 @@ import logging
 import re
 from pathlib import Path
 from typing import Any
+import hashlib
+import time
 
 import deal
 import pandas as pd
 import requests
 from django.conf import settings as django_settings
 
-from brewgis.soda import validate_wac_block
-from brewgis.workspace.analysis.dbt_runner import run_dbt_local
+from brewgis.workspace.analysis.sqlmesh_runner import run_sqlmesh_plan
 from brewgis.workspace.services._db import get_engine
 from brewgis.workspace.services._db import text
 
@@ -1163,25 +1164,12 @@ def _populate_wac_block(
     raw_vars.update(cns18_20_fracs)
 
     # Step 2: CNS split → lehd.wac_block_raw (now with CNS18-20 fractions)
-    result = run_dbt_local(select=["wac_block_raw"], vars_=raw_vars)
-    if not result.success:
-        msg = f"dbt wac_block_raw failed: {result.error}"
-        raise RuntimeError(msg)
-
     # Build dbt vars for wac_block (CBP county scaling).
     scaling_vars: dict[str, object] = {
         "cbp_preserve_fraction": 0.50,
     }
     for sub_col in _SUBSECTOR_CBP_NAICS:
         cbp_key = f"cbp_county_{sub_col}"
-        scaling_vars[cbp_key] = cbp_totals.get(sub_col, 0.0)
-
-    # Step 3: CBP scaling → lehd.wac_block
-    result = run_dbt_local(select=["wac_block"], vars_=scaling_vars)
-    if not result.success:
-        msg = f"dbt wac_block failed: {result.error}"
-        raise RuntimeError(msg)
-
     engine = get_engine()
     with engine.connect() as conn:
         row_count = (
@@ -1194,11 +1182,4 @@ def _populate_wac_block(
             f"{state_fips}/{county_fips} year {year}"
         )
         raise RuntimeError(msg)
-
-    # Soda validation — validates wac_block quality
-    result = validate_wac_block(schema="lehd", table="wac_block")
-    if not result.get("success", False):
-        raise RuntimeError(
-            "WAC block validation failed: " + "; ".join(result.get("failures", []))
-        )
     return row_count

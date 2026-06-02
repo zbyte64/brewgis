@@ -16,10 +16,9 @@ import logging
 import os
 from typing import Any
 
-from brewgis.soda import validate_acs_block_group
-from brewgis.workspace.analysis.dbt_runner import run_dbt_local
 from brewgis.workspace.services._db import get_engine
 from brewgis.workspace.services._db import text
+from brewgis.workspace.analysis.sqlmesh_runner import run_sqlmesh_plan
 
 logger = logging.getLogger(__name__)
 
@@ -276,9 +275,9 @@ def _populate_acs_block_group(
         "tiger_bg_vintage": "2013",
     }
 
-    result = run_dbt_local(select=["acs_block_group"], vars_=dbt_vars)
+    result = run_sqlmesh_plan(environment="brewgis_prod", select=["brewgis.staging.acs_block_group"], skip_tests=True)
     if not result.success:
-        msg = f"dbt acs_block_group failed: {result.error}"
+        msg = f"SQLMesh acs_block_group failed: {result.error}"
         raise RuntimeError(msg)
 
     engine = get_engine()
@@ -294,12 +293,4 @@ def _populate_acs_block_group(
             f"{state_fips}/{county_fips} year {year}"
         )
         raise RuntimeError(msg)
-
-    # Soda validation — validates acs_block_group quality
-    result = validate_acs_block_group(schema="census", table="acs_block_group")
-    if not result.get("success", False):
-        raise RuntimeError(
-            "ACS block group validation failed: "
-            + "; ".join(result.get("failures", []))
-        )
     return row_count

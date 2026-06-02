@@ -9,12 +9,9 @@ from brewgis.workspace.dagster.assets.impute_assets import (
 
 @job(
     name="impute_area_proportional",
-    description="Run area-proportional imputation via dbt.",
+    description="Run area-proportional imputation via SQLMesh.",
 )
 def impute_area_proportional_job() -> None:
-    """Execute the impute_area_proportional dbt model.
-
-    Creates a PostGIS view that COALESCEs original values with
-    area-weighted allocation from intersecting source features.
+    """Execute the impute_area_proportional SQLMesh model.
     """
     impute_area_proportional_asset()

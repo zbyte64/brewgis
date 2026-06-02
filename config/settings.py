@@ -81,7 +81,6 @@ THIRD_PARTY_APPS = [
 ]
 LOCAL_APPS = [
     "brewgis.workspace",
-    "brewgis.soda",
 ]
 INSTALLED_APPS = DJANGO_APPS + THIRD_PARTY_APPS + LOCAL_APPS
 
@@ -318,9 +317,6 @@ GIS_FILE_EXTENSIONS = env.list(
         ".topojson",
     ],
 )
-
-# Soda — data quality framework
-SODA_PROJECT_DIR = APPS_DIR / "soda"
 
 # Maximum upload file size in bytes (default: 100 MB).
 MAX_UPLOAD_SIZE = env.int("MAX_UPLOAD_SIZE", default=100 * 1024 * 1024)

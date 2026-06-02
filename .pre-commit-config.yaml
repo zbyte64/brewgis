@@ -105,17 +105,6 @@ repos:
       - id: djlint-django
         stages: [manual]
 
-  # SQL linting for dbt models
-  - repo: https://github.com/sqlfluff/sqlfluff
-    rev: 3.3.0
-    hooks:
-      - id: sqlfluff-lint
-        additional_dependencies:
-          - sqlfluff-templater-dbt>=3.3.0
-        files: ^brewgis/dbt_project/.*\.(sql|yml)$
-        args: [--config, .sqlfluff]
-        stages: [manual]
-
   - repo: https://github.com/codespell-project/codespell
     rev: v2.4.1
     hooks:

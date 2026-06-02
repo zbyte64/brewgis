@@ -260,13 +260,6 @@ class Command(BaseCommand):
             (workspace, self._last_nlcd_table, osm_table),
         )
 
-        # ── Step 10: Soda validation ──────────────────────────────────
-        self._run_step(
-            "Soda validation (land use + base canvas)",
-            self._run_soda_validation,
-            (),
-        )
-
         # ── Step 11: Import POIs ──────────────────────────────────────
         if not skip_poi:
             self._run_step("Import POIs", self._import_poi, ())
@@ -553,7 +546,7 @@ class Command(BaseCommand):
         osm_table: str,
     ) -> None:
         """Run dbt base_canvas models to produce the final base canvas table."""
-        from brewgis.workspace.analysis.dbt_runner import run_dbt_local
+        from brewgis.workspace.analysis.sqlmesh_runner import run_sqlmesh_plan
 
         dbt_vars: dict[str, Any] = {
             "parcel_table": "fresno_parcels",
@@ -570,14 +563,14 @@ class Command(BaseCommand):
             dbt_vars["osm_intersection_table"] = osm_table
 
         self.stdout.write(f"  dbt vars: {dbt_vars}")
-        result = run_dbt_local(
+        result = run_sqlmesh_plan(
+            environment="fresno_demo",
             select=BASE_CANVAS_MODELS,
-            vars_=dbt_vars,
         )
         if not result.success:
-            msg = "dbt base_canvas models failed: {result.error}"
-        raise CommandError(msg)
-        self.stdout.write(self.style.SUCCESS("  dbt base_canvas models complete"))
+            msg = f"SQLMesh base_canvas models failed: {result.error}"
+            raise CommandError(msg)
+        self.stdout.write(self.style.SUCCESS("  SQLMesh base_canvas models complete"))
 
         # Create analysis compat view: maps dbt column names to legacy names
         # expected by the analysis pipeline dbt models (id, geom, etc.)
@@ -597,33 +590,6 @@ class Command(BaseCommand):
             "fill",
         )
         self.stdout.write("  Registered base_canvas_reconciled as Layer")
-
-    def _run_soda_validation(self) -> None:
-        """Run Soda validation on base_canvas_attributes and base_canvas_reconciled."""
-        from brewgis.soda import validate_base_canvas
-        from brewgis.soda import validate_land_use_classification
-
-        self.stdout.write("  Validating land use classification...")
-        result = validate_land_use_classification(
-            schema=WORKSPACE_SCHEMA, table="base_canvas_attributes"
-        )
-        if not result.get("success", False):
-            raise CommandError(
-                "Land use classification validation failed: "
-                + "; ".join(result.get("failures", []))
-            )
-        self.stdout.write(self.style.SUCCESS("  Land use classification validated"))
-
-        self.stdout.write("  Validating base canvas reconciliation...")
-        result = validate_base_canvas(
-            schema=WORKSPACE_SCHEMA, table="base_canvas_reconciled"
-        )
-        if not result.get("success", False):
-            raise CommandError(
-                "Base canvas validation failed: "
-                + "; ".join(result.get("failures", []))
-            )
-        self.stdout.write(self.style.SUCCESS("  Base canvas validated"))
 
     def _import_poi(self) -> int:
         workspace = self._get_workspace()

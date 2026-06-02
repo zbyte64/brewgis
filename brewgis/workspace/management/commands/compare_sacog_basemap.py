@@ -1,6 +1,6 @@
 """Compare brewgis base canvas vs SACOG v1 reference — per-column report with aggregate + correlation stats.
 
-The pipeline now uses dbt models for the ETL and comparison stages,
+The pipeline now uses SQLMesh models for the ETL and comparison stages,
 with Soda validation checkpoints to catch data quality issues early.
 
 **DEPRECATED**: Use the Dagster ``sacog_comparison`` job instead:
@@ -180,10 +180,8 @@ class Command(BaseCommand):
 
         # Lazy imports — avoid loading dagster assets at module import time
         # which conflicts with test stubs for pandas/geopandas.
-        from brewgis.soda import validate_base_canvas
-        from brewgis.soda import validate_land_use_classification
-        from brewgis.workspace.analysis.dbt_runner import run_dbt_local
-        from brewgis.workspace.analysis.dbt_runner import run_dbt_seed
+        from brewgis.workspace.analysis.sqlmesh_runner import run_sqlmesh_plan
+        from brewgis.workspace.analysis.sqlmesh_runner import run_sqlmesh_run
         from brewgis.workspace.dagster.assets.comparison_assets import (
             _convert_reference_totals,
         )
@@ -259,20 +257,20 @@ class Command(BaseCommand):
                 "  SACOG reference tables already present, skipping restore"
             )
 
-        # ── Phase 1: Load parcels into dbt source table ────────────────
+        # ── Phase 1: Load parcels into SQLMesh source table ────────────────
         self.stdout.write("\n── Phase 1: Loading reference parcel geometries ──")
         parcels_gdf = _load_parcels(limit)
         self.stdout.write(f"  Loaded {len(parcels_gdf):,} parcels")
 
-        # Normalize SACOG column names to dbt contract
-        # SACOG source uses geography_id; dbt models expect parcel_id and id.
+        # Normalize SACOG column names to SQLMesh contract
+        # SACOG source uses geography_id; SQLMesh models expect parcel_id and id.
         parcels_gdf["parcel_id"] = parcels_gdf["geography_id"]
         parcels_gdf["id"] = parcels_gdf["geography_id"]
         self.stdout.write(
             f"  Normalized {len(parcels_gdf):,} rows: geography_id → parcel_id, id"
         )
 
-        # Drop with CASCADE — dbt views (sacog_brewgis_comparison_view) may depend
+        # Drop with CASCADE — SQLMesh views (sacog_brewgis_comparison_view) may depend
         # on this table from previous runs, and pandas' if_exists="replace" does not
         # use CASCADE.
         with get_engine().begin() as conn:
@@ -280,7 +278,7 @@ class Command(BaseCommand):
                 text("DROP TABLE IF EXISTS public.sacog_comparison_parcels CASCADE")
             )
 
-        # Write to dbt source table (sacog_comparison_parcels)
+        # Write to SQLMesh source table (sacog_comparison_parcels)
         parcels_gdf.to_postgis(
             "sacog_comparison_parcels",
             get_engine(),
@@ -359,22 +357,16 @@ class Command(BaseCommand):
                 f"  NLCD raster loaded: {nlcd_result.get('row_count', 0)} tiles "
                 f"in {nlcd_table}"
             )
-            # Run dbt nlcd_parcel_stats model to compute per-parcel zonal stats
+            # Run SQLMesh nlcd_parcel_stats model to compute per-parcel zonal stats
             self.stdout.write(
-                "\n── Phase 1.5a.5: Materializing nlcd_parcel_stats dbt model ──"
+                "\n── Phase 1.5a.5: Materializing nlcd_parcel_stats SQLMesh model ──"
             )
-            nlcd_dbt_result = run_dbt_local(
-                select=["nlcd_parcel_stats"],
-                vars_={
-                    "nlcd_enabled": True,
-                    "nlcd_raster_table": nlcd_table,
-                    "nlcd_parcel_source": "public.sacog_comparison_parcels",
-                    "base_canvas_materialized": "table",
-                },
+            nlcd_dbt_result = run_sqlmesh_plan(environment="sacog_comparison", skip_tests=True,
+                select=["brewgis.nlcd.parcels_wm", "brewgis.nlcd.nlcd_parcel_stats"],
             )
             if not nlcd_dbt_result.success:
                 raise CommandError(
-                    f"dbt nlcd_parcel_stats failed: {nlcd_dbt_result.error}"
+                    f"SQLMesh nlcd_parcel_stats failed: {nlcd_dbt_result.error}"
                 )
             self.stdout.write(self.style.SUCCESS("  nlcd_parcel_stats materialized"))
 
@@ -418,24 +410,20 @@ class Command(BaseCommand):
                 f"in {assessor_sales_result.get('table_name', '?')}"
             )
 
-            # ── Phase 1.5e: Materialize assessor dbt staging models ──
+            # ── Phase 1.5e: Materialize assessor SQLMesh staging models ──
             self.stdout.write(
-                "\n── Phase 1.5e: Materializing assessor dbt staging models ──"
+                "\n── Phase 1.5e: Materializing assessor SQLMesh staging models ──"
             )
-            staging_result = run_dbt_local(
+            staging_result = run_sqlmesh_plan(environment="sacog_comparison", skip_tests=True,
                 select=[
-                    "sacog_assessor_parcels",
-                    "sacog_assessor_sales",
-                    "assessor_building_medians",
+                    "brewgis.assessor.sacog_assessor_parcels",
+                    "brewgis.assessor.sacog_assessor_sales",
+                    "brewgis.assessor.assessor_building_medians",
                 ],
-                vars_={
-                    "base_canvas_materialized": "table",
-                    "projected_srid": LOCAL_SRID,
-                },
             )
             if not staging_result.success:
                 raise CommandError(
-                    f"dbt assessor base model staging failed: {staging_result.error}"
+                    f"SQLMesh assessor base model staging failed: {staging_result.error}"
                 )
             self.stdout.write(
                 self.style.SUCCESS(
@@ -472,8 +460,8 @@ class Command(BaseCommand):
                     )
                 )
 
-            # ── Pre-flight: Ensure dbt seed tables for footprint models ──
-            footprint_seeds = ["assessor_use_codes", "dasymetric_weights"]
+            # ── Pre-flight: Ensure SQLMesh seed tables for footprint models ──
+            footprint_seeds = ["brewgis.seeds.assessor_use_codes", "brewgis.seeds.dasymetric_weights"]
             missing_footprint_seeds = [
                 s for s in footprint_seeds if not self._table_has_rows("public", s)
             ]
@@ -481,38 +469,35 @@ class Command(BaseCommand):
                 self.stdout.write(
                     f"  Missing seed tables: {', '.join(missing_footprint_seeds)}. Seeding selectively..."
                 )
-                seed_result = run_dbt_seed(select=missing_footprint_seeds)
+                seed_result = run_sqlmesh_plan(environment="sacog_comparison", skip_tests=True, select=missing_footprint_seeds)
+                seed_result = run_sqlmesh_plan(environment="sacog_comparison", skip_tests=True, select=missing_footprint_seeds)
                 if not seed_result.success:
-                    raise CommandError(f"dbt seed failed: {seed_result.error}")
+                    raise CommandError(f"SQLMesh seed failed: {seed_result.error}")
                 self.stdout.write(
                     self.style.SUCCESS("  Missing seed tables loaded successfully")
                 )
 
-            # ── Phase 1.5c.6: Materialize footprint dbt models ──
+            # ── Phase 1.5c.6: Materialize footprint SQLMesh models ──
             self.stdout.write(
-                "\n── Phase 1.5c.6: Materializing footprint + dasymetric dbt models ──"
+                "\n── Phase 1.5c.6: Materializing footprint + dasymetric SQLMesh models ──"
             )
-            footprint_dbt_result = run_dbt_local(
+            footprint_dbt_result = run_sqlmesh_plan(environment="sacog_comparison", skip_tests=True,
                 select=[
-                    "buildings_combined",
-                    "parcel_building_footprints",
-                    "parcel_block_groups",
-                    "parcel_footprint_imputed",
-                    "parcel_dasymetric_weights",
+                    "brewgis.assessor.buildings_combined",
+                    "brewgis.assessor.parcel_building_footprints",
+                    "brewgis.assessor.parcel_block_groups",
+                    "brewgis.assessor.parcel_footprint_imputed",
+                    "brewgis.assessor.parcel_dasymetric_weights",
                 ],
-                vars_={
-                    "base_canvas_materialized": "table",
-                    "projected_srid": LOCAL_SRID,
-                },
             )
             if not footprint_dbt_result.success:
                 raise CommandError(
-                    f"dbt footprint models failed: {footprint_dbt_result.error}"
+                    f"SQLMesh footprint models failed: {footprint_dbt_result.error}"
                 )
             dasymetric_weights_table = "public.parcel_dasymetric_weights"
             self.stdout.write(
                 self.style.SUCCESS(
-                    "  Footprint dbt models complete; "
+                    "  Footprint SQLMesh models complete; "
                     f"dasymetric weights in {dasymetric_weights_table}",
                 )
             )
@@ -524,12 +509,11 @@ class Command(BaseCommand):
             "base_canvas_materialized": "table",
             "projected_srid": LOCAL_SRID,
         }
-        shim_result = run_dbt_local(
-            select=["sacog_parcel_shim"],
-            vars_=shim_vars,
+        shim_result = run_sqlmesh_plan(environment="sacog_comparison", skip_tests=True,
+            select=["brewgis.comparison.sacog_parcel_shim"],
         )
         if not shim_result.success:
-            raise CommandError(f"dbt sacog_parcel_shim run failed: {shim_result.error}")
+            raise CommandError(f"SQLMesh sacog_parcel_shim run failed: {shim_result.error}")
         self.stdout.write(self.style.SUCCESS("  sacog_parcel_shim materialized"))
 
         # ── Phase 2a.5: Materialize assessor→SACOG dasymetric crosswalk (if assessor data loaded) ──
@@ -540,13 +524,12 @@ class Command(BaseCommand):
             crosswalk_vars: dict[str, Any] = {
                 "base_canvas_materialized": "table",
             }
-            crosswalk_result = run_dbt_local(
-                select=["sacog_comparison_dasymetric"],
-                vars_=crosswalk_vars,
+            crosswalk_result = run_sqlmesh_plan(environment="sacog_comparison", skip_tests=True,
+                select=["brewgis.comparison.sacog_comparison_dasymetric"],
             )
             if not crosswalk_result.success:
                 raise CommandError(
-                    f"dbt sacog_comparison_dasymetric failed: {crosswalk_result.error}"
+                    f"SQLMesh sacog_comparison_dasymetric failed: {crosswalk_result.error}"
                 )
             dasymetric_weights_table = "public.sacog_comparison_dasymetric"
             self.stdout.write(
@@ -555,13 +538,13 @@ class Command(BaseCommand):
                 )
             )
 
-        # ── Pre-flight: Ensure dbt seed tables are loaded ──────────────
-        self.stdout.write("\n── Pre-flight: Checking dbt seed tables ──")
+        # ── Pre-flight: Ensure SQLMesh seed tables are loaded ──────────────
+        self.stdout.write("\n── Pre-flight: Checking SQLMesh seed tables ──")
         required_seeds = [
-            "calibration_parameters",
-            "assessor_use_codes",
-            "dasymetric_weights",
-            "sacog_land_use",
+            "brewgis.seeds.calibration_parameters",
+            "brewgis.seeds.assessor_use_codes",
+            "brewgis.seeds.dasymetric_weights",
+            "brewgis.seeds.sacog_land_use",
         ]
         missing_seeds = [
             s for s in required_seeds if not self._table_has_rows("public", s)
@@ -570,17 +553,18 @@ class Command(BaseCommand):
             self.stdout.write(
                 f"  Missing seed tables: {', '.join(missing_seeds)}. Seeding selectively..."
             )
-            seed_result = run_dbt_seed(select=missing_seeds)
+            seed_result = run_sqlmesh_plan(environment="sacog_comparison", skip_tests=True, select=missing_seeds)
+            seed_result = run_sqlmesh_plan(environment="sacog_comparison", skip_tests=True, select=missing_seeds)
             if not seed_result.success:
-                raise CommandError(f"dbt seed failed: {seed_result.error}")
+                    raise CommandError(f"SQLMesh seed failed: {seed_result.error}")
             self.stdout.write(
                 self.style.SUCCESS("  Missing seed tables loaded successfully")
             )
         else:
-            self.stdout.write("  dbt seed tables already present, skipping dbt seed")
+            self.stdout.write("  SQLMesh seed tables already present, skipping SQLMesh seed")
 
-        # ── Phase 2b: Run dbt base_canvas models ────────────────────────
-        self.stdout.write("\n── Phase 2b: Running dbt base_canvas models ──")
+        # ── Phase 2b: Run SQLMesh base_canvas models ────────────────────────
+        self.stdout.write("\n── Phase 2b: Running SQLMesh base_canvas models ──")
         dbt_vars: dict[str, Any] = {
             "parcel_table": "sacog_parcel_shim",
             "employment_land_use_constrain": True,
@@ -596,54 +580,29 @@ class Command(BaseCommand):
             dbt_vars["osm_intersection_table"] = osm_table
         if dasymetric_weights_table:
             dbt_vars["dasymetric_weights_table"] = dasymetric_weights_table
-        result = run_dbt_local(
+        result = run_sqlmesh_plan(environment="sacog_comparison", skip_tests=True,
             select=[
-                "base_canvas_geometry",
-                "base_canvas_demographics",
-                "base_canvas_employment",
-                "base_canvas_attributes",
-                "base_canvas_imputed",
-                "base_canvas_reconciled",
+                "brewgis.base_canvas.base_canvas_geometry",
+                "brewgis.base_canvas.base_canvas_demographics",
+                "brewgis.base_canvas.base_canvas_employment",
+                "brewgis.base_canvas.base_canvas_attributes",
+                "brewgis.base_canvas.base_canvas_imputed",
+                "brewgis.base_canvas.base_canvas_reconciled",
             ],
-            vars_=dbt_vars,
         )
         if not result.success:
-            raise CommandError(f"dbt base_canvas run failed: {result.error}")
-        self.stdout.write(self.style.SUCCESS("  dbt base_canvas models complete"))
+            raise CommandError(f"SQLMesh base_canvas run failed: {result.error}")
+        self.stdout.write(self.style.SUCCESS("  SQLMesh base_canvas models complete"))
 
-        # ── Phase 2.5: Validate land use classification ────────────────
-        self.stdout.write("\n── Phase 2.5: Validating land use classification ──")
-        soda_result = validate_land_use_classification(
-            schema="public", table="base_canvas_attributes"
-        )
-        if not soda_result.get("success", False):
-            self.stdout.write(
-                self.style.WARNING("  Land use classification validation issues found")
-            )
-        else:
-            self.stdout.write("  Land use classification validated ✓")
-
-        # ── Phase 3: Run dbt comparison models ─────────────────────────
-        self.stdout.write("\n── Phase 3: Running dbt comparison models ──")
-        result = run_dbt_local(select=["comparison.*"], vars_=dbt_vars)
+        # ── Phase 3: Running SQLMesh comparison models ─────────────────────────
+        self.stdout.write("\n── Phase 3: Running SQLMesh comparison models ──")
+        result = run_sqlmesh_plan(environment="sacog_comparison", skip_tests=True, select=["brewgis.comparison.*"])
         if not result.success:
-            raise CommandError(f"dbt comparison run failed: {result.error}")
-        self.stdout.write(self.style.SUCCESS("  dbt comparison models complete"))
+            raise CommandError(f"SQLMesh comparison run failed: {result.error}")
+        self.stdout.write(self.style.SUCCESS("  SQLMesh comparison models complete"))
 
-        # ── Phase 3.5: Validate base canvas ────────────────────────────
-        self.stdout.write("\n── Phase 3.5: Validating base canvas ──")
-        soda_result = validate_base_canvas(
-            schema="public", table="base_canvas_reconciled"
-        )
-        if not soda_result.get("success", False):
-            self.stdout.write(
-                self.style.WARNING("  Base canvas validation issues found")
-            )
-        else:
-            self.stdout.write("  Base canvas validated ✓")
-
-        # ── Phase 4: Read results from dbt-materialized tables ─────────
-        self.stdout.write("\n── Phase 4: Reading comparison data from dbt ──")
+        # ── Phase 4: Read results from SQLMesh-materialized tables ─────────
+        self.stdout.write("\n── Phase 4: Reading comparison data from SQLMesh ──")
         summary = _query_table_as_dict("sacog_summary")
 
         # Split summary columns by prefix
@@ -777,7 +736,7 @@ def _collect_diagnostics(
     engine: Engine,
     dasymetric_table: str | None = None,
 ) -> dict:
-    """Collect calibration diagnostics from materialized dbt tables.
+    """Collect calibration diagnostics from materialized SQLMesh tables.
 
     Queries the database for assessor coverage, DU sub-type breakdown,
     and employment pipeline statistics.

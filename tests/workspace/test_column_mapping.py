@@ -2,11 +2,6 @@
 
 from __future__ import annotations
 
-import json
-from unittest.mock import MagicMock
-from unittest.mock import patch
-
-import pytest
 from django.test import TestCase
 
 from brewgis.workspace.analysis.module_registry import CANONICAL_COLUMN_NAMES
@@ -55,46 +50,6 @@ class TestGetColumnMappingVars:
         for name in CANONICAL_COLUMN_NAMES:
             assert f"canonical_{name}" in result
             assert result[f"canonical_{name}"] == f"source_{name}"
-
-
-def test_dbt_runner_expands_column_mapping(tmp_path):
-    """Test that DbtRunnerWrapper.run() expands column_mapping into canonical vars."""
-    pytest.importorskip("dbt")
-    from brewgis.workspace.analysis.dbt_runner import DbtRunnerWrapper
-
-    # Create a minimal dbt project so the exists() check passes
-    project_dir = tmp_path / "dbt_project"
-    project_dir.mkdir()
-    dbt_project_yml = project_dir / "dbt_project.yml"
-    dbt_project_yml.write_text(
-        "name: 'test'\nversion: '1.0.0'\nconfig-version: 2\nprofile: 'test'\n"
-    )
-
-    runner = DbtRunnerWrapper(project_dir=str(project_dir))
-
-    with patch("brewgis.workspace.analysis.dbt_runner.dbtRunner") as MockDbtRunner:
-        mock_instance = MockDbtRunner.return_value
-        mock_result = MagicMock()
-        mock_result.result = None  # triggers _parse_results fallback, avoids iteration
-        mock_instance.invoke.return_value = mock_result
-
-        runner.run(
-            select=["core"],
-            vars_={
-                "target_year": 2050,
-                "column_mapping": {"pop": "population", "hh": "households"},
-            },
-        )
-
-    # Capture the args list that was passed to dbtRunner.invoke()
-    call_args = mock_instance.invoke.call_args[0][0]
-    var_idx = call_args.index("--vars")
-    vars_json = json.loads(call_args[var_idx + 1])
-
-    assert vars_json["canonical_pop"] == "population"
-    assert vars_json["canonical_hh"] == "households"
-    assert "column_mapping" not in vars_json
-    assert vars_json["target_year"] == 2050
 
 
 class TestAnalysisRunColumnMapping(TestCase):

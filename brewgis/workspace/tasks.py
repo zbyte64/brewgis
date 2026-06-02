@@ -10,9 +10,6 @@ from celery import shared_task
 from celery.utils.log import get_task_logger
 from django.conf import settings
 from django.utils import timezone
-
-from brewgis.soda import validate_column_stitching
-from brewgis.soda import validate_spatial_allocation
 from brewgis.workspace.analysis.data_export import export_building_types
 from brewgis.workspace.dlt_pipelines import run_census_pipeline
 from brewgis.workspace.dlt_pipelines import run_lehd_pipeline
@@ -319,22 +316,6 @@ def run_spatial_allocation(  # type: ignore[no-untyped-def]
         source_geom_col=source_geom_col,
         target_geom_col=target_geom_col,
     )
-
-    # Validate allocation output with Soda
-    validation = validate_spatial_allocation(
-        schema=target_schema,
-        table=target_table,
-    )
-    if not validation["success"]:
-        logger.warning(
-            "Spatial allocation validation failed for %s.%s: %s",
-            target_schema,
-            target_table,
-            "; ".join(validation.get("failures", [])),
-        )
-
-    result["validation"] = validation
-
     run.status = "completed"
     run.result = result
     run.completed_at = timezone.now()
@@ -388,15 +369,6 @@ def run_column_stitching(  # type: ignore[no-untyped-def]
     run.completed_at = timezone.now()
     run.save(update_fields=["status", "result", "completed_at"])
 
-    # Default validation after stitching — full context needed here
-    gx_result = validate_column_stitching(schema=schema, table=table)
-    if gx_result["success"]:
-        logger.info("GX validation passed for column_stitching")
-    else:
-        msg = "; ".join(gx_result["failures"][:5])
-        raise RuntimeError(
-            f"GX validation failed for column_stitching ({schema}.{table}): {msg}"
-        )
     return result
 
 

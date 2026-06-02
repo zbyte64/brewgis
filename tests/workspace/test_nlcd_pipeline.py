@@ -24,7 +24,10 @@ class TestComputeBbox:
         mock_engine = MagicMock()
         mock_conn = mock_engine.connect.return_value.__enter__.return_value
         mock_conn.execute.return_value.one.return_value = self._make_row(
-            -121.5, 38.5, -121.0, 39.0,
+            -121.5,
+            38.5,
+            -121.0,
+            39.0,
         )
 
         with patch(
@@ -47,7 +50,10 @@ class TestComputeBbox:
         mock_engine = MagicMock()
         mock_conn = mock_engine.connect.return_value.__enter__.return_value
         mock_conn.execute.return_value.one.return_value = self._make_row(
-            -121.5, 38.5, -121.0, 39.0,
+            -121.5,
+            38.5,
+            -121.0,
+            39.0,
         )
 
         with patch(
@@ -69,7 +75,10 @@ class TestComputeBbox:
         mock_engine = MagicMock()
         mock_conn = mock_engine.connect.return_value.__enter__.return_value
         mock_conn.execute.return_value.one.return_value = self._make_row(
-            None, None, None, None,
+            None,
+            None,
+            None,
+            None,
         )
 
         with patch(

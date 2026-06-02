@@ -1,7 +1,7 @@
 # ruff: noqa: ANN201
-"""Property-based tests for dbt SQL model math — pure reference + SQL parity.
+"""Property-based tests for SQL model math — pure reference + SQL parity.
 
-Each dbt SQL model with compound formulas gets:
+Each SQLMesh model with compound formulas gets:
 
 1. A pure Python reference function (``tests/dbt_math/reference.py``) that
    mirrors the exact SQL formula. Decorated with ``@deal.pre``/``@deal.post``
@@ -20,7 +20,7 @@ Architecture::
 
     reference.py              Pure Python reference + @deal contracts
     strategies.py             Hypothesis generators for input shapes
-    sql_templates.py          Parameterized SQL strings mirroring dbt models
+    sql_templates.py          Parameterized SQL strings mirroring SQL models
     test_reference_contracts.py   @pytest.mark.slow property-based tests
     test_sql_parity.py            @pytest.mark.integration SQL parity checks
 """

@@ -1,4 +1,4 @@
-"""Integration tests: run actual dbt models via dbt-core, compare to Python references.
+"""Integration tests: run actual SQLMesh models, compare to Python references.
 
 Each test:
 1. Generates synthetic upstream data as DataFrames
@@ -18,7 +18,7 @@ import numpy as np
 import pandas as pd
 import pytest
 
-from tests.dbt_math.dbt_model_runner import run_model
+from tests.dbt_math.sqlmesh_model_runner import run_model
 from tests.dbt_math.reference import compute_property_tax
 from tests.dbt_math.reference import compute_service_costs
 from tests.dbt_math.reference import compute_transport_ghg

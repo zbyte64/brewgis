@@ -11,7 +11,6 @@ from dagster import Definitions
 from dagster import ScheduleDefinition
 from dagster_embedded_elt.dlt import DagsterDltResource
 
-from brewgis.workspace.dagster.assets.comparison_assets import sacog_dbt_comparison
 from brewgis.workspace.dagster.assets.comparison_assets import sacog_generate_report
 from brewgis.workspace.dagster.assets.comparison_assets import sacog_load_parcels
 from brewgis.workspace.dagster.assets.comparison_assets import (
@@ -21,15 +20,8 @@ from brewgis.workspace.dagster.assets.comparison_assets import (
     sacog_populate_geography_id,
 )
 from brewgis.workspace.dagster.assets.comparison_assets import sacog_populate_wac_block
-from brewgis.workspace.dagster.assets.comparison_assets import sacog_run_comparison_etl
 from brewgis.workspace.dagster.assets.comparison_assets import sacog_verify_geometry
 from brewgis.workspace.dagster.assets.comparison_assets import tiger_bg_asset
-from brewgis.workspace.dagster.assets.dbt_assets import ANALYSIS_ASSETS
-from brewgis.workspace.dagster.assets.dbt_assets import acs_equity_preprocessor
-from brewgis.workspace.dagster.assets.dbt_assets import building_types_export
-from brewgis.workspace.dagster.assets.dbt_assets import dbt_staging_models
-from brewgis.workspace.dagster.assets.dbt_assets import food_access_preprocessor
-from brewgis.workspace.dagster.assets.dbt_assets import internal_capture_preprocessor
 from brewgis.workspace.dagster.assets.dlt_assets import census_acs_assets
 from brewgis.workspace.dagster.assets.dlt_assets import lehd_lodes_assets
 from brewgis.workspace.dagster.assets.dlt_assets import overpass_poi_assets
@@ -46,10 +38,8 @@ from brewgis.workspace.dagster.assets.service_assets import fresno_constraints
 from brewgis.workspace.dagster.assets.service_assets import imputation
 from brewgis.workspace.dagster.assets.service_assets import onboard_geography
 from brewgis.workspace.dagster.assets.service_assets import spatial_allocation
-from brewgis.workspace.dagster.jobs.comparison_jobs import sacog_comparison
 from brewgis.workspace.dagster.jobs.fresno_demo import fresno_demo_setup
 from brewgis.workspace.dagster.jobs.impute_jobs import impute_area_proportional_job
-from brewgis.workspace.dagster.resources.dbt_resource import DbtCliResource
 from brewgis.workspace.dagster.resources.postgres_resource import PostgresResource
 from brewgis.workspace.dagster.schedules import SCHEDULES
 
@@ -57,12 +47,10 @@ from brewgis.workspace.dagster.schedules import SCHEDULES
 # Resources
 # ---------------------------------------------------------------------------
 
-_dbt_cli_resource = DbtCliResource()
 _postgres_resource = PostgresResource()
 _dlt_resource = DagsterDltResource()
 
 _RESOURCES = {
-    "dbt_cli": _dbt_cli_resource,
     "dlt": _dlt_resource,
     "postgres": _postgres_resource,
 }
@@ -96,19 +84,9 @@ _ASSETS = [
     tiger_bg_asset,
     sacog_populate_acs_block_group,
     sacog_populate_wac_block,
-    sacog_run_comparison_etl,
     sacog_verify_geometry,
     sacog_populate_geography_id,
-    sacog_dbt_comparison,
     sacog_generate_report,
-    # preprocessing assets
-    building_types_export,
-    internal_capture_preprocessor,
-    food_access_preprocessor,
-    acs_equity_preprocessor,
-    # dbt model assets
-    dbt_staging_models,
-    *ANALYSIS_ASSETS,
 ]
 
 # ---------------------------------------------------------------------------
@@ -118,7 +96,6 @@ _ASSETS = [
 _JOBS = [
     impute_area_proportional_job,
     fresno_demo_setup,
-    sacog_comparison,
 ]
 
 # ---------------------------------------------------------------------------

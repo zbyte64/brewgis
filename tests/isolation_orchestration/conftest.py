@@ -5,8 +5,8 @@ correctly creates AnalysisRun records with the right workspace,
 scenario_id, and module isolation — without running real dbt.
 
 run_modules_sync is patched with a MagicMock so pipeline dispatch
-completes without executing dbt. Assertions check AnalysisRun records
-and their properties rather than PostGIS views or schemas.
+completes without executing SQLMesh.  Assertions check AnalysisRun
+records and their properties rather than PostGIS views or schemas.
 """
 
 from __future__ import annotations
@@ -49,11 +49,11 @@ def scenario_context() -> dict[str, Any]:
 
 @pytest.fixture
 def mock_module_tasks() -> Generator[MagicMock, None, None]:  # type: ignore[misc]
-    """Patch run_modules_sync so pipeline dispatch completes without running dbt.
+    """Patch run_modules_sync so pipeline dispatch completes without running SQLMesh.
 
     When Dagster is unavailable (as in tests), run_analysis_pipeline falls
-    back to run_modules_sync(). This fixture replaces it with a MagicMock
-    so no real dbt is executed.
+    back to run_modules_sync().  This fixture replaces it with a MagicMock
+    so no real SQLMesh is executed.
     """
     with patch(
         "brewgis.workspace.analysis.pipeline.run_modules_sync",

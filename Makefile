@@ -105,10 +105,6 @@ test-deal:  ## Run deal property-based tests only (sequential, with deal enabled
 test-all:  ## Run all tests sequentially (safe for full coverage)
 	$(COMPOSE_RUN) pytest -n 0 --timeout=300
 
-.PHONY: test-dbt
-test-dbt:  ## Run dbt seed + run + test (seed-based models only)
-	$(COMPOSE_RUN) bash brewgis/dbt_project/scripts/run_test_dbt.sh
-
 .PHONY: test-mcp
 test-mcp:  ## Run MCP server tests (models marker only)
 	$(COMPOSE_RUN) pytest tests/workspace/test_mcp_server.py -m models -v
@@ -155,10 +151,6 @@ typecheck:  ## Run mypy type checker
 typecheck-fast:  ## Run basedpyright type checker (host mode, faster)
 	basedpyright brewgis/
 
-.PHONY: lint-dbt
-lint-dbt:  ## SQLFluff lint dbt models
-	$(COMPOSE_RUN) sqlfluff lint brewgis/dbt_project/
-
 .PHONY: check-columns
 check-columns:  ## Static column provenance check (no DB needed)
 	docker compose -f $(COMPOSE_FILE) run --rm -e YEAR=2022 django python -m brewgis.workspace.dagster.check_provenance
@@ -176,7 +168,7 @@ dead-code-host:  ## Find dead Python code (vulture, host mode)
 # ─────────────────────────────────────────────
 
 .PHONY: check
-check: lint format-check typecheck check-columns test test-dbt test-soda  ## Run full CI pipeline: lint + format-check + typecheck + column-provenance + test + dbt + Soda data quality
+check: lint format-check typecheck check-columns test test-soda  ## Run full CI pipeline: lint + format-check + typecheck + column-provenance + test + Soda data quality
 
 # ─────────────────────────────────────────────
 # Development setup

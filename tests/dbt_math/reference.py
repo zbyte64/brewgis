@@ -396,12 +396,14 @@ def compute_water_demand(
 
 
 @deal.pre(
-    lambda e_res, e_nonres, g_res, g_nonres, w_total, pop: np.all(e_res >= 0)
-    & np.all(e_nonres >= 0)
+    lambda e_res, e_nonres, g_res, g_nonres, w_total, pop: (
+        np.all(e_res >= 0) & np.all(e_nonres >= 0)
+    )
 )
 @deal.pre(
-    lambda e_res, e_nonres, g_res, g_nonres, w_total, pop: np.all(g_res >= 0)
-    & np.all(g_nonres >= 0)
+    lambda e_res, e_nonres, g_res, g_nonres, w_total, pop: (
+        np.all(g_res >= 0) & np.all(g_nonres >= 0)
+    )
 )
 @deal.pre(lambda e_res, e_nonres, g_res, g_nonres, w_total, pop: np.all(w_total >= 0))
 @deal.pre(lambda e_res, e_nonres, g_res, g_nonres, w_total, pop: np.all(pop >= 0))
@@ -565,12 +567,14 @@ def compute_trip_generation(
 
 
 @deal.pre(
-    lambda out, inbound, intra, frac, length, radius: np.all(out >= 0)
-    & np.all(length >= 0)
+    lambda out, inbound, intra, frac, length, radius: (
+        np.all(out >= 0) & np.all(length >= 0)
+    )
 )
 @deal.pre(
-    lambda out, inbound, intra, frac, length, radius: np.all(intra >= 0)
-    & np.all(inbound >= 0)
+    lambda out, inbound, intra, frac, length, radius: (
+        np.all(intra >= 0) & np.all(inbound >= 0)
+    )
 )
 @deal.pre(lambda out, inbound, intra, frac, length, radius: 0 <= frac <= 1)
 @deal.pre(lambda out, inbound, intra, frac, length, radius: radius > 0)

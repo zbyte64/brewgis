@@ -10,23 +10,15 @@ from pathlib import Path
 
 import geopandas as gpd
 from dagster import AssetExecutionContext
-from dagster import AssetOut
 from dagster import MaterializeResult
 from dagster import asset
-from dagster import multi_asset
 from django.conf import settings
 from django.db import connection
 
-from brewgis.soda import validate_base_canvas
-from brewgis.soda import validate_dbt_table
-from brewgis.soda import validate_land_use_classification
 from brewgis.workspace.dagster.check_provenance import METADATA_CONTRACT_INLINE_COLUMNS
 from brewgis.workspace.dagster.check_provenance import METADATA_CONTRACT_PATH
 from brewgis.workspace.dagster.check_provenance import METADATA_CONTRACT_SOURCE
-from brewgis.workspace.dagster.configs import SacogComparisonETLConfig
 from brewgis.workspace.dagster.configs import SacogLoadParcelsConfig
-from brewgis.workspace.dagster.configs import SacogReportConfig
-from brewgis.workspace.dagster.resources.dbt_resource import DbtCliResource
 from brewgis.workspace.dagster.resources.postgres_resource import PostgresResource
 from brewgis.workspace.dlt_pipelines.tiger_bg import run_tiger_bg_pipeline
 from brewgis.workspace.dlt_pipelines.tiger_block import run_tiger_block_pipeline
@@ -110,90 +102,6 @@ def tiger_block_asset(
 
 # ---------------------------------------------------------------------------
 # Asset: Ingest Sacramento County Assessor parcel data
-# ---------------------------------------------------------------------------
-
-
-@asset(
-    group_name="comparison",
-    compute_kind="python",
-    metadata={
-        METADATA_CONTRACT_SOURCE: "inline",
-        METADATA_CONTRACT_INLINE_COLUMNS: [
-            "apn",
-            "pop_dasym_weight",
-            "emp_dasym_weight",
-        ],
-    },
-)
-def sacog_ingest_assessor(
-    context: AssetExecutionContext,
-    dbt_cli: DbtCliResource,
-) -> MaterializeResult:
-    """Fetch Sacramento County Assessor parcel + building data and compute dasymetric weights.
-
-    1. Fetch parcel geometries from PARCELS/MapServer/8 (~508K parcels)
-    2. Fetch building characteristics from ASSESSOR/MapServer/1 (~55K sales)
-    3. Run dbt staging models to produce dasymetric_weights table
-
-    The ``dasymetric_weights`` output table contains ``parcel_id``,
-    ``pop_dasym_weight``, and ``emp_dasym_weight`` for use by downstream
-    base_canvas_demographics and base_canvas_employment models.
-    """
-    from brewgis.workspace.dlt_pipelines.assessor import run_assessor_parcels_pipeline
-    from brewgis.workspace.dlt_pipelines.assessor import run_assessor_sales_pipeline
-
-    # Step 1: Fetch parcel geometries
-    context.log.info("Fetching assessor parcel geometries")
-    parcels_result = run_assessor_parcels_pipeline()
-    context.log.info(
-        "Assessor parcels loaded: %s rows",
-        parcels_result.get("row_count", 0),
-    )
-
-    # Step 2: Fetch sales/building data
-    context.log.info("Fetching assessor sales/building data")
-    sales_result = run_assessor_sales_pipeline()
-    context.log.info(
-        "Assessor sales loaded: %s rows",
-        sales_result.get("row_count", 0),
-    )
-
-    # Step 3: Run dbt staging models to compute dasymetric weights
-    context.log.info("Materializing assessor dbt staging models")
-    staging_result = dbt_cli.run(
-        select=[
-            "sacog_assessor_parcels",
-            "sacog_assessor_sales",
-            "assessor_building_medians",
-            "parcel_dasymetric_weights",
-        ],
-        vars_={
-            "base_canvas_materialized": "table",
-        },
-    )
-    if not staging_result.success:
-        raise RuntimeError(f"dbt assessor staging failed: {staging_result.error}")
-
-    # Verify output exists
-    with connection.cursor() as cur:
-        cur.execute("SELECT COUNT(*) FROM public.dasymetric_weights")
-        row_count = cur.fetchone()[0]
-
-    context.log.info(
-        "Dasymetric weights computed: %d rows in public.dasymetric_weights",
-        row_count,
-    )
-
-    return MaterializeResult(
-        metadata={
-            "parcels_fetched": parcels_result.get("row_count", 0),
-            "sales_fetched": sales_result.get("row_count", 0),
-            "dasymetric_rows": row_count,
-        }
-    )
-
-
-# ---------------------------------------------------------------------------
 # Asset 1: Load reference parcels
 # ---------------------------------------------------------------------------
 
@@ -298,9 +206,6 @@ def sacog_populate_acs_block_group(
     context: AssetExecutionContext,
 ) -> MaterializeResult:
     """Join ACS staging data with TIGER/Line BG geometry and write to ``census.acs_block_group``.
-
-    The downstream ETL (``sacog_run_comparison_etl``) reads demographics from
-    ``census.acs_block_group`` via area-weighted spatial allocation.
     """
     context.log.info(
         "Populating census.acs_block_group for %s/%s",
@@ -328,9 +233,6 @@ def sacog_populate_wac_block(
     context: AssetExecutionContext,
 ) -> MaterializeResult:
     """Join LEHD LODES WAC staging data with TIGER/Line block geometry (15-digit GEOID) and write to ``lehd.wac_block``.
-
-    The downstream ETL (``sacog_run_comparison_etl``) reads employment from
-    ``lehd.wac_block`` via area-weighted spatial allocation at block resolution.
     """
     context.log.info(
         "Populating lehd.wac_block for %s/%s",
@@ -345,195 +247,13 @@ def sacog_populate_wac_block(
 
 
 # ---------------------------------------------------------------------------
-# Asset 2: Run brewgis ETL on the loaded parcels
-# ---------------------------------------------------------------------------
-
-
-@asset(
-    group_name="comparison",
-    compute_kind="dbt",
-    deps=[
-        "sacog_load_parcels",
-        "sacog_populate_acs_block_group",
-        "sacog_populate_wac_block",
-    ],
-    metadata={METADATA_CONTRACT_SOURCE: "dbt"},
-)
-def sacog_run_comparison_etl(
-    context: AssetExecutionContext,
-    config: SacogComparisonETLConfig,
-    dbt_cli: DbtCliResource,
-) -> MaterializeResult:
-    """Run the brewgis base canvas dbt pipeline using the loaded SACOG parcels.
-
-    Replaces the old Python SQL ETL (``run_pipeline``) with a dbt run across
-    the 6 base_canvas models:
-
-      base_canvas_geometry → base_canvas_demographics → base_canvas_employment
-        → base_canvas_attributes → base_canvas_imputed → base_canvas_reconciled
-
-    Dependencies:
-      - ``sacog_load_parcels`` populates the parcel staging table
-      - ``sacog_populate_acs_block_group`` populates ``census.acs_block_group``
-      - ``sacog_populate_wac_block`` populates ``lehd.wac_block``
-
-    Optional data sources (controlled by config):
-      - NLCD: land cover classification + impervious fraction for irrigation
-      - OSM: intersection density from road network
-    """
-    dbt_vars: dict[str, object] = {
-        "parcel_table": "sacog_parcel_shim",
-        "base_canvas_materialized": "table",
-    }
-
-    # Ensure dbt seed tables are loaded
-    with connection.cursor() as cur:
-        cur.execute(
-            "SELECT EXISTS ("
-            "  SELECT 1 FROM information_schema.tables"
-            "  WHERE table_schema = 'public' AND table_name = 'calibration_parameters'"
-            ")",
-        )
-        if not cur.fetchone()[0]:
-            context.log.info(
-                "dbt seed table calibration_parameters not found — running dbt seed"
-            )
-            seed_result = dbt_cli.seed()
-            if not seed_result.success:
-                raise RuntimeError(f"dbt seed failed: {seed_result.error}")
-            context.log.info("dbt seed completed successfully")
-        else:
-            context.log.info("dbt seed tables already present")
-
-    # Run NLCD pipeline if enabled
-    if config.run_nlcd:
-        context.log.info("Running NLCD zonal stats pipeline")
-        from brewgis.workspace.dlt_pipelines.nlcd import run_nlcd_pipeline
-
-        nlcd_result = run_nlcd_pipeline(
-            parcel_source="sacog_comparison_parcels",
-        )
-        nlcd_raster_table = nlcd_result.get("raster_table", "nlcd_raster")
-        dbt_vars["nlcd_enabled"] = True
-        dbt_vars["nlcd_raster_table"] = f"public.{nlcd_raster_table}"
-        dbt_vars["nlcd_parcel_source"] = "public.sacog_comparison_parcels"
-        context.log.info(
-            "NLCD raster loaded: %s tiles in %s",
-            nlcd_result.get("row_count", 0),
-            nlcd_raster_table,
-        )
-
-    # Run OSM pipeline if enabled
-    if config.run_osm:
-        context.log.info("Running OSM intersection density pipeline")
-        from brewgis.workspace.dlt_pipelines.osm import run_osm_pipeline
-
-        osm_result = run_osm_pipeline(parcel_table="sacog_comparison_parcels")
-        osm_table = osm_result.get("table_name", "public.osm_intersection_density")
-        dbt_vars["osm_intersection_table"] = osm_table
-        context.log.info(
-            "OSM intersection density loaded: %s rows in %s",
-            osm_result.get("row_count", 0),
-            osm_table,
-        )
-
-    # Detect pre-materialized dasymetric_weights table
-    # If the assessor asset was already materialized, wire the dbt var
-    # so base_canvas_demographics and base_canvas_employment use it.
-    dasymetric_weights_table: str | None = None
-    if config.run_assessor:
-        context.log.info("Running assessor staging pipeline for dasymetric weights")
-        from brewgis.workspace.dlt_pipelines.assessor import (
-            run_assessor_parcels_pipeline,
-        )
-        from brewgis.workspace.dlt_pipelines.assessor import run_assessor_sales_pipeline
-
-        run_assessor_parcels_pipeline()
-        run_assessor_sales_pipeline()
-
-        # Materialize assessor dbt staging models
-        context.log.info("Materializing assessor dbt staging models")
-        staging_result = dbt_cli.run(
-            select=[
-                "sacog_assessor_parcels",
-                "sacog_assessor_sales",
-                "assessor_building_medians",
-                "parcel_dasymetric_weights",
-            ],
-            vars_={
-                "base_canvas_materialized": "table",
-            },
-        )
-        if not staging_result.success:
-            raise RuntimeError(f"dbt assessor staging failed: {staging_result.error}")
-        dasymetric_weights_table = "public.parcel_dasymetric_weights"
-    else:
-        with connection.cursor() as cur:
-            cur.execute(
-                "SELECT EXISTS ("
-                "  SELECT 1 FROM information_schema.tables"
-                "  WHERE table_schema = 'public' AND table_name = 'dasymetric_weights'"
-                ")"
-            )
-            if cur.fetchone()[0]:
-                dasymetric_weights_table = "public.parcel_dasymetric_weights"
-                context.log.info("Detected existing dasymetric_weights table")
-
-    if dasymetric_weights_table:
-        dbt_vars["dasymetric_weights_table"] = dasymetric_weights_table
-        context.log.info("Dasymetric weights enabled: %s", dasymetric_weights_table)
-
-    context.log.info("Running dbt base_canvas models")
-    result = dbt_cli.run(
-        select=[
-            "base_canvas_geometry",
-            "base_canvas_demographics",
-            "base_canvas_employment",
-            "base_canvas_attributes",
-            "base_canvas_imputed",
-            "base_canvas_reconciled",
-        ],
-        vars_=dbt_vars,
-        full_refresh=False,
-    )
-
-    context.log.info("dbt base_canvas run complete: status=%s", result.success)
-
-    # Validate land use classification (fail early if land use is broken)
-    context.log.info("Validating land use classification")
-    land_use_result = validate_land_use_classification(
-        schema="public", table="base_canvas_attributes"
-    )
-    context.log.info(
-        "Land use classification validation: %s",
-        land_use_result.get("success", False),
-    )
-
-    # Validate via Soda
-    soda_result = validate_base_canvas(schema="public", table="base_canvas_reconciled")
-    context.log.info("Soda validation result: %s", soda_result.get("success", False))
-
-    return MaterializeResult(
-        metadata={
-            "dbt_status": "success" if result.success else "failed",
-            "models_run": 6,
-            "nlcd_enabled": config.run_nlcd,
-            "osm_enabled": config.run_osm,
-            "land_use_success": land_use_result.get("success", False),
-            "soda_success": soda_result.get("success", False),
-        }
-    )
-
-
-# ---------------------------------------------------------------------------
-# Asset 3: Verify geometry identity (GX checkpoint)
+# Asset 3: Verify geometry identity
 # ---------------------------------------------------------------------------
 
 
 @asset(
     group_name="comparison",
     compute_kind="python",
-    deps=["sacog_run_comparison_etl"],
     metadata={
         METADATA_CONTRACT_SOURCE: "inline",
         METADATA_CONTRACT_INLINE_COLUMNS: [
@@ -599,17 +319,12 @@ def sacog_verify_geometry(
             "Area conservation within tolerance: %.2f%% diff", area_diff_pct
         )
 
-    # Run GX checkpoint
-    gx_result = validate_base_canvas(schema="public", table="base_canvas_reconciled")
-    context.log.info("GX checkpoint result: %s", gx_result.get("success", False))
-
     return MaterializeResult(
         metadata={
             "row_count": brewgis_count,
             "ref_area_acres": round(ref_area, 2),
             "brew_area_acres": round(brewgis_area, 2),
             "area_diff_pct": round(area_diff_pct, 4),
-            "gx_success": gx_result.get("success", False),
         }
     )
 
@@ -675,103 +390,26 @@ def sacog_populate_geography_id(
 
 
 # ---------------------------------------------------------------------------
-# Asset 5: dbt comparison models (multi-asset)
-# ---------------------------------------------------------------------------
-
-
-_COMPARISON_DBT_SELECT = "comparison.*"
-
-
-@multi_asset(
-    group_name="comparison",
-    compute_kind="dbt",
-    deps=["sacog_populate_geography_id"],
-    outs={
-        "sacog_reference_totals": AssetOut(
-            metadata={
-                METADATA_CONTRACT_SOURCE: "dbt",
-                METADATA_CONTRACT_PATH: "sacog_reference_totals",
-            },
-        ),
-        "sacog_brewgis_totals": AssetOut(),
-        "sacog_correlations": AssetOut(),
-        "sacog_weighted_means": AssetOut(),
-        "sacog_summary": AssetOut(),
-    },
-)
-def sacog_dbt_comparison(
-    context: AssetExecutionContext,
-    dbt_cli: DbtCliResource,
-) -> MaterializeResult:
-    """Materialize all dbt comparison models (``comparison.*``).
-
-    Dependencies on ``sacog_populate_geography_id`` are handled by
-    dbt itself via ``{{ ref() }}`` within the models.
-    """
-    context.log.info("Running dbt comparison models: %s", _COMPARISON_DBT_SELECT)
-
-    result = dbt_cli.run(
-        select=[_COMPARISON_DBT_SELECT],
-        full_refresh=False,
-    )
-
-    context.log.info("dbt comparison run complete: status=%s", result.success)
-
-    # Run Soda validation on each comparison output table (warning-only)
-    comparison_tables = [
-        "sacog_reference_totals",
-        "sacog_brewgis_totals",
-        "sacog_correlations",
-        "sacog_weighted_means",
-        "sacog_summary",
-    ]
-    schema = "public"
-    for tbl in comparison_tables:
-        result = validate_dbt_table(schema=schema, table=tbl)
-        if not result.get("success", False):
-            msg = (
-                f"Comparison dbt table {tbl} validation failed: "
-                f"{'; '.join(result.get('failures', []))}"
-            )
-            raise RuntimeError(msg)
-        context.log.info("  Soda validation passed for %s.%s", schema, tbl)
-
-    return MaterializeResult(
-        metadata={
-            "dbt_status": "success" if result.success else "failed",
-            "dbt_elapsed_s": 0,
-        }
-    )
-
-
-# ---------------------------------------------------------------------------
-# Asset 6: Generate report from dbt-materialized tables
+# Asset 6: Generate report
 # ---------------------------------------------------------------------------
 
 
 @asset(
     group_name="comparison",
     compute_kind="python",
-    deps=[
-        "sacog_reference_totals",
-        "sacog_brewgis_totals",
-        "sacog_correlations",
-        "sacog_weighted_means",
-    ],
 )
 def sacog_generate_report(
     context: AssetExecutionContext,
-    config: SacogReportConfig,
     postgres: PostgresResource,  # noqa: ARG001
 ) -> MaterializeResult:
-    """Generate the markdown comparison report from dbt-materialized tables.
+    """Generate the markdown comparison report.
 
-    Reads pre-computed totals, correlations, and weighted means from the
-    dbt comparison models, then formats the SACOG comparison report.
+    Reads pre-computed totals, correlations, and weighted means from
+    comparison tables, then formats the SACOG comparison report.
     """
     context.log.info("Generating comparison report")
 
-    # Read from dbt-materialized tables
+    # Read from comparison tables
     ref_totals = _query_table_as_dict("sacog_reference_totals")
     brew_totals = _query_table_as_dict("sacog_brewgis_totals")
     correlations = _query_table_as_dict("sacog_correlations")
@@ -789,6 +427,7 @@ def sacog_generate_report(
     )
 
     output_path = Path(config.output_path or REPORT_PATH)
+    output_path = REPORT_PATH
 
     # Build the report
     _generate_report_markdown(

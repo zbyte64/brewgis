@@ -1,8 +1,8 @@
-"""Step definitions for dbt isolation BDD scenarios.
+"""Step definitions for SQLMesh isolation BDD scenarios.
 
 Each step interacts with PostGIS via a raw psycopg connection
 (``db_conn`` fixture, autocommit=True) so that tables are immediately
-visible to dbt's separate database connection.
+visible to SQLMesh's separate database connection.
 """
 
 from __future__ import annotations
@@ -15,7 +15,7 @@ from pytest_bdd import scenarios
 from pytest_bdd import then
 from pytest_bdd import when
 
-from brewgis.workspace.analysis.dbt_runner import run_dbt_local
+from brewgis.workspace.analysis.sqlmesh_runner import run_sqlmesh_plan
 
 # Register the feature file so pytest-bdd discovers scenarios.
 scenarios(str(Path(__file__).parent.parent / "dbt_isolation.feature"))
@@ -35,12 +35,7 @@ def idle_connections_terminated(
     scenario_context: dict,
     db_conn,
 ) -> None:
-    """Terminate all other connections to the test database.
-
-    This prevents catalog lock conflicts with lingering connections
-    left by previous tests (especially TransactionTestCase-based tests
-    that run dbt). We terminate all connections except our own.
-    """
+    """Terminate all other connections to the test database."""
     with db_conn.cursor() as cursor:
         cursor.execute("""
             SELECT pg_terminate_backend(pid)
@@ -119,30 +114,24 @@ def parcel_table_exists(
 # ── When steps ─────────────────────────────────────────────────────────
 
 
-def _run_dbt_and_store_result(
+def _run_sqlmesh_and_store_result(
     module: str,
     scenario_id: str,
     target_schema: str,
     scenario_context: dict,
 ) -> None:
-    """Invoke dbt and store the result in scenario context."""
-    source_schema, parcel_table = scenario_context["parcel_table"]
+    """Invoke SQLMesh and store the result in scenario context."""
+    environment = f"bdd_{scenario_id}"
 
-    result = run_dbt_local(
+    result = run_sqlmesh_plan(
+        environment=environment,
         select=[module],
-        vars_={
-            "source_schema": source_schema,
-            "parcel_table": parcel_table,
-            "constraints": [],
-            "target_schema": target_schema,
-            "scenario_id": scenario_id,
-        },
-        full_refresh=True,
+        skip_tests=True,
     )
 
-    scenario_context["dbt_result"] = result
+    scenario_context["sqlmesh_result"] = result
 
-    # Register dbt-created view for cleanup
+    # Register SQLMesh-created view for cleanup
     view_name = f"{module}_{scenario_id}"
     scenario_context.setdefault("cleanup", []).append(
         {"type": "view", "schema": target_schema, "name": view_name}
@@ -161,8 +150,8 @@ def run_dbt_module(
     target_schema: str,
     scenario_context: dict,
 ) -> None:
-    """Run a single dbt model with the given vars."""
-    _run_dbt_and_store_result(module, scenario_id, target_schema, scenario_context)
+    """Run a single SQLMesh model with the given vars."""
+    _run_sqlmesh_and_store_result(module, scenario_id, target_schema, scenario_context)
 
 
 @when(
@@ -177,8 +166,8 @@ def run_dbt_module_second(
     target_schema: str,
     scenario_context: dict,
 ) -> None:
-    """Run the same dbt model a second time (idempotency check)."""
-    _run_dbt_and_store_result(module, scenario_id, target_schema, scenario_context)
+    """Run the same SQLMesh model a second time (idempotency check)."""
+    _run_sqlmesh_and_store_result(module, scenario_id, target_schema, scenario_context)
 
 
 # ── Then steps ─────────────────────────────────────────────────────────
@@ -230,15 +219,15 @@ def view_does_not_exist(
 
 @then("the dbt run should have succeeded")
 def dbt_run_succeeded(scenario_context: dict) -> None:
-    """Assert that the last dbt run completed successfully."""
-    result = scenario_context.get("dbt_result")
-    assert result is not None, "No dbt result stored — did the When step run?"
-    assert result.success, f"dbt run failed: {result.error}"
+    """Assert that the last SQLMesh run completed successfully."""
+    result = scenario_context.get("sqlmesh_result")
+    assert result is not None, "No SQLMesh result stored — did the When step run?"
+    assert result.success, f"SQLMesh run failed: {result.error}"
 
 
 @then("the dbt run should have failed")
 def dbt_run_failed(scenario_context: dict) -> None:
-    """Assert that the last dbt run failed."""
-    result = scenario_context.get("dbt_result")
-    assert result is not None, "No dbt result stored — did the When step run?"
-    assert not result.success, "Expected dbt run to fail, but it succeeded."
+    """Assert that the last SQLMesh run failed."""
+    result = scenario_context.get("sqlmesh_result")
+    assert result is not None, "No SQLMesh result stored — did the When step run?"
+    assert not result.success, "Expected SQLMesh run to fail, but it succeeded."

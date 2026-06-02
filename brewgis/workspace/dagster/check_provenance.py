@@ -38,11 +38,8 @@ _CHECKER_DIR = Path(__file__).resolve().parent  # .../workspace/dagster/
 _APPS_DIR = _CHECKER_DIR.parent.parent  # brewgis/ (Django app root)
 _PROJECT_DIR = _APPS_DIR.parent  # repo root
 
-_SODA_CONTRACTS_DIR = _APPS_DIR / "soda" / "contracts"
-_DBT_PROJECT_DIR = _APPS_DIR / "dbt_project"
-_DBT_SCHEMA_PATH = _DBT_PROJECT_DIR / "models" / "_schema.yml"
-_DBT_TARGET_DIR = _DBT_PROJECT_DIR / "target"
-_DBT_MANIFEST_PATH = _DBT_TARGET_DIR / "manifest.json"
+# SQLMesh manages model definitions — provenance now reads from SQLMesh config
+# Legacy dbt paths are removed; the manifest.json is no longer generated.
 
 # ---------------------------------------------------------------------------
 # Metadata keys used on asset definitions
@@ -264,7 +261,7 @@ def resolve_dbt_manifest(
     ----------
     manifest_path:
         Path to ``manifest.json``. Defaults to
-        ``brewgis/dbt_project/target/manifest.json``.
+        ``brewgis/sqlmesh/`` (SQLMesh project).
     auto_generate:
         If ``True`` and the manifest is stale or missing, runs
         ``dbt docs generate --no-populate-cache`` to produce it.
@@ -306,7 +303,7 @@ def resolve_dbt_manifest(
         for key, cols in deps.items():
             column_deps[key] = frozenset(cols)
 
-    logger.info("Resolved %d column-level deps from dbt manifest", len(column_deps))
+    logger.info("Resolved %d column-level deps", len(column_deps))
     return column_deps
 
 
@@ -315,19 +312,19 @@ def resolve_dbt_manifest(
 # ---------------------------------------------------------------------------
 
 
-def _contract_is_dbt(contract: ColumnContract) -> bool:
-    """Check if a contract source is a dbt model."""
-    return contract.source.startswith("dbt:")
+def _contract_is_source(contract: ColumnContract) -> bool:
+    """Check if a contract source is from SQLMesh."""
+    return contract.source.startswith("sqlmesh:")
 
 
 def _dbt_model_name_from_asset(contract: ColumnContract) -> str | None:
-    """Extract the dbt model name from a contract source.
+    """Extract the model name from a contract source.
 
-    Returns None if the contract is not from dbt.
+    Returns None if the contract is not from the source file.
     """
-    if not _contract_is_dbt(contract):
+    if not _contract_is_source(contract):
         return None
-    return contract.source.removeprefix("dbt:")
+    return contract.source.removeprefix("sqlmesh:")
 
 
 # ═══════════════════════════════════════════════════════════════════════════
@@ -648,8 +645,8 @@ def _columns_needed_from(
     # Phase 5: dbt manifest column deps for dbt→dbt edges
     if (
         manifest_deps is not None
-        and _contract_is_dbt(down_contract)
-        and _contract_is_dbt(_up_contract)
+        and _contract_is_source(down_contract)
+        and _contract_is_source(_up_contract)
     ):
         down_model = _dbt_model_name_from_asset(down_contract)
         up_model = _dbt_model_name_from_asset(_up_contract)

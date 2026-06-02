@@ -19,8 +19,6 @@ import pytest
 _STUB_MODS: dict[str, MagicMock] = {
     "dbt.cli.main": MagicMock(),
     "dbt.contracts.results": MagicMock(),
-    "brewgis.workspace.analysis.dbt_runner": MagicMock(),
-    "soda_core.contracts": MagicMock(),
 }
 
 

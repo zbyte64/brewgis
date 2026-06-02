@@ -1,0 +1,9 @@
+AUDIT (
+  name audit_acs_block_group,
+  dialect postgres
+);
+SELECT
+  geoid,
+  total_population
+FROM @this
+WHERE COALESCE(total_population, 0) < 0

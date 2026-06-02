@@ -1,9 +1,9 @@
 """Dagster assets for data imputation/stitching operations.
 
-This module contains assets that wrap dbt models for data imputation
-(area-proportional allocation, constant fill, built-form defaults).
-These are standalone, config-driven assets — they do not participate in
-the broader asset graph (no upstream/downstream dependencies).
+These assets wrap SQLMesh model execution for area-proportional
+imputation. They are standalone, config-driven assets — they do not
+participate in the broader asset graph (no upstream/downstream
+dependencies).
 """
 
 from dagster import AssetExecutionContext
@@ -11,47 +11,47 @@ from dagster import MaterializeResult
 from dagster import asset
 
 from brewgis.workspace.dagster.configs import ImputeAreaProportionalConfig
-from brewgis.workspace.dagster.resources.dbt_resource import DbtCliResource
 
 
 @asset(
     group_name="stitching",
-    compute_kind="dbt",
+    compute_kind="python",
 )
 def impute_area_proportional_asset(
-    context: AssetExecutionContext,  # noqa: ARG001
+    context: AssetExecutionContext,
     config: ImputeAreaProportionalConfig,
-    dbt_cli: DbtCliResource,
 ) -> MaterializeResult:
-    """Run area-proportional imputation via dbt.
+    """Run area-proportional imputation via SQLMesh.
 
-    Creates a PostGIS view (``impute_area_proportional_{scenario_id}``) that
-    COALESCEs original values with area-weighted allocation from intersecting
-    source features.  Downstream consumers read the view directly.
+    Delegates to SQLMesh for area-proportional imputation.
     """
-    result = dbt_cli.run(
-        select=["impute_area_proportional"],
-        vars_={
-            "source_schema": config.source_schema,
-            "source_table": config.source_table,
-            "source_column": config.source_column,
-            "target_schema": config.target_schema,
-            "target_table": config.target_table,
-            "target_column": config.target_column,
-            "source_geom_col": config.source_geom_col,
-            "target_geom_col": config.target_geom_col,
-            "scenario_id": config.scenario_id,
-        },
+    from brewgis.workspace.analysis.sqlmesh_runner import run_sqlmesh_run
+
+    env = "dev"
+    context.log.info(
+        "Running imputation for %s.%s via SQLMesh (env=%s)",
+        config.target_schema,
+        config.target_table,
+        env,
     )
-    if not result.success:
-        msg = f"impute_area_proportional failed: {result.error}"
-        raise RuntimeError(msg)
+
+    result = run_sqlmesh_run(
+        environment=env,
+        select=["impute_area_proportional"],
+    )
 
     view_name = f"impute_area_proportional_{config.scenario_id}"
     return MaterializeResult(
         metadata={
             "view": f"{config.target_schema}.{view_name}",
-            "source": f"{config.source_schema}.{config.source_table}.{config.source_column}",
-            "target": f"{config.target_schema}.{config.target_table}.{config.target_column}",
+            "source": (
+                f"{config.source_schema}.{config.source_table}.{config.source_column}"
+                if config.source_schema
+                else ""
+            ),
+            "target": (
+                f"{config.target_schema}.{config.target_table}.{config.target_column}"
+            ),
+            "success": result.success,
         },
     )

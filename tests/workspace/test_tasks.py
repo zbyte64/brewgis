@@ -76,10 +76,8 @@ class TestRunSpatialAllocation:
                 )
 
     @patch("brewgis.workspace.tasks.DataImportRun.objects.get")
-    @patch("brewgis.workspace.tasks.validate_spatial_allocation")
-    def test_success(self, mock_soda: MagicMock, mock_get: MagicMock) -> None:
+    def test_success(self, mock_get: MagicMock) -> None:
         """Successful allocation returns success + result keys."""
-        mock_soda.return_value = {"success": True, "failures": []}
         run_mock = MagicMock()
         mock_get.return_value = run_mock
 
@@ -95,10 +93,7 @@ class TestRunSpatialAllocation:
                 column_prefix="acs_",
             )
 
-        assert result == {
-            "rows_affected": 150,
-            "validation": {"success": True, "failures": []},
-        }
+        assert result == {"rows_affected": 150}
         mock_alloc.assert_called_once_with(
             source_schema="public",
             source_table="census_data",
@@ -109,11 +104,9 @@ class TestRunSpatialAllocation:
             source_geom_col="geom",
             target_geom_col="geom",
         )
-        mock_soda.assert_called_once_with(schema="public", table="parcels")
         assert run_mock.status == "completed"
         assert run_mock.result == {
             "rows_affected": 150,
-            "validation": {"success": True, "failures": []},
         }
         run_mock.save.assert_called()
 

@@ -14,8 +14,6 @@ from typing import Any
 
 import dlt
 
-from brewgis.soda import validate_nlcd
-
 __all__ = [
     "raster_band_source",
     "raster_metadata_source",
@@ -185,19 +183,10 @@ def run_raster_pipeline(
             row_count = si.row_counts.get("raster_metadata", 0)
             break
 
-    # Run Soda Core validation on the metadata table
-    validation = validate_nlcd(schema=schema, table="raster_metadata")
-    if validation["success"]:
-        logger.info("Validation passed for %s.raster_metadata", schema)
-    else:
-        msg = "; ".join(validation["failures"])
-        raise RuntimeError(f"Validation failed for {schema}.raster_metadata: {msg}")
-
     return {
         "success": True,
         "metadata_table": f"{schema}.raster_metadata",
         "bands_table": f"{schema}.raster_bands",
         "row_count": row_count,
         "load_info": str(load_info),
-        "validation": validation,
     }

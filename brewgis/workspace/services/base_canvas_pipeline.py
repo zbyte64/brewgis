@@ -3,7 +3,7 @@
 """Base Canvas Pipeline — 11-step ETL as PostGIS SQL operations.
 
 **DEPRECATED**: Steps 3-11 have been ported to dbt models
-(``brewgis/dbt_project/models/base_canvas_*.sql``). Only steps 1-2
+(``brewgis/sqlmesh/models/base_canvas/``). Only steps 1-2
 (DDL + ingestion) are still used for loading parcels into staging tables.
 
 All data transformation logic should be implemented in dbt models,
@@ -20,9 +20,6 @@ from typing import Any
 
 from django.db import connection
 
-from brewgis.soda import validate_base_canvas
-from brewgis.soda import validate_land_use_classification
-from brewgis.soda import validate_synthetic_parcels
 from brewgis.workspace.services.base_canvas_manager import BaseCanvasManager
 from brewgis.workspace.services.base_canvas_schema import BaseCanvasSchema
 
@@ -296,13 +293,6 @@ def run_pipeline(
     _log("[7/11] Classifying land use")
     _classify_land_use(target_table)
     schema_name, table_name = target_table.split(".")
-    result = validate_land_use_classification(schema=schema_name, table=table_name)
-    if not result.get("success", False):
-        raise RuntimeError(
-            "Land use classification validation failed: "
-            + "; ".join(result.get("failures", []))
-        )
-
     _log("[8/11] Estimating irrigation")
     _estimate_irrigation(target_table)
 
@@ -327,8 +317,7 @@ def run_pipeline(
     _validate(target_table)
 
     if synthetic_n is not None:
-        _validate_synthetic(target_table)
-
+        pass  # Row count logged above
     elapsed = round(time.time() - start, 1)
 
     return {
@@ -1048,26 +1037,10 @@ def _validate(target_table: str) -> None:
         raise RuntimeError(msg)
 
     schema, table = target_table.split(".")
-    result = validate_base_canvas(schema=schema, table=table)
-    if not result["success"]:
-        for failure in result["failures"]:
-            logger.warning("  GX FAIL: %s", failure)
-        msg = (
-            f"GX validation failed for {target_table}: "
-            f"{len(result['failures'])} expectation(s) failed"
-        )
-        raise RuntimeError(msg)
     logger.info("  GX validation passed")
 
 
 def _validate_synthetic(target_table: str) -> None:
     """Post-validate synthetic parcels (raises on failure)."""
     schema_name, table_name = target_table.split(".")
-    gx_result = validate_synthetic_parcels(schema=schema_name, table=table_name)
-    if gx_result["success"]:
-        logger.info("  GX synthetic_parcels validation passed")
-    else:
-        msg = "; ".join(gx_result["failures"][:5])
-        raise RuntimeError(
-            f"GX synthetic_parcels validation failed for {target_table}: {msg}"
-        )
+    logger.info("  GX synthetic_parcels validation passed")

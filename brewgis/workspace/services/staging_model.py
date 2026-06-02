@@ -21,7 +21,7 @@ from brewgis.workspace.services.base_canvas_schema import BaseCanvasSchema
 if TYPE_CHECKING:
     from brewgis.workspace.services.column_inspector import TableColumnInfo
 
-_STAGING_DIR = Path("brewgis/dbt_project/models/staging")
+_STAGING_DIR = Path("brewgis/sqlmesh/models/staging")
 
 # Default built_form_key for parcels without one (2 = "SFR Standard").
 _DEFAULT_BUILT_FORM_KEY = 2

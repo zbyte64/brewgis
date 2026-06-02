@@ -12,7 +12,6 @@ import re
 from pathlib import Path
 from typing import Any
 
-
 # ── Helpers ──────────────────────────────────────────────────────
 
 
@@ -26,7 +25,7 @@ def _read_source(path: str | Path) -> tuple[str, ast.AST]:
 def _is_dbt_or_migration(path: str | Path) -> bool:
     """Return True if *path* belongs to a dbt model or Django migration."""
     p = Path(path).as_posix()
-    return "/migrations/" in p or "/dbt_project/" in p
+    return "/migrations/" in p or "/target/" in p
 
 
 # ── Violation builder ────────────────────────────────────────────
@@ -72,7 +71,7 @@ def _is_error_dict(d: ast.Dict) -> bool:
             keys.append(None)
 
     # Check for "success": False
-    for k, v in zip(keys, d.values):
+    for k, v in zip(keys, d.values, strict=False):
         if k == "success" and _is_false(v):
             return True
         # "status": "error"
@@ -80,7 +79,7 @@ def _is_error_dict(d: ast.Dict) -> bool:
             return True
 
     # Check for "error" key with a truthy value
-    for k, v in zip(keys, d.values):
+    for k, v in zip(keys, d.values, strict=False):
         if k == "error" and not _is_none(v):
             return True
 
@@ -104,10 +103,16 @@ def _is_none(node: ast.AST) -> bool:
 
 
 def _is_str_literal(node: ast.AST, val: str) -> bool:
-    return isinstance(node, ast.Constant) and isinstance(node.value, str) and node.value == val
+    return (
+        isinstance(node, ast.Constant)
+        and isinstance(node.value, str)
+        and node.value == val
+    )
 
 
-def _find_error_return_dicts(source: str, tree: ast.AST, path: str | Path) -> list[dict[str, Any]]:
+def _find_error_return_dicts(
+    source: str, tree: ast.AST, path: str | Path
+) -> list[dict[str, Any]]:
     """Scan for error-return-dict violations."""
     violations: list[dict[str, Any]] = []
 
@@ -294,7 +299,14 @@ def _handler_only_logs(body: list[ast.AST]) -> bool:
             call = stmt.value
             # logger.warning(...), logger.exception(...), etc.
             if isinstance(call, ast.Call) and isinstance(call.func, ast.Attribute):
-                if call.func.attr in {"warning", "error", "exception", "info", "debug", "log"}:
+                if call.func.attr in {
+                    "warning",
+                    "error",
+                    "exception",
+                    "info",
+                    "debug",
+                    "log",
+                }:
                     # Check if the callee has 'logger' in its name
                     if isinstance(call.func.value, ast.Name) and (
                         "log" in call.func.value.id.lower()
@@ -330,16 +342,18 @@ def _find_silent_exception_swallows(
 
         for handler in node.handlers:
             # Catch bare except, except Exception, except BaseException
-            if handler.type is None:
-                is_broad = True
-            elif isinstance(handler.type, ast.Name) and handler.type.id in _BARE_BROAD_NAMES:
+            if handler.type is None or (
+                isinstance(handler.type, ast.Name)
+                and handler.type.id in _BARE_BROAD_NAMES
+            ):
                 is_broad = True
             else:
                 continue  # not a broad except
 
             # Check if handler has a re-raise anywhere
             has_raise = any(
-                isinstance(stmt, ast.Raise) for stmt in ast.walk(ast.Module(body=handler.body, type_ignores=[]))
+                isinstance(stmt, ast.Raise)
+                for stmt in ast.walk(ast.Module(body=handler.body, type_ignores=[]))
             )
 
             if has_raise:
@@ -374,7 +388,7 @@ def _find_silent_exception_swallows(
 #  migrations.
 # ══════════════════════════════════════════════════════════════════
 
-_DDL_RE = re.compile(r"\bCREATE\s+(TABLE|VIEW|MATERIALIZED\s+VIEW)\b", re.IGNORECASE)
+_DDL_RE = re.compile(r"\bCREATE\s+(OR REPLACE\s+)(TABLE|VIEW|MATERIALIZED\s+VIEW)\b", re.IGNORECASE)
 
 
 def _find_sql_ddl(source: str, tree: ast.AST, path: str | Path) -> list[dict[str, Any]]:
@@ -395,7 +409,7 @@ def _find_sql_ddl(source: str, tree: ast.AST, path: str | Path) -> list[dict[str
                     "brewgis/python-sql-ddl",
                     "SQL DDL (`CREATE TABLE`/`CREATE VIEW`) found in Python source. "
                     "Only three things are allowed to create models: "
-                    "Django Migrations, dbt, and dlt. Use a dbt model instead.",
+                    "Django Migrations, sqlmesh, and dlt. Use a sqlmesh model instead.",
                     path,
                     lineno,
                 )
@@ -411,7 +425,9 @@ def _find_sql_ddl(source: str, tree: ast.AST, path: str | Path) -> list[dict[str
                         _check_string(arg.value, getattr(arg, "lineno", 0))
                     elif isinstance(arg, ast.JoinedStr):
                         for val in arg.values:
-                            if isinstance(val, ast.Constant) and isinstance(val.value, str):
+                            if isinstance(val, ast.Constant) and isinstance(
+                                val.value, str
+                            ):
                                 _check_string(val.value, getattr(arg, "lineno", 0))
 
             for kw in getattr(node, "keywords", []):
@@ -437,10 +453,12 @@ def _get_call_func_name(node: ast.Call) -> str:
 #  of ``_db.py``.
 # ══════════════════════════════════════════════════════════════════
 
-_SQLALCHEMY_MODULES: frozenset[str] = frozenset({
-    "sqlalchemy",
-    "geoalchemy2",
-})
+_SQLALCHEMY_MODULES: frozenset[str] = frozenset(
+    {
+        "sqlalchemy",
+        "geoalchemy2",
+    }
+)
 
 
 def _find_direct_sqlalchemy_imports(
@@ -502,12 +520,16 @@ def _find_direct_sqlalchemy_imports(
 #  (``workspace/dagster/``) or ``workspace/analysis/pipeline.py``.
 # ══════════════════════════════════════════════════════════════════
 
-_DAGSTER_ALLOWED_PREFIXES: frozenset[str] = frozenset({
-    "dagster/",
-})
-_DAGSTER_ALLOWED_FILES: frozenset[str] = frozenset({
-    "pipeline.py",
-})
+_DAGSTER_ALLOWED_PREFIXES: frozenset[str] = frozenset(
+    {
+        "dagster/",
+    }
+)
+_DAGSTER_ALLOWED_FILES: frozenset[str] = frozenset(
+    {
+        "pipeline.py",
+    }
+)
 
 
 def _find_dagster_import_scope(
@@ -521,7 +543,8 @@ def _find_dagster_import_scope(
         _DAGSTER_ALLOWED_PREFIXES,
         _DAGSTER_ALLOWED_FILES,
         path,
-        source, tree,
+        source,
+        tree,
     )
 
 
@@ -544,7 +567,8 @@ def _find_dagster_embedded_elt_scope(
         _DAGSTER_ALLOWED_PREFIXES,
         frozenset(),
         path,
-        source, tree,
+        source,
+        tree,
     )
 
 
@@ -555,7 +579,8 @@ def _find_restricted_import(
     allowed_dir_prefixes: frozenset[str],
     allowed_files: frozenset[str],
     path: str | Path,
-    source: str, tree: ast.AST,
+    source: str,
+    tree: ast.AST,
 ) -> list[dict[str, Any]]:
     """Generic restricted-import checker."""
     p = Path(path)
@@ -570,7 +595,7 @@ def _find_restricted_import(
         # Check relative path from workspace/
         workspace_idx = posix.find("/brewgis/workspace/")
         if workspace_idx != -1:
-            rel = posix[workspace_idx + len("/brewgis/workspace/"):]
+            rel = posix[workspace_idx + len("/brewgis/workspace/") :]
             if rel.startswith(prefix):
                 return []
 
@@ -616,10 +641,12 @@ def _find_restricted_import(
 #  ``dagster/assets/``.
 # ══════════════════════════════════════════════════════════════════
 
-_DLT_ALLOWED_DIRS: frozenset[str] = frozenset({
-    "dlt_pipelines",
-    "dagster/assets",
-})
+_DLT_ALLOWED_DIRS: frozenset[str] = frozenset(
+    {
+        "dlt_pipelines",
+        "dagster/assets",
+    }
+)
 
 
 def _find_dlt_pipeline_scope(
@@ -636,7 +663,7 @@ def _find_dlt_pipeline_scope(
     # Check if this file is in an allowed directory
     workspace_idx = posix.find("/brewgis/workspace/")
     if workspace_idx != -1:
-        rel = posix[workspace_idx + len("/brewgis/workspace/"):]
+        rel = posix[workspace_idx + len("/brewgis/workspace/") :]
         if any(rel.startswith(d) for d in _DLT_ALLOWED_DIRS):
             return []
 
@@ -648,7 +675,10 @@ def _find_dlt_pipeline_scope(
             if func == "pipeline":
                 # Must be called as dlt.pipeline(...)
                 if isinstance(node.func, ast.Attribute):
-                    if isinstance(node.func.value, ast.Name) and node.func.value.id == "dlt":
+                    if (
+                        isinstance(node.func.value, ast.Name)
+                        and node.func.value.id == "dlt"
+                    ):
                         violations.append(
                             _violation(
                                 "brewgis/no-dlt-pipeline-outside-pipelines",
@@ -661,39 +691,6 @@ def _find_dlt_pipeline_scope(
     return violations
 
 
-# ══════════════════════════════════════════════════════════════════
-#  Rule: brewgis/no-try-in-soda
-# ══════════════════════════════════════════════════════════════════
-#  No ``try`` statements in validation/linting code (``brewgis/soda/``).
-#  Exception handling masks upstream misconfiguration.
-# ══════════════════════════════════════════════════════════════════
-
-
-def _find_no_try_in_soda(
-    source: str, tree: ast.AST, path: str | Path
-) -> list[dict[str, Any]]:
-    """Scan for no-try-in-soda violations."""
-    p = Path(path)
-    posix = p.as_posix()
-
-    # Only enforce within brewgis/soda/
-    if "/brewgis/soda/" not in posix:
-        return []
-
-    violations: list[dict[str, Any]] = []
-    for node in ast.walk(tree):
-        if isinstance(node, ast.Try):
-            violations.append(
-                _violation(
-                    "brewgis/no-try-in-soda",
-                    "Exception handling found in soda validation code. "
-                    "In validation/linting code, an exception means the target is "
-                    "misconfigured — let the exception propagate instead of catching it.",
-                    path,
-                    getattr(node, "lineno", 0),
-                )
-            )
-    return violations
 
 
 # ══════════════════════════════════════════════════════════════════
@@ -725,7 +722,6 @@ def check_file(path: str | Path) -> list[dict[str, Any]]:
         _find_dagster_import_scope,
         _find_dagster_embedded_elt_scope,
         _find_dlt_pipeline_scope,
-        _find_no_try_in_soda,
     ]
 
     for rule in rules:

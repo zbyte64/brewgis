@@ -21,7 +21,6 @@ Exit code: 0 always (violations communicated via JSON).
 from __future__ import annotations
 
 import json
-import os
 import sys
 from pathlib import Path
 
@@ -33,41 +32,44 @@ if str(_PROJECT_ROOT) not in sys.path:
 from brewgis._ruff_rules.rules import check_file  # noqa: E402
 
 
-def main() -> None:
-    """Entry point for ruffian plugin.
-
-    Reads optional JSON config from stdin, processes file paths from
-    argv[1:], and writes JSON violations to stdout.
-    """
-    # Consume stdin config if provided (ruffian sends it)
-    stdin_config_raw: str | None = None
-    try:
-        if not sys.stdin.isatty():
-            raw = sys.stdin.read()
-            if raw.strip():
-                json.loads(raw)  # validate JSON, ignore contents for now
-    except (json.JSONDecodeError, OSError):
-        pass  # no valid config — fine
-
-    files = sys.argv[1:]
-    if not files:
-        sys.stdout.write("[]\n")
-        return
-
-    all_violations: list[dict] = []
-
-    for filepath in files:
+def _collect_files(args: list[str]) -> list[Path]:
+    """Resolve file paths from CLI args, expanding directories recursively."""
+    files: list[Path] = []
+    for filepath in args:
         p = Path(filepath)
         if not p.exists():
             continue
         if p.is_dir():
             for py_file in p.rglob("*.py"):
-                # Skip migrations and dbt models
-                if "/migrations/" in py_file.as_posix() or "/dbt_project/" in py_file.as_posix():
+                if (
+                    "/migrations/" in py_file.as_posix()
+                    or "/target/" in py_file.as_posix()
+                ):
                     continue
-                _check_one(py_file, all_violations)
+                files.append(py_file)
         elif p.suffix == ".py":
-            _check_one(p, all_violations)
+            files.append(p)
+    return files
+
+
+def main() -> None:
+    """Entry point: reads JSON config from stdin, checks files, writes violations."""
+    try:
+        if not sys.stdin.isatty():
+            raw = sys.stdin.read()
+            if raw.strip():
+                json.loads(raw)  # validate JSON, ignore contents
+    except (json.JSONDecodeError, OSError):
+        pass  # no valid config
+
+    py_files = _collect_files(sys.argv[1:])
+    if not py_files:
+        sys.stdout.write("[]\n")
+        return
+
+    all_violations: list[dict] = []
+    for py_file in py_files:
+        _check_one(py_file, all_violations)
 
     sys.stdout.write(json.dumps(all_violations, indent=2))
     sys.stdout.write("\n")
@@ -80,21 +82,9 @@ def _check_one(p: Path, violations: list[dict]) -> None:
         violations.extend(v)
     except SyntaxError:
         pass
-    except Exception as exc:
+    except Exception as exc:  # noqa: BLE001
         msg = f"[brewgis-antipatterns] Error checking {p}: {exc}"
-        print(msg, file=sys.stderr)
-
-        try:
-            violations = check_file(str(p))
-            all_violations.extend(violations)
-        except SyntaxError:
-            # Skip files with syntax errors — ruff handles those
-            pass
-        except Exception as exc:
-            # Plugin failure — report to stderr, don't crash ruffian
-            msg = f"[brewgis-antipatterns] Error checking {filepath}: {exc}"
-            print(msg, file=sys.stderr)
-
+        print(msg, file=sys.stderr)  # noqa: T201
 
 
 if __name__ == "__main__":

@@ -1,31 +1,26 @@
 """Analysis pipeline orchestrator — dispatches module execution.
 
 Manages the dependency graph between analysis modules and executes
-them in dependency order. The pipeline:
+them in dependency order via SQLMesh. The pipeline:
 
 1. Creates an AnalysisRun record to track execution
 2. Resolves dependencies between requested modules
-3. Dispatches execution via Dagster or falls back to synchronous execution
-4. Registers result Layers after each module succeeds
+3. Runs all modules through a single SQLMesh plan
+4. Registers result Layers after the plan completes
 5. On failure, the AnalysisRun is marked as failed
 """
 
 from __future__ import annotations
 
-import contextlib
 import logging
 from typing import Any
 
 import deal
-from dagster._core.instance import DagsterInstance
 from django.utils import timezone
 
-from brewgis.soda import validate_dbt_table
-from brewgis.workspace.analysis.dbt_runner import run_dbt_local
+from brewgis.workspace.analysis.sqlmesh_runner import run_sqlmesh_plan, SqlmeshResult
 from brewgis.workspace.analysis.layer_registry import register_result_layer
 from brewgis.workspace.analysis.module_registry import MODULE_RESULT_TABLES
-from brewgis.workspace.analysis.module_registry import get_module_label
-from brewgis.workspace.analysis.module_registry import get_result_table_names
 from brewgis.workspace.analysis.module_registry import get_vars_for_module
 from brewgis.workspace.analysis.module_registry import (
     resolve_module_order as _resolve_module_order,
@@ -55,46 +50,16 @@ def _get_vars_for_module(module: str, base_vars: dict[str, Any]) -> dict[str, An
     return get_vars_for_module(module, base_vars)
 
 
-def _register_results(
-    workspace_id: int,
-    module: str,
-    task_result: dict[str, Any],
-    scenario_id: str,
-) -> None:
-    """Register dbt result views as Layers in the workspace.
-
-    Args:
-        workspace_id: Workspace primary key.
-        module: Module name that produced the results.
-        task_result: Result dict from the module execution.
-        scenario_id: Scenario identifier for table naming.
-    """
-    layer_schema = task_result.get("layer_schema")
-    if not layer_schema:
-        return
-
-    label = get_module_label(module)
-    for table_name in get_result_table_names(module, scenario_id):
-        register_result_layer(
-            workspace_id=workspace_id,
-            schema=layer_schema,
-            table=table_name,
-            name=f"{label} — {scenario_id}",
-            description=f"Analysis result for module '{module}' (scenario: {scenario_id})",
-        )
-
-
 def run_analysis_pipeline(
     workspace_id: int,
     module_names: list[str],
     vars_: dict[str, Any] | None = None,
     scenario_id: int | None = None,
 ) -> AnalysisRun:
-    """Create an AnalysisRun record and dispatch via Dagster or sync.
+    """Create an AnalysisRun record and execute via SQLMesh.
 
-    When Dagster is configured (daemon running), launches a Dagster run
-    via the in-process API. Falls back to synchronous execution when
-    Dagster's daemon isn't running (dev mode).
+    SQLMesh handles DAG traversal automatically — all modules run
+    in a single plan call.
     """
     base_vars = vars_ or {}
     if scenario_id is not None:
@@ -125,27 +90,6 @@ def run_analysis_pipeline(
         ordered_modules,
     )
 
-    # Try Dagster dispatch; fall back to sync
-    dagster_available = False
-    try:
-        instance = DagsterInstance.get()
-        _ = instance.get_runs()
-        dagster_available = True
-    except Exception:
-        logger.info("Dagster instance not available, falling back to sync execution")
-
-    if dagster_available:
-        # Update run status to running (Dagster will manage the rest)
-        run.status = "running"
-        run.started_at = timezone.now()
-        run.save(update_fields=["status", "started_at"])
-        logger.info(
-            "Dispatched AnalysisRun #%s via Dagster (modules: %s)",
-            run.pk,
-            ordered_modules,
-        )
-        return run
-
     run_modules_sync(
         modules=ordered_modules,
         base_vars=base_vars,
@@ -166,69 +110,40 @@ def run_modules_sync(  # noqa: PLR0913
     scenario_id: str,
     module_selects: dict[str, list[str]] | None = None,
 ) -> dict[str, Any]:
-    """Run dbt modules in dependency order, registering result layers.
+    """Run analysis modules via SQLMesh, registering result layers.
 
     Args:
         modules: Module names to run (e.g. ["env_constraint", "core", "water_demand"]).
-        base_vars: Base dbt vars dict (scenario_id, target_schema, etc.).
+        base_vars: Base vars dict (scenario_id, target_schema, etc.).
         target_schema: Schema where result tables are created.
         workspace_id: Workspace PK for layer registration.
         scenario_id: Scenario slug/ID for table name formatting.
-        module_selects: Optional per-module dbt select overrides.
+        module_selects: Optional per-module SQLMesh select overrides.
             If omitted, each module name is used as the select.
 
     Returns:
         Dict with keys:
             "success": bool — whether all modules completed
             "completed": list[str] — modules that succeeded
-            "results": list[dict] — per-module {module, success, error}
     """
     ordered = resolve_module_order(modules)
-    completed: list[str] = []
-    results: list[dict[str, Any]] = []
-
-    for module in ordered:
-        select = module_selects.get(module, [module]) if module_selects else [module]
-        dbt_result = run_dbt_local(
-            select=select,
-            vars_={**base_vars, "completed_modules": list(completed)},
-        )
-        validation: dict[str, Any] | None = None
-        if dbt_result.success:
-            completed.append(module)
-            # Register result layers
-            table_names = MODULE_RESULT_TABLES.get(module, [])
-            for pattern in table_names:
-                table = pattern.format(scenario_id=scenario_id)
-                with contextlib.suppress(Exception):
-                    register_result_layer(
-                        workspace_id=workspace_id,
-                        schema=target_schema,
-                        table=table,
-                    )
-                # Validate each module result table
-                validation = validate_dbt_table(schema=target_schema, table=table)
-                if validation["success"]:
-                    logger.info("Validation passed for %s.%s", target_schema, table)
-                else:
-                    for failure in validation["failures"]:
-                        logger.warning(
-                            "Validation failure for %s.%s: %s",
-                            target_schema,
-                            table,
-                            failure,
-                        )
-        results.append(
-            {
-                "module": module,
-                "success": dbt_result.success,
-                "error": dbt_result.error,
-                "validation": validation,
-            }
-        )
-
+    environment = f"scenario_{scenario_id}"
+    result = run_sqlmesh_plan(
+        environment=environment,
+        select=ordered,
+        skip_tests=True,
+    )
+    if result.success:
+        for module in ordered:
+            for table_name in MODULE_RESULT_TABLES.get(module, []):
+                table = table_name.format(scenario_id=scenario_id)
+                register_result_layer(
+                    workspace_id=workspace_id,
+                    schema=target_schema,
+                    table=table,
+                )
     return {
-        "success": len(completed) == len(ordered),
-        "completed": completed,
-        "results": results,
+        "success": result.success,
+        "completed": ordered if result.success else [],
+        "results": [],
     }

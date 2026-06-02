@@ -1,0 +1,40 @@
+MODEL (
+  name brewgis.seeds.test_base_canvas,
+  kind SEED (
+    path '../../seeds/test_base_canvas.csv'
+  ),
+  columns (
+    id TEXT,
+    geometry TEXT,
+    id_source TEXT,
+    geometry_key TEXT,
+    land_development_category TEXT,
+    built_form_key TEXT,
+    intersection_density TEXT,
+    area_gross TEXT,
+    area_parcel TEXT,
+    area_dev_condition TEXT,
+    area_row TEXT,
+    pop TEXT,
+    hh TEXT,
+    du TEXT,
+    emp TEXT,
+    bldg_area_detsf_sl TEXT,
+    bldg_area_detsf_ll TEXT,
+    bldg_area_attsf TEXT,
+    bldg_area_mf TEXT,
+    bldg_area_retail_services TEXT,
+    bldg_area_restaurant TEXT,
+    bldg_area_accommodation TEXT,
+    bldg_area_arts_entertainment TEXT,
+    bldg_area_other_services TEXT,
+    bldg_area_office_services TEXT,
+    bldg_area_public_admin TEXT,
+    bldg_area_education TEXT,
+    bldg_area_medical_services TEXT,
+    bldg_area_transport_warehousing TEXT,
+    bldg_area_wholesale TEXT,
+    residential_irrigated_area TEXT,
+    commercial_irrigated_area TEXT
+  )
+);

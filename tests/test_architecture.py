@@ -275,5 +275,3 @@ def _has_exists_call_before(
                 if hasattr(node, "lineno") and node.lineno < before_line:
                     return True
     return False
-
-

@@ -1,9 +1,0 @@
-# Soda Core configuration — Brew GIS data quality.
-#
-# The connection string is injected at runtime via DATABASE_URL env var,
-# avoiding hardcoded credentials in the repository.
-# ---------------------------------------------------------------------------
-data_source brewgis_postgis:
-  type: postgres
-  connection:
-    connection_string: ${DATABASE_URL}
