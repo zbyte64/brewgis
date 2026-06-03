@@ -299,390 +299,243 @@ class Command(BaseCommand):
 
         # ── Phase 1: Load parcels into SQLMesh source table ────────────────
         self.stdout.write("\n── Phase 1: Loading reference parcel geometries ──")
-        parcels_gdf = _load_parcels(limit)
-        self.stdout.write(f"  Loaded {len(parcels_gdf):,} parcels")
 
-        # Normalize SACOG column names to SQLMesh contract
-        # SACOG source uses geography_id; SQLMesh models expect parcel_id and id.
-        parcels_gdf["parcel_id"] = parcels_gdf["geography_id"]
-        parcels_gdf["id"] = parcels_gdf["geography_id"]
-        self.stdout.write(
-            f"  Normalized {len(parcels_gdf):,} rows: geography_id → parcel_id, id"
+        parcel_checksum = self._parcel_checksum(
+            get_engine(), "sacog_comparison_parcels"
         )
+        source_checksum = self._parcel_checksum(get_engine(), V1_PARCELS)
 
-        # Drop with CASCADE — SQLMesh views (sacog_brewgis_comparison_view) may depend
-        # on this table from previous runs, and pandas' if_exists="replace" does not
-        # use CASCADE.
-        with get_engine().begin() as conn:
-            conn.execute(
-                text("DROP TABLE IF EXISTS public.sacog_comparison_parcels CASCADE")
+        if (
+            force_data_fetch
+            or parcel_checksum is None
+            or parcel_checksum != source_checksum
+        ):
+            parcels_gdf = _load_parcels(limit)
+            self.stdout.write(f"  Loaded {len(parcels_gdf):,} parcels")
+
+            # Normalize SACOG column names to SQLMesh contract
+            # SACOG source uses geography_id; SQLMesh models expect parcel_id and id.
+            parcels_gdf["parcel_id"] = parcels_gdf["geography_id"]
+            parcels_gdf["id"] = parcels_gdf["geography_id"]
+            self.stdout.write(
+                f"  Normalized {len(parcels_gdf):,} rows: geography_id → parcel_id, id"
             )
 
-        # Write to SQLMesh source table (sacog_comparison_parcels)
-        parcels_gdf.to_postgis(
-            "sacog_comparison_parcels",
-            get_engine(),
-            schema="public",
-            if_exists="replace",
-            index=False,
-            dtype={"geometry": f"geometry(MultiPolygon, {LOCAL_SRID})"},
-        )
+            # Drop with CASCADE — SQLMesh views may depend on this table
+            with get_engine().begin() as conn:
+                conn.execute(
+                    text("DROP TABLE IF EXISTS public.sacog_comparison_parcels CASCADE")
+                )
 
-        self.stdout.write("  Written to public.sacog_comparison_parcels")
+            # Write to SQLMesh source table (sacog_comparison_parcels)
+            parcels_gdf.to_postgis(
+                "sacog_comparison_parcels",
+                get_engine(),
+                schema="public",
+                if_exists="replace",
+                index=False,
+                dtype={"geometry": f"geometry(MultiPolygon, {LOCAL_SRID})"},
+            )
+            self.stdout.write("  Written to public.sacog_comparison_parcels")
+        else:
+            self.stdout.write("  Parcels already loaded and unchanged, skipping")
+
+        # ── Conditional data loading ──────────────────────────────────
 
         # Populate TIGER/Line block group polygons (needed by ACS reader)
         self.stdout.write("\n── Populating TIGER/Line block group staging table ──")
-
-        tiger_result = run_tiger_bg_pipeline(
-            STATE_FIPS, vintages=["2013", "2023"], ignore_cache=force_data_fetch
-        )
-        self.stdout.write(
-            f"  TIGER/Line BG loaded: {tiger_result.get('row_count', 0)} rows "
-            f"in {tiger_result.get('table_name', '?')}"
-        )
+        if force_data_fetch or not self._table_has_rows("public", "tiger_block_groups"):
+            tiger_result = run_tiger_bg_pipeline(
+                STATE_FIPS, vintages=["2013", "2023"], ignore_cache=force_data_fetch
+            )
+            self.stdout.write(
+                f"  TIGER/Line BG loaded: {tiger_result.get('row_count', 0)} rows "
+                f"in {tiger_result.get('table_name', '?')}"
+            )
+        else:
+            self.stdout.write("  TIGER/Line BG already loaded, skipping")
 
         # Populate TIGER/Line block polygons (needed by wac_block_raw)
         self.stdout.write("\n── Populating TIGER/Line block staging table ──")
+        if force_data_fetch or not self._table_has_rows("public", "tiger_blocks"):
+            tiger_block_result = run_tiger_block_pipeline(
+                STATE_FIPS, vintages=["2020"], ignore_cache=force_data_fetch
+            )
+            self.stdout.write(
+                f"  TIGER/Line blocks loaded: {tiger_block_result.get('row_count', 0)} rows "
+                f"in {tiger_block_result.get('table_name', '?')}"
+            )
+        else:
+            self.stdout.write("  TIGER/Line blocks already loaded, skipping")
 
-        tiger_block_result = run_tiger_block_pipeline(
-            STATE_FIPS, vintages=["2020"], ignore_cache=force_data_fetch
-        )
-        self.stdout.write(
-            f"  TIGER/Line blocks loaded: {tiger_block_result.get('row_count', 0)} rows "
-            f"in {tiger_block_result.get('table_name', '?')}"
-        )
-
+        # Populate Census ACS staging table
         self.stdout.write("\n── Populating Census ACS staging table ──")
+        if force_data_fetch or not self._table_has_rows("public", "acs_raw"):
+            census_result = run_census_pipeline(
+                STATE_FIPS, COUNTY_FIPS, ACS_YEAR, ignore_cache=force_data_fetch
+            )
+            self.stdout.write(
+                f"  Census ACS loaded: {census_result.get('row_count', 0)} rows "
+                f"in {census_result.get('table_name', '?')}"
+            )
+        else:
+            self.stdout.write("  Census ACS already loaded, skipping")
 
-        census_result = run_census_pipeline(
-            STATE_FIPS, COUNTY_FIPS, ACS_YEAR, ignore_cache=force_data_fetch
-        )
-        self.stdout.write(
-            f"  Census ACS loaded: {census_result.get('row_count', 0)} rows "
-            f"in {census_result.get('table_name', '?')}"
-        )
         # Populate census.acs_block_group from ACS staging + TIGER BG geometry
         self.stdout.write("\n── Populating census.acs_block_group ──")
+        if force_data_fetch or not self._table_has_rows("census", "acs_block_group"):
+            acs_bg_count = _populate_acs_block_group(STATE_FIPS, COUNTY_FIPS, ACS_YEAR)
+            self.stdout.write(
+                f"  census.acs_block_group populated: {acs_bg_count:,} rows"
+            )
+        else:
+            self.stdout.write("  census.acs_block_group already populated, skipping")
 
-        acs_bg_count = _populate_acs_block_group(STATE_FIPS, COUNTY_FIPS, ACS_YEAR)
-        self.stdout.write(f"  census.acs_block_group populated: {acs_bg_count:,} rows")
         # Populate LEHD staging table before ETL
         self.stdout.write("\n── Populating LEHD LODES staging table ──")
+        if force_data_fetch or not self._table_has_rows("public", "lodes_raw"):
+            lehd_result = run_lehd_pipeline(
+                STATE_FIPS, COUNTY_FIPS, LEHD_YEAR, ignore_cache=force_data_fetch
+            )
+            self.stdout.write(
+                f"  LEHD LODES loaded: {lehd_result.get('row_count', 0)} rows "
+                f"in {lehd_result.get('table_name', '?')}"
+            )
+        else:
+            self.stdout.write("  LEHD LODES already loaded, skipping")
 
-        lehd_result = run_lehd_pipeline(
-            STATE_FIPS, COUNTY_FIPS, LEHD_YEAR, ignore_cache=force_data_fetch
-        )
-        self.stdout.write(
-            f"  LEHD LODES loaded: {lehd_result.get('row_count', 0)} rows "
-            f"in {lehd_result.get('table_name', '?')}"
-        )
-        # Populate lehd.wac_block from LEHD staging + TIGER BG geometry
+        # Populate lehd.wac_block from LEHD staging + TIGER geometry
         self.stdout.write("\n── Populating lehd.wac_block ──")
-
-        lehd_wac_count = _populate_wac_block(STATE_FIPS, COUNTY_FIPS, year=LEHD_YEAR)
-        self.stdout.write(f"  lehd.wac_block populated: {lehd_wac_count:,} rows")
-        # ── Phase 1.5: Run NLCD pipeline (optional) ──────────────────────
-        nlcd_table = ""
+        if force_data_fetch or not self._table_has_rows("lehd", "wac_block"):
+            lehd_wac_count = _populate_wac_block(
+                STATE_FIPS, COUNTY_FIPS, year=LEHD_YEAR
+            )
+            self.stdout.write(f"  lehd.wac_block populated: {lehd_wac_count:,} rows")
+        else:
+            self.stdout.write("  lehd.wac_block already populated, skipping")
+        # ── Phase 1.5: Optional data pipelines (conditional) ─────────
         if nlcd:
             self.stdout.write("\n── Phase 1.5a: Computing NLCD zonal stats ──")
+            if force_data_fetch or not self._table_has_rows("public", "nlcd_raster"):
+                nlcd_result = run_nlcd_pipeline(
+                    parcel_source="sacog_comparison_parcels",
+                    year=NLCD_YEAR,
+                    ignore_cache=force_data_fetch,
+                )
+                nlcd_raster_table = nlcd_result.get("raster_table", "nlcd_raster")
+                self.stdout.write(
+                    f"  NLCD raster loaded: {nlcd_result.get('row_count', 0)} tiles "
+                    f"in public.{nlcd_raster_table}"
+                )
+            else:
+                self.stdout.write("  NLCD raster already loaded, skipping")
 
-            nlcd_result = run_nlcd_pipeline(
-                parcel_source="sacog_comparison_parcels",
-                year=NLCD_YEAR,
-                ignore_cache=force_data_fetch,
-            )
-            nlcd_raster_table = nlcd_result.get("raster_table", "nlcd_raster")
-            nlcd_table = f"public.{nlcd_raster_table}"
-            self.stdout.write(
-                f"  NLCD raster loaded: {nlcd_result.get('row_count', 0)} tiles "
-                f"in {nlcd_table}"
-            )
-        # Run SQLMesh assessor staging models first to initialize the
-        # sacog_comparison environment, then the NLCD zonal stats model
-        # (ordering matters — the first plan call for a new environment
-        # must include all models that need physical tables).
-
-        # ── Phase 1.5c: Run Assessor pipeline (optional) ────────────────
-        dasymetric_weights_table = ""
         if use_assessor_geometry:
-            self.stdout.write("\n── Phase 1.5c: Fetching Assessor parcel geometries ──")
+            self.stdout.write("\n── Populating Assessor parcel geometries ──")
+            if force_data_fetch or not self._table_has_rows(
+                "public", "assessor_parcels"
+            ):
+                assessor_parcels_result = run_assessor_parcels_pipeline(
+                    max_pages=0 if not limit else max(1, limit // 2000 + 1),
+                    ignore_cache=force_data_fetch,
+                )
+                self.stdout.write(
+                    f"  Assessor parcels loaded: {assessor_parcels_result.get('row_count', 0)} rows"
+                )
+            else:
+                self.stdout.write("  Assessor parcels already loaded, skipping")
 
-            assessor_parcels_result = run_assessor_parcels_pipeline(
-                max_pages=0 if not limit else max(1, limit // 2000 + 1),
-                ignore_cache=force_data_fetch,
-            )
-            self.stdout.write(
-                f"  Assessor parcels loaded: {assessor_parcels_result.get('row_count', 0)} rows "
-                f"in {assessor_parcels_result.get('table_name', '?')}"
-            )
+            self.stdout.write("\n── Populating Assessor building characteristics ──")
+            if force_data_fetch or not self._table_has_rows("public", "assessor_sales"):
+                assessor_sales_result = run_assessor_sales_pipeline(
+                    max_pages=0 if not limit else max(1, limit // 2000 + 1),
+                    ignore_cache=force_data_fetch,
+                )
+                self.stdout.write(
+                    f"  Assessor sales loaded: {assessor_sales_result.get('row_count', 0)} rows"
+                )
+            else:
+                self.stdout.write("  Assessor sales already loaded, skipping")
 
-            self.stdout.write(
-                "\n── Phase 1.5d: Fetching Assessor building characteristics ──"
-            )
-            assessor_sales_result = run_assessor_sales_pipeline(
-                max_pages=0 if not limit else max(1, limit // 2000 + 1),
-                ignore_cache=force_data_fetch,
-            )
-            self.stdout.write(
-                f"  Assessor sales loaded: {assessor_sales_result.get('row_count', 0)} rows "
-                f"in {assessor_sales_result.get('table_name', '?')}"
-            )
+            self.stdout.write("\n── Downloading building footprints ──")
+            if force_data_fetch or not self._table_has_rows(
+                "public", "overture_buildings"
+            ):
+                footprint_result = download_overture_buildings(
+                    ignore_cache=force_data_fetch
+                )
+                self.stdout.write(
+                    f"  Overture buildings loaded: {footprint_result.get('row_count', 0):,} rows"
+                )
+            else:
+                self.stdout.write("  Overture buildings already loaded, skipping")
 
-            # ── Phase 1.5e: Materialize assessor SQLMesh staging models ──
-            self.stdout.write(
-                "\n── Phase 1.5e: Materializing assessor SQLMesh staging models ──"
+            if force_data_fetch or not self._table_has_rows("public", "vida_buildings"):
+                vida_result = run_vida_buildings_pipeline(ignore_cache=force_data_fetch)
+                vida_row_count = vida_result.get("row_count", 0)
+                self.stdout.write(f"  VIDA buildings loaded: {vida_row_count:,} rows")
+                if vida_row_count == 0:
+                    self.stdout.write(
+                        self.style.WARNING(
+                            "  No VIDA buildings — buildings_combined will contain only Overture"
+                        )
+                    )
+            else:
+                self.stdout.write("  VIDA buildings already loaded, skipping")
+
+        if osm:
+            self.stdout.write("\n── Computing OSM intersection density ──")
+            if force_data_fetch or not self._table_has_rows(
+                "public", "osm_intersection_density"
+            ):
+                osm_result = run_osm_pipeline(
+                    parcel_table="sacog_comparison_parcels",
+                )
+                self.stdout.write(
+                    f"  OSM intersection density loaded: {osm_result.get('row_count', 0)} rows"
+                )
+            else:
+                self.stdout.write("  OSM intersection density already loaded, skipping")
+
+        # ── Phase 2: Single consolidated SQLMesh plan call ─────────────────
+        self.stdout.write("\n── Phase 2: Running consolidated SQLMesh plan ──")
+
+        model_selectors: list[str] = [
+            "brewgis.comparison.sacog_parcel_shim",
+            "brewgis.base_canvas.base_canvas_reconciled",
+            "brewgis.comparison.sacog_summary",
+        ]
+        if nlcd:
+            model_selectors.extend(
+                [
+                    "brewgis.nlcd.parcels_wm",
+                    "brewgis.nlcd.nlcd_parcel_stats",
+                ]
             )
-            staging_result = run_sqlmesh_plan(
-                environment="sacog_comparison",
-                skip_tests=True,
-                select=[
+        if use_assessor_geometry:
+            model_selectors.extend(
+                [
                     "brewgis.assessor.sacog_assessor_parcels",
                     "brewgis.assessor.sacog_assessor_sales",
                     "brewgis.assessor.assessor_building_medians",
-                ],
-            )
-            if not staging_result.success:
-                raise CommandError(
-                    f"SQLMesh assessor base model staging failed: {staging_result.error}"
-                )
-            self.stdout.write(
-                self.style.SUCCESS(
-                    "  Assessor base models materialized",
-                )
-            )
-
-            # ── Phase 1.5c.5: Download Overture building footprints ──
-            self.stdout.write(
-                "\n── Phase 1.5c.5: Downloading Overture building footprints ──"
-            )
-            footprint_result = download_overture_buildings(
-                ignore_cache=force_data_fetch
-            )
-            self.stdout.write(
-                f"  Overture buildings loaded: {footprint_result.get('row_count', 0):,} rows "
-                f"in {footprint_result.get('table_name', '?')}"
-            )
-
-            # ── Phase 1.5c.5b: Download VIDA Combined building footprints ──
-            self.stdout.write(
-                "\n── Phase 1.5c.5b: Downloading VIDA Combined building footprints ──"
-            )
-            vida_result = run_vida_buildings_pipeline(ignore_cache=force_data_fetch)
-            vida_row_count = vida_result.get("row_count", 0)
-            self.stdout.write(
-                f"  VIDA buildings loaded: {vida_row_count:,} rows "
-                f"in {vida_result.get('table_name', '?')}"
-            )
-            if vida_row_count == 0:
-                self.stdout.write(
-                    self.style.WARNING(
-                        "  No VIDA buildings downloaded — buildings_combined will contain only Overture buildings"
-                    )
-                )
-
-            # ── Pre-flight: Ensure SQLMesh seed tables for footprint models ──
-            footprint_seeds = [
-                "brewgis.seeds.assessor_use_codes",
-                "brewgis.seeds.dasymetric_weights",
-            ]
-            missing_footprint_seeds = [
-                s for s in footprint_seeds if not self._table_has_rows("public", s)
-            ]
-            if missing_footprint_seeds:
-                self.stdout.write(
-                    f"  Missing seed tables: {', '.join(missing_footprint_seeds)}. Seeding selectively..."
-                )
-                seed_result = run_sqlmesh_plan(
-                    environment="sacog_comparison",
-                    skip_tests=True,
-                    select=missing_footprint_seeds,
-                )
-                seed_result = run_sqlmesh_plan(
-                    environment="sacog_comparison",
-                    skip_tests=True,
-                    select=missing_footprint_seeds,
-                )
-                if not seed_result.success:
-                    raise CommandError(f"SQLMesh seed failed: {seed_result.error}")
-                self.stdout.write(
-                    self.style.SUCCESS("  Missing seed tables loaded successfully")
-                )
-
-            # ── Phase 1.5c.6: Materialize footprint SQLMesh models ──
-            self.stdout.write(
-                "\n── Phase 1.5c.6: Materializing footprint + dasymetric SQLMesh models ──"
-            )
-            footprint_dbt_result = run_sqlmesh_plan(
-                environment="sacog_comparison",
-                skip_tests=True,
-                select=[
                     "brewgis.assessor.buildings_combined",
                     "brewgis.assessor.parcel_building_footprints",
                     "brewgis.assessor.parcel_block_groups",
                     "brewgis.assessor.parcel_footprint_imputed",
                     "brewgis.assessor.parcel_dasymetric_weights",
-                ],
-            )
-            if not footprint_dbt_result.success:
-                raise CommandError(
-                    f"SQLMesh footprint models failed: {footprint_dbt_result.error}"
-                )
-            dasymetric_weights_table = "public.parcel_dasymetric_weights"
-            self.stdout.write(
-                self.style.SUCCESS(
-                    "  Footprint SQLMesh models complete; "
-                    f"dasymetric weights in {dasymetric_weights_table}",
-                )
+                    "brewgis.comparison.sacog_comparison_dasymetric",
+                ]
             )
 
-        if nlcd:
-            # Run SQLMesh nlcd_parcel_stats model to compute per-parcel zonal stats.
-            # The sacog_comparison environment now already exists (created by the
-            # assessor plan above, or is new if assessor was skipped).
-            self.stdout.write(
-                "\n── Phase 1.5a.5: Materializing nlcd_parcel_stats SQLMesh model ──"
-            )
-            nlcd_dbt_result = run_sqlmesh_plan(
-                environment="sacog_comparison",
-                skip_tests=True,
-                select=["brewgis.nlcd.parcels_wm", "brewgis.nlcd.nlcd_parcel_stats"],
-            )
-            if not nlcd_dbt_result.success:
-                raise CommandError(
-                    f"SQLMesh nlcd_parcel_stats failed: {nlcd_dbt_result.error}"
-                )
-            self.stdout.write(self.style.SUCCESS("  nlcd_parcel_stats materialized"))
-
-        # ── Phase 1.5b: Run OSM pipeline (optional) ──────────────────────
-        osm_table = ""
-        if osm:
-            self.stdout.write("\n── Phase 1.5b: Computing OSM intersection density ──")
-
-            osm_result = run_osm_pipeline(
-                parcel_table="sacog_comparison_parcels",
-            )
-            osm_table = osm_result.get("table_name", "public.osm_intersection_density")
-            self.stdout.write(
-                f"  OSM intersection density loaded: {osm_result.get('row_count', 0)} rows "
-                f"in {osm_table}"
-            )
-
-        # ── Phase 2a: Materialize SACOG parcel shim ────────────────────
-        self.stdout.write("\n── Phase 2a: Materializing SACOG parcel shim ──")
-        shim_vars: dict[str, Any] = {
-            "comparison_parcel_table": "sacog_comparison_parcels",
-            "base_canvas_materialized": "table",
-            "projected_srid": LOCAL_SRID,
-        }
-        shim_result = run_sqlmesh_plan(
-            environment="sacog_comparison",
-            skip_tests=True,
-            select=["brewgis.comparison.sacog_parcel_shim"],
-        )
-        if not shim_result.success:
-            raise CommandError(
-                f"SQLMesh sacog_parcel_shim run failed: {shim_result.error}"
-            )
-        self.stdout.write(self.style.SUCCESS("  sacog_parcel_shim materialized"))
-
-        # ── Phase 2a.5: Materialize assessor→SACOG dasymetric crosswalk (if assessor data loaded) ──
-        if use_assessor_geometry:
-            self.stdout.write(
-                "\n── Phase 2a.5: Materializing assessor→SACOG dasymetric crosswalk ──"
-            )
-            crosswalk_vars: dict[str, Any] = {
-                "base_canvas_materialized": "table",
-            }
-            crosswalk_result = run_sqlmesh_plan(
-                environment="sacog_comparison",
-                skip_tests=True,
-                select=["brewgis.comparison.sacog_comparison_dasymetric"],
-            )
-            if not crosswalk_result.success:
-                raise CommandError(
-                    f"SQLMesh sacog_comparison_dasymetric failed: {crosswalk_result.error}"
-                )
-            dasymetric_weights_table = "public.sacog_comparison_dasymetric"
-            self.stdout.write(
-                self.style.SUCCESS(
-                    f"  Assessor→SACOG crosswalk materialized in {dasymetric_weights_table}"
-                )
-            )
-
-        # ── Pre-flight: Ensure SQLMesh seed tables are loaded ──────────────
-        self.stdout.write("\n── Pre-flight: Checking SQLMesh seed tables ──")
-        required_seeds = [
-            "brewgis.seeds.calibration_parameters",
-            "brewgis.seeds.assessor_use_codes",
-            "brewgis.seeds.dasymetric_weights",
-            "brewgis.seeds.sacog_land_use",
-        ]
-        missing_seeds = [
-            s for s in required_seeds if not self._table_has_rows("public", s)
-        ]
-        if missing_seeds:
-            self.stdout.write(
-                f"  Missing seed tables: {', '.join(missing_seeds)}. Seeding selectively..."
-            )
-            seed_result = run_sqlmesh_plan(
-                environment="sacog_comparison", skip_tests=True, select=missing_seeds
-            )
-            seed_result = run_sqlmesh_plan(
-                environment="sacog_comparison", skip_tests=True, select=missing_seeds
-            )
-            if not seed_result.success:
-                raise CommandError(f"SQLMesh seed failed: {seed_result.error}")
-            self.stdout.write(
-                self.style.SUCCESS("  Missing seed tables loaded successfully")
-            )
-        else:
-            self.stdout.write(
-                "  SQLMesh seed tables already present, skipping SQLMesh seed"
-            )
-
-        # ── Phase 2b: Run SQLMesh base_canvas models ────────────────────────
-        self.stdout.write("\n── Phase 2b: Running SQLMesh base_canvas models ──")
-        dbt_vars: dict[str, Any] = {
-            "parcel_table": "sacog_parcel_shim",
-            "employment_land_use_constrain": True,
-            "base_canvas_materialized": "table",
-            "projected_srid": LOCAL_SRID,
-            "quick_parcel_clipping": quick_parcel_clipping,
-        }
-        if nlcd_table:
-            dbt_vars["nlcd_enabled"] = True
-            dbt_vars["nlcd_raster_table"] = nlcd_table
-            dbt_vars["nlcd_parcel_source"] = "public.sacog_comparison_parcels"
-        if osm_table:
-            dbt_vars["osm_intersection_table"] = osm_table
-        if dasymetric_weights_table:
-            dbt_vars["dasymetric_weights_table"] = dasymetric_weights_table
         result = run_sqlmesh_plan(
             environment="sacog_comparison",
             skip_tests=True,
-            select=[
-                "brewgis.base_canvas.base_canvas_geometry",
-                "brewgis.base_canvas.base_canvas_demographics",
-                "brewgis.base_canvas.base_canvas_employment",
-                "brewgis.base_canvas.base_canvas_attributes",
-                "brewgis.base_canvas.base_canvas_imputed",
-                "brewgis.base_canvas.base_canvas_reconciled",
-            ],
+            forward_only=True,
+            select=model_selectors,
         )
         if not result.success:
-            raise CommandError(f"SQLMesh base_canvas run failed: {result.error}")
-        self.stdout.write(self.style.SUCCESS("  SQLMesh base_canvas models complete"))
-
-        # ── Phase 3: Running SQLMesh comparison models ─────────────────────────
-        self.stdout.write("\n── Phase 3: Running SQLMesh comparison models ──")
-        result = run_sqlmesh_plan(
-            environment="sacog_comparison",
-            skip_tests=True,
-            select=["brewgis.comparison.*"],
-        )
-        if not result.success:
-            raise CommandError(f"SQLMesh comparison run failed: {result.error}")
-        self.stdout.write(self.style.SUCCESS("  SQLMesh comparison models complete"))
+            raise CommandError(f"SQLMesh plan failed: {result.error}")
+        self.stdout.write(self.style.SUCCESS("  SQLMesh models complete"))
 
         # ── Phase 4: Read results from SQLMesh-materialized tables ─────────
         self.stdout.write("\n── Phase 4: Reading comparison data from SQLMesh ──")
@@ -719,7 +572,7 @@ class Command(BaseCommand):
             },
             diagnostics=_collect_diagnostics(
                 engine=get_engine(),
-                dasymetric_table=dasymetric_weights_table
+                dasymetric_table="public.sacog_comparison_dasymetric"
                 if use_assessor_geometry
                 else None,
             ),
@@ -751,6 +604,24 @@ class Command(BaseCommand):
                 text(f"SELECT COUNT(*) FROM {schema}.{table}")  # noqa: S608 — schema/table are hardcoded literals
             ).scalar()
             return bool(count) and count > 0
+
+    @staticmethod
+    def _parcel_checksum(engine: Any, table: str) -> str | None:
+        """Return an MD5 checksum of parcel geography_ids, or None if table doesn't exist."""
+        with engine.connect() as conn:
+            exists = conn.execute(
+                text(
+                    f"SELECT EXISTS ( SELECT 1 FROM information_schema.tables WHERE table_schema = 'public' AND table_name = '{table}')"
+                )
+            ).scalar()
+            if not exists:
+                return None
+            row = conn.execute(
+                text(
+                    f"SELECT MD5(string_agg(geography_id::text, ',' ORDER BY geography_id)) FROM public.{table}"
+                )
+            ).scalar()
+            return row
 
     def _print_totals(self, totals: dict[str, float], label: str) -> None:
         """Print key aggregate totals."""

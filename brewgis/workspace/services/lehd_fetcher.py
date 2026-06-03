@@ -18,8 +18,6 @@ import logging
 import re
 from pathlib import Path
 from typing import Any
-import hashlib
-import time
 
 import deal
 import pandas as pd
@@ -1170,6 +1168,28 @@ def _populate_wac_block(
     }
     for sub_col in _SUBSECTOR_CBP_NAICS:
         cbp_key = f"cbp_county_{sub_col}"
+        scaling_vars[cbp_key] = cbp_totals.get(sub_col, 0.0)
+
+    # Materialize wac_block_raw (CNS-to-sub-sector splitting with CBP proportions)
+    raw_result = run_sqlmesh_plan(
+        environment="brewgis_prod",
+        select=["brewgis.staging.wac_block_raw"],
+        skip_tests=True,
+    )
+    if not raw_result.success:
+        msg = f"SQLMesh wac_block_raw failed: {raw_result.error}"
+        raise RuntimeError(msg)
+
+    # Materialize wac_block (C000 gap distribution and CBP county-level scaling)
+    block_result = run_sqlmesh_plan(
+        environment="brewgis_prod",
+        select=["brewgis.staging.wac_block"],
+        skip_tests=True,
+    )
+    if not block_result.success:
+        msg = f"SQLMesh wac_block failed: {block_result.error}"
+        raise RuntimeError(msg)
+
     engine = get_engine()
     with engine.connect() as conn:
         row_count = (
