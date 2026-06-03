@@ -397,34 +397,10 @@ class Command(BaseCommand):
                 f"  NLCD raster loaded: {nlcd_result.get('row_count', 0)} tiles "
                 f"in {nlcd_table}"
             )
-            # Run SQLMesh nlcd_parcel_stats model to compute per-parcel zonal stats
-            self.stdout.write(
-                "\n── Phase 1.5a.5: Materializing nlcd_parcel_stats SQLMesh model ──"
-            )
-            nlcd_dbt_result = run_sqlmesh_plan(
-                environment="sacog_comparison",
-                skip_tests=True,
-                select=["brewgis.nlcd.parcels_wm", "brewgis.nlcd.nlcd_parcel_stats"],
-            )
-            if not nlcd_dbt_result.success:
-                raise CommandError(
-                    f"SQLMesh nlcd_parcel_stats failed: {nlcd_dbt_result.error}"
-                )
-            self.stdout.write(self.style.SUCCESS("  nlcd_parcel_stats materialized"))
-
-        # ── Phase 1.5b: Run OSM pipeline (optional) ──────────────────────
-        osm_table = ""
-        if osm:
-            self.stdout.write("\n── Phase 1.5b: Computing OSM intersection density ──")
-
-            osm_result = run_osm_pipeline(
-                parcel_table="sacog_comparison_parcels",
-            )
-            osm_table = osm_result.get("table_name", "public.osm_intersection_density")
-            self.stdout.write(
-                f"  OSM intersection density loaded: {osm_result.get('row_count', 0)} rows "
-                f"in {osm_table}"
-            )
+        # Run SQLMesh assessor staging models first to initialize the
+        # sacog_comparison environment, then the NLCD zonal stats model
+        # (ordering matters — the first plan call for a new environment
+        # must include all models that need physical tables).
 
         # ── Phase 1.5c: Run Assessor pipeline (optional) ────────────────
         dasymetric_weights_table = ""
@@ -557,6 +533,38 @@ class Command(BaseCommand):
                     "  Footprint SQLMesh models complete; "
                     f"dasymetric weights in {dasymetric_weights_table}",
                 )
+            )
+
+        if nlcd:
+            # Run SQLMesh nlcd_parcel_stats model to compute per-parcel zonal stats.
+            # The sacog_comparison environment now already exists (created by the
+            # assessor plan above, or is new if assessor was skipped).
+            self.stdout.write(
+                "\n── Phase 1.5a.5: Materializing nlcd_parcel_stats SQLMesh model ──"
+            )
+            nlcd_dbt_result = run_sqlmesh_plan(
+                environment="sacog_comparison",
+                skip_tests=True,
+                select=["brewgis.nlcd.parcels_wm", "brewgis.nlcd.nlcd_parcel_stats"],
+            )
+            if not nlcd_dbt_result.success:
+                raise CommandError(
+                    f"SQLMesh nlcd_parcel_stats failed: {nlcd_dbt_result.error}"
+                )
+            self.stdout.write(self.style.SUCCESS("  nlcd_parcel_stats materialized"))
+
+        # ── Phase 1.5b: Run OSM pipeline (optional) ──────────────────────
+        osm_table = ""
+        if osm:
+            self.stdout.write("\n── Phase 1.5b: Computing OSM intersection density ──")
+
+            osm_result = run_osm_pipeline(
+                parcel_table="sacog_comparison_parcels",
+            )
+            osm_table = osm_result.get("table_name", "public.osm_intersection_density")
+            self.stdout.write(
+                f"  OSM intersection density loaded: {osm_result.get('row_count', 0)} rows "
+                f"in {osm_table}"
             )
 
         # ── Phase 2a: Materialize SACOG parcel shim ────────────────────
