@@ -268,6 +268,17 @@ def run_tiger_block_pipeline(
                     )
                     conn.commit()
 
+    # Create spatial index for wac_block_raw joins
+    engine = get_engine()
+    with engine.begin() as conn:
+        conn.execute(
+            _text(
+                "CREATE INDEX IF NOT EXISTS idx_tiger_blocks_geometry "
+                f"ON {schema}.tiger_blocks USING GIST (geometry)"
+            )
+        )
+        conn.execute(_text(f"ANALYZE {schema}.tiger_blocks"))
+
     if total_rows == 0:
         raise RuntimeError("TIGER/Line block pipeline completed but loaded 0 rows")
 

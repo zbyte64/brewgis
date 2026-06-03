@@ -394,6 +394,15 @@ def load_to_postgis(
             schema,
         )
         result["sacog_assessor_parcels_raw"] = row_count
+        # Create spatial index for spatial joins in SQLMesh models
+        with engine.begin() as conn:
+            conn.execute(
+                text(
+                    "CREATE INDEX IF NOT EXISTS idx_sacog_assessor_parcels_raw_geometry "
+                    f"ON {schema}.sacog_assessor_parcels_raw USING GIST (geometry)"
+                )
+            )
+            conn.execute(text(f"ANALYZE {schema}.sacog_assessor_parcels_raw"))
 
     if sales is not None and not sales.empty:
         _drop_cascade("sacog_assessor_sales_raw")
@@ -411,5 +420,13 @@ def load_to_postgis(
             schema,
         )
         result["sacog_assessor_sales_raw"] = row_count
+        # Create B-tree index for APN joins in dasymetric_weights
+        with engine.begin() as conn:
+            conn.execute(
+                text(
+                    "CREATE INDEX IF NOT EXISTS idx_sacog_assessor_sales_raw_apn "
+                    f"ON {schema}.sacog_assessor_sales_raw (apn)"
+                )
+            )
 
     return result

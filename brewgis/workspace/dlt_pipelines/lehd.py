@@ -16,6 +16,9 @@ from typing import Any
 import dlt
 import requests
 from django.conf import settings
+
+from brewgis.workspace.services._db import get_engine
+from brewgis.workspace.services._db import text
 from brewgis.workspace.services.lehd_fetcher import _FIPS_TO_STATE
 from brewgis.workspace.services.lehd_fetcher import LODES_WAC_BASE
 
@@ -155,6 +158,16 @@ def run_lehd_pipeline(
         if si is not None and hasattr(si, "row_counts") and si.row_counts:
             row_count = si.row_counts.get("lodes_raw", 0)
             break
+
+    # Create index for wac_block_raw geoid joins
+    engine = get_engine()
+    with engine.begin() as conn:
+        conn.execute(
+            text(
+                "CREATE INDEX IF NOT EXISTS idx_lodes_raw_geoid "
+                f"ON {schema}.lodes_raw (geoid)"
+            )
+        )
 
     return {
         "table_name": f"{schema}.lodes_raw",

@@ -318,6 +318,17 @@ def run_vida_buildings_pipeline(
             )
             conn.commit()
 
+    # Create spatial index for buildings_combined dedup joins
+    engine = get_engine()
+    with engine.begin() as conn:
+        conn.execute(
+            _text(
+                "CREATE INDEX IF NOT EXISTS idx_vida_combined_buildings_geometry "
+                f"ON {schema}.{OUTPUT_TABLE} USING GIST (geometry)"
+            )
+        )
+        conn.execute(_text(f"ANALYZE {schema}.{OUTPUT_TABLE}"))
+
     return {
         "table_name": f"{schema}.{OUTPUT_TABLE}",
         "row_count": total_rows,

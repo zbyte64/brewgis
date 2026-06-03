@@ -235,6 +235,17 @@ def run_tiger_bg_pipeline(
                     )
                     conn.commit()
 
+    # Create spatial index for parcel_block_groups joins
+    engine = get_engine()
+    with engine.begin() as conn:
+        conn.execute(
+            _text(
+                "CREATE INDEX IF NOT EXISTS idx_tiger_block_groups_geometry "
+                f"ON {schema}.tiger_block_groups USING GIST (geometry)"
+            )
+        )
+        conn.execute(_text(f"ANALYZE {schema}.tiger_block_groups"))
+
     if total_rows == 0:
         raise RuntimeError("TIGER/Line BG pipeline completed but loaded 0 rows")
 

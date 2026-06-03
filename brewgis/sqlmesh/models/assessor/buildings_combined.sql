@@ -52,7 +52,8 @@ vida_deduped AS (
         vb.bf_source,
         vb.confidence
     FROM vida_buildings vb
-    WHERE NOT EXISTS (
+    WHERE vb.geometry && (SELECT ST_Extent(geometry) FROM overture_buildings)
+      AND NOT EXISTS (
         SELECT 1
         FROM overture_buildings ob
         WHERE ST_Intersects(vb.geometry, ob.geometry)

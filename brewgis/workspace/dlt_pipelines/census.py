@@ -24,6 +24,9 @@ from typing import Any
 import dlt
 import requests
 from django.conf import settings
+
+from brewgis.workspace.services._db import get_engine
+from brewgis.workspace.services._db import text
 from brewgis.workspace.services.census_fetcher import _all_vars
 from brewgis.workspace.services.census_fetcher import _census_api_key
 from brewgis.workspace.services.census_fetcher import _census_base_url
@@ -202,6 +205,16 @@ def run_census_pipeline(
         if si is not None and hasattr(si, "row_counts") and si.row_counts:
             row_count = si.row_counts.get("acs_raw", 0)
             break
+
+    # Create index for acs_block_group lookups
+    engine = get_engine()
+    with engine.begin() as conn:
+        conn.execute(
+            text(
+                "CREATE INDEX IF NOT EXISTS idx_acs_raw_lookup "
+                f"ON {schema}.acs_raw (state, county, year)"
+            )
+        )
 
     return {
         "table_name": f"{schema}.acs_raw",
