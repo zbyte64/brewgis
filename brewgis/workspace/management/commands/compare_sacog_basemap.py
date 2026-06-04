@@ -109,6 +109,13 @@ class Command(BaseCommand):
         )
 
         parser.add_argument(
+            "--force-data-reload",
+            action="store_true",
+            default=False,
+            help="Clear and reload data into database from cached downloads (does not re-download from upstream sources)",
+        )
+
+        parser.add_argument(
             "--quick-parcel-clipping",
             action="store_true",
             default=False,
@@ -182,6 +189,7 @@ class Command(BaseCommand):
         osm = bool(options.get("osm", False))
         limit = int(options.get("limit", 0))
         force_data_fetch = bool(options.get("force_data_fetch", False))
+        force_data_reload = bool(options.get("force_data_reload", False))
         quick_parcel_clipping = bool(options.get("quick_parcel_clipping", False))
         use_assessor_geometry = bool(options.get("use_assessor_geometry", False))
 
@@ -198,6 +206,9 @@ class Command(BaseCommand):
         self.stdout.write(f"  Parcel limit: {limit or 'all'}")
         self.stdout.write(
             f"  Force re-download: {'yes' if force_data_fetch else 'no (use cached data if available)'}"
+        )
+        self.stdout.write(
+            f"  Force data reload: {'yes' if force_data_reload else 'no (use cached data if available)'}"
         )
         self.stdout.write(
             f"  Parcel clipping: {'fast (ClipByBox2D)' if quick_parcel_clipping else 'accurate (Intersection)'}"
@@ -217,6 +228,7 @@ class Command(BaseCommand):
                 osm=osm,
                 limit=limit,
                 force_data_fetch=force_data_fetch,
+                force_data_reload=force_data_reload,
                 quick_parcel_clipping=quick_parcel_clipping,
                 use_assessor_geometry=use_assessor_geometry,
                 log_file_handle=log_file_handle,
@@ -246,6 +258,7 @@ class Command(BaseCommand):
         osm: bool,
         limit: int,
         force_data_fetch: bool,
+        force_data_reload: bool,
         quick_parcel_clipping: bool,
         use_assessor_geometry: bool,
         log_file_handle: Any,
@@ -344,7 +357,11 @@ class Command(BaseCommand):
 
         # Populate TIGER/Line block group polygons (needed by ACS reader)
         self.stdout.write("\n── Populating TIGER/Line block group staging table ──")
-        if force_data_fetch or not self._table_has_rows("public", "tiger_block_groups"):
+        if (
+            force_data_fetch
+            or force_data_reload
+            or not self._table_has_rows("public", "tiger_block_groups")
+        ):
             tiger_result = run_tiger_bg_pipeline(
                 STATE_FIPS, vintages=["2013", "2023"], ignore_cache=force_data_fetch
             )
@@ -357,7 +374,11 @@ class Command(BaseCommand):
 
         # Populate TIGER/Line block polygons (needed by wac_block_raw)
         self.stdout.write("\n── Populating TIGER/Line block staging table ──")
-        if force_data_fetch or not self._table_has_rows("public", "tiger_blocks"):
+        if (
+            force_data_fetch
+            or force_data_reload
+            or not self._table_has_rows("public", "tiger_blocks")
+        ):
             tiger_block_result = run_tiger_block_pipeline(
                 STATE_FIPS, vintages=["2020"], ignore_cache=force_data_fetch
             )
@@ -370,7 +391,11 @@ class Command(BaseCommand):
 
         # Populate Census ACS staging table
         self.stdout.write("\n── Populating Census ACS staging table ──")
-        if force_data_fetch or not self._table_has_rows("public", "acs_raw"):
+        if (
+            force_data_fetch
+            or force_data_reload
+            or not self._table_has_rows("public", "acs_raw")
+        ):
             census_result = run_census_pipeline(
                 STATE_FIPS, COUNTY_FIPS, ACS_YEAR, ignore_cache=force_data_fetch
             )
@@ -383,7 +408,11 @@ class Command(BaseCommand):
 
         # Populate census.acs_block_group from ACS staging + TIGER BG geometry
         self.stdout.write("\n── Populating census.acs_block_group ──")
-        if force_data_fetch or not self._table_has_rows("census", "acs_block_group"):
+        if (
+            force_data_fetch
+            or force_data_reload
+            or not self._table_has_rows("census", "acs_block_group")
+        ):
             acs_bg_count = _populate_acs_block_group(STATE_FIPS, COUNTY_FIPS, ACS_YEAR)
             self.stdout.write(
                 f"  census.acs_block_group populated: {acs_bg_count:,} rows"
@@ -393,7 +422,11 @@ class Command(BaseCommand):
 
         # Populate LEHD staging table before ETL
         self.stdout.write("\n── Populating LEHD LODES staging table ──")
-        if force_data_fetch or not self._table_has_rows("public", "lodes_raw"):
+        if (
+            force_data_fetch
+            or force_data_reload
+            or not self._table_has_rows("public", "lodes_raw")
+        ):
             lehd_result = run_lehd_pipeline(
                 STATE_FIPS, COUNTY_FIPS, LEHD_YEAR, ignore_cache=force_data_fetch
             )
@@ -406,7 +439,11 @@ class Command(BaseCommand):
 
         # Populate lehd.wac_block from LEHD staging + TIGER geometry
         self.stdout.write("\n── Populating lehd.wac_block ──")
-        if force_data_fetch or not self._table_has_rows("lehd", "wac_block"):
+        if (
+            force_data_fetch
+            or force_data_reload
+            or not self._table_has_rows("lehd", "wac_block")
+        ):
             lehd_wac_count = _populate_wac_block(
                 STATE_FIPS, COUNTY_FIPS, year=LEHD_YEAR
             )
@@ -416,7 +453,11 @@ class Command(BaseCommand):
         # ── Phase 1.5: Optional data pipelines (conditional) ─────────
         if nlcd:
             self.stdout.write("\n── Phase 1.5a: Computing NLCD zonal stats ──")
-            if force_data_fetch or not self._table_has_rows("public", "nlcd_raster"):
+            if (
+                force_data_fetch
+                or force_data_reload
+                or not self._table_has_rows("public", "nlcd_raster")
+            ):
                 nlcd_result = run_nlcd_pipeline(
                     parcel_source="sacog_comparison_parcels",
                     year=NLCD_YEAR,
@@ -432,8 +473,10 @@ class Command(BaseCommand):
 
         if use_assessor_geometry:
             self.stdout.write("\n── Populating Assessor parcel geometries ──")
-            if force_data_fetch or not self._table_has_rows(
-                "public", "assessor_parcels"
+            if (
+                force_data_fetch
+                or force_data_reload
+                or not self._table_has_rows("public", "sacog_assessor_parcels_raw")
             ):
                 assessor_parcels_result = run_assessor_parcels_pipeline(
                     max_pages=0 if not limit else max(1, limit // 2000 + 1),
@@ -446,7 +489,11 @@ class Command(BaseCommand):
                 self.stdout.write("  Assessor parcels already loaded, skipping")
 
             self.stdout.write("\n── Populating Assessor building characteristics ──")
-            if force_data_fetch or not self._table_has_rows("public", "assessor_sales"):
+            if (
+                force_data_fetch
+                or force_data_reload
+                or not self._table_has_rows("public", "sacog_assessor_sales_raw")
+            ):
                 assessor_sales_result = run_assessor_sales_pipeline(
                     max_pages=0 if not limit else max(1, limit // 2000 + 1),
                     ignore_cache=force_data_fetch,
@@ -458,8 +505,10 @@ class Command(BaseCommand):
                 self.stdout.write("  Assessor sales already loaded, skipping")
 
             self.stdout.write("\n── Downloading building footprints ──")
-            if force_data_fetch or not self._table_has_rows(
-                "public", "overture_buildings"
+            if (
+                force_data_fetch
+                or force_data_reload
+                or not self._table_has_rows("public", "overture_buildings")
             ):
                 footprint_result = download_overture_buildings(
                     ignore_cache=force_data_fetch
@@ -470,7 +519,11 @@ class Command(BaseCommand):
             else:
                 self.stdout.write("  Overture buildings already loaded, skipping")
 
-            if force_data_fetch or not self._table_has_rows("public", "vida_buildings"):
+            if (
+                force_data_fetch
+                or force_data_reload
+                or not self._table_has_rows("public", "vida_combined_buildings")
+            ):
                 vida_result = run_vida_buildings_pipeline(ignore_cache=force_data_fetch)
                 vida_row_count = vida_result.get("row_count", 0)
                 self.stdout.write(f"  VIDA buildings loaded: {vida_row_count:,} rows")
@@ -485,8 +538,10 @@ class Command(BaseCommand):
 
         if osm:
             self.stdout.write("\n── Computing OSM intersection density ──")
-            if force_data_fetch or not self._table_has_rows(
-                "public", "osm_intersection_density"
+            if (
+                force_data_fetch
+                or force_data_reload
+                or not self._table_has_rows("public", "osm_intersection_density")
             ):
                 osm_result = run_osm_pipeline(
                     parcel_table="sacog_comparison_parcels",
