@@ -1,6 +1,9 @@
 MODEL (
   name brewgis.assessor.parcel_footprint_imputed,
-  kind FULL,
+  kind INCREMENTAL_BY_UNIQUE_KEY (
+    unique_key (apn),
+    batch_size 100000
+  ),
   audits (
     not_null(columns := (apn))
   )
@@ -22,6 +25,12 @@ MODEL (
 
 WITH
 -- Parcels with both building footprint features AND assessor sales data (ground truth)
+latest_block_groups AS (
+    SELECT DISTINCT ON (apn) *
+    FROM parcel_block_groups
+    ORDER BY apn, data_year DESC
+),
+
 known AS (
     SELECT DISTINCT ON (pbf.apn)
         pbf.apn,
@@ -36,7 +45,7 @@ known AS (
         s.living_area AS living_sqft,
         s.building_sf AS building_sqft
     FROM brewgis.assessor.parcel_building_footprints pbf
-    JOIN parcel_block_groups pbg ON pbf.apn = pbg.apn
+    JOIN latest_block_groups pbg ON pbf.apn = pbg.apn
     JOIN public.sacog_assessor_sales_raw s ON pbf.apn = s.apn
     WHERE pbf.footprint_ratio > 0
       AND s.property_type IS NOT NULL
@@ -54,7 +63,7 @@ unknown AS (
         pbg.block_group_geoid,
         pbg.tract_geoid
     FROM brewgis.assessor.parcel_building_footprints pbf
-    JOIN parcel_block_groups pbg ON pbf.apn = pbg.apn
+    JOIN latest_block_groups pbg ON pbf.apn = pbg.apn
     WHERE pbf.footprint_ratio > 0
       AND pbf.apn NOT IN (SELECT apn FROM known)
 ),
@@ -287,5 +296,5 @@ SELECT
     i.imputed_from_tier,
     i.neighbor_count
 FROM brewgis.assessor.parcel_building_footprints pbf
-LEFT JOIN parcel_block_groups pbg ON pbf.apn = pbg.apn
+LEFT JOIN latest_block_groups pbg ON pbf.apn = pbg.apn
 JOIN imputed i ON pbf.apn = i.apn

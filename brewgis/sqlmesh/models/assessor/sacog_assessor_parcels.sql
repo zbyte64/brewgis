@@ -1,6 +1,9 @@
 MODEL (
   name brewgis.assessor.sacog_assessor_parcels,
-  kind FULL,
+  kind INCREMENTAL_BY_UNIQUE_KEY (
+    unique_key (apn),
+    batch_size 100000
+  ),
   audits (
     not_null(columns := (apn))
   )

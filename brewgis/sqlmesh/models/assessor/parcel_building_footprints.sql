@@ -1,6 +1,9 @@
 MODEL (
   name brewgis.assessor.parcel_building_footprints,
-  kind FULL,
+  kind INCREMENTAL_BY_UNIQUE_KEY (
+    unique_key (apn),
+    batch_size 100000
+  ),
   audits (
     not_null(columns := (apn))
   )

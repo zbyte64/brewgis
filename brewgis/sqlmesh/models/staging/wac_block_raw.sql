@@ -1,8 +1,11 @@
 MODEL (
   name brewgis.staging.wac_block_raw,
-  kind FULL,
+  kind INCREMENTAL_BY_UNIQUE_KEY (
+    unique_key (geoid, data_year),
+    batch_size 100000
+  ),
   audits (
-    not_null(columns := (geoid))
+    not_null(columns := (geoid, data_year))
   )
 );
 
@@ -36,7 +39,7 @@ WITH lodes_blocks AS (
         LEFT(w_geocode, 12) AS bg,
         LEFT(w_geocode, 11) AS tract
     FROM public.lodes_raw
-    WHERE year = 2021
+    WHERE year = @lodes_year
       AND LEFT(w_geocode, 5) = '06067'
 ),
 
@@ -51,14 +54,14 @@ block_geometry_map AS (
     FROM lodes_blocks lb
     LEFT JOIN public.tiger_blocks tb
         ON lb.block_geoid = tb.geoid
-        AND tb.vintage = '2020'
+        AND tb.vintage = @tiger_block_vintage
     LEFT JOIN public.tiger_block_groups tbg
         ON lb.bg = tbg.geoid
-        AND tbg.vintage = '2023'
+        AND tbg.vintage = @tiger_vintage
     LEFT JOIN LATERAL (
         SELECT geometry FROM public.tiger_block_groups
         WHERE geoid LIKE lb.tract || '%'
-          AND vintage = '2023'
+          AND vintage = @tiger_vintage
         LIMIT 1
     ) tbg_fallback ON tb.geoid IS NULL AND tbg.geoid IS NULL
     WHERE COALESCE(tb.geometry, tbg.geometry, tbg_fallback.geometry) IS NOT NULL
@@ -131,7 +134,7 @@ cbp_sub_sectors AS (
     FROM public.lodes_raw lr
     JOIN block_geometry_map bm
         ON lr.w_geocode = bm.block_geoid
-    WHERE lr.year = 2021
+    WHERE lr.year = @lodes_year
       AND LEFT(lr.w_geocode, 5) = '06067'
 ),
 
@@ -348,6 +351,7 @@ with_govt AS (
         geoid,
         geometry,
         emp,
+        make_date(@lodes_year::int, 1, 1) AS data_year,
         ROUND(emp_education + cns18_20_govt * 0.24, 1) AS emp_education,
         ROUND(emp_medical_services + cns18_20_govt * 0.37, 1) AS emp_medical_services,
         ROUND(emp_public_admin + cns18_20_govt * 0.39, 1) AS emp_public_admin,

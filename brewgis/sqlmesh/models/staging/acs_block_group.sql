@@ -1,8 +1,11 @@
 MODEL (
   name brewgis.staging.acs_block_group,
-  kind FULL,
+  kind INCREMENTAL_BY_UNIQUE_KEY (
+    unique_key (geoid, data_year),
+    batch_size 100000
+  ),
   audits (
-    not_null(columns := (geoid))
+    not_null(columns := (geoid, data_year))
   )
 );
 
@@ -59,8 +62,8 @@ WITH raw_derived AS (
     FROM public.acs_raw a
     JOIN public.tiger_block_groups tbg
         ON tbg.geoid = a.state || a.county || a.tract || a."block_group"
-        AND tbg.vintage = '2013'
-    WHERE a.year = 2022
+        AND tbg.vintage = @tiger_bg_vintage
+    WHERE a.year = @acs_year
       AND a.state = '06'
       AND a.county = '067'
 ),
@@ -99,6 +102,7 @@ derived_with_pcts AS (
 SELECT
     geoid,
     geometry,
+    make_date(@acs_year::int, 1, 1) AS data_year,
     pop,
     hh,
     du,

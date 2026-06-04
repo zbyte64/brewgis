@@ -9,12 +9,10 @@ from __future__ import annotations
 import os
 from urllib.parse import urlparse
 
-from sqlmesh.core.config import (
-    Config,
-    GatewayConfig,
-    ModelDefaultsConfig,
-    PostgresConnectionConfig,
-)
+from sqlmesh.core.config import Config
+from sqlmesh.core.config import GatewayConfig
+from sqlmesh.core.config import ModelDefaultsConfig
+from sqlmesh.core.config import PostgresConnectionConfig
 
 
 def _parse_database_url(url: str) -> dict[str, str | int]:
@@ -41,7 +39,7 @@ config = Config(
     default_gateway="local",
     gateways={
         "local": GatewayConfig(
-            connection=PostgresConnectionConfig(**_db_kwargs),
+            connection=PostgresConnectionConfig(concurrent_tasks=8, **_db_kwargs),
             state_connection=PostgresConnectionConfig(**_db_kwargs),
             state_schema="sqlmesh_state",
         ),
@@ -51,6 +49,12 @@ config = Config(
         start="2024-01-01",
     ),
     variables={
+        # Year and vintage parameters for staging models
+        "lodes_year": 2021,
+        "acs_year": 2022,
+        "tiger_vintage": "2023",
+        "tiger_block_vintage": "2020",
+        "tiger_bg_vintage": "2013",
         "default_srid": 4326,
         "projected_srid": 32611,
         # Scenario table references (overridden per scenario)
