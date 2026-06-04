@@ -159,13 +159,13 @@ def run_lehd_pipeline(
             row_count = si.row_counts.get("lodes_raw", 0)
             break
 
-    # Create index for wac_block_raw geoid joins
+    # Create index for lodes_raw w_geocode joins
     engine = get_engine()
     with engine.begin() as conn:
         conn.execute(
             text(
                 "CREATE INDEX IF NOT EXISTS idx_lodes_raw_geoid "
-                f"ON {schema}.lodes_raw (geoid)"
+                f"ON {schema}.lodes_raw (w_geocode)"
             )
         )
 

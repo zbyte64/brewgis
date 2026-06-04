@@ -29,7 +29,7 @@ CACHE_DIR: Path = settings.DATA_DOWNLOAD_CACHE_DIR
 
 
 def _compute_jurisdiction_density(
-    boundary: gpd.GeoDataFrame,
+    boundary_geom: gpd.GeoDataFrame | gpd.GeoSeries | shapely.Geometry,
 ) -> float:
     """Compute intersection density (intersections / sq mi) for a boundary.
 
@@ -39,8 +39,9 @@ def _compute_jurisdiction_density(
 
     Parameters
     ----------
-    boundary : gpd.GeoDataFrame
-        Single-row GeoDataFrame whose geometry defines the study area.
+    boundary_geom : gpd.GeoDataFrame | gpd.GeoSeries | shapely.Geometry
+        Geometry defining the study area.  Can be a GeoDataFrame/GeoSeries
+        with one or more rows (will be unioned) or a single shapely geometry.
 
     Returns
     -------
@@ -49,10 +50,12 @@ def _compute_jurisdiction_density(
         Exceptions propagate to the caller — no exception is swallowed.
     """
     # osmnx expects geos to be EPSG:4326
-    # Union all parcel geometries in the boundary then fix self-intersections
-    # and simplify micro-vertices that can become degenerate on reprojection.
-    geom = boundary.to_crs("EPSG:4326").union_all().buffer(0.001)
-    geom = shapely.make_valid(geom)
+    if isinstance(boundary_geom, gpd.GeoDataFrame | gpd.GeoSeries):
+        geom = boundary_geom.to_crs("EPSG:4326").union_all().buffer(0.001)
+    else:
+        # Project to EPSG:4326 and buffer (osmnx needs clean geometry)
+        geom = gpd.GeoSeries([boundary_geom], crs="EPSG:4326").buffer(0.001).iloc[0]
+        geom = shapely.make_valid(geom)
     # handled by osmnx?
     # geom = geom.simplify(tolerance=15.0, preserve_topology=True)
 
@@ -71,8 +74,16 @@ def _compute_jurisdiction_density(
 
     # Compute area in square miles
     # TODO projection should be keyed to the workspace's local projection setting
-    boundary_aea = boundary.to_crs("EPSG:6933")
-    area_sq_m = boundary_aea.area.sum()
+    if isinstance(boundary_geom, gpd.GeoDataFrame | gpd.GeoSeries):
+        boundary_aea = boundary_geom.to_crs("EPSG:6933")
+        area_sq_m = boundary_aea.area.sum()
+    else:
+        # Project to EPSG:6933 for area calculation
+        area_sq_m = (
+            gpd.GeoSeries([boundary_geom], crs="EPSG:4326")
+            .to_crs("EPSG:6933")
+            .area.iloc[0]
+        )
     area_sq_mi = area_sq_m / _SQ_METERS_PER_SQ_MILE
 
     if area_sq_mi > 0 and len(intersections) > 0:
@@ -89,8 +100,10 @@ def run_osm_pipeline(
     """Compute OSM intersection density per parcel and write to staging table.
 
     Reads parcels from *parcel_table*, groups by jurisdiction (if the
-    column exists), downloads the OSM driving network for each group,
-    and writes ``parcel_id`` + ``intersection_density`` to
+    column exists), computes the parcel union per jurisdiction in PostGIS
+    (avoiding expensive Python union_all), downloads the OSM driving
+    network for each jurisdiction, and writes
+    ``parcel_id`` + ``intersection_density`` to
     ``{schema}.osm_intersection_density``.
 
     Parameters
@@ -106,13 +119,15 @@ def run_osm_pipeline(
     dict
         ``{"table_name": str, "row_count": int}``
     """
-    # ── Read parcels as GeoDataFrame ──────────────────────────────
+    engine = get_engine()
+
+    # ── Read parcel_ids and jurisdictions (no geometry) ───────────
     sql = (
         f"SELECT parcel_id, geometry FROM {schema}.{parcel_table} "
         f"WHERE geometry IS NOT NULL"
     )
     parcels: gpd.GeoDataFrame = gpd.GeoDataFrame.from_postgis(
-        sql, get_engine(), geom_col="geometry"
+        sql, engine, geom_col="geometry"
     )
 
     assert not parcels.empty, f"No parcels found in {schema}.{parcel_table}"
@@ -125,7 +140,7 @@ def run_osm_pipeline(
     )
 
     # Check for optional jurisdiction column
-    with get_engine().connect() as conn:
+    with engine.connect() as conn:
         result = conn.execute(
             text(
                 f"SELECT column_name FROM information_schema.columns "
@@ -138,31 +153,57 @@ def run_osm_pipeline(
 
     # ── Compute density per jurisdiction or globally ──────────────
     if has_jurisdiction:
-        # Re-read with jurisdiction column
+        # Read just jurisdiction + geometry (re-use the already-loaded
+        # GeoDataFrame — the geometry was already fetched).
         sql_juris = (
             f"SELECT parcel_id, geometry, jurisdiction "
             f"FROM {schema}.{parcel_table} WHERE geometry IS NOT NULL"
         )
-        parcels = gpd.GeoDataFrame.from_postgis(
-            sql_juris, get_engine(), geom_col="geometry"
-        )
-        # Needed? parcels.to_crs(src.crs)
+        parcels = gpd.GeoDataFrame.from_postgis(sql_juris, engine, geom_col="geometry")
 
-        jurisdictions = parcels["jurisdiction"].unique()
+        # Compute the unioned boundary per jurisdiction in PostGIS,
+        # then compute density via osmnx for each.
         juris_density_map: dict[str, float] = {}
-
-        for juris in jurisdictions:
-            mask = parcels["jurisdiction"] == juris
-            juris_parcels = parcels[mask]
-            density = _compute_jurisdiction_density(juris_parcels)
-            juris_density_map[str(juris)] = density
+        with engine.connect() as conn:
+            rows = conn.execute(
+                text(
+                    f"SELECT jurisdiction, "
+                    f"  ST_AsBinary(ST_Union(geometry)) AS geom "
+                    f"FROM {schema}.{parcel_table} "
+                    f"WHERE geometry IS NOT NULL "
+                    f"GROUP BY jurisdiction"
+                )
+            ).fetchall()
+        for row in rows:
+            juris = str(row[0])
+            union_geom = shapely.from_wkb(bytes(row[1]))
+            density = _compute_jurisdiction_density(union_geom)
+            juris_density_map[juris] = density
 
         parcels["intersection_density"] = (
             parcels["jurisdiction"].map(juris_density_map).round(2)
         )
     else:
-        # Global density for the entire study area
-        density = _compute_jurisdiction_density(parcels)
+        # Global density — union all parcels in PostGIS
+        with engine.connect() as conn:
+            result = conn.execute(
+                text(
+                    f"SELECT ST_AsBinary(ST_Union(geometry)) "
+                    f"FROM {schema}.{parcel_table} "
+                    f"WHERE geometry IS NOT NULL"
+                )
+            )
+            row = result.fetchone()
+            if row is not None and row[0] is not None:
+                union_geom = shapely.from_wkb(bytes(row[0]))
+            else:
+                union_geom = None
+
+        density = (
+            _compute_jurisdiction_density(union_geom)
+            if union_geom is not None
+            else _DEFAULT_DENSITY
+        )
         parcels["intersection_density"] = np.round(density, 2)
 
     # ── Write to staging table ────────────────────────────────────

@@ -75,7 +75,7 @@ WITH raw_with_gap AS (
             + COALESCE(emp_public_admin, 0)
             + COALESCE(emp_military, 0)
         ) AS c000_gap
-    FROM wac_block_raw
+    FROM brewgis.staging.wac_block_raw
 ),
 
 -- Apply C000 gap distribution: when c000_gap > 0, distribute the gap across

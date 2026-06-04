@@ -13,6 +13,8 @@ from sqlmesh.core.config import Config
 from sqlmesh.core.config import GatewayConfig
 from sqlmesh.core.config import ModelDefaultsConfig
 from sqlmesh.core.config import PostgresConnectionConfig
+from sqlmesh.core.config.connection import DuckDBAttachOptions
+from sqlmesh.core.config.connection import DuckDBConnectionConfig
 
 
 def _parse_database_url(url: str) -> dict[str, str | int]:
@@ -34,6 +36,15 @@ _DATABASE_URL = os.environ.get(
 
 _db_kwargs = _parse_database_url(_DATABASE_URL)
 
+# Postgres connection string for DuckDB postgres_scanner attach
+_pg_attach_path = (
+    f"dbname={_db_kwargs['database']} "
+    f"user={_db_kwargs['user']} "
+    f"host={_db_kwargs['host']} "
+    f"port={_db_kwargs['port']} "
+    f"password={_db_kwargs['password']}"
+)
+
 config = Config(
     project="brewgis",
     default_gateway="local",
@@ -42,6 +53,30 @@ config = Config(
             connection=PostgresConnectionConfig(concurrent_tasks=8, **_db_kwargs),
             state_connection=PostgresConnectionConfig(**_db_kwargs),
             state_schema="sqlmesh_state",
+        ),
+        "duckdb": GatewayConfig(
+            connection=DuckDBConnectionConfig(
+                catalogs={
+                    "brewgis": "/app/planning/duckdb_cache.db",
+                    "pg": DuckDBAttachOptions(
+                        type="postgres",
+                        path=_pg_attach_path,
+                    ),
+                },
+                extensions=["httpfs", "spatial", "postgres_scanner"],
+                connector_config={
+                    "temp_directory": "/app/planning/duckdb_tmp",
+                },
+                secrets=[
+                    {
+                        "type": "s3",
+                        "provider": "config",
+                        "region": "us-west-2",
+                        "endpoint": "s3.us-west-2.amazonaws.com",
+                        "url_style": "path",
+                    },
+                ],
+            ),
         ),
     },
     model_defaults=ModelDefaultsConfig(
@@ -64,6 +99,20 @@ config = Config(
         "constraint_table": "constraints",
         "built_form_table": "built_forms",
         "constraints": [],
+        # VIDA + Overture building footprint pipeline variables
+        "vida_parquet_glob": (
+            "s3://us-west-2.opendata.source.coop/vida/"
+            "google-microsoft-osm-open-buildings/geoparquet/"
+            "by_country_s2/country_iso=USA/*.parquet"
+        ),
+        "overture_parquet_glob": (
+            "s3://overturemaps-us-west-2/release/2026-05-20.0/"
+            "theme=buildings/type=building/*.parquet"
+        ),
+        "overture_bbox_min_x": -121.87,
+        "overture_bbox_max_x": -121.01,
+        "overture_bbox_min_y": 38.02,
+        "overture_bbox_max_y": 38.74,
         # Fiscal
         "res_assessed_value_per_du": 350000,
         "nonres_assessed_value_per_sqft": 150,

@@ -15,6 +15,10 @@ MODEL (
 --   - VIDA bf_source = 'openstreetmap' buildings are dropped entirely
 --     — they are redundant with Overture (also OSM-derived) and have less
 --     metadata.
+--
+-- Source tables populated by DuckDB gateway staging models:
+--   brewgis.staging.overture_buildings
+--   brewgis.staging.vida_combined_buildings
 
 WITH overture_buildings AS (
     SELECT

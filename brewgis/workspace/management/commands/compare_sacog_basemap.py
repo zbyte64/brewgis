@@ -287,12 +287,6 @@ class Command(BaseCommand):
         from brewgis.workspace.dlt_pipelines.osm import run_osm_pipeline
         from brewgis.workspace.dlt_pipelines.tiger_bg import run_tiger_bg_pipeline
         from brewgis.workspace.dlt_pipelines.tiger_block import run_tiger_block_pipeline
-        from brewgis.workspace.dlt_pipelines.vida_buildings import (
-            run_vida_buildings_pipeline,
-        )
-        from brewgis.workspace.services.building_footprints import (
-            download_overture_buildings,
-        )
         from brewgis.workspace.services.census_fetcher import _populate_acs_block_group
         from brewgis.workspace.services.lehd_fetcher import _populate_wac_block
 
@@ -503,38 +497,26 @@ class Command(BaseCommand):
                 )
             else:
                 self.stdout.write("  Assessor sales already loaded, skipping")
-
-            self.stdout.write("\n── Downloading building footprints ──")
-            if (
-                force_data_fetch
-                or force_data_reload
-                or not self._table_has_rows("public", "overture_buildings")
-            ):
-                footprint_result = download_overture_buildings(
-                    ignore_cache=force_data_fetch
-                )
+            self.stdout.write(
+                "\n-- Running SQLMesh DuckDB building footprint models --"
+            )
+            building_result = run_sqlmesh_plan(
+                environment="sacog_comparison",
+                skip_tests=True,
+                forward_only=True,
+                select=[
+                    "brewgis.staging.overture_buildings",
+                    "brewgis.staging.vida_combined_buildings",
+                ],
+            )
+            if not building_result.success:
                 self.stdout.write(
-                    f"  Overture buildings loaded: {footprint_result.get('row_count', 0):,} rows"
+                    self.style.WARNING(
+                        f"  Building footprint models failed: {building_result.error}"
+                    )
                 )
             else:
-                self.stdout.write("  Overture buildings already loaded, skipping")
-
-            if (
-                force_data_fetch
-                or force_data_reload
-                or not self._table_has_rows("public", "vida_combined_buildings")
-            ):
-                vida_result = run_vida_buildings_pipeline(ignore_cache=force_data_fetch)
-                vida_row_count = vida_result.get("row_count", 0)
-                self.stdout.write(f"  VIDA buildings loaded: {vida_row_count:,} rows")
-                if vida_row_count == 0:
-                    self.stdout.write(
-                        self.style.WARNING(
-                            "  No VIDA buildings — buildings_combined will contain only Overture"
-                        )
-                    )
-            else:
-                self.stdout.write("  VIDA buildings already loaded, skipping")
+                self.stdout.write("  Building footprint models complete")
 
         if osm:
             self.stdout.write("\n── Computing OSM intersection density ──")
@@ -570,6 +552,8 @@ class Command(BaseCommand):
         if use_assessor_geometry:
             model_selectors.extend(
                 [
+                    "brewgis.staging.overture_buildings",
+                    "brewgis.staging.vida_combined_buildings",
                     "brewgis.assessor.sacog_assessor_parcels",
                     "brewgis.assessor.sacog_assessor_sales",
                     "brewgis.assessor.assessor_building_medians",
