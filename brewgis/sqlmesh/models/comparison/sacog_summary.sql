@@ -6,16 +6,16 @@ MODEL (
 -- SACOG Summary — single-row comparison joining totals, correlations, and weighted means.
 
 WITH ref_totals AS (
-    SELECT * FROM sacog_reference_totals
+    SELECT * FROM brewgis.comparison.sacog_reference_totals
 ),
 brew_totals AS (
-    SELECT * FROM sacog_brewgis_totals
+    SELECT * FROM brewgis.comparison.sacog_brewgis_totals
 ),
 correlations AS (
-    SELECT * FROM sacog_correlations
+    SELECT * FROM brewgis.comparison.sacog_correlations
 ),
 weighted_means AS (
-    SELECT * FROM sacog_weighted_means
+    SELECT * FROM brewgis.comparison.sacog_weighted_means
 )
 SELECT
     NOW()::timestamp AS generated_at,

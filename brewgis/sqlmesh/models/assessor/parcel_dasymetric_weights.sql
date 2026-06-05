@@ -123,9 +123,9 @@ classified AS (
         ap.lot_size_acres,
         COALESCE(auc.category, 'urban') AS land_development_category
     FROM assessor_parcels ap
-    LEFT JOIN sacog_assessor_parcels sap
+    LEFT JOIN brewgis.assessor.sacog_assessor_parcels sap
         ON ap.apn = sap.apn
-    LEFT JOIN assessor_use_codes auc
+    LEFT JOIN brewgis.seeds.assessor_use_codes auc
         ON LEFT(COALESCE(sap.landuse::text, ''), 2) = auc.use_code::text
 ),
 
@@ -167,7 +167,7 @@ assembled AS (
     LEFT JOIN classified cl ON ap.apn = cl.apn
     LEFT JOIN sales_data sd ON ap.apn = sd.apn
     LEFT JOIN estimated est ON ap.apn = est.apn
-    LEFT JOIN parcel_footprint_imputed fi ON ap.apn = fi.apn
+    LEFT JOIN brewgis.assessor.parcel_footprint_imputed fi ON ap.apn = fi.apn
     LEFT JOIN nlcd_join nj ON ap.apn = nj.apn
     LEFT JOIN osm_join oj ON ap.apn = oj.apn
     LEFT JOIN dasymetric_weights dw

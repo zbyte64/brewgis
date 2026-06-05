@@ -19,6 +19,6 @@ SELECT
     NULL::double precision AS area_parcel_emp_ind,
     NULL::double precision AS area_parcel_emp_military,
     sp.geography_id
-FROM base_canvas_reconciled bcr
+FROM brewgis.base_canvas.base_canvas_reconciled bcr
 LEFT JOIN public.sacog_comparison_parcels sp
     ON bcr.parcel_id = sp.parcel_id

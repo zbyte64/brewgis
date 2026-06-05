@@ -16,7 +16,7 @@ MODEL (
 -- from SRID 3857, and passes through source columns.
 
 WITH assessor_categories AS (
-    SELECT use_code::text, category FROM assessor_use_codes
+    SELECT use_code::text, category FROM brewgis.seeds.assessor_use_codes
 ),
 
 parcel_geom AS (

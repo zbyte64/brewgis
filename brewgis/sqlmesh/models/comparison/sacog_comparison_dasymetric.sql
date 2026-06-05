@@ -29,7 +29,7 @@ SELECT DISTINCT ON (sp.parcel_id)
     dw.du_subtype,
     dw.du_dasym_weight,
     sp.geometry
-FROM sacog_parcel_shim sp
-JOIN parcel_dasymetric_weights dw
+FROM brewgis.comparison.sacog_parcel_shim sp
+JOIN brewgis.assessor.parcel_dasymetric_weights dw
     ON ST_Intersects(sp.geometry, dw.geometry)
 ORDER BY sp.parcel_id, ST_Area(ST_Intersection(sp.geometry, dw.geometry)) DESC

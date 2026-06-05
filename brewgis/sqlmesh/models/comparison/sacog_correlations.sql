@@ -77,6 +77,6 @@ SELECT
     CORR(bc.bldg_area_wholesale, ref.bldg_sqft_wholesale) AS bldg_area_wholesale,
     CORR(bc.residential_irrigated_area, ref.residential_irrigated_sqft) AS residential_irrigated_area,
     CORR(bc.commercial_irrigated_area, ref.commercial_irrigated_sqft) AS commercial_irrigated_area
-FROM sacog_brewgis_comparison_view bc
-INNER JOIN sac_cnty_region_base_canvas ref ON bc.geography_id = ref.geography_id
+FROM brewgis.comparison.sacog_brewgis_comparison_view bc
+INNER JOIN public.sac_cnty_region_base_canvas ref ON bc.geography_id = ref.geography_id
 WHERE bc.geography_id IS NOT NULL

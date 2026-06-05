@@ -1,6 +1,6 @@
 MODEL (
   name brewgis.staging.vida_combined_buildings,
-  kind FULL,
+  kind VIEW,
   gateway duckdb,
   dialect duckdb
 );
@@ -18,12 +18,3 @@ SELECT
   area_in_meters
 FROM read_parquet(@vida_parquet_glob)
 WHERE bf_source IN ('google', 'microsoft');
-
-DROP TABLE IF EXISTS pg.public.vida_combined_buildings CASCADE;
-CREATE TABLE pg.public.vida_combined_buildings AS
-SELECT geometry, confidence, bf_source, area_in_meters
-FROM read_parquet(@vida_parquet_glob)
-WHERE bf_source IN ('google', 'microsoft');
-CREATE INDEX IF NOT EXISTS idx_vida_combined_buildings_geometry
-ON pg.public.vida_combined_buildings USING GIST (geometry);
-ANALYZE pg.public.vida_combined_buildings;

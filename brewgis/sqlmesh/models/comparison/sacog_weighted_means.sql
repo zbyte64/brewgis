@@ -16,7 +16,7 @@ WITH weighted AS (
         COALESCE(SUM(pct_college_educated * pop), 0) / NULLIF(SUM(pop), 0) AS pct_college_educated_wavg,
         COALESCE(SUM(cost_burden_pct * pop), 0) / NULLIF(SUM(pop), 0) AS cost_burden_pct_wavg,
         COALESCE(SUM(rent_burden_pct * pop), 0) / NULLIF(SUM(pop), 0) AS rent_burden_pct_wavg
-    FROM sacog_brewgis_comparison_view
+    FROM brewgis.comparison.sacog_brewgis_comparison_view
 )
 SELECT
     'brewgis'::text AS source,

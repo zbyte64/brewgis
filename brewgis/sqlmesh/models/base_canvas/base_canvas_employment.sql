@@ -40,7 +40,7 @@ WITH wac_data AS (
         w.emp_ag,
         w.geometry,
         ST_Transform(w.geometry, 3857) AS local_geometry
-    FROM wac_block w
+    FROM brewgis.staging.wac_block w
     WHERE w.geometry IS NOT NULL
 ),
 
@@ -56,16 +56,16 @@ wac_prep AS (
 parcel_with_weights AS (
     SELECT
         p.*
-    FROM base_canvas_demographics p
+    FROM brewgis.base_canvas.base_canvas_demographics p
 ),
 
 -- Land classification reference tables
 assessor_codes AS (
-    SELECT use_code::text, category FROM assessor_use_codes
+    SELECT use_code::text, category FROM brewgis.seeds.assessor_use_codes
 ),
 
 sacog_use AS (
-    SELECT land_use_label, category FROM sacog_land_use
+    SELECT land_use_label, category FROM brewgis.seeds.sacog_land_use
 ),
 
 -- Spatial intersection with area computation

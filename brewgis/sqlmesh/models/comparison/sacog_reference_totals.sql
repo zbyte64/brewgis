@@ -66,7 +66,7 @@ WITH totals AS (
         COALESCE(SUM(residential_irrigated_sqft), 0)::double precision AS residential_irrigated_sqft,
         COALESCE(SUM(commercial_irrigated_sqft), 0)::double precision AS commercial_irrigated_sqft,
         COALESCE(SUM(intersection_density_sqmi), 0)::double precision AS intersection_density_sqmi
-    FROM sac_cnty_region_base_canvas
+    FROM public.sac_cnty_region_base_canvas
 )
 SELECT
     'reference'::text AS source,

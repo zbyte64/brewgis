@@ -35,7 +35,7 @@ WITH building_stats AS (
         COUNT(*) FILTER (WHERE bc.bf_source = 'microsoft') AS microsoft_building_count,
         AVG(bc.confidence) AS mean_confidence
     FROM brewgis.assessor.sacog_assessor_parcels sap
-    JOIN buildings_combined bc
+    JOIN pg.public.buildings_combined bc
         ON ST_Intersects(sap.geometry, bc.geometry)
     GROUP BY sap.apn
 )

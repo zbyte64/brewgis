@@ -12,7 +12,7 @@ MODEL (
 -- full 11-step ETL pipeline.
 
 WITH imputed AS (
-    SELECT * FROM base_canvas_imputed
+    SELECT * FROM brewgis.base_canvas.base_canvas_imputed
 ),
 
 -- Recompute DU sub-types proportionally to fit the imputed (ACS) du total.

@@ -58,7 +58,7 @@ WITH parcel_geom AS (
         bg.area_parcel_emp,
         bg.area_parcel_mixed_use,
         bg.area_parcel_no_use
-    FROM base_canvas_geometry bg
+    FROM brewgis.base_canvas.base_canvas_geometry bg
 ),
 
 acs_data AS (
@@ -66,7 +66,7 @@ acs_data AS (
         a.*,
         GREATEST(ST_Area(ST_Transform(a.geometry, 3857)), 1e-10) AS bg_area,
         ST_Envelope(ST_Transform(a.geometry, 3857)) AS local_envelope
-    FROM acs_block_group a
+    FROM brewgis.staging.acs_block_group a
     WHERE a.geometry IS NOT NULL
 ),
 

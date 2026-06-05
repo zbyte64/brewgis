@@ -18,7 +18,7 @@ MODEL (
 -- NLCD, OSM, and dasymetric weight integration disabled (default).
 
 WITH source_data AS (
-    SELECT * FROM base_canvas_employment
+    SELECT * FROM brewgis.base_canvas.base_canvas_employment
 ),
 
 calibration AS (

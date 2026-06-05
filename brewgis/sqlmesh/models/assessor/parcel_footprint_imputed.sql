@@ -27,7 +27,7 @@ WITH
 -- Parcels with both building footprint features AND assessor sales data (ground truth)
 latest_block_groups AS (
     SELECT DISTINCT ON (apn) *
-    FROM parcel_block_groups
+    FROM brewgis.assessor.parcel_block_groups
     ORDER BY apn, data_year DESC
 ),
 

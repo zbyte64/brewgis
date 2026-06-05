@@ -72,7 +72,7 @@ WITH totals AS (
         COALESCE(SUM(pct_college_educated), 0)::double precision AS pct_college_educated,
         COALESCE(SUM(cost_burden_pct), 0)::double precision AS cost_burden_pct,
         COALESCE(SUM(rent_burden_pct), 0)::double precision AS rent_burden_pct
-    FROM base_canvas_reconciled
+    FROM brewgis.base_canvas.base_canvas_reconciled
 )
 SELECT
     'brewgis'::text AS source,
