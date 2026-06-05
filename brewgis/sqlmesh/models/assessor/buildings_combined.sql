@@ -1,8 +1,8 @@
 MODEL (
   name brewgis.staging.buildings_combined,
-  kind VIEW,
-  gateway duckdb,
-  dialect duckdb
+  kind FULL,
+  gateway: duckdb,
+  dialect: duckdb
 );
 
 -- Combined Building Footprints — spatial dedup union of Overture Maps
@@ -31,7 +31,7 @@ WITH overture_buildings AS (
         'overture' AS source,
         NULL::text AS bf_source,
         NULL::double precision AS confidence
-    FROM brewgis.staging.overture_buildings ob
+    FROM duckdb.staging.overture_buildings ob
 ),
 
 vida_buildings AS (
@@ -43,7 +43,7 @@ vida_buildings AS (
         'vida' AS source,
         vb.bf_source,
         vb.confidence
-    FROM brewgis.staging.vida_combined_buildings vb
+    FROM duckdb.staging.vida_combined_buildings vb
     WHERE vb.bf_source IN ('google', 'microsoft')
 ),
 
@@ -90,18 +90,6 @@ SELECT
     confidence
 FROM vida_deduped;
 
-
-DROP TABLE IF EXISTS pg.public.buildings_combined CASCADE;
-CREATE TABLE pg.public.buildings_combined AS
-SELECT
-    geometry,
-    height,
-    levels,
-    class,
-    source,
-    bf_source,
-    confidence
-FROM vida_deduped;
 CREATE INDEX IF NOT EXISTS idx_buildings_combined_geometry
-ON pg.public.buildings_combined USING GIST (geometry);
-ANALYZE pg.public.buildings_combined;
+ON brewgis.staging.buildings_combined USING GIST (geometry);
+ANALYZE brewgis.staging.buildings_combined;

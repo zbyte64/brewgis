@@ -1,5 +1,5 @@
 MODEL (
-  name brewgis.staging.vida_combined_buildings,
+  name duckdb.staging.vida_combined_buildings,
   kind VIEW,
   gateway duckdb,
   dialect duckdb

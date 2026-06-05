@@ -1,5 +1,5 @@
 MODEL (
-  name brewgis.staging.overture_buildings,
+  name duckdb.staging.overture_buildings,
   kind VIEW,
   gateway duckdb,
   dialect duckdb

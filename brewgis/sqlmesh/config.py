@@ -47,9 +47,9 @@ _pg_attach_path = (
 
 config = Config(
     project="brewgis",
-    default_gateway="local",
+    default_gateway="postgis",
     gateways={
-        "local": GatewayConfig(
+        "postgis": GatewayConfig(
             connection=PostgresConnectionConfig(concurrent_tasks=8, **_db_kwargs),
             state_connection=PostgresConnectionConfig(**_db_kwargs),
             state_schema="sqlmesh_state",
@@ -57,8 +57,8 @@ config = Config(
         "duckdb": GatewayConfig(
             connection=DuckDBConnectionConfig(
                 catalogs={
-                    "brewgis": "/app/planning/duckdb_cache.db",
-                    "pg": DuckDBAttachOptions(
+                    "duckdb": "/app/planning/duckdb_cache.db",
+                    "brewgis": DuckDBAttachOptions(
                         type="postgres",
                         path=_pg_attach_path,
                     ),
@@ -192,4 +192,5 @@ config = Config(
         "res_far_default": 0.5,
         "nonres_indoor_water_rate": 0.0,
     },
+    gateway_managed_virtual_layer=False,
 )
