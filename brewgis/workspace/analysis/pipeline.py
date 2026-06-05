@@ -18,7 +18,7 @@ from typing import Any
 import deal
 from django.utils import timezone
 
-from brewgis.workspace.analysis.sqlmesh_runner import run_sqlmesh_plan, SqlmeshResult
+from brewgis.workspace.analysis.sqlmesh_runner import run_sqlmesh_plan
 from brewgis.workspace.analysis.layer_registry import register_result_layer
 from brewgis.workspace.analysis.module_registry import MODULE_RESULT_TABLES
 from brewgis.workspace.analysis.module_registry import get_vars_for_module
@@ -128,22 +128,21 @@ def run_modules_sync(  # noqa: PLR0913
     """
     ordered = resolve_module_order(modules)
     environment = f"scenario_{scenario_id}"
-    result = run_sqlmesh_plan(
+    run_sqlmesh_plan(
         environment=environment,
         select=ordered,
         skip_tests=True,
     )
-    if result.success:
-        for module in ordered:
-            for table_name in MODULE_RESULT_TABLES.get(module, []):
-                table = table_name.format(scenario_id=scenario_id)
-                register_result_layer(
-                    workspace_id=workspace_id,
-                    schema=target_schema,
-                    table=table,
-                )
+    for module in ordered:
+        for table_name in MODULE_RESULT_TABLES.get(module, []):
+            table = table_name.format(scenario_id=scenario_id)
+            register_result_layer(
+                workspace_id=workspace_id,
+                schema=target_schema,
+                table=table,
+            )
     return {
-        "success": result.success,
-        "completed": ordered if result.success else [],
+        "success": True,
+        "completed": ordered,
         "results": [],
     }

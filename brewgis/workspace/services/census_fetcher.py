@@ -275,15 +275,18 @@ def _populate_acs_block_group(
         "tiger_bg_vintage": "2013",
     }
 
-    result = run_sqlmesh_plan(environment="brewgis_prod", select=["brewgis.staging.acs_block_group"], skip_tests=True)
-    if not result.success:
-        msg = f"SQLMesh acs_block_group failed: {result.error}"
-        raise RuntimeError(msg)
+    run_sqlmesh_plan(
+        environment="brewgis_prod",
+        select=["brewgis.staging.acs_block_group"],
+        skip_tests=True,
+    )
 
     engine = get_engine()
     with engine.connect() as conn:
         row_count = (
-            conn.execute(text("SELECT COUNT(*) FROM census.acs_block_group")).scalar()
+            conn.execute(
+                text("SELECT COUNT(*) FROM staging__brewgis_prod.acs_block_group")
+            ).scalar()
             or 0
         )
 

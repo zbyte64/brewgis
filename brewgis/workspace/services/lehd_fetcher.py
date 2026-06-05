@@ -1171,29 +1171,26 @@ def _populate_wac_block(
         scaling_vars[cbp_key] = cbp_totals.get(sub_col, 0.0)
 
     # Materialize wac_block_raw (CNS-to-sub-sector splitting with CBP proportions)
-    raw_result = run_sqlmesh_plan(
+    run_sqlmesh_plan(
         environment="brewgis_prod",
         select=["brewgis.staging.wac_block_raw"],
         skip_tests=True,
     )
-    if not raw_result.success:
-        msg = f"SQLMesh wac_block_raw failed: {raw_result.error}"
-        raise RuntimeError(msg)
 
     # Materialize wac_block (C000 gap distribution and CBP county-level scaling)
-    block_result = run_sqlmesh_plan(
+    run_sqlmesh_plan(
         environment="brewgis_prod",
         select=["brewgis.staging.wac_block"],
         skip_tests=True,
     )
-    if not block_result.success:
-        msg = f"SQLMesh wac_block failed: {block_result.error}"
-        raise RuntimeError(msg)
 
     engine = get_engine()
     with engine.connect() as conn:
         row_count = (
-            conn.execute(text("SELECT COUNT(*) FROM lehd.wac_block")).scalar() or 0
+            conn.execute(
+                text("SELECT COUNT(*) FROM staging__brewgis_prod.wac_block")
+            ).scalar()
+            or 0
         )
 
     if row_count == 0:

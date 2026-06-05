@@ -303,6 +303,7 @@ class Command(BaseCommand):
             self.stdout.write(
                 "  SACOG reference tables already present, skipping restore"
             )
+        # ── Override SQLMesh config variables to match SACOG comparison years ──
 
         # ── Phase 1: Load parcels into SQLMesh source table ────────────────
         self.stdout.write("\n── Phase 1: Loading reference parcel geometries ──")
@@ -405,7 +406,7 @@ class Command(BaseCommand):
         if (
             force_data_fetch
             or force_data_reload
-            or not self._table_has_rows("census", "acs_block_group")
+            or not self._table_has_rows("staging__brewgis_prod", "acs_block_group")
         ):
             acs_bg_count = _populate_acs_block_group(STATE_FIPS, COUNTY_FIPS, ACS_YEAR)
             self.stdout.write(
@@ -436,7 +437,7 @@ class Command(BaseCommand):
         if (
             force_data_fetch
             or force_data_reload
-            or not self._table_has_rows("lehd", "wac_block")
+            or not self._table_has_rows("staging__brewgis_prod", "wac_block")
         ):
             lehd_wac_count = _populate_wac_block(
                 STATE_FIPS, COUNTY_FIPS, year=LEHD_YEAR
@@ -497,27 +498,7 @@ class Command(BaseCommand):
                 )
             else:
                 self.stdout.write("  Assessor sales already loaded, skipping")
-            self.stdout.write(
-                "\n-- Running SQLMesh DuckDB building footprint models --"
-            )
-            building_result = run_sqlmesh_plan(
-                environment="sacog_comparison",
-                skip_tests=True,
-                forward_only=True,
-                select=[
-                    "brewgis.staging.overture_buildings",
-                    "brewgis.staging.vida_combined_buildings",
-                ],
-            )
-            if not building_result.success:
-                self.stdout.write(
-                    self.style.WARNING(
-                        f"  Building footprint models failed: {building_result.error}"
-                    )
-                )
-            else:
-                self.stdout.write("  Building footprint models complete")
-
+                
         if osm:
             self.stdout.write("\n── Computing OSM intersection density ──")
             if (
@@ -538,42 +519,40 @@ class Command(BaseCommand):
         self.stdout.write("\n── Phase 2: Running consolidated SQLMesh plan ──")
 
         model_selectors: list[str] = [
-            "brewgis.comparison.sacog_parcel_shim",
-            "brewgis.base_canvas.base_canvas_reconciled",
-            "brewgis.comparison.sacog_summary",
+            "+brewgis.comparison.sacog_parcel_shim",
+            "+brewgis.base_canvas.base_canvas_reconciled",
+            "+brewgis.comparison.sacog_summary",
         ]
         if nlcd:
             model_selectors.extend(
                 [
-                    "brewgis.nlcd.parcels_wm",
-                    "brewgis.nlcd.nlcd_parcel_stats",
+                    "+brewgis.nlcd.parcels_wm",
+                    "+brewgis.nlcd.nlcd_parcel_stats",
                 ]
             )
         if use_assessor_geometry:
             model_selectors.extend(
                 [
-                    "brewgis.staging.overture_buildings",
-                    "brewgis.staging.vida_combined_buildings",
-                    "brewgis.assessor.sacog_assessor_parcels",
-                    "brewgis.assessor.sacog_assessor_sales",
-                    "brewgis.assessor.assessor_building_medians",
-                    "brewgis.assessor.buildings_combined",
-                    "brewgis.assessor.parcel_building_footprints",
-                    "brewgis.assessor.parcel_block_groups",
-                    "brewgis.assessor.parcel_footprint_imputed",
-                    "brewgis.assessor.parcel_dasymetric_weights",
-                    "brewgis.comparison.sacog_comparison_dasymetric",
+                    "+brewgis.staging.overture_buildings",
+                    "+brewgis.staging.vida_combined_buildings",
+                    "+brewgis.assessor.sacog_assessor_parcels",
+                    "+brewgis.assessor.sacog_assessor_sales",
+                    "+brewgis.assessor.assessor_building_medians",
+                    "+brewgis.assessor.buildings_combined",
+                    "+brewgis.assessor.parcel_building_footprints",
+                    "+brewgis.assessor.parcel_block_groups",
+                    "+brewgis.assessor.parcel_footprint_imputed",
+                    "+brewgis.assessor.parcel_dasymetric_weights",
+                    "+brewgis.comparison.sacog_comparison_dasymetric",
                 ]
             )
 
-        result = run_sqlmesh_plan(
+        run_sqlmesh_plan(
             environment="sacog_comparison",
             skip_tests=True,
-            forward_only=True,
+            # forward_only=True,
             select=model_selectors,
         )
-        if not result.success:
-            raise CommandError(f"SQLMesh plan failed: {result.error}")
         self.stdout.write(self.style.SUCCESS("  SQLMesh models complete"))
 
         # ── Phase 4: Read results from SQLMesh-materialized tables ─────────

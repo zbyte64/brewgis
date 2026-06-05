@@ -563,13 +563,10 @@ class Command(BaseCommand):
             dbt_vars["osm_intersection_table"] = osm_table
 
         self.stdout.write(f"  dbt vars: {dbt_vars}")
-        result = run_sqlmesh_plan(
+        run_sqlmesh_plan(
             environment="fresno_demo",
             select=BASE_CANVAS_MODELS,
         )
-        if not result.success:
-            msg = f"SQLMesh base_canvas models failed: {result.error}"
-            raise CommandError(msg)
         self.stdout.write(self.style.SUCCESS("  SQLMesh base_canvas models complete"))
 
         # Create analysis compat view: maps dbt column names to legacy names

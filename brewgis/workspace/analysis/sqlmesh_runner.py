@@ -19,21 +19,6 @@ logger = logging.getLogger(__name__)
 SQLMESH_PROJECT_DIR = Path(__file__).resolve().parent.parent.parent / "sqlmesh"
 
 
-class SqlmeshResult:
-    """Structured result from a SQLMesh invocation."""
-
-    def __init__(
-        self,
-        *,
-        success: bool = False,
-        error: str | None = None,
-        environment: str | None = None,
-    ) -> None:
-        self.success = success
-        self.error = error
-        self.environment = environment
-
-
 def get_context() -> Context:
     """Return a SQLMesh Context for the BrewGIS project.
 
@@ -55,7 +40,9 @@ def run_sqlmesh_plan(  # noqa: PLR0913
     no_prompts: bool = True,
     auto_apply: bool = True,
     create_from: str | None = None,
-) -> SqlmeshResult:
+    variables: dict[str, object] | None = None,
+    restate_models: bool = False,
+):
     """Run ``sqlmesh plan`` for the given environment via the Python API.
 
     Args:
@@ -68,28 +55,23 @@ def run_sqlmesh_plan(  # noqa: PLR0913
         no_prompts: Auto-approve without interactive prompts.
         auto_apply: Apply the plan immediately after creation.
         create_from: Source environment to create from (virtual environment).
+        variables: Optional variable overrides for the plan (reserved for future use).
+        restate_models: If True, re-evaluate the selected models even if unchanged.
     """
     context = get_context()
-    try:
-        result = context.plan(
-            environment=environment,
-            start=start,
-            end=end,
-            skip_tests=skip_tests,
-            forward_only=forward_only,
-            no_prompts=no_prompts,
-            auto_apply=auto_apply,
-            select_models=select,
-            create_from=create_from,
-        )
-        logger.info("SQLMesh plan applied for environment '%s'", environment)
-        return SqlmeshResult(
-            success=True,
-            environment=environment,
-        )
-    except Exception as e:
-        logger.exception("SQLMesh plan failed for environment '%s': %s", environment, e)
-        return SqlmeshResult(success=False, error=str(e), environment=environment)
+    logger.info("SQLMesh plan applied for environment '%s'", environment)
+    return context.plan(
+        environment=environment,
+        start=start,
+        end=end,
+        skip_tests=skip_tests,
+        forward_only=forward_only,
+        no_prompts=no_prompts,
+        auto_apply=auto_apply,
+        select_models=select,
+        create_from=create_from,
+        restate_models=[m for m in (select or [])] if restate_models else None,
+    )
 
 
 def run_sqlmesh_run(
@@ -98,7 +80,7 @@ def run_sqlmesh_run(
     select: list[str] | None = None,
     start: str | None = None,
     end: str | None = None,
-) -> SqlmeshResult:
+):
     """Run ``sqlmesh run`` for the given environment.
 
     Executes any models that have not yet been run for the specified
@@ -112,28 +94,20 @@ def run_sqlmesh_run(
         end: End date.
     """
     context = get_context()
-    try:
-        context.run(
-            environment=environment,
-            start=start,
-            end=end,
-            select_models=select,
-        )
-        logger.info("SQLMesh run completed for environment '%s'", environment)
-        return SqlmeshResult(
-            success=True,
-            environment=environment,
-        )
-    except Exception as e:
-        logger.exception("SQLMesh run failed for environment '%s': %s", environment, e)
-        return SqlmeshResult(success=False, error=str(e), environment=environment)
+    logger.info("SQLMesh running for environment '%s'", environment)
+    return context.run(
+        environment=environment,
+        start=start,
+        end=end,
+        select_models=select,
+    )
 
 
 def run_sqlmesh_test(
     *,
     models: list[str] | None = None,
     verbose: bool = False,
-) -> SqlmeshResult:
+):
     """Run SQLMesh unit tests.
 
     Args:
@@ -141,21 +115,17 @@ def run_sqlmesh_test(
         verbose: Enable verbose test output.
     """
     context = get_context()
-    try:
-        result = context.test(models=models, verbose=verbose)
-        passed = result.count("FAILED") == 0 if isinstance(result, str) else True
-        logger.info("SQLMesh test completed")
-        return SqlmeshResult(success=passed)
-    except Exception as e:
-        logger.exception("SQLMesh test failed: %s", e)
-        return SqlmeshResult(success=False, error=str(e))
+    result = context.test(models=models, verbose=verbose)
+    passed = result.count("FAILED") == 0 if isinstance(result, str) else True
+    logger.info("SQLMesh test completed")
+    return passed
 
 
 def run_sqlmesh_table_diff(
     source_env: str,
     target_env: str,
     model: str | None = None,
-) -> dict[str, Any]:
+):
     """Compare tables between two SQLMesh environments.
 
     Args:
@@ -167,28 +137,18 @@ def run_sqlmesh_table_diff(
         Dict with diff results.
     """
     context = get_context()
-    try:
-        diff = context.table_diff(
-            source=source_env,
-            target=target_env,
-            model=model,
-        )
-        return {"success": True, "diff": str(diff)}
-    except Exception as e:
-        logger.exception(
-            "SQLMesh table_diff failed between '%s' and '%s': %s",
-            source_env,
-            target_env,
-            e,
-        )
-        return {"success": False, "error": str(e)}
+    return context.table_diff(
+        source=source_env,
+        target=target_env,
+        model=model,
+    )
 
 
 def evaluate_model(
     model_name: str,
     environment: str | None = None,
     limit: int = 10,
-) -> Any:
+):
     """Evaluate a single model and return its output.
 
     Useful for ad-hoc verification during migration.
@@ -202,13 +162,12 @@ def evaluate_model(
         DataFrame with model output.
     """
     context = get_context()
-    try:
-        df = context.evaluate(
-            model_name=model_name,
-            environment=environment,
-            limit=limit,
-        )
-        return df
-    except Exception as e:
-        logger.exception("SQLMesh evaluate failed for '%s': %s", model_name, e)
-        return None
+    return context.evaluate(
+        start=None,
+        end=None,
+        execution_time=None,
+        model_or_snapshot='snapshot',
+        model_name=model_name,
+        environment=environment,
+        limit=limit,
+    )

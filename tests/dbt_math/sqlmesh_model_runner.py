@@ -107,19 +107,18 @@ def run_model(
         _write_df(source_schema, src_name, df)
 
     # ── 4. Run SQLMesh plan ────────────────────────────────────────
-    result = run_sqlmesh_plan(
-        environment=env_name,
-        select=[model_name],
-        skip_tests=True,
-        forward_only=not full_refresh,
-    )
-    if not result.success:
+    try:
+        run_sqlmesh_plan(
+            environment=env_name,
+            select=[model_name],
+            skip_tests=True,
+            forward_only=not full_refresh,
+        )
+    except Exception as e:
         _drop_schema(test_schema)
         if source_schema != test_schema:
             _clean_schema(source_schema, list(source_tables))
-        raise RuntimeError(
-            f"SQLMesh model '{model_name}' failed: {result.error}"
-        )
+        raise e
 
     # ── 5. Read output table ───────────────────────────────────────
     output_table = f"{model_name}_{run_id}"
