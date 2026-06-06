@@ -10,23 +10,28 @@ from __future__ import annotations
 
 import logging
 from pathlib import Path
-from typing import Any
 
 from sqlmesh.core.context import Context
+
+from brewgis.sqlmesh.config import config_factory
 
 logger = logging.getLogger(__name__)
 
 SQLMESH_PROJECT_DIR = Path(__file__).resolve().parent.parent.parent / "sqlmesh"
 
 
-def get_context() -> Context:
+def get_context(**variables) -> Context:
     """Return a SQLMesh Context for the BrewGIS project.
 
     The context loads all models, macros, seeds, and audits from the
     ``brewgis/sqlmesh/`` directory.  Callers should cache the result
     when making multiple calls within the same process lifetime.
     """
-    return Context(paths=str(SQLMESH_PROJECT_DIR))
+    config = config_factory(**variables)
+    return Context(
+        paths=str(SQLMESH_PROJECT_DIR),
+        config=config
+    )
 
 
 def run_sqlmesh_plan(  # noqa: PLR0913
@@ -40,7 +45,7 @@ def run_sqlmesh_plan(  # noqa: PLR0913
     no_prompts: bool = True,
     auto_apply: bool = True,
     create_from: str | None = None,
-    variables: dict[str, object] | None = None,
+    variables: dict[str, object] = {},
     restate_models: bool = False,
 ):
     """Run ``sqlmesh plan`` for the given environment via the Python API.
@@ -58,7 +63,7 @@ def run_sqlmesh_plan(  # noqa: PLR0913
         variables: Optional variable overrides for the plan (reserved for future use).
         restate_models: If True, re-evaluate the selected models even if unchanged.
     """
-    context = get_context()
+    context = get_context(**variables)
     logger.info("SQLMesh plan applied for environment '%s'", environment)
     return context.plan(
         environment=environment,
