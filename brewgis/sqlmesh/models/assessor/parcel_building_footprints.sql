@@ -9,6 +9,10 @@ MODEL (
   )
 );
 
+CREATE INDEX IF NOT EXISTS idx_buildings_combined_geometry
+ON brewgis.staging.buildings_combined USING GIST (geometry);
+ANALYZE brewgis.staging.buildings_combined;
+
 -- Parcel Building Footprints — per-parcel building footprint features extracted
 -- from combined (Overture + VIDA) building footprints via spatial join to
 -- assessor parcels.
@@ -60,5 +64,5 @@ SELECT
     COALESCE(auc.category, 'urban') AS land_development_category
 FROM brewgis.assessor.sacog_assessor_parcels sap
 LEFT JOIN building_stats bs ON sap.apn = bs.apn
-LEFT JOIN assessor_use_codes auc
+LEFT JOIN brewgis.seeds.assessor_use_codes auc
     ON LEFT(COALESCE(sap.landuse::text, ''), 2) = auc.use_code::text

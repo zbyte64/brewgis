@@ -1,9 +1,15 @@
 MODEL (
   name brewgis.staging.buildings_combined,
   kind FULL,
-  gateway: duckdb,
-  dialect: duckdb
+  gateway: duckdb
 );
+
+/*
+// gets interpreted by duckdb and drops the gist index for a btree
+CREATE INDEX IF NOT EXISTS idx_buildings_combined_geometry
+ON brewgis.staging.buildings_combined USING GIST (geometry);
+ANALYZE brewgis.staging.buildings_combined;
+*/
 
 -- Combined Building Footprints — spatial dedup union of Overture Maps
 -- and VIDA (Google + Microsoft) building footprints.
@@ -58,13 +64,14 @@ vida_deduped AS (
         vb.bf_source,
         vb.confidence
     FROM vida_buildings vb
-    WHERE vb.geometry && (SELECT ST_Extent(geometry) FROM overture_buildings)
+    WHERE vb.geometry && (SELECT ST_Extent(geometry) FROM overture_buildings LIMIT 1)
       AND NOT EXISTS (
         SELECT 1
         FROM overture_buildings ob
         WHERE ST_Intersects(vb.geometry, ob.geometry)
           AND ST_Area(ST_Intersection(vb.geometry, ob.geometry))
               > 0.5 * ST_Area(vb.geometry)
+        LIMIT 1
     )
 )
 
@@ -89,7 +96,3 @@ SELECT
     bf_source,
     confidence
 FROM vida_deduped;
-
-CREATE INDEX IF NOT EXISTS idx_buildings_combined_geometry
-ON brewgis.staging.buildings_combined USING GIST (geometry);
-ANALYZE brewgis.staging.buildings_combined;
