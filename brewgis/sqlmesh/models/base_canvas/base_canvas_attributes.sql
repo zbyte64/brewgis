@@ -26,7 +26,7 @@ calibration AS (
 ),
 
 assessor_codes AS (
-    SELECT use_code, category FROM assessor_use_codes
+    SELECT use_code, category FROM brewgis.seeds.assessor_use_codes
 ),
 
 sacog_use AS (
