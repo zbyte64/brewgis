@@ -13,7 +13,8 @@ MODEL (
 -- PostGIS via the postgres_scanner-attached pg catalog.
 
 SELECT
-  geometry,
+  geometry as local_geometry,
+  ST_Transform(geometry, 'EPSG:4326') as geometry,
   CASE WHEN NOT is_nan(height) THEN height END AS height,
   CASE WHEN NOT is_nan(num_floors::DOUBLE) THEN num_floors::INTEGER END AS levels,
   class::VARCHAR AS class
