@@ -58,7 +58,7 @@ parcel_geom AS (
         p.area_parcel_emp,
         p.area_parcel_mixed_use,
         p.area_parcel_no_use
-    FROM public.parcels p
+    FROM @parcel_table p
     LEFT JOIN assessor_categories ac ON LEFT(COALESCE(p.assessor_use_code, ''), 2) = ac.use_code
 ),
 

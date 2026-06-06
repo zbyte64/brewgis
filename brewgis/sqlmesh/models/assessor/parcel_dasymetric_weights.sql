@@ -170,7 +170,7 @@ assembled AS (
     LEFT JOIN brewgis.assessor.parcel_footprint_imputed fi ON ap.apn = fi.apn
     LEFT JOIN nlcd_join nj ON ap.apn = nj.apn
     LEFT JOIN osm_join oj ON ap.apn = oj.apn
-    LEFT JOIN dasymetric_weights dw
+    LEFT JOIN brewgis.seeds.dasymetric_weights dw
         ON cl.land_development_category = dw.land_development_category
 ),
 
@@ -240,4 +240,8 @@ SELECT
     dc.du_subtype,
     dc.du_dasym_weight
 FROM assembled a
-LEFT JOIN du_classification dc ON a.apn = dc.apn
+LEFT JOIN du_classification dc ON a.apn = dc.apn;
+
+CREATE INDEX IF NOT EXISTS idx_parcel_dasymetric_weights_geometry
+ON brewgis.assessor.parcel_dasymetric_weights USING GIST (geometry);
+ANALYZE brewgis.assessor.parcel_dasymetric_weights;
