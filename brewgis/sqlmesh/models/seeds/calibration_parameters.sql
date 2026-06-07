@@ -5,10 +5,10 @@ MODEL (
   ),
   columns (
     land_development_category TEXT,
-    sqft_per_du TEXT,
-    sqft_per_emp TEXT,
-    res_irrigation_frac TEXT,
-    com_irrigation_frac TEXT,
-    intersection_density TEXT
+    sqft_per_du DOUBLE PRECISION,
+    sqft_per_emp DOUBLE PRECISION,
+    res_irrigation_frac DOUBLE PRECISION,
+    com_irrigation_frac DOUBLE PRECISION,
+    intersection_density DOUBLE PRECISION
   )
 );

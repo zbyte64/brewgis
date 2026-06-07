@@ -60,4 +60,9 @@ SELECT
     NULL::double precision AS area_parcel_emp,
     NULL::double precision AS area_parcel_mixed_use,
     NULL::double precision AS area_parcel_no_use
-FROM public.sacog_comparison_parcels
+FROM public.sacog_comparison_parcels;
+
+
+CREATE INDEX IF NOT EXISTS idx_sacog_parcel_shim_geometry
+ON brewgis.comparison.sacog_parcel_shim USING GIST (geometry);
+ANALYZE brewgis.comparison.sacog_parcel_shim;

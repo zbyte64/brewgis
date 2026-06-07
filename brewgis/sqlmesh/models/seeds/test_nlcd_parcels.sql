@@ -6,6 +6,6 @@ MODEL (
   columns (
     parcel_id TEXT,
     land_development_category TEXT,
-    impervious_fraction TEXT
+    impervious_fraction DOUBLE PRECISION
   )
 );

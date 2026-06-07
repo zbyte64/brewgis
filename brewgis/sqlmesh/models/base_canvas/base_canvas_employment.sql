@@ -244,5 +244,5 @@ SELECT
     a.emp_agriculture,
     a.emp_extraction,
     a.emp_military
-FROM base_canvas_demographics p
+FROM brewgis.base_canvas.base_canvas_demographics p
 LEFT JOIN allocated a ON p.parcel_id = a.parcel_id

@@ -6,6 +6,9 @@ MODEL (
   ),
   audits (
     not_null(columns := (parcel_id))
+  ),
+  depends_on (
+    brewgis.comparison.sacog_parcel_shim
   )
 );
 

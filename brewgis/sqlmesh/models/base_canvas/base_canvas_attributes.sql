@@ -22,7 +22,7 @@ WITH source_data AS (
 ),
 
 calibration AS (
-    SELECT * FROM calibration_parameters
+    SELECT * FROM brewgis.seeds.calibration_parameters
 ),
 
 assessor_codes AS (
@@ -30,7 +30,7 @@ assessor_codes AS (
 ),
 
 sacog_use AS (
-    SELECT land_use_label, category FROM sacog_land_use
+    SELECT land_use_label, category FROM brewgis.seeds.sacog_land_use
 ),
 
 -- Build per-row calibration join key

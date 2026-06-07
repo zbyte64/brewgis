@@ -4,9 +4,9 @@ MODEL (
     path '../../seeds/test_vida_buildings.csv'
   ),
   columns (
-    geometry TEXT,
-    confidence TEXT,
+    geometry geometry(Geometry,4326),
+    confidence DOUBLE PRECISION,
     bf_source TEXT,
-    area_in_meters TEXT
+    area_in_meters DOUBLE PRECISION
   )
 );
