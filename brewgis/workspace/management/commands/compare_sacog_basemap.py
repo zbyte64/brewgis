@@ -547,7 +547,6 @@ class Command(BaseCommand):
             # forward_only=True,
             select=model_selectors,
             variables={
-                # TODO needa catalog lookup, context.resolve_table
                 "parcel_table": "brewgis.comparison.sacog_parcel_shim"
             },
         )
@@ -555,9 +554,14 @@ class Command(BaseCommand):
 
         # ── Phase 4: Read results from SQLMesh-materialized tables ─────────
         self.stdout.write("\n── Phase 4: Reading comparison data from SQLMesh ──")
-        summary = _query_table_as_dict(
-            context.table_name("brewgis.comparison.sacog_summary", "sacog_comparison")
+        sacog_summary_table = context.table_name(
+            "brewgis.comparison.sacog_summary", "sacog_comparison"
         )
+        summary = _query_table_as_dict(
+            sacog_summary_table
+        )
+        # fetchdf assumes prod environment
+        # summary = context.fetchdf("SELECT * from brewgis.comparison.sacog_summary limit 1").iloc[0].to_dict()
 
         # Split summary columns by prefix
         ref_totals = {k[4:]: v for k, v in summary.items() if k.startswith("ref_")}
@@ -574,6 +578,9 @@ class Command(BaseCommand):
 
         # ── Phase 5: Generate comparison report ────────────────────────
         self.stdout.write("\n── Phase 5: Generating comparison report ──")
+        dasymetric_table = context.table_name(
+            "brewgis.comparison.sacog_comparison_dasymetric", "sacog_comparison"
+        )
         _generate_report_markdown(
             ref_totals,
             brew_totals,
@@ -590,9 +597,7 @@ class Command(BaseCommand):
             },
             diagnostics=_collect_diagnostics(
                 engine=get_engine(),
-                dasymetric_table=context.resolve_table(
-                    "brewgis.comparison.sacog_comparison_dasymetric"
-                )
+                dasymetric_table=dasymetric_table
                 if use_assessor_geometry
                 else None,
             ),
