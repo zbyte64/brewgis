@@ -56,7 +56,7 @@ def _load_parcels(limit: int, cache_dir: str | None = None) -> gpd.GeoDataFrame:
 def _query_table_as_dict(table_name: str) -> dict[str, float]:
     """Read a single-row dbt materialized table and return as a dict."""
     with connection.cursor() as cur:
-        cur.execute(f"SELECT * FROM public.{table_name}")
+        cur.execute(f'SELECT * FROM {table_name}')
         columns = [desc[0] for desc in cur.description]
         row = cur.fetchone()
 
