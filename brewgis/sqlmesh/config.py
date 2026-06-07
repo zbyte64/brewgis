@@ -195,7 +195,7 @@ def config_factory(**variables):
             "nonres_indoor_water_rate": 0.0,
             **variables,
         },
-        gateway_managed_virtual_layer=False,
+        gateway_managed_virtual_layer=True,
     )
 
 
