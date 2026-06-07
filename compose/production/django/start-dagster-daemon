@@ -1,7 +1,0 @@
-#!/bin/bash
-set -o errexit
-set -o pipefail
-set -o nounset
-
-mkdir -p "${DAGSTER_HOME:-/app/dagster_home}"
-exec dagster daemon run -f brewgis/workspace/dagster/definitions.py

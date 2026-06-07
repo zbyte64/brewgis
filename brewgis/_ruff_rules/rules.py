@@ -388,7 +388,9 @@ def _find_silent_exception_swallows(
 #  migrations.
 # ══════════════════════════════════════════════════════════════════
 
-_DDL_RE = re.compile(r"\bCREATE\s+(OR REPLACE\s+)(TABLE|VIEW|MATERIALIZED\s+VIEW)\b", re.IGNORECASE)
+_DDL_RE = re.compile(
+    r"\bCREATE\s+(OR REPLACE\s+)(TABLE|VIEW|MATERIALIZED\s+VIEW)\b", re.IGNORECASE
+)
 
 
 def _find_sql_ddl(source: str, tree: ast.AST, path: str | Path) -> list[dict[str, Any]]:
@@ -513,66 +515,7 @@ def _find_direct_sqlalchemy_imports(
     return violations
 
 
-# ══════════════════════════════════════════════════════════════════
-#  Rule: brewgis/dagster-import-scope
-# ══════════════════════════════════════════════════════════════════
-#  ``dagster`` must only be imported from within the dagster package
-#  (``workspace/dagster/``) or ``workspace/analysis/pipeline.py``.
-# ══════════════════════════════════════════════════════════════════
-
-_DAGSTER_ALLOWED_PREFIXES: frozenset[str] = frozenset(
-    {
-        "dagster/",
-    }
-)
-_DAGSTER_ALLOWED_FILES: frozenset[str] = frozenset(
-    {
-        "pipeline.py",
-    }
-)
-
-
-def _find_dagster_import_scope(
-    source: str, tree: ast.AST, path: str | Path
-) -> list[dict[str, Any]]:
-    """Scan for dagster-import-scope violations."""
-    return _find_restricted_import(
-        ["dagster"],
-        "brewgis/dagster-import-scope",
-        "`dagster` may only be imported from `workspace/dagster/` or `workspace/analysis/pipeline.py`.",
-        _DAGSTER_ALLOWED_PREFIXES,
-        _DAGSTER_ALLOWED_FILES,
-        path,
-        source,
-        tree,
-    )
-
-
-# ══════════════════════════════════════════════════════════════════
-#  Rule: brewgis/dagster-embedded-elt-scope
-# ══════════════════════════════════════════════════════════════════
-#  ``dagster_embedded_elt`` must only be imported from the dagster
-#  package (``workspace/dagster/``).
-# ══════════════════════════════════════════════════════════════════
-
-
-def _find_dagster_embedded_elt_scope(
-    source: str, tree: ast.AST, path: str | Path
-) -> list[dict[str, Any]]:
-    """Scan for dagster-embedded-elt-scope violations."""
-    return _find_restricted_import(
-        ["dagster_embedded_elt"],
-        "brewgis/dagster-embedded-elt-scope",
-        "`dagster_embedded_elt` may only be imported from `workspace/dagster/`.",
-        _DAGSTER_ALLOWED_PREFIXES,
-        frozenset(),
-        path,
-        source,
-        tree,
-    )
-
-
-def _find_restricted_import(
+def _find_dlt_pipeline_scope(
     module_names: list[str],
     code: str,
     message: str,
@@ -631,20 +574,16 @@ def _find_restricted_import(
                             )
                         )
                         break
-    return violations
 
 
 # ══════════════════════════════════════════════════════════════════
 #  Rule: brewgis/no-dlt-pipeline-outside-pipelines
 # ══════════════════════════════════════════════════════════════════
-#  ``dlt.pipeline(`` calls must only appear in ``dlt_pipelines/`` or
-#  ``dagster/assets/``.
-# ══════════════════════════════════════════════════════════════════
+#  ``dlt.pipeline(`` calls must only appear in ``dlt_pipelines/``.
 
 _DLT_ALLOWED_DIRS: frozenset[str] = frozenset(
     {
         "dlt_pipelines",
-        "dagster/assets",
     }
 )
 
@@ -683,14 +622,12 @@ def _find_dlt_pipeline_scope(
                             _violation(
                                 "brewgis/no-dlt-pipeline-outside-pipelines",
                                 "`dlt.pipeline()` call found outside allowed directories "
-                                f"{_DLT_ALLOWED_DIRS}. Move this to `dlt_pipelines/` or `dagster/assets/`.",
+                                f"{_DLT_ALLOWED_DIRS}. Move this to `dlt_pipelines/`.",
                                 path,
                                 getattr(node, "lineno", 0),
                             )
                         )
     return violations
-
-
 
 
 # ══════════════════════════════════════════════════════════════════
@@ -719,8 +656,6 @@ def check_file(path: str | Path) -> list[dict[str, Any]]:
         _find_silent_exception_swallows,
         _find_sql_ddl,
         _find_direct_sqlalchemy_imports,
-        _find_dagster_import_scope,
-        _find_dagster_embedded_elt_scope,
         _find_dlt_pipeline_scope,
     ]
 

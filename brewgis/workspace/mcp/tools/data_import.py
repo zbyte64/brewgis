@@ -8,7 +8,6 @@ from django.shortcuts import get_object_or_404
 
 from brewgis.workspace.models import DataImportRun
 from brewgis.workspace.models import Workspace
-from brewgis.workspace.services.dagster_client import submit_impute_run
 from brewgis.workspace.tasks import run_census_fetch
 from brewgis.workspace.tasks import run_column_stitching
 from brewgis.workspace.tasks import run_lehd_fetch
@@ -306,24 +305,10 @@ def register_tools(server: object) -> None:
         )
 
         if strategy == "area_proportional":
-            dagster_run_id = submit_impute_run(
-                {
-                    "source_schema": schema,
-                    "source_table": source_table,
-                    "source_column": source_column,
-                    "target_schema": schema,
-                    "target_table": table,
-                    "target_column": target_column,
-                    "scenario_id": f"stitch_{run.pk}",
-                }
-            )
-            run.params["dagster_run_id"] = dagster_run_id
-            run.save(update_fields=["params"])
             return {
-                "dagster_run_id": dagster_run_id,
                 "run_id": run.pk,
-                "status": run.status,
-                "message": f"Area-proportional stitching launched for {schema}.{table}.{target_column}",
+                "status": "error",
+                "message": "Area-proportional strategy is not yet implemented",
             }
         task = run_column_stitching.delay(
             run_pk=run.pk,

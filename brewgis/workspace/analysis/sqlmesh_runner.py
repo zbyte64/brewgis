@@ -28,10 +28,7 @@ def get_context(**variables) -> Context:
     when making multiple calls within the same process lifetime.
     """
     config = config_factory(**variables)
-    return Context(
-        paths=str(SQLMESH_PROJECT_DIR),
-        config=config
-    )
+    return Context(paths=str(SQLMESH_PROJECT_DIR), config=config)
 
 
 def run_sqlmesh_plan(  # noqa: PLR0913
@@ -76,7 +73,7 @@ def run_sqlmesh_plan(  # noqa: PLR0913
         select_models=select,
         create_from=create_from,
         restate_models=[m for m in (select or [])] if restate_models else None,
-    )
+    ), context
 
 
 def run_sqlmesh_run(
@@ -171,7 +168,7 @@ def evaluate_model(
         start=None,
         end=None,
         execution_time=None,
-        model_or_snapshot='snapshot',
+        model_or_snapshot="snapshot",
         model_name=model_name,
         environment=environment,
         limit=limit,

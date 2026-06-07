@@ -1,7 +1,7 @@
 """Shared logic for restoring the SACOG demo database from .sql.gz dump.
 
 This module provides a standalone :func:`restore_sacog_demo_db` function
-that can be called from management commands, Dagster assets, or any other
+that can be called from management commands, or any other
 code path that needs the SACOG v1 reference tables available.
 """
 

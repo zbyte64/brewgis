@@ -274,12 +274,6 @@ CELERY_TASK_EAGER_PROPAGATES = env.bool(
 )
 
 # ==============================================================================
-# DAGSTER
-# ==============================================================================
-DAGSTER_HOME = env("DAGSTER_HOME", default="/app/dagster_home")
-DAGSTER_POSTGRES_DSN = env("DAGSTER_POSTGRES_DSN", default=None)
-
-# ==============================================================================
 # DJANGO-ALLAUTH
 # ==============================================================================
 ACCOUNT_ALLOW_REGISTRATION = env.bool("DJANGO_ACCOUNT_ALLOW_REGISTRATION", True)
@@ -341,7 +335,6 @@ if TESTING:  # ── TEST MODE ────────────────
     EMAIL_BACKEND = "django.core.mail.backends.locmem.EmailBackend"
     MEDIA_URL = "http://media.testserver"
     TOKEN_AUTH_KEY = env("TOKEN_AUTH_KEY", default="test-token-key-dev-only")
-    DAGSTER_HOME = None
 
 elif DEBUG:  # ── DEV MODE ──────────────────────────────────────────────────
     SECRET_KEY = env(
@@ -375,9 +368,6 @@ elif DEBUG:  # ── DEV MODE ────────────────�
     if env("USE_DOCKER") == "yes":
         hostname, _, ips = socket.gethostbyname_ex(socket.gethostname())
         INTERNAL_IPS += [".".join([*ip.split(".")[:-1], "1"]) for ip in ips]
-
-    # Dagster — local sqlite metadata store.
-    DAGSTER_HOME = str(BASE_DIR / ".dagster_home")
 
 else:  # ── PRODUCTION MODE ─────────────────────────────────────────────────
     SECRET_KEY = env("DJANGO_SECRET_KEY")  # required — no default

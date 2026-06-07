@@ -151,11 +151,6 @@ typecheck:  ## Run mypy type checker
 typecheck-fast:  ## Run basedpyright type checker (host mode, faster)
 	basedpyright brewgis/
 
-.PHONY: check-columns
-check-columns:  ## Static column provenance check (no DB needed)
-	docker compose -f $(COMPOSE_FILE) run --rm -e YEAR=2022 django python -m brewgis.workspace.dagster.check_provenance
-
-
 .PHONY: dead-code
 dead-code:  ## Find dead Python code (vulture)
 	$(COMPOSE_RUN) vulture brewgis/
@@ -168,7 +163,7 @@ dead-code-host:  ## Find dead Python code (vulture, host mode)
 # ─────────────────────────────────────────────
 
 .PHONY: check
-check: lint format-check typecheck check-columns test test-soda  ## Run full CI pipeline: lint + format-check + typecheck + column-provenance + test + Soda data quality
+check: lint format-check typecheck test test-soda  ## Run full CI pipeline: lint + format-check + typecheck + test + Soda data quality
 
 # ─────────────────────────────────────────────
 # Development setup

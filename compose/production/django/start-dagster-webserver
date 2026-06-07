@@ -1,7 +1,0 @@
-#!/bin/bash
-set -o errexit
-set -o pipefail
-set -o nounset
-
-mkdir -p "${DAGSTER_HOME:-/app/dagster_home}"
-exec dagster-webserver -h 0.0.0.0 -p 3000 -f brewgis/workspace/dagster/definitions.py

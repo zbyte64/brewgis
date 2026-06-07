@@ -1,7 +1,7 @@
 """Download and cache Fresno demo data from public sources.
 
 Extracted from ``download_fresno_demo`` management command for reuse
-by Dagster assets and other callers.
+by callers.
 """
 
 from __future__ import annotations

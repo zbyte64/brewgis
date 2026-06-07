@@ -3,12 +3,7 @@
 The pipeline now uses SQLMesh models for the ETL and comparison stages,
 with Soda validation checkpoints to catch data quality issues early.
 
-**DEPRECATED**: Use the Dagster ``sacog_comparison`` job instead:
-
-    dagster job run sacog_comparison
-
-This management command is kept for backward compatibility. New development
-should use the Dagster pipeline (``brewgis/workspace/dagster/jobs/comparison_jobs.py``).
+This management command is kept for backward compatibility.
 
 """
 
@@ -264,19 +259,9 @@ class Command(BaseCommand):
         log_file_handle: Any,
         report_path: Path,
     ) -> None:
-        # Lazy imports — avoid loading dagster assets at module import time
+        # Lazy imports — avoid loading analysis modules at import time
         # which conflicts with test stubs for pandas/geopandas.
         from brewgis.workspace.analysis.sqlmesh_runner import run_sqlmesh_plan
-        from brewgis.workspace.dagster.assets.comparison_assets import (
-            _convert_reference_totals,
-        )
-        from brewgis.workspace.dagster.assets.comparison_assets import (
-            _generate_report_markdown,
-        )
-        from brewgis.workspace.dagster.assets.comparison_assets import _load_parcels
-        from brewgis.workspace.dagster.assets.comparison_assets import (
-            _query_table_as_dict,
-        )
         from brewgis.workspace.dlt_pipelines.assessor import (
             run_assessor_parcels_pipeline,
         )
@@ -288,6 +273,14 @@ class Command(BaseCommand):
         from brewgis.workspace.dlt_pipelines.tiger_bg import run_tiger_bg_pipeline
         from brewgis.workspace.dlt_pipelines.tiger_block import run_tiger_block_pipeline
         from brewgis.workspace.services.census_fetcher import _populate_acs_block_group
+        from brewgis.workspace.services.comparison_helpers import (
+            _convert_reference_totals,
+        )
+        from brewgis.workspace.services.comparison_helpers import (
+            _generate_report_markdown,
+        )
+        from brewgis.workspace.services.comparison_helpers import _load_parcels
+        from brewgis.workspace.services.comparison_helpers import _query_table_as_dict
         from brewgis.workspace.services.lehd_fetcher import _populate_wac_block
 
         self.stdout.write("\n── Pre-flight: Checking SACOG reference tables ──")
@@ -498,7 +491,7 @@ class Command(BaseCommand):
                 )
             else:
                 self.stdout.write("  Assessor sales already loaded, skipping")
-                
+
         if osm:
             self.stdout.write("\n── Computing OSM intersection density ──")
             if (
@@ -533,6 +526,7 @@ class Command(BaseCommand):
         if use_assessor_geometry:
             model_selectors.extend(
                 [
+                    "+brewgis.comparison.sacog_parcel_shim",
                     "+brewgis.staging.overture_buildings",
                     "+brewgis.staging.vida_combined_buildings",
                     "+brewgis.assessor.sacog_assessor_parcels",
@@ -547,17 +541,23 @@ class Command(BaseCommand):
                 ]
             )
 
-        run_sqlmesh_plan(
+        plan, context = run_sqlmesh_plan(
             environment="sacog_comparison",
             skip_tests=True,
             # forward_only=True,
             select=model_selectors,
+            variables={
+                # TODO needa catalog lookup, context.resolve_table
+                "parcel_table": "brewgis.comparison.sacog_parcel_shim"
+            },
         )
         self.stdout.write(self.style.SUCCESS("  SQLMesh models complete"))
 
         # ── Phase 4: Read results from SQLMesh-materialized tables ─────────
         self.stdout.write("\n── Phase 4: Reading comparison data from SQLMesh ──")
-        summary = _query_table_as_dict("sacog_summary")
+        summary = _query_table_as_dict(
+            context.table_name("brewgis.comparison.sacog_summary", "sacog_comparison")
+        )
 
         # Split summary columns by prefix
         ref_totals = {k[4:]: v for k, v in summary.items() if k.startswith("ref_")}
@@ -590,7 +590,9 @@ class Command(BaseCommand):
             },
             diagnostics=_collect_diagnostics(
                 engine=get_engine(),
-                dasymetric_table="public.sacog_comparison_dasymetric"
+                dasymetric_table=context.resolve_table(
+                    "brewgis.comparison.sacog_comparison_dasymetric"
+                )
                 if use_assessor_geometry
                 else None,
             ),
@@ -673,9 +675,9 @@ class Command(BaseCommand):
         Legacy method expected by test suite. Delegates to
         ``_generate_report_markdown``.
         """
-        # Lazy imports — avoid loading dagster assets at module import time
+        # Lazy imports — avoid loading analysis modules at import time
         import brewgis.workspace.management.commands.compare_sacog_basemap as _cmd_mod
-        from brewgis.workspace.dagster.assets.comparison_assets import (
+        from brewgis.workspace.services.comparison_helpers import (
             _generate_report_markdown,
         )
 

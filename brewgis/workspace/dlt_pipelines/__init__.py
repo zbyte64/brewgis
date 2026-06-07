@@ -1,7 +1,7 @@
 """dlt-based data extraction pipelines for Brew GIS.
 
 Each submodule exports a ``*_source`` function (a ``@dlt.source`` for use
-with ``@dlt_assets`` in Dagster) and a ``run_*_pipeline`` function (a
+with ``@dlt_assets``) and a ``run_*_pipeline`` function (a
 convenience wrapper for standalone Celery-task invocation).
 """
 

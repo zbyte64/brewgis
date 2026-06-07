@@ -72,7 +72,6 @@ from .views.layer_groups import layer_group_edit
 from .views.layer_groups import layer_group_list
 from .views.layer_groups import layer_group_move_layer
 from .views.map import view_public_scenario_map
-from .views.pipeline_callback import pipeline_callback as pipeline_callback
 from .views.report import generate_map_report
 from .views.report import generate_paint_report
 from .views.report import generate_scenario_report
@@ -393,5 +392,4 @@ urlpatterns = [
         layer_data_table,
         name="layer_data_table",
     ),
-    path("api/v1/pipeline-callback/", pipeline_callback, name="pipeline-callback"),
 ]
