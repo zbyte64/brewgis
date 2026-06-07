@@ -168,7 +168,7 @@ def run_osm_pipeline(
             rows = conn.execute(
                 text(
                     f"SELECT jurisdiction, "
-                    f"  ST_AsBinary(ST_Union(geometry)) AS geom "
+                    f"  ST_AsBinary(ST_Union(ST_Transform(geometry, 'EPSG:4326'))) AS geom "
                     f"FROM {schema}.{parcel_table} "
                     f"WHERE geometry IS NOT NULL "
                     f"GROUP BY jurisdiction"
@@ -188,7 +188,7 @@ def run_osm_pipeline(
         with engine.connect() as conn:
             result = conn.execute(
                 text(
-                    f"SELECT ST_AsBinary(ST_Union(geometry)) "
+                    f"SELECT ST_AsBinary(ST_Union(ST_Transform(geometry, 'EPSG:4326'))) "
                     f"FROM {schema}.{parcel_table} "
                     f"WHERE geometry IS NOT NULL"
                 )
