@@ -219,76 +219,6 @@ def _derive_agg_hint(metatype: str) -> str:
     return "sum"
 
 
-def _load_from_db() -> dict | None:
-    """Attempt to load schema from the ``BaseCanvasColumn`` model.
-
-    Returns ``None`` if the model table does not exist yet (migration in progress).
-    """
-    try:
-        from brewgis.workspace.models import BaseCanvasColumn as CanvasColumn
-
-        qs = CanvasColumn.objects.all().order_by("display_order")
-        if not qs.exists():
-            return None
-
-        names: list[str] = []
-        col_map: dict[str, ColumnDef] = {}
-        for row in qs:
-            names.append(row.name)
-            col_map[row.name] = ColumnDef(
-                name=row.name,
-                label=row.label or "",
-                pg_type=row.pg_type or "DOUBLE PRECISION",
-                unit=row.unit or "",
-                metatype=row.metatype or "count",
-                aggregation_hint=row.aggregation_hint or "sum",
-                behavior_category=row.behavior_category or "paintable",
-                nullable=row.nullable,
-                default_value=row.default_value
-                if row.default_value is not None
-                else 0.0,
-            )
-        col_names = tuple(names)
-
-        static_cols = _load_static_column_names(col_map)
-        return {
-            "column_names": col_names,
-            "column_map": col_map,
-            "static_columns": static_cols,
-            "paintable_columns": frozenset(
-                name for name in col_names if name not in static_cols
-            ),
-            "summable_columns": frozenset(
-                name for name in col_names if name not in static_cols
-            ),
-            "non_null_columns": _load_non_null_column_names(col_map),
-        }
-    except OperationalError:
-        # BaseCanvasColumn table doesn't exist yet (migrations not run).
-        # _get_cache falls back to hardcoded column definitions.
-        return None
-    except RuntimeError:
-        # Database access not allowed (e.g. during test collection).
-        # _get_cache falls back to hardcoded column definitions.
-        return None
-
-
-def _load_static_column_names(
-    col_map: dict[str, ColumnDef],
-) -> frozenset[str]:
-    """Derive static column set from the live column map."""
-    return frozenset(
-        name for name, col in col_map.items() if col.behavior_category == "static"
-    )
-
-
-def _load_non_null_column_names(
-    col_map: dict[str, ColumnDef],
-) -> frozenset[str]:
-    """Derive NOT NULL column set from the live column map."""
-    return frozenset(name for name, col in col_map.items() if not col.nullable)
-
-
 # Module-level cache populated once at first access.
 _cache: dict | None = None
 
@@ -297,12 +227,6 @@ def _get_cache() -> dict:
     """Return the schema cache, loading from DB or falling back to hardcoded."""
     global _cache
     if _cache is not None:
-        return _cache
-
-    # Try the DB first
-    db_state = _load_from_db()
-    if db_state is not None:
-        _cache = db_state
         return _cache
 
     # Fall back to hardcoded
