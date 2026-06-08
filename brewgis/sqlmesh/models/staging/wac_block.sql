@@ -239,12 +239,13 @@ county_lodes_totals AS (
 ),
 
 -- Apply CBP county-level scaling to each sub-sector.
--- All cbp_county_* variables default to 0.0, so the first condition
--- (C <= L OR C <= 0) is always true and the result is a passthrough.
+-- CBP totals are provided via SQLMesh @VAR variables:
+--   @VAR('cbp_county_emp_<sector>', 0.0) = CBP county total for each sub-sector
+--   @VAR('cbp_preserve_fraction', 0.5)    = fraction of spatial distribution to preserve
 --
 -- Formula (per sub-sector, per the plan):
 --   C = CBP county total, L = LODES county total,
---   v = block value, e = total proxy employment, T = total_proxy, p = 0.5
+--   v = block value, e = total proxy employment, T = total_proxy, p = preserve_fraction
 --   - C <= L or C <= 0: v (no scaling)
 --   - L > 0 and C > L: v * (C*p/L) + C*(1-p) * e/T
 --   - L = 0 and C > 0 and T > 0: C * e/T
@@ -255,195 +256,195 @@ scaled AS (
         c.geometry,
         c.emp,
         CASE
-            WHEN 0.0 <= t.lodes_emp_agriculture OR 0.0 <= 0 THEN c.emp_agriculture
-            WHEN t.lodes_emp_agriculture > 0 AND 0.0 > t.lodes_emp_agriculture THEN
+            WHEN @VAR('cbp_county_emp_agriculture', 0.0) <= t.lodes_emp_agriculture OR @VAR('cbp_county_emp_agriculture', 0.0) <= 0 THEN c.emp_agriculture
+            WHEN t.lodes_emp_agriculture > 0 AND @VAR('cbp_county_emp_agriculture', 0.0) > t.lodes_emp_agriculture THEN
                 CASE WHEN c.emp_agriculture > 0
-                    THEN c.emp_agriculture * (0.0 * 0.5 / t.lodes_emp_agriculture)
-                        + 0.0 * (1.0 - 0.5) * c.emp / t.total_proxy
-                    ELSE 0.0 * (1.0 - 0.5) * c.emp / t.total_proxy
+                    THEN c.emp_agriculture * (@VAR('cbp_county_emp_agriculture', 0.0) * @VAR('cbp_preserve_fraction', 0.5) / t.lodes_emp_agriculture)
+                        + @VAR('cbp_county_emp_agriculture', 0.0) * (1.0 - @VAR('cbp_preserve_fraction', 0.5)) * c.emp / t.total_proxy
+                    ELSE @VAR('cbp_county_emp_agriculture', 0.0) * (1.0 - @VAR('cbp_preserve_fraction', 0.5)) * c.emp / t.total_proxy
                 END
-            WHEN t.lodes_emp_agriculture = 0 AND 0.0 > 0 AND t.total_proxy > 0
-            THEN 0.0 * c.emp / t.total_proxy
+            WHEN t.lodes_emp_agriculture = 0 AND @VAR('cbp_county_emp_agriculture', 0.0) > 0 AND t.total_proxy > 0
+            THEN @VAR('cbp_county_emp_agriculture', 0.0) * c.emp / t.total_proxy
             ELSE c.emp_agriculture
         END AS emp_agriculture,
         CASE
-            WHEN 0.0 <= t.lodes_emp_extraction OR 0.0 <= 0 THEN c.emp_extraction
-            WHEN t.lodes_emp_extraction > 0 AND 0.0 > t.lodes_emp_extraction THEN
+            WHEN @VAR('cbp_county_emp_extraction', 0.0) <= t.lodes_emp_extraction OR @VAR('cbp_county_emp_extraction', 0.0) <= 0 THEN c.emp_extraction
+            WHEN t.lodes_emp_extraction > 0 AND @VAR('cbp_county_emp_extraction', 0.0) > t.lodes_emp_extraction THEN
                 CASE WHEN c.emp_extraction > 0
-                    THEN c.emp_extraction * (0.0 * 0.5 / t.lodes_emp_extraction)
-                        + 0.0 * (1.0 - 0.5) * c.emp / t.total_proxy
-                    ELSE 0.0 * (1.0 - 0.5) * c.emp / t.total_proxy
+                    THEN c.emp_extraction * (@VAR('cbp_county_emp_extraction', 0.0) * @VAR('cbp_preserve_fraction', 0.5) / t.lodes_emp_extraction)
+                        + @VAR('cbp_county_emp_extraction', 0.0) * (1.0 - @VAR('cbp_preserve_fraction', 0.5)) * c.emp / t.total_proxy
+                    ELSE @VAR('cbp_county_emp_extraction', 0.0) * (1.0 - @VAR('cbp_preserve_fraction', 0.5)) * c.emp / t.total_proxy
                 END
-            WHEN t.lodes_emp_extraction = 0 AND 0.0 > 0 AND t.total_proxy > 0
-            THEN 0.0 * c.emp / t.total_proxy
+            WHEN t.lodes_emp_extraction = 0 AND @VAR('cbp_county_emp_extraction', 0.0) > 0 AND t.total_proxy > 0
+            THEN @VAR('cbp_county_emp_extraction', 0.0) * c.emp / t.total_proxy
             ELSE c.emp_extraction
         END AS emp_extraction,
         CASE
-            WHEN 0.0 <= t.lodes_emp_construction OR 0.0 <= 0 THEN c.emp_construction
-            WHEN t.lodes_emp_construction > 0 AND 0.0 > t.lodes_emp_construction THEN
+            WHEN @VAR('cbp_county_emp_construction', 0.0) <= t.lodes_emp_construction OR @VAR('cbp_county_emp_construction', 0.0) <= 0 THEN c.emp_construction
+            WHEN t.lodes_emp_construction > 0 AND @VAR('cbp_county_emp_construction', 0.0) > t.lodes_emp_construction THEN
                 CASE WHEN c.emp_construction > 0
-                    THEN c.emp_construction * (0.0 * 0.5 / t.lodes_emp_construction)
-                        + 0.0 * (1.0 - 0.5) * c.emp / t.total_proxy
-                    ELSE 0.0 * (1.0 - 0.5) * c.emp / t.total_proxy
+                    THEN c.emp_construction * (@VAR('cbp_county_emp_construction', 0.0) * @VAR('cbp_preserve_fraction', 0.5) / t.lodes_emp_construction)
+                        + @VAR('cbp_county_emp_construction', 0.0) * (1.0 - @VAR('cbp_preserve_fraction', 0.5)) * c.emp / t.total_proxy
+                    ELSE @VAR('cbp_county_emp_construction', 0.0) * (1.0 - @VAR('cbp_preserve_fraction', 0.5)) * c.emp / t.total_proxy
                 END
-            WHEN t.lodes_emp_construction = 0 AND 0.0 > 0 AND t.total_proxy > 0
-            THEN 0.0 * c.emp / t.total_proxy
+            WHEN t.lodes_emp_construction = 0 AND @VAR('cbp_county_emp_construction', 0.0) > 0 AND t.total_proxy > 0
+            THEN @VAR('cbp_county_emp_construction', 0.0) * c.emp / t.total_proxy
             ELSE c.emp_construction
         END AS emp_construction,
         CASE
-            WHEN 0.0 <= t.lodes_emp_manufacturing OR 0.0 <= 0 THEN c.emp_manufacturing
-            WHEN t.lodes_emp_manufacturing > 0 AND 0.0 > t.lodes_emp_manufacturing THEN
+            WHEN @VAR('cbp_county_emp_manufacturing', 0.0) <= t.lodes_emp_manufacturing OR @VAR('cbp_county_emp_manufacturing', 0.0) <= 0 THEN c.emp_manufacturing
+            WHEN t.lodes_emp_manufacturing > 0 AND @VAR('cbp_county_emp_manufacturing', 0.0) > t.lodes_emp_manufacturing THEN
                 CASE WHEN c.emp_manufacturing > 0
-                    THEN c.emp_manufacturing * (0.0 * 0.5 / t.lodes_emp_manufacturing)
-                        + 0.0 * (1.0 - 0.5) * c.emp / t.total_proxy
-                    ELSE 0.0 * (1.0 - 0.5) * c.emp / t.total_proxy
+                    THEN c.emp_manufacturing * (@VAR('cbp_county_emp_manufacturing', 0.0) * @VAR('cbp_preserve_fraction', 0.5) / t.lodes_emp_manufacturing)
+                        + @VAR('cbp_county_emp_manufacturing', 0.0) * (1.0 - @VAR('cbp_preserve_fraction', 0.5)) * c.emp / t.total_proxy
+                    ELSE @VAR('cbp_county_emp_manufacturing', 0.0) * (1.0 - @VAR('cbp_preserve_fraction', 0.5)) * c.emp / t.total_proxy
                 END
-            WHEN t.lodes_emp_manufacturing = 0 AND 0.0 > 0 AND t.total_proxy > 0
-            THEN 0.0 * c.emp / t.total_proxy
+            WHEN t.lodes_emp_manufacturing = 0 AND @VAR('cbp_county_emp_manufacturing', 0.0) > 0 AND t.total_proxy > 0
+            THEN @VAR('cbp_county_emp_manufacturing', 0.0) * c.emp / t.total_proxy
             ELSE c.emp_manufacturing
         END AS emp_manufacturing,
         CASE
-            WHEN 0.0 <= t.lodes_emp_transport_warehousing OR 0.0 <= 0 THEN c.emp_transport_warehousing
-            WHEN t.lodes_emp_transport_warehousing > 0 AND 0.0 > t.lodes_emp_transport_warehousing THEN
+            WHEN @VAR('cbp_county_emp_transport_warehousing', 0.0) <= t.lodes_emp_transport_warehousing OR @VAR('cbp_county_emp_transport_warehousing', 0.0) <= 0 THEN c.emp_transport_warehousing
+            WHEN t.lodes_emp_transport_warehousing > 0 AND @VAR('cbp_county_emp_transport_warehousing', 0.0) > t.lodes_emp_transport_warehousing THEN
                 CASE WHEN c.emp_transport_warehousing > 0
-                    THEN c.emp_transport_warehousing * (0.0 * 0.5 / t.lodes_emp_transport_warehousing)
-                        + 0.0 * (1.0 - 0.5) * c.emp / t.total_proxy
-                    ELSE 0.0 * (1.0 - 0.5) * c.emp / t.total_proxy
+                    THEN c.emp_transport_warehousing * (@VAR('cbp_county_emp_transport_warehousing', 0.0) * @VAR('cbp_preserve_fraction', 0.5) / t.lodes_emp_transport_warehousing)
+                        + @VAR('cbp_county_emp_transport_warehousing', 0.0) * (1.0 - @VAR('cbp_preserve_fraction', 0.5)) * c.emp / t.total_proxy
+                    ELSE @VAR('cbp_county_emp_transport_warehousing', 0.0) * (1.0 - @VAR('cbp_preserve_fraction', 0.5)) * c.emp / t.total_proxy
                 END
-            WHEN t.lodes_emp_transport_warehousing = 0 AND 0.0 > 0 AND t.total_proxy > 0
-            THEN 0.0 * c.emp / t.total_proxy
+            WHEN t.lodes_emp_transport_warehousing = 0 AND @VAR('cbp_county_emp_transport_warehousing', 0.0) > 0 AND t.total_proxy > 0
+            THEN @VAR('cbp_county_emp_transport_warehousing', 0.0) * c.emp / t.total_proxy
             ELSE c.emp_transport_warehousing
         END AS emp_transport_warehousing,
         CASE
-            WHEN 0.0 <= t.lodes_emp_utilities OR 0.0 <= 0 THEN c.emp_utilities
-            WHEN t.lodes_emp_utilities > 0 AND 0.0 > t.lodes_emp_utilities THEN
+            WHEN @VAR('cbp_county_emp_utilities', 0.0) <= t.lodes_emp_utilities OR @VAR('cbp_county_emp_utilities', 0.0) <= 0 THEN c.emp_utilities
+            WHEN t.lodes_emp_utilities > 0 AND @VAR('cbp_county_emp_utilities', 0.0) > t.lodes_emp_utilities THEN
                 CASE WHEN c.emp_utilities > 0
-                    THEN c.emp_utilities * (0.0 * 0.5 / t.lodes_emp_utilities)
-                        + 0.0 * (1.0 - 0.5) * c.emp / t.total_proxy
-                    ELSE 0.0 * (1.0 - 0.5) * c.emp / t.total_proxy
+                    THEN c.emp_utilities * (@VAR('cbp_county_emp_utilities', 0.0) * @VAR('cbp_preserve_fraction', 0.5) / t.lodes_emp_utilities)
+                        + @VAR('cbp_county_emp_utilities', 0.0) * (1.0 - @VAR('cbp_preserve_fraction', 0.5)) * c.emp / t.total_proxy
+                    ELSE @VAR('cbp_county_emp_utilities', 0.0) * (1.0 - @VAR('cbp_preserve_fraction', 0.5)) * c.emp / t.total_proxy
                 END
-            WHEN t.lodes_emp_utilities = 0 AND 0.0 > 0 AND t.total_proxy > 0
-            THEN 0.0 * c.emp / t.total_proxy
+            WHEN t.lodes_emp_utilities = 0 AND @VAR('cbp_county_emp_utilities', 0.0) > 0 AND t.total_proxy > 0
+            THEN @VAR('cbp_county_emp_utilities', 0.0) * c.emp / t.total_proxy
             ELSE c.emp_utilities
         END AS emp_utilities,
         CASE
-            WHEN 0.0 <= t.lodes_emp_wholesale OR 0.0 <= 0 THEN c.emp_wholesale
-            WHEN t.lodes_emp_wholesale > 0 AND 0.0 > t.lodes_emp_wholesale THEN
+            WHEN @VAR('cbp_county_emp_wholesale', 0.0) <= t.lodes_emp_wholesale OR @VAR('cbp_county_emp_wholesale', 0.0) <= 0 THEN c.emp_wholesale
+            WHEN t.lodes_emp_wholesale > 0 AND @VAR('cbp_county_emp_wholesale', 0.0) > t.lodes_emp_wholesale THEN
                 CASE WHEN c.emp_wholesale > 0
-                    THEN c.emp_wholesale * (0.0 * 0.5 / t.lodes_emp_wholesale)
-                        + 0.0 * (1.0 - 0.5) * c.emp / t.total_proxy
-                    ELSE 0.0 * (1.0 - 0.5) * c.emp / t.total_proxy
+                    THEN c.emp_wholesale * (@VAR('cbp_county_emp_wholesale', 0.0) * @VAR('cbp_preserve_fraction', 0.5) / t.lodes_emp_wholesale)
+                        + @VAR('cbp_county_emp_wholesale', 0.0) * (1.0 - @VAR('cbp_preserve_fraction', 0.5)) * c.emp / t.total_proxy
+                    ELSE @VAR('cbp_county_emp_wholesale', 0.0) * (1.0 - @VAR('cbp_preserve_fraction', 0.5)) * c.emp / t.total_proxy
                 END
-            WHEN t.lodes_emp_wholesale = 0 AND 0.0 > 0 AND t.total_proxy > 0
-            THEN 0.0 * c.emp / t.total_proxy
+            WHEN t.lodes_emp_wholesale = 0 AND @VAR('cbp_county_emp_wholesale', 0.0) > 0 AND t.total_proxy > 0
+            THEN @VAR('cbp_county_emp_wholesale', 0.0) * c.emp / t.total_proxy
             ELSE c.emp_wholesale
         END AS emp_wholesale,
         CASE
-            WHEN 0.0 <= t.lodes_emp_retail_services OR 0.0 <= 0 THEN c.emp_retail_services
-            WHEN t.lodes_emp_retail_services > 0 AND 0.0 > t.lodes_emp_retail_services THEN
+            WHEN @VAR('cbp_county_emp_retail_services', 0.0) <= t.lodes_emp_retail_services OR @VAR('cbp_county_emp_retail_services', 0.0) <= 0 THEN c.emp_retail_services
+            WHEN t.lodes_emp_retail_services > 0 AND @VAR('cbp_county_emp_retail_services', 0.0) > t.lodes_emp_retail_services THEN
                 CASE WHEN c.emp_retail_services > 0
-                    THEN c.emp_retail_services * (0.0 * 0.5 / t.lodes_emp_retail_services)
-                        + 0.0 * (1.0 - 0.5) * c.emp / t.total_proxy
-                    ELSE 0.0 * (1.0 - 0.5) * c.emp / t.total_proxy
+                    THEN c.emp_retail_services * (@VAR('cbp_county_emp_retail_services', 0.0) * @VAR('cbp_preserve_fraction', 0.5) / t.lodes_emp_retail_services)
+                        + @VAR('cbp_county_emp_retail_services', 0.0) * (1.0 - @VAR('cbp_preserve_fraction', 0.5)) * c.emp / t.total_proxy
+                    ELSE @VAR('cbp_county_emp_retail_services', 0.0) * (1.0 - @VAR('cbp_preserve_fraction', 0.5)) * c.emp / t.total_proxy
                 END
-            WHEN t.lodes_emp_retail_services = 0 AND 0.0 > 0 AND t.total_proxy > 0
-            THEN 0.0 * c.emp / t.total_proxy
+            WHEN t.lodes_emp_retail_services = 0 AND @VAR('cbp_county_emp_retail_services', 0.0) > 0 AND t.total_proxy > 0
+            THEN @VAR('cbp_county_emp_retail_services', 0.0) * c.emp / t.total_proxy
             ELSE c.emp_retail_services
         END AS emp_retail_services,
         CASE
-            WHEN 0.0 <= t.lodes_emp_office_services OR 0.0 <= 0 THEN c.emp_office_services
-            WHEN t.lodes_emp_office_services > 0 AND 0.0 > t.lodes_emp_office_services THEN
+            WHEN @VAR('cbp_county_emp_office_services', 0.0) <= t.lodes_emp_office_services OR @VAR('cbp_county_emp_office_services', 0.0) <= 0 THEN c.emp_office_services
+            WHEN t.lodes_emp_office_services > 0 AND @VAR('cbp_county_emp_office_services', 0.0) > t.lodes_emp_office_services THEN
                 CASE WHEN c.emp_office_services > 0
-                    THEN c.emp_office_services * (0.0 * 0.5 / t.lodes_emp_office_services)
-                        + 0.0 * (1.0 - 0.5) * c.emp / t.total_proxy
-                    ELSE 0.0 * (1.0 - 0.5) * c.emp / t.total_proxy
+                    THEN c.emp_office_services * (@VAR('cbp_county_emp_office_services', 0.0) * @VAR('cbp_preserve_fraction', 0.5) / t.lodes_emp_office_services)
+                        + @VAR('cbp_county_emp_office_services', 0.0) * (1.0 - @VAR('cbp_preserve_fraction', 0.5)) * c.emp / t.total_proxy
+                    ELSE @VAR('cbp_county_emp_office_services', 0.0) * (1.0 - @VAR('cbp_preserve_fraction', 0.5)) * c.emp / t.total_proxy
                 END
-            WHEN t.lodes_emp_office_services = 0 AND 0.0 > 0 AND t.total_proxy > 0
-            THEN 0.0 * c.emp / t.total_proxy
+            WHEN t.lodes_emp_office_services = 0 AND @VAR('cbp_county_emp_office_services', 0.0) > 0 AND t.total_proxy > 0
+            THEN @VAR('cbp_county_emp_office_services', 0.0) * c.emp / t.total_proxy
             ELSE c.emp_office_services
         END AS emp_office_services,
         CASE
-            WHEN 0.0 <= t.lodes_emp_education OR 0.0 <= 0 THEN c.emp_education
-            WHEN t.lodes_emp_education > 0 AND 0.0 > t.lodes_emp_education THEN
+            WHEN @VAR('cbp_county_emp_education', 0.0) <= t.lodes_emp_education OR @VAR('cbp_county_emp_education', 0.0) <= 0 THEN c.emp_education
+            WHEN t.lodes_emp_education > 0 AND @VAR('cbp_county_emp_education', 0.0) > t.lodes_emp_education THEN
                 CASE WHEN c.emp_education > 0
-                    THEN c.emp_education * (0.0 * 0.5 / t.lodes_emp_education)
-                        + 0.0 * (1.0 - 0.5) * c.emp / t.total_proxy
-                    ELSE 0.0 * (1.0 - 0.5) * c.emp / t.total_proxy
+                    THEN c.emp_education * (@VAR('cbp_county_emp_education', 0.0) * @VAR('cbp_preserve_fraction', 0.5) / t.lodes_emp_education)
+                        + @VAR('cbp_county_emp_education', 0.0) * (1.0 - @VAR('cbp_preserve_fraction', 0.5)) * c.emp / t.total_proxy
+                    ELSE @VAR('cbp_county_emp_education', 0.0) * (1.0 - @VAR('cbp_preserve_fraction', 0.5)) * c.emp / t.total_proxy
                 END
-            WHEN t.lodes_emp_education = 0 AND 0.0 > 0 AND t.total_proxy > 0
-            THEN 0.0 * c.emp / t.total_proxy
+            WHEN t.lodes_emp_education = 0 AND @VAR('cbp_county_emp_education', 0.0) > 0 AND t.total_proxy > 0
+            THEN @VAR('cbp_county_emp_education', 0.0) * c.emp / t.total_proxy
             ELSE c.emp_education
         END AS emp_education,
         CASE
-            WHEN 0.0 <= t.lodes_emp_medical_services OR 0.0 <= 0 THEN c.emp_medical_services
-            WHEN t.lodes_emp_medical_services > 0 AND 0.0 > t.lodes_emp_medical_services THEN
+            WHEN @VAR('cbp_county_emp_medical_services', 0.0) <= t.lodes_emp_medical_services OR @VAR('cbp_county_emp_medical_services', 0.0) <= 0 THEN c.emp_medical_services
+            WHEN t.lodes_emp_medical_services > 0 AND @VAR('cbp_county_emp_medical_services', 0.0) > t.lodes_emp_medical_services THEN
                 CASE WHEN c.emp_medical_services > 0
-                    THEN c.emp_medical_services * (0.0 * 0.5 / t.lodes_emp_medical_services)
-                        + 0.0 * (1.0 - 0.5) * c.emp / t.total_proxy
-                    ELSE 0.0 * (1.0 - 0.5) * c.emp / t.total_proxy
+                    THEN c.emp_medical_services * (@VAR('cbp_county_emp_medical_services', 0.0) * @VAR('cbp_preserve_fraction', 0.5) / t.lodes_emp_medical_services)
+                        + @VAR('cbp_county_emp_medical_services', 0.0) * (1.0 - @VAR('cbp_preserve_fraction', 0.5)) * c.emp / t.total_proxy
+                    ELSE @VAR('cbp_county_emp_medical_services', 0.0) * (1.0 - @VAR('cbp_preserve_fraction', 0.5)) * c.emp / t.total_proxy
                 END
-            WHEN t.lodes_emp_medical_services = 0 AND 0.0 > 0 AND t.total_proxy > 0
-            THEN 0.0 * c.emp / t.total_proxy
+            WHEN t.lodes_emp_medical_services = 0 AND @VAR('cbp_county_emp_medical_services', 0.0) > 0 AND t.total_proxy > 0
+            THEN @VAR('cbp_county_emp_medical_services', 0.0) * c.emp / t.total_proxy
             ELSE c.emp_medical_services
         END AS emp_medical_services,
         CASE
-            WHEN 0.0 <= t.lodes_emp_arts_entertainment OR 0.0 <= 0 THEN c.emp_arts_entertainment
-            WHEN t.lodes_emp_arts_entertainment > 0 AND 0.0 > t.lodes_emp_arts_entertainment THEN
+            WHEN @VAR('cbp_county_emp_arts_entertainment', 0.0) <= t.lodes_emp_arts_entertainment OR @VAR('cbp_county_emp_arts_entertainment', 0.0) <= 0 THEN c.emp_arts_entertainment
+            WHEN t.lodes_emp_arts_entertainment > 0 AND @VAR('cbp_county_emp_arts_entertainment', 0.0) > t.lodes_emp_arts_entertainment THEN
                 CASE WHEN c.emp_arts_entertainment > 0
-                    THEN c.emp_arts_entertainment * (0.0 * 0.5 / t.lodes_emp_arts_entertainment)
-                        + 0.0 * (1.0 - 0.5) * c.emp / t.total_proxy
-                    ELSE 0.0 * (1.0 - 0.5) * c.emp / t.total_proxy
+                    THEN c.emp_arts_entertainment * (@VAR('cbp_county_emp_arts_entertainment', 0.0) * @VAR('cbp_preserve_fraction', 0.5) / t.lodes_emp_arts_entertainment)
+                        + @VAR('cbp_county_emp_arts_entertainment', 0.0) * (1.0 - @VAR('cbp_preserve_fraction', 0.5)) * c.emp / t.total_proxy
+                    ELSE @VAR('cbp_county_emp_arts_entertainment', 0.0) * (1.0 - @VAR('cbp_preserve_fraction', 0.5)) * c.emp / t.total_proxy
                 END
-            WHEN t.lodes_emp_arts_entertainment = 0 AND 0.0 > 0 AND t.total_proxy > 0
-            THEN 0.0 * c.emp / t.total_proxy
+            WHEN t.lodes_emp_arts_entertainment = 0 AND @VAR('cbp_county_emp_arts_entertainment', 0.0) > 0 AND t.total_proxy > 0
+            THEN @VAR('cbp_county_emp_arts_entertainment', 0.0) * c.emp / t.total_proxy
             ELSE c.emp_arts_entertainment
         END AS emp_arts_entertainment,
         CASE
-            WHEN 0.0 <= t.lodes_emp_accommodation OR 0.0 <= 0 THEN c.emp_accommodation
-            WHEN t.lodes_emp_accommodation > 0 AND 0.0 > t.lodes_emp_accommodation THEN
+            WHEN @VAR('cbp_county_emp_accommodation', 0.0) <= t.lodes_emp_accommodation OR @VAR('cbp_county_emp_accommodation', 0.0) <= 0 THEN c.emp_accommodation
+            WHEN t.lodes_emp_accommodation > 0 AND @VAR('cbp_county_emp_accommodation', 0.0) > t.lodes_emp_accommodation THEN
                 CASE WHEN c.emp_accommodation > 0
-                    THEN c.emp_accommodation * (0.0 * 0.5 / t.lodes_emp_accommodation)
-                        + 0.0 * (1.0 - 0.5) * c.emp / t.total_proxy
-                    ELSE 0.0 * (1.0 - 0.5) * c.emp / t.total_proxy
+                    THEN c.emp_accommodation * (@VAR('cbp_county_emp_accommodation', 0.0) * @VAR('cbp_preserve_fraction', 0.5) / t.lodes_emp_accommodation)
+                        + @VAR('cbp_county_emp_accommodation', 0.0) * (1.0 - @VAR('cbp_preserve_fraction', 0.5)) * c.emp / t.total_proxy
+                    ELSE @VAR('cbp_county_emp_accommodation', 0.0) * (1.0 - @VAR('cbp_preserve_fraction', 0.5)) * c.emp / t.total_proxy
                 END
-            WHEN t.lodes_emp_accommodation = 0 AND 0.0 > 0 AND t.total_proxy > 0
-            THEN 0.0 * c.emp / t.total_proxy
+            WHEN t.lodes_emp_accommodation = 0 AND @VAR('cbp_county_emp_accommodation', 0.0) > 0 AND t.total_proxy > 0
+            THEN @VAR('cbp_county_emp_accommodation', 0.0) * c.emp / t.total_proxy
             ELSE c.emp_accommodation
         END AS emp_accommodation,
         CASE
-            WHEN 0.0 <= t.lodes_emp_restaurant OR 0.0 <= 0 THEN c.emp_restaurant
-            WHEN t.lodes_emp_restaurant > 0 AND 0.0 > t.lodes_emp_restaurant THEN
+            WHEN @VAR('cbp_county_emp_restaurant', 0.0) <= t.lodes_emp_restaurant OR @VAR('cbp_county_emp_restaurant', 0.0) <= 0 THEN c.emp_restaurant
+            WHEN t.lodes_emp_restaurant > 0 AND @VAR('cbp_county_emp_restaurant', 0.0) > t.lodes_emp_restaurant THEN
                 CASE WHEN c.emp_restaurant > 0
-                    THEN c.emp_restaurant * (0.0 * 0.5 / t.lodes_emp_restaurant)
-                        + 0.0 * (1.0 - 0.5) * c.emp / t.total_proxy
-                    ELSE 0.0 * (1.0 - 0.5) * c.emp / t.total_proxy
+                    THEN c.emp_restaurant * (@VAR('cbp_county_emp_restaurant', 0.0) * @VAR('cbp_preserve_fraction', 0.5) / t.lodes_emp_restaurant)
+                        + @VAR('cbp_county_emp_restaurant', 0.0) * (1.0 - @VAR('cbp_preserve_fraction', 0.5)) * c.emp / t.total_proxy
+                    ELSE @VAR('cbp_county_emp_restaurant', 0.0) * (1.0 - @VAR('cbp_preserve_fraction', 0.5)) * c.emp / t.total_proxy
                 END
-            WHEN t.lodes_emp_restaurant = 0 AND 0.0 > 0 AND t.total_proxy > 0
-            THEN 0.0 * c.emp / t.total_proxy
+            WHEN t.lodes_emp_restaurant = 0 AND @VAR('cbp_county_emp_restaurant', 0.0) > 0 AND t.total_proxy > 0
+            THEN @VAR('cbp_county_emp_restaurant', 0.0) * c.emp / t.total_proxy
             ELSE c.emp_restaurant
         END AS emp_restaurant,
         CASE
-            WHEN 0.0 <= t.lodes_emp_other_services OR 0.0 <= 0 THEN c.emp_other_services
-            WHEN t.lodes_emp_other_services > 0 AND 0.0 > t.lodes_emp_other_services THEN
+            WHEN @VAR('cbp_county_emp_other_services', 0.0) <= t.lodes_emp_other_services OR @VAR('cbp_county_emp_other_services', 0.0) <= 0 THEN c.emp_other_services
+            WHEN t.lodes_emp_other_services > 0 AND @VAR('cbp_county_emp_other_services', 0.0) > t.lodes_emp_other_services THEN
                 CASE WHEN c.emp_other_services > 0
-                    THEN c.emp_other_services * (0.0 * 0.5 / t.lodes_emp_other_services)
-                        + 0.0 * (1.0 - 0.5) * c.emp / t.total_proxy
-                    ELSE 0.0 * (1.0 - 0.5) * c.emp / t.total_proxy
+                    THEN c.emp_other_services * (@VAR('cbp_county_emp_other_services', 0.0) * @VAR('cbp_preserve_fraction', 0.5) / t.lodes_emp_other_services)
+                        + @VAR('cbp_county_emp_other_services', 0.0) * (1.0 - @VAR('cbp_preserve_fraction', 0.5)) * c.emp / t.total_proxy
+                    ELSE @VAR('cbp_county_emp_other_services', 0.0) * (1.0 - @VAR('cbp_preserve_fraction', 0.5)) * c.emp / t.total_proxy
                 END
-            WHEN t.lodes_emp_other_services = 0 AND 0.0 > 0 AND t.total_proxy > 0
-            THEN 0.0 * c.emp / t.total_proxy
+            WHEN t.lodes_emp_other_services = 0 AND @VAR('cbp_county_emp_other_services', 0.0) > 0 AND t.total_proxy > 0
+            THEN @VAR('cbp_county_emp_other_services', 0.0) * c.emp / t.total_proxy
             ELSE c.emp_other_services
         END AS emp_other_services,
         CASE
-            WHEN 0.0 <= t.lodes_emp_public_admin OR 0.0 <= 0 THEN c.emp_public_admin
-            WHEN t.lodes_emp_public_admin > 0 AND 0.0 > t.lodes_emp_public_admin THEN
+            WHEN @VAR('cbp_county_emp_public_admin', 0.0) <= t.lodes_emp_public_admin OR @VAR('cbp_county_emp_public_admin', 0.0) <= 0 THEN c.emp_public_admin
+            WHEN t.lodes_emp_public_admin > 0 AND @VAR('cbp_county_emp_public_admin', 0.0) > t.lodes_emp_public_admin THEN
                 CASE WHEN c.emp_public_admin > 0
-                    THEN c.emp_public_admin * (0.0 * 0.5 / t.lodes_emp_public_admin)
-                        + 0.0 * (1.0 - 0.5) * c.emp / t.total_proxy
-                    ELSE 0.0 * (1.0 - 0.5) * c.emp / t.total_proxy
+                    THEN c.emp_public_admin * (@VAR('cbp_county_emp_public_admin', 0.0) * @VAR('cbp_preserve_fraction', 0.5) / t.lodes_emp_public_admin)
+                        + @VAR('cbp_county_emp_public_admin', 0.0) * (1.0 - @VAR('cbp_preserve_fraction', 0.5)) * c.emp / t.total_proxy
+                    ELSE @VAR('cbp_county_emp_public_admin', 0.0) * (1.0 - @VAR('cbp_preserve_fraction', 0.5)) * c.emp / t.total_proxy
                 END
-            WHEN t.lodes_emp_public_admin = 0 AND 0.0 > 0 AND t.total_proxy > 0
-            THEN 0.0 * c.emp / t.total_proxy
+            WHEN t.lodes_emp_public_admin = 0 AND @VAR('cbp_county_emp_public_admin', 0.0) > 0 AND t.total_proxy > 0
+            THEN @VAR('cbp_county_emp_public_admin', 0.0) * c.emp / t.total_proxy
             ELSE c.emp_public_admin
         END AS emp_public_admin,
         c.emp_military AS emp_military,

@@ -64,8 +64,8 @@ WITH parcel_geom AS (
 acs_data AS (
     SELECT
         a.*,
-        GREATEST(ST_Area(ST_Transform(a.geometry, 3857)), 1e-10) AS bg_area,
-        ST_Envelope(ST_Transform(a.geometry, 3857)) AS local_envelope
+        GREATEST(ST_Area(ST_Transform(a.geometry, @VAR('local_srid', 3310))), 1e-10) AS bg_area,
+        ST_Envelope(ST_Transform(a.geometry, @VAR('local_srid', 3310))) AS local_envelope
     FROM brewgis.staging.acs_block_group a
     WHERE a.geometry IS NOT NULL
 ),
@@ -91,7 +91,7 @@ intersections AS (
         a.pct_college_educated,
         a.cost_burden_pct,
         a.bg_area,
-        ST_Area(ST_ClipByBox2D(ST_Transform(p.geometry, 3857), a.local_envelope)) AS intersect_area
+        ST_Area(ST_ClipByBox2D(ST_Transform(p.geometry, @VAR('local_srid', 3310)), a.local_envelope)) AS intersect_area
     FROM parcel_geom p
     JOIN acs_data a ON ST_Intersects(p.geometry, a.geometry)
 ),

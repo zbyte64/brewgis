@@ -22,16 +22,17 @@ MODEL (
 --   Tier 3: any block group in the same census tract (tiger_block_groups)
 --   Excluded: blocks with no TIGER match at any tier
 --
--- CBP proportion parameters (defaults from dbt):
---   cbp_11 = 0.0 (agriculture share of CNS01)
---   cbp_21 = 0.0 (extraction share of CNS01)
---   cbp_48/cbp_49 = 0.0 (transport/warehousing share of CNS03)
---   cbp_22 = 0.0 (utilities share of CNS03)
---   cbp_42 = 0.0 (wholesale share of CNS03)
---   cbp_721 = 0.0 (accommodation share of CNS13)
---   cns18_20_edu_frac = 0.24 (education share of CNS18-20)
---   cns18_20_med_frac = 0.37 (medical share of CNS18-20)
---   cns18_20_pub_frac = 0.39 (public admin share of CNS18-20)
+-- CBP proportion parameters (SQLMesh @VAR variables, defaulting to passthrough):
+--   @VAR('cbp_11', 0.0)          = agriculture share of CNS01
+--   @VAR('cbp_21', 0.0)          = extraction share of CNS01
+--   @VAR('cbp_48', 0.0)          = transport share of CNS03
+--   @VAR('cbp_49', 0.0)          = warehousing share of CNS03
+--   @VAR('cbp_22', 0.0)          = utilities share of CNS03
+--   @VAR('cbp_42', 0.0)          = wholesale share of CNS03
+--   @VAR('cbp_721', 0.0)         = accommodation share of CNS13
+--   @VAR('cns18_20_edu_frac', 0.24)  = education share of CNS18-20 govt workers
+--   @VAR('cns18_20_med_frac', 0.37)  = medical share of CNS18-20 govt workers
+--   @VAR('cns18_20_pub_frac', 0.39)  = public admin share of CNS18-20 govt workers
 
 WITH lodes_blocks AS (
     SELECT DISTINCT
@@ -74,33 +75,33 @@ cbp_sub_sectors AS (
         lr.c000,
         -- CNS01 -> goods producing: agriculture (11), extraction (21), remainder construction (23)
         CASE WHEN COALESCE(lr.cns01, 0) > 0
-            THEN GREATEST(0, ROUND(COALESCE(lr.cns01, 0)::numeric * 0.0, 1))
+            THEN GREATEST(0, ROUND(COALESCE(lr.cns01, 0)::numeric * @VAR('cbp_11', 0.0), 1))
             ELSE 0 END AS emp_agriculture_cbp,
         CASE WHEN COALESCE(lr.cns01, 0) > 0
-            THEN GREATEST(0, ROUND(COALESCE(lr.cns01, 0)::numeric * 0.0, 1))
+            THEN GREATEST(0, ROUND(COALESCE(lr.cns01, 0)::numeric * @VAR('cbp_21', 0.0), 1))
             ELSE 0 END AS emp_extraction_cbp,
         CASE WHEN COALESCE(lr.cns01, 0) > 0
             THEN GREATEST(0, COALESCE(lr.cns01, 0)::numeric
-                - ROUND(COALESCE(lr.cns01, 0)::numeric * 0.0, 1)
-                - ROUND(COALESCE(lr.cns01, 0)::numeric * 0.0, 1))
+                - ROUND(COALESCE(lr.cns01, 0)::numeric * @VAR('cbp_11', 0.0), 1)
+                - ROUND(COALESCE(lr.cns01, 0)::numeric * @VAR('cbp_21', 0.0), 1))
             ELSE 0 END AS emp_construction_cbp,
         -- CNS02 -> manufacturing
         COALESCE(lr.cns02, 0)::numeric AS emp_manufacturing_cbp,
         -- CNS03 -> trade/transport/utilities
         CASE WHEN COALESCE(lr.cns03, 0) > 0
-            THEN GREATEST(0, ROUND(COALESCE(lr.cns03, 0)::numeric * (0.0 + 0.0), 1))
+            THEN GREATEST(0, ROUND(COALESCE(lr.cns03, 0)::numeric * (@VAR('cbp_48', 0.0) + @VAR('cbp_49', 0.0)), 1))
             ELSE 0 END AS emp_transport_warehousing_cbp,
         CASE WHEN COALESCE(lr.cns03, 0) > 0
-            THEN GREATEST(0, ROUND(COALESCE(lr.cns03, 0)::numeric * 0.0, 1))
+            THEN GREATEST(0, ROUND(COALESCE(lr.cns03, 0)::numeric * @VAR('cbp_22', 0.0), 1))
             ELSE 0 END AS emp_utilities_cbp,
         CASE WHEN COALESCE(lr.cns03, 0) > 0
-            THEN GREATEST(0, ROUND(COALESCE(lr.cns03, 0)::numeric * 0.0, 1))
+            THEN GREATEST(0, ROUND(COALESCE(lr.cns03, 0)::numeric * @VAR('cbp_42', 0.0), 1))
             ELSE 0 END AS emp_wholesale_cbp,
         CASE WHEN COALESCE(lr.cns03, 0) > 0
             THEN GREATEST(0, COALESCE(lr.cns03, 0)::numeric
-                - ROUND(COALESCE(lr.cns03, 0)::numeric * (0.0 + 0.0), 1)
-                - ROUND(COALESCE(lr.cns03, 0)::numeric * 0.0, 1)
-                - ROUND(COALESCE(lr.cns03, 0)::numeric * 0.0, 1))
+                - ROUND(COALESCE(lr.cns03, 0)::numeric * (@VAR('cbp_48', 0.0) + @VAR('cbp_49', 0.0)), 1)
+                - ROUND(COALESCE(lr.cns03, 0)::numeric * @VAR('cbp_22', 0.0), 1)
+                - ROUND(COALESCE(lr.cns03, 0)::numeric * @VAR('cbp_42', 0.0), 1))
             ELSE 0 END AS emp_retail_services_cbp,
         -- CNS04-CNS09 -> office services
         (COALESCE(lr.cns04, 0) + COALESCE(lr.cns05, 0) + COALESCE(lr.cns06, 0)
@@ -114,11 +115,11 @@ cbp_sub_sectors AS (
         COALESCE(lr.cns12, 0)::numeric AS emp_arts_entertainment_cbp,
         -- CNS13 -> accommodation/food: accommodation (721), remainder restaurant (722)
         CASE WHEN COALESCE(lr.cns13, 0) > 0
-            THEN GREATEST(0, ROUND(COALESCE(lr.cns13, 0)::numeric * 0.0, 1))
+            THEN GREATEST(0, ROUND(COALESCE(lr.cns13, 0)::numeric * @VAR('cbp_721', 0.0), 1))
             ELSE 0 END AS emp_accommodation_cbp,
         CASE WHEN COALESCE(lr.cns13, 0) > 0
             THEN GREATEST(0, COALESCE(lr.cns13, 0)::numeric
-                - ROUND(COALESCE(lr.cns13, 0)::numeric * 0.0, 1))
+                - ROUND(COALESCE(lr.cns13, 0)::numeric * @VAR('cbp_721', 0.0), 1))
             ELSE 0 END AS emp_restaurant_cbp,
         -- CNS14 -> other services
         COALESCE(lr.cns14, 0)::numeric AS emp_other_services_cbp,
@@ -352,9 +353,9 @@ with_govt AS (
         geometry,
         emp,
         make_date(@lodes_year::int, 1, 1) AS data_year,
-        ROUND(emp_education + cns18_20_govt * 0.24, 1) AS emp_education,
-        ROUND(emp_medical_services + cns18_20_govt * 0.37, 1) AS emp_medical_services,
-        ROUND(emp_public_admin + cns18_20_govt * 0.39, 1) AS emp_public_admin,
+        ROUND(emp_education + cns18_20_govt * @VAR('cns18_20_edu_frac', 0.24), 1) AS emp_education,
+        ROUND(emp_medical_services + cns18_20_govt * @VAR('cns18_20_med_frac', 0.37), 1) AS emp_medical_services,
+        ROUND(emp_public_admin + cns18_20_govt * @VAR('cns18_20_pub_frac', 0.39), 1) AS emp_public_admin,
         emp_agriculture,
         emp_extraction,
         emp_construction,
