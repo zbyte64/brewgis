@@ -1,0 +1,144 @@
+# External model declarations for tables created by dlt pipelines.
+#
+# These tables live outside SQLMesh's management but are referenced
+# by SQLMesh models via `FROM public.<table_name>`.
+#
+# SQLMesh uses this metadata for column-level lineage, plan-time schema
+# validation, and DAG visibility.
+#
+# Schema derived from:
+#   - dlt resource `columns=` declarations (source of truth)
+#   - Column references in downstream SQLMesh SQL models
+
+- name: public.acs_raw
+  description: "Raw Census ACS 5-year data, loaded by dlt census pipeline. One row per block group per year."
+  columns:
+    year: bigint
+    state: text
+    county: text
+    tract: text
+    block_group: text
+    b01001_001_e: bigint
+    b25003_001_e: bigint
+    b25003_002_e: bigint
+    b25003_003_e: bigint
+    b25008_001_e: bigint
+    b25008_002_e: bigint
+    b25008_003_e: bigint
+    b25024_001_e: bigint
+    b25024_002_e: bigint
+    b25024_003_e: bigint
+    b25024_004_e: bigint
+    b25024_005_e: bigint
+    b25024_006_e: bigint
+    b25024_007_e: bigint
+    b25024_008_e: bigint
+    b25024_009_e: bigint
+    b19013_001_e: bigint
+    b25070_001_e: bigint
+    b25070_007_e: bigint
+    b25070_008_e: bigint
+    b25070_009_e: bigint
+    b25070_010_e: bigint
+    b25091_001_e: bigint
+    b25091_005_e: bigint
+    b25091_006_e: bigint
+    b25091_007_e: bigint
+    b25091_011_e: bigint
+    b25091_012_e: bigint
+    b25091_013_e: bigint
+    b03002_001_e: bigint
+    b03002_002_e: bigint
+    b03002_003_e: bigint
+    b03002_004_e: bigint
+    b03002_005_e: bigint
+    b03002_012_e: bigint
+    b15003_001_e: bigint
+    b15003_022_e: bigint
+    b15003_023_e: bigint
+    b15003_024_e: bigint
+    b15003_025_e: bigint
+
+- name: public.lodes_raw
+  description: "Raw LEHD LODES WAC employment data, loaded by dlt lehd pipeline. One row per census block per year."
+  columns:
+    year: bigint
+    w_geocode: text
+    c000: bigint
+    cns01: bigint
+    cns02: bigint
+    cns03: bigint
+    cns04: bigint
+    cns05: bigint
+    cns06: bigint
+    cns07: bigint
+    cns08: bigint
+    cns09: bigint
+    cns10: bigint
+    cns11: bigint
+    cns12: bigint
+    cns13: bigint
+    cns14: bigint
+    cns15: bigint
+    cns16: bigint
+    cns17: bigint
+    cns18: bigint
+    cns19: bigint
+    cns20: bigint
+
+- name: public.tiger_block_groups
+  description: "TIGER/Line block group boundaries, loaded by dlt tiger_bg pipeline. One row per BG per vintage."
+  columns:
+    geoid: text
+    geometry: geometry
+    state_fips: text
+    vintage: text
+
+- name: public.tiger_blocks
+  description: "TIGER/Line census block boundaries, loaded by dlt tiger_block pipeline. Decennial-only (2020)."
+  columns:
+    geoid: text
+    geometry: geometry
+    state_fips: text
+    vintage: text
+
+- name: public.nlcd_raster
+  description: "NLCD land cover raster tiles, loaded by dlt nlcd pipeline. PostGIS raster coverage."
+  columns:
+    rid: integer
+    rast: raster
+    filename: text
+
+- name: public.sacog_assessor_parcels_raw
+  description: "Sacramento County assessor parcel geometries, loaded by dlt assessor pipeline from PARCELS/MapServer/8."
+  columns:
+    apn: text
+    geometry: geometry
+    lotsize: text
+    landuse: text
+    zone: text
+    jurisdiction: text
+
+- name: public.sacog_assessor_sales_raw
+  description: "Sacramento County assessor sales/building characteristics, loaded by dlt assessor pipeline from ASSESSOR/MapServer/1."
+  columns:
+    apn: text
+    living_area: double precision
+    building_sf: double precision
+    year_built: double precision
+    stories: double precision
+    bedrooms: double precision
+    baths: double precision
+    ground_floor_gross: double precision
+    land_use_code: text
+    property_type: text
+    sales_price: double precision
+    lot_size_acres: double precision
+    units: double precision
+
+- name: public.osm_intersection_density
+  description: "OSM intersection density per parcel, computed by dlt osm pipeline via osmnx."
+  columns:
+    parcel_id: text
+    intersection_density: double precision
+    geometry: geometry

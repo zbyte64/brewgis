@@ -1,0 +1,89 @@
+# External model declarations for SACOG comparison tables.
+#
+# These tables are created by the compare_sacog_basemap management command
+# and the SACOG v1 SQL dump restore. They are referenced by SQLMesh models
+# in the comparison/ directory.
+
+- name: public.sacog_comparison_parcels
+  description: "SACOG v1 reference parcels, loaded from sac_cnty_region_existing_land_use_parcels by compare_sacog_basemap. Used by sacog_parcel_shim and parcels_wm."
+  columns:
+    parcel_id: text
+    id: text
+    geometry: geometry
+    du: double precision
+    emp: double precision
+    land_use: text
+    assessor: text
+    acres: double precision
+    ret: double precision
+    off: double precision
+    pub: double precision
+    ind: double precision
+    other: double precision
+    jurisdiction: text
+    gp: text
+    gluc: text
+    census_blockgroup: text
+    census_block: text
+    notes: text
+
+- name: public.sac_cnty_region_base_canvas
+  description: "SACOG v1 reference base canvas (aggregate totals), restored from SQL dump. Used by sacog_reference_totals."
+  columns:
+    acres_gross: double precision
+    acres_parcel: double precision
+    acres_parcel_res: double precision
+    acres_parcel_emp: double precision
+    acres_parcel_mixed_use: double precision
+    acres_parcel_no_use: double precision
+    pop: double precision
+    hh: double precision
+    du: double precision
+    du_detsf: double precision
+    du_detsf_sl: double precision
+    du_detsf_ll: double precision
+    du_attsf: double precision
+    du_mf: double precision
+    du_mf2to4: double precision
+    du_mf5p: double precision
+    emp: double precision
+    emp_ret: double precision
+    emp_off: double precision
+    emp_pub: double precision
+    emp_ind: double precision
+    emp_ag: double precision
+    emp_military: double precision
+    emp_retail_services: double precision
+    emp_restaurant: double precision
+    emp_accommodation: double precision
+    emp_arts_entertainment: double precision
+    emp_other_services: double precision
+    emp_office_services: double precision
+    emp_medical_services: double precision
+    emp_public_admin: double precision
+    emp_education: double precision
+    emp_manufacturing: double precision
+    emp_wholesale: double precision
+    emp_transport_warehousing: double precision
+    emp_utilities: double precision
+    emp_construction: double precision
+    emp_agriculture: double precision
+    emp_extraction: double precision
+    bldg_sqft_detsf_sl: double precision
+    bldg_sqft_detsf_ll: double precision
+    bldg_sqft_attsf: double precision
+    bldg_sqft_mf: double precision
+    bldg_sqft_retail_services: double precision
+    bldg_sqft_restaurant: double precision
+    bldg_sqft_accommodation: double precision
+    bldg_sqft_arts_entertainment: double precision
+    bldg_sqft_other_services: double precision
+    bldg_sqft_office_services: double precision
+    bldg_sqft_public_admin: double precision
+    bldg_sqft_education: double precision
+    bldg_sqft_medical_services: double precision
+    bldg_sqft_transport_warehousing: double precision
+    bldg_sqft_wholesale: double precision
+    residential_irrigated_sqft: double precision
+    commercial_irrigated_sqft: double precision
+    intersection_density_sqmi: double precision
