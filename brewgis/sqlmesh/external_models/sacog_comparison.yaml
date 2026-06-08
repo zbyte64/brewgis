@@ -9,7 +9,7 @@
   columns:
     parcel_id: text
     id: text
-    geometry: geometry
+    geometry: geometry(3310)
     du: double precision
     emp: double precision
     land_use: text

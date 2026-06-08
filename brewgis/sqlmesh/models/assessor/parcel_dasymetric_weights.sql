@@ -135,11 +135,11 @@ nlcd_join AS (
         ap.apn,
         COALESCE(nlcd.impervious_fraction, 0.0) AS impervious_fraction
     FROM assessor_parcels ap
-    LEFT JOIN public.sacog_comparison_parcels scp
-        ON ST_Intersects(ap.geometry, ST_Transform(scp.geometry, 4326))
+    LEFT JOIN brewgis.comparison.sacog_parcel_shim sp
+        ON ST_Intersects(ap.geometry, sp.geometry)
     LEFT JOIN brewgis.nlcd.nlcd_parcel_stats nlcd
-        ON scp.geography_id = nlcd.parcel_id
-    ORDER BY ap.apn, ST_Area(ST_Intersection(ap.geometry, ST_Transform(scp.geometry, 4326))) DESC
+        ON sp.parcel_id = nlcd.parcel_id
+    ORDER BY ap.apn, ST_Area(ST_Intersection(ap.geometry, sp.geometry)) DESC
 ),
 
 -- OSM enabled defaults to false — intersection_density is NULL

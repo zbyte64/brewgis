@@ -31,7 +31,7 @@ ANALYZE brewgis.staging.buildings_combined;
 WITH building_stats AS (
     SELECT
         sap.apn,
-        SUM(ST_Area(bc.geometry) * 10.7639) AS total_footprint_sqft,
+        SUM(ST_Area(ST_Transform(bc.geometry, @VAR('local_srid', 3310))) * 10.7639) AS total_footprint_sqft,
         COUNT(*) AS building_count,
         MAX(bc.height) AS max_height,
         MAX(bc.levels) AS max_levels,

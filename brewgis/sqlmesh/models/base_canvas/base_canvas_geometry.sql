@@ -16,7 +16,7 @@ MODEL (
 --
 -- Reads raw parcel data from brewgis.parcels (via the parcels source),
 -- casts geometry to PostGIS geometry (EPSG:4326), computes area columns
--- from SRID 3857, and passes through source columns.
+-- from local_srid (CA Albers, SRID 3310), and passes through source columns.
 
 WITH assessor_categories AS (
     SELECT use_code::text, category FROM brewgis.seeds.assessor_use_codes

@@ -17,6 +17,6 @@ MODEL (
 
 SELECT
     parcel_id AS id,
-    ST_Transform(geometry, 3857) AS geometry
+    ST_Transform(geometry, @VAR('wm_srid', 3857)) AS geometry
 FROM public.sacog_comparison_parcels
 WHERE geometry IS NOT NULL

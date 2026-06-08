@@ -92,8 +92,9 @@ def config_factory(**variables):
             "tiger_vintage": "2023",
             "tiger_block_vintage": "2020",
             "tiger_bg_vintage": "2013",
+            "local_srid": 3310,
+            "wm_srid": 3857,
             "default_srid": 4326,
-            "projected_srid": 32611,
             # Scenario table references (overridden per scenario)
             "scenario_schema": "public",
             "base_canvas_table": "base_canvas",

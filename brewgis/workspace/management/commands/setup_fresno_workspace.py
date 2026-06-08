@@ -553,7 +553,7 @@ class Command(BaseCommand):
             "source_schema": WORKSPACE_SCHEMA,
             "target_schema": WORKSPACE_SCHEMA,
             "base_canvas_materialized": "table",
-            "projected_srid": LOCAL_SRID,
+            "local_srid": LOCAL_SRID,
         }
         if nlcd_raster_table:
             dbt_vars["nlcd_enabled"] = True

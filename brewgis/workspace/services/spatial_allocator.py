@@ -25,6 +25,7 @@ def allocate_attributes(
     target_column_prefix: str = "",
     source_geom_col: str = "geom",
     target_geom_col: str = "geom",
+    wm_srid: int = 3857,
 ) -> dict[str, Any]:
     """Allocate numeric attributes from source layer to target layer.
 
@@ -69,6 +70,8 @@ def allocate_attributes(
             )
 
             # Single UPDATE from allocation weight subquery
+            # Pre-transform both geometries in subquery CTEs to use index-friendly
+            # ST_Intersects on the projected SRID. Use the wm_srid parameter (default 3857).
             sql = text(f"""
                 UPDATE "{target_schema}"."{target_table}" AS t
                 SET "{new_col}" = sub.allocated_value
@@ -78,22 +81,22 @@ def allocate_attributes(
                         SUM(
                             COALESCE(s."{col}", 0)
                             * public.intersection_acres(
-                                ST_Transform(s."{source_geom_col}", 3857),
-                                ST_Transform(t2."{target_geom_col}", 3857)
+                                s.geom_wm,
+                                t2.geom_wm
                             )
-                            / NULLIF(public.acres(ST_Transform(s."{source_geom_col}", 3857)), 0)
+                            / NULLIF(public.acres(s.geom_wm), 0)
                         ) AS allocated_value
-                    FROM "{source_schema}"."{source_table}" s
-                    JOIN "{target_schema}"."{target_table}" t2
-                        ON ST_Intersects(
-                            ST_Transform(s."{source_geom_col}", 3857),
-                            ST_Transform(t2."{target_geom_col}", 3857)
-                        )
-                    WHERE public.acres(ST_Transform(s."{source_geom_col}", 3857)) > 0
-                      AND public.intersection_acres(
-                          ST_Transform(s."{source_geom_col}", 3857),
-                          ST_Transform(t2."{target_geom_col}", 3857)
-                      ) > 0
+                    FROM (
+                        SELECT *, ST_Transform("{source_geom_col}", {wm_srid}) AS geom_wm
+                        FROM "{source_schema}"."{source_table}"
+                    ) s
+                    JOIN (
+                        SELECT ctid, *, ST_Transform("{target_geom_col}", {wm_srid}) AS geom_wm
+                        FROM "{target_schema}"."{target_table}"
+                    ) t2
+                        ON ST_Intersects(s.geom_wm, t2.geom_wm)
+                    WHERE public.acres(s.geom_wm) > 0
+                      AND public.intersection_acres(s.geom_wm, t2.geom_wm) > 0
                     GROUP BY t2.ctid
                 ) sub
                 WHERE t.ctid = sub.ctid

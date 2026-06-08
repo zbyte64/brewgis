@@ -5,14 +5,15 @@ from sqlmesh import macro
 
 @macro()
 def st_area_projected(evaluator, geom: str) -> str:
-    """Compute projected area in acres using the configured projected_srid.
+    """Compute projected area in acres using local_srid (CA Albers, SRID 3310).
 
-    Uses the @projected_srid variable for accurate area calculations. When
-    projected_srid is null, falls back to ST_Area on the input geometry
-    (typically SRID 4326), which produces meaningless area values.
+    Uses the local_srid variable for accurate area calculations (default:
+    3310, CA Albers). When local_srid is null, falls back to ST_Area on
+    the input geometry (typically SRID 4326), which produces meaningless
+    area values.
 
-    projected_srid is configured in the SQLMesh config (default: 32611 for
-    UTM zone 11N). Override via @variable if needed.
+    local_srid is configured in the SQLMesh config (default: 3310 for
+    California Albers). Override via @variable if needed.
 
     Usage in model SQL::
 
@@ -24,4 +25,4 @@ def st_area_projected(evaluator, geom: str) -> str:
     Returns:
         SQL expression computing area in acres using the projected CRS.
     """
-    return f"public.acres(ST_Transform({geom}, @variable('projected_srid', 32611)))"
+    return f"public.acres(ST_Transform({geom}, @variable('local_srid', 3310)))"

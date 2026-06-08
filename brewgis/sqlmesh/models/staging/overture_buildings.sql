@@ -13,7 +13,7 @@ MODEL (
 -- PostGIS via the postgres_scanner-attached pg catalog.
 
 SELECT
-  geometry as local_geometry,
+  ST_Transform(geometry, 'EPSG:' || @VAR('local_srid', 3310)::text) AS local_geometry,
   ST_Transform(geometry, 'EPSG:4326') as geometry,
   CASE WHEN NOT is_nan(height) THEN height END AS height,
   CASE WHEN NOT is_nan(num_floors::DOUBLE) THEN num_floors::INTEGER END AS levels,
@@ -23,4 +23,3 @@ WHERE bbox.xmin < @overture_bbox_max_x
   AND bbox.xmax > @overture_bbox_min_x
   AND bbox.ymin < @overture_bbox_max_y
   AND bbox.ymax > @overture_bbox_min_y;
-

@@ -26,12 +26,15 @@ LEFT JOIN (
             COALESCE(s.source_column, 0)
             * @compute_allocation_weight(s, nt, geom, geom)
         ) AS allocated_value
-    FROM public.target_table nt
-    JOIN public.source_table s
-        ON ST_Intersects(
-            ST_Transform(s.geom, 3857),
-            ST_Transform(nt.geom, 3857)
-        )
+    FROM (
+        SELECT *, ST_Transform(geom, @VAR('wm_srid', 3857)) AS geom_wm
+        FROM public.target_table
+    ) nt
+    JOIN (
+        SELECT *, ST_Transform(geom, @VAR('wm_srid', 3857)) AS geom_wm
+        FROM public.source_table
+    ) s
+        ON ST_Intersects(s.geom_wm, nt.geom_wm)
     WHERE nt.target_column IS NULL
       AND @compute_allocation_weight(s, nt, geom, geom) > 0
     GROUP BY nt.ctid

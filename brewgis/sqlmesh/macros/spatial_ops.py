@@ -91,16 +91,16 @@ def compute_allocation_weight(
 
     Returns a SQL expression producing the ratio of intersection area to source
     area -- the fraction of each source geometry's area that overlaps a target
-    geometry. Both geometries are projected to SRID 3857 for area measurement.
+    Both geometries are projected to wm_srid for area measurement.
     The 4046.86 acre-conversion factor cancels out in the division, so the result
     is a pure ratio in [0, 1].
 
     Usage in model SQL::
 
-        SELECT @compute_allocation_weight('s', 't', 'geom', 'geom') AS weight
-        FROM source_table s
-        JOIN target_table t
-            ON ST_Intersects(ST_Transform(s.geom, 3857), ST_Transform(t.geom, 3857))
+        SELECT @compute_allocation_weight('s', 't', 'geom_wm', 'geom_wm') AS weight
+        FROM source_wm s
+        JOIN target_wm t
+            ON ST_Intersects(s.geom_wm, t.geom_wm)
 
     Args:
         source_alias: Table alias for the source geometry.
@@ -112,6 +112,6 @@ def compute_allocation_weight(
         SQL expression for allocation weight ratio.
     """
     return f"""public.intersection_acres(
-    ST_Transform({source_alias}.{source_geom}, 3857),
-    ST_Transform({target_alias}.{target_geom}, 3857)
-) / NULLIF(public.acres(ST_Transform({source_alias}.{source_geom}, 3857)), 0)"""
+    ST_Transform({source_alias}.{source_geom}, @variable('wm_srid', 3857)),
+    ST_Transform({target_alias}.{target_geom}, @variable('wm_srid', 3857))
+) / NULLIF(public.acres(ST_Transform({source_alias}.{source_geom}, @variable('wm_srid', 3857))), 0)"""

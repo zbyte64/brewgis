@@ -47,8 +47,10 @@ SELECT
         WHEN cu.constraint_geom IS NOT NULL
         THEN GREATEST(0,
             @st_area_projected(b.geom)
-            - public.intersection_acres(b.geom, cu.constraint_geom)
-              * cd.max_discount / 100.0
+            - public.intersection_acres(
+                ST_Transform(b.geom, @VAR('local_srid', 3310)),
+                ST_Transform(cu.constraint_geom, @VAR('local_srid', 3310))
+              ) * cd.max_discount / 100.0
         )
         ELSE @st_area_projected(b.geom)
     END AS acres_developable,
@@ -56,8 +58,10 @@ SELECT
         WHEN @st_area_projected(b.geom) > 0
         THEN GREATEST(0,
             @st_area_projected(b.geom)
-            - public.intersection_acres(b.geom, cu.constraint_geom)
-              * cd.max_discount / 100.0
+            - public.intersection_acres(
+                ST_Transform(b.geom, @VAR('local_srid', 3310)),
+                ST_Transform(cu.constraint_geom, @VAR('local_srid', 3310))
+              ) * cd.max_discount / 100.0
         ) / NULLIF(@st_area_projected(b.geom), 0)
         ELSE 0.0
     END AS developable_proportion,
