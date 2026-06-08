@@ -129,10 +129,17 @@ classified AS (
         ON LEFT(COALESCE(sap.landuse::text, ''), 2) = auc.use_code::text
 ),
 
--- NLCD enabled defaults to false — impervious_fraction is NULL
+-- NLCD impervious surface fraction joined spatially via SACOG parcels
 nlcd_join AS (
-    SELECT ap.apn, NULL::double precision AS impervious_fraction
+    SELECT DISTINCT ON (ap.apn)
+        ap.apn,
+        COALESCE(nlcd.impervious_fraction, 0.0) AS impervious_fraction
     FROM assessor_parcels ap
+    LEFT JOIN public.sacog_comparison_parcels scp
+        ON ST_Intersects(ap.geometry, ST_Transform(scp.geometry, 4326))
+    LEFT JOIN brewgis.nlcd.nlcd_parcel_stats nlcd
+        ON scp.geography_id = nlcd.parcel_id
+    ORDER BY ap.apn, ST_Area(ST_Intersection(ap.geometry, ST_Transform(scp.geometry, 4326))) DESC
 ),
 
 -- OSM enabled defaults to false — intersection_density is NULL

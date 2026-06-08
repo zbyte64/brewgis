@@ -544,6 +544,24 @@ class Command(BaseCommand):
         plan_vars: dict[str, object] = {
             "parcel_table": "brewgis.comparison.sacog_parcel_shim",
             "local_srid": LOCAL_SRID,
+            # CBP county-level employment controls for 2008 (Sacramento County, CA)
+            "cbp_county_emp_agriculture": 195,
+            "cbp_county_emp_extraction": 168,
+            "cbp_county_emp_construction": 34731,
+            "cbp_county_emp_manufacturing": 23768,
+            "cbp_county_emp_transport_warehousing": 10494,
+            "cbp_county_emp_utilities": 1894,
+            "cbp_county_emp_wholesale": 21107,
+            "cbp_county_emp_retail_services": 63192,
+            "cbp_county_emp_office_services": 103310,
+            "cbp_county_emp_education": 8385,
+            "cbp_county_emp_medical_services": 70577,
+            "cbp_county_emp_arts_entertainment": 7794,
+            "cbp_county_emp_accommodation": 4267,
+            "cbp_county_emp_restaurant": 42351,
+            "cbp_county_emp_other_services": 61210,
+            "cbp_county_emp_public_admin": 0,  # not available in CBP for 2008
+            "cbp_preserve_fraction": 0.5,
         }
         if osm:
             plan_vars["osm_intersection_table"] = "osm_intersection_density"

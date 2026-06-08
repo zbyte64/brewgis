@@ -189,17 +189,27 @@ area_by_use AS (
     FROM classified
 ),
 
--- Irrigation (NLCD disabled — uses calibration defaults)
+-- NLCD impervious surface data (zonal stats on SACOG parcels)
+nlcd_data AS (
+    SELECT parcel_id, impervious_fraction
+    FROM brewgis.nlcd.nlcd_parcel_stats
+),
+
+-- Irrigation — uses NLCD impervious fraction when available, else calibration defaults
 irrigation AS (
     SELECT
-        *,
-        COALESCE(residential_irrigated_area,
-            COALESCE(area_parcel_res_v, area_gross, 0) * COALESCE(res_irrigation_frac, 0.25)
+        abu.*,
+        nlcd.impervious_fraction,
+        COALESCE(abu.residential_irrigated_area,
+            COALESCE(abu.area_parcel_res_v, abu.area_gross, 0)
+                * COALESCE(NULLIF(nlcd.impervious_fraction, 0), abu.res_irrigation_frac, 0.064)
         ) AS residential_irrigated_area_v,
-        COALESCE(commercial_irrigated_area,
-            COALESCE(area_parcel_emp_v, area_gross, 0) * COALESCE(com_irrigation_frac, 0.035)
+        COALESCE(abu.commercial_irrigated_area,
+            COALESCE(abu.area_parcel_emp_v, abu.area_gross, 0)
+                * COALESCE(NULLIF(nlcd.impervious_fraction, 0), abu.com_irrigation_frac, 0.035)
         ) AS commercial_irrigated_area_v
-    FROM area_by_use
+    FROM area_by_use abu
+    LEFT JOIN nlcd_data nlcd ON abu.parcel_id = nlcd.parcel_id
 ),
 
 -- Intersection density — optionally from OSM, else calibration or default
@@ -216,7 +226,7 @@ with_intersection AS (
     FROM irrigation i
     LEFT @JOIN(@osm_intersection_table)
         public.@{osm_intersection_table} osm ON i.parcel_id = osm.parcel_id
-    
+
 )
 
 -- Final output
