@@ -101,6 +101,8 @@ def config_factory(**variables):
             "constraint_table": "constraints",
             "built_form_table": "built_forms",
             "constraints": [],
+            # OSM intersection density table (empty = disabled, overridden per-caller)
+            "osm_intersection_table": "",
             # VIDA + Overture building footprint pipeline variables
             "vida_parquet_glob": (
                 "s3://us-west-2.opendata.source.coop/vida/"

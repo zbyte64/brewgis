@@ -15,7 +15,8 @@ MODEL (
 --   6. Irrigation (residential and commercial irrigated area)
 --   7. Intersection density from calibration defaults
 --
--- NLCD, OSM, and dasymetric weight integration disabled (default).
+-- NLCD and dasymetric weight integration disabled (default).
+-- OSM intersection density is controlled by the ``osm_intersection_table`` variable.
 
 WITH source_data AS (
     SELECT * FROM brewgis.base_canvas.base_canvas_employment
@@ -201,15 +202,21 @@ irrigation AS (
     FROM area_by_use
 ),
 
--- Intersection density (OSM disabled — uses calibration or default)
+-- Intersection density — optionally from OSM, else calibration or default
 with_intersection AS (
     SELECT
-        *,
+        i.*,
         ROUND(COALESCE(
-            NULLIF(intersection_density, 0),
+            @IF(@osm_intersection_table <> '',
+                NULLIF(osm.intersection_density, 0),
+            ),
+            NULLIF(i.intersection_density, 0),
             COALESCE(calib_int_density, 12.5)
         )::numeric, 2) AS int_dens_v
-    FROM irrigation
+    FROM irrigation i
+    LEFT @JOIN(@osm_intersection_table)
+        public.@{osm_intersection_table} osm ON i.parcel_id = osm.parcel_id
+    
 )
 
 -- Final output

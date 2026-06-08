@@ -541,14 +541,19 @@ class Command(BaseCommand):
                 ]
             )
 
+        plan_vars: dict[str, object] = {
+            "parcel_table": "brewgis.comparison.sacog_parcel_shim",
+        }
+        if osm:
+            plan_vars["osm_intersection_table"] = "osm_intersection_density"
+
         plan, context = run_sqlmesh_plan(
             environment="sacog_comparison",
             skip_tests=True,
             # forward_only=True,
             select=model_selectors,
-            variables={
-                "parcel_table": "brewgis.comparison.sacog_parcel_shim"
-            },
+            variables=plan_vars,
+            # restate_models=True,
         )
         self.stdout.write(self.style.SUCCESS("  SQLMesh models complete"))
 
