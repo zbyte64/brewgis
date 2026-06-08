@@ -56,7 +56,7 @@ def _load_parcels(limit: int, cache_dir: str | None = None) -> gpd.GeoDataFrame:
 def _query_table_as_dict(table_name: str) -> dict[str, float]:
     """Read a single-row dbt materialized table and return as a dict."""
     with connection.cursor() as cur:
-        cur.execute(f'SELECT * FROM {table_name}')
+        cur.execute(f"SELECT * FROM {table_name}")
         columns = [desc[0] for desc in cur.description]
         row = cur.fetchone()
 
@@ -286,7 +286,12 @@ def _generate_report_markdown(
     lines.append("**Region:** Sacramento County, CA (SACOG)")
     lines.append(f"**Reference:** `{V1_BASE_CANVAS}` (2015 vintage, 2008-2012 data)")
     lines.append(f"**Quick mode:** {quick}")
-    lines.append(f"**Parcel limit:** {limit or 'all (502,874)'}")
+    total_parcels = "?"
+    if diagnostics:
+        dp = diagnostics.get("dasymetric", {})
+        if dp.get("total_parcels", 0):
+            total_parcels = f"{dp['total_parcels']:,}"
+    lines.append(f"**Parcel limit:** {limit or f'all ({total_parcels})'}")
     lines.append("")
 
     # Configuration section
@@ -432,9 +437,10 @@ def _generate_report_markdown(
     lines.append(
         "| Parcel geometries | SACOG Assessor | Same (extracted from reference) |"
     )
+    _acs_year = str(config.get("acs-year", "?")) if config else "?"
     lines.append(
         "| Demographics | SACOG 2008 + ACS blockgroup rates "
-        "| Census ACS 2022 blockgroup area-weighted |"
+        f"| Census ACS {_acs_year} blockgroup area-weighted |"
     )
     lines.append(
         "| Employment | SACOG 2008 + LEHD disaggregation "
@@ -444,9 +450,10 @@ def _generate_report_markdown(
         "| Dwelling units | SACOG parcel DU + TAZ controls "
         "| Inferred from ACS HH/occupancy |"
     )
+    _nlcd_year = str(config.get("nlcd-year", "?")) if config else "?"
     lines.append(
         "| Land use | SACOG use code crosswalk | "
-        + ("NLCD 2021" if not quick else "Default (Null source)")
+        + (f"NLCD {_nlcd_year}" if not quick else "Default (Null source)")
         + " |"
     )
     lines.append(

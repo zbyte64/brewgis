@@ -562,10 +562,11 @@ class Command(BaseCommand):
         if osm_table:
             dbt_vars["osm_intersection_table"] = osm_table
 
-        self.stdout.write(f"  dbt vars: {dbt_vars}")
+        self.stdout.write(f"  SQLMesh variables: {dbt_vars}")
         run_sqlmesh_plan(
             environment="fresno_demo",
             select=BASE_CANVAS_MODELS,
+            variables=dbt_vars,
         )
         self.stdout.write(self.style.SUCCESS("  SQLMesh base_canvas models complete"))
 

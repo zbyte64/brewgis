@@ -39,7 +39,7 @@ WITH wac_data AS (
         w.emp_ind,
         w.emp_ag,
         w.geometry,
-        ST_Transform(w.geometry, 3857) AS local_geometry
+        ST_Transform(w.geometry, @VAR('local_srid', 3310)) AS local_geometry
     FROM brewgis.staging.wac_block w
     WHERE w.geometry IS NOT NULL
 ),

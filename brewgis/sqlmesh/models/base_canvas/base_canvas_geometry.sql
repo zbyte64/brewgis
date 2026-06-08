@@ -26,7 +26,7 @@ parcel_geom AS (
     SELECT
         p.parcel_id,
         p.geometry,
-        ST_Transform(p.geometry, 3857) AS local_geometry,
+        ST_Transform(p.geometry, @VAR('local_srid', 3310)) AS local_geometry,
         p.county,
         COALESCE(
             NULLIF(p.land_development_category, ''),

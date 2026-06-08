@@ -543,6 +543,7 @@ class Command(BaseCommand):
 
         plan_vars: dict[str, object] = {
             "parcel_table": "brewgis.comparison.sacog_parcel_shim",
+            "local_srid": LOCAL_SRID,
         }
         if osm:
             plan_vars["osm_intersection_table"] = "osm_intersection_density"
@@ -562,9 +563,7 @@ class Command(BaseCommand):
         sacog_summary_table = context.table_name(
             "brewgis.comparison.sacog_summary", "sacog_comparison"
         )
-        summary = _query_table_as_dict(
-            sacog_summary_table
-        )
+        summary = _query_table_as_dict(sacog_summary_table)
         # fetchdf assumes prod environment
         # summary = context.fetchdf("SELECT * from brewgis.comparison.sacog_summary limit 1").iloc[0].to_dict()
 
@@ -602,9 +601,7 @@ class Command(BaseCommand):
             },
             diagnostics=_collect_diagnostics(
                 engine=get_engine(),
-                dasymetric_table=dasymetric_table
-                if use_assessor_geometry
-                else None,
+                dasymetric_table=dasymetric_table if use_assessor_geometry else None,
             ),
             output_path=report_path,
             quick=not (nlcd or osm),
@@ -789,13 +786,17 @@ def _collect_diagnostics(
     # Employment pipeline: WAC block counts
     with engine.connect() as conn:
         try:
-            row = conn.execute(text("SELECT COUNT(*) FROM lehd.wac_block")).scalar()
+            row = conn.execute(
+                text("SELECT COUNT(*) FROM staging__brewgis_prod.wac_block")
+            ).scalar()
             diagnostics["employment"]["total_wac_blocks"] = row or 0
         except Exception:
             pass
         try:
             row = conn.execute(
-                text("SELECT COUNT(*) FROM lehd.wac_block WHERE geometry IS NOT NULL")
+                text(
+                    "SELECT COUNT(*) FROM staging__brewgis_prod.wac_block WHERE geometry IS NOT NULL"
+                )
             ).scalar()
             diagnostics["employment"]["wac_blocks_with_geom"] = row or 0
         except Exception:
