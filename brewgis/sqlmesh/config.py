@@ -90,9 +90,11 @@ def config_factory(**variables):
             enabled=True,
             rules=[
                 "invalidselectstarexpansion",
+                "NoTransformInJoinWhere",
                 "noselectstar",
             ],
             warn_rules=[
+                "MissingGeometryIndex",
                 "ambiguousorinvalidcolumn",
                 "nomissingaudits",
                 "nomissingexternalmodels",

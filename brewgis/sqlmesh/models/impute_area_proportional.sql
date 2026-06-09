@@ -1,6 +1,7 @@
 MODEL (
   name brewgis.impute_area_proportional,
-  kind VIEW
+  kind VIEW,
+  ignored_rules ["NoTransformInJoinWhere"]
 );
 
 -- Impute Area Proportional — spatial allocation imputation for target
