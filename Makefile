@@ -128,6 +128,10 @@ coverage:  ## Run tests with coverage report and fail if below threshold
 lint:  ## Run Ruff linter
 	$(COMPOSE_RUN) ruffian check brewgis/
 
+.PHONY: lint-sql
+lint-sql:  ## Run SQLMesh linter on SQL models
+	$(COMPOSE_RUN) sqlmesh -p brewgis/sqlmesh/ lint
+
 .PHONY: lint-custom
 lint-custom:  ## Run custom anti-pattern rules (standalone, no Docker)
 	python3 -m brewgis._ruff_rules.check brewgis/

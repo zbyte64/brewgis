@@ -11,6 +11,7 @@ from urllib.parse import urlparse
 
 from sqlmesh.core.config import Config
 from sqlmesh.core.config import GatewayConfig
+from sqlmesh.core.config import LinterConfig
 from sqlmesh.core.config import ModelDefaultsConfig
 from sqlmesh.core.config import PostgresConnectionConfig
 from sqlmesh.core.config.connection import DuckDBAttachOptions
@@ -84,6 +85,19 @@ def config_factory(**variables):
         model_defaults=ModelDefaultsConfig(
             dialect="postgres",
             start="2024-01-01",
+        ),
+        linter=LinterConfig(
+            enabled=True,
+            rules=[
+                "ambiguousorinvalidcolumn",
+                "invalidselectstarexpansion",
+                "noselectstar",
+                "nomissingexternalmodels",
+            ],
+            warn_rules=[
+                "nomissingaudits",
+                "nomissingunittest",
+            ],
         ),
         variables={
             # Year and vintage parameters for staging models
