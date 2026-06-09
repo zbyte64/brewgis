@@ -14,7 +14,11 @@ MODEL (
 --
 -- Computes per-parcel zonal statistics from the NLCD land cover raster.
 -- Requires the nlcd_raster_table and nlcd_parcel_source to be populated.
--- This is a parameterized model that reads from the configured source tables.
+--
+-- NOTE: Uses ST_ValueCount as a set-returning function in the FROM clause
+-- so its output columns (value, count) are plain table columns, not
+-- composite field references. This avoids a SQLMesh query-wrapper bug
+-- that corrupts composite type field access like (alias).field.
 
 WITH parcel_tiles AS (
     SELECT
@@ -28,70 +32,52 @@ WITH parcel_tiles AS (
 
 tile_value_counts AS (
     SELECT
-        parcel_id,
-        value::integer AS nlcd_class,
-        count::integer AS pixel_count
-    FROM (
-        SELECT
-            t.parcel_id,
-            (vc).value,
-            (vc).count
-        FROM parcel_tiles t,
-        LATERAL ST_ValueCount(t.clipped, 1) AS vc
-    ) expanded
-    WHERE value IS NOT NULL
+        t.parcel_id,
+        vc.value::integer AS vc_value,
+        vc.count::integer AS vc_count
+    FROM parcel_tiles t,
+    ST_ValueCount(t.clipped, 1) AS vc
 ),
 
 per_parcel_value_counts AS (
     SELECT
         parcel_id,
-        nlcd_class,
-        SUM(pixel_count) AS total_pixels
+        vc_value AS nlcd_class,
+        SUM(vc_count) AS total_pixels
     FROM tile_value_counts
-    GROUP BY parcel_id, nlcd_class
+    GROUP BY parcel_id, vc_value
 ),
 
 majority_class AS (
     SELECT DISTINCT ON (parcel_id)
         parcel_id,
-        nlcd_class AS majority_nlcd_class
-    FROM per_parcel_value_counts
-    ORDER BY parcel_id, total_pixels DESC
+        vc_value AS majority_nlcd_class
+    FROM tile_value_counts
+    ORDER BY parcel_id, vc_count DESC
 ),
 
-tile_impervious AS (
-    SELECT
-        parcel_id,
-        (ST_SummaryStats(
-            ST_Reclass(
-                clipped, 1,
-                '[0-20]:0, [21-21]:0.10, [22-22]:0.30, [23-23]:0.60, '
-                '[24-24]:0.85, [31-31]:0.50, [32-254]:0',
-                '32BF', 0
-            ),
-            1, TRUE
-        )).count,
-        (ST_SummaryStats(
-            ST_Reclass(
-                clipped, 1,
-                '[0-20]:0, [21-21]:0.10, [22-22]:0.30, [23-23]:0.60, '
-                '[24-24]:0.85, [31-31]:0.50, [32-254]:0',
-                '32BF', 0
-            ),
-            1, TRUE
-        )).mean
-    FROM parcel_tiles
-),
-
-per_parcel_impervious AS (
+-- Compute impervious fraction as a weighted average of NLCD class
+-- impervious values, using pixel counts as weights. This replaces
+-- ST_Reclass + ST_SummaryStats with the equivalent computation
+-- from ST_ValueCount pixel counts, avoiding composite type access.
+impervious_frac AS (
     SELECT
         parcel_id,
         CASE
-            WHEN SUM(count) > 0
-            THEN SUM(mean * count) / SUM(count)
+            WHEN SUM(vc_count) > 0
+            THEN SUM(vc_count * CASE vc_value
+                WHEN 11 THEN 0.0
+                WHEN 12 THEN 0.0
+                WHEN 21 THEN 0.10
+                WHEN 22 THEN 0.30
+                WHEN 23 THEN 0.60
+                WHEN 24 THEN 0.85
+                WHEN 31 THEN 0.50
+                ELSE 0.0
+            END) / SUM(vc_count)
             ELSE 0.0
         END AS impervious_fraction
-    FROM tile_impervious
+    FROM tile_value_counts
     GROUP BY parcel_id
 ),
 
@@ -129,4 +115,4 @@ SELECT
     COALESCE(i.impervious_fraction, 0.0) AS impervious_fraction
 FROM all_parcels ap
 LEFT JOIN majority_class m ON ap.parcel_id = m.parcel_id
-LEFT JOIN per_parcel_impervious i ON ap.parcel_id = i.parcel_id
+LEFT JOIN impervious_frac i ON ap.parcel_id = i.parcel_id
