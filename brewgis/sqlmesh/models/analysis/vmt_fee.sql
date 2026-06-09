@@ -20,13 +20,15 @@ MODEL (
 WITH vmt_data AS (
     SELECT
         v.parcel_id,
-        v.gross_acres,
-        v.population,
-        v.households,
+        es.gross_acres,
+        es.population,
+        es.households,
         v.vmt_total,
         v.vmt_per_capita,
         v.geom
     FROM brewgis.analysis.vmt AS v
+    LEFT JOIN brewgis.analysis.core_end_state AS es
+        ON v.parcel_id = es.parcel_id
 )
 SELECT
     parcel_id,

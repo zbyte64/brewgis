@@ -8,6 +8,7 @@
   description: "SACOG v1 reference parcels, loaded from sac_cnty_region_existing_land_use_parcels by compare_sacog_basemap. Used by sacog_parcel_shim and parcels_wm."
   columns:
     parcel_id: text
+    geography_id: text
     id: text
     geometry: geometry(3310)
     du: double precision

@@ -1,0 +1,161 @@
+# External model declarations for base canvas runtime tables.
+#
+# These tables are managed by the Django application and exist in the
+# public schema. They are referenced via @VAR() in parameterized
+# SQLMesh models (parcel_table, built_form_table, etc.).
+#
+# SQLMesh uses this metadata for column-level lineage and plan-time
+# schema validation.
+
+# ── public.* (schema-qualified names for @VAR interpolation) ──
+
+- name: public.parcels
+  columns:
+    id: text
+    parcel_id: text
+    geometry: geometry
+    county: text
+    land_development_category: text
+    built_form_key: text
+    intersection_density: double precision
+    pop: double precision
+    hh: double precision
+    du: double precision
+    land_use: text
+    assessor_use_code: text
+    bldg_area_detsf_sl: double precision
+    bldg_area_detsf_ll: double precision
+    bldg_area_attsf: double precision
+    bldg_area_mf: double precision
+    bldg_area_retail_services: double precision
+    bldg_area_restaurant: double precision
+    bldg_area_accommodation: double precision
+    bldg_area_arts_entertainment: double precision
+    bldg_area_other_services: double precision
+    bldg_area_office_services: double precision
+    bldg_area_public_admin: double precision
+    bldg_area_education: double precision
+    bldg_area_medical_services: double precision
+    bldg_area_transport_warehousing: double precision
+    bldg_area_wholesale: double precision
+    residential_irrigated_area: double precision
+    commercial_irrigated_area: double precision
+    area_parcel_res: double precision
+    area_parcel_emp_ag: double precision
+    area_parcel_emp: double precision
+    area_parcel_mixed_use: double precision
+    area_parcel_no_use: double precision
+
+- name: public.built_forms
+  columns:
+    key: text
+    id: integer
+    du_per_acre: double precision
+    emp_per_acre: double precision
+    far: double precision
+    household_size: double precision
+    vacancy_rate: double precision
+    jobs_by_sector: jsonb
+    indoor_water_rate: double precision
+    outdoor_water_rate: double precision
+    building_coverage: double precision
+    electricity_eui: double precision
+    gas_eui: double precision
+    vintage: text
+    irrigable_area_fraction: double precision
+    trip_rate_override: double precision
+    pass_by_trip_pct: double precision
+
+- name: public.constraints
+  columns:
+    parcel_id: text
+    acres_developable: double precision
+    geometry: geometry
+
+- name: public.base_canvas
+  columns:
+    parcel_id: text
+    gross_acres: double precision
+    dwelling_units_total: double precision
+    dwelling_units_sf_ll: double precision
+    dwelling_units_sf_sl: double precision
+    dwelling_units_attached_sf: double precision
+    dwelling_units_mf_2_4: double precision
+    dwelling_units_mf_5p: double precision
+    population: double precision
+    households: double precision
+    employment_total: double precision
+    building_sqft_total: double precision
+    building_sqft_residential: double precision
+    building_sqft_commercial: double precision
+    building_sqft_office: double precision
+    building_sqft_industrial: double precision
+    building_sqft_public: double precision
+    building_sqft_retail: double precision
+    building_sqft_wholesale: double precision
+    building_sqft_education: double precision
+    building_sqft_healthcare: double precision
+    building_sqft_hotel_lodging: double precision
+    building_sqft_entertainment: double precision
+    building_sqft_other: double precision
+    res_irrigated_sqft: double precision
+    com_irrigated_sqft: double precision
+    parcel_acres_developed: double precision
+    parcel_acres_agriculture: double precision
+    parcel_acres_open_space: double precision
+    parcel_acres_vacant: double precision
+    intersection_density: double precision
+    geom: geometry
+
+# ── Parameterized shared model source/target tables ──
+
+- name: public.source_table
+  columns:
+    parcel_id: text
+    geometry: geometry
+    du: double precision
+    emp: double precision
+    gross_acres: double precision
+
+- name: public.target_table
+  columns:
+    geography_id: text
+    geometry: geometry
+    du: double precision
+    emp: double precision
+    gross_acres: double precision
+    acres_geography: double precision
+
+# ── Analysis-level external model references ──
+
+- name: brewgis.analysis.base_canvas
+  description: "Existing conditions for displacement models."
+  columns:
+    id: text
+    parcel_id: text
+    population: double precision
+    households: double precision
+    employment_total: double precision
+    median_income: double precision
+    pct_minority: double precision
+    rent_burden_pct: double precision
+    pct_college_educated: double precision
+    gross_acres: double precision
+    geom: geometry
+
+- name: brewgis.analysis.food_access_inputs
+  description: "Food access preprocessor outputs."
+  columns:
+    parcel_id: text
+    healthy_count: integer
+    unhealthy_count: integer
+    mrfei: double precision
+    population: double precision
+    households: double precision
+    geom: geometry
+
+- name: brewgis.analysis.base_canvas_parcels
+  description: "Food access parcel view (legacy reference)."
+  columns:
+    geography_id: text
+    geometry: geometry

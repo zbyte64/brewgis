@@ -29,15 +29,17 @@ WITH parcel_tiles AS (
 tile_value_counts AS (
     SELECT
         parcel_id,
-        (vc).value::integer AS nlcd_class,
-        (vc).count::integer AS pixel_count
+        value::integer AS nlcd_class,
+        count::integer AS pixel_count
     FROM (
         SELECT
-            parcel_id,
-            ST_ValueCount(clipped, 1) AS vc
-        FROM parcel_tiles
-    ) sub
-    WHERE (vc).value IS NOT NULL
+            t.parcel_id,
+            (vc).value,
+            (vc).count
+        FROM parcel_tiles t,
+        LATERAL ST_ValueCount(t.clipped, 1) AS vc
+    ) expanded
+    WHERE value IS NOT NULL
 ),
 
 per_parcel_value_counts AS (
@@ -68,7 +70,16 @@ tile_impervious AS (
                 '32BF', 0
             ),
             1, TRUE
-        )).*
+        )).count,
+        (ST_SummaryStats(
+            ST_Reclass(
+                clipped, 1,
+                '[0-20]:0, [21-21]:0.10, [22-22]:0.30, [23-23]:0.60, '
+                '[24-24]:0.85, [31-31]:0.50, [32-254]:0',
+                '32BF', 0
+            ),
+            1, TRUE
+        )).mean
     FROM parcel_tiles
 ),
 

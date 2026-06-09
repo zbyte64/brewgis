@@ -378,4 +378,31 @@ with_govt AS (
     FROM with_cns16
 )
 
-SELECT * FROM with_govt
+SELECT
+    geoid,
+    geometry,
+    emp,
+    data_year,
+    emp_education,
+    emp_medical_services,
+    emp_public_admin,
+    emp_agriculture,
+    emp_extraction,
+    emp_construction,
+    emp_manufacturing,
+    emp_transport_warehousing,
+    emp_utilities,
+    emp_wholesale,
+    emp_retail_services,
+    emp_office_services,
+    emp_arts_entertainment,
+    emp_accommodation,
+    emp_restaurant,
+    emp_other_services,
+    emp_military,
+    emp_ag,
+    emp_ret,
+    emp_off,
+    emp_pub,
+    emp_ind
+FROM with_govt

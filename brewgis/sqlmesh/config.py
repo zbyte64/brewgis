@@ -89,13 +89,13 @@ def config_factory(**variables):
         linter=LinterConfig(
             enabled=True,
             rules=[
-                "ambiguousorinvalidcolumn",
                 "invalidselectstarexpansion",
                 "noselectstar",
-                "nomissingexternalmodels",
             ],
             warn_rules=[
+                "ambiguousorinvalidcolumn",
                 "nomissingaudits",
+                "nomissingexternalmodels",
                 "nomissingunittest",
             ],
         ),
@@ -112,9 +112,9 @@ def config_factory(**variables):
             # Scenario table references (overridden per scenario)
             "scenario_schema": "public",
             "base_canvas_table": "base_canvas",
-            "parcel_table": "parcels",
-            "constraint_table": "constraints",
-            "built_form_table": "built_forms",
+            "parcel_table": "public.parcels",
+            "constraint_table": "public.constraints",
+            "built_form_table": "public.built_forms",
             "constraints": [],
             # OSM intersection density table (empty = disabled, overridden per-caller)
             "osm_intersection_table": "",
