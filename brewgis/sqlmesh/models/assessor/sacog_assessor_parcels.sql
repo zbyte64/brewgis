@@ -35,4 +35,10 @@ SELECT
     zone,
     jurisdiction
 FROM deduped
-WHERE rn = 1
+WHERE rn = 1;
+
+-- post_statements
+@IF(@runtime_stage = 'evaluating',
+  CREATE INDEX IF NOT EXISTS idx_sacog_assessor_parcels_geometry
+  ON brewgis.assessor.sacog_assessor_parcels USING GIST (geometry)
+);

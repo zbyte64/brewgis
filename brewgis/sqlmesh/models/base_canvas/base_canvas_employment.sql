@@ -245,4 +245,10 @@ SELECT
     a.emp_extraction,
     a.emp_military
 FROM brewgis.base_canvas.base_canvas_demographics p
-LEFT JOIN allocated a ON p.parcel_id = a.parcel_id
+LEFT JOIN allocated a ON p.parcel_id = a.parcel_id;
+
+-- post_statements
+@IF(@runtime_stage = 'evaluating',
+  CREATE INDEX IF NOT EXISTS idx_base_canvas_employment_geometry
+  ON brewgis.base_canvas.base_canvas_employment USING GIST (geometry)
+);

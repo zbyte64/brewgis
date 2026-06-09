@@ -9,10 +9,6 @@ MODEL (
   )
 );
 
-CREATE INDEX IF NOT EXISTS idx_buildings_combined_geometry
-ON brewgis.staging.buildings_combined USING GIST (geometry);
-ANALYZE brewgis.staging.buildings_combined;
-
 -- Parcel Building Footprints — per-parcel building footprint features extracted
 -- from combined (Overture + VIDA) building footprints via spatial join to
 -- assessor parcels.
@@ -65,4 +61,19 @@ SELECT
 FROM brewgis.assessor.sacog_assessor_parcels sap
 LEFT JOIN building_stats bs ON sap.apn = bs.apn
 LEFT JOIN brewgis.seeds.assessor_use_codes auc
-    ON LEFT(COALESCE(sap.landuse::text, ''), 2) = auc.use_code::text
+    ON LEFT(COALESCE(sap.landuse::text, ''), 2) = auc.use_code::text;
+
+-- post_statements
+-- Index on buildings_combined for ST_Intersects join performance
+-- (buildings_combined is DuckDB gateway, so index must live here)
+@IF(@runtime_stage = 'evaluating',
+  CREATE INDEX IF NOT EXISTS idx_buildings_combined_geometry
+  ON brewgis.staging.buildings_combined USING GIST (geometry)
+);
+ANALYZE brewgis.staging.buildings_combined;
+
+@IF(@runtime_stage = 'evaluating',
+  CREATE INDEX IF NOT EXISTS idx_parcel_building_footprints_geometry
+  ON brewgis.assessor.parcel_building_footprints USING GIST (geometry)
+);
+ANALYZE brewgis.assessor.parcel_building_footprints;

@@ -269,12 +269,19 @@ def run_tiger_block_pipeline(
                     conn.commit()
 
     # Create spatial index for wac_block_raw joins
+    # and btree index for TIGER geoid joins in wac_block_raw.sql
     engine = get_engine()
     with engine.begin() as conn:
         conn.execute(
             _text(
                 "CREATE INDEX IF NOT EXISTS idx_tiger_blocks_geometry "
                 f"ON {schema}.tiger_blocks USING GIST (geometry)"
+            )
+        )
+        conn.execute(
+            _text(
+                "CREATE INDEX IF NOT EXISTS idx_tiger_blocks_geoid_vintage "
+                f"ON {schema}.tiger_blocks (geoid, vintage)"
             )
         )
         conn.execute(_text(f"ANALYZE {schema}.tiger_blocks"))

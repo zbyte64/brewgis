@@ -111,4 +111,10 @@ SELECT
     ROUND(parcel_area.area_gross::numeric, 4) AS area_parcel,
     ROUND((parcel_area.area_gross * 0.7)::numeric, 4) AS area_dev_condition,
     ROUND((parcel_area.area_gross * 0.15)::numeric, 4) AS area_row
-FROM parcel_area
+FROM parcel_area;
+
+-- post_statements
+@IF(@runtime_stage = 'evaluating',
+  CREATE INDEX IF NOT EXISTS idx_base_canvas_geometry_geometry
+  ON brewgis.base_canvas.base_canvas_geometry USING GIST (geometry)
+);

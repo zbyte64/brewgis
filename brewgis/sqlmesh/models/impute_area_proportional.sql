@@ -1,7 +1,6 @@
 MODEL (
   name brewgis.impute_area_proportional,
-  kind VIEW,
-  ignored_rules ["NoTransformInJoinWhere"]
+  kind VIEW
 );
 
 -- Impute Area Proportional — spatial allocation imputation for target
@@ -27,15 +26,9 @@ LEFT JOIN (
             COALESCE(s.source_column, 0)
             * @compute_allocation_weight(s, nt, geom, geom)
         ) AS allocated_value
-    FROM (
-        SELECT *, ST_Transform(geom, @VAR('wm_srid', 3857)) AS geom_wm
-        FROM public.target_table
-    ) nt
-    JOIN (
-        SELECT *, ST_Transform(geom, @VAR('wm_srid', 3857)) AS geom_wm
-        FROM public.source_table
-    ) s
-        ON ST_Intersects(s.geom_wm, nt.geom_wm)
+    FROM public.target_table nt
+    JOIN public.source_table s
+        ON ST_Intersects(s.geom, nt.geom)
     WHERE nt.target_column IS NULL
       AND @compute_allocation_weight(s, nt, geom, geom) > 0
     GROUP BY nt.ctid

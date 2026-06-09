@@ -236,12 +236,19 @@ def run_tiger_bg_pipeline(
                     conn.commit()
 
     # Create spatial index for parcel_block_groups joins
+    # and btree index for ACS geoid joins in acs_block_group.sql
     engine = get_engine()
     with engine.begin() as conn:
         conn.execute(
             _text(
                 "CREATE INDEX IF NOT EXISTS idx_tiger_block_groups_geometry "
                 f"ON {schema}.tiger_block_groups USING GIST (geometry)"
+            )
+        )
+        conn.execute(
+            _text(
+                "CREATE INDEX IF NOT EXISTS idx_tiger_block_groups_geoid_vintage "
+                f"ON {schema}.tiger_block_groups (geoid, vintage)"
             )
         )
         conn.execute(_text(f"ANALYZE {schema}.tiger_block_groups"))

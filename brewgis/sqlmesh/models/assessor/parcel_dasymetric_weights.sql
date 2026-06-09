@@ -249,6 +249,9 @@ SELECT
 FROM assembled a
 LEFT JOIN du_classification dc ON a.apn = dc.apn;
 
-CREATE INDEX IF NOT EXISTS idx_parcel_dasymetric_weights_geometry
-ON brewgis.assessor.parcel_dasymetric_weights USING GIST (geometry);
+-- post_statements
+@IF(@runtime_stage = 'evaluating',
+  CREATE INDEX IF NOT EXISTS idx_parcel_dasymetric_weights_geometry
+  ON brewgis.assessor.parcel_dasymetric_weights USING GIST (geometry)
+);
 ANALYZE brewgis.assessor.parcel_dasymetric_weights;

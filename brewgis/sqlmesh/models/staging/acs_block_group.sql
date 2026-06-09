@@ -121,4 +121,10 @@ SELECT
     total_population,
     pct_minority,
     pct_college_educated
-FROM derived_with_pcts
+FROM derived_with_pcts;
+
+-- post_statements
+@IF(@runtime_stage = 'evaluating',
+  CREATE INDEX IF NOT EXISTS idx_acs_block_group_geometry
+  ON brewgis.staging.acs_block_group USING GIST (geometry)
+);

@@ -173,4 +173,10 @@ SELECT
     p.area_parcel_mixed_use,
     p.area_parcel_no_use
 FROM parcel_geom p
-LEFT JOIN allocated a ON p.parcel_id = a.parcel_id
+LEFT JOIN allocated a ON p.parcel_id = a.parcel_id;
+
+-- post_statements
+@IF(@runtime_stage = 'evaluating',
+  CREATE INDEX IF NOT EXISTS idx_base_canvas_demographics_geometry
+  ON brewgis.base_canvas.base_canvas_demographics USING GIST (geometry)
+);
