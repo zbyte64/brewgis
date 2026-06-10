@@ -36,7 +36,7 @@ WITH building_stats AS (
         AVG(bc.confidence) AS mean_confidence
     FROM brewgis.assessor.sacog_assessor_parcels sap
     JOIN brewgis.staging.buildings_combined bc
-        ON ST_Intersects(sap.geometry, bc.geometry)
+        ON ST_Intersects(sap.geometry, ST_SetSRID(bc.geometry, 4326))
     GROUP BY sap.apn
 )
 
@@ -64,7 +64,6 @@ LEFT JOIN brewgis.seeds.assessor_use_codes auc
     ON LEFT(COALESCE(sap.landuse::text, ''), 2) = auc.use_code::text;
 
 -- post_statements
--- Index on buildings_combined for ST_Intersects join performance
 -- (buildings_combined is DuckDB gateway, so index must live here)
 @IF(@runtime_stage = 'evaluating',
   CREATE INDEX IF NOT EXISTS idx_buildings_combined_geometry

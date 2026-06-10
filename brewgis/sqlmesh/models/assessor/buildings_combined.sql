@@ -76,7 +76,7 @@ vida_deduped AS (
 )
 
 SELECT
-    geometry,
+    ST_SetCRS(geometry, 'EPSG:4326') AS geometry,
     height,
     levels,
     class,
@@ -88,7 +88,7 @@ FROM overture_buildings
 UNION ALL
 
 SELECT
-    geometry,
+    ST_SetCRS(geometry, 'EPSG:4326') AS geometry,
     height,
     levels,
     class,

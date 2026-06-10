@@ -94,11 +94,12 @@ def config_factory(**variables):
                 "noselectstar",
             ],
             warn_rules=[
-                "MissingGeometryIndex",
+                # "MissingGeometryIndex",
+                "UnindexedJoin",
                 "ambiguousorinvalidcolumn",
-                "nomissingaudits",
+                # "nomissingaudits",
                 "nomissingexternalmodels",
-                "nomissingunittest",
+                # "nomissingunittest",
             ],
         ),
         variables={

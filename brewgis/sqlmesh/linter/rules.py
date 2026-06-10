@@ -10,6 +10,7 @@ import re
 from pathlib import Path
 
 import sqlglot.expressions as exp
+from sqlmesh.core.dialect import normalize_model_name
 from sqlmesh.core.linter.rule import Rule
 from sqlmesh.core.linter.rule import RuleViolation
 from sqlmesh.core.model import Model
@@ -172,5 +173,355 @@ class MissingGeometryIndex(Rule):
                 f" {', '.join(missing_index_cols)}. Add a CREATE INDEX"
                 f" USING GIST (<col>) statement in post_statements."
             )
+
+        return None
+
+
+_SPATIAL_FUNCTIONS = frozenset(
+    {
+        "ST_INTERSECTS",
+        "ST_CONTAINS",
+        "ST_DWITHIN",
+        "ST_WITHIN",
+        "ST_COVERS",
+        "ST_COVEREDBY",
+        "ST_OVERLAPS",
+        "ST_TOUCHES",
+        "ST_CROSSES",
+        "ST_EQUALS",
+    }
+)
+
+_EXPRESSION_WRAPPERS = frozenset(
+    {
+        "LEFT",
+        "TRIM",
+        "LTRIM",
+        "RTRIM",
+        "COALESCE",
+        "IFNULL",
+        "UPPER",
+        "LOWER",
+        "SUBSTR",
+        "SUBSTRING",
+        "DATE_TRUNC",
+    }
+)
+
+
+class UnindexedJoin(Rule):
+    """JOIN conditions that reference columns from other SQLMesh models
+    must have corresponding indexes on those columns in the referenced
+    model's ``post_statements``. Missing indexes force sequential scans.
+
+    Detects:
+
+    * **Key joins** (``a.parcel_id = b.parcel_id``) — requires a B-tree index
+      on the referenced model's join column.
+    * **Spatial joins** (``ST_Intersects(a.geom, b.geom)``, ``a.geom && b.geom``)
+      — requires a GiST index on the geometry column.
+    * **Expression joins** (``LEFT(a.key, 4) = LEFT(b.key, 4)``) — flags a
+      warning that an expression index may be needed.
+
+    Skips CROSS JOIN, ``ON TRUE``, LATERAL, dynamic table references
+    (``@var``), and external tables not managed by SQLMesh.
+    """
+
+    def check_model(self, model: Model) -> RuleViolation | list[RuleViolation] | None:
+        if not isinstance(model, SqlModel):
+            return None
+
+        query = model.query
+        if query is None:
+            return None
+
+        violations: list[RuleViolation] = []
+
+        for join in query.find_all(exp.Join):
+            violation = self._check_join(join, model)
+            if violation is not None:
+                violations.append(violation)
+
+        if not violations:
+            return None
+        if len(violations) == 1:
+            return violations[0]
+        return violations
+
+    def _check_join(self, join: exp.Join, model: Model) -> RuleViolation | None:
+        # Skip CROSS JOIN (no ON clause).
+        if "on" not in join.arg_types:
+            return None
+        on = join.args.get("on")
+        if on is None:
+            return None
+
+        # Skip LATERAL joins — they reference the outer query, not a table.
+        if join.args.get("kind") == "LATERAL":
+            return None
+
+        # Extract the referenced table.
+        table = join.this
+        if not isinstance(table, exp.Table):
+            return None
+
+        # Skip dynamic/variable table references (@parcel_table, @constraint_table).
+        table_sql = table.sql()
+        if table_sql.startswith("@"):
+            return None
+
+        # Build FQN for lookup.
+        fqn = self._table_fqn(table, model)
+        if fqn is None:
+            return None
+
+        # Look up the referenced model. Try the normalized FQN first,
+        # then fall back to the bare name (for test models).
+        ref_model = self.context._models.get(fqn)  # noqa: SLF001
+        if ref_model is None:
+            # Try bare dotted name in case normalization added quotes.
+            parts: list[str] = []
+            if table.args.get("catalog"):
+                parts.append(str(table.args["catalog"]))
+            if table.args.get("db"):
+                parts.append(str(table.args["db"]))
+            if table.name:
+                parts.append(table.name)
+            bare = ".".join(parts)
+            if bare != fqn:
+                ref_model = self.context._models.get(bare)  # noqa: SLF001
+        if ref_model is None:
+            # External table or not a SQLMesh model — skip.
+            return None
+        if not isinstance(ref_model, SqlModel):
+            return None
+
+        # Collect indexed columns from the referenced model.
+        indexed_cols = self._get_indexed_columns(ref_model)
+
+        # Analyze the ON condition for join columns on the referenced side.
+        join_alias = table.alias_or_name
+
+        # Check for spatial operators first.
+        spatial_violation = self._check_spatial_join(
+            on,
+            join_alias,
+            fqn,
+            indexed_cols,
+        )
+        if spatial_violation:
+            return spatial_violation
+
+        # Check for expression wrapping.
+        expr_violation = self._check_expression_join(on, join_alias, fqn)
+        if expr_violation:
+            return expr_violation
+
+        # Check key-based EQ joins.
+        return self._check_key_join(on, join_alias, fqn, indexed_cols)
+
+    def _table_fqn(
+        self,
+        table: exp.Table,
+        model: Model,
+    ) -> str | None:
+        """Build a fully-qualified name from a Table expression that
+        matches the quoting convention used by SQLMesh model FQNs."""
+        catalog = getattr(model, "default_catalog", None)
+        dialect = getattr(model, "dialect", None) or ""
+        try:
+            return normalize_model_name(
+                table,
+                default_catalog=catalog,
+                dialect=dialect,
+            )
+        except Exception:
+            # Fallback: build a bare dotted name.
+            parts: list[str] = []
+            if table.args.get("catalog"):
+                parts.append(str(table.args["catalog"]))
+            if table.args.get("db"):
+                parts.append(str(table.args["db"]))
+            name = table.name
+            if not name:
+                return None
+            parts.append(name)
+            return ".".join(parts)
+
+    def _get_indexed_columns(
+        self,
+        model: SqlModel,
+    ) -> dict[str, bool]:
+        """Return ``{column_name: is_spatial}`` from post_statements.
+
+        Checks both the model's source file and its ``post_statements_``
+        for ``CREATE INDEX`` statements and extracts column names.
+        The value is ``True`` if the index uses ``USING GIST``
+        (spatial index).
+        """
+        result: dict[str, bool] = {}
+
+        # 1) Try reading from post_statements_ (in-memory, works for synthetic models).
+        for ps in getattr(model, "post_statements_", []) or []:
+            sql_text = ps.sql if hasattr(ps, "sql") else str(ps)
+            self._extract_indexes_from_sql(sql_text, model.name, result)
+
+        # 2) Fall back to reading the source file (for real models on disk).
+        source_path = getattr(model, "_path", None)
+        if source_path:
+            try:
+                source = Path(source_path).read_text()
+                self._extract_indexes_from_sql(source, model.name, result)
+            except OSError:
+                pass
+
+        return result
+
+    @staticmethod
+    def _extract_indexes_from_sql(
+        sql_text: str,
+        model_name: str,
+        result: dict[str, bool],
+    ) -> None:
+        """Extract indexed columns from a SQL string into ``result``."""
+        pattern = re.compile(
+            r"""
+            CREATE\s+(UNIQUE\s+)?INDEX
+            (\s+IF\s+NOT\s+EXISTS)?\s+\S+
+            \s+ON\s+\S+
+            (\s+USING\s+(?P<gist>GIST))?
+            \s*\(
+            (?P<cols>[^)]+)
+            \)
+            """,
+            re.IGNORECASE | re.VERBOSE | re.DOTALL,
+        )
+
+        # Match the short table name too (last part of FQN).
+        short_name = model_name.rsplit(".", 1)[-1] if "." in model_name else model_name
+
+        for match in pattern.finditer(sql_text):
+            on_clause = match.group(0)
+            on_table_pattern = r"ON\s+" + re.escape(model_name)
+            on_short_pattern = r"ON\s+" + re.escape(short_name) + r"\b"
+            if not re.search(
+                on_table_pattern, on_clause, re.IGNORECASE
+            ) and not re.search(on_short_pattern, on_clause, re.IGNORECASE):
+                continue
+
+            is_gist = match.group("gist") is not None
+            cols_section = match.group("cols")
+            for col_expr in cols_section.split(","):
+                col_name = col_expr.strip().split()[0].strip('"')
+                if col_name:
+                    result[col_name] = result.get(col_name, False) or is_gist
+
+    @staticmethod
+    def _func_name(func: exp.Func) -> str:
+        """Return the uppercased function name, handling both ``Anonymous``
+        and specific function classes (``Left``, ``Coalesce``, etc.)."""
+        if func.name:
+            return func.name.upper()
+        sql_name = func.sql_name()
+        if callable(sql_name):
+            sql_name = sql_name()
+        return (sql_name or "").upper()
+
+    @staticmethod
+    def _func_args(func: exp.Func) -> list[exp.Expression]:
+        """Collect all argument expressions from a function node.
+
+        Different function classes store args differently:
+        - ``Anonymous``: ``expressions`` key
+        - ``Left`` / ``Right``: ``this`` and ``expression`` keys
+        - ``Coalesce`` / ``IfNull``: ``this`` and ``expressions`` keys
+        """
+        args: list[exp.Expression] = []
+        for key in ("this", "expression"):
+            val = func.args.get(key)
+            if val is not None and isinstance(val, exp.Expression):
+                args.append(val)
+        for val in func.args.get("expressions", []):
+            if isinstance(val, exp.Expression):
+                args.append(val)
+        return args
+
+    def _check_spatial_join(
+        self,
+        on: exp.Expr,
+        join_alias: str,
+        fqn: str,
+        indexed_cols: dict[str, bool],
+    ) -> RuleViolation | None:
+        """Check spatial JOIN conditions for GiST indexes."""
+        # Check for && (ArrayOverlaps / Overlap).
+        for node in on.find_all(exp.ArrayOverlaps):
+            for col in node.find_all(exp.Column):
+                if col.table == join_alias:
+                    col_name = col.name
+                    if col_name not in indexed_cols or not indexed_cols.get(col_name):
+                        return self.violation(
+                            f"Spatial join against ``{fqn}`` uses ``&&`` on "
+                            f"``{col_name}`` without a GiST index on the "
+                            f"referenced column."
+                        )
+
+        # Check for ST_Intersects etc.
+        for func in on.find_all(exp.Func):
+            if self._func_name(func) not in _SPATIAL_FUNCTIONS:
+                continue
+            for col in func.find_all(exp.Column):
+                if col.table == join_alias:
+                    col_name = col.name
+                    if col_name not in indexed_cols or not indexed_cols.get(col_name):
+                        return self.violation(
+                            f"Spatial join against ``{fqn}`` uses "
+                            f"``{self._func_name(func)}(..., {col_name})`` without a "
+                            f"GiST index on the referenced column."
+                        )
+
+        return None
+
+    def _check_expression_join(
+        self,
+        on: exp.Expr,
+        join_alias: str,
+        fqn: str,
+    ) -> RuleViolation | None:
+        """Flag JOIN conditions that wrap columns in functions."""
+        for func in on.find_all(exp.Func):
+            if self._func_name(func) not in _EXPRESSION_WRAPPERS:
+                continue
+            # Check all args for column references to the joined table.
+            for arg in self._func_args(func):
+                for col in arg.find_all(exp.Column):
+                    if col.table == join_alias:
+                        return self.violation(
+                            f"Join ON clause wraps ``{fqn}`` column "
+                            f"``{col.name}`` in ``{self._func_name(func)}()``. "
+                            f"Consider an expression index."
+                        )
+
+        return None
+
+    def _check_key_join(
+        self,
+        on: exp.Expr,
+        join_alias: str,
+        fqn: str,
+        indexed_cols: dict[str, bool],
+    ) -> RuleViolation | None:
+        """Check key-based ``=`` JOIN conditions for B-tree indexes."""
+        for eq in on.find_all(exp.EQ):
+            for col in eq.find_all(exp.Column):
+                if col.table == join_alias:
+                    col_name = col.name
+                    if col_name not in indexed_cols:
+                        return self.violation(
+                            f"Key join against ``{fqn}`` on column ``{col_name}``"
+                            f" without an index. Add a ``CREATE INDEX`` on this"
+                            f" column in the referenced model's "
+                            f"``post_statements``."
+                        )
 
         return None
