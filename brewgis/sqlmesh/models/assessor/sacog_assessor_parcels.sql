@@ -42,3 +42,8 @@ WHERE rn = 1;
   CREATE INDEX IF NOT EXISTS idx_sacog_assessor_parcels_geometry
   ON brewgis.assessor.sacog_assessor_parcels USING GIST (geometry)
 );
+
+@IF(@runtime_stage = 'evaluating',
+  CREATE INDEX IF NOT EXISTS idx_sacog_assessor_parcels_apn
+  ON brewgis.assessor.sacog_assessor_parcels (apn)
+);

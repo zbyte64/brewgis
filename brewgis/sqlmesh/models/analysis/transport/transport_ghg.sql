@@ -51,4 +51,10 @@ SELECT
     avg_trip_length_mi,
     auto_trips,
     geom
-FROM vmt_data
+FROM vmt_data;
+
+-- post_statements
+@IF(@runtime_stage = 'evaluating',
+  CREATE INDEX IF NOT EXISTS idx_transport_ghg_parcel_id
+  ON brewgis.analysis.transport_ghg (parcel_id)
+);

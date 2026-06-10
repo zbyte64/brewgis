@@ -71,4 +71,10 @@ SELECT
     END AS co2e_per_capita_kg,
 
     geom
-FROM energy_data
+FROM energy_data;
+
+-- post_statements
+@IF(@runtime_stage = 'evaluating',
+  CREATE INDEX IF NOT EXISTS idx_building_water_ghg_parcel_id
+  ON brewgis.analysis.building_water_ghg (parcel_id)
+);

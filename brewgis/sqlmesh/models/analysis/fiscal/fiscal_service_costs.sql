@@ -37,4 +37,10 @@ SELECT
     + COALESCE(es.employment_total * @cost_per_employee, 0.0)
     AS service_cost_total,
     es.geom
-FROM brewgis.analysis.core_end_state AS es
+FROM brewgis.analysis.core_end_state AS es;
+
+-- post_statements
+@IF(@runtime_stage = 'evaluating',
+  CREATE INDEX IF NOT EXISTS idx_fiscal_service_costs_parcel_id
+  ON brewgis.analysis.fiscal_service_costs (parcel_id)
+);

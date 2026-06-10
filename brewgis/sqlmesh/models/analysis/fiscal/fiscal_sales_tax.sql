@@ -34,4 +34,10 @@ SELECT
         0.0
     ) AS sales_tax_revenue,
     es.geom
-FROM brewgis.analysis.core_end_state AS es
+FROM brewgis.analysis.core_end_state AS es;
+
+-- post_statements
+@IF(@runtime_stage = 'evaluating',
+  CREATE INDEX IF NOT EXISTS idx_fiscal_sales_tax_parcel_id
+  ON brewgis.analysis.fiscal_sales_tax (parcel_id)
+);

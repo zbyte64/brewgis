@@ -68,4 +68,10 @@ SELECT
     b.geom
 FROM @parcel_table AS b
 LEFT JOIN constraint_union AS cu ON b.id = cu.parcel_id
-CROSS JOIN constraint_types AS cd
+CROSS JOIN constraint_types AS cd;
+
+-- post_statements
+@IF(@runtime_stage = 'evaluating',
+  CREATE INDEX IF NOT EXISTS idx_env_constraint_parcel_id
+  ON brewgis.analysis.env_constraint (parcel_id)
+);

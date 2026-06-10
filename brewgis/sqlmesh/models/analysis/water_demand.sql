@@ -41,8 +41,13 @@ SELECT
     es.employment_total,
     es.dwelling_units_total,
     es.geom
-
 FROM brewgis.analysis.core_end_state AS es;
+
+-- post_statements
+@IF(@runtime_stage = 'evaluating',
+  CREATE INDEX IF NOT EXISTS idx_water_demand_parcel_id
+  ON brewgis.analysis.water_demand (parcel_id)
+);
 
 
 -- ------------------------------------------------------------

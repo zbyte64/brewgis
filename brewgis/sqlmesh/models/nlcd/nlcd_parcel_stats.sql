@@ -115,4 +115,10 @@ SELECT
     COALESCE(i.impervious_fraction, 0.0) AS impervious_fraction
 FROM all_parcels ap
 LEFT JOIN majority_class m ON ap.parcel_id = m.parcel_id
-LEFT JOIN impervious_frac i ON ap.parcel_id = i.parcel_id
+LEFT JOIN impervious_frac i ON ap.parcel_id = i.parcel_id;
+
+-- post_statements
+@IF(@runtime_stage = 'evaluating',
+  CREATE INDEX IF NOT EXISTS idx_nlcd_parcel_stats_parcel_id
+  ON brewgis.nlcd.nlcd_parcel_stats (parcel_id)
+);

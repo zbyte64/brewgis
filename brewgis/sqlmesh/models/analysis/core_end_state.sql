@@ -192,4 +192,10 @@ SELECT
     COALESCE(c.gas_eui, 0.0) AS gas_eui,
     c.household_size,
     c.geom
-FROM computed AS c
+FROM computed AS c;
+
+-- post_statements
+@IF(@runtime_stage = 'evaluating',
+  CREATE INDEX IF NOT EXISTS idx_core_end_state_parcel_id
+  ON brewgis.analysis.core_end_state (parcel_id)
+);
