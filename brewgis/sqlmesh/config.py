@@ -96,6 +96,8 @@ def config_factory(**variables):
             warn_rules=[
                 # "MissingGeometryIndex",
                 "UnindexedJoin",
+                "UnindexedGroupBy",
+                "UnindexedWhereClause",
                 "ambiguousorinvalidcolumn",
                 # "nomissingaudits",
                 "nomissingexternalmodels",

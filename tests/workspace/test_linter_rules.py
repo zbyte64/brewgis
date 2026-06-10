@@ -14,7 +14,9 @@ from sqlmesh.core.linter.rule import RuleViolation
 from sqlmesh.core.model import Model
 from sqlmesh.core.model import create_sql_model
 
+from brewgis.sqlmesh.linter.rules import UnindexedGroupBy
 from brewgis.sqlmesh.linter.rules import UnindexedJoin
+from brewgis.sqlmesh.linter.rules import UnindexedWhereClause
 
 # ── Helpers ─────────────────────────────────────────────────────────
 
@@ -97,6 +99,36 @@ def _check(
 
 def _violation_msg(v: RuleViolation) -> str:
     return str(v)
+
+
+def _check_groupby(
+    source_model: Model,
+    ref_models: dict[str, Model],
+) -> list[RuleViolation]:
+    """Run ``UnindexedGroupBy`` on ``source_model``."""
+    context = _FakeContext(ref_models)
+    rule = UnindexedGroupBy(context)  # type: ignore[arg-type]
+    result = rule.check_model(source_model)
+    if result is None:
+        return []
+    if isinstance(result, list):
+        return result
+    return [result]
+
+
+def _check_where(
+    source_model: Model,
+    ref_models: dict[str, Model],
+) -> list[RuleViolation]:
+    """Run ``UnindexedWhereClause`` on ``source_model``."""
+    context = _FakeContext(ref_models)
+    rule = UnindexedWhereClause(context)  # type: ignore[arg-type]
+    result = rule.check_model(source_model)
+    if result is None:
+        return []
+    if isinstance(result, list):
+        return result
+    return [result]
 
 
 # ── Key Join Tests ──────────────────────────────────────────────────
@@ -405,4 +437,231 @@ class TestSkipCases:
             {"id": "BIGINT", "name": "TEXT"},
         )
         violations = _check(src, {"brewdb.public.parcels": ref})
+        assert violations == []
+
+
+# ── GROUP BY Tests ──────────────────────────────────────────────────
+
+
+class TestGroupByColumn:
+    """GROUP BY columns need B-tree indexes on the referenced model."""
+
+    def test_indexed_group_by_passes(self) -> None:
+        """GROUP BY on indexed column with alias → no violation."""
+        ref = _make_ref_model(
+            "brewdb.public.parcels",
+            {"parcel_id": "BIGINT", "owner_id": "BIGINT"},
+            post_statements=[
+                "CREATE INDEX idx_parcels_owner ON brewdb.public.parcels (owner_id)",
+            ],
+        )
+        src = _make_source_model(
+            "brewdb.public.analysis",
+            """
+            SELECT p.owner_id, COUNT(*)
+            FROM source_table AS s
+            JOIN brewdb.public.parcels AS p ON s.parcel_id = p.parcel_id
+            GROUP BY p.owner_id
+            """,
+            {"owner_id": "BIGINT", "count": "BIGINT"},
+            deps={"brewdb.public.parcels"},
+        )
+        violations = _check_groupby(src, {"brewdb.public.parcels": ref})
+        assert violations == []
+
+    def test_unindexed_group_by_violates(self) -> None:
+        """GROUP BY on unindexed column with alias → violation."""
+        ref = _make_ref_model(
+            "brewdb.public.parcels",
+            {"parcel_id": "BIGINT", "owner_id": "BIGINT"},
+            post_statements=[],
+        )
+        src = _make_source_model(
+            "brewdb.public.analysis",
+            """
+            SELECT p.owner_id, COUNT(*)
+            FROM source_table AS s
+            JOIN brewdb.public.parcels AS p ON s.parcel_id = p.parcel_id
+            GROUP BY p.owner_id
+            """,
+            {"owner_id": "BIGINT", "count": "BIGINT"},
+            deps={"brewdb.public.parcels"},
+        )
+        violations = _check_groupby(src, {"brewdb.public.parcels": ref})
+        assert len(violations) == 1
+        msg = _violation_msg(violations[0])
+        assert "GROUP BY" in msg
+        assert "brewdb" in msg
+        assert "owner_id" in msg
+
+    def test_unqualified_group_by_column_skipped(self) -> None:
+        """GROUP BY without table qualifier (bare column) → skipped."""
+        ref = _make_ref_model(
+            "brewdb.public.parcels",
+            {"parcel_id": "BIGINT"},
+            post_statements=[],
+        )
+        src = _make_source_model(
+            "brewdb.public.analysis",
+            """
+            SELECT owner_id, COUNT(*)
+            FROM source_table
+            GROUP BY owner_id
+            """,
+            {"owner_id": "BIGINT", "count": "BIGINT"},
+        )
+        violations = _check_groupby(src, {"brewdb.public.parcels": ref})
+        assert violations == []
+
+    def test_group_by_indexed_among_many_passes(self) -> None:
+        """Multiple GROUP BY columns, all indexed → no violation."""
+        ref = _make_ref_model(
+            "brewdb.public.parcels",
+            {"parcel_id": "BIGINT", "owner_id": "BIGINT", "zone": "TEXT"},
+            post_statements=[
+                "CREATE INDEX idx_parcels_owner ON brewdb.public.parcels (owner_id)",
+                "CREATE INDEX idx_parcels_zone ON brewdb.public.parcels (zone)",
+            ],
+        )
+        src = _make_source_model(
+            "brewdb.public.analysis",
+            """
+            SELECT p.owner_id, p.zone, COUNT(*)
+            FROM source_table AS s
+            JOIN brewdb.public.parcels AS p ON s.parcel_id = p.parcel_id
+            GROUP BY p.owner_id, p.zone
+            """,
+            {"owner_id": "BIGINT", "zone": "TEXT", "count": "BIGINT"},
+            deps={"brewdb.public.parcels"},
+        )
+        violations = _check_groupby(src, {"brewdb.public.parcels": ref})
+        assert violations == []
+
+
+# ── WHERE Clause Tests ──────────────────────────────────────────────
+
+
+class TestWhereClauseColumn:
+    """WHERE filter columns need B-tree indexes on the referenced model."""
+
+    def test_indexed_where_column_passes(self) -> None:
+        """WHERE filter on indexed column with alias → no violation."""
+        ref = _make_ref_model(
+            "brewdb.public.parcels",
+            {"parcel_id": "BIGINT", "owner_id": "BIGINT"},
+            post_statements=[
+                "CREATE INDEX idx_parcels_owner ON brewdb.public.parcels (owner_id)",
+            ],
+        )
+        src = _make_source_model(
+            "brewdb.public.analysis",
+            """
+            SELECT s.*
+            FROM source_table AS s
+            JOIN brewdb.public.parcels AS p ON s.parcel_id = p.parcel_id
+            WHERE p.owner_id = 42
+            """,
+            {"owner_id": "BIGINT", "result": "BIGINT"},
+        )
+        violations = _check_where(src, {"brewdb.public.parcels": ref})
+        assert violations == []
+
+    def test_unindexed_where_column_violates(self) -> None:
+        """WHERE filter on unindexed column → violation."""
+        ref = _make_ref_model(
+            "brewdb.public.parcels",
+            {"parcel_id": "BIGINT", "owner_id": "BIGINT"},
+            post_statements=[],
+        )
+        src = _make_source_model(
+            "brewdb.public.analysis",
+            """
+            SELECT s.*
+            FROM source_table AS s
+            JOIN brewdb.public.parcels AS p ON s.parcel_id = p.parcel_id
+            WHERE p.owner_id = 42
+            """,
+            {"owner_id": "BIGINT", "result": "BIGINT"},
+        )
+        violations = _check_where(src, {"brewdb.public.parcels": ref})
+        assert len(violations) == 1
+        msg = _violation_msg(violations[0])
+        assert "WHERE" in msg
+        assert "brewdb" in msg
+        assert "owner_id" in msg
+
+    def test_unqualified_where_column_skipped(self) -> None:
+        """WHERE filter without table qualifier → skipped."""
+        ref = _make_ref_model(
+            "brewdb.public.parcels",
+            {"owner_id": "BIGINT"},
+            post_statements=[],
+        )
+        src = _make_source_model(
+            "brewdb.public.analysis",
+            """
+            SELECT *
+            FROM source_table
+            WHERE owner_id = 42
+            """,
+            {"owner_id": "BIGINT", "result": "BIGINT"},
+        )
+        violations = _check_where(src, {"brewdb.public.parcels": ref})
+        assert violations == []
+
+    def test_spatial_function_in_where_skipped(self) -> None:
+        """WHERE with spatial function column → skipped (handled by UnindexedJoin)."""
+        ref = _make_ref_model(
+            "brewdb.public.parcels",
+            {"parcel_id": "BIGINT", "geom": "GEOMETRY"},
+            post_statements=[],
+        )
+        src = _make_source_model(
+            "brewdb.public.analysis",
+            """
+            SELECT s.*
+            FROM source_table AS s
+            JOIN brewdb.public.parcels AS p ON s.parcel_id = p.parcel_id
+            WHERE ST_Intersects(s.geom, p.geom)
+            """,
+            {"parcel_id": "BIGINT", "geom": "GEOMETRY", "result": "BIGINT"},
+        )
+        violations = _check_where(src, {"brewdb.public.parcels": ref})
+        assert violations == []
+
+
+# ── Expanded Skip Tests ─────────────────────────────────────────────
+
+
+class TestSkipCasesNew:
+    """Skip cases for UnindexedGroupBy and UnindexedWhereClause."""
+
+    def test_external_table_group_by_skipped(self) -> None:
+        """GROUP BY on column from external table → skipped."""
+        src = _make_source_model(
+            "brewdb.public.analysis",
+            """
+            SELECT t.owner_id, COUNT(*)
+            FROM source_table AS s
+            JOIN public.external_table AS t ON s.id = t.id
+            GROUP BY t.owner_id
+            """,
+            {"owner_id": "BIGINT", "count": "BIGINT"},
+        )
+        violations = _check_groupby(src, {})
+        assert violations == []
+
+    def test_external_table_where_skipped(self) -> None:
+        """WHERE on column from external table → skipped."""
+        src = _make_source_model(
+            "brewdb.public.analysis",
+            """
+            SELECT t.*
+            FROM source_table AS s
+            JOIN public.external_table AS t ON s.id = t.id
+            WHERE t.owner_id = 42
+            """,
+            {"owner_id": "BIGINT", "result": "BIGINT"},
+        )
+        violations = _check_where(src, {})
         assert violations == []

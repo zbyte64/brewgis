@@ -209,6 +209,157 @@ _EXPRESSION_WRAPPERS = frozenset(
 )
 
 
+# ── Module-level helpers ──────────────────────────────────────────────
+
+
+def _table_fqn(table: exp.Table, model: Model) -> str | None:
+    """Build a fully-qualified name from a Table expression that
+    matches the quoting convention used by SQLMesh model FQNs."""
+    catalog = getattr(model, "default_catalog", None)
+    dialect = getattr(model, "dialect", None) or ""
+    try:
+        return normalize_model_name(
+            table,
+            default_catalog=catalog,
+            dialect=dialect,
+        )
+    except Exception:  # noqa: BLE001
+        # Fallback: build a bare dotted name.
+        parts: list[str] = []
+        if table.args.get("catalog"):
+            parts.append(str(table.args["catalog"]))
+        if table.args.get("db"):
+            parts.append(str(table.args["db"]))
+        name = table.name
+        if not name:
+            return None
+        parts.append(name)
+        return ".".join(parts)
+
+
+def _extract_indexes_from_sql(
+    sql_text: str,
+    model_name: str,
+    result: dict[str, bool],
+) -> None:
+    """Extract indexed columns from a SQL string into ``result``.
+
+    The value is ``True`` if the index uses ``USING GIST`` (spatial index),
+    ``False`` for B-tree indexes.
+    """
+    pattern = re.compile(
+        r"""
+        CREATE\s+(UNIQUE\s+)?INDEX
+        (\s+IF\s+NOT\s+EXISTS)?\s+\S+
+        \s+ON\s+\S+
+        (\s+USING\s+(?P<gist>GIST))?
+        \s*\(
+        (?P<cols>[^)]+)
+        \)
+        """,
+        re.IGNORECASE | re.VERBOSE | re.DOTALL,
+    )
+
+    # Match the short table name too (last part of FQN).
+    short_name = model_name.rsplit(".", 1)[-1] if "." in model_name else model_name
+
+    for match in pattern.finditer(sql_text):
+        on_clause = match.group(0)
+        on_table_pattern = r"ON\s+" + re.escape(model_name)
+        on_short_pattern = r"ON\s+" + re.escape(short_name) + r"\b"
+        if not re.search(on_table_pattern, on_clause, re.IGNORECASE) and not re.search(
+            on_short_pattern, on_clause, re.IGNORECASE
+        ):
+            continue
+
+        is_gist = match.group("gist") is not None
+        cols_section = match.group("cols")
+        for col_expr in cols_section.split(","):
+            col_name = col_expr.strip().split()[0].strip('"')
+            if col_name:
+                result[col_name] = result.get(col_name, False) or is_gist
+
+
+def _get_indexed_columns(model: SqlModel) -> dict[str, bool]:
+    """Return ``{column_name: is_spatial}`` from ``post_statements``.
+
+    Checks both the model's source file and its ``post_statements_``
+    for ``CREATE INDEX`` statements and extracts column names.
+    """
+    result: dict[str, bool] = {}
+
+    # 1) Try reading from post_statements_ (in-memory, works for synthetic models).
+    for ps in getattr(model, "post_statements_", []) or []:
+        sql_text = ps.sql if hasattr(ps, "sql") else str(ps)
+        _extract_indexes_from_sql(sql_text, model.name, result)
+
+    # 2) Fall back to reading the source file (for real models on disk).
+    source_path = getattr(model, "_path", None)
+    if source_path:
+        try:
+            source = Path(source_path).read_text()
+            _extract_indexes_from_sql(source, model.name, result)
+        except OSError:
+            pass
+
+    return result
+
+
+def _build_alias_table_map(query: exp.Expr, model: Model) -> dict[str, str]:
+    """Build ``{alias: fully_qualified_table_name}`` from FROM/JOIN clauses.
+
+    Handles both ``FROM t AS alias`` and bare ``FROM t`` (alias = table name).
+    Dynamic table references (starting with ``@``) are excluded.
+    """
+    alias_map: dict[str, str] = {}
+
+    for from_node in query.find_all(exp.From):
+        table = from_node.this
+        if isinstance(table, exp.Table):
+            alias = table.alias_or_name
+            fqn = _table_fqn(table, model)
+            if fqn:
+                alias_map[alias] = fqn
+
+    for join_node in query.find_all(exp.Join):
+        table = join_node.this
+        if isinstance(table, exp.Table):
+            alias = table.alias_or_name
+            fqn = _table_fqn(table, model)
+            if fqn:
+                alias_map[alias] = fqn
+
+    return alias_map
+
+
+def _is_in_spatial_function(col: exp.Column) -> bool:
+    """Check if a column is an argument to a spatial function.
+
+    Walks the parent chain to detect ``ST_Intersects(..., col, ...)``
+    and similar spatial predicates handled by ``UnindexedJoin``.
+    """
+    parent = col.parent
+    while parent is not None:
+        if isinstance(parent, exp.Func) and parent.name.upper() in _SPATIAL_FUNCTIONS:
+            return True
+        parent = parent.parent
+    return False
+
+
+def _func_name(func: exp.Func) -> str:
+    """Return the uppercased function name, handling both ``Anonymous``
+    and specific function classes (``Left``, ``Coalesce``, etc.)."""
+    if func.name:
+        return func.name.upper()
+    sql_name = func.sql_name()
+    if callable(sql_name):
+        sql_name = sql_name()
+    return (sql_name or "").upper()
+
+
+# ── UnindexedJoin ────────────────────────────────────────────────────
+
+
 class UnindexedJoin(Rule):
     """JOIN conditions that reference columns from other SQLMesh models
     must have corresponding indexes on those columns in the referenced
@@ -271,7 +422,7 @@ class UnindexedJoin(Rule):
             return None
 
         # Build FQN for lookup.
-        fqn = self._table_fqn(table, model)
+        fqn = _table_fqn(table, model)
         if fqn is None:
             return None
 
@@ -297,7 +448,7 @@ class UnindexedJoin(Rule):
             return None
 
         # Collect indexed columns from the referenced model.
-        indexed_cols = self._get_indexed_columns(ref_model)
+        indexed_cols = _get_indexed_columns(ref_model)
 
         # Analyze the ON condition for join columns on the referenced side.
         join_alias = table.alias_or_name
@@ -319,132 +470,6 @@ class UnindexedJoin(Rule):
 
         # Check key-based EQ joins.
         return self._check_key_join(on, join_alias, fqn, indexed_cols)
-
-    def _table_fqn(
-        self,
-        table: exp.Table,
-        model: Model,
-    ) -> str | None:
-        """Build a fully-qualified name from a Table expression that
-        matches the quoting convention used by SQLMesh model FQNs."""
-        catalog = getattr(model, "default_catalog", None)
-        dialect = getattr(model, "dialect", None) or ""
-        try:
-            return normalize_model_name(
-                table,
-                default_catalog=catalog,
-                dialect=dialect,
-            )
-        except Exception:
-            # Fallback: build a bare dotted name.
-            parts: list[str] = []
-            if table.args.get("catalog"):
-                parts.append(str(table.args["catalog"]))
-            if table.args.get("db"):
-                parts.append(str(table.args["db"]))
-            name = table.name
-            if not name:
-                return None
-            parts.append(name)
-            return ".".join(parts)
-
-    def _get_indexed_columns(
-        self,
-        model: SqlModel,
-    ) -> dict[str, bool]:
-        """Return ``{column_name: is_spatial}`` from post_statements.
-
-        Checks both the model's source file and its ``post_statements_``
-        for ``CREATE INDEX`` statements and extracts column names.
-        The value is ``True`` if the index uses ``USING GIST``
-        (spatial index).
-        """
-        result: dict[str, bool] = {}
-
-        # 1) Try reading from post_statements_ (in-memory, works for synthetic models).
-        for ps in getattr(model, "post_statements_", []) or []:
-            sql_text = ps.sql if hasattr(ps, "sql") else str(ps)
-            self._extract_indexes_from_sql(sql_text, model.name, result)
-
-        # 2) Fall back to reading the source file (for real models on disk).
-        source_path = getattr(model, "_path", None)
-        if source_path:
-            try:
-                source = Path(source_path).read_text()
-                self._extract_indexes_from_sql(source, model.name, result)
-            except OSError:
-                pass
-
-        return result
-
-    @staticmethod
-    def _extract_indexes_from_sql(
-        sql_text: str,
-        model_name: str,
-        result: dict[str, bool],
-    ) -> None:
-        """Extract indexed columns from a SQL string into ``result``."""
-        pattern = re.compile(
-            r"""
-            CREATE\s+(UNIQUE\s+)?INDEX
-            (\s+IF\s+NOT\s+EXISTS)?\s+\S+
-            \s+ON\s+\S+
-            (\s+USING\s+(?P<gist>GIST))?
-            \s*\(
-            (?P<cols>[^)]+)
-            \)
-            """,
-            re.IGNORECASE | re.VERBOSE | re.DOTALL,
-        )
-
-        # Match the short table name too (last part of FQN).
-        short_name = model_name.rsplit(".", 1)[-1] if "." in model_name else model_name
-
-        for match in pattern.finditer(sql_text):
-            on_clause = match.group(0)
-            on_table_pattern = r"ON\s+" + re.escape(model_name)
-            on_short_pattern = r"ON\s+" + re.escape(short_name) + r"\b"
-            if not re.search(
-                on_table_pattern, on_clause, re.IGNORECASE
-            ) and not re.search(on_short_pattern, on_clause, re.IGNORECASE):
-                continue
-
-            is_gist = match.group("gist") is not None
-            cols_section = match.group("cols")
-            for col_expr in cols_section.split(","):
-                col_name = col_expr.strip().split()[0].strip('"')
-                if col_name:
-                    result[col_name] = result.get(col_name, False) or is_gist
-
-    @staticmethod
-    def _func_name(func: exp.Func) -> str:
-        """Return the uppercased function name, handling both ``Anonymous``
-        and specific function classes (``Left``, ``Coalesce``, etc.)."""
-        if func.name:
-            return func.name.upper()
-        sql_name = func.sql_name()
-        if callable(sql_name):
-            sql_name = sql_name()
-        return (sql_name or "").upper()
-
-    @staticmethod
-    def _func_args(func: exp.Func) -> list[exp.Expression]:
-        """Collect all argument expressions from a function node.
-
-        Different function classes store args differently:
-        - ``Anonymous``: ``expressions`` key
-        - ``Left`` / ``Right``: ``this`` and ``expression`` keys
-        - ``Coalesce`` / ``IfNull``: ``this`` and ``expressions`` keys
-        """
-        args: list[exp.Expression] = []
-        for key in ("this", "expression"):
-            val = func.args.get(key)
-            if val is not None and isinstance(val, exp.Expression):
-                args.append(val)
-        for val in func.args.get("expressions", []):
-            if isinstance(val, exp.Expression):
-                args.append(val)
-        return args
 
     def _check_spatial_join(
         self,
@@ -468,7 +493,7 @@ class UnindexedJoin(Rule):
 
         # Check for ST_Intersects etc.
         for func in on.find_all(exp.Func):
-            if self._func_name(func) not in _SPATIAL_FUNCTIONS:
+            if _func_name(func) not in _SPATIAL_FUNCTIONS:
                 continue
             for col in func.find_all(exp.Column):
                 if col.table == join_alias:
@@ -476,7 +501,7 @@ class UnindexedJoin(Rule):
                     if col_name not in indexed_cols or not indexed_cols.get(col_name):
                         return self.violation(
                             f"Spatial join against ``{fqn}`` uses "
-                            f"``{self._func_name(func)}(..., {col_name})`` without a "
+                            f"``{_func_name(func)}(..., {col_name})`` without a "
                             f"GiST index on the referenced column."
                         )
 
@@ -490,15 +515,15 @@ class UnindexedJoin(Rule):
     ) -> RuleViolation | None:
         """Flag JOIN conditions that wrap columns in functions."""
         for func in on.find_all(exp.Func):
-            if self._func_name(func) not in _EXPRESSION_WRAPPERS:
+            if _func_name(func) not in _EXPRESSION_WRAPPERS:
                 continue
             # Check all args for column references to the joined table.
-            for arg in self._func_args(func):
+            for arg in _func_args(func):
                 for col in arg.find_all(exp.Column):
                     if col.table == join_alias:
                         return self.violation(
                             f"Join ON clause wraps ``{fqn}`` column "
-                            f"``{col.name}`` in ``{self._func_name(func)}()``. "
+                            f"``{col.name}`` in ``{_func_name(func)}()``. "
                             f"Consider an expression index."
                         )
 
@@ -525,3 +550,182 @@ class UnindexedJoin(Rule):
                         )
 
         return None
+
+
+# ── UnindexedGroupBy ─────────────────────────────────────────────────
+
+
+class UnindexedGroupBy(Rule):
+    """GROUP BY clauses that reference unindexed columns from other
+    models force expensive sort or hash aggregate operations. Each
+    GROUP BY column from a referenced model should have a corresponding
+    B-tree index on that column in the referenced model's
+    ``post_statements``.
+
+    Only qualified columns (``alias.col``) are checked — unqualified
+    columns cannot be resolved to a source model without full schema
+    resolution and are skipped.
+    """
+
+    def check_model(self, model: Model) -> RuleViolation | list[RuleViolation] | None:
+        if not isinstance(model, SqlModel):
+            return None
+
+        query = model.query
+        if query is None:
+            return None
+
+        # Build alias → table FQN map from FROM/JOIN clauses.
+        alias_map = _build_alias_table_map(query, model)
+
+        violations: list[RuleViolation] = []
+
+        # Scan all GROUP BY expressions in the query.
+        for group_node in query.find_all(exp.Group):
+            for expr in group_node.expressions:
+                for col in expr.find_all(exp.Column):
+                    if not col.table:
+                        # Unqualified column — cannot resolve source model.
+                        continue
+
+                    alias = col.table
+                    ref_fqn = alias_map.get(alias)
+                    if ref_fqn is None:
+                        # Alias not resolved — external table or unknown.
+                        continue
+
+                    ref_model = _get_model(self.context, ref_fqn)
+                    if ref_model is None or not isinstance(ref_model, SqlModel):
+                        continue
+
+                    indexed_cols = _get_indexed_columns(ref_model)
+                    col_name = col.name
+                    if col_name not in indexed_cols:
+                        violations.append(
+                            self.violation(
+                                f"GROUP BY references unindexed column "
+                                f"``{ref_fqn}``.``{col_name}`` from alias "
+                                f"``{alias}``. Add a B-tree index on this "
+                                f"column in the referenced model's "
+                                f"``post_statements``."
+                            )
+                        )
+        if not violations:
+            return None
+        if len(violations) == 1:
+            return violations[0]
+        return violations
+
+
+# ── UnindexedWhereClause ─────────────────────────────────────────────
+
+
+class UnindexedWhereClause(Rule):
+    """WHERE clause filter columns from other models force sequential
+    scans when unindexed. Each filtered column from a referenced model
+    should have a corresponding index on that column in the referenced
+    model's ``post_statements``.
+
+    Only qualified columns (``alias.col``) are checked — unqualified
+    columns cannot be resolved to a source model without full schema
+    resolution and are skipped.
+
+    Columns inside spatial functions (``ST_Intersects``, etc.) are
+    skipped — those are handled by ``UnindexedJoin``.
+    """
+
+    def check_model(self, model: Model) -> RuleViolation | list[RuleViolation] | None:
+        if not isinstance(model, SqlModel):
+            return None
+
+        query = model.query
+        if query is None:
+            return None
+
+        # Build alias → table FQN map from FROM/JOIN clauses.
+        alias_map = _build_alias_table_map(query, model)
+
+        violations: list[RuleViolation] = []
+
+        # Scan the WHERE clause for qualified column references.
+        where = query.args.get("where")
+        if where is None:
+            return None
+
+        for col in where.find_all(exp.Column):
+            if not col.table:
+                # Unqualified column — cannot resolve source model.
+                continue
+
+            # Skip columns inside spatial functions — handled by UnindexedJoin.
+            if _is_in_spatial_function(col):
+                continue
+
+            alias = col.table
+            ref_fqn = alias_map.get(alias)
+            if ref_fqn is None:
+                # Alias not resolved — external table or unknown.
+                continue
+
+            ref_model = _get_model(self.context, ref_fqn)
+            if ref_model is None or not isinstance(ref_model, SqlModel):
+                continue
+
+            indexed_cols = _get_indexed_columns(ref_model)
+            col_name = col.name
+            if col_name not in indexed_cols:
+                violations.append(
+                    self.violation(
+                        f"WHERE clause filters on unindexed column "
+                        f"``{ref_fqn}``.``{col_name}`` from alias "
+                        f"``{alias}``. Add a B-tree index on this "
+                        f"column in the referenced model's "
+                        f"``post_statements``."
+                    )
+                )
+
+        if not violations:
+            return None
+        if len(violations) == 1:
+            return violations[0]
+        return violations
+
+
+# ── Shared utilities ─────────────────────────────────────────────────
+
+
+def _get_model(context: object, fqn: str) -> Model | None:
+    """Look up a model by FQN, trying both quoted and unquoted forms.
+
+    ``normalize_model_name`` may return quoted FQNs (e.g.
+    ``"brewdb"."public"."parcels"``) while test models and some
+    context lookups store unquoted FQNs (``brewdb.public.parcels``).
+    This helper tries both forms.
+    """
+    models: dict[str, Model] = getattr(context, "_models", {})
+    model = models.get(fqn)
+    if model is None:
+        # Try unquoted form (test models use unquoted FQNs).
+        unquoted = fqn.replace('"', "")
+        if unquoted != fqn:
+            model = models.get(unquoted)
+    return model
+
+
+def _func_args(func: exp.Func) -> list[exp.Expression]:
+    """Collect all argument expressions from a function node.
+
+    Different function classes store args differently:
+    - ``Anonymous``: ``expressions`` key
+    - ``Left`` / ``Right``: ``this`` and ``expression`` keys
+    - ``Coalesce`` / ``IfNull``: ``this`` and ``expressions`` keys
+    """
+    args: list[exp.Expression] = []
+    for key in ("this", "expression"):
+        val = func.args.get(key)
+        if val is not None and isinstance(val, exp.Expression):
+            args.append(val)
+    for val in func.args.get("expressions", []):
+        if isinstance(val, exp.Expression):
+            args.append(val)
+    return args
