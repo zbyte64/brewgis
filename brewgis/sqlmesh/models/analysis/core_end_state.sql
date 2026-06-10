@@ -199,3 +199,15 @@ FROM computed AS c;
   CREATE INDEX IF NOT EXISTS idx_core_end_state_parcel_id
   ON brewgis.analysis.core_end_state (parcel_id)
 );
+@IF(@runtime_stage = 'evaluating',
+  CREATE INDEX IF NOT EXISTS idx_core_end_state_parcel_acres_ag
+  ON brewgis.analysis.core_end_state (parcel_acres_agriculture)
+);
+@IF(@runtime_stage = 'evaluating',
+  CREATE INDEX IF NOT EXISTS idx_core_end_state_land_dev_cat
+  ON brewgis.analysis.core_end_state (land_dev_category)
+);
+@IF(@runtime_stage = 'evaluating',
+  CREATE INDEX IF NOT EXISTS idx_core_end_state_acres_dev
+  ON brewgis.analysis.core_end_state (acres_developed)
+);
