@@ -75,8 +75,10 @@ vida_deduped AS (
     )
 )
 
+-- DuckDB ST_Transform to EPSG:4326 follows OGC axis order (lat, lon). PostGIS expects
+-- (lon, lat).  ST_FlipCoordinates swaps them so parcel spatial joins work correctly.
 SELECT
-    ST_SetCRS(geometry, 'EPSG:4326') AS geometry,
+    ST_SetCRS(ST_FlipCoordinates(geometry), 'EPSG:4326') AS geometry,
     height,
     levels,
     class,
@@ -88,7 +90,7 @@ FROM overture_buildings
 UNION ALL
 
 SELECT
-    ST_SetCRS(geometry, 'EPSG:4326') AS geometry,
+    ST_SetCRS(ST_FlipCoordinates(geometry), 'EPSG:4326') AS geometry,
     height,
     levels,
     class,
