@@ -116,6 +116,9 @@ test-soda:  ## Run Soda Core data quality validation
 .PHONY: mcp-up
 mcp-up:  ## Start MCP server in Docker
 	$(COMPOSE_RUN) mcp
+.PHONY: sqlmesh-ui
+sqlmesh-ui:  ## Launch SQLMesh browser UI
+	docker compose -f $(COMPOSE_FILE) up sqlmesh-ui
 .PHONY: coverage
 coverage:  ## Run tests with coverage report and fail if below threshold
 	$(COMPOSE_RUN) bash -c 'coverage run -m pytest -m "not e2e" --timeout=300 && coverage report --fail-under=60'

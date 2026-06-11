@@ -113,3 +113,12 @@ services:
       - postgres
     ports: []
     command: /start-mcp
+  sqlmesh-ui:
+    <<: *django
+    image: brewgis_local_sqlmesh_ui
+    container_name: brewgis_local_sqlmesh_ui
+    depends_on:
+      - postgres
+    ports:
+      - '8001:8001'
+    command: /start-sqlmesh-ui

@@ -85,6 +85,12 @@ COPY --from=python-build-stage /usr/src/app/wheels  /wheels/
 RUN pip install --no-cache-dir --no-index --find-links=/wheels/ /wheels/* \
   && rm -rf /wheels/
 
+# Patch: web.server.settings uses Generator[Context, None] (2 type args) which
+# typing_extensions >=4.12 rejects because Generator expects 3 (Yield, Send, Return).
+# Can remove when upstream fixes it.
+RUN sed -i 's/Generator\[Context, None\]/Generator[Context, None, None]/g' \
+  /usr/local/lib/python3.12/site-packages/web/server/settings.py
+
 COPY ./compose/production/django/entrypoint /entrypoint
 RUN sed -i 's/\r$//g' /entrypoint
 RUN chmod +x /entrypoint
@@ -105,6 +111,10 @@ RUN chmod +x /start-celerybeat
 COPY ./compose/local/django/celery/flower/start /start-flower
 RUN sed -i 's/\r$//g' /start-flower
 RUN chmod +x /start-flower
+
+COPY ./compose/local/django/start-sqlmesh-ui /start-sqlmesh-ui
+RUN sed -i 's/\r$//g' /start-sqlmesh-ui
+RUN chmod +x /start-sqlmesh-ui
 
 
 # copy application code to WORKDIR
