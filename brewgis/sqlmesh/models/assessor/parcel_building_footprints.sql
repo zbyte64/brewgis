@@ -27,7 +27,7 @@ MODEL (
 WITH building_stats AS (
     SELECT
         sap.apn,
-        SUM(ST_Area(ST_Transform(bc.geometry, @VAR('local_srid', 3310))) * 10.7639) AS total_footprint_sqft,
+        SUM(ST_Area(ST_Transform(bc.geometry, @VAR('local_srid', 3310))) * 10.7639 * COALESCE(NULLIF(bc.levels, 0), 1)) AS total_footprint_sqft,
         COUNT(*) AS building_count,
         MAX(bc.height) AS max_height,
         MAX(bc.levels) AS max_levels,

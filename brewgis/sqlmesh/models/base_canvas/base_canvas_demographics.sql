@@ -57,7 +57,15 @@ WITH parcel_geom AS (
         bg.area_parcel_emp_ag,
         bg.area_parcel_emp,
         bg.area_parcel_mixed_use,
-        bg.area_parcel_no_use
+        bg.area_parcel_no_use,
+        bg.du_subtype,
+        bg.footprint_living_sqft,
+        bg.footprint_building_sqft,
+        bg.estimated_building_sqft,
+        bg.dasym_impervious_fraction,
+        bg.pop_dasym_weight,
+        bg.emp_dasym_weight,
+        bg.du_dasym_weight
     FROM brewgis.base_canvas.base_canvas_geometry bg
 ),
 
@@ -91,31 +99,40 @@ intersections AS (
         a.pct_college_educated,
         a.cost_burden_pct,
         a.bg_area,
-        ST_Area(ST_ClipByBox2D(ST_Transform(p.geometry, @VAR('local_srid', 3310)), a.local_envelope)) AS intersect_area
+        ST_Area(ST_ClipByBox2D(ST_Transform(p.geometry, @VAR('local_srid', 3310)), a.local_envelope)) AS intersect_area,
+        p.pop_dasym_weight,
+        ST_Area(ST_ClipByBox2D(ST_Transform(p.geometry, @VAR('local_srid', 3310)), a.local_envelope)) * COALESCE(p.pop_dasym_weight, 1.0) AS weighted_intersect_area
     FROM parcel_geom p
     JOIN acs_data a ON ST_Intersects(p.geometry, a.geometry)
 ),
 
+bg_weighted_totals AS (
+    SELECT geoid, SUM(weighted_intersect_area) AS bg_weighted_total
+    FROM intersections
+    GROUP BY geoid
+),
+
 allocated AS (
     SELECT
-        parcel_id,
-        SUM(pop * intersect_area / bg_area) AS pop,
-        SUM(hh * intersect_area / bg_area) AS hh,
-        SUM(du * intersect_area / bg_area) AS du,
-        SUM(du_detsf * intersect_area / bg_area) AS du_detsf,
-        SUM(du_detsf_sl * intersect_area / bg_area) AS du_detsf_sl,
-        SUM(du_detsf_ll * intersect_area / bg_area) AS du_detsf_ll,
-        SUM(du_attsf * intersect_area / bg_area) AS du_attsf,
-        SUM(du_mf * intersect_area / bg_area) AS du_mf,
-        SUM(du_mf2to4 * intersect_area / bg_area) AS du_mf2to4,
-        SUM(du_mf5p * intersect_area / bg_area) AS du_mf5p,
-        SUM(median_income * intersect_area) / NULLIF(SUM(intersect_area), 0) AS median_income,
-        SUM(rent_burden_pct * intersect_area) / NULLIF(SUM(intersect_area), 0) AS rent_burden_pct,
-        SUM(pct_minority * intersect_area) / NULLIF(SUM(intersect_area), 0) AS pct_minority,
-        SUM(pct_college_educated * intersect_area) / NULLIF(SUM(intersect_area), 0) AS pct_college_educated,
-        SUM(cost_burden_pct * intersect_area) / NULLIF(SUM(intersect_area), 0) AS cost_burden_pct
-    FROM intersections
-    GROUP BY parcel_id
+        i.parcel_id,
+        SUM(i.pop * i.weighted_intersect_area / NULLIF(bwt.bg_weighted_total, 0)) AS pop,
+        SUM(i.hh * i.weighted_intersect_area / NULLIF(bwt.bg_weighted_total, 0)) AS hh,
+        SUM(i.du * i.weighted_intersect_area / NULLIF(bwt.bg_weighted_total, 0)) AS du,
+        SUM(i.du_detsf * i.weighted_intersect_area / NULLIF(bwt.bg_weighted_total, 0)) AS du_detsf,
+        SUM(i.du_detsf_sl * i.weighted_intersect_area / NULLIF(bwt.bg_weighted_total, 0)) AS du_detsf_sl,
+        SUM(i.du_detsf_ll * i.weighted_intersect_area / NULLIF(bwt.bg_weighted_total, 0)) AS du_detsf_ll,
+        SUM(i.du_attsf * i.weighted_intersect_area / NULLIF(bwt.bg_weighted_total, 0)) AS du_attsf,
+        SUM(i.du_mf * i.weighted_intersect_area / NULLIF(bwt.bg_weighted_total, 0)) AS du_mf,
+        SUM(i.du_mf2to4 * i.weighted_intersect_area / NULLIF(bwt.bg_weighted_total, 0)) AS du_mf2to4,
+        SUM(i.du_mf5p * i.weighted_intersect_area / NULLIF(bwt.bg_weighted_total, 0)) AS du_mf5p,
+        SUM(i.median_income * i.intersect_area) / NULLIF(SUM(i.intersect_area), 0) AS median_income,
+        SUM(i.rent_burden_pct * i.intersect_area) / NULLIF(SUM(i.intersect_area), 0) AS rent_burden_pct,
+        SUM(i.pct_minority * i.intersect_area) / NULLIF(SUM(i.intersect_area), 0) AS pct_minority,
+        SUM(i.pct_college_educated * i.intersect_area) / NULLIF(SUM(i.intersect_area), 0) AS pct_college_educated,
+        SUM(i.cost_burden_pct * i.intersect_area) / NULLIF(SUM(i.intersect_area), 0) AS cost_burden_pct
+    FROM intersections i
+    LEFT JOIN bg_weighted_totals bwt ON i.geoid = bwt.geoid
+    GROUP BY i.parcel_id
 )
 
 SELECT
@@ -141,7 +158,7 @@ SELECT
     a.du_mf,
     a.du_mf2to4,
     a.du_mf5p,
-    NULL::text AS du_subtype,
+    p.du_subtype,
     a.median_income,
     a.rent_burden_pct,
     a.pct_minority,
@@ -171,7 +188,14 @@ SELECT
     p.area_parcel_emp_ag,
     p.area_parcel_emp,
     p.area_parcel_mixed_use,
-    p.area_parcel_no_use
+    p.area_parcel_no_use,
+    p.footprint_living_sqft,
+    p.footprint_building_sqft,
+    p.estimated_building_sqft,
+    p.dasym_impervious_fraction,
+    p.pop_dasym_weight,
+    p.emp_dasym_weight,
+    p.du_dasym_weight
 FROM parcel_geom p
 LEFT JOIN allocated a ON p.parcel_id = a.parcel_id;
 

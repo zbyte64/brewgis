@@ -104,7 +104,9 @@ intersections AS (
         w.emp_ind,
         w.emp_ag,
         w.wac_area,
-        ST_Area(ST_ClipByBox2D(p.local_geometry, w.wac_envelope)) AS intersect_area
+        ST_Area(ST_ClipByBox2D(p.local_geometry, w.wac_envelope)) AS intersect_area,
+        p.emp_dasym_weight,
+        ST_Area(ST_ClipByBox2D(p.local_geometry, w.wac_envelope)) * COALESCE(p.emp_dasym_weight, 1.0) AS weighted_intersect_area
     FROM parcel_with_weights p
     JOIN wac_prep w ON ST_Intersects(p.geometry, w.geometry)
     LEFT JOIN assessor_codes ac
@@ -117,7 +119,7 @@ intersections AS (
 block_intersect_totals AS (
     SELECT
         i.geoid,
-        SUM(i.intersect_area) AS total_intersect_area
+        SUM(i.weighted_intersect_area) AS total_intersect_area
     FROM intersections i
     GROUP BY i.geoid
 ),
@@ -125,29 +127,29 @@ block_intersect_totals AS (
 allocated AS (
     SELECT
         i.parcel_id,
-        SUM(i.emp * i.intersect_area / NULLIF(bit.total_intersect_area, 0)) AS emp,
-        SUM(i.emp_retail_services * i.intersect_area / NULLIF(bit.total_intersect_area, 0)) AS emp_retail_services,
-        SUM(i.emp_restaurant * i.intersect_area / NULLIF(bit.total_intersect_area, 0)) AS emp_restaurant,
-        SUM(i.emp_accommodation * i.intersect_area / NULLIF(bit.total_intersect_area, 0)) AS emp_accommodation,
-        SUM(i.emp_arts_entertainment * i.intersect_area / NULLIF(bit.total_intersect_area, 0)) AS emp_arts_entertainment,
-        SUM(i.emp_other_services * i.intersect_area / NULLIF(bit.total_intersect_area, 0)) AS emp_other_services,
-        SUM(i.emp_office_services * i.intersect_area / NULLIF(bit.total_intersect_area, 0)) AS emp_office_services,
-        SUM(i.emp_medical_services * i.intersect_area / NULLIF(bit.total_intersect_area, 0)) AS emp_medical_services,
-        SUM(i.emp_public_admin * i.intersect_area / NULLIF(bit.total_intersect_area, 0)) AS emp_public_admin,
-        SUM(i.emp_education * i.intersect_area / NULLIF(bit.total_intersect_area, 0)) AS emp_education,
-        SUM(i.emp_manufacturing * i.intersect_area / NULLIF(bit.total_intersect_area, 0)) AS emp_manufacturing,
-        SUM(i.emp_wholesale * i.intersect_area / NULLIF(bit.total_intersect_area, 0)) AS emp_wholesale,
-        SUM(i.emp_transport_warehousing * i.intersect_area / NULLIF(bit.total_intersect_area, 0)) AS emp_transport_warehousing,
-        SUM(i.emp_utilities * i.intersect_area / NULLIF(bit.total_intersect_area, 0)) AS emp_utilities,
-        SUM(i.emp_construction * i.intersect_area / NULLIF(bit.total_intersect_area, 0)) AS emp_construction,
-        SUM(i.emp_agriculture * i.intersect_area / NULLIF(bit.total_intersect_area, 0)) AS emp_agriculture,
-        SUM(i.emp_extraction * i.intersect_area / NULLIF(bit.total_intersect_area, 0)) AS emp_extraction,
-        SUM(i.emp_military * i.intersect_area / NULLIF(bit.total_intersect_area, 0)) AS emp_military,
-        SUM(i.emp_ret * i.intersect_area / NULLIF(bit.total_intersect_area, 0)) AS emp_ret,
-        SUM(i.emp_off * i.intersect_area / NULLIF(bit.total_intersect_area, 0)) AS emp_off,
-        SUM(i.emp_pub * i.intersect_area / NULLIF(bit.total_intersect_area, 0)) AS emp_pub,
-        SUM(i.emp_ind * i.intersect_area / NULLIF(bit.total_intersect_area, 0)) AS emp_ind,
-        SUM(i.emp_ag * i.intersect_area / NULLIF(bit.total_intersect_area, 0)) AS emp_ag
+        SUM(i.emp * i.weighted_intersect_area / NULLIF(bit.total_intersect_area, 0)) AS emp,
+        SUM(i.emp_retail_services * i.weighted_intersect_area / NULLIF(bit.total_intersect_area, 0)) AS emp_retail_services,
+        SUM(i.emp_restaurant * i.weighted_intersect_area / NULLIF(bit.total_intersect_area, 0)) AS emp_restaurant,
+        SUM(i.emp_accommodation * i.weighted_intersect_area / NULLIF(bit.total_intersect_area, 0)) AS emp_accommodation,
+        SUM(i.emp_arts_entertainment * i.weighted_intersect_area / NULLIF(bit.total_intersect_area, 0)) AS emp_arts_entertainment,
+        SUM(i.emp_other_services * i.weighted_intersect_area / NULLIF(bit.total_intersect_area, 0)) AS emp_other_services,
+        SUM(i.emp_office_services * i.weighted_intersect_area / NULLIF(bit.total_intersect_area, 0)) AS emp_office_services,
+        SUM(i.emp_medical_services * i.weighted_intersect_area / NULLIF(bit.total_intersect_area, 0)) AS emp_medical_services,
+        SUM(i.emp_public_admin * i.weighted_intersect_area / NULLIF(bit.total_intersect_area, 0)) AS emp_public_admin,
+        SUM(i.emp_education * i.weighted_intersect_area / NULLIF(bit.total_intersect_area, 0)) AS emp_education,
+        SUM(i.emp_manufacturing * i.weighted_intersect_area / NULLIF(bit.total_intersect_area, 0)) AS emp_manufacturing,
+        SUM(i.emp_wholesale * i.weighted_intersect_area / NULLIF(bit.total_intersect_area, 0)) AS emp_wholesale,
+        SUM(i.emp_transport_warehousing * i.weighted_intersect_area / NULLIF(bit.total_intersect_area, 0)) AS emp_transport_warehousing,
+        SUM(i.emp_utilities * i.weighted_intersect_area / NULLIF(bit.total_intersect_area, 0)) AS emp_utilities,
+        SUM(i.emp_construction * i.weighted_intersect_area / NULLIF(bit.total_intersect_area, 0)) AS emp_construction,
+        SUM(i.emp_agriculture * i.weighted_intersect_area / NULLIF(bit.total_intersect_area, 0)) AS emp_agriculture,
+        SUM(i.emp_extraction * i.weighted_intersect_area / NULLIF(bit.total_intersect_area, 0)) AS emp_extraction,
+        SUM(i.emp_military * i.weighted_intersect_area / NULLIF(bit.total_intersect_area, 0)) AS emp_military,
+        SUM(i.emp_ret * i.weighted_intersect_area / NULLIF(bit.total_intersect_area, 0)) AS emp_ret,
+        SUM(i.emp_off * i.weighted_intersect_area / NULLIF(bit.total_intersect_area, 0)) AS emp_off,
+        SUM(i.emp_pub * i.weighted_intersect_area / NULLIF(bit.total_intersect_area, 0)) AS emp_pub,
+        SUM(i.emp_ind * i.weighted_intersect_area / NULLIF(bit.total_intersect_area, 0)) AS emp_ind,
+        SUM(i.emp_ag * i.weighted_intersect_area / NULLIF(bit.total_intersect_area, 0)) AS emp_ag
     FROM intersections i
     LEFT JOIN block_intersect_totals bit ON i.geoid = bit.geoid
     GROUP BY i.parcel_id
@@ -182,6 +184,13 @@ SELECT
     p.pct_minority,
     p.pct_college_educated,
     p.cost_burden_pct,
+    p.footprint_living_sqft,
+    p.footprint_building_sqft,
+    p.estimated_building_sqft,
+    p.dasym_impervious_fraction,
+    p.pop_dasym_weight,
+    p.emp_dasym_weight,
+    p.du_dasym_weight,
     p.bldg_area_detsf_sl,
     p.bldg_area_detsf_ll,
     p.bldg_area_attsf,

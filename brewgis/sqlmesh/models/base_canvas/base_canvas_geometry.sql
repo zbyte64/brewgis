@@ -8,7 +8,8 @@ MODEL (
     not_null(columns := (parcel_id))
   ),
   depends_on (
-    brewgis.comparison.sacog_parcel_shim
+    brewgis.comparison.sacog_parcel_shim,
+    brewgis.comparison.sacog_comparison_dasymetric
   )
 );
 
@@ -70,6 +71,20 @@ parcel_area AS (
         parcel_geom.*,
         ROUND((ST_Area(parcel_geom.local_geometry) / 4046.86)::numeric, 4) AS area_gross
     FROM parcel_geom
+),
+
+dasymetric_enrichment AS (
+    SELECT
+        parcel_id,
+        du_subtype,
+        footprint_imputed_living_sqft AS footprint_living_sqft,
+        footprint_imputed_building_sqft AS footprint_building_sqft,
+        estimated_building_sqft,
+        impervious_fraction AS dasym_impervious_fraction,
+        pop_dasym_weight,
+        emp_dasym_weight,
+        du_dasym_weight
+    FROM brewgis.comparison.sacog_comparison_dasymetric
 )
 
 SELECT
@@ -110,8 +125,17 @@ SELECT
     parcel_area.area_gross,
     ROUND(parcel_area.area_gross::numeric, 4) AS area_parcel,
     ROUND((parcel_area.area_gross * 0.7)::numeric, 4) AS area_dev_condition,
-    ROUND((parcel_area.area_gross * 0.15)::numeric, 4) AS area_row
-FROM parcel_area;
+    ROUND((parcel_area.area_gross * 0.15)::numeric, 4) AS area_row,
+    de.du_subtype,
+    de.footprint_living_sqft,
+    de.footprint_building_sqft,
+    de.estimated_building_sqft,
+    de.dasym_impervious_fraction,
+    de.pop_dasym_weight,
+    de.emp_dasym_weight,
+    de.du_dasym_weight
+FROM parcel_area
+LEFT JOIN dasymetric_enrichment de ON parcel_area.parcel_id = de.parcel_id;
 
 -- post_statements
 @IF(@runtime_stage = 'evaluating',

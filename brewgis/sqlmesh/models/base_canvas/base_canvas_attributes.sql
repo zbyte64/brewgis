@@ -91,20 +91,30 @@ building_areas AS (
         *,
         COALESCE(
             bldg_area_detsf_sl,
+            CASE WHEN du_subtype = 'detsf_sl' THEN footprint_living_sqft END,
             du_detsf_sl_v * COALESCE(sqft_per_du, 1200.0) * 0.8
         ) AS bldg_area_detsf_sl_v,
         COALESCE(
             bldg_area_detsf_ll,
+            CASE WHEN du_subtype = 'detsf_ll' THEN footprint_living_sqft END,
             du_detsf_ll_v * COALESCE(sqft_per_du, 1200.0) * 1.2
         ) AS bldg_area_detsf_ll_v,
         COALESCE(
             bldg_area_attsf,
+            CASE WHEN du_subtype = 'attsf' THEN footprint_living_sqft END,
             du_attsf_v * COALESCE(sqft_per_du, 1200.0) * 0.9
         ) AS bldg_area_attsf_v,
         COALESCE(
             bldg_area_mf,
+            CASE WHEN du_subtype IN ('mf2to4', 'mf5p') THEN footprint_building_sqft END,
             du_mf_v * COALESCE(sqft_per_du, 1200.0) * 0.7
         ) AS bldg_area_mf_v,
+        -- Employment building areas (Tier 3 fallback only):
+        -- We cannot split total building sqft by 15 employment sub-types,
+        -- so these remain DU/emp * sqft_per_emp imputation.
+        -- Future: Overture `class` column (residential/commercial/industrial)
+        -- could distinguish residential vs non-residential footprints,
+        -- but not NAICS-level detail required here.
         COALESCE(
             bldg_area_retail_services,
             emp_retail_services_v * COALESCE(sqft_per_emp, 300.0)
@@ -202,11 +212,11 @@ irrigation AS (
         nlcd.impervious_fraction,
         COALESCE(abu.residential_irrigated_area,
             COALESCE(abu.area_parcel_res_v, abu.area_gross, 0)
-                * COALESCE(NULLIF(nlcd.impervious_fraction, 0), abu.res_irrigation_frac, 0.064)
+                * COALESCE(NULLIF(nlcd.impervious_fraction, 0), NULLIF(abu.dasym_impervious_fraction, 0), abu.res_irrigation_frac, 0.064)
         ) AS residential_irrigated_area_v,
         COALESCE(abu.commercial_irrigated_area,
             COALESCE(abu.area_parcel_emp_v, abu.area_gross, 0)
-                * COALESCE(NULLIF(nlcd.impervious_fraction, 0), abu.com_irrigation_frac, 0.035)
+                * COALESCE(NULLIF(nlcd.impervious_fraction, 0), NULLIF(abu.dasym_impervious_fraction, 0), abu.com_irrigation_frac, 0.035)
         ) AS commercial_irrigated_area_v
     FROM area_by_use abu
     LEFT JOIN nlcd_data nlcd ON abu.parcel_id = nlcd.parcel_id
