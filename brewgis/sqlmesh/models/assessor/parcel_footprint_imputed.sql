@@ -34,6 +34,7 @@ latest_block_groups AS (
 known AS (
     SELECT DISTINCT ON (pbf.apn)
         pbf.apn,
+        pbf.geometry,
         pbf.footprint_ratio,
         pbf.building_count,
         pbf.lot_size_acres,
@@ -56,6 +57,7 @@ known AS (
 unknown AS (
     SELECT
         pbf.apn,
+        pbf.geometry,
         pbf.footprint_ratio,
         pbf.building_count,
         pbf.lot_size_acres,
@@ -65,7 +67,7 @@ unknown AS (
     FROM brewgis.assessor.parcel_building_footprints pbf
     JOIN latest_block_groups pbg ON pbf.apn = pbg.apn
     WHERE pbf.footprint_ratio > 0
-      AND pbf.apn NOT IN (SELECT apn FROM known)
+      AND NOT EXISTS (SELECT 1 FROM known WHERE known.apn = pbf.apn)
 ),
 
 -- Z-score statistics per (block_group, land_development_category) partition
@@ -196,7 +198,7 @@ tier2 AS (
     LEFT JOIN tract_stats ts
         ON u.tract_geoid = ts.tract_geoid
        AND u.land_development_category = ts.land_development_category
-    WHERE u.apn NOT IN (SELECT DISTINCT apn FROM tier1 WHERE distance IS NOT NULL)
+    WHERE NOT EXISTS (SELECT 1 FROM tier1 WHERE tier1.apn = u.apn AND tier1.distance IS NOT NULL)
 ),
 
 tier2_ranked AS (
@@ -240,10 +242,11 @@ tier3 AS (
     FROM unknown u
     JOIN known k
         ON u.land_development_category = k.land_development_category
+       AND ST_DWithin(u.geometry, k.geometry, 5000)
     LEFT JOIN county_stats cs
         ON u.land_development_category = cs.land_development_category
-    WHERE u.apn NOT IN (SELECT DISTINCT apn FROM tier1 WHERE distance IS NOT NULL)
-      AND u.apn NOT IN (SELECT DISTINCT apn FROM tier2 WHERE distance IS NOT NULL)
+    WHERE NOT EXISTS (SELECT 1 FROM tier1 WHERE tier1.apn = u.apn AND tier1.distance IS NOT NULL)
+      AND NOT EXISTS (SELECT 1 FROM tier2 WHERE tier2.apn = u.apn AND tier2.distance IS NOT NULL)
 ),
 
 tier3_ranked AS (

@@ -76,6 +76,7 @@ parcel_area AS (
 dasymetric_enrichment AS (
     SELECT
         parcel_id,
+        land_development_category,
         du_subtype,
         footprint_imputed_living_sqft AS footprint_living_sqft,
         footprint_imputed_building_sqft AS footprint_building_sqft,
@@ -92,7 +93,7 @@ SELECT
     parcel_area.geometry,
     parcel_area.local_geometry,
     parcel_area.county,
-    parcel_area.land_development_category,
+    COALESCE(de.land_development_category, parcel_area.land_development_category) AS land_development_category,
     parcel_area.built_form_key,
     parcel_area.intersection_density,
     parcel_area.pop,

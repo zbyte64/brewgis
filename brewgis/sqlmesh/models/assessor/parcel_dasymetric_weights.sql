@@ -38,7 +38,8 @@ WITH assessor_parcels AS (
     SELECT
         apn,
         geometry,
-        COALESCE(NULLIF(lot_size_acres, 0), 0.01) AS lot_size_acres
+        COALESCE(NULLIF(lot_size_acres, 0), 0.01) AS lot_size_acres,
+        landuse
     FROM brewgis.assessor.sacog_assessor_parcels
 ),
 
@@ -86,35 +87,34 @@ building_medians AS (
     FROM brewgis.assessor.assessor_building_medians
 ),
 
+-- Best median values (most common property type) — materialized once, not per row
+best_medians AS (
+    SELECT * FROM building_medians ORDER BY parcel_count DESC LIMIT 1
+),
+
 estimated AS (
-    SELECT * FROM (
-        SELECT
-            ap.apn,
-            ap.lot_size_acres,
-            bm.median_living_area,
-            bm.median_building_sf,
-            bm.median_lot_size_acres,
-            CASE
-                WHEN bm.median_living_area IS NOT NULL AND bm.median_lot_size_acres > 0
-                THEN bm.median_living_area * (ap.lot_size_acres / bm.median_lot_size_acres)
-                WHEN bm.median_living_area IS NOT NULL
-                THEN bm.median_living_area
-                ELSE NULL
-            END AS estimated_living_sqft,
-            CASE
-                WHEN bm.median_building_sf IS NOT NULL AND bm.median_lot_size_acres > 0
-                THEN bm.median_building_sf * (ap.lot_size_acres / bm.median_lot_size_acres)
-                WHEN bm.median_building_sf IS NOT NULL
-                THEN bm.median_building_sf
-                ELSE NULL
-            END AS estimated_building_sqft,
-            ROW_NUMBER() OVER (
-                PARTITION BY ap.apn ORDER BY bm.parcel_count DESC
-            ) AS rn
-        FROM assessor_parcels ap
-            LEFT JOIN building_medians bm ON TRUE
-    ) sub
-    WHERE rn = 1
+    SELECT
+        ap.apn,
+        ap.lot_size_acres,
+        bm.median_living_area,
+        bm.median_building_sf,
+        bm.median_lot_size_acres,
+        CASE
+            WHEN bm.median_living_area IS NOT NULL AND bm.median_lot_size_acres > 0
+            THEN bm.median_living_area * (ap.lot_size_acres / bm.median_lot_size_acres)
+            WHEN bm.median_living_area IS NOT NULL
+            THEN bm.median_living_area
+            ELSE NULL
+        END AS estimated_living_sqft,
+        CASE
+            WHEN bm.median_building_sf IS NOT NULL AND bm.median_lot_size_acres > 0
+            THEN bm.median_building_sf * (ap.lot_size_acres / bm.median_lot_size_acres)
+            WHEN bm.median_building_sf IS NOT NULL
+            THEN bm.median_building_sf
+            ELSE NULL
+        END AS estimated_building_sqft
+    FROM assessor_parcels ap
+    CROSS JOIN best_medians bm
 ),
 
 classified AS (
@@ -123,13 +123,13 @@ classified AS (
         ap.lot_size_acres,
         COALESCE(auc.category, 'urban') AS land_development_category
     FROM assessor_parcels ap
-    LEFT JOIN brewgis.assessor.sacog_assessor_parcels sap
-        ON ap.apn = sap.apn
     LEFT JOIN brewgis.seeds.assessor_use_codes auc
-        ON LEFT(COALESCE(sap.landuse::text, ''), 2) = auc.use_code::text
+        ON LEFT(COALESCE(ap.landuse::text, ''), 2) = auc.use_code::text
 ),
 
 -- NLCD impervious surface fraction joined spatially via SACOG parcels
+-- Picks best match per APN by bounding-box overlap area (avoids expensive
+-- ST_Area(ST_Intersection(…)) on full polygon geometry)
 nlcd_join AS (
     SELECT DISTINCT ON (ap.apn)
         ap.apn,
@@ -139,7 +139,7 @@ nlcd_join AS (
         ON ST_Intersects(ap.geometry, sp.geometry)
     LEFT JOIN brewgis.nlcd.nlcd_parcel_stats nlcd
         ON sp.parcel_id = nlcd.parcel_id
-    ORDER BY ap.apn, ST_Area(ST_Intersection(ap.geometry, sp.geometry)) DESC
+    ORDER BY ap.apn, COALESCE(ST_Area(ST_Intersection(ST_Envelope(ap.geometry), ST_Envelope(sp.geometry))), 0) DESC
 ),
 
 -- OSM enabled defaults to false — intersection_density is NULL

@@ -32,7 +32,7 @@ SELECT DISTINCT ON (sp.parcel_id)
 FROM brewgis.comparison.sacog_parcel_shim sp
 JOIN brewgis.assessor.parcel_dasymetric_weights dw
     ON ST_Intersects(sp.geometry, dw.geometry)
-ORDER BY sp.parcel_id, ST_Area(ST_Intersection(sp.geometry, dw.geometry)) DESC;
+ORDER BY sp.parcel_id, COALESCE(ST_Area(ST_Intersection(ST_Envelope(sp.geometry), ST_Envelope(dw.geometry))), 0) DESC;
 
 -- post_statements
 @IF(@runtime_stage = 'evaluating',

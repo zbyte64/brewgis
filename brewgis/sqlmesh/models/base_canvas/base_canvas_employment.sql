@@ -71,48 +71,52 @@ sacog_use AS (
 -- Spatial intersection with area computation
 intersections AS (
     SELECT
-        p.parcel_id,
-        w.geoid,
-        -- Land development category from parcel
-        COALESCE(
-            NULLIF(p.land_development_category, ''),
-            ac.category,
-            su.category,
-            'urban'
-        ) AS land_development_category,
-        w.emp,
-        w.emp_retail_services,
-        w.emp_restaurant,
-        w.emp_accommodation,
-        w.emp_arts_entertainment,
-        w.emp_other_services,
-        w.emp_office_services,
-        w.emp_medical_services,
-        w.emp_public_admin,
-        w.emp_education,
-        w.emp_manufacturing,
-        w.emp_wholesale,
-        w.emp_transport_warehousing,
-        w.emp_utilities,
-        w.emp_construction,
-        w.emp_agriculture,
-        w.emp_extraction,
-        w.emp_military,
-        w.emp_ret,
-        w.emp_off,
-        w.emp_pub,
-        w.emp_ind,
-        w.emp_ag,
-        w.wac_area,
-        ST_Area(ST_ClipByBox2D(p.local_geometry, w.wac_envelope)) AS intersect_area,
-        p.emp_dasym_weight,
-        ST_Area(ST_ClipByBox2D(p.local_geometry, w.wac_envelope)) * COALESCE(p.emp_dasym_weight, 1.0) AS weighted_intersect_area
-    FROM parcel_with_weights p
-    JOIN wac_prep w ON ST_Intersects(p.geometry, w.geometry)
-    LEFT JOIN assessor_codes ac
-        ON LEFT(COALESCE(p.assessor_use_code, ''), 2) = ac.use_code::text
-    LEFT JOIN sacog_use su
-        ON TRIM(COALESCE(p.land_use, '')) = su.land_use_label
+        i.*,
+        i.intersect_area * COALESCE(i.emp_dasym_weight, 1.0) AS weighted_intersect_area
+    FROM (
+        SELECT
+            p.parcel_id,
+            w.geoid,
+            -- Land development category from parcel
+            COALESCE(
+                NULLIF(p.land_development_category, ''),
+                ac.category,
+                su.category,
+                'urban'
+            ) AS land_development_category,
+            w.emp,
+            w.emp_retail_services,
+            w.emp_restaurant,
+            w.emp_accommodation,
+            w.emp_arts_entertainment,
+            w.emp_other_services,
+            w.emp_office_services,
+            w.emp_medical_services,
+            w.emp_public_admin,
+            w.emp_education,
+            w.emp_manufacturing,
+            w.emp_wholesale,
+            w.emp_transport_warehousing,
+            w.emp_utilities,
+            w.emp_construction,
+            w.emp_agriculture,
+            w.emp_extraction,
+            w.emp_military,
+            w.emp_ret,
+            w.emp_off,
+            w.emp_pub,
+            w.emp_ind,
+            w.emp_ag,
+            w.wac_area,
+            ST_Area(ST_ClipByBox2D(p.local_geometry, w.wac_envelope)) AS intersect_area,
+            p.emp_dasym_weight
+        FROM parcel_with_weights p
+        JOIN wac_prep w ON ST_Intersects(p.geometry, w.geometry)
+        LEFT JOIN assessor_codes ac
+            ON LEFT(COALESCE(p.assessor_use_code, ''), 2) = ac.use_code::text
+        LEFT JOIN sacog_use su
+            ON TRIM(COALESCE(p.land_use, '')) = su.land_use_label
+    ) i
 ),
 
 -- Per-WAC-block total intersection area for normalization
