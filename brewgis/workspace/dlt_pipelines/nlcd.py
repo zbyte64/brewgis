@@ -14,6 +14,7 @@ from sqlalchemy import text as sql_text
 
 from brewgis.workspace.services._db import get_engine
 from brewgis.workspace.services.nlcd_fetcher import download_nlcd_raster
+from brewgis.workspace.services.nlcd_fetcher import download_nlcd_tree_canopy_raster
 from brewgis.workspace.services.raster_loader import load_raster_to_postgis
 
 logger = logging.getLogger(__name__)
@@ -21,6 +22,7 @@ logger = logging.getLogger(__name__)
 CACHE_DIR = settings.DATA_DOWNLOAD_CACHE_DIR
 
 _TARGET_RASTER_TABLE = "nlcd_raster"
+_TARGET_TREE_CANOPY_RASTER_TABLE = "nlcd_tree_canopy_raster"
 
 
 def _compute_bbox(parcel_source: str, schema: str) -> tuple | None:
@@ -146,5 +148,81 @@ def run_nlcd_pipeline(
 
     return {
         "raster_table": _TARGET_RASTER_TABLE,
+        "schema": schema,
+    }
+
+
+def run_nlcd_tree_canopy_pipeline(
+    parcel_source: str,
+    *,
+    bbox: tuple[float, float, float, float] | None = None,
+    year: int = 2016,
+    schema: str = "public",
+    ignore_cache: bool = False,
+) -> dict:
+    """Download NLCD Tree Canopy Cover raster and load into a PostGIS raster table.
+
+    Steps:
+    1. Downloads an NLCD Tree Canopy GeoTIFF subset covering the
+       *parcel_source* bounding box.
+    2. Loads the GeoTIFF into a PostGIS raster table via
+       ST_FromGDALRaster / ST_Tile / AddRasterConstraints.
+
+    Parameters
+    ----------
+    parcel_source : str
+        Name of the PostGIS table containing parcel geometries.
+        Used only to derive the bounding box when *bbox* is not
+        provided (reads ``ST_Extent(geometry)``).
+    bbox : tuple[float, float, float, float] | None, optional
+        Bounding box ``(west, south, east, north)`` in EPSG:4326.
+        When ``None``, computed from ``ST_Extent(geometry)`` on the
+        parcel source table with 5% buffer.
+    year : int, optional
+        NLCD tree canopy year (default 2016). Valid: 2011, 2016, 2019.
+    schema : str, optional
+        Database schema (default ``"public"``).
+    ignore_cache : bool, optional
+        If True, bypass cached downloads.
+
+    Returns
+    -------
+    dict
+        ``{"raster_table": str, "schema": str}``
+    """
+    # ── Derive bbox from parcel table if not provided ──────────────
+    if bbox is None:
+        bbox = _compute_bbox(parcel_source, schema)
+        assert bbox is not None, f"No geometries found in {schema}.{parcel_source}"
+
+    # ── Download NLCD Tree Canopy raster subset ───────────────────
+    # download_nlcd_tree_canopy_raster expects (west, south, east, north) in
+    # EPSG:4326; NLCD WCS handles reprojection to EPSG:5070
+    raster_path = download_nlcd_tree_canopy_raster(
+        bbox,
+        year,
+        refresh_cache=ignore_cache,
+        source_crs="EPSG:4326",
+    )
+
+    assert raster_path is not None, "NLCD Tree Canopy raster download returned no data"
+
+    # ── Load GeoTIFF into PostGIS raster table ────────────────────
+    result = load_raster_to_postgis(
+        raster_path,
+        _TARGET_TREE_CANOPY_RASTER_TABLE,
+        schema=schema,
+        srid=5070,
+    )
+
+    logger.info(
+        "NLCD Tree Canopy pipeline complete: raster loaded to %s.%s (%d tiles)",
+        schema,
+        _TARGET_TREE_CANOPY_RASTER_TABLE,
+        result.get("row_count", 0),
+    )
+
+    return {
+        "raster_table": _TARGET_TREE_CANOPY_RASTER_TABLE,
         "schema": schema,
     }

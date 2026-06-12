@@ -266,9 +266,15 @@ area_by_use AS (
 ),
 
 -- NLCD impervious surface data (zonal stats on SACOG parcels)
+-- and tree canopy cover fraction
 nlcd_data AS (
-    SELECT parcel_id, impervious_fraction
-    FROM brewgis.nlcd.nlcd_parcel_stats
+    SELECT
+        n.parcel_id,
+        n.impervious_fraction,
+        tc.tree_canopy_fraction
+    FROM brewgis.nlcd.nlcd_parcel_stats n
+    LEFT JOIN brewgis.nlcd.nlcd_tree_canopy_parcel_stats tc
+        ON n.parcel_id = tc.parcel_id
 ),
 
 -- Irrigation — uses NLCD impervious fraction when available, else calibration defaults
@@ -276,6 +282,7 @@ irrigation AS (
     SELECT
         abu.*,
         nlcd.impervious_fraction,
+        nlcd.tree_canopy_fraction,
         COALESCE(abu.residential_irrigated_area,
             COALESCE(abu.area_parcel_res_v, abu.area_gross, 0)
                 * COALESCE(NULLIF(nlcd.impervious_fraction, 0), NULLIF(abu.dasym_impervious_fraction, 0), abu.res_irrigation_frac, 0.064)
@@ -379,5 +386,6 @@ SELECT
     rent_burden_pct,
     pct_minority,
     pct_college_educated,
-    cost_burden_pct
+    cost_burden_pct,
+    tree_canopy_fraction
 FROM with_intersection

@@ -14,6 +14,7 @@ from brewgis.workspace.dlt_pipelines.census import run_census_pipeline
 from brewgis.workspace.dlt_pipelines.lehd import lehd_source
 from brewgis.workspace.dlt_pipelines.lehd import run_lehd_pipeline
 from brewgis.workspace.dlt_pipelines.nlcd import run_nlcd_pipeline
+from brewgis.workspace.dlt_pipelines.nlcd import run_nlcd_tree_canopy_pipeline
 from brewgis.workspace.dlt_pipelines.osm import run_osm_pipeline
 from brewgis.workspace.dlt_pipelines.poi import poi_source
 from brewgis.workspace.dlt_pipelines.poi import run_poi_pipeline
@@ -36,6 +37,7 @@ __all__ = [
     "run_census_pipeline",
     "run_lehd_pipeline",
     "run_nlcd_pipeline",
+    "run_nlcd_tree_canopy_pipeline",
     "run_osm_pipeline",
     "run_poi_pipeline",
     "run_raster_pipeline",

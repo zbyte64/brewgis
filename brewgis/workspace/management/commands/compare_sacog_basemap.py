@@ -269,6 +269,7 @@ class Command(BaseCommand):
         from brewgis.workspace.dlt_pipelines.census import run_census_pipeline
         from brewgis.workspace.dlt_pipelines.lehd import run_lehd_pipeline
         from brewgis.workspace.dlt_pipelines.nlcd import run_nlcd_pipeline
+        from brewgis.workspace.dlt_pipelines.nlcd import run_nlcd_tree_canopy_pipeline
         from brewgis.workspace.dlt_pipelines.osm import run_osm_pipeline
         from brewgis.workspace.dlt_pipelines.tiger_bg import run_tiger_bg_pipeline
         from brewgis.workspace.dlt_pipelines.tiger_block import run_tiger_block_pipeline
@@ -467,6 +468,30 @@ class Command(BaseCommand):
             else:
                 self.stdout.write("  NLCD raster already loaded, skipping")
 
+            self.stdout.write(
+                "\n── Phase 1.5b: Computing NLCD tree canopy zonal stats ──"
+            )
+            if (
+                force_data_fetch
+                or force_data_reload
+                or not self._table_has_rows("public", "nlcd_tree_canopy_raster")
+            ):
+                nlcd_tc_result = run_nlcd_tree_canopy_pipeline(
+                    parcel_source="sacog_comparison_parcels",
+                    year=NLCD_YEAR,
+                    ignore_cache=force_data_fetch,
+                )
+                nlcd_tc_raster_table = nlcd_tc_result.get(
+                    "raster_table", "nlcd_tree_canopy_raster"
+                )
+                self.stdout.write(
+                    f"  NLCD tree canopy raster loaded: "
+                    f"{nlcd_tc_result.get('row_count', 0)} tiles "
+                    f"in public.{nlcd_tc_raster_table}"
+                )
+            else:
+                self.stdout.write("  NLCD tree canopy raster already loaded, skipping")
+
         if use_assessor_geometry:
             self.stdout.write("\n── Populating Assessor parcel geometries ──")
             if (
@@ -529,6 +554,7 @@ class Command(BaseCommand):
                 [
                     "+brewgis.nlcd.parcels_wm",
                     "+brewgis.nlcd.nlcd_parcel_stats",
+                    "+brewgis.nlcd.nlcd_tree_canopy_parcel_stats",
                 ]
             )
         if use_assessor_geometry:
