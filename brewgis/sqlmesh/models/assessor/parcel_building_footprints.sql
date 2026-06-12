@@ -33,7 +33,13 @@ WITH building_stats AS (
         MAX(bc.levels) AS max_levels,
         COUNT(*) FILTER (WHERE bc.bf_source = 'google') AS google_building_count,
         COUNT(*) FILTER (WHERE bc.bf_source = 'microsoft') AS microsoft_building_count,
-        AVG(bc.confidence) AS mean_confidence
+        AVG(bc.confidence) AS mean_confidence,
+        SUM(ST_Area(ST_Transform(ST_SetSRID(bc.geometry, 4326), @VAR('local_srid', 3310))) * 10.7639)
+            FILTER (WHERE bc.class IN ('residential','house','apartments','dormitory','detached','semidetached','terrace','bungalow')) AS residential_building_sqft,
+        SUM(ST_Area(ST_Transform(ST_SetSRID(bc.geometry, 4326), @VAR('local_srid', 3310))) * 10.7639)
+            FILTER (WHERE bc.class NOT IN ('residential','house','apartments','dormitory','detached','semidetached','terrace','bungalow') OR bc.class IS NULL) AS non_residential_building_sqft,
+        COUNT(*) FILTER (WHERE bc.class IN ('residential','house','apartments','dormitory','detached','semidetached','terrace','bungalow')) AS residential_building_count,
+        COUNT(*) FILTER (WHERE bc.class NOT IN ('residential','house','apartments','dormitory','detached','semidetached','terrace','bungalow') OR bc.class IS NULL) AS non_residential_building_count
     FROM brewgis.assessor.sacog_assessor_parcels sap
     JOIN brewgis.staging.buildings_combined bc
         ON ST_Intersects(sap.geometry, ST_SetSRID(bc.geometry, 4326))
@@ -51,6 +57,10 @@ SELECT
     COALESCE(bs.google_building_count, 0) AS google_building_count,
     COALESCE(bs.microsoft_building_count, 0) AS microsoft_building_count,
     bs.mean_confidence,
+    COALESCE(bs.residential_building_sqft, 0) AS residential_building_sqft,
+    COALESCE(bs.non_residential_building_sqft, 0) AS non_residential_building_sqft,
+    COALESCE(bs.residential_building_count, 0) AS residential_building_count,
+    COALESCE(bs.non_residential_building_count, 0) AS non_residential_building_count,
     CASE
         WHEN sap.lot_size_acres > 0
         THEN COALESCE(bs.total_footprint_sqft, 0)

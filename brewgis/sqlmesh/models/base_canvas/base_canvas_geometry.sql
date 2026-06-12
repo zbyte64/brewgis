@@ -84,7 +84,12 @@ dasymetric_enrichment AS (
         impervious_fraction AS dasym_impervious_fraction,
         pop_dasym_weight,
         emp_dasym_weight,
-        du_dasym_weight
+        du_dasym_weight,
+        residential_building_sqft,
+        non_residential_building_sqft,
+        residential_building_count,
+        non_residential_building_count,
+        max_levels
     FROM brewgis.comparison.sacog_comparison_dasymetric
 )
 
@@ -134,7 +139,12 @@ SELECT
     de.dasym_impervious_fraction,
     de.pop_dasym_weight,
     de.emp_dasym_weight,
-    de.du_dasym_weight
+    de.du_dasym_weight,
+    de.residential_building_sqft,
+    de.non_residential_building_sqft,
+    de.residential_building_count,
+    de.non_residential_building_count,
+    de.max_levels
 FROM parcel_area
 LEFT JOIN dasymetric_enrichment de ON parcel_area.parcel_id = de.parcel_id;
 

@@ -65,7 +65,12 @@ WITH parcel_geom AS (
         bg.dasym_impervious_fraction,
         bg.pop_dasym_weight,
         bg.emp_dasym_weight,
-        bg.du_dasym_weight
+        bg.du_dasym_weight,
+        bg.residential_building_sqft,
+        bg.non_residential_building_sqft,
+        bg.residential_building_count,
+        bg.non_residential_building_count,
+        bg.max_levels
     FROM brewgis.base_canvas.base_canvas_geometry bg
 ),
 
@@ -195,7 +200,12 @@ SELECT
     p.dasym_impervious_fraction,
     p.pop_dasym_weight,
     p.emp_dasym_weight,
-    p.du_dasym_weight
+    p.du_dasym_weight,
+    p.residential_building_sqft,
+    p.non_residential_building_sqft,
+    p.residential_building_count,
+    p.non_residential_building_count,
+    p.max_levels
 FROM parcel_geom p
 LEFT JOIN allocated a ON p.parcel_id = a.parcel_id;
 

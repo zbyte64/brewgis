@@ -72,7 +72,10 @@ sacog_use AS (
 intersections AS (
     SELECT
         i.*,
-        i.intersect_area * COALESCE(i.emp_dasym_weight, 1.0) AS weighted_intersect_area
+        CASE
+            WHEN i.land_development_category IN ('undeveloped', 'agricultural') THEN 0
+            ELSE i.intersect_area * COALESCE(i.emp_dasym_weight, 1.0)
+        END AS weighted_intersect_area
     FROM (
         SELECT
             p.parcel_id,
@@ -195,6 +198,11 @@ SELECT
     p.pop_dasym_weight,
     p.emp_dasym_weight,
     p.du_dasym_weight,
+    p.residential_building_sqft,
+    p.non_residential_building_sqft,
+    p.residential_building_count,
+    p.non_residential_building_count,
+    p.max_levels,
     p.bldg_area_detsf_sl,
     p.bldg_area_detsf_ll,
     p.bldg_area_attsf,

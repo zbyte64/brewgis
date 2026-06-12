@@ -117,14 +117,50 @@ estimated AS (
     CROSS JOIN best_medians bm
 ),
 
+-- SACOG land-use code → category mapping.
+--
+-- SACOG parcel codes use a letter-prefix convention:
+--   A* = Residential, B* = Commercial, C* = Civic           → urban
+--   D* = Vacant, G* = Golf/Parks, W* = Water                → undeveloped
+--   E* = Education, H* = Hotel/Lodging                      → urban
+--   F* = Farming/Agriculture                                 → agricultural
+--   I* = Industrial/Office                                   → industrial
+--   M* = Misc/Public (MP=park, MR=road, MW=well + others)   → undeveloped exceptions, else urban
+--
+-- Also preserves the existing assessor_use_codes join for
+-- jurisdictions with 2-digit numeric codes (10-90).
+sacog_category AS (
+    SELECT
+        apn,
+        CASE
+            WHEN landuse IS NULL OR landuse = '' THEN 'undeveloped'
+            WHEN LEFT(landuse, 1) = 'A' THEN 'urban'
+            WHEN LEFT(landuse, 1) = 'B' THEN 'urban'
+            WHEN LEFT(landuse, 1) = 'C' THEN 'urban'
+            WHEN LEFT(landuse, 1) = 'D' THEN 'undeveloped'
+            WHEN LEFT(landuse, 1) = 'E' THEN 'urban'
+            WHEN LEFT(landuse, 1) = 'F' THEN 'agricultural'
+            WHEN LEFT(landuse, 1) = 'G' THEN 'undeveloped'
+            WHEN LEFT(landuse, 1) = 'H' THEN 'urban'
+            WHEN LEFT(landuse, 1) = 'I' THEN 'industrial'
+            -- M* two-letter exceptions: infrastructure → undeveloped
+            WHEN LEFT(landuse, 2) IN ('MP', 'MR', 'MW', 'MD', 'MF', 'MG', 'ML') THEN 'undeveloped'
+            WHEN LEFT(landuse, 1) = 'M' THEN 'urban'
+            WHEN LEFT(landuse, 1) = 'W' THEN 'undeveloped'
+            ELSE 'undeveloped'
+        END AS land_development_category
+    FROM assessor_parcels
+),
+
 classified AS (
     SELECT
         ap.apn,
         ap.lot_size_acres,
-        COALESCE(auc.category, 'urban') AS land_development_category
+        COALESCE(auc.category, sc.land_development_category, 'urban') AS land_development_category
     FROM assessor_parcels ap
     LEFT JOIN brewgis.seeds.assessor_use_codes auc
         ON LEFT(COALESCE(ap.landuse::text, ''), 2) = auc.use_code::text
+    LEFT JOIN sacog_category sc ON ap.apn = sc.apn
 ),
 
 -- NLCD impervious surface fraction joined spatially via SACOG parcels
@@ -163,6 +199,11 @@ assembled AS (
         fi.imputed_building_sqft AS footprint_imputed_building_sqft,
         fi.imputed_units AS footprint_imputed_units,
         fi.imputed_property_type AS footprint_imputed_property_type,
+        fi.residential_building_sqft,
+        fi.non_residential_building_sqft,
+        fi.residential_building_count,
+        fi.non_residential_building_count,
+        fi.max_levels,
         nj.impervious_fraction,
         oj.intersection_density,
         dw.pop_mult,
@@ -227,10 +268,18 @@ SELECT
     a.footprint_imputed_building_sqft,
     a.impervious_fraction,
     a.intersection_density,
+    a.residential_building_sqft,
+    a.non_residential_building_sqft,
+    a.residential_building_count,
+    a.non_residential_building_count,
+    a.max_levels,
     -- Population weight
     COALESCE(a.pop_mult, 1.0) * COALESCE(
         a.actual_living_sqft,
         a.footprint_imputed_living_sqft,
+        -- Tier 2.5: direct building footprint area × levels for residential buildings
+        CASE WHEN a.residential_building_sqft > 0
+             THEN a.residential_building_sqft * COALESCE(a.max_levels, 1) END,
         a.estimated_living_sqft,
         a.lot_size_acres * COALESCE(a.impervious_fraction, 1.0),
         a.lot_size_acres
@@ -239,6 +288,9 @@ SELECT
     COALESCE(a.emp_mult, 0.15) * COALESCE(
         a.actual_building_sqft,
         a.footprint_imputed_building_sqft,
+        -- Tier 2.5: direct building footprint area × levels for non-residential buildings
+        CASE WHEN a.non_residential_building_sqft > 0
+             THEN a.non_residential_building_sqft * COALESCE(a.max_levels, 1) END,
         a.estimated_building_sqft,
         a.lot_size_acres * COALESCE(a.impervious_fraction, 1.0),
         a.lot_size_acres

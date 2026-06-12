@@ -28,6 +28,11 @@ SELECT DISTINCT ON (sp.parcel_id)
     dw.emp_dasym_weight,
     dw.du_subtype,
     dw.du_dasym_weight,
+    dw.residential_building_sqft,
+    dw.non_residential_building_sqft,
+    dw.residential_building_count,
+    dw.non_residential_building_count,
+    dw.max_levels,
     sp.geometry
 FROM brewgis.comparison.sacog_parcel_shim sp
 JOIN brewgis.assessor.parcel_dasymetric_weights dw

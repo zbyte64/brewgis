@@ -207,16 +207,61 @@ area_by_use AS (
         *,
         lnd_v AS lnd_category,
         bf_v AS bf_key,
-        CASE WHEN lnd_v = 'urban'
-            THEN COALESCE(area_parcel, area_gross, 0) ELSE area_parcel_res END AS area_parcel_res_v,
+        CASE
+            -- Parcels with DU subtypes → full residential (known use from assessor)
+            WHEN du_subtype IS NOT NULL THEN COALESCE(area_parcel, area_gross, 0)
+            -- Industrial/Agra/Under → 0 res (no residential use)
+            WHEN lnd_v IN ('industrial', 'agricultural', 'undeveloped') THEN 0
+            -- Urban/mixed without du_subtype, with significant building coverage → proportional split
+            WHEN lnd_v IN ('urban', 'mixed_use')
+                 AND COALESCE(residential_building_sqft, 0) + COALESCE(non_residential_building_sqft, 0) > 0
+                 AND (COALESCE(residential_building_sqft, 0) + COALESCE(non_residential_building_sqft, 0))
+                     / NULLIF(COALESCE(area_parcel, area_gross, 0) * 43560, 0) >= 0.02
+                 THEN COALESCE(area_parcel, area_gross, 0)
+                      * COALESCE(residential_building_sqft, 0)
+                        / NULLIF(COALESCE(residential_building_sqft, 0) + COALESCE(non_residential_building_sqft, 0), 0)
+            -- Urban/mixed without significant building data → no_use (DON'T assume res)
+            WHEN lnd_v IN ('urban', 'mixed_use') THEN 0
+            -- Explicit res → res (from source parcel data)
+            ELSE area_parcel_res
+        END AS area_parcel_res_v,
         CASE WHEN lnd_v = 'agricultural'
             THEN COALESCE(area_parcel, area_gross, 0) ELSE area_parcel_emp_ag END AS area_parcel_emp_ag_v,
-        CASE WHEN lnd_v = 'industrial'
-            THEN COALESCE(area_parcel, area_gross, 0) ELSE COALESCE(area_parcel_emp, 0) END AS area_parcel_emp_v,
+        CASE
+            -- Parcels with du_subtype → residential use, no emp allocation
+            WHEN du_subtype IS NOT NULL THEN 0
+            -- No du_subtype, with significant building coverage → proportional split (non-residential share)
+            WHEN COALESCE(residential_building_sqft, 0) + COALESCE(non_residential_building_sqft, 0) > 0
+                 AND (COALESCE(residential_building_sqft, 0) + COALESCE(non_residential_building_sqft, 0))
+                     / NULLIF(COALESCE(area_parcel, area_gross, 0) * 43560, 0) >= 0.02
+                 THEN COALESCE(area_parcel, area_gross, 0)
+                      * COALESCE(non_residential_building_sqft, 0)
+                        / NULLIF(COALESCE(residential_building_sqft, 0) + COALESCE(non_residential_building_sqft, 0), 0)
+            -- Industrial → full area to emp
+            WHEN lnd_v = 'industrial' THEN COALESCE(area_parcel, area_gross, 0)
+            -- Urban/mixed without building data → 0 emp (no employment evidence)
+            WHEN lnd_v IN ('urban', 'mixed_use') THEN 0
+            -- Agricultural/Undeveloped → 0 emp
+            WHEN lnd_v IN ('agricultural', 'undeveloped') THEN 0
+            -- Explicit emp → emp (from source parcel data)
+            ELSE COALESCE(area_parcel_emp, 0)
+        END AS area_parcel_emp_v,
         CASE WHEN lnd_v = 'mixed_use'
             THEN COALESCE(area_parcel, area_gross, 0) ELSE area_parcel_mixed_use END AS area_parcel_mixed_use_v,
-        CASE WHEN lnd_v = 'undeveloped'
-            THEN COALESCE(area_parcel, area_gross, 0) ELSE area_parcel_no_use END AS area_parcel_no_use_v
+        CASE
+            -- Known use (du_subtype or significant building coverage) → none to no_use
+            WHEN du_subtype IS NOT NULL THEN 0
+            WHEN COALESCE(residential_building_sqft, 0) + COALESCE(non_residential_building_sqft, 0) > 0
+                 AND (COALESCE(residential_building_sqft, 0) + COALESCE(non_residential_building_sqft, 0))
+                     / NULLIF(COALESCE(area_parcel, area_gross, 0) * 43560, 0) >= 0.02
+                 THEN 0
+            -- Urban/mixed without any building data → full area to no_use
+            WHEN lnd_v IN ('urban', 'mixed_use') THEN COALESCE(area_parcel, area_gross, 0)
+            -- Undeveloped → full area to no_use
+            WHEN lnd_v = 'undeveloped' THEN COALESCE(area_parcel, area_gross, 0)
+            -- Explicit no_use → no_use (from source parcel data)
+            ELSE area_parcel_no_use
+        END AS area_parcel_no_use_v
     FROM classified
 ),
 
