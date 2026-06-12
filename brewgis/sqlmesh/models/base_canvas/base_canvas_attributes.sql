@@ -54,13 +54,34 @@ demographics AS (
     SELECT
         *,
         COALESCE(pop_groupquarter, 0.0) AS pop_groupquarter_v,
-        COALESCE(du_detsf, du * 0.4) AS du_detsf_v,
-        COALESCE(du_detsf_sl, du * 0.4 * 0.5) AS du_detsf_sl_v,
-        COALESCE(du_detsf_ll, du * 0.4 * 0.5) AS du_detsf_ll_v,
-        COALESCE(du_attsf, du * 0.2) AS du_attsf_v,
-        COALESCE(du_mf, du * 0.4) AS du_mf_v,
-        COALESCE(du_mf2to4, du * 0.4 * 0.3) AS du_mf2to4_v,
-        COALESCE(du_mf5p, du * 0.4 * 0.7) AS du_mf5p_v,
+        COALESCE(du_detsf,
+            CASE WHEN du_subtype IN ('detsf_sl', 'detsf_ll') THEN du END,
+            du * 0.4
+        ) AS du_detsf_v,
+        COALESCE(du_detsf_sl,
+            CASE WHEN du_subtype = 'detsf_sl' THEN du END,
+            du * 0.4 * 0.5
+        ) AS du_detsf_sl_v,
+        COALESCE(du_detsf_ll,
+            CASE WHEN du_subtype = 'detsf_ll' THEN du END,
+            du * 0.4 * 0.5
+        ) AS du_detsf_ll_v,
+        COALESCE(du_attsf,
+            CASE WHEN du_subtype = 'attsf' THEN du END,
+            du * 0.2
+        ) AS du_attsf_v,
+        COALESCE(du_mf,
+            CASE WHEN du_subtype IN ('mf2to4', 'mf5p') THEN du END,
+            du * 0.4
+        ) AS du_mf_v,
+        COALESCE(du_mf2to4,
+            CASE WHEN du_subtype = 'mf2to4' THEN du END,
+            du * 0.4 * 0.3
+        ) AS du_mf2to4_v,
+        COALESCE(du_mf5p,
+            CASE WHEN du_subtype = 'mf5p' THEN du END,
+            du * 0.4 * 0.7
+        ) AS du_mf5p_v,
         COALESCE(emp_ret, emp * 0.2) AS emp_ret_v,
         COALESCE(emp_off, emp * 0.35) AS emp_off_v,
         COALESCE(emp_pub, emp * 0.15) AS emp_pub_v,

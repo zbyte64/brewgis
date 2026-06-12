@@ -48,13 +48,13 @@ SELECT
     pop_groupquarter,
     hh,
     du AS du,
+    ROUND((COALESCE(du_detsf_sl, 0) * du_scale)::numeric, 4) AS du_detsf_sl,
+    ROUND((COALESCE(du_detsf_ll, 0) * du_scale)::numeric, 4) AS du_detsf_ll,
     ROUND((COALESCE(raw_detsf, 0) * du_scale)::numeric, 4) AS du_detsf,
-    du_detsf_sl,
-    du_detsf_ll,
     ROUND((COALESCE(du_attsf, 0) * du_scale)::numeric, 4) AS du_attsf,
+    ROUND((COALESCE(du_mf2to4, 0) * du_scale)::numeric, 4) AS du_mf2to4,
+    ROUND((COALESCE(du_mf5p, 0) * du_scale)::numeric, 4) AS du_mf5p,
     ROUND((COALESCE(raw_mf, 0) * du_scale)::numeric, 4) AS du_mf,
-    du_mf2to4,
-    du_mf5p,
     COALESCE(emp_retail_services, 0) + COALESCE(emp_restaurant, 0)
         + COALESCE(emp_accommodation, 0) + COALESCE(emp_arts_entertainment, 0)
         + COALESCE(emp_other_services, 0) AS emp_ret,

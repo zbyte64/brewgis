@@ -611,6 +611,9 @@ class Command(BaseCommand):
         dasymetric_table = context.table_name(
             "brewgis.comparison.sacog_comparison_dasymetric", "sacog_comparison"
         )
+        reconciled_table = context.table_name(
+            "brewgis.base_canvas.base_canvas_reconciled", "sacog_comparison"
+        )
         _generate_report_markdown(
             ref_totals,
             brew_totals,
@@ -628,6 +631,7 @@ class Command(BaseCommand):
             diagnostics=_collect_diagnostics(
                 engine=get_engine(),
                 dasymetric_table=dasymetric_table if use_assessor_geometry else None,
+                reconciled_table=reconciled_table,
             ),
             output_path=report_path,
             quick=not (nlcd or osm),
@@ -730,6 +734,7 @@ class Command(BaseCommand):
 def _collect_diagnostics(
     engine: Engine,
     dasymetric_table: str | None = None,
+    reconciled_table: str | None = None,
 ) -> dict:
     """Collect calibration diagnostics from materialized SQLMesh tables.
 
@@ -739,6 +744,8 @@ def _collect_diagnostics(
     Args:
         engine: SQLAlchemy database engine.
         dasymetric_table: Dasymetric weights table name, or None if not used.
+        reconciled_table: Materialized base_canvas_reconciled table name,
+            or None to skip land-development-category diagnostics.
 
     Returns:
         Dict with keys ``dasymetric``, ``assessor``, ``employment`` containing
@@ -794,20 +801,21 @@ def _collect_diagnostics(
             }
 
             # Land development category from base_canvas_reconciled
-            try:
-                lc_rows = conn.execute(
-                    text("""
-                        SELECT COALESCE(land_development_category, 'NULL') AS cat, COUNT(*) AS cnt
-                        FROM base_canvas_reconciled
-                        GROUP BY land_development_category
-                        ORDER BY cnt DESC
-                    """)
-                ).fetchall()
-                diagnostics["assessor"]["land_development_category"] = {
-                    row[0]: row[1] for row in lc_rows
-                }
-            except Exception:
-                pass
+            if reconciled_table:
+                try:
+                    lc_rows = conn.execute(
+                        text(f"""
+                            SELECT COALESCE(land_development_category, 'NULL') AS cat, COUNT(*) AS cnt
+                            FROM {reconciled_table}
+                            GROUP BY land_development_category
+                            ORDER BY cnt DESC
+                        """)
+                    ).fetchall()
+                    diagnostics["assessor"]["land_development_category"] = {
+                        row[0]: row[1] for row in lc_rows
+                    }
+                except Exception:
+                    pass
 
     # Employment pipeline: WAC block counts
     with engine.connect() as conn:
