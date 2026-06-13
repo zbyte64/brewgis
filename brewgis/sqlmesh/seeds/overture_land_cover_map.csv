@@ -1,0 +1,11 @@
+subtype,class,category
+forest,,conservation
+shrub,,conservation
+mangrove,,conservation
+moss,,conservation
+wetland,,conservation
+grass,,undeveloped
+crop,,agricultural
+urban,,urban
+barren,,undeveloped
+snow,,undeveloped

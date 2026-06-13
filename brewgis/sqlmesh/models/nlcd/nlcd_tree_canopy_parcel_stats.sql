@@ -43,14 +43,17 @@ tile_stats AS (
     FROM parcel_tiles t
 ),
 
+-- A parcel may intersect multiple raster tiles; average per-tile means
+-- to produce one row per parcel.
 per_parcel_stats AS (
     SELECT
         parcel_id,
         CASE
-            WHEN canopy_mean IS NOT NULL
-            THEN GREATEST(0.0, LEAST(100.0, canopy_mean))
+            WHEN AVG(canopy_mean) IS NOT NULL
+            THEN GREATEST(0.0, LEAST(100.0, AVG(canopy_mean)))
         END AS tree_canopy_fraction
     FROM tile_stats
+    GROUP BY parcel_id
 ),
 
 all_parcels AS (

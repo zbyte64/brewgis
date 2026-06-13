@@ -183,7 +183,16 @@ building_areas AS (
     FROM demographics
 ),
 
--- Land use classification derived from assessor codes or SACOG labels
+-- Overture land use fallback classification
+-- Provides land_development_category when assessor codes and SACOG labels
+-- are both unavailable, using Overture land use polygons joined to parcels.
+overture_lu AS (
+    SELECT parcel_id, overture_category
+    FROM brewgis.assessor.overture_land_use_parcel
+),
+
+-- Land use classification derived from assessor codes, SACOG labels,
+-- or Overture land use as final fallback before defaulting to 'urban'
 classified AS (
     SELECT
         b.*,
@@ -191,6 +200,7 @@ classified AS (
             NULLIF(b.land_development_category, ''),
             ac.category,
             su.category,
+            olu.overture_category,
             'urban'
         ) AS lnd_v,
         COALESCE(NULLIF(b.built_form_key, ''), 'mixed_use') AS bf_v
@@ -199,6 +209,8 @@ classified AS (
         ON LEFT(COALESCE(b.assessor_use_code, ''), 2) = ac.use_code::text
     LEFT JOIN sacog_use su
         ON TRIM(COALESCE(b.land_use, '')) = su.land_use_label
+    LEFT JOIN overture_lu olu
+        ON b.parcel_id = olu.parcel_id
 ),
 
 -- Area by use from land_development_category
