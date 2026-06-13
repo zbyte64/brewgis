@@ -205,3 +205,132 @@ class TestCompareSacogReport:
             assert "| pct_minority | 55.2% | 55.2% | +0.0pp |" in text
         finally:
             path.unlink(missing_ok=True)
+
+    def _build_report_with_diagnostics(
+        self,
+        ref: dict[str, float],
+        brew: dict[str, float],
+        report_path: Path,
+        *,
+        diagnostics: dict | None = None,
+        config: dict | None = None,
+    ) -> str:
+        """Run _generate_report_markdown directly with diagnostics/config."""
+        from brewgis.workspace.services.comparison_helpers import (
+            _generate_report_markdown,
+        )
+
+        _generate_report_markdown(
+            ref,
+            brew,
+            output_path=report_path,
+            quick=False,
+            limit=0,
+            diagnostics=diagnostics,
+            config=config,
+        )
+        return report_path.read_text(encoding="utf-8")
+
+    def test_road_surface_diagnostics_appear_when_data_present(self) -> None:
+        """Road surface diagnostics appear in Calibration Diagnostics section when data is present."""
+        ref: dict[str, float] = {}
+        brew: dict[str, float] = {}
+        diagnostics: dict = {
+            "road_surface": {
+                "segment_count": 50000,
+                "paved_segments": 40000,
+                "unpaved_segments": 8000,
+                "surface_class_breakdown": {
+                    "paved": 35000,
+                    "unpaved": 5000,
+                    "gravel": 3000,
+                    "NULL": 5000,
+                },
+                "total_parcels": 1000,
+                "parcels_with_roads": 800,
+                "total_road_paved_area": 2500.5,
+                "total_road_unpaved_area": 300.2,
+                "avg_road_impervious_fraction": 0.0456,
+            },
+        }
+        config: dict = {"overture-roads": True}
+
+        with tempfile.NamedTemporaryFile(suffix=".md", delete=False, mode="w") as f:
+            path = Path(f.name)
+
+        try:
+            text = self._build_report_with_diagnostics(
+                ref, brew, path, diagnostics=diagnostics, config=config
+            )
+            assert "### Road Surface Diagnostics (Overture Transportation)" in text
+            assert "| Road segments | 50,000 |" in text
+            assert "| Paved segments | 40,000" in text
+            assert "| Unpaved segments | 8,000" in text
+            assert "| Parcels intersecting roads | 800 (80.0%) |" in text
+            assert "| Total paved road area | 2,500.5 acres |" in text
+            assert "| Total unpaved road area | 300.2 acres |" in text
+            assert "| Avg road impervious fraction | 0.0456 |" in text
+        finally:
+            path.unlink(missing_ok=True)
+
+    def test_road_surface_data_source_note(self) -> None:
+        """Road surface data source note appears in Data Sources table when overture-roads is enabled."""
+        ref: dict[str, float] = {}
+        brew: dict[str, float] = {}
+        diagnostics: dict = {
+            "road_surface": {
+                "segment_count": 100,
+                "paved_segments": 80,
+                "unpaved_segments": 20,
+                "surface_class_breakdown": {},
+                "total_parcels": 100,
+                "parcels_with_roads": 50,
+                "total_road_paved_area": 10.0,
+                "total_road_unpaved_area": 2.0,
+                "avg_road_impervious_fraction": 0.012,
+            },
+        }
+        config: dict = {"overture-roads": True}
+
+        with tempfile.NamedTemporaryFile(suffix=".md", delete=False, mode="w") as f:
+            path = Path(f.name)
+
+        try:
+            text = self._build_report_with_diagnostics(
+                ref, brew, path, diagnostics=diagnostics, config=config
+            )
+            assert (
+                "| Road surface | N/A (SACOG v1 has no road surface data) "
+                "| Overture Transportation road segments |"
+            ) in text
+        finally:
+            path.unlink(missing_ok=True)
+
+    def test_road_surface_empty_diagnostics_graceful(self) -> None:
+        """Empty road_surface diagnostics don't produce road diagnostics section."""
+        ref: dict[str, float] = {}
+        brew: dict[str, float] = {}
+        diagnostics: dict = {
+            "road_surface": {
+                "segment_count": 0,
+                "paved_segments": 0,
+                "unpaved_segments": 0,
+                "surface_class_breakdown": {},
+                "total_parcels": 0,
+                "parcels_with_roads": 0,
+                "total_road_paved_area": 0.0,
+                "total_road_unpaved_area": 0.0,
+                "avg_road_impervious_fraction": 0.0,
+            },
+        }
+
+        with tempfile.NamedTemporaryFile(suffix=".md", delete=False, mode="w") as f:
+            path = Path(f.name)
+
+        try:
+            text = self._build_report_with_diagnostics(
+                ref, brew, path, diagnostics=diagnostics
+            )
+            assert "### Road Surface Diagnostics (Overture Transportation)" not in text
+        finally:
+            path.unlink(missing_ok=True)

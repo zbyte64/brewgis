@@ -143,6 +143,11 @@ def config_factory(**variables):
                 "s3://overturemaps-us-west-2/release/2026-05-20.0/"
                 "theme=buildings/type=building/*.parquet"
             ),
+            # Overture Transportation — road segments (used by overture road impervious)
+            "overture_transport_parquet_glob": (
+                "s3://overturemaps-us-west-2/release/2026-05-20.0/"
+                "theme=transportation/type=segment/*.parquet"
+            ),
             # Overture Sacramento County bbox
             "overture_bbox_min_x": -121.87,
             "overture_bbox_max_x": -121.01,

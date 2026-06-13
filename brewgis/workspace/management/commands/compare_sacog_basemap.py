@@ -91,6 +91,12 @@ class Command(BaseCommand):
             help="Enable OSM intersection density estimation",
         )
         parser.add_argument(
+            "--overture-roads",
+            action="store_true",
+            default=False,
+            help="Enable Overture Transportation road impervious diagnostics",
+        )
+        parser.add_argument(
             "--limit",
             type=int,
             default=0,
@@ -182,6 +188,7 @@ class Command(BaseCommand):
 
         nlcd = bool(options.get("nlcd", False))
         osm = bool(options.get("osm", False))
+        overture_roads = bool(options.get("overture_roads", False))
         limit = int(options.get("limit", 0))
         force_data_fetch = bool(options.get("force_data_fetch", False))
         force_data_reload = bool(options.get("force_data_reload", False))
@@ -195,6 +202,7 @@ class Command(BaseCommand):
         self.stdout.write("=" * 70)
         self.stdout.write(f"  NLCD: {'on' if nlcd else 'off'}")
         self.stdout.write(f"  OSM: {'on' if osm else 'off'}")
+        self.stdout.write(f"  Overture Roads: {'on' if overture_roads else 'off'}")
         self.stdout.write(
             f"  Assessor parcel geometry + dasymetric: {'on' if use_assessor_geometry else 'off'}"
         )
@@ -221,6 +229,7 @@ class Command(BaseCommand):
             self._run(
                 nlcd=nlcd,
                 osm=osm,
+                overture_roads=overture_roads,
                 limit=limit,
                 force_data_fetch=force_data_fetch,
                 force_data_reload=force_data_reload,
@@ -251,6 +260,7 @@ class Command(BaseCommand):
         *,
         nlcd: bool,
         osm: bool,
+        overture_roads: bool,
         limit: int,
         force_data_fetch: bool,
         force_data_reload: bool,
@@ -270,6 +280,7 @@ class Command(BaseCommand):
         from brewgis.workspace.dlt_pipelines.lehd import run_lehd_pipeline
         from brewgis.workspace.dlt_pipelines.nlcd import run_nlcd_pipeline
         from brewgis.workspace.dlt_pipelines.nlcd import run_nlcd_tree_canopy_pipeline
+        from brewgis.workspace.dlt_pipelines.pdb import run_pdb_pipeline
         from brewgis.workspace.dlt_pipelines.osm import run_osm_pipeline
         from brewgis.workspace.dlt_pipelines.tiger_bg import run_tiger_bg_pipeline
         from brewgis.workspace.dlt_pipelines.tiger_block import run_tiger_block_pipeline
@@ -416,6 +427,23 @@ class Command(BaseCommand):
             )
         else:
             self.stdout.write("  census.acs_block_group already populated, skipping")
+
+        # Populate Census PDB staging table
+        self.stdout.write("\n── Populating Census PDB staging table ──")
+        if (
+            force_data_fetch
+            or force_data_reload
+            or not self._table_has_rows("public", "pdb_raw")
+        ):
+            pdb_result = run_pdb_pipeline(
+                STATE_FIPS, COUNTY_FIPS, ignore_cache=force_data_fetch
+            )
+            self.stdout.write(
+                f"  Census PDB loaded: {pdb_result.get('row_count', 0)} rows "
+                f"in {pdb_result.get('table_name', '?')}"
+            )
+        else:
+            self.stdout.write("  Census PDB already loaded, skipping")
 
         # Populate LEHD staging table before ETL
         self.stdout.write("\n── Populating LEHD LODES staging table ──")
@@ -574,6 +602,13 @@ class Command(BaseCommand):
                     "+brewgis.comparison.sacog_comparison_dasymetric",
                 ]
             )
+        if overture_roads:
+            model_selectors.extend(
+                [
+                    "+brewgis.staging.overture_transport",
+                    "+brewgis.nlcd.overture_road_impervious",
+                ]
+            )
 
         plan_vars: dict[str, object] = {
             "parcel_table": "brewgis.comparison.sacog_parcel_shim",
@@ -648,6 +683,7 @@ class Command(BaseCommand):
             config={
                 "nlcd": nlcd,
                 "osm": osm,
+                "overture-roads": overture_roads,
                 "use-assessor-geometry": use_assessor_geometry,
                 "quick-parcel-clipping": quick_parcel_clipping,
                 "lehd-year": LEHD_YEAR,
@@ -658,6 +694,7 @@ class Command(BaseCommand):
                 engine=get_engine(),
                 dasymetric_table=dasymetric_table if use_assessor_geometry else None,
                 reconciled_table=reconciled_table,
+                overture_roads=overture_roads,
             ),
             output_path=report_path,
             quick=not (nlcd or osm),
@@ -761,6 +798,7 @@ def _collect_diagnostics(
     engine: Engine,
     dasymetric_table: str | None = None,
     reconciled_table: str | None = None,
+    overture_roads: bool = False,
 ) -> dict:
     """Collect calibration diagnostics from materialized SQLMesh tables.
 
@@ -861,5 +899,111 @@ def _collect_diagnostics(
             diagnostics["employment"]["wac_blocks_with_geom"] = row or 0
         except Exception:
             pass
+
+    # Road surface diagnostics from Overture Transportation
+    diagnostics["road_surface"] = {
+        "segment_count": 0,
+        "paved_segments": 0,
+        "unpaved_segments": 0,
+        "parcels_with_roads": 0,
+        "total_parcels": 0,
+        "total_road_paved_area": 0.0,
+        "total_road_unpaved_area": 0.0,
+        "avg_road_impervious_fraction": 0.0,
+        "surface_class_breakdown": {},
+    }
+    if overture_roads:
+        with engine.connect() as conn:
+            try:
+                row = conn.execute(
+                    text(
+                        "SELECT COUNT(*) AS cnt FROM brewgis.staging.overture_transport"
+                    )
+                ).scalar()
+                diagnostics["road_surface"]["segment_count"] = row or 0
+            except Exception:
+                pass
+            try:
+                row = conn.execute(
+                    text(
+                        "SELECT COUNT(*) AS cnt FROM brewgis.staging.overture_transport "
+                        "WHERE surface IN ('paved', 'asphalt', 'concrete') OR surface IS NULL"
+                    )
+                ).scalar()
+                diagnostics["road_surface"]["paved_segments"] = row or 0
+            except Exception:
+                pass
+            try:
+                row = conn.execute(
+                    text(
+                        "SELECT COUNT(*) AS cnt FROM brewgis.staging.overture_transport "
+                        "WHERE surface IN ('unpaved', 'gravel', 'dirt', 'earth', 'ground')"
+                    )
+                ).scalar()
+                diagnostics["road_surface"]["unpaved_segments"] = row or 0
+            except Exception:
+                pass
+            try:
+                rows = conn.execute(
+                    text(
+                        "SELECT COALESCE(surface, 'NULL') AS surface_class, COUNT(*) AS cnt "
+                        "FROM brewgis.staging.overture_transport "
+                        "GROUP BY surface ORDER BY cnt DESC"
+                    )
+                ).fetchall()
+                diagnostics["road_surface"]["surface_class_breakdown"] = {
+                    row[0]: row[1] for row in rows
+                }
+            except Exception:
+                pass
+            try:
+                row = conn.execute(
+                    text(
+                        "SELECT COUNT(DISTINCT parcel_id) AS cnt "
+                        "FROM brewgis.nlcd.overture_road_impervious "
+                        "WHERE road_total_area > 0"
+                    )
+                ).scalar()
+                diagnostics["road_surface"]["parcels_with_roads"] = row or 0
+            except Exception:
+                pass
+            try:
+                row = conn.execute(
+                    text(
+                        "SELECT COUNT(*) AS cnt FROM brewgis.nlcd.overture_road_impervious"
+                    )
+                ).scalar()
+                diagnostics["road_surface"]["total_parcels"] = row or 0
+            except Exception:
+                pass
+            try:
+                row = conn.execute(
+                    text(
+                        "SELECT SUM(road_paved_area) AS paved, SUM(road_unpaved_area) AS unpaved "
+                        "FROM brewgis.nlcd.overture_road_impervious"
+                    )
+                ).fetchone()
+                if row:
+                    diagnostics["road_surface"]["total_road_paved_area"] = float(
+                        row[0] or 0.0
+                    )
+                    diagnostics["road_surface"]["total_road_unpaved_area"] = float(
+                        row[1] or 0.0
+                    )
+            except Exception:
+                pass
+            try:
+                row = conn.execute(
+                    text(
+                        "SELECT AVG(road_impervious_fraction) AS avg_frac "
+                        "FROM brewgis.nlcd.overture_road_impervious "
+                        "WHERE road_total_area > 0"
+                    )
+                ).scalar()
+                diagnostics["road_surface"]["avg_road_impervious_fraction"] = float(
+                    row or 0.0
+                )
+            except Exception:
+                pass
 
     return diagnostics

@@ -354,6 +354,48 @@ def _generate_report_markdown(
                 f"| WAC blocks with geometry | {emp.get('wac_blocks_with_geom', 0):,} |"
             )
             lines.append(f"| Total WAC blocks | {emp.get('total_wac_blocks', 0):,} |")
+
+        rs = diagnostics.get("road_surface", {})
+        if rs and rs.get("segment_count", 0) > 0:
+            lines.append("")
+            lines.append("### Road Surface Diagnostics (Overture Transportation)")
+            lines.append("")
+            lines.append("| Metric | Value |")
+            lines.append("|--------|-------|")
+            paved_pct = (
+                rs["paved_segments"] / rs["segment_count"] * 100
+                if rs["segment_count"] > 0
+                else 0
+            )
+            unpaved_pct = (
+                rs["unpaved_segments"] / rs["segment_count"] * 100
+                if rs["segment_count"] > 0
+                else 0
+            )
+            lines.append(f"| Road segments | {rs['segment_count']:,} |")
+            lines.append(
+                f"| Paved segments | {rs['paved_segments']:,} ({paved_pct:.1f}%) |"
+            )
+            lines.append(
+                f"| Unpaved segments | {rs['unpaved_segments']:,} ({unpaved_pct:.1f}%) |"
+            )
+            parcels_with = rs["parcels_with_roads"]
+            total_parcels_rs = rs["total_parcels"]
+            parcel_pct = (
+                parcels_with / total_parcels_rs * 100 if total_parcels_rs > 0 else 0
+            )
+            lines.append(
+                f"| Parcels intersecting roads | {parcels_with:,} ({parcel_pct:.1f}%) |"
+            )
+            lines.append(
+                f"| Total paved road area | {rs['total_road_paved_area']:,.1f} acres |"
+            )
+            lines.append(
+                f"| Total unpaved road area | {rs['total_road_unpaved_area']:,.1f} acres |"
+            )
+            lines.append(
+                f"| Avg road impervious fraction | {rs['avg_road_impervious_fraction']:.4f} |"
+            )
         lines.append("")
     lines.append("")
 
@@ -470,6 +512,11 @@ def _generate_report_markdown(
         + ("NLCD impervious" if not quick else "Default (25%/3.5%)")
         + " |"
     )
+    if config and config.get("overture-roads"):
+        lines.append(
+            "| Road surface | N/A (SACOG v1 has no road surface data) "
+            "| Overture Transportation road segments |"
+        )
 
     lines.append("")
     lines.append(
