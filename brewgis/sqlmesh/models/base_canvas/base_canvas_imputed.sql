@@ -126,7 +126,12 @@ SELECT
     a.rent_burden_pct,
     a.pct_minority,
     a.pct_college_educated,
-    a.cost_burden_pct
+    a.cost_burden_pct,
+    a.vacancy_rate,
+    a.low_response_score,
+    a.below_poverty_pct,
+    a.renter_occupied_pct,
+    a.occupied_du
 FROM attributes a
 LEFT JOIN regional_avg r ON a.county = r.county
 LEFT JOIN du_subtype_proportions dp ON a.county = dp.county

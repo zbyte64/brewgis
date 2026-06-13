@@ -77,9 +77,17 @@ WITH parcel_geom AS (
 acs_data AS (
     SELECT
         a.*,
+        pdb.vacancy_rate,
+        pdb.group_quarters_pop AS pop_groupquarter_pdb,
+        pdb.low_response_score,
+        pdb.below_poverty_pct,
+        pdb.renter_occupied_pct,
         GREATEST(ST_Area(ST_Transform(a.geometry, @VAR('local_srid', 3310))), 1e-10) AS bg_area,
         ST_Envelope(ST_Transform(a.geometry, @VAR('local_srid', 3310))) AS local_envelope
     FROM brewgis.staging.acs_block_group a
+    LEFT JOIN brewgis.staging.pdb_block_group pdb
+        ON a.geoid = pdb.geoid
+        AND pdb.data_year = make_date(2024, 1, 1)
     WHERE a.geometry IS NOT NULL
 ),
 
@@ -103,6 +111,11 @@ intersections AS (
         a.pct_minority,
         a.pct_college_educated,
         a.cost_burden_pct,
+        a.vacancy_rate,
+        a.pop_groupquarter_pdb,
+        a.low_response_score,
+        a.below_poverty_pct,
+        a.renter_occupied_pct,
         a.bg_area,
         ST_Area(ST_ClipByBox2D(ST_Transform(p.geometry, @VAR('local_srid', 3310)), a.local_envelope)) AS intersect_area,
         p.pop_dasym_weight,
@@ -134,7 +147,12 @@ allocated AS (
         SUM(i.rent_burden_pct * i.intersect_area) / NULLIF(SUM(i.intersect_area), 0) AS rent_burden_pct,
         SUM(i.pct_minority * i.intersect_area) / NULLIF(SUM(i.intersect_area), 0) AS pct_minority,
         SUM(i.pct_college_educated * i.intersect_area) / NULLIF(SUM(i.intersect_area), 0) AS pct_college_educated,
-        SUM(i.cost_burden_pct * i.intersect_area) / NULLIF(SUM(i.intersect_area), 0) AS cost_burden_pct
+        SUM(i.cost_burden_pct * i.intersect_area) / NULLIF(SUM(i.intersect_area), 0) AS cost_burden_pct,
+        SUM(i.pop_groupquarter_pdb * i.weighted_intersect_area / NULLIF(bwt.bg_weighted_total, 0)) AS pop_groupquarter,
+        SUM(i.vacancy_rate * i.intersect_area) / NULLIF(SUM(i.intersect_area), 0) AS vacancy_rate,
+        SUM(i.low_response_score * i.intersect_area) / NULLIF(SUM(i.intersect_area), 0) AS low_response_score,
+        SUM(i.below_poverty_pct * i.intersect_area) / NULLIF(SUM(i.intersect_area), 0) AS below_poverty_pct,
+        SUM(i.renter_occupied_pct * i.intersect_area) / NULLIF(SUM(i.intersect_area), 0) AS renter_occupied_pct
     FROM intersections i
     LEFT JOIN bg_weighted_totals bwt ON i.geoid = bwt.geoid
     GROUP BY i.parcel_id
@@ -153,7 +171,7 @@ SELECT
     p.area_dev_condition,
     p.area_row,
     COALESCE(a.pop, p.bg_pop) AS pop,
-    NULL::double precision AS pop_groupquarter,
+    COALESCE(a.pop_groupquarter, 0.0) AS pop_groupquarter,
     COALESCE(a.hh, p.bg_hh) AS hh,
     COALESCE(a.du, p.bg_du) AS du,
     a.du_detsf,
@@ -169,6 +187,10 @@ SELECT
     a.pct_minority,
     a.pct_college_educated,
     a.cost_burden_pct,
+    a.vacancy_rate,
+    a.low_response_score,
+    a.below_poverty_pct,
+    a.renter_occupied_pct,
     NULL::double precision AS emp,
     p.bldg_area_detsf_sl,
     p.bldg_area_detsf_ll,

@@ -130,7 +130,20 @@ def census_acs_resource(
         / f"{county_fips}.json"
     )
     dl_path.parent.mkdir(exist_ok=True, parents=True)
-    if ignore_cache or not dl_path.exists():
+
+    # Try loading from cache first
+    data: Any = None
+    if not ignore_cache and dl_path.exists():
+        with dl_path.open() as f:
+            data = json.load(f)
+        if not isinstance(data, list):
+            logger.warning(
+                "Cached ACS data is %s instead of list, re-downloading",
+                type(data).__name__,
+            )
+            data = None
+
+    if data is None:
         vars_ = _all_vars()
         vars_str = ",".join(vars_)
         base = _census_base_url(year_val)
@@ -146,9 +159,19 @@ def census_acs_resource(
         response = requests.get(url, timeout=120)
         response.raise_for_status()
         data = response.json()
-        dl_path.open("wb").write(response.content)
-    else:
-        data = json.load(dl_path.open())
+        if not isinstance(data, list):
+            logger.error(
+                "Census ACS API returned %s instead of list. URL: %s, Body: %s",
+                type(data).__name__,
+                url,
+                response.text[:500],
+            )
+            raise RuntimeError(
+                f"Census ACS API returned {type(data).__name__} instead of list. "
+                f"URL: {url}, Body: {response.text[:500]}"
+            )
+        with dl_path.open("w") as f:
+            json.dump(data, f)
 
     headers = data[0]
     for row in data[1:]:

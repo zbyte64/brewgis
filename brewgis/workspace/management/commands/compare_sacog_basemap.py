@@ -280,8 +280,8 @@ class Command(BaseCommand):
         from brewgis.workspace.dlt_pipelines.lehd import run_lehd_pipeline
         from brewgis.workspace.dlt_pipelines.nlcd import run_nlcd_pipeline
         from brewgis.workspace.dlt_pipelines.nlcd import run_nlcd_tree_canopy_pipeline
-        from brewgis.workspace.dlt_pipelines.pdb import run_pdb_pipeline
         from brewgis.workspace.dlt_pipelines.osm import run_osm_pipeline
+        from brewgis.workspace.dlt_pipelines.pdb import run_pdb_pipeline
         from brewgis.workspace.dlt_pipelines.tiger_bg import run_tiger_bg_pipeline
         from brewgis.workspace.dlt_pipelines.tiger_block import run_tiger_block_pipeline
         from brewgis.workspace.services.census_fetcher import _populate_acs_block_group

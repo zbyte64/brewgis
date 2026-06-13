@@ -104,5 +104,10 @@ SELECT
     rent_burden_pct,
     pct_minority,
     pct_college_educated,
-    cost_burden_pct
+    cost_burden_pct,
+    vacancy_rate,
+    low_response_score,
+    below_poverty_pct,
+    renter_occupied_pct,
+    occupied_du
 FROM du_reconciled
