@@ -133,7 +133,7 @@ intersections AS (
 
 -- Apply building footprint area cap for large parcels (>= 1 acre).
 -- For these parcels, the intersection area is bounded by the total
--- residential building footprint area (converted from sqft to acres).
+-- residential building footprint area (converted from sqft to sq m).
 -- This prevents population from spreading across large undeveloped
 -- parcels that happen to have a small house, matching CA-POP methodology.
 intersections_adjusted AS (
@@ -162,11 +162,11 @@ intersections_adjusted AS (
         i.renter_occupied_pct,
         i.bg_area,
         CASE WHEN i.area_gross >= 1.0
-             THEN LEAST(i.raw_intersect_area, COALESCE(i.residential_building_sqft / 43560.0, i.raw_intersect_area))
+             THEN LEAST(i.raw_intersect_area, COALESCE(i.residential_building_sqft * 0.09290304, i.raw_intersect_area))
              ELSE i.raw_intersect_area
         END AS intersect_area,
         CASE WHEN i.area_gross >= 1.0
-             THEN LEAST(i.raw_intersect_area, COALESCE(i.residential_building_sqft / 43560.0, i.raw_intersect_area))
+             THEN LEAST(i.raw_intersect_area, COALESCE(i.residential_building_sqft * 0.09290304, i.raw_intersect_area))
              ELSE i.raw_intersect_area
         END * COALESCE(i.pop_dasym_weight, 1.0) AS weighted_intersect_area
     FROM intersections i

@@ -87,7 +87,7 @@ intersections AS (
             -- Apply building footprint cap for large parcels
             ELSE
                 CASE WHEN i.area_gross >= 1.0
-                     THEN LEAST(i.intersect_area, COALESCE(i.non_residential_building_sqft / 43560.0, i.intersect_area))
+                     THEN LEAST(i.intersect_area, COALESCE(i.non_residential_building_sqft * 0.09290304, i.intersect_area))
                      ELSE i.intersect_area
                 END * COALESCE(i.emp_dasym_weight, 1.0)
         END AS weighted_intersect_area
