@@ -92,9 +92,11 @@ acs_data AS (
 ),
 
 -- Spatial allocation: one row per overlapping parcel-acs pair
--- Apply population mask: only allocate to parcels with residential building
--- presence. Parcels without building data (NULL) continue to receive
--- population since we cannot distinguish missing data from zero buildings.
+-- Apply population mask: exclude parcels where we have confirmed
+-- non-residential-only buildings (non_residential_building_count > 0
+-- AND no residential buildings). Parcels without any building data
+-- (both residential and non-residential counts are 0) are kept since
+-- we cannot distinguish missing data from truly zero buildings.
 intersections AS (
     SELECT
         p.parcel_id,
@@ -126,9 +128,9 @@ intersections AS (
         p.area_gross
     FROM parcel_geom p
     JOIN acs_data a ON ST_Intersects(p.geometry, a.geometry)
-    WHERE (p.residential_building_count IS NULL AND p.residential_building_sqft IS NULL)
-       OR p.residential_building_count > 0
-       OR p.residential_building_sqft > 0
+    WHERE NOT (COALESCE(p.non_residential_building_count, 0) > 0
+           AND COALESCE(p.residential_building_count, 0) = 0
+           AND COALESCE(p.residential_building_sqft, 0) = 0)
 ),
 
 -- Apply building footprint area cap for large parcels (>= 1 acre).
