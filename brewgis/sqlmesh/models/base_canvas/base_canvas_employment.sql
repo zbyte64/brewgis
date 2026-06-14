@@ -69,12 +69,27 @@ sacog_use AS (
 ),
 
 -- Spatial intersection with area computation
+-- Apply employment mask: exclude parcels without building presence except
+-- mixed-use parcels (they may have employment in non-residential portions).
+-- Also cap intersection area at non-residential building footprint for
+-- large parcels (>= 1 acre) to avoid spreading employment across large
+-- parcels with only minor commercial presence.
 intersections AS (
     SELECT
         i.*,
         CASE
+            -- Land-use-based exclusion: undeveloped and agricultural get no employment
             WHEN i.land_development_category IN ('undeveloped', 'agricultural') THEN 0
-            ELSE i.intersect_area * COALESCE(i.emp_dasym_weight, 1.0)
+            -- Building-based exclusion: no non-residential buildings and not mixed-use
+            WHEN COALESCE(i.non_residential_building_sqft, 0) <= 0
+                 AND COALESCE(i.non_residential_building_count, 0) <= 0
+                 AND i.land_development_category != 'mixed_use' THEN 0
+            -- Apply building footprint cap for large parcels
+            ELSE
+                CASE WHEN i.area_gross >= 1.0
+                     THEN LEAST(i.intersect_area, COALESCE(i.non_residential_building_sqft / 43560.0, i.intersect_area))
+                     ELSE i.intersect_area
+                END * COALESCE(i.emp_dasym_weight, 1.0)
         END AS weighted_intersect_area
     FROM (
         SELECT
@@ -112,7 +127,10 @@ intersections AS (
             w.emp_ag,
             w.wac_area,
             ST_Area(ST_ClipByBox2D(p.local_geometry, w.wac_envelope)) AS intersect_area,
-            p.emp_dasym_weight
+            p.emp_dasym_weight,
+            p.non_residential_building_sqft,
+            p.non_residential_building_count,
+            p.area_gross
         FROM parcel_with_weights p
         JOIN wac_prep w ON ST_Intersects(p.geometry, w.geometry)
         LEFT JOIN assessor_codes ac

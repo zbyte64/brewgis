@@ -92,6 +92,9 @@ acs_data AS (
 ),
 
 -- Spatial allocation: one row per overlapping parcel-acs pair
+-- Apply population mask: only allocate to parcels with residential building
+-- presence. Parcels without building data (NULL) continue to receive
+-- population since we cannot distinguish missing data from zero buildings.
 intersections AS (
     SELECT
         p.parcel_id,
@@ -117,16 +120,61 @@ intersections AS (
         a.below_poverty_pct,
         a.renter_occupied_pct,
         a.bg_area,
-        ST_Area(ST_ClipByBox2D(ST_Transform(p.geometry, @VAR('local_srid', 3310)), a.local_envelope)) AS intersect_area,
+        ST_Area(ST_ClipByBox2D(ST_Transform(p.geometry, @VAR('local_srid', 3310)), a.local_envelope)) AS raw_intersect_area,
         p.pop_dasym_weight,
-        ST_Area(ST_ClipByBox2D(ST_Transform(p.geometry, @VAR('local_srid', 3310)), a.local_envelope)) * COALESCE(p.pop_dasym_weight, 1.0) AS weighted_intersect_area
+        p.residential_building_sqft,
+        p.area_gross
     FROM parcel_geom p
     JOIN acs_data a ON ST_Intersects(p.geometry, a.geometry)
+    WHERE (p.residential_building_count IS NULL AND p.residential_building_sqft IS NULL)
+       OR p.residential_building_count > 0
+       OR p.residential_building_sqft > 0
+),
+
+-- Apply building footprint area cap for large parcels (>= 1 acre).
+-- For these parcels, the intersection area is bounded by the total
+-- residential building footprint area (converted from sqft to acres).
+-- This prevents population from spreading across large undeveloped
+-- parcels that happen to have a small house, matching CA-POP methodology.
+intersections_adjusted AS (
+    SELECT
+        i.parcel_id,
+        i.geoid,
+        i.pop,
+        i.hh,
+        i.du,
+        i.du_detsf,
+        i.du_detsf_sl,
+        i.du_detsf_ll,
+        i.du_attsf,
+        i.du_mf,
+        i.du_mf2to4,
+        i.du_mf5p,
+        i.median_income,
+        i.rent_burden_pct,
+        i.pct_minority,
+        i.pct_college_educated,
+        i.cost_burden_pct,
+        i.vacancy_rate,
+        i.pop_groupquarter_pdb,
+        i.low_response_score,
+        i.below_poverty_pct,
+        i.renter_occupied_pct,
+        i.bg_area,
+        CASE WHEN i.area_gross >= 1.0
+             THEN LEAST(i.raw_intersect_area, COALESCE(i.residential_building_sqft / 43560.0, i.raw_intersect_area))
+             ELSE i.raw_intersect_area
+        END AS intersect_area,
+        CASE WHEN i.area_gross >= 1.0
+             THEN LEAST(i.raw_intersect_area, COALESCE(i.residential_building_sqft / 43560.0, i.raw_intersect_area))
+             ELSE i.raw_intersect_area
+        END * COALESCE(i.pop_dasym_weight, 1.0) AS weighted_intersect_area
+    FROM intersections i
 ),
 
 bg_weighted_totals AS (
     SELECT geoid, SUM(weighted_intersect_area) AS bg_weighted_total
-    FROM intersections
+    FROM intersections_adjusted
     GROUP BY geoid
 ),
 
@@ -153,7 +201,7 @@ allocated AS (
         SUM(i.low_response_score * i.intersect_area) / NULLIF(SUM(i.intersect_area), 0) AS low_response_score,
         SUM(i.below_poverty_pct * i.intersect_area) / NULLIF(SUM(i.intersect_area), 0) AS below_poverty_pct,
         SUM(i.renter_occupied_pct * i.intersect_area) / NULLIF(SUM(i.intersect_area), 0) AS renter_occupied_pct
-    FROM intersections i
+    FROM intersections_adjusted i
     LEFT JOIN bg_weighted_totals bwt ON i.geoid = bwt.geoid
     GROUP BY i.parcel_id
 )

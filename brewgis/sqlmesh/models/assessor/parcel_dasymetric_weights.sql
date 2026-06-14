@@ -206,8 +206,6 @@ assembled AS (
         fi.max_levels,
         nj.impervious_fraction,
         oj.intersection_density,
-        dw.pop_mult,
-        dw.emp_mult,
         sd.property_type,
         sd.lot_size_acres AS sales_lot_size_acres,
         sd.units
@@ -218,8 +216,6 @@ assembled AS (
     LEFT JOIN brewgis.assessor.parcel_footprint_imputed fi ON ap.apn = fi.apn
     LEFT JOIN nlcd_join nj ON ap.apn = nj.apn
     LEFT JOIN osm_join oj ON ap.apn = oj.apn
-    LEFT JOIN brewgis.seeds.dasymetric_weights dw
-        ON cl.land_development_category = dw.land_development_category
 ),
 
 -- DU sub-type classification from assessor sales data
@@ -274,7 +270,7 @@ SELECT
     a.non_residential_building_count,
     a.max_levels,
     -- Population weight
-    COALESCE(a.pop_mult, 1.0) * COALESCE(
+    COALESCE(
         a.actual_living_sqft,
         a.footprint_imputed_living_sqft,
         -- Tier 2.5: direct building footprint area × levels for residential buildings
@@ -285,7 +281,7 @@ SELECT
         a.lot_size_acres
     ) AS pop_dasym_weight,
     -- Employment weight with OSM boost
-    COALESCE(a.emp_mult, 0.15) * COALESCE(
+    COALESCE(
         a.actual_building_sqft,
         a.footprint_imputed_building_sqft,
         -- Tier 2.5: direct building footprint area × levels for non-residential buildings

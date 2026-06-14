@@ -35,11 +35,11 @@ WITH building_stats AS (
         COUNT(*) FILTER (WHERE bc.bf_source = 'microsoft') AS microsoft_building_count,
         AVG(bc.confidence) AS mean_confidence,
         SUM(ST_Area(ST_Transform(ST_SetSRID(bc.geometry, 4326), @VAR('local_srid', 3310))) * 10.7639)
-            FILTER (WHERE bc.class IN ('residential','house','apartments','dormitory','detached','semidetached','terrace','bungalow')) AS residential_building_sqft,
+            FILTER (WHERE bc.class IN ('cabin','dwelling_house','ger','houseboat','stilt_house','static_caravan','trullo','semi','residential','house','apartments','dormitory','detached','semidetached','terrace','bungalow')) AS residential_building_sqft,
         SUM(ST_Area(ST_Transform(ST_SetSRID(bc.geometry, 4326), @VAR('local_srid', 3310))) * 10.7639)
-            FILTER (WHERE bc.class NOT IN ('residential','house','apartments','dormitory','detached','semidetached','terrace','bungalow') OR bc.class IS NULL) AS non_residential_building_sqft,
-        COUNT(*) FILTER (WHERE bc.class IN ('residential','house','apartments','dormitory','detached','semidetached','terrace','bungalow')) AS residential_building_count,
-        COUNT(*) FILTER (WHERE bc.class NOT IN ('residential','house','apartments','dormitory','detached','semidetached','terrace','bungalow') OR bc.class IS NULL) AS non_residential_building_count
+            FILTER (WHERE bc.class NOT IN ('cabin','dwelling_house','ger','houseboat','stilt_house','static_caravan','trullo','semi','residential','house','apartments','dormitory','detached','semidetached','terrace','bungalow') OR bc.class IS NULL) AS non_residential_building_sqft,
+        COUNT(*) FILTER (WHERE bc.class IN ('cabin','dwelling_house','ger','houseboat','stilt_house','static_caravan','trullo','semi','residential','house','apartments','dormitory','detached','semidetached','terrace','bungalow')) AS residential_building_count,
+        COUNT(*) FILTER (WHERE bc.class NOT IN ('cabin','dwelling_house','ger','houseboat','stilt_house','static_caravan','trullo','semi','residential','house','apartments','dormitory','detached','semidetached','terrace','bungalow') OR bc.class IS NULL) AS non_residential_building_count
     FROM brewgis.assessor.sacog_assessor_parcels sap
     JOIN brewgis.staging.buildings_combined bc
         ON ST_Intersects(sap.geometry, ST_SetSRID(bc.geometry, 4326))
