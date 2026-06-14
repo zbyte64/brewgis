@@ -14,19 +14,25 @@ MODEL (
 --
 -- Strategy (in priority order):
 --   1. Centroid test: if the parcel's centroid falls inside an Overture land
---      use polygon, that polygon's classification wins.
+--      use polygon, that polygon's classification wins (smallest polygon
+--      wins ties for most specific classification).
 --   2. Area-weighted voting: if centroid test fails (e.g. parcel straddles
 --      multiple land uses), find the Overture polygon with the largest
---      intersection area.
+--      approximate intersection area (via envelope intersection, avoiding
+--      expensive ST_Intersection in the ORDER BY).
 --   3. Maps Overture subtype+class → land_development_category via the
 --      overture_land_use_map seed table.
+--
+-- NOTE: Parcels that overlap no Overture land use polygon are silently
+-- omitted from the output. These parcels will have NULL overture_category
+-- downstream and fall through to the 'urban' default.
 
 WITH parcels AS (
     SELECT parcel_id, geometry
     FROM brewgis.base_canvas.base_canvas_geometry
 ),
 
-overture_lu AS (
+overture_lu AS NOT MATERIALIZED (
     SELECT
         ST_SetSRID(geometry, @VAR('default_srid', 4326)) AS geometry,
         subtype,
@@ -35,6 +41,8 @@ overture_lu AS (
 ),
 
 -- Priority 1: centroid-inside-polygon join
+-- When multiple Overture polygons contain a parcel centroid, pick the
+-- smallest polygon (most specific classification).
 centroid_match AS (
     SELECT DISTINCT ON (p.parcel_id)
         p.parcel_id,
@@ -44,6 +52,7 @@ centroid_match AS (
     JOIN overture_lu olu
         ON ST_Centroid(p.geometry) && ST_Envelope(olu.geometry)
         AND ST_Contains(olu.geometry, ST_Centroid(p.geometry))
+    ORDER BY p.parcel_id, ST_Area(olu.geometry) ASC
 ),
 
 -- Parcels that did NOT match via centroid test
@@ -64,7 +73,7 @@ area_vote AS (
     JOIN overture_lu olu
         ON ST_Intersects(olu.geometry, u.geometry)
     ORDER BY u.parcel_id,
-        ST_Area(ST_Intersection(olu.geometry, u.geometry)) DESC
+        COALESCE(ST_Area(ST_Intersection(ST_Envelope(olu.geometry), ST_Envelope(u.geometry))), 0) DESC
 ),
 
 combined AS (
@@ -101,6 +110,12 @@ LEFT JOIN brewgis.seeds.overture_land_use_map oym_subtype
     AND oym_subtype.class IS NULL;
 
 -- post_statements
+-- (overture_land_use is DuckDB gateway, so geometry index must live here)
+@IF(@runtime_stage = 'evaluating',
+  CREATE INDEX IF NOT EXISTS idx_overture_land_use_bridge_geometry
+  ON brewgis.staging.overture_land_use USING GIST (geometry)
+);
+
 @IF(@runtime_stage = 'evaluating',
   CREATE INDEX IF NOT EXISTS idx_overture_land_use_parcel_parcel_id
   ON brewgis.assessor.overture_land_use_parcel (parcel_id)
