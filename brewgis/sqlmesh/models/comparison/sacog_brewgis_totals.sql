@@ -10,12 +10,12 @@ MODEL (
 
 WITH totals AS (
     SELECT
-        COALESCE(SUM(area_gross), 0)::double precision AS area_gross,
-        COALESCE(SUM(area_parcel), 0)::double precision AS area_parcel,
-        COALESCE(SUM(area_parcel_res), 0)::double precision AS area_parcel_res,
-        COALESCE(SUM(area_parcel_emp), 0)::double precision AS area_parcel_emp,
-        COALESCE(SUM(area_parcel_mixed_use), 0)::double precision AS area_parcel_mixed_use,
-        COALESCE(SUM(area_parcel_no_use), 0)::double precision AS area_parcel_no_use,
+        COALESCE(SUM(area_gross_acres), 0)::double precision AS area_gross_acres,
+        COALESCE(SUM(area_parcel_acres), 0)::double precision AS area_parcel_acres,
+        COALESCE(SUM(area_parcel_res_acres), 0)::double precision AS area_parcel_res_acres,
+        COALESCE(SUM(area_parcel_emp_acres), 0)::double precision AS area_parcel_emp_acres,
+        COALESCE(SUM(area_parcel_mixed_use_acres), 0)::double precision AS area_parcel_mixed_use_acres,
+        COALESCE(SUM(area_parcel_no_use_acres), 0)::double precision AS area_parcel_no_use_acres,
         COALESCE(SUM(pop), 0)::double precision AS pop,
         COALESCE(SUM(hh), 0)::double precision AS hh,
         COALESCE(SUM(du), 0)::double precision AS du,
@@ -76,12 +76,12 @@ WITH totals AS (
 )
 SELECT
     'brewgis'::text AS source,
-    area_gross,
-    area_parcel,
-    area_parcel_res,
-    area_parcel_emp,
-    area_parcel_mixed_use,
-    area_parcel_no_use,
+    area_gross_acres,
+    area_parcel_acres,
+    area_parcel_res_acres,
+    area_parcel_emp_acres,
+    area_parcel_mixed_use_acres,
+    area_parcel_no_use_acres,
     pop,
     hh,
     du,

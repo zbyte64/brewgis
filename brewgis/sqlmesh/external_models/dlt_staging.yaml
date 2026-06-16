@@ -94,6 +94,14 @@
     state_fips: text
     vintage: text
 
+- name: public.census_2020_block_raw
+  description: "Raw Census 2020 PL94-171 block data, loaded by dlt census_2020_block pipeline. One row per census block. PL94-171 redistricting data."
+  columns:
+    geoid: text
+    total_population: bigint
+    total_housing_units: bigint
+    total_group_quarters: bigint
+
 - name: public.tiger_blocks
   description: "TIGER/Line census block boundaries, loaded by dlt tiger_block pipeline. Decennial-only (2020)."
   columns:

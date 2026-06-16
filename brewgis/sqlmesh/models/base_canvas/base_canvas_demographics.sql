@@ -6,17 +6,15 @@ MODEL (
   )
 );
 
--- Base Canvas Demographics — spatial allocation from Census ACS.
+-- Base Canvas Demographics — DU-weighted allocation from Census 2020 blocks.
 --
--- For each parcel in base_canvas_geometry, allocates demographic values
--- from intersecting ACS block groups using area-weighted proportional
--- allocation (dasymetric weights disabled by default).
---
--- Sum columns (population, households, dwelling units, sub-types):
---   Proportional to intersection area / source area.
---
--- Average columns (median_income, rent_burden_pct, etc.):
---   Area-weighted mean across intersecting block groups.
+-- For each parcel in base_canvas_geometry:
+--   - Population: allocated from Census 2020 blocks using DU-weighted proportional
+--     allocation (Section 5, Section 9 of methodology).
+--   - Households: du × (1 - vacancy_rate)
+--   - Dwelling units: from parcel_du_estimation (not allocated from ACS)
+--   - Demographic averages (income, education, etc.): area-weighted mean from
+--     ACS block groups.
 
 WITH parcel_geom AS (
     SELECT
@@ -28,9 +26,10 @@ WITH parcel_geom AS (
         bg.built_form_key,
         bg.intersection_density,
         bg.area_gross,
-        bg.area_parcel,
-        bg.area_dev_condition,
-        bg.area_row,
+        bg.area_gross_acres,
+        bg.area_parcel_acres,
+        bg.area_dev_condition_acres,
+        bg.area_row_acres,
         bg.pop AS bg_pop,
         bg.hh AS bg_hh,
         bg.du AS bg_du,
@@ -59,153 +58,133 @@ WITH parcel_geom AS (
         bg.area_parcel_mixed_use,
         bg.area_parcel_no_use,
         bg.du_subtype,
-        bg.footprint_living_sqft,
-        bg.footprint_building_sqft,
-        bg.estimated_building_sqft,
+        bg.is_residential,
+        bg.residential_building_sqft,
+        bg.commercial_building_sqft,
+        bg.industrial_building_sqft,
+        bg.other_building_sqft,
+        bg.total_footprint_sqft,
+        bg.building_count,
+        bg.footprint_ratio,
+        bg.max_levels,
         bg.dasym_impervious_fraction,
         bg.pop_dasym_weight,
         bg.emp_dasym_weight,
-        bg.du_dasym_weight,
-        bg.residential_building_sqft,
-        bg.non_residential_building_sqft,
-        bg.residential_building_count,
-        bg.non_residential_building_count,
-        bg.max_levels
+        bg.du_estimated,
+        bg.hh_size,
+        bg.vacancy_rate,
+        bg.du_pop_dasym_weight,
+        bg.hh_dasym_weight,
+        bg.hh_estimated
     FROM brewgis.base_canvas.base_canvas_geometry bg
 ),
 
+-- ── Census 2020 block data (source zones) ──────────────────────────────────
+census_blocks AS (
+    SELECT
+        geoid,
+        total_population,
+        total_housing_units,
+        geometry,
+        ST_Transform(geometry, @VAR('local_srid', 3310)) AS local_geometry,
+        ST_Envelope(ST_Transform(geometry, @VAR('local_srid', 3310))) AS local_envelope
+    FROM brewgis.staging.census_2020_block
+    WHERE geometry IS NOT NULL
+),
+
+-- ── ACS block group data (for demographic averages) ────────────────────────
 acs_data AS (
     SELECT
         a.*,
-        pdb.vacancy_rate,
-        pdb.group_quarters_pop AS pop_groupquarter_pdb,
-        pdb.low_response_score,
-        pdb.below_poverty_pct,
-        pdb.renter_occupied_pct,
         GREATEST(ST_Area(ST_Transform(a.geometry, @VAR('local_srid', 3310))), 1e-10) AS bg_area,
         ST_Envelope(ST_Transform(a.geometry, @VAR('local_srid', 3310))) AS local_envelope
     FROM brewgis.staging.acs_block_group a
-    LEFT JOIN brewgis.staging.pdb_block_group pdb
-        ON a.geoid = pdb.geoid
-        AND pdb.data_year = make_date(2024, 1, 1)
     WHERE a.geometry IS NOT NULL
 ),
 
--- Spatial allocation: one row per overlapping parcel-acs pair
--- Apply population mask: exclude parcels where we have confirmed
--- non-residential-only buildings (non_residential_building_count > 0
--- AND no residential buildings). Parcels without any building data
--- (both residential and non-residential counts are 0) are kept since
--- we cannot distinguish missing data from truly zero buildings.
-intersections AS (
+-- ── Spatial join: parcels → Census 2020 blocks ────────────────────────────
+parcel_block_intersections AS (
     SELECT
         p.parcel_id,
-        a.geoid,
-        a.pop,
-        a.hh,
-        a.du,
-        a.du_detsf,
-        a.du_detsf_sl,
-        a.du_detsf_ll,
-        a.du_attsf,
-        a.du_mf,
-        a.du_mf2to4,
-        a.du_mf5p,
+        cb.geoid,
+        cb.total_population,
+        cb.total_housing_units,
+        p.du_pop_dasym_weight,
+        p.du_estimated,
+        p.hh_size,
+        p.vacancy_rate,
+        p.hh_dasym_weight,
+        ST_Area(ST_ClipByBox2D(p.local_geometry, cb.local_envelope)) AS intersect_area,
+        -- Normalize intersect area to fraction of total parcel area
+        CASE WHEN ST_Area(p.local_geometry) > 0
+             THEN ST_Area(ST_ClipByBox2D(p.local_geometry, cb.local_envelope))
+                  / NULLIF(ST_Area(p.local_geometry), 0)
+             ELSE 1.0
+        END AS intersect_fraction
+    FROM parcel_geom p
+    JOIN census_blocks cb ON ST_Intersects(p.geometry, cb.geometry)
+),
+
+-- ── Per-block total DU weight for proportional allocation ──────────────────
+block_weighted_totals AS (
+    SELECT
+        geoid,
+        SUM(COALESCE(du_pop_dasym_weight, 0)) AS block_total_du_weight
+    FROM parcel_block_intersections
+    GROUP BY geoid
+),
+
+-- ── DU-weighted population allocation ─────────────────────────────────────
+pop_allocated AS (
+    SELECT
+        pbi.parcel_id,
+        SUM(
+            pbi.total_population
+            * COALESCE(pbi.du_pop_dasym_weight, 0)
+            / NULLIF(bwt.block_total_du_weight, 0)
+        ) AS pop,
+        -- DU from estimation (not allocated), with hh derived from du × (1-vacancy)
+        AVG(pbi.du_estimated) AS du,
+        AVG(pbi.du_estimated * (1.0 - COALESCE(pbi.vacancy_rate, 0.05))) AS hh,
+        -- Household size for demographic weighted means
+        1.0 AS weight
+    FROM parcel_block_intersections pbi
+    LEFT JOIN block_weighted_totals bwt ON pbi.geoid = bwt.geoid
+    GROUP BY pbi.parcel_id
+),
+
+-- ── ACS area-weighted means for demographic averages ───────────────────────
+parcel_acs_intersections AS (
+    SELECT
+        p.parcel_id,
         a.median_income,
         a.rent_burden_pct,
         a.pct_minority,
         a.pct_college_educated,
         a.cost_burden_pct,
-        a.vacancy_rate,
-        a.pop_groupquarter_pdb,
+        a.vacancy_rate AS acs_vacancy_rate,
         a.low_response_score,
         a.below_poverty_pct,
         a.renter_occupied_pct,
-        a.bg_area,
-        ST_Area(ST_ClipByBox2D(ST_Transform(p.geometry, @VAR('local_srid', 3310)), a.local_envelope)) AS raw_intersect_area,
-        p.pop_dasym_weight,
-        p.residential_building_sqft,
-        p.area_gross
+        ST_Area(ST_ClipByBox2D(p.local_geometry, a.local_envelope)) AS intersect_area
     FROM parcel_geom p
     JOIN acs_data a ON ST_Intersects(p.geometry, a.geometry)
-    WHERE NOT (COALESCE(p.non_residential_building_count, 0) > 0
-           AND COALESCE(p.residential_building_count, 0) = 0
-           AND COALESCE(p.residential_building_sqft, 0) = 0)
 ),
 
--- Apply building footprint area cap for large parcels (>= 1 acre).
--- For these parcels, the intersection area is bounded by the total
--- residential building footprint area (converted from sqft to sq m).
--- This prevents population from spreading across large undeveloped
--- parcels that happen to have a small house, matching CA-POP methodology.
-intersections_adjusted AS (
+acs_allocated AS (
     SELECT
-        i.parcel_id,
-        i.geoid,
-        i.pop,
-        i.hh,
-        i.du,
-        i.du_detsf,
-        i.du_detsf_sl,
-        i.du_detsf_ll,
-        i.du_attsf,
-        i.du_mf,
-        i.du_mf2to4,
-        i.du_mf5p,
-        i.median_income,
-        i.rent_burden_pct,
-        i.pct_minority,
-        i.pct_college_educated,
-        i.cost_burden_pct,
-        i.vacancy_rate,
-        i.pop_groupquarter_pdb,
-        i.low_response_score,
-        i.below_poverty_pct,
-        i.renter_occupied_pct,
-        i.bg_area,
-        CASE WHEN i.area_gross >= 1.0
-             THEN LEAST(i.raw_intersect_area, COALESCE(i.residential_building_sqft * 0.09290304, i.raw_intersect_area))
-             ELSE i.raw_intersect_area
-        END AS intersect_area,
-        CASE WHEN i.area_gross >= 1.0
-             THEN LEAST(i.raw_intersect_area, COALESCE(i.residential_building_sqft * 0.09290304, i.raw_intersect_area))
-             ELSE i.raw_intersect_area
-        END * COALESCE(i.pop_dasym_weight, 1.0) AS weighted_intersect_area
-    FROM intersections i
-),
-
-bg_weighted_totals AS (
-    SELECT geoid, SUM(weighted_intersect_area) AS bg_weighted_total
-    FROM intersections_adjusted
-    GROUP BY geoid
-),
-
-allocated AS (
-    SELECT
-        i.parcel_id,
-        SUM(i.pop * i.weighted_intersect_area / NULLIF(bwt.bg_weighted_total, 0)) AS pop,
-        SUM(i.hh * i.weighted_intersect_area / NULLIF(bwt.bg_weighted_total, 0)) AS hh,
-        SUM(i.du * i.weighted_intersect_area / NULLIF(bwt.bg_weighted_total, 0)) AS du,
-        SUM(i.du_detsf * i.weighted_intersect_area / NULLIF(bwt.bg_weighted_total, 0)) AS du_detsf,
-        SUM(i.du_detsf_sl * i.weighted_intersect_area / NULLIF(bwt.bg_weighted_total, 0)) AS du_detsf_sl,
-        SUM(i.du_detsf_ll * i.weighted_intersect_area / NULLIF(bwt.bg_weighted_total, 0)) AS du_detsf_ll,
-        SUM(i.du_attsf * i.weighted_intersect_area / NULLIF(bwt.bg_weighted_total, 0)) AS du_attsf,
-        SUM(i.du_mf * i.weighted_intersect_area / NULLIF(bwt.bg_weighted_total, 0)) AS du_mf,
-        SUM(i.du_mf2to4 * i.weighted_intersect_area / NULLIF(bwt.bg_weighted_total, 0)) AS du_mf2to4,
-        SUM(i.du_mf5p * i.weighted_intersect_area / NULLIF(bwt.bg_weighted_total, 0)) AS du_mf5p,
-        SUM(i.median_income * i.intersect_area) / NULLIF(SUM(i.intersect_area), 0) AS median_income,
-        SUM(i.rent_burden_pct * i.intersect_area) / NULLIF(SUM(i.intersect_area), 0) AS rent_burden_pct,
-        SUM(i.pct_minority * i.intersect_area) / NULLIF(SUM(i.intersect_area), 0) AS pct_minority,
-        SUM(i.pct_college_educated * i.intersect_area) / NULLIF(SUM(i.intersect_area), 0) AS pct_college_educated,
-        SUM(i.cost_burden_pct * i.intersect_area) / NULLIF(SUM(i.intersect_area), 0) AS cost_burden_pct,
-        SUM(i.pop_groupquarter_pdb * i.weighted_intersect_area / NULLIF(bwt.bg_weighted_total, 0)) AS pop_groupquarter,
-        SUM(i.vacancy_rate * i.intersect_area) / NULLIF(SUM(i.intersect_area), 0) AS vacancy_rate,
-        SUM(i.low_response_score * i.intersect_area) / NULLIF(SUM(i.intersect_area), 0) AS low_response_score,
-        SUM(i.below_poverty_pct * i.intersect_area) / NULLIF(SUM(i.intersect_area), 0) AS below_poverty_pct,
-        SUM(i.renter_occupied_pct * i.intersect_area) / NULLIF(SUM(i.intersect_area), 0) AS renter_occupied_pct
-    FROM intersections_adjusted i
-    LEFT JOIN bg_weighted_totals bwt ON i.geoid = bwt.geoid
-    GROUP BY i.parcel_id
+        p.parcel_id,
+        SUM(a.median_income * a.intersect_area) / NULLIF(SUM(a.intersect_area), 0) AS median_income,
+        SUM(a.rent_burden_pct * a.intersect_area) / NULLIF(SUM(a.intersect_area), 0) AS rent_burden_pct,
+        SUM(a.pct_minority * a.intersect_area) / NULLIF(SUM(a.intersect_area), 0) AS pct_minority,
+        SUM(a.pct_college_educated * a.intersect_area) / NULLIF(SUM(a.intersect_area), 0) AS pct_college_educated,
+        SUM(a.cost_burden_pct * a.intersect_area) / NULLIF(SUM(a.intersect_area), 0) AS cost_burden_pct,
+        SUM(a.acs_vacancy_rate * a.intersect_area) / NULLIF(SUM(a.intersect_area), 0) AS vacancy_rate,
+        SUM(a.low_response_score * a.intersect_area) / NULLIF(SUM(a.intersect_area), 0) AS low_response_score,
+        SUM(a.below_poverty_pct * a.intersect_area) / NULLIF(SUM(a.intersect_area), 0) AS below_poverty_pct,
+        SUM(a.renter_occupied_pct * a.intersect_area) / NULLIF(SUM(a.intersect_area), 0) AS renter_occupied_pct
+    FROM parcel_acs_intersections a
+    GROUP BY p.parcel_id
 )
 
 SELECT
@@ -217,21 +196,41 @@ SELECT
     p.built_form_key,
     p.intersection_density,
     p.area_gross,
-    p.area_parcel,
-    p.area_dev_condition,
-    p.area_row,
-    COALESCE(a.pop, p.bg_pop) AS pop,
-    COALESCE(a.pop_groupquarter, 0.0) AS pop_groupquarter,
-    COALESCE(a.hh, p.bg_hh) AS hh,
-    COALESCE(a.du, p.bg_du) AS du,
-    a.du_detsf,
-    a.du_detsf_sl,
-    a.du_detsf_ll,
-    a.du_attsf,
-    a.du_mf,
-    a.du_mf2to4,
-    a.du_mf5p,
+    p.area_gross_acres,
+    p.area_parcel_acres,
+    p.area_dev_condition_acres,
+    p.area_row_acres,
+    COALESCE(pa.pop, p.bg_pop) AS pop,
+    0.0::double precision AS pop_groupquarter,
+    COALESCE(pa.hh, p.bg_hh) AS hh,
+    COALESCE(pa.du, p.bg_du) AS du,
     p.du_subtype,
+    p.is_residential,
+    p.residential_building_sqft,
+    p.commercial_building_sqft,
+    p.industrial_building_sqft,
+    p.other_building_sqft,
+    p.total_footprint_sqft,
+    p.building_count,
+    p.footprint_ratio,
+    p.max_levels,
+    p.dasym_impervious_fraction,
+    p.pop_dasym_weight,
+    p.emp_dasym_weight,
+    p.du_estimated,
+    p.hh_size,
+    p.vacancy_rate,
+    p.du_pop_dasym_weight,
+    p.hh_dasym_weight,
+    p.hh_estimated,
+    NULL::double precision AS du_detsf,
+    NULL::double precision AS du_detsf_sl,
+    NULL::double precision AS du_detsf_ll,
+    NULL::double precision AS du_attsf,
+    NULL::double precision AS du_mf,
+    NULL::double precision AS du_mf2to4,
+    NULL::double precision AS du_mf5p,
+    NULL::double precision AS emp,
     a.median_income,
     a.rent_burden_pct,
     a.pct_minority,
@@ -241,7 +240,6 @@ SELECT
     a.low_response_score,
     a.below_poverty_pct,
     a.renter_occupied_pct,
-    NULL::double precision AS emp,
     p.bldg_area_detsf_sl,
     p.bldg_area_detsf_ll,
     p.bldg_area_attsf,
@@ -265,21 +263,10 @@ SELECT
     p.area_parcel_emp_ag,
     p.area_parcel_emp,
     p.area_parcel_mixed_use,
-    p.area_parcel_no_use,
-    p.footprint_living_sqft,
-    p.footprint_building_sqft,
-    p.estimated_building_sqft,
-    p.dasym_impervious_fraction,
-    p.pop_dasym_weight,
-    p.emp_dasym_weight,
-    p.du_dasym_weight,
-    p.residential_building_sqft,
-    p.non_residential_building_sqft,
-    p.residential_building_count,
-    p.non_residential_building_count,
-    p.max_levels
+    p.area_parcel_no_use
 FROM parcel_geom p
-LEFT JOIN allocated a ON p.parcel_id = a.parcel_id;
+LEFT JOIN pop_allocated pa ON p.parcel_id = pa.parcel_id
+LEFT JOIN acs_allocated a ON p.parcel_id = a.parcel_id;
 
 -- post_statements
 @IF(@runtime_stage = 'evaluating',

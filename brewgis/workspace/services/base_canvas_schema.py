@@ -33,7 +33,6 @@ from __future__ import annotations
 from dataclasses import dataclass
 
 from django.db.models import Field
-from django.db.utils import OperationalError
 
 
 @dataclass(frozen=True, slots=True)
@@ -63,6 +62,15 @@ _STATIC_COLUMN_NAMES: frozenset[str] = frozenset(
         "built_form_key",
         "intersection_density",
         "area_gross",
+        "area_gross_acres",
+        "area_parcel_acres",
+        "area_dev_condition_acres",
+        "area_row_acres",
+        "area_parcel_res_acres",
+        "area_parcel_emp_ag_acres",
+        "area_parcel_emp_acres",
+        "area_parcel_mixed_use_acres",
+        "area_parcel_no_use_acres",
     }
 )
 

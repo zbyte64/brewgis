@@ -60,14 +60,20 @@ SELECT
         12.5
     )::numeric, 2) AS intersection_density,
     a.area_gross,
-    a.area_parcel,
-    a.area_dev_condition,
-    a.area_row,
+    a.area_gross_acres,
+    a.area_parcel_acres,
+    a.area_dev_condition_acres,
+    a.area_row_acres,
     a.area_parcel_res,
+    a.area_parcel_res_acres,
     a.area_parcel_emp_ag,
+    a.area_parcel_emp_ag_acres,
     a.area_parcel_emp,
+    a.area_parcel_emp_acres,
     a.area_parcel_mixed_use,
+    a.area_parcel_mixed_use_acres,
     a.area_parcel_no_use,
+    a.area_parcel_no_use_acres,
     COALESCE(a.pop, r.county_avg_pop, 0.0) AS pop,
     COALESCE(a.pop_groupquarter, 0.0) AS pop_groupquarter,
     COALESCE(a.hh, r.county_avg_hh, 0.0) AS hh,
@@ -82,6 +88,15 @@ SELECT
     COALESCE(a.du_mf2to4, dp.pct_mf2to4 * COALESCE(a.du, r.county_avg_du, 0.0), 0.0) AS du_mf2to4,
     COALESCE(a.du_mf5p, dp.pct_mf5p * COALESCE(a.du, r.county_avg_du, 0.0), 0.0) AS du_mf5p,
     a.du_subtype,
+    a.is_residential,
+    COALESCE(a.residential_building_sqft, 0.0) AS residential_building_sqft,
+    COALESCE(a.commercial_building_sqft, 0.0) AS commercial_building_sqft,
+    COALESCE(a.industrial_building_sqft, 0.0) AS industrial_building_sqft,
+    COALESCE(a.other_building_sqft, 0.0) AS other_building_sqft,
+    COALESCE(a.total_footprint_sqft, 0.0) AS total_footprint_sqft,
+    COALESCE(a.building_count, 0) AS building_count,
+    COALESCE(a.footprint_ratio, 0.0) AS footprint_ratio,
+    COALESCE(a.max_levels, 0) AS max_levels,
     COALESCE(a.emp, r.county_avg_emp, 0.0) AS emp,
     a.emp_ret,
     a.emp_retail_services,
@@ -134,4 +149,4 @@ SELECT
     a.occupied_du
 FROM attributes a
 LEFT JOIN regional_avg r ON a.county = r.county
-LEFT JOIN du_subtype_proportions dp ON a.county = dp.county
+LEFT JOIN du_subtype_proportions dp ON a.county = dp.county;

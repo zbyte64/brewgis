@@ -37,6 +37,9 @@ services:
       context: .
       dockerfile: ./compose/local/postgres/Dockerfile
     container_name: brewgis_local_postgres
+    shm_size: '4gb'
+    ports:
+      - '5432:5432'
     volumes:
       - brewgis_local_postgres_data:/var/lib/postgresql
       - brewgis_local_postgres_data_backups:/backups

@@ -277,6 +277,7 @@ class Command(BaseCommand):
         )
         from brewgis.workspace.dlt_pipelines.assessor import run_assessor_sales_pipeline
         from brewgis.workspace.dlt_pipelines.census import run_census_pipeline
+        from brewgis.workspace.dlt_pipelines.census_2020 import run_census_2020_pipeline
         from brewgis.workspace.dlt_pipelines.lehd import run_lehd_pipeline
         from brewgis.workspace.dlt_pipelines.nlcd import run_nlcd_pipeline
         from brewgis.workspace.dlt_pipelines.nlcd import run_nlcd_tree_canopy_pipeline
@@ -428,6 +429,23 @@ class Command(BaseCommand):
         else:
             self.stdout.write("  census.acs_block_group already populated, skipping")
 
+        # Populate Census 2020 block staging table
+        self.stdout.write("\n── Populating Census 2020 block staging table ──")
+        if (
+            force_data_fetch
+            or force_data_reload
+            or not self._table_has_rows("public", "census_2020_block_raw")
+        ):
+            census_2020_result = run_census_2020_pipeline(
+                STATE_FIPS, COUNTY_FIPS, ignore_cache=force_data_fetch
+            )
+            self.stdout.write(
+                f"  Census 2020 blocks loaded: {census_2020_result.get('row_count', 0)} rows "
+                f"in {census_2020_result.get('table_name', '?')}"
+            )
+        else:
+            self.stdout.write("  Census 2020 blocks already loaded, skipping")
+
         # Populate Census PDB staging table
         self.stdout.write("\n── Populating Census PDB staging table ──")
         if (
@@ -574,6 +592,7 @@ class Command(BaseCommand):
 
         model_selectors: list[str] = [
             "+brewgis.comparison.sacog_parcel_shim",
+            "+brewgis.staging.census_2020_block",
             "+brewgis.base_canvas.base_canvas_reconciled",
             "+brewgis.comparison.sacog_summary",
         ]
@@ -598,6 +617,7 @@ class Command(BaseCommand):
                     "+brewgis.assessor.parcel_building_footprints",
                     "+brewgis.assessor.parcel_block_groups",
                     "+brewgis.assessor.parcel_footprint_imputed",
+                    "+brewgis.assessor.authoritative_residential_area",
                     "+brewgis.assessor.parcel_dasymetric_weights",
                     "+brewgis.comparison.sacog_comparison_dasymetric",
                 ]
@@ -675,6 +695,14 @@ class Command(BaseCommand):
         reconciled_table = context.table_name(
             "brewgis.base_canvas.base_canvas_reconciled", "sacog_comparison"
         )
+        authoritative_table = (
+            context.table_name(
+                "brewgis.assessor.authoritative_residential_area",
+                "sacog_comparison",
+            )
+            if use_assessor_geometry
+            else None
+        )
         _generate_report_markdown(
             ref_totals,
             brew_totals,
@@ -693,6 +721,7 @@ class Command(BaseCommand):
             diagnostics=_collect_diagnostics(
                 engine=get_engine(),
                 dasymetric_table=dasymetric_table if use_assessor_geometry else None,
+                authoritative_table=authoritative_table,
                 reconciled_table=reconciled_table,
                 overture_roads=overture_roads,
             ),
@@ -746,8 +775,8 @@ class Command(BaseCommand):
     def _print_totals(self, totals: dict[str, float], label: str) -> None:
         """Print key aggregate totals."""
         col_map = {
-            "acres_gross": ("area_gross", "acres_gross"),
-            "acres_parcel": ("area_parcel", "acres_parcel"),
+            "acres_gross": ("area_gross_acres", "acres_gross"),
+            "acres_parcel": ("area_parcel_acres", "acres_parcel"),
             "pop": ("pop", "pop"),
             "hh": ("hh", "hh"),
             "du": ("du", "du"),
@@ -797,17 +826,21 @@ class Command(BaseCommand):
 def _collect_diagnostics(
     engine: Engine,
     dasymetric_table: str | None = None,
+    authoritative_table: str | None = None,
     reconciled_table: str | None = None,
     overture_roads: bool = False,
 ) -> dict:
     """Collect calibration diagnostics from materialized SQLMesh tables.
 
     Queries the database for assessor coverage, DU sub-type breakdown,
-    and employment pipeline statistics.
+    authoritative building intersection diagnostics, and employment pipeline
+    statistics.
 
     Args:
         engine: SQLAlchemy database engine.
         dasymetric_table: Dasymetric weights table name, or None if not used.
+        authoritative_table: Authoritative residential area table name, or None
+            to skip building intersection diagnostics.
         reconciled_table: Materialized base_canvas_reconciled table name,
             or None to skip land-development-category diagnostics.
 
@@ -899,6 +932,217 @@ def _collect_diagnostics(
             diagnostics["employment"]["wac_blocks_with_geom"] = row or 0
         except Exception:
             pass
+
+    # Authoritative Building Intersection Diagnostics
+    diagnostics["authoritative"] = {
+        "overture_residential_match": 0,
+        "assessor_sales_only": 0,
+        "no_authoritative_data": 0,
+        "total_parcels": 0,
+        "mean_acres_overture": 0.0,
+        "mean_acres_assessor_only": 0.0,
+        "mean_acres_no_data": 0.0,
+        "median_acres_overture": 0.0,
+        "median_acres_assessor_only": 0.0,
+        "median_acres_no_data": 0.0,
+        "building_count_breakdown": {},
+        "straddling_buildings": 0,
+        "parcels_with_straddling": 0,
+        "coverage_by_category": {},
+    }
+    if authoritative_table:
+        with engine.connect() as conn:
+            # Total parcels with authoritative data
+            row = conn.execute(
+                text(f"SELECT COUNT(*) FROM {authoritative_table}")
+            ).scalar()
+            total = row or 0
+            diagnostics["authoritative"]["total_parcels"] = total
+
+            # Parcels with Overture residential buildings (data_source = overture_*)
+            row = conn.execute(
+                text(f"""
+                    SELECT COUNT(*) FROM {authoritative_table}
+                    WHERE data_source IN ('overture_with_levels', 'overture_flat')
+                """)
+            ).scalar()
+            diagnostics["authoritative"]["overture_residential_match"] = row or 0
+
+            # Parcels with assessor sales only (no Overture)
+            row = conn.execute(
+                text(f"""
+                    SELECT COUNT(*) FROM {authoritative_table}
+                    WHERE data_source = 'assessor_sales'
+                """)
+            ).scalar()
+            diagnostics["authoritative"]["assessor_sales_only"] = row or 0
+
+            # Parcels with no authoritative data
+            row = conn.execute(
+                text(f"""
+                    SELECT COUNT(*) FROM {authoritative_table}
+                    WHERE data_source IS NULL
+                """)
+            ).scalar()
+            diagnostics["authoritative"]["no_authoritative_data"] = row or 0
+
+            # Parcel size stats per category
+            try:
+                rows = conn.execute(
+                    text(f"""
+                        SELECT
+                            CASE
+                                WHEN data_source IN ('overture_with_levels', 'overture_flat')
+                                THEN 'overture'
+                                ELSE COALESCE(data_source, 'none')
+                            END AS cat,
+                            PERCENTILE_CONT(0.5) WITHIN GROUP (ORDER BY lot_size_acres) AS median_acres,
+                            AVG(lot_size_acres) AS mean_acres
+                        FROM (
+                            SELECT a.*, sap.lot_size_acres
+                            FROM {authoritative_table} a
+                            LEFT JOIN brewgis.assessor.sacog_assessor_parcels sap
+                                ON a.apn = sap.apn
+                        ) sub
+                        GROUP BY cat
+                    """)
+                ).fetchall()
+                for row in rows:
+                    cat = str(row[0])
+                    if cat == "overture":
+                        diagnostics["authoritative"]["median_acres_overture"] = float(
+                            row[1] or 0.0
+                        )
+                        diagnostics["authoritative"]["mean_acres_overture"] = float(
+                            row[2] or 0.0
+                        )
+                    elif cat == "assessor_sales":
+                        diagnostics["authoritative"]["median_acres_assessor_only"] = (
+                            float(row[1] or 0.0)
+                        )
+                        diagnostics["authoritative"]["mean_acres_assessor_only"] = (
+                            float(row[2] or 0.0)
+                        )
+                    elif cat == "none":
+                        diagnostics["authoritative"]["median_acres_no_data"] = float(
+                            row[1] or 0.0
+                        )
+                        diagnostics["authoritative"]["mean_acres_no_data"] = float(
+                            row[2] or 0.0
+                        )
+            except Exception:
+                pass
+
+            # Building count distribution
+            try:
+                rows = conn.execute(
+                    text(f"""
+                        SELECT
+                            CASE
+                                WHEN building_count = 0 THEN '0'
+                                WHEN building_count = 1 THEN '1'
+                                WHEN building_count BETWEEN 2 AND 5 THEN '2-5'
+                                WHEN building_count BETWEEN 6 AND 10 THEN '6-10'
+                                WHEN building_count BETWEEN 11 AND 50 THEN '11-50'
+                                ELSE '50+'
+                            END AS bucket,
+                            COUNT(*) AS cnt
+                        FROM {authoritative_table}
+                        GROUP BY bucket
+                        ORDER BY MIN(building_count)
+                    """)
+                ).fetchall()
+                diagnostics["authoritative"]["building_count_breakdown"] = {
+                    str(row[0]): row[1] for row in rows
+                }
+            except Exception:
+                pass
+
+            # Straddling buildings — buildings intersecting multiple parcels
+            try:
+                row = conn.execute(
+                    text("""
+                        SELECT COUNT(*) FROM (
+                            SELECT bc.apn
+                            FROM brewgis.staging.buildings_combined bc
+                            JOIN brewgis.assessor.sacog_assessor_parcels sap
+                                ON ST_Intersects(
+                                    ST_SetSRID(bc.geometry, 4326),
+                                    sap.geometry
+                                )
+                            GROUP BY bc.geometry::text
+                            HAVING COUNT(DISTINCT sap.apn) > 1
+                        ) sub
+                    """)
+                ).scalar()
+                diagnostics["authoritative"]["straddling_buildings"] = row or 0
+            except Exception:
+                pass
+
+            try:
+                row = conn.execute(
+                    text("""
+                        SELECT COUNT(DISTINCT sap.apn) FROM (
+                            SELECT bc.geometry::text AS geom_key
+                            FROM brewgis.staging.buildings_combined bc
+                            JOIN brewgis.assessor.sacog_assessor_parcels sap
+                                ON ST_Intersects(
+                                    ST_SetSRID(bc.geometry, 4326),
+                                    sap.geometry
+                                )
+                            GROUP BY bc.geometry::text
+                            HAVING COUNT(DISTINCT sap.apn) > 1
+                        ) sub
+                        JOIN brewgis.staging.buildings_combined bc
+                            ON sub.geom_key = bc.geometry::text
+                        JOIN brewgis.assessor.sacog_assessor_parcels sap
+                            ON ST_Intersects(
+                                ST_SetSRID(bc.geometry, 4326),
+                                sap.geometry
+                            )
+                    """)
+                ).scalar()
+                diagnostics["authoritative"]["parcels_with_straddling"] = row or 0
+            except Exception:
+                pass
+
+            # Coverage by land development category
+            try:
+                rows = conn.execute(
+                    text(f"""
+                        SELECT
+                            COALESCE(sap.land_development_category, 'unknown') AS cat,
+                            COUNT(*) AS total,
+                            SUM(CASE WHEN a.data_source IS NOT NULL THEN 1 ELSE 0 END) AS covered,
+                            AVG(CASE WHEN a.authoritative_residential_sqft > 0
+                                THEN a.authoritative_residential_sqft ELSE NULL END
+                            ) AS mean_sqft
+                        FROM (
+                            SELECT a.*, sap.lot_size_acres
+                            FROM {authoritative_table} a
+                            LEFT JOIN brewgis.assessor.sacog_assessor_parcels sap
+                                ON a.apn = sap.apn
+                        ) a
+                        LEFT JOIN (
+                            SELECT apn, COALESCE(auc.category, 'unknown') AS land_development_category
+                            FROM brewgis.assessor.sacog_assessor_parcels
+                            LEFT JOIN brewgis.seeds.assessor_use_codes auc
+                                ON LEFT(COALESCE(landuse::text, ''), 2) = auc.use_code::text
+                        ) sap ON a.apn = sap.apn
+                        GROUP BY sap.land_development_category
+                        ORDER BY sap.land_development_category
+                    """)
+                ).fetchall()
+                diagnostics["authoritative"]["coverage_by_category"] = {
+                    str(row[0]): {
+                        "total": row[1],
+                        "covered": row[2],
+                        "mean_sqft": float(row[3] or 0.0),
+                    }
+                    for row in rows
+                }
+            except Exception:
+                pass
 
     # Road surface diagnostics from Overture Transportation
     diagnostics["road_surface"] = {

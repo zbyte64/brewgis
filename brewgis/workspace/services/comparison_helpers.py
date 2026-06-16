@@ -125,16 +125,16 @@ def _generate_report_markdown(
         (
             "Area (acres)",
             [
-                ("Gross Area", "acres_gross", "area_gross"),
-                ("Parcel Area", "acres_parcel", "area_parcel"),
-                ("Res Parcel Area *", "acres_parcel_res", "area_parcel_res"),
-                ("Emp Parcel Area *", "acres_parcel_emp", "area_parcel_emp"),
+                ("Gross Area", "acres_gross", "area_gross_acres"),
+                ("Parcel Area", "acres_parcel", "area_parcel_acres"),
+                ("Res Parcel Area *", "acres_parcel_res", "area_parcel_res_acres"),
+                ("Emp Parcel Area *", "acres_parcel_emp", "area_parcel_emp_acres"),
                 (
                     "Mixed Use Area *",
                     "acres_parcel_mixed_use",
-                    "area_parcel_mixed_use",
+                    "area_parcel_mixed_use_acres",
                 ),
-                ("No Use Area *", "acres_parcel_no_use", "area_parcel_no_use"),
+                ("No Use Area *", "acres_parcel_no_use", "area_parcel_no_use_acres"),
             ],
         ),
         (
@@ -523,6 +523,98 @@ def _generate_report_markdown(
         "_* Res/Emp/Mixed/No-use parcel area allocated via "
         "dasymetric weighting (assessor use codes + ACS)._\n"
     )
+
+    # Authoritative Building Intersection Diagnostics
+    if diagnostics and diagnostics.get("authoritative", {}).get("total_parcels", 0) > 0:
+        auth = diagnostics["authoritative"]
+        total = auth["total_parcels"]
+
+        lines.append("\n## 4. Authoritative Building Intersection Diagnostics")
+        lines.append("")
+
+        # Coverage Summary
+        lines.append("### Coverage Summary")
+        lines.append("")
+        lines.append("| Category | Count | % | Mean Parcel Size (acres) |")
+        lines.append("|----------|------:|---:|-------------------------:|")
+
+        def _pct(val: int) -> str:
+            return f"{(val / total * 100):.1f}" if total > 0 else "0.0"
+
+        overture_count = auth.get("overture_residential_match", 0)
+        assessor_count = auth.get("assessor_sales_only", 0)
+        none_count = auth.get("no_authoritative_data", 0)
+
+        lines.append(
+            f"| Overture residential match | {overture_count:>9,} | {_pct(overture_count):>5}% | "
+            f"{auth['mean_acres_overture']:>7.1f} |"
+        )
+        lines.append(
+            f"| Assessor sales only | {assessor_count:>9,} | {_pct(assessor_count):>5}% | "
+            f"{auth['mean_acres_assessor_only']:>7.1f} |"
+        )
+        lines.append(
+            f"| No authoritative data (NULL) | {none_count:>9,} | {_pct(none_count):>5}% | "
+            f"{auth['mean_acres_no_data']:>7.1f} |"
+        )
+        lines.append("")
+
+        # Building Count Distribution
+        lines.append("### Building Count Distribution")
+        lines.append("")
+        lines.append("| Buildings per Parcel | Count | % |")
+        lines.append("|---------------------|------:|---:|")
+        for bucket in ["0", "1", "2-5", "6-10", "11-50", "50+"]:
+            cnt = auth.get("building_count_breakdown", {}).get(bucket, 0)
+            lines.append(f"| {bucket:>20s} | {cnt:>8,} | {_pct(cnt):>5}% |")
+        lines.append("")
+
+        # Straddling Buildings
+        lines.append("### Straddling Buildings")
+        lines.append("")
+        lines.append("| Metric | Value |")
+        lines.append("|--------|------:|")
+        lines.append(
+            f"| Buildings intersecting multiple parcels | "
+            f"{auth.get('straddling_buildings', 0):>9,} |"
+        )
+        lines.append(
+            f"| Parcels with straddling buildings | "
+            f"{auth.get('parcels_with_straddling', 0):>9,} |"
+        )
+        lines.append("")
+
+        # Coverage by Land Development Category
+        cov = auth.get("coverage_by_category", {})
+        if cov:
+            lines.append("### Coverage by Land Development Category")
+            lines.append("")
+            lines.append(
+                "| Category | Total Parcels | With Overture | % Covered |"
+                " Mean Sqft/Parcel |"
+            )
+            lines.append(
+                "|----------|-------------:|-------------:|----------:|-----------------:|"
+            )
+            for cat in [
+                "urban",
+                "industrial",
+                "agricultural",
+                "undeveloped",
+                "unknown",
+            ]:
+                if cat in cov:
+                    stats = cov[cat]
+                    covered_pct = (
+                        (stats["covered"] / stats["total"] * 100)
+                        if stats["total"] > 0
+                        else 0.0
+                    )
+                    lines.append(
+                        f"| {cat:24s} | {stats['total']:>9,} | {stats['covered']:>9,} |"
+                        f" {covered_pct:>7.1f}% | {stats['mean_sqft']:>9,.0f} |"
+                    )
+            lines.append("")
 
     # Per-column detailed correlation
     if correlations:

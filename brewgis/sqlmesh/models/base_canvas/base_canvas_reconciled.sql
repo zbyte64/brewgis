@@ -15,7 +15,9 @@ WITH imputed AS (
     SELECT * FROM brewgis.base_canvas.base_canvas_imputed
 ),
 
--- Recompute DU sub-types proportionally to fit the imputed (ACS) du total.
+-- Recompute DU sub-types proportionally to fit the total du.
+-- With methodology Section 5, du_subtype is one-hot from built_form_key,
+-- so reconciliation should scale proportionally within each subtype.
 du_reconciled AS (
     SELECT
         *,
@@ -36,14 +38,20 @@ SELECT
     built_form_key,
     intersection_density,
     area_gross,
-    area_parcel,
-    area_dev_condition,
-    area_row,
+    area_gross_acres,
+    area_parcel_acres,
+    area_dev_condition_acres,
+    area_row_acres,
     area_parcel_res,
+    area_parcel_res_acres,
     area_parcel_emp_ag,
+    area_parcel_emp_ag_acres,
     area_parcel_emp,
+    area_parcel_emp_acres,
     area_parcel_mixed_use,
+    area_parcel_mixed_use_acres,
     area_parcel_no_use,
+    area_parcel_no_use_acres,
     pop,
     pop_groupquarter,
     hh,
@@ -55,6 +63,16 @@ SELECT
     ROUND((COALESCE(du_mf2to4, 0) * du_scale)::numeric, 4) AS du_mf2to4,
     ROUND((COALESCE(du_mf5p, 0) * du_scale)::numeric, 4) AS du_mf5p,
     ROUND((COALESCE(raw_mf, 0) * du_scale)::numeric, 4) AS du_mf,
+    du_subtype,
+    is_residential,
+    residential_building_sqft,
+    commercial_building_sqft,
+    industrial_building_sqft,
+    other_building_sqft,
+    total_footprint_sqft,
+    building_count,
+    footprint_ratio,
+    max_levels,
     COALESCE(emp_retail_services, 0) + COALESCE(emp_restaurant, 0)
         + COALESCE(emp_accommodation, 0) + COALESCE(emp_arts_entertainment, 0)
         + COALESCE(emp_other_services, 0) AS emp_ret,
@@ -110,4 +128,4 @@ SELECT
     below_poverty_pct,
     renter_occupied_pct,
     occupied_du
-FROM du_reconciled
+FROM du_reconciled;

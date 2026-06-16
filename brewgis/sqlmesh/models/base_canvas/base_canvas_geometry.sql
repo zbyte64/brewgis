@@ -18,6 +18,8 @@ MODEL (
 -- Reads raw parcel data from brewgis.parcels (via the parcels source),
 -- casts geometry to PostGIS geometry (EPSG:4326), computes area columns
 -- from local_srid (CA Albers, SRID 3310), and passes through source columns.
+--
+-- Area columns use _acres suffix per BASE_MAP_METHODOLOGY.md.
 
 WITH assessor_categories AS (
     SELECT use_code::text, category FROM brewgis.seeds.assessor_use_codes
@@ -76,20 +78,29 @@ parcel_area AS (
 dasymetric_enrichment AS (
     SELECT
         parcel_id,
+        apn,
         land_development_category,
+        built_form_key,
         du_subtype,
-        footprint_imputed_living_sqft AS footprint_living_sqft,
-        footprint_imputed_building_sqft AS footprint_building_sqft,
-        estimated_building_sqft,
-        impervious_fraction AS dasym_impervious_fraction,
+        is_residential,
+        residential_building_sqft,
+        commercial_building_sqft,
+        industrial_building_sqft,
+        other_building_sqft,
+        total_footprint_sqft,
+        building_count,
+        footprint_ratio,
+        max_levels,
+        intersection_density,
+        impervious_fraction,
         pop_dasym_weight,
         emp_dasym_weight,
-        du_dasym_weight,
-        residential_building_sqft,
-        non_residential_building_sqft,
-        residential_building_count,
-        non_residential_building_count,
-        max_levels
+        du,
+        hh_size,
+        vacancy_rate,
+        du_pop_dasym_weight,
+        hh_dasym_weight,
+        hh
     FROM brewgis.comparison.sacog_comparison_dasymetric
 )
 
@@ -99,8 +110,8 @@ SELECT
     parcel_area.local_geometry,
     parcel_area.county,
     COALESCE(de.land_development_category, parcel_area.land_development_category) AS land_development_category,
-    parcel_area.built_form_key,
-    parcel_area.intersection_density,
+    COALESCE(de.built_form_key, parcel_area.built_form_key) AS built_form_key,
+    COALESCE(de.intersection_density, parcel_area.intersection_density) AS intersection_density,
     parcel_area.pop,
     parcel_area.hh,
     parcel_area.du,
@@ -129,22 +140,32 @@ SELECT
     parcel_area.area_parcel_mixed_use,
     parcel_area.area_parcel_no_use,
     parcel_area.area_gross,
-    ROUND(parcel_area.area_gross::numeric, 4) AS area_parcel,
-    ROUND((parcel_area.area_gross * 0.7)::numeric, 4) AS area_dev_condition,
-    ROUND((parcel_area.area_gross * 0.15)::numeric, 4) AS area_row,
+    -- Area columns with _acres suffix (per methodology)
+    ROUND(parcel_area.area_gross::numeric, 4) AS area_gross_acres,
+    ROUND(parcel_area.area_gross::numeric, 4) AS area_parcel_acres,
+    ROUND((parcel_area.area_gross * 0.7)::numeric, 4) AS area_dev_condition_acres,
+    ROUND((parcel_area.area_gross * 0.15)::numeric, 4) AS area_row_acres,
+    -- Methodology columns from dasymetric enrichment
+    de.apn,
     de.du_subtype,
-    de.footprint_living_sqft,
-    de.footprint_building_sqft,
-    de.estimated_building_sqft,
-    de.dasym_impervious_fraction,
+    de.is_residential,
+    de.residential_building_sqft,
+    de.commercial_building_sqft,
+    de.industrial_building_sqft,
+    de.other_building_sqft,
+    de.total_footprint_sqft,
+    de.building_count,
+    de.footprint_ratio,
+    de.max_levels,
+    de.impervious_fraction AS dasym_impervious_fraction,
     de.pop_dasym_weight,
     de.emp_dasym_weight,
-    de.du_dasym_weight,
-    de.residential_building_sqft,
-    de.non_residential_building_sqft,
-    de.residential_building_count,
-    de.non_residential_building_count,
-    de.max_levels
+    de.du AS du_estimated,
+    de.hh_size,
+    de.vacancy_rate,
+    de.du_pop_dasym_weight,
+    de.hh_dasym_weight,
+    de.hh AS hh_estimated
 FROM parcel_area
 LEFT JOIN dasymetric_enrichment de ON parcel_area.parcel_id = de.parcel_id;
 
