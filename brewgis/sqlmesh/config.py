@@ -2,23 +2,24 @@
 
 Reads ``DATABASE_URL`` from the environment (Django-compatible).
 State is stored in a separate ``sqlmesh_state`` schema on the same PostGIS instance.
+
+Monkey-patches
+-------------
+- ``EngineAdapter.drop_data_object`` — falls back to the opposite object kind
+  when DuckDB's postgres_scanner misidentifies a view as a table (or vice versa)
+  and retries with CASCADE when dependent objects block the plain DROP.
+- ``DuckDBEngineAdapter._create_table`` — when ``replace=True``, explicitly
+  drops with CASCADE first to avoid DuckDB's internal DROP+CREATE translation
+  failing on PostgreSQL due to dependent views.
 """
 
 from __future__ import annotations
 
-# ── Monkey-patch: graceful fallback when the engine misidentifies an object's type ──
-#
-# DuckDB's postgres_scanner extension has a known bug where it reports PostgreSQL
-# views as BASE TABLE instead of VIEW (duckdb-postgres#269).  When SQLMesh tries to
-# replace a view during plan application, `drop_data_object` issues `DROP TABLE IF
-# EXISTS` based on the wrong type, which PostgreSQL rejects with "is not a table".
-#
-# This patch catches that failure and retries with the opposite object kind.  If the
-# retry also fails the original exception (with full traceback) is re-raised.
 import logging as _logging
 import os
 from urllib.parse import urlparse
 
+import sqlglot.expressions as _exp
 from sqlmesh.core.config import Config
 from sqlmesh.core.config import GatewayConfig
 from sqlmesh.core.config import LinterConfig
@@ -29,46 +30,130 @@ from sqlmesh.core.config.connection import DuckDBConnectionConfig
 
 _logger = _logging.getLogger(__name__)
 _drop_data_object_orig = None
+_create_table_orig = None
 
 
 def _drop_data_object_patched(self, data_object, ignore_if_not_exists=True):
     try:
         return _drop_data_object_orig(self, data_object, ignore_if_not_exists)
     except Exception:
+        pass
+
+    # Retry with CASCADE — dependent objects (e.g. views created by comparison
+    # models) prevent the plain DROP and PostgreSQL requires explicit CASCADE.
+    try:
         if data_object.type.is_table:
-            try:
-                self.drop_view(
-                    data_object.to_table(),
-                    ignore_if_not_exists=ignore_if_not_exists,
-                )
-                _logger.warning(
-                    "drop_data_object: fell back DROP TABLE→DROP VIEW for %s",
-                    data_object.to_table().sql(dialect=self.dialect),
-                )
-                return None
-            except Exception:
-                pass
-        elif data_object.type.is_view:
-            try:
-                self.drop_table(data_object.to_table(), exists=ignore_if_not_exists)
-                _logger.warning(
-                    "drop_data_object: fell back DROP VIEW→DROP TABLE for %s",
-                    data_object.to_table().sql(dialect=self.dialect),
-                )
-                return None
-            except Exception:
-                pass
-        raise
+            self.drop_table(
+                data_object.to_table(),
+                exists=ignore_if_not_exists,
+                cascade=True,
+            )
+            _logger.warning(
+                "drop_data_object: DROP TABLE CASCADE for %s (had dependents)",
+                data_object.to_table().sql(dialect=self.dialect),
+            )
+            return None
+        if data_object.type.is_view:
+            self.drop_view(
+                data_object.to_table(),
+                ignore_if_not_exists=ignore_if_not_exists,
+                cascade=True,
+            )
+            _logger.warning(
+                "drop_data_object: DROP VIEW CASCADE for %s (had dependents)",
+                data_object.to_table().sql(dialect=self.dialect),
+            )
+            return None
+    except Exception:
+        pass
+
+    # Type-swap fallback — DuckDB postgres_scanner sometimes reports PostgreSQL
+    # views as BASE TABLE.  If the cascade retry also failed, try the opposite
+    # kind before giving up.
+    if data_object.type.is_table:
+        try:
+            self.drop_view(
+                data_object.to_table(),
+                ignore_if_not_exists=ignore_if_not_exists,
+            )
+            _logger.warning(
+                "drop_data_object: fell back DROP TABLE→DROP VIEW for %s",
+                data_object.to_table().sql(dialect=self.dialect),
+            )
+            return None
+        except Exception:
+            pass
+    elif data_object.type.is_view:
+        try:
+            self.drop_table(data_object.to_table(), exists=ignore_if_not_exists)
+            _logger.warning(
+                "drop_data_object: fell back DROP VIEW→DROP TABLE for %s",
+                data_object.to_table().sql(dialect=self.dialect),
+            )
+            return None
+        except Exception:
+            pass
+    raise
+
+
+def _create_table_patched(
+    self,
+    table_name_or_schema,
+    expression,
+    exists=True,
+    replace=False,
+    target_columns_to_types=None,
+    table_description=None,
+    column_descriptions=None,
+    table_kind=None,
+    track_rows_processed=True,
+    **kwargs,
+):
+    if replace:
+        # DuckDB's CREATE OR REPLACE TABLE translates internally to
+        # DROP+CREATE when talking to PostgreSQL via postgres_scanner.
+        # The DROP is sent *without* CASCADE, so PostgreSQL rejects it
+        # when other objects (e.g. comparison views) depend on the table.
+        #
+        # Fix: explicitly DROP ... CASCADE first, then create without
+        # replace — the explicit CASCADE goes to PostgreSQL directly.
+        table_name = (
+            table_name_or_schema.this
+            if isinstance(table_name_or_schema, _exp.Schema)
+            else table_name_or_schema
+        )
+        self.drop_table(table_name, exists=True, cascade=True)
+        replace = False
+
+    return _create_table_orig(
+        self,
+        table_name_or_schema,
+        expression,
+        exists,
+        replace,
+        target_columns_to_types,
+        table_description,
+        column_descriptions,
+        table_kind,
+        track_rows_processed=track_rows_processed,
+        **kwargs,
+    )
 
 
 def _install_monkeypatch():
-    global _drop_data_object_orig
+    global _drop_data_object_orig, _create_table_orig
     from sqlmesh.core.engine_adapter.base import EngineAdapter
+    from sqlmesh.core.engine_adapter.duckdb import DuckDBEngineAdapter
 
     _drop_data_object_orig = EngineAdapter.drop_data_object
     EngineAdapter.drop_data_object = _drop_data_object_patched
+
+    _create_table_orig = DuckDBEngineAdapter._create_table
+    DuckDBEngineAdapter._create_table = _create_table_patched
+
     _logger.debug(
-        "EngineAdapter.drop_data_object monkey-patched (duckdb-postgres#269 workaround)"
+        "EngineAdapter.drop_data_object monkey-patched"
+        " (duckdb-postgres#269 workaround + cascade)"
     )
 
 
