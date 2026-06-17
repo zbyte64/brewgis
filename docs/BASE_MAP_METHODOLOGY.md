@@ -57,7 +57,25 @@ The central classifier that drives both paths is `built_form_key` (development s
 
 The first step for every parcel is to determine its development subtype. Only ~15% of parcels have assessor data with property type and lot size. The remaining 85% are classified through a cascade of inference tiers, each using a different signal.
 
-### Tier 1: Direct Assessor Data (~15% coverage)
+### Tier 0: Assessor Land Use Classification (~100% coverage)
+
+The first and most authoritative signal is the county assessor's official `landuse` code, available for every parcel in `sacog_assessor_parcels`. This directly encodes the jurisdiction's own land-use determination — the same source SACOG relies on. It takes priority over all signals derived from building footprints or lot-size heuristics:
+
+```
+WHEN assessor.landuse IS NOT NULL THEN
+    CASE assessor.landuse
+        WHEN 'Agriculture'          → agricultural
+        WHEN 'Vacant'               → undeveloped
+        WHEN 'Industrial'           → industrial
+        WHEN 'Commercial'           → commercial
+        WHEN 'Public / Civic'       → civic
+        WHEN 'Single Family'        → assign by lot size (detsf_sl / detsf_ll)
+        WHEN 'Multi Family'         → assign by unit count (mf2to4 / mf5p)
+        ELSE                        → fall through to Overture-based tiers
+    END
+```
+
+### Tier 1: Direct Assessor Sales Data (~8% coverage)
 
 For the minority of parcels with assessor sales records containing property type:
 
@@ -67,10 +85,6 @@ For the minority of parcels with assessor sales records containing property type
  Condo / Townhouse     → attsf      (attached single-family)
  MF + 2-4 units        → mf2to4     (duplex, triplex, fourplex)
  MF + 5+ units         → mf5p       (apartment)
- Commercial use code   → commercial
- Industrial use code   → industrial
- Agricultural use code → agricultural
- Civic/institutional   → civic
 ```
 
 ### Tier 2: Overture Building Footprint Class (variable coverage)
@@ -108,6 +122,9 @@ For the remaining parcels without direct assessor data or a distinguishing build
      (or tract, or county — three-tier spatial partition,
       identical to parcel_footprint_imputed.sql)
       that share the same land_development_category.
+      This prevents imputing a residential built form from
+      urban neighbors onto a parcel the assessor classifies
+      as agricultural.
 
   2. Compute feature distance between U and each K:
 
@@ -129,7 +146,7 @@ For the remaining parcels without direct assessor data or a distinguishing build
      reject and escalate to Tier 4.
 ```
 
-The three-tier spatial partition (block group → tract → county-wide within 5km), z-score normalization, and k=5 neighbor count mirror the existing `parcel_footprint_imputed.sql` implementation. The only new feature vector is intersection density, which is already computed per parcel.
+The three-tier spatial partition (block group → tract → county-wide within 5km), z-score normalization, and k=5 neighbor count mirror the existing `parcel_footprint_imputed.sql` implementation. The `land_development_category` filter ensures cross-category contamination is avoided — an agriculturally-zoned parcel never inherits a residential subtype from urban neighbors.
 
 #### Why intersection density refines the inference
 
@@ -226,51 +243,79 @@ This produces a continuous density surface that varies across the county (not 8 
 
 With the 15% assessor parcels distributed across block groups and land-use categories, the k-NN spatial inference covers the majority of remaining parcels within the same block group. A parcel in a residential subdivision where even a few neighbors have assessor data will inherit the correct subtype. The three-tier partition ensures most parcels find at least Tier 2 or 3 matches before reaching the area heuristic.
 
+### Tier 3b: Footprint Ratio Filter
+
+Before the area-based fallback, parcels with a tiny building relative to lot size are reclassified as agriculture rather than residential. A barn or small house on a large parcel does not make the parcel "residential":
+
+```
+WHEN lot_size_acres > 3
+  AND COALESCE(footprint_ratio, 0) < 0.02
+  AND (zone IS NULL OR zone NOT IN ('Residential', ...))
+    THEN agricultural
+```
+
+The 2% threshold is validated against SACOG reference data: agriculture-classified parcels average 0.01–0.05 footprint ratio. Parcels with such low coverage are predominantly agricultural with incidental structures.
+
 ### Tier 4: Area-Based Heuristic (final fallback)
 
-For parcels that reach no match in any spatial tier (isolated parcels with no nearby assessor data and no building footprints):
+For parcels that reach no match in any spatial tier (isolated parcels with no nearby assessor data and no building footprints), lot size is combined with zone information to distinguish agricultural from residential large parcels:
 
 ```
- area > 3.0 ac     → industrial or civic
- area > 1.5 ac     → commercial, office, or detsf_ll
- area > 0.4 ac     → detsf_ll
- area > 0.15 ac    → detsf_sl
- area ≤ 0.15 ac    → mf2to4 or mf5p (townhouse to apartment)
-
- Within each area band, diversity (parcel_id % N)
- distributes across plausible subtypes to avoid
- uniform assignment of the entire band.
+ lot_size > 10.0 ac  → agricultural (check zone/landuse first)
+ lot_size > 3.0 ac   → check assessor zone:
+                         agricultural zone → agricultural
+                         residential zone  → detsf_ll
+                         zone NULL         → agricultural (conservative)
+ lot_size > 0.4 ac   → detsf_ll
+ lot_size > 0.15 ac  → detsf_sl
+ lot_size ≤ 0.15 ac  → assign by parcel_id diversity
+                        (attsf / mf2to4 / mf5p)
 ```
 
-This tier fires only for parcels with no assessor data, no building footprint, and no spatially-nearby known parcels — the long tail of rural or recently subdivided land.
+This tier fires only for parcels with no assessor landuse, no building footprint, and no spatially-nearby known parcels — the long tail of rural or recently subdivided land.
+
+### `du_subtype`: redundant with `built_form_key`
+
+`du_subtype` is a derived view of `built_form_key` filtered to residential types:
+
+```
+du_subtype =
+    CASE WHEN built_form_key IN ('detsf_sl', 'detsf_ll', 'attsf', 'mf2to4', 'mf5p')
+        THEN built_form_key
+        ELSE NULL
+    END
+```
+
+It carries no independent information — it exists only as a convenience for downstream models that need to identify "is this parcel residential?" without joining the full built form key table. All classification logic operates on `built_form_key` directly.
 
 ### Subtype hierarchy
 
 ```
-built_form_key (residential)
-├── detsf_sl     — single-family detached, small lot (<0.15 ac)
-├── detsf_ll     — single-family detached, large lot (≥0.15 ac)
-├── attsf        — attached single-family (condo, townhouse)
-├── mf2to4       — multifamily 2-4 units (duplex, triplex, fourplex)
-├── mf5p         — multifamily 5+ units (apartment, condo building)
-│   ├── courtyard apartment
-│   ├── stacked flats
-│   ├── mid-rise apartment
-│   └── high-rise apartment
-│   (refined by Overture building levels)
+built_form_key
+├── Residential
+│   ├── detsf_sl     — single-family detached, small lot (<0.15 ac)
+│   ├── detsf_ll     — single-family detached, large lot (≥0.15 ac)
+│   ├── attsf        — attached single-family (condo, townhouse)
+│   ├── mf2to4       — multifamily 2-4 units (duplex, triplex, fourplex)
+│   ├── mf5p         — multifamily 5+ units (apartment, condo building)
+│   │   ├── courtyard apartment
+│   │   ├── stacked flats
+│   │   ├── mid-rise apartment
+│   │   └── high-rise apartment
+│   │   (refined by Overture building levels)
 │
-built_form_key (non-residential)
-├── commercial
-│   ├── neighborhood retail
-│   ├── general commercial
-│   ├── office low rise
-│   └── office mid/high rise
-├── industrial
-│   └── light industrial
-├── civic / institutional
-├── agricultural
-├── mixed_use
-└── undeveloped
+├── Non-residential
+│   ├── commercial
+│   │   ├── neighborhood retail
+│   │   ├── general commercial
+│   │   ├── office low rise
+│   │   └── office mid/high rise
+│   ├── industrial
+│   │   └── light industrial
+│   ├── civic / institutional
+│   ├── agricultural
+│   ├── mixed_use
+│   └── undeveloped
 ```
 
 The resolution of the hierarchy varies by parcel. Those with rich assessor data can distinguish all 5 residential subtypes. Those classified purely by area heuristic use coarser bins.
@@ -778,6 +823,12 @@ Originally proposed was a many-to-many mapping table (sector S → eligible buil
 - The sqft buckets are a natural spatial quantity. They don't require maintaining a lookup table.
 - The `built_form_key` still identifies the parcel's predominant use, but the sqft breakdown handles the marginal cases.
 
+### Why parcel area allocation respects the assessor's land-use classification
+
+When splitting parcel area into residential, employment, mixed-use, and no-use categories, the assessor's `landuse` code and derived `land_development_category` take priority over the building footprint classification. A parcel the assessor labels as agriculture does not become "residential area" just because Overture found a structure on it. The area-by-use logic checks the assessor's land development category first; the `built_form_key` (from Overture footprints) provides the building sqft breakdown within each use, not the use designation itself.
+
+This ensures alignment with SACOG's methodology, which also uses assessor records as the primary source for land-use classification. The building footprint data refines the density and intensity within each use category rather than overriding the jurisdiction's own determination.
+
 ### Why Overture buildings are critical
 
 - Building footprint provides the spatial mask for large-lot residential parcels.
@@ -788,7 +839,9 @@ Originally proposed was a many-to-many mapping table (sector S → eligible buil
 
 ---
 
-## 11. SACOG Built Form Alignment — Gap Analysis & Proposed Heuristics
+## 11. SACOG Built Form Alignment — Methodology Validation
+
+This section documents the cross-validation of BrewGIS built form classification against the SACOG v1 reference (`sac_cnty_region_base_canvas`). The gaps identified here inform the tier structure and heuristic thresholds defined in Section 3.
 
 ### 11.1 Observed Gaps
 
@@ -891,20 +944,4 @@ WHERE u.block_group_geoid = k.block_group_geoid
 
 This prevents imputing a `detsf_sl` built form from urban neighbors onto a parcel the assessor classifies as agricultural. The `land_development_category` is already computed from assessor use codes in the existing pipeline — it just needs to be propagated into the k-NN join condition.
 
-### 11.4 Coverage Impact
 
-| Heuristic | Parcels affected | Source of improvement |
-|---|---|---|
-| A: Assessor landuse | ~43K (8.5%) | Direct use of county land-use codes |
-| B: Footprint ratio | ~18K (3.5%) | Catches parcels with tiny buildings on large lots |
-| C: Better thresholds | ~27K (5.3%) | Fixes large-lot → residential misclassification |
-| D: k-NN + lnd_cat | ~14K (2.8%) | Prevents cross-category imputation |
-
-**Total addressable misclassification: ~60K parcels (12%),** accounting for overlaps between heuristics. This would reduce the "no use" area gap from 410K acres to approximately zero — the remaining gap would be methodological differences in how SACOG vs BrewGIS assign area within correctly classified residential parcels.
-
-### 11.5 Implementation Priority
-
-1. **Heuristic A (landuse)** — highest impact, lowest effort. The column already exists in `sacog_assessor_parcels`. Requires adding a CASE expression to the built form pipeline.
-2. **Heuristic C (thresholds)** — simple threshold changes in Tier 4. No new data dependencies.
-3. **Heuristic B (footprint ratio)** — requires joining `footprint_ratio` from `parcel_building_footprints` into the built form pipeline.
-4. **Heuristic D (k-NN filter)** — requires propagating `land_development_category` through the k-NN join. Moderate refactor of the inference query.
