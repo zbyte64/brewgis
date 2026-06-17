@@ -539,6 +539,30 @@ class Command(BaseCommand):
                 self.stdout.write("  NLCD tree canopy raster already loaded, skipping")
 
         if use_assessor_geometry:
+            # APN uniqueness pre-check: verify sacog_assessor_parcels_raw has no
+            # duplicate APNs before running assessor models through SQLMesh plan.
+            if self._table_has_rows("public", "sacog_assessor_parcels_raw"):
+                engine = get_engine()
+                with engine.connect() as conn:
+                    total = conn.execute(
+                        text("SELECT COUNT(*) FROM public.sacog_assessor_parcels_raw")
+                    ).scalar()
+                    distinct = conn.execute(
+                        text(
+                            "SELECT COUNT(DISTINCT apn) FROM public.sacog_assessor_parcels_raw"
+                        )
+                    ).scalar()
+                    if distinct is not None and total is not None and total > distinct:
+                        self.stdout.write(
+                            self.style.WARNING(
+                                f"  WARNING: sacog_assessor_parcels_raw has {total - distinct:,} duplicate APNs "
+                                f"({total:,} total rows, {distinct:,} distinct APNs). "
+                                "Dropping table and reloading"
+                            )
+                        )
+                        conn.execute(
+                            text("DROP TABLE public.sacog_assessor_parcels_raw CASCADE")
+                        )
             self.stdout.write("\n── Populating Assessor parcel geometries ──")
             if (
                 force_data_fetch
@@ -657,7 +681,7 @@ class Command(BaseCommand):
 
         plan, context = run_sqlmesh_plan(
             environment="sacog_comparison",
-            skip_tests=True,
+            skip_tests=False,
             # forward_only=True,
             select=model_selectors,
             variables=plan_vars,

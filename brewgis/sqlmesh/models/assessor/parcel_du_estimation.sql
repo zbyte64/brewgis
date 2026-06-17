@@ -5,7 +5,9 @@ MODEL (
     batch_size 100000
   ),
   audits (
-    not_null(columns := (apn))
+    not_null(columns := (apn)),
+    unique_values(columns := (apn,)),
+    assert_parcel_du_estimation_row_count
   )
 );
 
@@ -241,7 +243,10 @@ du_estimation AS (
             ELSE NULL
         END AS du_tier6
     FROM parcel_hh_size p
-    LEFT JOIN calibration c ON p.apn = c.apn
+    LEFT JOIN (
+        SELECT DISTINCT ON (apn) apn, region_avg_sqft_per_unit, min_du
+        FROM calibration
+    ) c ON p.apn = c.apn
     LEFT JOIN vacancy_cascade v ON p.apn = v.apn
 ),
 

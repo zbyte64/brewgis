@@ -378,6 +378,20 @@ def load_to_postgis(
                 conn.commit()
 
     if parcels is not None and not parcels.empty:
+        # Dedup: ArcGIS PARCELS/MapServer/8 may return multiple features per APN
+        # (multi-part parcels, land-use splits). Keep row with largest lotsize.
+        if "apn" in parcels.columns:
+            dup_mask = parcels["apn"].duplicated(keep=False)
+            if dup_mask.any():
+                dup_count = dup_mask.sum()
+                parcels = parcels.sort_values(
+                    "lotsize", ascending=False
+                ).drop_duplicates(subset="apn", keep="first")
+                logger.warning(
+                    "Deduplicated %d duplicate APN rows (kept largest lotsize per APN)",
+                    dup_count,
+                )
+
         _drop_cascade("sacog_assessor_parcels_raw")
         parcels.to_postgis(
             "sacog_assessor_parcels_raw",
@@ -405,6 +419,30 @@ def load_to_postgis(
             conn.execute(text(f"ANALYZE {schema}.sacog_assessor_parcels_raw"))
 
     if sales is not None and not sales.empty:
+        # Dedup: ASSESSOR/MapServer/1 may return multiple sales records per APN.
+        # Keep row with most complete data (prefers both living_area AND building_sf,
+        # then most recent year_built).
+        if "apn" in sales.columns:
+            dup_mask = sales["apn"].duplicated(keep=False)
+            if dup_mask.any():
+                dup_count = dup_mask.sum()
+                sales = (
+                    sales.assign(
+                        _completeness_rank=sales["living_area"].notna().astype(int)
+                        + sales["building_sf"].notna().astype(int),
+                    )
+                    .sort_values(
+                        ["_completeness_rank", "year_built"],
+                        ascending=[False, False],
+                    )
+                    .drop_duplicates(subset="apn", keep="first")
+                    .drop(columns=["_completeness_rank"])
+                )
+                logger.warning(
+                    "Deduplicated %d duplicate APN sales rows (kept most complete data)",
+                    dup_count,
+                )
+
         _drop_cascade("sacog_assessor_sales_raw")
         sales.to_postgis(
             "sacog_assessor_sales_raw",

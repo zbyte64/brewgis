@@ -124,6 +124,14 @@ coverage:  ## Run tests with coverage report and fail if below threshold
 	$(COMPOSE_RUN) bash -c 'coverage run -m pytest -m "not e2e" --timeout=300 && coverage report --fail-under=60'
 
 # ─────────────────────────────────────────────
+# SQLMesh Maintenance
+# ─────────────────────────────────────────────
+
+.PHONY: sqlmesh-clean
+sqlmesh-clean:  ## Drop all SQLMesh snapshots and start fresh
+	$(COMPOSE_RUN) sqlmesh -p brewgis/sqlmesh/ clean
+
+# ─────────────────────────────────────────────
 # Linting & Formatting
 # ─────────────────────────────────────────────
 

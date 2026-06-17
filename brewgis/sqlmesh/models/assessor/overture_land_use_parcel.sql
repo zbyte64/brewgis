@@ -5,7 +5,8 @@ MODEL (
     batch_size 100000
   ),
   audits (
-    not_null(columns := (parcel_id))
+    not_null(columns := (parcel_id)),
+    unique_values(columns := (parcel_id,))
   )
 );
 

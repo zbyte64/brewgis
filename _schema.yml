@@ -109,6 +109,100 @@
   - name: intersection_density
     tests: [non_negative]
 
+- name: parcel_dasymetric_weights
+  description: "Per-parcel built_form_key, dasymetric weights, and classification"
+  columns:
+  - name: apn
+    description: "Assessor parcel number"
+    tests:
+    - unique
+    - not_null
+
+- name: sacog_assessor_parcels
+  description: "Deduplicated SACOG assessor parcel geometries"
+  columns:
+  - name: apn
+    description: "Assessor parcel number"
+    tests:
+    - unique
+    - not_null
+
+- name: parcel_building_footprints
+  description: "Per-parcel building footprint features from combined (Overture + VIDA) sources"
+  columns:
+  - name: apn
+    description: "Assessor parcel number"
+    tests:
+    - unique
+    - not_null
+
+- name: parcel_building_sqft_by_type
+  description: "Per-parcel building sqft broken into residential, commercial, industrial, other"
+  columns:
+  - name: apn
+    description: "Assessor parcel number"
+    tests:
+    - unique
+    - not_null
+
+- name: overture_intersection_density
+  description: "Per-parcel intersection density from Overture transport road segments"
+  columns:
+  - name: apn
+    description: "Assessor parcel number"
+    tests:
+    - unique
+    - not_null
+
+- name: authoritative_residential_area
+  description: "Per-parcel authoritative residential/non-residential building area from observational data"
+  columns:
+  - name: apn
+    description: "Assessor parcel number"
+    tests:
+    - unique
+    - not_null
+
+- name: parcel_footprint_imputed
+  description: "Per-parcel k-NN imputation of building characteristics for parcels without sales data"
+  columns:
+  - name: apn
+    description: "Assessor parcel number"
+    tests:
+    - unique
+    - not_null
+
+- name: overture_land_use_parcel
+  description: "Overture land use per parcel via spatial join"
+  columns:
+  - name: parcel_id
+    description: "Unique parcel identifier"
+    tests:
+    - unique
+    - not_null
+
+- name: parcel_block_groups
+  description: "Parcel-to-block-group assignment via spatial join"
+  columns:
+  - name: apn
+    description: "Assessor parcel number"
+    tests:
+    - unique
+    - not_null
+  - name: data_year
+    description: "Year of the block group vintage"
+    tests:
+    - not_null
+
+- name: parcel_du_estimation
+  description: "Per-parcel dwelling unit estimation via 6-tier cascade"
+  columns:
+  - name: apn
+    description: "Assessor parcel number"
+    tests:
+    - unique
+    - not_null
+
 - name: base_canvas_reconciled
   description: "Base canvas reconciled — final ETL output with aggregate columns recomputed from sub-column sums. This is the end state equivalent of the full 11-step Python ETL pipeline."
   columns:

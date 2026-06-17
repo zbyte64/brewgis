@@ -162,10 +162,6 @@ parcel_acs_intersections AS (
         a.pct_minority,
         a.pct_college_educated,
         a.cost_burden_pct,
-        a.vacancy_rate AS acs_vacancy_rate,
-        a.low_response_score,
-        a.below_poverty_pct,
-        a.renter_occupied_pct,
         ST_Area(ST_ClipByBox2D(p.local_geometry, a.local_envelope)) AS intersect_area
     FROM parcel_geom p
     JOIN acs_data a ON ST_Intersects(p.geometry, a.geometry)
@@ -173,18 +169,14 @@ parcel_acs_intersections AS (
 
 acs_allocated AS (
     SELECT
-        p.parcel_id,
-        SUM(a.median_income * a.intersect_area) / NULLIF(SUM(a.intersect_area), 0) AS median_income,
-        SUM(a.rent_burden_pct * a.intersect_area) / NULLIF(SUM(a.intersect_area), 0) AS rent_burden_pct,
-        SUM(a.pct_minority * a.intersect_area) / NULLIF(SUM(a.intersect_area), 0) AS pct_minority,
-        SUM(a.pct_college_educated * a.intersect_area) / NULLIF(SUM(a.intersect_area), 0) AS pct_college_educated,
-        SUM(a.cost_burden_pct * a.intersect_area) / NULLIF(SUM(a.intersect_area), 0) AS cost_burden_pct,
-        SUM(a.acs_vacancy_rate * a.intersect_area) / NULLIF(SUM(a.intersect_area), 0) AS vacancy_rate,
-        SUM(a.low_response_score * a.intersect_area) / NULLIF(SUM(a.intersect_area), 0) AS low_response_score,
-        SUM(a.below_poverty_pct * a.intersect_area) / NULLIF(SUM(a.intersect_area), 0) AS below_poverty_pct,
-        SUM(a.renter_occupied_pct * a.intersect_area) / NULLIF(SUM(a.intersect_area), 0) AS renter_occupied_pct
-    FROM parcel_acs_intersections a
-    GROUP BY p.parcel_id
+        pai.parcel_id,
+        SUM(pai.median_income * pai.intersect_area) / NULLIF(SUM(pai.intersect_area), 0) AS median_income,
+        SUM(pai.rent_burden_pct * pai.intersect_area) / NULLIF(SUM(pai.intersect_area), 0) AS rent_burden_pct,
+        SUM(pai.pct_minority * pai.intersect_area) / NULLIF(SUM(pai.intersect_area), 0) AS pct_minority,
+        SUM(pai.pct_college_educated * pai.intersect_area) / NULLIF(SUM(pai.intersect_area), 0) AS pct_college_educated,
+        SUM(pai.cost_burden_pct * pai.intersect_area) / NULLIF(SUM(pai.intersect_area), 0) AS cost_burden_pct
+    FROM parcel_acs_intersections pai
+    GROUP BY pai.parcel_id
 )
 
 SELECT
@@ -231,15 +223,11 @@ SELECT
     NULL::double precision AS du_mf2to4,
     NULL::double precision AS du_mf5p,
     NULL::double precision AS emp,
-    a.median_income,
-    a.rent_burden_pct,
-    a.pct_minority,
-    a.pct_college_educated,
-    a.cost_burden_pct,
-    a.vacancy_rate,
-    a.low_response_score,
-    a.below_poverty_pct,
-    a.renter_occupied_pct,
+    acs.median_income,
+    acs.rent_burden_pct,
+    acs.pct_minority,
+    acs.pct_college_educated,
+    acs.cost_burden_pct,
     p.bldg_area_detsf_sl,
     p.bldg_area_detsf_ll,
     p.bldg_area_attsf,
@@ -266,7 +254,7 @@ SELECT
     p.area_parcel_no_use
 FROM parcel_geom p
 LEFT JOIN pop_allocated pa ON p.parcel_id = pa.parcel_id
-LEFT JOIN acs_allocated a ON p.parcel_id = a.parcel_id;
+LEFT JOIN acs_allocated acs ON p.parcel_id = acs.parcel_id;
 
 -- post_statements
 @IF(@runtime_stage = 'evaluating',

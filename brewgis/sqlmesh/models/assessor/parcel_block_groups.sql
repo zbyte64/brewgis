@@ -5,7 +5,8 @@ MODEL (
     batch_size 50000
   ),
   audits (
-    not_null(columns := (apn, data_year))
+    not_null(columns := (apn, data_year)),
+    unique_values(columns := (apn,))
   )
 );
 

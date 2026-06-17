@@ -410,8 +410,5 @@ SELECT
     cost_burden_pct,
     tree_canopy_fraction,
     vacancy_rate,
-    low_response_score,
-    below_poverty_pct,
-    renter_occupied_pct,
     ROUND((du * (1.0 - COALESCE(vacancy_rate, 0.0)))::numeric, 2) AS occupied_du
 FROM with_intersection;

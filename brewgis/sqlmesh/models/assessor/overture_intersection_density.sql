@@ -5,7 +5,8 @@ MODEL (
     batch_size 100000
   ),
   audits (
-    not_null(columns := (apn))
+    not_null(columns := (apn)),
+    unique_values(columns := (apn,))
   ),
   dialect postgres
 );
@@ -108,11 +109,12 @@ parcels_local AS (
 
 SELECT
     pl.apn,
-    COALESCE(id.density, 0.0)::double precision AS intersection_density,
+    COALESCE(AVG(id.density), 0.0)::double precision AS intersection_density,
     pl.geometry
 FROM parcels_local pl
 LEFT JOIN intersection_density id
-    ON ST_Intersects(pl.local_geometry, id.local_geometry);
+    ON ST_Intersects(pl.local_geometry, id.local_geometry)
+GROUP BY pl.apn, pl.geometry;
 
 -- post_statements
 @IF(@runtime_stage = 'evaluating',

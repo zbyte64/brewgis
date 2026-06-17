@@ -259,6 +259,143 @@ class TestLoadToPostGIS:
         result = load_to_postgis(parcels=empty_gdf)
         assert result == {}
 
+    def _mock_engine(self) -> MagicMock:
+        """Create a mock engine that handles connect/begin as context managers."""
+        mock_engine = MagicMock()
+        mock_conn = MagicMock()
+        mock_engine.connect.return_value.__enter__.return_value = mock_conn
+        mock_engine.begin.return_value.__enter__.return_value = mock_conn
+        return mock_engine
+
+    def test_load_to_postgis_dedup_parcels(self) -> None:
+        """load_to_postgis should dedup parcels by APN, keeping largest lotsize."""
+        parcels = gpd.GeoDataFrame(
+            {
+                "apn": ["001", "001", "002"],
+                "lotsize": [0.5, 1.5, 2.0],
+            },
+            geometry=[
+                Point(-121.5, 38.5),
+                Point(-121.51, 38.51),
+                Point(-121.52, 38.52),
+            ],
+            crs="EPSG:4326",
+        )
+
+        captured_length: list[int] = []
+
+        def _capture(self: gpd.GeoDataFrame, *args: object, **kwargs: object) -> None:
+            captured_length.append(len(self))
+
+        with (
+            patch.object(gpd.GeoDataFrame, "to_postgis", _capture),
+            patch(
+                "brewgis.workspace.services.assessor_fetcher.get_engine",
+                return_value=self._mock_engine(),
+            ),
+        ):
+            result = load_to_postgis(parcels=parcels)
+
+        assert len(captured_length) == 1
+        assert captured_length[0] == 2  # 3 rows deduped to 2 (001 has 2 copies → 1)
+        assert result["sacog_assessor_parcels_raw"] == 2
+
+    def test_load_to_postgis_dedup_parcels_keeps_largest_lotsize(self) -> None:
+        """Parcel dedup should keep the row with largest lotsize per APN."""
+        parcels = gpd.GeoDataFrame(
+            {
+                "apn": ["001", "001"],
+                "lotsize": [0.5, 2.5],
+            },
+            geometry=[Point(-121.5, 38.5), Point(-121.51, 38.51)],
+            crs="EPSG:4326",
+        )
+
+        captured_gdf: list[gpd.GeoDataFrame] = []
+
+        def _capture(self: gpd.GeoDataFrame, *args: object, **kwargs: object) -> None:
+            captured_gdf.append(self)
+
+        with (
+            patch.object(gpd.GeoDataFrame, "to_postgis", _capture),
+            patch(
+                "brewgis.workspace.services.assessor_fetcher.get_engine",
+                return_value=self._mock_engine(),
+            ),
+        ):
+            load_to_postgis(parcels=parcels)
+
+        assert len(captured_gdf) == 1
+        deduped = captured_gdf[0]
+        assert len(deduped) == 1
+        assert deduped["lotsize"].iloc[0] == 2.5
+        assert deduped["apn"].iloc[0] == "001"
+
+    def test_load_to_postgis_dedup_sales(self) -> None:
+        """load_to_postgis should dedup sales by APN, keeping most complete data."""
+        sales = gpd.GeoDataFrame(
+            {
+                "apn": ["001", "001", "002", "002"],
+                "living_area": [1500.0, None, None, 2000.0],
+                "building_sf": [None, 1800.0, None, 2200.0],
+                "year_built": [2000, 2010, 2000, 2010],
+            },
+            geometry=[
+                Point(-121.5, 38.5),
+                Point(-121.51, 38.51),
+                Point(-121.52, 38.52),
+                Point(-121.53, 38.53),
+            ],
+            crs="EPSG:4326",
+        )
+
+        captured_length: list[int] = []
+
+        def _capture(self: gpd.GeoDataFrame, *args: object, **kwargs: object) -> None:
+            captured_length.append(len(self))
+
+        with (
+            patch.object(gpd.GeoDataFrame, "to_postgis", _capture),
+            patch(
+                "brewgis.workspace.services.assessor_fetcher.get_engine",
+                return_value=self._mock_engine(),
+            ),
+        ):
+            result = load_to_postgis(sales=sales)
+
+        assert len(captured_length) == 1
+        assert captured_length[0] == 2  # 4 rows deduped to 2
+        assert result["sacog_assessor_sales_raw"] == 2
+
+    def test_load_to_postgis_no_dedup_when_no_duplicates(self) -> None:
+        """load_to_postgis should not modify data when there are no duplicate APNs."""
+        parcels = gpd.GeoDataFrame(
+            {
+                "apn": ["001", "002"],
+                "lotsize": [0.5, 1.5],
+            },
+            geometry=[Point(-121.5, 38.5), Point(-121.51, 38.51)],
+            crs="EPSG:4326",
+        )
+
+        captured_length: list[int] = []
+
+        def _capture(self: gpd.GeoDataFrame, *args: object, **kwargs: object) -> None:
+            captured_length.append(len(self))
+
+        with (
+            patch.object(gpd.GeoDataFrame, "to_postgis", _capture),
+            patch(
+                "brewgis.workspace.services.assessor_fetcher.get_engine",
+                return_value=self._mock_engine(),
+            ),
+        ):
+            result = load_to_postgis(parcels=parcels)
+
+        assert len(captured_length) == 1
+        assert captured_length[0] == 2
+        assert result["sacog_assessor_parcels_raw"] == 2
+
 
 class TestAssessorFetcherParcelFields:
     """Tests for parcel field constants."""

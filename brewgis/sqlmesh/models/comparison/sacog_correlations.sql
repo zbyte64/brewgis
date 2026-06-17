@@ -13,6 +13,7 @@ WITH base AS (
     SELECT
         COALESCE(NULLIF(area_gross, 0), NULLIF(acres_gross * 4046.86, 0), 1.0) AS w,
         bc.*,
+        area_parcel_acres AS area_parcel,
         acres_gross,
         acres_parcel,
         acres_parcel_emp,

@@ -5,7 +5,8 @@ MODEL (
     batch_size 100000
   ),
   audits (
-    not_null(columns := (apn))
+    not_null(columns := (apn)),
+    unique_values(columns := (apn,))
   ),
   dialect postgres,
   depends_on (

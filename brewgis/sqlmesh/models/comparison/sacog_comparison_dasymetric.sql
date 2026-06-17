@@ -6,15 +6,17 @@ MODEL (
   )
 );
 
--- SACOG Comparison Dasymetric Crosswalk — area-weighted assessor → SACOG parcel mapping.
+-- SACOG Comparison Dasymetric Crosswalk — enriched from pre-computed intersections.
 --
--- Joins SACOG parcel geometries (sacog_parcel_shim) against assessor-derived
--- dasymetric weights (parcel_dasymetric_weights) + DU estimation
--- (parcel_du_estimation) using ST_Intersects and picks the best match per
--- SACOG parcel_id by largest intersection area.
+-- Enriches SACOG parcels with dasymetric weights and DU estimation via the
+-- pre-computed intersection table (no spatial join at this stage — the
+-- expensive ST_Intersects + ST_Intersection is in
+-- dasymetric_intersections).
+--
+-- Output columns match the original single-stage model schema.
 
-SELECT DISTINCT ON (sp.parcel_id)
-    sp.parcel_id,
+SELECT
+    si.parcel_id,
     dw.apn,
     dw.lot_size_acres,
     dw.land_development_category,
@@ -43,12 +45,10 @@ SELECT DISTINCT ON (sp.parcel_id)
     de.hh_dasym_weight,
     de.hh,
     sp.geometry
-FROM brewgis.comparison.sacog_parcel_shim sp
-JOIN brewgis.assessor.parcel_dasymetric_weights dw
-    ON ST_Intersects(sp.geometry, dw.geometry)
-LEFT JOIN brewgis.assessor.parcel_du_estimation de
-    ON dw.apn = de.apn
-ORDER BY sp.parcel_id, COALESCE(ST_Area(ST_Intersection(ST_Envelope(sp.geometry), ST_Envelope(dw.geometry))), 0) DESC;
+FROM brewgis.comparison.dasymetric_intersections si
+JOIN brewgis.comparison.sacog_parcel_shim sp ON si.parcel_id = sp.parcel_id
+JOIN brewgis.assessor.parcel_dasymetric_weights dw ON si.apn = dw.apn
+LEFT JOIN brewgis.assessor.parcel_du_estimation de ON si.apn = de.apn;
 
 -- post_statements
 @IF(@runtime_stage = 'evaluating',

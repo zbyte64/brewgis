@@ -5,7 +5,9 @@ MODEL (
     batch_size 100000
   ),
   audits (
-    not_null(columns := (apn))
+    not_null(columns := (apn)),
+    unique_values(columns := (apn,)),
+    assert_sacog_assessor_parcels_row_count
   )
 );
 
