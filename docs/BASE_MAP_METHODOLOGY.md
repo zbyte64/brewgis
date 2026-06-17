@@ -57,20 +57,38 @@ The central classifier that drives both paths is `built_form_key` (development s
 
 The first step for every parcel is to determine its development subtype. Only ~15% of parcels have assessor data with property type and lot size. The remaining 85% are classified through a cascade of inference tiers, each using a different signal.
 
-### Tier 0: Assessor Land Use Classification (~100% coverage)
+### Tier 0: Assessor Use Code (near-universal coverage)
 
-The first and most authoritative signal is the county assessor's official `landuse` code, available for every parcel in `sacog_assessor_parcels`. This directly encodes the jurisdiction's own land-use determination — the same source SACOG relies on. It takes priority over all signals derived from building footprints or lot-size heuristics:
+The first and most authoritative signal is the county assessor's official use code, available for 508,222 of 508,468 parcels in `sacog_assessor_parcels` (99.95% coverage). These codes are the jurisdiction's own land-use determination — the same source SACOG relies on. They take priority over all signals derived from building footprints or lot-size heuristics.
+
+The codes follow the California State Board of Equalization's standardized use code system (4,513 distinct codes for Sacramento County). The first character indicates the general category:
+
+| Code prefix | Category | Examples |
+|---|---|---|
+| `A1` | Single Family Residential | `A1A00A` (354,631 parcels — single-family detached) |
+| `A2` | Multi Family Residential | `A2B00A` (10,674 — 2-unit apartment) |
+| `A3` | Condo / Townhouse | `A3B00A` (201) |
+| `A4` | Timeshare / Mobile Home | `A4E00A` (1,115 — mobile home park) |
+| `AE` | Commercial | `AE000A` through `AExxx` (wide variety) |
+| `AF` | Industrial | `AF012A` (12) |
+| `AG` | Agricultural | `AG006A` (42 — general agriculture) |
+| `AH` | Government / Public | `AH000A` (21) |
+| `AJ` | Institutional / Religious | `AJ000A` (2) |
+| `AD` | Vacant | `AD002A` (28 — vacant residential) |
 
 ```
-WHEN assessor.landuse IS NOT NULL THEN
-    CASE assessor.landuse
-        WHEN 'Agriculture'          → agricultural
-        WHEN 'Vacant'               → undeveloped
-        WHEN 'Industrial'           → industrial
-        WHEN 'Commercial'           → commercial
-        WHEN 'Public / Civic'       → civic
-        WHEN 'Single Family'        → assign by lot size (detsf_sl / detsf_ll)
-        WHEN 'Multi Family'         → assign by unit count (mf2to4 / mf5p)
+WHEN assessor.use_code IS NOT NULL THEN
+    CASE
+        WHEN use_code LIKE 'A1%'    → assign by lot size (detsf_sl / detsf_ll)
+        WHEN use_code LIKE 'A2%'    → assign by unit count (mf2to4 / mf5p)
+        WHEN use_code LIKE 'A3%'    → attsf
+        WHEN use_code LIKE 'A4%'    → detsf_sl (mobile home parks)
+        WHEN use_code LIKE 'AE%'    → commercial
+        WHEN use_code LIKE 'AF%'    → industrial
+        WHEN use_code LIKE 'AG%'    → agricultural
+        WHEN use_code LIKE 'AH%'    → civic
+        WHEN use_code LIKE 'AJ%'    → civic
+        WHEN use_code LIKE 'AD%'    → undeveloped
         ELSE                        → fall through to Overture-based tiers
     END
 ```
