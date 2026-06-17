@@ -17,7 +17,8 @@ WITH assessor_parcels AS (
         apn,
         geometry,
         COALESCE(NULLIF(lot_size_acres, 0), 0.01) AS lot_size_acres,
-        landuse
+        landuse,
+        zone
     FROM brewgis.assessor.sacog_assessor_parcels
 ),
 
@@ -133,6 +134,33 @@ tier1_built_form_key AS (
     FROM deduped_sales
 ),
 
+tier0_built_form_key AS (
+    SELECT
+        ap.apn,
+        CASE
+            WHEN LEFT(ap.landuse, 2) LIKE 'A1%' THEN
+                CASE
+                    WHEN ap.lot_size_acres < 0.15 THEN 'detsf_sl'
+                    ELSE 'detsf_ll'
+                END
+            -- A2% (multi-family) deliberately NOT classified here — falls through to
+            -- Tier 2 (Overture building footprints) which has building sqft to estimate
+            -- actual unit counts (mf2to4 vs mf5p). The parcel base has no unit count data.
+            WHEN LEFT(ap.landuse, 2) LIKE 'A3%' THEN 'attsf'
+            WHEN LEFT(ap.landuse, 2) LIKE 'A4%' THEN 'detsf_sl'
+            WHEN LEFT(ap.landuse, 2) LIKE 'AE%' THEN 'commercial'
+            WHEN LEFT(ap.landuse, 2) LIKE 'AF%' THEN 'industrial'
+            WHEN LEFT(ap.landuse, 2) LIKE 'AG%' THEN 'agricultural'
+            WHEN LEFT(ap.landuse, 2) LIKE 'AH%' THEN 'civic'
+            WHEN LEFT(ap.landuse, 2) LIKE 'AJ%' THEN 'civic'
+            WHEN LEFT(ap.landuse, 2) LIKE 'AD%' THEN 'undeveloped'
+            ELSE NULL
+        END AS built_form_key
+    FROM assessor_parcels ap
+    WHERE ap.landuse IS NOT NULL
+      AND NOT EXISTS (SELECT 1 FROM tier1_built_form_key t1 WHERE t1.apn = ap.apn AND t1.built_form_key IS NOT NULL)
+),
+
 tier2_built_form_key AS (
     SELECT DISTINCT ON (ap.apn)
         ap.apn,
@@ -150,24 +178,28 @@ tier2_built_form_key AS (
     JOIN building_sqft bs ON ap.apn = bs.apn
     WHERE bs.total_footprint_sqft > 0
       AND NOT EXISTS (SELECT 1 FROM tier1_built_form_key t1 WHERE t1.apn = ap.apn AND t1.built_form_key IS NOT NULL)
+      AND NOT EXISTS (SELECT 1 FROM tier0_built_form_key t0 WHERE t0.apn = ap.apn AND t0.built_form_key IS NOT NULL)
 ),
 
 known_parcels AS (
     SELECT
-        t1.apn,
-        p.geometry,
-        p.lot_size_acres,
+        ap.apn,
+        ap.geometry,
+        ap.lot_size_acres,
         COALESCE(bs.footprint_ratio, 0) AS footprint_ratio,
         COALESCE(id.intersection_density, 0) AS intersection_density,
-        t1.built_form_key,
+        COALESCE(t1.built_form_key, t0.built_form_key) AS built_form_key,
         cl.land_development_category
-    FROM tier1_built_form_key t1
-    JOIN assessor_parcels p ON t1.apn = p.apn
-    LEFT JOIN building_sqft bs ON t1.apn = bs.apn
-    LEFT JOIN int_density id ON t1.apn = id.apn
-    LEFT JOIN classified cl ON t1.apn = cl.apn
-    WHERE t1.built_form_key IS NOT NULL
-      AND t1.built_form_key IN ('detsf_sl', 'detsf_ll', 'attsf', 'mf2to4', 'mf5p', 'commercial', 'industrial')
+    FROM assessor_parcels ap
+    LEFT JOIN tier1_built_form_key t1 ON ap.apn = t1.apn AND t1.built_form_key IS NOT NULL
+    LEFT JOIN tier0_built_form_key t0 ON ap.apn = t0.apn AND t0.built_form_key IS NOT NULL
+    LEFT JOIN building_sqft bs ON ap.apn = bs.apn
+    LEFT JOIN int_density id ON ap.apn = id.apn
+    LEFT JOIN classified cl ON ap.apn = cl.apn
+    WHERE COALESCE(t1.built_form_key, t0.built_form_key) IS NOT NULL
+      AND COALESCE(t1.built_form_key, t0.built_form_key) IN (
+          'detsf_sl', 'detsf_ll', 'attsf', 'mf2to4', 'mf5p', 'commercial', 'industrial'
+      )
 ),
 
 unknown_parcels AS (
@@ -176,6 +208,7 @@ unknown_parcels AS (
         ap.geometry,
         ap.lot_size_acres,
         COALESCE(bs.footprint_ratio, 0) AS footprint_ratio,
+        ap.zone,
         COALESCE(id.intersection_density, 0) AS intersection_density,
         t2.built_form_key AS t2_bft,
         cl.land_development_category
@@ -185,6 +218,7 @@ unknown_parcels AS (
     LEFT JOIN classified cl ON ap.apn = cl.apn
     LEFT JOIN tier2_built_form_key t2 ON ap.apn = t2.apn
     WHERE NOT EXISTS (SELECT 1 FROM tier1_built_form_key t1 WHERE t1.apn = ap.apn AND t1.built_form_key IS NOT NULL)
+      AND NOT EXISTS (SELECT 1 FROM tier0_built_form_key t0 WHERE t0.apn = ap.apn AND t0.built_form_key IS NOT NULL)
 ),
 
 partition_stats AS (
@@ -210,10 +244,11 @@ tier3_candidates AS (
             + POWER(COALESCE((u.footprint_ratio - k.footprint_ratio) / NULLIF(ps.s_fr, 0), 0), 2)
             AS distance_sq
     FROM unknown_parcels u
-    JOIN known_parcels k
-        ON u.land_development_category = k.land_development_category
     LEFT JOIN partition_stats ps
         ON COALESCE(u.land_development_category, '') = ps.land_development_category
+    JOIN known_parcels k
+        ON u.land_development_category = k.land_development_category
+        AND (ps.s_ls IS NULL OR ABS(u.lot_size_acres - k.lot_size_acres) <= ps.s_ls * 3)
     WHERE u.t2_bft IS NULL
 ),
 
@@ -239,16 +274,27 @@ tier3_built_form_key AS (
     GROUP BY apn
 ),
 
+tier3b_built_form_key AS (
+    SELECT
+        u.apn,
+        'agricultural'::text AS built_form_key
+    FROM unknown_parcels u
+    WHERE u.lot_size_acres > 3.0
+      AND COALESCE(u.footprint_ratio, 0) < 0.02
+      AND u.t2_bft IS NULL
+      AND NOT EXISTS (SELECT 1 FROM tier3_built_form_key t3 WHERE t3.apn = u.apn)
+),
+
 tier4_built_form_key AS (
     SELECT
         u.apn,
         CASE
+            WHEN u.lot_size_acres > 10.0 THEN 'agricultural'
             WHEN u.lot_size_acres > 3.0 THEN
-                CASE (u.apn::bigint % 2)
-                    WHEN 0 THEN 'commercial'
-                    WHEN 1 THEN 'civic'
+                CASE
+                    WHEN u.zone LIKE '%A%' THEN 'agricultural'
+                    ELSE 'detsf_ll'
                 END
-            WHEN u.lot_size_acres > 1.5 THEN 'commercial'
             WHEN u.lot_size_acres > 0.4 THEN 'detsf_ll'
             WHEN u.lot_size_acres > 0.15 THEN 'detsf_sl'
             ELSE
@@ -260,15 +306,20 @@ tier4_built_form_key AS (
     FROM unknown_parcels u
     WHERE u.t2_bft IS NULL
       AND NOT EXISTS (SELECT 1 FROM tier3_built_form_key t3 WHERE t3.apn = u.apn)
+      AND NOT EXISTS (SELECT 1 FROM tier3b_built_form_key t3b WHERE t3b.apn = u.apn)
 ),
 
 final_built_form_key AS (
     SELECT apn, built_form_key AS bft
     FROM tier1_built_form_key WHERE built_form_key IS NOT NULL
     UNION ALL
+    SELECT apn, built_form_key FROM tier0_built_form_key WHERE built_form_key IS NOT NULL
+    UNION ALL
     SELECT apn, built_form_key FROM tier2_built_form_key WHERE built_form_key IS NOT NULL
     UNION ALL
     SELECT apn, built_form_key FROM tier3_built_form_key WHERE built_form_key IS NOT NULL
+    UNION ALL
+    SELECT apn, built_form_key FROM tier3b_built_form_key WHERE built_form_key IS NOT NULL
     UNION ALL
     SELECT apn, built_form_key FROM tier4_built_form_key WHERE built_form_key IS NOT NULL
 ),

@@ -121,3 +121,8 @@ GROUP BY pl.apn, pl.geometry;
   CREATE INDEX IF NOT EXISTS idx_overture_intersection_density_apn
   ON brewgis.assessor.overture_intersection_density (apn)
 );
+@IF(@runtime_stage = 'evaluating',
+  CREATE INDEX IF NOT EXISTS idx_overture_intersection_density_geometry
+  ON brewgis.assessor.overture_intersection_density USING GIST (geometry)
+);
+ANALYZE brewgis.assessor.overture_intersection_density;
