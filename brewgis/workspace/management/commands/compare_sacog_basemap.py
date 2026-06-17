@@ -727,6 +727,14 @@ class Command(BaseCommand):
             if use_assessor_geometry
             else None
         )
+        assessor_parcels_table = (
+            context.table_name(
+                "brewgis.assessor.sacog_assessor_parcels",
+                "sacog_comparison",
+            )
+            if use_assessor_geometry
+            else None
+        )
         _generate_report_markdown(
             ref_totals,
             brew_totals,
@@ -746,6 +754,7 @@ class Command(BaseCommand):
                 engine=get_engine(),
                 dasymetric_table=dasymetric_table if use_assessor_geometry else None,
                 authoritative_table=authoritative_table,
+                assessor_parcels_table=assessor_parcels_table,
                 reconciled_table=reconciled_table,
                 overture_roads=overture_roads,
             ),
@@ -851,6 +860,7 @@ def _collect_diagnostics(
     engine: Engine,
     dasymetric_table: str | None = None,
     authoritative_table: str | None = None,
+    assessor_parcels_table: str | None = None,
     reconciled_table: str | None = None,
     overture_roads: bool = False,
 ) -> dict:
@@ -961,13 +971,16 @@ def _collect_diagnostics(
     diagnostics["authoritative"] = {
         "overture_residential_match": 0,
         "assessor_sales_only": 0,
+        "footprint_imputed": 0,
         "no_authoritative_data": 0,
         "total_parcels": 0,
         "mean_acres_overture": 0.0,
         "mean_acres_assessor_only": 0.0,
+        "mean_acres_footprint_imputed": 0.0,
         "mean_acres_no_data": 0.0,
         "median_acres_overture": 0.0,
         "median_acres_assessor_only": 0.0,
+        "median_acres_footprint_imputed": 0.0,
         "median_acres_no_data": 0.0,
         "building_count_breakdown": {},
         "straddling_buildings": 0,
@@ -1001,6 +1014,15 @@ def _collect_diagnostics(
             ).scalar()
             diagnostics["authoritative"]["assessor_sales_only"] = row or 0
 
+            # Parcels with footprint-imputed data
+            row = conn.execute(
+                text(f"""
+                    SELECT COUNT(*) FROM {authoritative_table}
+                    WHERE data_source = 'footprint_imputed'
+                """)
+            ).scalar()
+            diagnostics["authoritative"]["footprint_imputed"] = row or 0
+
             # Parcels with no authoritative data
             row = conn.execute(
                 text(f"""
@@ -1025,7 +1047,7 @@ def _collect_diagnostics(
                         FROM (
                             SELECT a.*, sap.lot_size_acres
                             FROM {authoritative_table} a
-                            LEFT JOIN brewgis.assessor.sacog_assessor_parcels sap
+                            LEFT JOIN {assessor_parcels_table or "brewgis.assessor.sacog_assessor_parcels"} sap
                                 ON a.apn = sap.apn
                         ) sub
                         GROUP BY cat
@@ -1047,6 +1069,13 @@ def _collect_diagnostics(
                         diagnostics["authoritative"]["mean_acres_assessor_only"] = (
                             float(row[2] or 0.0)
                         )
+                    elif cat == "footprint_imputed":
+                        diagnostics["authoritative"][
+                            "median_acres_footprint_imputed"
+                        ] = float(row[1] or 0.0)
+                        diagnostics["authoritative"]["mean_acres_footprint_imputed"] = (
+                            float(row[2] or 0.0)
+                        )
                     elif cat == "none":
                         diagnostics["authoritative"]["median_acres_no_data"] = float(
                             row[1] or 0.0
@@ -1063,17 +1092,17 @@ def _collect_diagnostics(
                     text(f"""
                         SELECT
                             CASE
-                                WHEN building_count = 0 THEN '0'
-                                WHEN building_count = 1 THEN '1'
-                                WHEN building_count BETWEEN 2 AND 5 THEN '2-5'
-                                WHEN building_count BETWEEN 6 AND 10 THEN '6-10'
-                                WHEN building_count BETWEEN 11 AND 50 THEN '11-50'
+                                WHEN residential_building_count = 0 THEN '0'
+                                WHEN residential_building_count = 1 THEN '1'
+                                WHEN residential_building_count BETWEEN 2 AND 5 THEN '2-5'
+                                WHEN residential_building_count BETWEEN 6 AND 10 THEN '6-10'
+                                WHEN residential_building_count BETWEEN 11 AND 50 THEN '11-50'
                                 ELSE '50+'
                             END AS bucket,
                             COUNT(*) AS cnt
                         FROM {authoritative_table}
                         GROUP BY bucket
-                        ORDER BY MIN(building_count)
+                        ORDER BY MIN(residential_building_count)
                     """)
                 ).fetchall()
                 diagnostics["authoritative"]["building_count_breakdown"] = {

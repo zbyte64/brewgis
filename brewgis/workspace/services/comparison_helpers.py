@@ -434,7 +434,9 @@ def _generate_report_markdown(
                 diff_str = f"{'N/A':>11}"
                 pct_str = f"{'N/A':>7}"
 
-            corr_val = correlations.get(v3_col) if correlations else None
+            # Strip _acres suffix for area columns where correlation keys use bare names
+            _corr_key = v3_col.removesuffix("_acres")
+            corr_val = correlations.get(_corr_key) if correlations else None
             corr_str = f"{corr_val:.3f}" if corr_val is not None else "N/A"
 
             if corr_val is None:
@@ -543,19 +545,28 @@ def _generate_report_markdown(
 
         overture_count = auth.get("overture_residential_match", 0)
         assessor_count = auth.get("assessor_sales_only", 0)
+        footprint_imputed_count = auth.get("footprint_imputed", 0)
         none_count = auth.get("no_authoritative_data", 0)
+
+        def _acres_str(key: str) -> str:
+            val = auth.get(f"mean_acres_{key}", 0.0) or 0.0
+            return f"{val:>7.1f}"
 
         lines.append(
             f"| Overture residential match | {overture_count:>9,} | {_pct(overture_count):>5}% | "
-            f"{auth['mean_acres_overture']:>7.1f} |"
+            f"{_acres_str('overture')} |"
         )
         lines.append(
             f"| Assessor sales only | {assessor_count:>9,} | {_pct(assessor_count):>5}% | "
-            f"{auth['mean_acres_assessor_only']:>7.1f} |"
+            f"{_acres_str('assessor_only')} |"
+        )
+        lines.append(
+            f"| Footprint imputed | {footprint_imputed_count:>9,} | {_pct(footprint_imputed_count):>5}% | "
+            f"{_acres_str('footprint_imputed')} |"
         )
         lines.append(
             f"| No authoritative data (NULL) | {none_count:>9,} | {_pct(none_count):>5}% | "
-            f"{auth['mean_acres_no_data']:>7.1f} |"
+            f"{_acres_str('no_data')} |"
         )
         lines.append("")
 
