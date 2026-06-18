@@ -13,6 +13,7 @@ MODEL (
 
 SELECT
     ST_SetCRS(ST_FlipCoordinates(geometry), 'EPSG:4326') AS geometry,
+    ST_Transform(ST_SetCRS(ST_FlipCoordinates(geometry), 'EPSG:4326'), 'EPSG:3310') AS local_geometry,
     surface,
     class,
     subclass,

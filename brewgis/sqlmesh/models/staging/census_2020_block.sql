@@ -41,3 +41,10 @@ SELECT
 FROM raw_data raw
 LEFT JOIN block_geometry bg
     ON raw.geoid = bg.geoid;
+
+-- post_statements
+@IF(@runtime_stage = 'evaluating',
+  CREATE INDEX IF NOT EXISTS idx_census_2020_block_geometry
+  ON brewgis.staging.census_2020_block USING GIST (geometry)
+);
+ANALYZE brewgis.staging.census_2020_block;

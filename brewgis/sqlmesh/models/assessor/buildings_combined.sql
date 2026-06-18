@@ -79,6 +79,7 @@ vida_deduped AS (
 -- (lon, lat).  ST_FlipCoordinates swaps them so parcel spatial joins work correctly.
 SELECT
     ST_SetCRS(ST_FlipCoordinates(geometry), 'EPSG:4326') AS geometry,
+    ST_Transform(ST_SetCRS(ST_FlipCoordinates(geometry), 'EPSG:4326'), 'EPSG:3310') AS local_geometry,
     height,
     levels,
     class,
@@ -91,6 +92,7 @@ UNION ALL
 
 SELECT
     ST_SetCRS(ST_FlipCoordinates(geometry), 'EPSG:4326') AS geometry,
+    ST_Transform(ST_SetCRS(ST_FlipCoordinates(geometry), 'EPSG:4326'), 'EPSG:3310') AS local_geometry,
     height,
     levels,
     class,

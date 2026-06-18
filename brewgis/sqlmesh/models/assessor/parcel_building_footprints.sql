@@ -30,8 +30,7 @@ MODEL (
 WITH buildings_with_area AS (
     SELECT
         *,
-        ST_Transform(ST_SetSRID(geometry, 4326), @VAR('local_srid', 3310)) AS local_geometry,
-        ST_Area(ST_Transform(ST_SetSRID(geometry, 4326), @VAR('local_srid', 3310))) * 10.7639 AS footprint_sqft
+        ST_Area(local_geometry) * 10.7639 AS footprint_sqft
     FROM brewgis.staging.buildings_combined
 ),
 
@@ -130,10 +129,14 @@ LEFT JOIN brewgis.seeds.assessor_use_codes auc
     ON LEFT(COALESCE(sap.landuse::text, ''), 2) = auc.use_code::text;
 
 -- post_statements
--- (buildings_combined is DuckDB gateway, so index must live here)
+-- (buildings_combined is DuckDB gateway, so indexes must live here)
 @IF(@runtime_stage = 'evaluating',
   CREATE INDEX IF NOT EXISTS idx_buildings_combined_geometry
   ON brewgis.staging.buildings_combined USING GIST (geometry)
+);
+@IF(@runtime_stage = 'evaluating',
+  CREATE INDEX IF NOT EXISTS idx_buildings_combined_local_geometry
+  ON brewgis.staging.buildings_combined USING GIST (local_geometry)
 );
 ANALYZE brewgis.staging.buildings_combined;
 

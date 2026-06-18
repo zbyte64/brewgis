@@ -68,4 +68,8 @@ FROM public.sacog_comparison_parcels;
   CREATE INDEX IF NOT EXISTS idx_sacog_parcel_shim_geometry
   ON brewgis.comparison.sacog_parcel_shim USING GIST (geometry)
 );
+@IF(@runtime_stage = 'evaluating',
+  CREATE INDEX IF NOT EXISTS idx_sacog_parcel_shim_parcel_id
+  ON brewgis.comparison.sacog_parcel_shim (parcel_id)
+);
 ANALYZE brewgis.comparison.sacog_parcel_shim;

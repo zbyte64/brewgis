@@ -429,3 +429,14 @@ SELECT
     f.pop_dasym_weight,
     f.emp_dasym_weight
 FROM final_select f;
+
+-- post_statements
+@IF(@runtime_stage = 'evaluating',
+  CREATE INDEX IF NOT EXISTS idx_parcel_dasymetric_weights_geometry
+  ON brewgis.assessor.parcel_dasymetric_weights USING GIST (geometry)
+);
+@IF(@runtime_stage = 'evaluating',
+  CREATE INDEX IF NOT EXISTS idx_parcel_dasymetric_weights_apn
+  ON brewgis.assessor.parcel_dasymetric_weights (apn)
+);
+ANALYZE brewgis.assessor.parcel_dasymetric_weights;

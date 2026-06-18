@@ -1,6 +1,9 @@
 MODEL (
   name brewgis.comparison.sacog_brewgis_comparison_view,
-  kind VIEW
+  kind FULL,
+  audits (
+    not_null(columns := (parcel_id))
+  )
 );
 
 -- SACOG BrewGIS Comparison View — wraps base_canvas_reconciled with geography_id
@@ -97,4 +100,14 @@ SELECT
     sp.geography_id
 FROM brewgis.base_canvas.base_canvas_reconciled bcr
 LEFT JOIN public.sacog_comparison_parcels sp
-    ON bcr.parcel_id = sp.parcel_id
+    ON bcr.parcel_id = sp.parcel_id;
+
+-- post_statements
+@IF(@runtime_stage = 'evaluating',
+  CREATE INDEX IF NOT EXISTS idx_comparison_view_parcel_id
+  ON brewgis.comparison.sacog_brewgis_comparison_view (parcel_id)
+);
+@IF(@runtime_stage = 'evaluating',
+  CREATE INDEX IF NOT EXISTS idx_comparison_view_geography_id
+  ON brewgis.comparison.sacog_brewgis_comparison_view (geography_id)
+);

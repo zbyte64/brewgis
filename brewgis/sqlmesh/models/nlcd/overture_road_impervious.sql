@@ -32,10 +32,7 @@ WITH parcels AS (
 
 transport AS (
     SELECT
-        ST_Transform(
-            ST_SetSRID(geometry, @VAR('default_srid', 4326)),
-            @VAR('local_srid', 3310)
-        ) AS local_geometry,
+        local_geometry,
         CASE
             WHEN surface IS NULL
                  OR surface IN ('paved', 'asphalt', 'concrete') THEN 'paved'
@@ -93,6 +90,16 @@ FROM all_parcels ap
 LEFT JOIN road_summary rs ON ap.parcel_id = rs.parcel_id;
 
 -- post_statements
+-- (overture_transport is DuckDB gateway, so indexes must live here)
+@IF(@runtime_stage = 'evaluating',
+  CREATE INDEX IF NOT EXISTS idx_overture_transport_geometry
+  ON brewgis.staging.overture_transport USING GIST (geometry)
+);
+@IF(@runtime_stage = 'evaluating',
+  CREATE INDEX IF NOT EXISTS idx_overture_transport_local_geometry
+  ON brewgis.staging.overture_transport USING GIST (local_geometry)
+);
+
 @IF(@runtime_stage = 'evaluating',
   CREATE INDEX IF NOT EXISTS idx_overture_road_impervious_parcel_id
   ON brewgis.nlcd.overture_road_impervious (parcel_id)

@@ -88,3 +88,4 @@
     residential_irrigated_sqft: double precision
     commercial_irrigated_sqft: double precision
     intersection_density_sqmi: double precision
+    geography_id: integer

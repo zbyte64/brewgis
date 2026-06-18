@@ -5,17 +5,24 @@ MODEL (
 
 -- SACOG Summary — single-row comparison joining totals, correlations, and weighted means.
 
+-- Each CTE is guaranteed to return exactly 1 row. LIMIT 1 is defensive:
+-- if any sub-query ever returns >1 row (e.g. an accidental GROUP BY change),
+-- the CROSS JOINs below would explode to a Cartesian product.
 WITH ref_totals AS (
     SELECT * FROM brewgis.comparison.sacog_reference_totals
+    LIMIT 1
 ),
 brew_totals AS (
     SELECT * FROM brewgis.comparison.sacog_brewgis_totals
+    LIMIT 1
 ),
 correlations AS (
     SELECT * FROM brewgis.comparison.sacog_correlations
+    LIMIT 1
 ),
 weighted_means AS (
     SELECT * FROM brewgis.comparison.sacog_weighted_means
+    LIMIT 1
 )
 SELECT
     NOW()::timestamp AS generated_at,
