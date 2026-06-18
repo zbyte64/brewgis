@@ -2,14 +2,17 @@
 
 ## 1. Overview
 
-This spec defines how the base canvas is constructed: a parcel-level dataset containing population, households, dwelling units, and employment by sector, allocated from coarser source zones using assessor data, building footprints, and land-use classification.
+This spec defines how the base canvas is constructed: a parcel-level dataset containing population, households, dwelling units, and employment by sector, allocated from coarser source zones using two independent assessor datasets and Overture building footprints:
+
+1. **Parcel base** (`PARCELS/MapServer/8`) — the county's official parcel registry, containing `LANDUSE` and `ZONE_` for every parcel (~508K records, 99.95% coverage). This provides land-use classification.
+2. **Sales records** (`ASSESSOR/MapServer/1`) — transaction records for ~43K sold parcels (~8.5% coverage), containing `Property_Type`, `Units`, `Living_Area`, and `Building_SF`. This provides building characteristics where available.
 
 Two parallel allocation strategies operate:
 
-- **Residential** — DU-weighted allocation. Population is allocated proportional to estimated dwelling units per parcel. DUs are derived from assessor data or inferred from built_form_key + parcel area.
+- **Residential** — DU-weighted allocation. Population is allocated proportional to estimated dwelling units per parcel. DUs are derived from sales records or inferred from built_form_key + parcel area.
 - **Employment** — sector-constrained allocation. Each employment subsector allocates proportional to the relevant building sqft type (commercial, industrial, other) on each parcel.
 
-The central classifier that drives both paths is `built_form_key` (development subtype), derived from assessor data as the primary signal and Overture building data as the secondary signal.
+The central classifier that drives both paths is `built_form_key` (development subtype). The parcel base's use code is the primary signal; sales records and Overture building data provide refinement.
 
 ---
 
@@ -55,11 +58,16 @@ The central classifier that drives both paths is `built_form_key` (development s
 
 ## 3. built_form_key Derivation
 
-The first step for every parcel is to determine its development subtype. Only ~15% of parcels have assessor data with property type and lot size. The remaining 85% are classified through a cascade of inference tiers, each using a different signal.
+The first step for every parcel is to determine its development subtype. Two assessor-originated datasets provide complementary signals at different coverage rates:
 
-### Tier 0: Assessor Use Code (near-universal coverage)
+- **Parcel base use code** (`sacog_assessor_parcels.landuse`) — covers 99.95% of parcels, provides the county's official land-use classification.
+- **Sales records** (`sacog_assessor_sales_raw`) — covers ~8.5% of parcels, provides property type and unit counts.
 
-The first and most authoritative signal is the county assessor's official use code, available for 508,222 of 508,468 parcels in `sacog_assessor_parcels` (99.95% coverage). These codes are the jurisdiction's own land-use determination — the same source SACOG relies on. They take priority over all signals derived from building footprints or lot-size heuristics.
+Parcels without a distinguishing signal from either source are classified through a cascade of inference tiers.
+
+### Tier 0: Parcel Base Use Code (99.95% coverage)
+
+The first and most authoritative signal is the county's official use code from the parcel base (`PARCELS/MapServer/8`), available for 508,222 of 508,468 parcels in `sacog_assessor_parcels`. These codes are the jurisdiction's own land-use determination — the same source SACOG relies on. They take priority over all signals derived from building footprints or lot-size heuristics.
 
 The codes follow the California State Board of Equalization's standardized use code system (4,513 distinct codes for Sacramento County). The first character indicates the general category:
 
@@ -77,25 +85,28 @@ The codes follow the California State Board of Equalization's standardized use c
 | `AD` | Vacant | `AD002A` (28 — vacant residential) |
 
 ```
-WHEN assessor.use_code IS NOT NULL THEN
+WHEN landuse IS NOT NULL THEN
     CASE
-        WHEN use_code LIKE 'A1%'    → assign by lot size (detsf_sl / detsf_ll)
-        WHEN use_code LIKE 'A2%'    → assign by unit count (mf2to4 / mf5p)
-        WHEN use_code LIKE 'A3%'    → attsf
-        WHEN use_code LIKE 'A4%'    → detsf_sl (mobile home parks)
-        WHEN use_code LIKE 'AE%'    → commercial
-        WHEN use_code LIKE 'AF%'    → industrial
-        WHEN use_code LIKE 'AG%'    → agricultural
-        WHEN use_code LIKE 'AH%'    → civic
-        WHEN use_code LIKE 'AJ%'    → civic
-        WHEN use_code LIKE 'AD%'    → undeveloped
+        WHEN landuse LIKE 'A1%'    → assign by lot size (detsf_sl / detsf_ll)
+        -- A2% (multi-family) NOT classified here — falls through to
+        -- Tier 2 (Overture building footprints) which has building sqft
+        -- to estimate actual unit counts (mf2to4 vs mf5p). The parcel
+        -- base has no unit count data (see §11.3 Heuristic A note).
+        WHEN landuse LIKE 'A3%'    → attsf
+        WHEN landuse LIKE 'A4%'    → detsf_sl (mobile home parks)
+        WHEN landuse LIKE 'AE%'    → commercial
+        WHEN landuse LIKE 'AF%'    → industrial
+        WHEN landuse LIKE 'AG%'    → agricultural
+        WHEN landuse LIKE 'AH%'    → civic
+        WHEN landuse LIKE 'AJ%'    → civic
+        WHEN landuse LIKE 'AD%'    → undeveloped
         ELSE                        → fall through to Overture-based tiers
     END
 ```
 
-### Tier 1: Direct Assessor Sales Data (~8% coverage)
+### Tier 1: Sales Records (~8.5% coverage)
 
-For the minority of parcels with assessor sales records containing property type:
+For the minority of parcels with sales records (`ASSESSOR/MapServer/1`) containing property type:
 
 ```
  SFR + lot < 0.15 ac   → detsf_sl   (single-family small lot)
@@ -107,7 +118,7 @@ For the minority of parcels with assessor sales records containing property type
 
 ### Tier 2: Overture Building Footprint Class (variable coverage)
 
-For parcels with building footprints but no assessor subtype:
+For parcels with building footprints but no distinguishing signal from the parcel base use code or sales records:
 
 ```
  building_class = 'residential' + levels < 3  → detsf
@@ -119,9 +130,9 @@ For parcels with building footprints but no assessor subtype:
 
 Coarse — separates residential from non-residential, and low-rise from high-rise. Cannot distinguish `detsf_sl` from `detsf_ll`, or `mf2to4` from `mf5p`. This is refined by Tier 3.
 
-### Tier 3: Spatial Inference from Nearby Assessor Parcels
+### Tier 3: Spatial Inference from Nearby Known Parcels
 
-For the remaining parcels without direct assessor data or a distinguishing building class, we use the **15% of parcels with known built_form_key as a training set**, propagating their subtype to nearby parcels using feature similarity. Three inputs:
+For parcels without a distinguishing use code, sales record, or Overture building class, we use the **combined training set of Tier 0 (parcel base use code) and Tier 1 (sales records) parcels with known built_form_key as a training set**, propagating their subtype to nearby parcels using feature similarity. The training set covers ~99.95% of parcels through Tier 0 classification, plus an additional ~8.5% with sales-record-level granularity from Tier 1. Three inputs:
 
 1. **Intersection density** — a continuous proxy for urban form. Derived from Overture transport road segments. Higher values mean denser street grids, which correlate with denser development. Lower values mean sparse roads, which correlate with large-lot or rural use.
 
@@ -182,9 +193,15 @@ Intersection density correlates with development intensity in a way that lot siz
 
 A parcel with `lot_size = 0.3 ac` could be either `detsf_sl` (small-lot suburban) or `detsf_ll` (large-lot infill). The intersection density disambiguates: if the surrounding street network is a grid (int_dens > 15), it is likely `detsf_sl`. If it is a cul-de-sac subdivision (int_dens < 10), it is likely `detsf_ll`.
 
+#### Training set notes
+
+Tier 0 classifies parcels by use code prefix (e.g., A1→residential, AG→agricultural). These classified parcels are added to the k-NN training set alongside Tier 1 (sales records). This dramatically expands the training set from ~43K sales-record parcels (~8.5%) to ~508K parcels (~99.95%), ensuring that even parcel types with few or no sales records (agricultural, civic, industrial) have representation in every partition.
+
+The Tier 0 expansions means land_development_category partitions are well-populated even outside urban areas, preventing the k-NN from matching a rural parcel against an urban-only training set.
+
 #### Empirical validation from SACOG data
 
-The feature vectors for Tier 3 inference were validated against SACOG assessor records (55,079 parcels) joined with OSM intersection density (jurisdiction-level, the only resolution available at analysis time) and Overture building footprints. Key findings:
+The feature vectors for Tier 3 inference were validated against SACOG reference data (502,874 parcels) joined with OSM intersection density (jurisdiction-level, the only resolution available at analysis time) and Overture building footprints. Key findings:
 
 **Residential: Within the same intersection density jurisdiction, lot size separates built form types clearly for some pairs, but not all:**
 
@@ -259,7 +276,7 @@ This produces a continuous density surface that varies across the county (not 8 
 
 ### Tier 3 coverage
 
-With the 15% assessor parcels distributed across block groups and land-use categories, the k-NN spatial inference covers the majority of remaining parcels within the same block group. A parcel in a residential subdivision where even a few neighbors have assessor data will inherit the correct subtype. The three-tier partition ensures most parcels find at least Tier 2 or 3 matches before reaching the area heuristic.
+With the training parcels (those with sales data and known built_form_key) distributed across block groups and land-use categories, the k-NN spatial inference covers the majority of remaining parcels within the same block group. A parcel in a residential subdivision where even a few neighbors have sales records will inherit the correct subtype. The three-tier partition ensures most parcels find at least Tier 2 or 3 matches before reaching the area heuristic.
 
 ### Tier 3b: Footprint Ratio Filter
 
@@ -268,29 +285,30 @@ Before the area-based fallback, parcels with a tiny building relative to lot siz
 ```
 WHEN lot_size_acres > 3
   AND COALESCE(footprint_ratio, 0) < 0.02
-  AND (zone IS NULL OR zone NOT IN ('Residential', ...))
     THEN agricultural
 ```
+
+No zone check is needed here — this tier sits after Tier 0 (use code) and Tier 3 (k-NN). By this point, parcels with a distinguishing use code or zone are already classified. This catches only parcels where a barn-sized building on a large lot would cause a misclassification by lower tiers.
 
 The 2% threshold is validated against SACOG reference data: agriculture-classified parcels average 0.01–0.05 footprint ratio. Parcels with such low coverage are predominantly agricultural with incidental structures.
 
 ### Tier 4: Area-Based Heuristic (final fallback)
 
-For parcels that reach no match in any spatial tier (isolated parcels with no nearby assessor data and no building footprints), lot size is combined with zone information to distinguish agricultural from residential large parcels:
+For parcels that reach no match in any spatial tier (isolated parcels with no nearby sales records and no building footprints), lot size is combined with zone information to distinguish agricultural from residential large parcels:
 
 ```
- lot_size > 10.0 ac  → agricultural (check zone/landuse first)
- lot_size > 3.0 ac   → check assessor zone:
-                         agricultural zone → agricultural
-                         residential zone  → detsf_ll
-                         zone NULL         → agricultural (conservative)
+ lot_size > 10.0 ac  → agricultural (unconditionally)
+ lot_size > 3.0 ac   → check parcel base zone:
+                         zone LIKE '%A%' → agricultural
+                         zone NULL       → detsf_ll (conservative)
+                         other           → detsf_ll
  lot_size > 0.4 ac   → detsf_ll
  lot_size > 0.15 ac  → detsf_sl
  lot_size ≤ 0.15 ac  → assign by parcel_id diversity
                         (attsf / mf2to4 / mf5p)
 ```
 
-This tier fires only for parcels with no assessor landuse, no building footprint, and no spatially-nearby known parcels — the long tail of rural or recently subdivided land.
+This tier fires only for parcels with no distinguishing use code, no building footprint, and no spatially-nearby known parcels — the long tail of rural or recently subdivided land.
 
 ### `du_subtype`: redundant with `built_form_key`
 
@@ -336,7 +354,7 @@ built_form_key
 │   └── undeveloped
 ```
 
-The resolution of the hierarchy varies by parcel. Those with rich assessor data can distinguish all 5 residential subtypes. Those classified purely by area heuristic use coarser bins.
+The resolution of the hierarchy varies by parcel. Those with sales records can distinguish all 5 residential subtypes. Those classified purely by area heuristic use coarser bins.
 
 ---
 
@@ -396,14 +414,14 @@ This produces four per-parcel values that drive both residential and employment 
 
 ## 5. Dwelling Unit Estimation (Pipeline Step)
 
-Dwelling units are the central weight for population allocation, but most parcels do not have directly observed unit counts. The assessor data covers ~15% of parcels. For the remaining 85%, DU is estimated through a cascade that uses built_form_key to determine the subtype, then Overture building footprints to estimate the count where needed.
+Dwelling units are the central weight for population allocation, but most parcels do not have directly observed unit counts. Sales records cover ~8.5% of parcels. For the remaining 91.5%, DU is estimated through a cascade that uses built_form_key to determine the subtype, then Overture building footprints to estimate the count where needed.
 
 ### Prerequisites
 
 This step runs after:
   1. built_form_key derivation (Section 3) — every parcel has a subtype
   2. Overture building sqft breakdown (Section 4) — every parcel has residential_building_sqft
-  3. region_avg_sqft_per_unit calibration (computed from known assessor MF parcels in the region)
+  3. region_avg_sqft_per_unit calibration (computed from known MF parcels in sales records)
 
 ### The cascade
 
@@ -468,7 +486,7 @@ This step runs after:
 ```
  du_on_parcel = CASE
 
-     ── Tier 1: Direct assessor observation (covers ~15% of parcels)
+     ── Tier 1: Sales record observation (covers ~8.5% of parcels)
      WHEN assessor.units IS NOT NULL AND assessor.units > 0
          THEN assessor.units
          -- This is the ground truth. No estimation needed.
@@ -606,7 +624,7 @@ The DU subtype breakdown follows from built_form_key directly — no need for a 
  NULL (unknown)  →  county-averaged proportions
 ```
 
-A parcel classified as `detsf_ll` by assessor data gets zero `mf5p` DU, even though ACS might imply a multifamily share. The subtype is grounded in observation, not allocation.
+A parcel classified as `detsf_ll` by sales records gets zero `mf5p` DU, even though ACS might imply a multifamily share. The subtype is grounded in observation, not allocation.
 
 ---
 
@@ -843,9 +861,9 @@ Originally proposed was a many-to-many mapping table (sector S → eligible buil
 
 ### Why parcel area allocation respects the assessor's land-use classification
 
-When splitting parcel area into residential, employment, mixed-use, and no-use categories, the assessor's `landuse` code and derived `land_development_category` take priority over the building footprint classification. A parcel the assessor labels as agriculture does not become "residential area" just because Overture found a structure on it. The area-by-use logic checks the assessor's land development category first; the `built_form_key` (from Overture footprints) provides the building sqft breakdown within each use, not the use designation itself.
+When splitting parcel area into residential, employment, mixed-use, and no-use categories, the parcel base use code and derived `land_development_category` take priority over the building footprint classification. A parcel the county's official database labels as agriculture does not become "residential area" just because Overture found a structure on it. The area-by-use logic checks the land development category (derived from the use code) first; the `built_form_key` (from Overture footprints) provides the building sqft breakdown within each use, not the use designation itself.
 
-This ensures alignment with SACOG's methodology, which also uses assessor records as the primary source for land-use classification. The building footprint data refines the density and intensity within each use category rather than overriding the jurisdiction's own determination.
+This ensures alignment with SACOG's methodology, which also uses the county's official parcel database as the primary source for land-use classification. The building footprint data refines the density and intensity within each use category rather than overriding the jurisdiction's own determination.
 
 ### Why Overture buildings are critical
 
@@ -883,83 +901,94 @@ Cross-referencing BrewGIS `built_form_key` against SACOG v1 reference (`sac_cnty
 
 ### 11.2 Root Cause Analysis
 
-The built form classification pipeline (`parcel_dasymetric_weights`) uses four tiers of inference:
-1. **Tier 1:** Assessor sales data (8.5% coverage — only ~43K sold parcels)
-2. **Tier 2:** Overture building footprint class + levels (90% coverage)
-3. **Tier 3:** k-NN spatial imputation from known parcels
-4. **Tier 4:** Lot-size heuristic
+The built form classification pipeline (`parcel_dasymetric_weights`) uses six tiers of inference:
+1. **Tier 1:** Sales records from ASSESSOR/MapServer/1 (8.5% coverage — only ~43K sold parcels) — highest priority where available
+2. **Tier 0:** Parcel base use code from `PARCELS/MapServer/8` (99.95% coverage) — for parcels without sales records
+3. **Tier 2:** Overture building footprint classification (levels, sqft)
+4. **Tier 3:** k-NN spatial imputation from known parcels (training set expanded to include Tier 0 results)
+5. **Tier 3b:** Footprint ratio filter — parcels >3 ac with ratio <0.02 → agricultural
+6. **Tier 4:** Zone-aware lot-size heuristic
 
-Critical gaps in the current approach:
-- **Assessor `landuse` field is never consulted.** The county's official land-use designation (`sacog_assessor_parcels.landuse`) is available for every parcel but is only used in the `land_development_category` fallback, not in built form classification.
-- **Lot-size thresholds in Tier 4 are too aggressive.** Parcels > 0.4 acres with any building are classified as `detsf_ll` regardless of assessor designation or actual use. SACOG classifies 82% of these as agriculture.
-- **No footprint ratio check.** Parcels with a tiny building on a large lot (footprint_ratio < 0.02, lot > 3 acres) are classified as residential, but SACOG sees them as agriculture.
-- **`du_subtype` short-circuits area allocation.** Once a parcel has any residential built form, `area_by_use` assigns 100% of its area to residential — the assessor's `land_development_category` is never checked.
-- **k-NN imputation ignores land development category.** Tier 3 matches by intersection density, lot size, and footprint ratio within the same block group, but does not filter by the assessor-derived land development category.
+Prior to the intervention described in §11.3, critical gaps existed in the approach:
+- **Parcel base `landuse` code was never consulted in built form classification.** The county's official use code from `PARCELS/MapServer/8` (`sacog_assessor_parcels.landuse`) was available for 99.95% of parcels but was only used in the `land_development_category` fallback, not in the built form pipeline.
+- **Lot-size thresholds in Tier 4 were too aggressive.** Parcels > 0.4 acres with any building were classified as `detsf_ll` regardless of assessor designation or actual use. SACOG classifies 82% of these as agriculture.
+- **No footprint ratio check.** Parcels with a tiny building on a large lot (footprint_ratio < 0.02, lot > 3 acres) were classified as residential by Overture-based tiers, but SACOG sees them as agriculture.
+- **`du_subtype` short-circuited area allocation.** Once a parcel had any residential built form, `area_by_use` assigned 100% of its area to residential — the parcel base's `land_development_category` (derived from use codes) was never checked.
 
 ### 11.3 Proposed Heuristics
 
-#### Heuristic A: Assessor landuse as primary signal
+#### Heuristic A: Parcel base use code as primary signal
 
-Before checking Overture footprints or lot-size heuristics, consult the assessor's official `landuse` code for the parcel:
+Before checking Overture footprints or lot-size heuristics, consult the county's official use code from the parcel base (`sacog_assessor_parcels.landuse`):
 
 ```
-WHEN assessor.landuse IS NOT NULL THEN
-    CASE assessor.landuse
-        WHEN 'Agriculture'          → 'agricultural'
-        WHEN 'Vacant'               → 'undeveloped'
-        WHEN 'Industrial'           → 'industrial'
-        WHEN 'Commercial'           → 'commercial'
-        WHEN 'Public'               → 'civic'
-        WHEN 'Single Family'        → assign by lot size (detsf_sl / detsf_ll)
-        WHEN 'Multi Family'         → assign by unit count (mf2to4 / mf5p)
+WHEN landuse IS NOT NULL AND NOT covered_by_sales THEN
+    CASE
+        WHEN landuse LIKE 'A1%'    → assign by lot size (detsf_sl / detsf_ll)
+        -- A2% (multi-family) NOT classified here — no unit count in
+        -- parcel base. Falls through to Tier 2 (Overture) where
+        -- building sqft can distinguish mf2to4 from mf5p.
+        WHEN landuse LIKE 'A3%'    → attsf
+        WHEN landuse LIKE 'A4%'    → detsf_sl
+        WHEN landuse LIKE 'AE%'    → commercial
+        WHEN landuse LIKE 'AF%'    → industrial
+        WHEN landuse LIKE 'AG%'    → agricultural
+        WHEN landuse LIKE 'AH%'    → civic
+        WHEN landuse LIKE 'AJ%'    → civic
+        WHEN landuse LIKE 'AD%'    → undeveloped
         ELSE                        → fall through to Overture-based tiers
     END
 ```
 
-This directly uses the assessor's professional land-use classification — the same data source SACOG relies on. Impact: ~36K parcels currently misclassified as `detsf_sl`/`detsf_ll` that the assessor labels as agriculture would get the correct `agricultural` built form.
+**Design decision: A2% (multi-family) omitted.** The parcel base's BOE use code tells us a parcel is multi-family (`A2%` prefix) but does not provide unit counts needed to distinguish `mf2to4` from `mf5p`. The sales records (`ASSESSOR/MapServer/1`) have this data but only cover ~8.5% of parcels. Rather than defaulting all A2% parcels to `mf5p` (which would overcount DUs for small multi-family), A2% is deliberately left unclassified at Tier 0. These parcels fall through to Tier 2 (Overture building footprints), where `residential_building_sqft / region_avg_sqft_per_unit` can estimate actual unit counts at the parcel level.
+
+**Impact of Tier 0 overall:** ~36K parcels previously misclassified as `detsf_sl`/`detsf_ll` that the parcel base codes as agriculture now get the correct `agricultural` built form. An additional ~280K parcels with non-residential use codes (`AE`/`AF`/`AG`/`AH`/`AJ`/`AD`) receive correct non-residential classifications instead of falling through to Overture-based heuristics.
 
 #### Heuristic B: Footprint ratio filter
 
-For parcels without assessor landuse data (the ~90% with only Overture footprints):
+For parcels that pass through all spatial inference tiers (Tier 3) without a classification, a final check before the area heuristic catches parcels with tiny buildings on large lots:
 
 ```
 -- A tiny building on a large parcel is not a residential built form.
 -- It's an agricultural or rural parcel with an incidental structure.
 WHEN lot_size_acres > 3
   AND COALESCE(footprint_ratio, 0) < 0.02
-  AND (zone IS NULL OR zone NOT IN ('Residential', ...))
+  AND NOT classified_by_higher_tier
     THEN 'agricultural'
 ```
 
-The 2% threshold comes from the data: SACOG-agriculture parcels average 0.01-0.05 footprint ratio. A barn or small house on 10+ acres should not make the parcel "residential."
+**No zone check is used here** — the filter operates on parcels that already passed through all higher tiers (Tier 0-3). By this point, parcels with a distinguishing use code are already classified. This tier catches only parcels where building presence alone would cause a misclassification. The 2% threshold comes from the data: SACOG-agriculture parcels average 0.01-0.05 footprint ratio.
 
 #### Heuristic C: Revised Tier 4 thresholds
 
 Current thresholds are too simplistic — `lot_size > 0.4 ac → detsf_ll`. From SACOG cross-validation, parcels >3 acres are predominantly agricultural:
 
 ```
-lot_size > 10.0 ac  → agricultural (check zone/landuse first)
+lot_size > 10.0 ac  → agricultural (unconditionally)
 lot_size > 3.0 ac   → check assessor zone:
-                         agricultural zone → agricultural
-                         residential zone  → detsf_ll
-                         NULL              → agricultural (conservative)
+                         zone LIKE '%A%' → agricultural
+                         zone NULL/missing → detsf_ll (conservative)
+                         other → detsf_ll
 lot_size > 0.4 ac   → detsf_ll
 lot_size > 0.15 ac  → detsf_sl
-lot_size ≤ 0.15 ac  → attsf / mf (based on parcel_id diversity)
+lot_size ≤ 0.15 ac  → attsf / mf (based on parcel_id parity)
 ```
 
-#### Heuristic D: Add land_development_category as k-NN filter
+**Zone-NULL default changed from draft.** The draft proposal defaulted NULL-zone parcels >3 ac to `agricultural` (conservative for agricultural zones). After review, the default went to `detsf_ll`: parcels with no zone information are assumed residential. Only parcels with `%A%` in the zone string (matching patterns like `AG-80`, `A-1`) are classified as agricultural. This avoids overcorrection for parcels in residential subdivisions that lack zone data in the parcel base.
 
-In Tier 3's spatial inference, add `land_development_category` as a partition key alongside block_group/tract:
+#### Heuristic D: land_development_category as k-NN filter (already in place)
+
+In Tier 3's spatial inference, `land_development_category` was already a partition key alongside intersection density, lot size, and footprint ratio. The existing k-NN implementation used the `classified` CTE's `land_development_category` as a join condition in `tier3_candidates`:
 
 ```
--- Current: match by block_group + same built_form_key range
--- Proposed: match by block_group + same land_development_category
-
-WHERE u.block_group_geoid = k.block_group_geoid
-  AND u.land_development_category = k.land_development_category
+FROM unknown_parcels u
+JOIN known_parcels k
+    ON u.land_development_category = k.land_development_category
+LEFT JOIN partition_stats ps
+    ON COALESCE(u.land_development_category, '') = ps.land_development_category
+WHERE u.t2_bft IS NULL
 ```
 
-This prevents imputing a `detsf_sl` built form from urban neighbors onto a parcel the assessor classifies as agricultural. The `land_development_category` is already computed from assessor use codes in the existing pipeline — it just needs to be propagated into the k-NN join condition.
+This prevented cross-category contamination (agricultural parcels never inheriting residential subtypes from urban neighbors). The only change needed was to expand the training set (`known_parcels`) to include Tier 0 results (see §3, Training set notes), ensuring that every `land_development_category` partition had training examples even in non-urban areas.
 
 
