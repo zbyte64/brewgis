@@ -665,3 +665,86 @@ class TestSkipCasesNew:
         )
         violations = _check_where(src, {})
         assert violations == []
+
+
+# ── CTE Spatial Join Tests ──────────────────────────────────────────
+
+
+class TestCteSpatialJoin:
+    """Spatial joins against CTEs cannot use GiST indexes and must be
+    flagged so the user materializes the geometry in a real model."""
+
+    def test_cte_st_intersects_join_violates(self) -> None:
+        """``ST_Intersects`` against a CTE column → violation."""
+        src = _make_source_model(
+            "brewdb.public.analysis",
+            """
+            WITH my_cte AS (
+                SELECT geom, ST_Transform(geom, 3310) AS local_geom FROM parcels
+            )
+            SELECT p.*
+            FROM parcels p
+            JOIN my_cte m ON ST_Intersects(p.geometry, m.local_geom)
+            """,
+            {"geometry": "GEOMETRY", "local_geom": "GEOMETRY"},
+        )
+        violations = _check(src, {})
+        assert len(violations) == 1
+        msg = _violation_msg(violations[0])
+        assert "my_cte" in msg
+        assert "ST_INTERSECTS" in msg
+        assert "local_geom" in msg
+
+    def test_cte_array_overlap_join_violates(self) -> None:
+        """``&&`` (ArrayOverlaps) against a CTE column → violation."""
+        src = _make_source_model(
+            "brewdb.public.analysis",
+            """
+            WITH my_cte AS (
+                SELECT geom, ST_Transform(geom, 3310) AS local_geom FROM parcels
+            )
+            SELECT p.*
+            FROM parcels p
+            JOIN my_cte m ON p.geometry && m.local_geom
+            """,
+            {"geometry": "GEOMETRY", "local_geom": "GEOMETRY"},
+        )
+        violations = _check(src, {})
+        assert len(violations) == 1
+        msg = _violation_msg(violations[0])
+        assert "my_cte" in msg
+        assert "&&" in msg
+
+    def test_cte_key_join_passes(self) -> None:
+        """Plain ``=`` key join against a CTE → no violation."""
+        src = _make_source_model(
+            "brewdb.public.analysis",
+            """
+            WITH my_cte AS (
+                SELECT parcel_id, geom FROM parcels
+            )
+            SELECT p.*
+            FROM parcels p
+            JOIN my_cte m ON p.parcel_id = m.parcel_id
+            """,
+            {"parcel_id": "BIGINT", "geom": "GEOMETRY"},
+        )
+        violations = _check(src, {})
+        assert violations == []
+
+    def test_cte_without_spatial_join_passes(self) -> None:
+        """CTE join without any spatial function → no violation."""
+        src = _make_source_model(
+            "brewdb.public.analysis",
+            """
+            WITH my_cte AS (
+                SELECT id, name FROM parcels
+            )
+            SELECT p.*
+            FROM parcels p
+            JOIN my_cte m ON p.name = m.name
+            """,
+            {"id": "BIGINT", "name": "TEXT"},
+        )
+        violations = _check(src, {})
+        assert violations == []

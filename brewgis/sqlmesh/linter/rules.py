@@ -357,6 +357,25 @@ def _func_name(func: exp.Func) -> str:
     return (sql_name or "").upper()
 
 
+def _get_cte_names(query: exp.Expr) -> frozenset[str]:
+    """Extract CTE alias names from a query's WITH clause.
+
+    Returns a lowercase frozenset for case-insensitive comparison.
+    """
+    with_clause = query.args.get("with_")
+    if with_clause is None:
+        return frozenset()
+    ctes = with_clause.args.get("expressions")
+    if ctes is None:
+        return frozenset()
+    names: set[str] = set()
+    for cte in ctes:
+        alias = cte.args.get("alias")
+        if alias is not None and alias.name:
+            names.add(alias.name.lower())
+    return frozenset(names)
+
+
 # ── UnindexedJoin ────────────────────────────────────────────────────
 
 
@@ -442,7 +461,11 @@ class UnindexedJoin(Rule):
             if bare != fqn:
                 ref_model = self.context._models.get(bare)  # noqa: SLF001
         if ref_model is None:
-            # External table or not a SQLMesh model — skip.
+            # Not a SQLMesh model — check if it's a CTE with a spatial join.
+            cte_violation = self._check_cte_join(table, on, model)
+            if cte_violation:
+                return cte_violation
+            # Genuinely external table — skip.
             return None
         if not isinstance(ref_model, SqlModel):
             return None
@@ -548,6 +571,58 @@ class UnindexedJoin(Rule):
                             f" column in the referenced model's "
                             f"``post_statements``."
                         )
+
+        return None
+
+    def _check_cte_join(
+        self,
+        table: exp.Table,
+        on: exp.Expr,
+        model: Model,
+    ) -> RuleViolation | None:
+        """Check for spatial joins against CTEs, which can't have GiST indexes.
+
+        CTE references that can't be resolved to a SQLMesh model are checked
+        here. If the table is a CTE and the ON clause uses a spatial function,
+        flag it since CTEs are always materialized on the fly and can't have
+        persistent indexes.
+        """
+        query = model.query
+        if query is None:
+            return None
+
+        cte_names = _get_cte_names(query)
+
+        # If the table is not a CTE, it's genuinely external — skip.
+        if table.name.lower() not in cte_names:
+            return None
+
+        join_alias = table.alias_or_name
+
+        # Check for && (ArrayOverlaps / Overlap).
+        for node in on.find_all(exp.ArrayOverlaps):
+            for col in node.find_all(exp.Column):
+                if col.table == join_alias:
+                    return self.violation(
+                        f"Spatial join against CTE ``{table.name}`` column "
+                        f"``{col.name}`` uses ``&&``. CTEs cannot have GiST "
+                        f"indexes. Materialize the transformed geometry into "
+                        f"a dedicated model with a post_statements GiST index."
+                    )
+
+        # Check for ST_Intersects etc.
+        for func in on.find_all(exp.Func):
+            if _func_name(func) not in _SPATIAL_FUNCTIONS:
+                continue
+            for col in func.find_all(exp.Column):
+                if col.table == join_alias:
+                    return self.violation(
+                        f"Spatial join against CTE ``{table.name}`` column "
+                        f"``{col.name}`` uses ``{_func_name(func)}(..., "
+                        f"{col.name})``. CTEs cannot have GiST indexes. "
+                        f"Materialize the transformed geometry into a "
+                        f"dedicated model with a post_statements GiST index."
+                    )
 
         return None
 
