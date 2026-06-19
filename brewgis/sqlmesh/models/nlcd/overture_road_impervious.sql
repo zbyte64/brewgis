@@ -91,16 +91,9 @@ LEFT JOIN road_summary rs ON ap.parcel_id = rs.parcel_id;
 
 -- post_statements
 -- (overture_transport is DuckDB gateway, so indexes must live here)
-@IF(@runtime_stage = 'evaluating',
   CREATE INDEX IF NOT EXISTS idx_overture_transport_geometry
-  ON brewgis.staging.overture_transport USING GIST (geometry)
-);
-@IF(@runtime_stage = 'evaluating',
+  ON brewgis.staging.overture_transport USING GIST (geometry);
   CREATE INDEX IF NOT EXISTS idx_overture_transport_local_geometry
-  ON brewgis.staging.overture_transport USING GIST (local_geometry)
-);
-
-@IF(@runtime_stage = 'evaluating',
+  ON brewgis.staging.overture_transport USING GIST (local_geometry);
   CREATE INDEX IF NOT EXISTS idx_overture_road_impervious_parcel_id
-  ON brewgis.nlcd.overture_road_impervious (parcel_id)
-);
+  ON brewgis.nlcd.overture_road_impervious (parcel_id);

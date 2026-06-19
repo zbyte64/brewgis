@@ -19,12 +19,18 @@ MODEL (
 -- Uses ST_Clip + ST_SummaryStats (mean) since the data is continuous,
 -- not categorical like the NLCD land cover classes.
 
-WITH parcels_5070 AS (
+WITH raster_extent AS (
+    SELECT ST_SetSRID(ST_Extent(rast::geometry), 5070) AS extent
+    FROM public.nlcd_tree_canopy_raster
+),
+
+parcels_5070 AS (
     SELECT
         p.id AS parcel_id,
         ST_Transform(p.geometry, 5070) AS geometry_5070
-    FROM brewgis.nlcd.parcels_wm p
+    FROM brewgis.nlcd.parcels_wm p, raster_extent re
     WHERE p.geometry IS NOT NULL
+      AND ST_Intersects(p.geometry, re.extent)
 ),
 
 parcel_tiles AS (
@@ -69,7 +75,5 @@ FROM all_parcels ap
 LEFT JOIN per_parcel_stats s ON ap.parcel_id = s.parcel_id;
 
 -- post_statements
-@IF(@runtime_stage = 'evaluating',
   CREATE INDEX IF NOT EXISTS idx_nlcd_tree_canopy_parcel_stats_parcel_id
-  ON brewgis.nlcd.nlcd_tree_canopy_parcel_stats (parcel_id)
-);
+  ON brewgis.nlcd.nlcd_tree_canopy_parcel_stats (parcel_id);

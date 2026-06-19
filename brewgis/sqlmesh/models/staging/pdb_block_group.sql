@@ -76,7 +76,5 @@ SELECT
 FROM derived_rates;
 
 -- post_statements
-@IF(@runtime_stage = 'evaluating',
   CREATE INDEX IF NOT EXISTS idx_pdb_block_group_geometry
-  ON brewgis.staging.pdb_block_group USING GIST (geometry)
-);
+  ON brewgis.staging.pdb_block_group USING GIST (geometry);

@@ -20,14 +20,27 @@ MODEL (
 -- composite field references. This avoids a SQLMesh query-wrapper bug
 -- that corrupts composite type field access like (alias).field.
 
-WITH parcel_tiles AS (
+WITH
+-- Pre-compute raster extent to limit parcels to only those intersecting rasters
+raster_extent AS (
+    SELECT ST_SetSRID(ST_Extent(rast::geometry), 5070) AS extent
+    FROM public.nlcd_raster
+),
+
+parcels_in_extent AS (
+    SELECT p.id AS parcel_id, p.geometry
+    FROM brewgis.nlcd.parcels_wm p, raster_extent re
+    WHERE p.geometry IS NOT NULL
+      AND ST_Intersects(p.geometry, re.extent)
+),
+
+parcel_tiles AS (
     SELECT
-        p.id AS parcel_id,
+        p.parcel_id,
         ST_Clip(r.rast, 1, p.geometry, TRUE, TRUE) AS clipped
-    FROM brewgis.nlcd.parcels_wm p
+    FROM parcels_in_extent p
     JOIN public.nlcd_raster r
         ON ST_Intersects(p.geometry, r.rast::geometry)
-    WHERE p.geometry IS NOT NULL
 ),
 
 tile_value_counts AS (
@@ -118,7 +131,5 @@ LEFT JOIN majority_class m ON ap.parcel_id = m.parcel_id
 LEFT JOIN impervious_frac i ON ap.parcel_id = i.parcel_id;
 
 -- post_statements
-@IF(@runtime_stage = 'evaluating',
   CREATE INDEX IF NOT EXISTS idx_nlcd_parcel_stats_parcel_id
-  ON brewgis.nlcd.nlcd_parcel_stats (parcel_id)
-);
+  ON brewgis.nlcd.nlcd_parcel_stats (parcel_id);

@@ -2,7 +2,8 @@ MODEL (
   name brewgis.base_canvas.base_canvas_demographics,
   kind FULL,
   audits (
-    not_null(columns := (parcel_id))
+    not_null(columns := (parcel_id)),
+    assert_population_conserved
   )
 );
 
@@ -257,7 +258,5 @@ LEFT JOIN pop_allocated pa ON p.parcel_id = pa.parcel_id
 LEFT JOIN acs_allocated acs ON p.parcel_id = acs.parcel_id;
 
 -- post_statements
-@IF(@runtime_stage = 'evaluating',
   CREATE INDEX IF NOT EXISTS idx_base_canvas_demographics_geometry
-  ON brewgis.base_canvas.base_canvas_demographics USING GIST (geometry)
-);
+  ON brewgis.base_canvas.base_canvas_demographics USING GIST (geometry);

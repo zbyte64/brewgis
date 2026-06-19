@@ -28,21 +28,9 @@ MODEL (
 -- NULL output means "no authoritative data available" and the downstream
 -- dasymetric weight falls through to estimates (lot-size proxies).
 
-WITH parcel_base AS (
-    SELECT
-        pbf.apn,
-        pbf.geometry,
-        pbf.lot_size_acres,
-        pbf.residential_building_sqft,
-        pbf.non_residential_building_sqft,
-        pbf.residential_building_count,
-        pbf.non_residential_building_count,
-        pbf.max_levels
-    FROM brewgis.assessor.parcel_building_footprints pbf
-),
-
--- Deduplicated assessor sales data (same logic as parcel_dasymetric_weights)
-sales_data AS (
+WITH sales_data AS (
+    -- Deduplicated assessor sales data, filtered to APNs that have building
+    -- footprints to avoid sorting irrelevant rows.
     SELECT
         apn,
         living_area AS actual_living_sqft,
@@ -64,7 +52,8 @@ sales_data AS (
                     year_built DESC NULLS LAST
             ) AS rn
         FROM public.sacog_assessor_sales_raw
-        WHERE living_area IS NOT NULL OR building_sf IS NOT NULL
+        WHERE (living_area IS NOT NULL OR building_sf IS NOT NULL)
+          AND apn IN (SELECT apn FROM brewgis.assessor.parcel_building_footprints)
     ) deduped_sales
     WHERE rn = 1
 ),
@@ -80,25 +69,21 @@ footprint_imputed AS (
 
 assembled AS (
     SELECT
-        pb.apn,
-        pb.geometry,
-        pb.residential_building_sqft,
-        pb.non_residential_building_sqft,
-        pb.residential_building_count,
-        pb.non_residential_building_count,
-        pb.max_levels,
+        pbf.apn,
+        pbf.residential_building_sqft,
+        pbf.non_residential_building_sqft,
+        pbf.max_levels,
         sd.actual_living_sqft,
         sd.actual_building_sqft,
         fi.footprint_imputed_living_sqft,
         fi.footprint_imputed_building_sqft
-    FROM parcel_base pb
-    LEFT JOIN sales_data sd ON pb.apn = sd.apn
-    LEFT JOIN footprint_imputed fi ON pb.apn = fi.apn
+    FROM brewgis.assessor.parcel_building_footprints pbf
+    LEFT JOIN sales_data sd ON pbf.apn = sd.apn
+    LEFT JOIN footprint_imputed fi ON pbf.apn = fi.apn
 )
 
 SELECT
     apn,
-    geometry,
     -- Authoritative residential building area (floor area, not footprint)
     CASE
         WHEN residential_building_sqft > 0
@@ -130,34 +115,10 @@ SELECT
         WHEN COALESCE(footprint_imputed_building_sqft, 0) > 0
         THEN footprint_imputed_building_sqft
         ELSE NULL
-    END AS authoritative_non_residential_sqft,
-    -- Data source indicator: which priority tier was used for residential
-    CASE
-        WHEN residential_building_sqft > 0
-             AND COALESCE(max_levels, 0) > 0
-        THEN 'overture_with_levels'
-        WHEN residential_building_sqft > 0
-        THEN 'overture_flat'
-        WHEN COALESCE(actual_living_sqft, 0) > 0
-        THEN 'assessor_sales'
-        WHEN COALESCE(footprint_imputed_living_sqft, 0) > 0
-        THEN 'footprint_imputed'
-        ELSE NULL
-    END AS data_source,
-    residential_building_sqft,
-    non_residential_building_sqft,
-    residential_building_count,
-    non_residential_building_count,
-    max_levels,
-    actual_living_sqft,
-    actual_building_sqft,
-    footprint_imputed_living_sqft,
-    footprint_imputed_building_sqft
+    END AS authoritative_non_residential_sqft
 FROM assembled;
 
 -- post_statements
-@IF(@runtime_stage = 'evaluating',
   CREATE INDEX IF NOT EXISTS idx_authoritative_residential_area_apn
-  ON brewgis.assessor.authoritative_residential_area (apn)
-);
+  ON brewgis.assessor.authoritative_residential_area (apn);
 ANALYZE brewgis.assessor.authoritative_residential_area;

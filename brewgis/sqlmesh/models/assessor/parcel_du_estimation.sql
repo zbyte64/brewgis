@@ -7,7 +7,14 @@ MODEL (
   audits (
     not_null(columns := (apn)),
     unique_values(columns := (apn,)),
-    assert_parcel_du_estimation_row_count
+    assert_parcel_du_estimation_row_count,
+    assert_du_assessor_units_direct,
+    assert_du_sfr_equals_one,
+    assert_du_mf_with_sqft,
+    assert_du_mf_no_sqft,
+    assert_du_urban_default,
+    assert_du_non_residential_zero,
+    assert_du_vacancy_rates
   )
 );
 
@@ -52,27 +59,13 @@ assessor_units AS (
     ORDER BY apn, year_built DESC NULLS LAST
 ),
 
--- ── ACS household size (from staging.acs_block_group, area-weighted) ───────
--- Joins APN geometry directly to ACS block groups to avoid circular dependency
--- through sacog_comparison_dasymetric.
+-- ── ACS household size (from assessor.parcel_acs_intersections, area-weighted) ─
+-- Pre-computed spatial join avoids expensive ST_Intersection on every plan.
 acs_hh_size AS (
     SELECT
         p.apn,
-        SUM(p.hh / NULLIF(p.du, 0) * p.intersect_area) / NULLIF(SUM(p.intersect_area), 0) AS hh_size
-    FROM (
-        SELECT
-            sap.apn,
-            a.hh,
-            a.du,
-            ST_Area(ST_Intersection(
-                ST_Transform(sap.geometry, @VAR('local_srid', 3310)),
-                ST_Transform(a.geometry, @VAR('local_srid', 3310))
-            )) AS intersect_area
-        FROM brewgis.assessor.sacog_assessor_parcels sap
-        JOIN brewgis.staging.acs_block_group a
-            ON ST_Intersects(sap.geometry, a.geometry)
-        WHERE a.du > 0
-    ) p
+        SUM(p.hh / NULLIF(p.du, 0) * p.intersect_area_sqft) / NULLIF(SUM(p.intersect_area_sqft), 0) AS hh_size
+    FROM brewgis.assessor.parcel_acs_intersections p
     GROUP BY p.apn
 ),
 
@@ -289,8 +282,6 @@ SELECT
 FROM du_final;
 
 -- post_statements
-@IF(@runtime_stage = 'evaluating',
   CREATE INDEX IF NOT EXISTS idx_parcel_du_estimation_apn
-  ON brewgis.assessor.parcel_du_estimation (apn)
-);
+  ON brewgis.assessor.parcel_du_estimation (apn);
 ANALYZE brewgis.assessor.parcel_du_estimation;

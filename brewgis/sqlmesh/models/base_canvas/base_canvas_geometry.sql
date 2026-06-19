@@ -7,6 +7,9 @@ MODEL (
   audits (
     not_null(columns := (parcel_id))
   ),
+  columns (
+    land_use TEXT
+  ),
   depends_on (
     brewgis.comparison.sacog_parcel_shim,
     brewgis.comparison.sacog_comparison_dasymetric
@@ -92,7 +95,6 @@ dasymetric_enrichment AS (
         footprint_ratio,
         max_levels,
         intersection_density,
-        impervious_fraction,
         pop_dasym_weight,
         emp_dasym_weight,
         du,
@@ -157,7 +159,7 @@ SELECT
     de.building_count,
     de.footprint_ratio,
     de.max_levels,
-    de.impervious_fraction AS dasym_impervious_fraction,
+    0.0::double precision AS dasym_impervious_fraction,
     de.pop_dasym_weight,
     de.emp_dasym_weight,
     de.du AS du_estimated,
@@ -170,7 +172,5 @@ FROM parcel_area
 LEFT JOIN dasymetric_enrichment de ON parcel_area.parcel_id = de.parcel_id;
 
 -- post_statements
-@IF(@runtime_stage = 'evaluating',
   CREATE INDEX IF NOT EXISTS idx_base_canvas_geometry_geometry
-  ON brewgis.base_canvas.base_canvas_geometry USING GIST (geometry)
-);
+  ON brewgis.base_canvas.base_canvas_geometry USING GIST (geometry);

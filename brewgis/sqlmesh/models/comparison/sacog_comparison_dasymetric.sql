@@ -34,7 +34,6 @@ SELECT
     dw.footprint_ratio,
     dw.max_levels,
     dw.intersection_density,
-    dw.impervious_fraction,
     dw.pop_dasym_weight,
     dw.emp_dasym_weight,
     -- DU estimation columns
@@ -51,7 +50,5 @@ JOIN brewgis.assessor.parcel_dasymetric_weights dw ON si.apn = dw.apn
 LEFT JOIN brewgis.assessor.parcel_du_estimation de ON si.apn = de.apn;
 
 -- post_statements
-@IF(@runtime_stage = 'evaluating',
   CREATE INDEX IF NOT EXISTS idx_sacog_comparison_dasymetric_parcel_id
-  ON brewgis.comparison.sacog_comparison_dasymetric (parcel_id)
-);
+  ON brewgis.comparison.sacog_comparison_dasymetric (parcel_id);

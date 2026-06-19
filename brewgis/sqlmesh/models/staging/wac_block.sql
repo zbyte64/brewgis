@@ -530,7 +530,5 @@ SELECT
 FROM scaled;
 
 -- post_statements
-@IF(@runtime_stage = 'evaluating',
   CREATE INDEX IF NOT EXISTS idx_wac_block_geometry
-  ON brewgis.staging.wac_block USING GIST (geometry)
-);
+  ON brewgis.staging.wac_block USING GIST (geometry);

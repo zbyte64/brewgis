@@ -103,11 +103,7 @@ LEFT JOIN public.sacog_comparison_parcels sp
     ON bcr.parcel_id = sp.parcel_id;
 
 -- post_statements
-@IF(@runtime_stage = 'evaluating',
   CREATE INDEX IF NOT EXISTS idx_comparison_view_parcel_id
-  ON brewgis.comparison.sacog_brewgis_comparison_view (parcel_id)
-);
-@IF(@runtime_stage = 'evaluating',
+  ON brewgis.comparison.sacog_brewgis_comparison_view (parcel_id);
   CREATE INDEX IF NOT EXISTS idx_comparison_view_geography_id
-  ON brewgis.comparison.sacog_brewgis_comparison_view (geography_id)
-);
+  ON brewgis.comparison.sacog_brewgis_comparison_view (geography_id);

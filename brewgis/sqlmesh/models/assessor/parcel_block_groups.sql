@@ -25,4 +25,4 @@ FROM brewgis.assessor.sacog_assessor_parcels sap
 JOIN public.tiger_block_groups tbg
     ON ST_Intersects(sap.geometry, tbg.geometry)
    AND tbg.vintage = @tiger_vintage
-ORDER BY sap.apn, ST_Area(tbg.geometry) ASC
+ORDER BY sap.apn, ST_Area(ST_Intersection(sap.geometry, tbg.geometry)) DESC

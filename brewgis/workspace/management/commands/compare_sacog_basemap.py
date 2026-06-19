@@ -351,12 +351,24 @@ class Command(BaseCommand):
                 dtype={"geometry": f"geometry(MultiPolygon, {LOCAL_SRID})"},
             )
             self.stdout.write("  Written to public.sacog_comparison_parcels")
-            # Btree index for parcel_id JOINs in sacog_parcel_shim.sql and parcels_wm.sql
+            # Btree indexes for JOINs in sacog_parcel_shim.sql, parcels_wm.sql, parcel_block_groups, etc.
             with get_engine().begin() as conn:
                 conn.execute(
                     text(
                         "CREATE INDEX IF NOT EXISTS idx_sacog_comparison_parcels_parcel_id "
                         "ON public.sacog_comparison_parcels (parcel_id)"
+                    )
+                )
+                conn.execute(
+                    text(
+                        "CREATE INDEX IF NOT EXISTS idx_sacog_comparison_parcels_geography_id "
+                        "ON public.sacog_comparison_parcels (geography_id)"
+                    )
+                )
+                conn.execute(
+                    text(
+                        "CREATE INDEX IF NOT EXISTS idx_sacog_comparison_parcels_geometry "
+                        "ON public.sacog_comparison_parcels USING GIST (geometry)"
                     )
                 )
         else:

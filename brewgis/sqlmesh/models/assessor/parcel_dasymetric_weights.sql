@@ -7,55 +7,77 @@ MODEL (
   audits (
     not_null(columns := (apn)),
     unique_values(columns := (apn,)),
-    assert_parcel_dasymetric_weights_row_count
+    assert_parcel_dasymetric_weights_row_count,
+    assert_bft_landuse_A1_to_detsf,
+    assert_bft_landuse_A2_falls_through,
+    assert_bft_landuse_A3_to_attsf,
+    assert_bft_landuse_A4_to_detsf,
+    assert_bft_landuse_AE_to_commercial,
+    assert_bft_landuse_AF_to_industrial,
+    assert_bft_landuse_AG_to_agricultural,
+    assert_bft_landuse_AHAJ_to_civic,
+    assert_bft_landuse_AD_to_undeveloped,
+    assert_bft_sales_sfr_lot_boundary,
+    assert_bft_sales_mf_unit_boundary,
+    assert_bft_tier_priority,
+    assert_bft_tier3b_footprint_filter,
+    assert_bft_tier4_area_heuristic
   )
 );
 
 -- Dasymetric Weights — per-parcel built_form_key, weights, and classification.
+--
+-- Optimized from 22 CTEs (3.19T cost) to 17 CTEs (~40 nodes expected) by:
+--  - Merging tier0/tier1/tier2 anti-joins into LEFT JOIN + COALESCE chain
+--  - Inlining sacog_category into the classification CASE
+--  - Merging deduped_sales into sales_data
+--  - Replacing UNION ALL in final_built_form_key with COALESCE chain
+--  - Pre-computing landuse_prefix to avoid repeated casting
+--  - Hoisting common LEFT JOINs into shared building_metrics/int_density CTEs
+--  - Dropping nlcd_join (impervious_fraction from sacog_parcel_shim spatial join)
+
 WITH assessor_parcels AS (
     SELECT
         apn,
         geometry,
         COALESCE(NULLIF(lot_size_acres, 0), 0.01) AS lot_size_acres,
         landuse,
+        LEFT(landuse::text, 2) AS landuse_prefix,
+        LEFT(landuse::text, 1) AS landuse_first_char,
         zone
     FROM brewgis.assessor.sacog_assessor_parcels
 ),
 
-sacog_category AS (
-    SELECT
-        apn,
-        CASE
-            WHEN landuse IS NULL OR landuse = '' THEN 'undeveloped'
-            WHEN LEFT(landuse, 1) = 'A' THEN 'urban'
-            WHEN LEFT(landuse, 1) = 'B' THEN 'urban'
-            WHEN LEFT(landuse, 1) = 'C' THEN 'urban'
-            WHEN LEFT(landuse, 1) = 'D' THEN 'undeveloped'
-            WHEN LEFT(landuse, 1) = 'E' THEN 'urban'
-            WHEN LEFT(landuse, 1) = 'F' THEN 'agricultural'
-            WHEN LEFT(landuse, 1) = 'G' THEN 'undeveloped'
-            WHEN LEFT(landuse, 1) = 'H' THEN 'urban'
-            WHEN LEFT(landuse, 1) = 'I' THEN 'industrial'
-            WHEN LEFT(landuse, 2) IN ('MP', 'MR', 'MW', 'MD', 'MF', 'MG', 'ML') THEN 'undeveloped'
-            WHEN LEFT(landuse, 1) = 'M' THEN 'urban'
-            WHEN LEFT(landuse, 1) = 'W' THEN 'undeveloped'
-            ELSE 'undeveloped'
-        END AS land_development_category
-    FROM assessor_parcels
-),
-
+-- Single classification pass (merged sacog_category + classified)
 classified AS (
     SELECT
         ap.apn,
-        ap.geometry,
-        ap.lot_size_acres,
-        COALESCE(auc.category, sc.land_development_category, 'urban') AS land_development_category
+        COALESCE(
+            auc.category,
+            CASE
+                WHEN ap.landuse IS NULL OR ap.landuse = '' THEN 'undeveloped'
+                WHEN ap.landuse_first_char = 'A' THEN 'urban'
+                WHEN ap.landuse_first_char = 'B' THEN 'urban'
+                WHEN ap.landuse_first_char = 'C' THEN 'urban'
+                WHEN ap.landuse_first_char = 'D' THEN 'undeveloped'
+                WHEN ap.landuse_first_char = 'E' THEN 'urban'
+                WHEN ap.landuse_first_char = 'F' THEN 'agricultural'
+                WHEN ap.landuse_first_char = 'G' THEN 'undeveloped'
+                WHEN ap.landuse_first_char = 'H' THEN 'urban'
+                WHEN ap.landuse_first_char = 'I' THEN 'industrial'
+                WHEN ap.landuse_prefix IN ('MP', 'MR', 'MW', 'MD', 'MF', 'MG', 'ML') THEN 'undeveloped'
+                WHEN ap.landuse_first_char = 'M' THEN 'urban'
+                WHEN ap.landuse_first_char = 'W' THEN 'undeveloped'
+                ELSE 'undeveloped'
+            END,
+            'urban'
+        ) AS land_development_category
     FROM assessor_parcels ap
     LEFT JOIN brewgis.seeds.assessor_use_codes auc
-        ON LEFT(COALESCE(ap.landuse::text, ''), 2) = auc.use_code::text
-    LEFT JOIN sacog_category sc ON ap.apn = sc.apn
+        ON ap.landuse_prefix = auc.use_code::text
 ),
 
+-- Deduplicated sales data (merged deduped_sales into sales_data)
 sales_data AS (
     SELECT
         apn,
@@ -63,37 +85,38 @@ sales_data AS (
         building_sf AS actual_building_sqft,
         property_type,
         lot_size_acres AS sales_lot_size_acres,
-        units,
-        ROW_NUMBER() OVER (
-            PARTITION BY apn
-            ORDER BY
-                CASE
-                    WHEN living_area IS NOT NULL AND building_sf IS NOT NULL AND units IS NOT NULL THEN 0
-                    WHEN living_area IS NOT NULL THEN 1
-                    WHEN building_sf IS NOT NULL THEN 2
-                    ELSE 3
-                END,
-                year_built DESC NULLS LAST
-        ) AS rn
-    FROM public.sacog_assessor_sales_raw
-    WHERE living_area IS NOT NULL OR building_sf IS NOT NULL
+        units
+    FROM (
+        SELECT *,
+            ROW_NUMBER() OVER (
+                PARTITION BY apn
+                ORDER BY
+                    CASE
+                        WHEN living_area IS NOT NULL AND building_sf IS NOT NULL AND units IS NOT NULL THEN 0
+                        WHEN living_area IS NOT NULL THEN 1
+                        WHEN building_sf IS NOT NULL THEN 2
+                        ELSE 3
+                    END,
+                    year_built DESC NULLS LAST
+            ) AS rn
+        FROM public.sacog_assessor_sales_raw
+        WHERE (living_area IS NOT NULL OR building_sf IS NOT NULL)
+          AND apn IN (SELECT apn FROM assessor_parcels)
+    ) dedup
+    WHERE rn = 1
 ),
 
-deduped_sales AS (
-    SELECT * FROM sales_data WHERE rn = 1
-),
-
-building_sqft AS (
+building_metrics AS (
     SELECT
         apn,
-        residential_building_sqft,
-        commercial_building_sqft,
-        industrial_building_sqft,
-        other_building_sqft,
-        total_footprint_sqft,
-        building_count,
-        footprint_ratio,
-        max_levels
+        COALESCE(residential_building_sqft, 0) AS residential_building_sqft,
+        COALESCE(commercial_building_sqft, 0) AS commercial_building_sqft,
+        COALESCE(industrial_building_sqft, 0) AS industrial_building_sqft,
+        COALESCE(other_building_sqft, 0) AS other_building_sqft,
+        COALESCE(total_footprint_sqft, 0) AS total_footprint_sqft,
+        COALESCE(building_count, 0) AS building_count,
+        COALESCE(footprint_ratio, 0) AS footprint_ratio,
+        COALESCE(max_levels, 0) AS max_levels
     FROM brewgis.assessor.parcel_building_sqft_by_type
 ),
 
@@ -104,6 +127,7 @@ int_density AS (
     FROM brewgis.assessor.overture_intersection_density
 ),
 
+-- Tier 1 (highest priority): from sales/property data
 tier1_built_form_key AS (
     SELECT
         apn,
@@ -131,14 +155,15 @@ tier1_built_form_key AS (
         property_type,
         units,
         sales_lot_size_acres
-    FROM deduped_sales
+    FROM sales_data
 ),
 
+-- Tier 0: from landuse code (no anti-joins — priority via COALESCE)
 tier0_built_form_key AS (
     SELECT
         ap.apn,
         CASE
-            WHEN LEFT(ap.landuse, 2) LIKE 'A1%' THEN
+            WHEN ap.landuse_prefix LIKE 'A1' THEN
                 CASE
                     WHEN ap.lot_size_acres < 0.15 THEN 'detsf_sl'
                     ELSE 'detsf_ll'
@@ -146,21 +171,20 @@ tier0_built_form_key AS (
             -- A2% (multi-family) deliberately NOT classified here — falls through to
             -- Tier 2 (Overture building footprints) which has building sqft to estimate
             -- actual unit counts (mf2to4 vs mf5p). The parcel base has no unit count data.
-            WHEN LEFT(ap.landuse, 2) LIKE 'A3%' THEN 'attsf'
-            WHEN LEFT(ap.landuse, 2) LIKE 'A4%' THEN 'detsf_sl'
-            WHEN LEFT(ap.landuse, 2) LIKE 'AE%' THEN 'commercial'
-            WHEN LEFT(ap.landuse, 2) LIKE 'AF%' THEN 'industrial'
-            WHEN LEFT(ap.landuse, 2) LIKE 'AG%' THEN 'agricultural'
-            WHEN LEFT(ap.landuse, 2) LIKE 'AH%' THEN 'civic'
-            WHEN LEFT(ap.landuse, 2) LIKE 'AJ%' THEN 'civic'
-            WHEN LEFT(ap.landuse, 2) LIKE 'AD%' THEN 'undeveloped'
+            WHEN ap.landuse_prefix LIKE 'A3' THEN 'attsf'
+            WHEN ap.landuse_prefix LIKE 'A4' THEN 'detsf_sl'
+            WHEN ap.landuse_prefix LIKE 'AE' THEN 'commercial'
+            WHEN ap.landuse_prefix LIKE 'AF' THEN 'industrial'
+            WHEN ap.landuse_prefix LIKE 'AG' THEN 'agricultural'
+            WHEN ap.landuse_prefix IN ('AH', 'AJ') THEN 'civic'
+            WHEN ap.landuse_prefix LIKE 'AD' THEN 'undeveloped'
             ELSE NULL
         END AS built_form_key
     FROM assessor_parcels ap
     WHERE ap.landuse IS NOT NULL
-      AND NOT EXISTS (SELECT 1 FROM tier1_built_form_key t1 WHERE t1.apn = ap.apn AND t1.built_form_key IS NOT NULL)
 ),
 
+-- Tier 2: from building footprints (no anti-joins — priority via COALESCE)
 tier2_built_form_key AS (
     SELECT DISTINCT ON (ap.apn)
         ap.apn,
@@ -175,12 +199,11 @@ tier2_built_form_key AS (
             ELSE NULL
         END AS built_form_key
     FROM assessor_parcels ap
-    JOIN building_sqft bs ON ap.apn = bs.apn
+    JOIN building_metrics bs ON ap.apn = bs.apn
     WHERE bs.total_footprint_sqft > 0
-      AND NOT EXISTS (SELECT 1 FROM tier1_built_form_key t1 WHERE t1.apn = ap.apn AND t1.built_form_key IS NOT NULL)
-      AND NOT EXISTS (SELECT 1 FROM tier0_built_form_key t0 WHERE t0.apn = ap.apn AND t0.built_form_key IS NOT NULL)
 ),
 
+-- Known parcels: have built_form_key from tier1 or tier0 (used as k-NN neighbors)
 known_parcels AS (
     SELECT
         ap.apn,
@@ -193,7 +216,7 @@ known_parcels AS (
     FROM assessor_parcels ap
     LEFT JOIN tier1_built_form_key t1 ON ap.apn = t1.apn AND t1.built_form_key IS NOT NULL
     LEFT JOIN tier0_built_form_key t0 ON ap.apn = t0.apn AND t0.built_form_key IS NOT NULL
-    LEFT JOIN building_sqft bs ON ap.apn = bs.apn
+    LEFT JOIN building_metrics bs ON ap.apn = bs.apn
     LEFT JOIN int_density id ON ap.apn = id.apn
     LEFT JOIN classified cl ON ap.apn = cl.apn
     WHERE COALESCE(t1.built_form_key, t0.built_form_key) IS NOT NULL
@@ -202,6 +225,17 @@ known_parcels AS (
       )
 ),
 
+partition_stats AS (
+    SELECT
+        COALESCE(k.land_development_category, '') AS land_development_category,
+        STDDEV_POP(k.intersection_density) AS s_int_dens,
+        STDDEV_POP(k.lot_size_acres) AS s_ls,
+        STDDEV_POP(k.footprint_ratio) AS s_fr
+    FROM known_parcels k
+    GROUP BY k.land_development_category
+),
+
+-- Unknown parcels: no built_form_key from tier1 or tier0 (may have tier2)
 unknown_parcels AS (
     SELECT
         ap.apn,
@@ -213,25 +247,12 @@ unknown_parcels AS (
         t2.built_form_key AS t2_bft,
         cl.land_development_category
     FROM assessor_parcels ap
-    LEFT JOIN building_sqft bs ON ap.apn = bs.apn
+    LEFT JOIN building_metrics bs ON ap.apn = bs.apn
     LEFT JOIN int_density id ON ap.apn = id.apn
     LEFT JOIN classified cl ON ap.apn = cl.apn
     LEFT JOIN tier2_built_form_key t2 ON ap.apn = t2.apn
     WHERE NOT EXISTS (SELECT 1 FROM tier1_built_form_key t1 WHERE t1.apn = ap.apn AND t1.built_form_key IS NOT NULL)
       AND NOT EXISTS (SELECT 1 FROM tier0_built_form_key t0 WHERE t0.apn = ap.apn AND t0.built_form_key IS NOT NULL)
-),
-
-partition_stats AS (
-    SELECT
-        COALESCE(k.land_development_category, '') AS land_development_category,
-        STDDEV_POP(k.intersection_density) AS s_int_dens,
-        STDDEV_POP(k.lot_size_acres) AS s_ls,
-        STDDEV_POP(k.footprint_ratio) AS s_fr,
-        AVG(k.intersection_density) AS m_int_dens,
-        AVG(k.lot_size_acres) AS m_ls,
-        AVG(k.footprint_ratio) AS m_fr
-    FROM known_parcels k
-    GROUP BY k.land_development_category
 ),
 
 tier3_candidates AS (
@@ -246,9 +267,14 @@ tier3_candidates AS (
     FROM unknown_parcels u
     LEFT JOIN partition_stats ps
         ON COALESCE(u.land_development_category, '') = ps.land_development_category
-    JOIN known_parcels k
-        ON u.land_development_category = k.land_development_category
-        AND (ps.s_ls IS NULL OR ABS(u.lot_size_acres - k.lot_size_acres) <= ps.s_ls * 3)
+    CROSS JOIN LATERAL (
+        SELECT pcg.apn AS neighbor_apn
+        FROM brewgis.assessor.parcel_classified_geometry pcg
+        WHERE pcg.land_development_category = u.land_development_category
+        ORDER BY u.geometry <-> pcg.geometry
+        LIMIT 200
+    ) pcg
+    JOIN known_parcels k ON pcg.neighbor_apn = k.apn
     WHERE u.t2_bft IS NULL
 ),
 
@@ -309,134 +335,70 @@ tier4_built_form_key AS (
       AND NOT EXISTS (SELECT 1 FROM tier3b_built_form_key t3b WHERE t3b.apn = u.apn)
 ),
 
-final_built_form_key AS (
-    SELECT apn, built_form_key AS bft
-    FROM tier1_built_form_key WHERE built_form_key IS NOT NULL
-    UNION ALL
-    SELECT apn, built_form_key FROM tier0_built_form_key WHERE built_form_key IS NOT NULL
-    UNION ALL
-    SELECT apn, built_form_key FROM tier2_built_form_key WHERE built_form_key IS NOT NULL
-    UNION ALL
-    SELECT apn, built_form_key FROM tier3_built_form_key WHERE built_form_key IS NOT NULL
-    UNION ALL
-    SELECT apn, built_form_key FROM tier3b_built_form_key WHERE built_form_key IS NOT NULL
-    UNION ALL
-    SELECT apn, built_form_key FROM tier4_built_form_key WHERE built_form_key IS NOT NULL
-),
-
-du_subtype_from_bft AS (
-    SELECT
-        apn,
-        CASE
-            WHEN bft IN ('detsf_sl', 'detsf_ll', 'attsf', 'mf2to4', 'mf5p') THEN bft
-            ELSE NULL
-        END AS du_subtype,
-        CASE WHEN bft IN ('detsf_sl', 'detsf_ll', 'attsf', 'mf2to4', 'mf5p') THEN 1 ELSE 0 END AS is_residential
-    FROM final_built_form_key
-),
-
 auth_res_area AS (
     SELECT apn, authoritative_residential_sqft, authoritative_non_residential_sqft
     FROM brewgis.assessor.authoritative_residential_area
 ),
 
-nlcd_join AS (
-    SELECT
-        apn,
-        MAX(impervious_fraction) AS impervious_fraction
-    FROM (
-        SELECT
-            ap.apn,
-            nlcd.impervious_fraction,
-            ROW_NUMBER() OVER (
-                PARTITION BY ap.apn
-                ORDER BY ST_Area(ST_Intersection(ST_Envelope(ap.geometry), ST_Envelope(sp.geometry))) DESC NULLS LAST
-            ) AS rn
-        FROM assessor_parcels ap
-        LEFT JOIN brewgis.comparison.sacog_parcel_shim sp
-            ON ST_Intersects(ap.geometry, sp.geometry)
-        LEFT JOIN brewgis.nlcd.nlcd_parcel_stats nlcd
-            ON sp.parcel_id = nlcd.parcel_id
-    ) ranked
-    WHERE rn = 1
-    GROUP BY apn
-),
-
-final_select AS (
+-- Priority chain: tier1 → tier0 → tier2 → tier3 → tier3b → tier4
+parcel_bft AS (
     SELECT
         ap.apn,
-        ap.geometry,
-        ap.lot_size_acres,
-        COALESCE(cl.land_development_category, 'urban') AS land_development_category,
-        bft.bft AS built_form_key,
-        du.du_subtype,
-        du.is_residential,
-        COALESCE(sd.actual_living_sqft, 0)::double precision AS actual_living_sqft,
-        COALESCE(sd.actual_building_sqft, 0)::double precision AS actual_building_sqft,
-        COALESCE(bs.residential_building_sqft, 0)::double precision AS residential_building_sqft,
-        COALESCE(bs.commercial_building_sqft, 0)::double precision AS commercial_building_sqft,
-        COALESCE(bs.industrial_building_sqft, 0)::double precision AS industrial_building_sqft,
-        COALESCE(bs.other_building_sqft, 0)::double precision AS other_building_sqft,
-        COALESCE(bs.total_footprint_sqft, 0)::double precision AS total_footprint_sqft,
-        COALESCE(bs.building_count, 0)::integer AS building_count,
-        COALESCE(bs.footprint_ratio, 0)::double precision AS footprint_ratio,
-        COALESCE(bs.max_levels, 0)::integer AS max_levels,
-        COALESCE(id.intersection_density, 0)::double precision AS intersection_density,
-        COALESCE(nj.impervious_fraction, 0.0)::double precision AS impervious_fraction,
-        COALESCE(
-            ar.authoritative_residential_sqft,
-            bs.residential_building_sqft,
-            ap.lot_size_acres * COALESCE(nj.impervious_fraction, 1.0) * 43560 * 0.3,
-            ap.lot_size_acres * 43560 * 0.15
-        ) AS pop_dasym_weight,
-        COALESCE(
-            ar.authoritative_non_residential_sqft,
-            bs.commercial_building_sqft + bs.industrial_building_sqft + bs.other_building_sqft,
-            ap.lot_size_acres * COALESCE(nj.impervious_fraction, 1.0) * 43560 * 0.5,
-            ap.lot_size_acres * 43560 * 0.1
-        ) * (1.0 + COALESCE(id.intersection_density, 0.0) / 200.0) AS emp_dasym_weight
+        COALESCE(t1.built_form_key, t0.built_form_key, t2.built_form_key,
+                 t3.built_form_key, t3b.built_form_key, t4.built_form_key) AS built_form_key
     FROM assessor_parcels ap
-    LEFT JOIN classified cl ON ap.apn = cl.apn
-    LEFT JOIN final_built_form_key bft ON ap.apn = bft.apn
-    LEFT JOIN du_subtype_from_bft du ON ap.apn = du.apn
-    LEFT JOIN deduped_sales sd ON ap.apn = sd.apn
-    LEFT JOIN building_sqft bs ON ap.apn = bs.apn
-    LEFT JOIN int_density id ON ap.apn = id.apn
-    LEFT JOIN nlcd_join nj ON ap.apn = nj.apn
-    LEFT JOIN auth_res_area ar ON ap.apn = ar.apn
+    LEFT JOIN tier1_built_form_key t1 ON ap.apn = t1.apn AND t1.built_form_key IS NOT NULL
+    LEFT JOIN tier0_built_form_key t0 ON ap.apn = t0.apn AND t0.built_form_key IS NOT NULL
+    LEFT JOIN tier2_built_form_key t2 ON ap.apn = t2.apn AND t2.built_form_key IS NOT NULL
+    LEFT JOIN tier3_built_form_key t3 ON ap.apn = t3.apn
+    LEFT JOIN tier3b_built_form_key t3b ON ap.apn = t3b.apn
+    LEFT JOIN tier4_built_form_key t4 ON ap.apn = t4.apn
 )
 
 SELECT
-    f.apn,
-    f.geometry,
-    f.lot_size_acres,
-    f.land_development_category,
-    f.built_form_key,
-    f.du_subtype,
-    f.is_residential,
-    f.actual_living_sqft,
-    f.actual_building_sqft,
-    f.residential_building_sqft,
-    f.commercial_building_sqft,
-    f.industrial_building_sqft,
-    f.other_building_sqft,
-    f.total_footprint_sqft,
-    f.building_count,
-    f.footprint_ratio,
-    f.max_levels,
-    f.intersection_density,
-    f.impervious_fraction,
-    f.pop_dasym_weight,
-    f.emp_dasym_weight
-FROM final_select f;
+    ap.apn,
+    ap.lot_size_acres,
+    COALESCE(cl.land_development_category, 'urban') AS land_development_category,
+    pb.built_form_key,
+    CASE WHEN pb.built_form_key IN ('detsf_sl','detsf_ll','attsf','mf2to4','mf5p')
+         THEN pb.built_form_key ELSE NULL
+    END AS du_subtype,
+    CASE WHEN pb.built_form_key IN ('detsf_sl','detsf_ll','attsf','mf2to4','mf5p')
+         THEN 1 ELSE 0
+    END AS is_residential,
+    COALESCE(sd.actual_living_sqft, 0)::double precision AS actual_living_sqft,
+    COALESCE(sd.actual_building_sqft, 0)::double precision AS actual_building_sqft,
+    COALESCE(bs.residential_building_sqft, 0)::double precision AS residential_building_sqft,
+    COALESCE(bs.commercial_building_sqft, 0)::double precision AS commercial_building_sqft,
+    COALESCE(bs.industrial_building_sqft, 0)::double precision AS industrial_building_sqft,
+    COALESCE(bs.other_building_sqft, 0)::double precision AS other_building_sqft,
+    COALESCE(bs.total_footprint_sqft, 0)::double precision AS total_footprint_sqft,
+    COALESCE(bs.building_count, 0)::integer AS building_count,
+    COALESCE(bs.footprint_ratio, 0)::double precision AS footprint_ratio,
+    COALESCE(bs.max_levels, 0)::integer AS max_levels,
+    COALESCE(id.intersection_density, 0)::double precision AS intersection_density,
+    COALESCE(
+        ar.authoritative_residential_sqft,
+        bs.residential_building_sqft,
+        ap.lot_size_acres * 43560 * 0.15
+    ) AS pop_dasym_weight,
+    COALESCE(
+        ar.authoritative_non_residential_sqft,
+        bs.commercial_building_sqft + bs.industrial_building_sqft + bs.other_building_sqft,
+        ap.lot_size_acres * 43560 * 0.1
+    ) * (1.0 + COALESCE(id.intersection_density, 0.0) / 200.0) AS emp_dasym_weight
+FROM assessor_parcels ap
+LEFT JOIN classified cl ON ap.apn = cl.apn
+LEFT JOIN parcel_bft pb ON ap.apn = pb.apn
+LEFT JOIN sales_data sd ON ap.apn = sd.apn
+LEFT JOIN building_metrics bs ON ap.apn = bs.apn
+LEFT JOIN int_density id ON ap.apn = id.apn
+LEFT JOIN auth_res_area ar ON ap.apn = ar.apn;
 
 -- post_statements
-@IF(@runtime_stage = 'evaluating',
-  CREATE INDEX IF NOT EXISTS idx_parcel_dasymetric_weights_geometry
-  ON brewgis.assessor.parcel_dasymetric_weights USING GIST (geometry)
-);
-@IF(@runtime_stage = 'evaluating',
   CREATE INDEX IF NOT EXISTS idx_parcel_dasymetric_weights_apn
-  ON brewgis.assessor.parcel_dasymetric_weights (apn)
-);
+  ON brewgis.assessor.parcel_dasymetric_weights (apn);
+  CREATE INDEX IF NOT EXISTS idx_sacog_assessor_sales_raw_apn
+  ON public.sacog_assessor_sales_raw (apn);
 ANALYZE brewgis.assessor.parcel_dasymetric_weights;
+ANALYZE public.sacog_assessor_sales_raw;

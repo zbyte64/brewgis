@@ -112,12 +112,7 @@ LEFT JOIN brewgis.seeds.overture_land_use_map oym_subtype
 
 -- post_statements
 -- (overture_land_use is DuckDB gateway, so geometry index must live here)
-@IF(@runtime_stage = 'evaluating',
   CREATE INDEX IF NOT EXISTS idx_overture_land_use_bridge_geometry
-  ON brewgis.staging.overture_land_use USING GIST (geometry)
-);
-
-@IF(@runtime_stage = 'evaluating',
+  ON brewgis.staging.overture_land_use USING GIST (geometry);
   CREATE INDEX IF NOT EXISTS idx_overture_land_use_parcel_parcel_id
-  ON brewgis.assessor.overture_land_use_parcel (parcel_id)
-);
+  ON brewgis.assessor.overture_land_use_parcel (parcel_id);

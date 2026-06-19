@@ -6,7 +6,11 @@ MODEL (
   ),
   audits (
     not_null(columns := (apn)),
-    unique_values(columns := (apn,))
+    unique_values(columns := (apn,)),
+    assert_overture_class_residential,
+    assert_overture_class_commercial,
+    assert_overture_class_industrial,
+    assert_overture_mixed_use_split
   )
 );
 
@@ -31,7 +35,7 @@ WITH buildings_with_area AS (
     SELECT
         *,
         ST_Area(local_geometry) * 10.7639 AS footprint_sqft
-    FROM brewgis.staging.buildings_combined
+    FROM brewgis.staging.buildings_combined_pg
 ),
 
 building_stats AS (
@@ -129,19 +133,9 @@ LEFT JOIN brewgis.seeds.assessor_use_codes auc
     ON LEFT(COALESCE(sap.landuse::text, ''), 2) = auc.use_code::text;
 
 -- post_statements
--- (buildings_combined is DuckDB gateway, so indexes must live here)
-@IF(@runtime_stage = 'evaluating',
-  CREATE INDEX IF NOT EXISTS idx_buildings_combined_geometry
-  ON brewgis.staging.buildings_combined USING GIST (geometry)
-);
-@IF(@runtime_stage = 'evaluating',
-  CREATE INDEX IF NOT EXISTS idx_buildings_combined_local_geometry
-  ON brewgis.staging.buildings_combined USING GIST (local_geometry)
-);
-ANALYZE brewgis.staging.buildings_combined;
-
-@IF(@runtime_stage = 'evaluating',
   CREATE INDEX IF NOT EXISTS idx_parcel_building_footprints_geometry
-  ON brewgis.assessor.parcel_building_footprints USING GIST (geometry)
-);
+  ON brewgis.assessor.parcel_building_footprints USING GIST (geometry);
+ANALYZE brewgis.assessor.parcel_building_footprints;
+  CREATE INDEX IF NOT EXISTS idx_parcel_building_footprints_geometry
+  ON brewgis.assessor.parcel_building_footprints USING GIST (geometry);
 ANALYZE brewgis.assessor.parcel_building_footprints;

@@ -416,6 +416,12 @@ def load_to_postgis(
                     f"ON {schema}.sacog_assessor_parcels_raw USING GIST (geometry)"
                 )
             )
+            conn.execute(
+                text(
+                    "CREATE INDEX IF NOT EXISTS idx_sacog_assessor_parcels_raw_apn "
+                    f"ON {schema}.sacog_assessor_parcels_raw (apn)"
+                )
+            )
             conn.execute(text(f"ANALYZE {schema}.sacog_assessor_parcels_raw"))
 
     if sales is not None and not sales.empty:

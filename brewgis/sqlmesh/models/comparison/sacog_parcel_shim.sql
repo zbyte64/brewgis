@@ -2,7 +2,8 @@ MODEL (
   name brewgis.comparison.sacog_parcel_shim,
   kind FULL,
   audits (
-    not_null(columns := (parcel_id))
+    not_null(columns := (parcel_id)),
+    unique_values(columns := (parcel_id,))
   )
 );
 
@@ -64,12 +65,8 @@ SELECT
 FROM public.sacog_comparison_parcels;
 
 -- post_statements
-@IF(@runtime_stage = 'evaluating',
   CREATE INDEX IF NOT EXISTS idx_sacog_parcel_shim_geometry
-  ON brewgis.comparison.sacog_parcel_shim USING GIST (geometry)
-);
-@IF(@runtime_stage = 'evaluating',
+  ON brewgis.comparison.sacog_parcel_shim USING GIST (geometry);
   CREATE INDEX IF NOT EXISTS idx_sacog_parcel_shim_parcel_id
-  ON brewgis.comparison.sacog_parcel_shim (parcel_id)
-);
+  ON brewgis.comparison.sacog_parcel_shim (parcel_id);
 ANALYZE brewgis.comparison.sacog_parcel_shim;

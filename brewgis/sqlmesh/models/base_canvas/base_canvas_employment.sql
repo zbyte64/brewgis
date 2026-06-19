@@ -2,7 +2,10 @@ MODEL (
   name brewgis.base_canvas.base_canvas_employment,
   kind FULL,
   audits (
-    not_null(columns := (parcel_id))
+    not_null(columns := (parcel_id)),
+    assert_employment_conserved,
+    assert_commercial_sectors_use_commercial_sqft,
+    assert_industrial_sectors_use_industrial_sqft
   )
 );
 
@@ -308,7 +311,5 @@ FROM brewgis.base_canvas.base_canvas_demographics p
 LEFT JOIN allocated a ON p.parcel_id = a.parcel_id;
 
 -- post_statements
-@IF(@runtime_stage = 'evaluating',
   CREATE INDEX IF NOT EXISTS idx_base_canvas_employment_geometry
-  ON brewgis.base_canvas.base_canvas_employment USING GIST (geometry)
-);
+  ON brewgis.base_canvas.base_canvas_employment USING GIST (geometry);

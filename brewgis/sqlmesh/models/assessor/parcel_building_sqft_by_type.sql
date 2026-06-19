@@ -44,12 +44,8 @@ SELECT
 FROM brewgis.assessor.parcel_building_footprints;
 
 -- post_statements
-@IF(@runtime_stage = 'evaluating',
   CREATE INDEX IF NOT EXISTS idx_parcel_building_sqft_by_type_apn
-  ON brewgis.assessor.parcel_building_sqft_by_type (apn)
-);
-@IF(@runtime_stage = 'evaluating',
+  ON brewgis.assessor.parcel_building_sqft_by_type (apn);
   CREATE INDEX IF NOT EXISTS idx_parcel_building_sqft_by_type_geometry
-  ON brewgis.assessor.parcel_building_sqft_by_type USING GIST (geometry)
-);
+  ON brewgis.assessor.parcel_building_sqft_by_type USING GIST (geometry);
 ANALYZE brewgis.assessor.parcel_building_sqft_by_type;

@@ -309,7 +309,5 @@ LEFT JOIN latest_block_groups pbg ON pbf.apn = pbg.apn
 JOIN imputed i ON pbf.apn = i.apn;
 
 -- post_statements
-@IF(@runtime_stage = 'evaluating',
   CREATE INDEX IF NOT EXISTS idx_parcel_footprint_imputed_apn
-  ON brewgis.assessor.parcel_footprint_imputed (apn)
-);
+  ON brewgis.assessor.parcel_footprint_imputed (apn);

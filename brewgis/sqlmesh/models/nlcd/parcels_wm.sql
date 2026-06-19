@@ -22,7 +22,5 @@ FROM public.sacog_comparison_parcels
 WHERE geometry IS NOT NULL;
 
 -- post_statements
-@IF(@runtime_stage = 'evaluating',
   CREATE INDEX IF NOT EXISTS idx_parcels_wm_geometry
-  ON brewgis.nlcd.parcels_wm USING GIST (geometry)
-);
+  ON brewgis.nlcd.parcels_wm USING GIST (geometry);
