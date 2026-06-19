@@ -94,13 +94,21 @@ census_blocks AS (
 ),
 
 -- ── ACS block group data (for demographic averages) ────────────────────────
+-- Uses brewgis.assessor.acs_block_group_projected for pre-projected geometry
+-- (local_srid 3310) with a GiST index, avoiding the unindexed nested loop
+-- from joining against the DuckDB-built staging table directly.
 acs_data AS (
     SELECT
-        a.*,
-        GREATEST(ST_Area(ST_Transform(a.geometry, @VAR('local_srid', 3310))), 1e-10) AS bg_area,
-        ST_Envelope(ST_Transform(a.geometry, @VAR('local_srid', 3310))) AS local_envelope
+        a.median_income,
+        a.rent_burden_pct,
+        a.pct_minority,
+        a.pct_college_educated,
+        a.cost_burden_pct,
+        p.geometry AS local_geometry,
+        ST_Envelope(p.geometry) AS local_envelope,
+        GREATEST(ST_Area(p.geometry), 1e-10) AS bg_area
     FROM brewgis.staging.acs_block_group a
-    WHERE a.geometry IS NOT NULL
+    JOIN brewgis.assessor.acs_block_group_projected p ON a.geoid = p.geoid
 ),
 
 -- ── Spatial join: parcels → Census 2020 blocks ────────────────────────────
@@ -165,7 +173,7 @@ parcel_acs_intersections AS (
         a.cost_burden_pct,
         ST_Area(ST_ClipByBox2D(p.local_geometry, a.local_envelope)) AS intersect_area
     FROM parcel_geom p
-    JOIN acs_data a ON ST_Intersects(p.geometry, a.geometry)
+    JOIN acs_data a ON ST_Intersects(p.local_geometry, a.local_geometry)
 ),
 
 acs_allocated AS (
