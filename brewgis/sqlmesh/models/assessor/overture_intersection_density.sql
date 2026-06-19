@@ -21,29 +21,18 @@ MODEL (
 --
 -- Density = intersection_count / (π * 402² / 2589988.11) intersections/sq mi.
 
-WITH parcel_centroids AS (
-    SELECT
-        apn,
-        ST_Centroid(
-            ST_Transform(geometry, @VAR('local_srid', 3310))
-        ) AS centroid,
-        geometry
-    FROM brewgis.assessor.sacog_assessor_parcels
-    WHERE geometry IS NOT NULL
-)
-
 SELECT
-    pc.apn,
+    sap.apn,
     COALESCE(
         COUNT(i.geometry)::double precision
         / (PI() * 402.0 * 402.0 / 2589988.11),
         0.0
     ) AS intersection_density,
-    pc.geometry
-FROM parcel_centroids pc
+    sap.geometry
+FROM brewgis.assessor.sacog_assessor_parcels sap
 LEFT JOIN brewgis.assessor.overture_intersection_points i
-    ON ST_DWithin(pc.centroid, i.geometry, 402.0)
-GROUP BY pc.apn, pc.geometry;
+    ON ST_DWithin(sap.centroid_local, i.geometry, 402.0)
+GROUP BY sap.apn, sap.geometry;
 
 -- post_statements
   CREATE INDEX IF NOT EXISTS idx_overture_intersection_density_apn

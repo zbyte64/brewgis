@@ -29,6 +29,6 @@ CROSS JOIN LATERAL (
     FROM public.tiger_block_groups tbg
     WHERE ST_Intersects(sap.geometry, tbg.geometry)
       AND tbg.vintage = @tiger_vintage
-    ORDER BY ST_Area(ST_Intersection(sap.geometry, tbg.geometry)) DESC
+    ORDER BY ST_Area(ST_ClipByBox2D(sap.geometry, tbg.geometry)) DESC NULLS LAST
     LIMIT 1
 ) tbg

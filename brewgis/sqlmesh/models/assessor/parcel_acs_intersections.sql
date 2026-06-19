@@ -22,24 +22,18 @@ MODEL (
 -- Uses ST_Intersection on local_srid (California Albers) for accurate
 -- area-weighted ACS household size computation.
 
-WITH parcels_projected AS (
-    SELECT
-        apn,
-        ST_Transform(geometry, @VAR('local_srid', 3310)) AS geometry
-    FROM brewgis.assessor.sacog_assessor_parcels
-)
 SELECT
     sap.apn,
     a.geoid AS bg_geoid,
     a.hh,
     a.du,
     ST_Area(ST_Intersection(
-        sap.geometry,
+        sap.local_geometry,
         a.geometry
     )) AS intersect_area_sqft
-FROM parcels_projected sap
+FROM brewgis.assessor.sacog_assessor_parcels sap
 JOIN brewgis.assessor.acs_block_group_projected a
-    ON ST_Intersects(sap.geometry, a.geometry);
+    ON ST_Intersects(sap.local_geometry, a.geometry);
 
 -- post_statements
   CREATE INDEX IF NOT EXISTS idx_parcel_acs_intersections_apn

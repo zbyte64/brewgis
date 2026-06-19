@@ -1,9 +1,13 @@
 MODEL (
   name brewgis.comparison.sacog_parcel_shim,
-  kind FULL,
+  kind INCREMENTAL_BY_UNIQUE_KEY (
+    unique_key (parcel_id),
+    batch_size 100000
+  ),
   audits (
     not_null(columns := (parcel_id)),
-    unique_values(columns := (parcel_id,))
+    unique_values(columns := (parcel_id,)),
+    assert_row_count_greater_than_zero
   )
 );
 

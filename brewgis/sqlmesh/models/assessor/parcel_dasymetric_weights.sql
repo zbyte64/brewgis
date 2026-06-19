@@ -271,6 +271,10 @@ tier3_candidates AS (
         SELECT pcg.apn AS neighbor_apn
         FROM brewgis.assessor.parcel_classified_geometry pcg
         WHERE pcg.land_development_category = u.land_development_category
+          AND pcg.lot_size_acres BETWEEN
+              u.lot_size_acres - 3 * COALESCE(ps.s_ls, u.lot_size_acres + 100)
+              AND u.lot_size_acres + 3 * COALESCE(ps.s_ls, u.lot_size_acres + 100)
+          AND ST_DWithin(u.geometry, pcg.geometry, 5000)
         ORDER BY u.geometry <-> pcg.geometry
         LIMIT 200
     ) pcg
