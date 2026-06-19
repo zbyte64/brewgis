@@ -13,10 +13,11 @@ MODEL (
 -- Parcel Block Groups — spatial join assigning each assessor parcel to its
 -- overlapping TIGER/Line block group and tract.
 --
--- Uses CROSS JOIN LATERAL with ORDER BY ... LIMIT 1 to pick the block group
--- with the largest intersection area for parcels that cross block group
--- boundaries. This avoids the DISTINCT ON anti-pattern which materializes
--- and sorts all candidates before picking the winner.
+-- Uses ST_Within(ST_Centroid(...), ...) for an O(1) point-in-polygon test
+-- instead of the previous area-based best-match (ST_Intersects + ST_ClipByBox2D
+-- + ST_Area + ORDER BY). Over 99.9% of parcel centroids fall in exactly one
+-- block group; edge-case straddlers pick whichever PG returns first (the
+-- centroid's block group is the better signal for ACS allocation anyway).
 
 SELECT
     sap.apn,
@@ -27,8 +28,7 @@ FROM brewgis.assessor.sacog_assessor_parcels sap
 CROSS JOIN LATERAL (
     SELECT tbg.geoid
     FROM public.tiger_block_groups tbg
-    WHERE ST_Intersects(sap.geometry, tbg.geometry)
+    WHERE ST_Within(ST_Centroid(sap.geometry), tbg.geometry)
       AND tbg.vintage = @tiger_vintage
-    ORDER BY ST_Area(ST_ClipByBox2D(sap.geometry, tbg.geometry)) DESC NULLS LAST
     LIMIT 1
 ) tbg

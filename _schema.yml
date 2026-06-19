@@ -109,6 +109,23 @@
   - name: intersection_density
     tests: [non_negative]
 
+- name: parcel_known_features
+  description: "Materialized known-parcel table with built_form_key and feature columns for k-NN imputation"
+  columns:
+  - name: apn
+    description: "Assessor parcel number"
+    tests:
+    - not_null
+    - unique
+
+- name: parcel_partition_stats
+  description: "Per-category standard deviations for k-NN distance normalization"
+  columns:
+  - name: land_development_category
+    description: "Land development category"
+    tests:
+    - not_null
+
 - name: parcel_dasymetric_weights
   description: "Per-parcel built_form_key, dasymetric weights, and classification"
   columns:

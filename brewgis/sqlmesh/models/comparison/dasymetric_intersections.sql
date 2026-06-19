@@ -9,23 +9,21 @@ MODEL (
 -- SACOG Comparison Dasymetric Intersections — pre-computed spatial crosswalk.
 --
 -- Materializes the parcel_id ↔ apn mapping with pre-computed intersection area.
--- This is the expensive spatial join step (ST_Intersects + ST_Intersection on
--- 500k SACOG parcels × 55k assessor parcels), separated so it runs once per
--- pipeline build instead of being inlined in sacog_comparison_dasymetric.
---
--- The DISTINCT ON picks the best matching assessor parcel for each SACOG parcel
--- by largest intersection envelope area, using ST_Envelope for performance.
+-- Uses LATERAL with LIMIT 1 instead of DISTINCT ON + full outer-join to
+-- short-circuit the spatial join — for each SACOG parcel, only the best-matching
+-- assessor parcel intersection area is computed.
 
-SELECT DISTINCT ON (sp.parcel_id)
-    sp.parcel_id,
-    dw.apn,
-    ST_Area(ST_Intersection(ST_Envelope(sp.geometry), ST_Envelope(ap.geometry))) AS intersect_area_sqft
+SELECT sp.parcel_id, cand.apn, cand.intersect_area_sqft
 FROM brewgis.comparison.sacog_parcel_shim sp
-JOIN brewgis.assessor.sacog_assessor_parcels ap
-    ON ST_Intersects(sp.geometry, ap.geometry)
-JOIN brewgis.assessor.parcel_dasymetric_weights dw
-    ON ap.apn = dw.apn
-ORDER BY sp.parcel_id, intersect_area_sqft DESC NULLS LAST;
+CROSS JOIN LATERAL (
+    SELECT ap.apn,
+        ST_Area(ST_Intersection(ST_Envelope(sp.geometry), ST_Envelope(ap.geometry))) AS intersect_area_sqft
+    FROM brewgis.assessor.sacog_assessor_parcels ap
+    WHERE ST_Intersects(sp.geometry, ap.geometry)
+    ORDER BY intersect_area_sqft DESC NULLS LAST
+    LIMIT 1
+) cand
+JOIN brewgis.assessor.parcel_dasymetric_weights dw ON cand.apn = dw.apn;
 
 -- post_statements
   CREATE INDEX IF NOT EXISTS idx_dasymetric_intersections_parcel_id

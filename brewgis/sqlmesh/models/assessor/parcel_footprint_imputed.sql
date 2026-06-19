@@ -146,12 +146,21 @@ tier1 AS (
         ) AS distance,
         1 AS tier
     FROM unknown u
-    JOIN known k
-        ON u.block_group_geoid = k.block_group_geoid
-       AND u.land_development_category = k.land_development_category
     LEFT JOIN partition_stats ps
         ON u.block_group_geoid = ps.block_group_geoid
        AND u.land_development_category = ps.land_development_category
+    JOIN known k
+        ON u.block_group_geoid = k.block_group_geoid
+       AND u.land_development_category = k.land_development_category
+       AND k.footprint_ratio BETWEEN
+           u.footprint_ratio - 3 * COALESCE(ps.s_fr, u.footprint_ratio + 1)
+           AND u.footprint_ratio + 3 * COALESCE(ps.s_fr, u.footprint_ratio + 1)
+       AND k.building_count BETWEEN
+           u.building_count - 3 * COALESCE(ps.s_bc, u.building_count + 5)
+           AND u.building_count + 3 * COALESCE(ps.s_bc, u.building_count + 5)
+       AND k.lot_size_acres BETWEEN
+           u.lot_size_acres - 3 * COALESCE(ps.s_ls, u.lot_size_acres + 1)
+           AND u.lot_size_acres + 3 * COALESCE(ps.s_ls, u.lot_size_acres + 1)
 ),
 
 tier1_ranked AS (
@@ -193,12 +202,21 @@ tier2 AS (
         ) AS distance,
         2 AS tier
     FROM unknown u
-    JOIN known k
-        ON u.tract_geoid = k.tract_geoid
-       AND u.land_development_category = k.land_development_category
     LEFT JOIN tract_stats ts
         ON u.tract_geoid = ts.tract_geoid
        AND u.land_development_category = ts.land_development_category
+    JOIN known k
+        ON u.tract_geoid = k.tract_geoid
+       AND u.land_development_category = k.land_development_category
+       AND k.footprint_ratio BETWEEN
+           u.footprint_ratio - 3 * COALESCE(ts.s_fr, u.footprint_ratio + 1)
+           AND u.footprint_ratio + 3 * COALESCE(ts.s_fr, u.footprint_ratio + 1)
+       AND k.building_count BETWEEN
+           u.building_count - 3 * COALESCE(ts.s_bc, u.building_count + 5)
+           AND u.building_count + 3 * COALESCE(ts.s_bc, u.building_count + 5)
+       AND k.lot_size_acres BETWEEN
+           u.lot_size_acres - 3 * COALESCE(ts.s_ls, u.lot_size_acres + 1)
+           AND u.lot_size_acres + 3 * COALESCE(ts.s_ls, u.lot_size_acres + 1)
     WHERE NOT EXISTS (SELECT 1 FROM tier1 WHERE tier1.apn = u.apn AND tier1.distance IS NOT NULL)
 ),
 
@@ -241,11 +259,20 @@ tier3 AS (
         ) AS distance,
         3 AS tier
     FROM unknown u
+    LEFT JOIN county_stats cs
+        ON u.land_development_category = cs.land_development_category
     JOIN known k
         ON u.land_development_category = k.land_development_category
        AND ST_DWithin(u.geometry, k.geometry, 5000)
-    LEFT JOIN county_stats cs
-        ON u.land_development_category = cs.land_development_category
+       AND k.footprint_ratio BETWEEN
+           u.footprint_ratio - 3 * COALESCE(cs.s_fr, u.footprint_ratio + 1)
+           AND u.footprint_ratio + 3 * COALESCE(cs.s_fr, u.footprint_ratio + 1)
+       AND k.building_count BETWEEN
+           u.building_count - 3 * COALESCE(cs.s_bc, u.building_count + 5)
+           AND u.building_count + 3 * COALESCE(cs.s_bc, u.building_count + 5)
+       AND k.lot_size_acres BETWEEN
+           u.lot_size_acres - 3 * COALESCE(cs.s_ls, u.lot_size_acres + 1)
+           AND u.lot_size_acres + 3 * COALESCE(cs.s_ls, u.lot_size_acres + 1)
     WHERE NOT EXISTS (SELECT 1 FROM tier1 WHERE tier1.apn = u.apn AND tier1.distance IS NOT NULL)
       AND NOT EXISTS (SELECT 1 FROM tier2 WHERE tier2.apn = u.apn AND tier2.distance IS NOT NULL)
 ),
