@@ -104,7 +104,11 @@ def discover_models_from_sqlmesh() -> dict[str, ModelInfo]:
     for fqn, sqlmodel in ctx.models.items():
         normalised = _normalise_fqn(fqn)
         parts = normalised.split(".")
-        # Only include brewgis-catalog models (skip DuckDB gateway models)
+        # Only include brewgis-catalog models (skip pure-DuckDB catalog models
+        # like duckdb.staging.* whose SQL can't EXPLAIN on Postgres).
+        # Models with name brewgis.* but gateway: duckdb (e.g.
+        # brewgis.staging.overture_land_use bridge) ARE included — their
+        # Postgres placeholders are auto-created by materialize_empty_tables.
         if len(parts) < 3 or parts[0] != "brewgis":
             continue
         _schema, _name = parts[1], parts[2]
@@ -363,6 +367,118 @@ def _sqlglot_to_pg_type(raw_type: str, column_name: str = "") -> str:
         # outputs like ST_Area, ST_Intersection, etc.
         return "DOUBLE PRECISION"
     return raw_type
+
+
+def materialize_duckdb_gateway_models(ctx) -> int:
+    """Create empty Postgres tables + logical views for DuckDB-gateway models.
+
+    DuckDB-gateway models (e.g. ``brewgis.staging.overture_land_use``) don't
+    have physical tables in PostgreSQL.  This creates empty placeholders so
+    that downstream models whose EXPLAIN references them can resolve the
+    table name.
+
+    Returns the number of tables/views created.
+    """
+    from sqlalchemy import text as _text
+
+    engine = get_engine()
+    snaps = ctx._snapshots()  # noqa: SLF001
+    created = 0
+
+    for snap in snaps.values():
+        # Skip models that aren't DuckDB-gateway
+        gateway = getattr(snap.model, "gateway", "") or ""
+        if gateway != "duckdb":
+            continue
+
+        name = snap.name
+        logical = name.replace('"', "")
+        parts = logical.split(".")
+        if len(parts) < 3:
+            continue
+        schema, model_name = parts[1], parts[2]
+
+        # Skip public/shared/tests schemas — not our concern
+        if schema in ("public", "shared", "tests"):
+            continue
+
+        pschema = snap.physical_schema
+        version = snap.version
+        phys_table = f"{schema}__{model_name}__{version}"
+
+        try:
+            with engine.connect() as conn, conn.begin():
+                # Check if physical table/view already exists in Postgres
+                has_table = conn.execute(
+                    _text(
+                        "SELECT 1 FROM pg_tables "
+                        "WHERE schemaname = :s AND tablename = :t "
+                        "UNION ALL "
+                        "SELECT 1 FROM pg_views "
+                        "WHERE schemaname = :s AND viewname = :t "
+                        "LIMIT 1"
+                    ),
+                    {"s": pschema, "t": phys_table},
+                ).fetchone()
+
+                if has_table:
+                    # Already exists — our placeholder from a previous run
+                    # or a real DuckDB materialization.  Either way preserve.
+                    continue
+
+                cols = (
+                    snap.model.columns_to_types
+                    if hasattr(snap.model, "columns_to_types")
+                    else {}
+                )
+                if not cols:
+                    # Cannot create placeholder without column types
+                    continue
+
+                if snap.is_view:
+                    null_exprs = []
+                    for cname, ctype in cols.items():
+                        pg_type = _sqlglot_to_pg_type(str(ctype), cname)
+                        null_exprs.append(f'NULL::{pg_type} AS "{cname}"')
+                    conn.execute(_text(f'CREATE SCHEMA IF NOT EXISTS "{pschema}"'))
+                    conn.execute(
+                        _text(f'DROP VIEW IF EXISTS "{pschema}"."{phys_table}" CASCADE')
+                    )
+                    conn.execute(
+                        _text(
+                            f'CREATE VIEW "{pschema}"."{phys_table}" AS '
+                            f"SELECT {', '.join(null_exprs)} LIMIT 0"
+                        )
+                    )
+                else:
+                    col_defs = []
+                    for cname, ctype in cols.items():
+                        pg_type = _sqlglot_to_pg_type(str(ctype), cname)
+                        col_defs.append(f'"{cname}" {pg_type}')
+                    conn.execute(_text(f'CREATE SCHEMA IF NOT EXISTS "{pschema}"'))
+                    conn.execute(
+                        _text(
+                            f'CREATE TABLE IF NOT EXISTS "{pschema}"."{phys_table}" '
+                            f"({', '.join(col_defs)})"
+                        )
+                    )
+
+                # Create the logical-name view so downstream model EXPLAIN can
+                # reference the schema.model_name (e.g. brewgis.staging.model).
+                conn.execute(_text(f'CREATE SCHEMA IF NOT EXISTS "{schema}"'))
+                conn.execute(
+                    _text(
+                        f'CREATE OR REPLACE VIEW "{schema}"."{model_name}" AS '
+                        f'SELECT * FROM "{pschema}"."{phys_table}"'
+                    )
+                )
+                created += 1
+        except Exception:  # noqa: BLE001
+            logger.debug(
+                "Failed to materialize DuckDB gateway %s.%s", schema, model_name
+            )
+
+    return created
 
 
 def materialize_empty_tables(ctx) -> int:
@@ -897,7 +1013,9 @@ class Command(BaseCommand):
             "--materialize-empty",
             action="store_true",
             default=False,
-            help="Create empty physical tables + views for all models (no data loaded)",
+            help=(
+                "Also create empty external (dlt/managed) tables referenced by models"
+            ),
         )
 
     def handle(self, **options: object) -> str | None:
@@ -927,6 +1045,16 @@ class Command(BaseCommand):
         if n_views:
             self.stdout.write(
                 self.style.SUCCESS(f"Created {n_views} logical views for EXPLAIN")
+            )
+
+        # Create empty Postgres tables for DuckDB-gateway bridge models
+        # so that EXPLAIN can resolve their references from downstream
+        # models (e.g. brewgis.assessor.overture_land_use_parcel referencing
+        # brewgis.staging.overture_land_use).
+        n_bridge = materialize_duckdb_gateway_models(_get_sqlmesh_context())
+        if n_bridge:
+            self.stdout.write(
+                self.style.SUCCESS(f"Created {n_bridge} DuckDB bridge placeholders")
             )
 
         # If --materialize-empty, create empty tables for all missing models
@@ -980,7 +1108,11 @@ class Command(BaseCommand):
 
             if info.schema in ("staging", "seeds", "tests"):
                 analysis[info.qualified] = None
-                self.stdout.write(self.style.WARNING("skip (staging/seed — DuckDB)"))
+                self.stdout.write(
+                    self.style.WARNING(
+                        "skip (staging/seed/test — trivial or DuckDB-only)"
+                    )
+                )
                 continue
 
             if info.error:
