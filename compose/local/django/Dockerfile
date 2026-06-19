@@ -112,6 +112,10 @@ COPY ./compose/local/django/celery/flower/start /start-flower
 RUN sed -i 's/\r$//g' /start-flower
 RUN chmod +x /start-flower
 
+COPY ./compose/local/django/start-mcp /start-mcp
+RUN sed -i 's/\r$//g' /start-mcp
+RUN chmod +x /start-mcp
+
 COPY ./compose/local/django/start-sqlmesh-ui /start-sqlmesh-ui
 RUN sed -i 's/\r$//g' /start-sqlmesh-ui
 RUN chmod +x /start-sqlmesh-ui

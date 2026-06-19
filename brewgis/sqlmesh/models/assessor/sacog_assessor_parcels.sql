@@ -32,6 +32,7 @@ WITH deduped AS (
 SELECT
     apn,
     ST_MakeValid(geometry) AS geometry,
+    ST_Centroid(ST_MakeValid(geometry)) AS centroid,
     ST_Transform(ST_MakeValid(geometry), @VAR('local_srid', 3310)) AS local_geometry,
     ST_Centroid(ST_Transform(ST_MakeValid(geometry), @VAR('local_srid', 3310))) AS centroid_local,
     lotsize::double precision AS lot_size_acres,
@@ -70,6 +71,8 @@ WHERE rn = 1;
   ON brewgis.assessor.sacog_assessor_parcels USING GIST (local_geometry);
   CREATE INDEX IF NOT EXISTS idx_sacog_assessor_parcels_centroid_local
   ON brewgis.assessor.sacog_assessor_parcels USING GIST (centroid_local);
+  CREATE INDEX IF NOT EXISTS idx_sacog_assessor_parcels_centroid
+  ON brewgis.assessor.sacog_assessor_parcels USING GIST (centroid);
   CREATE INDEX IF NOT EXISTS idx_sacog_assessor_parcels_apn
   ON brewgis.assessor.sacog_assessor_parcels (apn);
   ANALYZE brewgis.assessor.sacog_assessor_parcels;

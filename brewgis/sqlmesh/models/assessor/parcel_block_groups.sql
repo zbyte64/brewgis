@@ -28,7 +28,7 @@ FROM brewgis.assessor.sacog_assessor_parcels sap
 CROSS JOIN LATERAL (
     SELECT tbg.geoid
     FROM public.tiger_block_groups tbg
-    WHERE ST_Within(ST_Centroid(sap.geometry), tbg.geometry)
+    WHERE ST_Within(sap.centroid, tbg.geometry)
       AND tbg.vintage = @tiger_vintage
     LIMIT 1
 ) tbg
