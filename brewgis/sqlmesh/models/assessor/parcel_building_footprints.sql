@@ -31,14 +31,7 @@ MODEL (
 --   - overture_*_sqft: per-class floor-area buckets using Overture class system
 --     (replaces the need for a separate spatial join in parcel_building_sqft_by_type)
 
-WITH buildings_with_area AS (
-    SELECT
-        *,
-        ST_Area(local_geometry) * 10.7639 AS footprint_sqft
-    FROM brewgis.staging.buildings_combined_pg
-),
-
-building_stats AS (
+WITH building_stats AS (
     SELECT
         sap.apn,
         SUM(bwa.footprint_sqft * COALESCE(NULLIF(bwa.levels, 0), 1)) AS total_footprint_sqft,
@@ -49,55 +42,55 @@ building_stats AS (
         COUNT(*) FILTER (WHERE bwa.bf_source = 'microsoft') AS microsoft_building_count,
         AVG(bwa.confidence) AS mean_confidence,
         SUM(bwa.footprint_sqft)
-            FILTER (WHERE bwa.class IN ('cabin','dwelling_house','ger','houseboat','stilt_house','static_caravan','trullo','semi','residential','house','apartments','dormitory','detached','semidetached','terrace','bungalow')) AS residential_building_sqft,
+            FILTER (WHERE bwa.class_category = 'residential') AS residential_building_sqft,
         SUM(bwa.footprint_sqft)
-            FILTER (WHERE bwa.class NOT IN ('cabin','dwelling_house','ger','houseboat','stilt_house','static_caravan','trullo','semi','residential','house','apartments','dormitory','detached','semidetached','terrace','bungalow') OR bwa.class IS NULL) AS non_residential_building_sqft,
-        COUNT(*) FILTER (WHERE bwa.class IN ('cabin','dwelling_house','ger','houseboat','stilt_house','static_caravan','trullo','semi','residential','house','apartments','dormitory','detached','semidetached','terrace','bungalow')) AS residential_building_count,
-        COUNT(*) FILTER (WHERE bwa.class NOT IN ('cabin','dwelling_house','ger','houseboat','stilt_house','static_caravan','trullo','semi','residential','house','apartments','dormitory','detached','semidetached','terrace','bungalow') OR bwa.class IS NULL) AS non_residential_building_count,
+            FILTER (WHERE bwa.class_category != 'residential') AS non_residential_building_sqft,
+        COUNT(*) FILTER (WHERE bwa.class_category = 'residential') AS residential_building_count,
+        COUNT(*) FILTER (WHERE bwa.class_category != 'residential') AS non_residential_building_count,
         -- Overture class-based sqft buckets for parcel_building_sqft_by_type.
-        -- Mixed-use (class IS NULL or 'mixed'): ground floor = commercial,
+        -- Mixed-use (class_category = 'mixed'): ground floor = commercial,
         -- upper floors = residential. With 1 floor (or unknown), split 50/50.
         -- For levels > 1: bldg_sqft = footprint_sqft * levels,
         --   commercial = bldg_sqft / levels = footprint_sqft,
         --   residential = bldg_sqft - commercial = footprint_sqft * (levels - 1).
         SUM(
             CASE
-                WHEN bwa.class IS NULL OR bwa.class = 'mixed' THEN
+                WHEN bwa.class_category = 'mixed' THEN
                     CASE
                         WHEN COALESCE(NULLIF(bwa.levels, 0), 1) > 1
                         THEN bwa.footprint_sqft
                         ELSE bwa.footprint_sqft * 0.5
                     END
-                WHEN bwa.class = 'commercial' THEN bwa.footprint_sqft * COALESCE(NULLIF(bwa.levels, 0), 1)
+                WHEN bwa.class_category = 'commercial' THEN bwa.footprint_sqft * COALESCE(NULLIF(bwa.levels, 0), 1)
                 ELSE 0
             END
         )::double precision AS overture_commercial_sqft,
         SUM(
             CASE
-                WHEN bwa.class IS NULL OR bwa.class = 'mixed' THEN
+                WHEN bwa.class_category = 'mixed' THEN
                     CASE
                         WHEN COALESCE(NULLIF(bwa.levels, 0), 1) > 1
                         THEN bwa.footprint_sqft * (COALESCE(NULLIF(bwa.levels, 0), 1) - 1)
                         ELSE bwa.footprint_sqft * 0.5
                     END
-                WHEN bwa.class = 'residential' THEN bwa.footprint_sqft * COALESCE(NULLIF(bwa.levels, 0), 1)
+                WHEN bwa.class_category = 'residential' THEN bwa.footprint_sqft * COALESCE(NULLIF(bwa.levels, 0), 1)
                 ELSE 0
             END
         )::double precision AS overture_residential_sqft,
         SUM(
-            CASE WHEN bwa.class = 'industrial' THEN bwa.footprint_sqft * COALESCE(NULLIF(bwa.levels, 0), 1) ELSE 0 END
+            CASE WHEN bwa.class_category = 'industrial' THEN bwa.footprint_sqft * COALESCE(NULLIF(bwa.levels, 0), 1) ELSE 0 END
         )::double precision AS overture_industrial_sqft,
         SUM(
             CASE
-                WHEN bwa.class IS NOT NULL
-                     AND bwa.class NOT IN ('residential', 'commercial', 'industrial', 'mixed')
+                WHEN bwa.class_category = 'other'
                 THEN bwa.footprint_sqft * COALESCE(NULLIF(bwa.levels, 0), 1)
                 ELSE 0
             END
         )::double precision AS overture_other_sqft
     FROM brewgis.assessor.sacog_assessor_parcels sap
-    JOIN buildings_with_area bwa
-        ON ST_Intersects(sap.geometry, bwa.local_geometry)
+    JOIN brewgis.staging.buildings_combined_pg bwa
+        ON sap.geometry && bwa.local_geometry
+       AND ST_Intersects(sap.geometry, bwa.local_geometry)
     GROUP BY sap.apn
 )
 
@@ -126,16 +119,11 @@ SELECT
              / NULLIF(sap.lot_size_acres * 43560, 0)
         ELSE 0
     END AS footprint_ratio,
-    COALESCE(auc.category, 'urban') AS land_development_category
+    sap.land_development_category
 FROM brewgis.assessor.sacog_assessor_parcels sap
-LEFT JOIN building_stats bs ON sap.apn = bs.apn
-LEFT JOIN brewgis.seeds.assessor_use_codes auc
-    ON LEFT(COALESCE(sap.landuse::text, ''), 2) = auc.use_code::text;
+LEFT JOIN building_stats bs ON sap.apn = bs.apn;
 
 -- post_statements
-  CREATE INDEX IF NOT EXISTS idx_parcel_building_footprints_geometry
-  ON brewgis.assessor.parcel_building_footprints USING GIST (geometry);
-ANALYZE brewgis.assessor.parcel_building_footprints;
   CREATE INDEX IF NOT EXISTS idx_parcel_building_footprints_geometry
   ON brewgis.assessor.parcel_building_footprints USING GIST (geometry);
 ANALYZE brewgis.assessor.parcel_building_footprints;

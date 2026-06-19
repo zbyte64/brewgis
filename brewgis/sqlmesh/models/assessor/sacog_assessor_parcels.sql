@@ -37,8 +37,30 @@ SELECT
     lotsize::double precision AS lot_size_acres,
     landuse,
     zone,
-    jurisdiction
+    jurisdiction,
+    COALESCE(
+        auc.category,
+        CASE
+            WHEN landuse IS NULL OR landuse = '' THEN 'undeveloped'
+            WHEN LEFT(landuse::text, 1) = 'A' THEN 'urban'
+            WHEN LEFT(landuse::text, 1) = 'B' THEN 'urban'
+            WHEN LEFT(landuse::text, 1) = 'C' THEN 'urban'
+            WHEN LEFT(landuse::text, 1) = 'D' THEN 'undeveloped'
+            WHEN LEFT(landuse::text, 1) = 'E' THEN 'urban'
+            WHEN LEFT(landuse::text, 1) = 'F' THEN 'agricultural'
+            WHEN LEFT(landuse::text, 1) = 'G' THEN 'undeveloped'
+            WHEN LEFT(landuse::text, 1) = 'H' THEN 'urban'
+            WHEN LEFT(landuse::text, 1) = 'I' THEN 'industrial'
+            WHEN LEFT(landuse::text, 2) IN ('MP','MR','MW','MD','MF','MG','ML') THEN 'undeveloped'
+            WHEN LEFT(landuse::text, 1) = 'M' THEN 'urban'
+            WHEN LEFT(landuse::text, 1) = 'W' THEN 'undeveloped'
+            ELSE 'undeveloped'
+        END,
+        'urban'
+    ) AS land_development_category
 FROM deduped
+LEFT JOIN brewgis.seeds.assessor_use_codes auc
+    ON LEFT(COALESCE(landuse::text, ''), 2) = auc.use_code::text
 WHERE rn = 1;
 
 -- post_statements
@@ -50,3 +72,4 @@ WHERE rn = 1;
   ON brewgis.assessor.sacog_assessor_parcels USING GIST (centroid_local);
   CREATE INDEX IF NOT EXISTS idx_sacog_assessor_parcels_apn
   ON brewgis.assessor.sacog_assessor_parcels (apn);
+  ANALYZE brewgis.assessor.sacog_assessor_parcels;
