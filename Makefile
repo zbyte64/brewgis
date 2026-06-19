@@ -143,6 +143,10 @@ lint:  ## Run Ruff linter
 lint-sql:  ## Run SQLMesh linter on SQL models
 	$(COMPOSE_RUN) sqlmesh -p brewgis/sqlmesh/ lint
 
+.PHONY: lint-sqlmesh-perf
+lint-sqlmesh-perf:  ## Run EXPLAIN audit on SQLMesh models
+	$(COMPOSE_RUN) python manage.py explain_sqlmesh_models
+
 .PHONY: lint-custom
 lint-custom:  ## Run custom anti-pattern rules (standalone, no Docker)
 	python3 -m brewgis._ruff_rules.check brewgis/
