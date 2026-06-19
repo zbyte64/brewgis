@@ -220,6 +220,38 @@ def topology_order(
 # ── SQLMesh logical views ────────────────────────────────────────────────────
 
 
+def _find_physical_table(
+    conn: object,
+    pschema: str,
+    phys_table: str,
+) -> str | None:
+    """Find a physical table or view, trying exact name then ``__dev`` fallback.
+
+    SQLMesh appends ``__<environment>`` to physical table names for non-prod
+    environments.  This helper tries the exact production-form name first,
+    then falls back to ``{phys_table}__dev`` for dev-environment materializations.
+
+    Returns the actual table/view name found, or *None*.
+    """
+    from sqlalchemy import text as _text
+
+    for candidate in (phys_table, f"{phys_table}__dev"):
+        row = conn.execute(
+            _text(
+                "SELECT tablename FROM pg_tables "
+                "WHERE schemaname = :s AND tablename = :t "
+                "UNION ALL "
+                "SELECT viewname FROM pg_views "
+                "WHERE schemaname = :s AND viewname = :t "
+                "LIMIT 1"
+            ),
+            {"s": pschema, "t": candidate},
+        ).fetchone()
+        if row:
+            return row[0]
+    return None
+
+
 def ensure_logical_views(ctx) -> int:
     """Create logical-name views for all materialized SQLMesh snapshots.
 
@@ -255,26 +287,14 @@ def ensure_logical_views(ctx) -> int:
 
         try:
             with engine.connect() as conn, conn.begin():
-                # Check both pg_tables and pg_views (some SQLMesh physical
-                # snapshots are views, e.g. DuckDB-staging models)
-                row = conn.execute(
-                    _text(
-                        "SELECT 1 FROM pg_tables "
-                        "WHERE schemaname = :s AND tablename = :t "
-                        "UNION ALL "
-                        "SELECT 1 FROM pg_views "
-                        "WHERE schemaname = :s AND viewname = :t "
-                        "LIMIT 1"
-                    ),
-                    {"s": pschema, "t": phys_table},
-                ).fetchone()
-                if not row:
+                found_table = _find_physical_table(conn, pschema, phys_table)
+                if not found_table:
                     continue
                 conn.execute(_text(f'CREATE SCHEMA IF NOT EXISTS "{schema}"'))
                 conn.execute(
                     _text(
                         f'CREATE OR REPLACE VIEW "{schema}"."{model_name}" AS '
-                        f'SELECT * FROM "{pschema}"."{phys_table}"'
+                        f'SELECT * FROM "{pschema}"."{found_table}"'
                     )
                 )
                 created += 1
@@ -408,22 +428,20 @@ def materialize_duckdb_gateway_models(ctx) -> int:
 
         try:
             with engine.connect() as conn, conn.begin():
-                # Check if physical table/view already exists in Postgres
-                has_table = conn.execute(
-                    _text(
-                        "SELECT 1 FROM pg_tables "
-                        "WHERE schemaname = :s AND tablename = :t "
-                        "UNION ALL "
-                        "SELECT 1 FROM pg_views "
-                        "WHERE schemaname = :s AND viewname = :t "
-                        "LIMIT 1"
-                    ),
-                    {"s": pschema, "t": phys_table},
-                ).fetchone()
+                # Check if physical table/view already exists (prod or dev)
+                found_table = _find_physical_table(conn, pschema, phys_table)
 
-                if has_table:
-                    # Already exists — our placeholder from a previous run
-                    # or a real DuckDB materialization.  Either way preserve.
+                if found_table:
+                    # Table/view exists — create the logical view if
+                    # ``ensure_logical_views`` missed it (dev- environment).
+                    conn.execute(_text(f'CREATE SCHEMA IF NOT EXISTS "{schema}"'))
+                    conn.execute(
+                        _text(
+                            f'CREATE OR REPLACE VIEW "{schema}"."{model_name}" AS '
+                            f'SELECT * FROM "{pschema}"."{found_table}"'
+                        )
+                    )
+                    created += 1
                     continue
 
                 cols = (
@@ -514,30 +532,38 @@ def materialize_empty_tables(ctx) -> int:
 
         try:
             with engine.connect() as conn, conn.begin():
-                # Check if physical table already exists
-                has_table = conn.execute(
-                    _text(
-                        "SELECT 1 FROM pg_tables "
-                        "WHERE schemaname = :s AND tablename = :t"
-                    ),
-                    {"s": pschema, "t": phys_table},
-                ).fetchone()
+                # Check if physical table already exists (prod or dev)
+                found_table = _find_physical_table(conn, pschema, phys_table)
 
-                if has_table:
-                    # If the model has been applied (has intervals), the table is
-                    # real pipeline data — preserve it.
-                    if snap.intervals:
-                        continue
-                    # Our empty table from a previous run with wrong types — drop it.
-                    conn.execute(
-                        _text(
-                            f'DROP TABLE IF EXISTS "{pschema}"."{phys_table}" CASCADE'
+                if found_table:
+                    if found_table == phys_table:
+                        if snap.intervals:
+                            # Prod-named table with real pipeline data — preserve.
+                            continue
+                        # Empty prod placeholder from a previous run with
+                        # possibly stale column types — drop everything
+                        # so we can recreate with fresh types below.
+                        conn.execute(
+                            _text(
+                                f'DROP TABLE IF EXISTS "{pschema}"."{phys_table}" '
+                                "CASCADE"
+                            )
                         )
-                    )
-                    # Also drop the logical view if it exists
-                    conn.execute(
-                        _text(f'DROP VIEW IF EXISTS "{schema}"."{model_name}" CASCADE')
-                    )
+                        conn.execute(
+                            _text(
+                                f'DROP VIEW IF EXISTS "{schema}"."{model_name}" CASCADE'
+                            )
+                        )
+                    else:
+                        # Dev-environment table exists — preserve it and its
+                        # logical view (set up by ``ensure_logical_views``).
+                        # Only drop a stale prod-name placeholder if present.
+                        conn.execute(
+                            _text(
+                                f'DROP TABLE IF EXISTS "{pschema}"."{phys_table}" '
+                                "CASCADE"
+                            )
+                        )
 
                 cols = (
                     snap.model.columns_to_types
