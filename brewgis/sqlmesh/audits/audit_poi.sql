@@ -4,5 +4,5 @@ AUDIT (
 );
 SELECT
   name
-FROM @this
+FROM @this_model
 WHERE name IS NULL

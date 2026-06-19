@@ -3,7 +3,7 @@ AUDIT (
   dialect postgres
 );
 SELECT *
-FROM @this
+FROM @this_model
 WHERE (SELECT COUNT(*) FROM @this) = 0
    OR geometry IS NULL
    LIMIT 1

@@ -12,7 +12,7 @@ SELECT
     + COALESCE(mode_share_transit, 0)
     + COALESCE(mode_share_walk, 0)
     + COALESCE(mode_share_bike, 0)) AS mode_share_sum
-FROM @this
+FROM @this_model
 WHERE ABS(
   COALESCE(mode_share_auto, 0)
   + COALESCE(mode_share_transit, 0)

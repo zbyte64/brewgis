@@ -22,7 +22,7 @@ actual AS (
       + COALESCE(emp_accommodation, 0) + COALESCE(emp_restaurant, 0)
       + COALESCE(emp_other_services, 0) + COALESCE(emp_public_admin, 0)
       + COALESCE(emp_military, 0)) AS actual_total
-  FROM @this
+  FROM @this_model
 )
 SELECT
   a.actual_total,

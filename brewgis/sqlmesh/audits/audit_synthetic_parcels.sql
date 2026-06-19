@@ -5,5 +5,5 @@ AUDIT (
 SELECT
   id,
   geometry
-FROM @this
+FROM @this_model
 WHERE geometry IS NULL

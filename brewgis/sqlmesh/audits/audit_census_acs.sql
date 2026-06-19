@@ -4,5 +4,5 @@ AUDIT (
 );
 SELECT
   geoid
-FROM @this
+FROM @this_model
 WHERE geoid IS NULL

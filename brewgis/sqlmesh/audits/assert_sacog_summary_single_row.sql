@@ -5,5 +5,5 @@ AUDIT (
 SELECT
   COUNT(*) AS row_count,
   'sacog_summary must have exactly 1 row, found ' || COUNT(*) AS failure_message
-FROM @this
+FROM @this_model
 HAVING COUNT(*) != 1

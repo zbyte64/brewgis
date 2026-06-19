@@ -5,5 +5,5 @@ AUDIT (
 SELECT
   geoid,
   total_population
-FROM @this
+FROM @this_model
 WHERE COALESCE(total_population, 0) < 0

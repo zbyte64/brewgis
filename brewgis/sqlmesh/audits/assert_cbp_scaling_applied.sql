@@ -7,7 +7,7 @@ WITH actual AS (
     COALESCE(SUM(emp_manufacturing + emp_wholesale + emp_transport_warehousing + emp_utilities + emp_construction), 0) AS actual_emp_ind_total,
     COALESCE(SUM(emp_retail_services + emp_restaurant + emp_accommodation + emp_arts_entertainment + emp_other_services), 0) AS actual_emp_ret_total,
     COALESCE(SUM(emp_office_services + emp_medical_services), 0) AS actual_emp_off_total
-  FROM @this
+  FROM @this_model
 ),
 raw_total AS (
   SELECT

@@ -7,7 +7,7 @@ WITH trip_totals AS (
     SUM(trips_outbound) AS total_outbound,
     SUM(trips_inbound) AS total_inbound,
     SUM(trips_internal) AS total_internal
-  FROM @this
+  FROM @this_model
 ),
 trip_gen_totals AS (
   SELECT SUM(trips_total) AS total_trips_gen

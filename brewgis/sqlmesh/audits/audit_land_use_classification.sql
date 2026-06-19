@@ -5,7 +5,7 @@ AUDIT (
 SELECT
   pk,
   land_development_category
-FROM @this
+FROM @this_model
 WHERE land_development_category IS NOT NULL
   AND land_development_category NOT IN (
     'urban', 'suburban', 'rural',

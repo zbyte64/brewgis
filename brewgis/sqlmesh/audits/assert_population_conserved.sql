@@ -9,7 +9,7 @@ WITH source AS (
 ),
 allocated AS (
   SELECT SUM(pop) AS allocated_pop
-  FROM @this
+  FROM @this_model
 )
 SELECT
   s.source_pop,

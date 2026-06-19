@@ -10,7 +10,7 @@ SELECT
   overture_land_use_subtype,
   overture_land_use_class,
   overture_category
-FROM @this
+FROM @this_model
 WHERE overture_category IS NULL
   AND parcel_id IN (
     SELECT parcel_id

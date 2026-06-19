@@ -10,7 +10,7 @@ WITH stats AS (
       100.0 * COUNT(du_subtype) / NULLIF(COUNT(*), 0),
       1
     ) AS coverage_pct
-  FROM @this
+  FROM @this_model
 )
 SELECT
   total_parcels,

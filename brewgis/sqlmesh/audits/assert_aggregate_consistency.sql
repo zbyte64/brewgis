@@ -19,7 +19,7 @@ SELECT
     + COALESCE(emp_extraction, 0) AS emp_ind_sum,
   emp_ag,
   COALESCE(emp_agriculture, 0) AS emp_ag_sum
-FROM @this
+FROM @this_model
 WHERE
   ABS(emp_ret - (COALESCE(emp_retail_services, 0) + COALESCE(emp_restaurant, 0)
     + COALESCE(emp_accommodation, 0) + COALESCE(emp_arts_entertainment, 0)

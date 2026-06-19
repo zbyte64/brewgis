@@ -4,5 +4,5 @@ AUDIT (
 );
 SELECT
   w_geocode
-FROM @this
+FROM @this_model
 WHERE w_geocode IS NULL

@@ -4,5 +4,5 @@ AUDIT (
 );
 SELECT
   id
-FROM @this
+FROM @this_model
 WHERE id IS NULL

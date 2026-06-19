@@ -9,7 +9,7 @@ AUDIT (
 SELECT
   geoid,
   vacancy_rate
-FROM @this
+FROM @this_model
 WHERE COALESCE(vacancy_rate, 0) < 0
    OR COALESCE(vacancy_rate, 0) > 1
 
@@ -19,7 +19,7 @@ UNION ALL
 SELECT
   geoid,
   group_quarters_pop
-FROM @this
+FROM @this_model
 WHERE group_quarters_pop < 0
 
 UNION ALL
@@ -28,6 +28,6 @@ UNION ALL
 SELECT
   geoid,
   low_response_score
-FROM @this
+FROM @this_model
 WHERE low_response_score IS NOT NULL
   AND (low_response_score < 0 OR low_response_score > 1)

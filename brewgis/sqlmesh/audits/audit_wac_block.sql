@@ -5,5 +5,5 @@ AUDIT (
 SELECT
   geoid,
   c000
-FROM @this
+FROM @this_model
 WHERE COALESCE(c000, 0) < 0

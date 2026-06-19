@@ -22,7 +22,7 @@ SELECT
     + COALESCE(emp_agriculture, 0)
     + COALESCE(emp_extraction, 0)
     + COALESCE(emp_military, 0) AS subsector_sum
-FROM @this
+FROM @this_model
 WHERE ABS(
   emp - (
     COALESCE(emp_retail_services, 0)

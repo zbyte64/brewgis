@@ -10,7 +10,7 @@ SELECT
   emp_pub,
   emp_ind,
   emp_ag
-FROM @this
+FROM @this_model
 WHERE COALESCE(emp, 0) < 0
    OR COALESCE(emp_ret, 0) < 0
    OR COALESCE(emp_off, 0) < 0

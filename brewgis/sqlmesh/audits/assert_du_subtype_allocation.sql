@@ -10,7 +10,7 @@ SELECT
   du_attsf,
   du_mf2to4,
   du_mf5p
-FROM @this
+FROM @this_model
 WHERE
   du_subtype IS NOT NULL
   AND (

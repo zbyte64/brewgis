@@ -6,5 +6,5 @@ SELECT
   source_id,
   target_id,
   weight
-FROM @this
+FROM @this_model
 WHERE weight < 0 OR weight > 1.0001

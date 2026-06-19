@@ -5,7 +5,7 @@ AUDIT (
 SELECT
   apn,
   imputed_property_type
-FROM @this
+FROM @this_model
 WHERE imputed_property_type IS NOT NULL
   AND imputed_property_type NOT IN (
     'Single Family Residence',

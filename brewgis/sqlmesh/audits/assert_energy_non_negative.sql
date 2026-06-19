@@ -10,7 +10,7 @@ SELECT
   energy_gas_nonres,
   energy_total,
   energy_intensity_kwh_per_sqft
-FROM @this
+FROM @this_model
 WHERE
   COALESCE(energy_electricity_res, 0) < 0
   OR COALESCE(energy_gas_res, 0) < 0

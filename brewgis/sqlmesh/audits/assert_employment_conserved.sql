@@ -9,7 +9,7 @@ WITH source AS (
 ),
 allocated AS (
   SELECT SUM(emp) AS allocated_emp
-  FROM @this
+  FROM @this_model
 )
 SELECT
   s.source_emp,

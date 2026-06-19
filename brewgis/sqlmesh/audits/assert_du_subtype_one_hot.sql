@@ -11,7 +11,7 @@ SELECT
   du_attsf,
   du_mf2to4,
   du_mf5p
-FROM @this
+FROM @this_model
 WHERE (
   CASE WHEN COALESCE(du_detsf_sl, 0) > 0 THEN 1 ELSE 0 END
   + CASE WHEN COALESCE(du_detsf_ll, 0) > 0 THEN 1 ELSE 0 END

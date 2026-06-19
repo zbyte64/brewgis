@@ -5,5 +5,5 @@ AUDIT (
 SELECT
   id,
   built_form_key
-FROM @this
+FROM @this_model
 WHERE built_form_key IS NULL

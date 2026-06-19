@@ -7,7 +7,7 @@ SELECT
   imputed_units,
   imputed_living_sqft,
   imputed_building_sqft
-FROM @this
+FROM @this_model
 WHERE imputed_property_type IS NOT NULL
   AND (
       imputed_units < 0
