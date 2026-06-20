@@ -8,6 +8,7 @@ from brewgis.workspace.mcp.tools import layer as layer_tools
 from brewgis.workspace.mcp.tools import paint as paint_tools
 from brewgis.workspace.mcp.tools import reports as reports_tools
 from brewgis.workspace.mcp.tools import scenario as scenario_tools
+from brewgis.workspace.mcp.tools import sqlmesh as sqlmesh_tools
 from brewgis.workspace.mcp.tools import workspace as workspace_tools
 
 logger = logging.getLogger(__name__)
@@ -22,4 +23,5 @@ def register_tools(server: object) -> None:
     analysis_tools.register_tools(server)
     data_import_tools.register_tools(server)
     reports_tools.register_tools(server)
+    sqlmesh_tools.register_tools(server)
     logger.info("All MCP tool modules registered")

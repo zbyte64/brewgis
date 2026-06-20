@@ -77,6 +77,7 @@ class TestMcpToolFunctions:
         from brewgis.workspace.mcp.tools import paint as pt
         from brewgis.workspace.mcp.tools import reports as rp
         from brewgis.workspace.mcp.tools import scenario as sc
+        from brewgis.workspace.mcp.tools import sqlmesh as sm
         from brewgis.workspace.mcp.tools import workspace as ws
 
         assert callable(ws.register_tools)
@@ -86,3 +87,4 @@ class TestMcpToolFunctions:
         assert callable(an.register_tools)
         assert callable(di.register_tools)
         assert callable(rp.register_tools)
+        assert callable(sm.register_tools)
