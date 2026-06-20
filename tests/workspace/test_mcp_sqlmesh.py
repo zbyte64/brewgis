@@ -4,13 +4,19 @@ from __future__ import annotations
 
 from unittest.mock import MagicMock
 
+import pytest
+
+from brewgis.workspace.mcp.tools.sqlmesh import ModelNotResolvedError
+from brewgis.workspace.mcp.tools.sqlmesh import PlanStats
 from brewgis.workspace.mcp.tools.sqlmesh import _audit_names
 from brewgis.workspace.mcp.tools.sqlmesh import _columns_to_list
 from brewgis.workspace.mcp.tools.sqlmesh import _depends_on_list
+from brewgis.workspace.mcp.tools.sqlmesh import _extract_post_statement_indexes
 from brewgis.workspace.mcp.tools.sqlmesh import _get_cached_context
 from brewgis.workspace.mcp.tools.sqlmesh import _grain_names
 from brewgis.workspace.mcp.tools.sqlmesh import _model_kind_name
 from brewgis.workspace.mcp.tools.sqlmesh import _model_source_type
+from brewgis.workspace.mcp.tools.sqlmesh import _resolve_model_name
 from brewgis.workspace.mcp.tools.sqlmesh import register_tools
 
 
@@ -33,7 +39,7 @@ class TestSqlmeshToolRegistration:
         mock_server.tool = capture_tool
         register_tools(mock_server)
 
-        assert len(registered) == 10
+        assert len(registered) == 11
 
     def test_register_tools_integration(self) -> None:
         """Registering sqlmesh tools works via the aggregator pattern."""
@@ -47,7 +53,7 @@ class TestSqlmeshToolRegistration:
         mock_server.tool = capture_decorator
         register_tools(mock_server)
 
-        assert len(calls) == 10
+        assert len(calls) == 11
 
     def test_cached_context_importable(self) -> None:
         """The cached context helper can be imported."""
@@ -116,3 +122,130 @@ class TestSqlmeshToolRegistration:
     def test_depends_on_list_none(self) -> None:
         """_depends_on_list returns [] for object with no depends_on."""
         assert _depends_on_list(object()) == []
+
+
+class TestResolveModelName:
+    """Tests for _resolve_model_name fuzzy resolution."""
+
+    models: dict[str, object] = {
+        "brewgis.assessor.parcel_dasymetric_weights": object(),
+        "brewgis.assessor.parcel_du_estimation": object(),
+        "brewgis.analysis.core_end_state": object(),
+        "brewgis.analysis.core_increment": object(),
+        "brewgis.staging.overture_land_use": object(),
+        "brewgis.comparison.sacog_parcel_shim": object(),
+    }
+
+    def test_exact_fqn(self) -> None:
+        """Exact FQN resolves correctly."""
+        result = _resolve_model_name(
+            "brewgis.assessor.parcel_dasymetric_weights", self.models
+        )
+        assert result == "brewgis.assessor.parcel_dasymetric_weights"
+
+    def test_quoted_fqn(self) -> None:
+        """SQL-quoted FQN resolves correctly."""
+        result = _resolve_model_name(
+            '"brewgis"."assessor"."parcel_dasymetric_weights"', self.models
+        )
+        assert result == "brewgis.assessor.parcel_dasymetric_weights"
+
+    def test_short_name(self) -> None:
+        """Bare model short name resolves correctly."""
+        result = _resolve_model_name("parcel_dasymetric_weights", self.models)
+        assert result == "brewgis.assessor.parcel_dasymetric_weights"
+
+    def test_two_part_name(self) -> None:
+        """Two-part name like 'assessor.parcel_dasymetric_weights' resolves."""
+        result = _resolve_model_name("assessor.parcel_dasymetric_weights", self.models)
+        assert result == "brewgis.assessor.parcel_dasymetric_weights"
+
+    def test_substring_match(self) -> None:
+        """Substring that uniquely matches resolves correctly."""
+        result = _resolve_model_name("sacog_parcel_shim", self.models)
+        assert result == "brewgis.comparison.sacog_parcel_shim"
+
+    def test_case_insensitive_short_name(self) -> None:
+        """Case-insensitive bare name resolves."""
+        result = _resolve_model_name("PARCEL_DASYMETRIC_WEIGHTS", self.models)
+        assert result == "brewgis.assessor.parcel_dasymetric_weights"
+
+    def test_not_found(self) -> None:
+        """Non-existent name raises ModelNotResolvedError."""
+        with pytest.raises(ModelNotResolvedError) as excinfo:
+            _resolve_model_name("nonexistent_model", self.models)
+        msg = str(excinfo.value)
+        assert "not found" in msg
+        assert "search_models" in msg
+
+    def test_ambiguous_short_name(self) -> None:
+        """Ambiguous short name raises ModelNotResolvedError."""
+        models = {
+            "brewgis.a.foo": object(),
+            "brewgis.b.foo": object(),
+        }
+        with pytest.raises(ModelNotResolvedError) as excinfo:
+            _resolve_model_name("foo", models)
+        msg = str(excinfo.value)
+        assert "ambiguous" in msg
+        assert "brewgis.a.foo" in msg
+        assert "brewgis.b.foo" in msg
+
+
+class TestExtractPostStatementIndexes:
+    """Tests for _extract_post_statement_indexes."""
+
+    def test_parcel_dasymetric_weights(self) -> None:
+        """Extracts CREATE INDEX statements from a known model file."""
+        indexes = _extract_post_statement_indexes(
+            "brewgis.assessor.parcel_dasymetric_weights"
+        )
+        assert len(indexes) >= 2
+        assert any("idx_parcel_dasymetric_weights_apn" in idx for idx in indexes)
+
+    def test_model_with_no_indexes(self) -> None:
+        """Returns empty list for models with no post_statements."""
+        indexes = _extract_post_statement_indexes(
+            "brewgis.comparison.sacog_correlations"
+        )
+        assert indexes == []
+
+    def test_non_existent_model(self) -> None:
+        """Returns empty list for non-existent model files."""
+        indexes = _extract_post_statement_indexes("brewgis.assessor.nonexistent_model")
+        assert indexes == []
+
+    def test_invalid_fqn(self) -> None:
+        """Returns empty list for invalid FQN."""
+        indexes = _extract_post_statement_indexes("invalid")
+        assert indexes == []
+
+
+class TestPlanStatsSchema:
+    """Tests for PlanStats pydantic schema."""
+
+    def test_basic_creation(self) -> None:
+        """PlanStats can be created with basic fields."""
+        stats = PlanStats(
+            model_name="brewgis.assessor.test",
+            total_cost=100.5,
+            startup_cost=10.0,
+            plan_rows=1000.0,
+            node_count=5,
+            max_depth=3,
+            seq_scans=["test_table (est. 50,000 rows)"],
+            nested_loops=1,
+        )
+        assert stats.model_name == "brewgis.assessor.test"
+        assert stats.total_cost == 100.5
+        assert stats.node_count == 5
+
+    def test_error_state(self) -> None:
+        """PlanStats can represent an error state."""
+        stats = PlanStats(
+            model_name="brewgis.assessor.test",
+            error="EXPLAIN failed",
+        )
+        assert stats.error == "EXPLAIN failed"
+        assert stats.total_cost is None
+        assert stats.seq_scans == []

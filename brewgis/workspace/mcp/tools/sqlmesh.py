@@ -3,6 +3,7 @@
 import logging
 import os
 from functools import lru_cache
+from pathlib import Path
 from typing import Any
 
 from pydantic import BaseModel
@@ -10,7 +11,11 @@ from pydantic import BaseModel
 # Allow sync Django ORM calls from async MCP context
 os.environ.setdefault("DJANGO_ALLOW_ASYNC_UNSAFE", "true")
 
+from sqlalchemy import text
+
 from brewgis.workspace.analysis.sqlmesh_runner import get_context
+from brewgis.workspace.management.commands.explain_sqlmesh_models import analyze_plan
+from brewgis.workspace.services._db import get_engine
 
 logger = logging.getLogger(__name__)
 
@@ -58,6 +63,7 @@ class ModelDetail(BaseModel):
     audits: list[str]
     grains: list[str]
     depends_on: list[str]
+    indexes: list[str] = []
 
 
 class ModelLineage(BaseModel):
@@ -105,7 +111,86 @@ class TableDiffResult(BaseModel):
     summary: dict[str, object] | None
 
 
+class PlanStats(BaseModel):
+    model_name: str
+    total_cost: float | None = None
+    startup_cost: float | None = None
+    plan_rows: float | None = None
+    node_count: int | None = None
+    max_depth: int | None = None
+    seq_scans: list[str] = []
+    nested_loops: int | None = None
+    error: str | None = None
+
+
 # ── Helpers ──────────────────────────────────────────────────────
+
+
+class ModelNotResolvedError(Exception):
+    """Raised when model name resolution fails."""
+
+
+def _resolve_model_name(name: str, models: dict) -> str:
+    """Resolve a model name (bare/FQN/quoted) to its ctx.models dict key.
+
+    Resolution order:
+      1. Exact match (existing behavior)
+      2. Strip SQL quotes and retry exact match
+      3. Match against model.name (short FQN like 'assessor.foo')
+      4. Substring match on normalized FQN (single unambiguous result)
+
+    Raises ModelNotResolvedError with actionable message on failure.
+    """
+    # 1. Exact match
+    if name in models:
+        return name
+
+    # 2. Strip SQL quotes and retry
+    stripped = name.replace('"', "").replace("`", "")
+    if stripped in models:
+        return stripped
+
+    total = len(models)
+
+    # 3. Match against model.name (short name or 2-part FQN suffix)
+    name_lower = stripped.lower()
+    candidates: list[str] = []
+    for fqn in models:
+        # model.name is the short name (last component)
+        short = fqn.rsplit(".", 1)[-1]
+        if short.lower() == name_lower:
+            candidates.append(fqn)
+        # 2-part suffix like "assessor.foo"
+        if (
+            len(fqn.split(".")) >= 2  # noqa: PLR2004
+            and ".".join(fqn.rsplit(".", 2)[-2:]).lower() == name_lower
+        ):
+            candidates.append(fqn)
+
+    if len(candidates) == 1:
+        return candidates[0]
+    if len(candidates) > 1:
+        ambiguous = sorted(set(candidates))
+        msg = (
+            f"Model '{name}' is ambiguous. Matching models: {ambiguous}. "
+            f"Use the fully qualified name (e.g. '{ambiguous[0]}')."
+        )
+        raise ModelNotResolvedError(msg)
+
+    # 4. Substring match on normalized FQN
+    substring_matches: list[str] = [fqn for fqn in models if name_lower in fqn.lower()]
+    if len(substring_matches) == 1:
+        return substring_matches[0]
+    if len(substring_matches) > 1:
+        msg = (
+            f"Model '{name}' is ambiguous. Matching models: {sorted(substring_matches)}. "
+            "Use the fully qualified name."
+        )
+        raise ModelNotResolvedError(msg)
+
+    # No match found
+    msg = f"Model '{name}' not found across {total} models. Try search_models to discover available models."
+    raise ModelNotResolvedError(msg)
 
 
 def _model_kind_name(model: object) -> str:
@@ -166,6 +251,48 @@ def _depends_on_list(model: object) -> list[str]:
     return sorted(str(d) for d in (deps or []))
 
 
+def _extract_post_statement_indexes(fqn: str) -> list[str]:
+    """Extract CREATE INDEX statements from a model file's post_statements block.
+
+    Given a normalized FQN like ``brewgis.assessor.parcel_dasymetric_weights``,
+    derives the source file path and parses ``-- post_statements`` section for
+    ``CREATE INDEX`` lines.
+    """
+    parts = fqn.replace('"', "").split(".")
+    if len(parts) < 3:  # noqa: PLR2004
+        return []
+    schema = parts[1]
+    model_name = parts[2]
+
+    # Try .sql first, then .py
+    for ext in (".sql", ".py"):
+        path = Path(f"brewgis/sqlmesh/models/{schema}/{model_name}{ext}")
+        if path.exists():
+            break
+    else:
+        return []
+
+    indexes: list[str] = []
+    in_post_statements = False
+    try:
+        text_content = path.read_text()
+    except OSError:
+        return []
+
+    for line in text_content.splitlines():
+        stripped = line.strip()
+        if stripped == "-- post_statements":
+            in_post_statements = True
+            continue
+        if in_post_statements:
+            # Stop at next model definition or blank-line boundary
+            if stripped.startswith(("MODEL (", "@@")):
+                break
+            if "CREATE INDEX" in stripped.upper():
+                indexes.append(stripped)
+    return indexes
+
+
 # ── Tool Registration ─────────────────────────────────────────
 
 
@@ -213,10 +340,12 @@ def register_tools(server: object) -> None:  # noqa: C901, PLR0915
         """
         ctx = _context()
         models = ctx.models
-        if model_name not in models:
-            return {"error": f"Model '{model_name}' not found"}
+        try:
+            key = _resolve_model_name(model_name, models)
+        except ModelNotResolvedError as e:
+            return {"error": str(e)}
 
-        model = models[model_name]
+        model = models[key]
         upstream = _depends_on_list(model)
 
         # Compute downstream: models whose depends_on includes this model
@@ -265,7 +394,7 @@ def register_tools(server: object) -> None:  # noqa: C901, PLR0915
             }
 
         return ModelLineage(
-            model_name=model_name,
+            model_name=key,
             upstream=sorted(upstream),
             downstream=sorted(downstream),
             lineage=lineage,
@@ -278,12 +407,14 @@ def register_tools(server: object) -> None:  # noqa: C901, PLR0915
         """Get detailed info about a model: columns, audits, kind, tags, grains, depends_on."""
         ctx = _context()
         models = ctx.models
-        if model_name not in models:
-            return {"error": f"Model '{model_name}' not found"}
-        model = models[model_name]
+        try:
+            key = _resolve_model_name(model_name, models)
+        except ModelNotResolvedError as e:
+            return {"error": str(e)}
+        model = models[key]
 
         return ModelDetail(
-            fqn=model_name,
+            fqn=key,
             name=_model_name(model),
             kind=_model_kind_name(model),
             source_type=_model_source_type(model),
@@ -295,6 +426,7 @@ def register_tools(server: object) -> None:  # noqa: C901, PLR0915
             audits=_audit_names(model),
             grains=_grain_names(model),
             depends_on=_depends_on_list(model),
+            indexes=_extract_post_statement_indexes(key),
         ).model_dump()
 
     @server.tool()  # type: ignore[attr-defined]
@@ -305,22 +437,24 @@ def register_tools(server: object) -> None:  # noqa: C901, PLR0915
         """Render a model's SQL with macros expanded."""
         ctx = _context()
         models = ctx.models
-        if model_name not in models:
-            return {"error": f"Model '{model_name}' not found"}
+        try:
+            key = _resolve_model_name(model_name, models)
+        except ModelNotResolvedError as e:
+            return {"error": str(e)}
 
         try:
             rendered = ctx.render(
-                model_name,
+                key,
                 environment=environment,
                 start=None,
                 end=None,
                 execution_time=None,
                 expand=None,
             )
-            return {"model_name": model_name, "sql": str(rendered)}
+            return {"model_name": key, "sql": str(rendered)}
         except Exception as exc:
-            logger.exception("Failed to render model '%s'", model_name)
-            return {"error": f"Failed to render model '{model_name}': {exc}"}
+            logger.exception("Failed to render model '%s'", key)
+            return {"error": f"Failed to render model '{key}': {exc}"}
 
     @server.tool()  # type: ignore[attr-defined]
     def list_environments() -> list[dict[str, object]]:
@@ -459,14 +593,16 @@ def register_tools(server: object) -> None:  # noqa: C901, PLR0915
 
         if model_name:
             models = ctx.models
-            if model_name not in models:
-                return [{"error": f"Model '{model_name}' not found"}]
-            model = models[model_name]
+            try:
+                key = _resolve_model_name(model_name, models)
+            except ModelNotResolvedError as e:
+                return [{"error": str(e)}]
+            model = models[key]
             audit_names = _audit_names(model)
             return [
                 AuditSummary(
                     name=an,
-                    model_name=model_name,
+                    model_name=key,
                     description=an,
                 ).model_dump()
                 for an in audit_names
@@ -521,3 +657,75 @@ def register_tools(server: object) -> None:  # noqa: C901, PLR0915
                 )
         results.sort(key=lambda r: str(r["fqn"]))
         return results
+
+    @server.tool()  # type: ignore[attr-defined]
+    def get_model_plan_stats(
+        model_name: str,
+    ) -> dict[str, object]:
+        """Run EXPLAIN on a model and return cost/plan analysis.
+
+        Renders the model SQL, wraps it in EXPLAIN (COSTS, VERBOSE, FORMAT JSON),
+        executes the query, and extracts diagnostics via analyze_plan.
+        """
+        ctx = _context()
+        models = ctx.models
+        try:
+            key = _resolve_model_name(model_name, models)
+        except ModelNotResolvedError as e:
+            return {"error": str(e)}
+
+        try:
+            rendered = ctx.render(
+                key,
+                environment=None,
+                start=None,
+                end=None,
+                execution_time=None,
+                expand=None,
+            )
+        except Exception as exc:  # noqa: BLE001
+            return PlanStats(
+                model_name=key,
+                error=f"Failed to render model '{key}': {exc}",
+            ).model_dump()
+
+        explain_sql = (
+            f"EXPLAIN (COSTS true, VERBOSE true, FORMAT JSON)"
+            f" {rendered.sql(dialect='postgres')}"
+        )
+
+        engine = get_engine()
+        try:
+            with engine.connect() as conn, conn.begin():
+                result = conn.execute(text(explain_sql))
+                row = result.fetchone()
+        except Exception as exc:  # noqa: BLE001
+            return PlanStats(
+                model_name=key,
+                error=f"EXPLAIN failed: {exc}",
+            ).model_dump()
+
+        if not (row and row[0]):
+            return PlanStats(
+                model_name=key,
+                error="No plan returned",
+            ).model_dump()
+
+        try:
+            analysis = analyze_plan(row[0])
+        except Exception as exc:  # noqa: BLE001
+            return PlanStats(
+                model_name=key,
+                error=f"analyze_plan failed: {exc}",
+            ).model_dump()
+
+        return PlanStats(
+            model_name=key,
+            total_cost=analysis.total_cost,
+            startup_cost=analysis.startup_cost,
+            plan_rows=analysis.plan_rows,
+            node_count=analysis.node_count,
+            max_depth=analysis.max_depth,
+            seq_scans=analysis.seq_scans,
+            nested_loops=analysis.nested_loops,
+        ).model_dump()
