@@ -90,4 +90,11 @@ SELECT
     aq_death_addition AS deaths_added_air_quality,
 
     geom
-FROM input_data
+FROM input_data;
+
+-- post_statements
+  CREATE INDEX IF NOT EXISTS idx_health_impacts_geom
+  ON brewgis.analysis.health_impacts USING GIST (geom);
+  CREATE INDEX IF NOT EXISTS idx_health_impacts_parcel_id
+  ON brewgis.analysis.health_impacts (parcel_id);
+ANALYZE brewgis.analysis.health_impacts;

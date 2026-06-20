@@ -20,39 +20,7 @@ MODEL (
 -- No separate land-use exclusion mask needed — the sqft weight naturally
 -- excludes parcels with zero relevant building area.
 
-WITH wac_data AS (
-    SELECT
-        w.geoid,
-        w.emp,
-        w.emp_retail_services,
-        w.emp_restaurant,
-        w.emp_accommodation,
-        w.emp_arts_entertainment,
-        w.emp_other_services,
-        w.emp_office_services,
-        w.emp_medical_services,
-        w.emp_public_admin,
-        w.emp_education,
-        w.emp_manufacturing,
-        w.emp_wholesale,
-        w.emp_transport_warehousing,
-        w.emp_utilities,
-        w.emp_construction,
-        w.emp_agriculture,
-        w.emp_extraction,
-        w.emp_military,
-        w.emp_ret,
-        w.emp_off,
-        w.emp_pub,
-        w.emp_ind,
-        w.emp_ag,
-        w.geometry,
-        ST_Transform(w.geometry, @VAR('local_srid', 3310)) AS local_geometry,
-        ST_Envelope(ST_Transform(w.geometry, @VAR('local_srid', 3310))) AS wac_envelope
-    FROM brewgis.staging.wac_block w
-    WHERE w.geometry IS NOT NULL
-),
-
+WITH
 -- Parcel data from demographics stage (includes building sqft by type)
 parcel_with_weights AS (
     SELECT
@@ -104,7 +72,7 @@ intersections AS (
             + COALESCE(p.other_building_sqft, 0) AS total_emp_weight,
         p.area_gross
     FROM parcel_with_weights p
-    JOIN wac_data w ON ST_Intersects(p.geometry, w.geometry)
+    JOIN brewgis.staging.wac_block_projected w ON ST_Intersects(p.geometry, w.geometry)
 ),
 
 -- Per-WAC-block total weight denominators

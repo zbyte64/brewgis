@@ -37,4 +37,11 @@ SELECT
         0.0
     ) AS property_tax_revenue,
     es.geom
-FROM brewgis.analysis.core_end_state AS es
+FROM brewgis.analysis.core_end_state AS es;
+
+-- post_statements
+  CREATE INDEX IF NOT EXISTS idx_fiscal_property_tax_geom
+  ON brewgis.analysis.fiscal_property_tax USING GIST (geom);
+  CREATE INDEX IF NOT EXISTS idx_fiscal_property_tax_parcel_id
+  ON brewgis.analysis.fiscal_property_tax (parcel_id);
+ANALYZE brewgis.analysis.fiscal_property_tax;

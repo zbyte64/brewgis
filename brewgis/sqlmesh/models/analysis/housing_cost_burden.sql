@@ -38,3 +38,10 @@ FROM brewgis.analysis.core_end_state AS es;
 --   vulnerability score (0-4) mapped to risk categories.
 -- Source (dbt): brewgis/dbt_project/models/displacement_risk.sql
 -- ------------------------------------------------------------
+
+-- post_statements
+  CREATE INDEX IF NOT EXISTS idx_housing_cost_burden_geom
+  ON brewgis.analysis.housing_cost_burden USING GIST (geom);
+  CREATE INDEX IF NOT EXISTS idx_housing_cost_burden_parcel_id
+  ON brewgis.analysis.housing_cost_burden (parcel_id);
+ANALYZE brewgis.analysis.housing_cost_burden;

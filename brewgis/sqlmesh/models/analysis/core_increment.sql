@@ -80,5 +80,8 @@ FROM end_state AS es
 FULL OUTER JOIN base AS b ON es.parcel_id = b.parcel_id;
 
 -- post_statements
+  CREATE INDEX IF NOT EXISTS idx_core_increment_geom
+  ON brewgis.analysis.core_increment USING GIST (geom);
+
   CREATE INDEX IF NOT EXISTS idx_core_increment_parcel_id
   ON brewgis.analysis.core_increment (parcel_id);

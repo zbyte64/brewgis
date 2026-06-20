@@ -80,36 +80,7 @@ WITH parcel_geom AS (
     FROM brewgis.base_canvas.base_canvas_geometry bg
 ),
 
--- ── Census 2020 block data (source zones) ──────────────────────────────────
-census_blocks AS (
-    SELECT
-        geoid,
-        total_population,
-        total_housing_units,
-        geometry,
-        ST_Transform(geometry, @VAR('local_srid', 3310)) AS local_geometry,
-        ST_Envelope(ST_Transform(geometry, @VAR('local_srid', 3310))) AS local_envelope
-    FROM brewgis.staging.census_2020_block
-    WHERE geometry IS NOT NULL
-),
 
--- ── ACS block group data (for demographic averages) ────────────────────────
--- Uses brewgis.assessor.acs_block_group_projected for pre-projected geometry
--- (local_srid 3310) with a GiST index, avoiding the unindexed nested loop
--- from joining against the DuckDB-built staging table directly.
-acs_data AS (
-    SELECT
-        a.median_income,
-        a.rent_burden_pct,
-        a.pct_minority,
-        a.pct_college_educated,
-        a.cost_burden_pct,
-        p.geometry AS local_geometry,
-        ST_Envelope(p.geometry) AS local_envelope,
-        GREATEST(ST_Area(p.geometry), 1e-10) AS bg_area
-    FROM brewgis.staging.acs_block_group a
-    JOIN brewgis.assessor.acs_block_group_projected p ON a.geoid = p.geoid
-),
 
 -- ── Spatial join: parcels → Census 2020 blocks ────────────────────────────
 parcel_block_intersections AS (
@@ -131,7 +102,7 @@ parcel_block_intersections AS (
              ELSE 1.0
         END AS intersect_fraction
     FROM parcel_geom p
-    JOIN census_blocks cb ON ST_Intersects(p.geometry, cb.geometry)
+    JOIN brewgis.staging.census_2020_block_projected cb ON ST_Intersects(p.geometry, cb.geometry)
 ),
 
 -- ── Per-block total DU weight for proportional allocation ──────────────────
@@ -173,7 +144,7 @@ parcel_acs_intersections AS (
         a.cost_burden_pct,
         ST_Area(ST_ClipByBox2D(p.local_geometry, a.local_envelope)) AS intersect_area
     FROM parcel_geom p
-    JOIN acs_data a ON ST_Intersects(p.local_geometry, a.local_geometry)
+    JOIN brewgis.assessor.acs_block_group_projected a ON ST_Intersects(p.local_geometry, a.geometry)
 ),
 
 acs_allocated AS (

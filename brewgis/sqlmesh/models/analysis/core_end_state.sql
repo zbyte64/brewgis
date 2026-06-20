@@ -195,6 +195,9 @@ SELECT
 FROM computed AS c;
 
 -- post_statements
+  CREATE INDEX IF NOT EXISTS idx_core_end_state_geom
+  ON brewgis.analysis.core_end_state USING GIST (geom);
+
   CREATE INDEX IF NOT EXISTS idx_core_end_state_parcel_id
   ON brewgis.analysis.core_end_state (parcel_id);
   CREATE INDEX IF NOT EXISTS idx_core_end_state_parcel_acres_ag

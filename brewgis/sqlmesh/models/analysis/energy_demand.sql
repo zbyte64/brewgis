@@ -78,3 +78,10 @@ FROM brewgis.analysis.core_end_state AS es;
 --   L2: Impervious surface estimation (building, parking, ROW)
 -- Source (dbt): brewgis/dbt_project/models/land_consumption.sql
 -- ------------------------------------------------------------
+
+-- post_statements
+  CREATE INDEX IF NOT EXISTS idx_energy_demand_geom
+  ON brewgis.analysis.energy_demand USING GIST (geom);
+  CREATE INDEX IF NOT EXISTS idx_energy_demand_parcel_id
+  ON brewgis.analysis.energy_demand (parcel_id);
+ANALYZE brewgis.analysis.energy_demand;

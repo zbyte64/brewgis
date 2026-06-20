@@ -118,3 +118,10 @@ FROM land_use AS lu;
 --   parcels.
 -- Source (dbt): brewgis/dbt_project/models/agriculture.sql
 -- ------------------------------------------------------------
+
+-- post_statements
+  CREATE INDEX IF NOT EXISTS idx_land_consumption_geom
+  ON brewgis.analysis.land_consumption USING GIST (geom);
+  CREATE INDEX IF NOT EXISTS idx_land_consumption_parcel_id
+  ON brewgis.analysis.land_consumption (parcel_id);
+ANALYZE brewgis.analysis.land_consumption;

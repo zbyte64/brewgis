@@ -46,4 +46,11 @@ SELECT
         / NULLIF(households, 0)::numeric, 2
     ) AS infrastructure_cost_per_hh_annual,
     geom
-FROM parcel_data
+FROM parcel_data;
+
+-- post_statements
+  CREATE INDEX IF NOT EXISTS idx_sprawl_cost_geom
+  ON brewgis.analysis.sprawl_cost USING GIST (geom);
+  CREATE INDEX IF NOT EXISTS idx_sprawl_cost_parcel_id
+  ON brewgis.analysis.sprawl_cost (parcel_id);
+ANALYZE brewgis.analysis.sprawl_cost;

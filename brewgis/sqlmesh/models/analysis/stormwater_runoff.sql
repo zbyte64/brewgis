@@ -82,3 +82,10 @@ FROM runoff;
 --   relationships (~1F reduction per 10% canopy increase).
 -- Source (dbt): brewgis/dbt_project/models/tree_canopy.sql
 -- ------------------------------------------------------------
+
+-- post_statements
+  CREATE INDEX IF NOT EXISTS idx_stormwater_runoff_geom
+  ON brewgis.analysis.stormwater_runoff USING GIST (geom);
+  CREATE INDEX IF NOT EXISTS idx_stormwater_runoff_parcel_id
+  ON brewgis.analysis.stormwater_runoff (parcel_id);
+ANALYZE brewgis.analysis.stormwater_runoff;

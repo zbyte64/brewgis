@@ -40,5 +40,8 @@ SELECT
 FROM brewgis.analysis.core_end_state AS es;
 
 -- post_statements
+  CREATE INDEX IF NOT EXISTS idx_fiscal_service_costs_geom
+  ON brewgis.analysis.fiscal_service_costs USING GIST (geom);
+
   CREATE INDEX IF NOT EXISTS idx_fiscal_service_costs_parcel_id
   ON brewgis.analysis.fiscal_service_costs (parcel_id);

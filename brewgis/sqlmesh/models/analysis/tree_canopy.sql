@@ -40,3 +40,10 @@ FROM parcel_canopy;
 --   using OSM Points of Interest data.
 -- Source (dbt): brewgis/dbt_project/models/food_access.sql
 -- ------------------------------------------------------------
+
+-- post_statements
+  CREATE INDEX IF NOT EXISTS idx_tree_canopy_geom
+  ON brewgis.analysis.tree_canopy USING GIST (geom);
+  CREATE INDEX IF NOT EXISTS idx_tree_canopy_parcel_id
+  ON brewgis.analysis.tree_canopy (parcel_id);
+ANALYZE brewgis.analysis.tree_canopy;

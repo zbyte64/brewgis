@@ -86,3 +86,10 @@ WHERE
 --   Method (Schueler, 1987).
 -- Source (dbt): brewgis/dbt_project/models/stormwater_runoff.sql
 -- ------------------------------------------------------------
+
+-- post_statements
+  CREATE INDEX IF NOT EXISTS idx_agriculture_geom
+  ON brewgis.analysis.agriculture USING GIST (geom);
+  CREATE INDEX IF NOT EXISTS idx_agriculture_parcel_id
+  ON brewgis.analysis.agriculture (parcel_id);
+ANALYZE brewgis.analysis.agriculture;

@@ -24,7 +24,14 @@ SELECT
     a.geoid,
     a.hh,
     a.du,
-    ST_Transform(a.geometry, @VAR('local_srid', 3310)) AS geometry
+    a.median_income,
+    a.rent_burden_pct,
+    a.pct_minority,
+    a.pct_college_educated,
+    a.cost_burden_pct,
+    ST_Transform(a.geometry, @VAR('local_srid', 3310)) AS geometry,
+    ST_Envelope(ST_Transform(a.geometry, @VAR('local_srid', 3310))) AS local_envelope,
+    GREATEST(ST_Area(ST_Transform(a.geometry, @VAR('local_srid', 3310))), 1e-10) AS bg_area
 FROM brewgis.staging.acs_block_group a
 WHERE a.du > 0
   AND a.geometry IS NOT NULL;

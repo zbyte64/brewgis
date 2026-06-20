@@ -25,33 +25,11 @@ MODEL (
 -- k = 5 (default footprint_imputation_k)
 
 WITH
--- Parcels with both building footprint features AND assessor sales data (ground truth)
+-- Latest block group assignment per APN
 latest_block_groups AS (
     SELECT DISTINCT ON (apn) *
     FROM brewgis.assessor.parcel_block_groups
     ORDER BY apn, data_year DESC
-),
-
-known AS (
-    SELECT DISTINCT ON (pbf.apn)
-        pbf.apn,
-        pbf.geometry,
-        pbf.footprint_ratio,
-        pbf.building_count,
-        pbf.lot_size_acres,
-        pbf.land_development_category,
-        pbg.block_group_geoid,
-        pbg.tract_geoid,
-        s.property_type,
-        COALESCE(s.units, 1) AS units,
-        s.living_area AS living_sqft,
-        s.building_sf AS building_sqft
-    FROM brewgis.assessor.parcel_building_footprints pbf
-    JOIN latest_block_groups pbg ON pbf.apn = pbg.apn
-    JOIN public.sacog_assessor_sales_raw s ON pbf.apn = s.apn
-    WHERE pbf.footprint_ratio > 0
-      AND s.property_type IS NOT NULL
-      AND s.property_type != ''
 ),
 
 -- Parcels with building footprint features but NO sales data
@@ -67,8 +45,9 @@ unknown AS (
         pbg.tract_geoid
     FROM brewgis.assessor.parcel_building_footprints pbf
     JOIN latest_block_groups pbg ON pbf.apn = pbg.apn
+    LEFT JOIN brewgis.assessor.parcel_sales_features k ON pbf.apn = k.apn
     WHERE pbf.footprint_ratio > 0
-      AND NOT EXISTS (SELECT 1 FROM known WHERE known.apn = pbf.apn)
+      AND k.apn IS NULL
 ),
 
 -- Z-score statistics per (block_group, land_development_category) partition
@@ -82,7 +61,7 @@ partition_stats AS (
         AVG(k.footprint_ratio) AS m_fr,
         AVG(k.building_count) AS m_bc,
         AVG(k.lot_size_acres) AS m_ls
-    FROM known k
+    FROM brewgis.assessor.parcel_sales_features k
     GROUP BY k.block_group_geoid, k.land_development_category
 ),
 
@@ -97,7 +76,7 @@ tract_stats AS (
         AVG(k.footprint_ratio) AS m_fr,
         AVG(k.building_count) AS m_bc,
         AVG(k.lot_size_acres) AS m_ls
-    FROM known k
+    FROM brewgis.assessor.parcel_sales_features k
     GROUP BY k.tract_geoid, k.land_development_category
 ),
 
@@ -111,7 +90,7 @@ county_stats AS (
         AVG(k.footprint_ratio) AS m_fr,
         AVG(k.building_count) AS m_bc,
         AVG(k.lot_size_acres) AS m_ls
-    FROM known k
+    FROM brewgis.assessor.parcel_sales_features k
     GROUP BY k.land_development_category
 ),
 
@@ -149,7 +128,7 @@ tier1 AS (
     LEFT JOIN partition_stats ps
         ON u.block_group_geoid = ps.block_group_geoid
        AND u.land_development_category = ps.land_development_category
-    JOIN known k
+    JOIN brewgis.assessor.parcel_sales_features k
         ON u.block_group_geoid = k.block_group_geoid
        AND u.land_development_category = k.land_development_category
        AND k.footprint_ratio BETWEEN
@@ -205,7 +184,7 @@ tier2 AS (
     LEFT JOIN tract_stats ts
         ON u.tract_geoid = ts.tract_geoid
        AND u.land_development_category = ts.land_development_category
-    JOIN known k
+    JOIN brewgis.assessor.parcel_sales_features k
         ON u.tract_geoid = k.tract_geoid
        AND u.land_development_category = k.land_development_category
        AND k.footprint_ratio BETWEEN
@@ -261,7 +240,7 @@ tier3 AS (
     FROM unknown u
     LEFT JOIN county_stats cs
         ON u.land_development_category = cs.land_development_category
-    JOIN known k
+    JOIN brewgis.assessor.parcel_sales_features k
         ON u.land_development_category = k.land_development_category
        AND ST_DWithin(u.geometry, k.geometry, 5000)
        AND k.footprint_ratio BETWEEN

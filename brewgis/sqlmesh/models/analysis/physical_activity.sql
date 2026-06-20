@@ -70,4 +70,11 @@ SELECT
     ) AS active_trip_share,
 
     geom
-FROM mode_data
+FROM mode_data;
+
+-- post_statements
+  CREATE INDEX IF NOT EXISTS idx_physical_activity_geom
+  ON brewgis.analysis.physical_activity USING GIST (geom);
+  CREATE INDEX IF NOT EXISTS idx_physical_activity_parcel_id
+  ON brewgis.analysis.physical_activity (parcel_id);
+ANALYZE brewgis.analysis.physical_activity;

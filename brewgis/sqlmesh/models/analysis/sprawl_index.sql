@@ -57,3 +57,10 @@ FROM parcel_scores;
 --   cost-burden rates applied to household counts.
 -- Source (dbt): brewgis/dbt_project/models/housing_cost_burden.sql
 -- ------------------------------------------------------------
+
+-- post_statements
+  CREATE INDEX IF NOT EXISTS idx_sprawl_index_geom
+  ON brewgis.analysis.sprawl_index USING GIST (geom);
+  CREATE INDEX IF NOT EXISTS idx_sprawl_index_parcel_id
+  ON brewgis.analysis.sprawl_index (parcel_id);
+ANALYZE brewgis.analysis.sprawl_index;

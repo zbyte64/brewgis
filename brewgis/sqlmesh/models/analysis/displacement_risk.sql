@@ -44,3 +44,10 @@ SELECT
     END AS displacement_risk_category,
     geom
 FROM parcel_equity;
+
+-- post_statements
+  CREATE INDEX IF NOT EXISTS idx_displacement_risk_geom
+  ON brewgis.analysis.displacement_risk USING GIST (geom);
+  CREATE INDEX IF NOT EXISTS idx_displacement_risk_parcel_id
+  ON brewgis.analysis.displacement_risk (parcel_id);
+ANALYZE brewgis.analysis.displacement_risk;

@@ -32,4 +32,11 @@ FROM brewgis.analysis.fiscal_property_tax AS f1
 FULL OUTER JOIN brewgis.analysis.fiscal_sales_tax AS f2
     ON f1.parcel_id = f2.parcel_id
 FULL OUTER JOIN brewgis.analysis.fiscal_service_costs AS f3
-    ON f1.parcel_id = f3.parcel_id
+    ON f1.parcel_id = f3.parcel_id;
+
+-- post_statements
+  CREATE INDEX IF NOT EXISTS idx_fiscal_net_impact_geom
+  ON brewgis.analysis.fiscal_net_impact USING GIST (geom);
+  CREATE INDEX IF NOT EXISTS idx_fiscal_net_impact_parcel_id
+  ON brewgis.analysis.fiscal_net_impact (parcel_id);
+ANALYZE brewgis.analysis.fiscal_net_impact;

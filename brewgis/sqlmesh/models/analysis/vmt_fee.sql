@@ -45,4 +45,11 @@ SELECT
     -- Net revenue after exemption
     ROUND((vmt_total * (1.0 - @vmt_exempt_pct / 100.0) * @vmt_fee_rate_dollars_per_vmt)::numeric, 2) AS net_revenue,
     geom
-FROM vmt_data
+FROM vmt_data;
+
+-- post_statements
+  CREATE INDEX IF NOT EXISTS idx_vmt_fee_geom
+  ON brewgis.analysis.vmt_fee USING GIST (geom);
+  CREATE INDEX IF NOT EXISTS idx_vmt_fee_parcel_id
+  ON brewgis.analysis.vmt_fee (parcel_id);
+ANALYZE brewgis.analysis.vmt_fee;

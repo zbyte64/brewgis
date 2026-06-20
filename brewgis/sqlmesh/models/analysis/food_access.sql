@@ -45,3 +45,10 @@ FROM food_data;
 --   mix (presence of both population and employment).
 -- Source (dbt): brewgis/dbt_project/models/sprawl_index.sql
 -- ------------------------------------------------------------
+
+-- post_statements
+  CREATE INDEX IF NOT EXISTS idx_food_access_geom
+  ON brewgis.analysis.food_access USING GIST (geom);
+  CREATE INDEX IF NOT EXISTS idx_food_access_parcel_id
+  ON brewgis.analysis.food_access (parcel_id);
+ANALYZE brewgis.analysis.food_access;

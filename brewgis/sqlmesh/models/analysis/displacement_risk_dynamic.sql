@@ -64,4 +64,11 @@ SELECT
     'same' AS risk_change_vs_base,
     0 AS vulnerability_change,
     geom
-FROM scenario_equity
+FROM scenario_equity;
+
+-- post_statements
+  CREATE INDEX IF NOT EXISTS idx_displacement_risk_dynamic_geom
+  ON brewgis.analysis.displacement_risk_dynamic USING GIST (geom);
+  CREATE INDEX IF NOT EXISTS idx_displacement_risk_dynamic_parcel_id
+  ON brewgis.analysis.displacement_risk_dynamic (parcel_id);
+ANALYZE brewgis.analysis.displacement_risk_dynamic;

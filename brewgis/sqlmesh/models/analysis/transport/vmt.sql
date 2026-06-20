@@ -43,4 +43,11 @@ SELECT
     auto_trips,
     avg_trip_length_km * @transport_km_to_mi AS avg_trip_length_mi,
     geom
-FROM mode_trips
+FROM mode_trips;
+
+-- post_statements
+  CREATE INDEX IF NOT EXISTS idx_transport_vmt_geom
+  ON brewgis.analysis.transport_vmt USING GIST (geom);
+  CREATE INDEX IF NOT EXISTS idx_transport_vmt_parcel_id
+  ON brewgis.analysis.transport_vmt (parcel_id);
+ANALYZE brewgis.analysis.transport_vmt;

@@ -74,4 +74,11 @@ SELECT
     (trips_res + trips_nonres_raw * (1.0 - pass_by_trip_pct)) * @transport_hbo_pct AS trips_hbo,
     (trips_res + trips_nonres_raw * (1.0 - pass_by_trip_pct)) * @transport_nhb_pct AS trips_nhb,
     geom
-FROM trip_rates
+FROM trip_rates;
+
+-- post_statements
+  CREATE INDEX IF NOT EXISTS idx_trip_generation_geom
+  ON brewgis.analysis.trip_generation USING GIST (geom);
+  CREATE INDEX IF NOT EXISTS idx_trip_generation_parcel_id
+  ON brewgis.analysis.trip_generation (parcel_id);
+ANALYZE brewgis.analysis.trip_generation;
