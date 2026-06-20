@@ -49,33 +49,17 @@ WITH assessor_parcels AS (
 
 
 
--- Deduplicated sales data (merged deduped_sales into sales_data)
+-- Deduplicated sales data
 sales_data AS (
     SELECT
         apn,
-        living_area AS actual_living_sqft,
-        building_sf AS actual_building_sqft,
+        actual_living_sqft,
+        actual_building_sqft,
         property_type,
-        lot_size_acres AS sales_lot_size_acres,
+        sales_lot_size_acres,
         units
-    FROM (
-        SELECT *,
-            ROW_NUMBER() OVER (
-                PARTITION BY apn
-                ORDER BY
-                    CASE
-                        WHEN living_area IS NOT NULL AND building_sf IS NOT NULL AND units IS NOT NULL THEN 0
-                        WHEN living_area IS NOT NULL THEN 1
-                        WHEN building_sf IS NOT NULL THEN 2
-                        ELSE 3
-                    END,
-                    year_built DESC NULLS LAST
-            ) AS rn
-        FROM public.sacog_assessor_sales_raw
-        WHERE (living_area IS NOT NULL OR building_sf IS NOT NULL)
-          AND apn IN (SELECT apn FROM assessor_parcels)
-    ) dedup
-    WHERE rn = 1
+    FROM brewgis.assessor.sacog_assessor_sales_deduped
+    WHERE apn IN (SELECT apn FROM assessor_parcels)
 ),
 
 building_metrics AS (

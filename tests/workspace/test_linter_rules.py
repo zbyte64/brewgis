@@ -14,6 +14,9 @@ from sqlmesh.core.linter.rule import RuleViolation
 from sqlmesh.core.model import Model
 from sqlmesh.core.model import create_sql_model
 
+from brewgis.sqlmesh.linter.rules import CrossJoinLikeJoin
+from brewgis.sqlmesh.linter.rules import StaticComplexityScore
+from brewgis.sqlmesh.linter.rules import UnfilteredTableScan
 from brewgis.sqlmesh.linter.rules import UnindexedGroupBy
 from brewgis.sqlmesh.linter.rules import UnindexedJoin
 from brewgis.sqlmesh.linter.rules import UnindexedWhereClause
@@ -748,3 +751,496 @@ class TestCteSpatialJoin:
         )
         violations = _check(src, {})
         assert violations == []
+
+
+# ── Helper functions for new rules ─────────────────────────────────
+
+
+def _check_cross_join(
+    source_model: Model,
+    ref_models: dict[str, Model] | None = None,
+) -> list[RuleViolation]:
+    """Run ``CrossJoinLikeJoin`` on ``source_model``."""
+    context = _FakeContext(ref_models or {})
+    rule = CrossJoinLikeJoin(context)  # type: ignore[arg-type]
+    result = rule.check_model(source_model)
+    if result is None:
+        return []
+    if isinstance(result, list):
+        return result
+    return [result]
+
+
+def _check_unfiltered_scan(
+    source_model: Model,
+    ref_models: dict[str, Model] | None = None,
+) -> list[RuleViolation]:
+    """Run ``UnfilteredTableScan`` on ``source_model``."""
+    context = _FakeContext(ref_models or {})
+    rule = UnfilteredTableScan(context)  # type: ignore[arg-type]
+    result = rule.check_model(source_model)
+    if result is None:
+        return []
+    if isinstance(result, list):
+        return result
+    return [result]
+
+
+def _check_complexity(
+    source_model: Model,
+    ref_models: dict[str, Model] | None = None,
+) -> list[RuleViolation]:
+    """Run ``StaticComplexityScore`` on ``source_model``."""
+    context = _FakeContext(ref_models or {})
+    rule = StaticComplexityScore(context)  # type: ignore[arg-type]
+    result = rule.check_model(source_model)
+    if result is None:
+        return []
+    if isinstance(result, list):
+        return result
+    return [result]
+
+
+# ── CrossJoinLikeJoin Tests ───────────────────────────────────────────
+
+
+class TestCrossJoinLikeJoin:
+    """CrossJoinLikeJoin detects patterns that produce nested loops."""
+
+    def test_explicit_cross_join_violates(self) -> None:
+        """CROSS JOIN against a table → violation."""
+        ref = _make_ref_model(
+            "brewdb.public.parcels",
+            {"parcel_id": "BIGINT"},
+        )
+        src = _make_source_model(
+            "brewdb.public.analysis",
+            """
+            SELECT p.*
+            FROM source_table AS s
+            CROSS JOIN brewdb.public.parcels AS p
+            """,
+            {"parcel_id": "BIGINT", "result": "BIGINT"},
+        )
+        violations = _check_cross_join(src, {"brewdb.public.parcels": ref})
+        assert len(violations) == 1
+        assert "CROSS JOIN" in _violation_msg(violations[0])
+
+    def test_comma_join_violates(self) -> None:
+        """FROM t1, t2 comma join → violation."""
+        src = _make_source_model(
+            "brewdb.public.analysis",
+            """
+            SELECT *
+            FROM source_table AS s, brewdb.public.parcels AS p
+            """,
+            {"parcel_id": "BIGINT", "result": "BIGINT"},
+        )
+        violations = _check_cross_join(src, {})
+        assert len(violations) == 1
+        assert "Comma join" in _violation_msg(violations[0])
+
+    def test_on_true_violates(self) -> None:
+        """JOIN ON TRUE → violation."""
+        ref = _make_ref_model(
+            "brewdb.public.parcels",
+            {"parcel_id": "BIGINT"},
+        )
+        src = _make_source_model(
+            "brewdb.public.analysis",
+            """
+            SELECT p.*
+            FROM source_table AS s
+            JOIN brewdb.public.parcels AS p ON TRUE
+            """,
+            {"parcel_id": "BIGINT", "result": "BIGINT"},
+        )
+        violations = _check_cross_join(src, {"brewdb.public.parcels": ref})
+        assert len(violations) == 1
+        assert "ON TRUE" in _violation_msg(violations[0]).upper()
+
+    def test_range_join_unindexed_violates(self) -> None:
+        """Range operator (>) on unindexed column → violation."""
+        ref = _make_ref_model(
+            "brewdb.public.parcels",
+            {"parcel_id": "BIGINT", "val": "BIGINT"},
+            post_statements=[],
+        )
+        src = _make_source_model(
+            "brewdb.public.analysis",
+            """
+            SELECT s.*
+            FROM source_table AS s
+            JOIN brewdb.public.parcels AS p ON s.val > p.val
+            """,
+            {"parcel_id": "BIGINT", "val": "BIGINT", "result": "BIGINT"},
+        )
+        violations = _check_cross_join(src, {"brewdb.public.parcels": ref})
+        assert len(violations) == 1
+        assert "range join" in _violation_msg(violations[0]).lower()
+
+    def test_range_join_indexed_passes(self) -> None:
+        """Range operator (>) on indexed column → no violation."""
+        ref = _make_ref_model(
+            "brewdb.public.parcels",
+            {"parcel_id": "BIGINT", "val": "BIGINT"},
+            post_statements=[
+                "CREATE INDEX idx_val ON brewdb.public.parcels (val)",
+            ],
+        )
+        src = _make_source_model(
+            "brewdb.public.analysis",
+            """
+            SELECT s.*
+            FROM source_table AS s
+            JOIN brewdb.public.parcels AS p ON s.val > p.val
+            """,
+            {"parcel_id": "BIGINT", "val": "BIGINT", "result": "BIGINT"},
+        )
+        violations = _check_cross_join(src, {"brewdb.public.parcels": ref})
+        assert violations == []
+
+    def test_indexed_eq_join_passes(self) -> None:
+        """Equi-join on indexed column → no violation (handled by UnindexedJoin)."""
+        ref = _make_ref_model(
+            "brewdb.public.parcels",
+            {"parcel_id": "BIGINT"},
+            post_statements=[
+                "CREATE INDEX idx_id ON brewdb.public.parcels (parcel_id)",
+            ],
+        )
+        src = _make_source_model(
+            "brewdb.public.analysis",
+            """
+            SELECT s.*
+            FROM source_table AS s
+            JOIN brewdb.public.parcels AS p ON s.parcel_id = p.parcel_id
+            """,
+            {"parcel_id": "BIGINT", "result": "BIGINT"},
+        )
+        violations = _check_cross_join(src, {"brewdb.public.parcels": ref})
+        assert violations == []
+
+    def test_lateral_join_skipped(self) -> None:
+        """CROSS JOIN LATERAL → no violation (intentional optimization)."""
+        src = _make_source_model(
+            "brewdb.public.analysis",
+            """
+            SELECT s.*
+            FROM source_table AS s
+            CROSS JOIN LATERAL (
+                SELECT p.* FROM brewdb.public.parcels p
+            ) AS sub
+            """,
+            {"parcel_id": "BIGINT", "result": "BIGINT"},
+        )
+        violations = _check_cross_join(src, {})
+        assert violations == []
+
+    def test_aggregate_cte_cross_join_skipped(self) -> None:
+        """CROSS JOIN on aggregate CTE (1 row) → no violation."""
+        src = _make_source_model(
+            "brewdb.public.analysis",
+            """
+            WITH totals AS (
+                SELECT SUM(val) AS total FROM source_table
+            )
+            SELECT s.*
+            FROM source_table AS s
+            CROSS JOIN totals AS t
+            """,
+            {"val": "BIGINT", "total": "BIGINT"},
+        )
+        violations = _check_cross_join(src, {})
+        assert violations == []
+
+
+# ── UnfilteredTableScan Tests ─────────────────────────────────────────
+
+
+class TestUnfilteredTableScan:
+    """UnfilteredTableScan detects models referencing base tables without filters."""
+
+    def test_no_where_on_base_table_violates(self) -> None:
+        """CROSS JOIN on base table without filter → violation."""
+        src = _make_source_model(
+            "brewdb.public.analysis",
+            """
+            SELECT p.*
+            FROM source_table AS s
+            CROSS JOIN staging.parcels AS p
+            """,
+            {"parcel_id": "BIGINT", "result": "BIGINT"},
+        )
+        violations = _check_unfiltered_scan(src, {})
+        assert len(violations) == 1
+        assert "staging" in _violation_msg(violations[0])
+
+    def test_where_clause_passes(self) -> None:
+        """Base table filtered by WHERE → no violation."""
+        src = _make_source_model(
+            "brewdb.public.analysis",
+            """
+            SELECT s.*
+            FROM staging.parcels AS p
+            JOIN source_table AS s ON s.parcel_id = p.parcel_id
+            WHERE p.owner_id = 42
+            """,
+            {"parcel_id": "BIGINT", "owner_id": "BIGINT", "result": "BIGINT"},
+        )
+        violations = _check_unfiltered_scan(src, {})
+        assert violations == []
+
+    def test_on_clause_as_filter_passes(self) -> None:
+        """JOIN ON condition on base table counts as filter → no violation."""
+        src = _make_source_model(
+            "brewdb.public.analysis",
+            """
+            SELECT s.*
+            FROM source_table AS s
+            JOIN staging.parcels AS p ON p.parcel_id = s.parcel_id
+            """,
+            {"parcel_id": "BIGINT", "result": "BIGINT"},
+        )
+        violations = _check_unfiltered_scan(src, {})
+        assert violations == []
+
+    def test_cte_reference_skipped(self) -> None:
+        """Join against CTE → no violation."""
+        src = _make_source_model(
+            "brewdb.public.analysis",
+            """
+            WITH filtered AS (
+                SELECT * FROM staging.parcels WHERE owner_id = 42
+            )
+            SELECT f.*
+            FROM filtered AS f
+            JOIN source_table AS s ON s.parcel_id = f.parcel_id
+            """,
+            {"parcel_id": "BIGINT", "owner_id": "BIGINT", "result": "BIGINT"},
+        )
+        violations = _check_unfiltered_scan(src, {})
+        assert violations == []
+
+    def test_non_base_schema_skipped(self) -> None:
+        """Table in non-base schema → no violation."""
+        src = _make_source_model(
+            "brewdb.public.analysis",
+            """
+            SELECT s.*
+            FROM comparison.some_table AS t
+            JOIN source_table AS s ON s.id = t.id
+            """,
+            {"id": "BIGINT", "result": "BIGINT"},
+        )
+        violations = _check_unfiltered_scan(src, {})
+        assert violations == []
+
+    def test_single_table_passthrough_skipped(self) -> None:
+        """SELECT * FROM base table alone → no violation (intentional load)."""
+        src = _make_source_model(
+            "brewdb.public.shim",
+            "SELECT parcel_id, owner_id FROM staging.source_table",
+            {"parcel_id": "BIGINT", "owner_id": "BIGINT"},
+        )
+        violations = _check_unfiltered_scan(src, {})
+        assert violations == []
+
+    def test_public_table_flagged_with_note(self) -> None:
+        """public.* external table without filter → flagged with external note."""
+        src = _make_source_model(
+            "brewdb.public.analysis",
+            """
+            SELECT s.*
+            FROM source_table AS s
+            CROSS JOIN public.built_forms AS bf
+            """,
+            {"id": "BIGINT", "result": "BIGINT"},
+        )
+        violations = _check_unfiltered_scan(src, {})
+        assert len(violations) == 1
+        assert "Cannot verify indexes" in _violation_msg(violations[0])
+
+
+# ── StaticComplexityScore Tests ─────────────────────────────────------
+
+
+class TestStaticComplexityScore:
+    """StaticComplexityScore assigns heuristic cost from AST topology."""
+
+    def test_simple_model_below_threshold(self) -> None:
+        """Single table, no complexity → no violation."""
+        src = _make_source_model(
+            "brewdb.public.simple",
+            "SELECT id, name FROM source_table",
+            {"id": "BIGINT", "name": "TEXT"},
+        )
+        violations = _check_complexity(src, {})
+        assert violations == []
+
+    def test_complex_model_above_threshold(self) -> None:
+        """5+ joins, subqueries, window fns → violation with score > 25."""
+        ref = _make_ref_model(
+            "brewdb.public.parcels",
+            {"parcel_id": "BIGINT", "owner_id": "BIGINT", "zone": "TEXT"},
+        )
+        src = _make_source_model(
+            "brewdb.public.analysis",
+            """
+            WITH ranked AS (
+                SELECT *, ROW_NUMBER() OVER (PARTITION BY zone ORDER BY val DESC) AS rn
+                FROM source_table
+            )
+            SELECT DISTINCT p.*, r.rn
+            FROM ranked AS r
+            JOIN brewdb.public.parcels AS p ON r.parcel_id = p.parcel_id
+            LEFT JOIN staging.zones AS z ON p.zone = z.code
+            LEFT JOIN staging.data AS d ON p.parcel_id = d.pid
+            LEFT JOIN staging.extra AS e ON p.parcel_id = e.pid
+            LEFT JOIN staging.more AS m ON p.parcel_id = m.pid
+            LEFT JOIN staging.another AS a ON p.parcel_id = a.pid
+            ORDER BY p.owner_id
+            """,
+            {
+                "parcel_id": "BIGINT",
+                "owner_id": "BIGINT",
+                "zone": "TEXT",
+                "rn": "BIGINT",
+            },
+        )
+        violations = _check_complexity(src, {"brewdb.public.parcels": ref})
+        assert len(violations) == 1
+        msg = _violation_msg(violations[0])
+        assert "Complexity score" in msg
+        assert "joins" in msg
+        assert "window fns" in msg
+        assert "DISTINCT" in msg
+
+    def test_score_in_message(self) -> None:
+        """Violation text includes score number."""
+        ref = _make_ref_model(
+            "brewdb.public.parcels",
+            {"parcel_id": "BIGINT"},
+        )
+        src = _make_source_model(
+            "brewdb.public.analysis",
+            """
+            SELECT p.*
+            FROM source_table AS s
+            JOIN brewdb.public.parcels AS p ON s.parcel_id = p.parcel_id
+            JOIN staging.other AS o ON p.parcel_id = o.pid
+            JOIN staging.final AS f ON p.parcel_id = f.pid
+            JOIN staging.extra AS e ON p.parcel_id = e.pid
+            JOIN staging.more AS m ON p.parcel_id = m.pid
+            """,
+            {"parcel_id": "BIGINT", "result": "BIGINT"},
+        )
+        violations = _check_complexity(src, {"brewdb.public.parcels": ref})
+        # 4 tables + 4 joins = 4*5 + 4*2 = 28 > 25
+        assert len(violations) == 1
+        msg = _violation_msg(violations[0])
+        assert "Complexity score" in msg
+        assert "5 joins" in msg
+
+    def test_unindexed_join_adds_penalty(self) -> None:
+        """Unindexed join column adds +10 penalty."""
+        ref = _make_ref_model(
+            "brewdb.public.parcels",
+            {"parcel_id": "BIGINT", "val": "BIGINT"},
+            post_statements=[],
+        )
+        src = _make_source_model(
+            "brewdb.public.analysis",
+            """
+            SELECT s.*
+            FROM source_table AS s
+            JOIN brewdb.public.parcels AS p ON s.parcel_id = p.parcel_id
+            JOIN staging.other AS o ON p.parcel_id = o.pid
+            JOIN staging.extra AS e ON p.parcel_id = e.pid
+            """,
+            {"parcel_id": "BIGINT", "val": "BIGINT", "result": "BIGINT"},
+            deps={"brewdb.public.parcels"},
+        )
+        violations = _check_complexity(src, {"brewdb.public.parcels": ref})
+        # 3 tables + 2 joins + 1 unindexed = 15 + 4 + 10 = 29 > 25
+        assert len(violations) >= 1
+
+    def test_full_outer_join_expensive(self) -> None:
+        """FULL OUTER JOIN → +15 penalty, likely above threshold."""
+        src = _make_source_model(
+            "brewdb.public.analysis",
+            """
+            SELECT *
+            FROM source_table AS s
+            FULL OUTER JOIN staging.other AS o ON s.id = o.id
+            JOIN staging.third AS t ON s.id = t.id
+            """,
+            {"id": "BIGINT", "result": "BIGINT"},
+        )
+        violations = _check_complexity(src, {})
+        assert len(violations) == 1
+        msg = _violation_msg(violations[0])
+        assert "FULL OUTER" in msg
+
+    def test_ctes_add_cost(self) -> None:
+        """CTEs add +1 per CTE to the score."""
+        src = _make_source_model(
+            "brewdb.public.analysis",
+            """
+            WITH cte1 AS (SELECT * FROM source_table),
+                 cte2 AS (SELECT * FROM cte1),
+                 cte3 AS (SELECT * FROM cte2)
+            SELECT *
+            FROM cte3 AS c
+            JOIN staging.other AS o ON c.id = o.id
+            """,
+            {"id": "BIGINT", "result": "BIGINT"},
+        )
+        violations = _check_complexity(src, {})
+        assert len(violations) == 1
+        msg = _violation_msg(violations[0])
+        assert "3 CTEs" in msg
+
+    def test_view_models_cheap(self) -> None:
+        """VIEW models → -5 penalty, may keep score below threshold."""
+        ref = _make_ref_model(
+            "brewdb.public.parcels",
+            {"parcel_id": "BIGINT"},
+        )
+        src = _make_source_model(
+            "brewdb.public.analysis",
+            """
+            SELECT s.*
+            FROM source_table AS s
+            JOIN brewdb.public.parcels AS p ON s.parcel_id = p.parcel_id
+            """,
+            {"parcel_id": "BIGINT", "result": "BIGINT"},
+        )
+        violations = _check_complexity(src, {"brewdb.public.parcels": ref})
+        assert len(violations) <= 1
+
+    def test_error_threshold(self) -> None:
+        """Very high complexity → Error severity in message."""
+        src = _make_source_model(
+            "brewdb.public.analysis",
+            """
+            WITH c1 AS (SELECT * FROM source_table),
+                 c2 AS (SELECT * FROM c1),
+                 c3 AS (SELECT * FROM c2),
+                 c4 AS (SELECT * FROM c3),
+                 c5 AS (SELECT * FROM c4)
+            SELECT DISTINCT *
+            FROM c5
+            CROSS JOIN staging.t1
+            CROSS JOIN staging.t2
+            CROSS JOIN staging.t3
+            CROSS JOIN staging.t4
+            CROSS JOIN staging.t5
+            CROSS JOIN staging.t6
+            """,
+            {"id": "BIGINT", "result": "BIGINT"},
+        )
+        violations = _check_complexity(src, {})
+        assert len(violations) == 1
+        msg = _violation_msg(violations[0])
+        assert "Complexity score" in msg

@@ -804,3 +804,574 @@ def _func_args(func: exp.Func) -> list[exp.Expression]:
         if isinstance(val, exp.Expression):
             args.append(val)
     return args
+
+
+# ── Additional helpers ────────────────────────────────────────────────
+
+
+_RANGE_OPERATORS = frozenset({"GT", "GTE", "LT", "LTE", "NEQ", "Like", "ILIKE"})
+
+_BASE_SCHEMAS = frozenset({"staging", "base_canvas", "assessor", "nlcd"})
+
+
+_AGGREGATE_FUNCS = frozenset({"AVG", "SUM", "COUNT", "MIN", "MAX"})
+
+
+def _is_comma_join(query: exp.Expr) -> bool:
+    """Check if FROM clause contains comma-separated tables (implicit CROSS JOIN)."""
+    for join in query.find_all(exp.Join):
+        kind = join.args.get("kind") or ""
+        on = join.args.get("on")
+        # Comma join = empty kind with no ON clause (regular JOIN has kind="" but does have ON).
+        if kind == "" and on is None:
+            return True
+    return False
+
+
+def _is_literal_true(on: exp.Expr) -> bool:
+    """Check if an ON condition is a literal TRUE (not a column comparison)."""
+    if isinstance(on, exp.Boolean) and on.this is True:
+        return True
+    if isinstance(on, exp.Boolean):
+        return bool(on.this)
+    # Check for `1=1` pattern.
+    if isinstance(on, exp.EQ):
+        left = on.left
+        right = on.right
+        if isinstance(left, exp.Literal) and isinstance(right, exp.Literal):
+            try:
+                return int(left.this) == int(right.this)
+            except (ValueError, TypeError):
+                pass
+    return False
+
+
+def _is_aggregate_cte(query: exp.Expr, cte_name: str) -> bool:
+    """Check if a CTE produces exactly 1 row (aggregate without GROUP BY)."""
+    with_clause = query.args.get("with_")
+    if with_clause is None:
+        return False
+    for cte in with_clause.args.get("expressions", []):
+        alias = cte.args.get("alias")
+        if alias is None or alias.name.lower() != cte_name.lower():
+            continue
+        cte_body = cte.args.get("this")
+        if cte_body is None:
+            continue
+        # Check for aggregate funcs without GROUP BY.
+        has_agg = any(
+            isinstance(node, (exp.Avg, exp.Sum, exp.Count, exp.Min, exp.Max))
+            for node in cte_body.find_all(exp.Func)
+        )
+        has_group = cte_body.find(exp.Group) is not None
+        if has_agg and not has_group:
+            return True
+    return False
+
+
+# ── CrossJoinLikeJoin ────────────────────────────────────────────────
+
+
+class CrossJoinLikeJoin(Rule):
+    """Detects JOIN patterns that PostgreSQL's planner will almost
+    certainly execute as nested loops:
+
+    * **Explicit CROSS JOIN** — always produces a nested loop.
+    * **Comma joins** (``FROM t1, t2``) — implicit CROSS JOIN.
+    * **ON TRUE** — ``JOIN t ON true`` / ``JOIN t ON 1=1``
+    * **Range-operator joins on unindexed columns** — ``a.col > b.col``
+      where the column has no index.
+
+    Skips LATERAL joins (deliberate optimization pattern) and CROSS JOIN
+    against aggregate CTEs (guaranteed single-row).
+    """
+
+    def check_model(self, model: Model) -> RuleViolation | list[RuleViolation] | None:
+        if not isinstance(model, SqlModel):
+            return None
+
+        query = model.query
+        if query is None:
+            return None
+
+        violations: list[RuleViolation] = []
+        cte_names = _get_cte_names(query)
+
+        # Check comma joins first.
+        if _is_comma_join(query):
+            for join in query.find_all(exp.Join):
+                kind = join.args.get("kind") or ""
+                on = join.args.get("on")
+                if kind == "" and on is None:
+                    table = join.this
+                    if isinstance(table, exp.Table):
+                        violations.append(
+                            self.violation(
+                                f"Comma join (implicit CROSS JOIN) against "
+                                f"``{table.alias_or_name}`` — will produce nested"
+                                f" loops. Add an explicit JOIN condition, or use"
+                                f" a separate CTE to pre-filter the table."
+                            )
+                        )
+
+        # Check each explicit JOIN.
+        for join in query.find_all(exp.Join):
+            violation = self._check_join(join, model, cte_names, query)
+            if violation is not None:
+                if isinstance(violation, list):
+                    violations.extend(violation)
+                else:
+                    violations.append(violation)
+
+        if not violations:
+            return None
+        if len(violations) == 1:
+            return violations[0]
+        return violations
+
+    def _check_join(
+        self,
+        join: exp.Join,
+        model: Model,
+        cte_names: frozenset[str],
+        query: exp.Expr,
+    ) -> RuleViolation | list[RuleViolation] | None:
+        table = join.this
+        if not isinstance(table, exp.Table):
+            return None
+
+        kind = join.args.get("kind") or ""
+
+        # Skip LATERAL joins — intentional optimization.
+        if "LATERAL" in kind.upper():
+            return None
+
+        # Skip dynamic/variable table references.
+        if table.sql().startswith("@"):
+            return None
+
+        # Handle explicit CROSS JOIN.
+        if "CROSS" in kind.upper():
+            # Check if target is a CTE.
+            if table.name.lower() in cte_names:
+                if _is_aggregate_cte(query, table.name):
+                    # Aggregate CTE produces 1 row — skip.
+                    return None
+                # Non-aggregate CTE — downgrade to info.
+                return self.violation(
+                    f"CROSS JOIN against CTE ``{table.alias_or_name}`` — verify"
+                    f" this CTE produces few rows."
+                )
+            return self.violation(
+                f"CROSS JOIN against ``{table.alias_or_name}`` — will produce"
+                f" nested loops. Add an explicit JOIN condition, or use a"
+                f" separate CTE to pre-filter the table."
+            )
+
+        # Skip comma joins (already handled above).
+        if kind == "":
+            on = join.args.get("on")
+            if on is None:
+                return None
+
+        on = join.args.get("on")
+        if on is None:
+            return None
+
+        # Check for ON TRUE / ON 1=1.
+        if _is_literal_true(on):
+            return self.violation(
+                f"JOIN ON TRUE against ``{table.alias_or_name}`` — will produce"
+                f" nested loops. Add a meaningful JOIN condition."
+            )
+
+        # Check for range operators on unindexed columns.
+        return self._check_range_operators(model, on, table)
+
+    def _check_range_operators(
+        self,
+        model: Model,
+        on: exp.Expr,
+        table: exp.Table,
+    ) -> RuleViolation | list[RuleViolation] | None:
+        """Check ON clause for range operators (>, <, >=, <=, !=, LIKE, ILIKE)
+        on columns that lack indexes."""
+        fqn = _table_fqn(table, model)
+        if fqn is None:
+            return None
+
+        # Try to find the referenced model.
+        ref_model = _get_model(self.context, fqn)
+        if ref_model is None or not isinstance(ref_model, SqlModel):
+            return None
+
+        indexed_cols = _get_indexed_columns(ref_model)
+        join_alias = table.alias_or_name
+
+        violations: list[RuleViolation] = []
+
+        for node in on.find_all(exp.Binary):
+            if node.key.upper() in _RANGE_OPERATORS:
+                for col in node.find_all(exp.Column):
+                    if col.table == join_alias:
+                        col_name = col.name
+                        if col_name not in indexed_cols:
+                            violations.append(
+                                self.violation(
+                                    f"Range join (``{node.key}``) against "
+                                    f"``{fqn}`` on unindexed column "
+                                    f"``{col_name}`` — will likely produce"
+                                    f" nested loops. Add a B-tree index on this"
+                                    f" column."
+                                )
+                            )
+
+        if not violations:
+            return None
+        if len(violations) == 1:
+            return violations[0]
+        return violations
+
+
+# ── UnfilteredTableScan ──────────────────────────────────────────────
+
+
+class UnfilteredTableScan(Rule):
+    """Flags models that reference base-table models (in ``staging/``,
+    ``base_canvas/``, ``assessor/``, ``nlcd/`` schemas) without any WHERE
+    or JOIN ON clause restricting them. This pattern nearly always produces
+    sequential scans on large production tables.
+
+    A WHERE clause, JOIN ON condition, or HAVING clause qualifies as a
+    filter — any condition that restricts rows from the base table.
+
+    Skips:
+    * Single-source passthrough models (``SELECT * FROM staging.parcels``)
+    * Models that only reference tables via CTEs (intermediate, not base)
+    """
+
+    def check_model(self, model: Model) -> RuleViolation | list[RuleViolation] | None:
+        if not isinstance(model, SqlModel):
+            return None
+
+        query = model.query
+        if query is None:
+            return None
+
+        # Build alias → table FQN map (only from main FROM/JOIN, not inside CTE bodies).
+        alias_map: dict[str, str] = {}
+        from_node = query.args.get("from_")
+        if from_node is not None:
+            t = from_node.this
+            if isinstance(t, exp.Table):
+                fqn = _table_fqn(t, model)
+                if fqn:
+                    alias_map[t.alias_or_name] = fqn
+        for join in query.args.get("joins", []):
+            t = join.this
+            if isinstance(t, exp.Table):
+                fqn = _table_fqn(t, model)
+                if fqn:
+                    alias_map[t.alias_or_name] = fqn
+
+        cte_names = _get_cte_names(query)
+
+        # Collect all ON-clause column references per alias.
+        on_referenced_aliases: set[str] = set()
+        for join in query.find_all(exp.Join):
+            on = join.args.get("on")
+            if on is not None:
+                for col in on.find_all(exp.Column):
+                    if col.table:
+                        on_referenced_aliases.add(col.table)
+
+        # Collect all WHERE clause column references per alias.
+        where = query.args.get("where")
+        where_referenced_aliases: set[str] = set()
+        if where is not None:
+            for col in where.find_all(exp.Column):
+                if col.table:
+                    where_referenced_aliases.add(col.table)
+
+        # Collect all HAVING clause column references per alias.
+        having = query.args.get("having")
+        having_referenced_aliases: set[str] = set()
+        if having is not None:
+            for col in having.find_all(exp.Column):
+                if col.table:
+                    having_referenced_aliases.add(col.table)
+
+        filtered_aliases = (
+            on_referenced_aliases | where_referenced_aliases | having_referenced_aliases
+        )
+
+        # Check if this is a single-source passthrough (no JOIN, no filter).
+        tables = list(query.find_all(exp.Table))
+        joins = list(query.find_all(exp.Join))
+        is_passthrough = len(tables) == 1 and len(joins) == 0
+
+        violations: list[RuleViolation] = []
+
+        for alias, fqn in alias_map.items():
+            # Skip CTE references.
+            if alias.lower() in cte_names:
+                continue
+
+            # Parse FQN to determine schema (strip quotes for comparison).
+            parts = fqn.split(".")
+            schema = parts[-2].strip('"').lower() if len(parts) >= 2 else ""
+
+            # Skip passthrough models (single table, no joins).
+            if is_passthrough:
+                continue
+
+            # Check for base schemas.
+            if schema in _BASE_SCHEMAS:
+                if alias not in filtered_aliases:
+                    violations.append(
+                        self.violation(
+                            f"Table ``{fqn}`` (alias ``{alias}``) is referenced"
+                            f" without any WHERE or JOIN filter — likely full"
+                            f" sequential scan."
+                        )
+                    )
+
+            # Flag public.* external tables with a note.
+            if schema == "public":
+                if alias not in filtered_aliases:
+                    violations.append(
+                        self.violation(
+                            f"External table ``{fqn}`` (alias ``{alias}``) is"
+                            f" referenced without any WHERE or JOIN filter."
+                            f" Cannot verify indexes on external table —"
+                            f" ensure it has appropriate indexes."
+                        )
+                    )
+
+        if not violations:
+            return None
+        if len(violations) == 1:
+            return violations[0]
+        return violations
+
+
+# ── StaticComplexityScore ────────────────────────────────────────────
+
+
+class StaticComplexityScore(Rule):
+    """Assigns a heuristic complexity score from AST topology, providing
+    an ordinal cost ranking across all models. Emits a warning when the
+    cumulative score exceeds a configurable threshold.
+
+    Scoring model::
+
+        score = (
+            num_base_tables * 5.0 +
+            num_joins * 2.0 +
+            num_unindexed_join_columns * 10.0 +
+            num_ctes * 1.0 +
+            num_subqueries * 3.0 +
+            num_distinct * 2.0 +
+            num_group_by_columns * 0.5 +
+            num_window_functions * 2.0 +
+            num_order_by * 1.0 +
+            has_full_outer_join * 15.0 +
+            is_view * (-5.0)
+        )
+
+    Thresholds:
+        * **< 25**: No violation (normal).
+        * **25–50**: Warning-level violation (review recommended).
+        * **> 50**: Error-level violation (may need optimization).
+    """
+
+    WARN_THRESHOLD = 25.0
+    ERROR_THRESHOLD = 50.0
+
+    def check_model(self, model: Model) -> RuleViolation | None:
+        if isinstance(model, SeedModel):
+            return None
+
+        if not isinstance(model, SqlModel):
+            return None
+
+        query = model.query
+        if query is None:
+            return None
+
+        # Count components.
+        tables = list(query.find_all(exp.Table))
+        joins = list(query.find_all(exp.Join))
+        ctes = self._count_ctes(query)
+        subqueries = self._count_subqueries(query)
+        distinct = 1 if query.find(exp.Distinct) else 0
+        group_by_cols = self._count_group_by_columns(query)
+        window_fns = len(list(query.find_all(exp.Window)))
+        order_by = self._count_order_by(query)
+        has_full_outer = self._has_full_outer_join(query)
+
+        # Determine if this is a VIEW model.
+        is_view = False
+        kind = getattr(model, "kind", None)
+        if kind is not None and getattr(kind, "is_view", False):
+            is_view = True
+
+        # Compute base score.
+        num_base_tables = len(tables)
+        num_joins = len(joins)
+        num_ctes = ctes
+        num_subqueries = subqueries
+        num_distinct = distinct
+        num_group_by_columns = group_by_cols
+        num_window_functions = window_fns
+        num_order_by = order_by
+        full_outer_penalty = 15.0 if has_full_outer else 0.0
+        view_penalty = -5.0 if is_view else 0.0
+
+        score = (
+            num_base_tables * 5.0
+            + num_joins * 2.0
+            + num_ctes * 1.0
+            + num_subqueries * 3.0
+            + num_distinct * 2.0
+            + num_group_by_columns * 0.5
+            + num_window_functions * 2.0
+            + num_order_by * 1.0
+            + full_outer_penalty
+            + view_penalty
+        )
+
+        # Add unindexed join column penalty.
+        unindexed_count = self._count_unindexed_join_columns(query, model)
+        score += unindexed_count * 10.0
+
+        if score < self.WARN_THRESHOLD:
+            return None
+
+        # Build message.
+        factors: list[str] = []
+        if num_base_tables:
+            factors.append(f"{num_base_tables} base tables")
+        if num_joins:
+            factors.append(f"{num_joins} joins")
+        if unindexed_count:
+            factors.append(f"{unindexed_count} unindexed")
+        if num_ctes:
+            factors.append(f"{num_ctes} CTEs")
+        if num_subqueries:
+            factors.append(f"{num_subqueries} subqueries")
+        if num_distinct:
+            factors.append(f"{num_distinct} DISTINCT")
+        if num_group_by_columns:
+            factors.append(f"{num_group_by_columns} GROUP BY cols")
+        if num_window_functions:
+            factors.append(f"{num_window_functions} window fns")
+        if has_full_outer:
+            factors.append("FULL OUTER JOIN")
+        if is_view:
+            factors.append("view")
+
+        factor_str = ", ".join(factors) if factors else "no complexity"
+
+        severity = "Warning" if score < self.ERROR_THRESHOLD else "Error"
+
+        return self.violation(
+            f"Complexity score {score:.1f} (> {self.WARN_THRESHOLD:.0f}):"
+            f" {factor_str}"
+            f" ({severity})"
+        )
+
+    @staticmethod
+    def _count_ctes(query: exp.Expr) -> int:
+        """Count CTE definitions in a WITH clause."""
+        with_clause = query.args.get("with_")
+        if with_clause is None:
+            return 0
+        ctes = with_clause.args.get("expressions")
+        if ctes is None:
+            return 0
+        return len(ctes)
+
+    @staticmethod
+    def _count_subqueries(query: exp.Expr) -> int:
+        """Count nested subqueries (Subquery nodes that are not CTEs)."""
+        count = 0
+        for node in query.find_all(exp.Select):
+            # Check if this is a nested SELECT (not the top-level query).
+            parent = node.parent
+            while parent is not None:
+                if isinstance(parent, exp.Subquery):
+                    count += 1
+                    break
+                parent = parent.parent
+        return count
+
+    @staticmethod
+    def _count_group_by_columns(query: exp.Expr) -> int:
+        """Count total columns across all GROUP BY clauses."""
+        count = 0
+        for group in query.find_all(exp.Group):
+            count += len(group.expressions)
+        return count
+
+    @staticmethod
+    def _count_order_by(query: exp.Expr) -> int:
+        """Count ORDER BY expressions."""
+        order = query.args.get("order")
+        if order is None:
+            return 0
+        expressions = order.args.get("expressions")
+        if expressions is None:
+            return 0
+        return len(expressions)
+
+    @staticmethod
+    def _has_full_outer_join(query: exp.Expr) -> bool:
+        """Check if query contains a FULL OUTER JOIN."""
+        for join in query.find_all(exp.Join):
+            kind = join.args.get("kind") or ""
+            side = join.args.get("side") or ""
+            if "FULL" in kind.upper() or "FULL" in side.upper():
+                return True
+        return False
+
+    def _count_unindexed_join_columns(
+        self,
+        query: exp.Expr,
+        model: Model,
+    ) -> int:
+        """Count unindexed columns used in JOIN ON conditions."""
+        count = 0
+        seen: set[tuple[str, str]] = set()
+
+        for join in query.find_all(exp.Join):
+            on = join.args.get("on")
+            if on is None:
+                continue
+
+            table = join.this
+            if not isinstance(table, exp.Table):
+                continue
+            if table.sql().startswith("@"):
+                continue
+
+            fqn = _table_fqn(table, model)
+            if fqn is None:
+                continue
+
+            ref_model = _get_model(self.context, fqn)
+            if ref_model is None or not isinstance(ref_model, SqlModel):
+                continue
+
+            indexed_cols = _get_indexed_columns(ref_model)
+            join_alias = table.alias_or_name
+
+            for col in on.find_all(exp.Column):
+                if col.table == join_alias:
+                    col_name = col.name
+                    key = (fqn, col_name)
+                    if key not in seen and col_name not in indexed_cols:
+                        seen.add(key)
+                        count += 1
+
+        return count
