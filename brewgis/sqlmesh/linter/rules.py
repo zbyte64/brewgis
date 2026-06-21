@@ -1523,6 +1523,9 @@ class AuditColumnExistence(Rule):
             "number_of_rows",
             "assert_row_count_greater_than_zero",
             "assert_row_count_between",
+            "assert_parcel_du_estimation_row_count",
+            "assert_parcel_dasymetric_weights_row_count",
+            "assert_sacog_assessor_parcels_row_count",
         }
     )
 
@@ -1637,7 +1640,7 @@ class AuditColumnExistence(Rule):
 
         try:
             parsed = sqlglot.parse_one(query_sql, read="postgres")
-        except (sqlglot.errors.ParseError, Exception):  # noqa: BLE001
+        except (sqlglot.errors.ParseError, Exception):
             return []
 
         # Find all @this_model references.
