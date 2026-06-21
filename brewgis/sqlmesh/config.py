@@ -29,11 +29,27 @@ from sqlmesh.core.config import PostgresConnectionConfig
 from sqlmesh.core.config.connection import DuckDBAttachOptions
 from sqlmesh.core.config.connection import DuckDBConnectionConfig
 
+from brewgis.workspace.services.duckdb_pool import DuckDBReadOnlyPool
+
 _logger = _logging.getLogger(__name__)
 _drop_data_object_orig = None
 _create_table_orig = None
 _singleton_get_orig = None
 _singleton_get_cursor_orig = None
+
+# Read-only mode flag — set SQLMESH_DUCKDB_READONLY=1 in the environment
+# before any SQLMesh import to enable thread-local read-only DuckDB connections
+# (used by the MCP server's SSE transport for concurrent tool access).
+_READONLY_MODE = os.environ.get("SQLMESH_DUCKDB_READONLY", "") == "1"
+_readonly_pool: DuckDBReadOnlyPool | None = None
+
+
+def _get_readonly_pool() -> DuckDBReadOnlyPool:
+    """Lazy-initialised singleton for the read-only DuckDB pool."""
+    global _readonly_pool
+    if _readonly_pool is None:
+        _readonly_pool = DuckDBReadOnlyPool("/app/planning/duckdb_cache.db")
+    return _readonly_pool
 
 
 def _drop_data_object_patched(self, data_object, ignore_if_not_exists=True):
@@ -144,6 +160,8 @@ def _create_table_patched(
 
 
 def _singleton_pool_get(self):
+    if _READONLY_MODE:
+        return _get_readonly_pool().get_connection()
     if not hasattr(self, "_brewgis_lock"):
         object.__setattr__(self, "_brewgis_lock", threading.RLock())
     with self._brewgis_lock:
@@ -151,6 +169,8 @@ def _singleton_pool_get(self):
 
 
 def _singleton_pool_get_cursor(self):
+    if _READONLY_MODE:
+        return _get_readonly_pool().get_connection().cursor()
     if not hasattr(self, "_brewgis_lock"):
         object.__setattr__(self, "_brewgis_lock", threading.RLock())
     with self._brewgis_lock:

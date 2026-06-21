@@ -37,7 +37,15 @@ services:
       context: .
       dockerfile: ./compose/local/postgres/Dockerfile
     container_name: brewgis_local_postgres
-    command: postgres -c work_mem=256MB -c shared_buffers=4GB -c effective_cache_size=12GB -c maintenance_work_mem=512MB -c random_page_cost=1.1 -c effective_io_concurrency=200
+    command:
+      postgres
+        -c work_mem=256MB -c shared_buffers=4GB -c effective_cache_size=12GB -c maintenance_work_mem=512MB
+        -c max_parallel_workers_per_gather=6 -c max_parallel_workers=8
+        -c parallel_tuple_cost=0.1 -c parallel_setup_cost=10
+        -c wal_buffers=64MB -c max_wal_size=4GB -c min_wal_size=1GB
+        -c max_connections=20
+        -c random_page_cost=1.1 -c effective_io_concurrency=200 -c default_statistics_target=500
+
     shm_size: '4gb'
     ports:
       - '5432:5432'
@@ -115,7 +123,8 @@ services:
     depends_on:
       - redis
       - postgres
-    ports: []
+    ports:
+      - '8002:8002'
     command: /start-mcp
   sqlmesh-ui:
     <<: *django

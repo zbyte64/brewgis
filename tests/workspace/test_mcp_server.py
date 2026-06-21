@@ -34,6 +34,12 @@ class TestMcpServerRegistration:
 
         assert callable(run_stdio)
 
+    def test_run_sse_imports(self) -> None:
+        """run_sse function can be imported without errors."""
+        from brewgis.workspace.mcp.server import run_sse
+
+        assert callable(run_sse)
+
     def test_auth_stub(self) -> None:
         """Auth stub returns None (Phase 5 not implemented)."""
         from brewgis.workspace.mcp.auth import resolve_user
