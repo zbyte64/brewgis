@@ -409,7 +409,5 @@ FROM with_govt;
 
 -- post_statements
   CREATE INDEX IF NOT EXISTS idx_wac_block_raw_geom
-  ON brewGIS.staging.wac_block_raw USING GIST (geometry);;
-  CREATE INDEX IF NOT EXISTS idx_wac_block_raw_parcel_id
-  ON brewGIS.staging.wac_block_raw (parcel_id);;
+  ON brewGIS.staging.wac_block_raw USING GIST (geometry);
 ANALYZE brewGIS.staging.wac_block_raw;
