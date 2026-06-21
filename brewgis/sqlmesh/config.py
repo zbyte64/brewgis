@@ -17,6 +17,7 @@ from __future__ import annotations
 
 import logging as _logging
 import os
+import threading
 from urllib.parse import urlparse
 
 import sqlglot.expressions as _exp
@@ -31,6 +32,8 @@ from sqlmesh.core.config.connection import DuckDBConnectionConfig
 _logger = _logging.getLogger(__name__)
 _drop_data_object_orig = None
 _create_table_orig = None
+_singleton_get_orig = None
+_singleton_get_cursor_orig = None
 
 
 def _drop_data_object_patched(self, data_object, ignore_if_not_exists=True):
@@ -140,8 +143,23 @@ def _create_table_patched(
     )
 
 
+def _singleton_pool_get(self):
+    if not hasattr(self, "_brewgis_lock"):
+        object.__setattr__(self, "_brewgis_lock", threading.RLock())
+    with self._brewgis_lock:
+        return _singleton_get_orig(self)
+
+
+def _singleton_pool_get_cursor(self):
+    if not hasattr(self, "_brewgis_lock"):
+        object.__setattr__(self, "_brewgis_lock", threading.RLock())
+    with self._brewgis_lock:
+        return _singleton_get_cursor_orig(self)
+
+
 def _install_monkeypatch():
     global _drop_data_object_orig, _create_table_orig
+    global _singleton_get_orig, _singleton_get_cursor_orig
     from sqlmesh.core.engine_adapter.base import EngineAdapter
     from sqlmesh.core.engine_adapter.duckdb import DuckDBEngineAdapter
 
@@ -151,9 +169,19 @@ def _install_monkeypatch():
     _create_table_orig = DuckDBEngineAdapter._create_table
     DuckDBEngineAdapter._create_table = _create_table_patched
 
+    from sqlmesh.utils.connection_pool import SingletonConnectionPool
+
+    _singleton_get_orig = SingletonConnectionPool.get
+    _singleton_get_cursor_orig = SingletonConnectionPool.get_cursor
+    SingletonConnectionPool.get = _singleton_pool_get
+    SingletonConnectionPool.get_cursor = _singleton_pool_get_cursor
+
     _logger.debug(
         "EngineAdapter.drop_data_object monkey-patched"
         " (duckdb-postgres#269 workaround + cascade)"
+    )
+    _logger.debug(
+        "SingletonConnectionPool.get/get_cursor monkey-patched (thread-safety)"
     )
 
 

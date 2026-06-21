@@ -124,4 +124,8 @@ RUN chmod +x /start-sqlmesh-ui
 # copy application code to WORKDIR
 COPY . ${APP_HOME}
 
+# Pre-download DuckDB extensions so INSTALL is a no-op at runtime
+COPY ./compose/local/django/preload_duckdb.py /tmp/preload_duckdb.py
+RUN su - dev-user -c "python3 /tmp/preload_duckdb.py" && rm /tmp/preload_duckdb.py
+
 ENTRYPOINT ["/entrypoint"]
