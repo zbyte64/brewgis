@@ -240,6 +240,29 @@ class TestPlanStatsSchema:
         assert stats.total_cost == 100.5
         assert stats.node_count == 5
 
+    def test_with_actual_timing(self) -> None:
+        """PlanStats can hold actual_total_time from EXPLAIN ANALYZE."""
+        stats = PlanStats(
+            model_name="brewgis.assessor.test",
+            total_cost=100.0,
+            startup_cost=5.0,
+            plan_rows=1000.0,
+            node_count=3,
+            max_depth=2,
+            seq_scans=[],
+            nested_loops=1,
+            actual_total_time=45.2,
+        )
+        assert stats.actual_total_time == 45.2
+        assert stats.total_cost == 100.0
+
+    def test_actual_timing_default_none(self) -> None:
+        """PlanStats without actual_total_time defaults to None."""
+        stats = PlanStats(
+            model_name="brewgis.assessor.test",
+        )
+        assert stats.actual_total_time is None
+
     def test_error_state(self) -> None:
         """PlanStats can represent an error state."""
         stats = PlanStats(

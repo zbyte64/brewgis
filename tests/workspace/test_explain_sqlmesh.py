@@ -309,3 +309,89 @@ class TestAnalyzePlan:
         }
         pa = analyze_plan(plan)
         assert len(pa.seq_scans) == 0  # below 10k row threshold
+
+    def test_analyze_plan_extracts_actual_timing(self) -> None:
+        """ANALYZE output includes Actual Total Time, Actual Rows, Actual Loops."""
+        plan = {
+            "Plan": {
+                "Node Type": "Hash Join",
+                "Join Type": "INNER",
+                "Startup Cost": 100.0,
+                "Total Cost": 5000.0,
+                "Plan Rows": 1000,
+                "Plan Width": 200,
+                "Actual Total Time": 45.2,
+                "Actual Rows": 950,
+                "Actual Loops": 1,
+                "Plans": [
+                    {
+                        "Node Type": "Seq Scan",
+                        "Relation Name": "big_table",
+                        "Alias": "bt",
+                        "Startup Cost": 0.0,
+                        "Total Cost": 1000.0,
+                        "Plan Rows": 100_000,
+                        "Plan Width": 50,
+                        "Actual Total Time": 12.0,
+                        "Actual Rows": 95000,
+                        "Actual Loops": 1,
+                    },
+                    {
+                        "Node Type": "Hash",
+                        "Startup Cost": 80.0,
+                        "Total Cost": 80.0,
+                        "Plan Rows": 500,
+                        "Plan Width": 100,
+                        "Actual Total Time": 10.5,
+                        "Actual Rows": 480,
+                        "Actual Loops": 1,
+                        "Plans": [
+                            {
+                                "Node Type": "Index Scan",
+                                "Relation Name": "small_table",
+                                "Alias": "st",
+                                "Index Name": "idx_small_pk",
+                                "Startup Cost": 0.0,
+                                "Total Cost": 50.0,
+                                "Plan Rows": 500,
+                                "Plan Width": 100,
+                                "Actual Total Time": 8.2,
+                                "Actual Rows": 480,
+                                "Actual Loops": 1,
+                            },
+                        ],
+                    },
+                ],
+            },
+        }
+        pa = analyze_plan(plan)
+        # Root node timing propagated to analysis
+        assert pa.actual_total_time == 45.2
+        # Root PlanNode has timing
+        assert pa.plan_tree is not None
+        assert pa.plan_tree.actual_total_time == 45.2
+        assert pa.plan_tree.actual_rows == 950
+        assert pa.plan_tree.actual_loops == 1
+        # Child nodes retain their timing
+        seq_node = pa.plan_tree.subplans[0]
+        assert seq_node.node_type == "Seq Scan"
+        assert seq_node.actual_total_time == 12.0
+        assert seq_node.actual_rows == 95000
+        # Without ANALYZE, actual timing fields are None
+        plan_non_analyze = {
+            "Plan": {
+                "Node Type": "Seq Scan",
+                "Relation Name": "t",
+                "Alias": "t",
+                "Startup Cost": 0.0,
+                "Total Cost": 100.0,
+                "Plan Rows": 1000,
+                "Plan Width": 8,
+            },
+        }
+        pa2 = analyze_plan(plan_non_analyze)
+        assert pa2.actual_total_time is None
+        assert pa2.plan_tree is not None
+        assert pa2.plan_tree.actual_total_time is None
+        assert pa2.plan_tree.actual_rows is None
+        assert pa2.plan_tree.actual_loops is None

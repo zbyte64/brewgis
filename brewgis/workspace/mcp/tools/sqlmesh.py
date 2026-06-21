@@ -120,6 +120,7 @@ class PlanStats(BaseModel):
     max_depth: int | None = None
     seq_scans: list[str] = []
     nested_loops: int | None = None
+    actual_total_time: float | None = None
     error: str | None = None
 
 
@@ -661,11 +662,15 @@ def register_tools(server: object) -> None:  # noqa: C901, PLR0915
     @server.tool()  # type: ignore[attr-defined]
     def get_model_plan_stats(
         model_name: str,
+        analyze: bool = False,  # noqa: FBT001, FBT002
     ) -> dict[str, object]:
         """Run EXPLAIN on a model and return cost/plan analysis.
 
         Renders the model SQL, wraps it in EXPLAIN (COSTS, VERBOSE, FORMAT JSON),
         executes the query, and extracts diagnostics via analyze_plan.
+
+        When *analyze* is True, uses EXPLAIN (ANALYZE, COSTS, VERBOSE, FORMAT JSON)
+        to actually execute the query and return real execution timings.
         """
         ctx = _context()
         models = ctx.models
@@ -689,8 +694,9 @@ def register_tools(server: object) -> None:  # noqa: C901, PLR0915
                 error=f"Failed to render model '{key}': {exc}",
             ).model_dump()
 
+        analyze_clause = "ANALYZE true, " if analyze else ""
         explain_sql = (
-            f"EXPLAIN (COSTS true, VERBOSE true, FORMAT JSON)"
+            f"EXPLAIN ({analyze_clause}COSTS true, VERBOSE true, FORMAT JSON)"
             f" {rendered.sql(dialect='postgres')}"
         )
 
@@ -728,4 +734,5 @@ def register_tools(server: object) -> None:  # noqa: C901, PLR0915
             max_depth=analysis.max_depth,
             seq_scans=analysis.seq_scans,
             nested_loops=analysis.nested_loops,
+            actual_total_time=analysis.actual_total_time,
         ).model_dump()

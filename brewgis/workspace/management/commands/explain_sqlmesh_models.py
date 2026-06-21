@@ -58,6 +58,9 @@ class PlanNode:
     plan_rows: float
     join_type: str | None
     index_name: str | None
+    actual_total_time: float | None = None
+    actual_rows: float | None = None
+    actual_loops: float | None = None
     subplans: list[PlanNode] = field(default_factory=list)
 
 
@@ -72,6 +75,7 @@ class PlanAnalysis:
     max_depth: int
     seq_scans: list[str]
     nested_loops: int
+    actual_total_time: float | None = None
     plan_tree: PlanNode | None = None
 
 
@@ -743,14 +747,20 @@ def _get_sqlmesh_context():
 
 def run_explain(
     model_info: ModelInfo,
+    analyze: bool = False,  # noqa: FBT001, FBT002
 ) -> tuple[dict | None, str | None]:
-    """Run EXPLAIN (COSTS, VERBOSE, FORMAT JSON) on a model's rendered query."""
+    """Run EXPLAIN on a model's rendered query.
+
+    When *analyze* is True, uses ``EXPLAIN (ANALYZE, COSTS, VERBOSE, FORMAT JSON)``
+    to actually execute the query and return real execution timings.
+    """
     model_key = _qualify(model_info)
     ctx = _get_sqlmesh_context()
     sqlmodel = ctx.models.get(model_key)
     if sqlmodel is None:
         return None, f"Model {model_key} not found in SQLMesh context"
 
+    analyze_clause = "ANALYZE true, " if analyze else ""
     try:
         if model_info.kind == "VIEW":
             rendered = sqlmodel.render_query()
@@ -758,7 +768,7 @@ def run_explain(
                 return None, "render_query returned None for VIEW model"
             # For views, EXPLAIN the view's own query (it's already a SELECT)
             explain_sql = (
-                f"EXPLAIN (COSTS true, VERBOSE true, FORMAT JSON)"
+                f"EXPLAIN ({analyze_clause}COSTS true, VERBOSE true, FORMAT JSON)"
                 f" {rendered.sql(dialect='postgres')}"
             )
         else:
@@ -766,7 +776,7 @@ def run_explain(
             if rendered is None:
                 return None, "render_query returned None"
             explain_sql = (
-                f"EXPLAIN (COSTS true, VERBOSE true, FORMAT JSON)"
+                f"EXPLAIN ({analyze_clause}COSTS true, VERBOSE true, FORMAT JSON)"
                 f" {rendered.sql(dialect='postgres')}"
             )
     except Exception as exc:
@@ -806,6 +816,15 @@ def parse_plan_tree(node: dict) -> PlanNode:
         for key in ("Plans", "Subplans")
         for child in (node.get(key) or ())
     ]
+    if "Actual Total Time" in node:
+        actual_total_time = float(node["Actual Total Time"])
+        actual_rows = float(node["Actual Rows"])
+        actual_loops = float(node.get("Actual Loops", 1))
+    else:
+        actual_total_time = None
+        actual_rows = None
+        actual_loops = None
+
     return PlanNode(
         node_type=node.get("Node Type", "?") or "?",
         relation_name=node.get("Relation Name"),
@@ -815,6 +834,9 @@ def parse_plan_tree(node: dict) -> PlanNode:
         plan_rows=float(node.get("Plan Rows", 0)),
         join_type=node.get("Join Type"),
         index_name=node.get("Index Name"),
+        actual_total_time=actual_total_time,
+        actual_rows=actual_rows,
+        actual_loops=actual_loops,
         subplans=subplans,
     )
 
@@ -854,6 +876,7 @@ def analyze_plan(plan_json: dict | list) -> PlanAnalysis:
         max_depth=max_depth,
         seq_scans=seq_scans,
         nested_loops=nested_loops,
+        actual_total_time=root.actual_total_time,
         plan_tree=root,
     )
 
