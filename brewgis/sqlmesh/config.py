@@ -243,6 +243,8 @@ def config_factory(**variables):
                 "CrossJoinLikeJoin",
                 "UnfilteredTableScan",
                 "StaticComplexityScore",
+                "IndexColumnExistence",
+                "AuditColumnExistence",
                 "ambiguousorinvalidcolumn",
                 # "nomissingaudits",
                 "nomissingexternalmodels",

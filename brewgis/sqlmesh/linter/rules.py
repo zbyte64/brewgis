@@ -9,6 +9,7 @@ from __future__ import annotations
 import re
 from pathlib import Path
 
+import sqlglot
 import sqlglot.expressions as exp
 from sqlmesh.core.dialect import normalize_model_name
 from sqlmesh.core.linter.rule import Rule
@@ -1375,3 +1376,409 @@ class StaticComplexityScore(Rule):
                         count += 1
 
         return count
+
+
+# ── IndexColumnExistence ──────────────────────────────────────────────
+
+
+def _extract_index_columns(
+    sql_text: str,
+    model_name: str,
+    result: set[str] | None = None,
+) -> set[str]:
+    """Extract column names from CREATE INDEX statements in
+    ``sql_text`` that reference ``model_name``.
+
+    If ``result`` is provided, columns are added to it (for incremental
+    collection). Always returns the full set of columns found.
+    """
+    cols: set[str] = set() if result is None else result
+    pattern = re.compile(
+        r"""
+        CREATE\s+(UNIQUE\s+)?INDEX
+        (\s+IF\s+NOT\s+EXISTS)?\s+\S+
+        \s+ON\s+(\S+\.)?(?P<on_table>\w+)
+        (\s+USING\s+\w+)?
+        \s*\(
+        (?P<cols>[^)]+)
+        \)
+        """,
+        re.IGNORECASE | re.VERBOSE | re.DOTALL,
+    )
+
+    # Short name (last component of FQN).
+    short_name = model_name.rsplit(".", 1)[-1] if "." in model_name else model_name
+
+    for match in pattern.finditer(sql_text):
+        on_table = match.group("on_table")
+        if on_table != short_name and on_table != model_name:
+            continue
+        cols_section = match.group("cols")
+        for col_expr in cols_section.split(","):
+            col_name = col_expr.strip().split()[0].strip('"')
+            if col_name:
+                cols.add(col_name)
+
+    return cols
+
+
+class IndexColumnExistence(Rule):
+    """``CREATE INDEX`` statements in ``post_statements`` reference
+    columns that exist in the model's schema.
+
+    An index referencing a nonexistent column silently creates an index on
+    a misspelled name, wasting DDL time and providing no query benefit.
+    """
+
+    def check_model(self, model: Model) -> RuleViolation | None:
+        if isinstance(model, SeedModel):
+            return None
+
+        if not isinstance(model, SqlModel):
+            return None
+
+        # VIEW models can't have indexes. DuckDB gateway models use
+        # DuckDB, not Postgres GiST. Skip both.
+        kind = getattr(model, "kind", None)
+        if kind is not None and getattr(kind, "is_view", False):
+            return None
+        gateway = getattr(model, "gateway", None) or ""
+        if "duckdb" in str(gateway).lower():
+            return None
+
+        # Collect model column names.
+        try:
+            model_columns = model.columns_to_types_or_raise
+        except (KeyError, ValueError, TypeError):
+            return None
+
+        # Extract column names from CREATE INDEX statements.
+        index_cols: set[str] = set()
+
+        # 1) Check post_statements_ (in-memory, works for synthetic models).
+        for ps in getattr(model, "post_statements_", []) or []:
+            sql_text = ps.sql if hasattr(ps, "sql") else str(ps)
+            _extract_index_columns(sql_text, model.name, index_cols)
+
+        # 2) Fall back to reading the source file (for real models on disk).
+        if not index_cols:
+            source_path = getattr(model, "_path", None)
+            if source_path:
+                try:
+                    source = Path(source_path).read_text()
+                    _extract_index_columns(source, model.name, index_cols)
+                except OSError:
+                    pass
+
+        if not index_cols:
+            return None
+
+        # Check each index column exists in the model schema.
+        missing = [c for c in index_cols if c not in model_columns]
+        if missing:
+            unique_missing = sorted(set(missing))
+            return self.violation(
+                f"CREATE INDEX references columns not in model schema:"
+                f" {', '.join(unique_missing)}."
+                f" Available columns: {', '.join(sorted(model_columns))}."
+            )
+
+        return None
+
+
+# ── AuditColumnExistence ─────────────────────────────────────────────
+
+
+class AuditColumnExistence(Rule):
+    """Audits reference columns that exist in the model's schema.
+
+    Catches two categories of column reference errors:
+
+    1. **Inline built-in audits** (``not_null(columns := (col,))``,
+       ``unique_values(columns := (col,))``) — extracts column names
+       from the keyword arguments and validates them.
+
+    2. **Named custom audit files** (e.g. ``assert_du_vacancy_rates``)
+       — parses the audit SQL file and extracts columns referenced
+       against ``@this_model``, then validates each against the model
+       schema.
+    """
+
+    _AUDIT_DIR = Path(__file__).resolve().parent.parent / "audits"
+
+    # Built-in audits that accept a ``columns`` keyword argument.
+    _BUILTIN_COLUMN_AUDITS = frozenset(
+        {
+            "not_null",
+            "unique",
+            "unique_values",
+            "distinct_values",
+            "accepted_values",
+        }
+    )
+
+    # Audits that intentionally take no column arguments (COUNT(*) etc.)
+    _SKIP_AUDITS = frozenset(
+        {
+            "number_of_rows",
+            "assert_row_count_greater_than_zero",
+            "assert_row_count_between",
+        }
+    )
+
+    def check_model(self, model: Model) -> RuleViolation | None:
+        if not isinstance(model, SqlModel):
+            return None
+
+        try:
+            model_columns = model.columns_to_types_or_raise
+        except (KeyError, ValueError, TypeError):
+            return None
+
+        violations: list[RuleViolation] = []
+
+        for audit_name, audit_args in getattr(model, "audits", None) or []:
+            # ── Inline built-in audits (not_null, unique_values, etc.) ──
+            if audit_name in self._SKIP_AUDITS:
+                continue
+
+            if audit_name in self._BUILTIN_COLUMN_AUDITS:
+                missing = self._check_inline_audit(
+                    audit_name,
+                    audit_args,
+                    model_columns,
+                )
+                if missing:
+                    violations.append(
+                        self.violation(
+                            f"Inline audit ``{audit_name}`` references columns"
+                            f" not in model schema: {', '.join(sorted(missing))}."
+                        )
+                    )
+                continue
+
+            # ── Named custom audit files ──
+            audit_path = self._AUDIT_DIR / f"{audit_name}.sql"
+            if not audit_path.exists():
+                # Audit file not found — skip (the built-in
+                # ``nomissingaudits`` rule catches missing files).
+                continue
+
+            try:
+                audit_sql = audit_path.read_text()
+            except OSError:
+                continue
+
+            missing = self._check_named_audit(
+                audit_name,
+                audit_sql,
+                model_columns,
+            )
+            if missing:
+                violations.append(
+                    self.violation(
+                        f"Audit ``{audit_name}`` references columns not in"
+                        f" model schema: {', '.join(sorted(missing))}."
+                    )
+                )
+
+        if not violations:
+            return None
+        if len(violations) == 1:
+            return violations[0]
+        return violations
+
+    def _check_inline_audit(
+        self,
+        audit_name: str,
+        audit_args: dict,
+        model_columns: dict,
+    ) -> list[str]:
+        """Extract column names from a built-in audit's args and
+        return any that don't exist in ``model_columns``."""
+        cols_expr = audit_args.get("columns")
+        if cols_expr is None:
+            return []
+
+        col_names: list[str] = []
+        if hasattr(cols_expr, "expressions"):
+            for c in cols_expr.expressions:
+                if hasattr(c, "name"):
+                    col_names.append(c.name)
+                else:
+                    col_names.append(str(c))
+
+        return [c for c in col_names if c not in model_columns]
+
+    @staticmethod
+    def _strip_audit_wrapper(audit_sql: str) -> str:
+        """Strip the AUDIT() wrapper from an audit SQL file, returning
+        just the query body."""
+        # Remove the AUDIT (...) wrapper block (may span multiple lines).
+        stripped = re.sub(
+            r"(?is)^\s*AUDIT\s*\(.*?\);\s*",
+            "",
+            audit_sql,
+        )
+        return stripped.strip()
+
+    def _check_named_audit(
+        self,
+        audit_name: str,
+        audit_sql: str,
+        model_columns: dict,
+    ) -> list[str]:
+        """Parse a named audit SQL file and return columns referenced
+        against ``@this_model`` that don't exist in ``model_columns``."""
+        # Strip the AUDIT() wrapper before parsing.
+        query_sql = self._strip_audit_wrapper(audit_sql)
+        if not query_sql:
+            return []
+
+        try:
+            parsed = sqlglot.parse_one(query_sql, read="postgres")
+        except (sqlglot.errors.ParseError, Exception):  # noqa: BLE001
+            return []
+
+        # Find all @this_model references.
+        # In FROM clauses, @this_model parses as an exp.Table with
+        # name starting with '@' (the '@' is part of the table name).
+        this_model_aliases: set[str] = set()
+        has_bare_this_model = False
+
+        # Check all FROM clauses for @this_model references.
+        for from_node in parsed.find_all(exp.From):
+            is_tm = False
+            from_table = from_node.this
+            if isinstance(from_table, exp.Table):
+                if (
+                    from_table.name.startswith("@this_model")
+                    or from_table.name == "this_model"
+                ):
+                    is_tm = True
+            elif isinstance(from_table, exp.Subquery):
+                # CTE reference — check if alias matches a CTE wrapping @this_model.
+                pass
+
+            if not is_tm:
+                continue
+
+            alias = from_table.alias or ""
+            if alias:
+                this_model_aliases.add(alias.lower())
+            else:
+                has_bare_this_model = True
+
+        # Also check CTEs for @this_model references.
+        # A CTE wrapping @this_model makes its alias a @this_model alias.
+        for cte in parsed.find_all(exp.CTE):
+            cte_body = cte.this
+            has_tm = any(
+                isinstance(n, exp.Table)
+                and (n.name.startswith("@this_model") or n.name == "this_model")
+                for n in cte_body.find_all(exp.Table)
+            )
+            if has_tm:
+                cte_alias = getattr(cte, "alias", None) or ""
+                if isinstance(cte_alias, str):
+                    alias_name = cte_alias
+                elif hasattr(cte_alias, "name"):
+                    alias_name = cte_alias.name
+                else:
+                    alias_name = str(cte_alias) if cte_alias else ""
+                if alias_name:
+                    this_model_aliases.add(alias_name.lower())
+                else:
+                    has_bare_this_model = True
+
+        # Collect CTE names to avoid confusing CTE columns with model columns.
+        cte_names = _get_cte_names(parsed)
+
+        col_names: set[str] = set()
+        for col in parsed.find_all(exp.Column):
+            table_name = (col.table or "").lower()
+            if table_name and table_name in this_model_aliases:
+                # Column explicitly qualified with @this_model's alias.
+                col_names.add(col.name)
+            elif not table_name:
+                # Unqualified column — could be from @this_model.
+                # Include if:
+                #   - bare @this_model (no alias) is used, OR
+                #   - the column is inside a CTE that wraps @this_model
+                in_unrelated_cte = _audit_col_inside_unrelated_cte(col, cte_names)
+                if has_bare_this_model and not in_unrelated_cte:
+                    col_names.add(col.name)
+                elif not in_unrelated_cte:
+                    # Check if inside a CTE that wraps @this_model
+                    if _is_inside_this_model_cte(col, this_model_aliases):
+                        col_names.add(col.name)
+
+        if not col_names:
+            return []
+
+        return [c for c in sorted(col_names) if c not in model_columns]
+
+
+def _is_inside_this_model_cte(col: exp.Column, this_model_aliases: set[str]) -> bool:
+    """Check if a column is inside a CTE whose alias is in
+    ``this_model_aliases`` (meaning the CTE wraps @this_model)."""
+    parent = col.parent
+    while parent is not None:
+        if isinstance(parent, exp.CTE):
+            cte_alias = getattr(parent, "alias", None) or ""
+            if isinstance(cte_alias, str):
+                alias_name = cte_alias
+            elif hasattr(cte_alias, "name"):
+                alias_name = cte_alias.name
+            else:
+                alias_name = str(cte_alias) if cte_alias else ""
+            if alias_name and alias_name.lower() in this_model_aliases:
+                return True
+            return False
+        if isinstance(parent, exp.Subquery):
+            # Check if this subquery references @this_model.
+            has_this = any(
+                isinstance(n, exp.Table)
+                and (n.name.startswith("@this_model") or n.name == "this_model")
+                for n in parent.find_all(exp.Table)
+            )
+            if has_this:
+                return True
+            return False
+        parent = parent.parent
+    return False
+
+
+def _audit_col_inside_unrelated_cte(col: exp.Column, cte_names: frozenset[str]) -> bool:
+    """Check if a column is inside a CTE that does NOT reference
+    @this_model. Columns inside unrelated CTEs are not model columns."""
+    parent = col.parent
+    while parent is not None:
+        if isinstance(parent, exp.CTE):
+            cte_alias = getattr(parent, "alias", None) or ""
+            if isinstance(cte_alias, str):
+                alias_name = cte_alias
+            elif hasattr(cte_alias, "name"):
+                alias_name = cte_alias.name
+            else:
+                alias_name = str(cte_alias) if cte_alias else ""
+            if alias_name:
+                if alias_name.lower() in cte_names:
+                    # Check if this CTE references @this_model.
+                    has_this = any(
+                        isinstance(n, exp.Table)
+                        and (n.name.startswith("@this_model") or n.name == "this_model")
+                        for n in parent.find_all(exp.Table)
+                    )
+                    return not has_this
+            return False
+        if isinstance(parent, exp.Subquery):
+            # Check if this subquery references @this_model.
+            has_this = any(
+                isinstance(n, exp.Table)
+                and (n.name.startswith("@this_model") or n.name == "this_model")
+                for n in parent.find_all(exp.Table)
+            )
+            return not has_this
+        parent = parent.parent
+    return False
