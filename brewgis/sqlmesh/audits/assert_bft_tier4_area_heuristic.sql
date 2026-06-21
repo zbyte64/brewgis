@@ -16,7 +16,8 @@ SELECT
     WHEN lot_size_acres > 0.15 THEN 'detsf_sl'
   END AS expected_bft
 FROM @this_model
-WHERE lot_size_acres IS NOT NULL
+WHERE built_form_key_source NOT IN ('tier1', 'tier0', 'tier2', 'tier3', 'tier3b')
+  AND lot_size_acres IS NOT NULL
   AND built_form_key IS NOT NULL
   AND (
     (lot_size_acres > 10.0 AND built_form_key != 'agricultural')

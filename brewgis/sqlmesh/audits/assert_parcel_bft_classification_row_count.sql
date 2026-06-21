@@ -1,9 +1,9 @@
 AUDIT (
-  name assert_parcel_dasymetric_weights_row_count,
+  name assert_parcel_bft_classification_row_count,
   dialect postgres
 );
 
--- Verify parcel_dasymetric_weights has a reasonable number of rows
+-- Verify parcel_bft_classification has a reasonable number of rows
 -- for Sacramento County (~510K parcels). Outside this range indicates
 -- duplicates, load failures, or upstream data issues.
 WITH actual AS (SELECT COUNT(*) AS cnt FROM @this_model)

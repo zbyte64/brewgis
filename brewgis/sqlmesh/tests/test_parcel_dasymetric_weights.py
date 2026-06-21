@@ -1,4 +1,4 @@
-"""Unit tests for parcel_dasymetric_weights model.
+"""Unit tests for parcel_bft_classification model.
 
 Tests the built_form_key 6-tier derivation:
   - Tier 0: landuse prefix → built_form_key mapping
@@ -15,7 +15,7 @@ Run with: sqlmesh test
 def test_landuse_A1_small_lot_returns_detsf_sl(context):
     """A1% + lot<0.15 → detsf_sl"""
     result = context.evaluate(
-        "brewgis.assessor.parcel_dasymetric_weights",
+        "brewgis.assessor.parcel_bft_classification",
         start="2024-01-01",
         end="2024-01-01",
         inputs={
@@ -39,7 +39,7 @@ def test_landuse_A1_small_lot_returns_detsf_sl(context):
 def test_landuse_A1_large_lot_returns_detsf_ll(context):
     """A1% + lot≥0.15 → detsf_ll"""
     result = context.evaluate(
-        "brewgis.assessor.parcel_dasymetric_weights",
+        "brewgis.assessor.parcel_bft_classification",
         start="2024-01-01",
         end="2024-01-01",
         inputs={
@@ -63,7 +63,7 @@ def test_landuse_A1_large_lot_returns_detsf_ll(context):
 def test_landuse_A2_falls_through(context):
     """A2% → NOT classified at Tier 0 (falls through to Tier 2+)"""
     result = context.evaluate(
-        "brewgis.assessor.parcel_dasymetric_weights",
+        "brewgis.assessor.parcel_bft_classification",
         start="2024-01-01",
         end="2024-01-01",
         inputs={
@@ -89,7 +89,7 @@ def test_landuse_A2_falls_through(context):
 def test_landuse_AE_returns_commercial(context):
     """AE% → commercial"""
     result = context.evaluate(
-        "brewgis.assessor.parcel_dasymetric_weights",
+        "brewgis.assessor.parcel_bft_classification",
         start="2024-01-01",
         end="2024-01-01",
         inputs={
@@ -116,7 +116,7 @@ def test_sales_sfr_overrides_landuse(context):
     A parcel with landuse=AG (agricultural) but SFR sales should get detsf_sl.
     """
     result = context.evaluate(
-        "brewgis.assessor.parcel_dasymetric_weights",
+        "brewgis.assessor.parcel_bft_classification",
         start="2024-01-01",
         end="2024-01-01",
         inputs={
@@ -152,7 +152,7 @@ def test_sales_sfr_overrides_landuse(context):
 def test_tier3b_footprint_ratio_filter(context):
     """lot>3ac + footprint_ratio<0.02 → agricultural (Tier 3b)"""
     result = context.evaluate(
-        "brewgis.assessor.parcel_dasymetric_weights",
+        "brewgis.assessor.parcel_bft_classification",
         start="2024-01-01",
         end="2024-01-01",
         inputs={

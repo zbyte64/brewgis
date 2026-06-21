@@ -8,5 +8,6 @@ SELECT
   landuse,
   built_form_key
 FROM @this_model
-WHERE landuse LIKE 'AF%'
+WHERE built_form_key_source != 'tier1'
+  AND landuse LIKE 'AF%'
   AND built_form_key != 'industrial';

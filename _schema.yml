@@ -109,6 +109,19 @@
   - name: intersection_density
     tests: [non_negative]
 
+- name: parcel_bft_classification
+  description: "Per-parcel built_form_key with 6-tier classification and source tracking. Split from parcel_dasymetric_weights for independent incremental rebuilds."
+  columns:
+  - name: apn
+    description: "Assessor parcel number"
+    tests:
+    - unique
+    - not_null
+  - name: built_form_key_source
+    description: "Which tier provided the final classification (tier1/tier0/tier2/tier3/tier3b/tier4)"
+    tests:
+    - not_null
+
 - name: parcel_known_features
   description: "Materialized known-parcel table with built_form_key and feature columns for k-NN imputation"
   columns:
@@ -127,13 +140,23 @@
     - not_null
 
 - name: parcel_dasymetric_weights
-  description: "Per-parcel built_form_key, dasymetric weights, and classification"
+  description: "Per-parcel dasymetric weights for population and employment allocation. Reads classification from parcel_bft_classification and computes weights from authoritative_residential_area."
   columns:
   - name: apn
     description: "Assessor parcel number"
     tests:
     - unique
     - not_null
+  - name: pop_dasym_weight
+    description: "Population dasymetric weight"
+    tests:
+    - not_null
+    - non_negative
+  - name: emp_dasym_weight
+    description: "Employment dasymetric weight"
+    tests:
+    - not_null
+    - non_negative
 
 - name: sacog_assessor_parcels
   description: "Deduplicated SACOG assessor parcel geometries"

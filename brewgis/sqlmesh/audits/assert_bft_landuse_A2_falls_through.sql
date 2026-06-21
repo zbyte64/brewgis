@@ -9,6 +9,7 @@ SELECT
   landuse,
   built_form_key
 FROM @this_model
-WHERE landuse LIKE 'A2%'
+WHERE built_form_key_source != 'tier1'
+  AND landuse LIKE 'A2%'
   AND built_form_key IS NOT NULL
   AND built_form_key NOT IN ('mf2to4', 'mf5p');

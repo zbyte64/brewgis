@@ -13,7 +13,8 @@ SELECT
     ELSE 'detsf_ll'
   END AS expected_bft
 FROM @this_model
-WHERE landuse LIKE 'A1%'
+WHERE built_form_key_source != 'tier1'
+  AND landuse LIKE 'A1%'
   AND (
     (lot_size_acres < 0.15 AND built_form_key != 'detsf_sl')
     OR (lot_size_acres >= 0.15 AND built_form_key != 'detsf_ll')
