@@ -191,6 +191,11 @@ du_estimation AS (
         p.is_residential,
         p.hh_size,
         v.vacancy_rate,
+        p.assessor_units,
+        p.residential_building_sqft,
+        p.land_development_category,
+        c.region_avg_sqft_per_unit,
+        c.min_du,
         -- Tier 1: Direct assessor observation
         CASE
             WHEN p.assessor_units IS NOT NULL AND p.assessor_units > 0
@@ -261,7 +266,12 @@ du_final AS (
         du_subtype,
         is_residential,
         hh_size,
-        vacancy_rate
+        vacancy_rate,
+        assessor_units,
+        residential_building_sqft,
+        land_development_category,
+        region_avg_sqft_per_unit,
+        min_du
     FROM du_estimation
 )
 
@@ -273,6 +283,11 @@ SELECT
     is_residential,
     hh_size::double precision AS hh_size,
     vacancy_rate::double precision AS vacancy_rate,
+    assessor_units::integer AS assessor_units,
+    residential_building_sqft::double precision AS residential_building_sqft,
+    land_development_category,
+    region_avg_sqft_per_unit::double precision AS region_avg_sqft_per_unit,
+    min_du::integer AS min_du,
     -- Population weight: du × household_size (Section 5)
     (du * COALESCE(NULLIF(hh_size, 0), 2.5))::double precision AS pop_dasym_weight,
     -- Household weight: du × (1 - vacancy_rate) (Section 5)

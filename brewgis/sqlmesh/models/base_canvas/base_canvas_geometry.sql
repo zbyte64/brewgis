@@ -7,8 +7,10 @@ MODEL (
   audits (
     not_null(columns := (parcel_id))
   ),
-  columns (
-    land_use TEXT
+    columns (
+    land_use TEXT,
+    geometry GEOMETRY,
+    local_geometry GEOMETRY
   ),
   depends_on (
     brewgis.comparison.sacog_parcel_shim,

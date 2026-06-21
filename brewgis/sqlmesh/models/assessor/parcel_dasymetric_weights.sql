@@ -284,7 +284,9 @@ parcel_bft AS (
 
 SELECT
     ap.apn,
+    ap.landuse,
     ap.lot_size_acres,
+    ap.zone,
     COALESCE(ap.land_development_category, 'urban') AS land_development_category,
     pb.built_form_key,
     CASE WHEN pb.built_form_key IN ('detsf_sl','detsf_ll','attsf','mf2to4','mf5p')
@@ -295,6 +297,9 @@ SELECT
     END AS is_residential,
     COALESCE(sd.actual_living_sqft, 0)::double precision AS actual_living_sqft,
     COALESCE(sd.actual_building_sqft, 0)::double precision AS actual_building_sqft,
+    sd.property_type,
+    sd.sales_lot_size_acres,
+    sd.units,
     COALESCE(bs.residential_building_sqft, 0)::double precision AS residential_building_sqft,
     COALESCE(bs.commercial_building_sqft, 0)::double precision AS commercial_building_sqft,
     COALESCE(bs.industrial_building_sqft, 0)::double precision AS industrial_building_sqft,
