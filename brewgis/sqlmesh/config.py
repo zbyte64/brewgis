@@ -29,8 +29,6 @@ from sqlmesh.core.config import PostgresConnectionConfig
 from sqlmesh.core.config.connection import DuckDBAttachOptions
 from sqlmesh.core.config.connection import DuckDBConnectionConfig
 
-from brewgis.workspace.services.duckdb_pool import DuckDBReadOnlyPool
-
 _logger = _logging.getLogger(__name__)
 _drop_data_object_orig = None
 _create_table_orig = None
@@ -42,12 +40,15 @@ _singleton_get_cursor_orig = None
 # (used by the MCP server's SSE transport for concurrent tool access).
 _READONLY_MODE = os.environ.get("SQLMESH_DUCKDB_READONLY", "") == "1"
 _readonly_pool: DuckDBReadOnlyPool | None = None
+# Import is lazy inside _get_readonly_pool() to avoid Django settings cascade
 
 
 def _get_readonly_pool() -> DuckDBReadOnlyPool:
     """Lazy-initialised singleton for the read-only DuckDB pool."""
     global _readonly_pool
     if _readonly_pool is None:
+        from brewgis.workspace.services.duckdb_pool import DuckDBReadOnlyPool
+
         _readonly_pool = DuckDBReadOnlyPool("/app/planning/duckdb_cache.db")
     return _readonly_pool
 

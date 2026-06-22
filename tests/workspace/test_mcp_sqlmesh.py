@@ -10,9 +10,9 @@ from brewgis.workspace.mcp.tools.sqlmesh import ModelNotResolvedError
 from brewgis.workspace.mcp.tools.sqlmesh import PlanStats
 from brewgis.workspace.mcp.tools.sqlmesh import _audit_names
 from brewgis.workspace.mcp.tools.sqlmesh import _columns_to_list
+from brewgis.workspace.mcp.tools.sqlmesh import _context_cache
 from brewgis.workspace.mcp.tools.sqlmesh import _depends_on_list
 from brewgis.workspace.mcp.tools.sqlmesh import _extract_post_statement_indexes
-from brewgis.workspace.mcp.tools.sqlmesh import _get_cached_context
 from brewgis.workspace.mcp.tools.sqlmesh import _grain_names
 from brewgis.workspace.mcp.tools.sqlmesh import _model_kind_name
 from brewgis.workspace.mcp.tools.sqlmesh import _model_source_type
@@ -39,7 +39,7 @@ class TestSqlmeshToolRegistration:
         mock_server.tool = capture_tool
         register_tools(mock_server)
 
-        assert len(registered) == 11
+        assert len(registered) == 12
 
     def test_register_tools_integration(self) -> None:
         """Registering sqlmesh tools works via the aggregator pattern."""
@@ -53,11 +53,12 @@ class TestSqlmeshToolRegistration:
         mock_server.tool = capture_decorator
         register_tools(mock_server)
 
-        assert len(calls) == 11
+        assert len(calls) == 12
 
     def test_cached_context_importable(self) -> None:
-        """The cached context helper can be imported."""
-        assert callable(_get_cached_context)
+        """The context cache can be imported."""
+        assert hasattr(_context_cache, "get")
+        assert hasattr(_context_cache, "refresh")
 
     def test_model_kind_name_none(self) -> None:
         """_model_kind_name returns UNKNOWN for None kind."""

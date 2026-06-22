@@ -2,7 +2,6 @@
 
 import logging
 import os
-from functools import lru_cache
 from pathlib import Path
 from typing import Any
 
@@ -13,6 +12,7 @@ os.environ.setdefault("DJANGO_ALLOW_ASYNC_UNSAFE", "true")
 
 from sqlalchemy import text
 
+from brewgis.workspace.analysis.sqlmesh_runner import SQLMESH_PROJECT_DIR
 from brewgis.workspace.analysis.sqlmesh_runner import get_context
 from brewgis.workspace.management.commands.explain_sqlmesh_models import analyze_plan
 from brewgis.workspace.services._db import get_engine
@@ -20,23 +20,67 @@ from brewgis.workspace.services._db import get_engine
 logger = logging.getLogger(__name__)
 
 
-# ── Cached Context ──────────────────────────────────────────────
+# ── Mtime-Aware Context Cache ─────────────────────────────────
 
 
-@lru_cache(maxsize=1)
-def _get_cached_context(**variables: str | int) -> Any:
-    """Return a cached read-only SQLMesh Context.
+class _ContextCache:
+    """File-mtime–aware cache for the SQLMesh Context.
 
-    Cache key = frozen sorted kwargs; maxsize = 1 means only the most
-        recent variable set is cached.  For the common case (default vars)
-        this avoids reloading ~69 models on every MCP invocation.
+    The cache stores the (context, load_time) pair.  On every access it
+    walks ``brewgis/sqlmesh/`` to compute the most recent file mtime.
+    If any file has been modified since the context was loaded, it
+    creates a fresh Context — eliminating staleness without external
+    signals or cross-container IPC.
+
+    The ``stat()`` walk adds ~5-15ms on local SSD (negligible compared
+    to the MCP roundtrip) and avoids reloading ~69 models on every call
+    when nothing has changed.
     """
-    return get_context(**dict(sorted(variables.items())))
+
+    def __init__(self) -> None:
+        self._context: Any = None
+        self._load_time: float = 0.0
+
+    def get(self, **variables: str | int) -> Any:
+        """Return a fresh-enough context, reloading if any source file changed."""
+        latest_mtime = self._compute_latest_mtime()
+        if self._context is None or latest_mtime > self._load_time:
+            ctx = get_context(**dict(sorted(variables.items())))
+            self._context = ctx
+            self._load_time = latest_mtime
+        return self._context
+
+    def refresh(self) -> None:
+        """Force the next ``get()`` to reload (escape hatch for edge cases)."""
+        self._load_time = 0.0
+
+    @staticmethod
+    def _compute_latest_mtime() -> float:
+        """Walk ``brewgis/sqlmesh/`` and return the latest file mtime."""
+        project_dir = str(SQLMESH_PROJECT_DIR)
+        latest: float = 0.0
+        for dirpath, dirnames, filenames in os.walk(project_dir):
+            # Skip __pycache__ directories for speed
+            dirnames[:] = [d for d in dirnames if d != "__pycache__"]
+            for filename in filenames:
+                filepath = os.path.join(dirpath, filename)
+                try:
+                    mtime = os.stat(filepath).st_mtime
+                    latest = max(latest, mtime)
+                except OSError:
+                    continue  # skip inaccessible files
+        return latest
 
 
-def _context() -> Any:
-    """Shortcut — cached context with default variables."""
-    return _get_cached_context()
+_context_cache = _ContextCache()
+
+
+def _context(**variables: str | int) -> Any:
+    """Shortcut — cached context with default variables, auto-refreshed.
+
+    Kwargs allow overriding SQLMesh variables for specialised callers.
+    """
+    return _context_cache.get(**variables)
 
 
 # ── Output Schemas ──────────────────────────────────────────────
@@ -299,6 +343,22 @@ def _extract_post_statement_indexes(fqn: str) -> list[str]:
 
 def register_tools(server: object) -> None:  # noqa: C901, PLR0915
     """Register SQLMesh inspection tools with the MCP server."""
+
+    @server.tool()  # type: ignore[attr-defined]
+    def refresh_sqlmesh_context() -> dict[str, object]:
+        """Force the SQLMesh Context to reload on the next tool call.
+
+        Use this escape hatch when external files change (e.g. external
+        model YAML, seeds) and the automatic file-mtime check is not fast
+        enough for your immediate next call.  Normally the context is
+        auto-refreshed when any file under ``brewgis/sqlmesh/`` is
+        modified.
+        """
+        _context_cache.refresh()
+        return {
+            "status": "ok",
+            "message": "SQLMesh context cache invalidated. Next tool call will reload.",
+        }
 
     @server.tool()  # type: ignore[attr-defined]
     def list_sqlmesh_models(
