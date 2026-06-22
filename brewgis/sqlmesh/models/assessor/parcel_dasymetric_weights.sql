@@ -79,16 +79,16 @@ SELECT
     c.footprint_ratio,
     c.max_levels,
     c.intersection_density,
-    COALESCE(
+    GREATEST(0, COALESCE(
         ar.authoritative_residential_sqft,
         c.residential_building_sqft,
         c.lot_size_acres * 43560 * 0.15
-    ) AS pop_dasym_weight,
-    COALESCE(
+    )) AS pop_dasym_weight,
+    GREATEST(0, COALESCE(
         ar.authoritative_non_residential_sqft,
         c.commercial_building_sqft + c.industrial_building_sqft + c.other_building_sqft,
         c.lot_size_acres * 43560 * 0.1
-    ) * (1.0 + COALESCE(c.intersection_density, 0.0) / 200.0) AS emp_dasym_weight
+    )) * (1.0 + COALESCE(c.intersection_density, 0.0) / 200.0) AS emp_dasym_weight
 FROM classification c
 LEFT JOIN auth_res ar ON c.apn = ar.apn;
 

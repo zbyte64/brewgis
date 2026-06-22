@@ -3,6 +3,7 @@ AUDIT (
   dialect postgres
 );
 -- lot>10ac → ag; 3-10ac+zone%A% → ag
+-- Excludes A2% parcels (multi-family) which correctly get mf2to4 from tier4.
 SELECT
   apn,
   lot_size_acres,
@@ -22,4 +23,5 @@ WHERE built_form_key_source NOT IN ('tier1', 'tier0', 'tier2', 'tier3', 'tier3b'
   AND (
     (lot_size_acres > 10.0 AND built_form_key != 'agricultural')
     OR (lot_size_acres > 3.0 AND zone LIKE '%A%' AND built_form_key != 'agricultural')
-  );
+  )
+  AND (landuse NOT LIKE 'A2%' OR landuse IS NULL);

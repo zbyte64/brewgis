@@ -123,9 +123,10 @@ tier0_built_form_key AS (
                     WHEN ap.lot_size_acres < 0.15 THEN 'detsf_sl'
                     ELSE 'detsf_ll'
                 END
-            -- A2% (multi-family) deliberately NOT classified here — falls through to
-            -- Tier 2 (Overture building footprints) which has building sqft to estimate
-            -- actual unit counts (mf2to4 vs mf5p). The parcel base has no unit count data.
+            -- A2% (multi-family): no tier0 classification. Falls through to tier2
+            -- (Overture footprints, which distinguish mf2to4 vs mf5p from building
+            -- square footage and height), then to tier3 landuse-constrained KNN.
+            WHEN ap.landuse_prefix LIKE 'A2' THEN NULL
             WHEN ap.landuse_prefix LIKE 'A3' THEN 'attsf'
             WHEN ap.landuse_prefix LIKE 'A4' THEN 'detsf_sl'
             WHEN ap.landuse_prefix LIKE 'AE' THEN 'commercial'
@@ -144,6 +145,13 @@ tier2_built_form_key AS (
     SELECT DISTINCT ON (ap.apn)
         ap.apn,
         CASE
+            -- A2 parcels (multi-family) with building footprints → mf2to4 or mf5p
+            WHEN ap.landuse_prefix LIKE 'A2'
+                 AND bs.residential_building_sqft > 0
+                 AND COALESCE(bs.max_levels, 1) >= 3 THEN 'mf5p'
+            WHEN ap.landuse_prefix LIKE 'A2'
+                 AND bs.residential_building_sqft > 0 THEN 'mf2to4'
+            -- Original tier2 logic for non-A2 parcels
             WHEN bs.residential_building_sqft > 0
                  AND COALESCE(bs.max_levels, 1) < 3 THEN 'detsf_sl'
             WHEN bs.residential_building_sqft > 0
@@ -168,7 +176,8 @@ unknown_parcels AS (
         ap.zone,
         COALESCE(id.intersection_density, 0) AS intersection_density,
         t2.built_form_key AS t2_bft,
-        ap.land_development_category
+        ap.land_development_category,
+        ap.landuse_prefix
     FROM assessor_parcels ap
     LEFT JOIN building_metrics bs ON ap.apn = bs.apn
     LEFT JOIN int_density id ON ap.apn = id.apn
@@ -198,6 +207,10 @@ tier3_candidates AS (
               u.lot_size_acres - 3 * COALESCE(ps.s_ls, u.lot_size_acres + 100)
               AND u.lot_size_acres + 3 * COALESCE(ps.s_ls, u.lot_size_acres + 100)
           AND ST_DWithin(u.geometry, kf.geometry, 5000)
+          AND (
+              (u.landuse_prefix LIKE 'A2' AND kf.built_form_key IN ('mf2to4', 'mf5p'))
+              OR (u.landuse_prefix NOT LIKE 'A2')
+          )
         ORDER BY u.geometry <-> kf.geometry
         LIMIT 200
     ) kf
@@ -234,6 +247,7 @@ tier3b_built_form_key AS (
     WHERE u.lot_size_acres > 3.0
       AND COALESCE(u.footprint_ratio, 0) < 0.02
       AND u.t2_bft IS NULL
+      AND (u.landuse_prefix NOT LIKE 'A2' OR u.landuse_prefix IS NULL)
       AND NOT EXISTS (SELECT 1 FROM tier3_built_form_key t3 WHERE t3.apn = u.apn)
 ),
 
@@ -241,6 +255,7 @@ tier4_built_form_key AS (
     SELECT
         u.apn,
         CASE
+            WHEN u.landuse_prefix LIKE 'A2' THEN 'mf2to4'
             WHEN u.lot_size_acres > 10.0 THEN 'agricultural'
             WHEN u.lot_size_acres > 3.0 THEN
                 CASE

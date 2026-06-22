@@ -60,8 +60,8 @@ def test_landuse_A1_large_lot_returns_detsf_ll(context):
     )
 
 
-def test_landuse_A2_falls_through(context):
-    """A2% → NOT classified at Tier 0 (falls through to Tier 2+)"""
+def test_a2_landuse_not_classified_at_tier0(context):
+    """A2% → NOT classified at Tier 0 (falls through to Tier 3b+/Tier4)"""
     result = context.evaluate(
         "brewgis.assessor.parcel_bft_classification",
         start="2024-01-01",
@@ -79,10 +79,13 @@ def test_landuse_A2_falls_through(context):
         },
     )
     df = result[0].df
-    # A2 should NOT get classified by Tier0 landuse mapping
-    # Without building footprints or sales, it should fall through to Tier3+/Tier4
-    assert df["built_form_key"].iloc[0] is None or df["built_form_key"].iloc[0] == "", (
-        f"A2 landuse should not be classified at Tier0, got {df['built_form_key'].iloc[0]}"
+    # A2 should NOT get classified by Tier0 — falls through to Tier4 mf2to4 fallback
+    row = df.iloc[0]
+    assert row["built_form_key"] == "mf2to4", (
+        f"A2 landuse should be mf2to4 from tier4, got {row['built_form_key']}"
+    )
+    assert row["built_form_key_source"] == "tier4", (
+        f"A2 should be tier4, got {row['built_form_key_source']}"
     )
 
 
