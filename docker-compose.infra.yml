@@ -9,7 +9,7 @@ services:
       context: .
       dockerfile: ./compose/local/postgres/Dockerfile
     container_name: brewgis_local_postgres
-    command: postgres -c work_mem=256MB -c shared_buffers=4GB -c effective_cache_size=12GB -c maintenance_work_mem=512MB -c random_page_cost=1.1 -c effective_io_concurrency=200
+    command: postgres -c work_mem=256MB -c shared_buffers=4GB -c effective_cache_size=12GB -c maintenance_work_mem=512MB -c random_page_cost=1.1 -c effective_io_concurrency=200 -c default_statistics_target=500 -c max_parallel_workers_per_gather=6 -c max_parallel_workers=8 -c parallel_tuple_cost=0.01 -c parallel_setup_cost=100 -c wal_buffers=64MB -c max_wal_size=4GB -c min_wal_size=1GB -c max_connections=20
     volumes:
       - brewgis_local_postgres_data:/var/lib/postgresql
       - brewgis_local_postgres_data_backups:/backups
