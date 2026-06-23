@@ -5,7 +5,7 @@ AUDIT (
 -- Σ(pop per parcel in block) ≈ Census block pop (within 5%)
 WITH source AS (
   SELECT SUM(total_population) AS source_pop
-  FROM brewgis.staging.census_2020_block
+  FROM brewgis.staging.census_2020_block_projected
 ),
 allocated AS (
   SELECT SUM(pop) AS allocated_pop

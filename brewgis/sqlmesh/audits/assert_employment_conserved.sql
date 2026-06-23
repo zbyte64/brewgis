@@ -5,7 +5,7 @@ AUDIT (
 -- Σ(emp per parcel in block) ≈ WAC block emp total (within 0.5%)
 WITH source AS (
   SELECT SUM(emp) AS source_emp
-  FROM brewgis.staging.wac_block
+  FROM brewgis.staging.wac_block_projected
 ),
 allocated AS (
   SELECT SUM(emp) AS allocated_emp

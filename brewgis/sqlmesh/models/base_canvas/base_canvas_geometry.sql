@@ -7,11 +7,7 @@ MODEL (
   audits (
     not_null(columns := (parcel_id))
   ),
-    columns (
-    land_use TEXT,
-    geometry GEOMETRY,
-    local_geometry GEOMETRY
-  ),
+
   depends_on (
     brewgis.comparison.sacog_parcel_shim,
     brewgis.comparison.sacog_comparison_dasymetric
@@ -144,12 +140,10 @@ SELECT
     parcel_area.area_parcel_mixed_use,
     parcel_area.area_parcel_no_use,
     parcel_area.area_gross,
-    -- Area columns with _acres suffix (per methodology)
     ROUND(parcel_area.area_gross::numeric, 4) AS area_gross_acres,
     ROUND(parcel_area.area_gross::numeric, 4) AS area_parcel_acres,
     ROUND((parcel_area.area_gross * 0.7)::numeric, 4) AS area_dev_condition_acres,
     ROUND((parcel_area.area_gross * 0.15)::numeric, 4) AS area_row_acres,
-    -- Methodology columns from dasymetric enrichment
     de.apn,
     de.du_subtype,
     de.is_residential,
@@ -176,3 +170,5 @@ LEFT JOIN dasymetric_enrichment de ON parcel_area.parcel_id = de.parcel_id;
 -- post_statements
   CREATE INDEX IF NOT EXISTS idx_base_canvas_geometry_geometry
   ON brewgis.base_canvas.base_canvas_geometry USING GIST (geometry);
+  CREATE INDEX IF NOT EXISTS idx_base_canvas_geometry_centroid
+  ON brewgis.base_canvas.base_canvas_geometry USING GIST (ST_Centroid(geometry));

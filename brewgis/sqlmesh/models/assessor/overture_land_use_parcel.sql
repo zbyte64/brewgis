@@ -10,6 +10,10 @@ MODEL (
   )
 );
 
+-- pre_statements
+  CREATE INDEX IF NOT EXISTS idx_overture_land_use_bridge_geometry
+  ON brewgis.staging.overture_land_use USING GIST (geometry);
+
 -- Overture Land Use per Parcel — spatial join of Overture land use polygons
 -- to base canvas parcels.
 --
@@ -111,8 +115,5 @@ LEFT JOIN brewgis.seeds.overture_land_use_map oym_subtype
     AND oym_subtype.class IS NULL;
 
 -- post_statements
--- (overture_land_use is DuckDB gateway, so geometry index must live here)
-  CREATE INDEX IF NOT EXISTS idx_overture_land_use_bridge_geometry
-  ON brewgis.staging.overture_land_use USING GIST (geometry);
   CREATE INDEX IF NOT EXISTS idx_overture_land_use_parcel_parcel_id
   ON brewgis.assessor.overture_land_use_parcel (parcel_id);
