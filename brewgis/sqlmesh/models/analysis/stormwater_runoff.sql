@@ -10,10 +10,10 @@ WITH land_data AS (
         lc.impervious_acres,
         lc.impervious_pct,
         es.geom,
-        COALESCE(inc.impervious_acres, 0.0) AS impervious_acres_baseline
+        0.0::double precision AS impervious_acres_baseline
+        -- Note: impervious-acres increment not yet modeled in core_increment;
+        -- baseline defaults to 0, making pct_baseline = pct below
     FROM brewgis.analysis.land_consumption AS lc
-    LEFT JOIN brewgis.analysis.core_increment AS inc
-        ON lc.parcel_id = inc.parcel_id
     LEFT JOIN brewgis.analysis.core_end_state AS es
         ON lc.parcel_id = es.parcel_id
 ),

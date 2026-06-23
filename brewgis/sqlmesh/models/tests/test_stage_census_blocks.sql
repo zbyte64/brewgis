@@ -11,19 +11,22 @@ MODEL (
 
 SELECT
     geoid,
-    total_population::double precision AS total_population,
-    total_housing_units::double precision AS total_housing_units,
+    total_population,
+    total_housing_units,
     0.0::double precision AS total_group_quarters,
     geometry
 FROM (
     SELECT
         '060670011001001' AS geoid,
-        ARRAY[
+        5000::double precision AS total_population,
+        2100::double precision AS total_housing_units,
+        ST_MakeEnvelope(
             ST_XMin(ST_Extent(geometry)),
             ST_YMin(ST_Extent(geometry)),
             ST_XMax(ST_Extent(geometry)),
-            ST_YMax(ST_Extent(geometry))
-        ] AS bbox
+            ST_YMax(ST_Extent(geometry)),
+            4326
+        ) AS geometry
     FROM brewgis.seeds.test_assessor_parcels
     WHERE apn IN ('APN001', 'APN002', 'APN003', 'APN004', 'APN005', 'APN006',
                   'APN007', 'APN010', 'APN011', 'APN012', 'APN013', 'APN014',
@@ -32,12 +35,6 @@ FROM (
                   'APN032', 'APN033', 'APN034', 'APN035', 'APN036', 'APN037',
                   'APN038', 'APN039', 'APN040', 'APN041')
 ) blocks
-CROSS JOIN LATERAL (
-    SELECT
-        5000 AS total_population,
-        2100 AS total_housing_units,
-        ST_MakeEnvelope(bbox[1], bbox[2], bbox[3], bbox[4], 4326) AS geometry
-) AS block1
 UNION ALL
 SELECT
     '060670011002002' AS geoid,
