@@ -47,6 +47,7 @@ WITH building_stats AS (
             FILTER (WHERE bwa.class_category != 'residential') AS non_residential_building_sqft,
         COUNT(*) FILTER (WHERE bwa.class_category = 'residential') AS residential_building_count,
         COUNT(*) FILTER (WHERE bwa.class_category != 'residential') AS non_residential_building_count,
+        COUNT(DISTINCT bwa.class_category) AS distinct_class_categories,
         -- Overture class-based sqft buckets for parcel_building_sqft_by_type.
         -- Mixed-use (class_category = 'mixed'): ground floor = commercial,
         -- upper floors = residential. With 1 floor (or unknown), split 50/50.
@@ -89,8 +90,8 @@ WITH building_stats AS (
         )::double precision AS overture_other_sqft
     FROM brewgis.assessor.sacog_assessor_parcels sap
     JOIN brewgis.staging.buildings_combined_pg bwa
-        ON sap.geometry && bwa.local_geometry
-       AND ST_Intersects(sap.geometry, bwa.local_geometry)
+        ON sap.geometry && bwa.geometry
+       AND ST_Intersects(sap.geometry, bwa.geometry)
     GROUP BY sap.apn
 )
 
@@ -109,6 +110,7 @@ SELECT
     COALESCE(bs.non_residential_building_sqft, 0) AS non_residential_building_sqft,
     COALESCE(bs.residential_building_count, 0) AS residential_building_count,
     COALESCE(bs.non_residential_building_count, 0) AS non_residential_building_count,
+    COALESCE(bs.distinct_class_categories, 0) AS distinct_class_categories,
     COALESCE(bs.overture_commercial_sqft, 0)::double precision AS overture_commercial_sqft,
     COALESCE(bs.overture_residential_sqft, 0)::double precision AS overture_residential_sqft,
     COALESCE(bs.overture_industrial_sqft, 0)::double precision AS overture_industrial_sqft,

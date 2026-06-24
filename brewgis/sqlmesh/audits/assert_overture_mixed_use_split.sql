@@ -13,6 +13,8 @@ WITH mixed_use AS (
     total_footprint_sqft
   FROM @this_model
   WHERE overture_commercial_sqft > 0 AND overture_residential_sqft > 0
+    AND distinct_class_categories = 1
+    AND building_count = 1
 )
 SELECT
   apn,

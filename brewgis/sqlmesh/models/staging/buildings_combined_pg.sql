@@ -13,8 +13,8 @@ MODEL (
 -- instead of sequential scans (~302K buildings).
 
 SELECT
-  geometry,
-  local_geometry,
+  ST_SetSRID(geometry, @VAR('default_srid', 4326)) AS geometry,
+  ST_Transform(ST_SetSRID(geometry, @VAR('default_srid', 4326)), @VAR('local_srid', 3310)) AS local_geometry,
   height,
   levels,
   class,
@@ -30,7 +30,7 @@ SELECT
       WHEN class IN ('mixed') OR class IS NULL THEN 'mixed'
       ELSE 'other'
   END AS class_category,
-  ST_Area(local_geometry) * 10.7639 AS footprint_sqft
+  ST_Area(ST_Transform(ST_SetSRID(geometry, @VAR('default_srid', 4326)), @VAR('local_srid', 3310))) * 10.7639 AS footprint_sqft
 FROM brewgis.staging.buildings_combined;
 
 -- post_statements
