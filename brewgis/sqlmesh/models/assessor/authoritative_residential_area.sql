@@ -96,7 +96,20 @@ SELECT
         WHEN COALESCE(footprint_imputed_building_sqft, 0) > 0
         THEN footprint_imputed_building_sqft
         ELSE NULL
-    END AS authoritative_non_residential_sqft
+    END AS authoritative_non_residential_sqft,
+    -- Data source: tracks which observation regime provided the authoritative value
+    CASE
+        WHEN residential_building_sqft > 0
+             AND COALESCE(max_levels, 0) > 0
+        THEN 'overture_with_levels'
+        WHEN residential_building_sqft > 0
+        THEN 'overture_flat'
+        WHEN COALESCE(actual_living_sqft, 0) > 0
+        THEN 'assessor_sales'
+        WHEN COALESCE(footprint_imputed_living_sqft, 0) > 0
+        THEN 'footprint_imputed'
+        ELSE NULL
+    END AS data_source
 FROM assembled;
 
 -- post_statements

@@ -80,13 +80,48 @@ SELECT
     COALESCE(a.du, r.county_avg_du, 0.0) AS du,
     COALESCE(a.du_detsf, dp.pct_detsf_sl * COALESCE(a.du, r.county_avg_du, 0.0)
         + dp.pct_detsf_ll * COALESCE(a.du, r.county_avg_du, 0.0), 0.0) AS du_detsf,
-    COALESCE(a.du_detsf_sl, dp.pct_detsf_sl * COALESCE(a.du, r.county_avg_du, 0.0), 0.0) AS du_detsf_sl,
-    COALESCE(a.du_detsf_ll, dp.pct_detsf_ll * COALESCE(a.du, r.county_avg_du, 0.0), 0.0) AS du_detsf_ll,
-    COALESCE(a.du_attsf, dp.pct_attsf * COALESCE(a.du, r.county_avg_du, 0.0), 0.0) AS du_attsf,
+    CASE
+        WHEN a.du IS NOT NULL AND a.du > 0
+             AND COALESCE(a.du_detsf_sl, 0) = 0 AND COALESCE(a.du_detsf_ll, 0) = 0
+             AND COALESCE(a.du_attsf, 0) = 0 AND COALESCE(a.du_mf2to4, 0) = 0
+             AND COALESCE(a.du_mf5p, 0) = 0
+        THEN COALESCE(dp.pct_detsf_sl * a.du, 0.0)
+        ELSE COALESCE(a.du_detsf_sl, dp.pct_detsf_sl * COALESCE(a.du, r.county_avg_du, 0.0), 0.0)
+    END AS du_detsf_sl,
+    CASE
+        WHEN a.du IS NOT NULL AND a.du > 0
+             AND COALESCE(a.du_detsf_sl, 0) = 0 AND COALESCE(a.du_detsf_ll, 0) = 0
+             AND COALESCE(a.du_attsf, 0) = 0 AND COALESCE(a.du_mf2to4, 0) = 0
+             AND COALESCE(a.du_mf5p, 0) = 0
+        THEN COALESCE(dp.pct_detsf_ll * a.du, 0.0)
+        ELSE COALESCE(a.du_detsf_ll, dp.pct_detsf_ll * COALESCE(a.du, r.county_avg_du, 0.0), 0.0)
+    END AS du_detsf_ll,
+    CASE
+        WHEN a.du IS NOT NULL AND a.du > 0
+             AND COALESCE(a.du_detsf_sl, 0) = 0 AND COALESCE(a.du_detsf_ll, 0) = 0
+             AND COALESCE(a.du_attsf, 0) = 0 AND COALESCE(a.du_mf2to4, 0) = 0
+             AND COALESCE(a.du_mf5p, 0) = 0
+        THEN COALESCE(dp.pct_attsf * a.du, 0.0)
+        ELSE COALESCE(a.du_attsf, dp.pct_attsf * COALESCE(a.du, r.county_avg_du, 0.0), 0.0)
+    END AS du_attsf,
     COALESCE(a.du_mf, dp.pct_mf2to4 * COALESCE(a.du, r.county_avg_du, 0.0)
         + dp.pct_mf5p * COALESCE(a.du, r.county_avg_du, 0.0), 0.0) AS du_mf,
-    COALESCE(a.du_mf2to4, dp.pct_mf2to4 * COALESCE(a.du, r.county_avg_du, 0.0), 0.0) AS du_mf2to4,
-    COALESCE(a.du_mf5p, dp.pct_mf5p * COALESCE(a.du, r.county_avg_du, 0.0), 0.0) AS du_mf5p,
+    CASE
+        WHEN a.du IS NOT NULL AND a.du > 0
+             AND COALESCE(a.du_detsf_sl, 0) = 0 AND COALESCE(a.du_detsf_ll, 0) = 0
+             AND COALESCE(a.du_attsf, 0) = 0 AND COALESCE(a.du_mf2to4, 0) = 0
+             AND COALESCE(a.du_mf5p, 0) = 0
+        THEN COALESCE(dp.pct_mf2to4 * a.du, 0.0)
+        ELSE COALESCE(a.du_mf2to4, dp.pct_mf2to4 * COALESCE(a.du, r.county_avg_du, 0.0), 0.0)
+    END AS du_mf2to4,
+    CASE
+        WHEN a.du IS NOT NULL AND a.du > 0
+             AND COALESCE(a.du_detsf_sl, 0) = 0 AND COALESCE(a.du_detsf_ll, 0) = 0
+             AND COALESCE(a.du_attsf, 0) = 0 AND COALESCE(a.du_mf2to4, 0) = 0
+             AND COALESCE(a.du_mf5p, 0) = 0
+        THEN COALESCE(dp.pct_mf5p * a.du, 0.0)
+        ELSE COALESCE(a.du_mf5p, dp.pct_mf5p * COALESCE(a.du, r.county_avg_du, 0.0), 0.0)
+    END AS du_mf5p,
     a.du_subtype,
     a.is_residential,
     COALESCE(a.residential_building_sqft, 0.0) AS residential_building_sqft,

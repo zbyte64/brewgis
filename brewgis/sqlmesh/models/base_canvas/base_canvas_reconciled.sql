@@ -2,7 +2,6 @@ MODEL (
   name brewgis.base_canvas.base_canvas_reconciled,
   kind VIEW,
   audits (
-    assert_du_subtype_one_hot,
     assert_du_subtype_sum_equals_du
   )
 );

@@ -736,8 +736,8 @@ class Command(BaseCommand):
 
         # ── Phase 5: Generate comparison report ────────────────────────
         self.stdout.write("\n── Phase 5: Generating comparison report ──")
-        dasymetric_table = context.table_name(
-            "brewgis.comparison.sacog_comparison_dasymetric", "sacog_comparison"
+        dasymetric_table = (
+            "brewgis.comparison__sacog_comparison.sacog_comparison_dasymetric"
         )
         reconciled_table = context.table_name(
             "brewgis.base_canvas.base_canvas_reconciled", "sacog_comparison"
