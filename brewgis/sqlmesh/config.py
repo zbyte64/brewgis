@@ -283,6 +283,7 @@ def config_factory(**variables):
                 "invalidselectstarexpansion",
                 "NoTransformInJoinWhere",
                 "noselectstar",
+                "DuckDBGeometryUsage",
             ],
             warn_rules=[
                 "MissingGeometryIndex",
@@ -298,6 +299,8 @@ def config_factory(**variables):
                 # "nomissingaudits",
                 "nomissingexternalmodels",
                 # "nomissingunittest",
+                "DuckDBTransformWarning",
+                "DegradingSRIDCast",
             ],
         ),
         variables={

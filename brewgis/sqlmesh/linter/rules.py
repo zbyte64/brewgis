@@ -193,6 +193,24 @@ _SPATIAL_FUNCTIONS = frozenset(
     }
 )
 
+_GEOMETRY_COMPUTE_FUNCTIONS = frozenset(
+    {
+        "ST_AREA",
+        "ST_LENGTH",
+        "ST_PERIMETER",
+        "ST_CENTROID",
+        "ST_BUFFER",
+        "ST_INTERSECTION",
+        "ST_UNION",
+        "ST_DIFFERENCE",
+        "ST_SYMDIFFERENCE",
+    }
+)
+
+_ALL_CHECKED_FUNCTIONS = (
+    _SPATIAL_FUNCTIONS | _GEOMETRY_COMPUTE_FUNCTIONS | frozenset({"ST_SETSRID"})
+)
+
 _EXPRESSION_WRAPPERS = frozenset(
     {
         "LEFT",
@@ -1785,3 +1803,234 @@ def _audit_col_inside_unrelated_cte(col: exp.Column, cte_names: frozenset[str]) 
             return not has_this
         parent = parent.parent
     return False
+
+
+# ── DuckDBGeometryUsage ────────────────────────────────────────────────
+
+
+class DuckDBGeometryUsage(Rule):
+    """Flags use of geometry columns from DuckDB gateway models that
+    produce NaN/Infinity coordinates when used in PostGIS.
+
+    DuckDB's ``ST_Transform(geometry, 'EPSG:3310')`` produces coordinates
+    that PostgreSQL interprets as valid but are actually NaN/Infinity.
+    Downstream models computing ``ST_Area`` on these geometries get 0.
+    Spatial joins (``ST_Intersects``, ``&&``) produce empty results.
+    """
+
+    def check_model(self, model: Model) -> RuleViolation | list[RuleViolation] | None:
+        if not isinstance(model, SqlModel):
+            return None
+
+        query = model.render_query()
+        if query is None:
+            return None
+
+        alias_map = _build_alias_table_map(query, model)
+        context = getattr(self, "context", None)
+
+        # Track dedup: (model_fqn, column_name) per model.
+        reported: set[tuple[str, str]] = set()
+        violations: list[RuleViolation] = []
+
+        for func in query.find_all(exp.Func):
+            if _func_name(func) not in _ALL_CHECKED_FUNCTIONS:
+                continue
+            for col in func.find_all(exp.Column):
+                self._check_column(col, alias_map, context, reported, violations)
+
+        # Check && operator (ArrayOverlaps).
+        for overlaps in query.find_all(exp.ArrayOverlaps):
+            for col in overlaps.find_all(exp.Column):
+                self._check_column(col, alias_map, context, reported, violations)
+
+        if not violations:
+            return None
+        if len(violations) == 1:
+            return violations[0]
+        return violations
+
+    def _check_column(
+        self,
+        col: exp.Column,
+        alias_map: dict[str, str],
+        context: object,
+        reported: set[tuple[str, str]],
+        violations: list[RuleViolation],
+    ) -> None:
+        """Check a single column reference for DuckDB geometry issues."""
+        alias = col.table or ""
+        if not alias:
+            from_entries = [k for k in alias_map if k]
+            if len(from_entries) == 1:
+                alias = from_entries[0]
+            else:
+                return
+
+        fqn = alias_map.get(alias)
+        if fqn is None:
+            return
+
+        ref_model = _get_model(context, fqn)
+        if ref_model is None:
+            return
+        if getattr(ref_model, "gateway", None) != "duckdb":
+            return
+
+        col_name = col.name
+        key = (fqn, col_name)
+        if key in reported:
+            return
+        reported.add(key)
+
+        if col_name == "local_geometry":
+            violations.append(
+                self.violation(
+                    f"reference to ``local_geometry`` from DuckDB gateway model"
+                    f" ``{fqn}``. DuckDB ST_Transform to EPSG:3310 produces"
+                    f" NaN/Infinity. Use ST_Transform(ST_SetSRID("
+                    f"{alias}.geometry, 4326), 3310) instead."
+                )
+            )
+        elif col_name == "geometry":
+            if self._is_wrapped_in_setsrid_or_transform(col):
+                return
+            violations.append(
+                self.violation(
+                    f"use of ``geometry`` from DuckDB gateway model ``{fqn}``"
+                    f" without ST_SetSRID. PostGIS sees SRID 0. Wrap with"
+                    f" ST_SetSRID({alias}.geometry, 4326)."
+                )
+            )
+
+    @staticmethod
+    def _is_wrapped_in_setsrid_or_transform(col: exp.Column) -> bool:
+        """Check if col is directly inside ST_SetSRID or ST_Transform."""
+        parent = col.parent
+        while parent is not None:
+            if isinstance(parent, exp.Func):
+                pname = _func_name(parent)
+                if pname == "ST_SETSRID" or pname == "ST_TRANSFORM":
+                    return True
+                break
+            parent = parent.parent
+        return False
+
+
+# ── DuckDBTransformWarning ──────────────────────────────────────────────
+
+
+class DuckDBTransformWarning(Rule):
+    """Warns when DuckDB gateway models project geometry to the local SRID.
+
+    DuckDB's ``ST_Transform`` to a projected CRS (specifically EPSG:3310)
+    produces NaN/Infinity coordinates when the geometry is materialized in
+    PostGIS. This rule flags DuckDB models that do ``ST_Transform(geometry, …3310…)``
+    so the developer can verify or move the transformation downstream.
+    """
+
+    def check_model(self, model: Model) -> RuleViolation | None:
+        if getattr(model, "gateway", None) != "duckdb":
+            return None
+        if not isinstance(model, SqlModel):
+            return None
+
+        try:
+            query = model.render_query()
+        except Exception:  # noqa: BLE001
+            return None
+        if query is None:
+            return None
+
+        sql = query.sql(dialect="duckdb")
+        if re.search(r"ST_Transform\s*\(.*(?:3310|local_srid)", sql, re.IGNORECASE):
+            return self.violation(
+                "DuckDB gateway model renders local_geometry via ST_Transform"
+                " to a projected CRS. This produces NaN/Infinity coordinates"
+                " when materialized in PostGIS. Move the ST_Transform to a"
+                " downstream PostgreSQL model, or verify the DuckDB proj"
+                " database is properly configured."
+            )
+        return None
+
+
+# ── DegradingSRIDCast ──────────────────────────────────────────────────
+
+
+class DegradingSRIDCast(Rule):
+    """Warns when ``ST_SetSRID(geometry, 0)`` degrades a properly-typed
+    geometry column down to SRID 0 to match an upstream workaround.
+
+    This is a downstream band-aid for the DuckDB SRID 0 problem. Instead
+    of casting to SRID 0, the upstream model's geometry should have its
+    SRID properly set.
+    """
+
+    def check_model(self, model: Model) -> RuleViolation | list[RuleViolation] | None:
+        if not isinstance(model, SqlModel):
+            return None
+
+        query = model.render_query()
+        if query is None:
+            return None
+
+        alias_map = _build_alias_table_map(query, model)
+        context = getattr(self, "context", None)
+
+        violations: list[RuleViolation] = []
+
+        for func in query.find_all(exp.Func):
+            if _func_name(func) != "ST_SETSRID":
+                continue
+
+            args = _func_args(func)
+            if len(args) < 2:
+                continue
+
+            srid_arg = args[1]
+            if not isinstance(srid_arg, exp.Literal):
+                continue
+            try:
+                if int(srid_arg.this) != 0:
+                    continue
+            except (ValueError, TypeError):
+                continue
+
+            # ``ST_SetSRID(expr, 0)`` — check first arg.
+            first = args[0]
+            if not isinstance(first, exp.Column):
+                continue  # Not a column ref (e.g., ST_MakePoint).
+
+            alias = first.table or ""
+            if not alias:
+                from_entries = [k for k in alias_map if k]
+                if len(from_entries) == 1:
+                    alias = from_entries[0]
+                else:
+                    continue
+
+            fqn = alias_map.get(alias)
+            if fqn is None:
+                continue
+
+            ref_model = _get_model(context, fqn)
+            if ref_model is None:
+                continue
+            # Skip DuckDB sources — SRID 0 is the true state.
+            if getattr(ref_model, "gateway", None) == "duckdb":
+                continue
+
+            violations.append(
+                self.violation(
+                    f"ST_SetSRID({first}, 0) degrades SRID to 0 from ``{fqn}``."
+                    f" Set the correct SRID on the upstream model's geometry"
+                    f" column instead of working around missing SRID metadata"
+                    f" downstream."
+                )
+            )
+
+        if not violations:
+            return None
+        if len(violations) == 1:
+            return violations[0]
+        return violations

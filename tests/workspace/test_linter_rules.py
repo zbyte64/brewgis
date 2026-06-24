@@ -15,6 +15,9 @@ from sqlmesh.core.model import Model
 from sqlmesh.core.model import create_sql_model
 
 from brewgis.sqlmesh.linter.rules import CrossJoinLikeJoin
+from brewgis.sqlmesh.linter.rules import DegradingSRIDCast
+from brewgis.sqlmesh.linter.rules import DuckDBGeometryUsage
+from brewgis.sqlmesh.linter.rules import DuckDBTransformWarning
 from brewgis.sqlmesh.linter.rules import StaticComplexityScore
 from brewgis.sqlmesh.linter.rules import UnfilteredTableScan
 from brewgis.sqlmesh.linter.rules import UnindexedGroupBy
@@ -1244,3 +1247,321 @@ class TestStaticComplexityScore:
         assert len(violations) == 1
         msg = _violation_msg(violations[0])
         assert "Complexity score" in msg
+
+
+# ── Helper functions for DuckDB geometry rules ────────────────────────
+
+
+def _make_duckdb_ref_model(
+    name: str,
+    columns: dict[str, str],
+    *,
+    dialect: str = "postgres",
+) -> Model:
+    """Create a SQLMesh model with ``gateway='duckdb'`` for testing."""
+    col_exprs = ", ".join(columns.keys())
+    parsed_cols = {
+        k: exp.DataType.build(v, dialect=dialect) for k, v in columns.items()
+    }
+    return create_sql_model(
+        name,
+        query=exp.maybe_parse(f"SELECT {col_exprs} FROM source_table", dialect=dialect),  # noqa: S608
+        columns=parsed_cols,
+        path=Path("/dev/null/test_duckdb.sql"),
+        dialect=dialect,
+        depends_on=set(),
+        post_statements=[],
+        gateway="duckdb",
+    )
+
+
+def _make_duckdb_model(name: str, query_sql: str) -> Model:
+    """Create a DuckDB gateway model for testing transform warnings."""
+    return create_sql_model(
+        name,
+        query=exp.maybe_parse(query_sql, dialect="duckdb"),
+        columns={},
+        path=Path("/dev/null/test_transform.sql"),
+        dialect="duckdb",
+        depends_on=set(),
+        post_statements=[],
+        gateway="duckdb",
+    )
+
+
+def _check_duckdb_geometry(
+    source_model: Model,
+    ref_models: dict[str, Model],
+) -> list[RuleViolation]:
+    """Run ``DuckDBGeometryUsage`` on ``source_model``."""
+    context = _FakeContext(ref_models)
+    rule = DuckDBGeometryUsage(context)  # type: ignore[arg-type]
+    result = rule.check_model(source_model)
+    if result is None:
+        return []
+    if isinstance(result, list):
+        return result
+    return [result]
+
+
+def _check_duckdb_transform(
+    model: Model,
+    ref_models: dict[str, Model] | None = None,
+) -> list[RuleViolation]:
+    """Run ``DuckDBTransformWarning`` on ``model``."""
+    context = _FakeContext(ref_models or {})
+    rule = DuckDBTransformWarning(context)  # type: ignore[arg-type]
+    result = rule.check_model(model)
+    if result is None:
+        return []
+    if isinstance(result, list):
+        return result
+    return [result]
+
+
+def _check_degrading_srid(
+    source_model: Model,
+    ref_models: dict[str, Model],
+) -> list[RuleViolation]:
+    """Run ``DegradingSRIDCast`` on ``source_model``."""
+    context = _FakeContext(ref_models)
+    rule = DegradingSRIDCast(context)  # type: ignore[arg-type]
+    result = rule.check_model(source_model)
+    if result is None:
+        return []
+    if isinstance(result, list):
+        return result
+    return [result]
+
+
+# ── DuckDBGeometryUsage Tests ──────────────────────────────────────────
+
+
+class TestDuckDBGeometryUsage:
+    """Tests for DuckDBGeometryUsage lint rule."""
+
+    def test_local_geometry_join_flagged(self) -> None:
+        """Spatial join on local_geometry from DuckDB → 1 violation."""
+        ref = _make_duckdb_ref_model(
+            "brewdb.staging.duckdb_ref",
+            {"local_geometry": "GEOMETRY", "geometry": "GEOMETRY", "id": "BIGINT"},
+        )
+        src = _make_source_model(
+            "brewdb.public.analysis",
+            """
+            SELECT s.*
+            FROM source_table AS s
+            JOIN brewdb.staging.duckdb_ref AS d
+                ON ST_Intersects(s.geom, d.local_geometry)
+            """,
+            {"id": "BIGINT", "result": "BIGINT"},
+        )
+        violations = _check_duckdb_geometry(src, {"brewdb.staging.duckdb_ref": ref})
+        assert len(violations) == 1
+        msg = _violation_msg(violations[0])
+        assert "local_geometry" in msg
+        assert "DuckDB" in msg
+
+    def test_geometry_without_srid_flagged(self) -> None:
+        """Spatial join on geometry from DuckDB without ST_SetSRID → 1 violation."""
+        ref = _make_duckdb_ref_model(
+            "brewdb.staging.duckdb_ref",
+            {"geometry": "GEOMETRY", "id": "BIGINT"},
+        )
+        src = _make_source_model(
+            "brewdb.public.analysis",
+            """
+            SELECT s.*
+            FROM source_table AS s
+            JOIN brewdb.staging.duckdb_ref AS d
+                ON ST_Intersects(s.geom, d.geometry)
+            """,
+            {"id": "BIGINT", "result": "BIGINT"},
+        )
+        violations = _check_duckdb_geometry(src, {"brewdb.staging.duckdb_ref": ref})
+        assert len(violations) == 1
+        msg = _violation_msg(violations[0])
+        assert "ST_SetSRID" in msg
+
+    def test_geometry_with_srid_passes(self) -> None:
+        """Spatial join on geometry from DuckDB wrapped in ST_SetSRID → 0 violations."""
+        ref = _make_duckdb_ref_model(
+            "brewdb.staging.duckdb_ref",
+            {"geometry": "GEOMETRY", "id": "BIGINT"},
+        )
+        src = _make_source_model(
+            "brewdb.public.analysis",
+            """
+            SELECT s.*
+            FROM source_table AS s
+            JOIN brewdb.staging.duckdb_ref AS d
+                ON ST_Intersects(s.geom, ST_SetSRID(d.geometry, 4326))
+            """,
+            {"id": "BIGINT", "result": "BIGINT"},
+        )
+        violations = _check_duckdb_geometry(src, {"brewdb.staging.duckdb_ref": ref})
+        assert violations == []
+
+    def test_st_area_on_local_geometry_flagged(self) -> None:
+        """ST_Area(local_geometry) on unqualified FROM clause → 1 violation."""
+        ref = _make_duckdb_ref_model(
+            "brewdb.staging.duckdb_ref",
+            {"local_geometry": "GEOMETRY", "geometry": "GEOMETRY"},
+        )
+        src = _make_source_model(
+            "brewdb.public.analysis",
+            "SELECT ST_Area(local_geometry) AS area FROM brewdb.staging.duckdb_ref",
+            {"area": "DOUBLE PRECISION"},
+        )
+        violations = _check_duckdb_geometry(src, {"brewdb.staging.duckdb_ref": ref})
+        assert len(violations) == 1
+        msg = _violation_msg(violations[0])
+        assert "local_geometry" in msg
+
+    def test_non_spatial_no_flag(self) -> None:
+        """Non-spatial join on DuckDB model → 0 violations."""
+        ref = _make_duckdb_ref_model(
+            "brewdb.staging.duckdb_ref",
+            {"id": "BIGINT", "name": "TEXT"},
+        )
+        src = _make_source_model(
+            "brewdb.public.analysis",
+            """
+            SELECT s.*
+            FROM source_table AS s
+            JOIN brewdb.staging.duckdb_ref AS d ON s.id = d.id
+            """,
+            {"id": "BIGINT", "result": "BIGINT"},
+        )
+        violations = _check_duckdb_geometry(src, {"brewdb.staging.duckdb_ref": ref})
+        assert violations == []
+
+    def test_pg_model_no_flag(self) -> None:
+        """Spatial join on local_geometry from PG (non-DuckDB) model → 0 violations."""
+        ref = _make_ref_model(
+            "brewdb.public.pg_ref",
+            {"local_geometry": "GEOMETRY", "geometry": "GEOMETRY"},
+        )
+        src = _make_source_model(
+            "brewdb.public.analysis",
+            """
+            SELECT s.*
+            FROM source_table AS s
+            JOIN brewdb.public.pg_ref AS p
+                ON ST_Intersects(s.geom, p.local_geometry)
+            """,
+            {"id": "BIGINT", "result": "BIGINT"},
+        )
+        violations = _check_duckdb_geometry(src, {"brewdb.public.pg_ref": ref})
+        assert violations == []
+
+
+# ── DuckDBTransformWarning Tests ───────────────────────────────────────
+
+
+class TestDuckDBTransformWarning:
+    """Tests for DuckDBTransformWarning lint rule."""
+
+    def test_duckdb_model_with_transform_warned(self) -> None:
+        """DuckDB model with ST_Transform to 3310 → 1 violation."""
+        model = _make_duckdb_model(
+            "duckdb.staging.test_model",
+            "SELECT ST_Transform(geometry, 'EPSG:3310') AS local_geometry FROM source",
+        )
+        violations = _check_duckdb_transform(model, {})
+        assert len(violations) == 1
+        msg = _violation_msg(violations[0])
+        assert "ST_Transform" in msg
+
+    def test_pg_model_with_transform_no_flag(self) -> None:
+        """PG model with ST_Transform → 0 violations (gateway is not 'duckdb')."""
+        model = _make_source_model(
+            "brewdb.public.test_model",
+            "SELECT ST_Transform(geometry, 3310) AS local_geometry FROM source_table",
+            {"local_geometry": "GEOMETRY"},
+        )
+        violations = _check_duckdb_transform(model, {})
+        assert violations == []
+
+    def test_duckdb_model_no_transform_passes(self) -> None:
+        """DuckDB model without ST_Transform → 0 violations."""
+        model = _make_duckdb_model(
+            "duckdb.staging.test_model",
+            "SELECT geometry FROM source",
+        )
+        violations = _check_duckdb_transform(model, {})
+        assert violations == []
+
+
+# ── DegradingSRIDCast Tests ────────────────────────────────────────────
+
+
+class TestDegradingSRIDCast:
+    """Tests for DegradingSRIDCast lint rule."""
+
+    def test_st_setsrid_zero_on_pg_model_flagged(self) -> None:
+        """ST_SetSRID(p.geometry, 0) on PG model → 1 violation."""
+        ref = _make_ref_model(
+            "brewdb.public.parcels",
+            {"geometry": "GEOMETRY", "parcel_id": "BIGINT"},
+        )
+        src = _make_source_model(
+            "brewdb.public.analysis",
+            """
+            SELECT s.*
+            FROM source_table AS s
+            JOIN brewdb.public.parcels AS p
+                ON ST_Intersects(s.geom, ST_SetSRID(p.geometry, 0))
+            """,
+            {"parcel_id": "BIGINT", "result": "BIGINT"},
+        )
+        violations = _check_degrading_srid(src, {"brewdb.public.parcels": ref})
+        assert len(violations) == 1
+        msg = _violation_msg(violations[0])
+        assert "degrades SRID" in msg
+
+    def test_st_setsrid_zero_on_literal_passes(self) -> None:
+        """ST_SetSRID(ST_MakePoint(x, y), 0) — literal construction → 0 violations."""
+        src = _make_source_model(
+            "brewdb.public.analysis",
+            "SELECT ST_SetSRID(ST_MakePoint(1.0, 2.0), 0) AS geom",
+            {"geom": "GEOMETRY"},
+        )
+        violations = _check_degrading_srid(src, {})
+        assert violations == []
+
+    def test_st_setsrid_nonzero_passes(self) -> None:
+        """ST_SetSRID(p.geometry, 4326) → 0 violations (correct SRID)."""
+        ref = _make_ref_model(
+            "brewdb.public.parcels",
+            {"geometry": "GEOMETRY"},
+        )
+        src = _make_source_model(
+            "brewdb.public.analysis",
+            """
+            SELECT ST_SetSRID(p.geometry, 4326) AS geom
+            FROM source_table AS s
+            JOIN brewdb.public.parcels AS p ON s.id = p.parcel_id
+            """,
+            {"geom": "GEOMETRY"},
+        )
+        violations = _check_degrading_srid(src, {"brewdb.public.parcels": ref})
+        assert violations == []
+
+    def test_st_setsrid_zero_on_duckdb_passes(self) -> None:
+        """ST_SetSRID(d.geometry, 0) — DuckDB source → 0 violations (SRID 0 is true state)."""
+        ref = _make_duckdb_ref_model(
+            "brewdb.staging.duckdb_ref",
+            {"geometry": "GEOMETRY"},
+        )
+        src = _make_source_model(
+            "brewdb.public.analysis",
+            """
+            SELECT ST_SetSRID(d.geometry, 0) AS geom
+            FROM source_table AS s
+            JOIN brewdb.staging.duckdb_ref AS d ON s.id = d.parcel_id
+            """,
+            {"geom": "GEOMETRY"},
+        )
+        violations = _check_degrading_srid(src, {"brewdb.staging.duckdb_ref": ref})
+        assert violations == []
