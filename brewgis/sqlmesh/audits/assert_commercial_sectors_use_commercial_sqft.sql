@@ -15,6 +15,7 @@ SELECT
   emp_medical_services
 FROM @this_model
 WHERE COALESCE(commercial_building_sqft, 0) <= 0
+  AND COALESCE(emp_dasym_weight, 0) <= 0
   AND (
     COALESCE(emp_retail_services, 0) > 0
     OR COALESCE(emp_restaurant, 0) > 0

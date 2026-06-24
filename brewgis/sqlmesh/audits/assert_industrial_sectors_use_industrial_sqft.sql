@@ -13,6 +13,7 @@ SELECT
   emp_construction
 FROM @this_model
 WHERE COALESCE(industrial_building_sqft, 0) <= 0
+  AND COALESCE(emp_dasym_weight, 0) <= 0
   AND (
     COALESCE(emp_manufacturing, 0) > 0
     OR COALESCE(emp_wholesale, 0) > 0

@@ -3,8 +3,13 @@ AUDIT (
   dialect postgres
 );
 -- Σ(emp per parcel in block) ≈ WAC block emp total (within 0.5%)
--- Only count blocks where at least one parcel has emp_dasym_weight > 0,
--- because blocks with no dasymetric weight cannot allocate employment.
+--
+-- Only counts blocks where at least one intersecting parcel has emp_dasym_weight > 0.
+-- Employment allocation uses a two-tier weight:
+--   1. Primary: sector-specific building sqft (commercial/industrial/other)
+--   2. Fallback: emp_dasym_weight (lot-size-based when building sqft is unavailable)
+-- Blocks with zero emp_dasym_weight across all intersecting parcels cannot allocate
+-- any employment and are correctly excluded from this comparison.
 WITH
 blocks_with_weight AS (
   SELECT DISTINCT cb.geoid
