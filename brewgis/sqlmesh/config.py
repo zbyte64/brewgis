@@ -247,6 +247,7 @@ def config_factory(**variables):
                 connection=PostgresConnectionConfig(concurrent_tasks=8, **_db_kwargs),
                 state_connection=PostgresConnectionConfig(**_db_kwargs),
                 state_schema="sqlmesh_state",
+                test_connection=PostgresConnectionConfig(**_db_kwargs),
             ),
             "duckdb": GatewayConfig(
                 connection=DuckDBConnectionConfig(

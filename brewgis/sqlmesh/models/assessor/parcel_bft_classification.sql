@@ -151,6 +151,11 @@ tier2_built_form_key AS (
                  AND COALESCE(bs.max_levels, 1) >= 3 THEN 'mf5p'
             WHEN ap.landuse_prefix LIKE 'A2'
                  AND bs.residential_building_sqft > 0 THEN 'mf2to4'
+            -- A2 catch-all: building footprints exist but Overture didn't tag as residential.
+            -- Landuse code already says multi-family, so default to conservative mf2to4.
+            -- Without this, A2 + non-residential-only footprints falls through to
+            -- 'WHEN other_building_sqft > 0 THEN civic', violating A2 audit.
+            WHEN ap.landuse_prefix LIKE 'A2' THEN 'mf2to4'
             -- Original tier2 logic for non-A2 parcels
             WHEN bs.residential_building_sqft > 0
                  AND COALESCE(bs.max_levels, 1) < 3 THEN 'detsf_sl'

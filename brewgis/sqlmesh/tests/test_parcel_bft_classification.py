@@ -397,3 +397,51 @@ def test_non_a2_large_lot_zone_a_still_agricultural_tier4(context):
         f"Non-A2 large lot (A-zone) expected agricultural from tier4, "
         f"got {row['built_form_key']} (source={row['built_form_key_source']})"
     )
+
+
+def test_a2_with_non_residential_footprints_tier2(context):
+    """A2% + building footprints but no residential sqft → tier2 → mf2to4 (NOT civic)
+
+    A2 parcels where Overture found buildings but classified them as 'other'
+    (not residential) must still get mf2to4, NOT civic. Prior to the fix,
+    the A2-specific CASE branches required residential_building_sqft > 0,
+    so these fell through to 'WHEN other_building_sqft > 0 THEN civic'.
+    """
+    result = context.evaluate(
+        "brewgis.assessor.parcel_bft_classification",
+        start="2024-01-01",
+        end="2024-01-01",
+        inputs={
+            "brewgis.assessor.sacog_assessor_parcels": [
+                {
+                    "apn": "TEST_A2_NON_RES",
+                    "lot_size_acres": 0.25,
+                    "landuse": "A2",
+                    "zone": "R-3",
+                    "geometry": "POLYGON((-121.5 38.5,-121.49 38.5,-121.49 38.51,-121.5 38.51,-121.5 38.5))",
+                }
+            ],
+            "brewgis.assessor.parcel_building_sqft_by_type": [
+                {
+                    "apn": "TEST_A2_NON_RES",
+                    "total_footprint_sqft": 3000.0,
+                    "building_count": 2,
+                    "footprint_ratio": 0.05,
+                    "residential_building_sqft": 0.0,
+                    "commercial_building_sqft": 0.0,
+                    "industrial_building_sqft": 0.0,
+                    "other_building_sqft": 3000.0,
+                    "max_levels": 2,
+                }
+            ],
+        },
+    )
+    df = result[0].df
+    row = df.iloc[0]
+    assert row["built_form_key"] == "mf2to4", (
+        f"A2 with non-residential footprints expected mf2to4 from tier2, "
+        f"got {row['built_form_key']} (source={row['built_form_key_source']})"
+    )
+    assert row["built_form_key_source"] == "tier2", (
+        f"A2 with footprints should be tier2, got {row['built_form_key_source']}"
+    )

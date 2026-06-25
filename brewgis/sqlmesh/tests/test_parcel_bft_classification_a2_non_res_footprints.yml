@@ -1,0 +1,49 @@
+test_a2_with_non_residential_footprints_tier2:
+  model: brewgis.assessor.parcel_bft_classification
+  gateway: postgis
+  inputs:
+    brewgis.assessor.sacog_assessor_parcels:
+      rows:
+        - apn: "TEST_A2_NON_RES"
+          lot_size_acres: 0.25
+          landuse: "A2"
+          zone: "R-3"
+          geometry: "POLYGON((-121.5 38.5,-121.49 38.5,-121.49 38.51,-121.5 38.51,-121.5 38.5))"
+          land_development_category: "urban"
+      columns:
+        geometry: GEOMETRY
+    brewgis.assessor.parcel_building_sqft_by_type:
+      rows:
+        - apn: "TEST_A2_NON_RES"
+          total_footprint_sqft: 3000.0
+          building_count: 2
+          footprint_ratio: 0.05
+          residential_building_sqft: 0.0
+          commercial_building_sqft: 0.0
+          industrial_building_sqft: 0.0
+          other_building_sqft: 3000.0
+          max_levels: 2
+    brewgis.assessor.sacog_assessor_sales_deduped:
+      rows: []
+    brewgis.assessor.overture_intersection_density:
+      rows: []
+    brewgis.assessor.parcel_partition_stats:
+      rows: []
+    brewgis.assessor.parcel_known_features:
+      rows:
+        - apn: "OTHER_PARCEL"
+          geometry: "POLYGON((-121.6 38.4,-121.59 38.4,-121.59 38.41,-121.6 38.41,-121.6 38.4))"
+          built_form_key: "detsf_ll"
+          lot_size_acres: 0.20
+          intersection_density: 5.0
+          footprint_ratio: 0.10
+          land_development_category: "urban"
+      columns:
+        geometry: GEOMETRY
+  outputs:
+    query:
+      partial: true
+      rows:
+        - apn: "TEST_A2_NON_RES"
+          built_form_key: "mf2to4"
+          built_form_key_source: "tier2"
