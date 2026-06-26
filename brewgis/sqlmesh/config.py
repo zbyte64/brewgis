@@ -308,6 +308,8 @@ def config_factory(**variables):
             # Year and vintage parameters for staging models
             "lodes_year": 2008,
             "acs_year": 2013,
+            "state_fips": "06",
+            "county_fips": "067",
             "tiger_vintage": "2023",
             "tiger_block_vintage": "2020",
             "tiger_bg_vintage": "2013",

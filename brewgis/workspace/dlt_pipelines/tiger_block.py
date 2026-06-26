@@ -6,7 +6,7 @@ dlt. Writes with merge disposition keyed on the 15-digit GEOID for upsert
 semantics on re-run.
 
 Block boundaries are decennial-only (Census 2020). The 2020 TIGER/Line
-release uses the TABBLOCK10 filename convention. TIGER2023 does NOT include
+release uses the TABBLOCK20 filename convention. TIGER2023 does NOT include
 a TABBLOCK directory. When newer releases provide block boundaries they can
 be added by extending the vintages list with the appropriate URL.
 
@@ -64,7 +64,7 @@ def tiger_block_source(
 #   TABBLOCK does NOT exist for 2023 (decennial-only). Add future decennial
 #   years here as the URL pattern becomes known.
 _TIGER_BLOCK_URLS: dict[str, str] = {
-    "2020": "https://www2.census.gov/geo/tiger/TIGER2020/TABBLOCK/tl_2020_{state_fips}_tabblock10.zip",
+    "2020": "https://www2.census.gov/geo/tiger/TIGER2020/TABBLOCK20/tl_2020_{state_fips}_tabblock20.zip",
 }
 
 
@@ -103,7 +103,10 @@ def tiger_block_resource(
     url = url_template.format(state_fips=state_fips)
 
     zip_path = (
-        CACHE_DIR / f"TIGER{year}" / "TABBLOCK" / f"tl_{year}_{state_fips}_tabblock.zip"
+        CACHE_DIR
+        / f"TIGER{year}"
+        / "TABBLOCK20"
+        / f"tl_{year}_{state_fips}_tabblock20.zip"
     )
     zip_path.parent.mkdir(exist_ok=True, parents=True)
 
@@ -120,12 +123,18 @@ def tiger_block_resource(
         gdf.set_crs("EPSG:4269", inplace=True)
     gdf = gdf.to_crs("EPSG:4326")
 
-    statefp_col = next((c for c in ("STATEFP10", "STATEFP") if c in gdf.columns), None)
-    countyfp_col = next(
-        (c for c in ("COUNTYFP10", "COUNTYFP") if c in gdf.columns), None
+    statefp_col = next(
+        (c for c in ("STATEFP20", "STATEFP10", "STATEFP") if c in gdf.columns), None
     )
-    tractce_col = next((c for c in ("TRACTCE10", "TRACTCE") if c in gdf.columns), None)
-    blockce_col = next((c for c in ("BLOCKCE10", "BLOCKCE") if c in gdf.columns), None)
+    countyfp_col = next(
+        (c for c in ("COUNTYFP20", "COUNTYFP10", "COUNTYFP") if c in gdf.columns), None
+    )
+    tractce_col = next(
+        (c for c in ("TRACTCE20", "TRACTCE10", "TRACTCE") if c in gdf.columns), None
+    )
+    blockce_col = next(
+        (c for c in ("BLOCKCE20", "BLOCKCE10", "BLOCKCE") if c in gdf.columns), None
+    )
 
     for _, row in gdf.iterrows():
         statefp = str(row.get(statefp_col, "")).zfill(2)

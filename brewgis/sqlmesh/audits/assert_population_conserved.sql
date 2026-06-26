@@ -16,7 +16,7 @@ WITH
 blocks_with_weight AS (
   SELECT DISTINCT cb.geoid
   FROM brewgis.staging.census_2020_block_projected cb
-  JOIN brewgis.base_canvas.base_canvas_geometry bg
+  JOIN @this_model bg
     ON ST_Intersects(bg.geometry, cb.geometry)
   WHERE COALESCE(bg.du_pop_dasym_weight, 0) > 0
 ),

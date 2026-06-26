@@ -16,9 +16,9 @@ import logging
 import os
 from typing import Any
 
+from brewgis.workspace.analysis.sqlmesh_runner import run_sqlmesh_plan
 from brewgis.workspace.services._db import get_engine
 from brewgis.workspace.services._db import text
-from brewgis.workspace.analysis.sqlmesh_runner import run_sqlmesh_plan
 
 logger = logging.getLogger(__name__)
 
@@ -243,57 +243,67 @@ def fetch_acs_data_summary(
 
 def _populate_acs_block_group(
     state_fips: str,
-    county_fips: str,
+    county_fips_list: str | list[str] | None = None,
     year: int = 2022,
 ) -> int:
-    """Fetch ACS data, join with TIGER BG geometry via the ``acs_block_group`` dbt model.
+    """Fetch ACS data, join with TIGER BG geometry via the ``acs_block_group`` model.
 
-    Invokes dbt to materialize ``census.acs_block_group`` with derived
-    columns, safe percentage computations, and DU sub-type splitting.
+    Invokes SQLMesh to materialize ``brewgis.staging.acs_block_group``
+    with derived columns, safe percentage computations, and DU sub-type
+    splitting. Accepts one or more county FIPS codes.
 
     Args:
         state_fips: Two-digit state FIPS code.
-        county_fips: Three-digit county FIPS code.
+        county_fips_list: Single three-digit FIPS code, list of codes,
+            or None (default ``["067"]`` for Sacramento).
         year: ACS data year (default 2022).
 
     Returns:
         Number of rows written.
 
     Raises:
-        RuntimeError: If dbt fails or the table is empty.
+        RuntimeError: If the table remains empty after all counties.
     """
-    dbt_vars: dict[str, object] = {
-        "source_schema": "public",
-        "acs_raw_table": "acs_raw",
-        "tiger_bg_table": "tiger_block_groups",
-        "year": year,
-        "state_fips": state_fips,
-        "county_fips": county_fips,
-        "detsf_sl_ratio": _DU_DETSF_TO_SL_RATIO,
-        "sl_density_threshold": _SL_DENSITY_THRESHOLD,
-        "k_steepness": _K_STEEPNESS,
-        "tiger_bg_vintage": "2013",
-    }
+    if isinstance(county_fips_list, str):
+        county_fips_list = [county_fips_list]
+    elif county_fips_list is None:
+        county_fips_list = ["067"]
 
-    run_sqlmesh_plan(
-        environment="brewgis_prod",
-        select=["brewgis.staging.acs_block_group"],
-        skip_tests=True,
-    )
+    total_rows = 0
+    for county_fips in county_fips_list:
+        acs_vars: dict[str, object] = {
+            "source_schema": "public",
+            "acs_raw_table": "acs_raw",
+            "tiger_bg_table": "tiger_block_groups",
+            "year": year,
+            "state_fips": state_fips,
+            "county_fips": county_fips,
+            "detsf_sl_ratio": _DU_DETSF_TO_SL_RATIO,
+            "sl_density_threshold": _SL_DENSITY_THRESHOLD,
+            "k_steepness": _K_STEEPNESS,
+            "tiger_bg_vintage": "2013",
+        }
+
+        run_sqlmesh_plan(
+            environment="brewgis_prod",
+            select=["brewgis.staging.acs_block_group"],
+            skip_tests=True,
+            variables=acs_vars,
+        )
 
     engine = get_engine()
     with engine.connect() as conn:
-        row_count = (
+        total_rows = (
             conn.execute(
                 text("SELECT COUNT(*) FROM staging__brewgis_prod.acs_block_group")
             ).scalar()
             or 0
         )
 
-    if row_count == 0:
+    if total_rows == 0:
         msg = (
             f"No ACS block-group data returned for "
-            f"{state_fips}/{county_fips} year {year}"
+            f"{state_fips}/{county_fips_list} year {year}"
         )
         raise RuntimeError(msg)
-    return row_count
+    return total_rows

@@ -41,7 +41,7 @@ _SENTINELS = frozenset({"-666666666", "-555555555", "-333333333"})
 @dlt.source(name="census_acs", max_table_nesting=0)
 def census_source(
     state_fips: str = "06",
-    county_fips: str = "067",
+    county_fips_list: list[str] | None = None,
     year: int | dlt.sources.incremental[int] = dlt.sources.incremental[int]("year"),
     ignore_cache: bool = False,
 ) -> list[Any]:
@@ -49,7 +49,8 @@ def census_source(
 
     Args:
         state_fips: Two-digit state FIPS code.
-        county_fips: Three-digit county FIPS code.
+        county_fips_list: List of three-digit county FIPS codes (default
+            ``["067"]`` for Sacramento).
         year: Incremental year — tracks the maximum year already loaded
             and only fetches new years on re-run.
 
@@ -57,7 +58,13 @@ def census_source(
         List with a single :class:`dlt.Resource` yielding block-group-level
         dicts keyed by Census variable name.
     """
-    return [census_acs_resource(state_fips, county_fips, year, ignore_cache)]
+    if county_fips_list is None:
+        county_fips_list = ["067"]
+    return [
+        census_acs_resource(
+            state_fips, county_fips_list, year, ignore_cache=ignore_cache
+        )
+    ]
 
 
 @dlt.resource(
@@ -110,11 +117,14 @@ def census_source(
 )
 def census_acs_resource(
     state_fips: str,
-    county_fips: str,
+    county_fips_list: list[str],
     year: int | dlt.sources.incremental[int] = dlt.sources.incremental[int]("year"),
     ignore_cache: bool = False,
 ) -> Any:
     """Yield raw ACS data from Census API, one dict per block group.
+
+    Iterates over multiple counties, fetching each from the Census API
+    (or loading from per-county cache) and yielding all rows.
 
     dlt's incremental tracking ensures that already-loaded years are
     skipped on subsequent runs. The ``year`` field is the merge key.
@@ -122,70 +132,71 @@ def census_acs_resource(
     year_val: int = (
         year.last_value if isinstance(year, dlt.sources.incremental) else year
     )
-    dl_path = (
-        CACHE_DIR
-        / "census_acs_resource"
-        / str(year_val)
-        / state_fips
-        / f"{county_fips}.json"
-    )
-    dl_path.parent.mkdir(exist_ok=True, parents=True)
-
-    # Try loading from cache first
-    data: Any = None
-    if not ignore_cache and dl_path.exists():
-        with dl_path.open() as f:
-            data = json.load(f)
-        if not isinstance(data, list):
-            logger.warning(
-                "Cached ACS data is %s instead of list, re-downloading",
-                type(data).__name__,
-            )
-            data = None
-
-    if data is None:
-        vars_ = _all_vars()
-        vars_str = ",".join(vars_)
-        base = _census_base_url(year_val)
-        url = (
-            f"{base}?get={vars_str}"
-            f"&for=block+group:*"
-            f"&in=state:{state_fips}+county:{county_fips}+tract:*"
+    for county_fips in county_fips_list:
+        dl_path = (
+            CACHE_DIR
+            / "census_acs_resource"
+            / str(year_val)
+            / state_fips
+            / f"{county_fips}.json"
         )
-        api_key = _census_api_key()
-        if api_key:
-            url += f"&key={api_key}"
+        dl_path.parent.mkdir(exist_ok=True, parents=True)
 
-        response = requests.get(url, timeout=120)
-        response.raise_for_status()
-        data = response.json()
-        if not isinstance(data, list):
-            logger.error(
-                "Census ACS API returned %s instead of list. URL: %s, Body: %s",
-                type(data).__name__,
-                url,
-                response.text[:500],
-            )
-            raise RuntimeError(
-                f"Census ACS API returned {type(data).__name__} instead of list. "
-                f"URL: {url}, Body: {response.text[:500]}"
-            )
-        with dl_path.open("w") as f:
-            json.dump(data, f)
+        # Try loading from cache first
+        data: Any = None
+        if not ignore_cache and dl_path.exists():
+            with dl_path.open() as f:
+                data = json.load(f)
+            if not isinstance(data, list):
+                logger.warning(
+                    "Cached ACS data is %s instead of list, re-downloading",
+                    type(data).__name__,
+                )
+                data = None
 
-    headers = data[0]
-    for row in data[1:]:
-        record = dict(zip(headers, row, strict=False))
-        record["year"] = year_val
-        for k, v in record.items():
-            if v in _SENTINELS:
-                record[k] = None
-        yield record
+        if data is None:
+            vars_ = _all_vars()
+            vars_str = ",".join(vars_)
+            base = _census_base_url(year_val)
+            url = (
+                f"{base}?get={vars_str}"
+                f"&for=block+group:*"
+                f"&in=state:{state_fips}+county:{county_fips}+tract:*"
+            )
+            api_key = _census_api_key()
+            if api_key:
+                url += f"&key={api_key}"
+
+            response = requests.get(url, timeout=120)
+            response.raise_for_status()
+            data = response.json()
+            if not isinstance(data, list):
+                logger.error(
+                    "Census ACS API returned %s instead of list. URL: %s, Body: %s",
+                    type(data).__name__,
+                    url,
+                    response.text[:500],
+                )
+                raise RuntimeError(
+                    f"Census ACS API returned {type(data).__name__} instead of list. "
+                    f"URL: {url}, Body: {response.text[:500]}"
+                )
+            with dl_path.open("w") as f:
+                json.dump(data, f)
+
+        headers = data[0]
+        for row in data[1:]:
+            record = dict(zip(headers, row, strict=False))
+            record["year"] = year_val
+            for k, v in record.items():
+                if v in _SENTINELS:
+                    record[k] = None
+            yield record
 
 
 def run_census_pipeline(
     state_fips: str,
-    county_fips: str,
+    county_fips_list: str | list[str] | None = None,
     year: int = 2022,
     schema: str = "public",
     ignore_cache: bool = False,
@@ -197,8 +208,9 @@ def run_census_pipeline(
     ----------
     state_fips : str
         Two-digit state FIPS code.
-    county_fips : str
-        Three-digit county FIPS code.
+    county_fips_list : str | list[str] | None
+        Three-digit county FIPS code, or list of codes (default
+        ``["067"]`` for Sacramento).
     year : int, optional
         ACS 5-year data year (default 2022).
     schema : str, optional
@@ -211,15 +223,21 @@ def run_census_pipeline(
         "load_info": str}`` on success, or ``{"success": False,
         "error": str}`` on failure.
     """
+    if isinstance(county_fips_list, str):
+        county_fips_list = [county_fips_list]
+    elif county_fips_list is None:
+        county_fips_list = ["067"]
+
+    counties_label = "_".join(county_fips_list)
     pipeline = dlt.pipeline(
-        pipeline_name=f"census_acs_{state_fips}_{county_fips}_{year}",
+        pipeline_name=f"census_acs_{state_fips}_{counties_label}_{year}",
         destination="postgres",
         dataset_name=schema,
         **kwargs,
     )
 
     load_info = pipeline.run(
-        census_source(state_fips, county_fips, year, ignore_cache=ignore_cache),
+        census_source(state_fips, county_fips_list, year, ignore_cache=ignore_cache),
     )
 
     row_count = 0

@@ -40,14 +40,15 @@ _BASE_URL = "https://api.census.gov/data/2020/dec/pl"
 @dlt.source(name="census_2020_block", max_table_nesting=0)
 def census_2020_block_source(
     state_fips: str = "06",
-    county_fips: str = "067",
+    county_fips_list: list[str] | None = None,
     ignore_cache: bool = False,
 ) -> list[Any]:
     """dlt source for Census 2020 Decennial P.L. 94-171 block extraction.
 
     Args:
         state_fips: Two-digit state FIPS code (default ``"06"``).
-        county_fips: Three-digit county FIPS code (default ``"067"``).
+        county_fips_list: List of three-digit county FIPS codes (default
+            ``["067"]`` for Sacramento).
         ignore_cache: Re-download even if cached.
 
     Returns:
@@ -55,8 +56,12 @@ def census_2020_block_source(
         with ``geoid`` (15-digit), ``total_population``, and
         ``total_housing_units``.
     """
+    if county_fips_list is None:
+        county_fips_list = ["067"]
     return [
-        census_2020_block_resource(state_fips, county_fips, ignore_cache),
+        census_2020_block_resource(
+            state_fips, county_fips_list, ignore_cache=ignore_cache
+        ),
     ]
 
 
@@ -75,10 +80,13 @@ def census_2020_block_source(
 )
 def census_2020_block_resource(
     state_fips: str,
-    county_fips: str,
+    county_fips_list: list[str],
     ignore_cache: bool = False,
 ) -> Any:
     """Yield Census 2020 Decennial P.L. 94-171 data, one dict per block.
+
+    Iterates over multiple counties, fetching each from the Census API
+    (or loading from per-county cache) and yielding all rows.
 
     Uses replace write disposition since the decennial census is a
     point-in-time dataset with no incremental key.
@@ -88,97 +96,101 @@ def census_2020_block_resource(
     "county", "tract", "block"]``) and subsequent rows contain the
     corresponding values.
     """
-    dl_path = CACHE_DIR / "census_2020" / state_fips / f"{county_fips}.json"
-    dl_path.parent.mkdir(exist_ok=True, parents=True)
+    for county_fips in county_fips_list:
+        dl_path = CACHE_DIR / "census_2020" / state_fips / f"{county_fips}.json"
+        dl_path.parent.mkdir(exist_ok=True, parents=True)
 
-    # Try loading from local JSON cache first
-    data: Any = None
-    if not ignore_cache and dl_path.exists():
-        with dl_path.open() as f:
-            data = json.load(f)
-        if not isinstance(data, list):
-            logger.warning(
-                "Cached Census 2020 data is %s instead of list, re-downloading",
-                type(data).__name__,
+        # Try loading from local JSON cache first
+        data: Any = None
+        if not ignore_cache and dl_path.exists():
+            with dl_path.open() as f:
+                data = json.load(f)
+            if not isinstance(data, list):
+                logger.warning(
+                    "Cached Census 2020 data is %s instead of list, re-downloading",
+                    type(data).__name__,
+                )
+                data = None
+
+        if data is None:
+            vars_str = "P1_001N,H1_001N"
+            url = (
+                f"{_BASE_URL}?get={vars_str}"
+                f"&for=block:*"
+                f"&in=state:{state_fips}+county:{county_fips}"
             )
-            data = None
+            api_key = settings.CENSUS_API_KEY
+            if api_key:
+                url += f"&key={api_key}"
 
-    if data is None:
-        vars_str = "P1_001N,H1_001N"
-        url = (
-            f"{_BASE_URL}?get={vars_str}"
-            f"&for=block:*"
-            f"&in=state:{state_fips}+county:{county_fips}"
-        )
-        api_key = settings.CENSUS_API_KEY
-        if api_key:
-            url += f"&key={api_key}"
+            response = requests.get(url, timeout=120)
+            response.raise_for_status()
+            data = response.json()
+            if not isinstance(data, list):
+                raise RuntimeError(
+                    f"Census 2020 API returned {type(data).__name__} instead of list. "
+                    f"Status: {response.status_code}, URL: {response.url}, "
+                    f"Body: {response.text[:500]}"
+                )
+            with dl_path.open("w") as f:
+                json.dump(data, f)
 
-        response = requests.get(url, timeout=120)
-        response.raise_for_status()
-        data = response.json()
-        if not isinstance(data, list):
-            raise RuntimeError(
-                f"Census 2020 API returned {type(data).__name__} instead of list. "
-                f"Status: {response.status_code}, URL: {response.url}, "
-                f"Body: {response.text[:500]}"
+        headers = data[0]
+        for row in data[1:]:
+            record: dict[str, Any] = dict(zip(headers, row, strict=False))
+
+            # Build 15-digit GEOID from component FIPS codes
+            geoid = (
+                f"{record['state']}{record['county']}{record['tract']}{record['block']}"
             )
-        with dl_path.open("w") as f:
-            json.dump(data, f)
 
-    headers = data[0]
-    for row in data[1:]:
-        record: dict[str, Any] = dict(zip(headers, row, strict=False))
+            # Convert sentinel values to None
+            total_pop: int | None = None
+            total_hu: int | None = None
 
-        # Build 15-digit GEOID from component FIPS codes
-        geoid = f"{record['state']}{record['county']}{record['tract']}{record['block']}"
+            p1 = record.get("P1_001N")
+            if isinstance(p1, str) and p1 not in _SENTINELS:
+                try:
+                    total_pop = int(p1)
+                except (ValueError, TypeError):
+                    pass
 
-        # Convert sentinel values to None
-        total_pop: int | None = None
-        total_hu: int | None = None
+            h1 = record.get("H1_001N")
+            if isinstance(h1, str) and h1 not in _SENTINELS:
+                try:
+                    total_hu = int(h1)
+                except (ValueError, TypeError):
+                    pass
 
-        p1 = record.get("P1_001N")
-        if isinstance(p1, str) and p1 not in _SENTINELS:
-            try:
-                total_pop = int(p1)
-            except (ValueError, TypeError):
-                pass
-
-        h1 = record.get("H1_001N")
-        if isinstance(h1, str) and h1 not in _SENTINELS:
-            try:
-                total_hu = int(h1)
-            except (ValueError, TypeError):
-                pass
-
-        yield {
-            "geoid": geoid,
-            "total_population": total_pop,
-            "total_housing_units": total_hu,
-            "state": state_fips,
-            "county": county_fips,
-        }
+            yield {
+                "geoid": geoid,
+                "total_population": total_pop,
+                "total_housing_units": total_hu,
+                "state": state_fips,
+                "county": county_fips,
+            }
 
 
 def run_census_2020_pipeline(
     state_fips: str = "06",
-    county_fips: str = "067",
+    county_fips_list: str | list[str] | None = None,
     schema: str = "public",
     ignore_cache: bool = False,
     **kwargs: Any,
 ) -> dict:
     """Run dlt pipeline to extract Census 2020 block-level data.
 
-    Fetches total population and housing units at the block level for a
-    given state and county from the Census 2020 Decennial P.L. 94-171 API
-    and writes the results to a PostgreSQL staging table.
+    Fetches total population and housing units at the block level for one
+    or more counties from the Census 2020 Decennial P.L. 94-171 API and
+    writes the combined results to a PostgreSQL staging table.
 
     Parameters
     ----------
     state_fips : str, optional
         Two-digit state FIPS code (default ``"06"`` for California).
-    county_fips : str, optional
-        Three-digit county FIPS code (default ``"067"`` for Sacramento).
+    county_fips_list : str | list[str] | None, optional
+        Three-digit county FIPS code, or list of codes (default
+        ``["067"]`` for Sacramento).
     schema : str, optional
         PostgreSQL schema for the destination table (default ``"public"``).
     ignore_cache : bool, optional
@@ -189,15 +201,23 @@ def run_census_2020_pipeline(
     dict
         ``{"table_name": str, "row_count": int, "load_info": str}``.
     """
+    if isinstance(county_fips_list, str):
+        county_fips_list = [county_fips_list]
+    elif county_fips_list is None:
+        county_fips_list = ["067"]
+
+    counties_label = "_".join(county_fips_list)
     pipeline = dlt.pipeline(
-        pipeline_name=f"census_2020_block_{state_fips}_{county_fips}",
+        pipeline_name=f"census_2020_block_{state_fips}_{counties_label}",
         destination="postgres",
         dataset_name=schema,
         **kwargs,
     )
 
     load_info = pipeline.run(
-        census_2020_block_source(state_fips, county_fips, ignore_cache=ignore_cache),
+        census_2020_block_source(
+            state_fips, county_fips_list, ignore_cache=ignore_cache
+        ),
     )
 
     row_count = 0

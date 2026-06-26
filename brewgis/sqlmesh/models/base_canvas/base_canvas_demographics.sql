@@ -3,7 +3,8 @@ MODEL (
   kind FULL,
   audits (
     not_null(columns := (parcel_id)),
-    assert_population_conserved
+    assert_population_conserved,
+    assert_census_block_coverage
   )
 );
 

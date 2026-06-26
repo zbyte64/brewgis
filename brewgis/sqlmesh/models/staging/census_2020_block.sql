@@ -1,6 +1,8 @@
 MODEL (
   name brewgis.staging.census_2020_block,
-  kind FULL,
+  kind INCREMENTAL_BY_UNIQUE_KEY (
+    unique_key (geoid)
+  ),
   audits (
     not_null(columns := (geoid))
   ),
@@ -32,7 +34,7 @@ block_geometry AS (
     WHERE vintage = '2020'
 )
 SELECT
-    raw.geoid,
+    raw.geoid AS geoid,
     COALESCE(raw.total_population, 0)::double precision AS total_population,
     COALESCE(raw.total_housing_units, 0)::double precision AS total_housing_units,
     -- PL94-171 does not include group quarters population; always 0.

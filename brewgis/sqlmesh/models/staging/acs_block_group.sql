@@ -64,8 +64,8 @@ WITH raw_derived AS (
         ON tbg.geoid = a.state || a.county || a.tract || a."block_group"
         AND tbg.vintage = @tiger_bg_vintage
     WHERE a.year = @acs_year
-      AND a.state = '06'
-      AND a.county = '067'
+      AND a.state = @state_fips
+      AND a.county = @county_fips
 ),
 derived_with_pcts AS (
     SELECT

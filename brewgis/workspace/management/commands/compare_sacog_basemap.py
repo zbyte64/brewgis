@@ -31,6 +31,7 @@ V1_PARCELS = "sac_cnty_region_existing_land_use_parcels"
 logger = logging.getLogger(__name__)
 STATE_FIPS = "06"
 COUNTY_FIPS = "067"
+SACOG_COUNTIES = ["067", "005", "017", "061"]  # Sacramento, Amador, El Dorado, Placer
 # Vintage data years matching the SACOG v1 reference (2008-2012 era)
 ACS_YEAR = 2013  # ACS 5-year 2009-2013 (earliest with block group API support)
 LEHD_YEAR = 2008  # LODES 2008 (employment stats)
@@ -418,7 +419,7 @@ class Command(BaseCommand):
             or not self._table_has_rows("public", "acs_raw")
         ):
             census_result = run_census_pipeline(
-                STATE_FIPS, COUNTY_FIPS, ACS_YEAR, ignore_cache=force_data_fetch
+                STATE_FIPS, SACOG_COUNTIES, ACS_YEAR, ignore_cache=force_data_fetch
             )
             self.stdout.write(
                 f"  Census ACS loaded: {census_result.get('row_count', 0)} rows "
@@ -434,7 +435,9 @@ class Command(BaseCommand):
             or force_data_reload
             or not self._table_has_rows("staging__brewgis_prod", "acs_block_group")
         ):
-            acs_bg_count = _populate_acs_block_group(STATE_FIPS, COUNTY_FIPS, ACS_YEAR)
+            acs_bg_count = _populate_acs_block_group(
+                STATE_FIPS, SACOG_COUNTIES, ACS_YEAR
+            )
             self.stdout.write(
                 f"  census.acs_block_group populated: {acs_bg_count:,} rows"
             )
@@ -449,7 +452,7 @@ class Command(BaseCommand):
             or not self._table_has_rows("public", "census_2020_block_raw")
         ):
             census_2020_result = run_census_2020_pipeline(
-                STATE_FIPS, COUNTY_FIPS, ignore_cache=force_data_fetch
+                STATE_FIPS, SACOG_COUNTIES, ignore_cache=force_data_fetch
             )
             self.stdout.write(
                 f"  Census 2020 blocks loaded: {census_2020_result.get('row_count', 0)} rows "
@@ -700,15 +703,15 @@ class Command(BaseCommand):
                 "+brewgis.staging.census_2020_block",
             ],
             variables=plan_vars,
+            restate_models=force_data_reload,
         )
 
         plan, context = run_sqlmesh_plan(
             environment="sacog_comparison",
             skip_tests=False,
-            # forward_only=True,
             select=model_selectors,
             variables=plan_vars,
-            # restate_models=True,
+            restate_models=force_data_reload,
         )
         self.stdout.write(self.style.SUCCESS("  SQLMesh models complete"))
 
