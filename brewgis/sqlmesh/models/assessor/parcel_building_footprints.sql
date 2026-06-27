@@ -34,16 +34,16 @@ MODEL (
 WITH building_stats AS (
     SELECT
         sap.apn,
-        SUM(bwa.footprint_sqft * COALESCE(NULLIF(bwa.levels, 0), 1)) AS total_footprint_sqft,
+        SUM(bwa.footprint_sqft * COALESCE(NULLIF(bwa.levels, 0), 1) * bwa.overlap_ratio) AS total_footprint_sqft,
         COUNT(*) AS building_count,
         MAX(bwa.height) AS max_height,
         MAX(bwa.levels) AS max_levels,
         COUNT(*) FILTER (WHERE bwa.bf_source = 'google') AS google_building_count,
         COUNT(*) FILTER (WHERE bwa.bf_source = 'microsoft') AS microsoft_building_count,
         AVG(bwa.confidence) AS mean_confidence,
-        SUM(bwa.footprint_sqft)
+        SUM(bwa.footprint_sqft * bwa.overlap_ratio)
             FILTER (WHERE bwa.class_category = 'residential') AS residential_building_sqft,
-        SUM(bwa.footprint_sqft)
+        SUM(bwa.footprint_sqft * bwa.overlap_ratio)
             FILTER (WHERE bwa.class_category != 'residential') AS non_residential_building_sqft,
         COUNT(*) FILTER (WHERE bwa.class_category = 'residential') AS residential_building_count,
         COUNT(*) FILTER (WHERE bwa.class_category != 'residential') AS non_residential_building_count,
@@ -64,7 +64,7 @@ WITH building_stats AS (
                     END
                 WHEN bwa.class_category = 'commercial' THEN bwa.footprint_sqft * COALESCE(NULLIF(bwa.levels, 0), 1)
                 ELSE 0
-            END
+            END * bwa.overlap_ratio
         )::double precision AS overture_commercial_sqft,
         SUM(
             CASE
@@ -76,22 +76,32 @@ WITH building_stats AS (
                     END
                 WHEN bwa.class_category = 'residential' THEN bwa.footprint_sqft * COALESCE(NULLIF(bwa.levels, 0), 1)
                 ELSE 0
-            END
+            END * bwa.overlap_ratio
         )::double precision AS overture_residential_sqft,
         SUM(
-            CASE WHEN bwa.class_category = 'industrial' THEN bwa.footprint_sqft * COALESCE(NULLIF(bwa.levels, 0), 1) ELSE 0 END
+            CASE WHEN bwa.class_category = 'industrial' THEN bwa.footprint_sqft * COALESCE(NULLIF(bwa.levels, 0), 1) ELSE 0 END * bwa.overlap_ratio
         )::double precision AS overture_industrial_sqft,
         SUM(
             CASE
                 WHEN bwa.class_category = 'other'
                 THEN bwa.footprint_sqft * COALESCE(NULLIF(bwa.levels, 0), 1)
                 ELSE 0
-            END
+            END * bwa.overlap_ratio
         )::double precision AS overture_other_sqft
     FROM brewgis.assessor.sacog_assessor_parcels sap
-    JOIN brewgis.staging.buildings_combined_pg bwa
-        ON sap.geometry && bwa.geometry
-       AND ST_Intersects(sap.geometry, bwa.geometry)
+    CROSS JOIN LATERAL (
+        SELECT
+            b.*,
+            CASE
+                WHEN ST_CoveredBy(b.local_geometry, sap.local_geometry)
+                    THEN 1.0
+                ELSE ST_Area(ST_Intersection(sap.local_geometry, b.local_geometry))
+                     / NULLIF(ST_Area(b.local_geometry), 0)
+            END AS overlap_ratio
+        FROM brewgis.staging.buildings_combined_pg b
+        WHERE sap.local_geometry && b.local_geometry
+          AND ST_Intersects(sap.local_geometry, b.local_geometry)
+    ) bwa
     GROUP BY sap.apn
 )
 
