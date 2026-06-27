@@ -148,13 +148,16 @@ county_subtype_avg AS (
 calibration AS (
     SELECT
         p.apn,
-        COALESCE(
-            CASE
-                WHEN k.calib_count >= 5 THEN k.region_avg_sqft_per_unit
-                ELSE csa.region_avg_sqft_per_unit
-            END,
-            csa.region_avg_sqft_per_unit,
-            1259.0  -- global default for mf2to4 (from SACOG data)
+        GREATEST(
+            COALESCE(
+                CASE
+                    WHEN k.calib_count >= 5 THEN k.region_avg_sqft_per_unit
+                    ELSE csa.region_avg_sqft_per_unit
+                END,
+                csa.region_avg_sqft_per_unit,
+                1259.0  -- global default for mf2to4 (from SACOG data)
+            ),
+            @min_sqft_per_unit
         ) AS region_avg_sqft_per_unit,
         CASE
             WHEN p.du_subtype = 'mf2to4' THEN 2

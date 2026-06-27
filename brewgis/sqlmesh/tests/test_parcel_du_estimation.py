@@ -208,3 +208,99 @@ def test_vacancy_rate_mf5p(context):
     assert abs(df["vacancy_rate"].iloc[0] - 0.080) < 0.001, (
         f"Expected vacancy_rate=0.080, got {df['vacancy_rate'].iloc[0]}"
     )
+
+
+def test_min_sqft_per_unit_clamps_low_calibration(context):
+    """@min_sqft_per_unit=400 → county avg of 100 gets clamped, DU drops"""
+    result = context.evaluate(
+        "brewgis.assessor.parcel_du_estimation",
+        start="2024-01-01",
+        end="2024-01-01",
+        inputs={
+            "brewgis.assessor.parcel_dasymetric_weights": [
+                {
+                    "apn": "TGT_CLAMP1",
+                    "built_form_key": "mf5p",
+                    "du_subtype": "mf5p",
+                    "is_residential": True,
+                    "lot_size_acres": 2.0,
+                    "land_development_category": "urban",
+                    "residential_building_sqft": 40000.0,
+                    "intersection_density": 15.0,
+                },
+                {
+                    "apn": "CAL_LOW",
+                    "built_form_key": "mf5p",
+                    "du_subtype": "mf5p",
+                    "is_residential": True,
+                    "lot_size_acres": 0.5,
+                    "land_development_category": "urban",
+                    "residential_building_sqft": 200.0,
+                    "intersection_density": 15.0,
+                },
+            ],
+            "public.sacog_assessor_sales_raw": [
+                {
+                    "apn": "CAL_LOW",
+                    "units": 2,
+                    "property_type": "Multiple Family Residence",
+                    "year_built": 2000,
+                },
+            ],
+        },
+    )
+    df = result[0].df
+    _actual_sqft = df.loc[df["apn"] == "TGT_CLAMP1", "region_avg_sqft_per_unit"].iloc[0]
+    assert _actual_sqft == 400.0, (
+        f"Expected region_avg=400 (clamped from 100), got {_actual_sqft}"
+    )
+    _actual_du = df.loc[df["apn"] == "TGT_CLAMP1", "du"].iloc[0]
+    assert _actual_du == 100.0, f"Expected du=100 (40000/400), got {_actual_du}"
+
+
+def test_min_sqft_per_unit_passes_through_reasonable_calibration(context):
+    """@min_sqft_per_unit=400 → county avg of 1000 passes through unchanged"""
+    result = context.evaluate(
+        "brewgis.assessor.parcel_du_estimation",
+        start="2024-01-01",
+        end="2024-01-01",
+        inputs={
+            "brewgis.assessor.parcel_dasymetric_weights": [
+                {
+                    "apn": "TGT_OK",
+                    "built_form_key": "mf5p",
+                    "du_subtype": "mf5p",
+                    "is_residential": True,
+                    "lot_size_acres": 2.0,
+                    "land_development_category": "urban",
+                    "residential_building_sqft": 40000.0,
+                    "intersection_density": 15.0,
+                },
+                {
+                    "apn": "CAL_OK",
+                    "built_form_key": "mf5p",
+                    "du_subtype": "mf5p",
+                    "is_residential": True,
+                    "lot_size_acres": 0.5,
+                    "land_development_category": "urban",
+                    "residential_building_sqft": 8000.0,
+                    "intersection_density": 15.0,
+                },
+            ],
+            "public.sacog_assessor_sales_raw": [
+                {
+                    "apn": "CAL_OK",
+                    "units": 8,
+                    "property_type": "Multiple Family Residence",
+                    "year_built": 2000,
+                },
+            ],
+        },
+    )
+    df = result[0].df
+    _actual_sqft = df.loc[df["apn"] == "TGT_OK", "region_avg_sqft_per_unit"].iloc[0]
+    assert _actual_sqft == 1000.0, (
+        f"Expected region_avg=1000 (unclamped), got {_actual_sqft}"
+    )
+    _actual_du = df.loc[df["apn"] == "TGT_OK", "du"].iloc[0]
+    assert _actual_du == 40.0, f"Expected du=40 (40000/1000), got {_actual_du}"

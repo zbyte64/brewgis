@@ -314,6 +314,7 @@ def config_factory(**variables):
             "tiger_block_vintage": "2020",
             "tiger_bg_vintage": "2013",
             "local_srid": 3310,
+            "min_sqft_per_unit": 400,
             "wm_srid": 3857,
             "default_srid": 4326,
             # Scenario table references (overridden per scenario)
