@@ -6,7 +6,7 @@
 # Override COMPOSE_FILE to use infra compose instead:
 #   COMPOSE_FILE=docker-compose.infra.yml make test
 #
-COMPOSE_FILE ?= docker-compose.local.yml
+COMPOSE_FILE ?= docker-compose.yml
 COMPOSE_RUN = docker compose -f $(COMPOSE_FILE) run --rm django
 
 # ─────────────────────────────────────────────
