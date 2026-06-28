@@ -1,0 +1,76 @@
+test_AT_tiny_lot_no_buildings_tier4_attsf:
+  model: brewgis.assessor.parcel_bft_classification
+  gateway: postgis
+  inputs:
+    brewgis.assessor.sacog_assessor_parcels:
+      rows:
+        - apn: "99900000000001"
+          lot_size_acres: 0.01
+          landuse: "ATA00A"
+          zone: "R-3"
+          geometry: "POLYGON((-121.5 38.5,-121.49 38.5,-121.49 38.51,-121.5 38.51,-121.5 38.5))"
+          land_development_category: "urban"
+      columns:
+        geometry: GEOMETRY
+        apn: TEXT
+        lot_size_acres: DOUBLE
+        landuse: TEXT
+        zone: TEXT
+        land_development_category: TEXT
+    brewgis.assessor.parcel_building_sqft_by_type:
+      rows: []
+      columns:
+        apn: TEXT
+        total_footprint_sqft: DOUBLE
+        building_count: INTEGER
+        footprint_ratio: DOUBLE
+        lot_size_acres: DOUBLE
+        residential_building_sqft: DOUBLE
+        commercial_building_sqft: DOUBLE
+        industrial_building_sqft: DOUBLE
+        other_building_sqft: DOUBLE
+        residential_building_count: INTEGER
+        non_residential_building_count: INTEGER
+        max_levels: INTEGER
+        land_development_category: TEXT
+        geometry: GEOMETRY
+    brewgis.assessor.sacog_assessor_sales_deduped:
+      rows: []
+      columns:
+        apn: TEXT
+        actual_living_sqft: DOUBLE
+        actual_building_sqft: DOUBLE
+        property_type: TEXT
+        sales_lot_size_acres: DOUBLE
+        units: INTEGER
+    brewgis.assessor.overture_intersection_density:
+      rows: []
+      columns:
+        apn: TEXT
+        intersection_density: DOUBLE
+    brewgis.assessor.parcel_known_features:
+      rows: []
+      columns:
+        apn: TEXT
+        geometry: GEOMETRY
+        built_form_key: TEXT
+        lot_size_acres: DOUBLE
+        intersection_density: DOUBLE
+        footprint_ratio: DOUBLE
+        land_development_category: TEXT
+    brewgis.assessor.parcel_partition_stats:
+      rows: []
+      columns:
+        land_development_category: TEXT
+        s_int_dens: DOUBLE
+        s_ls: DOUBLE
+        s_fr: DOUBLE
+  outputs:
+    query:
+      partial: true
+      rows:
+        - apn: "99900000000001"
+          built_form_key: "mf2to4"
+          built_form_key_source: "tier4"
+          du_subtype: "mf2to4"
+          is_residential: 1

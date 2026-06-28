@@ -1,0 +1,33 @@
+test_acres_conversion_typical_sfr_lot:
+  model: brewgis.assessor.sacog_assessor_parcels
+  gateway: postgis
+  inputs:
+    public.sacog_assessor_parcels_raw:
+      rows:
+        - apn: "TEST_LOT_ACRES_001"
+          lotsize: 6969.6
+          landuse: "A1A00A"
+          zone: "R-1"
+          jurisdiction: "SAC"
+          geometry: "SRID=4326;POLYGON((-121.5 38.5,-121.49 38.5,-121.49 38.51,-121.5 38.51,-121.5 38.5))"
+      columns:
+        geometry: GEOMETRY
+        apn: TEXT
+        lotsize: DOUBLE
+        landuse: TEXT
+        zone: TEXT
+        jurisdiction: TEXT
+    brewgis.seeds.assessor_use_codes:
+      rows: []
+      columns:
+        use_code: TEXT
+        use_description: TEXT
+        category: TEXT
+  vars:
+    local_srid: 3310
+  outputs:
+    query:
+      partial: true
+      rows:
+        - apn: "TEST_LOT_ACRES_001"
+          lot_size_acres: 0.16

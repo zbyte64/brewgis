@@ -94,6 +94,12 @@ tier0_built_form_key AS (
             WHEN ap.landuse_prefix LIKE 'AF' THEN 'industrial'
             WHEN ap.landuse_prefix LIKE 'AG' THEN 'agricultural'
             WHEN ap.landuse_prefix IN ('AH', 'AJ') THEN 'civic'
+            WHEN ap.landuse_prefix IN ('AT') THEN 'mf2to4'
+            WHEN ap.landuse_prefix IN ('CA', 'BA', 'BF', 'BC', 'BB', 'BE', 'BD', 'CG') THEN 'commercial'
+            WHEN ap.landuse_prefix IN ('GC', 'GA', 'HJ') THEN 'civic'
+            WHEN ap.landuse_prefix IN ('MS', 'MU', 'MP') THEN 'commercial'
+            WHEN ap.landuse_prefix IN ('IA', 'IG', 'IB') THEN 'industrial'
+            WHEN ap.landuse_prefix IN ('AQ') THEN 'undeveloped'
             WHEN ap.landuse_prefix LIKE 'AD' THEN 'undeveloped'
             ELSE NULL
         END AS built_form_key

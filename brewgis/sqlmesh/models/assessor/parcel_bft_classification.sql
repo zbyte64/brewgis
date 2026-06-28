@@ -18,6 +18,11 @@ MODEL (
     assert_bft_landuse_AG_to_agricultural,
     assert_bft_landuse_AHAJ_to_civic,
     assert_bft_landuse_AD_to_undeveloped,
+    assert_bft_landuse_AT_to_mf,
+    assert_bft_landuse_commercial_codes_to_commercial,
+    assert_bft_landuse_civic_codes_to_civic,
+    assert_bft_landuse_industrial_codes_to_industrial,
+    assert_bft_landuse_AQ_to_undeveloped,
     assert_bft_sales_sfr_lot_boundary,
     assert_bft_sales_mf_unit_boundary,
     assert_bft_tier_priority,
@@ -133,6 +138,12 @@ tier0_built_form_key AS (
             WHEN ap.landuse_prefix LIKE 'AF' THEN 'industrial'
             WHEN ap.landuse_prefix LIKE 'AG' THEN 'agricultural'
             WHEN ap.landuse_prefix IN ('AH', 'AJ') THEN 'civic'
+            WHEN ap.landuse_prefix IN ('AT') THEN NULL
+            WHEN ap.landuse_prefix IN ('CA', 'BA', 'BF', 'BC', 'BB', 'BE', 'BD', 'CG') THEN 'commercial'
+            WHEN ap.landuse_prefix IN ('GC', 'GA', 'HJ') THEN 'civic'
+            WHEN ap.landuse_prefix IN ('MS', 'MU', 'MP') THEN 'commercial'
+            WHEN ap.landuse_prefix IN ('IA', 'IG', 'IB') THEN 'industrial'
+            WHEN ap.landuse_prefix IN ('AQ') THEN 'undeveloped'
             WHEN ap.landuse_prefix LIKE 'AD' THEN 'undeveloped'
             ELSE NULL
         END AS built_form_key
@@ -146,16 +157,16 @@ tier2_built_form_key AS (
         ap.apn,
         CASE
             -- A2 parcels (multi-family) with building footprints → mf2to4 or mf5p
-            WHEN ap.landuse_prefix LIKE 'A2'
+            WHEN (ap.landuse_prefix LIKE 'A2' OR ap.landuse_prefix IN ('AT'))
                  AND bs.residential_building_sqft > 0
                  AND COALESCE(bs.max_levels, 1) >= 3 THEN 'mf5p'
-            WHEN ap.landuse_prefix LIKE 'A2'
+            WHEN (ap.landuse_prefix LIKE 'A2' OR ap.landuse_prefix IN ('AT'))
                  AND bs.residential_building_sqft > 0 THEN 'mf2to4'
             -- A2 catch-all: building footprints exist but Overture didn't tag as residential.
             -- Landuse code already says multi-family, so default to conservative mf2to4.
             -- Without this, A2 + non-residential-only footprints falls through to
             -- 'WHEN other_building_sqft > 0 THEN civic', violating A2 audit.
-            WHEN ap.landuse_prefix LIKE 'A2' THEN 'mf2to4'
+            WHEN (ap.landuse_prefix LIKE 'A2' OR ap.landuse_prefix IN ('AT')) THEN 'mf2to4'
             -- Original tier2 logic for non-A2 parcels
             WHEN bs.residential_building_sqft > 0
                  AND COALESCE(bs.max_levels, 1) < 3 THEN 'detsf_sl'
@@ -214,7 +225,8 @@ tier3_candidates AS (
           AND ST_DWithin(u.geometry, kf.geometry, 5000)
           AND (
               (u.landuse_prefix LIKE 'A2' AND kf.built_form_key IN ('mf2to4', 'mf5p'))
-              OR (u.landuse_prefix NOT LIKE 'A2')
+              OR (u.landuse_prefix IN ('AT') AND kf.built_form_key IN ('mf2to4', 'mf5p'))
+              OR (u.landuse_prefix NOT LIKE 'A2' AND u.landuse_prefix NOT IN ('AT'))
           )
         ORDER BY u.geometry <-> kf.geometry
         LIMIT 200
@@ -252,7 +264,7 @@ tier3b_built_form_key AS (
     WHERE u.lot_size_acres > 3.0
       AND COALESCE(u.footprint_ratio, 0) < 0.02
       AND u.t2_bft IS NULL
-      AND (u.landuse_prefix NOT LIKE 'A2' OR u.landuse_prefix IS NULL)
+      AND ((u.landuse_prefix NOT LIKE 'A2' AND u.landuse_prefix NOT IN ('AT')) OR u.landuse_prefix IS NULL)
       AND NOT EXISTS (SELECT 1 FROM tier3_built_form_key t3 WHERE t3.apn = u.apn)
 ),
 
@@ -260,7 +272,7 @@ tier4_built_form_key AS (
     SELECT
         u.apn,
         CASE
-            WHEN u.landuse_prefix LIKE 'A2' THEN 'mf2to4'
+            WHEN (u.landuse_prefix LIKE 'A2' OR u.landuse_prefix IN ('AT')) THEN 'mf2to4'
             WHEN u.lot_size_acres > 10.0 THEN 'agricultural'
             WHEN u.lot_size_acres > 3.0 THEN
                 CASE

@@ -35,7 +35,7 @@ SELECT
     ST_Centroid(ST_MakeValid(geometry)) AS centroid,
     ST_Transform(ST_MakeValid(geometry), @VAR('local_srid', 3310)) AS local_geometry,
     ST_Centroid(ST_Transform(ST_MakeValid(geometry), @VAR('local_srid', 3310))) AS centroid_local,
-    lotsize::double precision AS lot_size_acres,
+    (lotsize::double precision / 43560.0)::double precision AS lot_size_acres,
     landuse,
     zone,
     jurisdiction,
