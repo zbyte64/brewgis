@@ -46,5 +46,7 @@ LEFT JOIN block_geometry bg
 
 -- post_statements
   CREATE INDEX IF NOT EXISTS idx_census_2020_block_geometry
-  ON brewgis.staging.census_2020_block USING GIST (geometry);
-ANALYZE brewgis.staging.census_2020_block;
+  ON @this_model USING GIST (geometry);
+  CREATE INDEX IF NOT EXISTS idx_census_2020_block_geoid
+  ON @this_model USING btree (geoid);
+ANALYZE @this_model;

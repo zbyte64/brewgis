@@ -24,7 +24,7 @@ WHERE geometry IS NOT NULL;
 
 -- post_statements
   CREATE INDEX IF NOT EXISTS idx_c2020_block_proj_geometry
-  ON brewgis.staging.census_2020_block_projected USING GIST (geometry);
+  ON @this_model USING GIST (geometry);
   CREATE INDEX IF NOT EXISTS idx_c2020_block_proj_geoid
-  ON brewgis.staging.census_2020_block_projected (geoid);
-ANALYZE brewgis.staging.census_2020_block_projected;
+  ON @this_model USING btree (geoid);
+ANALYZE @this_model;

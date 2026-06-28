@@ -55,7 +55,7 @@ FROM vmt_data;
 
 -- post_statements
   CREATE INDEX IF NOT EXISTS idx_transport_ghg_geom
-  ON brewgis.analysis.transport_ghg USING GIST (geom);
+  ON @this_model USING GIST (geom);
 
   CREATE INDEX IF NOT EXISTS idx_transport_ghg_parcel_id
-  ON brewgis.analysis.transport_ghg (parcel_id);
+  ON @this_model USING btree (parcel_id);

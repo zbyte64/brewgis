@@ -7,8 +7,8 @@ MODEL (
 /*
 // gets interpreted by duckdb and drops the gist index for a btree
 CREATE INDEX IF NOT EXISTS idx_buildings_combined_geometry
-ON brewgis.staging.buildings_combined USING GIST (geometry);
-ANALYZE brewgis.staging.buildings_combined;
+ON @this_model USING GIST (geometry);
+ANALYZE @this_model;
 */
 
 -- Combined Building Footprints — spatial dedup union of Overture Maps

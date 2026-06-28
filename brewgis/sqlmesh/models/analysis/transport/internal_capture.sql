@@ -161,4 +161,9 @@ SELECT
     internal_capture_pct,
     trips_external
 FROM final
-ORDER BY parcel_id
+ORDER BY parcel_id;
+
+-- post_statements
+  CREATE INDEX IF NOT EXISTS idx_internal_capture_parcel_id
+  ON @this_model USING btree (parcel_id);
+ANALYZE @this_model;

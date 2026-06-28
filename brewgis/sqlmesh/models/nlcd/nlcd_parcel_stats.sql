@@ -29,9 +29,9 @@ raster_extent AS (
 
 parcels_in_extent AS (
     SELECT p.id AS parcel_id, p.geometry
-    FROM brewgis.nlcd.parcels_wm p, raster_extent re
+    FROM brewgis.nlcd.parcels_wm p
+    JOIN raster_extent re ON ST_Intersects(p.geometry, re.extent)
     WHERE p.geometry IS NOT NULL
-      AND ST_Intersects(p.geometry, re.extent)
 ),
 
 parcel_tiles AS (
@@ -48,8 +48,8 @@ tile_value_counts AS (
         t.parcel_id,
         vc.value::integer AS vc_value,
         vc.count::integer AS vc_count
-    FROM parcel_tiles t,
-    ST_ValueCount(t.clipped, 1) AS vc
+    FROM parcel_tiles t
+    CROSS JOIN LATERAL ST_ValueCount(t.clipped, 1) AS vc
 ),
 
 per_parcel_value_counts AS (
@@ -132,4 +132,4 @@ LEFT JOIN impervious_frac i ON ap.parcel_id = i.parcel_id;
 
 -- post_statements
   CREATE INDEX IF NOT EXISTS idx_nlcd_parcel_stats_parcel_id
-  ON brewgis.nlcd.nlcd_parcel_stats (parcel_id);
+  ON @this_model USING btree (parcel_id);

@@ -196,13 +196,13 @@ FROM computed AS c;
 
 -- post_statements
   CREATE INDEX IF NOT EXISTS idx_core_end_state_geom
-  ON brewgis.analysis.core_end_state USING GIST (geom);
+  ON @this_model USING GIST (geom);
 
   CREATE INDEX IF NOT EXISTS idx_core_end_state_parcel_id
-  ON brewgis.analysis.core_end_state (parcel_id);
+  ON @this_model USING btree (parcel_id);
   CREATE INDEX IF NOT EXISTS idx_core_end_state_parcel_acres_ag
-  ON brewgis.analysis.core_end_state (parcel_acres_agriculture);
+  ON @this_model USING btree (parcel_acres_agriculture);
   CREATE INDEX IF NOT EXISTS idx_core_end_state_land_dev_cat
-  ON brewgis.analysis.core_end_state (land_dev_category);
+  ON @this_model USING btree (land_dev_category);
   CREATE INDEX IF NOT EXISTS idx_core_end_state_acres_dev
-  ON brewgis.analysis.core_end_state (acres_developed);
+  ON @this_model USING btree (acres_developed);

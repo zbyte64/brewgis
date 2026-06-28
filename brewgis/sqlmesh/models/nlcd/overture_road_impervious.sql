@@ -94,4 +94,4 @@ LEFT JOIN road_summary rs ON ap.parcel_id = rs.parcel_id;
   CREATE INDEX IF NOT EXISTS idx_overture_transport_geometry
   ON brewgis.staging.overture_transport USING GIST (geometry);
   CREATE INDEX IF NOT EXISTS idx_overture_road_impervious_parcel_id
-  ON brewgis.nlcd.overture_road_impervious (parcel_id);
+  ON @this_model USING btree (parcel_id);

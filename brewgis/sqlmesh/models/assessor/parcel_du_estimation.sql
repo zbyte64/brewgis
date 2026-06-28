@@ -289,5 +289,5 @@ FROM du_final;
 
 -- post_statements
   CREATE INDEX IF NOT EXISTS idx_parcel_du_estimation_apn
-  ON @this_model (apn);
+  ON @this_model USING btree (apn);
 ANALYZE @this_model;

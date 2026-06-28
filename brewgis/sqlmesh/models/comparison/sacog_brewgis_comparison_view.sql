@@ -104,8 +104,8 @@ LEFT JOIN public.sacog_comparison_parcels sp
 
 -- post_statements
   CREATE INDEX IF NOT EXISTS idx_sacog_brewgis_comparison_view_geom
-  ON brewGIS.comparison.sacog_brewgis_comparison_view USING GIST (geometry);
+  ON @this_model USING GIST (geometry);
   CREATE INDEX IF NOT EXISTS idx_comparison_view_parcel_id
-  ON brewgis.comparison.sacog_brewgis_comparison_view (parcel_id);
+  ON @this_model USING btree (parcel_id);
   CREATE INDEX IF NOT EXISTS idx_comparison_view_geography_id
-  ON brewgis.comparison.sacog_brewgis_comparison_view (geography_id);
+  ON @this_model USING btree (geography_id);

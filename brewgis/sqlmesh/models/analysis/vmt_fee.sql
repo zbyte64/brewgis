@@ -49,7 +49,7 @@ FROM vmt_data;
 
 -- post_statements
   CREATE INDEX IF NOT EXISTS idx_vmt_fee_geom
-  ON brewgis.analysis.vmt_fee USING GIST (geom);
+  ON @this_model USING GIST (geom);
   CREATE INDEX IF NOT EXISTS idx_vmt_fee_parcel_id
-  ON brewgis.analysis.vmt_fee (parcel_id);
-ANALYZE brewgis.analysis.vmt_fee;
+  ON @this_model USING btree (parcel_id);
+ANALYZE @this_model;

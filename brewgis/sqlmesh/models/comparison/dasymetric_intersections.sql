@@ -27,5 +27,7 @@ JOIN brewgis.assessor.parcel_dasymetric_weights dw ON cand.apn = dw.apn;
 
 -- post_statements
   CREATE INDEX IF NOT EXISTS idx_dasymetric_intersections_parcel_id
-  ON brewgis.comparison.dasymetric_intersections (parcel_id);
-ANALYZE brewgis.comparison.dasymetric_intersections;
+  ON @this_model USING btree (parcel_id);
+  CREATE INDEX IF NOT EXISTS idx_dasymetric_intersections_apn
+  ON @this_model USING btree (apn);
+ANALYZE @this_model;

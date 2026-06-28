@@ -35,7 +35,7 @@ FROM brewgis.staging.buildings_combined;
 
 -- post_statements
   CREATE INDEX IF NOT EXISTS idx_buildings_combined_pg_geometry
-  ON brewgis.staging.buildings_combined_pg USING GIST (geometry);
+  ON @this_model USING GIST (geometry);
   CREATE INDEX IF NOT EXISTS idx_buildings_combined_pg_local_geometry
-  ON brewgis.staging.buildings_combined_pg USING GIST (local_geometry);
-ANALYZE brewgis.staging.buildings_combined_pg;
+  ON @this_model USING GIST (local_geometry);
+ANALYZE @this_model;

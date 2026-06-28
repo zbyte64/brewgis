@@ -50,7 +50,7 @@ FROM parcel_data;
 
 -- post_statements
   CREATE INDEX IF NOT EXISTS idx_sprawl_cost_geom
-  ON brewgis.analysis.sprawl_cost USING GIST (geom);
+  ON @this_model USING GIST (geom);
   CREATE INDEX IF NOT EXISTS idx_sprawl_cost_parcel_id
-  ON brewgis.analysis.sprawl_cost (parcel_id);
-ANALYZE brewgis.analysis.sprawl_cost;
+  ON @this_model USING btree (parcel_id);
+ANALYZE @this_model;

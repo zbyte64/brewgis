@@ -48,5 +48,5 @@ WHERE street_count >= 3;
 
 -- post_statements
   CREATE INDEX IF NOT EXISTS idx_overture_intersection_points_geometry
-  ON brewgis.assessor.overture_intersection_points USING GIST (geometry);
-ANALYZE brewgis.assessor.overture_intersection_points;
+  ON @this_model USING GIST (geometry);
+ANALYZE @this_model;

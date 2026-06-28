@@ -45,10 +45,10 @@ FROM brewgis.analysis.core_end_state AS es;
 
 -- post_statements
   CREATE INDEX IF NOT EXISTS idx_water_demand_geom
-  ON brewgis.analysis.water_demand USING GIST (geom);
+  ON @this_model USING GIST (geom);
 
   CREATE INDEX IF NOT EXISTS idx_water_demand_parcel_id
-  ON brewgis.analysis.water_demand (parcel_id);
+  ON @this_model USING btree (parcel_id);
 
 
 -- ------------------------------------------------------------

@@ -122,4 +122,4 @@ LEFT JOIN brewgis.seeds.overture_land_use_map oym_subtype
 
 -- post_statements
   CREATE INDEX IF NOT EXISTS idx_overture_land_use_parcel_parcel_id
-  ON brewgis.assessor.overture_land_use_parcel (parcel_id);
+  ON @this_model USING btree (parcel_id);

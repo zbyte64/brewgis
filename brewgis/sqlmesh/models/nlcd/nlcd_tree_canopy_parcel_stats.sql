@@ -28,9 +28,9 @@ parcels_5070 AS (
     SELECT
         p.id AS parcel_id,
         ST_Transform(p.geometry, 5070) AS geometry_5070
-    FROM brewgis.nlcd.parcels_wm p, raster_extent re
+    FROM brewgis.nlcd.parcels_wm p
+    JOIN raster_extent re ON ST_Intersects(p.geometry, re.extent)
     WHERE p.geometry IS NOT NULL
-      AND ST_Intersects(p.geometry, re.extent)
 ),
 
 parcel_tiles AS (
@@ -76,4 +76,4 @@ LEFT JOIN per_parcel_stats s ON ap.parcel_id = s.parcel_id;
 
 -- post_statements
   CREATE INDEX IF NOT EXISTS idx_nlcd_tree_canopy_parcel_stats_parcel_id
-  ON brewgis.nlcd.nlcd_tree_canopy_parcel_stats (parcel_id);
+  ON @this_model USING btree (parcel_id);

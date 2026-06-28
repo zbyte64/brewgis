@@ -114,5 +114,5 @@ FROM assembled;
 
 -- post_statements
   CREATE INDEX IF NOT EXISTS idx_authoritative_residential_area_apn
-  ON brewgis.assessor.authoritative_residential_area (apn);
-ANALYZE brewgis.assessor.authoritative_residential_area;
+  ON @this_model USING btree (apn);
+ANALYZE @this_model;

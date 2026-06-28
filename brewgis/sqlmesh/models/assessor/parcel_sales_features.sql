@@ -40,13 +40,13 @@ WHERE pbf.footprint_ratio > 0
 
 -- post_statements
   CREATE INDEX IF NOT EXISTS idx_parcel_sales_features_geometry
-  ON brewgis.assessor.parcel_sales_features USING GIST (geometry);
+  ON @this_model USING GIST (geometry);
   CREATE INDEX IF NOT EXISTS idx_parcel_sales_features_apn
-  ON brewgis.assessor.parcel_sales_features (apn);
+  ON @this_model USING btree (apn);
   CREATE INDEX IF NOT EXISTS idx_parcel_sales_features_bg_ldc
-  ON brewgis.assessor.parcel_sales_features (block_group_geoid, land_development_category);
+  ON @this_model USING btree (block_group_geoid, land_development_category);
   CREATE INDEX IF NOT EXISTS idx_parcel_sales_features_tract_ldc
-  ON brewgis.assessor.parcel_sales_features (tract_geoid, land_development_category);
+  ON @this_model USING btree (tract_geoid, land_development_category);
   CREATE INDEX IF NOT EXISTS idx_parcel_sales_features_ldc
-  ON brewgis.assessor.parcel_sales_features (land_development_category);
-ANALYZE brewgis.assessor.parcel_sales_features;
+  ON @this_model USING btree (land_development_category);
+ANALYZE @this_model;

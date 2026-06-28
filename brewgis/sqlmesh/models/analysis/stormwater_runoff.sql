@@ -85,7 +85,7 @@ FROM runoff;
 
 -- post_statements
   CREATE INDEX IF NOT EXISTS idx_stormwater_runoff_geom
-  ON brewgis.analysis.stormwater_runoff USING GIST (geom);
+  ON @this_model USING GIST (geom);
   CREATE INDEX IF NOT EXISTS idx_stormwater_runoff_parcel_id
-  ON brewgis.analysis.stormwater_runoff (parcel_id);
-ANALYZE brewgis.analysis.stormwater_runoff;
+  ON @this_model USING btree (parcel_id);
+ANALYZE @this_model;

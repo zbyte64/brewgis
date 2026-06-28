@@ -137,7 +137,7 @@ LEFT JOIN building_stats bs ON sap.apn = bs.apn;
 
 -- post_statements
   CREATE INDEX IF NOT EXISTS idx_parcel_building_footprints_geometry
-  ON brewgis.assessor.parcel_building_footprints USING GIST (geometry);
+  ON @this_model USING GIST (geometry);
   CREATE INDEX IF NOT EXISTS idx_parcel_building_footprints_apn
-  ON brewgis.assessor.parcel_building_footprints (apn);
-ANALYZE brewgis.assessor.parcel_building_footprints;
+  ON @this_model USING btree (apn);
+ANALYZE @this_model;

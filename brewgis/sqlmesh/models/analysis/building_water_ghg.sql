@@ -75,7 +75,7 @@ FROM energy_data;
 
 -- post_statements
   CREATE INDEX IF NOT EXISTS idx_building_water_ghg_geom
-  ON brewgis.analysis.building_water_ghg USING GIST (geom);
+  ON @this_model USING GIST (geom);
 
   CREATE INDEX IF NOT EXISTS idx_building_water_ghg_parcel_id
-  ON brewgis.analysis.building_water_ghg (parcel_id);
+  ON @this_model USING btree (parcel_id);

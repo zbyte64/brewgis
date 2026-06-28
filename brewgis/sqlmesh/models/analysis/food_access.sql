@@ -48,7 +48,7 @@ FROM food_data;
 
 -- post_statements
   CREATE INDEX IF NOT EXISTS idx_food_access_geom
-  ON brewgis.analysis.food_access USING GIST (geom);
+  ON @this_model USING GIST (geom);
   CREATE INDEX IF NOT EXISTS idx_food_access_parcel_id
-  ON brewgis.analysis.food_access (parcel_id);
-ANALYZE brewgis.analysis.food_access;
+  ON @this_model USING btree (parcel_id);
+ANALYZE @this_model;

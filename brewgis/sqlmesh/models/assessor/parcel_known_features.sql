@@ -128,13 +128,13 @@ WHERE COALESCE(t1.built_form_key, t0.built_form_key) IS NOT NULL
 -- post_statements
   CREATE EXTENSION IF NOT EXISTS btree_gist;
   CREATE INDEX IF NOT EXISTS idx_parcel_known_features_geometry
-  ON brewgis.assessor.parcel_known_features USING GIST (geometry);
+  ON @this_model USING GIST (geometry);
   CREATE INDEX IF NOT EXISTS idx_parcel_known_features_apn
-  ON brewgis.assessor.parcel_known_features (apn);
+  ON @this_model USING btree (apn);
   CREATE INDEX IF NOT EXISTS idx_parcel_known_features_land_dev_cat
-  ON brewgis.assessor.parcel_known_features (land_development_category);
+  ON @this_model USING btree (land_development_category);
   CREATE INDEX IF NOT EXISTS idx_parcel_known_features_lot_size_acres
-  ON brewgis.assessor.parcel_known_features (lot_size_acres);
+  ON @this_model USING btree (lot_size_acres);
   CREATE INDEX IF NOT EXISTS idx_parcel_known_features_cat_lot_geom
-  ON brewgis.assessor.parcel_known_features USING GIST (land_development_category, lot_size_acres, geometry);
-ANALYZE brewgis.assessor.parcel_known_features;
+  ON @this_model USING GIST (land_development_category, lot_size_acres, geometry);
+ANALYZE @this_model;

@@ -43,7 +43,7 @@ FROM parcel_canopy;
 
 -- post_statements
   CREATE INDEX IF NOT EXISTS idx_tree_canopy_geom
-  ON brewgis.analysis.tree_canopy USING GIST (geom);
+  ON @this_model USING GIST (geom);
   CREATE INDEX IF NOT EXISTS idx_tree_canopy_parcel_id
-  ON brewgis.analysis.tree_canopy (parcel_id);
-ANALYZE brewgis.analysis.tree_canopy;
+  ON @this_model USING btree (parcel_id);
+ANALYZE @this_model;

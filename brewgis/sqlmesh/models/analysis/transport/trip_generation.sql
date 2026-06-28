@@ -78,7 +78,7 @@ FROM trip_rates;
 
 -- post_statements
   CREATE INDEX IF NOT EXISTS idx_trip_generation_geom
-  ON brewgis.analysis.trip_generation USING GIST (geom);
+  ON @this_model USING GIST (geom);
   CREATE INDEX IF NOT EXISTS idx_trip_generation_parcel_id
-  ON brewgis.analysis.trip_generation (parcel_id);
-ANALYZE brewgis.analysis.trip_generation;
+  ON @this_model USING btree (parcel_id);
+ANALYZE @this_model;

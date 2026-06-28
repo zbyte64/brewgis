@@ -38,7 +38,7 @@ WHERE a.du > 0
 
 -- post_statements
   CREATE INDEX IF NOT EXISTS idx_acs_block_group_projected_geometry
-  ON brewgis.assessor.acs_block_group_projected USING GIST (geometry);
+  ON @this_model USING GIST (geometry);
   CREATE INDEX IF NOT EXISTS idx_acs_block_group_projected_geoid
-  ON brewgis.assessor.acs_block_group_projected (geoid);
-ANALYZE brewgis.assessor.acs_block_group_projected;
+  ON @this_model USING btree (geoid);
+ANALYZE @this_model;

@@ -60,7 +60,7 @@ FROM parcel_scores;
 
 -- post_statements
   CREATE INDEX IF NOT EXISTS idx_sprawl_index_geom
-  ON brewgis.analysis.sprawl_index USING GIST (geom);
+  ON @this_model USING GIST (geom);
   CREATE INDEX IF NOT EXISTS idx_sprawl_index_parcel_id
-  ON brewgis.analysis.sprawl_index (parcel_id);
-ANALYZE brewgis.analysis.sprawl_index;
+  ON @this_model USING btree (parcel_id);
+ANALYZE @this_model;

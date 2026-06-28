@@ -23,4 +23,9 @@ SELECT
     + COALESCE(b.co2e_total_kg, 0.0) AS co2e_total
 FROM brewgis.analysis.transport_ghg AS t
 FULL OUTER JOIN brewgis.analysis.building_water_ghg AS b
-    ON t.parcel_id = b.parcel_id
+    ON t.parcel_id = b.parcel_id;
+
+-- post_statements
+  CREATE INDEX IF NOT EXISTS idx_total_ghg_parcel_id
+  ON @this_model USING btree (parcel_id);
+ANALYZE @this_model;

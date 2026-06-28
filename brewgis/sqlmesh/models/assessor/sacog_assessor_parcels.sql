@@ -66,13 +66,13 @@ WHERE rn = 1;
 
 -- post_statements
   CREATE INDEX IF NOT EXISTS idx_sacog_assessor_parcels_geometry
-  ON brewgis.assessor.sacog_assessor_parcels USING GIST (geometry);
+  ON @this_model USING GIST (geometry);
   CREATE INDEX IF NOT EXISTS idx_sacog_assessor_parcels_local_geometry
-  ON brewgis.assessor.sacog_assessor_parcels USING GIST (local_geometry);
+  ON @this_model USING GIST (local_geometry);
   CREATE INDEX IF NOT EXISTS idx_sacog_assessor_parcels_centroid_local
-  ON brewgis.assessor.sacog_assessor_parcels USING GIST (centroid_local);
+  ON @this_model USING GIST (centroid_local);
   CREATE INDEX IF NOT EXISTS idx_sacog_assessor_parcels_centroid
-  ON brewgis.assessor.sacog_assessor_parcels USING GIST (centroid);
+  ON @this_model USING GIST (centroid);
   CREATE INDEX IF NOT EXISTS idx_sacog_assessor_parcels_apn
-  ON brewgis.assessor.sacog_assessor_parcels (apn);
-  ANALYZE brewgis.assessor.sacog_assessor_parcels;
+  ON @this_model USING btree (apn);
+  ANALYZE @this_model;

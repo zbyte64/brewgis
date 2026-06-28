@@ -46,8 +46,8 @@ SELECT
 FROM mode_trips;
 
 -- post_statements
-  CREATE INDEX IF NOT EXISTS idx_transport_vmt_geom
-  ON brewgis.analysis.transport_vmt USING GIST (geom);
-  CREATE INDEX IF NOT EXISTS idx_transport_vmt_parcel_id
-  ON brewgis.analysis.transport_vmt (parcel_id);
-ANALYZE brewgis.analysis.transport_vmt;
+  CREATE INDEX IF NOT EXISTS idx_vmt_geom
+  ON @this_model USING GIST (geom);
+  CREATE INDEX IF NOT EXISTS idx_vmt_parcel_id
+  ON @this_model USING btree (parcel_id);
+ANALYZE @this_model;

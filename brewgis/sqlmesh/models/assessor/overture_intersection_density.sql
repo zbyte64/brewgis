@@ -40,7 +40,7 @@ JOIN brewgis.assessor.sacog_assessor_parcels sap ON d.apn = sap.apn;
 
 -- post_statements
   CREATE INDEX IF NOT EXISTS idx_overture_intersection_density_apn
-  ON brewgis.assessor.overture_intersection_density (apn);
+  ON @this_model USING btree (apn);
   CREATE INDEX IF NOT EXISTS idx_overture_intersection_density_geometry
-  ON brewgis.assessor.overture_intersection_density USING GIST (geometry);
-ANALYZE brewgis.assessor.overture_intersection_density;
+  ON @this_model USING GIST (geometry);
+ANALYZE @this_model;

@@ -31,4 +31,9 @@ CROSS JOIN LATERAL (
     WHERE ST_Within(sap.centroid, tbg.geometry)
       AND tbg.vintage = @tiger_vintage
     LIMIT 1
-) tbg
+) tbg;
+
+-- post_statements
+  CREATE INDEX IF NOT EXISTS idx_parcel_block_groups_apn
+  ON @this_model USING btree (apn);
+ANALYZE @this_model;

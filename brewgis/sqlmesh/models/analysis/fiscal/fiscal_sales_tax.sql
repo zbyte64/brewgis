@@ -38,7 +38,7 @@ FROM brewgis.analysis.core_end_state AS es;
 
 -- post_statements
   CREATE INDEX IF NOT EXISTS idx_fiscal_sales_tax_geom
-  ON brewgis.analysis.fiscal_sales_tax USING GIST (geom);
+  ON @this_model USING GIST (geom);
 
   CREATE INDEX IF NOT EXISTS idx_fiscal_sales_tax_parcel_id
-  ON brewgis.analysis.fiscal_sales_tax (parcel_id);
+  ON @this_model USING btree (parcel_id);

@@ -44,5 +44,5 @@ WHERE rn = 1;
 
 -- post_statements
   CREATE INDEX IF NOT EXISTS idx_sacog_assessor_sales_deduped_apn
-  ON brewgis.assessor.sacog_assessor_sales_deduped (apn);
-ANALYZE brewgis.assessor.sacog_assessor_sales_deduped;
+  ON @this_model USING btree (apn);
+ANALYZE @this_model;

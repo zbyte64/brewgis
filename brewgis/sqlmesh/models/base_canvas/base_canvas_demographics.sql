@@ -239,4 +239,6 @@ LEFT JOIN acs_allocated acs ON p.parcel_id = acs.parcel_id;
 
 -- post_statements
   CREATE INDEX IF NOT EXISTS idx_base_canvas_demographics_geometry
-  ON brewgis.base_canvas.base_canvas_demographics USING GIST (geometry);
+  ON @this_model USING GIST (geometry);
+  CREATE INDEX IF NOT EXISTS idx_base_canvas_demographics_parcel_id
+  ON @this_model USING btree (parcel_id);

@@ -77,4 +77,6 @@ FROM derived_rates;
 
 -- post_statements
   CREATE INDEX IF NOT EXISTS idx_pdb_block_group_geometry
-  ON brewgis.staging.pdb_block_group USING GIST (geometry);
+  ON @this_model USING GIST (geometry);
+  CREATE INDEX IF NOT EXISTS idx_pdb_block_group_geoid
+  ON @this_model USING btree (geoid);

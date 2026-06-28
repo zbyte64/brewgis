@@ -694,16 +694,17 @@ class Command(BaseCommand):
             plan_vars["osm_intersection_table"] = "osm_intersection_density"
 
         # checkpoint
-        run_sqlmesh_plan(
-            environment="sacog_comparison",
-            skip_tests=False,
-            select=[
-                "+brewgis.comparison.sacog_reference_totals",
-                "+brewgis.comparison.sacog_parcel_shim",
-                "+brewgis.staging.census_2020_block",
-            ],
-            variables=plan_vars,
-        )
+        if not force_data_reload:
+            run_sqlmesh_plan(
+                environment="sacog_comparison",
+                skip_tests=False,
+                select=[
+                    "+brewgis.comparison.sacog_reference_totals",
+                    "+brewgis.comparison.sacog_parcel_shim",
+                    "+brewgis.staging.census_2020_block",
+                ],
+                variables=plan_vars,
+            )
 
         plan, context = run_sqlmesh_plan(
             environment="sacog_comparison",

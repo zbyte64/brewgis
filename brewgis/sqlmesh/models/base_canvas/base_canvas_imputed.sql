@@ -185,7 +185,7 @@ LEFT JOIN du_subtype_proportions dp ON a.county = dp.county;
 
 -- post_statements
   CREATE INDEX IF NOT EXISTS idx_base_canvas_imputed_geom
-  ON brewGIS.base_canvas.base_canvas_imputed USING GIST (geometry);;
+  ON @this_model USING GIST (geometry);;
   CREATE INDEX IF NOT EXISTS idx_base_canvas_imputed_parcel_id
-  ON brewGIS.base_canvas.base_canvas_imputed (parcel_id);;
-ANALYZE brewGIS.base_canvas.base_canvas_imputed;
+  ON @this_model USING btree (parcel_id);;
+ANALYZE @this_model;

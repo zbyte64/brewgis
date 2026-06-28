@@ -169,6 +169,10 @@ LEFT JOIN dasymetric_enrichment de ON parcel_area.parcel_id = de.parcel_id;
 
 -- post_statements
   CREATE INDEX IF NOT EXISTS idx_base_canvas_geometry_geometry
-  ON brewgis.base_canvas.base_canvas_geometry USING GIST (geometry);
+  ON @this_model USING GIST (geometry);
   CREATE INDEX IF NOT EXISTS idx_base_canvas_geometry_centroid
-  ON brewgis.base_canvas.base_canvas_geometry USING GIST (ST_Centroid(geometry));
+  ON @this_model USING GIST (ST_Centroid(geometry));
+  CREATE INDEX IF NOT EXISTS idx_base_canvas_geometry_parcel_id
+  ON @this_model USING btree (parcel_id);
+  CREATE INDEX IF NOT EXISTS idx_base_canvas_geometry_apn
+  ON @this_model USING btree (apn);

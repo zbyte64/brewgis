@@ -36,7 +36,7 @@ FULL OUTER JOIN brewgis.analysis.fiscal_service_costs AS f3
 
 -- post_statements
   CREATE INDEX IF NOT EXISTS idx_fiscal_net_impact_geom
-  ON brewgis.analysis.fiscal_net_impact USING GIST (geom);
+  ON @this_model USING GIST (geom);
   CREATE INDEX IF NOT EXISTS idx_fiscal_net_impact_parcel_id
-  ON brewgis.analysis.fiscal_net_impact (parcel_id);
-ANALYZE brewgis.analysis.fiscal_net_impact;
+  ON @this_model USING btree (parcel_id);
+ANALYZE @this_model;

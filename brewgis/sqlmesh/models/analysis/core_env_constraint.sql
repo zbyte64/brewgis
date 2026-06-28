@@ -72,7 +72,7 @@ CROSS JOIN constraint_types AS cd;
 
 -- post_statements
   CREATE INDEX IF NOT EXISTS idx_env_constraint_geom
-  ON brewgis.analysis.env_constraint USING GIST (geom);
+  ON @this_model USING GIST (geom);
 
   CREATE INDEX IF NOT EXISTS idx_env_constraint_parcel_id
-  ON brewgis.analysis.env_constraint (parcel_id);
+  ON @this_model USING btree (parcel_id);

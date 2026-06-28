@@ -23,4 +23,4 @@ WHERE geometry IS NOT NULL;
 
 -- post_statements
   CREATE INDEX IF NOT EXISTS idx_parcels_wm_geometry
-  ON brewgis.nlcd.parcels_wm USING GIST (geometry);
+  ON @this_model USING GIST (geometry);

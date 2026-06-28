@@ -70,7 +70,7 @@ FROM public.sacog_comparison_parcels;
 
 -- post_statements
   CREATE INDEX IF NOT EXISTS idx_sacog_parcel_shim_geometry
-  ON brewgis.comparison.sacog_parcel_shim USING GIST (geometry);
+  ON @this_model USING GIST (geometry);
   CREATE INDEX IF NOT EXISTS idx_sacog_parcel_shim_parcel_id
-  ON brewgis.comparison.sacog_parcel_shim (parcel_id);
-ANALYZE brewgis.comparison.sacog_parcel_shim;
+  ON @this_model USING btree (parcel_id);
+ANALYZE @this_model;

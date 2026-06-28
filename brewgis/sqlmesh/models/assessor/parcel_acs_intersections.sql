@@ -37,5 +37,7 @@ JOIN brewgis.assessor.acs_block_group_projected a
 
 -- post_statements
   CREATE INDEX IF NOT EXISTS idx_parcel_acs_intersections_apn
-  ON @this_model (apn);
+  ON @this_model USING btree (apn);
+  CREATE INDEX IF NOT EXISTS idx_parcel_acs_intersections_bg_geoid
+  ON @this_model USING btree (bg_geoid);
 ANALYZE @this_model;

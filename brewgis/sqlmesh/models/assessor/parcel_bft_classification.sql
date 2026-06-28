@@ -354,5 +354,5 @@ LEFT JOIN int_density id ON ap.apn = id.apn;
 
 -- post_statements
   CREATE INDEX IF NOT EXISTS idx_parcel_bft_classification_apn
-  ON brewgis.assessor.parcel_bft_classification (apn);
-ANALYZE brewgis.assessor.parcel_bft_classification;
+  ON @this_model USING btree (apn);
+ANALYZE @this_model;
