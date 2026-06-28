@@ -94,8 +94,7 @@ LEFT JOIN auth_res ar ON c.apn = ar.apn;
 
 -- post_statements
   CREATE INDEX IF NOT EXISTS idx_parcel_dasymetric_weights_apn
-  ON brewgis.assessor.parcel_dasymetric_weights (apn);
-  CREATE INDEX IF NOT EXISTS idx_sacog_assessor_sales_raw_apn
-  ON public.sacog_assessor_sales_raw (apn);
-ANALYZE brewgis.assessor.parcel_dasymetric_weights;
-ANALYZE public.sacog_assessor_sales_raw;
+  ON @this_model (apn);
+  CREATE INDEX IF NOT EXISTS idx_parcel_dasymetric_weights_int_dens
+  ON @this_model (intersection_density);
+ANALYZE @this_model;

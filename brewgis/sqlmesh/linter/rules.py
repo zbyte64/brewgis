@@ -178,6 +178,122 @@ class MissingGeometryIndex(Rule):
         return None
 
 
+_KEY_COLUMN_NAMES = frozenset(
+    {
+        "apn",
+        "parcel_id",
+        "geoid",
+        "bg_geoid",
+        "block_fips",
+        "block_group_id",
+        "tract_id",
+        "county_fips",
+        "place_id",
+    }
+)
+
+
+class MissingKeyIndex(Rule):
+    """Non-VIEW models with common join-key columns (apn, parcel_id, geoid,
+    etc.) must create B-tree indexes on those columns in ``post_statements``.
+
+    Downstream models join against these columns via CTEs, making the joins
+    invisible to ``UnindexedJoin``'s table-reference walker. This rule
+    ensures indexes exist at the source, complementing ``MissingGeometryIndex``
+    (GiST) with a B-tree key-column analogue.
+    """
+
+    def check_model(self, model: Model) -> RuleViolation | None:
+        if isinstance(model, SeedModel):
+            return None
+        if not isinstance(model, SqlModel):
+            return None
+
+        # VIEW models can't have indexes. DuckDB models use DuckDB.
+        kind = getattr(model, "kind", None)
+        if kind is not None and getattr(kind, "is_view", False):
+            return None
+        gateway = getattr(model, "gateway", None) or ""
+        if "duckdb" in str(gateway).lower():
+            return None
+
+        # Collect key columns from model schema.
+        try:
+            columns = model.columns_to_types_or_raise
+        except (KeyError, ValueError, TypeError):
+            return None
+
+        key_cols = [c for c in _KEY_COLUMN_NAMES if c in columns]
+        if not key_cols:
+            return None
+
+        # Check post_statements for b-tree indexes on those columns.
+        # _get_indexed_columns reuses existing infra (handles @this_model
+        # via the Step 1 fix).
+        indexed_cols = _get_indexed_columns(model)
+        missing = sorted(c for c in key_cols if c not in indexed_cols)
+        if missing:
+            return self.violation(
+                f"Missing B-tree index(es) for key column(s): "
+                f"{', '.join(missing)}. These columns are used as JOIN keys "
+                f"by downstream models. Add ``CREATE INDEX IF NOT EXISTS "
+                f"<idx_name> ON @this_model (<col>)`` in post_statements."
+            )
+
+        return None
+
+
+class PostStatementIndexTarget(Rule):
+    """``CREATE INDEX`` in ``post_statements`` must target ``@this_model``,
+    not the model FQN.
+
+    ``@this_model`` resolves to the physical versioned table (e.g.
+    ``sqlmesh__assessor.assessor__parcel_dasymetric_weights__3077844791``).
+    Using the model FQN (a view) silently fails — PostgreSQL refuses to
+    create indexes on views. Silent failure produces runtime sequential
+    scans instead of index scans.
+    """
+
+    def check_model(self, model: Model) -> RuleViolation | None:
+        if isinstance(model, SeedModel):
+            return None
+        if not isinstance(model, SqlModel):
+            return None
+
+        kind = getattr(model, "kind", None)
+        if kind is not None and getattr(kind, "is_view", False):
+            return None
+
+        source_path = getattr(model, "_path", None)
+        if not source_path:
+            return None
+        try:
+            source = Path(source_path).read_text()
+        except OSError:
+            return None
+
+        model_name = model.name  # e.g. "brewgis"."assessor"."parcel_dasymetric_weights"
+        short_name = model_name.rsplit(".", 1)[-1] if "." in model_name else model_name
+
+        # Find all CREATE INDEX statements and check their ON target.
+        pattern = re.compile(
+            r"CREATE\s+(?:UNIQUE\s+)?INDEX\s+(?:IF\s+NOT\s+EXISTS\s+)?\S+\s+ON\s+(\S+)",
+            re.IGNORECASE,
+        )
+
+        for match in pattern.finditer(source):
+            target = match.group(1).strip('"')
+            if target == model_name or target == short_name:
+                return self.violation(
+                    f"CREATE INDEX in post_statements targets the model's "
+                    f"view FQN (``{model_name}``). PostgreSQL cannot create "
+                    f"indexes on views — this statement silently fails. "
+                    f"Replace ``ON {target}`` with ``ON @this_model``."
+                )
+
+        return None
+
+
 _SPATIAL_FUNCTIONS = frozenset(
     {
         "ST_INTERSECTS",
@@ -286,8 +402,11 @@ def _extract_indexes_from_sql(
         on_clause = match.group(0)
         on_table_pattern = r"ON\s+" + re.escape(model_name)
         on_short_pattern = r"ON\s+" + re.escape(short_name) + r"\b"
-        if not re.search(on_table_pattern, on_clause, re.IGNORECASE) and not re.search(
-            on_short_pattern, on_clause, re.IGNORECASE
+        on_this_model_pattern = r"ON\s+@this_model\b"
+        if (
+            not re.search(on_table_pattern, on_clause, re.IGNORECASE)
+            and not re.search(on_short_pattern, on_clause, re.IGNORECASE)
+            and not re.search(on_this_model_pattern, on_clause, re.IGNORECASE)
         ):
             continue
 
@@ -642,6 +761,22 @@ class UnindexedJoin(Rule):
                         f"Materialize the transformed geometry into a "
                         f"dedicated model with a post_statements GiST index."
                     )
+
+        # Check for key-based (=) joins against CTEs.
+        # These can't use indexes on the CTE itself, but the source model
+        # whose table the CTE reads FROM should have a B-tree index.
+        for eq in on.find_all(exp.EQ):
+            for col in eq.find_all(exp.Column):
+                if col.table == join_alias:
+                    col_name = col.name.lower()
+                    if col_name in _KEY_COLUMN_NAMES:
+                        return self.violation(
+                            f"Key join against CTE ``{table.name}`` on column "
+                            f"``{col.name}`` cannot use an index. Ensure the "
+                            f"underlying model has a B-tree index on "
+                            f"``{col.name}`` via ``CREATE INDEX ON @this_model "
+                            f"({col.name})`` in its post_statements."
+                        )
 
         return None
 

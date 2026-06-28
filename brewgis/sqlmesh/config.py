@@ -287,6 +287,8 @@ def config_factory(**variables):
                 "DuckDBGeometryUsage",
             ],
             warn_rules=[
+                "MissingKeyIndex",
+                "PostStatementIndexTarget",
                 "MissingGeometryIndex",
                 "UnindexedJoin",
                 "UnindexedGroupBy",

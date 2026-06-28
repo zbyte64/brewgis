@@ -107,32 +107,18 @@ calibration_parcels AS (
       AND assessor_units >= 2
 ),
 
--- ── region_avg_overture_sqft_per_unit via k-NN in int_dens space (k=20) ─────
--- For each MF parcel, find 20 nearest calibration parcels in intersection
--- density space and compute the ratio of sums for the subtype.
--- Fallback to county-wide subtype avg when no calibration parcels within
--- a reasonable int_dens distance.
-knn_calibration AS (
+-- ── Bucket-based calibration (replaces per-parcel k-NN) ─────────────────────
+-- Pre-compute sqft-per-unit ratio per intersection_density bucket per subtype.
+-- 50 buckets over [0, 408) → ~8-unit width, ~28 calibration parcels/bucket.
+calibration_buckets AS (
     SELECT
-        p.apn,
-        c.du_subtype,
-        SUM(c.residential_building_sqft) / NULLIF(SUM(c.assessor_units), 0) AS region_avg_sqft_per_unit,
+        du_subtype,
+        WIDTH_BUCKET(intersection_density, 0, 408, 50) AS bucket,
+        SUM(residential_building_sqft) / NULLIF(SUM(assessor_units), 0) AS region_avg_sqft_per_unit,
         COUNT(*) AS calib_count
-    FROM parcel_hh_size p
-    CROSS JOIN LATERAL (
-        SELECT c.residential_building_sqft, c.assessor_units, c.du_subtype
-        FROM calibration_parcels c
-        WHERE c.du_subtype = (
-            CASE
-                WHEN p.du_subtype IN ('mf2to4', 'mf5p') THEN p.du_subtype
-                ELSE NULL
-            END
-        )
-        ORDER BY ABS(p.intersection_density - c.intersection_density)
-        LIMIT 20
-    ) c
-    WHERE p.du_subtype IN ('mf2to4', 'mf5p')
-    GROUP BY p.apn, c.du_subtype
+    FROM calibration_parcels
+    GROUP BY du_subtype, WIDTH_BUCKET(intersection_density, 0, 408, 50)
+    HAVING COUNT(*) > 0
 ),
 
 -- ── County-wide subtype avg (fallback for k-NN) ───────────────────────────
@@ -144,14 +130,14 @@ county_subtype_avg AS (
     GROUP BY du_subtype
 ),
 
--- ── Final calibration: k-NN if available, else county avg ──────────────────
+-- ── Final calibration: bucket if available, else county avg ─────────────────
 calibration AS (
     SELECT
         p.apn,
         GREATEST(
             COALESCE(
                 CASE
-                    WHEN k.calib_count >= 5 THEN k.region_avg_sqft_per_unit
+                    WHEN b.calib_count >= 5 THEN b.region_avg_sqft_per_unit
                     ELSE csa.region_avg_sqft_per_unit
                 END,
                 csa.region_avg_sqft_per_unit,
@@ -165,7 +151,9 @@ calibration AS (
             ELSE NULL
         END AS min_du
     FROM parcel_hh_size p
-    LEFT JOIN knn_calibration k ON p.apn = k.apn
+    LEFT JOIN calibration_buckets b
+        ON b.du_subtype = p.du_subtype
+        AND WIDTH_BUCKET(p.intersection_density, 0, 408, 50) = b.bucket
     LEFT JOIN county_subtype_avg csa
         ON (p.du_subtype = csa.du_subtype)
     WHERE p.du_subtype IN ('mf2to4', 'mf5p')
@@ -301,5 +289,5 @@ FROM du_final;
 
 -- post_statements
   CREATE INDEX IF NOT EXISTS idx_parcel_du_estimation_apn
-  ON brewgis.assessor.parcel_du_estimation (apn);
-ANALYZE brewgis.assessor.parcel_du_estimation;
+  ON @this_model (apn);
+ANALYZE @this_model;

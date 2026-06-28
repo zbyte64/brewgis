@@ -37,5 +37,5 @@ JOIN brewgis.assessor.acs_block_group_projected a
 
 -- post_statements
   CREATE INDEX IF NOT EXISTS idx_parcel_acs_intersections_apn
-  ON brewgis.assessor.parcel_acs_intersections (apn);
-ANALYZE brewgis.assessor.parcel_acs_intersections;
+  ON @this_model (apn);
+ANALYZE @this_model;

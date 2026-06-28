@@ -703,7 +703,6 @@ class Command(BaseCommand):
                 "+brewgis.staging.census_2020_block",
             ],
             variables=plan_vars,
-            restate_models=force_data_reload,
         )
 
         plan, context = run_sqlmesh_plan(
