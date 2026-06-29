@@ -195,6 +195,12 @@ def _resolve_model_name(name: str, models: dict) -> str:
     if stripped in models:
         return stripped
 
+    # 2.5. Convert dot-separated to SQL-quoted and retry exact match
+    if "." in stripped:
+        sql_quoted = ".".join(f'"{part}"' for part in stripped.split("."))
+        if sql_quoted in models:
+            return sql_quoted
+
     total = len(models)
 
     # 3. Match against model.name (short name or 2-part FQN suffix)
@@ -602,13 +608,19 @@ def register_tools(server: object) -> None:  # noqa: C901, PLR0915
         """
         ctx = _context()
         try:
+            if model_name:
+                key = _resolve_model_name(model_name, ctx.models)
+            else:
+                key = None
             diffs = ctx.table_diff(
                 source=source,
                 target=target,
-                select_models=[model_name] if model_name else None,
+                select_models=[key] if key else None,
                 show=False,
                 show_sample=False,
             )
+        except ModelNotResolvedError as e:
+            return [{"error": str(e)}]
         except Exception as exc:
             logger.exception("table_diff failed for %s → %s", source, target)
             return [{"error": str(exc)}]

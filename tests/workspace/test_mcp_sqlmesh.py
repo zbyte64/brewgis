@@ -192,6 +192,16 @@ class TestResolveModelName:
         assert "brewgis.a.foo" in msg
         assert "brewgis.b.foo" in msg
 
+    def test_converts_dot_separated_to_sql_quoted(self) -> None:
+        """Unquoted dot-separated FQN resolves via SQL-quoting conversion."""
+        models = {
+            '"brewgis"."assessor"."parcel_dasymetric_weights"': object(),
+        }
+        result = _resolve_model_name(
+            "brewgis.assessor.parcel_dasymetric_weights", models
+        )
+        assert result == '"brewgis"."assessor"."parcel_dasymetric_weights"'
+
 
 class TestExtractPostStatementIndexes:
     """Tests for _extract_post_statement_indexes."""
