@@ -31,6 +31,21 @@ def get_context(**variables) -> Context:
     return Context(paths=str(SQLMESH_PROJECT_DIR), config=config)
 
 
+def _models_in_environment(context: Context, environment: str) -> list[str]:
+    """Return FQNs of models materialized in *environment*.
+
+    Queries SQLMesh's state for the promoted snapshots in the given
+    environment and extracts the display name (model FQN) for each.
+    """
+    env = context.state_reader.get_environment(environment)
+    if env is None:
+        return []
+    snapshots = getattr(env, "promoted_snapshots", None) or []
+    # s.name is the quoted FQN (e.g. '"brewgis"."staging"."acs_block_group"');
+    # strip quotes for selector compatibility (brewgis.staging.acs_block_group).
+    return [s.name.replace('"', "") for s in snapshots]
+
+
 def run_sqlmesh_plan(  # noqa: PLR0913
     environment: str,
     *,
@@ -72,7 +87,9 @@ def run_sqlmesh_plan(  # noqa: PLR0913
         auto_apply=auto_apply,
         select_models=select,
         create_from=create_from,
-        restate_models=[m for m in (select or [])] if restate_models else None,
+        restate_models=_models_in_environment(context, environment)
+        if restate_models
+        else None,
     ), context
 
 
