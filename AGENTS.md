@@ -213,6 +213,7 @@ npm run test      # vitest
 - **Seeds (20):** calibration_parameters, dasymetric_weights, test data for all pipeline stages (parcels, ACS, built_forms, constraints, NLCD, TIGER, etc.)
 - **Audits (39):** SQL assertion files for data quality across all pipeline stages (spatial allocation, employment conservation, trip conservation, mode share sum, DU subtype validation, fiscal identity, correlation bounds, etc.)
 - **Naming:** Lowercase snake_case SQL files, prefixed by module (core_, transport_, energy_, water_, fiscal_, etc.)
+- **Performance tuning:** For SQLMesh model optimization, always follow the "Performance Tuning Protocol" in `.agents/skills/sqlmesh/SKILL.md` — capture EXPLAIN baseline, edit, re-capture, compare, and apply the go/no-go gate before running ANALYZE. Do not modify without a before/after plan comparison.
 
 ## Important Files
 
