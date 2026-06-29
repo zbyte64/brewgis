@@ -1,0 +1,197 @@
+test_apn_shared_across_two_parcels_du_proportional:
+  model: brewgis.comparison.sacog_comparison_dasymetric
+  gateway: postgis
+  inputs:
+    brewgis.comparison.dasymetric_intersections:
+      rows:
+        - parcel_id: "P1"
+          apn: "APN_SHARED"
+          intersect_area_sqft: 3000.0
+        - parcel_id: "P2"
+          apn: "APN_SHARED"
+          intersect_area_sqft: 1000.0
+      columns:
+        parcel_id: TEXT
+        apn: TEXT
+        intersect_area_sqft: DOUBLE
+    brewgis.comparison.sacog_parcel_shim:
+      rows:
+        - parcel_id: "P1"
+          geometry: "SRID=4326;POLYGON((-121.5 38.5,-121.49 38.5,-121.49 38.51,-121.5 38.51,-121.5 38.5))"
+        - parcel_id: "P2"
+          geometry: "SRID=4326;POLYGON((-121.51 38.5,-121.5 38.5,-121.5 38.51,-121.51 38.51,-121.51 38.5))"
+      columns:
+        parcel_id: TEXT
+        geometry: GEOMETRY
+    brewgis.assessor.parcel_dasymetric_weights:
+      rows:
+        - apn: "APN_SHARED"
+          lot_size_acres: 1.0
+          land_development_category: urban
+          built_form_key: detsf_sl
+          du_subtype: detsf_sl
+          is_residential: 1
+          actual_living_sqft: 0
+          actual_building_sqft: 0
+          residential_building_sqft: 2000.0
+          commercial_building_sqft: 0
+          industrial_building_sqft: 0
+          other_building_sqft: 0
+          total_footprint_sqft: 2000.0
+          building_count: 1
+          footprint_ratio: 0.25
+          max_levels: 1
+          intersection_density: 12.5
+          pop_dasym_weight: 3.0
+          emp_dasym_weight: 0.0
+      columns:
+        apn: TEXT
+        lot_size_acres: DOUBLE
+        land_development_category: TEXT
+        built_form_key: TEXT
+        du_subtype: TEXT
+        is_residential: INT
+        actual_living_sqft: DOUBLE
+        actual_building_sqft: DOUBLE
+        residential_building_sqft: DOUBLE
+        commercial_building_sqft: DOUBLE
+        industrial_building_sqft: DOUBLE
+        other_building_sqft: DOUBLE
+        total_footprint_sqft: DOUBLE
+        building_count: INT
+        footprint_ratio: DOUBLE
+        max_levels: INT
+        intersection_density: DOUBLE
+        pop_dasym_weight: DOUBLE
+        emp_dasym_weight: DOUBLE
+    brewgis.assessor.parcel_du_estimation:
+      rows:
+        - apn: "APN_SHARED"
+          du: 1.0
+          built_form_key: detsf_sl
+          du_subtype: detsf_sl
+          is_residential: 1
+          hh_size: 2.5
+          vacancy_rate: 0.025
+          pop_dasym_weight: 2.5
+          hh_dasym_weight: 0.975
+          hh: 0.975
+      columns:
+        apn: TEXT
+        du: DOUBLE
+        built_form_key: TEXT
+        du_subtype: TEXT
+        is_residential: INT
+        hh_size: DOUBLE
+        vacancy_rate: DOUBLE
+        pop_dasym_weight: DOUBLE
+        hh_dasym_weight: DOUBLE
+        hh: DOUBLE
+  outputs:
+    query:
+      rows:
+        - parcel_id: "P1"
+          apn: "APN_SHARED"
+          du: 0.75
+          residential_building_sqft: 1500.0
+          pop_dasym_weight: 2.25
+        - parcel_id: "P2"
+          apn: "APN_SHARED"
+          du: 0.25
+          residential_building_sqft: 500.0
+          pop_dasym_weight: 0.75
+    partial: true
+
+test_single_apn_no_duplication_passes_through:
+  model: brewgis.comparison.sacog_comparison_dasymetric
+  gateway: postgis
+  inputs:
+    brewgis.comparison.dasymetric_intersections:
+      rows:
+        - parcel_id: "P_SOLO"
+          apn: "APN_SOLO"
+          intersect_area_sqft: 5000.0
+      columns:
+        parcel_id: TEXT
+        apn: TEXT
+        intersect_area_sqft: DOUBLE
+    brewgis.comparison.sacog_parcel_shim:
+      rows:
+        - parcel_id: "P_SOLO"
+          geometry: "SRID=4326;POLYGON((-121.5 38.5,-121.49 38.5,-121.49 38.51,-121.5 38.51,-121.5 38.5))"
+      columns:
+        parcel_id: TEXT
+        geometry: GEOMETRY
+    brewgis.assessor.parcel_dasymetric_weights:
+      rows:
+        - apn: "APN_SOLO"
+          lot_size_acres: 0.5
+          land_development_category: urban
+          built_form_key: detsf_ll
+          du_subtype: detsf_ll
+          is_residential: 1
+          actual_living_sqft: 0
+          actual_building_sqft: 0
+          residential_building_sqft: 1800.0
+          commercial_building_sqft: 0
+          industrial_building_sqft: 0
+          other_building_sqft: 0
+          total_footprint_sqft: 1800.0
+          building_count: 1
+          footprint_ratio: 0.3
+          max_levels: 1
+          intersection_density: 10.0
+          pop_dasym_weight: 2.8
+          emp_dasym_weight: 0.0
+      columns:
+        apn: TEXT
+        lot_size_acres: DOUBLE
+        land_development_category: TEXT
+        built_form_key: TEXT
+        du_subtype: TEXT
+        is_residential: INT
+        actual_living_sqft: DOUBLE
+        actual_building_sqft: DOUBLE
+        residential_building_sqft: DOUBLE
+        commercial_building_sqft: DOUBLE
+        industrial_building_sqft: DOUBLE
+        other_building_sqft: DOUBLE
+        total_footprint_sqft: DOUBLE
+        building_count: INT
+        footprint_ratio: DOUBLE
+        max_levels: INT
+        intersection_density: DOUBLE
+        pop_dasym_weight: DOUBLE
+        emp_dasym_weight: DOUBLE
+    brewgis.assessor.parcel_du_estimation:
+      rows:
+        - apn: "APN_SOLO"
+          du: 1.0
+          built_form_key: detsf_ll
+          du_subtype: detsf_ll
+          is_residential: 1
+          hh_size: 3.0
+          vacancy_rate: 0.025
+          pop_dasym_weight: 3.0
+          hh_dasym_weight: 0.975
+          hh: 0.975
+      columns:
+        apn: TEXT
+        du: DOUBLE
+        built_form_key: TEXT
+        du_subtype: TEXT
+        is_residential: INT
+        hh_size: DOUBLE
+        vacancy_rate: DOUBLE
+        pop_dasym_weight: DOUBLE
+        hh_dasym_weight: DOUBLE
+        hh: DOUBLE
+  outputs:
+    query:
+      rows:
+        - parcel_id: "P_SOLO"
+          apn: "APN_SOLO"
+          du: 1.0
+          residential_building_sqft: 1800.0
+          pop_dasym_weight: 2.8
+    partial: true
