@@ -17,7 +17,7 @@ MODEL (
 -- Always treat 0 as 0, NULLs are what we fill in.
 
 WITH attributes AS (
-    SELECT * FROM brewgis.base_canvas.base_canvas_attributes
+    SELECT * FROM brewgis.base_canvas.base_canvas_combined
 ),
 
 -- Tier 2: County averages for key numeric columns

@@ -9,26 +9,25 @@ MODEL (
 -- SACOG Comparison Dasymetric Intersections — pre-computed spatial crosswalk.
 --
 -- Materializes the parcel_id ↔ apn mapping with pre-computed intersection area.
--- Uses a DISTINCT ON pattern over a single spatial join instead of a
--- CROSS JOIN LATERAL with LIMIT 1.  This lets PostgreSQL plan one spatial
--- join (hash join or merge join with a single sort) instead of 502K
--- independent lateral subqueries, each with its own sort.
+-- Uses CROSS JOIN LATERAL with GIST index-driven && bbox pre-filter and LIMIT 1
+-- instead of a full spatial join + DISTINCT ON.  Each of the 125K sacog_parcel_shim
+-- rows drives a single index lookup on sacog_assessor_parcels instead of building
+-- a hash table over 508K rows.
 
-WITH candidates AS (
-    SELECT sp.parcel_id, sp.geometry AS sp_geom,
-           ap.apn, ap.geometry AS ap_geom
+WITH ranked AS (
+    SELECT
+        sp.parcel_id,
+        ap.apn,
+        ST_Area(ST_Intersection(ST_Envelope(sp.geometry), ST_Envelope(ap.geometry))) AS intersect_area_sqft
     FROM brewgis.comparison.sacog_parcel_shim sp
-    JOIN brewgis.assessor.sacog_assessor_parcels ap
-        ON ST_Intersects(sp.geometry, ap.geometry)
-),
-ranked AS (
-    SELECT DISTINCT ON (parcel_id)
-        parcel_id,
-        apn,
-        ST_Area(ST_Intersection(ST_Envelope(sp_geom), ST_Envelope(ap_geom))) AS intersect_area_sqft
-    FROM candidates
-    ORDER BY parcel_id,
-        ST_Area(ST_Intersection(ST_Envelope(sp_geom), ST_Envelope(ap_geom))) DESC
+    CROSS JOIN LATERAL (
+        SELECT ap.apn, ap.geometry
+        FROM brewgis.assessor.sacog_assessor_parcels ap
+        WHERE ap.geometry && sp.geometry
+          AND ST_Intersects(sp.geometry, ap.geometry)
+        ORDER BY ST_Area(ST_Intersection(ST_Envelope(sp.geometry), ST_Envelope(ap.geometry))) DESC
+        LIMIT 1
+    ) ap
 )
 SELECT r.parcel_id, r.apn, r.intersect_area_sqft
 FROM ranked r
