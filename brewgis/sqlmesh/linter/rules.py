@@ -1825,6 +1825,20 @@ class AuditColumnExistence(Rule):
             else:
                 has_bare_this_model = True
 
+        # Also capture @this_model aliases from JOIN clauses (not just FROM).
+        # e.g. FROM some_table JOIN @this_model bg ON …
+        for join_node in parsed.find_all(exp.Join):
+            join_table = join_node.this
+            if isinstance(join_table, exp.Table) and (
+                getattr(join_table, "name", "").startswith("@this_model")
+                or getattr(join_table, "name", "") == "this_model"
+            ):
+                alias = getattr(join_table, "alias", "") or ""
+                if alias:
+                    this_model_aliases.add(alias.lower())
+                else:
+                    has_bare_this_model = True
+
         # Also check CTEs for @this_model references.
         # A CTE wrapping @this_model makes its alias a @this_model alias.
         for cte in parsed.find_all(exp.CTE):

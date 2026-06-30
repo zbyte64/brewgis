@@ -120,7 +120,7 @@ Generate external model schemas from the database:
 dc-run sqlmesh create_external_models
 ```
 
-### 4. Blueprinting 
+### 4. Blueprinting
 
 Blueprinting lets a single SQL/Python model generate multiple concrete models from a template.
 
@@ -377,7 +377,7 @@ AUDIT (name assert_correlation_bounds, dialect postgres);
 SELECT * FROM correlation_results WHERE r < @lower_bound OR r > @upper_bound;
 ```
 
-### 7. Unit Tests 
+### 7. Unit Tests
 
 YAML-based, can test the full query or individual CTEs:
 

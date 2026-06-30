@@ -12,8 +12,8 @@ from __future__ import annotations
 import datetime
 import logging
 from pathlib import Path
-from typing import Any
 from typing import TYPE_CHECKING
+from typing import Any
 
 if TYPE_CHECKING:
     from sqlmesh import Context
@@ -278,9 +278,11 @@ class Command(BaseCommand):
             file_handler.setFormatter(
                 logging.Formatter("%(levelname)s %(asctime)s %(module)s %(message)s")
             )
-            # Add to module logger only — root propagation sends to other loggers.
+            # Add to both the module logger (for our messages)
+            # and the root logger (for SQLMesh and other loggers).
             logger.addHandler(file_handler)
-            # Prevent double-logging when module logger propagates to root.
+            logging.getLogger().addHandler(file_handler)
+            # Prevent double-write when module logger propagates to root.
             logger.propagate = False
             self.stdout.write(f"Log file: {log_path}")
 
@@ -371,10 +373,8 @@ class Command(BaseCommand):
     ) -> None:
         # Lazy imports — avoid loading analysis modules at import time
         # which conflicts with test stubs for pandas/geopandas.
-        from brewgis.workspace.analysis.sqlmesh_runner import (
-            get_context,
-            run_sqlmesh_plan,
-        )
+        from brewgis.workspace.analysis.sqlmesh_runner import get_context
+        from brewgis.workspace.analysis.sqlmesh_runner import run_sqlmesh_plan
         from brewgis.workspace.dlt_pipelines.assessor import (
             run_assessor_parcels_pipeline,
         )

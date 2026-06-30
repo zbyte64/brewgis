@@ -974,6 +974,7 @@ SELECT
     pop_groupquarter_v AS pop_groupquarter,
     COALESCE(hh, 0.0) AS hh,
     COALESCE(du, 0.0) AS du,
+    du_estimated,
     du_detsf_v AS du_detsf,
     du_detsf_sl_v AS du_detsf_sl,
     du_detsf_ll_v AS du_detsf_ll,
@@ -991,6 +992,7 @@ SELECT
     building_count,
     footprint_ratio,
     max_levels,
+    emp_dasym_weight,
     COALESCE(emp, 0.0) AS emp,
     emp_ret_v AS emp_ret,
     emp_off_v AS emp_off,
@@ -1038,6 +1040,7 @@ SELECT
     cost_burden_pct,
     tree_canopy_fraction,
     vacancy_rate,
+    du_pop_dasym_weight,
     ROUND((du * (1.0 - COALESCE(vacancy_rate, 0.0)))::numeric, 2) AS occupied_du
 FROM with_intersection;
 
