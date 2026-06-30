@@ -7,7 +7,8 @@ MODEL (
   audits (
     assert_pop_dasym_weight_not_null,
     assert_pop_dasym_weight_non_negative,
-    assert_emp_dasym_weight_non_negative
+    assert_emp_dasym_weight_non_negative,
+    assert_emp_dasym_weight_fallback
   )
 );
 
@@ -86,7 +87,7 @@ SELECT
     )) AS pop_dasym_weight,
     GREATEST(0, COALESCE(
         ar.authoritative_non_residential_sqft,
-        c.commercial_building_sqft + c.industrial_building_sqft + c.other_building_sqft,
+        NULLIF(c.commercial_building_sqft + c.industrial_building_sqft + c.other_building_sqft, 0),
         c.lot_size_acres * 43560 * 0.1
     )) * (1.0 + COALESCE(c.intersection_density, 0.0) / 200.0) AS emp_dasym_weight
 FROM classification c

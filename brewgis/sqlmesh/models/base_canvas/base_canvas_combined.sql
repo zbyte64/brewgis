@@ -271,6 +271,21 @@ emp_intersections AS (
         COALESCE(p.commercial_building_sqft, 0)
             + COALESCE(p.industrial_building_sqft, 0)
             + COALESCE(p.other_building_sqft, 0) AS total_emp_weight,
+        -- Blended employment weight: building-sqft-based primary weight
+        -- with dasymetric minimum floor so every intersecting parcel attracts
+        -- at least proportional share.  min_emp_floor = 1.0 default.
+        GREATEST(
+            COALESCE(p.commercial_building_sqft, 0),
+            COALESCE(p.emp_dasym_weight, 0) * 0.1
+        ) AS commercial_alloc_weight,
+        GREATEST(
+            COALESCE(p.industrial_building_sqft, 0),
+            COALESCE(p.emp_dasym_weight, 0) * 0.1
+        ) AS industrial_alloc_weight,
+        GREATEST(
+            COALESCE(p.other_building_sqft, 0),
+            COALESCE(p.emp_dasym_weight, 0) * 0.1
+        ) AS other_alloc_weight,
         p.area_gross
     FROM demographics_data p
     JOIN brewgis.staging.wac_block_projected w ON ST_Intersects(p.geometry, w.geometry)
@@ -279,9 +294,9 @@ emp_intersections AS (
 emp_block_weight_totals AS (
     SELECT
         geoid,
-        SUM(commercial_weight) AS block_commercial_weight,
-        SUM(industrial_weight) AS block_industrial_weight,
-        SUM(other_weight) AS block_other_weight,
+        SUM(commercial_alloc_weight) AS block_commercial_weight,
+        SUM(industrial_alloc_weight) AS block_industrial_weight,
+        SUM(other_alloc_weight) AS block_other_weight,
         SUM(total_emp_weight) AS block_total_emp_weight,
         SUM(emp_dasy_weight) AS block_emp_dasym_weight
     FROM emp_intersections
@@ -294,119 +309,119 @@ emp_allocated AS (
         SUM(
             CASE
                 WHEN bwt.block_commercial_weight > 0
-                    THEN i.emp_retail_services * i.commercial_weight / bwt.block_commercial_weight
+                    THEN i.emp_retail_services * i.commercial_alloc_weight / bwt.block_commercial_weight
                 WHEN bwt.block_emp_dasym_weight > 0
                     THEN i.emp_retail_services * i.emp_dasy_weight / bwt.block_emp_dasym_weight
                 ELSE 0.0
             END
             + CASE
                 WHEN bwt.block_commercial_weight > 0
-                    THEN i.emp_restaurant * i.commercial_weight / bwt.block_commercial_weight
+                    THEN i.emp_restaurant * i.commercial_alloc_weight / bwt.block_commercial_weight
                 WHEN bwt.block_emp_dasym_weight > 0
                     THEN i.emp_restaurant * i.emp_dasy_weight / bwt.block_emp_dasym_weight
                 ELSE 0.0
             END
             + CASE
                 WHEN bwt.block_commercial_weight > 0
-                    THEN i.emp_accommodation * i.commercial_weight / bwt.block_commercial_weight
+                    THEN i.emp_accommodation * i.commercial_alloc_weight / bwt.block_commercial_weight
                 WHEN bwt.block_emp_dasym_weight > 0
                     THEN i.emp_accommodation * i.emp_dasy_weight / bwt.block_emp_dasym_weight
                 ELSE 0.0
             END
             + CASE
                 WHEN bwt.block_commercial_weight > 0
-                    THEN i.emp_arts_entertainment * i.commercial_weight / bwt.block_commercial_weight
+                    THEN i.emp_arts_entertainment * i.commercial_alloc_weight / bwt.block_commercial_weight
                 WHEN bwt.block_emp_dasym_weight > 0
                     THEN i.emp_arts_entertainment * i.emp_dasy_weight / bwt.block_emp_dasym_weight
                 ELSE 0.0
             END
             + CASE
                 WHEN bwt.block_commercial_weight > 0
-                    THEN i.emp_other_services * i.commercial_weight / bwt.block_commercial_weight
+                    THEN i.emp_other_services * i.commercial_alloc_weight / bwt.block_commercial_weight
                 WHEN bwt.block_emp_dasym_weight > 0
                     THEN i.emp_other_services * i.emp_dasy_weight / bwt.block_emp_dasym_weight
                 ELSE 0.0
             END
             + CASE
                 WHEN bwt.block_commercial_weight > 0
-                    THEN i.emp_office_services * i.commercial_weight / bwt.block_commercial_weight
+                    THEN i.emp_office_services * i.commercial_alloc_weight / bwt.block_commercial_weight
                 WHEN bwt.block_emp_dasym_weight > 0
                     THEN i.emp_office_services * i.emp_dasy_weight / bwt.block_emp_dasym_weight
                 ELSE 0.0
             END
             + CASE
                 WHEN bwt.block_commercial_weight > 0
-                    THEN i.emp_medical_services * i.commercial_weight / bwt.block_commercial_weight
+                    THEN i.emp_medical_services * i.commercial_alloc_weight / bwt.block_commercial_weight
                 WHEN bwt.block_emp_dasym_weight > 0
                     THEN i.emp_medical_services * i.emp_dasy_weight / bwt.block_emp_dasym_weight
                 ELSE 0.0
             END
             + CASE
                 WHEN bwt.block_industrial_weight > 0
-                    THEN i.emp_manufacturing * i.industrial_weight / bwt.block_industrial_weight
+                    THEN i.emp_manufacturing * i.industrial_alloc_weight / bwt.block_industrial_weight
                 WHEN bwt.block_emp_dasym_weight > 0
                     THEN i.emp_manufacturing * i.emp_dasy_weight / bwt.block_emp_dasym_weight
                 ELSE 0.0
             END
             + CASE
                 WHEN bwt.block_industrial_weight > 0
-                    THEN i.emp_wholesale * i.industrial_weight / bwt.block_industrial_weight
+                    THEN i.emp_wholesale * i.industrial_alloc_weight / bwt.block_industrial_weight
                 WHEN bwt.block_emp_dasym_weight > 0
                     THEN i.emp_wholesale * i.emp_dasy_weight / bwt.block_emp_dasym_weight
                 ELSE 0.0
             END
             + CASE
                 WHEN bwt.block_industrial_weight > 0
-                    THEN i.emp_transport_warehousing * i.industrial_weight / bwt.block_industrial_weight
+                    THEN i.emp_transport_warehousing * i.industrial_alloc_weight / bwt.block_industrial_weight
                 WHEN bwt.block_emp_dasym_weight > 0
                     THEN i.emp_transport_warehousing * i.emp_dasy_weight / bwt.block_emp_dasym_weight
                 ELSE 0.0
             END
             + CASE
                 WHEN bwt.block_industrial_weight > 0
-                    THEN i.emp_utilities * i.industrial_weight / bwt.block_industrial_weight
+                    THEN i.emp_utilities * i.industrial_alloc_weight / bwt.block_industrial_weight
                 WHEN bwt.block_emp_dasym_weight > 0
                     THEN i.emp_utilities * i.emp_dasy_weight / bwt.block_emp_dasym_weight
                 ELSE 0.0
             END
             + CASE
                 WHEN bwt.block_industrial_weight > 0
-                    THEN i.emp_construction * i.industrial_weight / bwt.block_industrial_weight
+                    THEN i.emp_construction * i.industrial_alloc_weight / bwt.block_industrial_weight
                 WHEN bwt.block_emp_dasym_weight > 0
                     THEN i.emp_construction * i.emp_dasy_weight / bwt.block_emp_dasym_weight
                 ELSE 0.0
             END
             + CASE
                 WHEN bwt.block_other_weight > 0
-                    THEN i.emp_public_admin * i.other_weight / bwt.block_other_weight
+                    THEN i.emp_public_admin * i.other_alloc_weight / bwt.block_other_weight
                 WHEN bwt.block_emp_dasym_weight > 0
                     THEN i.emp_public_admin * i.emp_dasy_weight / bwt.block_emp_dasym_weight
                 ELSE 0.0
             END
             + CASE
                 WHEN bwt.block_other_weight > 0
-                    THEN i.emp_education * i.other_weight / bwt.block_other_weight
+                    THEN i.emp_education * i.other_alloc_weight / bwt.block_other_weight
                 WHEN bwt.block_emp_dasym_weight > 0
                     THEN i.emp_education * i.emp_dasy_weight / bwt.block_emp_dasym_weight
                 ELSE 0.0
             END
             + CASE
                 WHEN bwt.block_other_weight > 0
-                    THEN i.emp_agriculture * i.other_weight / bwt.block_other_weight
+                    THEN i.emp_agriculture * i.other_alloc_weight / bwt.block_other_weight
                 WHEN bwt.block_emp_dasym_weight > 0
                     THEN i.emp_agriculture * i.emp_dasy_weight / bwt.block_emp_dasym_weight
                 ELSE 0.0
             END
             + CASE
                 WHEN bwt.block_other_weight > 0
-                    THEN i.emp_extraction * i.other_weight / bwt.block_other_weight
+                    THEN i.emp_extraction * i.other_alloc_weight / bwt.block_other_weight
                 WHEN bwt.block_emp_dasym_weight > 0
                     THEN i.emp_extraction * i.emp_dasy_weight / bwt.block_emp_dasym_weight
                 ELSE 0.0
             END
             + CASE
                 WHEN bwt.block_other_weight > 0
-                    THEN i.emp_military * i.other_weight / bwt.block_other_weight
+                    THEN i.emp_military * i.other_alloc_weight / bwt.block_other_weight
                 WHEN bwt.block_emp_dasym_weight > 0
                     THEN i.emp_military * i.emp_dasy_weight / bwt.block_emp_dasym_weight
                 ELSE 0.0
@@ -414,119 +429,119 @@ emp_allocated AS (
         ) AS emp,
         SUM(CASE
             WHEN bwt.block_commercial_weight > 0
-                THEN i.emp_retail_services * i.commercial_weight / bwt.block_commercial_weight
+                THEN i.emp_retail_services * i.commercial_alloc_weight / bwt.block_commercial_weight
             WHEN bwt.block_emp_dasym_weight > 0
                 THEN i.emp_retail_services * i.emp_dasy_weight / bwt.block_emp_dasym_weight
             ELSE 0.0
         END) AS emp_retail_services,
         SUM(CASE
             WHEN bwt.block_commercial_weight > 0
-                THEN i.emp_restaurant * i.commercial_weight / bwt.block_commercial_weight
+                THEN i.emp_restaurant * i.commercial_alloc_weight / bwt.block_commercial_weight
             WHEN bwt.block_emp_dasym_weight > 0
                 THEN i.emp_restaurant * i.emp_dasy_weight / bwt.block_emp_dasym_weight
             ELSE 0.0
         END) AS emp_restaurant,
         SUM(CASE
             WHEN bwt.block_commercial_weight > 0
-                THEN i.emp_accommodation * i.commercial_weight / bwt.block_commercial_weight
+                THEN i.emp_accommodation * i.commercial_alloc_weight / bwt.block_commercial_weight
             WHEN bwt.block_emp_dasym_weight > 0
                 THEN i.emp_accommodation * i.emp_dasy_weight / bwt.block_emp_dasym_weight
             ELSE 0.0
         END) AS emp_accommodation,
         SUM(CASE
             WHEN bwt.block_commercial_weight > 0
-                THEN i.emp_arts_entertainment * i.commercial_weight / bwt.block_commercial_weight
+                THEN i.emp_arts_entertainment * i.commercial_alloc_weight / bwt.block_commercial_weight
             WHEN bwt.block_emp_dasym_weight > 0
                 THEN i.emp_arts_entertainment * i.emp_dasy_weight / bwt.block_emp_dasym_weight
             ELSE 0.0
         END) AS emp_arts_entertainment,
         SUM(CASE
             WHEN bwt.block_commercial_weight > 0
-                THEN i.emp_other_services * i.commercial_weight / bwt.block_commercial_weight
+                THEN i.emp_other_services * i.commercial_alloc_weight / bwt.block_commercial_weight
             WHEN bwt.block_emp_dasym_weight > 0
                 THEN i.emp_other_services * i.emp_dasy_weight / bwt.block_emp_dasym_weight
             ELSE 0.0
         END) AS emp_other_services,
         SUM(CASE
             WHEN bwt.block_commercial_weight > 0
-                THEN i.emp_office_services * i.commercial_weight / bwt.block_commercial_weight
+                THEN i.emp_office_services * i.commercial_alloc_weight / bwt.block_commercial_weight
             WHEN bwt.block_emp_dasym_weight > 0
                 THEN i.emp_office_services * i.emp_dasy_weight / bwt.block_emp_dasym_weight
             ELSE 0.0
         END) AS emp_office_services,
         SUM(CASE
             WHEN bwt.block_commercial_weight > 0
-                THEN i.emp_medical_services * i.commercial_weight / bwt.block_commercial_weight
+                THEN i.emp_medical_services * i.commercial_alloc_weight / bwt.block_commercial_weight
             WHEN bwt.block_emp_dasym_weight > 0
                 THEN i.emp_medical_services * i.emp_dasy_weight / bwt.block_emp_dasym_weight
             ELSE 0.0
         END) AS emp_medical_services,
         SUM(CASE
             WHEN bwt.block_industrial_weight > 0
-                THEN i.emp_manufacturing * i.industrial_weight / bwt.block_industrial_weight
+                THEN i.emp_manufacturing * i.industrial_alloc_weight / bwt.block_industrial_weight
             WHEN bwt.block_emp_dasym_weight > 0
                 THEN i.emp_manufacturing * i.emp_dasy_weight / bwt.block_emp_dasym_weight
             ELSE 0.0
         END) AS emp_manufacturing,
         SUM(CASE
             WHEN bwt.block_industrial_weight > 0
-                THEN i.emp_wholesale * i.industrial_weight / bwt.block_industrial_weight
+                THEN i.emp_wholesale * i.industrial_alloc_weight / bwt.block_industrial_weight
             WHEN bwt.block_emp_dasym_weight > 0
                 THEN i.emp_wholesale * i.emp_dasy_weight / bwt.block_emp_dasym_weight
             ELSE 0.0
         END) AS emp_wholesale,
         SUM(CASE
             WHEN bwt.block_industrial_weight > 0
-                THEN i.emp_transport_warehousing * i.industrial_weight / bwt.block_industrial_weight
+                THEN i.emp_transport_warehousing * i.industrial_alloc_weight / bwt.block_industrial_weight
             WHEN bwt.block_emp_dasym_weight > 0
                 THEN i.emp_transport_warehousing * i.emp_dasy_weight / bwt.block_emp_dasym_weight
             ELSE 0.0
         END) AS emp_transport_warehousing,
         SUM(CASE
             WHEN bwt.block_industrial_weight > 0
-                THEN i.emp_utilities * i.industrial_weight / bwt.block_industrial_weight
+                THEN i.emp_utilities * i.industrial_alloc_weight / bwt.block_industrial_weight
             WHEN bwt.block_emp_dasym_weight > 0
                 THEN i.emp_utilities * i.emp_dasy_weight / bwt.block_emp_dasym_weight
             ELSE 0.0
         END) AS emp_utilities,
         SUM(CASE
             WHEN bwt.block_industrial_weight > 0
-                THEN i.emp_construction * i.industrial_weight / bwt.block_industrial_weight
+                THEN i.emp_construction * i.industrial_alloc_weight / bwt.block_industrial_weight
             WHEN bwt.block_emp_dasym_weight > 0
                 THEN i.emp_construction * i.emp_dasy_weight / bwt.block_emp_dasym_weight
             ELSE 0.0
         END) AS emp_construction,
         SUM(CASE
             WHEN bwt.block_other_weight > 0
-                THEN i.emp_public_admin * i.other_weight / bwt.block_other_weight
+                THEN i.emp_public_admin * i.other_alloc_weight / bwt.block_other_weight
             WHEN bwt.block_emp_dasym_weight > 0
                 THEN i.emp_public_admin * i.emp_dasy_weight / bwt.block_emp_dasym_weight
             ELSE 0.0
         END) AS emp_public_admin,
         SUM(CASE
             WHEN bwt.block_other_weight > 0
-                THEN i.emp_education * i.other_weight / bwt.block_other_weight
+                THEN i.emp_education * i.other_alloc_weight / bwt.block_other_weight
             WHEN bwt.block_emp_dasym_weight > 0
                 THEN i.emp_education * i.emp_dasy_weight / bwt.block_emp_dasym_weight
             ELSE 0.0
         END) AS emp_education,
         SUM(CASE
             WHEN bwt.block_other_weight > 0
-                THEN i.emp_agriculture * i.other_weight / bwt.block_other_weight
+                THEN i.emp_agriculture * i.other_alloc_weight / bwt.block_other_weight
             WHEN bwt.block_emp_dasym_weight > 0
                 THEN i.emp_agriculture * i.emp_dasy_weight / bwt.block_emp_dasym_weight
             ELSE 0.0
         END) AS emp_agriculture,
         SUM(CASE
             WHEN bwt.block_other_weight > 0
-                THEN i.emp_extraction * i.other_weight / bwt.block_other_weight
+                THEN i.emp_extraction * i.other_alloc_weight / bwt.block_other_weight
             WHEN bwt.block_emp_dasym_weight > 0
                 THEN i.emp_extraction * i.emp_dasy_weight / bwt.block_emp_dasym_weight
             ELSE 0.0
         END) AS emp_extraction,
         SUM(CASE
             WHEN bwt.block_other_weight > 0
-                THEN i.emp_military * i.other_weight / bwt.block_other_weight
+                THEN i.emp_military * i.other_alloc_weight / bwt.block_other_weight
             WHEN bwt.block_emp_dasym_weight > 0
                 THEN i.emp_military * i.emp_dasy_weight / bwt.block_emp_dasym_weight
             ELSE 0.0
