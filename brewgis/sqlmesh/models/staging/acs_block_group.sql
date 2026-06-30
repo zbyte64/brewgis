@@ -124,7 +124,7 @@ SELECT
 FROM derived_with_pcts;
 
 -- post_statements
-  CREATE INDEX IF NOT EXISTS idx_acs_block_group_geometry
+  CREATE INDEX IF NOT EXISTS idx_acs_block_group_geometry_@snapshot_hash
   ON @this_model USING GIST (geometry);
-  CREATE INDEX IF NOT EXISTS idx_acs_block_group_geoid
+  CREATE INDEX IF NOT EXISTS idx_acs_block_group_geoid_@snapshot_hash
   ON @this_model USING btree (geoid);

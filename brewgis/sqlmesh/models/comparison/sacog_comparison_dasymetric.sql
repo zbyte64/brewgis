@@ -68,10 +68,10 @@ JOIN brewgis.assessor.parcel_dasymetric_weights dw ON aw.apn = dw.apn
 LEFT JOIN brewgis.assessor.parcel_du_estimation de ON aw.apn = de.apn;
 
 -- post_statements
-  CREATE INDEX IF NOT EXISTS idx_sacog_comparison_dasymetric_geom
+  CREATE INDEX IF NOT EXISTS idx_sacog_comparison_dasymetric_geom_@snapshot_hash
   ON @this_model USING GIST (geometry);
-  CREATE INDEX IF NOT EXISTS idx_sacog_comparison_dasymetric_parcel_id
+  CREATE INDEX IF NOT EXISTS idx_sacog_comparison_dasymetric_parcel_id_@snapshot_hash
   ON @this_model USING btree (parcel_id);
-  CREATE INDEX IF NOT EXISTS idx_sacog_comparison_dasymetric_apn
+  CREATE INDEX IF NOT EXISTS idx_sacog_comparison_dasymetric_apn_@snapshot_hash
   ON @this_model USING btree (apn);
 ANALYZE @this_model;

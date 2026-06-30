@@ -43,6 +43,6 @@ FROM (
 WHERE rn = 1;
 
 -- post_statements
-  CREATE INDEX IF NOT EXISTS idx_sacog_assessor_sales_deduped_apn
+  CREATE INDEX IF NOT EXISTS idx_sacog_assessor_sales_deduped_apn_@snapshot_hash
   ON @this_model USING btree (apn);
 ANALYZE @this_model;

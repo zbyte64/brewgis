@@ -34,8 +34,8 @@ SELECT
 FROM brewgis.staging.buildings_combined;
 
 -- post_statements
-  CREATE INDEX IF NOT EXISTS idx_buildings_combined_pg_geometry
+  CREATE INDEX IF NOT EXISTS idx_buildings_combined_pg_geometry_@snapshot_hash
   ON @this_model USING GIST (geometry);
-  CREATE INDEX IF NOT EXISTS idx_buildings_combined_pg_local_geometry
+  CREATE INDEX IF NOT EXISTS idx_buildings_combined_pg_local_geometry_@snapshot_hash
   ON @this_model USING GIST (local_geometry);
 ANALYZE @this_model;

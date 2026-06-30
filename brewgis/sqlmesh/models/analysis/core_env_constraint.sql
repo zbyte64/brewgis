@@ -71,8 +71,8 @@ LEFT JOIN constraint_union AS cu ON b.id = cu.parcel_id
 CROSS JOIN constraint_types AS cd;
 
 -- post_statements
-  CREATE INDEX IF NOT EXISTS idx_env_constraint_geom
+  CREATE INDEX IF NOT EXISTS idx_env_constraint_geom_@snapshot_hash
   ON @this_model USING GIST (geom);
 
-  CREATE INDEX IF NOT EXISTS idx_env_constraint_parcel_id
+  CREATE INDEX IF NOT EXISTS idx_env_constraint_parcel_id_@snapshot_hash
   ON @this_model USING btree (parcel_id);

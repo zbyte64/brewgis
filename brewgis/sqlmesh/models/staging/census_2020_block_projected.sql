@@ -23,8 +23,8 @@ FROM brewgis.staging.census_2020_block
 WHERE geometry IS NOT NULL;
 
 -- post_statements
-  CREATE INDEX IF NOT EXISTS idx_c2020_block_proj_geometry
+  CREATE INDEX IF NOT EXISTS idx_c2020_block_proj_geometry_@snapshot_hash
   ON @this_model USING GIST (geometry);
-  CREATE INDEX IF NOT EXISTS idx_c2020_block_proj_geoid
+  CREATE INDEX IF NOT EXISTS idx_c2020_block_proj_geoid_@snapshot_hash
   ON @this_model USING btree (geoid);
 ANALYZE @this_model;

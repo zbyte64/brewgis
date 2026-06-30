@@ -22,5 +22,5 @@ FROM public.sacog_comparison_parcels
 WHERE geometry IS NOT NULL;
 
 -- post_statements
-  CREATE INDEX IF NOT EXISTS idx_parcels_wm_geometry
+  CREATE INDEX IF NOT EXISTS idx_parcels_wm_geometry_@snapshot_hash
   ON @this_model USING GIST (geometry);

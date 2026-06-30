@@ -44,3 +44,27 @@ def coalesce_zero(evaluator, expression: str) -> str:
         SQL expression with COALESCE null guard.
     """
     return f"COALESCE({expression}, 0.0)"
+
+
+@macro()
+def snapshot_hash(evaluator) -> str:
+    """Return the snapshot version hash suffix of the current physical table.
+
+    ``evaluator.this_model`` resolves to e.g.
+    ``"sqlmesh__assessor"."assessor__sacog_assessor_parcels__962285576"``.
+    This macro strips the leading identifiers and returns only the 9-digit
+    hash after the final ``__``.
+
+    Usage in post_statements::
+
+        CREATE INDEX idx_sacog_assessor_parcels_geometry_@snapshot_hash
+        ON @this_model USING GIST (geometry);
+
+    Produces index name e.g. ``idx_sacog_assessor_parcels_geometry_962285576``.
+    """
+    physical = evaluator.this_model
+    # physical is something like '"sqlmesh__assessor"."assessor__sacog_assessor_parcels__962285576"'
+    # Extract the last segment after the final __
+    last_part = physical.rsplit("__", 1)[-1]
+    # Strip any trailing double-quote
+    return last_part.rstrip('"')

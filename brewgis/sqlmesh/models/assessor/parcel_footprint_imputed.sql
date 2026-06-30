@@ -315,5 +315,5 @@ LEFT JOIN latest_block_groups pbg ON pbf.apn = pbg.apn
 JOIN imputed i ON pbf.apn = i.apn;
 
 -- post_statements
-  CREATE INDEX IF NOT EXISTS idx_parcel_footprint_imputed_apn
+  CREATE INDEX IF NOT EXISTS idx_parcel_footprint_imputed_apn_@snapshot_hash
   ON @this_model USING btree (apn);

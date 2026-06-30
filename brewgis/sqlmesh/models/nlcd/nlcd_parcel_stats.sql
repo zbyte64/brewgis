@@ -131,5 +131,5 @@ LEFT JOIN majority_class m ON ap.parcel_id = m.parcel_id
 LEFT JOIN impervious_frac i ON ap.parcel_id = i.parcel_id;
 
 -- post_statements
-  CREATE INDEX IF NOT EXISTS idx_nlcd_parcel_stats_parcel_id
+  CREATE INDEX IF NOT EXISTS idx_nlcd_parcel_stats_parcel_id_@snapshot_hash
   ON @this_model USING btree (parcel_id);

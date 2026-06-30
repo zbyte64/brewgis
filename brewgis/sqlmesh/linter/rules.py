@@ -237,7 +237,7 @@ class MissingKeyIndex(Rule):
                 f"Missing B-tree index(es) for key column(s): "
                 f"{', '.join(missing)}. These columns are used as JOIN keys "
                 f"by downstream models. Add ``CREATE INDEX IF NOT EXISTS "
-                f"<idx_name> ON @this_model (<col>)`` in post_statements."
+                f"<idx_name>_@snapshot_hash ON @this_model (<col>)`` in post_statements."
             )
 
         return None

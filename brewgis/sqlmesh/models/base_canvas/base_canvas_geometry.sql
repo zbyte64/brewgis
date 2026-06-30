@@ -168,11 +168,11 @@ FROM parcel_area
 LEFT JOIN dasymetric_enrichment de ON parcel_area.parcel_id = de.parcel_id;
 
 -- post_statements
-  CREATE INDEX IF NOT EXISTS idx_base_canvas_geometry_geometry
+  CREATE INDEX IF NOT EXISTS idx_base_canvas_geometry_geometry_@snapshot_hash
   ON @this_model USING GIST (geometry);
-  CREATE INDEX IF NOT EXISTS idx_base_canvas_geometry_centroid
+  CREATE INDEX IF NOT EXISTS idx_base_canvas_geometry_centroid_@snapshot_hash
   ON @this_model USING GIST (ST_Centroid(geometry));
-  CREATE INDEX IF NOT EXISTS idx_base_canvas_geometry_parcel_id
+  CREATE INDEX IF NOT EXISTS idx_base_canvas_geometry_parcel_id_@snapshot_hash
   ON @this_model USING btree (parcel_id);
-  CREATE INDEX IF NOT EXISTS idx_base_canvas_geometry_apn
+  CREATE INDEX IF NOT EXISTS idx_base_canvas_geometry_apn_@snapshot_hash
   ON @this_model USING btree (apn);

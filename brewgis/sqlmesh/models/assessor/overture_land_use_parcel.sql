@@ -121,5 +121,5 @@ LEFT JOIN brewgis.seeds.overture_land_use_map oym_subtype
     AND oym_subtype.class IS NULL;
 
 -- post_statements
-  CREATE INDEX IF NOT EXISTS idx_overture_land_use_parcel_parcel_id
+  CREATE INDEX IF NOT EXISTS idx_overture_land_use_parcel_parcel_id_@snapshot_hash
   ON @this_model USING btree (parcel_id);

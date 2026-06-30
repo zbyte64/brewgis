@@ -47,6 +47,6 @@ FROM street_nodes
 WHERE street_count >= 3;
 
 -- post_statements
-  CREATE INDEX IF NOT EXISTS idx_overture_intersection_points_geometry
+  CREATE INDEX IF NOT EXISTS idx_overture_intersection_points_geometry_@snapshot_hash
   ON @this_model USING GIST (geometry);
 ANALYZE @this_model;

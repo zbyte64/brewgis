@@ -136,8 +136,8 @@ FROM brewgis.assessor.sacog_assessor_parcels sap
 LEFT JOIN building_stats bs ON sap.apn = bs.apn;
 
 -- post_statements
-  CREATE INDEX IF NOT EXISTS idx_parcel_building_footprints_geometry
+  CREATE INDEX IF NOT EXISTS idx_parcel_building_footprints_geometry_@snapshot_hash
   ON @this_model USING GIST (geometry);
-  CREATE INDEX IF NOT EXISTS idx_parcel_building_footprints_apn
+  CREATE INDEX IF NOT EXISTS idx_parcel_building_footprints_apn_@snapshot_hash
   ON @this_model USING btree (apn);
 ANALYZE @this_model;

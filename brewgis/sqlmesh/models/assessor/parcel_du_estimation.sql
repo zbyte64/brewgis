@@ -288,6 +288,6 @@ SELECT
 FROM du_final;
 
 -- post_statements
-  CREATE INDEX IF NOT EXISTS idx_parcel_du_estimation_apn
+  CREATE INDEX IF NOT EXISTS idx_parcel_du_estimation_apn_@snapshot_hash
   ON @this_model USING btree (apn);
 ANALYZE @this_model;

@@ -530,7 +530,7 @@ SELECT
 FROM scaled;
 
 -- post_statements
-  CREATE INDEX IF NOT EXISTS idx_wac_block_geometry
+  CREATE INDEX IF NOT EXISTS idx_wac_block_geometry_@snapshot_hash
   ON @this_model USING GIST (geometry);
-  CREATE INDEX IF NOT EXISTS idx_wac_block_geoid
+  CREATE INDEX IF NOT EXISTS idx_wac_block_geoid_@snapshot_hash
   ON @this_model USING btree (geoid);

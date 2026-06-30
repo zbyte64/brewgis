@@ -93,5 +93,5 @@ LEFT JOIN road_summary rs ON ap.parcel_id = rs.parcel_id;
 -- (overture_transport is DuckDB gateway, so indexes must live here)
   CREATE INDEX IF NOT EXISTS idx_overture_transport_geometry
   ON brewgis.staging.overture_transport USING GIST (geometry);
-  CREATE INDEX IF NOT EXISTS idx_overture_road_impervious_parcel_id
+  CREATE INDEX IF NOT EXISTS idx_overture_road_impervious_parcel_id_@snapshot_hash
   ON @this_model USING btree (parcel_id);

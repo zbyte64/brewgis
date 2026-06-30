@@ -45,8 +45,8 @@ LEFT JOIN block_geometry bg
     ON raw.geoid = bg.geoid;
 
 -- post_statements
-  CREATE INDEX IF NOT EXISTS idx_census_2020_block_geometry
+  CREATE INDEX IF NOT EXISTS idx_census_2020_block_geometry_@snapshot_hash
   ON @this_model USING GIST (geometry);
-  CREATE INDEX IF NOT EXISTS idx_census_2020_block_geoid
+  CREATE INDEX IF NOT EXISTS idx_census_2020_block_geoid_@snapshot_hash
   ON @this_model USING btree (geoid);
 ANALYZE @this_model;

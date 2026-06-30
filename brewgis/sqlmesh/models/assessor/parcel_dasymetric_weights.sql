@@ -94,8 +94,8 @@ FROM classification c
 LEFT JOIN auth_res ar ON c.apn = ar.apn;
 
 -- post_statements
-  CREATE INDEX IF NOT EXISTS idx_parcel_dasymetric_weights_apn
+  CREATE INDEX IF NOT EXISTS idx_parcel_dasymetric_weights_apn_@snapshot_hash
   ON @this_model USING btree (apn);
-  CREATE INDEX IF NOT EXISTS idx_parcel_dasymetric_weights_int_dens
+  CREATE INDEX IF NOT EXISTS idx_parcel_dasymetric_weights_int_dens_@snapshot_hash
   ON @this_model USING btree (intersection_density);
 ANALYZE @this_model;

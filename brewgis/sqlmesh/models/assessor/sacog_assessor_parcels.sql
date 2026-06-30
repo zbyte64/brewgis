@@ -65,14 +65,14 @@ LEFT JOIN brewgis.seeds.assessor_use_codes auc
 WHERE rn = 1;
 
 -- post_statements
-  CREATE INDEX IF NOT EXISTS idx_sacog_assessor_parcels_geometry
+  CREATE INDEX IF NOT EXISTS idx_sacog_assessor_parcels_geometry_@snapshot_hash
   ON @this_model USING GIST (geometry);
-  CREATE INDEX IF NOT EXISTS idx_sacog_assessor_parcels_local_geometry
+  CREATE INDEX IF NOT EXISTS idx_sacog_assessor_parcels_local_geometry_@snapshot_hash
   ON @this_model USING GIST (local_geometry);
-  CREATE INDEX IF NOT EXISTS idx_sacog_assessor_parcels_centroid_local
+  CREATE INDEX IF NOT EXISTS idx_sacog_assessor_parcels_centroid_local_@snapshot_hash
   ON @this_model USING GIST (centroid_local);
-  CREATE INDEX IF NOT EXISTS idx_sacog_assessor_parcels_centroid
+  CREATE INDEX IF NOT EXISTS idx_sacog_assessor_parcels_centroid_@snapshot_hash
   ON @this_model USING GIST (centroid);
-  CREATE INDEX IF NOT EXISTS idx_sacog_assessor_parcels_apn
+  CREATE INDEX IF NOT EXISTS idx_sacog_assessor_parcels_apn_@snapshot_hash
   ON @this_model USING btree (apn);
   ANALYZE @this_model;

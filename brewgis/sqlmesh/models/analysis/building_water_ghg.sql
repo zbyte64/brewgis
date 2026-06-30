@@ -74,8 +74,8 @@ SELECT
 FROM energy_data;
 
 -- post_statements
-  CREATE INDEX IF NOT EXISTS idx_building_water_ghg_geom
+  CREATE INDEX IF NOT EXISTS idx_building_water_ghg_geom_@snapshot_hash
   ON @this_model USING GIST (geom);
 
-  CREATE INDEX IF NOT EXISTS idx_building_water_ghg_parcel_id
+  CREATE INDEX IF NOT EXISTS idx_building_water_ghg_parcel_id_@snapshot_hash
   ON @this_model USING btree (parcel_id);

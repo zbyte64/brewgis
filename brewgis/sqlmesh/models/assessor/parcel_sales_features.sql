@@ -39,14 +39,14 @@ WHERE pbf.footprint_ratio > 0
   AND s.property_type != '';
 
 -- post_statements
-  CREATE INDEX IF NOT EXISTS idx_parcel_sales_features_geometry
+  CREATE INDEX IF NOT EXISTS idx_parcel_sales_features_geometry_@snapshot_hash
   ON @this_model USING GIST (geometry);
-  CREATE INDEX IF NOT EXISTS idx_parcel_sales_features_apn
+  CREATE INDEX IF NOT EXISTS idx_parcel_sales_features_apn_@snapshot_hash
   ON @this_model USING btree (apn);
-  CREATE INDEX IF NOT EXISTS idx_parcel_sales_features_bg_ldc
+  CREATE INDEX IF NOT EXISTS idx_parcel_sales_features_bg_ldc_@snapshot_hash
   ON @this_model USING btree (block_group_geoid, land_development_category);
-  CREATE INDEX IF NOT EXISTS idx_parcel_sales_features_tract_ldc
+  CREATE INDEX IF NOT EXISTS idx_parcel_sales_features_tract_ldc_@snapshot_hash
   ON @this_model USING btree (tract_geoid, land_development_category);
-  CREATE INDEX IF NOT EXISTS idx_parcel_sales_features_ldc
+  CREATE INDEX IF NOT EXISTS idx_parcel_sales_features_ldc_@snapshot_hash
   ON @this_model USING btree (land_development_category);
 ANALYZE @this_model;

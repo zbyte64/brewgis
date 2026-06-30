@@ -80,8 +80,8 @@ FROM end_state AS es
 FULL OUTER JOIN base AS b ON es.parcel_id = b.parcel_id;
 
 -- post_statements
-  CREATE INDEX IF NOT EXISTS idx_core_increment_geom
+  CREATE INDEX IF NOT EXISTS idx_core_increment_geom_@snapshot_hash
   ON @this_model USING GIST (geom);
 
-  CREATE INDEX IF NOT EXISTS idx_core_increment_parcel_id
+  CREATE INDEX IF NOT EXISTS idx_core_increment_parcel_id_@snapshot_hash
   ON @this_model USING btree (parcel_id);

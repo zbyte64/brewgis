@@ -59,8 +59,8 @@ FROM parcel_scores;
 -- ------------------------------------------------------------
 
 -- post_statements
-  CREATE INDEX IF NOT EXISTS idx_sprawl_index_geom
+  CREATE INDEX IF NOT EXISTS idx_sprawl_index_geom_@snapshot_hash
   ON @this_model USING GIST (geom);
-  CREATE INDEX IF NOT EXISTS idx_sprawl_index_parcel_id
+  CREATE INDEX IF NOT EXISTS idx_sprawl_index_parcel_id_@snapshot_hash
   ON @this_model USING btree (parcel_id);
 ANALYZE @this_model;

@@ -26,6 +26,6 @@ FULL OUTER JOIN brewgis.analysis.building_water_ghg AS b
     ON t.parcel_id = b.parcel_id;
 
 -- post_statements
-  CREATE INDEX IF NOT EXISTS idx_total_ghg_parcel_id
+  CREATE INDEX IF NOT EXISTS idx_total_ghg_parcel_id_@snapshot_hash
   ON @this_model USING btree (parcel_id);
 ANALYZE @this_model;

@@ -75,5 +75,5 @@ FROM all_parcels ap
 LEFT JOIN per_parcel_stats s ON ap.parcel_id = s.parcel_id;
 
 -- post_statements
-  CREATE INDEX IF NOT EXISTS idx_nlcd_tree_canopy_parcel_stats_parcel_id
+  CREATE INDEX IF NOT EXISTS idx_nlcd_tree_canopy_parcel_stats_parcel_id_@snapshot_hash
   ON @this_model USING btree (parcel_id);

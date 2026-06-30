@@ -127,14 +127,14 @@ WHERE COALESCE(t1.built_form_key, t0.built_form_key) IS NOT NULL
 
 -- post_statements
   CREATE EXTENSION IF NOT EXISTS btree_gist;
-  CREATE INDEX IF NOT EXISTS idx_parcel_known_features_geometry
+  CREATE INDEX IF NOT EXISTS idx_parcel_known_features_geometry_@snapshot_hash
   ON @this_model USING GIST (geometry);
-  CREATE INDEX IF NOT EXISTS idx_parcel_known_features_apn
+  CREATE INDEX IF NOT EXISTS idx_parcel_known_features_apn_@snapshot_hash
   ON @this_model USING btree (apn);
-  CREATE INDEX IF NOT EXISTS idx_parcel_known_features_land_dev_cat
+  CREATE INDEX IF NOT EXISTS idx_parcel_known_features_land_dev_cat_@snapshot_hash
   ON @this_model USING btree (land_development_category);
-  CREATE INDEX IF NOT EXISTS idx_parcel_known_features_lot_size_acres
+  CREATE INDEX IF NOT EXISTS idx_parcel_known_features_lot_size_acres_@snapshot_hash
   ON @this_model USING btree (lot_size_acres);
-  CREATE INDEX IF NOT EXISTS idx_parcel_known_features_cat_lot_geom
+  CREATE INDEX IF NOT EXISTS idx_parcel_known_features_cat_lot_geom_@snapshot_hash
   ON @this_model USING GIST (land_development_category, lot_size_acres, geometry);
 ANALYZE @this_model;

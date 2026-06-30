@@ -353,6 +353,6 @@ LEFT JOIN building_metrics bs ON ap.apn = bs.apn
 LEFT JOIN int_density id ON ap.apn = id.apn;
 
 -- post_statements
-  CREATE INDEX IF NOT EXISTS idx_parcel_bft_classification_apn
+  CREATE INDEX IF NOT EXISTS idx_parcel_bft_classification_apn_@snapshot_hash
   ON @this_model USING btree (apn);
 ANALYZE @this_model;

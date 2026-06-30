@@ -42,8 +42,8 @@ FROM parcel_canopy;
 -- ------------------------------------------------------------
 
 -- post_statements
-  CREATE INDEX IF NOT EXISTS idx_tree_canopy_geom
+  CREATE INDEX IF NOT EXISTS idx_tree_canopy_geom_@snapshot_hash
   ON @this_model USING GIST (geom);
-  CREATE INDEX IF NOT EXISTS idx_tree_canopy_parcel_id
+  CREATE INDEX IF NOT EXISTS idx_tree_canopy_parcel_id_@snapshot_hash
   ON @this_model USING btree (parcel_id);
 ANALYZE @this_model;

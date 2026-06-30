@@ -34,8 +34,8 @@ FROM ranked r
 JOIN brewgis.assessor.parcel_dasymetric_weights dw ON r.apn = dw.apn;
 
 -- post_statements
-  CREATE INDEX IF NOT EXISTS idx_dasymetric_intersections_parcel_id
+  CREATE INDEX IF NOT EXISTS idx_dasymetric_intersections_parcel_id_@snapshot_hash
   ON @this_model USING btree (parcel_id);
-  CREATE INDEX IF NOT EXISTS idx_dasymetric_intersections_apn
+  CREATE INDEX IF NOT EXISTS idx_dasymetric_intersections_apn_@snapshot_hash
   ON @this_model USING btree (apn);
 ANALYZE @this_model;

@@ -22,6 +22,6 @@ FROM brewgis.assessor.parcel_known_features k
 GROUP BY k.land_development_category;
 
 -- post_statements
-  CREATE INDEX IF NOT EXISTS idx_parcel_partition_stats_land_dev_cat
+  CREATE INDEX IF NOT EXISTS idx_parcel_partition_stats_land_dev_cat_@snapshot_hash
   ON @this_model USING btree (land_development_category);
 ANALYZE @this_model;
