@@ -36,7 +36,7 @@ SELECT
     ap.lot_size_acres,
     COALESCE(bs.footprint_ratio, 0) AS footprint_ratio,
     COALESCE(id.intersection_density, 0) AS intersection_density,
-    COALESCE(t1.built_form_key, t0.built_form_key) AS built_form_key,
+    COALESCE(tier1.built_form_key, tier0.built_form_key) AS built_form_key,
     ap.land_development_category
 FROM brewgis.assessor.sacog_assessor_parcels ap
 LEFT JOIN tier1 ON ap.apn = tier1.apn

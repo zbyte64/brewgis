@@ -732,6 +732,7 @@ class Command(BaseCommand):
         self.stdout.write("\n── Phase 2: Running consolidated SQLMesh plan ──")
 
         model_selectors: list[str] = [
+            "+brewgis.assessor.parcel_partition_stats",
             "+brewgis.comparison.sacog_parcel_shim",
             "+brewgis.staging.census_2020_block",
             "+brewgis.base_canvas.base_canvas_reconciled",
@@ -804,6 +805,7 @@ class Command(BaseCommand):
                     "+brewgis.comparison.sacog_reference_totals",
                     "+brewgis.comparison.sacog_parcel_shim",
                     "+brewgis.staging.census_2020_block",
+                    "+brewgis.assessor.parcel_partition_stats",
                 ],
                 variables=plan_vars,
             )
