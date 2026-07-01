@@ -1,0 +1,10 @@
+apn,built_form_key
+T1_SFR_SL_001,detsf_sl
+T1_SFR_LL_001,detsf_ll
+T1_CONDO_001,attsf
+T1_MF_2TO4_001,mf2to4
+T1_MF_5P_001,mf5p
+T1_COM_001,commercial
+T1_IND_001,industrial
+T1_AG_001,agricultural
+T1_CIV_001,civic

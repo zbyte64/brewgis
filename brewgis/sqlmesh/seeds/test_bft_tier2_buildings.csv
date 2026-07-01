@@ -1,0 +1,7 @@
+apn,total_footprint_sqft,building_count,footprint_ratio,residential_building_sqft,commercial_building_sqft,industrial_building_sqft,other_building_sqft,max_levels,residential_building_count,non_residential_building_count,land_development_category
+T2_A2_MF2TO4_001,8000,1,0.18,6000,0,0,2000,2,1,0,urban
+T2_A2_MF5P_001,25000,1,0.28,20000,0,0,5000,5,1,0,urban
+T2_AT_MF2TO4_001,5000,1,0.22,4000,0,0,1000,2,1,0,urban
+T2_DETSF_001,2000,1,0.18,1800,0,0,200,1,1,0,urban
+T2_MF5P_001,30000,1,0.68,28000,0,0,2000,4,1,0,urban
+T2_A2_NONRES_001,4000,2,0.3,0,0,0,4000,1,0,2,urban

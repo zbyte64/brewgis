@@ -4,15 +4,15 @@ AUDIT (
 );
 -- lot>3ac + footprint_ratio<0.02 → agricultural (Tier 3b)
 -- Excludes A2% parcels (multi-family) which correctly fall through to tier4.
+-- Reads from tier3b model (apn, 'agricultural') and JOINs source tables.
 SELECT
-  apn,
-  lot_size_acres,
-  footprint_ratio,
-  built_form_key
-FROM @this_model
-WHERE built_form_key_source NOT IN ('tier1', 'tier0', 'tier2', 'tier3')
-  AND lot_size_acres > 3.0
-  AND COALESCE(footprint_ratio, 0) < 0.02
-  AND COALESCE(built_form_key, '') != 'agricultural'
-  AND COALESCE(built_form_key, '') != ''
-  AND (landuse NOT LIKE 'A2%' OR landuse IS NULL);
+  t3b.apn,
+  ap.lot_size_acres,
+  COALESCE(bs.footprint_ratio, 0) AS footprint_ratio,
+  t3b.built_form_key
+FROM @this_model t3b
+JOIN brewgis.assessor.sacog_assessor_parcels ap ON t3b.apn = ap.apn
+LEFT JOIN brewgis.assessor.parcel_building_sqft_by_type bs ON t3b.apn = bs.apn
+WHERE ap.lot_size_acres > 3.0
+  AND COALESCE(bs.footprint_ratio, 0) < 0.02
+  AND COALESCE(t3b.built_form_key, '') != 'agricultural';

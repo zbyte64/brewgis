@@ -1,5 +1,5 @@
 test_AT_tiny_lot_no_buildings_tier4_attsf:
-  model: brewgis.assessor.parcel_bft_classification
+  model: brewgis.assessor.parcel_bft_tier4_catchall
   gateway: postgis
   inputs:
     brewgis.assessor.sacog_assessor_parcels:
@@ -34,43 +34,39 @@ test_AT_tiny_lot_no_buildings_tier4_attsf:
         max_levels: INTEGER
         land_development_category: TEXT
         geometry: GEOMETRY
-    brewgis.assessor.sacog_assessor_sales_deduped:
-      rows: []
-      columns:
-        apn: TEXT
-        actual_living_sqft: DOUBLE
-        actual_building_sqft: DOUBLE
-        property_type: TEXT
-        sales_lot_size_acres: DOUBLE
-        units: INTEGER
     brewgis.assessor.overture_intersection_density:
       rows: []
       columns:
         apn: TEXT
         intersection_density: DOUBLE
-    brewgis.assessor.parcel_known_features:
+    brewgis.assessor.parcel_bft_tier0_landuse:
       rows: []
       columns:
         apn: TEXT
-        geometry: GEOMETRY
         built_form_key: TEXT
-        lot_size_acres: DOUBLE
-        intersection_density: DOUBLE
-        footprint_ratio: DOUBLE
-        land_development_category: TEXT
-    brewgis.assessor.parcel_partition_stats:
+    brewgis.assessor.parcel_bft_tier1_sales:
       rows: []
       columns:
-        land_development_category: TEXT
-        s_int_dens: DOUBLE
-        s_ls: DOUBLE
-        s_fr: DOUBLE
+        apn: TEXT
+        built_form_key: TEXT
+    brewgis.assessor.parcel_bft_tier2_footprints:
+      rows: []
+      columns:
+        apn: TEXT
+        built_form_key: TEXT
+    brewgis.assessor.parcel_bft_tier3_knn:
+      rows: []
+      columns:
+        apn: TEXT
+        built_form_key: TEXT
+    brewgis.assessor.parcel_bft_tier3b_agricultural:
+      rows: []
+      columns:
+        apn: TEXT
+        built_form_key: TEXT
   outputs:
     query:
       partial: true
       rows:
         - apn: "99900000000001"
           built_form_key: "mf2to4"
-          built_form_key_source: "tier4"
-          du_subtype: "mf2to4"
-          is_residential: 1

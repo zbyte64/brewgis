@@ -1,5 +1,5 @@
 test_AT_with_residential_sqft_low_levels_tier2_mf2to4:
-  model: brewgis.assessor.parcel_bft_classification
+  model: brewgis.assessor.parcel_bft_tier2_footprints
   gateway: postgis
   inputs:
     brewgis.assessor.sacog_assessor_parcels:
@@ -33,49 +33,28 @@ test_AT_with_residential_sqft_low_levels_tier2_mf2to4:
           geometry: "POLYGON((-121.5 38.5,-121.49 38.5,-121.49 38.51,-121.5 38.51,-121.5 38.5))"
       columns:
         geometry: GEOMETRY
-    brewgis.assessor.sacog_assessor_sales_deduped:
-      rows: []
-      columns:
         apn: TEXT
-        actual_living_sqft: DOUBLE
-        actual_building_sqft: DOUBLE
-        property_type: TEXT
-        sales_lot_size_acres: DOUBLE
-        units: INTEGER
-    brewgis.assessor.overture_intersection_density:
-      rows: []
-      columns:
-        apn: TEXT
-        intersection_density: DOUBLE
-    brewgis.assessor.parcel_known_features:
-      rows: []
-      columns:
-        apn: TEXT
-        geometry: GEOMETRY
-        built_form_key: TEXT
-        lot_size_acres: DOUBLE
-        intersection_density: DOUBLE
+        total_footprint_sqft: DOUBLE
+        building_count: INTEGER
         footprint_ratio: DOUBLE
+        lot_size_acres: DOUBLE
+        residential_building_sqft: DOUBLE
+        commercial_building_sqft: DOUBLE
+        industrial_building_sqft: DOUBLE
+        other_building_sqft: DOUBLE
+        residential_building_count: INTEGER
+        non_residential_building_count: INTEGER
+        max_levels: INTEGER
         land_development_category: TEXT
-    brewgis.assessor.parcel_partition_stats:
-      rows: []
-      columns:
-        land_development_category: TEXT
-        s_int_dens: DOUBLE
-        s_ls: DOUBLE
-        s_fr: DOUBLE
   outputs:
     query:
       partial: true
       rows:
         - apn: "TEST_AT_T2_001"
           built_form_key: "mf2to4"
-          built_form_key_source: "tier2"
-          du_subtype: "mf2to4"
-          is_residential: 1
 
 test_AT_with_residential_sqft_high_levels_tier2_mf5p:
-  model: brewgis.assessor.parcel_bft_classification
+  model: brewgis.assessor.parcel_bft_tier2_footprints
   gateway: postgis
   inputs:
     brewgis.assessor.sacog_assessor_parcels:
@@ -109,43 +88,22 @@ test_AT_with_residential_sqft_high_levels_tier2_mf5p:
           geometry: "POLYGON((-121.5 38.5,-121.49 38.5,-121.49 38.51,-121.5 38.51,-121.5 38.5))"
       columns:
         geometry: GEOMETRY
-    brewgis.assessor.sacog_assessor_sales_deduped:
-      rows: []
-      columns:
         apn: TEXT
-        actual_living_sqft: DOUBLE
-        actual_building_sqft: DOUBLE
-        property_type: TEXT
-        sales_lot_size_acres: DOUBLE
-        units: INTEGER
-    brewgis.assessor.overture_intersection_density:
-      rows: []
-      columns:
-        apn: TEXT
-        intersection_density: DOUBLE
-    brewgis.assessor.parcel_known_features:
-      rows: []
-      columns:
-        apn: TEXT
-        geometry: GEOMETRY
-        built_form_key: TEXT
-        lot_size_acres: DOUBLE
-        intersection_density: DOUBLE
+        total_footprint_sqft: DOUBLE
+        building_count: INTEGER
         footprint_ratio: DOUBLE
+        lot_size_acres: DOUBLE
+        residential_building_sqft: DOUBLE
+        commercial_building_sqft: DOUBLE
+        industrial_building_sqft: DOUBLE
+        other_building_sqft: DOUBLE
+        residential_building_count: INTEGER
+        non_residential_building_count: INTEGER
+        max_levels: INTEGER
         land_development_category: TEXT
-    brewgis.assessor.parcel_partition_stats:
-      rows: []
-      columns:
-        land_development_category: TEXT
-        s_int_dens: DOUBLE
-        s_ls: DOUBLE
-        s_fr: DOUBLE
   outputs:
     query:
       partial: true
       rows:
         - apn: "TEST_AT_T2_002"
           built_form_key: "mf5p"
-          built_form_key_source: "tier2"
-          du_subtype: "mf5p"
-          is_residential: 1

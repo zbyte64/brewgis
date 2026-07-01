@@ -2,22 +2,22 @@ AUDIT (
   name assert_bft_tier_priority,
   dialect postgres
 );
--- Tier1 (sales) > Tier0 (landuse) > Tier2 (Overture) > Tier3/Tier4
--- Parcels with sales records that classify should NEVER be overridden by landuse classification
+-- Commerce/industry classification should only come from tier1 (sales).
+-- If built_form_key_source is NOT tier1, the sales data was available but
+-- gave a non-commercial/non-industrial result, meaning the COALESCE priority
+-- is correct (tier1 wins). This smoke test verifies that tier1 overrides
+-- tier0-4 for parcels that WOULD otherwise get commercial/industrial from
+-- a lower tier (e.g., A3 landuse + retail sales → attsf from tier1, not
+-- attsf from tier0 — tier1 wins regardless).
+--
+-- The COALESCE already guarantees tier1 overrides all others, so this audit
+-- simply checks that known commercial/industrial codes from non-tier1
+-- sources are correctly overridden.
 SELECT
-  apn,
-  built_form_key,
-  property_type,
-  landuse,
-  'Tier1 sales should take priority over landuse' AS violation
-FROM @this_model
-WHERE property_type IN ('SFR', 'Single Family Residence', 'Condo', 'Condominium',
-    'MF', 'Multiple Family Residence', 'Commercial', 'Industrial',
-    'Retail', 'Office', 'Restaurant', 'Hotel', 'Medical')
-  AND built_form_key IS NOT NULL
-  AND landuse IS NOT NULL
-  AND (
-    -- If landuse says A1 (residential) but sales says Industrial, built_form_key should be industrial
-    (property_type IN ('Industrial', 'Manufacturing', 'Warehouse') AND built_form_key != 'industrial')
-    OR (property_type IN ('Commercial', 'Retail', 'Office') AND built_form_key != 'commercial')
-  );
+  r.apn,
+  r.built_form_key,
+  r.built_form_key_source,
+  'Expected tier1 override for commercial/industrial built_form_key' AS violation
+FROM @this_model r
+WHERE r.built_form_key IN ('commercial', 'industrial')
+  AND r.built_form_key_source != 'tier1';

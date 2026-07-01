@@ -4,24 +4,25 @@ AUDIT (
 );
 -- lot>10ac → ag; 3-10ac+zone%A% → ag
 -- Excludes A2% parcels (multi-family) which correctly get mf2to4 from tier4.
+-- Reads from tier4 model (apn, built_form_key) and JOINs assessor for landuse.
 SELECT
-  apn,
-  lot_size_acres,
-  zone,
-  built_form_key,
+  t4.apn,
+  ap.lot_size_acres,
+  ap.zone,
+  t4.built_form_key,
   CASE
-    WHEN lot_size_acres > 10.0 THEN 'agricultural'
-    WHEN lot_size_acres > 3.0 AND zone LIKE '%A%' THEN 'agricultural'
-    WHEN lot_size_acres > 3.0 AND zone NOT LIKE '%A%' THEN 'detsf_ll'
-    WHEN lot_size_acres > 0.4 THEN 'detsf_ll'
-    WHEN lot_size_acres > 0.15 THEN 'detsf_sl'
+    WHEN ap.lot_size_acres > 10.0 THEN 'agricultural'
+    WHEN ap.lot_size_acres > 3.0 AND ap.zone LIKE '%A%' THEN 'agricultural'
+    WHEN ap.lot_size_acres > 3.0 AND ap.zone NOT LIKE '%A%' THEN 'detsf_ll'
+    WHEN ap.lot_size_acres > 0.4 THEN 'detsf_ll'
+    WHEN ap.lot_size_acres > 0.15 THEN 'detsf_sl'
   END AS expected_bft
-FROM @this_model
-WHERE built_form_key_source NOT IN ('tier1', 'tier0', 'tier2', 'tier3', 'tier3b')
-  AND lot_size_acres IS NOT NULL
-  AND built_form_key IS NOT NULL
+FROM @this_model t4
+JOIN brewgis.assessor.sacog_assessor_parcels ap ON t4.apn = ap.apn
+WHERE ap.lot_size_acres IS NOT NULL
+  AND t4.built_form_key IS NOT NULL
   AND (
-    (lot_size_acres > 10.0 AND built_form_key != 'agricultural')
-    OR (lot_size_acres > 3.0 AND zone LIKE '%A%' AND built_form_key != 'agricultural')
+    (ap.lot_size_acres > 10.0 AND t4.built_form_key != 'agricultural')
+    OR (ap.lot_size_acres > 3.0 AND ap.zone LIKE '%A%' AND t4.built_form_key != 'agricultural')
   )
-  AND (landuse NOT LIKE 'A2%' OR landuse IS NULL);
+  AND (ap.landuse NOT LIKE 'A2%' OR ap.landuse IS NULL);

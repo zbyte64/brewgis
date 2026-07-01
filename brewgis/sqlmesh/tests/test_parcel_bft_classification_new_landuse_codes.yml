@@ -2,6 +2,19 @@ test_AQ_undeveloped_tier0:
   model: brewgis.assessor.parcel_bft_classification
   gateway: postgis
   inputs:
+    brewgis.assessor.parcel_bft_resolved:
+      rows:
+        - apn: "TEST_AQ_001"
+          built_form_key: "undeveloped"
+          built_form_key_source: "tier0"
+          du_subtype: null
+          is_residential: 0
+      columns:
+        apn: TEXT
+        built_form_key: TEXT
+        built_form_key_source: TEXT
+        du_subtype: TEXT
+        is_residential: INTEGER
     brewgis.assessor.sacog_assessor_parcels:
       rows:
         - apn: "TEST_AQ_001"
@@ -17,6 +30,15 @@ test_AQ_undeveloped_tier0:
         landuse: TEXT
         zone: TEXT
         land_development_category: TEXT
+    brewgis.assessor.sacog_assessor_sales_deduped:
+      rows: []
+      columns:
+        apn: TEXT
+        actual_living_sqft: DOUBLE
+        actual_building_sqft: DOUBLE
+        property_type: TEXT
+        sales_lot_size_acres: DOUBLE
+        units: INTEGER
     brewgis.assessor.parcel_building_sqft_by_type:
       rows: []
       columns:
@@ -34,37 +56,11 @@ test_AQ_undeveloped_tier0:
         max_levels: INTEGER
         land_development_category: TEXT
         geometry: GEOMETRY
-    brewgis.assessor.sacog_assessor_sales_deduped:
-      rows: []
-      columns:
-        apn: TEXT
-        actual_living_sqft: DOUBLE
-        actual_building_sqft: DOUBLE
-        property_type: TEXT
-        sales_lot_size_acres: DOUBLE
-        units: INTEGER
     brewgis.assessor.overture_intersection_density:
       rows: []
       columns:
         apn: TEXT
         intersection_density: DOUBLE
-    brewgis.assessor.parcel_known_features:
-      rows: []
-      columns:
-        apn: TEXT
-        geometry: GEOMETRY
-        built_form_key: TEXT
-        lot_size_acres: DOUBLE
-        intersection_density: DOUBLE
-        footprint_ratio: DOUBLE
-        land_development_category: TEXT
-    brewgis.assessor.parcel_partition_stats:
-      rows: []
-      columns:
-        land_development_category: TEXT
-        s_int_dens: DOUBLE
-        s_ls: DOUBLE
-        s_fr: DOUBLE
   outputs:
     query:
       partial: true
@@ -79,6 +75,19 @@ test_CA_commercial_tier0:
   model: brewgis.assessor.parcel_bft_classification
   gateway: postgis
   inputs:
+    brewgis.assessor.parcel_bft_resolved:
+      rows:
+        - apn: "TEST_CA_001"
+          built_form_key: "commercial"
+          built_form_key_source: "tier0"
+          du_subtype: null
+          is_residential: 0
+      columns:
+        apn: TEXT
+        built_form_key: TEXT
+        built_form_key_source: TEXT
+        du_subtype: TEXT
+        is_residential: INTEGER
     brewgis.assessor.sacog_assessor_parcels:
       rows:
         - apn: "TEST_CA_001"
@@ -94,6 +103,15 @@ test_CA_commercial_tier0:
         landuse: TEXT
         zone: TEXT
         land_development_category: TEXT
+    brewgis.assessor.sacog_assessor_sales_deduped:
+      rows: []
+      columns:
+        apn: TEXT
+        actual_living_sqft: DOUBLE
+        actual_building_sqft: DOUBLE
+        property_type: TEXT
+        sales_lot_size_acres: DOUBLE
+        units: INTEGER
     brewgis.assessor.parcel_building_sqft_by_type:
       rows: []
       columns:
@@ -111,37 +129,11 @@ test_CA_commercial_tier0:
         max_levels: INTEGER
         land_development_category: TEXT
         geometry: GEOMETRY
-    brewgis.assessor.sacog_assessor_sales_deduped:
-      rows: []
-      columns:
-        apn: TEXT
-        actual_living_sqft: DOUBLE
-        actual_building_sqft: DOUBLE
-        property_type: TEXT
-        sales_lot_size_acres: DOUBLE
-        units: INTEGER
     brewgis.assessor.overture_intersection_density:
       rows: []
       columns:
         apn: TEXT
         intersection_density: DOUBLE
-    brewgis.assessor.parcel_known_features:
-      rows: []
-      columns:
-        apn: TEXT
-        geometry: GEOMETRY
-        built_form_key: TEXT
-        lot_size_acres: DOUBLE
-        intersection_density: DOUBLE
-        footprint_ratio: DOUBLE
-        land_development_category: TEXT
-    brewgis.assessor.parcel_partition_stats:
-      rows: []
-      columns:
-        land_development_category: TEXT
-        s_int_dens: DOUBLE
-        s_ls: DOUBLE
-        s_fr: DOUBLE
   outputs:
     query:
       partial: true
@@ -156,6 +148,19 @@ test_GC_civic_tier0:
   model: brewgis.assessor.parcel_bft_classification
   gateway: postgis
   inputs:
+    brewgis.assessor.parcel_bft_resolved:
+      rows:
+        - apn: "TEST_GC_001"
+          built_form_key: "civic"
+          built_form_key_source: "tier0"
+          du_subtype: null
+          is_residential: 0
+      columns:
+        apn: TEXT
+        built_form_key: TEXT
+        built_form_key_source: TEXT
+        du_subtype: TEXT
+        is_residential: INTEGER
     brewgis.assessor.sacog_assessor_parcels:
       rows:
         - apn: "TEST_GC_001"
@@ -171,6 +176,15 @@ test_GC_civic_tier0:
         landuse: TEXT
         zone: TEXT
         land_development_category: TEXT
+    brewgis.assessor.sacog_assessor_sales_deduped:
+      rows: []
+      columns:
+        apn: TEXT
+        actual_living_sqft: DOUBLE
+        actual_building_sqft: DOUBLE
+        property_type: TEXT
+        sales_lot_size_acres: DOUBLE
+        units: INTEGER
     brewgis.assessor.parcel_building_sqft_by_type:
       rows: []
       columns:
@@ -188,37 +202,11 @@ test_GC_civic_tier0:
         max_levels: INTEGER
         land_development_category: TEXT
         geometry: GEOMETRY
-    brewgis.assessor.sacog_assessor_sales_deduped:
-      rows: []
-      columns:
-        apn: TEXT
-        actual_living_sqft: DOUBLE
-        actual_building_sqft: DOUBLE
-        property_type: TEXT
-        sales_lot_size_acres: DOUBLE
-        units: INTEGER
     brewgis.assessor.overture_intersection_density:
       rows: []
       columns:
         apn: TEXT
         intersection_density: DOUBLE
-    brewgis.assessor.parcel_known_features:
-      rows: []
-      columns:
-        apn: TEXT
-        geometry: GEOMETRY
-        built_form_key: TEXT
-        lot_size_acres: DOUBLE
-        intersection_density: DOUBLE
-        footprint_ratio: DOUBLE
-        land_development_category: TEXT
-    brewgis.assessor.parcel_partition_stats:
-      rows: []
-      columns:
-        land_development_category: TEXT
-        s_int_dens: DOUBLE
-        s_ls: DOUBLE
-        s_fr: DOUBLE
   outputs:
     query:
       partial: true
@@ -233,6 +221,19 @@ test_IA_industrial_tier0:
   model: brewgis.assessor.parcel_bft_classification
   gateway: postgis
   inputs:
+    brewgis.assessor.parcel_bft_resolved:
+      rows:
+        - apn: "TEST_IA_001"
+          built_form_key: "industrial"
+          built_form_key_source: "tier0"
+          du_subtype: null
+          is_residential: 0
+      columns:
+        apn: TEXT
+        built_form_key: TEXT
+        built_form_key_source: TEXT
+        du_subtype: TEXT
+        is_residential: INTEGER
     brewgis.assessor.sacog_assessor_parcels:
       rows:
         - apn: "TEST_IA_001"
@@ -248,6 +249,15 @@ test_IA_industrial_tier0:
         landuse: TEXT
         zone: TEXT
         land_development_category: TEXT
+    brewgis.assessor.sacog_assessor_sales_deduped:
+      rows: []
+      columns:
+        apn: TEXT
+        actual_living_sqft: DOUBLE
+        actual_building_sqft: DOUBLE
+        property_type: TEXT
+        sales_lot_size_acres: DOUBLE
+        units: INTEGER
     brewgis.assessor.parcel_building_sqft_by_type:
       rows: []
       columns:
@@ -265,37 +275,11 @@ test_IA_industrial_tier0:
         max_levels: INTEGER
         land_development_category: TEXT
         geometry: GEOMETRY
-    brewgis.assessor.sacog_assessor_sales_deduped:
-      rows: []
-      columns:
-        apn: TEXT
-        actual_living_sqft: DOUBLE
-        actual_building_sqft: DOUBLE
-        property_type: TEXT
-        sales_lot_size_acres: DOUBLE
-        units: INTEGER
     brewgis.assessor.overture_intersection_density:
       rows: []
       columns:
         apn: TEXT
         intersection_density: DOUBLE
-    brewgis.assessor.parcel_known_features:
-      rows: []
-      columns:
-        apn: TEXT
-        geometry: GEOMETRY
-        built_form_key: TEXT
-        lot_size_acres: DOUBLE
-        intersection_density: DOUBLE
-        footprint_ratio: DOUBLE
-        land_development_category: TEXT
-    brewgis.assessor.parcel_partition_stats:
-      rows: []
-      columns:
-        land_development_category: TEXT
-        s_int_dens: DOUBLE
-        s_ls: DOUBLE
-        s_fr: DOUBLE
   outputs:
     query:
       partial: true
@@ -310,6 +294,19 @@ test_MS_commercial_tier0:
   model: brewgis.assessor.parcel_bft_classification
   gateway: postgis
   inputs:
+    brewgis.assessor.parcel_bft_resolved:
+      rows:
+        - apn: "TEST_MS_001"
+          built_form_key: "commercial"
+          built_form_key_source: "tier0"
+          du_subtype: null
+          is_residential: 0
+      columns:
+        apn: TEXT
+        built_form_key: TEXT
+        built_form_key_source: TEXT
+        du_subtype: TEXT
+        is_residential: INTEGER
     brewgis.assessor.sacog_assessor_parcels:
       rows:
         - apn: "TEST_MS_001"
@@ -325,6 +322,15 @@ test_MS_commercial_tier0:
         landuse: TEXT
         zone: TEXT
         land_development_category: TEXT
+    brewgis.assessor.sacog_assessor_sales_deduped:
+      rows: []
+      columns:
+        apn: TEXT
+        actual_living_sqft: DOUBLE
+        actual_building_sqft: DOUBLE
+        property_type: TEXT
+        sales_lot_size_acres: DOUBLE
+        units: INTEGER
     brewgis.assessor.parcel_building_sqft_by_type:
       rows: []
       columns:
@@ -342,37 +348,11 @@ test_MS_commercial_tier0:
         max_levels: INTEGER
         land_development_category: TEXT
         geometry: GEOMETRY
-    brewgis.assessor.sacog_assessor_sales_deduped:
-      rows: []
-      columns:
-        apn: TEXT
-        actual_living_sqft: DOUBLE
-        actual_building_sqft: DOUBLE
-        property_type: TEXT
-        sales_lot_size_acres: DOUBLE
-        units: INTEGER
     brewgis.assessor.overture_intersection_density:
       rows: []
       columns:
         apn: TEXT
         intersection_density: DOUBLE
-    brewgis.assessor.parcel_known_features:
-      rows: []
-      columns:
-        apn: TEXT
-        geometry: GEOMETRY
-        built_form_key: TEXT
-        lot_size_acres: DOUBLE
-        intersection_density: DOUBLE
-        footprint_ratio: DOUBLE
-        land_development_category: TEXT
-    brewgis.assessor.parcel_partition_stats:
-      rows: []
-      columns:
-        land_development_category: TEXT
-        s_int_dens: DOUBLE
-        s_ls: DOUBLE
-        s_fr: DOUBLE
   outputs:
     query:
       partial: true

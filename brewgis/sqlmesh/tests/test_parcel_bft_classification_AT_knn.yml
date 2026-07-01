@@ -1,5 +1,5 @@
 test_AT_no_buildings_knn_matches_mf_only:
-  model: brewgis.assessor.parcel_bft_classification
+  model: brewgis.assessor.parcel_bft_resolved
   gateway: postgis
   inputs:
     brewgis.assessor.sacog_assessor_parcels:
@@ -17,68 +17,38 @@ test_AT_no_buildings_knn_matches_mf_only:
         landuse: TEXT
         zone: TEXT
         land_development_category: TEXT
-    brewgis.assessor.parcel_building_sqft_by_type:
+    brewgis.assessor.parcel_bft_tier0_landuse:
       rows: []
       columns:
         apn: TEXT
-        total_footprint_sqft: DOUBLE
-        building_count: INTEGER
-        footprint_ratio: DOUBLE
-        lot_size_acres: DOUBLE
-        residential_building_sqft: DOUBLE
-        commercial_building_sqft: DOUBLE
-        industrial_building_sqft: DOUBLE
-        other_building_sqft: DOUBLE
-        residential_building_count: INTEGER
-        non_residential_building_count: INTEGER
-        max_levels: INTEGER
-        land_development_category: TEXT
-        geometry: GEOMETRY
-    brewgis.assessor.sacog_assessor_sales_deduped:
+        built_form_key: TEXT
+    brewgis.assessor.parcel_bft_tier1_sales:
       rows: []
       columns:
         apn: TEXT
-        actual_living_sqft: DOUBLE
-        actual_building_sqft: DOUBLE
-        property_type: TEXT
-        sales_lot_size_acres: DOUBLE
-        units: INTEGER
-    brewgis.assessor.overture_intersection_density:
+        built_form_key: TEXT
+    brewgis.assessor.parcel_bft_tier2_footprints:
+      rows: []
+      columns:
+        apn: TEXT
+        built_form_key: TEXT
+    brewgis.assessor.parcel_bft_tier3_knn:
       rows:
         - apn: "TEST_AT_KNN_001"
-          intersection_density: 10.0
+          built_form_key: "mf5p"
       columns:
         apn: TEXT
-        intersection_density: DOUBLE
-    brewgis.assessor.parcel_known_features:
-      rows:
-        - apn: "KNOWN_MF"
-          geometry: "POLYGON((-121.5001 38.5001,-121.4999 38.5001,-121.4999 38.5002,-121.5001 38.5002,-121.5001 38.5001))"
-          built_form_key: "mf5p"
-          lot_size_acres: 0.6
-          intersection_density: 12.0
-          footprint_ratio: 0.15
-          land_development_category: "urban"
-        - apn: "KNOWN_SFR"
-          geometry: "POLYGON((-121.5001 38.5001,-121.4999 38.5001,-121.4999 38.5002,-121.5001 38.5002,-121.5001 38.5001))"
-          built_form_key: "detsf_ll"
-          lot_size_acres: 0.3
-          intersection_density: 8.0
-          footprint_ratio: 0.05
-          land_development_category: "urban"
+        built_form_key: TEXT
+    brewgis.assessor.parcel_bft_tier3b_agricultural:
+      rows: []
       columns:
-        geometry: GEOMETRY
-    brewgis.assessor.parcel_partition_stats:
-      rows:
-        - land_development_category: "urban"
-          s_int_dens: 5.0
-          s_ls: 0.5
-          s_fr: 0.1
+        apn: TEXT
+        built_form_key: TEXT
+    brewgis.assessor.parcel_bft_tier4_catchall:
+      rows: []
       columns:
-        land_development_category: TEXT
-        s_int_dens: DOUBLE
-        s_ls: DOUBLE
-        s_fr: DOUBLE
+        apn: TEXT
+        built_form_key: TEXT
   outputs:
     query:
       partial: true

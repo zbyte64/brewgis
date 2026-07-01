@@ -436,6 +436,9 @@ def config_factory(**variables):
             # Built form defaults
             "res_far_default": 0.5,
             "nonres_indoor_water_rate": 0.0,
+            # KNN test isolation variables (overridden in test environments)
+            "parcel_known_features_model": "brewgis.assessor.parcel_known_features",
+            "parcel_partition_stats_model": "brewgis.assessor.parcel_partition_stats",
             **variables,
         },
         gateway_managed_virtual_layer=True,

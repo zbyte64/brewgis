@@ -3,19 +3,20 @@ AUDIT (
   dialect postgres
 );
 -- A1% landuse + lot<0.15 → detsf_sl; A1% landuse + lot≥0.15 → detsf_ll
+-- Reads from tier0 model (apn, built_form_key) and JOINs assessor parcels for landuse.
 SELECT
-  apn,
-  landuse,
-  lot_size_acres,
-  built_form_key,
+  t0.apn,
+  ap.landuse,
+  ap.lot_size_acres,
+  t0.built_form_key,
   CASE
-    WHEN lot_size_acres < 0.15 THEN 'detsf_sl'
+    WHEN ap.lot_size_acres < 0.15 THEN 'detsf_sl'
     ELSE 'detsf_ll'
   END AS expected_bft
-FROM @this_model
-WHERE built_form_key_source != 'tier1'
-  AND landuse LIKE 'A1%'
+FROM @this_model t0
+JOIN brewgis.assessor.sacog_assessor_parcels ap ON t0.apn = ap.apn
+WHERE ap.landuse LIKE 'A1%'
   AND (
-    (lot_size_acres < 0.15 AND built_form_key != 'detsf_sl')
-    OR (lot_size_acres >= 0.15 AND built_form_key != 'detsf_ll')
+    (ap.lot_size_acres < 0.15 AND t0.built_form_key != 'detsf_sl')
+    OR (ap.lot_size_acres >= 0.15 AND t0.built_form_key != 'detsf_ll')
   );

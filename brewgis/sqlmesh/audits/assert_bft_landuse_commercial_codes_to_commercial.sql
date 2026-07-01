@@ -4,10 +4,10 @@ AUDIT (
 );
 -- Commercial landuse prefixes → commercial classification
 SELECT
-  apn,
-  landuse,
-  built_form_key
-FROM @this_model
-WHERE built_form_key_source != 'tier1'
-  AND LEFT(landuse, 2) IN ('CA', 'BA', 'BF', 'BC', 'BB', 'BE', 'BD', 'CG', 'MS', 'MU', 'MP')
-  AND built_form_key != 'commercial';
+  t0.apn,
+  ap.landuse,
+  t0.built_form_key
+FROM @this_model t0
+JOIN brewgis.assessor.sacog_assessor_parcels ap ON t0.apn = ap.apn
+WHERE LEFT(ap.landuse, 2) IN ('CA', 'BA', 'BF', 'BC', 'BB', 'BE', 'BD', 'CG', 'MS', 'MU', 'MP')
+  AND t0.built_form_key != 'commercial';

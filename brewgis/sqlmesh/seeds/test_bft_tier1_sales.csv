@@ -1,0 +1,11 @@
+apn,property_type,sales_lot_size_acres,units,actual_living_sqft,actual_building_sqft
+T1_SFR_SL_001,SFR,0.1,1,1200,1500
+T1_SFR_LL_001,SFR,0.2,1,1800,2200
+T1_CONDO_001,Condo,0.5,1,900,900
+T1_MF_2TO4_001,Multiple Family Residence,1.0,3,3000,4000
+T1_MF_5P_001,Multiple Family Residence,2.0,12,12000,15000
+T1_COM_001,Retail,0.5,0,0,3000
+T1_IND_001,Warehouse,2.0,0,0,10000
+T1_AG_001,Farm/Ranch,20.0,0,2000,3000
+T1_CIV_001,School,5.0,0,0,50000
+T1_UNK_001,Unknown,0.5,0,1000,1200

@@ -3,19 +3,21 @@ AUDIT (
   dialect postgres
 );
 -- MF + 2-4 units → mf2to4; 5+ → mf5p
+-- Reads from tier1 model (apn, built_form_key) and JOINs sales deduped for property_type + units.
 SELECT
-  apn,
-  property_type,
-  units,
-  built_form_key,
+  t1.apn,
+  sd.property_type,
+  sd.units,
+  t1.built_form_key,
   CASE
-    WHEN COALESCE(units, 0) BETWEEN 2 AND 4 THEN 'mf2to4'
-    WHEN COALESCE(units, 0) >= 5 THEN 'mf5p'
+    WHEN COALESCE(sd.units, 0) BETWEEN 2 AND 4 THEN 'mf2to4'
+    WHEN COALESCE(sd.units, 0) >= 5 THEN 'mf5p'
   END AS expected_bft
-FROM @this_model
-WHERE (property_type IN ('MF', 'Multiple Family Residence') OR property_type LIKE 'Multiple Family%')
-  AND units IS NOT NULL AND units >= 2
+FROM @this_model t1
+JOIN brewgis.assessor.sacog_assessor_sales_deduped sd ON t1.apn = sd.apn
+WHERE (sd.property_type IN ('MF', 'Multiple Family Residence') OR sd.property_type LIKE 'Multiple Family%')
+  AND sd.units IS NOT NULL AND sd.units >= 2
   AND (
-    (COALESCE(units, 0) BETWEEN 2 AND 4 AND built_form_key != 'mf2to4')
-    OR (COALESCE(units, 0) >= 5 AND built_form_key != 'mf5p')
+    (COALESCE(sd.units, 0) BETWEEN 2 AND 4 AND t1.built_form_key != 'mf2to4')
+    OR (COALESCE(sd.units, 0) >= 5 AND t1.built_form_key != 'mf5p')
   );

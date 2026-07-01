@@ -1,0 +1,4 @@
+apn,lot_size_acres,landuse,zone,geometry,land_development_category
+RES_TIER1_WINS_001,0.1,A100A,R-1,"POLYGON((-121.5 38.5,-121.49 38.5,-121.49 38.51,-121.5 38.51,-121.5 38.5))",urban
+RES_TIER0_001,0.5,A300A,R-2,"POLYGON((-121.5 38.5,-121.49 38.5,-121.49 38.51,-121.5 38.51,-121.5 38.5))",urban
+RES_NULL_001,0.5,BBB00B,R-1,"POLYGON((-121.5 38.5,-121.49 38.5,-121.49 38.51,-121.5 38.51,-121.5 38.5))",urban

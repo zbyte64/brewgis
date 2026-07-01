@@ -3,9 +3,11 @@ AUDIT (
   dialect postgres
 );
 
--- Verify parcel_bft_classification has a reasonable number of rows
+-- Verify parcel_bft_resolved has a reasonable number of rows
 -- for Sacramento County (~510K parcels). Outside this range indicates
 -- duplicates, load failures, or upstream data issues.
+-- The resolver LEFT JOINs every parcel, so row count should match
+-- the assessor parcels table.
 WITH actual AS (SELECT COUNT(*) AS cnt FROM @this_model)
 SELECT cnt AS actual_rows
 FROM actual

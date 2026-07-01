@@ -4,10 +4,10 @@ AUDIT (
 );
 -- AD% landuse → undeveloped
 SELECT
-  apn,
-  landuse,
-  built_form_key
-FROM @this_model
-WHERE built_form_key_source != 'tier1'
-  AND landuse LIKE 'AD%'
-  AND built_form_key != 'undeveloped';
+  t0.apn,
+  ap.landuse,
+  t0.built_form_key
+FROM @this_model t0
+JOIN brewgis.assessor.sacog_assessor_parcels ap ON t0.apn = ap.apn
+WHERE ap.landuse LIKE 'AD%'
+  AND t0.built_form_key != 'undeveloped';

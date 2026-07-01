@@ -4,10 +4,10 @@ AUDIT (
 );
 -- AH%, AJ% landuse → civic
 SELECT
-  apn,
-  landuse,
-  built_form_key
-FROM @this_model
-WHERE built_form_key_source != 'tier1'
-  AND (landuse LIKE 'AH%' OR landuse LIKE 'AJ%')
-  AND built_form_key != 'civic';
+  t0.apn,
+  ap.landuse,
+  t0.built_form_key
+FROM @this_model t0
+JOIN brewgis.assessor.sacog_assessor_parcels ap ON t0.apn = ap.apn
+WHERE (ap.landuse LIKE 'AH%' OR ap.landuse LIKE 'AJ%')
+  AND t0.built_form_key != 'civic';

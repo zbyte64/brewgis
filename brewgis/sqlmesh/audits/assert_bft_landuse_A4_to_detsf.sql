@@ -4,10 +4,10 @@ AUDIT (
 );
 -- A4% landuse → detsf_sl (small lot single family)
 SELECT
-  apn,
-  landuse,
-  built_form_key
-FROM @this_model
-WHERE built_form_key_source != 'tier1'
-  AND landuse LIKE 'A4%'
-  AND built_form_key != 'detsf_sl';
+  t0.apn,
+  ap.landuse,
+  t0.built_form_key
+FROM @this_model t0
+JOIN brewgis.assessor.sacog_assessor_parcels ap ON t0.apn = ap.apn
+WHERE ap.landuse LIKE 'A4%'
+  AND t0.built_form_key != 'detsf_sl';
