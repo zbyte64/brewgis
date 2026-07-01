@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import sqlglot.expressions as exp
 from sqlmesh import macro
 
 
@@ -68,3 +69,50 @@ def snapshot_hash(evaluator) -> str:
     last_part = physical.rsplit("__", 1)[-1]
     # Strip any trailing double-quote
     return last_part.rstrip('"')
+
+
+@macro()
+def ref_model(evaluator, model_fqn: str) -> exp.Expression:
+    """Convert a dotted model FQN into a proper 3-part ``exp.Table`` reference.
+
+    SQLMesh's ``@var`` expansion wraps strings via ``exp.convert()``, which
+    serializes the value as a SQL literal.  When the literal contains dots
+    (e.g. ``'brewgis.assessor.parcel_partition_stats'``), it re-parses as a
+    *single* quoted identifier with embedded dots instead of a 3-part table
+    reference.  ``find_tables()`` then normalises it to
+    ``'"brewgis.assessor.parcel_partition_stats"'``, which does not match
+    the model's ``fqn`` — so the dependency is **not** tracked in
+    ``snapshot.parents``.
+
+    This macro returns a proper ``exp.Table`` AST node (3-part qualified),
+    so that ``find_tables()`` produces the canonical 3-part quoted form
+    ``'"brewgis"."assessor"."parcel_partition_stats"'`` which **is**
+    correctly resolved by the dependency tracker.
+
+    Usage in model SQL::
+
+        FROM @ref_model(@parcel_known_features_model) kf
+        LEFT JOIN @ref_model(@parcel_partition_stats_model) ps ON ...
+
+    The ``@xxx_model`` variables are defined in ``config.py`` and can be
+    overridden in test / comparison environments for isolation.
+
+    Args:
+        model_fqn: Three-part fully qualified model name
+            (e.g. ``"brewgis.assessor.parcel_known_features"``).
+
+    Returns:
+        A 3-part ``exp.Table`` expression.
+    """
+    parts = model_fqn.rstrip('"').split(".")
+    if len(parts) >= 3:
+        return exp.Table(
+            this=exp.to_identifier(parts[2]),
+            db=exp.to_identifier(parts[1]),
+            catalog=exp.to_identifier(parts[0]),
+        )
+    if len(parts) == 2:
+        return exp.Table(
+            this=exp.to_identifier(parts[1]), db=exp.to_identifier(parts[0])
+        )
+    return exp.Table(this=exp.to_identifier(parts[0]))

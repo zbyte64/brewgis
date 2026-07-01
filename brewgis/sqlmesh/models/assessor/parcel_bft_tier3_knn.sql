@@ -60,12 +60,12 @@ tier3_candidates AS (
             + POWER(COALESCE((u.footprint_ratio - kf.footprint_ratio) / NULLIF(ps.s_fr, 0), 0), 2)
             AS distance_sq
     FROM unknown_parcels u
-    LEFT JOIN @parcel_partition_stats_model ps
+    LEFT JOIN @ref_model(@parcel_partition_stats_model) ps
         ON COALESCE(u.land_development_category, '') = ps.land_development_category
     CROSS JOIN LATERAL (
         SELECT kf.apn AS neighbor_apn, kf.built_form_key,
                kf.intersection_density, kf.lot_size_acres, kf.footprint_ratio
-        FROM @parcel_known_features_model kf
+        FROM @ref_model(@parcel_known_features_model) kf
         WHERE kf.land_development_category = u.land_development_category
           AND kf.lot_size_acres BETWEEN
               u.lot_size_acres - 3 * COALESCE(ps.s_ls, u.lot_size_acres + 100)
