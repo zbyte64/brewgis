@@ -7,7 +7,7 @@ MODEL (
   audits (
     not_null(columns := (apn)),
     unique_values(columns := (apn,)),
-    assert_parcel_du_estimation_row_count,
+    assert_parcel_du_estimation_row_count(parcel_table := 'brewgis.assessor.parcel_dasymetric_weights'),
     assert_du_assessor_units_direct,
     assert_du_sfr_equals_one,
     assert_du_mf_with_sqft,

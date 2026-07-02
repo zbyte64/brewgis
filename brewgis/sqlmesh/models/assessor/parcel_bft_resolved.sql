@@ -2,7 +2,7 @@ MODEL (
   name brewgis.assessor.parcel_bft_resolved,
   kind VIEW,
   audits (
-    assert_parcel_bft_classification_row_count,
+    assert_parcel_bft_classification_row_count(parcel_table := 'brewgis.assessor.sacog_assessor_parcels'),
     assert_bft_tier_priority,
     assert_bft_landuse_A2_falls_through,
     assert_bft_landuse_AT_to_mf

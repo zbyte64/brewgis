@@ -3,10 +3,11 @@ AUDIT (
   dialect postgres
 );
 
--- Verify parcel_du_estimation has a reasonable number of rows
--- for Sacramento County (~510K parcels). Outside this range indicates
--- duplicates, load failures, or upstream data issues.
-WITH actual AS (SELECT COUNT(*) AS cnt FROM @this_model)
-SELECT cnt AS actual_rows
-FROM actual
-WHERE cnt < 500000 OR cnt > 520000;
+-- Verify parcel_du_estimation row count matches its upstream parcel table.
+-- The model reads every row from parcel_dasymetric_weights via the parcel_input
+-- CTE, so output count should equal that table.
+WITH upstream AS (SELECT COUNT(*) AS cnt FROM @parcel_table),
+actual AS (SELECT COUNT(*) AS cnt FROM @this_model)
+SELECT actual.cnt AS actual_rows
+FROM actual, upstream
+WHERE actual.cnt != upstream.cnt;

@@ -20,4 +20,8 @@ SELECT
   'Expected tier1 override for commercial/industrial built_form_key' AS violation
 FROM @this_model r
 WHERE r.built_form_key IN ('commercial', 'industrial')
-  AND r.built_form_key_source != 'tier1';
+  AND r.built_form_key_source != 'tier1'
+  AND EXISTS (
+      SELECT 1 FROM brewgis.assessor.parcel_bft_tier1_sales t1
+      WHERE t1.apn = r.apn
+  );

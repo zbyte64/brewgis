@@ -274,6 +274,7 @@ def config_factory(**variables):
                 ),
             ),
         },
+        disable_anonymized_analytics=True,
         model_defaults=ModelDefaultsConfig(
             dialect="postgres",
             start="2024-01-01",

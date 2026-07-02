@@ -720,7 +720,7 @@ class Command(BaseCommand):
                 or not self._table_has_rows("public", "osm_intersection_density")
             ):
                 osm_result = run_osm_pipeline(
-                    parcel_table="sacog_comparison_parcels",
+                    parcel_table="sacog_comparison_parcels",  # why is this different? investigate swapping
                 )
                 self.stdout.write(
                     f"  OSM intersection density loaded: {osm_result.get('row_count', 0)} rows"
@@ -805,10 +805,10 @@ class Command(BaseCommand):
                     "+brewgis.comparison.sacog_reference_totals",
                     "+brewgis.comparison.sacog_parcel_shim",
                     "+brewgis.staging.census_2020_block",
-                    "+brewgis.assessor.parcel_partition_stats",
                 ],
                 variables=plan_vars,
             )
+            self.stdout.write("\nCheckpoint complete\n")
 
         # --- Index audit & environment invalidation ---
         if force_data_reload:
