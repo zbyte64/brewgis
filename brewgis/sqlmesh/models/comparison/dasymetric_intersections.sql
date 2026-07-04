@@ -2,36 +2,33 @@ MODEL (
   name brewgis.comparison.dasymetric_intersections,
   kind FULL,
   audits (
-    not_null(columns := (parcel_id, apn))
+    not_null(columns := (parcel_id, apn)),
+    assert_dasymetric_apn_match_rate
   )
 );
 
 -- SACOG Comparison Dasymetric Intersections — pre-computed spatial crosswalk.
 --
 -- Materializes the parcel_id ↔ apn mapping with pre-computed intersection area.
--- Uses CROSS JOIN LATERAL with GIST index-driven && bbox pre-filter and LIMIT 1
--- instead of a full spatial join + DISTINCT ON.  Each of the 125K sacog_parcel_shim
--- rows drives a single index lookup on sacog_assessor_parcels instead of building
--- a hash table over 508K rows.
+-- Uses a full spatial LEFT JOIN with GIST index-driven && bbox pre-filter.
+-- Removed the CROSS JOIN LATERAL + LIMIT 1 approach because it left ~20%
+-- of assessor APNs unmatched, silently losing ~101K DU from the allocation.
+-- The full join enables every intersecting APN-parcel pair to contribute,
+-- which is the basis for correct proportional dasymetric allocation.
 
-WITH ranked AS (
+WITH intersections AS (
     SELECT
         sp.parcel_id,
         ap.apn,
         ST_Area(ST_Intersection(ST_Envelope(sp.geometry), ST_Envelope(ap.geometry))) AS intersect_area_sqft
     FROM brewgis.comparison.sacog_parcel_shim sp
-    CROSS JOIN LATERAL (
-        SELECT ap.apn, ap.geometry
-        FROM brewgis.assessor.sacog_assessor_parcels ap
-        WHERE ap.geometry && sp.geometry
-          AND ST_Intersects(sp.geometry, ap.geometry)
-        ORDER BY ST_Area(ST_Intersection(ST_Envelope(sp.geometry), ST_Envelope(ap.geometry))) DESC
-        LIMIT 1
-    ) ap
+    JOIN brewgis.assessor.sacog_assessor_parcels ap
+        ON ap.geometry && sp.geometry
+        AND ST_Intersects(sp.geometry, ap.geometry)
 )
-SELECT r.parcel_id, r.apn, r.intersect_area_sqft
-FROM ranked r
-JOIN brewgis.assessor.parcel_dasymetric_weights dw ON r.apn = dw.apn;
+SELECT i.parcel_id, i.apn, i.intersect_area_sqft
+FROM intersections i
+JOIN brewgis.assessor.parcel_dasymetric_weights dw ON i.apn = dw.apn;
 
 -- post_statements
   CREATE INDEX IF NOT EXISTS idx_dasymetric_intersections_parcel_id_@snapshot_hash

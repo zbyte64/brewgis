@@ -7,7 +7,8 @@ MODEL (
     assert_census_block_coverage,
     assert_employment_conserved,
     assert_commercial_sectors_use_commercial_sqft,
-    assert_industrial_sectors_use_industrial_sqft
+    assert_industrial_sectors_use_industrial_sqft,
+    assert_bldg_area_employment_targeted
   )
 );
 
@@ -238,6 +239,8 @@ emp_intersections AS (
     SELECT
         p.parcel_id,
         w.geoid,
+        p.built_form_key,
+        p.land_development_category,
         p.commercial_building_sqft,
         p.industrial_building_sqft,
         p.other_building_sqft,
@@ -271,21 +274,31 @@ emp_intersections AS (
         COALESCE(p.commercial_building_sqft, 0)
             + COALESCE(p.industrial_building_sqft, 0)
             + COALESCE(p.other_building_sqft, 0) AS total_emp_weight,
-        -- Blended employment weight: building-sqft-based primary weight
-        -- with dasymetric minimum floor so every intersecting parcel attracts
-        -- at least proportional share.  min_emp_floor = 1.0 default.
-        GREATEST(
-            COALESCE(p.commercial_building_sqft, 0),
-            COALESCE(p.emp_dasym_weight, 0) * 0.1
-        ) AS commercial_alloc_weight,
-        GREATEST(
-            COALESCE(p.industrial_building_sqft, 0),
-            COALESCE(p.emp_dasym_weight, 0) * 0.1
-        ) AS industrial_alloc_weight,
-        GREATEST(
-            COALESCE(p.other_building_sqft, 0),
-            COALESCE(p.emp_dasym_weight, 0) * 0.1
-        ) AS other_alloc_weight,
+        -- Targeted employment weight: use building sqft when available;
+        -- only fall back to dasymetric for parcels with compatible built_form.
+        -- This prevents residential parcels from attracting commercial employment
+        -- just because they have a non-zero dasymetric weight.
+        CASE
+            WHEN COALESCE(p.commercial_building_sqft, 0) > 0
+                THEN p.commercial_building_sqft
+            WHEN p.built_form_key IN ('commercial', 'mixed_use')
+                THEN COALESCE(p.emp_dasym_weight, 0) * 0.1
+            ELSE 0.0
+        END AS commercial_alloc_weight,
+        CASE
+            WHEN COALESCE(p.industrial_building_sqft, 0) > 0
+                THEN p.industrial_building_sqft
+            WHEN p.built_form_key = 'industrial'
+                THEN COALESCE(p.emp_dasym_weight, 0) * 0.1
+            ELSE 0.0
+        END AS industrial_alloc_weight,
+        CASE
+            WHEN COALESCE(p.other_building_sqft, 0) > 0
+                THEN p.other_building_sqft
+            WHEN p.built_form_key = 'civic'
+                THEN COALESCE(p.emp_dasym_weight, 0) * 0.1
+            ELSE 0.0
+        END AS other_alloc_weight,
         p.area_gross
     FROM demographics_data p
     JOIN brewgis.staging.wac_block_projected w ON ST_Intersects(p.geometry, w.geometry)
@@ -726,99 +739,99 @@ building_areas AS (
         COALESCE(
             bldg_area_detsf_sl,
             CASE WHEN du_subtype = 'detsf_sl' THEN residential_building_sqft END,
-            du_detsf_sl_v * COALESCE(sqft_per_du, 1200.0) * 0.8
+            du_detsf_sl_v * COALESCE(sqft_per_du, 2200.0) * 0.8
         ) AS bldg_area_detsf_sl_v,
         COALESCE(
             bldg_area_detsf_ll,
             CASE WHEN du_subtype = 'detsf_ll' THEN residential_building_sqft END,
-            du_detsf_ll_v * COALESCE(sqft_per_du, 1200.0) * 1.2
+            du_detsf_ll_v * COALESCE(sqft_per_du, 2200.0) * 1.2
         ) AS bldg_area_detsf_ll_v,
         COALESCE(
             bldg_area_attsf,
             CASE WHEN du_subtype = 'attsf' THEN residential_building_sqft END,
-            du_attsf_v * COALESCE(sqft_per_du, 1200.0) * 0.9
+            du_attsf_v * COALESCE(sqft_per_du, 2200.0) * 0.9
         ) AS bldg_area_attsf_v,
         COALESCE(
             bldg_area_mf,
             CASE WHEN du_subtype IN ('mf2to4', 'mf5p') THEN residential_building_sqft END,
-            du_mf_v * COALESCE(sqft_per_du, 1200.0) * 0.7
+            du_mf_v * COALESCE(sqft_per_du, 2200.0) * 0.7
         ) AS bldg_area_mf_v,
         COALESCE(
             bldg_area_retail_services,
             CASE WHEN commercial_building_sqft > 0
                 THEN commercial_building_sqft * COALESCE(emp_retail_services_v, 0) / NULLIF(COALESCE(emp_ret_v, 0), 0)
             END,
-            emp_retail_services_v * COALESCE(sqft_per_emp, 300.0)
+            emp_retail_services_v * COALESCE(sqft_per_emp, 400.0)
         ) AS bldg_area_retail_services_v,
         COALESCE(
             bldg_area_restaurant,
             CASE WHEN commercial_building_sqft > 0
                 THEN commercial_building_sqft * COALESCE(emp_restaurant_v, 0) / NULLIF(COALESCE(emp_ret_v, 0), 0)
             END,
-            emp_restaurant_v * COALESCE(sqft_per_emp, 300.0)
+            emp_restaurant_v * COALESCE(sqft_per_emp, 400.0)
         ) AS bldg_area_restaurant_v,
         COALESCE(
             bldg_area_accommodation,
             CASE WHEN commercial_building_sqft > 0
                 THEN commercial_building_sqft * COALESCE(emp_accommodation_v, 0) / NULLIF(COALESCE(emp_ret_v, 0), 0)
             END,
-            emp_accommodation_v * COALESCE(sqft_per_emp, 300.0)
+            emp_accommodation_v * COALESCE(sqft_per_emp, 400.0)
         ) AS bldg_area_accommodation_v,
         COALESCE(
             bldg_area_arts_entertainment,
             CASE WHEN commercial_building_sqft > 0
                 THEN commercial_building_sqft * COALESCE(emp_arts_entertainment_v, 0) / NULLIF(COALESCE(emp_ret_v, 0), 0)
             END,
-            emp_arts_entertainment_v * COALESCE(sqft_per_emp, 300.0)
+            emp_arts_entertainment_v * COALESCE(sqft_per_emp, 400.0)
         ) AS bldg_area_arts_entertainment_v,
         COALESCE(
             bldg_area_other_services,
             CASE WHEN commercial_building_sqft > 0
                 THEN commercial_building_sqft * COALESCE(emp_other_services_v, 0) / NULLIF(COALESCE(emp_ret_v, 0), 0)
             END,
-            emp_other_services_v * COALESCE(sqft_per_emp, 300.0)
+            emp_other_services_v * COALESCE(sqft_per_emp, 400.0)
         ) AS bldg_area_other_services_v,
         COALESCE(
             bldg_area_office_services,
             CASE WHEN commercial_building_sqft > 0
                 THEN commercial_building_sqft * COALESCE(emp_office_services_v, 0) / NULLIF(COALESCE(emp_off_v, 0), 0)
             END,
-            emp_office_services_v * COALESCE(sqft_per_emp, 300.0)
+            emp_office_services_v * COALESCE(sqft_per_emp, 400.0)
         ) AS bldg_area_office_services_v,
         COALESCE(
             bldg_area_public_admin,
             CASE WHEN other_building_sqft > 0
                 THEN other_building_sqft * COALESCE(emp_public_admin_v, 0) / NULLIF(COALESCE(emp_pub_v, 0), 0)
             END,
-            emp_public_admin_v * COALESCE(sqft_per_emp, 300.0)
+            emp_public_admin_v * COALESCE(sqft_per_emp, 400.0)
         ) AS bldg_area_public_admin_v,
         COALESCE(
             bldg_area_education,
             CASE WHEN other_building_sqft > 0
                 THEN other_building_sqft * COALESCE(emp_education_v, 0) / NULLIF(COALESCE(emp_pub_v, 0), 0)
             END,
-            emp_education_v * COALESCE(sqft_per_emp, 300.0)
+            emp_education_v * COALESCE(sqft_per_emp, 400.0)
         ) AS bldg_area_education_v,
         COALESCE(
             bldg_area_medical_services,
             CASE WHEN commercial_building_sqft > 0
                 THEN commercial_building_sqft * COALESCE(emp_medical_services_v, 0) / NULLIF(COALESCE(emp_off_v, 0), 0)
             END,
-            emp_medical_services_v * COALESCE(sqft_per_emp, 300.0)
+            emp_medical_services_v * COALESCE(sqft_per_emp, 400.0)
         ) AS bldg_area_medical_services_v,
         COALESCE(
             bldg_area_transport_warehousing,
             CASE WHEN industrial_building_sqft > 0
                 THEN industrial_building_sqft * COALESCE(emp_transport_warehousing_v, 0) / NULLIF(COALESCE(emp_ind_v, 0), 0)
             END,
-            emp_transport_warehousing_v * COALESCE(sqft_per_emp, 300.0)
+            emp_transport_warehousing_v * COALESCE(sqft_per_emp, 400.0)
         ) AS bldg_area_transport_warehousing_v,
         COALESCE(
             bldg_area_wholesale,
             CASE WHEN industrial_building_sqft > 0
                 THEN industrial_building_sqft * COALESCE(emp_wholesale_v, 0) / NULLIF(COALESCE(emp_ind_v, 0), 0)
             END,
-            emp_wholesale_v * COALESCE(sqft_per_emp, 300.0)
+            emp_wholesale_v * COALESCE(sqft_per_emp, 400.0)
         ) AS bldg_area_wholesale_v
     FROM demographics_attr
 ),

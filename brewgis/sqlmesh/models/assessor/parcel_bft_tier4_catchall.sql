@@ -2,7 +2,8 @@ MODEL (
   name brewgis.assessor.parcel_bft_tier4_catchall,
   kind VIEW,
   audits (
-    assert_bft_tier4_area_heuristic
+    assert_bft_tier4_area_heuristic,
+    assert_bft_tier4_lot_bound_consistent
   )
 );
 
@@ -55,8 +56,8 @@ SELECT
                 WHEN u.zone LIKE '%A%' THEN 'agricultural'
                 ELSE 'detsf_ll'
             END
-        WHEN u.lot_size_acres > 0.4 THEN 'detsf_ll'
-        WHEN u.lot_size_acres > 0.15 THEN 'detsf_sl'
+        WHEN u.lot_size_acres > 0.15 THEN 'detsf_ll'
+        WHEN u.lot_size_acres > 0.01 THEN 'detsf_sl'
         ELSE
             CASE (u.apn::bigint % 2)
                 WHEN 0 THEN 'mf2to4'

@@ -1,6 +1,9 @@
 MODEL (
   name brewgis.assessor.parcel_bft_tier2_footprints,
-  kind VIEW
+  kind VIEW,
+  audits (
+    assert_bft_tier2_sfr_lot_bound
+  )
 );
 
 -- Tier 2: from building footprints. Returns one row per parcel successfully
@@ -44,7 +47,11 @@ SELECT DISTINCT ON (ap.apn)
         WHEN (ap.landuse_prefix LIKE 'A2' OR ap.landuse_prefix IN ('AT')) THEN 'mf2to4'
         -- Original tier2 logic for non-A2 parcels
         WHEN bs.residential_building_sqft > 0
-             AND COALESCE(bs.max_levels, 1) < 3 THEN 'detsf_sl'
+             AND COALESCE(bs.max_levels, 1) < 3
+             AND COALESCE(ap.lot_size_acres, 0) < 0.15 THEN 'detsf_sl'
+        WHEN bs.residential_building_sqft > 0
+             AND COALESCE(bs.max_levels, 1) < 3
+             AND COALESCE(ap.lot_size_acres, 0) >= 0.15 THEN 'detsf_ll'
         WHEN bs.residential_building_sqft > 0
              AND COALESCE(bs.max_levels, 1) >= 3 THEN 'mf5p'
         WHEN bs.commercial_building_sqft > 0 THEN 'commercial'
@@ -63,7 +70,11 @@ WHERE bs.total_footprint_sqft > 0
              AND bs.residential_building_sqft > 0 THEN 'mf2to4'
         WHEN (ap.landuse_prefix LIKE 'A2' OR ap.landuse_prefix IN ('AT')) THEN 'mf2to4'
         WHEN bs.residential_building_sqft > 0
-             AND COALESCE(bs.max_levels, 1) < 3 THEN 'detsf_sl'
+             AND COALESCE(bs.max_levels, 1) < 3
+             AND COALESCE(ap.lot_size_acres, 0) < 0.15 THEN 'detsf_sl'
+        WHEN bs.residential_building_sqft > 0
+             AND COALESCE(bs.max_levels, 1) < 3
+             AND COALESCE(ap.lot_size_acres, 0) >= 0.15 THEN 'detsf_ll'
         WHEN bs.residential_building_sqft > 0
              AND COALESCE(bs.max_levels, 1) >= 3 THEN 'mf5p'
         WHEN bs.commercial_building_sqft > 0 THEN 'commercial'

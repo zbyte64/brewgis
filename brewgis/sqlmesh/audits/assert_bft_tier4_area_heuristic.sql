@@ -14,8 +14,8 @@ SELECT
     WHEN ap.lot_size_acres > 10.0 THEN 'agricultural'
     WHEN ap.lot_size_acres > 3.0 AND ap.zone LIKE '%A%' THEN 'agricultural'
     WHEN ap.lot_size_acres > 3.0 AND ap.zone NOT LIKE '%A%' THEN 'detsf_ll'
-    WHEN ap.lot_size_acres > 0.4 THEN 'detsf_ll'
-    WHEN ap.lot_size_acres > 0.15 THEN 'detsf_sl'
+    WHEN ap.lot_size_acres > 0.15 THEN 'detsf_ll'
+    WHEN ap.lot_size_acres > 0.01 THEN 'detsf_sl'
   END AS expected_bft
 FROM @this_model t4
 JOIN brewgis.assessor.sacog_assessor_parcels ap ON t4.apn = ap.apn
