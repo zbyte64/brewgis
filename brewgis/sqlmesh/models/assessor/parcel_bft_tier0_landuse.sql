@@ -35,7 +35,8 @@ SELECT
     CASE
         WHEN ap.landuse_prefix LIKE 'A1' THEN
             CASE
-                WHEN ap.lot_size_acres < 0.15 THEN 'detsf_sl'
+                WHEN 1.0 / (1.0 + EXP(-0.04 * (COALESCE(id.intersection_density, 225.0) - 225.0))) > 0.5
+                    THEN 'detsf_sl'
                 ELSE 'detsf_ll'
             END
         -- A2% (multi-family): no tier0 classification. Falls through to tier2
@@ -60,11 +61,13 @@ SELECT
         ELSE NULL
     END AS built_form_key
 FROM assessor_parcels ap
+LEFT JOIN brewgis.assessor.overture_intersection_density id ON ap.apn = id.apn
 WHERE ap.landuse IS NOT NULL
   AND CASE
         WHEN ap.landuse_prefix LIKE 'A1' THEN
             CASE
-                WHEN ap.lot_size_acres < 0.15 THEN 'detsf_sl'
+                WHEN 1.0 / (1.0 + EXP(-0.04 * (COALESCE(id.intersection_density, 225.0) - 225.0))) > 0.5
+                    THEN 'detsf_sl'
                 ELSE 'detsf_ll'
             END
         WHEN ap.landuse_prefix LIKE 'A2' THEN NULL

@@ -13,7 +13,7 @@ Run with: sqlmesh test
 
 
 def test_landuse_A1_small_lot_returns_detsf_sl(context):
-    """A1% + lot<0.15 → detsf_sl"""
+    """A1% + intersection_density>225 → detsf_sl"""
     result = context.evaluate(
         "brewgis.assessor.parcel_bft_classification",
         start="2024-01-01",
@@ -27,7 +27,14 @@ def test_landuse_A1_small_lot_returns_detsf_sl(context):
                     "zone": "R-1",
                     "geometry": "POLYGON((-121.5 38.5,-121.49 38.5,-121.49 38.51,-121.5 38.51,-121.5 38.5))",
                 }
-            ]
+            ],
+            "brewgis.assessor.overture_intersection_density": [
+                {
+                    "apn": "TEST_A1_SL",
+                    "intersection_density": 300.0,
+                    "geometry": "POLYGON((-121.5 38.5,-121.49 38.5,-121.49 38.51,-121.5 38.51,-121.5 38.5))",
+                }
+            ],
         },
     )
     df = result[0].df
@@ -37,7 +44,7 @@ def test_landuse_A1_small_lot_returns_detsf_sl(context):
 
 
 def test_landuse_A1_large_lot_returns_detsf_ll(context):
-    """A1% + lot≥0.15 → detsf_ll"""
+    """A1% + intersection_density<225 → detsf_ll"""
     result = context.evaluate(
         "brewgis.assessor.parcel_bft_classification",
         start="2024-01-01",
@@ -51,7 +58,14 @@ def test_landuse_A1_large_lot_returns_detsf_ll(context):
                     "zone": "R-1",
                     "geometry": "POLYGON((-121.5 38.5,-121.49 38.5,-121.49 38.51,-121.5 38.51,-121.5 38.5))",
                 }
-            ]
+            ],
+            "brewgis.assessor.overture_intersection_density": [
+                {
+                    "apn": "TEST_A1_LL",
+                    "intersection_density": 100.0,
+                    "geometry": "POLYGON((-121.5 38.5,-121.49 38.5,-121.49 38.51,-121.5 38.51,-121.5 38.5))",
+                }
+            ],
         },
     )
     df = result[0].df
