@@ -875,6 +875,14 @@ class Command(BaseCommand):
             if use_assessor_geometry
             else None
         )
+        building_footprints_table = (
+            context.table_name(
+                "brewgis.assessor.parcel_building_footprints",
+                "sacog_comparison",
+            )
+            if use_assessor_geometry
+            else None
+        )
         _generate_report_markdown(
             ref_totals,
             brew_totals,
@@ -895,6 +903,7 @@ class Command(BaseCommand):
                 dasymetric_table=dasymetric_table if use_assessor_geometry else None,
                 authoritative_table=authoritative_table,
                 assessor_parcels_table=assessor_parcels_table,
+                building_footprints_table=building_footprints_table,
                 reconciled_table=reconciled_table,
                 overture_roads=overture_roads,
             ),
@@ -1001,6 +1010,7 @@ def _collect_diagnostics(
     dasymetric_table: str | None = None,
     authoritative_table: str | None = None,
     assessor_parcels_table: str | None = None,
+    building_footprints_table: str | None = None,
     reconciled_table: str | None = None,
     overture_roads: bool = False,
 ) -> dict:
@@ -1227,77 +1237,66 @@ def _collect_diagnostics(
                 pass
 
             # Building count distribution
-            try:
-                rows = conn.execute(
-                    text(f"""
-                        SELECT
-                            CASE
-                                WHEN residential_building_count = 0 THEN '0'
-                                WHEN residential_building_count = 1 THEN '1'
-                                WHEN residential_building_count BETWEEN 2 AND 5 THEN '2-5'
-                                WHEN residential_building_count BETWEEN 6 AND 10 THEN '6-10'
-                                WHEN residential_building_count BETWEEN 11 AND 50 THEN '11-50'
-                                ELSE '50+'
-                            END AS bucket,
-                            COUNT(*) AS cnt
-                        FROM {authoritative_table}
-                        GROUP BY bucket
-                        ORDER BY MIN(residential_building_count)
-                    """)
-                ).fetchall()
-                diagnostics["authoritative"]["building_count_breakdown"] = {
-                    str(row[0]): row[1] for row in rows
-                }
-            except Exception:
-                pass
+            if building_footprints_table:
+                try:
+                    rows = conn.execute(
+                        text(f"""
+                            SELECT
+                                CASE
+                                    WHEN residential_building_count = 0 THEN '0'
+                                    WHEN residential_building_count = 1 THEN '1'
+                                    WHEN residential_building_count BETWEEN 2 AND 5 THEN '2-5'
+                                    WHEN residential_building_count BETWEEN 6 AND 10 THEN '6-10'
+                                    WHEN residential_building_count BETWEEN 11 AND 50 THEN '11-50'
+                                    ELSE '50+'
+                                END AS bucket,
+                                COUNT(*) AS cnt
+                            FROM {building_footprints_table}
+                            GROUP BY bucket
+                            ORDER BY MIN(residential_building_count)
+                        """)
+                    ).fetchall()
+                    diagnostics["authoritative"]["building_count_breakdown"] = {
+                        str(row[0]): row[1] for row in rows
+                    }
+                except Exception:
+                    pass
 
-            # Straddling buildings — buildings intersecting multiple parcels
-            try:
-                row = conn.execute(
-                    text("""
-                        SELECT COUNT(*) FROM (
-                            SELECT bc.apn
-                            FROM brewgis.staging.buildings_combined bc
-                            JOIN brewgis.assessor.sacog_assessor_parcels sap
-                                ON ST_Intersects(
-                                    ST_SetSRID(bc.geometry, 4326),
-                                    sap.geometry
-                                )
-                            GROUP BY bc.geometry::text
-                            HAVING COUNT(DISTINCT sap.apn) > 1
-                        ) sub
-                    """)
-                ).scalar()
-                diagnostics["authoritative"]["straddling_buildings"] = row or 0
-            except Exception:
-                pass
+            # Straddling buildings — same building footprint geometry on multiple APNs
+            if building_footprints_table:
+                try:
+                    row = conn.execute(
+                        text(f"""
+                            SELECT COUNT(*) FROM (
+                                SELECT geometry::text
+                                FROM {building_footprints_table}
+                                WHERE total_footprint_sqft > 0
+                                GROUP BY geometry::text
+                                HAVING COUNT(DISTINCT apn) > 1
+                            ) sub
+                        """)
+                    ).scalar()
+                    diagnostics["authoritative"]["straddling_buildings"] = row or 0
+                except Exception:
+                    pass
 
-            try:
-                row = conn.execute(
-                    text("""
-                        SELECT COUNT(DISTINCT sap.apn) FROM (
-                            SELECT bc.geometry::text AS geom_key
-                            FROM brewgis.staging.buildings_combined bc
-                            JOIN brewgis.assessor.sacog_assessor_parcels sap
-                                ON ST_Intersects(
-                                    ST_SetSRID(bc.geometry, 4326),
-                                    sap.geometry
-                                )
-                            GROUP BY bc.geometry::text
-                            HAVING COUNT(DISTINCT sap.apn) > 1
-                        ) sub
-                        JOIN brewgis.staging.buildings_combined bc
-                            ON sub.geom_key = bc.geometry::text
-                        JOIN brewgis.assessor.sacog_assessor_parcels sap
-                            ON ST_Intersects(
-                                ST_SetSRID(bc.geometry, 4326),
-                                sap.geometry
-                            )
-                    """)
-                ).scalar()
-                diagnostics["authoritative"]["parcels_with_straddling"] = row or 0
-            except Exception:
-                pass
+                try:
+                    row = conn.execute(
+                        text(f"""
+                            SELECT COUNT(DISTINCT bf.apn) FROM (
+                                SELECT geometry::text AS geom_key
+                                FROM {building_footprints_table}
+                                WHERE total_footprint_sqft > 0
+                                GROUP BY geometry::text
+                                HAVING COUNT(DISTINCT apn) > 1
+                            ) sub
+                            JOIN {building_footprints_table} bf
+                                ON sub.geom_key = bf.geometry::text
+                        """)
+                    ).scalar()
+                    diagnostics["authoritative"]["parcels_with_straddling"] = row or 0
+                except Exception:
+                    pass
 
             # Coverage by land development category
             try:
