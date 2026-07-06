@@ -141,7 +141,7 @@ calibration AS (
                     ELSE csa.region_avg_sqft_per_unit
                 END,
                 csa.region_avg_sqft_per_unit,
-                1259.0  -- global default for mf2to4 (from SACOG data)
+                CASE WHEN p.du_subtype = 'mf2to4' THEN 1259.0 ELSE 950.0 END  -- global defaults
             ),
             @min_sqft_per_unit
         ) AS region_avg_sqft_per_unit,

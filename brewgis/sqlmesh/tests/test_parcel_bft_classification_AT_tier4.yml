@@ -1,3 +1,175 @@
+test_AT_tier4_mf5p_with_sqft:
+  model: brewgis.assessor.parcel_bft_tier4_catchall
+  gateway: postgis
+  inputs:
+    brewgis.assessor.sacog_assessor_parcels:
+      rows:
+        - apn: "99900000000010"
+          lot_size_acres: 1.0
+          landuse: "ATB00A"
+          zone: "R-4"
+          geometry: "POLYGON((-121.5 38.5,-121.49 38.5,-121.49 38.51,-121.5 38.51,-121.5 38.5))"
+          land_development_category: "urban"
+      columns:
+        geometry: GEOMETRY
+        apn: TEXT
+        lot_size_acres: DOUBLE
+        landuse: TEXT
+        zone: TEXT
+        land_development_category: TEXT
+    brewgis.assessor.parcel_building_sqft_by_type:
+      rows:
+        - apn: "99900000000010"
+          total_footprint_sqft: 3000.0
+          building_count: 1
+          footprint_ratio: 0.05
+          lot_size_acres: 1.0
+          residential_building_sqft: 3000.0
+          commercial_building_sqft: 0.0
+          industrial_building_sqft: 0.0
+          other_building_sqft: 0.0
+          max_levels: 2
+          land_development_category: "urban"
+          geometry: "POLYGON((-121.5 38.5,-121.49 38.5,-121.49 38.51,-121.5 38.51,-121.5 38.5))"
+      columns:
+        apn: TEXT
+        total_footprint_sqft: DOUBLE
+        building_count: INTEGER
+        footprint_ratio: DOUBLE
+        lot_size_acres: DOUBLE
+        residential_building_sqft: DOUBLE
+        commercial_building_sqft: DOUBLE
+        industrial_building_sqft: DOUBLE
+        other_building_sqft: DOUBLE
+        residential_building_count: INTEGER
+        non_residential_building_count: INTEGER
+        max_levels: INTEGER
+        land_development_category: TEXT
+        geometry: GEOMETRY
+    brewgis.assessor.overture_intersection_density:
+      rows: []
+      columns:
+        apn: TEXT
+        intersection_density: DOUBLE
+    brewgis.assessor.parcel_bft_tier0_landuse:
+      rows: []
+      columns:
+        apn: TEXT
+        built_form_key: TEXT
+    brewgis.assessor.parcel_bft_tier1_sales:
+      rows: []
+      columns:
+        apn: TEXT
+        built_form_key: TEXT
+    brewgis.assessor.parcel_bft_tier2_footprints:
+      rows: []
+      columns:
+        apn: TEXT
+        built_form_key: TEXT
+    brewgis.assessor.parcel_bft_tier3_knn:
+      rows: []
+      columns:
+        apn: TEXT
+        built_form_key: TEXT
+    brewgis.assessor.parcel_bft_tier3b_agricultural:
+      rows: []
+      columns:
+        apn: TEXT
+        built_form_key: TEXT
+  outputs:
+    query:
+      partial: true
+      rows:
+        - apn: "99900000000010"
+          built_form_key: "mf5p"
+
+
+test_AT_tier4_mf2to4_low_sqft:
+  model: brewgis.assessor.parcel_bft_tier4_catchall
+  gateway: postgis
+  inputs:
+    brewgis.assessor.sacog_assessor_parcels:
+      rows:
+        - apn: "99900000000011"
+          lot_size_acres: 1.0
+          landuse: "ATB00A"
+          zone: "R-4"
+          geometry: "POLYGON((-121.5 38.5,-121.49 38.5,-121.49 38.51,-121.5 38.51,-121.5 38.5))"
+          land_development_category: "urban"
+      columns:
+        geometry: GEOMETRY
+        apn: TEXT
+        lot_size_acres: DOUBLE
+        landuse: TEXT
+        zone: TEXT
+        land_development_category: TEXT
+    brewgis.assessor.parcel_building_sqft_by_type:
+      rows:
+        - apn: "99900000000011"
+          total_footprint_sqft: 1500.0
+          building_count: 1
+          footprint_ratio: 0.03
+          lot_size_acres: 1.0
+          residential_building_sqft: 1500.0
+          commercial_building_sqft: 0.0
+          industrial_building_sqft: 0.0
+          other_building_sqft: 0.0
+          max_levels: 2
+          land_development_category: "urban"
+          geometry: "POLYGON((-121.5 38.5,-121.49 38.5,-121.49 38.51,-121.5 38.51,-121.5 38.5))"
+      columns:
+        apn: TEXT
+        total_footprint_sqft: DOUBLE
+        building_count: INTEGER
+        footprint_ratio: DOUBLE
+        lot_size_acres: DOUBLE
+        residential_building_sqft: DOUBLE
+        commercial_building_sqft: DOUBLE
+        industrial_building_sqft: DOUBLE
+        other_building_sqft: DOUBLE
+        residential_building_count: INTEGER
+        non_residential_building_count: INTEGER
+        max_levels: INTEGER
+        land_development_category: TEXT
+        geometry: GEOMETRY
+    brewgis.assessor.overture_intersection_density:
+      rows: []
+      columns:
+        apn: TEXT
+        intersection_density: DOUBLE
+    brewgis.assessor.parcel_bft_tier0_landuse:
+      rows: []
+      columns:
+        apn: TEXT
+        built_form_key: TEXT
+    brewgis.assessor.parcel_bft_tier1_sales:
+      rows: []
+      columns:
+        apn: TEXT
+        built_form_key: TEXT
+    brewgis.assessor.parcel_bft_tier2_footprints:
+      rows: []
+      columns:
+        apn: TEXT
+        built_form_key: TEXT
+    brewgis.assessor.parcel_bft_tier3_knn:
+      rows: []
+      columns:
+        apn: TEXT
+        built_form_key: TEXT
+    brewgis.assessor.parcel_bft_tier3b_agricultural:
+      rows: []
+      columns:
+        apn: TEXT
+        built_form_key: TEXT
+  outputs:
+    query:
+      partial: true
+      rows:
+        - apn: "99900000000011"
+          built_form_key: "mf2to4"
+
+
 test_AT_tiny_lot_no_buildings_tier4_attsf:
   model: brewgis.assessor.parcel_bft_tier4_catchall
   gateway: postgis

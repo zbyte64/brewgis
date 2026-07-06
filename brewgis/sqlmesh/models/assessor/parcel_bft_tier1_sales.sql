@@ -33,7 +33,12 @@ classifications AS (
                 AND COALESCE(sd.sales_lot_size_acres, 0) < 0.15 THEN 'detsf_sl'
             WHEN (sd.property_type IN ('SFR', 'Single Family Residence') OR sd.property_type LIKE 'Single Family%')
                 AND COALESCE(sd.sales_lot_size_acres, 0) >= 0.15 THEN 'detsf_ll'
-            WHEN sd.property_type IN ('Condo', 'Condominium') THEN 'attsf'
+            WHEN sd.property_type LIKE '%Townhouse%' THEN 'attsf'
+            WHEN sd.property_type LIKE '%Row%House%' THEN 'attsf'
+            WHEN sd.property_type LIKE '%Attached%' THEN 'attsf'
+            WHEN sd.property_type LIKE '%PUD%' THEN 'attsf'
+            WHEN sd.property_type IN ('Condo', 'Condominium', 'Uncondo',
+                                       'Pud', 'Attch') THEN 'attsf'
             WHEN (sd.property_type IN ('MF', 'Multiple Family Residence') OR sd.property_type LIKE 'Multiple Family%')
                 AND COALESCE(sd.units, 0) BETWEEN 2 AND 4 THEN 'mf2to4'
             WHEN (sd.property_type IN ('MF', 'Multiple Family Residence') OR sd.property_type LIKE 'Multiple Family%')

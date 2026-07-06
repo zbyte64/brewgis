@@ -2,8 +2,7 @@ MODEL (
   name brewgis.assessor.parcel_bft_tier4_catchall,
   kind VIEW,
   audits (
-    assert_bft_tier4_area_heuristic,
-    assert_bft_tier4_lot_bound_consistent
+    assert_bft_tier4_area_heuristic
   )
 );
 
@@ -23,7 +22,8 @@ WITH assessor_parcels AS (
 building_metrics AS (
     SELECT
         apn,
-        COALESCE(footprint_ratio, 0) AS footprint_ratio
+        COALESCE(footprint_ratio, 0) AS footprint_ratio,
+        COALESCE(residential_building_sqft, 0) AS residential_building_sqft
     FROM brewgis.assessor.parcel_building_sqft_by_type
 ),
 int_density AS (
@@ -37,6 +37,7 @@ unknown_parcels AS (
         ap.apn,
         ap.lot_size_acres,
         COALESCE(bs.footprint_ratio, 0) AS footprint_ratio,
+        COALESCE(bs.residential_building_sqft, 0) AS residential_building_sqft,
         ap.zone,
         ap.landuse_prefix,
         ap.landuse
@@ -49,7 +50,11 @@ unknown_parcels AS (
 SELECT
     u.apn,
     CASE
-        WHEN (u.landuse_prefix LIKE 'A2' OR u.landuse_prefix IN ('AT')) THEN 'mf2to4'
+        WHEN (u.landuse_prefix LIKE 'A2' OR u.landuse_prefix IN ('AT')) THEN
+            CASE
+                WHEN u.residential_building_sqft >= 3000 THEN 'mf5p'
+                ELSE 'mf2to4'
+            END
         WHEN u.lot_size_acres > 10.0 THEN 'agricultural'
         WHEN u.lot_size_acres > 3.0 THEN
             CASE

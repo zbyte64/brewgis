@@ -210,6 +210,42 @@ def test_vacancy_rate_mf5p(context):
     )
 
 
+def test_mf5p_global_default_calibration(context):
+    """mf5p with no calibration data gets global default sqft_per_unit"""
+    result = context.evaluate(
+        "brewgis.assessor.parcel_du_estimation",
+        start="2024-01-01",
+        end="2024-01-01",
+        inputs={
+            "brewgis.assessor.parcel_dasymetric_weights": [
+                {
+                    "apn": "CAL-DEF-001",
+                    "built_form_key": "mf5p",
+                    "du_subtype": "mf5p",
+                    "is_residential": True,
+                    "lot_size_acres": 2.0,
+                    "land_development_category": "urban",
+                    "residential_building_sqft": 0.0,
+                    "intersection_density": 100.0,
+                    "actual_living_sqft": 0.0,
+                    "actual_building_sqft": 0.0,
+                }
+            ],
+            "public.sacog_assessor_sales_raw": [],
+            "brewgis.assessor.parcel_acs_intersections": [],
+        },
+    )
+    df = result[0].df
+    # Verify DU uses min_du=5 (tier4) since no sqft
+    assert df["du"].iloc[0] == 5.0, (
+        f"Expected du=5 (mf5p min_du), got {df['du'].iloc[0]}"
+    )
+    # Verify region_avg_sqft_per_unit is NOT NULL (has global default)
+    assert df["region_avg_sqft_per_unit"].notna().iloc[0], (
+        "Expected non-NULL region_avg_sqft_per_unit"
+    )
+
+
 def test_min_sqft_per_unit_clamps_low_calibration(context):
     """@min_sqft_per_unit=400 → county avg of 100 gets clamped, DU drops"""
     result = context.evaluate(

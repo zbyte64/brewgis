@@ -737,24 +737,24 @@ building_areas AS (
     SELECT
         *,
         COALESCE(
-            bldg_area_detsf_sl,
             CASE WHEN du_subtype = 'detsf_sl' THEN residential_building_sqft END,
-            du_detsf_sl_v * COALESCE(sqft_per_du, 2200.0) * 0.8
+            du_detsf_sl_v * COALESCE(sqft_per_du, 2200.0) * 0.8,
+            NULLIF(bldg_area_detsf_sl, 0)
         ) AS bldg_area_detsf_sl_v,
         COALESCE(
-            bldg_area_detsf_ll,
             CASE WHEN du_subtype = 'detsf_ll' THEN residential_building_sqft END,
-            du_detsf_ll_v * COALESCE(sqft_per_du, 2200.0) * 1.2
+            du_detsf_ll_v * COALESCE(sqft_per_du, 2200.0) * 1.2,
+            NULLIF(bldg_area_detsf_ll, 0)
         ) AS bldg_area_detsf_ll_v,
         COALESCE(
-            bldg_area_attsf,
             CASE WHEN du_subtype = 'attsf' THEN residential_building_sqft END,
-            du_attsf_v * COALESCE(sqft_per_du, 2200.0) * 0.9
+            du_attsf_v * COALESCE(sqft_per_du, 2200.0) * 0.9,
+            NULLIF(bldg_area_attsf, 0)
         ) AS bldg_area_attsf_v,
         COALESCE(
-            bldg_area_mf,
             CASE WHEN du_subtype IN ('mf2to4', 'mf5p') THEN residential_building_sqft END,
             du_mf_v * COALESCE(sqft_per_du, 2200.0) * 0.7,
+            NULLIF(bldg_area_mf, 0),
             CASE WHEN du_subtype IS NULL AND residential_building_sqft > 0 THEN residential_building_sqft END
         ) AS bldg_area_mf_v,
         COALESCE(
