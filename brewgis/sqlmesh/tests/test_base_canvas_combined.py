@@ -355,3 +355,202 @@ def test_no_commercial_sqft_no_retail_jobs(context):
     assert df["emp_manufacturing"].iloc[0] == 0.0, (
         f"Expected 0 manufacturing jobs (no industrial sqft), got {df['emp_manufacturing'].iloc[0]}"
     )
+
+
+def test_null_subtype_res_sqft_recovered_to_mf(context):
+    """Parcel with NULL du_subtype + residential_sqft → bldg_area_mf gets the sqft"""
+    result = context.evaluate(
+        "brewgis.base_canvas.base_canvas_combined",
+        start="2024-01-01",
+        end="2024-01-01",
+        inputs={
+            "brewgis.base_canvas.base_canvas_geometry": [
+                {
+                    "parcel_id": "NULLDU1",
+                    "geometry": "POLYGON((-121.5 38.49,-121.49 38.49,-121.49 38.50,-121.50 38.50,-121.5 38.49))",
+                    "local_geometry": "POLYGON((-121.5 38.49,-121.49 38.49,-121.49 38.50,-121.50 38.50,-121.5 38.49))",
+                    "county": "Sacramento",
+                    "land_development_category": "urban",
+                    "built_form_key": "commercial",
+                    "intersection_density": 8.0,
+                    "area_gross": 10.0,
+                    "area_gross_acres": 10.0,
+                    "area_parcel_acres": 9.5,
+                    "area_dev_condition_acres": 9.0,
+                    "area_row_acres": 1.0,
+                    "pop": 0.0,
+                    "hh": 0.0,
+                    "du": 0.0,
+                    "du_estimated": 1.0,
+                    "is_residential": True,
+                    "residential_building_sqft": 5000.0,
+                    "commercial_building_sqft": 0.0,
+                    "industrial_building_sqft": 0.0,
+                    "other_building_sqft": 0.0,
+                    "total_footprint_sqft": 5000.0,
+                    "building_count": 1,
+                    "footprint_ratio": 0.02,
+                    "max_levels": 1,
+                    "dasym_impervious_fraction": 0.3,
+                    "pop_dasym_weight": 1.0,
+                    "emp_dasym_weight": 0.0,
+                    "hh_size": 2.5,
+                    "vacancy_rate": 0.025,
+                    "du_pop_dasym_weight": 1.0,
+                    "hh_dasym_weight": 0.975,
+                    "hh_estimated": 0.975,
+                }
+            ],
+            "brewgis.staging.census_2020_block_projected": [
+                {
+                    "geoid": "060670011001001",
+                    "total_population": 0.0,
+                    "total_housing_units": 0.0,
+                    "geometry": "POLYGON((-121.51 38.49,-121.48 38.49,-121.48 38.52,-121.51 38.52,-121.51 38.49))",
+                }
+            ],
+            "brewgis.staging.wac_block_projected": [
+                {
+                    "geoid": "060670011001001",
+                    "emp": 0.0,
+                    "emp_retail_services": 0.0,
+                    "emp_restaurant": 0.0,
+                    "emp_accommodation": 0.0,
+                    "emp_arts_entertainment": 0.0,
+                    "emp_other_services": 0.0,
+                    "emp_office_services": 0.0,
+                    "emp_medical_services": 0.0,
+                    "emp_public_admin": 0.0,
+                    "emp_education": 0.0,
+                    "emp_manufacturing": 0.0,
+                    "emp_wholesale": 0.0,
+                    "emp_transport_warehousing": 0.0,
+                    "emp_utilities": 0.0,
+                    "emp_construction": 0.0,
+                    "emp_agriculture": 0.0,
+                    "emp_extraction": 0.0,
+                    "emp_military": 0.0,
+                    "emp_ret": 0.0,
+                    "emp_off": 0.0,
+                    "emp_pub": 0.0,
+                    "emp_ind": 0.0,
+                    "emp_ag": 0.0,
+                    "geometry": "POLYGON((-121.51 38.49,-121.48 38.49,-121.48 38.52,-121.51 38.52,-121.51 38.49))",
+                }
+            ],
+        },
+    )
+    df = result[0].df
+    # du_subtype is NULL → 4th COALESCE term recovers residential_building_sqft
+    assert df["bldg_area_mf"].iloc[0] == 5000.0, (
+        f"Expected bldg_area_mf=5000 (NULL du_subtype + 5000 res sqft), got {df['bldg_area_mf'].iloc[0]}"
+    )
+    # Other res bldg_area columns should be 0
+    assert df["bldg_area_detsf_sl"].iloc[0] == 0.0, (
+        f"Expected bldg_area_detsf_sl=0, got {df['bldg_area_detsf_sl'].iloc[0]}"
+    )
+    assert df["bldg_area_detsf_ll"].iloc[0] == 0.0, (
+        f"Expected bldg_area_detsf_ll=0, got {df['bldg_area_detsf_ll'].iloc[0]}"
+    )
+    assert df["bldg_area_attsf"].iloc[0] == 0.0, (
+        f"Expected bldg_area_attsf=0, got {df['bldg_area_attsf'].iloc[0]}"
+    )
+
+
+def test_null_subtype_no_res_sqft_zero_bldg_area(context):
+    """Parcel with NULL du_subtype + 0 residential_sqft → all bldg_area = 0"""
+    result = context.evaluate(
+        "brewgis.base_canvas.base_canvas_combined",
+        start="2024-01-01",
+        end="2024-01-01",
+        inputs={
+            "brewgis.base_canvas.base_canvas_geometry": [
+                {
+                    "parcel_id": "NULLDU2",
+                    "geometry": "POLYGON((-121.5 38.49,-121.49 38.49,-121.49 38.50,-121.50 38.50,-121.5 38.49))",
+                    "local_geometry": "POLYGON((-121.5 38.49,-121.49 38.49,-121.49 38.50,-121.50 38.50,-121.5 38.49))",
+                    "county": "Sacramento",
+                    "land_development_category": "urban",
+                    "built_form_key": "commercial",
+                    "intersection_density": 8.0,
+                    "area_gross": 10.0,
+                    "area_gross_acres": 10.0,
+                    "area_parcel_acres": 9.5,
+                    "area_dev_condition_acres": 9.0,
+                    "area_row_acres": 1.0,
+                    "pop": 0.0,
+                    "hh": 0.0,
+                    "du": 0.0,
+                    "du_estimated": 1.0,
+                    "is_residential": True,
+                    "residential_building_sqft": 0.0,
+                    "commercial_building_sqft": 0.0,
+                    "industrial_building_sqft": 0.0,
+                    "other_building_sqft": 0.0,
+                    "total_footprint_sqft": 0.0,
+                    "building_count": 0,
+                    "footprint_ratio": 0.0,
+                    "max_levels": 0,
+                    "dasym_impervious_fraction": 0.3,
+                    "pop_dasym_weight": 1.0,
+                    "emp_dasym_weight": 0.0,
+                    "hh_size": 2.5,
+                    "vacancy_rate": 0.025,
+                    "du_pop_dasym_weight": 1.0,
+                    "hh_dasym_weight": 0.975,
+                    "hh_estimated": 0.975,
+                }
+            ],
+            "brewgis.staging.census_2020_block_projected": [
+                {
+                    "geoid": "060670011001001",
+                    "total_population": 0.0,
+                    "total_housing_units": 0.0,
+                    "geometry": "POLYGON((-121.51 38.49,-121.48 38.49,-121.48 38.52,-121.51 38.52,-121.51 38.49))",
+                }
+            ],
+            "brewgis.staging.wac_block_projected": [
+                {
+                    "geoid": "060670011001001",
+                    "emp": 0.0,
+                    "emp_retail_services": 0.0,
+                    "emp_restaurant": 0.0,
+                    "emp_accommodation": 0.0,
+                    "emp_arts_entertainment": 0.0,
+                    "emp_other_services": 0.0,
+                    "emp_office_services": 0.0,
+                    "emp_medical_services": 0.0,
+                    "emp_public_admin": 0.0,
+                    "emp_education": 0.0,
+                    "emp_manufacturing": 0.0,
+                    "emp_wholesale": 0.0,
+                    "emp_transport_warehousing": 0.0,
+                    "emp_utilities": 0.0,
+                    "emp_construction": 0.0,
+                    "emp_agriculture": 0.0,
+                    "emp_extraction": 0.0,
+                    "emp_military": 0.0,
+                    "emp_ret": 0.0,
+                    "emp_off": 0.0,
+                    "emp_pub": 0.0,
+                    "emp_ind": 0.0,
+                    "emp_ag": 0.0,
+                    "geometry": "POLYGON((-121.51 38.49,-121.48 38.49,-121.48 38.52,-121.51 38.52,-121.51 38.49))",
+                }
+            ],
+        },
+    )
+    df = result[0].df
+    # No residential sqft → no recovery, and NULL du_subtype means no subtype match
+    assert df["bldg_area_mf"].iloc[0] == 0.0, (
+        f"Expected bldg_area_mf=0 (NULL du_subtype + 0 res sqft), got {df['bldg_area_mf'].iloc[0]}"
+    )
+    assert df["bldg_area_detsf_sl"].iloc[0] == 0.0, (
+        f"Expected bldg_area_detsf_sl=0, got {df['bldg_area_detsf_sl'].iloc[0]}"
+    )
+    assert df["bldg_area_detsf_ll"].iloc[0] == 0.0, (
+        f"Expected bldg_area_detsf_ll=0, got {df['bldg_area_detsf_ll'].iloc[0]}"
+    )
+    assert df["bldg_area_attsf"].iloc[0] == 0.0, (
+        f"Expected bldg_area_attsf=0, got {df['bldg_area_attsf'].iloc[0]}"
+    )

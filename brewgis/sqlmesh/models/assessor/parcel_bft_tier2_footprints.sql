@@ -37,7 +37,10 @@ SELECT DISTINCT ON (ap.apn)
         -- A2 parcels (multi-family) with building footprints → mf2to4 or mf5p
         WHEN (ap.landuse_prefix LIKE 'A2' OR ap.landuse_prefix IN ('AT'))
              AND bs.residential_building_sqft > 0
-             AND COALESCE(bs.max_levels, 1) >= 3 THEN 'mf5p'
+             AND (
+                 COALESCE(bs.max_levels, 1) >= 3
+                 OR (COALESCE(bs.max_levels, 0) = 0 AND bs.residential_building_sqft >= 3000)
+             ) THEN 'mf5p'
         WHEN (ap.landuse_prefix LIKE 'A2' OR ap.landuse_prefix IN ('AT'))
              AND bs.residential_building_sqft > 0 THEN 'mf2to4'
         -- A2 catch-all: building footprints exist but Overture didn't tag as residential.
@@ -65,7 +68,10 @@ WHERE bs.total_footprint_sqft > 0
   AND CASE
         WHEN (ap.landuse_prefix LIKE 'A2' OR ap.landuse_prefix IN ('AT'))
              AND bs.residential_building_sqft > 0
-             AND COALESCE(bs.max_levels, 1) >= 3 THEN 'mf5p'
+             AND (
+                 COALESCE(bs.max_levels, 1) >= 3
+                 OR (COALESCE(bs.max_levels, 0) = 0 AND bs.residential_building_sqft >= 3000)
+             ) THEN 'mf5p'
         WHEN (ap.landuse_prefix LIKE 'A2' OR ap.landuse_prefix IN ('AT'))
              AND bs.residential_building_sqft > 0 THEN 'mf2to4'
         WHEN (ap.landuse_prefix LIKE 'A2' OR ap.landuse_prefix IN ('AT')) THEN 'mf2to4'

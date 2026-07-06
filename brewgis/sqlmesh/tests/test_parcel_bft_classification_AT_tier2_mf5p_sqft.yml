@@ -1,0 +1,109 @@
+test_AT_with_residential_sqft_3000_no_levels_tier2_mf5p:
+  model: brewgis.assessor.parcel_bft_tier2_footprints
+  gateway: postgis
+  inputs:
+    brewgis.assessor.sacog_assessor_parcels:
+      rows:
+        - apn: "TEST_AT_T2_SQFT_001"
+          lot_size_acres: 1.5
+          landuse: "ATA00A"
+          zone: "R-4"
+          geometry: "POLYGON((-121.5 38.5,-121.49 38.5,-121.49 38.51,-121.5 38.51,-121.5 38.5))"
+          land_development_category: "urban"
+      columns:
+        geometry: GEOMETRY
+        apn: TEXT
+        lot_size_acres: DOUBLE
+        landuse: TEXT
+        zone: TEXT
+        land_development_category: TEXT
+    brewgis.assessor.parcel_building_sqft_by_type:
+      rows:
+        - apn: "TEST_AT_T2_SQFT_001"
+          total_footprint_sqft: 5000.0
+          building_count: 2
+          footprint_ratio: 0.15
+          lot_size_acres: 1.5
+          residential_building_sqft: 3000.0
+          commercial_building_sqft: 0.0
+          industrial_building_sqft: 0.0
+          other_building_sqft: 2000.0
+          max_levels: 0
+          land_development_category: "urban"
+          geometry: "POLYGON((-121.5 38.5,-121.49 38.5,-121.49 38.51,-121.5 38.51,-121.5 38.5))"
+      columns:
+        geometry: GEOMETRY
+        apn: TEXT
+        total_footprint_sqft: DOUBLE
+        building_count: INTEGER
+        footprint_ratio: DOUBLE
+        lot_size_acres: DOUBLE
+        residential_building_sqft: DOUBLE
+        commercial_building_sqft: DOUBLE
+        industrial_building_sqft: DOUBLE
+        other_building_sqft: DOUBLE
+        residential_building_count: INTEGER
+        non_residential_building_count: INTEGER
+        max_levels: INTEGER
+        land_development_category: TEXT
+  outputs:
+    query:
+      partial: true
+      rows:
+        - apn: "TEST_AT_T2_SQFT_001"
+          built_form_key: "mf5p"
+
+test_AT_with_residential_sqft_1500_no_levels_tier2_mf2to4:
+  model: brewgis.assessor.parcel_bft_tier2_footprints
+  gateway: postgis
+  inputs:
+    brewgis.assessor.sacog_assessor_parcels:
+      rows:
+        - apn: "TEST_AT_T2_SQFT_002"
+          lot_size_acres: 1.5
+          landuse: "ATA00A"
+          zone: "R-4"
+          geometry: "POLYGON((-121.5 38.5,-121.49 38.5,-121.49 38.51,-121.5 38.51,-121.5 38.5))"
+          land_development_category: "urban"
+      columns:
+        geometry: GEOMETRY
+        apn: TEXT
+        lot_size_acres: DOUBLE
+        landuse: TEXT
+        zone: TEXT
+        land_development_category: TEXT
+    brewgis.assessor.parcel_building_sqft_by_type:
+      rows:
+        - apn: "TEST_AT_T2_SQFT_002"
+          total_footprint_sqft: 3500.0
+          building_count: 1
+          footprint_ratio: 0.15
+          lot_size_acres: 1.5
+          residential_building_sqft: 1500.0
+          commercial_building_sqft: 0.0
+          industrial_building_sqft: 0.0
+          other_building_sqft: 2000.0
+          max_levels: 0
+          land_development_category: "urban"
+          geometry: "POLYGON((-121.5 38.5,-121.49 38.5,-121.49 38.51,-121.5 38.51,-121.5 38.5))"
+      columns:
+        geometry: GEOMETRY
+        apn: TEXT
+        total_footprint_sqft: DOUBLE
+        building_count: INTEGER
+        footprint_ratio: DOUBLE
+        lot_size_acres: DOUBLE
+        residential_building_sqft: DOUBLE
+        commercial_building_sqft: DOUBLE
+        industrial_building_sqft: DOUBLE
+        other_building_sqft: DOUBLE
+        residential_building_count: INTEGER
+        non_residential_building_count: INTEGER
+        max_levels: INTEGER
+        land_development_category: TEXT
+  outputs:
+    query:
+      partial: true
+      rows:
+        - apn: "TEST_AT_T2_SQFT_002"
+          built_form_key: "mf2to4"
