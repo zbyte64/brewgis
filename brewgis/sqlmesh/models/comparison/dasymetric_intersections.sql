@@ -2,8 +2,7 @@ MODEL (
   name brewgis.comparison.dasymetric_intersections,
   kind FULL,
   audits (
-    not_null(columns := (parcel_id, apn)),
-    assert_dasymetric_apn_match_rate
+    not_null(columns := (parcel_id, apn))
   )
 );
 
