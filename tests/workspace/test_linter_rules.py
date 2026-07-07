@@ -721,21 +721,79 @@ class TestCteSpatialJoin:
         assert "my_cte" in msg
         assert "&&" in msg
 
-    def test_cte_key_join_passes(self) -> None:
-        """Plain ``=`` key join against a CTE → no violation."""
+    def test_cte_key_join_without_index_violates(self) -> None:
+        """Key join against CTE → violation when upstream model has no index."""
+        ref = _make_ref_model(
+            "brewdb.public.parcels",
+            {"parcel_id": "BIGINT", "geom": "GEOMETRY"},
+        )
         src = _make_source_model(
             "brewdb.public.analysis",
             """
             WITH my_cte AS (
-                SELECT parcel_id, geom FROM parcels
+                SELECT parcel_id, geom FROM brewdb.public.parcels
             )
             SELECT p.*
-            FROM parcels p
+            FROM brewdb.public.parcels p
             JOIN my_cte m ON p.parcel_id = m.parcel_id
             """,
             {"parcel_id": "BIGINT", "geom": "GEOMETRY"},
+            deps={"brewdb.public.parcels"},
         )
-        violations = _check(src, {})
+        violations = _check(src, {"brewdb.public.parcels": ref})
+        assert len(violations) == 1
+        msg = _violation_msg(violations[0])
+        assert "my_cte" in msg
+        assert "parcel_id" in msg
+
+    def test_cte_key_join_with_upstream_index_passes(self) -> None:
+        """Key join against CTE → no violation when upstream model has index."""
+        ref = _make_ref_model(
+            "brewdb.public.parcels",
+            {"parcel_id": "BIGINT", "geom": "GEOMETRY"},
+            post_statements=["CREATE INDEX ON @this_model (parcel_id)"],
+        )
+        src = _make_source_model(
+            "brewdb.public.analysis",
+            """
+            WITH my_cte AS (
+                SELECT parcel_id, geom FROM brewdb.public.parcels
+            )
+            SELECT p.*
+            FROM brewdb.public.parcels p
+            JOIN my_cte m ON p.parcel_id = m.parcel_id
+            """,
+            {"parcel_id": "BIGINT", "geom": "GEOMETRY"},
+            deps={"brewdb.public.parcels"},
+        )
+        violations = _check(src, {"brewdb.public.parcels": ref})
+        assert violations == []
+
+    def test_cte_key_join_chained_cte_with_index_passes(self) -> None:
+        """Key join against chained CTE → no violation when ultimate
+        upstream model has the index."""
+        ref = _make_ref_model(
+            "brewdb.public.parcels",
+            {"parcel_id": "BIGINT", "geom": "GEOMETRY"},
+            post_statements=["CREATE INDEX ON @this_model (parcel_id)"],
+        )
+        src = _make_source_model(
+            "brewdb.public.analysis",
+            """
+            WITH inner_cte AS (
+                SELECT parcel_id, geom FROM brewdb.public.parcels
+            ),
+            outer_cte AS (
+                SELECT parcel_id, geom FROM inner_cte
+            )
+            SELECT p.*
+            FROM brewdb.public.parcels p
+            JOIN outer_cte o ON p.parcel_id = o.parcel_id
+            """,
+            {"parcel_id": "BIGINT", "geom": "GEOMETRY"},
+            deps={"brewdb.public.parcels"},
+        )
+        violations = _check(src, {"brewdb.public.parcels": ref})
         assert violations == []
 
     def test_cte_without_spatial_join_passes(self) -> None:

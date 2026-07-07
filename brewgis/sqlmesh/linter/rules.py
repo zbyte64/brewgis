@@ -385,8 +385,8 @@ def _extract_indexes_from_sql(
     pattern = re.compile(
         r"""
         CREATE\s+(UNIQUE\s+)?INDEX
-        (\s+IF\s+NOT\s+EXISTS)?\s+\S+
-        \s+ON\s+\S+
+        (\s+IF\s+NOT\s+EXISTS)?(\s+\S+)?
+        \s+ON\s+[^\s(]+
         (\s+USING\s+(?P<gist>GIST))?
         \s*\(
         (?P<cols>[^)]+)
@@ -432,6 +432,19 @@ def _get_indexed_columns(model: SqlModel) -> dict[str, bool]:
         _extract_indexes_from_sql(sql_text, model.name, result)
 
     # 2) Fall back to reading the source file (for real models on disk).
+    source_path = getattr(model, "_path", None)
+    if source_path:
+        try:
+            source = Path(source_path).read_text()
+            _extract_indexes_from_sql(source, model.name, result)
+        except OSError:
+            pass
+
+    # 3) Synthetic test models store post_statements without underscore.
+    # Check after source file so production models prefer the raw SQL path.
+    for ps in getattr(model, "post_statements", []) or []:
+        sql_text = ps.sql(dialect="postgres") if hasattr(ps, "sql") else str(ps)
+        _extract_indexes_from_sql(sql_text, model.name, result)
     source_path = getattr(model, "_path", None)
     if source_path:
         try:
@@ -765,18 +778,29 @@ class UnindexedJoin(Rule):
         # Check for key-based (=) joins against CTEs.
         # These can't use indexes on the CTE itself, but the source model
         # whose table the CTE reads FROM should have a B-tree index.
+        # Resolve the upstream model and verify before flagging.
         for eq in on.find_all(exp.EQ):
             for col in eq.find_all(exp.Column):
                 if col.table == join_alias:
                     col_name = col.name.lower()
-                    if col_name in _KEY_COLUMN_NAMES:
-                        return self.violation(
-                            f"Key join against CTE ``{table.name}`` on column "
-                            f"``{col.name}`` cannot use an index. Ensure the "
-                            f"underlying model has a B-tree index on "
-                            f"``{col.name}`` via ``CREATE INDEX ON @this_model "
-                            f"({col.name})`` in its post_statements."
-                        )
+                    if col_name not in _KEY_COLUMN_NAMES:
+                        continue
+                    # Check if the CTE's source model actually has the index.
+                    source_model = _resolve_cte_source_model(
+                        table.name, model, self.context
+                    )
+                    if source_model is not None and isinstance(source_model, SqlModel):
+                        indexed_cols = _get_indexed_columns(source_model)
+                        if col.name in indexed_cols:
+                            # Upstream model has the index — false positive.
+                            return None
+                    return self.violation(
+                        f"Key join against CTE ``{table.name}`` on column "
+                        f"``{col.name}`` cannot use an index. Ensure the "
+                        f"underlying model has a B-tree index on "
+                        f"``{col.name}`` via ``CREATE INDEX ON @this_model "
+                        f"({col.name})`` in its post_statements."
+                    )
 
         return None
 
@@ -921,6 +945,99 @@ class UnindexedWhereClause(Rule):
 
 
 # ── Shared utilities ─────────────────────────────────────────────────
+
+
+def _resolve_cte_source_model(
+    cte_name: str, model: Model, context: object
+) -> Model | None:
+    """Resolve the upstream SQLMesh model referenced by a CTE's FROM clause.
+
+    Given a CTE name like ``building_metrics``, looks up the CTE definition
+    in the model's query, extracts the first FROM table, and resolves it to
+    a SQLMesh model. If the CTE's FROM table is itself a CTE, follows the
+    chain (up to ``_CTE_CHAIN_MAX_DEPTH``) to find the ultimate model
+    reference. Returns ``None`` if the CTE can't be found, the FROM
+    table isn't a simple model reference, no SQLMesh model is referenced,
+    or the model isn't in the registry.
+
+    This enables ``UnindexedJoin``/``UnindexedWhereClause`` to check the
+    ACTUAL upstream model for indexes instead of always flagging CTE joins
+    as unindexed.
+    """
+    query = getattr(model, "query", None)
+    if query is None:
+        return None
+
+    with_clause = query.args.get("with_")
+    if with_clause is None:
+        return None
+
+    cte_map = _build_cte_map(with_clause)
+    return _walk_cte_chain(cte_name.lower(), cte_map, model, context)
+
+
+_CTE_CHAIN_MAX_DEPTH = 10
+
+
+def _build_cte_map(with_clause: exp.With) -> dict[str, exp.CTE]:
+    """Build {lowercase_alias: CTE} lookup from WITH clause."""
+    cte_map: dict[str, exp.CTE] = {}
+    for cte in with_clause.expressions:
+        alias = cte.alias_or_name.lower()
+        cte_map[alias] = cte
+    return cte_map
+
+
+def _walk_cte_chain(
+    start_name: str,
+    cte_map: dict[str, exp.CTE],
+    model: Model,
+    context: object,
+) -> Model | None:
+    """Walk a chain of CTE references to find the ultimate source model."""
+    visited: set[str] = set()
+    current_name = start_name
+
+    for _ in range(_CTE_CHAIN_MAX_DEPTH):
+        if current_name in visited:
+            break
+        visited.add(current_name)
+
+        target_cte = cte_map.get(current_name)
+        if target_cte is None:
+            break
+
+        cte_query = target_cte.this
+        if cte_query is None:
+            break
+
+        from_clause = cte_query.args.get("from_")
+        if from_clause is None:
+            break
+
+        from_table = from_clause.this
+        if not isinstance(from_table, exp.Table):
+            break
+
+        from_name = from_table.name.lower()
+
+        # If the FROM table is another CTE in this query, keep chasing.
+        if from_name in cte_map:
+            current_name = from_name
+            continue
+
+        # Try to resolve as a SQLMesh model.
+        fqn = _table_fqn(from_table, model)
+        if fqn is None:
+            break
+
+        ref_model = _get_model(context, fqn)
+        if ref_model is not None:
+            return ref_model
+
+        break
+
+    return None
 
 
 def _get_model(context: object, fqn: str) -> Model | None:
