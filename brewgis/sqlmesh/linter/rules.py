@@ -387,7 +387,7 @@ def _extract_indexes_from_sql(
         CREATE\s+(UNIQUE\s+)?INDEX
         (\s+IF\s+NOT\s+EXISTS)?(\s+\S+)?
         \s+ON\s+[^\s(]+
-        (\s+USING\s+(?P<gist>GIST))?
+        (\s+USING\s+(?P<using_type>\w+))?
         \s*\(
         (?P<cols>[^)]+)
         \)
@@ -410,7 +410,8 @@ def _extract_indexes_from_sql(
         ):
             continue
 
-        is_gist = match.group("gist") is not None
+        using_type = match.group("using_type")
+        is_gist = using_type is not None and using_type.upper() == "GIST"
         cols_section = match.group("cols")
         for col_expr in cols_section.split(","):
             col_name = col_expr.strip().split()[0].strip('"')
