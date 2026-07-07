@@ -532,12 +532,84 @@ def _get_cte_names(query: exp.Expr) -> frozenset[str]:
     ctes = with_clause.args.get("expressions")
     if ctes is None:
         return frozenset()
-    names: set[str] = set()
+    names: list[str] = []
     for cte in ctes:
         alias = cte.args.get("alias")
-        if alias is not None and alias.name:
-            names.add(alias.name.lower())
+        if alias is not None:
+            names.append(alias.name.lower())
     return frozenset(names)
+
+
+def _cte_body(query: exp.Expr, cte_name: str) -> exp.Expression | None:
+    """Return the query body of a named CTE, or None if not found."""
+    with_clause = query.args.get("with_")
+    if with_clause is None:
+        return None
+    for cte in with_clause.args.get("expressions", []):
+        alias = cte.args.get("alias")
+        if alias is not None and alias.name.lower() == cte_name.lower():
+            return cte.args.get("this")
+    return None
+
+
+def _cte_has_limit_one(cte_body: exp.Expression | None) -> bool:
+    """Check if a CTE body has LIMIT 1 (produces at most 1 row)."""
+    if cte_body is None:
+        return False
+    limit = cte_body.args.get("limit")
+    if limit is None:
+        return False
+    expr = limit.args.get("expression")
+    if expr is None:
+        return False
+    try:
+        return int(expr.this) == 1
+    except (ValueError, TypeError):
+        return False
+
+
+def _cte_groups_by_key(cte_body: exp.Expression | None, key: str) -> bool:
+    """Check if a CTE body groups by the given column name."""
+    if cte_body is None:
+        return False
+    group = cte_body.args.get("group")
+    if group is None:
+        return False
+    for expr in group.expressions:
+        for col in expr.find_all(exp.Column):
+            if col.name.lower() == key.lower():
+                return True
+    return False
+
+
+def _is_efficient_cte_join(query: exp.Expr, cte_name: str, join_key: str) -> bool:
+    """Check if a CTE join is inherently efficient without needing an index.
+
+    A CTE join is efficient when:
+    - The CTE produces at most 1 row (aggregate without GROUP BY, or LIMIT 1).
+      PostgreSQL trivially hash-joins a single row.
+    - The CTE groups by the join key column. The output is then one row per
+      distinct key value — naturally constrained, hash-join friendly.
+    """
+    cte_body = _cte_body(query, cte_name)
+    if cte_body is None:
+        return False
+
+    # Single-row CTEs (aggregate without GROUP BY).
+    has_agg = any(
+        isinstance(node, (exp.Avg, exp.Sum, exp.Count, exp.Min, exp.Max))
+        for node in cte_body.find_all(exp.Func)
+    )
+    has_group = cte_body.find(exp.Group) is not None
+    if has_agg and not has_group:
+        return True
+
+    # Single-row CTEs (LIMIT 1).
+    if _cte_has_limit_one(cte_body):
+        return True
+
+    # GROUP BY on the join key column.
+    return bool(_cte_groups_by_key(cte_body, join_key))
 
 
 # ── UnindexedJoin ────────────────────────────────────────────────────
@@ -792,12 +864,22 @@ class UnindexedJoin(Rule):
         # These can't use indexes on the CTE itself, but the source model
         # whose table the CTE reads FROM should have a B-tree index.
         # Resolve the upstream model and verify before flagging.
+        #
+        # Skip CTEs that are inherently efficient without an index:
+        #   - Single-row CTEs (aggregate without GROUP BY, or LIMIT 1)
+        #   - CTEs that GROUP BY the join key (one row per distinct key)
         for eq in on.find_all(exp.EQ):
             for col in eq.find_all(exp.Column):
                 if col.table == join_alias:
                     col_name = col.name.lower()
                     if col_name not in _KEY_COLUMN_NAMES:
                         continue
+                    # Skip CTEs that are efficient without an index:
+                    # single-row CTEs or GROUP BY on the join key.
+                    if query is not None and _is_efficient_cte_join(
+                        query, table.name, col.name
+                    ):
+                        return None
                     # Check if the CTE's source model actually has the index.
                     source_model = _resolve_cte_source_model(
                         table.name, model, self.context

@@ -813,6 +813,102 @@ class TestCteSpatialJoin:
         violations = _check(src, {})
         assert violations == []
 
+    def test_cte_aggregate_no_groupby_passes(self) -> None:
+        """Key join against single-row aggregate CTE → no violation.
+
+        A CTE with SUM() and no GROUP BY produces exactly 1 row,
+        which PostgreSQL trivially hash-joins. No index needed.
+        """
+        src = _make_source_model(
+            "brewdb.public.analysis",
+            """
+            WITH my_cte AS (
+                SELECT SUM(parcel_id) AS total FROM parcels
+            )
+            SELECT p.*
+            FROM parcels p
+            JOIN my_cte m ON p.parcel_id = m.total
+            """,
+            {"parcel_id": "BIGINT"},
+        )
+        violations = _check(src, {})
+        assert violations == []
+
+    def test_cte_limit_one_passes(self) -> None:
+        """Key join against LIMIT 1 CTE → no violation.
+
+        A CTE with LIMIT 1 produces at most 1 row, making the join
+        trivially efficient via hash join.
+        """
+        src = _make_source_model(
+            "brewdb.public.analysis",
+            """
+            WITH my_cte AS (
+                SELECT parcel_id, geom FROM parcels
+                LIMIT 1
+            )
+            SELECT p.*
+            FROM parcels p
+            JOIN my_cte m ON p.parcel_id = m.parcel_id
+            """,
+            {"parcel_id": "BIGINT", "geom": "GEOMETRY"},
+        )
+        violations = _check(src, {})
+        assert violations == []
+
+    def test_cte_group_by_join_key_passes(self) -> None:
+        """Key join against CTE that GROUP BYs the join key → no violation.
+
+        When the CTE groups by the same column used in the join, the
+        output is one row per distinct key value — hash-join friendly.
+        """
+        src = _make_source_model(
+            "brewdb.public.analysis",
+            """
+            WITH my_cte AS (
+                SELECT parcel_id, SUM(geom) AS total
+                FROM parcels
+                GROUP BY parcel_id
+            )
+            SELECT p.*
+            FROM parcels p
+            JOIN my_cte m ON p.parcel_id = m.parcel_id
+            """,
+            {"parcel_id": "BIGINT", "geom": "GEOMETRY"},
+        )
+        violations = _check(src, {})
+        assert violations == []
+
+    def test_cte_group_by_different_key_violates(self) -> None:
+        """Key join against CTE that GROUP BYs a different column → violation.
+
+        When the GROUP BY is on a different column than the join key,
+        the CTE isn't naturally constrained for this join.
+        """
+        ref = _make_ref_model(
+            "brewdb.public.parcels",
+            {"parcel_id": "BIGINT", "id": "BIGINT"},
+        )
+        src = _make_source_model(
+            "brewdb.public.analysis",
+            """
+            WITH my_cte AS (
+                SELECT id, MAX(parcel_id) AS parcel_id
+                FROM brewdb.public.parcels
+                GROUP BY id
+            )
+            SELECT p.*
+            FROM brewdb.public.parcels p
+            JOIN my_cte m ON p.parcel_id = m.parcel_id
+            """,
+            {"parcel_id": "BIGINT", "id": "BIGINT"},
+            deps={"brewdb.public.parcels"},
+        )
+        violations = _check(src, {"brewdb.public.parcels": ref})
+        assert len(violations) == 1
+        msg = _violation_msg(violations[0])
+        assert "my_cte" in msg
+
 
 # ── Helper functions for new rules ─────────────────────────────────
 
