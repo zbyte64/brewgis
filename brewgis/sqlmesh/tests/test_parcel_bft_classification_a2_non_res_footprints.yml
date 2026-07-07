@@ -43,6 +43,11 @@ test_a2_with_non_residential_footprints_tier2:
         max_levels: INTEGER
         land_development_category: TEXT
         geometry: GEOMETRY
+    brewgis.assessor.overture_intersection_density:
+      rows: []
+      columns:
+        apn: TEXT
+        intersection_density: DOUBLE
   outputs:
     query:
       partial: true

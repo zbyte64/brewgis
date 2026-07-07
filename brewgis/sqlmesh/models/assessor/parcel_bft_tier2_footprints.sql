@@ -10,7 +10,13 @@ MODEL (
 -- classified by building footprint data. Only outputs (apn, built_form_key).
 -- Includes both A2/AT logic and general building footprint logic.
 
-WITH assessor_parcels AS (
+WITH int_density AS (
+    SELECT
+        apn,
+        intersection_density
+    FROM brewgis.assessor.overture_intersection_density
+),
+assessor_parcels AS (
     SELECT
         apn,
         COALESCE(NULLIF(lot_size_acres, 0), 0.01) AS lot_size_acres,
@@ -43,6 +49,11 @@ SELECT DISTINCT ON (ap.apn)
              ) THEN 'mf5p'
         WHEN (ap.landuse_prefix LIKE 'A2' OR ap.landuse_prefix IN ('AT'))
              AND bs.residential_building_sqft > 0 THEN 'mf2to4'
+        -- A2/AT with high intersection density but no building data → mf5p
+        WHEN (ap.landuse_prefix LIKE 'A2' OR ap.landuse_prefix IN ('AT'))
+             AND bs.residential_building_sqft = 0
+             AND COALESCE(ap.lot_size_acres, 0) < 0.5
+             AND COALESCE(id.intersection_density, 0) >= 200 THEN 'mf5p'
         -- A2 catch-all: building footprints exist but Overture didn't tag as residential.
         -- Landuse code already says multi-family, so default to conservative mf2to4.
         -- Without this, A2 + non-residential-only footprints falls through to
@@ -53,6 +64,10 @@ SELECT DISTINCT ON (ap.apn)
         -- small lot), then SFR by lot size, then non-residential.
         WHEN bs.residential_building_sqft > 0
              AND COALESCE(bs.max_levels, 1) >= 3 THEN 'mf5p'
+        -- Non-A2 residential parcels with large bldg on small lot → mf5p
+        WHEN bs.residential_building_sqft > 0
+             AND bs.residential_building_sqft >= 6000
+             AND COALESCE(ap.lot_size_acres, 0) < 0.5 THEN 'mf5p'
         -- Attached SF: residential sqft in 600-2500 range, small lot, low height.
         -- Placed before SFR rules because sqft narrows the match; SFR rules
         -- catch any sqft on residential parcels that don't match attsf heuristics.
@@ -74,6 +89,7 @@ SELECT DISTINCT ON (ap.apn)
     END AS built_form_key
 FROM assessor_parcels ap
 JOIN building_metrics bs ON ap.apn = bs.apn
+LEFT JOIN int_density id ON ap.apn = id.apn
 WHERE bs.total_footprint_sqft > 0
   AND CASE
         WHEN (ap.landuse_prefix LIKE 'A2' OR ap.landuse_prefix IN ('AT'))
@@ -84,9 +100,18 @@ WHERE bs.total_footprint_sqft > 0
              ) THEN 'mf5p'
         WHEN (ap.landuse_prefix LIKE 'A2' OR ap.landuse_prefix IN ('AT'))
              AND bs.residential_building_sqft > 0 THEN 'mf2to4'
+        -- A2/AT with high intersection density but no building data → mf5p
+        WHEN (ap.landuse_prefix LIKE 'A2' OR ap.landuse_prefix IN ('AT'))
+             AND bs.residential_building_sqft = 0
+             AND COALESCE(ap.lot_size_acres, 0) < 0.5
+             AND COALESCE(id.intersection_density, 0) >= 200 THEN 'mf5p'
         WHEN (ap.landuse_prefix LIKE 'A2' OR ap.landuse_prefix IN ('AT')) THEN 'mf2to4'
         WHEN bs.residential_building_sqft > 0
              AND COALESCE(bs.max_levels, 1) >= 3 THEN 'mf5p'
+        -- Non-A2 residential parcels with large bldg on small lot → mf5p
+        WHEN bs.residential_building_sqft > 0
+             AND bs.residential_building_sqft >= 6000
+             AND COALESCE(ap.lot_size_acres, 0) < 0.5 THEN 'mf5p'
         -- Attached SF tier2: res sqft 600-2500, small lot, low height
         WHEN bs.residential_building_sqft > 0
              AND bs.residential_building_sqft BETWEEN 600 AND 2500

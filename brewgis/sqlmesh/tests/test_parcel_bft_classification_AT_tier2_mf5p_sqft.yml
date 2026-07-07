@@ -46,6 +46,11 @@ test_AT_with_residential_sqft_3000_no_levels_tier2_mf5p:
         non_residential_building_count: INTEGER
         max_levels: INTEGER
         land_development_category: TEXT
+    brewgis.assessor.overture_intersection_density:
+      rows: []
+      columns:
+        apn: TEXT
+        intersection_density: DOUBLE
   outputs:
     query:
       partial: true
@@ -101,6 +106,11 @@ test_AT_with_residential_sqft_1500_no_levels_tier2_mf2to4:
         non_residential_building_count: INTEGER
         max_levels: INTEGER
         land_development_category: TEXT
+    brewgis.assessor.overture_intersection_density:
+      rows: []
+      columns:
+        apn: TEXT
+        intersection_density: DOUBLE
   outputs:
     query:
       partial: true

@@ -753,7 +753,10 @@ building_areas AS (
         ) AS bldg_area_attsf_v,
         COALESCE(
             CASE WHEN du_subtype IN ('mf2to4', 'mf5p') THEN residential_building_sqft END,
-            du_mf_v * COALESCE(sqft_per_du, 2200.0) * 0.7,
+                        GREATEST(
+                du_mf_v * COALESCE(sqft_per_du, 2200.0) * CASE WHEN du_subtype = 'mf5p' THEN 1.4 ELSE 0.7 END,
+                COALESCE(du_mf_v, 1.0) * 800.0
+            ),
             NULLIF(bldg_area_mf, 0),
             CASE WHEN du_subtype IS NULL AND residential_building_sqft > 0 THEN residential_building_sqft END
         ) AS bldg_area_mf_v,

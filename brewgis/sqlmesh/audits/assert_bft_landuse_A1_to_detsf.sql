@@ -20,6 +20,7 @@ FROM @this_model t0
 JOIN brewgis.assessor.sacog_assessor_parcels ap ON t0.apn = ap.apn
 LEFT JOIN brewgis.assessor.overture_intersection_density id ON t0.apn = id.apn
 WHERE ap.landuse LIKE 'A1%'
+  AND COALESCE(NULLIF(ap.lot_size_acres, 0), 0.01) >= 0.08
   AND (
     (1.0 / (1.0 + EXP(-0.04 * (COALESCE(id.intersection_density, 225.0) - 225.0))) > 0.5
         AND t0.built_form_key != 'detsf_sl')

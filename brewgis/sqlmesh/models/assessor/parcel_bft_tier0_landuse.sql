@@ -33,6 +33,8 @@ WITH assessor_parcels AS (
 SELECT
     ap.apn,
     CASE
+        -- A1 parcels with very small lots → attsf (duplexes/townhomes on SF-coded land)
+        WHEN ap.landuse_prefix LIKE 'A1' AND COALESCE(ap.lot_size_acres, 0.01) < 0.08 THEN 'attsf'
         WHEN ap.landuse_prefix LIKE 'A1' THEN
             CASE
                 WHEN 1.0 / (1.0 + EXP(-0.04 * (COALESCE(id.intersection_density, 225.0) - 225.0))) > 0.5
@@ -64,6 +66,8 @@ FROM assessor_parcels ap
 LEFT JOIN brewgis.assessor.overture_intersection_density id ON ap.apn = id.apn
 WHERE ap.landuse IS NOT NULL
   AND CASE
+        -- A1 parcels with very small lots → attsf (duplexes/townhomes on SF-coded land)
+        WHEN ap.landuse_prefix LIKE 'A1' AND COALESCE(ap.lot_size_acres, 0.01) < 0.08 THEN 'attsf'
         WHEN ap.landuse_prefix LIKE 'A1' THEN
             CASE
                 WHEN 1.0 / (1.0 + EXP(-0.04 * (COALESCE(id.intersection_density, 225.0) - 225.0))) > 0.5

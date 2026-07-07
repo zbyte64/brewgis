@@ -5,7 +5,7 @@ test_SL_dense_urban:
     brewgis.assessor.sacog_assessor_parcels:
       rows:
         - apn: "TEST_SL_DENSE"
-          lot_size_acres: 0.05
+          lot_size_acres: 0.15
           landuse: "A1"
           zone: "R-1"
           geometry: "POLYGON((-121.5 38.5,-121.49 38.5,-121.49 38.51,-121.5 38.51,-121.5 38.5))"
@@ -40,7 +40,7 @@ test_LL_rural:
     brewgis.assessor.sacog_assessor_parcels:
       rows:
         - apn: "TEST_LL_RURAL"
-          lot_size_acres: 0.05
+          lot_size_acres: 0.15
           landuse: "A1"
           zone: "R-1"
           geometry: "POLYGON((-121.5 38.5,-121.49 38.5,-121.49 38.51,-121.5 38.51,-121.5 38.5))"
@@ -75,7 +75,7 @@ test_SL_threshold_right:
     brewgis.assessor.sacog_assessor_parcels:
       rows:
         - apn: "TEST_THRESH_R"
-          lot_size_acres: 0.05
+          lot_size_acres: 0.15
           landuse: "A1"
           zone: "R-1"
           geometry: "POLYGON((-121.5 38.5,-121.49 38.5,-121.49 38.51,-121.5 38.51,-121.5 38.5))"
@@ -110,7 +110,7 @@ test_LL_threshold_left:
     brewgis.assessor.sacog_assessor_parcels:
       rows:
         - apn: "TEST_THRESH_L"
-          lot_size_acres: 0.05
+          lot_size_acres: 0.15
           landuse: "A1"
           zone: "R-1"
           geometry: "POLYGON((-121.5 38.5,-121.49 38.5,-121.49 38.51,-121.5 38.51,-121.5 38.5))"
@@ -145,7 +145,7 @@ test_SL_midpoint:
     brewgis.assessor.sacog_assessor_parcels:
       rows:
         - apn: "TEST_MIDPOINT"
-          lot_size_acres: 0.05
+          lot_size_acres: 0.15
           landuse: "A1"
           zone: "R-1"
           geometry: "POLYGON((-121.5 38.5,-121.49 38.5,-121.49 38.51,-121.5 38.51,-121.5 38.5))"
