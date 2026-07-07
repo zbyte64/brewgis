@@ -45,7 +45,7 @@ SELECT DISTINCT ON (ap.apn)
              AND bs.residential_building_sqft > 0
              AND (
                  COALESCE(bs.max_levels, 1) >= 3
-                 OR (COALESCE(bs.max_levels, 0) = 0 AND bs.residential_building_sqft >= 3000)
+                 OR (COALESCE(bs.max_levels, 0) = 0 AND bs.residential_building_sqft >= 2000)
              ) THEN 'mf5p'
         WHEN (ap.landuse_prefix LIKE 'A2' OR ap.landuse_prefix IN ('AT'))
              AND bs.residential_building_sqft > 0 THEN 'mf2to4'
@@ -96,7 +96,7 @@ WHERE bs.total_footprint_sqft > 0
              AND bs.residential_building_sqft > 0
              AND (
                  COALESCE(bs.max_levels, 1) >= 3
-                 OR (COALESCE(bs.max_levels, 0) = 0 AND bs.residential_building_sqft >= 3000)
+                 OR (COALESCE(bs.max_levels, 0) = 0 AND bs.residential_building_sqft >= 2000)
              ) THEN 'mf5p'
         WHEN (ap.landuse_prefix LIKE 'A2' OR ap.landuse_prefix IN ('AT'))
              AND bs.residential_building_sqft > 0 THEN 'mf2to4'
