@@ -420,19 +420,28 @@ def _extract_indexes_from_sql(
 
 
 def _get_indexed_columns(model: SqlModel) -> dict[str, bool]:
-    """Return ``{column_name: is_spatial}`` from ``post_statements``.
+    """Return ``{column_name: is_spatial}`` from ``post_statements``
+    and implicit model key constraints.
 
-    Checks both the model's source file and its ``post_statements_``
-    for ``CREATE INDEX`` statements and extracts column names.
+    Checks ``post_statements`` (both in-memory and source file) for
+    ``CREATE INDEX`` directives. Also checks the model's ``kind.unique_key``
+    — ``INCREMENTAL_BY_UNIQUE_KEY`` models implicitly create a unique
+    B-tree index on their key column(s), so those columns are treated
+    as indexed even without an explicit ``CREATE INDEX``.
     """
     result: dict[str, bool] = {}
 
-    # 1) Try reading from post_statements_ (in-memory, works for synthetic models).
+    # 1) In-memory post_statements_ (synthetic models from test infrastructure).
     for ps in getattr(model, "post_statements_", []) or []:
         sql_text = ps.sql if hasattr(ps, "sql") else str(ps)
         _extract_indexes_from_sql(sql_text, model.name, result)
 
-    # 2) Fall back to reading the source file (for real models on disk).
+    # 2) In-memory post_statements (no underscore — test models via create_sql_model).
+    for ps in getattr(model, "post_statements", []) or []:
+        sql_text = ps.sql(dialect="postgres") if hasattr(ps, "sql") else str(ps)
+        _extract_indexes_from_sql(sql_text, model.name, result)
+
+    # 3) Source file on disk (production models).
     source_path = getattr(model, "_path", None)
     if source_path:
         try:
@@ -441,18 +450,21 @@ def _get_indexed_columns(model: SqlModel) -> dict[str, bool]:
         except OSError:
             pass
 
-    # 3) Synthetic test models store post_statements without underscore.
-    # Check after source file so production models prefer the raw SQL path.
-    for ps in getattr(model, "post_statements", []) or []:
-        sql_text = ps.sql(dialect="postgres") if hasattr(ps, "sql") else str(ps)
-        _extract_indexes_from_sql(sql_text, model.name, result)
-    source_path = getattr(model, "_path", None)
-    if source_path:
-        try:
-            source = Path(source_path).read_text()
-            _extract_indexes_from_sql(source, model.name, result)
-        except OSError:
-            pass
+    # 4) Implicit unique-key indexes from INCREMENTAL_BY_UNIQUE_KEY models.
+    # PostgreSQL creates a unique B-tree index for the unique key constraint,
+    # so these columns are effectively indexed even without explicit CREATE INDEX.
+    kind = getattr(model, "kind", None)
+    if kind is not None:
+        unique_key = getattr(kind, "unique_key", None)
+        if unique_key is not None:
+            for col_expr in unique_key:
+                col_name = (
+                    col_expr.name
+                    if hasattr(col_expr, "name")
+                    else str(col_expr).strip('"')
+                )
+                if col_name not in result:
+                    result[col_name] = False  # B-tree index
 
     return result
 
