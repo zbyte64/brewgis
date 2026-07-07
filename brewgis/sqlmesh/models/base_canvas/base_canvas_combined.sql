@@ -747,13 +747,16 @@ building_areas AS (
             NULLIF(bldg_area_detsf_ll, 0)
         ) AS bldg_area_detsf_ll_v,
         COALESCE(
-            CASE WHEN du_subtype = 'attsf' THEN residential_building_sqft END,
-            du_attsf_v * COALESCE(sqft_per_du, 2200.0) * 0.9,
+            GREATEST(
+                COALESCE(CASE WHEN du_subtype = 'attsf' THEN residential_building_sqft END, 0),
+                du_attsf_v * COALESCE(sqft_per_du, 2200.0) * 0.9,
+                COALESCE(du_attsf_v, 1.0) * 600.0
+            ),
             NULLIF(bldg_area_attsf, 0)
         ) AS bldg_area_attsf_v,
         COALESCE(
-            CASE WHEN du_subtype IN ('mf2to4', 'mf5p') THEN residential_building_sqft END,
-                        GREATEST(
+            GREATEST(
+                COALESCE(CASE WHEN du_subtype IN ('mf2to4', 'mf5p') THEN residential_building_sqft END, 0),
                 du_mf_v * COALESCE(sqft_per_du, 2200.0) * CASE WHEN du_subtype = 'mf5p' THEN 1.4 ELSE 0.7 END,
                 COALESCE(du_mf_v, 1.0) * 800.0
             ),

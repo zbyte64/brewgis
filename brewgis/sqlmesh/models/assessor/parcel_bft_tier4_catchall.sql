@@ -38,6 +38,7 @@ unknown_parcels AS (
         ap.lot_size_acres,
         COALESCE(bs.footprint_ratio, 0) AS footprint_ratio,
         COALESCE(bs.residential_building_sqft, 0) AS residential_building_sqft,
+        COALESCE(id.intersection_density, 0) AS intersection_density,
         ap.zone,
         ap.landuse_prefix,
         ap.landuse
@@ -53,6 +54,7 @@ SELECT
         WHEN (u.landuse_prefix LIKE 'A2' OR u.landuse_prefix IN ('AT')) THEN
             CASE
                 WHEN u.residential_building_sqft >= 3000 THEN 'mf5p'
+                WHEN u.intersection_density >= 100 THEN 'mf5p'
                 ELSE 'mf2to4'
             END
         WHEN u.lot_size_acres > 10.0 THEN 'agricultural'

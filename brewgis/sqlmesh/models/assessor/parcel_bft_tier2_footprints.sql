@@ -52,8 +52,8 @@ SELECT DISTINCT ON (ap.apn)
         -- A2/AT with high intersection density but no building data → mf5p
         WHEN (ap.landuse_prefix LIKE 'A2' OR ap.landuse_prefix IN ('AT'))
              AND bs.residential_building_sqft = 0
-             AND COALESCE(ap.lot_size_acres, 0) < 0.5
-             AND COALESCE(id.intersection_density, 0) >= 200 THEN 'mf5p'
+             AND COALESCE(ap.lot_size_acres, 0) < 1.0
+             AND COALESCE(id.intersection_density, 0) >= 100 THEN 'mf5p'
         -- A2 catch-all: building footprints exist but Overture didn't tag as residential.
         -- Landuse code already says multi-family, so default to conservative mf2to4.
         -- Without this, A2 + non-residential-only footprints falls through to
@@ -103,8 +103,8 @@ WHERE bs.total_footprint_sqft > 0
         -- A2/AT with high intersection density but no building data → mf5p
         WHEN (ap.landuse_prefix LIKE 'A2' OR ap.landuse_prefix IN ('AT'))
              AND bs.residential_building_sqft = 0
-             AND COALESCE(ap.lot_size_acres, 0) < 0.5
-             AND COALESCE(id.intersection_density, 0) >= 200 THEN 'mf5p'
+             AND COALESCE(ap.lot_size_acres, 0) < 1.0
+             AND COALESCE(id.intersection_density, 0) >= 100 THEN 'mf5p'
         WHEN (ap.landuse_prefix LIKE 'A2' OR ap.landuse_prefix IN ('AT')) THEN 'mf2to4'
         WHEN bs.residential_building_sqft > 0
              AND COALESCE(bs.max_levels, 1) >= 3 THEN 'mf5p'
