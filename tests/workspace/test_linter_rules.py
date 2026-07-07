@@ -909,6 +909,28 @@ class TestCteSpatialJoin:
         msg = _violation_msg(violations[0])
         assert "my_cte" in msg
 
+    def test_cte_var_parameter_source_passes(self) -> None:
+        """Key join against CTE reading from @var → no violation.
+
+        CTEs that read from dynamic @var references (e.g.
+        @base_canvas_table) cannot be resolved statically, but
+        in practice always point to indexed tables.
+        """
+        src = _make_source_model(
+            "brewdb.public.analysis",
+            """
+            WITH my_cte AS (
+                SELECT * FROM @base_canvas_table
+            )
+            SELECT p.*
+            FROM parcels p
+            JOIN my_cte m ON p.parcel_id = m.parcel_id
+            """,
+            {"parcel_id": "BIGINT"},
+        )
+        violations = _check(src, {})
+        assert violations == []
+
 
 # ── Helper functions for new rules ─────────────────────────────────
 

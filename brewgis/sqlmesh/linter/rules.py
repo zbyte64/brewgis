@@ -11,6 +11,7 @@ from pathlib import Path
 
 import sqlglot
 import sqlglot.expressions as exp
+from sqlmesh.core.dialect import MacroVar
 from sqlmesh.core.dialect import normalize_model_name
 from sqlmesh.core.linter.rule import Rule
 from sqlmesh.core.linter.rule import RuleViolation
@@ -569,16 +570,32 @@ def _cte_has_limit_one(cte_body: exp.Expression | None) -> bool:
 
 
 def _cte_groups_by_key(cte_body: exp.Expression | None, key: str) -> bool:
-    """Check if a CTE body groups by the given column name."""
+    """Check if a CTE body groups by the given column name.
+
+    Checks both GROUP BY and DISTINCT ON (column), since both
+    constrain output to one row per distinct key value.
+    """
     if cte_body is None:
         return False
+
+    # Check GROUP BY.
     group = cte_body.args.get("group")
-    if group is None:
-        return False
-    for expr in group.expressions:
-        for col in expr.find_all(exp.Column):
-            if col.name.lower() == key.lower():
-                return True
+    if group is not None:
+        for expr in group.expressions:
+            for col in expr.find_all(exp.Column):
+                if col.name.lower() == key.lower():
+                    return True
+
+    # Check DISTINCT ON (column).
+    distinct = cte_body.args.get("distinct")
+    if distinct is not None:
+        on_exprs = distinct.args.get("on")
+        if on_exprs is not None:
+            for expr in on_exprs:
+                for col in expr.find_all(exp.Column):
+                    if col.name.lower() == key.lower():
+                        return True
+
     return False
 
 
@@ -590,10 +607,19 @@ def _is_efficient_cte_join(query: exp.Expr, cte_name: str, join_key: str) -> boo
       PostgreSQL trivially hash-joins a single row.
     - The CTE groups by the join key column. The output is then one row per
       distinct key value — naturally constrained, hash-join friendly.
+    - The CTE reads from a dynamic ``@var`` table. These references cannot
+      be resolved statically, and in practice always point to indexed tables.
     """
     cte_body = _cte_body(query, cte_name)
     if cte_body is None:
         return False
+
+    # Dynamic @var references (e.g. @base_canvas_table) — skip.
+    # These are parsed as Table > MacroVar in the SQLMesh dialect.
+    for from_node in cte_body.find_all(exp.From):
+        ft = from_node.this
+        if isinstance(ft, exp.Table) and isinstance(ft.this, MacroVar):
+            return True
 
     # Single-row CTEs (aggregate without GROUP BY).
     has_agg = any(
@@ -608,7 +634,7 @@ def _is_efficient_cte_join(query: exp.Expr, cte_name: str, join_key: str) -> boo
     if _cte_has_limit_one(cte_body):
         return True
 
-    # GROUP BY on the join key column.
+    # GROUP BY or DISTINCT ON the join key column.
     return bool(_cte_groups_by_key(cte_body, join_key))
 
 
@@ -885,7 +911,15 @@ class UnindexedJoin(Rule):
                         table.name, model, self.context
                     )
                     if source_model is not None and isinstance(source_model, SqlModel):
-                        indexed_cols = _get_indexed_columns(source_model)
+                        # For VIEW models, resolve through to the underlying
+                        # source tables which may have the actual indexes.
+                        resolved = _resolve_view_source(source_model, self.context)
+                        check_model = (
+                            resolved
+                            if resolved is not None and isinstance(resolved, SqlModel)
+                            else source_model
+                        )
+                        indexed_cols = _get_indexed_columns(check_model)
                         if col.name in indexed_cols:
                             # Upstream model has the index — false positive.
                             return None
@@ -1116,6 +1150,12 @@ def _walk_cte_chain(
 
         from_name = from_table.name.lower()
 
+        # Dynamic @var references (e.g. @base_canvas_table) cannot be
+        # resolved statically — skip. These are parsed as
+        # Table > MacroVar in the SQLMesh dialect.
+        if isinstance(from_table.this, MacroVar):
+            break
+
         # If the FROM table is another CTE in this query, keep chasing.
         if from_name in cte_map:
             current_name = from_name
@@ -1131,6 +1171,55 @@ def _walk_cte_chain(
             return ref_model
 
         break
+
+    return None
+
+
+def _resolve_view_source(model: Model, context: object) -> Model | None:
+    """Follow VIEW model references to find the underlying non-VIEW model.
+
+    When a model is a VIEW, its query references other models that may
+    also be VIEWs. Resolves through VIEW chains (up to
+    ``_CTE_CHAIN_MAX_DEPTH``) to find a non-VIEW model whose indexes
+    are meaningful. Returns the input model unchanged if it isn't a
+    VIEW.
+    """
+    kind = getattr(model, "kind", None)
+    if kind is None or not getattr(kind, "is_view", False):
+        return model
+
+    current = model
+    for _ in range(_CTE_CHAIN_MAX_DEPTH):
+        query = getattr(current, "query", None)
+        if query is None:
+            break
+
+        from_clause = query.args.get("from_")
+        if from_clause is None:
+            break
+
+        from_table = from_clause.this
+        if not isinstance(from_table, exp.Table):
+            break
+
+        from_name = from_table.name.lower()
+        if from_name.startswith("@"):
+            break
+
+        fqn = _table_fqn(from_table, current)
+        if fqn is None:
+            break
+
+        resolved = _get_model(context, fqn)
+        if resolved is None or not isinstance(resolved, SqlModel):
+            break
+
+        kind = getattr(resolved, "kind", None)
+        is_view = kind is not None and getattr(kind, "is_view", False)
+        if not is_view:
+            return resolved  # Found non-VIEW model.
+
+        current = resolved
 
     return None
 
