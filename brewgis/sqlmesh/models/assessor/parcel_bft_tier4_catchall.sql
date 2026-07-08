@@ -53,7 +53,7 @@ SELECT
     CASE
         WHEN (u.landuse_prefix LIKE 'A2' OR u.landuse_prefix IN ('AT')) THEN
             CASE
-                WHEN u.residential_building_sqft >= 3000 THEN 'mf5p'
+                WHEN u.residential_building_sqft >= 2000 THEN 'mf5p'
                 WHEN u.intersection_density >= 100 THEN 'mf5p'
                 ELSE 'mf2to4'
             END
@@ -67,8 +67,8 @@ SELECT
         WHEN u.lot_size_acres > 0.01 THEN 'detsf_sl'
         ELSE
             CASE (u.apn::bigint % 2)
-                WHEN 0 THEN 'mf2to4'
-                WHEN 1 THEN 'attsf'
+                WHEN 0 THEN 'attsf'
+                WHEN 1 THEN 'mf2to4'
             END
     END AS built_form_key
 FROM unknown_parcels u

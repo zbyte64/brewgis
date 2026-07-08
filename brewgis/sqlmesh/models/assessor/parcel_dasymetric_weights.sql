@@ -89,7 +89,7 @@ SELECT
         ar.authoritative_non_residential_sqft,
         NULLIF(c.commercial_building_sqft + c.industrial_building_sqft + c.other_building_sqft, 0),
         c.lot_size_acres * 43560 * 0.1
-    )) * (1.0 + COALESCE(c.intersection_density, 0.0) / 200.0) AS emp_dasym_weight
+    )) * (1.0 + COALESCE(c.intersection_density, 0.0) / 400.0) AS emp_dasym_weight
 FROM classification c
 LEFT JOIN auth_res ar ON c.apn = ar.apn;
 

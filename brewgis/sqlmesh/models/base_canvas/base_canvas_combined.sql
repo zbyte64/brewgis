@@ -710,19 +710,19 @@ demographics_attr AS (
         CASE WHEN du_subtype = 'mf2to4' THEN COALESCE(du, 0.0) ELSE 0.0 END AS du_mf2to4_v,
         CASE WHEN du_subtype = 'mf5p' THEN COALESCE(du, 0.0) ELSE 0.0 END AS du_mf5p_v,
         CASE WHEN du_subtype IN ('mf2to4', 'mf5p') THEN COALESCE(du, 0.0) ELSE 0.0 END AS du_mf_v,
-        COALESCE(emp_ret, emp * 0.2) AS emp_ret_v,
-        COALESCE(emp_off, emp * 0.35) AS emp_off_v,
-        COALESCE(emp_pub, emp * 0.15) AS emp_pub_v,
+        COALESCE(emp_ret, emp * 0.22) AS emp_ret_v,
+        COALESCE(emp_off, emp * 0.30) AS emp_off_v,
+        COALESCE(emp_pub, emp * 0.18) AS emp_pub_v,
         COALESCE(emp_ind, emp * 0.3) AS emp_ind_v,
         COALESCE(emp_retail_services, emp_ret * 0.3) AS emp_retail_services_v,
         COALESCE(emp_restaurant, emp_ret * 0.2) AS emp_restaurant_v,
         COALESCE(emp_accommodation, emp_ret * 0.15) AS emp_accommodation_v,
         COALESCE(emp_arts_entertainment, emp_ret * 0.15) AS emp_arts_entertainment_v,
         COALESCE(emp_other_services, emp_ret * 0.2) AS emp_other_services_v,
-        COALESCE(emp_office_services, emp_off * 0.6) AS emp_office_services_v,
-        COALESCE(emp_medical_services, emp_off * 0.4) AS emp_medical_services_v,
-        COALESCE(emp_public_admin, emp_pub * 0.5) AS emp_public_admin_v,
-        COALESCE(emp_education, emp_pub * 0.5) AS emp_education_v,
+        COALESCE(emp_office_services, emp_off * 0.75) AS emp_office_services_v,
+        COALESCE(emp_medical_services, emp_off * 0.25) AS emp_medical_services_v,
+        COALESCE(emp_public_admin, emp_pub * 0.38) AS emp_public_admin_v,
+        COALESCE(emp_education, emp_pub * 0.62) AS emp_education_v,
         COALESCE(emp_manufacturing, emp_ind * 0.3) AS emp_manufacturing_v,
         COALESCE(emp_wholesale, emp_ind * 0.15) AS emp_wholesale_v,
         COALESCE(emp_transport_warehousing, emp_ind * 0.25) AS emp_transport_warehousing_v,
@@ -738,18 +738,18 @@ building_areas AS (
         *,
         COALESCE(
             CASE WHEN du_subtype = 'detsf_sl' THEN residential_building_sqft END,
-            du_detsf_sl_v * COALESCE(sqft_per_du, 2200.0) * 0.8,
+            du_detsf_sl_v * COALESCE(sqft_per_du, 2600.0) * 0.85,
             NULLIF(bldg_area_detsf_sl, 0)
         ) AS bldg_area_detsf_sl_v,
         COALESCE(
             CASE WHEN du_subtype = 'detsf_ll' THEN residential_building_sqft END,
-            du_detsf_ll_v * COALESCE(sqft_per_du, 2200.0) * 1.2,
+            du_detsf_ll_v * COALESCE(sqft_per_du, 2600.0) * 1.1,
             NULLIF(bldg_area_detsf_ll, 0)
         ) AS bldg_area_detsf_ll_v,
         COALESCE(
             GREATEST(
                 COALESCE(CASE WHEN du_subtype = 'attsf' THEN residential_building_sqft END, 0),
-                du_attsf_v * COALESCE(sqft_per_du, 2200.0) * 0.9,
+                du_attsf_v * COALESCE(sqft_per_du, 2600.0) * 0.7,
                 COALESCE(du_attsf_v, 1.0) * 600.0
             ),
             NULLIF(bldg_area_attsf, 0)
@@ -757,7 +757,7 @@ building_areas AS (
         COALESCE(
             GREATEST(
                 COALESCE(CASE WHEN du_subtype IN ('mf2to4', 'mf5p') THEN residential_building_sqft END, 0),
-                du_mf_v * COALESCE(sqft_per_du, 2200.0) * CASE WHEN du_subtype = 'mf5p' THEN 1.4 ELSE 0.7 END,
+                du_mf_v * COALESCE(sqft_per_du, 2600.0) * CASE WHEN du_subtype = 'mf5p' THEN 0.65 ELSE 0.55 END,
                 COALESCE(du_mf_v, 1.0) * 800.0
             ),
             NULLIF(bldg_area_mf, 0),
@@ -881,7 +881,7 @@ area_by_use AS (
                      + COALESCE(industrial_building_sqft, 0) + COALESCE(other_building_sqft, 0) > 0
                  AND (COALESCE(residential_building_sqft, 0) + COALESCE(commercial_building_sqft, 0)
                       + COALESCE(industrial_building_sqft, 0) + COALESCE(other_building_sqft, 0))
-                     / NULLIF(COALESCE(area_parcel_acres, area_gross_acres, area_gross, 0) * 43560, 0) >= 0.02
+                     / NULLIF(COALESCE(area_parcel_acres, area_gross_acres, area_gross, 0) * 43560, 0) >= 0.05
                  THEN COALESCE(area_parcel_acres, area_gross_acres, area_gross, 0)
                       * COALESCE(residential_building_sqft, 0)
                         / NULLIF(COALESCE(residential_building_sqft, 0) + COALESCE(commercial_building_sqft, 0)
@@ -897,7 +897,7 @@ area_by_use AS (
                  + COALESCE(industrial_building_sqft, 0) + COALESCE(other_building_sqft, 0) > 0
                  AND (COALESCE(residential_building_sqft, 0) + COALESCE(commercial_building_sqft, 0)
                       + COALESCE(industrial_building_sqft, 0) + COALESCE(other_building_sqft, 0))
-                     / NULLIF(COALESCE(area_parcel_acres, area_gross_acres, area_gross, 0) * 43560, 0) >= 0.02
+                     / NULLIF(COALESCE(area_parcel_acres, area_gross_acres, area_gross, 0) * 43560, 0) >= 0.05
                  THEN COALESCE(area_parcel_acres, area_gross_acres, area_gross, 0)
                       * COALESCE(commercial_building_sqft + industrial_building_sqft + other_building_sqft, 0)
                         / NULLIF(COALESCE(residential_building_sqft, 0) + COALESCE(commercial_building_sqft, 0)
@@ -915,7 +915,7 @@ area_by_use AS (
                  + COALESCE(industrial_building_sqft, 0) + COALESCE(other_building_sqft, 0) > 0
                  AND (COALESCE(residential_building_sqft, 0) + COALESCE(commercial_building_sqft, 0)
                       + COALESCE(industrial_building_sqft, 0) + COALESCE(other_building_sqft, 0))
-                     / NULLIF(COALESCE(area_parcel_acres, area_gross_acres, area_gross, 0) * 43560, 0) >= 0.02
+                     / NULLIF(COALESCE(area_parcel_acres, area_gross_acres, area_gross, 0) * 43560, 0) >= 0.05
                  THEN 0
             WHEN lnd_v IN ('urban', 'mixed_use') THEN COALESCE(area_parcel_acres, area_gross_acres, area_gross, 0)
             WHEN lnd_v = 'undeveloped' THEN COALESCE(area_parcel_acres, area_gross_acres, area_gross, 0)
