@@ -268,37 +268,25 @@ emp_intersections AS (
         w.emp_pub,
         w.emp_ind,
         w.emp_ag,
-        COALESCE(p.commercial_building_sqft, 0) AS commercial_weight,
-        COALESCE(p.industrial_building_sqft, 0) AS industrial_weight,
-        COALESCE(p.other_building_sqft, 0) AS other_weight,
         COALESCE(p.commercial_building_sqft, 0)
             + COALESCE(p.industrial_building_sqft, 0)
             + COALESCE(p.other_building_sqft, 0) AS total_emp_weight,
-        -- Targeted employment weight: use building sqft when available;
-        -- only fall back to dasymetric for parcels with compatible built_form.
-        -- This prevents residential parcels from attracting commercial employment
-        -- just because they have a non-zero dasymetric weight.
+        -- Unified employment allocation weight: use total building sqft
+        -- when available; only fall back to dasymetric for parcels with
+        -- compatible built_form. This prevents residential parcels from
+        -- attracting employment just because they have a non-zero
+        -- dasymetric weight.
         CASE
-            WHEN COALESCE(p.commercial_building_sqft, 0) > 0
-                THEN p.commercial_building_sqft
-            WHEN p.built_form_key IN ('commercial', 'mixed_use')
-                THEN COALESCE(p.emp_dasym_weight, 0) * 0.1
+            WHEN COALESCE(p.commercial_building_sqft, 0)
+                + COALESCE(p.industrial_building_sqft, 0)
+                + COALESCE(p.other_building_sqft, 0) > 0
+            THEN COALESCE(p.commercial_building_sqft, 0)
+                + COALESCE(p.industrial_building_sqft, 0)
+                + COALESCE(p.other_building_sqft, 0)
+            WHEN p.built_form_key IN ('commercial', 'industrial', 'civic', 'mixed_use')
+            THEN COALESCE(p.emp_dasym_weight, 0) * 0.05
             ELSE 0.0
-        END AS commercial_alloc_weight,
-        CASE
-            WHEN COALESCE(p.industrial_building_sqft, 0) > 0
-                THEN p.industrial_building_sqft
-            WHEN p.built_form_key = 'industrial'
-                THEN COALESCE(p.emp_dasym_weight, 0) * 0.1
-            ELSE 0.0
-        END AS industrial_alloc_weight,
-        CASE
-            WHEN COALESCE(p.other_building_sqft, 0) > 0
-                THEN p.other_building_sqft
-            WHEN p.built_form_key = 'civic'
-                THEN COALESCE(p.emp_dasym_weight, 0) * 0.1
-            ELSE 0.0
-        END AS other_alloc_weight,
+        END AS emp_alloc_weight,
         p.area_gross
     FROM demographics_data p
     JOIN brewgis.staging.wac_block_projected w ON ST_Intersects(p.geometry, w.geometry)
@@ -307,261 +295,40 @@ emp_intersections AS (
 emp_block_weight_totals AS (
     SELECT
         geoid,
-        SUM(commercial_alloc_weight) AS block_commercial_weight,
-        SUM(industrial_alloc_weight) AS block_industrial_weight,
-        SUM(other_alloc_weight) AS block_other_weight,
-        SUM(total_emp_weight) AS block_total_emp_weight,
-        SUM(emp_dasy_weight) AS block_emp_dasym_weight
+        SUM(COALESCE(emp_alloc_weight, 0)) AS block_total_emp_weight
     FROM emp_intersections
     GROUP BY geoid
 ),
 
 emp_allocated AS (
     SELECT
-        i.parcel_id,
-        SUM(
-            CASE
-                WHEN bwt.block_commercial_weight > 0
-                    THEN i.emp_retail_services * i.commercial_alloc_weight / bwt.block_commercial_weight
-                WHEN bwt.block_emp_dasym_weight > 0
-                    THEN i.emp_retail_services * i.emp_dasy_weight / bwt.block_emp_dasym_weight
-                ELSE 0.0
-            END
-            + CASE
-                WHEN bwt.block_commercial_weight > 0
-                    THEN i.emp_restaurant * i.commercial_alloc_weight / bwt.block_commercial_weight
-                WHEN bwt.block_emp_dasym_weight > 0
-                    THEN i.emp_restaurant * i.emp_dasy_weight / bwt.block_emp_dasym_weight
-                ELSE 0.0
-            END
-            + CASE
-                WHEN bwt.block_commercial_weight > 0
-                    THEN i.emp_accommodation * i.commercial_alloc_weight / bwt.block_commercial_weight
-                WHEN bwt.block_emp_dasym_weight > 0
-                    THEN i.emp_accommodation * i.emp_dasy_weight / bwt.block_emp_dasym_weight
-                ELSE 0.0
-            END
-            + CASE
-                WHEN bwt.block_commercial_weight > 0
-                    THEN i.emp_arts_entertainment * i.commercial_alloc_weight / bwt.block_commercial_weight
-                WHEN bwt.block_emp_dasym_weight > 0
-                    THEN i.emp_arts_entertainment * i.emp_dasy_weight / bwt.block_emp_dasym_weight
-                ELSE 0.0
-            END
-            + CASE
-                WHEN bwt.block_commercial_weight > 0
-                    THEN i.emp_other_services * i.commercial_alloc_weight / bwt.block_commercial_weight
-                WHEN bwt.block_emp_dasym_weight > 0
-                    THEN i.emp_other_services * i.emp_dasy_weight / bwt.block_emp_dasym_weight
-                ELSE 0.0
-            END
-            + CASE
-                WHEN bwt.block_commercial_weight > 0
-                    THEN i.emp_office_services * i.commercial_alloc_weight / bwt.block_commercial_weight
-                WHEN bwt.block_emp_dasym_weight > 0
-                    THEN i.emp_office_services * i.emp_dasy_weight / bwt.block_emp_dasym_weight
-                ELSE 0.0
-            END
-            + CASE
-                WHEN bwt.block_commercial_weight > 0
-                    THEN i.emp_medical_services * i.commercial_alloc_weight / bwt.block_commercial_weight
-                WHEN bwt.block_emp_dasym_weight > 0
-                    THEN i.emp_medical_services * i.emp_dasy_weight / bwt.block_emp_dasym_weight
-                ELSE 0.0
-            END
-            + CASE
-                WHEN bwt.block_industrial_weight > 0
-                    THEN i.emp_manufacturing * i.industrial_alloc_weight / bwt.block_industrial_weight
-                WHEN bwt.block_emp_dasym_weight > 0
-                    THEN i.emp_manufacturing * i.emp_dasy_weight / bwt.block_emp_dasym_weight
-                ELSE 0.0
-            END
-            + CASE
-                WHEN bwt.block_industrial_weight > 0
-                    THEN i.emp_wholesale * i.industrial_alloc_weight / bwt.block_industrial_weight
-                WHEN bwt.block_emp_dasym_weight > 0
-                    THEN i.emp_wholesale * i.emp_dasy_weight / bwt.block_emp_dasym_weight
-                ELSE 0.0
-            END
-            + CASE
-                WHEN bwt.block_industrial_weight > 0
-                    THEN i.emp_transport_warehousing * i.industrial_alloc_weight / bwt.block_industrial_weight
-                WHEN bwt.block_emp_dasym_weight > 0
-                    THEN i.emp_transport_warehousing * i.emp_dasy_weight / bwt.block_emp_dasym_weight
-                ELSE 0.0
-            END
-            + CASE
-                WHEN bwt.block_industrial_weight > 0
-                    THEN i.emp_utilities * i.industrial_alloc_weight / bwt.block_industrial_weight
-                WHEN bwt.block_emp_dasym_weight > 0
-                    THEN i.emp_utilities * i.emp_dasy_weight / bwt.block_emp_dasym_weight
-                ELSE 0.0
-            END
-            + CASE
-                WHEN bwt.block_industrial_weight > 0
-                    THEN i.emp_construction * i.industrial_alloc_weight / bwt.block_industrial_weight
-                WHEN bwt.block_emp_dasym_weight > 0
-                    THEN i.emp_construction * i.emp_dasy_weight / bwt.block_emp_dasym_weight
-                ELSE 0.0
-            END
-            + CASE
-                WHEN bwt.block_other_weight > 0
-                    THEN i.emp_public_admin * i.other_alloc_weight / bwt.block_other_weight
-                WHEN bwt.block_emp_dasym_weight > 0
-                    THEN i.emp_public_admin * i.emp_dasy_weight / bwt.block_emp_dasym_weight
-                ELSE 0.0
-            END
-            + CASE
-                WHEN bwt.block_other_weight > 0
-                    THEN i.emp_education * i.other_alloc_weight / bwt.block_other_weight
-                WHEN bwt.block_emp_dasym_weight > 0
-                    THEN i.emp_education * i.emp_dasy_weight / bwt.block_emp_dasym_weight
-                ELSE 0.0
-            END
-            + CASE
-                WHEN bwt.block_other_weight > 0
-                    THEN i.emp_agriculture * i.other_alloc_weight / bwt.block_other_weight
-                WHEN bwt.block_emp_dasym_weight > 0
-                    THEN i.emp_agriculture * i.emp_dasy_weight / bwt.block_emp_dasym_weight
-                ELSE 0.0
-            END
-            + CASE
-                WHEN bwt.block_other_weight > 0
-                    THEN i.emp_extraction * i.other_alloc_weight / bwt.block_other_weight
-                WHEN bwt.block_emp_dasym_weight > 0
-                    THEN i.emp_extraction * i.emp_dasy_weight / bwt.block_emp_dasym_weight
-                ELSE 0.0
-            END
-            + CASE
-                WHEN bwt.block_other_weight > 0
-                    THEN i.emp_military * i.other_alloc_weight / bwt.block_other_weight
-                WHEN bwt.block_emp_dasym_weight > 0
-                    THEN i.emp_military * i.emp_dasy_weight / bwt.block_emp_dasym_weight
-                ELSE 0.0
-            END
-        ) AS emp,
-        SUM(CASE
-            WHEN bwt.block_commercial_weight > 0
-                THEN i.emp_retail_services * i.commercial_alloc_weight / bwt.block_commercial_weight
-            WHEN bwt.block_emp_dasym_weight > 0
-                THEN i.emp_retail_services * i.emp_dasy_weight / bwt.block_emp_dasym_weight
-            ELSE 0.0
-        END) AS emp_retail_services,
-        SUM(CASE
-            WHEN bwt.block_commercial_weight > 0
-                THEN i.emp_restaurant * i.commercial_alloc_weight / bwt.block_commercial_weight
-            WHEN bwt.block_emp_dasym_weight > 0
-                THEN i.emp_restaurant * i.emp_dasy_weight / bwt.block_emp_dasym_weight
-            ELSE 0.0
-        END) AS emp_restaurant,
-        SUM(CASE
-            WHEN bwt.block_commercial_weight > 0
-                THEN i.emp_accommodation * i.commercial_alloc_weight / bwt.block_commercial_weight
-            WHEN bwt.block_emp_dasym_weight > 0
-                THEN i.emp_accommodation * i.emp_dasy_weight / bwt.block_emp_dasym_weight
-            ELSE 0.0
-        END) AS emp_accommodation,
-        SUM(CASE
-            WHEN bwt.block_commercial_weight > 0
-                THEN i.emp_arts_entertainment * i.commercial_alloc_weight / bwt.block_commercial_weight
-            WHEN bwt.block_emp_dasym_weight > 0
-                THEN i.emp_arts_entertainment * i.emp_dasy_weight / bwt.block_emp_dasym_weight
-            ELSE 0.0
-        END) AS emp_arts_entertainment,
-        SUM(CASE
-            WHEN bwt.block_commercial_weight > 0
-                THEN i.emp_other_services * i.commercial_alloc_weight / bwt.block_commercial_weight
-            WHEN bwt.block_emp_dasym_weight > 0
-                THEN i.emp_other_services * i.emp_dasy_weight / bwt.block_emp_dasym_weight
-            ELSE 0.0
-        END) AS emp_other_services,
-        SUM(CASE
-            WHEN bwt.block_commercial_weight > 0
-                THEN i.emp_office_services * i.commercial_alloc_weight / bwt.block_commercial_weight
-            WHEN bwt.block_emp_dasym_weight > 0
-                THEN i.emp_office_services * i.emp_dasy_weight / bwt.block_emp_dasym_weight
-            ELSE 0.0
-        END) AS emp_office_services,
-        SUM(CASE
-            WHEN bwt.block_commercial_weight > 0
-                THEN i.emp_medical_services * i.commercial_alloc_weight / bwt.block_commercial_weight
-            WHEN bwt.block_emp_dasym_weight > 0
-                THEN i.emp_medical_services * i.emp_dasy_weight / bwt.block_emp_dasym_weight
-            ELSE 0.0
-        END) AS emp_medical_services,
-        SUM(CASE
-            WHEN bwt.block_industrial_weight > 0
-                THEN i.emp_manufacturing * i.industrial_alloc_weight / bwt.block_industrial_weight
-            WHEN bwt.block_emp_dasym_weight > 0
-                THEN i.emp_manufacturing * i.emp_dasy_weight / bwt.block_emp_dasym_weight
-            ELSE 0.0
-        END) AS emp_manufacturing,
-        SUM(CASE
-            WHEN bwt.block_industrial_weight > 0
-                THEN i.emp_wholesale * i.industrial_alloc_weight / bwt.block_industrial_weight
-            WHEN bwt.block_emp_dasym_weight > 0
-                THEN i.emp_wholesale * i.emp_dasy_weight / bwt.block_emp_dasym_weight
-            ELSE 0.0
-        END) AS emp_wholesale,
-        SUM(CASE
-            WHEN bwt.block_industrial_weight > 0
-                THEN i.emp_transport_warehousing * i.industrial_alloc_weight / bwt.block_industrial_weight
-            WHEN bwt.block_emp_dasym_weight > 0
-                THEN i.emp_transport_warehousing * i.emp_dasy_weight / bwt.block_emp_dasym_weight
-            ELSE 0.0
-        END) AS emp_transport_warehousing,
-        SUM(CASE
-            WHEN bwt.block_industrial_weight > 0
-                THEN i.emp_utilities * i.industrial_alloc_weight / bwt.block_industrial_weight
-            WHEN bwt.block_emp_dasym_weight > 0
-                THEN i.emp_utilities * i.emp_dasy_weight / bwt.block_emp_dasym_weight
-            ELSE 0.0
-        END) AS emp_utilities,
-        SUM(CASE
-            WHEN bwt.block_industrial_weight > 0
-                THEN i.emp_construction * i.industrial_alloc_weight / bwt.block_industrial_weight
-            WHEN bwt.block_emp_dasym_weight > 0
-                THEN i.emp_construction * i.emp_dasy_weight / bwt.block_emp_dasym_weight
-            ELSE 0.0
-        END) AS emp_construction,
-        SUM(CASE
-            WHEN bwt.block_other_weight > 0
-                THEN i.emp_public_admin * i.other_alloc_weight / bwt.block_other_weight
-            WHEN bwt.block_emp_dasym_weight > 0
-                THEN i.emp_public_admin * i.emp_dasy_weight / bwt.block_emp_dasym_weight
-            ELSE 0.0
-        END) AS emp_public_admin,
-        SUM(CASE
-            WHEN bwt.block_other_weight > 0
-                THEN i.emp_education * i.other_alloc_weight / bwt.block_other_weight
-            WHEN bwt.block_emp_dasym_weight > 0
-                THEN i.emp_education * i.emp_dasy_weight / bwt.block_emp_dasym_weight
-            ELSE 0.0
-        END) AS emp_education,
-        SUM(CASE
-            WHEN bwt.block_other_weight > 0
-                THEN i.emp_agriculture * i.other_alloc_weight / bwt.block_other_weight
-            WHEN bwt.block_emp_dasym_weight > 0
-                THEN i.emp_agriculture * i.emp_dasy_weight / bwt.block_emp_dasym_weight
-            ELSE 0.0
-        END) AS emp_agriculture,
-        SUM(CASE
-            WHEN bwt.block_other_weight > 0
-                THEN i.emp_extraction * i.other_alloc_weight / bwt.block_other_weight
-            WHEN bwt.block_emp_dasym_weight > 0
-                THEN i.emp_extraction * i.emp_dasy_weight / bwt.block_emp_dasym_weight
-            ELSE 0.0
-        END) AS emp_extraction,
-        SUM(CASE
-            WHEN bwt.block_other_weight > 0
-                THEN i.emp_military * i.other_alloc_weight / bwt.block_other_weight
-            WHEN bwt.block_emp_dasym_weight > 0
-                THEN i.emp_military * i.emp_dasy_weight / bwt.block_emp_dasym_weight
-            ELSE 0.0
-        END) AS emp_military
-    FROM emp_intersections i
-    LEFT JOIN emp_block_weight_totals bwt ON i.geoid = bwt.geoid
-    GROUP BY i.parcel_id
+        ei.parcel_id,
+        SUM(ei.emp * COALESCE(ei.emp_alloc_weight, 0) / NULLIF(bwt.block_total_emp_weight, 0)) AS emp,
+        SUM(ei.emp_ret * COALESCE(ei.emp_alloc_weight, 0) / NULLIF(bwt.block_total_emp_weight, 0)) AS emp_ret,
+        SUM(ei.emp_off * COALESCE(ei.emp_alloc_weight, 0) / NULLIF(bwt.block_total_emp_weight, 0)) AS emp_off,
+        SUM(ei.emp_pub * COALESCE(ei.emp_alloc_weight, 0) / NULLIF(bwt.block_total_emp_weight, 0)) AS emp_pub,
+        SUM(ei.emp_ind * COALESCE(ei.emp_alloc_weight, 0) / NULLIF(bwt.block_total_emp_weight, 0)) AS emp_ind,
+        SUM(ei.emp_ag * COALESCE(ei.emp_alloc_weight, 0) / NULLIF(bwt.block_total_emp_weight, 0)) AS emp_ag,
+        SUM(ei.emp_retail_services * COALESCE(ei.emp_alloc_weight, 0) / NULLIF(bwt.block_total_emp_weight, 0)) AS emp_retail_services,
+        SUM(ei.emp_restaurant * COALESCE(ei.emp_alloc_weight, 0) / NULLIF(bwt.block_total_emp_weight, 0)) AS emp_restaurant,
+        SUM(ei.emp_accommodation * COALESCE(ei.emp_alloc_weight, 0) / NULLIF(bwt.block_total_emp_weight, 0)) AS emp_accommodation,
+        SUM(ei.emp_arts_entertainment * COALESCE(ei.emp_alloc_weight, 0) / NULLIF(bwt.block_total_emp_weight, 0)) AS emp_arts_entertainment,
+        SUM(ei.emp_other_services * COALESCE(ei.emp_alloc_weight, 0) / NULLIF(bwt.block_total_emp_weight, 0)) AS emp_other_services,
+        SUM(ei.emp_office_services * COALESCE(ei.emp_alloc_weight, 0) / NULLIF(bwt.block_total_emp_weight, 0)) AS emp_office_services,
+        SUM(ei.emp_medical_services * COALESCE(ei.emp_alloc_weight, 0) / NULLIF(bwt.block_total_emp_weight, 0)) AS emp_medical_services,
+        SUM(ei.emp_public_admin * COALESCE(ei.emp_alloc_weight, 0) / NULLIF(bwt.block_total_emp_weight, 0)) AS emp_public_admin,
+        SUM(ei.emp_education * COALESCE(ei.emp_alloc_weight, 0) / NULLIF(bwt.block_total_emp_weight, 0)) AS emp_education,
+        SUM(ei.emp_manufacturing * COALESCE(ei.emp_alloc_weight, 0) / NULLIF(bwt.block_total_emp_weight, 0)) AS emp_manufacturing,
+        SUM(ei.emp_wholesale * COALESCE(ei.emp_alloc_weight, 0) / NULLIF(bwt.block_total_emp_weight, 0)) AS emp_wholesale,
+        SUM(ei.emp_transport_warehousing * COALESCE(ei.emp_alloc_weight, 0) / NULLIF(bwt.block_total_emp_weight, 0)) AS emp_transport_warehousing,
+        SUM(ei.emp_utilities * COALESCE(ei.emp_alloc_weight, 0) / NULLIF(bwt.block_total_emp_weight, 0)) AS emp_utilities,
+        SUM(ei.emp_construction * COALESCE(ei.emp_alloc_weight, 0) / NULLIF(bwt.block_total_emp_weight, 0)) AS emp_construction,
+        SUM(ei.emp_agriculture * COALESCE(ei.emp_alloc_weight, 0) / NULLIF(bwt.block_total_emp_weight, 0)) AS emp_agriculture,
+        SUM(ei.emp_extraction * COALESCE(ei.emp_alloc_weight, 0) / NULLIF(bwt.block_total_emp_weight, 0)) AS emp_extraction,
+        SUM(ei.emp_military * COALESCE(ei.emp_alloc_weight, 0) / NULLIF(bwt.block_total_emp_weight, 0)) AS emp_military
+    FROM emp_intersections ei
+    LEFT JOIN emp_block_weight_totals bwt ON ei.geoid = bwt.geoid
+    GROUP BY ei.parcel_id
 ),
 
 employment_data AS (
@@ -690,7 +457,10 @@ with_cal AS (
         s.*,
         COALESCE(NULLIF(s.land_development_category, ''), 'urban') AS lc_key,
         c.sqft_per_du,
-        c.sqft_per_emp,
+        c.sqft_per_emp_retail,
+        c.sqft_per_emp_office,
+        c.sqft_per_emp_public,
+        c.sqft_per_emp_industrial,
         c.res_irrigation_frac,
         c.com_irrigation_frac,
         c.intersection_density AS calib_int_density
@@ -710,24 +480,24 @@ demographics_attr AS (
         CASE WHEN du_subtype = 'mf2to4' THEN COALESCE(du, 0.0) ELSE 0.0 END AS du_mf2to4_v,
         CASE WHEN du_subtype = 'mf5p' THEN COALESCE(du, 0.0) ELSE 0.0 END AS du_mf5p_v,
         CASE WHEN du_subtype IN ('mf2to4', 'mf5p') THEN COALESCE(du, 0.0) ELSE 0.0 END AS du_mf_v,
-        COALESCE(emp_ret, emp * 0.22) AS emp_ret_v,
-        COALESCE(emp_off, emp * 0.30) AS emp_off_v,
-        COALESCE(emp_pub, emp * 0.18) AS emp_pub_v,
-        COALESCE(emp_ind, emp * 0.3) AS emp_ind_v,
-        COALESCE(emp_retail_services, emp_ret * 0.3) AS emp_retail_services_v,
-        COALESCE(emp_restaurant, emp_ret * 0.2) AS emp_restaurant_v,
-        COALESCE(emp_accommodation, emp_ret * 0.15) AS emp_accommodation_v,
-        COALESCE(emp_arts_entertainment, emp_ret * 0.15) AS emp_arts_entertainment_v,
-        COALESCE(emp_other_services, emp_ret * 0.2) AS emp_other_services_v,
-        COALESCE(emp_office_services, emp_off * 0.75) AS emp_office_services_v,
-        COALESCE(emp_medical_services, emp_off * 0.25) AS emp_medical_services_v,
-        COALESCE(emp_public_admin, emp_pub * 0.38) AS emp_public_admin_v,
-        COALESCE(emp_education, emp_pub * 0.62) AS emp_education_v,
-        COALESCE(emp_manufacturing, emp_ind * 0.3) AS emp_manufacturing_v,
-        COALESCE(emp_wholesale, emp_ind * 0.15) AS emp_wholesale_v,
-        COALESCE(emp_transport_warehousing, emp_ind * 0.25) AS emp_transport_warehousing_v,
-        COALESCE(emp_utilities, emp_ind * 0.1) AS emp_utilities_v,
-        COALESCE(emp_construction, emp_ind * 0.2) AS emp_construction_v,
+        GREATEST(0, COALESCE(emp_ret, emp * 0.302)) AS emp_ret_v,
+        GREATEST(0, COALESCE(emp_off, emp * 0.478)) AS emp_off_v,
+        GREATEST(0, COALESCE(emp_pub, emp * 0.082)) AS emp_pub_v,
+        GREATEST(0, COALESCE(emp_ind, emp * 0.138)) AS emp_ind_v,
+        COALESCE(emp_retail_services, emp_ret * 0.466) AS emp_retail_services_v,
+        COALESCE(emp_restaurant, emp_ret * 0.259) AS emp_restaurant_v,
+        COALESCE(emp_accommodation, emp_ret * 0.023) AS emp_accommodation_v,
+        COALESCE(emp_arts_entertainment, emp_ret * 0.046) AS emp_arts_entertainment_v,
+        COALESCE(emp_other_services, emp_ret * 0.203) AS emp_other_services_v,
+        COALESCE(emp_office_services, emp_off * 0.912) AS emp_office_services_v,
+        COALESCE(emp_medical_services, emp_off * 0.088) AS emp_medical_services_v,
+        COALESCE(emp_public_admin, emp_pub * 0.382) AS emp_public_admin_v,
+        COALESCE(emp_education, emp_pub * 0.618) AS emp_education_v,
+        COALESCE(emp_manufacturing, emp_ind * 0.619) AS emp_manufacturing_v,
+        COALESCE(emp_wholesale, emp_ind * 0.143) AS emp_wholesale_v,
+        COALESCE(emp_transport_warehousing, emp_ind * 0.190) AS emp_transport_warehousing_v,
+        COALESCE(emp_utilities, emp_ind * 0.010) AS emp_utilities_v,
+        COALESCE(emp_construction, emp_ind * 0.038) AS emp_construction_v,
         COALESCE(emp_agriculture, emp_ag * 0.7) AS emp_agriculture_v,
         COALESCE(emp_extraction, emp_ag * 0.3) AS emp_extraction_v
     FROM with_cal
@@ -736,109 +506,103 @@ demographics_attr AS (
 building_areas AS (
     SELECT
         *,
-        COALESCE(
-            CASE WHEN du_subtype = 'detsf_sl' THEN residential_building_sqft END,
-            du_detsf_sl_v * COALESCE(sqft_per_du, 2200.0) * 0.8,
-            NULLIF(bldg_area_detsf_sl, 0)
+        GREATEST(
+            COALESCE(CASE WHEN du_subtype = 'detsf_sl' THEN residential_building_sqft END, 0),
+            du_detsf_sl_v * COALESCE(sqft_per_du, 3000.0)
         ) AS bldg_area_detsf_sl_v,
-        COALESCE(
-            CASE WHEN du_subtype = 'detsf_ll' THEN residential_building_sqft END,
-            du_detsf_ll_v * COALESCE(sqft_per_du, 2200.0) * 1.2,
-            NULLIF(bldg_area_detsf_ll, 0)
+        GREATEST(
+            COALESCE(CASE WHEN du_subtype = 'detsf_ll' THEN residential_building_sqft END, 0),
+            du_detsf_ll_v * COALESCE(sqft_per_du, 3000.0)
         ) AS bldg_area_detsf_ll_v,
-        COALESCE(
-            GREATEST(
-                COALESCE(CASE WHEN du_subtype = 'attsf' THEN residential_building_sqft END, 0),
-                du_attsf_v * COALESCE(sqft_per_du, 2200.0) * 0.9,
-                COALESCE(du_attsf_v, 1.0) * 600.0
-            ),
-            NULLIF(bldg_area_attsf, 0)
+        GREATEST(
+            COALESCE(CASE WHEN du_subtype = 'attsf' THEN residential_building_sqft END, 0),
+            du_attsf_v * 1500.0,
+            COALESCE(du_attsf_v, 1.0) * 600.0,
+            COALESCE(NULLIF(bldg_area_attsf, 0), 0)
         ) AS bldg_area_attsf_v,
-        COALESCE(
-            GREATEST(
-                COALESCE(CASE WHEN du_subtype IN ('mf2to4', 'mf5p') THEN residential_building_sqft END, 0),
-                du_mf_v * COALESCE(sqft_per_du, 2200.0) * CASE WHEN du_subtype = 'mf5p' THEN 1.4 ELSE 0.7 END,
-                COALESCE(du_mf_v, 1.0) * 800.0
-            ),
-            NULLIF(bldg_area_mf, 0),
-            CASE WHEN du_subtype IS NULL AND residential_building_sqft > 0 THEN residential_building_sqft END
+        GREATEST(
+            COALESCE(CASE WHEN du_subtype IN ('mf2to4', 'mf5p') THEN residential_building_sqft END, 0),
+            du_mf_v * 1500.0,
+            COALESCE(du_mf_v, 1.0) * 800.0,
+            COALESCE(NULLIF(bldg_area_mf, 0), 0),
+            COALESCE(CASE WHEN du_subtype IS NULL AND residential_building_sqft > 0 THEN residential_building_sqft END, 0)
         ) AS bldg_area_mf_v,
         COALESCE(
             bldg_area_retail_services,
             CASE WHEN commercial_building_sqft > 0
                 THEN commercial_building_sqft * COALESCE(emp_retail_services_v, 0) / NULLIF(COALESCE(emp_ret_v, 0), 0)
             END,
-            emp_retail_services_v * COALESCE(sqft_per_emp, 400.0)
+            emp_retail_services_v * COALESCE(sqft_per_emp_retail, 706.0)
         ) AS bldg_area_retail_services_v,
         COALESCE(
             bldg_area_restaurant,
             CASE WHEN commercial_building_sqft > 0
                 THEN commercial_building_sqft * COALESCE(emp_restaurant_v, 0) / NULLIF(COALESCE(emp_ret_v, 0), 0)
             END,
-            emp_restaurant_v * COALESCE(sqft_per_emp, 400.0)
+            emp_restaurant_v * COALESCE(sqft_per_emp_retail, 706.0)
         ) AS bldg_area_restaurant_v,
         COALESCE(
             bldg_area_accommodation,
             CASE WHEN commercial_building_sqft > 0
                 THEN commercial_building_sqft * COALESCE(emp_accommodation_v, 0) / NULLIF(COALESCE(emp_ret_v, 0), 0)
             END,
-            emp_accommodation_v * COALESCE(sqft_per_emp, 400.0)
+            emp_accommodation_v * COALESCE(sqft_per_emp_retail, 706.0)
         ) AS bldg_area_accommodation_v,
         COALESCE(
             bldg_area_arts_entertainment,
             CASE WHEN commercial_building_sqft > 0
                 THEN commercial_building_sqft * COALESCE(emp_arts_entertainment_v, 0) / NULLIF(COALESCE(emp_ret_v, 0), 0)
             END,
-            emp_arts_entertainment_v * COALESCE(sqft_per_emp, 400.0)
+            emp_arts_entertainment_v * COALESCE(sqft_per_emp_retail, 706.0)
         ) AS bldg_area_arts_entertainment_v,
         COALESCE(
             bldg_area_other_services,
             CASE WHEN commercial_building_sqft > 0
                 THEN commercial_building_sqft * COALESCE(emp_other_services_v, 0) / NULLIF(COALESCE(emp_ret_v, 0), 0)
             END,
-            emp_other_services_v * COALESCE(sqft_per_emp, 400.0)
+            emp_other_services_v * COALESCE(sqft_per_emp_retail, 706.0)
         ) AS bldg_area_other_services_v,
         COALESCE(
             bldg_area_office_services,
             CASE WHEN commercial_building_sqft > 0
                 THEN commercial_building_sqft * COALESCE(emp_office_services_v, 0) / NULLIF(COALESCE(emp_off_v, 0), 0)
             END,
-            emp_office_services_v * COALESCE(sqft_per_emp, 400.0)
+            emp_office_services_v * COALESCE(sqft_per_emp_office, 408.0)
         ) AS bldg_area_office_services_v,
         COALESCE(
             bldg_area_public_admin,
             CASE WHEN other_building_sqft > 0
                 THEN other_building_sqft * COALESCE(emp_public_admin_v, 0) / NULLIF(COALESCE(emp_pub_v, 0), 0)
             END,
-            emp_public_admin_v * COALESCE(sqft_per_emp, 400.0)
+            emp_public_admin_v * COALESCE(sqft_per_emp_public, 909.0)
         ) AS bldg_area_public_admin_v,
         COALESCE(
             bldg_area_education,
             CASE WHEN other_building_sqft > 0
                 THEN other_building_sqft * COALESCE(emp_education_v, 0) / NULLIF(COALESCE(emp_pub_v, 0), 0)
             END,
-            emp_education_v * COALESCE(sqft_per_emp, 400.0)
+            emp_education_v * COALESCE(sqft_per_emp_public, 909.0)
         ) AS bldg_area_education_v,
         COALESCE(
             bldg_area_medical_services,
             CASE WHEN commercial_building_sqft > 0
                 THEN commercial_building_sqft * COALESCE(emp_medical_services_v, 0) / NULLIF(COALESCE(emp_off_v, 0), 0)
             END,
-            emp_medical_services_v * COALESCE(sqft_per_emp, 400.0)
+            emp_medical_services_v * COALESCE(sqft_per_emp_office, 408.0)
         ) AS bldg_area_medical_services_v,
         COALESCE(
             bldg_area_transport_warehousing,
             CASE WHEN industrial_building_sqft > 0
                 THEN industrial_building_sqft * COALESCE(emp_transport_warehousing_v, 0) / NULLIF(COALESCE(emp_ind_v, 0), 0)
             END,
-            emp_transport_warehousing_v * COALESCE(sqft_per_emp, 400.0)
+            emp_transport_warehousing_v * COALESCE(sqft_per_emp_industrial, 267.0)
         ) AS bldg_area_transport_warehousing_v,
         COALESCE(
             bldg_area_wholesale,
             CASE WHEN industrial_building_sqft > 0
                 THEN industrial_building_sqft * COALESCE(emp_wholesale_v, 0) / NULLIF(COALESCE(emp_ind_v, 0), 0)
             END,
-            emp_wholesale_v * COALESCE(sqft_per_emp, 400.0)
+            emp_wholesale_v * COALESCE(sqft_per_emp_industrial, 267.0)
         ) AS bldg_area_wholesale_v
     FROM demographics_attr
 ),
