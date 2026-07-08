@@ -1,6 +1,11 @@
 MODEL (
   name brewgis.assessor.parcel_known_features,
-  kind FULL,
+  kind CUSTOM (
+    materialization 'partitioned_full',
+    materialization_properties (
+      'partition_by' = 'land_development_category'
+    )
+  ),
   audits (
     not_null(columns := (apn)),
     unique_values(columns := (apn,))
@@ -60,4 +65,6 @@ WHERE COALESCE(tier1.built_form_key, tier0.built_form_key) IS NOT NULL
   ON @this_model USING btree (lot_size_acres);
   CREATE INDEX IF NOT EXISTS idx_parcel_known_features_cat_lot_geom_@snapshot_hash
   ON @this_model USING GIST (land_development_category, lot_size_acres, geometry);
+  CREATE INDEX IF NOT EXISTS idx_parcel_known_features_cat_geom_@snapshot_hash
+  ON @this_model USING GIST (land_development_category, geometry);
 ANALYZE @this_model;
