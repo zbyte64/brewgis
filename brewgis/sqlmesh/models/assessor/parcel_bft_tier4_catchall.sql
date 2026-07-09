@@ -53,10 +53,12 @@ SELECT
     CASE
         WHEN (u.landuse_prefix LIKE 'A2' OR u.landuse_prefix IN ('AT')) THEN
             CASE
-                WHEN u.residential_building_sqft >= 2000 THEN 'mf5p'
+                WHEN u.residential_building_sqft >= 1500 THEN 'mf5p'
                 WHEN u.intersection_density >= 100 THEN 'mf5p'
                 ELSE 'mf2to4'
             END
+        -- Medium-density urban: moderate intersection density on small lot → mf2to4
+        WHEN u.intersection_density >= 50 AND COALESCE(u.lot_size_acres, 0.01) < 1.0 THEN 'mf2to4'
         WHEN u.lot_size_acres > 10.0 THEN 'agricultural'
         WHEN u.lot_size_acres > 3.0 THEN
             CASE

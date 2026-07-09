@@ -117,3 +117,123 @@ test_AT_with_residential_sqft_1100_no_levels_tier2_mf2to4_below_threshold:
       rows:
         - apn: "TEST_AT_T2_SQFT_002"
           built_form_key: "mf2to4"
+
+test_AT_residential_sqft_1600_tier2_mf5p:
+  model: brewgis.assessor.parcel_bft_tier2_footprints
+  gateway: postgis
+  inputs:
+    brewgis.assessor.sacog_assessor_parcels:
+      rows:
+        - apn: "TEST_AT_SQFT_1600"
+          lot_size_acres: 0.5
+          landuse: "ATA00A"
+          zone: "R-3"
+          geometry: "POLYGON((-121.5 38.5,-121.49 38.5,-121.49 38.51,-121.5 38.51,-121.5 38.5))"
+          land_development_category: "urban"
+      columns:
+        geometry: GEOMETRY
+        apn: TEXT
+        lot_size_acres: DOUBLE
+        landuse: TEXT
+        zone: TEXT
+        land_development_category: TEXT
+    brewgis.assessor.parcel_building_sqft_by_type:
+      rows:
+        - apn: "TEST_AT_SQFT_1600"
+          total_footprint_sqft: 3200.0
+          building_count: 2
+          footprint_ratio: 0.15
+          lot_size_acres: 0.5
+          residential_building_sqft: 1600.0
+          commercial_building_sqft: 0.0
+          industrial_building_sqft: 0.0
+          other_building_sqft: 800.0
+          max_levels: 0
+          land_development_category: "urban"
+          geometry: "POLYGON((-121.5 38.5,-121.49 38.5,-121.49 38.51,-121.5 38.51,-121.5 38.5))"
+      columns:
+        geometry: GEOMETRY
+        apn: TEXT
+        total_footprint_sqft: DOUBLE
+        building_count: INTEGER
+        footprint_ratio: DOUBLE
+        lot_size_acres: DOUBLE
+        residential_building_sqft: DOUBLE
+        commercial_building_sqft: DOUBLE
+        industrial_building_sqft: DOUBLE
+        other_building_sqft: DOUBLE
+        residential_building_count: INTEGER
+        non_residential_building_count: INTEGER
+        max_levels: INTEGER
+        land_development_category: TEXT
+    brewgis.assessor.overture_intersection_density:
+      rows: []
+      columns:
+        apn: TEXT
+        intersection_density: DOUBLE
+  outputs:
+    query:
+      partial: true
+      rows:
+        - apn: "TEST_AT_SQFT_1600"
+          built_form_key: "mf5p"
+
+test_attsf_ceiling_3000_sqft_now_mf5p:
+  model: brewgis.assessor.parcel_bft_tier2_footprints
+  gateway: postgis
+  inputs:
+    brewgis.assessor.sacog_assessor_parcels:
+      rows:
+        - apn: "TEST_ATTSF_CEIL_001"
+          lot_size_acres: 0.3
+          landuse: "A1000A"
+          zone: "R-3"
+          geometry: "POLYGON((-121.5 38.5,-121.49 38.5,-121.49 38.51,-121.5 38.51,-121.5 38.5))"
+          land_development_category: "urban"
+      columns:
+        geometry: GEOMETRY
+        apn: TEXT
+        lot_size_acres: DOUBLE
+        landuse: TEXT
+        zone: TEXT
+        land_development_category: TEXT
+    brewgis.assessor.parcel_building_sqft_by_type:
+      rows:
+        - apn: "TEST_ATTSF_CEIL_001"
+          total_footprint_sqft: 3000.0
+          building_count: 1
+          footprint_ratio: 0.2
+          lot_size_acres: 0.3
+          residential_building_sqft: 3000.0
+          commercial_building_sqft: 0.0
+          industrial_building_sqft: 0.0
+          other_building_sqft: 0.0
+          max_levels: 2
+          land_development_category: "urban"
+          geometry: "POLYGON((-121.5 38.5,-121.49 38.5,-121.49 38.51,-121.5 38.51,-121.5 38.5))"
+      columns:
+        geometry: GEOMETRY
+        apn: TEXT
+        total_footprint_sqft: DOUBLE
+        building_count: INTEGER
+        footprint_ratio: DOUBLE
+        lot_size_acres: DOUBLE
+        residential_building_sqft: DOUBLE
+        commercial_building_sqft: DOUBLE
+        industrial_building_sqft: DOUBLE
+        other_building_sqft: DOUBLE
+        residential_building_count: INTEGER
+        non_residential_building_count: INTEGER
+        max_levels: INTEGER
+        land_development_category: TEXT
+    brewgis.assessor.overture_intersection_density:
+      rows: []
+      columns:
+        apn: TEXT
+        intersection_density: DOUBLE
+  outputs:
+    query:
+      partial: true
+      rows:
+        - apn: "TEST_ATTSF_CEIL_001"
+          built_form_key: "mf5p"

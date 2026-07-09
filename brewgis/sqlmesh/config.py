@@ -354,6 +354,37 @@ def config_factory(**variables):
                 "s3://overturemaps-us-west-2/release/2026-05-20.0/"
                 "theme=transportation/type=segment/*.parquet"
             ),
+            # ---- CBP County Employment Scaling (wac_block.sql) ----
+            # Set to actual CBP 2008 county-level totals for accurate scaling.
+            # All default to 0.0 (passthrough — no scaling applied).
+            # Source: Census County Business Patterns, 2008 vintage
+            #   https://www.census.gov/programs-surveys/cbp.html
+            "cbp_county_emp_agriculture": 0.0,
+            "cbp_county_emp_extraction": 0.0,
+            "cbp_county_emp_construction": 0.0,
+            "cbp_county_emp_manufacturing": 0.0,
+            "cbp_county_emp_transport_warehousing": 0.0,
+            "cbp_county_emp_utilities": 0.0,
+            "cbp_county_emp_wholesale": 0.0,
+            "cbp_county_emp_retail_services": 0.0,
+            "cbp_county_emp_restaurant": 0.0,
+            "cbp_county_emp_accommodation": 0.0,
+            "cbp_county_emp_arts_entertainment": 0.0,
+            "cbp_county_emp_other_services": 0.0,
+            "cbp_county_emp_office_services": 0.0,
+            "cbp_county_emp_medical_services": 0.0,
+            "cbp_county_emp_education": 0.0,
+            "cbp_county_emp_public_admin": 0.0,
+            "cbp_county_emp_military": 0.0,
+            "cbp_preserve_fraction": 0.5,
+            # ---- CBP NAICS CNS sub-sector proportions (wac_block_raw.sql) ----
+            "cbp_11": 0.0,  # NAICS 11 (ag) share of CNS01
+            "cbp_21": 0.0,  # NAICS 21 (extraction) share of CNS01
+            "cbp_48": 0.0,  # NAICS 48 (transport) share of CNS03
+            "cbp_49": 0.0,  # NAICS 49 (warehousing) share of CNS03
+            "cbp_22": 0.0,  # NAICS 22 (utilities) share of CNS03
+            "cbp_42": 0.0,  # NAICS 42 (wholesale) share of CNS03
+            "cbp_721": 0.0,  # NAICS 721 (accommodation) share of CNS13
             # Overture Sacramento County bbox
             "overture_bbox_min_x": -121.87,
             "overture_bbox_max_x": -121.01,

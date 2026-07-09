@@ -1,0 +1,78 @@
+test_fractions_sum_to_one:
+  model: brewgis.staging.wac_sub_sector_fallbacks
+  gateway: postgis
+  inputs:
+    brewgis.staging.wac_block:
+      rows:
+        - geoid: "06067000100"
+          emp_retail_services: 100.0
+          emp_restaurant: 50.0
+          emp_accommodation: 10.0
+          emp_arts_entertainment: 15.0
+          emp_other_services: 25.0
+          emp_office_services: 200.0
+          emp_medical_services: 50.0
+          emp_public_admin: 80.0
+          emp_education: 120.0
+          emp_manufacturing: 30.0
+          emp_wholesale: 10.0
+          emp_transport_warehousing: 20.0
+          emp_utilities: 5.0
+          emp_construction: 15.0
+          emp_agriculture: 40.0
+          emp_extraction: 10.0
+        - geoid: "06067000200"
+          emp_retail_services: 0.0
+          emp_restaurant: 0.0
+          emp_accommodation: 0.0
+          emp_arts_entertainment: 0.0
+          emp_other_services: 0.0
+          emp_office_services: 0.0
+          emp_medical_services: 0.0
+          emp_public_admin: 0.0
+          emp_education: 0.0
+          emp_manufacturing: 0.0
+          emp_wholesale: 0.0
+          emp_transport_warehousing: 0.0
+          emp_utilities: 0.0
+          emp_construction: 0.0
+          emp_agriculture: 0.0
+          emp_extraction: 0.0
+      columns:
+        geoid: TEXT
+        emp_retail_services: DOUBLE
+        emp_restaurant: DOUBLE
+        emp_accommodation: DOUBLE
+        emp_arts_entertainment: DOUBLE
+        emp_other_services: DOUBLE
+        emp_office_services: DOUBLE
+        emp_medical_services: DOUBLE
+        emp_public_admin: DOUBLE
+        emp_education: DOUBLE
+        emp_manufacturing: DOUBLE
+        emp_wholesale: DOUBLE
+        emp_transport_warehousing: DOUBLE
+        emp_utilities: DOUBLE
+        emp_construction: DOUBLE
+        emp_agriculture: DOUBLE
+        emp_extraction: DOUBLE
+  outputs:
+    query:
+      partial: true
+      rows:
+        - emp_retail_services_frac: 0.5
+          emp_restaurant_frac: 0.25
+          emp_accommodation_frac: 0.05
+          emp_arts_entertainment_frac: 0.075
+          emp_other_services_frac: 0.125
+          emp_office_services_frac: 0.8
+          emp_medical_services_frac: 0.2
+          emp_public_admin_frac: 0.4
+          emp_education_frac: 0.6
+          emp_manufacturing_frac: 0.375
+          emp_wholesale_frac: 0.125
+          emp_transport_warehousing_frac: 0.25
+          emp_utilities_frac: 0.0625
+          emp_construction_frac: 0.1875
+          emp_agriculture_frac: 0.8
+          emp_extraction_frac: 0.2

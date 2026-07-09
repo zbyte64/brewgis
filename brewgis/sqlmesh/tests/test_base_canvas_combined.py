@@ -102,6 +102,27 @@ def test_population_conservation(context):
                     "geometry": "POLYGON((-121.51 38.49,-121.48 38.49,-121.48 38.52,-121.51 38.52,-121.51 38.49))",
                 }
             ],
+            "brewgis.staging.wac_sub_sector_fallbacks": [
+                {
+                    "county_fips": "067",
+                    "emp_retail_services_frac": 0.466,
+                    "emp_restaurant_frac": 0.259,
+                    "emp_accommodation_frac": 0.023,
+                    "emp_arts_entertainment_frac": 0.046,
+                    "emp_other_services_frac": 0.203,
+                    "emp_office_services_frac": 0.912,
+                    "emp_medical_services_frac": 0.088,
+                    "emp_public_admin_frac": 0.382,
+                    "emp_education_frac": 0.618,
+                    "emp_manufacturing_frac": 0.619,
+                    "emp_wholesale_frac": 0.143,
+                    "emp_transport_warehousing_frac": 0.190,
+                    "emp_utilities_frac": 0.010,
+                    "emp_construction_frac": 0.038,
+                    "emp_agriculture_frac": 0.7,
+                    "emp_extraction_frac": 0.3,
+                }
+            ],
         },
     )
     df = result[0].df
@@ -161,6 +182,27 @@ def test_non_residential_pop_zero(context):
                     "total_population": 3000.0,
                     "total_housing_units": 1200.0,
                     "geometry": "POLYGON((-121.51 38.49,-121.48 38.49,-121.48 38.52,-121.51 38.52,-121.51 38.49))",
+                }
+            ],
+            "brewgis.staging.wac_sub_sector_fallbacks": [
+                {
+                    "county_fips": "067",
+                    "emp_retail_services_frac": 0.466,
+                    "emp_restaurant_frac": 0.259,
+                    "emp_accommodation_frac": 0.023,
+                    "emp_arts_entertainment_frac": 0.046,
+                    "emp_other_services_frac": 0.203,
+                    "emp_office_services_frac": 0.912,
+                    "emp_medical_services_frac": 0.088,
+                    "emp_public_admin_frac": 0.382,
+                    "emp_education_frac": 0.618,
+                    "emp_manufacturing_frac": 0.619,
+                    "emp_wholesale_frac": 0.143,
+                    "emp_transport_warehousing_frac": 0.190,
+                    "emp_utilities_frac": 0.010,
+                    "emp_construction_frac": 0.038,
+                    "emp_agriculture_frac": 0.7,
+                    "emp_extraction_frac": 0.3,
                 }
             ],
         },
@@ -250,6 +292,27 @@ def test_commercial_sqft_routes_retail_jobs(context):
                     "emp_ind": 230.0,
                     "emp_ag": 30.0,
                     "geometry": "POLYGON((-121.51 38.49,-121.48 38.49,-121.48 38.52,-121.51 38.52,-121.51 38.49))",
+                }
+            ],
+            "brewgis.staging.wac_sub_sector_fallbacks": [
+                {
+                    "county_fips": "067",
+                    "emp_retail_services_frac": 0.466,
+                    "emp_restaurant_frac": 0.259,
+                    "emp_accommodation_frac": 0.023,
+                    "emp_arts_entertainment_frac": 0.046,
+                    "emp_other_services_frac": 0.203,
+                    "emp_office_services_frac": 0.912,
+                    "emp_medical_services_frac": 0.088,
+                    "emp_public_admin_frac": 0.382,
+                    "emp_education_frac": 0.618,
+                    "emp_manufacturing_frac": 0.619,
+                    "emp_wholesale_frac": 0.143,
+                    "emp_transport_warehousing_frac": 0.190,
+                    "emp_utilities_frac": 0.010,
+                    "emp_construction_frac": 0.038,
+                    "emp_agriculture_frac": 0.7,
+                    "emp_extraction_frac": 0.3,
                 }
             ],
         },
@@ -346,6 +409,27 @@ def test_no_commercial_sqft_no_retail_jobs(context):
                     "geometry": "POLYGON((-121.51 38.49,-121.48 38.49,-121.48 38.52,-121.51 38.52,-121.51 38.49))",
                 }
             ],
+            "brewgis.staging.wac_sub_sector_fallbacks": [
+                {
+                    "county_fips": "067",
+                    "emp_retail_services_frac": 0.466,
+                    "emp_restaurant_frac": 0.259,
+                    "emp_accommodation_frac": 0.023,
+                    "emp_arts_entertainment_frac": 0.046,
+                    "emp_other_services_frac": 0.203,
+                    "emp_office_services_frac": 0.912,
+                    "emp_medical_services_frac": 0.088,
+                    "emp_public_admin_frac": 0.382,
+                    "emp_education_frac": 0.618,
+                    "emp_manufacturing_frac": 0.619,
+                    "emp_wholesale_frac": 0.143,
+                    "emp_transport_warehousing_frac": 0.190,
+                    "emp_utilities_frac": 0.010,
+                    "emp_construction_frac": 0.038,
+                    "emp_agriculture_frac": 0.7,
+                    "emp_extraction_frac": 0.3,
+                }
+            ],
         },
     )
     df = result[0].df
@@ -436,6 +520,27 @@ def test_null_subtype_res_sqft_recovered_to_mf(context):
                     "emp_ind": 0.0,
                     "emp_ag": 0.0,
                     "geometry": "POLYGON((-121.51 38.49,-121.48 38.49,-121.48 38.52,-121.51 38.52,-121.51 38.49))",
+                }
+            ],
+            "brewgis.staging.wac_sub_sector_fallbacks": [
+                {
+                    "county_fips": "067",
+                    "emp_retail_services_frac": 0.466,
+                    "emp_restaurant_frac": 0.259,
+                    "emp_accommodation_frac": 0.023,
+                    "emp_arts_entertainment_frac": 0.046,
+                    "emp_other_services_frac": 0.203,
+                    "emp_office_services_frac": 0.912,
+                    "emp_medical_services_frac": 0.088,
+                    "emp_public_admin_frac": 0.382,
+                    "emp_education_frac": 0.618,
+                    "emp_manufacturing_frac": 0.619,
+                    "emp_wholesale_frac": 0.143,
+                    "emp_transport_warehousing_frac": 0.190,
+                    "emp_utilities_frac": 0.010,
+                    "emp_construction_frac": 0.038,
+                    "emp_agriculture_frac": 0.7,
+                    "emp_extraction_frac": 0.3,
                 }
             ],
         },
@@ -536,6 +641,27 @@ def test_null_subtype_no_res_sqft_zero_bldg_area(context):
                     "emp_ind": 0.0,
                     "emp_ag": 0.0,
                     "geometry": "POLYGON((-121.51 38.49,-121.48 38.49,-121.48 38.52,-121.51 38.52,-121.51 38.49))",
+                }
+            ],
+            "brewgis.staging.wac_sub_sector_fallbacks": [
+                {
+                    "county_fips": "067",
+                    "emp_retail_services_frac": 0.466,
+                    "emp_restaurant_frac": 0.259,
+                    "emp_accommodation_frac": 0.023,
+                    "emp_arts_entertainment_frac": 0.046,
+                    "emp_other_services_frac": 0.203,
+                    "emp_office_services_frac": 0.912,
+                    "emp_medical_services_frac": 0.088,
+                    "emp_public_admin_frac": 0.382,
+                    "emp_education_frac": 0.618,
+                    "emp_manufacturing_frac": 0.619,
+                    "emp_wholesale_frac": 0.143,
+                    "emp_transport_warehousing_frac": 0.190,
+                    "emp_utilities_frac": 0.010,
+                    "emp_construction_frac": 0.038,
+                    "emp_agriculture_frac": 0.7,
+                    "emp_extraction_frac": 0.3,
                 }
             ],
         },
