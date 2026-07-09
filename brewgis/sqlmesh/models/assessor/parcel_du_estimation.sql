@@ -141,22 +141,25 @@ calibration AS (
                     ELSE csa.region_avg_sqft_per_unit
                 END,
                 csa.region_avg_sqft_per_unit,
-                CASE WHEN p.du_subtype = 'mf2to4' THEN 1259.0 ELSE 950.0 END  -- global defaults
+                CASE WHEN p.built_form_key = 'mf2to4' THEN 1259.0
+                WHEN p.built_form_key = 'attsf'   THEN 1500.0
+                ELSE 950.0 END  -- global defaults
             ),
             @min_sqft_per_unit
         ) AS region_avg_sqft_per_unit,
         CASE
-            WHEN p.du_subtype = 'mf2to4' THEN 2
-            WHEN p.du_subtype = 'mf5p' THEN 5
+            WHEN p.built_form_key = 'mf2to4' THEN 2
+            WHEN p.built_form_key = 'mf5p' THEN 5
+            WHEN p.built_form_key = 'attsf' THEN 1
             ELSE NULL
         END AS min_du
     FROM parcel_hh_size p
     LEFT JOIN calibration_buckets b
-        ON b.du_subtype = p.du_subtype
+        ON b.du_subtype = p.built_form_key
         AND WIDTH_BUCKET(p.intersection_density, 0, 408, 50) = b.bucket
     LEFT JOIN county_subtype_avg csa
-        ON (p.du_subtype = csa.du_subtype)
-    WHERE p.du_subtype IN ('mf2to4', 'mf5p')
+        ON (p.built_form_key = csa.du_subtype)
+    WHERE p.built_form_key IN ('mf2to4', 'mf5p', 'attsf')
 ),
 
 -- ── Vacancy rate from built_form_key (Section 5) ───────────────────────────
@@ -195,13 +198,13 @@ du_estimation AS (
         END AS du_tier1,
         -- Tier 2: SFR subtypes → du = 1
         CASE
-            WHEN p.built_form_key IN ('detsf_sl', 'detsf_ll', 'attsf')
+            WHEN p.built_form_key IN ('detsf_sl', 'detsf_ll')
             THEN 1.0
             ELSE NULL
         END AS du_tier2,
         -- Tier 3: MF subtype + building sqft
         CASE
-            WHEN p.built_form_key IN ('mf2to4', 'mf5p')
+            WHEN p.built_form_key IN ('mf2to4', 'mf5p', 'attsf')
                  AND COALESCE(p.residential_building_sqft, 0) > 0
             THEN GREATEST(
                 c.min_du::double precision,

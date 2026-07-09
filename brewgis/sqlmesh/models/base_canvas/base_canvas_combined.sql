@@ -524,8 +524,7 @@ building_areas AS (
             COALESCE(CASE WHEN du_subtype IN ('mf2to4', 'mf5p') THEN residential_building_sqft END, 0),
             du_mf_v * 1500.0,
             COALESCE(du_mf_v, 1.0) * 800.0,
-            COALESCE(NULLIF(bldg_area_mf, 0), 0),
-            COALESCE(CASE WHEN du_subtype IS NULL AND residential_building_sqft > 0 THEN residential_building_sqft END, 0)
+            COALESCE(NULLIF(bldg_area_mf, 0), 0)
         ) AS bldg_area_mf_v,
         COALESCE(
             bldg_area_retail_services,

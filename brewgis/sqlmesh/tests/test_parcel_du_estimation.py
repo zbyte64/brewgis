@@ -51,7 +51,7 @@ def test_assessor_units_direct(context):
 
 
 def test_sfr_du_equals_one(context):
-    """detsf_sl/ll/attsf → du=1"""
+    """detsf_sl/ll → du=1"""
     result = context.evaluate(
         "brewgis.assessor.parcel_du_estimation",
         start="2024-01-01",
