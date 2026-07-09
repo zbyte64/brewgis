@@ -63,9 +63,10 @@ class PartitionedFullMaterialization(CustomMaterialization):
         self,
         table_name: str,
         model: Model,
-        _is_table_deployable: bool,
-        _render_kwargs: dict[str, t.Any],
-        **_kwargs: t.Any,
+        is_table_deployable: bool,  # noqa: FBT001, ARG002
+        render_kwargs: dict[str, t.Any],  # noqa: ARG002
+        skip_grants: bool,  # noqa: FBT001, ARG002
+        **kwargs: t.Any,  # noqa: ARG002
     ) -> None:
         from brewgis.sqlmesh.utils import sqlglot_to_pg_type
 
@@ -113,12 +114,12 @@ class PartitionedFullMaterialization(CustomMaterialization):
         self,
         table_name: str,
         query_or_df: QueryOrDF,
-        _model: Model,
-        _is_first_insert: bool,
-        _render_kwargs: dict[str, t.Any],
-        **_kwargs: t.Any,
+        model: Model,  # noqa: ARG002
+        is_first_insert: bool,  # noqa: FBT001, ARG002
+        render_kwargs: dict[str, t.Any],  # noqa: ARG002
+        **kwargs: t.Any,  # noqa: ARG002
     ) -> None:
         self.adapter.replace_query(table_name, query_or_df)
 
-    def delete(self, name: str, **kwargs: t.Any) -> None:
+    def delete(self, name: str, **kwargs: t.Any) -> None:  # noqa: ARG002
         self.adapter.execute(f"DROP TABLE IF EXISTS {name} CASCADE")
