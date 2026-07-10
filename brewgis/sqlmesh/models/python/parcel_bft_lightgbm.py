@@ -565,94 +565,72 @@ def _train_and_predict(
             "LightGBM: using cached model (hash: %s...)", data_hash[:12]
         )
     else:
-        # Stage 1: Pre-train on reference data
-        logging.getLogger(__name__).info(
-            "LightGBM: pre-training on %d reference parcels",
-            len(ref_df),
-        )
-        model_ref = LGBMClassifier(**REFERENCE_TRAINING_PARAMS)
-        model_ref.fit(x_ref, y_ref)
-        stage1_model = model_ref
+        # Concatenated training: combine reference + assessor data
+        # Avoids LightGBM init_model class-mapping issues while benefiting
+        # from both datasets.
+        if has_assessor and x_assessor is not None:
+            assert y_assessor is not None
+            x_combined = pd.concat([x_ref, x_assessor], ignore_index=True)
+            y_combined = np.concatenate([y_ref, y_assessor])
+            logging.getLogger(__name__).info(
+                "LightGBM: combined training on %d ref + %d assessor = %d samples",
+                len(x_ref),
+                len(x_assessor),
+                len(x_combined),
+            )
+            x_tr = x_combined
+            y_tr = y_combined
+            x_va = x_assessor
+            y_va = y_assessor
+        else:
+            x_tr, x_va, y_tr, y_va = train_test_split(
+                x_ref, y_ref, test_size=0.2, random_state=42
+            )
+            logging.getLogger(__name__).info(
+                "LightGBM: training on %d reference parcels (no assessor data)",
+                len(x_tr),
+            )
 
-        class_report = classification_report(
-            y_ref,
-            model_ref.predict(x_ref),
-            target_names=[IDX_TO_CLASS[int(i)] for i in sorted(set(y_ref))],
+        model_obj = LGBMClassifier(**TRAINING_PARAMS)
+        model_obj.fit(
+            x_tr,
+            y_tr,
+            eval_set=[(x_va, y_va)],
+            callbacks=[
+                early_stopping(20, verbose=False),
+                log_evaluation(period=0),
+            ],
+        )
+
+        y_pred = model_obj.predict(x_va)
+        va_classes = [IDX_TO_CLASS[int(i)] for i in sorted(set(y_va))]
+        f1_report = classification_report(
+            y_va,
+            y_pred,
+            target_names=va_classes,
             digits=3,
             zero_division=0.0,
         )
-        train_f1 = f1_score(
-            y_ref,
-            model_ref.predict(x_ref),
+        macro_f1 = f1_score(
+            y_va,
+            y_pred,
             average="macro",
             zero_division=0.0,
         )
+        logging.getLogger(__name__).info("LightGBM training report:\n%s", f1_report)
         logging.getLogger(__name__).info(
-            "LightGBM: reference training complete — macro-F1 on train: %.4f\n%s",
-            train_f1,
-            class_report,
+            "LightGBM: %d validation samples from %d classes — macro-F1: %.4f",
+            len(y_va),
+            len(set(y_va)),
+            macro_f1,
         )
 
-        # Stage 2: Fine-tune on assessor data
-        if has_assessor and x_assessor is not None:
-            assert y_assessor is not None
-            logging.getLogger(__name__).info(
-                "LightGBM: fine-tuning on %d mapped assessor parcels",
-                n_mapped,
-            )
-            x_tr, x_va, y_tr, y_va = train_test_split(
-                x_assessor,
-                y_assessor,
-                test_size=0.2,
-                stratify=y_assessor,
-                random_state=42,
-            )
-            model_obj = LGBMClassifier(**TRAINING_PARAMS)
-            model_obj.fit(
-                x_tr,
-                y_tr,
-                eval_set=[(x_va, y_va)],
-                init_model=stage1_model,
-                callbacks=[
-                    early_stopping(20, verbose=False),
-                    log_evaluation(period=0),
-                ],
-            )
-            y_pred = model_obj.predict(x_va)
-            va_classes = [IDX_TO_CLASS[int(i)] for i in sorted(set(y_va))]
-            f1_report = classification_report(
-                y_va,
-                y_pred,
-                target_names=va_classes,
-                digits=3,
-                zero_division=0.0,
-            )
-            macro_f1 = f1_score(
-                y_va,
-                y_pred,
-                average="macro",
-                zero_division=0.0,
-            )
-            logging.getLogger(__name__).info("LightGBM training report:\n%s", f1_report)
-            logging.getLogger(__name__).info(
-                "LightGBM: %d training samples from %d classes — macro-F1: %.4f",
-                n_mapped,
-                len(set(y_assessor)),
+        if macro_f1 < MIN_MACRO_F1:
+            logging.getLogger(__name__).warning(
+                "LightGBM: macro-F1 %.4f < %.2f — model still used",
                 macro_f1,
+                MIN_MACRO_F1,
             )
-
-            if macro_f1 < MIN_MACRO_F1:
-                logging.getLogger(__name__).warning(
-                    "LightGBM: macro-F1 %.4f < %.2f — model still used",
-                    macro_f1,
-                    MIN_MACRO_F1,
-                )
-        else:
-            model_obj = stage1_model
-            logging.getLogger(__name__).info(
-                "LightGBM: no assessor data — using reference-only model"
-            )
-
         _save_model(context, model_obj, data_hash, landuse_prefixes, zone_prefixes)
 
     # Predict for all parcels
