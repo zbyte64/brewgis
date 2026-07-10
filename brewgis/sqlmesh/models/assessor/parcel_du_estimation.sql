@@ -148,7 +148,11 @@ calibration AS (
         ) AS region_avg_sqft_per_unit,
         CASE
             WHEN p.built_form_key = 'bt__medium_density_attached_residential' THEN 2
+            WHEN p.built_form_key = 'bt__medium_high_density_attached_residential' THEN 2
             WHEN p.built_form_key = 'bt__high_density_attached_residential' THEN 5
+            WHEN p.built_form_key = 'bt__very_high_density_attached_residential' THEN 5
+            WHEN p.built_form_key = 'bt__urban_attached_residential' THEN 5
+            WHEN p.built_form_key = 'bt__urban_mid_rise_residential' THEN 5
             ELSE NULL
         END AS min_du
     FROM parcel_hh_size p

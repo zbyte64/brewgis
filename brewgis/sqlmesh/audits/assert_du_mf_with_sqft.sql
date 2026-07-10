@@ -16,9 +16,10 @@ WHERE built_form_key IN ('bt__medium_density_attached_residential','bt__medium_h
   AND COALESCE(residential_building_sqft, 0) > 0
   AND (assessor_units IS NULL OR assessor_units <= 0)
   AND du IS NOT NULL
-  AND du < (
+    AND du < (
     CASE
-      WHEN built_form_key = 'bt__medium_density_attached_residential' THEN 2.0
+      WHEN built_form_key IN ('bt__medium_density_attached_residential','bt__medium_high_density_attached_residential')
+        THEN 2.0
       ELSE 5.0
     END
   );
