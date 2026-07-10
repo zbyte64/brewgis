@@ -30,7 +30,7 @@ test_resolved_lightgbm_takes_priority_over_tier3b:
     brewgis.assessor.parcel_bft_lightgbm:
       rows:
         - apn: "TEST_LGBM_PRIORITY_001"
-          built_form_key: "mf5p"
+          built_form_key: "bt__high_density_attached_residential"
           probability: 0.88
       columns:
         apn: TEXT
@@ -39,7 +39,7 @@ test_resolved_lightgbm_takes_priority_over_tier3b:
     brewgis.assessor.parcel_bft_tier3b_agricultural:
       rows:
         - apn: "TEST_LGBM_PRIORITY_001"
-          built_form_key: "agricultural"
+          built_form_key: "bt__agriculture"
       columns:
         apn: TEXT
         built_form_key: TEXT
@@ -53,7 +53,7 @@ test_resolved_lightgbm_takes_priority_over_tier3b:
       partial: true
       rows:
         - apn: "TEST_LGBM_PRIORITY_001"
-          built_form_key: "mf5p"
+          built_form_key: "bt__high_density_attached_residential"
           built_form_key_source: "lightgbm"
           du_subtype: "mf5p"
           is_residential: 1
@@ -96,7 +96,7 @@ test_resolved_lightgbm_fallback_to_tier3b:
     brewgis.assessor.parcel_bft_tier3b_agricultural:
       rows:
         - apn: "TEST_FALLBACK_AGR_001"
-          built_form_key: "agricultural"
+          built_form_key: "bt__agriculture"
       columns:
         apn: TEXT
         built_form_key: TEXT
@@ -110,7 +110,7 @@ test_resolved_lightgbm_fallback_to_tier3b:
       partial: true
       rows:
         - apn: "TEST_FALLBACK_AGR_001"
-          built_form_key: "agricultural"
+          built_form_key: "bt__agriculture"
           built_form_key_source: "tier3b"
           du_subtype: null
           is_residential: 0
@@ -137,21 +137,21 @@ test_resolved_tier1_still_takes_priority:
     brewgis.assessor.parcel_bft_tier1_sales:
       rows:
         - apn: "TEST_T1_PRIORITY_001"
-          built_form_key: "detsf_sl"
+          built_form_key: "bt__medium_density_detached_residential"
       columns:
         apn: TEXT
         built_form_key: TEXT
     brewgis.assessor.parcel_bft_tier0_landuse:
       rows:
         - apn: "TEST_T1_PRIORITY_001"
-          built_form_key: "mf5p"
+          built_form_key: "bt__high_density_attached_residential"
       columns:
         apn: TEXT
         built_form_key: TEXT
     brewgis.assessor.parcel_bft_lightgbm:
       rows:
         - apn: "TEST_T1_PRIORITY_001"
-          built_form_key: "mf5p"
+          built_form_key: "bt__high_density_attached_residential"
           probability: 0.95
       columns:
         apn: TEXT
@@ -172,7 +172,7 @@ test_resolved_tier1_still_takes_priority:
       partial: true
       rows:
         - apn: "TEST_T1_PRIORITY_001"
-          built_form_key: "detsf_sl"
+          built_form_key: "bt__medium_density_detached_residential"
           built_form_key_source: "tier1"
           du_subtype: "detsf_sl"
           is_residential: 1

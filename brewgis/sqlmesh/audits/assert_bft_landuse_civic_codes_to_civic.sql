@@ -10,4 +10,4 @@ SELECT
 FROM @this_model t0
 JOIN brewgis.assessor.sacog_assessor_parcels ap ON t0.apn = ap.apn
 WHERE LEFT(ap.landuse, 2) IN ('GC', 'GA', 'HJ')
-  AND t0.built_form_key != 'civic';
+  AND t0.built_form_key != 'bt__publicquasi_public';

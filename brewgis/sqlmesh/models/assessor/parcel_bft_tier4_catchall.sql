@@ -53,24 +53,24 @@ SELECT
     CASE
         WHEN (u.landuse_prefix LIKE 'A2' OR u.landuse_prefix IN ('AT')) THEN
             CASE
-                WHEN u.residential_building_sqft >= 1500 THEN 'mf5p'
-                WHEN u.intersection_density >= 100 THEN 'mf5p'
-                ELSE 'mf2to4'
+                WHEN u.residential_building_sqft >= 1500 THEN 'bt__high_density_attached_residential'
+                WHEN u.intersection_density >= 100 THEN 'bt__high_density_attached_residential'
+                ELSE 'bt__medium_density_attached_residential'
             END
         -- Medium-density urban: moderate intersection density on small lot → mf2to4
-        WHEN u.intersection_density >= 50 AND COALESCE(u.lot_size_acres, 0.01) < 1.0 THEN 'mf2to4'
-        WHEN u.lot_size_acres > 10.0 THEN 'agricultural'
+        WHEN u.intersection_density >= 50 AND COALESCE(u.lot_size_acres, 0.01) < 1.0 THEN 'bt__medium_density_attached_residential'
+        WHEN u.lot_size_acres > 10.0 THEN 'bt__agriculture'
         WHEN u.lot_size_acres > 3.0 THEN
             CASE
-                WHEN u.zone LIKE '%A%' THEN 'agricultural'
-                ELSE 'detsf_ll'
+                WHEN u.zone LIKE '%A%' THEN 'bt__agriculture'
+                ELSE 'bt__low_density_detached_residential'
             END
-        WHEN u.lot_size_acres > 0.15 THEN 'detsf_ll'
-        WHEN u.lot_size_acres > 0.01 THEN 'detsf_sl'
+        WHEN u.lot_size_acres > 0.15 THEN 'bt__low_density_detached_residential'
+        WHEN u.lot_size_acres > 0.01 THEN 'bt__medium_density_detached_residential'
         ELSE
             CASE (u.apn::bigint % 2)
-                WHEN 0 THEN 'attsf'
-                WHEN 1 THEN 'mf2to4'
+                WHEN 0 THEN 'bt__medium_density_attached_residential'
+                WHEN 1 THEN 'bt__medium_density_attached_residential'
             END
     END AS built_form_key
 FROM unknown_parcels u

@@ -72,8 +72,8 @@ tier3_candidates AS (
               AND u.lot_size_acres + 3 * COALESCE(ps.s_ls, u.lot_size_acres + 100)
           AND ST_DWithin(u.geometry, kf.geometry, 5000)
           AND (
-              (u.landuse_prefix LIKE 'A2' AND kf.built_form_key IN ('mf2to4', 'mf5p'))
-              OR (u.landuse_prefix IN ('AT') AND kf.built_form_key IN ('mf2to4', 'mf5p'))
+              (u.landuse_prefix LIKE 'A2' AND kf.built_form_key IN ('bt__medium_density_attached_residential', 'bt__high_density_attached_residential', 'bt__medium_high_density_attached_residential', 'bt__very_high_density_attached_residential', 'bt__urban_attached_residential', 'bt__urban_mid_rise_residential'))
+              OR (u.landuse_prefix IN ('AT') AND kf.built_form_key IN ('bt__medium_density_attached_residential', 'bt__high_density_attached_residential', 'bt__medium_high_density_attached_residential', 'bt__very_high_density_attached_residential', 'bt__urban_attached_residential', 'bt__urban_mid_rise_residential'))
               OR (u.landuse_prefix NOT LIKE 'A2' AND u.landuse_prefix NOT IN ('AT'))
           )
         ORDER BY u.geometry <-> kf.geometry

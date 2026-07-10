@@ -53,4 +53,4 @@ test_a2_with_non_residential_footprints_tier2:
       partial: true
       rows:
         - apn: "TEST_A2_NON_RES"
-          built_form_key: "mf2to4"
+          built_form_key: "bt__medium_density_attached_residential"

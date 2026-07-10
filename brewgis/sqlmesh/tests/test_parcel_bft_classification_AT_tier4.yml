@@ -81,7 +81,7 @@ test_AT_tier4_mf5p_with_sqft:
       partial: true
       rows:
         - apn: "99900000000010"
-          built_form_key: "mf5p"
+          built_form_key: "bt__high_density_attached_residential"
 
 
 test_AT_tier4_mf2to4_low_sqft:
@@ -167,7 +167,7 @@ test_AT_tier4_mf2to4_low_sqft:
       partial: true
       rows:
         - apn: "99900000000011"
-          built_form_key: "mf5p"
+          built_form_key: "bt__high_density_attached_residential"
 
 
 test_AT_tiny_lot_no_buildings_tier4_attsf:
@@ -241,7 +241,7 @@ test_AT_tiny_lot_no_buildings_tier4_attsf:
       partial: true
       rows:
         - apn: "99900000000001"
-          built_form_key: "mf2to4"
+          built_form_key: "bt__medium_density_attached_residential"
 
 
 test_tier4_medium_accessibility_to_mf2to4:
@@ -317,4 +317,4 @@ test_tier4_medium_accessibility_to_mf2to4:
       partial: true
       rows:
         - apn: "TEST_T4_MF_001"
-          built_form_key: "mf2to4"
+          built_form_key: "bt__medium_density_attached_residential"

@@ -283,7 +283,7 @@ emp_intersections AS (
             THEN COALESCE(p.commercial_building_sqft, 0)
                 + COALESCE(p.industrial_building_sqft, 0)
                 + COALESCE(p.other_building_sqft, 0)
-            WHEN p.built_form_key IN ('commercial', 'industrial', 'civic', 'mixed_use')
+            WHEN p.built_form_key NOT IN ('bt__low_density_detached_residential', 'bt__medium_density_detached_residential', 'bt__medium_high_density_detached_residential', 'bt__very_low_density_detached_residential', 'bt__rural_residential', 'bt__farm_home', 'bt__mobile_home_park', 'bt__medium_density_attached_residential', 'bt__medium_high_density_attached_residential', 'bt__high_density_attached_residential', 'bt__very_high_density_attached_residential', 'bt__urban_attached_residential', 'bt__urban_mid_rise_residential', 'bt__blank_place_type') OR p.land_development_category IN ('industrial', 'agricultural', 'undeveloped')
             THEN COALESCE(p.emp_dasym_weight, 0) * 0.05
             ELSE 0.0
         END AS emp_alloc_weight,
@@ -473,13 +473,13 @@ demographics_attr AS (
     SELECT
         *,
         COALESCE(pop_groupquarter, 0.0) AS pop_groupquarter_v,
-        CASE WHEN du_subtype = 'detsf_sl' THEN COALESCE(du, 0.0) ELSE 0.0 END AS du_detsf_sl_v,
-        CASE WHEN du_subtype = 'detsf_ll' THEN COALESCE(du, 0.0) ELSE 0.0 END AS du_detsf_ll_v,
-        CASE WHEN du_subtype IN ('detsf_sl', 'detsf_ll') THEN COALESCE(du, 0.0) ELSE 0.0 END AS du_detsf_v,
-        CASE WHEN du_subtype = 'attsf' THEN COALESCE(du, 0.0) ELSE 0.0 END AS du_attsf_v,
-        CASE WHEN du_subtype = 'mf2to4' THEN COALESCE(du, 0.0) ELSE 0.0 END AS du_mf2to4_v,
-        CASE WHEN du_subtype = 'mf5p' THEN COALESCE(du, 0.0) ELSE 0.0 END AS du_mf5p_v,
-        CASE WHEN du_subtype IN ('mf2to4', 'mf5p') THEN COALESCE(du, 0.0) ELSE 0.0 END AS du_mf_v,
+        CASE WHEN du_subtype = 'bt__medium_density_detached_residential' THEN COALESCE(du, 0.0) ELSE 0.0 END AS du_detsf_sl_v,
+        CASE WHEN du_subtype = 'bt__low_density_detached_residential' THEN COALESCE(du, 0.0) ELSE 0.0 END AS du_detsf_ll_v,
+        CASE WHEN du_subtype IN ('bt__low_density_detached_residential', 'bt__medium_density_detached_residential', 'bt__medium_high_density_detached_residential', 'bt__very_low_density_detached_residential', 'bt__rural_residential', 'bt__farm_home', 'bt__mobile_home_park') THEN COALESCE(du, 0.0) ELSE 0.0 END AS du_detsf_v,
+        CASE WHEN du_subtype = 'bt__medium_density_attached_residential' THEN COALESCE(du, 0.0) ELSE 0.0 END AS du_attsf_v,
+        CASE WHEN du_subtype = 'bt__medium_density_attached_residential' THEN COALESCE(du, 0.0) ELSE 0.0 END AS du_mf2to4_v,
+        CASE WHEN du_subtype = 'bt__high_density_attached_residential' THEN COALESCE(du, 0.0) ELSE 0.0 END AS du_mf5p_v,
+        CASE WHEN du_subtype IN ('bt__medium_density_attached_residential', 'bt__medium_high_density_attached_residential', 'bt__high_density_attached_residential', 'bt__very_high_density_attached_residential', 'bt__urban_attached_residential', 'bt__urban_mid_rise_residential') THEN COALESCE(du, 0.0) ELSE 0.0 END AS du_mf_v,
         GREATEST(0, COALESCE(emp_ret, emp * 0.302)) AS emp_ret_v,
         GREATEST(0, COALESCE(emp_off, emp * 0.478)) AS emp_off_v,
         GREATEST(0, COALESCE(emp_pub, emp * 0.082)) AS emp_pub_v,
@@ -508,21 +508,21 @@ building_areas AS (
     SELECT
         *,
         GREATEST(
-            COALESCE(CASE WHEN du_subtype = 'detsf_sl' THEN residential_building_sqft END, 0),
+            COALESCE(CASE WHEN du_subtype = 'bt__medium_density_detached_residential' THEN residential_building_sqft END, 0),
             du_detsf_sl_v * COALESCE(sqft_per_du, 3000.0)
         ) AS bldg_area_detsf_sl_v,
         GREATEST(
-            COALESCE(CASE WHEN du_subtype = 'detsf_ll' THEN residential_building_sqft END, 0),
+            COALESCE(CASE WHEN du_subtype = 'bt__low_density_detached_residential' THEN residential_building_sqft END, 0),
             du_detsf_ll_v * COALESCE(sqft_per_du, 3000.0)
         ) AS bldg_area_detsf_ll_v,
         GREATEST(
-            COALESCE(CASE WHEN du_subtype = 'attsf' THEN residential_building_sqft END, 0),
+            COALESCE(CASE WHEN du_subtype = 'bt__medium_density_attached_residential' THEN residential_building_sqft END, 0),
             du_attsf_v * 1500.0,
             COALESCE(du_attsf_v, 1.0) * 600.0,
             COALESCE(NULLIF(bldg_area_attsf, 0), 0)
         ) AS bldg_area_attsf_v,
         GREATEST(
-            COALESCE(CASE WHEN du_subtype IN ('mf2to4', 'mf5p') THEN residential_building_sqft END, 0),
+            COALESCE(CASE WHEN du_subtype IN ('bt__medium_density_attached_residential', 'bt__medium_high_density_attached_residential', 'bt__high_density_attached_residential', 'bt__very_high_density_attached_residential', 'bt__urban_attached_residential', 'bt__urban_mid_rise_residential') THEN residential_building_sqft END, 0),
             du_mf_v * 1500.0,
             COALESCE(du_mf_v, 1.0) * 800.0,
             COALESCE(NULLIF(bldg_area_mf, 0), 0)

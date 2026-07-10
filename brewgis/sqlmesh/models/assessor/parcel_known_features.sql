@@ -50,7 +50,16 @@ LEFT JOIN brewgis.assessor.parcel_building_sqft_by_type bs ON ap.apn = bs.apn
 LEFT JOIN brewgis.assessor.overture_intersection_density id ON ap.apn = id.apn
 WHERE COALESCE(tier1.built_form_key, tier0.built_form_key) IS NOT NULL
   AND COALESCE(tier1.built_form_key, tier0.built_form_key) IN (
-      'detsf_sl', 'detsf_ll', 'attsf', 'mf2to4', 'mf5p', 'commercial', 'industrial'
+      'bt__low_density_detached_residential', 'bt__medium_density_detached_residential', 'bt__medium_high_density_detached_residential',
+      'bt__very_low_density_detached_residential', 'bt__rural_residential', 'bt__medium_density_attached_residential',
+      'bt__medium_high_density_attached_residential', 'bt__high_density_attached_residential', 'bt__very_high_density_attached_residential',
+      'bt__urban_attached_residential', 'bt__urban_mid_rise_residential', 'bt__mobile_home_park', 'bt__farm_home',
+      'bt__blank_place_type', 'bt__communityneighborhood_retail', 'bt__communityneighborhood_commercial',
+      'bt__communityneighborhood_commercialoffice', 'bt__regional_retail', 'bt__residentialretail_mixed_use_low',
+      'bt__residentialretail_mixed_use_high', 'bt__moderate_intensity_office', 'bt__high_intensity_office',
+      'bt__cbd_office', 'bt__light_industrialoffice', 'bt__hotel', 'bt__light_industrial', 'bt__heavy_industrial',
+      'bt__agricultural_processingretail_employment', 'bt__agriculture', 'bt__publicquasi_public', 'bt__civic_institution',
+      'bt__k_12_school', 'bt__college_university', 'bt__medical_facility', 'bt__park_and_open_space', 'bt__airport'
   );
 
 -- post_statements

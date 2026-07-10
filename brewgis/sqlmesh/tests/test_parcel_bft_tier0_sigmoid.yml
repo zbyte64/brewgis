@@ -31,7 +31,7 @@ test_SL_dense_urban:
       partial: true
       rows:
         - apn: "TEST_SL_DENSE"
-          built_form_key: "detsf_sl"
+          built_form_key: "bt__medium_density_detached_residential"
 
 test_LL_rural:
   model: brewgis.assessor.parcel_bft_tier0_landuse
@@ -66,7 +66,7 @@ test_LL_rural:
       partial: true
       rows:
         - apn: "TEST_LL_RURAL"
-          built_form_key: "detsf_ll"
+          built_form_key: "bt__low_density_detached_residential"
 
 test_SL_threshold_right:
   model: brewgis.assessor.parcel_bft_tier0_landuse
@@ -101,7 +101,7 @@ test_SL_threshold_right:
       partial: true
       rows:
         - apn: "TEST_THRESH_R"
-          built_form_key: "detsf_sl"
+          built_form_key: "bt__medium_density_detached_residential"
 
 test_LL_threshold_left:
   model: brewgis.assessor.parcel_bft_tier0_landuse
@@ -136,7 +136,7 @@ test_LL_threshold_left:
       partial: true
       rows:
         - apn: "TEST_THRESH_L"
-          built_form_key: "detsf_ll"
+          built_form_key: "bt__low_density_detached_residential"
 
 test_SL_midpoint:
   model: brewgis.assessor.parcel_bft_tier0_landuse
@@ -171,4 +171,4 @@ test_SL_midpoint:
       partial: true
       rows:
         - apn: "TEST_MIDPOINT"
-          built_form_key: "detsf_ll"
+          built_form_key: "bt__low_density_detached_residential"

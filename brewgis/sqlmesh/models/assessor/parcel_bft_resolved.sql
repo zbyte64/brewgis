@@ -31,7 +31,7 @@ SELECT
     CASE
         WHEN COALESCE(t1.built_form_key, t0.built_form_key, lgbm.built_form_key,
                       t3b.built_form_key, t4.built_form_key)
-             IN ('detsf_sl','detsf_ll','attsf','mf2to4','mf5p')
+             IN ('bt__low_density_detached_residential','bt__medium_density_detached_residential','bt__medium_high_density_detached_residential','bt__very_low_density_detached_residential','bt__rural_residential','bt__medium_density_attached_residential','bt__medium_high_density_attached_residential','bt__high_density_attached_residential','bt__very_high_density_attached_residential','bt__urban_attached_residential','bt__urban_mid_rise_residential','bt__mobile_home_park','bt__farm_home','bt__blank_place_type')
         THEN COALESCE(t1.built_form_key, t0.built_form_key, lgbm.built_form_key,
                       t3b.built_form_key, t4.built_form_key)
         ELSE NULL
@@ -39,7 +39,7 @@ SELECT
     CASE
         WHEN COALESCE(t1.built_form_key, t0.built_form_key, lgbm.built_form_key,
                       t3b.built_form_key, t4.built_form_key)
-             IN ('detsf_sl','detsf_ll','attsf','mf2to4','mf5p')
+             IN ('bt__low_density_detached_residential','bt__medium_density_detached_residential','bt__medium_high_density_detached_residential','bt__very_low_density_detached_residential','bt__rural_residential','bt__medium_density_attached_residential','bt__medium_high_density_attached_residential','bt__high_density_attached_residential','bt__very_high_density_attached_residential','bt__urban_attached_residential','bt__urban_mid_rise_residential','bt__mobile_home_park','bt__farm_home','bt__blank_place_type')
         THEN 1 ELSE 0
     END AS is_residential
 FROM brewgis.assessor.sacog_assessor_parcels ap

@@ -37,7 +37,7 @@ unknown_parcels AS (
 )
 SELECT
     u.apn,
-    'agricultural'::text AS built_form_key
+    'bt__agriculture'::text AS built_form_key
 FROM unknown_parcels u
 WHERE u.lot_size_acres > 3.0
   AND COALESCE(u.footprint_ratio, 0) < 0.02

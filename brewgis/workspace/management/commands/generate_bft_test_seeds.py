@@ -124,12 +124,12 @@ def _gen_tier0_seeds() -> dict[str, str]:
         },
     ]
     expected = [
-        {"apn": "T0_A1_SL_001", "built_form_key": "detsf_sl"},
-        {"apn": "T0_A1_SL_002", "built_form_key": "detsf_sl"},
-        {"apn": "T0_A1_LL_001", "built_form_key": "detsf_ll"},
-        {"apn": "T0_A1_LL_002", "built_form_key": "detsf_ll"},
-        {"apn": "T0_A1_LL_003", "built_form_key": "detsf_ll"},
-        {"apn": "T0_A3_001", "built_form_key": "attsf"},
+        {"apn": "T0_A1_SL_001", "built_form_key": "bt__medium_density_detached_residential"},
+        {"apn": "T0_A1_SL_002", "built_form_key": "bt__medium_density_detached_residential"},
+        {"apn": "T0_A1_LL_001", "built_form_key": "bt__low_density_detached_residential"},
+        {"apn": "T0_A1_LL_002", "built_form_key": "bt__low_density_detached_residential"},
+        {"apn": "T0_A1_LL_003", "built_form_key": "bt__low_density_detached_residential"},
+        {"apn": "T0_A3_001", "built_form_key": "bt__medium_density_attached_residential"},
     ]
     path_p = str(SEEDS_DIR / "test_bft_tier0_parcels.csv")
     path_e = str(SEEDS_DIR / "test_bft_tier0_expected.csv")
@@ -312,15 +312,15 @@ def _gen_tier1_seeds() -> dict[str, str]:
         },
     ]
     expected = [
-        {"apn": "T1_SFR_SL_001", "built_form_key": "detsf_sl"},
-        {"apn": "T1_SFR_LL_001", "built_form_key": "detsf_ll"},
-        {"apn": "T1_CONDO_001", "built_form_key": "attsf"},
-        {"apn": "T1_MF_2TO4_001", "built_form_key": "mf2to4"},
-        {"apn": "T1_MF_5P_001", "built_form_key": "mf5p"},
-        {"apn": "T1_COM_001", "built_form_key": "commercial"},
-        {"apn": "T1_IND_001", "built_form_key": "industrial"},
-        {"apn": "T1_AG_001", "built_form_key": "agricultural"},
-        {"apn": "T1_CIV_001", "built_form_key": "civic"},
+        {"apn": "T1_SFR_SL_001", "built_form_key": "bt__medium_density_detached_residential"},
+        {"apn": "T1_SFR_LL_001", "built_form_key": "bt__low_density_detached_residential"},
+        {"apn": "T1_CONDO_001", "built_form_key": "bt__medium_density_attached_residential"},
+        {"apn": "T1_MF_2TO4_001", "built_form_key": "bt__medium_density_attached_residential"},
+        {"apn": "T1_MF_5P_001", "built_form_key": "bt__high_density_attached_residential"},
+        {"apn": "T1_COM_001", "built_form_key": "bt__communityneighborhood_retail"},
+        {"apn": "T1_IND_001", "built_form_key": "bt__light_industrial"},
+        {"apn": "T1_AG_001", "built_form_key": "bt__agriculture"},
+        {"apn": "T1_CIV_001", "built_form_key": "bt__publicquasi_public"},
     ]
     path_p = str(SEEDS_DIR / "test_bft_tier1_parcels.csv")
     path_s = str(SEEDS_DIR / "test_bft_tier1_sales.csv")
@@ -473,12 +473,12 @@ def _gen_tier2_seeds() -> dict[str, str]:
         },
     ]
     expected = [
-        {"apn": "T2_A2_MF2TO4_001", "built_form_key": "mf2to4"},
-        {"apn": "T2_A2_MF5P_001", "built_form_key": "mf5p"},
-        {"apn": "T2_AT_MF2TO4_001", "built_form_key": "mf2to4"},
-        {"apn": "T2_DETSF_001", "built_form_key": "detsf_sl"},
-        {"apn": "T2_MF5P_001", "built_form_key": "mf5p"},
-        {"apn": "T2_A2_NONRES_001", "built_form_key": "mf2to4"},
+        {"apn": "T2_A2_MF2TO4_001", "built_form_key": "bt__medium_density_attached_residential"},
+        {"apn": "T2_A2_MF5P_001", "built_form_key": "bt__high_density_attached_residential"},
+        {"apn": "T2_AT_MF2TO4_001", "built_form_key": "bt__medium_density_attached_residential"},
+        {"apn": "T2_DETSF_001", "built_form_key": "bt__medium_density_detached_residential"},
+        {"apn": "T2_MF5P_001", "built_form_key": "bt__high_density_attached_residential"},
+        {"apn": "T2_A2_NONRES_001", "built_form_key": "bt__medium_density_attached_residential"},
     ]
     path_p = str(SEEDS_DIR / "test_bft_tier2_parcels.csv")
     path_b = str(SEEDS_DIR / "test_bft_tier2_buildings.csv")
@@ -552,12 +552,12 @@ def _gen_tier4_seeds() -> dict[str, str]:
         },
     ]
     expected = [
-        {"apn": "T4_AG_001", "built_form_key": "agricultural"},
-        {"apn": "T4_AG_002", "built_form_key": "agricultural"},
-        {"apn": "T4_DETSF_LL_001", "built_form_key": "detsf_ll"},
-        {"apn": "T4_DETSF_SL_001", "built_form_key": "detsf_sl"},
-        {"apn": "00000000000002", "built_form_key": "mf2to4"},
-        {"apn": "00000000000003", "built_form_key": "attsf"},
+        {"apn": "T4_AG_001", "built_form_key": "bt__agriculture"},
+        {"apn": "T4_AG_002", "built_form_key": "bt__agriculture"},
+        {"apn": "T4_DETSF_LL_001", "built_form_key": "bt__low_density_detached_residential"},
+        {"apn": "T4_DETSF_SL_001", "built_form_key": "bt__medium_density_detached_residential"},
+        {"apn": "00000000000002", "built_form_key": "bt__medium_density_attached_residential"},
+        {"apn": "00000000000003", "built_form_key": "bt__medium_density_attached_residential"},
     ]
     path_p = str(SEEDS_DIR / "test_bft_tier4_parcels.csv")
     path_e = str(SEEDS_DIR / "test_bft_tier4_expected.csv")
@@ -613,12 +613,12 @@ def _gen_resolver_seeds() -> dict[str, str]:
     expected = [
         {
             "apn": "RES_TIER1_WINS_001",
-            "built_form_key": "attsf",
+            "built_form_key": "bt__medium_density_attached_residential",
             "built_form_key_source": "tier1",
         },
         {
             "apn": "RES_TIER0_001",
-            "built_form_key": "attsf",
+            "built_form_key": "bt__medium_density_attached_residential",
             "built_form_key_source": "tier0",
         },
         {"apn": "RES_NULL_001", "built_form_key": "", "built_form_key_source": ""},

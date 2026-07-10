@@ -46,28 +46,28 @@ SELECT DISTINCT ON (ap.apn)
              AND (
                  COALESCE(bs.max_levels, 1) >= 2
                  OR (COALESCE(bs.max_levels, 0) = 0 AND bs.residential_building_sqft >= 1500)
-             ) THEN 'mf5p'
+             ) THEN 'bt__high_density_attached_residential'
         WHEN (ap.landuse_prefix LIKE 'A2' OR ap.landuse_prefix IN ('AT'))
-             AND bs.residential_building_sqft > 0 THEN 'mf2to4'
+             AND bs.residential_building_sqft > 0 THEN 'bt__medium_density_attached_residential'
         -- A2/AT with high intersection density but no building data → mf5p
         WHEN (ap.landuse_prefix LIKE 'A2' OR ap.landuse_prefix IN ('AT'))
              AND bs.residential_building_sqft = 0
              AND COALESCE(ap.lot_size_acres, 0) < 1.0
-             AND COALESCE(id.intersection_density, 0) >= 100 THEN 'mf5p'
+             AND COALESCE(id.intersection_density, 0) >= 100 THEN 'bt__high_density_attached_residential'
         -- A2 catch-all: building footprints exist but Overture didn't tag as residential.
         -- Landuse code already says multi-family, so default to conservative mf2to4.
         -- Without this, A2 + non-residential-only footprints falls through to
         -- 'WHEN other_building_sqft > 0 THEN civic', violating A2 audit.
-        WHEN (ap.landuse_prefix LIKE 'A2' OR ap.landuse_prefix IN ('AT')) THEN 'mf2to4'
+        WHEN (ap.landuse_prefix LIKE 'A2' OR ap.landuse_prefix IN ('AT')) THEN 'bt__medium_density_attached_residential'
         -- Non-A2 parcels: classify by building footprint characteristics.
         -- Multi-family first (≥2 levels), then attached SF (600-2500 sqft,
         -- small lot), then SFR by lot size, then non-residential.
         WHEN bs.residential_building_sqft > 0
-             AND COALESCE(bs.max_levels, 1) >= 2 THEN 'mf5p'
+             AND COALESCE(bs.max_levels, 1) >= 2 THEN 'bt__high_density_attached_residential'
         -- Non-A2 residential parcels with large bldg on small lot → mf5p
         WHEN bs.residential_building_sqft > 0
              AND bs.residential_building_sqft >= 6000
-             AND COALESCE(ap.lot_size_acres, 0) < 0.5 THEN 'mf5p'
+             AND COALESCE(ap.lot_size_acres, 0) < 0.5 THEN 'bt__high_density_attached_residential'
         -- Attached SF: residential sqft in 600-2500 range, small lot, low height.
         -- Placed before SFR rules because sqft narrows the match; SFR rules
         -- catch any sqft on residential parcels that don't match attsf heuristics.
@@ -75,16 +75,16 @@ SELECT DISTINCT ON (ap.apn)
              AND bs.residential_building_sqft BETWEEN 600 AND 2500
              AND COALESCE(bs.max_levels, 1) BETWEEN 1 AND 3
              AND COALESCE(ap.lot_size_acres, 0) < 0.5
-             AND COALESCE(ap.lot_size_acres, 0) > 0.0 THEN 'attsf'
+             AND COALESCE(ap.lot_size_acres, 0) > 0.0 THEN 'bt__medium_density_attached_residential'
         WHEN bs.residential_building_sqft > 0
              AND COALESCE(bs.max_levels, 1) < 3
-             AND COALESCE(ap.lot_size_acres, 0) < 0.15 THEN 'detsf_sl'
+             AND COALESCE(ap.lot_size_acres, 0) < 0.15 THEN 'bt__medium_density_detached_residential'
         WHEN bs.residential_building_sqft > 0
              AND COALESCE(bs.max_levels, 1) < 3
-             AND COALESCE(ap.lot_size_acres, 0) >= 0.15 THEN 'detsf_ll'
-        WHEN bs.commercial_building_sqft > 0 THEN 'commercial'
-        WHEN bs.industrial_building_sqft > 0 THEN 'industrial'
-        WHEN bs.other_building_sqft > 0 THEN 'civic'
+             AND COALESCE(ap.lot_size_acres, 0) >= 0.15 THEN 'bt__low_density_detached_residential'
+        WHEN bs.commercial_building_sqft > 0 THEN 'bt__communityneighborhood_retail'
+        WHEN bs.industrial_building_sqft > 0 THEN 'bt__light_industrial'
+        WHEN bs.other_building_sqft > 0 THEN 'bt__publicquasi_public'
         ELSE NULL
     END AS built_form_key
 FROM assessor_parcels ap
@@ -97,35 +97,35 @@ WHERE bs.total_footprint_sqft > 0
              AND (
                  COALESCE(bs.max_levels, 1) >= 2
                  OR (COALESCE(bs.max_levels, 0) = 0 AND bs.residential_building_sqft >= 1200)
-             ) THEN 'mf5p'
+             ) THEN 'bt__high_density_attached_residential'
         WHEN (ap.landuse_prefix LIKE 'A2' OR ap.landuse_prefix IN ('AT'))
-             AND bs.residential_building_sqft > 0 THEN 'mf2to4'
+             AND bs.residential_building_sqft > 0 THEN 'bt__medium_density_attached_residential'
         -- A2/AT with high intersection density but no building data → mf5p
         WHEN (ap.landuse_prefix LIKE 'A2' OR ap.landuse_prefix IN ('AT'))
              AND bs.residential_building_sqft = 0
              AND COALESCE(ap.lot_size_acres, 0) < 1.0
-             AND COALESCE(id.intersection_density, 0) >= 100 THEN 'mf5p'
-        WHEN (ap.landuse_prefix LIKE 'A2' OR ap.landuse_prefix IN ('AT')) THEN 'mf2to4'
+             AND COALESCE(id.intersection_density, 0) >= 100 THEN 'bt__high_density_attached_residential'
+        WHEN (ap.landuse_prefix LIKE 'A2' OR ap.landuse_prefix IN ('AT')) THEN 'bt__medium_density_attached_residential'
         WHEN bs.residential_building_sqft > 0
-             AND COALESCE(bs.max_levels, 1) >= 2 THEN 'mf5p'
+             AND COALESCE(bs.max_levels, 1) >= 2 THEN 'bt__high_density_attached_residential'
         -- Non-A2 residential parcels with large bldg on small lot → mf5p
         WHEN bs.residential_building_sqft > 0
              AND bs.residential_building_sqft >= 6000
-             AND COALESCE(ap.lot_size_acres, 0) < 0.5 THEN 'mf5p'
+             AND COALESCE(ap.lot_size_acres, 0) < 0.5 THEN 'bt__high_density_attached_residential'
         -- Attached SF tier2: res sqft 600-2500, small lot, low height
         WHEN bs.residential_building_sqft > 0
              AND bs.residential_building_sqft BETWEEN 600 AND 2500
              AND COALESCE(bs.max_levels, 1) BETWEEN 1 AND 3
              AND COALESCE(ap.lot_size_acres, 0) < 0.5
-             AND COALESCE(ap.lot_size_acres, 0) > 0.0 THEN 'attsf'
+             AND COALESCE(ap.lot_size_acres, 0) > 0.0 THEN 'bt__medium_density_attached_residential'
         WHEN bs.residential_building_sqft > 0
              AND COALESCE(bs.max_levels, 1) < 3
-             AND COALESCE(ap.lot_size_acres, 0) < 0.15 THEN 'detsf_sl'
+             AND COALESCE(ap.lot_size_acres, 0) < 0.15 THEN 'bt__medium_density_detached_residential'
         WHEN bs.residential_building_sqft > 0
              AND COALESCE(bs.max_levels, 1) < 3
-             AND COALESCE(ap.lot_size_acres, 0) >= 0.15 THEN 'detsf_ll'
-        WHEN bs.commercial_building_sqft > 0 THEN 'commercial'
-        WHEN bs.industrial_building_sqft > 0 THEN 'industrial'
-        WHEN bs.other_building_sqft > 0 THEN 'civic'
+             AND COALESCE(ap.lot_size_acres, 0) >= 0.15 THEN 'bt__low_density_detached_residential'
+        WHEN bs.commercial_building_sqft > 0 THEN 'bt__communityneighborhood_retail'
+        WHEN bs.industrial_building_sqft > 0 THEN 'bt__light_industrial'
+        WHEN bs.other_building_sqft > 0 THEN 'bt__publicquasi_public'
         ELSE NULL
     END IS NOT NULL;

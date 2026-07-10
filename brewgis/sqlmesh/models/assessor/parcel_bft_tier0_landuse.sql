@@ -34,37 +34,37 @@ SELECT
     ap.apn,
     CASE
         -- A1 parcels with very small lots → attsf (duplexes/townhomes on SF-coded land)
-        WHEN ap.landuse_prefix LIKE 'A1' AND COALESCE(ap.lot_size_acres, 0.01) < 0.08 THEN 'attsf'
+        WHEN ap.landuse_prefix LIKE 'A1' AND COALESCE(ap.lot_size_acres, 0.01) < 0.08 THEN 'bt__medium_density_attached_residential'
         WHEN ap.landuse_prefix LIKE 'A1' THEN
             CASE
                 WHEN 1.0 / (1.0 + EXP(-0.04 * (COALESCE(id.intersection_density, 225.0) - 225.0))) > 0.5
-                    THEN 'detsf_sl'
-                ELSE 'detsf_ll'
+                    THEN 'bt__medium_density_detached_residential'
+                ELSE 'bt__low_density_detached_residential'
             END
         -- A2% (multi-family): classify via intersection density as a density proxy.
         -- High intersection density (≥100 intersections/km²) → mf5p, else mf2to4.
         WHEN ap.landuse_prefix LIKE 'A2' THEN
             CASE
-                WHEN COALESCE(id.intersection_density, 0) >= 100 THEN 'mf5p'
-                ELSE 'mf2to4'
+                WHEN COALESCE(id.intersection_density, 0) >= 100 THEN 'bt__high_density_attached_residential'
+                ELSE 'bt__medium_density_attached_residential'
             END
-        WHEN ap.landuse_prefix LIKE 'A3' THEN 'attsf'
-        WHEN ap.landuse_prefix LIKE 'A4' THEN 'detsf_sl'
-        WHEN ap.landuse_prefix LIKE 'AE' THEN 'commercial'
-        WHEN ap.landuse_prefix LIKE 'AF' THEN 'industrial'
-        WHEN ap.landuse_prefix LIKE 'AG' THEN 'agricultural'
-        WHEN ap.landuse_prefix IN ('AH', 'AJ') THEN 'civic'
+        WHEN ap.landuse_prefix LIKE 'A3' THEN 'bt__medium_density_attached_residential'
+        WHEN ap.landuse_prefix LIKE 'A4' THEN 'bt__medium_density_detached_residential'
+        WHEN ap.landuse_prefix LIKE 'AE' THEN 'bt__communityneighborhood_retail'
+        WHEN ap.landuse_prefix LIKE 'AF' THEN 'bt__light_industrial'
+        WHEN ap.landuse_prefix LIKE 'AG' THEN 'bt__agriculture'
+        WHEN ap.landuse_prefix IN ('AH', 'AJ') THEN 'bt__publicquasi_public'
         -- AT% (apartments): classify via intersection density as a density proxy.
         -- High intersection density (≥100 intersections/km²) → mf5p, else mf2to4.
         WHEN ap.landuse_prefix IN ('AT') THEN
             CASE
-                WHEN COALESCE(id.intersection_density, 0) >= 100 THEN 'mf5p'
-                ELSE 'mf2to4'
+                WHEN COALESCE(id.intersection_density, 0) >= 100 THEN 'bt__high_density_attached_residential'
+                ELSE 'bt__medium_density_attached_residential'
             END
-        WHEN ap.landuse_prefix IN ('CA', 'BA', 'BF', 'BC', 'BB', 'BE', 'BD', 'CG') THEN 'commercial'
-        WHEN ap.landuse_prefix IN ('GC', 'GA', 'HJ') THEN 'civic'
-        WHEN ap.landuse_prefix IN ('MS', 'MU', 'MP') THEN 'commercial'
-        WHEN ap.landuse_prefix IN ('IA', 'IG', 'IB') THEN 'industrial'
+        WHEN ap.landuse_prefix IN ('CA', 'BA', 'BF', 'BC', 'BB', 'BE', 'BD', 'CG') THEN 'bt__communityneighborhood_retail'
+        WHEN ap.landuse_prefix IN ('GC', 'GA', 'HJ') THEN 'bt__publicquasi_public'
+        WHEN ap.landuse_prefix IN ('MS', 'MU', 'MP') THEN 'bt__communityneighborhood_retail'
+        WHEN ap.landuse_prefix IN ('IA', 'IG', 'IB') THEN 'bt__light_industrial'
         WHEN ap.landuse_prefix IN ('AQ') THEN 'undeveloped'
         WHEN ap.landuse_prefix LIKE 'AD' THEN 'undeveloped'
         ELSE NULL
@@ -74,33 +74,33 @@ LEFT JOIN brewgis.assessor.overture_intersection_density id ON ap.apn = id.apn
 WHERE ap.landuse IS NOT NULL
   AND CASE
         -- A1 parcels with very small lots → attsf (duplexes/townhomes on SF-coded land)
-        WHEN ap.landuse_prefix LIKE 'A1' AND COALESCE(ap.lot_size_acres, 0.01) < 0.08 THEN 'attsf'
+        WHEN ap.landuse_prefix LIKE 'A1' AND COALESCE(ap.lot_size_acres, 0.01) < 0.08 THEN 'bt__medium_density_attached_residential'
         WHEN ap.landuse_prefix LIKE 'A1' THEN
             CASE
                 WHEN 1.0 / (1.0 + EXP(-0.04 * (COALESCE(id.intersection_density, 225.0) - 225.0))) > 0.5
-                    THEN 'detsf_sl'
-                ELSE 'detsf_ll'
+                    THEN 'bt__medium_density_detached_residential'
+                ELSE 'bt__low_density_detached_residential'
             END
         WHEN ap.landuse_prefix LIKE 'A2' THEN
             CASE
-                WHEN COALESCE(id.intersection_density, 0) >= 100 THEN 'mf5p'
-                ELSE 'mf2to4'
+                WHEN COALESCE(id.intersection_density, 0) >= 100 THEN 'bt__high_density_attached_residential'
+                ELSE 'bt__medium_density_attached_residential'
             END
-        WHEN ap.landuse_prefix LIKE 'A3' THEN 'attsf'
-        WHEN ap.landuse_prefix LIKE 'A4' THEN 'detsf_sl'
-        WHEN ap.landuse_prefix LIKE 'AE' THEN 'commercial'
-        WHEN ap.landuse_prefix LIKE 'AF' THEN 'industrial'
-        WHEN ap.landuse_prefix LIKE 'AG' THEN 'agricultural'
-        WHEN ap.landuse_prefix IN ('AH', 'AJ') THEN 'civic'
+        WHEN ap.landuse_prefix LIKE 'A3' THEN 'bt__medium_density_attached_residential'
+        WHEN ap.landuse_prefix LIKE 'A4' THEN 'bt__medium_density_detached_residential'
+        WHEN ap.landuse_prefix LIKE 'AE' THEN 'bt__communityneighborhood_retail'
+        WHEN ap.landuse_prefix LIKE 'AF' THEN 'bt__light_industrial'
+        WHEN ap.landuse_prefix LIKE 'AG' THEN 'bt__agriculture'
+        WHEN ap.landuse_prefix IN ('AH', 'AJ') THEN 'bt__publicquasi_public'
         WHEN ap.landuse_prefix IN ('AT') THEN
             CASE
-                WHEN COALESCE(id.intersection_density, 0) >= 100 THEN 'mf5p'
-                ELSE 'mf2to4'
+                WHEN COALESCE(id.intersection_density, 0) >= 100 THEN 'bt__high_density_attached_residential'
+                ELSE 'bt__medium_density_attached_residential'
             END
-        WHEN ap.landuse_prefix IN ('CA', 'BA', 'BF', 'BC', 'BB', 'BE', 'BD', 'CG') THEN 'commercial'
-        WHEN ap.landuse_prefix IN ('GC', 'GA', 'HJ') THEN 'civic'
-        WHEN ap.landuse_prefix IN ('MS', 'MU', 'MP') THEN 'commercial'
-        WHEN ap.landuse_prefix IN ('IA', 'IG', 'IB') THEN 'industrial'
+        WHEN ap.landuse_prefix IN ('CA', 'BA', 'BF', 'BC', 'BB', 'BE', 'BD', 'CG') THEN 'bt__communityneighborhood_retail'
+        WHEN ap.landuse_prefix IN ('GC', 'GA', 'HJ') THEN 'bt__publicquasi_public'
+        WHEN ap.landuse_prefix IN ('MS', 'MU', 'MP') THEN 'bt__communityneighborhood_retail'
+        WHEN ap.landuse_prefix IN ('IA', 'IG', 'IB') THEN 'bt__light_industrial'
         WHEN ap.landuse_prefix IN ('AQ') THEN 'undeveloped'
         WHEN ap.landuse_prefix LIKE 'AD' THEN 'undeveloped'
         ELSE NULL

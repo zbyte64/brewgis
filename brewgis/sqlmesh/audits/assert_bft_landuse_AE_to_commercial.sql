@@ -10,4 +10,4 @@ SELECT
 FROM @this_model t0
 JOIN brewgis.assessor.sacog_assessor_parcels ap ON t0.apn = ap.apn
 WHERE ap.landuse LIKE 'AE%'
-  AND t0.built_form_key != 'commercial';
+  AND t0.built_form_key != 'bt__communityneighborhood_retail';

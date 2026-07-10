@@ -78,7 +78,7 @@ test_CA_commercial_tier0:
     brewgis.assessor.parcel_bft_resolved:
       rows:
         - apn: "TEST_CA_001"
-          built_form_key: "commercial"
+          built_form_key: "bt__communityneighborhood_retail"
           built_form_key_source: "tier0"
           du_subtype: null
           is_residential: 0
@@ -139,7 +139,7 @@ test_CA_commercial_tier0:
       partial: true
       rows:
         - apn: "TEST_CA_001"
-          built_form_key: "commercial"
+          built_form_key: "bt__communityneighborhood_retail"
           built_form_key_source: "tier0"
           du_subtype: null
           is_residential: 0
@@ -151,7 +151,7 @@ test_GC_civic_tier0:
     brewgis.assessor.parcel_bft_resolved:
       rows:
         - apn: "TEST_GC_001"
-          built_form_key: "civic"
+          built_form_key: "bt__publicquasi_public"
           built_form_key_source: "tier0"
           du_subtype: null
           is_residential: 0
@@ -212,7 +212,7 @@ test_GC_civic_tier0:
       partial: true
       rows:
         - apn: "TEST_GC_001"
-          built_form_key: "civic"
+          built_form_key: "bt__publicquasi_public"
           built_form_key_source: "tier0"
           du_subtype: null
           is_residential: 0
@@ -224,7 +224,7 @@ test_IA_industrial_tier0:
     brewgis.assessor.parcel_bft_resolved:
       rows:
         - apn: "TEST_IA_001"
-          built_form_key: "industrial"
+          built_form_key: "bt__light_industrial"
           built_form_key_source: "tier0"
           du_subtype: null
           is_residential: 0
@@ -285,7 +285,7 @@ test_IA_industrial_tier0:
       partial: true
       rows:
         - apn: "TEST_IA_001"
-          built_form_key: "industrial"
+          built_form_key: "bt__light_industrial"
           built_form_key_source: "tier0"
           du_subtype: null
           is_residential: 0
@@ -297,7 +297,7 @@ test_MS_commercial_tier0:
     brewgis.assessor.parcel_bft_resolved:
       rows:
         - apn: "TEST_MS_001"
-          built_form_key: "commercial"
+          built_form_key: "bt__communityneighborhood_retail"
           built_form_key_source: "tier0"
           du_subtype: null
           is_residential: 0
@@ -358,7 +358,7 @@ test_MS_commercial_tier0:
       partial: true
       rows:
         - apn: "TEST_MS_001"
-          built_form_key: "commercial"
+          built_form_key: "bt__communityneighborhood_retail"
           built_form_key_source: "tier0"
           du_subtype: null
           is_residential: 0

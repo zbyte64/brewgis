@@ -141,25 +141,23 @@ calibration AS (
                     ELSE csa.region_avg_sqft_per_unit
                 END,
                 csa.region_avg_sqft_per_unit,
-                CASE WHEN p.built_form_key = 'mf2to4' THEN 1259.0
-                WHEN p.built_form_key = 'attsf'   THEN 1500.0
+                CASE WHEN p.built_form_key = 'bt__medium_density_attached_residential' THEN 1259.0
                 ELSE 950.0 END  -- global defaults
             ),
             @min_sqft_per_unit
         ) AS region_avg_sqft_per_unit,
         CASE
-            WHEN p.built_form_key = 'mf2to4' THEN 2
-            WHEN p.built_form_key = 'mf5p' THEN 5
-            WHEN p.built_form_key = 'attsf' THEN 1
+            WHEN p.built_form_key = 'bt__medium_density_attached_residential' THEN 2
+            WHEN p.built_form_key = 'bt__high_density_attached_residential' THEN 5
             ELSE NULL
         END AS min_du
     FROM parcel_hh_size p
     LEFT JOIN calibration_buckets b
-        ON b.du_subtype = p.built_form_key
+        ON b.du_subtype = CASE WHEN p.built_form_key IN ('bt__medium_density_attached_residential','bt__medium_high_density_attached_residential','bt__urban_attached_residential') THEN 'mf2to4' WHEN p.built_form_key IN ('bt__high_density_attached_residential','bt__very_high_density_attached_residential','bt__urban_mid_rise_residential') THEN 'mf5p' END
         AND WIDTH_BUCKET(p.intersection_density, 0, 408, 50) = b.bucket
     LEFT JOIN county_subtype_avg csa
-        ON (p.built_form_key = csa.du_subtype)
-    WHERE p.built_form_key IN ('mf2to4', 'mf5p', 'attsf')
+        ON (csa.du_subtype = CASE WHEN p.built_form_key IN ('bt__medium_density_attached_residential','bt__medium_high_density_attached_residential','bt__urban_attached_residential') THEN 'mf2to4' WHEN p.built_form_key IN ('bt__high_density_attached_residential','bt__very_high_density_attached_residential','bt__urban_mid_rise_residential') THEN 'mf5p' END)
+    WHERE p.built_form_key IN ('bt__medium_density_attached_residential','bt__medium_high_density_attached_residential','bt__high_density_attached_residential','bt__very_high_density_attached_residential','bt__urban_attached_residential','bt__urban_mid_rise_residential')
 ),
 
 -- ── Vacancy rate from built_form_key (Section 5) ───────────────────────────
@@ -167,9 +165,9 @@ vacancy_cascade AS (
     SELECT
         apn,
         CASE
-            WHEN built_form_key IN ('detsf_sl', 'detsf_ll') THEN 0.025
-            WHEN built_form_key IN ('attsf', 'mf2to4') THEN 0.050
-            WHEN built_form_key = 'mf5p' THEN 0.080
+            WHEN built_form_key IN ('bt__low_density_detached_residential','bt__medium_density_detached_residential','bt__medium_high_density_detached_residential','bt__very_low_density_detached_residential','bt__rural_residential','bt__farm_home','bt__mobile_home_park') THEN 0.025
+            WHEN built_form_key IN ('bt__medium_density_attached_residential','bt__medium_high_density_attached_residential','bt__urban_attached_residential') THEN 0.050
+            WHEN built_form_key IN ('bt__high_density_attached_residential','bt__very_high_density_attached_residential','bt__urban_mid_rise_residential') THEN 0.080
             WHEN land_development_category IN ('urban', 'mixed_use') THEN 0.050
             ELSE 0.050
         END AS vacancy_rate
@@ -198,13 +196,13 @@ du_estimation AS (
         END AS du_tier1,
         -- Tier 2: SFR subtypes → du = 1
         CASE
-            WHEN p.built_form_key IN ('detsf_sl', 'detsf_ll')
+            WHEN p.built_form_key IN ('bt__low_density_detached_residential','bt__medium_density_detached_residential','bt__medium_high_density_detached_residential','bt__very_low_density_detached_residential','bt__rural_residential','bt__farm_home','bt__mobile_home_park')
             THEN 1.0
             ELSE NULL
         END AS du_tier2,
         -- Tier 3: MF subtype + building sqft
         CASE
-            WHEN p.built_form_key IN ('mf2to4', 'mf5p', 'attsf')
+            WHEN p.built_form_key IN ('bt__medium_density_attached_residential','bt__medium_high_density_attached_residential','bt__high_density_attached_residential','bt__very_high_density_attached_residential','bt__urban_attached_residential','bt__urban_mid_rise_residential')
                  AND COALESCE(p.residential_building_sqft, 0) > 0
             THEN GREATEST(
                 c.min_du::double precision,
@@ -214,7 +212,7 @@ du_estimation AS (
         END AS du_tier3,
         -- Tier 4: MF subtype, no building data
         CASE
-            WHEN p.built_form_key IN ('mf2to4', 'mf5p')
+            WHEN p.built_form_key IN ('bt__medium_density_attached_residential','bt__medium_high_density_attached_residential','bt__high_density_attached_residential','bt__very_high_density_attached_residential','bt__urban_attached_residential','bt__urban_mid_rise_residential')
                  AND COALESCE(p.residential_building_sqft, 0) = 0
             THEN c.min_du::double precision
             ELSE NULL
@@ -223,13 +221,13 @@ du_estimation AS (
         CASE
             WHEN p.land_development_category IN ('urban', 'mixed_use')
                  AND (p.assessor_units IS NULL OR p.assessor_units <= 0)
-                 AND p.built_form_key NOT IN ('detsf_sl', 'detsf_ll', 'attsf', 'mf2to4', 'mf5p')
+                 AND p.built_form_key NOT IN ('bt__low_density_detached_residential','bt__medium_density_detached_residential','bt__medium_high_density_detached_residential','bt__very_low_density_detached_residential','bt__rural_residential','bt__farm_home','bt__mobile_home_park','bt__medium_density_attached_residential','bt__medium_high_density_attached_residential','bt__high_density_attached_residential','bt__very_high_density_attached_residential','bt__urban_attached_residential','bt__urban_mid_rise_residential','bt__blank_place_type')
             THEN 1.0
             ELSE NULL
         END AS du_tier5,
         -- Tier 6: non-residential → du = 0
         CASE
-            WHEN p.built_form_key IN ('commercial', 'industrial', 'civic', 'agricultural')
+            WHEN p.built_form_key IN ('bt__communityneighborhood_retail','bt__light_industrial','bt__publicquasi_public','bt__agriculture')
                  OR p.land_development_category IN ('industrial', 'agricultural', 'undeveloped')
             THEN 0.0
             ELSE NULL

@@ -1,7 +1,7 @@
 apn,built_form_key
-T2_A2_MF2TO4_001,mf2to4
-T2_A2_MF5P_001,mf5p
-T2_AT_MF2TO4_001,mf2to4
-T2_DETSF_001,detsf_sl
-T2_MF5P_001,mf5p
-T2_A2_NONRES_001,mf2to4
+T2_A2_MF2TO4_001,bt__medium_density_attached_residential
+T2_A2_MF5P_001,bt__high_density_attached_residential
+T2_AT_MF2TO4_001,bt__medium_density_attached_residential
+T2_DETSF_001,bt__medium_density_detached_residential
+T2_MF5P_001,bt__high_density_attached_residential
+T2_A2_NONRES_001,bt__medium_density_attached_residential

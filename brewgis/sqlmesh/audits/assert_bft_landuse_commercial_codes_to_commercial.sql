@@ -10,4 +10,4 @@ SELECT
 FROM @this_model t0
 JOIN brewgis.assessor.sacog_assessor_parcels ap ON t0.apn = ap.apn
 WHERE LEFT(ap.landuse, 2) IN ('CA', 'BA', 'BF', 'BC', 'BB', 'BE', 'BD', 'CG', 'MS', 'MU', 'MP')
-  AND t0.built_form_key != 'commercial';
+  AND t0.built_form_key != 'bt__communityneighborhood_retail';

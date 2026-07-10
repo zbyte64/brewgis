@@ -56,7 +56,7 @@ test_AT_with_residential_sqft_low_levels_tier2_mf5p:
       partial: true
       rows:
         - apn: "TEST_AT_T2_001"
-          built_form_key: "mf5p"
+          built_form_key: "bt__high_density_attached_residential"
 
 test_non_AT_attsf_footprints:
   model: brewgis.assessor.parcel_bft_tier2_footprints
@@ -116,7 +116,7 @@ test_non_AT_attsf_footprints:
       partial: true
       rows:
         - apn: "TEST_ATTSF_001"
-          built_form_key: "mf5p"
+          built_form_key: "bt__high_density_attached_residential"
 
 
 test_non_AT_attsf_negative_mf5p:
@@ -177,7 +177,7 @@ test_non_AT_attsf_negative_mf5p:
       partial: true
       rows:
         - apn: "TEST_ATTSF_NEG"
-          built_form_key: "mf5p"
+          built_form_key: "bt__high_density_attached_residential"
 
 test_AT_with_residential_sqft_high_levels_tier2_mf5p:
   model: brewgis.assessor.parcel_bft_tier2_footprints
@@ -237,7 +237,7 @@ test_AT_with_residential_sqft_high_levels_tier2_mf5p:
       partial: true
       rows:
         - apn: "TEST_AT_T2_002"
-          built_form_key: "mf5p"
+          built_form_key: "bt__high_density_attached_residential"
 
 
 test_A2_high_intensity_no_bldg_tier2_mf5p:
@@ -300,7 +300,7 @@ test_A2_high_intensity_no_bldg_tier2_mf5p:
       partial: true
       rows:
         - apn: "TEST_A2_DENSE"
-          built_form_key: "mf5p"
+          built_form_key: "bt__high_density_attached_residential"
 
 
 
@@ -362,4 +362,4 @@ test_non_A2_high_sqft_small_lot_tier2_mf5p:
       partial: true
       rows:
         - apn: "TEST_NONA2_DENSE"
-          built_form_key: "mf5p"
+          built_form_key: "bt__high_density_attached_residential"

@@ -37,4 +37,4 @@ test_townhouse_property_type_to_attsf:
       partial: true
       rows:
         - apn: "TEST_T1_ATTSF_001"
-          built_form_key: "attsf"
+          built_form_key: "bt__medium_density_attached_residential"

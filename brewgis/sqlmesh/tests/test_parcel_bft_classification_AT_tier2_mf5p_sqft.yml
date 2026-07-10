@@ -56,7 +56,7 @@ test_AT_with_residential_sqft_3000_no_levels_tier2_mf5p:
       partial: true
       rows:
         - apn: "TEST_AT_T2_SQFT_001"
-          built_form_key: "mf5p"
+          built_form_key: "bt__high_density_attached_residential"
 
 test_AT_with_residential_sqft_1100_no_levels_tier2_mf2to4_below_threshold:
   model: brewgis.assessor.parcel_bft_tier2_footprints
@@ -116,7 +116,7 @@ test_AT_with_residential_sqft_1100_no_levels_tier2_mf2to4_below_threshold:
       partial: true
       rows:
         - apn: "TEST_AT_T2_SQFT_002"
-          built_form_key: "mf2to4"
+          built_form_key: "bt__medium_density_attached_residential"
 
 test_AT_residential_sqft_1600_tier2_mf5p:
   model: brewgis.assessor.parcel_bft_tier2_footprints
@@ -176,7 +176,7 @@ test_AT_residential_sqft_1600_tier2_mf5p:
       partial: true
       rows:
         - apn: "TEST_AT_SQFT_1600"
-          built_form_key: "mf5p"
+          built_form_key: "bt__high_density_attached_residential"
 
 test_attsf_ceiling_3000_sqft_now_mf5p:
   model: brewgis.assessor.parcel_bft_tier2_footprints
@@ -236,4 +236,4 @@ test_attsf_ceiling_3000_sqft_now_mf5p:
       partial: true
       rows:
         - apn: "TEST_ATTSF_CEIL_001"
-          built_form_key: "mf5p"
+          built_form_key: "bt__high_density_attached_residential"

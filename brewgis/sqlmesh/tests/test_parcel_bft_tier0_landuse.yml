@@ -29,7 +29,7 @@ test_A3_landuse_to_attsf:
       partial: true
       rows:
         - apn: "TEST_T0_A3_001"
-          built_form_key: "attsf"
+          built_form_key: "bt__medium_density_attached_residential"
 
 
 test_A1_small_lot_tier0_attsf:
@@ -63,4 +63,4 @@ test_A1_small_lot_tier0_attsf:
       partial: true
       rows:
         - apn: "TEST_A1_SMALL"
-          built_form_key: "attsf"
+          built_form_key: "bt__medium_density_attached_residential"

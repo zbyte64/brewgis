@@ -30,28 +30,28 @@ classifications AS (
         sd.apn,
         CASE
             WHEN (sd.property_type IN ('SFR', 'Single Family Residence') OR sd.property_type LIKE 'Single Family%')
-                AND COALESCE(sd.sales_lot_size_acres, 0) < 0.15 THEN 'detsf_sl'
+                AND COALESCE(sd.sales_lot_size_acres, 0) < 0.15 THEN 'bt__medium_density_detached_residential'
             WHEN (sd.property_type IN ('SFR', 'Single Family Residence') OR sd.property_type LIKE 'Single Family%')
-                AND COALESCE(sd.sales_lot_size_acres, 0) >= 0.15 THEN 'detsf_ll'
-            WHEN sd.property_type LIKE '%Townhouse%' THEN 'attsf'
-            WHEN sd.property_type LIKE '%Row%House%' THEN 'attsf'
-            WHEN sd.property_type LIKE '%Attached%' THEN 'attsf'
-            WHEN sd.property_type LIKE '%PUD%' THEN 'attsf'
+                AND COALESCE(sd.sales_lot_size_acres, 0) >= 0.15 THEN 'bt__low_density_detached_residential'
+            WHEN sd.property_type LIKE '%Townhouse%' THEN 'bt__medium_density_attached_residential'
+            WHEN sd.property_type LIKE '%Row%House%' THEN 'bt__medium_density_attached_residential'
+            WHEN sd.property_type LIKE '%Attached%' THEN 'bt__medium_density_attached_residential'
+            WHEN sd.property_type LIKE '%PUD%' THEN 'bt__medium_density_attached_residential'
             WHEN sd.property_type IN ('Condo', 'Condominium', 'Uncondo',
-                                       'Pud', 'Attch') THEN 'attsf'
+                                       'Pud', 'Attch') THEN 'bt__medium_density_attached_residential'
             WHEN (sd.property_type IN ('MF', 'Multiple Family Residence') OR sd.property_type LIKE 'Multiple Family%')
-                AND COALESCE(sd.units, 0) BETWEEN 2 AND 4 THEN 'mf2to4'
+                AND COALESCE(sd.units, 0) BETWEEN 2 AND 4 THEN 'bt__medium_density_attached_residential'
             WHEN (sd.property_type IN ('MF', 'Multiple Family Residence') OR sd.property_type LIKE 'Multiple Family%')
-                AND COALESCE(sd.units, 0) >= 5 THEN 'mf5p'
+                AND COALESCE(sd.units, 0) >= 5 THEN 'bt__high_density_attached_residential'
             WHEN (sd.property_type IN ('Commercial', 'Retail', 'Office', 'Restaurant', 'Hotel', 'Medical',
-                  'Retail/Commercial', 'Commercial/Office')) THEN 'commercial'
+                  'Retail/Commercial', 'Commercial/Office')) THEN 'bt__communityneighborhood_retail'
             WHEN (sd.property_type IN ('Industrial', 'Manufacturing', 'Warehouse', 'Industrial/Manufacturing',
-                  'Transport/Warehouse', 'Construction')) THEN 'industrial'
-            WHEN (sd.property_type IN ('Agricultural', 'Farm/Ranch', 'Vacant Agricultural')) THEN 'agricultural'
+                  'Transport/Warehouse', 'Construction')) THEN 'bt__light_industrial'
+            WHEN (sd.property_type IN ('Agricultural', 'Farm/Ranch', 'Vacant Agricultural')) THEN 'bt__agriculture'
             WHEN (sd.property_type IN ('Civic', 'Institutional', 'Church', 'School', 'Government', 'Education',
                   'Public', 'Hospital', 'Medical Facility'))
                 OR sd.property_type LIKE '%Church%' OR sd.property_type LIKE '%School%'
-                OR sd.property_type LIKE '%Government%' THEN 'civic'
+                OR sd.property_type LIKE '%Government%' THEN 'bt__publicquasi_public'
             ELSE NULL
         END AS built_form_key,
         CASE WHEN at.apn IS NOT NULL THEN 1 ELSE 0 END AS is_at_parcel
@@ -61,4 +61,4 @@ classifications AS (
 SELECT apn, built_form_key
 FROM classifications
 WHERE built_form_key IS NOT NULL
-  AND NOT (is_at_parcel = 1 AND built_form_key NOT IN ('attsf', 'mf2to4', 'mf5p'));
+  AND NOT (is_at_parcel = 1 AND built_form_key NOT IN ('bt__medium_density_attached_residential', 'bt__high_density_attached_residential'));
