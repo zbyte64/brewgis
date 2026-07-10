@@ -539,6 +539,9 @@ def _train_and_predict(
     if assessor_df is not None and len(assessor_df) >= MIN_TRAIN_SAMPLES:
         mapped = _map_tier1_to_39class(assessor_df)
         mapped = mapped[mapped["built_form_key"].isin(CLASSES)]
+        # Filter to only classes present in reference training set —
+        # init_model requires identical class sets between stages.
+        mapped = mapped[mapped["built_form_key"].isin(valid_classes)]
         mapped = mapped.copy()
         mapped["landuse_prefix"] = mapped["landuse"].fillna("XX").str[:2]
         mapped["zone_prefix"] = mapped["zone"].fillna("X").str[:1]
