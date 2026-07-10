@@ -131,6 +131,10 @@ coverage:  ## Run tests with coverage report and fail if below threshold
 sqlmesh-clean:  ## Drop all SQLMesh snapshots and start fresh
 	$(COMPOSE_RUN) sqlmesh -p brewgis/sqlmesh/ clean
 
+.PHONY: sqlmesh-migrate
+sqlmesh-migrate:  ## Run SQLMesh migration (migrate state database schema)
+	$(COMPOSE_RUN) sqlmesh -p brewgis/sqlmesh/ migrate
+
 .PHONY: test-sqlmesh
 test-sqlmesh:  ## Run SQLMesh tests, lint, and audits
 	$(COMPOSE_RUN) bash -c 'sqlmesh -p brewgis/sqlmesh/ test && sqlmesh -p brewgis/sqlmesh/ lint'

@@ -41,19 +41,26 @@ SELECT
                     THEN 'detsf_sl'
                 ELSE 'detsf_ll'
             END
-        -- A2% (multi-family): no tier0 classification. Falls through to tier2
-        -- (Overture footprints, which distinguish mf2to4 vs mf5p from building
-        -- square footage and height), then to tier3 landuse-constrained KNN.
-        WHEN ap.landuse_prefix LIKE 'A2' THEN NULL
+        -- A2% (multi-family): classify via intersection density as a density proxy.
+        -- High intersection density (≥100 intersections/km²) → mf5p, else mf2to4.
+        WHEN ap.landuse_prefix LIKE 'A2' THEN
+            CASE
+                WHEN COALESCE(id.intersection_density, 0) >= 100 THEN 'mf5p'
+                ELSE 'mf2to4'
+            END
         WHEN ap.landuse_prefix LIKE 'A3' THEN 'attsf'
         WHEN ap.landuse_prefix LIKE 'A4' THEN 'detsf_sl'
         WHEN ap.landuse_prefix LIKE 'AE' THEN 'commercial'
         WHEN ap.landuse_prefix LIKE 'AF' THEN 'industrial'
         WHEN ap.landuse_prefix LIKE 'AG' THEN 'agricultural'
         WHEN ap.landuse_prefix IN ('AH', 'AJ') THEN 'civic'
-        -- AT% (apartments): no tier0 classification. Falls through to tier2
-        -- so building footprints can distinguish mf2to4 vs mf5p.
-        WHEN ap.landuse_prefix IN ('AT') THEN NULL
+        -- AT% (apartments): classify via intersection density as a density proxy.
+        -- High intersection density (≥100 intersections/km²) → mf5p, else mf2to4.
+        WHEN ap.landuse_prefix IN ('AT') THEN
+            CASE
+                WHEN COALESCE(id.intersection_density, 0) >= 100 THEN 'mf5p'
+                ELSE 'mf2to4'
+            END
         WHEN ap.landuse_prefix IN ('CA', 'BA', 'BF', 'BC', 'BB', 'BE', 'BD', 'CG') THEN 'commercial'
         WHEN ap.landuse_prefix IN ('GC', 'GA', 'HJ') THEN 'civic'
         WHEN ap.landuse_prefix IN ('MS', 'MU', 'MP') THEN 'commercial'
@@ -74,14 +81,22 @@ WHERE ap.landuse IS NOT NULL
                     THEN 'detsf_sl'
                 ELSE 'detsf_ll'
             END
-        WHEN ap.landuse_prefix LIKE 'A2' THEN NULL
+        WHEN ap.landuse_prefix LIKE 'A2' THEN
+            CASE
+                WHEN COALESCE(id.intersection_density, 0) >= 100 THEN 'mf5p'
+                ELSE 'mf2to4'
+            END
         WHEN ap.landuse_prefix LIKE 'A3' THEN 'attsf'
         WHEN ap.landuse_prefix LIKE 'A4' THEN 'detsf_sl'
         WHEN ap.landuse_prefix LIKE 'AE' THEN 'commercial'
         WHEN ap.landuse_prefix LIKE 'AF' THEN 'industrial'
         WHEN ap.landuse_prefix LIKE 'AG' THEN 'agricultural'
         WHEN ap.landuse_prefix IN ('AH', 'AJ') THEN 'civic'
-        WHEN ap.landuse_prefix IN ('AT') THEN NULL
+        WHEN ap.landuse_prefix IN ('AT') THEN
+            CASE
+                WHEN COALESCE(id.intersection_density, 0) >= 100 THEN 'mf5p'
+                ELSE 'mf2to4'
+            END
         WHEN ap.landuse_prefix IN ('CA', 'BA', 'BF', 'BC', 'BB', 'BE', 'BD', 'CG') THEN 'commercial'
         WHEN ap.landuse_prefix IN ('GC', 'GA', 'HJ') THEN 'civic'
         WHEN ap.landuse_prefix IN ('MS', 'MU', 'MP') THEN 'commercial'
