@@ -65,6 +65,13 @@ MIN_R2 = 0.10
 MIN_TRAIN_SAMPLES = 100
 
 
+def _clean_bft_key(raw: str) -> str:
+    """Clean SACOG built_form_key: keep bt__ prefix, strip _sacog suffix."""
+    if not isinstance(raw, str):
+        return raw
+    return raw.removesuffix("_sacog")
+
+
 def _discover_env_view(context: ExecutionContext, table: str, base_schema: str) -> str:
     rows = context.engine_adapter.fetchdf(
         f"SELECT table_schema || '.' || table_name "
@@ -113,7 +120,9 @@ def _fetch_sqft_training_data(context: ExecutionContext) -> pd.DataFrame:
     return context.fetchdf(
         f"""
         SELECT DISTINCT ON (ap.apn)
+            ap.apn,
             {cols},
+            ref.built_form_key,
             ap.lot_size_acres, ap.landuse, ap.zone,
             COALESCE(ap.land_development_category, 'standard') AS land_development_category,
             ST_X(ST_Transform(ST_Centroid(ap.geometry), 3310)) AS centroid_x,
@@ -132,6 +141,41 @@ def _fetch_sqft_training_data(context: ExecutionContext) -> pd.DataFrame:
         JOIN {parcels} ap ON di.apn = ap.apn
         LEFT JOIN {bldg_sqft} bs ON di.apn = bs.apn
         LEFT JOIN {intersection} id ON di.apn = id.apn
+        ORDER BY ap.apn
+        """
+    )
+
+
+def _fetch_sqft_inference_data(context: ExecutionContext) -> pd.DataFrame:
+    """Fetch all assessor parcels with features + built_form_key for inference."""
+    parcels = context.resolve_table("brewgis.assessor.sacog_assessor_parcels")
+    bldg_sqft = context.resolve_table("brewgis.assessor.parcel_building_sqft_by_type")
+    intersection = context.resolve_table(
+        "brewgis.assessor.overture_intersection_density"
+    )
+    bft_resolved = context.resolve_table("brewgis.assessor.parcel_bft_resolved")
+    return context.fetchdf(
+        f"""
+        SELECT DISTINCT ON (ap.apn)
+            ap.apn,
+            r.built_form_key,
+            ap.lot_size_acres, ap.landuse, ap.zone,
+            COALESCE(ap.land_development_category, 'standard') AS land_development_category,
+            ST_X(ST_Transform(ST_Centroid(ap.geometry), 3310)) AS centroid_x,
+            ST_Y(ST_Transform(ST_Centroid(ap.geometry), 3310)) AS centroid_y,
+            COALESCE(bs.residential_building_sqft, 0) AS residential_building_sqft,
+            COALESCE(bs.commercial_building_sqft, 0) AS commercial_building_sqft,
+            COALESCE(bs.industrial_building_sqft, 0) AS industrial_building_sqft,
+            COALESCE(bs.other_building_sqft, 0) AS other_building_sqft,
+            COALESCE(bs.total_footprint_sqft, 0) AS total_footprint_sqft,
+            COALESCE(bs.building_count, 0) AS building_count,
+            COALESCE(bs.footprint_ratio, 0) AS footprint_ratio,
+            COALESCE(bs.max_levels, 1) AS max_levels,
+            COALESCE(id.intersection_density, 0) AS intersection_density
+        FROM {parcels} ap
+        JOIN {bft_resolved} r ON ap.apn = r.apn
+        LEFT JOIN {bldg_sqft} bs ON ap.apn = bs.apn
+        LEFT JOIN {intersection} id ON ap.apn = id.apn
         ORDER BY ap.apn
         """
     )
@@ -273,6 +317,10 @@ def execute(
 
     df = _fetch_sqft_training_data(context)
     logger.info("LightGBM SQFT: %d training parcels", len(df))
+    df["built_form_key"] = df["built_form_key"].apply(_clean_bft_key)
+
+    inference_df = _fetch_sqft_inference_data(context)
+    logger.info("LightGBM SQFT: %d inference parcels", len(inference_df))
 
     # Discover target columns at runtime
     sqft_targets = _get_sqft_targets(df)
@@ -292,7 +340,7 @@ def execute(
 
     train_df["landuse_prefix"] = train_df["landuse"].fillna("XX").str[:2]
     train_df["zone_prefix"] = train_df["zone"].fillna("X").str[:1]
-    inference_df = df.copy()
+    inference_df = inference_df.copy()
     inference_df["landuse_prefix"] = inference_df["landuse"].fillna("XX").str[:2]
     inference_df["zone_prefix"] = inference_df["zone"].fillna("X").str[:1]
 
@@ -352,7 +400,7 @@ def execute(
         _save_model(context, model_obj, data_hash, landuse_prefixes, zone_prefixes)
 
     y_pred = model_obj.predict(x_inference)
-    results = df[["apn"]].copy()
+    results = inference_df[["apn"]].copy()
     for i, target in enumerate(sqft_targets):
         results[target] = np.maximum(y_pred[:, i], 0.0).astype(np.float32)
     results["bldg_sqft_total"] = results[sqft_targets].sum(axis=1).astype(np.float32)
