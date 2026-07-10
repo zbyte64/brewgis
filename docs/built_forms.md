@@ -12,9 +12,9 @@ The UrbanFootprint framework classifies urban environments at three levels:
 
 The `land_development_category` column (urban / compact / standard) serves as a coarser place-type proxy at the parcel level.
 
-## Building Type Definitions
+## ML-Predicted Building Types (28 classes)
 
-All 40 building types classified by the LightGBM model:
+The following 28 building types are predicted by the LightGBM classifier. These are feature-distinguishable by the 12 assessor feature columns.
 
 ### Residential — Detached
 
@@ -111,3 +111,24 @@ The old 9-class system mapped to the 40-class system as follows:
 | `industrial` | `bt__light_industrial`, `bt__heavy_industrial`, `bt__agricultural_processingretail_employment` |
 | `civic` | `bt__publicquasi_public`, `bt__civic_institution`, `bt__k_12_school`, `bt__college_university`, `bt__medical_facility`, `bt__park_and_open_space`, `bt__airport`, `bt__parking_lot`, `bt__parking_structure`, `bt__road`, `bt__water` |
 | `agricultural` | `bt__agriculture`, `bt__farm_home` |
+
+## Land-Use-Defined Building Types (not ML-predicted)
+
+The following 12 building types are NOT predicted by the LightGBM model. They
+are assigned by tier0/landuse rules using assessor use codes and Overture
+building classifications, which identify them more reliably than parcel features:
+
+| Key | Label | Assignment Method |
+|-----|-------|-------------------|
+| `bt__k_12_school` | K-12 School | Assessor land use code (school categories) |
+| `bt__college_university` | College/University | Assessor land use code (college categories) |
+| `bt__medical_facility` | Medical Facility | Overture building classification |
+| `bt__airport` | Airport | Assessor land use code |
+| `bt__park_and_open_space` | Park and Open Space | Assessor land use code |
+| `bt__parking_lot` | Parking Lot | Assessor land use code + Overture |
+| `bt__parking_structure` | Parking Structure | Overture building classification |
+| `bt__road` | Road | Assessor land use code |
+| `bt__water` | Water | Assessor land use code |
+| `bt__publicquasi_public` | Public/Quasi-Public | Assessor land use code |
+| `bt__civic_institution` | Civic Institution | Assessor land use code |
+| `bt__agricultural_processingretail_employment` | Agricultural Processing | Assessor land use code |

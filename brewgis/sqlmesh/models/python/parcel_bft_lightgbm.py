@@ -35,8 +35,11 @@ if TYPE_CHECKING:
     from sqlmesh.utils.date import TimeLike
 
 
-# ── 39-class SACOG Building Type taxonomy (bt__ prefix = UrbanFootprint BT) ──
-# No pt__ (place type) entries exist in the SACOG reference data.
+# ── 28-class Building Type taxonomy (ML-predictable) ────────────────────
+# Removed 12 land-use-defined classes (k_12_school, college, medical, airport,
+# park, parking_lot, parking_structure, road, water, publicquasi_public,
+# civic_institution, agricultural_processingretail_employment).
+# These are predicted by tier0/landuse rules instead of ML.
 CLASSES = [
     "bt__low_density_detached_residential",
     "bt__medium_density_detached_residential",
@@ -65,19 +68,7 @@ CLASSES = [
     "bt__hotel",
     "bt__light_industrial",
     "bt__heavy_industrial",
-    "bt__agricultural_processingretail_employment",
     "bt__agriculture",
-    "bt__publicquasi_public",
-    "bt__civic_institution",
-    "bt__k_12_school",
-    "bt__college_university",
-    "bt__medical_facility",
-    "bt__park_and_open_space",
-    "bt__airport",
-    "bt__parking_lot",
-    "bt__parking_structure",
-    "bt__road",
-    "bt__water",
 ]
 
 CLASS_TO_IDX = {c: i for i, c in enumerate(CLASSES)}

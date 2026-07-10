@@ -284,7 +284,7 @@ def test_class_to_idx_roundtrip():
     """Each class must map to a unique index and back."""
     mod = _import_model()
 
-    assert len(mod.CLASSES) == 40, f"Expected 40 classes, got {len(mod.CLASSES)}"
+    assert len(mod.CLASSES) == 28, f"Expected 28 classes, got {len(mod.CLASSES)}"
     assert set(mod.CLASS_TO_IDX.keys()) == set(mod.CLASSES), (
         "CLASS_TO_IDX keys must match CLASSES"
     )
