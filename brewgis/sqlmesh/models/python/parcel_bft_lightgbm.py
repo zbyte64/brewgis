@@ -1,8 +1,9 @@
 """LightGBM BFT Classifier — Python SQLMesh FULL model.
 
 Trains a multiclass gradient-boosted model on tier1 sales labels, then predicts
-built_form_key for all assessor parcels. Drops into the resolved chain between
-tier0 and tier3b, replacing tier2 and tier3.
+built_form_key for all assessor parcels. Uses two-stage training: pre-train on
+reference base canvas data (~502K parcels) if available, then fine-tune on
+assessor tier1 sales labels (~55K parcels).
 """
 
 from __future__ import annotations
@@ -74,6 +75,22 @@ TRAINING_PARAMS: dict[str, Any] = {
     "min_data_in_leaf": 20,
     "verbose": -1,
     "n_estimators": 200,
+    "random_state": 42,
+}
+
+REFERENCE_TRAINING_PARAMS: dict[str, Any] = {
+    "objective": "multiclass",
+    "num_class": 9,
+    "metric": "multi_logloss",
+    "boosting_type": "gbdt",
+    "num_leaves": 31,
+    "learning_rate": 0.1,
+    "feature_fraction": 0.8,
+    "bagging_fraction": 0.8,
+    "bagging_freq": 5,
+    "min_data_in_leaf": 20,
+    "verbose": -1,
+    "n_estimators": 100,
     "random_state": 42,
 }
 
@@ -157,6 +174,65 @@ def _fetch_all_parcels(context: ExecutionContext) -> pd.DataFrame:
         ORDER BY ap.apn
         """
     )
+
+
+def _fetch_reference_training_data(context: ExecutionContext) -> pd.DataFrame:
+    """Fetch reference SACOG base canvas labels for pre-training.
+
+    Joins reference parcels to assessor APNs via dasymetric_intersections
+    crosswalk, producing one row per unique assessor APN with reference
+    built_form_key labels and the same 12 assessor features used for inference.
+
+    Silently returns empty DataFrame if the reference table or crosswalk
+    tables are unavailable (production environment without comparison data).
+    """
+    try:
+        parcels = context.resolve_table("brewgis.assessor.sacog_assessor_parcels")
+        bldg_sqft = context.resolve_table(
+            "brewgis.assessor.parcel_building_sqft_by_type"
+        )
+        intersection = context.resolve_table(
+            "brewgis.assessor.overture_intersection_density"
+        )
+        # Use raw name for dasymetric_intersections to avoid circular dependency:
+        # the LightGBM model is upstream of it, and resolve_table() would create
+        # a cycle that SQLMesh detects at DAG resolution time.
+        # The try/except ensures graceful fallback if the table doesn't exist.
+        dasymetric = "brewgis.comparison.dasymetric_intersections"
+        return context.fetchdf(
+            f"""
+            SELECT DISTINCT ON (ap.apn)
+                ref.built_form_key,
+                ap.lot_size_acres,
+                ap.landuse,
+                ap.zone,
+                ST_X(ST_Transform(ST_Centroid(ap.geometry), 3310)) AS centroid_x,
+                ST_Y(ST_Transform(ST_Centroid(ap.geometry), 3310)) AS centroid_y,
+                COALESCE(bs.residential_building_sqft, 0) AS residential_building_sqft,
+                COALESCE(bs.commercial_building_sqft, 0) AS commercial_building_sqft,
+                COALESCE(bs.industrial_building_sqft, 0) AS industrial_building_sqft,
+                COALESCE(bs.other_building_sqft, 0) AS other_building_sqft,
+                COALESCE(bs.total_footprint_sqft, 0) AS total_footprint_sqft,
+                COALESCE(bs.building_count, 0) AS building_count,
+                COALESCE(bs.footprint_ratio, 0) AS footprint_ratio,
+                COALESCE(bs.max_levels, 1) AS max_levels,
+                COALESCE(id.intersection_density, 0) AS intersection_density
+            FROM public.sac_cnty_region_base_canvas ref
+            JOIN {dasymetric} di ON ref.geography_id = di.parcel_id
+            JOIN {parcels} ap ON di.apn = ap.apn
+            LEFT JOIN {bldg_sqft} bs ON di.apn = bs.apn
+            LEFT JOIN {intersection} id ON di.apn = id.apn
+            WHERE ref.built_form_key IS NOT NULL
+            ORDER BY ap.apn
+            """
+        )
+    except Exception:
+        logger = logging.getLogger(__name__)
+        logger.info(
+            "LightGBM: reference training data unavailable"
+            " — falling back to assessor-only training"
+        )
+        return pd.DataFrame()
 
 
 def _extract_top_landuse_prefixes(
@@ -268,8 +344,16 @@ def _train_and_predict(
     context: ExecutionContext,
     train_df: pd.DataFrame,
     inference_df: pd.DataFrame,
+    ref_df: pd.DataFrame | None = None,
 ) -> pd.DataFrame:
-    """Train LightGBM classifier on tier1 labels and predict for all parcels."""
+    """Train LightGBM classifier on tier1 labels and predict for all parcels.
+
+    Two-stage training when ref_df is provided:
+    1. Pre-train on reference base canvas labels (~502K parcels, full 9-class distribution)
+    2. Fine-tune on assessor tier1 sales labels with warm-start (init_model)
+
+    Falls back to assessor-only training when ref_df is None or empty.
+    """
     train_df = train_df.dropna(subset=["built_form_key"])
     train_df = train_df[train_df["built_form_key"].isin(CLASSES)]
 
@@ -290,7 +374,7 @@ def _train_and_predict(
         results["probability"] = None
         return results.astype(object)
 
-    # Create prefix columns before feature extraction (avoids duplication with _feature_matrix)
+    # Create prefix columns before feature extraction
     train_df = train_df.copy()
     train_df["landuse_prefix"] = train_df["landuse"].fillna("XX").str[:2]
     train_df["zone_prefix"] = train_df["zone"].fillna("X").str[:1]
@@ -298,10 +382,23 @@ def _train_and_predict(
     inference_df["landuse_prefix"] = inference_df["landuse"].fillna("XX").str[:2]
     inference_df["zone_prefix"] = inference_df["zone"].fillna("X").str[:1]
 
-    landuse_prefixes = _extract_top_landuse_prefixes(train_df, inference_df)
+    # Prepare reference data if available (use as additional prefix source)
+    if ref_df is not None and len(ref_df) > 0:
+        ref_df = ref_df[ref_df["built_form_key"].isin(CLASSES)]
+        ref_df = ref_df.copy()
+        ref_df["landuse_prefix"] = ref_df["landuse"].fillna("XX").str[:2]
+        ref_df["zone_prefix"] = ref_df["zone"].fillna("X").str[:1]
+
+    # Build prefix vocabularies from all available data
+    prefix_train_df = (
+        pd.concat([ref_df, train_df], ignore_index=True)
+        if ref_df is not None and len(ref_df) > 0
+        else train_df
+    )
+    landuse_prefixes = _extract_top_landuse_prefixes(prefix_train_df, inference_df)
     zone_prefixes = sorted(
         set(
-            train_df["zone_prefix"].unique().tolist()
+            prefix_train_df["zone_prefix"].unique().tolist()
             + inference_df["zone_prefix"].unique().tolist()
         )
     )
@@ -311,10 +408,21 @@ def _train_and_predict(
     y_train = train_df["built_form_key"].map(CLASS_TO_IDX).to_numpy()
     x_inference = _feature_matrix(inference_df, landuse_prefixes, zone_prefixes)
 
-    # Data hash for caching
-    combo = pd.concat(
-        [x_train.reset_index(drop=True), pd.DataFrame({"y": y_train})], axis=1
-    )
+    # Build reference feature matrix if available
+    x_ref: pd.DataFrame | None = None
+    y_ref: np.ndarray | None = None
+    if ref_df is not None and len(ref_df) > 0:
+        assert ref_df is not None  # type narrowing
+        x_ref = _feature_matrix(ref_df, landuse_prefixes, zone_prefixes)
+        y_ref = ref_df["built_form_key"].map(CLASS_TO_IDX).to_numpy()
+
+    # Data hash for caching — includes reference data if used
+    hash_parts = [x_train.reset_index(drop=True), pd.DataFrame({"y": y_train})]
+    if x_ref is not None:
+        assert y_ref is not None  # always set together with x_ref
+        hash_parts.append(x_ref.reset_index(drop=True))
+        hash_parts.append(pd.DataFrame({"y": y_ref}))
+    combo = pd.concat(hash_parts, axis=1, ignore_index=True)
     data_hash = _compute_data_hash(combo)
 
     # Try cache
@@ -323,6 +431,20 @@ def _train_and_predict(
         model_obj, _, _ = cached
         logging.getLogger(__name__).info("LightGBM: using cached model")
     else:
+        # Stage 1: Pre-train on reference data (if available)
+        stage1_model = None
+        if x_ref is not None and len(x_ref) > 0:
+            logging.getLogger(__name__).info(
+                "LightGBM: pre-training on %d reference parcels", len(x_ref)
+            )
+            model_ref = LGBMClassifier(**REFERENCE_TRAINING_PARAMS)
+            model_ref.fit(x_ref, y_ref)
+            stage1_model = model_ref
+            logging.getLogger(__name__).info(
+                "LightGBM: reference pre-training complete"
+            )
+
+        # Stage 2: Fine-tune on assessor data
         x_tr, x_va, y_tr, y_va = train_test_split(
             x_train, y_train, test_size=0.2, stratify=y_train, random_state=42
         )
@@ -332,6 +454,7 @@ def _train_and_predict(
             x_tr,
             y_tr,
             eval_set=[(x_va, y_va)],
+            init_model=stage1_model,
             callbacks=[
                 early_stopping(20, verbose=False),
                 log_evaluation(period=0),
@@ -408,6 +531,14 @@ def execute(
     train_size = len(train_df)
     logging.getLogger(__name__).info("LightGBM: training samples: %d", train_size)
 
+    # Try to fetch reference labels for pre-training
+    # Silently returns empty in production (no reference table)
+    ref_df = _fetch_reference_training_data(context)
+    if len(ref_df) > 0:
+        logging.getLogger(__name__).info(
+            "LightGBM: fetched %d reference parcels for pre-training", len(ref_df)
+        )
+
     if train_size < MIN_TRAIN_SAMPLES:
         logging.getLogger(__name__).warning(
             "LightGBM: insufficient training data (%d samples), returning empty",
@@ -418,7 +549,7 @@ def execute(
         results["probability"] = None
         results = results.astype(object)
     else:
-        results = _train_and_predict(context, train_df, inference_df)
+        results = _train_and_predict(context, train_df, inference_df, ref_df=ref_df)
         predicted_count = results["built_form_key"].notna().sum()
         logging.getLogger(__name__).info(
             "LightGBM: predicted %d / %d parcels", predicted_count, len(results)
