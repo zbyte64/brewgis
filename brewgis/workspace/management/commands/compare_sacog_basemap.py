@@ -760,6 +760,8 @@ class Command(BaseCommand):
                     "+brewgis.assessor.parcel_footprint_imputed",
                     "+brewgis.assessor.authoritative_residential_area",
                     "+brewgis.assessor.parcel_dasymetric_weights",
+                    "+brewgis.assessor.parcel_du_regressor",
+                    "+brewgis.assessor.parcel_sqft_regressor",
                     "+brewgis.comparison.sacog_comparison_dasymetric",
                 ]
             )
