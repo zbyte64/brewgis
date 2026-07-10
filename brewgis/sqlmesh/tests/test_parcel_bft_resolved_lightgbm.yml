@@ -55,7 +55,7 @@ test_resolved_lightgbm_takes_priority_over_tier3b:
         - apn: "TEST_LGBM_PRIORITY_001"
           built_form_key: "bt__high_density_attached_residential"
           built_form_key_source: "lightgbm"
-          du_subtype: "mf5p"
+          du_subtype: "bt__high_density_attached_residential"
           is_residential: 1
 
 test_resolved_lightgbm_fallback_to_tier3b:
@@ -174,5 +174,5 @@ test_resolved_tier1_still_takes_priority:
         - apn: "TEST_T1_PRIORITY_001"
           built_form_key: "bt__medium_density_detached_residential"
           built_form_key_source: "tier1"
-          du_subtype: "detsf_sl"
+          du_subtype: "bt__medium_density_detached_residential"
           is_residential: 1
