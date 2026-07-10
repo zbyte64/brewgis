@@ -603,10 +603,12 @@ def _train_and_predict(
         )
 
         y_pred = model_obj.predict(x_va)
-        va_classes = [IDX_TO_CLASS[int(i)] for i in sorted(set(y_va))]
+        va_labels = sorted(set(y_va))
+        va_classes = [IDX_TO_CLASS[int(i)] for i in va_labels]
         f1_report = classification_report(
             y_va,
             y_pred,
+            labels=va_labels,
             target_names=va_classes,
             digits=3,
             zero_division=0.0,
@@ -614,6 +616,7 @@ def _train_and_predict(
         macro_f1 = f1_score(
             y_va,
             y_pred,
+            labels=va_labels,
             average="macro",
             zero_division=0.0,
         )
