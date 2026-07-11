@@ -98,7 +98,13 @@ scaled AS (
         dw.bldg_sqft_wholesale_regressor * aw.apn_weight AS bldg_area_wholesale,
         -- Rates (unchanged per APN)
         de.hh_size,
-        de.vacancy_rate
+        de.vacancy_rate,
+        -- Employment sector ratios (unchanged per APN, weighted by apn_weight at aggregation)
+        dw.emp_ret_per_acre_regressor AS emp_ret_per_acre,
+        dw.emp_off_per_acre_regressor AS emp_off_per_acre,
+        dw.emp_pub_per_acre_regressor AS emp_pub_per_acre,
+        dw.emp_ind_per_acre_regressor AS emp_ind_per_acre,
+        dw.emp_ag_per_acre_regressor AS emp_ag_per_acre
     FROM apn_weights aw
     JOIN brewgis.comparison.sacog_parcel_shim sp
         ON aw.parcel_id = sp.parcel_id
@@ -165,7 +171,13 @@ SELECT
     SUM(intersection_density * apn_weight) / NULLIF(SUM(apn_weight), 0) AS intersection_density,
     -- Rates: weighted by apn_weight
     SUM(hh_size * apn_weight) / NULLIF(SUM(apn_weight), 0) AS hh_size,
-    SUM(vacancy_rate * apn_weight) / NULLIF(SUM(apn_weight), 0) AS vacancy_rate
+    SUM(vacancy_rate * apn_weight) / NULLIF(SUM(apn_weight), 0) AS vacancy_rate,
+    -- Employment sector ratios: weighted by apn_weight
+    SUM(COALESCE(emp_ret_per_acre, 0) * apn_weight) / NULLIF(SUM(apn_weight), 0) AS emp_ret_per_acre,
+    SUM(COALESCE(emp_off_per_acre, 0) * apn_weight) / NULLIF(SUM(apn_weight), 0) AS emp_off_per_acre,
+    SUM(COALESCE(emp_pub_per_acre, 0) * apn_weight) / NULLIF(SUM(apn_weight), 0) AS emp_pub_per_acre,
+    SUM(COALESCE(emp_ind_per_acre, 0) * apn_weight) / NULLIF(SUM(apn_weight), 0) AS emp_ind_per_acre,
+    SUM(COALESCE(emp_ag_per_acre, 0) * apn_weight) / NULLIF(SUM(apn_weight), 0) AS emp_ag_per_acre
 FROM scaled
 GROUP BY parcel_id, geometry;
 

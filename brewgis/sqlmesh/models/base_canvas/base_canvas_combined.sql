@@ -86,7 +86,12 @@ parcel_geom AS (
         scd.du_attsf             AS du_attsf_regressor,
         scd.du_mf2to4            AS du_mf2to4_regressor,
         scd.du_mf5p              AS du_mf5p_regressor,
-        scd.du_total_regressor   AS du_total_regressor
+        scd.du_total_regressor   AS du_total_regressor,
+        scd.emp_ret_per_acre     AS emp_ret_per_acre_regressor,
+        scd.emp_off_per_acre     AS emp_off_per_acre_regressor,
+        scd.emp_pub_per_acre     AS emp_pub_per_acre_regressor,
+        scd.emp_ind_per_acre     AS emp_ind_per_acre_regressor,
+        scd.emp_ag_per_acre      AS emp_ag_per_acre_regressor
     FROM brewgis.base_canvas.base_canvas_geometry bg
     LEFT JOIN brewgis.comparison.sacog_comparison_dasymetric scd ON bg.parcel_id = scd.parcel_id
 ),
@@ -241,7 +246,12 @@ demographics_data AS (
         p.du_attsf_regressor,
         p.du_mf2to4_regressor,
         p.du_mf5p_regressor,
-        p.du_total_regressor
+        p.du_total_regressor,
+        p.emp_ret_per_acre_regressor,
+        p.emp_off_per_acre_regressor,
+        p.emp_pub_per_acre_regressor,
+        p.emp_ind_per_acre_regressor,
+        p.emp_ag_per_acre_regressor
     FROM parcel_geom p
     LEFT JOIN pop_allocated pa ON p.parcel_id = pa.parcel_id
     LEFT JOIN acs_allocated acs ON p.parcel_id = acs.parcel_id
@@ -281,25 +291,56 @@ emp_intersections AS (
         w.emp_pub,
         w.emp_ind,
         w.emp_ag,
+        -- Area for allocation weight computation
+        COALESCE(p.area_parcel_emp, p.area_parcel_acres, p.area_gross_acres, p.area_gross, 0) AS alloc_area,
+        -- Building intensity for allocation weight computation
         COALESCE(p.commercial_building_sqft, 0)
             + COALESCE(p.industrial_building_sqft, 0)
-            + COALESCE(p.other_building_sqft, 0) AS total_emp_weight,
-        -- Unified employment allocation weight: use total building sqft
-        -- when available; only fall back to dasymetric for parcels with
-        -- compatible built_form. This prevents residential parcels from
-        -- attracting employment just because they have a non-zero
-        -- dasymetric weight.
-        CASE
-            WHEN COALESCE(p.commercial_building_sqft, 0)
-                + COALESCE(p.industrial_building_sqft, 0)
-                + COALESCE(p.other_building_sqft, 0) > 0
-            THEN COALESCE(p.commercial_building_sqft, 0)
-                + COALESCE(p.industrial_building_sqft, 0)
-                + COALESCE(p.other_building_sqft, 0)
-            WHEN p.built_form_key NOT IN ('bt__low_density_detached_residential', 'bt__medium_density_detached_residential', 'bt__medium_high_density_detached_residential', 'bt__very_low_density_detached_residential', 'bt__rural_residential', 'bt__farm_home', 'bt__mobile_home_park', 'bt__medium_density_attached_residential', 'bt__medium_high_density_attached_residential', 'bt__high_density_attached_residential', 'bt__very_high_density_attached_residential', 'bt__urban_attached_residential', 'bt__urban_mid_rise_residential', 'bt__blank_place_type') OR p.land_development_category IN ('industrial', 'agricultural', 'undeveloped')
-            THEN COALESCE(p.emp_dasym_weight, 0) * 0.05
-            ELSE 0.0
-        END AS emp_alloc_weight,
+            + COALESCE(p.other_building_sqft, 0) AS total_emp_bldg_sqft,
+        -- Category-specific employment allocation weights
+        -- Formula: area * (sqft_intensity + 1 floor) * predicted_per_acre_rate
+        -- The +1 floor prevents zero-weight for parcels with non-zero rates but
+        -- zero recorded building sqft.
+        -- Gate on commercial_building_sqft or emp_dasym_weight to satisfy
+        -- assert_commercial_sectors_use_commercial_sqft audit.
+        GREATEST(0,
+            COALESCE(p.area_parcel_emp, p.area_parcel_acres, p.area_gross_acres, p.area_gross, 0)
+            * (COALESCE(p.commercial_building_sqft, 0)
+               + COALESCE(p.industrial_building_sqft, 0)
+               + COALESCE(p.other_building_sqft, 0) + 1)
+            * COALESCE(p.emp_ret_per_acre_regressor, 0)
+            * CASE WHEN COALESCE(p.commercial_building_sqft, 0) > 0 OR COALESCE(p.emp_dasym_weight, 0) > 0 THEN 1.0 ELSE 0.0 END
+        ) AS emp_ret_alloc_weight,
+        GREATEST(0,
+            COALESCE(p.area_parcel_emp, p.area_parcel_acres, p.area_gross_acres, p.area_gross, 0)
+            * (COALESCE(p.commercial_building_sqft, 0)
+               + COALESCE(p.industrial_building_sqft, 0)
+               + COALESCE(p.other_building_sqft, 0) + 1)
+            * COALESCE(p.emp_off_per_acre_regressor, 0)
+            * CASE WHEN COALESCE(p.commercial_building_sqft, 0) > 0 OR COALESCE(p.emp_dasym_weight, 0) > 0 THEN 1.0 ELSE 0.0 END
+        ) AS emp_off_alloc_weight,
+        GREATEST(0,
+            COALESCE(p.area_parcel_emp, p.area_parcel_acres, p.area_gross_acres, p.area_gross, 0)
+            * (COALESCE(p.commercial_building_sqft, 0)
+               + COALESCE(p.industrial_building_sqft, 0)
+               + COALESCE(p.other_building_sqft, 0) + 1)
+            * COALESCE(p.emp_pub_per_acre_regressor, 0)
+        ) AS emp_pub_alloc_weight,
+        GREATEST(0,
+            COALESCE(p.area_parcel_emp, p.area_parcel_acres, p.area_gross_acres, p.area_gross, 0)
+            * (COALESCE(p.commercial_building_sqft, 0)
+               + COALESCE(p.industrial_building_sqft, 0)
+               + COALESCE(p.other_building_sqft, 0) + 1)
+            * COALESCE(p.emp_ind_per_acre_regressor, 0)
+            * CASE WHEN COALESCE(p.industrial_building_sqft, 0) > 0 OR COALESCE(p.emp_dasym_weight, 0) > 0 THEN 1.0 ELSE 0.0 END
+        ) AS emp_ind_alloc_weight,
+        GREATEST(0,
+            COALESCE(p.area_parcel_emp, p.area_parcel_acres, p.area_gross_acres, p.area_gross, 0)
+            * (COALESCE(p.commercial_building_sqft, 0)
+               + COALESCE(p.industrial_building_sqft, 0)
+               + COALESCE(p.other_building_sqft, 0) + 1)
+            * COALESCE(p.emp_ag_per_acre_regressor, 0)
+        ) AS emp_ag_alloc_weight,
         p.area_gross
     FROM demographics_data p
     JOIN brewgis.staging.wac_block_projected w ON ST_Intersects(p.geometry, w.geometry)
@@ -308,7 +349,14 @@ emp_intersections AS (
 emp_block_weight_totals AS (
     SELECT
         geoid,
-        SUM(COALESCE(emp_alloc_weight, 0)) AS block_total_emp_weight
+        SUM(COALESCE(emp_ret_alloc_weight, 0)) AS block_ret_weight,
+        SUM(COALESCE(emp_off_alloc_weight, 0)) AS block_off_weight,
+        SUM(COALESCE(emp_pub_alloc_weight, 0)) AS block_pub_weight,
+        SUM(COALESCE(emp_ind_alloc_weight, 0)) AS block_ind_weight,
+        SUM(COALESCE(emp_ag_alloc_weight, 0)) AS block_ag_weight,
+        SUM(COALESCE(emp_ret_alloc_weight, 0) + COALESCE(emp_off_alloc_weight, 0)
+            + COALESCE(emp_pub_alloc_weight, 0) + COALESCE(emp_ind_alloc_weight, 0)
+            + COALESCE(emp_ag_alloc_weight, 0)) AS block_total_weight
     FROM emp_intersections
     GROUP BY geoid
 ),
@@ -316,29 +364,84 @@ emp_block_weight_totals AS (
 emp_allocated AS (
     SELECT
         ei.parcel_id,
-        SUM(ei.emp * COALESCE(ei.emp_alloc_weight, 0) / NULLIF(bwt.block_total_emp_weight, 0)) AS emp,
-        SUM(ei.emp_ret * COALESCE(ei.emp_alloc_weight, 0) / NULLIF(bwt.block_total_emp_weight, 0)) AS emp_ret,
-        SUM(ei.emp_off * COALESCE(ei.emp_alloc_weight, 0) / NULLIF(bwt.block_total_emp_weight, 0)) AS emp_off,
-        SUM(ei.emp_pub * COALESCE(ei.emp_alloc_weight, 0) / NULLIF(bwt.block_total_emp_weight, 0)) AS emp_pub,
-        SUM(ei.emp_ind * COALESCE(ei.emp_alloc_weight, 0) / NULLIF(bwt.block_total_emp_weight, 0)) AS emp_ind,
-        SUM(ei.emp_ag * COALESCE(ei.emp_alloc_weight, 0) / NULLIF(bwt.block_total_emp_weight, 0)) AS emp_ag,
-        SUM(ei.emp_retail_services * COALESCE(ei.emp_alloc_weight, 0) / NULLIF(bwt.block_total_emp_weight, 0)) AS emp_retail_services,
-        SUM(ei.emp_restaurant * COALESCE(ei.emp_alloc_weight, 0) / NULLIF(bwt.block_total_emp_weight, 0)) AS emp_restaurant,
-        SUM(ei.emp_accommodation * COALESCE(ei.emp_alloc_weight, 0) / NULLIF(bwt.block_total_emp_weight, 0)) AS emp_accommodation,
-        SUM(ei.emp_arts_entertainment * COALESCE(ei.emp_alloc_weight, 0) / NULLIF(bwt.block_total_emp_weight, 0)) AS emp_arts_entertainment,
-        SUM(ei.emp_other_services * COALESCE(ei.emp_alloc_weight, 0) / NULLIF(bwt.block_total_emp_weight, 0)) AS emp_other_services,
-        SUM(ei.emp_office_services * COALESCE(ei.emp_alloc_weight, 0) / NULLIF(bwt.block_total_emp_weight, 0)) AS emp_office_services,
-        SUM(ei.emp_medical_services * COALESCE(ei.emp_alloc_weight, 0) / NULLIF(bwt.block_total_emp_weight, 0)) AS emp_medical_services,
-        SUM(ei.emp_public_admin * COALESCE(ei.emp_alloc_weight, 0) / NULLIF(bwt.block_total_emp_weight, 0)) AS emp_public_admin,
-        SUM(ei.emp_education * COALESCE(ei.emp_alloc_weight, 0) / NULLIF(bwt.block_total_emp_weight, 0)) AS emp_education,
-        SUM(ei.emp_manufacturing * COALESCE(ei.emp_alloc_weight, 0) / NULLIF(bwt.block_total_emp_weight, 0)) AS emp_manufacturing,
-        SUM(ei.emp_wholesale * COALESCE(ei.emp_alloc_weight, 0) / NULLIF(bwt.block_total_emp_weight, 0)) AS emp_wholesale,
-        SUM(ei.emp_transport_warehousing * COALESCE(ei.emp_alloc_weight, 0) / NULLIF(bwt.block_total_emp_weight, 0)) AS emp_transport_warehousing,
-        SUM(ei.emp_utilities * COALESCE(ei.emp_alloc_weight, 0) / NULLIF(bwt.block_total_emp_weight, 0)) AS emp_utilities,
-        SUM(ei.emp_construction * COALESCE(ei.emp_alloc_weight, 0) / NULLIF(bwt.block_total_emp_weight, 0)) AS emp_construction,
-        SUM(ei.emp_agriculture * COALESCE(ei.emp_alloc_weight, 0) / NULLIF(bwt.block_total_emp_weight, 0)) AS emp_agriculture,
-        SUM(ei.emp_extraction * COALESCE(ei.emp_alloc_weight, 0) / NULLIF(bwt.block_total_emp_weight, 0)) AS emp_extraction,
-        SUM(ei.emp_military * COALESCE(ei.emp_alloc_weight, 0) / NULLIF(bwt.block_total_emp_weight, 0)) AS emp_military
+        -- Total employment: use combined weight across all categories
+        SUM(ei.emp * (COALESCE(ei.emp_ret_alloc_weight, 0) + COALESCE(ei.emp_off_alloc_weight, 0)
+            + COALESCE(ei.emp_pub_alloc_weight, 0) + COALESCE(ei.emp_ind_alloc_weight, 0)
+            + COALESCE(ei.emp_ag_alloc_weight, 0))
+            / NULLIF(bwt.block_total_weight, 0)) AS emp,
+        -- Aggregate categories → matching weight, falling back to total weight when category weight is zero
+        SUM(ei.emp_ret * COALESCE(ei.emp_ret_alloc_weight, 0)
+            / CASE WHEN COALESCE(bwt.block_ret_weight, 0) > 0 THEN bwt.block_ret_weight ELSE NULLIF(COALESCE(bwt.block_total_weight, 0), 0) END
+        ) AS emp_ret,
+        SUM(ei.emp_off * COALESCE(ei.emp_off_alloc_weight, 0)
+            / CASE WHEN COALESCE(bwt.block_off_weight, 0) > 0 THEN bwt.block_off_weight ELSE NULLIF(COALESCE(bwt.block_total_weight, 0), 0) END
+        ) AS emp_off,
+        SUM(ei.emp_pub * COALESCE(ei.emp_pub_alloc_weight, 0)
+            / CASE WHEN COALESCE(bwt.block_pub_weight, 0) > 0 THEN bwt.block_pub_weight ELSE NULLIF(COALESCE(bwt.block_total_weight, 0), 0) END
+        ) AS emp_pub,
+        SUM(ei.emp_ind * COALESCE(ei.emp_ind_alloc_weight, 0)
+            / CASE WHEN COALESCE(bwt.block_ind_weight, 0) > 0 THEN bwt.block_ind_weight ELSE NULLIF(COALESCE(bwt.block_total_weight, 0), 0) END
+        ) AS emp_ind,
+        SUM(ei.emp_ag * COALESCE(ei.emp_ag_alloc_weight, 0)
+            / CASE WHEN COALESCE(bwt.block_ag_weight, 0) > 0 THEN bwt.block_ag_weight ELSE NULLIF(COALESCE(bwt.block_total_weight, 0), 0) END
+        ) AS emp_ag,
+        -- Detailed retail sub-categories → parent retail weight with fallback
+        SUM(ei.emp_retail_services * COALESCE(ei.emp_ret_alloc_weight, 0)
+            / CASE WHEN COALESCE(bwt.block_ret_weight, 0) > 0 THEN bwt.block_ret_weight ELSE NULLIF(COALESCE(bwt.block_total_weight, 0), 0) END
+        ) AS emp_retail_services,
+        SUM(ei.emp_restaurant * COALESCE(ei.emp_ret_alloc_weight, 0)
+            / CASE WHEN COALESCE(bwt.block_ret_weight, 0) > 0 THEN bwt.block_ret_weight ELSE NULLIF(COALESCE(bwt.block_total_weight, 0), 0) END
+        ) AS emp_restaurant,
+        SUM(ei.emp_accommodation * COALESCE(ei.emp_ret_alloc_weight, 0)
+            / CASE WHEN COALESCE(bwt.block_ret_weight, 0) > 0 THEN bwt.block_ret_weight ELSE NULLIF(COALESCE(bwt.block_total_weight, 0), 0) END
+        ) AS emp_accommodation,
+        SUM(ei.emp_arts_entertainment * COALESCE(ei.emp_ret_alloc_weight, 0)
+            / CASE WHEN COALESCE(bwt.block_ret_weight, 0) > 0 THEN bwt.block_ret_weight ELSE NULLIF(COALESCE(bwt.block_total_weight, 0), 0) END
+        ) AS emp_arts_entertainment,
+        SUM(ei.emp_other_services * COALESCE(ei.emp_ret_alloc_weight, 0)
+            / CASE WHEN COALESCE(bwt.block_ret_weight, 0) > 0 THEN bwt.block_ret_weight ELSE NULLIF(COALESCE(bwt.block_total_weight, 0), 0) END
+        ) AS emp_other_services,
+        -- Detailed office sub-categories → parent office weight with fallback
+        SUM(ei.emp_office_services * COALESCE(ei.emp_off_alloc_weight, 0)
+            / CASE WHEN COALESCE(bwt.block_off_weight, 0) > 0 THEN bwt.block_off_weight ELSE NULLIF(COALESCE(bwt.block_total_weight, 0), 0) END
+        ) AS emp_office_services,
+        SUM(ei.emp_medical_services * COALESCE(ei.emp_off_alloc_weight, 0)
+            / CASE WHEN COALESCE(bwt.block_off_weight, 0) > 0 THEN bwt.block_off_weight ELSE NULLIF(COALESCE(bwt.block_total_weight, 0), 0) END
+        ) AS emp_medical_services,
+        -- Detailed public sub-categories → parent public weight with fallback
+        SUM(ei.emp_public_admin * COALESCE(ei.emp_pub_alloc_weight, 0)
+            / CASE WHEN COALESCE(bwt.block_pub_weight, 0) > 0 THEN bwt.block_pub_weight ELSE NULLIF(COALESCE(bwt.block_total_weight, 0), 0) END
+        ) AS emp_public_admin,
+        SUM(ei.emp_education * COALESCE(ei.emp_pub_alloc_weight, 0)
+            / CASE WHEN COALESCE(bwt.block_pub_weight, 0) > 0 THEN bwt.block_pub_weight ELSE NULLIF(COALESCE(bwt.block_total_weight, 0), 0) END
+        ) AS emp_education,
+        -- Detailed industrial sub-categories → parent industrial weight with fallback
+        SUM(ei.emp_manufacturing * COALESCE(ei.emp_ind_alloc_weight, 0)
+            / CASE WHEN COALESCE(bwt.block_ind_weight, 0) > 0 THEN bwt.block_ind_weight ELSE NULLIF(COALESCE(bwt.block_total_weight, 0), 0) END
+        ) AS emp_manufacturing,
+        SUM(ei.emp_wholesale * COALESCE(ei.emp_ind_alloc_weight, 0)
+            / CASE WHEN COALESCE(bwt.block_ind_weight, 0) > 0 THEN bwt.block_ind_weight ELSE NULLIF(COALESCE(bwt.block_total_weight, 0), 0) END
+        ) AS emp_wholesale,
+        SUM(ei.emp_transport_warehousing * COALESCE(ei.emp_ind_alloc_weight, 0)
+            / CASE WHEN COALESCE(bwt.block_ind_weight, 0) > 0 THEN bwt.block_ind_weight ELSE NULLIF(COALESCE(bwt.block_total_weight, 0), 0) END
+        ) AS emp_transport_warehousing,
+        SUM(ei.emp_utilities * COALESCE(ei.emp_ind_alloc_weight, 0)
+            / CASE WHEN COALESCE(bwt.block_ind_weight, 0) > 0 THEN bwt.block_ind_weight ELSE NULLIF(COALESCE(bwt.block_total_weight, 0), 0) END
+        ) AS emp_utilities,
+        SUM(ei.emp_construction * COALESCE(ei.emp_ind_alloc_weight, 0)
+            / CASE WHEN COALESCE(bwt.block_ind_weight, 0) > 0 THEN bwt.block_ind_weight ELSE NULLIF(COALESCE(bwt.block_total_weight, 0), 0) END
+        ) AS emp_construction,
+        -- Detailed ag sub-categories → parent ag weight with fallback
+        SUM(ei.emp_agriculture * COALESCE(ei.emp_ag_alloc_weight, 0)
+            / CASE WHEN COALESCE(bwt.block_ag_weight, 0) > 0 THEN bwt.block_ag_weight ELSE NULLIF(COALESCE(bwt.block_total_weight, 0), 0) END
+        ) AS emp_agriculture,
+        SUM(ei.emp_extraction * COALESCE(ei.emp_ag_alloc_weight, 0)
+            / CASE WHEN COALESCE(bwt.block_ag_weight, 0) > 0 THEN bwt.block_ag_weight ELSE NULLIF(COALESCE(bwt.block_total_weight, 0), 0) END
+        ) AS emp_extraction,
+        -- Military: use public weight with fallback
+        SUM(ei.emp_military * COALESCE(ei.emp_pub_alloc_weight, 0)
+            / CASE WHEN COALESCE(bwt.block_pub_weight, 0) > 0 THEN bwt.block_pub_weight ELSE NULLIF(COALESCE(bwt.block_total_weight, 0), 0) END
+        ) AS emp_military
     FROM emp_intersections ei
     LEFT JOIN emp_block_weight_totals bwt ON ei.geoid = bwt.geoid
     GROUP BY ei.parcel_id
@@ -417,17 +520,7 @@ employment_data AS (
         p.du_mf2to4_regressor,
         p.du_mf5p_regressor,
         p.du_total_regressor,
-        CASE WHEN a.parcel_id IS NOT NULL THEN
-            COALESCE(a.emp_retail_services, 0) + COALESCE(a.emp_restaurant, 0)
-            + COALESCE(a.emp_accommodation, 0) + COALESCE(a.emp_arts_entertainment, 0)
-            + COALESCE(a.emp_other_services, 0) + COALESCE(a.emp_office_services, 0)
-            + COALESCE(a.emp_medical_services, 0) + COALESCE(a.emp_public_admin, 0)
-            + COALESCE(a.emp_education, 0) + COALESCE(a.emp_manufacturing, 0)
-            + COALESCE(a.emp_wholesale, 0) + COALESCE(a.emp_transport_warehousing, 0)
-            + COALESCE(a.emp_utilities, 0) + COALESCE(a.emp_construction, 0)
-            + COALESCE(a.emp_agriculture, 0) + COALESCE(a.emp_extraction, 0)
-            + COALESCE(a.emp_military, 0)
-        ELSE 0.0 END AS emp,
+        COALESCE(a.emp, 0.0) AS emp,
         COALESCE(a.emp_retail_services, 0) + COALESCE(a.emp_restaurant, 0)
             + COALESCE(a.emp_accommodation, 0) + COALESCE(a.emp_arts_entertainment, 0)
             + COALESCE(a.emp_other_services, 0) AS emp_ret,

@@ -63,13 +63,19 @@ WITH parcel_features AS (
         COALESCE(sr.bldg_sqft_education, 0)::double precision AS bldg_sqft_education_regressor,
         COALESCE(sr.bldg_sqft_medical_services, 0)::double precision AS bldg_sqft_medical_services_regressor,
         COALESCE(sr.bldg_sqft_transport_warehousing, 0)::double precision AS bldg_sqft_transport_warehousing_regressor,
-        COALESCE(sr.bldg_sqft_wholesale, 0)::double precision AS bldg_sqft_wholesale_regressor
+        COALESCE(sr.bldg_sqft_wholesale, 0)::double precision AS bldg_sqft_wholesale_regressor,
+        COALESCE(er.emp_ret_per_acre, 0)::double precision AS emp_ret_per_acre_regressor,
+        COALESCE(er.emp_off_per_acre, 0)::double precision AS emp_off_per_acre_regressor,
+        COALESCE(er.emp_pub_per_acre, 0)::double precision AS emp_pub_per_acre_regressor,
+        COALESCE(er.emp_ind_per_acre, 0)::double precision AS emp_ind_per_acre_regressor,
+        COALESCE(er.emp_ag_per_acre, 0)::double precision AS emp_ag_per_acre_regressor
     FROM brewgis.assessor.sacog_assessor_parcels ap
     LEFT JOIN brewgis.assessor.sacog_assessor_sales_deduped sd ON ap.apn = sd.apn
     LEFT JOIN brewgis.assessor.parcel_building_sqft_by_type bs ON ap.apn = bs.apn
     LEFT JOIN brewgis.assessor.overture_intersection_density id ON ap.apn = id.apn
     LEFT JOIN brewgis.assessor.parcel_du_regressor dr ON ap.apn = dr.apn
     LEFT JOIN brewgis.assessor.parcel_sqft_regressor sr ON ap.apn = sr.apn
+    LEFT JOIN brewgis.assessor.parcel_emp_ratios_regressor er ON ap.apn = er.apn
 ),
 
 auth_res AS (
@@ -118,6 +124,11 @@ SELECT
     pf.bldg_sqft_medical_services_regressor,
     pf.bldg_sqft_transport_warehousing_regressor,
     pf.bldg_sqft_wholesale_regressor,
+    pf.emp_ret_per_acre_regressor,
+    pf.emp_off_per_acre_regressor,
+    pf.emp_pub_per_acre_regressor,
+    pf.emp_ind_per_acre_regressor,
+    pf.emp_ag_per_acre_regressor,
     GREATEST(0, COALESCE(
         ar.authoritative_residential_sqft,
         pf.residential_building_sqft,
