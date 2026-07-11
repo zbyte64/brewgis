@@ -179,7 +179,7 @@ class Command(BaseCommand):
         parser.add_argument(
             "--nlcd",
             action="store_true",
-            default=False,
+            default=True,
             help="Enable NLCD land cover classification and irrigation estimation",
         )
         parser.add_argument(
@@ -191,7 +191,7 @@ class Command(BaseCommand):
         parser.add_argument(
             "--overture-roads",
             action="store_true",
-            default=False,
+            default=True,
             help="Enable Overture Transportation road impervious diagnostics",
         )
         parser.add_argument(
@@ -218,7 +218,7 @@ class Command(BaseCommand):
         parser.add_argument(
             "--use-assessor-geometry",
             action="store_true",
-            default=False,
+            default=True,
             help="Use Sacramento County Assessor parcel geometries + building data for dasymetric weight refinement",
         )
 
