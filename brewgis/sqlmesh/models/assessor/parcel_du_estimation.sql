@@ -9,27 +9,25 @@ MODEL (
     unique_values(columns := (apn,)),
     assert_parcel_du_estimation_row_count(parcel_table := 'brewgis.assessor.parcel_dasymetric_weights'),
     assert_du_assessor_units_direct,
-    assert_du_sfr_equals_one,
-    assert_du_mf_with_sqft,
-    assert_du_mf_no_sqft,
-    assert_du_urban_default,
-    assert_du_non_residential_zero,
     assert_du_vacancy_rates
   )
 );
 
--- Dwelling Unit Estimation — 6-tier cascade per Section 5 of methodology.
+-- Dwelling Unit Estimation — 2-tier cascade using LightGBM regressor.
 --
--- Computes per-parcel dwelling units, vacancy rate, and population weight
--- using built_form_key, Overture building sqft, and assessor unit counts.
+-- Tier 1: Direct assessor unit observation (from sales raw).
+-- Tier 2: LightGBM regressor prediction (du_total_regressor) from
+--         parcel_dasymetric_weights.
+-- Fallback: 0.0 (non-residential parcels).
 --
--- Also computes region_avg_overture_sqft_per_unit calibration from parcels
--- with both assessor unit counts and Overture residential building sqft,
--- using k-NN in intersection density space (k=20, same subtype).
+-- DU subtype breakdown is provided directly by the regressor (du_detsf_sl,
+-- du_detsf_ll, du_attsf, du_mf2to4, du_mf5p).
+--
+-- Vacancy rate: flat 0.05 default since built_form_key is no longer available.
 --
 -- Output:
---   du                     — final dwelling unit estimate (6-tier cascade)
---   vacancy_rate           — from built_form_key defaults
+--   du                     — final dwelling unit estimate (2-tier cascade)
+--   vacancy_rate           — flat 0.05 default
 --   household_size         — from ACS block group (area-weighted mean)
 --   pop_dasym_weight       — du × household_size
 --   hh_dasym_weight        — du × (1 - vacancy_rate)
@@ -37,9 +35,12 @@ MODEL (
 WITH parcel_input AS (
     SELECT
         apn,
-        built_form_key,
-        du_subtype,
-        is_residential,
+        du_detsf_sl_regressor,
+        du_detsf_ll_regressor,
+        du_attsf_regressor,
+        du_mf2to4_regressor,
+        du_mf5p_regressor,
+        du_total_regressor,
         lot_size_acres,
         land_development_category,
         residential_building_sqft,
@@ -60,7 +61,6 @@ assessor_units AS (
 ),
 
 -- ── ACS household size (from assessor.parcel_acs_intersections, area-weighted) ─
--- Pre-computed spatial join avoids expensive ST_Intersection on every plan.
 acs_hh_size AS (
     SELECT
         p.apn,
@@ -69,228 +69,74 @@ acs_hh_size AS (
     GROUP BY p.apn
 ),
 
--- ── Merge ACS hh_size with APN-level data ─────────────────────────────────
-parcel_hh_size AS (
+-- ── Merge ACS hh_size and regressor output with APN-level data ─────────────
+parcel_data AS (
     SELECT
         p.apn,
-        p.built_form_key,
-        p.du_subtype,
-        p.is_residential,
-        p.lot_size_acres,
+        p.du_detsf_sl_regressor,
+        p.du_detsf_ll_regressor,
+        p.du_attsf_regressor,
+        p.du_mf2to4_regressor,
+        p.du_mf5p_regressor,
+        p.du_total_regressor,
         p.land_development_category,
+        p.lot_size_acres,
         p.residential_building_sqft,
-        p.intersection_density,
-        p.actual_living_sqft,
-        p.actual_building_sqft,
-        au.units AS assessor_units,
-        au.property_type,
+        COALESCE(au.units, 0) AS assessor_units,
         COALESCE(acs.hh_size, 2.5) AS hh_size
     FROM parcel_input p
     LEFT JOIN assessor_units au ON p.apn = au.apn
     LEFT JOIN acs_hh_size acs ON p.apn = acs.apn
 ),
 
--- ── Calibration parcels (have both assessor.units > 0 and Overture res sqft > 0) ──
-calibration_parcels AS (
-    SELECT
-        apn,
-        residential_building_sqft,
-        assessor_units,
-        intersection_density,
-        CASE
-            WHEN assessor_units BETWEEN 2 AND 4 THEN 'mf2to4'
-            WHEN assessor_units >= 5 THEN 'mf5p'
-        END AS du_subtype
-    FROM parcel_hh_size
-    WHERE residential_building_sqft > 0
-      AND assessor_units > 0
-      AND assessor_units >= 2
-),
-
--- ── Bucket-based calibration (replaces per-parcel k-NN) ─────────────────────
--- Pre-compute sqft-per-unit ratio per intersection_density bucket per subtype.
--- 50 buckets over [0, 408) → ~8-unit width, ~28 calibration parcels/bucket.
-calibration_buckets AS (
-    SELECT
-        du_subtype,
-        WIDTH_BUCKET(intersection_density, 0, 408, 50) AS bucket,
-        SUM(residential_building_sqft) / NULLIF(SUM(assessor_units), 0) AS region_avg_sqft_per_unit,
-        COUNT(*) AS calib_count
-    FROM calibration_parcels
-    GROUP BY du_subtype, WIDTH_BUCKET(intersection_density, 0, 408, 50)
-    HAVING COUNT(*) > 0
-),
-
--- ── County-wide subtype avg (fallback for k-NN) ───────────────────────────
-county_subtype_avg AS (
-    SELECT
-        du_subtype,
-        SUM(residential_building_sqft) / NULLIF(SUM(assessor_units), 0) AS region_avg_sqft_per_unit
-    FROM calibration_parcels
-    GROUP BY du_subtype
-),
-
--- ── Final calibration: bucket if available, else county avg ─────────────────
-calibration AS (
-    SELECT
-        p.apn,
-        GREATEST(
-            COALESCE(
-                CASE
-                    WHEN b.calib_count >= 5 THEN b.region_avg_sqft_per_unit
-                    ELSE csa.region_avg_sqft_per_unit
-                END,
-                csa.region_avg_sqft_per_unit,
-                CASE WHEN p.built_form_key = 'bt__medium_density_attached_residential' THEN 1259.0
-                ELSE 950.0 END  -- global defaults
-            ),
-            @min_sqft_per_unit
-        ) AS region_avg_sqft_per_unit,
-        CASE
-            WHEN p.built_form_key = 'bt__medium_density_attached_residential' THEN 2
-            WHEN p.built_form_key = 'bt__medium_high_density_attached_residential' THEN 2
-            WHEN p.built_form_key = 'bt__high_density_attached_residential' THEN 5
-            WHEN p.built_form_key = 'bt__very_high_density_attached_residential' THEN 5
-            WHEN p.built_form_key = 'bt__urban_attached_residential' THEN 5
-            WHEN p.built_form_key = 'bt__urban_mid_rise_residential' THEN 5
-            ELSE NULL
-        END AS min_du
-    FROM parcel_hh_size p
-    LEFT JOIN calibration_buckets b
-        ON b.du_subtype = CASE WHEN p.built_form_key IN ('bt__medium_density_attached_residential','bt__medium_high_density_attached_residential','bt__urban_attached_residential') THEN 'mf2to4' WHEN p.built_form_key IN ('bt__high_density_attached_residential','bt__very_high_density_attached_residential','bt__urban_mid_rise_residential') THEN 'mf5p' END
-        AND WIDTH_BUCKET(p.intersection_density, 0, 408, 50) = b.bucket
-    LEFT JOIN county_subtype_avg csa
-        ON (csa.du_subtype = CASE WHEN p.built_form_key IN ('bt__medium_density_attached_residential','bt__medium_high_density_attached_residential','bt__urban_attached_residential') THEN 'mf2to4' WHEN p.built_form_key IN ('bt__high_density_attached_residential','bt__very_high_density_attached_residential','bt__urban_mid_rise_residential') THEN 'mf5p' END)
-    WHERE p.built_form_key IN ('bt__medium_density_attached_residential','bt__medium_high_density_attached_residential','bt__high_density_attached_residential','bt__very_high_density_attached_residential','bt__urban_attached_residential','bt__urban_mid_rise_residential')
-),
-
--- ── Vacancy rate from built_form_key (Section 5) ───────────────────────────
-vacancy_cascade AS (
-    SELECT
-        apn,
-        CASE
-            WHEN built_form_key IN ('bt__low_density_detached_residential','bt__medium_density_detached_residential','bt__medium_high_density_detached_residential','bt__very_low_density_detached_residential','bt__rural_residential','bt__farm_home','bt__mobile_home_park') THEN 0.025
-            WHEN built_form_key IN ('bt__medium_density_attached_residential','bt__medium_high_density_attached_residential','bt__urban_attached_residential') THEN 0.050
-            WHEN built_form_key IN ('bt__high_density_attached_residential','bt__very_high_density_attached_residential','bt__urban_mid_rise_residential') THEN 0.080
-            WHEN land_development_category IN ('urban', 'mixed_use') THEN 0.050
-            ELSE 0.050
-        END AS vacancy_rate
-    FROM parcel_hh_size
-),
-
--- ── 6-tier DU estimation cascade (Section 5) ───────────────────────────────
+-- ── 2-tier DU estimation cascade (replaces 6-tier BFT-based cascade) ────────
+-- Tier 1: Direct assessor observation (units from sales raw)
+-- Tier 2: LightGBM regressor prediction (du_total_regressor)
+-- Fallback: 0.0 for parcels without assessor units or regressor prediction
 du_estimation AS (
     SELECT
-        p.apn,
-        p.built_form_key,
-        p.du_subtype,
-        p.is_residential,
-        p.hh_size,
-        v.vacancy_rate,
-        p.assessor_units,
-        p.residential_building_sqft,
-        p.land_development_category,
-        c.region_avg_sqft_per_unit,
-        c.min_du,
-        -- Tier 1: Direct assessor observation
-        CASE
-            WHEN p.assessor_units IS NOT NULL AND p.assessor_units > 0
-            THEN p.assessor_units::double precision
-            ELSE NULL
-        END AS du_tier1,
-        -- Tier 2: SFR subtypes → du = 1
-        CASE
-            WHEN p.built_form_key IN ('bt__low_density_detached_residential','bt__medium_density_detached_residential','bt__medium_high_density_detached_residential','bt__very_low_density_detached_residential','bt__rural_residential','bt__farm_home','bt__mobile_home_park')
-            THEN 1.0
-            ELSE NULL
-        END AS du_tier2,
-        -- Tier 3: MF subtype + building sqft
-        CASE
-            WHEN p.built_form_key IN ('bt__medium_density_attached_residential','bt__medium_high_density_attached_residential','bt__high_density_attached_residential','bt__very_high_density_attached_residential','bt__urban_attached_residential','bt__urban_mid_rise_residential')
-                 AND COALESCE(p.residential_building_sqft, 0) > 0
-            THEN GREATEST(
-                c.min_du::double precision,
-                ROUND(p.residential_building_sqft / NULLIF(c.region_avg_sqft_per_unit, 0))::double precision
-            )
-            ELSE NULL
-        END AS du_tier3,
-        -- Tier 4: MF subtype, no building data
-        CASE
-            WHEN p.built_form_key IN ('bt__medium_density_attached_residential','bt__medium_high_density_attached_residential','bt__high_density_attached_residential','bt__very_high_density_attached_residential','bt__urban_attached_residential','bt__urban_mid_rise_residential')
-                 AND COALESCE(p.residential_building_sqft, 0) = 0
-            THEN c.min_du::double precision
-            ELSE NULL
-        END AS du_tier4,
-        -- Tier 5: urban/mixed_use default
-        CASE
-            WHEN p.land_development_category IN ('urban', 'mixed_use')
-                 AND (p.assessor_units IS NULL OR p.assessor_units <= 0)
-                 AND p.built_form_key NOT IN ('bt__low_density_detached_residential','bt__medium_density_detached_residential','bt__medium_high_density_detached_residential','bt__very_low_density_detached_residential','bt__rural_residential','bt__farm_home','bt__mobile_home_park','bt__medium_density_attached_residential','bt__medium_high_density_attached_residential','bt__high_density_attached_residential','bt__very_high_density_attached_residential','bt__urban_attached_residential','bt__urban_mid_rise_residential','bt__blank_place_type')
-            THEN 1.0
-            ELSE NULL
-        END AS du_tier5,
-        -- Tier 6: non-residential → du = 0
-        CASE
-            WHEN p.built_form_key IN ('bt__communityneighborhood_retail','bt__light_industrial','bt__publicquasi_public','bt__agriculture')
-                 OR p.land_development_category IN ('industrial', 'agricultural', 'undeveloped')
-            THEN 0.0
-            ELSE NULL
-        END AS du_tier6
-    FROM parcel_hh_size p
-    LEFT JOIN (
-        SELECT DISTINCT ON (apn) apn, region_avg_sqft_per_unit, min_du
-        FROM calibration
-    ) c ON p.apn = c.apn
-    LEFT JOIN vacancy_cascade v ON p.apn = v.apn
-),
-
--- ── Collapse cascade into single du value ──────────────────────────────────
-du_final AS (
-    SELECT
         apn,
+        -- 2-tier cascade: assessor_units > regressor > 0
         COALESCE(
-            du_tier1,
-            du_tier2,
-            du_tier3,
-            du_tier4,
-            du_tier5,
-            du_tier6,
-            -- Default: if nothing matched, assume 0 for non-res or 1 for urban
+            NULLIF(assessor_units::double precision, 0),
+            du_total_regressor,
             0.0
         ) AS du,
-        built_form_key,
-        du_subtype,
-        is_residential,
+        du_detsf_sl_regressor,
+        du_detsf_ll_regressor,
+        du_attsf_regressor,
+        du_mf2to4_regressor,
+        du_mf5p_regressor,
+        du_total_regressor,
         hh_size,
-        vacancy_rate,
+        0.05::double precision AS vacancy_rate,
         assessor_units,
         residential_building_sqft,
-        land_development_category,
-        region_avg_sqft_per_unit,
-        min_du
-    FROM du_estimation
+        land_development_category
+    FROM parcel_data
 )
 
 SELECT
     apn,
     du::double precision AS du,
-    du_subtype,
-    built_form_key,
-    is_residential,
+    du_detsf_sl_regressor::double precision AS du_detsf_sl_regressor,
+    du_detsf_ll_regressor::double precision AS du_detsf_ll_regressor,
+    du_attsf_regressor::double precision AS du_attsf_regressor,
+    du_mf2to4_regressor::double precision AS du_mf2to4_regressor,
+    du_mf5p_regressor::double precision AS du_mf5p_regressor,
+    du_total_regressor::double precision AS du_total_regressor,
     hh_size::double precision AS hh_size,
     vacancy_rate::double precision AS vacancy_rate,
     assessor_units::integer AS assessor_units,
     residential_building_sqft::double precision AS residential_building_sqft,
     land_development_category,
-    region_avg_sqft_per_unit::double precision AS region_avg_sqft_per_unit,
-    min_du::integer AS min_du,
-    -- Population weight: du × household_size (Section 5)
+    -- Population weight: du × household_size
     (du * COALESCE(NULLIF(hh_size, 0), 2.5))::double precision AS pop_dasym_weight,
-    -- Household weight: du × (1 - vacancy_rate) (Section 5)
+    -- Household weight: du × (1 - vacancy_rate)
     (du * (1.0 - COALESCE(vacancy_rate, 0.05)))::double precision AS hh_dasym_weight,
     -- Households: du × (1 - vacancy_rate)
     (du * (1.0 - COALESCE(vacancy_rate, 0.05)))::double precision AS hh
-FROM du_final;
+FROM du_estimation;
 
 -- post_statements
   CREATE INDEX IF NOT EXISTS idx_parcel_du_estimation_apn_@snapshot_hash

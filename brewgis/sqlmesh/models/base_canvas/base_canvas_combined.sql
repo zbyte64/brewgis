@@ -80,8 +80,15 @@ parcel_geom AS (
         bg.vacancy_rate,
         bg.du_pop_dasym_weight,
         bg.hh_dasym_weight,
-        bg.hh_estimated
+        bg.hh_estimated,
+        scd.du_detsf_sl          AS du_detsf_sl_regressor,
+        scd.du_detsf_ll          AS du_detsf_ll_regressor,
+        scd.du_attsf             AS du_attsf_regressor,
+        scd.du_mf2to4            AS du_mf2to4_regressor,
+        scd.du_mf5p              AS du_mf5p_regressor,
+        scd.du_total_regressor   AS du_total_regressor
     FROM brewgis.base_canvas.base_canvas_geometry bg
+    LEFT JOIN brewgis.comparison.sacog_comparison_dasymetric scd ON bg.parcel_id = scd.parcel_id
 ),
 
 -- ── Step 1: Demographics — DU-weighted Census block allocation ──────────────
@@ -228,7 +235,13 @@ demographics_data AS (
         p.area_parcel_emp_ag,
         p.area_parcel_emp,
         p.area_parcel_mixed_use,
-        p.area_parcel_no_use
+        p.area_parcel_no_use,
+        p.du_detsf_sl_regressor,
+        p.du_detsf_ll_regressor,
+        p.du_attsf_regressor,
+        p.du_mf2to4_regressor,
+        p.du_mf5p_regressor,
+        p.du_total_regressor
     FROM parcel_geom p
     LEFT JOIN pop_allocated pa ON p.parcel_id = pa.parcel_id
     LEFT JOIN acs_allocated acs ON p.parcel_id = acs.parcel_id
@@ -398,6 +411,12 @@ employment_data AS (
         p.area_parcel_emp,
         p.area_parcel_mixed_use,
         p.area_parcel_no_use,
+        p.du_detsf_sl_regressor,
+        p.du_detsf_ll_regressor,
+        p.du_attsf_regressor,
+        p.du_mf2to4_regressor,
+        p.du_mf5p_regressor,
+        p.du_total_regressor,
         CASE WHEN a.parcel_id IS NOT NULL THEN
             COALESCE(a.emp_retail_services, 0) + COALESCE(a.emp_restaurant, 0)
             + COALESCE(a.emp_accommodation, 0) + COALESCE(a.emp_arts_entertainment, 0)
@@ -473,13 +492,13 @@ demographics_attr AS (
     SELECT
         *,
         COALESCE(pop_groupquarter, 0.0) AS pop_groupquarter_v,
-        CASE WHEN du_subtype = 'bt__medium_density_detached_residential' THEN COALESCE(du, 0.0) ELSE 0.0 END AS du_detsf_sl_v,
-        CASE WHEN du_subtype = 'bt__low_density_detached_residential' THEN COALESCE(du, 0.0) ELSE 0.0 END AS du_detsf_ll_v,
-        CASE WHEN du_subtype IN ('bt__low_density_detached_residential', 'bt__medium_density_detached_residential', 'bt__medium_high_density_detached_residential', 'bt__very_low_density_detached_residential', 'bt__rural_residential', 'bt__farm_home', 'bt__mobile_home_park') THEN COALESCE(du, 0.0) ELSE 0.0 END AS du_detsf_v,
-        CASE WHEN du_subtype = 'bt__medium_density_attached_residential' THEN COALESCE(du, 0.0) ELSE 0.0 END AS du_attsf_v,
-        CASE WHEN du_subtype = 'bt__medium_density_attached_residential' THEN COALESCE(du, 0.0) ELSE 0.0 END AS du_mf2to4_v,
-        CASE WHEN du_subtype = 'bt__high_density_attached_residential' THEN COALESCE(du, 0.0) ELSE 0.0 END AS du_mf5p_v,
-        CASE WHEN du_subtype IN ('bt__medium_density_attached_residential', 'bt__medium_high_density_attached_residential', 'bt__high_density_attached_residential', 'bt__very_high_density_attached_residential', 'bt__urban_attached_residential', 'bt__urban_mid_rise_residential') THEN COALESCE(du, 0.0) ELSE 0.0 END AS du_mf_v,
+        COALESCE(du_detsf_sl_regressor, 0.0) AS du_detsf_sl_v,
+        COALESCE(du_detsf_ll_regressor, 0.0) AS du_detsf_ll_v,
+        COALESCE(du_detsf_sl_regressor, 0.0) + COALESCE(du_detsf_ll_regressor, 0.0) AS du_detsf_v,
+        COALESCE(du_attsf_regressor, 0.0) AS du_attsf_v,
+        COALESCE(du_mf2to4_regressor, 0.0) AS du_mf2to4_v,
+        COALESCE(du_mf5p_regressor, 0.0) AS du_mf5p_v,
+        COALESCE(du_mf2to4_regressor, 0.0) + COALESCE(du_mf5p_regressor, 0.0) AS du_mf_v,
         GREATEST(0, COALESCE(emp_ret, emp * 0.302)) AS emp_ret_v,
         GREATEST(0, COALESCE(emp_off, emp * 0.478)) AS emp_off_v,
         GREATEST(0, COALESCE(emp_pub, emp * 0.082)) AS emp_pub_v,
@@ -507,25 +526,22 @@ demographics_attr AS (
 building_areas AS (
     SELECT
         *,
-        GREATEST(
-            COALESCE(CASE WHEN du_subtype = 'bt__medium_density_detached_residential' THEN residential_building_sqft END, 0),
+        COALESCE(
+            bldg_area_detsf_sl,
             du_detsf_sl_v * COALESCE(sqft_per_du, 3000.0)
         ) AS bldg_area_detsf_sl_v,
-        GREATEST(
-            COALESCE(CASE WHEN du_subtype = 'bt__low_density_detached_residential' THEN residential_building_sqft END, 0),
+        COALESCE(
+            bldg_area_detsf_ll,
             du_detsf_ll_v * COALESCE(sqft_per_du, 3000.0)
         ) AS bldg_area_detsf_ll_v,
-        GREATEST(
-            COALESCE(CASE WHEN du_subtype = 'bt__medium_density_attached_residential' THEN residential_building_sqft END, 0),
-            du_attsf_v * 1500.0,
-            COALESCE(du_attsf_v, 1.0) * 600.0,
-            COALESCE(NULLIF(bldg_area_attsf, 0), 0)
+        COALESCE(
+            bldg_area_attsf,
+            du_attsf_v * COALESCE(sqft_per_du, 1500.0)
         ) AS bldg_area_attsf_v,
-        GREATEST(
-            COALESCE(CASE WHEN du_subtype IN ('bt__medium_density_attached_residential', 'bt__medium_high_density_attached_residential', 'bt__high_density_attached_residential', 'bt__very_high_density_attached_residential', 'bt__urban_attached_residential', 'bt__urban_mid_rise_residential') THEN residential_building_sqft END, 0),
+        COALESCE(
+            bldg_area_mf,
             du_mf_v * 1500.0,
-            COALESCE(du_mf_v, 1.0) * 800.0,
-            COALESCE(NULLIF(bldg_area_mf, 0), 0)
+            du_mf_v * 800.0
         ) AS bldg_area_mf_v,
         COALESCE(
             bldg_area_retail_services,
@@ -638,7 +654,7 @@ area_by_use AS (
         lnd_v AS lnd_category,
         bf_v AS bf_key,
         CASE
-            WHEN du_subtype IS NOT NULL THEN COALESCE(area_parcel_acres, area_gross_acres, area_gross, 0)
+            WHEN COALESCE(du_total_regressor, 0) > 0 THEN COALESCE(area_parcel_acres, area_gross_acres, area_gross, 0)
             WHEN lnd_v IN ('industrial', 'agricultural', 'undeveloped') THEN 0
             WHEN lnd_v IN ('urban', 'mixed_use')
                  AND COALESCE(residential_building_sqft, 0) + COALESCE(commercial_building_sqft, 0)
@@ -656,7 +672,7 @@ area_by_use AS (
         CASE WHEN lnd_v = 'agricultural'
             THEN COALESCE(area_parcel_acres, area_gross_acres, area_gross, 0) ELSE area_parcel_emp_ag END AS area_parcel_emp_ag_v,
         CASE
-            WHEN du_subtype IS NOT NULL THEN 0
+            WHEN COALESCE(du_total_regressor, 0) > 0 THEN 0
             WHEN COALESCE(residential_building_sqft, 0) + COALESCE(commercial_building_sqft, 0)
                  + COALESCE(industrial_building_sqft, 0) + COALESCE(other_building_sqft, 0) > 0
                  AND (COALESCE(residential_building_sqft, 0) + COALESCE(commercial_building_sqft, 0)
@@ -674,7 +690,7 @@ area_by_use AS (
         CASE WHEN lnd_v = 'mixed_use'
             THEN COALESCE(area_parcel_acres, area_gross_acres, area_gross, 0) ELSE area_parcel_mixed_use END AS area_parcel_mixed_use_v,
         CASE
-            WHEN du_subtype IS NOT NULL THEN 0
+            WHEN COALESCE(du_total_regressor, 0) > 0 THEN 0
             WHEN COALESCE(residential_building_sqft, 0) + COALESCE(commercial_building_sqft, 0)
                  + COALESCE(industrial_building_sqft, 0) + COALESCE(other_building_sqft, 0) > 0
                  AND (COALESCE(residential_building_sqft, 0) + COALESCE(commercial_building_sqft, 0)

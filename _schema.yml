@@ -110,7 +110,7 @@
     tests: [non_negative]
 
 - name: parcel_dasymetric_weights
-  description: "Per-parcel dasymetric weights for population and employment allocation. Reads parcel features directly from assessor parcels, sales, and building tables, then computes weights from authoritative_residential_area."
+  description: "Per-parcel dasymetric weights for population and employment allocation, with LightGBM regressor predictions for DU subtype breakdown and building sqft by type."
   columns:
   - name: apn
     description: "Assessor parcel number"
@@ -127,6 +127,48 @@
     tests:
     - not_null
     - non_negative
+  - name: du_detsf_sl_regressor
+    description: "LightGBM regressor: single-family detached small lot DU"
+  - name: du_detsf_ll_regressor
+    description: "LightGBM regressor: single-family detached large lot DU"
+  - name: du_attsf_regressor
+    description: "LightGBM regressor: attached single-family DU"
+  - name: du_mf2to4_regressor
+    description: "LightGBM regressor: 2-4 unit multifamily DU"
+  - name: du_mf5p_regressor
+    description: "LightGBM regressor: 5+ unit multifamily DU"
+  - name: du_total_regressor
+    description: "LightGBM regressor: total DU estimate"
+  - name: bldg_sqft_detsf_sl_regressor
+    description: "LightGBM regressor: building sqft for detsf_sl"
+  - name: bldg_sqft_detsf_ll_regressor
+    description: "LightGBM regressor: building sqft for detsf_ll"
+  - name: bldg_sqft_attsf_regressor
+    description: "LightGBM regressor: building sqft for attsf"
+  - name: bldg_sqft_mf_regressor
+    description: "LightGBM regressor: building sqft for multifamily"
+  - name: bldg_sqft_retail_services_regressor
+    description: "LightGBM regressor: building sqft for retail services"
+  - name: bldg_sqft_restaurant_regressor
+    description: "LightGBM regressor: building sqft for restaurant"
+  - name: bldg_sqft_accommodation_regressor
+    description: "LightGBM regressor: building sqft for accommodation"
+  - name: bldg_sqft_arts_entertainment_regressor
+    description: "LightGBM regressor: building sqft for arts/entertainment"
+  - name: bldg_sqft_other_services_regressor
+    description: "LightGBM regressor: building sqft for other services"
+  - name: bldg_sqft_office_services_regressor
+    description: "LightGBM regressor: building sqft for office services"
+  - name: bldg_sqft_public_admin_regressor
+    description: "LightGBM regressor: building sqft for public admin"
+  - name: bldg_sqft_education_regressor
+    description: "LightGBM regressor: building sqft for education"
+  - name: bldg_sqft_medical_services_regressor
+    description: "LightGBM regressor: building sqft for medical services"
+  - name: bldg_sqft_transport_warehousing_regressor
+    description: "LightGBM regressor: building sqft for transport/warehousing"
+  - name: bldg_sqft_wholesale_regressor
+    description: "LightGBM regressor: building sqft for wholesale"
 
 - name: sacog_assessor_parcels
   description: "Deduplicated SACOG assessor parcel geometries"
@@ -205,13 +247,39 @@
     - not_null
 
 - name: parcel_du_estimation
-  description: "Per-parcel dwelling unit estimation via 6-tier cascade"
+  description: "Per-parcel dwelling unit estimation via 2-tier cascade (assessor units > LightGBM regressor). Replaced the 6-tier built_form_key-based cascade."
   columns:
   - name: apn
     description: "Assessor parcel number"
     tests:
     - unique
     - not_null
+  - name: du
+    description: "Final dwelling unit estimate (2-tier: assessor units > regressor > 0)"
+    tests:
+    - non_negative
+  - name: du_detsf_sl_regressor
+    description: "LightGBM regressor: detsf_sl DU breakdown"
+  - name: du_detsf_ll_regressor
+    description: "LightGBM regressor: detsf_ll DU breakdown"
+  - name: du_attsf_regressor
+    description: "LightGBM regressor: attsf DU breakdown"
+  - name: du_mf2to4_regressor
+    description: "LightGBM regressor: mf2to4 DU breakdown"
+  - name: du_mf5p_regressor
+    description: "LightGBM regressor: mf5p DU breakdown"
+  - name: du_total_regressor
+    description: "LightGBM regressor: total DU"
+  - name: hh_size
+    description: "Average household size (from ACS block group)"
+  - name: vacancy_rate
+    description: "Flat 0.05 vacancy rate for all parcels"
+  - name: pop_dasym_weight
+    description: "Population dasymetric weight = du * hh_size"
+  - name: hh_dasym_weight
+    description: "Household dasymetric weight = du * (1 - vacancy_rate)"
+  - name: hh
+    description: "Households = du * (1 - vacancy_rate)"
 
 - name: base_canvas_reconciled
   description: "Base canvas reconciled — final ETL output with aggregate columns recomputed from sub-column sums. This is the end state equivalent of the full 11-step Python ETL pipeline."
