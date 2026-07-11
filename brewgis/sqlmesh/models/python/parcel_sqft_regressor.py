@@ -318,7 +318,7 @@ def execute(
             x_train, y_train, test_size=0.2, random_state=42
         )
         base_model = LGBMRegressor(**LGBM_PARAMS)
-        model_obj = MultiOutputRegressor(base_model, n_jobs=-1)
+        model_obj = MultiOutputRegressor(base_model, n_jobs=1)
         model_obj.fit(x_tr, y_tr)
         y_pred = model_obj.predict(x_va)
 
