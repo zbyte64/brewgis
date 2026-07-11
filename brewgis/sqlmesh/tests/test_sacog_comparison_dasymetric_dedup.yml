@@ -28,9 +28,6 @@ test_apn_shared_across_two_parcels_du_proportional:
         - apn: "APN_SHARED"
           lot_size_acres: 1.0
           land_development_category: urban
-          built_form_key: detsf_sl
-          du_subtype: detsf_sl
-          is_residential: 1
           actual_living_sqft: 0
           actual_building_sqft: 0
           residential_building_sqft: 2000.0
@@ -48,9 +45,6 @@ test_apn_shared_across_two_parcels_du_proportional:
         apn: TEXT
         lot_size_acres: DOUBLE
         land_development_category: TEXT
-        built_form_key: TEXT
-        du_subtype: TEXT
-        is_residential: INT
         actual_living_sqft: DOUBLE
         actual_building_sqft: DOUBLE
         residential_building_sqft: DOUBLE
@@ -68,9 +62,6 @@ test_apn_shared_across_two_parcels_du_proportional:
       rows:
         - apn: "APN_SHARED"
           du: 1.0
-          built_form_key: detsf_sl
-          du_subtype: detsf_sl
-          is_residential: 1
           hh_size: 2.5
           vacancy_rate: 0.025
           pop_dasym_weight: 2.5
@@ -79,9 +70,6 @@ test_apn_shared_across_two_parcels_du_proportional:
       columns:
         apn: TEXT
         du: DOUBLE
-        built_form_key: TEXT
-        du_subtype: TEXT
-        is_residential: INT
         hh_size: DOUBLE
         vacancy_rate: DOUBLE
         pop_dasym_weight: DOUBLE
@@ -127,9 +115,6 @@ test_single_apn_no_duplication_passes_through:
         - apn: "APN_SOLO"
           lot_size_acres: 0.5
           land_development_category: urban
-          built_form_key: detsf_ll
-          du_subtype: detsf_ll
-          is_residential: 1
           actual_living_sqft: 0
           actual_building_sqft: 0
           residential_building_sqft: 1800.0
@@ -147,9 +132,6 @@ test_single_apn_no_duplication_passes_through:
         apn: TEXT
         lot_size_acres: DOUBLE
         land_development_category: TEXT
-        built_form_key: TEXT
-        du_subtype: TEXT
-        is_residential: INT
         actual_living_sqft: DOUBLE
         actual_building_sqft: DOUBLE
         residential_building_sqft: DOUBLE
@@ -167,9 +149,6 @@ test_single_apn_no_duplication_passes_through:
       rows:
         - apn: "APN_SOLO"
           du: 1.0
-          built_form_key: detsf_ll
-          du_subtype: detsf_ll
-          is_residential: 1
           hh_size: 3.0
           vacancy_rate: 0.025
           pop_dasym_weight: 3.0
@@ -178,9 +157,6 @@ test_single_apn_no_duplication_passes_through:
       columns:
         apn: TEXT
         du: DOUBLE
-        built_form_key: TEXT
-        du_subtype: TEXT
-        is_residential: INT
         hh_size: DOUBLE
         vacancy_rate: DOUBLE
         pop_dasym_weight: DOUBLE

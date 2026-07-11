@@ -64,11 +64,11 @@ scaled AS (
         de.pop_dasym_weight * aw.apn_weight AS du_pop_dasym_weight,
         de.hh_dasym_weight  * aw.apn_weight AS hh_dasym_weight,
         de.hh               * aw.apn_weight AS hh,
-        -- Categorical labels from the dominant APN
+        -- Categorical labels: land_development_category from dw, others removed from assessor pipeline
         dw.land_development_category,
-        dw.built_form_key,
-        dw.du_subtype,
-        dw.is_residential,
+        NULL::text AS built_form_key,
+        NULL::text AS du_subtype,
+        NULL::int AS is_residential,
         -- Ratio/density columns (unchanged per APN)
         dw.footprint_ratio,
         dw.max_levels,

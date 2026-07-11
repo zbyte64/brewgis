@@ -137,7 +137,7 @@ sqlmesh-migrate:  ## Run SQLMesh migration (migrate state database schema)
 
 .PHONY: test-sqlmesh
 test-sqlmesh:  ## Run SQLMesh tests, lint, and audits
-	$(COMPOSE_RUN) bash -c 'sqlmesh -p brewgis/sqlmesh/ test && sqlmesh -p brewgis/sqlmesh/ lint'
+	$(COMPOSE_RUN) bash -c 'PYTHONPATH=/app sqlmesh -p brewgis/sqlmesh/ test && PYTHONPATH=/app sqlmesh -p brewgis/sqlmesh/ lint'
 
 # ─────────────────────────────────────────────
 # Linting & Formatting
