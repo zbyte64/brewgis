@@ -9,9 +9,7 @@ Replaces the heuristic building area formulas in base_canvas_combined.sql.
 
 from __future__ import annotations
 
-import hashlib
 import logging
-import pickle
 from collections.abc import Iterator  # noqa: TC003
 from typing import TYPE_CHECKING
 from typing import Any
@@ -25,6 +23,10 @@ from sklearn.multioutput import MultiOutputRegressor
 from sqlmesh import model
 from sqlmesh.core.engine_adapter.postgres import PostgresEngineAdapter
 from sqlmesh.core.model.definition import ModelKindName
+
+from brewgis.sqlmesh.models.python._cache import compute_data_hash
+from brewgis.sqlmesh.models.python._cache import save_model
+from brewgis.sqlmesh.models.python._cache import try_load_cached
 
 if TYPE_CHECKING:
     from sqlmesh.core.context import ExecutionContext
@@ -147,18 +149,16 @@ def _fetch_sqft_training_data(context: ExecutionContext) -> pd.DataFrame:
 
 
 def _fetch_sqft_inference_data(context: ExecutionContext) -> pd.DataFrame:
-    """Fetch all assessor parcels with features + built_form_key for inference."""
+    """Fetch all assessor parcels with features for inference."""
     parcels = context.resolve_table("brewgis.assessor.sacog_assessor_parcels")
     bldg_sqft = context.resolve_table("brewgis.assessor.parcel_building_sqft_by_type")
     intersection = context.resolve_table(
         "brewgis.assessor.overture_intersection_density"
     )
-    bft_resolved = context.resolve_table("brewgis.assessor.parcel_bft_resolved")
     return context.fetchdf(
         f"""
         SELECT DISTINCT ON (ap.apn)
             ap.apn,
-            r.built_form_key,
             ap.lot_size_acres, ap.landuse, ap.zone,
             COALESCE(ap.land_development_category, 'standard') AS land_development_category,
             ST_X(ST_Transform(ST_Centroid(ap.geometry), 3310)) AS centroid_x,
@@ -173,7 +173,6 @@ def _fetch_sqft_inference_data(context: ExecutionContext) -> pd.DataFrame:
             COALESCE(bs.max_levels, 1) AS max_levels,
             COALESCE(id.intersection_density, 0) AS intersection_density
         FROM {parcels} ap
-        JOIN {bft_resolved} r ON ap.apn = r.apn
         LEFT JOIN {bldg_sqft} bs ON ap.apn = bs.apn
         LEFT JOIN {intersection} id ON ap.apn = id.apn
         ORDER BY ap.apn
@@ -187,9 +186,7 @@ def _extract_top_prefixes(train_df, inference_df, col, n=20):
     return sorted(set(train_vals) | set(inference_vals))
 
 
-def _encode_one_hots(
-    df, landuse_prefixes, zone_prefixes, ldev_cats=None, bft_classes=None
-):
+def _encode_one_hots(df, landuse_prefixes, zone_prefixes, ldev_cats=None):
     landuse_oh = pd.get_dummies(df["landuse_prefix"], prefix="lu")
     landuse_oh = landuse_oh.reindex(
         columns=[f"lu_{p}" for p in landuse_prefixes], fill_value=0
@@ -203,16 +200,10 @@ def _encode_one_hots(
         ldev_oh = pd.get_dummies(df["land_development_category"], prefix="ldc")
         ldev_oh = ldev_oh.reindex(columns=[f"ldc_{c}" for c in ldev_cats], fill_value=0)
         parts.append(ldev_oh)
-    if bft_classes is not None:
-        bft_oh = pd.get_dummies(df["built_form_key"], prefix="bft")
-        bft_oh = bft_oh.reindex(columns=[f"bft_{c}" for c in bft_classes], fill_value=0)
-        parts.append(bft_oh)
     return pd.concat(parts, axis=1)
 
 
-def _feature_matrix(
-    df, landuse_prefixes, zone_prefixes, ldev_cats=None, bft_classes=None
-):
+def _feature_matrix(df, landuse_prefixes, zone_prefixes, ldev_cats=None):
     df = df.copy()
     df["landuse_prefix"] = df["landuse"].fillna("XX").str[:2]
     df["zone_prefix"] = df["zone"].fillna("X").str[:1]
@@ -220,63 +211,13 @@ def _feature_matrix(
     df["max_levels"] = df["max_levels"].fillna(1).astype(np.int32)
     for col in NUMERIC_FEATURES:
         df[col] = df[col].astype(np.float32)
-    df = _encode_one_hots(df, landuse_prefixes, zone_prefixes, ldev_cats, bft_classes)
+    df = _encode_one_hots(df, landuse_prefixes, zone_prefixes, ldev_cats)
     oh_cols = [f"lu_{p}" for p in landuse_prefixes] + [
         f"zone_{p}" for p in zone_prefixes
     ]
     if ldev_cats is not None:
         oh_cols += [f"ldc_{c}" for c in ldev_cats]
-    if bft_classes is not None:
-        oh_cols += [f"bft_{c}" for c in bft_classes]
     return df[NUMERIC_FEATURES + oh_cols]
-
-
-def _compute_data_hash(df):
-    h = hashlib.sha256()
-    h.update(pd.util.hash_pandas_object(df).to_numpy().tobytes())
-    return h.hexdigest()
-
-
-def _try_load_cached_model(context, data_hash):
-    try:
-        row = context.fetchdf(
-            f"""
-            SELECT model_bytes, data_hash, landuse_prefixes, zone_prefixes
-            FROM _artifacts.lightgbm_model
-            WHERE data_hash = '{data_hash}' AND model_type = 'sqft_regressor'
-            ORDER BY created_at DESC
-            LIMIT 1
-            """
-        )
-        if not row.empty:
-            return pickle.loads(row["model_bytes"].iloc[0])
-    except Exception:
-        pass
-    return None
-
-
-def _save_model(context, model_obj, data_hash, landuse_prefixes, zone_prefixes):
-    model_bytes = pickle.dumps(model_obj)
-    hex_model = model_bytes.hex()
-    landuse_str = ",".join(landuse_prefixes)
-    zone_str = ",".join(zone_prefixes)
-    context.engine_adapter.execute(
-        f"""
-        CREATE SCHEMA IF NOT EXISTS _artifacts;
-        CREATE TABLE IF NOT EXISTS _artifacts.lightgbm_model (
-            id SERIAL PRIMARY KEY,
-            model_type TEXT DEFAULT 'sqft_regressor',
-            model_bytes TEXT,
-            data_hash TEXT,
-            landuse_prefixes TEXT,
-            zone_prefixes TEXT,
-            created_at TIMESTAMP DEFAULT NOW()
-        );
-        INSERT INTO _artifacts.lightgbm_model
-            (model_bytes, data_hash, landuse_prefixes, zone_prefixes)
-        VALUES ('{hex_model}', '{data_hash}', '{landuse_str}', '{zone_str}');
-        """
-    )
 
 
 @model(
@@ -358,27 +299,18 @@ def execute(
         )
     )
 
-    if "built_form_key" in inference_df.columns:
-        bft_classes = sorted(inference_df["built_form_key"].dropna().unique())
-    else:
-        bft_classes = None
-
-    x_train = _feature_matrix(
-        train_df, landuse_prefixes, zone_prefixes, ldev_cats, bft_classes
-    )
+    x_train = _feature_matrix(train_df, landuse_prefixes, zone_prefixes, ldev_cats)
     y_train = train_df[sqft_targets].to_numpy()
     x_inference = _feature_matrix(
-        inference_df, landuse_prefixes, zone_prefixes, ldev_cats, bft_classes
+        inference_df, landuse_prefixes, zone_prefixes, ldev_cats
     )
 
+    # Train or load cached model
     combo = pd.concat([x_train.reset_index(drop=True), pd.DataFrame(y_train)], axis=1)
-    data_hash = _compute_data_hash(combo)
+    data_hash = compute_data_hash(combo)
+    model_obj = try_load_cached(data_hash)
 
-    cached = _try_load_cached_model(context, data_hash)
-    if cached is not None:
-        model_obj = cached
-        logger.info("LightGBM SQFT: using cached model")
-    else:
+    if model_obj is None:
         x_tr, x_va, y_tr, y_va = train_test_split(
             x_train, y_train, test_size=0.2, random_state=42
         )
@@ -397,7 +329,7 @@ def execute(
         if mean_r2 < MIN_R2:
             logger.warning("LightGBM SQFT: mean R² %.4f < %.2f", mean_r2, MIN_R2)
 
-        _save_model(context, model_obj, data_hash, landuse_prefixes, zone_prefixes)
+        save_model(model_obj, data_hash)
 
     y_pred = model_obj.predict(x_inference)
     results = inference_df[["apn"]].copy()

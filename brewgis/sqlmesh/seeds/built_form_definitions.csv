@@ -1,0 +1,93 @@
+key,name,built_form_category,du_per_acre,pop_per_acre,hh_per_acre,emp_per_acre,du_detsf_sl_per_acre,du_detsf_ll_per_acre,du_attsf_per_acre,du_mf2to4_per_acre,du_mf5p_per_acre,emp_ret_per_acre,emp_off_per_acre,emp_pub_per_acre,emp_ind_per_acre,emp_ag_per_acre,intersection_density,building_sqft_per_acre,footprint_ratio,max_levels,area_parcel_res,area_parcel_emp,area_parcel_mixed_use,is_active
+bt__skyscraper_mixed_use,Skyscraper Mixed Use,Mixed Use,133.9384787,230.6087231,125.4333853,1920.81939,0.0,0.0,0.0,133.9384787,0.0,174.6458796,1746.17351,0.0,0.0,0.0,0.0,1535036.540422,0.0,1,0.0,0.0,1.0,TRUE
+bt__high_rise_mixed_use,High-Rise Mixed Use,Mixed Use,204.5994781,381.6936843,191.6074112,642.3726075,0.0,0.0,0.0,204.5994781,0.0,83.61799273,558.7546147,0.0,0.0,0.0,0.0,674160.7526589,0.0,1,0.1,0.0,0.9,TRUE
+bt__mid_rise_mixed_use,Mid-Rise Mixed Use,Mixed Use,164.7050148,287.3341069,154.2462464,131.4263592,0.0,0.0,0.0,164.7050148,0.0,84.21991042,47.20644881,0.0,0.0,0.0,0.0,458016.03392809996,0.0,1,0.0,0.0,1.0,TRUE
+bt__low_rise_mixed_use,Low-Rise Mixed Use,Mixed Use,95.69545477,169.864208,89.61879339,62.88255256,0.0,0.0,0.0,95.69545477,0.0,41.43400833,21.44854423,0.0,0.0,0.0,0.0,225340.1603274,0.0,1,0.0,0.0,1.0,TRUE
+bt__parking_structure_mu,Parking Structure/MU,Commercial/Retail,18.01932,30.96579599,16.87509318,60.4395,0.0,0.0,0.0,18.01932,0.0,60.4395,0.0,0.0,0.0,0.0,0.0,56410.200000000004,0.0,1,0.0,0.0,1.0,TRUE
+bt__main_street_commercial_mu_high,Main Street Commercial/MU High,Commercial/Retail,66.3854493,120.9287516,62.16997327,91.60565614,0.0,0.0,0.0,66.3854493,0.0,55.86266822,35.74298792,0.0,0.0,0.0,0.0,86687.2967427,0.0,1,0.0,0.0,1.0,TRUE
+bt__main_street_commercial_mu_low_1.5_far,Main Street Commercial/MU Low 1.5 FAR,Commercial/Retail,40.0,0.0,0.0,39.65169551,0.0,0.0,0.0,40.0,0.0,16.80136408,22.85033143,0.0,0.0,0.0,0.0,53317.4399999,0.0,1,0.0,0.0,1.0,TRUE
+bt__main_street_commercial_mu_low,Main Street Commercial/MU Low,Commercial/Retail,48.04474808,90.98434409,44.99390658,45.85784078,0.0,0.0,0.0,48.04474808,0.0,45.85784078,0.0,0.0,0.0,0.0,0.0,66244.30559989999,0.0,1,0.0,0.0,1.0,TRUE
+bt__skyscraper_residential,Skyscraper Residential,Residential,608.7160546,898.8762738,570.0625852,8.759144457,0.0,0.0,0.0,608.7160546,0.0,8.759144457,0.0,0.0,0.0,0.0,0.0,1638637.9019999,0.0,1,1.0,0.0,0.0,TRUE
+bt__high_rise_residential,High-Rise Residential,Residential,374.0888431,574.4691496,350.3342016,18.17262587,0.0,0.0,0.0,374.0888431,0.0,17.12053298,0.228715844,0.0,0.823377039,0.0,0.0,997995.33698107,0.0,1,1.0,0.0,0.0,TRUE
+bt__mid_rise_residential,Mid-Rise Residential,Residential,241.4681623,405.2735633,226.134934,28.41667389,0.0,0.0,0.0,241.4681623,0.0,17.45448423,10.96218966,0.0,0.0,0.0,0.0,213175.70524437,0.0,1,0.1,0.0,0.9,TRUE
+bt__urban_podium_multifamily,Urban Podium Multifamily,Residential,133.8127199,234.4284004,125.3156121,16.96939191,0.0,0.0,0.0,133.8127199,0.0,16.96939191,0.0,0.0,0.0,0.0,0.0,120356.1079404,0.0,1,0.45,0.0,0.55,TRUE
+bt__standard_podium_multifamily,Standard Podium Multifamily,Residential,65.25713552,132.3291038,61.11330741,6.636323934,0.0,0.0,0.0,65.25713552,0.0,6.636323934,0.0,0.0,0.0,0.0,0.0,72536.23388049999,0.0,1,0.45,0.0,0.55,TRUE
+bt__suburban_multifamily,Suburban Multifamily,Residential,44.33940541,85.87115779,41.52385317,0.0,0.0,0.0,0.0,44.33940541,0.0,0.0,0.0,0.0,0.0,0.0,0.0,36137.376,0.0,1,1.0,0.0,0.0,TRUE
+bt__urban_townhome_live_work,Urban Townhome/Live-Work,Residential,35.45684244,75.7844289,33.99956621,18.16714286,0.0,0.0,35.45684244,0.0,0.0,0.0,18.16714286,0.0,0.0,0.0,0.0,64687.14,0.0,1,1.0,0.0,0.0,TRUE
+bt__suburban_townhome,Suburban Townhome,Residential,20.26168391,47.44633275,19.53219245,0.0,0.0,0.0,20.26168391,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,34429.56,0.0,1,1.0,0.0,0.0,TRUE
+bt__garden_apartment,Garden Apartment,Residential,25.59604962,56.34609582,24.54405198,0.0,0.0,0.0,25.59604962,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,40706.26069,0.0,1,1.0,0.0,0.0,TRUE
+bt__very_small_lot_sf_detached,Very Small Lot SF Detached,Residential,15.92356688,37.64904459,15.42993631,0.0,15.92356688,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,30891.71975,0.0,1,1.0,0.0,0.0,TRUE
+bt__small_lot_sf_detached,Small Lot SF Detached,Residential,10.57059835,26.38552209,10.2429098,0.0,10.57059835,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,25374.38473,0.0,1,1.0,0.0,0.0,TRUE
+bt__medium_lot_sf_detached,Medium Lot SF Detached,Residential,8.0784,21.15700646,7.8279696,0.0,8.0784,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,18786.24,0.0,1,1.0,0.0,0.0,TRUE
+bt__large_lot_sf_detached,Large Lot SF Detached,Residential,5.796773646,18.30248551,5.617073663,0.0,0.0,5.796773646,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,21313.97003,0.0,1,1.0,0.0,0.0,TRUE
+bt__estate_lot_sf_detached,Estate Lot SF Detached,Residential,3.396220133,10.11436126,3.290937309,0.0,0.0,3.396220133,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,13962.77373,0.0,1,1.0,0.0,0.0,TRUE
+bt__rural_residential_lot_sf_detached,Rural Residential Lot SF Detached,Residential,0.532394748,1.569243263,0.515890511,0.0,0.0,0.532394748,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,1720.901504,0.0,1,1.0,0.0,0.0,TRUE
+bt__rural_ranchette_lot_sf_detached,Rural Ranchette Lot SF Detached,Residential,0.158466817,0.472251603,0.153554346,0.0,0.0,0.158466817,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,554.633859,0.0,1,1.0,0.0,0.0,TRUE
+bt__skyscraper_office,Skyscraper Office,Office/Industrial,0.0,0.0,0.0,2829.693151,0.0,0.0,0.0,0.0,0.0,136.3182512,2693.3749,0.0,0.0,0.0,0.0,741543.660022,1.0,1,0.0,1.0,0.0,TRUE
+bt__high_rise_office,High-Rise Office,Office/Industrial,0.0,0.0,0.0,1698.110099,0.0,0.0,0.0,0.0,0.0,31.73710647,1666.372993,0.0,0.0,0.0,0.0,431557.63195799995,1.0,1,0.0,1.0,0.0,TRUE
+bt__mid_rise_office,Mid-Rise Office,Office/Industrial,0.0,0.0,0.0,597.0686781,0.0,0.0,0.0,0.0,0.0,8.87296753,588.1957106,0.0,0.0,0.0,0.0,156423.9600327,1.0,1,0.0,1.0,0.0,TRUE
+bt__low_rise_office,Low-Rise Office,Office/Industrial,0.0,0.0,0.0,251.2962469,0.0,0.0,0.0,0.0,0.0,14.69060844,236.6056384,0.0,0.0,0.0,0.0,75887.1828035,1.0,1,0.0,1.0,0.0,TRUE
+bt__main_street_commercial_low,Main Street Commercial Low,Commercial/Retail,0.0,0.0,0.0,40.80970431,0.0,0.0,0.0,0.0,0.0,32.65699816,8.152706146,0.0,0.0,0.0,0.0,24418.6562638,0.6,1,0.0,0.6,0.4,TRUE
+bt__parking_structure_ground_floor_retail,Parking Structure+Ground-Floor Retail,Commercial/Retail,0.0,0.0,0.0,363.3808385,0.0,0.0,0.0,0.0,0.0,281.2846298,82.0962087,0.0,0.0,0.0,0.0,180338.4,0.0,1,0.0,0.0,1.0,TRUE
+bt__parking_structure,Parking Structure,Commercial/Retail,0.0,0.0,0.0,9.303366515,0.0,0.0,0.0,0.0,0.0,9.303366515,0.0,0.0,0.0,0.0,0.0,5204.331,1.0,1,0.0,1.0,0.0,TRUE
+bt__office_park_high,Office Park High,Office/Industrial,0.0,0.0,0.0,111.9158156,0.0,0.0,0.0,0.0,0.0,3.174991025,108.7408246,0.0,0.0,0.0,0.0,32108.076000899997,1.0,1,0.0,1.0,0.0,TRUE
+bt__office_park_low,Office Park Low,Office/Industrial,0.0,0.0,0.0,26.93622465,0.0,0.0,0.0,0.0,0.0,0.0,24.66623827,0.0,2.269986376,0.0,0.0,10193.0399996,1.0,1,0.0,1.0,0.0,TRUE
+bt__industrial_high,Industrial High,Office/Industrial,0.0,0.0,0.0,20.9521674,0.0,0.0,0.0,0.0,0.0,0.0,0.263009865,0.0,20.68915754,0.0,0.0,19935.23400122,1.0,1,0.0,1.0,0.0,TRUE
+bt__industrial_low,Industrial Low,Office/Industrial,0.0,0.0,0.0,7.310323823,0.0,0.0,0.0,0.0,0.0,0.01181577,0.0,0.0,7.298508053,0.0,0.0,10898.712000335,1.0,1,0.0,1.0,0.0,TRUE
+bt__warehouse_high,Warehouse High,Office/Industrial,0.0,0.0,0.0,67.60095238,0.0,0.0,0.0,0.0,0.0,0.0,2.492672484,0.0,65.10827989,0.0,0.0,51482.4066055,1.0,1,0.0,1.0,0.0,TRUE
+bt__warehouse_low,Warehouse Low,Office/Industrial,0.0,0.0,0.0,14.39499164,0.0,0.0,0.0,0.0,0.0,0.0,0.786687529,0.0,13.60830411,0.0,0.0,19163.6667391,1.0,1,0.0,1.0,0.0,TRUE
+bt__hotel_high,Hotel High,Commercial/Retail,0.0,0.0,0.0,396.4616278,0.0,0.0,0.0,0.0,0.0,395.6528656,0.808762225,0.0,0.0,0.0,0.0,223933.248032,1.0,1,0.0,1.0,0.0,TRUE
+bt__hotel_low,Hotel Low,Commercial/Retail,0.0,0.0,0.0,28.72139279,0.0,0.0,0.0,0.0,0.0,28.72139279,0.0,0.0,0.0,0.0,0.0,24463.2959954,1.0,1,0.0,1.0,0.0,TRUE
+bt__regional_mall,Regional Mall,Commercial/Retail,0.0,0.0,0.0,27.9613667,0.0,0.0,0.0,0.0,0.0,27.93044729,0.030919415,0.0,0.0,0.0,0.0,18504.287998861,1.0,1,0.0,1.0,0.0,TRUE
+bt__medium_intensity_strip_commercial,Medium Intensity Strip Commercial,Commercial/Retail,0.0,0.0,0.0,27.45200909,0.0,0.0,0.0,0.0,0.0,25.64572924,1.806279849,0.0,0.0,0.0,0.0,17630.672572170002,1.0,1,0.0,1.0,0.0,TRUE
+bt__low_intensity_strip_commercial,Low Intensity Strip Commercial,Commercial/Retail,0.0,0.0,0.0,9.274140664,0.0,0.0,0.0,0.0,0.0,9.244175147,0.029965518,0.0,0.0,0.0,0.0,7119.186299164,1.0,1,0.0,1.0,0.0,TRUE
+bt__rural_employment,Rural Employment,Rural,0.000114781,0.000340341,0.000111222,7.11e-05,0.0,0.000114781,0.0,0.0,0.0,0.0,0.0,0.0,7.11e-05,0.0,0.0,0.235620265,1.0,1,0.0,1.0,0.0,TRUE
+bt__campus_college_high,Campus/College High,Civic/Institutional,0.0,0.0,0.0,22.34628,0.0,0.0,0.0,0.0,0.0,0.0,0.0,22.34628,0.0,0.0,0.0,22346.28,0.0,1,0.0,0.0,0.0,TRUE
+bt__campus_college_low,Campus/College Low,Civic/Institutional,0.0,0.0,0.0,11.7612,0.0,0.0,0.0,0.0,0.0,0.0,0.0,11.7612,0.0,0.0,0.0,11761.2,0.0,1,0.0,0.0,0.0,TRUE
+bt__hospital,Hospital,Civic/Institutional,0.0,0.0,0.0,386.8128,0.0,0.0,0.0,0.0,0.0,0.0,0.0,386.8128,0.0,0.0,0.0,116043.84,0.0,1,0.0,0.0,0.0,TRUE
+bt__urban_elementary_school,Urban Elementary School,Civic/Institutional,0.0,0.0,0.0,8.23284,0.0,0.0,0.0,0.0,0.0,0.0,0.0,8.23284,0.0,0.0,0.0,8232.84,0.0,1,0.0,0.0,0.0,TRUE
+bt__non_urban_elementary_school,Non-Urban Elementary School,Civic/Institutional,0.0,0.0,0.0,7.8408,0.0,0.0,0.0,0.0,0.0,0.0,0.0,7.8408,0.0,0.0,0.0,7840.8,0.0,1,0.0,0.0,0.0,TRUE
+bt__urban_middle_school,Urban Middle School,Civic/Institutional,0.0,0.0,0.0,15.6816,0.0,0.0,0.0,0.0,0.0,0.0,0.0,15.6816,0.0,0.0,0.0,15681.6,0.0,1,0.0,0.0,0.0,TRUE
+bt__non_urban_middle_school,Non-Urban Middle School,Civic/Institutional,0.0,0.0,0.0,7.8408,0.0,0.0,0.0,0.0,0.0,0.0,0.0,7.8408,0.0,0.0,0.0,7840.8,0.0,1,0.0,0.0,0.0,TRUE
+bt__urban_high_school,Urban High School,Civic/Institutional,0.0,0.0,0.0,23.5224,0.0,0.0,0.0,0.0,0.0,0.0,0.0,23.5224,0.0,0.0,0.0,23522.4,0.0,1,0.0,0.0,0.0,TRUE
+bt__non_urban_high_school,Non-Urban High School,Civic/Institutional,0.0,0.0,0.0,9.801,0.0,0.0,0.0,0.0,0.0,0.0,0.0,9.801,0.0,0.0,0.0,9801.0,0.0,1,0.0,0.0,0.0,TRUE
+bt__urban_city_hall,Urban City Hall,Civic/Institutional,0.0,0.0,0.0,40.497732,0.0,0.0,0.0,0.0,0.0,0.0,0.0,40.497732,0.0,0.0,0.0,12149.3196,0.0,1,0.0,0.0,0.0,TRUE
+bt__urban_public_library,Urban Public Library,Civic/Institutional,0.0,0.0,0.0,52.40268,0.0,0.0,0.0,0.0,0.0,0.0,0.0,52.40268,0.0,0.0,0.0,15720.804,0.0,1,0.0,0.0,0.0,TRUE
+bt__urban_courthouse,Urban Courthouse,Civic/Institutional,0.0,0.0,0.0,75.0939552,0.0,0.0,0.0,0.0,0.0,0.0,0.0,75.0939552,0.0,0.0,0.0,22528.18656,0.0,1,0.0,0.0,0.0,TRUE
+bt__urban_convention_center,Urban Convention Center,Civic/Institutional,0.0,0.0,0.0,67.20672705,0.0,0.0,0.0,0.0,0.0,12.83338618,0.0,54.37334087,0.0,0.0,0.0,23491.0367998,0.0,1,0.0,0.0,0.0,TRUE
+bt__suburban_civic_complex,Suburban Civic Complex,Civic/Institutional,0.0,0.0,0.0,7.857601714,0.0,0.0,0.0,0.0,0.0,0.0,0.0,7.857601714,0.0,0.0,0.0,5500.3212,0.0,1,0.0,0.0,0.0,TRUE
+bt__town_civic_complex,Town Civic Complex,Civic/Institutional,0.0,0.0,0.0,16.6617,0.0,0.0,0.0,0.0,0.0,0.0,0.0,16.6617,0.0,0.0,0.0,11663.19,0.0,1,0.0,0.0,0.0,TRUE
+bt__town_branch_library,Town/Branch Library,Civic/Institutional,0.0,0.0,0.0,27.71907619,0.0,0.0,0.0,0.0,0.0,0.0,0.0,27.71907619,0.0,0.0,0.0,19403.35333,0.0,1,0.0,0.0,0.0,TRUE
+bt__religious_center,Religious Center,Civic/Institutional,0.5,0.0,0.46825,50.9924643,0.5,0.0,0.0,0.0,0.0,3.533945268,47.45851903,0.0,0.0,0.0,0.0,19403.3533312,0.0,1,0.0,0.0,0.0,TRUE
+bt__airport,Airport,Civic/Institutional,0.0,0.0,0.0,25.59082892,0.0,0.0,0.0,0.0,0.0,9.87654321,10.71428571,0.0,5.0,0.0,0.0,15000.0,0.0,1,0.0,0.0,0.0,TRUE
+bt__detention_utilities,Detention/Utilities,Civic/Institutional,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,1,0.0,0.0,0.0,TRUE
+bt__park,Park,Open Space,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,1,0.0,0.0,0.0,TRUE
+bt__mobile_home_park,Mobile Home Park,Residential,8.0,15.04,7.52,0.0,8.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,1,1.0,0.0,0.0,TRUE
+bt__military,Military,Military,0.0,0.0,0.0,10.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,1,0.0,0.0,0.0,TRUE
+bt__urban_civic,Urban Civic,Civic/Institutional,0.0,0.0,0.0,75.0939552,0.0,0.0,0.0,0.0,0.0,0.0,0.0,75.0939552,0.0,0.0,0.0,22528.18656,0.0,1,0.0,0.0,0.0,TRUE
+bt__non_urban_civic,Non-Urban Civic,Civic/Institutional,0.0,0.0,0.0,38.8773,0.0,0.0,0.0,0.0,0.0,0.0,0.0,38.8773,0.0,0.0,0.0,11663.19,0.0,1,0.0,0.0,0.0,TRUE
+bt__duplex,Duplex,Open Space,8.0,16.0,8.0,0.0,0.0,0.0,8.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,15000.0,0.0,1,1.0,0.0,0.0,TRUE
+bt__blank,Blank,Blank,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,1,0.0,0.0,0.0,TRUE
+bt__high_rise_mixed_use_alt,High-Rise Mixed Use Alt,Commercial/Retail,69.81871284,104.9432854,65.38522458,928.7448033,0.0,0.0,0.0,69.81871284,0.0,185.4910171,743.2537861,0.0,0.0,0.0,0.0,362823.820081,0.4,1,0.0,0.4,0.8,TRUE
+bt__golf_course,Golf Course,Open Space,0.0,0.0,0.0,0.114942529,0.0,0.0,0.0,0.0,0.0,0.114942529,0.0,0.0,0.0,0.0,0.0,50.000000002,0.0,1,0.0,0.0,0.0,TRUE
+bt__commercial_recreation_facility,Commercial Recreation Facility,Commercial/Retail,0.0,0.0,0.0,14.08450704,0.0,0.0,0.0,0.0,0.0,14.08450704,0.0,0.0,0.0,0.0,0.0,9999.9999993,1.0,1,0.0,1.0,0.0,TRUE
+bt__emergency_services,Emergency Services,Civic/Institutional,0.0,0.0,0.0,21.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,21.0,0.0,0.0,0.0,14700.0,0.0,1,0.0,0.0,0.0,TRUE
+bt__correctional_facility,Correctional Facility,Civic/Institutional,0.0,35.0,0.0,31.25,0.0,0.0,0.0,0.0,0.0,0.0,0.0,31.25,0.0,0.0,0.0,12500.0,0.0,1,0.0,0.0,0.0,TRUE
+bt__parking_surface_lot,Surface Parking,Vacant,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,1,0.0,0.0,0.0,TRUE
+bt__transit_station,Transit Station,Civic/Institutional,0.0,0.0,0.0,7.5,0.0,0.0,0.0,0.0,0.0,0.0,0.0,7.5,0.0,0.0,0.0,3000.0,0.0,1,0.0,0.0,0.0,TRUE
+bt__transportation_facility,Transportation Facility,Commercial/Retail,0.0,0.0,0.0,0.166666667,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.166666667,0.0,0.0,200.0,1.0,1,0.0,1.0,0.0,TRUE
+bt__communications_facility,Communications Facility,Infrastructure,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,1,0.0,0.0,0.0,TRUE
+bt__extraction,Extraction,Vacant,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,1,0.0,0.0,0.0,TRUE
+bt__commercial_storage,Commercial Storage,Commercial/Retail,0.0,0.0,0.0,20.40816327,0.0,0.0,0.0,0.0,0.0,20.40816327,0.0,0.0,0.0,0.0,0.0,59999.999997,1.0,1,0.0,1.0,0.0,TRUE
+bt__daycare,Daycare,Commercial/Retail,0.0,0.0,0.0,13.46153846,0.0,0.0,0.0,0.0,0.0,13.46153846,0.0,0.0,0.0,0.0,0.0,8750.0,1.0,1,0.0,1.0,0.0,TRUE
+bt__mental_health_facility,Mental Health Facility,Civic/Institutional,0.0,0.0,0.0,53.84615385,0.0,0.0,0.0,0.0,0.0,53.84615385,0.0,0.0,0.0,0.0,0.0,35000.0,0.0,1,0.0,0.0,0.0,TRUE
+bt__group_quarters,Group Quarters,Residential,0.0,40.0,0.0,3.75,0.0,0.0,0.0,0.0,0.0,0.0,0.0,3.75,0.0,0.0,0.0,1500.0,0.0,1,1.0,0.0,0.0,TRUE
+bt__cemetery,Cemetery,Civic/Institutional,0.0,0.0,0.0,0.091954023,0.0,0.0,0.0,0.0,0.0,0.091954023,0.0,0.0,0.0,0.0,0.0,40.0,0.0,1,0.0,0.0,0.0,TRUE
+bt__vacant,Vacant,Vacant,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,1,0.0,0.0,0.0,TRUE
+bt__right_of_way,Right of Way,Vacant,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,1,0.0,0.0,0.0,TRUE
+bt__vacant_subdivided,Vacant-Subdivided,Blank,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,1,0.0,0.0,0.0,TRUE
+bt__under_construction,Under Construction,Vacant,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,1,0.0,0.0,0.0,TRUE
+bt__water,Water,Open Space,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,1,0.0,0.0,0.0,TRUE
+bt__open_space,Open Space,Open Space,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,1,0.0,0.0,0.0,TRUE
+bt__blank,Blank,Blank,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0.6,0,0,0,0,TRUE
+bt__open_space,Open Space,Open Space,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0.6,0,0,0,0,TRUE

@@ -3,6 +3,7 @@ from django.contrib import admin
 from brewgis.workspace.built_forms.admin import *  # noqa: F403
 
 from .models import AnalysisRun
+from .models import BuiltFormDefinition
 from .models import DataSource
 from .models import DataSourceCategory
 from .models import PaintConstraint
@@ -12,6 +13,19 @@ from .models import Scenario
 from .models import Workspace
 
 # Register your models here.
+
+
+@admin.register(BuiltFormDefinition)
+class BuiltFormDefinitionAdmin(admin.ModelAdmin):
+    list_display = (
+        "key",
+        "name",
+        "built_form_category",
+        "du_per_acre",
+        "intersection_density",
+    )
+    list_filter = ("built_form_category", "is_active")
+    search_fields = ("key", "name")
 
 
 @admin.register(Workspace)

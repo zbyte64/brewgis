@@ -1080,3 +1080,50 @@ class BaseCanvas(models.Model):
 
     def __str__(self) -> str:
         return f"BaseCanvas #{self.pk}"
+
+
+class BuiltFormDefinition(models.Model):
+    """Canonical built form prototype — per-acre density metrics for nearest-prototype matching."""
+
+    key = models.CharField(max_length=64, unique=True)
+    name = models.CharField(max_length=128)
+    built_form_category = models.CharField(max_length=64)
+
+    # Per-acre density metrics
+    du_per_acre = models.FloatField(default=0)
+    pop_per_acre = models.FloatField(default=0)
+    hh_per_acre = models.FloatField(default=0)
+    emp_per_acre = models.FloatField(default=0)
+
+    # DU subtype breakdown per acre
+    du_detsf_sl_per_acre = models.FloatField(default=0)
+    du_detsf_ll_per_acre = models.FloatField(default=0)
+    du_attsf_per_acre = models.FloatField(default=0)
+    du_mf2to4_per_acre = models.FloatField(default=0)
+    du_mf5p_per_acre = models.FloatField(default=0)
+
+    # Employment sector breakdown per acre
+    emp_ret_per_acre = models.FloatField(default=0)
+    emp_off_per_acre = models.FloatField(default=0)
+    emp_pub_per_acre = models.FloatField(default=0)
+    emp_ind_per_acre = models.FloatField(default=0)
+    emp_ag_per_acre = models.FloatField(default=0)
+
+    # Physical form metrics used for matching
+    intersection_density = models.FloatField(default=0)
+    building_sqft_per_acre = models.FloatField(default=0)
+    footprint_ratio = models.FloatField(default=0)
+    max_levels = models.IntegerField(default=1)
+
+    # Area allocation fractions (sum to 1.0)
+    area_parcel_res = models.FloatField(default=0)
+    area_parcel_emp = models.FloatField(default=0)
+    area_parcel_mixed_use = models.FloatField(default=0)
+
+    is_active = models.BooleanField(default=True)
+
+    class Meta:
+        ordering = ("key",)
+
+    def __str__(self) -> str:
+        return f"{self.key} ({self.name})"

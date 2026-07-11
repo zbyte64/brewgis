@@ -1978,7 +1978,6 @@ class AuditColumnExistence(Rule):
             "assert_row_count_greater_than_zero",
             "assert_row_count_between",
             "assert_parcel_du_estimation_row_count",
-            "assert_parcel_bft_classification_row_count",
             "assert_sacog_assessor_parcels_row_count",
         }
     )

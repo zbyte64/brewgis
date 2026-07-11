@@ -195,12 +195,6 @@ class Command(BaseCommand):
             help="Enable Overture Transportation road impervious diagnostics",
         )
         parser.add_argument(
-            "--limit",
-            type=int,
-            default=0,
-            help="Limit parcel count for fast test runs (0 = all)",
-        )
-        parser.add_argument(
             "--force-data-fetch",
             action="store_true",
             default=False,
@@ -291,7 +285,6 @@ class Command(BaseCommand):
         nlcd = bool(options.get("nlcd", False))
         osm = bool(options.get("osm", False))
         overture_roads = bool(options.get("overture_roads", False))
-        limit = int(options.get("limit", 0))
         force_data_fetch = bool(options.get("force_data_fetch", False))
         force_data_reload = bool(options.get("force_data_reload", False))
         quick_parcel_clipping = bool(options.get("quick_parcel_clipping", False))
@@ -308,7 +301,6 @@ class Command(BaseCommand):
         self.stdout.write(
             f"  Assessor parcel geometry + dasymetric: {'on' if use_assessor_geometry else 'off'}"
         )
-        self.stdout.write(f"  Parcel limit: {limit or 'all'}")
         self.stdout.write(
             f"  Force re-download: {'yes' if force_data_fetch else 'no (use cached data if available)'}"
         )
@@ -332,7 +324,6 @@ class Command(BaseCommand):
                 nlcd=nlcd,
                 osm=osm,
                 overture_roads=overture_roads,
-                limit=limit,
                 force_data_fetch=force_data_fetch,
                 force_data_reload=force_data_reload,
                 quick_parcel_clipping=quick_parcel_clipping,
@@ -363,7 +354,6 @@ class Command(BaseCommand):
         nlcd: bool,
         osm: bool,
         overture_roads: bool,
-        limit: int,
         force_data_fetch: bool,
         force_data_reload: bool,
         quick_parcel_clipping: bool,
@@ -427,7 +417,7 @@ class Command(BaseCommand):
             or parcel_checksum is None
             or parcel_checksum != source_checksum
         ):
-            parcels_gdf = _load_parcels(limit)
+            parcels_gdf = _load_parcels(0)
             self.stdout.write(f"  Loaded {len(parcels_gdf):,} parcels")
 
             # Normalize SACOG column names to SQLMesh contract
@@ -687,7 +677,7 @@ class Command(BaseCommand):
                 or not self._table_has_rows("public", "sacog_assessor_parcels_raw")
             ):
                 assessor_parcels_result = run_assessor_parcels_pipeline(
-                    max_pages=0 if not limit else max(1, limit // 2000 + 1),
+                    max_pages=0,
                     ignore_cache=force_data_fetch,
                 )
                 self.stdout.write(
@@ -703,7 +693,7 @@ class Command(BaseCommand):
                 or not self._table_has_rows("public", "sacog_assessor_sales_raw")
             ):
                 assessor_sales_result = run_assessor_sales_pipeline(
-                    max_pages=0 if not limit else max(1, limit // 2000 + 1),
+                    max_pages=0,
                     ignore_cache=force_data_fetch,
                 )
                 self.stdout.write(
@@ -732,7 +722,6 @@ class Command(BaseCommand):
         self.stdout.write("\n── Phase 2: Running consolidated SQLMesh plan ──")
 
         model_selectors: list[str] = [
-            "+brewgis.assessor.parcel_partition_stats",
             "+brewgis.comparison.sacog_parcel_shim",
             "+brewgis.staging.census_2020_block",
             "+brewgis.base_canvas.base_canvas_reconciled",
@@ -911,7 +900,6 @@ class Command(BaseCommand):
             ),
             output_path=report_path,
             quick=not (nlcd or osm),
-            limit=limit,
         )
 
         self.stdout.write(self.style.SUCCESS(f"\n✓ Report written to {report_path}"))
@@ -979,7 +967,6 @@ class Command(BaseCommand):
         brew: dict[str, float],
         etl_result: dict,
         quick: bool,
-        limit: int,
         correlations: dict[str, float] | None = None,
         weighted_means: dict[str, float] | None = None,
     ):
@@ -1003,7 +990,6 @@ class Command(BaseCommand):
             weighted_means=weighted_means or {},
             output_path=report_path,
             quick=quick,
-            limit=limit,
         )
 
 

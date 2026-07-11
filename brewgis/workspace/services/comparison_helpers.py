@@ -97,7 +97,6 @@ def _generate_report_markdown(
     diagnostics: dict | None = None,
     output_path: Path,
     quick: bool,
-    limit: int,
 ) -> None:
     """Generate the markdown comparison report.
 
@@ -291,7 +290,7 @@ def _generate_report_markdown(
         dp = diagnostics.get("dasymetric", {})
         if dp.get("total_parcels", 0):
             total_parcels = f"{dp['total_parcels']:,}"
-    lines.append(f"**Parcel limit:** {limit or f'all ({total_parcels})'}")
+    lines.append(f"**Parcel limit:** all ({total_parcels})")
     lines.append("")
 
     # Configuration section
