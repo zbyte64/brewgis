@@ -38,6 +38,8 @@ if TYPE_CHECKING:
 NUMERIC_FEATURES = [
     "lot_size_acres",
     "intersection_density",
+    "highway_intersection_density",
+    "path_intersection_density",
     "footprint_ratio",
     "building_count",
     "max_levels",
@@ -46,24 +48,23 @@ NUMERIC_FEATURES = [
     "industrial_building_sqft",
     "other_building_sqft",
     "total_footprint_sqft",
-    "centroid_x",
-    "centroid_y",
 ]
 
 LGBM_PARAMS: dict[str, Any] = {
-    "objective": "regression",
+    "objective": "tweedie",
+    "tweedie_variance_power": 1.5,
     "metric": "rmse",
     "boosting_type": "gbdt",
-    "num_leaves": 255,
-    "n_estimators": 200,
-    "learning_rate": 0.03,
+    "num_leaves": 63,
+    "n_estimators": 1000,
+    "learning_rate": 0.01,
     "min_data_in_leaf": 10,
-    "feature_fraction": 0.9,
+    "feature_fraction": 0.7,
     "bagging_fraction": 1.0,
-    "bagging_freq": 1,
-    "lambda_l1": 0.0,
+    "bagging_freq": 10,
+    "lambda_l1": 0.01,
     "lambda_l2": 0.1,
-    "min_gain_to_split": 0.0,
+    "min_gain_to_split": 0.01,
     "verbose": -1,
     "random_state": 42,
 }
@@ -80,41 +81,29 @@ EMP_RATIO_TARGETS = [
 ]
 
 
-def _discover_env_view(context: ExecutionContext, table: str, base_schema: str) -> str:
-    rows = context.engine_adapter.fetchdf(
-        f"SELECT table_schema || '.' || table_name "
-        f"FROM information_schema.tables "
-        f"WHERE table_name = '{table}' AND table_schema LIKE '%__%'"
-    )
-    if rows.empty:
-        msg = f"Cannot find environment view for {base_schema}.{table}."
-        raise RuntimeError(msg)
-    return min(rows.iloc[:, 0], key=len)
-
-
 def _fetch_emp_training_data(context: ExecutionContext) -> pd.DataFrame:
     """Fetch reference employment ratio data with features for regression training."""
-    dasymetric = _discover_env_view(
-        context, "dasymetric_intersections", "brewgis.comparison"
-    )
+    training_map = context.resolve_table("brewgis.comparison.training_parcel_map")
     parcels = context.resolve_table("brewgis.assessor.sacog_assessor_parcels")
     bldg_sqft = context.resolve_table("brewgis.assessor.parcel_building_sqft_by_type")
     intersection = context.resolve_table(
         "brewgis.assessor.overture_intersection_density"
     )
+    highway = context.resolve_table(
+        "brewgis.assessor.overture_highway_intersection_density"
+    )
+    path = context.resolve_table("brewgis.assessor.overture_path_intersection_density")
     return context.fetchdf(
         f"""
         SELECT DISTINCT ON (ap.apn)
             ap.apn,
-            ref.emp_ret / NULLIF(ref.acres_parcel_emp, 0) AS emp_ret_per_acre,
-            ref.emp_off / NULLIF(ref.acres_parcel_emp, 0) AS emp_off_per_acre,
-            ref.emp_pub / NULLIF(ref.acres_parcel_emp, 0) AS emp_pub_per_acre,
-            ref.emp_ind / NULLIF(ref.acres_parcel_emp, 0) AS emp_ind_per_acre,
-            ref.emp_ag / NULLIF(ref.acres_parcel_emp, 0) AS emp_ag_per_acre,
+            COALESCE(ref.emp_ret / NULLIF(ref.acres_parcel_emp, 0), 0) AS emp_ret_per_acre,
+            COALESCE(ref.emp_off / NULLIF(ref.acres_parcel_emp, 0), 0) AS emp_off_per_acre,
+            COALESCE(ref.emp_pub / NULLIF(ref.acres_parcel_emp, 0), 0) AS emp_pub_per_acre,
+            COALESCE(ref.emp_ind / NULLIF(ref.acres_parcel_emp, 0), 0) AS emp_ind_per_acre,
+            COALESCE(ref.emp_ag / NULLIF(ref.acres_parcel_emp, 0), 0) AS emp_ag_per_acre,
             ap.lot_size_acres, ap.landuse, ap.zone,
             COALESCE(ap.land_development_category, 'standard') AS land_development_category,
-            ST_X(ST_Transform(ST_Centroid(ap.geometry), 3310)) AS centroid_x,
-            ST_Y(ST_Transform(ST_Centroid(ap.geometry), 3310)) AS centroid_y,
             COALESCE(bs.residential_building_sqft, 0) AS residential_building_sqft,
             COALESCE(bs.commercial_building_sqft, 0) AS commercial_building_sqft,
             COALESCE(bs.industrial_building_sqft, 0) AS industrial_building_sqft,
@@ -123,16 +112,16 @@ def _fetch_emp_training_data(context: ExecutionContext) -> pd.DataFrame:
             COALESCE(bs.building_count, 0) AS building_count,
             COALESCE(bs.footprint_ratio, 0) AS footprint_ratio,
             COALESCE(bs.max_levels, 1) AS max_levels,
-            COALESCE(id.intersection_density, 0) AS intersection_density
+            COALESCE(id.intersection_density, 0) AS intersection_density,
+            COALESCE(hw.highway_intersection_density, 0) AS highway_intersection_density,
+            COALESCE(pw.path_intersection_density, 0) AS path_intersection_density
         FROM public.sac_cnty_region_base_canvas ref
-        JOIN {dasymetric} di ON ref.geography_id = di.parcel_id
-        JOIN {parcels} ap ON di.apn = ap.apn
-        LEFT JOIN {bldg_sqft} bs ON di.apn = bs.apn
-        LEFT JOIN {intersection} id ON di.apn = id.apn
-        WHERE ref.acres_parcel_emp > 0
-          AND (COALESCE(ref.emp_ret, 0) + COALESCE(ref.emp_off, 0)
-               + COALESCE(ref.emp_pub, 0) + COALESCE(ref.emp_ind, 0)
-               + COALESCE(ref.emp_ag, 0)) > 0
+        JOIN {training_map} tpm ON ref.geography_id = tpm.parcel_id
+        JOIN {parcels} ap ON tpm.apn = ap.apn
+        LEFT JOIN {bldg_sqft} bs ON tpm.apn = bs.apn
+        LEFT JOIN {intersection} id ON tpm.apn = id.apn
+        LEFT JOIN {highway} hw ON tpm.apn = hw.apn
+        LEFT JOIN {path} pw ON tpm.apn = pw.apn
         ORDER BY ap.apn
         """
     )
@@ -145,14 +134,16 @@ def _fetch_emp_inference_data(context: ExecutionContext) -> pd.DataFrame:
     intersection = context.resolve_table(
         "brewgis.assessor.overture_intersection_density"
     )
+    highway = context.resolve_table(
+        "brewgis.assessor.overture_highway_intersection_density"
+    )
+    path = context.resolve_table("brewgis.assessor.overture_path_intersection_density")
     return context.fetchdf(
         f"""
         SELECT DISTINCT ON (ap.apn)
             ap.apn,
             ap.lot_size_acres, ap.landuse, ap.zone,
             COALESCE(ap.land_development_category, 'standard') AS land_development_category,
-            ST_X(ST_Transform(ST_Centroid(ap.geometry), 3310)) AS centroid_x,
-            ST_Y(ST_Transform(ST_Centroid(ap.geometry), 3310)) AS centroid_y,
             COALESCE(bs.residential_building_sqft, 0) AS residential_building_sqft,
             COALESCE(bs.commercial_building_sqft, 0) AS commercial_building_sqft,
             COALESCE(bs.industrial_building_sqft, 0) AS industrial_building_sqft,
@@ -161,10 +152,14 @@ def _fetch_emp_inference_data(context: ExecutionContext) -> pd.DataFrame:
             COALESCE(bs.building_count, 0) AS building_count,
             COALESCE(bs.footprint_ratio, 0) AS footprint_ratio,
             COALESCE(bs.max_levels, 1) AS max_levels,
-            COALESCE(id.intersection_density, 0) AS intersection_density
+            COALESCE(id.intersection_density, 0) AS intersection_density,
+            COALESCE(hw.highway_intersection_density, 0) AS highway_intersection_density,
+            COALESCE(pw.path_intersection_density, 0) AS path_intersection_density
         FROM {parcels} ap
         LEFT JOIN {bldg_sqft} bs ON ap.apn = bs.apn
         LEFT JOIN {intersection} id ON ap.apn = id.apn
+        LEFT JOIN {highway} hw ON ap.apn = hw.apn
+        LEFT JOIN {path} pw ON ap.apn = pw.apn
         ORDER BY ap.apn
         """
     )
@@ -224,6 +219,15 @@ def _feature_matrix(df, landuse_prefixes, zone_prefixes, ldev_cats=None):
     audits=[
         ("not_null", {"columns": "apn"}),
     ],
+    depends_on=[
+        "brewgis.comparison.training_parcel_map",
+        "public.sac_cnty_region_base_canvas",
+        "brewgis.assessor.sacog_assessor_parcels",
+        "brewgis.assessor.parcel_building_sqft_by_type",
+        "brewgis.assessor.overture_intersection_density",
+        "brewgis.assessor.overture_highway_intersection_density",
+        "brewgis.assessor.overture_path_intersection_density",
+    ],
 )
 def execute(
     context: ExecutionContext,
@@ -245,14 +249,34 @@ def execute(
     emp_targets = [c for c in EMP_RATIO_TARGETS if c in df.columns]
     logger.info("LightGBM EMP: %d target columns: %s", len(emp_targets), emp_targets)
 
-    has_emp = df[emp_targets].sum(axis=1) > 0
-    train_df = df[has_emp].copy()
-    logger.info("LightGBM EMP: %d parcels with emp > 0", len(train_df))
+    n_positive = (df[emp_targets].sum(axis=1) > 0).sum()
+    logger.info("LightGBM EMP: %d parcels with emp > 0 out of %d", n_positive, len(df))
 
-    if len(train_df) < MIN_TRAIN_SAMPLES:
-        logger.warning("LightGBM EMP: insufficient training data (%d)", len(train_df))
+    if n_positive < MIN_TRAIN_SAMPLES:
+        logger.warning(
+            "LightGBM EMP: insufficient training data (%d positive)", n_positive
+        )
         results = df[["apn"]].copy()
-        for t in emp_targets:
+        for t in EMP_RATIO_TARGETS:
+            results[t] = 0.0
+        yield results
+        return
+
+    # Use ALL parcels for training including zeros (~96% zero-inflated)
+    # Tweedie objective handles the zero-inflation naturally
+    train_df = df.copy()
+
+    # Filter out targets with zero total sum (Tweedie requires sum of labels > 0)
+    nonzero_cols = [c for c in emp_targets if train_df[c].sum() > 0]
+    excluded = set(emp_targets) - set(nonzero_cols)
+    if excluded:
+        logger.info("LightGBM EMP: excluded zero-sum columns: %s", excluded)
+    emp_targets = nonzero_cols
+
+    if not emp_targets:
+        logger.warning("LightGBM EMP: all targets have zero sum, yielding zeros")
+        results = df[["apn"]].copy()
+        for t in EMP_RATIO_TARGETS:
             results[t] = 0.0
         yield results
         return
@@ -311,6 +335,9 @@ def execute(
 
     y_pred = model_obj.predict(x_inference)
     results = inference_df[["apn"]].copy()
+    # Initialize all targets to 0; only trained targets get non-zero predictions
+    for t in EMP_RATIO_TARGETS:
+        results[t] = 0.0
     for i, target in enumerate(emp_targets):
         results[target] = np.maximum(y_pred[:, i], 0.0).astype(np.float32)
 

@@ -44,6 +44,8 @@ DU_TARGETS = [
 NUMERIC_FEATURES = [
     "lot_size_acres",
     "intersection_density",
+    "highway_intersection_density",
+    "path_intersection_density",
     "footprint_ratio",
     "building_count",
     "max_levels",
@@ -52,8 +54,6 @@ NUMERIC_FEATURES = [
     "industrial_building_sqft",
     "other_building_sqft",
     "total_footprint_sqft",
-    "centroid_x",
-    "centroid_y",
 ]
 
 LGBM_PARAMS: dict[str, Any] = {
@@ -77,35 +77,18 @@ LGBM_PARAMS: dict[str, Any] = {
 MIN_R2 = 0.10
 
 
-def _discover_env_view(context: ExecutionContext, table: str, base_schema: str) -> str:
-    """Find the environment-scoped view for a SQLMesh-managed table.
-    Raises RuntimeError if the view is absent.
-    """
-    rows = context.engine_adapter.fetchdf(
-        f"SELECT table_schema || '.' || table_name "
-        f"FROM information_schema.tables "
-        f"WHERE table_name = '{table}' "
-        f"AND table_schema LIKE '%__%'"
-    )
-    if rows.empty:
-        msg = (
-            f"Cannot find environment view for {base_schema}.{table}. "
-            f"The comparison environment must be materialized first."
-        )
-        raise RuntimeError(msg)
-    return min(rows.iloc[:, 0], key=len)
-
-
 def _fetch_du_training_data(context: ExecutionContext) -> pd.DataFrame:
     """Fetch reference DU data with features for regression training."""
-    dasymetric = _discover_env_view(
-        context, "dasymetric_intersections", "brewgis.comparison"
-    )
+    training_map = context.resolve_table("brewgis.comparison.training_parcel_map")
     parcels = context.resolve_table("brewgis.assessor.sacog_assessor_parcels")
     bldg_sqft = context.resolve_table("brewgis.assessor.parcel_building_sqft_by_type")
     intersection = context.resolve_table(
         "brewgis.assessor.overture_intersection_density"
     )
+    highway = context.resolve_table(
+        "brewgis.assessor.overture_highway_intersection_density"
+    )
+    path = context.resolve_table("brewgis.assessor.overture_path_intersection_density")
 
     df = context.fetchdf(
         f"""
@@ -113,8 +96,6 @@ def _fetch_du_training_data(context: ExecutionContext) -> pd.DataFrame:
             ref.du_detsf_sl, ref.du_detsf_ll, ref.du_attsf, ref.du_mf2to4, ref.du_mf5p,
             ap.lot_size_acres, ap.landuse, ap.zone,
             COALESCE(ap.land_development_category, 'standard') AS land_development_category,
-            ST_X(ST_Transform(ST_Centroid(ap.geometry), 3310)) AS centroid_x,
-            ST_Y(ST_Transform(ST_Centroid(ap.geometry), 3310)) AS centroid_y,
             COALESCE(bs.residential_building_sqft, 0) AS residential_building_sqft,
             COALESCE(bs.commercial_building_sqft, 0) AS commercial_building_sqft,
             COALESCE(bs.industrial_building_sqft, 0) AS industrial_building_sqft,
@@ -123,12 +104,16 @@ def _fetch_du_training_data(context: ExecutionContext) -> pd.DataFrame:
             COALESCE(bs.building_count, 0) AS building_count,
             COALESCE(bs.footprint_ratio, 0) AS footprint_ratio,
             COALESCE(bs.max_levels, 1) AS max_levels,
-            COALESCE(id.intersection_density, 0) AS intersection_density
+            COALESCE(id.intersection_density, 0) AS intersection_density,
+            COALESCE(hw.highway_intersection_density, 0) AS highway_intersection_density,
+            COALESCE(pw.path_intersection_density, 0) AS path_intersection_density
         FROM public.sac_cnty_region_base_canvas ref
-        JOIN {dasymetric} di ON ref.geography_id = di.parcel_id
-        JOIN {parcels} ap ON di.apn = ap.apn
-        LEFT JOIN {bldg_sqft} bs ON di.apn = bs.apn
-        LEFT JOIN {intersection} id ON di.apn = id.apn
+        JOIN {training_map} tpm ON ref.geography_id = tpm.parcel_id
+        JOIN {parcels} ap ON tpm.apn = ap.apn
+        LEFT JOIN {bldg_sqft} bs ON tpm.apn = bs.apn
+        LEFT JOIN {intersection} id ON tpm.apn = id.apn
+        LEFT JOIN {highway} hw ON tpm.apn = hw.apn
+        LEFT JOIN {path} pw ON tpm.apn = pw.apn
         ORDER BY ap.apn
         """
     )
@@ -142,6 +127,10 @@ def _fetch_inference_data(context: ExecutionContext) -> pd.DataFrame:
     intersection = context.resolve_table(
         "brewgis.assessor.overture_intersection_density"
     )
+    highway = context.resolve_table(
+        "brewgis.assessor.overture_highway_intersection_density"
+    )
+    path = context.resolve_table("brewgis.assessor.overture_path_intersection_density")
 
     return context.fetchdf(
         f"""
@@ -149,8 +138,6 @@ def _fetch_inference_data(context: ExecutionContext) -> pd.DataFrame:
             ap.apn,
             ap.lot_size_acres, ap.landuse, ap.zone,
             COALESCE(ap.land_development_category, 'standard') AS land_development_category,
-            ST_X(ST_Transform(ST_Centroid(ap.geometry), 3310)) AS centroid_x,
-            ST_Y(ST_Transform(ST_Centroid(ap.geometry), 3310)) AS centroid_y,
             COALESCE(bs.residential_building_sqft, 0) AS residential_building_sqft,
             COALESCE(bs.commercial_building_sqft, 0) AS commercial_building_sqft,
             COALESCE(bs.industrial_building_sqft, 0) AS industrial_building_sqft,
@@ -159,10 +146,14 @@ def _fetch_inference_data(context: ExecutionContext) -> pd.DataFrame:
             COALESCE(bs.building_count, 0) AS building_count,
             COALESCE(bs.footprint_ratio, 0) AS footprint_ratio,
             COALESCE(bs.max_levels, 1) AS max_levels,
-            COALESCE(id.intersection_density, 0) AS intersection_density
+            COALESCE(id.intersection_density, 0) AS intersection_density,
+            COALESCE(hw.highway_intersection_density, 0) AS highway_intersection_density,
+            COALESCE(pw.path_intersection_density, 0) AS path_intersection_density
         FROM {parcels} ap
         LEFT JOIN {bldg_sqft} bs ON ap.apn = bs.apn
         LEFT JOIN {intersection} id ON ap.apn = id.apn
+        LEFT JOIN {highway} hw ON ap.apn = hw.apn
+        LEFT JOIN {path} pw ON ap.apn = pw.apn
         ORDER BY ap.apn
         """
     )
@@ -237,6 +228,15 @@ def _feature_matrix(
     },
     audits=[
         ("not_null", {"columns": "apn"}),
+    ],
+    depends_on=[
+        "brewgis.comparison.training_parcel_map",
+        "public.sac_cnty_region_base_canvas",
+        "brewgis.assessor.sacog_assessor_parcels",
+        "brewgis.assessor.parcel_building_sqft_by_type",
+        "brewgis.assessor.overture_intersection_density",
+        "brewgis.assessor.overture_highway_intersection_density",
+        "brewgis.assessor.overture_path_intersection_density",
     ],
 )
 def execute(
