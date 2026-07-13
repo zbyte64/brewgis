@@ -21,26 +21,33 @@ MODEL (
 -- that corrupts composite type field access like (alias).field.
 
 WITH
+-- Compute transformed geometry for all non-null parcels (no join — satisfies NoTransformInJoinWhere)
+parcels_5070 AS (
+    SELECT p.id AS parcel_id, ST_Transform(p.geometry, 5070) AS geometry_5070
+    FROM brewgis.nlcd.parcels_wm p
+    WHERE p.geometry IS NOT NULL
+),
+
 -- Pre-compute raster extent to limit parcels to only those intersecting rasters
 raster_extent AS (
     SELECT ST_SetSRID(ST_Extent(rast::geometry), 5070) AS extent
     FROM public.nlcd_raster
 ),
 
+-- Filter to parcels within raster extent, using pre-computed geometry
 parcels_in_extent AS (
-    SELECT p.id AS parcel_id, p.geometry
-    FROM brewgis.nlcd.parcels_wm p
-    JOIN raster_extent re ON ST_Intersects(p.geometry, re.extent)
-    WHERE p.geometry IS NOT NULL
+    SELECT p.parcel_id, p.geometry_5070
+    FROM parcels_5070 p
+    JOIN raster_extent re ON ST_Intersects(p.geometry_5070, re.extent)
 ),
 
 parcel_tiles AS (
     SELECT
         p.parcel_id,
-        ST_Clip(r.rast, 1, p.geometry, TRUE, TRUE) AS clipped
+        ST_Clip(r.rast, 1, p.geometry_5070, TRUE, TRUE) AS clipped
     FROM parcels_in_extent p
     JOIN public.nlcd_raster r
-        ON ST_Intersects(p.geometry, r.rast::geometry)
+        ON ST_Intersects(p.geometry_5070, r.rast::geometry)
 ),
 
 tile_value_counts AS (

@@ -766,6 +766,8 @@ class Command(BaseCommand):
         plan_vars: dict[str, object] = {
             "parcel_table": "brewgis.comparison.sacog_parcel_shim",
             "local_srid": LOCAL_SRID,
+            "acs_year": ACS_YEAR,
+            "state_fips": STATE_FIPS,
             # CBP county-level employment controls for 2008 (Sacramento County, CA)
             "cbp_county_emp_agriculture": 195,
             "cbp_county_emp_extraction": 168,

@@ -250,46 +250,47 @@ def _populate_acs_block_group(
 
     Invokes SQLMesh to materialize ``brewgis.staging.acs_block_group``
     with derived columns, safe percentage computations, and DU sub-type
-    splitting. Accepts one or more county FIPS codes.
+    splitting.
+
+    Note:
+        ``county_fips_list`` is accepted for backward compatibility but no
+        longer used. The model filters by ``state_fips`` only; ``acs_raw``
+        is assumed to contain only the target counties.
 
     Args:
         state_fips: Two-digit state FIPS code.
-        county_fips_list: Single three-digit FIPS code, list of codes,
-            or None (default ``["067"]`` for Sacramento).
+        county_fips_list: Ignored (accepted for backward compatibility).
         year: ACS data year (default 2022).
 
     Returns:
         Number of rows written.
 
     Raises:
-        RuntimeError: If the table remains empty after all counties.
+        RuntimeError: If the table remains empty.
     """
     if isinstance(county_fips_list, str):
         county_fips_list = [county_fips_list]
     elif county_fips_list is None:
         county_fips_list = ["067"]
 
-    total_rows = 0
-    for county_fips in county_fips_list:
-        acs_vars: dict[str, object] = {
-            "source_schema": "public",
-            "acs_raw_table": "acs_raw",
-            "tiger_bg_table": "tiger_block_groups",
-            "year": year,
-            "state_fips": state_fips,
-            "county_fips": county_fips,
-            "detsf_sl_ratio": _DU_DETSF_TO_SL_RATIO,
-            "sl_density_threshold": _SL_DENSITY_THRESHOLD,
-            "k_steepness": _K_STEEPNESS,
-            "tiger_bg_vintage": "2013",
-        }
+    acs_vars: dict[str, object] = {
+        "source_schema": "public",
+        "acs_raw_table": "acs_raw",
+        "tiger_bg_table": "tiger_block_groups",
+        "acs_year": year,
+        "state_fips": state_fips,
+        "detsf_sl_ratio": _DU_DETSF_TO_SL_RATIO,
+        "sl_density_threshold": _SL_DENSITY_THRESHOLD,
+        "k_steepness": _K_STEEPNESS,
+        "tiger_bg_vintage": "2013",
+    }
 
-        run_sqlmesh_plan(
-            environment="brewgis_prod",
-            select=["brewgis.staging.acs_block_group"],
-            skip_tests=True,
-            variables=acs_vars,
-        )
+    run_sqlmesh_plan(
+        environment="brewgis_prod",
+        select=["brewgis.staging.acs_block_group"],
+        skip_tests=True,
+        variables=acs_vars,
+    )
 
     engine = get_engine()
     with engine.connect() as conn:

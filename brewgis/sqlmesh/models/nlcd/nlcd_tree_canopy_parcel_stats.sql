@@ -19,25 +19,31 @@ MODEL (
 -- Uses ST_Clip + ST_SummaryStats (mean) since the data is continuous,
 -- not categorical like the NLCD land cover classes.
 
-WITH raster_extent AS (
+WITH
+-- Compute transformed geometry for all non-null parcels (no join — satisfies NoTransformInJoinWhere)
+parcels_5070 AS (
+    SELECT p.id AS parcel_id, ST_Transform(p.geometry, 5070) AS geometry_5070
+    FROM brewgis.nlcd.parcels_wm p
+    WHERE p.geometry IS NOT NULL
+),
+
+raster_extent AS (
     SELECT ST_SetSRID(ST_Extent(rast::geometry), 5070) AS extent
     FROM public.nlcd_tree_canopy_raster
 ),
 
-parcels_5070 AS (
-    SELECT
-        p.id AS parcel_id,
-        ST_Transform(p.geometry, 5070) AS geometry_5070
-    FROM brewgis.nlcd.parcels_wm p
-    JOIN raster_extent re ON ST_Intersects(p.geometry, re.extent)
-    WHERE p.geometry IS NOT NULL
+-- Filter to parcels within raster extent, using pre-computed geometry
+parcels_in_extent AS (
+    SELECT p.parcel_id, p.geometry_5070
+    FROM parcels_5070 p
+    JOIN raster_extent re ON ST_Intersects(p.geometry_5070, re.extent)
 ),
 
 parcel_tiles AS (
     SELECT
         p.parcel_id,
         ST_Clip(r.rast, 1, p.geometry_5070, TRUE, TRUE) AS clipped
-    FROM parcels_5070 p
+    FROM parcels_in_extent p
     JOIN public.nlcd_tree_canopy_raster r
         ON ST_Intersects(p.geometry_5070, r.rast::geometry)
 ),
