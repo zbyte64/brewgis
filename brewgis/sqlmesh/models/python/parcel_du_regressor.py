@@ -255,17 +255,18 @@ def execute(
     inference_df = _fetch_inference_data(context)
     logger.info("LightGBM DU: %d inference parcels", len(inference_df))
 
-    # Filter to parcels with at least one DU target > 0
-    has_du = (
-        df["du_detsf_sl"]
-        + df["du_detsf_ll"]
-        + df["du_attsf"]
-        + df["du_mf2to4"]
-        + df["du_mf5p"]
-        > 0
+    # Include all parcels in training — DU=0 parcels teach the regressor
+    # to output zero for non-residential parcels (agricultural, industrial,
+    # undeveloped), fixing the previous over-prediction for those categories.
+    train_df = df.copy()
+    nonzero_count = (train_df[DU_TARGETS].sum(axis=1) > 0).sum()
+    zero_count = (train_df[DU_TARGETS].sum(axis=1) == 0).sum()
+    logger.info(
+        "LightGBM DU: %d training parcels (%d with DU > 0, %d with DU = 0)",
+        len(train_df),
+        nonzero_count,
+        zero_count,
     )
-    train_df = df[has_du].copy()
-    logger.info("LightGBM DU: %d parcels with DU > 0", len(train_df))
 
     if len(train_df) < 100:
         logger.warning("LightGBM DU: insufficient training data (%d)", len(train_df))
