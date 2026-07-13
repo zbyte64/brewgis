@@ -250,16 +250,13 @@ def _populate_acs_block_group(
 
     Invokes SQLMesh to materialize ``brewgis.staging.acs_block_group``
     with derived columns, safe percentage computations, and DU sub-type
-    splitting.
-
-    Note:
-        ``county_fips_list`` is accepted for backward compatibility but no
-        longer used. The model filters by ``state_fips`` only; ``acs_raw``
-        is assumed to contain only the target counties.
+    splitting. Passes all target counties as a comma-separated list so
+    a single plan call captures all counties without overwriting.
 
     Args:
         state_fips: Two-digit state FIPS code.
-        county_fips_list: Ignored (accepted for backward compatibility).
+        county_fips_list: Single three-digit FIPS code, list of codes,
+            or None (default ``["067"]`` for Sacramento).
         year: ACS data year (default 2022).
 
     Returns:
@@ -279,6 +276,7 @@ def _populate_acs_block_group(
         "tiger_bg_table": "tiger_block_groups",
         "acs_year": year,
         "state_fips": state_fips,
+        "county_fips": ",".join(county_fips_list),
         "detsf_sl_ratio": _DU_DETSF_TO_SL_RATIO,
         "sl_density_threshold": _SL_DENSITY_THRESHOLD,
         "k_steepness": _K_STEEPNESS,

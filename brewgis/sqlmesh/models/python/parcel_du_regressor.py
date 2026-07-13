@@ -61,7 +61,7 @@ LGBM_PARAMS: dict[str, Any] = {
     "metric": "rmse",
     "boosting_type": "gbdt",
     "num_leaves": 63,
-    "n_estimators": 500,
+    "n_estimators": 350,
     "learning_rate": 0.01,
     "min_data_in_leaf": 10,
     "feature_fraction": 0.6,
@@ -298,9 +298,6 @@ def execute(
 
     x_train = _feature_matrix(train_df, landuse_prefixes, zone_prefixes, ldev_cats)
     y_train = train_df[DU_TARGETS].to_numpy()
-    x_inference = _feature_matrix(
-        inference_df, landuse_prefixes, zone_prefixes, ldev_cats
-    )
 
     # Train or load cached model
     combo = pd.concat([x_train.reset_index(drop=True), pd.DataFrame(y_train)], axis=1)
@@ -314,25 +311,35 @@ def execute(
         base_model = LGBMRegressor(**LGBM_PARAMS)
         model_obj = MultiOutputRegressor(base_model, n_jobs=1)
         model_obj.fit(x_tr, y_tr)
-        y_pred = model_obj.predict(x_va)
+        y_train_pred = model_obj.predict(x_va)
 
         for i, target in enumerate(DU_TARGETS):
-            r2 = r2_score(y_va[:, i], y_pred[:, i])
+            r2 = r2_score(y_va[:, i], y_train_pred[:, i])
             logger.info("LightGBM DU: %s R² = %.4f", target, r2)
 
-        mean_r2 = r2_score(y_va, y_pred, multioutput="uniform_average")
+        mean_r2 = r2_score(y_va, y_train_pred, multioutput="uniform_average")
         logger.info("LightGBM DU: mean R² = %.4f", mean_r2)
 
         if mean_r2 < MIN_R2:
             logger.warning("LightGBM DU: mean R² %.4f < %.2f", mean_r2, MIN_R2)
 
         save_model(model_obj, data_hash)
+        del y_train_pred
+    # free memory
+    del x_train
+    del y_train
 
+    x_inference = _feature_matrix(
+        inference_df, landuse_prefixes, zone_prefixes, ldev_cats
+    )
     y_pred = model_obj.predict(x_inference)
     results = inference_df[["apn"]].copy()
+    del inference_df
+    del x_inference
     for i, target in enumerate(DU_TARGETS):
         results[target] = np.maximum(y_pred[:, i], 0.0).astype(np.float32)
     results["du_total"] = results[DU_TARGETS].sum(axis=1).astype(np.float32)
+    del y_pred
 
     _original = PostgresEngineAdapter.DEFAULT_BATCH_SIZE
     PostgresEngineAdapter.DEFAULT_BATCH_SIZE = 500000

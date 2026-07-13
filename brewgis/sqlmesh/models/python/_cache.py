@@ -55,12 +55,6 @@ def save_model(model_obj: MultiOutputRegressor, data_hash: str) -> None:
     """Persist a trained model to filesystem cache."""
     cache_path = _ensure_cache_dir() / f"{data_hash}.pkl"
     tmp = cache_path.with_suffix(".tmp")
-    try:
-        tmp.write_bytes(pickle.dumps(model_obj))
-        tmp.rename(cache_path)
-        logging.getLogger(__name__).info("Cached model to %s", cache_path.name)
-    except Exception:  # noqa: BLE001
-        logging.getLogger(__name__).warning(
-            "Cache write failed for %s", cache_path.name
-        )
-        tmp.unlink(missing_ok=True)
+    tmp.write_bytes(pickle.dumps(model_obj))
+    tmp.rename(cache_path)
+    logging.getLogger(__name__).info("Cached model to %s", cache_path.name)

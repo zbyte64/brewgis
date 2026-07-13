@@ -18,6 +18,7 @@ MODEL (
 -- Parameters (from dbt vars, with defaults):
 --   year: 2022
 --   state_fips: '06'
+--   county_fips: '067' (comma-separated for multiple, e.g. '067,005,017,061')
 --   detsf_sl_ratio: 0.40 (fallback small-lot ratio when geometry unavailable)
 --   sl_density_threshold: 8.0 (density threshold for small-lot sigmoid)
 --   k_steepness: 0.5 (sigmoid steepness)
@@ -64,6 +65,7 @@ WITH raw_derived AS (
         AND tbg.vintage = @tiger_bg_vintage
     WHERE a.year = @acs_year
       AND a.state = @state_fips
+      AND a.county = ANY(STRING_TO_ARRAY(@county_fips, ','))
 ),
 derived_with_pcts AS (
     SELECT

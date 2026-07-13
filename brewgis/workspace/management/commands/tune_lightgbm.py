@@ -58,7 +58,7 @@ HP_DISTRIBUTIONS: dict[str, list] = {
     "estimator__lambda_l1": [0.0, 0.01, 0.1, 1.0],
     "estimator__lambda_l2": [0.0, 0.01, 0.1, 1.0, 10.0],
     "estimator__min_gain_to_split": [0.0, 0.01, 0.1],
-    "estimator__n_estimators": [200, 500, 1000],
+    "estimator__n_estimators": [100, 200, 350],
 }
 
 
