@@ -4,27 +4,34 @@ AUDIT (
 );
 
 -- Assert that every parcel with du_estimated ≥ 0.5 has du > 0 after
--- the census block intersection join in base_canvas_demographics.
+-- the census block allocation in base_canvas_combined, UNLESS the
+-- parcel's intersecting census blocks all have total_housing_units = 0.
 --
--- A parcel with du = 0 but du_estimated ≥ 0.5 means the ST_Intersects
--- join to census_2020_block_projected found no matching block —
--- typically because census block geometry was under-fetched, has
--- invalid SRID metadata, or otherwise failed ST_Transform.
+-- The regressor-ratio-scaled allocation constrains DU to Census 2020
+-- block total_housing_units. When a block has 0 housing units, the
+-- formula produces du = 0, which is correct — not a mapping failure.
 --
--- The 0.5 threshold excludes tiny fractional DU residuals (e.g.
--- 0.01 DU from boundary-edge APN crosswalk) that are essentially
--- floating-point noise from boundary misalignment between parcels
--- and census blocks.
+-- A parcel with du = 0 but du_estimated ≥ 0.5 AND intersecting at
+-- least one block with total_housing_units > 0 means the ST_Intersects
+-- join truly found no matching block — typically because census block
+-- geometry was under-fetched, has invalid SRID metadata, or otherwise
+-- failed ST_Transform.
 --
 -- Returns at most 10 violating parcels so logs stay readable while
 -- still identifying the affected geographies.
 
 SELECT
-    parcel_id,
-    du_estimated,
-    du,
+    c.parcel_id,
+    c.du_estimated,
+    c.du,
     'No intersecting census block — check census_2020_block_projected spatial extent and geometry validity' AS reason
-FROM @this_model
-WHERE COALESCE(du_estimated, 0) >= 0.5
-  AND COALESCE(du, 0) = 0
+FROM @this_model c
+WHERE COALESCE(c.du_estimated, 0) >= 0.5
+  AND COALESCE(c.du, 0) = 0
+  AND EXISTS (
+    SELECT 1
+    FROM brewgis.staging.census_2020_block_projected cb
+    WHERE ST_Intersects(c.geometry, cb.geometry)
+      AND cb.total_housing_units > 0
+  )
 LIMIT 10

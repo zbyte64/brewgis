@@ -126,6 +126,14 @@ block_weighted_totals AS (
     GROUP BY geoid
 ),
 
+block_regressor_du AS (
+    SELECT
+        geoid,
+        SUM(COALESCE(du_estimated, 0)) AS block_regressor_du
+    FROM parcel_block_intersections
+    GROUP BY geoid
+),
+
 pop_allocated AS (
     SELECT
         pbi.parcel_id,
@@ -134,11 +142,21 @@ pop_allocated AS (
             * COALESCE(pbi.du_pop_dasym_weight, 0)
             / NULLIF(bwt.block_total_du_weight, 0)
         ) AS pop,
-        AVG(pbi.du_estimated) AS du,
-        AVG(pbi.du_estimated * (1.0 - COALESCE(pbi.vacancy_rate, 0.05))) AS hh,
+        SUM(
+            pbi.du_estimated
+            * pbi.total_housing_units
+            / NULLIF(br.block_regressor_du, 0)
+        ) AS du,
+        SUM(
+            pbi.du_estimated
+            * pbi.total_housing_units
+            / NULLIF(br.block_regressor_du, 0)
+            * (1.0 - COALESCE(pbi.vacancy_rate, 0.05))
+        ) AS hh,
         1.0 AS weight
     FROM parcel_block_intersections pbi
     LEFT JOIN block_weighted_totals bwt ON pbi.geoid = bwt.geoid
+    LEFT JOIN block_regressor_du br ON pbi.geoid = br.geoid
     GROUP BY pbi.parcel_id
 ),
 
