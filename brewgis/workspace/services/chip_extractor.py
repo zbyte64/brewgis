@@ -85,7 +85,19 @@ def extract_chips(  # noqa: C901, PLR0915
                     x_min, y_min = _transformer.transform(west, south)
                     x_max, y_max = _transformer.transform(east, north)
                     bounds = (x_min, y_min, x_max, y_max)
-                window = windows.from_bounds(*bounds, transform=src.transform)
+                # Compute window manually via inverse transform instead of
+                # windows.from_bounds to avoid WindowError when reprojected
+                # bounds have floating-point rounding at raster edges.
+                # from_bounds(left, bottom, right, top) expects top for row_off
+                # and bottom for height, so we need (x_min, y_max) → top-left
+                # and (x_max, y_min) → bottom-right pixel coords.
+                inv = ~src.transform
+                left, bottom, right, top = bounds
+                col_off, row_off = inv * (left, top)
+                col_end, row_end = inv * (right, bottom)
+                window = windows.Window(
+                    col_off, row_off, col_end - col_off, row_end - row_off
+                )
             except (ValueError, KeyError):
                 logger.debug("Skipping parcel %s: window computation failed", parcel_id)
                 continue

@@ -11,12 +11,16 @@ from __future__ import annotations
 
 import logging
 import time
+from typing import TYPE_CHECKING
 
 import numpy as np
 import pandas as pd
 from django.core.management.base import BaseCommand
 from lightgbm import LGBMRegressor
 from sklearn.model_selection import RandomizedSearchCV
+
+if TYPE_CHECKING:
+    from sqlmesh import Context
 
 from brewgis.sqlmesh.models.python.parcel_du_regressor import (
     _fetch_du_training_data as fetch_du_training_data,
@@ -28,6 +32,7 @@ from brewgis.sqlmesh.models.python.parcel_sqft_regressor import (
     _fetch_sqft_training_data as fetch_sqft_training_data,
 )
 from brewgis.workspace.analysis.sqlmesh_runner import get_context
+from brewgis.workspace.analysis.sqlmesh_runner import run_sqlmesh_plan
 
 logger = logging.getLogger("tune_lightgbm")
 
@@ -99,7 +104,7 @@ EMP_RATIO_TARGETS = [
 
 
 def _tune_model(
-    context,
+    context: Context,
     is_du: bool,
     is_emp: bool = False,
     n_iter: int = 15,
@@ -227,7 +232,26 @@ class Command(BaseCommand):
         print("=" * 60)
         print()
 
+        # Materialize all upstream SQLMesh models needed by the regressor training queries
+        # The + prefix includes transitive dependencies through the SQLMesh DAG.
+        tune_selectors: list[str] = [
+            "+brewgis.comparison.training_parcel_map",
+            "+brewgis.assessor.sacog_assessor_parcels",
+            "+brewgis.assessor.parcel_building_sqft_by_type",
+            "+brewgis.assessor.overture_intersection_density",
+            "+brewgis.assessor.overture_highway_intersection_density",
+            "+brewgis.assessor.overture_path_intersection_density",
+            "+brewgis.assessor.parcel_resnet_features",
+        ]
+        logger.info("Materializing upstream models for regressor training data…")
+        run_sqlmesh_plan(
+            environment="prod",
+            select=tune_selectors,
+        )
+        logger.info("Upstream models materialized.")
+
         sqlmesh_context = get_context()
+        logger.info("Starting tuning…")
 
         _tune_model(
             sqlmesh_context,

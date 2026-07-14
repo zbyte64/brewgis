@@ -279,6 +279,9 @@ def execute(  # noqa: C901, PLR0912, PLR0915
     apn_map = context.fetchdf(
         f"""SELECT DISTINCT parcel_id, apn FROM {training_map_name}"""  # noqa: S608
     )
+    # Align parcel_id dtypes: extract_chips yields str(parcel_id) so results
+    # has object dtype, but the database column may be int64.
+    results["parcel_id"] = results["parcel_id"].astype(apn_map["parcel_id"].dtype)
     results = results.merge(apn_map, on="parcel_id", how="left")
     results = results[["parcel_id", "apn", *_RESNET_PC_COLS]]
     logger.info("Result: %d rows, %d columns", len(results), len(results.columns))
