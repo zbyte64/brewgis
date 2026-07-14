@@ -240,6 +240,12 @@ class Command(BaseCommand):
             default="",
             help="Path for the comparison report (default: planning/sacog_comparison_report_<timestamp>.md)",
         )
+        parser.add_argument(
+            "--environment",
+            type=str,
+            default="prod",
+            help="sqlmesh evnrionment",
+        )
 
     def handle(self, **options: Any) -> None:
         # ── Resolve output paths ─────────────────────────────────────
@@ -289,6 +295,7 @@ class Command(BaseCommand):
         force_data_reload = bool(options.get("force_data_reload", False))
         quick_parcel_clipping = bool(options.get("quick_parcel_clipping", False))
         use_assessor_geometry = bool(options.get("use_assessor_geometry", False))
+        environment = options.get("environment", "prod")
 
         # TODO check if base_canvas exists / migrations are up to date
 
@@ -330,6 +337,7 @@ class Command(BaseCommand):
                 use_assessor_geometry=use_assessor_geometry,
                 log_file_handle=log_file_handle,
                 report_path=report_path,
+                environment=environment,
             )
         except Exception:
             logger.exception("compare_sacog_basemap failed")
@@ -360,6 +368,7 @@ class Command(BaseCommand):
         use_assessor_geometry: bool,
         log_file_handle: Any,
         report_path: Path,
+        environment: str,
     ) -> None:
         # Lazy imports — avoid loading analysis modules at import time
         # which conflicts with test stubs for pandas/geopandas.
@@ -794,7 +803,7 @@ class Command(BaseCommand):
         # checkpoint
         if not force_data_reload:
             run_sqlmesh_plan(
-                environment="sacog_comparison",
+                environment=environment,
                 skip_tests=False,
                 select=[
                     "+brewgis.comparison.sacog_reference_totals",
@@ -808,15 +817,15 @@ class Command(BaseCommand):
         # --- Index audit & environment invalidation ---
         if force_data_reload:
             reload_context = get_context(**plan_vars)
-            reload_context.invalidate_environment("sacog_comparison")
+            reload_context.invalidate_environment(environment)
             logger.info("Invalidated sacog_comparison environment for full rebuild")
 
         selector_fqns = [s.lstrip("+") for s in model_selectors]
         plan_context = get_context(**plan_vars)
-        _repair_missing_indexes(plan_context, "sacog_comparison", selector_fqns)
+        _repair_missing_indexes(plan_context, environment, selector_fqns)
 
         plan, context = run_sqlmesh_plan(
-            environment="sacog_comparison",
+            environment=environment,
             skip_tests=False,
             select=model_selectors,
             variables=plan_vars,
@@ -827,7 +836,8 @@ class Command(BaseCommand):
         # ── Phase 4: Read results from SQLMesh-materialized tables ─────────
         self.stdout.write("\n── Phase 4: Reading comparison data from SQLMesh ──")
         sacog_summary_table = context.table_name(
-            "brewgis.comparison.sacog_summary", "sacog_comparison"
+            "brewgis.comparison.sacog_summary",
+            environment,
         )
         summary = _query_table_as_dict(sacog_summary_table)
         # fetchdf assumes prod environment
@@ -852,12 +862,12 @@ class Command(BaseCommand):
             "brewgis.comparison__sacog_comparison.sacog_comparison_dasymetric"
         )
         reconciled_table = context.table_name(
-            "brewgis.base_canvas.base_canvas_reconciled", "sacog_comparison"
+            "brewgis.base_canvas.base_canvas_reconciled", environment
         )
         authoritative_table = (
             context.table_name(
                 "brewgis.assessor.authoritative_residential_area",
-                "sacog_comparison",
+                environment,
             )
             if use_assessor_geometry
             else None
@@ -865,7 +875,7 @@ class Command(BaseCommand):
         assessor_parcels_table = (
             context.table_name(
                 "brewgis.assessor.sacog_assessor_parcels",
-                "sacog_comparison",
+                environment,
             )
             if use_assessor_geometry
             else None
@@ -873,7 +883,7 @@ class Command(BaseCommand):
         building_footprints_table = (
             context.table_name(
                 "brewgis.assessor.parcel_building_footprints",
-                "sacog_comparison",
+                environment,
             )
             if use_assessor_geometry
             else None

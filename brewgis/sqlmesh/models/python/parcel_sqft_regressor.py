@@ -27,6 +27,7 @@ from sqlmesh.core.model.definition import ModelKindName
 from brewgis.sqlmesh.models.python._cache import compute_data_hash
 from brewgis.sqlmesh.models.python._cache import save_model
 from brewgis.sqlmesh.models.python._cache import try_load_cached
+from brewgis.sqlmesh.models.python._feature_cols import _RESNET_PC_COLS
 
 if TYPE_CHECKING:
     from sqlmesh.core.context import ExecutionContext
@@ -94,6 +95,7 @@ def _fetch_sqft_training_data(context: ExecutionContext) -> pd.DataFrame:
         "brewgis.assessor.overture_highway_intersection_density"
     )
     path = context.resolve_table("brewgis.assessor.overture_path_intersection_density")
+    features = context.resolve_table("brewgis.assessor.parcel_resnet_features")
     sqft_cols = [
         "bldg_sqft_detsf_sl",
         "bldg_sqft_detsf_ll",
@@ -112,6 +114,11 @@ def _fetch_sqft_training_data(context: ExecutionContext) -> pd.DataFrame:
         "bldg_sqft_wholesale",
     ]
     cols = ", ".join(f"ref.{c}" for c in sqft_cols)
+
+    pc_cols_sql = ",\n            ".join(
+        f"COALESCE(rf.{c}, 0.0) AS {c}" for c in _RESNET_PC_COLS
+    )
+
     return context.fetchdf(
         f"""
         SELECT DISTINCT ON (ap.apn)
@@ -130,7 +137,8 @@ def _fetch_sqft_training_data(context: ExecutionContext) -> pd.DataFrame:
             COALESCE(bs.max_levels, 1) AS max_levels,
             COALESCE(id.intersection_density, 0) AS intersection_density,
             COALESCE(hw.highway_intersection_density, 0) AS highway_intersection_density,
-            COALESCE(pw.path_intersection_density, 0) AS path_intersection_density
+            COALESCE(pw.path_intersection_density, 0) AS path_intersection_density,
+            {pc_cols_sql}
         FROM public.sac_cnty_region_base_canvas ref
         JOIN {training_map} tpm ON ref.geography_id = tpm.parcel_id
         JOIN {parcels} ap ON tpm.apn = ap.apn
@@ -138,6 +146,7 @@ def _fetch_sqft_training_data(context: ExecutionContext) -> pd.DataFrame:
         LEFT JOIN {intersection} id ON tpm.apn = id.apn
         LEFT JOIN {highway} hw ON tpm.apn = hw.apn
         LEFT JOIN {path} pw ON tpm.apn = pw.apn
+        LEFT JOIN {features} rf ON tpm.apn = rf.apn
         ORDER BY ap.apn
         """
     )
@@ -154,6 +163,12 @@ def _fetch_sqft_inference_data(context: ExecutionContext) -> pd.DataFrame:
         "brewgis.assessor.overture_highway_intersection_density"
     )
     path = context.resolve_table("brewgis.assessor.overture_path_intersection_density")
+    features = context.resolve_table("brewgis.assessor.parcel_resnet_features")
+
+    pc_cols_sql = ",\n            ".join(
+        f"COALESCE(rf.{c}, 0.0) AS {c}" for c in _RESNET_PC_COLS
+    )
+
     return context.fetchdf(
         f"""
         SELECT DISTINCT ON (ap.apn)
@@ -170,12 +185,14 @@ def _fetch_sqft_inference_data(context: ExecutionContext) -> pd.DataFrame:
             COALESCE(bs.max_levels, 1) AS max_levels,
             COALESCE(id.intersection_density, 0) AS intersection_density,
             COALESCE(hw.highway_intersection_density, 0) AS highway_intersection_density,
-            COALESCE(pw.path_intersection_density, 0) AS path_intersection_density
+            COALESCE(pw.path_intersection_density, 0) AS path_intersection_density,
+            {pc_cols_sql}
         FROM {parcels} ap
         LEFT JOIN {bldg_sqft} bs ON ap.apn = bs.apn
         LEFT JOIN {intersection} id ON ap.apn = id.apn
         LEFT JOIN {highway} hw ON ap.apn = hw.apn
         LEFT JOIN {path} pw ON ap.apn = pw.apn
+        LEFT JOIN {features} rf ON ap.apn = rf.apn
         ORDER BY ap.apn
         """
     )
@@ -218,7 +235,7 @@ def _feature_matrix(df, landuse_prefixes, zone_prefixes, ldev_cats=None):
     ]
     if ldev_cats is not None:
         oh_cols += [f"ldc_{c}" for c in ldev_cats]
-    return df[NUMERIC_FEATURES + oh_cols]
+    return df[NUMERIC_FEATURES + oh_cols + _RESNET_PC_COLS]
 
 
 @model(
@@ -254,6 +271,7 @@ def _feature_matrix(df, landuse_prefixes, zone_prefixes, ldev_cats=None):
         "brewgis.assessor.overture_intersection_density",
         "brewgis.assessor.overture_highway_intersection_density",
         "brewgis.assessor.overture_path_intersection_density",
+        "brewgis.assessor.parcel_resnet_features",
     ],
 )
 def execute(
