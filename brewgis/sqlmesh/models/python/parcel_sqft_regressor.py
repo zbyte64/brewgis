@@ -28,6 +28,7 @@ from brewgis.sqlmesh.models.python._cache import compute_data_hash
 from brewgis.sqlmesh.models.python._cache import save_model
 from brewgis.sqlmesh.models.python._cache import try_load_cached
 from brewgis.sqlmesh.models.python._feature_cols import _RESNET_PC_COLS
+from brewgis.sqlmesh.models.python._predict import predict_in_batches
 
 if TYPE_CHECKING:
     from sqlmesh.core.context import ExecutionContext
@@ -152,8 +153,11 @@ def _fetch_sqft_training_data(context: ExecutionContext) -> pd.DataFrame:
     )
 
 
-def _fetch_sqft_inference_data(context: ExecutionContext) -> pd.DataFrame:
-    """Fetch all assessor parcels with features for inference."""
+def _stream_sqft_inference_data(
+    context: ExecutionContext,
+    batch_size: int = 50000,
+) -> Iterator[pd.DataFrame]:
+    """Yield inference data in LIMIT/OFFSET batches."""
     parcels = context.resolve_table("brewgis.assessor.sacog_assessor_parcels")
     bldg_sqft = context.resolve_table("brewgis.assessor.parcel_building_sqft_by_type")
     intersection = context.resolve_table(
@@ -169,8 +173,7 @@ def _fetch_sqft_inference_data(context: ExecutionContext) -> pd.DataFrame:
         f"COALESCE(rf.{c}, 0.0) AS {c}" for c in _RESNET_PC_COLS
     )
 
-    return context.fetchdf(
-        f"""
+    query = f"""
         SELECT DISTINCT ON (ap.apn)
             ap.apn,
             ap.lot_size_acres, ap.landuse, ap.zone,
@@ -194,14 +197,15 @@ def _fetch_sqft_inference_data(context: ExecutionContext) -> pd.DataFrame:
         LEFT JOIN {path} pw ON ap.apn = pw.apn
         LEFT JOIN {features} rf ON ap.apn = rf.apn
         ORDER BY ap.apn
-        """
-    )
+    """
 
-
-def _extract_top_prefixes(train_df, inference_df, col, n=20):
-    train_vals = train_df[col].value_counts().head(n).index.tolist()
-    inference_vals = inference_df[col].unique().tolist()
-    return sorted(set(train_vals) | set(inference_vals))
+    offset = 0
+    while True:
+        batch = context.fetchdf(f"{query} LIMIT {batch_size} OFFSET {offset}")
+        if len(batch) == 0:
+            break
+        yield batch
+        offset += batch_size
 
 
 def _encode_one_hots(df, landuse_prefixes, zone_prefixes, ldev_cats=None):
@@ -288,9 +292,6 @@ def execute(
     logger.info("LightGBM SQFT: %d training parcels", len(df))
     df["built_form_key"] = df["built_form_key"].apply(_clean_bft_key)
 
-    inference_df = _fetch_sqft_inference_data(context)
-    logger.info("LightGBM SQFT: %d inference parcels", len(inference_df))
-
     # Discover target columns at runtime
     sqft_targets = _get_sqft_targets(df)
     logger.info("LightGBM SQFT: %d target columns: %s", len(sqft_targets), sqft_targets)
@@ -309,23 +310,12 @@ def execute(
 
     train_df["landuse_prefix"] = train_df["landuse"].fillna("XX").str[:2]
     train_df["zone_prefix"] = train_df["zone"].fillna("X").str[:1]
-    inference_df = inference_df.copy()
-    inference_df["landuse_prefix"] = inference_df["landuse"].fillna("XX").str[:2]
-    inference_df["zone_prefix"] = inference_df["zone"].fillna("X").str[:1]
 
-    landuse_prefixes = _extract_top_prefixes(train_df, inference_df, "landuse_prefix")
-    zone_prefixes = sorted(
-        set(
-            train_df["zone_prefix"].unique().tolist()
-            + inference_df["zone_prefix"].unique().tolist()
-        )
+    landuse_prefixes = sorted(
+        train_df["landuse_prefix"].value_counts().head(20).index.tolist()
     )
-    ldev_cats = sorted(
-        set(
-            train_df["land_development_category"].unique().tolist()
-            + inference_df["land_development_category"].unique().tolist()
-        )
-    )
+    zone_prefixes = sorted(train_df["zone_prefix"].unique().tolist())
+    ldev_cats = sorted(train_df["land_development_category"].unique().tolist())
 
     x_train = _feature_matrix(train_df, landuse_prefixes, zone_prefixes, ldev_cats)
     y_train = train_df[sqft_targets].to_numpy()
@@ -360,20 +350,25 @@ def execute(
     del x_train
     del y_train
 
-    x_inference = _feature_matrix(
-        inference_df, landuse_prefixes, zone_prefixes, ldev_cats
-    )
-    y_pred = model_obj.predict(x_inference)
-    results = inference_df[["apn"]].copy()
-    del inference_df
-    del x_inference
-    for i, target in enumerate(sqft_targets):
-        results[target] = np.maximum(y_pred[:, i], 0.0).astype(np.float32)
+    def _features(df: pd.DataFrame) -> pd.DataFrame:
+        return _feature_matrix(df, landuse_prefixes, zone_prefixes, ldev_cats)
+
+    results_parts: list[pd.DataFrame] = []
+    for apns, y_batch in predict_in_batches(
+        _stream_sqft_inference_data(context),
+        model_obj,
+        _features,
+    ):
+        partial = apns
+        for i, target in enumerate(sqft_targets):
+            partial[target] = np.maximum(y_batch[:, i], 0.0).astype(np.float32)
+        results_parts.append(partial)
+
+    results = pd.concat(results_parts, ignore_index=True)
     results["bldg_sqft_total"] = results[sqft_targets].sum(axis=1).astype(np.float32)
-    del y_pred
 
     _original = PostgresEngineAdapter.DEFAULT_BATCH_SIZE
-    PostgresEngineAdapter.DEFAULT_BATCH_SIZE = 500000
+    PostgresEngineAdapter.DEFAULT_BATCH_SIZE = 50000
     try:
         yield results
     finally:

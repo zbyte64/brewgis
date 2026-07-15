@@ -28,6 +28,7 @@ from brewgis.sqlmesh.models.python._cache import compute_data_hash
 from brewgis.sqlmesh.models.python._cache import save_model
 from brewgis.sqlmesh.models.python._cache import try_load_cached
 from brewgis.sqlmesh.models.python._feature_cols import _RESNET_PC_COLS
+from brewgis.sqlmesh.models.python._predict import predict_in_batches
 
 if TYPE_CHECKING:
     from sqlmesh.core.context import ExecutionContext
@@ -128,8 +129,11 @@ def _fetch_du_training_data(context: ExecutionContext) -> pd.DataFrame:
     return df
 
 
-def _fetch_inference_data(context: ExecutionContext) -> pd.DataFrame:
-    """Fetch all assessor parcels with features for inference."""
+def _stream_inference_data(
+    context: ExecutionContext,
+    batch_size: int = 50000,
+) -> Iterator[pd.DataFrame]:
+    """Yield inference data in LIMIT/OFFSET batches."""
     parcels = context.resolve_table("brewgis.assessor.sacog_assessor_parcels")
     bldg_sqft = context.resolve_table("brewgis.assessor.parcel_building_sqft_by_type")
     intersection = context.resolve_table(
@@ -145,8 +149,7 @@ def _fetch_inference_data(context: ExecutionContext) -> pd.DataFrame:
         f"COALESCE(rf.{c}, 0.0) AS {c}" for c in _RESNET_PC_COLS
     )
 
-    return context.fetchdf(
-        f"""
+    query = f"""
         SELECT DISTINCT ON (ap.apn)
             ap.apn,
             ap.lot_size_acres, ap.landuse, ap.zone,
@@ -170,17 +173,15 @@ def _fetch_inference_data(context: ExecutionContext) -> pd.DataFrame:
         LEFT JOIN {path} pw ON ap.apn = pw.apn
         LEFT JOIN {features} rf ON ap.apn = rf.apn
         ORDER BY ap.apn
-        """
-    )
+    """
 
-
-def _extract_top_prefixes(
-    train_df: pd.DataFrame, inference_df: pd.DataFrame, col: str, n: int = 20
-) -> list[str]:
-    """Get top N prefix values from training, plus any seen at inference."""
-    train_vals = train_df[col].value_counts().head(n).index.tolist()
-    inference_vals = inference_df[col].unique().tolist()
-    return sorted(set(train_vals) | set(inference_vals))
+    offset = 0
+    while True:
+        batch = context.fetchdf(f"{query} LIMIT {batch_size} OFFSET {offset}")
+        if len(batch) == 0:
+            break
+        yield batch
+        offset += batch_size
 
 
 def _encode_one_hots(
@@ -268,9 +269,6 @@ def execute(
     df = _fetch_du_training_data(context)
     logger.info("LightGBM DU: %d training parcels from reference", len(df))
 
-    inference_df = _fetch_inference_data(context)
-    logger.info("LightGBM DU: %d inference parcels", len(inference_df))
-
     # Include all parcels in training — DU=0 parcels teach the regressor
     # to output zero for non-residential parcels (agricultural, industrial,
     # undeveloped), fixing the previous over-prediction for those categories.
@@ -286,7 +284,8 @@ def execute(
 
     if len(train_df) < 100:
         logger.warning("LightGBM DU: insufficient training data (%d)", len(train_df))
-        results = inference_df[["apn"]].copy()
+        apns_parts = [b[["apn"]].copy() for b in _stream_inference_data(context)]
+        results = pd.concat(apns_parts, ignore_index=True)
         for t in DU_TARGETS:
             results[t] = 0.0
         results["du_total"] = 0.0
@@ -296,22 +295,12 @@ def execute(
     # Prepare features for both datasets
     train_df["landuse_prefix"] = train_df["landuse"].fillna("XX").str[:2]
     train_df["zone_prefix"] = train_df["zone"].fillna("X").str[:1]
-    inference_df["landuse_prefix"] = inference_df["landuse"].fillna("XX").str[:2]
-    inference_df["zone_prefix"] = inference_df["zone"].fillna("X").str[:1]
 
-    landuse_prefixes = _extract_top_prefixes(train_df, inference_df, "landuse_prefix")
-    zone_prefixes = sorted(
-        set(
-            train_df["zone_prefix"].unique().tolist()
-            + inference_df["zone_prefix"].unique().tolist()
-        )
+    landuse_prefixes = sorted(
+        train_df["landuse_prefix"].value_counts().head(20).index.tolist()
     )
-    ldev_cats = sorted(
-        set(
-            train_df["land_development_category"].unique().tolist()
-            + inference_df["land_development_category"].unique().tolist()
-        )
-    )
+    zone_prefixes = sorted(train_df["zone_prefix"].unique().tolist())
+    ldev_cats = sorted(train_df["land_development_category"].unique().tolist())
 
     x_train = _feature_matrix(train_df, landuse_prefixes, zone_prefixes, ldev_cats)
     y_train = train_df[DU_TARGETS].to_numpy()
@@ -346,20 +335,25 @@ def execute(
     del x_train
     del y_train
 
-    x_inference = _feature_matrix(
-        inference_df, landuse_prefixes, zone_prefixes, ldev_cats
-    )
-    y_pred = model_obj.predict(x_inference)
-    results = inference_df[["apn"]].copy()
-    del inference_df
-    del x_inference
-    for i, target in enumerate(DU_TARGETS):
-        results[target] = np.maximum(y_pred[:, i], 0.0).astype(np.float32)
+    def _features(df: pd.DataFrame) -> pd.DataFrame:
+        return _feature_matrix(df, landuse_prefixes, zone_prefixes, ldev_cats)
+
+    results_parts: list[pd.DataFrame] = []
+    for apns, y_batch in predict_in_batches(
+        _stream_inference_data(context),
+        model_obj,
+        _features,
+    ):
+        partial = apns
+        for i, target in enumerate(DU_TARGETS):
+            partial[target] = np.maximum(y_batch[:, i], 0.0).astype(np.float32)
+        results_parts.append(partial)
+
+    results = pd.concat(results_parts, ignore_index=True)
     results["du_total"] = results[DU_TARGETS].sum(axis=1).astype(np.float32)
-    del y_pred
 
     _original = PostgresEngineAdapter.DEFAULT_BATCH_SIZE
-    PostgresEngineAdapter.DEFAULT_BATCH_SIZE = 500000
+    PostgresEngineAdapter.DEFAULT_BATCH_SIZE = 50000
     try:
         yield results
     finally:
