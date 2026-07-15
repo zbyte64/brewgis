@@ -395,6 +395,38 @@ def _generate_report_markdown(
             lines.append(
                 f"| Avg road impervious fraction | {rs['avg_road_impervious_fraction']:.4f} |"
             )
+
+        # ResNet Feature Coverage
+        rn = diagnostics.get("resnet", {})
+        if rn.get("total_rows", 0) > 0:
+            lines.append("")
+            lines.append("### ResNet Feature Coverage")
+            lines.append("")
+            lines.append("| Metric | Value |")
+            lines.append("|--------|-------|")
+            total_rows = rn["total_rows"]
+            unique_apns = rn["unique_apns"]
+            cmp_with = rn["comparison_parcels_with_features"]
+            cmp_total = rn["comparison_parcels_total"]
+            pct = cmp_with / cmp_total * 100 if cmp_total > 0 else 0
+            lines.append(f"| ResNet feature rows | {total_rows:,} |")
+            lines.append(f"| Unique APNs with features | {unique_apns:,} |")
+            lines.append(
+                f"| Comparison parcels with ResNet features | {cmp_with:,} ({pct:.2f}%) |"
+            )
+            lines.append(f"| Comparison parcels total | {cmp_total:,} |")
+            lon_min = rn["min_lon"]
+            lon_max = rn["max_lon"]
+            lat_min = rn["min_lat"]
+            lat_max = rn["max_lat"]
+            if lon_min or lon_max or lat_min or lat_max:
+                lines.append(
+                    f"| Spatial extent (lon) | [{lon_min:.4f}, {lon_max:.4f}] |"
+                )
+                lines.append(
+                    f"| Spatial extent (lat) | [{lat_min:.4f}, {lat_max:.4f}] |"
+                )
+
         lines.append("")
     lines.append("")
 

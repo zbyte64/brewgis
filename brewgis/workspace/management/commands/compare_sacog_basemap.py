@@ -758,8 +758,6 @@ class Command(BaseCommand):
                     "+brewgis.assessor.parcel_footprint_imputed",
                     "+brewgis.assessor.authoritative_residential_area",
                     "+brewgis.assessor.parcel_dasymetric_weights",
-                    "+brewgis.assessor.parcel_du_regressor",
-                    "+brewgis.assessor.parcel_sqft_regressor",
                     "+brewgis.comparison.training_parcel_map",
                     "+brewgis.comparison.sacog_comparison_dasymetric",
                 ]
@@ -809,6 +807,10 @@ class Command(BaseCommand):
                     "+brewgis.comparison.sacog_reference_totals",
                     "+brewgis.comparison.sacog_parcel_shim",
                     "+brewgis.staging.census_2020_block",
+                    "+brewgis.assessor.parcel_resnet_features",
+                    "+brewgis.assessor.parcel_du_regressor",
+                    "+brewgis.assessor.parcel_sqft_regressor",
+                    "+brewgis.assessor.parcel_emp_ratio_regressor",
                 ],
                 variables=plan_vars,
             )
@@ -888,6 +890,10 @@ class Command(BaseCommand):
             if use_assessor_geometry
             else None
         )
+        resnet_features_table = context.table_name(
+            "brewgis.assessor.parcel_resnet_features",
+            environment,
+        )
         _generate_report_markdown(
             ref_totals,
             brew_totals,
@@ -910,6 +916,7 @@ class Command(BaseCommand):
                 assessor_parcels_table=assessor_parcels_table,
                 building_footprints_table=building_footprints_table,
                 reconciled_table=reconciled_table,
+                resnet_features_table=resnet_features_table,
                 overture_roads=overture_roads,
             ),
             output_path=report_path,
@@ -1014,13 +1021,14 @@ def _collect_diagnostics(
     assessor_parcels_table: str | None = None,
     building_footprints_table: str | None = None,
     reconciled_table: str | None = None,
+    resnet_features_table: str | None = None,
     overture_roads: bool = False,
 ) -> dict:
     """Collect calibration diagnostics from materialized SQLMesh tables.
 
     Queries the database for assessor coverage, DU sub-type breakdown,
-    authoritative building intersection diagnostics, and employment pipeline
-    statistics.
+    authoritative building intersection diagnostics, employment pipeline
+    statistics, and ResNet feature coverage.
 
     Args:
         engine: SQLAlchemy database engine.
@@ -1029,10 +1037,12 @@ def _collect_diagnostics(
             to skip building intersection diagnostics.
         reconciled_table: Materialized base_canvas_reconciled table name,
             or None to skip land-development-category diagnostics.
+        resnet_features_table: ResNet feature snapshot table name, or None
+            to skip ResNet coverage diagnostics.
 
     Returns:
-        Dict with keys ``dasymetric``, ``assessor``, ``employment`` containing
-        diagnostic metrics.
+        Dict with keys ``dasymetric``, ``assessor``, ``employment``,
+        ``resnet`` containing diagnostic metrics.
     """
     from brewgis.workspace.services._db import text
 
@@ -1118,6 +1128,84 @@ def _collect_diagnostics(
             diagnostics["employment"]["wac_blocks_with_geom"] = row or 0
         except Exception:
             pass
+
+    # ResNet feature coverage
+    diagnostics["resnet"] = {
+        "total_rows": 0,
+        "unique_apns": 0,
+        "comparison_parcels_with_features": 0,
+        "comparison_parcels_total": 0,
+        "min_lon": 0.0,
+        "min_lat": 0.0,
+        "max_lon": 0.0,
+        "max_lat": 0.0,
+    }
+    if resnet_features_table and dasymetric_table:
+        with engine.connect() as conn:
+            try:
+                row = conn.execute(
+                    text(f"SELECT COUNT(*) FROM {resnet_features_table}")
+                ).scalar()
+                diagnostics["resnet"]["total_rows"] = row or 0
+            except Exception:
+                pass
+            try:
+                row = conn.execute(
+                    text(
+                        f"SELECT COUNT(DISTINCT apn) FROM {resnet_features_table} "
+                        "WHERE apn IS NOT NULL"
+                    )
+                ).scalar()
+                diagnostics["resnet"]["unique_apns"] = row or 0
+            except Exception:
+                pass
+            try:
+                row = conn.execute(
+                    text(
+                        f"SELECT COUNT(*) FROM ("
+                        f"  SELECT d.apn FROM {dasymetric_table} d "
+                        f"  WHERE EXISTS ("
+                        f"    SELECT 1 FROM {resnet_features_table} rf "
+                        f"    WHERE rf.apn = d.apn"
+                        f"  )"
+                        f") sub"
+                    )
+                ).scalar()
+                diagnostics["resnet"]["comparison_parcels_with_features"] = row or 0
+            except Exception:
+                pass
+            try:
+                row = conn.execute(
+                    text(f"SELECT COUNT(*) FROM {dasymetric_table}")
+                ).scalar()
+                diagnostics["resnet"]["comparison_parcels_total"] = row or 0
+            except Exception:
+                pass
+            # Spatial extent of ResNet parcels
+            try:
+                row = conn.execute(
+                    text(
+                        f"SELECT "
+                        f"  ROUND(MIN(ST_XMin(d.geometry))::numeric, 4), "
+                        f"  ROUND(MIN(ST_YMin(d.geometry))::numeric, 4), "
+                        f"  ROUND(MAX(ST_XMax(d.geometry))::numeric, 4), "
+                        f"  ROUND(MAX(ST_YMax(d.geometry))::numeric, 4) "
+                        f"FROM {dasymetric_table} d "
+                        f"WHERE EXISTS ("
+                        f"  SELECT 1 FROM {resnet_features_table} rf "
+                        f"  WHERE rf.apn = d.apn"
+                        f")"
+                    )
+                ).fetchone()
+                if row:
+                    (
+                        diagnostics["resnet"]["min_lon"],
+                        diagnostics["resnet"]["min_lat"],
+                        diagnostics["resnet"]["max_lon"],
+                        diagnostics["resnet"]["max_lat"],
+                    ) = (float(v) if v is not None else 0.0 for v in row)
+            except Exception:
+                pass
 
     # Authoritative Building Intersection Diagnostics
     diagnostics["authoritative"] = {

@@ -247,6 +247,7 @@ class Command(BaseCommand):
         run_sqlmesh_plan(
             environment="prod",
             select=tune_selectors,
+            restate_models=["brewgis.assessor.parcel_resnet_features"],
         )
         logger.info("Upstream models materialized.")
 

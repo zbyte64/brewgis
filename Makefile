@@ -17,10 +17,6 @@ COMPOSE_RUN = docker compose -f $(COMPOSE_FILE) run --rm django
 up:  ## Build and start full local stack (Django + PostGIS + Redis + tipg + Martin + Celery + Flower)
 	docker compose -f $(COMPOSE_FILE) up --build
 
-.PHONY: up-infra
-up-infra:  ## Start only infrastructure services (PostGIS, Redis, tipg, Martin)
-	docker compose -f docker-compose.infra.yml up -d
-
 .PHONY: down
 down:  ## Stop and remove all containers
 	docker compose -f $(COMPOSE_FILE) down
@@ -219,21 +215,6 @@ setup:  ## Install git hooks and local dependencies
 	@echo ""
 	@echo "==> Done. Make sure to 'pip install -r requirements/local.txt' if developing on host."
 
-.PHONY: dev-host
-dev-host:  ## Set up host development mode (infra containers + env file)
-	@echo "==> Checking prerequisites..."
-	@python3 -c "import sys; sys.exit(0 if sys.version_info >= (3, 12) else 1)" || (echo "ERROR: Python 3.12+ required" && exit 1)
-	@docker compose version >/dev/null 2>&1 || (echo "ERROR: Docker Compose required" && exit 1)
-	@echo "==> Copying .env.example to .env (if missing)..."
-	@test -f .env || cp .env.example .env
-	@echo "==> Starting infrastructure containers..."
-	docker compose -f docker-compose.infra.yml up -d
-	@echo ""
-	@echo "==> Infrastructure running. Run the Django dev server:"
-	@echo "    python manage.py runserver"
-	@echo ""
-	@echo "==> Run Celery worker (separate terminal):"
-	@echo "    celery -A config.celery_app worker -l info"
 
 # ─────────────────────────────────────────────
 # Help (auto-documented)

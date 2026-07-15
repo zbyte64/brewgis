@@ -10,6 +10,7 @@ from __future__ import annotations
 
 import logging
 from pathlib import Path
+from typing import Iterable
 
 from sqlmesh.core.context import Context
 
@@ -58,7 +59,7 @@ def run_sqlmesh_plan(  # noqa: PLR0913
     auto_apply: bool = True,
     create_from: str | None = None,
     variables: dict[str, object] = {},
-    restate_models: bool = False,
+    restate_models: Iterable[str] | bool = False,
 ):
     """Run ``sqlmesh plan`` for the given environment via the Python API.
 

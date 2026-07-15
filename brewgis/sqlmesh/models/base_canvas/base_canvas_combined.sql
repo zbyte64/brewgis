@@ -765,7 +765,9 @@ area_by_use AS (
         lnd_v AS lnd_category,
         bf_v AS bf_key,
         CASE
-            WHEN COALESCE(du_total_regressor, 0) > 0 THEN COALESCE(area_parcel_acres, area_gross_acres, area_gross, 0)
+            WHEN COALESCE(du_total_regressor, 0) > 0
+                 AND lnd_v IN ('urban', 'mixed_use')
+                THEN COALESCE(area_parcel_acres, area_gross_acres, area_gross, 0)
             WHEN lnd_v IN ('industrial', 'agricultural', 'undeveloped') THEN 0
             WHEN lnd_v IN ('urban', 'mixed_use')
                  AND COALESCE(residential_building_sqft, 0) + COALESCE(commercial_building_sqft, 0)
@@ -783,7 +785,9 @@ area_by_use AS (
         CASE WHEN lnd_v = 'agricultural'
             THEN COALESCE(area_parcel_acres, area_gross_acres, area_gross, 0) ELSE area_parcel_emp_ag END AS area_parcel_emp_ag_v,
         CASE
-            WHEN COALESCE(du_total_regressor, 0) > 0 THEN 0
+            WHEN COALESCE(du_total_regressor, 0) > 0
+                 AND lnd_v IN ('urban', 'mixed_use')
+                THEN 0
             WHEN COALESCE(residential_building_sqft, 0) + COALESCE(commercial_building_sqft, 0)
                  + COALESCE(industrial_building_sqft, 0) + COALESCE(other_building_sqft, 0) > 0
                  AND (COALESCE(residential_building_sqft, 0) + COALESCE(commercial_building_sqft, 0)
@@ -801,7 +805,9 @@ area_by_use AS (
         CASE WHEN lnd_v = 'mixed_use'
             THEN COALESCE(area_parcel_acres, area_gross_acres, area_gross, 0) ELSE area_parcel_mixed_use END AS area_parcel_mixed_use_v,
         CASE
-            WHEN COALESCE(du_total_regressor, 0) > 0 THEN 0
+            WHEN COALESCE(du_total_regressor, 0) > 0
+                 AND lnd_v IN ('urban', 'mixed_use')
+                THEN 0
             WHEN COALESCE(residential_building_sqft, 0) + COALESCE(commercial_building_sqft, 0)
                  + COALESCE(industrial_building_sqft, 0) + COALESCE(other_building_sqft, 0) > 0
                  AND (COALESCE(residential_building_sqft, 0) + COALESCE(commercial_building_sqft, 0)
