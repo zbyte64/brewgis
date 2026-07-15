@@ -817,7 +817,7 @@ class Command(BaseCommand):
             self.stdout.write("\nCheckpoint complete\n")
 
         # --- Index audit & environment invalidation ---
-        if force_data_reload:
+        if force_data_reload and environment != "prod":
             reload_context = get_context(**plan_vars)
             reload_context.invalidate_environment(environment)
             logger.info("Invalidated sacog_comparison environment for full rebuild")
@@ -894,6 +894,14 @@ class Command(BaseCommand):
             "brewgis.assessor.parcel_resnet_features",
             environment,
         )
+        overture_transport_table = context.table_name(
+            "brewgis.staging.overture_transport",
+            environment,
+        )
+        overture_road_impervious_table = context.table_name(
+            "brewgis.nlcd.overture_road_impervious",
+            environment,
+        )
         _generate_report_markdown(
             ref_totals,
             brew_totals,
@@ -917,6 +925,12 @@ class Command(BaseCommand):
                 building_footprints_table=building_footprints_table,
                 reconciled_table=reconciled_table,
                 resnet_features_table=resnet_features_table,
+                overture_transport_table=overture_transport_table
+                if overture_roads
+                else None,
+                overture_road_impervious_table=overture_road_impervious_table
+                if overture_roads
+                else None,
                 overture_roads=overture_roads,
             ),
             output_path=report_path,
@@ -1022,6 +1036,8 @@ def _collect_diagnostics(
     building_footprints_table: str | None = None,
     reconciled_table: str | None = None,
     resnet_features_table: str | None = None,
+    overture_transport_table: str | None = None,
+    overture_road_impervious_table: str | None = None,
     overture_roads: bool = False,
 ) -> dict:
     """Collect calibration diagnostics from materialized SQLMesh tables.
@@ -1439,74 +1455,79 @@ def _collect_diagnostics(
         "surface_class_breakdown": {},
     }
     if overture_roads:
+        transport = overture_transport_table
+        road_impervious = overture_road_impervious_table
+
+        if not transport or not road_impervious:
+            diagnostics["road_surface"]["error"] = (
+                "Table not resolved: overture_transport_table="
+                f"{transport}, overture_road_impervious_table={road_impervious}"
+            )
+
         with engine.connect() as conn:
             try:
                 row = conn.execute(
-                    text(
-                        "SELECT COUNT(*) AS cnt FROM brewgis.staging.overture_transport"
-                    )
+                    text(f"SELECT COUNT(*) AS cnt FROM {transport}")
                 ).scalar()
                 diagnostics["road_surface"]["segment_count"] = row or 0
-            except Exception:
-                pass
+            except Exception as exc:
+                diagnostics["road_surface"]["error_segment_count"] = str(exc)
             try:
                 row = conn.execute(
                     text(
-                        "SELECT COUNT(*) AS cnt FROM brewgis.staging.overture_transport "
+                        f"SELECT COUNT(*) AS cnt FROM {transport} "
                         "WHERE surface IN ('paved', 'asphalt', 'concrete') OR surface IS NULL"
                     )
                 ).scalar()
                 diagnostics["road_surface"]["paved_segments"] = row or 0
-            except Exception:
-                pass
+            except Exception as exc:
+                diagnostics["road_surface"]["error_paved_segments"] = str(exc)
             try:
                 row = conn.execute(
                     text(
-                        "SELECT COUNT(*) AS cnt FROM brewgis.staging.overture_transport "
+                        f"SELECT COUNT(*) AS cnt FROM {transport} "
                         "WHERE surface IN ('unpaved', 'gravel', 'dirt', 'earth', 'ground')"
                     )
                 ).scalar()
                 diagnostics["road_surface"]["unpaved_segments"] = row or 0
-            except Exception:
-                pass
+            except Exception as exc:
+                diagnostics["road_surface"]["error_unpaved_segments"] = str(exc)
             try:
                 rows = conn.execute(
                     text(
-                        "SELECT COALESCE(surface, 'NULL') AS surface_class, COUNT(*) AS cnt "
-                        "FROM brewgis.staging.overture_transport "
+                        f"SELECT COALESCE(surface, 'NULL') AS surface_class, COUNT(*) AS cnt "
+                        f"FROM {transport} "
                         "GROUP BY surface ORDER BY cnt DESC"
                     )
                 ).fetchall()
                 diagnostics["road_surface"]["surface_class_breakdown"] = {
                     row[0]: row[1] for row in rows
                 }
-            except Exception:
-                pass
+            except Exception as exc:
+                diagnostics["road_surface"]["error_surface_class_breakdown"] = str(exc)
             try:
                 row = conn.execute(
                     text(
-                        "SELECT COUNT(DISTINCT parcel_id) AS cnt "
-                        "FROM brewgis.nlcd.overture_road_impervious "
+                        f"SELECT COUNT(DISTINCT parcel_id) AS cnt "
+                        f"FROM {road_impervious} "
                         "WHERE road_total_area > 0"
                     )
                 ).scalar()
                 diagnostics["road_surface"]["parcels_with_roads"] = row or 0
-            except Exception:
-                pass
+            except Exception as exc:
+                diagnostics["road_surface"]["error_parcels_with_roads"] = str(exc)
             try:
                 row = conn.execute(
-                    text(
-                        "SELECT COUNT(*) AS cnt FROM brewgis.nlcd.overture_road_impervious"
-                    )
+                    text(f"SELECT COUNT(*) AS cnt FROM {road_impervious}")
                 ).scalar()
                 diagnostics["road_surface"]["total_parcels"] = row or 0
-            except Exception:
-                pass
+            except Exception as exc:
+                diagnostics["road_surface"]["error_total_parcels"] = str(exc)
             try:
                 row = conn.execute(
                     text(
-                        "SELECT SUM(road_paved_area) AS paved, SUM(road_unpaved_area) AS unpaved "
-                        "FROM brewgis.nlcd.overture_road_impervious"
+                        f"SELECT SUM(road_paved_area) AS paved, SUM(road_unpaved_area) AS unpaved "
+                        f"FROM {road_impervious}"
                     )
                 ).fetchone()
                 if row:
@@ -1516,20 +1537,20 @@ def _collect_diagnostics(
                     diagnostics["road_surface"]["total_road_unpaved_area"] = float(
                         row[1] or 0.0
                     )
-            except Exception:
-                pass
+            except Exception as exc:
+                diagnostics["road_surface"]["error_road_area"] = str(exc)
             try:
                 row = conn.execute(
                     text(
-                        "SELECT AVG(road_impervious_fraction) AS avg_frac "
-                        "FROM brewgis.nlcd.overture_road_impervious "
+                        f"SELECT AVG(road_impervious_fraction) AS avg_frac "
+                        f"FROM {road_impervious} "
                         "WHERE road_total_area > 0"
                     )
                 ).scalar()
                 diagnostics["road_surface"]["avg_road_impervious_fraction"] = float(
                     row or 0.0
                 )
-            except Exception:
-                pass
+            except Exception as exc:
+                diagnostics["road_surface"]["error_avg_impervious"] = str(exc)
 
     return diagnostics

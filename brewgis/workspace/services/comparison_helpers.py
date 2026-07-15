@@ -355,31 +355,25 @@ def _generate_report_markdown(
             lines.append(f"| Total WAC blocks | {emp.get('total_wac_blocks', 0):,} |")
 
         rs = diagnostics.get("road_surface", {})
-        if rs and rs.get("segment_count", 0) > 0:
+        # Road Surface Diagnostics (Overture Transportation)
+        if config and config.get("overture-roads"):
             lines.append("")
             lines.append("### Road Surface Diagnostics (Overture Transportation)")
             lines.append("")
             lines.append("| Metric | Value |")
             lines.append("|--------|-------|")
-            paved_pct = (
-                rs["paved_segments"] / rs["segment_count"] * 100
-                if rs["segment_count"] > 0
-                else 0
-            )
-            unpaved_pct = (
-                rs["unpaved_segments"] / rs["segment_count"] * 100
-                if rs["segment_count"] > 0
-                else 0
-            )
-            lines.append(f"| Road segments | {rs['segment_count']:,} |")
-            lines.append(
-                f"| Paved segments | {rs['paved_segments']:,} ({paved_pct:.1f}%) |"
-            )
-            lines.append(
-                f"| Unpaved segments | {rs['unpaved_segments']:,} ({unpaved_pct:.1f}%) |"
-            )
-            parcels_with = rs["parcels_with_roads"]
-            total_parcels_rs = rs["total_parcels"]
+            if rs.get("error"):
+                lines.append(f"| Error | {rs['error']} |")
+            seg = rs.get("segment_count", 0)
+            paved = rs.get("paved_segments", 0)
+            unpaved = rs.get("unpaved_segments", 0)
+            paved_pct = paved / seg * 100 if seg > 0 else 0
+            unpaved_pct = unpaved / seg * 100 if seg > 0 else 0
+            lines.append(f"| Road segments | {seg:,} |")
+            lines.append(f"| Paved segments | {paved:,} ({paved_pct:.1f}%) |")
+            lines.append(f"| Unpaved segments | {unpaved:,} ({unpaved_pct:.1f}%) |")
+            parcels_with = rs.get("parcels_with_roads", 0)
+            total_parcels_rs = rs.get("total_parcels", 0)
             parcel_pct = (
                 parcels_with / total_parcels_rs * 100 if total_parcels_rs > 0 else 0
             )
@@ -387,45 +381,50 @@ def _generate_report_markdown(
                 f"| Parcels intersecting roads | {parcels_with:,} ({parcel_pct:.1f}%) |"
             )
             lines.append(
-                f"| Total paved road area | {rs['total_road_paved_area']:,.1f} acres |"
+                f"| Total paved road area | {rs.get('total_road_paved_area', 0):,.1f} acres |"
             )
             lines.append(
-                f"| Total unpaved road area | {rs['total_road_unpaved_area']:,.1f} acres |"
+                f"| Total unpaved road area | {rs.get('total_road_unpaved_area', 0):,.1f} acres |"
             )
             lines.append(
-                f"| Avg road impervious fraction | {rs['avg_road_impervious_fraction']:.4f} |"
+                f"| Avg road impervious fraction | "
+                f"{rs.get('avg_road_impervious_fraction', 0):.4f} |"
             )
+            # Surface class breakdown (compact)
+            scb = rs.get("surface_class_breakdown", {})
+            if scb:
+                class_str = ", ".join(f"{k}: {v:,}" for k, v in scb.items())
+                lines.append(f"| Surface class breakdown | {class_str} |")
+            # Error details
+            error_keys = [k for k in rs if k.startswith("error_") and rs[k]]
+            for ek in sorted(error_keys):
+                lines.append(f"| {ek} | {rs[ek]} |")
 
         # ResNet Feature Coverage
         rn = diagnostics.get("resnet", {})
-        if rn.get("total_rows", 0) > 0:
-            lines.append("")
-            lines.append("### ResNet Feature Coverage")
-            lines.append("")
-            lines.append("| Metric | Value |")
-            lines.append("|--------|-------|")
-            total_rows = rn["total_rows"]
-            unique_apns = rn["unique_apns"]
-            cmp_with = rn["comparison_parcels_with_features"]
-            cmp_total = rn["comparison_parcels_total"]
-            pct = cmp_with / cmp_total * 100 if cmp_total > 0 else 0
-            lines.append(f"| ResNet feature rows | {total_rows:,} |")
-            lines.append(f"| Unique APNs with features | {unique_apns:,} |")
-            lines.append(
-                f"| Comparison parcels with ResNet features | {cmp_with:,} ({pct:.2f}%) |"
-            )
-            lines.append(f"| Comparison parcels total | {cmp_total:,} |")
-            lon_min = rn["min_lon"]
-            lon_max = rn["max_lon"]
-            lat_min = rn["min_lat"]
-            lat_max = rn["max_lat"]
-            if lon_min or lon_max or lat_min or lat_max:
-                lines.append(
-                    f"| Spatial extent (lon) | [{lon_min:.4f}, {lon_max:.4f}] |"
-                )
-                lines.append(
-                    f"| Spatial extent (lat) | [{lat_min:.4f}, {lat_max:.4f}] |"
-                )
+        lines.append("")
+        lines.append("### ResNet Feature Coverage")
+        lines.append("")
+        lines.append("| Metric | Value |")
+        lines.append("|--------|-------|")
+        total_rows = rn.get("total_rows", 0)
+        unique_apns = rn.get("unique_apns", 0)
+        cmp_with = rn.get("comparison_parcels_with_features", 0)
+        cmp_total = rn.get("comparison_parcels_total", 0)
+        pct = cmp_with / cmp_total * 100 if cmp_total > 0 else 0
+        lines.append(f"| ResNet feature rows | {total_rows:,} |")
+        lines.append(f"| Unique APNs with features | {unique_apns:,} |")
+        lines.append(
+            f"| Comparison parcels with ResNet features | {cmp_with:,} ({pct:.2f}%) |"
+        )
+        lines.append(f"| Comparison parcels total | {cmp_total:,} |")
+        lon_min = rn.get("min_lon", 0.0)
+        lon_max = rn.get("max_lon", 0.0)
+        lat_min = rn.get("min_lat", 0.0)
+        lat_max = rn.get("max_lat", 0.0)
+        if lon_min or lon_max or lat_min or lat_max:
+            lines.append(f"| Spatial extent (lon) | [{lon_min:.4f}, {lon_max:.4f}] |")
+            lines.append(f"| Spatial extent (lat) | [{lat_min:.4f}, {lat_max:.4f}] |")
 
         lines.append("")
     lines.append("")
