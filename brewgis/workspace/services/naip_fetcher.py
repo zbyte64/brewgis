@@ -19,7 +19,7 @@ logger = logging.getLogger(__name__)
 _NAIP_CACHE_DIR = Path.home() / ".cache" / "brewgis" / "naip"
 _STAC_API_URL = "https://planetarycomputer.microsoft.com/api/stac/v1"
 _NAIP_YEAR = 2024
-_STAC_SEARCH_LIMIT = 50
+_STAC_SEARCH_LIMIT = 500
 
 
 def _find_naip_tiles(bbox: tuple[float, float, float, float]) -> list[dict]:
@@ -44,11 +44,48 @@ def _find_naip_tiles(bbox: tuple[float, float, float, float]) -> list[dict]:
     data = response.json()
     features = data.get("features", [])
 
-    # Filter to target year if possible
-    year_features = [
-        f for f in features if f.get("properties", {}).get("naip:year") == _NAIP_YEAR
-    ]
-    return year_features or features
+    # Parse naip:year (returned as string by API, e.g. '2022') and filter
+    # to the target year. If no tiles match the target year, deduplicate by
+    # USGS quad (extracted from tile ID) keeping only the most recent year
+    # per quad, so we process one tile per area instead of multiple years
+    # of the same coverage.
+    def _tile_year(f: dict) -> int:
+        y = f.get("properties", {}).get("naip:year")
+        if y is not None:
+            return int(y)
+        # Fallback: extract year from datetime or tile ID
+        dt = f.get("properties", {}).get("datetime", "")
+        if dt:
+            return int(dt[:4])
+        parts = f.get("id", "").split("_")
+        for p in reversed(parts):
+            if p.isdigit() and len(p) >= _year_len:
+                return int(p[:_year_len])
+        return 0
+
+    _year_len = 4
+    _quad_index = 2
+    _min_len = 3
+
+    target = int(_NAIP_YEAR)
+    year_features = [f for f in features if _tile_year(f) == target]
+    if year_features:
+        return year_features
+
+    # No tiles match the target year. Deduplicate by quad, keeping the
+    # most recent year for each. The quad is the 3rd underscore-delimited
+    # component of the tile ID (e.g. '3812147' in
+    # ca_m_3812147_sw_10_060_20220621).
+    seen_quads: dict[str, dict] = {}
+    for f in features:
+        parts = f.get("id", "").split("_")
+        if len(parts) < _quad_index + 1:
+            continue
+        quad = parts[_quad_index]
+        existing = seen_quads.get(quad)
+        if existing is None or _tile_year(f) > _tile_year(existing):
+            seen_quads[quad] = f
+    return list(seen_quads.values())
 
 
 def _get_cog_url(tile: dict) -> str | None:
