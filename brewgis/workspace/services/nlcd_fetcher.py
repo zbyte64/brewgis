@@ -20,7 +20,9 @@ logger = logging.getLogger(__name__)
 # NLCD download base URL
 _NLCD_BASE_URL = "https://s3-us-west-2.amazonaws.com/mrlcdata"
 _NLCD_YEAR = 2021
-_NLCD_CACHE_DIR = Path.home() / ".cache" / "brewgis" / "nlcd"
+_CACHE_ROOT = Path(__file__).resolve().parent.parent.parent.parent / "planning"
+_NLCD_CACHE_DIR = _CACHE_ROOT / "nlcd"
+
 _MRLC_WCS_URL = "https://www.mrlc.gov/geoserver/wcs"
 
 
@@ -59,12 +61,12 @@ def _download_nlcd_subset(  # noqa: PLR0913
         Path to cached GeoTIFF, or None on failure.
         The GeoTIFF is clipped to the specified bounding box.
     """
-    _NLCD_NATIVE_CRS = "EPSG:5070"
+    nlcd_native_crs = "EPSG:5070"
 
     # Reproject to the coverage native CRS if needed
-    if source_crs is not None and source_crs.upper() != _NLCD_NATIVE_CRS:
+    if source_crs is not None and source_crs.upper() != nlcd_native_crs:
         transformer = pyproj.Transformer.from_crs(
-            source_crs, _NLCD_NATIVE_CRS, always_xy=True
+            source_crs, nlcd_native_crs, always_xy=True
         )
         # Transform all four corners; Albers conic projection can invert
         # the Y-axis ordering vs latitude, so take the axis-aligned envelope.

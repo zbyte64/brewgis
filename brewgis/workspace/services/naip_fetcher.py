@@ -7,6 +7,7 @@ via rasterio VSICurl for efficient partial-window access.
 
 from __future__ import annotations
 
+import hashlib
 import logging
 from pathlib import Path
 from typing import TYPE_CHECKING
@@ -16,7 +17,9 @@ if TYPE_CHECKING:
 
 logger = logging.getLogger(__name__)
 
-_NAIP_CACHE_DIR = Path.home() / ".cache" / "brewgis" / "naip"
+_CACHE_ROOT = Path(__file__).resolve().parent.parent.parent.parent / "planning"
+_NAIP_CACHE_DIR = _CACHE_ROOT / "naip"
+_COG_CACHE_DIR = _CACHE_ROOT / "cog"
 _STAC_API_URL = "https://planetarycomputer.microsoft.com/api/stac/v1"
 _NAIP_YEAR = 2024
 _STAC_SEARCH_LIMIT = 500
@@ -188,3 +191,62 @@ def download_naip_for_parcels(
     bbox = (west, south, east, north)
 
     return download_naip_raster(bbox, year=year)
+
+
+def download_cog_to_cache(cog_url: str) -> Path:
+    """Download a single COG tile to a local cache path under the project root.
+
+    Uses a SHA-256 hash of the URL as the cache key, so the same URL always
+    resolves to the same local file. Cache hits return the existing path
+    without a network request.
+
+    Args:
+        cog_url: URL of the COG tile to download.
+
+    Returns:
+        Local path to the cached COG file.
+
+    Raises:
+        requests.HTTPError: If the download fails.
+        OSError: If disk is full or rename fails.
+    """
+    cache_path = (
+        _COG_CACHE_DIR / f"{hashlib.sha256(cog_url.encode()).hexdigest()[:24]}.tif"
+    )
+    if cache_path.exists():
+        return cache_path
+
+    _COG_CACHE_DIR.mkdir(parents=True, exist_ok=True)
+    tmp_path = cache_path.with_suffix(".tif.tmp")
+    import requests
+
+    with requests.get(cog_url, stream=True, timeout=300) as r:
+        r.raise_for_status()
+        with tmp_path.open("wb") as f:
+            f.writelines(r.iter_content(chunk_size=131_072))
+
+    tmp_path.replace(cache_path)
+    logger.info("Cached COG: %s -> %s", cog_url.rsplit("/", 1)[-1], cache_path)
+    return cache_path
+
+
+def download_cog_tiles(cog_urls: list[str]) -> list[Path]:
+    """Download multiple COG tiles to local cache.
+
+    Wraps :func:`download_cog_to_cache` for batch use. For each URL,
+    returns the local path (from cache or fresh download).
+
+    Args:
+        cog_urls: List of COG URLs to cache locally.
+
+    Returns:
+        List of local paths in the same order as the input URLs.
+    """
+    paths: list[Path] = []
+    for i, url in enumerate(cog_urls):
+        path = download_cog_to_cache(url)
+        paths.append(path)
+        logger.info(
+            "Caching COG tile %d/%d: %s", i + 1, len(cog_urls), url.rsplit("/", 1)[-1]
+        )
+    return paths

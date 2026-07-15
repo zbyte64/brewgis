@@ -10,6 +10,7 @@ from __future__ import annotations
 
 import hashlib
 import logging
+import os
 import pickle
 from collections.abc import Iterator  # noqa: TC003
 from pathlib import Path
@@ -28,6 +29,7 @@ from torchvision.models import resnet34
 
 from brewgis.sqlmesh.models.python._feature_cols import _RESNET_PC_COLS
 from brewgis.workspace.services.chip_extractor import extract_chips
+from brewgis.workspace.services.naip_fetcher import download_cog_tiles
 from brewgis.workspace.services.naip_fetcher import download_naip_for_parcels
 
 if TYPE_CHECKING:
@@ -35,13 +37,34 @@ if TYPE_CHECKING:
     from sqlmesh.utils.date import TimeLike
 
 _BATCH_SIZE = 2048
-_PCA_CACHE_DIR = Path.home() / ".cache" / "brewgis" / "pca"
 _MIN_PCA_SAMPLES = 33  # n_components + 1
+
+# Cache dirs are lazily initialized to keep module-level state serializable
+# (SQLMesh pickles the python_env and cannot serialize concrete Path objects).
+_CACHE_ROOT: Path | None = None
+_PCA_CACHE_DIR: Path | None = None
+
+
+def _get_cache_root() -> Path:
+    """Get the project-level planning cache root (lazy init)."""
+    global _CACHE_ROOT  # noqa: PLW0603
+    if _CACHE_ROOT is None:
+        _CACHE_ROOT = Path(os.getcwd()) / "planning"  # noqa: PTH109
+    return _CACHE_ROOT
+
+
+def _get_pca_cache_dir() -> Path:
+    """Get the PCA cache directory (lazy init, creates on first access)."""
+    global _PCA_CACHE_DIR  # noqa: PLW0603
+    if _PCA_CACHE_DIR is None:
+        _PCA_CACHE_DIR = _get_cache_root() / "pca"
+        _PCA_CACHE_DIR.mkdir(parents=True, exist_ok=True)
+    return _PCA_CACHE_DIR
 
 
 def _pca_cache_path(data_hash: str) -> Path:
     """Get filesystem path for cached PCA model."""
-    return Path.home() / ".cache" / "brewgis" / "pca" / f"{data_hash}.pkl"
+    return _get_pca_cache_dir() / f"{data_hash}.pkl"
 
 
 def _compute_cog_hash(cog_urls: list[str]) -> str:
@@ -78,7 +101,7 @@ def _save_pca_cache(pca: IncrementalPCA, data_hash: str) -> None:
 
 def _embeddings_cache_path(data_hash: str) -> Path:
     """Get filesystem path for cached ResNet embeddings."""
-    return Path.home() / ".cache" / "brewgis" / "pca" / f"{data_hash}_embeddings.npz"
+    return _get_pca_cache_dir() / f"{data_hash}_embeddings.npz"
 
 
 def _load_cached_embeddings(
@@ -188,6 +211,15 @@ def execute(  # noqa: C901, PLR0912, PLR0915
 
     cog_hash = _compute_cog_hash(cog_urls)
 
+    # Step 2.5: Download COG tiles to local cache for fast raster window reads
+    cog_paths = download_cog_tiles(cog_urls)
+
+    # Log COG cache directory size
+    cog_files = list(_get_cache_root().glob("cog/*.tif"))
+    if cog_files:
+        total_mb = sum(f.stat().st_size for f in cog_files) / 1_048_576
+        logger.info("COG cache: %d files, %.0f MB", len(cog_files), total_mb)
+
     # Step 3: Extract chips + ResNet forward pass (or load cached)
     cached = _load_cached_embeddings(cog_hash)
     if cached is not None:
@@ -205,11 +237,11 @@ def execute(  # noqa: C901, PLR0912, PLR0915
         batch_chips: list[np.ndarray] = []
         batch_pids: list[str] = []
 
-        for cog_url in cog_urls:
-            tile_name = cog_url.rsplit("/", 1)[-1]
+        for cog_path in cog_paths:
+            tile_name = cog_path.name
             logger.info("Processing COG tile: %s", tile_name)
             for pid, chip in extract_chips(
-                cog_url, gdf_4326, parcel_id_col="parcel_id"
+                str(cog_path), gdf_4326, parcel_id_col="parcel_id"
             ):
                 batch_pids.append(pid)
                 batch_chips.append(chip)
