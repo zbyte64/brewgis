@@ -151,6 +151,8 @@ _RESNET_COLUMNS: dict[str, str] = {
     columns=_RESNET_COLUMNS,
     audits=[
         ("not_null", {"columns": "parcel_id"}),
+        ("assert_row_count_between", {"min_rows": 1000}),
+        "assert_resnet_apn_coverage",
     ],
     depends_on=[
         "public.sac_cnty_region_existing_land_use_parcels",

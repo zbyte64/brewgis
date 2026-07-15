@@ -4,6 +4,10 @@ MODEL (
   gateway duckdb
 );
 
+-- NOTE: Audits intentionally omitted (gateway duckdb). Transport row-count
+-- coverage is enforced by assert_row_count_between on
+-- brewgis.assessor.overture_intersection_points (min_rows := 50000).
+
 -- Overture Transportation — bridge model that materializes the DuckDB VIEW
 -- (which reads GeoParquet from S3) into a PostGIS-accessible table.
 --

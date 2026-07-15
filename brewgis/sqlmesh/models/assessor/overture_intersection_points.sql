@@ -4,6 +4,12 @@ MODEL (
   column_descriptions (
     geometry = "Intersection point (snapped to 10m grid) in local_srid (3310)",
     street_count = "Number of road segments meeting at this intersection"
+  ),
+  audits (
+    -- Also covers transport-data availability from overture_transport:
+    -- if that bridge produces <50000 rows, the intersection count drops
+    -- below threshold and this audit fails.
+    assert_row_count_between (min_rows := 50000, max_rows := 100000000)
   )
 );
 

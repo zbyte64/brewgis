@@ -6,7 +6,8 @@ MODEL (
   ),
   audits (
     not_null(columns := (apn)),
-    unique_values(columns := (apn,))
+    unique_values(columns := (apn,)),
+    assert_intersection_density_coverage
   ),
   dialect postgres
 );
