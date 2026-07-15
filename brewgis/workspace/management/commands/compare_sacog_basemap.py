@@ -826,12 +826,29 @@ class Command(BaseCommand):
         plan_context = get_context(**plan_vars)
         _repair_missing_indexes(plan_context, environment, selector_fqns)
 
+        # When force_data_reload, explicitly list models to restate.
+        # The environment was invalidated above, so _models_in_environment()
+        # returns empty and restate_models=True would restate nothing.
+        # Include the base_canvas chain to ensure SQL changes (e.g.
+        # area allocation CASE logic) are re-evaluated even when the
+        # metadata fingerprint doesn't detect the SQL diff.
+        restate_models_list: list[str] = (
+            [
+                *selector_fqns,
+                "brewgis.base_canvas.base_canvas_geometry",
+                "brewgis.base_canvas.base_canvas_combined",
+                "brewgis.base_canvas.base_canvas_imputed",
+            ]
+            if force_data_reload
+            else []
+        )
+
         plan, context = run_sqlmesh_plan(
             environment=environment,
             skip_tests=False,
             select=model_selectors,
             variables=plan_vars,
-            restate_models=force_data_reload,
+            restate_models=restate_models_list or False,
         )
         self.stdout.write(self.style.SUCCESS("  SQLMesh models complete"))
 
