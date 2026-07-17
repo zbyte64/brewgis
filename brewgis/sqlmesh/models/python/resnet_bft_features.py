@@ -20,7 +20,9 @@ from typing import Any
 import geopandas as gpd
 import numpy as np
 import pandas as pd
+import rasterio
 import torch
+from rasterio.warp import transform_bounds
 from sklearn.decomposition import IncrementalPCA
 from sqlmesh import model
 from sqlmesh.core.model.definition import ModelKindName
@@ -151,7 +153,7 @@ _RESNET_COLUMNS: dict[str, str] = {
     columns=_RESNET_COLUMNS,
     audits=[
         ("not_null", {"columns": "parcel_id"}),
-        ("assert_row_count_between", {"min_rows": 1000}),
+        ("assert_row_count_between", {"min_rows": 1000, "max_rows": 100000000}),
         "assert_resnet_apn_coverage",
     ],
     depends_on=[
@@ -206,7 +208,7 @@ def execute(  # noqa: C901, PLR0912, PLR0915
     gdf_4326 = gdf.to_crs("EPSG:4326")
 
     # Step 2: Resolve NAIP COG URL(s) — hard stop on failure
-    cog_urls = download_naip_for_parcels(gdf_4326, year=2024)
+    cog_urls = download_naip_for_parcels(gdf_4326)
     if isinstance(cog_urls, str):
         cog_urls = [cog_urls]
     logger.info("Resolved %d NAIP COG URL(s)", len(cog_urls))
@@ -224,10 +226,26 @@ def execute(  # noqa: C901, PLR0912, PLR0915
 
     # Step 3: Extract chips + ResNet forward pass (or load cached)
     cached = _load_cached_embeddings(cog_hash)
+
+    def _dedup_embeddings(
+        embeddings: np.ndarray, pids: list[str]
+    ) -> tuple[np.ndarray, list[str]]:
+        """Deduplicate parcel embeddings — last tile wins."""
+        seen: set[str] = set()
+        keep: list[int] = []
+        for i in range(len(pids) - 1, -1, -1):
+            pid = pids[i]
+            if pid not in seen:
+                seen.add(pid)
+                keep.append(i)
+        keep.reverse()
+        return embeddings[keep], [pids[i] for i in keep]
+
     if cached is not None:
         embeddings_np, parcel_ids = cached
+        embeddings_np, parcel_ids = _dedup_embeddings(embeddings_np, parcel_ids)
         logger.info(
-            "Loaded %d cached embeddings (shape %s)",
+            "Loaded %d deduplicated cached embeddings (shape %s)",
             len(embeddings_np),
             embeddings_np.shape,
         )
@@ -242,8 +260,27 @@ def execute(  # noqa: C901, PLR0912, PLR0915
         for cog_path in cog_paths:
             tile_name = cog_path.name
             logger.info("Processing COG tile: %s", tile_name)
+
+            # Pre-filter parcels to only those overlapping this tile.
+            # Without this filter, extracting chips from 1000+ tiles
+            # would iterate 500M+ parcel-tile combinations.
+            with rasterio.open(str(cog_path)) as src:
+                tile_bounds_4326 = transform_bounds(src.crs, "EPSG:4326", *src.bounds)
+            west, south, east, north = tile_bounds_4326
+            tile_parcels = gdf_4326.cx[west:east, south:north]
+
+            if tile_parcels.empty:
+                logger.debug("Skipping tile %s: no parcels overlap", tile_name)
+                continue
+
+            logger.info(
+                "Tile %s: %d overlapping parcels",
+                tile_name,
+                len(tile_parcels),
+            )
+
             for pid, chip in extract_chips(
-                str(cog_path), gdf_4326, parcel_id_col="parcel_id"
+                str(cog_path), tile_parcels, parcel_id_col="parcel_id"
             ):
                 batch_pids.append(pid)
                 batch_chips.append(chip)
@@ -279,9 +316,13 @@ def execute(  # noqa: C901, PLR0912, PLR0915
             embeddings_np.shape,
         )
 
+        # Deduplicate before saving cache
+        embeddings_np, parcel_ids = _dedup_embeddings(embeddings_np, parcel_ids)
+        logger.info("Deduplicated to %d unique parcels", len(parcel_ids))
+
         if len(embeddings_np) < _MIN_PCA_SAMPLES:
             msg = (
-                f"Only {len(embeddings_np)} chips extracted "
+                f"Only {len(embeddings_np)} deduplicated chips extracted "
                 f"({_MIN_PCA_SAMPLES} required for PCA). "
                 f"Insufficient parcel-raster overlap."
             )

@@ -1,108 +1,142 @@
 """NAIP (National Agriculture Imagery Program) aerial imagery downloader.
 
-Resolves NAIP 60cm RGBN imagery COG URLs via Microsoft Planetary Computer
-STAC API. COGs are served from Azure Blob Storage (public, no auth) and read
-via rasterio VSICurl for efficient partial-window access.
+Resolves NAIP 60cm RGBN imagery COG URLs by discovering available tiles
+directly from Azure blob storage, using the official USDA NAIP quad
+shapefile to identify quads overlapping the target bounding box.
+
+Shapefile format: ca_naip22qq (CA NAIP 2022 quarter-quad grid), available
+from the USDA Aerial Photography Field Office. Each record corresponds to
+a single NAIP quarter-quad corner tile.
 """
 
 from __future__ import annotations
 
 import hashlib
 import logging
+import re
 from pathlib import Path
 from typing import TYPE_CHECKING
 
 if TYPE_CHECKING:
     import geopandas as gpd
 
+from xml.etree import ElementTree as ET
+
+import geopandas as gpd
+import requests
+from shapely.geometry import box
+
 logger = logging.getLogger(__name__)
 
 _CACHE_ROOT = Path(__file__).resolve().parent.parent.parent.parent / "planning"
 _NAIP_CACHE_DIR = _CACHE_ROOT / "naip"
 _COG_CACHE_DIR = _CACHE_ROOT / "cog"
-_STAC_API_URL = "https://planetarycomputer.microsoft.com/api/stac/v1"
-_NAIP_YEAR = 2024
-_STAC_SEARCH_LIMIT = 500
+_AZURE_NAIP_BASE = "https://naipeuwest.blob.core.windows.net/naip"
+_NAIP_YEAR = 2022
+_QUAD_SHAPEFILE = _CACHE_ROOT / "ca_naip22qq"
+_AZURE_LIST_TIMEOUT = 15
+
+# Compiled regex to extract base quad (first 5 digits) from NAIP tile filename
+# e.g. m_3812118_nw_10_060_20220709.tif → 38121
+_RE_TILE_QUAD = re.compile(r"m_(\d{5})\d\d_\w+_\d+_\d+_\d[\d_]*\.tif$")
 
 
-def _find_naip_tiles(bbox: tuple[float, float, float, float]) -> list[dict]:
-    """Query Planetary Computer STAC for NAIP tiles covering the given bbox.
-
-    Args:
-        bbox: (west, south, east, north) in EPSG:4326.
+def _load_quad_shapefile() -> gpd.GeoDataFrame:
+    """Load the CA NAIP quarter-quad shapefile.
 
     Returns:
-        List of STAC feature dicts, each with an ``assets.image.href`` COG URL.
+        GeoDataFrame with one row per quarter-quad corner tile.
     """
-    import requests
-
-    west, south, east, north = bbox
-    params = {
-        "collections": "naip",
-        "bbox": f"{west},{south},{east},{north}",
-        "limit": _STAC_SEARCH_LIMIT,
-    }
-    response = requests.get(f"{_STAC_API_URL}/search", params=params, timeout=30)
-    response.raise_for_status()
-    data = response.json()
-    features = data.get("features", [])
-
-    # Parse naip:year (returned as string by API, e.g. '2022') and filter
-    # to the target year. If no tiles match the target year, deduplicate by
-    # USGS quad (extracted from tile ID) keeping only the most recent year
-    # per quad, so we process one tile per area instead of multiple years
-    # of the same coverage.
-    def _tile_year(f: dict) -> int:
-        y = f.get("properties", {}).get("naip:year")
-        if y is not None:
-            return int(y)
-        # Fallback: extract year from datetime or tile ID
-        dt = f.get("properties", {}).get("datetime", "")
-        if dt:
-            return int(dt[:4])
-        parts = f.get("id", "").split("_")
-        for p in reversed(parts):
-            if p.isdigit() and len(p) >= _year_len:
-                return int(p[:_year_len])
-        return 0
-
-    _year_len = 4
-    _quad_index = 2
-    _min_len = 3
-
-    target = int(_NAIP_YEAR)
-    year_features = [f for f in features if _tile_year(f) == target]
-    if year_features:
-        return year_features
-
-    # No tiles match the target year. Deduplicate by quad, keeping the
-    # most recent year for each. The quad is the 3rd underscore-delimited
-    # component of the tile ID (e.g. '3812147' in
-    # ca_m_3812147_sw_10_060_20220621).
-    seen_quads: dict[str, dict] = {}
-    for f in features:
-        parts = f.get("id", "").split("_")
-        if len(parts) < _quad_index + 1:
-            continue
-        quad = parts[_quad_index]
-        existing = seen_quads.get(quad)
-        if existing is None or _tile_year(f) > _tile_year(existing):
-            seen_quads[quad] = f
-    return list(seen_quads.values())
+    path = _QUAD_SHAPEFILE
+    gdf = gpd.read_file(str(path))
+    if gdf.crs is not None and gdf.crs.to_string() != "EPSG:4326":
+        gdf = gdf.to_crs("EPSG:4326")
+    return gdf
 
 
-def _get_cog_url(tile: dict) -> str | None:
-    """Extract the COG asset URL from a STAC feature."""
-    assets = tile.get("assets", {})
-    image = assets.get("image", {})
-    href = image.get("href")
-    if href:
-        return href
-    for key in ("cog", "geotiff"):
-        img = assets.get(key, {})
-        if img.get("href"):
-            return img["href"]
-    return None
+def _overlapping_base_quads(
+    bbox: tuple[float, float, float, float],
+) -> set[str]:
+    """Find NAIP base quads whose quarter-quad tiles overlap ``bbox``.
+
+    Uses the USDA shapefile to perform a spatial filter, then extracts
+    the base quad (first 5 digits of the tile filename).
+
+    Returns:
+        Set of 5-digit base quad strings (e.g. ``{"38121"}``).
+    """
+    quads = _load_quad_shapefile()
+    search_box = box(*bbox)
+    mask = quads.intersects(search_box)
+    overlapping = quads[mask]
+
+    base_quads: set[str] = set()
+    for fn in overlapping["FileName"]:
+        m = _RE_TILE_QUAD.match(str(fn))
+        if m:
+            base_quads.add(m.group(1))
+    return base_quads
+
+
+def _list_quad_tiles(base_quad: str, year: int) -> list[str]:
+    """List NAIP .tif COG URLs for one USGS base quad in a specific year."""
+    prefix = f"v002/ca/{year}/ca_060cm_{year}/{base_quad}/"
+    list_url = (
+        f"{_AZURE_NAIP_BASE}?restype=container&comp=list"
+        f"&prefix={prefix}&maxresults=5000"
+    )
+    try:
+        resp = requests.get(list_url, timeout=_AZURE_LIST_TIMEOUT)
+        if resp.status_code != 200:  # noqa: PLR2004
+            return []
+        root = ET.fromstring(resp.content)  # noqa: S314
+        urls: list[str] = []
+        for blob in root.findall(".//Blob"):
+            name = blob.find("Name").text
+            if not name.endswith(".tif"):
+                continue
+            urls.append(f"{_AZURE_NAIP_BASE}/{name}")
+    except Exception:  # noqa: BLE001
+        return []
+    else:
+        return urls
+
+
+def _discover_naip_tiles_from_azure(
+    bbox: tuple[float, float, float, float],
+    year: int = _NAIP_YEAR,
+) -> list[str]:
+    """Discover NAIP COG URLs from Azure blob storage for the given bbox.
+
+    Uses the official USDA NAIP quarter-quad shapefile to identify which
+    USGS quads overlap the bounding box, then lists available .tif files
+    for each quad on Azure blob storage.
+
+    Returns:
+        List of COG URLs for rasterio VSICurl access.
+    """
+    base_quads = _overlapping_base_quads(bbox)
+    if not base_quads:
+        return []
+
+    logger.info("Azure discovery: %d base quad(s) overlap bbox", len(base_quads))
+
+    all_urls: list[str] = []
+    seen: set[str] = set()
+    for quad in sorted(base_quads):
+        urls = _list_quad_tiles(quad, year)
+        for url in urls:
+            if url not in seen:
+                seen.add(url)
+                all_urls.append(url)
+        logger.info("  Quad %s: %d tile(s)", quad, len(urls))
+
+    logger.info(
+        "Azure discovery: %d total COG URL(s) from %d quad(s)",
+        len(all_urls),
+        len(base_quads),
+    )
+    return all_urls
 
 
 def _format_bbox_for_cache(bbox: tuple[float, float, float, float]) -> str:
@@ -115,21 +149,18 @@ def _format_bbox_for_cache(bbox: tuple[float, float, float, float]) -> str:
 def download_naip_raster(
     bbox: tuple[float, float, float, float],
     *,
-    year: int = _NAIP_YEAR,  # noqa: ARG001
+    year: int = _NAIP_YEAR,
     refresh_cache: bool = False,
 ) -> str | list[str]:
     """Resolve NAIP imagery covering the given bbox to COG URL(s).
 
-    Returns a COG URL (or list of URLs) that can be opened directly via
-    ``rasterio.open(url)`` using VSICurl — no local file download needed.
-
-    URLs are cached as a text file so re-runs with the same bbox skip
-    the STAC query.
+    Discovers tiles directly from Azure blob storage using the USDA NAIP
+    quarter-quad shapefile. URLs are cached as a text file for reuse.
 
     Args:
         bbox: Bounding box ``(west, south, east, north)`` in EPSG:4326.
-        year: NAIP year (ignored — PC uses latest available).
-        refresh_cache: If True, re-query STAC.
+        year: NAIP acquisition year.
+        refresh_cache: If True, re-discover and re-cache.
 
     Returns:
         A COG URL string, or list of COG URLs if multiple tiles needed.
@@ -146,26 +177,12 @@ def download_naip_raster(
         logger.info("NAIP cache hit: %d COG URL(s)", len(urls))
         return urls if len(urls) > 1 else urls[0]
 
-    tiles = _find_naip_tiles(bbox)
-    if not tiles:
+    urls = _discover_naip_tiles_from_azure(bbox, year=year)
+    if not urls:
         msg = f"No NAIP tiles found for bbox {bbox}"
         raise RuntimeError(msg)
 
-    # Collect unique COG URLs from all tiles
-    urls: list[str] = []
-    seen: set[str] = set()
-    for tile in tiles:
-        url = _get_cog_url(tile)
-        if url and url not in seen:
-            seen.add(url)
-            urls.append(url)
-
-    if not urls:
-        msg = f"No COG asset URLs found in NAIP tiles for bbox {bbox}"
-        raise RuntimeError(msg)
-
     cache_path.write_text("\n".join(urls))
-    logger.info("Cached %d NAIP COG URL(s)", len(urls))
     return urls if len(urls) > 1 else urls[0]
 
 
@@ -218,7 +235,6 @@ def download_cog_to_cache(cog_url: str) -> Path:
 
     _COG_CACHE_DIR.mkdir(parents=True, exist_ok=True)
     tmp_path = cache_path.with_suffix(".tif.tmp")
-    import requests
 
     with requests.get(cog_url, stream=True, timeout=300) as r:
         r.raise_for_status()
