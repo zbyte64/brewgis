@@ -5,22 +5,31 @@ MODEL (
     batch_size 100000
   ),
   audits (
-    not_null(columns := (parcel_id))
+    not_null(columns := (parcel_id)),
+    assert_road_area_valid
   )
 );
 
--- Overture Road Impervious — per-parcel road surface statistics.
+-- pre hooks
+-- (overture_transport is DuckDB gateway, so indexes must live here)
+  CREATE INDEX IF NOT EXISTS idx_overture_transport_geometry_@snapshot_hash
+  ON brewgis.staging.overture_transport USING GIST (geometry);
+  CREATE INDEX IF NOT EXISTS idx_overture_transport_local_geometry_@snapshot_hash
+  ON brewgis.staging.overture_transport USING GIST (local_geometry);
+
+-- Overture Road Surface — per-parcel road intersection statistics.
 --
--- Computes paved and unpaved road area within each parcel using Overture
--- transportation segments (roads). Road impervious fraction is the share
--- of parcel area covered by paved road surfaces, complementing the NLCD-based
--- impervious fraction metric.
+-- Computes paved and unpaved road metrics within each parcel using Overture
+-- transportation segments (roads). Overture roads are ST_LineString, so
+-- ST_Area of the intersection is always 0. Instead, we compute:
+--   - road_length_m: length of road within the parcel (meters)
+--   - road_total_area: kept for backward compat (always 0 for linestrings)
 --
 -- Road classification:
 --   Paved: surface IN ('paved', 'asphalt', 'concrete') or NULL (assumed paved)
 --   Unpaved: surface IN ('unpaved', 'gravel', 'dirt', 'earth', 'ground')
 --
--- All areas are in acres. Parcel geometry is in LOCAL_SRID (3310, California Albers).
+-- Road length is in meters. Parcel geometry is in LOCAL_SRID (3310, California Albers).
 
 WITH parcels AS (
     SELECT
@@ -40,15 +49,16 @@ transport AS (
             ELSE 'other'
         END AS road_surface_class
     FROM brewgis.staging.overture_transport
-    WHERE geometry IS NOT NULL
+    WHERE local_geometry IS NOT NULL
 ),
 
--- Categorize by paved/unpaved and compute intersection area per parcel
+-- Categorize by paved/unpaved and compute intersection geometry per parcel
+-- Overture roads are ST_LineString, so we use ST_Length not ST_Area.
 road_intersections AS (
     SELECT
         p.parcel_id,
         t.road_surface_class,
-        ST_Area(ST_Intersection(p.geometry, t.local_geometry)) AS area_sqm
+        ST_Length(ST_Intersection(p.geometry, t.local_geometry)) AS length_m
     FROM parcels p
     JOIN transport t
         ON ST_Intersects(p.geometry, t.local_geometry)
@@ -58,10 +68,10 @@ road_intersections AS (
 road_summary AS (
     SELECT
         parcel_id,
-        COALESCE(SUM(CASE WHEN road_surface_class = 'paved' THEN area_sqm END), 0) AS paved_sqm,
-        COALESCE(SUM(CASE WHEN road_surface_class = 'unpaved' THEN area_sqm END), 0) AS unpaved_sqm,
-        COALESCE(SUM(CASE WHEN road_surface_class = 'other' THEN area_sqm END), 0) AS other_sqm,
-        COALESCE(SUM(area_sqm), 0) AS total_sqm
+        COALESCE(SUM(CASE WHEN road_surface_class = 'paved' THEN length_m END), 0) AS paved_length_m,
+        COALESCE(SUM(CASE WHEN road_surface_class = 'unpaved' THEN length_m END), 0) AS unpaved_length_m,
+        COALESCE(SUM(CASE WHEN road_surface_class = 'other' THEN length_m END), 0) AS other_length_m,
+        COALESCE(SUM(length_m), 0) AS road_length_m
     FROM road_intersections
     GROUP BY parcel_id
 ),
@@ -77,12 +87,12 @@ all_parcels AS (
 
 SELECT
     ap.parcel_id,
-    COALESCE(rs.paved_sqm / 4046.86, 0.0) AS road_paved_area,
-    COALESCE(rs.unpaved_sqm / 4046.86, 0.0) AS road_unpaved_area,
-    COALESCE(rs.other_sqm / 4046.86, 0.0) AS road_other_area,
-    COALESCE(rs.total_sqm / 4046.86, 0.0) AS road_total_area,
+    COALESCE(rs.paved_length_m, 0.0) AS road_paved_area,
+    COALESCE(rs.unpaved_length_m, 0.0) AS road_unpaved_area,
+    COALESCE(rs.other_length_m, 0.0) AS road_other_area,
+    COALESCE(rs.road_length_m, 0.0) AS road_total_area,
     COALESCE(
-        (rs.paved_sqm / 4046.86) / NULLIF(ap.area_gross_acres, 0.0),
+        rs.paved_length_m / NULLIF(rs.road_length_m, 0.0),
         0.0
     ) AS road_impervious_fraction,
     ap.area_gross_acres AS parcel_area_gross
@@ -90,8 +100,5 @@ FROM all_parcels ap
 LEFT JOIN road_summary rs ON ap.parcel_id = rs.parcel_id;
 
 -- post_statements
--- (overture_transport is DuckDB gateway, so indexes must live here)
-  CREATE INDEX IF NOT EXISTS idx_overture_transport_geometry
-  ON brewgis.staging.overture_transport USING GIST (geometry);
   CREATE INDEX IF NOT EXISTS idx_overture_road_impervious_parcel_id_@snapshot_hash
   ON @this_model USING btree (parcel_id);
