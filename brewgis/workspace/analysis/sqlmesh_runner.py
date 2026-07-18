@@ -89,8 +89,8 @@ def run_sqlmesh_plan(  # noqa: PLR0913
         select_models=select,
         create_from=create_from,
         restate_models=_models_in_environment(context, environment)
-        if restate_models
-        else None,
+        if restate_models is True
+        else (restate_models or None),
     ), context
 
 

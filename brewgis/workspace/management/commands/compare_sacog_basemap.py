@@ -246,6 +246,14 @@ class Command(BaseCommand):
             default="prod",
             help="sqlmesh evnrionment",
         )
+        parser.add_argument(
+            "--restate-model",
+            action="extend",
+            default=[],
+            dest="restate_models",
+            nargs="+",
+            help="Model FQN(s) to restate during the checkpoint phase. Can be specified multiple times.",
+        )
 
     def handle(self, **options: Any) -> None:
         # ── Resolve output paths ─────────────────────────────────────
@@ -296,6 +304,7 @@ class Command(BaseCommand):
         quick_parcel_clipping = bool(options.get("quick_parcel_clipping", False))
         use_assessor_geometry = bool(options.get("use_assessor_geometry", False))
         environment = options.get("environment", "prod")
+        restate_models: list[str] = options.get("restate_models", [])
 
         # TODO check if base_canvas exists / migrations are up to date
 
@@ -338,6 +347,7 @@ class Command(BaseCommand):
                 log_file_handle=log_file_handle,
                 report_path=report_path,
                 environment=environment,
+                restate_models=restate_models,
             )
         except Exception:
             logger.exception("compare_sacog_basemap failed")
@@ -369,6 +379,7 @@ class Command(BaseCommand):
         log_file_handle: Any,
         report_path: Path,
         environment: str,
+        restate_models: list[str] | None = None,
     ) -> None:
         # Lazy imports — avoid loading analysis modules at import time
         # which conflicts with test stubs for pandas/geopandas.
@@ -810,45 +821,44 @@ class Command(BaseCommand):
                     "+brewgis.assessor.parcel_resnet_features",
                     "+brewgis.assessor.parcel_du_regressor",
                     "+brewgis.assessor.parcel_sqft_regressor",
-                    "+brewgis.assessor.parcel_emp_ratio_regressor",
+                    "+brewgis.assessor.parcel_emp_ratios_regressor",
+                    "+brewgis.base_canvas.overture_road_impervious",
+                    "+brewgis.assessor.parcel_dasymetric_weights",
                 ],
                 variables=plan_vars,
             )
             self.stdout.write("\nCheckpoint complete\n")
 
-        # --- Index audit & environment invalidation ---
-        if force_data_reload and environment != "prod":
-            reload_context = get_context(**plan_vars)
-            reload_context.invalidate_environment(environment)
-            logger.info("Invalidated sacog_comparison environment for full rebuild")
-
+        # --- environment invalidation ---
+        restate_models_list: list[str] = [
+            *(restate_models or []),
+        ]
         selector_fqns = [s.lstrip("+") for s in model_selectors]
-        plan_context = get_context(**plan_vars)
-        _repair_missing_indexes(plan_context, environment, selector_fqns)
 
-        # When force_data_reload, explicitly list models to restate.
-        # The environment was invalidated above, so _models_in_environment()
-        # returns empty and restate_models=True would restate nothing.
-        # Include the base_canvas chain to ensure SQL changes (e.g.
-        # area allocation CASE logic) are re-evaluated even when the
-        # metadata fingerprint doesn't detect the SQL diff.
-        restate_models_list: list[str] = (
-            [
-                *selector_fqns,
-                "brewgis.base_canvas.base_canvas_geometry",
-                "brewgis.base_canvas.base_canvas_combined",
-                "brewgis.base_canvas.base_canvas_imputed",
-            ]
-            if force_data_reload
-            else []
-        )
+        if force_data_reload:
+            if environment == "prod":
+                if restate_models:
+                    restate_models_list.extend(
+                        [
+                            *selector_fqns,
+                            "brewgis.base_canvas.base_canvas_geometry",
+                            "brewgis.base_canvas.base_canvas_combined",
+                            "brewgis.base_canvas.base_canvas_imputed",
+                        ]
+                    )
+            else:
+                reload_context = get_context(**plan_vars)
+                reload_context.invalidate_environment(environment)
+                logger.info("Invalidated sacog_comparison environment for full rebuild")
 
         plan, context = run_sqlmesh_plan(
             environment=environment,
             skip_tests=False,
             select=model_selectors,
             variables=plan_vars,
-            restate_models=restate_models_list or False,
+            restate_models=(restate_models_list or True)
+            if force_data_reload
+            else False,
         )
         self.stdout.write(self.style.SUCCESS("  SQLMesh models complete"))
 
@@ -877,8 +887,8 @@ class Command(BaseCommand):
 
         # ── Phase 5: Generate comparison report ────────────────────────
         self.stdout.write("\n── Phase 5: Generating comparison report ──")
-        dasymetric_table = (
-            "brewgis.comparison__sacog_comparison.sacog_comparison_dasymetric"
+        dasymetric_table = context.table_name(
+            "brewgis.comparison.sacog_comparison_dasymetric", environment
         )
         reconciled_table = context.table_name(
             "brewgis.base_canvas.base_canvas_reconciled", environment
@@ -1165,7 +1175,7 @@ def _collect_diagnostics(
     # ResNet feature coverage
     diagnostics["resnet"] = {
         "total_rows": 0,
-        "unique_apns": 0,
+        "unique_parcels": 0,
         "comparison_parcels_with_features": 0,
         "comparison_parcels_total": 0,
         "min_lon": 0.0,
@@ -1185,21 +1195,20 @@ def _collect_diagnostics(
             try:
                 row = conn.execute(
                     text(
-                        f"SELECT COUNT(DISTINCT apn) FROM {resnet_features_table} "
-                        "WHERE apn IS NOT NULL"
+                        f"SELECT COUNT(DISTINCT parcel_id) FROM {resnet_features_table}"
                     )
                 ).scalar()
-                diagnostics["resnet"]["unique_apns"] = row or 0
+                diagnostics["resnet"]["unique_parcels"] = row or 0
             except Exception:
                 pass
             try:
                 row = conn.execute(
                     text(
                         f"SELECT COUNT(*) FROM ("
-                        f"  SELECT d.apn FROM {dasymetric_table} d "
+                        f"  SELECT d.parcel_id FROM {dasymetric_table} d "
                         f"  WHERE EXISTS ("
                         f"    SELECT 1 FROM {resnet_features_table} rf "
-                        f"    WHERE rf.apn = d.apn"
+                        f"    WHERE rf.parcel_id::text = d.parcel_id::text"
                         f"  )"
                         f") sub"
                     )
@@ -1226,7 +1235,7 @@ def _collect_diagnostics(
                         f"FROM {dasymetric_table} d "
                         f"WHERE EXISTS ("
                         f"  SELECT 1 FROM {resnet_features_table} rf "
-                        f"  WHERE rf.apn = d.apn"
+                        f"  WHERE rf.parcel_id::text = d.parcel_id::text"
                         f")"
                     )
                 ).fetchone()
