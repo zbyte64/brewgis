@@ -59,21 +59,22 @@ NUMERIC_FEATURES = [
 ]
 
 LGBM_PARAMS: dict[str, Any] = {
-    "objective": "regression",
-    "metric": "rmse",
+    "objective": "tweedie",
+    "metric": "tweedie",
     "boosting_type": "gbdt",
     "verbose": -1,
     "random_state": 42,
+    "tweedie_variance_power": 1.3,
     "num_leaves": 63,
-    "n_estimators": 200,
-    "min_gain_to_split": 0.01,
-    "min_data_in_leaf": 10,
-    "learning_rate": 0.01,
-    "lambda_l2": 10,
-    "lambda_l1": 0.01,
-    "feature_fraction": 0.6,
-    "bagging_freq": 1,
-    "bagging_fraction": 0.7,
+    "n_estimators": 100,
+    "min_gain_to_split": 0.1,
+    "min_data_in_leaf": 5,
+    "learning_rate": 0.05,
+    "lambda_l2": 0,
+    "lambda_l1": 1,
+    "feature_fraction": 0.9,
+    "bagging_freq": 10,
+    "bagging_fraction": 0.6,
 }
 
 MIN_R2 = 0.10

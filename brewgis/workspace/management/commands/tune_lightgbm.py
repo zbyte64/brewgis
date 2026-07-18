@@ -64,6 +64,7 @@ HP_DISTRIBUTIONS: dict[str, list] = {
     "estimator__lambda_l2": [0.0, 0.01, 0.1, 1.0, 10.0],
     "estimator__min_gain_to_split": [0.0, 0.01, 0.1],
     "estimator__n_estimators": [100, 200, 350],
+    "estimator__tweedie_variance_power": [1.1, 1.3, 1.5, 1.7, 1.9],
 }
 
 
@@ -121,13 +122,13 @@ def _tune_model(
         label = "DU"
         df = fetch_du_training_data(context)
         targets = DU_TARGETS
-        objective = "regression"
+        objective = "tweedie"
     else:
         label = "SQFT"
         df = fetch_sqft_training_data(context)
         sqft_cols = [c for c in df.columns if c.startswith("bldg_sqft_")]
         targets = sqft_cols
-        objective = "regression"
+        objective = "tweedie"
 
     logger.info("%s: loaded %d training parcels", label, len(df))
 
@@ -247,7 +248,7 @@ class Command(BaseCommand):
         run_sqlmesh_plan(
             environment="prod",
             select=tune_selectors,
-            restate_models=["brewgis.assessor.parcel_resnet_features"],
+            # restate_models=["brewgis.assessor.parcel_resnet_features"],
         )
         logger.info("Upstream models materialized.")
 
