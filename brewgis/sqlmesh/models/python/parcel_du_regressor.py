@@ -346,7 +346,9 @@ def execute(
     ):
         partial = apns
         for i, target in enumerate(DU_TARGETS):
-            partial[target] = np.maximum(y_batch[:, i], 0.0).astype(np.float32)
+            partial[target] = np.round(np.maximum(y_batch[:, i], 0.0)).astype(
+                np.float32
+            )
         results_parts.append(partial)
 
     results = pd.concat(results_parts, ignore_index=True)
