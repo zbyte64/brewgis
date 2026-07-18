@@ -17,6 +17,7 @@ services:
       - tipg
     volumes:
       - .:/app:z
+      - ./cache:/home/dev-user/.cache/
     env_file:
       - ./.envs/.local/.django
       - ./.envs/.local/.postgres
