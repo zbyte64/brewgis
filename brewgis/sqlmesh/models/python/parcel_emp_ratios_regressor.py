@@ -271,15 +271,9 @@ def execute(
     n_positive = (df[emp_targets].sum(axis=1) > 0).sum()
     logger.info("LightGBM EMP: %d parcels with emp > 0 out of %d", n_positive, len(df))
 
-    if n_positive < MIN_TRAIN_SAMPLES:
-        logger.warning(
-            "LightGBM EMP: insufficient training data (%d positive)", n_positive
-        )
-        results = df[["apn"]].copy()
-        for t in EMP_RATIO_TARGETS:
-            results[t] = 0.0
-        yield results
-        return
+    assert n_positive >= MIN_TRAIN_SAMPLES, (
+        f"LightGBM EMP: insufficient training data ({n_positive} positive)"
+    )
 
     # Use ALL parcels for training including zeros (~96% zero-inflated)
     # Tweedie objective handles the zero-inflation naturally
