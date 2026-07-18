@@ -408,12 +408,12 @@ def _generate_report_markdown(
         lines.append("| Metric | Value |")
         lines.append("|--------|-------|")
         total_rows = rn.get("total_rows", 0)
-        unique_apns = rn.get("unique_apns", 0)
+        unique_parcels = rn.get("unique_parcels", 0)
         cmp_with = rn.get("comparison_parcels_with_features", 0)
         cmp_total = rn.get("comparison_parcels_total", 0)
         pct = cmp_with / cmp_total * 100 if cmp_total > 0 else 0
-        lines.append(f"| ResNet feature rows | {total_rows:,} |")
-        lines.append(f"| Unique APNs with features | {unique_apns:,} |")
+        lines.append(f"| ResNet feature rows (after dedup) | {total_rows:,} |")
+        lines.append(f"| Unique parcels with features | {unique_parcels:,} |")
         lines.append(
             f"| Comparison parcels with ResNet features | {cmp_with:,} ({pct:.2f}%) |"
         )
