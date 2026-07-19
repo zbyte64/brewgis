@@ -55,6 +55,12 @@
                     hx-target="#filter-preview-{{ layer.pk }}"
                     hx-swap="innerHTML">👁️</button>
             <button type="button"
+                    class="btn btn-sm py-0 px-1"
+                    style="font-size: 0.65rem"
+                    title="{% translate 'Preview on Map' %}"
+                    hx-post="{% url 'workspace:layer_filter_preview_map' flt.pk %}"
+                    hx-swap="none">🗺️</button>
+            <button type="button"
                     class="btn btn-sm py-0 px-1 text-danger"
                     style="font-size: 0.65rem"
                     title="{% translate 'Delete' %}"

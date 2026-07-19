@@ -71,6 +71,7 @@ from .views.filter import layer_filter_delete
 from .views.filter import layer_filter_edit
 from .views.filter import layer_filter_list
 from .views.filter import layer_filter_preview
+from .views.filter import layer_filter_preview_map
 from .views.filter import layer_filter_toggle
 from .views.layer_groups import layer_group_create
 from .views.layer_groups import layer_group_delete
@@ -338,6 +339,11 @@ urlpatterns = [
         "filters/<int:pk>/preview/",
         layer_filter_preview,
         name="layer_filter_preview",
+    ),
+    path(
+        "filters/<int:pk>/preview-map/",
+        layer_filter_preview_map,
+        name="layer_filter_preview_map",
     ),
     # External Map Services
     path(

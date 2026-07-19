@@ -78,6 +78,93 @@ class FilterCompiler:
         joined = f" {operator} ".join(parts)
         return f"({joined})"
 
+    # ── MapLibre filter expression compilation ─────────────────
+
+    def compile_to_maplibre(self, filter_json: dict | None) -> list | None:
+        """Compile a filter_json expression tree to a MapLibre filter expression.
+
+        Returns None if the filter is empty (no filtering). Returns a MapLibre
+        filter expression list otherwise.
+        """
+        if not filter_json:
+            return None
+        return self._compile_maplibre_node(filter_json)
+
+    def _compile_maplibre_node(self, node: dict) -> list:
+        if not node:
+            return ["literal", True]
+        node_type = node.get("type")
+        if node_type == "column":
+            return self._compile_maplibre_column(node)
+        if node_type == "group":
+            return self._compile_maplibre_group(node)
+        msg = f"Unknown node type: {node_type}"
+        raise ValueError(msg)
+
+    def _compile_maplibre_column(self, node: dict) -> list:
+        # Accept both key formats: "field" (editor) and "column" (legacy SQL)
+        column = node.get("field") or node["column"]
+        # Accept both key formats: "operator" (editor) and "op" (legacy SQL)
+        op = node.get("operator") or node["op"]
+
+        # Comparison operators — accept both naming sets
+        comp_map = {
+            "eq": "==",
+            "neq": "!=",
+            "gt": ">",
+            "gte": ">=",
+            "lt": "<",
+            "lte": "<=",
+            "=": "==",
+            "!=": "!=",
+            ">": ">",
+            ">=": ">=",
+            "<": "<",
+            "<=": "<=",
+        }
+        if maplibre_op := comp_map.get(op):
+            value = self._coerce_value(node.get("value"), node.get("value_type"))
+            return [maplibre_op, ["get", column], value]
+
+        # Special operators
+        if op in ("contains", "LIKE", "ILIKE"):
+            value = node.get("value", "")
+            return [">=", ["index-of", value, ["downcase", ["get", column]]], 0]
+
+        if op in ("is_null", "IS NULL"):
+            return ["!", ["has", column]]
+
+        if op in ("is_not_null", "IS NOT NULL"):
+            return ["has", column]
+
+        if op in ("IN", "NOT IN"):
+            raw_values = node.get("value")
+            values = raw_values if isinstance(raw_values, list) else [raw_values]
+            inner = ["in", ["get", column], ["literal", values]]
+            return ["!", inner] if op == "NOT IN" else inner
+
+        msg = f"Unknown operator: {op}"
+        raise ValueError(msg)
+
+    def _compile_maplibre_group(self, node: dict) -> list:
+        children = node.get("children", [])
+        # Skip empty children (e.g. filters with empty filter_json)
+        valid_children = [c for c in children if c and c.get("type")]
+        if not valid_children:
+            return ["literal", True]
+        operator = node.get("operator", "AND")
+        parts = [self._compile_maplibre_node(c) for c in valid_children]
+        return [operator.lower(), *parts]
+
+    @staticmethod
+    def _coerce_value(value: Any, value_type: str | None = None) -> Any:
+        """Coerce a filter value to the correct Python type for MapLibre."""
+        if value is None or value == "":
+            return None
+        if value_type == "number":
+            return float(value)
+        return value
+
     @staticmethod
     def _quote_value(value: Any) -> str:
         """Quote a single value for SQL — text gets single-quoted, numbers don't."""

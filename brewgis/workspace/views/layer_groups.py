@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import logging
+from contextlib import suppress
 from typing import Any
 
 from django.contrib.auth.decorators import user_passes_test
@@ -17,6 +18,7 @@ from django.views.decorators.http import require_POST
 
 from brewgis.workspace.models import Layer
 from brewgis.workspace.models import LayerGroup
+from brewgis.workspace.models import SymbologyConfig
 from brewgis.workspace.models import Workspace
 
 logger = logging.getLogger(__name__)
@@ -115,9 +117,45 @@ def layer_group_delete(request: HttpRequest, pk: int) -> HttpResponse:
 @user_passes_test(lambda u: u.is_authenticated)
 @require_POST
 def layer_group_move_layer(request: HttpRequest, layer_pk: int) -> HttpResponse:
-    """Move a layer to a different group, or remove from group."""
+    """Move a layer to a different group, reorder layers, or remove from group.
+
+    POST params:
+      - group_id: move layer into this group (existing behavior)
+      - target_layer_pk: swap display_order with another layer (reorder)
+    """
     layer = get_object_or_404(Layer, pk=layer_pk)
+    target_pk = request.POST.get("target_layer_pk", "")
     group_id = request.POST.get("group_id", "")
+
+    if target_pk:
+        # Reorder: swap display_order with target layer
+        target = get_object_or_404(Layer, pk=target_pk)
+        layer.display_order, target.display_order = (
+            target.display_order,
+            layer.display_order,
+        )
+        layer.save()
+        target.save()
+
+        # Build swatch colors for the layer list panel
+        workspace = layer.workspace
+        swatch_colors: dict[int, str] = {}
+        for lyr in workspace.layers.all():
+            with suppress(SymbologyConfig.DoesNotExist):
+                cfg = lyr.symbology
+                swatch_colors[lyr.pk] = cfg.default_color or "#e0e0e0"
+                continue
+            swatch_colors[lyr.pk] = "#e0e0e0"
+
+        context: dict[str, Any] = {
+            "workspace": workspace,
+            "scenario": None,
+            "is_public_view": False,
+            "layer_configs": {},
+            "swatch_colors": swatch_colors,
+        }
+        return render(request, "workspace/partials/_layer_list_panel.html", context)
+
     if group_id:
         group = get_object_or_404(LayerGroup, pk=group_id, workspace=layer.workspace)
         layer.group = group

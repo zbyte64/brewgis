@@ -18,6 +18,7 @@ from django.shortcuts import render
 from brewgis.workspace.models import Scenario
 from brewgis.workspace.models import SymbologyConfig
 from brewgis.workspace.models import Workspace
+from brewgis.workspace.services.filter_compiler import FilterCompiler
 
 if TYPE_CHECKING:
     from django.http import HttpRequest
@@ -73,6 +74,24 @@ def panel_layer_list(request: HttpRequest, workspace_pk: int) -> HttpResponse:
         else:
             swatch_colors[layer.pk] = "#e0e0e0"
     context["swatch_colors"] = swatch_colors
+
+    # Pre-compute active filter expressions for map auto-apply
+    active_maplibre_filters: dict[str, list | None] = {}
+    for layer in workspace.layers.all():
+        active_filters = layer.filters.filter(is_active=True)
+        if active_filters:
+            compiler = FilterCompiler()
+            combined = {
+                "type": "group",
+                "operator": "AND",
+                "children": [f.filter_json for f in active_filters],
+            }
+            active_maplibre_filters[layer.db_table] = compiler.compile_to_maplibre(
+                combined
+            )
+        else:
+            active_maplibre_filters[layer.db_table] = None
+    context["active_maplibre_filters"] = active_maplibre_filters
     return render(
         request,
         "workspace/partials/_layer_list_panel.html",

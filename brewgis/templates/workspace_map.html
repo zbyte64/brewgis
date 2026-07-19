@@ -696,5 +696,80 @@
         });
       }
     })();
+
+    // ── Active filter auto-apply on map load ─────────────────
+    var mapEl = document.querySelector('brew-gis-map');
+    if (mapEl) {
+      mapEl.addEventListener('mapready', function() {
+        var filterEl = document.getElementById('active-filter-data');
+        if (!filterEl || !filterEl.dataset.filters) return;
+        try {
+          var filterData = JSON.parse(filterEl.dataset.filters);
+          for (var layerKey in filterData) {
+            if (!Object.prototype.hasOwnProperty.call(filterData, layerKey)) continue;
+            var expr = filterData[layerKey];
+            var map = mapEl._map || mapEl['_map'];
+            if (!map) return;
+            var style = map.getStyle();
+            if (!style || !style.layers) return;
+            var targetLayer = style.layers.find(function(l) {
+              return l.id.indexOf(layerKey) === 0;
+            });
+            if (!targetLayer) continue;
+            try {
+              map.setFilter(targetLayer.id, expr || null);
+            } catch (e) {}
+          }
+        } catch (e) {}
+      });
+    }
+
+    // ── Layer reorder (drag-and-drop) ──────────────────────────
+    (function() {
+      var dragSrc = null;
+
+      function handleDragStart(e) {
+        var row = e.target.closest('.layer-row');
+        if (!row) return;
+        dragSrc = row;
+        e.dataTransfer.effectAllowed = 'move';
+        row.style.opacity = '0.4';
+      }
+
+      function handleDragOver(e) {
+        e.preventDefault();
+        e.dataTransfer.dropEffect = 'move';
+      }
+
+      function handleDrop(e) {
+        e.preventDefault();
+        var target = e.target.closest('.layer-row');
+        if (!target || !dragSrc || target === dragSrc) return;
+
+        var srcPk = dragSrc.getAttribute('data-layer-pk');
+        var tgtPk = target.getAttribute('data-layer-pk');
+        if (!srcPk || !tgtPk) return;
+
+        htmx.ajax('POST', '/layers/' + srcPk + '/move-group/', {
+          target: '#legend-list',
+          swap: 'outerHTML',
+          values: {
+            target_layer_pk: tgtPk
+          }
+        });
+      }
+
+      function handleDragEnd() {
+        if (dragSrc) {
+          dragSrc.style.opacity = '';
+          dragSrc = null;
+        }
+      }
+
+      document.addEventListener('dragstart', handleDragStart);
+      document.addEventListener('dragover', handleDragOver);
+      document.addEventListener('drop', handleDrop);
+      document.addEventListener('dragend', handleDragEnd);
+    })();
   </script>
 {% endblock inline_javascript %}

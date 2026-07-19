@@ -52,7 +52,9 @@ def layer_data_table(request: HttpRequest, layer_pk: int) -> HttpResponse:
         all_columns = cursor.fetchall()
 
         data_columns: list[str] = []
+        all_column_names: list[str] = []
         for col_name, udt_name in all_columns:
+            all_column_names.append(col_name)
             if udt_name in _POSTGIS_TYPES:
                 continue
             data_columns.append(col_name)
@@ -98,6 +100,17 @@ def layer_data_table(request: HttpRequest, layer_pk: int) -> HttpResponse:
 
         # ── Data rows ────────────────────────────────────────────────
         rows: list[list[str]] = []
+
+        # Determine feature ID column for row-click highlight
+        feature_id_column: str | None = None
+        id_candidates = ["__gid", "gid", "fid", "id", "ogc_fid"]
+        for c in id_candidates:
+            if c in all_column_names:
+                feature_id_column = c
+                break
+        if not feature_id_column and data_columns:
+            feature_id_column = data_columns[0]
+
         if data_columns:
             quoted_cols = ", ".join(connection.ops.quote_name(c) for c in data_columns)
             cursor.execute(
@@ -106,12 +119,22 @@ def layer_data_table(request: HttpRequest, layer_pk: int) -> HttpResponse:
                 [page_size, offset],
             )
             for db_row in cursor.fetchall():
-                rows.append([str(v) if v is not None else "" for v in db_row])
+                row_values = [str(v) if v is not None else "" for v in db_row]
+                # Prepend feature_id as first column (hidden, used for row-click)
+                rows.append(row_values)
+
+    # Determine feature_id_col_index for the template (0-based position in the row)
+    feature_id_col_index: int | None = None
+    if feature_id_column and feature_id_column in all_column_names:
+        # Map the column name to index in the raw all_column_names list
+        feature_id_col_index = all_column_names.index(feature_id_column)
 
     context: dict[str, Any] = {
         "layer": layer,
         "columns": data_columns,
         "rows": rows,
+        "feature_id_column": feature_id_column,
+        "feature_id_col_index": feature_id_col_index,
         "total_rows": total_rows,
         "column_count": len(data_columns),
         "page_obj": page_obj,

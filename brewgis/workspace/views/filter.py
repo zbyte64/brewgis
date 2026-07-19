@@ -17,6 +17,7 @@ from django.views.decorators.http import require_POST
 
 from brewgis.workspace.models import Layer
 from brewgis.workspace.models import LayerFilter
+from brewgis.workspace.services.filter_compiler import FilterCompiler
 
 
 def _filter_list_context(layer: Layer) -> dict[str, Any]:
@@ -140,8 +141,54 @@ def layer_filter_toggle(request: HttpRequest, pk: int) -> HttpResponse:
     flt = get_object_or_404(LayerFilter, pk=pk)
     flt.is_active = not flt.is_active
     flt.save()
-    context = _filter_list_context(flt.layer)
-    return render(request, "workspace/filter/list.html", context)
+
+    # Build combined filter expression for all active filters on this layer
+    layer = flt.layer
+    compiler = FilterCompiler()
+    active = layer.filters.filter(is_active=True)
+    if active:
+        combined = {
+            "type": "group",
+            "operator": "AND",
+            "children": [f.filter_json for f in active],
+        }
+        maplibre_filter = compiler.compile_to_maplibre(combined)
+    else:
+        maplibre_filter = None
+
+    context = _filter_list_context(layer)
+    response = render(request, "workspace/filter/list.html", context)
+    response["HX-Trigger"] = json.dumps(
+        {
+            "filter-preview": {
+                "layerKey": layer.db_table,
+                "filterExpression": maplibre_filter,
+            },
+        }
+    )
+    return response
+
+
+@require_POST
+@user_passes_test(lambda u: u.is_authenticated)
+def layer_filter_preview_map(request: HttpRequest, pk: int) -> HttpResponse:
+    """Apply (or remove) a filter on the map without saving state."""
+    flt = get_object_or_404(LayerFilter, pk=pk)
+    layer = flt.layer
+
+    compiler = FilterCompiler()
+    maplibre_filter = compiler.compile_to_maplibre(flt.filter_json)
+
+    response = HttpResponse()
+    response["HX-Trigger"] = json.dumps(
+        {
+            "filter-preview": {
+                "layerKey": layer.db_table,
+                "filterExpression": maplibre_filter,
+            },
+        }
+    )
+    return response
 
 
 @user_passes_test(lambda u: u.is_authenticated)

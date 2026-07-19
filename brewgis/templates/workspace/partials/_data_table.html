@@ -1,4 +1,5 @@
 {% load i18n %}
+{% load workspace_tags %}
 
 <div id="data-table-{{ layer.pk }}">
   {# ── Header bar: stats + page-size selector ─────────────────────── #}
@@ -40,6 +41,7 @@
              style="font-size: 0.7rem">
         <thead class="table-light">
           <tr>
+            <th scope="col" style="width: 24px; font-size: 0.75rem;"></th>
             {% for col in columns %}
               {% if sort_field == col and not sort_desc %}
                 {% translate "Switch to descending sort" as sort_aria %}
@@ -74,9 +76,9 @@
                   </span>
                 </th>
               {% else %}
-                {% blocktranslate trimmed with col=col %}
+                {% blocktranslate trimmed with col=col asvar sort_aria %}
                   Sort by {{ col }} ascending
-                {% endblocktranslate as sort_aria %}
+                {% endblocktranslate %}
                 <th scope="col"
                     style="font-size: 0.75rem;
                            white-space: nowrap;
@@ -94,7 +96,15 @@
         </thead>
         <tbody>
           {% for row in rows %}
-            <tr>
+            <tr data-feature-id="{{ row|list_index:feature_id_col_index }}">
+              <td style="width: 24px; padding: 2px;">
+                <button type="button"
+                        class="btn btn-sm py-0 px-1 text-muted locate-feature-btn"
+                        style="font-size: 0.65rem;
+                               line-height: 1"
+                        data-feature-id="{{ row|list_index:feature_id_col_index }}"
+                        title="{% translate 'Locate on map' %}">&oplus;</button>
+              </td>
               {% for val in row %}
                 <td class="text-nowrap"
                     style="max-width: 300px;

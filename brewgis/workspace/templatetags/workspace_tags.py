@@ -100,6 +100,16 @@ def dictlookup(d: dict | None, key: str | int) -> str:
 
 
 @register.filter
+def list_index(lst: list, index: int | None) -> str:
+    """Return the element at the given index, or "" if out of range."""
+    if index is None:
+        return ""
+    if not isinstance(lst, (list, tuple)) or index < 0 or index >= len(lst):
+        return ""
+    return str(lst[index])
+
+
+@register.filter
 def json_attr(value: object) -> str:
     """Serialize to JSON, safe for embedding in an HTML attribute.
 

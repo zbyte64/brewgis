@@ -368,6 +368,72 @@
       }
     });
 
+    // ─── Layer visibility toggle ────────────────────────────
+    document.addEventListener('change', function(evt) {
+      var cb = evt.target;
+      if (!cb.classList.contains('visibility-toggle')) return;
+      var layerKey = cb.getAttribute('data-layer-key');
+      if (!layerKey) return;
+      var mapEl = getMapEl();
+      if (!mapEl) return;
+      var map = mapEl._map || mapEl['_map'];
+      if (!map) return;
+      var style = map.getStyle();
+      if (!style || !style.layers) return;
+      var targetLayer = style.layers.find(function(l) {
+        return l.id.indexOf(layerKey) === 0;
+      });
+      if (!targetLayer) return;
+      mapEl.setLayerVisibility(targetLayer.id, cb.checked);
+    });
+
+    // ─── Data table row-click highlight ─────────────────────
+    document.addEventListener('click', function(evt) {
+      var tr = evt.target.closest('tr[data-feature-id]');
+      if (!tr) return;
+      var btn = evt.target.closest('.locate-feature-btn');
+      if (btn) return; // handled by locate handler below
+      var featureId = tr.getAttribute('data-feature-id');
+      if (!featureId) return;
+      var mapEl = getMapEl();
+      if (!mapEl || typeof mapEl.highlightFeatures !== 'function') return;
+      mapEl.highlightFeatures([featureId]);
+    });
+
+    // ─── Data table locate feature ──────────────────────────
+    document.addEventListener('click', function(evt) {
+      var btn = evt.target.closest('.locate-feature-btn');
+      if (!btn) return;
+      evt.stopPropagation();
+      var featureId = btn.getAttribute('data-feature-id');
+      if (!featureId) return;
+      var mapEl = getMapEl();
+      if (!mapEl || typeof mapEl.zoomToFeature !== 'function') return;
+      mapEl.zoomToFeature(featureId);
+    });
+
+    // ─── Filter preview on map ─────────────────────────────
+    document.body.addEventListener('filter-preview', function(evt) {
+      var detail = evt.detail;
+      if (!detail || !detail.layerKey) return;
+      var mapEl = getMapEl();
+      if (!mapEl) return;
+      var map = mapEl._map || mapEl['_map'];
+      if (!map) return;
+      var style = map.getStyle();
+      if (!style || !style.layers) return;
+      var targetLayer = style.layers.find(function(l) {
+        return l.id.indexOf(detail.layerKey) === 0;
+      });
+      if (!targetLayer) return;
+      // Apply or remove filter
+      if (detail.filterExpression) {
+        try { map.setFilter(targetLayer.id, detail.filterExpression); } catch(e) {}
+      } else {
+        try { map.setFilter(targetLayer.id, null); } catch(e) {}
+      }
+    });
+
     // ─── Toast messages ─────────────────────────────────────
     document.body.addEventListener('show-toast', function(evt) {
       var msg = evt.detail;
