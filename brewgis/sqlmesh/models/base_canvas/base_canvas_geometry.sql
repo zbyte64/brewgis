@@ -8,9 +8,13 @@ MODEL (
     not_null(columns := (parcel_id))
   ),
 
+  -- Dependencies include both SACOG and Fresno variants so SQLMesh knows
+  -- to build the parcel_shim before this model regardless of which
+  -- @parcel_table / @dasymetric_source variables point to.
   depends_on (
-    brewgis.comparison.sacog_parcel_shim,
-    brewgis.comparison.sacog_comparison_dasymetric
+    brewgis.fresno.parcel_shim,
+    brewgis.fresno.comparison_dasymetric,
+    brewgis.seeds.assessor_use_codes
   )
 );
 
@@ -116,7 +120,7 @@ dasymetric_enrichment AS (
         bldg_area_medical_services,
         bldg_area_transport_warehousing,
         bldg_area_wholesale
-    FROM brewgis.comparison.sacog_comparison_dasymetric
+    FROM @VAR('dasymetric_source', 'brewgis.comparison.sacog_comparison_dasymetric')
 )
 
 SELECT

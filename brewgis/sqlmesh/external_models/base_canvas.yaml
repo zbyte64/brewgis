@@ -154,6 +154,14 @@
     households: double precision
     geom: geometry
 
+# ── Runtime tables created by setup_fresno_workspace ──
+
+- name: brewgis.fresno_demo.fresno_parcels
+  description: "Fresno parcel geometries, written by setup_fresno_workspace._ingest_parcels."
+  columns:
+    parcel_id: text
+    geometry: geometry
+
 - name: brewgis.analysis.base_canvas_parcels
   description: "Food access parcel view (legacy reference)."
   columns:

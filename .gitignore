@@ -300,3 +300,7 @@ notebooks/
 
 # Great Expectations validation results
 brewgis/gx/validation_results/
+
+# dlt secrets (local)
+.dlt/secrets.toml
+planning/fresno_demo/

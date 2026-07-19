@@ -43,13 +43,23 @@ _readonly_pool: DuckDBReadOnlyPool | None = None
 # Import is lazy inside _get_readonly_pool() to avoid Django settings cascade
 
 
+_DUCKDB_PATH = os.environ.get(
+    "SQLMESH_DUCKDB_PATH",
+    "/app/planning/duckdb_cache.db",
+)
+_DUCKDB_TMP = os.environ.get(
+    "SQLMESH_DUCKDB_TMP",
+    "/app/planning/duckdb_tmp",
+)
+
+
 def _get_readonly_pool() -> DuckDBReadOnlyPool:
     """Lazy-initialised singleton for the read-only DuckDB pool."""
     global _readonly_pool
     if _readonly_pool is None:
         from brewgis.workspace.services.duckdb_pool import DuckDBReadOnlyPool
 
-        _readonly_pool = DuckDBReadOnlyPool("/app/planning/duckdb_cache.db")
+        _readonly_pool = DuckDBReadOnlyPool(_DUCKDB_PATH)
     return _readonly_pool
 
 
@@ -252,7 +262,7 @@ def config_factory(**variables):
             "duckdb": GatewayConfig(
                 connection=DuckDBConnectionConfig(
                     catalogs={
-                        "duckdb": "/app/planning/duckdb_cache.db",
+                        "duckdb": _DUCKDB_PATH,
                         "brewgis": DuckDBAttachOptions(
                             type="postgres",
                             path=_pg_attach_path,
@@ -260,7 +270,7 @@ def config_factory(**variables):
                     },
                     extensions=["httpfs", "spatial", "postgres_scanner"],
                     connector_config={
-                        "temp_directory": "/app/planning/duckdb_tmp",
+                        "temp_directory": _DUCKDB_TMP,
                     },
                     secrets=[
                         {

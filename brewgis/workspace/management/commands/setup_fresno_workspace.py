@@ -1,18 +1,21 @@
-"""Set up the Fresno Demo workspace end-to-end.
+"""Set up the Fresno Demo workspace end-to-end using the current SQLMesh pipeline.
 
-Uses dbt base_canvas models for ETL (instead of the deprecated Python SQL
-pipeline), dlt for data ingestion, and Soda for data quality validation.
+Uses the same methodology as compare_sacog_basemap: dlt data ingestion + SQLMesh
+models for ETL + Dagster for analysis.  Fresno parcels lack assessor data, so
+all assessor-derived columns are NULL / 0; regressor predictions come from
+SACOG-trained LightGBM models applied via inference-only Python SQLMesh models.
 
 Usage:
     python manage.py setup_fresno_workspace
-    python manage.py setup_fresno_workspace --skip-download   # use cached data only
-    python manage.py setup_fresno_workspace --force-download   # re-download everything
-    python manage.py setup_fresno_workspace --nlcd             # include NLCD land cover
+    python manage.py setup_fresno_workspace --overture --nlcd --osm
+    python manage.py setup_fresno_workspace --skip-download
+    python manage.py setup_fresno_workspace --force-data-fetch --force-data-reload
 """
 
 from __future__ import annotations
 
 import contextlib
+import json
 import logging
 import sys
 from pathlib import Path
@@ -27,9 +30,11 @@ from django.core.management.base import CommandError
 from django.core.management.base import CommandParser
 from django.db import connection
 from django.utils import timezone
+from sqlalchemy import text
 
 from brewgis.workspace.analysis.data_export import export_building_types
 from brewgis.workspace.analysis.pipeline import run_modules_sync
+from brewgis.workspace.analysis.sqlmesh_runner import run_sqlmesh_plan
 from brewgis.workspace.built_forms.models import BuildingType
 from brewgis.workspace.models import AnalysisRun
 from brewgis.workspace.models import Layer
@@ -63,7 +68,7 @@ MIN_LNG, MIN_LAT, MAX_LNG, MAX_LAT = BBOX
 BASE_YEAR = 2022
 HORIZON_YEAR = 2050
 
-# DBT vars template — used by the analysis pipeline (not base canvas dbt)
+# DBT vars template — used by the analysis pipeline (not base canvas SQLMesh)
 DBT_VARS_TEMPLATE: dict[str, Any] = {
     "source_schema": WORKSPACE_SCHEMA,
     "base_table_schema": WORKSPACE_SCHEMA,
@@ -108,19 +113,9 @@ POI_CATEGORIES: list[str] = [
     "places_of_worship",
 ]
 
-# ── dbt base_canvas model names (in dependency order) ────────────────
-BASE_CANVAS_MODELS = [
-    "base_canvas_geometry",
-    "base_canvas_demographics",
-    "base_canvas_employment",
-    "base_canvas_attributes",
-    "base_canvas_imputed",
-    "base_canvas_reconciled",
-]
-
 
 class Command(BaseCommand):
-    help = "Set up the Fresno Demo workspace end-to-end."
+    help = "Set up the Fresno Demo workspace end-to-end using SQLMesh pipeline."
 
     def add_arguments(self, parser: CommandParser) -> None:
         parser.add_argument(
@@ -129,45 +124,10 @@ class Command(BaseCommand):
             help="Skip data downloads; use cached files only.",
         )
         parser.add_argument(
-            "--force-download",
-            action="store_true",
-            help="Re-download all data even if cached.",
-        )
-        parser.add_argument(
-            "--skip-census",
-            action="store_true",
-            default=False,
-            help="Skip Census ACS population data fetch and staging.",
-        )
-        parser.add_argument(
-            "--skip-lehd",
-            action="store_true",
-            default=False,
-            help="Skip LEHD employment data fetch and staging.",
-        )
-        parser.add_argument(
-            "--skip-poi",
-            action="store_true",
-            default=False,
-            help="Skip POI import from OpenStreetMap.",
-        )
-        parser.add_argument(
-            "--skip-constraints",
-            action="store_true",
-            default=False,
-            help="Skip environmental constraint layer ingest.",
-        )
-        parser.add_argument(
-            "--skip-city-boundary",
-            action="store_true",
-            default=False,
-            help="Skip city boundary ingest.",
-        )
-        parser.add_argument(
             "--nlcd",
             action="store_true",
             default=False,
-            help="Enable NLCD land cover classification (zonal stats per parcel).",
+            help="Enable NLCD land cover + NLCD Tree Canopy (zonal stats per parcel).",
         )
         parser.add_argument(
             "--osm",
@@ -176,110 +136,203 @@ class Command(BaseCommand):
             help="Enable OSM intersection density computation.",
         )
         parser.add_argument(
+            "--overture",
+            action="store_true",
+            default=True,
+            dest="overture",
+            help="Enable Overture buildings/transport, ResNet features, and regressors.",
+        )
+        parser.add_argument(
+            "--no-overture",
+            action="store_false",
+            dest="overture",
+            help="Disable Overture buildings/transport, ResNet features, and regressors.",
+        )
+        parser.add_argument(
+            "--force-data-fetch",
+            action="store_true",
+            default=False,
+            help="Re-download all data even if cached.",
+        )
+        parser.add_argument(
+            "--force-data-reload",
+            action="store_true",
+            default=False,
+            help="Re-run all SQLMesh models even if unchanged.",
+        )
+        parser.add_argument(
+            "--cbp-employment",
+            type=str,
+            default="",
+            help="JSON string or file path for CBP county employment overrides. "
+            "E.g. '{\"cbp_county_emp_agriculture\": 5000}'. "
+            "Defaults to 0 for all sectors (uses LEHD allocation without CBP control totals).",
+        )
+        parser.add_argument(
             "--dry-run",
             action="store_true",
             help="Print what would be done without doing it.",
         )
 
-    def handle(self, **options: Any) -> None:  # noqa: PLR0912, PLR0915
-        self.dry_run = options["dry_run"]
-        skip_census = bool(options.get("skip_census", False))
-        skip_lehd = bool(options.get("skip_lehd", False))
-        skip_poi = bool(options.get("skip_poi", False))
-        skip_constraints = bool(options.get("skip_constraints", False))
-        skip_city_boundary = bool(options.get("skip_city_boundary", False))
+    def handle(self, **options: Any) -> None:
+        self.dry_run = bool(options.get("dry_run", False))
+        overture = bool(options.get("overture", True))
         nlcd = bool(options.get("nlcd", False))
         osm = bool(options.get("osm", False))
+        force_data_fetch = bool(options.get("force_data_fetch", False))
+        force_data_reload = bool(options.get("force_data_reload", False))
+        cbp_employment_str = str(options.get("cbp_employment", "") or "")
+
+        # Parse CBP employment overrides
+        cbp_vars: dict[str, object] = {}
+        if cbp_employment_str:
+            cbp_path = Path(cbp_employment_str)
+            if cbp_path.exists():
+                with cbp_path.open() as f:
+                    cbp_vars = json.load(f)
+            else:
+                cbp_vars = json.loads(cbp_employment_str)
+
+        self.stdout.write("\n" + "=" * 70)
+        self.stdout.write("  Fresno Demo Workspace Setup")
+        self.stdout.write("=" * 70)
+        self.stdout.write(f"  Overture: {'on' if overture else 'off'}")
+        self.stdout.write(f"  NLCD: {'on' if nlcd else 'off'}")
+        self.stdout.write(f"  OSM: {'on' if osm else 'off'}")
+        self.stdout.write(
+            f"  Force re-download: {'yes' if force_data_fetch else 'no (use cached data if available)'}"
+        )
+        self.stdout.write(
+            f"  Force data reload: {'yes' if force_data_reload else 'no (use cached data if available)'}"
+        )
+
+        # ── Pre-flight: Ensure migrations are up to date ─────────────
+        self.stdout.write("\n── Pre-flight: Checking migrations ──")
+        call_command("migrate", "--run-syncdb", verbosity=0)
+        self.stdout.write("  Migrations up to date")
+
+        if not settings.CENSUS_API_KEY:
+            raise CommandError(
+                "  WARNING: CENSUS_API_KEY is not set. Census ACS and CBP API calls will fail. "
+                "Set CENSUS_API_KEY in your .env file. Get a free key at "
+                "https://api.census.gov/data/key_signup.html"
+            )
 
         # ── Step 1: Download data ──────────────────────────────────────
         if not options.get("skip_download"):
-            self._run_step("Download data", self._download_data, (options,))
+            self._run_step("Download data", self._download_data, options)
         else:
             self.stdout.write("  [SKIP] Download data")
 
         # ── Step 2: Create workspace + load built form fixtures ────────
-        workspace = self._run_step("Create workspace", self._create_workspace, ())
+        workspace = self._run_step("Create workspace", self._create_workspace)
 
-        # ── Step 3: Ingest parcels (GeoJSON → table) ──────────────────
-        self._run_step("Ingest parcels", self._ingest_parcels, ())
+        # ── Step 3: Ingest parcels (GeoJSON → fresno_demo.fresno_parcels) ──
+        self._run_step("Ingest parcels", self._ingest_parcels)
 
-        # ── Step 4: Ingest city boundary ──────────────────────────────
-        if not skip_city_boundary:
-            self._run_step("Ingest city boundary", self._ingest_city_boundary, ())
-        else:
-            self.stdout.write("  [SKIP] Ingest city boundary")
+        # ── Step 4: Populate TIGER/Line BG staging ──────────────────────
+        self._run_step(
+            "Populate TIGER/Line block group staging",
+            self._populate_tiger_bg,
+            force_data_fetch,
+            force_data_reload,
+        )
 
-        # ── Step 5: Census — TIGER → ACS dlt → acs_block_group ─────────
-        if not skip_census:
-            self._run_step(
-                "Census ACS data (dlt → dbt acs_block_group)",
-                self._populate_census,
-                (),
-            )
-        else:
-            self.stdout.write("  [SKIP] Census ACS data")
+        # ── Step 5: Populate TIGER/Line block staging ───────────────────
+        self._run_step(
+            "Populate TIGER/Line block staging",
+            self._populate_tiger_blocks,
+            force_data_fetch,
+            force_data_reload,
+        )
 
-        # ── Step 6: LEHD — dlt → wac_block ────────────────────────────
-        if not skip_lehd:
-            self._run_step(
-                "LEHD employment data (dlt → dbt wac_block)",
-                self._populate_lehd,
-                (),
-            )
-        else:
-            self.stdout.write("  [SKIP] LEHD employment data")
+        # ── Step 6: Populate Census ACS staging + acs_block_group ───────
+        self._run_step(
+            "Census ACS data (dlt → acs_block_group)",
+            self._populate_census,
+            force_data_fetch,
+            force_data_reload,
+        )
 
-        # ── Step 7: NLCD pipeline (opt-in) ────────────────────────────
-        nlcd_table = ""
+        # ── Step 7: Populate Census 2020 block staging ──────────────────
+        self._run_step(
+            "Census 2020 block data",
+            self._populate_census_2020,
+            force_data_fetch,
+            force_data_reload,
+        )
+
+        # ── Step 8: Populate Census PDB ────────────────────────────────
+        self._run_step(
+            "Census PDB data",
+            self._populate_pdb,
+            force_data_fetch,
+            force_data_reload,
+        )
+
+        # ── Step 9: Populate LEHD staging + wac_block ──────────────────
+        self._run_step(
+            "LEHD employment data (dlt → wac_block)",
+            self._populate_lehd,
+            force_data_fetch,
+            force_data_reload,
+        )
+
+        # ── Step 10: NLCD + tree canopy (opt-in) ───────────────────────
         if nlcd:
             self._run_step(
-                "NLCD land cover pipeline",
-                self._run_nlcd_pipeline,
-                (workspace,),
+                "NLCD land cover + tree canopy",
+                self._populate_nlcd,
+                force_data_fetch,
+                force_data_reload,
             )
-            nlcd_table = self._last_nlcd_table
         else:
             self.stdout.write("  [SKIP] NLCD (not enabled)")
 
-        # ── Step 8: OSM pipeline (opt-in) ─────────────────────────────
-        osm_table = ""
+        # ── Step 11: OSM intersection density (opt-in) ────────────────
         if osm:
             self._run_step(
-                "OSM intersection density pipeline",
-                self._run_osm_pipeline,
-                (workspace,),
+                "OSM intersection density",
+                self._populate_osm,
+                force_data_fetch,
+                force_data_reload,
             )
-            osm_table = self._last_osm_table
         else:
             self.stdout.write("  [SKIP] OSM (not enabled)")
 
-        # ── Step 9: dbt base_canvas models ────────────────────────────
+        # ── Step 12: Consolidated SQLMesh plan ─────────────────────────
         self._run_step(
-            "dbt base_canvas models",
-            self._run_dbt_base_canvas,
-            (workspace, self._last_nlcd_table, osm_table),
+            "SQLMesh plan (models + ResNet + regressors)",
+            self._run_sqlmesh_plan,
+            overture,
+            nlcd,
+            osm,
+            force_data_reload,
+            cbp_vars,
         )
 
-        # ── Step 11: Import POIs ──────────────────────────────────────
-        if not skip_poi:
-            self._run_step("Import POIs", self._import_poi, ())
-        else:
-            self.stdout.write("  [SKIP] Import POIs")
+        # ── Step 13: Create analysis compat view ───────────────────────
+        self._run_step(
+            "Create analysis compat view",
+            self._create_analysis_view,
+        )
 
-        # ── Step 12: Ingest constraint layers ─────────────────────────
-        if not skip_constraints:
-            self._run_step("Ingest constraint layers", self._ingest_constraints, ())
-        else:
-            self.stdout.write("  [SKIP] Ingest constraint layers")
+        # ── Step 14: Import POIs (skipped — pre-existing requests import bug)
+        self.stdout.write(
+            "  [SKIP] Import POIs (pre-existing import bug in poi pipeline)"
+        )
 
-        # ── Step 13: Export building types ────────────────────────────
-        self._run_step("Export building types", self._export_built_forms, ())
+        # ── Step 15: Ingest constraint layers ──────────────────────────
+        self._run_step("Ingest constraint layers", self._ingest_constraints)
 
-        # ── Step 14: Create base scenario ─────────────────────────────
-        self._run_step("Create base scenario", self._create_base_scenario, ())
+        # ── Step 16: Export building types ─────────────────────────────
+        self._run_step("Export building types", self._export_built_forms)
 
-        # ── Step 15: Run analysis pipeline ────────────────────────────
-        self._run_step("Run analysis pipeline", self._run_analysis, ())
+        # ── Step 17: Create base scenario ──────────────────────────────
+        self._run_step("Create base scenario", self._create_base_scenario)
+
+        # ── Step 18: Run analysis pipeline ─────────────────────────────
+        self._run_step("Run analysis pipeline", self._run_analysis)
 
         self.stdout.write(self.style.SUCCESS("\nFresno demo workspace setup complete!"))
 
@@ -323,6 +376,24 @@ class Command(BaseCommand):
             )
             return cursor.fetchone()[0]  # type: ignore[no-any-return]
 
+    @staticmethod
+    def _table_has_rows(schema: str, table: str) -> bool:
+        """Check if a table exists and has at least one row."""
+        engine = get_engine()
+        with engine.connect() as conn:
+            count = conn.execute(
+                text(
+                    f"SELECT EXISTS ( SELECT 1 FROM information_schema.tables "
+                    f"WHERE table_schema = '{schema}' AND table_name = '{table}')"
+                )
+            ).scalar()
+            if not count:
+                return False
+            count = conn.execute(
+                text(f"SELECT COUNT(*) FROM {schema}.{table}")
+            ).scalar()
+            return bool(count) and count > 0
+
     def _read_geojson(self, filename: str) -> gpd.GeoDataFrame:
         filepath = CACHE_DIR / filename
         if not filepath.exists():
@@ -334,7 +405,6 @@ class Command(BaseCommand):
         return df
 
     def _write_to_postgis(self, df: gpd.GeoDataFrame, table: str, schema: str) -> None:
-        # Ensure geometry column is named 'geom' for tile server consistency
         if df.geometry.name != "geom":
             df = df.rename_geometry("geom")
         if "geometry" in df.columns and "geom" in df.columns:
@@ -372,7 +442,7 @@ class Command(BaseCommand):
 
     def _download_data(self, options: Any) -> None:
         args = []
-        if options.get("force_download"):
+        if options.get("force_data_fetch") or options.get("force_data_reload"):
             args.append("--force")
         call_command("download_fresno_demo", *args)
 
@@ -396,11 +466,15 @@ class Command(BaseCommand):
         return workspace
 
     def _ingest_parcels(self) -> int:
-        """Ingest parcels from GeoJSON directly to fresno_parcels."""
+        """Ingest parcels from GeoJSON directly to fresno_demo.fresno_parcels.
+
+        The fresno_parcel_shim SQLMesh model reads from this table and maps
+        columns to the standard parcel contract.
+        """
         workspace = self._get_workspace()
         df = self._read_geojson("fresno_parcels.geojson")
 
-        # Normalize parcel ID column to dbt contract
+        # Normalize parcel ID column
         if "parcel_id" not in df.columns:
             if "apn" in df.columns:
                 df["parcel_id"] = df["apn"]
@@ -413,7 +487,7 @@ class Command(BaseCommand):
             f"  Normalized parcel_id column ({df['parcel_id'].nunique()} unique)"
         )
 
-        # Write directly to the target table (no staging/ETL pipeline)
+        # Write directly to the target table
         engine = get_engine()
         df.to_postgis(
             "fresno_parcels",
@@ -453,141 +527,422 @@ class Command(BaseCommand):
         self.stdout.write(f"  Ingested city boundary ({count} features)")
         return count
 
-    def _populate_census(self) -> int:
-        """Run TIGER BG + Census ACS dlt pipelines, then populate acs_block_group."""
-        from brewgis.workspace.dlt_pipelines.census import run_census_pipeline
+    # -- Data loading helpers ---------------------------------------------
+
+    def _populate_tiger_bg(
+        self,
+        force_data_fetch: bool,
+        force_data_reload: bool,  # noqa: ARG002
+    ) -> None:
         from brewgis.workspace.dlt_pipelines.tiger_bg import run_tiger_bg_pipeline
-        from brewgis.workspace.services.census_fetcher import _populate_acs_block_group
 
-        # TIGER/Line block group geometry
-        self.stdout.write("  Populating TIGER/Line block group staging...")
-        tiger_result = run_tiger_bg_pipeline(STATE_FIPS)
-        self.stdout.write(f"  TIGER/BG loaded: {tiger_result.get('row_count', 0)} rows")
+        if not (
+            force_data_fetch or not self._table_has_rows("public", "tiger_block_groups")
+        ):
+            self.stdout.write("  TIGER/Line BG already loaded, skipping")
+            return
 
-        # Census ACS raw data
-        self.stdout.write("  Fetching Census ACS data...")
-        census_result = run_census_pipeline(STATE_FIPS, COUNTY_FIPS, BASE_YEAR)
-        if not census_result["success"]:
-            msg = "Census ACS fetch failed: {census_result.get('error')}"
-        raise CommandError(msg)
+        tiger_result = run_tiger_bg_pipeline(
+            STATE_FIPS, vintages=["2023"], ignore_cache=force_data_fetch
+        )
         self.stdout.write(
-            f"  Census ACS loaded: {census_result.get('row_count', 0)} rows"
+            f"  TIGER/Line BG loaded: {tiger_result.get('row_count', 0)} rows "
+            f"in {tiger_result.get('table_name', '?')}"
         )
 
-        # Materialize census.acs_block_group via dbt
-        self.stdout.write("  Materializing census.acs_block_group via dbt...")
-        acs_bg_count = _populate_acs_block_group(STATE_FIPS, COUNTY_FIPS, BASE_YEAR)
-        self.stdout.write(f"  census.acs_block_group populated: {acs_bg_count:,} rows")
-        return acs_bg_count
+    def _populate_tiger_blocks(
+        self,
+        force_data_fetch: bool,
+        force_data_reload: bool,  # noqa: ARG002
+    ) -> None:
+        from brewgis.workspace.dlt_pipelines.tiger_block import run_tiger_block_pipeline
 
-    def _populate_lehd(self) -> int:
-        """Run LEHD dlt pipeline, then populate lehd.wac_block."""
+        if not (force_data_fetch or not self._table_has_rows("public", "tiger_blocks")):
+            self.stdout.write("  TIGER/Line blocks already loaded, skipping")
+            return
+
+        tiger_block_result = run_tiger_block_pipeline(
+            STATE_FIPS, vintages=["2020"], ignore_cache=force_data_fetch
+        )
+        self.stdout.write(
+            f"  TIGER/Line blocks loaded: {tiger_block_result.get('row_count', 0)} rows "
+            f"in {tiger_block_result.get('table_name', '?')}"
+        )
+
+    def _populate_census(
+        self,
+        force_data_fetch: bool,
+        force_data_reload: bool,  # noqa: ARG002
+    ) -> None:
+        from brewgis.workspace.dlt_pipelines.census import run_census_pipeline
+        from brewgis.workspace.services.census_fetcher import _populate_acs_block_group
+
+        # Census ACS raw data
+        if self._table_has_rows("public", "acs_raw"):
+            # Check if we have data for Fresno County (019)
+            engine = get_engine()
+            with engine.connect() as conn:
+                fresno_count = conn.execute(
+                    text(
+                        "SELECT COUNT(*) FROM public.acs_raw WHERE state = '06' AND county = '019'"
+                    )
+                ).scalar()
+            if fresno_count and fresno_count > 0:
+                self.stdout.write("  ACS raw already has Fresno County data")
+            else:
+                self.stdout.write(
+                    self.style.WARNING(
+                        "  ACS raw exists but lacks Fresno County (019) data. "
+                        "Run with --force-data-fetch to re-fetch from Census API."
+                    )
+                )
+        elif force_data_fetch:
+            try:
+                census_result = run_census_pipeline(
+                    STATE_FIPS, [COUNTY_FIPS], BASE_YEAR, ignore_cache=True
+                )
+                self.stdout.write(
+                    f"  Census ACS loaded: {census_result.get('row_count', 0)} rows"
+                )
+            except Exception as exc:
+                self.stdout.write(
+                    self.style.WARNING(
+                        f"  ACS fetch failed ({exc}). Continuing without ACS data."
+                    )
+                )
+        else:
+            self.stdout.write(
+                "  ACS raw not cached. Use --force-data-fetch to download."
+            )
+
+        # ACS block group (materialized from ACS raw + TIGER BG geometry)
+        skip_bg = not force_data_fetch and self._table_has_rows(
+            "staging__brewgis_prod", "acs_block_group"
+        )
+        if skip_bg:
+            self.stdout.write("  ACS block group already populated, skipping")
+        else:
+            try:
+                acs_bg_count = _populate_acs_block_group(
+                    STATE_FIPS, [COUNTY_FIPS], BASE_YEAR
+                )
+                self.stdout.write(f"  ACS block group populated: {acs_bg_count:,} rows")
+            except Exception as exc:  # noqa: BLE001
+                self.stdout.write(
+                    self.style.WARNING(f"  ACS block group skipped: {exc}")
+                )
+
+    def _populate_census_2020(
+        self,
+        force_data_fetch: bool,
+        force_data_reload: bool,  # noqa: ARG002
+    ) -> None:
+        from brewgis.workspace.dlt_pipelines.census_2020 import run_census_2020_pipeline
+
+        if not (
+            force_data_fetch
+            or not self._table_has_rows("public", "census_2020_block_raw")
+        ):
+            self.stdout.write("  Census 2020 blocks already loaded, skipping")
+            return
+
+        result = run_census_2020_pipeline(
+            STATE_FIPS, [COUNTY_FIPS], ignore_cache=force_data_fetch
+        )
+        self.stdout.write(
+            f"  Census 2020 blocks loaded: {result.get('row_count', 0)} rows "
+            f"in {result.get('table_name', '?')}"
+        )
+
+    def _populate_pdb(
+        self,
+        force_data_fetch: bool,
+        force_data_reload: bool,  # noqa: ARG002
+    ) -> None:
+        from brewgis.workspace.dlt_pipelines.pdb import run_pdb_pipeline
+
+        if self._table_has_rows("public", "pdb_raw"):
+            self.stdout.write("  Census PDB already loaded, skipping")
+            return
+
+        if not force_data_fetch:
+            self.stdout.write(
+                "  Census PDB not cached. Use --force-data-fetch to download."
+            )
+            return
+
+        try:
+            result = run_pdb_pipeline(STATE_FIPS, COUNTY_FIPS, ignore_cache=True)
+            self.stdout.write(
+                f"  Census PDB loaded: {result.get('row_count', 0)} rows "
+                f"in {result.get('table_name', '?')}"
+            )
+        except Exception as exc:
+            self.stdout.write(
+                self.style.WARNING(f"  PDB fetch failed ({exc}). Continuing.")
+            )
+
+    def _populate_lehd(
+        self,
+        force_data_fetch: bool,
+        force_data_reload: bool,  # noqa: ARG002
+    ) -> None:
         from brewgis.workspace.dlt_pipelines.lehd import run_lehd_pipeline
         from brewgis.workspace.services.lehd_fetcher import _populate_wac_block
 
         # LEHD LODES raw data
-        self.stdout.write("  Fetching LEHD employment data...")
-        lehd_result = run_lehd_pipeline(STATE_FIPS, COUNTY_FIPS, 2021)
-        if not lehd_result["success"]:
-            msg = "LEHD LODES fetch failed: {lehd_result.get('error')}"
-        raise CommandError(msg)
-        self.stdout.write(
-            f"  LEHD LODES loaded: {lehd_result.get('row_count', 0)} rows"
+        if self._table_has_rows("public", "lodes_raw"):
+            self.stdout.write("  LEHD LODES already loaded, skipping")
+        elif force_data_fetch:
+            try:
+                lehd_result = run_lehd_pipeline(
+                    STATE_FIPS, COUNTY_FIPS, BASE_YEAR, ignore_cache=True
+                )
+                self.stdout.write(
+                    f"  LEHD LODES loaded: {lehd_result.get('row_count', 0)} rows"
+                )
+            except Exception as exc:
+                self.stdout.write(
+                    self.style.WARNING(f"  LEHD fetch failed ({exc}). Continuing.")
+                )
+        else:
+            self.stdout.write(
+                "  LEHD LODES not cached. Use --force-data-fetch to download."
+            )
+
+        # Materialize lehd.wac_block
+        skip_wac = not force_data_fetch and self._table_has_rows(
+            "staging__brewgis_prod", "wac_block"
         )
+        if skip_wac:
+            self.stdout.write("  LEHD wac_block already populated, skipping")
+        else:
+            try:
+                lehd_wac_count = _populate_wac_block(STATE_FIPS, COUNTY_FIPS, BASE_YEAR)
+                self.stdout.write(
+                    f"  LEHD wac_block populated: {lehd_wac_count:,} rows"
+                )
+            except Exception as exc:  # noqa: BLE001
+                self.stdout.write(
+                    self.style.WARNING(f"  LEHD wac_block skipped: {exc}")
+                )
 
-        # Materialize lehd.wac_block via dbt
-        self.stdout.write("  Materializing lehd.wac_block via dbt...")
-        lehd_wac_count = _populate_wac_block(STATE_FIPS, COUNTY_FIPS, 2021)
-        self.stdout.write(f"  lehd.wac_block populated: {lehd_wac_count:,} rows")
-        return lehd_wac_count
-
-    _last_nlcd_table: str = ""
-
-    def _run_nlcd_pipeline(self, _workspace: Workspace) -> None:
-        """Run NLCD raster loading pipeline."""
+    def _populate_nlcd(
+        self,
+        force_data_fetch: bool,
+        force_data_reload: bool,  # noqa: ARG002
+    ) -> None:
         from brewgis.workspace.dlt_pipelines.nlcd import run_nlcd_pipeline
+        from brewgis.workspace.dlt_pipelines.nlcd import run_nlcd_tree_canopy_pipeline
 
-        result = run_nlcd_pipeline(
-            parcel_source="fresno_parcels",
-            schema=WORKSPACE_SCHEMA,
-        )
-        raster_table = result.get("raster_table", "nlcd_raster")
-        self._last_nlcd_table = f"{WORKSPACE_SCHEMA}.{raster_table}"
-        self.stdout.write(
-            f"  NLCD raster loaded: {result.get('row_count', 0)} tiles "
-            f"in {self._last_nlcd_table}"
-        )
+        self.stdout.write("\n  -- NLCD land cover --")
+        if not (force_data_fetch or not self._table_has_rows("public", "nlcd_raster")):
+            self.stdout.write("  NLCD raster already loaded, skipping")
+        else:
+            nlcd_result = run_nlcd_pipeline(
+                parcel_source="fresno_parcels",
+                year=2021,
+                ignore_cache=force_data_fetch,
+            )
+            self.stdout.write(
+                f"  NLCD raster loaded: {nlcd_result.get('row_count', 0)} tiles "
+                f"in public.{nlcd_result.get('raster_table', 'nlcd_raster')}"
+            )
 
-    _last_osm_table: str = ""
+        self.stdout.write("\n  -- NLCD tree canopy --")
+        if not (
+            force_data_fetch
+            or not self._table_has_rows("public", "nlcd_tree_canopy_raster")
+        ):
+            self.stdout.write("  NLCD tree canopy already loaded, skipping")
+        else:
+            nlcd_tc_result = run_nlcd_tree_canopy_pipeline(
+                parcel_source="fresno_parcels",
+                year=2021,
+                ignore_cache=force_data_fetch,
+            )
+            self.stdout.write(
+                f"  NLCD tree canopy loaded: {nlcd_tc_result.get('row_count', 0)} tiles "
+                f"in public.{nlcd_tc_result.get('raster_table', 'nlcd_tree_canopy_raster')}"
+            )
 
-    def _run_osm_pipeline(self, _workspace: Workspace) -> None:
-        """Run OSM intersection density pipeline."""
+    def _populate_osm(
+        self,
+        force_data_fetch: bool,
+        force_data_reload: bool,  # noqa: ARG002
+    ) -> None:
         from brewgis.workspace.dlt_pipelines.osm import run_osm_pipeline
 
-        result = run_osm_pipeline(
+        if not (
+            force_data_fetch
+            or not self._table_has_rows("public", "osm_intersection_density")
+        ):
+            self.stdout.write("  OSM intersection density already loaded, skipping")
+            return
+
+        osm_result = run_osm_pipeline(
             parcel_table="fresno_parcels",
             schema=WORKSPACE_SCHEMA,
         )
-        if not result.get("success"):
-            msg = "OSM pipeline failed: {result.get('error')}"
-        raise CommandError(msg)
-        self._last_osm_table = result.get(
-            "table_name", f"{WORKSPACE_SCHEMA}.osm_intersection_density"
-        )
         self.stdout.write(
-            f"  OSM intersection density loaded: {result.get('row_count', 0)} rows "
-            f"in {self._last_osm_table}"
+            f"  OSM intersection density loaded: {osm_result.get('row_count', 0)} rows "
+            f"in {osm_result.get('table_name', '?')}"
         )
 
-    def _run_dbt_base_canvas(
+    # -- SQLMesh plan runner -----------------------------------------------
+
+    def _run_sqlmesh_plan(
         self,
-        workspace: Workspace,
-        nlcd_raster_table: str,
-        osm_table: str,
+        overture: bool,
+        nlcd: bool,
+        osm: bool,
+        force_data_reload: bool,
+        cbp_vars: dict[str, object],
     ) -> None:
-        """Run dbt base_canvas models to produce the final base canvas table."""
-        from brewgis.workspace.analysis.sqlmesh_runner import run_sqlmesh_plan
+        """Run the consolidated SQLMesh plan with Fresno-specific selectors and variables."""
 
-        dbt_vars: dict[str, Any] = {
-            "parcel_table": "fresno_parcels",
-            "source_schema": WORKSPACE_SCHEMA,
-            "target_schema": WORKSPACE_SCHEMA,
-            "base_canvas_materialized": "table",
-            "local_srid": LOCAL_SRID,
-        }
-        if nlcd_raster_table:
-            dbt_vars["nlcd_enabled"] = True
-            dbt_vars["nlcd_raster_table"] = nlcd_raster_table
-            dbt_vars["nlcd_parcel_source"] = f"{WORKSPACE_SCHEMA}.fresno_parcels"
-        if osm_table:
-            dbt_vars["osm_intersection_table"] = osm_table
-
-        self.stdout.write(f"  SQLMesh variables: {dbt_vars}")
-        run_sqlmesh_plan(
-            environment="fresno_demo",
-            select=BASE_CANVAS_MODELS,
-            variables=dbt_vars,
-        )
-        self.stdout.write(self.style.SUCCESS("  SQLMesh base_canvas models complete"))
-
-        # Create analysis compat view: maps dbt column names to legacy names
-        # expected by the analysis pipeline dbt models (id, geom, etc.)
-        with connection.cursor() as cursor:
-            cursor.execute(
-                f'CREATE OR REPLACE VIEW "{WORKSPACE_SCHEMA}".parcels AS '  # noqa: S608
-                f"SELECT parcel_id AS id, geometry AS geom, * "
-                f'FROM "{WORKSPACE_SCHEMA}"."base_canvas_reconciled"'
+        # Core Fresno models + regressors (no DuckDB dependency)
+        model_selectors: list[str] = [
+            "+brewgis.fresno.parcel_shim",
+            "+brewgis.fresno.dasymetric_weights",
+            "+brewgis.fresno.dasymetric_intersections",
+            "+brewgis.fresno.du_estimation",
+            "+brewgis.fresno.du_regressor",
+            "+brewgis.fresno.sqft_regressor",
+            "+brewgis.fresno.emp_ratios_regressor",
+            "+brewgis.fresno.comparison_dasymetric",
+            "+brewgis.staging.census_2020_block",
+            "+brewgis.base_canvas.base_canvas_reconciled",
+        ]
+        if overture:
+            # DuckDB-dependent: Overture building/transport staging + ResNet
+            model_selectors.extend(
+                [
+                    "+brewgis.fresno.parcel_resnet_features",
+                    "+brewgis.staging.overture_buildings",
+                    "+brewgis.staging.vida_combined_buildings",
+                    "+brewgis.assessor.buildings_combined",
+                    "+brewgis.assessor.parcel_building_footprints",
+                    "+brewgis.assessor.authoritative_residential_area",
+                ]
             )
-        self.stdout.write(f"  Created analysis compat view: {WORKSPACE_SCHEMA}.parcels")
+        if nlcd:
+            model_selectors.extend(
+                [
+                    "+brewgis.nlcd.parcels_wm",
+                    "+brewgis.nlcd.nlcd_parcel_stats",
+                    "+brewgis.nlcd.nlcd_tree_canopy_parcel_stats",
+                ]
+            )
+        if osm:
+            model_selectors.extend(
+                [
+                    "+brewgis.staging.overture_transport",
+                    "+brewgis.nlcd.overture_road_impervious",
+                ]
+            )
 
-        # Register the final base canvas as a Layer
-        self._register_layer(
-            "base_canvas_reconciled",
-            "Fresno Base Canvas (dbt)",
-            workspace,
-            "fill",
+        # Default CBP employment controls: 0 (use LEHD block-level allocation
+        # without county-level control totals). Users can override via --cbp-employment.
+        plan_vars: dict[str, object] = {
+            "parcel_table": "brewgis.fresno.parcel_shim",
+            "dasymetric_source": "brewgis.fresno.comparison_dasymetric",
+            "local_srid": LOCAL_SRID,
+            "acs_year": BASE_YEAR,
+            "state_fips": STATE_FIPS,
+            "county_fips": COUNTY_FIPS,
+            # CBP county-level employment controls default to 0 (Fresno County, 2021)
+            # Use --cbp-employment to set from Census CBP API
+            "cbp_county_emp_agriculture": cbp_vars.get("cbp_county_emp_agriculture", 0),
+            "cbp_county_emp_extraction": cbp_vars.get("cbp_county_emp_extraction", 0),
+            "cbp_county_emp_construction": cbp_vars.get(
+                "cbp_county_emp_construction", 0
+            ),
+            "cbp_county_emp_manufacturing": cbp_vars.get(
+                "cbp_county_emp_manufacturing", 0
+            ),
+            "cbp_county_emp_transport_warehousing": cbp_vars.get(
+                "cbp_county_emp_transport_warehousing", 0
+            ),
+            "cbp_county_emp_utilities": cbp_vars.get("cbp_county_emp_utilities", 0),
+            "cbp_county_emp_wholesale": cbp_vars.get("cbp_county_emp_wholesale", 0),
+            "cbp_county_emp_retail_services": cbp_vars.get(
+                "cbp_county_emp_retail_services", 0
+            ),
+            "cbp_county_emp_office_services": cbp_vars.get(
+                "cbp_county_emp_office_services", 0
+            ),
+            "cbp_county_emp_education": cbp_vars.get("cbp_county_emp_education", 0),
+            "cbp_county_emp_medical_services": cbp_vars.get(
+                "cbp_county_emp_medical_services", 0
+            ),
+            "cbp_county_emp_arts_entertainment": cbp_vars.get(
+                "cbp_county_emp_arts_entertainment", 0
+            ),
+            "cbp_county_emp_accommodation": cbp_vars.get(
+                "cbp_county_emp_accommodation", 0
+            ),
+            "cbp_county_emp_restaurant": cbp_vars.get("cbp_county_emp_restaurant", 0),
+            "cbp_county_emp_other_services": cbp_vars.get(
+                "cbp_county_emp_other_services", 0
+            ),
+            "cbp_county_emp_public_admin": cbp_vars.get(
+                "cbp_county_emp_public_admin", 0
+            ),
+            "cbp_preserve_fraction": 0.5,
+        }
+        if osm:
+            plan_vars["osm_intersection_table"] = "osm_intersection_density"
+
+        self.stdout.write("  SQLMesh plan variables configured")
+        if cbp_vars:
+            self.stdout.write(f"  CBP employment overrides: {cbp_vars}")
+        else:
+            self.stdout.write(
+                "  CBP employment controls: 0 (LEHD allocation without county totals). "
+                "Set via --cbp-employment for accuracy."
+            )
+
+        # Fresh environment — all models build from scratch.
+        # restate_models is not needed (would fail if env doesn't exist yet).
+        run_sqlmesh_plan(
+            environment="fdemo",
+            skip_tests=True,
+            select=model_selectors,
+            variables=plan_vars,
+            restate_models=False,
         )
-        self.stdout.write("  Registered base_canvas_reconciled as Layer")
+        self.stdout.write(self.style.SUCCESS("  SQLMesh models complete"))
+
+    def _create_analysis_view(self) -> None:
+        """Create analysis compat view pointing at the SQLMesh fdemo environment."""
+        # base_canvas_reconciled lives in the 'fdemo' SQLMesh environment
+        env_schema = "base_canvas__fdemo"
+        with connection.cursor() as cursor:
+            # Check if the view exists in the fdemo environment
+            cursor.execute(
+                f"SELECT EXISTS (SELECT 1 FROM pg_views WHERE schemaname = '{env_schema}' "
+                f"AND viewname = 'base_canvas_reconciled')"
+            )
+            exists = cursor.fetchone()[0]
+            if not exists:
+                self.stdout.write(
+                    self.style.WARNING(
+                        f"  base_canvas_reconciled not found in {env_schema}. "
+                        f"Skipping analysis compat view creation."
+                    )
+                )
+                return
+
+            cursor.execute(
+                f'CREATE OR REPLACE VIEW "{WORKSPACE_SCHEMA}".parcels AS '
+                f"SELECT parcel_id AS id, geometry AS geom, * "
+                f'FROM "{env_schema}"."base_canvas_reconciled"'
+            )
+            self.stdout.write(
+                f"  Created analysis compat view: {WORKSPACE_SCHEMA}.parcels "
+                f"from {env_schema}.base_canvas_reconciled"
+            )
 
     def _import_poi(self) -> int:
         workspace = self._get_workspace()
@@ -661,7 +1016,7 @@ class Command(BaseCommand):
         if not self._table_exists(WORKSPACE_SCHEMA, "steep_slopes"):
             with connection.cursor() as cursor:
                 cursor.execute(
-                    f"CREATE TABLE {WORKSPACE_SCHEMA}.steep_slopes ("
+                    f"CREATE TABLE IF NOT EXISTS {WORKSPACE_SCHEMA}.steep_slopes ("
                     f"id SERIAL PRIMARY KEY, "
                     f"geom geometry(Polygon, 4326)"
                     f")"

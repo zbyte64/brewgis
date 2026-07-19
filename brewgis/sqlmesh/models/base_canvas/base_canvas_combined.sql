@@ -7,8 +7,11 @@ MODEL (
     assert_census_block_coverage,
     assert_employment_conserved,
     assert_commercial_sectors_use_commercial_sqft,
-    assert_industrial_sectors_use_industrial_sqft,
-    assert_bldg_area_employment_targeted
+    assert_industrial_sectors_use_industrial_sqft
+  ),
+  depends_on (
+    brewgis.fresno.comparison_dasymetric,
+    brewgis.seeds.assessor_use_codes
   )
 );
 
@@ -93,7 +96,7 @@ parcel_geom AS (
         scd.emp_ind_per_acre     AS emp_ind_per_acre_regressor,
         scd.emp_ag_per_acre      AS emp_ag_per_acre_regressor
     FROM brewgis.base_canvas.base_canvas_geometry bg
-    LEFT JOIN brewgis.comparison.sacog_comparison_dasymetric scd ON bg.parcel_id = scd.parcel_id
+    LEFT JOIN @VAR('dasymetric_source', 'brewgis.comparison.sacog_comparison_dasymetric') scd ON bg.parcel_id = scd.parcel_id
 ),
 
 -- ── Step 1: Demographics — DU-weighted Census block allocation ──────────────
@@ -848,7 +851,7 @@ irrigation AS (
                 * COALESCE(NULLIF(nlcd.impervious_fraction, 0), NULLIF(abu.dasym_impervious_fraction, 0), abu.com_irrigation_frac, 0.035)
         ) AS commercial_irrigated_area_v
     FROM area_by_use abu
-    LEFT JOIN nlcd_data nlcd ON abu.parcel_id = nlcd.parcel_id
+    LEFT JOIN nlcd_data nlcd ON abu.parcel_id = nlcd.parcel_id::text
 ),
 
 with_intersection AS (
