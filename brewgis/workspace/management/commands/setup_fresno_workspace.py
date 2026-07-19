@@ -66,6 +66,7 @@ MIN_LNG, MIN_LAT, MAX_LNG, MAX_LAT = BBOX
 
 # Base scenario config
 BASE_YEAR = 2022
+LEHD_YEAR = 2021  # LEHD LODES lags 1-2 years behind ACS
 HORIZON_YEAR = 2050
 
 # DBT vars template — used by the analysis pipeline (not base canvas SQLMesh)
@@ -577,60 +578,27 @@ class Command(BaseCommand):
         from brewgis.workspace.dlt_pipelines.census import run_census_pipeline
         from brewgis.workspace.services.census_fetcher import _populate_acs_block_group
 
-        # Census ACS raw data
-        if self._table_has_rows("public", "acs_raw"):
-            # Check if we have data for Fresno County (019)
-            engine = get_engine()
-            with engine.connect() as conn:
-                fresno_count = conn.execute(
-                    text(
-                        "SELECT COUNT(*) FROM public.acs_raw WHERE state = '06' AND county = '019'"
-                    )
-                ).scalar()
-            if fresno_count and fresno_count > 0:
-                self.stdout.write("  ACS raw already has Fresno County data")
-            else:
-                self.stdout.write(
-                    self.style.WARNING(
-                        "  ACS raw exists but lacks Fresno County (019) data. "
-                        "Run with --force-data-fetch to re-fetch from Census API."
-                    )
-                )
-        elif force_data_fetch:
-            try:
-                census_result = run_census_pipeline(
-                    STATE_FIPS, [COUNTY_FIPS], BASE_YEAR, ignore_cache=True
-                )
-                self.stdout.write(
-                    f"  Census ACS loaded: {census_result.get('row_count', 0)} rows"
-                )
-            except Exception as exc:
-                self.stdout.write(
-                    self.style.WARNING(
-                        f"  ACS fetch failed ({exc}). Continuing without ACS data."
-                    )
-                )
-        else:
-            self.stdout.write(
-                "  ACS raw not cached. Use --force-data-fetch to download."
+        # Census ACS raw data — hard fail on fetch error
+        if force_data_fetch or not self._table_has_rows("public", "acs_raw"):
+            census_result = run_census_pipeline(
+                STATE_FIPS, [COUNTY_FIPS], BASE_YEAR, ignore_cache=force_data_fetch
             )
-
-        # ACS block group (materialized from ACS raw + TIGER BG geometry)
-        skip_bg = not force_data_fetch and self._table_has_rows(
-            "staging__brewgis_prod", "acs_block_group"
-        )
-        if skip_bg:
-            self.stdout.write("  ACS block group already populated, skipping")
+            self.stdout.write(
+                f"  Census ACS loaded: {census_result.get('row_count', 0)} rows"
+            )
         else:
-            try:
-                acs_bg_count = _populate_acs_block_group(
-                    STATE_FIPS, [COUNTY_FIPS], BASE_YEAR
-                )
-                self.stdout.write(f"  ACS block group populated: {acs_bg_count:,} rows")
-            except Exception as exc:  # noqa: BLE001
-                self.stdout.write(
-                    self.style.WARNING(f"  ACS block group skipped: {exc}")
-                )
+            self.stdout.write("  ACS raw already loaded, skipping")
+
+        # Materialize acs_block_group via SQLMesh — hard fail on error
+        if force_data_fetch or not self._table_has_rows(
+            "staging__brewgis_prod", "acs_block_group"
+        ):
+            acs_bg_count = _populate_acs_block_group(
+                STATE_FIPS, [COUNTY_FIPS], BASE_YEAR
+            )
+            self.stdout.write(f"  ACS block group populated: {acs_bg_count:,} rows")
+        else:
+            self.stdout.write("  ACS block group already populated, skipping")
 
     def _populate_census_2020(
         self,
@@ -661,71 +629,41 @@ class Command(BaseCommand):
     ) -> None:
         from brewgis.workspace.dlt_pipelines.pdb import run_pdb_pipeline
 
-        if self._table_has_rows("public", "pdb_raw"):
-            self.stdout.write("  Census PDB already loaded, skipping")
-            return
-
-        if not force_data_fetch:
-            self.stdout.write(
-                "  Census PDB not cached. Use --force-data-fetch to download."
+        if force_data_fetch or not self._table_has_rows("public", "pdb_raw"):
+            result = run_pdb_pipeline(
+                STATE_FIPS, COUNTY_FIPS, ignore_cache=force_data_fetch
             )
-            return
-
-        try:
-            result = run_pdb_pipeline(STATE_FIPS, COUNTY_FIPS, ignore_cache=True)
             self.stdout.write(
                 f"  Census PDB loaded: {result.get('row_count', 0)} rows "
                 f"in {result.get('table_name', '?')}"
             )
-        except Exception as exc:
-            self.stdout.write(
-                self.style.WARNING(f"  PDB fetch failed ({exc}). Continuing.")
-            )
+        else:
+            self.stdout.write("  Census PDB already loaded, skipping")
 
     def _populate_lehd(
         self,
         force_data_fetch: bool,
-        force_data_reload: bool,  # noqa: ARG002
+        force_data_reload: bool,
     ) -> None:
         from brewgis.workspace.dlt_pipelines.lehd import run_lehd_pipeline
         from brewgis.workspace.services.lehd_fetcher import _populate_wac_block
 
-        # LEHD LODES raw data
-        if self._table_has_rows("public", "lodes_raw"):
-            self.stdout.write("  LEHD LODES already loaded, skipping")
-        elif force_data_fetch:
-            try:
-                lehd_result = run_lehd_pipeline(
-                    STATE_FIPS, COUNTY_FIPS, BASE_YEAR, ignore_cache=True
-                )
-                self.stdout.write(
-                    f"  LEHD LODES loaded: {lehd_result.get('row_count', 0)} rows"
-                )
-            except Exception as exc:
-                self.stdout.write(
-                    self.style.WARNING(f"  LEHD fetch failed ({exc}). Continuing.")
-                )
-        else:
-            self.stdout.write(
-                "  LEHD LODES not cached. Use --force-data-fetch to download."
+        # LEHD LODES raw data — hard fail on fetch error
+        if force_data_fetch or not self._table_has_rows("public", "lodes_raw"):
+            lehd_result = run_lehd_pipeline(
+                STATE_FIPS, COUNTY_FIPS, LEHD_YEAR, ignore_cache=force_data_fetch
             )
-
-        # Materialize lehd.wac_block
-        skip_wac = not force_data_fetch and self._table_has_rows(
-            "staging__brewgis_prod", "wac_block"
-        )
-        if skip_wac:
-            self.stdout.write("  LEHD wac_block already populated, skipping")
+            self.stdout.write(
+                f"  LEHD LODES loaded: {lehd_result.get('row_count', 0)} rows"
+            )
         else:
-            try:
-                lehd_wac_count = _populate_wac_block(STATE_FIPS, COUNTY_FIPS, BASE_YEAR)
-                self.stdout.write(
-                    f"  LEHD wac_block populated: {lehd_wac_count:,} rows"
-                )
-            except Exception as exc:  # noqa: BLE001
-                self.stdout.write(
-                    self.style.WARNING(f"  LEHD wac_block skipped: {exc}")
-                )
+            self.stdout.write("  LEHD LODES already loaded, skipping")
+
+        # Materialize lehd.wac_block — hard fail on error
+        lehd_wac_count = _populate_wac_block(
+            STATE_FIPS, COUNTY_FIPS, LEHD_YEAR, force_reload=force_data_reload
+        )
+        self.stdout.write(f"  LEHD wac_block populated: {lehd_wac_count:,} rows")
 
     def _populate_nlcd(
         self,

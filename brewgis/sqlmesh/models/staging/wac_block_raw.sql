@@ -41,7 +41,7 @@ WITH lodes_blocks AS (
         LEFT(w_geocode, 11) AS tract
     FROM public.lodes_raw
     WHERE year = @lodes_year
-      AND LEFT(w_geocode, 5) = '06067'
+      AND LEFT(w_geocode, 5) = CONCAT(@state_fips, @county_fips)
 ),
 
 block_geometry_map AS (
@@ -136,7 +136,7 @@ cbp_sub_sectors AS (
     JOIN block_geometry_map bm
         ON lr.w_geocode = bm.block_geoid
     WHERE lr.year = @lodes_year
-      AND LEFT(lr.w_geocode, 5) = '06067'
+      AND LEFT(lr.w_geocode, 5) = CONCAT(@state_fips, @county_fips)
 ),
 
 -- Compute CBP-based aggregate columns and classified_total for CNS16 distribution.

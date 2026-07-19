@@ -1093,6 +1093,7 @@ def _populate_wac_block(
     state_fips: str,
     county_fips: str,
     year: int = 2021,
+    force_reload: bool = False,
 ) -> int:
     """Join LEHD LODES WAC data with TIGER BG geometry via a two-step dbt pipeline.
 
@@ -1105,6 +1106,7 @@ def _populate_wac_block(
         state_fips: Two-digit state FIPS code.
         county_fips: Three-digit county FIPS code.
         year: LEHD data year (default 2021).
+        force_reload: If True, restate the models even if unchanged.
 
     Returns:
         Number of rows written.
@@ -1139,7 +1141,7 @@ def _populate_wac_block(
     raw_vars: dict[str, object] = {
         "state_fips": state_fips,
         "county_fips": county_fips,
-        "year": year,
+        "lodes_year": year,
         "cbp_11": cbp_props.get("11", 0.0),
         "cbp_21": cbp_props.get("21", 0.0),
         "cbp_48": cbp_props.get("48", 0.0),
@@ -1171,11 +1173,20 @@ def _populate_wac_block(
         scaling_vars[cbp_key] = cbp_totals.get(sub_col, 0.0)
 
     # Materialize wac_block_raw (CNS-to-sub-sector splitting with CBP proportions)
+    def _restate_list() -> list[str]:
+        from brewgis.workspace.analysis.sqlmesh_runner import get_context
+
+        ctx = get_context()
+        existing = ["brewgis.staging.wac_block_raw", "brewgis.staging.wac_block"]
+        return [m for m in existing if m in ctx.models]
+
+    restate_wac = _restate_list() if force_reload else False
     run_sqlmesh_plan(
         environment="brewgis_prod",
         select=["brewgis.staging.wac_block_raw"],
         skip_tests=True,
         variables=raw_vars,
+        restate_models=restate_wac,
     )
 
     # Materialize wac_block (C000 gap distribution and CBP county-level scaling)
@@ -1184,6 +1195,7 @@ def _populate_wac_block(
         select=["brewgis.staging.wac_block"],
         skip_tests=True,
         variables=scaling_vars,
+        restate_models=restate_wac,
     )
 
     engine = get_engine()
