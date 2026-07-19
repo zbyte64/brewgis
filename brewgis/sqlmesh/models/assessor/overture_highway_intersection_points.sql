@@ -7,6 +7,13 @@ MODEL (
   )
 );
 
+-- pre hooks
+-- (overture_transport is DuckDB gateway, so indexes must live here)
+  CREATE INDEX IF NOT EXISTS idx_overture_transport_geometry_@snapshot_hash
+  ON brewgis.staging.overture_transport USING GIST (geometry);
+  CREATE INDEX IF NOT EXISTS idx_overture_transport_local_geometry_@snapshot_hash
+  ON brewgis.staging.overture_transport USING GIST (local_geometry);
+
 -- Overture Highway Intersection Points — pre-computed highway interchange points
 -- with GiST index for performant ST_DWithin joins.
 --
