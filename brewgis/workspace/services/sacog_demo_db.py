@@ -225,6 +225,53 @@ def _restore(sql_file: Path, db_url: str, log: Any = None) -> None:
         raise RestoreError(msg)
 
 
+def _fix_elk_grove_land_use_srid(log: Any = None) -> None:
+    """Fix SRID 900914 → 2226 on public.elk_grove_land_use.
+
+    The SACOG v1 dump assigns SRID 900914 (a non-standard custom code) to
+    ``public.elk_grove_land_use.wkb_geometry``.  The actual projection is
+    NAD83 / California zone 2 (US survey feet) — EPSG:2226.  Since
+    ``spatial_ref_sys`` is managed by the PostGIS extension and the dump's
+    ``spatial_ref_sys`` COPY is intentionally skipped during restore,
+    SRID 900914 has no definition, causing downstream tools (tipg, Martin)
+    to fail when they discover the geometry column.
+
+    This function is a no-op if the table doesn't exist or already has a
+    different SRID (already fixed).
+    """
+    write = getattr(log, "write", None) or logger.info
+
+    with connection.cursor() as cursor:
+        cursor.execute(
+            """
+            SELECT 1 FROM geometry_columns
+            WHERE f_table_schema = 'public'
+              AND f_table_name = 'elk_grove_land_use'
+              AND f_geometry_column = 'wkb_geometry'
+              AND srid = 900914
+            """
+        )
+        if not cursor.fetchone():
+            return
+
+        cursor.execute(
+            "SELECT UpdateGeometrySRID('public', 'elk_grove_land_use', 'wkb_geometry', 2226)"
+        )
+        cursor.execute(
+            """
+            SELECT 1 FROM geometry_columns
+            WHERE f_table_schema = 'public'
+              AND f_table_name = 'elk_grove_land_use'
+              AND f_geometry_column = 'wkb_geometry'
+              AND srid = 2226
+            """
+        )
+        if cursor.fetchone():
+            write("  \u2713 Fixed public.elk_grove_land_use SRID: 900914 \u2192 2226")
+        else:
+            write("  \u26a0 Failed to fix public.elk_grove_land_use SRID")
+
+
 def restore_sacog_demo_db(log: Any = None) -> None:
     """Restore the SACOG demo database from the compressed SQL dump.
 
@@ -251,5 +298,14 @@ def restore_sacog_demo_db(log: Any = None) -> None:
 
     db_url = _get_database_url()
     _restore(sql_file, db_url, log=log)
+
+    # Fix geometry SRID on SACOG land-use table imported from the v1 dump.
+    # The dump assigns SRID 900914 (a non-standard code) to
+    # public.elk_grove_land_use.wkb_geometry, which is actually
+    # NAD83 / California zone 2 (US survey feet) = EPSG:2226.
+    # SRID 900914 is not registered in PostGIS spatial_ref_sys, causing
+    # tile-server startups (tipg) to crash with
+    # "Cannot find SRID (900914) in spatial_ref_sys".
+    _fix_elk_grove_land_use_srid(log=log)
 
     write("Demo database restored successfully")
