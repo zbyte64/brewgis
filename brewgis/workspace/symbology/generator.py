@@ -82,6 +82,8 @@ def _categorical_paint(symbology: SymbologyConfig) -> dict[str, Any]:
     """Generate a ``match`` paint expression for categorical symbology."""
     attr = symbology.attribute_column
     classes = list(symbology.classes.all().order_by("sort_order"))
+    if not classes:
+        return _single_paint(symbology)
     geo = _normalize_geo(symbology.layer.geometry_type)
 
     color_key = {
@@ -104,6 +106,8 @@ def _graduated_paint(symbology: SymbologyConfig) -> dict[str, Any]:
     """Generate a ``step`` paint expression for graduated symbology."""
     attr = symbology.attribute_column
     classes = list(symbology.classes.all().order_by("sort_order"))
+    if not classes:
+        return _single_paint(symbology)
     geo = _normalize_geo(symbology.layer.geometry_type)
 
     color_key = {

@@ -72,33 +72,45 @@ def edit_symbology(request: HttpRequest, layer_pk: int) -> HttpResponse:
     return render(request, "workspace/symbology/editor.html", context)
 
 
+def _apply_form_data(
+    config: SymbologyConfig,
+    post_data: dict[str, str],
+) -> None:
+    """Apply POST form data to a SymbologyConfig without saving.
+
+    Shared between ``_save_symbology`` and ``preview_symbology_for_map``
+    so both use the same field parsing.
+    """
+    config.symbology_type = post_data.get("symbology_type", "single")
+    config.attribute_column = post_data.get("attribute_column", "")
+    config.default_color = post_data.get("default_color", "#888888")
+    config.default_opacity = float(post_data.get("default_opacity", "0.7"))
+    config.palette_name = post_data.get("palette_name", "")
+    config.reverse_palette = post_data.get("reverse_palette") == "on"
+    config.num_classes = int(post_data.get("num_classes", "5"))
+    config.classification_method = post_data.get("classification_method", "quantile")
+    config.null_handling = post_data.get("null_handling", "gray")
+    config.null_color = post_data.get("null_color", "")
+    config.zero_transparent = post_data.get("zero_transparent") == "on"
+    config.auto_generated = False
+
+    stroke_color = post_data.get("stroke_color", "")
+    if stroke_color:
+        config.stroke_color = stroke_color
+    config.stroke_width = float(post_data.get("stroke_width", "1.0"))
+    config.line_width = float(post_data.get("line_width", "1.0"))
+    config.circle_radius = float(post_data.get("circle_radius", "4.0"))
+    config.min_zoom = float(post_data.get("min_zoom", "0.0"))
+    config.max_zoom = float(post_data.get("max_zoom", "22.0"))
+
+
 def _save_symbology(
     request: HttpRequest,
     layer: Layer,
     config: SymbologyConfig,
 ) -> HttpResponse:
     """Save symbology config from POST data."""
-    config.symbology_type = request.POST.get("symbology_type", "single")
-    config.attribute_column = request.POST.get("attribute_column", "")
-    config.default_color = request.POST.get("default_color", "#888888")
-    config.default_opacity = float(request.POST.get("default_opacity", "0.7"))
-    config.palette_name = request.POST.get("palette_name", "")
-    config.reverse_palette = request.POST.get("reverse_palette") == "on"
-    config.num_classes = int(request.POST.get("num_classes", "5"))
-    config.classification_method = request.POST.get("classification_method", "quantile")
-    config.null_handling = request.POST.get("null_handling", "gray")
-    config.null_color = request.POST.get("null_color", "")
-    config.zero_transparent = request.POST.get("zero_transparent") == "on"
-    config.auto_generated = False
-
-    stroke_color = request.POST.get("stroke_color", "")
-    if stroke_color:
-        config.stroke_color = stroke_color
-    config.stroke_width = float(request.POST.get("stroke_width", "1.0"))
-    config.line_width = float(request.POST.get("line_width", "1.0"))
-    config.circle_radius = float(request.POST.get("circle_radius", "4.0"))
-    config.min_zoom = float(request.POST.get("min_zoom", "0.0"))
-    config.max_zoom = float(request.POST.get("max_zoom", "22.0"))
+    _apply_form_data(config, request.POST)
     config.save()
 
     # Update style classes from POST
@@ -123,12 +135,44 @@ def _save_symbology(
             sort_order=i,
         )
 
-    redirect_url = f"/workspace/{layer.workspace.pk}/map/"
-    if getattr(request, "htmx", None) or is_panel_request(request):
-        response = HttpResponse()
-        response["HX-Redirect"] = redirect_url
+    if is_panel_request(request):
+        # Stay in panel — return updated editor + trigger map refresh
+        context = _build_context(layer, config)
+        response = render(request, "workspace/symbology/_editor_panel.html", context)
+        style = generate_maplibre_style(config)
+        response["HX-Trigger"] = json.dumps(
+            {
+                "layer-style-changed": {
+                    "layerKey": layer.table_name,
+                    "layerPk": layer.pk,
+                    "style": style,
+                },
+                "show-toast": f"Symbology saved for {layer.name}",
+            }
+        )
         return response
-    return HttpResponseRedirect(redirect_url)
+
+    return HttpResponseRedirect(f"/workspace/{layer.workspace.pk}/map/")
+
+
+@require_POST
+def preview_symbology_for_map(request: HttpRequest, layer_pk: int) -> HttpResponse:
+    """Return style preview for live in-map preview."""
+    layer = get_object_or_404(Layer, pk=layer_pk)
+    config, _created = SymbologyConfig.objects.get_or_create(layer=layer)
+    _apply_form_data(config, request.POST)
+    style = generate_maplibre_style(config)
+    response = HttpResponse()
+    response["HX-Trigger"] = json.dumps(
+        {
+            "layer-style-preview": {
+                "layerKey": layer.table_name,
+                "paint": style.get("paint", {}),
+                "layerName": layer.name,
+            }
+        }
+    )
+    return response
 
 
 @require_POST
@@ -153,12 +197,28 @@ def auto_generate(request: HttpRequest, layer_pk: int) -> HttpResponse:
         # Non-fatal - table may not exist or have no data
         pass
 
-    redirect_url = f"/symbology/{layer.pk}/edit/"
-    if getattr(request, "htmx", None) or is_panel_request(request):
-        response = HttpResponse()
-        response["HX-Redirect"] = redirect_url
+    if is_panel_request(request):
+        # Stay in panel — return updated editor + trigger map refresh
+        try:
+            config = layer.symbology
+        except SymbologyConfig.DoesNotExist:
+            config = SymbologyConfig(layer=layer)
+        context = _build_context(layer, config)
+        response = render(request, "workspace/symbology/_editor_panel.html", context)
+        style = generate_maplibre_style(config)
+        response["HX-Trigger"] = json.dumps(
+            {
+                "layer-style-changed": {
+                    "layerKey": layer.table_name,
+                    "layerPk": layer.pk,
+                    "style": style,
+                },
+                "show-toast": f"Symbology auto-generated for {layer.name}",
+            }
+        )
         return response
-    return HttpResponseRedirect(redirect_url)
+
+    return HttpResponseRedirect(f"/symbology/{layer.pk}/edit/")
 
 
 @require_GET

@@ -321,6 +321,78 @@
     // Map resize observer
     setupMapResizeObserver();
 
+    // ─── Symbology preview (Step 2) ──────────────────────────
+    document.body.addEventListener('layer-style-preview', function(evt) {
+      var detail = evt.detail;
+      if (!detail || !detail.layerKey || !detail.paint) return;
+      var mapEl = getMapEl();
+      if (!mapEl) return;
+      var map = mapEl._map || mapEl['_map'];
+      if (!map) return;
+      var style = map.getStyle();
+      if (!style || !style.layers) return;
+      var targetLayer = style.layers.find(function(l) {
+        return l.id.indexOf(detail.layerKey) === 0;
+      });
+      if (!targetLayer) {
+        console.warn('No MapLibre layer found for key:', detail.layerKey);
+        return;
+      }
+      if (typeof mapEl.previewLayerStyle === 'function') {
+        mapEl.previewLayerStyle(targetLayer.id, detail.paint);
+      }
+    });
+
+    // ─── Symbology saved / auto-generated (Steps 3, 5) ──────
+    document.body.addEventListener('layer-style-changed', function(evt) {
+      var detail = evt.detail;
+      if (!detail || !detail.layerKey || !detail.style) return;
+      var mapEl = getMapEl();
+      if (!mapEl) return;
+      var map = mapEl._map || mapEl['_map'];
+      if (!map) return;
+      var style = map.getStyle();
+      if (!style || !style.layers) return;
+      var targetLayer = style.layers.find(function(l) {
+        return l.id.indexOf(detail.layerKey) === 0;
+      });
+      if (!targetLayer) return;
+      // Apply paint and layout properties
+      if (detail.style.paint && typeof mapEl.previewLayerStyle === 'function') {
+        mapEl.previewLayerStyle(targetLayer.id, detail.style.paint);
+      }
+      if (detail.style.layout) {
+        for (var key in detail.style.layout) {
+          try { map.setLayoutProperty(targetLayer.id, key, detail.style.layout[key]); } catch(e) {}
+        }
+      }
+    });
+
+    // ─── Toast messages ─────────────────────────────────────
+    document.body.addEventListener('show-toast', function(evt) {
+      var msg = evt.detail;
+      if (!msg) return;
+      var toast = document.getElementById('toast-container');
+      if (!toast) {
+        toast = document.createElement('div');
+        toast.id = 'toast-container';
+        toast.style.cssText = 'position:fixed;bottom:20px;right:20px;z-index:9999;';
+        document.body.appendChild(toast);
+      }
+      var el = document.createElement('div');
+      el.className = 'alert alert-info alert-dismissible fade show py-1 px-2 mb-1';
+      el.style.fontSize = '0.75rem';
+      el.textContent = typeof msg === 'string' ? msg : msg.toString();
+      var closeBtn = document.createElement('button');
+      closeBtn.type = 'button';
+      closeBtn.className = 'btn-close py-1';
+      closeBtn.style.fontSize = '0.6rem';
+      closeBtn.onclick = function() { el.remove(); };
+      el.appendChild(closeBtn);
+      toast.appendChild(el);
+      setTimeout(function() { el.remove(); }, 4000);
+    });
+
     // Expose panel API globally for htmx response handlers and inline scripts
     window.__panelManager = {
       openPanel: openPanel,

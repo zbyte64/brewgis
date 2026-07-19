@@ -31,6 +31,7 @@ from .views import panel_layer_list
 from .views import panel_report_list
 from .views import poi_fetch
 from .views import preview_symbology
+from .views import preview_symbology_for_map
 from .views import scenario_clone
 from .views import scenario_comparison
 from .views import scenario_comparison_data
@@ -182,6 +183,11 @@ urlpatterns = [
         "symbology/<int:layer_pk>/preview/",
         preview_symbology,
         name="symbology_preview",
+    ),
+    path(
+        "symbology/<int:layer_pk>/preview-map/",
+        preview_symbology_for_map,
+        name="symbology_preview_map",
     ),
     path(
         "symbology/<int:layer_pk>/legend/",

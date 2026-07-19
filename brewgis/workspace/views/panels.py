@@ -8,6 +8,7 @@ force ``panel=1`` rendering.
 
 from __future__ import annotations
 
+import contextlib
 from typing import TYPE_CHECKING
 
 from django.contrib.auth.decorators import user_passes_test
@@ -15,6 +16,7 @@ from django.shortcuts import get_object_or_404
 from django.shortcuts import render
 
 from brewgis.workspace.models import Scenario
+from brewgis.workspace.models import SymbologyConfig
 from brewgis.workspace.models import Workspace
 
 if TYPE_CHECKING:
@@ -54,6 +56,23 @@ def panel_layer_list(request: HttpRequest, workspace_pk: int) -> HttpResponse:
         "scenario": scenario,
         "is_public_view": False,
     }
+
+    # Pre-fetch symbology configs for inline legend swatches
+    layer_configs: dict[int, SymbologyConfig] = {}
+    for layer in workspace.layers.all():
+        with contextlib.suppress(SymbologyConfig.DoesNotExist):
+            layer_configs[layer.pk] = layer.symbology
+    context["layer_configs"] = layer_configs
+
+    # Pre-compute swatch colors for quick rendering (avoid template ORM access)
+    swatch_colors: dict[int, str] = {}
+    for layer in workspace.layers.all():
+        cfg = layer_configs.get(layer.pk)
+        if cfg:
+            swatch_colors[layer.pk] = cfg.default_color or "#e0e0e0"
+        else:
+            swatch_colors[layer.pk] = "#e0e0e0"
+    context["swatch_colors"] = swatch_colors
     return render(
         request,
         "workspace/partials/_layer_list_panel.html",

@@ -69,14 +69,33 @@ def report_status_badge(status: str) -> str:
 
 
 @register.filter
-def dictlookup(d: dict | None, key: str) -> str:
+def dictlookup(d: dict | None, key: str | int) -> str:
     """Look up a key in a dictionary, returning "" if missing or not a dict.
+
+    Tries the key as-is, then as int (for template-rendered numeric keys)
+    and as string (for template-rendered string keys against int dict keys).
 
     Usage in templates: ``{{ data|dictlookup:"key" }}``
     """
-    if isinstance(d, dict):
-        value = d.get(key, "")
-        return str(value) if value is not None else ""
+    if not isinstance(d, dict):
+        return ""
+    # Try the key as-is
+    if key in d:
+        val = d[key]
+        return str(val) if val is not None else ""
+    # Try int (template renders ints as strings)
+    try:
+        ikey = int(key)
+        if ikey in d:
+            val = d[ikey]
+            return str(val) if val is not None else ""
+    except (ValueError, TypeError):
+        pass
+    # Try str (dict has string keys)
+    skey = str(key)
+    if skey in d:
+        val = d[skey]
+        return str(val) if val is not None else ""
     return ""
 
 

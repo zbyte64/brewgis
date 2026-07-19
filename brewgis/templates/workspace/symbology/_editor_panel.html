@@ -1,186 +1,396 @@
 {% load i18n %}
 {% load static %}
+{% load workspace_tags %}
 
-<div class="symbology-editor-panel">
+<div class="symbology-editor-panel"
+     data-layer-key="{{ layer.table_name }}"
+     data-layer-pk="{{ layer.pk }}"
+     data-palettes="{{ palettes_json|json_attr }}">
   <form method="post"
         hx-post="{% url 'workspace:symbology_edit' layer.pk %}?panel=1"
         hx-target="#right-panel-content"
         hx-swap="innerHTML">
     {% csrf_token %}
-    <div class="row mb-3">
-      <div class="col-md-6">
-        <label class="form-label">Symbology Type</label>
-        <select name="symbology_type"
-                class="form-select"
-                onchange="this.form.submit()">
-          <option value="single"
-                  {% if config.symbology_type == 'single' %}selected{% endif %}>Single Symbol</option>
-          <option value="categorical"
-                  {% if config.symbology_type == 'categorical' %}selected{% endif %}>Categorical</option>
-          <option value="graduated"
-                  {% if config.symbology_type == 'graduated' %}selected{% endif %}>Graduated</option>
-        </select>
-      </div>
-      <div class="col-md-6">
-        <label class="form-label">Attribute Column</label>
-        <input type="text"
-               name="attribute_column"
-               class="form-control"
-               value="{{ config.attribute_column }}"
-               placeholder="feature column name" />
-      </div>
-    </div>
-    <div class="row mb-3">
-      <div class="col-4">
-        <label class="form-label">Default Color</label>
-        <input type="color"
-               name="default_color"
-               class="form-control form-control-color"
-               value="{{ config.default_color }}" />
-      </div>
-      <div class="col-4">
-        <label class="form-label">Opacity</label>
-        <input type="range"
-               name="default_opacity"
-               class="form-range"
-               min="0"
-               max="1"
-               step="0.05"
-               value="{{ config.default_opacity }}" />
-      </div>
-      <div class="col-4">
-        <label class="form-label">Stroke Width</label>
-        <input type="number"
-               name="stroke_width"
-               class="form-control"
-               value="{{ config.stroke_width }}"
-               step="0.5"
-               min="0" />
-      </div>
-    </div>
-    <div class="row mb-3">
-      <div class="col-6">
-        <label class="form-label">Min Zoom</label>
-        <input type="number"
-               name="min_zoom"
-               class="form-control"
-               value="{{ config.min_zoom|default:'0.0' }}"
-               min="0"
-               max="22"
-               step="0.5" />
-      </div>
-      <div class="col-6">
-        <label class="form-label">Max Zoom</label>
-        <input type="number"
-               name="max_zoom"
-               class="form-control"
-               value="{{ config.max_zoom|default:'22.0' }}"
-               min="0"
-               max="22"
-               step="0.5" />
-      </div>
-    </div>
-    {% if config.symbology_type != 'single' %}
-      <div class="row mb-3">
+    <input type="hidden"
+           name="attribute_column"
+           value="{{ config.attribute_column }}" />
+    {# ─── Quick-Edit Section (always visible) ─── #}
+    <div class="quick-edit-section">
+      <div class="row mb-2">
         <div class="col-6">
-          <label class="form-label">Palette</label>
-          <select name="palette_name" class="form-select">
-            <option value="" {% if not config.palette_name %}selected{% endif %}>Manual</option>
-            {% for name in palette_names %}
-              <option value="{{ name }}"
-                      {% if config.palette_name == name %}selected{% endif %}>{{ name }}</option>
-            {% endfor %}
+          <label class="form-label" style="font-size:0.75rem">{% translate "Type" %}</label>
+          <select name="symbology_type"
+                  class="form-select form-select-sm"
+                  onchange="this.form.submit()">
+            <option value="single"
+                    {% if config.symbology_type == 'single' %}selected{% endif %}>{% translate "Single" %}</option>
+            <option value="categorical"
+                    {% if config.symbology_type == 'categorical' %}selected{% endif %}>
+              {% translate "Categorical" %}
+            </option>
+            <option value="graduated"
+                    {% if config.symbology_type == 'graduated' %}selected{% endif %}>
+              {% translate "Graduated" %}
+            </option>
           </select>
         </div>
-        <div class="col-3">
-          <label class="form-label">Num Classes</label>
-          <input type="number"
-                 name="num_classes"
-                 class="form-control"
-                 value="{{ config.num_classes }}"
-                 min="2"
-                 max="20" />
-        </div>
-        <div class="col-3">
-          <label class="form-label">Method</label>
-          <select name="classification_method" class="form-select">
-            <option value="quantile"
-                    {% if config.classification_method == 'quantile' %}selected{% endif %}>Quantile</option>
-            <option value="equal_interval"
-                    {% if config.classification_method == 'equal_interval' %}selected{% endif %}>Equal</option>
-            <option value="natural_breaks"
-                    {% if config.classification_method == 'natural_breaks' %}selected{% endif %}>Natural</option>
-            <option value="logarithmic"
-                    {% if config.classification_method == 'logarithmic' %}selected{% endif %}>Log</option>
-            <option value="std_deviation"
-                    {% if config.classification_method == 'std_deviation' %}selected{% endif %}>Std Dev</option>
-          </select>
+        <div class="col-6">
+          <label class="form-label" style="font-size:0.75rem">{% translate "Opacity" %}</label>
+          <div class="d-flex align-items-center gap-2">
+            <input type="range"
+                   name="default_opacity"
+                   class="form-range flex-grow-1"
+                   style="height:4px"
+                   min="0"
+                   max="1"
+                   step="0.05"
+                   value="{{ config.default_opacity }}"
+                   hx-post="{% url 'workspace:symbology_preview_map' layer.pk %}"
+                   hx-trigger="change delay:200ms"
+                   hx-include="closest form"
+                   hx-swap="none" />
+            <span class="opacity-label small text-muted"
+                  style="width:24px;
+                         text-align:right">{{ config.default_opacity|floatformat:1 }}</span>
+          </div>
         </div>
       </div>
-    {% endif %}
-    {% if config.symbology_type != 'single' and classes %}
-      <div class="mb-3">
-        <label class="form-label">Style Classes</label>
-        <div class="table-responsive">
-          <table class="table table-sm">
-            <thead>
-              <tr>
-                <th>Label</th>
-                <th>Color</th>
-                {% if config.symbology_type == 'graduated' %}
-                  <th>Min</th>
-                  <th>Max</th>
-                {% endif %}
-              </tr>
-            </thead>
-            <tbody>
-              {% for cls in classes %}
-                <tr>
-                  <td>
-                    <input type="text"
-                           name="class_label[]"
-                           class="form-control form-control-sm"
-                           value="{{ cls.label }}"
-                           style="width:100px" />
-                  </td>
-                  <td>
-                    <input type="color"
-                           name="class_color[]"
-                           class="form-control form-control-color"
-                           value="{{ cls.color }}" />
-                  </td>
-                  {% if config.symbology_type == 'graduated' %}
-                    <td>
-                      <input type="number"
-                             name="class_min[]"
-                             class="form-control form-control-sm"
-                             value="{{ cls.min_value|default_if_none:'' }}"
-                             step="any"
-                             style="width:80px" />
-                    </td>
-                    <td>
-                      <input type="number"
-                             name="class_max[]"
-                             class="form-control form-control-sm"
-                             value="{{ cls.max_value|default_if_none:'' }}"
-                             step="any"
-                             style="width:80px" />
-                    </td>
-                  {% endif %}
-                </tr>
+      <div class="row mb-2">
+        <div class="col-6">
+          <label class="form-label" style="font-size:0.75rem">{% translate "Fill Color" %}</label>
+          <input type="color"
+                 name="default_color"
+                 class="form-control form-control-color"
+                 value="{{ config.default_color }}"
+                 hx-post="{% url 'workspace:symbology_preview_map' layer.pk %}"
+                 hx-trigger="change delay:300ms"
+                 hx-include="closest form"
+                 hx-swap="none" />
+        </div>
+        <div class="col-6">
+          <label class="form-label" style="font-size:0.75rem">{% translate "Stroke" %}</label>
+          <input type="color"
+                 name="stroke_color"
+                 class="form-control form-control-color"
+                 value="{{ config.stroke_color|default:'#333333' }}"
+                 hx-post="{% url 'workspace:symbology_preview_map' layer.pk %}"
+                 hx-trigger="change delay:300ms"
+                 hx-include="closest form"
+                 hx-swap="none" />
+        </div>
+      </div>
+      {% if config.symbology_type != 'single' %}
+        <div class="row mb-2">
+          <div class="col-7">
+            <label class="form-label" style="font-size:0.75rem">{% translate "Palette" %}</label>
+            <select name="palette_name"
+                    class="form-select form-select-sm palette-select"
+                    hx-post="{% url 'workspace:symbology_preview_map' layer.pk %}"
+                    hx-trigger="change delay:500ms"
+                    hx-include="closest form"
+                    hx-swap="none">
+              <option value="" {% if not config.palette_name %}selected{% endif %}>{% translate "Manual" %}</option>
+              {% for name in palette_names %}
+                <option value="{{ name }}"
+                        {% if config.palette_name == name %}selected{% endif %}>{{ name }}</option>
               {% endfor %}
-            </tbody>
-          </table>
+            </select>
+          </div>
+          <div class="col-5">
+            <label class="form-label" style="font-size:0.75rem">{% translate "Classes" %}</label>
+            <input type="number"
+                   name="num_classes"
+                   class="form-control form-control-sm num-classes-input"
+                   value="{{ config.num_classes }}"
+                   min="2"
+                   max="20"
+                   hx-post="{% url 'workspace:symbology_preview_map' layer.pk %}"
+                   hx-trigger="change delay:800ms"
+                   hx-include="closest form"
+                   hx-swap="none" />
+          </div>
+        </div>
+      {% endif %}
+      {# Color swatch bar — populated by JS from palette data #}
+      <div class="swatch-bar d-flex gap-1 mb-2" style="height:8px">
+        {% if config.symbology_type != 'single' and config.palette_name %}
+          {% with palette=palettes_json|dictlookup:config.palette_name %}
+            {% comment %}
+              The swatch bar is populated client-side from the data-palettes attribute.
+              We render placeholders here for initial state.
+            {% endcomment %}
+          {% endwith %}
+        {% endif %}
+      </div>
+    </div>
+    {# ─── Toggle ─── #}
+    <button type="button"
+            class="btn btn-sm btn-link p-0 text-decoration-none text-muted mb-2 toggle-advanced"
+            style="font-size:0.7rem"
+            onclick="var s=this.nextElementSibling;var h=s.style.display;s.style.display=h==='none'?'block':'none';this.textContent=h==='none'?'{% translate "Basic ▴" %}':'{% translate "Advanced ▸" %}'">
+      {% translate "Advanced ▸" %}
+    </button>
+    {# ─── Advanced Section (hidden by default) ─── #}
+    <div class="advanced-section" style="display:none">
+      {# Stroke width #}
+      <div class="row mb-2">
+        <div class="col-6">
+          <label class="form-label" style="font-size:0.75rem">{% translate "Stroke Width" %}</label>
+          <input type="number"
+                 name="stroke_width"
+                 class="form-control form-control-sm"
+                 value="{{ config.stroke_width }}"
+                 step="0.5"
+                 min="0" />
+        </div>
+        <div class="col-6">
+          <label class="form-label" style="font-size:0.75rem">{% translate "Line Width" %}</label>
+          <input type="number"
+                 name="line_width"
+                 class="form-control form-control-sm"
+                 value="{{ config.line_width }}"
+                 step="0.5"
+                 min="0" />
         </div>
       </div>
-    {% endif %}
-    <div class="d-flex gap-2 mt-3">
-      <button type="submit" class="btn btn-sm btn-primary">Save Symbology</button>
-      <a href="{% url 'workspace:symbology_auto' layer.pk %}"
-         class="btn btn-sm btn-outline-info"
-         hx-post="{% url 'workspace:symbology_auto' layer.pk %}?panel=1"
-         hx-target="#right-panel-content"
-         hx-swap="innerHTML">Auto</a>
+      {# Min/Max Zoom #}
+      <div class="row mb-2">
+        <div class="col-6">
+          <label class="form-label" style="font-size:0.75rem">{% translate "Min Zoom" %}</label>
+          <input type="number"
+                 name="min_zoom"
+                 class="form-control form-control-sm"
+                 value="{{ config.min_zoom|default:'0.0' }}"
+                 min="0"
+                 max="22"
+                 step="0.5" />
+        </div>
+        <div class="col-6">
+          <label class="form-label" style="font-size:0.75rem">{% translate "Max Zoom" %}</label>
+          <input type="number"
+                 name="max_zoom"
+                 class="form-control form-control-sm"
+                 value="{{ config.max_zoom|default:'22.0' }}"
+                 min="0"
+                 max="22"
+                 step="0.5" />
+        </div>
+      </div>
+      {# Null handling #}
+      <div class="row mb-2">
+        <div class="col-6">
+          <label class="form-label" style="font-size:0.75rem">{% translate "Null Handling" %}</label>
+          <select name="null_handling" class="form-select form-select-sm">
+            <option value="gray"
+                    {% if config.null_handling == 'gray' %}selected{% endif %}>{% translate "Gray" %}</option>
+            <option value="hide"
+                    {% if config.null_handling == 'hide' %}selected{% endif %}>{% translate "Hide" %}</option>
+            <option value="default"
+                    {% if config.null_handling == 'default' %}selected{% endif %}>{% translate "Default" %}</option>
+          </select>
+        </div>
+        <div class="col-6">
+          <label class="form-label" style="font-size:0.75rem">{% translate "Null Color" %}</label>
+          <input type="color"
+                 name="null_color"
+                 class="form-control form-control-color"
+                 value="{{ config.null_color|default:'#cccccc' }}" />
+        </div>
+      </div>
+      {# Checkboxes #}
+      <div class="mb-2">
+        <div class="form-check form-check-inline">
+          <input type="checkbox"
+                 name="zero_transparent"
+                 class="form-check-input"
+                 id="id_zero_transparent"
+                 {% if config.zero_transparent %}checked{% endif %} />
+          <label class="form-check-label"
+                 for="id_zero_transparent"
+                 style="font-size:0.75rem">{% translate "Zero Transparent" %}</label>
+        </div>
+        <div class="form-check form-check-inline">
+          <input type="checkbox"
+                 name="reverse_palette"
+                 class="form-check-input"
+                 id="id_reverse_palette"
+                 {% if config.reverse_palette %}checked{% endif %} />
+          <label class="form-check-label"
+                 for="id_reverse_palette"
+                 style="font-size:0.75rem">{% translate "Reverse Palette" %}</label>
+        </div>
+      </div>
+      {# Classification method (graduated only) #}
+      {% if config.symbology_type == 'graduated' %}
+        <div class="mb-2">
+          <label class="form-label" style="font-size:0.75rem">{% translate "Classification" %}</label>
+          <select name="classification_method" class="form-select form-select-sm">
+            <option value="quantile"
+                    {% if config.classification_method == 'quantile' %}selected{% endif %}>
+              {% translate "Quantile" %}
+            </option>
+            <option value="equal_interval"
+                    {% if config.classification_method == 'equal_interval' %}selected{% endif %}>
+              {% translate "Equal Interval" %}
+            </option>
+            <option value="natural_breaks"
+                    {% if config.classification_method == 'natural_breaks' %}selected{% endif %}>
+              {% translate "Natural Breaks" %}
+            </option>
+            <option value="logarithmic"
+                    {% if config.classification_method == 'logarithmic' %}selected{% endif %}>
+              {% translate "Logarithmic" %}
+            </option>
+            <option value="std_deviation"
+                    {% if config.classification_method == 'std_deviation' %}selected{% endif %}>
+              {% translate "Std Deviation" %}
+            </option>
+          </select>
+        </div>
+      {% endif %}
+      {# Style Class table (categorical/graduated only) #}
+      {% if config.symbology_type != 'single' and classes %}
+        <div class="mb-2">
+          <label class="form-label" style="font-size:0.75rem">{% translate "Style Classes" %}</label>
+          <div class="table-responsive">
+            <table class="table table-sm mb-0">
+              <thead>
+                <tr>
+                  <th style="font-size:0.65rem">{% translate "Label" %}</th>
+                  <th style="font-size:0.65rem">{% translate "Color" %}</th>
+                  {% if config.symbology_type == 'graduated' %}
+                    <th style="font-size:0.65rem">{% translate "Min" %}</th>
+                    <th style="font-size:0.65rem">{% translate "Max" %}</th>
+                  {% endif %}
+                  <th style="width:20px"></th>
+                </tr>
+              </thead>
+              <tbody>
+                {% for cls in classes %}
+                  <tr>
+                    <td>
+                      <input type="text"
+                             name="class_label[]"
+                             class="form-control form-control-sm"
+                             value="{{ cls.label }}"
+                             style="width:100px;
+                                    font-size:0.7rem" />
+                    </td>
+                    <td>
+                      <input type="color"
+                             name="class_color[]"
+                             class="form-control form-control-color"
+                             value="{{ cls.color }}" />
+                    </td>
+                    {% if config.symbology_type == 'graduated' %}
+                      <td>
+                        <input type="number"
+                               name="class_min[]"
+                               class="form-control form-control-sm"
+                               value="{{ cls.min_value|default_if_none:'' }}"
+                               step="any"
+                               style="width:70px;
+                                      font-size:0.7rem" />
+                      </td>
+                      <td>
+                        <input type="number"
+                               name="class_max[]"
+                               class="form-control form-control-sm"
+                               value="{{ cls.max_value|default_if_none:'' }}"
+                               step="any"
+                               style="width:70px;
+                                      font-size:0.7rem" />
+                      </td>
+                    {% endif %}
+                    <td>
+                      <button type="button"
+                              class="btn btn-sm py-0 px-1 text-danger"
+                              style="font-size:0.7rem;
+                                     line-height:1"
+                              onclick="this.closest('tr').remove()"
+                              title="{% translate 'Remove class' %}">&times;</button>
+                    </td>
+                  </tr>
+                {% endfor %}
+              </tbody>
+            </table>
+          </div>
+        </div>
+      {% endif %}
+      {# Auto-Generate (in advanced section) #}
+      <div class="mb-2">
+        <button type="button"
+                class="btn btn-sm btn-outline-info"
+                style="font-size:0.75rem"
+                hx-post="{% url 'workspace:symbology_auto' layer.pk %}?panel=1"
+                hx-target="#right-panel-content"
+                hx-swap="innerHTML">{% translate "Auto-Generate" %}</button>
+      </div>
+    </div>
+    {# ─── Button Bar (always visible) ─── #}
+    <div class="d-flex gap-2 mt-2 pt-2 border-top">
+      <button type="submit"
+              class="btn btn-sm btn-primary"
+              style="font-size:0.75rem">{% translate "Save" %}</button>
+      <button type="button"
+              class="btn btn-sm btn-outline-secondary"
+              style="font-size:0.75rem"
+              onclick="window.__panelManager.closePanel()">{% translate "Cancel" %}</button>
+      <button type="button"
+              class="btn btn-sm btn-outline-info"
+              style="font-size:0.75rem"
+              hx-post="{% url 'workspace:symbology_auto' layer.pk %}?panel=1"
+              hx-target="#right-panel-content"
+              hx-swap="innerHTML">{% translate "Auto" %}</button>
     </div>
   </form>
 </div>
+<script>
+  (function() {
+    var panel = document.querySelector('.symbology-editor-panel');
+    if (!panel) return;
+
+    // ─── Color swatch bar from palette ───
+    function updateSwatchBar() {
+      var swatchBar = panel.querySelector('.swatch-bar');
+      if (!swatchBar) return;
+      var paletteName = panel.querySelector('.palette-select')?.value;
+      var numClasses = parseInt(panel.querySelector('.num-classes-input')?.value || '5', 10);
+      var palettesRaw = panel.getAttribute('data-palettes');
+      if (!palettesRaw || !paletteName) {
+        swatchBar.innerHTML = '';
+        return;
+      }
+      try {
+        var palettes = JSON.parse(palettesRaw);
+        var palette = palettes[paletteName];
+        if (!palette || !palette.length) {
+          swatchBar.innerHTML = '';
+          return;
+        }
+        var colors = palette.slice(0, numClasses);
+        swatchBar.innerHTML = colors.map(function(c) {
+          return '<span style="background-color:' + c + ';flex:1;border-radius:2px"></span>';
+        }).join('');
+      } catch (e) {
+        swatchBar.innerHTML = '';
+      }
+    }
+
+    // Update swatch bar on palette/classes change
+    panel.querySelector('.palette-select')?.addEventListener('change', updateSwatchBar);
+    panel.querySelector('.num-classes-input')?.addEventListener('change', updateSwatchBar);
+
+    // Initial update
+    updateSwatchBar();
+
+    // ─── Opacity label sync ───
+    var opacitySlider = panel.querySelector('input[name="default_opacity"]');
+    var opacityLabel = panel.querySelector('.opacity-label');
+    if (opacitySlider && opacityLabel) {
+      opacitySlider.addEventListener('input', function() {
+        opacityLabel.textContent = parseFloat(this.value).toFixed(1);
+      });
+    }
+  })();
+</script>
