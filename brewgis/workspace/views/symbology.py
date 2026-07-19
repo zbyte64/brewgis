@@ -28,6 +28,7 @@ from brewgis.workspace.palettes import get_all_names
 from brewgis.workspace.symbology.auto import auto_generate_symbology
 from brewgis.workspace.symbology.generator import generate_maplibre_style
 from brewgis.workspace.symbology.legend import generate_legend
+from brewgis.workspace.views.panels import is_panel_request
 
 
 def _build_context(
@@ -64,6 +65,10 @@ def edit_symbology(request: HttpRequest, layer_pk: int) -> HttpResponse:
         return _save_symbology(request, layer, config)
 
     context = _build_context(layer, config)
+
+    if is_panel_request(request):
+        return render(request, "workspace/symbology/_editor_panel.html", context)
+
     return render(request, "workspace/symbology/editor.html", context)
 
 
@@ -119,7 +124,7 @@ def _save_symbology(
         )
 
     redirect_url = f"/workspace/{layer.workspace.pk}/map/"
-    if getattr(request, "htmx", None):
+    if getattr(request, "htmx", None) or is_panel_request(request):
         response = HttpResponse()
         response["HX-Redirect"] = redirect_url
         return response
@@ -149,7 +154,7 @@ def auto_generate(request: HttpRequest, layer_pk: int) -> HttpResponse:
         pass
 
     redirect_url = f"/symbology/{layer.pk}/edit/"
-    if getattr(request, "htmx", None):
+    if getattr(request, "htmx", None) or is_panel_request(request):
         response = HttpResponse()
         response["HX-Redirect"] = redirect_url
         return response

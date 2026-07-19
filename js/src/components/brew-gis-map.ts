@@ -12,10 +12,9 @@ export class BrewGisMap extends LitElement {
     delegatesFocus: true,
   }
 
-  /** MapLibre style URL or style object. */
-  @property({ type: String, attribute: 'map-style' })
-  mapStyle: string =
-    'https://raw.githubusercontent.com/go2garret/maps/main/src/assets/json/openStreetMap.json'
+  /** MapLibre style URL or style object. Read from #basemap-style-data by default. */
+  @property({ type: String })
+  mapStyle: string = 'https://basemaps.cartocdn.com/gl/positron-gl-style/style.json'
 
   /** Initial viewport state. */
   @property({ type: Object })
@@ -40,6 +39,14 @@ export class BrewGisMap extends LitElement {
   /** Canvas view layer ID for feature querying in paint mode. */
   @property({ type: String, attribute: 'canvas-layer-id' })
   canvasLayerId: string = ''
+
+  /** Width of an open panel in pixels, for map viewport adjustment. */
+  @property({ type: Number, attribute: 'panel-width' })
+  panelWidth: number = 0
+
+  /** Which side has an open panel: 'left', 'right', 'bottom', or null. */
+  @property({ type: String, attribute: 'panel-side' })
+  panelSide: 'left' | 'right' | 'bottom' | null = null
 
   @property({ type: Object, attribute: 'transform-request' })
   transformRequest:
@@ -69,7 +76,7 @@ export class BrewGisMap extends LitElement {
 
   /** @inheritdoc */
   override render(): unknown {
-    return html` <div id="map-container" style="height: 90vh; width: 100%;"></div> `
+    return html` <div id="map-container" style="height: 100%; width: 100%;"></div> `
   }
 
   /** @inheritdoc */
@@ -106,6 +113,13 @@ export class BrewGisMap extends LitElement {
     if (changedProperties.has('canvasLayerId') && this._mapLoaded) {
       this._syncCanvasLayer()
     }
+
+    if (
+      (changedProperties.has('panelWidth') || changedProperties.has('panelSide')) &&
+      this._mapLoaded
+    ) {
+      this._adjustViewport()
+    }
   }
 
   /** @inheritdoc */
@@ -128,7 +142,7 @@ export class BrewGisMap extends LitElement {
     this.clearHighlight()
     for (const id of ids) {
       try {
-        this._map.setFeatureState({ source: sourceId, id } as any, { selected: true })
+        this._map.setFeatureState({ source: sourceId, id: id }, { selected: true })
       } catch {
         // Feature or source may not exist yet
       }
@@ -141,7 +155,7 @@ export class BrewGisMap extends LitElement {
     const sourceId = this._findCanvasSourceId()
     if (!sourceId) return
     try {
-      ;(this._map as any).removeFeatureState({ source: sourceId })
+      this._map.removeFeatureState({ source: sourceId })
     } catch {
       // Source may not exist
     }
@@ -152,7 +166,128 @@ export class BrewGisMap extends LitElement {
     return this._paintController
   }
 
+  /**
+   * Resize the map to fit its container. Called by panel manager after panel opens/closes.
+   */
+  resize(): void {
+    if (this._map) {
+      this._map.resize()
+    }
+  }
+
+  /**
+   * Preview a layer style by applying paint properties directly.
+   * Used for live-preview updates in the symbology panel.
+   */
+  previewLayerStyle(layerId: string, paintProperties: Record<string, unknown>): void {
+    if (!this._map) return
+    for (const [key, value] of Object.entries(paintProperties)) {
+      try {
+        this._map.setPaintProperty(layerId, key, value)
+      } catch {
+        // Layer may not exist yet
+      }
+    }
+  }
+
+  /**
+   * Set a layer's visibility.
+   */
+  setLayerVisibility(layerId: string, visible: boolean): void {
+    if (!this._map) return
+    try {
+      this._map.setLayoutProperty(layerId, 'visibility', visible ? 'visible' : 'none')
+    } catch {
+      // Layer may not exist yet
+    }
+  }
+
+  /**
+   * Zoom to fit a feature by its ID.
+   * Queries the resolved layer ID and fits the map bounds.
+   */
+  zoomToFeature(featureId: string): void {
+    if (!this._map) return
+    const sourceId = this._findCanvasSourceId()
+    if (!sourceId) return
+    const canvasConfig = this.layers.find(
+      (l) => l.id === this.canvasLayerId || l.key === this.canvasLayerId,
+    )
+    const sourceLayer = canvasConfig?.['source-layer']
+    try {
+      const features = this._map.querySourceFeatures(sourceId, {
+        sourceLayer: sourceLayer,
+        filter: ['==', ['id'], featureId],
+      })
+      if (features.length > 0) {
+        const bounds = new maplibregl.LngLatBounds()
+        for (const f of features) {
+          if (f.geometry?.type === 'Point') {
+            const coords = f.geometry.coordinates
+            if (
+              coords.length >= 2 &&
+              typeof coords[0] === 'number' &&
+              typeof coords[1] === 'number'
+            ) {
+              bounds.extend([coords[0], coords[1]] as [number, number])
+            }
+          }
+        }
+        if (!bounds.isEmpty()) {
+          this._map.fitBounds(bounds, { padding: 50 })
+        }
+      }
+    } catch {
+      // Feature query failed
+    }
+  }
+
+  /**
+   * Adjust map viewport padding to accommodate open panels.
+   */
+  private _adjustViewport(): void {
+    if (!this._map) return
+    try {
+      if (this.panelSide === 'right' && this.panelWidth > 0) {
+        this._map.setPadding({ top: 0, bottom: 0, left: 0, right: this.panelWidth })
+      } else if (this.panelSide === 'bottom' && this.panelWidth > 0) {
+        this._map.setPadding({ top: 0, bottom: this.panelWidth, left: 0, right: 0 })
+      } else {
+        this._map.setPadding({ top: 0, bottom: 0, left: 0, right: 0 })
+      }
+      this._map.resize()
+    } catch {
+      // Map may not be fully initialized
+    }
+  }
+
+  /**
+   * Resolve the basemap style from the script data tag or property fallback.
+   *
+   * Reads from `<script id="basemap-style-data" type="application/json">`
+   * which can contain either a URL string (fetched by MapLibre) or a
+   * full style object (used directly). Falls back to `this.mapStyle`.
+   */
+  private _resolveBasemapStyle(): maplibregl.StyleSpecification | string {
+    const el =
+      typeof document !== 'undefined' ? document.getElementById('basemap-style-data') : null
+    if (el?.textContent) {
+      try {
+        const parsed: unknown = JSON.parse(el.textContent)
+        if (typeof parsed === 'string') return parsed
+        return parsed as maplibregl.StyleSpecification
+      } catch {
+        // Invalid JSON in script tag — fall through to property
+      }
+    }
+    return this.mapStyle
+  }
+
   // ─── Private Methods ──────────────────────────────────────
+
+  /** Fallback default basemap URL. */
+  private readonly _defaultMapStyle =
+    'https://basemaps.cartocdn.com/gl/positron-gl-style/style.json'
 
   private _initMap(): void {
     if (this._map) return
@@ -162,7 +297,7 @@ export class BrewGisMap extends LitElement {
 
     const mapOptions: maplibregl.MapOptions = {
       container,
-      style: this.mapStyle,
+      style: this._resolveBasemapStyle(),
     }
 
     if (this.transformRequest) {
@@ -279,14 +414,7 @@ export class BrewGisMap extends LitElement {
   private _findCanvasSourceId(): string | null {
     if (!this._map || !this.canvasLayerId) return null
 
-    // Check rendered layers on the map
-    const style = this._map.getStyle()
-    if (style?.layers) {
-      const canvasLayer = style.layers.find((l) => l.id === this.canvasLayerId) as any
-      if (canvasLayer?.source) return canvasLayer.source
-    }
-
-    // Fall back to this.layers prop
+    // Derive source ID from the layers config
     const layerConfig = this.layers.find(
       (l) => l.id === this.canvasLayerId || l.key === this.canvasLayerId,
     )

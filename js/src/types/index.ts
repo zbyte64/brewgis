@@ -55,6 +55,21 @@ export interface PaintRequest {
   bf_id?: number
 }
 
+export interface LayerVisibilityEvent {
+  layerId: string
+  visible: boolean
+}
+
+export interface FeatureHighlightEvent {
+  featureIds: string[]
+  mode: 'highlight' | 'clear'
+}
+
+export interface LayerStylePreviewEvent {
+  layerId: string
+  paint: Record<string, unknown>
+}
+
 declare global {
   interface HTMLElementTagNameMap {
     'brew-gis-map': import('../components/brew-gis-map').BrewGisMap

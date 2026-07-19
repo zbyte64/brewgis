@@ -244,12 +244,13 @@ describe('brew-gis-map', () => {
       scenarioId: 1,
     })
     ;(el as any).canvasLayerId = 'scenario_test_canvas'
-
-    // Mock getStyle to return the canvas layer
-    const originalGetStyle = mockMap.getStyle
-    mockMap.getStyle.mockReturnValue({
-      layers: [{ id: 'scenario_test_canvas', source: 'test_source', type: 'fill' }],
-    })
+    ;(el as any).layers = [
+      {
+        key: 'scenario_test_canvas',
+        id: 'scenario_test_canvas',
+        source: { type: 'vector', tiles: [] },
+      },
+    ]
 
     const ids = ['feature-1', 'feature-2']
     ;(el as any).highlightFeatures(ids)
@@ -257,26 +258,25 @@ describe('brew-gis-map', () => {
     expect(mockMap.setFeatureState).toHaveBeenCalled()
     const call = mockMap.setFeatureState.mock.calls[0]
     expect(call[0]).toHaveProperty('source')
-    expect(call[0].source).toBe('test_source')
+    // Source ID is derived from the layer config id
+    expect(call[0].source).toBe('scenario_test_canvas')
     expect(call[1]).toEqual({ selected: true })
-
-    // Restore mock
-    mockMap.getStyle = originalGetStyle
   })
 
   it('clearHighlight uses canvas source when canvas-layer-id is set', async () => {
     const { el, mockMap } = await createAndAttach()
 
     ;(el as any).canvasLayerId = 'scenario_test_canvas'
-    mockMap.getStyle.mockReturnValue({
-      layers: [{ id: 'scenario_test_canvas', source: 'test_source', type: 'fill' }],
-    })
+    ;(el as any).layers = [
+      {
+        key: 'scenario_test_canvas',
+        id: 'scenario_test_canvas',
+        source: { type: 'vector', tiles: [] },
+      },
+    ]
     ;(el as any).clearHighlight()
 
     expect(mockMap.removeFeatureState).toHaveBeenCalled()
-
-    mockMap.getStyle.mockReset()
-    mockMap.getStyle.mockReturnValue({ layers: [] })
   })
 
   it('dispatches featureselected event in polygon mode on draw.selectionchange', async () => {

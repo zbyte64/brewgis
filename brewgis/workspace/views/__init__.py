@@ -39,6 +39,11 @@ from .paint import paint_built_form  # noqa: F401
 from .paint import paint_features  # noqa: F401
 from .paint import paint_history  # noqa: F401
 from .paint import undo_paint  # noqa: F401
+from .panels import panel_analysis_launch  # noqa: F401
+from .panels import panel_data_catalog  # noqa: F401
+from .panels import panel_import_center  # noqa: F401
+from .panels import panel_layer_list  # noqa: F401
+from .panels import panel_report_list  # noqa: F401
 from .read_gis_file import ReadGISFileView  # noqa: F401
 from .report import generate_map_report  # noqa: F401
 from .report import generate_paint_report  # noqa: F401

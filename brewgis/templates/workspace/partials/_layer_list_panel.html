@@ -1,0 +1,152 @@
+{% load i18n %}
+
+<div class="layer-list-panel">
+  <h6 class="text-muted mb-2" style="font-size: 0.8rem;">{% translate "Scenario Layers" %}</h6>
+  <div class="list-group list-group-flush" style="font-size: 0.75rem;">
+    <div class="list-group-item d-flex align-items-center gap-2 py-1 px-0 border-0">
+      <input type="checkbox"
+             class="form-check-input m-0"
+             checked
+             disabled
+             style="width: 0.9rem;
+                    height: 0.9rem" />
+      <span class="d-flex align-items-center gap-1">
+        <span class="badge"
+              style="background-color: #e0e0e0;
+                     width: 12px;
+                     height: 12px">&nbsp;</span>
+        {% translate "Base Canvas" %}
+      </span>
+    </div>
+    <div class="list-group-item d-flex align-items-center gap-2 py-1 px-0 border-0">
+      <input type="checkbox"
+             class="form-check-input m-0"
+             checked
+             disabled
+             style="width: 0.9rem;
+                    height: 0.9rem" />
+      <span class="d-flex align-items-center gap-1">
+        <span class="badge"
+              style="background-color: #ffeb3b;
+                     width: 12px;
+                     height: 12px">&nbsp;</span>
+        {% translate "Painted Features" %}
+      </span>
+    </div>
+  </div>
+  {% if scenario and scenario.analysis_runs.exists %}
+    <hr class="my-2" />
+    <h6 class="text-muted mb-2" style="font-size: 0.8rem;">{% translate "Analysis Results" %}</h6>
+    <div class="list-group list-group-flush" style="font-size: 0.75rem;">
+      {% for run in scenario.analysis_runs.all %}
+        {% if run.status == "completed" %}
+          {% for module in run.modules %}
+            <div class="list-group-item d-flex align-items-center gap-2 py-1 px-0 border-0">
+              <input type="checkbox"
+                     class="form-check-input m-0"
+                     checked
+                     disabled
+                     style="width: 0.9rem;
+                            height: 0.9rem" />
+              <span>{{ module|title }}</span>
+            </div>
+          {% endfor %}
+        {% endif %}
+      {% endfor %}
+    </div>
+  {% endif %}
+  <hr class="my-2" />
+  <div class="d-flex align-items-center justify-content-between">
+    <h6 class="mb-0 text-muted" style="font-size: 0.8rem;">{% translate "Legends" %}</h6>
+    <button type="button"
+            class="btn btn-sm py-0 px-1 text-muted"
+            style="font-size: 0.65rem;
+                   line-height: 1"
+            title="{% translate 'Layer Groups' %}"
+            hx-get="{% url 'workspace:layer_group_list' workspace.pk %}"
+            hx-target="#layer-group-container"
+            hx-swap="innerHTML">Groups</button>
+  </div>
+  <div id="legend-list">
+    {% regroup workspace.layers.all by group as layer_groups %}
+    {% for group in layer_groups %}
+      {% if group.grouper %}
+        <div class="text-muted fw-semibold small px-1 mt-1 mb-0"
+             style="font-size: 0.65rem;
+                    text-transform: uppercase">{{ group.grouper.name }}</div>
+      {% endif %}
+      {% for layer in group.list %}
+        <div class="mb-1">
+          <div class="d-flex align-items-center justify-content-between">
+            <button type="button"
+                    class="btn btn-sm btn-link p-0 text-start text-decoration-none"
+                    hx-get="{% url 'workspace:layer_legend' layer.pk %}"
+                    hx-target="#legend-{{ layer.pk }}"
+                    hx-swap="innerHTML"
+                    style="font-size: 0.75rem">
+              {% if not is_public_view %}
+                <span class="text-decoration-none"
+                      style="font-size: 0.75rem;
+                             color: inherit"
+                      hx-get="{% url 'workspace:symbology_edit' layer.pk %}?panel=1"
+                      hx-target="#right-panel-content"
+                      hx-swap="innerHTML"
+                      hx-trigger="click"
+                      data-panel-event="open-panel:Symbology: {{ layer.name }}">
+                {% endif %}
+                {{ layer.name }}
+                {% if not is_public_view %}</span>{% endif %}
+            </button>
+            {% if not is_public_view %}
+              <div class="d-flex align-items-center gap-1">
+                <button type="button"
+                        class="btn btn-sm py-0 px-1 text-muted"
+                        style="font-size: 0.65rem;
+                               line-height: 1"
+                        title="{% translate 'Filters' %}"
+                        aria-label="{% translate 'Filters' %}"
+                        hx-get="{% url 'workspace:layer_filter_list' layer.pk %}"
+                        hx-target="#filter-container-{{ layer.pk }}"
+                        hx-swap="innerHTML">🔽</button>
+                <span class="btn btn-sm py-0 px-1 text-muted"
+                      style="font-size: 0.65rem;
+                             line-height: 1"
+                      title="{% translate 'View Data' %}"
+                      aria-label="{% translate 'View Data' %}"
+                      hx-get="{% url 'workspace:layer_data_table' layer.pk %}?panel=1"
+                      hx-target="#bottom-sheet-content"
+                      hx-swap="innerHTML"
+                      data-panel-event="open-sheet:{{ layer.name }} Data">📋</span>
+              </div>
+            {% endif %}
+          </div>
+          <div id="legend-{{ layer.pk }}" class="ps-2"></div>
+          <div id="filter-container-{{ layer.pk }}" class="ps-2"></div>
+        </div>
+      {% endfor %}
+    {% endfor %}
+  </div>
+  <hr class="my-2" />
+  <div class="d-flex flex-column gap-1">
+    <button type="button"
+            class="btn btn-sm btn-outline-secondary"
+            hx-get="{% url 'workspace:create_layer' %}?workspace={{ workspace.pk }}"
+            hx-target="#right-panel-content"
+            hx-swap="innerHTML"
+            data-panel-event="open-panel:{% translate 'Add Layer' %}">{% translate "Add Layer" %}</button>
+    <button type="button"
+            class="btn btn-sm btn-outline-secondary"
+            hx-get="{% url 'workspace:layer_group_list' workspace.pk %}"
+            hx-target="#right-panel-content"
+            hx-swap="innerHTML"
+            data-panel-event="open-panel:{% translate 'Layer Groups' %}">{% translate "Layer Groups" %}</button>
+    <button type="button"
+            class="btn btn-sm btn-outline-secondary"
+            hx-get="{% url 'workspace:external_service_list' workspace.pk %}"
+            hx-target="#right-panel-content"
+            hx-swap="innerHTML"
+            data-panel-event="open-panel:{% translate 'External Services' %}">
+      {% translate "External Services" %}
+    </button>
+  </div>
+</div>

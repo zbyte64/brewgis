@@ -64,9 +64,11 @@ def view_workspace_map(request: HttpRequest, workspace_pk: int) -> HttpResponse:
         canvas_source_id = f"{schema}.{view_name}"
 
         if settings.TILE_SERVER_BACKEND == "martin":
-            canvas_tiles_url = f"/martin/{canvas_source_id}/{{z}}/{{x}}/{{y}}"
+            canvas_tiles_url = request.build_absolute_uri(
+                f"/martin/{canvas_source_id}/{{z}}/{{x}}/{{y}}"
+            )
         else:
-            canvas_tiles_url = (
+            canvas_tiles_url = request.build_absolute_uri(
                 f"/tipg/collections/{canvas_source_id}/tiles/WebMercatorQuad"
                 "/{z}/{x}/{y}"
             )
@@ -111,7 +113,15 @@ def view_workspace_map(request: HttpRequest, workspace_pk: int) -> HttpResponse:
     layer_data = []
     for layer in layers:
         data = LayerSchema.model_validate(layer).model_dump()
+        data["type"] = layer.geometry_type
         data["source"] = layer.to_maplibre_source()
+
+        # Make tile URLs absolute (MapLibre v4+ requires absolute URLs
+        # for tile sources in web worker contexts)
+        if "tiles" in data["source"]:
+            data["source"]["tiles"] = [
+                request.build_absolute_uri(t) for t in data["source"]["tiles"]
+            ]
 
         if settings.TILE_SERVER_BACKEND == "tipg":
             data["source-layer"] = layer.db_table
@@ -188,7 +198,34 @@ def view_workspace_map(request: HttpRequest, workspace_pk: int) -> HttpResponse:
                 json.dumps(resolved) if isinstance(resolved, dict) else resolved
             )
         else:
-            basemap_style = "https://raw.githubusercontent.com/go2garret/maps/main/src/assets/json/openStreetMap.json"
+            basemap_style = json.dumps(
+                {
+                    "version": 8,
+                    "sources": {
+                        "basemap": {
+                            "type": "raster",
+                            "tiles": [
+                                "https://a.basemaps.cartocdn.com/light_all/{z}/{x}/{y}@2x.png",
+                            ],
+                            "tileSize": 256,
+                            "attribution": (
+                                '&copy; <a href="https://www.openstreetmap.org/copyright">'
+                                "OpenStreetMap</a> contributors &copy;"
+                                ' <a href="https://carto.com/">CARTO</a>'
+                            ),
+                        },
+                    },
+                    "layers": [
+                        {
+                            "id": "basemap-layer",
+                            "type": "raster",
+                            "source": "basemap",
+                            "minzoom": 0,
+                            "maxzoom": 22,
+                        },
+                    ],
+                }
+            )
 
     context: dict[str, object] = {
         "layers_json": json.dumps(layer_data).replace("'", "\\u0027"),
@@ -242,11 +279,16 @@ def view_public_scenario_map(request: HttpRequest, token: str) -> HttpResponse:
 
     layer_data = []
     for layer in layers:
+        source = layer.to_maplibre_source()
+        if "tiles" in source:
+            source["tiles"] = [request.build_absolute_uri(t) for t in source["tiles"]]
         layer_data.append(
             {
                 "key": layer.key,
                 "name": layer.name,
-                "source": layer.to_maplibre_source(),
+                "type": layer.geometry_type,
+                "source": source,
+                "source-layer": layer.db_table,
                 "symbology": layer.symbology if hasattr(layer, "symbology") else None,
             }
         )

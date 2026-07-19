@@ -1,0 +1,186 @@
+{% load i18n %}
+{% load static %}
+
+<div class="symbology-editor-panel">
+  <form method="post"
+        hx-post="{% url 'workspace:symbology_edit' layer.pk %}?panel=1"
+        hx-target="#right-panel-content"
+        hx-swap="innerHTML">
+    {% csrf_token %}
+    <div class="row mb-3">
+      <div class="col-md-6">
+        <label class="form-label">Symbology Type</label>
+        <select name="symbology_type"
+                class="form-select"
+                onchange="this.form.submit()">
+          <option value="single"
+                  {% if config.symbology_type == 'single' %}selected{% endif %}>Single Symbol</option>
+          <option value="categorical"
+                  {% if config.symbology_type == 'categorical' %}selected{% endif %}>Categorical</option>
+          <option value="graduated"
+                  {% if config.symbology_type == 'graduated' %}selected{% endif %}>Graduated</option>
+        </select>
+      </div>
+      <div class="col-md-6">
+        <label class="form-label">Attribute Column</label>
+        <input type="text"
+               name="attribute_column"
+               class="form-control"
+               value="{{ config.attribute_column }}"
+               placeholder="feature column name" />
+      </div>
+    </div>
+    <div class="row mb-3">
+      <div class="col-4">
+        <label class="form-label">Default Color</label>
+        <input type="color"
+               name="default_color"
+               class="form-control form-control-color"
+               value="{{ config.default_color }}" />
+      </div>
+      <div class="col-4">
+        <label class="form-label">Opacity</label>
+        <input type="range"
+               name="default_opacity"
+               class="form-range"
+               min="0"
+               max="1"
+               step="0.05"
+               value="{{ config.default_opacity }}" />
+      </div>
+      <div class="col-4">
+        <label class="form-label">Stroke Width</label>
+        <input type="number"
+               name="stroke_width"
+               class="form-control"
+               value="{{ config.stroke_width }}"
+               step="0.5"
+               min="0" />
+      </div>
+    </div>
+    <div class="row mb-3">
+      <div class="col-6">
+        <label class="form-label">Min Zoom</label>
+        <input type="number"
+               name="min_zoom"
+               class="form-control"
+               value="{{ config.min_zoom|default:'0.0' }}"
+               min="0"
+               max="22"
+               step="0.5" />
+      </div>
+      <div class="col-6">
+        <label class="form-label">Max Zoom</label>
+        <input type="number"
+               name="max_zoom"
+               class="form-control"
+               value="{{ config.max_zoom|default:'22.0' }}"
+               min="0"
+               max="22"
+               step="0.5" />
+      </div>
+    </div>
+    {% if config.symbology_type != 'single' %}
+      <div class="row mb-3">
+        <div class="col-6">
+          <label class="form-label">Palette</label>
+          <select name="palette_name" class="form-select">
+            <option value="" {% if not config.palette_name %}selected{% endif %}>Manual</option>
+            {% for name in palette_names %}
+              <option value="{{ name }}"
+                      {% if config.palette_name == name %}selected{% endif %}>{{ name }}</option>
+            {% endfor %}
+          </select>
+        </div>
+        <div class="col-3">
+          <label class="form-label">Num Classes</label>
+          <input type="number"
+                 name="num_classes"
+                 class="form-control"
+                 value="{{ config.num_classes }}"
+                 min="2"
+                 max="20" />
+        </div>
+        <div class="col-3">
+          <label class="form-label">Method</label>
+          <select name="classification_method" class="form-select">
+            <option value="quantile"
+                    {% if config.classification_method == 'quantile' %}selected{% endif %}>Quantile</option>
+            <option value="equal_interval"
+                    {% if config.classification_method == 'equal_interval' %}selected{% endif %}>Equal</option>
+            <option value="natural_breaks"
+                    {% if config.classification_method == 'natural_breaks' %}selected{% endif %}>Natural</option>
+            <option value="logarithmic"
+                    {% if config.classification_method == 'logarithmic' %}selected{% endif %}>Log</option>
+            <option value="std_deviation"
+                    {% if config.classification_method == 'std_deviation' %}selected{% endif %}>Std Dev</option>
+          </select>
+        </div>
+      </div>
+    {% endif %}
+    {% if config.symbology_type != 'single' and classes %}
+      <div class="mb-3">
+        <label class="form-label">Style Classes</label>
+        <div class="table-responsive">
+          <table class="table table-sm">
+            <thead>
+              <tr>
+                <th>Label</th>
+                <th>Color</th>
+                {% if config.symbology_type == 'graduated' %}
+                  <th>Min</th>
+                  <th>Max</th>
+                {% endif %}
+              </tr>
+            </thead>
+            <tbody>
+              {% for cls in classes %}
+                <tr>
+                  <td>
+                    <input type="text"
+                           name="class_label[]"
+                           class="form-control form-control-sm"
+                           value="{{ cls.label }}"
+                           style="width:100px" />
+                  </td>
+                  <td>
+                    <input type="color"
+                           name="class_color[]"
+                           class="form-control form-control-color"
+                           value="{{ cls.color }}" />
+                  </td>
+                  {% if config.symbology_type == 'graduated' %}
+                    <td>
+                      <input type="number"
+                             name="class_min[]"
+                             class="form-control form-control-sm"
+                             value="{{ cls.min_value|default_if_none:'' }}"
+                             step="any"
+                             style="width:80px" />
+                    </td>
+                    <td>
+                      <input type="number"
+                             name="class_max[]"
+                             class="form-control form-control-sm"
+                             value="{{ cls.max_value|default_if_none:'' }}"
+                             step="any"
+                             style="width:80px" />
+                    </td>
+                  {% endif %}
+                </tr>
+              {% endfor %}
+            </tbody>
+          </table>
+        </div>
+      </div>
+    {% endif %}
+    <div class="d-flex gap-2 mt-3">
+      <button type="submit" class="btn btn-sm btn-primary">Save Symbology</button>
+      <a href="{% url 'workspace:symbology_auto' layer.pk %}"
+         class="btn btn-sm btn-outline-info"
+         hx-post="{% url 'workspace:symbology_auto' layer.pk %}?panel=1"
+         hx-target="#right-panel-content"
+         hx-swap="innerHTML">Auto</a>
+    </div>
+  </form>
+</div>

@@ -24,6 +24,11 @@ from .views import merge_paint_edits
 from .views import paint_built_form
 from .views import paint_features
 from .views import paint_history
+from .views import panel_analysis_launch
+from .views import panel_data_catalog
+from .views import panel_import_center
+from .views import panel_layer_list
+from .views import panel_report_list
 from .views import poi_fetch
 from .views import preview_symbology
 from .views import scenario_clone
@@ -391,5 +396,31 @@ urlpatterns = [
         "layers/<int:layer_pk>/data/",
         layer_data_table,
         name="layer_data_table",
+    ),
+    # Panel endpoints (return partial HTML for map shell panels)
+    path(
+        "workspace/<int:workspace_pk>/panel/layer-list/",
+        panel_layer_list,
+        name="panel_layer_list",
+    ),
+    path(
+        "workspace/<int:workspace_pk>/panel/catalog/",
+        panel_data_catalog,
+        name="panel_data_catalog",
+    ),
+    path(
+        "workspace/<int:workspace_pk>/panel/import/",
+        panel_import_center,
+        name="panel_import_center",
+    ),
+    path(
+        "workspace/<int:workspace_pk>/panel/analysis/",
+        panel_analysis_launch,
+        name="panel_analysis_launch",
+    ),
+    path(
+        "workspace/<int:workspace_pk>/panel/reports/",
+        panel_report_list,
+        name="panel_report_list",
     ),
 ]

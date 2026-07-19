@@ -1,0 +1,23 @@
+{% load i18n crispy_forms_tags %}
+
+<div class="scenario-form-panel">
+  <form method="post"
+        hx-post="{% if scenario %}{% url 'workspace:scenario_edit' workspace.pk scenario.pk %}?panel=1{% else %}{% url 'workspace:scenario_create' workspace.pk %}?panel=1{% endif %}"
+        hx-target="#modal-content"
+        hx-swap="innerHTML">
+    {% csrf_token %}
+    {{ form|crispy }}
+    <div class="d-flex gap-2 mt-3">
+      <button type="submit" class="btn btn-primary">
+        {% if scenario %}
+          {% translate "Save Changes" %}
+        {% else %}
+          {% translate "Create Scenario" %}
+        {% endif %}
+      </button>
+      <button type="button"
+              class="btn btn-outline-secondary"
+              onclick="window.__panelManager.closeModal()">{% translate "Cancel" %}</button>
+    </div>
+  </form>
+</div>

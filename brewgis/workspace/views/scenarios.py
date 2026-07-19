@@ -25,6 +25,7 @@ from brewgis.workspace.models import ScenarioType
 from brewgis.workspace.models import Workspace
 from brewgis.workspace.services.canvas_view_manager import create_canvas_view
 from brewgis.workspace.services.scenario_cloner import clone_scenario
+from brewgis.workspace.views.panels import is_panel_request
 
 # ---------------------------------------------------------------------------
 # ScenarioCreateForm
@@ -203,6 +204,12 @@ def scenario_create(request: HttpRequest, workspace_pk: int) -> HttpResponse:
                 horizon_year=form.cleaned_data["horizon_year"],
             )
             create_canvas_view(scenario, base_table="public.base_canvas")
+            if is_panel_request(request):
+                response = HttpResponse()
+                response["HX-Redirect"] = (
+                    f"/workspace/{workspace.pk}/map/?scenario={scenario.pk}"
+                )
+                return response
             return redirect("workspace:workspace_detail", pk=workspace.pk)
     else:
         form = ScenarioCreateForm(workspace=workspace)
@@ -211,6 +218,14 @@ def scenario_create(request: HttpRequest, workspace_pk: int) -> HttpResponse:
         "workspace": workspace,
         "form": form,
     }
+
+    if is_panel_request(request):
+        return render(
+            request,
+            "workspace/partials/_scenario_modal.html",
+            context,
+        )
+
     return render(request, "workspace/scenario_form.html", context)
 
 
@@ -230,6 +245,12 @@ def scenario_edit(
             scenario.base_year = form.cleaned_data["base_year"]
             scenario.horizon_year = form.cleaned_data["horizon_year"]
             scenario.save()
+            if is_panel_request(request):
+                response = HttpResponse()
+                response["HX-Redirect"] = (
+                    f"/workspace/{workspace.pk}/map/?scenario={scenario.pk}"
+                )
+                return response
             return redirect("workspace:workspace_detail", pk=workspace.pk)
     else:
         initial = {
@@ -247,6 +268,14 @@ def scenario_edit(
         "scenario": scenario,
         "form": form,
     }
+
+    if is_panel_request(request):
+        return render(
+            request,
+            "workspace/partials/_scenario_modal.html",
+            context,
+        )
+
     return render(request, "workspace/scenario_form.html", context)
 
 

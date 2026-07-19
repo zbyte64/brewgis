@@ -7,473 +7,349 @@
 {% block extrahead %}
   <link href="https://unpkg.com/maplibre-gl@^4.7.1/dist/maplibre-gl.css"
         rel="stylesheet" />
+  <link href="{% static 'css/map-shell.css' %}" rel="stylesheet" />
+  <meta name="referrer" content="unsafe-url" />
   <script type="module" src="{% static 'js/brew-gis-map.js' %}"></script>
+  <script defer src="{% static 'js/panel-manager.js' %}"></script>
 {% endblock extrahead %}
 {% block title %}
   Map - {{ workspace.name }}
 {% endblock title %}
 {% block content %}
-  <nav aria-label="breadcrumb">
-    <ol class="breadcrumb">
-      <li class="breadcrumb-item">
-        <a href="{% url 'workspace:home' %}">{% translate "Home" %}</a>
-      </li>
-      <li class="breadcrumb-item active" aria-current="page">{% translate "Map" %} - {{ workspace.name }}</li>
-    </ol>
-  </nav>
-  <div class="container mt-4">
-    {% if is_public_view %}
-      <div class="alert alert-info mb-3 rounded-0 text-center small"
-           role="alert">{% translate "Public view — read-only scenario display" %}</div>
-    {% endif %}
-    <div class="row">
-      <div class="col-12">
-        <div class="card">
-          <div class="card-header d-flex justify-content-between align-items-center flex-wrap gap-2">
-            <h5 class="card-title mb-0">{{ workspace.name }}</h5>
-            {% if scenario %}
-              <span class="badge bg-{% if scenario.scenario_type == 'base' %}success{% else %}warning text-dark{% endif %} ms-2"
-                    style="font-size: 0.75rem">
-                {{ scenario.name }}
-                <small class="ms-1">({{ scenario.get_scenario_type_display }})</small>
-              </span>
-            {% endif %}
-            {% if not is_public_view %}
-              <div class="d-flex align-items-center gap-2">
-                {% if workspace.scenarios.exists %}
-                  <form method="get"
-                        class="d-flex align-items-center gap-1"
-                        id="scenario-form">
-                    <select name="scenario"
-                            class="form-select form-select-sm"
-                            style="width: auto"
-                            onchange="this.form.submit()">
-                      <option value="">View mode</option>
-                      {% for s in workspace.scenarios.all %}
-                        <option value="{{ s.pk }}"
-                                {% if scenario and scenario.pk == s.pk %}selected{% endif %}>{{ s.name }}</option>
-                      {% endfor %}
-                    </select>
-                    {% if scenario %}
-                      <button type="button"
-                              class="btn btn-sm btn-outline-primary"
-                              id="toggle-paint-btn">Paint Mode</button>
-                    {% endif %}
-                  </form>
-                {% else %}
-                  <small class="text-muted">No scenarios yet.
-                    <a href="{% url 'workspace:scenario_create' workspace.pk %}"
-                       class="text-decoration-none">Create one</a>
-                  </small>
-                {% endif %}
-                <a href="{% url 'workspace:home' %}"
-                   class="btn btn-sm btn-outline-secondary">Back</a>
-                <button type="button"
-                        class="btn btn-sm btn-outline-secondary"
-                        id="export-map-btn"
-                        data-bs-toggle="modal"
-                        data-bs-target="#exportMapModal">Export Map</button>
-                <button type="button"
-                        class="btn btn-sm btn-outline-secondary"
-                        id="basemap-btn"
-                        hx-get="{% url 'workspace:basemap_list' %}?workspace={{ workspace.pk }}"
-                        hx-target="#basemap-picker-container"
-                        hx-swap="innerHTML">Basemap</button>
-                <button type="button"
-                        class="btn btn-sm btn-outline-secondary"
-                        hx-get="{% url 'workspace:external_service_list' workspace.pk %}"
-                        hx-target="#external-services-container"
-                        hx-swap="innerHTML">Services</button>
-              </div>
-            {% endif %}
-          </div>
-          {% if scenario and not is_public_view %}
-            {% partialdef paint-toolbar %}
-            <div id="paint-toolbar"
-                 class="p-2 bg-light border-bottom"
-                 style="display: none">
-              <div class="row g-2 align-items-center">
-                <!-- Feature count -->
-                <div class="col-auto">
-                  <small class="text-muted" id="paint-feature-count">0 features selected</small>
-                </div>
-                <!-- Selection mode buttons -->
-                <div class="col-auto">
-                  <div class="btn-group btn-group-sm"
-                       role="group"
-                       aria-label="Selection mode">
-                    <input type="radio"
-                           class="btn-check"
-                           name="sel-mode"
-                           id="sel-mode-click"
-                           value="click"
-                           checked />
-                    <label class="btn btn-outline-secondary"
-                           for="sel-mode-click"
-                           title="Click to select features">Click</label>
-                    <input type="radio"
-                           class="btn-check"
-                           name="sel-mode"
-                           id="sel-mode-box"
-                           value="box" />
-                    <label class="btn btn-outline-secondary"
-                           for="sel-mode-box"
-                           title="Drag to select a rectangle">Box</label>
-                    <input type="radio"
-                           class="btn-check"
-                           name="sel-mode"
-                           id="sel-mode-polygon"
-                           value="polygon" />
-                    <label class="btn btn-outline-secondary"
-                           for="sel-mode-polygon"
-                           title="Draw a polygon to select features">Polygon</label>
-                  </div>
-                </div>
-                <!-- Paint mode tabs -->
-                <div class="col-auto">
-                  <div class="btn-group btn-group-sm" role="group">
-                    <input type="radio"
-                           class="btn-check"
-                           name="paint-mode"
-                           id="paint-mode-direct"
-                           value="direct"
-                           checked />
-                    <label class="btn btn-outline-secondary" for="paint-mode-direct">Direct Paint</label>
-                    <input type="radio"
-                           class="btn-check"
-                           name="paint-mode"
-                           id="paint-mode-bf"
-                           value="built_form" />
-                    <label class="btn btn-outline-secondary" for="paint-mode-bf">Built Form</label>
-                  </div>
-                </div>
-                <!-- Direct Paint Controls -->
-                <div class="col-auto paint-control-group" id="paint-direct-controls">
-                  <select class="form-select form-select-sm"
-                          id="paint-column"
-                          name="column"
-                          aria-label="Column">
-                    <option value="">Select column...</option>
-                    {% for column in paintable_columns %}<option value="{{ column.name }}">{{ column.label }}</option>{% endfor %}
-                  </select>
-                </div>
-                <div class="col-auto paint-control-group" id="paint-direct-value">
-                  <input type="number"
-                         class="form-control form-control-sm"
-                         id="paint-value"
-                         name="value"
-                         placeholder="Value"
-                         step="any" />
-                </div>
-                <!-- Built Form Controls (hidden by default, shown via JS) -->
-                <div class="col-auto paint-bf-group"
-                     id="paint-bf-controls"
-                     style="display: none">
-                  <select class="form-select form-select-sm"
-                          id="paint-bf-type"
-                          name="bf_type"
-                          aria-label="Built Form Type">
-                    <option value="building">Building Type</option>
-                    <option value="place">Place Type</option>
-                  </select>
-                </div>
-                <div class="col-auto paint-bf-group"
-                     id="paint-bf-id-wrapper"
-                     style="display: none">
-                  <select class="form-select form-select-sm"
-                          id="paint-bf-id"
-                          name="bf_id"
-                          aria-label="Built Form">
-                    <option value="">Select...</option>
-                    {% if built_forms %}
-                      {% if built_forms.building_types %}
-                        <optgroup label="Building Types" id="bf-optgroup-building" data-type="building">
-                          {% for bf in built_forms.building_types %}
-                            <option value="{{ bf.id }}" data-type="building">{{ bf.name }}</option>
-                          {% endfor %}
-                        </optgroup>
-                      {% endif %}
-                      {% if built_forms.place_types %}
-                        <optgroup label="Place Types"
-                                  id="bf-optgroup-place"
-                                  data-type="place"
-                                  style="display: none">
-                          {% for bf in built_forms.place_types %}
-                            <option value="{{ bf.id }}" data-type="place">{{ bf.name }}</option>
-                          {% endfor %}
-                        </optgroup>
-                      {% endif %}
-                    {% endif %}
-                  </select>
-                </div>
-                <!-- Hidden fields for selected feature IDs -->
-                <input type="hidden" id="paint-feature-ids" name="features" value="" />
-                <!-- Buttons -->
-                <div class="col-auto ms-auto">
-                  <button type="button"
-                          class="btn btn-sm btn-primary"
-                          id="paint-apply-btn"
-                          disabled
-                          hx-post="{{ paint_url }}"
-                          hx-target="#paint-result"
-                          hx-swap="innerHTML"
-                          hx-include="#paint-toolbar select, #paint-toolbar input"
-                          hx-trigger="click"
-                          hx-headers='{"X-CSRFToken": "{{ csrf_token }}"}'>Apply</button>
-                  <button type="button"
-                          class="btn btn-sm btn-outline-danger"
-                          id="paint-clear-btn"
-                          disabled
-                          hx-post="{{ clear_url }}"
-                          hx-target="#paint-result"
-                          hx-swap="innerHTML"
-                          hx-include="#paint-feature-ids"
-                          hx-trigger="click"
-                          hx-headers='{"X-CSRFToken": "{{ csrf_token }}"}'>Clear</button>
-                  <button type="button"
-                          class="btn btn-sm btn-outline-secondary"
-                          id="paint-undo-btn"
-                          disabled
-                          style="margin-left: 0.25rem"
-                          hx-post="{{ undo_url }}"
-                          hx-target="#paint-result"
-                          hx-swap="innerHTML"
-                          hx-include="#undo-event-id"
-                          hx-trigger="click"
-                          hx-headers='{"X-CSRFToken": "{{ csrf_token }}"}'>Undo Last</button>
-                  <input type="hidden" id="undo-event-id" name="event_id" value="" />
-                  <button type="button"
-                          class="btn btn-sm btn-outline-info"
-                          id="paint-history-btn"
-                          style="margin-left: 0.25rem">History</button>
-                </div>
-              </div>
-              <!-- Result feedback area -->
-              <div id="paint-result" class="mt-1"></div>
-            </div>
-            {% partialdef paint-history-panel %}
-            <div id="paint-history-panel"
-                 class="p-2 bg-light border-bottom"
-                 style="display: none">
-              <div class="d-flex justify-content-between align-items-center mb-1">
-                <small class="text-muted fw-semibold">Paint History</small>
-                <button type="button"
-                        class="btn btn-sm btn-outline-secondary"
-                        id="paint-history-toggle"
-                        style="font-size: 0.75rem">Refresh</button>
-              </div>
-              <div id="paint-history-list"
-                   style="max-height: 180px;
-                          overflow-y: auto;
-                          font-size: 0.75rem">
-                <div class="text-muted">No paint history loaded.</div>
-              </div>
-            </div>
-          {% endpartialdef %}
-        {% endpartialdef %}
-        {% partial paint-toolbar %}
-        {% partial paint-history-panel %}
-      {% endif %}
-      <div class="card-body p-0">
-        <div class="row g-0">
-          <div class="col{% if scenario %}-9{% endif %}">
-            <brew-gis-map map-style="{{ basemap_style }}" viewport='{{ viewport_json|safe }}' layers='{{ layer_data|json_attr }}'
-            {% if scenario %}
-              mode="view" scenario-id="{{ scenario.pk }}" canvas-layer-id="{{ canvas_view_layer_id }}" selection-mode="{{ selection_mode }}"
-            {% endif %}
-            </brew-gis-map>
-            <!-- Basemap Picker (hidden by default, shown via htmx) -->
-            <div id="basemap-picker-container" class="p-2" style="display: none;"></div>
-            <!-- Layer Groups Container -->
-            <div id="layer-group-container" class="p-2" style="display: none;"></div>
-            <!-- External Services Container -->
-            <div id="external-services-container" class="p-2" style="display: none;"></div>
-          </div>
-          {% if scenario %}
-            <div class="col-3 border-start"
-                 style="max-height: 600px;
-                        overflow-y: auto">
-              <div class="p-2">
-                <h6 class="mb-2 text-muted" style="font-size: 0.8rem;">{% translate "Scenario Layers" %}</h6>
-                <div class="list-group list-group-flush" style="font-size: 0.75rem;">
-                  <div class="list-group-item d-flex align-items-center gap-2 py-1 px-0 border-0">
-                    <input type="checkbox"
-                           class="form-check-input m-0"
-                           checked
-                           disabled
-                           style="width: 0.9rem;
-                                  height: 0.9rem" />
-                    <span class="d-flex align-items-center gap-1">
-                      <span class="badge"
-                            style="background-color: #e0e0e0;
-                                   width: 12px;
-                                   height: 12px">&nbsp;</span>
-                      {% translate "Base Canvas" %}
-                    </span>
-                  </div>
-                  <div class="list-group-item d-flex align-items-center gap-2 py-1 px-0 border-0">
-                    <input type="checkbox"
-                           class="form-check-input m-0"
-                           checked
-                           disabled
-                           style="width: 0.9rem;
-                                  height: 0.9rem" />
-                    <span class="d-flex align-items-center gap-1">
-                      <span class="badge"
-                            style="background-color: #ffeb3b;
-                                   width: 12px;
-                                   height: 12px">&nbsp;</span>
-                      {% translate "Painted Features" %}
-                    </span>
-                  </div>
-                </div>
-                {% if scenario.analysis_runs.exists %}
-                  <hr class="my-2" />
-                  <h6 class="mb-2 text-muted" style="font-size: 0.8rem;">{% translate "Analysis Results" %}</h6>
-                  <div class="list-group list-group-flush" style="font-size: 0.75rem;">
-                    {% for run in scenario.analysis_runs.all %}
-                      {% if run.status == "completed" %}
-                        {% for module in run.modules %}
-                          <div class="list-group-item d-flex align-items-center gap-2 py-1 px-0 border-0">
-                            <input type="checkbox"
-                                   class="form-check-input m-0"
-                                   checked
-                                   disabled
-                                   style="width: 0.9rem;
-                                          height: 0.9rem" />
-                            <span>{{ module|title }}</span>
-                          </div>
-                        {% endfor %}
-                      {% endif %}
-                    {% endfor %}
-                  </div>
-                {% endif %}
-                <hr class="my-2" />
-                <div class="d-flex align-items-center justify-content-between">
-                  <h6 class="mb-0 text-muted" style="font-size: 0.8rem;">{% translate "Legends" %}</h6>
-                  <button type="button"
-                          class="btn btn-sm py-0 px-1 text-muted"
-                          style="font-size: 0.65rem;
-                                 line-height: 1"
-                          title="{% translate 'Layer Groups' %}"
-                          hx-get="{% url 'workspace:layer_group_list' workspace.pk %}"
-                          hx-target="#layer-group-container"
-                          hx-swap="innerHTML">Groups</button>
-                </div>
-                <div id="legend-list">
-                  {% regroup workspace.layers.all by group as layer_groups %}
-                  {% for group in layer_groups %}
-                    {% if group.grouper %}
-                      <div class="text-muted fw-semibold small px-1 mt-1 mb-0"
-                           style="font-size: 0.65rem;
-                                  text-transform: uppercase">{{ group.grouper.name }}</div>
-                    {% endif %}
-                    {% for layer in group.list %}
-                      <div class="mb-1">
-                        <div class="d-flex align-items-center justify-content-between">
-                          <button type="button"
-                                  class="btn btn-sm btn-link p-0 text-start text-decoration-none"
-                                  hx-get="{% url 'workspace:layer_legend' layer.pk %}"
-                                  hx-target="#legend-{{ layer.pk }}"
-                                  hx-swap="innerHTML"
-                                  style="font-size: 0.75rem">
-                            {% if not is_public_view %}
-                              <a href="{% url 'workspace:symbology_edit' layer.pk %}"
-                                 class="text-decoration-none"
-                                 style="font-size: 0.75rem;
-                                        color: inherit">
-                              {% endif %}
-                              {{ layer.name }}
-                              {% if not is_public_view %}</a>{% endif %}
-                          </button>
-                          {% if not is_public_view %}
-                            <button type="button"
-                                    class="btn btn-sm py-0 px-1 text-muted"
-                                    style="font-size: 0.65rem;
-                                           line-height: 1"
-                                    title="{% translate 'Filters' %}"
-                                    aria-label="{% translate 'Filters' %}"
-                                    hx-get="{% url 'workspace:layer_filter_list' layer.pk %}"
-                                    hx-target="#filter-container-{{ layer.pk }}"
-                                    hx-swap="innerHTML">🔽</button>
-                          {% endif %}
-                          {% if not is_public_view %}
-                            <a href="{% url 'workspace:layer_data_table' layer.pk %}"
-                               class="btn btn-sm py-0 px-1 text-muted text-decoration-none"
-                               style="font-size: 0.65rem;
-                                      line-height: 1"
-                               title="{% translate 'View Data' %}"
-                               aria-label="{% translate 'View Data' %}"
-                               target="_blank">📋</a>
-                          {% endif %}
-                        </div>
-                        <div id="legend-{{ layer.pk }}" class="ps-2"></div>
-                        <div id="filter-container-{{ layer.pk }}" class="ps-2"></div>
-                      </div>
-                    {% endfor %}
+  <div class="map-shell">
+    <!-- Top bar overlay -->
+    <div class="map-shell__topbar">
+      <div class="map-shell__topbar-row">
+        <button id="sidebar-toggle"
+                class="btn btn-sm btn-outline-secondary"
+                type="button"
+                aria-label="{% translate 'Toggle sidebar' %}">☰</button>
+        <span class="fw-semibold">{{ workspace.name }}</span>
+        {% if scenario %}
+          <span class="badge bg-{% if scenario.scenario_type == 'base' %}success{% else %}warning text-dark{% endif %}"
+                style="font-size: 0.75rem">
+            {{ scenario.name }}
+            <small class="ms-1">({{ scenario.get_scenario_type_display }})</small>
+          </span>
+        {% endif %}
+        {% if is_public_view %}
+          <span class="badge bg-info ms-2" style="font-size: 0.65rem">{% translate "Public View" %}</span>
+        {% endif %}
+        <div class="ms-auto d-flex align-items-center gap-2">
+          {% if not is_public_view %}
+            {% if workspace.scenarios.exists %}
+              <form method="get"
+                    class="d-flex align-items-center gap-1"
+                    id="scenario-form">
+                <select name="scenario"
+                        class="form-select form-select-sm"
+                        style="width: auto"
+                        onchange="this.form.submit()">
+                  <option value="">{% translate "View mode" %}</option>
+                  {% for s in workspace.scenarios.all %}
+                    <option value="{{ s.pk }}"
+                            {% if scenario and scenario.pk == s.pk %}selected{% endif %}>{{ s.name }}</option>
                   {% endfor %}
-                </div>
-              </div>
-            </div>
+                </select>
+                {% if scenario %}
+                  <button type="button"
+                          class="btn btn-sm btn-outline-primary"
+                          id="toggle-paint-btn">{% translate "Paint Mode" %}</button>
+                {% endif %}
+              </form>
+            {% else %}
+              <small class="text-muted">{% translate "No scenarios yet." %}</small>
+            {% endif %}
+            <button type="button"
+                    class="btn btn-sm btn-outline-secondary"
+                    id="export-map-btn"
+                    onclick="window.__panelManager.openModal()">{% translate "Export Map" %}</button>
           {% endif %}
         </div>
       </div>
-    </div>
-  </div>
-</div>
-</div>
-<!-- Export Map Modal -->
-<div class="modal fade"
-     id="exportMapModal"
-     tabindex="-1"
-     aria-hidden="true">
-  <div class="modal-dialog modal-sm">
-    <div class="modal-content">
-      <div class="modal-header">
-        <h6 class="modal-title">Export Map</h6>
-        <button type="button"
-                class="btn-close"
-                data-bs-dismiss="modal"
-                aria-label="Close"></button>
-      </div>
-      <div class="modal-body">
-        <div class="mb-3">
-          <label for="export-title" class="form-label">Title</label>
-          <input type="text"
-                 class="form-control form-control-sm"
-                 id="export-title"
-                 value="{{ workspace.name }} - {% if scenario %}{{ scenario.name }}{% else %}Map View{% endif %}" />
-        </div>
-        <div class="mb-3">
-          <label for="export-dpi" class="form-label">DPI</label>
-          <select class="form-select form-select-sm" id="export-dpi">
-            <option value="1">72 DPI (Screen)</option>
-            <option value="2" selected>144 DPI (Retina)</option>
-            <option value="3">216 DPI (Print)</option>
-            <option value="4">300 DPI (High Quality Print)</option>
+      {% if scenario and not is_public_view %}
+        {% partialdef paint-toolbar %}
+        <div id="paint-toolbar"
+             class="map-shell__topbar-row"
+             style="display: none">
+          <!-- Feature count -->
+          <small class="text-muted" id="paint-feature-count">0 features selected</small>
+          <!-- Selection mode buttons -->
+          <div class="btn-group btn-group-sm"
+               role="group"
+               aria-label="Selection mode">
+            <input type="radio"
+                   class="btn-check"
+                   name="sel-mode"
+                   id="sel-mode-click"
+                   value="click"
+                   checked />
+            <label class="btn btn-outline-secondary"
+                   for="sel-mode-click"
+                   title="Click to select features">Click</label>
+            <input type="radio"
+                   class="btn-check"
+                   name="sel-mode"
+                   id="sel-mode-box"
+                   value="box" />
+            <label class="btn btn-outline-secondary"
+                   for="sel-mode-box"
+                   title="Drag to select a rectangle">Box</label>
+            <input type="radio"
+                   class="btn-check"
+                   name="sel-mode"
+                   id="sel-mode-polygon"
+                   value="polygon" />
+            <label class="btn btn-outline-secondary"
+                   for="sel-mode-polygon"
+                   title="Draw a polygon to select features">Polygon</label>
+          </div>
+          <!-- Paint mode tabs -->
+          <div class="btn-group btn-group-sm" role="group">
+            <input type="radio"
+                   class="btn-check"
+                   name="paint-mode"
+                   id="paint-mode-direct"
+                   value="direct"
+                   checked />
+            <label class="btn btn-outline-secondary" for="paint-mode-direct">Direct Paint</label>
+            <input type="radio"
+                   class="btn-check"
+                   name="paint-mode"
+                   id="paint-mode-bf"
+                   value="built_form" />
+            <label class="btn btn-outline-secondary" for="paint-mode-bf">Built Form</label>
+          </div>
+          <!-- Direct Paint Controls -->
+          <select class="form-select form-select-sm paint-control-group"
+                  id="paint-column"
+                  name="column"
+                  aria-label="Column"
+                  style="width: auto">
+            <option value="">Select column...</option>
+            {% for column in paintable_columns %}<option value="{{ column.name }}">{{ column.label }}</option>{% endfor %}
           </select>
+          <input type="number"
+                 class="form-control form-control-sm paint-control-group"
+                 id="paint-value"
+                 name="value"
+                 placeholder="Value"
+                 step="any"
+                 style="width: 100px" />
+          <!-- Built Form Controls (hidden by default) -->
+          <select class="form-select form-select-sm paint-bf-group"
+                  id="paint-bf-type"
+                  name="bf_type"
+                  aria-label="Built Form Type"
+                  style="width: auto;
+                         display: none">
+            <option value="building">Building Type</option>
+            <option value="place">Place Type</option>
+          </select>
+          <select class="form-select form-select-sm paint-bf-group"
+                  id="paint-bf-id"
+                  name="bf_id"
+                  aria-label="Built Form"
+                  style="width: auto;
+                         display: none">
+            <option value="">Select...</option>
+            {% if built_forms %}
+              {% if built_forms.building_types %}
+                <optgroup label="Building Types" id="bf-optgroup-building" data-type="building">
+                  {% for bf in built_forms.building_types %}
+                    <option value="{{ bf.id }}" data-type="building">{{ bf.name }}</option>
+                  {% endfor %}
+                </optgroup>
+              {% endif %}
+              {% if built_forms.place_types %}
+                <optgroup label="Place Types"
+                          id="bf-optgroup-place"
+                          data-type="place"
+                          style="display: none">
+                  {% for bf in built_forms.place_types %}
+                    <option value="{{ bf.id }}" data-type="place">{{ bf.name }}</option>
+                  {% endfor %}
+                </optgroup>
+              {% endif %}
+            {% endif %}
+          </select>
+          <!-- Hidden fields for selected feature IDs -->
+          <input type="hidden" id="paint-feature-ids" name="features" value="" />
+          <input type="hidden" id="undo-event-id" name="event_id" value="" />
+          <!-- Buttons -->
+          <button type="button"
+                  class="btn btn-sm btn-primary"
+                  id="paint-apply-btn"
+                  disabled
+                  hx-post="{{ paint_url }}"
+                  hx-target="#paint-result"
+                  hx-swap="innerHTML"
+                  hx-include="#paint-toolbar select, #paint-toolbar input"
+                  hx-trigger="click"
+                  hx-headers='{"X-CSRFToken": "{{ csrf_token }}"}'>Apply</button>
+          <button type="button"
+                  class="btn btn-sm btn-outline-danger"
+                  id="paint-clear-btn"
+                  disabled
+                  hx-post="{{ clear_url }}"
+                  hx-target="#paint-result"
+                  hx-swap="innerHTML"
+                  hx-include="#paint-feature-ids"
+                  hx-trigger="click"
+                  hx-headers='{"X-CSRFToken": "{{ csrf_token }}"}'>Clear</button>
+          <button type="button"
+                  class="btn btn-sm btn-outline-secondary"
+                  id="paint-undo-btn"
+                  disabled
+                  hx-post="{{ undo_url }}"
+                  hx-target="#paint-result"
+                  hx-swap="innerHTML"
+                  hx-include="#undo-event-id"
+                  hx-trigger="click"
+                  hx-headers='{"X-CSRFToken": "{{ csrf_token }}"}'>Undo Last</button>
+          <button type="button"
+                  class="btn btn-sm btn-outline-info"
+                  id="paint-history-btn">History</button>
+          <!-- Result feedback area -->
+          <div id="paint-result" class="mt-1 w-100"></div>
         </div>
-        <div class="form-check mb-3">
-          <input class="form-check-input"
-                 type="checkbox"
-                 id="export-include-legend"
-                 checked />
-          <label class="form-check-label" for="export-include-legend">Include Legend</label>
-        </div>
-        <div class="mb-3">
-          <label class="form-label">Format</label>
-          <div class="d-flex gap-2">
-            <button type="button"
-                    class="btn btn-sm btn-outline-primary"
-                    id="export-png-btn">Download PNG</button>
-            <button type="button"
-                    class="btn btn-sm btn-outline-primary"
-                    id="export-pdf-btn">Generate PDF</button>
+        {% partialdef paint-history-panel %}
+        <div id="paint-history-panel"
+             class="map-shell__topbar-row"
+             style="display: none">
+          <small class="text-muted fw-semibold">Paint History</small>
+          <button type="button"
+                  class="btn btn-sm btn-outline-secondary"
+                  id="paint-history-toggle"
+                  style="font-size: 0.75rem">Refresh</button>
+          <div id="paint-history-list"
+               style="max-height: 120px;
+                      overflow-y: auto;
+                      font-size: 0.75rem;
+                      flex: 1">
+            <div class="text-muted">No paint history loaded.</div>
           </div>
         </div>
+      {% endpartialdef %}
+    {% endpartialdef %}
+  {% endif %}
+</div>
+<!-- Left sidebar -->
+<div class="map-shell__left-sidebar collapsed"
+     id="left-sidebar"
+     data-workspace-pk="{{ workspace.pk }}">
+  <div class="sidebar-icons">
+    <button type="button"
+            data-panel="layers"
+            class="active"
+            title="{% translate 'Layers' %}"
+            aria-label="{% translate 'Layers' %}">🗂️</button>
+    <button type="button"
+            data-panel="catalog"
+            title="{% translate 'Data Catalog' %}"
+            aria-label="{% translate 'Data Catalog' %}">📦</button>
+    <button type="button"
+            data-panel="import"
+            title="{% translate 'Import Data' %}"
+            aria-label="{% translate 'Import Data' %}">📥</button>
+    <button type="button"
+            data-panel="analysis"
+            title="{% translate 'Analysis' %}"
+            aria-label="{% translate 'Analysis' %}">📊</button>
+    <button type="button"
+            data-panel="reports"
+            title="{% translate 'Reports' %}"
+            aria-label="{% translate 'Reports' %}">📄</button>
+  </div>
+  <div class="sidebar-content" id="left-sidebar-content">{# Loaded via htmx by panel manager on expand #}</div>
+</div>
+<!-- Map -->
+<script id="basemap-style-data" type="application/json">
+  {
+    {
+      basemap_style | safe
+    }
+  }
+</script>
+<div class="map-shell__map">
+  <brew-gis-map viewport='{{ viewport_json|safe }}' layers='{{ layer_data|json_attr }}'
+  {% if scenario %}
+    mode="view" scenario-id="{{ scenario.pk }}" canvas-layer-id="{{ canvas_view_layer_id }}" selection-mode="{{ selection_mode }}"
+  {% endif %}
+  ></brew-gis-map>
+</div>
+<!-- Right panel (drawer) -->
+<div class="map-shell__right-panel" id="right-panel">
+  <div class="panel-header">
+    <h6 id="right-panel-title"></h6>
+    <button type="button"
+            class="btn-close"
+            id="right-panel-close"
+            aria-label="{% translate 'Close panel' %}"></button>
+  </div>
+  <div class="panel-content" id="right-panel-content">{# htmx targets this for panel content #}</div>
+</div>
+<!-- Bottom sheet -->
+<div class="map-shell__bottom-sheet" id="bottom-sheet">
+  <div class="sheet-handle"></div>
+  <div class="sheet-header">
+    <span id="bottom-sheet-title"></span>
+    <button type="button"
+            class="btn-close"
+            id="bottom-sheet-close"
+            aria-label="{% translate 'Close sheet' %}"></button>
+  </div>
+  <div class="sheet-content" id="bottom-sheet-content">{# htmx targets this for sheet content #}</div>
+</div>
+<!-- Modal container -->
+<div class="map-shell__modal-backdrop" id="modal-container">
+  <div class="modal-content" id="modal-content">
+    <!-- Export Map Modal Content -->
+    <div class="p-3">
+      <div class="d-flex justify-content-between align-items-center mb-3">
+        <h6 class="mb-0">{% translate "Export Map" %}</h6>
+        <button type="button"
+                class="btn-close"
+                onclick="window.__panelManager.closeModal()"
+                aria-label="Close"></button>
+      </div>
+      <div class="mb-3">
+        <label for="export-title" class="form-label">{% translate "Title" %}</label>
+        <input type="text"
+               class="form-control form-control-sm"
+               id="export-title"
+               value="{{ workspace.name }} - {% if scenario %}{{ scenario.name }}{% else %}{% translate 'Map View' %}{% endif %}" />
+      </div>
+      <div class="mb-3">
+        <label for="export-dpi" class="form-label">{% translate "DPI" %}</label>
+        <select class="form-select form-select-sm" id="export-dpi">
+          <option value="1">72 DPI (Screen)</option>
+          <option value="2" selected>144 DPI (Retina)</option>
+          <option value="3">216 DPI (Print)</option>
+          <option value="4">300 DPI (High Quality Print)</option>
+        </select>
+      </div>
+      <div class="form-check mb-3">
+        <input class="form-check-input"
+               type="checkbox"
+               id="export-include-legend"
+               checked />
+        <label class="form-check-label" for="export-include-legend">{% translate "Include Legend" %}</label>
+      </div>
+      <div class="mb-3">
+        <label class="form-label">{% translate "Format" %}</label>
+        <div class="d-flex gap-2">
+          <button type="button"
+                  class="btn btn-sm btn-outline-primary"
+                  id="export-png-btn">{% translate "Download PNG" %}</button>
+          <button type="button"
+                  class="btn btn-sm btn-outline-primary"
+                  id="export-pdf-btn">{% translate "Generate PDF" %}</button>
+        </div>
       </div>
     </div>
   </div>
+</div>
 </div>
 {% endblock content %}
 {% block inline_javascript %}
@@ -484,8 +360,7 @@
         evt.detail.headers['X-CSRFToken'] = csrfToken.getAttribute('content');
       }
     });
-  </script>
-  <script>
+
     (function() {
       'use strict';
 
@@ -514,7 +389,7 @@
       // Toggle paint mode
       toggleBtn.addEventListener('click', function() {
         paintActive = !paintActive;
-        toolbar.style.display = paintActive ? 'block' : 'none';
+        toolbar.style.display = paintActive ? 'flex' : 'none';
         toggleBtn.textContent = paintActive ? 'Exit Paint Mode' : 'Paint Mode';
         toggleBtn.classList.toggle('btn-outline-primary', !paintActive);
         toggleBtn.classList.toggle('btn-primary', paintActive);
@@ -540,6 +415,7 @@
           }
         });
       });
+
       // Paint mode radio buttons
       function updatePaintMode() {
         var isDirect = paintModeDirect && paintModeDirect.checked;
@@ -668,7 +544,7 @@
       if (historyBtn && historyPanel) {
         historyBtn.addEventListener('click', function() {
           historyVisible = !historyVisible;
-          historyPanel.style.display = historyVisible ? 'block' : 'none';
+          historyPanel.style.display = historyVisible ? 'flex' : 'none';
           historyBtn.textContent = historyVisible ? 'Hide History' : 'History';
           if (historyVisible) {
             loadPaintHistory();
@@ -808,11 +684,7 @@
             })
             .then(function(data) {
               if (data.status === 'ok') {
-                var modalEl = document.getElementById('exportMapModal');
-                if (modalEl) {
-                  var bsModal = bootstrap.Modal.getInstance(modalEl);
-                  if (bsModal) bsModal.hide();
-                }
+                window.__panelManager.closeModal();
                 alert('PDF report queued for generation. Check the Reports page.');
               } else {
                 alert('Error: ' + (data.error || 'Unknown error'));
