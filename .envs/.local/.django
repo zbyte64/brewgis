@@ -15,3 +15,8 @@ REDIS_URL=redis://redis:6379/0
 CELERY_FLOWER_USER=komkgDMMBitfqRabgrYDlEKCynFCWYOQ
 CELERY_FLOWER_PASSWORD=DTWvUkZNIUACsu1J0yygxl7T9TjDfWUQbJSZGmjieqhBvp0bbSIu7g34oa62POHT
 LGBM_INFERENCE_BATCH_SIZE=10000
+
+# Tile server (Docker internal hostname, not localhost)
+# ------------------------------------------------------------------------------
+TILE_SERVER_TIPG_URL=http://tipg:8081
+TILE_SERVER_MARTIN_URL=http://martin:3000

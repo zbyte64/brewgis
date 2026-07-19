@@ -63,14 +63,19 @@ def view_workspace_map(request: HttpRequest, workspace_pk: int) -> HttpResponse:
         canvas_view_name = view_name
         canvas_source_id = f"{schema}.{view_name}"
 
+        # Build absolute base URL manually — must NOT go through
+        # build_absolute_uri()/iri_to_uri() which URL-encodes {z}/{x}/{y}
+        # template placeholders.
+        _request_scheme_host = f"{request.scheme}://{request.get_host()}"
+
         if settings.TILE_SERVER_BACKEND == "martin":
-            canvas_tiles_url = request.build_absolute_uri(
-                f"/martin/{canvas_source_id}/{{z}}/{{x}}/{{y}}"
+            canvas_tiles_url = (
+                f"{_request_scheme_host}/martin/{canvas_source_id}/{{z}}/{{x}}/{{y}}"
             )
         else:
-            canvas_tiles_url = request.build_absolute_uri(
-                f"/tipg/collections/{canvas_source_id}/tiles/WebMercatorQuad"
-                "/{z}/{x}/{y}"
+            canvas_tiles_url = (
+                f"{_request_scheme_host}"
+                f"/tipg/collections/{canvas_source_id}/tiles/WebMercatorQuad/{{z}}/{{x}}/{{y}}"
             )
 
         # Build column metadata for the paint toolbar dropdown
@@ -117,10 +122,12 @@ def view_workspace_map(request: HttpRequest, workspace_pk: int) -> HttpResponse:
         data["source"] = layer.to_maplibre_source()
 
         # Make tile URLs absolute (MapLibre v4+ requires absolute URLs
-        # for tile sources in web worker contexts)
+        # for tile sources in web worker contexts).
+        # Build manually — build_absolute_uri() would URL-encode {z}/{x}/{y}.
+        _request_scheme_host = f"{request.scheme}://{request.get_host()}"
         if "tiles" in data["source"]:
             data["source"]["tiles"] = [
-                request.build_absolute_uri(t) for t in data["source"]["tiles"]
+                f"{_request_scheme_host}{t}" for t in data["source"]["tiles"]
             ]
 
         if settings.TILE_SERVER_BACKEND == "tipg":

@@ -63,7 +63,7 @@ services:
       PORT: 8081
       TIPG_DEBUG: "True"
       TIPG_ROOT_PATH: /tipg
-      TIPG_DB_SCHEMAS: '["public", "tiger"]'
+      TIPG_DB_SCHEMAS: '["public", "tiger", "fresno_demo"]'
       DATABASE_URL: postgresql://rADfmsnMjDXKephNGWFkfdPkuSAjdASF:glm5bKLmVKkfdJaM9qkDREdor4y8uSEJZKZvLVwP5jeEX6YSnw6DnNG9EYvupSlg@postgres:5432/brewgis
     ports:
       - 8081
