@@ -4,8 +4,8 @@ Creates ``network_edges`` and ``network_nodes`` tables in the target schema
 using the projected coordinate system of the downloaded graph. Both tables
 include the geometry columns needed for pgRouting topology.
 
-This module is an *external preprocessor* — it runs outside dbt and creates
-tables that dbt models reference via ``source()`` or ``ref()``.
+This module is an *external preprocessor* — it runs before SQLMesh and creates
+tables that SQLMesh models reference as external models.
 
 Reference:
     - osmnx: https://osmnx.readthedocs.io/

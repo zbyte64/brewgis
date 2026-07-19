@@ -1,6 +1,6 @@
 """Auto-registration of analysis result views as Layer objects.
 
-After a successful dbt run, materialized views are created in PostGIS.
+After a successful SQLMesh plan, materialized views are created in PostGIS.
 This module creates or updates corresponding Layer objects in the workspace
 so the results are discoverable by the tile server and map component.
 """

@@ -1,4 +1,4 @@
-"""SQLMesh runner — replaces dbt_runner.py for BrewGIS analysis pipelines.
+"""SQLMesh runner — orchestrates BrewGIS analysis pipelines via the Python API.
 
 Uses the SQLMesh Python API (sqlmesh.core.context.Context) for tight
 Django integration — not subprocess. Automatically resolves the DAG
@@ -73,7 +73,7 @@ def run_sqlmesh_plan(  # noqa: PLR0913
         no_prompts: Auto-approve without interactive prompts.
         auto_apply: Apply the plan immediately after creation.
         create_from: Source environment to create from (virtual environment).
-        variables: Optional variable overrides for the plan (reserved for future use).
+        variables: Model variable overrides (e.g. ``parcel_table``, ``constraints``).
         restate_models: If True, re-evaluate the selected models even if unchanged.
     """
     context = get_context(**variables)

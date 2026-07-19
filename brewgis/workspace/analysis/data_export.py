@@ -1,10 +1,10 @@
-"""Export Django model data to PostGIS tables for dbt consumption.
+"""Export Django model data to PostGIS tables for SQLMesh consumption.
 
 Bridge between the Django ORM world (BuildingType records stored in
-``public.workspace_buildingtype``) and the dbt/SQL analysis pipeline
+``public.workspace_buildingtype``) and the SQLMesh analysis pipeline
 which expects flat, de-normalized tables with specific column names.
 
-The main consumer is the core_end_state dbt model, which joins parcels
+The main consumer is the core_end_state SQLMesh model, which joins parcels
 against a built_forms table using columns like ``du_per_acre``,
 ``emp_per_acre``, ``far``, etc. — matching the BuildingType model fields.
 """
@@ -21,7 +21,7 @@ from django.db import transaction
 logger = logging.getLogger(__name__)
 
 # Columns exported from workspace_buildingtype → built_forms table.
-# Maps dbt-expected column → BuildingType model field name (or SQL expression).
+# Maps SQLMesh-expected column → BuildingType model field name (or SQL expression).
 BUILT_FORM_COLUMNS: dict[str, str] = {
     "id": "id",
     "key": "name",
@@ -65,7 +65,7 @@ def _column_defs(field_map: dict[str, str]) -> str:
     """Build the column list for CREATE TABLE / INSERT statements.
 
     Wraps nullable float columns in COALESCE(…, 0) so the output table
-    never contains NULL for density/rate columns the dbt model expects
+    never contains NULL for density/rate columns the SQLMesh model expects
     to be non-null.
     """
     parts: list[str] = []

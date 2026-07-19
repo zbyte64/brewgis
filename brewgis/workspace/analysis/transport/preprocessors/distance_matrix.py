@@ -6,7 +6,7 @@ nearest pgRouting network node, and computes a distance matrix using
 ``pgr_dijkstra()`` for origin-destination pairs.
 
 The output ``trip_distribution_inputs_{scenario_id}`` table is consumed
-by the T2 ``trip_distribution`` dbt Python model, replacing the default
+by the T2 ``trip_distribution`` SQLMesh Python model, replacing the default
 crow-flies Euclidean distance computation.
 
 Convention:

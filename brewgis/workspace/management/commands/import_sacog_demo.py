@@ -41,7 +41,7 @@ SCENARIO_SLUG = "base"
 CACHE_DIR = Path(settings.BASE_DIR) / "planning" / "sacog_demo"
 CACHE_DIR.mkdir(parents=True, exist_ok=True)
 
-DBT_VARS: dict[str, object] = {
+PIPELINE_VARS: dict[str, object] = {
     "source_schema": WORKSPACE_SCHEMA,
     "base_table_schema": WORKSPACE_SCHEMA,
     "base_table_name": CANVAS_VIEW_NAME,
@@ -241,11 +241,11 @@ class Command(BaseCommand):
         constraint_count = self._register_constraint_layers(ws)
         self.stdout.write(f"  ✓ Registered {constraint_count} constraint layers")
 
-        # Write DBT vars for pipeline
-        vars_path = CACHE_DIR / "dbt_vars.json"
+        # Write pipeline vars
+        vars_path = CACHE_DIR / "pipeline_vars.json"
         with open(vars_path, "w") as f:
-            json.dump(DBT_VARS, f, indent=2)
-        self.stdout.write(f"  ✓ DBT vars written to {vars_path}")
+            json.dump(PIPELINE_VARS, f, indent=2)
+        self.stdout.write(f"  ✓ Pipeline vars written to {vars_path}")
 
         self.stdout.write(self.style.SUCCESS("  ✓ Workspace bootstrap complete"))
 
@@ -330,15 +330,15 @@ class Command(BaseCommand):
             )
 
         self.stdout.write(self.style.SUCCESS("  ✓ Base canvas view ready"))
-        # Create dbt compatibility view (renames geometry→geom)
+        # Create analysis compat view (renames geometry→geom)
         with connection.cursor() as cursor:
             cursor.execute(f"""
                 CREATE OR REPLACE VIEW "{WORKSPACE_SCHEMA}".parcels AS
                 SELECT *, geometry AS geom
                 FROM "{WORKSPACE_SCHEMA}"."{CANVAS_VIEW_NAME}"
             """)
-        self.stdout.write(f"  ✓ Created dbt compat view: {WORKSPACE_SCHEMA}.parcels")
-        self.stdout.write(self.style.SUCCESS("  ✓ Base canvas + dbt views ready"))
+        self.stdout.write(f"  ✓ Created compat view: {WORKSPACE_SCHEMA}.parcels")
+        self.stdout.write(self.style.SUCCESS("  ✓ Base canvas views ready"))
 
     # ── Step: stitch ──────────────────────────────────────────────────
 
@@ -411,7 +411,7 @@ class Command(BaseCommand):
         # Check prerequisites
         self._check_prerequisites()
 
-        # Export built forms for dbt
+        # Export built forms for analysis pipeline
         self._export_built_forms()
 
         # Register base canvas as a Layer
@@ -422,29 +422,9 @@ class Command(BaseCommand):
         ordered_modules = resolve_module_order(all_modules)
         self.stdout.write(f"  ✓ Module order: {', '.join(ordered_modules)}")
 
-        # Run dbt SQL models + create end_state passthrough for base case
-        svars = dict(DBT_VARS)
+        # Run analysis SQLMesh models + create end_state passthrough for base case
+        svars = dict(PIPELINE_VARS)
 
-        MODULE_SELECTS: dict[str, list[str]] = {
-            "env_constraint": ["env_constraint"],
-            "water_demand": ["water_demand"],
-            "energy_demand": ["energy_demand"],
-            "land_consumption": ["land_consumption"],
-            "fiscal": [
-                "fiscal_property_tax",
-                "fiscal_sales_tax",
-                "fiscal_service_costs",
-                "fiscal_net_impact",
-            ],
-            "agriculture": ["agriculture"],
-            "trip_generation": ["trip_generation"],
-            "trip_distribution": ["trip_distribution"],
-            "mode_choice": ["mode_choice"],
-            "vmt": ["vmt"],
-        }
-
-        # Create end_state and increment as direct v1 passthrough for base case
-        # (ships dbt core models which require proper built form key matching)
         self._create_base_case_end_state()
 
         result = run_modules_sync(
@@ -453,7 +433,6 @@ class Command(BaseCommand):
             target_schema=WORKSPACE_SCHEMA,
             workspace_id=ws.pk,
             scenario_id=SCENARIO_SLUG,
-            module_selects=MODULE_SELECTS,
         )
         if result["success"]:
             self.stdout.write(
@@ -472,7 +451,7 @@ class Command(BaseCommand):
     def _create_base_case_end_state(self) -> None:
         """Create end_state_base + increment_base as direct v1 passthrough for base case.
 
-        The dbt core models allocate from built form densities, which requires
+        The core analysis models allocate from built form densities, which requires
         correct built_form_key → main_builtform → FlatBuiltForm matching.
         For the base case, pass through v1 source data directly so downstream
         modules (water, energy, land_consumption, fiscal) work correctly.
@@ -578,7 +557,7 @@ class Command(BaseCommand):
             )
 
     def _export_built_forms(self) -> None:
-        """Export BuildingType records to the workspace schema for dbt."""
+        """Export BuildingType records to the workspace schema."""
         from django.db import connection
 
         from brewgis.workspace.analysis.data_export import export_building_types

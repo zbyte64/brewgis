@@ -1,7 +1,7 @@
-"""Transport preprocessors — build input tables consumed by dbt models.
+"""Transport preprocessors — build input tables consumed by SQLMesh models.
 
-Preprocessors run outside dbt as Celery tasks before the corresponding
-dbt module executes. They write to well-known table names following the
+Preprocessors run as Celery tasks before the corresponding
+SQLMesh module executes. They write to well-known table names following the
 convention::
 
     {target_schema}.{module}_inputs_{scenario_id}

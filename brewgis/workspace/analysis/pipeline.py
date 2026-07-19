@@ -18,13 +18,14 @@ from typing import Any
 import deal
 from django.utils import timezone
 
-from brewgis.workspace.analysis.sqlmesh_runner import run_sqlmesh_plan
 from brewgis.workspace.analysis.layer_registry import register_result_layer
 from brewgis.workspace.analysis.module_registry import MODULE_RESULT_TABLES
+from brewgis.workspace.analysis.module_registry import MODULE_SQLMESH_SELECTORS
 from brewgis.workspace.analysis.module_registry import get_vars_for_module
 from brewgis.workspace.analysis.module_registry import (
     resolve_module_order as _resolve_module_order,
 )
+from brewgis.workspace.analysis.sqlmesh_runner import run_sqlmesh_plan
 from brewgis.workspace.models import AnalysisRun
 
 logger = logging.getLogger(__name__)
@@ -48,6 +49,62 @@ def _get_vars_for_module(module: str, base_vars: dict[str, Any]) -> dict[str, An
     table name so the core module can reference it.
     """
     return get_vars_for_module(module, base_vars)
+
+
+def _build_model_vars(base_vars: dict[str, Any], schema: str) -> dict[str, object]:
+    """Build SQLMesh plan variables from pipeline base_vars.
+
+    Qualifies unqualified table references with the target schema
+    and filters to keys that match SQLMesh model variable names.
+    """
+    model_vars: dict[str, object] = {}
+    target_schema = base_vars.get("target_schema", schema)
+
+    # Qualify table references with schema if not already qualified
+    for tbl_key in ("parcel_table", "constraint_table", "built_form_table"):
+        val = base_vars.get(tbl_key)
+        if val and "." not in str(val):
+            model_vars[tbl_key] = f"{target_schema}.{val}"
+        elif val:
+            model_vars[tbl_key] = val
+
+    # Forward constraints list
+    if "constraints" in base_vars:
+        model_vars["constraints"] = base_vars["constraints"]
+
+    # Forward canonical column mappings and known model variables
+    known_keys = {
+        "scenario_schema",
+        "scenario_id",
+        "scenario_slug",
+        "base_canvas_table",
+        "base_year",
+        "horizon_year",
+        "osm_intersection_table",
+    }
+    model_vars.update(
+        {
+            k: v
+            for k, v in base_vars.items()
+            if k.startswith("canonical_") or k in known_keys
+        }
+    )
+
+    return model_vars
+
+
+def _build_sqlmesh_selectors(modules: list[str]) -> list[str]:
+    """Build SQLMesh model FQN selectors from analysis module names.
+
+    Converts module names (e.g. "core", "water_demand") to their
+    corresponding SQLMesh model FQNs (e.g. "brewgis.analysis.core_end_state",
+    "brewgis.analysis.water_demand") using MODULE_SQLMESH_SELECTORS.
+    """
+    selects: list[str] = []
+    for module in modules:
+        patterns = MODULE_SQLMESH_SELECTORS.get(module, [module])
+        selects.extend(f"brewgis.analysis.{p}" for p in patterns)
+    return selects
 
 
 def run_analysis_pipeline(
@@ -128,10 +185,24 @@ def run_modules_sync(  # noqa: PLR0913
     """
     ordered = resolve_module_order(modules)
     environment = f"scenario_{scenario_id}"
+
+    # Build SQLMesh model selectors from module names.
+    # Convert module names to model FQNs via MODULE_SQLMESH_SELECTORS.
+    if module_selects:
+        selects = []
+        for module in ordered:
+            selects.extend(module_selects.get(module, []))
+    else:
+        selects = _build_sqlmesh_selectors(ordered)
+
+    # Build and forward model variables from base_vars to the SQLMesh plan
+    model_vars = _build_model_vars(base_vars, target_schema)
+
     run_sqlmesh_plan(
         environment=environment,
-        select=ordered,
+        select=selects or None,
         skip_tests=True,
+        variables=model_vars,
     )
     for module in ordered:
         for table_name in MODULE_RESULT_TABLES.get(module, []):

@@ -94,8 +94,8 @@ MODULE_RESULT_TABLES: dict[str, list[str]] = {
 }
 
 
-# Module → dbt select pattern (list of model names to run)
-MODULE_DBT_SELECT: dict[str, list[str]] = {
+# Module → SQLMesh model name patterns (model basename without brewgis.analysis. prefix)
+MODULE_SQLMESH_SELECTORS: dict[str, list[str]] = {
     "env_constraint": ["env_constraint"],
     "core": ["core_end_state", "core_increment"],
     "water_demand": ["water_demand"],
@@ -241,7 +241,7 @@ CANONICAL_COLUMN_NAMES: list[str] = [
 def get_column_mapping_vars(
     column_mapping: dict[str, str],
 ) -> dict[str, str]:
-    """Convert user column mapping into canonical_{name} dbt vars.
+    """Convert user column mapping into canonical_{name} pipeline vars.
 
     Args:
         column_mapping: User-specified mapping like {'pop': 'population',

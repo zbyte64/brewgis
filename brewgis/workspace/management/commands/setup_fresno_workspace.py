@@ -69,8 +69,8 @@ BASE_YEAR = 2022
 LEHD_YEAR = 2021  # LEHD LODES lags 1-2 years behind ACS
 HORIZON_YEAR = 2050
 
-# DBT vars template — used by the analysis pipeline (not base canvas SQLMesh)
-DBT_VARS_TEMPLATE: dict[str, Any] = {
+# Pipeline vars — used by the analysis pipeline (not base canvas SQLMesh)
+PIPELINE_VARS: dict[str, Any] = {
     "source_schema": WORKSPACE_SCHEMA,
     "base_table_schema": WORKSPACE_SCHEMA,
     "base_table_name": "base_canvas_reconciled",
@@ -1018,9 +1018,9 @@ class Command(BaseCommand):
             ],
         )
 
-        dbt_vars = dict(DBT_VARS_TEMPLATE)
-        dbt_vars["target_schema"] = scenario.target_schema
-        dbt_vars["scenario_id"] = scenario.id
+        pipeline_vars = dict(PIPELINE_VARS)
+        pipeline_vars["target_schema"] = scenario.target_schema
+        pipeline_vars["scenario_id"] = scenario.id
 
         self._create_db_schema(scenario.target_schema)
 
@@ -1035,7 +1035,7 @@ class Command(BaseCommand):
                 "mode_choice",
                 "vmt",
             ],
-            base_vars=dbt_vars,
+            base_vars=pipeline_vars,
             target_schema=scenario.target_schema,
             workspace_id=workspace.pk,
             scenario_id=scenario.slug,
