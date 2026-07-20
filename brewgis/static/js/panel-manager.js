@@ -240,7 +240,7 @@
 
   // ─── htmx Event Bridge ────────────────────────────────────
   function handleHtmxAfterSettle(evt) {
-    var panelEvent = evt.detail.target?.getAttribute('data-panel-event');
+    var panelEvent = evt.detail.requestConfig?.elt?.getAttribute('data-panel-event');
     if (!panelEvent) return;
 
     if (panelEvent === 'close-panel') {
