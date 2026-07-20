@@ -895,6 +895,25 @@ class Command(BaseCommand):
                 f"from {env_schema}.base_canvas_reconciled"
             )
 
+            # Create a clean base canvas view for tipg/Layer registration
+            cursor.execute(
+                f'CREATE OR REPLACE VIEW "{WORKSPACE_SCHEMA}"."base_canvas_reconciled" AS '
+                f'SELECT * FROM "{env_schema}"."base_canvas_reconciled"'
+            )
+            self.stdout.write(
+                f"  Created analysis compat view: {WORKSPACE_SCHEMA}.base_canvas_reconciled "
+                f"from {env_schema}.base_canvas_reconciled"
+            )
+
+        # Register base canvas as a Layer for tipg serving + symbology editing
+        workspace = self._get_workspace()
+        self._register_layer(
+            "base_canvas_reconciled",
+            "Base Canvas",
+            workspace,
+            "fill",
+        )
+
     def _import_poi(self) -> int:
         workspace = self._get_workspace()
         self.stdout.write("  Fetching POIs from OpenStreetMap Overpass...")
