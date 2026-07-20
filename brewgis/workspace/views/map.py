@@ -131,7 +131,7 @@ def view_workspace_map(request: HttpRequest, workspace_pk: int) -> HttpResponse:
             ]
 
         if settings.TILE_SERVER_BACKEND == "tipg":
-            data["source-layer"] = layer.db_table
+            data["source-layer"] = "default"
 
         # Merge symbology-generated paint/layout if available
         try:
@@ -157,7 +157,7 @@ def view_workspace_map(request: HttpRequest, workspace_pk: int) -> HttpResponse:
                     "type": "vector",
                     "tiles": [canvas_tiles_url],
                 },
-                "source-layer": view_name,
+                "source-layer": "default",
                 "paint": {
                     "fill-color": [
                         "case",
@@ -295,7 +295,9 @@ def view_public_scenario_map(request: HttpRequest, token: str) -> HttpResponse:
                 "name": layer.name,
                 "type": layer.geometry_type,
                 "source": source,
-                "source-layer": layer.db_table,
+                "source-layer": "default"
+                if settings.TILE_SERVER_BACKEND == "tipg"
+                else layer.db_table,
                 "symbology": layer.symbology if hasattr(layer, "symbology") else None,
             }
         )
