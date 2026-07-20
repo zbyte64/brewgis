@@ -21,6 +21,18 @@ class Workspace(models.Model):
         blank=True,
         help_text="List of {state, county} FIPS objects for multi-county workspaces.",
     )
+    center_lng = models.FloatField(
+        default=0.0,
+        help_text="Default map center longitude.",
+    )
+    center_lat = models.FloatField(
+        default=0.0,
+        help_text="Default map center latitude.",
+    )
+    zoom = models.FloatField(
+        default=10.0,
+        help_text="Default map zoom level.",
+    )
 
     def __str__(self) -> str:
         return self.name

@@ -356,10 +356,23 @@ class Command(BaseCommand):
             return result
 
     def _get_workspace(self) -> Workspace:
+        lng = (MIN_LNG + MAX_LNG) / 2
+        lat = (MIN_LAT + MAX_LAT) / 2
         workspace, _ = Workspace.objects.get_or_create(
             name=WORKSPACE_NAME,
-            defaults={"db_schema": WORKSPACE_SCHEMA},
+            defaults={
+                "db_schema": WORKSPACE_SCHEMA,
+                "center_lng": lng,
+                "center_lat": lat,
+                "zoom": 11,
+            },
         )
+        # Update if workspace already existed without center/zoom
+        if not workspace.center_lng or not workspace.center_lat:
+            workspace.center_lng = lng
+            workspace.center_lat = lat
+            workspace.zoom = 11
+            workspace.save()
         return workspace
 
     @staticmethod

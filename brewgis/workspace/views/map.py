@@ -118,6 +118,7 @@ def view_workspace_map(request: HttpRequest, workspace_pk: int) -> HttpResponse:
     layer_data = []
     for layer in layers:
         data = LayerSchema.model_validate(layer).model_dump()
+        data["id"] = layer.key
         data["type"] = layer.geometry_type
         data["source"] = layer.to_maplibre_source()
 
@@ -239,8 +240,8 @@ def view_workspace_map(request: HttpRequest, workspace_pk: int) -> HttpResponse:
         "layer_data": layer_data,
         "viewport_json": json.dumps(
             {
-                "center": [0, 0],
-                "zoom": 1,
+                "center": [workspace.center_lng, workspace.center_lat],
+                "zoom": workspace.zoom,
             },
         ),
         "workspace": workspace,

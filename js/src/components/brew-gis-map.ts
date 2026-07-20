@@ -313,10 +313,15 @@ export class BrewGisMap extends LitElement {
       // Skip background and land layers — data should sit above them
       if (id === 'background' || id.startsWith('land')) continue
       if (beforePatterns.some((p) => id.includes(p))) {
+        console.log('_findBeforeId matched:', layer.id)
         return layer.id
       }
     }
 
+    console.log(
+      '_findBeforeId no match — available layers:',
+      layers.map((l) => l.id),
+    )
     return undefined
   }
 
@@ -354,12 +359,9 @@ export class BrewGisMap extends LitElement {
         this._syncLayers()
       }
 
-      // Initialize paint mode if active
       if (this.mode === 'paint') {
         this._initPaintMode()
       }
-
-      this._previousLayers = [...this.layers]
 
       this.dispatchEvent(
         new CustomEvent('mapready', {
@@ -368,6 +370,21 @@ export class BrewGisMap extends LitElement {
           composed: true,
         }),
       )
+    })
+
+    // Re-add data layers after runtime basemap switches.
+    // setStyle() wipes our sources/layers. styledata fires
+    // when new style data loads; we detect the wipe by
+    // checking if our first data source still exists.
+    map.on('styledata', () => {
+      if (!this._mapLoaded) return
+      if (!this._map || this.layers.length === 0) return
+      const firstId = this.layers[0].id || this.layers[0].key
+      console.log('styledata', firstId, !this._map.getSource(firstId))
+      if (!this._map.getSource(firstId)) {
+        this._previousLayers = []
+        this._syncLayers()
+      }
     })
 
     map.on('idle', () => {
@@ -549,7 +566,17 @@ export class BrewGisMap extends LitElement {
 
     // Compute insertion point so data layers render below
     // water and roads in vector basemaps.
+    const allLayersBefore = (this._map?.getStyle().layers || []).map((l) => l.id)
     const beforeId = this._findBeforeId()
+    console.log(
+      '_syncLayers beforeId:',
+      beforeId,
+      '| total style layers:',
+      allLayersBefore.length,
+      '| adding:',
+      this.layers.length,
+      'layers',
+    )
 
     // Add new layers
     for (let i = 0; i < this.layers.length; i++) {
@@ -587,6 +614,7 @@ export class BrewGisMap extends LitElement {
       }
 
       this._map.addLayer(mlLayer, beforeId)
+      console.log('  added layer:', resolvedId, 'before:', beforeId || '(top)')
     }
 
     this._previousLayers = [...this.layers]

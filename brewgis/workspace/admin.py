@@ -30,7 +30,7 @@ class BuiltFormDefinitionAdmin(admin.ModelAdmin):
 
 @admin.register(Workspace)
 class WorkspaceAdmin(admin.ModelAdmin):
-    pass
+    list_display = ("name", "center_lng", "center_lat", "zoom")
 
 
 @admin.register(Scenario)
