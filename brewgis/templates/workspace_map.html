@@ -265,14 +265,10 @@
 </div>
 <!-- Map -->
 <script id="basemap-style-data" type="application/json">
-  {
-    {
-      basemap_style | safe
-    }
-  }
+  {{ basemap_style | safe }}
 </script>
 <div class="map-shell__map">
-  <brew-gis-map viewport='{{ viewport_json|safe }}' layers='{{ layer_data|json_attr }}'
+  <brew-gis-map viewport='{{ viewport_json|safe }}' layers='{{ layer_data|json_attr|safe }}'
   {% if scenario %}
     mode="view" scenario-id="{{ scenario.pk }}" canvas-layer-id="{{ canvas_view_layer_id }}" selection-mode="{{ selection_mode }}"
   {% endif %}
