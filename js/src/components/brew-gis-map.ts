@@ -289,6 +289,37 @@ export class BrewGisMap extends LitElement {
   private readonly _defaultMapStyle =
     'https://basemaps.cartocdn.com/gl/positron-gl-style/style.json'
 
+  /**
+   * Find a good insertion point for data layers so they render
+   * below water and roads in vector basemaps.
+   *
+   * Scans the current style for the first layer whose ID matches
+   * water/road/building patterns. Returns undefined if no suitable
+   * layer is found (data layers go on top — correct for raster
+   * basemaps).
+   */
+  private _findBeforeId(): string | undefined {
+    if (!this._map) return undefined
+
+    const layers = this._map.getStyle().layers
+    if (!layers) return undefined
+
+    // Insert before the first water/road/building/label layer so
+    // our data renders underneath those features.
+    const beforePatterns = ['water', 'road', 'building', 'poi', 'label']
+
+    for (const layer of layers) {
+      const id = layer.id.toLowerCase()
+      // Skip background and land layers — data should sit above them
+      if (id === 'background' || id.startsWith('land')) continue
+      if (beforePatterns.some((p) => id.includes(p))) {
+        return layer.id
+      }
+    }
+
+    return undefined
+  }
+
   private _initMap(): void {
     if (this._map) return
 
@@ -444,8 +475,10 @@ export class BrewGisMap extends LitElement {
     )
     const sourceLayer = canvasConfig?.['source-layer'] || 'default'
 
-    // Insert above the canvas view layer
-    const before = this._map.getLayer(this.canvasLayerId) ? this.canvasLayerId : undefined
+    // Insert above the canvas view layer, or before water/roads
+    const before = this._map.getLayer(this.canvasLayerId)
+      ? this.canvasLayerId
+      : this._findBeforeId()
 
     this._map.addLayer(
       {
@@ -514,6 +547,10 @@ export class BrewGisMap extends LitElement {
       }
     }
 
+    // Compute insertion point so data layers render below
+    // water and roads in vector basemaps.
+    const beforeId = this._findBeforeId()
+
     // Add new layers
     for (let i = 0; i < this.layers.length; i++) {
       const layer = this.layers[i]
@@ -549,7 +586,7 @@ export class BrewGisMap extends LitElement {
         ...(layerConfig.layout ? { layout: layerConfig.layout } : {}),
       }
 
-      this._map.addLayer(mlLayer)
+      this._map.addLayer(mlLayer, beforeId)
     }
 
     this._previousLayers = [...this.layers]
