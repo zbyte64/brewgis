@@ -27,19 +27,20 @@ MODEL (
 
 WITH parcel_input AS (
     SELECT
-        apn,
-        du_detsf_sl_regressor,
-        du_detsf_ll_regressor,
-        du_attsf_regressor,
-        du_mf2to4_regressor,
-        du_mf5p_regressor,
-        du_total_regressor,
-        lot_size_acres,
-        land_development_category,
-        residential_building_sqft,
-        actual_living_sqft,
-        actual_building_sqft
-    FROM brewgis.fresno.dasymetric_weights
+        dw.apn,
+        COALESCE(dr.du_detsf_sl, 0)::double precision AS du_detsf_sl_regressor,
+        COALESCE(dr.du_detsf_ll, 0)::double precision AS du_detsf_ll_regressor,
+        COALESCE(dr.du_attsf, 0)::double precision AS du_attsf_regressor,
+        COALESCE(dr.du_mf2to4, 0)::double precision AS du_mf2to4_regressor,
+        COALESCE(dr.du_mf5p, 0)::double precision AS du_mf5p_regressor,
+        COALESCE(dr.du_total, 0)::double precision AS du_total_regressor,
+        dw.lot_size_acres,
+        dw.land_development_category,
+        dw.residential_building_sqft,
+        dw.actual_living_sqft,
+        dw.actual_building_sqft
+    FROM brewgis.fresno.dasymetric_weights dw
+    LEFT JOIN brewgis.fresno.du_regressor dr ON dw.apn = dr.apn
 ),
 
 -- ACS household size (area-weighted, joins on block group geometry — geography-agnostic)

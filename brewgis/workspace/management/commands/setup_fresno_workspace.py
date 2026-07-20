@@ -785,10 +785,17 @@ class Command(BaseCommand):
                     "+brewgis.nlcd.nlcd_tree_canopy_parcel_stats",
                 ]
             )
-        if osm:
+        if overture:
             model_selectors.extend(
                 [
                     "+brewgis.staging.overture_transport",
+                    "+brewgis.fresno.overture_intersection_points",
+                    "+brewgis.fresno.overture_intersection_density",
+                ]
+            )
+        if osm:
+            model_selectors.extend(
+                [
                     "+brewgis.nlcd.overture_road_impervious",
                 ]
             )
@@ -842,8 +849,8 @@ class Command(BaseCommand):
             ),
             "cbp_preserve_fraction": 0.5,
         }
-        if osm:
-            plan_vars["osm_intersection_table"] = "osm_intersection_density"
+        if overture:
+            plan_vars["osm_intersection_table"] = "fresno_intersection_density"
 
         self.stdout.write("  SQLMesh plan variables configured")
         if cbp_vars:
