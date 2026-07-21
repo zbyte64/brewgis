@@ -1,19 +1,20 @@
 """Points of Interest fetcher — queries OpenStreetMap Overpass API.
 
 Retrieves POIs (amenities, shops, leisure, tourism, transit) within a
-bounding box and returns them as a GeoDataFrame point layer.
+bounding box and writes to GeoParquet for DuckDB-ingestion.
+Also returns a categorized GeoDataFrame for direct use by callers.
 """
 
 from __future__ import annotations
 
+import json
 import logging
+from pathlib import Path
 from typing import Any
 
 import geopandas as gpd
+import requests
 from shapely.geometry import Point
-
-from brewgis.workspace.services._db import get_engine
-from brewgis.workspace.services._db import text
 
 logger = logging.getLogger(__name__)
 
@@ -149,14 +150,13 @@ def _build_overpass_query(
 
     tag_block = "\n".join(tag_clauses)
 
-    query = f"""
+    return f"""
 [out:json][timeout:60];
 (
 {tag_block}
 );
 out center;
 """
-    return query
 
 
 def _categorize_element(tags: dict[str, str]) -> tuple[str, str]:
@@ -182,65 +182,84 @@ def fetch_pois(
     max_lat: float,
     categories: list[str] | None = None,
 ) -> gpd.GeoDataFrame:
-    """Fetch POIs from the poi_raw staging table (loaded by dlt pipeline).
+    """Fetch POIs from Overpass API and return a categorized GeoDataFrame.
 
-    Reads raw Overpass elements from the staging table, then processes
-    them into a categorized GeoDataFrame with geometry.
+    Writes the raw Overpass response to a GeoParquet file at
+    ``/app/planning/poi/poi_raw.parquet`` so the DuckDB staging VIEW
+    (``duckdb.staging.poi_raw``) can read it.
 
-    The dlt pipeline must have been run before calling this function.
+    Args:
+        min_lng: Western bound.
+        min_lat: Southern bound.
+        max_lng: Eastern bound.
+        max_lat: Northern bound.
+        categories: List of category names to include. None = all.
+
+    Returns:
+        GeoDataFrame with categorized POI points (EPSG:4326).
     """
-    engine = get_engine()
+    query = _build_overpass_query(min_lng, min_lat, max_lng, max_lat, categories)
 
-    query = text("""
-        SELECT * FROM public.poi_raw
-    """)
+    logger.info("Fetching POIs from Overpass API...")
+    response = requests.post(
+        OVERPASS_URL,
+        data={"data": query},
+        timeout=120,
+    )
+    response.raise_for_status()
+    data = response.json()
+    elements = data.get("elements", [])
 
-    with engine.connect() as conn:
-        result = conn.execute(query)
-        rows = result.fetchall()
-        columns = list(result.keys())
+    # Write raw elements to GeoParquet for DuckDB staging
+    parquet_dir = Path("/app/planning/poi")
+    parquet_dir.mkdir(parents=True, exist_ok=True)
+    raw_records: list[dict[str, Any]] = []
+    for elem in elements:
+        raw_records.append(
+            {
+                "id": elem.get("id"),
+                "type": elem.get("type"),
+                "lat": elem.get("lat"),
+                "lng": elem.get("lon"),
+                "tags": json.dumps(elem.get("tags", {}) or {}),
+                "center": json.dumps(elem.get("center", {}) or {}),
+            }
+        )
+    if raw_records:
+        raw_gdf = gpd.GeoDataFrame(
+            raw_records,
+            geometry=gpd.points_from_xy(
+                [r.get("lng", 0) or 0 for r in raw_records],
+                [r.get("lat", 0) or 0 for r in raw_records],
+            ),
+            crs="EPSG:4326",
+        )
+        raw_gdf.to_parquet(parquet_dir / "poi_raw.parquet", index=False)
+        logger.info(
+            "Wrote %d raw POI elements to %s",
+            len(raw_gdf),
+            parquet_dir / "poi_raw.parquet",
+        )
 
-    elements = [dict(zip(columns, row, strict=False)) for row in rows]
-
-    if not elements:
-        msg = "No POI data in staging table. Run the dlt pipeline first."
-        raise RuntimeError(msg)
-
+    # Process into categorized records
     records: list[dict[str, Any]] = []
     for elem in elements:
         elem_type = elem.get("type", "") or ""
         osm_id = elem.get("id", 0) or 0
-        tags_raw = elem.get("tags", {})
-        if isinstance(tags_raw, str):
-            import json
-
-            try:
-                tags_raw = json.loads(tags_raw)
-            except (json.JSONDecodeError, TypeError):
-                tags_raw = {}
+        tags_raw = elem.get("tags", {}) or {}
         tags: dict[str, str] = tags_raw if isinstance(tags_raw, dict) else {}
-
         name = tags.get("name", "")
         category, subcategory = _categorize_element(tags)
-
         if categories is not None and category not in categories:
             continue
 
-        # Get geometry
         if elem_type == "node":
-            lng = elem.get("lng", 0) or 0
+            lng = elem.get("lon", 0) or 0
             lat = elem.get("lat", 0) or 0
         else:
-            center_raw = elem.get("center", {})
-            if isinstance(center_raw, str):
-                import json
-
-                try:
-                    center_raw = json.loads(center_raw)
-                except (json.JSONDecodeError, TypeError):
-                    center_raw = {}
+            center_raw = elem.get("center", {}) or {}
             center = center_raw if isinstance(center_raw, dict) else {}
-            lng = center.get("lng", 0) or 0
+            lng = center.get("lon", 0) or 0
             lat = center.get("lat", 0) or 0
 
         record = {
@@ -258,9 +277,10 @@ def fetch_pois(
         records.append(record)
 
     if not records:
-        msg = "No POI records matched the requested categories."
-        raise RuntimeError(msg)
+        logger.warning("No POI records matched the requested categories.")
+        return gpd.GeoDataFrame([], geometry="geometry", crs="EPSG:4326")
 
     df = gpd.GeoDataFrame(records, geometry="geometry")
     df.crs = "EPSG:4326"
+    logger.info("Returning %d categorized POIs", len(df))
     return df

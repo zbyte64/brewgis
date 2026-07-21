@@ -24,13 +24,13 @@ WITH raw_data AS (
         geoid,
         total_population,
         total_housing_units
-    FROM public.census_2020_block_raw
+    FROM brewgis.staging.census_2020_block_raw
 ),
 block_geometry AS (
     SELECT
         geoid,
         geometry
-    FROM public.tiger_blocks
+    FROM brewgis.staging.tiger_blocks
     WHERE vintage = '2020'
 )
 SELECT

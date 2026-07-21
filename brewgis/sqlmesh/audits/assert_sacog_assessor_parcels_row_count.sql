@@ -19,14 +19,14 @@ WITH normal_count AS (
             ROW_NUMBER() OVER (
                 PARTITION BY apn ORDER BY lotsize::double precision DESC NULLS LAST
             ) AS rn
-        FROM public.sacog_assessor_parcels_raw
+        FROM brewgis.staging.sacog_assessor_parcels_raw
         WHERE lotsize IS NOT NULL AND lotsize::double precision > 0
     ) sub
     WHERE rn = 1
 ),
 consolidated_count AS (
     SELECT COUNT(DISTINCT LEFT(apn, 8)) AS cnt
-    FROM public.sacog_assessor_parcels_raw
+    FROM brewgis.staging.sacog_assessor_parcels_raw
     WHERE (lotsize IS NULL OR lotsize::double precision <= 0)
       AND geometry IS NOT NULL
 ),

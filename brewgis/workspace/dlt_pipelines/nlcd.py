@@ -1,4 +1,4 @@
-"""dlt pipeline for NLCD (National Land Cover Database) raster loading.
+"""NLCD (National Land Cover Database) raster loading.
 
 Downloads a NLCD GeoTIFF subset and loads it into a PostGIS raster
 table using ST_FromGDALRaster. Zonal statistics computation moves to

@@ -7,7 +7,14 @@ import duckdb
 
 con = duckdb.connect()
 try:
-    for ext in ["httpfs", "spatial", "postgres_scanner"]:
+    for ext in [
+        "httpfs",
+        "spatial",
+        "postgres_scanner",
+        "cache_httpfs",
+        "raster",
+        "zipfs",
+    ]:
         con.execute(f"INSTALL {ext}")
         con.execute(f"LOAD {ext}")
     print("DuckDB extensions pre-loaded into image cache")

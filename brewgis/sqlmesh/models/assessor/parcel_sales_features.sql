@@ -33,7 +33,7 @@ SELECT DISTINCT ON (pbf.apn)
     s.building_sf AS building_sqft
 FROM brewgis.assessor.parcel_building_footprints pbf
 JOIN latest_block_groups pbg ON pbf.apn = pbg.apn
-JOIN public.sacog_assessor_sales_raw s ON pbf.apn = s.apn
+JOIN brewgis.staging.sacog_assessor_sales_raw s ON pbf.apn = s.apn
 WHERE pbf.footprint_ratio > 0
   AND s.property_type IS NOT NULL
   AND s.property_type != '';

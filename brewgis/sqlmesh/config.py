@@ -268,9 +268,24 @@ def config_factory(**variables):
                             path=_pg_attach_path,
                         ),
                     },
-                    extensions=["httpfs", "spatial", "postgres_scanner"],
+                    extensions=[
+                        "httpfs",
+                        "spatial",
+                        "postgres_scanner",
+                        "cache_httpfs",
+                        "raster",
+                        "zipfs",
+                    ],
                     connector_config={
                         "temp_directory": _DUCKDB_TMP,
+                        # cache_httpfs: transparent read-cache for httpfs
+                        #   on_disk cache survives container restarts
+                        #   lru_single_proc eviction for single-process SQLMesh runs
+                        "cache_httpfs_type": "on_disk",
+                        "cache_httpfs_cache_directory": "/app/planning/http_cache",
+                        "cache_httpfs_evict_policy": "lru_single_proc",
+                        "cache_httpfs_cache_block_size": 65536,
+                        "cache_httpfs_min_disk_bytes_for_cache": 1073741824,
                     },
                     secrets=[
                         {
@@ -291,13 +306,11 @@ def config_factory(**variables):
         ),
         linter=LinterConfig(
             enabled=True,
-            rules=[
+            warn_rules=[
                 "invalidselectstarexpansion",
                 "NoTransformInJoinWhere",
                 "noselectstar",
                 "DuckDBGeometryUsage",
-            ],
-            warn_rules=[
                 "MissingKeyIndex",
                 "PostStatementIndexTarget",
                 "MissingGeometryIndex",
@@ -318,6 +331,8 @@ def config_factory(**variables):
             ],
         ),
         variables={
+            # Census API key (loaded from env; empty string = public data only)
+            "census_api_key": os.environ.get("CENSUS_API_KEY", ""),
             # Year and vintage parameters for staging models
             "lodes_year": 2008,
             "acs_year": 2013,
@@ -340,13 +355,13 @@ def config_factory(**variables):
             # OSM intersection density table (empty = disabled, overridden per-caller)
             "osm_intersection_table": "",
             # Overture release tag for land cover/use themes
-            "overture_release_tag": "2026-05-20.0",
+            "overture_release_tag": "2026-06-17.0",
             "overture_land_cover_parquet_glob": (
-                "s3://overturemaps-us-west-2/release/2026-05-20.0/"
+                "s3://overturemaps-us-west-2/release/2026-06-17.0/"
                 "theme=base/type=land_cover/*.parquet"
             ),
             "overture_land_use_parquet_glob": (
-                "s3://overturemaps-us-west-2/release/2026-05-20.0/"
+                "s3://overturemaps-us-west-2/release/2026-06-17.0/"
                 "theme=base/type=land_use/*.parquet"
             ),
             # VIDA + Overture building footprint pipeline variables
@@ -356,12 +371,12 @@ def config_factory(**variables):
                 "by_country_s2/country_iso=USA/*.parquet"
             ),
             "overture_parquet_glob": (
-                "s3://overturemaps-us-west-2/release/2026-05-20.0/"
+                "s3://overturemaps-us-west-2/release/2026-06-17.0/"
                 "theme=buildings/type=building/*.parquet"
             ),
             # Overture Transportation — road segments (used by overture road impervious)
             "overture_transport_parquet_glob": (
-                "s3://overturemaps-us-west-2/release/2026-05-20.0/"
+                "s3://overturemaps-us-west-2/release/2026-06-17.0/"
                 "theme=transportation/type=segment/*.parquet"
             ),
             # ---- CBP County Employment Scaling (wac_block.sql) ----

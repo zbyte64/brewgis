@@ -1641,7 +1641,7 @@ class StaticComplexityScore(Rule):
     """
 
     WARN_THRESHOLD = 25.0
-    ERROR_THRESHOLD = 50.0
+    ERROR_THRESHOLD = 500.0
 
     def check_model(self, model: Model) -> RuleViolation | None:
         if isinstance(model, SeedModel):

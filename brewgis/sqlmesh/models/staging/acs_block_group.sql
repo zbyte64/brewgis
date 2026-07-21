@@ -59,9 +59,9 @@ WITH raw_derived AS (
         COALESCE(a.b15003_001_e, 0)::numeric AS edu_total,
         (COALESCE(a.b15003_022_e, 0) + COALESCE(a.b15003_023_e, 0)
             + COALESCE(a.b15003_024_e, 0) + COALESCE(a.b15003_025_e, 0))::numeric AS college_educated
-    FROM public.acs_raw a
-    JOIN public.tiger_block_groups tbg
-        ON tbg.geoid = a.state || a.county || a.tract || a."block_group"
+    FROM brewgis.staging.acs_raw a
+    JOIN brewgis.staging.tiger_block_groups tbg
+        ON tbg.geoid = a.state || a.county || a.tract || a.block_group
         AND tbg.vintage = @tiger_bg_vintage
     WHERE a.year = @acs_year
       AND a.state = @state_fips

@@ -89,3 +89,9 @@
     commercial_irrigated_sqft: double precision
     intersection_density_sqmi: double precision
     geography_id: integer
+
+- name: public.sac_cnty_region_existing_land_use_parcels
+  description: "SACOG reference parcel geometries (Sacramento region), used by resnet_bft_features."
+  columns:
+    geography_id: integer
+    wkb_geometry: geometry

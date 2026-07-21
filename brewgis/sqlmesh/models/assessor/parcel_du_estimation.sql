@@ -56,7 +56,7 @@ assessor_units AS (
         apn,
         COALESCE(NULLIF(units, 0), 0) AS units,
         property_type
-    FROM public.sacog_assessor_sales_raw
+    FROM brewgis.staging.sacog_assessor_sales_raw
     ORDER BY apn, year_built DESC NULLS LAST
 ),
 

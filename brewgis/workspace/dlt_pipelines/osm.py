@@ -9,6 +9,7 @@ table for dbt consumption.
 from __future__ import annotations
 
 import logging
+import os
 from pathlib import Path
 
 import geopandas as gpd
@@ -217,6 +218,11 @@ def run_osm_pipeline(
     )
 
     row_count = len(parcels)
+
+    # ── Write to shared GeoParquet for DuckDB catalog ────────────
+    os.makedirs("/app/planning/osm", exist_ok=True)
+    results_gdf = parcels[["parcel_id", "intersection_density", "geometry"]]
+    results_gdf.to_parquet("/app/planning/osm/osm_intersection_density.parquet")
 
     logger.info(
         "OSM pipeline complete: %d rows written to %s",

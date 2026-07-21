@@ -548,39 +548,15 @@ class Command(BaseCommand):
         force_data_fetch: bool,
         force_data_reload: bool,  # noqa: ARG002
     ) -> None:
-        from brewgis.workspace.dlt_pipelines.tiger_bg import run_tiger_bg_pipeline
-
-        if not (
-            force_data_fetch or not self._table_has_rows("public", "tiger_block_groups")
-        ):
-            self.stdout.write("  TIGER/Line BG already loaded, skipping")
-            return
-
-        tiger_result = run_tiger_bg_pipeline(
-            STATE_FIPS, vintages=["2023"], ignore_cache=force_data_fetch
-        )
-        self.stdout.write(
-            f"  TIGER/Line BG loaded: {tiger_result.get('row_count', 0)} rows "
-            f"in {tiger_result.get('table_name', '?')}"
-        )
+        self.stdout.write("  TIGER/Line BG: data served from DuckDB zipfs staging VIEW")
 
     def _populate_tiger_blocks(
         self,
         force_data_fetch: bool,
         force_data_reload: bool,  # noqa: ARG002
     ) -> None:
-        from brewgis.workspace.dlt_pipelines.tiger_block import run_tiger_block_pipeline
-
-        if not (force_data_fetch or not self._table_has_rows("public", "tiger_blocks")):
-            self.stdout.write("  TIGER/Line blocks already loaded, skipping")
-            return
-
-        tiger_block_result = run_tiger_block_pipeline(
-            STATE_FIPS, vintages=["2020"], ignore_cache=force_data_fetch
-        )
         self.stdout.write(
-            f"  TIGER/Line blocks loaded: {tiger_block_result.get('row_count', 0)} rows "
-            f"in {tiger_block_result.get('table_name', '?')}"
+            "  TIGER/Line blocks: data served from DuckDB zipfs staging VIEW"
         )
 
     def _populate_census(
@@ -588,19 +564,10 @@ class Command(BaseCommand):
         force_data_fetch: bool,
         force_data_reload: bool,  # noqa: ARG002
     ) -> None:
-        from brewgis.workspace.dlt_pipelines.census import run_census_pipeline
         from brewgis.workspace.services.census_fetcher import _populate_acs_block_group
 
-        # Census ACS raw data — hard fail on fetch error
-        if force_data_fetch or not self._table_has_rows("public", "acs_raw"):
-            census_result = run_census_pipeline(
-                STATE_FIPS, [COUNTY_FIPS], BASE_YEAR, ignore_cache=force_data_fetch
-            )
-            self.stdout.write(
-                f"  Census ACS loaded: {census_result.get('row_count', 0)} rows"
-            )
-        else:
-            self.stdout.write("  ACS raw already loaded, skipping")
+        # Census ACS data served from DuckDB httpfs staging VIEW
+        self.stdout.write("  Census ACS: data served from DuckDB httpfs staging VIEW")
 
         # Materialize acs_block_group via SQLMesh — hard fail on error
         if force_data_fetch or not self._table_has_rows(
@@ -618,21 +585,8 @@ class Command(BaseCommand):
         force_data_fetch: bool,
         force_data_reload: bool,  # noqa: ARG002
     ) -> None:
-        from brewgis.workspace.dlt_pipelines.census_2020 import run_census_2020_pipeline
-
-        if not (
-            force_data_fetch
-            or not self._table_has_rows("public", "census_2020_block_raw")
-        ):
-            self.stdout.write("  Census 2020 blocks already loaded, skipping")
-            return
-
-        result = run_census_2020_pipeline(
-            STATE_FIPS, [COUNTY_FIPS], ignore_cache=force_data_fetch
-        )
         self.stdout.write(
-            f"  Census 2020 blocks loaded: {result.get('row_count', 0)} rows "
-            f"in {result.get('table_name', '?')}"
+            "  Census 2020 blocks: data served from DuckDB httpfs staging VIEW"
         )
 
     def _populate_pdb(
@@ -640,37 +594,23 @@ class Command(BaseCommand):
         force_data_fetch: bool,
         force_data_reload: bool,  # noqa: ARG002
     ) -> None:
-        from brewgis.workspace.dlt_pipelines.pdb import run_pdb_pipeline
-
-        if force_data_fetch or not self._table_has_rows("public", "pdb_raw"):
-            result = run_pdb_pipeline(
-                STATE_FIPS, COUNTY_FIPS, ignore_cache=force_data_fetch
-            )
-            self.stdout.write(
-                f"  Census PDB loaded: {result.get('row_count', 0)} rows "
-                f"in {result.get('table_name', '?')}"
-            )
-        else:
-            self.stdout.write("  Census PDB already loaded, skipping")
+        self.stdout.write("  Census PDB: materializing via SQLMesh bridge model")
+        run_sqlmesh_plan(
+            "prod",
+            select=["brewgis.staging.pdb_raw"],
+            variables={"state_fips": STATE_FIPS, "county_fips": COUNTY_FIPS},
+            no_prompts=True,
+        )
 
     def _populate_lehd(
         self,
         force_data_fetch: bool,
         force_data_reload: bool,
     ) -> None:
-        from brewgis.workspace.dlt_pipelines.lehd import run_lehd_pipeline
         from brewgis.workspace.services.lehd_fetcher import _populate_wac_block
 
-        # LEHD LODES raw data — hard fail on fetch error
-        if force_data_fetch or not self._table_has_rows("public", "lodes_raw"):
-            lehd_result = run_lehd_pipeline(
-                STATE_FIPS, COUNTY_FIPS, LEHD_YEAR, ignore_cache=force_data_fetch
-            )
-            self.stdout.write(
-                f"  LEHD LODES loaded: {lehd_result.get('row_count', 0)} rows"
-            )
-        else:
-            self.stdout.write("  LEHD LODES already loaded, skipping")
+        # LEHD LODES raw data — now served from DuckDB staging VIEWs via httpfs
+        self.stdout.write("  LEHD LODES: data sourced from DuckDB staging VIEWs")
 
         # Materialize lehd.wac_block — hard fail on error
         lehd_wac_count = _populate_wac_block(
@@ -683,39 +623,30 @@ class Command(BaseCommand):
         force_data_fetch: bool,
         force_data_reload: bool,  # noqa: ARG002
     ) -> None:
-        from brewgis.workspace.dlt_pipelines.nlcd import run_nlcd_pipeline
-        from brewgis.workspace.dlt_pipelines.nlcd import run_nlcd_tree_canopy_pipeline
+        from brewgis.workspace.services.nlcd_fetcher import download_nlcd_raster
+        from brewgis.workspace.services.nlcd_fetcher import (
+            download_nlcd_tree_canopy_raster,
+        )
 
         self.stdout.write("\n  -- NLCD land cover --")
-        if not (force_data_fetch or not self._table_has_rows("public", "nlcd_raster")):
-            self.stdout.write("  NLCD raster already loaded, skipping")
+        nlcd_path = download_nlcd_raster(
+            year=2021,
+            refresh_cache=force_data_fetch,
+        )
+        if nlcd_path:
+            self.stdout.write(f"  NLCD raster cached at {nlcd_path}")
         else:
-            nlcd_result = run_nlcd_pipeline(
-                parcel_source="fresno_parcels",
-                year=2021,
-                ignore_cache=force_data_fetch,
-            )
-            self.stdout.write(
-                f"  NLCD raster loaded: {nlcd_result.get('row_count', 0)} tiles "
-                f"in public.{nlcd_result.get('raster_table', 'nlcd_raster')}"
-            )
+            self.stdout.write("  NLCD raster download failed")
 
         self.stdout.write("\n  -- NLCD tree canopy --")
-        if not (
-            force_data_fetch
-            or not self._table_has_rows("public", "nlcd_tree_canopy_raster")
-        ):
-            self.stdout.write("  NLCD tree canopy already loaded, skipping")
+        tc_path = download_nlcd_tree_canopy_raster(
+            year=2016,
+            refresh_cache=force_data_fetch,
+        )
+        if tc_path:
+            self.stdout.write(f"  NLCD tree canopy cached at {tc_path}")
         else:
-            nlcd_tc_result = run_nlcd_tree_canopy_pipeline(
-                parcel_source="fresno_parcels",
-                year=2021,
-                ignore_cache=force_data_fetch,
-            )
-            self.stdout.write(
-                f"  NLCD tree canopy loaded: {nlcd_tc_result.get('row_count', 0)} tiles "
-                f"in public.{nlcd_tc_result.get('raster_table', 'nlcd_tree_canopy_raster')}"
-            )
+            self.stdout.write("  NLCD tree canopy download failed")
 
     def _populate_osm(
         self,
@@ -766,15 +697,10 @@ class Command(BaseCommand):
             "+brewgis.base_canvas.base_canvas_reconciled",
         ]
         if overture:
-            # DuckDB-dependent: Overture building/transport staging + ResNet
+            # DuckDB-dependent: ResNet features (needs DuckDB for Parquet reads)
             model_selectors.extend(
                 [
                     "+brewgis.fresno.parcel_resnet_features",
-                    "+brewgis.staging.overture_buildings",
-                    "+brewgis.staging.vida_combined_buildings",
-                    "+brewgis.assessor.buildings_combined",
-                    "+brewgis.assessor.parcel_building_footprints",
-                    "+brewgis.assessor.authoritative_residential_area",
                 ]
             )
         if nlcd:
@@ -786,6 +712,8 @@ class Command(BaseCommand):
                 ]
             )
         if overture:
+            # Overture transport for Fresno intersection density
+            # Reads from PostgreSQL bridge (already materialized), not DuckDB
             model_selectors.extend(
                 [
                     "+brewgis.staging.overture_transport",
@@ -851,6 +779,11 @@ class Command(BaseCommand):
         }
         if overture:
             plan_vars["osm_intersection_table"] = "fresno_intersection_density"
+            # Fresno bounding box for Overture transport downloads
+            plan_vars["overture_bbox_min_x"] = MIN_LNG
+            plan_vars["overture_bbox_max_x"] = MAX_LNG
+            plan_vars["overture_bbox_min_y"] = MIN_LAT
+            plan_vars["overture_bbox_max_y"] = MAX_LAT
 
         self.stdout.write("  SQLMesh plan variables configured")
         if cbp_vars:
@@ -924,20 +857,6 @@ class Command(BaseCommand):
     def _import_poi(self) -> int:
         workspace = self._get_workspace()
         self.stdout.write("  Fetching POIs from OpenStreetMap Overpass...")
-
-        from brewgis.workspace.dlt_pipelines.poi import run_poi_pipeline
-
-        dlt_result = run_poi_pipeline(
-            MIN_LNG,
-            MIN_LAT,
-            MAX_LNG,
-            MAX_LAT,
-            categories=POI_CATEGORIES,
-            schema=WORKSPACE_SCHEMA,
-        )
-        self.stdout.write(
-            f"  dlt pipeline loaded {dlt_result.get('row_count', 0)} raw POIs"
-        )
 
         gdf = fetch_pois(MIN_LNG, MIN_LAT, MAX_LNG, MAX_LAT, POI_CATEGORIES)
         count = len(gdf)

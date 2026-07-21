@@ -30,11 +30,6 @@ def _census_api_key() -> str:
     return django_settings.CENSUS_API_KEY or ""
 
 
-# Census API base
-def _census_base_url(year: int = 2022) -> str:
-    return f"https://api.census.gov/data/{year}/acs/acs5"
-
-
 # ACS variable definitions mapped to base canvas columns
 # Grouped so we can fetch them efficiently via a single call
 ACS_TABLE_GROUPS = {
@@ -179,68 +174,6 @@ except (ValueError, TypeError):
     _K_STEEPNESS = 0.5
 
 
-def fetch_acs_data_summary(
-    state_fips: str, county_fips: str, year: int = 2022
-) -> dict[str, Any]:
-    """Return a summary of ACS data available in the staging table.
-
-    Args:
-        state_fips: Two-digit state FIPS code.
-        county_fips: Three-digit county FIPS code.
-        year: ACS data year (default 2022).
-
-    Returns:
-        Dict with keys: table_groups (list of table IDs), row_count,
-        and columns (list of derived column names).
-    """
-    engine = get_engine()
-
-    query = text("""
-        SELECT COUNT(*) as row_count
-        FROM public.acs_raw
-        WHERE state = :state_fips
-          AND county = :county_fips
-          AND year = :year
-    """)
-    with engine.connect() as conn:
-        result = conn.execute(
-            query,
-            {
-                "state_fips": state_fips,
-                "county_fips": county_fips,
-                "year": year,
-            },
-        ).scalar()
-        row_count = result or 0
-
-    return {
-        "table_groups": list(ACS_TABLE_GROUPS.keys()),
-        "row_count": row_count,
-        "columns": [
-            "pop",
-            "hh",
-            "du",
-            "du_detsf",
-            "du_attsf",
-            "du_2",
-            "du_3_4",
-            "du_5_9",
-            "du_10p",
-            "du_mf2to4",
-            "du_mf5p",
-            "du_detsf_sl",
-            "du_detsf_ll",
-            "owner_occupied",
-            "renter_occupied",
-            "median_income",
-            "rent_burden_pct",
-            "total_population",
-            "pct_minority",
-            "pct_college_educated",
-        ],
-    }
-
-
 def _populate_acs_block_group(
     state_fips: str,
     county_fips_list: str | list[str] | None = None,
@@ -306,3 +239,63 @@ def _populate_acs_block_group(
         )
         raise RuntimeError(msg)
     return total_rows
+
+
+def fetch_acs_data_summary(
+    state_fips: str, county_fips: str, year: int = 2022
+) -> dict[str, Any]:
+    """Return a summary of ACS data available in the staging table.
+
+    Args:
+        state_fips: Two-digit state FIPS code.
+        county_fips: Three-digit county FIPS code.
+        year: ACS data year (default 2022).
+
+    Returns:
+        Dict with keys: table_groups (list of table IDs), row_count,
+        and columns (list of derived column names).
+    """
+    engine = get_engine()
+    query = text("""
+        SELECT COUNT(*) as row_count
+        FROM brewgis.staging.acs_raw
+        WHERE state = :state_fips
+          AND county = :county_fips
+          AND year = :year
+    """)
+    with engine.connect() as conn:
+        result = conn.execute(
+            query,
+            {
+                "state_fips": state_fips,
+                "county_fips": county_fips,
+                "year": year,
+            },
+        ).scalar()
+        row_count = result or 0
+    return {
+        "table_groups": list(ACS_TABLE_GROUPS.keys()),
+        "row_count": row_count,
+        "columns": [
+            "pop",
+            "hh",
+            "du",
+            "du_detsf",
+            "du_attsf",
+            "du_2",
+            "du_3_4",
+            "du_5_9",
+            "du_10p",
+            "du_mf2to4",
+            "du_mf5p",
+            "du_detsf_sl",
+            "du_detsf_ll",
+            "owner_occupied",
+            "renter_occupied",
+            "median_income",
+            "rent_burden_pct",
+            "total_population",
+            "pct_minority",
+            "pct_college_educated",
+        ],
+    }

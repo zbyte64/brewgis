@@ -145,7 +145,7 @@ lint:  ## Run Ruff linter
 
 .PHONY: lint-sql
 lint-sql:  ## Run SQLMesh linter on SQL models
-	$(COMPOSE_RUN) sqlmesh -p brewgis/sqlmesh/ lint
+	$(COMPOSE_RUN) bash -c 'DATABASE_URL="postgres://$${POSTGRES_USER}:$${POSTGRES_PASSWORD}@$${POSTGRES_HOST}:$${POSTGRES_PORT}/$${POSTGRES_DB}" PYTHONPATH=/app DJANGO_SETTINGS_MODULE=config.settings sqlmesh -p brewgis/sqlmesh/ lint'
 
 .PHONY: lint-sqlmesh-perf
 lint-sqlmesh-perf:  ## Run EXPLAIN audit on SQLMesh models

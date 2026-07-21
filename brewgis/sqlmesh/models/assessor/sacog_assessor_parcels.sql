@@ -15,7 +15,7 @@ MODEL (
 -- deduplicated by apn, with sub-unit APNs (condos/PUDs/mobile home pads with
 -- lotsize=0) consolidated into development-level parcels.
 --
--- Reads from public.sacog_assessor_parcels_raw (populated by the assessor dlt
+-- Reads from brewgis.staging.sacog_assessor_parcels_raw (populated by the assessor dlt
 -- pipeline from PARCELS/MapServer/8).
 --
 -- Sub-unit APNs (lotsize=0 or NULL) represent individual tax parcels within
@@ -33,7 +33,7 @@ WITH
 -- Identify sub-unit parcels (zero or null lotsize — individual condo/PUD pads)
 sub_unit_parcels AS (
     SELECT *
-    FROM public.sacog_assessor_parcels_raw
+    FROM brewgis.staging.sacog_assessor_parcels_raw
     WHERE (lotsize IS NULL OR lotsize::double precision <= 0)
       AND geometry IS NOT NULL  -- skip rows without spatial data
 ) ,
@@ -78,7 +78,7 @@ deduped AS (
             PARTITION BY apn
             ORDER BY lotsize::double precision DESC NULLS LAST
         ) AS rn
-    FROM public.sacog_assessor_parcels_raw
+    FROM brewgis.staging.sacog_assessor_parcels_raw
     WHERE lotsize IS NOT NULL AND lotsize::double precision > 0
 ),
 

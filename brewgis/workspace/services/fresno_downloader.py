@@ -48,11 +48,19 @@ DATASETS: dict[str, dict[str, Any]] = {
     },
     "city_boundary": {
         "description": "City of Fresno boundary",
-        "source": "City of Fresno GIS Hub",
+        "source": "Fresno County ArcGIS FeatureServer",
         "base_url": (
-            "https://city-of-fresno-gis-hub-cityoffresno.hub.arcgis.com/api"
-            "/download/v1/items/6825e97701754a65af95564d41213e92/geojson"
+            "https://services6.arcgis.com/Gs01XZPFhKUG8tKU/ArcGIS/rest/services"
+            "/Fresno_City_Limits/FeatureServer/0/query"
         ),
+        "params": {
+            "where": "AGENCY_NAM = 'Fresno'",
+            "outFields": "*",
+            "returnGeometry": "true",
+            "f": "json",
+            "inSR": "4326",
+            "outSR": "4326",
+        },
         "expected_count": 1,
         "filename": "fresno_city_boundary.geojson",
     },
@@ -60,8 +68,8 @@ DATASETS: dict[str, dict[str, Any]] = {
         "description": "FEMA NFHL flood zones (Fresno County area)",
         "source": "FEMA National Flood Hazard Layer",
         "base_url": (
-            "https://hazards.fema.gov/gis/nfhl/rest/services/public/NFHL"
-            "/MapServer/1/query"
+            "https://hazards.fema.gov/arcgis/rest/services/public/NFHL"
+            "/MapServer/28/query"
         ),
         "params": {
             "where": "1=1",
@@ -103,14 +111,14 @@ ADDITIONAL_DATASETS: dict[str, dict[str, Any]] = {
     },
     "wetlands": {
         "description": "Wetlands (Fresno County area)",
-        "source": "US Fish & Wildlife Service NWI",
+        "source": "CA Dept of Fish & Wildlife BIOS (USFWS NWI)",
         "base_url": (
-            "https://www.fws.gov/wetlands/arcgis/rest/services"
-            "/Wetlands/MapServer/0/query"
+            "https://services2.arcgis.com/Uq9r85Potqm3MfRV/ArcGIS/rest/services"
+            "/biosds2630_fpu/FeatureServer/0/query"
         ),
         "params": {
             "where": "ATTRIBUTE LIKE '%Fresh%'",
-            "outFields": "ATTRIBUTE,WETLAND_TYPE",
+            "outFields": "ATTRIBUTE,WETLAND_TYPE,ACRES",
             "returnGeometry": "true",
             "f": "json",
             "inSR": "4326",

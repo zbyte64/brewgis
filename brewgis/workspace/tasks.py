@@ -10,13 +10,13 @@ from celery import shared_task
 from celery.utils.log import get_task_logger
 from django.conf import settings
 from django.utils import timezone
+
 from brewgis.workspace.analysis.data_export import export_building_types
-from brewgis.workspace.dlt_pipelines import run_census_pipeline
-from brewgis.workspace.dlt_pipelines import run_lehd_pipeline
-from brewgis.workspace.dlt_pipelines import run_poi_pipeline
-from brewgis.workspace.dlt_pipelines import run_raster_pipeline
+from brewgis.workspace.analysis.sqlmesh_runner import run_sqlmesh_plan
 from brewgis.workspace.models import DataImportRun
 from brewgis.workspace.models import Layer
+from brewgis.workspace.services._db import get_engine
+from brewgis.workspace.services._db import text
 from brewgis.workspace.services.spatial_allocator import allocate_attributes
 from brewgis.workspace.services.stitcher import impute_built_form_default
 from brewgis.workspace.services.stitcher import impute_constant
@@ -77,11 +77,11 @@ def run_census_fetch(  # type: ignore[no-untyped-def]
     schema: str,
     year: int = 2022,
 ) -> dict:
-    """Fetch Census ACS demographics data via dlt and register as Layer.
+    """Fetch Census ACS demographics data via SQLMesh and register as Layer.
 
-    The dlt pipeline writes raw data to the staging table
-    ``{schema}.acs_raw``.  No geopandas re-read is performed — the
-    dlt-loaded table IS the source of truth for downstream processing.
+    The DuckDB staging VIEW reads directly from the Census API via httpfs;
+    the bridge model ``brewgis.staging.acs_block_group`` materializes to
+    PostGIS with derived demographic columns.
     """
 
     run = DataImportRun.objects.get(pk=run_pk)
@@ -89,10 +89,26 @@ def run_census_fetch(  # type: ignore[no-untyped-def]
     run.started_at = timezone.now()
     run.save(update_fields=["status", "started_at"])
 
-    dlt_result = run_census_pipeline(state_fips, county_fips, year, schema)
+    run_sqlmesh_plan(
+        environment="brewgis_prod",
+        select=["brewgis.staging.acs_block_group"],
+        skip_tests=True,
+        variables={
+            "acs_year": year,
+            "state_fips": state_fips,
+            "county_fips": county_fips,
+        },
+    )
 
-    table_name = dlt_result["table_name"]
-    row_count = dlt_result["row_count"]
+    table_name = "staging__brewgis_prod.acs_block_group"
+    engine = get_engine()
+    with engine.connect() as conn:
+        row_count = (
+            conn.execute(
+                text("SELECT COUNT(*) FROM staging__brewgis_prod.acs_block_group")
+            ).scalar()
+            or 0
+        )
     layer_key = f"census_acs_{year}_{state_fips}_{county_fips}"
 
     layer, created = Layer.objects.get_or_create(
@@ -114,7 +130,6 @@ def run_census_fetch(  # type: ignore[no-untyped-def]
         "layer_key": layer_key,
         "layer_id": layer.pk,
         "row_count": row_count,
-        "validation": dlt_result.get("validation"),
     }
     run.completed_at = timezone.now()
     run.save(update_fields=["status", "result", "completed_at"])
@@ -131,19 +146,37 @@ def run_lehd_fetch(  # type: ignore[no-untyped-def]
     schema: str,
     year: int = 2022,
 ) -> dict:
-    """Fetch LEHD employment data via dlt and register as Layer.
-    The dlt pipeline writes raw data to the staging table
-    ``{schema}.lodes_raw``. No geopandas re-read is performed.
+    """Fetch LEHD employment data via SQLMesh and register as Layer.
+
+    The DuckDB staging VIEW reads gzipped CSVs from the LEHD CES FTP
+    via httpfs; the bridge model ``brewgis.staging.wac_block_raw``
+    materialises CNS-split employment to PostGIS.
     """
     run = DataImportRun.objects.get(pk=run_pk)
     run.status = "running"
     run.started_at = timezone.now()
     run.save(update_fields=["status", "started_at"])
 
-    dlt_result = run_lehd_pipeline(state_fips, county_fips, year, schema=schema)
+    run_sqlmesh_plan(
+        environment="brewgis_prod",
+        select=["brewgis.staging.wac_block_raw"],
+        skip_tests=True,
+        variables={
+            "lodes_year": year,
+            "state_fips": state_fips,
+            "county_fips": county_fips,
+        },
+    )
 
-    table_name = dlt_result["table_name"]
-    row_count = dlt_result["row_count"]
+    table_name = "staging__brewgis_prod.wac_block_raw"
+    engine = get_engine()
+    with engine.connect() as conn:
+        row_count = (
+            conn.execute(
+                text("SELECT COUNT(*) FROM staging__brewgis_prod.wac_block_raw")
+            ).scalar()
+            or 0
+        )
     layer_key = f"lehd_{state_fips}_{county_fips}"
 
     layer, created = Layer.objects.get_or_create(
@@ -165,7 +198,6 @@ def run_lehd_fetch(  # type: ignore[no-untyped-def]
         "layer_key": layer_key,
         "layer_id": layer.pk,
         "row_count": row_count,
-        "validation": dlt_result.get("validation"),
     }
     run.completed_at = timezone.now()
     run.save(update_fields=["status", "result", "completed_at"])

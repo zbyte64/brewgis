@@ -30,9 +30,6 @@ from torchvision.models import ResNet34_Weights
 from torchvision.models import resnet34
 
 from brewgis.sqlmesh.models.python._feature_cols import _RESNET_PC_COLS
-from brewgis.workspace.services.chip_extractor import extract_chips
-from brewgis.workspace.services.naip_fetcher import download_cog_tiles
-from brewgis.workspace.services.naip_fetcher import download_naip_for_parcels
 
 if TYPE_CHECKING:
     from sqlmesh.core.context import ExecutionContext
@@ -170,6 +167,13 @@ def execute(  # noqa: C901, PLR0912, PLR0915
 ) -> Iterator[pd.DataFrame]:
     """Extract ResNet-34 image features for all reference parcels."""
     logger = logging.getLogger(__name__)
+
+    # Lazy imports — these cascade to Django settings, so import
+    # inside the function body to avoid errors when SQLMesh loads
+    # models without Django configured (e.g. during lint).
+    from brewgis.workspace.services.chip_extractor import extract_chips
+    from brewgis.workspace.services.naip_fetcher import download_cog_tiles
+    from brewgis.workspace.services.naip_fetcher import download_naip_for_parcels
 
     # Step 1: Load parcel geometries
     df_parcels = context.fetchdf(

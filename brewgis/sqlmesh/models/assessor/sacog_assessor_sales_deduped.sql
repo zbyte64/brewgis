@@ -37,7 +37,7 @@ FROM (
                 END,
                 year_built DESC NULLS LAST
         ) AS rn
-    FROM public.sacog_assessor_sales_raw
+    FROM brewgis.staging.sacog_assessor_sales_raw
     WHERE living_area IS NOT NULL OR building_sf IS NOT NULL
 ) dedup
 WHERE rn = 1;

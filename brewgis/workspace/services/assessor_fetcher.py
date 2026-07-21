@@ -9,7 +9,7 @@ from __future__ import annotations
 
 import json
 import logging
-from pathlib import Path  # noqa: TC003
+from pathlib import Path
 from typing import Any
 
 import geopandas as gpd
@@ -472,5 +472,81 @@ def load_to_postgis(
                     f"ON {schema}.sacog_assessor_sales_raw (apn)"
                 )
             )
+
+    return result
+
+
+def write_to_geoparquet(
+    *,
+    parcels: gpd.GeoDataFrame | None = None,
+    sales: gpd.GeoDataFrame | None = None,
+    output_dir: str | Path = "/app/planning/assessor",
+) -> dict[str, int]:
+    """Write assessor data to GeoParquet files for DuckDB consumption.
+
+    Saves GeoParquet files to a shared volume that DuckDB's httpfs
+    extension can read via ``read_parquet``.
+
+    Parameters
+    ----------
+    parcels : gpd.GeoDataFrame | None
+        Parcel geometries (from ``fetch_parcels_arcgis``).
+    sales : gpd.GeoDataFrame | None
+        Sales/building characteristics (from ``fetch_sales_arcgis``).
+    output_dir : str | Path
+        Output directory (default ``/app/planning/assessor``).
+
+    Returns
+    -------
+    dict[str, int]
+        ``{"parcels": N, "sales": M}`` row counts.
+    """
+    output_path = Path(output_dir)
+    output_path.mkdir(parents=True, exist_ok=True)
+
+    result: dict[str, int] = {}
+
+    if parcels is not None and not parcels.empty:
+        # Dedup (same logic as load_to_postgis)
+        if "apn" in parcels.columns:
+            dup_mask = parcels["apn"].duplicated(keep=False)
+            if dup_mask.any():
+                parcels = parcels.sort_values(
+                    "lotsize", ascending=False
+                ).drop_duplicates(subset="apn", keep="first")
+                logger.warning(
+                    "Deduplicated %d duplicate APN rows (kept largest lotsize per APN)",
+                    dup_mask.sum(),
+                )
+        out_path = output_path / "assessor_parcels.parquet"
+        parcels.to_parquet(out_path, index=False)
+        result["parcels"] = len(parcels)
+        logger.info("Wrote %d parcels to %s", len(parcels), out_path)
+
+    if sales is not None and not sales.empty:
+        # Dedup (same logic as load_to_postgis)
+        if "apn" in sales.columns:
+            dup_mask = sales["apn"].duplicated(keep=False)
+            if dup_mask.any():
+                sales = (
+                    sales.assign(
+                        _completeness_rank=sales["living_area"].notna().astype(int)
+                        + sales["building_sf"].notna().astype(int),
+                    )
+                    .sort_values(
+                        ["_completeness_rank", "year_built"],
+                        ascending=[False, False],
+                    )
+                    .drop_duplicates(subset="apn", keep="first")
+                    .drop(columns=["_completeness_rank"])
+                )
+                logger.warning(
+                    "Deduplicated %d duplicate APN sales rows (kept most complete data)",
+                    dup_mask.sum(),
+                )
+        out_path = output_path / "assessor_sales.parquet"
+        sales.to_parquet(out_path, index=False)
+        result["sales"] = len(sales)
+        logger.info("Wrote %d sales to %s", len(sales), out_path)
 
     return result

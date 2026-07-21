@@ -385,19 +385,7 @@ class Command(BaseCommand):
         # which conflicts with test stubs for pandas/geopandas.
         from brewgis.workspace.analysis.sqlmesh_runner import get_context
         from brewgis.workspace.analysis.sqlmesh_runner import run_sqlmesh_plan
-        from brewgis.workspace.dlt_pipelines.assessor import (
-            run_assessor_parcels_pipeline,
-        )
-        from brewgis.workspace.dlt_pipelines.assessor import run_assessor_sales_pipeline
-        from brewgis.workspace.dlt_pipelines.census import run_census_pipeline
-        from brewgis.workspace.dlt_pipelines.census_2020 import run_census_2020_pipeline
-        from brewgis.workspace.dlt_pipelines.lehd import run_lehd_pipeline
-        from brewgis.workspace.dlt_pipelines.nlcd import run_nlcd_pipeline
-        from brewgis.workspace.dlt_pipelines.nlcd import run_nlcd_tree_canopy_pipeline
         from brewgis.workspace.dlt_pipelines.osm import run_osm_pipeline
-        from brewgis.workspace.dlt_pipelines.pdb import run_pdb_pipeline
-        from brewgis.workspace.dlt_pipelines.tiger_bg import run_tiger_bg_pipeline
-        from brewgis.workspace.dlt_pipelines.tiger_block import run_tiger_block_pipeline
         from brewgis.workspace.services.census_fetcher import _populate_acs_block_group
         from brewgis.workspace.services.comparison_helpers import (
             _convert_reference_totals,
@@ -408,6 +396,10 @@ class Command(BaseCommand):
         from brewgis.workspace.services.comparison_helpers import _load_parcels
         from brewgis.workspace.services.comparison_helpers import _query_table_as_dict
         from brewgis.workspace.services.lehd_fetcher import _populate_wac_block
+        from brewgis.workspace.services.nlcd_fetcher import download_nlcd_raster
+        from brewgis.workspace.services.nlcd_fetcher import (
+            download_nlcd_tree_canopy_raster,
+        )
 
         self.stdout.write("\n── Pre-flight: Checking SACOG reference tables ──")
         if not self._table_has_rows("public", V1_PARCELS):
@@ -490,55 +482,18 @@ class Command(BaseCommand):
         # ── Conditional data loading ──────────────────────────────────
 
         # Populate TIGER/Line block group polygons (needed by ACS reader)
-        self.stdout.write("\n── Populating TIGER/Line block group staging table ──")
-        if (
-            force_data_fetch
-            or force_data_reload
-            or not self._table_has_rows("public", "tiger_block_groups")
-        ):
-            tiger_result = run_tiger_bg_pipeline(
-                STATE_FIPS, vintages=["2013", "2023"], ignore_cache=force_data_fetch
-            )
-            self.stdout.write(
-                f"  TIGER/Line BG loaded: {tiger_result.get('row_count', 0)} rows "
-                f"in {tiger_result.get('table_name', '?')}"
-            )
-        else:
-            self.stdout.write("  TIGER/Line BG already loaded, skipping")
+        self.stdout.write("\n── TIGER/Line block group staging (DuckDB zipfs) ──")
+        self.stdout.write("  TIGER/Line BG: data served from DuckDB zipfs staging VIEW")
 
         # Populate TIGER/Line block polygons (needed by wac_block_raw)
-        self.stdout.write("\n── Populating TIGER/Line block staging table ──")
-        if (
-            force_data_fetch
-            or force_data_reload
-            or not self._table_has_rows("public", "tiger_blocks")
-        ):
-            tiger_block_result = run_tiger_block_pipeline(
-                STATE_FIPS, vintages=["2020"], ignore_cache=force_data_fetch
-            )
-            self.stdout.write(
-                f"  TIGER/Line blocks loaded: {tiger_block_result.get('row_count', 0)} rows "
-                f"in {tiger_block_result.get('table_name', '?')}"
-            )
-        else:
-            self.stdout.write("  TIGER/Line blocks already loaded, skipping")
+        self.stdout.write("\n── TIGER/Line block staging (DuckDB zipfs) ──")
+        self.stdout.write(
+            "  TIGER/Line blocks: data served from DuckDB zipfs staging VIEW"
+        )
 
         # Populate Census ACS staging table
-        self.stdout.write("\n── Populating Census ACS staging table ──")
-        if (
-            force_data_fetch
-            or force_data_reload
-            or not self._table_has_rows("public", "acs_raw")
-        ):
-            census_result = run_census_pipeline(
-                STATE_FIPS, SACOG_COUNTIES, ACS_YEAR, ignore_cache=force_data_fetch
-            )
-            self.stdout.write(
-                f"  Census ACS loaded: {census_result.get('row_count', 0)} rows "
-                f"in {census_result.get('table_name', '?')}"
-            )
-        else:
-            self.stdout.write("  Census ACS already loaded, skipping")
+        self.stdout.write("\n── Census ACS staging (DuckDB httpfs VIEW) ──")
+        self.stdout.write("  Census ACS: data served from DuckDB httpfs staging VIEW")
 
         # Populate census.acs_block_group from ACS staging + TIGER BG geometry
         self.stdout.write("\n── Populating census.acs_block_group ──")
@@ -557,55 +512,18 @@ class Command(BaseCommand):
             self.stdout.write("  census.acs_block_group already populated, skipping")
 
         # Populate Census 2020 block staging table
-        self.stdout.write("\n── Populating Census 2020 block staging table ──")
-        if (
-            force_data_fetch
-            or force_data_reload
-            or not self._table_has_rows("public", "census_2020_block_raw")
-        ):
-            census_2020_result = run_census_2020_pipeline(
-                STATE_FIPS, SACOG_COUNTIES, ignore_cache=force_data_fetch
-            )
-            self.stdout.write(
-                f"  Census 2020 blocks loaded: {census_2020_result.get('row_count', 0)} rows "
-                f"in {census_2020_result.get('table_name', '?')}"
-            )
-        else:
-            self.stdout.write("  Census 2020 blocks already loaded, skipping")
+        self.stdout.write("\n── Census 2020 block staging (DuckDB httpfs VIEW) ──")
+        self.stdout.write(
+            "  Census 2020 blocks: data served from DuckDB httpfs staging VIEW"
+        )
 
         # Populate Census PDB staging table
-        self.stdout.write("\n── Populating Census PDB staging table ──")
-        if (
-            force_data_fetch
-            or force_data_reload
-            or not self._table_has_rows("public", "pdb_raw")
-        ):
-            pdb_result = run_pdb_pipeline(
-                STATE_FIPS, COUNTY_FIPS, ignore_cache=force_data_fetch
-            )
-            self.stdout.write(
-                f"  Census PDB loaded: {pdb_result.get('row_count', 0)} rows "
-                f"in {pdb_result.get('table_name', '?')}"
-            )
-        else:
-            self.stdout.write("  Census PDB already loaded, skipping")
+        self.stdout.write("\n── Census PDB staging (DuckDB httpfs VIEW) ──")
+        self.stdout.write("  Census PDB: data served from DuckDB httpfs staging VIEW")
 
         # Populate LEHD staging table before ETL
-        self.stdout.write("\n── Populating LEHD LODES staging table ──")
-        if (
-            force_data_fetch
-            or force_data_reload
-            or not self._table_has_rows("public", "lodes_raw")
-        ):
-            lehd_result = run_lehd_pipeline(
-                STATE_FIPS, COUNTY_FIPS, LEHD_YEAR, ignore_cache=force_data_fetch
-            )
-            self.stdout.write(
-                f"  LEHD LODES loaded: {lehd_result.get('row_count', 0)} rows "
-                f"in {lehd_result.get('table_name', '?')}"
-            )
-        else:
-            self.stdout.write("  LEHD LODES already loaded, skipping")
+        self.stdout.write("\n── LEHD LODES staging (DuckDB httpfs VIEW) ──")
+        self.stdout.write("  LEHD LODES: data served from DuckDB httpfs staging VIEW")
 
         # Populate lehd.wac_block from LEHD staging + TIGER geometry
         self.stdout.write("\n── Populating lehd.wac_block ──")
@@ -622,48 +540,25 @@ class Command(BaseCommand):
             self.stdout.write("  lehd.wac_block already populated, skipping")
         # ── Phase 1.5: Optional data pipelines (conditional) ─────────
         if nlcd:
-            self.stdout.write("\n── Phase 1.5a: Computing NLCD zonal stats ──")
-            if (
-                force_data_fetch
-                or force_data_reload
-                or not self._table_has_rows("public", "nlcd_raster")
-            ):
-                nlcd_result = run_nlcd_pipeline(
-                    parcel_source="sacog_comparison_parcels",
-                    year=NLCD_YEAR,
-                    ignore_cache=force_data_fetch,
-                )
-                nlcd_raster_table = nlcd_result.get("raster_table", "nlcd_raster")
-                self.stdout.write(
-                    f"  NLCD raster loaded: {nlcd_result.get('row_count', 0)} tiles "
-                    f"in public.{nlcd_raster_table}"
-                )
-            else:
-                self.stdout.write("  NLCD raster already loaded, skipping")
-
-            self.stdout.write(
-                "\n── Phase 1.5b: Computing NLCD tree canopy zonal stats ──"
+            self.stdout.write("\n── Phase 1.5a: Downloading NLCD land cover raster ──")
+            nlcd_path = download_nlcd_raster(
+                year=NLCD_YEAR,
+                refresh_cache=force_data_fetch,
             )
-            if (
-                force_data_fetch
-                or force_data_reload
-                or not self._table_has_rows("public", "nlcd_tree_canopy_raster")
-            ):
-                nlcd_tc_result = run_nlcd_tree_canopy_pipeline(
-                    parcel_source="sacog_comparison_parcels",
-                    year=NLCD_YEAR,
-                    ignore_cache=force_data_fetch,
-                )
-                nlcd_tc_raster_table = nlcd_tc_result.get(
-                    "raster_table", "nlcd_tree_canopy_raster"
-                )
-                self.stdout.write(
-                    f"  NLCD tree canopy raster loaded: "
-                    f"{nlcd_tc_result.get('row_count', 0)} tiles "
-                    f"in public.{nlcd_tc_raster_table}"
-                )
+            if nlcd_path:
+                self.stdout.write(f"  NLCD raster cached at {nlcd_path}")
             else:
-                self.stdout.write("  NLCD tree canopy raster already loaded, skipping")
+                self.stdout.write("  NLCD raster download failed")
+
+            self.stdout.write("\n── Phase 1.5b: Downloading NLCD tree canopy raster ──")
+            tc_path = download_nlcd_tree_canopy_raster(
+                year=NLCD_YEAR,
+                refresh_cache=force_data_fetch,
+            )
+            if tc_path:
+                self.stdout.write(f"  NLCD tree canopy cached at {tc_path}")
+            else:
+                self.stdout.write("  NLCD tree canopy download failed")
 
         if use_assessor_geometry:
             # APN uniqueness pre-check: verify sacog_assessor_parcels_raw has no
@@ -696,12 +591,9 @@ class Command(BaseCommand):
                 or force_data_reload
                 or not self._table_has_rows("public", "sacog_assessor_parcels_raw")
             ):
-                assessor_parcels_result = run_assessor_parcels_pipeline(
-                    max_pages=0,
-                    ignore_cache=force_data_fetch,
-                )
+                # Assessor parcels now served from DuckDB GeoParquet staging
                 self.stdout.write(
-                    f"  Assessor parcels loaded: {assessor_parcels_result.get('row_count', 0)} rows"
+                    "  Assessor parcels: data sourced from DuckDB GeoParquet staging"
                 )
             else:
                 self.stdout.write("  Assessor parcels already loaded, skipping")
@@ -712,12 +604,9 @@ class Command(BaseCommand):
                 or force_data_reload
                 or not self._table_has_rows("public", "sacog_assessor_sales_raw")
             ):
-                assessor_sales_result = run_assessor_sales_pipeline(
-                    max_pages=0,
-                    ignore_cache=force_data_fetch,
-                )
+                # Assessor sales now served from DuckDB GeoParquet staging
                 self.stdout.write(
-                    f"  Assessor sales loaded: {assessor_sales_result.get('row_count', 0)} rows"
+                    "  Assessor sales: data sourced from DuckDB GeoParquet staging"
                 )
             else:
                 self.stdout.write("  Assessor sales already loaded, skipping")

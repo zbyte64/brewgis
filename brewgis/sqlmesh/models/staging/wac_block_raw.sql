@@ -39,7 +39,7 @@ WITH lodes_blocks AS (
         w_geocode AS block_geoid,
         LEFT(w_geocode, 12) AS bg,
         LEFT(w_geocode, 11) AS tract
-    FROM public.lodes_raw
+    FROM brewgis.staging.lodes_raw
     WHERE year = @lodes_year
       AND LEFT(w_geocode, 5) = CONCAT(@state_fips, @county_fips)
 ),
@@ -53,14 +53,14 @@ block_geometry_map AS (
             tbg_fallback.geometry
         ) AS geometry
     FROM lodes_blocks lb
-    LEFT JOIN public.tiger_blocks tb
+    LEFT JOIN brewgis.staging.tiger_blocks tb
         ON lb.block_geoid = tb.geoid
         AND tb.vintage = @tiger_block_vintage
-    LEFT JOIN public.tiger_block_groups tbg
+    LEFT JOIN brewgis.staging.tiger_block_groups tbg
         ON lb.bg = tbg.geoid
         AND tbg.vintage = @tiger_vintage
     LEFT JOIN LATERAL (
-        SELECT geometry FROM public.tiger_block_groups
+        SELECT geometry FROM brewgis.staging.tiger_block_groups
         WHERE geoid LIKE lb.tract || '%'
           AND vintage = @tiger_vintage
         LIMIT 1
@@ -132,7 +132,7 @@ cbp_sub_sectors AS (
         COALESCE(lr.cns17::numeric, 0)::numeric AS emp_military_cbp,
         -- CNS16 unclassified (distributed in later CTE)
         COALESCE(lr.cns16::numeric, 0)::numeric AS cns16_unclassified
-    FROM public.lodes_raw lr
+    FROM brewgis.staging.lodes_raw lr
     JOIN block_geometry_map bm
         ON lr.w_geocode = bm.block_geoid
     WHERE lr.year = @lodes_year

@@ -29,9 +29,6 @@ from brewgis.sqlmesh.models.python.resnet_bft_features import _infer_batch
 from brewgis.sqlmesh.models.python.resnet_bft_features import _load_cached_embeddings
 from brewgis.sqlmesh.models.python.resnet_bft_features import _load_resnet_backbone
 from brewgis.sqlmesh.models.python.resnet_bft_features import _save_embeddings
-from brewgis.workspace.services.chip_extractor import extract_chips
-from brewgis.workspace.services.naip_fetcher import download_cog_tiles
-from brewgis.workspace.services.naip_fetcher import download_naip_for_parcels
 
 if TYPE_CHECKING:
     from sqlmesh.core.context import ExecutionContext
@@ -68,6 +65,13 @@ def execute(  # noqa: C901, PLR0912, PLR0915
 ) -> Iterator[pd.DataFrame]:
     """Extract ResNet-34 image features for Fresno parcels."""
     logger = logging.getLogger(__name__)
+
+    # Lazy imports — these cascade to Django settings, so import
+    # inside the function body to avoid errors when SQLMesh loads
+    # models without Django configured (e.g. during lint).
+    from brewgis.workspace.services.chip_extractor import extract_chips
+    from brewgis.workspace.services.naip_fetcher import download_cog_tiles
+    from brewgis.workspace.services.naip_fetcher import download_naip_for_parcels
 
     # Step 1: Load Fresno parcel geometries from parcel_shim
     parcel_table = context.resolve_table("brewgis.fresno.parcel_shim")
