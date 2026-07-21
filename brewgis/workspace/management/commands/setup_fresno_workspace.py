@@ -797,8 +797,6 @@ class Command(BaseCommand):
         # Fresh environment — all models build from scratch.
         # restate_models is not needed (would fail if env doesn't exist yet).
         run_sqlmesh_plan(
-            environment="fdemo",
-            skip_tests=True,
             select=model_selectors,
             variables=plan_vars,
             restate_models=False,
