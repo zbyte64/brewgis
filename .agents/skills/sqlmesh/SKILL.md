@@ -973,14 +973,10 @@ ON @this_model USING btree (parcel_acres_agriculture)
 ```
 
 **Bridge-table indexes:** When a source model uses a different gateway (e.g., DuckDB),
-the GiST index lives in the consumer (Postgres) model's `post_statements`. These
-target an explicit table (not `@this_model`), so they do NOT use `@snapshot_hash`:
-
-```sql
--- overture_land_use is DuckDB gateway, so geometry index lives here
-CREATE INDEX IF NOT EXISTS idx_overture_land_use_bridge_geometry
-ON brewgis.staging.overture_land_use USING GIST (geometry)
-```
+the GiST index MUST be created in the **consuming** model's `pre_statements`
+(for INCREMENTAL consumers) or `pre hooks` (for FULL consumers). See
+[DuckDB Gateway GiST Index Trap](#duckdb-gateway-gist-index-trap) below.
+These target an explicit table (not `@this_model`), so they do NOT use `@snapshot_hash`:
 
 **INDEX + ANALYZE for freshly created indexes:**
 
@@ -1005,6 +1001,80 @@ DROP INDEX IF EXISTS idx_temp
 Prefer permanent indexes in the referenced model's `post_statements` over temporary
 indexes. Temporary indexes add DDL overhead to every model run and don't benefit
 other consumers.
+
+### DuckDB Gateway GiST Index Trap
+
+**Problem:** DuckDB gateway FULL bridge models (`gateway duckdb`, `kind FULL`)
+use `postgres_scanner` to export tables into PostGIS. The PostgreSQL FDW does
+NOT support GiST index creation during export — `post_statements` with `CREATE INDEX
+USING GIST` silently succeeds but NEVER actually creates the index. The table
+lands in PostGIS without a spatial index, causing every downstream spatial join
+(`ST_Within`, `ST_Intersects`, `ST_DWithin`, `ST_Contains`) to do a sequential
+scan — hours instead of seconds.
+
+**Workaround pattern — index in the consumer, not the bridge:**
+
+The GiST index MUST be created by the **first consuming model** that does a spatial
+join against the bridge table. The placement depends on the consumer model's `kind`:
+
+| Consumer kind | Placement | Mechanism |
+|---|---|---|
+| `INCREMENTAL_BY_UNIQUE_KEY` | `pre_statements` block | Runs before the CTAS query each batch |
+| `FULL` | `pre hooks` block | Runs before the CTAS once |
+
+**Pattern — INCREMENTAL consumer (pre_statements):**
+
+```sql
+-- pre_statements
+-- Create a GiST expression index on the raw bridge table's geometry column
+-- so the CROSS JOIN LATERAL ST_Within can use an index scan.
+-- Must live here because the duckdb-gateway bridge model
+-- (brewgis.staging._tiger_block_groups_raw) does not recognise PostGIS
+-- geometry indexes in post_statements.
+  CREATE INDEX IF NOT EXISTS idx_tiger_block_groups_bridge_geometry
+  ON brewgis.staging._tiger_block_groups_raw USING GIST (ST_SetSRID(geometry, 4326));
+```
+
+**Pattern — FULL consumer (pre hooks):**
+
+```sql
+-- pre hooks
+-- (overture_transport is DuckDB gateway, so indexes must live here)
+  CREATE INDEX IF NOT EXISTS idx_overture_transport_geometry_@snapshot_hash
+  ON brewgis.staging.overture_transport USING GIST (geometry);
+  CREATE INDEX IF NOT EXISTS idx_overture_transport_local_geometry_@snapshot_hash
+  ON brewgis.staging.overture_transport USING GIST (local_geometry);
+```
+
+**SRID-0 geometry from DuckDB:**
+
+DuckDB exports geometry as SRID=0 (unknown). When the PostGIS view layer applies
+`ST_SetSRID(geometry, 4326)`, a plain GiST index on `geometry` won't be used by
+queries filtering on the expression. Use a **GiST expression index** matching
+the view's transform:
+
+```sql
+CREATE INDEX IF NOT EXISTS idx_bridge_geom_4326
+ON brewgis.staging._tiger_block_groups_raw USING GIST (ST_SetSRID(geometry, 4326));
+```
+
+This lets `WHERE ST_Within(point, ST_SetSRID(geometry, 4326))` use the index.
+
+**Index naming on bridge tables vs versioned tables:**
+
+Bridge tables (DuckDB gateway, `kind FULL`) are NOT versioned by SQLMesh — they
+are always one physical table. Index names on bridge tables use a fixed name
+(no `@snapshot_hash` because there's no versioning to collide).
+
+**Inventory checklist — when a new DuckDB FULL bridge with geometry is added:**
+
+1. Identify every downstream model that does a spatial join against it.
+2. For each consuming model, add `pre_statements` (INCREMENTAL) or `pre hooks`
+   (FULL) with `CREATE INDEX ... USING GIST (...)` targeting the bridge table.
+3. If the bridge geometry has SRID=0, use a GiST expression index matching the
+   SRID transform that views/consumers apply.
+4. Confirm with `EXPLAIN` after a plan run that the spatial join uses `Index Scan`
+   or `Bitmap Index Scan`, not `Seq Scan`.
 
 **ON_VIRTUAL_UPDATE:** Runs after schema views are created (e.g., for GRANT):
 
@@ -1200,7 +1270,10 @@ already-transformed column.
 **Why:** Every downstream spatial join forces a sequential scan without the index.
 Raw `CREATE INDEX` outside the MODEL block is dead code — SQLMesh never executes it.
 
-**Exemptions:** VIEW models (can't have indexes), DuckDB gateway models.
+**Exemptions:** VIEW models (can't have indexes). DuckDB gateway models are
+  exempt from their own `post_statements` (postgres_scanner silently drops GiST
+  indexes) BUT the index MUST be created via `pre_statements`/`pre hooks` in
+  the first consuming model — see DuckDB Gateway GiST Index Trap above.
 
 ### UnindexedJoin
 

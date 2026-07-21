@@ -10,6 +10,13 @@ MODEL (
   )
 );
 
+-- pre hooks
+-- (overture_transport is DuckDB gateway, so indexes must live here)
+  CREATE INDEX IF NOT EXISTS idx_overture_transport_geometry_@snapshot_hash
+  ON brewgis.staging.overture_transport USING GIST (geometry);
+  CREATE INDEX IF NOT EXISTS idx_overture_transport_local_geometry_@snapshot_hash
+  ON brewgis.staging.overture_transport USING GIST (local_geometry);
+
 -- Fresno Overture Intersection Points — pre-computed road intersection points.
 --
 -- Methodology matches brewgis.assessor.overture_intersection_points:

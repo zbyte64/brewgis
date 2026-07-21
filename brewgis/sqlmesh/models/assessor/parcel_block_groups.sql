@@ -7,8 +7,21 @@ MODEL (
   audits (
     not_null(columns := (apn, data_year)),
     unique_values(columns := (apn,))
+  ),
+  depends_on (
+    brewgis.staging._tiger_block_groups_raw
   )
 );
+
+-- pre_statements
+-- Create a GiST expression index on the raw bridge table's geometry column
+-- so the CROSS JOIN LATERAL ST_Within can use an index scan instead of a
+-- sequential scan across all 48K block group rows for each of 490K parcels.
+-- Must live here because the duckdb-gateway bridge model
+-- (brewgis.staging._tiger_block_groups_raw) does not recognise PostGIS
+-- geometry indexes in post_statements.
+  CREATE INDEX IF NOT EXISTS idx_tiger_block_groups_bridge_geometry
+  ON brewgis.staging._tiger_block_groups_raw USING GIST (ST_SetSRID(geometry, 4326));
 
 -- Parcel Block Groups — spatial join assigning each assessor parcel to its
 -- overlapping TIGER/Line block group and tract.
