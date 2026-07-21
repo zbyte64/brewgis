@@ -1641,7 +1641,7 @@ class StaticComplexityScore(Rule):
         * **> 50**: Error-level violation (may need optimization).
     """
 
-    WARN_THRESHOLD = 25.0
+    WARN_THRESHOLD = 50.0
     ERROR_THRESHOLD = 500.0
 
     def check_model(self, model: Model) -> RuleViolation | None:

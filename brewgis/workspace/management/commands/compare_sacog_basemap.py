@@ -557,55 +557,41 @@ class Command(BaseCommand):
                     self.stdout.write(f"  Tree canopy raster cached at {tc_path}")
 
         if use_assessor_geometry:
-            # APN uniqueness pre-check: verify sacog_assessor_parcels_raw has no
-            # duplicate APNs before running assessor models through SQLMesh plan.
-            if self._table_has_rows("public", "sacog_assessor_parcels_raw"):
-                engine = get_engine()
-                with engine.connect() as conn:
-                    total = conn.execute(
-                        text("SELECT COUNT(*) FROM public.sacog_assessor_parcels_raw")
-                    ).scalar()
-                    distinct = conn.execute(
-                        text(
-                            "SELECT COUNT(DISTINCT apn) FROM public.sacog_assessor_parcels_raw"
-                        )
-                    ).scalar()
-                    if distinct is not None and total is not None and total > distinct:
-                        self.stdout.write(
-                            self.style.WARNING(
-                                f"  WARNING: sacog_assessor_parcels_raw has {total - distinct:,} duplicate APNs "
-                                f"({total:,} total rows, {distinct:,} distinct APNs). "
-                                "Dropping table and reloading"
-                            )
-                        )
-                        conn.execute(
-                            text("DROP TABLE public.sacog_assessor_parcels_raw CASCADE")
-                        )
+            # Assessor parcels and sales now served from DuckDB GeoParquet staging.
+            # Download from ArcGIS REST services and write parquet files so
+            # duckdb.staging.assessor_parcels and duckdb.staging.assessor_sales
+            # (SQLMesh VIEWs) can read them. The bridge FULL models then copy
+            # into the brewgis.staging schema for PostGIS access.
+            from brewgis.workspace.services.assessor_fetcher import fetch_parcels_arcgis
+            from brewgis.workspace.services.assessor_fetcher import fetch_sales_arcgis
+            from brewgis.workspace.services.assessor_fetcher import write_to_geoparquet
+
+            assessor_parquet_dir = Path(settings.BASE_DIR) / "planning" / "assessor"
+            assessor_parquet_dir.mkdir(parents=True, exist_ok=True)
+            parcels_parquet = assessor_parquet_dir / "assessor_parcels.parquet"
+            sales_parquet = assessor_parquet_dir / "assessor_sales.parquet"
+
             self.stdout.write("\n── Populating Assessor parcel geometries ──")
-            if (
-                force_data_fetch
-                or force_data_reload
-                or not self._table_has_rows("public", "sacog_assessor_parcels_raw")
-            ):
-                # Assessor parcels now served from DuckDB GeoParquet staging
+            if force_data_fetch or force_data_reload or not parcels_parquet.exists():
+                self.stdout.write("  Downloading assessor parcels from ArcGIS...")
+                parcels_gdf = fetch_parcels_arcgis()
+                result = write_to_geoparquet(parcels=parcels_gdf)
                 self.stdout.write(
-                    "  Assessor parcels: data sourced from DuckDB GeoParquet staging"
+                    f"  Downloaded {result.get('parcels', 0):,} parcels → {parcels_parquet}"
                 )
             else:
-                self.stdout.write("  Assessor parcels already loaded, skipping")
+                self.stdout.write("  Assessor parcels already cached, skipping")
 
             self.stdout.write("\n── Populating Assessor building characteristics ──")
-            if (
-                force_data_fetch
-                or force_data_reload
-                or not self._table_has_rows("public", "sacog_assessor_sales_raw")
-            ):
-                # Assessor sales now served from DuckDB GeoParquet staging
+            if force_data_fetch or force_data_reload or not sales_parquet.exists():
+                self.stdout.write("  Downloading assessor sales data from ArcGIS...")
+                sales_gdf = fetch_sales_arcgis()
+                result = write_to_geoparquet(sales=sales_gdf)
                 self.stdout.write(
-                    "  Assessor sales: data sourced from DuckDB GeoParquet staging"
+                    f"  Downloaded {result.get('sales', 0):,} sales records → {sales_parquet}"
                 )
             else:
-                self.stdout.write("  Assessor sales already loaded, skipping")
+                self.stdout.write("  Assessor sales already cached, skipping")
 
         if osm:
             self.stdout.write("\n── Computing OSM intersection density ──")

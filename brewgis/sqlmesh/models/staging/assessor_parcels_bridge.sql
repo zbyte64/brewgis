@@ -12,7 +12,7 @@ MODEL (
 
 SELECT
   apn,
-  ST_SetCRS(ST_FlipCoordinates(geometry), 'EPSG:4326') AS geometry,
+  ST_SetCRS(geometry, 'EPSG:4326') AS geometry,
   lotsize,
   landuse,
   zone,

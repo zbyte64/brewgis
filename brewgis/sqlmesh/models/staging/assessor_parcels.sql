@@ -20,4 +20,11 @@ MODEL (
 -- DuckDB's ST_Transform to EPSG:4326 follows OGC axis order (lat, lon).
 -- PostGIS expects (lon, lat). Downstream bridge model flips coordinates.
 
-SELECT * FROM read_parquet('/app/planning/assessor/assessor_parcels.parquet');
+SELECT
+  apn,
+  landuse,
+  zone,
+  lotsize,
+  jurisdiction,
+  geometry
+FROM read_parquet('/app/planning/assessor/assessor_parcels.parquet');

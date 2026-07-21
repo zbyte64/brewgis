@@ -50,13 +50,13 @@ consolidated_subunits AS (
             WHEN COUNT(*) >= 3
             THEN ST_Buffer(
                 ST_ConvexHull(
-                    ST_Collect(ST_Centroid(ST_Transform(ST_MakeValid(geometry), @VAR('local_srid', 3310))))
+                    ST_Collect(ST_Centroid(ST_Transform(ST_SetSRID(ST_MakeValid(geometry), 4326), @VAR('local_srid', 3310))))
                 ),
                 5.0  -- 5m buffer ensures non-degenerate polygon for co-linear centroids
             )
             ELSE ST_Buffer(
                 ST_Centroid(
-                    ST_Collect(ST_Centroid(ST_Transform(ST_MakeValid(geometry), @VAR('local_srid', 3310))))
+                    ST_Collect(ST_Centroid(ST_Transform(ST_SetSRID(ST_MakeValid(geometry), 4326), @VAR('local_srid', 3310))))
                 ),
                 30.0  -- 30m buffer ≈ 100ft radius, ~0.7 acres
             )
@@ -86,11 +86,11 @@ deduped AS (
 combined AS (
     SELECT
         apn,
-        ST_Transform(local_geometry, 4326) AS geometry,
-        ST_Centroid(ST_Transform(local_geometry, 4326)) AS centroid,
-        local_geometry,
-        ST_Centroid(local_geometry) AS centroid_local,
-        (ST_Area(local_geometry) / 4046.8564224)::double precision AS lot_size_acres,
+        ST_Transform(ST_SetSRID(local_geometry, @VAR('local_srid', 3310)), 4326) AS geometry,
+        ST_Centroid(ST_Transform(ST_SetSRID(local_geometry, @VAR('local_srid', 3310)), 4326)) AS centroid,
+        ST_SetSRID(local_geometry, @VAR('local_srid', 3310)) AS local_geometry,
+        ST_Centroid(ST_SetSRID(local_geometry, @VAR('local_srid', 3310))) AS centroid_local,
+        (ST_Area(ST_SetSRID(local_geometry, @VAR('local_srid', 3310))) / 4046.8564224)::double precision AS lot_size_acres,
         landuse,
         zone,
         jurisdiction
@@ -100,10 +100,10 @@ combined AS (
 
     SELECT
         apn,
-        ST_MakeValid(geometry) AS geometry,
-        ST_Centroid(ST_MakeValid(geometry)) AS centroid,
-        ST_Transform(ST_MakeValid(geometry), @VAR('local_srid', 3310)) AS local_geometry,
-        ST_Centroid(ST_Transform(ST_MakeValid(geometry), @VAR('local_srid', 3310))) AS centroid_local,
+        ST_SetSRID(ST_MakeValid(geometry), 4326) AS geometry,
+        ST_Centroid(ST_SetSRID(ST_MakeValid(geometry), 4326)) AS centroid,
+        ST_Transform(ST_SetSRID(ST_MakeValid(geometry), 4326), @VAR('local_srid', 3310)) AS local_geometry,
+        ST_Centroid(ST_Transform(ST_SetSRID(ST_MakeValid(geometry), 4326), @VAR('local_srid', 3310))) AS centroid_local,
         (lotsize::double precision / 43560.0)::double precision AS lot_size_acres,
         landuse,
         zone,
