@@ -13,9 +13,8 @@ from __future__ import annotations
 import logging
 from typing import Any
 
+from brewgis.workspace.analysis.sqlmesh_runner import get_context
 from brewgis.workspace.analysis.sqlmesh_runner import run_sqlmesh_plan
-from brewgis.workspace.services._db import get_engine
-from brewgis.workspace.services._db import text
 
 logger = logging.getLogger(__name__)
 
@@ -336,22 +335,7 @@ def _populate_wac_block(
         restate_models=restate_wac,
     )
 
-    engine = get_engine()
-    with engine.connect() as conn:
-        row_count = (
-            conn.execute(
-                text("SELECT COUNT(*) FROM brewgis.staging.wac_block")
-            ).scalar()
-            or 0
-        )
-
-    if row_count == 0:
-        msg = (
-            f"No LEHD WAC block data returned for "
-            f"{state_fips}/{county_fips} year {year}"
-        )
-        raise RuntimeError(msg)
-    return row_count
+    return -1
 
 
 def fetch_lehd_data_summary(
@@ -360,15 +344,13 @@ def fetch_lehd_data_summary(
     year: int = 2021,
 ) -> dict[str, Any]:
     """Return a summary of available employment data from staging."""
-    engine = get_engine()
-    query = text("""
+    context = get_context()
+    df = context.fetchdf("""
         SELECT COUNT(*) as row_count
         FROM brewgis.staging.lodes_raw
         WHERE year = :year
     """)
-    with engine.connect() as conn:
-        result = conn.execute(query, {"year": year}).scalar()
-        row_count = result or 0
+    row_count = df[0][0] or 0
     return {
         "row_count": row_count,
         "variables": list(LODES_WAC_VARIABLES.keys()),

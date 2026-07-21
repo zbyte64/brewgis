@@ -1,8 +1,16 @@
-"""NLCD (National Land Cover Database) raster loading.
+"""NLCD (National Land Cover Database) raster downloading.
 
-Downloads a NLCD GeoTIFF subset and loads it into a PostGIS raster
-table using ST_FromGDALRaster. Zonal statistics computation moves to
-a dbt model (nlcd_parcel_stats).
+Downloads an NLCD GeoTIFF subset to a well-known cache path.  The
+DuckDB staging models ``brewgis.nlcd.nlcd_parcel_stats`` (VIEW,
+duckdb gateway) read the cached file directly via ``RT_ReadCells``
+and compute per-parcel zonal statistics.
+
+The ``raster2pgsql`` / PostGIS raster step has been removed — all
+raster processing now happens inside DuckDB's ``raster`` extension.
+
+Callers **must** ensure the GeoTIFF is cached at the well-known path
+(``/app/planning/nlcd/nlcd_land_cover.tif``) before the SQLMesh plan
+runs.  This module provides convenience functions for that download.
 """
 
 from __future__ import annotations
@@ -15,27 +23,28 @@ from sqlalchemy import text as sql_text
 from brewgis.workspace.services._db import get_engine
 from brewgis.workspace.services.nlcd_fetcher import download_nlcd_raster
 from brewgis.workspace.services.nlcd_fetcher import download_nlcd_tree_canopy_raster
-from brewgis.workspace.services.raster_loader import load_raster_to_postgis
 
 logger = logging.getLogger(__name__)
 
 CACHE_DIR = settings.DATA_DOWNLOAD_CACHE_DIR
 
-_TARGET_RASTER_TABLE = "nlcd_raster"
-_TARGET_TREE_CANOPY_RASTER_TABLE = "nlcd_tree_canopy_raster"
-
 
 def _compute_bbox(parcel_source: str, schema: str) -> tuple | None:
     """Compute a bounding box from a parcel table's geometry extent.
 
-    Returns ``(west, south, east, north)`` in EPSG:4326 with 5%
-    padding, or ``None`` if the table has no geometries.
+    Args:
+        parcel_source: Table name (without schema).
+        schema: Database schema.
+
+    Returns:
+        ``(west, south, east, north)`` in EPSG:4326, or None if the
+        table has no geometry.
     """
     engine = get_engine()
     with engine.connect() as conn:
         row = conn.execute(
             sql_text(
-                f"WITH extent_info AS ("  # noqa: S608
+                f"WITH extent_info AS ("
                 f"  SELECT "
                 f"    ST_Extent(geometry) AS e, "
                 f"    MAX(ST_SRID(geometry)) AS srid "
@@ -81,13 +90,15 @@ def run_nlcd_pipeline(
     schema: str = "public",
     ignore_cache: bool = False,
 ) -> dict:
-    """Download NLCD raster and load into a PostGIS raster table.
+    """Download NLCD land cover GeoTIFF to the DuckDB well-known cache path.
 
     Steps:
-    1. Downloads an NLCD GeoTIFF subset covering the *parcel_source*
-       bounding box.
-    2. Loads the GeoTIFF into a PostGIS raster table via
-       ST_FromGDALRaster / ST_Tile / AddRasterConstraints.
+    1. Optionally derives a bbox from *parcel_source* ``ST_Extent``.
+    2. Downloads a GeoTIFF subset (via WCS) to
+       ``DEFAULT_LAND_COVER_PATH``.
+
+    The DuckDB model ``brewgis.nlcd.nlcd_parcel_stats`` reads this
+    cached file and computes per-parcel zonal statistics.
 
     Parameters
     ----------
@@ -109,16 +120,21 @@ def run_nlcd_pipeline(
     Returns
     -------
     dict
-        ``{"raster_table": str, "schema": str}``
+        ``{"raster_path": str}``
     """
     # ── Derive bbox from parcel table if not provided ──────────────
     if bbox is None:
-        bbox = _compute_bbox(parcel_source, schema)
-        assert bbox is not None, f"No geometries found in {schema}.{parcel_source}"
+        bbox_raw = _compute_bbox(parcel_source, schema)
+        if bbox_raw is None:
+            _msg = (
+                f"No geometries found in {schema}.{parcel_source} — "
+                "cannot compute NLCD download bbox"
+            )
+            raise ValueError(_msg)
+        bbox = bbox_raw
 
-    # ── Download NLCD raster subset ───────────────────────────────
-    # download_nlcd_raster expects (west, south, east, north) in
-    # EPSG:4326; NLCD WCS handles reprojection to EPSG:5070
+    # ── Download NLCD raster subset to well-known cache path ──────
+
     raster_path = download_nlcd_raster(
         bbox,
         year,
@@ -126,30 +142,10 @@ def run_nlcd_pipeline(
         source_crs="EPSG:4326",
     )
 
-    assert raster_path is not None, "NLCD raster download returned no data"
+    msg_suffix = " (re-downloaded)" if ignore_cache else ""
+    logger.info("NLCD land cover raster cached at %s%s", raster_path, msg_suffix)
 
-    # ── Load GeoTIFF into PostGIS raster table ────────────────────
-
-    result = load_raster_to_postgis(
-        raster_path,
-        _TARGET_RASTER_TABLE,
-        schema=schema,
-        srid=5070,
-    )
-
-    # result is guaranteed success (exception propagates on failure)
-
-    logger.info(
-        "NLCD pipeline complete: raster loaded to %s.%s (%d tiles)",
-        schema,
-        _TARGET_RASTER_TABLE,
-        result.get("row_count", 0),
-    )
-
-    return {
-        "raster_table": _TARGET_RASTER_TABLE,
-        "schema": schema,
-    }
+    return {"raster_path": raster_path}
 
 
 def run_nlcd_tree_canopy_pipeline(
@@ -160,24 +156,15 @@ def run_nlcd_tree_canopy_pipeline(
     schema: str = "public",
     ignore_cache: bool = False,
 ) -> dict:
-    """Download NLCD Tree Canopy Cover raster and load into a PostGIS raster table.
-
-    Steps:
-    1. Downloads an NLCD Tree Canopy GeoTIFF subset covering the
-       *parcel_source* bounding box.
-    2. Loads the GeoTIFF into a PostGIS raster table via
-       ST_FromGDALRaster / ST_Tile / AddRasterConstraints.
+    """Download NLCD Tree Canopy Cover GeoTIFF to the well-known cache path.
 
     Parameters
     ----------
     parcel_source : str
         Name of the PostGIS table containing parcel geometries.
-        Used only to derive the bounding box when *bbox* is not
-        provided (reads ``ST_Extent(geometry)``).
+        Used only to derive the bbox when *bbox* is not provided.
     bbox : tuple[float, float, float, float] | None, optional
         Bounding box ``(west, south, east, north)`` in EPSG:4326.
-        When ``None``, computed from ``ST_Extent(geometry)`` on the
-        parcel source table with 5% buffer.
     year : int, optional
         NLCD tree canopy year (default 2016). Valid: 2011, 2016, 2019.
     schema : str, optional
@@ -188,16 +175,18 @@ def run_nlcd_tree_canopy_pipeline(
     Returns
     -------
     dict
-        ``{"raster_table": str, "schema": str}``
+        ``{"raster_path": str}``
     """
-    # ── Derive bbox from parcel table if not provided ──────────────
     if bbox is None:
-        bbox = _compute_bbox(parcel_source, schema)
-        assert bbox is not None, f"No geometries found in {schema}.{parcel_source}"
+        bbox_raw = _compute_bbox(parcel_source, schema)
+        if bbox_raw is None:
+            _msg = (
+                f"No geometries found in {schema}.{parcel_source} — "
+                "cannot compute NLCD download bbox"
+            )
+            raise ValueError(_msg)
+        bbox = bbox_raw
 
-    # ── Download NLCD Tree Canopy raster subset ───────────────────
-    # download_nlcd_tree_canopy_raster expects (west, south, east, north) in
-    # EPSG:4326; NLCD WCS handles reprojection to EPSG:5070
     raster_path = download_nlcd_tree_canopy_raster(
         bbox,
         year,
@@ -205,24 +194,7 @@ def run_nlcd_tree_canopy_pipeline(
         source_crs="EPSG:4326",
     )
 
-    assert raster_path is not None, "NLCD Tree Canopy raster download returned no data"
+    msg_suffix = " (re-downloaded)" if ignore_cache else ""
+    logger.info("NLCD tree canopy raster cached at %s%s", raster_path, msg_suffix)
 
-    # ── Load GeoTIFF into PostGIS raster table ────────────────────
-    result = load_raster_to_postgis(
-        raster_path,
-        _TARGET_TREE_CANOPY_RASTER_TABLE,
-        schema=schema,
-        srid=5070,
-    )
-
-    logger.info(
-        "NLCD Tree Canopy pipeline complete: raster loaded to %s.%s (%d tiles)",
-        schema,
-        _TARGET_TREE_CANOPY_RASTER_TABLE,
-        result.get("row_count", 0),
-    )
-
-    return {
-        "raster_table": _TARGET_TREE_CANOPY_RASTER_TABLE,
-        "schema": schema,
-    }
+    return {"raster_path": raster_path}

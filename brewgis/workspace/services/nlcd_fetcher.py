@@ -1,13 +1,15 @@
 """NLCD (National Land Cover Database) raster downloader.
 
-Downloads NLCD land cover rasters via MRLC WCS (subset) or S3 (full
-CONUS) and caches them locally.
+Downloads NLCD land cover rasters via MRLC WCS and caches them
+locally.  The S3 bucket ``mrlcdata`` was retired by MRLC in 2024,
+so all downloads now go through the MRLC Geoserver WCS endpoint.
 """
 
 from __future__ import annotations
 
 import contextlib
 import logging
+import shutil
 import tempfile
 import zlib
 from pathlib import Path
@@ -17,23 +19,27 @@ import requests
 
 logger = logging.getLogger(__name__)
 
-# NLCD download base URL
-_NLCD_BASE_URL = "https://s3-us-west-2.amazonaws.com/mrlcdata"
-_NLCD_YEAR = 2021
-_CACHE_ROOT = Path(__file__).resolve().parent.parent.parent.parent / "planning"
-_NLCD_CACHE_DIR = _CACHE_ROOT / "nlcd"
+_NLCD_CACHE_ROOT = Path(__file__).resolve().parent.parent.parent.parent / "planning"
+_NLCD_CACHE_DIR = _NLCD_CACHE_ROOT / "nlcd"
 
 _MRLC_WCS_URL = "https://www.mrlc.gov/geoserver/wcs"
 
+# Well-known cache filenames — the Caller (management command or dlt
+# pipeline) is responsible for downloading the raster to these paths
+# *before* running the SQLMesh plan.  The DuckDB staging VIEW reads
+# from these locations.
+DEFAULT_LAND_COVER_PATH = _NLCD_CACHE_DIR / "nlcd_land_cover.tif"
+DEFAULT_TREE_CANOPY_PATH = _NLCD_CACHE_DIR / "nlcd_tree_canopy.tif"
 
-def _download_nlcd_subset(  # noqa: PLR0913
+
+def download_nlcd_subset(  # noqa: PLR0913
     west: float,
     south: float,
     east: float,
     north: float,
-    year: int = 2021,
-    cache_dir: Path = _NLCD_CACHE_DIR,
     *,
+    year: int = 2021,
+    cache_path: Path | None = None,
     refresh_cache: bool = False,
     source_crs: str | None = None,
     coverage_id: str | None = None,
@@ -50,7 +56,8 @@ def _download_nlcd_subset(  # noqa: PLR0913
         east: Eastern bound in *source_crs* (or EPSG:5070 if None).
         north: Northern bound in *source_crs* (or EPSG:5070 if None).
         year: NLCD year (default 2021).
-        cache_dir: Directory for cached GeoTIFFs.
+        cache_path: Destination file path.  When not provided the file
+            is stored at ``_DEFAULT_LAND_COVER_PATH``.
         refresh_cache: If True, delete cached file and re-download.
         source_crs: CRS of the input coordinates (e.g. ``"EPSG:4326"``).
             When provided and not EPSG:5070, coordinates are reprojected.
@@ -58,18 +65,14 @@ def _download_nlcd_subset(  # noqa: PLR0913
             cover coverage for the given year.
 
     Returns:
-        Path to cached GeoTIFF, or None on failure.
-        The GeoTIFF is clipped to the specified bounding box.
+        Path to cached GeoTIFF, or ``None`` on failure.
     """
     nlcd_native_crs = "EPSG:5070"
 
-    # Reproject to the coverage native CRS if needed
     if source_crs is not None and source_crs.upper() != nlcd_native_crs:
         transformer = pyproj.Transformer.from_crs(
             source_crs, nlcd_native_crs, always_xy=True
         )
-        # Transform all four corners; Albers conic projection can invert
-        # the Y-axis ordering vs latitude, so take the axis-aligned envelope.
         corners = [
             transformer.transform(west, south),
             transformer.transform(east, south),
@@ -93,29 +96,169 @@ def _download_nlcd_subset(  # noqa: PLR0913
         "format": "image/geotiff",
     }
 
-    cache_key = f"nlcd_{year}_{west}_{south}_{east}_{north}".replace(".", "_")
-    cache_path = cache_dir / f"{cache_key}.tif"
-
-    if cache_path.exists() and not refresh_cache:
-        if _verify_cached_file(cache_path):
-            return str(cache_path)
+    result_path = cache_path or DEFAULT_LAND_COVER_PATH
+    if result_path.exists() and not refresh_cache:
+        if _verify_cached_file(result_path):
+            return str(result_path)
 
     if refresh_cache:
-        cache_path.unlink(missing_ok=True)
+        result_path.unlink(missing_ok=True)
+
+    _NLCD_CACHE_DIR.mkdir(parents=True, exist_ok=True)
 
     response = requests.get(_MRLC_WCS_URL, params=params, timeout=300)
     response.raise_for_status()
-    cache_dir.mkdir(parents=True, exist_ok=True)
-    cache_path.write_bytes(response.content)
-    return str(cache_path)
+
+    with tempfile.NamedTemporaryFile(delete=False, suffix=".tif") as tmp:
+        tmp.write(response.content)
+        tmp_path = tmp.name
+
+    shutil.move(tmp_path, str(result_path))
+    logger.info("NLCD raster cached at %s", result_path)
+    return str(result_path)
+
+
+def download_nlcd_raster(
+    bbox: tuple[float, float, float, float] | None = None,
+    year: int = 2021,
+    *,
+    refresh_cache: bool = False,
+    source_crs: str | None = None,
+    tree_canopy: bool = False,
+) -> str:
+    """Download an NLCD land cover (or tree canopy) GeoTIFF subset.
+
+    The caller **must** provide a *bbox* — the dead S3 CONUS fallback
+    has been removed.  Use ``download_nlcd_subset`` for more control;
+    this is a convenience wrapper that picks good defaults.
+
+    When *tree_canopy* is True the raster is saved to
+    ``_DEFAULT_TREE_CANOPY_PATH`` instead of ``_DEFAULT_LAND_COVER_PATH``
+    so the DuckDB staging views can discover it.
+
+    Args:
+        bbox: Bounding box ``(west, south, east, north)`` in
+            *source_crs* (or EPSG:5070 if None).  **Required.**
+        year: NLCD year (default 2021).
+        refresh_cache: If True, re-download.
+        source_crs: CRS of the bbox coordinates.
+        tree_canopy: If True, download tree canopy instead of land cover.
+
+    Returns:
+        Path to cached GeoTIFF, or ``None`` on failure.
+
+    Raises:
+        ValueError: if *bbox* is None.
+    """
+    if bbox is None:
+        _msg = (
+            "bbox is required — the S3 CONUS fallback was retired. "
+            "Compute the bbox from parcel ST_Extent or pass it explicitly."
+        )
+        raise ValueError(_msg)
+
+    west, south, east, north = bbox
+
+    if tree_canopy:
+        return download_nlcd_subset(
+            west,
+            south,
+            east,
+            north,
+            year=year,
+            cache_path=DEFAULT_TREE_CANOPY_PATH,
+            refresh_cache=refresh_cache,
+            source_crs=source_crs,
+            coverage_id=f"mrlc_download__nlcd_tcc_conus_{year}_v2021-4",
+        )
+
+    return download_nlcd_subset(
+        west,
+        south,
+        east,
+        north,
+        year=year,
+        cache_path=DEFAULT_LAND_COVER_PATH,
+        refresh_cache=refresh_cache,
+        source_crs=source_crs,
+    )
+
+
+def download_nlcd_tree_canopy_raster(
+    bbox: tuple[float, float, float, float] | None = None,
+    year: int = 2016,
+    *,
+    refresh_cache: bool = False,
+    source_crs: str | None = None,
+) -> str:
+    """Convenience wrapper — delegates to ``download_nlcd_raster(…, tree_canopy=True)``.
+
+    Args:
+        bbox: Required bounding box ``(west, south, east, north)``.
+        year: NLCD tree canopy year (default 2016). Valid: 2011, 2016, 2019.
+        refresh_cache: If True, re-download.
+        source_crs: CRS of the bbox coordinates.
+
+    Returns:
+        Path to cached GeoTIFF.
+
+    Raises:
+        ValueError: if *bbox* is None.
+    """
+    return download_nlcd_raster(
+        bbox=bbox,
+        year=year,
+        refresh_cache=refresh_cache,
+        source_crs=source_crs,
+        tree_canopy=True,
+    )
+
+
+def ensure_raster_cached(
+    bbox: tuple[float, float, float, float],
+    *,
+    land_cover_year: int = 2021,
+    tree_canopy_year: int | None = 2016,
+    refresh_cache: bool = False,
+    source_crs: str | None = None,
+) -> tuple[str, str | None]:
+    """Download both NLCD rasters to the well-known cache paths.
+
+    Call this before running a SQLMesh plan that references the
+    DuckDB staging models ``duckdb.staging.*``.
+
+    Args:
+        bbox: Bounding box in *source_crs*.
+        land_cover_year: NLCD land cover year.
+        tree_canopy_year: NLCD tree canopy year (None to skip).
+        refresh_cache: If True, re-download.
+        source_crs: CRS of the bbox.
+
+    Returns:
+        ``(land_cover_path, tree_canopy_path_or_None)``.
+    """
+    lc = download_nlcd_raster(
+        bbox,
+        year=land_cover_year,
+        refresh_cache=refresh_cache,
+        source_crs=source_crs,
+    )
+    tc = (
+        download_nlcd_raster(
+            bbox,
+            year=tree_canopy_year,
+            refresh_cache=refresh_cache,
+            source_crs=source_crs,
+            tree_canopy=True,
+        )
+        if tree_canopy_year is not None
+        else None
+    )
+    return lc, tc
 
 
 def _verify_cached_file(path: Path, expected_size: int | None = None) -> bool:
-    """Verify a cached file exists, has positive size, and optionally matches expected size.
-
-    Returns True if file appears valid.
-    Logs a warning and returns False for corrupt/missing files.
-    """
+    """Verify a cached file exists and has positive size."""
     if not path.exists():
         return False
     if path.stat().st_size == 0:
@@ -135,18 +278,12 @@ def _verify_cached_file(path: Path, expected_size: int | None = None) -> bool:
 
 
 def _verify_cached_bytes(path: Path, size_path: Path, crc32_path: Path) -> bool:
-    """Verify cached file size and CRC32 against companion files.
-
-    Returns True if verification passes and the file can be used.
-    On failure, removes the corrupt file and returns False so the
-    caller re-downloads.
-    """
+    """Verify cached file size and CRC32 against companion files."""
     expected_size: int | None = None
     with contextlib.suppress(ValueError, OSError):
         expected_size = int(size_path.read_text().strip())
 
     if not _verify_cached_file(path, expected_size):
-        path.unlink(missing_ok=True)
         return False
 
     if crc32_path.exists():
@@ -164,167 +301,6 @@ def _verify_cached_bytes(path: Path, size_path: Path, crc32_path: Path) -> bool:
                 return False
         except (ValueError, OSError) as exc:
             logger.warning("Failed to read CRC32 for %s: %s", path, exc)
-            path.unlink(missing_ok=True)
             return False
 
     return True
-
-
-def download_nlcd_raster(
-    bbox: tuple[float, float, float, float] | None = None,
-    year: int = _NLCD_YEAR,
-    *,
-    refresh_cache: bool = False,
-    source_crs: str | None = None,
-) -> str:
-    """Download the NLCD land cover raster.
-
-    When a bounding box is provided, uses the MRLC WCS endpoint to
-    download only the subset covering that area (much faster for
-    county-sized analyses).  Falls back to the full CONUS download
-    (S3) when bbox is ``None``.
-
-    Cached files have companion .size and .crc32 files for integrity
-    verification. On verification failure the corrupt file is removed
-    and re-downloaded.
-
-    Args:
-        bbox: Optional bounding box ``(west, south, east, north)``.
-            When provided, uses WCS subset download.  Coordinates are
-            interpreted in *source_crs* (or EPSG:5070 if None).
-        year: NLCD year (default 2021).
-        refresh_cache: If True, delete cached files and re-download.
-        source_crs: CRS of the bbox coordinates.  Passed through to
-            the WCS subset downloader.
-
-    Returns:
-        Path to the (potentially clipped) GeoTIFF, or ``None`` if
-        download fails.
-    """
-    if bbox is not None:
-        west, south, east, north = bbox
-        return _download_nlcd_subset(
-            west,
-            south,
-            east,
-            north,
-            year=year,
-            refresh_cache=refresh_cache,
-            source_crs=source_crs,
-        )
-
-    # ── Fallback: full CONUS download (S3) ──────────────────────
-    cache_dir = _NLCD_CACHE_DIR / str(year)
-    cache_dir.mkdir(parents=True, exist_ok=True)
-
-    raster_name = f"nlcd_{year}_land_cover_l48_20230630.img"
-    raster_path = cache_dir / raster_name
-    size_path = cache_dir / f"{raster_name}.size"
-    crc32_path = cache_dir / f"{raster_name}.crc32"
-
-    if refresh_cache:
-        for p in [raster_path, size_path, crc32_path]:
-            p.unlink(missing_ok=True)
-
-    if not raster_path.exists() or not _verify_cached_bytes(
-        raster_path, size_path, crc32_path
-    ):
-        url = f"{_NLCD_BASE_URL}/nlcd/{year}/land_cover/l48/{raster_name}"
-        logger.info("Downloading NLCD CONUS raster from %s ...", url)
-        response = requests.get(url, timeout=600)
-        response.raise_for_status()
-        import shutil
-
-        with tempfile.NamedTemporaryFile(delete=False, suffix=".img") as tmp:
-            tmp.write(response.content)
-            tmp_path = tmp.name
-        shutil.move(tmp_path, str(raster_path))
-        content_length = response.headers.get("Content-Length")
-        if content_length is not None:
-            size_path.write_text(content_length)
-        crc32_path.write_text(str(zlib.crc32(response.content)))
-        logger.info("NLCD raster cached at %s", raster_path)
-
-    return str(raster_path)
-
-
-def download_nlcd_tree_canopy_raster(
-    bbox: tuple[float, float, float, float] | None = None,
-    year: int = 2016,
-    *,
-    refresh_cache: bool = False,
-    source_crs: str | None = None,
-) -> str:
-    """Download the NLCD Tree Canopy Cover (USFS) raster.
-
-    When a bounding box is provided, uses the MRLC WCS endpoint to
-    download only the subset covering that area (much faster for
-    county-sized analyses).  Falls back to the full CONUS download
-    (S3) when bbox is ``None``.
-
-    The tree canopy product covers 0-100% continuous values at 30m
-    resolution, available for 2011, 2016, and 2019 vintages.
-
-    Cached files have companion .size and .crc32 files for integrity
-    verification. On verification failure the corrupt file is removed
-    and re-downloaded.
-
-    Args:
-        bbox: Optional bounding box ``(west, south, east, north)``.
-            When provided, uses WCS subset download.  Coordinates are
-            interpreted in *source_crs* (or EPSG:5070 if None).
-        year: NLCD tree canopy year (default 2016). Valid: 2011, 2016, 2019.
-        refresh_cache: If True, delete cached files and re-download.
-        source_crs: CRS of the bbox coordinates.  Passed through to
-            the WCS subset downloader.
-
-    Returns:
-        Path to the (potentially clipped) GeoTIFF, or ``None`` if
-        download fails.
-    """
-    if bbox is not None:
-        west, south, east, north = bbox
-        return _download_nlcd_subset(
-            west,
-            south,
-            east,
-            north,
-            year=year,
-            refresh_cache=refresh_cache,
-            source_crs=source_crs,
-            coverage_id=f"mrlc_download__nlcd_tcc_conus_{year}_v2021-4",
-        )
-
-    # ── Fallback: full CONUS download (S3) ──────────────────────
-    cache_dir = _NLCD_CACHE_DIR / str(year) / "tree_canopy"
-    cache_dir.mkdir(parents=True, exist_ok=True)
-
-    raster_name = f"nlcd_{year}_tree_canopy_l48.img"
-    raster_path = cache_dir / raster_name
-    size_path = cache_dir / f"{raster_name}.size"
-    crc32_path = cache_dir / f"{raster_name}.crc32"
-
-    if refresh_cache:
-        for p in [raster_path, size_path, crc32_path]:
-            p.unlink(missing_ok=True)
-
-    if not raster_path.exists() or not _verify_cached_bytes(
-        raster_path, size_path, crc32_path
-    ):
-        url = f"{_NLCD_BASE_URL}/nlcd/{year}/tree_canopy/l48/{raster_name}"
-        logger.info("Downloading NLCD Tree Canopy CONUS raster from %s ...", url)
-        response = requests.get(url, timeout=600)
-        response.raise_for_status()
-        import shutil
-
-        with tempfile.NamedTemporaryFile(delete=False, suffix=".img") as tmp:
-            tmp.write(response.content)
-            tmp_path = tmp.name
-        shutil.move(tmp_path, str(raster_path))
-        content_length = response.headers.get("Content-Length")
-        if content_length is not None:
-            size_path.write_text(content_length)
-        crc32_path.write_text(str(zlib.crc32(response.content)))
-        logger.info("NLCD Tree Canopy raster cached at %s", raster_path)
-
-    return str(raster_path)

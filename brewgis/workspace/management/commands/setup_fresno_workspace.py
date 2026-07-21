@@ -623,30 +623,28 @@ class Command(BaseCommand):
         force_data_fetch: bool,
         force_data_reload: bool,  # noqa: ARG002
     ) -> None:
-        from brewgis.workspace.services.nlcd_fetcher import download_nlcd_raster
-        from brewgis.workspace.services.nlcd_fetcher import (
-            download_nlcd_tree_canopy_raster,
-        )
+        from brewgis.workspace.dlt_pipelines.nlcd import _compute_bbox
+        from brewgis.workspace.services.nlcd_fetcher import ensure_raster_cached
 
-        self.stdout.write("\n  -- NLCD land cover --")
-        nlcd_path = download_nlcd_raster(
-            year=2021,
-            refresh_cache=force_data_fetch,
-        )
-        if nlcd_path:
-            self.stdout.write(f"  NLCD raster cached at {nlcd_path}")
-        else:
-            self.stdout.write("  NLCD raster download failed")
+        self.stdout.write("\n  -- NLCD rasters (DuckDB raster pattern) --")
 
-        self.stdout.write("\n  -- NLCD tree canopy --")
-        tc_path = download_nlcd_tree_canopy_raster(
-            year=2016,
+        parcel_bbox = _compute_bbox("fresno_parcels", WORKSPACE_SCHEMA)
+        if parcel_bbox is None:
+            self.stdout.write(
+                self.style.WARNING("  No parcel geometry — skipping NLCD download")
+            )
+            return
+
+        lc_path, tc_path = ensure_raster_cached(
+            parcel_bbox,
+            land_cover_year=2021,
+            tree_canopy_year=2016,
             refresh_cache=force_data_fetch,
+            source_crs="EPSG:4326",
         )
+        self.stdout.write(f"  Land cover raster cached at {lc_path}")
         if tc_path:
-            self.stdout.write(f"  NLCD tree canopy cached at {tc_path}")
-        else:
-            self.stdout.write("  NLCD tree canopy download failed")
+            self.stdout.write(f"  Tree canopy raster cached at {tc_path}")
 
     def _populate_osm(
         self,

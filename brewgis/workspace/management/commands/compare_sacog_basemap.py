@@ -385,6 +385,7 @@ class Command(BaseCommand):
         # which conflicts with test stubs for pandas/geopandas.
         from brewgis.workspace.analysis.sqlmesh_runner import get_context
         from brewgis.workspace.analysis.sqlmesh_runner import run_sqlmesh_plan
+        from brewgis.workspace.dlt_pipelines.nlcd import _compute_bbox
         from brewgis.workspace.dlt_pipelines.osm import run_osm_pipeline
         from brewgis.workspace.services.census_fetcher import _populate_acs_block_group
         from brewgis.workspace.services.comparison_helpers import (
@@ -396,10 +397,7 @@ class Command(BaseCommand):
         from brewgis.workspace.services.comparison_helpers import _load_parcels
         from brewgis.workspace.services.comparison_helpers import _query_table_as_dict
         from brewgis.workspace.services.lehd_fetcher import _populate_wac_block
-        from brewgis.workspace.services.nlcd_fetcher import download_nlcd_raster
-        from brewgis.workspace.services.nlcd_fetcher import (
-            download_nlcd_tree_canopy_raster,
-        )
+        from brewgis.workspace.services.nlcd_fetcher import ensure_raster_cached
 
         self.stdout.write("\n── Pre-flight: Checking SACOG reference tables ──")
         if not self._table_has_rows("public", V1_PARCELS):
@@ -540,25 +538,23 @@ class Command(BaseCommand):
             self.stdout.write("  lehd.wac_block already populated, skipping")
         # ── Phase 1.5: Optional data pipelines (conditional) ─────────
         if nlcd:
-            self.stdout.write("\n── Phase 1.5a: Downloading NLCD land cover raster ──")
-            nlcd_path = download_nlcd_raster(
-                year=NLCD_YEAR,
-                refresh_cache=force_data_fetch,
-            )
-            if nlcd_path:
-                self.stdout.write(f"  NLCD raster cached at {nlcd_path}")
+            self.stdout.write("\n── Phase 1.5: Downloading NLCD rasters ──")
+            parcel_bbox = _compute_bbox("sacog_comparison_parcels", "public")
+            if parcel_bbox is None:
+                self.stdout.write(
+                    self.style.WARNING("  No parcel geometry — skipping NLCD download")
+                )
             else:
-                self.stdout.write("  NLCD raster download failed")
-
-            self.stdout.write("\n── Phase 1.5b: Downloading NLCD tree canopy raster ──")
-            tc_path = download_nlcd_tree_canopy_raster(
-                year=NLCD_YEAR,
-                refresh_cache=force_data_fetch,
-            )
-            if tc_path:
-                self.stdout.write(f"  NLCD tree canopy cached at {tc_path}")
-            else:
-                self.stdout.write("  NLCD tree canopy download failed")
+                lc_path, tc_path = ensure_raster_cached(
+                    parcel_bbox,
+                    land_cover_year=NLCD_YEAR,
+                    tree_canopy_year=NLCD_YEAR,
+                    refresh_cache=force_data_fetch,
+                    source_crs="EPSG:4326",
+                )
+                self.stdout.write(f"  Land cover raster cached at {lc_path}")
+                if tc_path:
+                    self.stdout.write(f"  Tree canopy raster cached at {tc_path}")
 
         if use_assessor_geometry:
             # APN uniqueness pre-check: verify sacog_assessor_parcels_raw has no

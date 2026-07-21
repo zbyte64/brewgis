@@ -1,109 +1,126 @@
 MODEL (
   name brewgis.nlcd.nlcd_parcel_stats,
-  kind INCREMENTAL_BY_UNIQUE_KEY (
-    unique_key (parcel_id),
-    batch_size 100000
-  ),
+  kind FULL,
+  gateway duckdb,
+  dialect duckdb,
   audits (
     not_null(columns := (parcel_id))
   )
 );
 
-
--- NLCD Parcel Statistics Model
+-- NLCD Parcel Statistics Model (DuckDB raster extension)
 --
--- Computes per-parcel zonal statistics from the NLCD land cover raster.
--- Requires the nlcd_raster_table and nlcd_parcel_source to be populated.
+-- Reads the NLCD land cover GeoTIFF raster directly via DuckDB's
+-- RT_ReadCells (powered by GDAL/raster extension), spatially joins
+-- each pixel to its parcel, and computes per-parcel:
+--   - land_development_category (majority NLCD class mapped to label)
+--   - impervious_fraction (weighted average of impervious factors)
 --
--- NOTE: Uses ST_ValueCount as a set-returning function in the FROM clause
--- so its output columns (value, count) are plain table columns, not
--- composite field references. This avoids a SQLMesh query-wrapper bug
--- that corrupts composite type field access like (alias).field.
+-- The GeoTIFF must be cached at @nlcd_land_cover_raster_path by the
+-- caller (management command or dlt pipeline) *before* this model
+-- runs.  The WCS endpoint provides a county-sized subset (~1-10M
+-- pixels) that fits comfortably in DuckDB memory.
+--
+-- Depends on:
+--   - @nlcd_land_cover_raster_path: local cached GeoTIFF
+--   - @nlcd_parcel_source: PostGIS parcel table with geometry in
+--     EPSG:@nlcd_parcel_srid (e.g. public.sacog_comparison_parcels)
 
 WITH
--- Compute transformed geometry for all non-null parcels (no join — satisfies NoTransformInJoinWhere)
+-- Read NLCD raster pixels from the cached GeoTIFF.
+-- The geometry column from RT_ReadCells is already in EPSG:5070
+-- (the native CRS of the NLCD WCS coverage).
+nlcd_pixels AS (
+    SELECT
+        x,
+        y,
+        geometry AS geom_5070,
+        band_1::INTEGER AS nlcd_class
+    FROM RT_ReadCells(@nlcd_land_cover_raster_path)
+    WHERE band_1 != 0  -- NoData / background
+),
+
+-- Get parcel geometries and project to EPSG:5070 (raster CRS).
 parcels_5070 AS (
-    SELECT p.id AS parcel_id, ST_Transform(p.geometry, 5070) AS geometry_5070
-    FROM brewgis.nlcd.parcels_wm p
-    WHERE p.geometry IS NOT NULL
+    SELECT
+        id AS parcel_id,
+        ST_Transform(
+            ST_SetCRS(geometry, 'EPSG:' || @nlcd_parcel_srid),
+            'EPSG:5070'
+        ) AS geom_5070
+    FROM brewgis.@nlcd_parcel_source
+    WHERE geometry IS NOT NULL
 ),
 
--- Pre-compute raster extent to limit parcels to only those intersecting rasters
-raster_extent AS (
-    SELECT ST_SetSRID(ST_Extent(rast::geometry), 5070) AS extent
-    FROM public.nlcd_raster
-),
-
--- Filter to parcels within raster extent, using pre-computed geometry
-parcels_in_extent AS (
-    SELECT p.parcel_id, p.geometry_5070
-    FROM parcels_5070 p
-    JOIN raster_extent re ON ST_Intersects(p.geometry_5070, re.extent)
-),
-
-parcel_tiles AS (
+-- Spatial join: each pixel belongs to at most one parcel.
+-- DuckDB spatial uses an R-tree index for ST_Contains.
+pixel_parcels AS (
     SELECT
         p.parcel_id,
-        ST_Clip(r.rast, 1, p.geometry_5070, TRUE, TRUE) AS clipped
-    FROM parcels_in_extent p
-    JOIN public.nlcd_raster r
-        ON ST_Intersects(p.geometry_5070, r.rast::geometry)
+        px.nlcd_class
+    FROM nlcd_pixels px
+    JOIN parcels_5070 p
+        ON ST_Contains(p.geom_5070, px.geom_5070)
 ),
 
-tile_value_counts AS (
-    SELECT
-        t.parcel_id,
-        vc.value::integer AS vc_value,
-        vc.count::integer AS vc_count
-    FROM parcel_tiles t
-    CROSS JOIN LATERAL ST_ValueCount(t.clipped, 1) AS vc
-),
-
-per_parcel_value_counts AS (
+-- Count pixels per NLCD class per parcel.
+per_parcel_counts AS (
     SELECT
         parcel_id,
-        vc_value AS nlcd_class,
-        SUM(vc_count) AS total_pixels
-    FROM tile_value_counts
-    GROUP BY parcel_id, vc_value
+        nlcd_class,
+        COUNT(*) AS pixel_count
+    FROM pixel_parcels
+    GROUP BY parcel_id, nlcd_class
 ),
 
+-- Majority NLCD class per parcel.
 majority_class AS (
     SELECT DISTINCT ON (parcel_id)
         parcel_id,
-        vc_value AS majority_nlcd_class
-    FROM tile_value_counts
-    ORDER BY parcel_id, vc_count DESC
+        nlcd_class AS majority_nlcd_class
+    FROM per_parcel_counts
+    ORDER BY parcel_id, pixel_count DESC
 ),
 
--- Compute impervious fraction as a weighted average of NLCD class
--- impervious values, using pixel counts as weights. This replaces
--- ST_Reclass + ST_SummaryStats with the equivalent computation
--- from ST_ValueCount pixel counts, avoiding composite type access.
+-- Weighted impervious fraction based on NLCD class factors.
 impervious_frac AS (
     SELECT
         parcel_id,
         CASE
-            WHEN SUM(vc_count) > 0
-            THEN SUM(vc_count * CASE vc_value
-                WHEN 11 THEN 0.0
-                WHEN 12 THEN 0.0
-                WHEN 21 THEN 0.10
-                WHEN 22 THEN 0.30
-                WHEN 23 THEN 0.60
-                WHEN 24 THEN 0.85
-                WHEN 31 THEN 0.50
+            WHEN SUM(pixel_count) > 0
+            THEN SUM(pixel_count * CASE nlcd_class
+                WHEN 11 THEN 0.0    -- open water
+                WHEN 12 THEN 0.0    -- perennial ice/snow
+                WHEN 21 THEN 0.10   -- developed, open space
+                WHEN 22 THEN 0.30   -- developed, low intensity
+                WHEN 23 THEN 0.60   -- developed, medium intensity
+                WHEN 24 THEN 0.85   -- developed, high intensity
+                WHEN 31 THEN 0.50   -- barren land (rock/sand/clay)
+                WHEN 41 THEN 0.0    -- deciduous forest
+                WHEN 42 THEN 0.0    -- evergreen forest
+                WHEN 43 THEN 0.0    -- mixed forest
+                WHEN 51 THEN 0.0    -- dwarf scrub
+                WHEN 52 THEN 0.0    -- shrub/scrub
+                WHEN 71 THEN 0.0    -- grassland/herbaceous
+                WHEN 72 THEN 0.0    -- sedge/herbaceous
+                WHEN 73 THEN 0.0    -- lichens
+                WHEN 74 THEN 0.0    -- moss
+                WHEN 81 THEN 0.0    -- pasture/hay
+                WHEN 82 THEN 0.0    -- cultivated crops
+                WHEN 90 THEN 0.0    -- woody wetlands
+                WHEN 95 THEN 0.0    -- emergent herbaceous wetlands
                 ELSE 0.0
-            END) / SUM(vc_count)
+            END) / SUM(pixel_count)
             ELSE 0.0
         END AS impervious_fraction
-    FROM tile_value_counts
+    FROM per_parcel_counts
     GROUP BY parcel_id
 ),
 
+-- All parcels (including those with zero NLCD overlap).
 all_parcels AS (
     SELECT id AS parcel_id
-    FROM brewgis.nlcd.parcels_wm
+    FROM brewgis.@nlcd_parcel_source
     WHERE geometry IS NOT NULL
 )
 

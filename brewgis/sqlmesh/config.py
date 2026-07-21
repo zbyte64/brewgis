@@ -376,6 +376,15 @@ def config_factory(**variables):
                 "s3://overturemaps-us-west-2/release/2026-06-17.0/"
                 "theme=transportation/type=segment/*.parquet"
             ),
+            # ---- NLCD DuckDB raster models ----
+            # Paths to locally-cached NLCD GeoTIFFs (downloaded by management
+            # command / dlt pipeline before SQLMesh plan runs).
+            "nlcd_land_cover_raster_path": ("/app/planning/nlcd/nlcd_land_cover.tif"),
+            "nlcd_tree_canopy_raster_path": ("/app/planning/nlcd/nlcd_tree_canopy.tif"),
+            # PostGIS parcel table (accessible via DuckDB postgres_scanner
+            # as brewgis.<schema>.<table>) with geometry in EPSG:3310.
+            "nlcd_parcel_source": "public.sacog_comparison_parcels",
+            "nlcd_parcel_srid": 3310,
             # ---- CBP County Employment Scaling (wac_block.sql) ----
             # Set to actual CBP 2008 county-level totals for accurate scaling.
             # All default to 0.0 (passthrough — no scaling applied).
