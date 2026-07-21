@@ -273,17 +273,14 @@ def config_factory(**variables):
                         "spatial",
                         "postgres_scanner",
                         "cache_httpfs",
-                        "raster",
                         "zipfs",
+                        "raster",
                     ],
                     connector_config={
                         "temp_directory": _DUCKDB_TMP,
-                        # cache_httpfs: transparent read-cache for httpfs
-                        #   on_disk cache survives container restarts
-                        #   lru_single_proc eviction for single-process SQLMesh runs
                         "cache_httpfs_type": "on_disk",
                         "cache_httpfs_cache_directory": "/app/planning/http_cache",
-                        "cache_httpfs_evict_policy": "lru_single_proc",
+                        "cache_httpfs_evict_policy": "lru_sp",
                         "cache_httpfs_cache_block_size": 65536,
                         "cache_httpfs_min_disk_bytes_for_cache": 1073741824,
                     },

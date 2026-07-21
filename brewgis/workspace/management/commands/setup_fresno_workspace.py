@@ -597,7 +597,7 @@ class Command(BaseCommand):
         self.stdout.write("  Census PDB: materializing via SQLMesh bridge model")
         run_sqlmesh_plan(
             "prod",
-            select=["brewgis.staging.pdb_raw"],
+            select=["+brewgis.staging.pdb_bridge"],
             variables={"state_fips": STATE_FIPS, "county_fips": COUNTY_FIPS},
             no_prompts=True,
         )

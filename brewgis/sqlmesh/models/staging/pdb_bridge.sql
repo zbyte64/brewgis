@@ -1,5 +1,5 @@
 MODEL (
-  name brewgis.staging.pdb_raw,
+  name brewgis.staging.pdb_bridge,
   kind FULL,
   gateway duckdb
 );

@@ -25,6 +25,7 @@ MODEL (
 --   @state_fips      — Two-digit state FIPS code (default '06')
 --   @county_fips     — Three-digit county code; supports '*' for all counties
 --   @census_api_key  — Census API key; empty string skips the &key= param
+SET allow_asterisks_in_http_paths = true;
 
 WITH api_response AS MATERIALIZED (
   SELECT *

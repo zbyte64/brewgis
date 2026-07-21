@@ -5,11 +5,11 @@ MODEL (
   dialect duckdb
 );
 
--- TIGER/Line census block boundaries — DuckDB reads directly from Census
--- TIGER2020 shapefile ZIPs via the zipfs + httpfs extensions.
+-- TIGER/Line census block boundaries — DuckDB reads directly from Census FTP
+-- ZIP files via the zipfs community extension (zip:// protocol).
 --
 -- Variables:
---   @state_fips  — Two-digit state FIPS code for URL construction
+--   @state_fips  — Two-digit state FIPS code
 
 SELECT
   STATEFP20 || COUNTYFP20 || TRACTCE20 || BLOCKCE20 AS geoid,

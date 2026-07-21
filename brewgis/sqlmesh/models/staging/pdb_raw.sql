@@ -18,6 +18,8 @@ MODEL (
 --
 -- PDB is ACS 2018-2022 vintage (data_year = 2024).
 
+SET allow_asterisks_in_http_paths = true;
+
 WITH api_response AS MATERIALIZED (
   SELECT *
   FROM read_json_auto(

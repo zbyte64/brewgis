@@ -34,7 +34,7 @@ WITH raw_derived AS (
         p.pct_renter_occp_hu_acs_18_22::double precision AS pct_renter_occp_raw,
         -- Below poverty %
         p.pct_prs_blw_pov_lev_acs_18_22::double precision AS pct_below_poverty_raw
-    FROM brewgis.staging.pdb_raw p
+    FROM brewgis.staging.pdb_bridge p
     JOIN brewgis.staging.tiger_block_groups tbg
         ON p.gidbg = tbg.geoid
         AND tbg.vintage = @tiger_bg_vintage

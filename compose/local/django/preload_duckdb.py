@@ -12,10 +12,13 @@ try:
         "spatial",
         "postgres_scanner",
         "cache_httpfs",
-        "raster",
         "zipfs",
+        "raster",
     ]:
-        con.execute(f"INSTALL {ext}")
+        if ext in ("cache_httpfs", "zipfs", "raster"):
+            con.execute(f"INSTALL {ext} FROM community")
+        else:
+            con.execute(f"INSTALL {ext}")
         con.execute(f"LOAD {ext}")
     print("DuckDB extensions pre-loaded into image cache")
 finally:

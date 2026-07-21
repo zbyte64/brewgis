@@ -1,0 +1,406 @@
+- name: '"brewgis"."fresno_demo"."fresno_parcels"'
+  columns:
+    APN: TEXT
+    AGENCY_COD: TEXT
+    ROLL_YEAR: TEXT
+    SHAPE_AREA: DOUBLE PRECISION
+    geometry: GEOMETRY(POLYGON, 4326)
+    parcel_id: TEXT
+  gateway: postgis
+- name: '"brewgis"."public"."acs_raw"'
+  columns:
+    year: BIGINT
+    b01001_001_e: BIGINT
+    b25003_001_e: BIGINT
+    b25003_002_e: BIGINT
+    b25003_003_e: BIGINT
+    b25024_001_e: BIGINT
+    b25024_002_e: BIGINT
+    b25024_003_e: BIGINT
+    b25024_004_e: BIGINT
+    b25024_005_e: BIGINT
+    b25024_006_e: BIGINT
+    b25024_007_e: BIGINT
+    b25024_008_e: BIGINT
+    b25024_009_e: BIGINT
+    b25008_001_e: BIGINT
+    b25008_002_e: BIGINT
+    b25008_003_e: BIGINT
+    b19013_001_e: BIGINT
+    b25070_001_e: BIGINT
+    b25070_007_e: BIGINT
+    b25070_008_e: BIGINT
+    b25070_009_e: BIGINT
+    b25070_010_e: BIGINT
+    b25091_001_e: BIGINT
+    b25091_005_e: BIGINT
+    b25091_006_e: BIGINT
+    b25091_007_e: BIGINT
+    b25091_011_e: BIGINT
+    b25091_012_e: BIGINT
+    b25091_013_e: BIGINT
+    b03002_001_e: BIGINT
+    b03002_002_e: BIGINT
+    b03002_003_e: BIGINT
+    b03002_004_e: BIGINT
+    b03002_005_e: BIGINT
+    b03002_012_e: BIGINT
+    b15003_001_e: BIGINT
+    b15003_022_e: BIGINT
+    b15003_023_e: BIGINT
+    b15003_024_e: BIGINT
+    b15003_025_e: BIGINT
+    state: VARCHAR
+    county: VARCHAR
+    tract: VARCHAR
+    block_group: VARCHAR
+    _dlt_load_id: VARCHAR
+    _dlt_id: VARCHAR
+  gateway: postgis
+- name: '"brewgis"."public"."base_canvas"'
+  columns:
+    id: BIGINT
+    id_source: VARCHAR(64)
+    geography_id: INT
+    geometry_key: VARCHAR(128)
+    geometry: GEOMETRY(GEOMETRY, 4326)
+    land_development_category: VARCHAR(64)
+    built_form_key: VARCHAR(128)
+    intersection_density: DOUBLE PRECISION
+    area_gross: DOUBLE PRECISION
+    area_parcel: DOUBLE PRECISION
+    area_dev_condition: DOUBLE PRECISION
+    area_row: DOUBLE PRECISION
+    area_parcel_res_detsf: DOUBLE PRECISION
+    area_parcel_res_detsf_sl: DOUBLE PRECISION
+    area_parcel_res_detsf_ll: DOUBLE PRECISION
+    area_parcel_res_attsf: DOUBLE PRECISION
+    area_parcel_res_mf: DOUBLE PRECISION
+    area_parcel_res: DOUBLE PRECISION
+    area_parcel_emp: DOUBLE PRECISION
+    area_parcel_emp_ret: DOUBLE PRECISION
+    area_parcel_emp_off: DOUBLE PRECISION
+    area_parcel_emp_pub: DOUBLE PRECISION
+    area_parcel_emp_ind: DOUBLE PRECISION
+    area_parcel_emp_ag: DOUBLE PRECISION
+    area_parcel_emp_military: DOUBLE PRECISION
+    area_parcel_mixed_use: DOUBLE PRECISION
+    area_parcel_no_use: DOUBLE PRECISION
+    pop: DOUBLE PRECISION
+    pop_groupquarter: DOUBLE PRECISION
+    hh: DOUBLE PRECISION
+    du: DOUBLE PRECISION
+    median_income: DOUBLE PRECISION
+    rent_burden_pct: DOUBLE PRECISION
+    pct_minority: DOUBLE PRECISION
+    pct_college_educated: DOUBLE PRECISION
+    cost_burden_pct: DOUBLE PRECISION
+    du_detsf: DOUBLE PRECISION
+    du_detsf_sl: DOUBLE PRECISION
+    du_detsf_ll: DOUBLE PRECISION
+    du_attsf: DOUBLE PRECISION
+    du_mf: DOUBLE PRECISION
+    du_mf2to4: DOUBLE PRECISION
+    du_mf5p: DOUBLE PRECISION
+    emp: DOUBLE PRECISION
+    emp_ret: DOUBLE PRECISION
+    emp_retail_services: DOUBLE PRECISION
+    emp_restaurant: DOUBLE PRECISION
+    emp_accommodation: DOUBLE PRECISION
+    emp_arts_entertainment: DOUBLE PRECISION
+    emp_other_services: DOUBLE PRECISION
+    emp_off: DOUBLE PRECISION
+    emp_office_services: DOUBLE PRECISION
+    emp_medical_services: DOUBLE PRECISION
+    emp_pub: DOUBLE PRECISION
+    emp_public_admin: DOUBLE PRECISION
+    emp_education: DOUBLE PRECISION
+    emp_ind: DOUBLE PRECISION
+    emp_manufacturing: DOUBLE PRECISION
+    emp_wholesale: DOUBLE PRECISION
+    emp_transport_warehousing: DOUBLE PRECISION
+    emp_utilities: DOUBLE PRECISION
+    emp_construction: DOUBLE PRECISION
+    emp_ag: DOUBLE PRECISION
+    emp_agriculture: DOUBLE PRECISION
+    emp_extraction: DOUBLE PRECISION
+    emp_military: DOUBLE PRECISION
+    bldg_area_detsf_sl: DOUBLE PRECISION
+    bldg_area_detsf_ll: DOUBLE PRECISION
+    bldg_area_attsf: DOUBLE PRECISION
+    bldg_area_mf: DOUBLE PRECISION
+    bldg_area_retail_services: DOUBLE PRECISION
+    bldg_area_restaurant: DOUBLE PRECISION
+    bldg_area_accommodation: DOUBLE PRECISION
+    bldg_area_arts_entertainment: DOUBLE PRECISION
+    bldg_area_other_services: DOUBLE PRECISION
+    bldg_area_office_services: DOUBLE PRECISION
+    bldg_area_public_admin: DOUBLE PRECISION
+    bldg_area_education: DOUBLE PRECISION
+    bldg_area_medical_services: DOUBLE PRECISION
+    bldg_area_transport_warehousing: DOUBLE PRECISION
+    bldg_area_wholesale: DOUBLE PRECISION
+    residential_irrigated_area: DOUBLE PRECISION
+    commercial_irrigated_area: DOUBLE PRECISION
+    assessor_use_code: VARCHAR(32)
+    land_use: VARCHAR(255)
+  gateway: postgis
+- name: '"brewgis"."public"."census_2020_block_raw"'
+  columns:
+    geoid: VARCHAR
+    total_population: BIGINT
+    total_housing_units: BIGINT
+    state: VARCHAR
+    county: VARCHAR
+    _dlt_load_id: VARCHAR
+    _dlt_id: VARCHAR
+  gateway: postgis
+- name: '"brewgis"."public"."lodes_raw"'
+  columns:
+    year: BIGINT
+    w_geocode: VARCHAR
+    c000: BIGINT
+    cns01: BIGINT
+    cns02: BIGINT
+    cns03: BIGINT
+    cns04: BIGINT
+    cns05: BIGINT
+    cns06: BIGINT
+    cns07: BIGINT
+    cns08: BIGINT
+    cns09: BIGINT
+    cns10: BIGINT
+    cns11: BIGINT
+    cns12: BIGINT
+    cns13: BIGINT
+    cns14: BIGINT
+    cns15: BIGINT
+    cns16: BIGINT
+    cns17: BIGINT
+    cns18: BIGINT
+    cns19: BIGINT
+    cns20: BIGINT
+    ca01: VARCHAR
+    ca02: VARCHAR
+    ca03: VARCHAR
+    ce01: VARCHAR
+    ce02: VARCHAR
+    ce03: VARCHAR
+    cr01: VARCHAR
+    cr02: VARCHAR
+    cr03: VARCHAR
+    cr04: VARCHAR
+    cr05: VARCHAR
+    cr07: VARCHAR
+    ct01: VARCHAR
+    ct02: VARCHAR
+    cd01: VARCHAR
+    cd02: VARCHAR
+    cd03: VARCHAR
+    cd04: VARCHAR
+    cs01: VARCHAR
+    cs02: VARCHAR
+    cfa01: VARCHAR
+    cfa02: VARCHAR
+    cfa03: VARCHAR
+    cfa04: VARCHAR
+    cfa05: VARCHAR
+    cfs01: VARCHAR
+    cfs02: VARCHAR
+    cfs03: VARCHAR
+    cfs04: VARCHAR
+    cfs05: VARCHAR
+    createdate: VARCHAR
+    _dlt_load_id: VARCHAR
+    _dlt_id: VARCHAR
+  gateway: postgis
+- name: '"brewgis"."public"."nlcd_raster"'
+  columns:
+    rid: INT
+    rast: raster
+  gateway: postgis
+- name: '"brewgis"."public"."nlcd_tree_canopy_raster"'
+  columns:
+    rid: INT
+    rast: raster
+  gateway: postgis
+- name: '"brewgis"."public"."sac_cnty_region_base_canvas"'
+  columns:
+    geography_id: INT
+    source_id: VARCHAR
+    wkb_geometry: GEOMETRY
+    region_lu_code: VARCHAR(200)
+    built_form_key: VARCHAR(200)
+    acres_developable: DECIMAL(14, 4)
+    developable_proportion: DECIMAL(8, 4)
+    land_development_category: VARCHAR(50)
+    intersection_density_sqmi: DECIMAL(14, 4)
+    sqft_parcel: DECIMAL(14, 4)
+    acres_gross: DECIMAL(14, 4)
+    acres_parcel: DECIMAL(14, 4)
+    acres_parcel_res: DECIMAL(14, 4)
+    acres_parcel_emp: DECIMAL(14, 4)
+    acres_parcel_mixed_use: DECIMAL(14, 4)
+    acres_parcel_no_use: DECIMAL(14, 4)
+    pop: DECIMAL(14, 4)
+    hh: DECIMAL(14, 4)
+    du: DECIMAL(14, 4)
+    du_detsf: DECIMAL(14, 4)
+    du_attsf: DECIMAL(14, 4)
+    du_mf: DECIMAL(14, 4)
+    emp: DECIMAL(14, 4)
+    emp_ret: DECIMAL(14, 4)
+    emp_off: DECIMAL(14, 4)
+    emp_pub: DECIMAL(14, 4)
+    emp_ind: DECIMAL(14, 4)
+    emp_ag: DECIMAL(14, 4)
+    emp_military: DECIMAL(14, 4)
+    du_detsf_ll: DECIMAL(14, 4)
+    du_detsf_sl: DECIMAL(14, 4)
+    du_mf2to4: DECIMAL(14, 4)
+    du_mf5p: DECIMAL(14, 4)
+    emp_retail_services: DECIMAL(14, 4)
+    emp_restaurant: DECIMAL(14, 4)
+    emp_accommodation: DECIMAL(14, 4)
+    emp_arts_entertainment: DECIMAL(14, 4)
+    emp_other_services: DECIMAL(14, 4)
+    emp_office_services: DECIMAL(14, 4)
+    emp_public_admin: DECIMAL(14, 4)
+    emp_education: DECIMAL(14, 4)
+    emp_medical_services: DECIMAL(14, 4)
+    emp_manufacturing: DECIMAL(14, 4)
+    emp_wholesale: DECIMAL(14, 4)
+    emp_transport_warehousing: DECIMAL(14, 4)
+    emp_utilities: DECIMAL(14, 4)
+    emp_construction: DECIMAL(14, 4)
+    emp_agriculture: DECIMAL(14, 4)
+    emp_extraction: DECIMAL(14, 4)
+    bldg_sqft_detsf_sl: DECIMAL(14, 4)
+    bldg_sqft_detsf_ll: DECIMAL(14, 4)
+    bldg_sqft_attsf: DECIMAL(14, 4)
+    bldg_sqft_mf: DECIMAL(14, 4)
+    bldg_sqft_retail_services: DECIMAL(14, 4)
+    bldg_sqft_restaurant: DECIMAL(14, 4)
+    bldg_sqft_accommodation: DECIMAL(14, 4)
+    bldg_sqft_arts_entertainment: DECIMAL(14, 4)
+    bldg_sqft_other_services: DECIMAL(14, 4)
+    bldg_sqft_office_services: DECIMAL(14, 4)
+    bldg_sqft_public_admin: DECIMAL(14, 4)
+    bldg_sqft_education: DECIMAL(14, 4)
+    bldg_sqft_medical_services: DECIMAL(14, 4)
+    bldg_sqft_transport_warehousing: DECIMAL(14, 4)
+    bldg_sqft_wholesale: DECIMAL(14, 4)
+    acres_parcel_res_detsf: DECIMAL(14, 4)
+    acres_parcel_res_detsf_sl: DECIMAL(14, 4)
+    acres_parcel_res_detsf_ll: DECIMAL(14, 4)
+    acres_parcel_res_attsf: DECIMAL(14, 4)
+    acres_parcel_res_mf: DECIMAL(14, 4)
+    acres_parcel_emp_ret: DECIMAL(14, 4)
+    acres_parcel_emp_off: DECIMAL(14, 4)
+    acres_parcel_emp_pub: DECIMAL(14, 4)
+    acres_parcel_emp_ind: DECIMAL(14, 4)
+    acres_parcel_emp_ag: DECIMAL(14, 4)
+    acres_parcel_emp_military: DECIMAL(14, 4)
+    residential_irrigated_sqft: DECIMAL(14, 4)
+    commercial_irrigated_sqft: DECIMAL(14, 4)
+    created: TIMESTAMPTZ
+    updated: TIMESTAMPTZ
+    dev_pct: DECIMAL(8, 4)
+    density_pct: DECIMAL(8, 4)
+    gross_net_pct: DECIMAL(8, 4)
+    dirty_flag: BOOLEAN
+    jurisdiction: VARCHAR
+    county: VARCHAR
+    clear_flag: BOOLEAN
+  gateway: postgis
+- name: '"brewgis"."public"."sac_cnty_region_existing_land_use_parcels"'
+  columns:
+    geography_id: INT
+    wkb_geometry: GEOMETRY
+    census_blockgroup: VARCHAR
+    census_block: VARCHAR
+    land_use: VARCHAR
+    acres: DECIMAL(14, 4)
+    du: DECIMAL(14, 4)
+    jurisdiction: VARCHAR
+    notes: VARCHAR
+    emp: DECIMAL(14, 4)
+    ret: DECIMAL(14, 4)
+    off: DECIMAL(14, 4)
+    pub: DECIMAL(14, 4)
+    ind: DECIMAL(14, 4)
+    other: DECIMAL(14, 4)
+    assessor: VARCHAR
+    gp: VARCHAR
+    gluc: VARCHAR
+  gateway: postgis
+- name: '"brewgis"."public"."sacog_assessor_parcels_raw"'
+  columns:
+    apn: TEXT
+    landuse: TEXT
+    zone: TEXT
+    lotsize: DOUBLE PRECISION
+    jurisdiction: TEXT
+    SHAPE: DOUBLE PRECISION
+    geometry: GEOMETRY(GEOMETRY, 4326)
+  gateway: postgis
+- name: '"brewgis"."public"."sacog_assessor_sales_raw"'
+  columns:
+    apn: TEXT
+    living_area: DOUBLE PRECISION
+    building_sf: DOUBLE PRECISION
+    year_built: DOUBLE PRECISION
+    stories: DOUBLE PRECISION
+    bedrooms: DOUBLE PRECISION
+    baths: DOUBLE PRECISION
+    ground_floor_gross: DOUBLE PRECISION
+    land_use_code: TEXT
+    property_type: TEXT
+    sales_price: TEXT
+    lot_size_acres: DOUBLE PRECISION
+    units: DOUBLE PRECISION
+    Shape: DOUBLE PRECISION
+    geometry: GEOMETRY(GEOMETRY, 4326)
+  gateway: postgis
+- name: '"brewgis"."public"."sacog_comparison_parcels"'
+  columns:
+    geography_id: INT
+    wkb_geometry: TEXT
+    census_blockgroup: TEXT
+    census_block: TEXT
+    land_use: TEXT
+    acres: DOUBLE PRECISION
+    du: DOUBLE PRECISION
+    jurisdiction: TEXT
+    notes: TEXT
+    emp: DOUBLE PRECISION
+    ret: DOUBLE PRECISION
+    off: DOUBLE PRECISION
+    pub: DOUBLE PRECISION
+    ind: DOUBLE PRECISION
+    other: DOUBLE PRECISION
+    assessor: TEXT
+    gp: TEXT
+    gluc: TEXT
+    geometry: GEOMETRY(MULTIPOLYGON, 3310)
+    parcel_id: INT
+    id: INT
+  gateway: postgis
+- name: '"brewgis"."public"."tiger_block_groups"'
+  columns:
+    geoid: VARCHAR
+    geometry: GEOMETRY(GEOMETRY, 4326)
+    state_fips: VARCHAR
+    vintage: VARCHAR
+    _dlt_load_id: VARCHAR
+    _dlt_id: VARCHAR
+  gateway: postgis
+- name: '"brewgis"."public"."tiger_blocks"'
+  columns:
+    geoid: VARCHAR
+    geometry: GEOMETRY(GEOMETRY, 4326)
+    state_fips: VARCHAR
+    vintage: VARCHAR
+    _dlt_load_id: VARCHAR
+    _dlt_id: VARCHAR
+  gateway: postgis

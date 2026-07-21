@@ -48,7 +48,7 @@ def _models_in_environment(context: Context, environment: str) -> list[str]:
 
 
 def run_sqlmesh_plan(  # noqa: PLR0913
-    environment: str,
+    environment: str = "prod",
     *,
     select: list[str] | None = None,
     start: str | None = None,

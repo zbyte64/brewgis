@@ -326,23 +326,12 @@ def _populate_wac_block(
         from brewgis.workspace.analysis.sqlmesh_runner import get_context
 
         ctx = get_context()
-        existing = ["brewgis.staging.wac_block_raw", "brewgis.staging.wac_block"]
+        existing = ["+brewgis.staging.wac_block_raw", "+brewgis.staging.wac_block"]
         return [m for m in existing if m in ctx.models]
 
     restate_wac = _restate_list() if force_reload else False
     run_sqlmesh_plan(
-        environment="brewgis_prod",
-        select=["brewgis.staging.wac_block_raw"],
-        skip_tests=True,
-        variables=vars,
-        restate_models=restate_wac,
-    )
-
-    # Materialize wac_block (C000 gap distribution and CBP county-level scaling)
-    run_sqlmesh_plan(
-        environment="brewgis_prod",
-        select=["brewgis.staging.wac_block"],
-        skip_tests=True,
+        select=["+brewgis.staging.wac_block_raw"],
         variables=vars,
         restate_models=restate_wac,
     )
@@ -351,7 +340,7 @@ def _populate_wac_block(
     with engine.connect() as conn:
         row_count = (
             conn.execute(
-                text("SELECT COUNT(*) FROM staging__brewgis_prod.wac_block")
+                text("SELECT COUNT(*) FROM brewgis.staging.wac_block")
             ).scalar()
             or 0
         )
