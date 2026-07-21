@@ -18,6 +18,7 @@ from sqlmesh.core.linter.rule import RuleViolation
 from sqlmesh.core.model import Model
 from sqlmesh.core.model import SeedModel
 from sqlmesh.core.model import SqlModel
+from sqlmesh.utils.errors import SQLMeshError
 
 
 class NoTransformInJoinWhere(Rule):
@@ -107,7 +108,7 @@ class MissingGeometryIndex(Rule):
         # Collect geometry column names from the model schema.
         try:
             columns = model.columns_to_types_or_raise
-        except (KeyError, ValueError, TypeError):
+        except (KeyError, ValueError, TypeError, SQLMeshError):
             return None
 
         geometry_cols: list[str] = []
@@ -221,7 +222,7 @@ class MissingKeyIndex(Rule):
         # Collect key columns from model schema.
         try:
             columns = model.columns_to_types_or_raise
-        except (KeyError, ValueError, TypeError):
+        except (KeyError, ValueError, TypeError, SQLMeshError):
             return None
 
         key_cols = [c for c in _KEY_COLUMN_NAMES if c in columns]
@@ -1903,7 +1904,7 @@ class IndexColumnExistence(Rule):
         # Collect model column names.
         try:
             model_columns = model.columns_to_types_or_raise
-        except (KeyError, ValueError, TypeError):
+        except (KeyError, ValueError, TypeError, SQLMeshError):
             return None
 
         # Extract column names from CREATE INDEX statements.
@@ -1988,7 +1989,7 @@ class AuditColumnExistence(Rule):
 
         try:
             model_columns = model.columns_to_types_or_raise
-        except (KeyError, ValueError, TypeError):
+        except (KeyError, ValueError, TypeError, SQLMeshError):
             return None
 
         violations: list[RuleViolation] = []

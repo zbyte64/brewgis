@@ -386,21 +386,3 @@
     parcel_id: INT
     id: INT
   gateway: postgis
-- name: '"brewgis"."public"."tiger_block_groups"'
-  columns:
-    geoid: VARCHAR
-    geometry: GEOMETRY(GEOMETRY, 4326)
-    state_fips: VARCHAR
-    vintage: VARCHAR
-    _dlt_load_id: VARCHAR
-    _dlt_id: VARCHAR
-  gateway: postgis
-- name: '"brewgis"."public"."tiger_blocks"'
-  columns:
-    geoid: VARCHAR
-    geometry: GEOMETRY(GEOMETRY, 4326)
-    state_fips: VARCHAR
-    vintage: VARCHAR
-    _dlt_load_id: VARCHAR
-    _dlt_id: VARCHAR
-  gateway: postgis

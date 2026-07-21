@@ -13,32 +13,44 @@ MODEL (
 -- Variables:
 --   @state_fips  — Two-digit state FIPS code
 
-SELECT
-  STATEFP || COUNTYFP || TRACTCE || BLKGRPCE AS geoid,
-  ST_Transform(geometry, 'EPSG:4326') AS geometry,
-  STATEFP AS state_fips,
-  '2023' AS vintage
-FROM ST_Read(
-  'zip://https://www2.census.gov/geo/tiger/TIGER2023/BG/tl_2023_'
-  || @state_fips
-  || '_bg.zip/tl_2023_'
-  || @state_fips
-  || '_bg.shp'
+WITH bg_2023_raw AS (
+  SELECT STATEFP, COUNTYFP, TRACTCE, BLKGRPCE, geom
+  FROM ST_Read(
+    'zip://https://www2.census.gov/geo/tiger/TIGER2023/BG/tl_2023_'
+    || @state_fips
+    || '_bg.zip/tl_2023_'
+    || @state_fips
+    || '_bg.shp'
+  )
+  WHERE STATEFP = @state_fips
+),
+bg_2023 AS (
+  SELECT
+    STATEFP || COUNTYFP || TRACTCE || BLKGRPCE AS geoid,
+    ST_Transform(geom, 'EPSG:4326') AS geometry,
+    STATEFP AS state_fips,
+    '2023' AS vintage
+  FROM bg_2023_raw
+),
+bg_2013_raw AS (
+  SELECT STATEFP, COUNTYFP, TRACTCE, BLKGRPCE, geom
+  FROM ST_Read(
+    'zip://https://www2.census.gov/geo/tiger/TIGER2013/BG/tl_2013_'
+    || @state_fips
+    || '_bg.zip/tl_2013_'
+    || @state_fips
+    || '_bg.shp'
+  )
+  WHERE STATEFP = @state_fips
+),
+bg_2013 AS (
+  SELECT
+    STATEFP || COUNTYFP || TRACTCE || BLKGRPCE AS geoid,
+    ST_Transform(geom, 'EPSG:4326') AS geometry,
+    STATEFP AS state_fips,
+    '2013' AS vintage
+  FROM bg_2013_raw
 )
-WHERE STATEFP = @state_fips
-
+SELECT geoid, geometry, state_fips, vintage FROM bg_2023
 UNION ALL
-
-SELECT
-  STATEFP10 || COUNTYFP10 || TRACTCE10 || BLKGRPCE10 AS geoid,
-  ST_Transform(geometry, 'EPSG:4326') AS geometry,
-  STATEFP10 AS state_fips,
-  '2013' AS vintage
-FROM ST_Read(
-  'zip://https://www2.census.gov/geo/tiger/TIGER2013/BG/tl_2013_'
-  || @state_fips
-  || '_bg.zip/tl_2013_'
-  || @state_fips
-  || '_bg.shp'
-)
-WHERE STATEFP10 = @state_fips;
+SELECT geoid, geometry, state_fips, vintage FROM bg_2013;

@@ -2,7 +2,7 @@ test_acres_conversion_typical_sfr_lot:
   model: brewgis.assessor.sacog_assessor_parcels
   gateway: postgis
   inputs:
-    public.sacog_assessor_parcels_raw:
+    brewgis.staging.sacog_assessor_parcels_raw:
       rows:
         - apn: "TEST_LOT_ACRES_001"
           lotsize: 6969.6
