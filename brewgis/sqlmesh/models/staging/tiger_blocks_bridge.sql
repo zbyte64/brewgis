@@ -18,3 +18,6 @@ SELECT
   state_fips,
   vintage
 FROM duckdb.staging.tiger_blocks;
+
+-- post_statements
+  CREATE INDEX IF NOT EXISTS idx_tiger_blocks_raw_geoid_vintage ON @this_model USING btree (geoid, vintage);

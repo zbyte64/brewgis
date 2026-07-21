@@ -140,4 +140,6 @@ LEFT JOIN building_stats bs ON sap.apn = bs.apn;
   ON @this_model USING GIST (geometry);
   CREATE INDEX IF NOT EXISTS idx_parcel_building_footprints_apn_@snapshot_hash
   ON @this_model USING btree (apn);
+  CREATE INDEX IF NOT EXISTS idx_parcel_building_footprints_footprint_ratio_@snapshot_hash
+  ON @this_model USING btree (footprint_ratio);
 ANALYZE @this_model;
