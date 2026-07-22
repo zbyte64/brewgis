@@ -15,10 +15,10 @@ MODEL (
 
 -- Sacramento County assessor parcels — DuckDB reads from local GeoParquet.
 --
--- The GeoParquet file is created by assessor_fetcher.write_to_geoparquet(),
--- which downloads parcel geometries from ArcGIS REST services.
--- DuckDB's ST_Transform to EPSG:4326 follows OGC axis order (lat, lon).
--- PostGIS expects (lon, lat). Downstream bridge model flips coordinates.
+-- Source CRS: EPSG:4326 (GeoParquet native lon/lat). Parcel geometries from
+-- ArcGIS REST export written by assessor_fetcher. DuckDB preserves (lon,lat)
+-- axis from GeoParquet metadata. ST_Transform with always_xy=true ensures
+-- (lon,lat) input axis order.
 
 SELECT
   apn,
@@ -26,5 +26,6 @@ SELECT
   zone,
   lotsize,
   jurisdiction,
-  geometry
+  ST_Transform(geometry, 'EPSG:4326', 'EPSG:3857', true) AS geometry,
+  geometry AS wgs84_geometry
 FROM read_parquet('/app/planning/assessor/assessor_parcels.parquet');

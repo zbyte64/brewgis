@@ -48,7 +48,7 @@ parcels_5070 AS (
             ST_SetCRS(geometry, 'EPSG:' || @nlcd_parcel_srid),
             'EPSG:5070'
         ) AS geom_5070
-    FROM brewgis.@nlcd_parcel_source
+    FROM @nlcd_parcel_source
     WHERE geometry IS NOT NULL
 ),
 
@@ -120,7 +120,7 @@ impervious_frac AS (
 -- All parcels (including those with zero NLCD overlap).
 all_parcels AS (
     SELECT id AS parcel_id
-    FROM brewgis.@nlcd_parcel_source
+    FROM @nlcd_parcel_source
     WHERE geometry IS NOT NULL
 )
 

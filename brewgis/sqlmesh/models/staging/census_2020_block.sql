@@ -29,7 +29,7 @@ WITH raw_data AS (
 block_geometry AS (
     SELECT
         geoid,
-        geometry
+        ST_SetSRID(wgs84_geometry, 4326) AS geometry
     FROM brewgis.staging.tiger_blocks
     WHERE vintage = '2020'
 )

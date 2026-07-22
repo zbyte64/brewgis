@@ -7,56 +7,6 @@
     geometry: GEOMETRY(POLYGON, 4326)
     parcel_id: TEXT
   gateway: postgis
-- name: '"brewgis"."public"."acs_raw"'
-  columns:
-    year: BIGINT
-    b01001_001_e: BIGINT
-    b25003_001_e: BIGINT
-    b25003_002_e: BIGINT
-    b25003_003_e: BIGINT
-    b25024_001_e: BIGINT
-    b25024_002_e: BIGINT
-    b25024_003_e: BIGINT
-    b25024_004_e: BIGINT
-    b25024_005_e: BIGINT
-    b25024_006_e: BIGINT
-    b25024_007_e: BIGINT
-    b25024_008_e: BIGINT
-    b25024_009_e: BIGINT
-    b25008_001_e: BIGINT
-    b25008_002_e: BIGINT
-    b25008_003_e: BIGINT
-    b19013_001_e: BIGINT
-    b25070_001_e: BIGINT
-    b25070_007_e: BIGINT
-    b25070_008_e: BIGINT
-    b25070_009_e: BIGINT
-    b25070_010_e: BIGINT
-    b25091_001_e: BIGINT
-    b25091_005_e: BIGINT
-    b25091_006_e: BIGINT
-    b25091_007_e: BIGINT
-    b25091_011_e: BIGINT
-    b25091_012_e: BIGINT
-    b25091_013_e: BIGINT
-    b03002_001_e: BIGINT
-    b03002_002_e: BIGINT
-    b03002_003_e: BIGINT
-    b03002_004_e: BIGINT
-    b03002_005_e: BIGINT
-    b03002_012_e: BIGINT
-    b15003_001_e: BIGINT
-    b15003_022_e: BIGINT
-    b15003_023_e: BIGINT
-    b15003_024_e: BIGINT
-    b15003_025_e: BIGINT
-    state: VARCHAR
-    county: VARCHAR
-    tract: VARCHAR
-    block_group: VARCHAR
-    _dlt_load_id: VARCHAR
-    _dlt_id: VARCHAR
-  gateway: postgis
 - name: '"brewgis"."public"."base_canvas"'
   columns:
     id: BIGINT
@@ -362,7 +312,7 @@
     Shape: DOUBLE PRECISION
     geometry: GEOMETRY(GEOMETRY, 4326)
   gateway: postgis
-- name: '"brewgis"."public"."sacog_comparison_parcels"'
+- name: public.sacog_comparison_parcels
   columns:
     geography_id: INT
     wkb_geometry: TEXT
@@ -385,4 +335,3 @@
     geometry: GEOMETRY(MULTIPOLYGON, 3310)
     parcel_id: INT
     id: INT
-  gateway: postgis

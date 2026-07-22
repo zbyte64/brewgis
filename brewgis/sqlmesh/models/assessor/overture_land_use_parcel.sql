@@ -11,10 +11,10 @@ MODEL (
 );
 
 -- pre_statements
-  CREATE INDEX IF NOT EXISTS idx_overture_land_use_bridge_geometry
-  ON brewgis.staging.overture_land_use USING GIST (geometry);
+  CREATE INDEX IF NOT EXISTS idx_overture_land_use_bridge_wgs84_geometry
+  ON brewgis.staging.overture_land_use USING GIST (wgs84_geometry);
   CREATE INDEX IF NOT EXISTS idx_overture_land_use_area
-  ON brewgis.staging.overture_land_use USING BTREE (ST_Area(geometry));
+  ON brewgis.staging.overture_land_use USING BTREE (ST_Area(wgs84_geometry));
 
 -- Overture Land Use per Parcel — spatial join of Overture land use polygons
 -- to base canvas parcels.
@@ -50,7 +50,7 @@ centroid_match AS (
         olu.class AS overture_land_use_class
     FROM brewgis.base_canvas.base_canvas_geometry bg
     JOIN (
-        SELECT ST_SetSRID(geometry, @VAR('default_srid', 4326)) AS geometry,
+        SELECT ST_SetSRID(wgs84_geometry, @VAR('default_srid', 4326)) AS geometry,
                subtype, class
         FROM brewgis.staging.overture_land_use
     ) olu
@@ -81,8 +81,8 @@ area_vote AS (
     CROSS JOIN LATERAL (
         SELECT olu2.subtype, olu2.class
         FROM brewgis.staging.overture_land_use olu2
-        WHERE ST_Intersects(olu2.geometry, ST_SetSRID(u.geometry, 0))
-        ORDER BY ST_Area(olu2.geometry) DESC
+        WHERE ST_Intersects(olu2.wgs84_geometry, ST_SetSRID(u.geometry, 0))
+        ORDER BY ST_Area(olu2.wgs84_geometry) DESC
         LIMIT 1
     ) olu
 ),

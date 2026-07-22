@@ -4,15 +4,12 @@ MODEL (
   gateway duckdb
 );
 
--- Assessor Parcels Bridge — materializes the DuckDB VIEW (which reads from
--- local GeoParquet) into a PostGIS-accessible table.
---
--- Replaces the public.sacog_assessor_parcels_raw table previously created
--- by the dlt assessor pipeline.
+-- Assessor Parcels Bridge — materializes the DuckDB VIEW into PostGIS.
 
 SELECT
   apn,
-  ST_SetCRS(geometry, 'EPSG:4326') AS geometry,
+  ST_SetCRS(geometry, 'EPSG:3857') AS geometry,
+  ST_SetCRS(wgs84_geometry, 'EPSG:4326') AS wgs84_geometry,
   lotsize,
   landuse,
   zone,

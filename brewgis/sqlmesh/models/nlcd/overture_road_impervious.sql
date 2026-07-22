@@ -30,6 +30,8 @@ MODEL (
 --   Unpaved: surface IN ('unpaved', 'gravel', 'dirt', 'earth', 'ground')
 --
 -- Road length is in meters. Parcel geometry is in LOCAL_SRID (3310, California Albers).
+-- local_geometry is computed from wgs84_geometry since the bridge sets
+-- local_geometry=NULL (DuckDB geographic→projected ST_Transform is unreliable).
 
 WITH parcels AS (
     SELECT
@@ -41,7 +43,7 @@ WITH parcels AS (
 
 transport AS (
     SELECT
-        ST_Transform(ST_SetSRID(geometry, @VAR('default_srid', 4326)), @VAR('local_srid', 3310)) AS local_geometry,
+        ST_Transform(ST_SetSRID(wgs84_geometry, @VAR('default_srid', 4326)), @VAR('local_srid', 3310)) AS local_geometry,
         CASE
             WHEN surface IS NULL
                  OR surface IN ('paved', 'asphalt', 'concrete') THEN 'paved'
@@ -49,7 +51,7 @@ transport AS (
             ELSE 'other'
         END AS road_surface_class
     FROM brewgis.staging.overture_transport
-    WHERE local_geometry IS NOT NULL
+    WHERE wgs84_geometry IS NOT NULL
 ),
 
 -- Categorize by paved/unpaved and compute intersection geometry per parcel

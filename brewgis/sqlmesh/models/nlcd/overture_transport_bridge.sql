@@ -11,13 +11,15 @@ MODEL (
 -- Overture Transportation — bridge model that materializes the DuckDB VIEW
 -- (which reads GeoParquet from S3) into a PostGIS-accessible table.
 --
--- DuckDB ST_Transform to EPSG:4326 follows OGC axis order (lat, lon).
--- PostGIS expects (lon, lat).  ST_FlipCoordinates swaps them so parcel
--- spatial joins work correctly.
+-- DuckDB ST_Transform with always_xy=true produces (lon,lat) for 4326
+-- and (x,y) for 3857 — no axis flip needed.
+-- local_geometry is computed in downstream PostGIS intersection models
+-- to avoid DuckDB geographic→projected transform issues.
 
 SELECT
-    ST_SetCRS(ST_FlipCoordinates(geometry), 'EPSG:4326') AS geometry,
-    ST_Transform(ST_SetCRS(ST_FlipCoordinates(geometry), 'EPSG:4326'), 'EPSG:3310') AS local_geometry,
+    ST_SetCRS(geometry, 'EPSG:3857') AS geometry,
+    ST_SetCRS(wgs84_geometry, 'EPSG:4326') AS wgs84_geometry,
+    NULL::geometry AS local_geometry,
     surface,
     class,
     subclass,

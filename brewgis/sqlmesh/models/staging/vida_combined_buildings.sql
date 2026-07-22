@@ -10,9 +10,13 @@ MODEL (
 -- DuckDB reads GeoParquet directly via httpfs extension with row-group pushdown.
 -- Post-statements materialize the result in public.vida_combined_buildings in
 -- PostGIS via the postgres_scanner-attached pg catalog.
+--
+-- Source CRS: EPSG:4326 (GeoParquet native lon/lat). VIDA Google+Microsoft
+-- building footprints from Source Cooperative S3.
 
 SELECT
-  geometry,
+  ST_Transform(geometry, 'EPSG:4326', 'EPSG:3857', true) AS geometry,
+  geometry AS wgs84_geometry,
   confidence,
   bf_source,
   area_in_meters

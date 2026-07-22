@@ -6,6 +6,9 @@ MODEL (
   ),
   audits (
     not_null(columns := (geoid, data_year))
+  ),
+  depends_on (
+    brewgis.staging.acs_raw
   )
 );
 
@@ -27,7 +30,7 @@ MODEL (
 WITH raw_derived AS (
     SELECT
         a.state || a.county || a.tract || a."block_group" AS geoid,
-        ST_Multi(tbg.geometry) AS geometry,
+        ST_Multi(tbg.wgs84_geometry) AS geometry,
         COALESCE(a.b01001_001_e, 0)::numeric AS pop,
         COALESCE(a.b25003_001_e, 0)::numeric AS hh,
         COALESCE(a.b25024_001_e, 0)::numeric AS du,

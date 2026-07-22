@@ -681,7 +681,7 @@ class Command(BaseCommand):
             plan_vars["osm_intersection_table"] = "osm_intersection_density"
 
         # checkpoint
-        if not force_data_reload:
+        if not force_data_reload and False:
             run_sqlmesh_plan(
                 environment=environment,
                 skip_tests=False,

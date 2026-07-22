@@ -20,7 +20,7 @@ MODEL (
 WITH raw_derived AS (
     SELECT
         p.gidbg AS geoid,
-        ST_Multi(tbg.geometry) AS geometry,
+        ST_Multi(tbg.wgs84_geometry) AS geometry,
         -- Housing vacancy
         COALESCE(p.tot_vacant_units_acs_18_22, 0)::numeric AS vacant_units,
         COALESCE(p.tot_housing_units_acs_18_22, 0)::numeric AS housing_units,

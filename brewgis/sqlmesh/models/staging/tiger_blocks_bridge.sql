@@ -4,17 +4,12 @@ MODEL (
   gateway duckdb
 );
 
--- TIGER Blocks Bridge — materializes the DuckDB VIEW (which reads from
--- local GeoParquet) into a PostGIS-accessible table.
---
--- Replaces the public.tiger_blocks table previously created by the dlt
--- tiger_block pipeline. DuckDB ST_Transform to EPSG:4326 follows OGC
--- axis order (lat, lon). PostGIS expects (lon, lat).
--- ST_FlipCoordinates swaps them so spatial joins work correctly.
+-- TIGER Blocks Bridge — materializes the DuckDB VIEW into PostGIS.
 
 SELECT
   geoid,
-  ST_SetCRS(ST_FlipCoordinates(geometry), 'EPSG:4326') AS geometry,
+  ST_SetCRS(geometry, 'EPSG:3857') AS geometry,
+  ST_SetCRS(wgs84_geometry, 'EPSG:4326') AS wgs84_geometry,
   state_fips,
   vintage
 FROM duckdb.staging.tiger_blocks;

@@ -22,6 +22,7 @@ MODEL (
 --   @state_fips    — Two-digit state FIPS code
 --   @county_fips   — Three-digit county code; supports '*' for all counties
 --   @census_api_key  — Census API key
+SET allow_asterisks_in_http_paths = true;
 
 WITH naics_vintage AS (
   SELECT

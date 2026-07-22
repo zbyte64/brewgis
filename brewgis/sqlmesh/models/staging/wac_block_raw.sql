@@ -48,9 +48,9 @@ block_geometry_map AS (
     SELECT
         lb.block_geoid,
         COALESCE(
-            tb.geometry,
-            tbg.geometry,
-            tbg_fallback.geometry
+            tb.wgs84_geometry,
+            tbg.wgs84_geometry,
+            tbg_fallback.wgs84_geometry
         ) AS geometry
     FROM lodes_blocks lb
     LEFT JOIN brewgis.staging.tiger_blocks tb
@@ -60,12 +60,12 @@ block_geometry_map AS (
         ON lb.bg = tbg.geoid
         AND tbg.vintage = @tiger_vintage
     LEFT JOIN LATERAL (
-        SELECT geometry FROM brewgis.staging.tiger_block_groups
+        SELECT wgs84_geometry FROM brewgis.staging.tiger_block_groups
         WHERE geoid LIKE lb.tract || '%'
           AND vintage = @tiger_vintage
         LIMIT 1
     ) tbg_fallback ON tb.geoid IS NULL AND tbg.geoid IS NULL
-    WHERE COALESCE(tb.geometry, tbg.geometry, tbg_fallback.geometry) IS NOT NULL
+    WHERE COALESCE(tb.wgs84_geometry, tbg.wgs84_geometry, tbg_fallback.wgs84_geometry) IS NOT NULL
 ),
 
 cbp_sub_sectors AS (

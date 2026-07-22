@@ -24,6 +24,9 @@ services:
     ports:
       - '8000:8000'
     command: /start
+    ulimits:
+      nproc: 65535
+      nofile: 65536
     deploy:
       resources:
         limits:

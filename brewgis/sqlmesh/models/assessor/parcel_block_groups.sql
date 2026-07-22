@@ -20,8 +20,8 @@ MODEL (
 -- Must live here because the duckdb-gateway bridge model
 -- (brewgis.staging._tiger_block_groups_raw) does not recognise PostGIS
 -- geometry indexes in post_statements.
-  CREATE INDEX IF NOT EXISTS idx_tiger_block_groups_bridge_geometry
-  ON brewgis.staging._tiger_block_groups_raw USING GIST (ST_SetSRID(geometry, 4326));
+  CREATE INDEX IF NOT EXISTS idx_tiger_block_groups_bridge_wgs84_geometry
+  ON brewgis.staging._tiger_block_groups_raw USING GIST (ST_SetSRID(wgs84_geometry, 4326));
 
 -- Parcel Block Groups — spatial join assigning each assessor parcel to its
 -- overlapping TIGER/Line block group and tract.
@@ -41,7 +41,7 @@ FROM brewgis.assessor.sacog_assessor_parcels sap
 CROSS JOIN LATERAL (
     SELECT tbg.geoid
     FROM brewgis.staging.tiger_block_groups tbg
-    WHERE ST_Within(sap.centroid, tbg.geometry)
+    WHERE ST_Within(sap.centroid, tbg.wgs84_geometry)
       AND tbg.vintage = @tiger_vintage
     LIMIT 1
 ) tbg;

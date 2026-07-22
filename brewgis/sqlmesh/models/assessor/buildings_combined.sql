@@ -24,13 +24,16 @@ ANALYZE @this_model;
 --     — they are redundant with Overture (also OSM-derived) and have less
 --     metadata.
 --
--- Source tables populated by DuckDB gateway staging models:
---   brewgis.staging.overture_buildings
---   brewgis.staging.vida_combined_buildings
+-- Column conventions:
+--   geometry (EPSG:3857) — Web Mercator, projected with no axis ambiguity
+--   wgs84_geometry (EPSG:4326) — (lon,lat) axis via always_xy=true
+--   local_geometry (EPSG:3310) — California Albers via always_xy=true
 
 WITH overture_buildings AS (
     SELECT
         ob.geometry,
+        ob.wgs84_geometry,
+        ob.local_geometry,
         ob.height,
         ob.levels,
         ob.class,
@@ -43,6 +46,8 @@ WITH overture_buildings AS (
 vida_buildings AS (
     SELECT
         vb.geometry,
+        vb.wgs84_geometry,
+        NULL::geometry AS local_geometry,
         NULL::double precision AS height,
         NULL::integer AS levels,
         NULL::text AS class,
@@ -57,6 +62,8 @@ vida_buildings AS (
 vida_deduped AS (
     SELECT
         vb.geometry,
+        vb.wgs84_geometry,
+        vb.local_geometry,
         vb.height,
         vb.levels,
         vb.class,
@@ -75,11 +82,13 @@ vida_deduped AS (
     )
 )
 
--- DuckDB ST_Transform to EPSG:4326 follows OGC axis order (lat, lon). PostGIS expects
--- (lon, lat).  ST_FlipCoordinates swaps them so parcel spatial joins work correctly.
+-- DuckDB ST_Transform with always_xy=true produces correct axis order.
+-- geometry (3857) and wgs84_geometry (4326) need no axis flips.
+-- local_geometry computed from wgs84_geometry via always_xy transform.
 SELECT
-    ST_SetCRS(ST_FlipCoordinates(geometry), 'EPSG:4326') AS geometry,
-    ST_Transform(ST_SetCRS(ST_FlipCoordinates(geometry), 'EPSG:4326'), 'EPSG:3310') AS local_geometry,
+    ST_SetCRS(geometry, 'EPSG:3857') AS geometry,
+    ST_SetCRS(wgs84_geometry, 'EPSG:4326') AS wgs84_geometry,
+    ST_Transform(wgs84_geometry, 'EPSG:4326', 'EPSG:3310', true) AS local_geometry,
     height,
     levels,
     class,
@@ -91,8 +100,9 @@ FROM overture_buildings
 UNION ALL
 
 SELECT
-    ST_SetCRS(ST_FlipCoordinates(geometry), 'EPSG:4326') AS geometry,
-    ST_Transform(ST_SetCRS(ST_FlipCoordinates(geometry), 'EPSG:4326'), 'EPSG:3310') AS local_geometry,
+    ST_SetCRS(geometry, 'EPSG:3857') AS geometry,
+    ST_SetCRS(wgs84_geometry, 'EPSG:4326') AS wgs84_geometry,
+    ST_Transform(wgs84_geometry, 'EPSG:4326', 'EPSG:3310', true) AS local_geometry,
     height,
     levels,
     class,

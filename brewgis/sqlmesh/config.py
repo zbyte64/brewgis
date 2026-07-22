@@ -79,7 +79,7 @@ def _drop_data_object_patched(self, data_object, ignore_if_not_exists=True):
                 cascade=True,
             )
             _logger.warning(
-                "drop_data_object: DROP TABLE CASCADE for %s (had dependents)",
+                "drop_data_object: DROP TABLE for %s (had dependents)",
                 data_object.to_table().sql(dialect=self.dialect),
             )
             return None
@@ -90,7 +90,7 @@ def _drop_data_object_patched(self, data_object, ignore_if_not_exists=True):
                 cascade=True,
             )
             _logger.warning(
-                "drop_data_object: DROP VIEW CASCADE for %s (had dependents)",
+                "drop_data_object: DROP VIEW for %s (had dependents)",
                 data_object.to_table().sql(dialect=self.dialect),
             )
             return None
@@ -199,6 +199,7 @@ def _install_monkeypatch():
 
     _create_table_orig = DuckDBEngineAdapter._create_table
     DuckDBEngineAdapter._create_table = _create_table_patched
+    return
 
     from sqlmesh.utils.connection_pool import SingletonConnectionPool
 
@@ -283,6 +284,9 @@ def config_factory(**variables):
                         "cache_httpfs_evict_policy": "lru_sp",
                         "cache_httpfs_cache_block_size": 65536,
                         "cache_httpfs_min_disk_bytes_for_cache": 1073741824,
+                        "allow_asterisks_in_http_paths": True,
+                        "httpfs_connection_caching": True,
+                        "http_retry_wait_ms": 1000,
                     },
                     secrets=[
                         {
@@ -383,7 +387,7 @@ def config_factory(**variables):
             "nlcd_tree_canopy_raster_path": ("/app/planning/nlcd/nlcd_tree_canopy.tif"),
             # PostGIS parcel table (accessible via DuckDB postgres_scanner
             # as brewgis.<schema>.<table>) with geometry in EPSG:3310.
-            "nlcd_parcel_source": "public.sacog_comparison_parcels",
+            "nlcd_parcel_source": "public.sacog_comparison_parcels",  #'"public"."sacog_comparison_parcels"',
             "nlcd_parcel_srid": 3310,
             # ---- CBP County Employment Scaling (wac_block.sql) ----
             # Set to actual CBP 2008 county-level totals for accurate scaling.

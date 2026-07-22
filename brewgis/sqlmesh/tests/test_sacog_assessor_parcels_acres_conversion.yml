@@ -10,8 +10,10 @@ test_acres_conversion_typical_sfr_lot:
           zone: "R-1"
           jurisdiction: "SAC"
           geometry: "SRID=4326;POLYGON((-121.5 38.5,-121.49 38.5,-121.49 38.51,-121.5 38.51,-121.5 38.5))"
+          wgs84_geometry: "SRID=4326;POLYGON((-121.5 38.5,-121.49 38.5,-121.49 38.51,-121.5 38.51,-121.5 38.5))"
       columns:
         geometry: GEOMETRY
+        wgs84_geometry: GEOMETRY
         apn: TEXT
         lotsize: DOUBLE
         landuse: TEXT
