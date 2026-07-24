@@ -680,26 +680,6 @@ class Command(BaseCommand):
         if osm:
             plan_vars["osm_intersection_table"] = "osm_intersection_density"
 
-        # checkpoint
-        if not force_data_reload and False:
-            run_sqlmesh_plan(
-                environment=environment,
-                skip_tests=False,
-                select=[
-                    "+brewgis.comparison.sacog_reference_totals",
-                    "+brewgis.comparison.sacog_parcel_shim",
-                    "+brewgis.staging.census_2020_block",
-                    "+brewgis.assessor.parcel_resnet_features",
-                    "+brewgis.assessor.parcel_du_regressor",
-                    "+brewgis.assessor.parcel_sqft_regressor",
-                    "+brewgis.assessor.parcel_emp_ratios_regressor",
-                    "+brewgis.base_canvas.overture_road_impervious",
-                    "+brewgis.assessor.parcel_dasymetric_weights",
-                ],
-                variables=plan_vars,
-            )
-            self.stdout.write("\nCheckpoint complete\n")
-
         # --- environment invalidation ---
         restate_models_list: list[str] = [
             *(restate_models or []),
@@ -727,9 +707,7 @@ class Command(BaseCommand):
             skip_tests=False,
             select=model_selectors,
             variables=plan_vars,
-            restate_models=(restate_models_list or True)
-            if force_data_reload
-            else False,
+            restate_models=restate_models_list or False,
         )
         self.stdout.write(self.style.SUCCESS("  SQLMesh models complete"))
 

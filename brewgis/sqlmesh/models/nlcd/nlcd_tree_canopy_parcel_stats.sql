@@ -5,6 +5,9 @@ MODEL (
   dialect duckdb,
   audits (
     not_null(columns := (parcel_id))
+  ),
+  depends_on (
+    brewgis.public.sacog_comparison_parcels
   )
 );
 
@@ -44,7 +47,7 @@ parcels_5070 AS (
             ST_SetCRS(geometry, 'EPSG:' || @nlcd_parcel_srid),
             'EPSG:5070'
         ) AS geom_5070
-    FROM @nlcd_parcel_source
+    FROM brewgis.public.sacog_comparison_parcels
     WHERE geometry IS NOT NULL
 ),
 
@@ -70,7 +73,7 @@ per_parcel_mean AS (
 -- All parcels (including those with no canopy overlap).
 all_parcels AS (
     SELECT id AS parcel_id
-    FROM @nlcd_parcel_source
+    FROM brewgis.public.sacog_comparison_parcels
     WHERE geometry IS NOT NULL
 )
 

@@ -313,6 +313,30 @@
     geometry: GEOMETRY(GEOMETRY, 4326)
   gateway: postgis
 - name: public.sacog_comparison_parcels
+  gateway: postgis
+  columns:
+    geography_id: INT
+    wkb_geometry: TEXT
+    census_blockgroup: TEXT
+    census_block: TEXT
+    land_use: TEXT
+    acres: DOUBLE PRECISION
+    du: DOUBLE PRECISION
+    jurisdiction: TEXT
+    notes: TEXT
+    emp: DOUBLE PRECISION
+    ret: DOUBLE PRECISION
+    off: DOUBLE PRECISION
+    pub: DOUBLE PRECISION
+    ind: DOUBLE PRECISION
+    other: DOUBLE PRECISION
+    assessor: TEXT
+    gp: TEXT
+    gluc: TEXT
+    geometry: GEOMETRY(MULTIPOLYGON, 3310)
+    parcel_id: INT
+    id: INT
+- name: brewgis.public.sacog_comparison_parcels
   columns:
     geography_id: INT
     wkb_geometry: TEXT

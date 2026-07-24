@@ -14,7 +14,9 @@ MODEL (
   depends_on (
     brewgis.fresno.parcel_shim,
     brewgis.fresno.comparison_dasymetric,
-    brewgis.seeds.assessor_use_codes
+    brewgis.seeds.assessor_use_codes,
+    @parcel_table,
+    @VAR('dasymetric_source', 'brewgis.comparison.sacog_comparison_dasymetric')
   )
 );
 

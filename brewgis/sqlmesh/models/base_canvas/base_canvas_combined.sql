@@ -11,7 +11,8 @@ MODEL (
   ),
   depends_on (
     brewgis.fresno.comparison_dasymetric,
-    brewgis.seeds.assessor_use_codes
+    brewgis.seeds.assessor_use_codes,
+    @VAR('dasymetric_source', 'brewgis.comparison.sacog_comparison_dasymetric')
   )
 );
 
@@ -851,7 +852,7 @@ irrigation AS (
                 * COALESCE(NULLIF(nlcd.impervious_fraction, 0), NULLIF(abu.dasym_impervious_fraction, 0), abu.com_irrigation_frac, 0.035)
         ) AS commercial_irrigated_area_v
     FROM area_by_use abu
-    LEFT JOIN nlcd_data nlcd ON abu.parcel_id = nlcd.parcel_id::text
+    LEFT JOIN nlcd_data nlcd ON abu.parcel_id = nlcd.parcel_id
 ),
 
 with_intersection AS (
