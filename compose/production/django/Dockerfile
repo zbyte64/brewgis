@@ -94,7 +94,7 @@ RUN chown -R django:django ${APP_HOME}
 USER django
 
 RUN DATABASE_URL="" \
-  DJANGO_SETTINGS_MODULE="config.settings" \
+  DJANGO_SETTINGS_MODULE="brewgis.config.settings" \
   python manage.py compilemessages
 
 ENTRYPOINT ["/entrypoint"]

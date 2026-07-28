@@ -5,7 +5,7 @@ import sys
 from pathlib import Path
 
 if __name__ == "__main__":
-    os.environ.setdefault("DJANGO_SETTINGS_MODULE", "config.settings")
+    os.environ.setdefault("DJANGO_SETTINGS_MODULE", "brewgis.config.settings")
     os.environ.setdefault("DJANGO_READ_DOT_ENV_FILE", "True")
 
     try:
@@ -28,6 +28,6 @@ if __name__ == "__main__":
     # This allows easy placement of apps within the interior
     # brewgis directory.
     current_path = Path(__file__).parent.resolve()
-    sys.path.append(str(current_path / "brewgis"))
+    sys.path.append(str(current_path))
 
     execute_from_command_line(sys.argv)

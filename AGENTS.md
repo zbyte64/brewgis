@@ -292,7 +292,7 @@ npm run test      # vitest
 ## Testing & QA
 
 - **Framework:** pytest 8.3 + pytest-django + pytest-sugar + Factory Boy + pytest-bdd + pytest-playwright
-- **Runner:** Django's DiscoverRunner. Config: `--ds=config.settings --reuse-db --import-mode=importlib`, 300s timeout
+- **Runner:** Django's DiscoverRunner. Config: `--ds=brewgis.config.settings --reuse-db --import-mode=importlib`, 300s timeout
 - **Coverage:** coverage with django_coverage_plugin, includes `brewgis/**`, excludes `*/migrations/*` and `*/tests/*`, **60% threshold**
 - **BDD:** Gherkin `.feature` files in `tests/e2e/features/`, `tests/review/features/`, `tests/features/` — shared across two abstraction levels
 - **Property-based:** Hypothesis for numerical invariants in tests/dbt_math/ (mode choice shares sum to 1, trip conservation, SQL math parity vs Python reference)
