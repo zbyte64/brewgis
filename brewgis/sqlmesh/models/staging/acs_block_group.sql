@@ -8,7 +8,7 @@ MODEL (
     not_null(columns := (geoid, data_year))
   ),
   depends_on (
-    brewgis.staging.acs_raw
+    brewgis.staging.acs_bridge
   )
 );
 
@@ -62,7 +62,7 @@ WITH raw_derived AS (
         COALESCE(a.b15003_001_e, 0)::numeric AS edu_total,
         (COALESCE(a.b15003_022_e, 0) + COALESCE(a.b15003_023_e, 0)
             + COALESCE(a.b15003_024_e, 0) + COALESCE(a.b15003_025_e, 0))::numeric AS college_educated
-    FROM brewgis.staging.acs_raw a
+    FROM brewgis.staging.acs_bridge a
     JOIN brewgis.staging.tiger_block_groups tbg
         ON tbg.geoid = a.state || a.county || a.tract || a.block_group
         AND tbg.vintage = @tiger_bg_vintage

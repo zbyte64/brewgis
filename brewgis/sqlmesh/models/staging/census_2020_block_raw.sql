@@ -35,7 +35,7 @@ WITH api_response AS MATERIALIZED (
     || '&for=block:*'
     || '&in=state:' || @state_fips || '+county:' || @county_fips || '+tract:*'
     || CASE WHEN @census_api_key <> '' THEN '&key=' || @census_api_key ELSE '' END,
-    format = 'array'
+    format = 'auto'
   )
 ),
 numbered AS (

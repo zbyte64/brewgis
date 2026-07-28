@@ -3,6 +3,11 @@ MODEL (
   kind FULL
 );
 
+-- pre_statements
+  CREATE INDEX IF NOT EXISTS idx_ref_geography_id
+  ON public.sac_cnty_region_base_canvas (geography_id);
+  ANALYZE public.sac_cnty_region_base_canvas;
+
 -- SACOG Correlations — per-column area-weighted Pearson R between brewgis and reference.
 --
 -- Architecture: no custom Python macros. Uses SQLMesh built-in @EACH with
@@ -222,7 +227,7 @@ WITH raw AS (
         bldg_area_wholesale * ref.bldg_sqft_wholesale AS xy_bldg_area_wholesale,
         residential_irrigated_area * ref.residential_irrigated_sqft AS xy_residential_irrigated_area,
         commercial_irrigated_area * ref.commercial_irrigated_sqft AS xy_commercial_irrigated_area
-    FROM brewgis.comparison.sacog_brewgis_comparison_view bc
+    FROM brewgis.comparison.sacog bc
     INNER JOIN public.sac_cnty_region_base_canvas ref ON bc.geography_id = ref.geography_id
     WHERE bc.geography_id IS NOT NULL
 ),

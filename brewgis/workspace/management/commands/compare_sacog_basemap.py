@@ -613,12 +613,13 @@ class Command(BaseCommand):
         self.stdout.write("\n── Phase 2: Running consolidated SQLMesh plan ──")
 
         model_selectors: list[str] = [
+            "+brewgis.staging.acs_bridge",
             "+brewgis.comparison.sacog_parcel_shim",
             "+brewgis.staging.census_2020_block",
             "+brewgis.base_canvas.base_canvas_reconciled",
             "+brewgis.comparison.sacog_summary",
         ]
-        if nlcd:
+        if False and nlcd:
             model_selectors.extend(
                 [
                     "+brewgis.nlcd.parcels_wm",
@@ -626,7 +627,7 @@ class Command(BaseCommand):
                     "+brewgis.nlcd.nlcd_tree_canopy_parcel_stats",
                 ]
             )
-        if use_assessor_geometry:
+        if False and use_assessor_geometry:
             model_selectors.extend(
                 [
                     "+brewgis.staging.overture_buildings",
@@ -641,10 +642,10 @@ class Command(BaseCommand):
                     "+brewgis.assessor.authoritative_residential_area",
                     "+brewgis.assessor.parcel_dasymetric_weights",
                     "+brewgis.comparison.training_parcel_map",
-                    "+brewgis.comparison.sacog_comparison_dasymetric",
+                    "+brewgis.comparison.sacog_dasymetric",
                 ]
             )
-        if overture_roads:
+        if False and overture_roads:
             model_selectors.extend(
                 [
                     "+brewgis.staging.overture_transport",
@@ -737,7 +738,7 @@ class Command(BaseCommand):
         # ── Phase 5: Generate comparison report ────────────────────────
         self.stdout.write("\n── Phase 5: Generating comparison report ──")
         dasymetric_table = context.table_name(
-            "brewgis.comparison.sacog_comparison_dasymetric", environment
+            "brewgis.comparison.sacog_dasymetric", environment
         )
         reconciled_table = context.table_name(
             "brewgis.base_canvas.base_canvas_reconciled", environment

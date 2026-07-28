@@ -14,7 +14,8 @@ MODEL (
   CREATE INDEX IF NOT EXISTS idx_overture_land_use_bridge_wgs84_geometry
   ON brewgis.staging.overture_land_use USING GIST (wgs84_geometry);
   CREATE INDEX IF NOT EXISTS idx_overture_land_use_area
-  ON brewgis.staging.overture_land_use USING BTREE (ST_Area(wgs84_geometry));
+  ON brewgis.staging.overture_land_use USING BTREE (area);
+  ANALYZE brewgis.staging.overture_land_use;
 
 -- Overture Land Use per Parcel — spatial join of Overture land use polygons
 -- to base canvas parcels.
@@ -51,12 +52,13 @@ centroid_match AS (
     FROM brewgis.base_canvas.base_canvas_geometry bg
     JOIN (
         SELECT ST_SetSRID(wgs84_geometry, @VAR('default_srid', 4326)) AS geometry,
+               area,
                subtype, class
         FROM brewgis.staging.overture_land_use
     ) olu
         ON ST_Centroid(bg.geometry) && ST_Envelope(olu.geometry)
         AND ST_Contains(olu.geometry, ST_Centroid(bg.geometry))
-    ORDER BY bg.parcel_id, ST_Area(olu.geometry) ASC
+    ORDER BY bg.parcel_id, olu.area ASC
 ),
 
 -- Parcels that did NOT match via centroid test

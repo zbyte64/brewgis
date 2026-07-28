@@ -47,7 +47,7 @@ WITH parcel_base AS (
         p.id AS parcel_id,
         @st_area_projected(p.geom) AS gross_acres,
         -- Developable acres from env_constraint if available, else raw area
-        COALESCE(ec.acres_developable, @st_area_projected(p.geom)) AS acres_developable,
+        @st_area_projected(p.geom) AS acres_developable,
         bf.du_per_acre,
         bf.emp_per_acre,
         bf.far,
@@ -67,8 +67,6 @@ WITH parcel_base AS (
         p.du_per_acre IS NOT NULL AND p.du_per_acre > 0 AS is_residential,
         bf.emp_per_acre IS NOT NULL AND bf.emp_per_acre > 0 AS is_nonresidential
     FROM @parcel_table AS p
-    LEFT JOIN brewgis.analysis.env_constraint AS ec
-        ON p.id = ec.parcel_id
     LEFT JOIN @built_form_table AS bf
         ON p.built_form_key = bf.key
 ),

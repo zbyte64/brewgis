@@ -258,7 +258,7 @@ def fetch_acs_data_summary(
     engine = get_engine()
     query = text("""
         SELECT COUNT(*) as row_count
-        FROM brewgis.staging.acs_raw
+        FROM brewgis.staging.acs_bridge
         WHERE state = :state_fips
           AND county = :county_fips
           AND year = :year

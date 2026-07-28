@@ -1,5 +1,5 @@
 test_apn_shared_across_two_parcels_du_proportional:
-  model: brewgis.comparison.sacog_comparison_dasymetric
+  model: brewgis.comparison.sacog_dasymetric
   gateway: postgis
   inputs:
     brewgis.comparison.dasymetric_intersections:
@@ -91,7 +91,7 @@ test_apn_shared_across_two_parcels_du_proportional:
     partial: true
 
 test_single_apn_no_duplication_passes_through:
-  model: brewgis.comparison.sacog_comparison_dasymetric
+  model: brewgis.comparison.sacog_dasymetric
   gateway: postgis
   inputs:
     brewgis.comparison.dasymetric_intersections:

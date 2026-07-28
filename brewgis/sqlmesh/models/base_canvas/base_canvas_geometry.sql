@@ -16,7 +16,7 @@ MODEL (
     brewgis.fresno.comparison_dasymetric,
     brewgis.seeds.assessor_use_codes,
     @parcel_table,
-    @VAR('dasymetric_source', 'brewgis.comparison.sacog_comparison_dasymetric')
+    @VAR('dasymetric_source', 'brewgis.comparison.sacog_dasymetric')
   )
 );
 
@@ -122,7 +122,7 @@ dasymetric_enrichment AS (
         bldg_area_medical_services,
         bldg_area_transport_warehousing,
         bldg_area_wholesale
-    FROM @VAR('dasymetric_source', 'brewgis.comparison.sacog_comparison_dasymetric')
+    FROM @VAR('dasymetric_source', 'brewgis.comparison.sacog_dasymetric')
 )
 
 SELECT
@@ -197,3 +197,4 @@ LEFT JOIN dasymetric_enrichment de ON parcel_area.parcel_id = de.parcel_id;
   ON @this_model USING btree (parcel_id);
   CREATE INDEX IF NOT EXISTS idx_base_canvas_geometry_apn_@snapshot_hash
   ON @this_model USING btree (apn);
+  ANALYZE @this_model;

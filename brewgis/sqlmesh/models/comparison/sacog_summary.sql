@@ -1,6 +1,6 @@
 MODEL (
   name brewgis.comparison.sacog_summary,
-  kind VIEW
+  kind FULL
 );
 
 -- SACOG Summary — single-row comparison joining totals, correlations, and weighted means.

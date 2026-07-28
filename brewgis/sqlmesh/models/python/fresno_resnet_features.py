@@ -7,6 +7,15 @@ each Fresno parcel. Does NOT fit a new PCA — reuses existing SACOG model.
 
 from __future__ import annotations
 
+import sys
+
+sys.path.append("/app")
+# naming conflict with sqlmesh? should rename and consolidate
+import django
+
+django.setup()
+
+
 import logging
 import pickle
 from collections.abc import Iterator  # noqa: TC003

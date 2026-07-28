@@ -1,5 +1,5 @@
 MODEL (
-  name brewgis.comparison.sacog_comparison_dasymetric,
+  name brewgis.comparison.sacog_dasymetric,
   kind FULL,
   audits (
     not_null(columns := (parcel_id))

@@ -13,6 +13,7 @@ MODEL (
 SELECT
     ST_SetCRS(geometry, 'EPSG:3857') AS geometry,
     ST_SetCRS(wgs84_geometry, 'EPSG:4326') AS wgs84_geometry,
+    ST_Area(wgs84_geometry) AS area,
     subtype,
     class
 FROM duckdb.staging.overture_land_use;

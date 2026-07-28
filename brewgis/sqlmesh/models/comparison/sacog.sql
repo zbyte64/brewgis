@@ -1,5 +1,5 @@
 MODEL (
-  name brewgis.comparison.sacog_brewgis_comparison_view,
+  name brewgis.comparison.sacog,
   kind FULL,
   audits (
     not_null(columns := (parcel_id))
@@ -103,9 +103,10 @@ LEFT JOIN public.sacog_comparison_parcels sp
     ON bcr.parcel_id = sp.parcel_id;
 
 -- post_statements
-  CREATE INDEX IF NOT EXISTS idx_sacog_brewgis_comparison_view_geom_@snapshot_hash
+  CREATE INDEX IF NOT EXISTS idx_sacog_comparison_geom_@snapshot_hash
   ON @this_model USING GIST (geometry);
   CREATE INDEX IF NOT EXISTS idx_comparison_view_parcel_id_@snapshot_hash
   ON @this_model USING btree (parcel_id);
   CREATE INDEX IF NOT EXISTS idx_comparison_view_geography_id_@snapshot_hash
   ON @this_model USING btree (geography_id);
+  ANALYZE @this_model;

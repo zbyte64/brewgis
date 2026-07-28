@@ -8,6 +8,14 @@ DU, SQFT, and employment ratio regressors as additional tabular features.
 
 from __future__ import annotations
 
+import sys
+
+sys.path.append("/app")
+# import brewgis.config.settings
+import django
+
+django.setup()
+
 import hashlib
 import logging
 import os

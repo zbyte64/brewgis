@@ -2,10 +2,7 @@ MODEL (
   name duckdb.staging.cbp_raw,
   kind VIEW,
   gateway duckdb,
-  dialect duckdb,
-  columns (
-    json VARCHAR[]
-  )
+  dialect duckdb
 );
 
 -- County Business Patterns raw data — DuckDB reads from Census API via httpfs.
@@ -24,26 +21,20 @@ MODEL (
 --   @census_api_key  — Census API key
 SET allow_asterisks_in_http_paths = true;
 
-WITH naics_vintage AS (
+WITH api_response AS MATERIALIZED (
   SELECT
-    CASE WHEN CAST(@acs_year AS INTEGER) >= 2017 THEN '2017' ELSE '2007' END AS naics_year
-),
-api_response AS MATERIALIZED (
-  SELECT json
+    ROW_NUMBER() OVER () AS rn,
+    json
   FROM read_json_auto(
     'https://api.census.gov/data/' || CAST(@acs_year AS VARCHAR) || '/cbp'
-    || '?get=EMP,NAICS' || (SELECT naics_year FROM naics_vintage)
+    || '?get=EMP,NAICS' || CASE WHEN CAST(@acs_year AS INTEGER) >= 2017 THEN '2017'
+    WHEN CAST(@acs_year AS INTEGER) >= 2012 THEN '2012'
+    ELSE '2007' END
     || '&for=county:*&in=state:' || @state_fips
     || CASE WHEN @county_fips <> '*' THEN '&for=county:' || @county_fips ELSE '' END
     || CASE WHEN @census_api_key <> '' THEN '&key=' || @census_api_key ELSE '' END,
     format = 'array'
   )
-),
-numbered AS (
-  SELECT
-    ROW_NUMBER() OVER () AS rn,
-    json
-  FROM api_response
 )
 SELECT
   CAST(@acs_year AS INTEGER) AS year,
@@ -51,5 +42,5 @@ SELECT
   TRIM(json[2]::VARCHAR) AS naics_code,
   json[3]::VARCHAR AS state,
   json[4]::VARCHAR AS county
-FROM numbered
+FROM api_response
 WHERE rn > 1;  -- skip header row

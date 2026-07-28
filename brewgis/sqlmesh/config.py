@@ -287,6 +287,7 @@ def config_factory(**variables):
                         "allow_asterisks_in_http_paths": True,
                         "httpfs_connection_caching": True,
                         "http_retry_wait_ms": 1000,
+                        "unsafe_disable_etag_checks": True,
                     },
                     secrets=[
                         {
@@ -512,4 +513,34 @@ def config_factory(**variables):
     )
 
 
-config = config_factory()
+# sacog defaults for now, until we get blueprinting in place
+STATE_FIPS = "06"
+SACOG_COUNTIES = ["067", "005", "017", "061"]  # Sacramento, Amador, El Dorado, Placer
+# Vintage data years matching the SACOG v1 reference (2008-2012 era)
+ACS_YEAR = 2013  # ACS 5-year 2009-2013 (earliest with block group API support)
+LOCAL_SRID = 3310
+
+config = config_factory(
+    parcel_table="brewgis.comparison.sacog_parcel_shim",
+    local_srid=LOCAL_SRID,
+    acs_year=ACS_YEAR,
+    state_fips=STATE_FIPS,
+    county_fips=",".join(SACOG_COUNTIES),
+    cbp_county_emp_agriculture=195,
+    cbp_county_emp_extraction=168,
+    cbp_county_emp_construction=34731,
+    cbp_county_emp_manufacturing=23768,
+    cbp_county_emp_transport_warehousing=10494,
+    cbp_county_emp_utilities=1894,
+    cbp_county_emp_wholesale=21107,
+    cbp_county_emp_retail_services=63192,
+    cbp_county_emp_office_services=103310,
+    cbp_county_emp_education=8385,
+    cbp_county_emp_medical_services=70577,
+    cbp_county_emp_arts_entertainment=7794,
+    cbp_county_emp_accommodation=4267,
+    cbp_county_emp_restaurant=42351,
+    cbp_county_emp_other_services=61210,
+    cbp_county_emp_public_admin=0,
+    cbp_preserve_fraction=0.5,
+)
