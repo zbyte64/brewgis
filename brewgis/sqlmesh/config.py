@@ -382,10 +382,9 @@ def config_factory(**variables):
                 "theme=transportation/type=segment/*.parquet"
             ),
             # ---- NLCD DuckDB raster models ----
-            # Paths to locally-cached NLCD GeoTIFFs (downloaded by management
-            # command / dlt pipeline before SQLMesh plan runs).
-            "nlcd_land_cover_raster_path": ("/app/planning/nlcd/nlcd_land_cover.tif"),
-            "nlcd_tree_canopy_raster_path": ("/app/planning/nlcd/nlcd_tree_canopy.tif"),
+            # NLCD land cover and tree canopy year for WCS coverage IDs.
+            "nlcd_land_cover_year": 2021,
+            "nlcd_tree_canopy_year": 2016,
             # PostGIS parcel table (accessible via DuckDB postgres_scanner
             # as brewgis.<schema>.<table>) with geometry in EPSG:3310.
             "nlcd_parcel_source": "brewgis.public.sacog_comparison_parcels",  #'"brewgis"."public"."sacog_comparison_parcels"',

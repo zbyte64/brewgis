@@ -279,17 +279,6 @@ class Command(BaseCommand):
             force_data_reload,
         )
 
-        # ── Step 10: NLCD + tree canopy (opt-in) ───────────────────────
-        if nlcd:
-            self._run_step(
-                "NLCD land cover + tree canopy",
-                self._populate_nlcd,
-                force_data_fetch,
-                force_data_reload,
-            )
-        else:
-            self.stdout.write("  [SKIP] NLCD (not enabled)")
-
         # ── Step 11: OSM intersection density (opt-in) ────────────────
         if osm:
             self._run_step(
@@ -617,34 +606,6 @@ class Command(BaseCommand):
             STATE_FIPS, COUNTY_FIPS, LEHD_YEAR, force_reload=force_data_reload
         )
         self.stdout.write(f"  LEHD wac_block populated: {lehd_wac_count:,} rows")
-
-    def _populate_nlcd(
-        self,
-        force_data_fetch: bool,
-        force_data_reload: bool,  # noqa: ARG002
-    ) -> None:
-        from brewgis.workspace.dlt_pipelines.nlcd import _compute_bbox
-        from brewgis.workspace.services.nlcd_fetcher import ensure_raster_cached
-
-        self.stdout.write("\n  -- NLCD rasters (DuckDB raster pattern) --")
-
-        parcel_bbox = _compute_bbox("fresno_parcels", WORKSPACE_SCHEMA)
-        if parcel_bbox is None:
-            self.stdout.write(
-                self.style.WARNING("  No parcel geometry — skipping NLCD download")
-            )
-            return
-
-        lc_path, tc_path = ensure_raster_cached(
-            parcel_bbox,
-            land_cover_year=2021,
-            tree_canopy_year=2016,
-            refresh_cache=force_data_fetch,
-            source_crs="EPSG:4326",
-        )
-        self.stdout.write(f"  Land cover raster cached at {lc_path}")
-        if tc_path:
-            self.stdout.write(f"  Tree canopy raster cached at {tc_path}")
 
     def _populate_osm(
         self,

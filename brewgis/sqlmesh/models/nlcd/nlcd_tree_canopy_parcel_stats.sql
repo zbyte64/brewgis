@@ -21,10 +21,38 @@ MODEL (
 -- at 30m resolution.  The WCS coverage stores values as UTINYINT
 -- (0-254 range, where 255 = NoData).
 --
+-- The GeoTIFF URL is computed dynamically from the parcel bbox and
+-- fetched via httpfs with cache_httpfs handling on-disk caching.
+--
 -- Depends on:
---   - @nlcd_tree_canopy_raster_path: local cached GeoTIFF
 --   - @nlcd_parcel_source: PostGIS parcel table with geometry in
 --     EPSG:@nlcd_parcel_srid
+
+-- pre_statements
+  SET VARIABLE nlcd_tree_canopy_url = (
+    SELECT
+      'https://www.mrlc.gov/geoserver/wcs?service=WCS&version=2.0.1&request=GetCoverage'
+      || '&CoverageId=mrlc_download__nlcd_tcc_conus_' || @nlcd_tree_canopy_year || '_v2021-4'
+      || '&subset=X(' || west || ',' || east || ')'
+      || '&subset=Y(' || south || ',' || north || ')'
+      || '&format=image/geotiff'
+    FROM (
+      SELECT
+        ST_XMin(ST_Extent(xf.geom_5070)) AS west,
+        ST_YMin(ST_Extent(xf.geom_5070)) AS south,
+        ST_XMax(ST_Extent(xf.geom_5070)) AS east,
+        ST_YMax(ST_Extent(xf.geom_5070)) AS north
+      FROM (
+        SELECT ST_Transform(
+          ST_SetCRS(geometry, 'EPSG:' || @nlcd_parcel_srid),
+          'EPSG:5070'
+        ) AS geom_5070
+        FROM @nlcd_parcel_source
+        WHERE geometry IS NOT NULL
+        LIMIT 1
+      ) xf
+    )
+  );
 
 WITH
 -- Read NLCD Tree Canopy pixels from the cached GeoTIFF.
@@ -35,7 +63,7 @@ tcc_pixels AS (
         y,
         geometry AS geom_5070,
         band_1 AS canopy_pct  -- UTINYINT 0-100, 255=NoData
-    FROM RT_ReadCells(@nlcd_tree_canopy_raster_path)
+    FROM RT_ReadCells(getvariable('nlcd_tree_canopy_url'))
     WHERE band_1 != 255 AND band_1 IS NOT NULL
 ),
 

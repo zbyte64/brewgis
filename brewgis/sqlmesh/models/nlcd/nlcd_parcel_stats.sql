@@ -13,21 +13,44 @@ MODEL (
 
 -- NLCD Parcel Statistics Model (DuckDB raster extension)
 --
--- Reads the NLCD land cover GeoTIFF raster directly via DuckDB's
--- RT_ReadCells (powered by GDAL/raster extension), spatially joins
--- each pixel to its parcel, and computes per-parcel:
+-- Reads the NLCD land cover GeoTIFF raster directly from the MRLC WCS
+-- endpoint via DuckDB's RT_ReadCells (powered by GDAL/raster extension),
+-- spatially joins each pixel to its parcel, and computes per-parcel:
 --   - land_development_category (majority NLCD class mapped to label)
 --   - impervious_fraction (weighted average of impervious factors)
 --
--- The GeoTIFF must be cached at @nlcd_land_cover_raster_path by the
--- caller (management command or dlt pipeline) *before* this model
--- runs.  The WCS endpoint provides a county-sized subset (~1-10M
--- pixels) that fits comfortably in DuckDB memory.
+-- The GeoTIFF URL is computed dynamically from the parcel bbox and
+-- fetched via httpfs with cache_httpfs handling on-disk caching.
 --
 -- Depends on:
---   - @nlcd_land_cover_raster_path: local cached GeoTIFF
 --   - @nlcd_parcel_source: PostGIS parcel table with geometry in
 --     EPSG:@nlcd_parcel_srid (e.g. public.sacog_comparison_parcels)
+
+-- pre_statements
+  SET VARIABLE nlcd_land_cover_url = (
+    SELECT
+      'https://www.mrlc.gov/geoserver/wcs?service=WCS&version=2.0.1&request=GetCoverage'
+      || '&CoverageId=mrlc_download__NLCD_' || @nlcd_land_cover_year || '_Land_Cover_L48'
+      || '&subset=X(' || west || ',' || east || ')'
+      || '&subset=Y(' || south || ',' || north || ')'
+      || '&format=image/geotiff'
+    FROM (
+      SELECT
+        ST_XMin(ST_Extent(xf.geom_5070)) AS west,
+        ST_YMin(ST_Extent(xf.geom_5070)) AS south,
+        ST_XMax(ST_Extent(xf.geom_5070)) AS east,
+        ST_YMax(ST_Extent(xf.geom_5070)) AS north
+      FROM (
+        SELECT ST_Transform(
+          ST_SetCRS(geometry, 'EPSG:' || @nlcd_parcel_srid),
+          'EPSG:5070'
+        ) AS geom_5070
+        FROM @nlcd_parcel_source
+        WHERE geometry IS NOT NULL
+        LIMIT 1
+      ) xf
+    )
+  );
 
 WITH
 -- Read NLCD raster pixels from the cached GeoTIFF.
@@ -39,7 +62,7 @@ nlcd_pixels AS (
         y,
         geometry AS geom_5070,
         band_1::INTEGER AS nlcd_class
-    FROM RT_ReadCells(@nlcd_land_cover_raster_path)
+    FROM RT_ReadCells(getvariable('nlcd_land_cover_url'))
     WHERE band_1 != 0  -- NoData / background
 ),
 
