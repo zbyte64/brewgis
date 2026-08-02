@@ -127,6 +127,14 @@ coverage:  ## Run tests with coverage report and fail if below threshold
 sqlmesh-clean:  ## Drop all SQLMesh snapshots and start fresh
 	$(COMPOSE_RUN) sqlmesh -p brewgis/sqlmesh/ clean
 
+.PHONY: sqlmesh-janitor
+sqlmesh-janitor:
+	$(COMPOSE_RUN) sqlmesh -p brewgis/sqlmesh/ janitor --ignore-ttl
+
+.PHONY: sqlmesh-destroy
+sqlmesh-destroy:
+	$(COMPOSE_RUN) sqlmesh -p brewgis/sqlmesh/ destroy
+
 .PHONY: sqlmesh-migrate
 sqlmesh-migrate:  ## Run SQLMesh migration (migrate state database schema)
 	$(COMPOSE_RUN) sqlmesh -p brewgis/sqlmesh/ migrate
@@ -145,7 +153,7 @@ lint:  ## Run Ruff linter
 
 .PHONY: lint-sql
 lint-sql:  ## Run SQLMesh linter on SQL models
-	$(COMPOSE_RUN) bash -c 'DATABASE_URL="postgres://$${POSTGRES_USER}:$${POSTGRES_PASSWORD}@$${POSTGRES_HOST}:$${POSTGRES_PORT}/$${POSTGRES_DB}" PYTHONPATH=/app DJANGO_SETTINGS_MODULE=config.settings sqlmesh -p brewgis/sqlmesh/ lint'
+	$(COMPOSE_RUN) bash -c 'DATABASE_URL="postgres://$${POSTGRES_USER}:$${POSTGRES_PASSWORD}@$${POSTGRES_HOST}:$${POSTGRES_PORT}/$${POSTGRES_DB}" PYTHONPATH=/app DJANGO_SETTINGS_MODULE=brewgis.config.settings sqlmesh -p brewgis/sqlmesh/ lint'
 
 .PHONY: lint-sqlmesh-perf
 lint-sqlmesh-perf:  ## Run EXPLAIN audit on SQLMesh models
