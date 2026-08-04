@@ -18,7 +18,7 @@ SELECT
     ELSE 'bt__low_density_detached_residential'
   END AS expected_bft
 FROM @this_model t2
-JOIN brewgis.assessor.sacog_assessor_parcels ap ON t2.apn = ap.apn
+JOIN brewgis.sacog.assessor_parcels ap ON t2.apn = ap.apn
 WHERE t2.built_form_key IN ('bt__medium_density_detached_residential', 'bt__low_density_detached_residential')
   AND LEFT(COALESCE(ap.landuse, ''), 2) NOT IN ('A2', 'AT')
   AND (

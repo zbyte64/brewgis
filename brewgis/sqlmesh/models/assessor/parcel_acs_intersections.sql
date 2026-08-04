@@ -31,7 +31,7 @@ SELECT
         sap.local_geometry,
         a.geometry
     )) AS intersect_area_sqft
-FROM brewgis.assessor.sacog_assessor_parcels sap
+FROM brewgis.sacog.assessor_parcels sap
 JOIN brewgis.assessor.acs_block_group_projected a
     ON ST_Intersects(sap.local_geometry, a.geometry);
 

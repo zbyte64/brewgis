@@ -1,5 +1,5 @@
 MODEL (
-  name brewgis.assessor.parcel_block_groups,
+  name brewgis.@{region}.parcel_block_groups,
   kind INCREMENTAL_BY_UNIQUE_KEY (
     unique_key (apn, data_year),
     batch_size 50000
@@ -10,6 +10,10 @@ MODEL (
   ),
   depends_on (
     brewgis.staging._tiger_block_groups_raw
+  ),
+  blueprints (
+    (region := sacog),
+    (region := fresno)
   )
 );
 
@@ -37,7 +41,7 @@ SELECT
     make_date(@tiger_vintage::int, 1, 1) AS data_year,
     tbg.geoid AS block_group_geoid,
     LEFT(tbg.geoid, 11) AS tract_geoid
-FROM brewgis.assessor.sacog_assessor_parcels sap
+FROM brewgis.@{region}.assessor_parcels sap
 CROSS JOIN LATERAL (
     SELECT tbg.geoid
     FROM brewgis.staging.tiger_block_groups tbg
@@ -47,6 +51,6 @@ CROSS JOIN LATERAL (
 ) tbg;
 
 -- post_statements
-  CREATE INDEX IF NOT EXISTS idx_parcel_block_groups_apn_@snapshot_hash
+  CREATE INDEX IF NOT EXISTS idx_@{region}_parcel_block_groups_apn_@snapshot_hash
   ON @this_model USING btree (apn);
 ANALYZE @this_model;

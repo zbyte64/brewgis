@@ -1,5 +1,5 @@
 MODEL (
-  name brewgis.assessor.parcel_building_footprints,
+  name brewgis.@{region}.parcel_building_footprints,
   kind INCREMENTAL_BY_UNIQUE_KEY (
     unique_key (apn),
     batch_size 100000
@@ -11,6 +11,10 @@ MODEL (
     assert_overture_class_commercial,
     assert_overture_class_industrial,
     assert_overture_mixed_use_split
+  ),
+  blueprints (
+    (region := sacog),
+    (region := fresno)
   )
 );
 
@@ -88,7 +92,7 @@ WITH building_stats AS (
                 ELSE 0
             END * bwa.overlap_ratio
         )::double precision AS overture_other_sqft
-    FROM brewgis.assessor.sacog_assessor_parcels sap
+    FROM brewgis.@{region}.assessor_parcels sap
     CROSS JOIN LATERAL (
         SELECT
             b.*,
@@ -98,7 +102,7 @@ WITH building_stats AS (
                 ELSE ST_Area(ST_Intersection(sap.local_geometry, b.local_geometry))
                      / NULLIF(ST_Area(b.local_geometry), 0)
             END AS overlap_ratio
-        FROM brewgis.staging.buildings_combined_pg b
+        FROM brewgis.@{region}.buildings_combined_pg b
         WHERE sap.local_geometry && b.local_geometry
           AND ST_Intersects(sap.local_geometry, b.local_geometry)
     ) bwa
@@ -132,14 +136,14 @@ SELECT
         ELSE 0
     END AS footprint_ratio,
     sap.land_development_category
-FROM brewgis.assessor.sacog_assessor_parcels sap
+FROM brewgis.@{region}.assessor_parcels sap
 LEFT JOIN building_stats bs ON sap.apn = bs.apn;
 
 -- post_statements
-  CREATE INDEX IF NOT EXISTS idx_parcel_building_footprints_geometry_@snapshot_hash
+  CREATE INDEX IF NOT EXISTS idx_@{region}_parcel_building_footprints_geometry_@snapshot_hash
   ON @this_model USING GIST (geometry);
-  CREATE INDEX IF NOT EXISTS idx_parcel_building_footprints_apn_@snapshot_hash
+  CREATE INDEX IF NOT EXISTS idx_@{region}_parcel_building_footprints_apn_@snapshot_hash
   ON @this_model USING btree (apn);
-  CREATE INDEX IF NOT EXISTS idx_parcel_building_footprints_footprint_ratio_@snapshot_hash
+  CREATE INDEX IF NOT EXISTS idx_@{region}_parcel_building_footprints_fp_ratio_@snapshot_hash
   ON @this_model USING btree (footprint_ratio);
 ANALYZE @this_model;

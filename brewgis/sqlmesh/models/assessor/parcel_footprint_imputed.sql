@@ -1,5 +1,5 @@
 MODEL (
-  name brewgis.assessor.parcel_footprint_imputed,
+  name brewgis.@{region}.parcel_footprint_imputed,
   kind INCREMENTAL_BY_UNIQUE_KEY (
     unique_key (apn),
     batch_size 100000
@@ -7,6 +7,10 @@ MODEL (
   audits (
     not_null(columns := (apn)),
     unique_values(columns := (apn,))
+  ),
+  blueprints (
+    (region := sacog),
+    (region := fresno)
   )
 );
 
@@ -28,7 +32,7 @@ WITH
 -- Latest block group assignment per APN
 latest_block_groups AS (
     SELECT DISTINCT ON (apn) *
-    FROM brewgis.assessor.parcel_block_groups
+    FROM brewgis.@{region}.parcel_block_groups
     ORDER BY apn, data_year DESC
 ),
 
@@ -43,9 +47,9 @@ unknown AS (
         pbf.land_development_category,
         pbg.block_group_geoid,
         pbg.tract_geoid
-    FROM brewgis.assessor.parcel_building_footprints pbf
+    FROM brewgis.@{region}.parcel_building_footprints pbf
     JOIN latest_block_groups pbg ON pbf.apn = pbg.apn
-    LEFT JOIN brewgis.assessor.parcel_sales_features k ON pbf.apn = k.apn
+    LEFT JOIN brewgis.@{region}.parcel_sales_features k ON pbf.apn = k.apn
     WHERE pbf.footprint_ratio > 0
       AND k.apn IS NULL
 ),
@@ -61,7 +65,7 @@ partition_stats AS (
         AVG(k.footprint_ratio) AS m_fr,
         AVG(k.building_count) AS m_bc,
         AVG(k.lot_size_acres) AS m_ls
-    FROM brewgis.assessor.parcel_sales_features k
+    FROM brewgis.@{region}.parcel_sales_features k
     GROUP BY k.block_group_geoid, k.land_development_category
 ),
 
@@ -76,7 +80,7 @@ tract_stats AS (
         AVG(k.footprint_ratio) AS m_fr,
         AVG(k.building_count) AS m_bc,
         AVG(k.lot_size_acres) AS m_ls
-    FROM brewgis.assessor.parcel_sales_features k
+    FROM brewgis.@{region}.parcel_sales_features k
     GROUP BY k.tract_geoid, k.land_development_category
 ),
 
@@ -90,7 +94,7 @@ county_stats AS (
         AVG(k.footprint_ratio) AS m_fr,
         AVG(k.building_count) AS m_bc,
         AVG(k.lot_size_acres) AS m_ls
-    FROM brewgis.assessor.parcel_sales_features k
+    FROM brewgis.@{region}.parcel_sales_features k
     GROUP BY k.land_development_category
 ),
 
@@ -128,7 +132,7 @@ tier1 AS (
     LEFT JOIN partition_stats ps
         ON u.block_group_geoid = ps.block_group_geoid
        AND u.land_development_category = ps.land_development_category
-    JOIN brewgis.assessor.parcel_sales_features k
+    JOIN brewgis.@{region}.parcel_sales_features k
         ON u.block_group_geoid = k.block_group_geoid
        AND u.land_development_category = k.land_development_category
        AND k.footprint_ratio BETWEEN
@@ -184,7 +188,7 @@ tier2 AS (
     LEFT JOIN tract_stats ts
         ON u.tract_geoid = ts.tract_geoid
        AND u.land_development_category = ts.land_development_category
-    JOIN brewgis.assessor.parcel_sales_features k
+    JOIN brewgis.@{region}.parcel_sales_features k
         ON u.tract_geoid = k.tract_geoid
        AND u.land_development_category = k.land_development_category
        AND k.footprint_ratio BETWEEN
@@ -240,7 +244,7 @@ tier3 AS (
     FROM unknown u
     LEFT JOIN county_stats cs
         ON u.land_development_category = cs.land_development_category
-    JOIN brewgis.assessor.parcel_sales_features k
+    JOIN brewgis.@{region}.parcel_sales_features k
         ON u.land_development_category = k.land_development_category
        AND ST_DWithin(u.geometry, k.geometry, 5000)
        AND k.footprint_ratio BETWEEN
@@ -310,10 +314,10 @@ SELECT
     i.imputed_building_sqft,
     i.imputed_from_tier,
     i.neighbor_count
-FROM brewgis.assessor.parcel_building_footprints pbf
+FROM brewgis.@{region}.parcel_building_footprints pbf
 LEFT JOIN latest_block_groups pbg ON pbf.apn = pbg.apn
 JOIN imputed i ON pbf.apn = i.apn;
 
 -- post_statements
-  CREATE INDEX IF NOT EXISTS idx_parcel_footprint_imputed_apn_@snapshot_hash
+  CREATE INDEX IF NOT EXISTS idx_@{region}_parcel_footprint_imputed_apn_@snapshot_hash
   ON @this_model USING btree (apn);

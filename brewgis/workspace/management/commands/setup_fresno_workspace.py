@@ -583,13 +583,10 @@ class Command(BaseCommand):
         force_data_fetch: bool,
         force_data_reload: bool,  # noqa: ARG002
     ) -> None:
-        self.stdout.write("  Census PDB: materializing via SQLMesh bridge model")
-        run_sqlmesh_plan(
-            "prod",
-            select=["+brewgis.staging.pdb_bridge"],
-            variables={"state_fips": STATE_FIPS, "county_fips": COUNTY_FIPS},
-            no_prompts=True,
-        )
+        # Census PDB staging is not consumed by the base canvas chain — the
+        # blueprinted plan resolves only models downstream of parcel_shim, so
+        # there is no separate pdb_bridge materialization step.
+        self.stdout.write("  Census PDB: not needed by the base canvas chain, skipping")
 
     def _populate_lehd(
         self,
@@ -642,42 +639,20 @@ class Command(BaseCommand):
     ) -> None:
         """Run the consolidated SQLMesh plan with Fresno-specific selectors and variables."""
 
-        # Core Fresno models + regressors (no DuckDB dependency)
+        # The blueprinted pipeline resolves everything downstream of
+        # parcel_shim automatically (adapters → dasymetric chain → regressors
+        # → base canvas) — no per-model Fresno selectors needed.
         model_selectors: list[str] = [
             "+brewgis.fresno.parcel_shim",
-            "+brewgis.fresno.dasymetric_weights",
-            "+brewgis.fresno.dasymetric_intersections",
-            "+brewgis.fresno.du_estimation",
-            "+brewgis.fresno.du_regressor",
-            "+brewgis.fresno.sqft_regressor",
-            "+brewgis.fresno.emp_ratios_regressor",
-            "+brewgis.fresno.comparison_dasymetric",
             "+brewgis.staging.census_2020_block",
             "+brewgis.base_canvas.base_canvas_reconciled",
         ]
-        if overture:
-            # DuckDB-dependent: ResNet features (needs DuckDB for Parquet reads)
-            model_selectors.extend(
-                [
-                    "+brewgis.fresno.parcel_resnet_features",
-                ]
-            )
         if nlcd:
             model_selectors.extend(
                 [
                     "+brewgis.nlcd.parcels_wm",
                     "+brewgis.nlcd.nlcd_parcel_stats",
                     "+brewgis.nlcd.nlcd_tree_canopy_parcel_stats",
-                ]
-            )
-        if overture:
-            # Overture transport for Fresno intersection density
-            # Reads from PostgreSQL bridge (already materialized), not DuckDB
-            model_selectors.extend(
-                [
-                    "+brewgis.staging.overture_transport",
-                    "+brewgis.fresno.overture_intersection_points",
-                    "+brewgis.fresno.overture_intersection_density",
                 ]
             )
         if osm:
@@ -687,62 +662,16 @@ class Command(BaseCommand):
                 ]
             )
 
-        # Default CBP employment controls: 0 (use LEHD block-level allocation
-        # without county-level control totals). Users can override via --cbp-employment.
-        plan_vars: dict[str, object] = {
-            "parcel_table": "brewgis.fresno.parcel_shim",
-            "dasymetric_source": "brewgis.fresno.comparison_dasymetric",
-            "local_srid": LOCAL_SRID,
-            "acs_year": BASE_YEAR,
-            "state_fips": STATE_FIPS,
-            "county_fips": COUNTY_FIPS,
-            # CBP county-level employment controls default to 0 (Fresno County, 2021)
-            # Use --cbp-employment to set from Census CBP API
-            "cbp_county_emp_agriculture": cbp_vars.get("cbp_county_emp_agriculture", 0),
-            "cbp_county_emp_extraction": cbp_vars.get("cbp_county_emp_extraction", 0),
-            "cbp_county_emp_construction": cbp_vars.get(
-                "cbp_county_emp_construction", 0
-            ),
-            "cbp_county_emp_manufacturing": cbp_vars.get(
-                "cbp_county_emp_manufacturing", 0
-            ),
-            "cbp_county_emp_transport_warehousing": cbp_vars.get(
-                "cbp_county_emp_transport_warehousing", 0
-            ),
-            "cbp_county_emp_utilities": cbp_vars.get("cbp_county_emp_utilities", 0),
-            "cbp_county_emp_wholesale": cbp_vars.get("cbp_county_emp_wholesale", 0),
-            "cbp_county_emp_retail_services": cbp_vars.get(
-                "cbp_county_emp_retail_services", 0
-            ),
-            "cbp_county_emp_office_services": cbp_vars.get(
-                "cbp_county_emp_office_services", 0
-            ),
-            "cbp_county_emp_education": cbp_vars.get("cbp_county_emp_education", 0),
-            "cbp_county_emp_medical_services": cbp_vars.get(
-                "cbp_county_emp_medical_services", 0
-            ),
-            "cbp_county_emp_arts_entertainment": cbp_vars.get(
-                "cbp_county_emp_arts_entertainment", 0
-            ),
-            "cbp_county_emp_accommodation": cbp_vars.get(
-                "cbp_county_emp_accommodation", 0
-            ),
-            "cbp_county_emp_restaurant": cbp_vars.get("cbp_county_emp_restaurant", 0),
-            "cbp_county_emp_other_services": cbp_vars.get(
-                "cbp_county_emp_other_services", 0
-            ),
-            "cbp_county_emp_public_admin": cbp_vars.get(
-                "cbp_county_emp_public_admin", 0
-            ),
-            "cbp_preserve_fraction": 0.5,
-        }
-        if overture:
-            plan_vars["osm_intersection_table"] = "fresno_intersection_density"
-            # Fresno bounding box for Overture transport downloads
-            plan_vars["overture_bbox_min_x"] = MIN_LNG
-            plan_vars["overture_bbox_max_x"] = MAX_LNG
-            plan_vars["overture_bbox_min_y"] = MIN_LAT
-            plan_vars["overture_bbox_max_y"] = MAX_LAT
+        from brewgis.sqlmesh.config import REGIONS
+
+        # Region parameters come from the central REGIONS config; only the
+        # blueprinted pipeline entry points differ from the shared defaults.
+        # CBP employment controls default to 0 (no county totals for Fresno);
+        # users can override via --cbp-employment.
+        plan_vars: dict[str, object] = dict(REGIONS["fresno"])
+        plan_vars.update(cbp_vars)
+        plan_vars["parcel_table"] = "brewgis.fresno.parcel_shim"
+        plan_vars["dasymetric_source"] = "brewgis.fresno.comparison_dasymetric"
 
         self.stdout.write("  SQLMesh plan variables configured")
         if cbp_vars:

@@ -14,7 +14,7 @@ SELECT
     ELSE 'bt__low_density_detached_residential'
   END AS expected_bft
 FROM @this_model t1
-JOIN brewgis.assessor.sacog_assessor_sales_deduped sd ON t1.apn = sd.apn
+JOIN brewgis.sacog.assessor_sales_deduped sd ON t1.apn = sd.apn
 WHERE (sd.property_type IN ('SFR', 'Single Family Residence') OR sd.property_type LIKE 'Single Family%')
   AND (
     (COALESCE(sd.sales_lot_size_acres, 0) < 0.15 AND t1.built_form_key != 'bt__medium_density_detached_residential')

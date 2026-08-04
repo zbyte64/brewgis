@@ -10,9 +10,10 @@ MODEL (
     assert_industrial_sectors_use_industrial_sqft
   ),
   depends_on (
+    brewgis.sacog.comparison_dasymetric,
     brewgis.fresno.comparison_dasymetric,
     brewgis.seeds.assessor_use_codes,
-    @VAR('dasymetric_source', 'brewgis.comparison.sacog_dasymetric')
+    @VAR('dasymetric_source', 'brewgis.sacog.comparison_dasymetric')
   )
 );
 
@@ -97,7 +98,7 @@ parcel_geom AS (
         scd.emp_ind_per_acre     AS emp_ind_per_acre_regressor,
         scd.emp_ag_per_acre      AS emp_ag_per_acre_regressor
     FROM brewgis.base_canvas.base_canvas_geometry bg
-    LEFT JOIN @VAR('dasymetric_source', 'brewgis.comparison.sacog_dasymetric') scd ON bg.parcel_id = scd.parcel_id
+    LEFT JOIN @VAR('dasymetric_source', 'brewgis.sacog.comparison_dasymetric') scd ON bg.parcel_id = scd.parcel_id
 ),
 
 -- ── Step 1: Demographics — DU-weighted Census block allocation ──────────────

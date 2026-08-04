@@ -20,8 +20,8 @@ SELECT
     ELSE 'bt__low_density_detached_residential'
   END AS tier0_classification
 FROM @this_model t4
-JOIN brewgis.assessor.sacog_assessor_parcels ap ON t4.apn = ap.apn
-LEFT JOIN brewgis.assessor.overture_intersection_density id ON t4.apn = id.apn
+JOIN brewgis.sacog.assessor_parcels ap ON t4.apn = ap.apn
+LEFT JOIN brewgis.sacog.overture_intersection_density id ON t4.apn = id.apn
 WHERE t4.built_form_key IN ('bt__medium_density_detached_residential', 'bt__low_density_detached_residential')
   AND (
     (t4.built_form_key = 'bt__medium_density_detached_residential'

@@ -1,5 +1,5 @@
 MODEL (
-  name brewgis.assessor.authoritative_residential_area,
+  name brewgis.@{region}.authoritative_residential_area,
   kind INCREMENTAL_BY_UNIQUE_KEY (
     unique_key (apn),
     batch_size 100000
@@ -7,6 +7,10 @@ MODEL (
   audits (
     not_null(columns := (apn)),
     unique_values(columns := (apn,))
+  ),
+  blueprints (
+    (region := sacog),
+    (region := fresno)
   )
 );
 
@@ -35,8 +39,8 @@ WITH sales_data AS (
         apn,
         actual_living_sqft,
         actual_building_sqft
-    FROM brewgis.assessor.sacog_assessor_sales_deduped
-    WHERE apn IN (SELECT apn FROM brewgis.assessor.parcel_building_footprints)
+    FROM brewgis.@{region}.assessor_sales_deduped
+    WHERE apn IN (SELECT apn FROM brewgis.@{region}.parcel_building_footprints)
 ),
 
 -- k-NN imputed values from parcel_footprint_imputed
@@ -45,7 +49,7 @@ footprint_imputed AS (
         apn,
         imputed_living_sqft AS footprint_imputed_living_sqft,
         imputed_building_sqft AS footprint_imputed_building_sqft
-    FROM brewgis.assessor.parcel_footprint_imputed
+    FROM brewgis.@{region}.parcel_footprint_imputed
 ),
 
 assembled AS (
@@ -58,7 +62,7 @@ assembled AS (
         sd.actual_building_sqft,
         fi.footprint_imputed_living_sqft,
         fi.footprint_imputed_building_sqft
-    FROM brewgis.assessor.parcel_building_footprints pbf
+    FROM brewgis.@{region}.parcel_building_footprints pbf
     LEFT JOIN sales_data sd ON pbf.apn = sd.apn
     LEFT JOIN footprint_imputed fi ON pbf.apn = fi.apn
 )
@@ -113,6 +117,6 @@ SELECT
 FROM assembled;
 
 -- post_statements
-  CREATE INDEX IF NOT EXISTS idx_authoritative_residential_area_apn_@snapshot_hash
+  CREATE INDEX IF NOT EXISTS idx_@{region}_authoritative_residential_area_apn_@snapshot_hash
   ON @this_model USING btree (apn);
 ANALYZE @this_model;

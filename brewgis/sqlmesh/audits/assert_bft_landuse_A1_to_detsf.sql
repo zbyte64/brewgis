@@ -17,8 +17,8 @@ SELECT
     ELSE 'bt__low_density_detached_residential'
   END AS expected_bft
 FROM @this_model t0
-JOIN brewgis.assessor.sacog_assessor_parcels ap ON t0.apn = ap.apn
-LEFT JOIN brewgis.assessor.overture_intersection_density id ON t0.apn = id.apn
+JOIN brewgis.sacog.assessor_parcels ap ON t0.apn = ap.apn
+LEFT JOIN brewgis.sacog.overture_intersection_density id ON t0.apn = id.apn
 WHERE ap.landuse LIKE 'A1%'
   AND COALESCE(NULLIF(ap.lot_size_acres, 0), 0.01) >= 0.08
   AND (

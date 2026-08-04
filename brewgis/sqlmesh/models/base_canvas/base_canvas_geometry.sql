@@ -12,11 +12,13 @@ MODEL (
   -- to build the parcel_shim before this model regardless of which
   -- @parcel_table / @dasymetric_source variables point to.
   depends_on (
+    brewgis.sacog.parcel_shim,
+    brewgis.sacog.comparison_dasymetric,
     brewgis.fresno.parcel_shim,
     brewgis.fresno.comparison_dasymetric,
     brewgis.seeds.assessor_use_codes,
     @parcel_table,
-    @VAR('dasymetric_source', 'brewgis.comparison.sacog_dasymetric')
+    @VAR('dasymetric_source', 'brewgis.sacog.comparison_dasymetric')
   )
 );
 
@@ -122,7 +124,7 @@ dasymetric_enrichment AS (
         bldg_area_medical_services,
         bldg_area_transport_warehousing,
         bldg_area_wholesale
-    FROM @VAR('dasymetric_source', 'brewgis.comparison.sacog_dasymetric')
+    FROM @VAR('dasymetric_source', 'brewgis.sacog.comparison_dasymetric')
 )
 
 SELECT

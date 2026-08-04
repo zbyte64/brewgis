@@ -8,7 +8,7 @@ even when authoritative source data contains incoherent (negative) values.
 def test_emp_weight_non_negative_with_negative_authoritative(context):
     """Negative authoritative_non_residential_sqft → GREATEST(0, ...) clamps to 0"""
     result = context.evaluate(
-        "brewgis.assessor.parcel_dasymetric_weights",
+        "brewgis.sacog.parcel_dasymetric_weights",
         start="2024-01-01",
         end="2024-01-01",
         inputs={
@@ -39,7 +39,7 @@ def test_emp_weight_non_negative_with_negative_authoritative(context):
                     "intersection_density": 0.0,
                 }
             ],
-            "brewgis.assessor.authoritative_residential_area": [
+            "brewgis.sacog.authoritative_residential_area": [
                 {
                     "apn": "TEST_EMP_NEG",
                     "authoritative_residential_sqft": None,
@@ -65,7 +65,7 @@ def test_emp_weight_non_negative_with_negative_authoritative(context):
 def test_pop_weight_non_negative_with_negative_authoritative(context):
     """Negative authoritative_residential_sqft → GREATEST(0, ...) clamps to 0"""
     result = context.evaluate(
-        "brewgis.assessor.parcel_dasymetric_weights",
+        "brewgis.sacog.parcel_dasymetric_weights",
         start="2024-01-01",
         end="2024-01-01",
         inputs={
@@ -96,7 +96,7 @@ def test_pop_weight_non_negative_with_negative_authoritative(context):
                     "intersection_density": 0.0,
                 }
             ],
-            "brewgis.assessor.authoritative_residential_area": [
+            "brewgis.sacog.authoritative_residential_area": [
                 {
                     "apn": "TEST_POP_NEG",
                     "authoritative_residential_sqft": -200.0,
@@ -121,7 +121,7 @@ def test_pop_weight_non_negative_with_negative_authoritative(context):
 def test_emp_weight_positive_with_normal_data(context):
     """Normal positive data → emp_dasym_weight > 0"""
     result = context.evaluate(
-        "brewgis.assessor.parcel_dasymetric_weights",
+        "brewgis.sacog.parcel_dasymetric_weights",
         start="2024-01-01",
         end="2024-01-01",
         inputs={

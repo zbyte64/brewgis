@@ -1,5 +1,5 @@
 MODEL (
-  name brewgis.assessor.overture_intersection_points,
+  name brewgis.@{region}.overture_intersection_points,
   kind FULL,
   column_descriptions (
     geometry = "Intersection point (snapped to 10m grid) in local_srid (3310)",
@@ -10,6 +10,10 @@ MODEL (
     -- if that bridge produces <50000 rows, the intersection count drops
     -- below threshold and this audit fails.
     assert_row_count_between (min_rows := 50000, max_rows := 100000000)
+  ),
+  blueprints (
+    (region := sacog),
+    (region := fresno)
   )
 );
 
@@ -20,12 +24,13 @@ MODEL (
   CREATE INDEX IF NOT EXISTS idx_overture_transport_local_geometry_@snapshot_hash
   ON brewgis.staging.overture_transport USING GIST (local_geometry);
 
--- Overture Intersection Points — pre-computed road intersection point features
+-- Region Overture Intersection Points — pre-computed road intersection points
 -- with GiST index for performant ST_DWithin joins in intersection density.
 --
--- Extracts endpoints from driveable Overture road segments, snaps to a 10m
--- grid to deduplicate, and keeps only points with ≥3 incident segments
--- (true intersections).
+-- Identical logic for every region: extracts endpoints from driveable Overture
+-- road segments, snaps to a 10m grid to deduplicate, and keeps only points
+-- with ≥3 incident segments (true intersections). Reads from the PostgreSQL
+-- bridge table (already materialized from DuckDB).
 
 WITH driveable_segments AS (
     SELECT
@@ -60,6 +65,6 @@ FROM street_nodes
 WHERE street_count >= 3;
 
 -- post_statements
-  CREATE INDEX IF NOT EXISTS idx_overture_intersection_points_geometry_@snapshot_hash
+  CREATE INDEX IF NOT EXISTS idx_@{region}_intersection_points_geometry_@snapshot_hash
   ON @this_model USING GIST (geometry);
-ANALYZE @this_model;
+  ANALYZE @this_model;

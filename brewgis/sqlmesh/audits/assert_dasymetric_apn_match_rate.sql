@@ -10,7 +10,7 @@ AUDIT (
 WITH
 unmatched AS (
     SELECT COUNT(*) AS cnt
-    FROM brewgis.assessor.parcel_du_estimation de
+    FROM brewgis.sacog.parcel_du_estimation de
     WHERE de.du > 0
       AND de.land_development_category = 'urban'
       AND de.apn NOT IN (
@@ -19,7 +19,7 @@ unmatched AS (
 ),
 total AS (
     SELECT COUNT(*) AS cnt
-    FROM brewgis.assessor.parcel_du_estimation de
+    FROM brewgis.sacog.parcel_du_estimation de
     WHERE de.du > 0
       AND de.land_development_category = 'urban'
 )

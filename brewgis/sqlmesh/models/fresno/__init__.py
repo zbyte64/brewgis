@@ -1,1 +1,0 @@
-# Fresno Demo SQLMesh models

@@ -10,7 +10,7 @@ SELECT
 FROM @this AS m
 WHERE EXISTS (
   SELECT 1
-  FROM brewgis.assessor.parcel_building_footprints pbf
+  FROM brewgis.sacog.parcel_building_footprints pbf
   WHERE pbf.apn = m.apn
     AND pbf.footprint_ratio > 0
 )

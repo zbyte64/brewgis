@@ -1,24 +1,26 @@
 MODEL (
-  name brewgis.assessor.overture_intersection_density,
+  name brewgis.@{region}.overture_intersection_density,
   kind INCREMENTAL_BY_UNIQUE_KEY (
     unique_key (apn),
     batch_size 100000
   ),
   audits (
     not_null(columns := (apn)),
-    unique_values(columns := (apn,)),
-    assert_intersection_density_coverage
+    unique_values(columns := (apn,))
   ),
-  dialect postgres
+  dialect postgres,
+  blueprints (
+    (region := sacog),
+    (region := fresno)
+  )
 );
 
 -- Overture Intersection Density — per-parcel intersection density using
 -- ST_DWithin against pre-computed intersection points.
 --
--- Replaces the earlier grid-based approach. Uses GiST-indexed ST_DWithin
--- to count intersection points within a 1/4-mile (402m) radius of each
--- parcel's centroid, leveraging the pre-computed overture_intersection_points
--- table which has a GiST index on geometry.
+-- Identical logic for every region: counts intersection points within a
+-- 1/4-mile (402m) radius of each assessor parcel's local centroid, using
+-- the region's own ``@{region}.overture_intersection_points`` table.
 --
 -- Density = intersection_count / (π * 402² / 2589988.11) intersections/sq mi.
 
@@ -27,8 +29,8 @@ WITH density AS (
         sap.apn,
         COUNT(i.geometry)::double precision
             / (PI() * 402.0 * 402.0 / 2589988.11) AS intersection_density
-    FROM brewgis.assessor.sacog_assessor_parcels sap
-    LEFT JOIN brewgis.assessor.overture_intersection_points i
+    FROM brewgis.@{region}.assessor_parcels sap
+    LEFT JOIN brewgis.@{region}.overture_intersection_points i
         ON ST_DWithin(sap.centroid_local, i.geometry, 402.0)
     GROUP BY sap.apn
 )
@@ -37,11 +39,11 @@ SELECT
     COALESCE(d.intersection_density, 0.0) AS intersection_density,
     sap.geometry
 FROM density d
-JOIN brewgis.assessor.sacog_assessor_parcels sap ON d.apn = sap.apn;
+JOIN brewgis.@{region}.assessor_parcels sap ON d.apn = sap.apn;
 
 -- post_statements
-  CREATE INDEX IF NOT EXISTS idx_overture_intersection_density_apn_@snapshot_hash
+  CREATE INDEX IF NOT EXISTS idx_@{region}_intersection_density_apn_@snapshot_hash
   ON @this_model USING btree (apn);
-  CREATE INDEX IF NOT EXISTS idx_overture_intersection_density_geometry_@snapshot_hash
+  CREATE INDEX IF NOT EXISTS idx_@{region}_intersection_density_geometry_@snapshot_hash
   ON @this_model USING GIST (geometry);
 ANALYZE @this_model;

@@ -4,7 +4,7 @@
 def test_consolidated_parcel_has_positive_lot_size(context):
     """After consolidation, the output parcel has lot_size_acres > 0."""
     result = context.evaluate(
-        "brewgis.assessor.sacog_assessor_parcels",
+        "brewgis.sacog.assessor_parcels",
         start="2024-01-01",
         end="2024-01-01",
         inputs={

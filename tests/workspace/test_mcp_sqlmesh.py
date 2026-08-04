@@ -129,47 +129,47 @@ class TestResolveModelName:
     """Tests for _resolve_model_name fuzzy resolution."""
 
     models: dict[str, object] = {
-        "brewgis.assessor.parcel_dasymetric_weights": object(),
-        "brewgis.assessor.parcel_du_estimation": object(),
+        "brewgis.sacog.parcel_dasymetric_weights": object(),
+        "brewgis.sacog.parcel_du_estimation": object(),
         "brewgis.analysis.core_end_state": object(),
         "brewgis.analysis.core_increment": object(),
         "brewgis.staging.overture_land_use": object(),
-        "brewgis.comparison.sacog_parcel_shim": object(),
+        "brewgis.sacog.parcel_shim": object(),
     }
 
     def test_exact_fqn(self) -> None:
         """Exact FQN resolves correctly."""
         result = _resolve_model_name(
-            "brewgis.assessor.parcel_dasymetric_weights", self.models
+            "brewgis.sacog.parcel_dasymetric_weights", self.models
         )
-        assert result == "brewgis.assessor.parcel_dasymetric_weights"
+        assert result == "brewgis.sacog.parcel_dasymetric_weights"
 
     def test_quoted_fqn(self) -> None:
         """SQL-quoted FQN resolves correctly."""
         result = _resolve_model_name(
-            '"brewgis"."assessor"."parcel_dasymetric_weights"', self.models
+            '"brewgis"."sacog"."parcel_dasymetric_weights"', self.models
         )
-        assert result == "brewgis.assessor.parcel_dasymetric_weights"
+        assert result == "brewgis.sacog.parcel_dasymetric_weights"
 
     def test_short_name(self) -> None:
         """Bare model short name resolves correctly."""
         result = _resolve_model_name("parcel_dasymetric_weights", self.models)
-        assert result == "brewgis.assessor.parcel_dasymetric_weights"
+        assert result == "brewgis.sacog.parcel_dasymetric_weights"
 
     def test_two_part_name(self) -> None:
-        """Two-part name like 'assessor.parcel_dasymetric_weights' resolves."""
-        result = _resolve_model_name("assessor.parcel_dasymetric_weights", self.models)
-        assert result == "brewgis.assessor.parcel_dasymetric_weights"
+        """Two-part name like 'sacog.parcel_dasymetric_weights' resolves."""
+        result = _resolve_model_name("sacog.parcel_dasymetric_weights", self.models)
+        assert result == "brewgis.sacog.parcel_dasymetric_weights"
 
     def test_substring_match(self) -> None:
         """Substring that uniquely matches resolves correctly."""
-        result = _resolve_model_name("sacog_parcel_shim", self.models)
-        assert result == "brewgis.comparison.sacog_parcel_shim"
+        result = _resolve_model_name("sacog.parcel_shim", self.models)
+        assert result == "brewgis.sacog.parcel_shim"
 
     def test_case_insensitive_short_name(self) -> None:
         """Case-insensitive bare name resolves."""
         result = _resolve_model_name("PARCEL_DASYMETRIC_WEIGHTS", self.models)
-        assert result == "brewgis.assessor.parcel_dasymetric_weights"
+        assert result == "brewgis.sacog.parcel_dasymetric_weights"
 
     def test_not_found(self) -> None:
         """Non-existent name raises ModelNotResolvedError."""
@@ -195,12 +195,10 @@ class TestResolveModelName:
     def test_converts_dot_separated_to_sql_quoted(self) -> None:
         """Unquoted dot-separated FQN resolves via SQL-quoting conversion."""
         models = {
-            '"brewgis"."assessor"."parcel_dasymetric_weights"': object(),
+            '"brewgis"."sacog"."parcel_dasymetric_weights"': object(),
         }
-        result = _resolve_model_name(
-            "brewgis.assessor.parcel_dasymetric_weights", models
-        )
-        assert result == '"brewgis"."assessor"."parcel_dasymetric_weights"'
+        result = _resolve_model_name("brewgis.sacog.parcel_dasymetric_weights", models)
+        assert result == '"brewgis"."sacog"."parcel_dasymetric_weights"'
 
 
 class TestExtractPostStatementIndexes:
@@ -209,10 +207,10 @@ class TestExtractPostStatementIndexes:
     def test_parcel_dasymetric_weights(self) -> None:
         """Extracts CREATE INDEX statements from a known model file."""
         indexes = _extract_post_statement_indexes(
-            "brewgis.assessor.parcel_dasymetric_weights"
+            "brewgis.sacog.parcel_dasymetric_weights"
         )
         assert len(indexes) >= 2
-        assert any("idx_parcel_dasymetric_weights_apn" in idx for idx in indexes)
+        assert any("dasymetric_weights_apn" in idx for idx in indexes)
 
     def test_model_with_no_indexes(self) -> None:
         """Returns empty list for models with no post_statements."""

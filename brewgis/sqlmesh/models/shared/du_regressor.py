@@ -1,11 +1,15 @@
-"""Fresno DU Regressor — inference-only Python SQLMesh FULL model.
+"""Shared LightGBM DU Regressor — inference-only Python SQLMesh FULL model (blueprinted).
 
-Loads a pre-trained SACOG LightGBM model from filesystem cache, runs inference
-on Fresno parcels using features from ``fresno.dasymetric_weights``, and yields
-DU predictions.
+Loads the most recently trained SACOG LightGBM model from the filesystem
+cache and predicts per-parcel DU subtype breakdown for the region.
 
-No training phase.  A cache miss (no ``.pkl`` files in ``planning/lightgbm_cache/``)
-is a hard stop — raises ``RuntimeError``.
+- SACOG: training (``brewgis.assessor.parcel_du_regressor``) runs first in the
+  same plan via the conditional dependency, so the cache is always fresh.
+- Fresno: no training — the SACOG-trained cache is reused; a missing cache is
+  a hard stop (run compare_sacog_basemap first).
+
+Features are read uniformly from ``@{region}.parcel_dasymetric_weights``.
+No training logic, no region branching — only data availability differs.
 """
 
 from __future__ import annotations
@@ -14,12 +18,15 @@ import logging
 import os
 import pickle
 from collections.abc import Iterator  # noqa: TC003
-from pathlib import Path
 from typing import TYPE_CHECKING
 from typing import Any
 
+if TYPE_CHECKING:
+    from pathlib import Path
+
 import numpy as np
 import pandas as pd
+from sqlglot import exp
 from sqlmesh import model
 from sqlmesh.core.engine_adapter.postgres import PostgresEngineAdapter
 from sqlmesh.core.model.definition import ModelKindName
@@ -36,7 +43,7 @@ if TYPE_CHECKING:
 
 
 @model(
-    "brewgis.fresno.du_regressor",
+    "brewgis.@{region}.du_regressor",
     kind={"name": ModelKindName.FULL},
     columns={
         "apn": "text",
@@ -48,21 +55,27 @@ if TYPE_CHECKING:
         "du_total": "float",
     },
     audits=[
-        ("not_null", {"columns": ["apn"]}),
+        ("not_null", {"columns": [exp.to_column("apn")]}),
     ],
     depends_on=[
-        "brewgis.fresno.dasymetric_weights",
+        "brewgis.@{region}.parcel_dasymetric_weights",
+        "@IF(@train_model != '', brewgis.assessor.parcel_du_regressor, brewgis.@{region}.parcel_shim)",
+    ],
+    blueprints=[
+        {"region": "sacog", "train_model": "brewgis.assessor.parcel_du_regressor"},
+        {"region": "fresno", "train_model": ""},
     ],
 )
 def execute(
     context: ExecutionContext,
-    start: TimeLike,
-    end: TimeLike,
-    execution_time: TimeLike,
-    **kwargs: Any,
+    start: TimeLike,  # noqa: ARG001
+    end: TimeLike,  # noqa: ARG001
+    execution_time: TimeLike,  # noqa: ARG001
+    **kwargs: Any,  # noqa: ARG001
 ) -> Iterator[pd.DataFrame]:
-    """Load SACOG-trained LightGBM model, predict DU for Fresno parcels."""
+    """Load the SACOG-trained model and predict DU for the region's parcels."""
     logger = logging.getLogger(__name__)
+    region = context.blueprint_var("region")
 
     # --- 1. Load the most recently trained model from cache -----------------
     cache_dir: Path = _ensure_cache_dir()
@@ -70,8 +83,7 @@ def execute(
     if not pkl_files:
         raise RuntimeError(
             "No cached LightGBM model found for DU regressor. "
-            "Run compare_sacog_basemap with --use-assessor-geometry first "
-            "to generate models in planning/lightgbm_cache/."
+            "Run compare_sacog_basemap first to train models in planning/lightgbm_cache/."
         )
     model_path = pkl_files[0]
     logger.info(
@@ -81,7 +93,7 @@ def execute(
     )
 
     # mypy: the pickled object is a MultiOutputRegressor, but pickle.loads doesn't
-    # carry the type annotation.  The attribute access below is safe at runtime.
+    # carry the type annotation. The attribute access below is safe at runtime.
     model_obj: Any = pickle.loads(model_path.read_bytes())
 
     # --- 2. Learn expected feature columns from the trained model ----------
@@ -94,39 +106,39 @@ def execute(
         sum(1 for c in expected_cols if c.startswith("pc")),
     )
 
-    # --- 3. Stream inference data from fresno.dasymetric_weights ------------
-    def _stream_fresno_data(
+    # --- 3. Stream inference data from @{region}.parcel_dasymetric_weights --
+    dw_table = context.resolve_table(f"brewgis.{region}.parcel_dasymetric_weights")
+
+    pc_cols_sql = ", ".join(f"COALESCE({c}, 0.0) AS {c}" for c in _RESNET_PC_COLS)
+
+    base_query = f"""
+        SELECT
+            apn,
+            lot_size_acres,
+            'XX' AS landuse,
+            'X' AS zone,
+            COALESCE(land_development_category, 'urban') AS land_development_category,
+            COALESCE(residential_building_sqft, 0) AS residential_building_sqft,
+            COALESCE(commercial_building_sqft, 0) AS commercial_building_sqft,
+            COALESCE(industrial_building_sqft, 0) AS industrial_building_sqft,
+            COALESCE(other_building_sqft, 0) AS other_building_sqft,
+            COALESCE(total_footprint_sqft, 0) AS total_footprint_sqft,
+            COALESCE(building_count, 0) AS building_count,
+            COALESCE(footprint_ratio, 0) AS footprint_ratio,
+            COALESCE(NULLIF(max_levels, 0), 1) AS max_levels,
+            COALESCE(intersection_density, 0) AS intersection_density,
+            COALESCE(highway_intersection_density, 0) AS highway_intersection_density,
+            COALESCE(path_intersection_density, 0) AS path_intersection_density,
+            {pc_cols_sql}
+        FROM {dw_table}
+        ORDER BY apn
+    """
+
+    def _stream_region_data(
         ctx: ExecutionContext,
         batch_size: int = 50000,
     ) -> Iterator[pd.DataFrame]:
-        """Yield batches of Fresno parcel features for inference."""
-        dw_table = ctx.resolve_table("brewgis.fresno.dasymetric_weights")
-
-        pc_cols_sql = ", ".join(f"COALESCE({c}, 0.0) AS {c}" for c in _RESNET_PC_COLS)
-
-        base_query = f"""
-            SELECT
-                apn,
-                lot_size_acres,
-                'XX' AS landuse,
-                'X' AS zone,
-                COALESCE(land_development_category, 'urban') AS land_development_category,
-                COALESCE(residential_building_sqft, 0) AS residential_building_sqft,
-                COALESCE(commercial_building_sqft, 0) AS commercial_building_sqft,
-                COALESCE(industrial_building_sqft, 0) AS industrial_building_sqft,
-                COALESCE(other_building_sqft, 0) AS other_building_sqft,
-                COALESCE(total_footprint_sqft, 0) AS total_footprint_sqft,
-                COALESCE(building_count, 0) AS building_count,
-                COALESCE(footprint_ratio, 0) AS footprint_ratio,
-                COALESCE(NULLIF(max_levels, 0), 1) AS max_levels,
-                COALESCE(intersection_density, 0) AS intersection_density,
-                0::double precision AS highway_intersection_density,
-                0::double precision AS path_intersection_density,
-                {pc_cols_sql}
-            FROM {dw_table}
-            ORDER BY apn
-        """
-
+        """Yield batches of region parcel features for inference."""
         offset = 0
         while True:
             batch = ctx.fetchdf(f"{base_query} LIMIT {batch_size} OFFSET {offset}")
@@ -139,9 +151,9 @@ def execute(
     def _feature_fn(df: pd.DataFrame) -> pd.DataFrame:
         """Build full feature matrix that exactly matches ``expected_cols``.
 
-        Fresno parcels lack assessor ``landuse`` and ``zone``, so those are set
-        to ``'XX'`` and ``'X'`` respectively.  The SACOG-trained one-hot encoder
-        maps these to a "missing" category the model handles gracefully.
+        Regions without assessor ``landuse``/``zone`` set them to ``'XX'`` /
+        ``'X'``; the SACOG-trained one-hot encoder maps these to a "missing"
+        category the model handles gracefully.
         """
         df = df.copy()
         df["landuse_prefix"] = df["landuse"].fillna("XX").str[:2]
@@ -158,8 +170,8 @@ def execute(
             if col.startswith(("lu_", "zone_", "ldc_")):
                 df[col] = 0
 
-        df["lu_XX"] = 1  # all Fresno parcels
-        df["zone_X"] = 1  # all Fresno parcels
+        df["lu_XX"] = 1  # no assessor landuse in this region
+        df["zone_X"] = 1  # no assessor zone in this region
 
         ldc_series = df.get("land_development_category", pd.Series(["urban"] * len(df)))
         for cat in ldc_series.unique():
@@ -172,7 +184,7 @@ def execute(
     # --- 5. Run inference ---------------------------------------------------
     results_parts: list[pd.DataFrame] = []
     for apns, y_batch in predict_in_batches(
-        _stream_fresno_data(context),
+        _stream_region_data(context),
         model_obj,
         _feature_fn,
     ):
@@ -185,7 +197,7 @@ def execute(
 
     results = pd.concat(results_parts, ignore_index=True)
     results["du_total"] = results[DU_TARGETS].sum(axis=1).astype(np.float32)
-    logger.info("Fresno DU regressor: %d parcels predicted", len(results))
+    logger.info("DU regressor (%s): %d parcels predicted", region, len(results))
 
     # --- 6. Yield with batch-size protection --------------------------------
     _original = PostgresEngineAdapter.DEFAULT_BATCH_SIZE

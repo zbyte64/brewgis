@@ -14,7 +14,7 @@ SELECT
     WHEN COALESCE(sd.units, 0) >= 5 THEN 'bt__high_density_attached_residential'
   END AS expected_bft
 FROM @this_model t1
-JOIN brewgis.assessor.sacog_assessor_sales_deduped sd ON t1.apn = sd.apn
+JOIN brewgis.sacog.assessor_sales_deduped sd ON t1.apn = sd.apn
 WHERE (sd.property_type IN ('MF', 'Multiple Family Residence') OR sd.property_type LIKE 'Multiple Family%')
   AND sd.units IS NOT NULL AND sd.units >= 2
   AND (

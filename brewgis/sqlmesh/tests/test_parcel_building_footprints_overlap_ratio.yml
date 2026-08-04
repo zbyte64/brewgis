@@ -1,8 +1,8 @@
 test_building_fully_inside_parcel_gets_full_sqft:
-  model: brewgis.assessor.parcel_building_footprints
+  model: brewgis.sacog.parcel_building_footprints
   gateway: postgis
   inputs:
-    brewgis.assessor.sacog_assessor_parcels:
+    brewgis.sacog.assessor_parcels:
       rows:
         - apn: "PARCEL_FULL"
           lot_size_acres: 2.3
@@ -14,7 +14,7 @@ test_building_fully_inside_parcel_gets_full_sqft:
         geometry: GEOMETRY
         wgs84_geometry: GEOMETRY
         local_geometry: GEOMETRY
-    brewgis.staging.buildings_combined_pg:
+    brewgis.sacog.buildings_combined_pg:
       rows:
         - geometry: "POLYGON((50 50, 150 50, 150 150, 50 150, 50 50))"
           wgs84_geometry: "POLYGON((50 50, 150 50, 150 150, 50 150, 50 50))"
@@ -43,10 +43,10 @@ test_building_fully_inside_parcel_gets_full_sqft:
           max_height: 30.0
 
 test_building_crossing_two_parcels_proportional_split:
-  model: brewgis.assessor.parcel_building_footprints
+  model: brewgis.sacog.parcel_building_footprints
   gateway: postgis
   inputs:
-    brewgis.assessor.sacog_assessor_parcels:
+    brewgis.sacog.assessor_parcels:
       rows:
         - apn: "PARCEL_A"
           lot_size_acres: 2.3
@@ -64,7 +64,7 @@ test_building_crossing_two_parcels_proportional_split:
         geometry: GEOMETRY
         wgs84_geometry: GEOMETRY
         local_geometry: GEOMETRY
-    brewgis.staging.buildings_combined_pg:
+    brewgis.sacog.buildings_combined_pg:
       rows:
         - geometry: "POLYGON((50 0, 150 0, 150 100, 50 100, 50 0))"
           wgs84_geometry: "POLYGON((50 0, 150 0, 150 100, 50 100, 50 0))"
@@ -95,10 +95,10 @@ test_building_crossing_two_parcels_proportional_split:
           max_levels: 2
 
 test_building_crossing_uneven_split:
-  model: brewgis.assessor.parcel_building_footprints
+  model: brewgis.sacog.parcel_building_footprints
   gateway: postgis
   inputs:
-    brewgis.assessor.sacog_assessor_parcels:
+    brewgis.sacog.assessor_parcels:
       rows:
         - apn: "PARCEL_75"
           lot_size_acres: 2.3
@@ -116,7 +116,7 @@ test_building_crossing_uneven_split:
         geometry: GEOMETRY
         wgs84_geometry: GEOMETRY
         local_geometry: GEOMETRY
-    brewgis.staging.buildings_combined_pg:
+    brewgis.sacog.buildings_combined_pg:
       rows:
         - geometry: "POLYGON((25 0, 125 0, 125 100, 25 100, 25 0))"
           wgs84_geometry: "POLYGON((25 0, 125 0, 125 100, 25 100, 25 0))"
@@ -145,10 +145,10 @@ test_building_crossing_uneven_split:
           building_count: 1
 
 test_overture_bucket_proportional_split:
-  model: brewgis.assessor.parcel_building_footprints
+  model: brewgis.sacog.parcel_building_footprints
   gateway: postgis
   inputs:
-    brewgis.assessor.sacog_assessor_parcels:
+    brewgis.sacog.assessor_parcels:
       rows:
         - apn: "COM_A"
           lot_size_acres: 2.3
@@ -166,7 +166,7 @@ test_overture_bucket_proportional_split:
         geometry: GEOMETRY
         wgs84_geometry: GEOMETRY
         local_geometry: GEOMETRY
-    brewgis.staging.buildings_combined_pg:
+    brewgis.sacog.buildings_combined_pg:
       rows:
         - geometry: "POLYGON((25 0, 125 0, 125 100, 25 100, 25 0))"
           wgs84_geometry: "POLYGON((25 0, 125 0, 125 100, 25 100, 25 0))"
@@ -197,10 +197,10 @@ test_overture_bucket_proportional_split:
           building_count: 1
 
 test_non_area_aggregates_unchanged:
-  model: brewgis.assessor.parcel_building_footprints
+  model: brewgis.sacog.parcel_building_footprints
   gateway: postgis
   inputs:
-    brewgis.assessor.sacog_assessor_parcels:
+    brewgis.sacog.assessor_parcels:
       rows:
         - apn: "PARCEL_AGG"
           lot_size_acres: 2.3
@@ -212,7 +212,7 @@ test_non_area_aggregates_unchanged:
         geometry: GEOMETRY
         wgs84_geometry: GEOMETRY
         local_geometry: GEOMETRY
-    brewgis.staging.buildings_combined_pg:
+    brewgis.sacog.buildings_combined_pg:
       rows:
         - geometry: "POLYGON((10 10, 60 10, 60 60, 10 60, 10 10))"
           wgs84_geometry: "POLYGON((10 10, 60 10, 60 60, 10 60, 10 10))"

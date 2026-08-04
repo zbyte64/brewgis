@@ -90,15 +90,11 @@ def _get_sqft_targets(df: pd.DataFrame) -> list[str]:
 def _fetch_sqft_training_data(context: ExecutionContext) -> pd.DataFrame:
     """Fetch reference building sqft data with features for regression training."""
     training_map = context.resolve_table("brewgis.comparison.training_parcel_map")
-    parcels = context.resolve_table("brewgis.assessor.sacog_assessor_parcels")
-    bldg_sqft = context.resolve_table("brewgis.assessor.parcel_building_sqft_by_type")
-    intersection = context.resolve_table(
-        "brewgis.assessor.overture_intersection_density"
-    )
-    highway = context.resolve_table(
-        "brewgis.assessor.overture_highway_intersection_density"
-    )
-    path = context.resolve_table("brewgis.assessor.overture_path_intersection_density")
+    parcels = context.resolve_table("brewgis.sacog.assessor_parcels")
+    bldg_sqft = context.resolve_table("brewgis.sacog.parcel_building_sqft_by_type")
+    intersection = context.resolve_table("brewgis.sacog.overture_intersection_density")
+    highway = context.resolve_table("brewgis.sacog.hwy_intersection_density")
+    path = context.resolve_table("brewgis.sacog.path_intersection_density")
     features = context.resolve_table("brewgis.assessor.parcel_resnet_features")
     sqft_cols = [
         "bldg_sqft_detsf_sl",
@@ -161,15 +157,11 @@ def _stream_sqft_inference_data(
     batch_size: int = 50000,
 ) -> Iterator[pd.DataFrame]:
     """Yield inference data in LIMIT/OFFSET batches."""
-    parcels = context.resolve_table("brewgis.assessor.sacog_assessor_parcels")
-    bldg_sqft = context.resolve_table("brewgis.assessor.parcel_building_sqft_by_type")
-    intersection = context.resolve_table(
-        "brewgis.assessor.overture_intersection_density"
-    )
-    highway = context.resolve_table(
-        "brewgis.assessor.overture_highway_intersection_density"
-    )
-    path = context.resolve_table("brewgis.assessor.overture_path_intersection_density")
+    parcels = context.resolve_table("brewgis.sacog.assessor_parcels")
+    bldg_sqft = context.resolve_table("brewgis.sacog.parcel_building_sqft_by_type")
+    intersection = context.resolve_table("brewgis.sacog.overture_intersection_density")
+    highway = context.resolve_table("brewgis.sacog.hwy_intersection_density")
+    path = context.resolve_table("brewgis.sacog.path_intersection_density")
     features = context.resolve_table("brewgis.assessor.parcel_resnet_features")
 
     pc_cols_sql = ",\n            ".join(
@@ -273,11 +265,11 @@ def _feature_matrix(df, landuse_prefixes, zone_prefixes, ldev_cats=None):
     depends_on=[
         "brewgis.comparison.training_parcel_map",
         "public.sac_cnty_region_base_canvas",
-        "brewgis.assessor.sacog_assessor_parcels",
-        "brewgis.assessor.parcel_building_sqft_by_type",
-        "brewgis.assessor.overture_intersection_density",
-        "brewgis.assessor.overture_highway_intersection_density",
-        "brewgis.assessor.overture_path_intersection_density",
+        "brewgis.sacog.assessor_parcels",
+        "brewgis.sacog.parcel_building_sqft_by_type",
+        "brewgis.sacog.overture_intersection_density",
+        "brewgis.sacog.hwy_intersection_density",
+        "brewgis.sacog.path_intersection_density",
         "brewgis.assessor.parcel_resnet_features",
     ],
 )

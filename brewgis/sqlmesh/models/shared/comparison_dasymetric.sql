@@ -1,23 +1,29 @@
 MODEL (
-  name brewgis.comparison.sacog_dasymetric,
+  name brewgis.@{region}.comparison_dasymetric,
   kind FULL,
   audits (
     not_null(columns := (parcel_id))
+  ),
+  blueprints (
+    (region := sacog),
+    (region := fresno)
   )
 );
 
--- SACOG Comparison Dasymetric Crosswalk — enriched from pre-computed intersections.
+-- Region Comparison Dasymetric Crosswalk — enriches parcels with dasymetric
+-- weights, DU estimation, and regressor predictions.
 --
--- Enriches SACOG parcels with dasymetric weights and DU estimation via the
--- pre-computed intersection table. When multiple SACOG parcels share the same
--- APN, or one SACOG parcel intersects multiple APNs, scalar quantities (sqft,
--- DU, weights) are allocated proportionally by intersection area then summed
--- per SACOG parcel.  Categorical columns (built_form_key, du_subtype) are
--- taken from the APN with the largest intersection area for that parcel.
+-- For regions with real assessor APNs (SACOG) multiple parcels can share one
+-- APN (or one parcel intersects several APNs); scalar quantities are
+-- allocated proportionally by intersection area then summed per parcel.
+-- For regions without assessor data (Fresno) the dasymetric_intersections
+-- adapter yields a 1:1 parcel→apn mapping, so apn_weight = 1.0 and the sums
+-- pass values through unchanged.  Identical SQL — the adapter difference
+-- makes both cases work.
 --
--- The aggregation by parcel_id produces exactly one row per SACOG parcel,
--- which satisfies the INCREMENTAL_BY_UNIQUE_KEY constraint in downstream
--- base_canvas_geometry.
+-- Categorical columns are taken from the APN with the largest intersection
+-- area for that parcel. The aggregation by parcel_id produces exactly one
+-- row per parcel (INCREMENTAL_BY_UNIQUE_KEY-safe for base_canvas_geometry).
 
 WITH apn_weights AS (
     SELECT
@@ -31,7 +37,7 @@ WITH apn_weights AS (
                  / SUM(si.intersect_area_sqft) OVER (PARTITION BY si.apn)
             ELSE 1.0
         END AS apn_weight
-    FROM brewgis.comparison.dasymetric_intersections si
+    FROM brewgis.@{region}.dasymetric_intersections si
 ),
 
 scaled AS (
@@ -45,7 +51,7 @@ scaled AS (
             ORDER BY aw.intersect_area_sqft DESC
         ) AS rn,
         sp.geometry,
-        -- Allocate scalar quantities proportionally (Section 4.2 methodology)
+        -- Allocate scalar quantities proportionally
         dw.lot_size_acres          * aw.apn_weight AS lot_size_acres,
         dw.actual_living_sqft      * aw.apn_weight AS actual_living_sqft,
         dw.actual_building_sqft    * aw.apn_weight AS actual_building_sqft,
@@ -64,7 +70,7 @@ scaled AS (
         de.pop_dasym_weight * aw.apn_weight AS du_pop_dasym_weight,
         de.hh_dasym_weight  * aw.apn_weight AS hh_dasym_weight,
         de.hh               * aw.apn_weight AS hh,
-        -- Categorical labels: land_development_category from dw, others removed from assessor pipeline
+        -- Categorical labels
         dw.land_development_category,
         NULL::text AS built_form_key,
         NULL::text AS du_subtype,
@@ -74,44 +80,48 @@ scaled AS (
         dw.max_levels,
         dw.intersection_density,
         -- DU breakdown from regressor (proportional allocation)
-        dw.du_detsf_sl_regressor  * aw.apn_weight AS du_detsf_sl,
-        dw.du_detsf_ll_regressor  * aw.apn_weight AS du_detsf_ll,
-        dw.du_attsf_regressor     * aw.apn_weight AS du_attsf,
-        dw.du_mf2to4_regressor    * aw.apn_weight AS du_mf2to4,
-        dw.du_mf5p_regressor      * aw.apn_weight AS du_mf5p,
-        dw.du_total_regressor     * aw.apn_weight AS du_total_regressor,
-        -- Building sqft from regressor (proportional allocation, renamed for downstream compat)
-        dw.bldg_sqft_detsf_sl_regressor * aw.apn_weight AS bldg_area_detsf_sl,
-        dw.bldg_sqft_detsf_ll_regressor * aw.apn_weight AS bldg_area_detsf_ll,
-        dw.bldg_sqft_attsf_regressor * aw.apn_weight AS bldg_area_attsf,
-        dw.bldg_sqft_mf_regressor * aw.apn_weight AS bldg_area_mf,
-        dw.bldg_sqft_retail_services_regressor * aw.apn_weight AS bldg_area_retail_services,
-        dw.bldg_sqft_restaurant_regressor * aw.apn_weight AS bldg_area_restaurant,
-        dw.bldg_sqft_accommodation_regressor * aw.apn_weight AS bldg_area_accommodation,
-        dw.bldg_sqft_arts_entertainment_regressor * aw.apn_weight AS bldg_area_arts_entertainment,
-        dw.bldg_sqft_other_services_regressor * aw.apn_weight AS bldg_area_other_services,
-        dw.bldg_sqft_office_services_regressor * aw.apn_weight AS bldg_area_office_services,
-        dw.bldg_sqft_public_admin_regressor * aw.apn_weight AS bldg_area_public_admin,
-        dw.bldg_sqft_education_regressor * aw.apn_weight AS bldg_area_education,
-        dw.bldg_sqft_medical_services_regressor * aw.apn_weight AS bldg_area_medical_services,
-        dw.bldg_sqft_transport_warehousing_regressor * aw.apn_weight AS bldg_area_transport_warehousing,
-        dw.bldg_sqft_wholesale_regressor * aw.apn_weight AS bldg_area_wholesale,
-        -- Rates (unchanged per APN)
+        de.du_detsf_sl_regressor  * aw.apn_weight AS du_detsf_sl,
+        de.du_detsf_ll_regressor  * aw.apn_weight AS du_detsf_ll,
+        de.du_attsf_regressor     * aw.apn_weight AS du_attsf,
+        de.du_mf2to4_regressor    * aw.apn_weight AS du_mf2to4,
+        de.du_mf5p_regressor      * aw.apn_weight AS du_mf5p,
+        de.du_total_regressor     * aw.apn_weight AS du_total_regressor,
+        -- Building sqft from sqft_regressor (renamed for downstream compat)
+        dr.bldg_sqft_detsf_sl          * aw.apn_weight AS bldg_area_detsf_sl,
+        dr.bldg_sqft_detsf_ll          * aw.apn_weight AS bldg_area_detsf_ll,
+        dr.bldg_sqft_attsf             * aw.apn_weight AS bldg_area_attsf,
+        dr.bldg_sqft_mf                * aw.apn_weight AS bldg_area_mf,
+        dr.bldg_sqft_retail_services   * aw.apn_weight AS bldg_area_retail_services,
+        dr.bldg_sqft_restaurant        * aw.apn_weight AS bldg_area_restaurant,
+        dr.bldg_sqft_accommodation     * aw.apn_weight AS bldg_area_accommodation,
+        dr.bldg_sqft_arts_entertainment * aw.apn_weight AS bldg_area_arts_entertainment,
+        dr.bldg_sqft_other_services    * aw.apn_weight AS bldg_area_other_services,
+        dr.bldg_sqft_office_services   * aw.apn_weight AS bldg_area_office_services,
+        dr.bldg_sqft_public_admin      * aw.apn_weight AS bldg_area_public_admin,
+        dr.bldg_sqft_education         * aw.apn_weight AS bldg_area_education,
+        dr.bldg_sqft_medical_services  * aw.apn_weight AS bldg_area_medical_services,
+        dr.bldg_sqft_transport_warehousing * aw.apn_weight AS bldg_area_transport_warehousing,
+        dr.bldg_sqft_wholesale         * aw.apn_weight AS bldg_area_wholesale,
+        -- Rates from du_estimation
         de.hh_size,
         de.vacancy_rate,
-        -- Employment sector ratios (unchanged per APN, weighted by apn_weight at aggregation)
-        dw.emp_ret_per_acre_regressor AS emp_ret_per_acre,
-        dw.emp_off_per_acre_regressor AS emp_off_per_acre,
-        dw.emp_pub_per_acre_regressor AS emp_pub_per_acre,
-        dw.emp_ind_per_acre_regressor AS emp_ind_per_acre,
-        dw.emp_ag_per_acre_regressor AS emp_ag_per_acre
+        -- Employment sector ratios from emp_ratios_regressor
+        er.emp_ret_per_acre AS emp_ret_per_acre,
+        er.emp_off_per_acre AS emp_off_per_acre,
+        er.emp_pub_per_acre AS emp_pub_per_acre,
+        er.emp_ind_per_acre AS emp_ind_per_acre,
+        er.emp_ag_per_acre  AS emp_ag_per_acre
     FROM apn_weights aw
-    JOIN brewgis.comparison.sacog_parcel_shim sp
+    JOIN brewgis.@{region}.parcel_shim sp
         ON aw.parcel_id = sp.parcel_id
-    JOIN brewgis.assessor.parcel_dasymetric_weights dw
+    JOIN brewgis.@{region}.parcel_dasymetric_weights dw
         ON aw.apn = dw.apn
-    LEFT JOIN brewgis.assessor.parcel_du_estimation de
+    LEFT JOIN brewgis.@{region}.parcel_du_estimation de
         ON aw.apn = de.apn
+    LEFT JOIN brewgis.@{region}.sqft_regressor dr
+        ON aw.apn = dr.apn
+    LEFT JOIN brewgis.@{region}.emp_ratios_regressor er
+        ON aw.apn = er.apn
 )
 
 SELECT
@@ -140,7 +150,7 @@ SELECT
     SUM(du_mf2to4) AS du_mf2to4,
     SUM(du_mf5p) AS du_mf5p,
     SUM(du_total_regressor) AS du_total_regressor,
-    -- Regressor building sqft (proportional allocation summed, renamed for downstream)
+    -- Regressor building sqft (proportional allocation summed)
     SUM(bldg_area_detsf_sl) AS bldg_area_detsf_sl,
     SUM(bldg_area_detsf_ll) AS bldg_area_detsf_ll,
     SUM(bldg_area_attsf) AS bldg_area_attsf,
@@ -182,10 +192,10 @@ FROM scaled
 GROUP BY parcel_id, geometry;
 
 -- post_statements
-  CREATE INDEX IF NOT EXISTS idx_sacog_comparison_dasymetric_geom_@snapshot_hash
+  CREATE INDEX IF NOT EXISTS idx_@{region}_comparison_dasymetric_geom_@snapshot_hash
   ON @this_model USING GIST (geometry);
-  CREATE INDEX IF NOT EXISTS idx_sacog_comparison_dasymetric_parcel_id_@snapshot_hash
+  CREATE INDEX IF NOT EXISTS idx_@{region}_comparison_dasymetric_parcel_id_@snapshot_hash
   ON @this_model USING btree (parcel_id);
-  CREATE INDEX IF NOT EXISTS idx_sacog_comparison_dasymetric_apn_@snapshot_hash
+  CREATE INDEX IF NOT EXISTS idx_@{region}_comparison_dasymetric_apn_@snapshot_hash
   ON @this_model USING btree (apn);
-ANALYZE @this_model;
+  ANALYZE @this_model;

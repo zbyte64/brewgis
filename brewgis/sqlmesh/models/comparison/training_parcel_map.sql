@@ -19,8 +19,8 @@ WITH intersections AS (
         sp.parcel_id,
         ap.apn,
         ST_Area(ST_Intersection(ST_Envelope(sp.geometry), ST_Envelope(ap.geometry))) AS intersect_area_sqft
-    FROM brewgis.comparison.sacog_parcel_shim sp
-    JOIN brewgis.assessor.sacog_assessor_parcels ap
+    FROM brewgis.sacog.parcel_shim sp
+    JOIN brewgis.sacog.assessor_parcels ap
         ON ap.geometry && sp.geometry
         AND ST_Intersects(sp.geometry, ap.geometry)
 )

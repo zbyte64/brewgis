@@ -594,7 +594,7 @@ class Command(BaseCommand):
 
         model_selectors: list[str] = [
             "+brewgis.staging.acs_bridge",
-            "+brewgis.comparison.sacog_parcel_shim",
+            "+brewgis.sacog.parcel_shim",
             "+brewgis.staging.census_2020_block",
             "+brewgis.base_canvas.base_canvas_reconciled",
             "+brewgis.comparison.sacog_summary",
@@ -612,17 +612,17 @@ class Command(BaseCommand):
                 [
                     "+brewgis.staging.overture_buildings",
                     "+brewgis.staging.vida_combined_buildings",
-                    "+brewgis.assessor.sacog_assessor_parcels",
+                    "+brewgis.sacog.assessor_parcels",
                     "+brewgis.assessor.sacog_assessor_sales",
                     "+brewgis.assessor.assessor_building_medians",
                     "+brewgis.assessor.buildings_combined",
-                    "+brewgis.assessor.parcel_building_footprints",
-                    "+brewgis.assessor.parcel_block_groups",
-                    "+brewgis.assessor.parcel_footprint_imputed",
-                    "+brewgis.assessor.authoritative_residential_area",
-                    "+brewgis.assessor.parcel_dasymetric_weights",
+                    "+brewgis.sacog.parcel_building_footprints",
+                    "+brewgis.sacog.parcel_block_groups",
+                    "+brewgis.sacog.parcel_footprint_imputed",
+                    "+brewgis.sacog.authoritative_residential_area",
+                    "+brewgis.sacog.parcel_dasymetric_weights",
                     "+brewgis.comparison.training_parcel_map",
-                    "+brewgis.comparison.sacog_dasymetric",
+                    "+brewgis.sacog.comparison_dasymetric",
                 ]
             )
         if False and overture_roads:
@@ -633,31 +633,13 @@ class Command(BaseCommand):
                 ]
             )
 
-        plan_vars: dict[str, object] = {
-            "parcel_table": "brewgis.comparison.sacog_parcel_shim",
-            "local_srid": LOCAL_SRID,
-            "acs_year": ACS_YEAR,
-            "state_fips": STATE_FIPS,
-            "county_fips": ",".join(SACOG_COUNTIES),
-            # CBP county-level employment controls for 2008 (Sacramento County, CA)
-            "cbp_county_emp_agriculture": 195,
-            "cbp_county_emp_extraction": 168,
-            "cbp_county_emp_construction": 34731,
-            "cbp_county_emp_manufacturing": 23768,
-            "cbp_county_emp_transport_warehousing": 10494,
-            "cbp_county_emp_utilities": 1894,
-            "cbp_county_emp_wholesale": 21107,
-            "cbp_county_emp_retail_services": 63192,
-            "cbp_county_emp_office_services": 103310,
-            "cbp_county_emp_education": 8385,
-            "cbp_county_emp_medical_services": 70577,
-            "cbp_county_emp_arts_entertainment": 7794,
-            "cbp_county_emp_accommodation": 4267,
-            "cbp_county_emp_restaurant": 42351,
-            "cbp_county_emp_other_services": 61210,
-            "cbp_county_emp_public_admin": 0,  # not available in CBP for 2008
-            "cbp_preserve_fraction": 0.5,
-        }
+        from brewgis.sqlmesh.config import REGIONS
+
+        # Region parameters come from the central REGIONS config; only the
+        # blueprinted pipeline entry points differ from the shared defaults.
+        plan_vars: dict[str, object] = dict(REGIONS["sacog"])
+        plan_vars["parcel_table"] = "brewgis.sacog.parcel_shim"
+        plan_vars["dasymetric_source"] = "brewgis.sacog.comparison_dasymetric"
         if osm:
             plan_vars["osm_intersection_table"] = "osm_intersection_density"
 
@@ -718,14 +700,14 @@ class Command(BaseCommand):
         # ── Phase 5: Generate comparison report ────────────────────────
         self.stdout.write("\n── Phase 5: Generating comparison report ──")
         dasymetric_table = context.table_name(
-            "brewgis.comparison.sacog_dasymetric", environment
+            "brewgis.sacog.comparison_dasymetric", environment
         )
         reconciled_table = context.table_name(
             "brewgis.base_canvas.base_canvas_reconciled", environment
         )
         authoritative_table = (
             context.table_name(
-                "brewgis.assessor.authoritative_residential_area",
+                "brewgis.sacog.authoritative_residential_area",
                 environment,
             )
             if use_assessor_geometry
@@ -733,7 +715,7 @@ class Command(BaseCommand):
         )
         assessor_parcels_table = (
             context.table_name(
-                "brewgis.assessor.sacog_assessor_parcels",
+                "brewgis.sacog.assessor_parcels",
                 environment,
             )
             if use_assessor_geometry
@@ -741,7 +723,7 @@ class Command(BaseCommand):
         )
         building_footprints_table = (
             context.table_name(
-                "brewgis.assessor.parcel_building_footprints",
+                "brewgis.sacog.parcel_building_footprints",
                 environment,
             )
             if use_assessor_geometry
@@ -1159,7 +1141,7 @@ def _collect_diagnostics(
                         FROM (
                             SELECT a.*, sap.lot_size_acres
                             FROM {authoritative_table} a
-                            LEFT JOIN {assessor_parcels_table or "brewgis.assessor.sacog_assessor_parcels"} sap
+                            LEFT JOIN {assessor_parcels_table or "brewgis.sacog.assessor_parcels"} sap
                                 ON a.apn = sap.apn
                         ) sub
                         GROUP BY cat
@@ -1274,12 +1256,12 @@ def _collect_diagnostics(
                         FROM (
                             SELECT a.*, sap.lot_size_acres
                             FROM {authoritative_table} a
-                            LEFT JOIN brewgis.assessor.sacog_assessor_parcels sap
+                            LEFT JOIN brewgis.sacog.assessor_parcels sap
                                 ON a.apn = sap.apn
                         ) a
                         LEFT JOIN (
                             SELECT apn, COALESCE(auc.category, 'unknown') AS land_development_category
-                            FROM brewgis.assessor.sacog_assessor_parcels
+                            FROM brewgis.sacog.assessor_parcels
                             LEFT JOIN brewgis.seeds.assessor_use_codes auc
                                 ON LEFT(COALESCE(landuse::text, ''), 2) = auc.use_code::text
                         ) sap ON a.apn = sap.apn

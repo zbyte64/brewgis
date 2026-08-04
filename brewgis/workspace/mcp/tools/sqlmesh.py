@@ -305,7 +305,7 @@ def _depends_on_list(model: object) -> list[str]:
 def _extract_post_statement_indexes(fqn: str) -> list[str]:
     """Extract CREATE INDEX statements from a model file's post_statements block.
 
-    Given a normalized FQN like ``brewgis.assessor.parcel_dasymetric_weights``,
+    Given a normalized FQN like ``brewgis.sacog.parcel_dasymetric_weights``,
     derives the source file path and parses ``-- post_statements`` section for
     ``CREATE INDEX`` lines.
     """
@@ -315,12 +315,19 @@ def _extract_post_statement_indexes(fqn: str) -> list[str]:
     schema = parts[1]
     model_name = parts[2]
 
-    # Try .sql first, then .py
+    # Blueprinted models live in adapters/, shared/, or their original
+    # subdirectory (their schema is the blueprint region); legacy models live
+    # under models/{schema}/.
+    path = None
     for ext in (".sql", ".py"):
-        path = Path(f"brewgis/sqlmesh/models/{schema}/{model_name}{ext}")
-        if path.exists():
+        for subdir in (schema, "adapters", "shared", "python", "assessor"):
+            candidate = Path(f"brewgis/sqlmesh/models/{subdir}/{model_name}{ext}")
+            if candidate.exists():
+                path = candidate
+                break
+        if path:
             break
-    else:
+    if path is None:
         return []
 
     indexes: list[str] = []

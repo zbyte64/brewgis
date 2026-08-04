@@ -13,7 +13,7 @@ SELECT
   ap.landuse,
   r.built_form_key
 FROM @this_model r
-JOIN brewgis.assessor.sacog_assessor_parcels ap ON r.apn = ap.apn
+JOIN brewgis.sacog.assessor_parcels ap ON r.apn = ap.apn
 WHERE ap.landuse LIKE 'A2%'
   AND r.built_form_key IS NOT NULL
   AND r.built_form_key NOT IN (

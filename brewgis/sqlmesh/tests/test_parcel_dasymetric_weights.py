@@ -19,7 +19,7 @@ def test_landuse_A1_small_lot_returns_detsf_sl(context):
         start="2024-01-01",
         end="2024-01-01",
         inputs={
-            "brewgis.assessor.sacog_assessor_parcels": [
+            "brewgis.sacog.assessor_parcels": [
                 {
                     "apn": "TEST_A1_SL",
                     "lot_size_acres": 0.10,
@@ -28,7 +28,7 @@ def test_landuse_A1_small_lot_returns_detsf_sl(context):
                     "geometry": "POLYGON((-121.5 38.5,-121.49 38.5,-121.49 38.51,-121.5 38.51,-121.5 38.5))",
                 }
             ],
-            "brewgis.assessor.overture_intersection_density": [
+            "brewgis.sacog.overture_intersection_density": [
                 {
                     "apn": "TEST_A1_SL",
                     "intersection_density": 300.0,
@@ -50,7 +50,7 @@ def test_landuse_A1_large_lot_returns_detsf_ll(context):
         start="2024-01-01",
         end="2024-01-01",
         inputs={
-            "brewgis.assessor.sacog_assessor_parcels": [
+            "brewgis.sacog.assessor_parcels": [
                 {
                     "apn": "TEST_A1_LL",
                     "lot_size_acres": 0.25,
@@ -59,7 +59,7 @@ def test_landuse_A1_large_lot_returns_detsf_ll(context):
                     "geometry": "POLYGON((-121.5 38.5,-121.49 38.5,-121.49 38.51,-121.5 38.51,-121.5 38.5))",
                 }
             ],
-            "brewgis.assessor.overture_intersection_density": [
+            "brewgis.sacog.overture_intersection_density": [
                 {
                     "apn": "TEST_A1_LL",
                     "intersection_density": 100.0,
@@ -81,7 +81,7 @@ def test_a2_landuse_not_classified_at_tier0(context):
         start="2024-01-01",
         end="2024-01-01",
         inputs={
-            "brewgis.assessor.sacog_assessor_parcels": [
+            "brewgis.sacog.assessor_parcels": [
                 {
                     "apn": "TEST_A2_FT",
                     "lot_size_acres": 5.0,
@@ -110,7 +110,7 @@ def test_landuse_AE_returns_commercial(context):
         start="2024-01-01",
         end="2024-01-01",
         inputs={
-            "brewgis.assessor.sacog_assessor_parcels": [
+            "brewgis.sacog.assessor_parcels": [
                 {
                     "apn": "TEST_AE",
                     "lot_size_acres": 1.0,
@@ -137,7 +137,7 @@ def test_sales_sfr_overrides_landuse(context):
         start="2024-01-01",
         end="2024-01-01",
         inputs={
-            "brewgis.assessor.sacog_assessor_parcels": [
+            "brewgis.sacog.assessor_parcels": [
                 {
                     "apn": "TEST_SFR_OVERRIDE",
                     "lot_size_acres": 0.10,
@@ -173,7 +173,7 @@ def test_tier3b_footprint_ratio_filter(context):
         start="2024-01-01",
         end="2024-01-01",
         inputs={
-            "brewgis.assessor.sacog_assessor_parcels": [
+            "brewgis.sacog.assessor_parcels": [
                 {
                     "apn": "TEST_3B",
                     "lot_size_acres": 5.0,
@@ -182,7 +182,7 @@ def test_tier3b_footprint_ratio_filter(context):
                     "geometry": "POLYGON((-121.5 38.5,-121.49 38.5,-121.49 38.51,-121.5 38.51,-121.5 38.5))",
                 }
             ],
-            "brewgis.assessor.parcel_building_sqft_by_type": [
+            "brewgis.sacog.parcel_building_sqft_by_type": [
                 {
                     "apn": "TEST_3B",
                     "total_footprint_sqft": 500.0,

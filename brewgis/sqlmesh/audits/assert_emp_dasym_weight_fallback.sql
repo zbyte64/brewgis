@@ -24,7 +24,7 @@ SELECT
   pdw.emp_dasym_weight,
   ar.authoritative_non_residential_sqft
 FROM @this_model pdw
-LEFT JOIN brewgis.assessor.authoritative_residential_area ar
+LEFT JOIN brewgis.sacog.authoritative_residential_area ar
   ON pdw.apn = ar.apn
 WHERE COALESCE(pdw.residential_building_sqft, 0) > 0
   AND COALESCE(pdw.commercial_building_sqft, 0) = 0

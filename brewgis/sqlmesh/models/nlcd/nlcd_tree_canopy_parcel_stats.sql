@@ -29,6 +29,8 @@ MODEL (
 --     EPSG:@nlcd_parcel_srid
 
 -- pre_statements
+-- SELECT RT_GdalConfig('GDAL_DISABLE_READDIR_ON_OPEN', 'EMPTY_DIR');
+
   SET VARIABLE nlcd_tree_canopy_url = (
     SELECT
       'https://www.mrlc.gov/geoserver/wcs?service=WCS&version=2.0.1&request=GetCoverage'

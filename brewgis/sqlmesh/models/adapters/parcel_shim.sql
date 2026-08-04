@@ -1,5 +1,5 @@
 MODEL (
-  name brewgis.comparison.sacog_parcel_shim,
+  name brewgis.@{region}.parcel_shim,
   kind INCREMENTAL_BY_UNIQUE_KEY (
     unique_key (parcel_id),
     batch_size 100000
@@ -8,21 +8,30 @@ MODEL (
     not_null(columns := (parcel_id)),
     unique_values(columns := (parcel_id,)),
     assert_row_count_greater_than_zero
+  ),
+  blueprints (
+    (region := sacog,  source_schema := 'public',      source_table := 'sacog_comparison_parcels', county_name := 'Sacramento'),
+    (region := fresno, source_schema := 'fresno_demo', source_table := 'fresno_parcels',            county_name := 'Fresno')
   )
 );
 
--- SACOG Parcel Column Shim — maps SACOG v1 columns to brewgis-standard column names.
+-- Region Parcel Column Shim — the sole raw-parcel adapter.
 --
--- Reads raw SACOG parcel data from public.sacog_comparison_parcels and produces
--- a table with brewgis-compatible column names so that base_canvas_geometry and
--- the rest of the base_canvas chain can consume SACOG v1 data.
--- should not reveal any statistical information, we get that from our data sources
+-- Maps each region's raw parcel table onto the standard 42-column brewgis
+-- parcel contract consumed by every downstream methodology model. The only
+-- region-specific inputs are the source table and county name (blueprint
+-- variables); the SQL body is identical for all regions.
+--
+-- geometry       — global WGS84 (4326), transformed from the source SRID
+-- local_geometry — local projected SRID (3310 CA Albers) for area/join work
+-- acres          — area from local_geometry (Fresno parcels rely on this for
+--                  lot_size_acres since they lack assessor data)
 
 SELECT
     parcel_id,
     ST_MakeValid(ST_Transform(geometry, @VAR('default_srid', 4326))) AS geometry,
-    ST_MakeValid(geometry) AS local_geometry,
-    'Sacramento'::text AS county,
+    ST_Transform(ST_MakeValid(geometry), @VAR('local_srid', 3310)) AS local_geometry,
+    @county_name::text AS county,
     NULL::text AS land_development_category,
     NULL::text AS built_form_key,
     NULL::double precision AS intersection_density,
@@ -32,7 +41,9 @@ SELECT
     NULL::double precision AS emp,
     NULL::text AS land_use,
     NULL::text AS assessor_use_code,
-    NULL::double precision AS acres,
+    -- acres computed from local_geometry area
+    ROUND((ST_Area(ST_Transform(ST_MakeValid(geometry), @VAR('local_srid', 3310))) / 4046.86)::numeric, 4)
+        AS acres,
     NULL::double precision AS ret,
     NULL::double precision AS off,
     NULL::double precision AS pub,
@@ -66,11 +77,11 @@ SELECT
     NULL::double precision AS area_parcel_emp,
     NULL::double precision AS area_parcel_mixed_use,
     NULL::double precision AS area_parcel_no_use
-FROM public.sacog_comparison_parcels;
+FROM @{source_schema}.@{source_table};
 
 -- post_statements
-  CREATE INDEX IF NOT EXISTS idx_sacog_parcel_shim_geometry_@snapshot_hash
+  CREATE INDEX IF NOT EXISTS idx_@{region}_parcel_shim_geometry_@snapshot_hash
   ON @this_model USING GIST (geometry);
-  CREATE INDEX IF NOT EXISTS idx_sacog_parcel_shim_parcel_id_@snapshot_hash
+  CREATE INDEX IF NOT EXISTS idx_@{region}_parcel_shim_parcel_id_@snapshot_hash
   ON @this_model USING btree (parcel_id);
-ANALYZE @this_model;
+  ANALYZE @this_model;

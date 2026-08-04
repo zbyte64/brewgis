@@ -1,6 +1,10 @@
 MODEL (
-  name brewgis.staging.buildings_combined_pg,
-  kind FULL
+  name brewgis.@{region}.buildings_combined_pg,
+  kind FULL,
+  blueprints (
+    (region := sacog),
+    (region := fresno)
+  )
 );
 
 -- Combined Building Footprints (PG copy) — PostgreSQL materialization of the
@@ -37,13 +41,13 @@ SELECT
       ELSE 'other'
   END AS class_category,
   ST_Area(ST_Transform(ST_SetSRID(wgs84_geometry, @VAR('default_srid', 4326)), @VAR('local_srid', 3310))) * 10.7639 AS footprint_sqft
-FROM brewgis.staging.buildings_combined;
+FROM brewgis.@{region}.buildings_combined;
 
 -- post_statements
-  CREATE INDEX IF NOT EXISTS idx_buildings_combined_pg_wgs84_geometry_@snapshot_hash
+  CREATE INDEX IF NOT EXISTS idx_@{region}_buildings_combined_pg_wgs84_geometry_@snapshot_hash
   ON @this_model USING GIST (wgs84_geometry);
-  CREATE INDEX IF NOT EXISTS idx_buildings_combined_pg_geometry_@snapshot_hash
+  CREATE INDEX IF NOT EXISTS idx_@{region}_buildings_combined_pg_geometry_@snapshot_hash
   ON @this_model USING GIST (geometry);
-  CREATE INDEX IF NOT EXISTS idx_buildings_combined_pg_local_geometry_@snapshot_hash
+  CREATE INDEX IF NOT EXISTS idx_@{region}_buildings_combined_pg_local_geometry_@snapshot_hash
   ON @this_model USING GIST (local_geometry);
 ANALYZE @this_model;

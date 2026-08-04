@@ -1,7 +1,11 @@
 MODEL (
-  name brewgis.staging.buildings_combined,
+  name brewgis.@{region}.buildings_combined,
   kind FULL,
-  gateway: duckdb
+  gateway: duckdb,
+  blueprints (
+    (region := sacog),
+    (region := fresno)
+  )
 );
 
 /*

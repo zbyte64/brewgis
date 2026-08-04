@@ -1,8 +1,8 @@
 test_apn_shared_across_two_parcels_du_proportional:
-  model: brewgis.comparison.sacog_dasymetric
+  model: brewgis.sacog.comparison_dasymetric
   gateway: postgis
   inputs:
-    brewgis.comparison.dasymetric_intersections:
+    brewgis.sacog.dasymetric_intersections:
       rows:
         - parcel_id: "P1"
           apn: "APN_SHARED"
@@ -14,7 +14,7 @@ test_apn_shared_across_two_parcels_du_proportional:
         parcel_id: TEXT
         apn: TEXT
         intersect_area_sqft: DOUBLE
-    brewgis.comparison.sacog_parcel_shim:
+    brewgis.sacog.parcel_shim:
       rows:
         - parcel_id: "P1"
           geometry: "SRID=4326;POLYGON((-121.5 38.5,-121.49 38.5,-121.49 38.51,-121.5 38.51,-121.5 38.5))"
@@ -23,7 +23,7 @@ test_apn_shared_across_two_parcels_du_proportional:
       columns:
         parcel_id: TEXT
         geometry: GEOMETRY
-    brewgis.assessor.parcel_dasymetric_weights:
+    brewgis.sacog.parcel_dasymetric_weights:
       rows:
         - apn: "APN_SHARED"
           lot_size_acres: 1.0
@@ -58,7 +58,7 @@ test_apn_shared_across_two_parcels_du_proportional:
         intersection_density: DOUBLE
         pop_dasym_weight: DOUBLE
         emp_dasym_weight: DOUBLE
-    brewgis.assessor.parcel_du_estimation:
+    brewgis.sacog.parcel_du_estimation:
       rows:
         - apn: "APN_SHARED"
           du: 1.0
@@ -75,6 +75,35 @@ test_apn_shared_across_two_parcels_du_proportional:
         pop_dasym_weight: DOUBLE
         hh_dasym_weight: DOUBLE
         hh: DOUBLE
+    brewgis.sacog.sqft_regressor:
+      rows: []
+      columns:
+        apn: TEXT
+        bldg_sqft_detsf_sl: DOUBLE
+        bldg_sqft_detsf_ll: DOUBLE
+        bldg_sqft_attsf: DOUBLE
+        bldg_sqft_mf: DOUBLE
+        bldg_sqft_retail_services: DOUBLE
+        bldg_sqft_restaurant: DOUBLE
+        bldg_sqft_accommodation: DOUBLE
+        bldg_sqft_arts_entertainment: DOUBLE
+        bldg_sqft_other_services: DOUBLE
+        bldg_sqft_office_services: DOUBLE
+        bldg_sqft_public_admin: DOUBLE
+        bldg_sqft_education: DOUBLE
+        bldg_sqft_medical_services: DOUBLE
+        bldg_sqft_transport_warehousing: DOUBLE
+        bldg_sqft_wholesale: DOUBLE
+        bldg_sqft_total: DOUBLE
+    brewgis.sacog.emp_ratios_regressor:
+      rows: []
+      columns:
+        apn: TEXT
+        emp_ret_per_acre: DOUBLE
+        emp_off_per_acre: DOUBLE
+        emp_pub_per_acre: DOUBLE
+        emp_ind_per_acre: DOUBLE
+        emp_ag_per_acre: DOUBLE
   outputs:
     query:
       rows:
@@ -91,10 +120,10 @@ test_apn_shared_across_two_parcels_du_proportional:
     partial: true
 
 test_single_apn_no_duplication_passes_through:
-  model: brewgis.comparison.sacog_dasymetric
+  model: brewgis.sacog.comparison_dasymetric
   gateway: postgis
   inputs:
-    brewgis.comparison.dasymetric_intersections:
+    brewgis.sacog.dasymetric_intersections:
       rows:
         - parcel_id: "P_SOLO"
           apn: "APN_SOLO"
@@ -103,14 +132,14 @@ test_single_apn_no_duplication_passes_through:
         parcel_id: TEXT
         apn: TEXT
         intersect_area_sqft: DOUBLE
-    brewgis.comparison.sacog_parcel_shim:
+    brewgis.sacog.parcel_shim:
       rows:
         - parcel_id: "P_SOLO"
           geometry: "SRID=4326;POLYGON((-121.5 38.5,-121.49 38.5,-121.49 38.51,-121.5 38.51,-121.5 38.5))"
       columns:
         parcel_id: TEXT
         geometry: GEOMETRY
-    brewgis.assessor.parcel_dasymetric_weights:
+    brewgis.sacog.parcel_dasymetric_weights:
       rows:
         - apn: "APN_SOLO"
           lot_size_acres: 0.5
@@ -145,7 +174,7 @@ test_single_apn_no_duplication_passes_through:
         intersection_density: DOUBLE
         pop_dasym_weight: DOUBLE
         emp_dasym_weight: DOUBLE
-    brewgis.assessor.parcel_du_estimation:
+    brewgis.sacog.parcel_du_estimation:
       rows:
         - apn: "APN_SOLO"
           du: 1.0
@@ -162,6 +191,35 @@ test_single_apn_no_duplication_passes_through:
         pop_dasym_weight: DOUBLE
         hh_dasym_weight: DOUBLE
         hh: DOUBLE
+    brewgis.sacog.sqft_regressor:
+      rows: []
+      columns:
+        apn: TEXT
+        bldg_sqft_detsf_sl: DOUBLE
+        bldg_sqft_detsf_ll: DOUBLE
+        bldg_sqft_attsf: DOUBLE
+        bldg_sqft_mf: DOUBLE
+        bldg_sqft_retail_services: DOUBLE
+        bldg_sqft_restaurant: DOUBLE
+        bldg_sqft_accommodation: DOUBLE
+        bldg_sqft_arts_entertainment: DOUBLE
+        bldg_sqft_other_services: DOUBLE
+        bldg_sqft_office_services: DOUBLE
+        bldg_sqft_public_admin: DOUBLE
+        bldg_sqft_education: DOUBLE
+        bldg_sqft_medical_services: DOUBLE
+        bldg_sqft_transport_warehousing: DOUBLE
+        bldg_sqft_wholesale: DOUBLE
+        bldg_sqft_total: DOUBLE
+    brewgis.sacog.emp_ratios_regressor:
+      rows: []
+      columns:
+        apn: TEXT
+        emp_ret_per_acre: DOUBLE
+        emp_off_per_acre: DOUBLE
+        emp_pub_per_acre: DOUBLE
+        emp_ind_per_acre: DOUBLE
+        emp_ag_per_acre: DOUBLE
   outputs:
     query:
       rows:

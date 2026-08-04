@@ -1,5 +1,5 @@
 test_subunit_apns_consolidated:
-  model: brewgis.assessor.sacog_assessor_parcels
+  model: brewgis.sacog.assessor_parcels
   gateway: postgis
   inputs:
     brewgis.staging.sacog_assessor_parcels_raw:
@@ -48,7 +48,7 @@ test_subunit_apns_consolidated:
         - apn: "810000500000"
 
 test_normal_parcels_pass_through:
-  model: brewgis.assessor.sacog_assessor_parcels
+  model: brewgis.sacog.assessor_parcels
   gateway: postgis
   inputs:
     brewgis.staging.sacog_assessor_parcels_raw:

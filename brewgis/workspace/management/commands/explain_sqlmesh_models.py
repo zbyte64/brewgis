@@ -41,7 +41,7 @@ class ModelInfo:
     name: str
     schema: str
     kind: str  # "FULL" or "VIEW"
-    qualified: str  # e.g. "brewgis.comparison.sacog_parcel_shim"
+    qualified: str  # e.g. "brewgis.sacog.parcel_shim"
     deps: set[str] = field(default_factory=set)
     error: str | None = None
 

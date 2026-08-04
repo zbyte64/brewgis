@@ -1448,6 +1448,55 @@ dc-run sqlmesh plan dev_scenario_1 \
 
 ## Gotchas and Anti-Patterns
 
+### Postgres Identifier Length Limit (63 chars)
+
+SQLMesh materializes each model as a physical table named
+`{schema}__{model_name}__{version_hash}` inside the `sqlmesh__{schema}` schema.
+During a plan, the table is first built in a temporary schema under the name
+**plus a `_schema_tmp` suffix** — so the full identifier is:
+
+```
+{schema}__{model_name}__{version_hash}_schema_tmp
+```
+
+Postgres rejects identifiers longer than **63 characters** with:
+
+```
+Error: Identifier name 'assessor__overture_highway_intersection_density__3552755629_schema_tmp' (length 70)
+exceeds Postgres's max identifier limit of 63 characters ; please rename to shorten
+```
+
+**Budget:** `__` (2) + version hash (10) + `_schema_tmp` (11) = 23 fixed
+characters after the model-name segment, plus the schema prefix. With this
+project's blueprint schemas that leaves:
+
+| Schema prefix | Max model-name segment |
+|---|---|
+| `fresno` (6) | ≤ 32 chars |
+| `sacog` (5) | ≤ 33 chars |
+
+**Key trap:** the `_schema_tmp` suffix only appears during plans, so a name
+that fits the base physical table can still blow the limit mid-plan. Always
+check the full name **including `_schema_tmp`** with a 10-digit hash — don't
+rely on the non-tmp name fitting.
+
+**Rule:** keep the last segment of every model name ≤ 32 chars. This includes
+blueprinted model names — they expand to `sacog.`/`fresno.` physical tables.
+Quick check before naming a model:
+
+```python
+# name segment must be <= 32 for fresno, <= 33 for sacog
+for schema in ("fresno", "sacog"):
+    assert len(f"{schema}__{name}__1234567890_schema_tmp") <= 63
+```
+
+**Precedent (2026-08):** `overture_highway_intersection_density` (37) and the
+other overture class-specific models exceeded the limit and were renamed:
+`overture_highway_intersection_density` → `hwy_intersection_density`,
+`overture_path_intersection_density` → `path_intersection_density`,
+`overture_highway_intersection_points` → `hwy_intersection_points`,
+`overture_path_intersection_points` → `path_intersection_points`.
+
 ### DO NOT:
 - **Use Jinja when SQLMesh macros suffice** — Jinja is legacy support; SQLMesh macros are type-safe and composable.
 - **Create physical tables in pre/post-statements** — these run twice (at table creation and at query evaluation). Use `@IF(@runtime_stage = 'evaluating', ...)` to condition.
@@ -1457,6 +1506,9 @@ dc-run sqlmesh plan dev_scenario_1 \
 - **Use non-idempotent models (`INCREMENTAL_BY_UNIQUE_KEY`, etc.) with limited `--start` in non-prod** — they can only preview, not fully backfill.
 
 ### DO:
+- **Length-check new model names against the Postgres 63-char limit** —
+  `{schema}__{name}__{10-digit-hash}_schema_tmp` must be ≤ 63; keep the
+  name segment ≤ 32 chars (see the identifier-length gotcha above).
 - **Always cast types in the final SELECT** (`column::INT`) — SQLMesh infers schema from casts.
 - **Use `grain` for merge/upsert strategies** — enables `table_diff` and audit efficiency.
 - **Use `dc-run sqlmesh create_test --query ...` to bootstrap tests** — then refine by hand.

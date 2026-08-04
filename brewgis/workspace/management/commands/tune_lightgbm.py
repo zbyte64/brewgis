@@ -237,11 +237,11 @@ class Command(BaseCommand):
         # The + prefix includes transitive dependencies through the SQLMesh DAG.
         tune_selectors: list[str] = [
             "+brewgis.comparison.training_parcel_map",
-            "+brewgis.assessor.sacog_assessor_parcels",
-            "+brewgis.assessor.parcel_building_sqft_by_type",
-            "+brewgis.assessor.overture_intersection_density",
-            "+brewgis.assessor.overture_highway_intersection_density",
-            "+brewgis.assessor.overture_path_intersection_density",
+            "+brewgis.sacog.assessor_parcels",
+            "+brewgis.sacog.parcel_building_sqft_by_type",
+            "+brewgis.sacog.overture_intersection_density",
+            "+brewgis.sacog.hwy_intersection_density",
+            "+brewgis.sacog.path_intersection_density",
             "+brewgis.assessor.parcel_resnet_features",
         ]
         logger.info("Materializing upstream models for regressor training data…")

@@ -18,7 +18,7 @@ SELECT
     WHEN ap.lot_size_acres > 0.01 THEN 'bt__medium_density_detached_residential'
   END AS expected_bft
 FROM @this_model t4
-JOIN brewgis.assessor.sacog_assessor_parcels ap ON t4.apn = ap.apn
+JOIN brewgis.sacog.assessor_parcels ap ON t4.apn = ap.apn
 WHERE ap.lot_size_acres IS NOT NULL
   AND t4.built_form_key IS NOT NULL
   AND (

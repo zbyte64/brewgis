@@ -1,5 +1,5 @@
 test_acres_conversion_typical_sfr_lot:
-  model: brewgis.assessor.sacog_assessor_parcels
+  model: brewgis.sacog.assessor_parcels
   gateway: postgis
   inputs:
     brewgis.staging.sacog_assessor_parcels_raw:

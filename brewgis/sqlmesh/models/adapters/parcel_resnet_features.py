@@ -1,8 +1,19 @@
-"""Fresno ResNet-34 Image Feature Extractor — Python SQLMesh FULL model.
+"""Region ResNet-34 image feature adapter — Python SQLMesh FULL model (blueprinted).
 
-Inference-only: loads a SACOG-trained PCA model from planning/pca/ and
-extracts 32 PCA-compressed visual features from NAIP aerial imagery for
-each Fresno parcel. Does NOT fit a new PCA — reuses existing SACOG model.
+Presents per-parcel 32-component PCA features extracted from NAIP aerial
+imagery (``parcel_id, apn, pc01..pc32``), consumed by the shared dasymetric
+weights model as regressor features.
+
+- SACOG: passes through ``brewgis.assessor.parcel_resnet_features`` — the
+  training model that extracts chips from Sacramento imagery, fits the PCA,
+  and caches it. Running the SACOG plan therefore (re)trains the PCA.
+- Fresno: no cached embeddings — extracts chips from Fresno imagery using the
+  same ResNet-34 backbone and applies the SACOG-trained PCA (inference only,
+  ``apn = parcel_id``).
+
+The branch is driven by the ``source_table`` blueprint variable: a non-empty
+value means "an existing model already produced these features" (SACOG);
+an empty value means "compute them from ``@{region}.parcel_shim``" (Fresno).
 """
 
 from __future__ import annotations
@@ -10,11 +21,9 @@ from __future__ import annotations
 import sys
 
 sys.path.append("/app")
-# naming conflict with sqlmesh? should rename and consolidate
 import django
 
 django.setup()
-
 
 import logging
 import pickle
@@ -28,6 +37,7 @@ import pandas as pd
 import rasterio
 import torch
 from rasterio.warp import transform_bounds
+from sqlglot import exp
 from sqlmesh import model
 from sqlmesh.core.model.definition import ModelKindName
 
@@ -53,37 +63,24 @@ _RESNET_COLUMNS: dict[str, str] = {
 }
 
 
-@model(
-    "brewgis.fresno.parcel_resnet_features",
-    kind={"name": ModelKindName.FULL},
-    columns=_RESNET_COLUMNS,
-    audits=[
-        ("not_null", {"columns": "parcel_id"}),
-        ("assert_row_count_between", {"min_rows": 100, "max_rows": 100000000}),
-    ],
-    depends_on=[
-        "brewgis.fresno.parcel_shim",
-    ],
-)
-def execute(  # noqa: C901, PLR0912, PLR0915
-    context: ExecutionContext,
-    start: TimeLike,  # noqa: ARG001
-    end: TimeLike,  # noqa: ARG001
-    execution_time: TimeLike,  # noqa: ARG001
-    **kwargs: Any,  # noqa: ARG001
-) -> Iterator[pd.DataFrame]:
-    """Extract ResNet-34 image features for Fresno parcels."""
+def _fetch_sacog_features(context: ExecutionContext) -> pd.DataFrame:
+    """Pass through the SACOG training model's output (already apn-keyed)."""
+    table = context.resolve_table("brewgis.assessor.parcel_resnet_features")
+    pc_cols_sql = ", ".join(f"COALESCE({c}, 0.0) AS {c}" for c in _RESNET_PC_COLS)
+    return context.fetchdf(f"SELECT parcel_id, apn, {pc_cols_sql} FROM {table}")
+
+
+def _infer_fresno_features(context: ExecutionContext, region: str) -> pd.DataFrame:
+    """Extract chips from ``@{region}.parcel_shim`` imagery and apply the cached PCA."""
     logger = logging.getLogger(__name__)
 
-    # Lazy imports — these cascade to Django settings, so import
-    # inside the function body to avoid errors when SQLMesh loads
-    # models without Django configured (e.g. during lint).
+    # Lazy imports — these cascade to Django settings, so import inside the
+    # function body to avoid errors when SQLMesh loads models without Django.
     from brewgis.workspace.services.chip_extractor import extract_chips
     from brewgis.workspace.services.naip_fetcher import download_cog_tiles
     from brewgis.workspace.services.naip_fetcher import download_naip_for_parcels
 
-    # Step 1: Load Fresno parcel geometries from parcel_shim
-    parcel_table = context.resolve_table("brewgis.fresno.parcel_shim")
+    parcel_table = context.resolve_table(f"brewgis.{region}.parcel_shim")
     df_parcels = context.fetchdf(
         f"""
         SELECT parcel_id, geometry AS wkb_geometry
@@ -91,14 +88,14 @@ def execute(  # noqa: C901, PLR0912, PLR0915
         """
     )
     if df_parcels.empty:
-        msg = "No parcels found in brewgis.fresno.parcel_shim"
+        msg = f"No parcels found in brewgis.{region}.parcel_shim"
         raise RuntimeError(msg)
 
-    logger.info("Loaded %d parcels from fresno.parcel_shim", len(df_parcels))
+    logger.info("Loaded %d parcels from %s.parcel_shim", len(df_parcels), region)
 
     with_wkb = df_parcels.dropna(subset=["wkb_geometry"])
 
-    # Fresno GeoJSON parcels are in EPSG:4326 (WGS84, GeoJSON default)
+    # GeoJSON-sourced parcels are EPSG:4326 (WGS84)
     gdf = gpd.GeoDataFrame(
         with_wkb,
         geometry=gpd.GeoSeries.from_wkb(with_wkb["wkb_geometry"]),
@@ -106,11 +103,8 @@ def execute(  # noqa: C901, PLR0912, PLR0915
     )
     logger.info("Parsed %d valid geometries in EPSG:4326", len(gdf))
 
-    # Already in 4326 — no reprojection needed, but keep the 4326 var for clarity
-    gdf_4326 = gdf
-
     # Step 2: Resolve NAIP COG URL(s) — hard stop on failure
-    cog_urls = download_naip_for_parcels(gdf_4326)
+    cog_urls = download_naip_for_parcels(gdf)
     if isinstance(cog_urls, str):
         cog_urls = [cog_urls]
     logger.info("Resolved %d NAIP COG URL(s)", len(cog_urls))
@@ -119,12 +113,6 @@ def execute(  # noqa: C901, PLR0912, PLR0915
 
     # Step 2.5: Download COG tiles to local cache for fast raster window reads
     cog_paths = download_cog_tiles(cog_urls)
-
-    # Log COG cache directory size
-    cog_files = list(_get_cache_root().glob("cog/*.tif"))
-    if cog_files:
-        total_mb = sum(f.stat().st_size for f in cog_files) / 1_048_576
-        logger.info("COG cache: %d files, %.0f MB", len(cog_files), total_mb)
 
     # Step 3: Extract chips + ResNet forward pass (or load cached)
     cached = _load_cached_embeddings(cog_hash)
@@ -167,17 +155,13 @@ def execute(  # noqa: C901, PLR0912, PLR0915
             with rasterio.open(str(cog_path)) as src:
                 tile_bounds_4326 = transform_bounds(src.crs, "EPSG:4326", *src.bounds)
             west, south, east, north = tile_bounds_4326
-            tile_parcels = gdf_4326.cx[west:east, south:north]
+            tile_parcels = gdf.cx[west:east, south:north]
 
             if tile_parcels.empty:
                 logger.debug("Skipping tile %s: no parcels overlap", tile_name)
                 continue
 
-            logger.info(
-                "Tile %s: %d overlapping parcels",
-                tile_name,
-                len(tile_parcels),
-            )
+            logger.info("Tile %s: %d overlapping parcels", tile_name, len(tile_parcels))
 
             for pid, chip in extract_chips(
                 str(cog_path), tile_parcels, parcel_id_col="parcel_id"
@@ -205,7 +189,7 @@ def execute(  # noqa: C901, PLR0912, PLR0915
         if not all_embeddings:
             msg = (
                 f"No chips extracted from {len(cog_urls)} NAIP COG tiles for "
-                f"{len(gdf_4326)} parcels. Possible CRS or tile extent mismatch."
+                f"{len(gdf)} parcels. Possible CRS or tile extent mismatch."
             )
             raise RuntimeError(msg)
 
@@ -248,22 +232,51 @@ def execute(  # noqa: C901, PLR0912, PLR0915
         pca = pickle.load(f)  # noqa: S301
     logger.info("Loaded SACOG-trained PCA from %s", pca_path.name)
 
-    n_chips = len(embeddings_np)
     features = pca.transform(embeddings_np)  # (N, 32)
-    logger.info("Transformed %d samples with PCA (32 components)", n_chips)
+    logger.info("Transformed %d samples with PCA (32 components)", len(embeddings_np))
 
-    # Step 5: Build result DataFrame
-    # Fresno parcels have a 1:1 parcel_id → apn mapping — no training_parcel_map join
-    results = pd.DataFrame(
-        {
-            "parcel_id": parcel_ids,
-            "apn": parcel_ids,  # 1:1 mapping for Fresno
-        }
-    )
+    # Fresno parcels have a 1:1 parcel_id → apn mapping
+    results = pd.DataFrame({"parcel_id": parcel_ids, "apn": parcel_ids})
     for i in range(32):
         results[_RESNET_PC_COLS[i]] = features[:, i].astype(np.float32)
 
-    results = results[["parcel_id", "apn", *_RESNET_PC_COLS]]
-    logger.info("Result: %d rows, %d columns", len(results), len(results.columns))
+    return results[["parcel_id", "apn", *_RESNET_PC_COLS]]
 
+
+@model(
+    "brewgis.@{region}.parcel_resnet_features",
+    kind={"name": ModelKindName.FULL},
+    columns=_RESNET_COLUMNS,
+    audits=[
+        ("not_null", {"columns": [exp.to_column("parcel_id")]}),
+        ("assert_row_count_between", {"min_rows": 100, "max_rows": 100000000}),
+    ],
+    depends_on=[
+        "@IF(@source_table != '', brewgis.assessor.parcel_resnet_features, brewgis.@{region}.parcel_shim)",
+    ],
+    blueprints=[
+        {"region": "sacog", "source_table": "brewgis.assessor.parcel_resnet_features"},
+        {"region": "fresno", "source_table": ""},
+    ],
+)
+def execute(
+    context: ExecutionContext,
+    start: TimeLike,  # noqa: ARG001
+    end: TimeLike,  # noqa: ARG001
+    execution_time: TimeLike,  # noqa: ARG001
+    **kwargs: Any,  # noqa: ARG001
+) -> Iterator[pd.DataFrame]:
+    """Return SACOG training-model features or infer Fresno features from imagery."""
+    logger = logging.getLogger(__name__)
+    region = context.blueprint_var("region")
+    source_table = context.blueprint_var("source_table", "")
+
+    if source_table:
+        results = _fetch_sacog_features(context)
+        logger.info("SACOG resnet features: %d rows passed through", len(results))
+        yield results
+        return
+
+    results = _infer_fresno_features(context, region)
+    logger.info("ResNet features for %s: %d rows", region, len(results))
     yield results
