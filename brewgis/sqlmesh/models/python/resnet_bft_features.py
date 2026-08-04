@@ -361,15 +361,30 @@ def execute(  # noqa: C901, PLR0912, PLR0915
     for i in range(32):
         results[_RESNET_PC_COLS[i]] = features[:, i].astype(np.float32)
 
-    # Step 6: Join APN from training_parcel_map
+    # Step 6: Join APN from training_parcel_map — pick largest-area parcel per APN
     training_map_name = context.resolve_table("brewgis.comparison.training_parcel_map")
     apn_map = context.fetchdf(
-        f"""SELECT DISTINCT parcel_id, apn FROM {training_map_name}"""  # noqa: S608
+        f"""SELECT DISTINCT ON (parcel_id)
+                parcel_id, apn, intersect_area_sqft
+            FROM {training_map_name}
+            ORDER BY parcel_id, intersect_area_sqft DESC NULLS LAST"""  # noqa: S608
     )
     # Align parcel_id dtypes: extract_chips yields str(parcel_id) so results
     # has object dtype, but the database column may be int64.
     results["parcel_id"] = results["parcel_id"].astype(apn_map["parcel_id"].dtype)
     results = results.merge(apn_map, on="parcel_id", how="left")
+
+    # Collapse to one row per APN: keep the parcel with largest overlap area.
+    # If multiple parcel_ids share an APN (spatial crosswalk is many-to-many),
+    # the one whose parcel has the largest intersection with that APN wins.
+    results = results.sort_values(
+        "intersect_area_sqft", ascending=False, na_position="last"
+    )
+    results = results.drop_duplicates(subset="apn", keep="first")
+
+    # Drop NULL-apn rows (parcels with no assessor-APN overlap)
+    results = results.dropna(subset=["apn"])
+
     results = results[["parcel_id", "apn", *_RESNET_PC_COLS]]
     logger.info("Result: %d rows, %d columns", len(results), len(results.columns))
 

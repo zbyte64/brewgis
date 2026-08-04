@@ -5,6 +5,8 @@ MODEL (
     batch_size 100000
   ),
   audits (
+    not_null(columns := (apn,)),
+    unique_values(columns := (apn,)),
     assert_pop_dasym_weight_not_null,
     assert_pop_dasym_weight_non_negative,
     assert_emp_dasym_weight_non_negative,
