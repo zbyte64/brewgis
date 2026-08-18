@@ -25,6 +25,10 @@ down:  ## Stop and remove all containers
 shell:  ## Open Django shell
 	$(COMPOSE_RUN) python manage.py shell
 
+.PHONY: duckdb
+duckdb:  ## Open DuckDB shell (planning cache DB)
+	$(COMPOSE_RUN) python scripts/duckdb_shell.py
+
 # ─────────────────────────────────────────────
 # Database
 # ─────────────────────────────────────────────
