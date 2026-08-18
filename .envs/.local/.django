@@ -20,3 +20,5 @@ LGBM_INFERENCE_BATCH_SIZE=10000
 # ------------------------------------------------------------------------------
 TILE_SERVER_TIPG_URL=http://tipg:8081
 TILE_SERVER_MARTIN_URL=http://martin:3000
+
+GDAL_DISABLE_READDIR_ON_OPEN=EMPTY_DIR
