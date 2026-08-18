@@ -1,10 +1,14 @@
 MODEL (
-  name brewgis.staging.tiger_blocks,
+  name brewgis.staging._tiger_blocks_raw,
   kind FULL,
   gateway duckdb
 );
 
 -- TIGER Blocks Bridge — materializes the DuckDB VIEW into PostGIS.
+--
+-- PostGIS models should use brewgis.staging.tiger_blocks (the PostGIS
+-- VIEW wrapping this table) rather than referencing this model directly, to
+-- get proper SRID column metadata for index-friendly spatial predicates.
 
 SELECT
   geoid,
