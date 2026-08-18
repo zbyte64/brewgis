@@ -26,7 +26,7 @@ from brewgis.workspace.services._db import get_engine
 from brewgis.workspace.services._db import text
 from brewgis.workspace.services.sacog_demo_db import restore_sacog_demo_db
 
-CACHE_DIR = Path(settings.BASE_DIR) / "planning"
+CACHE_DIR = Path(settings.BASE_DIR) / ".." / "planning"
 _TIMESTAMP = datetime.datetime.now().strftime("%Y%m%d_%H%M%S")
 REPORT_PATH = CACHE_DIR / f"sacog_comparison_report_{_TIMESTAMP}.md"
 LOG_FILE_PATH = CACHE_DIR / f"sacog_comparison_{_TIMESTAMP}.log"
@@ -384,9 +384,6 @@ class Command(BaseCommand):
         # Lazy imports — avoid loading analysis modules at import time
         # which conflicts with test stubs for pandas/geopandas.
         from brewgis.workspace.analysis.sqlmesh_runner import get_context
-        from brewgis.workspace.analysis.sqlmesh_runner import run_sqlmesh_plan
-        from brewgis.workspace.dlt_pipelines.osm import run_osm_pipeline
-        from brewgis.workspace.services.census_fetcher import _populate_acs_block_group
         from brewgis.workspace.services.comparison_helpers import (
             _convert_reference_totals,
         )
@@ -395,7 +392,6 @@ class Command(BaseCommand):
         )
         from brewgis.workspace.services.comparison_helpers import _load_parcels
         from brewgis.workspace.services.comparison_helpers import _query_table_as_dict
-        from brewgis.workspace.services.lehd_fetcher import _populate_wac_block
 
         self.stdout.write("\n── Pre-flight: Checking SACOG reference tables ──")
         if not self._table_has_rows("public", V1_PARCELS):
@@ -475,202 +471,11 @@ class Command(BaseCommand):
         else:
             self.stdout.write("  Parcels already loaded and unchanged, skipping")
 
-        # ── Conditional data loading ──────────────────────────────────
+        # TODO run vanilla sqlmesh plan here
+        # docker compose run --rm django sqlmesh -p brewgis/sqlmesh/ plan --auto-apply --select-model +brewgis.comparison.sacog_summary
+        # docker compose run --rm django sqlmesh -p brewgis/sqlmesh/ plan --auto-apply --select-model +brewgis.nlcd.overture_road_impervious
 
-        # Populate TIGER/Line block group polygons (needed by ACS reader)
-        self.stdout.write("\n── TIGER/Line block group staging (DuckDB zipfs) ──")
-        self.stdout.write("  TIGER/Line BG: data served from DuckDB zipfs staging VIEW")
-
-        # Populate TIGER/Line block polygons (needed by wac_block_raw)
-        self.stdout.write("\n── TIGER/Line block staging (DuckDB zipfs) ──")
-        self.stdout.write(
-            "  TIGER/Line blocks: data served from DuckDB zipfs staging VIEW"
-        )
-
-        # Populate Census ACS staging table
-        self.stdout.write("\n── Census ACS staging (DuckDB httpfs VIEW) ──")
-        self.stdout.write("  Census ACS: data served from DuckDB httpfs staging VIEW")
-
-        # Populate census.acs_block_group from ACS staging + TIGER BG geometry
-        self.stdout.write("\n── Populating census.acs_block_group ──")
-        if (
-            force_data_fetch
-            or force_data_reload
-            or not self._table_has_rows("staging__brewgis_prod", "acs_block_group")
-        ):
-            acs_bg_count = _populate_acs_block_group(
-                STATE_FIPS, SACOG_COUNTIES, ACS_YEAR
-            )
-            self.stdout.write(
-                f"  census.acs_block_group populated: {acs_bg_count:,} rows"
-            )
-        else:
-            self.stdout.write("  census.acs_block_group already populated, skipping")
-
-        # Populate Census 2020 block staging table
-        self.stdout.write("\n── Census 2020 block staging (DuckDB httpfs VIEW) ──")
-        self.stdout.write(
-            "  Census 2020 blocks: data served from DuckDB httpfs staging VIEW"
-        )
-
-        # Populate Census PDB staging table
-        self.stdout.write("\n── Census PDB staging (DuckDB httpfs VIEW) ──")
-        self.stdout.write("  Census PDB: data served from DuckDB httpfs staging VIEW")
-
-        # Populate LEHD staging table before ETL
-        self.stdout.write("\n── LEHD LODES staging (DuckDB httpfs VIEW) ──")
-        self.stdout.write("  LEHD LODES: data served from DuckDB httpfs staging VIEW")
-
-        # Populate lehd.wac_block from LEHD staging + TIGER geometry
-        self.stdout.write("\n── Populating lehd.wac_block ──")
-        if (
-            force_data_fetch
-            or force_data_reload
-            or not self._table_has_rows("staging__brewgis_prod", "wac_block")
-        ):
-            lehd_wac_count = _populate_wac_block(
-                STATE_FIPS, COUNTY_FIPS, year=LEHD_YEAR
-            )
-            self.stdout.write(f"  lehd.wac_block populated: {lehd_wac_count:,} rows")
-        else:
-            self.stdout.write("  lehd.wac_block already populated, skipping")
-        # ── Phase 1.5: Optional data pipelines (conditional) ─────────
-
-        if use_assessor_geometry:
-            # Assessor parcels and sales now served from DuckDB GeoParquet staging.
-            # Download from ArcGIS REST services and write parquet files so
-            # duckdb.staging.assessor_parcels and duckdb.staging.assessor_sales
-            # (SQLMesh VIEWs) can read them. The bridge FULL models then copy
-            # into the brewgis.staging schema for PostGIS access.
-            from brewgis.workspace.services.assessor_fetcher import fetch_parcels_arcgis
-            from brewgis.workspace.services.assessor_fetcher import fetch_sales_arcgis
-            from brewgis.workspace.services.assessor_fetcher import write_to_geoparquet
-
-            assessor_parquet_dir = Path(settings.BASE_DIR) / "planning" / "assessor"
-            assessor_parquet_dir.mkdir(parents=True, exist_ok=True)
-            parcels_parquet = assessor_parquet_dir / "assessor_parcels.parquet"
-            sales_parquet = assessor_parquet_dir / "assessor_sales.parquet"
-
-            self.stdout.write("\n── Populating Assessor parcel geometries ──")
-            if force_data_fetch or force_data_reload or not parcels_parquet.exists():
-                self.stdout.write("  Downloading assessor parcels from ArcGIS...")
-                parcels_gdf = fetch_parcels_arcgis()
-                result = write_to_geoparquet(parcels=parcels_gdf)
-                self.stdout.write(
-                    f"  Downloaded {result.get('parcels', 0):,} parcels → {parcels_parquet}"
-                )
-            else:
-                self.stdout.write("  Assessor parcels already cached, skipping")
-
-            self.stdout.write("\n── Populating Assessor building characteristics ──")
-            if force_data_fetch or force_data_reload or not sales_parquet.exists():
-                self.stdout.write("  Downloading assessor sales data from ArcGIS...")
-                sales_gdf = fetch_sales_arcgis()
-                result = write_to_geoparquet(sales=sales_gdf)
-                self.stdout.write(
-                    f"  Downloaded {result.get('sales', 0):,} sales records → {sales_parquet}"
-                )
-            else:
-                self.stdout.write("  Assessor sales already cached, skipping")
-
-        if osm:
-            self.stdout.write("\n── Computing OSM intersection density ──")
-            if (
-                force_data_fetch
-                or force_data_reload
-                or not self._table_has_rows("public", "osm_intersection_density")
-            ):
-                osm_result = run_osm_pipeline(
-                    parcel_table="sacog_comparison_parcels",  # why is this different? investigate swapping
-                )
-                self.stdout.write(
-                    f"  OSM intersection density loaded: {osm_result.get('row_count', 0)} rows"
-                )
-            else:
-                self.stdout.write("  OSM intersection density already loaded, skipping")
-
-        # ── Phase 2: Single consolidated SQLMesh plan call ─────────────────
-        self.stdout.write("\n── Phase 2: Running consolidated SQLMesh plan ──")
-
-        model_selectors: list[str] = [
-            "+brewgis.staging.acs_bridge",
-            "+brewgis.sacog.parcel_shim",
-            "+brewgis.staging.census_2020_block",
-            "+brewgis.base_canvas.base_canvas_reconciled",
-            "+brewgis.comparison.sacog_summary",
-        ]
-        if False and nlcd:
-            model_selectors.extend(
-                [
-                    "+brewgis.nlcd.parcels_wm",
-                    "+brewgis.nlcd.nlcd_parcel_stats",
-                    "+brewgis.nlcd.nlcd_tree_canopy_parcel_stats",
-                ]
-            )
-        if False and use_assessor_geometry:
-            model_selectors.extend(
-                [
-                    "+brewgis.staging.overture_buildings",
-                    "+brewgis.staging.vida_combined_buildings",
-                    "+brewgis.sacog.assessor_parcels",
-                    "+brewgis.assessor.sacog_assessor_sales",
-                    "+brewgis.assessor.assessor_building_medians",
-                    "+brewgis.assessor.buildings_combined",
-                    "+brewgis.sacog.parcel_building_footprints",
-                    "+brewgis.sacog.parcel_block_groups",
-                    "+brewgis.sacog.parcel_footprint_imputed",
-                    "+brewgis.sacog.authoritative_residential_area",
-                    "+brewgis.sacog.parcel_dasymetric_weights",
-                    "+brewgis.comparison.training_parcel_map",
-                    "+brewgis.sacog.comparison_dasymetric",
-                ]
-            )
-        if False and overture_roads:
-            model_selectors.extend(
-                [
-                    "+brewgis.staging.overture_transport",
-                    "+brewgis.nlcd.overture_road_impervious",
-                ]
-            )
-
-        from brewgis.sqlmesh.config import REGIONS
-
-        # Region parameters come from the central REGIONS config.
-        plan_vars: dict[str, object] = dict(REGIONS["sacog"])
-        if osm:
-            plan_vars["osm_intersection_table"] = "osm_intersection_density"
-
-        # --- environment invalidation ---
-        restate_models_list: list[str] = [
-            *(restate_models or []),
-        ]
-        selector_fqns = [s.lstrip("+") for s in model_selectors]
-
-        if force_data_reload:
-            if environment == "prod":
-                if restate_models:
-                    restate_models_list.extend(
-                        [
-                            *selector_fqns,
-                            "brewgis.base_canvas.base_canvas_geometry",
-                            "brewgis.base_canvas.base_canvas_combined",
-                            "brewgis.base_canvas.base_canvas_imputed",
-                        ]
-                    )
-            else:
-                reload_context = get_context(**plan_vars)
-                reload_context.invalidate_environment(environment)
-                logger.info("Invalidated sacog_comparison environment for full rebuild")
-
-        plan, context = run_sqlmesh_plan(
-            environment=environment,
-            skip_tests=False,
-            select=model_selectors,
-            variables=plan_vars,
-            restate_models=restate_models_list or False,
-        )
-        self.stdout.write(self.style.SUCCESS("  SQLMesh models complete"))
-
+        context = get_context()
         # ── Phase 4: Read results from SQLMesh-materialized tables ─────────
         self.stdout.write("\n── Phase 4: Reading comparison data from SQLMesh ──")
         sacog_summary_table = context.table_name(
