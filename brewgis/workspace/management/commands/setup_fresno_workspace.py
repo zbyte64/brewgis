@@ -664,14 +664,11 @@ class Command(BaseCommand):
 
         from brewgis.sqlmesh.config import REGIONS
 
-        # Region parameters come from the central REGIONS config; only the
-        # blueprinted pipeline entry points differ from the shared defaults.
+        # Region parameters come from the central REGIONS config.
         # CBP employment controls default to 0 (no county totals for Fresno);
         # users can override via --cbp-employment.
         plan_vars: dict[str, object] = dict(REGIONS["fresno"])
         plan_vars.update(cbp_vars)
-        plan_vars["parcel_table"] = "brewgis.fresno.parcel_shim"
-        plan_vars["dasymetric_source"] = "brewgis.fresno.comparison_dasymetric"
 
         self.stdout.write("  SQLMesh plan variables configured")
         if cbp_vars:

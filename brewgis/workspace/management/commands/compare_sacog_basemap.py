@@ -635,11 +635,8 @@ class Command(BaseCommand):
 
         from brewgis.sqlmesh.config import REGIONS
 
-        # Region parameters come from the central REGIONS config; only the
-        # blueprinted pipeline entry points differ from the shared defaults.
+        # Region parameters come from the central REGIONS config.
         plan_vars: dict[str, object] = dict(REGIONS["sacog"])
-        plan_vars["parcel_table"] = "brewgis.sacog.parcel_shim"
-        plan_vars["dasymetric_source"] = "brewgis.sacog.comparison_dasymetric"
         if osm:
             plan_vars["osm_intersection_table"] = "osm_intersection_density"
 

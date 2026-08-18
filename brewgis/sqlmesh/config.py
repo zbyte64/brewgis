@@ -258,6 +258,8 @@ REGIONS: dict[str, dict[str, object]] = {
     "sacog": {
         # Sacramento, Amador, El Dorado, Placer
         "county_fips": "067,005,017,061",
+        "parcel_table": "brewgis.sacog.parcel_shim",
+        "dasymetric_source": "brewgis.sacog.comparison_dasymetric",
         "acs_year": 2013,
         # Overture Sacramento County bbox
         "overture_bbox_min_x": -121.87,
@@ -287,6 +289,8 @@ REGIONS: dict[str, dict[str, object]] = {
     },
     "fresno": {
         "county_fips": "019",
+        "parcel_table": "brewgis.fresno.parcel_shim",
+        "dasymetric_source": "brewgis.fresno.comparison_dasymetric",
         "acs_year": 2022,
         # Fresno-Clovis urban area bounding box
         "overture_bbox_min_x": -119.95,
@@ -420,7 +424,8 @@ def config_factory(**variables):
             # Scenario table references (overridden per scenario)
             "scenario_schema": "public",
             "base_canvas_table": "base_canvas",
-            "parcel_table": "public.parcels",
+            "parcel_table": "brewgis.sacog.parcel_shim",
+            "dasymetric_source": "brewgis.sacog.comparison_dasymetric",
             "constraint_table": "public.constraints",
             "built_form_table": "public.built_forms",
             "constraints": [],
