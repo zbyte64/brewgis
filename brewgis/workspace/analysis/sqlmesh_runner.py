@@ -47,6 +47,7 @@ def _models_in_environment(context: Context, environment: str) -> list[str]:
     return [s.name.replace('"', "") for s in snapshots]
 
 
+# deprecated
 def run_sqlmesh_plan(  # noqa: PLR0913
     environment: str = "prod",
     *,

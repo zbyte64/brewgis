@@ -157,9 +157,9 @@ module = [
     "brewgis.workspace.views",
     "brewgis.workspace.models",
     "brewgis.conftest",
-    "config.celery_app",
-    "config.wsgi",
-    "config.urls",
+    "brewgis.config.celery_app",
+    "brewgis.config.wsgi",
+    "brewgis.config.urls",
 ]
 disallow_untyped_defs = false
 

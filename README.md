@@ -87,7 +87,7 @@ For hot-reload and breakpoint support:
 cp .env.example .env
 docker compose -f docker-compose.infra.yml up -d
 python manage.py runserver     # Django on localhost:8000
-celery -A config.celery_app worker -l info  # Celery on host
+celery -A brewgis.config.celery_app worker -l info  # Celery on host
 ```
 
 ## Key Features

@@ -54,8 +54,8 @@ DATABASES["default"]["ENGINE"] = "django.contrib.gis.db.backends.postgis"
 # ==============================================================================
 # URLS
 # ==============================================================================
-ROOT_URLCONF = "config.urls"
-WSGI_APPLICATION = "config.wsgi.application"
+ROOT_URLCONF = "brewgis.config.urls"
+WSGI_APPLICATION = "brewgis.config.wsgi.application"
 
 # ==============================================================================
 # APPS
