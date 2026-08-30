@@ -37,9 +37,7 @@ class TestLightgbmCache:
     @staticmethod
     def _fake_model(n_targets: int) -> Any:
         """Minimal stand-in for a fitted MultiOutputRegressor."""
-        return types.SimpleNamespace(
-            estimators_=[object() for _ in range(n_targets)]
-        )
+        return types.SimpleNamespace(estimators_=[object() for _ in range(n_targets)])
 
     def test_type_isolation(self) -> None:
         """load_latest_model must only return models of the requested type."""
@@ -103,12 +101,8 @@ class TestLightgbmCache:
         type-keyed glob) and type-named files containing a bare model
         (no wrapped target list — rejected by payload validation).
         """
-        (tmp_path / "deadbeef.pkl").write_bytes(
-            pickle.dumps(self._fake_model(15))
-        )
-        (tmp_path / "du__deadbeef.pkl").write_bytes(
-            pickle.dumps(self._fake_model(15))
-        )
+        (tmp_path / "deadbeef.pkl").write_bytes(pickle.dumps(self._fake_model(15)))
+        (tmp_path / "du__deadbeef.pkl").write_bytes(pickle.dumps(self._fake_model(15)))
 
         assert _cache.load_latest_model("du") is None
         assert _cache.load_latest_model("sqft") is None
