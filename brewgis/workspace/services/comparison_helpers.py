@@ -349,10 +349,15 @@ def _generate_report_markdown(
             lines.append("")
             lines.append("| Metric | Value |")
             lines.append("|--------|-------|")
+            if emp.get("error"):
+                lines.append(f"| Error | {emp['error']} |")
             lines.append(
                 f"| WAC blocks with geometry | {emp.get('wac_blocks_with_geom', 0):,} |"
             )
             lines.append(f"| Total WAC blocks | {emp.get('total_wac_blocks', 0):,} |")
+            error_keys = [k for k in emp if k.startswith("error_") and emp[k]]
+            for ek in sorted(error_keys):
+                lines.append(f"| {ek} | {emp[ek]} |")
 
         rs = diagnostics.get("road_surface", {})
         # Road Surface Diagnostics (Overture Transportation)
@@ -381,10 +386,10 @@ def _generate_report_markdown(
                 f"| Parcels intersecting roads | {parcels_with:,} ({parcel_pct:.1f}%) |"
             )
             lines.append(
-                f"| Total paved road area | {rs.get('total_road_paved_area', 0):,.1f} acres |"
+                f"| Total paved road length | {rs.get('total_road_paved_length_m', 0):,.1f} m |"
             )
             lines.append(
-                f"| Total unpaved road area | {rs.get('total_road_unpaved_area', 0):,.1f} acres |"
+                f"| Total unpaved road length | {rs.get('total_road_unpaved_length_m', 0):,.1f} m |"
             )
             lines.append(
                 f"| Avg road impervious fraction | "
@@ -407,6 +412,8 @@ def _generate_report_markdown(
         lines.append("")
         lines.append("| Metric | Value |")
         lines.append("|--------|-------|")
+        if rn.get("error"):
+            lines.append(f"| Error | {rn['error']} |")
         total_rows = rn.get("total_rows", 0)
         unique_parcels = rn.get("unique_parcels", 0)
         cmp_with = rn.get("comparison_parcels_with_features", 0)
@@ -425,6 +432,9 @@ def _generate_report_markdown(
         if lon_min or lon_max or lat_min or lat_max:
             lines.append(f"| Spatial extent (lon) | [{lon_min:.4f}, {lon_max:.4f}] |")
             lines.append(f"| Spatial extent (lat) | [{lat_min:.4f}, {lat_max:.4f}] |")
+        error_keys = [k for k in rn if k.startswith("error_") and rn[k]]
+        for ek in sorted(error_keys):
+            lines.append(f"| {ek} | {rn[ek]} |")
 
         lines.append("")
     lines.append("")

@@ -535,6 +535,7 @@ class Command(BaseCommand):
             "brewgis.assessor.parcel_resnet_features",
             environment,
         )
+        wac_block_table = context.table_name("brewgis.staging.wac_block", environment)
         overture_transport_table = context.table_name(
             "brewgis.staging.overture_transport",
             environment,
@@ -566,6 +567,7 @@ class Command(BaseCommand):
                 building_footprints_table=building_footprints_table,
                 reconciled_table=reconciled_table,
                 resnet_features_table=resnet_features_table,
+                wac_block_table=wac_block_table,
                 overture_transport_table=overture_transport_table
                 if overture_roads
                 else None,
@@ -677,6 +679,7 @@ def _collect_diagnostics(
     building_footprints_table: str | None = None,
     reconciled_table: str | None = None,
     resnet_features_table: str | None = None,
+    wac_block_table: str | None = None,
     overture_transport_table: str | None = None,
     overture_road_impervious_table: str | None = None,
     overture_roads: bool = False,
@@ -696,6 +699,8 @@ def _collect_diagnostics(
             or None to skip land-development-category diagnostics.
         resnet_features_table: ResNet feature snapshot table name, or None
             to skip ResNet coverage diagnostics.
+        wac_block_table: Physical table name of ``brewgis.staging.wac_block``
+            resolved via SQLMesh, or None to skip WAC diagnostics.
 
     Returns:
         Dict with keys ``dasymetric``, ``assessor``, ``employment``,
@@ -767,24 +772,32 @@ def _collect_diagnostics(
                 except Exception:
                     pass
 
-    # Employment pipeline: WAC block counts
-    with engine.connect() as conn:
-        try:
-            row = conn.execute(
-                text("SELECT COUNT(*) FROM staging__brewgis_prod.wac_block")
-            ).scalar()
-            diagnostics["employment"]["total_wac_blocks"] = row or 0
-        except Exception:
-            pass
-        try:
-            row = conn.execute(
-                text(
-                    "SELECT COUNT(*) FROM staging__brewgis_prod.wac_block WHERE geometry IS NOT NULL"
-                )
-            ).scalar()
-            diagnostics["employment"]["wac_blocks_with_geom"] = row or 0
-        except Exception:
-            pass
+    # Employment pipeline: WAC block counts. The physical table is resolved
+    # via context.table_name (see _run) — the pre-refactor literal
+    # ``staging__brewgis_prod.wac_block`` no longer exists under the SQLMesh
+    # blueprint physical naming.
+    if wac_block_table:
+        with engine.connect() as conn:
+            try:
+                row = conn.execute(
+                    text(f"SELECT COUNT(*) FROM {wac_block_table}")
+                ).scalar()
+                diagnostics["employment"]["total_wac_blocks"] = row or 0
+            except Exception as exc:
+                conn.rollback()
+                diagnostics["employment"]["error_total_wac_blocks"] = str(exc)
+            try:
+                row = conn.execute(
+                    text(
+                        f"SELECT COUNT(*) FROM {wac_block_table} WHERE geometry IS NOT NULL"
+                    )
+                ).scalar()
+                diagnostics["employment"]["wac_blocks_with_geom"] = row or 0
+            except Exception as exc:
+                conn.rollback()
+                diagnostics["employment"]["error_wac_blocks_with_geom"] = str(exc)
+    else:
+        diagnostics["employment"]["error"] = "wac_block table not resolved"
 
     # ResNet feature coverage
     diagnostics["resnet"] = {
@@ -804,8 +817,9 @@ def _collect_diagnostics(
                     text(f"SELECT COUNT(*) FROM {resnet_features_table}")
                 ).scalar()
                 diagnostics["resnet"]["total_rows"] = row or 0
-            except Exception:
-                pass
+            except Exception as exc:
+                conn.rollback()
+                diagnostics["resnet"]["error_total_rows"] = str(exc)
             try:
                 row = conn.execute(
                     text(
@@ -813,8 +827,9 @@ def _collect_diagnostics(
                     )
                 ).scalar()
                 diagnostics["resnet"]["unique_parcels"] = row or 0
-            except Exception:
-                pass
+            except Exception as exc:
+                conn.rollback()
+                diagnostics["resnet"]["error_unique_parcels"] = str(exc)
             try:
                 row = conn.execute(
                     text(
@@ -828,15 +843,19 @@ def _collect_diagnostics(
                     )
                 ).scalar()
                 diagnostics["resnet"]["comparison_parcels_with_features"] = row or 0
-            except Exception:
-                pass
+            except Exception as exc:
+                conn.rollback()
+                diagnostics["resnet"]["error_comparison_parcels_with_features"] = str(
+                    exc
+                )
             try:
                 row = conn.execute(
                     text(f"SELECT COUNT(*) FROM {dasymetric_table}")
                 ).scalar()
                 diagnostics["resnet"]["comparison_parcels_total"] = row or 0
-            except Exception:
-                pass
+            except Exception as exc:
+                conn.rollback()
+                diagnostics["resnet"]["error_comparison_parcels_total"] = str(exc)
             # Spatial extent of ResNet parcels
             try:
                 row = conn.execute(
@@ -860,8 +879,13 @@ def _collect_diagnostics(
                         diagnostics["resnet"]["max_lon"],
                         diagnostics["resnet"]["max_lat"],
                     ) = (float(v) if v is not None else 0.0 for v in row)
-            except Exception:
-                pass
+            except Exception as exc:
+                conn.rollback()
+                diagnostics["resnet"]["error_spatial_extent"] = str(exc)
+    else:
+        diagnostics["resnet"]["error"] = (
+            "resnet_features_table and/or dasymetric_table not resolved"
+        )
 
     # Authoritative Building Intersection Diagnostics
     diagnostics["authoritative"] = {
@@ -1089,8 +1113,8 @@ def _collect_diagnostics(
         "unpaved_segments": 0,
         "parcels_with_roads": 0,
         "total_parcels": 0,
-        "total_road_paved_area": 0.0,
-        "total_road_unpaved_area": 0.0,
+        "total_road_paved_length_m": 0.0,
+        "total_road_unpaved_length_m": 0.0,
         "avg_road_impervious_fraction": 0.0,
         "surface_class_breakdown": {},
     }
@@ -1111,6 +1135,7 @@ def _collect_diagnostics(
                 ).scalar()
                 diagnostics["road_surface"]["segment_count"] = row or 0
             except Exception as exc:
+                conn.rollback()  # abort the PG transaction so later queries run
                 diagnostics["road_surface"]["error_segment_count"] = str(exc)
             try:
                 row = conn.execute(
@@ -1121,6 +1146,7 @@ def _collect_diagnostics(
                 ).scalar()
                 diagnostics["road_surface"]["paved_segments"] = row or 0
             except Exception as exc:
+                conn.rollback()
                 diagnostics["road_surface"]["error_paved_segments"] = str(exc)
             try:
                 row = conn.execute(
@@ -1131,6 +1157,7 @@ def _collect_diagnostics(
                 ).scalar()
                 diagnostics["road_surface"]["unpaved_segments"] = row or 0
             except Exception as exc:
+                conn.rollback()
                 diagnostics["road_surface"]["error_unpaved_segments"] = str(exc)
             try:
                 rows = conn.execute(
@@ -1144,17 +1171,19 @@ def _collect_diagnostics(
                     row[0]: row[1] for row in rows
                 }
             except Exception as exc:
+                conn.rollback()
                 diagnostics["road_surface"]["error_surface_class_breakdown"] = str(exc)
             try:
                 row = conn.execute(
                     text(
                         f"SELECT COUNT(DISTINCT parcel_id) AS cnt "
                         f"FROM {road_impervious} "
-                        "WHERE road_total_area > 0"
+                        "WHERE road_total_length_m > 0"
                     )
                 ).scalar()
                 diagnostics["road_surface"]["parcels_with_roads"] = row or 0
             except Exception as exc:
+                conn.rollback()
                 diagnostics["road_surface"]["error_parcels_with_roads"] = str(exc)
             try:
                 row = conn.execute(
@@ -1162,35 +1191,38 @@ def _collect_diagnostics(
                 ).scalar()
                 diagnostics["road_surface"]["total_parcels"] = row or 0
             except Exception as exc:
+                conn.rollback()
                 diagnostics["road_surface"]["error_total_parcels"] = str(exc)
             try:
                 row = conn.execute(
                     text(
-                        f"SELECT SUM(road_paved_area) AS paved, SUM(road_unpaved_area) AS unpaved "
+                        f"SELECT SUM(road_paved_length_m) AS paved, SUM(road_unpaved_length_m) AS unpaved "
                         f"FROM {road_impervious}"
                     )
                 ).fetchone()
                 if row:
-                    diagnostics["road_surface"]["total_road_paved_area"] = float(
+                    diagnostics["road_surface"]["total_road_paved_length_m"] = float(
                         row[0] or 0.0
                     )
-                    diagnostics["road_surface"]["total_road_unpaved_area"] = float(
+                    diagnostics["road_surface"]["total_road_unpaved_length_m"] = float(
                         row[1] or 0.0
                     )
             except Exception as exc:
+                conn.rollback()
                 diagnostics["road_surface"]["error_road_area"] = str(exc)
             try:
                 row = conn.execute(
                     text(
                         f"SELECT AVG(road_impervious_fraction) AS avg_frac "
                         f"FROM {road_impervious} "
-                        "WHERE road_total_area > 0"
+                        "WHERE road_total_length_m > 0"
                     )
                 ).scalar()
                 diagnostics["road_surface"]["avg_road_impervious_fraction"] = float(
                     row or 0.0
                 )
             except Exception as exc:
+                conn.rollback()
                 diagnostics["road_surface"]["error_avg_impervious"] = str(exc)
 
     return diagnostics

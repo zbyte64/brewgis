@@ -76,7 +76,6 @@ class TestCompareSacogReport:
                 brew=brew,
                 etl_result={},
                 quick=False,
-                limit=None,
                 correlations=None,
                 weighted_means=weighted_means,
             )
@@ -225,7 +224,6 @@ class TestCompareSacogReport:
             brew,
             output_path=report_path,
             quick=False,
-            limit=0,
             diagnostics=diagnostics,
             config=config,
         )
@@ -248,8 +246,8 @@ class TestCompareSacogReport:
                 },
                 "total_parcels": 1000,
                 "parcels_with_roads": 800,
-                "total_road_paved_area": 2500.5,
-                "total_road_unpaved_area": 300.2,
+                "total_road_paved_length_m": 2500.5,
+                "total_road_unpaved_length_m": 300.2,
                 "avg_road_impervious_fraction": 0.0456,
             },
         }
@@ -267,9 +265,35 @@ class TestCompareSacogReport:
             assert "| Paved segments | 40,000" in text
             assert "| Unpaved segments | 8,000" in text
             assert "| Parcels intersecting roads | 800 (80.0%) |" in text
-            assert "| Total paved road area | 2,500.5 acres |" in text
-            assert "| Total unpaved road area | 300.2 acres |" in text
+            assert "| Total paved road length | 2,500.5 m |" in text
+            assert "| Total unpaved road length | 300.2 m |" in text
             assert "| Avg road impervious fraction | 0.0456 |" in text
+        finally:
+            path.unlink(missing_ok=True)
+
+    def test_employment_diagnostics_error_rendered(self) -> None:
+        """Employment diagnostics render WAC metrics and surface query errors."""
+        ref: dict[str, float] = {}
+        brew: dict[str, float] = {}
+        diagnostics: dict = {
+            "employment": {
+                "total_wac_blocks": 11082,
+                "wac_blocks_with_geom": 11082,
+                "error_total_wac_blocks": "boom",
+            },
+        }
+
+        with tempfile.NamedTemporaryFile(suffix=".md", delete=False, mode="w") as f:
+            path = Path(f.name)
+
+        try:
+            text = self._build_report_with_diagnostics(
+                ref, brew, path, diagnostics=diagnostics
+            )
+            assert "### Employment Pipeline" in text
+            assert "| Total WAC blocks | 11,082 |" in text
+            assert "| WAC blocks with geometry | 11,082 |" in text
+            assert "| error_total_wac_blocks | boom |" in text
         finally:
             path.unlink(missing_ok=True)
 
@@ -285,8 +309,8 @@ class TestCompareSacogReport:
                 "surface_class_breakdown": {},
                 "total_parcels": 100,
                 "parcels_with_roads": 50,
-                "total_road_paved_area": 10.0,
-                "total_road_unpaved_area": 2.0,
+                "total_road_paved_length_m": 10.0,
+                "total_road_unpaved_length_m": 2.0,
                 "avg_road_impervious_fraction": 0.012,
             },
         }
@@ -318,8 +342,8 @@ class TestCompareSacogReport:
                 "surface_class_breakdown": {},
                 "total_parcels": 0,
                 "parcels_with_roads": 0,
-                "total_road_paved_area": 0.0,
-                "total_road_unpaved_area": 0.0,
+                "total_road_paved_length_m": 0.0,
+                "total_road_unpaved_length_m": 0.0,
                 "avg_road_impervious_fraction": 0.0,
             },
         }

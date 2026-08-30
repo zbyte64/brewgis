@@ -6,7 +6,7 @@ MODEL (
   ),
   audits (
     not_null(columns := (parcel_id)),
-    assert_road_area_valid
+    assert_road_length_valid
   )
 );
 
@@ -21,9 +21,8 @@ MODEL (
 --
 -- Computes paved and unpaved road metrics within each parcel using Overture
 -- transportation segments (roads). Overture roads are ST_LineString, so
--- ST_Area of the intersection is always 0. Instead, we compute:
---   - road_length_m: length of road within the parcel (meters)
---   - road_total_area: kept for backward compat (always 0 for linestrings)
+-- ST_Area of the intersection is always 0. All road_*_length_m columns are
+-- LENGTH in meters (not area).
 --
 -- Road classification:
 --   Paved: surface IN ('paved', 'asphalt', 'concrete') or NULL (assumed paved)
@@ -89,10 +88,10 @@ all_parcels AS (
 
 SELECT
     ap.parcel_id,
-    COALESCE(rs.paved_length_m, 0.0) AS road_paved_area,
-    COALESCE(rs.unpaved_length_m, 0.0) AS road_unpaved_area,
-    COALESCE(rs.other_length_m, 0.0) AS road_other_area,
-    COALESCE(rs.road_length_m, 0.0) AS road_total_area,
+    COALESCE(rs.paved_length_m, 0.0) AS road_paved_length_m,
+    COALESCE(rs.unpaved_length_m, 0.0) AS road_unpaved_length_m,
+    COALESCE(rs.other_length_m, 0.0) AS road_other_length_m,
+    COALESCE(rs.road_length_m, 0.0) AS road_total_length_m,
     COALESCE(
         rs.paved_length_m / NULLIF(rs.road_length_m, 0.0),
         0.0
