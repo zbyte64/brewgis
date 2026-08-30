@@ -298,12 +298,12 @@ def execute(
     x_train = _feature_matrix(train_df, landuse_prefixes, zone_prefixes, ldev_cats)
     y_train = train_df[DU_TARGETS].to_numpy()
 
-    # Train or load cached model
+    # Train or load cached model (type-keyed: one cache namespace per regressor)
     combo = pd.concat([x_train.reset_index(drop=True), pd.DataFrame(y_train)], axis=1)
     data_hash = compute_data_hash(combo)
-    model_obj = try_load_cached(data_hash)
+    payload = try_load_cached(data_hash, "du")
 
-    if model_obj is None:
+    if payload is None:
         x_tr, x_va, y_tr, y_va = train_test_split(
             x_train, y_train, test_size=0.2, random_state=42
         )
@@ -322,8 +322,10 @@ def execute(
         if mean_r2 < MIN_R2:
             logger.warning("LightGBM DU: mean R² %.4f < %.2f", mean_r2, MIN_R2)
 
-        save_model(model_obj, data_hash)
+        save_model(model_obj, data_hash, "du", DU_TARGETS)
         del y_train_pred
+    else:
+        model_obj = payload["model"]
     # free memory
     del x_train
     del y_train

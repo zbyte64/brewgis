@@ -15,14 +15,9 @@ No training logic, no region branching — only data availability differs.
 from __future__ import annotations
 
 import logging
-import os
-import pickle
 from collections.abc import Iterator  # noqa: TC003
 from typing import TYPE_CHECKING
 from typing import Any
-
-if TYPE_CHECKING:
-    from pathlib import Path
 
 import numpy as np
 import pandas as pd
@@ -31,7 +26,7 @@ from sqlmesh import model
 from sqlmesh.core.engine_adapter.postgres import PostgresEngineAdapter
 from sqlmesh.core.model.definition import ModelKindName
 
-from brewgis.sqlmesh.models.python._cache import _ensure_cache_dir
+from brewgis.sqlmesh.models.python._cache import load_latest_model
 from brewgis.sqlmesh.models.python._feature_cols import _RESNET_PC_COLS
 from brewgis.sqlmesh.models.python._predict import predict_in_batches
 from brewgis.sqlmesh.models.python.parcel_du_regressor import DU_TARGETS
@@ -40,6 +35,34 @@ from brewgis.sqlmesh.models.python.parcel_du_regressor import NUMERIC_FEATURES
 if TYPE_CHECKING:
     from sqlmesh.core.context import ExecutionContext
     from sqlmesh.utils.date import TimeLike
+
+
+def _load_du_model() -> tuple[Any, list[str]]:
+    """Load the most recently trained DU model from the type-keyed cache.
+
+    Only ``du__*.pkl`` files are considered, so this regressor can never load
+    another model type (sqft/emp_ratios) by accident.
+
+    Raises RuntimeError if no DU model is cached or its targets no longer
+    match the expected ``DU_TARGETS``.
+    """
+    payload = load_latest_model("du")
+    if payload is None:
+        raise RuntimeError(
+            "No cached LightGBM DU model found for the DU regressor. "
+            "Run compare_sacog_basemap first to train models in planning/lightgbm_cache/."
+        )
+    # mypy: the pickled object is a MultiOutputRegressor; attribute access below
+    # is safe at runtime.
+    model_obj: Any = payload["model"]
+    targets = payload["targets"]
+    if targets != DU_TARGETS:
+        msg = (
+            f"DU model target mismatch: cache has {targets}, expected {DU_TARGETS}. "
+            "Retrain the DU regressor (remove planning/lightgbm_cache/du__*.pkl)."
+        )
+        raise RuntimeError(msg)
+    return model_obj, targets
 
 
 @model(
@@ -77,24 +100,9 @@ def execute(
     logger = logging.getLogger(__name__)
     region = context.blueprint_var("region")
 
-    # --- 1. Load the most recently trained model from cache -----------------
-    cache_dir: Path = _ensure_cache_dir()
-    pkl_files = sorted(cache_dir.glob("*.pkl"), key=os.path.getmtime, reverse=True)
-    if not pkl_files:
-        raise RuntimeError(
-            "No cached LightGBM model found for DU regressor. "
-            "Run compare_sacog_basemap first to train models in planning/lightgbm_cache/."
-        )
-    model_path = pkl_files[0]
-    logger.info(
-        "Loading DU model from %s (mtime=%s)",
-        model_path.name,
-        model_path.stat().st_mtime,
-    )
-
-    # mypy: the pickled object is a MultiOutputRegressor, but pickle.loads doesn't
-    # carry the type annotation. The attribute access below is safe at runtime.
-    model_obj: Any = pickle.loads(model_path.read_bytes())
+    # --- 1. Load the most recently trained DU model from cache ---------------
+    model_obj, du_targets = _load_du_model()
+    logger.info("Loaded DU model with %d targets", len(du_targets))
 
     # --- 2. Learn expected feature columns from the trained model ----------
     expected_cols: list[str] = list(model_obj.estimators_[0].feature_names_in_)  # type: ignore[union-attr]

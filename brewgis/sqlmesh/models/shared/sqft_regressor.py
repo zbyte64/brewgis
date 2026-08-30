@@ -15,7 +15,6 @@ No training logic, no region branching — only data availability differs.
 from __future__ import annotations
 
 import logging
-import pickle
 from collections.abc import Iterator  # noqa: TC003
 from typing import TYPE_CHECKING
 from typing import Any
@@ -27,7 +26,7 @@ from sqlmesh import model
 from sqlmesh.core.engine_adapter.postgres import PostgresEngineAdapter
 from sqlmesh.core.model.definition import ModelKindName
 
-from brewgis.sqlmesh.models.python._cache import _ensure_cache_dir
+from brewgis.sqlmesh.models.python._cache import load_latest_model
 from brewgis.sqlmesh.models.python._feature_cols import _RESNET_PC_COLS
 from brewgis.sqlmesh.models.python._predict import predict_in_batches
 
@@ -69,33 +68,32 @@ NUMERIC_FEATURES = [
 ]
 
 
-def _load_model() -> Any:
+def _load_model() -> tuple[Any, list[str]]:
     """Load the most recent trained LightGBM SQFT model from cache.
 
-    Raises RuntimeError if no model is found or the loaded model has the wrong
-    number of output targets.
+    Only ``sqft__*.pkl`` files are considered, so this regressor can never
+    load another model type (du/emp_ratios) by accident.
+
+    Returns the fitted model and its ordered target columns. Raises
+    RuntimeError if no SQFT model is found or the cached targets do not
+    match the expected ``SQFT_TARGETS``.
     """
-    cache_dir = _ensure_cache_dir()
-    pkl_files = sorted(
-        cache_dir.glob("*.pkl"),
-        key=lambda p: p.stat().st_mtime,
-        reverse=True,
-    )
-    if not pkl_files:
+    payload = load_latest_model("sqft")
+    if payload is None:
         raise RuntimeError(
             "No trained LightGBM SQFT model found in planning/lightgbm_cache/. "
             "Run the SACOG pipeline (compare_sacog_basemap) first to train "
             "the SQFT regressor."
         )
-    model_obj = pickle.loads(pkl_files[0].read_bytes())
-    n_outputs = len(model_obj.estimators_)
-    if n_outputs != len(SQFT_TARGETS):
-        raise RuntimeError(
-            f"Loaded model has {n_outputs} target(s), expected {len(SQFT_TARGETS)} "
-            f"for SQFT. Most recent cache file: {pkl_files[0].name}. "
-            "Run the SACOG SQFT regressor pipeline first."
+    model_obj = payload["model"]
+    targets = payload["targets"]
+    if targets != SQFT_TARGETS:
+        msg = (
+            f"Loaded SQFT model has targets {targets}, expected {SQFT_TARGETS}. "
+            "Retrain the SQFT regressor (remove planning/lightgbm_cache/sqft__*.pkl)."
         )
-    return model_obj
+        raise RuntimeError(msg)
+    return model_obj, targets
 
 
 def _get_model_expected_cols(model_obj: Any) -> list[str]:
@@ -205,13 +203,13 @@ def execute(
     logger = logging.getLogger(__name__)
     region = context.blueprint_var("region")
 
-    model_obj = _load_model()
+    model_obj, sqft_targets = _load_model()
     expected_cols = _get_model_expected_cols(model_obj)
     logger.info(
         "%s SQFT: loaded model with %d expected features and %d targets",
         region,
         len(expected_cols),
-        len(SQFT_TARGETS),
+        len(sqft_targets),
     )
 
     dw_table = context.resolve_table(f"brewgis.{region}.parcel_dasymetric_weights")
@@ -275,12 +273,12 @@ def execute(
         _features,
     ):
         partial = apns
-        for i, target in enumerate(SQFT_TARGETS):
+        for i, target in enumerate(sqft_targets):
             partial[target] = np.maximum(y_batch[:, i], 0.0).astype(np.float32)
         results_parts.append(partial)
 
     results = pd.concat(results_parts, ignore_index=True)
-    results["bldg_sqft_total"] = results[SQFT_TARGETS].sum(axis=1).astype(np.float32)
+    results["bldg_sqft_total"] = results[sqft_targets].sum(axis=1).astype(np.float32)
     logger.info("SQFT regressor (%s): %d parcels predicted", region, len(results))
 
     _original = PostgresEngineAdapter.DEFAULT_BATCH_SIZE

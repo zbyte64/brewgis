@@ -15,14 +15,9 @@ No training logic, no region branching — only data availability differs.
 from __future__ import annotations
 
 import logging
-import os
-import pickle
 from collections.abc import Iterator  # noqa: TC003
 from typing import TYPE_CHECKING
 from typing import Any
-
-if TYPE_CHECKING:
-    from pathlib import Path
 
 import numpy as np
 import pandas as pd
@@ -31,7 +26,7 @@ from sqlmesh import model
 from sqlmesh.core.engine_adapter.postgres import PostgresEngineAdapter
 from sqlmesh.core.model.definition import ModelKindName
 
-from brewgis.sqlmesh.models.python._cache import _ensure_cache_dir
+from brewgis.sqlmesh.models.python._cache import load_latest_model
 from brewgis.sqlmesh.models.python._feature_cols import _RESNET_PC_COLS
 from brewgis.sqlmesh.models.python._predict import predict_in_batches
 from brewgis.sqlmesh.models.python.parcel_emp_ratios_regressor import EMP_RATIO_TARGETS
@@ -40,6 +35,37 @@ from brewgis.sqlmesh.models.python.parcel_emp_ratios_regressor import NUMERIC_FE
 if TYPE_CHECKING:
     from sqlmesh.core.context import ExecutionContext
     from sqlmesh.utils.date import TimeLike
+
+
+def _load_emp_model() -> tuple[Any, list[str]]:
+    """Load the most recently trained employment-ratio model from cache.
+
+    Only ``emp_ratios__*.pkl`` files are considered, so this regressor can
+    never load another model type (du/sqft) by accident. The trained target
+    set is variable — zero-sum reference columns are excluded at training
+    time — so the stored target list drives the output column mapping.
+
+    Raises RuntimeError if no model is cached or its targets are not a
+    subset of ``EMP_RATIO_TARGETS``.
+    """
+    payload = load_latest_model("emp_ratios")
+    if payload is None:
+        raise RuntimeError(
+            "No cached LightGBM model found for employment ratios regressor. "
+            "Run compare_sacog_basemap first to train models in planning/lightgbm_cache/."
+        )
+    # mypy: the pickled object is a MultiOutputRegressor; attribute access below
+    # is safe at runtime.
+    model_obj: Any = payload["model"]
+    targets = payload["targets"]
+    if not set(targets) <= set(EMP_RATIO_TARGETS):
+        msg = (
+            f"Employment-ratio model targets {targets} are not a subset of "
+            f"{EMP_RATIO_TARGETS}. Retrain the emp_ratios regressor "
+            "(remove planning/lightgbm_cache/emp_ratios__*.pkl)."
+        )
+        raise RuntimeError(msg)
+    return model_obj, targets
 
 
 @model(
@@ -79,24 +105,9 @@ def execute(
     logger = logging.getLogger(__name__)
     region = context.blueprint_var("region")
 
-    # --- 1. Load the most recently trained model from cache -----------------
-    cache_dir: Path = _ensure_cache_dir()
-    pkl_files = sorted(cache_dir.glob("*.pkl"), key=os.path.getmtime, reverse=True)
-    if not pkl_files:
-        raise RuntimeError(
-            "No cached LightGBM model found for employment ratios regressor. "
-            "Run compare_sacog_basemap first to train models in planning/lightgbm_cache/."
-        )
-    model_path = pkl_files[0]
-    logger.info(
-        "Loading EMP model from %s (mtime=%s)",
-        model_path.name,
-        model_path.stat().st_mtime,
-    )
-
-    # mypy: the pickled object is a MultiOutputRegressor, but pickle.loads doesn't
-    # carry the type annotation. The attribute access below is safe at runtime.
-    model_obj: Any = pickle.loads(model_path.read_bytes())
+    # --- 1. Load the most recently trained EMP model from cache --------------
+    model_obj, emp_targets = _load_emp_model()
+    logger.info("Loaded EMP model with %d targets", len(emp_targets))
 
     # --- 2. Learn expected feature columns from the trained model ----------
     expected_cols: list[str] = list(model_obj.estimators_[0].feature_names_in_)  # type: ignore[union-attr]
@@ -191,10 +202,10 @@ def execute(
         _feature_fn,
     ):
         partial = apns
-        # Initialize all targets to 0; only trained targets get non-zero
+        # Initialize all targets to 0; only trained targets get non-zero predictions
         for t in EMP_RATIO_TARGETS:
             partial[t] = 0.0
-        for i, target in enumerate(EMP_RATIO_TARGETS):
+        for i, target in enumerate(emp_targets):
             partial[target] = np.maximum(y_batch[:, i], 0.0).astype(np.float32)
         results_parts.append(partial)
 
