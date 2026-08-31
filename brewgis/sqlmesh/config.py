@@ -432,13 +432,13 @@ def config_factory(**variables):
             # OSM intersection density table (empty = disabled, overridden per-caller)
             "osm_intersection_table": "",
             # Overture release tag for land cover/use themes
-            "overture_release_tag": "2026-06-17.0",
+            "overture_release_tag": "2026-08-19.0",
             "overture_land_cover_parquet_glob": (
-                "s3://overturemaps-us-west-2/release/2026-06-17.0/"
+                "s3://overturemaps-us-west-2/release/2026-08-19.0/"
                 "theme=base/type=land_cover/*.parquet"
             ),
             "overture_land_use_parquet_glob": (
-                "s3://overturemaps-us-west-2/release/2026-06-17.0/"
+                "s3://overturemaps-us-west-2/release/2026-08-19.0/"
                 "theme=base/type=land_use/*.parquet"
             ),
             # VIDA + Overture building footprint pipeline variables
@@ -448,12 +448,12 @@ def config_factory(**variables):
                 "by_country_s2/country_iso=USA/*.parquet"
             ),
             "overture_parquet_glob": (
-                "s3://overturemaps-us-west-2/release/2026-06-17.0/"
+                "s3://overturemaps-us-west-2/release/2026-08-19.0/"
                 "theme=buildings/type=building/*.parquet"
             ),
             # Overture Transportation — road segments (used by overture road impervious)
             "overture_transport_parquet_glob": (
-                "s3://overturemaps-us-west-2/release/2026-06-17.0/"
+                "s3://overturemaps-us-west-2/release/2026-08-19.0/"
                 "theme=transportation/type=segment/*.parquet"
             ),
             # ---- NLCD DuckDB raster models ----
