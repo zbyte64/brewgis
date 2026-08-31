@@ -33,11 +33,12 @@ from brewgis.sqlmesh.models.python.parcel_du_regressor import DU_TARGETS
 from brewgis.sqlmesh.models.python.parcel_du_regressor import NUMERIC_FEATURES
 
 if TYPE_CHECKING:
+    from sklearn.multioutput import MultiOutputRegressor
     from sqlmesh.core.context import ExecutionContext
     from sqlmesh.utils.date import TimeLike
 
 
-def _load_du_model() -> tuple[Any, list[str]]:
+def _load_du_model() -> tuple[MultiOutputRegressor, list[str]]:
     """Load the most recently trained DU model from the type-keyed cache.
 
     Only ``du__*.pkl`` files are considered, so this regressor can never load
