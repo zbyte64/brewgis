@@ -219,8 +219,8 @@ def execute(
     query = f"""
         SELECT
             dw.apn,
-            'XX'::text AS landuse,
-            'X'::text AS zone,
+            dw.landuse AS landuse,
+            dw.zone AS zone,
             COALESCE(dw.land_development_category, 'urban')
                 AS land_development_category,
             COALESCE(dw.lot_size_acres, 0)::double precision

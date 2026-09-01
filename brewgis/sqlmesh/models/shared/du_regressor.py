@@ -124,8 +124,8 @@ def execute(
         SELECT
             apn,
             lot_size_acres,
-            'XX' AS landuse,
-            'X' AS zone,
+            landuse,
+            zone,
             COALESCE(land_development_category, 'urban') AS land_development_category,
             COALESCE(residential_building_sqft, 0) AS residential_building_sqft,
             COALESCE(commercial_building_sqft, 0) AS commercial_building_sqft,
@@ -160,9 +160,9 @@ def execute(
     def _feature_fn(df: pd.DataFrame) -> pd.DataFrame:
         """Build full feature matrix that exactly matches ``expected_cols``.
 
-        Regions without assessor ``landuse``/``zone`` set them to ``'XX'`` /
-        ``'X'``; the SACOG-trained one-hot encoder maps these to a "missing"
-        category the model handles gracefully.
+        Real assessor ``landuse``/``zone`` (SACOG) are one-hot encoded;
+        regions without them (Fresno) fall back to ``'XX'``/``'X'`` which
+        zeroes every trained category the model handles gracefully.
         """
         df = df.copy()
         df["landuse_prefix"] = df["landuse"].fillna("XX").str[:2]
@@ -179,8 +179,15 @@ def execute(
             if col.startswith(("lu_", "zone_", "ldc_")):
                 df[col] = 0
 
-        df["lu_XX"] = 1  # no assessor landuse in this region
-        df["zone_X"] = 1  # no assessor zone in this region
+        # Real assessor landuse/zone one-hots (SACOG). Rows with no
+        # landuse/zone (Fresno, or NULL assessor codes) fall back to
+        # 'XX'/'X' prefixes, which zero every trained lu_* category and
+        # leave only the trained zone_X category hot.
+        for col in expected_cols:
+            if col.startswith("lu_"):
+                df[col] = (df["landuse_prefix"] == col[3:]).astype(int)
+            elif col.startswith("zone_"):
+                df[col] = (df["zone_prefix"] == col[5:]).astype(int)
 
         ldc_series = df.get("land_development_category", pd.Series(["urban"] * len(df)))
         for cat in ldc_series.unique():
