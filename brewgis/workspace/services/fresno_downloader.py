@@ -24,28 +24,6 @@ CACHE_DIR = Path(settings.BASE_DIR) / "planning" / "fresno_demo"
 # ── Data source definitions ──────────────────────────────────────────
 
 DATASETS: dict[str, dict[str, Any]] = {
-    "parcels": {
-        "description": "Fresno County parcel boundaries (Fresno urban area)",
-        "source": "Fresno County ArcGIS FeatureServer",
-        "base_url": (
-            "https://services6.arcgis.com/Gs01XZPFhKUG8tKU/ArcGIS/rest/services"
-            "/Fresno_County_Parcels/FeatureServer/0/query"
-        ),
-        "params": {
-            "where": "1=1",
-            "outFields": "APN,AGENCY_COD,ROLL_YEAR,SHAPE_AREA",
-            "returnGeometry": "true",
-            "f": "json",
-            "inSR": "4326",
-            "outSR": "4326",
-            "resultRecordCount": "4000",
-            "geometry": '{"xmin":-119.82,"ymin":36.72,"xmax":-119.72,"ymax":36.80}',
-            "geometryType": "esriGeometryEnvelope",
-        },
-        "expected_count": 200_000,
-        "filename": "fresno_parcels.geojson",
-        "needs_pagination": True,
-    },
     "city_boundary": {
         "description": "City of Fresno boundary",
         "source": "Fresno County ArcGIS FeatureServer",

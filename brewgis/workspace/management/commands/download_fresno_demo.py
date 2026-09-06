@@ -2,7 +2,7 @@
 
 Usage:
     python manage.py download_fresno_demo                     # download all datasets
-    python manage.py download_fresno_demo --dataset parcels   # only parcels
+    python manage.py download_fresno_demo --dataset flood_zones   # only flood zones
     python manage.py download_fresno_demo --list-datasets     # list available datasets
 """
 

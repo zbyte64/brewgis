@@ -11,7 +11,7 @@ MODEL (
   ),
   blueprints (
     (region := sacog,  source_schema := 'public',      source_table := 'sacog_comparison_parcels', county_name := 'Sacramento'),
-    (region := fresno, source_schema := 'fresno_demo', source_table := 'fresno_parcels',            county_name := 'Fresno')
+    (region := fresno, source_schema := 'staging', source_table := 'fresno_parcels', county_name := 'Fresno')
   )
 );
 

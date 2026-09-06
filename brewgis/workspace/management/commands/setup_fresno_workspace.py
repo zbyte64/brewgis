@@ -17,7 +17,6 @@ from __future__ import annotations
 import contextlib
 import json
 import logging
-import sys
 from pathlib import Path
 from typing import Any
 from uuid import uuid4
@@ -228,8 +227,9 @@ class Command(BaseCommand):
         # ── Step 2: Create workspace + load built form fixtures ────────
         workspace = self._run_step("Create workspace", self._create_workspace)
 
-        # ── Step 3: Ingest parcels (GeoJSON → fresno_demo.fresno_parcels) ──
-        self._run_step("Ingest parcels", self._ingest_parcels)
+        # ── Step 3: (removed) Parcels now managed by SQLMesh — the
+        # DuckDB page-fetch chain (fresno_parcels → bridge → PostGIS VIEW)
+        # runs in the consolidated SQLMesh plan step below. ───────────────
 
         # ── Step 4: Populate TIGER/Line BG staging ──────────────────────
         self._run_step(
@@ -397,16 +397,6 @@ class Command(BaseCommand):
             ).scalar()
             return bool(count) and count > 0
 
-    def _read_geojson(self, filename: str) -> gpd.GeoDataFrame:
-        filepath = CACHE_DIR / filename
-        if not filepath.exists():
-            self.stdout.write(f"  Cache miss: {filepath}. Run download step first.")
-            sys.exit(1)
-        self.stdout.write(f"  Reading {filepath}...")
-        df: gpd.GeoDataFrame = gpd.read_file(str(filepath))
-        self.stdout.write(f"  Loaded {len(df)} features")
-        return df
-
     def _write_to_postgis(self, df: gpd.GeoDataFrame, table: str, schema: str) -> None:
         if df.geometry.name != "geom":
             df = df.rename_geometry("geom")
@@ -467,50 +457,6 @@ class Command(BaseCommand):
             )
 
         return workspace
-
-    def _ingest_parcels(self) -> int:
-        """Ingest parcels from GeoJSON directly to fresno_demo.fresno_parcels.
-
-        The fresno_parcel_shim SQLMesh model reads from this table and maps
-        columns to the standard parcel contract.
-        """
-        workspace = self._get_workspace()
-        df = self._read_geojson("fresno_parcels.geojson")
-
-        # Normalize parcel ID column
-        if "parcel_id" not in df.columns:
-            if "apn" in df.columns:
-                df["parcel_id"] = df["apn"]
-            elif "geography_id" in df.columns:
-                df["parcel_id"] = df["geography_id"]
-            else:
-                df["parcel_id"] = df.index.astype(str)
-
-        self.stdout.write(
-            f"  Normalized parcel_id column ({df['parcel_id'].nunique()} unique)"
-        )
-
-        # Write directly to the target table
-        engine = get_engine()
-        df.to_postgis(
-            "fresno_parcels",
-            engine,
-            schema=WORKSPACE_SCHEMA,
-            if_exists="replace",
-            chunksize=50000,
-        )
-
-        count = len(df)
-        self.stdout.write(
-            f"  Wrote {count} parcels to {WORKSPACE_SCHEMA}.fresno_parcels"
-        )
-
-        # Register layer
-        self._register_layer(
-            "fresno_parcels", "Fresno County Parcels", workspace, "fill"
-        )
-
-        return count
 
     def _ingest_city_boundary(self) -> int:
         filepath = CACHE_DIR / "fresno_city_boundary.geojson"
@@ -646,6 +592,10 @@ class Command(BaseCommand):
             "+brewgis.fresno.parcel_shim",
             "+brewgis.staging.census_2020_block",
             "+brewgis.base_canvas.base_canvas_reconciled",
+            # SQLMesh selector semantics: "+model" = model + ancestors (upstreams).
+            # Builds the SQLMesh-managed parcel fetch chain (DuckDB page fetch
+            # VIEW → bridge → PostGIS staging VIEW) ahead of parcel_shim.
+            "+brewgis.staging.fresno_parcels",
         ]
         if nlcd:
             model_selectors.extend(

@@ -1,12 +1,3 @@
-- name: '"brewgis"."fresno_demo"."fresno_parcels"'
-  columns:
-    APN: TEXT
-    AGENCY_COD: TEXT
-    ROLL_YEAR: TEXT
-    SHAPE_AREA: DOUBLE PRECISION
-    geometry: GEOMETRY(POLYGON, 4326)
-    parcel_id: TEXT
-  gateway: postgis
 - name: '"brewgis"."public"."base_canvas"'
   columns:
     id: BIGINT
