@@ -72,9 +72,10 @@ def register_tools(server: object) -> None:
             feat_count = None
             try:
                 qs = connection.ops.quote_name
+                schema = layer.db_schema or workspace.db_schema
                 with connection.cursor() as cursor:
                     cursor.execute(
-                        f"SELECT COUNT(*) FROM {qs(workspace.db_schema)}.{qs(layer.db_table)}"
+                        f"SELECT COUNT(*) FROM {qs(schema)}.{qs(layer.db_table)}"
                     )
                     feat_count = cursor.fetchone()[0]
             except Exception:
@@ -106,7 +107,9 @@ def register_tools(server: object) -> None:
         layer = get_object_or_404(Layer, key=layer_key, workspace=workspace)
 
         try:
-            schema = get_table_schema(workspace.db_schema, layer.db_table)
+            schema = get_table_schema(
+                layer.db_schema or workspace.db_schema, layer.db_table
+            )
         except Exception as e:
             return {"error": f"Failed to read schema: {e}", "columns": []}
 
@@ -140,7 +143,7 @@ def register_tools(server: object) -> None:
         layer = get_object_or_404(Layer, key=layer_key, workspace=workspace)
 
         qs = connection.ops.quote_name
-        schema = qs(workspace.db_schema)
+        schema = qs(layer.db_schema or workspace.db_schema)
         table = qs(layer.db_table)
 
         # Build column list

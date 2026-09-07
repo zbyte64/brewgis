@@ -18,7 +18,7 @@ MODEL (
 --
 -- Each page is a GeoJSON FeatureCollection (crs EPSG:4326, honored by
 -- ST_GeomFromGeoJSON on each feature geometry). The service caps responses
--- at 2000 records/request, so @fresno_parcel_page_urls emits paginated URLs
+-- at 2000 records/request, so @arcgis_page_urls emits paginated URLs
 -- (step 2000) as a constant list_value(...) literal — DuckDB does not
 -- accept subqueries or lateral columns inside table functions, so the page
 -- list cannot be read from another relation. The page count is derived from
@@ -37,7 +37,13 @@ SELECT
     feature.properties.SHAPE_AREA::DOUBLE AS shape_area,
     ST_GeomFromGeoJSON(to_json(feature.geometry)) AS geometry
 FROM read_json_auto(
-    @fresno_parcel_page_urls(),
+    @arcgis_page_urls(
+        'https://services6.arcgis.com/Gs01XZPFhKUG8tKU/ArcGIS/rest/services/Fresno_County_Parcels/FeatureServer/0/query',
+        '1=1',
+        'APN,AGENCY_COD,ROLL_YEAR,SHAPE_AREA',
+        geometry = '{"xmin":-119.82,"ymin":36.72,"xmax":-119.72,"ymax":36.80}',
+        fallback_pages = 28
+    ),
     format = 'auto'
 ) r,
 UNNEST(r.features) AS t(feature)

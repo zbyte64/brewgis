@@ -123,7 +123,7 @@ def auto_generate_symbology(
     SymbologyConfig
         The saved configuration (with related ``StyleClass`` rows).
     """
-    schema = layer.workspace.db_schema
+    schema = layer.db_schema or layer.workspace.db_schema
     table = layer.db_table
 
     if attribute_column:

@@ -133,7 +133,7 @@ def generate_legend(config: SymbologyConfig) -> SymbologyLegend:
         try:
             from django.db import connection
 
-            schema = config.layer.workspace.db_schema
+            schema = config.layer.db_schema or config.layer.workspace.db_schema
             table = config.layer.db_table
             col = config.attribute_column
             sql = f'SELECT COUNT(*) FROM "{schema}"."{table}" WHERE "{col}" IS NULL'

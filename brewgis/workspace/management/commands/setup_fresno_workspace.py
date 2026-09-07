@@ -8,7 +8,6 @@ SACOG-trained LightGBM models applied via inference-only Python SQLMesh models.
 Usage:
     python manage.py setup_fresno_workspace
     python manage.py setup_fresno_workspace --overture --nlcd --osm
-    python manage.py setup_fresno_workspace --skip-download
     python manage.py setup_fresno_workspace --force-data-fetch --force-data-reload
 """
 
@@ -90,9 +89,6 @@ PIPELINE_VARS: dict[str, Any] = {
     "horizon_year": HORIZON_YEAR,
 }
 
-CACHE_DIR = Path(settings.BASE_DIR) / "planning" / "fresno_demo"
-CACHE_DIR.mkdir(parents=True, exist_ok=True)
-
 FIXTURE_PATH = (
     Path(settings.BASE_DIR)
     / "brewgis"
@@ -118,11 +114,6 @@ class Command(BaseCommand):
     help = "Set up the Fresno Demo workspace end-to-end using SQLMesh pipeline."
 
     def add_arguments(self, parser: CommandParser) -> None:
-        parser.add_argument(
-            "--skip-download",
-            action="store_true",
-            help="Skip data downloads; use cached files only.",
-        )
         parser.add_argument(
             "--nlcd",
             action="store_true",
@@ -218,12 +209,6 @@ class Command(BaseCommand):
                 "https://api.census.gov/data/key_signup.html"
             )
 
-        # ── Step 1: Download data ──────────────────────────────────────
-        if not options.get("skip_download"):
-            self._run_step("Download data", self._download_data, options)
-        else:
-            self.stdout.write("  [SKIP] Download data")
-
         # ── Step 2: Create workspace + load built form fixtures ────────
         workspace = self._run_step("Create workspace", self._create_workspace)
 
@@ -312,16 +297,22 @@ class Command(BaseCommand):
             "  [SKIP] Import POIs (pre-existing import bug in poi pipeline)"
         )
 
-        # ── Step 15: Ingest constraint layers ──────────────────────────
-        self._run_step("Ingest constraint layers", self._ingest_constraints)
+        # ── Step 15: Register constraint layers ────────────────────────
+        self._run_step("Register constraint layers", self._register_constraint_layers)
 
-        # ── Step 16: Export building types ─────────────────────────────
+        # ── Step 16: Register city boundary layer ──────────────────────
+        self._run_step(
+            "Register city boundary layer",
+            self._register_city_boundary_layer,
+        )
+
+        # ── Step 17: Export building types ─────────────────────────────
         self._run_step("Export building types", self._export_built_forms)
 
-        # ── Step 17: Create base scenario ──────────────────────────────
+        # ── Step 18: Create base scenario ──────────────────────────────
         self._run_step("Create base scenario", self._create_base_scenario)
 
-        # ── Step 18: Run analysis pipeline ─────────────────────────────
+        # ── Step 19: Run analysis pipeline ─────────────────────────────
         self._run_step("Run analysis pipeline", self._run_analysis)
 
         self.stdout.write(self.style.SUCCESS("\nFresno demo workspace setup complete!"))
@@ -415,6 +406,7 @@ class Command(BaseCommand):
         workspace: Workspace,
         geometry_type: str = "fill",
         layer_source: str = "Fresno Demo",
+        db_schema: str = "",
     ) -> Layer:
         layer, created = Layer.objects.get_or_create(
             key=key,
@@ -422,6 +414,7 @@ class Command(BaseCommand):
             defaults={
                 "name": name,
                 "db_table": key,
+                "db_schema": db_schema,
                 "geometry_type": geometry_type,
                 "layer_source": layer_source,
             },
@@ -432,12 +425,6 @@ class Command(BaseCommand):
         return layer
 
     # -- Step implementations --------------------------------------------
-
-    def _download_data(self, options: Any) -> None:
-        args = []
-        if options.get("force_data_fetch") or options.get("force_data_reload"):
-            args.append("--force")
-        call_command("download_fresno_demo", *args)
 
     def _create_workspace(self) -> Workspace:
         self._create_db_schema(WORKSPACE_SCHEMA)
@@ -458,23 +445,15 @@ class Command(BaseCommand):
 
         return workspace
 
-    def _ingest_city_boundary(self) -> int:
-        filepath = CACHE_DIR / "fresno_city_boundary.geojson"
-        if not filepath.exists():
-            self.stdout.write("  [SKIP] City boundary not cached; skipping")
-            return 0
+    def _register_city_boundary_layer(self) -> None:
         workspace = self._get_workspace()
-        df = gpd.read_file(str(filepath))
-        self._write_to_postgis(df, "fresno_city_boundary", WORKSPACE_SCHEMA)
         self._register_layer(
-            "fresno_city_boundary",
+            "city_boundary",
             "Fresno City Boundary",
             workspace,
             "fill",
+            db_schema="fresno",
         )
-        count = len(df)
-        self.stdout.write(f"  Ingested city boundary ({count} features)")
-        return count
 
     # -- Data loading helpers ---------------------------------------------
 
@@ -596,6 +575,12 @@ class Command(BaseCommand):
             # Builds the SQLMesh-managed parcel fetch chain (DuckDB page fetch
             # VIEW → bridge → PostGIS staging VIEW) ahead of parcel_shim.
             "+brewgis.staging.fresno_parcels",
+            # Constraint + city boundary datasets: DuckDB ArcGIS fetch VIEW →
+            # bridge → PostGIS VIEW in the brewgis.fresno schema.
+            "+brewgis.fresno.floodplains",
+            "+brewgis.fresno.wetlands",
+            "+brewgis.fresno.farmland",
+            "+brewgis.fresno.city_boundary",
         ]
         if nlcd:
             model_selectors.extend(
@@ -708,39 +693,17 @@ class Command(BaseCommand):
         self.stdout.write(f"  POI data written to {WORKSPACE_SCHEMA}.{table_name}")
         return count
 
-    def _ingest_constraints(self) -> None:
+    def _register_constraint_layers(self) -> None:
         workspace = self._get_workspace()
-        constraint_files = {
-            "flood_zones.geojson": "floodplains",
-            "wetlands.geojson": "wetlands",
-            "farmland.geojson": "farmland",
-        }
-
-        for filename, target_table in constraint_files.items():
-            filepath = CACHE_DIR / filename
-            if not filepath.exists():
-                self.stdout.write(
-                    f"  [SKIP] {filename} not cached; skipping {target_table}"
-                )
-                continue
-
-            self.stdout.write(f"  Ingesting {filename} -> {target_table}...")
-            df = gpd.read_file(str(filepath))
-            if df.empty:
-                self.stdout.write(f"  [SKIP] Empty dataset: {filename}")
-                continue
-            df.columns = [c.lower() for c in df.columns]
-            if "geom" not in df.columns and "geometry" in df.columns:
-                df = df.rename_geometry("geom")
-            self._write_to_postgis(df, target_table, WORKSPACE_SCHEMA)
+        for table in ("floodplains", "wetlands", "farmland"):
             self._register_layer(
-                target_table,
-                target_table.capitalize(),
+                table,
+                table.capitalize(),
                 workspace,
                 "fill",
                 "Environmental Constraints",
+                db_schema="fresno",
             )
-            self.stdout.write(f"  {target_table}: {len(df)} features")
 
         if not self._table_exists(WORKSPACE_SCHEMA, "steep_slopes"):
             with connection.cursor() as cursor:
@@ -751,13 +714,14 @@ class Command(BaseCommand):
                     f")"
                 )
             self.stdout.write("  Created empty steep_slopes table (DEM deferred)")
-            self._register_layer(
-                "steep_slopes",
-                "Steep Slopes",
-                workspace,
-                "fill",
-                "Environmental Constraints",
-            )
+
+        self._register_layer(
+            "steep_slopes",
+            "Steep Slopes",
+            workspace,
+            "fill",
+            "Environmental Constraints",
+        )
 
     def _create_base_scenario(self) -> Scenario:
         workspace = self._get_workspace()

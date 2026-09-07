@@ -360,6 +360,12 @@ def config_factory(**variables):
                         "httpfs_connection_caching": True,
                         "http_retry_wait_ms": 1000,
                         "unsafe_disable_etag_checks": True,
+                        # Full downloads instead of HTTP Range requests: some
+                        # ArcGIS FeatureServers (FEMA NFHL, CA DOC farmland)
+                        # mishandle Range/keep-alive, so cache_httpfs block
+                        # reads fail ("Server sent back more data than
+                        # expected" / malformed JSON at a fixed byte).
+                        "force_download": True,
                     },
                     secrets=[
                         {

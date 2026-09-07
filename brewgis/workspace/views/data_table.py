@@ -32,7 +32,7 @@ def layer_data_table(request: HttpRequest, layer_pk: int) -> HttpResponse:
     sorting and cursor-based pagination via htmx.
     """
     layer = get_object_or_404(Layer, pk=layer_pk)
-    schema = layer.workspace.db_schema
+    schema = layer.db_schema or layer.workspace.db_schema
     table = layer.db_table
 
     quoted_schema = connection.ops.quote_name(schema)

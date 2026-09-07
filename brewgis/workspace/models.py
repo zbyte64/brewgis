@@ -62,6 +62,12 @@ class Layer(models.Model):
     db_table = models.CharField(
         max_length=64,
     )  # TODO ask tipg or pg for list of options
+    db_schema = models.CharField(
+        max_length=64,
+        blank=True,
+        default="",
+        help_text="Schema holding db_table; blank inherits the workspace schema.",
+    )
 
     group = models.ForeignKey(
         "LayerGroup",
@@ -80,7 +86,8 @@ class Layer(models.Model):
 
     def _source_id(self) -> str:
         """Return the tile server source identifier (schema.table)."""
-        return f"{self.workspace.db_schema}.{self.db_table}"
+        schema = self.db_schema or self.workspace.db_schema
+        return f"{schema}.{self.db_table}"
 
     def resolve_tiles_url(self, tile_matrix_set: str = "WebMercatorQuad") -> str:
         """Return the raw tile URL template (tipg only; for backward compat)."""
