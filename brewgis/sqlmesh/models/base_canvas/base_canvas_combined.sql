@@ -839,8 +839,8 @@ nlcd_data AS (
         n.parcel_id,
         n.impervious_fraction,
         tc.tree_canopy_fraction
-    FROM brewgis.nlcd.nlcd_parcel_stats n
-    LEFT JOIN brewgis.nlcd.nlcd_tree_canopy_parcel_stats tc
+    FROM brewgis.@{region}.nlcd_parcel_stats n
+    LEFT JOIN brewgis.@{region}.nlcd_tree_canopy_parcel_stats tc
         ON n.parcel_id = tc.parcel_id
 ),
 

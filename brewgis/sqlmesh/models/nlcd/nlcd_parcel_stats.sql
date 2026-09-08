@@ -1,13 +1,24 @@
 MODEL (
-  name brewgis.nlcd.nlcd_parcel_stats,
+  name brewgis.@{region}.nlcd_parcel_stats,
   kind FULL,
   gateway duckdb,
   dialect duckdb,
   audits (
     not_null(columns := (parcel_id))
   ),
-  depends_on (
-    brewgis.public.sacog_comparison_parcels
+  blueprints (
+    (
+      region := sacog,
+      nlcd_parcel_source := 'brewgis.public.sacog_comparison_parcels',
+      nlcd_parcel_srid := 3310,
+      nlcd_parcel_id := 'id'
+    ),
+    (
+      region := fresno,
+      nlcd_parcel_source := 'brewgis.staging.fresno_parcels',
+      nlcd_parcel_srid := 4326,
+      nlcd_parcel_id := 'parcel_id'
+    )
   )
 );
 
@@ -22,9 +33,11 @@ MODEL (
 -- The GeoTIFF URL is computed dynamically from the parcel bbox and
 -- fetched via httpfs with cache_httpfs handling on-disk caching.
 --
--- Depends on:
---   - @nlcd_parcel_source: PostGIS parcel table with geometry in
---     EPSG:@nlcd_parcel_srid (e.g. public.sacog_comparison_parcels)
+-- Region-scoped parcel source (blueprint var @nlcd_parcel_source), e.g.
+-- sacog: public.sacog_comparison_parcels (geometry EPSG:3310)
+-- fresno: brewgis.staging.fresno_parcels (raw ArcGIS fetch, lon/lat 4326,
+-- geometry stored without SRID -> @nlcd_parcel_srid = 4326).
+-- NLCD is a national dataset, so every region's parcels get real stats.
 
 -- pre_statements
 -- SELECT RT_GdalConfig('GDAL_DISABLE_READDIR_ON_OPEN', 'EMPTY_DIR');
@@ -38,18 +51,22 @@ MODEL (
       || '&format=image/geotiff'
     FROM (
       SELECT
-        ST_XMin(ST_Extent(xf.geom_5070)) AS west,
-        ST_YMin(ST_Extent(xf.geom_5070)) AS south,
-        ST_XMax(ST_Extent(xf.geom_5070)) AS east,
-        ST_YMax(ST_Extent(xf.geom_5070)) AS north
+        ST_XMin(ST_Extent_Agg(xf.geom_5070)) AS west,
+        ST_YMin(ST_Extent_Agg(xf.geom_5070)) AS south,
+        ST_XMax(ST_Extent_Agg(xf.geom_5070)) AS east,
+        ST_YMax(ST_Extent_Agg(xf.geom_5070)) AS north
       FROM (
         SELECT ST_Transform(
           ST_SetCRS(geometry, 'EPSG:' || @nlcd_parcel_srid),
-          'EPSG:5070'
+          'EPSG:' || @nlcd_parcel_srid,
+          'EPSG:5070',
+          true  -- always_xy: see parcels_5070 CTE note
         ) AS geom_5070
-        FROM @nlcd_parcel_source
+        FROM @ref_model(@nlcd_parcel_source)
         WHERE geometry IS NOT NULL
-        LIMIT 1
+        -- NOTE: no LIMIT here — the WCS GetCoverage must span the FULL
+        -- region parcel extent, otherwise only one parcel's raster slice is
+        -- fetched and every other parcel silently falls back to defaults.
       ) xf
     )
   );
@@ -71,12 +88,16 @@ nlcd_pixels AS (
 -- Get parcel geometries and project to EPSG:5070 (raster CRS).
 parcels_5070 AS (
     SELECT
-        id AS parcel_id,
+        @{nlcd_parcel_id} AS parcel_id,
         ST_Transform(
             ST_SetCRS(geometry, 'EPSG:' || @nlcd_parcel_srid),
-            'EPSG:5070'
+            'EPSG:' || @nlcd_parcel_srid,
+            'EPSG:5070',
+            true  -- always_xy: source coords are (lon, lat); EPSG:4326 axis
+                  -- order is (lat, lon) and duckdb honours it, producing inf
+                  -- without this flag (fresno raw parcels are lon/lat 4326).
         ) AS geom_5070
-    FROM brewgis.public.sacog_comparison_parcels
+    FROM @ref_model(@nlcd_parcel_source)
     WHERE geometry IS NOT NULL
 ),
 
@@ -147,8 +168,8 @@ impervious_frac AS (
 
 -- All parcels (including those with zero NLCD overlap).
 all_parcels AS (
-    SELECT id AS parcel_id
-    FROM brewgis.public.sacog_comparison_parcels
+    SELECT @{nlcd_parcel_id} AS parcel_id
+    FROM @ref_model(@nlcd_parcel_source)
     WHERE geometry IS NOT NULL
 )
 
