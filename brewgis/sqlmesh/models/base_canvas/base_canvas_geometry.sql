@@ -1,5 +1,5 @@
 MODEL (
-  name brewgis.base_canvas.base_canvas_geometry,
+  name brewgis.@{region}.base_canvas_geometry,
   kind INCREMENTAL_BY_UNIQUE_KEY (
     unique_key (parcel_id),
     batch_size 100000
@@ -8,16 +8,17 @@ MODEL (
     not_null(columns := (parcel_id))
   ),
 
-  -- Dependencies include both SACOG and Fresno variants so SQLMesh knows
-  -- to build the parcel_shim before this model regardless of which
-  -- @parcel_table / @dasymetric_source variables point to.
+  -- depends_on uses macro refs (@parcel_table / @dasymetric_source) that
+  -- resolve to each blueprint instance's concrete parcel_shim and
+  -- comparison_dasymetric models, so plan ordering works per region.
   depends_on (
-    brewgis.sacog.parcel_shim,
-    brewgis.sacog.comparison_dasymetric,
-    brewgis.fresno.parcel_shim,
-    brewgis.fresno.comparison_dasymetric,
     brewgis.seeds.assessor_use_codes,
-    @parcel_table
+    @parcel_table,
+    @dasymetric_source
+  ),
+  blueprints (
+    (region := sacog,  parcel_table := 'brewgis.sacog.parcel_shim',   dasymetric_source := 'brewgis.sacog.comparison_dasymetric'),
+    (region := fresno, parcel_table := 'brewgis.fresno.parcel_shim',  dasymetric_source := 'brewgis.fresno.comparison_dasymetric')
   )
 );
 
@@ -123,7 +124,7 @@ dasymetric_enrichment AS (
         bldg_area_medical_services,
         bldg_area_transport_warehousing,
         bldg_area_wholesale
-    FROM @VAR('dasymetric_source')
+    FROM @dasymetric_source
 )
 
 SELECT

@@ -181,7 +181,7 @@ def _populate_acs_block_group(
 ) -> int:
     """Fetch ACS data, join with TIGER BG geometry via the ``acs_block_group`` model.
 
-    Invokes SQLMesh to materialize ``brewgis.staging.acs_block_group``
+    Invokes SQLMesh to materialize ``brewgis.sacog.acs_block_group``
     with derived columns, safe percentage computations, and DU sub-type
     splitting. Passes all target counties as a comma-separated list so
     a single plan call captures all counties without overwriting.
@@ -218,7 +218,7 @@ def _populate_acs_block_group(
 
     run_sqlmesh_plan(
         environment="brewgis_prod",
-        select=["brewgis.staging.acs_block_group"],
+        select=["brewgis.sacog.acs_block_group"],
         skip_tests=True,
         variables=acs_vars,
     )
@@ -227,7 +227,7 @@ def _populate_acs_block_group(
     with engine.connect() as conn:
         total_rows = (
             conn.execute(
-                text("SELECT COUNT(*) FROM staging__brewgis_prod.acs_block_group")
+                text("SELECT COUNT(*) FROM sacog__brewgis_prod.acs_block_group")
             ).scalar()
             or 0
         )
@@ -258,7 +258,7 @@ def fetch_acs_data_summary(
     engine = get_engine()
     query = text("""
         SELECT COUNT(*) as row_count
-        FROM brewgis.staging.acs_bridge
+        FROM brewgis.sacog.acs_bridge
         WHERE state = :state_fips
           AND county = :county_fips
           AND year = :year

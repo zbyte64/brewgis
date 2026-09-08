@@ -80,7 +80,7 @@ def run_census_fetch(  # type: ignore[no-untyped-def]
     """Fetch Census ACS demographics data via SQLMesh and register as Layer.
 
     The DuckDB staging VIEW reads directly from the Census API via httpfs;
-    the bridge model ``brewgis.staging.acs_block_group`` materializes to
+    the bridge model ``brewgis.sacog.acs_block_group`` materializes to
     PostGIS with derived demographic columns.
     """
 
@@ -91,7 +91,7 @@ def run_census_fetch(  # type: ignore[no-untyped-def]
 
     run_sqlmesh_plan(
         environment="brewgis_prod",
-        select=["brewgis.staging.acs_block_group"],
+        select=["brewgis.sacog.acs_block_group"],
         skip_tests=True,
         variables={
             "acs_year": year,
@@ -100,12 +100,12 @@ def run_census_fetch(  # type: ignore[no-untyped-def]
         },
     )
 
-    table_name = "staging__brewgis_prod.acs_block_group"
+    table_name = "sacog__brewgis_prod.acs_block_group"
     engine = get_engine()
     with engine.connect() as conn:
         row_count = (
             conn.execute(
-                text("SELECT COUNT(*) FROM staging__brewgis_prod.acs_block_group")
+                text("SELECT COUNT(*) FROM sacog__brewgis_prod.acs_block_group")
             ).scalar()
             or 0
         )
@@ -149,7 +149,7 @@ def run_lehd_fetch(  # type: ignore[no-untyped-def]
     """Fetch LEHD employment data via SQLMesh and register as Layer.
 
     The DuckDB staging VIEW reads gzipped CSVs from the LEHD CES FTP
-    via httpfs; the bridge model ``brewgis.staging.wac_block_raw``
+    via httpfs; the bridge model ``brewgis.sacog.wac_block_raw``
     materialises CNS-split employment to PostGIS.
     """
     run = DataImportRun.objects.get(pk=run_pk)
@@ -159,7 +159,7 @@ def run_lehd_fetch(  # type: ignore[no-untyped-def]
 
     run_sqlmesh_plan(
         environment="brewgis_prod",
-        select=["brewgis.staging.wac_block_raw"],
+        select=["brewgis.sacog.wac_block_raw"],
         skip_tests=True,
         variables={
             "lodes_year": year,
@@ -168,12 +168,12 @@ def run_lehd_fetch(  # type: ignore[no-untyped-def]
         },
     )
 
-    table_name = "staging__brewgis_prod.wac_block_raw"
+    table_name = "sacog__brewgis_prod.wac_block_raw"
     engine = get_engine()
     with engine.connect() as conn:
         row_count = (
             conn.execute(
-                text("SELECT COUNT(*) FROM staging__brewgis_prod.wac_block_raw")
+                text("SELECT COUNT(*) FROM sacog__brewgis_prod.wac_block_raw")
             ).scalar()
             or 0
         )

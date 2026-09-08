@@ -1,7 +1,11 @@
 MODEL (
-  name brewgis.staging.pdb_bridge,
+  name brewgis.@{region}.pdb_bridge,
   kind FULL,
-  gateway duckdb
+  gateway duckdb,
+  blueprints (
+    (region := sacog),
+    (region := fresno)
+  )
 );
 
 -- PDB Raw Bridge — materializes the DuckDB VIEW (which reads from Census API)
@@ -11,4 +15,4 @@ MODEL (
 -- Replaces the public.pdb_raw table previously created by the dlt pdb pipeline.
 -- All columns match the dlt staging schema in pdb.py:dlt.resource(columns=...).
 
-SELECT * FROM duckdb.staging.pdb_raw;
+SELECT * FROM duckdb.@{region}.pdb_raw;

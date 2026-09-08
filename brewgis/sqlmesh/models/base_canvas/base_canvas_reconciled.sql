@@ -1,8 +1,12 @@
 MODEL (
-  name brewgis.base_canvas.base_canvas_reconciled,
+  name brewgis.@{region}.base_canvas_reconciled,
   kind VIEW,
   audits (
     assert_du_subtype_sum_equals_du
+  ),
+  blueprints (
+    (region := sacog),
+    (region := fresno)
   )
 );
 
@@ -15,7 +19,7 @@ MODEL (
 -- full 11-step ETL pipeline.
 
 WITH imputed AS (
-    SELECT * FROM brewgis.base_canvas.base_canvas_imputed
+    SELECT * FROM brewgis.@{region}.base_canvas_imputed
 ),
 
 -- Recompute DU sub-types proportionally to fit the total du.

@@ -133,7 +133,7 @@ class TestResolveModelName:
         "brewgis.sacog.parcel_du_estimation": object(),
         "brewgis.analysis.core_end_state": object(),
         "brewgis.analysis.core_increment": object(),
-        "brewgis.staging.overture_land_use": object(),
+        "brewgis.sacog.overture_land_use": object(),
         "brewgis.sacog.parcel_shim": object(),
     }
 

@@ -1,5 +1,5 @@
 MODEL (
-  name brewgis.base_canvas.base_canvas_combined,
+  name brewgis.@{region}.base_canvas_combined,
   kind FULL,
   audits (
     not_null(columns := (parcel_id)),
@@ -9,10 +9,16 @@ MODEL (
     assert_commercial_sectors_use_commercial_sqft,
     assert_industrial_sectors_use_industrial_sqft
   ),
+
+  -- @dasymetric_source resolves to each blueprint instance's concrete
+  -- comparison_dasymetric model, so plan ordering works per region.
   depends_on (
-    brewgis.sacog.comparison_dasymetric,
-    brewgis.fresno.comparison_dasymetric,
-    brewgis.seeds.assessor_use_codes
+    brewgis.seeds.assessor_use_codes,
+    @dasymetric_source
+  ),
+  blueprints (
+    (region := sacog,  dasymetric_source := 'brewgis.sacog.comparison_dasymetric'),
+    (region := fresno, dasymetric_source := 'brewgis.fresno.comparison_dasymetric')
   )
 );
 
@@ -96,8 +102,8 @@ parcel_geom AS (
         scd.emp_pub_per_acre     AS emp_pub_per_acre_regressor,
         scd.emp_ind_per_acre     AS emp_ind_per_acre_regressor,
         scd.emp_ag_per_acre      AS emp_ag_per_acre_regressor
-    FROM brewgis.base_canvas.base_canvas_geometry bg
-    LEFT JOIN @VAR('dasymetric_source') scd ON bg.parcel_id = scd.parcel_id
+    FROM brewgis.@{region}.base_canvas_geometry bg
+    LEFT JOIN @dasymetric_source scd ON bg.parcel_id = scd.parcel_id
 ),
 
 -- ── Step 1: Demographics — DU-weighted Census block allocation ──────────────
@@ -119,7 +125,7 @@ parcel_block_intersections AS (
              ELSE 1.0
         END AS intersect_fraction
     FROM parcel_geom p
-    JOIN brewgis.staging.census_2020_block_projected cb ON ST_Intersects(p.geometry, cb.geometry)
+    JOIN brewgis.@{region}.census_2020_block_projected cb ON ST_Intersects(p.geometry, cb.geometry)
 ),
 
 block_weighted_totals AS (
@@ -174,7 +180,7 @@ parcel_acs_intersections AS (
         a.cost_burden_pct,
         ST_Area(ST_ClipByBox2D(p.local_geometry, a.local_envelope)) AS intersect_area
     FROM parcel_geom p
-    JOIN brewgis.assessor.acs_block_group_projected a ON ST_Intersects(p.local_geometry, a.geometry)
+    JOIN brewgis.@{region}.acs_block_group_projected a ON ST_Intersects(p.local_geometry, a.geometry)
 ),
 
 acs_allocated AS (
@@ -365,7 +371,7 @@ emp_intersections AS (
         ) AS emp_ag_alloc_weight,
         p.area_gross
     FROM demographics_data p
-    JOIN brewgis.staging.wac_block_projected w ON ST_Intersects(p.geometry, w.geometry)
+    JOIN brewgis.@{region}.wac_block_projected w ON ST_Intersects(p.geometry, w.geometry)
 ),
 
 emp_block_weight_totals AS (
@@ -635,7 +641,7 @@ demographics_attr AS (
         COALESCE(emp_agriculture, emp_ag * COALESCE(f.emp_agriculture_frac, 0.7)) AS emp_agriculture_v,
         COALESCE(emp_extraction, emp_ag * COALESCE(f.emp_extraction_frac, 0.3)) AS emp_extraction_v
     FROM with_cal
-    LEFT JOIN brewgis.staging.wac_sub_sector_fallbacks f ON TRUE
+    LEFT JOIN brewgis.@{region}.wac_sub_sector_fallbacks f ON TRUE
 ),
 
 building_areas AS (
@@ -740,7 +746,7 @@ building_areas AS (
 
 overture_lu AS (
     SELECT parcel_id, overture_category
-    FROM brewgis.assessor.overture_land_use_parcel
+    FROM brewgis.@{region}.overture_land_use_parcel
 ),
 
 classified AS (

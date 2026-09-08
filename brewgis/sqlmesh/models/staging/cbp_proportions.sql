@@ -1,8 +1,12 @@
 MODEL (
-  name brewgis.staging.cbp_proportions,
+  name brewgis.@{region}.cbp_proportions,
   kind FULL,
   audits (
     not_null(columns := (state_fips, county_fips))
+  ),
+  blueprints (
+    (region := sacog,  county_fips := '067,005,017,061', acs_year := 2013),
+    (region := fresno, county_fips := '019',             acs_year := 2022)
   )
 );
 
@@ -29,7 +33,7 @@ WITH raw_emp AS (
   SELECT
     TRIM(c.naics_code) AS naics_code,
     SUM(c.emp) AS total_emp
-  FROM brewgis.staging.cbp_raw c
+  FROM brewgis.@{region}.cbp_raw c
   WHERE c.year = CAST(@acs_year AS INTEGER)
     AND c.state = @state_fips
     AND c.emp IS NOT NULL

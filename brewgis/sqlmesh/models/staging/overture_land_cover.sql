@@ -1,8 +1,12 @@
 MODEL (
-  name duckdb.staging.overture_land_cover,
+  name duckdb.@{region}.overture_land_cover,
   kind VIEW,
   gateway duckdb,
-  dialect duckdb
+  dialect duckdb,
+  blueprints (
+    (region := sacog,  overture_bbox_min_x := -121.87, overture_bbox_max_x := -121.01, overture_bbox_min_y := 38.02, overture_bbox_max_y := 38.74),
+    (region := fresno, overture_bbox_min_x := -119.95, overture_bbox_max_x := -119.55, overture_bbox_min_y := 36.60, overture_bbox_max_y := 36.90)
+  )
 );
 
 -- Overture Maps land cover for Sacramento County, CA.

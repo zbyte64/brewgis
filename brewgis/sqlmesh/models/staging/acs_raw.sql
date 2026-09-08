@@ -1,8 +1,12 @@
 MODEL (
-  name duckdb.staging.acs_raw,
+  name duckdb.@{region}.acs_raw,
   kind VIEW,
   gateway duckdb,
-  dialect duckdb
+  dialect duckdb,
+  blueprints (
+    (region := sacog,  county_fips := '067,005,017,061', acs_year := 2013),
+    (region := fresno, county_fips := '019',             acs_year := 2022)
+  )
 );
 
 -- Census ACS 5-year raw data — DuckDB reads directly from Census API via httpfs.
@@ -16,10 +20,11 @@ MODEL (
 -- Columns 41-44 are geography columns: state, county, tract, block_group.
 -- Variables are listed in the same order as _all_vars() in census_fetcher.py.
 --
--- Variables (from SQLMesh @VAR macro — set in config.py):
---   @acs_year        — ACS 5-year data year (default 2022)
+-- Variables (from SQLMesh blueprint columns; bare @refs resolve to the
+-- region's blueprint value over the config default):
+--   @acs_year      — ACS 5-year data year (sacog 2013, fresno 2022)
 --   @state_fips      — Two-digit state FIPS code (default '06')
---   @county_fips     — Three-digit county code; supports '*' for all counties
+--   @county_fips   — Three-digit county code(s); supports '*' for all counties
 --   @census_api_key  — Census API key; empty string skips the &key= param
 SET allow_asterisks_in_http_paths = true;
 

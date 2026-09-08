@@ -1,8 +1,8 @@
 test_fractions_sum_to_one:
-  model: brewgis.staging.wac_sub_sector_fallbacks
+  model: brewgis.sacog.wac_sub_sector_fallbacks
   gateway: postgis
   inputs:
-    brewgis.staging.wac_block:
+    brewgis.sacog.wac_block:
       rows:
         - geoid: "06067000100"
           emp_retail_services: 100.0

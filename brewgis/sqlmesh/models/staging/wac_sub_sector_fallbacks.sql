@@ -1,7 +1,11 @@
 MODEL (
-  name brewgis.staging.wac_sub_sector_fallbacks,
+  name brewgis.@{region}.wac_sub_sector_fallbacks,
   kind FULL,
-  grain (county_fips)
+  grain (county_fips),
+  blueprints (
+    (region := sacog,  county_fips := '067,005,017,061'),
+    (region := fresno, county_fips := '019')
+  )
 );
 
 WITH wac_sub_sector_totals AS (
@@ -23,7 +27,7 @@ WITH wac_sub_sector_totals AS (
     COALESCE(SUM(emp_construction), 0)       AS total_emp_construction,
     COALESCE(SUM(emp_agriculture), 0)        AS total_emp_agriculture,
     COALESCE(SUM(emp_extraction), 0)         AS total_emp_extraction
-  FROM brewgis.staging.wac_block
+  FROM brewgis.@{region}.wac_block
 )
 SELECT
   county_fips,

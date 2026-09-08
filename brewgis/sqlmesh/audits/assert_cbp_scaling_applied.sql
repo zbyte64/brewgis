@@ -14,7 +14,7 @@ raw_total AS (
     COALESCE(SUM(emp_manufacturing + emp_wholesale + emp_transport_warehousing + emp_utilities + emp_construction), 0) AS raw_ind_total,
     COALESCE(SUM(emp_retail_services + emp_restaurant + emp_accommodation + emp_arts_entertainment + emp_other_services), 0) AS raw_ret_total,
     COALESCE(SUM(emp_office_services + emp_medical_services), 0) AS raw_off_total
-  FROM brewgis.staging.wac_block_raw
+  FROM brewgis.@{region}.wac_block_raw
 )
 SELECT
   a.actual_emp_ind_total,

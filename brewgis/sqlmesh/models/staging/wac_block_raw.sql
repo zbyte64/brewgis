@@ -1,11 +1,15 @@
 MODEL (
-  name brewgis.staging.wac_block_raw,
+  name brewgis.@{region}.wac_block_raw,
   kind INCREMENTAL_BY_UNIQUE_KEY (
     unique_key (geoid, data_year),
     batch_size 100000
   ),
   audits (
     not_null(columns := (geoid, data_year))
+  ),
+  blueprints (
+    (region := sacog,  county_fips := '067,005,017,061', lodes_year := 2008),
+    (region := fresno, county_fips := '019',             lodes_year := 2021)
   )
 );
 
@@ -39,9 +43,11 @@ WITH lodes_blocks AS (
         w_geocode AS block_geoid,
         LEFT(w_geocode, 12) AS bg,
         LEFT(w_geocode, 11) AS tract
-    FROM brewgis.staging.lodes_raw
+    FROM brewgis.@{region}.lodes_raw
     WHERE year = @lodes_year
-      AND LEFT(w_geocode, 5) = CONCAT(@state_fips, @county_fips)
+      AND LEFT(w_geocode, 5) IN (
+        SELECT CONCAT(@state_fips, c) FROM UNNEST(STRING_TO_ARRAY(@county_fips, ',')) AS c
+      )
 ),
 
 block_geometry_map AS (
@@ -132,11 +138,13 @@ cbp_sub_sectors AS (
         COALESCE(lr.cns17::numeric, 0)::numeric AS emp_military_cbp,
         -- CNS16 unclassified (distributed in later CTE)
         COALESCE(lr.cns16::numeric, 0)::numeric AS cns16_unclassified
-    FROM brewgis.staging.lodes_raw lr
+    FROM brewgis.@{region}.lodes_raw lr
     JOIN block_geometry_map bm
         ON lr.w_geocode = bm.block_geoid
     WHERE lr.year = @lodes_year
-      AND LEFT(lr.w_geocode, 5) = CONCAT(@state_fips, @county_fips)
+      AND LEFT(lr.w_geocode, 5) IN (
+        SELECT CONCAT(@state_fips, c) FROM UNNEST(STRING_TO_ARRAY(@county_fips, ',')) AS c
+      )
 ),
 
 -- Compute CBP-based aggregate columns and classified_total for CNS16 distribution.

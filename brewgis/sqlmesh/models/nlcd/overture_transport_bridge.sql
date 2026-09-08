@@ -1,7 +1,11 @@
 MODEL (
-  name brewgis.staging.overture_transport,
+  name brewgis.@{region}.overture_transport,
   kind FULL,
-  gateway duckdb
+  gateway duckdb,
+  blueprints (
+    (region := sacog),
+    (region := fresno)
+  )
 );
 
 -- NOTE: Audits intentionally omitted (gateway duckdb). Transport row-count
@@ -24,4 +28,4 @@ SELECT
     class,
     subclass,
     width
-FROM duckdb.staging.overture_transport;
+FROM duckdb.@{region}.overture_transport;

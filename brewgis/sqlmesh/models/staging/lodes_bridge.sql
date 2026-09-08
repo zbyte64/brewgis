@@ -1,7 +1,11 @@
 MODEL (
-  name brewgis.staging.lodes_raw,
+  name brewgis.@{region}.lodes_raw,
   kind FULL,
-  gateway duckdb
+  gateway duckdb,
+  blueprints (
+    (region := sacog),
+    (region := fresno)
+  )
 );
 
 -- LODES Raw Bridge — materializes the DuckDB VIEW (which reads gzipped CSV
@@ -11,4 +15,4 @@ MODEL (
 -- Replaces the public.lodes_raw table previously created by the dlt lehd pipeline.
 -- All columns match the dlt staging schema in external_models/dlt_staging.yaml.
 
-SELECT * FROM duckdb.staging.lodes_raw;
+SELECT * FROM duckdb.@{region}.lodes_raw;

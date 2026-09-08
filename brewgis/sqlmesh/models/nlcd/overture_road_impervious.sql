@@ -13,9 +13,9 @@ MODEL (
 -- pre hooks
 -- (overture_transport is DuckDB gateway, so indexes must live here)
   CREATE INDEX IF NOT EXISTS idx_overture_transport_geometry_@snapshot_hash
-  ON brewgis.staging.overture_transport USING GIST (geometry);
+  ON brewgis.sacog.overture_transport USING GIST (geometry);
   CREATE INDEX IF NOT EXISTS idx_overture_transport_local_geometry_@snapshot_hash
-  ON brewgis.staging.overture_transport USING GIST (local_geometry);
+  ON brewgis.sacog.overture_transport USING GIST (local_geometry);
 
 -- Overture Road Surface — per-parcel road intersection statistics.
 --
@@ -49,7 +49,7 @@ transport AS (
             WHEN surface IN ('unpaved', 'gravel', 'dirt', 'earth', 'ground') THEN 'unpaved'
             ELSE 'other'
         END AS road_surface_class
-    FROM brewgis.staging.overture_transport
+    FROM brewgis.sacog.overture_transport
     WHERE wgs84_geometry IS NOT NULL
 ),
 

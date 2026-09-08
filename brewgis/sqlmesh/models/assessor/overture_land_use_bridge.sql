@@ -1,7 +1,11 @@
 MODEL (
-  name brewgis.staging.overture_land_use,
+  name brewgis.@{region}.overture_land_use,
   kind FULL,
-  gateway duckdb
+  gateway duckdb,
+  blueprints (
+    (region := sacog),
+    (region := fresno)
+  )
 );
 
 -- Overture Land Use — bridge model that materializes the DuckDB VIEW
@@ -16,4 +20,4 @@ SELECT
     ST_Area(wgs84_geometry) AS area,
     subtype,
     class
-FROM duckdb.staging.overture_land_use;
+FROM duckdb.@{region}.overture_land_use;

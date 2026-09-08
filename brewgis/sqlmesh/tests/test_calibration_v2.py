@@ -11,11 +11,11 @@ def test_retail_sqft_per_emp_formula_fallback(context):
     """Parcel with emp_retail_services > 0, no building sqft, no geometry bldg area
     → sqft_per_emp formula path fires → 5 emp × 706 sqft/emp = 3530"""
     result = context.evaluate(
-        "brewgis.base_canvas.base_canvas_combined",
+        "brewgis.sacog.base_canvas_combined",
         start="2024-01-01",
         end="2024-01-01",
         inputs={
-            "brewgis.base_canvas.base_canvas_geometry": [
+            "brewgis.sacog.base_canvas_geometry": [
                 {
                     "parcel_id": "CAL_RETAIL_001",
                     "geometry": "POLYGON((-121.5 38.50,-121.49 38.50,-121.49 38.51,-121.50 38.51,-121.5 38.50))",
@@ -52,7 +52,7 @@ def test_retail_sqft_per_emp_formula_fallback(context):
                     "hh_estimated": 0.0,
                 }
             ],
-            "brewgis.staging.wac_block_projected": [
+            "brewgis.sacog.wac_block_projected": [
                 {
                     "geoid": "060670011001001",
                     "emp": 5.0,
@@ -94,7 +94,7 @@ def test_retail_sqft_per_emp_formula_fallback(context):
                     "com_irrigation_frac": 0.035,
                 }
             ],
-            "brewgis.staging.census_2020_block_projected": [
+            "brewgis.sacog.census_2020_block_projected": [
                 {
                     "geoid": "060670011001001",
                     "total_population": 0.0,
@@ -102,7 +102,7 @@ def test_retail_sqft_per_emp_formula_fallback(context):
                     "geometry": "POLYGON((-121.51 38.49,-121.48 38.49,-121.48 38.52,-121.51 38.52,-121.51 38.49))",
                 }
             ],
-            "brewgis.staging.wac_sub_sector_fallbacks": [
+            "brewgis.sacog.wac_sub_sector_fallbacks": [
                 {
                     "county_fips": "067",
                     "emp_retail_services_frac": 0.466,
@@ -136,11 +136,11 @@ def test_detsf_sl_sqft_per_du_3000(context):
     """Parcel with du=2, du_subtype=detsf_sl, no residential building sqft
     → formula: 2 × 3000 = 6000 sqft"""
     result = context.evaluate(
-        "brewgis.base_canvas.base_canvas_combined",
+        "brewgis.sacog.base_canvas_combined",
         start="2024-01-01",
         end="2024-01-01",
         inputs={
-            "brewgis.base_canvas.base_canvas_geometry": [
+            "brewgis.sacog.base_canvas_geometry": [
                 {
                     "parcel_id": "CAL_DU_DETSF",
                     "geometry": "POLYGON((-121.5 38.50,-121.49 38.50,-121.49 38.51,-121.50 38.51,-121.5 38.50))",
@@ -178,7 +178,7 @@ def test_detsf_sl_sqft_per_du_3000(context):
                     "hh_estimated": 1.95,
                 }
             ],
-            "brewgis.staging.census_2020_block_projected": [
+            "brewgis.sacog.census_2020_block_projected": [
                 {
                     "geoid": "060670011001001",
                     "total_population": 0.0,
@@ -186,7 +186,7 @@ def test_detsf_sl_sqft_per_du_3000(context):
                     "geometry": "POLYGON((-121.51 38.49,-121.48 38.49,-121.48 38.52,-121.51 38.52,-121.51 38.49))",
                 }
             ],
-            "brewgis.staging.wac_block_projected": [
+            "brewgis.sacog.wac_block_projected": [
                 {
                     "geoid": "060670011001001",
                     "emp": 0.0,
@@ -228,7 +228,7 @@ def test_detsf_sl_sqft_per_du_3000(context):
                     "com_irrigation_frac": 0.035,
                 }
             ],
-            "brewgis.staging.wac_sub_sector_fallbacks": [
+            "brewgis.sacog.wac_sub_sector_fallbacks": [
                 {
                     "county_fips": "067",
                     "emp_retail_services_frac": 0.466,
@@ -262,11 +262,11 @@ def test_attsf_sqft_per_du_1500(context):
     """Parcel with du=3, du_subtype=attsf, no residential building sqft
     → GREATEST(3 × 1500, 3 × 600) = 4500 sqft"""
     result = context.evaluate(
-        "brewgis.base_canvas.base_canvas_combined",
+        "brewgis.sacog.base_canvas_combined",
         start="2024-01-01",
         end="2024-01-01",
         inputs={
-            "brewgis.base_canvas.base_canvas_geometry": [
+            "brewgis.sacog.base_canvas_geometry": [
                 {
                     "parcel_id": "CAL_DU_ATTSF",
                     "geometry": "POLYGON((-121.5 38.50,-121.49 38.50,-121.49 38.51,-121.50 38.51,-121.5 38.50))",
@@ -304,7 +304,7 @@ def test_attsf_sqft_per_du_1500(context):
                     "hh_estimated": 2.85,
                 }
             ],
-            "brewgis.staging.census_2020_block_projected": [
+            "brewgis.sacog.census_2020_block_projected": [
                 {
                     "geoid": "060670011001001",
                     "total_population": 0.0,
@@ -312,7 +312,7 @@ def test_attsf_sqft_per_du_1500(context):
                     "geometry": "POLYGON((-121.51 38.49,-121.48 38.49,-121.48 38.52,-121.51 38.52,-121.51 38.49))",
                 }
             ],
-            "brewgis.staging.wac_block_projected": [
+            "brewgis.sacog.wac_block_projected": [
                 {
                     "geoid": "060670011001001",
                     "emp": 0.0,
@@ -354,7 +354,7 @@ def test_attsf_sqft_per_du_1500(context):
                     "com_irrigation_frac": 0.035,
                 }
             ],
-            "brewgis.staging.wac_sub_sector_fallbacks": [
+            "brewgis.sacog.wac_sub_sector_fallbacks": [
                 {
                     "county_fips": "067",
                     "emp_retail_services_frac": 0.466,
@@ -387,11 +387,11 @@ def test_attsf_sqft_per_du_1500(context):
 def test_proportional_emp_allocation(context):
     """Two parcels with equal building sqft in same block → 50/50 emp split"""
     result = context.evaluate(
-        "brewgis.base_canvas.base_canvas_combined",
+        "brewgis.sacog.base_canvas_combined",
         start="2024-01-01",
         end="2024-01-01",
         inputs={
-            "brewgis.base_canvas.base_canvas_geometry": [
+            "brewgis.sacog.base_canvas_geometry": [
                 {
                     "parcel_id": "CAL_EMP_A",
                     "geometry": "POLYGON((-121.5 38.50,-121.49 38.50,-121.49 38.51,-121.50 38.51,-121.5 38.50))",
@@ -463,7 +463,7 @@ def test_proportional_emp_allocation(context):
                     "hh_estimated": 0.0,
                 },
             ],
-            "brewgis.staging.wac_block_projected": [
+            "brewgis.sacog.wac_block_projected": [
                 {
                     "geoid": "060670011001001",
                     "emp": 100.0,
@@ -505,7 +505,7 @@ def test_proportional_emp_allocation(context):
                     "com_irrigation_frac": 0.035,
                 }
             ],
-            "brewgis.staging.census_2020_block_projected": [
+            "brewgis.sacog.census_2020_block_projected": [
                 {
                     "geoid": "060670011001001",
                     "total_population": 0.0,
@@ -513,7 +513,7 @@ def test_proportional_emp_allocation(context):
                     "geometry": "POLYGON((-121.51 38.49,-121.48 38.49,-121.48 38.52,-121.51 38.52,-121.51 38.49))",
                 }
             ],
-            "brewgis.staging.wac_sub_sector_fallbacks": [
+            "brewgis.sacog.wac_sub_sector_fallbacks": [
                 {
                     "county_fips": "067",
                     "emp_retail_services_frac": 0.466,
@@ -554,11 +554,11 @@ def test_proportional_emp_allocation(context):
 def test_residential_parcel_zero_emp(context):
     """Residential parcel with no building sqft → gets zero employment"""
     result = context.evaluate(
-        "brewgis.base_canvas.base_canvas_combined",
+        "brewgis.sacog.base_canvas_combined",
         start="2024-01-01",
         end="2024-01-01",
         inputs={
-            "brewgis.base_canvas.base_canvas_geometry": [
+            "brewgis.sacog.base_canvas_geometry": [
                 {
                     "parcel_id": "CAL_RES_EMP",
                     "geometry": "POLYGON((-121.5 38.50,-121.49 38.50,-121.49 38.51,-121.50 38.51,-121.5 38.50))",
@@ -631,7 +631,7 @@ def test_residential_parcel_zero_emp(context):
                     "hh_estimated": 0.0,
                 },
             ],
-            "brewgis.staging.wac_block_projected": [
+            "brewgis.sacog.wac_block_projected": [
                 {
                     "geoid": "060670011001001",
                     "emp": 100.0,
@@ -673,7 +673,7 @@ def test_residential_parcel_zero_emp(context):
                     "com_irrigation_frac": 0.035,
                 }
             ],
-            "brewgis.staging.census_2020_block_projected": [
+            "brewgis.sacog.census_2020_block_projected": [
                 {
                     "geoid": "060670011001001",
                     "total_population": 0.0,
@@ -681,7 +681,7 @@ def test_residential_parcel_zero_emp(context):
                     "geometry": "POLYGON((-121.51 38.49,-121.48 38.49,-121.48 38.52,-121.51 38.52,-121.51 38.49))",
                 }
             ],
-            "brewgis.staging.wac_sub_sector_fallbacks": [
+            "brewgis.sacog.wac_sub_sector_fallbacks": [
                 {
                     "county_fips": "067",
                     "emp_retail_services_frac": 0.466,
@@ -723,11 +723,11 @@ def test_detsf_sl_assessor_over_formula(context):
     """Parcel with du=1, du_subtype=detsf_sl, assessor sqft 5000 > formula 3000
     → bldg_area_detsf_sl_v = 5000 (GREATEST picks assessor)"""
     result = context.evaluate(
-        "brewgis.base_canvas.base_canvas_combined",
+        "brewgis.sacog.base_canvas_combined",
         start="2024-01-01",
         end="2024-01-01",
         inputs={
-            "brewgis.base_canvas.base_canvas_geometry": [
+            "brewgis.sacog.base_canvas_geometry": [
                 {
                     "parcel_id": "CAL_V3_DETSF",
                     "geometry": "POLYGON((-121.5 38.50,-121.49 38.50,-121.49 38.51,-121.50 38.51,-121.5 38.50))",
@@ -765,7 +765,7 @@ def test_detsf_sl_assessor_over_formula(context):
                     "hh_estimated": 0.975,
                 }
             ],
-            "brewgis.staging.wac_block_projected": [
+            "brewgis.sacog.wac_block_projected": [
                 {
                     "geoid": "060670011001001",
                     "emp": 0.0,
@@ -807,7 +807,7 @@ def test_detsf_sl_assessor_over_formula(context):
                     "com_irrigation_frac": 0.035,
                 }
             ],
-            "brewgis.staging.census_2020_block_projected": [
+            "brewgis.sacog.census_2020_block_projected": [
                 {
                     "geoid": "060670011001001",
                     "total_population": 0.0,
@@ -815,7 +815,7 @@ def test_detsf_sl_assessor_over_formula(context):
                     "geometry": "POLYGON((-121.51 38.49,-121.48 38.49,-121.48 38.52,-121.51 38.52,-121.51 38.49))",
                 }
             ],
-            "brewgis.staging.wac_sub_sector_fallbacks": [
+            "brewgis.sacog.wac_sub_sector_fallbacks": [
                 {
                     "county_fips": "067",
                     "emp_retail_services_frac": 0.466,
@@ -849,11 +849,11 @@ def test_detsf_ll_formula_path(context):
     """Parcel with du=2, du_subtype=detsf_ll, no residential building sqft
     → bldg_area_detsf_ll_v = 2 × 3000 = 6000 (GREATEST formula path)"""
     result = context.evaluate(
-        "brewgis.base_canvas.base_canvas_combined",
+        "brewgis.sacog.base_canvas_combined",
         start="2024-01-01",
         end="2024-01-01",
         inputs={
-            "brewgis.base_canvas.base_canvas_geometry": [
+            "brewgis.sacog.base_canvas_geometry": [
                 {
                     "parcel_id": "CAL_V3_DETSF_LL",
                     "geometry": "POLYGON((-121.5 38.50,-121.49 38.50,-121.49 38.51,-121.50 38.51,-121.5 38.50))",
@@ -891,7 +891,7 @@ def test_detsf_ll_formula_path(context):
                     "hh_estimated": 1.95,
                 }
             ],
-            "brewgis.staging.wac_block_projected": [
+            "brewgis.sacog.wac_block_projected": [
                 {
                     "geoid": "060670011001001",
                     "emp": 0.0,
@@ -933,7 +933,7 @@ def test_detsf_ll_formula_path(context):
                     "com_irrigation_frac": 0.035,
                 }
             ],
-            "brewgis.staging.census_2020_block_projected": [
+            "brewgis.sacog.census_2020_block_projected": [
                 {
                     "geoid": "060670011001001",
                     "total_population": 0.0,
@@ -941,7 +941,7 @@ def test_detsf_ll_formula_path(context):
                     "geometry": "POLYGON((-121.51 38.49,-121.48 38.49,-121.48 38.52,-121.51 38.52,-121.51 38.49))",
                 }
             ],
-            "brewgis.staging.wac_sub_sector_fallbacks": [
+            "brewgis.sacog.wac_sub_sector_fallbacks": [
                 {
                     "county_fips": "067",
                     "emp_retail_services_frac": 0.466,
@@ -975,11 +975,11 @@ def test_null_subtype_mf_assessor_recovery_greatest(context):
     """Parcel with NULL du_subtype + 5000 residential_building_sqft
     → bldg_area_mf_v = 5000 (GREATEST picks assessor via catch-all CASE)"""
     result = context.evaluate(
-        "brewgis.base_canvas.base_canvas_combined",
+        "brewgis.sacog.base_canvas_combined",
         start="2024-01-01",
         end="2024-01-01",
         inputs={
-            "brewgis.base_canvas.base_canvas_geometry": [
+            "brewgis.sacog.base_canvas_geometry": [
                 {
                     "parcel_id": "CAL_V3_MF_NULL",
                     "geometry": "POLYGON((-121.5 38.50,-121.49 38.50,-121.49 38.51,-121.50 38.51,-121.5 38.50))",
@@ -1017,7 +1017,7 @@ def test_null_subtype_mf_assessor_recovery_greatest(context):
                     "hh_estimated": 0.975,
                 }
             ],
-            "brewgis.staging.wac_block_projected": [
+            "brewgis.sacog.wac_block_projected": [
                 {
                     "geoid": "060670011001001",
                     "emp": 0.0,
@@ -1059,7 +1059,7 @@ def test_null_subtype_mf_assessor_recovery_greatest(context):
                     "com_irrigation_frac": 0.035,
                 }
             ],
-            "brewgis.staging.census_2020_block_projected": [
+            "brewgis.sacog.census_2020_block_projected": [
                 {
                     "geoid": "060670011001001",
                     "total_population": 0.0,
@@ -1067,7 +1067,7 @@ def test_null_subtype_mf_assessor_recovery_greatest(context):
                     "geometry": "POLYGON((-121.51 38.49,-121.48 38.49,-121.48 38.52,-121.51 38.52,-121.51 38.49))",
                 }
             ],
-            "brewgis.staging.wac_sub_sector_fallbacks": [
+            "brewgis.sacog.wac_sub_sector_fallbacks": [
                 {
                     "county_fips": "067",
                     "emp_retail_services_frac": 0.466,

@@ -76,7 +76,7 @@ acs_hh_size AS (
         ) / NULLIF(SUM(ST_Area(ST_Intersection(ap.local_geometry, a.local_envelope))), 0)
             AS hh_size
     FROM brewgis.@{region}.assessor_parcels ap
-    JOIN brewgis.assessor.acs_block_group_projected a
+    JOIN brewgis.@{region}.acs_block_group_projected a
         ON ST_Intersects(ap.local_geometry, a.geometry)
     GROUP BY ap.apn
 ),

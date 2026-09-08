@@ -1,9 +1,13 @@
 MODEL (
-  name brewgis.assessor.acs_block_group_projected,
+  name brewgis.@{region}.acs_block_group_projected,
   kind FULL,
   audits (
     not_null(columns := (geoid)),
     unique_values(columns := (geoid,))
+  ),
+  blueprints (
+    (region := sacog),
+    (region := fresno)
   )
 );
 
@@ -12,7 +16,7 @@ MODEL (
 -- Reads ACS block group data from staging, transforms geometry to local_srid
 -- (California Albers, 3310), and applies a GiST index on the projected geometry.
 --
--- The staging model (brewGIS.staging.acs_block_group) is executed on DuckDB,
+-- The staging model (brewgis.@{region}.acs_block_group) is executed on DuckDB,
 -- which does not support PostgreSQL post_statements GiST indexes. Without an
 -- index, spatial joins against brewGIS.assessor.sacog_assessor_parcels fall
 -- back to unindexed nested loops (~2.4B cost).
@@ -32,7 +36,7 @@ SELECT
     ST_Transform(a.geometry, @VAR('local_srid', 3310)) AS geometry,
     ST_Envelope(ST_Transform(a.geometry, @VAR('local_srid', 3310))) AS local_envelope,
     GREATEST(ST_Area(ST_Transform(a.geometry, @VAR('local_srid', 3310))), 1e-10) AS bg_area
-FROM brewgis.staging.acs_block_group a
+FROM brewgis.@{region}.acs_block_group a
 WHERE a.du > 0
   AND a.geometry IS NOT NULL;
 

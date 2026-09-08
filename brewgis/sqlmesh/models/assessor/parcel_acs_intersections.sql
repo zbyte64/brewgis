@@ -1,11 +1,15 @@
 MODEL (
-  name brewgis.assessor.parcel_acs_intersections,
+  name brewgis.@{region}.parcel_acs_intersections,
   kind INCREMENTAL_BY_UNIQUE_KEY (
     unique_key (apn, bg_geoid),
     batch_size 100000
   ),
   audits (
     not_null(columns := (apn, bg_geoid))
+  ),
+  blueprints (
+    (region := sacog),
+    (region := fresno)
   )
 );
 
@@ -15,7 +19,7 @@ MODEL (
 -- parcel_du_estimation into a separate model that runs once per pipeline build
 -- instead of recomputing for every plan.
 --
--- Relies on brewgis.assessor.acs_block_group_projected for pre-projected ACS
+-- Relies on brewgis.@{region}.acs_block_group_projected for pre-projected ACS
 -- geometry (local_srid 3310) with a GiST index, avoiding the unindexed nested
 -- loop from joining against the DuckDB-built staging table directly.
 --
@@ -31,8 +35,8 @@ SELECT
         sap.local_geometry,
         a.geometry
     )) AS intersect_area_sqft
-FROM brewgis.sacog.assessor_parcels sap
-JOIN brewgis.assessor.acs_block_group_projected a
+FROM brewgis.@{region}.assessor_parcels sap
+JOIN brewgis.@{region}.acs_block_group_projected a
     ON ST_Intersects(sap.local_geometry, a.geometry);
 
 -- post_statements

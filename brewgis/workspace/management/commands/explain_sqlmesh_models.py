@@ -111,7 +111,7 @@ def discover_models_from_sqlmesh() -> dict[str, ModelInfo]:
         # Only include brewgis-catalog models (skip pure-DuckDB catalog models
         # like duckdb.staging.* whose SQL can't EXPLAIN on Postgres).
         # Models with name brewgis.* but gateway: duckdb (e.g.
-        # brewgis.staging.overture_land_use bridge) ARE included — their
+        # brewgis.sacog.overture_land_use bridge) ARE included — their
         # Postgres placeholders are auto-created by materialize_empty_tables.
         if len(parts) < 3 or parts[0] != "brewgis":
             continue
@@ -317,7 +317,7 @@ def _sqlglot_to_pg_type(raw_type: str, column_name: str = "") -> str:
 def materialize_duckdb_gateway_models(ctx) -> int:
     """Create empty Postgres tables + logical views for DuckDB-gateway models.
 
-    DuckDB-gateway models (e.g. ``brewgis.staging.overture_land_use``) don't
+    DuckDB-gateway models (e.g. ``brewgis.sacog.overture_land_use``) don't
     have physical tables in PostgreSQL.  This creates empty placeholders so
     that downstream models whose EXPLAIN references them can resolve the
     table name.
@@ -1019,8 +1019,8 @@ class Command(BaseCommand):
 
         # Create empty Postgres tables for DuckDB-gateway bridge models
         # so that EXPLAIN can resolve their references from downstream
-        # models (e.g. brewgis.assessor.overture_land_use_parcel referencing
-        # brewgis.staging.overture_land_use).
+        # models (e.g. brewgis.sacog.overture_land_use_parcel referencing
+        # brewgis.sacog.overture_land_use).
         n_bridge = materialize_duckdb_gateway_models(_get_sqlmesh_context())
         if n_bridge:
             self.stdout.write(

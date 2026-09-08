@@ -1,12 +1,16 @@
 MODEL (
-  name brewgis.staging.census_2020_block,
+  name brewgis.@{region}.census_2020_block,
   kind INCREMENTAL_BY_UNIQUE_KEY (
     unique_key (geoid)
   ),
   audits (
     not_null(columns := (geoid))
   ),
-  dialect postgres
+  dialect postgres,
+  blueprints (
+    (region := sacog),
+    (region := fresno)
+  )
 );
 
 -- Census 2020 PL94-171 → Census Block Demographics Table
@@ -24,7 +28,7 @@ WITH raw_data AS (
         geoid,
         total_population,
         total_housing_units
-    FROM brewgis.staging.census_2020_block_raw
+    FROM brewgis.@{region}.census_2020_block_raw
 ),
 block_geometry AS (
     SELECT

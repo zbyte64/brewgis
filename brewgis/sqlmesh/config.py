@@ -249,78 +249,6 @@ _pg_attach_path = (
 )
 
 
-# Region-specific config parameters, consumed by the blueprinted SQLMesh models
-# (via `models/adapters/` + `models/shared/`) and by the management commands
-# (compare_sacog_basemap, setup_fresno_workspace) which build plan_vars from
-# these dicts. Keys mirror the SQLMesh config variable names so that
-# ``dict(REGIONS[region])`` can be passed straight to ``run_sqlmesh_plan``.
-REGIONS: dict[str, dict[str, object]] = {
-    "sacog": {
-        # Sacramento, Amador, El Dorado, Placer
-        "county_fips": "067,005,017,061",
-        "parcel_table": "brewgis.sacog.parcel_shim",
-        "dasymetric_source": "brewgis.sacog.comparison_dasymetric",
-        "acs_year": 2013,
-        # Overture Sacramento County bbox
-        "overture_bbox_min_x": -121.87,
-        "overture_bbox_max_x": -121.01,
-        "overture_bbox_min_y": 38.02,
-        "overture_bbox_max_y": 38.74,
-        # Census County Business Patterns, 2008 vintage (Sacramento County)
-        "cbp_county_emp_agriculture": 195,
-        "cbp_county_emp_extraction": 168,
-        "cbp_county_emp_construction": 34731,
-        "cbp_county_emp_manufacturing": 23768,
-        "cbp_county_emp_transport_warehousing": 10494,
-        "cbp_county_emp_utilities": 1894,
-        "cbp_county_emp_wholesale": 21107,
-        "cbp_county_emp_retail_services": 63192,
-        "cbp_county_emp_office_services": 103310,
-        "cbp_county_emp_education": 8385,
-        "cbp_county_emp_medical_services": 70577,
-        "cbp_county_emp_arts_entertainment": 7794,
-        "cbp_county_emp_accommodation": 4267,
-        "cbp_county_emp_restaurant": 42351,
-        "cbp_county_emp_other_services": 61210,
-        "cbp_county_emp_public_admin": 0,
-        "cbp_preserve_fraction": 0.5,
-        # OSM intersection density table (empty = disabled)
-        "osm_intersection_table": "",
-    },
-    "fresno": {
-        "county_fips": "019",
-        "parcel_table": "brewgis.fresno.parcel_shim",
-        "dasymetric_source": "brewgis.fresno.comparison_dasymetric",
-        "acs_year": 2022,
-        # Fresno-Clovis urban area bounding box
-        "overture_bbox_min_x": -119.95,
-        "overture_bbox_max_x": -119.55,
-        "overture_bbox_min_y": 36.60,
-        "overture_bbox_max_y": 36.90,
-        # No CBP county controls for Fresno (LEHD allocation without scaling)
-        "cbp_county_emp_agriculture": 0,
-        "cbp_county_emp_extraction": 0,
-        "cbp_county_emp_construction": 0,
-        "cbp_county_emp_manufacturing": 0,
-        "cbp_county_emp_transport_warehousing": 0,
-        "cbp_county_emp_utilities": 0,
-        "cbp_county_emp_wholesale": 0,
-        "cbp_county_emp_retail_services": 0,
-        "cbp_county_emp_office_services": 0,
-        "cbp_county_emp_education": 0,
-        "cbp_county_emp_medical_services": 0,
-        "cbp_county_emp_arts_entertainment": 0,
-        "cbp_county_emp_accommodation": 0,
-        "cbp_county_emp_restaurant": 0,
-        "cbp_county_emp_other_services": 0,
-        "cbp_county_emp_public_admin": 0,
-        "cbp_preserve_fraction": 0.5,
-        # OSM intersection density table (empty = disabled)
-        "osm_intersection_table": "fresno_intersection_density",
-    },
-}
-
-
 def config_factory(**variables):
     return Config(
         project="brewgis",
@@ -411,15 +339,10 @@ def config_factory(**variables):
             ],
         ),
         variables={
-            # Available blueprint regions (see REGIONS above)
-            "regions": list(REGIONS.keys()),
             # Census API key (loaded from env; empty string = public data only)
             "census_api_key": os.environ.get("CENSUS_API_KEY", ""),
             # Year and vintage parameters for staging models
-            "lodes_year": 2008,
-            "acs_year": 2013,
             "state_fips": "06",
-            "county_fips": "067",
             "tiger_vintage": "2023",
             "tiger_block_vintage": "2020",
             "tiger_bg_vintage": "2013",
@@ -430,8 +353,10 @@ def config_factory(**variables):
             # Scenario table references (overridden per scenario)
             "scenario_schema": "public",
             "base_canvas_table": "base_canvas",
+            # Default parcel adapter (analysis models read @parcel_table as a
+            # per-scenario config var — core_end_state). Region chains use the
+            # blueprinted parcel_shim instances instead.
             "parcel_table": "brewgis.sacog.parcel_shim",
-            "dasymetric_source": "brewgis.sacog.comparison_dasymetric",
             "constraint_table": "public.constraints",
             "built_form_table": "public.built_forms",
             "constraints": [],
@@ -501,11 +426,6 @@ def config_factory(**variables):
             "cbp_22": 0.0,  # NAICS 22 (utilities) share of CNS03
             "cbp_42": 0.0,  # NAICS 42 (wholesale) share of CNS03
             "cbp_721": 0.0,  # NAICS 721 (accommodation) share of CNS13
-            # Overture Sacramento County bbox
-            "overture_bbox_min_x": -121.87,
-            "overture_bbox_max_x": -121.01,
-            "overture_bbox_min_y": 38.02,
-            "overture_bbox_max_y": 38.74,
             # Fiscal
             "res_assessed_value_per_du": 350000,
             "nonres_assessed_value_per_sqft": 150,

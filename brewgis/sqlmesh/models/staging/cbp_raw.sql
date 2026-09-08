@@ -1,8 +1,12 @@
 MODEL (
-  name duckdb.staging.cbp_raw,
+  name duckdb.@{region}.cbp_raw,
   kind VIEW,
   gateway duckdb,
-  dialect duckdb
+  dialect duckdb,
+  blueprints (
+    (region := sacog,  county_fips := '067,005,017,061', acs_year := 2013),
+    (region := fresno, county_fips := '019',             acs_year := 2022)
+  )
 );
 
 -- County Business Patterns raw data — DuckDB reads from Census API via httpfs.
@@ -14,11 +18,12 @@ MODEL (
 -- Columns: EMP (employment), NAICS2017 (NAICS code), state, county
 -- The NAICS code uses 2017 vintage when year >= 2017, else 2007.
 --
--- Variables:
---   @cbp_year      — CBP data year (uses @acs_year if not set)
---   @state_fips    — Two-digit state FIPS code
+-- Variables (from SQLMesh blueprint columns; bare @refs resolve to the
+-- region's blueprint value over the config default):
+--   @acs_year      — CBP data year (sacog 2013, fresno 2022)
 --   @county_fips   — Three-digit county code; supports '*' for all counties
---   @census_api_key  — Census API key
+--   @state_fips    — Two-digit state FIPS code (default '06')
+--   @census_api_key  — Census API key; empty string skips the &key= param
 SET allow_asterisks_in_http_paths = true;
 
 WITH api_response AS MATERIALIZED (

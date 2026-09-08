@@ -1,8 +1,12 @@
 MODEL (
-  name duckdb.staging.lodes_raw,
+  name duckdb.@{region}.lodes_raw,
   kind VIEW,
   gateway duckdb,
-  dialect duckdb
+  dialect duckdb,
+  blueprints (
+    (region := sacog,  county_fips := '067,005,017,061', lodes_year := 2008),
+    (region := fresno, county_fips := '019',             lodes_year := 2021)
+  )
 );
 
 -- LEHD LODES WAC raw data — DuckDB reads gzipped CSV from CES FTP via httpfs.
@@ -15,10 +19,11 @@ MODEL (
 -- DuckDB's restriction that read_csv_auto only accepts literal file paths
 -- (not column references).
 --
--- Variables (set in config.py):
---   lodes_year    — LEHD LODES release year (default 2008)
---   state_fips    — Two-digit state FIPS code (default '06')
+-- Variables (from SQLMesh blueprint columns, read via blueprint_var in the
+-- Jinja body; resolve to the region's blueprint value over the config default):
+--   lodes_year    — LEHD LODES release year (sacog 2008, fresno 2021)
 --   county_fips   — Three-digit county code for row-level filtering
+--   state_fips    — Two-digit state FIPS code (default '06')
 
 JINJA_QUERY_BEGIN;
 {% set fips_to_abbr = {
@@ -35,8 +40,8 @@ JINJA_QUERY_BEGIN;
 } %}
 {% set state_fips_val = var('state_fips') %}
 {% set state_abbr = fips_to_abbr.get(state_fips_val, '') %}
-{% set lodes_year_val = var('lodes_year') %}
-{% set county_fips_val = var('county_fips') %}
+{% set lodes_year_val = blueprint_var('lodes_year') %}
+{% set county_fips_val = blueprint_var('county_fips') %}
 
 SELECT
   CAST({{ lodes_year_val }} AS INTEGER) AS year,
@@ -68,5 +73,9 @@ FROM read_csv_auto(
     delim = ',',
     all_varchar = true
 )
-WHERE LEFT(w_geocode, 5) = CONCAT('{{ state_fips_val }}', '{{ county_fips_val }}');
+WHERE EXISTS (
+  SELECT 1
+  FROM (SELECT unnest(string_split({{ county_fips_val }}, ',')) AS c) codes
+  WHERE LEFT(w_geocode, 5) = CONCAT('{{ state_fips_val }}', codes.c)
+);
 JINJA_END;

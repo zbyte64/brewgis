@@ -13,14 +13,14 @@ AUDIT (
 WITH
 blocks_with_weight AS (
   SELECT DISTINCT cb.geoid
-  FROM brewgis.staging.wac_block_projected cb
+  FROM brewgis.@{region}.wac_block_projected cb
   JOIN @this_model bg
     ON ST_Intersects(bg.geometry, cb.geometry)
   WHERE COALESCE(bg.emp_dasym_weight, 0) > 0
 ),
 source AS (
   SELECT SUM(cb.emp) AS source_emp
-  FROM brewgis.staging.wac_block_projected cb
+  FROM brewgis.@{region}.wac_block_projected cb
   JOIN blocks_with_weight bww ON cb.geoid = bww.geoid
 ),
 allocated AS (

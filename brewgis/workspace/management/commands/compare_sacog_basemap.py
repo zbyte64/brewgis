@@ -505,7 +505,7 @@ class Command(BaseCommand):
             "brewgis.sacog.comparison_dasymetric", environment
         )
         reconciled_table = context.table_name(
-            "brewgis.base_canvas.base_canvas_reconciled", environment
+            "brewgis.sacog.base_canvas_reconciled", environment
         )
         authoritative_table = (
             context.table_name(
@@ -535,9 +535,9 @@ class Command(BaseCommand):
             "brewgis.assessor.parcel_resnet_features",
             environment,
         )
-        wac_block_table = context.table_name("brewgis.staging.wac_block", environment)
+        wac_block_table = context.table_name("brewgis.sacog.wac_block", environment)
         overture_transport_table = context.table_name(
-            "brewgis.staging.overture_transport",
+            "brewgis.sacog.overture_transport",
             environment,
         )
         overture_road_impervious_table = context.table_name(
@@ -699,7 +699,7 @@ def _collect_diagnostics(
             or None to skip land-development-category diagnostics.
         resnet_features_table: ResNet feature snapshot table name, or None
             to skip ResNet coverage diagnostics.
-        wac_block_table: Physical table name of ``brewgis.staging.wac_block``
+        wac_block_table: Physical table name of ``brewgis.sacog.wac_block``
             resolved via SQLMesh, or None to skip WAC diagnostics.
 
     Returns:
@@ -773,9 +773,9 @@ def _collect_diagnostics(
                     pass
 
     # Employment pipeline: WAC block counts. The physical table is resolved
-    # via context.table_name (see _run) — the pre-refactor literal
-    # ``staging__brewgis_prod.wac_block`` no longer exists under the SQLMesh
-    # blueprint physical naming.
+    # via context.table_name (see _run) — under the SQLMesh blueprint
+    # physical naming the SACOG instance materializes to
+    # ``sacog__brewgis_prod.wac_block``.
     if wac_block_table:
         with engine.connect() as conn:
             try:

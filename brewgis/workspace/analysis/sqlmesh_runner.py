@@ -42,8 +42,8 @@ def _models_in_environment(context: Context, environment: str) -> list[str]:
     if env is None:
         return []
     snapshots = getattr(env, "promoted_snapshots", None) or []
-    # s.name is the quoted FQN (e.g. '"brewgis"."staging"."acs_block_group"');
-    # strip quotes for selector compatibility (brewgis.staging.acs_block_group).
+    # s.name is the quoted FQN (e.g. '"brewgis"."sacog"."acs_block_group"');
+    # strip quotes for selector compatibility (brewgis.sacog.acs_block_group).
     return [s.name.replace('"', "") for s in snapshots]
 
 

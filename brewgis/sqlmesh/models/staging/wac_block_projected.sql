@@ -1,8 +1,12 @@
 MODEL (
-  name brewgis.staging.wac_block_projected,
+  name brewgis.@{region}.wac_block_projected,
   kind FULL,
   audits (
     not_null(columns := (geoid))
+  ),
+  blueprints (
+    (region := sacog),
+    (region := fresno)
   )
 );
 
@@ -40,7 +44,7 @@ SELECT
     w.emp_ag,
     ST_Transform(w.geometry, @VAR('local_srid', 3310)) AS local_geometry,
     ST_Envelope(ST_Transform(w.geometry, @VAR('local_srid', 3310))) AS wac_envelope
-FROM brewgis.staging.wac_block w
+FROM brewgis.@{region}.wac_block w
 WHERE w.geometry IS NOT NULL;
 
 -- post_statements

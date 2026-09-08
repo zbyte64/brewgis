@@ -1,5 +1,5 @@
 MODEL (
-  name brewgis.assessor.overture_land_use_parcel,
+  name brewgis.@{region}.overture_land_use_parcel,
   kind INCREMENTAL_BY_UNIQUE_KEY (
     unique_key (parcel_id),
     batch_size 100000
@@ -7,15 +7,19 @@ MODEL (
   audits (
     not_null(columns := (parcel_id)),
     unique_values(columns := (parcel_id,))
+  ),
+  blueprints (
+    (region := sacog),
+    (region := fresno)
   )
 );
 
 -- pre_statements
   CREATE INDEX IF NOT EXISTS idx_overture_land_use_bridge_wgs84_geometry
-  ON brewgis.staging.overture_land_use USING GIST (wgs84_geometry);
+  ON brewgis.@{region}.overture_land_use USING GIST (wgs84_geometry);
   CREATE INDEX IF NOT EXISTS idx_overture_land_use_area
-  ON brewgis.staging.overture_land_use USING BTREE (area);
-  ANALYZE brewgis.staging.overture_land_use;
+  ON brewgis.@{region}.overture_land_use USING BTREE (area);
+  ANALYZE brewgis.@{region}.overture_land_use;
 
 -- Overture Land Use per Parcel — spatial join of Overture land use polygons
 -- to base canvas parcels.
@@ -49,12 +53,12 @@ centroid_match AS (
         bg.parcel_id,
         olu.subtype AS overture_land_use_subtype,
         olu.class AS overture_land_use_class
-    FROM brewgis.base_canvas.base_canvas_geometry bg
+    FROM brewgis.@{region}.base_canvas_geometry bg
     JOIN (
         SELECT ST_SetSRID(wgs84_geometry, @VAR('default_srid', 4326)) AS geometry,
                area,
                subtype, class
-        FROM brewgis.staging.overture_land_use
+        FROM brewgis.@{region}.overture_land_use
     ) olu
         ON ST_Centroid(bg.geometry) && ST_Envelope(olu.geometry)
         AND ST_Contains(olu.geometry, ST_Centroid(bg.geometry))
@@ -65,7 +69,7 @@ centroid_match AS (
 -- References base_canvas_geometry directly for the same reason.
 unmatched AS (
     SELECT bg.parcel_id, bg.geometry
-    FROM brewgis.base_canvas.base_canvas_geometry bg
+    FROM brewgis.@{region}.base_canvas_geometry bg
     LEFT JOIN centroid_match cm ON bg.parcel_id = cm.parcel_id
     WHERE cm.parcel_id IS NULL
 ),
@@ -82,7 +86,7 @@ area_vote AS (
     FROM unmatched u
     CROSS JOIN LATERAL (
         SELECT olu2.subtype, olu2.class
-        FROM brewgis.staging.overture_land_use olu2
+        FROM brewgis.@{region}.overture_land_use olu2
         WHERE ST_Intersects(olu2.wgs84_geometry, ST_SetSRID(u.geometry, 0))
         ORDER BY ST_Area(olu2.wgs84_geometry) DESC
         LIMIT 1

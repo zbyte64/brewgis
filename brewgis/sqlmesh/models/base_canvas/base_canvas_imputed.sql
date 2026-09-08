@@ -1,11 +1,15 @@
 MODEL (
-  name brewgis.base_canvas.base_canvas_imputed,
+  name brewgis.@{region}.base_canvas_imputed,
   kind INCREMENTAL_BY_UNIQUE_KEY (
     unique_key (parcel_id),
     batch_size 100000
   ),
   audits (
     not_null(columns := (parcel_id))
+  ),
+  blueprints (
+    (region := sacog),
+    (region := fresno)
   )
 );
 
@@ -17,7 +21,7 @@ MODEL (
 -- Always treat 0 as 0, NULLs are what we fill in.
 
 WITH attributes AS (
-    SELECT * FROM brewgis.base_canvas.base_canvas_combined
+    SELECT * FROM brewgis.@{region}.base_canvas_combined
 ),
 
 -- Tier 2: County averages for key numeric columns

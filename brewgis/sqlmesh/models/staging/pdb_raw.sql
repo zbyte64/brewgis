@@ -1,8 +1,12 @@
 MODEL (
-  name duckdb.staging.pdb_raw,
+  name duckdb.@{region}.pdb_raw,
   kind VIEW,
   gateway duckdb,
-  dialect duckdb
+  dialect duckdb,
+  blueprints (
+    (region := sacog,  county_fips := '067,005,017,061'),
+    (region := fresno, county_fips := '019')
+  )
 );
 
 -- Census Planning Database (PDB) raw data — DuckDB reads directly from Census API via httpfs.

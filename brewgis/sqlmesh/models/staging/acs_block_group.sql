@@ -1,5 +1,5 @@
 MODEL (
-  name brewgis.staging.acs_block_group,
+  name brewgis.@{region}.acs_block_group,
   kind INCREMENTAL_BY_UNIQUE_KEY (
     unique_key (geoid, data_year),
     batch_size 100000
@@ -8,7 +8,11 @@ MODEL (
     not_null(columns := (geoid, data_year))
   ),
   depends_on (
-    brewgis.staging.acs_bridge
+    brewgis.@{region}.acs_bridge
+  ),
+  blueprints (
+    (region := sacog,  county_fips := '067,005,017,061', acs_year := 2013),
+    (region := fresno, county_fips := '019',             acs_year := 2022)
   )
 );
 
@@ -62,7 +66,7 @@ WITH raw_derived AS (
         COALESCE(a.b15003_001_e, 0)::numeric AS edu_total,
         (COALESCE(a.b15003_022_e, 0) + COALESCE(a.b15003_023_e, 0)
             + COALESCE(a.b15003_024_e, 0) + COALESCE(a.b15003_025_e, 0))::numeric AS college_educated
-    FROM brewgis.staging.acs_bridge a
+    FROM brewgis.@{region}.acs_bridge a
     JOIN brewgis.staging.tiger_block_groups tbg
         ON tbg.geoid = a.state || a.county || a.tract || a.block_group
         AND tbg.vintage = @tiger_bg_vintage

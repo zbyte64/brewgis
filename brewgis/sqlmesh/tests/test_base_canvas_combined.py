@@ -18,11 +18,11 @@ Run with: sqlmesh test
 def test_population_conservation(context):
     """2 parcels in one block should split pop proportionally by DU weight"""
     result = context.evaluate(
-        "brewgis.base_canvas.base_canvas_combined",
+        "brewgis.sacog.base_canvas_combined",
         start="2024-01-01",
         end="2024-01-01",
         inputs={
-            "brewgis.base_canvas.base_canvas_geometry": [
+            "brewgis.sacog.base_canvas_geometry": [
                 {
                     "parcel_id": "P1",
                     "geometry": "POLYGON((-121.5 38.49,-121.49 38.49,-121.49 38.50,-121.50 38.50,-121.5 38.49))",
@@ -94,7 +94,7 @@ def test_population_conservation(context):
                     "local_geometry": "POLYGON((-121.50 38.50,-121.49 38.50,-121.49 38.51,-121.50 38.51,-121.50 38.50))",
                 },
             ],
-            "brewgis.staging.census_2020_block_projected": [
+            "brewgis.sacog.census_2020_block_projected": [
                 {
                     "geoid": "060670011001001",
                     "total_population": 3000.0,
@@ -102,7 +102,7 @@ def test_population_conservation(context):
                     "geometry": "POLYGON((-121.51 38.49,-121.48 38.49,-121.48 38.52,-121.51 38.52,-121.51 38.49))",
                 }
             ],
-            "brewgis.staging.wac_sub_sector_fallbacks": [
+            "brewgis.sacog.wac_sub_sector_fallbacks": [
                 {
                     "county_fips": "067",
                     "emp_retail_services_frac": 0.466,
@@ -135,11 +135,11 @@ def test_population_conservation(context):
 def test_non_residential_pop_zero(context):
     """Non-residential parcels get zero population"""
     result = context.evaluate(
-        "brewgis.base_canvas.base_canvas_combined",
+        "brewgis.sacog.base_canvas_combined",
         start="2024-01-01",
         end="2024-01-01",
         inputs={
-            "brewgis.base_canvas.base_canvas_geometry": [
+            "brewgis.sacog.base_canvas_geometry": [
                 {
                     "parcel_id": "P3",
                     "geometry": "POLYGON((-121.5 38.49,-121.49 38.49,-121.49 38.50,-121.50 38.50,-121.5 38.49))",
@@ -176,7 +176,7 @@ def test_non_residential_pop_zero(context):
                     "local_geometry": "POLYGON((-121.5 38.49,-121.49 38.49,-121.49 38.50,-121.50 38.50,-121.5 38.49))",
                 }
             ],
-            "brewgis.staging.census_2020_block_projected": [
+            "brewgis.sacog.census_2020_block_projected": [
                 {
                     "geoid": "060670011001001",
                     "total_population": 3000.0,
@@ -184,7 +184,7 @@ def test_non_residential_pop_zero(context):
                     "geometry": "POLYGON((-121.51 38.49,-121.48 38.49,-121.48 38.52,-121.51 38.52,-121.51 38.49))",
                 }
             ],
-            "brewgis.staging.wac_sub_sector_fallbacks": [
+            "brewgis.sacog.wac_sub_sector_fallbacks": [
                 {
                     "county_fips": "067",
                     "emp_retail_services_frac": 0.466,
@@ -216,11 +216,11 @@ def test_non_residential_pop_zero(context):
 def test_commercial_sqft_routes_retail_jobs(context):
     """Parcel with commercial sqft gets retail/office jobs"""
     result = context.evaluate(
-        "brewgis.base_canvas.base_canvas_combined",
+        "brewgis.sacog.base_canvas_combined",
         start="2024-01-01",
         end="2024-01-01",
         inputs={
-            "brewgis.base_canvas.base_canvas_geometry": [
+            "brewgis.sacog.base_canvas_geometry": [
                 {
                     "parcel_id": "EMP1",
                     "geometry": "POLYGON((-121.5 38.49,-121.49 38.49,-121.49 38.50,-121.50 38.50,-121.5 38.49))",
@@ -257,7 +257,7 @@ def test_commercial_sqft_routes_retail_jobs(context):
                     "local_geometry": "POLYGON((-121.5 38.49,-121.49 38.49,-121.49 38.50,-121.50 38.50,-121.5 38.49))",
                 }
             ],
-            "brewgis.staging.census_2020_block_projected": [
+            "brewgis.sacog.census_2020_block_projected": [
                 {
                     "geoid": "060670011001001",
                     "total_population": 3000.0,
@@ -265,7 +265,7 @@ def test_commercial_sqft_routes_retail_jobs(context):
                     "geometry": "POLYGON((-121.51 38.49,-121.48 38.49,-121.48 38.52,-121.51 38.52,-121.51 38.49))",
                 }
             ],
-            "brewgis.staging.wac_block_projected": [
+            "brewgis.sacog.wac_block_projected": [
                 {
                     "geoid": "060670011001001",
                     "emp": 1500.0,
@@ -294,7 +294,7 @@ def test_commercial_sqft_routes_retail_jobs(context):
                     "geometry": "POLYGON((-121.51 38.49,-121.48 38.49,-121.48 38.52,-121.51 38.52,-121.51 38.49))",
                 }
             ],
-            "brewgis.staging.wac_sub_sector_fallbacks": [
+            "brewgis.sacog.wac_sub_sector_fallbacks": [
                 {
                     "county_fips": "067",
                     "emp_retail_services_frac": 0.466,
@@ -331,11 +331,11 @@ def test_commercial_sqft_routes_retail_jobs(context):
 def test_no_commercial_sqft_no_retail_jobs(context):
     """Parcel with zero commercial sqft gets zero retail/office jobs"""
     result = context.evaluate(
-        "brewgis.base_canvas.base_canvas_combined",
+        "brewgis.sacog.base_canvas_combined",
         start="2024-01-01",
         end="2024-01-01",
         inputs={
-            "brewgis.base_canvas.base_canvas_geometry": [
+            "brewgis.sacog.base_canvas_geometry": [
                 {
                     "parcel_id": "EMP2",
                     "geometry": "POLYGON((-121.5 38.49,-121.49 38.49,-121.49 38.50,-121.50 38.50,-121.5 38.49))",
@@ -372,7 +372,7 @@ def test_no_commercial_sqft_no_retail_jobs(context):
                     "local_geometry": "POLYGON((-121.5 38.49,-121.49 38.49,-121.49 38.50,-121.50 38.50,-121.5 38.49))",
                 }
             ],
-            "brewgis.staging.census_2020_block_projected": [
+            "brewgis.sacog.census_2020_block_projected": [
                 {
                     "geoid": "060670011001001",
                     "total_population": 3000.0,
@@ -380,7 +380,7 @@ def test_no_commercial_sqft_no_retail_jobs(context):
                     "geometry": "POLYGON((-121.51 38.49,-121.48 38.49,-121.48 38.52,-121.51 38.52,-121.51 38.49))",
                 }
             ],
-            "brewgis.staging.wac_block_projected": [
+            "brewgis.sacog.wac_block_projected": [
                 {
                     "geoid": "060670011001001",
                     "emp": 1500.0,
@@ -409,7 +409,7 @@ def test_no_commercial_sqft_no_retail_jobs(context):
                     "geometry": "POLYGON((-121.51 38.49,-121.48 38.49,-121.48 38.52,-121.51 38.52,-121.51 38.49))",
                 }
             ],
-            "brewgis.staging.wac_sub_sector_fallbacks": [
+            "brewgis.sacog.wac_sub_sector_fallbacks": [
                 {
                     "county_fips": "067",
                     "emp_retail_services_frac": 0.466,
@@ -444,11 +444,11 @@ def test_no_commercial_sqft_no_retail_jobs(context):
 def test_null_subtype_res_sqft_recovered_to_mf(context):
     """Parcel with NULL du_subtype + residential_sqft → bldg_area_mf gets the sqft"""
     result = context.evaluate(
-        "brewgis.base_canvas.base_canvas_combined",
+        "brewgis.sacog.base_canvas_combined",
         start="2024-01-01",
         end="2024-01-01",
         inputs={
-            "brewgis.base_canvas.base_canvas_geometry": [
+            "brewgis.sacog.base_canvas_geometry": [
                 {
                     "parcel_id": "NULLDU1",
                     "geometry": "POLYGON((-121.5 38.49,-121.49 38.49,-121.49 38.50,-121.50 38.50,-121.5 38.49))",
@@ -485,7 +485,7 @@ def test_null_subtype_res_sqft_recovered_to_mf(context):
                     "hh_estimated": 0.975,
                 }
             ],
-            "brewgis.staging.census_2020_block_projected": [
+            "brewgis.sacog.census_2020_block_projected": [
                 {
                     "geoid": "060670011001001",
                     "total_population": 0.0,
@@ -493,7 +493,7 @@ def test_null_subtype_res_sqft_recovered_to_mf(context):
                     "geometry": "POLYGON((-121.51 38.49,-121.48 38.49,-121.48 38.52,-121.51 38.52,-121.51 38.49))",
                 }
             ],
-            "brewgis.staging.wac_block_projected": [
+            "brewgis.sacog.wac_block_projected": [
                 {
                     "geoid": "060670011001001",
                     "emp": 0.0,
@@ -522,7 +522,7 @@ def test_null_subtype_res_sqft_recovered_to_mf(context):
                     "geometry": "POLYGON((-121.51 38.49,-121.48 38.49,-121.48 38.52,-121.51 38.52,-121.51 38.49))",
                 }
             ],
-            "brewgis.staging.wac_sub_sector_fallbacks": [
+            "brewgis.sacog.wac_sub_sector_fallbacks": [
                 {
                     "county_fips": "067",
                     "emp_retail_services_frac": 0.466,
@@ -565,11 +565,11 @@ def test_null_subtype_res_sqft_recovered_to_mf(context):
 def test_null_subtype_no_res_sqft_zero_bldg_area(context):
     """Parcel with NULL du_subtype + 0 residential_sqft → all bldg_area = 0"""
     result = context.evaluate(
-        "brewgis.base_canvas.base_canvas_combined",
+        "brewgis.sacog.base_canvas_combined",
         start="2024-01-01",
         end="2024-01-01",
         inputs={
-            "brewgis.base_canvas.base_canvas_geometry": [
+            "brewgis.sacog.base_canvas_geometry": [
                 {
                     "parcel_id": "NULLDU2",
                     "geometry": "POLYGON((-121.5 38.49,-121.49 38.49,-121.49 38.50,-121.50 38.50,-121.5 38.49))",
@@ -606,7 +606,7 @@ def test_null_subtype_no_res_sqft_zero_bldg_area(context):
                     "hh_estimated": 0.975,
                 }
             ],
-            "brewgis.staging.census_2020_block_projected": [
+            "brewgis.sacog.census_2020_block_projected": [
                 {
                     "geoid": "060670011001001",
                     "total_population": 0.0,
@@ -614,7 +614,7 @@ def test_null_subtype_no_res_sqft_zero_bldg_area(context):
                     "geometry": "POLYGON((-121.51 38.49,-121.48 38.49,-121.48 38.52,-121.51 38.52,-121.51 38.49))",
                 }
             ],
-            "brewgis.staging.wac_block_projected": [
+            "brewgis.sacog.wac_block_projected": [
                 {
                     "geoid": "060670011001001",
                     "emp": 0.0,
@@ -643,7 +643,7 @@ def test_null_subtype_no_res_sqft_zero_bldg_area(context):
                     "geometry": "POLYGON((-121.51 38.49,-121.48 38.49,-121.48 38.52,-121.51 38.52,-121.51 38.49))",
                 }
             ],
-            "brewgis.staging.wac_sub_sector_fallbacks": [
+            "brewgis.sacog.wac_sub_sector_fallbacks": [
                 {
                     "county_fips": "067",
                     "emp_retail_services_frac": 0.466,

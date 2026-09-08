@@ -1,8 +1,12 @@
 MODEL (
-  name duckdb.staging.census_2020_block_raw,
+  name duckdb.@{region}.census_2020_block_raw,
   kind VIEW,
   gateway duckdb,
-  dialect duckdb
+  dialect duckdb,
+  blueprints (
+    (region := sacog,  county_fips := '067,005,017,061'),
+    (region := fresno, county_fips := '019')
+  )
 );
 
 -- Census 2020 Decennial P.L. 94-171 block-level raw data — DuckDB reads
@@ -21,9 +25,10 @@ MODEL (
 --   [5] = tract
 --   [6] = block
 --
--- Variables (from SQLMesh @VAR macro — set in config.py):
---   @state_fips      — Two-digit state FIPS code (default '06')
+-- Variables (from SQLMesh blueprint columns; bare @refs resolve to the
+-- region's blueprint value over the config default):
 --   @county_fips     — Three-digit county code; supports '*' for all counties
+--   @state_fips      — Two-digit state FIPS code (default '06')
 --   @census_api_key  — Census API key; empty string skips the &key= param
 SET allow_asterisks_in_http_paths = true;
 

@@ -44,7 +44,7 @@ WITH overture_buildings AS (
         'overture' AS source,
         NULL::text AS bf_source,
         NULL::double precision AS confidence
-    FROM duckdb.staging.overture_buildings ob
+    FROM duckdb.@{region}.overture_buildings ob
 ),
 
 vida_buildings AS (

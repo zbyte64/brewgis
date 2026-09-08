@@ -1,11 +1,15 @@
 MODEL (
-  name brewgis.staging.pdb_block_group,
+  name brewgis.@{region}.pdb_block_group,
   kind INCREMENTAL_BY_UNIQUE_KEY (
     unique_key (geoid, data_year),
     batch_size 100000
   ),
   audits (
     not_null(columns := (geoid, data_year))
+  ),
+  blueprints (
+    (region := sacog,  county_fips := '067,005,017,061'),
+    (region := fresno, county_fips := '019')
   )
 );
 
@@ -34,12 +38,12 @@ WITH raw_derived AS (
         p.pct_renter_occp_hu_acs_18_22::double precision AS pct_renter_occp_raw,
         -- Below poverty %
         p.pct_prs_blw_pov_lev_acs_18_22::double precision AS pct_below_poverty_raw
-    FROM brewgis.staging.pdb_bridge p
+    FROM brewgis.@{region}.pdb_bridge p
     JOIN brewgis.staging.tiger_block_groups tbg
         ON p.gidbg = tbg.geoid
         AND tbg.vintage = @tiger_bg_vintage
-    WHERE p.state = '06'
-      AND p.county = '067'
+    WHERE p.state = @state_fips
+      AND p.county = ANY(STRING_TO_ARRAY(@county_fips, ','))
 ),
 derived_rates AS (
     SELECT

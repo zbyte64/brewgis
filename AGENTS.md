@@ -70,8 +70,8 @@ Key rules:
 |`brewgis/workspace/symbology/`|Map style generation (classifiers, generator, auto-config, legend, stats), 21 color palettes|
 |`brewgis/workspace/services/`|~33 service modules: base canvas ETL pipeline (1047 lines), schema, fetchers (Census, LEHD, POI, NLCD, assessor), spatial allocator, stitcher, imputation engine, built form classifier, paint constraints, scenario cloner, canvas view manager, `_db.py` (cached SQLAlchemy singleton)|
 |`brewgis/workspace/mcp/`|MCP server: FastMCP stdio entrypoint, auth stub, 8 tool modules|
-|`brewgis/workspace/dlt_pipelines/`|3 dlt pipeline modules: nlcd, osm — load directly into DuckDB (caches HTTP, handles raster/zip)|
-|`brewgis/workspace/management/commands/`|Management commands: setup_fresno_workspace, import_sacog_demo, populate_base_canvas, compare_sacog_basemap, onboard_geography, run_mcp, export_story_packet, restore_demo_db|
+|`brewgis/workspace/dlt_pipelines/`|dlt pipeline modules (nlcd) — load directly into DuckDB (caches HTTP, handles raster/zip)|
+|`brewgis/workspace/management/commands/`|Management commands: import_sacog_demo, populate_base_canvas, compare_sacog_basemap, onboard_geography, run_mcp, export_story_packet, restore_demo_db|
 |`brewgis/sqlmesh/`|SQLMesh project: ~162 models across 11 subdirs, 22 macros, 37 seeds, 86 audits, config.py|
 |`brewgis/templates/`|~30 Django templates: base.html, workspace_map.html (main map page), workspace_detail.html, scenario_comparison.html, import_center.html, partials, allauth overrides|
 |`brewgis/static/js/`|Bundled frontend: brew-gis-map.js (1.3MB Lit+MapLibre ESM from Vite+TS)|
@@ -229,7 +229,7 @@ npm run test      # vitest
 |`brewgis/workspace/services/duckdb_pool.py`|DuckDB connection pool for data-loading operations — caches HTTP fetches, handles raster and zip files natively|
 |`brewgis/workspace/mcp/server.py`|FastMCP stdio server entrypoint with 8 tool modules|
 
-|`brewgis/workspace/dlt_pipelines/__init__.py`|Exports 3 dlt pipeline functions: run_nlcd_pipeline, run_nlcd_tree_canopy_pipeline, run_osm_pipeline|
+|`brewgis/workspace/dlt_pipelines/__init__.py`|dlt pipeline package: nlcd pipeline modules|
 |`brewgis/workspace/services/_db.py`|Cached SQLAlchemy engine singleton (functools.lru_cache)|
 |`brewgis/workspace/services/base_canvas_pipeline.py`|1047-line 11-step ETL pipeline (raw SQL with SQL injection quoting)|
 |`brewgis/sqlmesh/config.py`|SQLMesh config: Postgres dialect, 90+ config variables, gateway settings|

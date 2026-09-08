@@ -15,14 +15,14 @@ AUDIT (
 WITH
 blocks_with_weight AS (
   SELECT DISTINCT cb.geoid
-  FROM brewgis.staging.census_2020_block_projected cb
+  FROM brewgis.@{region}.census_2020_block_projected cb
   JOIN @this_model bg
     ON ST_Intersects(bg.geometry, cb.geometry)
   WHERE COALESCE(bg.du_pop_dasym_weight, 0) > 0
 ),
 source AS (
   SELECT SUM(cb.total_population) AS source_pop
-  FROM brewgis.staging.census_2020_block_projected cb
+  FROM brewgis.@{region}.census_2020_block_projected cb
   JOIN blocks_with_weight bww ON cb.geoid = bww.geoid
 ),
 allocated AS (

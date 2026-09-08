@@ -1,7 +1,11 @@
 MODEL (
-  name brewgis.staging.acs_bridge,
+  name brewgis.@{region}.acs_bridge,
   kind FULL,
-  gateway duckdb
+  gateway duckdb,
+  blueprints (
+    (region := sacog),
+    (region := fresno)
+  )
 );
 
 -- ACS Raw Bridge — materializes the DuckDB VIEW (which reads from Census API)
@@ -11,4 +15,4 @@ MODEL (
 -- Replaces the public.acs_raw table previously created by the dlt census pipeline.
 -- All columns match the dlt staging schema in external_models/dlt_staging.yaml.
 
-SELECT * FROM duckdb.staging.acs_raw;
+SELECT * FROM duckdb.@{region}.acs_raw;

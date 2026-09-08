@@ -1,8 +1,12 @@
 MODEL (
-  name brewgis.staging.census_2020_block_projected,
+  name brewgis.@{region}.census_2020_block_projected,
   kind FULL,
   audits (
     not_null(columns := (geoid))
+  ),
+  blueprints (
+    (region := sacog),
+    (region := fresno)
   )
 );
 
@@ -19,7 +23,7 @@ SELECT
     geometry,
     ST_Transform(geometry, @VAR('local_srid', 3310)) AS local_geometry,
     ST_Envelope(ST_Transform(geometry, @VAR('local_srid', 3310))) AS local_envelope
-FROM brewgis.staging.census_2020_block
+FROM brewgis.@{region}.census_2020_block
 WHERE geometry IS NOT NULL;
 
 -- post_statements

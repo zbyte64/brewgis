@@ -291,9 +291,9 @@ def _populate_wac_block(
 ) -> int:
     """Join LEHD LODES WAC data with TIGER BG geometry via SQLMesh models.
 
-    1. ``brewgis.staging.wac_block_raw`` — CNS-to-sub-sector splitting with
+    1. ``brewgis.sacog.wac_block_raw`` — CNS-to-sub-sector splitting with
        CBP proportions (from ``cbp_proportions.sql`` model).
-    2. ``brewgis.staging.wac_block`` — C000 gap distribution and CBP county-
+    2. ``brewgis.sacog.wac_block`` — C000 gap distribution and CBP county-
        level scaling to correct LEHD disclosure suppression.
 
     CBP proportion variables are computed by the ``cbp_proportions.sql``
@@ -325,12 +325,12 @@ def _populate_wac_block(
         from brewgis.workspace.analysis.sqlmesh_runner import get_context
 
         ctx = get_context()
-        existing = ["+brewgis.staging.wac_block_raw", "+brewgis.staging.wac_block"]
+        existing = ["+brewgis.sacog.wac_block_raw", "+brewgis.sacog.wac_block"]
         return [m for m in existing if m in ctx.models]
 
     restate_wac = _restate_list() if force_reload else False
     run_sqlmesh_plan(
-        select=["+brewgis.staging.wac_block_raw"],
+        select=["+brewgis.sacog.wac_block_raw"],
         variables=vars,
         restate_models=restate_wac,
     )
@@ -347,7 +347,7 @@ def fetch_lehd_data_summary(
     context = get_context()
     df = context.fetchdf("""
         SELECT COUNT(*) as row_count
-        FROM brewgis.staging.lodes_raw
+        FROM brewgis.sacog.lodes_raw
         WHERE year = :year
     """)
     row_count = df[0][0] or 0

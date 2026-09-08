@@ -1,8 +1,12 @@
 MODEL (
-  name brewgis.staging.wac_block,
+  name brewgis.@{region}.wac_block,
   kind FULL,
   audits (
     not_null(columns := (geoid))
+  ),
+  blueprints (
+    (region := sacog),
+    (region := fresno)
   )
 );
 
@@ -75,7 +79,7 @@ WITH raw_with_gap AS (
             + COALESCE(emp_public_admin, 0)
             + COALESCE(emp_military, 0)
         ) AS c000_gap
-    FROM brewgis.staging.wac_block_raw
+    FROM brewgis.@{region}.wac_block_raw
 ),
 
 -- Apply C000 gap distribution: when c000_gap > 0, distribute the gap across

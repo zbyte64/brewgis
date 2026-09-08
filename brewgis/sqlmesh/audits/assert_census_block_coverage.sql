@@ -30,7 +30,7 @@ WHERE COALESCE(c.du_estimated, 0) >= 0.5
   AND COALESCE(c.du, 0) = 0
   AND EXISTS (
     SELECT 1
-    FROM brewgis.staging.census_2020_block_projected cb
+    FROM brewgis.@{region}.census_2020_block_projected cb
     WHERE ST_Intersects(c.geometry, cb.geometry)
       AND cb.total_housing_units > 0
   )
