@@ -252,6 +252,13 @@ _pg_attach_path = (
 def config_factory(**variables):
     return Config(
         project="brewgis",
+        # TEMPORARY: analysis domain deferred (2026-09-08). The
+        # brewgis.analysis.* models depend on an external `public.built_forms`
+        # table (@built_form_table below) that does not exist in this
+        # environment, so their backfill fails and blocks promote of every
+        # plan. Remove this pattern (and provide public.built_forms) when the
+        # analysis domain is brought back online.
+        ignore_patterns=["models/analysis/**/*.sql"],
         default_gateway="postgis",
         gateways={
             "postgis": GatewayConfig(
@@ -279,6 +286,21 @@ def config_factory(**variables):
                     ],
                     connector_config={
                         "temp_directory": _DUCKDB_TMP,
+                        # cache_httpfs on-disk block cache. NO force_download:
+                        # it made every s3:// parquet file an upfront full
+                        # download (277 GB theme -> never completes).
+                        # ArcGIS FeatureServers (FEMA NFHL, CA DOC farmland)
+                        # that mishandle Range requests are covered by
+                        # cache_httpfs' default auto_fallback_to_full_download.
+                        #
+                        # IMPORTANT: the extension must be a CURRENT community
+                        # build. The artifact pinned in images built before
+                        # ~2026-09 wedged/busy-looped on s3:// parquet reads
+                        # (duck-read-cache-fs#331 family); a fresh
+                        # `FORCE INSTALL cache_httpfs FROM community` fixed it
+                        # (verified 2026-09-08: s3 fetch 149 s + cache writes;
+                        # ArcGIS page 11.7 s). Rebuild the django image after
+                        # touching preload_duckdb.py.
                         "cache_httpfs_type": "on_disk",
                         "cache_httpfs_cache_directory": "/app/planning/http_cache",
                         "cache_httpfs_evict_policy": "lru_sp",
@@ -288,12 +310,6 @@ def config_factory(**variables):
                         "httpfs_connection_caching": True,
                         "http_retry_wait_ms": 1000,
                         "unsafe_disable_etag_checks": True,
-                        # Full downloads instead of HTTP Range requests: some
-                        # ArcGIS FeatureServers (FEMA NFHL, CA DOC farmland)
-                        # mishandle Range/keep-alive, so cache_httpfs block
-                        # reads fail ("Server sent back more data than
-                        # expected" / malformed JSON at a fixed byte).
-                        "force_download": True,
                     },
                     secrets=[
                         {
@@ -389,12 +405,12 @@ def config_factory(**variables):
             ),
             # ---- NLCD DuckDB raster models ----
             # NLCD land cover and tree canopy year for WCS coverage IDs.
+            # nlcd_parcel_source / nlcd_parcel_srid are bound per region by the
+            # nlcd_parcel_stats / nlcd_tree_canopy_parcel_stats blueprints
+            # (sacog: public.sacog_comparison_parcels @3310; fresno:
+            # brewgis.staging.fresno_parcels @4326).
             "nlcd_land_cover_year": 2021,
             "nlcd_tree_canopy_year": 2016,
-            # PostGIS parcel table (accessible via DuckDB postgres_scanner
-            # as brewgis.<schema>.<table>) with geometry in EPSG:3310.
-            "nlcd_parcel_source": "brewgis.public.sacog_comparison_parcels",  #'"brewgis"."public"."sacog_comparison_parcels"',
-            "nlcd_parcel_srid": 3310,
             # ---- CBP County Employment Scaling (wac_block.sql) ----
             # Set to actual CBP 2008 county-level totals for accurate scaling.
             # All default to 0.0 (passthrough — no scaling applied).
