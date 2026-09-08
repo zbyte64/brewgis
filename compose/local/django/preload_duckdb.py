@@ -16,7 +16,9 @@ try:
         "raster",
     ]:
         if ext in ("cache_httpfs", "zipfs", "raster"):
-            con.execute(f"INSTALL {ext} FROM community")
+            # FORCE: cache_httpfs artifacts pinned before ~2026-09 wedge on
+            # s3:// parquet reads; always fetch the current community build.
+            con.execute(f"FORCE INSTALL {ext} FROM community")
         else:
             con.execute(f"INSTALL {ext}")
         con.execute(f"LOAD {ext}")
