@@ -29,6 +29,10 @@ shell:  ## Open Django shell
 duckdb:  ## Open DuckDB shell (planning cache DB)
 	$(COMPOSE_RUN) python scripts/duckdb_shell.py
 
+.PHONY: check-hang
+check-hang:  ## Diagnose whether the running sqlmesh plan is hung (30s sample; add ARGS="-s 60 --pg" for a longer window + Postgres probe)
+	./scripts/check-sqlmesh-hang.sh $(ARGS)
+
 # ─────────────────────────────────────────────
 # Database
 # ─────────────────────────────────────────────
