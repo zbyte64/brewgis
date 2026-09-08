@@ -7,9 +7,11 @@ MODEL (
   ),
   audits (
     -- Also covers transport-data availability from overture_transport:
-    -- if that bridge produces <50000 rows, the intersection count drops
-    -- below threshold and this audit fails.
-    assert_row_count_between (min_rows := 50000, max_rows := 100000000)
+    -- if that bridge produces very few rows, the intersection count drops
+    -- below threshold and this audit fails. Floor is regional: SACOG
+    -- ~64k intersections, Fresno County ~25k (2026-09-08 counts), so a
+    -- 20000 floor catches an empty/broken transport bridge for both.
+    assert_row_count_between (min_rows := 20000, max_rows := 100000000)
   ),
   blueprints (
     (region := sacog),
@@ -19,8 +21,10 @@ MODEL (
 
 -- pre hooks
 -- (overture_transport is DuckDB gateway, so indexes must live here)
+  DO $$ BEGIN PERFORM pg_advisory_xact_lock(hashtext('idx_overture_transport_geometry')::bigint); END $$;
   CREATE INDEX IF NOT EXISTS idx_overture_transport_geometry_@snapshot_hash
   ON brewgis.@{region}.overture_transport USING GIST (wgs84_geometry);
+  DO $$ BEGIN PERFORM pg_advisory_xact_lock(hashtext('idx_overture_transport_local_geometry')::bigint); END $$;
   CREATE INDEX IF NOT EXISTS idx_overture_transport_local_geometry_@snapshot_hash
   ON brewgis.@{region}.overture_transport USING GIST (local_geometry);
 
