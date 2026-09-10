@@ -23,6 +23,7 @@ from brewgis.workspace.models import AnalysisRun
 from brewgis.workspace.models import Scenario
 from brewgis.workspace.models import Workspace
 from brewgis.workspace.services.preflight import check_analysis_prerequisites
+from brewgis.workspace.views.built_forms import HtmxResponseMixin
 
 _CONSTRAINTS_INITIAL = json.dumps(
     [
@@ -112,6 +113,12 @@ class AnalysisLaunchForm(forms.Form):
         super().__init__(*args, **kwargs)  # type: ignore[arg-type]
 
         if self._workspace:
+            self.fields["workspace"].queryset = Workspace.objects.filter(
+                pk=self._workspace.pk,
+            )
+            self.fields["workspace"].initial = self._workspace.pk
+            self.fields["workspace"].widget = forms.HiddenInput()
+
             schema = self._workspace.db_schema
             choices = _discover_geom_tables(schema)
             if choices:
@@ -239,7 +246,7 @@ class AnalysisLaunchForm(forms.Form):
 
 
 @method_decorator(user_passes_test(lambda u: u.is_authenticated), name="dispatch")
-class AnalysisLaunchView(FormView):
+class AnalysisLaunchView(HtmxResponseMixin, FormView):
     """View to launch an analysis pipeline run."""
 
     form_class = AnalysisLaunchForm
@@ -247,7 +254,12 @@ class AnalysisLaunchView(FormView):
 
     def get_form_kwargs(self) -> dict[str, object]:
         kwargs = super().get_form_kwargs()
-        workspace_pk = self.request.GET.get("workspace")
+        # The panel URL passes the workspace as a path segment
+        # (``workspace_pk``); a bare ``?workspace=`` query param is also
+        # accepted for direct links.
+        workspace_pk = self.request.GET.get("workspace") or self.kwargs.get(
+            "workspace_pk",
+        )
         if workspace_pk:
             try:
                 kwargs["workspace"] = Workspace.objects.get(pk=workspace_pk)

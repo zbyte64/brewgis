@@ -37,6 +37,12 @@ class CreateLayerForm(forms.ModelForm):
         super().__init__(*args, **kwargs)  # type: ignore[arg-type]
         self.helper = FormHelper()
         self.helper.form_tag = False
+        workspace_pk = self.initial.get("workspace")
+        if workspace_pk:
+            self.fields["workspace"].queryset = Workspace.objects.filter(
+                pk=workspace_pk,
+            )
+            self.fields["workspace"].widget = forms.HiddenInput()
 
 
 @method_decorator(user_passes_test(lambda u: u.is_authenticated), name="dispatch")
@@ -44,6 +50,13 @@ class CreateLayerView(HtmxResponseMixin, CreateView):
     form_class = CreateLayerForm
     template_name = "form.html"
     success_url_name = "workspace:workspace_map"
+
+    def get_initial(self) -> dict[str, Any]:
+        initial = super().get_initial()
+        workspace_pk = self.request.GET.get("workspace")
+        if workspace_pk:
+            initial["workspace"] = workspace_pk
+        return initial
 
     def get_redirect_url(self) -> str:
         assert self.object is not None
@@ -78,6 +91,12 @@ class ImportSqlmeshLayerForm(forms.Form):
         super().__init__(*args, **kwargs)  # type: ignore[arg-type]
         self.helper = FormHelper()
         self.helper.form_tag = False
+        workspace_pk = self.initial.get("workspace")
+        if workspace_pk:
+            self.fields["workspace"].queryset = Workspace.objects.filter(
+                pk=workspace_pk,
+            )
+            self.fields["workspace"].widget = forms.HiddenInput()
 
 
 @method_decorator(user_passes_test(lambda u: u.is_authenticated), name="dispatch")

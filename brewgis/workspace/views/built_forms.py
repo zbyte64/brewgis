@@ -34,6 +34,20 @@ class HtmxResponseMixin:
     success_url_name: str
     success_url_args: tuple = ()
     request: HttpRequest
+    template_name: str
+
+    def get_template_names(self) -> list[str]:
+        """Render just the form fragment (no page chrome) for htmx panel loads.
+
+        Panels are loaded via ``hx-get`` into ``#right-panel-content`` while
+        the browser stays on the map page, so a full ``extends base.html``
+        render would nest the whole page — nav bar included — inside the
+        panel. Only htmx requests get the ``#form-content`` partial; a
+        direct browser visit still gets the full page.
+        """
+        if getattr(self.request, "htmx", False):
+            return [f"{self.template_name}#form-content"]
+        return [self.template_name]
 
     def get_redirect_url(self) -> str:
         return reverse(self.success_url_name, args=self.success_url_args)
@@ -55,7 +69,7 @@ class HtmxResponseMixin:
         if getattr(self.request, "htmx", False):
             return render(
                 self.request,
-                "form.html#form-content",
+                self.get_template_names()[0],
                 {"form": form, "view": self},
             )
         return super().form_invalid(form)  # type: ignore[misc, no-any-return]
