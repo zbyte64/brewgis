@@ -42,7 +42,14 @@
       <!-- Your stuff: Third-party javascript libraries go here -->
       <!-- place project specific Javascript in this file -->
       <script defer src="{% static 'js/project.js' %}"></script>
-      <script src="https://unpkg.com/htmx.org@2.0.4"></script>
+      {# htmx 4 compat: preserve htmx 2 defaults (implicit attribute
+         inheritance, no swap on 4xx/5xx/204/304) while templates are
+         migrated incrementally — see htmx-upgrade-from-htmx2 guide. #}
+      <meta name="htmx-config"
+            content='{"implicitInheritance": true, "noSwap": [204, 304, "4xx", "5xx"]}' />
+      <script src="https://cdn.jsdelivr.net/npm/htmx.org@4.0.0"
+              integrity="sha384-BvJpBiO8Kh31EqtJe5DRIeWrHWnCGkwytKs9NKFi86Hhw96dEqdEMzZDeK9iEGTc"
+              crossorigin="anonymous"></script>
     {% endblock javascript %}
   </head>
   <body class="{% block bodyclass %}{% endblock bodyclass %}">
@@ -124,10 +131,10 @@
     </script>
         {% endcomment %}
         <script>
-          document.body.addEventListener('htmx:configRequest', function(evt) {
+          document.body.addEventListener('htmx:config:request', function(evt) {
             var csrfToken = document.querySelector('meta[name="csrf-token"]');
             if (csrfToken) {
-              evt.detail.headers['X-CSRFToken'] = csrfToken.getAttribute('content');
+              evt.detail.ctx.request.headers['X-CSRFToken'] = csrfToken.getAttribute('content');
             }
           });
         </script>

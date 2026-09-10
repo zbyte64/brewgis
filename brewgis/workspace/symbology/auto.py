@@ -94,6 +94,7 @@ def auto_generate_symbology(
     palette_name: str | None = None,
     num_classes: int = 5,
     classification_method: str | None = None,
+    commit: bool = True,
 ) -> SymbologyConfig:
     """Auto-generate a symbology configuration for *layer*.
 
@@ -102,7 +103,7 @@ def auto_generate_symbology(
     2. Selects palette, symbology type, and classification method via
        heuristics.
     3. Creates/updates ``SymbologyConfig`` and ``StyleClass`` rows.
-    4. Returns the saved ``SymbologyConfig``.
+    4. Returns the (saved, unless ``commit=False``) ``SymbologyConfig``.
 
     Parameters
     ----------
@@ -117,11 +118,20 @@ def auto_generate_symbology(
         Number of classes (default 5).
     classification_method:
         Classification method.  ``None`` = auto-select.
+    commit:
+        When ``True`` (default), persists the config and replaces its
+        ``StyleClass`` rows in the database. When ``False``, computes the
+        same result but does not write to the database — useful for a live
+        preview (e.g. while the user is still picking a column) that should
+        only be committed when they explicitly save. The computed style
+        classes are attached to the returned config as
+        ``preview_style_classes`` rather than being queryable via
+        ``config.classes.all()``.
 
     Returns
     -------
     SymbologyConfig
-        The saved configuration (with related ``StyleClass`` rows).
+        The configuration (saved unless ``commit=False``).
     """
     schema = layer.db_schema or layer.workspace.db_schema
     table = layer.db_table
@@ -152,7 +162,7 @@ def auto_generate_symbology(
             col = ""
 
     if not col:
-        return _create_default_config(layer)
+        return _create_default_config(layer, commit=commit)
 
     stats = compute_statistics(schema, table, col)
 
@@ -205,30 +215,46 @@ def auto_generate_symbology(
                 }
             )
 
-    # Create or update SymbologyConfig
-    config, created = SymbologyConfig.objects.update_or_create(
-        layer=layer,
-        defaults={
-            "symbology_type": used_type,
-            "attribute_column": col,
-            "default_color": "#888888",
-            "default_opacity": 0.7,
-            "palette_name": used_palette,
-            "reverse_palette": False,
-            "num_classes": num_classes,
-            "classification_method": used_method,
-            "null_handling": "gray",
-            "null_color": "",
-            "zero_transparent": False,
-            "auto_generated": True,
-        },
-    )
+    if commit:
+        # Create or update SymbologyConfig
+        config, _created = SymbologyConfig.objects.update_or_create(
+            layer=layer,
+            defaults={
+                "symbology_type": used_type,
+                "attribute_column": col,
+                "default_color": "#888888",
+                "default_opacity": 0.7,
+                "palette_name": used_palette,
+                "reverse_palette": False,
+                "num_classes": num_classes,
+                "classification_method": used_method,
+                "null_handling": "gray",
+                "null_color": "",
+                "zero_transparent": False,
+                "auto_generated": True,
+            },
+        )
+        # Replace StyleClass rows
+        config.classes.all().delete()
+        for row_data in class_rows:
+            StyleClass.objects.create(symbology=config, **row_data)
+        return config
 
-    # Replace StyleClass rows
-    config.classes.all().delete()
-    for row_data in class_rows:
-        StyleClass.objects.create(symbology=config, **row_data)
-
+    # Preview only — reuse the existing config's non-classification fields
+    # (color/opacity/stroke/etc.) so previewing a new column, palette, or
+    # class count doesn't clobber settings the user already customized.
+    try:
+        config = SymbologyConfig.objects.get(layer=layer)
+    except SymbologyConfig.DoesNotExist:
+        config = SymbologyConfig(layer=layer)
+    config.symbology_type = used_type
+    config.attribute_column = col
+    config.palette_name = used_palette
+    config.num_classes = num_classes
+    config.classification_method = used_method
+    config.preview_style_classes = [
+        StyleClass(symbology=config, **row_data) for row_data in class_rows
+    ]
     return config
 
 
@@ -242,16 +268,28 @@ def _get_palette_list(name: str, stats: ColumnStatistics) -> list[str]:
         return get_palette("viridis")
 
 
-def _create_default_config(layer: Layer) -> SymbologyConfig:
+def _create_default_config(layer: Layer, *, commit: bool = True) -> SymbologyConfig:
     """Create a minimal single-symbol config when no suitable column is found."""
-    config, _ = SymbologyConfig.objects.update_or_create(
-        layer=layer,
-        defaults={
-            "symbology_type": "single",
-            "attribute_column": "",
-            "default_color": "#888888",
-            "default_opacity": 0.7,
-            "auto_generated": True,
-        },
-    )
+    if commit:
+        config, _created = SymbologyConfig.objects.update_or_create(
+            layer=layer,
+            defaults={
+                "symbology_type": "single",
+                "attribute_column": "",
+                "default_color": "#888888",
+                "default_opacity": 0.7,
+                "auto_generated": True,
+            },
+        )
+        return config
+
+    try:
+        config = SymbologyConfig.objects.get(layer=layer)
+    except SymbologyConfig.DoesNotExist:
+        config = SymbologyConfig(
+            layer=layer, default_color="#888888", default_opacity=0.7
+        )
+    config.symbology_type = "single"
+    config.attribute_column = ""
+    config.preview_style_classes = []
     return config

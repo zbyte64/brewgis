@@ -240,8 +240,14 @@
   }
 
   // ─── htmx Event Bridge ────────────────────────────────────
+  // htmx 4's htmx:after:settle event carries no request context (just
+  // task/newContent/settleTasks), so we bridge on htmx:after:swap instead,
+  // which exposes evt.detail.ctx.sourceElement (the element that triggered
+  // the request) — see the htmx 4 request-context reference.
   function handleHtmxAfterSettle(evt) {
-    var panelEvent = evt.detail.requestConfig?.elt?.getAttribute('data-panel-event');
+    var ctx = evt.detail && evt.detail.ctx;
+    var sourceEl = ctx && ctx.sourceElement;
+    var panelEvent = sourceEl && sourceEl.getAttribute('data-panel-event');
     if (!panelEvent) return;
 
     if (panelEvent === 'close-panel') {
@@ -314,7 +320,7 @@
     document.querySelector('.map-shell')?.addEventListener('click', handleMapClick);
 
     // htmx event bridge
-    document.body.addEventListener('htmx:afterSettle', handleHtmxAfterSettle);
+    document.body.addEventListener('htmx:after:swap', handleHtmxAfterSettle);
 
     // Window resize
     window.addEventListener('resize', handleResize);
@@ -437,7 +443,9 @@
 
     // ─── Toast messages ─────────────────────────────────────
     document.body.addEventListener('show-toast', function(evt) {
-      var msg = evt.detail;
+      // htmx wraps non-object HX-Trigger payloads as {value: <payload>}
+      var detail = evt.detail;
+      var msg = detail && typeof detail === 'object' ? detail.value : detail;
       if (!msg) return;
       var toast = document.getElementById('toast-container');
       if (!toast) {

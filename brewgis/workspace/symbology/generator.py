@@ -11,6 +11,7 @@ from typing import Any
 
 import deal
 
+from brewgis.workspace.models import StyleClass
 from brewgis.workspace.models import SymbologyConfig
 
 __all__ = ["auto_generate_style_from_layer", "generate_maplibre_style"]
@@ -78,10 +79,22 @@ def _base_layout(symbology: SymbologyConfig) -> dict[str, Any]:
     return layout
 
 
-def _categorical_paint(symbology: SymbologyConfig) -> dict[str, Any]:
+def _resolve_classes(
+    symbology: SymbologyConfig, classes: list[StyleClass] | None
+) -> list[StyleClass]:
+    """Return the style classes to render — an explicit override if given,
+    otherwise the config's saved ``StyleClass`` rows."""
+    if classes is not None:
+        return classes
+    return list(symbology.classes.all().order_by("sort_order"))
+
+
+def _categorical_paint(
+    symbology: SymbologyConfig, classes: list[StyleClass] | None = None
+) -> dict[str, Any]:
     """Generate a ``match`` paint expression for categorical symbology."""
     attr = symbology.attribute_column
-    classes = list(symbology.classes.all().order_by("sort_order"))
+    classes = _resolve_classes(symbology, classes)
     if not classes:
         return _single_paint(symbology)
     geo = _normalize_geo(symbology.layer.geometry_type)
@@ -102,10 +115,12 @@ def _categorical_paint(symbology: SymbologyConfig) -> dict[str, Any]:
     return {color_key: _null_expression(symbology, match_parts)}
 
 
-def _graduated_paint(symbology: SymbologyConfig) -> dict[str, Any]:
+def _graduated_paint(
+    symbology: SymbologyConfig, classes: list[StyleClass] | None = None
+) -> dict[str, Any]:
     """Generate a ``step`` paint expression for graduated symbology."""
     attr = symbology.attribute_column
-    classes = list(symbology.classes.all().order_by("sort_order"))
+    classes = _resolve_classes(symbology, classes)
     if not classes:
         return _single_paint(symbology)
     geo = _normalize_geo(symbology.layer.geometry_type)
@@ -154,8 +169,20 @@ def _single_paint(symbology: SymbologyConfig) -> dict[str, Any]:
 
 
 @deal.post(lambda result: "paint" in result and "layout" in result)
-def generate_maplibre_style(symbology: SymbologyConfig) -> dict[str, Any]:
+def generate_maplibre_style(
+    symbology: SymbologyConfig, classes: list[StyleClass] | None = None
+) -> dict[str, Any]:
     """Generate MapLibre GL ``paint`` and ``layout`` for a symbology config.
+
+    Parameters
+    ----------
+    symbology:
+        The config to render.
+    classes:
+        Explicit style classes to use instead of querying
+        ``symbology.classes.all()`` — needed when *symbology* is an unsaved
+        or not-yet-persisted preview (see ``auto_generate_symbology``'s
+        ``commit=False`` mode).
 
     Returns
     -------
@@ -168,9 +195,9 @@ def generate_maplibre_style(symbology: SymbologyConfig) -> dict[str, Any]:
     if stype == "single":
         paint = _single_paint(symbology)
     elif stype == "categorical":
-        paint = _categorical_paint(symbology)
+        paint = _categorical_paint(symbology, classes)
     elif stype == "graduated":
-        paint = _graduated_paint(symbology)
+        paint = _graduated_paint(symbology, classes)
     else:
         paint = _base_paint(symbology)
 

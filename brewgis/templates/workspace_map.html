@@ -358,10 +358,10 @@
 {% endblock content %}
 {% block inline_javascript %}
   <script>
-    document.body.addEventListener('htmx:configRequest', function(evt) {
+    document.body.addEventListener('htmx:config:request', function(evt) {
       var csrfToken = document.querySelector('meta[name="csrf-token"]');
       if (csrfToken) {
-        evt.detail.headers['X-CSRFToken'] = csrfToken.getAttribute('content');
+        evt.detail.ctx.request.headers['X-CSRFToken'] = csrfToken.getAttribute('content');
       }
     });
 
@@ -466,8 +466,8 @@
       }
 
       // Re-enable apply/clear after htmx swap
-      document.body.addEventListener('htmx:afterSwap', function(evt) {
-        if (evt.detail.target && evt.detail.target.id === 'paint-result') {
+      document.body.addEventListener('htmx:after:swap', function(evt) {
+        if (evt.detail.ctx.target && evt.detail.ctx.target.id === 'paint-result') {
           applyBtn.disabled = selectedFeatures.length === 0;
           clearBtn.disabled = selectedFeatures.length === 0;
         }
@@ -566,7 +566,7 @@
 
       // "Undo Last" button: auto-fill with most recent event ID
       if (undoBtn && undoEventId) {
-        undoBtn.addEventListener('htmx:beforeRequest', function() {
+        undoBtn.addEventListener('htmx:before:request', function() {
           if (!undoEventId.value && lastEventId) {
             undoEventId.value = lastEventId;
           }

@@ -66,6 +66,7 @@ from .stitch_data import StitchView as stitch  # noqa: F401
 from .symbology import auto_generate  # noqa: F401
 from .symbology import edit_symbology  # noqa: F401
 from .symbology import layer_legend  # noqa: F401
+from .symbology import preview_classify  # noqa: F401
 from .symbology import preview_symbology  # noqa: F401
 from .symbology import preview_symbology_for_map  # noqa: F401
 from .token_auth import token_auth  # noqa: F401

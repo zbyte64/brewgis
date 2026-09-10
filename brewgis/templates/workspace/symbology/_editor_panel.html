@@ -9,11 +9,13 @@
   <form method="post"
         hx-post="{% url 'workspace:symbology_edit' layer.pk %}?panel=1"
         hx-target="#right-panel-content"
-        hx-swap="innerHTML">
+        hx-swap="innerMorph">
     {% csrf_token %}
     <input type="hidden"
-           name="attribute_column"
-           value="{{ config.attribute_column }}" />
+           name="advanced_open"
+           id="advanced-open-flag"
+           value="{% if advanced_open %}1{% endif %}" />
+    {% if config.symbology_type == 'single' %}<input type="hidden" name="attribute_column" value="" />{% endif %}
     {# ─── Quick-Edit Section (always visible) ─── #}
     <div class="quick-edit-section">
       <div class="row mb-2">
@@ -81,14 +83,32 @@
       </div>
       {% if config.symbology_type != 'single' %}
         <div class="row mb-2">
+          <div class="col-12">
+            <label class="form-label" style="font-size:0.75rem">{% translate "Column" %}</label>
+            <select name="attribute_column"
+                    class="form-select form-select-sm"
+                    hx-post="{% url 'workspace:symbology_preview_classify' layer.pk %}"
+                    hx-target="#right-panel-content"
+                    hx-swap="innerMorph"
+                    hx-include="closest form"
+                    hx-trigger="change">
+              {% for col in column_choices %}
+                <option value="{{ col }}"
+                        {% if config.attribute_column == col %}selected{% endif %}>{{ col }}</option>
+              {% endfor %}
+            </select>
+          </div>
+        </div>
+        <div class="row mb-2">
           <div class="col-7">
             <label class="form-label" style="font-size:0.75rem">{% translate "Palette" %}</label>
             <select name="palette_name"
                     class="form-select form-select-sm palette-select"
-                    hx-post="{% url 'workspace:symbology_preview_map' layer.pk %}"
-                    hx-trigger="change delay:500ms"
-                    hx-include="closest form"
-                    hx-swap="none">
+                    hx-post="{% url 'workspace:symbology_preview_classify' layer.pk %}"
+                    hx-target="#right-panel-content"
+                    hx-swap="innerMorph"
+                    hx-trigger="change delay:300ms"
+                    hx-include="closest form">
               <option value="" {% if not config.palette_name %}selected{% endif %}>{% translate "Manual" %}</option>
               {% for name in palette_names %}
                 <option value="{{ name }}"
@@ -104,10 +124,11 @@
                    value="{{ config.num_classes }}"
                    min="2"
                    max="20"
-                   hx-post="{% url 'workspace:symbology_preview_map' layer.pk %}"
-                   hx-trigger="change delay:800ms"
-                   hx-include="closest form"
-                   hx-swap="none" />
+                   hx-post="{% url 'workspace:symbology_preview_classify' layer.pk %}"
+                   hx-target="#right-panel-content"
+                   hx-swap="innerMorph"
+                   hx-trigger="change delay:600ms"
+                   hx-include="closest form" />
           </div>
         </div>
       {% endif %}
@@ -127,11 +148,16 @@
     <button type="button"
             class="btn btn-sm btn-link p-0 text-decoration-none text-muted mb-2 toggle-advanced"
             style="font-size:0.7rem"
-            onclick="var s=this.nextElementSibling;var h=s.style.display;s.style.display=h==='none'?'block':'none';this.textContent=h==='none'?'{% translate "Basic ▴" %}':'{% translate "Advanced ▸" %}'">
-      {% translate "Advanced ▸" %}
+            onclick="var s=this.nextElementSibling;var h=s.style.display;var opening=(h==='none');s.style.display=opening?'block':'none';this.textContent=opening?'{% translate "Basic ▴" %}':'{% translate "Advanced ▸" %}';var flag=this.closest('form').querySelector('#advanced-open-flag');if(flag){flag.value=opening?'1':'';}">
+      {% if advanced_open %}
+        {% translate "Basic ▴" %}
+      {% else %}
+        {% translate "Advanced ▸" %}
+      {% endif %}
     </button>
-    {# ─── Advanced Section (hidden by default) ─── #}
-    <div class="advanced-section" style="display:none">
+    {# ─── Advanced Section ─── #}
+    <div class="advanced-section"
+         style="display:{% if advanced_open %}block{% else %}none{% endif %}">
       {# Stroke width #}
       <div class="row mb-2">
         <div class="col-6">
@@ -141,7 +167,11 @@
                  class="form-control form-control-sm"
                  value="{{ config.stroke_width }}"
                  step="0.5"
-                 min="0" />
+                 min="0"
+                 hx-post="{% url 'workspace:symbology_preview_map' layer.pk %}"
+                 hx-trigger="change delay:300ms"
+                 hx-include="closest form"
+                 hx-swap="none" />
         </div>
         <div class="col-6">
           <label class="form-label" style="font-size:0.75rem">{% translate "Line Width" %}</label>
@@ -150,7 +180,11 @@
                  class="form-control form-control-sm"
                  value="{{ config.line_width }}"
                  step="0.5"
-                 min="0" />
+                 min="0"
+                 hx-post="{% url 'workspace:symbology_preview_map' layer.pk %}"
+                 hx-trigger="change delay:300ms"
+                 hx-include="closest form"
+                 hx-swap="none" />
         </div>
       </div>
       {# Min/Max Zoom #}
@@ -163,7 +197,11 @@
                  value="{{ config.min_zoom|default:'0.0' }}"
                  min="0"
                  max="22"
-                 step="0.5" />
+                 step="0.5"
+                 hx-post="{% url 'workspace:symbology_preview_map' layer.pk %}"
+                 hx-trigger="change delay:300ms"
+                 hx-include="closest form"
+                 hx-swap="none" />
         </div>
         <div class="col-6">
           <label class="form-label" style="font-size:0.75rem">{% translate "Max Zoom" %}</label>
@@ -173,14 +211,23 @@
                  value="{{ config.max_zoom|default:'22.0' }}"
                  min="0"
                  max="22"
-                 step="0.5" />
+                 step="0.5"
+                 hx-post="{% url 'workspace:symbology_preview_map' layer.pk %}"
+                 hx-trigger="change delay:300ms"
+                 hx-include="closest form"
+                 hx-swap="none" />
         </div>
       </div>
       {# Null handling #}
       <div class="row mb-2">
         <div class="col-6">
           <label class="form-label" style="font-size:0.75rem">{% translate "Null Handling" %}</label>
-          <select name="null_handling" class="form-select form-select-sm">
+          <select name="null_handling"
+                  class="form-select form-select-sm"
+                  hx-post="{% url 'workspace:symbology_preview_map' layer.pk %}"
+                  hx-trigger="change"
+                  hx-include="closest form"
+                  hx-swap="none">
             <option value="gray"
                     {% if config.null_handling == 'gray' %}selected{% endif %}>{% translate "Gray" %}</option>
             <option value="hide"
@@ -194,7 +241,11 @@
           <input type="color"
                  name="null_color"
                  class="form-control form-control-color"
-                 value="{{ config.null_color|default:'#cccccc' }}" />
+                 value="{{ config.null_color|default:'#cccccc' }}"
+                 hx-post="{% url 'workspace:symbology_preview_map' layer.pk %}"
+                 hx-trigger="change delay:300ms"
+                 hx-include="closest form"
+                 hx-swap="none" />
         </div>
       </div>
       {# Checkboxes #}
@@ -204,7 +255,11 @@
                  name="zero_transparent"
                  class="form-check-input"
                  id="id_zero_transparent"
-                 {% if config.zero_transparent %}checked{% endif %} />
+                 {% if config.zero_transparent %}checked{% endif %}
+                 hx-post="{% url 'workspace:symbology_preview_map' layer.pk %}"
+                 hx-trigger="change"
+                 hx-include="closest form"
+                 hx-swap="none" />
           <label class="form-check-label"
                  for="id_zero_transparent"
                  style="font-size:0.75rem">{% translate "Zero Transparent" %}</label>
@@ -214,7 +269,12 @@
                  name="reverse_palette"
                  class="form-check-input"
                  id="id_reverse_palette"
-                 {% if config.reverse_palette %}checked{% endif %} />
+                 {% if config.reverse_palette %}checked{% endif %}
+                 hx-post="{% url 'workspace:symbology_preview_classify' layer.pk %}"
+                 hx-target="#right-panel-content"
+                 hx-swap="innerMorph"
+                 hx-trigger="change"
+                 hx-include="closest form" />
           <label class="form-check-label"
                  for="id_reverse_palette"
                  style="font-size:0.75rem">{% translate "Reverse Palette" %}</label>
@@ -224,7 +284,13 @@
       {% if config.symbology_type == 'graduated' %}
         <div class="mb-2">
           <label class="form-label" style="font-size:0.75rem">{% translate "Classification" %}</label>
-          <select name="classification_method" class="form-select form-select-sm">
+          <select name="classification_method"
+                  class="form-select form-select-sm"
+                  hx-post="{% url 'workspace:symbology_preview_classify' layer.pk %}"
+                  hx-target="#right-panel-content"
+                  hx-swap="innerMorph"
+                  hx-trigger="change"
+                  hx-include="closest form">
             <option value="quantile"
                     {% if config.classification_method == 'quantile' %}selected{% endif %}>
               {% translate "Quantile" %}
@@ -324,7 +390,7 @@
                 style="font-size:0.75rem"
                 hx-post="{% url 'workspace:symbology_auto' layer.pk %}?panel=1"
                 hx-target="#right-panel-content"
-                hx-swap="innerHTML">{% translate "Auto-Generate" %}</button>
+                hx-swap="innerMorph">{% translate "Auto-Generate" %}</button>
       </div>
     </div>
     {# ─── Button Bar (always visible) ─── #}
@@ -341,7 +407,7 @@
               style="font-size:0.75rem"
               hx-post="{% url 'workspace:symbology_auto' layer.pk %}?panel=1"
               hx-target="#right-panel-content"
-              hx-swap="innerHTML">{% translate "Auto" %}</button>
+              hx-swap="innerMorph">{% translate "Auto" %}</button>
     </div>
   </form>
 </div>

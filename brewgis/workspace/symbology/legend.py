@@ -66,8 +66,16 @@ def _build_label(cls: StyleClass, index: int) -> str:
     return f"Class {index + 1}"
 
 
-def generate_legend(config: SymbologyConfig) -> SymbologyLegend:
-    """Generate legend data from a SymbologyConfig."""
+def generate_legend(
+    config: SymbologyConfig, classes: list[StyleClass] | None = None
+) -> SymbologyLegend:
+    """Generate legend data from a SymbologyConfig.
+
+    *classes*, when given, is used instead of querying
+    ``config.classes.all()`` — needed when *config* is an unsaved or
+    not-yet-persisted preview (see ``auto_generate_symbology``'s
+    ``commit=False`` mode).
+    """
     layer = config.layer
     type_hint = _resolve_type_hint(layer.geometry_type)
 
@@ -86,8 +94,10 @@ def generate_legend(config: SymbologyConfig) -> SymbologyLegend:
         )
         legend.items.append(item)
     elif config.symbology_type in ("categorical", "graduated"):
-        classes = list(config.classes.all())
-        for i, cls in enumerate(classes):
+        resolved_classes = (
+            classes if classes is not None else list(config.classes.all())
+        )
+        for i, cls in enumerate(resolved_classes):
             label = _build_label(cls, i)
             item = LegendItem(
                 label=label,

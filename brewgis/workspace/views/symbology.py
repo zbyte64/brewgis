@@ -16,10 +16,13 @@ from django.http import HttpResponseRedirect
 from django.http import JsonResponse
 from django.shortcuts import get_object_or_404
 from django.shortcuts import render
+from django.template.loader import render_to_string
+from django.utils.html import format_html
 from django.views.decorators.http import require_GET
 from django.views.decorators.http import require_http_methods
 from django.views.decorators.http import require_POST
 
+from brewgis.workspace.analysis.layer_registry import _get_table_columns
 from brewgis.workspace.models import Layer
 from brewgis.workspace.models import StyleClass
 from brewgis.workspace.models import SymbologyConfig
@@ -30,19 +33,62 @@ from brewgis.workspace.symbology.generator import generate_maplibre_style
 from brewgis.workspace.symbology.legend import generate_legend
 from brewgis.workspace.views.panels import is_panel_request
 
+_GEOMETRY_DATA_TYPES = {"geometry", "geography", "USER-DEFINED"}
+
+
+def _advanced_open(post_data: dict[str, str]) -> bool:
+    """Read the Advanced section's open/closed state from POST data."""
+    return post_data.get("advanced_open") == "1"
+
+
+def _column_choices(layer: Layer, symbology_type: str) -> list[str]:
+    """Return candidate column names for the "color by" dropdown.
+
+    Graduated symbology needs a numeric column to classify; categorical can
+    use any non-geometry column (text or numeric).
+    """
+    schema = layer.db_schema or layer.workspace.db_schema
+    columns = _get_table_columns(schema, layer.db_table)
+    if symbology_type == "graduated":
+        return [c["column_name"] for c in columns if c["numeric"]]
+    return [
+        c["column_name"] for c in columns if c["data_type"] not in _GEOMETRY_DATA_TYPES
+    ]
+
+
+def _resolve_context_classes(config: SymbologyConfig) -> list[StyleClass]:
+    """Return the classes to render for *config*.
+
+    Prefers ``preview_style_classes`` (set by ``auto_generate_symbology``'s
+    ``commit=False`` mode) over querying the database, since a preview
+    config's saved classes — if any — belong to the pre-preview state.
+    """
+    preview_classes = getattr(config, "preview_style_classes", None)
+    if preview_classes is not None:
+        return preview_classes
+    return list(config.classes.all().order_by("sort_order")) if config.pk else []
+
 
 def _build_context(
     layer: Layer,
     config: SymbologyConfig | None = None,
+    *,
+    advanced_open: bool = False,
 ) -> dict:
-    """Build shared template context for the symbology editor."""
+    """Build shared template context for the symbology editor.
+
+    ``advanced_open`` echoes back whether the Advanced section was expanded
+    when the request was made (see the panel's ``advanced_open`` hidden
+    field) — the server, not client-side DOM state, is the source of truth
+    for this so it survives a full panel re-render regardless of swap style.
+    """
     if config is None:
         try:
             config = layer.symbology
         except SymbologyConfig.DoesNotExist:
             config = SymbologyConfig(layer=layer)
 
-    classes = list(config.classes.all().order_by("sort_order")) if config.pk else []
+    classes = _resolve_context_classes(config)
 
     return {
         "layer": layer,
@@ -51,6 +97,8 @@ def _build_context(
         "palette_names": get_all_names(),
         "palettes_json": json.dumps(PALETTES),
         "geometry_types": ["fill", "line", "circle"],
+        "column_choices": _column_choices(layer, config.symbology_type),
+        "advanced_open": advanced_open,
     }
 
 
@@ -104,6 +152,37 @@ def _apply_form_data(
     config.max_zoom = float(post_data.get("max_zoom", "22.0"))
 
 
+def _legend_oob_html(
+    request: HttpRequest, layer: Layer, config: SymbologyConfig
+) -> str:
+    """Render out-of-band swaps that refresh this layer's row in the Layers panel.
+
+    The Layers panel's swatch dot and expandable legend are only populated
+    when that panel is (re)fetched, so without this, a symbology save leaves
+    them showing the pre-edit colors/classes until the panel is closed and
+    reopened.
+    """
+    swatch_color = config.default_color or "#e0e0e0"
+    legend_html = render_to_string(
+        "workspace/symbology/legend_partial.html",
+        {"legend": generate_legend(config)},
+        request=request,
+    )
+    swatch = format_html(
+        '<span id="legend-swatch-{}" hx-swap-oob="true" class="legend-swatch-inline" '
+        'style="background-color: {}; width: 10px; height: 10px; '
+        'display: inline-block; border-radius: 2px; vertical-align: middle"></span>',
+        layer.pk,
+        swatch_color,
+    )
+    legend_wrapper = format_html(
+        '<div id="legend-{}" hx-swap-oob="true" class="ps-2">{}</div>',
+        layer.pk,
+        legend_html,
+    )
+    return swatch + legend_wrapper
+
+
 def _save_symbology(
     request: HttpRequest,
     layer: Layer,
@@ -137,8 +216,11 @@ def _save_symbology(
 
     if is_panel_request(request):
         # Stay in panel — return updated editor + trigger map refresh
-        context = _build_context(layer, config)
+        context = _build_context(
+            layer, config, advanced_open=_advanced_open(request.POST)
+        )
         response = render(request, "workspace/symbology/_editor_panel.html", context)
+        response.write(_legend_oob_html(request, layer, config))
         style = generate_maplibre_style(config)
         response["HX-Trigger"] = json.dumps(
             {
@@ -163,6 +245,52 @@ def preview_symbology_for_map(request: HttpRequest, layer_pk: int) -> HttpRespon
     _apply_form_data(config, request.POST)
     style = generate_maplibre_style(config)
     response = HttpResponse()
+    response["HX-Trigger"] = json.dumps(
+        {
+            "layer-style-preview": {
+                "layerKey": layer.key,
+                "paint": style.get("paint", {}),
+                "layerName": layer.name,
+            }
+        }
+    )
+    return response
+
+
+@require_POST
+def preview_classify(request: HttpRequest, layer_pk: int) -> HttpResponse:
+    """Live-preview a reclassification (new column/palette/class count/method).
+
+    Unlike ``auto_generate``, this never writes to the database — it's what
+    the editor panel's Column/Palette/Classes/Classification inputs use so
+    the user can see the effect of a change before deciding to Save. The
+    computed classes are only persisted if the user then submits the form.
+    """
+    layer = get_object_or_404(Layer, pk=layer_pk)
+    attribute_column = request.POST.get("attribute_column") or None
+    palette_name = request.POST.get("palette_name") or None
+    num_classes = int(request.POST.get("num_classes", "5"))
+    classification_method = request.POST.get("classification_method") or None
+
+    try:
+        config = auto_generate_symbology(
+            layer,
+            attribute_column=attribute_column,
+            palette_name=palette_name,
+            num_classes=num_classes,
+            classification_method=classification_method,
+            commit=False,
+        )
+    except Exception:
+        # Non-fatal — table may not exist or have no data for this column
+        config, _created = SymbologyConfig.objects.get_or_create(layer=layer)
+        _apply_form_data(config, request.POST)
+        config.preview_style_classes = _resolve_context_classes(config)
+
+    context = _build_context(layer, config, advanced_open=_advanced_open(request.POST))
+    response = render(request, "workspace/symbology/_editor_panel.html", context)
+    classes = _resolve_context_classes(config)
+    style = generate_maplibre_style(config, classes=classes)
     response["HX-Trigger"] = json.dumps(
         {
             "layer-style-preview": {
@@ -203,8 +331,11 @@ def auto_generate(request: HttpRequest, layer_pk: int) -> HttpResponse:
             config = layer.symbology
         except SymbologyConfig.DoesNotExist:
             config = SymbologyConfig(layer=layer)
-        context = _build_context(layer, config)
+        context = _build_context(
+            layer, config, advanced_open=_advanced_open(request.POST)
+        )
         response = render(request, "workspace/symbology/_editor_panel.html", context)
+        response.write(_legend_oob_html(request, layer, config))
         style = generate_maplibre_style(config)
         response["HX-Trigger"] = json.dumps(
             {
