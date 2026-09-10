@@ -1,6 +1,6 @@
 {% load i18n %}
 
-<div class="basemap-picker">
+<div class="basemap-picker" id="basemap-picker-container">
   <h6 class="text-muted mb-3" style="font-size: 0.8rem;">{% translate "Basemap" %}</h6>
   <div class="row g-2">
     {% for basemap in basemaps %}
@@ -23,7 +23,7 @@
                       hx-post="{% url 'workspace:basemap_select' workspace_pk %}"
                       hx-vals='{"basemap_id": {{ basemap.id }}}'
                       hx-target="#basemap-picker-container"
-                      hx-swap="innerHTML"
+                      hx-swap="outerHTML"
                       style="font-size: 0.7rem">{% translate "Select" %}</button>
             {% else %}
               <span class="badge bg-secondary d-block" style="font-size: 0.7rem;">{% translate "Available" %}</span>

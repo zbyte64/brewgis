@@ -3,9 +3,11 @@ from .analysis import AnalysisLaunchView as analysis_launch  # noqa: F401
 from .analysis import analysis_list  # noqa: F401
 from .analysis import analysis_status  # noqa: F401
 from .analysis import check_prerequisites  # noqa: F401
+from .base_canvas import SelectBaseCanvasView  # noqa: F401
 from .basemaps import basemap_list  # noqa: F401
 from .basemaps import basemap_select  # noqa: F401
 from .create_layer import CreateLayerView  # noqa: F401
+from .create_layer import ImportSqlmeshLayerView  # noqa: F401
 from .create_layer import layer_delete  # noqa: F401
 from .data_table import layer_data_table  # noqa: F401
 from .external_services import external_service_add  # noqa: F401
@@ -40,6 +42,7 @@ from .paint import paint_features  # noqa: F401
 from .paint import paint_history  # noqa: F401
 from .paint import undo_paint  # noqa: F401
 from .panels import panel_analysis_launch  # noqa: F401
+from .panels import panel_basemap_picker  # noqa: F401
 from .panels import panel_data_catalog  # noqa: F401
 from .panels import panel_import_center  # noqa: F401
 from .panels import panel_layer_list  # noqa: F401

@@ -2,7 +2,8 @@ MODEL (
   name brewgis.@{region}.base_canvas_reconciled,
   kind VIEW,
   audits (
-    assert_du_subtype_sum_equals_du
+    assert_du_subtype_sum_equals_du,
+    is_base_canvas_compatible
   ),
   blueprints (
     (region := sacog),
@@ -39,6 +40,10 @@ du_reconciled AS (
 
 SELECT
     parcel_id,
+    parcel_id AS id,
+    parcel_id AS geometry_key,
+    NULL::text AS id_source,
+    NULL::integer AS geography_id,
     geometry,
     county,
     land_development_category,
@@ -47,18 +52,37 @@ SELECT
     area_gross,
     area_gross_acres,
     area_parcel_acres,
+    area_parcel_acres AS area_parcel,
     area_dev_condition_acres,
+    area_dev_condition_acres AS area_dev_condition,
     area_row_acres,
+    area_row_acres AS area_row,
     area_parcel_res,
     area_parcel_res_acres,
+    -- Residential sub-type area breakdown is not yet allocated by this
+    -- pipeline (the legacy Python ETL never populated it either) — these
+    -- are explicit zero placeholders, not real per-subtype allocations.
+    0.0::double precision AS area_parcel_res_detsf,
+    0.0::double precision AS area_parcel_res_detsf_sl,
+    0.0::double precision AS area_parcel_res_detsf_ll,
+    0.0::double precision AS area_parcel_res_attsf,
+    0.0::double precision AS area_parcel_res_mf,
     area_parcel_emp_ag,
     area_parcel_emp_ag_acres,
     area_parcel_emp,
     area_parcel_emp_acres,
+    -- Employment sub-type area breakdown — same caveat as residential above.
+    0.0::double precision AS area_parcel_emp_ret,
+    0.0::double precision AS area_parcel_emp_off,
+    0.0::double precision AS area_parcel_emp_pub,
+    0.0::double precision AS area_parcel_emp_ind,
+    0.0::double precision AS area_parcel_emp_military,
     area_parcel_mixed_use,
     area_parcel_mixed_use_acres,
     area_parcel_no_use,
     area_parcel_no_use_acres,
+    land_use,
+    assessor_use_code,
     pop,
     pop_groupquarter,
     hh,

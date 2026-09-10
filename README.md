@@ -11,7 +11,13 @@ License: GPLv3
 
 ## Overview
 
-Brew GIS is a batteries-included, Docker-based workspace for managing geographic data, creating scenarios, performing analysis, and rendering maps with vector tiles. Built on Django 6.0 with PostGIS, MapLibre GL JS, and an integrated dbt analytics pipeline.
+Brew GIS is a batteries-included, Docker-based workspace for managing geographic data, creating scenarios, performing analysis, and rendering maps with vector tiles. Built on Django 6.0 with Duckdb, PostGIS, MapLibre GL JS, and an integrated SQLMesh analytics pipeline.
+
+### System Concerns
+
+1. Duckdb handles the datawarehouse and cataloque needs
+2. SQLMesh provides the analytical processes and workflows
+3. Django and Map Tile Servers provide the presentation
 
 ### Architecture
 

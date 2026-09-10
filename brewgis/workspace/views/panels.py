@@ -15,10 +15,12 @@ from django.contrib.auth.decorators import user_passes_test
 from django.shortcuts import get_object_or_404
 from django.shortcuts import render
 
+from brewgis.workspace.models import Basemap
 from brewgis.workspace.models import Scenario
 from brewgis.workspace.models import SymbologyConfig
 from brewgis.workspace.models import Workspace
 from brewgis.workspace.services.filter_compiler import FilterCompiler
+from brewgis.workspace.views.basemaps import _get_selected_basemap_id
 
 if TYPE_CHECKING:
     from django.http import HttpRequest
@@ -134,6 +136,23 @@ def panel_analysis_launch(request: HttpRequest, workspace_pk: int) -> HttpRespon
 
     view = AnalysisLaunchView.as_view()
     return view(request, workspace_pk=workspace_pk)
+
+
+@user_passes_test(lambda u: u.is_authenticated)
+def panel_basemap_picker(request: HttpRequest, workspace_pk: int) -> HttpResponse:
+    """Return the basemap picker content for the left sidebar."""
+    get_object_or_404(Workspace, pk=workspace_pk)
+    basemaps = Basemap.objects.all().order_by("sort_order")
+    context: dict[str, object] = {
+        "basemaps": basemaps,
+        "workspace_pk": workspace_pk,
+        "selected_basemap_id": _get_selected_basemap_id(request, workspace_pk),
+    }
+    return render(
+        request,
+        "workspace/partials/_basemap_picker.html",
+        context,
+    )
 
 
 @user_passes_test(lambda u: u.is_authenticated)

@@ -971,7 +971,9 @@ SELECT
     tree_canopy_fraction,
     vacancy_rate,
     du_pop_dasym_weight,
-    ROUND((du * (1.0 - COALESCE(vacancy_rate, 0.0)))::numeric, 2) AS occupied_du
+    ROUND((du * (1.0 - COALESCE(vacancy_rate, 0.0)))::numeric, 2) AS occupied_du,
+    land_use,
+    assessor_use_code
 FROM with_intersection;
 
 -- post_statements

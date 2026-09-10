@@ -35,8 +35,9 @@
           </div>
           <div class="card-body">
             <form method="post"
+                  action="{{ request.path }}"
                   enctype="multipart/form-data"
-                  hx-post="."
+                  hx-post="{{ request.path }}"
                   hx-target="#form-content"
                   hx-swap="outerHTML"
                   hx-trigger="submit">

@@ -182,7 +182,9 @@ SELECT
     a.pct_college_educated,
     a.cost_burden_pct,
     a.vacancy_rate,
-    a.occupied_du
+    a.occupied_du,
+    a.land_use,
+    a.assessor_use_code
 FROM attributes a
 LEFT JOIN regional_avg r ON a.county = r.county
 LEFT JOIN du_subtype_proportions dp ON a.county = dp.county;

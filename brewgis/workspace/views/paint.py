@@ -501,9 +501,9 @@ _PAINT_CONSTRAINT_RESULT: list[ConstraintResult | None] = [None]
 """Last constraint result, cached for warning collection (mutable container for in-module mutation)."""
 
 
-def _resolve_base_table(scenario: Scenario) -> str:  # noqa: ARG001
+def _resolve_base_table(scenario: Scenario) -> str:
     """Resolve the base canvas table name for a scenario."""
-    return "public.base_canvas"
+    return scenario.workspace.base_table
 
 
 def _fetch_painted_old_values(

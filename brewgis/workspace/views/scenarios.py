@@ -203,7 +203,7 @@ def scenario_create(request: HttpRequest, workspace_pk: int) -> HttpResponse:
                 base_year=form.cleaned_data["base_year"],
                 horizon_year=form.cleaned_data["horizon_year"],
             )
-            create_canvas_view(scenario, base_table="public.base_canvas")
+            create_canvas_view(scenario, base_table=workspace.base_table)
             if is_panel_request(request):
                 response = HttpResponse()
                 response["HX-Redirect"] = (
@@ -310,7 +310,12 @@ def scenario_clone(
         return JsonResponse({"error": "name is required"}, status=400)
 
     description = body.get("description", "")
-    new_scenario = clone_scenario(source=source, name=name, description=description)
+    new_scenario = clone_scenario(
+        source=source,
+        name=name,
+        description=description,
+        base_canvas_table=workspace.base_table,
+    )
 
     return JsonResponse(
         {

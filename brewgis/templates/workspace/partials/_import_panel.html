@@ -2,5 +2,18 @@
 
 <div class="import-panel">
   <h6 class="text-muted mb-3" style="font-size: 0.8rem;">{% translate "Import Data" %}</h6>
-  <p class="text-muted small">{% translate "Import center loading..." %}</p>
+  <div class="mb-2">
+    <h6 class="text-muted mb-1" style="font-size: 0.75rem;">{% translate "Base Canvas" %}</h6>
+    <p class="text-muted small mb-2" style="font-size: 0.7rem;">
+      {% translate "Current table:" %} <code>{{ workspace.base_table }}</code>
+    </p>
+    <button type="button"
+            class="btn btn-sm btn-outline-secondary w-100"
+            hx-get="{% url 'workspace:select_base_canvas' workspace.pk %}"
+            hx-target="#right-panel-content"
+            hx-swap="innerHTML"
+            data-panel-event="open-panel:{% translate 'Select Base Canvas' %}">
+      {% translate "Select SQLMesh Base Canvas…" %}
+    </button>
+  </div>
 </div>

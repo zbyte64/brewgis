@@ -33,9 +33,50 @@ class Workspace(models.Model):
         default=10.0,
         help_text="Default map zoom level.",
     )
+    base_table = models.CharField(
+        max_length=128,
+        default="public.base_canvas",
+        blank=True,
+        help_text=(
+            "schema.table for this workspace's base canvas — the parcel/feature "
+            "table that scenarios paint over. Defaults to the shared public.base_canvas "
+            "table; can point at a SQLMesh-generated table with the required columns."
+        ),
+    )
 
     def __str__(self) -> str:
         return self.name
+
+
+def _tile_source_id(schema: str, table: str) -> str:
+    """Return the tile server source identifier (schema.table)."""
+    return f"{schema}.{table}"
+
+
+def _tile_url_template(
+    schema: str, table: str, tile_matrix_set: str = "WebMercatorQuad"
+) -> str:
+    """Return the raw tile URL template for a PostGIS schema.table."""
+    source_id = _tile_source_id(schema, table)
+    if settings.TILE_SERVER_BACKEND == "martin":
+        return f"/martin/{source_id}"
+    return f"/tipg/collections/{source_id}/tiles/{tile_matrix_set}"
+
+
+def _maplibre_vector_source(schema: str, table: str) -> dict:
+    """Return a MapLibre GL JS vector source specification for schema.table."""
+    source_id = _tile_source_id(schema, table)
+    if settings.TILE_SERVER_BACKEND == "martin":
+        return {
+            "type": "vector",
+            "url": f"/martin/{source_id}",
+        }
+    return {
+        "type": "vector",
+        "tiles": [
+            f"/tipg/collections/{source_id}/tiles/WebMercatorQuad/{{z}}/{{x}}/{{y}}"
+        ],
+    }
 
 
 class Layer(models.Model):
@@ -87,27 +128,17 @@ class Layer(models.Model):
     def _source_id(self) -> str:
         """Return the tile server source identifier (schema.table)."""
         schema = self.db_schema or self.workspace.db_schema
-        return f"{schema}.{self.db_table}"
+        return _tile_source_id(schema, self.db_table)
 
     def resolve_tiles_url(self, tile_matrix_set: str = "WebMercatorQuad") -> str:
         """Return the raw tile URL template (tipg only; for backward compat)."""
-        if settings.TILE_SERVER_BACKEND == "martin":
-            return f"/martin/{self._source_id()}"
-        return f"/tipg/collections/{self._source_id()}/tiles/{tile_matrix_set}"
+        schema = self.db_schema or self.workspace.db_schema
+        return _tile_url_template(schema, self.db_table, tile_matrix_set)
 
     def to_maplibre_source(self) -> dict:
         """Return a MapLibre GL JS source specification dict."""
-        if settings.TILE_SERVER_BACKEND == "martin":
-            return {
-                "type": "vector",
-                "url": f"/martin/{self._source_id()}",
-            }
-        return {
-            "type": "vector",
-            "tiles": [
-                f"/tipg/collections/{self._source_id()}/tiles/WebMercatorQuad/{{z}}/{{x}}/{{y}}"
-            ],
-        }
+        schema = self.db_schema or self.workspace.db_schema
+        return _maplibre_vector_source(schema, self.db_table)
 
 
 class SymbologyConfig(models.Model):

@@ -1,7 +1,9 @@
 from django.urls import path
 
 from .views import CreateLayerView
+from .views import ImportSqlmeshLayerView
 from .views import ReadGISFileView
+from .views import SelectBaseCanvasView
 from .views import allocate
 from .views import analysis_launch
 from .views import analysis_list
@@ -25,6 +27,7 @@ from .views import paint_built_form
 from .views import paint_features
 from .views import paint_history
 from .views import panel_analysis_launch
+from .views import panel_basemap_picker
 from .views import panel_data_catalog
 from .views import panel_import_center
 from .views import panel_layer_list
@@ -97,7 +100,17 @@ urlpatterns = [
     path("new/county-options/", county_options, name="county_options"),
     path("upload/", ReadGISFileView.as_view(), name="upload"),
     path("layers/create/", CreateLayerView.as_view(), name="create_layer"),
+    path(
+        "layers/import-sqlmesh/",
+        ImportSqlmeshLayerView.as_view(),
+        name="import_sqlmesh_layer",
+    ),
     path("layers/<int:pk>/delete/", layer_delete, name="layer_delete"),
+    path(
+        "<int:workspace_pk>/base-canvas/select/",
+        SelectBaseCanvasView.as_view(),
+        name="select_base_canvas",
+    ),
     path("<int:workspace_pk>/map/", view_workspace_map, name="workspace_map"),
     path("public/<uuid:token>/", view_public_scenario_map, name="public_scenario_map"),
     path("<int:pk>/", workspace_detail, name="workspace_detail"),
@@ -434,5 +447,10 @@ urlpatterns = [
         "workspace/<int:workspace_pk>/panel/reports/",
         panel_report_list,
         name="panel_report_list",
+    ),
+    path(
+        "workspace/<int:workspace_pk>/panel/basemap/",
+        panel_basemap_picker,
+        name="panel_basemap_picker",
     ),
 ]

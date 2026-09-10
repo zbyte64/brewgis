@@ -63,6 +63,7 @@
       import: '/workspace/' + wsId + '/panel/import/',
       analysis: '/workspace/' + wsId + '/panel/analysis/',
       reports: '/workspace/' + wsId + '/panel/reports/',
+      basemap: '/workspace/' + wsId + '/panel/basemap/',
     };
 
     var url = urls[name];

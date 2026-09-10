@@ -1,4 +1,4 @@
-# Base Map Methodology — Specification
+# Base Canvas Methodology — Specification
 
 ## 1. Overview
 
