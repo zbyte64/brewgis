@@ -271,6 +271,7 @@ def preview_classify(request: HttpRequest, layer_pk: int) -> HttpResponse:
     palette_name = request.POST.get("palette_name") or None
     num_classes = int(request.POST.get("num_classes", "5"))
     classification_method = request.POST.get("classification_method") or None
+    reverse_palette = request.POST.get("reverse_palette") == "on"
 
     try:
         config = auto_generate_symbology(
@@ -279,6 +280,7 @@ def preview_classify(request: HttpRequest, layer_pk: int) -> HttpResponse:
             palette_name=palette_name,
             num_classes=num_classes,
             classification_method=classification_method,
+            reverse_palette=reverse_palette,
             commit=False,
         )
     except Exception:
@@ -311,6 +313,7 @@ def auto_generate(request: HttpRequest, layer_pk: int) -> HttpResponse:
     palette_name = request.POST.get("palette_name") or None
     num_classes = int(request.POST.get("num_classes", "5"))
     classification_method = request.POST.get("classification_method") or None
+    reverse_palette = request.POST.get("reverse_palette") == "on"
 
     try:
         with transaction.atomic():
@@ -320,6 +323,7 @@ def auto_generate(request: HttpRequest, layer_pk: int) -> HttpResponse:
                 palette_name=palette_name,
                 num_classes=num_classes,
                 classification_method=classification_method,
+                reverse_palette=reverse_palette,
             )
     except Exception:
         # Non-fatal - table may not exist or have no data

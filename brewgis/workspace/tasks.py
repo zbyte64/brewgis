@@ -18,6 +18,7 @@ from brewgis.workspace.models import Layer
 from brewgis.workspace.services._db import get_engine
 from brewgis.workspace.services._db import text
 from brewgis.workspace.services.poi_fetcher import run_poi_pipeline
+from brewgis.workspace.services.raster_fetcher import run_raster_pipeline
 from brewgis.workspace.services.spatial_allocator import allocate_attributes
 from brewgis.workspace.services.stitcher import impute_built_form_default
 from brewgis.workspace.services.stitcher import impute_constant
@@ -105,12 +106,13 @@ def run_census_fetch(  # type: ignore[no-untyped-def]
         },
     )
 
-    table_name = "sacog__brewgis_prod.acs_block_group"
+    table_schema = "sacog__brewgis_prod"
+    table_name = "acs_block_group"
     engine = get_engine()
     with engine.connect() as conn:
         row_count = (
             conn.execute(
-                text("SELECT COUNT(*) FROM sacog__brewgis_prod.acs_block_group")
+                text(f"SELECT COUNT(*) FROM {table_schema}.{table_name}")
             ).scalar()
             or 0
         )
@@ -121,6 +123,7 @@ def run_census_fetch(  # type: ignore[no-untyped-def]
         workspace=run.workspace,
         defaults={
             "name": f"ACS Demographics ({year}) ({state_fips}-{county_fips})",
+            "db_schema": table_schema,
             "db_table": table_name,
             "layer_source": "Census ACS",
             "geometry_type": "circle",
@@ -131,7 +134,7 @@ def run_census_fetch(  # type: ignore[no-untyped-def]
         auto_generate_symbology(layer)
     run.status = "completed"
     run.result = {
-        "table_name": table_name,
+        "table_name": f"{table_schema}.{table_name}",
         "layer_key": layer_key,
         "layer_id": layer.pk,
         "row_count": row_count,
@@ -173,12 +176,13 @@ def run_lehd_fetch(  # type: ignore[no-untyped-def]
         },
     )
 
-    table_name = "sacog__brewgis_prod.wac_block_raw"
+    table_schema = "sacog__brewgis_prod"
+    table_name = "wac_block_raw"
     engine = get_engine()
     with engine.connect() as conn:
         row_count = (
             conn.execute(
-                text("SELECT COUNT(*) FROM sacog__brewgis_prod.wac_block_raw")
+                text(f"SELECT COUNT(*) FROM {table_schema}.{table_name}")
             ).scalar()
             or 0
         )
@@ -189,6 +193,7 @@ def run_lehd_fetch(  # type: ignore[no-untyped-def]
         workspace=run.workspace,
         defaults={
             "name": f"LEHD Employment ({state_fips}-{county_fips})",
+            "db_schema": table_schema,
             "db_table": table_name,
             "layer_source": "Census LEHD",
             "geometry_type": "circle",
@@ -199,7 +204,7 @@ def run_lehd_fetch(  # type: ignore[no-untyped-def]
         auto_generate_symbology(layer)
     run.status = "completed"
     run.result = {
-        "table_name": table_name,
+        "table_name": f"{table_schema}.{table_name}",
         "layer_key": layer_key,
         "layer_id": layer.pk,
         "row_count": row_count,
@@ -274,9 +279,9 @@ def run_raster_fetch(  # type: ignore[no-untyped-def]
     file_path: str,
     schema: str,
 ) -> dict:
-    """Extract raster metadata and band statistics from GeoTIFF via dlt.
+    """Extract raster metadata and band statistics from a GeoTIFF file.
 
-    The dlt pipeline reads the file and writes to staging tables
+    Reads the file via rasterio and writes to
     ``{schema}.raster_metadata`` and ``{schema}.raster_bands``.
     A Layer is registered pointing to the metadata table.
     """
@@ -286,11 +291,11 @@ def run_raster_fetch(  # type: ignore[no-untyped-def]
     run.started_at = timezone.now()
     run.save(update_fields=["status", "started_at"])
 
-    dlt_result = run_raster_pipeline(file_path, schema)
+    raster_result = run_raster_pipeline(file_path, schema)
 
-    metadata_table = dlt_result["metadata_table"]
-    bands_table = dlt_result["bands_table"]
-    row_count = dlt_result["row_count"]
+    metadata_table = raster_result["metadata_table"]
+    bands_table = raster_result["bands_table"]
+    row_count = raster_result["row_count"]
     fname = file_path.rsplit("/", 1)[-1] if "/" in file_path else file_path
     layer_key = f"raster_{fname}"
 
@@ -314,7 +319,6 @@ def run_raster_fetch(  # type: ignore[no-untyped-def]
         "layer_key": layer_key,
         "layer_id": layer.pk,
         "row_count": row_count,
-        "validation": dlt_result.get("validation"),
     }
     run.completed_at = timezone.now()
     run.save(update_fields=["status", "result", "completed_at"])

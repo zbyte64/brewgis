@@ -94,6 +94,7 @@ def auto_generate_symbology(
     palette_name: str | None = None,
     num_classes: int = 5,
     classification_method: str | None = None,
+    reverse_palette: bool = False,
     commit: bool = True,
 ) -> SymbologyConfig:
     """Auto-generate a symbology configuration for *layer*.
@@ -118,6 +119,8 @@ def auto_generate_symbology(
         Number of classes (default 5).
     classification_method:
         Classification method.  ``None`` = auto-select.
+    reverse_palette:
+        When ``True``, sample the palette in reverse order.
     commit:
         When ``True`` (default), persists the config and replaces its
         ``StyleClass`` rows in the database. When ``False``, computes the
@@ -175,9 +178,10 @@ def auto_generate_symbology(
 
     if used_type == "categorical":
         # One class per distinct value
-        palette = sample_palette(
+        palette = _resolve_palette(
             _get_palette_list(used_palette, stats),
             min(stats.distinct_count, 20),
+            reverse=reverse_palette,
         )
         if stats.frequencies:
             for i, val in enumerate(stats.frequencies):
@@ -200,9 +204,10 @@ def auto_generate_symbology(
             table=table,
             column=col,
         )
-        palette = sample_palette(
+        palette = _resolve_palette(
             _get_palette_list(used_palette, stats),
             len(result.breaks) - 1,
+            reverse=reverse_palette,
         )
         for i in range(len(result.breaks) - 1):
             class_rows.append(
@@ -225,7 +230,7 @@ def auto_generate_symbology(
                 "default_color": "#888888",
                 "default_opacity": 0.7,
                 "palette_name": used_palette,
-                "reverse_palette": False,
+                "reverse_palette": reverse_palette,
                 "num_classes": num_classes,
                 "classification_method": used_method,
                 "null_handling": "gray",
@@ -250,12 +255,21 @@ def auto_generate_symbology(
     config.symbology_type = used_type
     config.attribute_column = col
     config.palette_name = used_palette
+    config.reverse_palette = reverse_palette
     config.num_classes = num_classes
     config.classification_method = used_method
     config.preview_style_classes = [
         StyleClass(symbology=config, **row_data) for row_data in class_rows
     ]
     return config
+
+
+def _resolve_palette(
+    palette_names: list[str], count: int, *, reverse: bool = False
+) -> list[str]:
+    """Sample *count* colors from *palette_names*, optionally reversed."""
+    palette = sample_palette(palette_names, count)
+    return list(reversed(palette)) if reverse else palette
 
 
 def _get_palette_list(name: str, stats: ColumnStatistics) -> list[str]:

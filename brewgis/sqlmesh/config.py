@@ -18,6 +18,7 @@ from __future__ import annotations
 import logging as _logging
 import os
 import threading
+from typing import TYPE_CHECKING
 from urllib.parse import urlparse
 
 import sqlglot.expressions as _exp
@@ -28,6 +29,9 @@ from sqlmesh.core.config import ModelDefaultsConfig
 from sqlmesh.core.config import PostgresConnectionConfig
 from sqlmesh.core.config.connection import DuckDBAttachOptions
 from sqlmesh.core.config.connection import DuckDBConnectionConfig
+
+if TYPE_CHECKING:
+    from brewgis.workspace.services.duckdb_pool import DuckDBReadOnlyPool
 
 _logger = _logging.getLogger(__name__)
 _drop_data_object_orig = None
