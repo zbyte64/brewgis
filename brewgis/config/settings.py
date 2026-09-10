@@ -13,7 +13,7 @@ import environ
 
 BASE_DIR = Path(__file__).resolve(strict=True).parent.parent
 # brewgis/
-APPS_DIR = BASE_DIR / "brewgis"
+APPS_DIR = BASE_DIR
 env = environ.Env()
 
 READ_DOT_ENV_FILE = env.bool("DJANGO_READ_DOT_ENV_FILE", default=False)
