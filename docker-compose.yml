@@ -14,9 +14,9 @@ x-shared-django: &django
     - .:/app:z
     - ./cache:/home/dev-user/.cache/
   env_file:
+    - ./.env
     - ./.envs/.local/.django
     - ./.envs/.local/.postgres
-    - ./.env
   ulimits:
     nproc: 65535
     nofile: 65536
