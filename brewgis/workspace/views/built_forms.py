@@ -1,9 +1,10 @@
-"""CRUD and baking views for BuildingTypes and PlaceTypes."""
+"""CRUD and baking views for BuildingTypes and PlaceTypes — workspace-scoped."""
 
 from __future__ import annotations
 
 from typing import Any
 
+from crispy_forms.helper import FormHelper
 from django import forms
 from django.contrib.auth.decorators import user_passes_test
 from django.http import HttpRequest
@@ -19,6 +20,7 @@ from django.views.generic.edit import UpdateView
 from brewgis.workspace.built_forms.allocation import AllocationEngine
 from brewgis.workspace.built_forms.models import BuildingType
 from brewgis.workspace.built_forms.models import PlaceType
+from brewgis.workspace.models import Workspace
 
 # ── HtmxResponseMixin ─────────────────────────────────────────────────
 
@@ -75,6 +77,36 @@ class HtmxResponseMixin:
         return super().form_invalid(form)  # type: ignore[misc, no-any-return]
 
 
+# ── WorkspaceScopedMixin ──────────────────────────────────────────────
+
+
+class WorkspaceScopedMixin:
+    """Resolves ``self.workspace`` from the ``workspace_pk`` URL kwarg.
+
+    BuildingTypes and PlaceTypes belong to exactly one workspace, so every
+    CRUD view for them needs the workspace up front: to scope the queryset
+    (an edit/delete can't reach another workspace's row), to stamp new rows
+    on create, and to build the redirect back to that workspace's list.
+    """
+
+    kwargs: dict[str, Any]
+    workspace: Workspace
+
+    def dispatch(self, request: HttpRequest, *args: Any, **kwargs: Any) -> HttpResponse:
+        self.workspace = get_object_or_404(Workspace, pk=kwargs["workspace_pk"])
+        return super().dispatch(request, *args, **kwargs)  # type: ignore[misc]
+
+    def get_queryset(self) -> Any:
+        return super().get_queryset().filter(workspace=self.workspace)  # type: ignore[misc]
+
+    def form_valid(self, form: Any) -> HttpResponse:
+        form.instance.workspace = self.workspace
+        return super().form_valid(form)  # type: ignore[misc, no-any-return]
+
+    def get_redirect_url(self) -> str:
+        return reverse(self.success_url_name, args=[self.workspace.pk])  # type: ignore[attr-defined]
+
+
 # ── ModelForms ──────────────────────────────────────────────────────────
 
 
@@ -117,6 +149,11 @@ class BuildingTypeForm(forms.ModelForm):
             ),
         }
 
+    def __init__(self, *args: object, **kwargs: object) -> None:
+        super().__init__(*args, **kwargs)  # type: ignore[arg-type]
+        self.helper = FormHelper()
+        self.helper.form_tag = False
+
 
 class PlaceTypeForm(forms.ModelForm):
     """Form for creating/editing PlaceTypes."""
@@ -134,6 +171,11 @@ class PlaceTypeForm(forms.ModelForm):
             "description": forms.Textarea(attrs={"rows": 3}),
         }
 
+    def __init__(self, *args: object, **kwargs: object) -> None:
+        super().__init__(*args, **kwargs)  # type: ignore[arg-type]
+        self.helper = FormHelper()
+        self.helper.form_tag = False
+
 
 # ── Building Type CRUD ──────────────────────────────────────────────────
 
@@ -142,8 +184,8 @@ auth_method = user_passes_test(lambda u: u.is_authenticated)
 
 
 @method_decorator(auth_method, name="dispatch")
-class BuildingTypeCreateView(HtmxResponseMixin, CreateView):
-    """Create a new BuildingType."""
+class BuildingTypeCreateView(WorkspaceScopedMixin, HtmxResponseMixin, CreateView):
+    """Create a new BuildingType in a workspace."""
 
     form_class = BuildingTypeForm
     template_name = "form.html"
@@ -151,7 +193,7 @@ class BuildingTypeCreateView(HtmxResponseMixin, CreateView):
 
 
 @method_decorator(auth_method, name="dispatch")
-class BuildingTypeUpdateView(HtmxResponseMixin, UpdateView):
+class BuildingTypeUpdateView(WorkspaceScopedMixin, HtmxResponseMixin, UpdateView):
     """Edit an existing BuildingType."""
 
     model = BuildingType
@@ -161,7 +203,7 @@ class BuildingTypeUpdateView(HtmxResponseMixin, UpdateView):
 
 
 @method_decorator(auth_method, name="dispatch")
-class BuildingTypeDeleteView(HtmxResponseMixin, DeleteView):  # type: ignore[misc]
+class BuildingTypeDeleteView(WorkspaceScopedMixin, HtmxResponseMixin, DeleteView):  # type: ignore[misc]
     """Delete a BuildingType."""
 
     model = BuildingType
@@ -172,8 +214,8 @@ class BuildingTypeDeleteView(HtmxResponseMixin, DeleteView):  # type: ignore[mis
 
 
 @method_decorator(auth_method, name="dispatch")
-class PlaceTypeCreateView(HtmxResponseMixin, CreateView):
-    """Create a new PlaceType."""
+class PlaceTypeCreateView(WorkspaceScopedMixin, HtmxResponseMixin, CreateView):
+    """Create a new PlaceType in a workspace."""
 
     form_class = PlaceTypeForm
     template_name = "form.html"
@@ -181,7 +223,7 @@ class PlaceTypeCreateView(HtmxResponseMixin, CreateView):
 
 
 @method_decorator(auth_method, name="dispatch")
-class PlaceTypeUpdateView(HtmxResponseMixin, UpdateView):
+class PlaceTypeUpdateView(WorkspaceScopedMixin, HtmxResponseMixin, UpdateView):
     """Edit an existing PlaceType."""
 
     model = PlaceType
@@ -191,7 +233,7 @@ class PlaceTypeUpdateView(HtmxResponseMixin, UpdateView):
 
 
 @method_decorator(auth_method, name="dispatch")
-class PlaceTypeDeleteView(HtmxResponseMixin, DeleteView):  # type: ignore[misc]
+class PlaceTypeDeleteView(WorkspaceScopedMixin, HtmxResponseMixin, DeleteView):  # type: ignore[misc]
     """Delete a PlaceType."""
 
     model = PlaceType
@@ -202,33 +244,37 @@ class PlaceTypeDeleteView(HtmxResponseMixin, DeleteView):  # type: ignore[misc]
 
 
 @user_passes_test(lambda u: u.is_authenticated)
-def building_type_list(request: HttpRequest) -> HttpResponse:
-    """List all BuildingTypes."""
-    building_types = BuildingType.objects.all()
+def building_type_list(request: HttpRequest, workspace_pk: int) -> HttpResponse:
+    """List a workspace's BuildingTypes."""
+    workspace = get_object_or_404(Workspace, pk=workspace_pk)
+    building_types = BuildingType.objects.filter(workspace=workspace)
     return render(
         request,
         "workspace/built_forms/building_type_list.html",
-        {"building_types": building_types},
+        {"workspace": workspace, "building_types": building_types},
     )
 
 
 @user_passes_test(lambda u: u.is_authenticated)
-def place_type_list(request: HttpRequest) -> HttpResponse:
-    """List all PlaceTypes."""
-    place_types = PlaceType.objects.all()
+def place_type_list(request: HttpRequest, workspace_pk: int) -> HttpResponse:
+    """List a workspace's PlaceTypes."""
+    workspace = get_object_or_404(Workspace, pk=workspace_pk)
+    place_types = PlaceType.objects.filter(workspace=workspace)
     return render(
         request,
         "workspace/built_forms/place_type_list.html",
-        {"place_types": place_types},
+        {"workspace": workspace, "place_types": place_types},
     )
 
 
 # ── Baking Views ────────────────────────────────────────────────────────
 
 
-def building_type_bake(request: HttpRequest, pk: int) -> HttpResponse:
+def building_type_bake(
+    request: HttpRequest, workspace_pk: int, pk: int
+) -> HttpResponse:
     """Show bake form (GET) or run allocation (POST) for a BuildingType."""
-    building_type = get_object_or_404(BuildingType, pk=pk)
+    building_type = get_object_or_404(BuildingType, pk=pk, workspace_id=workspace_pk)
 
     if request.method == "GET":
         return render(
@@ -262,13 +308,14 @@ def building_type_bake(request: HttpRequest, pk: int) -> HttpResponse:
     )
 
 
-def place_type_bake(request: HttpRequest, pk: int) -> HttpResponse:
+def place_type_bake(request: HttpRequest, workspace_pk: int, pk: int) -> HttpResponse:
     """Show bake form (GET) or run allocation (POST) for a PlaceType."""
     place_type = get_object_or_404(
         PlaceType.objects.prefetch_related(
             "building_type_mixes__building_type",
         ),
         pk=pk,
+        workspace_id=workspace_pk,
     )
 
     if request.method == "GET":

@@ -25,10 +25,12 @@ def import_center(request: HttpRequest) -> HttpResponse:
     census_initial = {}
     employment_initial = {}
     poi_initial = {}
+    workspace: Workspace | None = None
     workspace_pk = request.GET.get("workspace")
     if workspace_pk:
         try:
             ws = Workspace.objects.get(pk=workspace_pk)
+            workspace = ws
             county_entries = ws.county_fips_list
             if county_entries:
                 first = county_entries[0]
@@ -53,6 +55,7 @@ def import_center(request: HttpRequest) -> HttpResponse:
 
     context = {
         "active_tab": active_tab,
+        "workspace": workspace,
         "workspaces": Workspace.objects.all(),
         "census_form": CensusFetchForm(initial=census_initial),
         "employment_form": EmploymentFetchForm(initial=employment_initial),

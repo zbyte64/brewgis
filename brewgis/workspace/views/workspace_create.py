@@ -2,6 +2,9 @@
 
 from __future__ import annotations
 
+import contextlib
+import datetime
+import logging
 from typing import Any
 
 from crispy_forms.helper import FormHelper
@@ -17,7 +20,12 @@ from django.utils.text import slugify
 from django.views.generic.edit import FormView
 
 from brewgis.workspace.models import County
+from brewgis.workspace.models import Scenario
+from brewgis.workspace.models import ScenarioType
 from brewgis.workspace.models import Workspace
+from brewgis.workspace.services.canvas_view_manager import create_canvas_view
+
+logger = logging.getLogger(__name__)
 
 US_STATES: list[tuple[str, str]] = [
     ("01", "Alabama"),
@@ -116,9 +124,23 @@ class WorkspaceCreateView(FormView):
             db_schema=slugify(name),
             county_fips_list=county_fips,
         )
+        self._create_default_scenario(workspace)
         return redirect(
             reverse("workspace:workspace_detail", kwargs={"pk": workspace.pk})
         )
+
+    def _create_default_scenario(self, workspace: Workspace) -> None:
+        """Give every new workspace a base scenario to paint against."""
+        today = datetime.date.today()  # noqa: DTZ011
+        scenario = Scenario.objects.create(
+            workspace=workspace,
+            name="Base Scenario",
+            scenario_type=ScenarioType.BASE,
+            base_year=today.year,
+            horizon_year=today.year + 20,
+        )
+        with contextlib.suppress(Exception):
+            create_canvas_view(scenario, base_table=workspace.base_table)
 
 
 @user_passes_test(lambda u: u.is_authenticated)

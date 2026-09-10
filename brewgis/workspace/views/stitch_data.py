@@ -14,6 +14,7 @@ from django.views.generic.edit import FormView
 from brewgis.workspace.models import DataImportRun
 from brewgis.workspace.models import Workspace
 from brewgis.workspace.tasks import run_column_stitching
+from brewgis.workspace.views.built_forms import HtmxResponseMixin
 
 
 class StitchForm(forms.Form):
@@ -26,6 +27,12 @@ class StitchForm(forms.Form):
         self.helper.disable_csrf = True
         self.helper.label_class = "form-label"
         self.helper.field_class = "mb-3"
+        workspace_pk = self.initial.get("workspace")
+        if workspace_pk:
+            self.fields["workspace"].queryset = Workspace.objects.filter(
+                pk=workspace_pk,
+            )
+            self.fields["workspace"].widget = forms.HiddenInput()
 
     STRATEGY_CHOICES = [
         ("constant", "Constant Default Value"),
@@ -70,11 +77,18 @@ class StitchForm(forms.Form):
 
 
 @method_decorator(user_passes_test(lambda u: u.is_authenticated), name="dispatch")
-class StitchView(FormView):
+class StitchView(HtmxResponseMixin, FormView):
     """View to run column stitching / imputation."""
 
     form_class = StitchForm
     template_name = "form.html"
+
+    def get_initial(self) -> dict[str, object]:
+        initial = super().get_initial()
+        workspace_pk = self.request.GET.get("workspace")
+        if workspace_pk:
+            initial["workspace"] = workspace_pk
+        return initial
 
     def get_context_data(self, **kwargs: object) -> dict[str, object]:
         context = super().get_context_data(**kwargs)

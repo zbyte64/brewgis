@@ -35,27 +35,6 @@ _CONSTRAINTS_INITIAL = json.dumps(
 )
 
 
-def _discover_geom_tables(schema: str) -> list[tuple[str, str]]:
-    """Discover tables in *schema* that have a geometry column.
-
-    Returns a list of ``(table_name, label)`` tuples suitable for
-    a ``Select`` widget's ``choices``.
-    """
-    with connection.cursor() as cursor:
-        cursor.execute(
-            """
-            SELECT DISTINCT c.table_name
-            FROM information_schema.columns c
-            WHERE c.table_schema = %s
-              AND c.udt_name IN ('geometry', 'geography')
-              AND c.table_name NOT LIKE 'stage_%%'
-            ORDER BY c.table_name
-            """,
-            [schema],
-        )
-        return [(row[0], row[0]) for row in cursor.fetchall()]
-
-
 class AnalysisLaunchForm(forms.Form):
     """Form to configure and launch an analysis pipeline run."""
 
@@ -86,8 +65,7 @@ class AnalysisLaunchForm(forms.Form):
     built_form_table = forms.CharField(
         max_length=128,
         required=False,
-        label="Built Form Table",
-        help_text="Table name with BuildingType definitions. Defaults to 'built_forms'.",
+        widget=forms.HiddenInput(),
         initial="built_forms",
     )
     source_schema = forms.CharField(
@@ -106,7 +84,7 @@ class AnalysisLaunchForm(forms.Form):
     )
 
     def __init__(self, *args: object, **kwargs: object) -> None:
-        """Initialize form, optionally auto-discovering parcel tables."""
+        """Initialize form, defaulting tables to the workspace's configuration."""
         self._workspace: Workspace | None = cast(
             "Workspace | None", kwargs.pop("workspace", None)
         )
@@ -119,23 +97,14 @@ class AnalysisLaunchForm(forms.Form):
             self.fields["workspace"].initial = self._workspace.pk
             self.fields["workspace"].widget = forms.HiddenInput()
 
-            schema = self._workspace.db_schema
-            choices = _discover_geom_tables(schema)
-            if choices:
-                self.fields["parcel_table"].widget = forms.widgets.Select(
-                    choices=[("", "--- Select a table ---")] + choices,
-                )
-                self.fields[
-                    "parcel_table"
-                ].help_text = (
-                    "Select a table from the workspace schema or type a custom name."
-                )
-                # Default base_canvas_table to the first detected staging stub
-                default_stub = f"stage_{choices[0][0]}_base_canvas"
-                self.fields["base_canvas_table"].initial = default_stub
-                self.fields[
-                    "base_canvas_table"
-                ].help_text = "Auto-detected staging stub. Change to a real base canvas if available."
+            # The workspace's configured base canvas already has one row per
+            # parcel, so it doubles as the parcel table unless overridden.
+            self.fields["base_canvas_table"].initial = self._workspace.base_table
+            self.fields["parcel_table"].initial = self._workspace.base_table
+            self.fields["parcel_table"].help_text = (
+                "Defaults to the workspace's base canvas table. "
+                "Override to use a different parcel source."
+            )
 
             # Filter scenario queryset to the selected workspace
             self.fields["scenario"].queryset = Scenario.objects.filter(  # type: ignore[attr-defined]
@@ -227,11 +196,8 @@ class AnalysisLaunchForm(forms.Form):
         if workspace and parcel_table:
             schema = workspace.db_schema
             built_form_table = data.get("built_form_table") or "built_forms"
-            base_canvas_table = data.get("base_canvas_table")
-            # Default to staging stub if no real base canvas specified
-            if not base_canvas_table or base_canvas_table == "base_canvas":
-                base_canvas_table = f"stage_{parcel_table}_base_canvas"
-                data["base_canvas_table"] = base_canvas_table
+            base_canvas_table = data.get("base_canvas_table") or workspace.base_table
+            data["base_canvas_table"] = base_canvas_table
             errors = check_analysis_prerequisites(
                 schema=schema,
                 parcel_table=parcel_table,

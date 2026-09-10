@@ -16,4 +16,78 @@
       {% translate "Select SQLMesh Base Canvas…" %}
     </button>
   </div>
+  <hr class="my-2" />
+  <div class="mb-2">
+    <h6 class="text-muted mb-1" style="font-size: 0.75rem;">{% translate "Layers" %}</h6>
+    <div class="d-flex flex-column gap-1">
+      <button type="button"
+              class="btn btn-sm btn-outline-secondary"
+              hx-get="{% url 'workspace:import_sqlmesh_layer' %}?workspace={{ workspace.pk }}"
+              hx-target="#right-panel-content"
+              hx-swap="innerHTML"
+              data-panel-event="open-panel:{% translate 'Import from SQLMesh' %}">
+        {% translate "Import from SQLMesh" %}
+      </button>
+      <button type="button"
+              class="btn btn-sm btn-outline-secondary"
+              hx-get="{% url 'workspace:create_layer' %}?workspace={{ workspace.pk }}"
+              hx-target="#right-panel-content"
+              hx-swap="innerHTML"
+              data-panel-event="open-panel:{% translate 'Add Layer' %}">{% translate "Add Layer (manual)" %}</button>
+    </div>
+  </div>
+  <hr class="my-2" />
+  <div class="mb-2">
+    <h6 class="text-muted mb-1" style="font-size: 0.75rem;">{% translate "More Import Options" %}</h6>
+    <div class="d-flex flex-column gap-1">
+      <button type="button"
+              class="btn btn-sm btn-outline-secondary"
+              hx-get="{% url 'workspace:upload' %}?workspace={{ workspace.pk }}"
+              hx-target="#right-panel-content"
+              hx-swap="innerHTML"
+              data-panel-event="open-panel:{% translate 'Upload GIS File' %}">
+        {% translate "Upload GIS File…" %}
+      </button>
+      <button type="button"
+              class="btn btn-sm btn-outline-secondary"
+              hx-get="{% url 'workspace:poi_fetch' %}?workspace={{ workspace.pk }}"
+              hx-target="#right-panel-content"
+              hx-swap="innerHTML"
+              data-panel-event="open-panel:{% translate 'Points of Interest' %}">
+        {% translate "Fetch Points of Interest…" %}
+      </button>
+      <button type="button"
+              class="btn btn-sm btn-outline-secondary"
+              hx-get="{% url 'workspace:census_fetch' %}?workspace={{ workspace.pk }}"
+              hx-target="#right-panel-content"
+              hx-swap="innerHTML"
+              data-panel-event="open-panel:{% translate 'Census ACS Demographics' %}">
+        {% translate "Fetch Census ACS Data…" %}
+      </button>
+      <button type="button"
+              class="btn btn-sm btn-outline-secondary"
+              hx-get="{% url 'workspace:employment_fetch' %}?workspace={{ workspace.pk }}"
+              hx-target="#right-panel-content"
+              hx-swap="innerHTML"
+              data-panel-event="open-panel:{% translate 'LEHD Employment' %}">
+        {% translate "Fetch LEHD Employment…" %}
+      </button>
+      <button type="button"
+              class="btn btn-sm btn-outline-secondary"
+              hx-get="{% url 'workspace:allocate' %}?workspace={{ workspace.pk }}"
+              hx-target="#right-panel-content"
+              hx-swap="innerHTML"
+              data-panel-event="open-panel:{% translate 'Spatial Allocation' %}">
+        {% translate "Spatial Allocation…" %}
+      </button>
+      <button type="button"
+              class="btn btn-sm btn-outline-secondary"
+              hx-get="{% url 'workspace:stitch' %}?workspace={{ workspace.pk }}"
+              hx-target="#right-panel-content"
+              hx-swap="innerHTML"
+              data-panel-event="open-panel:{% translate 'Column Stitching' %}">
+        {% translate "Stitch & Fill…" %}
+      </button>
+    </div>
+  </div>
 </div>

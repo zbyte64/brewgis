@@ -10,7 +10,7 @@
     <nav aria-label="breadcrumb">
       <ol class="breadcrumb">
         <li class="breadcrumb-item">
-          <a href="{% url 'workspace:place_type_list' %}">Place Types</a>
+          <a href="{% url 'workspace:place_type_list' place_type.workspace_id %}">Place Types</a>
         </li>
         <li class="breadcrumb-item active" aria-current="page">Bake {{ place_type.name }}</li>
       </ol>
@@ -22,7 +22,7 @@
       <div class="card-body">
         {% if place_type.description %}<p class="text-muted">{{ place_type.description }}</p>{% endif %}
         <form method="post"
-              hx-post="{% url 'workspace:place_type_bake' place_type.pk %}"
+              hx-post="{% url 'workspace:place_type_bake' place_type.workspace_id place_type.pk %}"
               hx-target="#bake-results-container"
               hx-swap="innerHTML">
           {% csrf_token %}

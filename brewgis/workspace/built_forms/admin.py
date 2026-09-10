@@ -21,11 +21,18 @@ class PlaceTypeBuildingTypeMixInline(admin.TabularInline):
 class BuildingTypeAdmin(admin.ModelAdmin):
     """Admin for BuildingType."""
 
-    list_display = ("name", "du_per_acre", "emp_per_acre", "far", "vintage")
-    list_filter = ("vintage",)
+    list_display = (
+        "name",
+        "workspace",
+        "du_per_acre",
+        "emp_per_acre",
+        "far",
+        "vintage",
+    )
+    list_filter = ("workspace", "vintage")
     search_fields = ("name", "description")
     fieldsets = (
-        ("Identity", {"fields": ("name", "description")}),
+        ("Identity", {"fields": ("workspace", "name", "description")}),
         ("Density", {"fields": ("du_per_acre", "emp_per_acre", "far")}),
         (
             "Housing / Household",
@@ -75,8 +82,8 @@ class BuildingTypeAdmin(admin.ModelAdmin):
 class PlaceTypeAdmin(admin.ModelAdmin):
     """Admin for PlaceType with inline mix editing."""
 
-    list_display = ("name", "row_allocation_pct", "street_pattern")
-    list_filter = ("street_pattern",)
+    list_display = ("name", "workspace", "row_allocation_pct", "street_pattern")
+    list_filter = ("workspace", "street_pattern")
     search_fields = ("name", "description")
     inlines = [PlaceTypeBuildingTypeMixInline]
 

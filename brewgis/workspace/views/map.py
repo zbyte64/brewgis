@@ -168,8 +168,8 @@ def view_workspace_map(request: HttpRequest, workspace_pk: int) -> HttpResponse:
             )
 
         # Build built forms data for toolbar dropdowns
-        bts = BuildingType.objects.all().order_by("name")
-        pts = PlaceType.objects.all().order_by("name")
+        bts = BuildingType.objects.filter(workspace=workspace).order_by("name")
+        pts = PlaceType.objects.filter(workspace=workspace).order_by("name")
         built_forms_data = {
             "building_types": [{"id": bt.pk, "name": bt.name} for bt in bts],
             "place_types": [{"id": pt.pk, "name": pt.name} for pt in pts],

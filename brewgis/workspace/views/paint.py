@@ -681,12 +681,12 @@ def _execute_built_form_paint(
             {"status": "error", "message": "bf_id is required."}, status=400
         )
 
-    # Resolve built form instance
+    # Resolve built form instance (scoped to this workspace's own library)
     built_form: BuildingType | PlaceType
     if bf_type == "building":
-        built_form = get_object_or_404(BuildingType, pk=bf_id)
+        built_form = get_object_or_404(BuildingType, pk=bf_id, workspace=workspace)
     else:
-        built_form = get_object_or_404(PlaceType, pk=bf_id)
+        built_form = get_object_or_404(PlaceType, pk=bf_id, workspace=workspace)
 
     # Load base canvas data for selected features
     base_table = _resolve_base_table(scenario)

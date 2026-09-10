@@ -4,12 +4,12 @@ from io import BufferedReader
 from typing import cast
 
 import geopandas
+from crispy_forms.helper import FormHelper
 from django import forms
 from django.conf import settings
 from django.contrib.auth.decorators import user_passes_test
 from django.http import HttpResponse
 from django.http import HttpResponseRedirect
-from django.shortcuts import render
 from django.urls import reverse
 from django.utils.decorators import method_decorator
 from django.views.generic.edit import FormView
@@ -19,6 +19,7 @@ from brewgis.workspace.services._db import get_engine
 from brewgis.workspace.services.column_inspector import inspect_table
 from brewgis.workspace.services.staging_model import write_base_canvas_stub
 from brewgis.workspace.services.staging_model import write_parcel_staging
+from brewgis.workspace.views.built_forms import HtmxResponseMixin
 
 logger = logging.getLogger(__name__)
 
@@ -27,6 +28,17 @@ class ImportGISFileForm(forms.Form):
     file = forms.FileField(required=True)
     workspace = forms.ModelChoiceField(queryset=Workspace.objects.all())
     table_name = forms.CharField(max_length=63)
+
+    def __init__(self, *args: object, **kwargs: object) -> None:
+        super().__init__(*args, **kwargs)  # type: ignore[arg-type]
+        self.helper = FormHelper()
+        self.helper.form_tag = False
+        workspace_pk = self.initial.get("workspace")
+        if workspace_pk:
+            self.fields["workspace"].queryset = Workspace.objects.filter(
+                pk=workspace_pk,
+            )
+            self.fields["workspace"].widget = forms.HiddenInput()
 
     def clean_file(self) -> forms.FileField | None:
         file = self.cleaned_data.get("file")
@@ -95,9 +107,16 @@ def read_gis_file_into_table(
 
 
 @method_decorator(user_passes_test(lambda u: u.is_authenticated), name="dispatch")
-class ReadGISFileView(FormView):
+class ReadGISFileView(HtmxResponseMixin, FormView):
     form_class = ImportGISFileForm
     template_name = "form.html"
+
+    def get_initial(self) -> dict[str, object]:
+        initial = super().get_initial()
+        workspace_pk = self.request.GET.get("workspace")
+        if workspace_pk:
+            initial["workspace"] = workspace_pk
+        return initial
 
     def form_valid(self, form: ImportGISFileForm) -> HttpResponse:
         data = form.cleaned_data
@@ -107,18 +126,9 @@ class ReadGISFileView(FormView):
             schema=workspace.db_schema,
             table_name=data["table_name"],
         )
-        redirect_url = reverse("workspace:home")
+        redirect_url = reverse("workspace:workspace_map", args=[workspace.pk])
         if self.request.htmx:  # type: ignore[attr-defined]
             response = HttpResponse()
             response["HX-Redirect"] = redirect_url
             return response
         return HttpResponseRedirect(redirect_url)
-
-    def form_invalid(self, form: ImportGISFileForm) -> HttpResponse:
-        if self.request.htmx:  # type: ignore[attr-defined]
-            return render(
-                self.request,
-                "form.html#form-content",
-                {"form": form, "view": self},
-            )
-        return super().form_invalid(form)

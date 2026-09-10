@@ -26,8 +26,14 @@ class StreetPatternChoices(models.TextChoices):
 class BuildingType(models.Model):
     """A built form archetype with physical, demographic, and resource parameters."""
 
+    workspace = models.ForeignKey(
+        "workspace.Workspace",
+        on_delete=models.CASCADE,
+        related_name="building_types",
+    )
+
     # Identity
-    name = models.CharField(max_length=128, unique=True)
+    name = models.CharField(max_length=128)
     description = models.TextField(blank=True, default="")
 
     # Density
@@ -186,6 +192,12 @@ class BuildingType(models.Model):
     class Meta:
         ordering = ("name",)
         verbose_name = "Building Type"
+        constraints = [
+            models.UniqueConstraint(
+                fields=("workspace", "name"),
+                name="uq_building_type_workspace_name",
+            ),
+        ]
 
     def __str__(self) -> str:
         return self.name
@@ -194,8 +206,14 @@ class BuildingType(models.Model):
 class PlaceType(models.Model):
     """A place typology that defines right-of-way and street context parameters."""
 
+    workspace = models.ForeignKey(
+        "workspace.Workspace",
+        on_delete=models.CASCADE,
+        related_name="place_types",
+    )
+
     # Identity
-    name = models.CharField(max_length=128, unique=True)
+    name = models.CharField(max_length=128)
     description = models.TextField(blank=True, default="")
 
     # Right-of-way
@@ -227,6 +245,12 @@ class PlaceType(models.Model):
     class Meta:
         ordering = ("name",)
         verbose_name = "Place Type"
+        constraints = [
+            models.UniqueConstraint(
+                fields=("workspace", "name"),
+                name="uq_place_type_workspace_name",
+            ),
+        ]
 
     def __str__(self) -> str:
         return self.name

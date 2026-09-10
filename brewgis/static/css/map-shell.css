@@ -54,6 +54,9 @@
 .map-shell__left-sidebar.collapsed {
   width: 44px;
 }
+.map-shell__left-sidebar.wide-panel {
+  width: 460px;
+}
 .map-shell__left-sidebar .sidebar-icons {
   width: 44px;
   flex-shrink: 0;

@@ -42,9 +42,11 @@
       <!-- Your stuff: Third-party javascript libraries go here -->
       <!-- place project specific Javascript in this file -->
       <script defer src="{% static 'js/project.js' %}"></script>
-      {# htmx 4 compat: preserve htmx 2 defaults (implicit attribute
-         inheritance, no swap on 4xx/5xx/204/304) while templates are
-         migrated incrementally — see htmx-upgrade-from-htmx2 guide. #}
+      {% comment %}
+        htmx 4 compat: preserve htmx 2 defaults (implicit attribute
+        inheritance, no swap on 4xx/5xx/204/304) while templates are
+        migrated incrementally — see htmx-upgrade-from-htmx2 guide.
+      {% endcomment %}
       <meta name="htmx-config"
             content='{"implicitInheritance": true, "noSwap": [204, 304, "4xx", "5xx"]}' />
       <script src="https://cdn.jsdelivr.net/npm/htmx.org@4.0.0"
@@ -74,54 +76,49 @@
                 </li>
                 {% if request.user.is_authenticated %}
                   <li class="nav-item">
-                    <a class="nav-link" href="{% url 'workspace:building_type_list' %}">Building Types</a>
-                  </li>
-                  <li class="nav-item">
-                    <a class="nav-link" href="{% url 'workspace:place_type_list' %}">Place Types</a>
-                  </li>
-                  <li class="nav-item">
                     <a class="nav-link" href="{% url 'account_logout' %}">{% translate "Sign Out" %}</a>
-                  {% else %}
-                    {% if ACCOUNT_ALLOW_REGISTRATION %}
-                      <li class="nav-item">
-                        {# URL provided by django-allauth/account/urls.py #}
-                        <a id="sign-up-link" class="nav-link" href="{% url 'account_signup' %}">{% translate "Sign Up" %}</a>
-                      </li>
-                    {% endif %}
+                  </li>
+                {% else %}
+                  {% if ACCOUNT_ALLOW_REGISTRATION %}
                     <li class="nav-item">
                       {# URL provided by django-allauth/account/urls.py #}
-                      <a id="log-in-link" class="nav-link" href="{% url 'account_login' %}">{% translate "Sign In" %}</a>
+                      <a id="sign-up-link" class="nav-link" href="{% url 'account_signup' %}">{% translate "Sign Up" %}</a>
                     </li>
                   {% endif %}
-                </ul>
-              </div>
+                  <li class="nav-item">
+                    {# URL provided by django-allauth/account/urls.py #}
+                    <a id="log-in-link" class="nav-link" href="{% url 'account_login' %}">{% translate "Sign In" %}</a>
+                  </li>
+                {% endif %}
+              </ul>
             </div>
-          </nav>
-        </div>
-        <div class="container">
-          {% if messages %}
-            {% for message in messages %}
-              <div class="alert alert-dismissible {% if message.tags %}alert-{{ message.tags }}{% endif %}">
-                {{ message }}
-                <button type="button"
-                        class="btn-close"
-                        data-bs-dismiss="alert"
-                        aria-label="Close"></button>
-              </div>
-            {% endfor %}
-          {% endif %}
-          {% block main %}
-            {% block content %}
-              <p>Use this document as a way to quick start any new project.</p>
-            {% endblock content %}
-          {% endblock main %}
-        </div>
-      {% endblock body %}
-      <!-- /container -->
-      {% block modal %}
-      {% endblock modal %}
-      {% block inline_javascript %}
-        {% comment %}
+          </div>
+        </nav>
+      </div>
+      <div class="container">
+        {% if messages %}
+          {% for message in messages %}
+            <div class="alert alert-dismissible {% if message.tags %}alert-{{ message.tags }}{% endif %}">
+              {{ message }}
+              <button type="button"
+                      class="btn-close"
+                      data-bs-dismiss="alert"
+                      aria-label="Close"></button>
+            </div>
+          {% endfor %}
+        {% endif %}
+        {% block main %}
+          {% block content %}
+            <p>Use this document as a way to quick start any new project.</p>
+          {% endblock content %}
+        {% endblock main %}
+      </div>
+    {% endblock body %}
+    <!-- /container -->
+    {% block modal %}
+    {% endblock modal %}
+    {% block inline_javascript %}
+      {% comment %}
     Script tags with only code, no src (defer by default). To run
     with a "defer" so that you run inline code:
     <script>
@@ -129,15 +126,15 @@
         /* Run whatever you want */
       });
     </script>
-        {% endcomment %}
-        <script>
-          document.body.addEventListener('htmx:config:request', function(evt) {
-            var csrfToken = document.querySelector('meta[name="csrf-token"]');
-            if (csrfToken) {
-              evt.detail.ctx.request.headers['X-CSRFToken'] = csrfToken.getAttribute('content');
-            }
-          });
-        </script>
-      {% endblock inline_javascript %}
-    </body>
-  </html>
+      {% endcomment %}
+      <script>
+        document.body.addEventListener('htmx:config:request', function(evt) {
+          var csrfToken = document.querySelector('meta[name="csrf-token"]');
+          if (csrfToken) {
+            evt.detail.ctx.request.headers['X-CSRFToken'] = csrfToken.getAttribute('content');
+          }
+        });
+      </script>
+    {% endblock inline_javascript %}
+  </body>
+</html>

@@ -126,6 +126,25 @@ def _build_region_summary(workspace: Workspace) -> str:
     return f"{len(entries)} counties"
 
 
+def build_catalog_context(workspace: Workspace) -> dict[str, object]:
+    """Return the Data Catalog context.
+
+    Shared by the workspace hub page and the map view's Data Catalog panel
+    so the two surfaces can't drift apart.
+    """
+    return {
+        "workspace": workspace,
+        "catalog_categories": DataSourceCategory.objects.prefetch_related(
+            "sources"
+        ).order_by("sort_order"),
+        "imported_types": list(
+            DataImportRun.objects.filter(workspace=workspace, status="completed")
+            .values_list("import_type", flat=True)
+            .distinct()
+        ),
+    }
+
+
 @user_passes_test(lambda u: u.is_authenticated)
 def workspace_detail(request: HttpRequest, pk: int) -> HttpResponse:
     """Render the workspace detail hub page."""
@@ -139,21 +158,13 @@ def workspace_detail(request: HttpRequest, pk: int) -> HttpResponse:
         )
 
     context: dict[str, object] = {
-        "workspace": workspace,
         "counties": County.objects.filter(county_q),
         "region_summary": _build_region_summary(workspace),
-        "catalog_categories": DataSourceCategory.objects.prefetch_related(
-            "sources"
-        ).order_by("sort_order"),
-        "imported_types": list(
-            DataImportRun.objects.filter(workspace=workspace, status="completed")
-            .values_list("import_type", flat=True)
-            .distinct()
-        ),
         "analysis_modules": ANALYSIS_MODULES,
         "recent_runs": AnalysisRun.objects.filter(workspace=workspace).order_by(
             "-created_at"
         )[:5],
+        **build_catalog_context(workspace),
     }
 
     return render(request, "workspace/workspace_detail.html", context)

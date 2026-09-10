@@ -41,25 +41,28 @@ def check_analysis_prerequisites(
 
     with connection.cursor() as cursor:
         # ── 1. Parcel table exists ──────────────────────────────────
-        if not _table_exists(cursor, schema, parcel_table):
+        parcel_schema, parcel_name = _split(schema, parcel_table)
+        if not _table_exists(cursor, parcel_schema, parcel_name):
             errors.append(
                 PreflightError(
                     field="parcel_table",
-                    message=f"Table {schema}.{parcel_table} not found.",
+                    message=f"Table {parcel_schema}.{parcel_name} not found.",
                 ),
             )
             return errors  # Cannot proceed without the parcel table
 
         # ── 2. Parcel table has geometry column ─────────────────────
-        lower_cols = {c.lower() for c in _get_columns(cursor, schema, parcel_table)}
+        lower_cols = {
+            c.lower() for c in _get_columns(cursor, parcel_schema, parcel_name)
+        }
         has_geom = "geom" in lower_cols or "geometry" in lower_cols
         if not has_geom:
             errors.append(
                 PreflightError(
                     field="parcel_table",
                     message=(
-                        f"Table {schema}.{parcel_table} has no geometry column "
-                        "(expected 'geom' or 'geometry')."
+                        f"Table {parcel_schema}.{parcel_name} has no geometry "
+                        "column (expected 'geom' or 'geometry')."
                     ),
                 ),
             )
@@ -72,8 +75,8 @@ def check_analysis_prerequisites(
                 PreflightError(
                     field="parcel_table",
                     message=(
-                        f"Table {schema}.{parcel_table} has no recognized ID "
-                        "column (expected one of: id, gid, fid, objectid, "
+                        f"Table {parcel_schema}.{parcel_name} has no recognized "
+                        "ID column (expected one of: id, gid, fid, objectid, "
                         "ogc_fid, parcel_id)."
                     ),
                 ),
@@ -81,20 +84,21 @@ def check_analysis_prerequisites(
 
         # ── 4. Built forms table exists and has rows ───────────────
         if built_form_table:
-            bt_exists = _table_exists(cursor, schema, built_form_table)
+            bt_schema, bt_name = _split(schema, built_form_table)
+            bt_exists = _table_exists(cursor, bt_schema, bt_name)
             if not bt_exists:
                 errors.append(
                     PreflightError(
                         field="built_form_table",
                         message=(
-                            f"Built form table {schema}.{built_form_table} not "
+                            f"Built form table {bt_schema}.{bt_name} not "
                             "found. Run 'Export Building Types' first."
                         ),
                     ),
                 )
             else:
                 cursor.execute(
-                    f"SELECT COUNT(*) FROM {_qi(schema, built_form_table)}",
+                    f"SELECT COUNT(*) FROM {_qi(bt_schema, bt_name)}",
                 )
                 (bt_count,) = cursor.fetchone()
                 if bt_count == 0:
@@ -102,7 +106,7 @@ def check_analysis_prerequisites(
                         PreflightError(
                             field="built_form_table",
                             message=(
-                                f"Built form table {schema}.{built_form_table} "
+                                f"Built form table {bt_schema}.{bt_name} "
                                 "is empty. Run 'Export Building Types' first."
                             ),
                         ),
@@ -110,12 +114,13 @@ def check_analysis_prerequisites(
 
         # ── 5. Base canvas table exists ────────────────────────────
         if base_canvas_table:
-            if not _table_exists(cursor, schema, base_canvas_table):
+            bc_schema, bc_name = _split(schema, base_canvas_table)
+            if not _table_exists(cursor, bc_schema, bc_name):
                 errors.append(
                     PreflightError(
                         field="base_canvas_table",
                         message=(
-                            f"Base canvas table {schema}.{base_canvas_table} "
+                            f"Base canvas table {bc_schema}.{bc_name} "
                             "not found. Import a base map first or use the "
                             "auto-generated staging stub."
                         ),
@@ -123,6 +128,19 @@ def check_analysis_prerequisites(
                 )
 
     return errors
+
+
+def _split(schema: str, table: str) -> tuple[str, str]:
+    """Split a possibly schema-qualified table reference.
+
+    Falls back to *schema* when *table* has no schema prefix, matching the
+    qualification convention used elsewhere (e.g.
+    ``analysis.pipeline._build_model_vars``).
+    """
+    if "." in table:
+        table_schema, table_name = table.split(".", 1)
+        return table_schema, table_name
+    return schema, table
 
 
 def _table_exists(cursor: Any, schema: str, table: str) -> bool:

@@ -60,6 +60,8 @@ _STATIC_COLUMN_NAMES: frozenset[str] = frozenset(
         "geometry",
         "land_development_category",
         "built_form_key",
+        "land_use",
+        "assessor_use_code",
         "intersection_density",
         "area_gross",
         "area_gross_acres",
@@ -213,7 +215,12 @@ def _derive_metatype(internal_type: str, name_lower: str) -> str:
         return "geometry"
     if name_lower in ("id", "id_source", "geography_id", "geometry_key"):
         return "identity"
-    if name_lower in ("land_development_category", "built_form_key"):
+    if name_lower in (
+        "land_development_category",
+        "built_form_key",
+        "land_use",
+        "assessor_use_code",
+    ):
         return "classification"
     return "count"
 

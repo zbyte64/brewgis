@@ -21,6 +21,7 @@ from brewgis.workspace.models import SymbologyConfig
 from brewgis.workspace.models import Workspace
 from brewgis.workspace.services.filter_compiler import FilterCompiler
 from brewgis.workspace.views.basemaps import _get_selected_basemap_id
+from brewgis.workspace.views.workspace_detail import build_catalog_context
 
 if TYPE_CHECKING:
     from django.http import HttpRequest
@@ -103,11 +104,14 @@ def panel_layer_list(request: HttpRequest, workspace_pk: int) -> HttpResponse:
 
 @user_passes_test(lambda u: u.is_authenticated)
 def panel_data_catalog(request: HttpRequest, workspace_pk: int) -> HttpResponse:
-    """Return data catalog content for the left sidebar."""
+    """Return data catalog content for the left sidebar.
+
+    Uses the same curated DataSourceCategory/DataSource catalog as the
+    workspace hub page's Data Catalog card, via the shared
+    ``build_catalog_context`` helper, so the two surfaces stay consistent.
+    """
     workspace = get_object_or_404(Workspace, pk=workspace_pk)
-    context: dict[str, object] = {
-        "workspace": workspace,
-    }
+    context = build_catalog_context(workspace)
     return render(
         request,
         "workspace/partials/_catalog_panel.html",

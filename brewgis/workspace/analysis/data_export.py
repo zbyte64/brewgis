@@ -13,10 +13,14 @@ against a built_forms table using columns like ``du_per_acre``,
 from __future__ import annotations
 
 import logging
+from typing import TYPE_CHECKING
 from typing import Any
 
 from django.db import connection
 from django.db import transaction
+
+if TYPE_CHECKING:
+    from brewgis.workspace.models import Workspace
 
 logger = logging.getLogger(__name__)
 
@@ -79,18 +83,20 @@ def _column_defs(field_map: dict[str, str]) -> str:
 
 @transaction.atomic
 def export_building_types(
+    workspace: Workspace,
     schema: str = "public",
     table: str = "built_forms",
     *,
     force_recreate: bool = False,
 ) -> int:
-    """Export BuildingType records from Django ORM to a flat PostGIS table.
+    """Export a workspace's BuildingType records to a flat PostGIS table.
 
     Creates (or re-creates) ``{schema}.{table}`` with the columns listed
-    in :py:data:`BUILT_FORM_COLUMNS`.  All BuildingType rows are copied
-    into the target table.
+    in :py:data:`BUILT_FORM_COLUMNS`, populated only from *workspace*'s own
+    BuildingType rows — each workspace has its own building type library.
 
     Args:
+        workspace: The workspace whose BuildingType rows to export.
         schema: Target PostGIS schema.
         table: Target table name.
         force_recreate: If True, DROP and recreate from scratch
@@ -101,10 +107,10 @@ def export_building_types(
 
     Raises:
         RuntimeError: If the source Django table *workspace_buildingtype*
-            does not exist or has no rows (table may not be migrated).
+            does not exist (table may not be migrated).
     """
     with connection.cursor() as cursor:
-        # Verify the source table exists and has data
+        # Verify the source table exists
         cursor.execute(
             "SELECT COUNT(*) FROM information_schema.tables "
             "WHERE table_schema = 'public' AND table_name = 'workspace_buildingtype'"
@@ -113,15 +119,23 @@ def export_building_types(
             msg = "Source table 'public.workspace_buildingtype' not found — has the migration been run?"
             raise RuntimeError(msg)
 
-        cursor.execute("SELECT COUNT(*) FROM public.workspace_buildingtype")
+        cursor.execute(
+            "SELECT COUNT(*) FROM public.workspace_buildingtype WHERE workspace_id = %s",
+            [workspace.pk],
+        )
         row_count = cursor.fetchone()[0]
         if row_count == 0:
             logger.warning(
-                "No BuildingType records found — export will produce an empty table."
+                "No BuildingType records found for workspace %s — export will "
+                "produce an empty table.",
+                workspace.pk,
             )
 
         cols = _column_defs(BUILT_FORM_COLUMNS)
-        source_table = "public.workspace_buildingtype"
+        source_table = (
+            f"(SELECT * FROM public.workspace_buildingtype "
+            f"WHERE workspace_id = {workspace.pk}) AS workspace_buildingtype"
+        )
 
         if force_recreate:
             cursor.execute(f'DROP TABLE IF EXISTS "{schema}"."{table}"')
@@ -155,6 +169,7 @@ def export_building_types(
 
 
 def ensure_export_exists(
+    workspace: Workspace,
     schema: str = "public",
     table: str = "built_forms",
     **kwargs: Any,
@@ -184,4 +199,4 @@ def ensure_export_exists(
                 )
                 return count  # type: ignore[no-any-return]
 
-    return export_building_types(schema, table, **kwargs)
+    return export_building_types(workspace, schema, table, **kwargs)

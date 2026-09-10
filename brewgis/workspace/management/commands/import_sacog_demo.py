@@ -179,17 +179,27 @@ class Command(BaseCommand):
             extract_built_forms,
         )
 
-        count = extract_built_forms(overwrite=force)
+        workspace = self._resolve_workspace()
+        count = extract_built_forms(workspace, overwrite=force)
         if count > 0:
             self.stdout.write(
                 self.style.SUCCESS(f"  ✓ Created {count} BuildingType records")
             )
         else:
-            existing = __import__("django.db.models", fromlist=["Count"]).Count
             from brewgis.workspace.built_forms.models import BuildingType
 
-            n = BuildingType.objects.count()
+            n = BuildingType.objects.filter(workspace=workspace).count()
             self.stdout.write(f"  ✓ BuildingType records already exist ({n} found)")
+
+    def _resolve_workspace(self) -> Any:
+        """Get-or-create the demo workspace (built_forms may run before workspace step)."""
+        from brewgis.workspace.models import Workspace
+
+        workspace, _created = Workspace.objects.get_or_create(
+            name=WORKSPACE_NAME,
+            defaults={"db_schema": WORKSPACE_SCHEMA},
+        )
+        return workspace
 
     # ── Step: workspace ───────────────────────────────────────────────
 
@@ -412,7 +422,7 @@ class Command(BaseCommand):
         self._check_prerequisites()
 
         # Export built forms for analysis pipeline
-        self._export_built_forms()
+        self._export_built_forms(ws)
 
         # Register base canvas as a Layer
         self._register_base_canvas_layer(ws)
@@ -556,13 +566,13 @@ class Command(BaseCommand):
                 )
             )
 
-    def _export_built_forms(self) -> None:
+    def _export_built_forms(self, ws: Any) -> None:
         """Export BuildingType records to the workspace schema."""
         from django.db import connection
 
         from brewgis.workspace.analysis.data_export import export_building_types
 
-        export_building_types(schema=WORKSPACE_SCHEMA)
+        export_building_types(workspace=ws, schema=WORKSPACE_SCHEMA)
         with connection.cursor() as cursor:
             cursor.execute(f'SELECT count(*) FROM "{WORKSPACE_SCHEMA}"."built_forms"')
             count = cursor.fetchone()[0]

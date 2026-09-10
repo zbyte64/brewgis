@@ -9,17 +9,27 @@ from __future__ import annotations
 
 import json
 import logging
+import re
 from pathlib import Path
 from typing import Any
 
 import geopandas as gpd
 import requests
+from django.conf import settings
 from shapely.geometry import Point
+
+from brewgis.workspace.services._db import get_engine
+from brewgis.workspace.services._db import text
 
 logger = logging.getLogger(__name__)
 
 # Overpass API endpoint
 OVERPASS_URL = "https://overpass-api.de/api/interpreter"
+
+# Overpass's fair-use policy asks clients to identify themselves; in
+# practice the default `python-requests/x.y.z` User-Agent also gets
+# blocked outright (406 Not Acceptable) by their front end.
+_REQUEST_HEADERS = {"User-Agent": "brewgis/1.0 (+https://github.com/brewgis)"}
 
 # POI category definitions: category → list of (key, value) tag filters
 # Each entry is a tag filter — nodes matching ANY tag in the category are included.
@@ -205,6 +215,7 @@ def fetch_pois(
         OVERPASS_URL,
         data={"data": query},
         timeout=120,
+        headers=_REQUEST_HEADERS,
     )
     response.raise_for_status()
     data = response.json()
@@ -284,3 +295,62 @@ def fetch_pois(
     df.crs = "EPSG:4326"
     logger.info("Returning %d categorized POIs", len(df))
     return df
+
+
+def _poi_table_name(
+    min_lng: float,
+    min_lat: float,
+    max_lng: float,
+    max_lat: float,
+    categories: list[str] | None,
+) -> str:
+    """Build a deterministic, valid Postgres table name for a POI request.
+
+    Re-running the same bounding box/category fetch replaces its own table
+    rather than growing a new one on every request.
+    """
+    cat_label = ",".join(categories) if categories else "all"
+    raw = f"poi_{min_lng}_{min_lat}_{max_lng}_{max_lat}_{cat_label}"
+    slug = re.sub(r"[^a-z0-9_]+", "_", raw.lower()).strip("_")
+    return slug[:63]  # Postgres identifier length limit
+
+
+def run_poi_pipeline(
+    min_lng: float,
+    min_lat: float,
+    max_lng: float,
+    max_lat: float,
+    categories: list[str] | None,
+    *,
+    schema: str,
+) -> dict[str, Any]:
+    """Fetch POIs from Overpass and materialize them into a Postgres table.
+
+    Args:
+        min_lng: Western bound.
+        min_lat: Southern bound.
+        max_lng: Eastern bound.
+        max_lat: Northern bound.
+        categories: List of category names to include. None = all.
+        schema: Workspace schema to write the resulting table into.
+
+    Returns:
+        Dict with ``table_name`` (unqualified, within *schema*) and
+        ``row_count``.
+    """
+    gdf = fetch_pois(min_lng, min_lat, max_lng, max_lat, categories)
+    table_name = _poi_table_name(min_lng, min_lat, max_lng, max_lat, categories)
+
+    if settings.TILE_SERVER_BACKEND == "tipg":
+        # columns need to be lower case for tipg:
+        # https://github.com/developmentseed/tipg/issues/195
+        gdf.columns = [str(c).lower() for c in gdf.columns]
+
+    engine = get_engine()
+    with engine.begin() as conn:
+        conn.execute(text(f'CREATE SCHEMA IF NOT EXISTS "{schema}"'))
+
+    gdf.to_postgis(table_name, engine, schema=schema, if_exists="replace", index=False)
+
+    logger.info("Wrote %d POI records to %s.%s", len(gdf), schema, table_name)
+    return {"table_name": table_name, "row_count": len(gdf)}

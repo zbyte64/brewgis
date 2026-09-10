@@ -12,32 +12,39 @@ from __future__ import annotations
 
 import logging
 from collections.abc import Sequence
+from typing import TYPE_CHECKING
 from typing import Any
 
 from django.db import connection
 
 from brewgis.workspace.built_forms.models import BuildingType
 
+if TYPE_CHECKING:
+    from brewgis.workspace.models import Workspace
+
 logger = logging.getLogger(__name__)
 
 
-def extract_built_forms(overwrite: bool = False) -> int:
-    """Extract v1 FlatBuiltForm records into BuildingType records.
+def extract_built_forms(workspace: Workspace, overwrite: bool = False) -> int:
+    """Extract v1 FlatBuiltForm records into BuildingType records for *workspace*.
 
     Traces parcel built_form_key → main_builtform → footprint_flatbuiltform,
     aggregates PrimaryComponent density values, and creates BuildingType records.
 
     Returns the number of new records created.
     """
-    if not overwrite and BuildingType.objects.exists():
+    existing = BuildingType.objects.filter(workspace=workspace)
+    if not overwrite and existing.exists():
         logger.info(
-            "BuildingType records already exist (%d), skipping. Use overwrite=True to replace.",
-            BuildingType.objects.count(),
+            "BuildingType records already exist for workspace %s (%d), skipping. "
+            "Use overwrite=True to replace.",
+            workspace.pk,
+            existing.count(),
         )
         return 0
 
     if overwrite:
-        BuildingType.objects.all().delete()
+        existing.delete()
 
     created = 0
     for key, bf_id, name in _get_parcel_built_form_keys():
@@ -51,6 +58,7 @@ def extract_built_forms(overwrite: bool = False) -> int:
         profile["name"] = name or key
 
         bt, was_created = BuildingType.objects.update_or_create(
+            workspace=workspace,
             name=key,
             defaults=profile,
         )

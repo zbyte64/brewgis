@@ -82,6 +82,16 @@
     if (sidebarEl && sidebarEl.classList.contains('collapsed')) {
       toggleSidebar();
     }
+
+    // The Analysis form (checkboxes, JSON config, etc.) and the Data
+    // Catalog's multi-column table need more room than the other
+    // list-style panels.
+    if (sidebarEl) {
+      sidebarEl.classList.toggle(
+        'wide-panel',
+        name === 'analysis' || name === 'catalog',
+      );
+    }
   }
 
   // ─── Right Panel ───────────────────────────────────────────

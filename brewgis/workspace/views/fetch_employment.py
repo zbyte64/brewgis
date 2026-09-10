@@ -16,6 +16,7 @@ from brewgis.workspace.models import DataImportRun
 from brewgis.workspace.models import Workspace
 from brewgis.workspace.services.lehd_fetcher import fetch_lehd_data_summary
 from brewgis.workspace.tasks import run_lehd_fetch
+from brewgis.workspace.views.built_forms import HtmxResponseMixin
 
 
 class EmploymentFetchForm(forms.Form):
@@ -28,6 +29,12 @@ class EmploymentFetchForm(forms.Form):
         self.helper.disable_csrf = True
         self.helper.label_class = "form-label"
         self.helper.field_class = "mb-3"
+        workspace_pk = self.initial.get("workspace")
+        if workspace_pk:
+            self.fields["workspace"].queryset = Workspace.objects.filter(
+                pk=workspace_pk,
+            )
+            self.fields["workspace"].widget = forms.HiddenInput()
 
     workspace = forms.ModelChoiceField(
         queryset=Workspace.objects.all(),
@@ -46,11 +53,18 @@ class EmploymentFetchForm(forms.Form):
 
 
 @method_decorator(user_passes_test(lambda u: u.is_authenticated), name="dispatch")
-class EmploymentFetchView(FormView):
+class EmploymentFetchView(HtmxResponseMixin, FormView):
     """View to import LEHD employment data."""
 
     form_class = EmploymentFetchForm
     template_name = "form.html"
+
+    def get_initial(self) -> dict[str, object]:
+        initial = super().get_initial()
+        workspace_pk = self.request.GET.get("workspace")
+        if workspace_pk:
+            initial["workspace"] = workspace_pk
+        return initial
 
     def get_context_data(self, **kwargs: object) -> dict[str, object]:
         context = super().get_context_data(**kwargs)

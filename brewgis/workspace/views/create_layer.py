@@ -111,6 +111,9 @@ class ImportSqlmeshLayerView(HtmxResponseMixin, FormView):
         workspace_pk = self.request.GET.get("workspace")
         if workspace_pk:
             initial["workspace"] = workspace_pk
+        table = self.request.GET.get("table")
+        if table:
+            initial["sqlmesh_table"] = table
         return initial
 
     def get_redirect_url(self) -> str:

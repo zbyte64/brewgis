@@ -12,10 +12,21 @@
         <li class="breadcrumb-item">
           <a href="{% url 'workspace:home' %}">Home</a>
         </li>
+        {% if workspace %}
+          <li class="breadcrumb-item">
+            <a href="{% url 'workspace:workspace_detail' workspace.pk %}">{{ workspace.name }}</a>
+          </li>
+        {% endif %}
         <li class="breadcrumb-item active">Import Data</li>
       </ol>
     </nav>
-    <h2>Import Data</h2>
+    <div class="d-flex justify-content-between align-items-center">
+      <h2>Import Data</h2>
+      {% if workspace %}
+        <a href="{% url 'workspace:workspace_map' workspace.pk %}"
+           class="btn btn-outline-primary">← Back to Map</a>
+      {% endif %}
+    </div>
     <!-- Tabs -->
     <ul class="nav nav-tabs mt-3" id="importTabs" role="tablist">
       <li class="nav-item" role="presentation">

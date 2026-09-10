@@ -17,6 +17,7 @@ from brewgis.workspace.models import DataImportRun
 from brewgis.workspace.models import Layer
 from brewgis.workspace.services._db import get_engine
 from brewgis.workspace.services._db import text
+from brewgis.workspace.services.poi_fetcher import run_poi_pipeline
 from brewgis.workspace.services.spatial_allocator import allocate_attributes
 from brewgis.workspace.services.stitcher import impute_built_form_default
 from brewgis.workspace.services.stitcher import impute_constant
@@ -40,11 +41,12 @@ _plain_logger = logging.getLogger(__name__)
 )
 def export_building_types_task(  # type: ignore[no-untyped-def]
     self,
+    workspace_id: int,
     schema: str = "public",
     table: str = "built_forms",
     **kwargs: Any,
 ) -> dict:
-    """Export BuildingType Django records to a flat PostGIS table for dbt.
+    """Export a workspace's BuildingType Django records to a flat PostGIS table.
 
     Creates ``{schema}.{table}`` with columns matching the
     ``core_end_state`` dbt model's expectations.
@@ -52,7 +54,10 @@ def export_building_types_task(  # type: ignore[no-untyped-def]
     Returns:
         Dict with keys: success, count, error.
     """
-    count = export_building_types(schema=schema, table=table)
+    from brewgis.workspace.models import Workspace
+
+    workspace = Workspace.objects.get(pk=workspace_id)
+    count = export_building_types(workspace, schema=schema, table=table)
     logger.info(
         "Built form export complete: %d rows in %s.%s",
         count,
@@ -216,10 +221,10 @@ def run_poi_fetch(  # type: ignore[no-untyped-def]
     categories: list[str] | None,
     schema: str,
 ) -> dict:
-    """Fetch POIs from OpenStreetMap Overpass via dlt and register as Layer.
+    """Fetch POIs from OpenStreetMap Overpass and register as a Layer.
 
-    The dlt pipeline writes raw data to the staging table
-    ``{schema}.poi_raw``. No geopandas re-read is performed.
+    Writes the categorized POI GeoDataFrame directly into a table in
+    *schema*, named deterministically from the request parameters.
     """
 
     run = DataImportRun.objects.get(pk=run_pk)
@@ -227,12 +232,12 @@ def run_poi_fetch(  # type: ignore[no-untyped-def]
     run.started_at = timezone.now()
     run.save(update_fields=["status", "started_at"])
 
-    dlt_result = run_poi_pipeline(
+    poi_result = run_poi_pipeline(
         min_lng, min_lat, max_lng, max_lat, categories, schema=schema
     )
 
-    table_name = dlt_result["table_name"]
-    row_count = dlt_result["row_count"]
+    table_name = poi_result["table_name"]
+    row_count = poi_result["row_count"]
     cat_label = ",".join(categories) if categories else "all"
     layer_key = f"poi_{min_lng}_{min_lat}_{max_lng}_{max_lat}_{cat_label}"
 
@@ -255,7 +260,6 @@ def run_poi_fetch(  # type: ignore[no-untyped-def]
         "layer_key": layer_key,
         "layer_id": layer.pk,
         "row_count": row_count,
-        "validation": dlt_result.get("validation"),
     }
     run.completed_at = timezone.now()
     run.save(update_fields=["status", "result", "completed_at"])
