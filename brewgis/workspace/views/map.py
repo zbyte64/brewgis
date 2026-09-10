@@ -3,10 +3,12 @@
 from __future__ import annotations
 
 import json
+import math
 import uuid
 from typing import TYPE_CHECKING
 
 from django.conf import settings
+from django.db import connection
 from django.http import Http404
 from django.views.decorators.http import require_safe
 
@@ -33,6 +35,83 @@ class LayerSchema(ModelSchema):
     class Meta:
         model = Layer
         exclude = ["id"]
+
+
+_MIN_AUTO_ZOOM = 2.0
+_MAX_AUTO_ZOOM = 16.0
+_AUTO_ZOOM_PADDING = 1.0
+
+
+def _table_extent(schema: str, table: str) -> tuple[float, float, float, float] | None:
+    """Return (min_lng, min_lat, max_lng, max_lat) for a table's geometry, or None."""
+    try:
+        with connection.cursor() as cursor:
+            # schema/table are quoted identifiers from Workspace/Layer
+            # records, not raw user input.
+            cursor.execute(
+                f"SELECT ST_XMin(e), ST_YMin(e), ST_XMax(e), ST_YMax(e) "  # noqa: S608
+                f"FROM (SELECT ST_Extent(geometry) AS e "
+                f"FROM {connection.ops.quote_name(schema)}"
+                f".{connection.ops.quote_name(table)}) t"
+            )
+            row = cursor.fetchone()
+    except Exception:  # noqa: BLE001
+        return None
+    if not row or row[0] is None:
+        return None
+    return row
+
+
+def _zoom_for_extent(
+    min_lng: float, min_lat: float, max_lng: float, max_lat: float
+) -> float:
+    """Rough zoom level that fits a lng/lat bounding box, clamped to a sane range."""
+    lng_span = max(max_lng - min_lng, 1e-6)
+    lat_span = max(max_lat - min_lat, 1e-6)
+    zoom = min(math.log2(360.0 / lng_span), math.log2(180.0 / lat_span))
+    return max(_MIN_AUTO_ZOOM, min(zoom - _AUTO_ZOOM_PADDING, _MAX_AUTO_ZOOM))
+
+
+def _resolve_viewport(workspace: Workspace) -> dict[str, object]:
+    """Return ``{"center": [lng, lat], "zoom": z}`` for the initial map view.
+
+    ``Workspace.center_lng``/``center_lat`` default to ``0.0`` (Null Island),
+    so a freshly-created workspace that never had these set explicitly would
+    otherwise open off the coast of Africa. When both are still at that
+    default, this instead fits to the extent of the workspace's base table
+    (or, failing that, one of its layers) and persists the result so future
+    loads skip the recomputation.
+    """
+    if workspace.center_lng or workspace.center_lat:
+        return {
+            "center": [workspace.center_lng, workspace.center_lat],
+            "zoom": workspace.zoom,
+        }
+
+    candidates: list[tuple[str, str]] = []
+    if workspace.base_table and "." in workspace.base_table:
+        schema, table = workspace.base_table.split(".", 1)
+        candidates.append((schema, table))
+    for layer in workspace.layers.all():
+        schema = layer.db_schema or workspace.db_schema
+        candidates.append((schema, layer.db_table))
+
+    for schema, table in candidates:
+        extent = _table_extent(schema, table)
+        if extent is None:
+            continue
+        min_lng, min_lat, max_lng, max_lat = extent
+        center = [(min_lng + max_lng) / 2.0, (min_lat + max_lat) / 2.0]
+        zoom = _zoom_for_extent(min_lng, min_lat, max_lng, max_lat)
+        Workspace.objects.filter(pk=workspace.pk).update(
+            center_lng=center[0], center_lat=center[1], zoom=zoom
+        )
+        return {"center": center, "zoom": zoom}
+
+    return {
+        "center": [workspace.center_lng, workspace.center_lat],
+        "zoom": workspace.zoom,
+    }
 
 
 def view_workspace_map(request: HttpRequest, workspace_pk: int) -> HttpResponse:
@@ -238,12 +317,7 @@ def view_workspace_map(request: HttpRequest, workspace_pk: int) -> HttpResponse:
     context: dict[str, object] = {
         "layers_json": json.dumps(layer_data).replace("'", "\\u0027"),
         "layer_data": layer_data,
-        "viewport_json": json.dumps(
-            {
-                "center": [workspace.center_lng, workspace.center_lat],
-                "zoom": workspace.zoom,
-            },
-        ),
+        "viewport_json": json.dumps(_resolve_viewport(workspace)),
         "workspace": workspace,
         "scenario": scenario,
         "scenario_json": json.dumps(
