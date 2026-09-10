@@ -143,7 +143,7 @@ def _save_symbology(
         response["HX-Trigger"] = json.dumps(
             {
                 "layer-style-changed": {
-                    "layerKey": layer.table_name,
+                    "layerKey": layer.key,
                     "layerPk": layer.pk,
                     "style": style,
                 },
@@ -166,7 +166,7 @@ def preview_symbology_for_map(request: HttpRequest, layer_pk: int) -> HttpRespon
     response["HX-Trigger"] = json.dumps(
         {
             "layer-style-preview": {
-                "layerKey": layer.table_name,
+                "layerKey": layer.key,
                 "paint": style.get("paint", {}),
                 "layerName": layer.name,
             }
@@ -209,7 +209,7 @@ def auto_generate(request: HttpRequest, layer_pk: int) -> HttpResponse:
         response["HX-Trigger"] = json.dumps(
             {
                 "layer-style-changed": {
-                    "layerKey": layer.table_name,
+                    "layerKey": layer.key,
                     "layerPk": layer.pk,
                     "style": style,
                 },
