@@ -50,6 +50,12 @@
       </button>
       <button type="button"
               class="btn btn-sm btn-outline-secondary"
+              hx-get="{% url 'workspace:raster_upload' %}?workspace={{ workspace.pk }}"
+              hx-target="#right-panel-content"
+              hx-swap="innerHTML"
+              data-panel-event="open-panel:{% translate 'Upload Raster' %}">{% translate "Upload Raster…" %}</button>
+      <button type="button"
+              class="btn btn-sm btn-outline-secondary"
               hx-get="{% url 'workspace:poi_fetch' %}?workspace={{ workspace.pk }}"
               hx-target="#right-panel-content"
               hx-swap="innerHTML"

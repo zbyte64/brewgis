@@ -2,9 +2,12 @@
 
 {# Shared Data Catalog listing — included from both workspace_detail.html and #}
 {# the map view's Data Catalog panel so the two stay in sync. Expects        #}
-{# `catalog_categories` (DataSourceCategory queryset, sources prefetched),   #}
+{# `catalog_categories` (DataSourceCategory queryset, sources prefetched,    #}
+{# each source annotated with `import_url` by build_catalog_context),       #}
 {# `imported_types` (list of completed DataImportRun.import_type values),    #}
-{# and `workspace` in context.                                               #}
+{# `workspace`, and `in_map_panel` (True only from the map view's panel —    #}
+{# routes the Import action through the right-panel drawer instead of a     #}
+{# normal page navigation).                                                 #}
 <div class="accordion accordion-flush" id="catalogAccordion">
   {% for category in catalog_categories %}
     {% with source_count=category.sources.all|length %}
@@ -62,10 +65,14 @@
                         </div>
                       </td>
                       <td>
-                        <a href="{{ source.provider_url }}"
-                           target="_blank"
-                           rel="noopener"
-                           class="text-decoration-none small">{{ source.provider }}</a>
+                        {% if source.provider_url %}
+                          <a href="{{ source.provider_url }}"
+                             target="_blank"
+                             rel="noopener"
+                             class="text-decoration-none small">{{ source.provider }}</a>
+                        {% else %}
+                          <span class="small">{{ source.provider }}</span>
+                        {% endif %}
                       </td>
                       <td>
                         <span class="badge bg-light text-dark border">{{ source.get_data_format_display|default:"—" }}</span>
@@ -76,10 +83,27 @@
                       <td>
                         {% if source.import_type and source.import_type in imported_types %}
                           <span class="badge bg-success">{% translate "Imported" %}</span>
-                        {% elif source.is_importable and source.import_type %}
-                          <a href="{% url 'workspace:import_center' %}?workspace={{ workspace.pk }}"
-                             class="btn btn-outline-primary btn-sm py-0"
-                             style="font-size: 0.7rem">{% translate "Import" %}</a>
+                        {% elif source.is_importable %}
+                          {% if source.is_manual_upload %}
+                            <div class="small text-muted mb-1" style="font-size: 0.65rem;">
+                              {% translate "No live feed — download from the provider, then upload it here." %}
+                            </div>
+                          {% endif %}
+                          {% if in_map_panel and source.import_url %}
+                            <button type="button"
+                                    class="btn btn-outline-primary btn-sm py-0"
+                                    style="font-size: 0.7rem"
+                                    hx-get="{{ source.import_url }}"
+                                    hx-target="#right-panel-content"
+                                    hx-swap="innerHTML"
+                                    data-panel-event="open-panel:{{ source.action_label }} {{ source.name }}">
+                              {% translate source.action_label %}
+                            </button>
+                          {% else %}
+                            <a href="{% if source.import_url %}{{ source.import_url }}{% else %}{% url 'workspace:import_center' %}?workspace={{ workspace.pk }}{% endif %}"
+                               class="btn btn-outline-primary btn-sm py-0"
+                               style="font-size: 0.7rem">{% translate source.action_label %}</a>
+                          {% endif %}
                         {% else %}
                           <span class="badge bg-secondary">{% translate "Not Imported" %}</span>
                         {% endif %}

@@ -70,6 +70,7 @@ from .symbology import preview_classify  # noqa: F401
 from .symbology import preview_symbology  # noqa: F401
 from .symbology import preview_symbology_for_map  # noqa: F401
 from .token_auth import token_auth  # noqa: F401
+from .upload_raster import RasterUploadView  # noqa: F401
 from .workspace_create import WorkspaceCreateView as workspace_create  # noqa: F401
 from .workspace_create import county_options  # noqa: F401
 from .workspace_detail import workspace_detail  # noqa: F401

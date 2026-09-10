@@ -112,6 +112,7 @@ def panel_data_catalog(request: HttpRequest, workspace_pk: int) -> HttpResponse:
     """
     workspace = get_object_or_404(Workspace, pk=workspace_pk)
     context = build_catalog_context(workspace)
+    context["in_map_panel"] = True
     return render(
         request,
         "workspace/partials/_catalog_panel.html",

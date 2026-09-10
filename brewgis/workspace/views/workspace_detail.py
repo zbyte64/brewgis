@@ -6,12 +6,29 @@ from django.http import HttpRequest
 from django.http import HttpResponse
 from django.shortcuts import get_object_or_404
 from django.shortcuts import render
+from django.urls import reverse
 
 from brewgis.workspace.models import AnalysisRun
 from brewgis.workspace.models import County
 from brewgis.workspace.models import DataImportRun
 from brewgis.workspace.models import DataSourceCategory
 from brewgis.workspace.models import Workspace
+
+# Maps DataSource.import_type -> the URL name of the view that performs it.
+# Sources without a mapped type here fall back to the generic Import Center.
+_IMPORT_TYPE_URL_NAMES: dict[str, str] = {
+    "census": "workspace:census_fetch",
+    "lehd": "workspace:employment_fetch",
+    "poi": "workspace:poi_fetch",
+    "upload": "workspace:upload",
+    "raster": "workspace:raster_upload",
+}
+
+# import_type values that require the user to supply their own file — there's
+# no live integration with the listed provider (e.g. FEMA, USFWS, USGS), so
+# the action must read "Upload", never "Import"/"Fetch", to avoid implying
+# an automatic pull from that provider.
+_MANUAL_UPLOAD_TYPES: frozenset[str] = frozenset({"upload", "raster"})
 
 STATE_NAMES: dict[str, str] = {
     "01": "Alabama",
@@ -132,11 +149,21 @@ def build_catalog_context(workspace: Workspace) -> dict[str, object]:
     Shared by the workspace hub page and the map view's Data Catalog panel
     so the two surfaces can't drift apart.
     """
+    categories = DataSourceCategory.objects.prefetch_related("sources").order_by(
+        "sort_order"
+    )
+    for category in categories:
+        for source in category.sources.all():
+            url_name = _IMPORT_TYPE_URL_NAMES.get(source.import_type)
+            source.import_url = (
+                f"{reverse(url_name)}?workspace={workspace.pk}" if url_name else ""
+            )
+            source.is_manual_upload = source.import_type in _MANUAL_UPLOAD_TYPES
+            source.action_label = "Upload" if source.is_manual_upload else "Import"
+
     return {
         "workspace": workspace,
-        "catalog_categories": DataSourceCategory.objects.prefetch_related(
-            "sources"
-        ).order_by("sort_order"),
+        "catalog_categories": categories,
         "imported_types": list(
             DataImportRun.objects.filter(workspace=workspace, status="completed")
             .values_list("import_type", flat=True)
