@@ -3,39 +3,43 @@ volumes:
   brewgis_local_postgres_data_backups: {}
   brewgis_local_redis_data: {}
 
+x-shared-django: &django
+  user: "${UID:-1000}:${GID:-1000}"
+  image: brewgis_local_django
+  depends_on:
+    - postgres
+    - redis
+    - tipg
+  volumes:
+    - .:/app:z
+    - ./cache:/home/dev-user/.cache/
+  env_file:
+    - ./.envs/.local/.django
+    - ./.envs/.local/.postgres
+    - ./.env
+  ulimits:
+    nproc: 65535
+    nofile: 65536
+  deploy:
+    resources:
+      limits:
+        cpus: '8'
+        memory: 48G
+      reservations:
+        cpus: '2'
+        memory: 1G
+
+
 services:
-  django: &django
+  django:
+    <<: *django
     build:
       context: .
       dockerfile: ./compose/local/django/Dockerfile
-    user: "${UID:-1000}:${GID:-1000}"
-    image: brewgis_local_django
     container_name: brewgis_local_django
-    depends_on:
-      - postgres
-      - redis
-      - tipg
-    volumes:
-      - .:/app:z
-      - ./cache:/home/dev-user/.cache/
-    env_file:
-      - ./.envs/.local/.django
-      - ./.envs/.local/.postgres
-      - ./.env
     ports:
       - '8000:8000'
     command: /start
-    ulimits:
-      nproc: 65535
-      nofile: 65536
-    deploy:
-      resources:
-        limits:
-          cpus: '8'
-          memory: 48G
-        reservations:
-          cpus: '2'
-          memory: 1G
 
   postgres:
     build:
@@ -95,35 +99,25 @@ services:
 
   celeryworker:
     <<: *django
-    image: brewgis_local_celeryworker
     container_name: brewgis_local_celeryworker
-    depends_on:
-      - redis
-      - postgres
-      - tipg
-    ports: []
     command: /start-celeryworker
 
   celerybeat:
     <<: *django
-    image: brewgis_local_celerybeat
     container_name: brewgis_local_celerybeat
     depends_on:
       - redis
       - postgres
-    ports: []
     command: /start-celerybeat
 
   flower:
     <<: *django
-    image: brewgis_local_flower
     container_name: brewgis_local_flower
     ports:
       - '5555:5555'
     command: /start-flower
   mcp:
     <<: *django
-    image: brewgis_local_mcp
     container_name: brewgis_local_mcp
     depends_on:
       - redis
@@ -133,7 +127,6 @@ services:
     command: /start-mcp
   sqlmesh-ui:
     <<: *django
-    image: brewgis_local_sqlmesh_ui
     container_name: brewgis_local_sqlmesh_ui
     depends_on:
       - postgres
