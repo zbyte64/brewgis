@@ -317,7 +317,7 @@ class AnalysisLaunchView(HtmxResponseMixin, FormView):
 
 
 def analysis_status(request: HttpRequest, run_pk: int) -> HttpResponse:
-    """htmx-polled status partial for an analysis run."""
+    """Analysis run detail — full page on a direct visit, htmx-polled partial otherwise."""
     run = get_object_or_404(AnalysisRun, pk=run_pk)
 
     vmt_fee_data = None
@@ -342,9 +342,14 @@ def analysis_status(request: HttpRequest, run_pk: int) -> HttpResponse:
         except Exception:
             pass
 
+    template_name = (
+        "workspace/analysis/status.html#analysis-status"
+        if request.htmx  # type: ignore[attr-defined]
+        else "workspace/analysis/status.html"
+    )
     return render(
         request,
-        "workspace/analysis/status.html#analysis-status",
+        template_name,
         {"run": run, "vmt_fee_data": vmt_fee_data},
     )
 

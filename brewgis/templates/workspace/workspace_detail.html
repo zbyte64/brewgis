@@ -1,6 +1,7 @@
 {% extends "base.html" %}
 
 {% load i18n %}
+{% load workspace_tags %}
 
 {% block title %}
   {{ workspace.name }} — Brew GIS
@@ -205,15 +206,16 @@
         <div class="card-body p-0">
           <ul class="list-group list-group-flush">
             {% for run in recent_runs %}
-              <li class="list-group-item d-flex justify-content-between align-items-center">
+              <a href="{% url 'workspace:analysis_status' run.pk %}"
+                 class="list-group-item list-group-item-action d-flex justify-content-between align-items-center">
                 <div>
                   <strong>{{ run.modules|join:", " }}</strong>
                   <span class="text-muted ms-2">{{ run.created_at|date:"M j, Y H:i" }}</span>
                 </div>
-                <span class="badge {% if run.status == 'completed' %}bg-success{% elif run.status == 'running' %}bg-primary{% elif run.status == 'failed' %}bg-danger{% else %}bg-secondary{% endif %}">
-                  {{ run.status|title }}
-                </span>
-              </li>
+                {% with badge_class=run.status|analysis_status_badge %}
+                  <span class="badge bg-{{ badge_class }}">{{ run.status|title }}</span>
+                {% endwith %}
+              </a>
             {% endfor %}
           </ul>
         </div>

@@ -13,6 +13,7 @@ them in dependency order via SQLMesh. The pipeline:
 from __future__ import annotations
 
 import logging
+import traceback
 from typing import Any
 
 import deal
@@ -165,14 +166,30 @@ def run_analysis_pipeline(
         ordered_modules,
     )
 
-    run_modules_sync(
-        modules=ordered_modules,
-        base_vars=base_vars,
-        target_schema=base_vars.get("target_schema", "public"),
-        workspace_id=workspace_id,
-        scenario_id=str(scenario_id),
-        module_selects=base_vars.get("module_selects"),
-    )
+    run.status = "running"
+    run.started_at = timezone.now()
+    run.save(update_fields=["status", "started_at"])
+
+    try:
+        run_modules_sync(
+            modules=ordered_modules,
+            base_vars=base_vars,
+            target_schema=base_vars.get("target_schema", "public"),
+            workspace_id=workspace_id,
+            scenario_id=str(scenario_id),
+            module_selects=base_vars.get("module_selects"),
+        )
+    except Exception:
+        logger.exception("AnalysisRun #%s failed", run.pk)
+        run.status = "failed"
+        run.error_log = traceback.format_exc()
+        run.completed_at = timezone.now()
+        run.save(update_fields=["status", "error_log", "completed_at"])
+        return run
+
+    run.status = "completed"
+    run.completed_at = timezone.now()
+    run.save(update_fields=["status", "completed_at"])
     return run
 
 
