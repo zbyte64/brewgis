@@ -1,12 +1,15 @@
 from __future__ import annotations
 
+from django import forms
 from django.contrib.auth.decorators import user_passes_test
 from django.db.models import Q
 from django.http import HttpRequest
 from django.http import HttpResponse
 from django.shortcuts import get_object_or_404
+from django.shortcuts import redirect
 from django.shortcuts import render
 from django.urls import reverse
+from django.views.decorators.http import require_POST
 
 from brewgis.workspace.models import AnalysisRun
 from brewgis.workspace.models import County
@@ -172,6 +175,17 @@ def build_catalog_context(workspace: Workspace) -> dict[str, object]:
     }
 
 
+class WorkspaceSettingsForm(forms.ModelForm):
+    """Workspace-level settings editable from the hub page (not admin)."""
+
+    class Meta:
+        model = Workspace
+        fields = ["tile_server_backend"]
+        widgets = {
+            "tile_server_backend": forms.Select(attrs={"class": "form-select"}),
+        }
+
+
 @user_passes_test(lambda u: u.is_authenticated)
 def workspace_detail(request: HttpRequest, pk: int) -> HttpResponse:
     """Render the workspace detail hub page."""
@@ -191,7 +205,19 @@ def workspace_detail(request: HttpRequest, pk: int) -> HttpResponse:
         "recent_runs": AnalysisRun.objects.filter(workspace=workspace).order_by(
             "-created_at"
         )[:5],
+        "settings_form": WorkspaceSettingsForm(instance=workspace),
         **build_catalog_context(workspace),
     }
 
     return render(request, "workspace/workspace_detail.html", context)
+
+
+@user_passes_test(lambda u: u.is_authenticated)
+@require_POST
+def workspace_settings_update(request: HttpRequest, pk: int) -> HttpResponse:
+    """Save workspace-level settings (e.g. tile server backend) from the hub page."""
+    workspace = get_object_or_404(Workspace, pk=pk)
+    form = WorkspaceSettingsForm(request.POST, instance=workspace)
+    if form.is_valid():
+        form.save()
+    return redirect("workspace:workspace_detail", pk=pk)

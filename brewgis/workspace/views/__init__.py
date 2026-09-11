@@ -75,3 +75,4 @@ from .upload_raster import RasterUploadView  # noqa: F401
 from .workspace_create import WorkspaceCreateView as workspace_create  # noqa: F401
 from .workspace_create import county_options  # noqa: F401
 from .workspace_detail import workspace_detail  # noqa: F401
+from .workspace_detail import workspace_settings_update  # noqa: F401

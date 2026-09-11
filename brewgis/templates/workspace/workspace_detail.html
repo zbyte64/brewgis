@@ -38,6 +38,27 @@
       <a href="{% url 'workspace:place_type_list' workspace.pk %}"
          class="btn btn-outline-secondary">{% translate "Place Types" %}</a>
     </div>
+    <!-- Workspace Settings -->
+    <div class="card mb-4">
+      <div class="card-header">
+        <h5 class="card-title mb-0">{% translate "Workspace Settings" %}</h5>
+      </div>
+      <div class="card-body">
+        <form method="post"
+              action="{% url 'workspace:workspace_settings_update' workspace.pk %}"
+              class="row g-2 align-items-end">
+          {% csrf_token %}
+          <div class="col-auto">
+            <label for="{{ settings_form.tile_server_backend.id_for_label }}"
+                   class="form-label">{% translate "Tile Rendering Backend" %}</label>
+            {{ settings_form.tile_server_backend }}
+          </div>
+          <div class="col-auto">
+            <button type="submit" class="btn btn-outline-primary">{% translate "Save" %}</button>
+          </div>
+        </form>
+      </div>
+    </div>
     <!-- Scenario Management Panel -->
     <div class="card mb-4">
       <div class="card-header d-flex justify-content-between align-items-center">

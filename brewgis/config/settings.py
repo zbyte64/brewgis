@@ -287,6 +287,11 @@ ACCOUNT_EMAIL_VERIFICATION = "optional"
 TILE_SERVER_BACKEND = env("TILE_SERVER_BACKEND", default="tipg")
 TILE_SERVER_TIPG_URL = env("TILE_SERVER_TIPG_URL", default="http://tipg:8081")
 TILE_SERVER_MARTIN_URL = env("TILE_SERVER_MARTIN_URL", default="http://martin:3000")
+# Container to restart so Martin picks up newly-created tables — it has no
+# live-reload API, only a startup-time table scan. Unset (None) disables
+# the restart-on-new-tables behavior entirely (e.g. if the docker socket
+# isn't mounted in this environment).
+MARTIN_CONTAINER_NAME = env("MARTIN_CONTAINER_NAME", default=None)
 TOKEN_AUTH_KEY = env("TOKEN_AUTH_KEY", default=None)
 CENSUS_API_KEY = env("CENSUS_API_KEY", default=None)
 

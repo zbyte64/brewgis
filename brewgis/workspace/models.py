@@ -43,6 +43,15 @@ class Workspace(models.Model):
             "table; can point at a SQLMesh-generated table with the required columns."
         ),
     )
+    tile_server_backend = models.CharField(
+        max_length=16,
+        choices=[
+            ("tipg", "tipg"),
+            ("martin", "Martin"),
+        ],
+        default="tipg",
+        help_text="Vector tile server used to render this workspace's layers.",
+    )
 
     def __str__(self) -> str:
         return self.name
@@ -54,19 +63,24 @@ def _tile_source_id(schema: str, table: str) -> str:
 
 
 def _tile_url_template(
-    schema: str, table: str, tile_matrix_set: str = "WebMercatorQuad"
+    schema: str,
+    table: str,
+    tile_matrix_set: str = "WebMercatorQuad",
+    backend: str | None = None,
 ) -> str:
     """Return the raw tile URL template for a PostGIS schema.table."""
     source_id = _tile_source_id(schema, table)
-    if settings.TILE_SERVER_BACKEND == "martin":
+    if (backend or settings.TILE_SERVER_BACKEND) == "martin":
         return f"/martin/{source_id}"
     return f"/tipg/collections/{source_id}/tiles/{tile_matrix_set}"
 
 
-def _maplibre_vector_source(schema: str, table: str) -> dict:
+def _maplibre_vector_source(
+    schema: str, table: str, backend: str | None = None
+) -> dict:
     """Return a MapLibre GL JS vector source specification for schema.table."""
     source_id = _tile_source_id(schema, table)
-    if settings.TILE_SERVER_BACKEND == "martin":
+    if (backend or settings.TILE_SERVER_BACKEND) == "martin":
         return {
             "type": "vector",
             "url": f"/martin/{source_id}",
@@ -133,12 +147,19 @@ class Layer(models.Model):
     def resolve_tiles_url(self, tile_matrix_set: str = "WebMercatorQuad") -> str:
         """Return the raw tile URL template (tipg only; for backward compat)."""
         schema = self.db_schema or self.workspace.db_schema
-        return _tile_url_template(schema, self.db_table, tile_matrix_set)
+        return _tile_url_template(
+            schema,
+            self.db_table,
+            tile_matrix_set,
+            backend=self.workspace.tile_server_backend,
+        )
 
     def to_maplibre_source(self) -> dict:
         """Return a MapLibre GL JS source specification dict."""
         schema = self.db_schema or self.workspace.db_schema
-        return _maplibre_vector_source(schema, self.db_table)
+        return _maplibre_vector_source(
+            schema, self.db_table, backend=self.workspace.tile_server_backend
+        )
 
 
 class SymbologyConfig(models.Model):

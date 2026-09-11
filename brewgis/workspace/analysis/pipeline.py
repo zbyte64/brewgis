@@ -31,6 +31,8 @@ from brewgis.workspace.analysis.module_registry import (
 )
 from brewgis.workspace.analysis.sqlmesh_runner import run_sqlmesh_plan
 from brewgis.workspace.models import AnalysisRun
+from brewgis.workspace.models import Workspace
+from brewgis.workspace.services.tile_server import restart_martin
 
 logger = logging.getLogger(__name__)
 
@@ -190,6 +192,13 @@ def run_analysis_pipeline(
     run.status = "completed"
     run.completed_at = timezone.now()
     run.save(update_fields=["status", "completed_at"])
+
+    # New analysis__scenario_<id> tables are invisible to Martin until it
+    # restarts (see brewgis.workspace.services.tile_server) — only relevant
+    # if this workspace actually renders tiles through Martin.
+    if Workspace.objects.filter(pk=workspace_id, tile_server_backend="martin").exists():
+        restart_martin()
+
     return run
 
 

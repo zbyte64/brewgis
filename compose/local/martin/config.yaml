@@ -1,0 +1,22 @@
+# Martin tile server config.
+#
+# Auto-publishes every table/view across all schemas (same as running
+# Martin with no config file at all) — this is NOT a frozen snapshot list.
+# The only reason a config file exists here is to override
+# `source_id_format`: without it, Martin names each tile source after the
+# bare table name (colliding names across schemas get a numeric suffix
+# like `.1`), but brewgis addresses tile sources as `{schema}.{table}`
+# (see `_maplibre_vector_source()` in brewgis/workspace/models.py) — so
+# the source IDs must match that shape.
+#
+# default_srid: most geometry columns here are created without an
+# explicit SRID typmod (`geometry_columns` reports srid=0) even though
+# the stored values are all actually EPSG:4326 — verified directly via
+# ST_SRID() against real rows. Without this, Martin silently skips
+# publishing every such table.
+postgres:
+  connection_string: $DATABASE_URL
+  default_srid: 4326
+  auto_publish:
+    tables:
+      source_id_format: "{schema}.{table}"

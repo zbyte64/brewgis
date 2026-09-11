@@ -49,6 +49,7 @@ from .views import undo_paint
 from .views import view_workspace_map
 from .views import workspace_create
 from .views import workspace_detail
+from .views import workspace_settings_update
 from .views.basemaps import basemap_list
 from .views.basemaps import basemap_select
 from .views.built_forms import (
@@ -123,6 +124,11 @@ urlpatterns = [
     path("<int:workspace_pk>/map/", view_workspace_map, name="workspace_map"),
     path("public/<uuid:token>/", view_public_scenario_map, name="public_scenario_map"),
     path("<int:pk>/", workspace_detail, name="workspace_detail"),
+    path(
+        "<int:pk>/settings/",
+        workspace_settings_update,
+        name="workspace_settings_update",
+    ),
     # Scenario Management
     path(
         "<int:workspace_pk>/scenario/create/",

@@ -7,7 +7,6 @@ import math
 import uuid
 from typing import TYPE_CHECKING
 
-from django.conf import settings
 from django.db import connection
 from django.http import Http404
 from django.views.decorators.http import require_safe
@@ -147,7 +146,7 @@ def view_workspace_map(request: HttpRequest, workspace_pk: int) -> HttpResponse:
         # template placeholders.
         _request_scheme_host = f"{request.scheme}://{request.get_host()}"
 
-        if settings.TILE_SERVER_BACKEND == "martin":
+        if workspace.tile_server_backend == "martin":
             canvas_tiles_url = (
                 f"{_request_scheme_host}/martin/{canvas_source_id}/{{z}}/{{x}}/{{y}}"
             )
@@ -210,8 +209,14 @@ def view_workspace_map(request: HttpRequest, workspace_pk: int) -> HttpResponse:
                 f"{_request_scheme_host}{t}" for t in data["source"]["tiles"]
             ]
 
-        if settings.TILE_SERVER_BACKEND == "tipg":
+        # MapLibre always requires a source-layer for a vector source — it's
+        # not tipg-specific. tipg's MVT layers are always named "default";
+        # Martin's TileJSON confirms it names each MVT layer after the
+        # source's own id (the same "{schema}.{table}" string used above).
+        if workspace.tile_server_backend == "tipg":
             data["source-layer"] = "default"
+        else:
+            data["source-layer"] = layer._source_id()  # noqa: SLF001
 
         # Merge symbology-generated paint/layout if available
         try:
@@ -237,7 +242,11 @@ def view_workspace_map(request: HttpRequest, workspace_pk: int) -> HttpResponse:
                     "type": "vector",
                     "tiles": [canvas_tiles_url],
                 },
-                "source-layer": "default",
+                "source-layer": (
+                    "default"
+                    if workspace.tile_server_backend == "tipg"
+                    else canvas_source_id
+                ),
                 "paint": {
                     "fill-color": [
                         "case",
@@ -371,8 +380,8 @@ def view_public_scenario_map(request: HttpRequest, token: str) -> HttpResponse:
                 "type": layer.geometry_type,
                 "source": source,
                 "source-layer": "default"
-                if settings.TILE_SERVER_BACKEND == "tipg"
-                else layer.db_table,
+                if workspace.tile_server_backend == "tipg"
+                else layer._source_id(),  # noqa: SLF001
                 "symbology": layer.symbology if hasattr(layer, "symbology") else None,
             }
         )
