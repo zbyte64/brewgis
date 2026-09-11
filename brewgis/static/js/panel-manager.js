@@ -13,6 +13,14 @@
     modalOpen: false,
     activePanel: null,
     panelTitle: '',
+    // Layer whose symbology editor is currently showing in the right
+    // panel, if any — live-preview edits (layer-style-preview) mutate the
+    // map directly without saving, so whenever this layer's editor goes
+    // away without a save (Cancel, X, Escape, click-outside, or
+    // navigating to a different panel), its actually-saved style must be
+    // re-fetched and reapplied to undo any lingering unsaved preview.
+    symbologyPreviewLayerPk: null,
+    symbologyPreviewLayerKey: null,
   };
 
   if (typeof window.__panelState === 'undefined') {
@@ -94,6 +102,66 @@
     }
   }
 
+  // ─── Symbology live-preview revert ───────────────────────────
+  // Live-edit inputs in the symbology editor (color/opacity/column/etc.)
+  // mutate the live MapLibre layer directly via 'layer-style-preview'
+  // without saving anything — only Save actually persists. If the editor
+  // goes away some other way (Cancel, the panel's X, Escape, clicking the
+  // map, or navigating to a different panel) that unsaved preview must be
+  // reverted back to whatever is actually saved in the database.
+  function applyLayerStyle(layerKey, paint, layout) {
+    var mapEl = getMapEl();
+    if (!mapEl || !layerKey) return;
+    var map = mapEl._map || mapEl['_map'];
+    if (!map) return;
+    var mapStyle = map.getStyle();
+    if (!mapStyle || !mapStyle.layers) return;
+    var targetLayer = mapStyle.layers.find(function (l) {
+      return l.id.indexOf(layerKey) === 0;
+    });
+    if (!targetLayer) return;
+    if (paint && typeof mapEl.previewLayerStyle === 'function') {
+      mapEl.previewLayerStyle(targetLayer.id, paint);
+    }
+    if (layout) {
+      for (var key in layout) {
+        try { map.setLayoutProperty(targetLayer.id, key, layout[key]); } catch (e) {}
+      }
+    }
+  }
+
+  function revertSymbologyPreview() {
+    var pk = state.symbologyPreviewLayerPk;
+    var layerKey = state.symbologyPreviewLayerKey;
+    state.symbologyPreviewLayerPk = null;
+    state.symbologyPreviewLayerKey = null;
+    if (!pk || !layerKey) return;
+    fetch('/symbology/' + pk + '/preview/')
+      .then(function (r) { return r.ok ? r.json() : null; })
+      .then(function (style) {
+        if (style) applyLayerStyle(layerKey, style.paint, style.layout);
+      })
+      .catch(function () {});
+  }
+
+  // Called whenever the right panel's content is (re)established, to
+  // start/stop tracking which layer's symbology editor (if any) is now
+  // showing — reverting the previous one first if it's being abandoned
+  // unsaved.
+  function trackSymbologyPanel() {
+    var contentEl = document.getElementById('right-panel-content');
+    var editorEl = contentEl && contentEl.querySelector('.symbology-editor-panel[data-layer-pk]');
+    var newPk = editorEl ? editorEl.getAttribute('data-layer-pk') : null;
+
+    if (state.symbologyPreviewLayerPk && state.symbologyPreviewLayerPk !== newPk) {
+      revertSymbologyPreview();
+    }
+    if (editorEl && newPk) {
+      state.symbologyPreviewLayerPk = newPk;
+      state.symbologyPreviewLayerKey = editorEl.getAttribute('data-layer-key');
+    }
+  }
+
   // ─── Right Panel ───────────────────────────────────────────
   function openPanel(title, contentHtml) {
     var panel = document.getElementById('right-panel');
@@ -112,6 +180,8 @@
     state.rightPanelOpen = true;
     state.panelTitle = title;
 
+    trackSymbologyPanel();
+
     // Update map padding
     updateMapPadding();
   }
@@ -119,6 +189,8 @@
   function closePanel() {
     var panel = document.getElementById('right-panel');
     if (!panel) return;
+
+    revertSymbologyPreview();
 
     panel.classList.remove('open');
     state.rightPanelOpen = false;
@@ -346,47 +418,14 @@
     document.body.addEventListener('layer-style-preview', function(evt) {
       var detail = evt.detail;
       if (!detail || !detail.layerKey || !detail.paint) return;
-      var mapEl = getMapEl();
-      if (!mapEl) return;
-      var map = mapEl._map || mapEl['_map'];
-      if (!map) return;
-      var style = map.getStyle();
-      if (!style || !style.layers) return;
-      var targetLayer = style.layers.find(function(l) {
-        return l.id.indexOf(detail.layerKey) === 0;
-      });
-      if (!targetLayer) {
-        console.warn('No MapLibre layer found for key:', detail.layerKey);
-        return;
-      }
-      if (typeof mapEl.previewLayerStyle === 'function') {
-        mapEl.previewLayerStyle(targetLayer.id, detail.paint);
-      }
+      applyLayerStyle(detail.layerKey, detail.paint, null);
     });
 
     // ─── Symbology saved / auto-generated (Steps 3, 5) ──────
     document.body.addEventListener('layer-style-changed', function(evt) {
       var detail = evt.detail;
       if (!detail || !detail.layerKey || !detail.style) return;
-      var mapEl = getMapEl();
-      if (!mapEl) return;
-      var map = mapEl._map || mapEl['_map'];
-      if (!map) return;
-      var style = map.getStyle();
-      if (!style || !style.layers) return;
-      var targetLayer = style.layers.find(function(l) {
-        return l.id.indexOf(detail.layerKey) === 0;
-      });
-      if (!targetLayer) return;
-      // Apply paint and layout properties
-      if (detail.style.paint && typeof mapEl.previewLayerStyle === 'function') {
-        mapEl.previewLayerStyle(targetLayer.id, detail.style.paint);
-      }
-      if (detail.style.layout) {
-        for (var key in detail.style.layout) {
-          try { map.setLayoutProperty(targetLayer.id, key, detail.style.layout[key]); } catch(e) {}
-        }
-      }
+      applyLayerStyle(detail.layerKey, detail.style.paint, detail.style.layout);
     });
 
     // ─── Layer visibility toggle ────────────────────────────

@@ -3,7 +3,7 @@
 {% load workspace_tags %}
 
 <div class="symbology-editor-panel"
-     data-layer-key="{{ layer.table_name }}"
+     data-layer-key="{{ layer.key }}"
      data-layer-pk="{{ layer.pk }}"
      data-palettes="{{ palettes_json|json_attr }}">
   <form method="post"
