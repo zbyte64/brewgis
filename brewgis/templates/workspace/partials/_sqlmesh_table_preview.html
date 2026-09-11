@@ -1,0 +1,55 @@
+{% load i18n %}
+
+<div id="sqlmesh-detail">
+  {% if not preview %}
+    <p class="text-muted small mb-0">{% translate "Select a table above to see its columns and a data preview." %}</p>
+  {% else %}
+    <h6 class="mb-2">{{ schema }}.{{ table }}</h6>
+    <div class="row">
+      <div class="col-md-4">
+        <h6 class="text-muted small text-uppercase mb-1">{% translate "Columns" %} ({{ preview.columns|length }})</h6>
+        <div style="max-height: 260px;
+                    overflow-y: auto"
+             class="border rounded p-2 small">
+          <ul class="list-unstyled mb-0">
+            {% for col in preview.columns %}
+              <li>
+                <code>{{ col.name }}</code>
+                <span class="text-muted">{{ col.type }}</span>
+              </li>
+            {% endfor %}
+          </ul>
+        </div>
+      </div>
+      <div class="col-md-8">
+        <h6 class="text-muted small text-uppercase mb-1">
+          {% translate "Data preview" %}
+          {% if preview.has_geometry %}
+            <span class="text-muted fw-normal">({% translate "geometry column omitted" %})</span>
+          {% endif %}
+        </h6>
+        <div class="table-responsive" style="max-height: 260px; overflow-y: auto;">
+          <table class="table table-sm table-striped mb-0" style="font-size: 0.75rem;">
+            <thead class="table-light" style="position: sticky; top: 0;">
+              <tr>
+                {% for col in preview.display_columns %}<th>{{ col }}</th>{% endfor %}
+              </tr>
+            </thead>
+            <tbody>
+              {% for row in preview.rows %}
+                <tr>
+                  {% for val in row %}<td>{{ val|default:"—" }}</td>{% endfor %}
+                </tr>
+              {% empty %}
+                <tr>
+                  <td colspan="{{ preview.display_columns|length }}"
+                      class="text-center text-muted py-2">{% translate "No rows." %}</td>
+                </tr>
+              {% endfor %}
+            </tbody>
+          </table>
+        </div>
+      </div>
+    </div>
+  {% endif %}
+</div>

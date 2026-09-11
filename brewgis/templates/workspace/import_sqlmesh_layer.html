@@ -1,0 +1,178 @@
+{% extends "base.html" %}
+
+{% load i18n %}
+
+{% block extrahead %}
+  {{ form.media }}
+{% endblock extrahead %}
+{% block title %}
+  {% translate "Import SQLMesh Table as Layer" %}
+{% endblock title %}
+{% block content %}
+  {% partialdef form-content %}
+  <div class="container-fluid mt-4" id="form-content" data-wide-panel="true">
+    <div class="card">
+      <div class="card-header">
+        <h5 class="card-title mb-0">{% translate "Import from SQLMesh" %}</h5>
+      </div>
+      <div class="card-body">
+        <form method="post"
+              action="{{ request.path }}"
+              hx-post="{{ request.path }}"
+              hx-target="#form-content"
+              hx-swap="outerHTML"
+              hx-trigger="submit">
+          {% csrf_token %}
+          {{ form.workspace }}
+          {% if form.non_field_errors %}<div class="alert alert-danger py-2">{{ form.non_field_errors }}</div>{% endif %}
+          {% if form.sqlmesh_table.errors %}
+            <div class="alert alert-danger py-2">{{ form.sqlmesh_table.errors }}</div>
+          {% endif %}
+          <input type="text"
+                 id="sqlmesh-table-filter"
+                 class="form-control form-control-sm mb-2"
+                 placeholder="{% translate 'Filter by schema, table, or description…' %}"
+                 autocomplete="off" />
+          <div class="table-responsive"
+               style="max-height: 320px;
+                      overflow-y: auto;
+                      border: 1px solid #dee2e6;
+                      border-radius: 4px">
+            <table class="table table-sm table-hover mb-0" id="sqlmesh-table-picker">
+              <thead class="table-light" style="position: sticky; top: 0; z-index: 1">
+                <tr>
+                  <th style="width: 2rem"></th>
+                  <th>{% translate "Schema" %}</th>
+                  <th>{% translate "Table" %}</th>
+                  <th>{% translate "Geometry" %}</th>
+                  <th>{% translate "Created" %}</th>
+                  <th>{% translate "Columns" %}</th>
+                </tr>
+              </thead>
+              <tbody>
+                {% for c in candidates %}
+                  <tr class="sqlmesh-row"
+                      data-search="{{ c.schema }} {{ c.table }} {{ c.description }}"
+                      data-name="{{ c.table }}"
+                      data-description="{{ c.description }}"
+                      style="cursor: pointer">
+                    <td>
+                      <input type="radio"
+                             class="form-check-input"
+                             name="sqlmesh_table"
+                             id="sqlmesh-table-{{ forloop.counter }}"
+                             value="{{ c.qualified }}"
+                             {% if form.sqlmesh_table.value == c.qualified %}checked{% endif %}
+                             required
+                             hx-get="{% url 'workspace:sqlmesh_table_preview' %}?schema={{ c.schema }}&table={{ c.table }}"
+                             hx-target="#sqlmesh-detail"
+                             hx-swap="outerHTML"
+                             hx-trigger="change" />
+                    </td>
+                    <td>
+                      <label for="sqlmesh-table-{{ forloop.counter }}"
+                             class="mb-0 small text-muted">{{ c.schema }}</label>
+                    </td>
+                    <td>
+                      <label for="sqlmesh-table-{{ forloop.counter }}" class="mb-0">{{ c.table }}</label>
+                    </td>
+                    <td>
+                      <span class="badge bg-secondary">{{ c.geometry_type }}</span>
+                    </td>
+                    <td class="small text-muted" style="white-space: nowrap">{{ c.created_at|date:"M j, Y"|default:"—" }}</td>
+                    <td class="small">
+                      <span title="{{ c.columns|join:', ' }}">{{ c.columns|length }} {% translate "cols" %}</span>
+                    </td>
+                  </tr>
+                {% empty %}
+                  <tr>
+                    <td colspan="6" class="text-center text-muted py-3">{% translate "No geometry-bearing SQLMesh tables found." %}</td>
+                  </tr>
+                {% endfor %}
+              </tbody>
+            </table>
+          </div>
+          <div class="card bg-light mt-2">
+            <div class="card-body py-2">{% include "workspace/partials/_sqlmesh_table_preview.html" with preview=None %}</div>
+          </div>
+          <div class="row mt-3">
+            <div class="col-md-6 mb-2">
+              {{ form.name.label_tag }}
+              {{ form.name }}
+            </div>
+            <div class="col-md-6 mb-2">
+              {{ form.description.label_tag }}
+              {{ form.description }}
+            </div>
+          </div>
+          <div class="mt-3">
+            <button type="submit" class="btn btn-primary">{% translate "Import" %}</button>
+            <a href="{% url 'workspace:home' %}" class="btn btn-outline-secondary">{% translate "Cancel" %}</a>
+          </div>
+        </form>
+      </div>
+    </div>
+    <script>
+      (function() {
+        var root = document.currentScript.closest('#form-content');
+        if (!root) return;
+        var filterInput = root.querySelector('#sqlmesh-table-filter');
+        var table = root.querySelector('#sqlmesh-table-picker');
+        var nameInput = root.querySelector('#id_name');
+        var descInput = root.querySelector('#id_description');
+        if (!filterInput || !table) return;
+
+        filterInput.addEventListener('input', function() {
+          var q = this.value.toLowerCase();
+          table.querySelectorAll('.sqlmesh-row').forEach(function(row) {
+            var haystack = (row.getAttribute('data-search') || '').toLowerCase();
+            row.hidden = q.length > 0 && haystack.indexOf(q) === -1;
+          });
+        });
+
+        [nameInput, descInput].forEach(function(input) {
+          if (!input) return;
+          input.addEventListener('input', function() {
+            input.dataset.userEdited = 'true';
+          });
+        });
+
+        function titleCase(s) {
+          return s.replace(/_/g, ' ').replace(/\b\w/g, function(c) {
+            return c.toUpperCase();
+          });
+        }
+
+        // One 'change' listener per radio drives autofill, regardless of
+        // whether the change came from a direct click on the radio or a
+        // click anywhere else in the row (dispatched below).
+        table.querySelectorAll('input[type="radio"][name="sqlmesh_table"]').forEach(function(radio) {
+          radio.addEventListener('change', function() {
+            var row = radio.closest('tr');
+            if (!row) return;
+            if (nameInput && nameInput.dataset.userEdited !== 'true') {
+              nameInput.value = titleCase(row.dataset.name || '');
+            }
+            if (descInput && descInput.dataset.userEdited !== 'true') {
+              descInput.value = row.dataset.description || '';
+            }
+          });
+        });
+
+        table.querySelectorAll('.sqlmesh-row').forEach(function(row) {
+          row.addEventListener('click', function(evt) {
+            if (evt.target.tagName === 'INPUT' || evt.target.tagName === 'LABEL') return;
+            var radio = row.querySelector('input[type="radio"]');
+            if (!radio) return;
+            radio.checked = true;
+            radio.dispatchEvent(new Event('change', {
+              bubbles: true
+            }));
+          });
+        });
+      })();
+    </script>
+  </div>
+{% endpartialdef %}
+{% partial form-content %}
+{% endblock content %}

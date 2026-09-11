@@ -23,6 +23,8 @@ from brewgis.workspace.analysis.layer_registry import register_result_layer
 from brewgis.workspace.models import Layer
 from brewgis.workspace.models import SymbologyConfig
 from brewgis.workspace.models import Workspace
+from brewgis.workspace.services.sqlmesh_tables import get_table_preview
+from brewgis.workspace.services.sqlmesh_tables import list_sqlmesh_layer_candidates
 from brewgis.workspace.services.sqlmesh_tables import list_sqlmesh_tables
 from brewgis.workspace.symbology.auto import auto_generate_symbology
 from brewgis.workspace.views.built_forms import HtmxResponseMixin
@@ -70,10 +72,17 @@ class CreateLayerView(HtmxResponseMixin, CreateView):
 
 
 def _sqlmesh_table_choices() -> list[tuple[str, list[tuple[str, str]]]]:
-    """Group importable sqlmesh tables into optgroups keyed by schema."""
+    """Group importable sqlmesh tables into optgroups keyed by schema.
+
+    Only tables with a geometry column are offered — a Layer needs
+    geometry to render on the map, so a non-spatial table isn't a valid
+    choice here (it's still visible in the Data Catalog for other uses).
+    """
     grouped: dict[str, list[tuple[str, str]]] = {}
     for info in list_sqlmesh_tables():
-        label = f"{info.table} ({info.geometry_type or 'no geometry'})"
+        if not info.has_geometry:
+            continue
+        label = f"{info.table} ({info.geometry_type})"
         grouped.setdefault(info.schema, []).append((info.qualified, label))
     return list(grouped.items())
 
@@ -102,7 +111,7 @@ class ImportSqlmeshLayerForm(forms.Form):
 @method_decorator(user_passes_test(lambda u: u.is_authenticated), name="dispatch")
 class ImportSqlmeshLayerView(HtmxResponseMixin, FormView):
     form_class = ImportSqlmeshLayerForm
-    template_name = "form.html"
+    template_name = "workspace/import_sqlmesh_layer.html"
     success_url_name = "workspace:workspace_map"
     extra_context = {"title": "Import SQLMesh Table as Layer"}
 
@@ -115,6 +124,11 @@ class ImportSqlmeshLayerView(HtmxResponseMixin, FormView):
         if table:
             initial["sqlmesh_table"] = table
         return initial
+
+    def get_context_data(self, **kwargs: object) -> dict[str, object]:
+        context = super().get_context_data(**kwargs)
+        context["candidates"] = list_sqlmesh_layer_candidates()
+        return context
 
     def get_redirect_url(self) -> str:
         assert self.object is not None
@@ -134,6 +148,24 @@ class ImportSqlmeshLayerView(HtmxResponseMixin, FormView):
             form.add_error(None, "Could not import this table as a layer.")
             return self.form_invalid(form)
         return super().form_valid(form)
+
+
+@user_passes_test(lambda u: u.is_authenticated)
+def sqlmesh_table_preview(request: HttpRequest) -> HttpResponse:
+    """htmx partial: full column list + a small row sample for one candidate.
+
+    ``schema``/``table`` are validated against the currently discovered
+    sqlmesh tables inside ``get_table_preview`` before touching the
+    database — never trust them as raw SQL identifiers otherwise.
+    """
+    schema = request.GET.get("schema", "")
+    table = request.GET.get("table", "")
+    preview = get_table_preview(schema, table)
+    return render(
+        request,
+        "workspace/partials/_sqlmesh_table_preview.html",
+        {"preview": preview, "schema": schema, "table": table},
+    )
 
 
 @require_POST

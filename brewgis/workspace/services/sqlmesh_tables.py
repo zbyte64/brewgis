@@ -9,7 +9,11 @@ module only enumerates the virtual-layer schemas.
 
 from __future__ import annotations
 
+import re
 from dataclasses import dataclass
+from datetime import UTC
+from datetime import datetime
+from pathlib import Path
 
 from django.db import connection
 
@@ -19,6 +23,8 @@ _EXCLUDED_SCHEMAS = {"public", "information_schema", "sqlmesh_state"}
 
 _POLYGON_TYPES = {"polygon", "multipolygon"}
 _LINE_TYPES = {"linestring", "multilinestring"}
+
+_MODELS_ROOT = Path(__file__).resolve().parents[2] / "sqlmesh" / "models"
 
 
 @dataclass(frozen=True)
@@ -91,6 +97,236 @@ def list_sqlmesh_tables() -> list[SqlmeshTableInfo]:
 
     results.sort(key=lambda info: (info.schema, not info.has_geometry, info.table))
     return results
+
+
+@dataclass(frozen=True)
+class SqlmeshLayerCandidate:
+    """A geometry-bearing sqlmesh table, enriched for the import picker."""
+
+    schema: str
+    table: str
+    geometry_type: str
+    columns: tuple[str, ...]
+    created_at: datetime | None
+    description: str
+
+    @property
+    def qualified(self) -> str:
+        return f"{self.schema}.{self.table}"
+
+
+def _strip_line_comments(text: str) -> str:
+    """Blank out everything from ``--`` to end-of-line, character for character.
+
+    Preserves the original length/offsets (blanks with spaces rather than
+    truncating) so the result stays index-compatible with *text* — needed
+    since callers use offsets found here to slice the original string.
+    Otherwise a stray ``(``/``)`` mentioned inside a comment could also
+    throw off paren-depth counting.
+    """
+
+    def _blank(line: str) -> str:
+        idx = line.find("--")
+        return line if idx == -1 else line[:idx] + " " * (len(line) - idx)
+
+    return "\n".join(_blank(line) for line in text.splitlines())
+
+
+def _model_block_end(text: str) -> int | None:
+    """Return the index just past the closing paren of ``MODEL ( ... )``."""
+    match = re.search(r"\bMODEL\s*\(", text)
+    if not match:
+        return None
+    stripped = _strip_line_comments(text)
+    depth = 1
+    i = match.end()
+    while i < len(stripped) and depth > 0:
+        if stripped[i] == "(":
+            depth += 1
+        elif stripped[i] == ")":
+            depth -= 1
+        i += 1
+    return i if depth == 0 else None
+
+
+def _extract_model_description(text: str) -> str:
+    """Return the ``--`` comment block immediately following ``MODEL (...)``.
+
+    This is the codebase's convention for documenting a model in prose —
+    see e.g. ``models/base_canvas/base_canvas_geometry.sql``. Returns ""
+    when a model has no such trailing comment block.
+    """
+    end = _model_block_end(text)
+    if end is None:
+        return ""
+
+    # `end` lands right after the closing `)` — still mid-line (the model's
+    # trailing `;` usually follows immediately). Skip to the next line
+    # before scanning for the blank line + comment block.
+    next_newline = text.find("\n", end)
+    rest = text[next_newline + 1 :] if next_newline != -1 else ""
+    lines = rest.splitlines()
+    idx = 0
+    while idx < len(lines) and not lines[idx].strip():
+        idx += 1
+
+    desc_lines: list[str] = []
+    while idx < len(lines) and lines[idx].strip().startswith("--"):
+        desc_lines.append(lines[idx].strip()[2:].strip())
+        idx += 1
+
+    while desc_lines and not desc_lines[-1]:
+        desc_lines.pop()
+    return "\n".join(desc_lines).strip()
+
+
+def _model_descriptions_by_table_name() -> dict[str, str]:
+    """Map bare table name (sql filename stem) -> model description.
+
+    SQLMesh models live at ``models/<category>/<table_name>.sql`` where
+    ``<table_name>`` matches the trailing segment of the model's ``name``
+    (blueprints only template the schema/region, never the table name), so
+    the filename stem reliably identifies which model produced a given
+    discovered table.
+    """
+    descriptions: dict[str, str] = {}
+    if not _MODELS_ROOT.exists():
+        return descriptions
+    for path in _MODELS_ROOT.rglob("*.sql"):
+        desc = _extract_model_description(path.read_text())
+        if desc:
+            descriptions[path.stem] = desc
+    return descriptions
+
+
+def _model_created_at() -> dict[tuple[str, str], datetime]:
+    """Map (schema, table) -> earliest known SQLMesh snapshot timestamp.
+
+    Approximates "created" as the first time this model name appeared in
+    SQLMesh's own snapshot history (``sqlmesh_state._snapshots``) — not
+    perfect (old snapshots can be purged), but the best signal available
+    without parsing plan/apply logs.
+    """
+    _name_parts = 3  # "project"."schema"."table"
+    created: dict[tuple[str, str], datetime] = {}
+    try:
+        with connection.cursor() as cursor:
+            cursor.execute(
+                "SELECT name, MIN(updated_ts) FROM sqlmesh_state._snapshots "
+                "GROUP BY name"
+            )
+            rows = cursor.fetchall()
+    except Exception:  # noqa: BLE001 — state schema may not exist in dev
+        return created
+
+    for name, min_ts in rows:
+        parts = [p.strip('"') for p in name.split(".")]
+        if len(parts) != _name_parts or min_ts is None:
+            continue
+        _project, schema, table = parts
+        created[(schema, table)] = datetime.fromtimestamp(min_ts / 1000, tz=UTC)
+    return created
+
+
+def _all_columns_by_table() -> dict[tuple[str, str], list[str]]:
+    """Map (schema, table) -> ordered column names, in one bulk query."""
+    with connection.cursor() as cursor:
+        cursor.execute(
+            "SELECT table_schema, table_name, column_name FROM information_schema.columns "
+            "WHERE column_name != 'geometry' "
+            "ORDER BY table_schema, table_name, ordinal_position"
+        )
+        rows = cursor.fetchall()
+
+    columns_by_table: dict[tuple[str, str], list[str]] = {}
+    for schema, table, column in rows:
+        columns_by_table.setdefault((schema, table), []).append(column)
+    return columns_by_table
+
+
+def list_sqlmesh_layer_candidates() -> list[SqlmeshLayerCandidate]:
+    """Return geometry-bearing sqlmesh tables enriched for the import picker.
+
+    Adds each table's columns, earliest known creation timestamp (from
+    SQLMesh's own snapshot history), and a human-written description
+    (parsed from the model's .sql file).
+    """
+    columns_by_table = _all_columns_by_table()
+    created_by_table = _model_created_at()
+    descriptions = _model_descriptions_by_table_name()
+
+    return [
+        SqlmeshLayerCandidate(
+            schema=info.schema,
+            table=info.table,
+            geometry_type=info.geometry_type or "circle",
+            columns=tuple(columns_by_table.get((info.schema, info.table), ())),
+            created_at=created_by_table.get((info.schema, info.table)),
+            description=descriptions.get(info.table, ""),
+        )
+        for info in list_sqlmesh_tables()
+        if info.has_geometry
+    ]
+
+
+def get_table_preview(
+    schema: str, table: str, limit: int = 8
+) -> dict[str, object] | None:
+    """Return column metadata and a small row sample for a sqlmesh table.
+
+    Returns ``None`` when ``(schema, table)`` isn't a currently discovered
+    sqlmesh table — callers MUST check this before trusting the input,
+    since *schema*/*table* are interpolated directly into SQL below (they
+    can't be bind parameters as identifiers) and this function is the only
+    thing standing between a request and arbitrary-table access.
+    """
+    known = {(info.schema, info.table) for info in list_sqlmesh_tables()}
+    if (schema, table) not in known:
+        return None
+
+    with connection.cursor() as cursor:
+        cursor.execute(
+            "SELECT column_name, data_type FROM information_schema.columns "
+            "WHERE table_schema = %s AND table_name = %s "
+            "ORDER BY ordinal_position",
+            [schema, table],
+        )
+        columns = [{"name": name, "type": dtype} for name, dtype in cursor.fetchall()]
+
+        # A table can have more than one geometry column (e.g. a raw
+        # `geometry` plus a reprojected `local_geometry`) — the catalog is
+        # the authoritative way to find all of them, a name check isn't
+        # enough. Raw WKB isn't useful in a text preview, so all are
+        # excluded from the sample-row query.
+        cursor.execute(
+            "SELECT f_geometry_column FROM geometry_columns "
+            "WHERE f_table_schema = %s AND f_table_name = %s",
+            [schema, table],
+        )
+        geometry_columns = {row[0] for row in cursor.fetchall()}
+
+        display_columns = [
+            c["name"] for c in columns if c["name"] not in geometry_columns
+        ]
+        select_list = ", ".join(f'"{name}"' for name in display_columns) or "1"
+        q_schema = f'"{schema}"'
+        q_table = f'"{table}"'
+        cursor.execute(
+            # schema/table validated against the known-tables set above
+            f"SELECT {select_list} FROM {q_schema}.{q_table} LIMIT %s",  # noqa: S608
+            [limit],
+        )
+        # Plain row tuples (not dicts) — Django templates can't do a dynamic
+        # dict lookup by loop variable, so rows are zipped against
+        # display_columns positionally in the template instead.
+        rows = cursor.fetchall()
+
+    return {
+        "columns": columns,
+        "display_columns": display_columns,
+        "has_geometry": len(display_columns) != len(columns),
+        "rows": rows,
+    }
 
 
 def _required_base_canvas_columns() -> frozenset[str]:

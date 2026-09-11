@@ -105,6 +105,9 @@
     if (contentHtml) {
       contentEl.innerHTML = contentHtml;
     }
+    // Panel content can opt into a wider drawer (e.g. a table-heavy form)
+    // by including an element with data-wide-panel.
+    panel.classList.toggle('wide', !!contentEl.querySelector('[data-wide-panel]'));
     panel.classList.add('open');
     state.rightPanelOpen = true;
     state.panelTitle = title;

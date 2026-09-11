@@ -114,6 +114,14 @@
 .map-shell__right-panel.open {
   right: 0;
 }
+.map-shell__right-panel.wide {
+  width: 960px;
+  right: -960px;
+  max-width: 90vw;
+}
+.map-shell__right-panel.wide.open {
+  right: 0;
+}
 .map-shell__right-panel .panel-header {
   display: flex;
   align-items: center;
@@ -199,7 +207,8 @@
 
 /* ── Responsive ────────────────────────────────────────────── */
 @media (max-width: 992px) {
-  .map-shell__right-panel {
+  .map-shell__right-panel,
+  .map-shell__right-panel.wide {
     width: 320px;
     right: -320px;
   }

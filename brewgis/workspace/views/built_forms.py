@@ -69,10 +69,11 @@ class HtmxResponseMixin:
 
     def form_invalid(self, form: Any) -> HttpResponse:
         if getattr(self.request, "htmx", False):
+            context = self.get_context_data(form=form)  # type: ignore[attr-defined]
             return render(
                 self.request,
                 self.get_template_names()[0],
-                {"form": form, "view": self},
+                context,
             )
         return super().form_invalid(form)  # type: ignore[misc, no-any-return]
 

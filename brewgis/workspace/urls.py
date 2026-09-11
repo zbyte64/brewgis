@@ -43,6 +43,7 @@ from .views import scenario_comparison_data
 from .views import scenario_create
 from .views import scenario_delete
 from .views import scenario_edit
+from .views import sqlmesh_table_preview
 from .views import stitch
 from .views import undo_paint
 from .views import view_workspace_map
@@ -107,6 +108,11 @@ urlpatterns = [
         "layers/import-sqlmesh/",
         ImportSqlmeshLayerView.as_view(),
         name="import_sqlmesh_layer",
+    ),
+    path(
+        "layers/import-sqlmesh/preview/",
+        sqlmesh_table_preview,
+        name="sqlmesh_table_preview",
     ),
     path("layers/<int:pk>/delete/", layer_delete, name="layer_delete"),
     path(
