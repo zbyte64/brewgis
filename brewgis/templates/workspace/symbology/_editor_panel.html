@@ -23,7 +23,11 @@
           <label class="form-label" style="font-size:0.75rem">{% translate "Type" %}</label>
           <select name="symbology_type"
                   class="form-select form-select-sm"
-                  onchange="this.form.submit()">
+                  hx-post="{% url 'workspace:symbology_edit' layer.pk %}?panel=1"
+                  hx-target="#right-panel-content"
+                  hx-swap="innerMorph"
+                  hx-include="closest form"
+                  hx-trigger="change">
             <option value="single"
                     {% if config.symbology_type == 'single' %}selected{% endif %}>{% translate "Single" %}</option>
             <option value="categorical"

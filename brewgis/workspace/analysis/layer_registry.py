@@ -220,8 +220,19 @@ def register_result_layer(
         workspace_id,
     )
 
-    # Auto-generate symbology for new layers
-    if created and numeric_column:
+    # Auto-generate symbology for new layers. Also backfill it for an
+    # existing layer whose config was never customized and never got past
+    # the bare defaults (symbology_type="single", attribute_column="") —
+    # e.g. one first registered against a table that didn't exist yet
+    # (a stale schema/table pointer), where numeric_column was None back
+    # then and this never ran. A config the user has actually touched
+    # (auto_generated=False) or a previously-successful auto-config is
+    # left untouched either way.
+    existing_config = SymbologyConfig.objects.filter(layer=layer).first()
+    needs_auto_config = existing_config is None or (
+        existing_config.auto_generated and not existing_config.attribute_column
+    )
+    if numeric_column and (created or needs_auto_config):
         SymbologyConfig.objects.update_or_create(
             layer=layer,
             defaults={

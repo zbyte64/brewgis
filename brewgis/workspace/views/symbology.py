@@ -41,16 +41,16 @@ def _advanced_open(post_data: dict[str, str]) -> bool:
     return post_data.get("advanced_open") == "1"
 
 
-def _column_choices(layer: Layer, symbology_type: str) -> list[str]:
+def _column_choices(layer: Layer) -> list[str]:
     """Return candidate column names for the "color by" dropdown.
 
-    Graduated symbology needs a numeric column to classify; categorical can
-    use any non-geometry column (text or numeric).
+    Always the full set of non-geometry columns, regardless of the
+    currently-selected symbology Type — the user picks whichever column
+    they want to style by and whichever Type makes sense for it, rather
+    than the dropdown pre-filtering columns based on Type.
     """
     schema = layer.db_schema or layer.workspace.db_schema
     columns = _get_table_columns(schema, layer.db_table)
-    if symbology_type == "graduated":
-        return [c["column_name"] for c in columns if c["numeric"]]
     return [
         c["column_name"] for c in columns if c["data_type"] not in _GEOMETRY_DATA_TYPES
     ]
@@ -97,7 +97,7 @@ def _build_context(
         "palette_names": get_all_names(),
         "palettes_json": json.dumps(PALETTES),
         "geometry_types": ["fill", "line", "circle"],
-        "column_choices": _column_choices(layer, config.symbology_type),
+        "column_choices": _column_choices(layer),
         "advanced_open": advanced_open,
     }
 
