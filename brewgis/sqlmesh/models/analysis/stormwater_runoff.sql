@@ -6,10 +6,10 @@ MODEL (
 WITH land_data AS (
     SELECT
         lc.parcel_id,
-        lc.gross_acres,
+        lc.area_gross_acres,
         lc.impervious_acres,
         lc.impervious_pct,
-        es.geom,
+        es.geometry,
         0.0::double precision AS impervious_acres_baseline
         -- Note: impervious-acres increment not yet modeled in core_increment;
         -- baseline defaults to 0, making pct_baseline = pct below
@@ -22,15 +22,15 @@ WITH land_data AS (
 baseline AS (
     SELECT
         parcel_id,
-        gross_acres,
+        area_gross_acres,
         impervious_acres,
         impervious_pct,
-        geom,
+        geometry,
         GREATEST(
             impervious_pct
             - CASE
-                WHEN gross_acres > 0
-                    THEN impervious_acres_baseline / gross_acres * 100.0
+                WHEN area_gross_acres > 0
+                    THEN impervious_acres_baseline / area_gross_acres * 100.0
                 ELSE 0.0
             END,
             0.0
@@ -44,15 +44,15 @@ runoff AS (
         parcel_id,
         impervious_acres,
         impervious_pct,
-        geom,
+        geometry,
         0.05 + 0.009 * impervious_pct AS runoff_coefficient,
         @stormwater_annual_precipitation_in * 0.9
         * (0.05 + 0.009 * impervious_pct)
-        * gross_acres / 12.0 AS runoff_volume_acre_ft,
+        * area_gross_acres / 12.0 AS runoff_volume_acre_ft,
         0.05 + 0.009 * impervious_pct_baseline AS runoff_coefficient_baseline,
         @stormwater_annual_precipitation_in * 0.9
         * (0.05 + 0.009 * impervious_pct_baseline)
-        * gross_acres / 12.0 AS runoff_baseline_acre_ft
+        * area_gross_acres / 12.0 AS runoff_baseline_acre_ft
     FROM baseline
 )
 
@@ -63,7 +63,7 @@ SELECT
     runoff_coefficient,
     runoff_volume_acre_ft,
     runoff_baseline_acre_ft,
-    geom,
+    geometry,
     runoff_volume_acre_ft - runoff_baseline_acre_ft AS runoff_change_acre_ft,
     CASE
         WHEN runoff_baseline_acre_ft > 0
@@ -84,8 +84,8 @@ FROM runoff;
 -- ------------------------------------------------------------
 
 -- post_statements
-  CREATE INDEX IF NOT EXISTS idx_stormwater_runoff_geom_@snapshot_hash
-  ON @this_model USING GIST (geom);
+  CREATE INDEX IF NOT EXISTS idx_stormwater_runoff_geometry_@snapshot_hash
+  ON @this_model USING GIST (geometry);
   CREATE INDEX IF NOT EXISTS idx_stormwater_runoff_parcel_id_@snapshot_hash
   ON @this_model USING btree (parcel_id);
 ANALYZE @this_model;

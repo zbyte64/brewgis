@@ -6,13 +6,13 @@ MODEL (
 WITH food_data AS (
     SELECT
         es.parcel_id,
-        es.gross_acres,
-        es.population,
-        es.households,
+        es.area_gross_acres,
+        es.pop,
+        es.hh,
         fi.healthy_count,
         fi.unhealthy_count,
         fi.mrfei,
-        es.geom
+        es.geometry
     FROM brewgis.analysis.core_end_state AS es
     LEFT JOIN brewgis.analysis.food_access_inputs AS fi
         ON es.parcel_id = fi.parcel_id
@@ -20,9 +20,9 @@ WITH food_data AS (
 
 SELECT
     parcel_id,
-    gross_acres,
-    population,
-    households,
+    area_gross_acres,
+    pop,
+    hh,
     COALESCE(healthy_count, 0) AS healthy_count,
     COALESCE(unhealthy_count, 0) AS unhealthy_count,
     mrfei,
@@ -34,7 +34,7 @@ SELECT
         WHEN mrfei < 75 THEN 'moderate_access'
         ELSE 'high_access'
     END AS food_access_category,
-    geom
+    geometry
 FROM food_data;
 
 
@@ -47,8 +47,8 @@ FROM food_data;
 -- ------------------------------------------------------------
 
 -- post_statements
-  CREATE INDEX IF NOT EXISTS idx_food_access_geom_@snapshot_hash
-  ON @this_model USING GIST (geom);
+  CREATE INDEX IF NOT EXISTS idx_food_access_geometry_@snapshot_hash
+  ON @this_model USING GIST (geometry);
   CREATE INDEX IF NOT EXISTS idx_food_access_parcel_id_@snapshot_hash
   ON @this_model USING btree (parcel_id);
 ANALYZE @this_model;

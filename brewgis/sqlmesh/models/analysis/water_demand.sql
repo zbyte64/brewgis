@@ -5,47 +5,47 @@ MODEL (
 
 SELECT
     es.parcel_id,
-    es.gross_acres,
+    es.area_gross_acres,
     es.acres_developed,
 
     -- Residential indoor (L/yr): households * household_size * indoor_water_rate * 365
-    es.households * es.household_size * es.indoor_water_rate * 365.0 AS water_demand_res_indoor,
+    es.hh * es.household_size * es.indoor_water_rate * 365.0 AS water_demand_res_indoor,
 
-    -- Residential outdoor (L/yr): irrigated sqft -> m2 * outdoor_water_rate (L/m2/yr)
-    es.res_irrigated_sqft * 0.092903 * es.outdoor_water_rate AS water_demand_res_outdoor,
+    -- Residential outdoor (L/yr): irrigated acres -> m2 * outdoor_water_rate (L/m2/yr)
+    es.residential_irrigated_area * 4046.8564224 * es.outdoor_water_rate AS water_demand_res_outdoor,
 
     -- Non-residential indoor (L/yr): employment * default_rate * 365
-    es.employment_total * @nonres_indoor_water_rate * 365.0 AS water_demand_nonres_indoor,
+    es.emp * @nonres_indoor_water_rate * 365.0 AS water_demand_nonres_indoor,
 
-    -- Non-residential outdoor (L/yr): irrigated sqft -> m2 * outdoor_water_rate
-    es.com_irrigated_sqft * 0.092903 * es.outdoor_water_rate AS water_demand_nonres_outdoor,
+    -- Non-residential outdoor (L/yr): irrigated acres -> m2 * outdoor_water_rate
+    es.commercial_irrigated_area * 4046.8564224 * es.outdoor_water_rate AS water_demand_nonres_outdoor,
 
     -- Total water demand (L/yr)
-    (es.households * es.household_size * es.indoor_water_rate * 365.0)
-      + (es.res_irrigated_sqft * 0.092903 * es.outdoor_water_rate)
-      + (es.employment_total * @nonres_indoor_water_rate * 365.0)
-      + (es.com_irrigated_sqft * 0.092903 * es.outdoor_water_rate)
+    (es.hh * es.household_size * es.indoor_water_rate * 365.0)
+      + (es.residential_irrigated_area * 4046.8564224 * es.outdoor_water_rate)
+      + (es.emp * @nonres_indoor_water_rate * 365.0)
+      + (es.commercial_irrigated_area * 4046.8564224 * es.outdoor_water_rate)
     AS water_demand_total,
 
     -- Per-unit water demand (L/person+job/yr)
-    CASE WHEN (es.population + es.employment_total) > 0
-        THEN ((es.households * es.household_size * es.indoor_water_rate * 365.0)
-              + (es.res_irrigated_sqft * 0.092903 * es.outdoor_water_rate)
-              + (es.employment_total * @nonres_indoor_water_rate * 365.0)
-              + (es.com_irrigated_sqft * 0.092903 * es.outdoor_water_rate))
-             / (es.population + es.employment_total)
+    CASE WHEN (es.pop + es.emp) > 0
+        THEN ((es.hh * es.household_size * es.indoor_water_rate * 365.0)
+              + (es.residential_irrigated_area * 4046.8564224 * es.outdoor_water_rate)
+              + (es.emp * @nonres_indoor_water_rate * 365.0)
+              + (es.commercial_irrigated_area * 4046.8564224 * es.outdoor_water_rate))
+             / (es.pop + es.emp)
         ELSE 0.0
     END AS water_demand_per_unit,
 
-    es.population,
-    es.employment_total,
-    es.dwelling_units_total,
-    es.geom
+    es.pop,
+    es.emp,
+    es.du,
+    es.geometry
 FROM brewgis.analysis.core_end_state AS es;
 
 -- post_statements
-  CREATE INDEX IF NOT EXISTS idx_water_demand_geom_@snapshot_hash
-  ON @this_model USING GIST (geom);
+  CREATE INDEX IF NOT EXISTS idx_water_demand_geometry_@snapshot_hash
+  ON @this_model USING GIST (geometry);
 
   CREATE INDEX IF NOT EXISTS idx_water_demand_parcel_id_@snapshot_hash
   ON @this_model USING btree (parcel_id);

@@ -27,7 +27,7 @@ SELECT
     + COALESCE(f2.sales_tax_revenue, 0.0)
     - COALESCE(f3.service_cost_total, 0.0)
     AS net_fiscal_impact,
-    COALESCE(f1.geom, f2.geom, f3.geom) AS geom
+    COALESCE(f1.geometry, f2.geometry, f3.geometry) AS geometry
 FROM brewgis.analysis.fiscal_property_tax AS f1
 FULL OUTER JOIN brewgis.analysis.fiscal_sales_tax AS f2
     ON f1.parcel_id = f2.parcel_id
@@ -35,8 +35,8 @@ FULL OUTER JOIN brewgis.analysis.fiscal_service_costs AS f3
     ON f1.parcel_id = f3.parcel_id;
 
 -- post_statements
-  CREATE INDEX IF NOT EXISTS idx_fiscal_net_impact_geom_@snapshot_hash
-  ON @this_model USING GIST (geom);
+  CREATE INDEX IF NOT EXISTS idx_fiscal_net_impact_geometry_@snapshot_hash
+  ON @this_model USING GIST (geometry);
   CREATE INDEX IF NOT EXISTS idx_fiscal_net_impact_parcel_id_@snapshot_hash
   ON @this_model USING btree (parcel_id);
 ANALYZE @this_model;

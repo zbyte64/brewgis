@@ -19,23 +19,23 @@ MODEL (
 WITH parcel_data AS (
     SELECT
         es.parcel_id,
-        es.gross_acres,
-        es.population,
-        es.households,
-        es.dwelling_units_total,
-        es.geom,
-        es.land_dev_category,
+        es.area_gross_acres,
+        es.pop,
+        es.hh,
+        es.du,
+        es.geometry,
+        es.land_development_category,
         -- Infrastructure cost: annual service cost + amortized capital cost
-        ROUND((es.dwelling_units_total * @sprawl_infrastructure_cost_per_du)::numeric, 2) AS infrastructure_cost_annual,
-        ROUND((es.dwelling_units_total * @sprawl_capital_cost_per_du)::numeric, 2) AS capital_cost
+        ROUND((es.du * @sprawl_infrastructure_cost_per_du)::numeric, 2) AS infrastructure_cost_annual,
+        ROUND((es.du * @sprawl_capital_cost_per_du)::numeric, 2) AS capital_cost
     FROM brewgis.analysis.core_end_state AS es
 )
 SELECT
     parcel_id,
-    gross_acres,
-    population,
-    households,
-    dwelling_units_total,
+    area_gross_acres,
+    pop,
+    hh,
+    du,
     @sprawl_infrastructure_cost_per_du AS infrastructure_cost_per_du_annual,
     @sprawl_capital_cost_per_du AS capital_cost_per_du,
     infrastructure_cost_annual,
@@ -43,14 +43,14 @@ SELECT
     -- Infrastructure cost per household (annual)
     ROUND(
         (infrastructure_cost_annual + capital_cost / 30.0)  -- 30-year amortization
-        / NULLIF(households, 0)::numeric, 2
+        / NULLIF(hh, 0)::numeric, 2
     ) AS infrastructure_cost_per_hh_annual,
-    geom
+    geometry
 FROM parcel_data;
 
 -- post_statements
-  CREATE INDEX IF NOT EXISTS idx_sprawl_cost_geom_@snapshot_hash
-  ON @this_model USING GIST (geom);
+  CREATE INDEX IF NOT EXISTS idx_sprawl_cost_geometry_@snapshot_hash
+  ON @this_model USING GIST (geometry);
   CREATE INDEX IF NOT EXISTS idx_sprawl_cost_parcel_id_@snapshot_hash
   ON @this_model USING btree (parcel_id);
 ANALYZE @this_model;

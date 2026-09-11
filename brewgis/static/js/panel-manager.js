@@ -260,7 +260,8 @@
   function handleHtmxAfterSettle(evt) {
     var ctx = evt.detail && evt.detail.ctx;
     var sourceEl = ctx && ctx.sourceElement;
-    var panelEvent = sourceEl && sourceEl.getAttribute('data-panel-event');
+    if (!(sourceEl instanceof Element)) return;
+    var panelEvent = sourceEl.getAttribute('data-panel-event');
     if (!panelEvent) return;
 
     if (panelEvent === 'close-panel') {

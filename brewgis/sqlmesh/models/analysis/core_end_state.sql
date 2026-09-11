@@ -4,6 +4,10 @@ MODEL (
   audits (
     not_null(columns := (parcel_id)),
     number_of_rows(threshold := 1)
+  ),
+  depends_on(
+    brewgis.sacog.parcel_shim,
+    @parcel_table
   )
 );
 
@@ -23,31 +27,39 @@ MODEL (
 --   @density_pct:        Density adjustment percentage (default 100)
 --
 -- Output columns:
---   parcel_id, gross_acres, acres_developable, acres_developed,
---   population, households, dwelling_units_total,
---   dwelling_units_sf_ll, dwelling_units_sf_sl,
---   dwelling_units_attached_sf, dwelling_units_mf_2_4,
---   dwelling_units_mf_5p, employment_total,
+--   Column names follow the base_canvas convention wherever a base_canvas
+--   equivalent exists (pop/hh/du/emp, area_*_acres, bldg_area_*, du_*
+--   subtypes, *_irrigated_area in acres) so core_increment.sql can diff
+--   this table against a real base_canvas table without a name/unit
+--   mismatch. Columns with no base_canvas analog (scenario-only quantities
+--   like acres_developed/acres_developable, or BuildingType rate/metadata
+--   pass-throughs like electricity_eui) keep their original names.
+--
+--   parcel_id, area_gross_acres, acres_developable, acres_developed,
+--   pop, hh, du,
+--   du_detsf_ll, du_detsf_sl,
+--   du_attsf, du_mf2to4,
+--   du_mf5p, emp,
 --   building_sqft_total, building_sqft_residential,
---   building_sqft_commercial, building_sqft_office,
---   building_sqft_industrial, building_sqft_public,
---   building_sqft_retail, building_sqft_wholesale,
---   building_sqft_education, building_sqft_healthcare,
---   building_sqft_hotel_lodging, building_sqft_entertainment,
+--   building_sqft_commercial, bldg_area_office_services,
+--   building_sqft_industrial, bldg_area_public_admin,
+--   bldg_area_retail_services, bldg_area_wholesale,
+--   bldg_area_education, bldg_area_medical_services,
+--   bldg_area_accommodation, bldg_area_arts_entertainment,
 --   building_sqft_other,
---   res_irrigated_sqft, com_irrigated_sqft,
+--   residential_irrigated_area, commercial_irrigated_area,
 --   parcel_acres_developed, parcel_acres_agriculture,
 --   parcel_acres_open_space, parcel_acres_vacant,
---   intersection_density, land_dev_category,
+--   intersection_density, land_development_category,
 --   built_form_id, indoor_water_rate, outdoor_water_rate,
---   electricity_eui, gas_eui, household_size, geom
+--   electricity_eui, gas_eui, household_size, geometry
 
 WITH parcel_base AS (
     SELECT
         p.id AS parcel_id,
-        @st_area_projected(p.geom) AS gross_acres,
+        @st_area_projected(p.geometry) AS area_gross_acres,
         -- Developable acres from env_constraint if available, else raw area
-        @st_area_projected(p.geom) AS acres_developable,
+        @st_area_projected(p.geometry) AS acres_developable,
         bf.du_per_acre,
         bf.emp_per_acre,
         bf.far,
@@ -63,18 +75,18 @@ WITH parcel_base AS (
         bf.vintage,
         bf.irrigable_area_fraction,
         p.intersection_density,
-        p.geom,
-        p.du_per_acre IS NOT NULL AND p.du_per_acre > 0 AS is_residential,
+        p.geometry,
+        bf.du_per_acre IS NOT NULL AND bf.du_per_acre > 0 AS is_residential,
         bf.emp_per_acre IS NOT NULL AND bf.emp_per_acre > 0 AS is_nonresidential
-    FROM @parcel_table AS p
-    LEFT JOIN @built_form_table AS bf
+    FROM @ref_model(@parcel_table) AS p
+    LEFT JOIN @ref_model(@built_form_table) AS bf
         ON p.built_form_key = bf.key
 ),
 
 computed AS (
     SELECT
         parcel_id,
-        gross_acres,
+        area_gross_acres,
         acres_developable,
         -- Density-adjusted acres
         @compute_applied_acres(acres_developable, @dev_pct, @gross_net_pct) AS applied_acres,
@@ -95,7 +107,7 @@ computed AS (
         vintage,
         irrigable_area_fraction,
         intersection_density,
-        geom,
+        geometry,
         is_residential,
         is_nonresidential
     FROM parcel_base
@@ -103,7 +115,7 @@ computed AS (
 
 SELECT
     c.parcel_id,
-    c.gross_acres,
+    c.area_gross_acres,
     c.acres_developable,
     c.applied_acres AS acres_developed,
 
@@ -113,62 +125,63 @@ SELECT
             THEN c.density_adjusted_acres * c.du_per_acre
             ELSE 0.0 END,
         COALESCE(c.household_size, 2.5)
-    ) AS population,
+    ) AS pop,
 
     @compute_households(
         CASE WHEN c.du_per_acre IS NOT NULL AND c.du_per_acre > 0
             THEN c.density_adjusted_acres * c.du_per_acre
             ELSE 0.0 END,
         COALESCE(c.vacancy_rate, 5.0)
-    ) AS households,
+    ) AS hh,
 
     -- Dwelling unit breakdown
-    @compute_dwelling_units(c.density_adjusted_acres, c.du_per_acre) AS dwelling_units_sf_ll,
-    0.0 AS dwelling_units_sf_sl,
-    0.0 AS dwelling_units_attached_sf,
-    0.0 AS dwelling_units_mf_2_4,
-    0.0 AS dwelling_units_mf_5p,
+    @compute_dwelling_units(c.density_adjusted_acres, c.du_per_acre) AS du_detsf_ll,
+    0.0 AS du_detsf_sl,
+    0.0 AS du_attsf,
+    0.0 AS du_mf2to4,
+    0.0 AS du_mf5p,
 
-    @compute_dwelling_units(c.density_adjusted_acres, c.du_per_acre) AS dwelling_units_total,
+    @compute_dwelling_units(c.density_adjusted_acres, c.du_per_acre) AS du,
 
     -- Employment
     CASE
         WHEN c.is_nonresidential
         THEN @compute_employment(c.density_adjusted_acres, c.emp_per_acre)
         ELSE 0.0
-    END AS employment_total,
+    END AS emp,
 
     -- Building square footage
     @compute_floor_area(c.density_adjusted_acres, c.far) AS building_sqft_total,
     0.0 AS building_sqft_residential,
     0.0 AS building_sqft_commercial,
-    0.0 AS building_sqft_office,
+    0.0 AS bldg_area_office_services,
     0.0 AS building_sqft_industrial,
-    0.0 AS building_sqft_public,
-    0.0 AS building_sqft_retail,
-    0.0 AS building_sqft_wholesale,
-    0.0 AS building_sqft_education,
-    0.0 AS building_sqft_healthcare,
-    0.0 AS building_sqft_hotel_lodging,
-    0.0 AS building_sqft_entertainment,
+    0.0 AS bldg_area_public_admin,
+    0.0 AS bldg_area_retail_services,
+    0.0 AS bldg_area_wholesale,
+    0.0 AS bldg_area_education,
+    0.0 AS bldg_area_medical_services,
+    0.0 AS bldg_area_accommodation,
+    0.0 AS bldg_area_arts_entertainment,
     0.0 AS building_sqft_other,
 
-    -- Irrigated area
+    -- Irrigated area (acres, matching base_canvas's residential_irrigated_area
+    -- / commercial_irrigated_area — no *43560.0 sqft conversion)
     CASE
         WHEN c.is_residential
-        THEN c.density_adjusted_acres * 43560.0
+        THEN c.density_adjusted_acres
             * (1.0 - COALESCE(c.building_coverage, 30.0) / 100.0)
             * COALESCE(c.irrigable_area_fraction, 0.0)
         ELSE 0.0
-    END AS res_irrigated_sqft,
+    END AS residential_irrigated_area,
 
     CASE
         WHEN c.is_nonresidential
-        THEN c.density_adjusted_acres * 43560.0
+        THEN c.density_adjusted_acres
             * (1.0 - COALESCE(c.building_coverage, 30.0) / 100.0)
             * COALESCE(c.irrigable_area_fraction, 0.0)
         ELSE 0.0
-    END AS com_irrigated_sqft,
+    END AS commercial_irrigated_area,
 
     -- Parcel acres by type
     c.applied_acres AS parcel_acres_developed,
@@ -180,7 +193,7 @@ SELECT
     COALESCE(c.intersection_density, 0.0) AS intersection_density,
 
     -- Land development category
-    @classify_land_dev_category(c.du_per_acre) AS land_dev_category,
+    @classify_land_dev_category(c.du_per_acre) AS land_development_category,
 
     -- Built form metadata
     c.built_form_id,
@@ -189,18 +202,18 @@ SELECT
     COALESCE(c.electricity_eui, 0.0) AS electricity_eui,
     COALESCE(c.gas_eui, 0.0) AS gas_eui,
     c.household_size,
-    c.geom
+    c.geometry
 FROM computed AS c;
 
 -- post_statements
-  CREATE INDEX IF NOT EXISTS idx_core_end_state_geom_@snapshot_hash
-  ON @this_model USING GIST (geom);
+  CREATE INDEX IF NOT EXISTS idx_core_end_state_geometry_@snapshot_hash
+  ON @this_model USING GIST (geometry);
 
   CREATE INDEX IF NOT EXISTS idx_core_end_state_parcel_id_@snapshot_hash
   ON @this_model USING btree (parcel_id);
   CREATE INDEX IF NOT EXISTS idx_core_end_state_parcel_acres_ag_@snapshot_hash
   ON @this_model USING btree (parcel_acres_agriculture);
   CREATE INDEX IF NOT EXISTS idx_core_end_state_land_dev_cat_@snapshot_hash
-  ON @this_model USING btree (land_dev_category);
+  ON @this_model USING btree (land_development_category);
   CREATE INDEX IF NOT EXISTS idx_core_end_state_acres_dev_@snapshot_hash
   ON @this_model USING btree (acres_developed);

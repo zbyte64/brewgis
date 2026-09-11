@@ -27,9 +27,9 @@ WITH scenario_equity AS (
     -- Scenario vulnerability using end-state projected demographics
     SELECT
         es.parcel_id,
-        es.gross_acres,
-        es.population,
-        es.households,
+        es.area_gross_acres,
+        es.pop,
+        es.hh,
         COALESCE(bc.median_income, 0) AS median_income,
         COALESCE(bc.rent_burden_pct, 0) AS rent_burden_pct,
         COALESCE(bc.pct_minority, 0) AS pct_minority,
@@ -40,16 +40,16 @@ WITH scenario_equity AS (
         + CASE WHEN COALESCE(bc.rent_burden_pct, 0) > @displacement_rent_burden_threshold THEN 1 ELSE 0 END
         + CASE WHEN COALESCE(bc.pct_college_educated, 0) < @displacement_college_education_threshold THEN 1 ELSE 0 END
         AS vulnerability_score,
-        es.geom
+        es.geometry
     FROM brewgis.analysis.core_end_state AS es
     LEFT JOIN brewgis.analysis.@base_canvas_table AS bc
         ON es.parcel_id = bc.id
 )
 SELECT
     parcel_id,
-    gross_acres,
-    population,
-    households,
+    area_gross_acres,
+    pop,
+    hh,
     -- Static displacement risk fields (same as displacement_risk model)
     vulnerability_score,
     CASE
@@ -63,12 +63,12 @@ SELECT
     --  vulnerability computed from base canvas alone)
     'same' AS risk_change_vs_base,
     0 AS vulnerability_change,
-    geom
+    geometry
 FROM scenario_equity;
 
 -- post_statements
-  CREATE INDEX IF NOT EXISTS idx_displacement_risk_dynamic_geom_@snapshot_hash
-  ON @this_model USING GIST (geom);
+  CREATE INDEX IF NOT EXISTS idx_displacement_risk_dynamic_geometry_@snapshot_hash
+  ON @this_model USING GIST (geometry);
   CREATE INDEX IF NOT EXISTS idx_displacement_risk_dynamic_parcel_id_@snapshot_hash
   ON @this_model USING btree (parcel_id);
 ANALYZE @this_model;

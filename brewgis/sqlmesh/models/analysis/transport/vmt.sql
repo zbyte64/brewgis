@@ -21,8 +21,8 @@ WITH mode_trips AS (
         mc.parcel_id,
         mc.trips_auto AS auto_trips,
         td.avg_trip_length_km,
-        es.population,
-        es.geom,
+        es.pop,
+        es.geometry,
         mc.trips_auto * td.avg_trip_length_km * @transport_km_to_mi * @transport_circuity_factor
             AS vmt_total
     FROM brewgis.analysis.mode_choice AS mc
@@ -36,18 +36,18 @@ SELECT
     parcel_id,
     vmt_total,
     -- VMT per capita
-    CASE WHEN population > 0
-        THEN vmt_total / population
+    CASE WHEN pop > 0
+        THEN vmt_total / pop
         ELSE 0.0
     END AS vmt_per_capita,
     auto_trips,
     avg_trip_length_km * @transport_km_to_mi AS avg_trip_length_mi,
-    geom
+    geometry
 FROM mode_trips;
 
 -- post_statements
-  CREATE INDEX IF NOT EXISTS idx_vmt_geom_@snapshot_hash
-  ON @this_model USING GIST (geom);
+  CREATE INDEX IF NOT EXISTS idx_vmt_geometry_@snapshot_hash
+  ON @this_model USING GIST (geometry);
   CREATE INDEX IF NOT EXISTS idx_vmt_parcel_id_@snapshot_hash
   ON @this_model USING btree (parcel_id);
 ANALYZE @this_model;

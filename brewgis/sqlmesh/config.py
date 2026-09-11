@@ -256,13 +256,6 @@ _pg_attach_path = (
 def config_factory(**variables):
     return Config(
         project="brewgis",
-        # TEMPORARY: analysis domain deferred (2026-09-08). The
-        # brewgis.analysis.* models depend on an external `public.built_forms`
-        # table (@built_form_table below) that does not exist in this
-        # environment, so their backfill fails and blocks promote of every
-        # plan. Remove this pattern (and provide public.built_forms) when the
-        # analysis domain is brought back online.
-        ignore_patterns=["models/analysis/**/*.sql"],
         default_gateway="postgis",
         gateways={
             "postgis": GatewayConfig(

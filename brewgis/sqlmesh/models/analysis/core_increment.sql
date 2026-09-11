@@ -21,67 +21,75 @@ WITH end_state AS (
 ),
 
 base AS (
-    SELECT * FROM @base_canvas_table
+    SELECT * FROM @ref_model(@base_canvas_table)
 )
 
 SELECT
     COALESCE(es.parcel_id, b.parcel_id) AS parcel_id,
-    b.gross_acres,
+    b.area_gross_acres,
+    -- Scenario-only quantities (no existing-condition analog in base_canvas)
+    -- pass through from the end-state alone rather than diffing.
     es.acres_developable,
     es.acres_developed,
-    es.land_dev_category,
+    es.land_development_category,
 
     -- Dwelling units
-    COALESCE(es.dwelling_units_total, 0.0) - COALESCE(b.dwelling_units_total, 0.0) AS dwelling_units_total,
-    COALESCE(es.dwelling_units_sf_ll, 0.0) - COALESCE(b.dwelling_units_sf_ll, 0.0) AS dwelling_units_sf_ll,
-    COALESCE(es.dwelling_units_sf_sl, 0.0) - COALESCE(b.dwelling_units_sf_sl, 0.0) AS dwelling_units_sf_sl,
-    COALESCE(es.dwelling_units_attached_sf, 0.0) - COALESCE(b.dwelling_units_attached_sf, 0.0) AS dwelling_units_attached_sf,
-    COALESCE(es.dwelling_units_mf_2_4, 0.0) - COALESCE(b.dwelling_units_mf_2_4, 0.0) AS dwelling_units_mf_2_4,
-    COALESCE(es.dwelling_units_mf_5p, 0.0) - COALESCE(b.dwelling_units_mf_5p, 0.0) AS dwelling_units_mf_5p,
+    COALESCE(es.du, 0.0) - COALESCE(b.du, 0.0) AS du,
+    COALESCE(es.du_detsf_ll, 0.0) - COALESCE(b.du_detsf_ll, 0.0) AS du_detsf_ll,
+    COALESCE(es.du_detsf_sl, 0.0) - COALESCE(b.du_detsf_sl, 0.0) AS du_detsf_sl,
+    COALESCE(es.du_attsf, 0.0) - COALESCE(b.du_attsf, 0.0) AS du_attsf,
+    COALESCE(es.du_mf2to4, 0.0) - COALESCE(b.du_mf2to4, 0.0) AS du_mf2to4,
+    COALESCE(es.du_mf5p, 0.0) - COALESCE(b.du_mf5p, 0.0) AS du_mf5p,
 
     -- Population and households
-    COALESCE(es.population, 0.0) - COALESCE(b.population, 0.0) AS population,
-    COALESCE(es.households, 0.0) - COALESCE(b.households, 0.0) AS households,
+    COALESCE(es.pop, 0.0) - COALESCE(b.pop, 0.0) AS pop,
+    COALESCE(es.hh, 0.0) - COALESCE(b.hh, 0.0) AS hh,
 
     -- Employment
-    COALESCE(es.employment_total, 0.0) - COALESCE(b.employment_total, 0.0) AS employment_total,
+    COALESCE(es.emp, 0.0) - COALESCE(b.emp, 0.0) AS emp,
 
-    -- Building square footage
-    COALESCE(es.building_sqft_total, 0.0) - COALESCE(b.building_sqft_total, 0.0) AS building_sqft_total,
-    COALESCE(es.building_sqft_residential, 0.0) - COALESCE(b.building_sqft_residential, 0.0) AS building_sqft_residential,
-    COALESCE(es.building_sqft_commercial, 0.0) - COALESCE(b.building_sqft_commercial, 0.0) AS building_sqft_commercial,
-    COALESCE(es.building_sqft_office, 0.0) - COALESCE(b.building_sqft_office, 0.0) AS building_sqft_office,
-    COALESCE(es.building_sqft_industrial, 0.0) - COALESCE(b.building_sqft_industrial, 0.0) AS building_sqft_industrial,
-    COALESCE(es.building_sqft_public, 0.0) - COALESCE(b.building_sqft_public, 0.0) AS building_sqft_public,
-    COALESCE(es.building_sqft_retail, 0.0) - COALESCE(b.building_sqft_retail, 0.0) AS building_sqft_retail,
-    COALESCE(es.building_sqft_wholesale, 0.0) - COALESCE(b.building_sqft_wholesale, 0.0) AS building_sqft_wholesale,
-    COALESCE(es.building_sqft_education, 0.0) - COALESCE(b.building_sqft_education, 0.0) AS building_sqft_education,
-    COALESCE(es.building_sqft_healthcare, 0.0) - COALESCE(b.building_sqft_healthcare, 0.0) AS building_sqft_healthcare,
-    COALESCE(es.building_sqft_hotel_lodging, 0.0) - COALESCE(b.building_sqft_hotel_lodging, 0.0) AS building_sqft_hotel_lodging,
-    COALESCE(es.building_sqft_entertainment, 0.0) - COALESCE(b.building_sqft_entertainment, 0.0) AS building_sqft_entertainment,
-    COALESCE(es.building_sqft_other, 0.0) - COALESCE(b.building_sqft_other, 0.0) AS building_sqft_other,
+    -- Building square footage: base_canvas has no floor-area equivalent for
+    -- these (only building *footprint*, a different physical quantity), so
+    -- pass through the end-state value rather than diffing against it.
+    es.building_sqft_total,
+    es.building_sqft_residential,
+    es.building_sqft_commercial,
+    es.building_sqft_industrial,
+    es.building_sqft_other,
 
-    -- Irrigation
-    COALESCE(es.res_irrigated_sqft, 0.0) - COALESCE(b.res_irrigated_sqft, 0.0) AS res_irrigated_sqft,
-    COALESCE(es.com_irrigated_sqft, 0.0) - COALESCE(b.com_irrigated_sqft, 0.0) AS com_irrigated_sqft,
+    -- Building square footage by use type (base_canvas bldg_area_* — same
+    -- floor-area concept on both sides, so these diff cleanly)
+    COALESCE(es.bldg_area_office_services, 0.0) - COALESCE(b.bldg_area_office_services, 0.0) AS bldg_area_office_services,
+    COALESCE(es.bldg_area_public_admin, 0.0) - COALESCE(b.bldg_area_public_admin, 0.0) AS bldg_area_public_admin,
+    COALESCE(es.bldg_area_retail_services, 0.0) - COALESCE(b.bldg_area_retail_services, 0.0) AS bldg_area_retail_services,
+    COALESCE(es.bldg_area_wholesale, 0.0) - COALESCE(b.bldg_area_wholesale, 0.0) AS bldg_area_wholesale,
+    COALESCE(es.bldg_area_education, 0.0) - COALESCE(b.bldg_area_education, 0.0) AS bldg_area_education,
+    COALESCE(es.bldg_area_medical_services, 0.0) - COALESCE(b.bldg_area_medical_services, 0.0) AS bldg_area_medical_services,
+    COALESCE(es.bldg_area_accommodation, 0.0) - COALESCE(b.bldg_area_accommodation, 0.0) AS bldg_area_accommodation,
+    COALESCE(es.bldg_area_arts_entertainment, 0.0) - COALESCE(b.bldg_area_arts_entertainment, 0.0) AS bldg_area_arts_entertainment,
 
-    -- Parcel acres
-    COALESCE(es.parcel_acres_developed, 0.0) - COALESCE(b.parcel_acres_developed, 0.0) AS parcel_acres_developed,
-    COALESCE(es.parcel_acres_agriculture, 0.0) - COALESCE(b.parcel_acres_agriculture, 0.0) AS parcel_acres_agriculture,
-    COALESCE(es.parcel_acres_open_space, 0.0) - COALESCE(b.parcel_acres_open_space, 0.0) AS parcel_acres_open_space,
-    COALESCE(es.parcel_acres_vacant, 0.0) - COALESCE(b.parcel_acres_vacant, 0.0) AS parcel_acres_vacant,
+    -- Irrigation (acres, matching base_canvas's own units)
+    COALESCE(es.residential_irrigated_area, 0.0) - COALESCE(b.residential_irrigated_area, 0.0) AS residential_irrigated_area,
+    COALESCE(es.commercial_irrigated_area, 0.0) - COALESCE(b.commercial_irrigated_area, 0.0) AS commercial_irrigated_area,
+
+    -- Parcel acres by land classification — no base_canvas analog, pass
+    -- through from the end-state alone.
+    es.parcel_acres_developed,
+    es.parcel_acres_agriculture,
+    es.parcel_acres_open_space,
+    es.parcel_acres_vacant,
 
     -- Intersection density
     COALESCE(es.intersection_density, 0.0) - COALESCE(b.intersection_density, 0.0) AS intersection_density,
 
     -- Geometry
-    COALESCE(es.geom, b.geom) AS geom
+    COALESCE(es.geometry, b.geometry) AS geometry
 FROM end_state AS es
 FULL OUTER JOIN base AS b ON es.parcel_id = b.parcel_id;
 
 -- post_statements
-  CREATE INDEX IF NOT EXISTS idx_core_increment_geom_@snapshot_hash
-  ON @this_model USING GIST (geom);
+  CREATE INDEX IF NOT EXISTS idx_core_increment_geometry_@snapshot_hash
+  ON @this_model USING GIST (geometry);
 
   CREATE INDEX IF NOT EXISTS idx_core_increment_parcel_id_@snapshot_hash
   ON @this_model USING btree (parcel_id);

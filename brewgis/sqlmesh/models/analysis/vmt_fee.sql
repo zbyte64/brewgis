@@ -20,21 +20,21 @@ MODEL (
 WITH vmt_data AS (
     SELECT
         v.parcel_id,
-        es.gross_acres,
-        es.population,
-        es.households,
+        es.area_gross_acres,
+        es.pop,
+        es.hh,
         v.vmt_total,
         v.vmt_per_capita,
-        v.geom
+        v.geometry
     FROM brewgis.analysis.vmt AS v
     LEFT JOIN brewgis.analysis.core_end_state AS es
         ON v.parcel_id = es.parcel_id
 )
 SELECT
     parcel_id,
-    gross_acres,
-    population,
-    households,
+    area_gross_acres,
+    pop,
+    hh,
     vmt_total,
     @vmt_fee_rate_dollars_per_vmt AS fee_rate_dollars_per_vmt,
     ROUND((vmt_total * @vmt_exempt_pct / 100.0)::numeric, 2) AS vmt_exempt,
@@ -44,12 +44,12 @@ SELECT
     ROUND((vmt_total * @vmt_exempt_pct / 100.0 * @vmt_fee_rate_dollars_per_vmt)::numeric, 2) AS revenue_forgone,
     -- Net revenue after exemption
     ROUND((vmt_total * (1.0 - @vmt_exempt_pct / 100.0) * @vmt_fee_rate_dollars_per_vmt)::numeric, 2) AS net_revenue,
-    geom
+    geometry
 FROM vmt_data;
 
 -- post_statements
-  CREATE INDEX IF NOT EXISTS idx_vmt_fee_geom_@snapshot_hash
-  ON @this_model USING GIST (geom);
+  CREATE INDEX IF NOT EXISTS idx_vmt_fee_geometry_@snapshot_hash
+  ON @this_model USING GIST (geometry);
   CREATE INDEX IF NOT EXISTS idx_vmt_fee_parcel_id_@snapshot_hash
   ON @this_model USING btree (parcel_id);
 ANALYZE @this_model;

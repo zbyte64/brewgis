@@ -28,8 +28,8 @@ WITH energy_data AS (
         ed.energy_electricity_nonres,
         ed.energy_gas_nonres,
         wd.water_demand_total,
-        es.population,
-        es.geom,
+        es.pop,
+        es.geometry,
         -- Energy CO2e (kg): electric kWh x eGRID factor + gas kWh x gas factor
         COALESCE(
             (ed.energy_electricity_res + ed.energy_electricity_nonres) * @ghg_egrid_co2_per_kwh
@@ -65,17 +65,17 @@ SELECT
 
     -- Per-capita CO2e
     CASE
-        WHEN population > 0
-        THEN (co2e_energy_kg + co2e_water_kg) / population
+        WHEN pop > 0
+        THEN (co2e_energy_kg + co2e_water_kg) / pop
         ELSE 0.0
     END AS co2e_per_capita_kg,
 
-    geom
+    geometry
 FROM energy_data;
 
 -- post_statements
-  CREATE INDEX IF NOT EXISTS idx_building_water_ghg_geom_@snapshot_hash
-  ON @this_model USING GIST (geom);
+  CREATE INDEX IF NOT EXISTS idx_building_water_ghg_geometry_@snapshot_hash
+  ON @this_model USING GIST (geometry);
 
   CREATE INDEX IF NOT EXISTS idx_building_water_ghg_parcel_id_@snapshot_hash
   ON @this_model USING btree (parcel_id);

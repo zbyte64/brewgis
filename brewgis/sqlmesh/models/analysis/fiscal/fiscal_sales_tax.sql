@@ -24,21 +24,21 @@ SELECT
     es.parcel_id,
     -- Estimated retail sales
     COALESCE(
-        es.employment_total * @retail_employment_share / 100.0 * @sales_per_employee,
+        es.emp * @retail_employment_share / 100.0 * @sales_per_employee,
         0.0
     ) AS retail_sales,
     -- Sales tax revenue
     COALESCE(
-        es.employment_total * @retail_employment_share / 100.0 * @sales_per_employee
+        es.emp * @retail_employment_share / 100.0 * @sales_per_employee
         * @sales_tax_rate / 100.0,
         0.0
     ) AS sales_tax_revenue,
-    es.geom
+    es.geometry
 FROM brewgis.analysis.core_end_state AS es;
 
 -- post_statements
-  CREATE INDEX IF NOT EXISTS idx_fiscal_sales_tax_geom_@snapshot_hash
-  ON @this_model USING GIST (geom);
+  CREATE INDEX IF NOT EXISTS idx_fiscal_sales_tax_geometry_@snapshot_hash
+  ON @this_model USING GIST (geometry);
 
   CREATE INDEX IF NOT EXISTS idx_fiscal_sales_tax_parcel_id_@snapshot_hash
   ON @this_model USING btree (parcel_id);

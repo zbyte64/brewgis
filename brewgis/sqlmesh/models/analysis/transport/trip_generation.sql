@@ -24,15 +24,15 @@ MODEL (
 WITH parcel_base AS (
     SELECT
         es.parcel_id,
-        es.gross_acres,
-        es.dwelling_units_total,
+        es.area_gross_acres,
+        es.du,
         es.building_sqft_total,
         es.built_form_id,
-        es.land_dev_category,
+        es.land_development_category,
         es.intersection_density,
-        es.population,
-        es.employment_total,
-        es.geom,
+        es.pop,
+        es.emp,
+        es.geometry,
         bf.trip_rate_override,
         bf.pass_by_trip_pct
     FROM brewgis.analysis.core_end_state AS es
@@ -43,14 +43,14 @@ WITH parcel_base AS (
 trip_rates AS (
     SELECT
         parcel_id,
-        gross_acres,
-        dwelling_units_total,
+        area_gross_acres,
+        du,
         building_sqft_total,
-        geom,
+        geometry,
 
         -- Residential trips: dwelling_units * trip_rate_override
         -- (trip_rate_override is trips/dwelling_unit for residential)
-        COALESCE(dwelling_units_total * trip_rate_override, 0.0)
+        COALESCE(du * trip_rate_override, 0.0)
             AS trips_res,
 
         -- Non-residential trips: (building_sqft_total / 1000) * nonres_rate
@@ -63,7 +63,7 @@ trip_rates AS (
 
 SELECT
     parcel_id,
-    gross_acres,
+    area_gross_acres,
     -- Total primary trips with pass-by reduction
     trips_res + trips_nonres_raw * (1.0 - pass_by_trip_pct) AS trips_total,
     trips_res,
@@ -73,12 +73,12 @@ SELECT
     (trips_res + trips_nonres_raw * (1.0 - pass_by_trip_pct)) * @transport_hbw_pct AS trips_hbw,
     (trips_res + trips_nonres_raw * (1.0 - pass_by_trip_pct)) * @transport_hbo_pct AS trips_hbo,
     (trips_res + trips_nonres_raw * (1.0 - pass_by_trip_pct)) * @transport_nhb_pct AS trips_nhb,
-    geom
+    geometry
 FROM trip_rates;
 
 -- post_statements
-  CREATE INDEX IF NOT EXISTS idx_trip_generation_geom_@snapshot_hash
-  ON @this_model USING GIST (geom);
+  CREATE INDEX IF NOT EXISTS idx_trip_generation_geometry_@snapshot_hash
+  ON @this_model USING GIST (geometry);
   CREATE INDEX IF NOT EXISTS idx_trip_generation_parcel_id_@snapshot_hash
   ON @this_model USING btree (parcel_id);
 ANALYZE @this_model;

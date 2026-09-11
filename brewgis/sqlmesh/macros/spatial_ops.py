@@ -111,7 +111,8 @@ def compute_allocation_weight(
     Returns:
         SQL expression for allocation weight ratio.
     """
+    wm_srid = evaluator.var("wm_srid", 3857)
     return f"""public.intersection_acres(
-    ST_Transform({source_alias}.{source_geom}, @variable('wm_srid', 3857)),
-    ST_Transform({target_alias}.{target_geom}, @variable('wm_srid', 3857))
-) / NULLIF(public.acres(ST_Transform({source_alias}.{source_geom}, @variable('wm_srid', 3857))), 0)"""
+    ST_Transform({source_alias}.{source_geom}, {wm_srid}),
+    ST_Transform({target_alias}.{target_geom}, {wm_srid})
+) / NULLIF(public.acres(ST_Transform({source_alias}.{source_geom}, {wm_srid})), 0)"""

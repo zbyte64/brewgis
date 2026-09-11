@@ -22,8 +22,8 @@ WITH vmt_data AS (
         v.vmt_total,
         v.avg_trip_length_mi,
         v.auto_trips,
-        es.population,
-        es.geom
+        es.pop,
+        es.geometry
     FROM brewgis.analysis.vmt AS v
     LEFT JOIN brewgis.analysis.core_end_state AS es
         ON v.parcel_id = es.parcel_id
@@ -39,23 +39,23 @@ SELECT
 
     -- CO2e per capita
     CASE
-        WHEN population > 0
+        WHEN pop > 0
         THEN (
             vmt_total * @transport_ghg_co2_per_mile
             * CASE WHEN @transport_ghg_speed_adjust THEN 1.15 ELSE 1.0 END
-        ) / population
+        ) / pop
         ELSE 0.0
     END AS co2e_per_capita_kg,
 
     vmt_total,
     avg_trip_length_mi,
     auto_trips,
-    geom
+    geometry
 FROM vmt_data;
 
 -- post_statements
-  CREATE INDEX IF NOT EXISTS idx_transport_ghg_geom_@snapshot_hash
-  ON @this_model USING GIST (geom);
+  CREATE INDEX IF NOT EXISTS idx_transport_ghg_geometry_@snapshot_hash
+  ON @this_model USING GIST (geometry);
 
   CREATE INDEX IF NOT EXISTS idx_transport_ghg_parcel_id_@snapshot_hash
   ON @this_model USING btree (parcel_id);

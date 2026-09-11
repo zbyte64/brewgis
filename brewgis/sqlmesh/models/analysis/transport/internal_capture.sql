@@ -41,7 +41,7 @@ study_area AS (
                 4326
             )
             ELSE NULL
-        END AS geom
+        END AS geometry
 ),
 
 -- 2. Parcel locations (from core_end_state via trip_generation)
@@ -55,7 +55,7 @@ parcel_locations AS (
         COALESCE(td.trips_outbound, 0) AS trips_outbound,
         COALESCE(td.trips_inbound, 0) AS trips_inbound,
         COALESCE(td.avg_trip_length_km, 0) AS avg_trip_length_km,
-        ces.geom
+        ces.geometry
     FROM brewgis.analysis.trip_generation tg
     LEFT JOIN brewgis.analysis.trip_distribution td
         ON tg.parcel_id = td.parcel_id
@@ -68,9 +68,9 @@ classified_parcels AS (
     SELECT
         pl.*,
         CASE
-            WHEN sa.geom IS NULL THEN TRUE
-            WHEN pl.geom IS NULL THEN FALSE
-            ELSE ST_Within(ST_Centroid(pl.geom), sa.geom)
+            WHEN sa.geometry IS NULL THEN TRUE
+            WHEN pl.geometry IS NULL THEN FALSE
+            ELSE ST_Within(ST_Centroid(pl.geometry), sa.geometry)
         END AS in_study_area
     FROM parcel_locations pl
     CROSS JOIN study_area sa

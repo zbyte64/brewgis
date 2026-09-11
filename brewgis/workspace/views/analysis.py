@@ -6,6 +6,7 @@ import json
 from typing import Any
 from typing import cast
 
+from crispy_forms.helper import FormHelper
 from django import forms
 from django.contrib.auth.decorators import user_passes_test
 from django.db import connection
@@ -18,6 +19,8 @@ from django.utils.decorators import method_decorator
 from django.views.decorators.http import require_POST
 from django.views.generic.edit import FormView
 
+from brewgis.workspace.analysis.data_export import ensure_export_exists_isolated
+from brewgis.workspace.analysis.module_registry import MODULE_LABELS
 from brewgis.workspace.analysis.pipeline import run_analysis_pipeline
 from brewgis.workspace.models import AnalysisRun
 from brewgis.workspace.models import Scenario
@@ -43,10 +46,7 @@ class AnalysisLaunchForm(forms.Form):
         label="Workspace",
     )
     modules = forms.MultipleChoiceField(
-        choices=[
-            ("env_constraint", "Environmental Constraint"),
-            ("core", "Scenario Builder (Core)"),
-        ],
+        choices=list(MODULE_LABELS.items()),
         widget=forms.CheckboxSelectMultiple,
         label="Analysis Modules",
         help_text="Select the modules to run. Dependencies are resolved automatically.",
@@ -89,6 +89,9 @@ class AnalysisLaunchForm(forms.Form):
             "Workspace | None", kwargs.pop("workspace", None)
         )
         super().__init__(*args, **kwargs)  # type: ignore[arg-type]
+
+        self.helper = FormHelper()
+        self.helper.form_tag = False
 
         if self._workspace:
             self.fields["workspace"].queryset = Workspace.objects.filter(
@@ -198,6 +201,25 @@ class AnalysisLaunchForm(forms.Form):
             built_form_table = data.get("built_form_table") or "built_forms"
             base_canvas_table = data.get("base_canvas_table") or workspace.base_table
             data["base_canvas_table"] = base_canvas_table
+
+            # Mechanically re-sync already-configured BuildingType rows into
+            # the workspace's built_forms table before checking for it. This
+            # never invents data — a workspace with no BuildingType rows
+            # configured still produces an empty table, which the prerequisite
+            # check below still catches and reports.
+            #
+            # Uses its own DB connection (not Django's request-scoped one) so
+            # the write commits immediately: under ATOMIC_REQUESTS the whole
+            # view runs in one transaction, but SQLMesh's engine adapter opens
+            # a separate connection to run the plan — it can't see this table
+            # until it's actually committed, not just pending in our own txn.
+            bt_schema, bt_table = (
+                built_form_table.split(".", 1)
+                if "." in built_form_table
+                else (schema, built_form_table)
+            )
+            ensure_export_exists_isolated(workspace, schema=bt_schema, table=bt_table)
+
             errors = check_analysis_prerequisites(
                 schema=schema,
                 parcel_table=parcel_table,
@@ -206,7 +228,14 @@ class AnalysisLaunchForm(forms.Form):
             )
             if errors:
                 first = errors[0]
-                self.add_error(first.field, first.message)
+                # A hidden field (e.g. built_form_table) renders without an
+                # inline error slot, so its message would otherwise vanish
+                # silently. Surface it as a non-field error instead so it's
+                # always visible regardless of which field it's attached to.
+                if self.fields[first.field].widget.is_hidden:
+                    self.add_error(None, first.message)
+                else:
+                    self.add_error(first.field, first.message)
 
         return data
 

@@ -16,10 +16,13 @@ import logging
 from typing import Any
 
 import deal
+from django.db import connection
 from django.utils import timezone
 
 from brewgis.workspace.analysis.layer_registry import register_result_layer
-from brewgis.workspace.analysis.module_registry import MODULE_RESULT_TABLES
+from brewgis.workspace.analysis.module_registry import (
+    MODULE_RESULT_TABLES,  # noqa: F401 -- re-exported for import_sacog_demo.py
+)
 from brewgis.workspace.analysis.module_registry import MODULE_SQLMESH_SELECTORS
 from brewgis.workspace.analysis.module_registry import get_vars_for_module
 from brewgis.workspace.analysis.module_registry import (
@@ -91,6 +94,21 @@ def _build_model_vars(base_vars: dict[str, Any], schema: str) -> dict[str, objec
     )
 
     return model_vars
+
+
+def _list_tables(schema: str) -> list[str]:
+    """List table/view names actually present in *schema*.
+
+    Used to discover which analysis result views a SQLMesh plan really
+    promoted into a scenario environment, rather than trusting the module
+    registries' static (and drift-prone) table-name lists.
+    """
+    with connection.cursor() as cursor:
+        cursor.execute(
+            "SELECT table_name FROM information_schema.tables WHERE table_schema = %s",
+            [schema],
+        )
+        return [row[0] for row in cursor.fetchall()]
 
 
 def _build_sqlmesh_selectors(modules: list[str]) -> list[str]:
@@ -204,14 +222,25 @@ def run_modules_sync(  # noqa: PLR0913
         skip_tests=True,
         variables=model_vars,
     )
-    for module in ordered:
-        for table_name in MODULE_RESULT_TABLES.get(module, []):
-            table = table_name.format(scenario_id=scenario_id)
-            register_result_layer(
-                workspace_id=workspace_id,
-                schema=target_schema,
-                table=table,
-            )
+    # SQLMesh promotes each plan into its own environment (scenario_<id>)
+    # rather than materializing results directly into the workspace's own
+    # schema. With the default environment_suffix_target (SCHEMA), that
+    # means every brewgis.analysis.* model's virtual-layer view lives under
+    # "analysis__scenario_<id>", under its own bare model name — not in the
+    # workspace's schema, and not under the MODULE_RESULT_TABLES
+    # scenario-suffixed names. Discover the views actually promoted into
+    # that environment rather than trusting the module registries (which
+    # have drifted out of sync with the real model set on both counts —
+    # some listed models no longer exist, some real ones aren't listed).
+    env_schema = f"analysis__scenario_{scenario_id}"
+    for model_name in _list_tables(env_schema):
+        register_result_layer(
+            workspace_id=workspace_id,
+            schema=env_schema,
+            table=model_name,
+            key=f"{model_name}_{scenario_id}",
+            name=f"{model_name.replace('_', ' ').title()} {scenario_id}",
+        )
     return {
         "success": True,
         "completed": ordered,

@@ -30,8 +30,8 @@ WITH mode_data AS (
         mc.trips_auto AS auto_trips,
         mc.trips_transit AS transit_trips,
         td.avg_trip_length_km,
-        es.population,
-        es.geom
+        es.pop,
+        es.geometry
     FROM brewgis.analysis.mode_choice AS mc
     LEFT JOIN brewgis.analysis.trip_distribution AS td
         ON mc.parcel_id = td.parcel_id
@@ -69,12 +69,12 @@ SELECT
         0.0
     ) AS active_trip_share,
 
-    geom
+    geometry
 FROM mode_data;
 
 -- post_statements
-  CREATE INDEX IF NOT EXISTS idx_physical_activity_geom_@snapshot_hash
-  ON @this_model USING GIST (geom);
+  CREATE INDEX IF NOT EXISTS idx_physical_activity_geometry_@snapshot_hash
+  ON @this_model USING GIST (geometry);
   CREATE INDEX IF NOT EXISTS idx_physical_activity_parcel_id_@snapshot_hash
   ON @this_model USING btree (parcel_id);
 ANALYZE @this_model;

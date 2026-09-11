@@ -6,16 +6,16 @@ MODEL (
 WITH parcel_scores AS (
     SELECT
         es.parcel_id,
-        es.gross_acres,
-        es.population,
-        COALESCE(es.population / NULLIF(es.gross_acres, 0.0), 0.0) AS population_density,
+        es.area_gross_acres,
+        es.pop,
+        COALESCE(es.pop / NULLIF(es.area_gross_acres, 0.0), 0.0) AS population_density,
         es.intersection_density,
-        es.land_dev_category,
-        es.employment_total,
-        es.geom,
+        es.land_development_category,
+        es.emp,
+        es.geometry,
         -- Density score: PERCENT_RANK of population density
         PERCENT_RANK() OVER (
-            ORDER BY COALESCE(es.population / NULLIF(es.gross_acres, 0.0), 0.0)
+            ORDER BY COALESCE(es.pop / NULLIF(es.area_gross_acres, 0.0), 0.0)
         ) AS density_score,
         -- Connectivity score: PERCENT_RANK of intersection density
         PERCENT_RANK() OVER (
@@ -23,8 +23,8 @@ WITH parcel_scores AS (
         ) AS connectivity_score,
         -- Mixed-use score: 1.0 if both population and employment present
         CASE
-            WHEN COALESCE(es.population, 0.0) > 0.0
-                AND COALESCE(es.employment_total, 0.0) > 0.0
+            WHEN COALESCE(es.pop, 0.0) > 0.0
+                AND COALESCE(es.emp, 0.0) > 0.0
             THEN 1.0
             ELSE 0.0
         END AS mixed_use_score
@@ -33,12 +33,12 @@ WITH parcel_scores AS (
 
 SELECT
     parcel_id,
-    gross_acres,
-    population,
+    area_gross_acres,
+    pop,
     population_density,
     intersection_density,
-    land_dev_category,
-    employment_total,
+    land_development_category,
+    emp,
     density_score,
     connectivity_score,
     mixed_use_score,
@@ -47,7 +47,7 @@ SELECT
         (density_score + connectivity_score + mixed_use_score) / 3.0 * 100.0,
         0.0
     ) AS sprawl_index,
-    geom
+    geometry
 FROM parcel_scores;
 
 
@@ -59,8 +59,8 @@ FROM parcel_scores;
 -- ------------------------------------------------------------
 
 -- post_statements
-  CREATE INDEX IF NOT EXISTS idx_sprawl_index_geom_@snapshot_hash
-  ON @this_model USING GIST (geom);
+  CREATE INDEX IF NOT EXISTS idx_sprawl_index_geometry_@snapshot_hash
+  ON @this_model USING GIST (geometry);
   CREATE INDEX IF NOT EXISTS idx_sprawl_index_parcel_id_@snapshot_hash
   ON @this_model USING btree (parcel_id);
 ANALYZE @this_model;

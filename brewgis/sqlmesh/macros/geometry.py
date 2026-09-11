@@ -25,4 +25,5 @@ def st_area_projected(evaluator, geom: str) -> str:
     Returns:
         SQL expression computing area in acres using the projected CRS.
     """
-    return f"public.acres(ST_Transform({geom}, @variable('local_srid', 3310)))"
+    srid = evaluator.var("local_srid", 3310)
+    return f"public.acres(ST_Transform({geom}, {srid}))"

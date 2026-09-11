@@ -5,21 +5,21 @@ MODEL (
 
 SELECT
     es.parcel_id,
-    es.gross_acres,
+    es.area_gross_acres,
     es.acres_developed,
 
     -- Residential electric (kWh/yr): dwelling units * avg_unit_area_m2 * EUI (kWh/m2/yr)
     -- Avg unit area = acres_developed * 43560 * FAR / dwelling_units
     COALESCE(
-        es.dwelling_units_total * es.electricity_eui * 0.092903
-        * (es.acres_developed * 43560.0 * @res_far_default / NULLIF(es.dwelling_units_total, 0)),
+        es.du * es.electricity_eui * 0.092903
+        * (es.acres_developed * 43560.0 * @res_far_default / NULLIF(es.du, 0)),
         0.0
     ) AS energy_electricity_res,
 
     -- Residential gas (kWh/yr)
     COALESCE(
-        es.dwelling_units_total * es.gas_eui * 0.092903
-        * (es.acres_developed * 43560.0 * @res_far_default / NULLIF(es.dwelling_units_total, 0)),
+        es.du * es.gas_eui * 0.092903
+        * (es.acres_developed * 43560.0 * @res_far_default / NULLIF(es.du, 0)),
         0.0
     ) AS energy_gas_res,
 
@@ -31,13 +31,13 @@ SELECT
 
     -- Total energy (kWh/yr)
     COALESCE(
-        es.dwelling_units_total * es.electricity_eui * 0.092903
-        * (es.acres_developed * 43560.0 * @res_far_default / NULLIF(es.dwelling_units_total, 0)),
+        es.du * es.electricity_eui * 0.092903
+        * (es.acres_developed * 43560.0 * @res_far_default / NULLIF(es.du, 0)),
         0.0
     )
     + COALESCE(
-        es.dwelling_units_total * es.gas_eui * 0.092903
-        * (es.acres_developed * 43560.0 * @res_far_default / NULLIF(es.dwelling_units_total, 0)),
+        es.du * es.gas_eui * 0.092903
+        * (es.acres_developed * 43560.0 * @res_far_default / NULLIF(es.du, 0)),
         0.0
     )
     + COALESCE(es.building_sqft_total * 0.092903 * es.electricity_eui, 0.0)
@@ -48,13 +48,13 @@ SELECT
     CASE WHEN es.building_sqft_total > 0
         THEN (
             COALESCE(
-                es.dwelling_units_total * es.electricity_eui * 0.092903
-                * (es.acres_developed * 43560.0 * @res_far_default / NULLIF(es.dwelling_units_total, 0)),
+                es.du * es.electricity_eui * 0.092903
+                * (es.acres_developed * 43560.0 * @res_far_default / NULLIF(es.du, 0)),
                 0.0
             )
             + COALESCE(
-                es.dwelling_units_total * es.gas_eui * 0.092903
-                * (es.acres_developed * 43560.0 * @res_far_default / NULLIF(es.dwelling_units_total, 0)),
+                es.du * es.gas_eui * 0.092903
+                * (es.acres_developed * 43560.0 * @res_far_default / NULLIF(es.du, 0)),
                 0.0
             )
             + COALESCE(es.building_sqft_total * 0.092903 * es.electricity_eui, 0.0)
@@ -63,11 +63,11 @@ SELECT
         ELSE 0.0
     END AS energy_intensity_kwh_per_sqft,
 
-    es.dwelling_units_total,
+    es.du,
     es.building_sqft_total,
-    es.population,
-    es.employment_total,
-    es.geom
+    es.pop,
+    es.emp,
+    es.geometry
 
 FROM brewgis.analysis.core_end_state AS es;
 
@@ -80,8 +80,8 @@ FROM brewgis.analysis.core_end_state AS es;
 -- ------------------------------------------------------------
 
 -- post_statements
-  CREATE INDEX IF NOT EXISTS idx_energy_demand_geom_@snapshot_hash
-  ON @this_model USING GIST (geom);
+  CREATE INDEX IF NOT EXISTS idx_energy_demand_geometry_@snapshot_hash
+  ON @this_model USING GIST (geometry);
   CREATE INDEX IF NOT EXISTS idx_energy_demand_parcel_id_@snapshot_hash
   ON @this_model USING btree (parcel_id);
 ANALYZE @this_model;

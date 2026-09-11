@@ -18,17 +18,17 @@ MODEL (
 WITH
 core_agg AS (
     SELECT
-        COALESCE(SUM(population), 0) AS total_population,
-        COALESCE(SUM(households), 0) AS total_households,
-        COALESCE(SUM(dwelling_units_total), 0) AS total_dwelling_units_total,
-        COALESCE(SUM(employment_total), 0) AS total_employment,
-        COALESCE(SUM(population) FILTER (WHERE geom IS NOT NULL), 0) AS total_pop_for_co2e_per_capita
+        COALESCE(SUM(pop), 0) AS total_population,
+        COALESCE(SUM(hh), 0) AS total_households,
+        COALESCE(SUM(du), 0) AS total_dwelling_units_total,
+        COALESCE(SUM(emp), 0) AS total_employment,
+        COALESCE(SUM(pop) FILTER (WHERE geometry IS NOT NULL), 0) AS total_pop_for_co2e_per_capita
     FROM brewgis.analysis.core_end_state
 ),
 vmt_agg AS (
     SELECT
         COALESCE(SUM(vmt_total), 0) AS total_vmt,
-        COALESCE(AVG(vmt_per_capita) FILTER (WHERE population > 0), 0) AS avg_vmt_per_capita
+        COALESCE(AVG(vmt_per_capita) FILTER (WHERE pop > 0), 0) AS avg_vmt_per_capita
     FROM brewgis.analysis.vmt
 ),
 total_ghg_agg AS (
@@ -40,7 +40,7 @@ water_demand_agg AS (
 land_consumption_agg AS (
     SELECT
         COALESCE(SUM(acres_consumed), 0) AS total_land_consumed,
-        COALESCE(AVG(impervious_pct) FILTER (WHERE gross_acres > 0), 0) AS avg_impervious_pct
+        COALESCE(AVG(impervious_pct) FILTER (WHERE area_gross_acres > 0), 0) AS avg_impervious_pct
     FROM brewgis.analysis.land_consumption
 ),
 health_agg AS (
@@ -81,7 +81,7 @@ SELECT
     'blueprint'::text AS scenario_id,
     total_population,
     total_households,
-    total_dwelling_units_total AS dwelling_units_total,
+    total_dwelling_units_total AS du,
     total_employment,
     total_vmt AS vmt_total,
     ROUND((total_vmt / NULLIF(total_population, 0))::numeric, 2) AS vmt_per_capita,

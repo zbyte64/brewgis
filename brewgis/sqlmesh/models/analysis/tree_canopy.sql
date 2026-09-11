@@ -6,31 +6,31 @@ MODEL (
 WITH parcel_canopy AS (
     SELECT
         es.parcel_id,
-        es.gross_acres,
-        es.population,
-        es.households,
-        es.geom,
+        es.area_gross_acres,
+        es.pop,
+        es.hh,
+        es.geometry,
         -- Canopy cover: estimate from land use category
         CASE
-            WHEN es.land_dev_category = 'compact' THEN 25.0  -- dense urban (low canopy)
-            WHEN es.land_dev_category = 'urban' THEN 15.0
-            WHEN es.land_dev_category = 'standard' THEN 30.0  -- suburban (moderate)
-            WHEN es.land_dev_category = 'rural' THEN 45.0     -- rural (high canopy)
+            WHEN es.land_development_category = 'compact' THEN 25.0  -- dense urban (low canopy)
+            WHEN es.land_development_category = 'urban' THEN 15.0
+            WHEN es.land_development_category = 'standard' THEN 30.0  -- suburban (moderate)
+            WHEN es.land_development_category = 'rural' THEN 45.0     -- rural (high canopy)
             ELSE 20.0
         END AS canopy_pct
     FROM brewgis.analysis.core_end_state AS es
 )
 SELECT
     parcel_id,
-    gross_acres,
-    population,
-    households,
+    area_gross_acres,
+    pop,
+    hh,
     canopy_pct,
     -- Surface temp proxy: baseline minus cooling effect
     ROUND((@tree_canopy_baseline_temp - (canopy_pct / 10.0 * @tree_canopy_temp_per_10pct))::numeric, 1) AS surface_temp_f,
     -- Heat exposure score: 0-100 (higher = worse, inverse of canopy)
     ROUND(GREATEST(0.0, 100.0 - (canopy_pct * 4.0))::numeric, 1) AS heat_exposure_score,
-    geom
+    geometry
 FROM parcel_canopy;
 
 
@@ -42,8 +42,8 @@ FROM parcel_canopy;
 -- ------------------------------------------------------------
 
 -- post_statements
-  CREATE INDEX IF NOT EXISTS idx_tree_canopy_geom_@snapshot_hash
-  ON @this_model USING GIST (geom);
+  CREATE INDEX IF NOT EXISTS idx_tree_canopy_geometry_@snapshot_hash
+  ON @this_model USING GIST (geometry);
   CREATE INDEX IF NOT EXISTS idx_tree_canopy_parcel_id_@snapshot_hash
   ON @this_model USING btree (parcel_id);
 ANALYZE @this_model;

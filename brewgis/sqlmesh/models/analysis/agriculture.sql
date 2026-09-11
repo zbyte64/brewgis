@@ -10,7 +10,7 @@ SELECT
     -- Acres cultivated: use parcel_acres_agriculture, or acres_developed as proxy for rural parcels
     CASE
         WHEN es.parcel_acres_agriculture > 0 THEN es.parcel_acres_agriculture
-        WHEN es.land_dev_category = 'rural' AND es.acres_developed > 0
+        WHEN es.land_development_category = 'rural' AND es.acres_developed > 0
             THEN es.acres_developed
         ELSE 0.0
     END AS acres_cultivated,
@@ -18,7 +18,7 @@ SELECT
     CASE
         WHEN es.parcel_acres_agriculture > 0
             THEN es.parcel_acres_agriculture * @crop_yield_per_acre
-        WHEN es.land_dev_category = 'rural' AND es.acres_developed > 0
+        WHEN es.land_development_category = 'rural' AND es.acres_developed > 0
             THEN es.acres_developed * @crop_yield_per_acre
         ELSE 0.0
     END AS crop_yield_tons,
@@ -26,7 +26,7 @@ SELECT
     CASE
         WHEN es.parcel_acres_agriculture > 0
             THEN es.parcel_acres_agriculture * @crop_yield_per_acre * @crop_market_price_per_ton
-        WHEN es.land_dev_category = 'rural' AND es.acres_developed > 0
+        WHEN es.land_development_category = 'rural' AND es.acres_developed > 0
             THEN es.acres_developed * @crop_yield_per_acre * @crop_market_price_per_ton
         ELSE 0.0
     END AS market_value,
@@ -34,7 +34,7 @@ SELECT
     CASE
         WHEN es.parcel_acres_agriculture > 0
             THEN es.parcel_acres_agriculture * @crop_production_cost_per_acre
-        WHEN es.land_dev_category = 'rural' AND es.acres_developed > 0
+        WHEN es.land_development_category = 'rural' AND es.acres_developed > 0
             THEN es.acres_developed * @crop_production_cost_per_acre
         ELSE 0.0
     END AS production_cost,
@@ -43,7 +43,7 @@ SELECT
         WHEN es.parcel_acres_agriculture > 0
             THEN es.parcel_acres_agriculture * @crop_yield_per_acre * @crop_market_price_per_ton
                  - es.parcel_acres_agriculture * @crop_production_cost_per_acre
-        WHEN es.land_dev_category = 'rural' AND es.acres_developed > 0
+        WHEN es.land_development_category = 'rural' AND es.acres_developed > 0
             THEN es.acres_developed * @crop_yield_per_acre * @crop_market_price_per_ton
                  - es.acres_developed * @crop_production_cost_per_acre
         ELSE 0.0
@@ -52,7 +52,7 @@ SELECT
     CASE
         WHEN es.parcel_acres_agriculture > 0
             THEN es.parcel_acres_agriculture * @crop_water_per_acre_af
-        WHEN es.land_dev_category = 'rural' AND es.acres_developed > 0
+        WHEN es.land_development_category = 'rural' AND es.acres_developed > 0
             THEN es.acres_developed * @crop_water_per_acre_af
         ELSE 0.0
     END AS water_consumption_af,
@@ -60,7 +60,7 @@ SELECT
     CASE
         WHEN es.parcel_acres_agriculture > 0
             THEN es.parcel_acres_agriculture * @crop_labor_hours_per_acre
-        WHEN es.land_dev_category = 'rural' AND es.acres_developed > 0
+        WHEN es.land_development_category = 'rural' AND es.acres_developed > 0
             THEN es.acres_developed * @crop_labor_hours_per_acre
         ELSE 0.0
     END AS labor_hours,
@@ -68,15 +68,15 @@ SELECT
     CASE
         WHEN es.parcel_acres_agriculture > 0
             THEN es.parcel_acres_agriculture * @crop_truck_trips_per_acre
-        WHEN es.land_dev_category = 'rural' AND es.acres_developed > 0
+        WHEN es.land_development_category = 'rural' AND es.acres_developed > 0
             THEN es.acres_developed * @crop_truck_trips_per_acre
         ELSE 0.0
     END AS truck_trips,
-    es.geom
+    es.geometry
 FROM brewgis.analysis.core_end_state AS es
 WHERE
     es.parcel_acres_agriculture > 0
-    OR (es.land_dev_category = 'rural' AND es.acres_developed > 0);
+    OR (es.land_development_category = 'rural' AND es.acres_developed > 0);
 
 
 -- ------------------------------------------------------------
@@ -88,8 +88,8 @@ WHERE
 -- ------------------------------------------------------------
 
 -- post_statements
-  CREATE INDEX IF NOT EXISTS idx_agriculture_geom_@snapshot_hash
-  ON @this_model USING GIST (geom);
+  CREATE INDEX IF NOT EXISTS idx_agriculture_geometry_@snapshot_hash
+  ON @this_model USING GIST (geometry);
   CREATE INDEX IF NOT EXISTS idx_agriculture_parcel_id_@snapshot_hash
   ON @this_model USING btree (parcel_id);
 ANALYZE @this_model;

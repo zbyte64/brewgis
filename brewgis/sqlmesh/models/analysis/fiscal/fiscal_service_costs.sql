@@ -26,22 +26,22 @@ MODEL (
 SELECT
     es.parcel_id,
     -- Schools and infrastructure
-    COALESCE(es.dwelling_units_total * @cost_per_du, 0.0) AS service_cost_schools,
+    COALESCE(es.du * @cost_per_du, 0.0) AS service_cost_schools,
     -- Police, fire, libraries
-    COALESCE(es.population * @cost_per_capita, 0.0) AS service_cost_public_safety,
+    COALESCE(es.pop * @cost_per_capita, 0.0) AS service_cost_public_safety,
     -- Roads and transit
-    COALESCE(es.employment_total * @cost_per_employee, 0.0) AS service_cost_roads,
+    COALESCE(es.emp * @cost_per_employee, 0.0) AS service_cost_roads,
     -- Total service cost
-    COALESCE(es.dwelling_units_total * @cost_per_du, 0.0)
-    + COALESCE(es.population * @cost_per_capita, 0.0)
-    + COALESCE(es.employment_total * @cost_per_employee, 0.0)
+    COALESCE(es.du * @cost_per_du, 0.0)
+    + COALESCE(es.pop * @cost_per_capita, 0.0)
+    + COALESCE(es.emp * @cost_per_employee, 0.0)
     AS service_cost_total,
-    es.geom
+    es.geometry
 FROM brewgis.analysis.core_end_state AS es;
 
 -- post_statements
-  CREATE INDEX IF NOT EXISTS idx_fiscal_service_costs_geom_@snapshot_hash
-  ON @this_model USING GIST (geom);
+  CREATE INDEX IF NOT EXISTS idx_fiscal_service_costs_geometry_@snapshot_hash
+  ON @this_model USING GIST (geometry);
 
   CREATE INDEX IF NOT EXISTS idx_fiscal_service_costs_parcel_id_@snapshot_hash
   ON @this_model USING btree (parcel_id);
