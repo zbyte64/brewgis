@@ -88,6 +88,9 @@ class AnalysisLaunchForm(forms.Form):
         self._workspace: Workspace | None = cast(
             "Workspace | None", kwargs.pop("workspace", None)
         )
+        scenario: Scenario | None = cast(
+            "Scenario | None", kwargs.pop("scenario", None)
+        )
         super().__init__(*args, **kwargs)  # type: ignore[arg-type]
 
         self.helper = FormHelper()
@@ -103,11 +106,28 @@ class AnalysisLaunchForm(forms.Form):
             # The workspace's configured base canvas already has one row per
             # parcel, so it doubles as the parcel table unless overridden.
             self.fields["base_canvas_table"].initial = self._workspace.base_table
-            self.fields["parcel_table"].initial = self._workspace.base_table
-            self.fields["parcel_table"].help_text = (
-                "Defaults to the workspace's base canvas table. "
-                "Override to use a different parcel source."
-            )
+
+            if scenario is not None:
+                # Default to the scenario's canvas view — it COALESCEs any
+                # painted overlay over the base canvas, so an analysis run
+                # picks up paint edits by default instead of silently
+                # ignoring them. Harmless for an unpainted scenario since
+                # the view then falls through to base canvas values anyway.
+                self.fields[
+                    "parcel_table"
+                ].initial = f"{scenario.target_schema}.scenario_{scenario.slug}_canvas"
+                self.fields["parcel_table"].help_text = (
+                    "Defaults to the selected scenario's canvas view "
+                    "(base canvas + painted edits). Override to use a "
+                    "different parcel source."
+                )
+                self.fields["scenario"].initial = scenario.pk
+            else:
+                self.fields["parcel_table"].initial = self._workspace.base_table
+                self.fields["parcel_table"].help_text = (
+                    "Defaults to the workspace's base canvas table. "
+                    "Override to use a different parcel source."
+                )
 
             # Filter scenario queryset to the selected workspace
             self.fields["scenario"].queryset = Scenario.objects.filter(  # type: ignore[attr-defined]
@@ -255,16 +275,42 @@ class AnalysisLaunchView(HtmxResponseMixin, FormView):
         workspace_pk = self.request.GET.get("workspace") or self.kwargs.get(
             "workspace_pk",
         )
+        workspace: Workspace | None = None
         if workspace_pk:
             try:
-                kwargs["workspace"] = Workspace.objects.get(pk=workspace_pk)
+                workspace = Workspace.objects.get(pk=workspace_pk)
+                kwargs["workspace"] = workspace
             except Workspace.DoesNotExist:
                 pass
+
+        # ``?scenario=`` follows the same convention ``panel_layer_list``
+        # uses to learn the map's currently-active scenario.
+        scenario_pk = self.request.GET.get("scenario")
+        if workspace is not None and scenario_pk:
+            kwargs["scenario"] = Scenario.objects.filter(
+                pk=scenario_pk, workspace=workspace
+            ).first()
         return kwargs
 
     def get_context_data(self, **kwargs: object) -> dict[str, object]:
         context = super().get_context_data(**kwargs)
         context["title"] = "Run Analysis"
+
+        workspace_pk = self.request.GET.get("workspace") or self.kwargs.get(
+            "workspace_pk",
+        )
+        if workspace_pk:
+            try:
+                workspace = Workspace.objects.get(pk=workspace_pk)
+            except Workspace.DoesNotExist:
+                workspace = None
+            if workspace is not None:
+                canvas_map = {
+                    str(s.pk): f"{s.target_schema}.scenario_{s.slug}_canvas"
+                    for s in workspace.scenarios.all()
+                }
+                canvas_map[""] = workspace.base_table
+                context["scenario_canvas_map"] = json.dumps(canvas_map)
         return context
 
     def form_valid(self, form: AnalysisLaunchForm) -> HttpResponse:

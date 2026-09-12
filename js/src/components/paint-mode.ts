@@ -1,5 +1,7 @@
 import maplibregl from 'maplibre-gl'
 import MapboxDraw from 'maplibre-gl-draw'
+import booleanPointInPolygon from '@turf/boolean-point-in-polygon'
+import centroid from '@turf/centroid'
 import type { FeatureSelectedEvent } from '../types/index.js'
 
 /**
@@ -14,6 +16,7 @@ export class PaintModeController {
   private _selectionMode: 'click' | 'box' | 'polygon' = 'polygon'
   private _canvasLayerId = ''
   private _canvasSourceId = ''
+  private _canvasSourceLayer = 'default'
   private _selectedFeatureIds: string[] = []
 
   // Box select state
@@ -41,9 +44,10 @@ export class PaintModeController {
   }
 
   /** Set the canvas view layer info for querying features. */
-  setCanvasLayer(layerId: string, sourceId: string): void {
+  setCanvasLayer(layerId: string, sourceId: string, sourceLayer = 'default'): void {
     this._canvasLayerId = layerId
     this._canvasSourceId = sourceId
+    this._canvasSourceLayer = sourceLayer
   }
 
   /** Set the selection mode. */
@@ -61,6 +65,16 @@ export class PaintModeController {
     if (this._active) return
     this._active = true
 
+    // Disable drag-to-pan/box-zoom for every selection mode, not just
+    // Box — otherwise a drag started anywhere on the map (even while in
+    // Click or Polygon mode) just pans the map instead of doing nothing,
+    // which reads as "dragging doesn't work" rather than "use a click."
+    // The crosshair cursor is the other half of that signal: paint mode
+    // is a select/paint tool, not the normal pan-the-map cursor.
+    this._map.dragPan.disable()
+    this._map.boxZoom.disable()
+    this._map.getCanvas().style.cursor = 'crosshair'
+
     if (this._selectionMode === 'polygon') {
       this._activatePolygonMode()
     } else if (this._selectionMode === 'box') {
@@ -74,6 +88,10 @@ export class PaintModeController {
   deactivate(): void {
     if (!this._active) return
     this._active = false
+
+    this._map.dragPan.enable()
+    this._map.boxZoom.enable()
+    this._map.getCanvas().style.cursor = ''
 
     this._removeDraw()
     this._removeClickHandler()
@@ -192,7 +210,13 @@ export class PaintModeController {
   }
 
   private _createBoxRect(x: number, y: number): void {
-    this._removeBoxRect()
+    // Only clear a leftover DOM element from a previous box here — NOT
+    // the full _removeBoxRect(), which also resets _isBoxSelecting and
+    // _boxStartPoint. Those were just set by the mousedown handler
+    // immediately before this call; clobbering them here meant every
+    // subsequent mousemove/mouseup saw isBoxSelecting === false and
+    // no-opped, so box-select never actually selected anything.
+    this._removeBoxRectElement()
     const rect = document.createElement('div')
     rect.style.cssText = `
       position: absolute;
@@ -210,11 +234,16 @@ export class PaintModeController {
     this._boxRect = rect
   }
 
-  private _removeBoxRect(): void {
+  /** Remove the box rectangle's DOM element only, leaving selection state untouched. */
+  private _removeBoxRectElement(): void {
     if (this._boxRect && this._boxRect.parentNode) {
       this._boxRect.parentNode.removeChild(this._boxRect)
     }
     this._boxRect = null
+  }
+
+  private _removeBoxRect(): void {
+    this._removeBoxRectElement()
     this._boxStartPoint = null
     this._isBoxSelecting = false
   }
@@ -233,6 +262,17 @@ export class PaintModeController {
 
     // eslint-disable-next-line @typescript-eslint/no-explicit-any, @typescript-eslint/no-unsafe-argument
     this._map.addControl(this._draw as any, 'top-left')
+
+    // Drop straight into drawing instead of leaving the draw control in
+    // its idle 'simple_select' mode, which would otherwise require the
+    // user to separately click MapboxDraw's own polygon tool icon first.
+    this._draw.changeMode('draw_polygon')
+
+    // MapboxDraw's own mode setup re-enables dragPan regardless (its
+    // polygon tool is click-to-place-a-vertex, not drag-based, so it
+    // doesn't need drag-to-pan off) — reassert our own disable so a drag
+    // reads as "not supported here" rather than silently panning.
+    this._map.dragPan.disable()
 
     this._map.on('draw.create', this._handleDrawCreate)
     this._map.on('draw.delete', this._handleDrawDelete)
@@ -256,10 +296,31 @@ export class PaintModeController {
   private _handleDrawCreate = (e: { features: GeoJSON.Feature[] }): void => {
     const features = e.features
     if (features.length === 0) return
+    const drawnPolygon = features[0]
 
-    // Get bounding box of drawn polygon and query real features
+    // The bbox query is just a broad-phase filter (screen-space rect);
+    // narrow it down to features actually inside the drawn shape (by
+    // centroid), not merely its bounding box — otherwise a triangle (or
+    // any non-rectangular shape) selects everything in its
+    // corner-to-corner rectangle, including parcels well outside the
+    // drawn outline.
     const bbox = this._computeBbox(features)
-    const tileFeatures = this._queryFeaturesInBbox(bbox)
+    const candidates = this._queryRawFeaturesInBbox(bbox)
+    const withinPolygon = candidates.filter((f) => {
+      if (!f.geometry) return false
+      try {
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        const center = centroid(f as any)
+        return booleanPointInPolygon(
+          center,
+          // eslint-disable-next-line @typescript-eslint/no-explicit-any
+          drawnPolygon as any,
+        )
+      } catch {
+        return false
+      }
+    })
+    const tileFeatures = this._resolveFeatureIds(withinPolygon)
 
     this._selectedFeatureIds = tileFeatures.map((f) => f.id)
     this._highlightFeatures(this._selectedFeatureIds)
@@ -269,12 +330,11 @@ export class PaintModeController {
       'draw',
     )
 
-    // Enter simple_select so features are selectable
-    if (this._draw) {
-      this._draw.changeMode('simple_select', {
-        featureIds: features.map((f) => String(f.id ?? '')),
-      })
-    }
+    // No need to switch modes here — 'draw.create' only fires as part of
+    // MapboxDraw's own draw_polygon-finishing sequence, which already
+    // ends by transitioning itself to simple_select. Calling changeMode()
+    // again from inside this handler re-entered that same in-progress
+    // stop/transition and recursed until the stack overflowed.
   }
 
   private _handleDrawDelete = (_e: { features: GeoJSON.Feature[] }): void => {
@@ -314,26 +374,50 @@ export class PaintModeController {
   private _queryFeaturesAtPoint(e: MouseEvent): { id: string }[] {
     if (!this._canvasLayerId) return []
     try {
-      const point = { x: e.offsetX, y: e.offsetY } as any
+      // MapLibre's queryRenderedFeatures only recognizes a PointLike
+      // ([number, number] or a maplibregl.Point) as a single-point query —
+      // a plain {x, y} object doesn't match, silently falls through to the
+      // "no geometry" overload, and returns every feature in the layer.
+      const point: [number, number] = [e.offsetX, e.offsetY]
       const features = this._map.queryRenderedFeatures(point, {
         layers: [this._canvasLayerId],
       })
-      return features.filter((f) => f.id != null).map((f) => ({ id: String(f.id) }))
+      return this._resolveFeatureIds(features)
     } catch {
       return []
     }
   }
 
   private _queryFeaturesInBbox(bbox: [[number, number], [number, number]]): { id: string }[] {
+    return this._resolveFeatureIds(this._queryRawFeaturesInBbox(bbox))
+  }
+
+  private _queryRawFeaturesInBbox(
+    bbox: [[number, number], [number, number]],
+  ): maplibregl.MapGeoJSONFeature[] {
     if (!this._canvasLayerId) return []
     try {
-      const features = this._map.queryRenderedFeatures(bbox, {
-        layers: [this._canvasLayerId],
-      })
-      return features.filter((f) => f.id != null).map((f) => ({ id: String(f.id) }))
+      return this._map.queryRenderedFeatures(bbox, { layers: [this._canvasLayerId] })
     } catch {
       return []
     }
+  }
+
+  /**
+   * Resolve a stable id for each queried feature, preferring the native/
+   * promoted MVT feature id but falling back to `properties.id` — the
+   * `promoteId: "id"` source option (see map.py) covers the common case,
+   * but a workspace whose base table's primary key isn't literally named
+   * "id" would otherwise leave every feature.id null and silently drop
+   * every result, making selection look like it does nothing.
+   */
+  private _resolveFeatureIds(features: maplibregl.MapGeoJSONFeature[]): { id: string }[] {
+    const ids: { id: string }[] = []
+    for (const f of features) {
+      const id = f.id ?? (f.properties && (f.properties as Record<string, unknown>).id)
+      if (id != null) ids.push({ id: String(id) })
+    }
+    return ids
   }
 
   private _computeBbox(features: GeoJSON.Feature[]): [[number, number], [number, number]] {
@@ -344,10 +428,16 @@ export class PaintModeController {
 
     for (const feature of features) {
       this._walkCoordinates(feature.geometry, (coord) => {
-        minX = Math.min(minX, coord[0])
-        minY = Math.min(minY, coord[1])
-        maxX = Math.max(maxX, coord[0])
-        maxY = Math.max(maxY, coord[1])
+        // The drawn feature's coordinates are geographic (lng/lat) —
+        // queryRenderedFeatures needs screen pixels, so project each
+        // point first. Using the raw lng/lat values directly produced a
+        // degenerate ~0.001px query box, which is why a drawn polygon
+        // never actually selected anything underneath it.
+        const point = this._map.project(coord as [number, number])
+        minX = Math.min(minX, point.x)
+        minY = Math.min(minY, point.y)
+        maxX = Math.max(maxX, point.x)
+        maxY = Math.max(maxY, point.y)
       })
     }
 
@@ -379,7 +469,14 @@ export class PaintModeController {
     if (!this._canvasSourceId) return
     for (const id of ids) {
       try {
-        this._map.setFeatureState({ source: this._canvasSourceId, id } as any, { selected: true })
+        // `sourceLayer` is required for vector sources — without it,
+        // MapLibre logs "The sourceLayer parameter must be provided for
+        // vector source types" and silently drops the feature-state
+        // update, so nothing ever visually highlights.
+        this._map.setFeatureState(
+          { source: this._canvasSourceId, sourceLayer: this._canvasSourceLayer, id },
+          { selected: true },
+        )
       } catch {
         // Feature or source may not exist
       }
@@ -389,7 +486,10 @@ export class PaintModeController {
   private _clearSelectionHighlight(): void {
     if (!this._canvasSourceId) return
     try {
-      ;(this._map as any).removeFeatureState({ source: this._canvasSourceId })
+      this._map.removeFeatureState({
+        source: this._canvasSourceId,
+        sourceLayer: this._canvasSourceLayer,
+      })
     } catch {
       // Source may not exist
     }

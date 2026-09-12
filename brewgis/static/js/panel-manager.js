@@ -68,11 +68,18 @@
         var wsId = document.getElementById('left-sidebar')?.getAttribute('data-workspace-pk');
         if (!wsId) return;
 
+        // The map's active scenario (if any) is carried via ?scenario= so
+        // panel views can default to its data (e.g. the Analysis panel
+        // defaulting "Parcel Table" to the scenario's canvas view instead
+        // of the raw, unpainted base table).
+        var scenarioId = getMapEl()?.getAttribute('scenario-id');
+        var scenarioQuery = scenarioId ? '?scenario=' + encodeURIComponent(scenarioId) : '';
+
         var urls = {
-          layers: '/workspace/' + wsId + '/panel/layer-list/',
+          layers: '/workspace/' + wsId + '/panel/layer-list/' + scenarioQuery,
           catalog: '/workspace/' + wsId + '/panel/catalog/',
           import: '/workspace/' + wsId + '/panel/import/',
-          analysis: '/workspace/' + wsId + '/panel/analysis/',
+          analysis: '/workspace/' + wsId + '/panel/analysis/' + scenarioQuery,
           reports: '/workspace/' + wsId + '/panel/reports/',
           basemap: '/workspace/' + wsId + '/panel/basemap/',
         };
@@ -83,10 +90,14 @@
           this.activePanel = name;
         }
 
-        // Expand sidebar if collapsed
-        if (!this.leftSidebarOpen) {
-          this.toggleSidebar();
-        }
+        // Expand sidebar if collapsed — set the flag directly rather than
+        // calling toggleSidebar(), which would *also* fire its own
+        // layer-list load into the same target (content has no child
+        // nodes yet, since the fetch above hasn't resolved) and race the
+        // tab-specific request above; whichever response lands last wins,
+        // so a first click on any non-"layers" tab could silently show
+        // the layer list instead.
+        this.leftSidebarOpen = true;
 
         // The Analysis form (checkboxes, JSON config, etc.) and the Data
         // Catalog's multi-column table need more room than the other

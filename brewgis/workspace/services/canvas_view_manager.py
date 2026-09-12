@@ -12,6 +12,7 @@ from __future__ import annotations
 
 from typing import TYPE_CHECKING
 
+from django.db import ProgrammingError
 from django.db import connection
 from django.db import transaction
 
@@ -22,6 +23,20 @@ if TYPE_CHECKING:
 
 # Paintable columns — sourced from the canonical BaseCanvasSchema.
 PAINTABLE_COLUMNS: frozenset[str] = BaseCanvasSchema.PAINTABLE_COLUMNS
+
+
+def build_paintable_column_meta() -> list[dict[str, str]]:
+    """Build ``{name, label}`` entries for every paintable column.
+
+    Shared by the paint toolbar's column dropdown and the feature-inspect
+    panel so both surfaces render the same human-readable labels.
+    """
+    meta: list[dict[str, str]] = []
+    for col_name in sorted(PAINTABLE_COLUMNS):
+        col_def = BaseCanvasSchema.get(col_name)
+        meta.append({"name": col_name, "label": col_def.label if col_def else col_name})
+    return meta
+
 
 _COLUMNS_DISCOVERY_SQL = """
 SELECT column_name
@@ -71,7 +86,14 @@ def _build_create_view_sql(
     scenario_id: int,
 ) -> str:
     """Generate the ``CREATE OR REPLACE VIEW`` statement."""
-    paintable_in_table = [c for c in PAINTABLE_COLUMNS if c in all_columns]
+    # Iterate `all_columns` (a stable, DB-ordered list) rather than the
+    # `PAINTABLE_COLUMNS` frozenset directly — Python's per-process string
+    # hash randomization makes frozenset iteration order vary from run to
+    # run, so the previous `[c for c in PAINTABLE_COLUMNS if ...]` produced
+    # a different SELECT column order on every process restart. Postgres'
+    # `CREATE OR REPLACE VIEW` cannot rename/reorder existing columns, so
+    # the very next refresh_canvas_view() after a restart would 500.
+    paintable_in_table = [c for c in all_columns if c in PAINTABLE_COLUMNS]
 
     q_view = _qi(f"{view_schema}.{view_name}")
     q_base = _qi(f"{base_schema}.{base_table_name}")
@@ -138,9 +160,22 @@ def create_canvas_view(scenario: Scenario, base_table: str) -> str:
         scenario_id=scenario.pk,
     )
 
-    with transaction.atomic(), connection.cursor() as cursor:
-        cursor.execute(f"CREATE SCHEMA IF NOT EXISTS {_qi(view_schema)}")
-        cursor.execute(sql)
+    try:
+        with transaction.atomic(), connection.cursor() as cursor:
+            cursor.execute(f"CREATE SCHEMA IF NOT EXISTS {_qi(view_schema)}")
+            cursor.execute(sql)
+    except ProgrammingError as exc:
+        if "cannot change name of view column" not in str(exc):
+            raise
+        # The existing view's column layout was baked in under a since-
+        # changed column order (e.g. a view created before the SELECT
+        # list became deterministic) — CREATE OR REPLACE can only add
+        # trailing columns, not rename/reorder existing ones, so fall
+        # back to a clean drop + recreate.
+        q_view = _qi(f"{view_schema}.{view_name}")
+        with transaction.atomic(), connection.cursor() as cursor:
+            cursor.execute(f"DROP VIEW IF EXISTS {q_view} CASCADE")
+            cursor.execute(sql)
 
     return f"{view_schema}.{view_name}"
 

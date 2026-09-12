@@ -16,6 +16,7 @@ if TYPE_CHECKING:
     from django.http import HttpResponse
 from django.shortcuts import get_object_or_404
 from django.shortcuts import render
+from django.urls import reverse
 from ninja import ModelSchema
 
 from brewgis.workspace.built_forms.models import BuildingType
@@ -25,8 +26,7 @@ from brewgis.workspace.models import Layer
 from brewgis.workspace.models import Scenario
 from brewgis.workspace.models import SymbologyConfig
 from brewgis.workspace.models import Workspace
-from brewgis.workspace.services.base_canvas_schema import BaseCanvasSchema
-from brewgis.workspace.services.canvas_view_manager import PAINTABLE_COLUMNS
+from brewgis.workspace.services.canvas_view_manager import build_paintable_column_meta
 from brewgis.workspace.symbology.generator import generate_maplibre_style
 
 
@@ -157,14 +157,7 @@ def view_workspace_map(request: HttpRequest, workspace_pk: int) -> HttpResponse:
             )
 
         # Build column metadata for the paint toolbar dropdown
-        for col_name in sorted(PAINTABLE_COLUMNS):
-            col_def = BaseCanvasSchema.get(col_name)
-            paintable_column_meta.append(
-                {
-                    "name": col_name,
-                    "label": col_def.label if col_def else col_name,
-                }
-            )
+        paintable_column_meta = build_paintable_column_meta()
 
         # Build built forms data for toolbar dropdowns
         bts = BuildingType.objects.filter(workspace=workspace).order_by("name")
@@ -174,21 +167,24 @@ def view_workspace_map(request: HttpRequest, workspace_pk: int) -> HttpResponse:
             "place_types": [{"id": pt.pk, "name": pt.name} for pt in pts],
         }
 
-        # Build htmx paint URLs
+        # Build paint action URLs via reverse() — these previously
+        # hardcoded a "/workspace/" prefix that doesn't match the actual
+        # URL patterns (which mount directly under the workspace_pk), so
+        # every Apply/Clear/Undo/History request 404'd.
         paint_url = request.build_absolute_uri(
-            f"/workspace/{workspace_pk}/scenario/{scenario.pk}/paint/"
+            reverse("workspace:paint_features", args=[workspace_pk, scenario.pk])
         )
         clear_url = request.build_absolute_uri(
-            f"/workspace/{workspace_pk}/scenario/{scenario.pk}/clear-paint/"
+            reverse("workspace:clear_paint", args=[workspace_pk, scenario.pk])
         )
         bf_paint_url = request.build_absolute_uri(
-            f"/workspace/{workspace_pk}/scenario/{scenario.pk}/paint-bf/"
+            reverse("workspace:paint_built_form", args=[workspace_pk, scenario.pk])
         )
         history_url = request.build_absolute_uri(
-            f"/workspace/{workspace_pk}/scenario/{scenario.pk}/paint-history/"
+            reverse("workspace:paint_history", args=[workspace_pk, scenario.pk])
         )
         undo_url = request.build_absolute_uri(
-            f"/workspace/{workspace_pk}/scenario/{scenario.pk}/paint/undo/"
+            reverse("workspace:undo_paint", args=[workspace_pk, scenario.pk])
         )
 
     # Build regular layer data
@@ -199,6 +195,11 @@ def view_workspace_map(request: HttpRequest, workspace_pk: int) -> HttpResponse:
         data["id"] = layer.key
         data["type"] = layer.geometry_type
         data["source"] = layer.to_maplibre_source()
+        if layer._source_id() == workspace.base_table:  # noqa: SLF001
+            # Same fix as the scenario canvas view below: non-numeric
+            # parcel ids aren't valid native MVT feature ids, so without
+            # this, click-to-inspect can never resolve a clicked feature.
+            data["source"]["promoteId"] = "id"
 
         # Make tile URLs absolute (MapLibre v4+ requires absolute URLs
         # for tile sources in web worker contexts).
@@ -246,6 +247,12 @@ def view_workspace_map(request: HttpRequest, workspace_pk: int) -> HttpResponse:
                 "source": {
                     "type": "vector",
                     "tiles": [canvas_tiles_url],
+                    # Parcel ids (e.g. "45002008T") aren't valid native MVT
+                    # feature ids (MVT only supports uint64) — without this,
+                    # tipg/Martin emit every feature with id=null, so paint
+                    # mode's click/box selection and setFeatureState-based
+                    # highlighting silently match nothing.
+                    "promoteId": "id",
                 },
                 "source-layer": (
                     "default"
@@ -270,6 +277,16 @@ def view_workspace_map(request: HttpRequest, workspace_pk: int) -> HttpResponse:
     # The map layer ID for the scenario canvas view (used by brew-gis-map for feature selection)
     canvas_view_layer_id = f"scenario_{scenario.slug}_canvas" if scenario else ""
     selection_mode = request.GET.get("selection_mode", "click")
+
+    # Layer id to click-inspect against when no scenario is active. Only
+    # set if the workspace's base table has actually been registered as a
+    # Layer — nothing does that automatically today, so inspect click is
+    # effectively scenario-only otherwise.
+    base_layer_id = ""
+    for layer in layers:
+        if layer._source_id() == workspace.base_table:  # noqa: SLF001
+            base_layer_id = layer.key
+            break
 
     # Build URL for the map page with scenario param
     scenario_url = ""
@@ -349,6 +366,7 @@ def view_workspace_map(request: HttpRequest, workspace_pk: int) -> HttpResponse:
         "history_url": history_url if scenario else "",
         "undo_url": undo_url if scenario else "",
         "canvas_view_layer_id": canvas_view_layer_id,
+        "base_layer_id": base_layer_id,
         "selection_mode": selection_mode,
         "basemap_style": basemap_style,
     }

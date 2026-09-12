@@ -1,7 +1,7 @@
 import { LitElement, html, type PropertyValues } from 'lit'
 import { property } from 'lit/decorators.js'
 import maplibregl from 'maplibre-gl'
-import type { Viewport, LayerConfig, ViewportChangeEvent } from '../types/index.js'
+import type { Viewport, LayerConfig, ViewportChangeEvent, LayerClickEvent } from '../types/index.js'
 import { generateLayerId, diffLayers } from '../utils/maplibre-helpers.js'
 import { PaintModeController } from './paint-mode.js'
 
@@ -39,6 +39,10 @@ export class BrewGisMap extends LitElement {
   /** Canvas view layer ID for feature querying in paint mode. */
   @property({ type: String, attribute: 'canvas-layer-id' })
   canvasLayerId: string = ''
+
+  /** Base (non-scenario) layer ID to inspect-click against when no scenario is active. */
+  @property({ type: String, attribute: 'base-layer-id' })
+  baseLayerId: string = ''
 
   /** Width of an open panel in pixels, for map viewport adjustment. */
   @property({ type: Number, attribute: 'panel-width' })
@@ -138,11 +142,14 @@ export class BrewGisMap extends LitElement {
     if (!this._map) return
     const sourceId = this._findCanvasSourceId()
     if (!sourceId) return
+    const sourceLayer = this._findCanvasSourceLayer()
 
     this.clearHighlight()
     for (const id of ids) {
       try {
-        this._map.setFeatureState({ source: sourceId, id: id }, { selected: true })
+        // `sourceLayer` is required for vector sources — omitting it makes
+        // MapLibre log an error and drop the update instead of applying it.
+        this._map.setFeatureState({ source: sourceId, sourceLayer, id }, { selected: true })
       } catch {
         // Feature or source may not exist yet
       }
@@ -154,8 +161,9 @@ export class BrewGisMap extends LitElement {
     if (!this._map) return
     const sourceId = this._findCanvasSourceId()
     if (!sourceId) return
+    const sourceLayer = this._findCanvasSourceLayer()
     try {
-      this._map.removeFeatureState({ source: sourceId })
+      this._map.removeFeatureState({ source: sourceId, sourceLayer })
     } catch {
       // Source may not exist
     }
@@ -247,6 +255,30 @@ export class BrewGisMap extends LitElement {
     } catch {
       // Feature query failed
     }
+  }
+
+  /**
+   * Force the canvas view layer's vector tiles to be re-fetched.
+   *
+   * `refresh_canvas_view()` on the server does a `CREATE OR REPLACE VIEW`,
+   * which is picked up immediately by new tile requests — but MapLibre
+   * caches tiles it has already fetched for the current viewport, so a
+   * paint/clear/undo would otherwise stay invisible until an unrelated
+   * pan/zoom evicted the stale tiles. Bumping a cache-busting param on the
+   * source's tile URLs forces exactly that source to re-request.
+   */
+  refreshCanvasTiles(): void {
+    if (!this._map) return
+    const sourceId = this._findCanvasSourceId()
+    if (!sourceId) return
+    const source = this._map.getSource(sourceId) as maplibregl.VectorTileSource | undefined
+    if (!source || typeof source.setTiles !== 'function' || !source.tiles) return
+    const cacheBust = `_cb=${Date.now()}`
+    const tiles = source.tiles.map((url) => {
+      const sep = url.includes('?') ? '&' : '?'
+      return `${url}${sep}${cacheBust}`
+    })
+    source.setTiles(tiles)
   }
 
   /**
@@ -409,6 +441,10 @@ export class BrewGisMap extends LitElement {
       )
     })
 
+    map.on('click', (e) => {
+      this._handleInspectClick(e)
+    })
+
     map.on('moveend', () => {
       if (!this._map) return
       const center = map.getCenter()
@@ -451,7 +487,46 @@ export class BrewGisMap extends LitElement {
   private _syncCanvasLayer(): void {
     if (!this._paintController || !this.canvasLayerId) return
     const sourceId = this._findCanvasSourceId()
-    this._paintController.setCanvasLayer(this.canvasLayerId, sourceId || '')
+    this._paintController.setCanvasLayer(
+      this.canvasLayerId,
+      sourceId || '',
+      this._findCanvasSourceLayer(),
+    )
+  }
+
+  /**
+   * Handle a map click in 'view' mode by querying the active data layer
+   * (canvas view when a scenario is active, otherwise the base layer) and
+   * dispatching a `layerclick` event with the feature's already-decoded
+   * tile properties — the canvas view's SELECT already includes every
+   * base + painted column, so no extra fetch is needed just to read it.
+   *
+   * Paint mode's own click-to-select handler (`PaintModeController`) only
+   * attaches while paint mode is active, so this coexists safely with it.
+   */
+  private _handleInspectClick(e: maplibregl.MapMouseEvent): void {
+    if (this.mode !== 'view' || !this._map) return
+    const targetLayerId = this.canvasLayerId || this.baseLayerId
+    if (!targetLayerId || !this._map.getLayer(targetLayerId)) return
+
+    const features = this._map.queryRenderedFeatures(e.point, { layers: [targetLayerId] })
+    if (features.length === 0) return
+
+    const feature = features[0]
+    if (feature.id == null) return
+
+    this.dispatchEvent(
+      new CustomEvent<LayerClickEvent>('layerclick', {
+        detail: {
+          layerId: targetLayerId,
+          features: [{ id: String(feature.id), properties: feature.properties ?? {} }],
+          lngLat: { lng: e.lngLat.lng, lat: e.lngLat.lat },
+          point: { x: e.point.x, y: e.point.y },
+        },
+        bubbles: true,
+        composed: true,
+      }),
+    )
   }
 
   private _syncMode(): void {
@@ -486,8 +561,21 @@ export class BrewGisMap extends LitElement {
   }
 
   /**
-   * Add a fill layer that highlights selected features (blue).
-   * Uses the feature-state 'selected' set via setFeatureState.
+   * Find the source-layer name for the canvas view layer — required
+   * alongside the source id for any vector-source setFeatureState /
+   * removeFeatureState / addLayer call.
+   */
+  private _findCanvasSourceLayer(): string {
+    const layerConfig = this.layers.find(
+      (l) => l.id === this.canvasLayerId || l.key === this.canvasLayerId,
+    )
+    return (layerConfig?.['source-layer'] as string | undefined) || 'default'
+  }
+
+  /**
+   * Add a highlight layer for selected features — a thicker colored
+   * outline plus a light fill — driven by the feature-state 'selected'
+   * set via setFeatureState.
    */
   private _addSelectionHighlightLayer(): void {
     if (!this._map) return
@@ -498,11 +586,7 @@ export class BrewGisMap extends LitElement {
     const sourceId = this._findCanvasSourceId()
     if (!sourceId) return
 
-    // Find source-layer from the canvas layer config
-    const canvasConfig = this.layers.find(
-      (l) => l.id === this.canvasLayerId || l.key === this.canvasLayerId,
-    )
-    const sourceLayer = canvasConfig?.['source-layer'] || 'default'
+    const sourceLayer = this._findCanvasSourceLayer()
 
     // Insert above the canvas view layer, or before water/roads
     const before = this._map.getLayer(this.canvasLayerId)
@@ -522,7 +606,24 @@ export class BrewGisMap extends LitElement {
             '#2196f3', // Blue for selected
             'rgba(0,0,0,0)', // Transparent otherwise
           ],
-          'fill-opacity': ['case', ['boolean', ['feature-state', 'selected'], false], 0.4, 0],
+          'fill-opacity': ['case', ['boolean', ['feature-state', 'selected'], false], 0.25, 0],
+        },
+      },
+      before,
+    )
+
+    // A fill layer's own outline is capped at 1px (fill-outline-color has
+    // no width control), so a separate line layer gives selected parcels
+    // an actually-visible thick border.
+    this._map.addLayer(
+      {
+        id: `${layerId}-outline`,
+        type: 'line',
+        source: sourceId,
+        'source-layer': sourceLayer,
+        paint: {
+          'line-color': '#1565c0',
+          'line-width': ['case', ['boolean', ['feature-state', 'selected'], false], 3, 0],
         },
       },
       before,

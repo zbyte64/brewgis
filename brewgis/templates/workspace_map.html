@@ -98,7 +98,7 @@
         </div>
       </div>
       {% if scenario and not is_public_view %}
-        {% partialdef paint-toolbar %}
+        {% partialdef paint-toolbar inline %}
         <div id="paint-toolbar"
              class="map-shell__topbar-row"
              style="display: none">
@@ -210,40 +210,22 @@
           <button type="button"
                   class="btn btn-sm btn-primary"
                   id="paint-apply-btn"
-                  disabled
-                  hx-post="{{ paint_url }}"
-                  hx-target="#paint-result"
-                  hx-swap="innerHTML"
-                  hx-include="#paint-toolbar select, #paint-toolbar input"
-                  hx-trigger="click"
-                  hx-headers='{"X-CSRFToken": "{{ csrf_token }}"}'>Apply</button>
+                  disabled>Apply</button>
           <button type="button"
                   class="btn btn-sm btn-outline-danger"
                   id="paint-clear-btn"
-                  disabled
-                  hx-post="{{ clear_url }}"
-                  hx-target="#paint-result"
-                  hx-swap="innerHTML"
-                  hx-include="#paint-feature-ids"
-                  hx-trigger="click"
-                  hx-headers='{"X-CSRFToken": "{{ csrf_token }}"}'>Clear</button>
+                  disabled>Clear</button>
           <button type="button"
                   class="btn btn-sm btn-outline-secondary"
                   id="paint-undo-btn"
-                  disabled
-                  hx-post="{{ undo_url }}"
-                  hx-target="#paint-result"
-                  hx-swap="innerHTML"
-                  hx-include="#undo-event-id"
-                  hx-trigger="click"
-                  hx-headers='{"X-CSRFToken": "{{ csrf_token }}"}'>Undo Last</button>
+                  disabled>Undo Last</button>
           <button type="button"
                   class="btn btn-sm btn-outline-info"
                   id="paint-history-btn">History</button>
           <!-- Result feedback area -->
           <div id="paint-result" class="mt-1 w-100"></div>
         </div>
-        {% partialdef paint-history-panel %}
+        {% partialdef paint-history-panel inline %}
         <div id="paint-history-panel"
              class="map-shell__topbar-row"
              style="display: none">
@@ -319,7 +301,7 @@
 </script>
 <div class="map-shell__map"
      x-on:click="$store.panels.rightPanelOpen && $store.panels.closePanel()">
-  <brew-gis-map viewport='{{ viewport_json|safe }}' layers='{{ layer_data|json_attr|safe }}'
+  <brew-gis-map viewport='{{ viewport_json|safe }}' layers='{{ layer_data|json_attr|safe }}' base-layer-id="{{ base_layer_id }}"
   {% if scenario %}
     mode="view" scenario-id="{{ scenario.pk }}" canvas-layer-id="{{ canvas_view_layer_id }}" selection-mode="{{ selection_mode }}"
   {% endif %}
@@ -436,6 +418,13 @@
       const bfIdSelect = document.getElementById('paint-bf-id');
       const bfOptgroupBuilding = document.getElementById('bf-optgroup-building');
       const bfOptgroupPlace = document.getElementById('bf-optgroup-place');
+      const paintColumnSelect = document.getElementById('paint-column');
+      const paintValueInput = document.getElementById('paint-value');
+
+      const paintUrl = '{{ paint_url|safe }}';
+      const clearUrl = '{{ clear_url|safe }}';
+      const bfPaintUrl = '{{ bf_paint_url|safe }}';
+      const undoUrl = '{{ undo_url|safe }}';
 
       let selectedFeatures = [];
       let paintActive = false;
@@ -517,13 +506,106 @@
         });
       }
 
-      // Re-enable apply/clear after htmx swap
-      document.body.addEventListener('htmx:after:swap', function(evt) {
-        if (evt.detail.ctx.target && evt.detail.ctx.target.id === 'paint-result') {
-          applyBtn.disabled = selectedFeatures.length === 0;
-          clearBtn.disabled = selectedFeatures.length === 0;
+      // ── Paint action requests ──────────────────────────────
+      // Apply/Clear/Undo POST a raw JSON body (features as an array, value
+      // as a possibly-null number) that doesn't map onto htmx's default
+      // form-urlencoded hx-post/hx-include — so these go through fetch()
+      // directly instead, matching the pattern already used below for
+      // paint history and the PDF export request.
+      function renderPaintResult(ok, data) {
+        if (!paintResult) return;
+        if (ok) {
+          var count = data.painted_count ?? data.cleared_count ?? data.undone_count ?? 0;
+          var label = data.painted_count !== undefined ? 'Painted' :
+            data.cleared_count !== undefined ? 'Cleared' :
+            data.undone_count !== undefined ? 'Undid' : 'Updated';
+          var html = '<div class="alert alert-success py-1 px-2 mb-0" style="font-size:0.75rem;">' +
+            label + ' ' + count + ' feature(s).';
+          if (data.warnings && data.warnings.length) {
+            html += ' Warnings: ' + data.warnings.map(function(w) {
+              return w.message || '';
+            }).join('; ');
+          }
+          html += '</div>';
+          paintResult.innerHTML = html;
+        } else {
+          var message = data && data.message ? data.message : 'Request failed.';
+          if (data && data.violations && data.violations.length) {
+            message += ' — ' + data.violations.map(function(v) {
+              return v.message || '';
+            }).join('; ');
+          }
+          paintResult.innerHTML = '<div class="alert alert-danger py-1 px-2 mb-0" style="font-size:0.75rem;">' +
+            message + '</div>';
         }
-      });
+      }
+
+      function postPaintAction(url, body) {
+        return fetch(url, {
+            method: 'POST',
+            headers: {
+              'X-CSRFToken': '{{ csrf_token }}',
+              'Content-Type': 'application/json'
+            },
+            body: JSON.stringify(body)
+          })
+          .then(function(r) {
+            return r.json().then(function(data) {
+              return {
+                ok: r.ok,
+                data: data
+              };
+            });
+          })
+          .then(function(result) {
+            renderPaintResult(result.ok, result.data);
+            if (result.ok) {
+              mapEl.refreshCanvasTiles();
+            }
+            return result;
+          })
+          .catch(function(err) {
+            renderPaintResult(false, {
+              message: err.message
+            });
+          })
+          .finally(function() {
+            applyBtn.disabled = selectedFeatures.length === 0;
+            clearBtn.disabled = selectedFeatures.length === 0;
+          });
+      }
+
+      if (applyBtn) {
+        applyBtn.addEventListener('click', function() {
+          if (selectedFeatures.length === 0) return;
+          applyBtn.disabled = true;
+          var isDirect = paintModeDirect && paintModeDirect.checked;
+          if (isDirect) {
+            var rawValue = paintValueInput ? paintValueInput.value : '';
+            postPaintAction(paintUrl, {
+              features: selectedFeatures,
+              column: paintColumnSelect ? paintColumnSelect.value : '',
+              value: rawValue === '' ? null : parseFloat(rawValue)
+            });
+          } else {
+            postPaintAction(bfPaintUrl, {
+              features: selectedFeatures,
+              bf_type: bfTypeSelect ? bfTypeSelect.value : '',
+              bf_id: bfIdSelect && bfIdSelect.value ? parseInt(bfIdSelect.value, 10) : null
+            });
+          }
+        });
+      }
+
+      if (clearBtn) {
+        clearBtn.addEventListener('click', function() {
+          if (selectedFeatures.length === 0) return;
+          clearBtn.disabled = true;
+          postPaintAction(clearUrl, {
+            features: selectedFeatures
+          });
+        });
+      }
 
       // ── Paint History & Undo ──────────────────────────────
       const undoBtn = document.getElementById('paint-undo-btn');
@@ -616,12 +698,18 @@
         });
       }
 
-      // "Undo Last" button: auto-fill with most recent event ID
+      // "Undo Last" button: auto-fill with most recent event ID, then POST
       if (undoBtn && undoEventId) {
-        undoBtn.addEventListener('htmx:before:request', function() {
-          if (!undoEventId.value && lastEventId) {
-            undoEventId.value = lastEventId;
-          }
+        undoBtn.addEventListener('click', function() {
+          var eventId = undoEventId.value || lastEventId;
+          if (!eventId) return;
+          undoBtn.disabled = true;
+          postPaintAction(undoUrl, {
+            event_id: parseInt(eventId, 10)
+          }).finally(function() {
+            undoEventId.value = '';
+            undoBtn.disabled = false;
+          });
         });
       }
 
@@ -763,6 +851,134 @@
             });
         });
       }
+    })();
+
+    // ---- Click-to-inspect a parcel ----------------------------------------
+    // Its own top-level IIFE (not nested in the paint-toolbar block above):
+    // inspect must also work with no scenario active / no paint toolbar in
+    // the DOM at all.
+    (function() {
+      'use strict';
+
+      const mapEl = document.querySelector('brew-gis-map');
+      if (!mapEl) return;
+
+      const inspectBaseUrl = '{% url "workspace:panel_feature_inspect" workspace.pk %}';
+      const scenarioQuery = {
+        %
+        if scenario %
+      }
+      '?scenario={{ scenario.pk }}' {
+        %
+        else %
+      }
+      '' {
+        %
+        endif %
+      };
+
+      function wireSaveButton() {
+        const panelEl = document.getElementById('feature-inspect-panel');
+        const saveBtn = document.getElementById('feature-inspect-save-btn');
+        if (!panelEl || !saveBtn) return;
+
+        saveBtn.addEventListener('click', function() {
+          const featureId = panelEl.getAttribute('data-feature-id');
+          const paintUrl = panelEl.getAttribute('data-paint-url');
+          if (!featureId || !paintUrl) return;
+
+          const inputs = panelEl.querySelectorAll('.feature-inspect-input');
+          const changed = [];
+          inputs.forEach(function(input) {
+            var original = input.getAttribute('data-original-value') || '';
+            if (input.value !== original) {
+              changed.push({
+                column: input.getAttribute('data-column'),
+                value: input.value === '' ? null : parseFloat(input.value)
+              });
+            }
+          });
+
+          const resultEl = document.getElementById('feature-inspect-result');
+          if (changed.length === 0) {
+            if (resultEl) resultEl.innerHTML = '<div class="text-muted" style="font-size:0.7rem">No changes to save.</div>';
+            return;
+          }
+
+          saveBtn.disabled = true;
+          Promise.all(changed.map(function(change) {
+              return fetch(paintUrl, {
+                method: 'POST',
+                headers: {
+                  'X-CSRFToken': '{{ csrf_token }}',
+                  'Content-Type': 'application/json'
+                },
+                body: JSON.stringify({
+                  features: [featureId],
+                  column: change.column,
+                  value: change.value
+                })
+              }).then(function(r) {
+                return r.json().then(function(data) {
+                  return {
+                    ok: r.ok,
+                    data: data
+                  };
+                });
+              });
+            }))
+            .then(function(results) {
+              var failed = results.filter(function(r) {
+                return !r.ok;
+              });
+              if (resultEl) {
+                resultEl.innerHTML = failed.length === 0 ?
+                  '<div class="alert alert-success py-1 px-2 mb-0" style="font-size:0.7rem">Saved.</div>' :
+                  '<div class="alert alert-danger py-1 px-2 mb-0" style="font-size:0.7rem">' +
+                  failed.map(function(r) {
+                    return r.data.message || 'Save failed.';
+                  }).join('; ') + '</div>';
+              }
+              if (mapEl.refreshCanvasTiles) mapEl.refreshCanvasTiles();
+              inputs.forEach(function(input) {
+                input.setAttribute('data-original-value', input.value);
+              });
+            })
+            .catch(function(err) {
+              if (resultEl) resultEl.innerHTML = '<div class="alert alert-danger py-1 px-2 mb-0" style="font-size:0.7rem">' + err.message + '</div>';
+            })
+            .finally(function() {
+              saveBtn.disabled = false;
+            });
+        });
+      }
+
+      mapEl.addEventListener('layerclick', function(e) {
+        var feature = e.detail.features && e.detail.features[0];
+        if (!feature) return;
+
+        fetch(inspectBaseUrl + scenarioQuery, {
+            method: 'POST',
+            headers: {
+              'X-CSRFToken': '{{ csrf_token }}',
+              'Content-Type': 'application/json'
+            },
+            body: JSON.stringify({
+              feature_id: feature.id,
+              properties: feature.properties
+            })
+          })
+          .then(function(r) {
+            return r.text();
+          })
+          .then(function(html) {
+            window.__panelManager.openPanel('Feature ' + feature.id, html);
+            wireSaveButton();
+          })
+          .catch(function() {
+            // Silently ignore — inspect is a convenience feature, not critical path.
+          });
+      });
     })();
 
     // ── Active filter auto-apply on map load ─────────────────

@@ -31,6 +31,7 @@ from .views import paint_history
 from .views import panel_analysis_launch
 from .views import panel_basemap_picker
 from .views import panel_data_catalog
+from .views import panel_feature_inspect
 from .views import panel_import_center
 from .views import panel_layer_list
 from .views import panel_report_list
@@ -484,5 +485,10 @@ urlpatterns = [
         "workspace/<int:workspace_pk>/panel/basemap/",
         panel_basemap_picker,
         name="panel_basemap_picker",
+    ),
+    path(
+        "workspace/<int:workspace_pk>/panel/feature-inspect/",
+        panel_feature_inspect,
+        name="panel_feature_inspect",
     ),
 ]

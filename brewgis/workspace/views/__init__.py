@@ -46,6 +46,7 @@ from .paint import undo_paint  # noqa: F401
 from .panels import panel_analysis_launch  # noqa: F401
 from .panels import panel_basemap_picker  # noqa: F401
 from .panels import panel_data_catalog  # noqa: F401
+from .panels import panel_feature_inspect  # noqa: F401
 from .panels import panel_import_center  # noqa: F401
 from .panels import panel_layer_list  # noqa: F401
 from .panels import panel_report_list  # noqa: F401
