@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from django import forms
 from django.contrib.auth.decorators import user_passes_test
+from django.db import connection
 from django.db.models import Q
 from django.http import HttpRequest
 from django.http import HttpResponse
@@ -11,11 +12,15 @@ from django.shortcuts import render
 from django.urls import reverse
 from django.views.decorators.http import require_POST
 
+from brewgis.workspace.built_forms.models import BuildingType
 from brewgis.workspace.models import AnalysisRun
 from brewgis.workspace.models import County
 from brewgis.workspace.models import DataImportRun
 from brewgis.workspace.models import DataSourceCategory
+from brewgis.workspace.models import Scenario
 from brewgis.workspace.models import Workspace
+from brewgis.workspace.services.preflight import _qi
+from brewgis.workspace.services.preflight import _table_exists
 
 # Maps DataSource.import_type -> the URL name of the view that performs it.
 # Sources without a mapped type here fall back to the generic Import Center.
@@ -90,6 +95,7 @@ STATE_NAMES: dict[str, str] = {
 
 ANALYSIS_MODULES: list[dict[str, object]] = [
     {
+        "key": "env_constraint",
         "name": "Environmental Constraint",
         "description": "Overlay environmental constraints on base parcels",
         "inputs": ["Base parcels", "Constraint layers"],
@@ -97,6 +103,7 @@ ANALYSIS_MODULES: list[dict[str, object]] = [
         "prereq_status": "",
     },
     {
+        "key": "core",
         "name": "Core Allocation",
         "description": "End-state allocation plus increment analysis",
         "inputs": ["Scenario parameters", "Base allocation"],
@@ -104,6 +111,7 @@ ANALYSIS_MODULES: list[dict[str, object]] = [
         "prereq_status": "",
     },
     {
+        "key": "water_demand",
         "name": "Water Demand",
         "description": "Residential and non-residential water demand in L/yr",
         "inputs": ["Allocated parcels", "Density factors"],
@@ -111,6 +119,7 @@ ANALYSIS_MODULES: list[dict[str, object]] = [
         "prereq_status": "",
     },
     {
+        "key": "energy_demand",
         "name": "Energy Demand",
         "description": "Residential and non-residential energy demand in kWh/yr",
         "inputs": ["Allocated parcels", "Density factors"],
@@ -118,6 +127,71 @@ ANALYSIS_MODULES: list[dict[str, object]] = [
         "prereq_status": "",
     },
 ]
+
+# Constraint tables checked by the analysis launch form's default configuration
+# (see AnalysisLaunchForm._CONSTRAINTS_INITIAL in views/analysis.py).
+_CONSTRAINT_LAYER_TABLES: tuple[str, ...] = ("floodplains", "wetlands", "steep_slopes")
+
+
+def _split_table_ref(schema: str, table_ref: str) -> tuple[str, str]:
+    """Split a possibly schema-qualified "schema.table" reference."""
+    if "." in table_ref:
+        table_schema, table_name = table_ref.split(".", 1)
+        return table_schema, table_name
+    return schema, table_ref
+
+
+def _table_has_rows(schema: str, table: str) -> bool:
+    """Return True if schema.table exists in Postgres and has at least one row."""
+    with connection.cursor() as cursor:
+        if not _table_exists(cursor, schema, table):
+            return False
+        cursor.execute(f"SELECT EXISTS (SELECT 1 FROM {_qi(schema, table)})")
+        (has_rows,) = cursor.fetchone()
+        return bool(has_rows)
+
+
+def _prereq_status(*inputs_ready: bool) -> str:
+    """Reduce a module's per-input readiness booleans to a prereq_status."""
+    if all(inputs_ready):
+        return "ready"
+    if any(inputs_ready):
+        return "partial"
+    return ""
+
+
+def build_analysis_modules(workspace: Workspace) -> list[dict[str, object]]:
+    """Return ANALYSIS_MODULES with prereq_status computed from real data.
+
+    Checks the actual tables/rows each module's inputs describe, scoped to
+    this workspace, rather than the previous hardcoded empty status.
+    """
+    base_schema, base_name = _split_table_ref(workspace.db_schema, workspace.base_table)
+    base_parcels_ready = _table_has_rows(base_schema, base_name)
+    constraint_layers_ready = any(
+        _table_has_rows(workspace.db_schema, table)
+        for table in _CONSTRAINT_LAYER_TABLES
+    )
+    scenario_ready = Scenario.objects.filter(workspace=workspace).exists()
+    allocated_parcels_ready = AnalysisRun.objects.filter(
+        workspace=workspace,
+        status="completed",
+        modules__contains=["core"],
+    ).exists()
+    density_factors_ready = BuildingType.objects.filter(workspace=workspace).exists()
+
+    water_energy_status = _prereq_status(allocated_parcels_ready, density_factors_ready)
+    status_by_key: dict[str, str] = {
+        "env_constraint": _prereq_status(base_parcels_ready, constraint_layers_ready),
+        "core": _prereq_status(scenario_ready, base_parcels_ready),
+        "water_demand": water_energy_status,
+        "energy_demand": water_energy_status,
+    }
+
+    modules = [dict(module) for module in ANALYSIS_MODULES]
+    for module in modules:
+        module["prereq_status"] = status_by_key[module["key"]]
+    return modules
 
 
 def _build_region_summary(workspace: Workspace) -> str:
@@ -201,7 +275,7 @@ def workspace_detail(request: HttpRequest, pk: int) -> HttpResponse:
     context: dict[str, object] = {
         "counties": County.objects.filter(county_q),
         "region_summary": _build_region_summary(workspace),
-        "analysis_modules": ANALYSIS_MODULES,
+        "analysis_modules": build_analysis_modules(workspace),
         "recent_runs": AnalysisRun.objects.filter(workspace=workspace).order_by(
             "-created_at"
         )[:5],
