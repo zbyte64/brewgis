@@ -322,6 +322,10 @@ MAX_UPLOAD_SIZE = env.int("MAX_UPLOAD_SIZE", default=100 * 1024 * 1024)
 
 DATA_DOWNLOAD_CACHE_DIR = BASE_DIR / "planning"
 
+# Base URL of the `sqlmesh ui` web server (see compose/local/django/start-sqlmesh-ui),
+# used to link out to table/model details from the sqlmesh import pickers.
+SQLMESH_UI_URL = env("SQLMESH_UI_URL", default="http://localhost:8001")
+
 
 # ==============================================================================
 # MODE-SPECIFIC OVERRIDES
