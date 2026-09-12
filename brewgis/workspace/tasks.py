@@ -512,30 +512,37 @@ def _build_report_scenario_metrics(scenario: Any) -> dict[str, Any]:
         "total_land_consumed_acres": None,
     }
 
-    view_name = scenario.canvas_view_name
+    # Same view naming/qualification as _build_comparison_metrics in scenarios.py.
+    schema = scenario.target_schema
+    view_name = f"scenario_{scenario.slug}_canvas"
+    q_view = f'"{schema}"."{view_name}"'
 
     with connection.cursor() as cursor:
-        parts = view_name.split(".")
-        table_name = parts[1] if len(parts) > 1 else view_name
         cursor.execute(
             "SELECT COUNT(*) FROM information_schema.tables "
             "WHERE table_schema = %s AND table_name = %s",
-            [scenario.schema_name, table_name],
+            [schema, view_name],
         )
         exists = cursor.fetchone()[0]
         if not exists:
             return metrics
 
+        # Only pop/hh/du/emp/area_acres are real canvas columns (see
+        # BaseCanvasSchema); vmt/water/energy aren't computed from the
+        # canvas view, so they stay None here too.
         cursor.execute(
-            "SELECT "
-            'SUM("total_population"), SUM("total_households"), SUM("total_du"), '
-            'SUM("total_employment"), SUM("vmt"), SUM("water"), SUM("energy"), '
-            'SUM("acres") '
-            f"FROM {view_name}"
+            f"SELECT SUM(pop), SUM(hh), SUM(du), SUM(emp), SUM(area_acres) "
+            f"FROM {q_view}"
         )
         row = cursor.fetchone()
         if row:
-            keys = list(metrics.keys())
+            keys = [
+                "total_population",
+                "total_households",
+                "total_du",
+                "total_employment",
+                "total_land_consumed_acres",
+            ]
             for i, key in enumerate(keys):
                 if i < len(row) and row[i] is not None:
                     metrics[key] = float(row[i])

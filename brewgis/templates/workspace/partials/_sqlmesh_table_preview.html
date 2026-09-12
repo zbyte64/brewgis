@@ -1,4 +1,4 @@
-{% load i18n %}
+{% load i18n workspace_tags %}
 
 <div id="sqlmesh-detail">
   {% if not preview %}
@@ -6,7 +6,7 @@
   {% else %}
     <h6 class="mb-2">
       {{ schema }}.{{ table }}
-      <a href="{{ sqlmesh_ui_url }}"
+      <a href="{{ schema|sqlmesh_model_url:table }}"
          target="_blank"
          rel="noopener"
          class="ms-1 small">{% translate "Open in SQLMesh UI ↗" %}</a>

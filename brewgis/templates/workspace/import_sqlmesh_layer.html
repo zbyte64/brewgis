@@ -75,7 +75,7 @@
                     </td>
                     <td>
                       <label for="sqlmesh-table-{{ forloop.counter }}" class="mb-0">{{ c.table }}</label>
-                      <a href="{{ sqlmesh_ui_url }}"
+                      <a href="{{ c.schema|sqlmesh_model_url:c.table }}"
                          target="_blank"
                          rel="noopener"
                          class="ms-1 small"
