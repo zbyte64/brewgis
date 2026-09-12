@@ -1,4 +1,4 @@
-{% load i18n %}
+{% load i18n workspace_tags %}
 
 <div id="filter-list-{{ layer.pk }}">
   <div class="d-flex justify-content-between align-items-center mb-2">
@@ -24,7 +24,7 @@
             </div>
             <div class="text-muted text-truncate"
                  style="font-size: 0.65rem;
-                        max-width: 180px">{{ flt.filter_json|default:"(empty)"|truncatechars:60 }}</div>
+                        max-width: 180px">{{ flt.filter_json|filter_expression|truncatechars:60 }}</div>
           </div>
           <div class="d-flex gap-1 flex-shrink-0">
             <button type="button"

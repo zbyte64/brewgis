@@ -1,4 +1,4 @@
-{% load i18n %}
+{% load i18n workspace_tags %}
 
 <div id="filter-editor-{{ layer.pk }}">
   <div class="card card-body p-2 mb-2 bg-light" style="font-size: 0.7rem;">
@@ -19,15 +19,12 @@
                style="font-size: 0.7rem" />
       </div>
       <div>
-        <label class="form-label mb-0" style="font-size: 0.7rem;">{% translate "Filter Expression (JSON)" %}</label>
-        <small class="text-muted d-block mb-1" style="font-size: 0.65rem;">
-          {% translate "Build an expression tree with AND/OR groups:" %}
-        </small>
-        <textarea name="filter_json"
-                  class="form-control form-control-sm font-monospace"
-                  rows="8"
-                  style="font-size: 0.65rem"
-                  placeholder='{ "type": "group", "operator": "AND", "children": [ { "type": "column", "field": "existing_du", "operator": "gt", "value": "0", "value_type": "number" }, { "type": "column", "field": "land_use", "operator": "eq", "value": "residential", "value_type": "string" } ] }'>{% if filter %}{{ filter.filter_json|pprint }}{% endif %}</textarea>
+        <label class="form-label mb-0" style="font-size: 0.7rem;">{% translate "Conditions" %}</label>
+        <input type="hidden"
+               name="filter_json"
+               id="filter_json_input_{{ layer.pk }}"
+               value='{{ filter_value|json_attr }}' />
+        <filter-builder columns='{{ columns|json_attr }}' value='{{ filter_value|json_attr }}' target-input="filter_json_input_{{ layer.pk }}"></filter-builder>
       </div>
       <div class="d-flex gap-1">
         <button type="submit"
@@ -47,23 +44,5 @@
                 hx-swap="outerHTML">{% translate "Cancel" %}</button>
       </div>
     </form>
-    <hr class="my-1" />
-    <div style="font-size: 0.65rem;">
-      <strong>{% translate "Filter Operators:" %}</strong>
-      <ul class="mb-0 ps-3 mt-1">
-        <li>
-          <code>eq</code> = equal, <code>neq</code> ≠ not equal
-        </li>
-        <li>
-          <code>gt</code> &gt;, <code>gte</code> ≥, <code>lt</code> &lt;, <code>lte</code> ≤
-        </li>
-        <li>
-          <code>contains</code> = text contains
-        </li>
-        <li>
-          <code>is_null</code> / <code>is_not_null</code>
-        </li>
-      </ul>
-    </div>
   </div>
 </div>

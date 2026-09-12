@@ -134,3 +134,14 @@ def sqlmesh_model_url(schema: str, table: str) -> str:
     from brewgis.workspace.services.sqlmesh_tables import sqlmesh_model_ui_url
 
     return sqlmesh_model_ui_url(schema, table)
+
+
+@register.filter
+def filter_expression(filter_json: dict) -> str:
+    """Human-readable rendering of a LayerFilter's expression tree.
+
+    Usage: ``{{ flt.filter_json|filter_expression }}``
+    """
+    from brewgis.workspace.views.filter import _human_readable_expression
+
+    return _human_readable_expression(filter_json)

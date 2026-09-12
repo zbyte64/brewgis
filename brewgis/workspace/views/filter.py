@@ -15,9 +15,23 @@ from django.views.decorators.http import require_GET
 from django.views.decorators.http import require_http_methods
 from django.views.decorators.http import require_POST
 
+from brewgis.workspace.analysis.layer_registry import _get_table_columns
 from brewgis.workspace.models import Layer
 from brewgis.workspace.models import LayerFilter
 from brewgis.workspace.services.filter_compiler import FilterCompiler
+
+_GEOMETRY_DATA_TYPES = {"geometry", "geography", "USER-DEFINED"}
+
+
+def _column_metadata(layer: Layer) -> list[dict[str, Any]]:
+    """Field choices for the filter-builder component: name + numeric flag."""
+    schema = layer.db_schema or layer.workspace.db_schema
+    columns = _get_table_columns(schema, layer.db_table)
+    return [
+        {"name": c["column_name"], "numeric": c["numeric"]}
+        for c in columns
+        if c["data_type"] not in _GEOMETRY_DATA_TYPES
+    ]
 
 
 def _filter_list_context(layer: Layer) -> dict[str, Any]:
@@ -25,6 +39,21 @@ def _filter_list_context(layer: Layer) -> dict[str, Any]:
     return {
         "layer": layer,
         "filters": layer.filters.all(),
+    }
+
+
+def _editor_context(
+    layer: Layer,
+    flt: LayerFilter | None = None,
+    error: str | None = None,
+) -> dict[str, Any]:
+    """Build shared context for the filter editor partial."""
+    return {
+        "layer": layer,
+        "filter": flt,
+        "filter_value": flt.filter_json if flt else {},
+        "error": error,
+        "columns": _column_metadata(layer),
     }
 
 
@@ -53,7 +82,7 @@ def layer_filter_create(request: HttpRequest, layer_pk: int) -> HttpResponse:
             return render(
                 request,
                 "workspace/filter/editor.html",
-                {"layer": layer, "error": "Filter name is required."},
+                _editor_context(layer, error="Filter name is required."),
             )
         raw_json = request.POST.get("filter_json", "{}")
         try:
@@ -62,7 +91,7 @@ def layer_filter_create(request: HttpRequest, layer_pk: int) -> HttpResponse:
             return render(
                 request,
                 "workspace/filter/editor.html",
-                {"layer": layer, "filter": None, "error": f"Invalid filter JSON: {e}"},
+                _editor_context(layer, error=f"Invalid filter JSON: {e}"),
             )
         flt = LayerFilter.objects.create(
             layer=layer,
@@ -76,7 +105,7 @@ def layer_filter_create(request: HttpRequest, layer_pk: int) -> HttpResponse:
     return render(
         request,
         "workspace/filter/editor.html",
-        {"layer": layer, "filter": None},
+        _editor_context(layer),
     )
 
 
@@ -91,11 +120,7 @@ def layer_filter_edit(request: HttpRequest, pk: int) -> HttpResponse:
             return render(
                 request,
                 "workspace/filter/editor.html",
-                {
-                    "layer": flt.layer,
-                    "filter": flt,
-                    "error": "Filter name is required.",
-                },
+                _editor_context(flt.layer, flt, error="Filter name is required."),
             )
         raw_json = request.POST.get("filter_json", "{}")
         try:
@@ -104,11 +129,7 @@ def layer_filter_edit(request: HttpRequest, pk: int) -> HttpResponse:
             return render(
                 request,
                 "workspace/filter/editor.html",
-                {
-                    "layer": flt.layer,
-                    "filter": flt,
-                    "error": f"Invalid filter JSON: {e}",
-                },
+                _editor_context(flt.layer, flt, error=f"Invalid filter JSON: {e}"),
             )
         flt.name = name
         flt.filter_json = parsed
@@ -119,7 +140,7 @@ def layer_filter_edit(request: HttpRequest, pk: int) -> HttpResponse:
     return render(
         request,
         "workspace/filter/editor.html",
-        {"layer": flt.layer, "filter": flt},
+        _editor_context(flt.layer, flt),
     )
 
 

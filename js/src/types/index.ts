@@ -70,8 +70,41 @@ export interface LayerStylePreviewEvent {
   paint: Record<string, unknown>
 }
 
+export interface ColumnMeta {
+  name: string
+  numeric: boolean
+}
+
+export type ColumnOperator =
+  | 'eq'
+  | 'neq'
+  | 'gt'
+  | 'gte'
+  | 'lt'
+  | 'lte'
+  | 'contains'
+  | 'is_null'
+  | 'is_not_null'
+
+export interface ColumnNode {
+  type: 'column'
+  field: string
+  operator: ColumnOperator
+  value: string
+  value_type: 'string' | 'number'
+}
+
+export interface GroupNode {
+  type: 'group'
+  operator: 'AND' | 'OR'
+  children: FilterNode[]
+}
+
+export type FilterNode = GroupNode | ColumnNode
+
 declare global {
   interface HTMLElementTagNameMap {
     'brew-gis-map': import('../components/brew-gis-map').BrewGisMap
+    'filter-builder': import('../components/filter-builder').FilterBuilder
   }
 }
