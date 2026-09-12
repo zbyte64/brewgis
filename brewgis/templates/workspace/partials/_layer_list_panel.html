@@ -67,7 +67,7 @@
         <div class="mb-1 layer-row"
              draggable="true"
              data-layer-pk="{{ layer.pk }}"
-             data-layer-key="{{ layer.db_table }}">
+             data-layer-key="{{ layer.key }}">
           <div class="d-flex align-items-center justify-content-between">
             <div class="d-flex align-items-center gap-1">
               {% if not is_public_view %}
@@ -77,7 +77,7 @@
                               height: 0.9rem;
                               flex-shrink: 0"
                        checked
-                       data-layer-key="{{ layer.db_table }}"
+                       data-layer-key="{{ layer.key }}"
                        aria-label="{% translate 'Toggle layer visibility' %}" />
               {% endif %}
               <button type="button"

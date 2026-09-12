@@ -176,6 +176,13 @@ export class BrewGisMap extends LitElement {
   }
 
   /**
+   * Get the underlying maplibre-gl Map instance, e.g. for canvas export.
+   */
+  getMap(): maplibregl.Map | null {
+    return this._map
+  }
+
+  /**
    * Preview a layer style by applying paint properties directly.
    * Used for live-preview updates in the symbology panel.
    */
@@ -334,6 +341,11 @@ export class BrewGisMap extends LitElement {
     const mapOptions: maplibregl.MapOptions = {
       container,
       style: this._resolveBasemapStyle(),
+      // Export Map (workspace_map.html) reads the WebGL canvas via
+      // getCanvas()/toDataURL() from a button click, not from inside a
+      // render callback — without this, the drawing buffer is typically
+      // already cleared by then and the capture comes out blank.
+      preserveDrawingBuffer: true,
     }
 
     if (this.transformRequest) {

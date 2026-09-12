@@ -132,7 +132,11 @@ def _graduated_paint(
     }[geo]
 
     # Build step expression: ["step", ["get", attr], color_below_first, threshold1, color1, ...]
-    step_parts: list[Any] = ["step", ["get", attr]]
+    # ["to-number", ...] guards against tile servers (e.g. Martin) that encode
+    # Postgres `numeric` columns as MVT strings rather than doubles — "step"
+    # requires a numeric input and otherwise throws at evaluation time,
+    # silently falling back to fill-color's spec default (black).
+    step_parts: list[Any] = ["step", ["to-number", ["get", attr]]]
 
     # Default color (below first threshold)
     if classes:

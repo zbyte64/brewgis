@@ -33,6 +33,7 @@ from brewgis.workspace.analysis.sqlmesh_runner import run_sqlmesh_plan
 from brewgis.workspace.models import AnalysisRun
 from brewgis.workspace.models import Workspace
 from brewgis.workspace.services.tile_server import restart_martin
+from brewgis.workspace.services.tile_server import wait_until_martin_ready
 
 logger = logging.getLogger(__name__)
 
@@ -173,7 +174,7 @@ def run_analysis_pipeline(
     run.save(update_fields=["status", "started_at"])
 
     try:
-        run_modules_sync(
+        result = run_modules_sync(
             modules=ordered_modules,
             base_vars=base_vars,
             target_schema=base_vars.get("target_schema", "public"),
@@ -195,9 +196,13 @@ def run_analysis_pipeline(
 
     # New analysis__scenario_<id> tables are invisible to Martin until it
     # restarts (see brewgis.workspace.services.tile_server) — only relevant
-    # if this workspace actually renders tiles through Martin.
+    # if this workspace actually renders tiles through Martin. Block until
+    # Martin has actually finished re-scanning (not just restarted) so the
+    # map is correct the moment this run shows as "completed" — otherwise
+    # the user can land on a map that briefly renders wrong/blank tiles.
     if Workspace.objects.filter(pk=workspace_id, tile_server_backend="martin").exists():
         restart_martin()
+        wait_until_martin_ready(result.get("fqtns", []))
 
     return run
 
@@ -259,6 +264,7 @@ def run_modules_sync(  # noqa: PLR0913
     # have drifted out of sync with the real model set on both counts —
     # some listed models no longer exist, some real ones aren't listed).
     env_schema = f"analysis__scenario_{scenario_id}"
+    fqtns = []
     for model_name in _list_tables(env_schema):
         register_result_layer(
             workspace_id=workspace_id,
@@ -267,8 +273,10 @@ def run_modules_sync(  # noqa: PLR0913
             key=f"{model_name}_{scenario_id}",
             name=f"{model_name.replace('_', ' ').title()} {scenario_id}",
         )
+        fqtns.append(f"{env_schema}.{model_name}")
     return {
         "success": True,
         "completed": ordered,
         "results": [],
+        "fqtns": fqtns,
     }

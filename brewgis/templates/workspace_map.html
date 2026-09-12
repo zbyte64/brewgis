@@ -601,16 +601,28 @@
         });
       }
 
-      // ---- Map Export --------------------------------------------------
+    })();
+
+    // ---- Map Export ------------------------------------------------------
+    // Deliberately its own top-level IIFE (not nested in the paint-mode
+    // block above): #paint-toolbar only enters the DOM later, via an htmx
+    // swap the first time "Paint Mode" is toggled, so that IIFE's
+    // `if (!mapEl || !toggleBtn || !toolbar) return;` guard always exits on
+    // first page load — which silently skipped this wiring entirely.
+    (function() {
+      'use strict';
+
+      const mapEl = document.querySelector('brew-gis-map');
       const exportPngBtn = document.getElementById('export-png-btn');
       const exportPdfBtn = document.getElementById('export-pdf-btn');
       const exportTitleInput = document.getElementById('export-title');
       const exportDpiSelect = document.getElementById('export-dpi');
       const exportIncludeLegend = document.getElementById('export-include-legend');
 
+      if (!mapEl) return;
+
       function getMapCanvas(scale) {
-        if (!mapEl || typeof mapEl.getCanvas !== 'function') return null;
-        const map = mapEl.getMap ? mapEl.getMap() : mapEl;
+        const map = mapEl.getMap ? mapEl.getMap() : (mapEl._map || mapEl['_map']);
         if (!map || typeof map.getCanvas !== 'function') return null;
         const canvas = map.getCanvas();
         if (!canvas) return null;
