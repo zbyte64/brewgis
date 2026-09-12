@@ -1,281 +1,274 @@
 /**
  * Panel Manager — controls map shell panels (sidebar, right panel, bottom sheet, modal).
  * Loaded as a deferred script in workspace_map.html.
+ *
+ * Open/close state lives in the Alpine store 'panels' (registered below via
+ * 'alpine:init'), so workspace_map.html's x-bind/x-on/x-text directives can
+ * react to it directly instead of this file manually toggling classes and
+ * text content. window.__panelManager stays as a thin compatibility shim
+ * forwarding to the store, since several server-rendered partials — loaded
+ * via htmx into these same panels — still call it from plain onclick
+ * handlers or data-panel-event attributes rather than Alpine bindings.
  */
 (function () {
   'use strict';
-
-  // ─── State ─────────────────────────────────────────────────
-  var state = {
-    leftSidebarOpen: false,
-    rightPanelOpen: false,
-    bottomSheetOpen: false,
-    modalOpen: false,
-    activePanel: null,
-    panelTitle: '',
-    // Layer whose symbology editor is currently showing in the right
-    // panel, if any — live-preview edits (layer-style-preview) mutate the
-    // map directly without saving, so whenever this layer's editor goes
-    // away without a save (Cancel, X, Escape, click-outside, or
-    // navigating to a different panel), its actually-saved style must be
-    // re-fetched and reapplied to undo any lingering unsaved preview.
-    symbologyPreviewLayerPk: null,
-    symbologyPreviewLayerKey: null,
-  };
-
-  if (typeof window.__panelState === 'undefined') {
-    window.__panelState = state;
-  } else {
-    state = window.__panelState;
-  }
 
   // ─── DOM refs ──────────────────────────────────────────────
   function getMapEl() {
     return document.querySelector('brew-gis-map');
   }
 
-  // ─── Left Sidebar ──────────────────────────────────────────
-  function toggleSidebar() {
-    var sidebar = document.getElementById('left-sidebar');
-    if (!sidebar) return;
+  document.addEventListener('alpine:init', function () {
+    Alpine.store('panels', {
+      leftSidebarOpen: false,
+      activePanel: 'layers',
+      sidebarWide: false,
 
-    var isCollapsed = sidebar.classList.contains('collapsed');
-    sidebar.classList.toggle('collapsed');
-    state.leftSidebarOpen = !isCollapsed;
+      rightPanelOpen: false,
+      rightPanelWide: false,
+      rightPanelTitle: '',
 
-    // When expanding, load layer list via htmx
-    if (state.leftSidebarOpen) {
-      var content = document.getElementById('left-sidebar-content');
-      if (content && !content.hasChildNodes()) {
-        var wsId = document.getElementById('left-sidebar')?.getAttribute('data-workspace-pk');
-        if (wsId) {
-          htmx.ajax('GET', '/workspace/' + wsId + '/panel/layer-list/', {
-            target: '#left-sidebar-content',
-            swap: 'innerHTML',
-          });
+      bottomSheetOpen: false,
+      sheetTitle: '',
+
+      modalOpen: false,
+
+      // Layer whose symbology editor is currently showing in the right
+      // panel, if any — live-preview edits (layer-style-preview) mutate the
+      // map directly without saving, so whenever this layer's editor goes
+      // away without a save (Cancel, X, Escape, click-outside, or
+      // navigating to a different panel), its actually-saved style must be
+      // re-fetched and reapplied to undo any lingering unsaved preview.
+      symbologyPreviewLayerPk: null,
+      symbologyPreviewLayerKey: null,
+
+      // ─── Left Sidebar ────────────────────────────────────
+      toggleSidebar: function () {
+        this.leftSidebarOpen = !this.leftSidebarOpen;
+
+        // When expanding, load layer list via htmx
+        if (this.leftSidebarOpen) {
+          var content = document.getElementById('left-sidebar-content');
+          if (content && !content.hasChildNodes()) {
+            var wsId = document.getElementById('left-sidebar')?.getAttribute('data-workspace-pk');
+            if (wsId) {
+              htmx.ajax('GET', '/workspace/' + wsId + '/panel/layer-list/', {
+                target: '#left-sidebar-content',
+                swap: 'innerHTML',
+              });
+            }
+          }
         }
-      }
-    }
-  }
+      },
 
-  function setSidebarTab(name) {
-    var content = document.getElementById('left-sidebar-content');
-    if (!content) return;
+      setSidebarTab: function (name) {
+        var content = document.getElementById('left-sidebar-content');
+        if (!content) return;
 
-    var wsId = document.getElementById('left-sidebar')?.getAttribute('data-workspace-pk');
-    if (!wsId) return;
+        var wsId = document.getElementById('left-sidebar')?.getAttribute('data-workspace-pk');
+        if (!wsId) return;
 
-    var urls = {
-      layers: '/workspace/' + wsId + '/panel/layer-list/',
-      catalog: '/workspace/' + wsId + '/panel/catalog/',
-      import: '/workspace/' + wsId + '/panel/import/',
-      analysis: '/workspace/' + wsId + '/panel/analysis/',
-      reports: '/workspace/' + wsId + '/panel/reports/',
-      basemap: '/workspace/' + wsId + '/panel/basemap/',
+        var urls = {
+          layers: '/workspace/' + wsId + '/panel/layer-list/',
+          catalog: '/workspace/' + wsId + '/panel/catalog/',
+          import: '/workspace/' + wsId + '/panel/import/',
+          analysis: '/workspace/' + wsId + '/panel/analysis/',
+          reports: '/workspace/' + wsId + '/panel/reports/',
+          basemap: '/workspace/' + wsId + '/panel/basemap/',
+        };
+
+        var url = urls[name];
+        if (url) {
+          htmx.ajax('GET', url, { target: '#left-sidebar-content', swap: 'innerHTML' });
+          this.activePanel = name;
+        }
+
+        // Expand sidebar if collapsed
+        if (!this.leftSidebarOpen) {
+          this.toggleSidebar();
+        }
+
+        // The Analysis form (checkboxes, JSON config, etc.) and the Data
+        // Catalog's multi-column table need more room than the other
+        // list-style panels.
+        this.sidebarWide = name === 'analysis' || name === 'catalog';
+      },
+
+      // ─── Symbology live-preview revert ───────────────────────
+      // Live-edit inputs in the symbology editor (color/opacity/column/etc.)
+      // mutate the live MapLibre layer directly via 'layer-style-preview'
+      // without saving anything — only Save actually persists. If the editor
+      // goes away some other way (Cancel, the panel's X, Escape, clicking the
+      // map, or navigating to a different panel) that unsaved preview must be
+      // reverted back to whatever is actually saved in the database.
+      applyLayerStyle: function (layerKey, paint, layout) {
+        var mapEl = getMapEl();
+        if (!mapEl || !layerKey) return;
+        var map = mapEl._map || mapEl['_map'];
+        if (!map) return;
+        var mapStyle = map.getStyle();
+        if (!mapStyle || !mapStyle.layers) return;
+        var targetLayer = mapStyle.layers.find(function (l) {
+          return l.id.indexOf(layerKey) === 0;
+        });
+        if (!targetLayer) return;
+        if (paint && typeof mapEl.previewLayerStyle === 'function') {
+          mapEl.previewLayerStyle(targetLayer.id, paint);
+        }
+        if (layout) {
+          for (var key in layout) {
+            try { map.setLayoutProperty(targetLayer.id, key, layout[key]); } catch (e) {}
+          }
+        }
+      },
+
+      revertSymbologyPreview: function () {
+        var pk = this.symbologyPreviewLayerPk;
+        var layerKey = this.symbologyPreviewLayerKey;
+        this.symbologyPreviewLayerPk = null;
+        this.symbologyPreviewLayerKey = null;
+        if (!pk || !layerKey) return;
+        var self = this;
+        fetch('/symbology/' + pk + '/preview/')
+          .then(function (r) { return r.ok ? r.json() : null; })
+          .then(function (style) {
+            if (style) self.applyLayerStyle(layerKey, style.paint, style.layout);
+          })
+          .catch(function () {});
+      },
+
+      // Called whenever the right panel's content is (re)established, to
+      // start/stop tracking which layer's symbology editor (if any) is now
+      // showing — reverting the previous one first if it's being abandoned
+      // unsaved.
+      trackSymbologyPanel: function () {
+        var contentEl = document.getElementById('right-panel-content');
+        var editorEl = contentEl && contentEl.querySelector('.symbology-editor-panel[data-layer-pk]');
+        var newPk = editorEl ? editorEl.getAttribute('data-layer-pk') : null;
+
+        if (this.symbologyPreviewLayerPk && this.symbologyPreviewLayerPk !== newPk) {
+          this.revertSymbologyPreview();
+        }
+        if (editorEl && newPk) {
+          this.symbologyPreviewLayerPk = newPk;
+          this.symbologyPreviewLayerKey = editorEl.getAttribute('data-layer-key');
+        }
+      },
+
+      // ─── Right Panel ───────────────────────────────────────
+      openPanel: function (title, contentHtml) {
+        var contentEl = document.getElementById('right-panel-content');
+        if (!contentEl) return;
+
+        this.rightPanelTitle = title;
+        if (contentHtml) {
+          contentEl.innerHTML = contentHtml;
+        }
+        // Panel content can opt into a wider drawer (e.g. a table-heavy form)
+        // by including an element with data-wide-panel.
+        this.rightPanelWide = !!contentEl.querySelector('[data-wide-panel]');
+        this.rightPanelOpen = true;
+
+        this.trackSymbologyPanel();
+        this.updateMapPadding();
+      },
+
+      closePanel: function () {
+        this.revertSymbologyPreview();
+
+        this.rightPanelOpen = false;
+        this.rightPanelTitle = '';
+
+        this.updateMapPadding();
+
+        document.body.dispatchEvent(new CustomEvent('panel-closed', { detail: { side: 'right' } }));
+      },
+
+      // ─── Bottom Sheet ──────────────────────────────────────
+      openSheet: function (title, contentHtml) {
+        var contentEl = document.getElementById('bottom-sheet-content');
+        if (!contentEl) return;
+
+        this.sheetTitle = title;
+        if (contentHtml) {
+          contentEl.innerHTML = contentHtml;
+        }
+        this.bottomSheetOpen = true;
+
+        this.updateMapPadding();
+      },
+
+      closeSheet: function () {
+        this.bottomSheetOpen = false;
+        this.sheetTitle = '';
+
+        this.updateMapPadding();
+
+        document.body.dispatchEvent(new CustomEvent('panel-closed', { detail: { side: 'bottom' } }));
+      },
+
+      // ─── Modal ─────────────────────────────────────────────
+      openModal: function (contentHtml) {
+        if (contentHtml) {
+          var contentEl = document.getElementById('modal-content');
+          if (contentEl) contentEl.innerHTML = contentHtml;
+        }
+        this.modalOpen = true;
+      },
+
+      closeModal: function () {
+        this.modalOpen = false;
+
+        document.body.dispatchEvent(new CustomEvent('panel-closed', { detail: { side: 'modal' } }));
+      },
+
+      // ─── Map Integration ───────────────────────────────────
+      updateMapPadding: function () {
+        var mapEl = getMapEl();
+        if (!mapEl) return;
+
+        if (this.rightPanelOpen) {
+          mapEl.panelSide = 'right';
+          mapEl.panelWidth = 400;
+        } else if (this.bottomSheetOpen) {
+          mapEl.panelSide = 'bottom';
+          mapEl.panelWidth = Math.round(window.innerHeight * 0.4);
+        } else {
+          mapEl.panelSide = null;
+          mapEl.panelWidth = 0;
+        }
+      },
+
+      // ─── Keyboard ──────────────────────────────────────────
+      handleEscape: function () {
+        if (this.modalOpen) {
+          this.closeModal();
+        } else if (this.rightPanelOpen) {
+          this.closePanel();
+        } else if (this.bottomSheetOpen) {
+          this.closeSheet();
+        } else if (this.leftSidebarOpen) {
+          this.toggleSidebar();
+        }
+      },
+    });
+
+    // Compatibility shim: several server-rendered partials swapped into
+    // these panels still call window.__panelManager directly rather than
+    // binding to the Alpine store.
+    window.__panelManager = {
+      openPanel: function (title, contentHtml) { Alpine.store('panels').openPanel(title, contentHtml); },
+      closePanel: function () { Alpine.store('panels').closePanel(); },
+      openSheet: function (title, contentHtml) { Alpine.store('panels').openSheet(title, contentHtml); },
+      closeSheet: function () { Alpine.store('panels').closeSheet(); },
+      openModal: function (contentHtml) { Alpine.store('panels').openModal(contentHtml); },
+      closeModal: function () { Alpine.store('panels').closeModal(); },
+      toggleSidebar: function () { Alpine.store('panels').toggleSidebar(); },
+      setSidebarTab: function (name) { Alpine.store('panels').setSidebarTab(name); },
     };
+  });
 
-    var url = urls[name];
-    if (url) {
-      htmx.ajax('GET', url, { target: '#left-sidebar-content', swap: 'innerHTML' });
-      state.activePanel = name;
-    }
-
-    // Update active icon state
-    document.querySelectorAll('.sidebar-icons button').forEach(function (btn) {
-      btn.classList.toggle('active', btn.getAttribute('data-panel') === name);
-    });
-
-    // Expand sidebar if collapsed
-    var sidebarEl = document.getElementById('left-sidebar');
-    if (sidebarEl && sidebarEl.classList.contains('collapsed')) {
-      toggleSidebar();
-    }
-
-    // The Analysis form (checkboxes, JSON config, etc.) and the Data
-    // Catalog's multi-column table need more room than the other
-    // list-style panels.
-    if (sidebarEl) {
-      sidebarEl.classList.toggle(
-        'wide-panel',
-        name === 'analysis' || name === 'catalog',
-      );
-    }
-  }
-
-  // ─── Symbology live-preview revert ───────────────────────────
-  // Live-edit inputs in the symbology editor (color/opacity/column/etc.)
-  // mutate the live MapLibre layer directly via 'layer-style-preview'
-  // without saving anything — only Save actually persists. If the editor
-  // goes away some other way (Cancel, the panel's X, Escape, clicking the
-  // map, or navigating to a different panel) that unsaved preview must be
-  // reverted back to whatever is actually saved in the database.
-  function applyLayerStyle(layerKey, paint, layout) {
-    var mapEl = getMapEl();
-    if (!mapEl || !layerKey) return;
-    var map = mapEl._map || mapEl['_map'];
-    if (!map) return;
-    var mapStyle = map.getStyle();
-    if (!mapStyle || !mapStyle.layers) return;
-    var targetLayer = mapStyle.layers.find(function (l) {
-      return l.id.indexOf(layerKey) === 0;
-    });
-    if (!targetLayer) return;
-    if (paint && typeof mapEl.previewLayerStyle === 'function') {
-      mapEl.previewLayerStyle(targetLayer.id, paint);
-    }
-    if (layout) {
-      for (var key in layout) {
-        try { map.setLayoutProperty(targetLayer.id, key, layout[key]); } catch (e) {}
-      }
-    }
-  }
-
-  function revertSymbologyPreview() {
-    var pk = state.symbologyPreviewLayerPk;
-    var layerKey = state.symbologyPreviewLayerKey;
-    state.symbologyPreviewLayerPk = null;
-    state.symbologyPreviewLayerKey = null;
-    if (!pk || !layerKey) return;
-    fetch('/symbology/' + pk + '/preview/')
-      .then(function (r) { return r.ok ? r.json() : null; })
-      .then(function (style) {
-        if (style) applyLayerStyle(layerKey, style.paint, style.layout);
-      })
-      .catch(function () {});
-  }
-
-  // Called whenever the right panel's content is (re)established, to
-  // start/stop tracking which layer's symbology editor (if any) is now
-  // showing — reverting the previous one first if it's being abandoned
-  // unsaved.
-  function trackSymbologyPanel() {
-    var contentEl = document.getElementById('right-panel-content');
-    var editorEl = contentEl && contentEl.querySelector('.symbology-editor-panel[data-layer-pk]');
-    var newPk = editorEl ? editorEl.getAttribute('data-layer-pk') : null;
-
-    if (state.symbologyPreviewLayerPk && state.symbologyPreviewLayerPk !== newPk) {
-      revertSymbologyPreview();
-    }
-    if (editorEl && newPk) {
-      state.symbologyPreviewLayerPk = newPk;
-      state.symbologyPreviewLayerKey = editorEl.getAttribute('data-layer-key');
-    }
-  }
-
-  // ─── Right Panel ───────────────────────────────────────────
-  function openPanel(title, contentHtml) {
-    var panel = document.getElementById('right-panel');
-    var titleEl = document.getElementById('right-panel-title');
-    var contentEl = document.getElementById('right-panel-content');
-    if (!panel || !titleEl || !contentEl) return;
-
-    titleEl.textContent = title;
-    if (contentHtml) {
-      contentEl.innerHTML = contentHtml;
-    }
-    // Panel content can opt into a wider drawer (e.g. a table-heavy form)
-    // by including an element with data-wide-panel.
-    panel.classList.toggle('wide', !!contentEl.querySelector('[data-wide-panel]'));
-    panel.classList.add('open');
-    state.rightPanelOpen = true;
-    state.panelTitle = title;
-
-    trackSymbologyPanel();
-
-    // Update map padding
-    updateMapPadding();
-  }
-
-  function closePanel() {
-    var panel = document.getElementById('right-panel');
-    if (!panel) return;
-
-    revertSymbologyPreview();
-
-    panel.classList.remove('open');
-    state.rightPanelOpen = false;
-    state.panelTitle = '';
-
-    // Reset map padding
-    updateMapPadding();
-
-    document.body.dispatchEvent(new CustomEvent('panel-closed', { detail: { side: 'right' } }));
-  }
-
-  // ─── Bottom Sheet ──────────────────────────────────────────
-  function openSheet(title, contentHtml) {
-    var sheet = document.getElementById('bottom-sheet');
-    var titleEl = document.getElementById('bottom-sheet-title');
-    var contentEl = document.getElementById('bottom-sheet-content');
-    if (!sheet || !titleEl || !contentEl) return;
-
-    titleEl.textContent = title;
-    if (contentHtml) {
-      contentEl.innerHTML = contentHtml;
-    }
-    sheet.classList.add('open');
-    state.bottomSheetOpen = true;
-    state.panelTitle = title;
-
-    // Update map padding
-    updateMapPadding();
-  }
-
-  function closeSheet() {
-    var sheet = document.getElementById('bottom-sheet');
-    if (!sheet) return;
-
-    sheet.classList.remove('open');
-    state.bottomSheetOpen = false;
-    state.panelTitle = '';
-
-    // Reset map padding
-    updateMapPadding();
-
-    document.body.dispatchEvent(new CustomEvent('panel-closed', { detail: { side: 'bottom' } }));
-  }
-
-  // ─── Modal ─────────────────────────────────────────────────
-  function openModal(contentHtml) {
-    var backdrop = document.getElementById('modal-container');
-    var contentEl = document.getElementById('modal-content');
-    if (!backdrop || !contentEl) return;
-
-    if (contentHtml) {
-      contentEl.innerHTML = contentHtml;
-    }
-    backdrop.classList.add('open');
-    state.modalOpen = true;
-  }
-
-  function closeModal() {
-    var backdrop = document.getElementById('modal-container');
-    if (!backdrop) return;
-
-    backdrop.classList.remove('open');
-    state.modalOpen = false;
-
-    document.body.dispatchEvent(new CustomEvent('panel-closed', { detail: { side: 'modal' } }));
-  }
-
-  // ─── Map Integration ──────────────────────────────────────
-  function updateMapPadding() {
-    var mapEl = getMapEl();
-    if (!mapEl) return;
-
-    if (state.rightPanelOpen) {
-      mapEl.panelSide = 'right';
-      mapEl.panelWidth = 400;
-    } else if (state.bottomSheetOpen) {
-      mapEl.panelSide = 'bottom';
-      mapEl.panelWidth = Math.round(window.innerHeight * 0.4);
-    } else {
-      mapEl.panelSide = null;
-      mapEl.panelWidth = 0;
-    }
-  }
-
-  // ResizeObserver for map element resizing
+  // ─── ResizeObserver for map element resizing ──────────────
   var mapResizeObserver = null;
 
   function setupMapResizeObserver() {
@@ -291,39 +284,6 @@
     mapResizeObserver.observe(mapContainer);
   }
 
-  // ─── Keyboard ─────────────────────────────────────────────
-  function handleKeydown(e) {
-    if (e.key !== 'Escape') return;
-
-    if (state.modalOpen) {
-      closeModal();
-      e.preventDefault();
-    } else if (state.rightPanelOpen) {
-      closePanel();
-      e.preventDefault();
-    } else if (state.bottomSheetOpen) {
-      closeSheet();
-      e.preventDefault();
-    } else if (state.leftSidebarOpen) {
-      toggleSidebar();
-      e.preventDefault();
-    }
-  }
-
-  // ─── Click-outside ────────────────────────────────────────
-  function handleMapClick(e) {
-    // Close right panel on map area click
-    if (state.rightPanelOpen && e.target.closest('.map-shell__map')) {
-      closePanel();
-    }
-  }
-
-  function handleModalBackdropClick(e) {
-    if (state.modalOpen && e.target === e.currentTarget) {
-      closeModal();
-    }
-  }
-
   // ─── htmx Event Bridge ────────────────────────────────────
   // htmx 4's htmx:after:settle event carries no request context (just
   // task/newContent/settleTasks), so we bridge on htmx:after:swap instead,
@@ -336,18 +296,17 @@
     var panelEvent = sourceEl.getAttribute('data-panel-event');
     if (!panelEvent) return;
 
+    var panels = Alpine.store('panels');
     if (panelEvent === 'close-panel') {
-      closePanel();
+      panels.closePanel();
     } else if (panelEvent === 'close-sheet') {
-      closeSheet();
+      panels.closeSheet();
     } else if (panelEvent === 'close-modal') {
-      closeModal();
+      panels.closeModal();
     } else if (panelEvent.startsWith('open-panel:')) {
-      var title = panelEvent.substring('open-panel:'.length);
-      openPanel(title);
+      panels.openPanel(panelEvent.substring('open-panel:'.length));
     } else if (panelEvent.startsWith('open-sheet:')) {
-      var sheetTitle = panelEvent.substring('open-sheet:'.length);
-      openSheet(sheetTitle);
+      panels.openSheet(panelEvent.substring('open-sheet:'.length));
     }
   }
 
@@ -357,7 +316,7 @@
   function handleResize() {
     if (resizeTimer) clearTimeout(resizeTimer);
     resizeTimer = setTimeout(function () {
-      updateMapPadding();
+      Alpine.store('panels').updateMapPadding();
 
       var mapEl = getMapEl();
       if (mapEl && typeof mapEl.resize === 'function') {
@@ -368,43 +327,6 @@
 
   // ─── Init ──────────────────────────────────────────────────
   function init() {
-    // Wire sidebar toggle
-    var sidebarToggle = document.getElementById('sidebar-toggle');
-    if (sidebarToggle) {
-      sidebarToggle.addEventListener('click', toggleSidebar);
-    }
-
-    // Wire sidebar icon buttons
-    document.querySelectorAll('.sidebar-icons button[data-panel]').forEach(function (btn) {
-      btn.addEventListener('click', function () {
-        setSidebarTab(this.getAttribute('data-panel'));
-      });
-    });
-
-    // Wire right panel close
-    var rightPanelClose = document.getElementById('right-panel-close');
-    if (rightPanelClose) {
-      rightPanelClose.addEventListener('click', closePanel);
-    }
-
-    // Wire bottom sheet close
-    var bottomSheetClose = document.getElementById('bottom-sheet-close');
-    if (bottomSheetClose) {
-      bottomSheetClose.addEventListener('click', closeSheet);
-    }
-
-    // Wire modal backdrop click
-    var modalBackdrop = document.getElementById('modal-container');
-    if (modalBackdrop) {
-      modalBackdrop.addEventListener('click', handleModalBackdropClick);
-    }
-
-    // Keyboard handler
-    document.addEventListener('keydown', handleKeydown);
-
-    // Map area click handler
-    document.querySelector('.map-shell')?.addEventListener('click', handleMapClick);
-
     // htmx event bridge
     document.body.addEventListener('htmx:after:swap', handleHtmxAfterSettle);
 
@@ -418,14 +340,14 @@
     document.body.addEventListener('layer-style-preview', function(evt) {
       var detail = evt.detail;
       if (!detail || !detail.layerKey || !detail.paint) return;
-      applyLayerStyle(detail.layerKey, detail.paint, null);
+      Alpine.store('panels').applyLayerStyle(detail.layerKey, detail.paint, null);
     });
 
     // ─── Symbology saved / auto-generated (Steps 3, 5) ──────
     document.body.addEventListener('layer-style-changed', function(evt) {
       var detail = evt.detail;
       if (!detail || !detail.layerKey || !detail.style) return;
-      applyLayerStyle(detail.layerKey, detail.style.paint, detail.style.layout);
+      Alpine.store('panels').applyLayerStyle(detail.layerKey, detail.style.paint, detail.style.layout);
     });
 
     // ─── Layer visibility toggle ────────────────────────────
@@ -520,18 +442,6 @@
       toast.appendChild(el);
       setTimeout(function() { el.remove(); }, 4000);
     });
-
-    // Expose panel API globally for htmx response handlers and inline scripts
-    window.__panelManager = {
-      openPanel: openPanel,
-      closePanel: closePanel,
-      openSheet: openSheet,
-      closeSheet: closeSheet,
-      openModal: openModal,
-      closeModal: closeModal,
-      toggleSidebar: toggleSidebar,
-      setSidebarTab: setSidebarTab,
-    };
   }
 
   // Wait for DOM ready

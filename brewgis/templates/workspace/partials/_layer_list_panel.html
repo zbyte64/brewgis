@@ -151,7 +151,7 @@
   <div class="d-flex flex-column gap-1">
     <button type="button"
             class="btn btn-sm btn-outline-secondary"
-            onclick="window.__panelManager.setSidebarTab('import')">{% translate "Import Data…" %}</button>
+            x-on:click="$store.panels.setSidebarTab('import')">{% translate "Import Data…" %}</button>
     <button type="button"
             class="btn btn-sm btn-outline-secondary"
             hx-get="{% url 'workspace:layer_group_list' workspace.pk %}"

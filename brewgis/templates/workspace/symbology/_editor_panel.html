@@ -417,7 +417,7 @@
       <button type="button"
               class="btn btn-sm btn-outline-secondary"
               style="font-size:0.75rem"
-              onclick="window.__panelManager.closePanel()">{% translate "Cancel" %}</button>
+              x-on:click="$store.panels.closePanel()">{% translate "Cancel" %}</button>
       <button type="button"
               class="btn btn-sm btn-outline-info"
               style="font-size:0.75rem"

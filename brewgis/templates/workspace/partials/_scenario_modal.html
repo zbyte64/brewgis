@@ -17,7 +17,7 @@
       </button>
       <button type="button"
               class="btn btn-outline-secondary"
-              onclick="window.__panelManager.closeModal()">{% translate "Cancel" %}</button>
+              x-on:click="$store.panels.closeModal()">{% translate "Cancel" %}</button>
     </div>
   </form>
 </div>

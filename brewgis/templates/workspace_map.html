@@ -10,19 +10,43 @@
   <link href="{% static 'css/map-shell.css' %}" rel="stylesheet" />
   <meta name="referrer" content="unsafe-url" />
   <script type="module" src="{% static 'js/brew-gis-map.js' %}"></script>
+  {% comment %}
+    Alpine drives panel-manager.js's open/close state; alpine-compat keeps
+    Alpine's mutation observer and reactive bindings in sync with htmx's
+    swaps into these same panels (including the innerMorph swaps used by
+    the symbology editor) — see htmx 4's alpine-compat extension docs.
+
+    panel-manager.js must load (and register its 'alpine:init' listener)
+    BEFORE Alpine's own script tag: Alpine's CDN build calls Alpine.start()
+    synchronously the moment it executes if document.readyState is no
+    longer 'loading' — which, for defer scripts, it already isn't — so an
+    'alpine:init' listener attached by a later script would miss the event.
+  {% endcomment %}
   <script defer src="{% static 'js/panel-manager.js' %}"></script>
+  <script defer
+          src="https://cdn.jsdelivr.net/npm/htmx.org@4.0.0/dist/ext/hx-alpine-compat.min.js"
+          integrity="sha256-0gR7qFsnffM7RKiQpHAhMkbQ6PdFj/p2bnfHNHVRdn4="
+          crossorigin="anonymous"></script>
+  <script defer
+          src="https://cdn.jsdelivr.net/npm/alpinejs@3.17.2/dist/cdn.min.js"
+          integrity="sha256-q+W3VlKITOAsY0qxAosEdY7HX6h0/Xqb6hoNl+vlssM="
+          crossorigin="anonymous"></script>
 {% endblock extrahead %}
 {% block title %}
   Map - {{ workspace.name }}
 {% endblock title %}
 {% block content %}
-  <div class="map-shell">
+  <div class="map-shell"
+       hx-ext="alpine-compat"
+       x-data="{}"
+       x-on:keydown.escape.window="$store.panels.handleEscape()">
     <!-- Top bar overlay -->
     <div class="map-shell__topbar">
       <div class="map-shell__topbar-row">
         <button id="sidebar-toggle"
                 class="btn btn-sm btn-outline-secondary"
                 type="button"
+                x-on:click="$store.panels.toggleSidebar()"
                 aria-label="{% translate 'Toggle sidebar' %}">☰</button>
         {% if not is_public_view %}
           <a href="{% url 'workspace:home' %}"
@@ -69,7 +93,7 @@
             <button type="button"
                     class="btn btn-sm btn-outline-secondary"
                     id="export-map-btn"
-                    onclick="window.__panelManager.openModal()">{% translate "Export Map" %}</button>
+                    x-on:click="$store.panels.openModal()">{% translate "Export Map" %}</button>
           {% endif %}
         </div>
       </div>
@@ -241,33 +265,45 @@
   {% endif %}
 </div>
 <!-- Left sidebar -->
-<div class="map-shell__left-sidebar collapsed"
+<div class="map-shell__left-sidebar"
      id="left-sidebar"
-     data-workspace-pk="{{ workspace.pk }}">
+     data-workspace-pk="{{ workspace.pk }}"
+     x-bind:class="{ collapsed: !$store.panels.leftSidebarOpen, 'wide-panel': $store.panels.sidebarWide }">
   <div class="sidebar-icons">
     <button type="button"
             data-panel="layers"
-            class="active"
+            x-on:click="$store.panels.setSidebarTab('layers')"
+            x-bind:class="{ active: $store.panels.activePanel === 'layers' }"
             title="{% translate 'Layers' %}"
             aria-label="{% translate 'Layers' %}">🗂️</button>
     <button type="button"
             data-panel="catalog"
+            x-on:click="$store.panels.setSidebarTab('catalog')"
+            x-bind:class="{ active: $store.panels.activePanel === 'catalog' }"
             title="{% translate 'Data Catalog' %}"
             aria-label="{% translate 'Data Catalog' %}">📦</button>
     <button type="button"
             data-panel="import"
+            x-on:click="$store.panels.setSidebarTab('import')"
+            x-bind:class="{ active: $store.panels.activePanel === 'import' }"
             title="{% translate 'Import Data' %}"
             aria-label="{% translate 'Import Data' %}">📥</button>
     <button type="button"
             data-panel="analysis"
+            x-on:click="$store.panels.setSidebarTab('analysis')"
+            x-bind:class="{ active: $store.panels.activePanel === 'analysis' }"
             title="{% translate 'Analysis' %}"
             aria-label="{% translate 'Analysis' %}">📊</button>
     <button type="button"
             data-panel="reports"
+            x-on:click="$store.panels.setSidebarTab('reports')"
+            x-bind:class="{ active: $store.panels.activePanel === 'reports' }"
             title="{% translate 'Reports' %}"
             aria-label="{% translate 'Reports' %}">📄</button>
     <button type="button"
             data-panel="basemap"
+            x-on:click="$store.panels.setSidebarTab('basemap')"
+            x-bind:class="{ active: $store.panels.activePanel === 'basemap' }"
             title="{% translate 'Basemap' %}"
             aria-label="{% translate 'Basemap' %}">🗺️</button>
   </div>
@@ -281,7 +317,8 @@
     }
   }
 </script>
-<div class="map-shell__map">
+<div class="map-shell__map"
+     x-on:click="$store.panels.rightPanelOpen && $store.panels.closePanel()">
   <brew-gis-map viewport='{{ viewport_json|safe }}' layers='{{ layer_data|json_attr|safe }}'
   {% if scenario %}
     mode="view" scenario-id="{{ scenario.pk }}" canvas-layer-id="{{ canvas_view_layer_id }}" selection-mode="{{ selection_mode }}"
@@ -289,30 +326,39 @@
   ></brew-gis-map>
 </div>
 <!-- Right panel (drawer) -->
-<div class="map-shell__right-panel" id="right-panel">
+<div class="map-shell__right-panel"
+     id="right-panel"
+     x-bind:class="{ open: $store.panels.rightPanelOpen, wide: $store.panels.rightPanelWide }">
   <div class="panel-header">
-    <h6 id="right-panel-title"></h6>
+    <h6 id="right-panel-title" x-text="$store.panels.rightPanelTitle"></h6>
     <button type="button"
             class="btn-close"
             id="right-panel-close"
+            x-on:click="$store.panels.closePanel()"
             aria-label="{% translate 'Close panel' %}"></button>
   </div>
   <div class="panel-content" id="right-panel-content">{# htmx targets this for panel content #}</div>
 </div>
 <!-- Bottom sheet -->
-<div class="map-shell__bottom-sheet" id="bottom-sheet">
+<div class="map-shell__bottom-sheet"
+     id="bottom-sheet"
+     x-bind:class="{ open: $store.panels.bottomSheetOpen }">
   <div class="sheet-handle"></div>
   <div class="sheet-header">
-    <span id="bottom-sheet-title"></span>
+    <span id="bottom-sheet-title" x-text="$store.panels.sheetTitle"></span>
     <button type="button"
             class="btn-close"
             id="bottom-sheet-close"
+            x-on:click="$store.panels.closeSheet()"
             aria-label="{% translate 'Close sheet' %}"></button>
   </div>
   <div class="sheet-content" id="bottom-sheet-content">{# htmx targets this for sheet content #}</div>
 </div>
 <!-- Modal container -->
-<div class="map-shell__modal-backdrop" id="modal-container">
+<div class="map-shell__modal-backdrop"
+     id="modal-container"
+     x-bind:class="{ open: $store.panels.modalOpen }"
+     x-on:click.self="$store.panels.closeModal()">
   <div class="modal-content" id="modal-content">
     <!-- Export Map Modal Content -->
     <div class="p-3">
@@ -320,7 +366,7 @@
         <h6 class="mb-0">{% translate "Export Map" %}</h6>
         <button type="button"
                 class="btn-close"
-                onclick="window.__panelManager.closeModal()"
+                x-on:click="$store.panels.closeModal()"
                 aria-label="Close"></button>
       </div>
       <div class="mb-3">
