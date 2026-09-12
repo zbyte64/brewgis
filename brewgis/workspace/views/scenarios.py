@@ -177,6 +177,8 @@ def _build_layer_data(workspace: Workspace) -> list[dict[str, object]]:
             data["layout"] = style["layout"]
         except SymbologyConfig.DoesNotExist:
             pass
+        data.setdefault("layout", {})
+        data["layout"]["visibility"] = "visible" if layer.is_visible else "none"
         layer_data.append(data)
     return layer_data
 

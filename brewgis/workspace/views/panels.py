@@ -17,6 +17,7 @@ from django.shortcuts import render
 
 from brewgis.workspace.models import Basemap
 from brewgis.workspace.models import Scenario
+from brewgis.workspace.models import ScenarioReport
 from brewgis.workspace.models import SymbologyConfig
 from brewgis.workspace.models import Workspace
 from brewgis.workspace.services.filter_compiler import FilterCompiler
@@ -164,8 +165,10 @@ def panel_basemap_picker(request: HttpRequest, workspace_pk: int) -> HttpRespons
 def panel_report_list(request: HttpRequest, workspace_pk: int) -> HttpResponse:
     """Return report list content for the left sidebar."""
     workspace = get_object_or_404(Workspace, pk=workspace_pk)
+    reports = ScenarioReport.objects.filter(workspace=workspace)
     context: dict[str, object] = {
         "workspace": workspace,
+        "reports": reports,
     }
     return render(
         request,

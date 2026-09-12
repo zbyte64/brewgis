@@ -72,6 +72,12 @@ RUN apt-get update && apt-get install --no-install-recommends -y \
     libpango-1.0-0 libcairo2 libatspi2.0-0 \
     && rm -rf /var/lib/apt/lists/*
 
+# WeasyPrint (PDF report generation) dependencies —
+# https://doc.courtbouillon.org/weasyprint/stable/first_steps.html#debian-ubuntu
+RUN apt-get update && apt-get install --no-install-recommends -y \
+    libpangoft2-1.0-0 \
+    && rm -rf /var/lib/apt/lists/*
+
 # Install Playwright browsers (chromium only to keep image lean)
 # Use a shared path so the dev-user can access them at runtime
 ENV PLAYWRIGHT_BROWSERS_PATH=/usr/local/share/ms-playwright

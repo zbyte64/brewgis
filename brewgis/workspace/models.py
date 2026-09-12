@@ -113,6 +113,7 @@ class Layer(models.Model):
         help_text="Derived from the source geometry type; can be overridden.",
     )
     display_order = models.IntegerField(default=0)
+    is_visible = models.BooleanField(default=True)
     layer_source = models.CharField(max_length=255)
     db_table = models.CharField(
         max_length=64,

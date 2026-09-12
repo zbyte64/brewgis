@@ -23,6 +23,7 @@ from .views import import_center
 from .views import import_status
 from .views import layer_delete
 from .views import layer_legend
+from .views import layer_toggle_visibility
 from .views import merge_paint_edits
 from .views import paint_built_form
 from .views import paint_features
@@ -89,6 +90,7 @@ from .views.map import view_public_scenario_map
 from .views.report import generate_map_report
 from .views.report import generate_paint_report
 from .views.report import generate_scenario_report
+from .views.report import report_delete
 from .views.report import report_detail
 from .views.report import report_list
 from .views.report import report_list_partial
@@ -116,6 +118,11 @@ urlpatterns = [
         name="sqlmesh_table_preview",
     ),
     path("layers/<int:pk>/delete/", layer_delete, name="layer_delete"),
+    path(
+        "layers/<int:pk>/toggle-visibility/",
+        layer_toggle_visibility,
+        name="layer_toggle_visibility",
+    ),
     path(
         "<int:workspace_pk>/base-canvas/select/",
         SelectBaseCanvasView.as_view(),
@@ -321,6 +328,11 @@ urlpatterns = [
         "<int:workspace_pk>/reports/<int:report_pk>/status/",
         report_status,
         name="report_status",
+    ),
+    path(
+        "<int:workspace_pk>/reports/<int:report_pk>/delete/",
+        report_delete,
+        name="report_delete",
     ),
     path(
         "<int:workspace_pk>/reports/generate/scenario/",

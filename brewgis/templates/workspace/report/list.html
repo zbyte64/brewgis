@@ -36,14 +36,7 @@
         </select>
       </div>
     </div>
-    <!-- Report list partial -->
+    <!-- Report list partial (includes its own generate action) -->
     <div id="report-list-container">{% include "workspace/report/partials/_report_list.html" %}</div>
-    <!-- Generate buttons -->
-    <div class="mt-3 d-flex gap-2">
-      <a href="{% url 'workspace:generate_scenario_report' workspace.pk %}"
-         class="btn btn-sm btn-outline-primary">{% translate "Generate Scenario Comparison Report" %}</a>
-      <a href="{% url 'workspace:generate_map_report' workspace.pk %}"
-         class="btn btn-sm btn-outline-primary">{% translate "Export Map" %}</a>
-    </div>
   </div>
 {% endblock content %}

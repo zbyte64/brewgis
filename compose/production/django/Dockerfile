@@ -49,6 +49,10 @@ RUN apt-get update && apt-get install --no-install-recommends -y \
   wait-for-it \
   postgresql-client \
   postgis \
+  # WeasyPrint (PDF report generation) dependencies —
+  # https://doc.courtbouillon.org/weasyprint/stable/first_steps.html#debian-ubuntu
+  libpango-1.0-0 \
+  libpangoft2-1.0-0 \
   # cleaning up unused files
   && apt-get purge -y --auto-remove -o APT::AutoRemove::RecommendsImportant=false \
   && rm -rf /var/lib/apt/lists/*

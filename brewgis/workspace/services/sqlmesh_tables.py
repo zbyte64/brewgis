@@ -26,6 +26,20 @@ _LINE_TYPES = {"linestring", "multilinestring"}
 
 _MODELS_ROOT = Path(__file__).resolve().parents[2] / "sqlmesh" / "models"
 
+# Must match the `project=` value in brewgis/sqlmesh/config.py — sqlmesh
+# qualifies every model's UI/FQN path as "<project>.<schema>.<table>".
+SQLMESH_PROJECT_NAME = "brewgis"
+
+
+def sqlmesh_model_ui_url(schema: str, table: str) -> str:
+    """Deep link to a model's page in the ``sqlmesh ui`` data catalog."""
+    from django.conf import settings
+
+    return (
+        f"{settings.SQLMESH_UI_URL}/data-catalog/models/"
+        f"{SQLMESH_PROJECT_NAME}.{schema}.{table}"
+    )
+
 
 @dataclass(frozen=True)
 class SqlmeshTableInfo:

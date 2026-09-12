@@ -94,6 +94,16 @@ class AnalysisRunFactory(factory.django.DjangoModelFactory):
     vars = {}
 
 
+class ScenarioReportFactory(factory.django.DjangoModelFactory):
+    class Meta:
+        model = "workspace.ScenarioReport"
+
+    workspace = factory.SubFactory(WorkspaceFactory)
+    name = factory.Sequence(lambda n: f"Report {n}")
+    report_type = "scenario_comparison"
+    status = "pending"
+
+
 class PaintedCanvasFactory(factory.django.DjangoModelFactory):
     class Meta:
         model = "workspace.PaintedCanvas"

@@ -226,6 +226,11 @@ def view_workspace_map(request: HttpRequest, workspace_pk: int) -> HttpResponse:
             data["layout"] = style["layout"]
         except SymbologyConfig.DoesNotExist:
             pass
+
+        # Persisted visibility toggle
+        data.setdefault("layout", {})
+        data["layout"]["visibility"] = "visible" if layer.is_visible else "none"
+
         layer_data.append(data)
 
     # If a scenario is active, add the canvas view as the last layer
@@ -383,6 +388,7 @@ def view_public_scenario_map(request: HttpRequest, token: str) -> HttpResponse:
                 if workspace.tile_server_backend == "tipg"
                 else layer._source_id(),  # noqa: SLF001
                 "symbology": layer.symbology if hasattr(layer, "symbology") else None,
+                "layout": {"visibility": "visible" if layer.is_visible else "none"},
             }
         )
 

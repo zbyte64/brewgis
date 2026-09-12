@@ -123,3 +123,14 @@ def json_attr(value: object) -> str:
     # Escape single quotes — HTML attribute delimiters,
     # and strip null bytes that truncate in some parsers.
     return raw.replace("'", "\\u0027").replace("\x00", "")
+
+
+@register.filter
+def sqlmesh_model_url(schema: str, table: str) -> str:
+    """Deep link to a model's page in the sqlmesh UI data catalog.
+
+    Usage: ``{{ c.schema|sqlmesh_model_url:c.table }}``
+    """
+    from brewgis.workspace.services.sqlmesh_tables import sqlmesh_model_ui_url
+
+    return sqlmesh_model_ui_url(schema, table)

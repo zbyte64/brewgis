@@ -76,8 +76,11 @@
                        style="width: 0.9rem;
                               height: 0.9rem;
                               flex-shrink: 0"
-                       checked
+                       {% if layer.is_visible %}checked{% endif %}
                        data-layer-key="{{ layer.key }}"
+                       hx-post="{% url 'workspace:layer_toggle_visibility' layer.pk %}"
+                       hx-trigger="change"
+                       hx-swap="none"
                        aria-label="{% translate 'Toggle layer visibility' %}" />
               {% endif %}
               <button type="button"

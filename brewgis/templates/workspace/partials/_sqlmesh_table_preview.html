@@ -4,7 +4,13 @@
   {% if not preview %}
     <p class="text-muted small mb-0">{% translate "Select a table above to see its columns and a data preview." %}</p>
   {% else %}
-    <h6 class="mb-2">{{ schema }}.{{ table }}</h6>
+    <h6 class="mb-2">
+      {{ schema }}.{{ table }}
+      <a href="{{ sqlmesh_ui_url }}"
+         target="_blank"
+         rel="noopener"
+         class="ms-1 small">{% translate "Open in SQLMesh UI ↗" %}</a>
+    </h6>
     <div class="row">
       <div class="col-md-4">
         <h6 class="text-muted small text-uppercase mb-1">{% translate "Columns" %} ({{ preview.columns|length }})</h6>

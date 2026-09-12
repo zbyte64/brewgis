@@ -9,6 +9,7 @@ from .basemaps import basemap_select  # noqa: F401
 from .create_layer import CreateLayerView  # noqa: F401
 from .create_layer import ImportSqlmeshLayerView  # noqa: F401
 from .create_layer import layer_delete  # noqa: F401
+from .create_layer import layer_toggle_visibility  # noqa: F401
 from .create_layer import sqlmesh_table_preview  # noqa: F401
 from .data_table import layer_data_table  # noqa: F401
 from .external_services import external_service_add  # noqa: F401

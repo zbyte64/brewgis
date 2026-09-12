@@ -6,6 +6,7 @@ from typing import Any
 
 from crispy_forms.helper import FormHelper
 from django import forms
+from django.conf import settings
 from django.contrib.auth.decorators import user_passes_test
 from django.http import HttpRequest
 from django.http import HttpResponse
@@ -128,6 +129,7 @@ class ImportSqlmeshLayerView(HtmxResponseMixin, FormView):
     def get_context_data(self, **kwargs: object) -> dict[str, object]:
         context = super().get_context_data(**kwargs)
         context["candidates"] = list_sqlmesh_layer_candidates()
+        context["sqlmesh_ui_url"] = settings.SQLMESH_UI_URL
         return context
 
     def get_redirect_url(self) -> str:
@@ -164,8 +166,23 @@ def sqlmesh_table_preview(request: HttpRequest) -> HttpResponse:
     return render(
         request,
         "workspace/partials/_sqlmesh_table_preview.html",
-        {"preview": preview, "schema": schema, "table": table},
+        {
+            "preview": preview,
+            "schema": schema,
+            "table": table,
+            "sqlmesh_ui_url": settings.SQLMESH_UI_URL,
+        },
     )
+
+
+@require_POST
+@user_passes_test(lambda u: u.is_authenticated)
+def layer_toggle_visibility(request: HttpRequest, pk: int) -> HttpResponse:
+    """Persist a layer's visibility toggle from the legend checkbox."""
+    layer = get_object_or_404(Layer, pk=pk)
+    layer.is_visible = not layer.is_visible
+    layer.save(update_fields=["is_visible"])
+    return HttpResponse(status=204)
 
 
 @require_POST

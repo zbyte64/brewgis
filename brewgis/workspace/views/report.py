@@ -70,6 +70,27 @@ def report_status(
 
 @require_POST
 @user_passes_test(lambda u: u.is_authenticated)
+def report_delete(
+    request: HttpRequest, workspace_pk: int, report_pk: int
+) -> HttpResponse:
+    """Delete a report and return the refreshed report list."""
+    workspace = get_object_or_404(Workspace, pk=workspace_pk)
+    report = get_object_or_404(ScenarioReport, pk=report_pk, workspace=workspace)
+    report.delete()
+
+    reports = ScenarioReport.objects.filter(workspace=workspace)
+    return render(
+        request,
+        "workspace/report/partials/_report_list.html",
+        {
+            "workspace": workspace,
+            "reports": reports,
+        },
+    )
+
+
+@require_POST
+@user_passes_test(lambda u: u.is_authenticated)
 def generate_scenario_report(request: HttpRequest, workspace_pk: int) -> HttpResponse:
     """Generate a scenario comparison report."""
     workspace = get_object_or_404(Workspace, pk=workspace_pk)
@@ -85,7 +106,17 @@ def generate_scenario_report(request: HttpRequest, workspace_pk: int) -> HttpRes
 
     generate_report_task.delay(report.pk)
 
-    return JsonResponse({"pk": report.pk, "status": report.status})
+    if request.headers.get("HX-Request") == "true":
+        reports = ScenarioReport.objects.filter(workspace=workspace)
+        return render(
+            request,
+            "workspace/report/partials/_report_list.html",
+            {"workspace": workspace, "reports": reports},
+        )
+
+    return JsonResponse(
+        {"status": "ok", "pk": report.pk, "report_status": report.status}
+    )
 
 
 @require_POST
@@ -107,7 +138,9 @@ def generate_paint_report(request: HttpRequest, workspace_pk: int) -> HttpRespon
 
     generate_report_task.delay(report.pk)
 
-    return JsonResponse({"pk": report.pk, "status": report.status})
+    return JsonResponse(
+        {"status": "ok", "pk": report.pk, "report_status": report.status}
+    )
 
 
 @require_POST
@@ -140,7 +173,9 @@ def generate_map_report(request: HttpRequest, workspace_pk: int) -> HttpResponse
 
     generate_report_task.delay(report.pk)
 
-    return JsonResponse({"pk": report.pk, "status": report.status})
+    return JsonResponse(
+        {"status": "ok", "pk": report.pk, "report_status": report.status}
+    )
 
 
 @require_safe

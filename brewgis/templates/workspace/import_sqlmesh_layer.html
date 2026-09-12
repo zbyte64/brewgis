@@ -1,6 +1,6 @@
 {% extends "base.html" %}
 
-{% load i18n %}
+{% load i18n workspace_tags %}
 
 {% block extrahead %}
   {{ form.media }}
@@ -75,6 +75,11 @@
                     </td>
                     <td>
                       <label for="sqlmesh-table-{{ forloop.counter }}" class="mb-0">{{ c.table }}</label>
+                      <a href="{{ sqlmesh_ui_url }}"
+                         target="_blank"
+                         rel="noopener"
+                         class="ms-1 small"
+                         title="{% blocktranslate with qualified=c.qualified %}Open {{ qualified }} in the SQLMesh UI{% endblocktranslate %}">↗</a>
                     </td>
                     <td>
                       <span class="badge bg-secondary">{{ c.geometry_type }}</span>

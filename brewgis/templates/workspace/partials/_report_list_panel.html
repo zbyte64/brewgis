@@ -1,6 +1,11 @@
 {% load i18n %}
 
-<div class="report-list-panel">
-  <h6 class="text-muted mb-3" style="font-size: 0.8rem;">{% translate "Reports" %}</h6>
-  <p class="text-muted small">{% translate "Reports loading..." %}</p>
+<div class="report-list-panel" style="font-size: 0.75rem;">
+  <div class="d-flex align-items-center justify-content-between mb-2">
+    <h6 class="mb-0 text-muted" style="font-size: 0.8rem;">{% translate "Reports" %}</h6>
+    <a href="{% url 'workspace:report_list' workspace.pk %}"
+       target="_blank"
+       class="small">{% translate "Open full list" %}</a>
+  </div>
+  {% include "workspace/report/partials/_report_list.html" %}
 </div>
