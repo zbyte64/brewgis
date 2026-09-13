@@ -252,6 +252,14 @@ def run_modules_sync(  # noqa: PLR0913
         select=selects or None,
         skip_tests=True,
         variables=model_vars,
+        # Launching an analysis must always recompute the selected models,
+        # never trust SQLMesh's own snapshot-fingerprint staleness check.
+        # Upstream reference data (e.g. BuildingType/built_forms exports)
+        # can change without the model's SQL or vars changing at all, which
+        # SQLMesh has no way to detect on its own — without this, a rerun
+        # can silently keep serving a stale physical table with results
+        # computed against data that no longer exists.
+        restate_models=selects or None,
     )
     # SQLMesh promotes each plan into its own environment (scenario_<id>)
     # rather than materializing results directly into the workspace's own

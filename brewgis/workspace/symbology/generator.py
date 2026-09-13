@@ -16,6 +16,10 @@ from brewgis.workspace.models import SymbologyConfig
 
 __all__ = ["auto_generate_style_from_layer", "generate_maplibre_style"]
 
+# A MapLibre "step" expression needs at least one threshold to step over —
+# the color below the first threshold, plus one (threshold, color) pair.
+_MIN_CLASSES_FOR_STEP = 2
+
 
 @deal.post(lambda result: result in ("fill", "line", "circle"))
 def _normalize_geo(geometry_type: str) -> str:
@@ -131,21 +135,27 @@ def _graduated_paint(
         "circle": "circle-color",
     }[geo]
 
+    # With too few classes to step between (e.g. classification collapsed to
+    # a single bucket because the data is mostly one value, like VMT being 0
+    # for most parcels), fall back to a flat color instead of emitting a
+    # "step" expression MapLibre rejects as too short.
+    if len(classes) < _MIN_CLASSES_FOR_STEP:
+        color = classes[0].color or symbology.default_color
+        return {color_key: _null_expression(symbology, color)}
+
     # Build step expression: ["step", ["get", attr], color_below_first, threshold1, color1, ...]
     # ["to-number", ...] guards against tile servers (e.g. Martin) that encode
     # Postgres `numeric` columns as MVT strings rather than doubles — "step"
     # requires a numeric input and otherwise throws at evaluation time,
     # silently falling back to fill-color's spec default (black).
-    step_parts: list[Any] = ["step", ["to-number", ["get", attr]]]
-
-    # Default color (below first threshold)
-    if classes:
-        step_parts.append(classes[0].color or symbology.default_color)
-        for sc in classes[1:]:
-            step_parts.append(sc.min_value or 0)
-            step_parts.append(sc.color or symbology.default_color)
-    else:
-        step_parts.append(symbology.default_color)
+    step_parts: list[Any] = [
+        "step",
+        ["to-number", ["get", attr]],
+        classes[0].color or symbology.default_color,
+    ]
+    for sc in classes[1:]:
+        step_parts.append(sc.min_value or 0)
+        step_parts.append(sc.color or symbology.default_color)
 
     return {color_key: _null_expression(symbology, step_parts)}
 

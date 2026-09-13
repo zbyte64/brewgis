@@ -83,4 +83,37 @@ describe('palette-picker', () => {
     await el.updateComplete
     expect(el.querySelector('.palette-picker-menu')?.classList.contains('is-open')).toBe(false)
   })
+
+  it('closes when a pointerdown lands outside the element, even if the backdrop is bypassed', async () => {
+    // Regression test: a stuck-open menu leaves its full-viewport backdrop
+    // in place, silently blocking clicks anywhere on the page (e.g. a Save
+    // button elsewhere in the form) until the toggle is clicked again.
+    const el = await createElement({ options: OPTIONS })
+    const toggle = el.querySelector('.palette-picker-toggle') as HTMLButtonElement
+    toggle.click()
+    await el.updateComplete
+    expect(el.querySelector('.palette-picker-menu')?.classList.contains('is-open')).toBe(true)
+
+    const outsideButton = document.createElement('button')
+    document.body.appendChild(outsideButton)
+    outsideButton.dispatchEvent(new MouseEvent('pointerdown', { bubbles: true }))
+    await el.updateComplete
+
+    expect(el.querySelector('.palette-picker-menu')?.classList.contains('is-open')).toBe(false)
+    expect(el.querySelector('.palette-picker-backdrop')).toBeNull()
+    outsideButton.remove()
+  })
+
+  it('does not close when a pointerdown lands inside the element (e.g. on an option)', async () => {
+    const el = await createElement({ options: OPTIONS })
+    const toggle = el.querySelector('.palette-picker-toggle') as HTMLButtonElement
+    toggle.click()
+    await el.updateComplete
+
+    const option = el.querySelector('.palette-picker-option') as HTMLElement
+    option.dispatchEvent(new MouseEvent('pointerdown', { bubbles: true }))
+    await el.updateComplete
+
+    expect(el.querySelector('.palette-picker-menu')?.classList.contains('is-open')).toBe(true)
+  })
 })

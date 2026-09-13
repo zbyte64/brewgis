@@ -48,13 +48,29 @@ export class PalettePicker extends LitElement {
     if (e.key === 'Escape' && this._open) this._close()
   }
 
+  // Belt-and-braces alongside the backdrop: the backdrop only catches clicks
+  // that land on the page *behind* it, but a stray click that reaches some
+  // other element first (e.g. one with its own stopPropagation, or one that
+  // briefly outranks the backdrop's z-index during a swap) would otherwise
+  // leave the menu — and its full-viewport backdrop — open indefinitely,
+  // silently blocking clicks anywhere on the page (including Save) until
+  // the toggle is clicked again. Capture-phase means this runs before any
+  // stopPropagation() elsewhere in the bubble phase can suppress it.
+  private _onDocumentPointerDown = (e: PointerEvent): void => {
+    if (this._open && e.target instanceof Node && !this.contains(e.target)) {
+      this._close()
+    }
+  }
+
   override connectedCallback(): void {
     super.connectedCallback()
     document.addEventListener('keydown', this._onDocumentKeydown)
+    document.addEventListener('pointerdown', this._onDocumentPointerDown, true)
   }
 
   override disconnectedCallback(): void {
     document.removeEventListener('keydown', this._onDocumentKeydown)
+    document.removeEventListener('pointerdown', this._onDocumentPointerDown, true)
     super.disconnectedCallback()
   }
 
