@@ -27,8 +27,8 @@ from brewgis.workspace.models import Layer
 from brewgis.workspace.models import Scenario
 from brewgis.workspace.models import StyleClass
 from brewgis.workspace.models import SymbologyConfig
-from brewgis.workspace.palettes import PALETTES
 from brewgis.workspace.palettes import get_all_names
+from brewgis.workspace.palettes import preview_swatches
 from brewgis.workspace.symbology.auto import auto_generate_symbology
 from brewgis.workspace.symbology.generator import generate_maplibre_style
 from brewgis.workspace.symbology.legend import generate_legend
@@ -115,7 +115,7 @@ def _build_context(
         "config": config,
         "classes": classes,
         "palette_names": get_all_names(),
-        "palettes_json": json.dumps(PALETTES),
+        "palettes_json": json.dumps(preview_swatches()),
         "geometry_types": ["fill", "line", "circle"],
         "column_choices": _column_choices(layer),
         "advanced_open": advanced_open,

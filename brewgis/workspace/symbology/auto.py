@@ -10,6 +10,7 @@ Given a Layer and an optional attribute column name, this pipeline:
 
 from __future__ import annotations
 
+from typing import TYPE_CHECKING
 from typing import Any
 
 from brewgis.workspace.models import Layer
@@ -25,6 +26,9 @@ from brewgis.workspace.symbology.classifiers import classify
 from brewgis.workspace.symbology.stats import ColumnStatistics
 from brewgis.workspace.symbology.stats import compute_statistics
 from brewgis.workspace.symbology.stats import list_columns
+
+if TYPE_CHECKING:
+    from cmap import Colormap
 
 
 def _suggest_palette(
@@ -290,15 +294,15 @@ def auto_generate_symbology(  # noqa: PLR0913
 
 
 def _resolve_palette(
-    palette_names: list[str], count: int, *, reverse: bool = False
+    colormap: Colormap, count: int, *, reverse: bool = False
 ) -> list[str]:
-    """Sample *count* colors from *palette_names*, optionally reversed."""
-    palette = sample_palette(palette_names, count)
+    """Sample *count* colors from *colormap*, optionally reversed."""
+    palette = sample_palette(colormap, count)
     return list(reversed(palette)) if reverse else palette
 
 
-def _get_palette_list(name: str, stats: ColumnStatistics) -> list[str]:
-    """Return palette list by name, falling back on sensible defaults."""
+def _get_palette_list(name: str, stats: ColumnStatistics) -> Colormap:
+    """Return palette Colormap by name, falling back on sensible defaults."""
     try:
         return get_palette(name)
     except KeyError:

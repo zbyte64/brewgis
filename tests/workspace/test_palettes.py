@@ -2,17 +2,19 @@
 
 from __future__ import annotations
 
+import json
+
 import pytest
+from cmap import Colormap
 
 from brewgis.workspace.palettes import PALETTES
-from brewgis.workspace.palettes import _hex_from_rgb
-from brewgis.workspace.palettes import _parse_hex
 from brewgis.workspace.palettes import get_all_names
 from brewgis.workspace.palettes import get_diverging_names
 from brewgis.workspace.palettes import get_palette
 from brewgis.workspace.palettes import get_qualitative_names
 from brewgis.workspace.palettes import get_sequential_names
 from brewgis.workspace.palettes import interpolate_color
+from brewgis.workspace.palettes import preview_swatches
 from brewgis.workspace.palettes import sample_palette
 
 
@@ -20,15 +22,10 @@ class TestPaletteRegistry:
     def test_all_palettes_accessible_by_name(self) -> None:
         """Every palette in PALETTES dict is retrievable via get_palette()."""
         for name in PALETTES:
-            retrieved = get_palette(name)
-            assert retrieved == PALETTES[name]
+            assert get_palette(name) is PALETTES[name]
 
-    def test_get_palette_returns_copy(self) -> None:
-        """get_palette should return a mutable copy, not the original."""
-        original = PALETTES["blues"]
-        retrieved = get_palette("blues")
-        retrieved.append("#000000")
-        assert retrieved != original
+    def test_get_palette_returns_colormap(self) -> None:
+        assert isinstance(get_palette("blues"), Colormap)
 
     def test_get_palette_unknown_key(self) -> None:
         with pytest.raises(KeyError, match="does_not_exist"):
@@ -58,94 +55,112 @@ class TestPaletteRegistry:
         assert all_names == sorted(PALETTES)
 
     def test_palettes_have_valid_hex_colors(self) -> None:
-        """Every color in every palette is a valid 6-digit hex string."""
-        for name, palette in PALETTES.items():
-            for color in palette:
+        """Every color stop in every palette is a valid 6-digit hex string."""
+        for name, colormap in PALETTES.items():
+            for stop in colormap.color_stops:
+                color = stop.color.hex
                 assert color.startswith("#"), f"{name}: {color}"
                 assert len(color) == 7, f"{name}: {color}"
                 int(color[1:], 16)  # should not raise
 
+    def test_qualitative_palettes_use_nearest_interpolation(self) -> None:
+        """Categorical palettes must not blend between unrelated classes."""
+        for name in get_qualitative_names():
+            assert get_palette(name).category == "qualitative"
+            assert get_palette(name).interpolation == "nearest"
 
-class TestParseHex:
-    def test_full_hex(self) -> None:
-        assert _parse_hex("#ff0000") == (255, 0, 0)
-
-    def test_short_hex(self) -> None:
-        assert _parse_hex("#f00") == (255, 0, 0)
-
-    def test_mixed(self) -> None:
-        assert _parse_hex("#1a2b3c") == (26, 43, 60)
-
-
-class TestHexFromRgb:
-    def test_basic(self) -> None:
-        assert _hex_from_rgb(255, 0, 0) == "#ff0000"
-
-    def test_zero_padding(self) -> None:
-        assert _hex_from_rgb(10, 20, 30) == "#0a141e"
+    def test_material_set1_is_a_colormap(self) -> None:
+        """material_set1 isn't in cmap's catalog but is still first-class."""
+        colormap = get_palette("material_set1")
+        assert isinstance(colormap, Colormap)
+        assert colormap.color_stops[0].color.hex.lower() == "#4caf50"
 
 
 class TestInterpolateColor:
-    def test_single_color_palette(self) -> None:
-        assert interpolate_color(["#ff0000"], 0.5) == "#ff0000"
+    def test_single_stop_index(self) -> None:
+        colormap = get_palette("viridis")
+        first = colormap.color_stops[0].color.hex.lower()
+        last = colormap.color_stops[-1].color.hex.lower()
+        assert interpolate_color(colormap, 0, 0, 1) == first
+        assert interpolate_color(colormap, 1, 0, 1) == last
 
-    def test_empty_palette(self) -> None:
-        with pytest.raises(ValueError, match="empty palette"):
-            interpolate_color([], 0.5)
-
-    def test_degenerate_range(self) -> None:
-        """When min_val == max_val, return midpoint color."""
-        palette = ["#ff0000", "#00ff00", "#0000ff"]
-        result = interpolate_color(palette, 42.0, 42.0, 42.0)
-        assert result == "#00ff00"  # middle of 3
+    def test_degenerate_range_returns_midpoint(self) -> None:
+        """When min_val == max_val, return the colormap's midpoint color."""
+        colormap = get_palette("rdylbu")  # 11 stops, odd -> exact middle
+        mid_stop = colormap.color_stops[len(colormap.color_stops) // 2]
+        result = interpolate_color(colormap, 42.0, 42.0, 42.0)
+        assert result == mid_stop.color.hex.lower()
 
     def test_clamp_low(self) -> None:
-        palette = ["#000000", "#ffffff"]
-        assert interpolate_color(palette, -100, 0, 100) == "#000000"
+        colormap = get_palette("blues")
+        expected = sample_palette(colormap, 1)[0]
+        assert interpolate_color(colormap, -100, 0, 100) == expected
 
     def test_clamp_high(self) -> None:
-        palette = ["#000000", "#ffffff"]
-        assert interpolate_color(palette, 200, 0, 100) == "#ffffff"
+        colormap = get_palette("blues")
+        expected = colormap.color_stops[-1].color.hex.lower()
+        assert interpolate_color(colormap, 200, 0, 100) == expected
 
-    def test_exact_low(self) -> None:
-        palette = ["#ff0000", "#00ff00", "#0000ff"]
-        assert interpolate_color(palette, 0, 0, 2) == "#ff0000"
-
-    def test_exact_high(self) -> None:
-        palette = ["#ff0000", "#00ff00", "#0000ff"]
-        assert interpolate_color(palette, 2, 0, 2) == "#0000ff"
-
-    def test_midpoint_interpolation(self) -> None:
-        palette = ["#ff0000", "#0000ff"]  # red to blue
-        result = interpolate_color(palette, 0.5, 0, 1)
-        assert result == "#800080"  # midway in RGB: (255+0)//2=128
+    def test_qualitative_snaps_to_nearest_class(self) -> None:
+        colormap = get_palette("material_set1")
+        result = interpolate_color(colormap, 0.05, 0, 1)
+        assert result == colormap.color_stops[0].color.hex.lower()
 
 
 class TestSamplePalette:
     def test_n_zero(self) -> None:
-        assert sample_palette(["#000"], 0) == []
+        assert sample_palette(get_palette("viridis"), 0) == []
 
     def test_n_one(self) -> None:
-        result = sample_palette(["#ff0000", "#00ff00"], 1)
-        assert result == ["#ff0000"]
+        colormap = get_palette("viridis")
+        result = sample_palette(colormap, 1)
+        assert result == [colormap.color_stops[0].color.hex.lower()]
 
     def test_n_one_reverse(self) -> None:
-        result = sample_palette(["#ff0000", "#00ff00"], 1, reverse=True)
-        assert result == ["#00ff00"]
+        colormap = get_palette("viridis")
+        result = sample_palette(colormap, 1, reverse=True)
+        assert result == [colormap.color_stops[-1].color.hex.lower()]
 
-    def test_n_equals_length(self) -> None:
-        palette = ["#ff0000", "#00ff00", "#0000ff"]
-        result = sample_palette(palette, 3)
-        assert len(result) == 3
-        assert result[0] == "#ff0000"
-        assert result[2] == "#0000ff"
+    def test_n_equals_native_stops(self) -> None:
+        colormap = get_palette("blues")
+        native = len(colormap.color_stops)
+        result = sample_palette(colormap, native)
+        assert len(result) == native
+        assert result[0] == colormap.color_stops[0].color.hex.lower()
+        assert result[-1] == colormap.color_stops[-1].color.hex.lower()
 
-    def test_n_greater_than_length(self) -> None:
-        palette = ["#000000", "#ffffff"]
-        result = sample_palette(palette, 5)
-        assert len(result) == 5
+    def test_n_greater_than_native_stops(self) -> None:
+        colormap = get_palette("rdbu")  # 11 native stops
+        result = sample_palette(colormap, 20)
+        assert len(result) == 20
 
     def test_reverse(self) -> None:
-        palette = ["#ff0000", "#00ff00", "#0000ff"]
-        result = sample_palette(palette, 3, reverse=True)
-        assert result == ["#0000ff", "#00ff00", "#ff0000"]
+        colormap = get_palette("blues")
+        forward = sample_palette(colormap, 5)
+        backward = sample_palette(colormap, 5, reverse=True)
+        assert backward == list(reversed(forward))
+
+    def test_qualitative_cycles_native_classes_without_blending(self) -> None:
+        """Requesting more classes than a qualitative palette has cycles,
+        rather than blending unrelated categories together."""
+        colormap = get_palette("material_set1")
+        native = [stop.color.hex.lower() for stop in colormap.color_stops]
+        result = sample_palette(colormap, len(native) + 2)
+        assert result == [*native, native[0], native[1]]
+
+
+class TestPreviewSwatches:
+    def test_returns_every_palette(self) -> None:
+        swatches = preview_swatches()
+        assert set(swatches) == set(get_all_names())
+
+    def test_json_serializable(self) -> None:
+        json.dumps(preview_swatches())  # should not raise
+
+    def test_caps_continuous_palettes(self) -> None:
+        swatches = preview_swatches(max_swatches=11)
+        assert len(swatches["viridis"]) == 11
+
+    def test_keeps_small_native_palettes_uncapped(self) -> None:
+        swatches = preview_swatches(max_swatches=11)
+        assert len(swatches["dark2"]) == len(get_palette("dark2").color_stops)

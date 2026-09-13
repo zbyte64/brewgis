@@ -176,6 +176,7 @@ source = { editable = "." }
 dependencies = [
     { name = "argon2-cffi" },
     { name = "celery" },
+    { name = "cmap" },
     { name = "coverage" },
     { name = "crispy-bootstrap5" },
     { name = "deal" },
@@ -192,6 +193,7 @@ dependencies = [
     { name = "django-ninja" },
     { name = "django-redis" },
     { name = "django-stubs", extra = ["compatible-mypy"] },
+    { name = "django-template-lsp" },
     { name = "djlint" },
     { name = "dlt", extra = ["postgres"] },
     { name = "factory-boy" },
@@ -241,6 +243,7 @@ dependencies = [
 requires-dist = [
     { name = "argon2-cffi", specifier = "==23.1.0" },
     { name = "celery", specifier = "==5.4.0" },
+    { name = "cmap", specifier = "==0.7.2" },
     { name = "coverage", specifier = "==7.6.8" },
     { name = "crispy-bootstrap5", specifier = "==2026.3" },
     { name = "deal", specifier = ">=4.24" },
@@ -257,6 +260,7 @@ requires-dist = [
     { name = "django-ninja", specifier = "==1.6.2" },
     { name = "django-redis", specifier = "==6.0.0" },
     { name = "django-stubs", extras = ["compatible-mypy"], specifier = "==6.0.3" },
+    { name = "django-template-lsp", specifier = ">=1.2,<2.0" },
     { name = "djlint", specifier = "==1.36.1" },
     { name = "dlt", extras = ["postgres"], specifier = ">=1.0,<2.0" },
     { name = "factory-boy", specifier = "==3.3.1" },
@@ -359,6 +363,19 @@ wheels = [
     { url = "https://files.pythonhosted.org/packages/99/39/e7410db7f6f56de57744ea52a115084ceb2735f4d44973f349bb92136586/brotlicffi-1.2.0.1-cp38-abi3-manylinux2014_x86_64.manylinux_2_17_x86_64.manylinux_2_28_x86_64.whl", hash = "sha256:6f3314a3476f59e5443f9f72a6dff16edc0c3463c9b318feaef04ae3e4683f5a", size = 1536838, upload-time = "2026-03-05T19:54:00.705Z" },
     { url = "https://files.pythonhosted.org/packages/a6/75/6e7977d1935fc3fbb201cbd619be8f2c7aea25d40a096967132854b34708/brotlicffi-1.2.0.1-cp38-abi3-win32.whl", hash = "sha256:82ea52e2b5d3145b6c406ebd3efb0d55db718b7ad996bd70c62cec0439de1187", size = 343337, upload-time = "2026-03-05T19:54:02.446Z" },
     { url = "https://files.pythonhosted.org/packages/d8/ef/e7e485ce5e4ba3843a0a92feb767c7b6098fd6e65ce752918074d175ae71/brotlicffi-1.2.0.1-cp38-abi3-win_amd64.whl", hash = "sha256:da2e82a08e7778b8bc539d27ca03cdd684113e81394bfaaad8d0dfc6a17ddede", size = 379026, upload-time = "2026-03-05T19:54:04.322Z" },
+]
+
+[[package]]
+name = "cattrs"
+version = "26.2.0"
+source = { registry = "https://pypi.org/simple" }
+dependencies = [
+    { name = "attrs" },
+    { name = "typing-extensions" },
+]
+sdist = { url = "https://files.pythonhosted.org/packages/d6/b2/42f4524e5479b090040b5fd8bb316dd8c65a079bb6492494ce2079dc91be/cattrs-26.2.0.tar.gz", hash = "sha256:3cf49f69df8326bcf17a3cb3d3d3ec4a856858fe3a7473746c9044c317d3ba55", size = 524993, upload-time = "2026-09-06T20:31:58.055Z" }
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/f5/4d/6b8460462012a52075ba97932197f8c141be71b8e5f7e918af08ee73424b/cattrs-26.2.0-py3-none-any.whl", hash = "sha256:c680f17cd1df3a1c038ad1db8d90a9c595568cc54c4e8098e7ceb8d7b9bd826b", size = 74830, upload-time = "2026-09-06T20:31:56.327Z" },
 ]
 
 [[package]]
@@ -588,6 +605,18 @@ dependencies = [
 sdist = { url = "https://files.pythonhosted.org/packages/ea/0d/837dbd5d8430fd0f01ed72c4cfb2f548180f4c68c635df84ce87956cff32/cligj-0.7.2.tar.gz", hash = "sha256:a4bc13d623356b373c2c27c53dbd9c68cae5d526270bfa71f6c6fa69669c6b27", size = 9803, upload-time = "2021-05-28T21:23:27.935Z" }
 wheels = [
     { url = "https://files.pythonhosted.org/packages/73/86/43fa9f15c5b9fb6e82620428827cd3c284aa933431405d1bcf5231ae3d3e/cligj-0.7.2-py3-none-any.whl", hash = "sha256:c1ca117dbce1fe20a5809dc96f01e1c2840f6dcc939b3ddbb1111bf330ba82df", size = 7069, upload-time = "2021-05-28T21:23:26.877Z" },
+]
+
+[[package]]
+name = "cmap"
+version = "0.7.2"
+source = { registry = "https://pypi.org/simple" }
+dependencies = [
+    { name = "numpy" },
+]
+sdist = { url = "https://files.pythonhosted.org/packages/37/85/5c31c565c68807e525cb268d783e62b1f4a46b97d301d991f6b4ffbd52d6/cmap-0.7.2.tar.gz", hash = "sha256:9501cec4d5c2b7a821479aec3282b3d8b42fda983bad055e0f9dbc19cf7bc5b1", size = 949039, upload-time = "2026-02-24T13:18:33.729Z" }
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/28/b6/0f760b625233ae39ed7df1069e11edd8c2f8807acac75e40f6228507238c/cmap-0.7.2-py3-none-any.whl", hash = "sha256:ad85bcc2327351bb72ff41516d4116d74b0af89258b35a323fcccb655a64f1f2", size = 995915, upload-time = "2026-02-24T13:18:31.346Z" },
 ]
 
 [[package]]
@@ -1043,6 +1072,19 @@ dependencies = [
 sdist = { url = "https://files.pythonhosted.org/packages/c6/b0/94335dc59138483c2bd2edf81cb39240fdef5e72c8cf0a6c177db207617b/django_stubs_ext-6.0.4.tar.gz", hash = "sha256:ff21f7b4362928b56e18cda0595f296e33c665f3019f4e3e4231977385e76cac", size = 6684, upload-time = "2026-05-09T21:24:02.745Z" }
 wheels = [
     { url = "https://files.pythonhosted.org/packages/b4/42/7db8470c0e276e7c7763c468441381dfa8727a360c68473f33ef828422bb/django_stubs_ext-6.0.4-py3-none-any.whl", hash = "sha256:0434a912bb08a370afcac9e90305c53e6f4eed3c1d1d46962559da5f8dbb8f27", size = 10373, upload-time = "2026-05-09T21:24:01.291Z" },
+]
+
+[[package]]
+name = "django-template-lsp"
+version = "1.3.1"
+source = { registry = "https://pypi.org/simple" }
+dependencies = [
+    { name = "jedi" },
+    { name = "pygls" },
+]
+sdist = { url = "https://files.pythonhosted.org/packages/54/d3/fbaf6121080092750aefdd0e41367f830d7fcf75b0aa79fe558dc1181e2b/django_template_lsp-1.3.1.tar.gz", hash = "sha256:0261ede9748801edaa686e5085506c0023f358806aca79c828bdfce621c79914", size = 63191, upload-time = "2026-08-13T10:56:18.751Z" }
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/3b/68/3db3286540016964ca8ec2ed02e16292f18d43513c58125b027d16846521/django_template_lsp-1.3.1-py3-none-any.whl", hash = "sha256:7a678a7cbe13922f9384ece33e89673334c084fd18084871116e4d86cb953dfd", size = 48230, upload-time = "2026-08-13T10:56:17.413Z" },
 ]
 
 [[package]]
@@ -1859,6 +1901,19 @@ dependencies = [
 sdist = { url = "https://files.pythonhosted.org/packages/b6/a5/607e533ed6c83ae1a696969b8e1c137dfebd5759a2e9682e26ff1b97740b/kombu-5.6.2.tar.gz", hash = "sha256:8060497058066c6f5aed7c26d7cd0d3b574990b09de842a8c5aaed0b92cc5a55", size = 472594, upload-time = "2025-12-29T20:30:07.779Z" }
 wheels = [
     { url = "https://files.pythonhosted.org/packages/fb/0f/834427d8c03ff1d7e867d3db3d176470c64871753252b21b4f4897d1fa45/kombu-5.6.2-py3-none-any.whl", hash = "sha256:efcfc559da324d41d61ca311b0c64965ea35b4c55cc04ee36e55386145dace93", size = 214219, upload-time = "2025-12-29T20:30:05.74Z" },
+]
+
+[[package]]
+name = "lsprotocol"
+version = "2023.0.1"
+source = { registry = "https://pypi.org/simple" }
+dependencies = [
+    { name = "attrs" },
+    { name = "cattrs" },
+]
+sdist = { url = "https://files.pythonhosted.org/packages/9d/f6/6e80484ec078d0b50699ceb1833597b792a6c695f90c645fbaf54b947e6f/lsprotocol-2023.0.1.tar.gz", hash = "sha256:cc5c15130d2403c18b734304339e51242d3018a05c4f7d0f198ad6e0cd21861d", size = 69434, upload-time = "2024-01-09T17:21:12.625Z" }
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/8d/37/2351e48cb3309673492d3a8c59d407b75fb6630e560eb27ecd4da03adc9a/lsprotocol-2023.0.1-py3-none-any.whl", hash = "sha256:c75223c9e4af2f24272b14c6375787438279369236cd568f596d4951052a60f2", size = 70826, upload-time = "2024-01-09T17:21:14.491Z" },
 ]
 
 [[package]]
@@ -2881,6 +2936,19 @@ dependencies = [
 sdist = { url = "https://files.pythonhosted.org/packages/8b/04/e7c1fe4dc78a6fdbfd6c337b1c3732ff543b8a397683ab38378447baa331/pyee-13.0.1.tar.gz", hash = "sha256:0b931f7c14535667ed4c7e0d531716368715e860b988770fc7eb8578d1f67fc8", size = 31655, upload-time = "2026-02-14T21:12:28.044Z" }
 wheels = [
     { url = "https://files.pythonhosted.org/packages/a0/c4/b4d4827c93ef43c01f599ef31453ccc1c132b353284fc6c87d535c233129/pyee-13.0.1-py3-none-any.whl", hash = "sha256:af2f8fede4171ef667dfded53f96e2ed0d6e6bd7ee3bb46437f77e3b57689228", size = 15659, upload-time = "2026-02-14T21:12:26.263Z" },
+]
+
+[[package]]
+name = "pygls"
+version = "1.3.1"
+source = { registry = "https://pypi.org/simple" }
+dependencies = [
+    { name = "cattrs" },
+    { name = "lsprotocol" },
+]
+sdist = { url = "https://files.pythonhosted.org/packages/86/b9/41d173dad9eaa9db9c785a85671fc3d68961f08d67706dc2e79011e10b5c/pygls-1.3.1.tar.gz", hash = "sha256:140edceefa0da0e9b3c533547c892a42a7d2fd9217ae848c330c53d266a55018", size = 45527, upload-time = "2024-03-26T18:44:25.679Z" }
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/11/19/b74a10dd24548e96e8c80226cbacb28b021bc3a168a7d2709fb0d0185348/pygls-1.3.1-py3-none-any.whl", hash = "sha256:6e00f11efc56321bdeb6eac04f6d86131f654c7d49124344a9ebb968da3dd91e", size = 56031, upload-time = "2024-03-26T18:44:24.249Z" },
 ]
 
 [[package]]
