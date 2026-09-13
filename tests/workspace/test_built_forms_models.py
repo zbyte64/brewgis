@@ -9,15 +9,19 @@ from django.test import TestCase
 from brewgis.workspace.built_forms.models import BuildingType
 from brewgis.workspace.built_forms.models import PlaceType
 from brewgis.workspace.built_forms.models import PlaceTypeBuildingTypeMix
+from tests.factories import WorkspaceFactory
 
 
 @pytest.mark.models
 class TestBuildingType(TestCase):
     """BuildingType model tests."""
 
+    def setUp(self) -> None:
+        self.workspace = WorkspaceFactory()
+
     def test_create_minimal(self) -> None:
         """Creating a BuildingType with just a name should work."""
-        bt = BuildingType.objects.create(name="Test Type")
+        bt = BuildingType.objects.create(workspace=self.workspace, name="Test Type")
         self.assertEqual(str(bt), "Test Type")
         self.assertEqual(bt.household_size, 2.5)
         self.assertEqual(bt.vacancy_rate, 5.0)
@@ -26,13 +30,14 @@ class TestBuildingType(TestCase):
 
     def test_unique_name_constraint(self) -> None:
         """Duplicate names should be rejected."""
-        BuildingType.objects.create(name="Unique")
+        BuildingType.objects.create(workspace=self.workspace, name="Unique")
         with self.assertRaises(IntegrityError):
-            BuildingType.objects.create(name="Unique")
+            BuildingType.objects.create(workspace=self.workspace, name="Unique")
 
     def test_create_full(self) -> None:
         """Creating a BuildingType with all fields set should work."""
         bt = BuildingType.objects.create(
+            workspace=self.workspace,
             name="Full Test",
             description="A comprehensive test",
             du_per_acre=20.0,
@@ -67,6 +72,7 @@ class TestBuildingType(TestCase):
     def test_nullable_density_fields(self) -> None:
         """Employment-only building types should allow null residential fields."""
         bt = BuildingType.objects.create(
+            workspace=self.workspace,
             name="Employment Only",
             du_per_acre=None,
             emp_per_acre=40.0,
@@ -76,7 +82,7 @@ class TestBuildingType(TestCase):
 
     def test_str_representation(self) -> None:
         """__str__ should return the name."""
-        bt = BuildingType.objects.create(name="Single-Family")
+        bt = BuildingType.objects.create(workspace=self.workspace, name="Single-Family")
         self.assertEqual(str(bt), "Single-Family")
 
 
@@ -84,21 +90,25 @@ class TestBuildingType(TestCase):
 class TestPlaceType(TestCase):
     """PlaceType model tests."""
 
+    def setUp(self) -> None:
+        self.workspace = WorkspaceFactory()
+
     def test_create_minimal(self) -> None:
         """Creating a PlaceType with just a name should work."""
-        pt = PlaceType.objects.create(name="Test Place")
+        pt = PlaceType.objects.create(workspace=self.workspace, name="Test Place")
         self.assertEqual(str(pt), "Test Place")
         self.assertEqual(pt.row_allocation_pct, 25.0)
 
     def test_unique_name_constraint(self) -> None:
         """Duplicate names should be rejected."""
-        PlaceType.objects.create(name="Unique Place")
+        PlaceType.objects.create(workspace=self.workspace, name="Unique Place")
         with self.assertRaises(IntegrityError):
-            PlaceType.objects.create(name="Unique Place")
+            PlaceType.objects.create(workspace=self.workspace, name="Unique Place")
 
     def test_create_with_all_fields(self) -> None:
         """Creating a PlaceType with all fields should work."""
         pt = PlaceType.objects.create(
+            workspace=self.workspace,
             name="Urban Core",
             description="Dense downtown area",
             row_allocation_pct=40.0,
@@ -116,8 +126,9 @@ class TestPlaceTypeBuildingTypeMix(TestCase):
     """PlaceTypeBuildingTypeMix model tests."""
 
     def setUp(self) -> None:
-        self.bt = BuildingType.objects.create(name="Test BT")
-        self.pt = PlaceType.objects.create(name="Test PT")
+        self.workspace = WorkspaceFactory()
+        self.bt = BuildingType.objects.create(workspace=self.workspace, name="Test BT")
+        self.pt = PlaceType.objects.create(workspace=self.workspace, name="Test PT")
 
     def test_create_mix(self) -> None:
         """Creating a valid mix should work."""
@@ -190,7 +201,7 @@ class TestPlaceTypeBuildingTypeMix(TestCase):
 
     def test_ordering(self) -> None:
         """Mix results should be ordered by (place_type, building_type)."""
-        bt2 = BuildingType.objects.create(name="BT B")
+        bt2 = BuildingType.objects.create(workspace=self.workspace, name="BT B")
         PlaceTypeBuildingTypeMix.objects.create(
             place_type=self.pt,
             building_type=bt2,

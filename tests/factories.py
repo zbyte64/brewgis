@@ -118,6 +118,7 @@ class BuildingTypeFactory(factory.django.DjangoModelFactory):
     class Meta:
         model = BuildingType
 
+    workspace = factory.SubFactory(WorkspaceFactory)
     name = factory.Sequence(lambda n: f"Building Type {n}")
     du_per_acre = 10.0
     emp_per_acre = 0.0
@@ -132,6 +133,7 @@ class PlaceTypeFactory(factory.django.DjangoModelFactory):
     class Meta:
         model = PlaceType
 
+    workspace = factory.SubFactory(WorkspaceFactory)
     name = factory.Sequence(lambda n: f"Place Type {n}")
     row_allocation_pct = 25.0
 

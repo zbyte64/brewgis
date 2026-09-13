@@ -10,6 +10,7 @@ from django.test import TestCase
 from brewgis.workspace.analysis.data_export import ensure_export_exists
 from brewgis.workspace.analysis.data_export import export_building_types
 from tests.factories import BuildingTypeFactory
+from tests.factories import WorkspaceFactory
 
 TEST_SCHEMA = "public"
 TEST_TABLE = "test_export_bt"
@@ -18,6 +19,9 @@ TEST_TABLE = "test_export_bt"
 @pytest.mark.integration
 class TestExportBuildingTypes(TestCase):
     """Tests for :func:`export_building_types`."""
+
+    def setUp(self):
+        self.workspace = WorkspaceFactory()
 
     def tearDown(self):
         """Clean up the test table after each test."""
@@ -29,9 +33,11 @@ class TestExportBuildingTypes(TestCase):
 
     def test_creates_table_with_expected_columns(self) -> None:
         """Export creates a table with the correct column set."""
-        BuildingTypeFactory.create_batch(3)
+        BuildingTypeFactory.create_batch(3, workspace=self.workspace)
 
-        count = export_building_types(schema=TEST_SCHEMA, table=TEST_TABLE)
+        count = export_building_types(
+            self.workspace, schema=TEST_SCHEMA, table=TEST_TABLE
+        )
         assert count == 3
 
         with connection.cursor() as cursor:
@@ -70,9 +76,11 @@ class TestExportBuildingTypes(TestCase):
 
     def test_all_building_types_exported(self) -> None:
         """All BuildingType rows appear in the output table."""
-        BuildingTypeFactory.create_batch(7)
+        BuildingTypeFactory.create_batch(7, workspace=self.workspace)
 
-        count = export_building_types(schema=TEST_SCHEMA, table=TEST_TABLE)
+        count = export_building_types(
+            self.workspace, schema=TEST_SCHEMA, table=TEST_TABLE
+        )
         assert count == 7
 
         with connection.cursor() as cursor:
@@ -82,13 +90,13 @@ class TestExportBuildingTypes(TestCase):
 
     def test_force_recreate_drops_and_recreates(self) -> None:
         """force_recreate=True drops the table and creates it fresh."""
-        BuildingTypeFactory.create_batch(3)
-        export_building_types(schema=TEST_SCHEMA, table=TEST_TABLE)
-        BuildingTypeFactory.create_batch(2)
+        BuildingTypeFactory.create_batch(3, workspace=self.workspace)
+        export_building_types(self.workspace, schema=TEST_SCHEMA, table=TEST_TABLE)
+        BuildingTypeFactory.create_batch(2, workspace=self.workspace)
 
         # force_recreate should produce only the pre-existing batch
         count = export_building_types(
-            schema=TEST_SCHEMA, table=TEST_TABLE, force_recreate=True
+            self.workspace, schema=TEST_SCHEMA, table=TEST_TABLE, force_recreate=True
         )
         assert count == 5
 
@@ -99,7 +107,9 @@ class TestExportBuildingTypes(TestCase):
 
     def test_empty_building_type_table_creates_empty_table(self) -> None:
         """No BuildingTypes → table is created with 0 rows."""
-        count = export_building_types(schema=TEST_SCHEMA, table=TEST_TABLE)
+        count = export_building_types(
+            self.workspace, schema=TEST_SCHEMA, table=TEST_TABLE
+        )
         assert count == 0
 
         with connection.cursor() as cursor:
@@ -117,6 +127,7 @@ class TestExportBuildingTypes(TestCase):
         # Create a BuildingType with all nullable fields left as None
         # (factory defaults override some, so we explicitly set them).
         bt = BuildingTypeFactory(
+            workspace=self.workspace,
             du_per_acre=None,
             emp_per_acre=None,
             far=None,
@@ -129,7 +140,7 @@ class TestExportBuildingTypes(TestCase):
             trip_rate_override=None,
         )
 
-        export_building_types(schema=TEST_SCHEMA, table=TEST_TABLE)
+        export_building_types(self.workspace, schema=TEST_SCHEMA, table=TEST_TABLE)
 
         with connection.cursor() as cursor:
             cursor.execute(
@@ -177,8 +188,10 @@ class TestExportBuildingTypes(TestCase):
 
     def test_jobs_by_sector_is_jsonb(self) -> None:
         """jobs_by_sector is exported as a JSONB column."""
-        BuildingTypeFactory(jobs_by_sector={"retail": 40.0, "office": 60.0})
-        export_building_types(schema=TEST_SCHEMA, table=TEST_TABLE)
+        BuildingTypeFactory(
+            workspace=self.workspace, jobs_by_sector={"retail": 40.0, "office": 60.0}
+        )
+        export_building_types(self.workspace, schema=TEST_SCHEMA, table=TEST_TABLE)
 
         with connection.cursor() as cursor:
             cursor.execute(
@@ -198,6 +211,9 @@ class TestExportBuildingTypes(TestCase):
 class TestEnsureExportExists(TestCase):
     """Tests for :func:`ensure_export_exists`."""
 
+    def setUp(self):
+        self.workspace = WorkspaceFactory()
+
     def tearDown(self):
         """Clean up the test table after each test."""
         with connection.cursor() as cursor:
@@ -208,8 +224,10 @@ class TestEnsureExportExists(TestCase):
 
     def test_creates_table_on_first_call(self) -> None:
         """First call creates the table when it does not exist."""
-        BuildingTypeFactory.create_batch(3)
-        count = ensure_export_exists(schema=TEST_SCHEMA, table=TEST_TABLE)
+        BuildingTypeFactory.create_batch(3, workspace=self.workspace)
+        count = ensure_export_exists(
+            self.workspace, schema=TEST_SCHEMA, table=TEST_TABLE
+        )
         assert count == 3
 
         with connection.cursor() as cursor:
@@ -218,13 +236,17 @@ class TestEnsureExportExists(TestCase):
 
     def test_second_call_is_no_op_when_table_has_rows(self) -> None:
         """Calling again with non-empty table returns row count without re-exporting."""
-        BuildingTypeFactory.create_batch(2)
-        count1 = ensure_export_exists(schema=TEST_SCHEMA, table=TEST_TABLE)
+        BuildingTypeFactory.create_batch(2, workspace=self.workspace)
+        count1 = ensure_export_exists(
+            self.workspace, schema=TEST_SCHEMA, table=TEST_TABLE
+        )
         assert count1 == 2
 
         # Add more rows — ensure_export_exists should skip since table already has rows
-        BuildingTypeFactory.create_batch(3)
-        count2 = ensure_export_exists(schema=TEST_SCHEMA, table=TEST_TABLE)
+        BuildingTypeFactory.create_batch(3, workspace=self.workspace)
+        count2 = ensure_export_exists(
+            self.workspace, schema=TEST_SCHEMA, table=TEST_TABLE
+        )
         # Should return the original count (2), not the new count (5)
         assert count2 == 2
 
@@ -235,10 +257,12 @@ class TestEnsureExportExists(TestCase):
 
     def test_re_exports_when_table_is_empty(self) -> None:
         """If the table exists but is empty, it re-exports."""
-        BuildingTypeFactory.create_batch(3)
+        BuildingTypeFactory.create_batch(3, workspace=self.workspace)
 
         # First export populates the table
-        count1 = ensure_export_exists(schema=TEST_SCHEMA, table=TEST_TABLE)
+        count1 = ensure_export_exists(
+            self.workspace, schema=TEST_SCHEMA, table=TEST_TABLE
+        )
         assert count1 == 3
 
         # Manually truncate to simulate an empty table
@@ -246,10 +270,12 @@ class TestEnsureExportExists(TestCase):
             cursor.execute(f'TRUNCATE TABLE "{TEST_SCHEMA}"."{TEST_TABLE}"')
 
         # A new BuildingType was created in the meantime
-        BuildingTypeFactory.create_batch(2)
+        BuildingTypeFactory.create_batch(2, workspace=self.workspace)
 
         # ensure_export_exists should re-export because the table is now empty
-        count2 = ensure_export_exists(schema=TEST_SCHEMA, table=TEST_TABLE)
+        count2 = ensure_export_exists(
+            self.workspace, schema=TEST_SCHEMA, table=TEST_TABLE
+        )
         assert count2 == 5
 
         with connection.cursor() as cursor:
@@ -258,7 +284,9 @@ class TestEnsureExportExists(TestCase):
 
     def test_empty_database_creates_empty_table(self) -> None:
         """No BuildingType records → table is created with 0 rows."""
-        count = ensure_export_exists(schema=TEST_SCHEMA, table=TEST_TABLE)
+        count = ensure_export_exists(
+            self.workspace, schema=TEST_SCHEMA, table=TEST_TABLE
+        )
         assert count == 0
 
         with connection.cursor() as cursor:

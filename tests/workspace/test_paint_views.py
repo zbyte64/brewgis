@@ -259,13 +259,14 @@ class TestPaintBuiltFormView(TestCase):
         self.scenario = ScenarioFactory(workspace=self.workspace)
 
         self.bt = BuildingTypeFactory(
+            workspace=self.workspace,
             du_per_acre=10.0,
             household_size=2.5,
             vacancy_rate=5.0,
             emp_per_acre=0.0,
             far=0.5,
         )
-        self.pt = PlaceTypeFactory(row_allocation_pct=25.0)
+        self.pt = PlaceTypeFactory(workspace=self.workspace, row_allocation_pct=25.0)
         PlaceTypeBuildingTypeMixFactory(
             place_type=self.pt, building_type=self.bt, percentage=100.0
         )

@@ -101,7 +101,10 @@ class WorkspaceScopedMixin:
         return super().get_queryset().filter(workspace=self.workspace)  # type: ignore[misc]
 
     def form_valid(self, form: Any) -> HttpResponse:
-        form.instance.workspace = self.workspace
+        # DeleteView's confirmation POST uses a plain Form (no `.instance`)
+        # — only Create/UpdateView's ModelForm needs the workspace stamped.
+        if hasattr(form, "instance"):
+            form.instance.workspace = self.workspace
         return super().form_valid(form)  # type: ignore[misc, no-any-return]
 
     def get_redirect_url(self) -> str:

@@ -10,6 +10,7 @@ from brewgis.workspace.built_forms.models import BuildingType
 from brewgis.workspace.built_forms.models import PlaceType
 from brewgis.workspace.built_forms.models import PlaceTypeBuildingTypeMix
 from tests.factories import UserFactory
+from tests.factories import WorkspaceFactory
 
 
 @pytest.mark.views
@@ -18,31 +19,32 @@ class TestBuildingTypeViews(TestCase):
 
     def setUp(self) -> None:
         self.user = UserFactory()
+        self.workspace = WorkspaceFactory()
 
     def test_list_requires_auth(self) -> None:
         """Building type list should redirect unauthenticated users."""
-        url = reverse("workspace:building_type_list")
+        url = reverse("workspace:building_type_list", args=[self.workspace.pk])
         response = self.client.get(url)
         self.assertEqual(response.status_code, 302)
 
     def test_list_authenticated(self) -> None:
         """Building type list should return 200 for authenticated users."""
         self.client.force_login(self.user)
-        url = reverse("workspace:building_type_list")
+        url = reverse("workspace:building_type_list", args=[self.workspace.pk])
         response = self.client.get(url)
         self.assertEqual(response.status_code, 200)
 
     def test_create_get(self) -> None:
         """GET on create should return 200."""
         self.client.force_login(self.user)
-        url = reverse("workspace:building_type_create")
+        url = reverse("workspace:building_type_create", args=[self.workspace.pk])
         response = self.client.get(url)
         self.assertEqual(response.status_code, 200)
 
     def test_create_post(self) -> None:
         """POST with valid data should create a BuildingType."""
         self.client.force_login(self.user)
-        url = reverse("workspace:building_type_create")
+        url = reverse("workspace:building_type_create", args=[self.workspace.pk])
         response = self.client.post(
             url,
             {
@@ -54,13 +56,15 @@ class TestBuildingTypeViews(TestCase):
         )
         self.assertIn(response.status_code, [302, 200])
         self.assertTrue(
-            BuildingType.objects.filter(name="Test BT").exists(),
+            BuildingType.objects.filter(
+                name="Test BT", workspace=self.workspace
+            ).exists(),
         )
 
     def test_create_post_redirects_to_list(self) -> None:
         """Successful create should redirect to building type list."""
         self.client.force_login(self.user)
-        url = reverse("workspace:building_type_create")
+        url = reverse("workspace:building_type_create", args=[self.workspace.pk])
         response = self.client.post(
             url,
             {
@@ -71,22 +75,22 @@ class TestBuildingTypeViews(TestCase):
         if response.status_code == 302:
             self.assertEqual(
                 response.url,
-                reverse("workspace:building_type_list"),
+                reverse("workspace:building_type_list", args=[self.workspace.pk]),
             )
 
     def test_edit_get(self) -> None:
         """GET on edit should return 200."""
         self.client.force_login(self.user)
-        bt = BuildingType.objects.create(name="Editable BT")
-        url = reverse("workspace:building_type_edit", args=[bt.pk])
+        bt = BuildingType.objects.create(workspace=self.workspace, name="Editable BT")
+        url = reverse("workspace:building_type_edit", args=[self.workspace.pk, bt.pk])
         response = self.client.get(url)
         self.assertEqual(response.status_code, 200)
 
     def test_edit_post(self) -> None:
         """POST should update the BuildingType."""
         self.client.force_login(self.user)
-        bt = BuildingType.objects.create(name="Original")
-        url = reverse("workspace:building_type_edit", args=[bt.pk])
+        bt = BuildingType.objects.create(workspace=self.workspace, name="Original")
+        url = reverse("workspace:building_type_edit", args=[self.workspace.pk, bt.pk])
         self.client.post(
             url,
             {
@@ -101,8 +105,8 @@ class TestBuildingTypeViews(TestCase):
     def test_delete(self) -> None:
         """POST to delete should remove the BuildingType."""
         self.client.force_login(self.user)
-        bt = BuildingType.objects.create(name="Deletable BT")
-        url = reverse("workspace:building_type_delete", args=[bt.pk])
+        bt = BuildingType.objects.create(workspace=self.workspace, name="Deletable BT")
+        url = reverse("workspace:building_type_delete", args=[self.workspace.pk, bt.pk])
         response = self.client.post(url)
         self.assertIn(response.status_code, [302, 200])
         self.assertFalse(
@@ -112,15 +116,15 @@ class TestBuildingTypeViews(TestCase):
     def test_list_shows_created_types(self) -> None:
         """Building type list should include created types."""
         self.client.force_login(self.user)
-        BuildingType.objects.create(name="Visible BT")
-        url = reverse("workspace:building_type_list")
+        BuildingType.objects.create(workspace=self.workspace, name="Visible BT")
+        url = reverse("workspace:building_type_list", args=[self.workspace.pk])
         response = self.client.get(url)
         self.assertContains(response, "Visible BT")
 
     def test_create_post_empty_name(self) -> None:
         """POST with empty name should re-render with form error."""
         self.client.force_login(self.user)
-        url = reverse("workspace:building_type_create")
+        url = reverse("workspace:building_type_create", args=[self.workspace.pk])
         response = self.client.post(
             url,
             {
@@ -134,7 +138,7 @@ class TestBuildingTypeViews(TestCase):
     def test_create_post_negative_du(self) -> None:
         """POST with negative du_per_acre is accepted (no MinValueValidator on model)."""
         self.client.force_login(self.user)
-        url = reverse("workspace:building_type_create")
+        url = reverse("workspace:building_type_create", args=[self.workspace.pk])
         response = self.client.post(
             url,
             {
@@ -152,24 +156,25 @@ class TestPlaceTypeViews(TestCase):
 
     def setUp(self) -> None:
         self.user = UserFactory()
+        self.workspace = WorkspaceFactory()
 
     def test_list_requires_auth(self) -> None:
         """Place type list should redirect unauthenticated users."""
-        url = reverse("workspace:place_type_list")
+        url = reverse("workspace:place_type_list", args=[self.workspace.pk])
         response = self.client.get(url)
         self.assertEqual(response.status_code, 302)
 
     def test_list_authenticated(self) -> None:
         """Place type list should return 200 for authenticated users."""
         self.client.force_login(self.user)
-        url = reverse("workspace:place_type_list")
+        url = reverse("workspace:place_type_list", args=[self.workspace.pk])
         response = self.client.get(url)
         self.assertEqual(response.status_code, 200)
 
     def test_create_post(self) -> None:
         """POST with valid data should create a PlaceType."""
         self.client.force_login(self.user)
-        url = reverse("workspace:place_type_create")
+        url = reverse("workspace:place_type_create", args=[self.workspace.pk])
         response = self.client.post(
             url,
             {
@@ -179,14 +184,14 @@ class TestPlaceTypeViews(TestCase):
         )
         self.assertIn(response.status_code, [302, 200])
         self.assertTrue(
-            PlaceType.objects.filter(name="Test PT").exists(),
+            PlaceType.objects.filter(name="Test PT", workspace=self.workspace).exists(),
         )
 
     def test_edit_post(self) -> None:
         """POST should update the PlaceType."""
         self.client.force_login(self.user)
-        pt = PlaceType.objects.create(name="Original PT")
-        url = reverse("workspace:place_type_edit", args=[pt.pk])
+        pt = PlaceType.objects.create(workspace=self.workspace, name="Original PT")
+        url = reverse("workspace:place_type_edit", args=[self.workspace.pk, pt.pk])
         self.client.post(
             url,
             {
@@ -201,8 +206,8 @@ class TestPlaceTypeViews(TestCase):
     def test_delete(self) -> None:
         """POST to delete should remove the PlaceType."""
         self.client.force_login(self.user)
-        pt = PlaceType.objects.create(name="Deletable PT")
-        url = reverse("workspace:place_type_delete", args=[pt.pk])
+        pt = PlaceType.objects.create(workspace=self.workspace, name="Deletable PT")
+        url = reverse("workspace:place_type_delete", args=[self.workspace.pk, pt.pk])
         self.client.post(url)
         self.assertFalse(
             PlaceType.objects.filter(pk=pt.pk).exists(),
@@ -211,14 +216,14 @@ class TestPlaceTypeViews(TestCase):
     def test_list_shows_building_type_mix(self) -> None:
         """Place type list should render with building type mix info."""
         self.client.force_login(self.user)
-        bt = BuildingType.objects.create(name="Mix BT")
-        pt = PlaceType.objects.create(name="Mix PT")
+        bt = BuildingType.objects.create(workspace=self.workspace, name="Mix BT")
+        pt = PlaceType.objects.create(workspace=self.workspace, name="Mix PT")
         PlaceTypeBuildingTypeMix.objects.create(
             place_type=pt,
             building_type=bt,
             percentage=100.0,
         )
-        url = reverse("workspace:place_type_list")
+        url = reverse("workspace:place_type_list", args=[self.workspace.pk])
         response = self.client.get(url)
         self.assertContains(response, "Mix PT")
         self.assertContains(response, "Mix BT")
@@ -226,7 +231,7 @@ class TestPlaceTypeViews(TestCase):
     def test_create_post_empty_name(self) -> None:
         """POST with empty name should re-render with form error."""
         self.client.force_login(self.user)
-        url = reverse("workspace:place_type_create")
+        url = reverse("workspace:place_type_create", args=[self.workspace.pk])
         response = self.client.post(
             url,
             {
@@ -245,8 +250,10 @@ class TestBakingViews(TestCase):
     def setUp(self) -> None:
         self.user = UserFactory()
         self.client.force_login(self.user)
+        self.workspace = WorkspaceFactory()
 
         self.bt = BuildingType.objects.create(
+            workspace=self.workspace,
             name="Bake BT",
             du_per_acre=10.0,
             emp_per_acre=5.0,
@@ -261,6 +268,7 @@ class TestBakingViews(TestCase):
             trip_rate_override=5.0,
         )
         self.pt = PlaceType.objects.create(
+            workspace=self.workspace,
             name="Bake PT",
             row_allocation_pct=25.0,
         )
@@ -272,7 +280,9 @@ class TestBakingViews(TestCase):
 
     def test_building_type_bake_get(self) -> None:
         """GET on bake should show the bake form."""
-        url = reverse("workspace:building_type_bake", args=[self.bt.pk])
+        url = reverse(
+            "workspace:building_type_bake", args=[self.workspace.pk, self.bt.pk]
+        )
         response = self.client.get(url)
         self.assertEqual(response.status_code, 200)
         self.assertContains(response, "Bake BT")
@@ -280,35 +290,39 @@ class TestBakingViews(TestCase):
 
     def test_building_type_bake_post(self) -> None:
         """POST on bake should return results partial."""
-        url = reverse("workspace:building_type_bake", args=[self.bt.pk])
+        url = reverse(
+            "workspace:building_type_bake", args=[self.workspace.pk, self.bt.pk]
+        )
         response = self.client.post(url, {"acres": "10.0", "row_pct": "25.0"})
         self.assertEqual(response.status_code, 200)
         self.assertContains(response, "Baking Results")
 
     def test_building_type_bake_shows_numbers(self) -> None:
         """POST on bake should include computed values."""
-        url = reverse("workspace:building_type_bake", args=[self.bt.pk])
+        url = reverse(
+            "workspace:building_type_bake", args=[self.workspace.pk, self.bt.pk]
+        )
         response = self.client.post(url, {"acres": "10.0", "row_pct": "25.0"})
         # 7.5 developable acres * 10 du/ac = 75 dwelling units
         self.assertContains(response, "75")
 
     def test_place_type_bake_get(self) -> None:
         """GET on place type bake should show the bake form."""
-        url = reverse("workspace:place_type_bake", args=[self.pt.pk])
+        url = reverse("workspace:place_type_bake", args=[self.workspace.pk, self.pt.pk])
         response = self.client.get(url)
         self.assertEqual(response.status_code, 200)
         self.assertContains(response, "Bake PT")
 
     def test_place_type_bake_post(self) -> None:
         """POST on place type bake should return results partial."""
-        url = reverse("workspace:place_type_bake", args=[self.pt.pk])
+        url = reverse("workspace:place_type_bake", args=[self.workspace.pk, self.pt.pk])
         response = self.client.post(url, {"acres": "40.0"})
         self.assertEqual(response.status_code, 200)
         self.assertContains(response, "Baking Results")
 
     def test_place_type_bake_shows_breakdown(self) -> None:
         """POST on place type bake should include per-type breakdown."""
-        url = reverse("workspace:place_type_bake", args=[self.pt.pk])
+        url = reverse("workspace:place_type_bake", args=[self.workspace.pk, self.pt.pk])
         response = self.client.post(url, {"acres": "40.0"})
         # 40 * 0.75 = 30 developable acres, all goes to Bake BT (100%)
         self.assertContains(response, "Bake BT")
