@@ -288,7 +288,7 @@ def register_tools(server: object) -> None:
         config.symbology_type = symbology_type
         config.default_color = default_color
         config.default_opacity = default_opacity
-        config.palette_name = palette_name
+        config.palette_name = (palette_name or "").lower()
         config.attribute_column = attribute_column or ""
         config.num_classes = num_classes
         config.save()
@@ -300,7 +300,7 @@ def register_tools(server: object) -> None:
         layer_key: str,
         method: str = "quantile",
         num_classes: int = 5,
-        palette: str = "Blues",
+        palette: str = "blues",
     ) -> dict[str, Any]:
         """Auto-generate symbology using the classification engine."""
         try:

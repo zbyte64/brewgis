@@ -108,14 +108,23 @@ def _build_context(
         except SymbologyConfig.DoesNotExist:
             config = SymbologyConfig(layer=layer)
 
+    # Defensive: normalize in-memory so a palette_name saved with the wrong
+    # case (e.g. by an older/external caller) still matches the (lowercase)
+    # registry instead of rendering as an unrecognized, unselected palette.
+    if config.palette_name:
+        config.palette_name = config.palette_name.lower()
+
     classes = _resolve_context_classes(config)
+    swatches = preview_swatches()
 
     return {
         "layer": layer,
         "config": config,
         "classes": classes,
         "palette_names": get_all_names(),
-        "palettes_json": json.dumps(preview_swatches()),
+        "palette_options": sorted(swatches.items()),
+        "selected_palette_swatches": swatches.get(config.palette_name, []),
+        "palettes_json": swatches,
         "geometry_types": ["fill", "line", "circle"],
         "column_choices": _column_choices(layer),
         "advanced_open": advanced_open,
@@ -155,7 +164,7 @@ def _apply_form_data(
     config.attribute_column = post_data.get("attribute_column", "")
     config.default_color = post_data.get("default_color", "#888888")
     config.default_opacity = float(post_data.get("default_opacity", "0.7"))
-    config.palette_name = post_data.get("palette_name", "")
+    config.palette_name = post_data.get("palette_name", "").lower()
     config.reverse_palette = post_data.get("reverse_palette") == "on"
     config.num_classes = int(post_data.get("num_classes", "5"))
     config.classification_method = post_data.get("classification_method", "quantile")

@@ -198,7 +198,7 @@ def auto_generate_symbology(  # noqa: PLR0913
 
     stats = compute_statistics(schema, table, col)
 
-    used_palette = palette_name or _suggest_palette(stats)
+    used_palette = (palette_name or _suggest_palette(stats)).lower()
     used_method = classification_method or _suggest_classification_method(stats)
     used_type = _suggest_symbology_type(stats)
 

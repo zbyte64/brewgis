@@ -11,3 +11,58 @@
   background-color: #f2dede;
   border-color: #eed3d7;
 }
+
+/* ── Palette Picker (symbology editor) ─────────────────────── */
+.palette-picker-toggle {
+  position: relative;
+  z-index: 1001; /* above .palette-picker-backdrop, so re-clicking it closes the menu */
+  width: 100%;
+  cursor: pointer;
+}
+.palette-picker-swatch-row {
+  display: flex;
+  flex-shrink: 0;
+  width: 36px;
+  height: 10px;
+  border-radius: 2px;
+  overflow: hidden;
+  background: #e9ecef; /* shows through when a swatch has no colors (Manual) */
+}
+.palette-picker-menu {
+  display: none;
+  position: absolute;
+  z-index: 1000;
+  top: calc(100% + 2px);
+  left: 0;
+  right: 0;
+  max-height: 260px;
+  overflow-y: auto;
+  background: #fff;
+  border: 1px solid #ced4da;
+  border-radius: 0.25rem;
+  box-shadow: 0 0.25rem 0.5rem rgba(0, 0, 0, 0.15);
+  padding: 4px 0;
+}
+.palette-picker-menu.is-open {
+  display: block;
+}
+.palette-picker-option {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 4px 10px;
+  font-size: 0.75rem;
+  cursor: pointer;
+}
+.palette-picker-option:hover {
+  background: #f1f3f5;
+}
+.palette-picker-option.is-selected {
+  background: #e7f1ff;
+  font-weight: 600;
+}
+.palette-picker-backdrop {
+  position: fixed;
+  inset: 0;
+  z-index: 999;
+}

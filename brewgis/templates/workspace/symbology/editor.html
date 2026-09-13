@@ -2,6 +2,7 @@
 
 {% load i18n %}
 {% load static %}
+{% load workspace_tags %}
 
 {% block title %}
   Symbology - {{ layer.name }}
@@ -30,7 +31,11 @@
             </div>
           </div>
           <div class="card-body">
-            <form method="post" hx-post="." hx-target="this" hx-swap="outerHTML">
+            <form method="post"
+                  hx-post="."
+                  hx-target="this"
+                  hx-swap="outerHTML"
+                  data-palettes="{{ palettes_json|json_attr }}">
               {% csrf_token %}
               <div class="row mb-3">
                 <div class="col-md-6">
@@ -118,13 +123,40 @@
                 <div class="row mb-3">
                   <div class="col-md-4">
                     <label class="form-label">Palette</label>
-                    <select name="palette_name" class="form-select">
-                      <option value="" {% if not config.palette_name %}selected{% endif %}>Manual</option>
-                      {% for name in palette_names %}
-                        <option value="{{ name }}"
-                                {% if config.palette_name == name %}selected{% endif %}>{{ name }}</option>
-                      {% endfor %}
-                    </select>
+                    <div class="palette-picker position-relative">
+                      <select name="palette_name"
+                              class="palette-select visually-hidden"
+                              tabindex="-1"
+                              aria-hidden="true">
+                        <option value="" {% if not config.palette_name %}selected{% endif %}>Manual</option>
+                        {% for name in palette_names %}
+                          <option value="{{ name }}"
+                                  {% if config.palette_name == name %}selected{% endif %}>{{ name }}</option>
+                        {% endfor %}
+                      </select>
+                      <button type="button"
+                              class="form-select palette-picker-toggle d-flex align-items-center gap-2"
+                              aria-haspopup="listbox"
+                              aria-expanded="false">
+                        <span class="palette-picker-swatch-row"></span>
+                        <span class="palette-picker-current-label flex-grow-1 text-truncate text-start"></span>
+                      </button>
+                      <div class="palette-picker-menu" role="listbox">
+                        <div class="palette-picker-option" data-value="" role="option">
+                          <span class="palette-picker-swatch-row"></span>
+                          <span>Manual</span>
+                        </div>
+                        {% for name in palette_names %}
+                          <div class="palette-picker-option"
+                               data-value="{{ name }}"
+                               data-palette="{{ name }}"
+                               role="option">
+                            <span class="palette-picker-swatch-row"></span>
+                            <span>{{ name }}</span>
+                          </div>
+                        {% endfor %}
+                      </div>
+                    </div>
                   </div>
                   <div class="col-md-3">
                     <label class="form-label">Num Classes</label>
@@ -303,38 +335,112 @@
       </div>
     </div>
   </div>
-  {% block inline_javascript %}
-    <script>
-      (function() {
-        const previewBtn = document.getElementById('live-preview-btn');
-        const previewArea = document.getElementById('live-preview-area');
-        const previewContent = document.getElementById('live-preview-content');
-
-        if (!previewBtn || !previewArea || !previewContent) return;
-
-        previewBtn.addEventListener('click', function() {
-          if (previewArea.style.display !== 'none') {
-            previewArea.style.display = 'none';
-            previewBtn.textContent = 'Live Preview';
-            return;
-          }
-
-          previewArea.style.display = 'block';
-          previewContent.textContent = 'Loading...';
-          previewBtn.textContent = 'Hide Preview';
-
-          fetch('{% url "workspace:symbology_preview" layer.pk %}')
-            .then(function(r) {
-              return r.json();
-            })
-            .then(function(data) {
-              previewContent.textContent = JSON.stringify(data, null, 2);
-            })
-            .catch(function() {
-              previewContent.textContent = 'Failed to load preview.';
-            });
-        });
-      })();
-    </script>
-  {% endblock inline_javascript %}
 {% endblock content %}
+{% block inline_javascript %}
+  <script>
+    (function() {
+      // ─── Palette picker: custom dropdown showing every palette's colors up front ───
+      const form = document.querySelector('form[data-palettes]');
+      const select = form && form.querySelector('.palette-select');
+      const toggle = form && form.querySelector('.palette-picker-toggle');
+      const menu = form && form.querySelector('.palette-picker-menu');
+      if (form && select && toggle && menu) {
+        let palettes = {};
+        try {
+          palettes = JSON.parse(form.getAttribute('data-palettes') || '{}');
+        } catch (e) {
+          palettes = {};
+        }
+
+        const renderSwatchChips = (el, colors) => {
+          if (!el) return;
+          el.innerHTML = (colors || []).map(
+            (c) => '<span style="background-color:' + c + ';flex:1;border-radius:2px"></span>'
+          ).join('');
+        };
+
+        menu.querySelectorAll('.palette-picker-option[data-palette]').forEach((option) => {
+          renderSwatchChips(
+            option.querySelector('.palette-picker-swatch-row'),
+            palettes[option.getAttribute('data-palette')]
+          );
+        });
+
+        const syncToggleFromSelect = () => {
+          const value = select.value;
+          const selectedOption = select.options[select.selectedIndex];
+          const label = toggle.querySelector('.palette-picker-current-label');
+          if (label) label.textContent = selectedOption ? selectedOption.textContent : '';
+          renderSwatchChips(toggle.querySelector('.palette-picker-swatch-row'), value ? palettes[value] : null);
+          menu.querySelectorAll('.palette-picker-option').forEach((option) => {
+            option.classList.toggle('is-selected', option.getAttribute('data-value') === value);
+          });
+        };
+        syncToggleFromSelect();
+
+        const onKeydown = (e) => {
+          if (e.key === 'Escape') closeMenu();
+        };
+        const openMenu = () => {
+          menu.classList.add('is-open');
+          toggle.setAttribute('aria-expanded', 'true');
+          const backdrop = document.createElement('div');
+          backdrop.className = 'palette-picker-backdrop';
+          backdrop.addEventListener('click', closeMenu);
+          form.querySelector('.palette-picker').appendChild(backdrop);
+          document.addEventListener('keydown', onKeydown);
+        };
+        const closeMenu = () => {
+          menu.classList.remove('is-open');
+          toggle.setAttribute('aria-expanded', 'false');
+          form.querySelector('.palette-picker-backdrop')?.remove();
+          document.removeEventListener('keydown', onKeydown);
+        };
+
+        toggle.addEventListener('click', () => {
+          menu.classList.contains('is-open') ? closeMenu() : openMenu();
+        });
+
+        menu.querySelectorAll('.palette-picker-option').forEach((option) => {
+          option.addEventListener('click', () => {
+            select.value = option.getAttribute('data-value');
+            syncToggleFromSelect();
+            closeMenu();
+            select.dispatchEvent(new Event('change', {
+              bubbles: true
+            }));
+          });
+        });
+      }
+
+      const previewBtn = document.getElementById('live-preview-btn');
+      const previewArea = document.getElementById('live-preview-area');
+      const previewContent = document.getElementById('live-preview-content');
+
+      if (!previewBtn || !previewArea || !previewContent) return;
+
+      previewBtn.addEventListener('click', function() {
+        if (previewArea.style.display !== 'none') {
+          previewArea.style.display = 'none';
+          previewBtn.textContent = 'Live Preview';
+          return;
+        }
+
+        previewArea.style.display = 'block';
+        previewContent.textContent = 'Loading...';
+        previewBtn.textContent = 'Hide Preview';
+
+        fetch('{% url "workspace:symbology_preview" layer.pk %}')
+          .then(function(r) {
+            return r.json();
+          })
+          .then(function(data) {
+            previewContent.textContent = JSON.stringify(data, null, 2);
+          })
+          .catch(function() {
+            previewContent.textContent = 'Failed to load preview.';
+          });
+      });
+    })();
+  </script>
+{% endblock inline_javascript %}

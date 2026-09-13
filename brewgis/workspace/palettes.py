@@ -120,13 +120,18 @@ PALETTES: Final[dict[str, Colormap]] = {
 def get_palette(name: str) -> Colormap:
     """Return the ``Colormap`` registered under *name*.
 
+    Lookup is case-insensitive — every registry key is lowercase, so a
+    caller-supplied ``"Blues"``/``"BLUES"`` still resolves to ``"blues"``
+    instead of silently failing over to a fallback palette elsewhere.
+
     Raises ``KeyError`` if *name* is not found. ``Colormap`` is immutable, so
     the object is returned directly rather than copied.
     """
-    if name not in PALETTES:
+    key = name.lower()
+    if key not in PALETTES:
         msg = f"Unknown palette: {name!r}"
         raise KeyError(msg)
-    return PALETTES[name]
+    return PALETTES[key]
 
 
 def get_qualitative_names() -> list[str]:
