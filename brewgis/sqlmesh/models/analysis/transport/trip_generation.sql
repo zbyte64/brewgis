@@ -27,7 +27,7 @@ WITH parcel_base AS (
         es.area_gross_acres,
         es.du,
         es.building_sqft_total,
-        es.built_form_id,
+        es.built_form_key,
         es.land_development_category,
         es.intersection_density,
         es.pop,
@@ -36,8 +36,8 @@ WITH parcel_base AS (
         bf.trip_rate_override,
         bf.pass_by_trip_pct
     FROM brewgis.analysis.core_end_state AS es
-    LEFT JOIN public.built_forms AS bf
-        ON es.built_form_id = bf.key
+    LEFT JOIN @ref_model(@built_form_table) AS bf
+        ON es.built_form_key = bf.key
 ),
 
 trip_rates AS (

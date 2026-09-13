@@ -325,105 +325,35 @@ class TestNewModuleResolution(TestCase):
         ordered = resolve_module_order(["env_constraint", "core", "trip_generation"])
         assert ordered.index("core") < ordered.index("trip_generation")
 
-    def test_trip_distribution_depends_on_trip_generation(self) -> None:
-        """trip_distribution requires trip_generation in its chain."""
+    def test_vmt_depends_on_trip_generation(self) -> None:
+        """vmt requires trip_generation in its chain."""
         from brewgis.workspace.analysis.pipeline import resolve_module_order
 
         ordered = resolve_module_order(
-            ["env_constraint", "core", "trip_generation", "trip_distribution"]
+            ["env_constraint", "core", "trip_generation", "vmt"]
         )
-        assert ordered.index("trip_generation") < ordered.index("trip_distribution")
-
-    def test_mode_choice_depends_on_trip_distribution(self) -> None:
-        """mode_choice requires trip_distribution in its chain."""
-        from brewgis.workspace.analysis.pipeline import resolve_module_order
-
-        ordered = resolve_module_order(
-            [
-                "env_constraint",
-                "core",
-                "trip_generation",
-                "trip_distribution",
-                "mode_choice",
-            ]
-        )
-        assert ordered.index("trip_distribution") < ordered.index("mode_choice")
-
-    def test_vmt_depends_on_mode_choice(self) -> None:
-        """vmt requires mode_choice in its chain."""
-        from brewgis.workspace.analysis.pipeline import resolve_module_order
-
-        ordered = resolve_module_order(
-            [
-                "env_constraint",
-                "core",
-                "trip_generation",
-                "trip_distribution",
-                "mode_choice",
-                "vmt",
-            ]
-        )
-        assert ordered.index("mode_choice") < ordered.index("vmt")
-
-    def test_internal_capture_depends_on_trip_distribution(self) -> None:
-        """internal_capture requires trip_distribution in its chain."""
-        from brewgis.workspace.analysis.pipeline import resolve_module_order
-
-        ordered = resolve_module_order(
-            [
-                "env_constraint",
-                "core",
-                "trip_generation",
-                "trip_distribution",
-                "internal_capture",
-            ]
-        )
-        assert ordered.index("trip_distribution") < ordered.index("internal_capture")
+        assert ordered.index("trip_generation") < ordered.index("vmt")
 
     def test_full_pipeline_ordering(self) -> None:
-        """All modules resolve correctly: core → trip_generation → trip_distribution → mode_choice/internal_capture → vmt."""
+        """All modules resolve correctly: core → trip_generation → vmt."""
         from brewgis.workspace.analysis.pipeline import resolve_module_order
 
         ordered = resolve_module_order(
-            [
-                "env_constraint",
-                "core",
-                "trip_generation",
-                "trip_distribution",
-                "mode_choice",
-                "internal_capture",
-                "vmt",
-            ]
+            ["env_constraint", "core", "trip_generation", "vmt"]
         )
         core_idx = ordered.index("core")
         tg_idx = ordered.index("trip_generation")
-        td_idx = ordered.index("trip_distribution")
-        mc_idx = ordered.index("mode_choice")
-        ic_idx = ordered.index("internal_capture")
         vm_idx = ordered.index("vmt")
-        assert core_idx < tg_idx < td_idx, (
-            f"Expected core < trip_generation < trip_distribution, "
-            f"got indices: core={core_idx}, tg={tg_idx}, td={td_idx}"
+        assert core_idx < tg_idx < vm_idx, (
+            f"Expected core < trip_generation < vmt, "
+            f"got indices: core={core_idx}, tg={tg_idx}, vmt={vm_idx}"
         )
-        assert td_idx < mc_idx, (
-            f"Expected trip_distribution < mode_choice, got {ordered}"
-        )
-        assert td_idx < ic_idx, (
-            f"Expected trip_distribution < internal_capture, got {ordered}"
-        )
-        assert mc_idx < vm_idx, f"Expected mode_choice < vmt, got {ordered}"
 
     def test_transport_module_result_tables_defined(self) -> None:
         """Transport modules must have result tables in MODULE_RESULT_TABLES."""
         from brewgis.workspace.analysis.module_registry import MODULE_RESULT_TABLES
 
-        for module in [
-            "trip_generation",
-            "trip_distribution",
-            "mode_choice",
-            "vmt",
-            "internal_capture",
-        ]:
+        for module in ["trip_generation", "vmt"]:
             assert module in MODULE_RESULT_TABLES, (
                 f"{module} missing from MODULE_RESULT_TABLES"
             )

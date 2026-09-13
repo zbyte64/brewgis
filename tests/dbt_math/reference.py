@@ -175,9 +175,8 @@ def compute_impervious_surface(
 # ══════════════════════════════════════════════════════════════════════
 
 
-@deal.pre(lambda auto, length, pop: np.all(auto >= 0))
-@deal.pre(lambda auto, length, pop: np.all(length >= 0))
-@deal.pre(lambda auto, length, pop: np.all(pop >= 0))
+@deal.pre(lambda trips_total, pop: np.all(trips_total >= 0))
+@deal.pre(lambda trips_total, pop: np.all(pop >= 0))
 @deal.post(lambda result: np.all(result[0] >= 0))  # vmt_total
 @deal.post(lambda result: np.all(result[1] >= 0))  # vmt_per_capita
 @deal.post(lambda result: np.all(result[2] >= 0))  # avg_trip_length_mi
@@ -190,18 +189,22 @@ def compute_impervious_surface(
     )
 )
 def compute_vmt(
-    auto_trips: np.ndarray,
-    avg_trip_length_km: np.ndarray,
+    trips_total: np.ndarray,
     population: np.ndarray,
+    mode_share_auto: float = 0.85,
+    avg_trip_length_mi: float = 5.0,
     circuity_factor: float = 1.2,
 ) -> tuple[np.ndarray, np.ndarray, np.ndarray, np.ndarray]:
-    """SQL: ``vmt`` — vehicle miles traveled.
+    """SQL: ``vmt`` — vehicle miles traveled, computed directly from trip
+    generation using a fixed auto mode share and average trip length (no
+    mode choice / trip distribution sub-models).
 
     Returns (vmt_total, vmt_per_capita, avg_trip_length_mi, auto_trips).
     """
-    vmt = auto_trips * avg_trip_length_km * 0.621371 * circuity_factor
+    auto_trips = trips_total * mode_share_auto
+    vmt = auto_trips * avg_trip_length_mi * circuity_factor
     vmt_per_cap = np.where(population > 0, vmt / population, 0.0)
-    trip_len_mi = avg_trip_length_km * 0.621371
+    trip_len_mi = np.full_like(np.asarray(trips_total, dtype=float), avg_trip_length_mi)
     return vmt, vmt_per_cap, trip_len_mi, auto_trips
 
 

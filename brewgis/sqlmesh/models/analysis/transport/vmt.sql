@@ -9,27 +9,29 @@ MODEL (
 
 -- VMT Model — T4 Module
 --
--- Computes vehicle miles traveled (VMT) from mode choice and trip distribution.
--- VMT = auto trips x avg trip length (km) x 0.621371 (km->mi) x circuity factor.
+-- Computes vehicle miles traveled (VMT) directly from trip generation,
+-- using a fixed auto mode share and average trip length (sketch-level
+-- planning approximation — no mode choice / trip distribution sub-models).
+--
+-- VMT = total trips x auto mode share x avg trip length (mi) x circuity factor.
 --
 -- Variables:
+--   @transport_mode_share_auto: Fraction of trips made by auto (default: 0.85).
+--   @transport_avg_trip_length_mi: Average one-way trip length in miles (default: 5.0).
 --   @transport_circuity_factor: Road network directness adjustment (default: 1.2).
---   @transport_km_to_mi: Kilometer to mile conversion factor (default: 0.621371).
 
-WITH mode_trips AS (
+WITH auto_trips AS (
     SELECT
-        mc.parcel_id,
-        mc.trips_auto AS auto_trips,
-        td.avg_trip_length_km,
+        tg.parcel_id,
+        tg.trips_total * @transport_mode_share_auto AS auto_trips,
         es.pop,
         es.geometry,
-        mc.trips_auto * td.avg_trip_length_km * @transport_km_to_mi * @transport_circuity_factor
+        tg.trips_total * @transport_mode_share_auto
+            * @transport_avg_trip_length_mi * @transport_circuity_factor
             AS vmt_total
-    FROM brewgis.analysis.mode_choice AS mc
-    LEFT JOIN brewgis.analysis.trip_distribution AS td
-        ON mc.parcel_id = td.parcel_id
+    FROM brewgis.analysis.trip_generation AS tg
     LEFT JOIN brewgis.analysis.core_end_state AS es
-        ON mc.parcel_id = es.parcel_id
+        ON tg.parcel_id = es.parcel_id
 )
 
 SELECT
@@ -41,9 +43,9 @@ SELECT
         ELSE 0.0
     END AS vmt_per_capita,
     auto_trips,
-    avg_trip_length_km * @transport_km_to_mi AS avg_trip_length_mi,
+    @transport_avg_trip_length_mi AS avg_trip_length_mi,
     geometry
-FROM mode_trips;
+FROM auto_trips;
 
 -- post_statements
   CREATE INDEX IF NOT EXISTS idx_vmt_geometry_@snapshot_hash

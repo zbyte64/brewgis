@@ -193,15 +193,16 @@ def test_impervious_surface(quint):
 
 
 @pytest.mark.slow
-@given(_triple(0, 50000, 0, 100, 0, 15000))
+@given(_pair(0, 50000, 0, 15000))
 @_N_HYPOTHESIS
-def test_vmt_formulas(triple):
-    auto, length, pop = triple
-    vmt, vmt_pc, trip_mi, _ = compute_vmt(auto, length, pop)
+def test_vmt_formulas(pair):
+    trips_total, pop = pair
+    vmt, vmt_pc, trip_mi, auto_trips = compute_vmt(trips_total, pop)
     assert np.all(vmt >= 0)
     assert np.all(vmt_pc >= 0)
     assert np.all(trip_mi >= 0)
-    assert np.allclose(trip_mi, length * 0.621371, atol=1e-6)
+    assert np.allclose(trip_mi, 5.0, atol=1e-6)
+    assert np.allclose(auto_trips, trips_total * 0.85, atol=1e-6)
     mask = pop > 0
     if np.any(mask):
         assert np.allclose(vmt[mask] / pop[mask], vmt_pc[mask], atol=1e-6)
@@ -418,7 +419,7 @@ def test_all_refs_handle_empty_input():
     cases = [
         ("property_tax", lambda: compute_property_tax(e, e)),
         ("service_costs", lambda: compute_service_costs(e, e, e)),
-        ("vmt", lambda: compute_vmt(e, e, e)),
+        ("vmt", lambda: compute_vmt(e, e)),
         ("transport_ghg", lambda: compute_transport_ghg(e, e)),
         ("impervious", lambda: compute_impervious_surface(e, e, e, e, e)),
         ("physical_activity", lambda: compute_physical_activity(e, e, e, e, e)),

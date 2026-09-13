@@ -33,13 +33,11 @@ class TestResolveModuleOrder:
     def test_modules_in_correct_order(self) -> None:
         """Full transitive dependency chain is resolved."""
         result = resolve_module_order(["vmt"])
-        # vmt -> mode_choice -> trip_distribution -> trip_generation -> core -> env_constraint
+        # vmt -> trip_generation -> core -> env_constraint
         assert result == [
             "env_constraint",
             "core",
             "trip_generation",
-            "trip_distribution",
-            "mode_choice",
             "vmt",
         ]
 
@@ -57,14 +55,12 @@ class TestResolveModuleOrder:
     def test_interleaved_chain(self) -> None:
         """Full transitive chain for each requested module is resolved."""
         result = resolve_module_order(["vmt", "land_consumption"])
-        # vmt -> mode_choice -> trip_distribution -> trip_generation -> core -> env_constraint
+        # vmt -> trip_generation -> core -> env_constraint
         # land_consumption -> core -> env_constraint (already seen)
         assert result == [
             "env_constraint",
             "core",
             "trip_generation",
-            "trip_distribution",
-            "mode_choice",
             "vmt",
             "land_consumption",
         ]

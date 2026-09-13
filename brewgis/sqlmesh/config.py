@@ -465,6 +465,8 @@ def config_factory(**variables):
             "transport_intrazonal_friction": 0.15,
             "transport_study_area_geometry": "",
             "transport_km_to_mi": 0.621371,
+            "transport_mode_share_auto": 0.85,
+            "transport_avg_trip_length_mi": 5.0,
             # GHG
             "ghg_egrid_co2_per_kwh": 0.417,
             "ghg_gas_co2_per_kwh": 0.181,

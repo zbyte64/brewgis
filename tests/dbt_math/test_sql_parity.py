@@ -18,11 +18,11 @@ import numpy as np
 import pandas as pd
 import pytest
 
-from tests.dbt_math.sqlmesh_model_runner import run_model
 from tests.dbt_math.reference import compute_property_tax
 from tests.dbt_math.reference import compute_service_costs
 from tests.dbt_math.reference import compute_transport_ghg
 from tests.dbt_math.reference import compute_vmt
+from tests.dbt_math.sqlmesh_model_runner import run_model
 
 pytestmark = [pytest.mark.integration, pytest.mark.django_db]
 
@@ -135,34 +135,17 @@ def test_fiscal_service_costs_parity() -> None:
 @pytest.mark.slow
 def test_vmt_parity() -> None:
     """dbt VMT output matches Python reference."""
-    auto = np.array([0.0, 100.0, 500.0], dtype=float)
-    length = np.array([0.0, 5.0, 15.0], dtype=float)
+    trips_total = np.array([0.0, 100.0, 500.0], dtype=float)
     pop = np.array([0.0, 10.0, 250.0], dtype=float)
-    pid = np.arange(len(auto), dtype=int)
+    pid = np.arange(len(trips_total), dtype=int)
 
-    v_ref, vpc_ref, tl_ref, _ = compute_vmt(auto, length, pop)
+    v_ref, vpc_ref, tl_ref, _ = compute_vmt(trips_total, pop)
 
-    # VMT depends on mode_choice + trip_distribution + core_end_state
-    mc_df = pd.DataFrame(
+    # VMT is computed directly from trip_generation + core_end_state
+    tg_df = pd.DataFrame(
         {
             "parcel_id": pid,
-            "trips_auto": auto,
-            "trips_transit": np.zeros(len(auto)),
-            "trips_walk": np.zeros(len(auto)),
-            "trips_bike": np.zeros(len(auto)),
-            "mode_share_auto": np.where(auto > 0, 1.0, 0.0),
-            "mode_share_transit": np.zeros(len(auto)),
-            "mode_share_walk": np.zeros(len(auto)),
-            "mode_share_bike": np.zeros(len(auto)),
-        }
-    )
-    td_df = pd.DataFrame(
-        {
-            "parcel_id": pid,
-            "trips_outbound": auto,
-            "trips_inbound": auto,
-            "trips_internal": np.zeros(len(auto)),
-            "avg_trip_length_km": length,
+            "trips_total": trips_total,
         }
     )
     es_df = _core_es_df(pid, pop=pop)
@@ -170,8 +153,7 @@ def test_vmt_parity() -> None:
     result = run_model(
         "vmt",
         upstream={
-            "mode_choice": mc_df,
-            "trip_distribution": td_df,
+            "trip_generation": tg_df,
             "core_end_state": es_df,
         },
         vars_={"scenario_id": "test_vmt"},
