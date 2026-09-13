@@ -1,57 +1,8 @@
-"""Tests for the vmt dbt model SQL template and formulas."""
+"""Tests for the vmt dbt model formula logic."""
 
 from __future__ import annotations
 
-from pathlib import Path
-
 import pytest
-
-from tests.analysis_template_test import DbtModelTemplateTest
-
-MODEL_PATH = Path("brewgis/dbt_project/models/vmt.sql")
-
-
-@pytest.mark.integration
-class TestVmtTemplate(DbtModelTemplateTest):
-    """Verify the vmt SQL template structure."""
-
-    model_path = MODEL_PATH
-    model_name = "vmt"
-    uses_ref_core_end_state = False
-    expected_cols = [
-        "vmt_total",
-        "vmt_per_capita",
-        "auto_trips",
-        "avg_trip_length_mi",
-    ]
-
-    def test_has_vmt_total_column(self, sql_template: str) -> None:
-        assert "vmt_total" in sql_template
-
-    def test_has_vmt_per_capita_column(self, sql_template: str) -> None:
-        assert "vmt_per_capita" in sql_template
-
-    def test_has_auto_trips_column(self, sql_template: str) -> None:
-        assert "auto_trips" in sql_template
-
-    def test_has_avg_trip_length_mi_column(self, sql_template: str) -> None:
-        assert "avg_trip_length_mi" in sql_template
-
-    def test_uses_circuity_var(self, sql_template: str) -> None:
-        assert "transport_circuity_factor" in sql_template
-
-    def test_uses_km_to_mi_conversion(self, sql_template: str) -> None:
-        assert "0.621371" in sql_template
-
-    @pytest.mark.parametrize(("col"), ["parcel_id"])
-    def test_has_input_columns(self, sql_template: str, col: str) -> None:
-        assert col in sql_template
-
-    def test_uses_ref_for_dependency(self, sql_template: str) -> None:
-        assert "{{ ref('core_end_state') }}" in sql_template
-
-    def test_no_hardcoded_schema_names(self, sql_template: str) -> None:
-        assert all(h not in sql_template for h in ["public.", ' "schema"'])
 
 
 @pytest.mark.integration

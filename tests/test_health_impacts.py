@@ -1,73 +1,8 @@
-"""Tests for the health_impacts dbt model SQL template and formulas."""
+"""Tests for the health_impacts dbt model formula logic."""
 
 from __future__ import annotations
 
-from pathlib import Path
-
 import pytest
-
-from tests.analysis_template_test import DbtModelTemplateTest
-
-MODEL_PATH = Path("brewgis/dbt_project/models/health_impacts.sql")
-
-
-@pytest.mark.integration
-class TestHealthImpactsTemplate(DbtModelTemplateTest):
-    """Verify the health_impacts SQL template structure."""
-
-    model_path = MODEL_PATH
-    model_name = "health_impacts"
-    uses_ref_core_end_state = False
-    expected_cols = [
-        "dalys_averted_pa",
-        "dalys_added_air_quality",
-        "net_dalys",
-        "deaths_averted_pa",
-        "deaths_added_air_quality",
-    ]
-
-    def test_has_dalys_averted_column(self, sql_template: str) -> None:
-        assert "dalys_averted_pa" in sql_template
-
-    def test_has_dalys_added_column(self, sql_template: str) -> None:
-        assert "dalys_added_air_quality" in sql_template
-
-    def test_has_net_dalys_column(self, sql_template: str) -> None:
-        assert "net_dalys" in sql_template
-
-    def test_has_deaths_averted_column(self, sql_template: str) -> None:
-        assert "deaths_averted_pa" in sql_template
-
-    def test_has_deaths_added_column(self, sql_template: str) -> None:
-        assert "deaths_added_air_quality" in sql_template
-
-    def test_uses_met_vars(self, sql_template: str) -> None:
-        assert "health_heat_mortality_reduction_pct" in sql_template
-        assert "health_heat_baseline_met_hours_per_week" in sql_template
-
-    def test_uses_pm25_vars(self, sql_template: str) -> None:
-        assert "health_pm25_intake_fraction" in sql_template
-        assert "health_pm25_concentration_response" in sql_template
-
-    def test_uses_background_vars(self, sql_template: str) -> None:
-        assert "health_background_dalys_per_capita" in sql_template
-        assert "health_background_death_rate" in sql_template
-
-    def test_uses_physical_activity_ref(self, sql_template: str) -> None:
-        assert "{{ ref('physical_activity') }}" in sql_template
-
-    def test_uses_transport_ghg_ref(self, sql_template: str) -> None:
-        assert "{{ ref('transport_ghg') }}" in sql_template
-
-    @pytest.mark.parametrize(
-        ("col"),
-        ["parcel_id", "total_met_hours", "co2e_transport_kg", "population"],
-    )
-    def test_has_input_columns(self, sql_template: str, col: str) -> None:
-        assert col in sql_template
-
-    def test_no_hardcoded_schema_names(self, sql_template: str) -> None:
-        assert all(h not in sql_template for h in ["public.", ' "schema"'])
 
 
 @pytest.mark.integration

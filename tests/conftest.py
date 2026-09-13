@@ -150,6 +150,8 @@ def base_canvas_table(db) -> str:
         """Build a row dict with defaults for all non-null columns."""
         row: dict[str, object] = {
             "land_development_category": ldc,
+            "land_use": "residential",
+            "assessor_use_code": "R1",
             "du": du,
             "pop": pop,
             "hh": hh,

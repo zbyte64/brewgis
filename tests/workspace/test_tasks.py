@@ -14,10 +14,12 @@ from brewgis.workspace.tasks import run_census_fetch
 from brewgis.workspace.tasks import run_lehd_fetch
 from brewgis.workspace.tasks import run_poi_fetch
 from brewgis.workspace.tasks import run_spatial_allocation
+from tests.factories import WorkspaceFactory
 
 # ── export_building_types_task ──────────────────────────────────────
 
 
+@pytest.mark.django_db
 class TestExportBuildingTypesTask:
     """Tests for :func:`export_building_types_task`."""
 
@@ -25,32 +27,43 @@ class TestExportBuildingTypesTask:
     def test_success(self, mock_export: MagicMock) -> None:
         """Successful export returns count in result dict."""
         mock_export.return_value = 42
+        workspace = WorkspaceFactory()
 
-        result = export_building_types_task(schema="test_schema", table="bt")
+        result = export_building_types_task(
+            workspace_id=workspace.pk, schema="test_schema", table="bt"
+        )
 
         assert result == {"success": True, "count": 42, "error": None}
-        mock_export.assert_called_once_with(schema="test_schema", table="bt")
+        mock_export.assert_called_once_with(workspace, schema="test_schema", table="bt")
 
     @patch("brewgis.workspace.tasks.export_building_types")
     def test_error(self, mock_export: MagicMock) -> None:
         """Exception during export propagates to the caller."""
         mock_export.side_effect = RuntimeError("DB connection lost")
+        workspace = WorkspaceFactory()
 
         try:
-            export_building_types_task(schema="public", table="built_forms")
+            export_building_types_task(
+                workspace_id=workspace.pk, schema="public", table="built_forms"
+            )
             assert False, "Expected RuntimeError"
         except RuntimeError:
             pass
-        mock_export.assert_called_once_with(schema="public", table="built_forms")
+        mock_export.assert_called_once_with(
+            workspace, schema="public", table="built_forms"
+        )
 
     @patch("brewgis.workspace.tasks.export_building_types")
     def test_default_params(self, mock_export: MagicMock) -> None:
         """Default parameters should be used when none are provided."""
         mock_export.return_value = 0
+        workspace = WorkspaceFactory()
 
-        export_building_types_task()
+        export_building_types_task(workspace_id=workspace.pk)
 
-        mock_export.assert_called_once_with(schema="public", table="built_forms")
+        mock_export.assert_called_once_with(
+            workspace, schema="public", table="built_forms"
+        )
 
 
 # ── run_spatial_allocation ──────────────────────────────────────────

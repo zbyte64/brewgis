@@ -26,9 +26,7 @@ def _seed_all_counties() -> None:
     comprehensive data)."""
     from brewgis.workspace.models import County as CountyModel
 
-    csv_path = (
-        settings.BASE_DIR / "brewgis" / "workspace" / "fixtures" / "county_fips.csv"
-    )
+    csv_path = settings.BASE_DIR / "workspace" / "fixtures" / "county_fips.csv"
     with csv_path.open(newline="") as f:
         reader = csv.DictReader(f)
         batch = [CountyModel(**row) for row in reader]

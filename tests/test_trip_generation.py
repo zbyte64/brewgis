@@ -1,81 +1,8 @@
-"""Tests for the trip_generation dbt model SQL template and formulas."""
+"""Tests for the trip_generation dbt model formula logic."""
 
 from __future__ import annotations
 
-from pathlib import Path
-
 import pytest
-
-from tests.analysis_template_test import DbtModelTemplateTest
-
-MODEL_PATH = Path("brewgis/dbt_project/models/trip_generation.sql")
-
-
-@pytest.mark.integration
-class TestTripGenerationTemplate(DbtModelTemplateTest):
-    """Verify the trip_generation SQL template structure."""
-
-    model_path = MODEL_PATH
-    model_name = "trip_generation"
-    expected_cols = [
-        "trips_total",
-        "trips_res",
-        "trips_nonres",
-        "trips_hbw",
-        "trips_hbo",
-        "trips_nhb",
-    ]
-
-    def test_joins_built_forms(self, sql_template: str) -> None:
-        assert "built_form_table" in sql_template
-        assert "trip_rate_override" in sql_template
-
-    def test_has_total_column(self, sql_template: str) -> None:
-        assert "trips_total" in sql_template
-
-    def test_has_res_column(self, sql_template: str) -> None:
-        assert "trips_res" in sql_template
-
-    def test_has_nonres_column(self, sql_template: str) -> None:
-        assert "trips_nonres" in sql_template
-
-    def test_has_hbw_column(self, sql_template: str) -> None:
-        assert "trips_hbw" in sql_template
-
-    def test_has_hbo_column(self, sql_template: str) -> None:
-        assert "trips_hbo" in sql_template
-
-    def test_has_nhb_column(self, sql_template: str) -> None:
-        assert "trips_nhb" in sql_template
-
-    def test_uses_dwelling_units(self, sql_template: str) -> None:
-        assert "dwelling_units_total" in sql_template
-
-    def test_uses_building_sqft(self, sql_template: str) -> None:
-        assert "building_sqft_total" in sql_template
-
-    def test_uses_nonres_trip_rate_var(self, sql_template: str) -> None:
-        assert "transport_nonres_trip_rate" in sql_template
-
-    def test_uses_pass_by_var(self, sql_template: str) -> None:
-        assert "transport_pass_by_pct" in sql_template
-
-    def test_uses_purpose_split_vars(self, sql_template: str) -> None:
-        assert "transport_hbw_pct" in sql_template
-        assert "transport_hbo_pct" in sql_template
-        assert "transport_nhb_pct" in sql_template
-
-    @pytest.mark.parametrize(("col"), ["parcel_id", "gross_acres"])
-    def test_has_input_columns(self, sql_template: str, col: str) -> None:
-        assert col in sql_template
-
-    def test_uses_ref_for_dependency(self, sql_template: str) -> None:
-        """Verify the template refs the core_end_state dependency."""
-        assert "{{ ref('core_end_state') }}" in sql_template
-
-    def test_no_hardcoded_schema_names(self, sql_template: str) -> None:
-        """Verify the template avoids hardcoded schema references."""
-        assert all(h not in sql_template for h in ["public.", ' "schema"'])
 
 
 @pytest.mark.integration

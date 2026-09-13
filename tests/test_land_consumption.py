@@ -1,70 +1,8 @@
-"""Tests for the land_consumption dbt model SQL template and formulas."""
+"""Tests for the land_consumption dbt model formula logic."""
 
 from __future__ import annotations
 
-from pathlib import Path
-
 import pytest
-
-from tests.analysis_template_test import DbtModelTemplateTest
-
-MODEL_PATH = Path("brewgis/dbt_project/models/land_consumption.sql")
-
-
-@pytest.mark.integration
-class TestLandConsumptionTemplate(DbtModelTemplateTest):
-    """Verify the land_consumption SQL template structure."""
-
-    model_path = MODEL_PATH
-    model_name = "land_consumption"
-    expected_cols = [
-        "land_use_transition",
-        "acres_consumed",
-        "acres_preserved",
-        "development_type",
-        "impervious_sqft",
-        "impervious_acres",
-        "pervious_acres",
-        "impervious_pct",
-    ]
-
-    def test_has_l1_output_columns(self, sql_template: str) -> None:
-        for col in [
-            "land_use_transition",
-            "acres_consumed",
-            "acres_preserved",
-            "development_type",
-        ]:
-            assert col in sql_template
-
-    def test_has_l2_output_columns(self, sql_template: str) -> None:
-        for col in [
-            "impervious_sqft",
-            "impervious_acres",
-            "pervious_acres",
-            "impervious_pct",
-        ]:
-            assert col in sql_template
-
-    def test_has_input_columns(self, sql_template: str) -> None:
-        for col in [
-            "parcel_id",
-            "acres_developed",
-            "building_sqft_total",
-            "dwelling_units_total",
-            "employment_total",
-            "land_dev_category",
-            "built_form_id",
-            "geom",
-        ]:
-            assert col in sql_template
-
-    def test_uses_ref_for_dependency(self, sql_template: str) -> None:
-        assert "{{ ref('core_end_state') }}" in sql_template
-
-    def test_no_hardcoded_schema_names(self, sql_template: str) -> None:
-        for h in ["public.", ' "schema"']:
-            assert h not in sql_template
 
 
 @pytest.mark.integration

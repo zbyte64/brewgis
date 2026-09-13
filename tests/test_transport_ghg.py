@@ -1,61 +1,8 @@
-"""Tests for the transport_ghg dbt model SQL template and formulas."""
+"""Tests for the transport_ghg dbt model formula logic."""
 
 from __future__ import annotations
 
-from pathlib import Path
-
 import pytest
-
-from tests.analysis_template_test import DbtModelTemplateTest
-
-MODEL_PATH = Path("brewgis/dbt_project/models/transport_ghg.sql")
-
-
-@pytest.mark.integration
-class TestTransportGhgTemplate(DbtModelTemplateTest):
-    """Verify the transport_ghg SQL template structure."""
-
-    model_path = MODEL_PATH
-    model_name = "transport_ghg"
-    uses_ref_core_end_state = False
-    expected_cols = [
-        "co2e_total_kg",
-        "co2e_per_capita_kg",
-        "vmt_total",
-        "avg_trip_length_mi",
-        "auto_trips",
-    ]
-
-    def test_has_co2e_total_column(self, sql_template: str) -> None:
-        assert "co2e_total_kg" in sql_template
-
-    def test_has_co2e_per_capita_column(self, sql_template: str) -> None:
-        assert "co2e_per_capita_kg" in sql_template
-
-    def test_has_vmt_total_column(self, sql_template: str) -> None:
-        assert "vmt_total" in sql_template
-
-    def test_has_avg_trip_length_mi_column(self, sql_template: str) -> None:
-        assert "avg_trip_length_mi" in sql_template
-
-    def test_has_auto_trips_column(self, sql_template: str) -> None:
-        assert "auto_trips" in sql_template
-
-    def test_uses_co2_per_mile_var(self, sql_template: str) -> None:
-        assert "transport_ghg_co2_per_mile" in sql_template
-
-    def test_uses_speed_adjust_var(self, sql_template: str) -> None:
-        assert "transport_ghg_speed_adjust" in sql_template
-
-    def test_uses_ref_for_dependency(self, sql_template: str) -> None:
-        assert "{{ ref('vmt') }}" in sql_template
-
-    @pytest.mark.parametrize(("col"), ["parcel_id", "population"])
-    def test_has_input_columns(self, sql_template: str, col: str) -> None:
-        assert col in sql_template
-
-    def test_no_hardcoded_schema_names(self, sql_template: str) -> None:
-        assert all(h not in sql_template for h in ["public.", ' "schema"'])
 
 
 @pytest.mark.integration

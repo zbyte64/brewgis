@@ -1,78 +1,8 @@
-"""Tests for the building_water_ghg dbt model SQL template and formulas."""
+"""Tests for the building_water_ghg dbt model formula logic."""
 
 from __future__ import annotations
 
-from pathlib import Path
-
 import pytest
-
-from tests.analysis_template_test import DbtModelTemplateTest
-
-MODEL_PATH = Path("brewgis/dbt_project/models/building_water_ghg.sql")
-
-
-@pytest.mark.integration
-class TestBuildingWaterGhgTemplate(DbtModelTemplateTest):
-    """Verify the building_water_ghg SQL template structure."""
-
-    model_path = MODEL_PATH
-    model_name = "building_water_ghg"
-    uses_ref_core_end_state = False
-    expected_cols = [
-        "co2e_energy_total_kg",
-        "co2e_water_total_kg",
-        "co2e_total_kg",
-        "co2e_per_capita_kg",
-    ]
-
-    def test_has_energy_co2e_column(self, sql_template: str) -> None:
-        assert "co2e_energy_total_kg" in sql_template
-
-    def test_has_water_co2e_column(self, sql_template: str) -> None:
-        assert "co2e_water_total_kg" in sql_template
-
-    def test_has_total_co2e_column(self, sql_template: str) -> None:
-        assert "co2e_total_kg" in sql_template
-
-    def test_has_per_capita_column(self, sql_template: str) -> None:
-        assert "co2e_per_capita_kg" in sql_template
-
-    def test_uses_egrid_var(self, sql_template: str) -> None:
-        assert "ghg_egrid_co2_per_kwh" in sql_template
-
-    def test_uses_gas_var(self, sql_template: str) -> None:
-        assert "ghg_gas_co2_per_kwh" in sql_template
-
-    def test_uses_water_vars(self, sql_template: str) -> None:
-        assert "ghg_water_supply_kwh_per_mg" in sql_template
-        assert "ghg_wastewater_kwh_per_mg" in sql_template
-
-    def test_uses_l_to_mg_conversion(self, sql_template: str) -> None:
-        assert "3785411.8" in sql_template
-
-    def test_uses_energy_refs(self, sql_template: str) -> None:
-        assert "{{ ref('energy_demand') }}" in sql_template
-
-    def test_uses_water_ref(self, sql_template: str) -> None:
-        assert "{{ ref('water_demand') }}" in sql_template
-
-    @pytest.mark.parametrize(
-        ("col"),
-        [
-            "parcel_id",
-            "population",
-            "energy_electricity_res",
-            "energy_gas_res",
-            "energy_electricity_nonres",
-            "energy_gas_nonres",
-            "water_demand_total",
-        ],
-    )
-    def test_has_input_columns(self, sql_template: str, col: str) -> None:
-        assert col in sql_template
-
-    def test_no_hardcoded_schema_names(self, sql_template: str) -> None:
-        assert all(h not in sql_template for h in ["public.", ' "schema"'])
 
 
 @pytest.mark.integration

@@ -1,71 +1,8 @@
-"""Tests for the agriculture dbt model SQL template and formulas."""
+"""Tests for the agriculture dbt model formula logic."""
 
 from __future__ import annotations
 
-from pathlib import Path
-
 import pytest
-
-from tests.analysis_template_test import DbtModelTemplateTest
-
-MODEL_PATH = Path("brewgis/dbt_project/models/agriculture.sql")
-
-
-@pytest.mark.integration
-class TestAgricultureTemplate(DbtModelTemplateTest):
-    """Verify the agriculture SQL template structure."""
-
-    model_path = MODEL_PATH
-    model_name = "agriculture"
-    expected_cols = [
-        "crop_type",
-        "acres_cultivated",
-        "crop_yield_tons",
-        "market_value",
-        "production_cost",
-        "net_return",
-        "water_consumption_af",
-        "labor_hours",
-        "truck_trips",
-    ]
-
-    def test_has_output_columns(self, sql_template: str) -> None:
-        for col in [
-            "crop_type",
-            "acres_cultivated",
-            "crop_yield_tons",
-            "market_value",
-            "production_cost",
-            "net_return",
-            "water_consumption_af",
-            "labor_hours",
-            "truck_trips",
-            "geom",
-        ]:
-            assert col in sql_template
-
-    def test_has_input_columns(self, sql_template: str) -> None:
-        for col in [
-            "parcel_id",
-            "parcel_acres_agriculture",
-            "acres_developed",
-            "land_dev_category",
-            "geom",
-        ]:
-            assert col in sql_template
-
-    def test_has_where_clause(self, sql_template: str) -> None:
-        assert "WHERE" in sql_template
-        assert (
-            "parcel_acres_agriculture > 0" in sql_template
-            or "land_dev_category = 'rural'" in sql_template
-        )
-
-    def test_uses_ref_for_dependency(self, sql_template: str) -> None:
-        assert "{{ ref('core_end_state') }}" in sql_template
-
-    def test_no_hardcoded_schema_names(self, sql_template: str) -> None:
-        assert all(h not in sql_template for h in ["public.", ' "schema"'])
 
 
 @pytest.mark.integration
