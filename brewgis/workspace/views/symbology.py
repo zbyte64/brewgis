@@ -24,6 +24,7 @@ from django.views.decorators.http import require_POST
 
 from brewgis.workspace.analysis.layer_registry import _get_table_columns
 from brewgis.workspace.models import Layer
+from brewgis.workspace.models import Scenario
 from brewgis.workspace.models import StyleClass
 from brewgis.workspace.models import SymbologyConfig
 from brewgis.workspace.palettes import PALETTES
@@ -34,6 +35,20 @@ from brewgis.workspace.symbology.legend import generate_legend
 from brewgis.workspace.views.panels import is_panel_request
 
 _GEOMETRY_DATA_TYPES = {"geometry", "geography", "USER-DEFINED"}
+
+
+def _resolve_scenario(layer: Layer, data: dict[str, str]) -> Scenario | None:
+    """Resolve the active scenario (if any) from a GET/POST payload.
+
+    Lets symbology auto-generation/preview compute breaks against a
+    scenario's painted-aware canvas view instead of the raw base table (see
+    ``resolve_symbology_source``). Returns ``None`` if no ``scenario`` value
+    is present or it doesn't belong to *layer*'s workspace.
+    """
+    scenario_id = data.get("scenario")
+    if not scenario_id:
+        return None
+    return Scenario.objects.filter(pk=scenario_id, workspace=layer.workspace).first()
 
 
 def _advanced_open(post_data: dict[str, str]) -> bool:
@@ -74,6 +89,7 @@ def _build_context(
     config: SymbologyConfig | None = None,
     *,
     advanced_open: bool = False,
+    scenario: Scenario | None = None,
 ) -> dict:
     """Build shared template context for the symbology editor.
 
@@ -81,6 +97,10 @@ def _build_context(
     when the request was made (see the panel's ``advanced_open`` hidden
     field) — the server, not client-side DOM state, is the source of truth
     for this so it survives a full panel re-render regardless of swap style.
+
+    ``scenario``, if given, is echoed back into a hidden form field so every
+    subsequent htmx request from the panel (preview/auto-generate/save)
+    keeps computing breaks against that scenario's painted-aware canvas view.
     """
     if config is None:
         try:
@@ -99,6 +119,7 @@ def _build_context(
         "geometry_types": ["fill", "line", "circle"],
         "column_choices": _column_choices(layer),
         "advanced_open": advanced_open,
+        "scenario": scenario,
     }
 
 
@@ -112,7 +133,8 @@ def edit_symbology(request: HttpRequest, layer_pk: int) -> HttpResponse:
     if request.method == "POST":
         return _save_symbology(request, layer, config)
 
-    context = _build_context(layer, config)
+    scenario = _resolve_scenario(layer, request.GET)
+    context = _build_context(layer, config, scenario=scenario)
 
     if is_panel_request(request):
         return render(request, "workspace/symbology/_editor_panel.html", context)
@@ -216,8 +238,12 @@ def _save_symbology(
 
     if is_panel_request(request):
         # Stay in panel — return updated editor + trigger map refresh
+        scenario = _resolve_scenario(layer, request.POST)
         context = _build_context(
-            layer, config, advanced_open=_advanced_open(request.POST)
+            layer,
+            config,
+            advanced_open=_advanced_open(request.POST),
+            scenario=scenario,
         )
         response = render(request, "workspace/symbology/_editor_panel.html", context)
         response.write(_legend_oob_html(request, layer, config))
@@ -267,6 +293,7 @@ def preview_classify(request: HttpRequest, layer_pk: int) -> HttpResponse:
     computed classes are only persisted if the user then submits the form.
     """
     layer = get_object_or_404(Layer, pk=layer_pk)
+    scenario = _resolve_scenario(layer, request.POST)
     attribute_column = request.POST.get("attribute_column") or None
     palette_name = request.POST.get("palette_name") or None
     num_classes = int(request.POST.get("num_classes", "5"))
@@ -282,6 +309,7 @@ def preview_classify(request: HttpRequest, layer_pk: int) -> HttpResponse:
             classification_method=classification_method,
             reverse_palette=reverse_palette,
             commit=False,
+            scenario=scenario,
         )
     except Exception:
         # Non-fatal — table may not exist or have no data for this column
@@ -289,7 +317,9 @@ def preview_classify(request: HttpRequest, layer_pk: int) -> HttpResponse:
         _apply_form_data(config, request.POST)
         config.preview_style_classes = _resolve_context_classes(config)
 
-    context = _build_context(layer, config, advanced_open=_advanced_open(request.POST))
+    context = _build_context(
+        layer, config, advanced_open=_advanced_open(request.POST), scenario=scenario
+    )
     response = render(request, "workspace/symbology/_editor_panel.html", context)
     classes = _resolve_context_classes(config)
     style = generate_maplibre_style(config, classes=classes)
@@ -309,6 +339,7 @@ def preview_classify(request: HttpRequest, layer_pk: int) -> HttpResponse:
 def auto_generate(request: HttpRequest, layer_pk: int) -> HttpResponse:
     """Re-run auto-generation for a layer and redirect to the editor."""
     layer = get_object_or_404(Layer, pk=layer_pk)
+    scenario = _resolve_scenario(layer, request.POST)
     attribute_column = request.POST.get("attribute_column") or None
     palette_name = request.POST.get("palette_name") or None
     num_classes = int(request.POST.get("num_classes", "5"))
@@ -324,6 +355,7 @@ def auto_generate(request: HttpRequest, layer_pk: int) -> HttpResponse:
                 num_classes=num_classes,
                 classification_method=classification_method,
                 reverse_palette=reverse_palette,
+                scenario=scenario,
             )
     except Exception:
         # Non-fatal - table may not exist or have no data
@@ -336,7 +368,7 @@ def auto_generate(request: HttpRequest, layer_pk: int) -> HttpResponse:
         except SymbologyConfig.DoesNotExist:
             config = SymbologyConfig(layer=layer)
         context = _build_context(
-            layer, config, advanced_open=_advanced_open(request.POST)
+            layer, config, advanced_open=_advanced_open(request.POST), scenario=scenario
         )
         response = render(request, "workspace/symbology/_editor_panel.html", context)
         response.write(_legend_oob_html(request, layer, config))

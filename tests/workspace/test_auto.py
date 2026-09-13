@@ -7,11 +7,13 @@ from unittest.mock import patch
 from django.test import TestCase
 
 from brewgis.workspace.models import Layer
+from brewgis.workspace.models import Scenario
 from brewgis.workspace.models import Workspace
 from brewgis.workspace.symbology.auto import _suggest_classification_method
 from brewgis.workspace.symbology.auto import _suggest_palette
 from brewgis.workspace.symbology.auto import _suggest_symbology_type
 from brewgis.workspace.symbology.auto import auto_generate_symbology
+from brewgis.workspace.symbology.auto import resolve_symbology_source
 from brewgis.workspace.symbology.classifiers import ClassificationResult
 from brewgis.workspace.symbology.stats import ColumnStatistics
 
@@ -178,3 +180,123 @@ class TestAutoGenerate(TestCase):
 
         config2 = auto_generate_symbology(self.layer, attribute_column="val")
         self.assertEqual(config2.pk, first_id)
+
+
+class TestResolveSymbologySource(TestCase):
+    """Tests for ``resolve_symbology_source`` — deciding raw table vs canvas view."""
+
+    def setUp(self) -> None:
+        self.workspace = Workspace.objects.create(
+            name="Scenario-Aware Symbology Test",
+            db_schema="public",
+            base_table="public.base_canvas",
+        )
+        self.base_layer = Layer.objects.create(
+            key="base_canvas",
+            name="Base Canvas",
+            workspace=self.workspace,
+            db_table="base_canvas",
+            db_schema="public",
+            layer_source="test",
+            geometry_type="fill",
+        )
+        self.other_layer = Layer.objects.create(
+            key="zoning",
+            name="Zoning",
+            workspace=self.workspace,
+            db_table="zoning_districts",
+            db_schema="public",
+            layer_source="test",
+            geometry_type="fill",
+        )
+        self.scenario = Scenario.objects.create(
+            name="Test Scenario",
+            slug="test-scenario",
+            workspace=self.workspace,
+            base_year=2020,
+            horizon_year=2050,
+        )
+
+    def test_no_scenario_uses_raw_table(self) -> None:
+        schema, table = resolve_symbology_source(self.base_layer, None)
+        assert (schema, table) == ("public", "base_canvas")
+
+    def test_base_layer_with_scenario_uses_canvas_view(self) -> None:
+        schema, table = resolve_symbology_source(self.base_layer, self.scenario)
+        assert schema == self.scenario.target_schema
+        assert table == f"scenario_{self.scenario.slug}_canvas"
+
+    def test_non_base_layer_ignores_scenario(self) -> None:
+        """A non-paintable layer always reads its own raw table."""
+        schema, table = resolve_symbology_source(self.other_layer, self.scenario)
+        assert (schema, table) == ("public", "zoning_districts")
+
+
+class TestAutoGenerateScenarioAware(TestCase):
+    """Tests that auto_generate_symbology computes breaks against the
+    scenario canvas view (not the raw base table) when scenario is given."""
+
+    def setUp(self) -> None:
+        self.workspace = Workspace.objects.create(
+            name="Scenario-Aware Auto Generate Test",
+            db_schema="public",
+            base_table="public.base_canvas",
+        )
+        self.base_layer = Layer.objects.create(
+            key="base_canvas",
+            name="Base Canvas",
+            workspace=self.workspace,
+            db_table="base_canvas",
+            db_schema="public",
+            layer_source="test",
+            geometry_type="fill",
+        )
+        self.scenario = Scenario.objects.create(
+            name="Test Scenario",
+            slug="test-scenario",
+            workspace=self.workspace,
+            base_year=2020,
+            horizon_year=2050,
+        )
+
+    @patch("brewgis.workspace.symbology.auto.classify")
+    @patch("brewgis.workspace.symbology.auto.compute_statistics")
+    @patch("brewgis.workspace.symbology.auto.list_columns")
+    def test_scenario_routes_stats_through_canvas_view(
+        self, mock_list_columns, mock_compute_stats, mock_classify
+    ) -> None:
+        mock_list_columns.return_value = [{"name": "du", "type": "float8"}]
+        mock_compute_stats.return_value = _make_stats(distinct_count=50)
+        mock_classify.return_value = ClassificationResult(
+            method="quantile",
+            breaks=[0, 25, 50, 75, 100],
+            labels=["0 - 25", "25 - 50", "50 - 75", "75 - 100"],
+        )
+
+        auto_generate_symbology(
+            self.base_layer, attribute_column="du", scenario=self.scenario
+        )
+
+        mock_compute_stats.assert_called_once_with(
+            self.scenario.target_schema,
+            f"scenario_{self.scenario.slug}_canvas",
+            "du",
+        )
+
+    @patch("brewgis.workspace.symbology.auto.classify")
+    @patch("brewgis.workspace.symbology.auto.compute_statistics")
+    @patch("brewgis.workspace.symbology.auto.list_columns")
+    def test_no_scenario_routes_stats_through_raw_table(
+        self, mock_list_columns, mock_compute_stats, mock_classify
+    ) -> None:
+        mock_list_columns.return_value = [{"name": "du", "type": "float8"}]
+        mock_compute_stats.return_value = _make_stats(distinct_count=50)
+        mock_classify.return_value = ClassificationResult(
+            method="quantile",
+            breaks=[0, 25, 50, 75, 100],
+            labels=["0 - 25", "25 - 50", "50 - 75", "75 - 100"],
+        )
+
+        auto_generate_symbology(self.base_layer, attribute_column="du")
+
+        mock_compute_stats.assert_called_once_with("public", "base_canvas", "du")

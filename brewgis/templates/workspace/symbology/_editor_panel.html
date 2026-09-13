@@ -15,6 +15,12 @@
            name="advanced_open"
            id="advanced-open-flag"
            value="{% if advanced_open %}1{% endif %}" />
+    {% if scenario %}
+      <input type="hidden" name="scenario" value="{{ scenario.pk }}" />
+      <p class="text-muted mb-2" style="font-size: 0.7rem">
+        {% translate "Breaks computed from scenario:" %} {{ scenario.name }}
+      </p>
+    {% endif %}
     {% if config.symbology_type == 'single' %}<input type="hidden" name="attribute_column" value="" />{% endif %}
     {# ─── Quick-Edit Section (always visible) ─── #}
     <div class="quick-edit-section">

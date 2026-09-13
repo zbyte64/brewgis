@@ -101,7 +101,7 @@
                   <span class="text-decoration-none"
                         style="font-size: 0.75rem;
                                color: inherit"
-                        hx-get="{% url 'workspace:symbology_edit' layer.pk %}?panel=1"
+                        hx-get="{% url 'workspace:symbology_edit' layer.pk %}?panel=1{% if scenario %}&scenario={{ scenario.pk }}{% endif %}"
                         hx-target="#right-panel-content"
                         hx-swap="innerHTML"
                         hx-trigger="click"

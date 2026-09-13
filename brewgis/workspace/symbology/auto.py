@@ -13,6 +13,7 @@ from __future__ import annotations
 from typing import Any
 
 from brewgis.workspace.models import Layer
+from brewgis.workspace.models import Scenario
 from brewgis.workspace.models import StyleClass
 from brewgis.workspace.models import SymbologyConfig
 from brewgis.workspace.palettes import get_diverging_names
@@ -80,6 +81,24 @@ def _suggest_classification_method(stats: ColumnStatistics) -> str:
     return "quantile"
 
 
+def resolve_symbology_source(
+    layer: Layer, scenario: Scenario | None
+) -> tuple[str, str]:
+    """Return the ``(schema, table)`` symbology should read *layer* from.
+
+    For the workspace's base canvas layer, when *scenario* is given, this is
+    the scenario's canvas view (base canvas COALESCEd with any PaintedCanvas
+    overrides) rather than the raw base table — so breaks/categories reflect
+    painted values instead of silently ignoring them. Any other layer (not
+    paintable) always uses its own raw table regardless of scenario.
+    """
+    schema = layer.db_schema or layer.workspace.db_schema
+    table = layer.db_table
+    if scenario is not None and layer._source_id() == layer.workspace.base_table:  # noqa: SLF001
+        return scenario.target_schema, f"scenario_{scenario.slug}_canvas"
+    return schema, table
+
+
 _PALETTE_QUALITATIVE_NAMES = frozenset(get_qualitative_names())
 _PALETTE_SEQUENTIAL_NAMES = frozenset(get_sequential_names())
 _PALETTE_DIVERGING_NAMES = frozenset(get_diverging_names())
@@ -87,7 +106,7 @@ _CATEGORICAL_PALETTES = _PALETTE_QUALITATIVE_NAMES
 _NUMERIC_PALETTES = _PALETTE_SEQUENTIAL_NAMES | _PALETTE_DIVERGING_NAMES
 
 
-def auto_generate_symbology(
+def auto_generate_symbology(  # noqa: PLR0913
     layer: Layer,
     attribute_column: str | None = None,
     *,
@@ -96,6 +115,7 @@ def auto_generate_symbology(
     classification_method: str | None = None,
     reverse_palette: bool = False,
     commit: bool = True,
+    scenario: Scenario | None = None,
 ) -> SymbologyConfig:
     """Auto-generate a symbology configuration for *layer*.
 
@@ -130,14 +150,19 @@ def auto_generate_symbology(
         classes are attached to the returned config as
         ``preview_style_classes`` rather than being queryable via
         ``config.classes.all()``.
+    scenario:
+        When given and *layer* is the workspace's base canvas layer, breaks
+        and statistics are computed from this scenario's canvas view
+        (base canvas COALESCEd with any PaintedCanvas overrides) instead of
+        the raw base table — so painted values are reflected. Ignored for
+        any other layer.
 
     Returns
     -------
     SymbologyConfig
         The configuration (saved unless ``commit=False``).
     """
-    schema = layer.db_schema or layer.workspace.db_schema
-    table = layer.db_table
+    schema, table = resolve_symbology_source(layer, scenario)
 
     if attribute_column:
         col = attribute_column

@@ -59,8 +59,22 @@ def register_tools(server: object) -> None:
         workspace = get_object_or_404(Workspace, pk=ws_pk)
         scenario = get_object_or_404(Scenario, pk=s_pk, workspace=workspace)
 
+        # Default parcel_table to the scenario's canvas view — it COALESCEs
+        # any painted overlay over the base canvas, so a run launched from
+        # here picks up paint edits by default instead of silently analyzing
+        # stale/unpainted data (mirrors AnalysisLaunchForm's default in
+        # views/analysis.py). base_canvas_table always stays the raw base
+        # table — it's the pristine "existing conditions" baseline, not
+        # meant to reflect scenario edits. Explicit overrides in `params`
+        # still win.
+        p_params = dict(params or {})
+        p_params.setdefault(
+            "parcel_table",
+            f"{scenario.target_schema}.scenario_{scenario.slug}_canvas",
+        )
+        p_params.setdefault("base_canvas_table", workspace.base_table)
+
         # Check prerequisites
-        p_params = params or {}
         preflight = check_analysis_prerequisites(
             schema=workspace.db_schema,
             parcel_table=p_params.get("parcel_table", ""),
@@ -87,7 +101,7 @@ def register_tools(server: object) -> None:
             vars_={
                 "scenario_id": scenario_id_str,
                 "target_schema": workspace.db_schema,
-                **(params or {}),
+                **p_params,
             },
             scenario_id=scenario.pk,
         )

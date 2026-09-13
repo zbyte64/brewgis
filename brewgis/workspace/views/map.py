@@ -202,12 +202,32 @@ def view_workspace_map(request: HttpRequest, workspace_pk: int) -> HttpResponse:
         data = LayerSchema.model_validate(layer).model_dump()
         data["id"] = layer.key
         data["type"] = layer.geometry_type
-        data["source"] = layer.to_maplibre_source()
-        if layer._source_id() == workspace.base_table:  # noqa: SLF001
-            # Same fix as the scenario canvas view below: non-numeric
-            # parcel ids aren't valid native MVT feature ids, so without
-            # this, click-to-inspect can never resolve a clicked feature.
-            data["source"]["promoteId"] = "id"
+        is_base_layer = layer._source_id() == workspace.base_table  # noqa: SLF001
+
+        if is_base_layer and scenario:
+            # A scenario is active: tile this layer from the scenario's
+            # canvas view (base canvas COALESCEd with any PaintedCanvas
+            # overrides) instead of the raw, unpainted base table — so the
+            # symbology below (breaks/colors/categories) actually reflects
+            # painted values instead of silently showing stale data.
+            data["source"] = {
+                "type": "vector",
+                "tiles": [canvas_tiles_url],
+                "promoteId": "id",
+            }
+            base_source_layer = (
+                "default"
+                if workspace.tile_server_backend == "tipg"
+                else canvas_source_id
+            )
+        else:
+            data["source"] = layer.to_maplibre_source()
+            if is_base_layer:
+                # Same fix as the scenario canvas view below: non-numeric
+                # parcel ids aren't valid native MVT feature ids, so without
+                # this, click-to-inspect can never resolve a clicked feature.
+                data["source"]["promoteId"] = "id"
+            base_source_layer = None
 
         # Make tile URLs absolute (MapLibre v4+ requires absolute URLs
         # for tile sources in web worker contexts).
@@ -215,14 +235,17 @@ def view_workspace_map(request: HttpRequest, workspace_pk: int) -> HttpResponse:
         _request_scheme_host = f"{request.scheme}://{request.get_host()}"
         if "tiles" in data["source"]:
             data["source"]["tiles"] = [
-                f"{_request_scheme_host}{t}" for t in data["source"]["tiles"]
+                t if t.startswith("http") else f"{_request_scheme_host}{t}"
+                for t in data["source"]["tiles"]
             ]
 
         # MapLibre always requires a source-layer for a vector source — it's
         # not tipg-specific. tipg's MVT layers are always named "default";
         # Martin's TileJSON confirms it names each MVT layer after the
         # source's own id (the same "{schema}.{table}" string used above).
-        if workspace.tile_server_backend == "tipg":
+        if base_source_layer is not None:
+            data["source-layer"] = base_source_layer
+        elif workspace.tile_server_backend == "tipg":
             data["source-layer"] = "default"
         else:
             data["source-layer"] = layer._source_id()  # noqa: SLF001
