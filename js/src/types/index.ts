@@ -106,5 +106,6 @@ declare global {
   interface HTMLElementTagNameMap {
     'brew-gis-map': import('../components/brew-gis-map').BrewGisMap
     'filter-builder': import('../components/filter-builder').FilterBuilder
+    'palette-picker': import('../components/palette-picker').PalettePicker
   }
 }

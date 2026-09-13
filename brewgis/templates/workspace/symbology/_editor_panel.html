@@ -112,807 +112,382 @@
         <div class="row mb-2">
           <div class="col-7">
             <label class="form-label" style="font-size:0.75rem">{% translate "Palette" %}</label>
-            <div class="palette-picker position-relative">
-              <select name="palette_name"
-                      class="palette-select visually-hidden"
-                      tabindex="-1"
-                      aria-hidden="true"
-                      hx-post="{% url 'workspace:symbology_preview_classify' layer.pk %}"
-                      hx-target="#right-panel-content"
-                      hx-swap="innerMorph"
-                      hx-trigger="change delay:300ms"
-                      hx-include="closest form">
-                <option value="" {% if not config.palette_name %}selected{% endif %}>{% translate "Manual" %}</option>
-                {% for name, colors in palette_options %}
-                  <option value="{{ name }}"
-                          {% if config.palette_name == name %}selected{% endif %}>{{ name }}</option>
+            <palette-picker id="palette-picker-{{ layer.pk }}" hx-preserve="true" name="palette_name" value="{{ config.palette_name }}" options='{{ palette_options|json_attr }}' hx-post="{% url 'workspace:symbology_preview_classify' layer.pk %}" hx-target="#right-panel-content" hx-swap="innerMorph" hx-trigger="change delay:300ms" hx-include="closest form"></palette-picker>
+          </div>
+          <div class="col-5">
+            <label class="form-label" style="font-size:0.75rem">{% translate "Classes" %}</label>
+            <input type="number"
+                   name="num_classes"
+                   class="form-control form-control-sm num-classes-input"
+                   value="{{ config.num_classes }}"
+                   min="2"
+                   max="20"
+                   hx-post="{% url 'workspace:symbology_preview_classify' layer.pk %}"
+                   hx-target="#right-panel-content"
+                   hx-swap="innerMorph"
+                   hx-trigger="change delay:600ms"
+                   hx-include="closest form" />
+          </div>
+        </div>
+      {% endif %}
+      {# Color swatch bar — populated by JS from palette data #}
+      <div class="swatch-bar d-flex gap-1 mb-2" style="height:8px">
+        {% if config.symbology_type != 'single' and config.palette_name %}
+          {% with palette=palettes_json|dictlookup:config.palette_name %}
+            {% comment %}
+              The swatch bar is populated client-side from the data-palettes
+              attribute. We render placeholders here for initial state.
+            {% endcomment %}
+          {% endwith %}
+        {% endif %}
+      </div>
+    </div>
+    {# ─── Toggle ─── #}
+    <button type="button"
+            class="btn btn-sm btn-link p-0 text-decoration-none text-muted mb-2 toggle-advanced"
+            style="font-size:0.7rem"
+            onclick="var s=this.nextElementSibling;var h=s.style.display;var opening=(h==='none');s.style.display=opening?'block':'none';this.textContent=opening?'{% translate "Basic ▴" %}':'{% translate "Advanced ▸" %}';var flag=this.closest('form').querySelector('#advanced-open-flag');if(flag){flag.value=opening?'1':'';}">
+      {% if advanced_open %}
+        {% translate "Basic ▴" %}
+      {% else %}
+        {% translate "Advanced ▸" %}
+      {% endif %}
+    </button>
+    {# ─── Advanced Section ─── #}
+    <div class="advanced-section"
+         style="display:{% if advanced_open %}block{% else %}none{% endif %}">
+      {# Stroke width #}
+      <div class="row mb-2">
+        <div class="col-6">
+          <label class="form-label" style="font-size:0.75rem">{% translate "Stroke Width" %}</label>
+          <input type="number"
+                 name="stroke_width"
+                 class="form-control form-control-sm"
+                 value="{{ config.stroke_width }}"
+                 step="0.5"
+                 min="0"
+                 hx-post="{% url 'workspace:symbology_preview_map' layer.pk %}"
+                 hx-trigger="change delay:300ms"
+                 hx-include="closest form"
+                 hx-swap="none" />
+        </div>
+        <div class="col-6">
+          <label class="form-label" style="font-size:0.75rem">{% translate "Line Width" %}</label>
+          <input type="number"
+                 name="line_width"
+                 class="form-control form-control-sm"
+                 value="{{ config.line_width }}"
+                 step="0.5"
+                 min="0"
+                 hx-post="{% url 'workspace:symbology_preview_map' layer.pk %}"
+                 hx-trigger="change delay:300ms"
+                 hx-include="closest form"
+                 hx-swap="none" />
+        </div>
+      </div>
+      {# Min/Max Zoom #}
+      <div class="row mb-2">
+        <div class="col-6">
+          <label class="form-label" style="font-size:0.75rem">{% translate "Min Zoom" %}</label>
+          <input type="number"
+                 name="min_zoom"
+                 class="form-control form-control-sm"
+                 value="{{ config.min_zoom|default:'0.0' }}"
+                 min="0"
+                 max="22"
+                 step="0.5"
+                 hx-post="{% url 'workspace:symbology_preview_map' layer.pk %}"
+                 hx-trigger="change delay:300ms"
+                 hx-include="closest form"
+                 hx-swap="none" />
+        </div>
+        <div class="col-6">
+          <label class="form-label" style="font-size:0.75rem">{% translate "Max Zoom" %}</label>
+          <input type="number"
+                 name="max_zoom"
+                 class="form-control form-control-sm"
+                 value="{{ config.max_zoom|default:'22.0' }}"
+                 min="0"
+                 max="22"
+                 step="0.5"
+                 hx-post="{% url 'workspace:symbology_preview_map' layer.pk %}"
+                 hx-trigger="change delay:300ms"
+                 hx-include="closest form"
+                 hx-swap="none" />
+        </div>
+      </div>
+      {# Null handling #}
+      <div class="row mb-2">
+        <div class="col-6">
+          <label class="form-label" style="font-size:0.75rem">{% translate "Null Handling" %}</label>
+          <select name="null_handling"
+                  class="form-select form-select-sm"
+                  hx-post="{% url 'workspace:symbology_preview_map' layer.pk %}"
+                  hx-trigger="change"
+                  hx-include="closest form"
+                  hx-swap="none">
+            <option value="gray"
+                    {% if config.null_handling == 'gray' %}selected{% endif %}>{% translate "Gray" %}</option>
+            <option value="hide"
+                    {% if config.null_handling == 'hide' %}selected{% endif %}>{% translate "Hide" %}</option>
+            <option value="default"
+                    {% if config.null_handling == 'default' %}selected{% endif %}>{% translate "Default" %}</option>
+          </select>
+        </div>
+        <div class="col-6">
+          <label class="form-label" style="font-size:0.75rem">{% translate "Null Color" %}</label>
+          <input type="color"
+                 name="null_color"
+                 class="form-control form-control-color"
+                 value="{{ config.null_color|default:'#cccccc' }}"
+                 hx-post="{% url 'workspace:symbology_preview_map' layer.pk %}"
+                 hx-trigger="change delay:300ms"
+                 hx-include="closest form"
+                 hx-swap="none" />
+        </div>
+      </div>
+      {# Checkboxes #}
+      <div class="mb-2">
+        <div class="form-check form-check-inline">
+          <input type="checkbox"
+                 name="zero_transparent"
+                 class="form-check-input"
+                 id="id_zero_transparent"
+                 {% if config.zero_transparent %}checked{% endif %}
+                 hx-post="{% url 'workspace:symbology_preview_map' layer.pk %}"
+                 hx-trigger="change"
+                 hx-include="closest form"
+                 hx-swap="none" />
+          <label class="form-check-label"
+                 for="id_zero_transparent"
+                 style="font-size:0.75rem">{% translate "Zero Transparent" %}</label>
+        </div>
+        <div class="form-check form-check-inline">
+          <input type="checkbox"
+                 name="reverse_palette"
+                 class="form-check-input"
+                 id="id_reverse_palette"
+                 {% if config.reverse_palette %}checked{% endif %}
+                 hx-post="{% url 'workspace:symbology_preview_classify' layer.pk %}"
+                 hx-target="#right-panel-content"
+                 hx-swap="innerMorph"
+                 hx-trigger="change"
+                 hx-include="closest form" />
+          <label class="form-check-label"
+                 for="id_reverse_palette"
+                 style="font-size:0.75rem">{% translate "Reverse Palette" %}</label>
+        </div>
+      </div>
+      {# Classification method (graduated only) #}
+      {% if config.symbology_type == 'graduated' %}
+        <div class="mb-2">
+          <label class="form-label" style="font-size:0.75rem">{% translate "Classification" %}</label>
+          <select name="classification_method"
+                  class="form-select form-select-sm"
+                  hx-post="{% url 'workspace:symbology_preview_classify' layer.pk %}"
+                  hx-target="#right-panel-content"
+                  hx-swap="innerMorph"
+                  hx-trigger="change"
+                  hx-include="closest form">
+            <option value="quantile"
+                    {% if config.classification_method == 'quantile' %}selected{% endif %}>
+              {% translate "Quantile" %}
+            </option>
+            <option value="equal_interval"
+                    {% if config.classification_method == 'equal_interval' %}selected{% endif %}>
+              {% translate "Equal Interval" %}
+            </option>
+            <option value="natural_breaks"
+                    {% if config.classification_method == 'natural_breaks' %}selected{% endif %}>
+              {% translate "Natural Breaks" %}
+            </option>
+            <option value="logarithmic"
+                    {% if config.classification_method == 'logarithmic' %}selected{% endif %}>
+              {% translate "Logarithmic" %}
+            </option>
+            <option value="std_deviation"
+                    {% if config.classification_method == 'std_deviation' %}selected{% endif %}>
+              {% translate "Std Deviation" %}
+            </option>
+          </select>
+        </div>
+      {% endif %}
+      {# Style Class table (categorical/graduated only) #}
+      {% if config.symbology_type != 'single' and classes %}
+        <div class="mb-2">
+          <label class="form-label" style="font-size:0.75rem">{% translate "Style Classes" %}</label>
+          <div class="table-responsive">
+            <table class="table table-sm mb-0">
+              <thead>
+                <tr>
+                  <th style="font-size:0.65rem">{% translate "Label" %}</th>
+                  <th style="font-size:0.65rem">{% translate "Color" %}</th>
+                  {% if config.symbology_type == 'graduated' %}
+                    <th style="font-size:0.65rem">{% translate "Min" %}</th>
+                    <th style="font-size:0.65rem">{% translate "Max" %}</th>
+                  {% endif %}
+                  <th style="width:20px"></th>
+                </tr>
+              </thead>
+              <tbody>
+                {% for cls in classes %}
+                  <tr>
+                    <td>
+                      {% if config.symbology_type == 'graduated' %}
+                        <input type="text"
+                               name="class_label[]"
+                               class="form-control form-control-sm class-label-input"
+                               value="{{ cls.label }}"
+                               readonly
+                               tabindex="-1"
+                               style="width:100px;
+                                      font-size:0.7rem;
+                                      background-color:#e9ecef" />
+                      {% else %}
+                        <input type="text"
+                               name="class_label[]"
+                               class="form-control form-control-sm"
+                               value="{{ cls.label }}"
+                               style="width:100px;
+                                      font-size:0.7rem" />
+                      {% endif %}
+                    </td>
+                    <td>
+                      <input type="color"
+                             name="class_color[]"
+                             class="form-control form-control-color"
+                             value="{{ cls.color }}" />
+                    </td>
+                    {% if config.symbology_type == 'graduated' %}
+                      <td>
+                        <input type="number"
+                               name="class_min[]"
+                               class="form-control form-control-sm class-min-input"
+                               value="{{ cls.min_value|default_if_none:'' }}"
+                               step="any"
+                               style="width:70px;
+                                      font-size:0.7rem" />
+                      </td>
+                      <td>
+                        <input type="number"
+                               name="class_max[]"
+                               class="form-control form-control-sm class-max-input"
+                               value="{{ cls.max_value|default_if_none:'' }}"
+                               step="any"
+                               style="width:70px;
+                                      font-size:0.7rem" />
+                      </td>
+                    {% endif %}
+                    <td>
+                      <button type="button"
+                              class="btn btn-sm py-0 px-1 text-danger"
+                              style="font-size:0.7rem;
+                                     line-height:1"
+                              onclick="this.closest('tr').remove()"
+                              title="{% translate 'Remove class' %}">&times;</button>
+                    </td>
+                  </tr>
                 {% endfor %}
-              </select>
-              {% comment %}
-Swatches/label are server-rendered (not JS-populated) so they stay correct
-across htmx morph swaps regardless of whether inline <script>
-   re - runs. {
-       %
-       endcomment %
-     } <
-     button type = "button"
-   class = "form-select form-select-sm palette-picker-toggle d-flex align-items-center gap-2"
-   aria - haspopup = "listbox"
-   aria - expanded = "false" >
-     <
-     span class = "palette-picker-swatch-row" > {
-       %
-       for c in selected_palette_swatches %
-     } <
-     span style = "background-color:{{ c }};flex:1;border-radius:2px" > < /span> { %
-   endfor %
-   } <
-   /span> <
-   span class = "palette-picker-current-label flex-grow-1 text-truncate text-start" > {
-     %
-     translate "Manual"
-     as manual_label %
-   } {
-     {
-       config.palette_name |
-         default: manual_label
-     }
-   } < /span> < /
-   button > <
-     div class = "palette-picker-menu"
-   role = "listbox" >
-     <
-     div class = "palette-picker-option"
-   data - value = ""
-   role = "option" >
-     <
-     span class = "palette-picker-swatch-row" > < /span> <
-   span > {
-     %
-     translate "Manual" %
-   } < /span> < /
-   div > {
-       %
-       for name,
-       colors in palette_options %
-     } <
-     div class = "palette-picker-option"
-   data - value = "{{ name }}"
-   role = "option" >
-     <
-     span class = "palette-picker-swatch-row" > {
-       %
-       for c in colors %
-     } < span style = "background-color:{{ c }};flex:1;border-radius:2px" > < /span>{% endfor %} < /
-   span > <
-     span > {
-       {
-         name
-       }
-     } < /span> < /
-   div > {
-       %
-       endfor %
-     } <
-     /div> < /
-   div > <
-     /div> <
-   div class = "col-5" >
-   <
-   label class = "form-label"
-   style = "font-size:0.75rem" > {
-     %
-     translate "Classes" %
-   } < /label> <
-   input type = "number"
-   name = "num_classes"
-   class = "form-control form-control-sm num-classes-input"
-   value = "{{ config.num_classes }}"
-   min = "2"
-   max = "20"
-   hx - post = "{% url 'workspace:symbology_preview_classify' layer.pk %}"
-   hx - target = "#right-panel-content"
-   hx - swap = "innerMorph"
-   hx - trigger = "change delay:600ms"
-   hx - include = "closest form" / >
-     <
-     /div> < /
-   div > {
-       %
-       endif %
-     } {
-       # Color swatch bar— populated by JS from palette data #
-     } <
-     div class = "swatch-bar d-flex gap-1 mb-2"
-   style = "height:8px" > {
-     %
-     if config.symbology_type != 'single'
-     and config.palette_name %
-   } {
-     %
-     with palette = palettes_json | dictlookup: config.palette_name %
-   } {
-     %
-     comment %
-   }
-   The swatch bar is populated client - side from the data - palettes attribute.
-   We render placeholders here
-   for initial state. {
-       %
-       endcomment %
-     } {
-       %
-       endwith %
-     } {
-       %
-       endif %
-     } <
-     /div> < /
-   div > {
-       #─── Toggle─── #
-     } <
-     button type = "button"
-   class = "btn btn-sm btn-link p-0 text-decoration-none text-muted mb-2 toggle-advanced"
-   style = "font-size:0.7rem"
-   onclick = "var s=this.nextElementSibling;var h=s.style.display;var opening=(h==='none');s.style.display=opening?'block':'none';this.textContent=opening?'{% translate "
-   Basic▴ " %}':'{% translate "
-   Advanced▸ " %}';var flag=this.closest('form').querySelector('#advanced-open-flag');if(flag){flag.value=opening?'1':'';}" > {
-       %
-       if advanced_open %
-     } {
-       %
-       translate "Basic ▴" %
-     } {
-       %
-       else %
-     } {
-       %
-       translate "Advanced ▸" %
-     } {
-       %
-       endif %
-     } <
-     /button> {
-   #─── Advanced Section─── #
-   } <
-   div class = "advanced-section"
-   style = "display:{% if advanced_open %}block{% else %}none{% endif %}" > {
-       # Stroke width #
-     } <
-     div class = "row mb-2" >
-     <
-     div class = "col-6" >
-     <
-     label class = "form-label"
-   style = "font-size:0.75rem" > {
-     %
-     translate "Stroke Width" %
-   } < /label> <
-   input type = "number"
-   name = "stroke_width"
-   class = "form-control form-control-sm"
-   value = "{{ config.stroke_width }}"
-   step = "0.5"
-   min = "0"
-   hx - post = "{% url 'workspace:symbology_preview_map' layer.pk %}"
-   hx - trigger = "change delay:300ms"
-   hx - include = "closest form"
-   hx - swap = "none" / >
-     <
-     /div> <
-   div class = "col-6" >
-   <
-   label class = "form-label"
-   style = "font-size:0.75rem" > {
-     %
-     translate "Line Width" %
-   } < /label> <
-   input type = "number"
-   name = "line_width"
-   class = "form-control form-control-sm"
-   value = "{{ config.line_width }}"
-   step = "0.5"
-   min = "0"
-   hx - post = "{% url 'workspace:symbology_preview_map' layer.pk %}"
-   hx - trigger = "change delay:300ms"
-   hx - include = "closest form"
-   hx - swap = "none" / >
-     <
-     /div> < /
-   div > {
-       # Min / Max Zoom #
-     } <
-     div class = "row mb-2" >
-     <
-     div class = "col-6" >
-     <
-     label class = "form-label"
-   style = "font-size:0.75rem" > {
-     %
-     translate "Min Zoom" %
-   } < /label> <
-   input type = "number"
-   name = "min_zoom"
-   class = "form-control form-control-sm"
-   value = "{{ config.min_zoom|default:'0.0' }}"
-   min = "0"
-   max = "22"
-   step = "0.5"
-   hx - post = "{% url 'workspace:symbology_preview_map' layer.pk %}"
-   hx - trigger = "change delay:300ms"
-   hx - include = "closest form"
-   hx - swap = "none" / >
-     <
-     /div> <
-   div class = "col-6" >
-   <
-   label class = "form-label"
-   style = "font-size:0.75rem" > {
-     %
-     translate "Max Zoom" %
-   } < /label> <
-   input type = "number"
-   name = "max_zoom"
-   class = "form-control form-control-sm"
-   value = "{{ config.max_zoom|default:'22.0' }}"
-   min = "0"
-   max = "22"
-   step = "0.5"
-   hx - post = "{% url 'workspace:symbology_preview_map' layer.pk %}"
-   hx - trigger = "change delay:300ms"
-   hx - include = "closest form"
-   hx - swap = "none" / >
-     <
-     /div> < /
-   div > {
-       # Null handling #
-     } <
-     div class = "row mb-2" >
-     <
-     div class = "col-6" >
-     <
-     label class = "form-label"
-   style = "font-size:0.75rem" > {
-     %
-     translate "Null Handling" %
-   } < /label> <
-   select name = "null_handling"
-   class = "form-select form-select-sm"
-   hx - post = "{% url 'workspace:symbology_preview_map' layer.pk %}"
-   hx - trigger = "change"
-   hx - include = "closest form"
-   hx - swap = "none" >
-     <
-     option value = "gray" {
-       %
-       if config.null_handling == 'gray' %
-     }
-   selected {
-     %
-     endif %
-   } > {
-     %
-     translate "Gray" %
-   } < /option> <
-   option value = "hide" {
-     %
-     if config.null_handling == 'hide' %
-   }
-   selected {
-     %
-     endif %
-   } > {
-     %
-     translate "Hide" %
-   } < /option> <
-   option value = "default" {
-     %
-     if config.null_handling == 'default' %
-   }
-   selected {
-     %
-     endif %
-   } > {
-     %
-     translate "Default" %
-   } <
-   /option> < /
-   select > <
-     /div> <
-   div class = "col-6" >
-   <
-   label class = "form-label"
-   style = "font-size:0.75rem" > {
-     %
-     translate "Null Color" %
-   } < /label> <
-   input type = "color"
-   name = "null_color"
-   class = "form-control form-control-color"
-   value = "{{ config.null_color|default:'#cccccc' }}"
-   hx - post = "{% url 'workspace:symbology_preview_map' layer.pk %}"
-   hx - trigger = "change delay:300ms"
-   hx - include = "closest form"
-   hx - swap = "none" / >
-     <
-     /div> < /
-   div > {
-       # Checkboxes #
-     } <
-     div class = "mb-2" >
-     <
-     div class = "form-check form-check-inline" >
-     <
-     input type = "checkbox"
-   name = "zero_transparent"
-   class = "form-check-input"
-   id = "id_zero_transparent" {
-     %
-     if config.zero_transparent %
-   }
-   checked {
-     %
-     endif %
-   }
-   hx - post = "{% url 'workspace:symbology_preview_map' layer.pk %}"
-   hx - trigger = "change"
-   hx - include = "closest form"
-   hx - swap = "none" / >
-     <
-     label class = "form-check-label"
-   for = "id_zero_transparent"
-   style = "font-size:0.75rem" > {
-       %
-       translate "Zero Transparent" %
-     } <
-     /label> < /
-   div > <
-     div class = "form-check form-check-inline" >
-     <
-     input type = "checkbox"
-   name = "reverse_palette"
-   class = "form-check-input"
-   id = "id_reverse_palette" {
-     %
-     if config.reverse_palette %
-   }
-   checked {
-     %
-     endif %
-   }
-   hx - post = "{% url 'workspace:symbology_preview_classify' layer.pk %}"
-   hx - target = "#right-panel-content"
-   hx - swap = "innerMorph"
-   hx - trigger = "change"
-   hx - include = "closest form" / >
-     <
-     label class = "form-check-label"
-   for = "id_reverse_palette"
-   style = "font-size:0.75rem" > {
-       %
-       translate "Reverse Palette" %
-     } <
-     /label> < /
-   div > <
-     /div> {
-   # Classification method(graduated only) #
-   } {
-     %
-     if config.symbology_type == 'graduated' %
-   } <
-   div class = "mb-2" >
-   <
-   label class = "form-label"
-   style = "font-size:0.75rem" > {
-     %
-     translate "Classification" %
-   } < /label> <
-   select name = "classification_method"
-   class = "form-select form-select-sm"
-   hx - post = "{% url 'workspace:symbology_preview_classify' layer.pk %}"
-   hx - target = "#right-panel-content"
-   hx - swap = "innerMorph"
-   hx - trigger = "change"
-   hx - include = "closest form" >
-     <
-     option value = "quantile" {
-       %
-       if config.classification_method == 'quantile' %
-     }
-   selected {
-     %
-     endif %
-   } > {
-     %
-     translate "Quantile" %
-   } <
-   /option> <
-   option value = "equal_interval" {
-     %
-     if config.classification_method == 'equal_interval' %
-   }
-   selected {
-     %
-     endif %
-   } > {
-     %
-     translate "Equal Interval" %
-   } <
-   /option> <
-   option value = "natural_breaks" {
-     %
-     if config.classification_method == 'natural_breaks' %
-   }
-   selected {
-     %
-     endif %
-   } > {
-     %
-     translate "Natural Breaks" %
-   } <
-   /option> <
-   option value = "logarithmic" {
-     %
-     if config.classification_method == 'logarithmic' %
-   }
-   selected {
-     %
-     endif %
-   } > {
-     %
-     translate "Logarithmic" %
-   } <
-   /option> <
-   option value = "std_deviation" {
-     %
-     if config.classification_method == 'std_deviation' %
-   }
-   selected {
-     %
-     endif %
-   } > {
-     %
-     translate "Std Deviation" %
-   } <
-   /option> < /
-   select > <
-     /div> { %
-   endif %
-   } {
-     # Style Class table(categorical / graduated only) #
-   } {
-     %
-     if config.symbology_type != 'single'
-     and classes %
-   } <
-   div class = "mb-2" >
-   <
-   label class = "form-label"
-   style = "font-size:0.75rem" > {
-     %
-     translate "Style Classes" %
-   } < /label> <
-   div class = "table-responsive" >
-   <
-   table class = "table table-sm mb-0" >
-   <
-   thead >
-     <
-     tr >
-     <
-     th style = "font-size:0.65rem" > {
-       %
-       translate "Label" %
-     } < /th> <
-   th style = "font-size:0.65rem" > {
-     %
-     translate "Color" %
-   } < /th> { %
-   if config.symbology_type == 'graduated' %
-   } <
-   th style = "font-size:0.65rem" > {
-     %
-     translate "Min" %
-   } < /th> <
-   th style = "font-size:0.65rem" > {
-     %
-     translate "Max" %
-   } < /th> { %
-   endif %
-   } <
-   th style = "width:20px" > < /th> < /
-   tr > <
-     /thead> <
-   tbody > {
-       %
-       for cls in classes %
-     } <
-     tr >
-     <
-     td > {
-       %
-       if config.symbology_type == 'graduated' %
-     } <
-     input type = "text"
-   name = "class_label[]"
-   class = "form-control form-control-sm class-label-input"
-   value = "{{ cls.label }}"
-   readonly tabindex = "-1"
-   style = "width:100px; font-size:0.7rem; background-color:#e9ecef" / > {
-       %
-       else %
-     } <
-     input type = "text"
-   name = "class_label[]"
-   class = "form-control form-control-sm"
-   value = "{{ cls.label }}"
-   style = "width:100px; font-size:0.7rem" / > {
-       %
-       endif %
-     } <
-     /td> <
-   td >
-     <
-     input type = "color"
-   name = "class_color[]"
-   class = "form-control form-control-color"
-   value = "{{ cls.color }}" / >
-     <
-     /td> { %
-   if config.symbology_type == 'graduated' %
-   } <
-   td >
-     <
-     input type = "number"
-   name = "class_min[]"
-   class = "form-control form-control-sm class-min-input"
-   value = "{{ cls.min_value|default_if_none:'' }}"
-   step = "any"
-   style = "width:70px; font-size:0.7rem" / >
-     <
-     /td> <
-   td >
-     <
-     input type = "number"
-   name = "class_max[]"
-   class = "form-control form-control-sm class-max-input"
-   value = "{{ cls.max_value|default_if_none:'' }}"
-   step = "any"
-   style = "width:70px; font-size:0.7rem" / >
-     <
-     /td> { %
-   endif %
-   } <
-   td >
-     <
-     button type = "button"
-   class = "btn btn-sm py-0 px-1 text-danger"
-   style = "font-size:0.7rem; line-height:1"
-   onclick = "this.closest('tr').remove()"
-   title = "{% translate 'Remove class' %}" >
-     &
-     times; <
-   /button> < /
-   td > <
-     /tr> { %
-   endfor %
-   } <
-   /tbody> < /
-   table > <
-     /div> < /
-   div > {
-       %
-       endif %
-     } {
-       # Auto - Generate(in advanced section) #
-     } <
-     div class = "mb-2" >
-     <
-     button type = "button"
-   class = "btn btn-sm btn-outline-info"
-   style = "font-size:0.75rem"
-   hx - post = "{% url 'workspace:symbology_auto' layer.pk %}?panel=1"
-   hx - target = "#right-panel-content"
-   hx - swap = "innerMorph" > {
-       %
-       translate "Auto-Generate" %
-     } <
-     /button> < /
-   div > <
-     /div> {
-   #─── Button Bar(always visible)─── #
-   } <
-   div class = "d-flex gap-2 mt-2 pt-2 border-top" >
-   <
-   button type = "submit"
-   class = "btn btn-sm btn-primary"
-   style = "font-size:0.75rem" > {
-     %
-     translate "Save" %
-   } < /button> <
-   button type = "button"
-   class = "btn btn-sm btn-outline-secondary"
-   style = "font-size:0.75rem"
-   x - on: click = "$store.panels.closePanel()" > {
-       %
-       translate "Cancel" %
-     } <
-     /button> <
-   button type = "button"
-   class = "btn btn-sm btn-outline-info"
-   style = "font-size:0.75rem"
-   hx - post = "{% url 'workspace:symbology_auto' layer.pk %}?panel=1"
-   hx - target = "#right-panel-content"
-   hx - swap = "innerMorph" > {
-       %
-       translate "Auto" %
-     } <
-     /button> < /
-   div > <
-     /form> < /
-   div > <
-     script >
-     (function() {
-       var panel = document.querySelector('.symbology-editor-panel');
-       if (!panel) return;
+              </tbody>
+            </table>
+          </div>
+        </div>
+      {% endif %}
+      {# Auto-Generate (in advanced section) #}
+      <div class="mb-2">
+        <button type="button"
+                class="btn btn-sm btn-outline-info"
+                style="font-size:0.75rem"
+                hx-post="{% url 'workspace:symbology_auto' layer.pk %}?panel=1"
+                hx-target="#right-panel-content"
+                hx-swap="innerMorph">{% translate "Auto-Generate" %}</button>
+      </div>
+    </div>
+    {# ─── Button Bar (always visible) ─── #}
+    <div class="d-flex gap-2 mt-2 pt-2 border-top">
+      <button type="submit"
+              class="btn btn-sm btn-primary"
+              style="font-size:0.75rem">{% translate "Save" %}</button>
+      <button type="button"
+              class="btn btn-sm btn-outline-secondary"
+              style="font-size:0.75rem"
+              x-on:click="$store.panels.closePanel()">{% translate "Cancel" %}</button>
+      <button type="button"
+              class="btn btn-sm btn-outline-info"
+              style="font-size:0.75rem"
+              hx-post="{% url 'workspace:symbology_auto' layer.pk %}?panel=1"
+              hx-target="#right-panel-content"
+              hx-swap="innerMorph">{% translate "Auto" %}</button>
+    </div>
+  </form>
+</div>
+<script>
+  (function() {
+    var panel = document.querySelector('.symbology-editor-panel');
+    if (!panel) return;
 
-       // ─── Palette data + shared swatch rendering ───
-       var palettes = (function() {
-         try {
-           return JSON.parse(panel.getAttribute('data-palettes') || '{}');
-         } catch (e) {
-           return {};
-         }
-       })();
+    // ─── Palette data + shared swatch rendering ───
+    var palettes = (function() {
+      try {
+        return JSON.parse(panel.getAttribute('data-palettes') || '{}');
+      } catch (e) {
+        return {};
+      }
+    })();
 
-       function renderSwatchChips(el, colors) {
-         if (!el) return;
-         if (!colors || !colors.length) {
-           el.innerHTML = '';
-           return;
-         }
-         el.innerHTML = colors.map(function(c) {
-           return '<span style="background-color:' + c + ';flex:1;border-radius:2px"></span>';
-         }).join('');
-       }
+    function renderSwatchChips(el, colors) {
+      if (!el) return;
+      if (!colors || !colors.length) {
+        el.innerHTML = '';
+        return;
+      }
+      el.innerHTML = colors.map(function(c) {
+        return '<span style="background-color:' + c + ';flex:1;border-radius:2px"></span>';
+      }).join('');
+    }
 
-       // ─── Color swatch bar: preview of the classes that will be generated ───
-       function updateSwatchBar() {
-         var swatchBar = panel.querySelector('.swatch-bar');
-         if (!swatchBar) return;
-         var paletteName = panel.querySelector('.palette-select')?.value;
-         var numClasses = parseInt(panel.querySelector('.num-classes-input')?.value || '5', 10);
-         var palette = paletteName && palettes[paletteName];
-         renderSwatchChips(swatchBar, palette ? palette.slice(0, numClasses) : null);
-       }
+    // ─── Color swatch bar: preview of the classes that will be generated ───
+    function updateSwatchBar() {
+      var swatchBar = panel.querySelector('.swatch-bar');
+      if (!swatchBar) return;
+      var paletteName = panel.querySelector('.palette-select')?.value;
+      var numClasses = parseInt(panel.querySelector('.num-classes-input')?.value || '5', 10);
+      var palette = paletteName && palettes[paletteName];
+      renderSwatchChips(swatchBar, palette ? palette.slice(0, numClasses) : null);
+    }
 
-       // Update swatch bar on palette/classes change
-       panel.querySelector('.palette-select')?.addEventListener('change', updateSwatchBar);
-       panel.querySelector('.num-classes-input')?.addEventListener('change', updateSwatchBar);
+    // Update swatch bar on palette/classes change
+    panel.querySelector('.palette-select')?.addEventListener('change', updateSwatchBar);
+    panel.querySelector('.num-classes-input')?.addEventListener('change', updateSwatchBar);
 
-       // Initial update
-       updateSwatchBar();
+    // Initial update
+    updateSwatchBar();
 
-       // ─── Palette picker: custom dropdown showing every palette's colors up front ───
-       //
-       // The toggle button and each option row have their swatches/labels
-       // server-rendered (see the view/template), not built from JSON here —
-       // that way they're still correct after an htmx morph swap even if this
-       // <script> doesn't re-run (morphing text/attributes is what idiomorph
-       // does reliably; re-executing an existing <script> tag in place isn't
-       // guaranteed). wirePalettePicker() only wires up the open/close/select
-       // interaction, optimistically mirroring a clicked option's own
-       // (already-correct) markup into the toggle before the server round-trip
-       // lands; it's re-run after every htmx swap (belt-and-braces in case a
-       // swap fully replaces these nodes rather than morphing them in place),
-       // guarded so re-running it against nodes it already wired is a no-op.
-       function wirePalettePicker(root) {
-         var select = root.querySelector('.palette-select');
-         var toggle = root.querySelector('.palette-picker-toggle');
-         var menu = root.querySelector('.palette-picker-menu');
-         if (!select || !toggle || !menu) return;
+    // ─── Opacity label sync ───
+    var opacitySlider = panel.querySelector('input[name="default_opacity"]');
+    var opacityLabel = panel.querySelector('.opacity-label');
+    if (opacitySlider && opacityLabel) {
+      opacitySlider.addEventListener('input', function() {
+        opacityLabel.textContent = parseFloat(this.value).toFixed(1);
+      });
+    }
 
-         // Guard against wiring the same (morph-preserved) nodes twice, in case
-         // this <script> does re-run against DOM idiomorph chose to keep
-         // rather than replace.
-         var alreadyWired = toggle.dataset.paletteWired === '1';
-         toggle.dataset.paletteWired = '1';
+    // ─── Style class label: derived from Min/Max, not directly editable ───
+    function updateClassLabel(row) {
+      var labelInput = row.querySelector('.class-label-input');
+      if (!labelInput) return; // categorical rows keep a freely-editable label
+      var minInput = row.querySelector('.class-min-input');
+      var maxInput = row.querySelector('.class-max-input');
+      var minVal = parseFloat(minInput && minInput.value);
+      var maxVal = parseFloat(maxInput && maxInput.value);
+      if (isNaN(minVal) || isNaN(maxVal)) return;
+      labelInput.value = minVal.toFixed(2) + ' — ' + maxVal.toFixed(2);
+    }
 
-         function selectOption(option) {
-           var value = option.getAttribute('data-value');
-           select.value = value;
-           var toggleRow = toggle.querySelector('.palette-picker-swatch-row');
-           var toggleLabel = toggle.querySelector('.palette-picker-current-label');
-           var optionRow = option.querySelector('.palette-picker-swatch-row');
-           var optionLabel = option.querySelector('span:last-child');
-           if (toggleRow && optionRow) toggleRow.innerHTML = optionRow.innerHTML;
-           if (toggleLabel && optionLabel) toggleLabel.textContent = optionLabel.textContent;
-           menu.querySelectorAll('.palette-picker-option').forEach(function(opt) {
-             opt.classList.toggle('is-selected', opt === option);
-           });
-         }
-
-         // Mark the option matching the server-rendered selection (its
-         // swatch/label are already correct in the HTML; only the highlight
-         // class needs setting here).
-         menu.querySelectorAll('.palette-picker-option').forEach(function(opt) {
-           opt.classList.toggle('is-selected', opt.getAttribute('data-value') === select.value);
-         });
-
-         function onKeydown(e) {
-           if (e.key === 'Escape') closeMenu();
-         }
-
-         function openMenu() {
-           menu.classList.add('is-open');
-           toggle.setAttribute('aria-expanded', 'true');
-           var backdrop = document.createElement('div');
-           backdrop.className = 'palette-picker-backdrop';
-           backdrop.addEventListener('click', closeMenu);
-           panel.querySelector('.palette-picker').appendChild(backdrop);
-           document.addEventListener('keydown', onKeydown);
-         }
-
-         function closeMenu() {
-           menu.classList.remove('is-open');
-           toggle.setAttribute('aria-expanded', 'false');
-           panel.querySelector('.palette-picker-backdrop')?.remove();
-           document.removeEventListener('keydown', onKeydown);
-         }
-
-         if (!alreadyWired) {
-           toggle.addEventListener('click', function() {
-             if (menu.classList.contains('is-open')) {
-               closeMenu();
-             } else {
-               openMenu();
-             }
-           });
-
-           menu.querySelectorAll('.palette-picker-option').forEach(function(option) {
-             option.addEventListener('click', function() {
-               selectOption(option);
-               closeMenu();
-               select.dispatchEvent(new Event('change', {
-                 bubbles: true
-               }));
-             });
-           });
-         }
-       }
-       wirePalettePicker(panel);
-       if (!document.body.dataset.palettePickerSwapBound) {
-         document.body.dataset.palettePickerSwapBound = '1';
-         document.body.addEventListener('htmx:afterSwap', function() {
-           document.querySelectorAll('.symbology-editor-panel').forEach(wirePalettePicker);
-         });
-       }
-
-       // ─── Opacity label sync ───
-       var opacitySlider = panel.querySelector('input[name="default_opacity"]');
-       var opacityLabel = panel.querySelector('.opacity-label');
-       if (opacitySlider && opacityLabel) {
-         opacitySlider.addEventListener('input', function() {
-           opacityLabel.textContent = parseFloat(this.value).toFixed(1);
-         });
-       }
-
-       // ─── Style class label: derived from Min/Max, not directly editable ───
-       function updateClassLabel(row) {
-         var labelInput = row.querySelector('.class-label-input');
-         if (!labelInput) return; // categorical rows keep a freely-editable label
-         var minInput = row.querySelector('.class-min-input');
-         var maxInput = row.querySelector('.class-max-input');
-         var minVal = parseFloat(minInput && minInput.value);
-         var maxVal = parseFloat(maxInput && maxInput.value);
-         if (isNaN(minVal) || isNaN(maxVal)) return;
-         labelInput.value = minVal.toFixed(2) + ' — ' + maxVal.toFixed(2);
-       }
-
-       panel.querySelectorAll('.class-min-input, .class-max-input').forEach(function(input) {
-         input.addEventListener('input', function() {
-           updateClassLabel(this.closest('tr'));
-         });
-       });
-     })();
- </script>
+    panel.querySelectorAll('.class-min-input, .class-max-input').forEach(function(input) {
+      input.addEventListener('input', function() {
+        updateClassLabel(this.closest('tr'));
+      });
+    });
+  })();
+</script>
