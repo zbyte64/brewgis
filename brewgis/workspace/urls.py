@@ -18,12 +18,14 @@ from .views import county_options
 from .views import edit_symbology
 from .views import employment_fetch
 from .views import employment_preview
+from .views import fill_built_form
 from .views import home
 from .views import import_center
 from .views import import_status
 from .views import layer_delete
 from .views import layer_legend
 from .views import layer_toggle_visibility
+from .views import match_built_form
 from .views import merge_paint_edits
 from .views import paint_built_form
 from .views import paint_features
@@ -183,6 +185,16 @@ urlpatterns = [
         "<int:workspace_pk>/scenario/<int:scenario_pk>/paint-bf/",
         paint_built_form,
         name="paint_built_form",
+    ),
+    path(
+        "<int:workspace_pk>/scenario/<int:scenario_pk>/paint-bf/match/",
+        match_built_form,
+        name="match_built_form",
+    ),
+    path(
+        "<int:workspace_pk>/scenario/<int:scenario_pk>/paint-bf/fill/",
+        fill_built_form,
+        name="fill_built_form",
     ),
     path(
         "<int:workspace_pk>/scenario/<int:scenario_pk>/clear-paint/",

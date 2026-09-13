@@ -22,9 +22,11 @@ Column categories (per ``planning/v2/09-base-canvas.md``):
 
 **Static columns** (passed through verbatim by the painting system):
     id, id_source, geometry_key, geometry, land_development_category,
-    built_form_key, intersection_density, area_gross
+    intersection_density, area_gross
 
-All other columns are **paintable/summable**.
+All other columns are **paintable/summable**, except ``built_form_key`` which
+is paintable but text-valued (see ``TEXT_COLUMNS`` — overrides are stored in
+``PaintedCanvas.painted_text_value`` rather than the numeric ``painted_value``).
 """
 # ruff: noqa: E501  # long lines in docstring & DDL
 
@@ -59,7 +61,6 @@ _STATIC_COLUMN_NAMES: frozenset[str] = frozenset(
         "geometry_key",
         "geometry",
         "land_development_category",
-        "built_form_key",
         "land_use",
         "assessor_use_code",
         "intersection_density",
@@ -75,6 +76,10 @@ _STATIC_COLUMN_NAMES: frozenset[str] = frozenset(
         "area_parcel_no_use_acres",
     }
 )
+
+# ── Text-valued paintable columns — overrides live in
+# PaintedCanvas.painted_text_value instead of the numeric painted_value ──
+TEXT_COLUMN_NAMES: frozenset[str] = frozenset({"built_form_key"})
 
 # ── Nullable columns ──────────────────────────────────────────────────
 _NULLABLE_NAMES: frozenset[str] = frozenset(
@@ -274,6 +279,7 @@ class BaseCanvasSchema:
     PAINTABLE_COLUMNS: frozenset[str] = _get_cache()["paintable_columns"]
     SUMMABLE_COLUMNS: frozenset[str] = _get_cache()["summable_columns"]
     NON_NULL_COLUMNS: frozenset[str] = _get_cache()["non_null_columns"]
+    TEXT_COLUMNS: frozenset[str] = TEXT_COLUMN_NAMES
 
     _COLUMNS: dict[str, ColumnDef] = _get_cache()["column_map"]
 

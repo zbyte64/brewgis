@@ -348,6 +348,13 @@ class PaintedCanvas(models.Model):
     feature_id = models.CharField(max_length=128)
     column_name = models.CharField(max_length=128)
     painted_value = models.FloatField(null=True, blank=True)
+    painted_text_value = models.CharField(
+        max_length=128,
+        null=True,
+        blank=True,
+        help_text="Override value for text-valued columns (e.g. built_form_key). "
+        "painted_value is used for every other (numeric) paintable column.",
+    )
     painted_by = models.ForeignKey(
         settings.AUTH_USER_MODEL, on_delete=models.SET_NULL, null=True
     )
@@ -359,7 +366,7 @@ class PaintedCanvas(models.Model):
             ("approved", "Approved"),
             ("rejected", "Rejected"),
         ],
-        default="pending",
+        default="approved",
         help_text="Approval status for merge operations.",
     )
 
@@ -608,6 +615,20 @@ class PaintEvent(models.Model):
     column_name = models.CharField(max_length=128)
     old_value = models.FloatField(null=True, blank=True)
     new_value = models.FloatField(null=True, blank=True)
+    old_text_value = models.CharField(
+        max_length=128,
+        null=True,
+        blank=True,
+        help_text="Old value for text-valued columns (e.g. built_form_key); "
+        "old_value is used for every other (numeric) column.",
+    )
+    new_text_value = models.CharField(
+        max_length=128,
+        null=True,
+        blank=True,
+        help_text="New value for text-valued columns (e.g. built_form_key); "
+        "new_value is used for every other (numeric) column.",
+    )
     painted_by = models.ForeignKey(
         settings.AUTH_USER_MODEL, on_delete=models.SET_NULL, null=True
     )

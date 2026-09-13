@@ -82,7 +82,9 @@ class AllocationEngine:
     """
 
     @deal.pre(
-        lambda parcel_acres, row_allocation_pct: (
+        # building_type is unused but must be named: deal binds every actual
+        # call argument by name and errors on any the validator doesn't declare.
+        lambda parcel_acres, building_type, row_allocation_pct: (  # noqa: ARG005
             parcel_acres >= 0 and 0 <= row_allocation_pct <= 100
         )
     )
@@ -215,7 +217,7 @@ class AllocationEngine:
 
         return result
 
-    @deal.pre(lambda parcel_acres: parcel_acres >= 0)
+    @deal.pre(lambda parcel_acres, place_type: parcel_acres >= 0)  # noqa: ARG005
     @deal.post(
         lambda result: result.developable_acres >= 0 and result.total_population >= 0
     )

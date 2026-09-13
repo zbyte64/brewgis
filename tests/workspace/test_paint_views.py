@@ -26,6 +26,9 @@ from tests.factories import WorkspaceFactory
 PAINT_URL_NAME = "workspace:paint_features"
 CLEAR_URL_NAME = "workspace:clear_paint"
 BF_PAINT_URL_NAME = "workspace:paint_built_form"
+BF_MATCH_URL_NAME = "workspace:match_built_form"
+BF_FILL_URL_NAME = "workspace:fill_built_form"
+UNDO_URL_NAME = "workspace:undo_paint"
 
 
 @pytest.mark.views
@@ -138,6 +141,21 @@ class TestPaintFeaturesView(TestCase):
         assert response.status_code == 400
         data = response.json()
         assert "error" in data["status"]
+
+    def test_text_column_rejected(self):
+        """Painting the text-valued built_form_key column via Direct Paint returns 400."""
+        self.client.force_login(self.user)
+        with self._patch_refresh():
+            response = self.client.post(
+                self.paint_url,
+                json.dumps(
+                    {"features": ["1"], "column": "built_form_key", "value": 5.0}
+                ),
+                content_type="application/json",
+            )
+        assert response.status_code == 400
+        data = response.json()
+        assert data["status"] == "error"
 
     def test_empty_features_returns_400(self):
         """Empty feature list returns 400."""
@@ -336,6 +354,10 @@ class TestPaintBuiltFormView(TestCase):
         du_row = rows.get(column_name="du")
         assert abs(float(du_row.painted_value) - 100.0) < 0.1
 
+        bf_row = rows.get(column_name="built_form_key")
+        assert bf_row.painted_value is None
+        assert bf_row.painted_text_value == self.bt.name
+
     def test_built_form_paint_place_type(self):
         """Built form paint with PlaceType runs allocation and creates rows."""
         self.client.force_login(self.user)
@@ -365,6 +387,9 @@ class TestPaintBuiltFormView(TestCase):
         col_names = set(rows.values_list("column_name", flat=True))
         assert "du" in col_names
         assert "pop" in col_names
+
+        bf_row = rows.get(column_name="built_form_key")
+        assert bf_row.painted_text_value == self.pt.name
 
     def test_built_form_paint_invalid_type(self):
         """Invalid bf_type returns 400."""
@@ -467,3 +492,320 @@ class TestPaintBuiltFormView(TestCase):
             content_type="application/json",
         )
         assert response.status_code == 404
+
+
+@pytest.mark.views
+class TestMatchBuiltFormView(TestCase):
+    """Tests for ``match_built_form`` view — attribute-proximity auto-match."""
+
+    def setUp(self):
+        self.user = UserFactory()
+        self.workspace = WorkspaceFactory()
+        self.scenario = ScenarioFactory(workspace=self.workspace)
+
+        self.dense_bt = BuildingTypeFactory(
+            workspace=self.workspace,
+            name="High Density",
+            du_per_acre=20.0,
+            emp_per_acre=0.0,
+        )
+        self.sparse_bt = BuildingTypeFactory(
+            workspace=self.workspace,
+            name="Low Density",
+            du_per_acre=2.0,
+            emp_per_acre=0.0,
+        )
+
+        self.match_url = reverse(
+            BF_MATCH_URL_NAME,
+            kwargs={
+                "workspace_pk": self.workspace.pk,
+                "scenario_pk": self.scenario.pk,
+            },
+        )
+
+    def _patch(self, canvas_data: dict) -> tuple[patch, patch]:
+        patcher1 = patch(
+            "brewgis.workspace.views.paint.refresh_canvas_view",
+            return_value="public.mock_canvas_view",
+        )
+        patcher2 = patch(
+            "brewgis.workspace.views.paint._fetch_canvas_feature_data",
+            return_value=canvas_data,
+        )
+        patcher1.start()
+        patcher2.start()
+        return patcher1, patcher2
+
+    def test_matches_closest_density(self):
+        """A parcel with high du/acre matches the dense Building Type."""
+        self.client.force_login(self.user)
+        p1, p2 = self._patch(
+            {
+                "1": {
+                    "id": 1,
+                    "du": 190.0,
+                    "emp": 0.0,
+                    "area_gross": 10.0,
+                    "area_parcel": 10.0,
+                }
+            }
+        )
+        try:
+            response = self.client.post(
+                self.match_url,
+                json.dumps({"features": ["1"]}),
+                content_type="application/json",
+            )
+        finally:
+            p1.stop()
+            p2.stop()
+
+        assert response.status_code == 200
+        data = response.json()
+        assert data["status"] == "ok"
+        assert data["matches"][0]["building_type_id"] == self.dense_bt.pk
+
+        rows = PaintedCanvas.objects.filter(scenario=self.scenario, feature_id="1")
+        assert "du" in set(rows.values_list("column_name", flat=True))
+
+        bf_row = rows.get(column_name="built_form_key")
+        assert bf_row.painted_value is None
+        assert bf_row.painted_text_value == "High Density"
+
+    def test_undo_removes_built_form_key(self):
+        """Undoing a fresh match deletes the built_form_key override, not just numeric columns."""
+        self.client.force_login(self.user)
+        p1, p2 = self._patch(
+            {
+                "1": {
+                    "id": 1,
+                    "du": 190.0,
+                    "emp": 0.0,
+                    "area_gross": 10.0,
+                    "area_parcel": 10.0,
+                }
+            }
+        )
+        try:
+            response = self.client.post(
+                self.match_url,
+                json.dumps({"features": ["1"]}),
+                content_type="application/json",
+            )
+        finally:
+            p1.stop()
+            p2.stop()
+
+        assert PaintedCanvas.objects.filter(
+            scenario=self.scenario, feature_id="1", column_name="built_form_key"
+        ).exists()
+
+        batch_id = response.json()["batch_id"]
+        undo_url = reverse(
+            UNDO_URL_NAME,
+            kwargs={
+                "workspace_pk": self.workspace.pk,
+                "scenario_pk": self.scenario.pk,
+            },
+        )
+        with patch(
+            "brewgis.workspace.views.paint.refresh_canvas_view",
+            return_value="public.mock_canvas_view",
+        ):
+            undo_response = self.client.post(
+                undo_url,
+                json.dumps({"batch_id": batch_id}),
+                content_type="application/json",
+            )
+
+        assert undo_response.status_code == 200
+        assert not PaintedCanvas.objects.filter(
+            scenario=self.scenario, feature_id="1"
+        ).exists()
+
+    def test_no_du_or_emp_reports_unmatched(self):
+        """A parcel with no du/emp value is skipped and reported unmatched."""
+        self.client.force_login(self.user)
+        p1, p2 = self._patch(
+            {
+                "1": {
+                    "id": 1,
+                    "du": 0.0,
+                    "emp": 0.0,
+                    "area_gross": 10.0,
+                    "area_parcel": 10.0,
+                }
+            }
+        )
+        try:
+            response = self.client.post(
+                self.match_url,
+                json.dumps({"features": ["1"]}),
+                content_type="application/json",
+            )
+        finally:
+            p1.stop()
+            p2.stop()
+
+        assert response.status_code == 400
+        data = response.json()
+        assert data["status"] == "error"
+        assert data["unmatched"][0]["feature_id"] == "1"
+
+    def test_empty_features_returns_400(self):
+        self.client.force_login(self.user)
+        response = self.client.post(
+            self.match_url,
+            json.dumps({"features": []}),
+            content_type="application/json",
+        )
+        assert response.status_code == 400
+
+    def test_unauthenticated_returns_302(self):
+        response = self.client.post(
+            self.match_url, json.dumps({}), content_type="application/json"
+        )
+        assert response.status_code == 302
+
+
+@pytest.mark.views
+class TestFillBuiltFormView(TestCase):
+    """Tests for ``fill_built_form`` view — fill du/emp from base-layer built form."""
+
+    def setUp(self):
+        self.user = UserFactory()
+        self.workspace = WorkspaceFactory()
+        self.scenario = ScenarioFactory(workspace=self.workspace)
+
+        self.bt = BuildingTypeFactory(
+            workspace=self.workspace,
+            name="Mid Rise Mixed Use",
+            du_per_acre=10.0,
+            emp_per_acre=0.0,
+        )
+
+        self.fill_url = reverse(
+            BF_FILL_URL_NAME,
+            kwargs={
+                "workspace_pk": self.workspace.pk,
+                "scenario_pk": self.scenario.pk,
+            },
+        )
+
+    def _patch(self, feature_data: dict) -> tuple[patch, patch]:
+        patcher1 = patch(
+            "brewgis.workspace.views.paint.refresh_canvas_view",
+            return_value="public.mock_canvas_view",
+        )
+        patcher2 = patch(
+            "brewgis.workspace.views.paint._fetch_canvas_feature_data",
+            return_value=feature_data,
+        )
+        patcher1.start()
+        patcher2.start()
+        return patcher1, patcher2
+
+    def test_fills_from_matching_built_form_key(self):
+        """A parcel whose built_form_key loosely matches a Building Type gets filled in."""
+        self.client.force_login(self.user)
+        p1, p2 = self._patch(
+            {
+                "1": {
+                    "id": 1,
+                    "area_gross": 10.0,
+                    "area_parcel": 10.0,
+                    "built_form_key": "bt__mid_rise_mixed_use",
+                }
+            }
+        )
+        try:
+            response = self.client.post(
+                self.fill_url,
+                json.dumps({"features": ["1"]}),
+                content_type="application/json",
+            )
+        finally:
+            p1.stop()
+            p2.stop()
+
+        assert response.status_code == 200
+        data = response.json()
+        assert data["status"] == "ok"
+        assert data["matched"][0]["building_type_id"] == self.bt.pk
+
+        rows = PaintedCanvas.objects.filter(scenario=self.scenario, feature_id="1")
+        assert "du" in set(rows.values_list("column_name", flat=True))
+
+        bf_row = rows.get(column_name="built_form_key")
+        assert bf_row.painted_value is None
+        assert bf_row.painted_text_value == "Mid Rise Mixed Use"
+
+    def test_no_built_form_key_reports_unmatched(self):
+        """A parcel with no built_form_key is skipped and reported unmatched."""
+        self.client.force_login(self.user)
+        p1, p2 = self._patch(
+            {
+                "1": {
+                    "id": 1,
+                    "area_gross": 10.0,
+                    "area_parcel": 10.0,
+                    "built_form_key": None,
+                }
+            }
+        )
+        try:
+            response = self.client.post(
+                self.fill_url,
+                json.dumps({"features": ["1"]}),
+                content_type="application/json",
+            )
+        finally:
+            p1.stop()
+            p2.stop()
+
+        assert response.status_code == 400
+        data = response.json()
+        assert data["unmatched"][0]["feature_id"] == "1"
+
+    def test_unmatched_built_form_key(self):
+        """A built_form_key with no corresponding Building Type is unmatched."""
+        self.client.force_login(self.user)
+        p1, p2 = self._patch(
+            {
+                "1": {
+                    "id": 1,
+                    "area_gross": 10.0,
+                    "area_parcel": 10.0,
+                    "built_form_key": "bt__nonexistent_type",
+                }
+            }
+        )
+        try:
+            response = self.client.post(
+                self.fill_url,
+                json.dumps({"features": ["1"]}),
+                content_type="application/json",
+            )
+        finally:
+            p1.stop()
+            p2.stop()
+
+        assert response.status_code == 400
+        data = response.json()
+        assert data["unmatched"][0]["built_form_key"] == "bt__nonexistent_type"
+
+    def test_empty_features_returns_400(self):
+        self.client.force_login(self.user)
+        response = self.client.post(
+            self.fill_url,
+            json.dumps({"features": []}),
+            content_type="application/json",
+        )
+        assert response.status_code == 400
+
+    def test_unauthenticated_returns_302(self):
+        response = self.client.post(
+            self.fill_url, json.dumps({}), content_type="application/json"
+        )
+        assert response.status_code == 302

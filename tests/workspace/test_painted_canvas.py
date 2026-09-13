@@ -160,3 +160,26 @@ class TestPaintedCanvasModel:
         )
         expected = f"PaintedCanvas[{scenario.pk}](parcel-001.du=150.0)"
         assert str(paint) == expected
+
+    def test_approval_status_defaults_to_approved(self, db, scenario):
+        """New paints default to 'approved' — nothing sets 'pending' explicitly,
+        so merge_paint_edits (which only copies approved rows) works out of the box."""
+        paint = PaintedCanvasFactory(
+            scenario=scenario,
+            feature_id="parcel-001",
+            column_name="du",
+            painted_value=100.0,
+        )
+        assert paint.approval_status == "approved"
+
+    def test_painted_text_value_for_text_column(self, db, scenario):
+        """built_form_key overrides store text in painted_text_value, not painted_value."""
+        paint = PaintedCanvasFactory(
+            scenario=scenario,
+            feature_id="parcel-001",
+            column_name="built_form_key",
+            painted_value=None,
+            painted_text_value="Courtyard Apartment",
+        )
+        assert paint.painted_value is None
+        assert paint.painted_text_value == "Courtyard Apartment"

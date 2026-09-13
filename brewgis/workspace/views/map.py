@@ -130,6 +130,8 @@ def view_workspace_map(request: HttpRequest, workspace_pk: int) -> HttpResponse:
     paint_url: str = ""
     clear_url: str = ""
     bf_paint_url: str = ""
+    bf_match_url: str = ""
+    bf_fill_url: str = ""
     history_url: str = ""
     undo_url: str = ""
 
@@ -179,6 +181,12 @@ def view_workspace_map(request: HttpRequest, workspace_pk: int) -> HttpResponse:
         )
         bf_paint_url = request.build_absolute_uri(
             reverse("workspace:paint_built_form", args=[workspace_pk, scenario.pk])
+        )
+        bf_match_url = request.build_absolute_uri(
+            reverse("workspace:match_built_form", args=[workspace_pk, scenario.pk])
+        )
+        bf_fill_url = request.build_absolute_uri(
+            reverse("workspace:fill_built_form", args=[workspace_pk, scenario.pk])
         )
         history_url = request.build_absolute_uri(
             reverse("workspace:paint_history", args=[workspace_pk, scenario.pk])
@@ -363,6 +371,8 @@ def view_workspace_map(request: HttpRequest, workspace_pk: int) -> HttpResponse:
         "paint_url": paint_url,
         "clear_url": clear_url,
         "bf_paint_url": bf_paint_url,
+        "bf_match_url": bf_match_url,
+        "bf_fill_url": bf_fill_url,
         "history_url": history_url if scenario else "",
         "undo_url": undo_url if scenario else "",
         "canvas_view_layer_id": canvas_view_layer_id,

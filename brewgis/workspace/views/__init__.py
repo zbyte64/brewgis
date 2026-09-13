@@ -39,6 +39,8 @@ from .map import view_public_scenario_map  # noqa: F401
 from .map import view_workspace_map  # noqa: F401
 from .merge import merge_paint_edits  # noqa: F401
 from .paint import clear_paint  # noqa: F401
+from .paint import fill_built_form  # noqa: F401
+from .paint import match_built_form  # noqa: F401
 from .paint import paint_built_form  # noqa: F401
 from .paint import paint_features  # noqa: F401
 from .paint import paint_history  # noqa: F401

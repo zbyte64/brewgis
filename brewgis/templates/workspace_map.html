@@ -167,6 +167,19 @@
                  step="any"
                  style="width: 100px" />
           <!-- Built Form Controls (hidden by default) -->
+          <!-- Built Form auto-fill actions (hidden by default) -->
+          <button type="button"
+                  class="btn btn-sm btn-primary paint-bf-group"
+                  id="paint-bf-match-btn"
+                  title="Assign each selected parcel the Building Type whose du/emp density is closest to its own"
+                  style="display: none"
+                  disabled>Match Closest</button>
+          <button type="button"
+                  class="btn btn-sm btn-primary paint-bf-group"
+                  id="paint-bf-fill-btn"
+                  title="Fill in du/emp for each selected parcel from its base-layer built form"
+                  style="display: none"
+                  disabled>Fill from Base Layer</button>
           <select class="form-select form-select-sm paint-bf-group"
                   id="paint-bf-type"
                   name="bf_type"
@@ -420,10 +433,14 @@
       const bfOptgroupPlace = document.getElementById('bf-optgroup-place');
       const paintColumnSelect = document.getElementById('paint-column');
       const paintValueInput = document.getElementById('paint-value');
+      const bfMatchBtn = document.getElementById('paint-bf-match-btn');
+      const bfFillBtn = document.getElementById('paint-bf-fill-btn');
 
       const paintUrl = '{{ paint_url|safe }}';
       const clearUrl = '{{ clear_url|safe }}';
       const bfPaintUrl = '{{ bf_paint_url|safe }}';
+      const bfMatchUrl = '{{ bf_match_url|safe }}';
+      const bfFillUrl = '{{ bf_fill_url|safe }}';
       const undoUrl = '{{ undo_url|safe }}';
 
       let selectedFeatures = [];
@@ -450,6 +467,8 @@
         featureCount.textContent = selectedFeatures.length + ' feature(s) selected';
         applyBtn.disabled = selectedFeatures.length === 0;
         clearBtn.disabled = selectedFeatures.length === 0;
+        if (bfMatchBtn) bfMatchBtn.disabled = selectedFeatures.length === 0;
+        if (bfFillBtn) bfFillBtn.disabled = selectedFeatures.length === 0;
       });
 
       // Selection mode radio buttons -> map component property
@@ -572,6 +591,8 @@
           .finally(function() {
             applyBtn.disabled = selectedFeatures.length === 0;
             clearBtn.disabled = selectedFeatures.length === 0;
+            if (bfMatchBtn) bfMatchBtn.disabled = selectedFeatures.length === 0;
+            if (bfFillBtn) bfFillBtn.disabled = selectedFeatures.length === 0;
           });
       }
 
@@ -602,6 +623,26 @@
           if (selectedFeatures.length === 0) return;
           clearBtn.disabled = true;
           postPaintAction(clearUrl, {
+            features: selectedFeatures
+          });
+        });
+      }
+
+      if (bfMatchBtn) {
+        bfMatchBtn.addEventListener('click', function() {
+          if (selectedFeatures.length === 0) return;
+          bfMatchBtn.disabled = true;
+          postPaintAction(bfMatchUrl, {
+            features: selectedFeatures
+          });
+        });
+      }
+
+      if (bfFillBtn) {
+        bfFillBtn.addEventListener('click', function() {
+          if (selectedFeatures.length === 0) return;
+          bfFillBtn.disabled = true;
+          postPaintAction(bfFillUrl, {
             features: selectedFeatures
           });
         });
@@ -638,7 +679,9 @@
               var isUndone = evt.undone_at !== null;
               var opLabel = evt.operation_type === 'paint' ? 'Paint' :
                 evt.operation_type === 'clear' ? 'Clear' :
-                evt.operation_type === 'built_form' ? 'BF' : evt.operation_type;
+                evt.operation_type === 'built_form' ? 'BF' :
+                evt.operation_type === 'built_form_match' ? 'BF Match' :
+                evt.operation_type === 'built_form_fill' ? 'BF Fill' : evt.operation_type;
               var valStr = evt.old_value + ' → ' + evt.new_value;
               var rowClass = isUndone ? 'text-muted' : '';
               html += '<div class="' + rowClass + '" style="border-bottom: 1px solid #eee; padding: 2px 0;">';
@@ -864,18 +907,7 @@
       if (!mapEl) return;
 
       const inspectBaseUrl = '{% url "workspace:panel_feature_inspect" workspace.pk %}';
-      const scenarioQuery = {
-        %
-        if scenario %
-      }
-      '?scenario={{ scenario.pk }}' {
-        %
-        else %
-      }
-      '' {
-        %
-        endif %
-      };
+      const scenarioQuery = '{% if scenario %}?scenario={{ scenario.pk }}{% endif %}';
 
       function wireSaveButton() {
         const panelEl = document.getElementById('feature-inspect-panel');

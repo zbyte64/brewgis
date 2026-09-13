@@ -31,6 +31,8 @@ from typing import Final
 # Qualitative
 # =========================================================================
 
+# TODO import appropriate libraries for color schemes, ie https://github.com/pyapp-kit/cmap
+
 QUALITATIVE: Final[dict[str, list[str]]] = {
     # Material Design 500 palette (first 10)
     "material_set1": [

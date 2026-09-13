@@ -69,6 +69,7 @@ def merge_paint_edits(
         "feature_id",
         "column_name",
         "painted_value",
+        "painted_text_value",
         "painted_by_id",
     )
 
@@ -95,6 +96,7 @@ def merge_paint_edits(
                         feature_id=paint["feature_id"],
                         column_name=paint["column_name"],
                         painted_value=paint["painted_value"],
+                        painted_text_value=paint["painted_text_value"],
                         painted_by=request.user
                         if request.user.is_authenticated
                         else None,

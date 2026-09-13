@@ -24,15 +24,21 @@ if TYPE_CHECKING:
 # Paintable columns — sourced from the canonical BaseCanvasSchema.
 PAINTABLE_COLUMNS: frozenset[str] = BaseCanvasSchema.PAINTABLE_COLUMNS
 
+# Paintable columns whose override is text (not numeric) — stored in
+# PaintedCanvas.painted_text_value instead of painted_value.
+TEXT_COLUMNS: frozenset[str] = BaseCanvasSchema.TEXT_COLUMNS
+
 
 def build_paintable_column_meta() -> list[dict[str, str]]:
-    """Build ``{name, label}`` entries for every paintable column.
+    """Build ``{name, label}`` entries for every numeric paintable column.
 
-    Shared by the paint toolbar's column dropdown and the feature-inspect
-    panel so both surfaces render the same human-readable labels.
+    Shared by the paint toolbar's Direct Paint dropdown and the
+    feature-inspect panel so both surfaces render the same human-readable
+    labels. Excludes text-valued columns (``TEXT_COLUMNS``) since that path
+    only ever coerces values to ``float``.
     """
     meta: list[dict[str, str]] = []
-    for col_name in sorted(PAINTABLE_COLUMNS):
+    for col_name in sorted(PAINTABLE_COLUMNS - TEXT_COLUMNS):
         col_def = BaseCanvasSchema.get(col_name)
         meta.append({"name": col_name, "label": col_def.label if col_def else col_name})
     return meta
@@ -116,9 +122,13 @@ def _build_create_view_sql(
     select_parts.append("(pc._feature_id IS NOT NULL) AS uf_is_painted")
     select_clause = ",\n    ".join(select_parts)
 
-    # Pivot subquery
+    # Pivot subquery — text columns (e.g. built_form_key) pivot from
+    # painted_text_value; every other paintable column pivots from the
+    # numeric painted_value.
     pivot_cases = [
-        f"        MAX(CASE WHEN column_name = '{col}' THEN painted_value END) AS {col}"
+        f"        MAX(CASE WHEN column_name = '{col}' THEN "
+        f"{'painted_text_value' if col in TEXT_COLUMNS else 'painted_value'} "
+        f"END) AS {col}"
         for col in paintable_in_table
     ]
     pivot_clause = ",\n".join(pivot_cases)
