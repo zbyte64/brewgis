@@ -46,6 +46,18 @@ if TYPE_CHECKING:
 _BATCH_SIZE = 2048
 _MIN_PCA_SAMPLES = 33  # n_components + 1
 
+# scikit-learn's IncrementalPCA no longer raises when given fewer samples
+# than n_components — it silently clamps n_components_ to n_samples while
+# still reporting the requested value, so transform() then returns fewer
+# columns than expected and the fixed `range(32)` column-assignment loop
+# below indexes out of range. This guard restores a fail-fast error instead.
+# Set RESNET_BFT_ENFORCE_MIN_PCA_SAMPLES=0 to disable it if it ever
+# misfires in production — that falls back to sklearn's silent-clamp
+# behavior rather than raising.
+_ENFORCE_MIN_PCA_SAMPLES = (
+    os.environ.get("RESNET_BFT_ENFORCE_MIN_PCA_SAMPLES", "1") == "1"
+)
+
 # Cache dirs are lazily initialized to keep module-level state serializable
 # (SQLMesh pickles the python_env and cannot serialize concrete Path objects).
 _CACHE_ROOT: Path | None = None
@@ -72,6 +84,30 @@ def _get_pca_cache_dir() -> Path:
 def _pca_cache_path(data_hash: str) -> Path:
     """Get filesystem path for cached PCA model."""
     return _get_pca_cache_dir() / f"{data_hash}.pkl"
+
+
+def _check_min_pca_samples(n_samples: int) -> None:
+    """Fail fast if there aren't enough samples to fit a 32-component PCA.
+
+    scikit-learn's IncrementalPCA no longer raises for this itself — it
+    silently clamps n_components_ down to n_samples while still reporting
+    the originally-requested value, so transform() then returns fewer
+    columns than expected and the `range(32)` column-assignment loop in
+    `execute()` indexes out of range instead of failing with a clear cause.
+
+    Set RESNET_BFT_ENFORCE_MIN_PCA_SAMPLES=0 to disable this check if it
+    ever misfires in production — that restores scikit-learn's silent-clamp
+    behavior rather than raising.
+    """
+    if not _ENFORCE_MIN_PCA_SAMPLES:
+        return
+    if n_samples < _MIN_PCA_SAMPLES:
+        msg = (
+            f"Only {n_samples} deduplicated chips available "
+            f"({_MIN_PCA_SAMPLES} required for PCA). Insufficient "
+            f"parcel-raster overlap."
+        )
+        raise RuntimeError(msg)
 
 
 def _compute_cog_hash(cog_urls: list[str]) -> str:
@@ -332,15 +368,14 @@ def execute(  # noqa: C901, PLR0912, PLR0915
         embeddings_np, parcel_ids = _dedup_embeddings(embeddings_np, parcel_ids)
         logger.info("Deduplicated to %d unique parcels", len(parcel_ids))
 
-        if len(embeddings_np) < _MIN_PCA_SAMPLES:
-            msg = (
-                f"Only {len(embeddings_np)} deduplicated chips extracted "
-                f"({_MIN_PCA_SAMPLES} required for PCA). "
-                f"Insufficient parcel-raster overlap."
-            )
-            raise RuntimeError(msg)
-
+        _check_min_pca_samples(len(embeddings_np))
         _save_embeddings(cog_hash, embeddings_np, parcel_ids)
+
+    # Also covers the cached-embeddings branch above (`if cached is not
+    # None`), which has no min-sample check of its own — a cache written
+    # before this guard existed, or one that dedups down to too few unique
+    # parcels, would otherwise reach pca.fit() unchecked.
+    _check_min_pca_samples(len(embeddings_np))
 
     # Step 4: Fit/load IncrementalPCA
     pca = _load_pca_cache(cog_hash)

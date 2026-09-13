@@ -7,12 +7,17 @@ being installed.
 
 from __future__ import annotations
 
+import importlib
+
 import numpy as np
 import pytest
 from sklearn.decomposition import IncrementalPCA
 
 torch = pytest.importorskip("torch")
 torchvision_models = pytest.importorskip("torchvision.models")
+resnet_bft_features = pytest.importorskip(
+    "brewgis.sqlmesh.models.python.resnet_bft_features"
+)
 
 
 class TestResNetBackbone:
@@ -86,7 +91,11 @@ class TestIncrementalPCA:
 
         features = pca.transform(embeddings)
         assert features.shape == (100, 32)
-        assert features.dtype == np.float64
+        # Modern scikit-learn preserves the input dtype (float32 in,
+        # float32 out) instead of always upcasting to float64 — not that
+        # it matters for us either way, since resnet_bft_features.py casts
+        # the output to float32 explicitly regardless (see its line 362).
+        assert features.dtype == np.float32
 
     def test_pca_components_shape(self) -> None:
         """PCA components should have shape (32, 512)."""
@@ -110,11 +119,17 @@ class TestIncrementalPCA:
         assert len(explained_ratio) == 32
         assert np.all(explained_ratio > 0)
 
-    def test_pca_needs_minimum_samples(self) -> None:
-        """PCA requires at least n_components+1 samples."""
+    def test_pca_silently_clamps_when_too_few_samples(self) -> None:
+        """Document current scikit-learn behavior: IncrementalPCA no longer
+        raises for too-few-samples — it silently clamps components_ to
+        n_samples while `n_components_` still reports the requested value,
+        so transform() returns fewer columns than the caller expects. This
+        is exactly the gap `_check_min_pca_samples` (tested below) exists
+        to catch before it reaches scikit-learn."""
         pca = IncrementalPCA(n_components=32, batch_size=10000)
-        with pytest.raises(ValueError, match="n_components"):
-            pca.fit(np.random.randn(10, 512))
+        pca.fit(np.random.randn(10, 512))
+        assert pca.n_components_ == 32
+        assert pca.components_.shape == (10, 512)
 
     def test_transform_output_all_finite(self) -> None:
         """All transformed feature values should be finite."""
@@ -126,3 +141,60 @@ class TestIncrementalPCA:
 
         features = pca.transform(embeddings)
         assert np.all(np.isfinite(features))
+
+
+class TestCheckMinPcaSamples:
+    """Verify the _check_min_pca_samples guard and its env-var toggle.
+
+    scikit-learn stopped raising for too-few-samples (see
+    TestIncrementalPCA.test_pca_silently_clamps_when_too_few_samples), so
+    this guard restores a fail-fast error at the application level —
+    behind a toggle in case it ever needs to be turned off in production
+    without a code change.
+    """
+
+    def _reload_with_env(self, monkeypatch: pytest.MonkeyPatch, value: str | None):
+        """Set (or clear) the toggle env var and reload the module so its
+        module-level `_ENFORCE_MIN_PCA_SAMPLES` picks up the new value."""
+        if value is None:
+            monkeypatch.delenv("RESNET_BFT_ENFORCE_MIN_PCA_SAMPLES", raising=False)
+        else:
+            monkeypatch.setenv("RESNET_BFT_ENFORCE_MIN_PCA_SAMPLES", value)
+        importlib.reload(resnet_bft_features)
+
+    @pytest.fixture(autouse=True)
+    def _restore_module_state(self, monkeypatch: pytest.MonkeyPatch):
+        """Reload the module once more after each test so a later test file
+        (or a later run of this one) doesn't inherit a monkeypatched env
+        var's effect after monkeypatch itself has already reverted it."""
+        yield
+        importlib.reload(resnet_bft_features)
+
+    def test_enforced_by_default(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        """With no env var set, too few samples raises RuntimeError."""
+        self._reload_with_env(monkeypatch, None)
+        with pytest.raises(RuntimeError, match="33 required for PCA"):
+            resnet_bft_features._check_min_pca_samples(10)
+
+    def test_enforced_allows_enough_samples(
+        self, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        """With enough samples, the guard is a no-op."""
+        self._reload_with_env(monkeypatch, None)
+        resnet_bft_features._check_min_pca_samples(33)
+        resnet_bft_features._check_min_pca_samples(1000)
+
+    def test_toggle_disables_the_guard(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        """RESNET_BFT_ENFORCE_MIN_PCA_SAMPLES=0 bypasses the check entirely —
+        the escape hatch for if this guard ever misfires in production."""
+        self._reload_with_env(monkeypatch, "0")
+        resnet_bft_features._check_min_pca_samples(10)  # does not raise
+
+    def test_toggle_value_other_than_1_disables_it(
+        self, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        """Any value other than the literal "1" disables enforcement —
+        matching the codebase's existing `== "1"` env-flag convention
+        (see brewgis/sqlmesh/config.py's SQLMESH_DUCKDB_READONLY)."""
+        self._reload_with_env(monkeypatch, "false")
+        resnet_bft_features._check_min_pca_samples(10)  # does not raise
