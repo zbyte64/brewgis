@@ -13,6 +13,7 @@ from brewgis.workspace.analysis.layer_registry import _get_geometry_type
 from brewgis.workspace.analysis.layer_registry import register_result_layer
 from brewgis.workspace.models import Layer
 from tests.factories import LayerFactory
+from tests.factories import SymbologyConfigFactory
 from tests.factories import WorkspaceFactory
 
 
@@ -104,35 +105,44 @@ class TestGetGeometryType(TestCase):
     @patch("brewgis.workspace.analysis.layer_registry.connection.cursor")
     def test_returns_fill_for_multipolygon(self, mock_cursor_factory) -> None:
         """Multipolygon geometry should return 'fill'."""
-        mock_cursor_factory.return_value = self._mock_cursor(("MULTIPOLYGON",))
+        mock_cursor_factory.return_value = self._mock_cursor(("geom", "MULTIPOLYGON"))
         result = _get_geometry_type("public", "test_table")
         self.assertEqual(result, "fill")
 
     @patch("brewgis.workspace.analysis.layer_registry.connection.cursor")
     def test_returns_fill_for_polygon(self, mock_cursor_factory) -> None:
         """Polygon geometry should return 'fill'."""
-        mock_cursor_factory.return_value = self._mock_cursor(("POLYGON",))
+        mock_cursor_factory.return_value = self._mock_cursor(("geom", "POLYGON"))
         result = _get_geometry_type("public", "test_table")
         self.assertEqual(result, "fill")
 
     @patch("brewgis.workspace.analysis.layer_registry.connection.cursor")
     def test_returns_line_for_linestring(self, mock_cursor_factory) -> None:
         """Linestring geometry should return 'line'."""
-        mock_cursor_factory.return_value = self._mock_cursor(("LINESTRING",))
+        mock_cursor_factory.return_value = self._mock_cursor(("geom", "LINESTRING"))
         result = _get_geometry_type("public", "test_table")
         self.assertEqual(result, "line")
 
     @patch("brewgis.workspace.analysis.layer_registry.connection.cursor")
     def test_returns_line_for_multilinestring(self, mock_cursor_factory) -> None:
         """MultiLinestring geometry should return 'line'."""
-        mock_cursor_factory.return_value = self._mock_cursor(("MULTILINESTRING",))
+        mock_cursor_factory.return_value = self._mock_cursor(
+            ("geom", "MULTILINESTRING")
+        )
         result = _get_geometry_type("public", "test_table")
         self.assertEqual(result, "line")
 
     @patch("brewgis.workspace.analysis.layer_registry.connection.cursor")
     def test_returns_fill_for_geometry_type_mismatch(self, mock_cursor_factory) -> None:
-        """Unhandled geometry type (e.g. POINT) should default to 'fill'."""
-        mock_cursor_factory.return_value = self._mock_cursor(("POINT",))
+        """A generic catalog type (e.g. bare 'GEOMETRY', common for computed
+        view columns) falls back to sampling a row's actual geometry via
+        ST_GeometryType; when that's also unclassifiable, default to 'fill'."""
+        mock_cursor = self._mock_cursor(("geom", "GEOMETRY"))
+        mock_cursor.fetchone.side_effect = [
+            ("geom", "GEOMETRY"),
+            ("ST_GeometryCollection",),
+        ]
+        mock_cursor_factory.return_value = mock_cursor
         result = _get_geometry_type("public", "test_table")
         self.assertEqual(result, "fill")
 
@@ -307,10 +317,13 @@ class TestRegisterResultLayer(TestCase):
 
     @patch("brewgis.workspace.analysis.layer_registry._get_geometry_type")
     @patch("brewgis.workspace.analysis.layer_registry._get_table_columns")
-    def test_update_does_not_create_symbology(
+    def test_update_backfills_symbology_when_layer_has_none(
         self, mock_columns: MagicMock, mock_geom: MagicMock
     ) -> None:
-        """SymbologyConfig should not be auto-created when updating an existing Layer."""
+        """Updating a Layer with no existing SymbologyConfig should backfill
+        one — e.g. a Layer first registered when numeric_column was None
+        (table didn't exist yet) should get graduated symbology once the
+        table shows up with a usable numeric column."""
         mock_geom.return_value = "fill"
         mock_columns.return_value = [
             {"column_name": "population", "data_type": "integer", "numeric": True},
@@ -329,5 +342,40 @@ class TestRegisterResultLayer(TestCase):
         )
 
         self.assertIsNotNone(layer)
-        with self.assertRaises(Layer.symbology.RelatedObjectDoesNotExist):
-            layer.symbology
+        self.assertEqual(layer.symbology.attribute_column, "population")
+        self.assertTrue(layer.symbology.auto_generated)
+
+    @patch("brewgis.workspace.analysis.layer_registry._get_geometry_type")
+    @patch("brewgis.workspace.analysis.layer_registry._get_table_columns")
+    def test_update_does_not_overwrite_customized_symbology(
+        self, mock_columns: MagicMock, mock_geom: MagicMock
+    ) -> None:
+        """A user-customized SymbologyConfig (auto_generated=False) must be
+        left untouched when the Layer it belongs to is re-registered."""
+        mock_geom.return_value = "fill"
+        mock_columns.return_value = [
+            {"column_name": "population", "data_type": "integer", "numeric": True},
+        ]
+
+        existing = LayerFactory(
+            workspace=self.workspace,
+            key="existing_customized",
+            db_table="existing_customized",
+        )
+        SymbologyConfigFactory(
+            layer=existing,
+            symbology_type="categorical",
+            attribute_column="my_custom_column",
+            auto_generated=False,
+        )
+
+        layer = register_result_layer(
+            workspace_id=self.workspace.pk,
+            schema="public",
+            table="existing_customized",
+        )
+
+        self.assertIsNotNone(layer)
+        self.assertEqual(layer.symbology.attribute_column, "my_custom_column")
+        self.assertEqual(layer.symbology.symbology_type, "categorical")
+        self.assertFalse(layer.symbology.auto_generated)
