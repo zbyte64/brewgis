@@ -112,32 +112,39 @@ class BuildingType(models.Model):
     indoor_water_rate = models.FloatField(
         blank=True,
         null=True,
+        default=200.0,
         verbose_name="Indoor water use (L/person/day)",
+        help_text="Defaults to 200 L/person/day (typical US residential indoor use).",
     )
     outdoor_water_rate = models.FloatField(
         blank=True,
         null=True,
+        default=100.0,
         verbose_name="Outdoor water use (L/m²/year)",
+        help_text="Defaults to 100 L/m²/yr (typical turf irrigation rate).",
     )
     irrigable_area_fraction = models.FloatField(
         blank=True,
         null=True,
+        default=0.3,
         verbose_name="Irrigable area fraction",
-        help_text="Fraction of open space that is irrigated.",
+        help_text="Fraction of open space that is irrigated. Defaults to 0.3.",
     )
 
     # Energy
     electricity_eui = models.FloatField(
         blank=True,
         null=True,
+        default=100.0,
         verbose_name="Electricity EUI (kWh/m²/yr)",
-        help_text="Energy use intensity for electricity.",
+        help_text="Energy use intensity for electricity. Defaults to 100 kWh/m²/yr.",
     )
     gas_eui = models.FloatField(
         blank=True,
         null=True,
+        default=50.0,
         verbose_name="Gas EUI (kWh/m²/yr)",
-        help_text="Energy use intensity for natural gas.",
+        help_text="Energy use intensity for natural gas. Defaults to 50 kWh/m²/yr.",
     )
     vintage = models.CharField(
         max_length=32,

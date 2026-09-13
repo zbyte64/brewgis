@@ -12,6 +12,7 @@ from typing import Any
 
 from django.db import connection
 
+from brewgis.workspace.analysis.module_registry import get_primary_column
 from brewgis.workspace.models import Layer
 from brewgis.workspace.models import SymbologyConfig
 from brewgis.workspace.models import Workspace
@@ -121,13 +122,19 @@ def _get_geometry_type(schema: str, table: str) -> str:
         return "fill"
 
 
-def _find_numeric_column(columns: list[dict[str, Any]]) -> str | None:
-    """Find the first numeric column suitable for graduated symbology.
+def _find_numeric_column(columns: list[dict[str, Any]], table: str) -> str | None:
+    """Find the numeric column that best represents this result table.
 
-    Prefers columns like 'acres_developable', 'population', 'households',
-    'dwelling_units_total', 'employment_total', then falls back to
-    the first numeric column that isn't an id or geometry column.
+    Prefers the analysis module's known headline output column (see
+    ``module_registry.TABLE_PRIMARY_COLUMN``), then falls back to a handful
+    of common cross-module names like 'population'/'households', and only
+    then to the first numeric column that isn't an id or geometry column.
     """
+    numeric_columns = {col["column_name"] for col in columns if col["numeric"]}
+    primary_column = get_primary_column(table)
+    if primary_column and primary_column in numeric_columns:
+        return primary_column
+
     preferred = {
         "acres_developable",
         "developable_proportion",
@@ -194,7 +201,7 @@ def register_result_layer(
 
     # Look up columns for auto-configuration
     columns = _get_table_columns(schema, table)
-    numeric_column = _find_numeric_column(columns)
+    numeric_column = _find_numeric_column(columns, table)
 
     # Create or update the Layer
     layer_key = key or table

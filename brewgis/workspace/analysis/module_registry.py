@@ -165,6 +165,51 @@ MODULE_LABELS: dict[str, str] = {
 }
 
 
+# Result table (bare SQLMesh model name) → primary output column.
+#
+# Used to pick a meaningful default symbology attribute for a result layer
+# instead of falling back to "first numeric column that isn't parcel_id",
+# which tends to land on an incidental pass-through column (e.g.
+# area_gross_acres) rather than the analysis's actual headline metric.
+TABLE_PRIMARY_COLUMN: dict[str, str] = {
+    "core_end_state": "pop",
+    "core_increment": "pop",
+    "water_demand": "water_demand_total",
+    "energy_demand": "energy_total",
+    "building_water_ghg": "co2e_total_kg",
+    "total_ghg": "co2e_total",
+    "transport_ghg": "co2e_total_kg",
+    "agriculture": "net_return",
+    "sprawl_cost": "infrastructure_cost_per_hh_annual",
+    "displacement_risk": "vulnerability_score",
+    "displacement_risk_dynamic": "vulnerability_score",
+    "food_access": "mrfei",
+    "health_impacts": "net_dalys",
+    "housing_cost_burden": "cost_burden_pct",
+    "land_consumption": "impervious_pct",
+    "sprawl_index": "sprawl_index",
+    "stormwater_runoff": "runoff_volume_acre_ft",
+    "tree_canopy": "canopy_pct",
+    "vmt_fee": "fee_revenue_total",
+    "vmt": "vmt_total",
+    "trip_generation": "trips_total",
+    "internal_capture": "internal_capture_pct",
+    "fiscal_net_impact": "net_fiscal_impact",
+    "fiscal_property_tax": "property_tax_revenue",
+    "fiscal_sales_tax": "sales_tax_revenue",
+    "fiscal_service_costs": "service_cost_total",
+}
+
+
+def get_primary_column(table: str) -> str | None:
+    """Return the known headline output column for a result table, if any.
+
+    ``table`` is the bare SQLMesh model name (e.g. ``"water_demand"``), the
+    same value passed as ``table=`` to ``register_result_layer``.
+    """
+    return TABLE_PRIMARY_COLUMN.get(table)
+
+
 def resolve_module_order(module_names: list[str]) -> list[str]:
     """Resolve requested modules into execution order respecting dependencies.
 

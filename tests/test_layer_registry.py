@@ -28,7 +28,7 @@ class TestFindNumericColumn(TestCase):
             {"column_name": "population", "data_type": "integer", "numeric": True},
             {"column_name": "label", "data_type": "text", "numeric": False},
         ]
-        result = _find_numeric_column(columns)
+        result = _find_numeric_column(columns, "some_table")
         self.assertEqual(result, "population")
 
     def test_falls_back_to_first_non_id_numeric_column(self) -> None:
@@ -39,7 +39,7 @@ class TestFindNumericColumn(TestCase):
             {"column_name": "parcel_id", "data_type": "integer", "numeric": True},
             {"column_name": "some_value", "data_type": "numeric", "numeric": True},
         ]
-        result = _find_numeric_column(columns)
+        result = _find_numeric_column(columns, "some_table")
         self.assertEqual(result, "some_value")
 
     def test_returns_none_when_no_numeric_columns(self) -> None:
@@ -49,7 +49,7 @@ class TestFindNumericColumn(TestCase):
             {"column_name": "name", "data_type": "text", "numeric": False},
             {"column_name": "description", "data_type": "varchar", "numeric": False},
         ]
-        result = _find_numeric_column(columns)
+        result = _find_numeric_column(columns, "some_table")
         self.assertIsNone(result)
 
     def test_skips_preferred_column_if_not_numeric(self) -> None:
@@ -58,8 +58,35 @@ class TestFindNumericColumn(TestCase):
             {"column_name": "population", "data_type": "text", "numeric": False},
             {"column_name": "total", "data_type": "integer", "numeric": True},
         ]
-        result = _find_numeric_column(columns)
+        result = _find_numeric_column(columns, "some_table")
         self.assertEqual(result, "total")
+
+    def test_prefers_known_module_primary_column(self) -> None:
+        """Should pick the module's headline output column over an incidental one."""
+        columns = [
+            {"column_name": "parcel_id", "data_type": "integer", "numeric": True},
+            {
+                "column_name": "area_gross_acres",
+                "data_type": "numeric",
+                "numeric": True,
+            },
+            {
+                "column_name": "water_demand_total",
+                "data_type": "numeric",
+                "numeric": True,
+            },
+        ]
+        result = _find_numeric_column(columns, "water_demand")
+        self.assertEqual(result, "water_demand_total")
+
+    def test_falls_back_when_primary_column_missing_from_table(self) -> None:
+        """Should fall back to the generic heuristic if the primary column isn't present."""
+        columns = [
+            {"column_name": "parcel_id", "data_type": "integer", "numeric": True},
+            {"column_name": "population", "data_type": "integer", "numeric": True},
+        ]
+        result = _find_numeric_column(columns, "water_demand")
+        self.assertEqual(result, "population")
 
 
 @pytest.mark.integration

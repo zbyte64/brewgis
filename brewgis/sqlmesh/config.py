@@ -516,7 +516,7 @@ def config_factory(**variables):
             "displacement_college_education_threshold": 0.25,
             # Built form defaults
             "res_far_default": 0.5,
-            "nonres_indoor_water_rate": 0.0,
+            "nonres_indoor_water_rate": 40.0,
             # KNN test isolation variables (overridden in test environments)
             "parcel_known_features_model": "brewgis.assessor.parcel_known_features",
             "parcel_partition_stats_model": "brewgis.assessor.parcel_partition_stats",

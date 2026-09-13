@@ -184,7 +184,7 @@ via the `**variables` dict when calling `config_factory()` or via plan overrides
 
 | Variable | Default | Notes |
 |---|---|---|
-| `nonres_indoor_water_rate` | `0.0` | L/employee/day (set to 0 — no non-res water model yet) |
+| `nonres_indoor_water_rate` | `40.0` | L/employee/day (typical commercial/office indoor use) |
 
 ---
 

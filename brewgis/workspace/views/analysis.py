@@ -21,6 +21,7 @@ from django.views.generic.edit import FormView
 
 from brewgis.workspace.analysis.data_export import ensure_export_exists_isolated
 from brewgis.workspace.analysis.module_registry import MODULE_LABELS
+from brewgis.workspace.analysis.module_registry import get_module_label
 from brewgis.workspace.analysis.pipeline import run_analysis_pipeline
 from brewgis.workspace.models import AnalysisRun
 from brewgis.workspace.models import Scenario
@@ -351,8 +352,14 @@ class AnalysisLaunchView(HtmxResponseMixin, FormView):
                 request=self.request,
             )
             response = HttpResponse(html)
-            # Trigger polling
-            response["HX-Trigger"] = "analysis-started"
+            module_labels = ", ".join(get_module_label(m) for m in modules)
+            response["HX-Trigger"] = json.dumps(
+                {
+                    # Trigger polling
+                    "analysis-started": True,
+                    "show-toast": f"Analysis started: {module_labels}",
+                },
+            )
             return response
 
         return render(
