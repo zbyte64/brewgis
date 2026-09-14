@@ -269,16 +269,31 @@ export class BrewGisMap extends LitElement {
    */
   refreshCanvasTiles(): void {
     if (!this._map) return
-    const sourceId = this._findCanvasSourceId()
-    if (!sourceId) return
-    const source = this._map.getSource(sourceId) as maplibregl.VectorTileSource | undefined
-    if (!source || typeof source.setTiles !== 'function' || !source.tiles) return
+
+    // A scenario's canvas view backs *two* independent MapLibre sources —
+    // the base layer (re-pointed at the canvas view, rendered with the
+    // workspace's real symbology — what a user is actually looking at) and
+    // the separate "is painted" highlight overlay layer (`canvasLayerId`).
+    // Each layer gets its own dedicated source (see `_syncLayers`), so
+    // busting only one leaves the other showing pre-paint tiles forever.
+    // Refresh whichever of the two are present.
+    const sourceIds = new Set(
+      [this.canvasLayerId, this.baseLayerId]
+        .map((layerId) => this._findSourceIdForLayerId(layerId))
+        .filter((id): id is string => !!id),
+    )
+    if (sourceIds.size === 0) return
+
     const cacheBust = `_cb=${Date.now()}`
-    const tiles = source.tiles.map((url) => {
-      const sep = url.includes('?') ? '&' : '?'
-      return `${url}${sep}${cacheBust}`
-    })
-    source.setTiles(tiles)
+    for (const sourceId of sourceIds) {
+      const source = this._map.getSource(sourceId) as maplibregl.VectorTileSource | undefined
+      if (!source || typeof source.setTiles !== 'function' || !source.tiles) continue
+      const tiles = source.tiles.map((url) => {
+        const sep = url.includes('?') ? '&' : '?'
+        return `${url}${sep}${cacheBust}`
+      })
+      source.setTiles(tiles)
+    }
   }
 
   /**
@@ -547,12 +562,14 @@ export class BrewGisMap extends LitElement {
    * Find the source ID for the canvas view layer.
    */
   private _findCanvasSourceId(): string | null {
-    if (!this._map || !this.canvasLayerId) return null
+    return this._findSourceIdForLayerId(this.canvasLayerId)
+  }
 
-    // Derive source ID from the layers config
-    const layerConfig = this.layers.find(
-      (l) => l.id === this.canvasLayerId || l.key === this.canvasLayerId,
-    )
+  /** Find the MapLibre source ID backing a given layer config's id/key. */
+  private _findSourceIdForLayerId(layerId: string): string | null {
+    if (!this._map || !layerId) return null
+
+    const layerConfig = this.layers.find((l) => l.id === layerId || l.key === layerId)
     if (layerConfig?.source) {
       return generateLayerId(layerConfig, this.layers.indexOf(layerConfig))
     }

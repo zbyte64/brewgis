@@ -108,7 +108,20 @@ services:
     # to override source_id_format to "{schema}.{table}" — brewgis
     # addresses tile sources that way, but Martin's zero-config default is
     # a bare table name (see the config file's own comments for why).
-    command: --base-path /martin -c /martin-config/config.yaml
+    #
+    # --cache-size 0 disables Martin's own internal tile cache. Martin
+    # caches rendered tile bytes keyed by (source, z, x, y) — it doesn't
+    # look at the request's query string at all — so a scenario's paint
+    # operations (which mutate the canvas view's underlying data, not its
+    # schema) were invisible on the map for any tile Martin had already
+    # served once: verified directly, painting a feature and re-requesting
+    # its exact tile from Martin returned byte-identical, unchanged content
+    # (same ETag) even though the view's own SQL returned the new value.
+    # Every layer here is served from either a small/cheap table or a plain
+    # (non-materialized) view meant to reflect live edits, so there's
+    # nothing worth caching at this layer — correctness matters more than
+    # shaving a query.
+    command: --base-path /martin -c /martin-config/config.yaml --cache-size 0
     environment:
       DATABASE_URL: postgresql://rADfmsnMjDXKephNGWFkfdPkuSAjdASF:glm5bKLmVKkfdJaM9qkDREdor4y8uSEJZKZvLVwP5jeEX6YSnw6DnNG9EYvupSlg@postgres:5432/brewgis
     volumes:

@@ -167,8 +167,8 @@ def _setup_fixture(conn: psycopg.Connection) -> dict[str, Any]:
             """
             INSERT INTO workspace_layer
                 (key, name, description, geometry_type, display_order,
-                 layer_source, db_table, workspace_id, db_schema)
-            VALUES (%s, %s, '', 'fill', 0, 'postgis', %s, %s, %s)
+                 layer_source, db_table, workspace_id, db_schema, is_visible)
+            VALUES (%s, %s, '', 'fill', 0, 'postgis', %s, %s, %s, true)
             RETURNING id
             """,
             (
@@ -325,6 +325,12 @@ def _export_map_png(page: Any, workspace_id: int, out_path: Path) -> None:
     page.fill('input[name="password"]', TEST_PASSWORD)
     page.click('button[type="submit"]')
     page.wait_for_load_state("networkidle")
+    # A bad credential just re-renders the login form (no exception, no
+    # non-2xx status) — assert here, not several steps downstream where a
+    # silently-unauthenticated session would fail for an unrelated reason.
+    assert "/accounts/login/" not in page.url, (
+        f"Login failed for {TEST_USERNAME!r} — still on the login page ({page.url})"
+    )
 
     page.goto(f"{BASE_URL}/{workspace_id}/map/")
     page.wait_for_load_state("networkidle")
