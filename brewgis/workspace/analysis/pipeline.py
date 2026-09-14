@@ -280,6 +280,7 @@ def run_modules_sync(  # noqa: PLR0913
             table=model_name,
             key=f"{model_name}_{scenario_id}",
             name=f"{model_name.replace('_', ' ').title()} {scenario_id}",
+            group_name="Analysis Results",
         )
         fqtns.append(f"{env_schema}.{model_name}")
     return {

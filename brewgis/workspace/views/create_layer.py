@@ -19,7 +19,9 @@ from django.views.generic.edit import CreateView
 from django.views.generic.edit import FormView
 
 from brewgis.workspace.analysis.layer_registry import BASE_CANVAS_LAYER_KEY
+from brewgis.workspace.analysis.layer_registry import PAINTED_FEATURES_LAYER_KEY
 from brewgis.workspace.analysis.layer_registry import register_result_layer
+from brewgis.workspace.analysis.layer_registry import visible_layers_for_panel
 from brewgis.workspace.models import Layer
 from brewgis.workspace.models import SymbologyConfig
 from brewgis.workspace.models import Workspace
@@ -194,7 +196,7 @@ def layer_delete(request: HttpRequest, pk: int) -> HttpResponse:
     workspace = layer.workspace
 
     # Prevent deletion of canvas layers
-    if layer.key == BASE_CANVAS_LAYER_KEY or (
+    if layer.key in (BASE_CANVAS_LAYER_KEY, PAINTED_FEATURES_LAYER_KEY) or (
         layer.db_table and layer.db_table.startswith("base_canvas_")
     ):
         return HttpResponse("Cannot delete canvas layers", status=400)
@@ -218,6 +220,7 @@ def layer_delete(request: HttpRequest, pk: int) -> HttpResponse:
             "is_public_view": False,
             "layer_configs": {},
             "swatch_colors": swatch_colors,
+            "layers_for_panel": visible_layers_for_panel(workspace, None),
         }
         response = render(
             request,

@@ -19,6 +19,8 @@ from django.shortcuts import render
 from django.urls import reverse
 from django.views.decorators.http import require_POST
 
+from brewgis.workspace.analysis.layer_registry import ensure_painted_features_layer
+from brewgis.workspace.analysis.layer_registry import visible_layers_for_panel
 from brewgis.workspace.models import Basemap
 from brewgis.workspace.models import Scenario
 from brewgis.workspace.models import ScenarioReport
@@ -63,11 +65,17 @@ def panel_layer_list(request: HttpRequest, workspace_pk: int) -> HttpResponse:
     scenario_id = request.GET.get("scenario")
     if scenario_id:
         scenario = get_object_or_404(Scenario, pk=int(scenario_id), workspace=workspace)
+        ensure_painted_features_layer(
+            workspace,
+            schema=scenario.target_schema,
+            table=f"scenario_{scenario.slug}_canvas",
+        )
 
     context: dict[str, object] = {
         "workspace": workspace,
         "scenario": scenario,
         "is_public_view": False,
+        "layers_for_panel": visible_layers_for_panel(workspace, scenario),
     }
 
     # Pre-fetch symbology configs for inline legend swatches

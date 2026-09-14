@@ -103,20 +103,27 @@ def _categorical_paint(
         return _single_paint(symbology)
     geo = _normalize_geo(symbology.layer.geometry_type)
 
-    color_key = {
-        "fill": "fill-color",
-        "line": "line-color",
-        "circle": "circle-color",
+    color_key, opacity_key = {
+        "fill": ("fill-color", "fill-opacity"),
+        "line": ("line-color", "line-opacity"),
+        "circle": ("circle-color", "circle-opacity"),
     }[geo]
 
-    # Build match expression: ["match", ["get", attr], val1, color1, val2, color2, ..., default]
-    match_parts: list[Any] = ["match", ["get", attr]]
+    # Build match expression: ["match", ["to-string", ["get", attr]], val1, color1, ..., default]
+    # ``to-string`` normalizes the input so labels always match regardless of
+    # the underlying MVT property type — notably booleans (e.g. a painted/
+    # unpainted flag), which MapLibre's ``match`` otherwise never equates
+    # with a CharField-backed StyleClass.label like "true"/"false".
+    match_parts: list[Any] = ["match", ["to-string", ["get", attr]]]
     for sc in classes:
         match_parts.append(sc.label)
         match_parts.append(sc.color or symbology.default_color)
     match_parts.append(symbology.default_color)
 
-    return {color_key: _null_expression(symbology, match_parts)}
+    return {
+        color_key: _null_expression(symbology, match_parts),
+        opacity_key: symbology.default_opacity,
+    }
 
 
 def _graduated_paint(

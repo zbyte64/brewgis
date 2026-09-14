@@ -20,6 +20,8 @@ from django.shortcuts import render
 from django.urls import reverse
 from ninja import ModelSchema
 
+from brewgis.workspace.analysis.layer_registry import PAINTED_FEATURES_LAYER_KEY
+from brewgis.workspace.analysis.layer_registry import ensure_painted_features_layer
 from brewgis.workspace.built_forms.models import BuildingType
 from brewgis.workspace.built_forms.models import PlaceType
 from brewgis.workspace.models import Basemap
@@ -144,6 +146,7 @@ def view_workspace_map(request: HttpRequest, workspace_pk: int) -> HttpResponse:
         view_name = f"scenario_{scenario.slug}_canvas"
         canvas_view_name = view_name
         canvas_source_id = f"{schema}.{view_name}"
+        ensure_painted_features_layer(workspace, schema=schema, table=view_name)
 
         # Build absolute base URL manually — must NOT go through
         # build_absolute_uri()/iri_to_uri() which URL-encodes {z}/{x}/{y}
@@ -212,12 +215,21 @@ def view_workspace_map(request: HttpRequest, workspace_pk: int) -> HttpResponse:
     layers = workspace.layers.all()
     layer_data = []
     for layer in layers:
+        is_painted_features_layer = layer.key == PAINTED_FEATURES_LAYER_KEY
+        if is_painted_features_layer and not scenario:
+            # This overlay has no source of its own — it only ever renders
+            # against the active scenario's canvas view (below). Without a
+            # scenario there's nothing to tile from, so skip it entirely
+            # rather than fall through to to_maplibre_source() with no
+            # db_table.
+            continue
+
         data = LayerSchema.model_validate(layer).model_dump()
         data["id"] = layer.key
         data["type"] = layer.geometry_type
         is_base_layer = layer._source_id() == workspace.base_table  # noqa: SLF001
 
-        if is_base_layer and scenario:
+        if (is_base_layer or is_painted_features_layer) and scenario:
             # A scenario is active: tile this layer from the scenario's
             # canvas view (base canvas COALESCEd with any PaintedCanvas
             # overrides) instead of the raw, unpainted base table — so the
@@ -278,48 +290,11 @@ def view_workspace_map(request: HttpRequest, workspace_pk: int) -> HttpResponse:
 
         layer_data.append(data)
 
-    # If a scenario is active, add the canvas view as the last layer
-    if scenario and canvas_view_name:
-        schema = scenario.target_schema
-        view_name = f"scenario_{scenario.slug}_canvas"
-
-        layer_data.append(
-            {
-                "key": f"scenario_{scenario.slug}_canvas",
-                "id": f"scenario_{scenario.slug}_canvas",
-                "type": "fill",
-                "source": {
-                    "type": "vector",
-                    "tiles": [canvas_tiles_url],
-                    # Parcel ids (e.g. "45002008T") aren't valid native MVT
-                    # feature ids (MVT only supports uint64) — without this,
-                    # tipg/Martin emit every feature with id=null, so paint
-                    # mode's click/box selection and setFeatureState-based
-                    # highlighting silently match nothing.
-                    "promoteId": "id",
-                },
-                "source-layer": (
-                    "default"
-                    if workspace.tile_server_backend == "tipg"
-                    else canvas_source_id
-                ),
-                "paint": {
-                    "fill-color": [
-                        "case",
-                        ["boolean", ["get", "uf_is_painted"], False],
-                        "#ffeb3b",
-                        "#e0e0e0",
-                    ],
-                    "fill-opacity": 0.3,
-                },
-                "layout": {
-                    "visibility": "visible",
-                },
-            }
-        )
-
-    # The map layer ID for the scenario canvas view (used by brew-gis-map for feature selection)
-    canvas_view_layer_id = f"scenario_{scenario.slug}_canvas" if scenario else ""
+    # The map layer ID for the scenario canvas view (used by brew-gis-map for
+    # feature selection). The painted-features Layer (see
+    # ensure_painted_features_layer) is what actually renders this now — its
+    # paint/visibility come from the loop above like any other Layer.
+    canvas_view_layer_id = PAINTED_FEATURES_LAYER_KEY if scenario else ""
     selection_mode = request.GET.get("selection_mode", "click")
 
     # Layer id to click-inspect against when no scenario is active. Only

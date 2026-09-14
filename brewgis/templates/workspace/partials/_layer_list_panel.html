@@ -2,48 +2,6 @@
 {% load workspace_tags %}
 
 <div class="layer-list-panel">
-  {% if scenario %}
-    <h6 class="text-muted mb-2" style="font-size: 0.8rem;">{% translate "Scenario Layers" %}</h6>
-    <div class="list-group list-group-flush" style="font-size: 0.75rem;">
-      <div class="list-group-item d-flex align-items-center gap-2 py-1 px-0 border-0">
-        <input type="checkbox"
-               class="form-check-input m-0"
-               checked
-               disabled
-               style="width: 0.9rem;
-                      height: 0.9rem" />
-        <span class="d-flex align-items-center gap-1">
-          <span class="badge"
-                style="background-color: #ffeb3b;
-                       width: 12px;
-                       height: 12px">&nbsp;</span>
-          {% translate "Painted Features" %}
-        </span>
-      </div>
-    </div>
-  {% endif %}
-  {% if scenario and scenario.analysis_runs.exists %}
-    <hr class="my-2" />
-    <h6 class="text-muted mb-2" style="font-size: 0.8rem;">{% translate "Analysis Results" %}</h6>
-    <div class="list-group list-group-flush" style="font-size: 0.75rem;">
-      {% for run in scenario.analysis_runs.all %}
-        {% if run.status == "completed" %}
-          {% for module in run.modules %}
-            <div class="list-group-item d-flex align-items-center gap-2 py-1 px-0 border-0">
-              <input type="checkbox"
-                     class="form-check-input m-0"
-                     checked
-                     disabled
-                     style="width: 0.9rem;
-                            height: 0.9rem" />
-              <span>{{ module|title }}</span>
-            </div>
-          {% endfor %}
-        {% endif %}
-      {% endfor %}
-    </div>
-  {% endif %}
-  <hr class="my-2" />
   <div class="d-flex align-items-center justify-content-between">
     <h6 class="mb-0 text-muted" style="font-size: 0.8rem;">{% translate "Legends" %}</h6>
     <button type="button"
@@ -56,7 +14,7 @@
             hx-swap="innerHTML">Groups</button>
   </div>
   <div id="legend-list">
-    {% regroup workspace.layers.all by group as layer_groups %}
+    {% regroup layers_for_panel by group as layer_groups %}
     {% for group in layer_groups %}
       {% if group.grouper %}
         <div class="text-muted fw-semibold small px-1 mt-1 mb-0"

@@ -14,6 +14,8 @@ from django.db import connection
 
 from brewgis.workspace.analysis.module_registry import get_primary_column
 from brewgis.workspace.models import Layer
+from brewgis.workspace.models import LayerGroup
+from brewgis.workspace.models import StyleClass
 from brewgis.workspace.models import SymbologyConfig
 from brewgis.workspace.models import Workspace
 
@@ -26,6 +28,112 @@ Fixed (not derived from the table name) so that switching
 ``Workspace.base_table`` to a different table updates this same Layer in
 place instead of leaving the old one orphaned in the Layers panel.
 """
+
+PAINTED_FEATURES_LAYER_KEY = "painted_features"
+"""Stable Layer.key for a workspace's painted-features overlay.
+
+One Layer per workspace, shared across all of its scenarios (mirroring
+``BASE_CANVAS_LAYER_KEY``) — only its map source is swapped to the active
+scenario's canvas view at render time; the Layer row itself (and its
+SymbologyConfig) persists independent of any single scenario.
+"""
+
+_PAINTED_FEATURES_GROUP_NAME = "Scenario Layers"
+
+_PAINTED_TRUE_COLOR = "#ffeb3b"
+_PAINTED_FALSE_COLOR = "#e0e0e0"
+
+
+def ensure_painted_features_layer(
+    workspace: Workspace, *, schema: str = "", table: str = ""
+) -> Layer:
+    """Get or create the workspace's painted-features overlay Layer.
+
+    Creates a ``categorical`` SymbologyConfig keyed on the ``uf_is_painted``
+    boolean column (present on every scenario's canvas view — see
+    ``canvas_view_manager.py``) with the historical yellow/gray colors as
+    defaults, editable afterwards via the normal Symbology editor like any
+    other layer. Idempotent: a workspace that already has this Layer (and
+    classes) is returned unchanged.
+
+    ``schema``/``table`` — the currently-active scenario's canvas view, if
+    known — are (re)stamped on every call so the Symbology editor's "color
+    by" column dropdown has something real to introspect (``uf_is_painted``
+    among others). Map rendering itself never reads these back: map.py
+    always swaps this layer's actual source to whichever scenario is active
+    at request time.
+    """
+    layer, created = Layer.objects.get_or_create(
+        workspace=workspace,
+        key=PAINTED_FEATURES_LAYER_KEY,
+        defaults={
+            "name": "Painted Features",
+            "description": "Highlights parcels painted in the active scenario.",
+            "layer_source": "postgis",
+            "db_table": table,
+            "db_schema": schema,
+            "geometry_type": "fill",
+        },
+    )
+    if not created and table and (layer.db_table != table or layer.db_schema != schema):
+        layer.db_table = table
+        layer.db_schema = schema
+        layer.save(update_fields=["db_table", "db_schema"])
+
+    if created:
+        group, _ = LayerGroup.objects.get_or_create(
+            workspace=workspace,
+            name=_PAINTED_FEATURES_GROUP_NAME,
+            # High display_order so this group sorts after other named
+            # groups (e.g. "Analysis Results") by default, approximating the
+            # old hardcoded behavior of always drawing the paint highlight on
+            # top — still just a default; fully draggable afterwards.
+            defaults={"display_order": 9000},
+        )
+        layer.group = group
+        layer.save(update_fields=["group"])
+
+    config, config_created = SymbologyConfig.objects.get_or_create(
+        layer=layer,
+        defaults={
+            "symbology_type": "categorical",
+            "attribute_column": "uf_is_painted",
+            "default_color": _PAINTED_FALSE_COLOR,
+            "default_opacity": 0.3,
+            "null_handling": "custom_color",
+            "null_color": _PAINTED_FALSE_COLOR,
+            "auto_generated": True,
+        },
+    )
+    if config_created:
+        StyleClass.objects.create(
+            symbology=config,
+            label="true",
+            color=_PAINTED_TRUE_COLOR,
+            sort_order=0,
+        )
+        StyleClass.objects.create(
+            symbology=config,
+            label="false",
+            color=_PAINTED_FALSE_COLOR,
+            sort_order=1,
+        )
+
+    return layer
+
+
+def visible_layers_for_panel(workspace: Workspace, scenario: object | None):
+    """Layers to render in the layer panel's Legends list.
+
+    The painted-features overlay only has a source while a scenario is
+    active (see ``view_workspace_map``), so it's excluded here otherwise —
+    keeping it out of the queryset (rather than skipping it in the template)
+    means its "Scenario Layers" group header doesn't show up empty either.
+    """
+    layers = workspace.layers.all()
+    if not scenario:
+        layers = layers.exclude(key=PAINTED_FEATURES_LAYER_KEY)
+    return layers
 
 
 def _get_table_columns(schema: str, table: str) -> list[dict[str, Any]]:
@@ -167,6 +275,7 @@ def register_result_layer(
     name: str | None = None,
     description: str | None = None,
     key: str | None = None,
+    group_name: str | None = None,
 ) -> Layer | None:
     """Register a PostGIS view/table as a Layer in the workspace.
 
@@ -183,6 +292,10 @@ def register_result_layer(
             key (e.g. ``"base_canvas"``) when the underlying table can change
             over time and re-registration should update the same Layer
             rather than create a new one per table name.
+        group_name: LayerGroup to place this layer under (created if it
+            doesn't exist yet). Only applied while the layer has no group of
+            its own, so a group the user picked by hand (e.g. via drag/drop
+            in the Layer Groups panel) is never overwritten on a later rerun.
 
     Returns:
         The Layer instance, or None if registration fails.
@@ -226,6 +339,13 @@ def register_result_layer(
         layer_key,
         workspace_id,
     )
+
+    if group_name and layer.group_id is None:
+        group, _ = LayerGroup.objects.get_or_create(
+            workspace=workspace, name=group_name
+        )
+        layer.group = group
+        layer.save(update_fields=["group"])
 
     # Auto-generate symbology for new layers. Also backfill it for an
     # existing layer whose config was never customized and never got past

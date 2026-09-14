@@ -134,7 +134,11 @@ class Layer(models.Model):
     )
 
     class Meta:
-        ordering = ("display_order",)
+        # Group first (ungrouped layers sort last, after all named groups),
+        # then each group's own display_order — so `{% regroup %}` in the
+        # layer panel template sees same-group layers as one contiguous run
+        # instead of interleaved with other groups' layers.
+        ordering = ("group__display_order", "group__name", "display_order")
         unique_together = [("workspace", "key")]
 
     def __str__(self) -> str:
