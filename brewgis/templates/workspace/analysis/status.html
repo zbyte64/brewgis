@@ -38,7 +38,7 @@
             <div id="analysis-status-{{ run.pk }}"
                  class="card mt-3"
                  hx-get="{% url 'workspace:analysis_status' run.pk %}"
-                 hx-trigger="{% if run.status == "running" %}every 2s{% endif %}"
+                 hx-trigger="{% if run.status == "running" %}every 2s{% else %}analysis-status-poll-disabled{% endif %}"
                  hx-swap="outerHTML">
               <div class="card-body">
                 <div class="d-flex justify-content-between align-items-center">
@@ -80,6 +80,15 @@
                     <div class="progress-bar progress-bar-striped progress-bar-animated"
                          style="width: 100%"></div>
                   </div>
+                {% endif %}
+                {% if run.log_output %}
+                  <details class="mt-3" {% if run.status == "failed" %}open{% endif %}>
+                    <summary class="text-muted" style="cursor: pointer;">SQLMesh log output</summary>
+                    <pre class="mt-2 p-2 bg-light border rounded small"
+                         style="max-height: 400px;
+                                overflow: auto;
+                                white-space: pre-wrap">{{ run.log_output }}</pre>
+                  </details>
                 {% endif %}
                 {% if vmt_fee_data %}
                   <div class="mt-3 pt-3 border-top">

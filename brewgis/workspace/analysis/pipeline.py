@@ -21,6 +21,8 @@ from django.db import connection
 from django.utils import timezone
 
 from brewgis.workspace.analysis.layer_registry import register_result_layer
+from brewgis.workspace.analysis.log_capture import capture_run_log
+from brewgis.workspace.analysis.log_capture import truncate_log
 from brewgis.workspace.analysis.module_registry import (
     MODULE_RESULT_TABLES,  # noqa: F401 -- re-exported for import_sacog_demo.py
 )
@@ -182,26 +184,41 @@ def _execute_analysis_run(run: AnalysisRun) -> None:
     workspace_id = run.workspace_id
     scenario_id = run.scenario_id
 
-    try:
-        result = run_modules_sync(
-            modules=run.modules,
-            base_vars=base_vars,
-            target_schema=base_vars.get("target_schema", "public"),
-            workspace_id=workspace_id,
-            scenario_id=str(scenario_id),
-            module_selects=base_vars.get("module_selects"),
-        )
-    except Exception:
-        logger.exception("AnalysisRun #%s failed", run.pk)
-        run.status = "failed"
-        run.error_log = traceback.format_exc()
-        run.completed_at = timezone.now()
-        run.save(update_fields=["status", "error_log", "completed_at"])
-        return
+    with capture_run_log() as log_stream:
+        try:
+            result = run_modules_sync(
+                modules=run.modules,
+                base_vars=base_vars,
+                target_schema=base_vars.get("target_schema", "public"),
+                workspace_id=workspace_id,
+                scenario_id=str(scenario_id),
+                module_selects=base_vars.get("module_selects"),
+            )
+        except Exception:
+            # SQLMesh's own exception here (PlanError("Plan application
+            # failed.")) discards the actual per-node cause — the captured
+            # log is often the only place that's still visible (e.g. a
+            # psycopg2/duckdb error several frames below where SQLMesh
+            # catches and re-raises generically).
+            logger.exception("AnalysisRun #%s failed", run.pk)
+            run.status = "failed"
+            run.error_log = traceback.format_exc()
+            run.log_output = truncate_log(log_stream.getvalue())
+            run.completed_at = timezone.now()
+            run.save(
+                update_fields=[
+                    "status",
+                    "error_log",
+                    "log_output",
+                    "completed_at",
+                ]
+            )
+            return
+        run.log_output = truncate_log(log_stream.getvalue())
 
     run.status = "completed"
     run.completed_at = timezone.now()
-    run.save(update_fields=["status", "completed_at"])
+    run.save(update_fields=["status", "completed_at", "log_output"])
 
     # New analysis__scenario_<id> tables are invisible to Martin until it
     # restarts (see brewgis.workspace.services.tile_server) — only relevant

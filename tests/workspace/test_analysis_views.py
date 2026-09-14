@@ -229,6 +229,33 @@ class TestAnalysisStatusView(TestCase):
         response = self.client.get(self.status_url)
         assert response.status_code == 200
 
+    def test_non_running_run_never_renders_empty_hx_trigger(self):
+        """An empty hx-trigger="" falls back to htmx's implicit "click"
+        default, which makes the whole polling card (including anything
+        clickable inside it, like the log-output <details>) swap itself
+        via outerHTML on every click — reverting any client-side state
+        (e.g. an expanded <details>) the instant it's opened."""
+        self.client.force_login(self.user)
+        self.run.status = "completed"
+        self.run.save()
+        response = self.client.get(self.status_url)
+        assert response.status_code == 200
+        self.assertNotContains(response, 'hx-trigger=""')
+
+    def test_failed_run_log_output_details_default_open(self):
+        """A failed run's SQLMesh log output should be expanded by default
+        — that's exactly when a user needs to see it without an extra
+        click (which, pre-fix, would have immediately re-collapsed it)."""
+        self.client.force_login(self.user)
+        self.run.status = "failed"
+        self.run.log_output = "INFO something happened"
+        self.run.save()
+        response = self.client.get(self.status_url)
+        content = response.content.decode()
+        details_start = content.index("<details")
+        details_end = content.index(">", details_start)
+        assert "open" in content[details_start:details_end]
+
 
 @pytest.mark.views
 class TestAnalysisListView(TestCase):

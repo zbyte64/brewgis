@@ -207,3 +207,54 @@ class TestLaunchAnalysisRun(TestCase):
         # With .delay() mocked out, the run must still be "pending" —
         # proof launch_analysis_run itself never executes the SQLMesh plan.
         assert run.status == "pending"
+
+
+class TestExecuteAnalysisRunLogCapture(TestCase):
+    """_execute_analysis_run must capture SQLMesh's log output either way —
+    it's often the only place the real failure reason survives, since
+    SQLMesh's own PlanError discards the per-node cause."""
+
+    def setUp(self):
+        self.workspace = WorkspaceFactory()
+        self.scenario = ScenarioFactory(workspace=self.workspace)
+        self.run = AnalysisRunFactory(
+            workspace=self.workspace,
+            scenario=self.scenario,
+            modules=["water_demand"],
+            vars={"target_schema": self.workspace.db_schema},
+        )
+
+    @patch("brewgis.workspace.analysis.pipeline.run_modules_sync")
+    def test_captures_log_on_success(self, mock_run_modules_sync):
+        import logging
+
+        from brewgis.workspace.analysis.pipeline import _execute_analysis_run
+
+        def _fake_run(**kwargs):
+            logging.getLogger("sqlmesh.core.context").info("evaluating water_demand")
+            return {"fqtns": []}
+
+        mock_run_modules_sync.side_effect = _fake_run
+        _execute_analysis_run(self.run)
+        self.run.refresh_from_db()
+        assert self.run.status == "completed"
+        assert "evaluating water_demand" in self.run.log_output
+
+    @patch("brewgis.workspace.analysis.pipeline.run_modules_sync")
+    def test_captures_log_on_failure(self, mock_run_modules_sync):
+        import logging
+
+        from brewgis.workspace.analysis.pipeline import _execute_analysis_run
+
+        def _fake_run(**kwargs):
+            logging.getLogger("sqlmesh.core.plan.evaluator").warning(
+                "too many clients already"
+            )
+            raise RuntimeError("Plan application failed.")
+
+        mock_run_modules_sync.side_effect = _fake_run
+        _execute_analysis_run(self.run)
+        self.run.refresh_from_db()
+        assert self.run.status == "failed"
+        assert "too many clients already" in self.run.log_output
+        assert "Plan application failed." in self.run.error_log

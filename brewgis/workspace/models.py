@@ -424,6 +424,15 @@ class AnalysisRun(models.Model):
     started_at = models.DateTimeField(null=True, blank=True)
     completed_at = models.DateTimeField(null=True, blank=True)
     error_log = models.TextField(blank=True, default="")
+    log_output = models.TextField(
+        blank=True,
+        default="",
+        help_text=(
+            "Captured INFO+ log output from the SQLMesh run (progress, "
+            "warnings, and the real per-node error when a plan fails — "
+            "SQLMesh's own exception discards that detail)."
+        ),
+    )
     created_at = models.DateTimeField(auto_now_add=True)
 
     class Meta:
