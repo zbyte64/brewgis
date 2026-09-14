@@ -6,8 +6,11 @@ from .views import RasterUploadView
 from .views import ReadGISFileView
 from .views import SelectBaseCanvasView
 from .views import allocate
+from .views import analysis_card_status
 from .views import analysis_launch
 from .views import analysis_list
+from .views import analysis_module_configure
+from .views import analysis_module_launch
 from .views import analysis_status
 from .views import auto_generate
 from .views import census_fetch
@@ -493,6 +496,21 @@ urlpatterns = [
         "workspace/<int:workspace_pk>/panel/analysis/",
         panel_analysis_launch,
         name="panel_analysis_launch",
+    ),
+    path(
+        "workspace/<int:workspace_pk>/panel/analysis/<str:module_key>/status/",
+        analysis_card_status,
+        name="analysis_card_status",
+    ),
+    path(
+        "workspace/<int:workspace_pk>/panel/analysis/<str:module_key>/configure/",
+        analysis_module_configure,
+        name="analysis_module_configure",
+    ),
+    path(
+        "workspace/<int:workspace_pk>/panel/analysis/<str:module_key>/launch/",
+        analysis_module_launch,
+        name="analysis_module_launch",
     ),
     path(
         "workspace/<int:workspace_pk>/panel/reports/",

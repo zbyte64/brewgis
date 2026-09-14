@@ -636,3 +636,27 @@ def run_paint_operation(self, run_pk: int) -> dict:  # type: ignore[no-untyped-d
     run.completed_at = timezone.now()
     run.save(update_fields=["status", "result", "completed_at"])
     return result
+
+
+# ────────────────────────────────────────────────────────────
+#  Analysis runs (map view's Analysis panel launches these in the background)
+# ────────────────────────────────────────────────────────────
+
+
+@shared_task(bind=True, max_retries=1, default_retry_delay=10)
+def run_analysis_task(self, run_pk: int) -> None:  # type: ignore[no-untyped-def]
+    """Execute a background AnalysisRun (SQLMesh plan for its modules).
+
+    The map view's per-analysis "Configure & Run" form only creates a
+    ``pending`` ``AnalysisRun`` and dispatches this task before returning, so
+    launching an analysis never blocks the request on however long the
+    SQLMesh plan takes — the card polls the run's status instead (see
+    ``analysis_card_status``). ``CELERY_TASK_ALWAYS_EAGER`` (the dev/test
+    default) runs this inline before ``.delay()`` returns, same as
+    ``run_paint_operation`` above.
+    """
+    from brewgis.workspace.analysis.pipeline import _execute_analysis_run
+    from brewgis.workspace.models import AnalysisRun
+
+    run = AnalysisRun.objects.select_related("workspace", "scenario").get(pk=run_pk)
+    _execute_analysis_run(run)

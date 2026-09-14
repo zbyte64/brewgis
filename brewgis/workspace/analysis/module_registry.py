@@ -149,6 +149,100 @@ MODULE_LABELS: dict[str, str] = {
 }
 
 
+# Module → one-line description of what the analysis computes, shown on its
+# card in the map view's Analysis panel.
+MODULE_DESCRIPTIONS: dict[str, str] = {
+    "env_constraint": (
+        "Applies constraint layers (floodplains, wetlands, steep slopes) to "
+        "discount developable land before scenario allocation."
+    ),
+    "core": (
+        "Computes each parcel's end-state population, households, dwelling "
+        "units, employment, and building area from its built form assignment."
+    ),
+    "water_demand": (
+        "Estimates residential and non-residential indoor/outdoor water "
+        "demand per parcel."
+    ),
+    "energy_demand": (
+        "Estimates residential and non-residential electricity and natural "
+        "gas consumption per parcel."
+    ),
+    "displacement_risk": (
+        "Scores displacement vulnerability per parcel from income, rent "
+        "burden, and demographic equity indicators."
+    ),
+    "land_consumption": "Computes developed and impervious land area per parcel.",
+    "fiscal": (
+        "Computes property tax, sales tax, and service cost impacts per "
+        "parcel, and nets them into a fiscal impact per parcel."
+    ),
+    "agriculture": (
+        "Estimates agricultural land use and net return for undeveloped or "
+        "rural parcels."
+    ),
+    "trip_generation": (
+        "Computes daily trip generation per parcel from ITE trip rates by land use."
+    ),
+    "vmt": (
+        "Computes vehicle miles traveled per parcel from trip generation, "
+        "auto mode share, and average trip length."
+    ),
+    "transport_ghg": (
+        "Computes transportation greenhouse gas emissions (CO2e) from "
+        "vehicle miles traveled."
+    ),
+    "building_water_ghg": (
+        "Computes greenhouse gas emissions from building energy use and "
+        "water/wastewater treatment."
+    ),
+    "total_ghg": (
+        "Sums transportation and building/water emissions into a total "
+        "per-parcel GHG summary."
+    ),
+    "health_impacts": (
+        "Estimates health outcomes (DALYs) from physical activity and "
+        "transportation-related air quality changes."
+    ),
+    "stormwater_runoff": (
+        "Estimates stormwater runoff volume from impervious surface area per parcel."
+    ),
+    "food_access": (
+        "Scores food access (mRFEI) from proximity to healthy vs. unhealthy "
+        "food retailers."
+    ),
+    "acs_equity": (
+        "Loads ACS demographic and equity indicators (income, rent burden, "
+        "demographics) used by other modules."
+    ),
+    "housing_cost_burden": (
+        "Estimates the share of households that are cost-burdened or "
+        "severely cost-burdened by housing costs."
+    ),
+    "sprawl_index": (
+        "Scores development pattern compactness from population density, "
+        "intersection density, and land use mix."
+    ),
+    "tree_canopy": "Estimates tree canopy cover and urban heat island exposure per parcel.",
+    "vmt_fee": (
+        "Calculates VMT mitigation fee revenue and exemptions using a "
+        "configurable $/VMT rate (e.g. SB 743 programs)."
+    ),
+    "displacement_risk_dynamic": (
+        "Augments displacement risk with scenario-responsive indicators "
+        "showing how infill vs. sprawl patterns affect nearby vulnerability."
+    ),
+    "scenario_summary": (
+        "Aggregates key metrics from every analysis module into one "
+        "per-scenario summary."
+    ),
+    "sprawl_cost": (
+        "Divides scenario infrastructure and service costs by household "
+        "count to compute cost of sprawl per household."
+    ),
+}
+
+
 # Result table (bare SQLMesh model name) → primary output column.
 #
 # Used to pick a meaningful default symbology attribute for a result layer
@@ -247,6 +341,31 @@ def get_result_table_names(module: str, scenario_id: str) -> list[str]:
 def get_module_label(module: str) -> str:
     """Return the human-readable label for a module."""
     return MODULE_LABELS.get(module, module.replace("_", " ").title())
+
+
+def get_available_analyses() -> list[dict[str, Any]]:
+    """Return one entry per user-launchable analysis, for the Analysis panel.
+
+    Excludes modules with no result table of their own (currently just
+    ``acs_equity``, a pure upstream data wrapper with nothing to show or
+    re-run standalone) — those still run automatically as a dependency of
+    whichever card actually needs them.
+    """
+    analyses = []
+    for key, label in MODULE_LABELS.items():
+        if not MODULE_RESULT_TABLES.get(key):
+            continue
+        deps = resolve_module_order([key])
+        analyses.append(
+            {
+                "key": key,
+                "label": label,
+                "description": MODULE_DESCRIPTIONS.get(key, ""),
+                "needs_constraints": "env_constraint" in deps,
+                "needs_column_mapping": "core" in deps,
+            }
+        )
+    return analyses
 
 
 CANONICAL_COLUMN_NAMES: list[str] = [

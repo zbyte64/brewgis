@@ -1,0 +1,18 @@
+{% load i18n %}
+
+<div class="analysis-panel" style="font-size: 0.75rem;">
+  <div class="d-flex align-items-center justify-content-between mb-2">
+    <h6 class="mb-0 text-muted" style="font-size: 0.8rem;">{% translate "Analysis" %}</h6>
+    <a href="{% url 'workspace:analysis_list' %}"
+       target="_blank"
+       class="small">{% translate "All runs" %}</a>
+  </div>
+  {% if not scenario %}
+    <div class="alert alert-warning py-1 px-2" style="font-size: 0.7rem;">
+      {% translate "Select a scenario on the map to launch analyses against it." %}
+    </div>
+  {% endif %}
+  {% for card in cards %}
+    {% include "workspace/analysis/_analysis_card.html" with analysis=card.analysis last_run=card.last_run %}
+  {% endfor %}
+</div>

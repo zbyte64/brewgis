@@ -10,6 +10,7 @@ from crispy_forms.helper import FormHelper
 from django import forms
 from django.contrib.auth.decorators import user_passes_test
 from django.db import connection
+from django.http import Http404
 from django.http import HttpRequest
 from django.http import HttpResponse
 from django.shortcuts import get_object_or_404
@@ -20,8 +21,12 @@ from django.views.decorators.http import require_POST
 from django.views.generic.edit import FormView
 
 from brewgis.workspace.analysis.data_export import ensure_export_exists_isolated
+from brewgis.workspace.analysis.module_registry import CANONICAL_COLUMN_NAMES
 from brewgis.workspace.analysis.module_registry import MODULE_LABELS
+from brewgis.workspace.analysis.module_registry import get_available_analyses
 from brewgis.workspace.analysis.module_registry import get_module_label
+from brewgis.workspace.analysis.module_registry import resolve_module_order
+from brewgis.workspace.analysis.pipeline import launch_analysis_run
 from brewgis.workspace.analysis.pipeline import run_analysis_pipeline
 from brewgis.workspace.models import AnalysisRun
 from brewgis.workspace.models import Scenario
@@ -261,6 +266,196 @@ class AnalysisLaunchForm(forms.Form):
         return data
 
 
+# Fixed constraint layers offered as individual discount-% fields on
+# AnalysisModuleForm — mirrors _CONSTRAINTS_INITIAL above (the same three
+# layers AnalysisLaunchForm's constraints_json field defaults to), just
+# surfaced as plain number inputs instead of JSON so the map view's
+# per-analysis form never requires typing JSON.
+_CONSTRAINT_LAYERS: list[tuple[str, str, str, int]] = [
+    # each entry is field_name, table, geom_col, default_pct
+    ("floodplain_discount_pct", "floodplains", "geom", 100),
+    ("wetlands_discount_pct", "wetlands", "geom", 100),
+    ("steep_slopes_discount_pct", "steep_slopes", "geom", 75),
+]
+
+
+class AnalysisModuleForm(forms.Form):
+    """Parameter form for launching a single analysis from its map-view card.
+
+    Unlike ``AnalysisLaunchForm`` (a generic multi-module launcher with raw
+    JSON textareas for constraints/column mapping), this form is bound to one
+    specific analysis module and exposes every relevant parameter as its own
+    field — no JSON entry required.
+    """
+
+    scenario = forms.ModelChoiceField(
+        queryset=Scenario.objects.all(),
+        required=True,
+        label="Scenario",
+    )
+    parcel_table = forms.CharField(
+        max_length=128,
+        label="Parcel Table",
+        help_text="Table name containing parcels with built form assignments.",
+    )
+    built_form_table = forms.CharField(
+        max_length=128,
+        required=False,
+        widget=forms.HiddenInput(),
+        initial="built_forms",
+    )
+    source_schema = forms.CharField(
+        max_length=64,
+        required=False,
+        label="Source Schema",
+        help_text="Database schema containing source tables.",
+        initial="public",
+    )
+    base_canvas_table = forms.CharField(
+        max_length=128,
+        required=False,
+        label="Base Canvas Table",
+        help_text="Existing condition table for increment computation.",
+        initial="base_canvas",
+    )
+
+    def __init__(self, *args: object, **kwargs: object) -> None:
+        """Initialize the form for one ``module``, adding only its relevant fields."""
+        self._workspace: Workspace | None = cast(
+            "Workspace | None", kwargs.pop("workspace", None)
+        )
+        scenario: Scenario | None = cast(
+            "Scenario | None", kwargs.pop("scenario", None)
+        )
+        module: str = cast("str", kwargs.pop("module"))
+        super().__init__(*args, **kwargs)  # type: ignore[arg-type]
+
+        deps = resolve_module_order([module])
+        needs_constraints = "env_constraint" in deps
+        needs_column_mapping = "core" in deps
+
+        if needs_constraints:
+            for field_name, _table, _geom_col, default_pct in _CONSTRAINT_LAYERS:
+                self.fields[field_name] = forms.IntegerField(
+                    required=False,
+                    min_value=0,
+                    max_value=100,
+                    initial=default_pct,
+                    label=f"{_table.replace('_', ' ').title()} discount %",
+                    help_text="% of this layer's overlapping acreage excluded from developable land.",
+                )
+
+        if needs_column_mapping:
+            for name in CANONICAL_COLUMN_NAMES:
+                self.fields[f"column_{name}"] = forms.CharField(
+                    required=False,
+                    label=f"{name.replace('_', ' ').title()} column override",
+                    help_text=f"Use if your source table names this column something other than '{name}'.",
+                )
+
+        self.helper = FormHelper()
+        self.helper.form_tag = False
+
+        if self._workspace:
+            # The workspace's configured base canvas already has one row per
+            # parcel, so it doubles as the parcel table unless overridden.
+            self.fields["base_canvas_table"].initial = self._workspace.base_table
+
+            if scenario is not None:
+                # Default to the scenario's canvas view — it COALESCEs any
+                # painted overlay over the base canvas, so an analysis run
+                # picks up paint edits by default instead of silently
+                # ignoring them.
+                self.fields[
+                    "parcel_table"
+                ].initial = f"{scenario.target_schema}.scenario_{scenario.slug}_canvas"
+                self.fields["parcel_table"].help_text = (
+                    "Defaults to the selected scenario's canvas view "
+                    "(base canvas + painted edits). Override to use a "
+                    "different parcel source."
+                )
+                self.fields["scenario"].initial = scenario.pk
+            else:
+                self.fields["parcel_table"].initial = self._workspace.base_table
+
+            self.fields["scenario"].queryset = Scenario.objects.filter(  # type: ignore[attr-defined]
+                workspace=self._workspace,
+            )
+
+    def clean(self) -> dict[str, Any] | None:
+        """Validate analysis prerequisites before launching (same checks as AnalysisLaunchForm)."""
+        data = super().clean()
+        if self.errors:
+            return data
+        if data is None:
+            return None
+
+        workspace: Workspace | None = self._workspace
+        parcel_table = data.get("parcel_table", "")
+        if workspace and parcel_table:
+            schema = workspace.db_schema
+            built_form_table = data.get("built_form_table") or "built_forms"
+            base_canvas_table = data.get("base_canvas_table") or workspace.base_table
+            data["base_canvas_table"] = base_canvas_table
+
+            # See AnalysisLaunchForm.clean() for why this uses its own DB
+            # connection rather than Django's request-scoped one.
+            bt_schema, bt_table = (
+                built_form_table.split(".", 1)
+                if "." in built_form_table
+                else (schema, built_form_table)
+            )
+            ensure_export_exists_isolated(workspace, schema=bt_schema, table=bt_table)
+
+            errors = check_analysis_prerequisites(
+                schema=schema,
+                parcel_table=parcel_table,
+                built_form_table=built_form_table,
+                base_canvas_table=base_canvas_table,
+            )
+            if errors:
+                first = errors[0]
+                if self.fields[first.field].widget.is_hidden:
+                    self.add_error(None, first.message)
+                else:
+                    self.add_error(first.field, first.message)
+
+        return data
+
+    def build_vars(self, workspace: Workspace) -> dict[str, Any]:
+        """Assemble the SQLMesh vars dict for this run from individual fields."""
+        data = self.cleaned_data
+        scenario: Scenario = data["scenario"]
+        vars_: dict[str, Any] = {
+            "source_schema": data.get("source_schema") or "public",
+            "parcel_table": data["parcel_table"],
+            "built_form_table": data.get("built_form_table") or "built_forms",
+            "base_canvas_table": data.get("base_canvas_table") or "base_canvas",
+            "target_schema": workspace.db_schema,
+            "scenario_id": scenario.slug,
+        }
+
+        constraints = []
+        for field_name, table, geom_col, _default_pct in _CONSTRAINT_LAYERS:
+            pct = data.get(field_name)
+            if pct is not None:
+                constraints.append(
+                    {"table": table, "discount_pct": pct, "geom_col": geom_col}
+                )
+        if constraints:
+            vars_["constraints"] = constraints
+
+        column_mapping = {
+            name: data[f"column_{name}"]
+            for name in CANONICAL_COLUMN_NAMES
+            if data.get(f"column_{name}")
+        }
+        if column_mapping:
+            vars_["column_mapping"] = column_mapping
+
+        return vars_
+
+
 @method_decorator(user_passes_test(lambda u: u.is_authenticated), name="dispatch")
 class AnalysisLaunchView(HtmxResponseMixin, FormView):
     """View to launch an analysis pipeline run."""
@@ -452,3 +647,146 @@ def check_prerequisites(request: HttpRequest) -> HttpResponse:
         )
 
     return HttpResponse(html)
+
+
+# ─────────────────────────────────────────────────────────────────────
+#  Analysis panel (map view) — one card per available analysis
+# ─────────────────────────────────────────────────────────────────────
+
+
+def _get_active_scenario(request: HttpRequest, workspace: Workspace) -> Scenario | None:
+    """Resolve the map's currently-active scenario from ``?scenario=``.
+
+    Same convention as ``panel_layer_list`` — the map passes its active
+    scenario as a query param so panel views default to its data.
+    """
+    scenario_pk = request.GET.get("scenario")
+    if not scenario_pk:
+        return None
+    return Scenario.objects.filter(pk=scenario_pk, workspace=workspace).first()
+
+
+def _get_analysis_meta(module_key: str) -> dict[str, Any]:
+    """Look up one analysis's card metadata by module key, or 404."""
+    meta = next(
+        (a for a in get_available_analyses() if a["key"] == module_key),
+        None,
+    )
+    if meta is None:
+        msg = f"Unknown analysis module: {module_key}"
+        raise Http404(msg)
+    return meta
+
+
+def _analysis_card_context(
+    workspace: Workspace,
+    scenario: Scenario | None,
+    meta: dict[str, Any],
+) -> dict[str, Any]:
+    """Build the render context for one analysis's card.
+
+    Shared by the card-list panel and the single-card polling endpoint so
+    both always render identical markup.
+    """
+    runs = AnalysisRun.objects.filter(workspace=workspace)
+    if scenario is not None:
+        runs = runs.filter(scenario=scenario)
+    last_run = (
+        runs.filter(modules__contains=[meta["key"]]).order_by("-created_at").first()
+    )
+    return {
+        "workspace": workspace,
+        "scenario": scenario,
+        "analysis": meta,
+        "last_run": last_run,
+    }
+
+
+@user_passes_test(lambda u: u.is_authenticated)
+def panel_analysis_card_list(request: HttpRequest, workspace_pk: int) -> HttpResponse:
+    """Left-sidebar Analysis panel — a card per available analysis module."""
+    workspace = get_object_or_404(Workspace, pk=workspace_pk)
+    scenario = _get_active_scenario(request, workspace)
+    cards = [
+        _analysis_card_context(workspace, scenario, meta)
+        for meta in get_available_analyses()
+    ]
+    return render(
+        request,
+        "workspace/analysis/_analysis_panel.html",
+        {"workspace": workspace, "scenario": scenario, "cards": cards},
+    )
+
+
+@user_passes_test(lambda u: u.is_authenticated)
+def analysis_card_status(
+    request: HttpRequest, workspace_pk: int, module_key: str
+) -> HttpResponse:
+    """Single-card htmx polling target — self-refreshes while its run is active."""
+    workspace = get_object_or_404(Workspace, pk=workspace_pk)
+    scenario = _get_active_scenario(request, workspace)
+    meta = _get_analysis_meta(module_key)
+    context = _analysis_card_context(workspace, scenario, meta)
+    return render(request, "workspace/analysis/_analysis_card.html", context)
+
+
+@user_passes_test(lambda u: u.is_authenticated)
+def analysis_module_configure(
+    request: HttpRequest, workspace_pk: int, module_key: str
+) -> HttpResponse:
+    """Right-panel parameter form for one analysis, opened from its card."""
+    workspace = get_object_or_404(Workspace, pk=workspace_pk)
+    scenario = _get_active_scenario(request, workspace)
+    meta = _get_analysis_meta(module_key)
+    form = AnalysisModuleForm(workspace=workspace, scenario=scenario, module=module_key)
+    return render(
+        request,
+        "workspace/analysis/_module_form.html",
+        {"workspace": workspace, "scenario": scenario, "analysis": meta, "form": form},
+    )
+
+
+@require_POST
+@user_passes_test(lambda u: u.is_authenticated)
+def analysis_module_launch(
+    request: HttpRequest, workspace_pk: int, module_key: str
+) -> HttpResponse:
+    """Launch one analysis in the background and notify immediately.
+
+    Creates the ``AnalysisRun`` and dispatches it to Celery via
+    ``launch_analysis_run`` — the request never blocks on the analysis
+    itself finishing. The response fires a toast right away and swaps the
+    right panel to a status view; the analysis's card (see
+    ``analysis_card_status``) polls independently until the run completes.
+    """
+    workspace = get_object_or_404(Workspace, pk=workspace_pk)
+    meta = _get_analysis_meta(module_key)
+    form = AnalysisModuleForm(request.POST, workspace=workspace, module=module_key)
+
+    if not form.is_valid():
+        return render(
+            request,
+            "workspace/analysis/_module_form.html",
+            {"workspace": workspace, "scenario": None, "analysis": meta, "form": form},
+            status=400,
+        )
+
+    scenario: Scenario = form.cleaned_data["scenario"]
+    vars_ = form.build_vars(workspace)
+    run = launch_analysis_run(
+        workspace_id=workspace.pk,
+        module_names=[module_key],
+        vars_=vars_,
+        scenario_id=scenario.pk,
+    )
+
+    html = render_to_string(
+        "workspace/analysis/_module_launch_confirm.html",
+        {"workspace": workspace, "scenario": scenario, "analysis": meta, "run": run},
+        request=request,
+    )
+    response = HttpResponse(html)
+    response["HX-Trigger"] = json.dumps(
+        {"show-toast": f"{meta['label']} analysis started"},
+    )
+    return response

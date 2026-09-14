@@ -129,17 +129,13 @@ def _build_sqlmesh_selectors(modules: list[str]) -> list[str]:
     return selects
 
 
-def run_analysis_pipeline(
+def _create_analysis_run(
     workspace_id: int,
     module_names: list[str],
-    vars_: dict[str, Any] | None = None,
-    scenario_id: int | None = None,
+    vars_: dict[str, Any] | None,
+    scenario_id: int | None,
 ) -> AnalysisRun:
-    """Create an AnalysisRun record and execute via SQLMesh.
-
-    SQLMesh handles DAG traversal automatically — all modules run
-    in a single plan call.
-    """
+    """Resolve dependencies and create a ``pending`` AnalysisRun record."""
     base_vars = vars_ or {}
     if scenario_id is not None:
         base_vars.setdefault("scenario_id", str(scenario_id))
@@ -168,14 +164,27 @@ def run_analysis_pipeline(
         workspace_id,
         ordered_modules,
     )
+    return run
 
+
+def _execute_analysis_run(run: AnalysisRun) -> None:
+    """Run a ``pending``/``running`` AnalysisRun's modules via SQLMesh in place.
+
+    Mutates and saves ``run``'s status as it goes, so both the synchronous
+    caller (:func:`run_analysis_pipeline`) and the Celery task that backs
+    :func:`launch_analysis_run` can share the exact same execution logic.
+    """
     run.status = "running"
     run.started_at = timezone.now()
     run.save(update_fields=["status", "started_at"])
 
+    base_vars = run.vars
+    workspace_id = run.workspace_id
+    scenario_id = run.scenario_id
+
     try:
         result = run_modules_sync(
-            modules=ordered_modules,
+            modules=run.modules,
             base_vars=base_vars,
             target_schema=base_vars.get("target_schema", "public"),
             workspace_id=workspace_id,
@@ -188,7 +197,7 @@ def run_analysis_pipeline(
         run.error_log = traceback.format_exc()
         run.completed_at = timezone.now()
         run.save(update_fields=["status", "error_log", "completed_at"])
-        return run
+        return
 
     run.status = "completed"
     run.completed_at = timezone.now()
@@ -204,6 +213,46 @@ def run_analysis_pipeline(
         restart_martin()
         wait_until_martin_ready(result.get("fqtns", []))
 
+
+def run_analysis_pipeline(
+    workspace_id: int,
+    module_names: list[str],
+    vars_: dict[str, Any] | None = None,
+    scenario_id: int | None = None,
+) -> AnalysisRun:
+    """Create an AnalysisRun record and execute it synchronously via SQLMesh.
+
+    SQLMesh handles DAG traversal automatically — all modules run in a
+    single plan call. Blocks the caller until the run finishes; used by the
+    MCP tool and the full-page multi-module launcher, where a synchronous
+    result is expected. For a non-blocking launch (e.g. the map view's
+    Analysis panel), use :func:`launch_analysis_run` instead.
+    """
+    run = _create_analysis_run(workspace_id, module_names, vars_, scenario_id)
+    _execute_analysis_run(run)
+    return run
+
+
+def launch_analysis_run(
+    workspace_id: int,
+    module_names: list[str],
+    vars_: dict[str, Any] | None = None,
+    scenario_id: int | None = None,
+) -> AnalysisRun:
+    """Create an AnalysisRun and dispatch its execution to Celery.
+
+    Returns as soon as the run is recorded (``status="pending"``) — it does
+    not wait for the analysis to finish. ``CELERY_TASK_ALWAYS_EAGER`` (the
+    dev/test default) still runs the task inline before ``.delay()``
+    returns, so the run is already ``completed``/``failed`` by the time this
+    function returns in those environments; the real behavior of returning
+    immediately only takes effect where Celery workers are running async.
+    """
+    from brewgis.workspace.tasks import run_analysis_task
+
+    run = _create_analysis_run(workspace_id, module_names, vars_, scenario_id)
+    run_analysis_task.delay(run.pk)
+    run.refresh_from_db()
     return run
 
 

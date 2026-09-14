@@ -153,11 +153,10 @@ def panel_import_center(request: HttpRequest, workspace_pk: int) -> HttpResponse
 
 @user_passes_test(lambda u: u.is_authenticated)
 def panel_analysis_launch(request: HttpRequest, workspace_pk: int) -> HttpResponse:
-    """Return analysis launch content for the left sidebar."""
-    from brewgis.workspace.views.analysis import AnalysisLaunchView
+    """Return the Analysis panel (one card per available analysis) for the left sidebar."""
+    from brewgis.workspace.views.analysis import panel_analysis_card_list
 
-    view = AnalysisLaunchView.as_view()
-    return view(request, workspace_pk=workspace_pk)
+    return panel_analysis_card_list(request, workspace_pk=workspace_pk)
 
 
 @user_passes_test(lambda u: u.is_authenticated)

@@ -1,0 +1,48 @@
+{% load i18n workspace_tags %}
+
+<div id="analysis-card-{{ analysis.key }}"
+     class="card mb-2"
+     style="font-size: 0.75rem"
+     hx-get="{% url 'workspace:analysis_card_status' workspace.pk analysis.key %}{% if scenario %}?scenario={{ scenario.pk }}{% endif %}"
+     hx-trigger="{% if last_run.status == "pending" or last_run.status == "running" %}every 2s{% else %}analysis-card-poll-disabled{% endif %}"
+     hx-swap="outerHTML">
+  <div class="card-body py-2 px-2">
+    <div class="d-flex justify-content-between align-items-start gap-2">
+      <h6 class="card-title mb-1" style="font-size: 0.8rem;">
+        {{ analysis.label }}
+        {% if last_run.status == "pending" or last_run.status == "running" %}
+          <span class="spinner-border spinner-border-sm text-primary ms-1"
+                role="status">
+            <span class="visually-hidden">{% translate "Running..." %}</span>
+          </span>
+        {% endif %}
+      </h6>
+      {% if last_run %}
+        {% with badge_class=last_run.status|analysis_status_badge %}
+          <span class="badge bg-{{ badge_class }}">{{ last_run.get_status_display }}</span>
+        {% endwith %}
+      {% else %}
+        <span class="badge bg-secondary">{% translate "Never run" %}</span>
+      {% endif %}
+    </div>
+    <p class="text-muted mb-2">{{ analysis.description }}</p>
+    <p class="text-muted mb-2" style="font-size: 0.7rem;">
+      {% translate "Last run:" %}
+      {% if last_run %}
+        {{ last_run.completed_at|default:last_run.started_at|default:last_run.created_at }}
+      {% else %}
+        {% translate "—" %}
+      {% endif %}
+    </p>
+    {% if last_run.status == "failed" and last_run.error_log %}
+      <p class="text-danger mb-2" style="font-size: 0.7rem;">{{ last_run.error_log|truncatechars:140 }}</p>
+    {% endif %}
+    <button type="button"
+            class="btn btn-sm btn-outline-primary w-100"
+            hx-get="{% url 'workspace:analysis_module_configure' workspace.pk analysis.key %}{% if scenario %}?scenario={{ scenario.pk }}{% endif %}"
+            hx-trigger="click"
+            hx-target="#right-panel-content"
+            hx-swap="innerHTML"
+            data-panel-event="open-panel:Analysis: {{ analysis.label }}">{% translate "Configure & Run" %}</button>
+  </div>
+</div>
