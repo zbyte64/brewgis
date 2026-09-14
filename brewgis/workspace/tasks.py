@@ -576,3 +576,63 @@ def _build_report_scenario_metrics(scenario: Any) -> dict[str, Any]:
             )
 
     return metrics
+
+
+# ────────────────────────────────────────────────────────────
+#  Paint operations (large selections run in the background)
+# ────────────────────────────────────────────────────────────
+
+
+@shared_task(bind=True, max_retries=1, default_retry_delay=10)
+def run_paint_operation(self, run_pk: int) -> dict:  # type: ignore[no-untyped-def]
+    """Execute a background paint run (direct/built-form/match/fill).
+
+    Painting a large selection (constraint checks, ``AllocationEngine``
+    calls, canvas-view refresh) can take a while, so
+    ``brewgis.workspace.views.paint``'s "apply" endpoints only validate the
+    request and create a ``PaintRun`` before returning; this task does the
+    actual work and records the outcome on that row for the frontend to
+    poll (see ``paint_status``). ``CELERY_TASK_ALWAYS_EAGER`` (the dev/test
+    default) runs this inline before ``.delay()`` returns, so the view's
+    caller sees the finished result immediately in those environments.
+    """
+    from brewgis.workspace.models import PaintRun
+    from brewgis.workspace.views import paint as paint_views
+
+    run = PaintRun.objects.select_related("workspace", "scenario").get(pk=run_pk)
+    run.status = "running"
+    run.started_at = timezone.now()
+    run.save(update_fields=["status", "started_at"])
+
+    runners = {
+        "direct": paint_views.run_direct_paint,
+        "built_form": paint_views.run_built_form_paint,
+        "match": paint_views.run_match_built_form,
+        "fill": paint_views.run_fill_built_form,
+    }
+    runner = runners.get(run.operation)
+    if runner is None:
+        result = {
+            "status": "error",
+            "message": f"Unknown paint operation: {run.operation}",
+        }
+    else:
+        try:
+            result = runner(
+                workspace=run.workspace,
+                scenario=run.scenario,
+                user=run.created_by,
+                params=run.params,
+            )
+        except Exception as exc:
+            run.status = "failed"
+            run.error_log = str(exc)
+            run.completed_at = timezone.now()
+            run.save(update_fields=["status", "error_log", "completed_at"])
+            raise
+
+    run.result = result
+    run.status = "failed" if result.get("status") == "error" else "completed"
+    run.completed_at = timezone.now()
+    run.save(update_fields=["status", "result", "completed_at"])
+    return result

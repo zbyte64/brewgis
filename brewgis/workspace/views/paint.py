@@ -1,4 +1,17 @@
-"""Paint views — direct column painting, built form painting, paint history, and undo/redo."""
+"""Paint views — direct column painting, built form painting, paint history, and undo/redo.
+
+Painting can touch a large number of parcels at once (a big box/polygon
+selection), and each of the four "apply" operations below does real work per
+feature (constraint checks, ``AllocationEngine`` calls, canvas-view
+refreshes) that scales with selection size. To keep the request from
+blocking on that, ``paint_features``/``paint_built_form``/``match_built_form``/
+``fill_built_form`` only validate the request synchronously; the actual work
+runs in ``run_paint_operation`` (a Celery task, see ``brewgis.workspace.tasks``)
+tracked by a ``PaintRun`` row. The view responds immediately with either the
+finished result (if the task already completed — always true in eager-mode
+tests/dev, per ``CELERY_TASK_ALWAYS_EAGER``) or a 202 + poll URL for the
+frontend to watch via ``paint_status``.
+"""
 
 from __future__ import annotations
 
@@ -7,11 +20,13 @@ import uuid
 from typing import TYPE_CHECKING
 from typing import Any
 
+from celery import current_app
 from django.contrib.auth.decorators import login_required
 from django.db import connection
 from django.db import transaction
 from django.http import JsonResponse
 from django.shortcuts import get_object_or_404
+from django.urls import reverse
 from django.utils.timezone import now as tz_now
 from django.views.decorators.http import require_GET
 from django.views.decorators.http import require_POST
@@ -22,6 +37,7 @@ from brewgis.workspace.built_forms.models import BuildingType
 from brewgis.workspace.built_forms.models import PlaceType
 from brewgis.workspace.models import PaintedCanvas
 from brewgis.workspace.models import PaintEvent
+from brewgis.workspace.models import PaintRun
 from brewgis.workspace.models import Scenario
 from brewgis.workspace.models import Workspace
 from brewgis.workspace.services.canvas_view_manager import PAINTABLE_COLUMNS
@@ -35,11 +51,15 @@ if TYPE_CHECKING:
 
 
 # ─── Paint Operations ────────────────────────────────────────────
+#
+# Each of these views does cheap, request-shape validation (JSON parsing,
+# required fields, enum checks) synchronously, then hands off to a
+# background PaintRun — see ``_enqueue`` below.
 
 
 @require_POST
 @login_required
-def paint_features(  # noqa: PLR0911
+def paint_features(
     request: HttpRequest, workspace_pk: int, scenario_pk: int
 ) -> JsonResponse:
     """Paint a single column's value on the selected features.
@@ -47,8 +67,8 @@ def paint_features(  # noqa: PLR0911
     Accepts JSON body::
         {"features": ["1", "2"], "column": "du", "value": 100.0}
 
-    Validates column name against PAINTABLE_COLUMNS, bulk-upserts
-    PaintedCanvas rows, logs PaintEvents, then refreshes the canvas view.
+    Runs as a background ``PaintRun`` (see module docstring) — validates the
+    request shape here, then hands off to :func:`run_direct_paint`.
     """
     workspace = get_object_or_404(Workspace, pk=workspace_pk)
     scenario = get_object_or_404(Scenario, pk=scenario_pk, workspace=workspace)
@@ -62,7 +82,7 @@ def paint_features(  # noqa: PLR0911
 
     features: list[str] = body.get("features", [])
     column: str = body.get("column", "")
-    value: float | None = body.get("value", None)
+    value = body.get("value", None)
 
     if not features:
         return JsonResponse(
@@ -90,13 +110,9 @@ def paint_features(  # noqa: PLR0911
             status=400,
         )
 
-    # Coerce value to float or None
-    painted_value: float | None
-    if value is None:
-        painted_value = None
-    else:
+    if value is not None:
         try:
-            painted_value = float(value)
+            value = float(value)
         except (TypeError, ValueError):
             return JsonResponse(
                 {
@@ -106,66 +122,12 @@ def paint_features(  # noqa: PLR0911
                 status=400,
             )
 
-    # ── Constraint checking ──────────────────────────────
-    paint_map: dict[str, dict[str, float | None]] = {
-        fid: {column: painted_value} for fid in features
-    }
-    block_response = _enforce_paint_constraints(workspace, paint_map)
-    if block_response is not None:
-        return block_response
-    # ─────────────────────────────────────────────────────
-
-    with transaction.atomic():
-        # Capture old values before upsert
-        old_values = _fetch_painted_old_values(scenario, features, column)
-
-        pc_rows = [
-            PaintedCanvas(
-                scenario=scenario,
-                feature_id=fid,
-                column_name=column,
-                painted_value=painted_value,
-            )
-            for fid in features
-        ]
-
-        PaintedCanvas.objects.bulk_create(
-            pc_rows,
-            update_conflicts=True,
-            update_fields=["painted_value", "painted_by", "painted_at"],
-            unique_fields=["scenario", "feature_id", "column_name"],
-        )
-
-        # Log paint events
-        batch_id = uuid.uuid4().hex
-        PaintEvent.objects.bulk_create(
-            [
-                PaintEvent(
-                    scenario=scenario,
-                    feature_id=fid,
-                    column_name=column,
-                    old_value=old_values.get(fid, (None, None))[0],
-                    new_value=painted_value,
-                    operation_type="paint",
-                    batch_id=batch_id,
-                )
-                for fid in features
-            ]
-        )
-
-        # Refresh the canvas view
-        base_table = _resolve_base_table(scenario)
-        refresh_canvas_view(scenario, base_table)
-
-    warnings = _collect_warnings()
-    return JsonResponse(
-        {
-            "status": "ok",
-            "painted_count": len(features),
-            "painted_features": features,
-            "batch_id": batch_id,
-            "warnings": warnings,
-        }
+    return _enqueue(
+        workspace,
+        scenario,
+        request.user,
+        "direct",
+        {"features": features, "column": column, "value": value},
     )
 
 
@@ -257,9 +219,10 @@ def paint_built_form(
     or::
         {"features": ["1", "2"], "bf_type": "place", "bf_id": 1}
 
-    Loads base canvas data for selected features, runs AllocationEngine,
-    writes computed fields as PaintedCanvas rows, logs PaintEvents,
-    refreshes canvas view.
+    Runs as a background ``PaintRun`` (see module docstring) — validates the
+    request shape (including resolving ``bf_id`` to a real Building/Place
+    Type, so an unknown id still 404s immediately) here, then hands off to
+    :func:`run_built_form_paint`.
     """
     workspace = get_object_or_404(Workspace, pk=workspace_pk)
     scenario = get_object_or_404(Scenario, pk=scenario_pk, workspace=workspace)
@@ -271,12 +234,136 @@ def paint_built_form(
             {"status": "error", "message": "Invalid JSON body."}, status=400
         )
 
-    return _execute_built_form_paint(
+    features: list[str] = body.get("features", [])
+    bf_type: str = body.get("bf_type", "")
+    bf_id: int | None = body.get("bf_id")
+
+    if not features:
+        return JsonResponse(
+            {"status": "error", "message": "No features selected."}, status=400
+        )
+
+    if bf_type not in ("building", "place"):
+        return JsonResponse(
+            {"status": "error", "message": "bf_type must be 'building' or 'place'."},
+            status=400,
+        )
+
+    if bf_id is None:
+        return JsonResponse(
+            {"status": "error", "message": "bf_id is required."}, status=400
+        )
+
+    # Resolve now (scoped to this workspace's own library) so an unknown id
+    # 404s immediately instead of surfacing as a failed background run.
+    if bf_type == "building":
+        get_object_or_404(BuildingType, pk=bf_id, workspace=workspace)
+    else:
+        get_object_or_404(PlaceType, pk=bf_id, workspace=workspace)
+
+    return _enqueue(
         workspace,
         scenario,
-        body,
         request.user,
+        "built_form",
+        {"features": features, "bf_type": bf_type, "bf_id": bf_id},
     )
+
+
+@require_POST
+@login_required
+def match_built_form(
+    request: HttpRequest, workspace_pk: int, scenario_pk: int
+) -> JsonResponse:
+    """Auto-assign each selected feature the closest-matching Building Type.
+
+    Accepts JSON body::
+        {"features": ["1", "2"]}
+
+    Runs as a background ``PaintRun`` (see module docstring) — for each
+    feature, :func:`run_match_built_form` reads its current ``du``/``emp``
+    value (from the scenario's canvas view, i.e. base canvas + any existing
+    paint overlay), computes the implied per-acre density, and picks
+    whichever workspace ``BuildingType`` has the numerically closest
+    ``du_per_acre``/``emp_per_acre``, then runs the same allocation pipeline
+    as :func:`paint_built_form` using the matched Building Type, per feature.
+    """
+    workspace = get_object_or_404(Workspace, pk=workspace_pk)
+    scenario = get_object_or_404(Scenario, pk=scenario_pk, workspace=workspace)
+
+    try:
+        body = json.loads(request.body)
+    except json.JSONDecodeError:
+        return JsonResponse(
+            {"status": "error", "message": "Invalid JSON body."}, status=400
+        )
+
+    features: list[str] = body.get("features", [])
+    if not features:
+        return JsonResponse(
+            {"status": "error", "message": "No features selected."}, status=400
+        )
+
+    return _enqueue(workspace, scenario, request.user, "match", {"features": features})
+
+
+@require_POST
+@login_required
+def fill_built_form(
+    request: HttpRequest, workspace_pk: int, scenario_pk: int
+) -> JsonResponse:
+    """Fill in du/emp stats for selected features from their current built form.
+
+    Accepts JSON body::
+        {"features": ["1", "2"]}
+
+    Runs as a background ``PaintRun`` (see module docstring). For each
+    feature, :func:`run_fill_built_form` reads its ``built_form_key`` as
+    currently in effect for this scenario (base layer, COALESCEd with any
+    existing PaintedCanvas override — e.g. one just set by Match Closest or
+    a manual Built Form paint), resolves it to a workspace ``BuildingType``
+    by (loosely normalized) name match, and runs the allocation pipeline to
+    derive du/emp/pop/hh — without requiring the user to re-pick a Building
+    Type. Features with no ``built_form_key`` or no matching Building Type
+    are skipped and reported back as ``unmatched``.
+    """
+    workspace = get_object_or_404(Workspace, pk=workspace_pk)
+    scenario = get_object_or_404(Scenario, pk=scenario_pk, workspace=workspace)
+
+    try:
+        body = json.loads(request.body)
+    except json.JSONDecodeError:
+        return JsonResponse(
+            {"status": "error", "message": "Invalid JSON body."}, status=400
+        )
+
+    features: list[str] = body.get("features", [])
+    if not features:
+        return JsonResponse(
+            {"status": "error", "message": "No features selected."}, status=400
+        )
+
+    return _enqueue(workspace, scenario, request.user, "fill", {"features": features})
+
+
+@require_GET
+@login_required
+def paint_status(
+    request: HttpRequest,  # noqa: ARG001
+    workspace_pk: int,
+    scenario_pk: int,
+    run_pk: int,
+) -> JsonResponse:
+    """Poll a background paint run's status.
+
+    Returns the same JSON body the "apply" endpoints return once a run
+    finishes (``{"status": "ok"/"error", "painted_count": ..., ...}``), or
+    ``{"status": "pending"/"running"}`` while it's still in progress.
+    """
+    run = get_object_or_404(
+        PaintRun, pk=run_pk, workspace_id=workspace_pk, scenario_id=scenario_pk
+    )
+    return _respond_for_run(run)
 
 
 # ─── Undo / Redo ─────────────────────────────────────────────────
@@ -504,6 +591,440 @@ def paint_history(
     )
 
 
+# ─── Background run dispatch ──────────────────────────────────────
+
+
+_MAX_RESPONSE_ITEMS = 200
+"""Cap on per-feature list fields (painted_features/matches/unmatched/
+matched/violations/warnings) in a paint run's result.
+
+A full-canvas selection is tens of thousands of features — nothing in this
+app (or its tests) reads these lists back for anything other than a first
+element/sample, but returning one full-detail dict per feature turned a
+whole-scenario Match Closest into a multi-megabyte JSON response, which is
+slow to serialize, slow to transfer, and slow for the browser to parse for
+no benefit. ``painted_count``/``<field>_total`` carry the real numbers.
+"""
+
+
+def _cap_list(items: list[Any], limit: int = _MAX_RESPONSE_ITEMS) -> list[Any]:
+    """Truncate a per-feature list field for the response, if it's large."""
+    return items[:limit] if len(items) > limit else items
+
+
+def _enqueue(
+    workspace: Workspace,
+    scenario: Scenario,
+    user: Any,
+    operation: str,
+    params: dict[str, Any],
+) -> JsonResponse:
+    """Create a PaintRun, kick off its Celery task, and respond.
+
+    In eager mode (``CELERY_TASK_ALWAYS_EAGER`` — the default in dev/tests)
+    ``.delay()`` runs the task inline before returning, so the run is
+    already ``completed``/``failed`` by the time we respond — the caller
+    gets the same immediate result it always did. In production, the task
+    runs on a worker and the caller gets a 202 + poll URL instead.
+
+    Every view runs inside one transaction (``ATOMIC_REQUESTS``): the
+    ``PaintRun`` row created just above isn't actually committed until this
+    view returns. A real (non-eager) worker is a separate connection, so
+    dispatching ``.delay()`` right here can — and in practice did — race
+    the commit and fail with ``PaintRun.DoesNotExist`` the moment the worker
+    picks the message up before this transaction lands. Deferring with
+    ``transaction.on_commit`` closes that race.
+
+    Eager mode (dev/tests, per ``CELERY_TASK_ALWAYS_EAGER``) is exempted:
+    ``on_commit`` there would defer the (synchronous, same-process) task
+    until *after* this function has already built and returned its response,
+    so ``_respond_for_run`` would always observe the run as still pending
+    instead of the finished result callers (and every existing test) expect.
+    Since an eager task can't race a commit — it runs inline, on this same
+    connection, before ``.delay()`` even returns — calling it immediately is
+    both safe and necessary there.
+    """
+    from brewgis.workspace.tasks import run_paint_operation
+
+    run = PaintRun.objects.create(
+        workspace=workspace,
+        scenario=scenario,
+        operation=operation,
+        params=params,
+        created_by=user if user.is_authenticated else None,
+    )
+    if current_app.conf.task_always_eager:
+        run_paint_operation.delay(run.pk)
+    else:
+        transaction.on_commit(lambda: run_paint_operation.delay(run.pk))
+    return _respond_for_run(run)
+
+
+def _respond_for_run(run: PaintRun) -> JsonResponse:
+    """Build the JSON response for a PaintRun's current state."""
+    run.refresh_from_db()
+
+    if run.status == "completed":
+        body = dict(run.result)
+        status_code = body.pop("http_status", 200)
+        return JsonResponse(body, status=status_code)
+
+    if run.status == "failed":
+        body = dict(run.result) if run.result else {}
+        body.setdefault("status", "error")
+        body.setdefault("message", run.error_log or "Paint operation failed.")
+        status_code = body.pop("http_status", 400)
+        return JsonResponse(body, status=status_code)
+
+    return JsonResponse(
+        {
+            "status": "accepted",
+            "run_id": run.pk,
+            "run_status": run.status,
+            "poll_url": reverse(
+                "workspace:paint_status",
+                kwargs={
+                    "workspace_pk": run.workspace_id,
+                    "scenario_pk": run.scenario_id,
+                    "run_pk": run.pk,
+                },
+            ),
+        },
+        status=202,
+    )
+
+
+# ─── Run implementations (executed by the Celery task) ────────────
+#
+# These do the actual DB/allocation work for each operation. Called from
+# ``run_paint_operation`` in ``brewgis.workspace.tasks`` with a PaintRun's
+# resolved ``workspace``/``scenario``/``created_by``/``params``.
+
+
+def run_direct_paint(
+    *,
+    workspace: Workspace,
+    scenario: Scenario,
+    user: Any,  # noqa: ARG001 — kept for a uniform run_*() call signature
+    params: dict[str, Any],
+) -> dict[str, Any]:
+    """Paint a single column's value on the selected features."""
+    features: list[str] = params["features"]
+    column: str = params["column"]
+    painted_value = params["value"]
+
+    paint_map: dict[str, dict[str, float | None]] = {
+        fid: {column: painted_value} for fid in features
+    }
+    block = _enforce_paint_constraints(workspace, paint_map)
+    if block is not None:
+        return block
+
+    with transaction.atomic():
+        # Capture old values before upsert
+        old_values = _fetch_painted_old_values(scenario, features, column)
+
+        pc_rows = [
+            PaintedCanvas(
+                scenario=scenario,
+                feature_id=fid,
+                column_name=column,
+                painted_value=painted_value,
+            )
+            for fid in features
+        ]
+
+        PaintedCanvas.objects.bulk_create(
+            pc_rows,
+            update_conflicts=True,
+            update_fields=["painted_value", "painted_by", "painted_at"],
+            unique_fields=["scenario", "feature_id", "column_name"],
+        )
+
+        # Log paint events
+        batch_id = uuid.uuid4().hex
+        PaintEvent.objects.bulk_create(
+            [
+                PaintEvent(
+                    scenario=scenario,
+                    feature_id=fid,
+                    column_name=column,
+                    old_value=old_values.get(fid, (None, None))[0],
+                    new_value=painted_value,
+                    operation_type="paint",
+                    batch_id=batch_id,
+                )
+                for fid in features
+            ]
+        )
+
+        # Refresh the canvas view
+        base_table = _resolve_base_table(scenario)
+        refresh_canvas_view(scenario, base_table)
+
+    warnings = _collect_warnings()
+    return {
+        "status": "ok",
+        "painted_count": len(features),
+        "painted_features": _cap_list(features),
+        "painted_features_total": len(features),
+        "batch_id": batch_id,
+        "warnings": _cap_list(warnings),
+        "warnings_total": len(warnings),
+    }
+
+
+def run_built_form_paint(
+    *,
+    workspace: Workspace,
+    scenario: Scenario,
+    user: Any,
+    params: dict[str, Any],
+) -> dict[str, Any]:
+    """Paint built form attributes on the selected features.
+
+    ``bf_id``/``bf_type`` were already resolved to a real Building/Place
+    Type by the view (so an unknown id 404s immediately) — re-resolve here
+    from the same (validated) params for the actual allocation work.
+    """
+    features: list[str] = params["features"]
+    bf_type: str = params["bf_type"]
+    bf_id: int = params["bf_id"]
+
+    built_form: BuildingType | PlaceType
+    if bf_type == "building":
+        built_form = get_object_or_404(BuildingType, pk=bf_id, workspace=workspace)
+    else:
+        built_form = get_object_or_404(PlaceType, pk=bf_id, workspace=workspace)
+
+    base_table = _resolve_base_table(scenario)
+    feature_data = _fetch_feature_data(base_table, features)
+    if not feature_data:
+        return {
+            "status": "error",
+            "message": "No base canvas data found for selected features.",
+            "http_status": 400,
+        }
+
+    allocations: dict[str, AllocationResult] = {}
+    for fid, row in feature_data.items():
+        parcel_acres = float(row.get("area_gross", row.get("area_parcel", 1.0)))
+
+        if bf_type == "building":
+            assert isinstance(built_form, BuildingType)
+            allocations[fid] = AllocationEngine.allocation_building_type(
+                parcel_acres=parcel_acres,
+                building_type=built_form,
+                row_allocation_pct=0.0,  # ROW already reflected in base data
+            )
+        else:
+            assert isinstance(built_form, PlaceType)
+            allocations[fid] = AllocationEngine.allocation_place_type(
+                parcel_acres=parcel_acres,
+                place_type=built_form,
+            )
+
+    return _write_built_form_paint(
+        workspace=workspace,
+        scenario=scenario,
+        user=user,
+        base_table=base_table,
+        allocations=allocations,
+        operation_type="built_form",
+        built_form_names=dict.fromkeys(allocations, built_form.name),
+    )
+
+
+def run_match_built_form(
+    *,
+    workspace: Workspace,
+    scenario: Scenario,
+    user: Any,
+    params: dict[str, Any],
+) -> dict[str, Any]:
+    """Auto-assign each selected feature the closest-matching Building Type."""
+    features: list[str] = params["features"]
+
+    canvas_data = _fetch_canvas_feature_data(scenario, features)
+    if not canvas_data:
+        return {
+            "status": "error",
+            "message": "No canvas data found for selected features.",
+            "http_status": 400,
+        }
+
+    building_types = list(BuildingType.objects.filter(workspace=workspace))
+    du_candidates = [bt for bt in building_types if bt.du_per_acre is not None]
+    emp_candidates = [bt for bt in building_types if bt.emp_per_acre is not None]
+
+    allocations: dict[str, AllocationResult] = {}
+    built_form_names: dict[str, str] = {}
+    matches: list[dict[str, Any]] = []
+    unmatched: list[dict[str, Any]] = []
+
+    for fid, row in canvas_data.items():
+        acres = float(row.get("area_gross") or row.get("area_parcel") or 0.0)
+        if acres <= 0:
+            unmatched.append(
+                {"feature_id": fid, "message": "No parcel area available."}
+            )
+            continue
+
+        du_value = float(row.get("du") or 0.0)
+        emp_value = float(row.get("emp") or 0.0)
+
+        candidates: list[BuildingType] = []
+        basis = ""
+        density = 0.0
+        if du_value > 0 and du_candidates:
+            candidates, basis, density = du_candidates, "du_per_acre", du_value / acres
+        elif emp_value > 0 and emp_candidates:
+            candidates, basis, density = (
+                emp_candidates,
+                "emp_per_acre",
+                emp_value / acres,
+            )
+
+        if not candidates:
+            unmatched.append(
+                {
+                    "feature_id": fid,
+                    "message": (
+                        "No du/emp value to match against, or no Building "
+                        "Types with that density defined."
+                    ),
+                }
+            )
+            continue
+
+        best = min(candidates, key=lambda bt: abs(getattr(bt, basis) - density))
+        allocations[fid] = AllocationEngine.allocation_building_type(
+            parcel_acres=acres,
+            building_type=best,
+            row_allocation_pct=0.0,
+        )
+        built_form_names[fid] = best.name
+        matches.append(
+            {
+                "feature_id": fid,
+                "building_type_id": best.pk,
+                "building_type_name": best.name,
+                "basis": basis,
+                "parcel_density": density,
+                "matched_density": getattr(best, basis),
+            }
+        )
+
+    if not allocations:
+        return {
+            "status": "error",
+            "message": "No features could be matched to a Building Type.",
+            "unmatched": unmatched,
+            "http_status": 400,
+        }
+
+    return _write_built_form_paint(
+        workspace=workspace,
+        scenario=scenario,
+        user=user,
+        base_table=_resolve_base_table(scenario),
+        allocations=allocations,
+        operation_type="built_form_match",
+        built_form_names=built_form_names,
+        extra_response_fields={"matches": matches, "unmatched": unmatched},
+        extra_warnings=[
+            {"message": f"{u['feature_id']}: {u['message']}"} for u in unmatched
+        ],
+    )
+
+
+def run_fill_built_form(
+    *,
+    workspace: Workspace,
+    scenario: Scenario,
+    user: Any,
+    params: dict[str, Any],
+) -> dict[str, Any]:
+    """Fill in du/emp stats for selected features from their current built form."""
+    features: list[str] = params["features"]
+
+    base_table = _resolve_base_table(scenario)
+    feature_data = _fetch_canvas_feature_data(scenario, features)
+    if not feature_data:
+        return {
+            "status": "error",
+            "message": "No canvas data found for selected features.",
+            "http_status": 400,
+        }
+
+    building_types = list(BuildingType.objects.filter(workspace=workspace))
+    bt_by_name: dict[str, BuildingType] = {
+        _normalize_bf_name(bt.name): bt for bt in building_types
+    }
+
+    allocations: dict[str, AllocationResult] = {}
+    built_form_names: dict[str, str] = {}
+    matched: list[dict[str, Any]] = []
+    unmatched: list[dict[str, Any]] = []
+
+    for fid, row in feature_data.items():
+        built_form_key = row.get("built_form_key")
+        if not built_form_key:
+            unmatched.append(
+                {"feature_id": fid, "message": "No built_form_key set on this parcel."}
+            )
+            continue
+
+        built_form = bt_by_name.get(_normalize_bf_name(built_form_key))
+        if built_form is None:
+            unmatched.append(
+                {
+                    "feature_id": fid,
+                    "built_form_key": built_form_key,
+                    "message": "No matching Building Type found.",
+                }
+            )
+            continue
+
+        parcel_acres = float(row.get("area_gross") or row.get("area_parcel") or 1.0)
+        allocations[fid] = AllocationEngine.allocation_building_type(
+            parcel_acres=parcel_acres,
+            building_type=built_form,
+            row_allocation_pct=0.0,
+        )
+        built_form_names[fid] = built_form.name
+        matched.append(
+            {
+                "feature_id": fid,
+                "built_form_key": built_form_key,
+                "building_type_id": built_form.pk,
+                "building_type_name": built_form.name,
+            }
+        )
+
+    if not allocations:
+        return {
+            "status": "error",
+            "message": "No features could be matched to a Building Type.",
+            "unmatched": unmatched,
+            "http_status": 400,
+        }
+
+    return _write_built_form_paint(
+        workspace=workspace,
+        scenario=scenario,
+        user=user,
+        base_table=base_table,
+        allocations=allocations,
+        operation_type="built_form_fill",
+        built_form_names=built_form_names,
+        extra_response_fields={"matched": matched, "unmatched": unmatched},
+        extra_warnings=[
+            {"message": f"{u['feature_id']}: {u['message']}"} for u in unmatched
+        ],
+    )
+
+
 # ─── Helpers ─────────────────────────────────────────────────────
 
 
@@ -697,8 +1218,8 @@ def _allocation_to_painted_rows(  # noqa: C901
 def _enforce_paint_constraints(
     workspace: Workspace,
     paint_map: dict[str, dict[str, float | None]],
-) -> JsonResponse | None:
-    """Check paint constraints; return a blocking JsonResponse or None.
+) -> dict[str, Any] | None:
+    """Check paint constraints; return a blocking result dict or None.
 
     Violations are cached on the function for later retrieval via
     :func:`_collect_warnings`.
@@ -706,14 +1227,14 @@ def _enforce_paint_constraints(
     constraint_result = check_paint_batch(workspace, paint_map)
     _PAINT_CONSTRAINT_RESULT[0] = constraint_result
     if constraint_result.blocked:
-        return JsonResponse(
-            {
-                "status": "error",
-                "message": "Paint operation blocked by workspace constraints.",
-                "violations": [v.to_dict() for v in constraint_result.violations],
-            },
-            status=409,
-        )
+        violations = [v.to_dict() for v in constraint_result.violations]
+        return {
+            "status": "error",
+            "message": "Paint operation blocked by workspace constraints.",
+            "violations": _cap_list(violations),
+            "violations_total": len(violations),
+            "http_status": 409,
+        }
     return None
 
 
@@ -750,7 +1271,7 @@ def _paint_event_from_row(  # noqa: PLR0913
     )
 
 
-def _write_built_form_paint(  # noqa: PLR0913
+def _write_built_form_paint(  # noqa: C901, PLR0913
     *,
     workspace: Workspace,
     scenario: Scenario,
@@ -761,11 +1282,11 @@ def _write_built_form_paint(  # noqa: PLR0913
     built_form_names: dict[str, str] | None = None,
     extra_response_fields: dict[str, Any] | None = None,
     extra_warnings: list[dict] | None = None,
-) -> JsonResponse:
+) -> dict[str, Any]:
     """Write allocation results as PaintedCanvas rows and log paint events.
 
-    Shared by :func:`paint_built_form`, :func:`match_built_form`, and
-    :func:`fill_built_form` — each computes a ``{feature_id: AllocationResult}``
+    Shared by :func:`run_built_form_paint`, :func:`run_match_built_form`, and
+    :func:`run_fill_built_form` — each computes a ``{feature_id: AllocationResult}``
     map by its own logic, then hands it here for the common
     upsert/constraint-check/event-log/refresh pipeline. When *built_form_names*
     is given (``{feature_id: building/place type name}``), each feature also
@@ -795,19 +1316,29 @@ def _write_built_form_paint(  # noqa: PLR0913
             paint_map.setdefault(pc_row.feature_id, {})[pc_row.column_name] = (
                 pc_row.painted_value
             )
-        block_response = _enforce_paint_constraints(workspace, paint_map)
-        if block_response is not None:
-            return block_response
+        block = _enforce_paint_constraints(workspace, paint_map)
+        if block is not None:
+            return block
         bf_warnings = _collect_warnings()
         if extra_warnings:
             bf_warnings = [*bf_warnings, *extra_warnings]
         # ─────────────────────────────────────────────────
 
-        # Fetch old values before upsert
-        old_values_map: dict[tuple[str, str], tuple[float | None, str | None]] = {}
+        # Fetch old values before upsert — one query per distinct column
+        # (batching all of that column's feature ids together), not one
+        # query per (feature, column) pair. A large selection touches the
+        # same handful of columns (du, pop, hh, emp, built_form_key, ...)
+        # across every feature, so grouping this way turns what would be
+        # thousands of near-identical queries into a handful.
+        fids_by_column: dict[str, list[str]] = {}
         for fid, col in feature_columns:
-            old = _fetch_painted_old_values(scenario, [fid], col)
-            old_values_map[(fid, col)] = old.get(fid, (None, None))
+            fids_by_column.setdefault(col, []).append(fid)
+
+        old_values_map: dict[tuple[str, str], tuple[float | None, str | None]] = {}
+        for col, fids in fids_by_column.items():
+            old = _fetch_painted_old_values(scenario, fids, col)
+            for fid in fids:
+                old_values_map[(fid, col)] = old.get(fid, (None, None))
 
         # Bulk upsert all painted rows
         PaintedCanvas.objects.bulk_create(
@@ -842,335 +1373,21 @@ def _write_built_form_paint(  # noqa: PLR0913
 
         refresh_canvas_view(scenario, base_table)
 
+    painted_features = list(allocations.keys())
     response_body: dict[str, Any] = {
         "status": "ok",
         "painted_count": len(all_pc_rows),
-        "painted_features": list(allocations.keys()),
+        "painted_features": _cap_list(painted_features),
+        "painted_features_total": len(painted_features),
         "batch_id": batch_id,
-        "warnings": bf_warnings,
+        "warnings": _cap_list(bf_warnings),
+        "warnings_total": len(bf_warnings),
     }
     if extra_response_fields:
-        response_body.update(extra_response_fields)
-    return JsonResponse(response_body)
-
-
-def _execute_built_form_paint(
-    workspace: Workspace,
-    scenario: Scenario,
-    body: dict,
-    user: Any,
-) -> JsonResponse:
-    """Execute built form painting after request validation."""
-    features: list[str] = body.get("features", [])
-    bf_type: str = body.get("bf_type", "")
-    bf_id: int | None = body.get("bf_id")
-
-    if not features:
-        return JsonResponse(
-            {"status": "error", "message": "No features selected."}, status=400
-        )
-
-    if bf_type not in ("building", "place"):
-        return JsonResponse(
-            {"status": "error", "message": "bf_type must be 'building' or 'place'."},
-            status=400,
-        )
-
-    if bf_id is None:
-        return JsonResponse(
-            {"status": "error", "message": "bf_id is required."}, status=400
-        )
-
-    # Resolve built form instance (scoped to this workspace's own library)
-    built_form: BuildingType | PlaceType
-    if bf_type == "building":
-        built_form = get_object_or_404(BuildingType, pk=bf_id, workspace=workspace)
-    else:
-        built_form = get_object_or_404(PlaceType, pk=bf_id, workspace=workspace)
-
-    # Load base canvas data for selected features
-    base_table = _resolve_base_table(scenario)
-    feature_data = _fetch_feature_data(base_table, features)
-    if not feature_data:
-        return JsonResponse(
-            {
-                "status": "error",
-                "message": "No base canvas data found for selected features.",
-            },
-            status=400,
-        )
-
-    allocations: dict[str, AllocationResult] = {}
-    for fid, row in feature_data.items():
-        parcel_acres = float(row.get("area_gross", row.get("area_parcel", 1.0)))
-
-        if bf_type == "building":
-            assert isinstance(built_form, BuildingType)
-            allocations[fid] = AllocationEngine.allocation_building_type(
-                parcel_acres=parcel_acres,
-                building_type=built_form,
-                row_allocation_pct=0.0,  # ROW already reflected in base data
-            )
-        else:
-            assert isinstance(built_form, PlaceType)
-            allocations[fid] = AllocationEngine.allocation_place_type(
-                parcel_acres=parcel_acres,
-                place_type=built_form,
-            )
-
-    return _write_built_form_paint(
-        workspace=workspace,
-        scenario=scenario,
-        user=user,
-        base_table=base_table,
-        allocations=allocations,
-        operation_type="built_form",
-        built_form_names=dict.fromkeys(allocations, built_form.name),
-    )
-
-
-@require_POST
-@login_required
-def match_built_form(
-    request: HttpRequest, workspace_pk: int, scenario_pk: int
-) -> JsonResponse:
-    """Auto-assign each selected feature the closest-matching Building Type.
-
-    Accepts JSON body::
-        {"features": ["1", "2"]}
-
-    For each feature, reads its current ``du``/``emp`` value (from the
-    scenario's canvas view, i.e. base canvas + any existing paint overlay),
-    computes the implied per-acre density, and picks whichever workspace
-    ``BuildingType`` has the numerically closest ``du_per_acre`` (if the
-    feature has a du value) or ``emp_per_acre`` (if it has an emp value).
-    Runs the same allocation pipeline as :func:`paint_built_form` using the
-    matched Building Type, per feature.
-    """
-    workspace = get_object_or_404(Workspace, pk=workspace_pk)
-    scenario = get_object_or_404(Scenario, pk=scenario_pk, workspace=workspace)
-
-    try:
-        body = json.loads(request.body)
-    except json.JSONDecodeError:
-        return JsonResponse(
-            {"status": "error", "message": "Invalid JSON body."}, status=400
-        )
-
-    features: list[str] = body.get("features", [])
-    if not features:
-        return JsonResponse(
-            {"status": "error", "message": "No features selected."}, status=400
-        )
-
-    canvas_data = _fetch_canvas_feature_data(scenario, features)
-    if not canvas_data:
-        return JsonResponse(
-            {
-                "status": "error",
-                "message": "No canvas data found for selected features.",
-            },
-            status=400,
-        )
-
-    building_types = list(BuildingType.objects.filter(workspace=workspace))
-    du_candidates = [bt for bt in building_types if bt.du_per_acre is not None]
-    emp_candidates = [bt for bt in building_types if bt.emp_per_acre is not None]
-
-    allocations: dict[str, AllocationResult] = {}
-    built_form_names: dict[str, str] = {}
-    matches: list[dict[str, Any]] = []
-    unmatched: list[dict[str, Any]] = []
-
-    for fid, row in canvas_data.items():
-        acres = float(row.get("area_gross") or row.get("area_parcel") or 0.0)
-        if acres <= 0:
-            unmatched.append(
-                {"feature_id": fid, "message": "No parcel area available."}
-            )
-            continue
-
-        du_value = float(row.get("du") or 0.0)
-        emp_value = float(row.get("emp") or 0.0)
-
-        candidates: list[BuildingType] = []
-        basis = ""
-        density = 0.0
-        if du_value > 0 and du_candidates:
-            candidates, basis, density = du_candidates, "du_per_acre", du_value / acres
-        elif emp_value > 0 and emp_candidates:
-            candidates, basis, density = (
-                emp_candidates,
-                "emp_per_acre",
-                emp_value / acres,
-            )
-
-        if not candidates:
-            unmatched.append(
-                {
-                    "feature_id": fid,
-                    "message": (
-                        "No du/emp value to match against, or no Building "
-                        "Types with that density defined."
-                    ),
-                }
-            )
-            continue
-
-        best = min(candidates, key=lambda bt: abs(getattr(bt, basis) - density))
-        allocations[fid] = AllocationEngine.allocation_building_type(
-            parcel_acres=acres,
-            building_type=best,
-            row_allocation_pct=0.0,
-        )
-        built_form_names[fid] = best.name
-        matches.append(
-            {
-                "feature_id": fid,
-                "building_type_id": best.pk,
-                "building_type_name": best.name,
-                "basis": basis,
-                "parcel_density": density,
-                "matched_density": getattr(best, basis),
-            }
-        )
-
-    if not allocations:
-        return JsonResponse(
-            {
-                "status": "error",
-                "message": "No features could be matched to a Building Type.",
-                "unmatched": unmatched,
-            },
-            status=400,
-        )
-
-    return _write_built_form_paint(
-        workspace=workspace,
-        scenario=scenario,
-        user=request.user,
-        base_table=_resolve_base_table(scenario),
-        allocations=allocations,
-        operation_type="built_form_match",
-        built_form_names=built_form_names,
-        extra_response_fields={"matches": matches, "unmatched": unmatched},
-        extra_warnings=[
-            {"message": f"{u['feature_id']}: {u['message']}"} for u in unmatched
-        ],
-    )
-
-
-@require_POST
-@login_required
-def fill_built_form(
-    request: HttpRequest, workspace_pk: int, scenario_pk: int
-) -> JsonResponse:
-    """Fill in du/emp stats for selected features from their current built form.
-
-    Accepts JSON body::
-        {"features": ["1", "2"]}
-
-    For each feature, reads its ``built_form_key`` as currently in effect for
-    this scenario (base layer, COALESCEd with any existing PaintedCanvas
-    override — e.g. one just set by Match Closest or a manual Built Form
-    paint), resolves it to a workspace ``BuildingType`` by (loosely
-    normalized) name match, and runs the allocation pipeline to derive
-    du/emp/pop/hh — without requiring the user to re-pick a Building Type.
-    Features with no ``built_form_key`` or no matching Building Type are
-    skipped and reported back as ``unmatched``.
-    """
-    workspace = get_object_or_404(Workspace, pk=workspace_pk)
-    scenario = get_object_or_404(Scenario, pk=scenario_pk, workspace=workspace)
-
-    try:
-        body = json.loads(request.body)
-    except json.JSONDecodeError:
-        return JsonResponse(
-            {"status": "error", "message": "Invalid JSON body."}, status=400
-        )
-
-    features: list[str] = body.get("features", [])
-    if not features:
-        return JsonResponse(
-            {"status": "error", "message": "No features selected."}, status=400
-        )
-
-    base_table = _resolve_base_table(scenario)
-    feature_data = _fetch_canvas_feature_data(scenario, features)
-    if not feature_data:
-        return JsonResponse(
-            {
-                "status": "error",
-                "message": "No canvas data found for selected features.",
-            },
-            status=400,
-        )
-
-    building_types = list(BuildingType.objects.filter(workspace=workspace))
-    bt_by_name: dict[str, BuildingType] = {
-        _normalize_bf_name(bt.name): bt for bt in building_types
-    }
-
-    allocations: dict[str, AllocationResult] = {}
-    built_form_names: dict[str, str] = {}
-    matched: list[dict[str, Any]] = []
-    unmatched: list[dict[str, Any]] = []
-
-    for fid, row in feature_data.items():
-        built_form_key = row.get("built_form_key")
-        if not built_form_key:
-            unmatched.append(
-                {"feature_id": fid, "message": "No built_form_key set on this parcel."}
-            )
-            continue
-
-        built_form = bt_by_name.get(_normalize_bf_name(built_form_key))
-        if built_form is None:
-            unmatched.append(
-                {
-                    "feature_id": fid,
-                    "built_form_key": built_form_key,
-                    "message": "No matching Building Type found.",
-                }
-            )
-            continue
-
-        parcel_acres = float(row.get("area_gross") or row.get("area_parcel") or 1.0)
-        allocations[fid] = AllocationEngine.allocation_building_type(
-            parcel_acres=parcel_acres,
-            building_type=built_form,
-            row_allocation_pct=0.0,
-        )
-        built_form_names[fid] = built_form.name
-        matched.append(
-            {
-                "feature_id": fid,
-                "built_form_key": built_form_key,
-                "building_type_id": built_form.pk,
-                "building_type_name": built_form.name,
-            }
-        )
-
-    if not allocations:
-        return JsonResponse(
-            {
-                "status": "error",
-                "message": "No features could be matched to a Building Type.",
-                "unmatched": unmatched,
-            },
-            status=400,
-        )
-
-    return _write_built_form_paint(
-        workspace=workspace,
-        scenario=scenario,
-        user=request.user,
-        base_table=base_table,
-        allocations=allocations,
-        operation_type="built_form_fill",
-        built_form_names=built_form_names,
-        extra_response_fields={"matched": matched, "unmatched": unmatched},
-        extra_warnings=[
-            {"message": f"{u['feature_id']}: {u['message']}"} for u in unmatched
-        ],
-    )
+        for key, value in extra_response_fields.items():
+            if isinstance(value, list):
+                response_body[key] = _cap_list(value)
+                response_body[f"{key}_total"] = len(value)
+            else:
+                response_body[key] = value
+    return response_body

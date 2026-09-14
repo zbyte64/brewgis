@@ -44,6 +44,7 @@ from .paint import match_built_form  # noqa: F401
 from .paint import paint_built_form  # noqa: F401
 from .paint import paint_features  # noqa: F401
 from .paint import paint_history  # noqa: F401
+from .paint import paint_status  # noqa: F401
 from .paint import undo_paint  # noqa: F401
 from .panels import panel_analysis_launch  # noqa: F401
 from .panels import panel_basemap_picker  # noqa: F401

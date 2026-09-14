@@ -133,13 +133,40 @@ def check_paint_batch(
 
     Returns a ``ConstraintResult`` with all violations and a ``blocked``
     flag that is True if *any* blocking constraint was violated.
+
+    Fetches each distinct column's constraints once up front rather than
+    calling :func:`check_paint_value` (one query per feature/column pair) —
+    ``PaintConstraint`` rows are workspace-level, so the same handful of
+    rules apply to every feature; a large selection would otherwise mean
+    thousands of near-identical queries for what's really a small, reusable
+    rule set.
     """
+    columns_touched = {
+        column
+        for column_map in paint_map.values()
+        for column in column_map
+        if column in PAINTABLE_COLUMNS
+    }
+    constraints_by_column: dict[str, list[PaintConstraint]] = {}
+    for constraint in PaintConstraint.objects.filter(
+        workspace=workspace, column__in=columns_touched
+    ):
+        constraints_by_column.setdefault(constraint.column, []).append(constraint)
+
     all_violations = [
-        v
+        ConstraintViolation(
+            feature_id=feature_id,
+            column=column,
+            operator=constraint.operator,
+            constraint_value=constraint.value,
+            painted_value=value,
+            message=constraint.message,
+            severity=constraint.severity,
+        )
         for feature_id, column_map in paint_map.items()
         for column, value in column_map.items()
-        if column in PAINTABLE_COLUMNS
-        for v in check_paint_value(workspace, column, value, feature_id=feature_id)
+        for constraint in constraints_by_column.get(column, [])
+        if _evaluate(constraint.operator, constraint.value, value)
     ]
 
     blocked = any(v.severity == "block" for v in all_violations)

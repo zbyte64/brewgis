@@ -75,6 +75,20 @@ if TYPE_CHECKING:
 # commands and production-like workflows; the tests fixture is the standard for
 # pytest-based tests. If email-related issues arise with allauth, migrate both
 # to a shared factory pattern.
+@pytest.fixture(autouse=True)
+def _celery_eager(settings) -> None:
+    """Force Celery tasks to run inline for every test.
+
+    Independent of whatever CELERY_TASK_ALWAYS_EAGER the host environment
+    has set (dev containers now run with it off, so tasks like paint
+    operations genuinely background against the live worker) — a test
+    calling `.delay()` needs the task to execute synchronously in-process,
+    since nothing in a test run consumes the real Celery queue.
+    """
+    settings.CELERY_TASK_ALWAYS_EAGER = True
+    settings.CELERY_TASK_EAGER_PROPAGATES = True
+
+
 @pytest.fixture
 def user(db) -> User:
     return UserFactory()

@@ -8,6 +8,7 @@ import uuid
 from typing import TYPE_CHECKING
 
 from django.db import connection
+from django.db.models import Max
 from django.http import Http404
 from django.views.decorators.http import require_safe
 
@@ -23,6 +24,7 @@ from brewgis.workspace.built_forms.models import BuildingType
 from brewgis.workspace.built_forms.models import PlaceType
 from brewgis.workspace.models import Basemap
 from brewgis.workspace.models import Layer
+from brewgis.workspace.models import PaintedCanvas
 from brewgis.workspace.models import Scenario
 from brewgis.workspace.models import SymbologyConfig
 from brewgis.workspace.models import Workspace
@@ -148,14 +150,25 @@ def view_workspace_map(request: HttpRequest, workspace_pk: int) -> HttpResponse:
         # template placeholders.
         _request_scheme_host = f"{request.scheme}://{request.get_host()}"
 
+        # Martin's tile responses carry no Cache-Control/Expires header, so
+        # a plain page reload can have the browser reuse a previously
+        # cached tile for an extent painted since — the canvas view itself
+        # is always live (see canvas_view_manager.refresh_canvas_view), but
+        # the *browser* doesn't know that. Stamp the tile URL with the most
+        # recent paint write for this scenario so a repaint always changes
+        # the URL (and therefore the browser's cache key), the same way
+        # brew-gis-map.ts's refreshCanvasTiles() cache-busts mid-session.
+        last_painted = PaintedCanvas.objects.filter(scenario=scenario).aggregate(
+            Max("painted_at")
+        )["painted_at__max"]
+        _version_qs = f"?v={last_painted.timestamp():.0f}" if last_painted else ""
+
         if workspace.tile_server_backend == "martin":
-            canvas_tiles_url = (
-                f"{_request_scheme_host}/martin/{canvas_source_id}/{{z}}/{{x}}/{{y}}"
-            )
+            canvas_tiles_url = f"{_request_scheme_host}/martin/{canvas_source_id}/{{z}}/{{x}}/{{y}}{_version_qs}"
         else:
             canvas_tiles_url = (
                 f"{_request_scheme_host}"
-                f"/tipg/collections/{canvas_source_id}/tiles/WebMercatorQuad/{{z}}/{{x}}/{{y}}"
+                f"/tipg/collections/{canvas_source_id}/tiles/WebMercatorQuad/{{z}}/{{x}}/{{y}}{_version_qs}"
             )
 
         # Build column metadata for the paint toolbar dropdown

@@ -11,6 +11,11 @@ REDIS_URL=redis://redis:6379/0
 # Celery
 # ------------------------------------------------------------------------------
 
+# Off (real async via the celeryworker container) so long-running tasks —
+# e.g. a large paint operation — actually background instead of blocking
+# the request inline, which is what DEBUG's implicit default would do.
+CELERY_TASK_ALWAYS_EAGER=False
+
 # Flower
 CELERY_FLOWER_USER=komkgDMMBitfqRabgrYDlEKCynFCWYOQ
 CELERY_FLOWER_PASSWORD=DTWvUkZNIUACsu1J0yygxl7T9TjDfWUQbJSZGmjieqhBvp0bbSIu7g34oa62POHT

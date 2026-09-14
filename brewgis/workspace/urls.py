@@ -30,6 +30,7 @@ from .views import merge_paint_edits
 from .views import paint_built_form
 from .views import paint_features
 from .views import paint_history
+from .views import paint_status
 from .views import panel_analysis_launch
 from .views import panel_basemap_picker
 from .views import panel_data_catalog
@@ -200,6 +201,11 @@ urlpatterns = [
         "<int:workspace_pk>/scenario/<int:scenario_pk>/clear-paint/",
         clear_paint,
         name="clear_paint",
+    ),
+    path(
+        "<int:workspace_pk>/scenario/<int:scenario_pk>/paint/status/<int:run_pk>/",
+        paint_status,
+        name="paint_status",
     ),
     # Paint History & Undo
     path(

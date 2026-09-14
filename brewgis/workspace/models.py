@@ -655,6 +655,61 @@ class PaintEvent(models.Model):
         )
 
 
+class PaintRun(models.Model):
+    """Tracks execution of a bulk paint operation running as a background
+    Celery task, so painting a large selection of parcels doesn't block the
+    request — the frontend polls this row's status instead."""
+
+    OPERATION_CHOICES = [
+        ("direct", "Direct Column Paint"),
+        ("built_form", "Built Form Paint"),
+        ("match", "Match Closest Built Form"),
+        ("fill", "Fill From Built Form"),
+    ]
+
+    workspace = models.ForeignKey(
+        Workspace, on_delete=models.CASCADE, related_name="paint_runs"
+    )
+    scenario = models.ForeignKey(
+        Scenario, on_delete=models.CASCADE, related_name="paint_runs"
+    )
+    operation = models.CharField(max_length=16, choices=OPERATION_CHOICES)
+    params = models.JSONField(
+        default=dict,
+        blank=True,
+        help_text="Validated request body (features, plus column/value or bf_type/bf_id).",
+    )
+    result = models.JSONField(
+        default=dict,
+        blank=True,
+        help_text="Final response body once complete (painted_count, warnings, etc.).",
+    )
+    status = models.CharField(
+        max_length=16,
+        choices=[
+            ("pending", "Pending"),
+            ("running", "Running"),
+            ("completed", "Completed"),
+            ("failed", "Failed"),
+        ],
+        default="pending",
+    )
+    started_at = models.DateTimeField(null=True, blank=True)
+    completed_at = models.DateTimeField(null=True, blank=True)
+    error_log = models.TextField(blank=True, default="")
+    created_at = models.DateTimeField(auto_now_add=True)
+    created_by = models.ForeignKey(
+        settings.AUTH_USER_MODEL, on_delete=models.SET_NULL, null=True, blank=True
+    )
+
+    class Meta:
+        ordering = ("-created_at",)
+        verbose_name = "Paint Run"
+
+    def __str__(self) -> str:
+        return f"PaintRun[{self.scenario_id}]({self.get_operation_display()}: {self.status})"
+
+
 class ScenarioReport(models.Model):
     """Tracks and stores generated reports (scenario comparison, paint tracking, map export)."""
 

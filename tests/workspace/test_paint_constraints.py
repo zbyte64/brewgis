@@ -348,3 +348,28 @@ class TestCheckPaintBatch(TestCase):
         result = check_paint_batch(self.workspace, {"f1": {col: 50.0}})
         assert not result.blocked
         assert len(result.violations) == 1
+
+    def test_query_count_does_not_scale_with_feature_count(self) -> None:
+        """A large selection must not issue one query per (feature, column).
+
+        PaintConstraint rows are workspace-level, so the same handful of
+        rules apply to every feature — a naive per-feature/column lookup
+        loop would turn a big paint operation into thousands of near-
+        identical queries. This should stay at a small, constant count no
+        matter how many features are being painted.
+        """
+        col = "area_parcel"
+        PaintConstraint.objects.create(
+            workspace=self.workspace,
+            column=col,
+            operator=ConstraintOperator.LT,
+            value=100.0,
+            severity=ConstraintSeverity.WARN,
+        )
+        small_map = {f"f{i}": {col: 50.0} for i in range(5)}
+        large_map = {f"f{i}": {col: 50.0} for i in range(500)}
+
+        with self.assertNumQueries(1):
+            check_paint_batch(self.workspace, small_map)
+        with self.assertNumQueries(1):
+            check_paint_batch(self.workspace, large_map)

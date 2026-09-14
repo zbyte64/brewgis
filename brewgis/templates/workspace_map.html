@@ -531,6 +531,15 @@
       // form-urlencoded hx-post/hx-include — so these go through fetch()
       // directly instead, matching the pattern already used below for
       // paint history and the PDF export request.
+      function renderPaintSpinner() {
+        if (!paintResult) return;
+        paintResult.innerHTML =
+          '<div class="d-flex align-items-center gap-2 text-muted" style="font-size:0.75rem;">' +
+          '<span class="spinner-border spinner-border-sm" role="status" aria-hidden="true"></span>' +
+          '<span>Working on it&hellip;</span>' +
+          '</div>';
+      }
+
       function renderPaintResult(ok, data) {
         if (!paintResult) return;
         if (ok) {
@@ -559,8 +568,39 @@
         }
       }
 
+      // Large selections run as a background Celery task (see PaintRun /
+      // run_paint_operation) instead of blocking the request — the apply
+      // endpoints respond immediately with either the finished result or a
+      // 202 + poll_url. Poll until it's no longer "accepted", showing a
+      // spinner the whole time so a slow paint doesn't look like nothing
+      // happened.
+      function fetchJson(url, options) {
+        return fetch(url, options).then(function(r) {
+          return r.json().then(function(data) {
+            return {
+              ok: r.ok,
+              data: data
+            };
+          });
+        });
+      }
+
+      function pollPaintStatus(pollUrl) {
+        return fetchJson(pollUrl).then(function(result) {
+          if (result.data && result.data.status === 'accepted') {
+            return new Promise(function(resolve) {
+              setTimeout(function() {
+                resolve(pollPaintStatus(pollUrl));
+              }, 1000);
+            });
+          }
+          return result;
+        });
+      }
+
       function postPaintAction(url, body) {
-        return fetch(url, {
+        renderPaintSpinner();
+        return fetchJson(url, {
             method: 'POST',
             headers: {
               'X-CSRFToken': '{{ csrf_token }}',
@@ -568,13 +608,11 @@
             },
             body: JSON.stringify(body)
           })
-          .then(function(r) {
-            return r.json().then(function(data) {
-              return {
-                ok: r.ok,
-                data: data
-              };
-            });
+          .then(function(result) {
+            if (result.data && result.data.status === 'accepted' && result.data.poll_url) {
+              return pollPaintStatus(result.data.poll_url);
+            }
+            return result;
           })
           .then(function(result) {
             renderPaintResult(result.ok, result.data);
