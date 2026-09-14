@@ -8,6 +8,13 @@
 #
 COMPOSE_FILE ?= docker-compose.yml
 COMPOSE_RUN = docker compose -f $(COMPOSE_FILE) run --rm django
+# `.env` hardcodes DJANGO_TESTING=false for the live dev server; pytest-django
+# force-imports Django settings (evaluating TESTING) before any conftest.py
+# runs, so setting DJANGO_TESTING=true from Python is always too late — it
+# has to be a real env var before the process starts. `docker compose run`
+# spins up its own one-off container (never the persistent `up`-started
+# one), so this only affects test runs, not the live server.
+COMPOSE_TEST_RUN = docker compose -f $(COMPOSE_FILE) run --rm -e DJANGO_TESTING=true django
 
 # ─────────────────────────────────────────────
 # Service lifecycle
@@ -60,26 +67,26 @@ clean-test-db:  ## Drop and recreate the test database
 
 .PHONY: test
 test:  ## Run all tests (excludes e2e)
-	$(COMPOSE_RUN) pytest -m "not e2e" --timeout=300
+	$(COMPOSE_TEST_RUN) pytest -m "not e2e" --timeout=300
 
 .PHONY: test-fast
 test-fast:  ## Run tests with fast-fail and reuse-db
-	$(COMPOSE_RUN) pytest -x --reuse-db -m "not e2e and not integration" --timeout=300
+	$(COMPOSE_TEST_RUN) pytest -x --reuse-db -m "not e2e and not integration" --timeout=300
 
 .PHONY: test-parallel
 test-parallel:  ## Run tests in parallel (excludes slow and e2e, requires pytest-xdist)
-	$(COMPOSE_RUN) pytest -n auto --reuse-db -m "not slow and not e2e" --timeout=300
+	$(COMPOSE_TEST_RUN) pytest -n auto --reuse-db -m "not slow and not e2e" --timeout=300
 
 .PHONY: test-e2e
 test-e2e:  ## Run end-to-end tests only (sequential, single worker)
-	$(COMPOSE_RUN) pytest tests/e2e/ -m e2e -n 0 --timeout=300
+	$(COMPOSE_TEST_RUN) pytest tests/e2e/ -m e2e -n 0 --timeout=300
 .PHONY: test-review
 test-review:  ## Run UX design review tests only
-	$(COMPOSE_RUN) pytest tests/review/ -m review --timeout=300
+	$(COMPOSE_TEST_RUN) pytest tests/review/ -m review --timeout=300
 
 .PHONY: test-review-parallel
 test-review-parallel:  ## Run UX design review tests in parallel (requires pytest-xdist)
-	$(COMPOSE_RUN) pytest tests/review/ -m review -n auto --timeout=300 || echo "Warning: xdist not installed, install with 'pip install pytest-xdist'"
+	$(COMPOSE_TEST_RUN) pytest tests/review/ -m review -n auto --timeout=300 || echo "Warning: xdist not installed, install with 'pip install pytest-xdist'"
 
 .PHONY: clean-review-screenshots
 clean-review-screenshots:  ## Remove stale review test screenshots
@@ -87,31 +94,31 @@ clean-review-screenshots:  ## Remove stale review test screenshots
 
 .PHONY: test-models
 test-models:  ## Run model tests only
-	$(COMPOSE_RUN) pytest -m models --reuse-db
+	$(COMPOSE_TEST_RUN) pytest -m models --reuse-db
 
 .PHONY: test-views
 test-views:  ## Run view/HTTP tests only
-	$(COMPOSE_RUN) pytest -m views --reuse-db
+	$(COMPOSE_TEST_RUN) pytest -m views --reuse-db
 
 .PHONY: test-integration
 test-integration:  ## Run integration tests only
-	$(COMPOSE_RUN) pytest -m integration --reuse-db
+	$(COMPOSE_TEST_RUN) pytest -m integration --reuse-db
 
 .PHONY: test-safe
 test-safe:  ## Run tests excluding slow and e2e (safe for parallel execution)
-	$(COMPOSE_RUN) pytest -m "not slow and not e2e" --timeout=300 -n auto
+	$(COMPOSE_TEST_RUN) pytest -m "not slow and not e2e" --timeout=300 -n auto
 
 .PHONY: test-deal
 test-deal:  ## Run deal property-based tests only (sequential, with deal enabled)
-	$(COMPOSE_RUN) bash -c "DEAL_ENABLED=1 DEAL_CASE_COUNT=10 pytest tests/workspace/test_deal_contracts.py -n 0 --timeout=300"
+	$(COMPOSE_TEST_RUN) bash -c "DEAL_ENABLED=1 DEAL_CASE_COUNT=10 pytest tests/workspace/test_deal_contracts.py -n 0 --timeout=300"
 
 .PHONY: test-all
 test-all:  ## Run all tests sequentially (safe for full coverage)
-	$(COMPOSE_RUN) pytest -n 0 --timeout=300
+	$(COMPOSE_TEST_RUN) pytest -n 0 --timeout=300
 
 .PHONY: test-mcp
 test-mcp:  ## Run MCP server tests (models marker only)
-	$(COMPOSE_RUN) pytest tests/workspace/test_mcp_server.py -m models -v
+	$(COMPOSE_TEST_RUN) pytest tests/workspace/test_mcp_server.py -m models -v
 
 .PHONY: test-soda
 test-soda:  ## Run Soda Core data quality validation
@@ -125,7 +132,7 @@ sqlmesh-ui:  ## Launch SQLMesh browser UI
 	docker compose -f $(COMPOSE_FILE) up sqlmesh-ui
 .PHONY: coverage
 coverage:  ## Run tests with coverage report and fail if below threshold
-	$(COMPOSE_RUN) bash -c 'coverage run -m pytest -m "not e2e" --timeout=300 && coverage report --fail-under=60'
+	$(COMPOSE_TEST_RUN) bash -c 'coverage run -m pytest -m "not e2e" --timeout=300 && coverage report --fail-under=60'
 
 # ─────────────────────────────────────────────
 # SQLMesh Maintenance

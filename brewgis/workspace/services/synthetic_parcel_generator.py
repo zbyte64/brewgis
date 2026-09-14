@@ -34,15 +34,68 @@ LAND_USE_CATEGORIES: list[tuple[str, float]] = [
     ("vacant", 0.03),
 ]
 
+# Land use classification, weighted per land_development_category — a
+# "commercial" parcel is realistically almost always zoned commercial, an
+# "urban" one is a mix dominated by residential, etc.
+LAND_USE_BY_CATEGORY: dict[str, list[tuple[str, float]]] = {
+    "urban": [
+        ("residential", 0.50),
+        ("commercial", 0.25),
+        ("mixed_use", 0.15),
+        ("industrial", 0.10),
+    ],
+    "suburban": [
+        ("residential", 0.70),
+        ("commercial", 0.20),
+        ("mixed_use", 0.10),
+    ],
+    "rural_residential": [("residential", 0.90), ("agricultural", 0.10)],
+    "commercial": [("commercial", 0.85), ("mixed_use", 0.15)],
+    "industrial": [("industrial", 0.90), ("commercial", 0.10)],
+    "agricultural": [("agricultural", 0.95), ("vacant", 0.05)],
+    "park": [("public", 1.0)],
+    "vacant": [("vacant", 1.0)],
+}
+
+# Assessor use codes, weighted per land_use — mimics the short alphanumeric
+# codes (e.g. "R1", "C2") real county assessor rolls use.
+ASSESSOR_USE_CODES_BY_LAND_USE: dict[str, list[tuple[str, float]]] = {
+    "residential": [("R1", 0.60), ("R2", 0.25), ("R3", 0.15)],
+    "commercial": [("C1", 0.50), ("C2", 0.30), ("C3", 0.20)],
+    "industrial": [("I1", 0.60), ("I2", 0.40)],
+    "mixed_use": [("MU1", 0.70), ("MU2", 0.30)],
+    "agricultural": [("A1", 0.70), ("A2", 0.30)],
+    "public": [("E1", 0.50), ("P1", 0.50)],
+    "vacant": [("V1", 1.0)],
+}
+
 _DEFAULT_RANDOM_SEED = 42
+
+
+def _weighted_choice(rng: random.Random, choices: list[tuple[str, float]]) -> str:
+    """Pick one value from a ``(value, weight)`` list — the shared "factory"
+    backing every fuzzed classification column below."""
+    values, weights = zip(*choices, strict=True)
+    return rng.choices(values, weights=weights, k=1)[0]  # type: ignore[no-any-return]
 
 
 def _select_category(rng: random.Random) -> str:
     """Weighted random selection of land development category."""
     if not LAND_USE_CATEGORIES:
         return "urban"
-    categories, weights = zip(*LAND_USE_CATEGORIES, strict=True)
-    return rng.choices(categories, weights=weights, k=1)[0]  # type: ignore[no-any-return]
+    return _weighted_choice(rng, LAND_USE_CATEGORIES)
+
+
+def _select_land_use(category: str, rng: random.Random) -> str:
+    """Weighted random land use classification, correlated with *category*."""
+    choices = LAND_USE_BY_CATEGORY.get(category, [("residential", 1.0)])
+    return _weighted_choice(rng, choices)
+
+
+def _select_assessor_use_code(land_use: str, rng: random.Random) -> str:
+    """Weighted random assessor use code, correlated with *land_use*."""
+    choices = ASSESSOR_USE_CODES_BY_LAND_USE.get(land_use, [("R1", 1.0)])
+    return _weighted_choice(rng, choices)
 
 
 def _generate_parcel_geometry(
@@ -255,6 +308,8 @@ def generate_synthetic_parcels(
         area_gross = max(0.01, min(area_gross, 640.0))
 
         category = _select_category(rng)
+        land_use = _select_land_use(category, rng)
+        assessor_use_code = _select_assessor_use_code(land_use, rng)
 
         # Demographics: population ~ area * density
         density = np_rng.lognormal(mean=1.5, sigma=1.0) * 5  # persons/acre
@@ -323,6 +378,8 @@ def generate_synthetic_parcels(
             "id_source": f"synthetic_{i}",
             "geometry_key": f"synth_{i}",
             "land_development_category": category,
+            "land_use": land_use,
+            "assessor_use_code": assessor_use_code,
             "built_form_key": None,
             "intersection_density": round(rng.uniform(0, 25), 2),
             "area_gross": round(area_gross, 4),

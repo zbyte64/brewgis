@@ -78,22 +78,28 @@
             </div>
             <p class="mb-1">{% translate "Import GIS files, POIs, Census data, or stitch and fill layer attributes." %}</p>
           </a>
-          <a href="{% url 'workspace:building_type_list' %}"
-             class="list-group-item list-group-item-action">
+          <span class="list-group-item disabled" aria-disabled="true">
             <div class="d-flex w-100 justify-content-between">
-              <h5 class="mb-1">{% translate "Building Types" %}</h5>
+              <h5 class="mb-1 text-muted">{% translate "Building Types" %}</h5>
             </div>
-            <p class="mb-1">
+            <p class="mb-1 text-muted">
               {% translate "Define and manage built form archetypes with density, energy, water, and trip parameters." %}
             </p>
-          </a>
-          <a href="{% url 'workspace:place_type_list' %}"
-             class="list-group-item list-group-item-action">
+            <p class="mb-0 small fst-italic">
+              {% translate "Create a workspace first — building types are managed per workspace." %}
+            </p>
+          </span>
+          <span class="list-group-item disabled" aria-disabled="true">
             <div class="d-flex w-100 justify-content-between">
-              <h5 class="mb-1">{% translate "Place Types" %}</h5>
+              <h5 class="mb-1 text-muted">{% translate "Place Types" %}</h5>
             </div>
-            <p class="mb-1">{% translate "Define place typologies and mix building types to model development scenarios." %}</p>
-          </a>
+            <p class="mb-1 text-muted">
+              {% translate "Define place typologies and mix building types to model development scenarios." %}
+            </p>
+            <p class="mb-0 small fst-italic">
+              {% translate "Create a workspace first — place types are managed per workspace." %}
+            </p>
+          </span>
         </div>
       </div>
     {% endif %}

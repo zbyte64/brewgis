@@ -1311,15 +1311,17 @@ class TestStaticComplexityScore:
             JOIN staging.final AS f ON p.parcel_id = f.pid
             JOIN staging.extra AS e ON p.parcel_id = e.pid
             JOIN staging.more AS m ON p.parcel_id = m.pid
+            JOIN staging.sixth AS s6 ON p.parcel_id = s6.pid
+            JOIN staging.seventh AS s7 ON p.parcel_id = s7.pid
             """,
             {"parcel_id": "BIGINT", "result": "BIGINT"},
         )
         violations = _check_complexity(src, {"brewdb.public.parcels": ref})
-        # 4 tables + 4 joins = 4*5 + 4*2 = 28 > 25
+        # 8 base tables + 7 joins + 1 unindexed - 5 (view) = 40 + 14 + 10 - 5 = 59 > 50
         assert len(violations) == 1
         msg = _violation_msg(violations[0])
         assert "Complexity score" in msg
-        assert "5 joins" in msg
+        assert "7 joins" in msg
 
     def test_unindexed_join_adds_penalty(self) -> None:
         """Unindexed join column adds +10 penalty."""
@@ -1336,12 +1338,16 @@ class TestStaticComplexityScore:
             JOIN brewdb.public.parcels AS p ON s.parcel_id = p.parcel_id
             JOIN staging.other AS o ON p.parcel_id = o.pid
             JOIN staging.extra AS e ON p.parcel_id = e.pid
+            JOIN staging.more AS m ON p.parcel_id = m.pid
+            JOIN staging.sixth AS s6 ON p.parcel_id = s6.pid
+            JOIN staging.seventh AS s7 ON p.parcel_id = s7.pid
+            JOIN staging.eighth AS s8 ON p.parcel_id = s8.pid
             """,
             {"parcel_id": "BIGINT", "val": "BIGINT", "result": "BIGINT"},
             deps={"brewdb.public.parcels"},
         )
         violations = _check_complexity(src, {"brewdb.public.parcels": ref})
-        # 3 tables + 2 joins + 1 unindexed = 15 + 4 + 10 = 29 > 25
+        # 8 base tables + 7 joins + 1 unindexed - 5 (view) = 40 + 14 + 10 - 5 = 59 > 50
         assert len(violations) >= 1
 
     def test_full_outer_join_expensive(self) -> None:
@@ -1353,10 +1359,14 @@ class TestStaticComplexityScore:
             FROM source_table AS s
             FULL OUTER JOIN staging.other AS o ON s.id = o.id
             JOIN staging.third AS t ON s.id = t.id
+            JOIN staging.fourth AS f ON s.id = f.id
+            JOIN staging.fifth AS f5 ON s.id = f5.id
+            JOIN staging.sixth AS s6 ON s.id = s6.id
             """,
             {"id": "BIGINT", "result": "BIGINT"},
         )
         violations = _check_complexity(src, {})
+        # 7 base tables + 6 joins + 15 (full outer) - 5 (view) = 35 + 12 + 15 - 5 = 57 > 50
         assert len(violations) == 1
         msg = _violation_msg(violations[0])
         assert "FULL OUTER" in msg
@@ -1372,10 +1382,15 @@ class TestStaticComplexityScore:
             SELECT *
             FROM cte3 AS c
             JOIN staging.other AS o ON c.id = o.id
+            JOIN staging.third AS t ON c.id = t.id
+            JOIN staging.fourth AS f ON c.id = f.id
+            JOIN staging.fifth AS f5 ON c.id = f5.id
+            JOIN staging.sixth AS s6 ON c.id = s6.id
             """,
             {"id": "BIGINT", "result": "BIGINT"},
         )
         violations = _check_complexity(src, {})
+        # 9 base tables + 5 joins + 3 CTEs - 5 (view) = 45 + 10 + 3 - 5 = 53 > 50
         assert len(violations) == 1
         msg = _violation_msg(violations[0])
         assert "3 CTEs" in msg

@@ -4,6 +4,16 @@ from __future__ import annotations
 
 import os
 
+# NOTE: this used to be `os.environ.setdefault(...)`, which looked like it
+# would force test mode but never actually could: pytest-django's own
+# `pytest_load_initial_conftests` hook (see its plugin.py) force-imports
+# `brewgis.config.settings` — evaluating `TESTING = env.bool("DJANGO_TESTING",
+# ...)` — before this conftest.py's top-level code ever runs. By the time
+# either form of this line executes, `settings.TESTING` is already a fixed
+# Python bool; no amount of `os.environ` mutation here can change it
+# retroactively. `.env` hardcodes DJANGO_TESTING=false (correct for the live
+# dev server), so the real fix has to set that env var before pytest starts
+# at all — see `COMPOSE_TEST_RUN` in the Makefile — not here.
 os.environ.setdefault("DJANGO_TESTING", "true")
 
 import deal

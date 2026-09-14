@@ -1636,9 +1636,9 @@ class StaticComplexityScore(Rule):
         )
 
     Thresholds:
-        * **< 25**: No violation (normal).
-        * **25–50**: Warning-level violation (review recommended).
-        * **> 50**: Error-level violation (may need optimization).
+        * **< 50**: No violation (normal).
+        * **50–500**: Warning-level violation (review recommended).
+        * **> 500**: Error-level violation (may need optimization).
     """
 
     WARN_THRESHOLD = 50.0
