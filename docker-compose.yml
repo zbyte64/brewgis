@@ -45,9 +45,12 @@ services:
     # Docker socket: lets the app restart the martin container after an
     # analysis run creates new tables, since Martin only discovers tables
     # at process startup (no live-reload API). Scoped to this service only
-    # (not celeryworker/mcp/etc.) since AnalysisRun pipelines run
-    # synchronously in the Django process — see
-    # brewgis/workspace/services/tile_server.py.
+    # (not celeryworker/mcp/etc.) — an AnalysisRun launched from the map
+    # view's Analysis panel executes in celeryworker instead, where
+    # restart_martin() safely no-ops (MARTIN_CONTAINER_NAME isn't set
+    # there) rather than restarting Martin immediately; the run still
+    # completes correctly, tiles just pick up new tables on Martin's next
+    # restart. See brewgis/workspace/services/tile_server.py.
     #
     # NOTE: a service-level `volumes:` key REPLACES (not merges with) the
     # `x-shared-django` anchor's own `volumes:` list under YAML `<<:`
@@ -143,6 +146,16 @@ services:
     <<: *django
     container_name: brewgis_local_celeryworker
     command: /start-celeryworker
+    environment:
+      # Celery's prefork pool runs tasks in daemonic worker processes, and
+      # daemonic processes can't spawn their own children (Python's
+      # multiprocessing forbids it). SQLMesh's model loader normally forks
+      # a ProcessPoolExecutor to load .sql models in parallel — safe from
+      # the django/mcp services (not daemonic), but it crashes an
+      # AnalysisRun task here with "daemonic processes are not allowed to
+      # have children" unless this is set, which makes SQLMesh fall back
+      # to loading models sequentially in-process instead of forking.
+      MAX_FORK_WORKERS: "1"
 
   celerybeat:
     <<: *django
