@@ -94,6 +94,11 @@ python_files = [
 norecursedirs = [
     "planning",
     "brewgis/sqlmesh/tests",
+    # Pre-dbt->SQLMesh-migration BDD suite (see commit db21d4b): its steps
+    # module references tests/features/dbt_isolation.feature, which no
+    # longer exists, so pytest can't even collect it — breaks `make test`
+    # for every invocation until this is either restored or deleted outright.
+    "tests/isolation_orchestration",
 ]
 markers = [
     "e2e: mark test as end-to-end test requiring Playwright browser",

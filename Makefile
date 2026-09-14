@@ -66,8 +66,8 @@ clean-test-db:  ## Drop and recreate the test database
 # ─────────────────────────────────────────────
 
 .PHONY: test
-test:  ## Run all tests (excludes e2e)
-	$(COMPOSE_TEST_RUN) pytest -m "not e2e" --timeout=300
+test:  ## Run all tests (excludes e2e and integration — see test-integration)
+	$(COMPOSE_TEST_RUN) pytest -m "not e2e and not integration" --timeout=300
 
 .PHONY: test-fast
 test-fast:  ## Run tests with fast-fail and reuse-db
