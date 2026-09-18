@@ -26,7 +26,13 @@ class UploadPage(BasePage):
         return self.page.locator("input[type=file]").is_visible()
 
     def submit_empty(self) -> None:
-        """Submit the form without any file selected."""
+        """Submit the form without any file selected.
+
+        Disables HTML5 constraint validation first — otherwise the browser
+        blocks the empty submit client-side and the request never reaches
+        the server, so the server-side validation error would never render.
+        """
+        self.page.evaluate("document.querySelector('form').noValidate = true")
         self.page.click("button[type=submit]")
 
     def get_validation_errors(self) -> list[str]:

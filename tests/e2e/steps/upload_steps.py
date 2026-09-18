@@ -17,12 +17,6 @@ if TYPE_CHECKING:
 scenarios(str(Path(__file__).parent.parent / "features" / "upload.feature"))
 
 
-@when("I navigate to the upload page")
-def navigate_upload(page: Page, live_server_url: str) -> None:
-    """Navigate to the GIS file upload page."""
-    UploadPage(page, live_server_url).navigate_to()
-
-
 @when("I submit the form without a file")
 def submit_empty_upload(page: Page, live_server_url: str) -> None:
     """Submit the upload form with no file selected."""

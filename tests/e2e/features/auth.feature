@@ -8,6 +8,7 @@ Feature: Authentication
 
   @e2e
   Scenario: Login with valid credentials
+    Given a user "testuser" exists
     When I navigate to the login page
     And I log in as "testuser" with password "testpass123"
     Then I should be on the home page
@@ -15,6 +16,7 @@ Feature: Authentication
 
   @e2e
   Scenario: Login with invalid credentials
+    Given a user "testuser" exists
     When I navigate to the login page
     And I log in as "testuser" with password "wrongpassword"
     Then I should see an error message on the login page
@@ -28,5 +30,4 @@ Feature: Authentication
   Scenario: Logout
     Given the user is logged in
     When I log out
-    Then I should be on the home page
-    And I should see "Sign In" in the navigation
+    Then I should be on the login page

@@ -9,6 +9,7 @@ from pytest_bdd import parsers
 from pytest_bdd import scenarios
 from pytest_bdd import when
 
+from brewgis.workspace.models import Workspace
 from tests.e2e.pages.building_types_page import BuildingTypesPage
 from tests.e2e.steps.common_steps import *  # noqa: F403
 
@@ -19,9 +20,10 @@ scenarios(str(Path(__file__).parent.parent / "features" / "building_types.featur
 
 
 @when("I navigate to the building types page")
-def navigate_building_types(page: Page, live_server_url: str) -> None:
+def navigate_building_types(page: Page, live_server_url: str, db) -> None:  # type: ignore[no-untyped-def]
     """Navigate to the building types list page."""
-    BuildingTypesPage(page, live_server_url).navigate_to_list()
+    workspace = Workspace.objects.get(name="Building Types WS")
+    BuildingTypesPage(page, live_server_url).navigate_to_list(workspace.pk)
 
 
 @when(parsers.parse('I click "{text}"'))

@@ -5,18 +5,19 @@ Feature: Building Types
 
   Background:
     Given the user is logged in
+    And a workspace named "Building Types WS" exists
 
   @e2e
   Scenario: Building types list shows empty state
     When I navigate to the building types page
     Then I should see "No building types yet"
-    And I should see a "+ New Building Type" button
+    And I should see a "+ New Building Type" link
 
   @e2e
   Scenario: Create a building type
     When I navigate to the building types page
     And I click "+ New Building Type"
-    Then I should see "New Building Type" in the page title
+    Then New Building Type in the page title
     And I should see a form with name and density fields
 
   @e2e

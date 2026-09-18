@@ -10,7 +10,7 @@ Feature: Create Layer
   @e2e
   Scenario: Create layer page shows the form
     When I navigate to the create layer page
-    Then I should see "New Layer" in the page title
+    Then New Layer in the page title
 
   @e2e
   Scenario: Submit invalid form shows errors

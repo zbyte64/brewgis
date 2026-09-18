@@ -2,8 +2,11 @@
 
 from __future__ import annotations
 
+from contextlib import suppress
 from typing import TYPE_CHECKING
 
+from playwright.sync_api import Error as PlaywrightError
+from playwright.sync_api import expect
 from pytest_bdd import given
 from pytest_bdd import parsers
 from pytest_bdd import then
@@ -11,6 +14,7 @@ from pytest_bdd import when
 
 from tests.e2e.pages.auth_page import AuthPage
 from tests.e2e.pages.base_page import BasePage
+from tests.e2e.pages.upload_page import UploadPage
 from tests.factories import BuildingTypeFactory
 from tests.factories import LayerFactory
 from tests.factories import PlaceTypeFactory
@@ -32,12 +36,17 @@ def user_logged_in(logged_in_page: Page) -> Page:
 
 
 @given("the user is not logged in")
-def user_not_logged_in() -> None:
-    """Ensure no user is logged in."""
-    return
+def user_not_logged_in(page: Page) -> None:
+    """Ensure no user is logged in.
+
+    Clears cookies so this can also undo a Background's "the user is logged
+    in" step — Backgrounds always run before a scenario's own Given steps,
+    so without this the session from the Background would still be active.
+    """
+    page.context.clear_cookies()
 
 
-@given(parsers.parse("a workspace named {name} exists"))
+@given(parsers.parse('a workspace named "{name}" exists'))
 def workspace_exists(name: str, db) -> WorkspaceFactory:  # type: ignore[no-untyped-def]
     """Create a workspace with the given name."""
     return WorkspaceFactory(name=name)
@@ -50,13 +59,13 @@ def layer_exists(name: str, ws_name: str, db) -> None:  # type: ignore[no-untype
     LayerFactory(name=name, workspace=ws)
 
 
-@given(parsers.parse("a building type named {name} exists"))
+@given(parsers.parse('a building type named "{name}" exists'))
 def building_type_exists(name: str, db) -> BuildingTypeFactory:  # type: ignore[no-untyped-def]
     """Create a building type with the given name."""
     return BuildingTypeFactory(name=name)
 
 
-@given(parsers.parse("a place type named {name} exists"))
+@given(parsers.parse('a place type named "{name}" exists'))
 def place_type_exists(name: str, db) -> PlaceTypeFactory:  # type: ignore[no-untyped-def]
     """Create a place type with the given name."""
     return PlaceTypeFactory(name=name)
@@ -70,6 +79,17 @@ def navigate(page: Page, live_server_url: str, url: str) -> None:
     """Navigate to the given URL path."""
     full_url = live_server_url + url
     page.goto(full_url, wait_until="networkidle")
+
+
+@when("I navigate to the upload page")
+def navigate_upload(page: Page, live_server_url: str) -> None:
+    """Navigate to the GIS file upload page.
+
+    Defined here (not in upload_steps.py) so auth.feature's
+    "Unauthenticated user is redirected to login" scenario can reach it too —
+    pytest-bdd only resolves a step for scenarios in modules that import it.
+    """
+    UploadPage(page, live_server_url).navigate_to()
 
 
 @when(parsers.parse('I take a screenshot "{name}"'))
@@ -123,6 +143,13 @@ def see_link(page: Page, text: str) -> None:
     assert link.is_visible(), f'Expected link "{text}" to be visible'
 
 
+@then(parsers.parse('I should see a "{text}" heading'))
+def see_heading(page: Page, text: str) -> None:
+    """Assert a heading with the given text is visible."""
+    heading = page.get_by_role("heading", name=text)
+    assert heading.is_visible(), f'Expected heading "{text}" to be visible'
+
+
 @then(parsers.parse("{text} in the page title"))
 def title_contains_text(page: Page, text: str) -> None:
     """Check that the page title contains the given text."""
@@ -160,22 +187,27 @@ def validation_error(page: Page) -> None:
 
     Checks both CSS-based error indicators and Django's default
     required-field error text (for htmx-swapped forms).
+
+    Uses `expect()` rather than one-shot `.count()`/`.is_visible()` checks:
+    the htmx swap that inserts the errors can settle a moment after
+    `networkidle` fires (that event only tracks network activity, not
+    htmx's own post-response DOM patching), so a snapshot check taken right
+    after can race the swap. `expect()` retries until the condition holds
+    or its timeout elapses.
     """
-    page.wait_for_load_state("networkidle")
-    # Check CSS-based error indicators (standard Django/crispy forms)
     error_elements = page.locator(
         ".invalid-feedback, .alert-danger, .errorlist, .is-invalid"
     )
-    if error_elements.count() > 0:
-        return
-    # Fallback: check for Django default required-field error text
-    error_text = page.get_by_text("This field is required")
-    if error_text.is_visible():
-        return
-    # Final fallback: check for any form error text pattern
+    # `.first` because every empty required field renders its own copy of
+    # the "required" text, and a multi-match locator raises on
+    # `to_be_visible()` instead of waiting/returning a bool.
+    error_text = page.get_by_text("This field is required").first
     generic_errors = page.locator("text=error").first
-    if generic_errors.is_visible():
-        return
+
+    for candidate in (error_elements.first, error_text, generic_errors):
+        with suppress(AssertionError, PlaywrightError):
+            expect(candidate).to_be_visible(timeout=3000)
+            return
     raise AssertionError("Expected validation error to be visible")
 
 

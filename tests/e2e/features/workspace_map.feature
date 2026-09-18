@@ -10,7 +10,7 @@ Feature: Workspace Map
   @e2e
   Scenario: Map page renders with web component
     When I navigate to the map page for workspace "Map Test WS"
-    Then I should see "Map - Map Test WS" in the page title
+    Then Map - Map Test WS in the page title
     And the map web component should be visible
     And I should see a "Back" button
 

@@ -7,7 +7,9 @@ import math
 import uuid
 from typing import TYPE_CHECKING
 
+from django.contrib.auth.decorators import user_passes_test
 from django.db import connection
+from django.db import transaction
 from django.db.models import Max
 from django.http import Http404
 from django.views.decorators.http import require_safe
@@ -47,9 +49,14 @@ _AUTO_ZOOM_PADDING = 1.0
 
 
 def _table_extent(schema: str, table: str) -> tuple[float, float, float, float] | None:
-    """Return (min_lng, min_lat, max_lng, max_lat) for a table's geometry, or None."""
+    """Return (min_lng, min_lat, max_lng, max_lat) for a table's geometry, or None.
+
+    Runs in its own savepoint: a missing/renamed table (e.g. a SQLMesh output
+    that hasn't materialized yet) must not poison the outer request
+    transaction and take down every other query on the page with it.
+    """
     try:
-        with connection.cursor() as cursor:
+        with transaction.atomic(), connection.cursor() as cursor:
             # schema/table are quoted identifiers from Workspace/Layer
             # records, not raw user input.
             cursor.execute(
@@ -132,6 +139,7 @@ def _resolve_viewport(workspace: Workspace) -> dict[str, object]:
     }
 
 
+@user_passes_test(lambda u: u.is_authenticated)
 def view_workspace_map(request: HttpRequest, workspace_pk: int) -> HttpResponse:
     """Render the workspace map, optionally with scenario paint mode.
 

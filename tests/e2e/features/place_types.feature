@@ -5,18 +5,19 @@ Feature: Place Types
 
   Background:
     Given the user is logged in
+    And a workspace named "Place Types WS" exists
 
   @e2e
   Scenario: Place types list shows empty state
     When I navigate to the place types page
     Then I should see "No place types yet"
-    And I should see a "+ New Place Type" button
+    And I should see a "+ New Place Type" link
 
   @e2e
   Scenario: Create a place type
     When I navigate to the place types page
     And I click "+ New Place Type"
-    Then I should see "New Place Type" in the page title
+    Then New Place Type in the page title
     And I should see a form with name and ROW allocation fields
 
   @e2e

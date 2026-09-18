@@ -32,11 +32,11 @@ Feature: Paint Mode
     And I am on the map page with "Test Scenario" and workspace "Paint WS Buttons"
     And paint mode is active
     When I select 3 parcels
-    Then the feature count should show "3 parcel(s) selected"
+    Then the feature count should show "3 feature(s) selected"
     And the Apply button should be enabled
     And the Clear button should be enabled
     When I clear the selection
-    Then the feature count should show "0 parcel(s) selected"
+    Then the feature count should show "0 feature(s) selected"
     And the Apply button should be disabled
     And the Clear button should be disabled
 

@@ -17,13 +17,15 @@ class BuildingTypesPage(BasePage):
         super().__init__(page)
         self.base_url = base_url
 
-    def navigate_to_list(self) -> None:
+    def navigate_to_list(self, workspace_pk: int) -> None:
         """Navigate to the building types list page."""
-        self.navigate(self.base_url + "/built-forms/building-types/")
+        self.navigate(self.base_url + f"/{workspace_pk}/built-forms/building-types/")
 
-    def navigate_to_create(self) -> None:
+    def navigate_to_create(self, workspace_pk: int) -> None:
         """Navigate to the create building type page."""
-        self.navigate(self.base_url + "/built-forms/building-types/create/")
+        self.navigate(
+            self.base_url + f"/{workspace_pk}/built-forms/building-types/create/"
+        )
 
     def click_new(self) -> None:
         """Click the '+ New Building Type' button."""
@@ -45,13 +47,15 @@ class PlaceTypesPage(BasePage):
         super().__init__(page)
         self.base_url = base_url
 
-    def navigate_to_list(self) -> None:
+    def navigate_to_list(self, workspace_pk: int) -> None:
         """Navigate to the place types list page."""
-        self.navigate(self.base_url + "/built-forms/place-types/")
+        self.navigate(self.base_url + f"/{workspace_pk}/built-forms/place-types/")
 
-    def navigate_to_create(self) -> None:
+    def navigate_to_create(self, workspace_pk: int) -> None:
         """Navigate to the create place type page."""
-        self.navigate(self.base_url + "/built-forms/place-types/create/")
+        self.navigate(
+            self.base_url + f"/{workspace_pk}/built-forms/place-types/create/"
+        )
 
     def click_new(self) -> None:
         """Click the '+ New Place Type' button."""

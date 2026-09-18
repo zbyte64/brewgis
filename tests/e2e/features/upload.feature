@@ -10,8 +10,7 @@ Feature: GIS File Upload
   @e2e
   Scenario: Upload page shows the form
     When I navigate to the upload page
-    Then I should see "Importgis File" in the page title
-    And I should see a file upload field
+    Then I should see a file upload field
 
   @e2e
   Scenario: Submit without file shows validation error

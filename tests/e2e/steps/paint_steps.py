@@ -236,7 +236,14 @@ def feature_count_matches(page: Page, expected: str) -> None:
 
 @then(parsers.parse('the page URL should contain "{text}"'))
 def url_contains(page: Page, text: str) -> None:
-    """Check the URL contains the given substring."""
+    """Check the URL contains the given substring.
+
+    Waits for network idle first so any tile/map requests the navigation
+    triggered finish before the test ends — otherwise the live_server
+    thread can still be mid-request when teardown's table flush starts,
+    deadlocking against it.
+    """
+    page.wait_for_load_state("networkidle")
     assert text in page.url, f"Expected URL to contain '{text}', got '{page.url}'"
 
 

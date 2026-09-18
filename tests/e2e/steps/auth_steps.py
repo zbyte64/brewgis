@@ -5,6 +5,7 @@ from __future__ import annotations
 from pathlib import Path
 from typing import TYPE_CHECKING
 
+from pytest_bdd import given
 from pytest_bdd import parsers
 from pytest_bdd import scenarios
 from pytest_bdd import then
@@ -12,11 +13,23 @@ from pytest_bdd import when
 
 from tests.e2e.pages.auth_page import AuthPage
 from tests.e2e.steps.common_steps import *  # noqa: F403
+from tests.factories import UserFactory
 
 if TYPE_CHECKING:
     from playwright.sync_api import Page
 
 scenarios(str(Path(__file__).parent.parent / "features" / "auth.feature"))
+
+
+@given(parsers.parse('a user "{username}" exists'))
+def user_exists(username: str, db) -> None:  # type: ignore[no-untyped-def]
+    """Create a user with a verified email, matching the password login steps expect."""
+    from allauth.account.models import EmailAddress
+
+    user = UserFactory(username=username)
+    EmailAddress.objects.create(
+        user=user, email=user.email, verified=True, primary=True
+    )
 
 
 @when("I navigate to the login page")

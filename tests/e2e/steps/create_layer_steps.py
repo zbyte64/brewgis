@@ -25,6 +25,13 @@ def navigate_create_layer(page: Page, live_server_url: str) -> None:
 
 @when("I submit the form with empty fields")
 def submit_empty_form(page: Page) -> None:
-    """Submit the create layer form without filling it."""
+    """Submit the create layer form without filling it.
+
+    Disables HTML5 constraint validation first — otherwise the browser
+    blocks the empty submit client-side and the request never reaches the
+    server, so the server-side validation errors this scenario checks for
+    would never render.
+    """
+    page.evaluate("document.querySelector('form').noValidate = true")
     page.click("button[type=submit]")
     page.wait_for_load_state("networkidle")

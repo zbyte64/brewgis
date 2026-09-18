@@ -28,8 +28,34 @@ if (
         stacklevel=2,
     )
 
-# All e2e tests need database access (for live_server, factories, etc.)
-pytestmark = pytest.mark.django_db
+
+def pytest_collection_modifyitems(items: list[pytest.Item]) -> None:
+    """Mark every e2e test with ``django_db(transaction=True)``.
+
+    A module-level ``pytestmark`` here would only apply to tests defined in
+    this file — it does not propagate to the step modules under
+    ``tests/e2e/steps/`` where the actual pytest-bdd scenarios live. All e2e
+    tests need database access (for live_server, factories, etc.), so the
+    marker is applied explicitly to every item collected under this directory.
+
+    ``transaction=True`` is required, not optional: pytest-django only
+    auto-upgrades a test to ``TransactionTestCase`` when it sees
+    ``"live_server"`` already in ``request.fixturenames`` at fixture-setup
+    time. pytest-bdd injects each step's fixtures lazily, one step at a time,
+    as the scenario runs — so ``live_server_url`` isn't in
+    ``request.fixturenames`` yet when this marker's own db-setup fixture
+    runs, and the auto-detection silently falls back to a plain, rolled-back
+    ``TestCase``. Under that mode, data a Given step writes (e.g. a
+    logged-in user) is invisible to the live_server thread's own connection,
+    which then fails to find it. Declaring the marker with ``transaction=True``
+    up front sidesteps the detection entirely.
+    """
+    e2e_dir = Path(__file__).parent
+    for item in items:
+        if Path(item.fspath).is_relative_to(e2e_dir):
+            item.add_marker(pytest.mark.django_db(transaction=True))
+
+
 if TYPE_CHECKING:
     from django.contrib.auth.models import User
     from playwright.sync_api import Browser

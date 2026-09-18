@@ -74,8 +74,9 @@ class AuthPage(BasePage):
         return None
 
     def logout(self) -> None:
-        """Click the Sign Out link in the navbar."""
+        """Click Sign Out in the navbar, then confirm on allauth's logout page."""
         self.page.get_by_role("link", name="Sign Out").click()
+        self.page.get_by_role("button", name="Sign Out").click()
 
     def is_logged_in(self) -> bool:
         """Check if the Sign Out link is visible in the navbar."""

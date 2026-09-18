@@ -16,12 +16,12 @@ Feature: Home Page
   @e2e
   Scenario: No workspaces shows empty message
     When I navigate to the home page
-    Then I should see "No workspaces found"
+    Then I should see "No Workspaces Yet"
 
   @e2e
   Scenario: Navigation links are visible
     When I navigate to the home page
-    Then I should see "Upload GIS File"
-    And I should see "Create Layer"
-    And I should see "Building Types"
-    And I should see "Place Types"
+    Then I should see a "Upload GIS File" heading
+    And I should see a "Create Layer" heading
+    And I should see a "Building Types" heading
+    And I should see a "Place Types" heading
