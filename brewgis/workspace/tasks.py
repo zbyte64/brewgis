@@ -619,7 +619,6 @@ def run_paint_operation(self, run_pk: int) -> dict:  # type: ignore[no-untyped-d
     else:
         try:
             result = runner(
-                workspace=run.workspace,
                 scenario=run.scenario,
                 user=run.created_by,
                 params=run.params,

@@ -39,6 +39,7 @@ from brewgis.workspace.models import PaintedCanvas
 from brewgis.workspace.models import PaintEvent
 from brewgis.workspace.models import PaintRun
 from brewgis.workspace.models import Scenario
+from brewgis.workspace.models import ScenarioNotPaintableError
 from brewgis.workspace.models import Workspace
 from brewgis.workspace.services.canvas_view_manager import PAINTABLE_COLUMNS
 from brewgis.workspace.services.canvas_view_manager import TEXT_COLUMNS
@@ -72,6 +73,10 @@ def paint_features(
     """
     workspace = get_object_or_404(Workspace, pk=workspace_pk)
     scenario = get_object_or_404(Scenario, pk=scenario_pk, workspace=workspace)
+    try:
+        scenario.ensure_paintable()
+    except ScenarioNotPaintableError as exc:
+        return JsonResponse({"status": "error", "message": str(exc)}, status=400)
 
     try:
         body = json.loads(request.body)
@@ -123,7 +128,6 @@ def paint_features(
             )
 
     return _enqueue(
-        workspace,
         scenario,
         request.user,
         "direct",
@@ -146,6 +150,10 @@ def clear_paint(
     """
     workspace = get_object_or_404(Workspace, pk=workspace_pk)
     scenario = get_object_or_404(Scenario, pk=scenario_pk, workspace=workspace)
+    try:
+        scenario.ensure_paintable()
+    except ScenarioNotPaintableError as exc:
+        return JsonResponse({"status": "error", "message": str(exc)}, status=400)
 
     try:
         body = json.loads(request.body)
@@ -196,8 +204,7 @@ def clear_paint(
             )
 
         # Refresh the canvas view
-        base_table = _resolve_base_table(scenario)
-        refresh_canvas_view(scenario, base_table)
+        refresh_canvas_view(scenario)
 
     return JsonResponse(
         {
@@ -226,6 +233,10 @@ def paint_built_form(
     """
     workspace = get_object_or_404(Workspace, pk=workspace_pk)
     scenario = get_object_or_404(Scenario, pk=scenario_pk, workspace=workspace)
+    try:
+        scenario.ensure_paintable()
+    except ScenarioNotPaintableError as exc:
+        return JsonResponse({"status": "error", "message": str(exc)}, status=400)
 
     try:
         body = json.loads(request.body)
@@ -262,7 +273,6 @@ def paint_built_form(
         get_object_or_404(PlaceType, pk=bf_id, workspace=workspace)
 
     return _enqueue(
-        workspace,
         scenario,
         request.user,
         "built_form",
@@ -290,6 +300,10 @@ def match_built_form(
     """
     workspace = get_object_or_404(Workspace, pk=workspace_pk)
     scenario = get_object_or_404(Scenario, pk=scenario_pk, workspace=workspace)
+    try:
+        scenario.ensure_paintable()
+    except ScenarioNotPaintableError as exc:
+        return JsonResponse({"status": "error", "message": str(exc)}, status=400)
 
     try:
         body = json.loads(request.body)
@@ -304,7 +318,7 @@ def match_built_form(
             {"status": "error", "message": "No features selected."}, status=400
         )
 
-    return _enqueue(workspace, scenario, request.user, "match", {"features": features})
+    return _enqueue(scenario, request.user, "match", {"features": features})
 
 
 @require_POST
@@ -329,6 +343,10 @@ def fill_built_form(
     """
     workspace = get_object_or_404(Workspace, pk=workspace_pk)
     scenario = get_object_or_404(Scenario, pk=scenario_pk, workspace=workspace)
+    try:
+        scenario.ensure_paintable()
+    except ScenarioNotPaintableError as exc:
+        return JsonResponse({"status": "error", "message": str(exc)}, status=400)
 
     try:
         body = json.loads(request.body)
@@ -343,7 +361,7 @@ def fill_built_form(
             {"status": "error", "message": "No features selected."}, status=400
         )
 
-    return _enqueue(workspace, scenario, request.user, "fill", {"features": features})
+    return _enqueue(scenario, request.user, "fill", {"features": features})
 
 
 @require_GET
@@ -388,6 +406,10 @@ def undo_paint(  # noqa: C901, PLR0912
     """
     workspace = get_object_or_404(Workspace, pk=workspace_pk)
     scenario = get_object_or_404(Scenario, pk=scenario_pk, workspace=workspace)
+    try:
+        scenario.ensure_paintable()
+    except ScenarioNotPaintableError as exc:
+        return JsonResponse({"status": "error", "message": str(exc)}, status=400)
 
     try:
         body = json.loads(request.body)
@@ -512,8 +534,7 @@ def undo_paint(  # noqa: C901, PLR0912
         PaintEvent.objects.bulk_create(undo_events)
 
         # Refresh canvas view
-        base_table = _resolve_base_table(scenario)
-        refresh_canvas_view(scenario, base_table)
+        refresh_canvas_view(scenario)
 
     return JsonResponse(
         {
@@ -613,7 +634,6 @@ def _cap_list(items: list[Any], limit: int = _MAX_RESPONSE_ITEMS) -> list[Any]:
 
 
 def _enqueue(
-    workspace: Workspace,
     scenario: Scenario,
     user: Any,
     operation: str,
@@ -647,7 +667,7 @@ def _enqueue(
     from brewgis.workspace.tasks import run_paint_operation
 
     run = PaintRun.objects.create(
-        workspace=workspace,
+        workspace=scenario.workspace,
         scenario=scenario,
         operation=operation,
         params=params,
@@ -703,7 +723,6 @@ def _respond_for_run(run: PaintRun) -> JsonResponse:
 
 def run_direct_paint(
     *,
-    workspace: Workspace,
     scenario: Scenario,
     user: Any,  # noqa: ARG001 — kept for a uniform run_*() call signature
     params: dict[str, Any],
@@ -716,7 +735,7 @@ def run_direct_paint(
     paint_map: dict[str, dict[str, float | None]] = {
         fid: {column: painted_value} for fid in features
     }
-    block = _enforce_paint_constraints(workspace, paint_map)
+    block = _enforce_paint_constraints(scenario.workspace, paint_map)
     if block is not None:
         return block
 
@@ -759,8 +778,7 @@ def run_direct_paint(
         )
 
         # Refresh the canvas view
-        base_table = _resolve_base_table(scenario)
-        refresh_canvas_view(scenario, base_table)
+        refresh_canvas_view(scenario)
 
     warnings = _collect_warnings()
     return {
@@ -776,7 +794,6 @@ def run_direct_paint(
 
 def run_built_form_paint(
     *,
-    workspace: Workspace,
     scenario: Scenario,
     user: Any,
     params: dict[str, Any],
@@ -790,6 +807,7 @@ def run_built_form_paint(
     features: list[str] = params["features"]
     bf_type: str = params["bf_type"]
     bf_id: int = params["bf_id"]
+    workspace = scenario.workspace
 
     built_form: BuildingType | PlaceType
     if bf_type == "building":
@@ -797,7 +815,7 @@ def run_built_form_paint(
     else:
         built_form = get_object_or_404(PlaceType, pk=bf_id, workspace=workspace)
 
-    base_table = _resolve_base_table(scenario)
+    base_table = workspace.base_table
     feature_data = _fetch_feature_data(base_table, features)
     if not feature_data:
         return {
@@ -828,7 +846,6 @@ def run_built_form_paint(
         workspace=workspace,
         scenario=scenario,
         user=user,
-        base_table=base_table,
         allocations=allocations,
         operation_type="built_form",
         built_form_names=dict.fromkeys(allocations, built_form.name),
@@ -837,13 +854,13 @@ def run_built_form_paint(
 
 def run_match_built_form(
     *,
-    workspace: Workspace,
     scenario: Scenario,
     user: Any,
     params: dict[str, Any],
 ) -> dict[str, Any]:
     """Auto-assign each selected feature the closest-matching Building Type."""
     features: list[str] = params["features"]
+    workspace = scenario.workspace
 
     canvas_data = _fetch_canvas_feature_data(scenario, features)
     if not canvas_data:
@@ -927,7 +944,6 @@ def run_match_built_form(
         workspace=workspace,
         scenario=scenario,
         user=user,
-        base_table=_resolve_base_table(scenario),
         allocations=allocations,
         operation_type="built_form_match",
         built_form_names=built_form_names,
@@ -940,15 +956,14 @@ def run_match_built_form(
 
 def run_fill_built_form(
     *,
-    workspace: Workspace,
     scenario: Scenario,
     user: Any,
     params: dict[str, Any],
 ) -> dict[str, Any]:
     """Fill in du/emp stats for selected features from their current built form."""
     features: list[str] = params["features"]
+    workspace = scenario.workspace
 
-    base_table = _resolve_base_table(scenario)
     feature_data = _fetch_canvas_feature_data(scenario, features)
     if not feature_data:
         return {
@@ -1014,7 +1029,6 @@ def run_fill_built_form(
         workspace=workspace,
         scenario=scenario,
         user=user,
-        base_table=base_table,
         allocations=allocations,
         operation_type="built_form_fill",
         built_form_names=built_form_names,
@@ -1030,11 +1044,6 @@ def run_fill_built_form(
 
 _PAINT_CONSTRAINT_RESULT: list[ConstraintResult | None] = [None]
 """Last constraint result, cached for warning collection (mutable container for in-module mutation)."""
-
-
-def _resolve_base_table(scenario: Scenario) -> str:
-    """Resolve the base canvas table name for a scenario."""
-    return scenario.workspace.base_table
 
 
 def _fetch_painted_old_values(
@@ -1062,6 +1071,16 @@ def _fetch_painted_old_values(
     return result
 
 
+def _quote_qualified_table(schema: str, table: str) -> str:
+    """Quote a ``schema``/``table`` pair for safe interpolation into raw SQL.
+
+    Needed because scenario slugs (and therefore canvas view names, e.g.
+    ``scenario_martin-auto-refresh_canvas``) can contain hyphens, which
+    Postgres parses as a minus operator in an unquoted identifier.
+    """
+    return f"{connection.ops.quote_name(schema)}.{connection.ops.quote_name(table)}"
+
+
 def _fetch_feature_data(base_table: str, feature_ids: list[str]) -> dict[str, dict]:
     """Fetch base canvas data for given feature IDs.
 
@@ -1071,9 +1090,11 @@ def _fetch_feature_data(base_table: str, feature_ids: list[str]) -> dict[str, di
     if not feature_ids:
         return {}
 
+    schema, _, table = base_table.rpartition(".")
+    quoted_table = _quote_qualified_table(schema or "public", table)
     placeholders = ", ".join("%s" for _ in feature_ids)
     query = (
-        f"SELECT id, area_gross, area_parcel, built_form_key FROM {base_table} "  # noqa: S608
+        f"SELECT id, area_gross, area_parcel, built_form_key FROM {quoted_table} "  # noqa: S608
         f"WHERE CAST(id AS text) IN ({placeholders})"
     )
 
@@ -1098,11 +1119,12 @@ def _fetch_canvas_feature_data(
     if not feature_ids:
         return {}
 
-    view_name = f"{scenario.target_schema}.scenario_{scenario.slug}_canvas"
+    schema, table = scenario.base_layer_source()
+    quoted_view = _quote_qualified_table(schema, table)
     placeholders = ", ".join("%s" for _ in feature_ids)
     query = (
         f"SELECT id, du, emp, area_gross, area_parcel, built_form_key "  # noqa: S608
-        f"FROM {view_name} WHERE CAST(id AS text) IN ({placeholders})"
+        f"FROM {quoted_view} WHERE CAST(id AS text) IN ({placeholders})"
     )
 
     with connection.cursor() as cursor:
@@ -1276,7 +1298,6 @@ def _write_built_form_paint(  # noqa: C901, PLR0913
     workspace: Workspace,
     scenario: Scenario,
     user: Any,
-    base_table: str,
     allocations: dict[str, AllocationResult],
     operation_type: str,
     built_form_names: dict[str, str] | None = None,
@@ -1371,7 +1392,7 @@ def _write_built_form_paint(  # noqa: C901, PLR0913
             ]
         )
 
-        refresh_canvas_view(scenario, base_table)
+        refresh_canvas_view(scenario)
 
     painted_features = list(allocations.keys())
     response_body: dict[str, Any] = {

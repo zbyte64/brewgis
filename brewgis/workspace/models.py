@@ -273,6 +273,10 @@ class ScenarioType(models.TextChoices):
     ALTERNATIVE = "alternative", "Alternative"
 
 
+class ScenarioNotPaintableError(Exception):
+    """Raised when a paint operation targets a BASE scenario."""
+
+
 class Scenario(models.Model):
     name = models.CharField(max_length=128)
     slug = models.SlugField(max_length=128)
@@ -335,6 +339,34 @@ class Scenario(models.Model):
     @property
     def target_schema(self) -> str:
         return self.schema_name or f"scenario_{self.slug}"
+
+    def base_layer_source(self) -> tuple[str, str]:
+        """Return ``(schema, table)`` holding this scenario's effective base layer.
+
+        BASE scenarios have no paint overlay, so this is simply the
+        workspace's configured ``base_table``. ALTERNATIVE scenarios resolve
+        to their canvas view — the ``COALESCE(painted, base)`` view from
+        ``canvas_view_manager.py`` — so callers never need to check
+        ``scenario_type`` themselves; this is the one place that decision
+        is made.
+        """
+        if self.scenario_type == ScenarioType.BASE:
+            schema, _, table = self.workspace.base_table.rpartition(".")
+            return (schema or "public"), table
+        return self.target_schema, f"scenario_{self.slug}_canvas"
+
+    @property
+    def base_layer_table(self) -> str:
+        """``schema.table`` form of :meth:`base_layer_source`."""
+        schema, table = self.base_layer_source()
+        return f"{schema}.{table}"
+
+    def ensure_paintable(self) -> None:
+        """Raise :class:`ScenarioNotPaintableError` if this is a BASE scenario."""
+        if self.scenario_type == ScenarioType.BASE:
+            raise ScenarioNotPaintableError(
+                f"'{self.name}' is a BASE scenario and can't be painted on."
+            )
 
 
 class PaintedCanvas(models.Model):

@@ -25,7 +25,6 @@ class TestScenarioCloning:
         cloned = clone_scenario(
             source=scenario,
             name="Alternative 1",
-            base_canvas_table=base_canvas_table,
         )
 
         assert cloned.scenario_type == "alternative"
@@ -39,7 +38,6 @@ class TestScenarioCloning:
         cloned = clone_scenario(
             source=scenario,
             name="Alternative 2",
-            base_canvas_table=base_canvas_table,
         )
 
         assert cloned.workspace_id == scenario.workspace_id
@@ -52,19 +50,14 @@ class TestScenarioCloning:
         cloned = clone_scenario(
             source=scenario,
             name="Clean Canvas",
-            base_canvas_table=base_canvas_table,
         )
 
         assert cloned.painted_features.count() == 0
 
     def test_can_create_multiple_alternatives(self, base_canvas_table, scenario):
         """Multiple alternatives can be cloned from the same base."""
-        alt1 = clone_scenario(
-            source=scenario, name="Alt A", base_canvas_table=base_canvas_table
-        )
-        alt2 = clone_scenario(
-            source=scenario, name="Alt B", base_canvas_table=base_canvas_table
-        )
+        alt1 = clone_scenario(source=scenario, name="Alt A")
+        alt2 = clone_scenario(source=scenario, name="Alt B")
 
         assert alt1.pk != alt2.pk
         assert alt1.parent == scenario
@@ -76,7 +69,6 @@ class TestScenarioCloning:
         cloned = clone_scenario(
             source=scenario,
             name="View Test",
-            base_canvas_table=base_canvas_table,
         )
 
         view_name = f"scenario_{cloned.slug}_canvas"
@@ -99,7 +91,6 @@ class TestScenarioCloning:
         cloned = clone_scenario(
             source=scenario,
             name="Layer Test",
-            base_canvas_table=base_canvas_table,
         )
 
         layer = Layer.objects.filter(
@@ -116,7 +107,6 @@ class TestScenarioCloning:
         cloned = clone_scenario(
             source=scenario,
             name="Drop Test",
-            base_canvas_table=base_canvas_table,
         )
 
         view_schema = cloned.target_schema
@@ -149,7 +139,6 @@ class TestScenarioCloning:
         cloned = clone_scenario(
             source=scenario,
             name="Symbology Test",
-            base_canvas_table=base_canvas_table,
         )
 
         layer = Layer.objects.get(

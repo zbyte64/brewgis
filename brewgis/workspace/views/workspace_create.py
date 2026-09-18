@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-import contextlib
 import datetime
 import logging
 from typing import Any
@@ -23,7 +22,6 @@ from brewgis.workspace.models import County
 from brewgis.workspace.models import Scenario
 from brewgis.workspace.models import ScenarioType
 from brewgis.workspace.models import Workspace
-from brewgis.workspace.services.canvas_view_manager import create_canvas_view
 
 logger = logging.getLogger(__name__)
 
@@ -130,17 +128,19 @@ class WorkspaceCreateView(FormView):
         )
 
     def _create_default_scenario(self, workspace: Workspace) -> None:
-        """Give every new workspace a base scenario to paint against."""
+        """Give every new workspace a base scenario to paint against.
+
+        BASE scenarios have no canvas view — they resolve straight to
+        ``workspace.base_table`` via ``Scenario.base_layer_source()``.
+        """
         today = datetime.date.today()  # noqa: DTZ011
-        scenario = Scenario.objects.create(
+        Scenario.objects.create(
             workspace=workspace,
             name="Base Scenario",
             scenario_type=ScenarioType.BASE,
             base_year=today.year,
             horizon_year=today.year + 20,
         )
-        with contextlib.suppress(Exception):
-            create_canvas_view(scenario, base_table=workspace.base_table)
 
 
 @user_passes_test(lambda u: u.is_authenticated)

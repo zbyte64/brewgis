@@ -25,6 +25,7 @@ from django.views.generic.edit import FormView
 
 from brewgis.workspace.analysis.layer_registry import BASE_CANVAS_LAYER_KEY
 from brewgis.workspace.analysis.layer_registry import register_result_layer
+from brewgis.workspace.models import ScenarioType
 from brewgis.workspace.models import Workspace
 from brewgis.workspace.services.canvas_view_manager import refresh_canvas_view
 from brewgis.workspace.services.sqlmesh_tables import list_base_canvas_candidates
@@ -85,9 +86,12 @@ class SelectBaseCanvasView(HtmxResponseMixin, FormView):
             name="Base Canvas",
             description=f"Workspace base canvas ({self.workspace.base_table})",
         )
-        for scenario in self.workspace.scenarios.all():
+        alternative_scenarios = self.workspace.scenarios.filter(
+            scenario_type=ScenarioType.ALTERNATIVE
+        )
+        for scenario in alternative_scenarios:
             with contextlib.suppress(Exception):
-                refresh_canvas_view(scenario, self.workspace.base_table)
+                refresh_canvas_view(scenario)
         logger.info(
             "Workspace %s base_table set to %s",
             self.workspace.pk,

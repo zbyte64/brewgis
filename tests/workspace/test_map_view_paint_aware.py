@@ -14,6 +14,8 @@ from django.http import HttpResponse
 from django.test import TestCase
 from django.urls import reverse
 
+from brewgis.workspace.analysis.layer_registry import PAINTED_FEATURES_LAYER_KEY
+from brewgis.workspace.models import ScenarioType
 from tests.factories import LayerFactory
 from tests.factories import ScenarioFactory
 from tests.factories import UserFactory
@@ -38,7 +40,18 @@ class TestMapViewBaseLayerSource(TestCase):
             db_schema="public",
             db_table="base_canvas",
         )
-        self.scenario = ScenarioFactory(workspace=self.workspace)
+        # Every workspace always has exactly one BASE scenario (see
+        # resolve_scenario_param's docstring in views/panels.py) — real
+        # workspaces get this from the workspace-creation flow; the factory
+        # doesn't do it automatically, so it's created explicitly here for
+        # the "no ?scenario= param" case below to have something to fall
+        # back to.
+        self.base_scenario = ScenarioFactory(
+            workspace=self.workspace, scenario_type=ScenarioType.BASE
+        )
+        self.scenario = ScenarioFactory(
+            workspace=self.workspace, scenario_type=ScenarioType.ALTERNATIVE
+        )
         self.map_url = reverse("workspace:workspace_map", args=[self.workspace.pk])
 
     def _get_layer_data(self, query: str = "") -> list[dict]:
@@ -66,10 +79,11 @@ class TestMapViewBaseLayerSource(TestCase):
         instead of the raw base table, matching the separate canvas overlay layer."""
         layer_data = self._get_layer_data(f"?scenario={self.scenario.pk}")
         base = next(layer for layer in layer_data if layer["id"] == "base_canvas")
+        # The painted-features overlay is one shared Layer per workspace
+        # (key=PAINTED_FEATURES_LAYER_KEY), not a per-scenario one — see
+        # ensure_painted_features_layer's docstring in layer_registry.py.
         overlay = next(
-            layer
-            for layer in layer_data
-            if layer["id"] == f"scenario_{self.scenario.slug}_canvas"
+            layer for layer in layer_data if layer["id"] == PAINTED_FEATURES_LAYER_KEY
         )
 
         assert base["source"]["tiles"] == overlay["source"]["tiles"]

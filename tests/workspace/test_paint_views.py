@@ -15,6 +15,7 @@ from django.test import TestCase
 from django.urls import reverse
 
 from brewgis.workspace.models import PaintedCanvas
+from brewgis.workspace.models import ScenarioType
 from tests.factories import BuildingTypeFactory
 from tests.factories import PaintedCanvasFactory
 from tests.factories import PlaceTypeBuildingTypeMixFactory
@@ -38,7 +39,9 @@ class TestPaintFeaturesView(TestCase):
     def setUp(self):
         self.user = UserFactory()
         self.workspace = WorkspaceFactory()
-        self.scenario = ScenarioFactory(workspace=self.workspace)
+        self.scenario = ScenarioFactory(
+            workspace=self.workspace, scenario_type=ScenarioType.ALTERNATIVE
+        )
         self.paint_url = reverse(
             PAINT_URL_NAME,
             kwargs={
@@ -226,7 +229,9 @@ class TestPaintFeaturesView(TestCase):
     def test_paint_cross_scenario_isolation(self):
         """Painting one scenario does not affect another."""
         self.client.force_login(self.user)
-        other_scenario = ScenarioFactory(workspace=self.workspace)
+        other_scenario = ScenarioFactory(
+            workspace=self.workspace, scenario_type=ScenarioType.ALTERNATIVE
+        )
 
         with self._patch_refresh():
             self.client.post(
@@ -274,7 +279,9 @@ class TestPaintBuiltFormView(TestCase):
     def setUp(self):
         self.user = UserFactory()
         self.workspace = WorkspaceFactory()
-        self.scenario = ScenarioFactory(workspace=self.workspace)
+        self.scenario = ScenarioFactory(
+            workspace=self.workspace, scenario_type=ScenarioType.ALTERNATIVE
+        )
 
         self.bt = BuildingTypeFactory(
             workspace=self.workspace,
@@ -501,7 +508,9 @@ class TestMatchBuiltFormView(TestCase):
     def setUp(self):
         self.user = UserFactory()
         self.workspace = WorkspaceFactory()
-        self.scenario = ScenarioFactory(workspace=self.workspace)
+        self.scenario = ScenarioFactory(
+            workspace=self.workspace, scenario_type=ScenarioType.ALTERNATIVE
+        )
 
         self.dense_bt = BuildingTypeFactory(
             workspace=self.workspace,
@@ -676,7 +685,9 @@ class TestFillBuiltFormView(TestCase):
     def setUp(self):
         self.user = UserFactory()
         self.workspace = WorkspaceFactory()
-        self.scenario = ScenarioFactory(workspace=self.workspace)
+        self.scenario = ScenarioFactory(
+            workspace=self.workspace, scenario_type=ScenarioType.ALTERNATIVE
+        )
 
         self.bt = BuildingTypeFactory(
             workspace=self.workspace,

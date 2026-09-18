@@ -68,10 +68,7 @@ def register_tools(server: object) -> None:
         # meant to reflect scenario edits. Explicit overrides in `params`
         # still win.
         p_params = dict(params or {})
-        p_params.setdefault(
-            "parcel_table",
-            f"{scenario.target_schema}.scenario_{scenario.slug}_canvas",
-        )
+        p_params.setdefault("parcel_table", scenario.base_layer_table)
         p_params.setdefault("base_canvas_table", workspace.base_table)
 
         # Check prerequisites
@@ -96,14 +93,13 @@ def register_tools(server: object) -> None:
         scenario_id_str = str(scenario.pk)
 
         run = run_analysis_pipeline(
-            workspace_id=ws_pk,
+            scenario_id=scenario.pk,
             module_names=ordered,
             vars_={
                 "scenario_id": scenario_id_str,
                 "target_schema": workspace.db_schema,
                 **p_params,
             },
-            scenario_id=scenario.pk,
         )
         return {
             "run_id": run.pk,

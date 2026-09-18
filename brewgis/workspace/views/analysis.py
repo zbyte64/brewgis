@@ -30,6 +30,7 @@ from brewgis.workspace.analysis.pipeline import launch_analysis_run
 from brewgis.workspace.analysis.pipeline import run_analysis_pipeline
 from brewgis.workspace.models import AnalysisRun
 from brewgis.workspace.models import Scenario
+from brewgis.workspace.models import ScenarioType
 from brewgis.workspace.models import Workspace
 from brewgis.workspace.services.preflight import check_analysis_prerequisites
 from brewgis.workspace.views.built_forms import HtmxResponseMixin
@@ -94,9 +95,12 @@ class AnalysisLaunchForm(forms.Form):
         self._workspace: Workspace | None = cast(
             "Workspace | None", kwargs.pop("workspace", None)
         )
-        scenario: Scenario | None = cast(
-            "Scenario | None", kwargs.pop("scenario", None)
-        )
+        # Required whenever `workspace` is given (see call sites, which
+        # always fall back to the workspace's BASE scenario). Left
+        # unenforced at the kwargs.pop() level so the rare workspace-less
+        # instantiation (the bare "Run Analysis" picker page) still works,
+        # since scenario is only read below inside `if self._workspace:`.
+        scenario: Scenario = cast("Scenario", kwargs.pop("scenario", None))
         super().__init__(*args, **kwargs)  # type: ignore[arg-type]
 
         self.helper = FormHelper()
@@ -113,27 +117,20 @@ class AnalysisLaunchForm(forms.Form):
             # parcel, so it doubles as the parcel table unless overridden.
             self.fields["base_canvas_table"].initial = self._workspace.base_table
 
-            if scenario is not None:
-                # Default to the scenario's canvas view — it COALESCEs any
-                # painted overlay over the base canvas, so an analysis run
-                # picks up paint edits by default instead of silently
-                # ignoring them. Harmless for an unpainted scenario since
-                # the view then falls through to base canvas values anyway.
-                self.fields[
-                    "parcel_table"
-                ].initial = f"{scenario.target_schema}.scenario_{scenario.slug}_canvas"
-                self.fields["parcel_table"].help_text = (
-                    "Defaults to the selected scenario's canvas view "
-                    "(base canvas + painted edits). Override to use a "
-                    "different parcel source."
-                )
-                self.fields["scenario"].initial = scenario.pk
-            else:
-                self.fields["parcel_table"].initial = self._workspace.base_table
-                self.fields["parcel_table"].help_text = (
-                    "Defaults to the workspace's base canvas table. "
-                    "Override to use a different parcel source."
-                )
+            # Default to the scenario's effective base layer. For an
+            # ALTERNATIVE scenario that's its canvas view — it COALESCEs any
+            # painted overlay over the base canvas, so an analysis run picks
+            # up paint edits by default instead of silently ignoring them
+            # (harmless for an unpainted scenario since the view then falls
+            # through to base canvas values anyway). For the BASE scenario
+            # it's simply the raw base table.
+            self.fields["parcel_table"].initial = scenario.base_layer_table
+            self.fields["parcel_table"].help_text = (
+                "Defaults to the selected scenario's canvas view "
+                "(base canvas + painted edits). Override to use a "
+                "different parcel source."
+            )
+            self.fields["scenario"].initial = scenario.pk
 
             # Filter scenario queryset to the selected workspace
             self.fields["scenario"].queryset = Scenario.objects.filter(  # type: ignore[attr-defined]
@@ -324,9 +321,9 @@ class AnalysisModuleForm(forms.Form):
         self._workspace: Workspace | None = cast(
             "Workspace | None", kwargs.pop("workspace", None)
         )
-        scenario: Scenario | None = cast(
-            "Scenario | None", kwargs.pop("scenario", None)
-        )
+        # Required whenever `workspace` is given — see AnalysisLaunchForm
+        # for why this isn't enforced at the kwargs.pop() level.
+        scenario: Scenario = cast("Scenario", kwargs.pop("scenario", None))
         module: str = cast("str", kwargs.pop("module"))
         super().__init__(*args, **kwargs)  # type: ignore[arg-type]
 
@@ -361,22 +358,15 @@ class AnalysisModuleForm(forms.Form):
             # parcel, so it doubles as the parcel table unless overridden.
             self.fields["base_canvas_table"].initial = self._workspace.base_table
 
-            if scenario is not None:
-                # Default to the scenario's canvas view — it COALESCEs any
-                # painted overlay over the base canvas, so an analysis run
-                # picks up paint edits by default instead of silently
-                # ignoring them.
-                self.fields[
-                    "parcel_table"
-                ].initial = f"{scenario.target_schema}.scenario_{scenario.slug}_canvas"
-                self.fields["parcel_table"].help_text = (
-                    "Defaults to the selected scenario's canvas view "
-                    "(base canvas + painted edits). Override to use a "
-                    "different parcel source."
-                )
-                self.fields["scenario"].initial = scenario.pk
-            else:
-                self.fields["parcel_table"].initial = self._workspace.base_table
+            # Default to the scenario's effective base layer — see
+            # AnalysisLaunchForm.__init__ for the rationale.
+            self.fields["parcel_table"].initial = scenario.base_layer_table
+            self.fields["parcel_table"].help_text = (
+                "Defaults to the selected scenario's canvas view "
+                "(base canvas + painted edits). Override to use a "
+                "different parcel source."
+            )
+            self.fields["scenario"].initial = scenario.pk
 
             self.fields["scenario"].queryset = Scenario.objects.filter(  # type: ignore[attr-defined]
                 workspace=self._workspace,
@@ -480,12 +470,19 @@ class AnalysisLaunchView(HtmxResponseMixin, FormView):
                 pass
 
         # ``?scenario=`` follows the same convention ``panel_layer_list``
-        # uses to learn the map's currently-active scenario.
-        scenario_pk = self.request.GET.get("scenario")
-        if workspace is not None and scenario_pk:
-            kwargs["scenario"] = Scenario.objects.filter(
-                pk=scenario_pk, workspace=workspace
-            ).first()
+        # uses to learn the map's currently-active scenario. Fall back to
+        # the workspace's BASE scenario when none was explicitly picked —
+        # every workspace always has exactly one.
+        if workspace is not None:
+            scenario_pk = self.request.GET.get("scenario")
+            scenario = None
+            if scenario_pk:
+                scenario = Scenario.objects.filter(
+                    pk=scenario_pk, workspace=workspace
+                ).first()
+            kwargs["scenario"] = scenario or workspace.scenarios.get(
+                scenario_type=ScenarioType.BASE
+            )
         return kwargs
 
     def get_context_data(self, **kwargs: object) -> dict[str, object]:
@@ -502,8 +499,7 @@ class AnalysisLaunchView(HtmxResponseMixin, FormView):
                 workspace = None
             if workspace is not None:
                 canvas_map = {
-                    str(s.pk): f"{s.target_schema}.scenario_{s.slug}_canvas"
-                    for s in workspace.scenarios.all()
+                    str(s.pk): s.base_layer_table for s in workspace.scenarios.all()
                 }
                 canvas_map[""] = workspace.base_table
                 context["scenario_canvas_map"] = json.dumps(canvas_map)
@@ -534,10 +530,9 @@ class AnalysisLaunchView(HtmxResponseMixin, FormView):
 
         # Launch the pipeline
         run = run_analysis_pipeline(
-            workspace_id=workspace.pk,
+            scenario_id=scenario.pk,
             module_names=modules,
             vars_=vars_,
-            scenario_id=scenario.pk,
         )
 
         if self.request.htmx:  # type: ignore[attr-defined]
@@ -736,7 +731,9 @@ def analysis_module_configure(
 ) -> HttpResponse:
     """Right-panel parameter form for one analysis, opened from its card."""
     workspace = get_object_or_404(Workspace, pk=workspace_pk)
-    scenario = _get_active_scenario(request, workspace)
+    scenario = _get_active_scenario(request, workspace) or workspace.scenarios.get(
+        scenario_type=ScenarioType.BASE
+    )
     meta = _get_analysis_meta(module_key)
     form = AnalysisModuleForm(workspace=workspace, scenario=scenario, module=module_key)
     return render(
@@ -761,7 +758,15 @@ def analysis_module_launch(
     """
     workspace = get_object_or_404(Workspace, pk=workspace_pk)
     meta = _get_analysis_meta(module_key)
-    form = AnalysisModuleForm(request.POST, workspace=workspace, module=module_key)
+    # The bound form's actual `scenario` value comes from POST data (below);
+    # this kwarg only seeds field.initial, which a bound form ignores — any
+    # scenario belonging to the workspace is a safe placeholder here.
+    default_scenario = _get_active_scenario(
+        request, workspace
+    ) or workspace.scenarios.get(scenario_type=ScenarioType.BASE)
+    form = AnalysisModuleForm(
+        request.POST, workspace=workspace, scenario=default_scenario, module=module_key
+    )
 
     if not form.is_valid():
         return render(
@@ -774,10 +779,9 @@ def analysis_module_launch(
     scenario: Scenario = form.cleaned_data["scenario"]
     vars_ = form.build_vars(workspace)
     run = launch_analysis_run(
-        workspace_id=workspace.pk,
+        scenario_id=scenario.pk,
         module_names=[module_key],
         vars_=vars_,
-        scenario_id=scenario.pk,
     )
 
     html = render_to_string(

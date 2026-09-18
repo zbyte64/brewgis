@@ -111,7 +111,6 @@ class TestWorkspaceIsolation(TestCase):
             "parcel_table": "parcels",
         }
         run = run_analysis_pipeline(
-            workspace_id=self.workspace_a.pk,
             module_names=["env_constraint"],
             vars_=vars_,
             scenario_id=self.scenario_a.pk,
@@ -132,7 +131,6 @@ class TestWorkspaceIsolation(TestCase):
             "parcel_table": "parcels",
         }
         run = run_analysis_pipeline(
-            workspace_id=self.workspace_a.pk,
             module_names=["env_constraint"],
             vars_=vars_,
             scenario_id=self.scenario_a.pk,
@@ -153,7 +151,6 @@ class TestWorkspaceIsolation(TestCase):
             "parcel_table": "parcels",
         }
         run = run_analysis_pipeline(
-            workspace_id=self.workspace_b.pk,
             module_names=["env_constraint"],
             scenario_id=self.scenario_b.pk,
             vars_=vars_b,
@@ -306,7 +303,6 @@ class TestScenarioIsolation(TestCase):
             "parcel_table": "parcels",
         }
         run = run_analysis_pipeline(
-            workspace_id=self.workspace.pk,
             module_names=["env_constraint"],
             vars_=vars_,
             scenario_id=self.scenario_a.pk,
@@ -326,7 +322,6 @@ class TestScenarioIsolation(TestCase):
             "parcel_table": "parcels",
         }
         run_a = run_analysis_pipeline(
-            workspace_id=self.workspace.pk,
             module_names=["env_constraint"],
             vars_=vars_a,
             scenario_id=self.scenario_a.pk,
@@ -338,7 +333,6 @@ class TestScenarioIsolation(TestCase):
             "parcel_table": "parcels",
         }
         run_b = run_analysis_pipeline(
-            workspace_id=self.workspace.pk,
             module_names=["env_constraint"],
             vars_=vars_b,
             scenario_id=self.scenario_b.pk,
@@ -435,7 +429,6 @@ class TestSingleModuleExecution(TestCase):
         ws = WorkspaceFactory()
         sc = ScenarioFactory(workspace=ws)
         run = run_analysis_pipeline(
-            workspace_id=ws.pk,
             module_names=["env_constraint"],
             scenario_id=sc.pk,
         )
@@ -450,7 +443,6 @@ class TestSingleModuleExecution(TestCase):
         ws = WorkspaceFactory()
         sc = ScenarioFactory(workspace=ws)
         run = run_analysis_pipeline(
-            workspace_id=ws.pk,
             module_names=["water_demand"],
             scenario_id=sc.pk,
         )
@@ -479,7 +471,6 @@ class TestSingleModuleExecution(TestCase):
             "parcel_table": "parcels",
         }
         run_analysis_pipeline(
-            workspace_id=ws.pk,
             module_names=["water_demand"],
             vars_=vars_,
             scenario_id=sc.pk,
@@ -496,7 +487,6 @@ class TestSingleModuleExecution(TestCase):
         ws = WorkspaceFactory()
         sc = ScenarioFactory(workspace=ws)
         run = run_analysis_pipeline(
-            workspace_id=ws.pk,
             module_names=["core"],
             scenario_id=sc.pk,
         )
@@ -547,7 +537,6 @@ class TestNoCascadingAnalysisTriggers(TestCase):
         count_before = AnalysisRun.objects.count()
 
         run = run_analysis_pipeline(
-            workspace_id=ws.pk,
             module_names=["env_constraint"],
             scenario_id=sc.pk,
         )
@@ -570,7 +559,6 @@ class TestNoCascadingAnalysisTriggers(TestCase):
         b_count_before = AnalysisRun.objects.filter(workspace=ws_b).count()
 
         run_analysis_pipeline(
-            workspace_id=ws_a.pk,
             module_names=["env_constraint"],
             scenario_id=sc.pk,
         )

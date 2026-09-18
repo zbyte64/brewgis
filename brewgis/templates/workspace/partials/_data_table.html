@@ -23,7 +23,7 @@
               style="width: auto;
                      font-size: 0.7rem"
               name="page_size"
-              hx-get="{% url 'workspace:layer_data_table' layer.pk %}?page=1&amp;sort={{ sort_raw }}"
+              hx-get="{% url 'workspace:layer_data_table' layer.pk %}?page=1&amp;sort={{ sort_raw }}{% if scenario %}&amp;scenario={{ scenario.pk }}{% endif %}"
               hx-target="#data-table-{{ layer.pk }}"
               hx-swap="outerHTML"
               hx-trigger="change">
@@ -50,7 +50,7 @@
                            white-space: nowrap;
                            cursor: pointer;
                            user-select: none"
-                    hx-get="{% url 'workspace:layer_data_table' layer.pk %}?sort=-{{ col }}&amp;page_size={{ page_size }}&amp;page=1"
+                    hx-get="{% url 'workspace:layer_data_table' layer.pk %}?sort=-{{ col }}&amp;page_size={{ page_size }}&amp;page=1{% if scenario %}&amp;scenario={{ scenario.pk }}{% endif %}"
                     hx-target="#data-table-{{ layer.pk }}"
                     hx-swap="outerHTML"
                     aria-label="{{ sort_aria }}">
@@ -66,7 +66,7 @@
                            white-space: nowrap;
                            cursor: pointer;
                            user-select: none"
-                    hx-get="{% url 'workspace:layer_data_table' layer.pk %}?page_size={{ page_size }}&amp;page=1"
+                    hx-get="{% url 'workspace:layer_data_table' layer.pk %}?page_size={{ page_size }}&amp;page=1{% if scenario %}&amp;scenario={{ scenario.pk }}{% endif %}"
                     hx-target="#data-table-{{ layer.pk }}"
                     hx-swap="outerHTML"
                     aria-label="{{ sort_aria }}">
@@ -84,7 +84,7 @@
                            white-space: nowrap;
                            cursor: pointer;
                            user-select: none"
-                    hx-get="{% url 'workspace:layer_data_table' layer.pk %}?sort={{ col }}&amp;page_size={{ page_size }}&amp;page=1"
+                    hx-get="{% url 'workspace:layer_data_table' layer.pk %}?sort={{ col }}&amp;page_size={{ page_size }}&amp;page=1{% if scenario %}&amp;scenario={{ scenario.pk }}{% endif %}"
                     hx-target="#data-table-{{ layer.pk }}"
                     hx-swap="outerHTML"
                     aria-label="{{ sort_aria }}">
@@ -133,7 +133,7 @@
                 <a class="page-link"
                    href="#"
                    style="font-size: 0.7rem"
-                   hx-get="{% url 'workspace:layer_data_table' layer.pk %}?page=1&amp;page_size={{ page_size }}&amp;sort={{ sort_raw }}"
+                   hx-get="{% url 'workspace:layer_data_table' layer.pk %}?page=1&amp;page_size={{ page_size }}&amp;sort={{ sort_raw }}{% if scenario %}&amp;scenario={{ scenario.pk }}{% endif %}"
                    hx-target="#data-table-{{ layer.pk }}"
                    hx-swap="outerHTML"
                    aria-label="{% translate 'First page' %}">{% translate "First" %}</a>
@@ -142,7 +142,7 @@
                 <a class="page-link"
                    href="#"
                    style="font-size: 0.7rem"
-                   hx-get="{% url 'workspace:layer_data_table' layer.pk %}?page={{ page_obj.previous_page_number }}&amp;page_size={{ page_size }}&amp;sort={{ sort_raw }}"
+                   hx-get="{% url 'workspace:layer_data_table' layer.pk %}?page={{ page_obj.previous_page_number }}&amp;page_size={{ page_size }}&amp;sort={{ sort_raw }}{% if scenario %}&amp;scenario={{ scenario.pk }}{% endif %}"
                    hx-target="#data-table-{{ layer.pk }}"
                    hx-swap="outerHTML"
                    aria-label="{% translate 'Previous page' %}">&#9664;</a>
@@ -159,7 +159,7 @@
                   <a class="page-link"
                      href="#"
                      style="font-size: 0.7rem"
-                     hx-get="{% url 'workspace:layer_data_table' layer.pk %}?page={{ p }}&amp;page_size={{ page_size }}&amp;sort={{ sort_raw }}"
+                     hx-get="{% url 'workspace:layer_data_table' layer.pk %}?page={{ p }}&amp;page_size={{ page_size }}&amp;sort={{ sort_raw }}{% if scenario %}&amp;scenario={{ scenario.pk }}{% endif %}"
                      hx-target="#data-table-{{ layer.pk }}"
                      hx-swap="outerHTML">{{ p }}</a>
                 </li>
@@ -171,7 +171,7 @@
                 <a class="page-link"
                    href="#"
                    style="font-size: 0.7rem"
-                   hx-get="{% url 'workspace:layer_data_table' layer.pk %}?page={{ page_obj.next_page_number }}&amp;page_size={{ page_size }}&amp;sort={{ sort_raw }}"
+                   hx-get="{% url 'workspace:layer_data_table' layer.pk %}?page={{ page_obj.next_page_number }}&amp;page_size={{ page_size }}&amp;sort={{ sort_raw }}{% if scenario %}&amp;scenario={{ scenario.pk }}{% endif %}"
                    hx-target="#data-table-{{ layer.pk }}"
                    hx-swap="outerHTML"
                    aria-label="{% translate 'Next page' %}">&#9654;</a>
@@ -180,7 +180,7 @@
                 <a class="page-link"
                    href="#"
                    style="font-size: 0.7rem"
-                   hx-get="{% url 'workspace:layer_data_table' layer.pk %}?page={{ paginator.num_pages }}&amp;page_size={{ page_size }}&amp;sort={{ sort_raw }}"
+                   hx-get="{% url 'workspace:layer_data_table' layer.pk %}?page={{ paginator.num_pages }}&amp;page_size={{ page_size }}&amp;sort={{ sort_raw }}{% if scenario %}&amp;scenario={{ scenario.pk }}{% endif %}"
                    hx-target="#data-table-{{ layer.pk }}"
                    hx-swap="outerHTML"
                    aria-label="{% translate 'Last page' %}">{% translate "Last" %}</a>

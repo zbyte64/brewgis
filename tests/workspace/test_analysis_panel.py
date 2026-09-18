@@ -13,6 +13,7 @@ from django.urls import reverse
 
 from brewgis.workspace.analysis.module_registry import get_available_analyses
 from brewgis.workspace.analysis.pipeline import launch_analysis_run
+from brewgis.workspace.models import ScenarioType
 from brewgis.workspace.views.analysis import AnalysisModuleForm
 from tests.factories import AnalysisRunFactory
 from tests.factories import ScenarioFactory
@@ -80,10 +81,17 @@ class TestAnalysisModuleForm(TestCase):
         assert "column_pop" not in form.fields
 
     def test_defaults_parcel_table_to_scenario_canvas(self):
-        form = AnalysisModuleForm(
-            workspace=self.workspace, scenario=self.scenario, module="water_demand"
+        # ScenarioFactory defaults to scenario_type=BASE (matching the
+        # model's default), whose base_layer_table is the raw base table —
+        # use an ALTERNATIVE scenario here to exercise the canvas-view
+        # default this test is actually about.
+        alt_scenario = ScenarioFactory(
+            workspace=self.workspace, scenario_type=ScenarioType.ALTERNATIVE
         )
-        expected = f"{self.scenario.target_schema}.scenario_{self.scenario.slug}_canvas"
+        form = AnalysisModuleForm(
+            workspace=self.workspace, scenario=alt_scenario, module="water_demand"
+        )
+        expected = f"{alt_scenario.target_schema}.scenario_{alt_scenario.slug}_canvas"
         assert form.fields["parcel_table"].initial == expected
 
 
@@ -194,14 +202,13 @@ class TestLaunchAnalysisRun(TestCase):
     @patch("brewgis.workspace.tasks.run_analysis_task.delay")
     def test_dispatches_to_celery_without_running_inline(self, mock_delay):
         run = launch_analysis_run(
-            workspace_id=self.workspace.pk,
+            scenario_id=self.scenario.pk,
             module_names=["water_demand"],
             vars_={
                 "target_schema": self.workspace.db_schema,
                 "parcel_table": "parcels",
                 "base_canvas_table": self.workspace.base_table,
             },
-            scenario_id=self.scenario.pk,
         )
         mock_delay.assert_called_once_with(run.pk)
         # With .delay() mocked out, the run must still be "pending" —

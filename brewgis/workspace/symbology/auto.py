@@ -13,8 +13,10 @@ from __future__ import annotations
 from typing import TYPE_CHECKING
 from typing import Any
 
+from brewgis.workspace.analysis.layer_registry import BASE_CANVAS_LAYER_KEY
 from brewgis.workspace.models import Layer
 from brewgis.workspace.models import Scenario
+from brewgis.workspace.models import ScenarioType
 from brewgis.workspace.models import StyleClass
 from brewgis.workspace.models import SymbologyConfig
 from brewgis.workspace.palettes import get_diverging_names
@@ -85,22 +87,21 @@ def _suggest_classification_method(stats: ColumnStatistics) -> str:
     return "quantile"
 
 
-def resolve_symbology_source(
-    layer: Layer, scenario: Scenario | None
-) -> tuple[str, str]:
+def resolve_symbology_source(layer: Layer, scenario: Scenario) -> tuple[str, str]:
     """Return the ``(schema, table)`` symbology should read *layer* from.
 
-    For the workspace's base canvas layer, when *scenario* is given, this is
-    the scenario's canvas view (base canvas COALESCEd with any PaintedCanvas
-    overrides) rather than the raw base table — so breaks/categories reflect
-    painted values instead of silently ignoring them. Any other layer (not
-    paintable) always uses its own raw table regardless of scenario.
+    For the workspace's base canvas layer, this is *scenario*'s effective
+    base layer (see ``Scenario.base_layer_source``) — the raw base table for
+    a BASE scenario, or the scenario's canvas view (base canvas COALESCEd
+    with any PaintedCanvas overrides) for an ALTERNATIVE one — so
+    breaks/categories reflect painted values instead of silently ignoring
+    them. Any other layer (not paintable) always uses its own raw table
+    regardless of scenario.
     """
+    if layer.key == BASE_CANVAS_LAYER_KEY:
+        return scenario.base_layer_source()
     schema = layer.db_schema or layer.workspace.db_schema
-    table = layer.db_table
-    if scenario is not None and layer._source_id() == layer.workspace.base_table:  # noqa: SLF001
-        return scenario.target_schema, f"scenario_{scenario.slug}_canvas"
-    return schema, table
+    return schema, layer.db_table
 
 
 _PALETTE_QUALITATIVE_NAMES = frozenset(get_qualitative_names())
@@ -166,7 +167,16 @@ def auto_generate_symbology(  # noqa: PLR0913
     SymbologyConfig
         The configuration (saved unless ``commit=False``).
     """
-    schema, table = resolve_symbology_source(layer, scenario)
+    # resolve_symbology_source now requires a real Scenario (it defers to
+    # Scenario.base_layer_source(), which needs a scenario_type to decide
+    # between the raw base table and a canvas view) — callers here may pass
+    # None (e.g. scenario_cloner.py's post-create symbology generation, with
+    # no scenario context in play), so fall back to the workspace's BASE
+    # scenario, which resolves to the same raw base table None used to.
+    resolved_scenario = scenario or layer.workspace.scenarios.get(
+        scenario_type=ScenarioType.BASE
+    )
+    schema, table = resolve_symbology_source(layer, resolved_scenario)
 
     if attribute_column:
         col = attribute_column

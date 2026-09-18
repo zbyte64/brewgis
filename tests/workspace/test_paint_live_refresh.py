@@ -187,7 +187,7 @@ def _setup_fixture(conn: psycopg.Connection) -> dict[str, Any]:
                 (name, slug, description, workspace_id, scenario_type,
                  base_year, horizon_year, schema_name, published,
                  public_token, created_at, updated_at)
-            VALUES (%s, %s, '', %s, 'base', 2023, 2050, %s, false,
+            VALUES (%s, %s, '', %s, 'alternative', 2023, 2050, %s, false,
                     gen_random_uuid(), now(), now())
             RETURNING id
             """,
@@ -223,10 +223,12 @@ def _create_canvas_view(ids: dict[str, Any]) -> None:
     from brewgis.workspace.models import Scenario
     from brewgis.workspace.services.canvas_view_manager import create_canvas_view
 
-    scenario = Scenario(
-        pk=ids["scenario_id"], slug=ids["slug"], schema_name=ids["schema_name"]
-    )
-    create_canvas_view(scenario, f"{FIXTURE_SCHEMA}.{FIXTURE_TABLE}")
+    # Fetch the real row (rather than a bare in-memory Scenario(pk=...))
+    # so `.workspace` resolves — create_canvas_view derives the base table
+    # from `scenario.workspace.base_table` now, which the fixture's raw
+    # INSERT already points at f"{FIXTURE_SCHEMA}.{FIXTURE_TABLE}".
+    scenario = Scenario.objects.get(pk=ids["scenario_id"])
+    create_canvas_view(scenario)
 
 
 def _teardown_fixture(conn: psycopg.Connection, ids: dict[str, Any]) -> None:

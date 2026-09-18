@@ -7,10 +7,10 @@ Feature: Scenario Management UX
     Given the user is logged in
 
   @review
-  Scenario: Scenario panel shows empty state on workspace detail
+  Scenario: Scenario panel shows the workspace's base scenario by default
     Given a workspace named "Test Region" exists
     When I navigate to the workspace detail page
-    Then I should see "No scenarios yet"
+    Then I should see "Base Scenario"
 
   @review
   Scenario: Create scenario page shows the form

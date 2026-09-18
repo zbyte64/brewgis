@@ -8,6 +8,7 @@ from django.test import TestCase
 from django.urls import reverse
 
 from brewgis.workspace.models import Layer
+from brewgis.workspace.models import Scenario
 from brewgis.workspace.models import SymbologyConfig
 from brewgis.workspace.models import Workspace
 
@@ -18,6 +19,16 @@ class TestSymbologyViews(TestCase):
         self.workspace = Workspace.objects.create(
             name="View Test",
             db_schema="public",
+        )
+        # _resolve_scenario() falls back to the workspace's BASE scenario
+        # when no ?scenario= is given — every workspace has one in practice
+        # (auto-created at workspace-creation time), so tests that bypass
+        # that flow need to create one explicitly.
+        Scenario.objects.create(
+            name="Base Scenario",
+            workspace=self.workspace,
+            base_year=2020,
+            horizon_year=2050,
         )
         self.layer = Layer.objects.create(
             key="view-layer",

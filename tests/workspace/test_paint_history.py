@@ -15,6 +15,7 @@ from django.urls import reverse
 
 from brewgis.workspace.models import PaintedCanvas
 from brewgis.workspace.models import PaintEvent
+from brewgis.workspace.models import ScenarioType
 from tests.factories import PaintedCanvasFactory
 from tests.factories import ScenarioFactory
 from tests.factories import UserFactory
@@ -164,7 +165,9 @@ class TestPaintLoggingIntegration(TestCase):
         self.user = UserFactory()
         self.client.force_login(self.user)
         self.workspace = WorkspaceFactory()
-        self.scenario = ScenarioFactory(workspace=self.workspace)
+        self.scenario = ScenarioFactory(
+            workspace=self.workspace, scenario_type=ScenarioType.ALTERNATIVE
+        )
         self.paint_url = reverse(
             PAINT_URL_NAME,
             args=[self.workspace.pk, self.scenario.pk],
@@ -269,7 +272,9 @@ class TestPaintHistoryView(TestCase):
         self.user = UserFactory()
         self.client.force_login(self.user)
         self.workspace = WorkspaceFactory()
-        self.scenario = ScenarioFactory(workspace=self.workspace)
+        self.scenario = ScenarioFactory(
+            workspace=self.workspace, scenario_type=ScenarioType.ALTERNATIVE
+        )
         self.url = reverse(
             HISTORY_URL_NAME,
             args=[self.workspace.pk, self.scenario.pk],
@@ -377,7 +382,9 @@ class TestUndoPaintView(TestCase):
         self.user = UserFactory()
         self.client.force_login(self.user)
         self.workspace = WorkspaceFactory()
-        self.scenario = ScenarioFactory(workspace=self.workspace)
+        self.scenario = ScenarioFactory(
+            workspace=self.workspace, scenario_type=ScenarioType.ALTERNATIVE
+        )
         self.paint_url = reverse(
             PAINT_URL_NAME,
             args=[self.workspace.pk, self.scenario.pk],

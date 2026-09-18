@@ -10,6 +10,9 @@ from brewgis.workspace.models import Scenario
 from brewgis.workspace.models import ScenarioType
 from brewgis.workspace.models import Workspace
 from brewgis.workspace.services.scenario_cloner import clone_scenario
+from brewgis.workspace.services.scenario_cloner import (
+    create_scenario as _create_scenario,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -152,11 +155,13 @@ def register_tools(server: object) -> None:
                 source=source, name=name, description=description
             )
         else:
-            new_scenario = Scenario.objects.create(
-                workspace=workspace,
+            parent = get_object_or_404(
+                Scenario, workspace=workspace, scenario_type=ScenarioType.BASE
+            )
+            new_scenario = _create_scenario(
+                parent=parent,
                 name=name,
                 description=description,
-                scenario_type=ScenarioType.ALTERNATIVE,
                 base_year=base_year,
                 horizon_year=horizon_year,
             )

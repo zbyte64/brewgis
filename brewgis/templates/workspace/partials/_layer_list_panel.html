@@ -86,7 +86,7 @@
                              line-height: 1"
                       title="{% translate 'View Data' %}"
                       aria-label="{% translate 'View Data' %}"
-                      hx-get="{% url 'workspace:layer_data_table' layer.pk %}?panel=1"
+                      hx-get="{% url 'workspace:layer_data_table' layer.pk %}?panel=1{% if scenario %}&scenario={{ scenario.pk }}{% endif %}"
                       hx-target="#bottom-sheet-content"
                       hx-swap="innerHTML"
                       data-panel-event="open-sheet:{{ layer.name }} Data">📋</span>

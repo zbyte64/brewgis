@@ -8,6 +8,7 @@ from django.test import TestCase
 
 from brewgis.workspace.models import Layer
 from brewgis.workspace.models import Scenario
+from brewgis.workspace.models import ScenarioType
 from brewgis.workspace.models import Workspace
 from brewgis.workspace.symbology.auto import _suggest_classification_method
 from brewgis.workspace.symbology.auto import _suggest_palette
@@ -72,6 +73,15 @@ class TestAutoGenerate(TestCase):
         self.workspace = Workspace.objects.create(
             name="Auto Test",
             db_schema="public",
+        )
+        # auto_generate_symbology() falls back to the workspace's BASE
+        # scenario when none is given — every workspace has one in practice
+        # (auto-created at workspace-creation time).
+        Scenario.objects.create(
+            name="Base Scenario",
+            workspace=self.workspace,
+            base_year=2020,
+            horizon_year=2050,
         )
         self.layer = Layer.objects.create(
             key="auto-layer",
@@ -213,12 +223,20 @@ class TestResolveSymbologySource(TestCase):
             name="Test Scenario",
             slug="test-scenario",
             workspace=self.workspace,
+            scenario_type=ScenarioType.ALTERNATIVE,
+            base_year=2020,
+            horizon_year=2050,
+        )
+        self.base_scenario = Scenario.objects.create(
+            name="Base Scenario",
+            workspace=self.workspace,
             base_year=2020,
             horizon_year=2050,
         )
 
     def test_no_scenario_uses_raw_table(self) -> None:
-        schema, table = resolve_symbology_source(self.base_layer, None)
+        """A BASE scenario (no paint overlay) resolves to the raw table."""
+        schema, table = resolve_symbology_source(self.base_layer, self.base_scenario)
         assert (schema, table) == ("public", "base_canvas")
 
     def test_base_layer_with_scenario_uses_canvas_view(self) -> None:
@@ -255,6 +273,13 @@ class TestAutoGenerateScenarioAware(TestCase):
             name="Test Scenario",
             slug="test-scenario",
             workspace=self.workspace,
+            scenario_type=ScenarioType.ALTERNATIVE,
+            base_year=2020,
+            horizon_year=2050,
+        )
+        self.base_scenario = Scenario.objects.create(
+            name="Base Scenario",
+            workspace=self.workspace,
             base_year=2020,
             horizon_year=2050,
         )
@@ -289,6 +314,8 @@ class TestAutoGenerateScenarioAware(TestCase):
     def test_no_scenario_routes_stats_through_raw_table(
         self, mock_list_columns, mock_compute_stats, mock_classify
     ) -> None:
+        """No scenario given falls back to the workspace's BASE scenario,
+        which resolves to the raw table (no paint overlay to COALESCE)."""
         mock_list_columns.return_value = [{"name": "du", "type": "float8"}]
         mock_compute_stats.return_value = _make_stats(distinct_count=50)
         mock_classify.return_value = ClassificationResult(

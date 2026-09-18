@@ -20,6 +20,7 @@ from django.shortcuts import render
 from django.urls import reverse
 from django.views.decorators.http import require_POST
 
+from brewgis.workspace.analysis.layer_registry import BASE_CANVAS_LAYER_KEY
 from brewgis.workspace.analysis.layer_registry import PAINTED_FEATURES_LAYER_KEY
 from brewgis.workspace.analysis.layer_registry import ensure_painted_features_layer
 from brewgis.workspace.analysis.layer_registry import visible_layers_for_panel
@@ -27,6 +28,7 @@ from brewgis.workspace.models import Basemap
 from brewgis.workspace.models import Layer
 from brewgis.workspace.models import Scenario
 from brewgis.workspace.models import ScenarioReport
+from brewgis.workspace.models import ScenarioType
 from brewgis.workspace.models import SymbologyConfig
 from brewgis.workspace.models import Workspace
 from brewgis.workspace.services.base_canvas_schema import BaseCanvasSchema
@@ -117,6 +119,21 @@ def is_panel_request(request: HttpRequest) -> bool:
     )
 
 
+def resolve_scenario_param(request: HttpRequest, workspace: Workspace) -> Scenario:
+    """Resolve the active scenario from ``?scenario=<pk>``.
+
+    Defaults to the workspace's BASE scenario when no ``scenario`` param is
+    given — every workspace always has exactly one, so this never returns
+    ``None`` and callers never need an ``if scenario:`` branch, only
+    ``if scenario.scenario_type == ScenarioType.ALTERNATIVE:`` where
+    paint-specific behavior (not data resolution) is being decided.
+    """
+    scenario_pk = request.GET.get("scenario")
+    if scenario_pk:
+        return get_object_or_404(Scenario, pk=scenario_pk, workspace=workspace)
+    return workspace.scenarios.get(scenario_type=ScenarioType.BASE)
+
+
 # ---------------------------------------------------------------------------
 # Left-sidebar panel endpoints
 # ---------------------------------------------------------------------------
@@ -127,11 +144,11 @@ def panel_layer_list(request: HttpRequest, workspace_pk: int) -> HttpResponse:
     """Return the layer list panel content for the left sidebar."""
     workspace = get_object_or_404(Workspace, pk=workspace_pk)
 
-    # Check for active scenario (passed via query param when on workspace map)
-    scenario: Scenario | None = None
-    scenario_id = request.GET.get("scenario")
-    if scenario_id:
-        scenario = get_object_or_404(Scenario, pk=int(scenario_id), workspace=workspace)
+    # Resolve active scenario (passed via query param when on workspace map),
+    # defaulting to the workspace's BASE scenario.
+    scenario = resolve_scenario_param(request, workspace)
+    is_alternative = scenario.scenario_type == ScenarioType.ALTERNATIVE
+    if is_alternative:
         ensure_painted_features_layer(
             workspace,
             schema=scenario.target_schema,
@@ -142,7 +159,12 @@ def panel_layer_list(request: HttpRequest, workspace_pk: int) -> HttpResponse:
         "workspace": workspace,
         "scenario": scenario,
         "is_public_view": False,
-        "layers_for_panel": visible_layers_for_panel(workspace, scenario),
+        # visible_layers_for_panel only shows the painted-features overlay
+        # while an ALTERNATIVE scenario is active (it has no source
+        # otherwise) — pass None for a BASE scenario to preserve that.
+        "layers_for_panel": visible_layers_for_panel(
+            workspace, scenario if is_alternative else None
+        ),
     }
 
     # Pre-fetch symbology configs for inline legend swatches
@@ -275,10 +297,7 @@ def panel_feature_inspect(request: HttpRequest, workspace_pk: int) -> HttpRespon
     """
     workspace = get_object_or_404(Workspace, pk=workspace_pk)
 
-    scenario: Scenario | None = None
-    scenario_pk = request.GET.get("scenario")
-    if scenario_pk:
-        scenario = get_object_or_404(Scenario, pk=scenario_pk, workspace=workspace)
+    scenario = resolve_scenario_param(request, workspace)
 
     try:
         body = json.loads(request.body)
@@ -331,7 +350,7 @@ def panel_feature_inspect(request: HttpRequest, workspace_pk: int) -> HttpRespon
     # import), are silently skipped rather than shown as an empty tab.
     base_layer_key = ""
     for layer in workspace.layers.all():
-        if layer._source_id() == workspace.base_table:  # noqa: SLF001
+        if layer.key == BASE_CANVAS_LAYER_KEY:
             base_layer_key = layer.key
             break
 
@@ -342,16 +361,17 @@ def panel_feature_inspect(request: HttpRequest, workspace_pk: int) -> HttpRespon
         if rows:
             layer_tabs.append({"layer": layer, "rows": rows})
 
+    is_alternative = scenario.scenario_type == ScenarioType.ALTERNATIVE
     context: dict[str, object] = {
         "workspace_pk": workspace_pk,
         "feature_id": feature_id,
         "editable_rows": editable_rows,
         "static_rows": static_rows,
-        "editable": scenario is not None,
+        "editable": is_alternative,
         "is_painted": bool(properties.get("uf_is_painted")),
         "layer_tabs": layer_tabs,
     }
-    if scenario is not None:
+    if is_alternative:
         context["paint_url"] = reverse(
             "workspace:paint_features", args=[workspace_pk, scenario.pk]
         )

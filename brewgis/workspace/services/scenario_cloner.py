@@ -1,10 +1,10 @@
-"""Scenario cloning service — creates alternative scenarios from a base.
+"""Scenario creation service — creates ALTERNATIVE scenarios under a parent.
 
-Cloning creates a fresh :class:`~brewgis.workspace.models.Scenario` of type
-``ALTERNATIVE`` with *parent* pointing to the source scenario.  No
-:class:`~brewgis.workspace.models.PaintedCanvas` rows are copied — a fresh
-alternative shares the same base data (copy-on-write).  A SQL view is created
-so tile servers see the (initially transparent) canvas.
+Every ALTERNATIVE scenario has a *parent* (a workspace's BASE scenario, or
+another ALTERNATIVE it was cloned from). No
+:class:`~brewgis.workspace.models.PaintedCanvas` rows are ever copied from
+the parent — a fresh scenario shares the same base data (copy-on-write). A
+SQL view is created so tile servers see the (initially transparent) canvas.
 """
 
 from __future__ import annotations
@@ -15,40 +15,41 @@ import logging
 from brewgis.workspace.models import Layer
 from brewgis.workspace.models import Scenario
 from brewgis.workspace.models import ScenarioType
-from brewgis.workspace.services.base_canvas_manager import DEFAULT_BASE_CANVAS_TABLE
 from brewgis.workspace.services.canvas_view_manager import create_canvas_view
 
 logger = logging.getLogger(__name__)
 
 
-def clone_scenario(
+def create_scenario(
     *,
-    source: Scenario,
+    parent: Scenario,
     name: str,
     description: str = "",
+    base_year: int | None = None,
     horizon_year: int | None = None,
-    base_canvas_table: str = DEFAULT_BASE_CANVAS_TABLE,
 ) -> Scenario:
-    """Clone *source* into a new ALTERNATIVE scenario.
+    """Create a new ALTERNATIVE scenario under *parent*.
 
     Parameters
     ----------
-    source : Scenario
-        The base scenario to clone from.
+    parent : Scenario
+        The scenario this new one is based on (typically the workspace's
+        BASE scenario). Determines ``workspace`` and, unless overridden,
+        ``base_year``/``horizon_year``.
     name : str
         Display name for the new scenario.
     description : str
         Optional description.
+    base_year : int | None
+        Override base year. Inherits from *parent* when ``None``.
     horizon_year : int | None
-        Override horizon year.  Inherits from *source* when ``None``.
-    base_canvas_table : str
-        Fully-qualified base canvas table name (``schema.table``).
-        Used to create the SQL view for tile server compatibility.
+        Override horizon year. Inherits from *parent* when ``None``.
 
     Returns
     -------
     Scenario
-        The newly created ALTERNATIVE scenario.
+        The newly created ALTERNATIVE scenario, with its canvas view and
+        Layer already registered.
 
     Raises
     ------
@@ -57,47 +58,71 @@ def clone_scenario(
     """
     new_scenario = Scenario.objects.create(
         name=name,
-        description=description or source.description,
-        workspace=source.workspace,
+        description=description or parent.description,
+        workspace=parent.workspace,
         scenario_type=ScenarioType.ALTERNATIVE,
-        parent=source,
-        base_year=source.base_year,
-        horizon_year=horizon_year if horizon_year is not None else source.horizon_year,
+        parent=parent,
+        base_year=base_year if base_year is not None else parent.base_year,
+        horizon_year=horizon_year if horizon_year is not None else parent.horizon_year,
     )
 
     # Create the canvas SQL view so tile servers can query it.
     # No PaintedCanvas rows are copied — canvas starts blank (pass-through to base).
-    create_canvas_view(new_scenario, base_canvas_table)
+    create_canvas_view(new_scenario)
     logger.info(
         "Created canvas view for scenario %s (%s)", new_scenario.pk, new_scenario.slug
     )
 
-    # Register a Layer so the tile server picks up the view.
-    view_qualifier = f"{new_scenario.target_schema}.scenario_{new_scenario.slug}_canvas"
+    _register_canvas_layer(new_scenario, source_name=parent.name)
+    return new_scenario
+
+
+def clone_scenario(
+    *,
+    source: Scenario,
+    name: str,
+    description: str = "",
+    horizon_year: int | None = None,
+) -> Scenario:
+    """Clone *source* into a new ALTERNATIVE scenario.
+
+    Thin wrapper around :func:`create_scenario` — *source* becomes the new
+    scenario's ``parent``. No paint data is copied (copy-on-write).
+    """
+    return create_scenario(
+        parent=source,
+        name=name,
+        description=description,
+        horizon_year=horizon_year,
+    )
+
+
+def _register_canvas_layer(scenario: Scenario, *, source_name: str) -> None:
+    """Get-or-create the Layer that exposes *scenario*'s canvas view.
+
+    Auto-generates symbology the first time the Layer is created.
+    """
+    view_qualifier = f"{scenario.target_schema}.scenario_{scenario.slug}_canvas"
     layer, created = Layer.objects.get_or_create(
-        workspace=source.workspace,
-        key=f"scenario_{new_scenario.slug}_canvas",
+        workspace=scenario.workspace,
+        key=f"scenario_{scenario.slug}_canvas",
         defaults={
-            "name": f"{new_scenario.name} — Canvas",
+            "name": f"{scenario.name} — Canvas",
             "description": (
-                f"Canvas view for scenario '{new_scenario.name}' "
-                f"(cloned from {source.name})"
+                f"Canvas view for scenario '{scenario.name}' (based on {source_name})"
             ),
-            "workspace": source.workspace,
+            "workspace": scenario.workspace,
             "geometry_type": "fill",
             "display_order": 0,
             "layer_source": "canvas_view",
             "db_table": view_qualifier,
         },
     )
-    # Auto-generate symbology for newly created canvas layers.
     if created:
         from brewgis.workspace.symbology.auto import auto_generate_symbology
 
         with contextlib.suppress(Exception):
             auto_generate_symbology(layer)
-
-    return new_scenario
 
 
 def _get_layer_model() -> type[Layer]:

@@ -19,6 +19,7 @@ from django.test import TestCase
 from django.urls import reverse
 
 from brewgis.workspace.models import PaintRun
+from brewgis.workspace.models import ScenarioType
 from tests.factories import BuildingTypeFactory
 from tests.factories import ScenarioFactory
 from tests.factories import UserFactory
@@ -39,7 +40,9 @@ class TestPaintRunTracking(TestCase):
     def setUp(self):
         self.user = UserFactory()
         self.workspace = WorkspaceFactory()
-        self.scenario = ScenarioFactory(workspace=self.workspace)
+        self.scenario = ScenarioFactory(
+            workspace=self.workspace, scenario_type=ScenarioType.ALTERNATIVE
+        )
         self.client.force_login(self.user)
 
     def test_direct_paint_creates_a_completed_paint_run(self):
@@ -92,7 +95,9 @@ class TestPaintRunTracking(TestCase):
         assert status_response.json() == apply_response.json()
 
     def test_paint_status_404s_for_a_run_in_another_scenario(self):
-        other_scenario = ScenarioFactory(workspace=self.workspace)
+        other_scenario = ScenarioFactory(
+            workspace=self.workspace, scenario_type=ScenarioType.ALTERNATIVE
+        )
         url = reverse(
             "workspace:paint_features",
             kwargs={"workspace_pk": self.workspace.pk, "scenario_pk": self.scenario.pk},
@@ -161,7 +166,9 @@ class TestPaintRunTrackingBuiltFormOperations(TestCase):
     def setUp(self):
         self.user = UserFactory()
         self.workspace = WorkspaceFactory()
-        self.scenario = ScenarioFactory(workspace=self.workspace)
+        self.scenario = ScenarioFactory(
+            workspace=self.workspace, scenario_type=ScenarioType.ALTERNATIVE
+        )
         self.client.force_login(self.user)
         self.bt = BuildingTypeFactory(
             workspace=self.workspace,

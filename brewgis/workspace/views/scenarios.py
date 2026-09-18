@@ -23,8 +23,8 @@ from brewgis.workspace.models import County
 from brewgis.workspace.models import Scenario
 from brewgis.workspace.models import ScenarioType
 from brewgis.workspace.models import Workspace
-from brewgis.workspace.services.canvas_view_manager import create_canvas_view
 from brewgis.workspace.services.scenario_cloner import clone_scenario
+from brewgis.workspace.services.scenario_cloner import create_scenario
 from brewgis.workspace.views.panels import is_panel_request
 
 # ---------------------------------------------------------------------------
@@ -33,7 +33,12 @@ from brewgis.workspace.views.panels import is_panel_request
 
 
 class ScenarioCreateForm(forms.Form):
-    """Standard form (not ModelForm) — parent field needs custom queryset."""
+    """Standard form (not ModelForm) — parent field needs custom queryset.
+
+    Only creates ALTERNATIVE scenarios — BASE scenarios are exclusively the
+    one auto-created per workspace (see ``workspace_create.py``), never
+    user-created, so there's no ``scenario_type`` choice here.
+    """
 
     name = forms.CharField(
         max_length=128,
@@ -43,14 +48,11 @@ class ScenarioCreateForm(forms.Form):
         required=False,
         widget=forms.Textarea(attrs={"class": "form-control", "rows": 3}),
     )
-    scenario_type = forms.ChoiceField(
-        choices=ScenarioType.choices,
-        widget=forms.Select(attrs={"class": "form-select"}),
-    )
     parent = forms.ModelChoiceField(
         queryset=Scenario.objects.none(),
         required=False,
         widget=forms.Select(attrs={"class": "form-select"}),
+        help_text="Required when creating a new scenario.",
     )
     base_year = forms.IntegerField(
         widget=forms.NumberInput(attrs={"class": "form-control"}),
@@ -73,8 +75,6 @@ class ScenarioCreateForm(forms.Form):
         cleaned = cast("dict[str, object]", super().clean())
         base_year = cleaned.get("base_year")
         horizon_year = cleaned.get("horizon_year")
-        scenario_type = cleaned.get("scenario_type")
-        parent = cleaned.get("parent")
 
         if (
             base_year is not None
@@ -82,14 +82,6 @@ class ScenarioCreateForm(forms.Form):
             and base_year >= horizon_year  # type: ignore[operator]
         ):
             self.add_error("horizon_year", "Horizon year must be after base year.")
-
-        if scenario_type == ScenarioType.ALTERNATIVE and parent is None:
-            self.add_error(
-                "parent", "Alternative scenarios must have a parent base scenario."
-            )
-
-        if scenario_type == ScenarioType.BASE and parent is not None:
-            cleaned["parent"] = None
 
         return cleaned
 
@@ -113,10 +105,9 @@ def _build_comparison_metrics(scenario: Scenario) -> dict[str, object]:
         "total_land_consumed_acres": 0,
     }
 
-    # Canvas view aggregate query — gracefully return zeroes if view missing
-    schema = scenario.target_schema
-    view_name = f"scenario_{scenario.slug}_canvas"
-    q_view = f'"{schema}"."{view_name}"'
+    # Base-layer aggregate query — gracefully return zeroes if missing
+    schema, table = scenario.base_layer_source()
+    q_view = f'"{schema}"."{table}"'
 
     try:
         with transaction.atomic(using="default"), connection.cursor() as cursor:
@@ -195,17 +186,16 @@ def scenario_create(request: HttpRequest, workspace_pk: int) -> HttpResponse:
 
     if request.method == "POST":
         form = ScenarioCreateForm(request.POST, workspace=workspace)
+        if form.is_valid() and not form.cleaned_data.get("parent"):
+            form.add_error("parent", "A new scenario must have a parent base scenario.")
         if form.is_valid():
-            scenario = Scenario.objects.create(
-                workspace=workspace,
+            scenario = create_scenario(
+                parent=form.cleaned_data["parent"],
                 name=form.cleaned_data["name"],
                 description=form.cleaned_data.get("description", ""),
-                scenario_type=form.cleaned_data["scenario_type"],
-                parent=form.cleaned_data.get("parent"),
                 base_year=form.cleaned_data["base_year"],
                 horizon_year=form.cleaned_data["horizon_year"],
             )
-            create_canvas_view(scenario, base_table=workspace.base_table)
             if is_panel_request(request):
                 response = HttpResponse()
                 response["HX-Redirect"] = (
@@ -258,7 +248,6 @@ def scenario_edit(
         initial = {
             "name": scenario.name,
             "description": scenario.description,
-            "scenario_type": scenario.scenario_type,
             "parent": scenario.parent,
             "base_year": scenario.base_year,
             "horizon_year": scenario.horizon_year,
@@ -316,7 +305,6 @@ def scenario_clone(
         source=source,
         name=name,
         description=description,
-        base_canvas_table=workspace.base_table,
     )
 
     return JsonResponse(

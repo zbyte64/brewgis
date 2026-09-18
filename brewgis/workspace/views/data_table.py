@@ -14,12 +14,20 @@ from django.shortcuts import get_object_or_404
 from django.shortcuts import render
 from django.views.decorators.http import require_GET
 
+from brewgis.workspace.analysis.layer_registry import BASE_CANVAS_LAYER_KEY
 from brewgis.workspace.models import Layer
+from brewgis.workspace.services.canvas_view_manager import PAINTABLE_COLUMNS
+from brewgis.workspace.views.panels import resolve_scenario_param
 
 logger = logging.getLogger(__name__)
 
 _POSTGIS_TYPES = {"geometry", "geography"}
 _MAX_VISIBLE_COLUMNS = 20
+"""Cap on *non-paintable* columns shown. Paintable columns (du, built_form_key,
+etc.) are always shown in full regardless of this cap — capping them would
+silently hide the very values a paint operation just changed, on a wide
+canvas view (see canvas_view_manager.py) where they can fall well past
+column 20."""
 _DEFAULT_PAGE_SIZE = 50
 
 
@@ -32,8 +40,13 @@ def layer_data_table(request: HttpRequest, layer_pk: int) -> HttpResponse:
     sorting and cursor-based pagination via htmx.
     """
     layer = get_object_or_404(Layer, pk=layer_pk)
-    schema = layer.db_schema or layer.workspace.db_schema
-    table = layer.db_table
+    workspace = layer.workspace
+    scenario = resolve_scenario_param(request, workspace)
+    if layer.key == BASE_CANVAS_LAYER_KEY:
+        schema, table = scenario.base_layer_source()
+    else:
+        schema = layer.db_schema or workspace.db_schema
+        table = layer.db_table
 
     quoted_schema = connection.ops.quote_name(schema)
     quoted_table = connection.ops.quote_name(table)
@@ -50,16 +63,26 @@ def layer_data_table(request: HttpRequest, layer_pk: int) -> HttpResponse:
             [schema, table],
         )
         all_columns = cursor.fetchall()
+        all_column_names = [col_name for col_name, _ in all_columns]
 
-        data_columns: list[str] = []
-        all_column_names: list[str] = []
-        for col_name, udt_name in all_columns:
-            all_column_names.append(col_name)
-            if udt_name in _POSTGIS_TYPES:
+        non_geom_columns = [
+            col_name
+            for col_name, udt_name in all_columns
+            if udt_name not in _POSTGIS_TYPES
+        ]
+        # Fill the cap from non-paintable columns first, then always add
+        # every paintable column present — see _MAX_VISIBLE_COLUMNS above.
+        selected: set[str] = set()
+        for col_name in non_geom_columns:
+            if col_name in PAINTABLE_COLUMNS:
                 continue
-            data_columns.append(col_name)
-            if len(data_columns) >= _MAX_VISIBLE_COLUMNS:
+            if len(selected) >= _MAX_VISIBLE_COLUMNS:
                 break
+            selected.add(col_name)
+        selected.update(c for c in non_geom_columns if c in PAINTABLE_COLUMNS)
+
+        # Preserve the table's natural left-to-right column order.
+        data_columns = [c for c in non_geom_columns if c in selected]
 
         # ── Count ────────────────────────────────────────────────────
         count_sql = f"SELECT COUNT(*) FROM {quoted_schema}.{quoted_table}"
@@ -131,6 +154,7 @@ def layer_data_table(request: HttpRequest, layer_pk: int) -> HttpResponse:
 
     context: dict[str, Any] = {
         "layer": layer,
+        "scenario": scenario,
         "columns": data_columns,
         "rows": rows,
         "feature_id_column": feature_id_column,

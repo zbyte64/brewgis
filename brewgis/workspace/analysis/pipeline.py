@@ -33,6 +33,7 @@ from brewgis.workspace.analysis.module_registry import (
 )
 from brewgis.workspace.analysis.sqlmesh_runner import run_sqlmesh_plan
 from brewgis.workspace.models import AnalysisRun
+from brewgis.workspace.models import Scenario
 from brewgis.workspace.models import Workspace
 from brewgis.workspace.services.tile_server import restart_martin
 from brewgis.workspace.services.tile_server import wait_until_martin_ready
@@ -132,25 +133,19 @@ def _build_sqlmesh_selectors(modules: list[str]) -> list[str]:
 
 
 def _create_analysis_run(
-    workspace_id: int,
+    scenario_id: int,
     module_names: list[str],
     vars_: dict[str, Any] | None,
-    scenario_id: int | None,
 ) -> AnalysisRun:
     """Resolve dependencies and create a ``pending`` AnalysisRun record."""
     base_vars = vars_ or {}
-    if scenario_id is not None:
-        base_vars.setdefault("scenario_id", str(scenario_id))
-    else:
-        raw_id = base_vars.get(
-            "scenario_id", f"run_{timezone.now().strftime('%Y%m%d_%H%M%S')}"
-        )
-        base_vars.setdefault("scenario_id", raw_id)
+    base_vars.setdefault("scenario_id", str(scenario_id))
+
+    workspace_id = Scenario.objects.get(pk=scenario_id).workspace_id
 
     ordered_modules = resolve_module_order(module_names)
     column_mapping = base_vars.get("column_mapping", {})
 
-    assert scenario_id is not None, "scenario_id is required to create an AnalysisRun"
     run = AnalysisRun.objects.create(
         workspace_id=workspace_id,
         scenario_id=scenario_id,
@@ -232,10 +227,9 @@ def _execute_analysis_run(run: AnalysisRun) -> None:
 
 
 def run_analysis_pipeline(
-    workspace_id: int,
+    scenario_id: int,
     module_names: list[str],
     vars_: dict[str, Any] | None = None,
-    scenario_id: int | None = None,
 ) -> AnalysisRun:
     """Create an AnalysisRun record and execute it synchronously via SQLMesh.
 
@@ -245,16 +239,15 @@ def run_analysis_pipeline(
     result is expected. For a non-blocking launch (e.g. the map view's
     Analysis panel), use :func:`launch_analysis_run` instead.
     """
-    run = _create_analysis_run(workspace_id, module_names, vars_, scenario_id)
+    run = _create_analysis_run(scenario_id, module_names, vars_)
     _execute_analysis_run(run)
     return run
 
 
 def launch_analysis_run(
-    workspace_id: int,
+    scenario_id: int,
     module_names: list[str],
     vars_: dict[str, Any] | None = None,
-    scenario_id: int | None = None,
 ) -> AnalysisRun:
     """Create an AnalysisRun and dispatch its execution to Celery.
 
@@ -267,7 +260,7 @@ def launch_analysis_run(
     """
     from brewgis.workspace.tasks import run_analysis_task
 
-    run = _create_analysis_run(workspace_id, module_names, vars_, scenario_id)
+    run = _create_analysis_run(scenario_id, module_names, vars_)
     run_analysis_task.delay(run.pk)
     run.refresh_from_db()
     return run

@@ -18,6 +18,7 @@ from tests.e2e.pages.upload_page import UploadPage
 from tests.factories import BuildingTypeFactory
 from tests.factories import LayerFactory
 from tests.factories import PlaceTypeFactory
+from tests.factories import ScenarioFactory
 from tests.factories import WorkspaceFactory
 
 if TYPE_CHECKING:
@@ -48,14 +49,25 @@ def user_not_logged_in(page: Page) -> None:
 
 @given(parsers.parse('a workspace named "{name}" exists'))
 def workspace_exists(name: str, db) -> WorkspaceFactory:  # type: ignore[no-untyped-def]
-    """Create a workspace with the given name."""
-    return WorkspaceFactory(name=name)
+    """Create a workspace with the given name.
+
+    Every real workspace gets exactly one BASE scenario at creation time —
+    several views (symbology, map, data table) resolve the active scenario
+    via a fallback to it, so this fixture needs one too. The map page's
+    "no scenarios yet" empty state now means "no ALTERNATIVE scenario has
+    been created yet" (a workspace always has its BASE scenario), so a
+    single auto-created BASE scenario here still exercises that state.
+    """
+    ws = WorkspaceFactory(name=name)
+    ScenarioFactory(workspace=ws, name="Base Scenario")
+    return ws
 
 
 @given(parsers.parse('a layer named "{name}" exists in workspace "{ws_name}"'))
 def layer_exists(name: str, ws_name: str, db) -> None:  # type: ignore[no-untyped-def]
     """Create a layer in the named workspace."""
     ws = WorkspaceFactory(name=ws_name)
+    ScenarioFactory(workspace=ws, name="Base Scenario")
     LayerFactory(name=name, workspace=ws)
 
 

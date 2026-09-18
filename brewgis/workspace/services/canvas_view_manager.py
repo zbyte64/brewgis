@@ -16,6 +16,7 @@ from django.db import ProgrammingError
 from django.db import connection
 from django.db import transaction
 
+from brewgis.workspace.models import ScenarioType
 from brewgis.workspace.services.base_canvas_schema import BaseCanvasSchema
 
 if TYPE_CHECKING:
@@ -148,18 +149,26 @@ LEFT JOIN (
 """
 
 
-def create_canvas_view(scenario: Scenario, base_table: str) -> str:
-    """Create a canvas view for *scenario* over *base_table*.
+def create_canvas_view(scenario: Scenario) -> str:
+    """Create a canvas view for *scenario* over its workspace's base table.
 
     The view is named ``scenario_{slug}_canvas`` and lives in the
-    scenario's target schema (``scenario_{slug}``).
+    scenario's target schema (``scenario_{slug}``). Only ALTERNATIVE
+    scenarios get a view — a BASE scenario has nothing to COALESCE and
+    resolves straight to the workspace's base table via
+    :meth:`Scenario.base_layer_source`.
 
     Returns the fully-qualified view name (``schema.view_name``).
     """
+    if scenario.scenario_type == ScenarioType.BASE:
+        raise ValueError(
+            f"'{scenario.name}' is a BASE scenario — it has no canvas view."
+        )
+
     view_name = f"scenario_{scenario.slug}_canvas"
     view_schema = scenario.target_schema
 
-    schema, table_name, all_cols = _fetch_base_columns(base_table)
+    schema, table_name, all_cols = _fetch_base_columns(scenario.workspace.base_table)
 
     sql = _build_create_view_sql(
         view_schema=view_schema,
@@ -190,12 +199,12 @@ def create_canvas_view(scenario: Scenario, base_table: str) -> str:
     return f"{view_schema}.{view_name}"
 
 
-def refresh_canvas_view(scenario: Scenario, base_table: str) -> str:
+def refresh_canvas_view(scenario: Scenario) -> str:
     """Recreate the canvas view for *scenario* — after paint operations.
 
     Same as :func:`create_canvas_view` because we use ``CREATE OR REPLACE VIEW``.
     """
-    return create_canvas_view(scenario, base_table)
+    return create_canvas_view(scenario)
 
 
 def drop_canvas_view(scenario: Scenario) -> None:

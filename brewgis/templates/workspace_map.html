@@ -67,7 +67,7 @@
         {% endif %}
         <div class="ms-auto d-flex align-items-center gap-2">
           {% if not is_public_view %}
-            {% if workspace.scenarios.exists %}
+            {% if workspace.scenarios.count > 1 %}
               <form method="get"
                     class="d-flex align-items-center gap-1"
                     id="scenario-form">
@@ -81,7 +81,7 @@
                             {% if scenario and scenario.pk == s.pk %}selected{% endif %}>{{ s.name }}</option>
                   {% endfor %}
                 </select>
-                {% if scenario %}
+                {% if is_alternative_scenario %}
                   <button type="button"
                           class="btn btn-sm btn-outline-primary"
                           id="toggle-paint-btn">{% translate "Paint Mode" %}</button>

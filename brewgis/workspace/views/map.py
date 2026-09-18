@@ -22,6 +22,7 @@ from django.shortcuts import render
 from django.urls import reverse
 from ninja import ModelSchema
 
+from brewgis.workspace.analysis.layer_registry import BASE_CANVAS_LAYER_KEY
 from brewgis.workspace.analysis.layer_registry import PAINTED_FEATURES_LAYER_KEY
 from brewgis.workspace.analysis.layer_registry import ensure_painted_features_layer
 from brewgis.workspace.built_forms.models import BuildingType
@@ -30,11 +31,13 @@ from brewgis.workspace.models import Basemap
 from brewgis.workspace.models import Layer
 from brewgis.workspace.models import PaintedCanvas
 from brewgis.workspace.models import Scenario
+from brewgis.workspace.models import ScenarioType
 from brewgis.workspace.models import SymbologyConfig
 from brewgis.workspace.models import Workspace
 from brewgis.workspace.services.base_canvas_schema import BaseCanvasSchema
 from brewgis.workspace.services.canvas_view_manager import build_paintable_column_meta
 from brewgis.workspace.symbology.generator import generate_maplibre_style
+from brewgis.workspace.views.panels import resolve_scenario_param
 
 
 class LayerSchema(ModelSchema):
@@ -148,9 +151,15 @@ def view_workspace_map(request: HttpRequest, workspace_pk: int) -> HttpResponse:
     """
     workspace = get_object_or_404(Workspace, pk=workspace_pk)
 
-    # Check for scenario query parameter
-    scenario_id = request.GET.get("scenario")
-    scenario: Scenario | None = None
+    # Resolve the active scenario, defaulting to the workspace's BASE
+    # scenario when no ?scenario= param is given — scenario is never None
+    # from here on. Paint-specific UI (toolbar, paint URLs, the
+    # painted-features overlay, the canvas tile source) only applies when
+    # an ALTERNATIVE scenario is active; a BASE scenario's tile source is
+    # just its already-registered base canvas Layer, unchanged from
+    # today's non-scenario code path.
+    scenario = resolve_scenario_param(request, workspace)
+    is_alternative_scenario = scenario.scenario_type == ScenarioType.ALTERNATIVE
     canvas_view_name: str | None = None
     paintable_column_meta: list[dict[str, str]] = []
     built_forms_data: dict[str, list[dict[str, object]]] = {}
@@ -162,11 +171,9 @@ def view_workspace_map(request: HttpRequest, workspace_pk: int) -> HttpResponse:
     history_url: str = ""
     undo_url: str = ""
 
-    if scenario_id:
-        scenario = get_object_or_404(Scenario, pk=int(scenario_id), workspace=workspace)
+    if is_alternative_scenario:
         # Build canvas view source (the COALESCE view for this scenario)
-        schema = scenario.target_schema
-        view_name = f"scenario_{scenario.slug}_canvas"
+        schema, view_name = scenario.base_layer_source()
         canvas_view_name = view_name
         canvas_source_id = f"{schema}.{view_name}"
         ensure_painted_features_layer(workspace, schema=schema, table=view_name)
@@ -239,10 +246,10 @@ def view_workspace_map(request: HttpRequest, workspace_pk: int) -> HttpResponse:
     layer_data = []
     for layer in layers:
         is_painted_features_layer = layer.key == PAINTED_FEATURES_LAYER_KEY
-        if is_painted_features_layer and not scenario:
+        if is_painted_features_layer and not is_alternative_scenario:
             # This overlay has no source of its own — it only ever renders
-            # against the active scenario's canvas view (below). Without a
-            # scenario there's nothing to tile from, so skip it entirely
+            # against the active ALTERNATIVE scenario's canvas view (below).
+            # Without one there's nothing to tile from, so skip it entirely
             # rather than fall through to to_maplibre_source() with no
             # db_table.
             continue
@@ -250,9 +257,9 @@ def view_workspace_map(request: HttpRequest, workspace_pk: int) -> HttpResponse:
         data = LayerSchema.model_validate(layer).model_dump()
         data["id"] = layer.key
         data["type"] = layer.geometry_type
-        is_base_layer = layer._source_id() == workspace.base_table  # noqa: SLF001
+        is_base_layer = layer.key == BASE_CANVAS_LAYER_KEY
 
-        if (is_base_layer or is_painted_features_layer) and scenario:
+        if (is_base_layer or is_painted_features_layer) and is_alternative_scenario:
             # A scenario is active: tile this layer from the scenario's
             # canvas view (base canvas COALESCEd with any PaintedCanvas
             # overrides) instead of the raw, unpainted base table — so the
@@ -329,7 +336,7 @@ def view_workspace_map(request: HttpRequest, workspace_pk: int) -> HttpResponse:
     # feature selection). The painted-features Layer (see
     # ensure_painted_features_layer) is what actually renders this now — its
     # paint/visibility come from the loop above like any other Layer.
-    canvas_view_layer_id = PAINTED_FEATURES_LAYER_KEY if scenario else ""
+    canvas_view_layer_id = PAINTED_FEATURES_LAYER_KEY if is_alternative_scenario else ""
     selection_mode = request.GET.get("selection_mode", "click")
 
     # Layer id to click-inspect against when no scenario is active. Only
@@ -338,13 +345,13 @@ def view_workspace_map(request: HttpRequest, workspace_pk: int) -> HttpResponse:
     # effectively scenario-only otherwise.
     base_layer_id = ""
     for layer in layers:
-        if layer._source_id() == workspace.base_table:  # noqa: SLF001
+        if layer.key == BASE_CANVAS_LAYER_KEY:
             base_layer_id = layer.key
             break
 
     # Build URL for the map page with scenario param
     scenario_url = ""
-    if scenario:
+    if is_alternative_scenario:
         scenario_url = request.build_absolute_uri(
             f"/workspace/{workspace_pk}/map/?scenario={scenario.pk}"
         )
@@ -405,10 +412,11 @@ def view_workspace_map(request: HttpRequest, workspace_pk: int) -> HttpResponse:
         "viewport_json": json.dumps(_resolve_viewport(workspace)),
         "workspace": workspace,
         "scenario": scenario,
+        "is_alternative_scenario": is_alternative_scenario,
         "scenario_json": json.dumps(
             {"id": scenario.pk, "name": scenario.name, "slug": scenario.slug}
         )
-        if scenario
+        if is_alternative_scenario
         else "null",
         "scenario_url": scenario_url,
         "canvas_view_name": canvas_view_name if canvas_view_name else "",
@@ -419,8 +427,8 @@ def view_workspace_map(request: HttpRequest, workspace_pk: int) -> HttpResponse:
         "bf_paint_url": bf_paint_url,
         "bf_match_url": bf_match_url,
         "bf_fill_url": bf_fill_url,
-        "history_url": history_url if scenario else "",
-        "undo_url": undo_url if scenario else "",
+        "history_url": history_url if is_alternative_scenario else "",
+        "undo_url": undo_url if is_alternative_scenario else "",
         "canvas_view_layer_id": canvas_view_layer_id,
         "base_layer_id": base_layer_id,
         "selection_mode": selection_mode,

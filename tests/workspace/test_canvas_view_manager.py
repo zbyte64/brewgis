@@ -9,6 +9,7 @@ from __future__ import annotations
 import pytest
 from django.db import connection
 
+from brewgis.workspace.models import ScenarioType
 from brewgis.workspace.services.canvas_view_manager import create_canvas_view
 from brewgis.workspace.services.canvas_view_manager import drop_canvas_view
 from brewgis.workspace.services.canvas_view_manager import refresh_canvas_view
@@ -18,8 +19,16 @@ from tests.factories import ScenarioFactory
 
 @pytest.fixture
 def canvas_scenario(db, workspace):
-    """A scenario with a specific slug for canvas view tests."""
-    return ScenarioFactory(workspace=workspace, slug="testcanvasvm")
+    """A scenario with a specific slug for canvas view tests.
+
+    ALTERNATIVE-typed — canvas views only exist for ALTERNATIVE scenarios;
+    a BASE scenario resolves straight to the raw base table and has no view.
+    """
+    return ScenarioFactory(
+        workspace=workspace,
+        slug="testcanvasvm",
+        scenario_type=ScenarioType.ALTERNATIVE,
+    )
 
 
 @pytest.mark.integration
@@ -28,7 +37,7 @@ class TestCanvasViewManager:
 
     def test_create_view_creates_valid_view(self, base_canvas_table, canvas_scenario):
         """create_canvas_view creates a valid PostGIS view."""
-        result = create_canvas_view(canvas_scenario, base_canvas_table)
+        result = create_canvas_view(canvas_scenario)
         assert f"scenario_{canvas_scenario.slug}_canvas" in result
 
         with connection.cursor() as cursor:
@@ -46,7 +55,7 @@ class TestCanvasViewManager:
 
     def test_view_has_correct_columns(self, base_canvas_table, canvas_scenario):
         """View exposes static columns, COALESCE'd paintable columns, and uf_is_painted."""
-        create_canvas_view(canvas_scenario, base_canvas_table)
+        create_canvas_view(canvas_scenario)
 
         with connection.cursor() as cursor:
             cursor.execute(
@@ -75,7 +84,7 @@ class TestCanvasViewManager:
         self, base_canvas_table, canvas_scenario
     ):
         """Unpainted view returns base canvas values."""
-        create_canvas_view(canvas_scenario, base_canvas_table)
+        create_canvas_view(canvas_scenario)
         view_id = f"scenario_{canvas_scenario.slug}_canvas"
         qview = f'"{canvas_scenario.target_schema}"."{view_id}"'
 
@@ -91,7 +100,7 @@ class TestCanvasViewManager:
 
     def test_coalesce_picks_painted_value(self, base_canvas_table, canvas_scenario):
         """COALESCE returns painted value when an override exists."""
-        create_canvas_view(canvas_scenario, base_canvas_table)
+        create_canvas_view(canvas_scenario)
         view_id = f"scenario_{canvas_scenario.slug}_canvas"
         qview = f'"{canvas_scenario.target_schema}"."{view_id}"'
 
@@ -102,7 +111,7 @@ class TestCanvasViewManager:
             painted_value=999.0,
         )
 
-        refresh_canvas_view(canvas_scenario, base_canvas_table)
+        refresh_canvas_view(canvas_scenario)
 
         with connection.cursor() as cursor:
             cursor.execute(f"SELECT du, pop, uf_is_painted FROM {qview} ORDER BY id")
@@ -118,7 +127,7 @@ class TestCanvasViewManager:
 
     def test_multiple_painted_columns(self, base_canvas_table, canvas_scenario):
         """Multiple columns can be painted on the same feature."""
-        create_canvas_view(canvas_scenario, base_canvas_table)
+        create_canvas_view(canvas_scenario)
         view_id = f"scenario_{canvas_scenario.slug}_canvas"
         qview = f'"{canvas_scenario.target_schema}"."{view_id}"'
 
@@ -141,7 +150,7 @@ class TestCanvasViewManager:
             painted_value=150.0,
         )
 
-        refresh_canvas_view(canvas_scenario, base_canvas_table)
+        refresh_canvas_view(canvas_scenario)
 
         with connection.cursor() as cursor:
             cursor.execute(
@@ -156,7 +165,7 @@ class TestCanvasViewManager:
 
     def test_drop_view_removes_it(self, base_canvas_table, canvas_scenario):
         """drop_canvas_view removes the view from the database."""
-        create_canvas_view(canvas_scenario, base_canvas_table)
+        create_canvas_view(canvas_scenario)
         drop_canvas_view(canvas_scenario)
 
         view_name = f"scenario_{canvas_scenario.slug}_canvas"

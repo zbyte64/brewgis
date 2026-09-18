@@ -12,6 +12,7 @@ from unittest.mock import patch
 
 import pytest
 
+from brewgis.workspace.models import ScenarioType
 from tests.factories import ScenarioFactory
 from tests.factories import WorkspaceFactory
 
@@ -41,7 +42,9 @@ class TestRunAnalysisDefaults:
 
     def setup_method(self):
         self.workspace = WorkspaceFactory(base_table="public.base_canvas")
-        self.scenario = ScenarioFactory(workspace=self.workspace)
+        self.scenario = ScenarioFactory(
+            workspace=self.workspace, scenario_type=ScenarioType.ALTERNATIVE
+        )
         self.run_analysis = _get_run_analysis_tool()
 
     def test_defaults_parcel_table_to_scenario_canvas_view(self):

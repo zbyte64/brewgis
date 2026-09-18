@@ -10,8 +10,10 @@ from brewgis.workspace.models import PaintConstraint
 from brewgis.workspace.models import PaintedCanvas
 from brewgis.workspace.models import PaintEvent
 from brewgis.workspace.models import Scenario
+from brewgis.workspace.models import ScenarioNotPaintableError
 from brewgis.workspace.models import Workspace
 from brewgis.workspace.services.canvas_view_manager import PAINTABLE_COLUMNS
+from brewgis.workspace.services.canvas_view_manager import refresh_canvas_view
 from brewgis.workspace.services.paint_constraints import check_paint_batch
 
 logger = logging.getLogger(__name__)
@@ -37,6 +39,10 @@ def register_tools(server: object) -> None:
             return {"error": "Invalid slug"}
         workspace = get_object_or_404(Workspace, pk=ws_pk)
         scenario = get_object_or_404(Scenario, pk=s_pk, workspace=workspace)
+        try:
+            scenario.ensure_paintable()
+        except ScenarioNotPaintableError as exc:
+            return {"error": str(exc)}
 
         if column not in PAINTABLE_COLUMNS:
             return {
@@ -51,11 +57,15 @@ def register_tools(server: object) -> None:
                 obj, created = PaintedCanvas.objects.update_or_create(
                     scenario=scenario,
                     feature_id=fid,
-                    defaults={column: value},
+                    column_name=column,
+                    defaults={"painted_value": value},
                 )
                 painted += 1
             except Exception as e:
                 errors.append({"feature_id": fid, "error": str(e)})
+
+        if painted:
+            refresh_canvas_view(scenario)
 
         if note:
             PaintEvent.objects.create(
@@ -88,6 +98,10 @@ def register_tools(server: object) -> None:
             return {"error": "Invalid slug", "cleared": 0}
         workspace = get_object_or_404(Workspace, pk=ws_pk)
         scenario = get_object_or_404(Scenario, pk=s_pk, workspace=workspace)
+        try:
+            scenario.ensure_paintable()
+        except ScenarioNotPaintableError as exc:
+            return {"error": str(exc)}
 
         qs = PaintedCanvas.objects.filter(scenario=scenario)
         if feature_ids:
@@ -146,6 +160,10 @@ def register_tools(server: object) -> None:
             return {"error": "Invalid slug", "reverted": 0}
         workspace = get_object_or_404(Workspace, pk=ws_pk)
         scenario = get_object_or_404(Scenario, pk=s_pk, workspace=workspace)
+        try:
+            scenario.ensure_paintable()
+        except ScenarioNotPaintableError as exc:
+            return {"error": str(exc)}
 
         events = PaintEvent.objects.filter(
             scenario=scenario, operation_type="paint"

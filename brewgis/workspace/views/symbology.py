@@ -25,6 +25,7 @@ from django.views.decorators.http import require_POST
 from brewgis.workspace.analysis.layer_registry import _get_table_columns
 from brewgis.workspace.models import Layer
 from brewgis.workspace.models import Scenario
+from brewgis.workspace.models import ScenarioType
 from brewgis.workspace.models import StyleClass
 from brewgis.workspace.models import SymbologyConfig
 from brewgis.workspace.palettes import get_all_names
@@ -37,18 +38,24 @@ from brewgis.workspace.views.panels import is_panel_request
 _GEOMETRY_DATA_TYPES = {"geometry", "geography", "USER-DEFINED"}
 
 
-def _resolve_scenario(layer: Layer, data: dict[str, str]) -> Scenario | None:
-    """Resolve the active scenario (if any) from a GET/POST payload.
+def _resolve_scenario(layer: Layer, data: dict[str, str]) -> Scenario:
+    """Resolve the active scenario from a GET/POST payload.
 
     Lets symbology auto-generation/preview compute breaks against a
     scenario's painted-aware canvas view instead of the raw base table (see
-    ``resolve_symbology_source``). Returns ``None`` if no ``scenario`` value
-    is present or it doesn't belong to *layer*'s workspace.
+    ``resolve_symbology_source``). Falls back to *layer*'s workspace's BASE
+    scenario if no ``scenario`` value is present or it doesn't belong to
+    *layer*'s workspace — every workspace always has exactly one, so this
+    never returns ``None``.
     """
     scenario_id = data.get("scenario")
-    if not scenario_id:
-        return None
-    return Scenario.objects.filter(pk=scenario_id, workspace=layer.workspace).first()
+    if scenario_id:
+        scenario = Scenario.objects.filter(
+            pk=scenario_id, workspace=layer.workspace
+        ).first()
+        if scenario is not None:
+            return scenario
+    return layer.workspace.scenarios.get(scenario_type=ScenarioType.BASE)
 
 
 def _advanced_open(post_data: dict[str, str]) -> bool:
