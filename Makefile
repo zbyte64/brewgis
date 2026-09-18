@@ -120,10 +120,6 @@ test-all:  ## Run all tests sequentially (safe for full coverage)
 test-mcp:  ## Run MCP server tests (models marker only)
 	$(COMPOSE_TEST_RUN) pytest tests/workspace/test_mcp_server.py -m models -v
 
-.PHONY: test-soda
-test-soda:  ## Run Soda Core data quality validation
-	$(COMPOSE_RUN) python manage.py validate_data_quality
-
 .PHONY: mcp-up
 mcp-up:  ## Start MCP server in Docker
 	$(COMPOSE_RUN) mcp

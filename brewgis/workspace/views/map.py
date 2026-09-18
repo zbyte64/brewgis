@@ -30,6 +30,7 @@ from brewgis.workspace.models import PaintedCanvas
 from brewgis.workspace.models import Scenario
 from brewgis.workspace.models import SymbologyConfig
 from brewgis.workspace.models import Workspace
+from brewgis.workspace.services.base_canvas_schema import BaseCanvasSchema
 from brewgis.workspace.services.canvas_view_manager import build_paintable_column_meta
 from brewgis.workspace.symbology.generator import generate_maplibre_style
 
@@ -73,6 +74,20 @@ def _zoom_for_extent(
     lat_span = max(max_lat - min_lat, 1e-6)
     zoom = min(math.log2(360.0 / lng_span), math.log2(180.0 / lat_span))
     return max(_MIN_AUTO_ZOOM, min(zoom - _AUTO_ZOOM_PADDING, _MAX_AUTO_ZOOM))
+
+
+def _resolve_attribute_label(column: str) -> str:
+    """Human-readable label for a symbology attribute column.
+
+    Used by hover tooltips to show e.g. "Built Form" instead of the raw
+    ``built_form_key`` column name. Falls back to a title-cased version of
+    the column name for columns outside the base canvas schema (e.g.
+    analysis-result tables like ``vmt_total``).
+    """
+    col_def = BaseCanvasSchema.get(column)
+    if col_def:
+        return col_def.label
+    return column.replace("_", " ").title()
 
 
 def _resolve_viewport(workspace: Workspace) -> dict[str, object]:
@@ -275,12 +290,24 @@ def view_workspace_map(request: HttpRequest, workspace_pk: int) -> HttpResponse:
         else:
             data["source-layer"] = layer._source_id()  # noqa: SLF001
 
-        # Merge symbology-generated paint/layout if available
+        # Merge symbology-generated paint/layout if available. The attribute
+        # column driving it is also surfaced to the frontend so hover
+        # tooltips can show just the column(s) actually used for styling
+        # (e.g. built_form_key, vmt_total) instead of every column on the
+        # layer's table.
+        data["name"] = layer.name
+        data["attribute_column"] = ""
+        data["attribute_label"] = ""
         try:
             config = layer.symbology
             style = generate_maplibre_style(config)
             data["paint"] = style["paint"]
             data["layout"] = style["layout"]
+            if config.attribute_column:
+                data["attribute_column"] = config.attribute_column
+                data["attribute_label"] = _resolve_attribute_label(
+                    config.attribute_column
+                )
         except SymbologyConfig.DoesNotExist:
             pass
 

@@ -5,6 +5,15 @@ import type { Viewport, LayerConfig, ViewportChangeEvent, LayerClickEvent } from
 import { generateLayerId, diffLayers } from '../utils/maplibre-helpers.js'
 import { PaintModeController } from './paint-mode.js'
 
+/** Escape text for safe interpolation into hover-tooltip HTML. */
+function _escapeHtml(value: string): string {
+  return value
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;')
+}
+
 export class BrewGisMap extends LitElement {
   /** @inheritdoc */
   static override shadowRootOptions: ShadowRootInit = {
@@ -68,6 +77,12 @@ export class BrewGisMap extends LitElement {
 
   /** Tracks whether map is loaded. */
   private _mapLoaded = false
+
+  /** Feature id currently shown as hovered (feature-state 'hover'), or null. */
+  private _hoveredFeatureId: string | null = null
+
+  /** Floating tooltip shown over a hovered parcel in view mode. */
+  private _hoverPopup: maplibregl.Popup | null = null
 
   constructor() {
     super()
@@ -460,6 +475,14 @@ export class BrewGisMap extends LitElement {
       this._handleInspectClick(e)
     })
 
+    map.on('mousemove', (e) => {
+      this._handleHoverMove(e)
+    })
+
+    container.addEventListener('mouseleave', () => {
+      this._clearHover()
+    })
+
     map.on('moveend', () => {
       if (!this._map) return
       const center = map.getCenter()
@@ -530,6 +553,8 @@ export class BrewGisMap extends LitElement {
     const feature = features[0]
     if (feature.id == null) return
 
+    this.highlightFeatures([String(feature.id)])
+
     this.dispatchEvent(
       new CustomEvent<LayerClickEvent>('layerclick', {
         detail: {
@@ -542,6 +567,128 @@ export class BrewGisMap extends LitElement {
         composed: true,
       }),
     )
+  }
+
+  /**
+   * Handle pointer movement in 'view' mode: outline whichever parcel is
+   * under the cursor and show a tooltip of just the column(s) actually
+   * driving each visible layer's symbology (`attribute_column`, e.g.
+   * built_form_key on the base layer, vmt_total on a VMT result layer) —
+   * not every column on those layers' tables.
+   */
+  private _handleHoverMove(e: maplibregl.MapMouseEvent): void {
+    if (this.mode !== 'view' || !this._map) return
+
+    // Resolved separately from the attribute-column loop below: the
+    // painted-features overlay (`canvasLayerId`, when a scenario is active)
+    // typically has no symbology attribute_column of its own, but it's
+    // still the parcel that should get outlined and made clickable — the
+    // same target `_handleInspectClick` queries.
+    const targetLayerId = this.canvasLayerId || this.baseLayerId
+    let primaryId: string | null = null
+    if (targetLayerId && this._map.getLayer(targetLayerId)) {
+      const targetFeatures = this._map.queryRenderedFeatures(e.point, {
+        layers: [targetLayerId],
+      })
+      if (targetFeatures.length > 0 && targetFeatures[0].id != null) {
+        primaryId = String(targetFeatures[0].id)
+      }
+    }
+
+    const rows: { label: string; value: unknown }[] = []
+    for (let i = 0; i < this.layers.length; i++) {
+      const layer = this.layers[i]
+      const attributeColumn = layer.attribute_column
+      if (!attributeColumn) continue
+
+      const resolvedId = generateLayerId(layer, i)
+      if (!this._map.getLayer(resolvedId)) continue
+      if (this._map.getLayoutProperty(resolvedId, 'visibility') === 'none') continue
+
+      const features = this._map.queryRenderedFeatures(e.point, { layers: [resolvedId] })
+      if (features.length === 0) continue
+
+      const value = features[0].properties?.[attributeColumn]
+      if (value === undefined || value === null) continue
+
+      rows.push({ label: layer.attribute_label || attributeColumn, value })
+    }
+
+    if (primaryId === null && rows.length === 0) {
+      this._clearHover()
+      return
+    }
+
+    this._setHoverFeature(primaryId)
+    if (rows.length > 0) {
+      this._showHoverTooltip(e.lngLat, rows)
+    } else {
+      this._hoverPopup?.remove()
+    }
+    this._map.getCanvas().style.cursor = primaryId ? 'pointer' : ''
+  }
+
+  /** Clear hover outline, tooltip, and cursor override. */
+  private _clearHover(): void {
+    this._setHoverFeature(null)
+    this._hoverPopup?.remove()
+    if (this._map) this._map.getCanvas().style.cursor = ''
+  }
+
+  /** Set (or clear, with `id === null`) the 'hover' feature-state on the active parcel layer. */
+  private _setHoverFeature(id: string | null): void {
+    if (!this._map || id === this._hoveredFeatureId) return
+    const sourceId = this._findCanvasSourceId()
+    if (sourceId) {
+      const sourceLayer = this._findCanvasSourceLayer()
+      if (this._hoveredFeatureId !== null) {
+        try {
+          this._map.setFeatureState(
+            { source: sourceId, sourceLayer, id: this._hoveredFeatureId },
+            { hover: false },
+          )
+        } catch {
+          // Feature or source may not exist
+        }
+      }
+      if (id !== null) {
+        try {
+          this._map.setFeatureState({ source: sourceId, sourceLayer, id }, { hover: true })
+        } catch {
+          // Feature or source may not exist
+        }
+      }
+    }
+    this._hoveredFeatureId = id
+  }
+
+  /** Show (creating on first use) a floating tooltip of symbology attribute values at lngLat. */
+  private _showHoverTooltip(
+    lngLat: maplibregl.LngLat,
+    rows: { label: string; value: unknown }[],
+  ): void {
+    if (!this._map) return
+
+    const html = rows
+      .map((row) => {
+        const value =
+          typeof row.value === 'number' ? Number(row.value.toFixed(2)) : String(row.value)
+        return (
+          '<div style="display:flex;justify-content:space-between;gap:10px;font-size:0.75rem;white-space:nowrap;">' +
+          `<span style="color:#666;">${_escapeHtml(String(row.label))}</span>` +
+          `<span style="font-weight:600;">${_escapeHtml(String(value))}</span></div>`
+        )
+      })
+      .join('')
+
+    if (!this._hoverPopup) {
+      this._hoverPopup = new maplibregl.Popup({
+        closeButton: false,
+        closeOnClick: false,
+        className: 'brew-gis-hover-popup',
+      })
+    }
+    this._hoverPopup.setLngLat(lngLat).setHTML(html).addTo(this._map)
   }
 
   private _syncMode(): void {
@@ -559,10 +706,14 @@ export class BrewGisMap extends LitElement {
   }
 
   /**
-   * Find the source ID for the canvas view layer.
+   * Find the source ID for the active parcel layer — the scenario canvas
+   * view when a scenario is active, otherwise the plain base layer. Falling
+   * back to baseLayerId (rather than only canvasLayerId) lets selection and
+   * hover highlighting work in plain view mode with no scenario, matching
+   * how `_handleInspectClick` already resolves its target layer.
    */
   private _findCanvasSourceId(): string | null {
-    return this._findSourceIdForLayerId(this.canvasLayerId)
+    return this._findSourceIdForLayerId(this.canvasLayerId || this.baseLayerId)
   }
 
   /** Find the MapLibre source ID backing a given layer config's id/key. */
@@ -583,9 +734,8 @@ export class BrewGisMap extends LitElement {
    * removeFeatureState / addLayer call.
    */
   private _findCanvasSourceLayer(): string {
-    const layerConfig = this.layers.find(
-      (l) => l.id === this.canvasLayerId || l.key === this.canvasLayerId,
-    )
+    const targetId = this.canvasLayerId || this.baseLayerId
+    const layerConfig = this.layers.find((l) => l.id === targetId || l.key === targetId)
     return (layerConfig?.['source-layer'] as string | undefined) || 'default'
   }
 
@@ -605,10 +755,9 @@ export class BrewGisMap extends LitElement {
 
     const sourceLayer = this._findCanvasSourceLayer()
 
-    // Insert above the canvas view layer, or before water/roads
-    const before = this._map.getLayer(this.canvasLayerId)
-      ? this.canvasLayerId
-      : this._findBeforeId()
+    // Insert above the active parcel layer, or before water/roads
+    const targetLayerId = this.canvasLayerId || this.baseLayerId
+    const before = this._map.getLayer(targetLayerId) ? targetLayerId : this._findBeforeId()
 
     this._map.addLayer(
       {
@@ -641,6 +790,40 @@ export class BrewGisMap extends LitElement {
         paint: {
           'line-color': '#1565c0',
           'line-width': ['case', ['boolean', ['feature-state', 'selected'], false], 3, 0],
+        },
+      },
+      before,
+    )
+  }
+
+  /**
+   * Add a hover-outline layer for the parcel under the pointer in view mode
+   * — driven by the feature-state 'hover' key (kept separate from
+   * 'selected' so hovering never clobbers the click-selected highlight;
+   * `removeFeatureState` with no id would otherwise wipe both at once).
+   */
+  private _addHoverHighlightLayer(): void {
+    if (!this._map) return
+
+    const layerId = 'brew-gis-hover-highlight'
+    if (this._map.getLayer(layerId)) return
+
+    const sourceId = this._findCanvasSourceId()
+    if (!sourceId) return
+
+    const sourceLayer = this._findCanvasSourceLayer()
+    const targetLayerId = this.canvasLayerId || this.baseLayerId
+    const before = this._map.getLayer(targetLayerId) ? targetLayerId : this._findBeforeId()
+
+    this._map.addLayer(
+      {
+        id: layerId,
+        type: 'line',
+        source: sourceId,
+        'source-layer': sourceLayer,
+        paint: {
+          'line-color': '#ff9800',
+          'line-width': ['case', ['boolean', ['feature-state', 'hover'], false], 2, 0],
         },
       },
       before,
@@ -748,6 +931,13 @@ export class BrewGisMap extends LitElement {
     }
 
     this._previousLayers = [...this.layers]
+
+    // Idempotent — no-ops once already added, and no-ops until a base/canvas
+    // layer is actually resolvable. Added here (rather than only in
+    // _initPaintMode) so click-select and hover highlighting also work in
+    // plain view mode, with no scenario and no paint mode ever activated.
+    this._addHoverHighlightLayer()
+    this._addSelectionHighlightLayer()
   }
 
   private _destroyMap(): void {
@@ -755,6 +945,10 @@ export class BrewGisMap extends LitElement {
       this._paintController.deactivate()
     }
     this._paintController = null
+
+    this._hoverPopup?.remove()
+    this._hoverPopup = null
+    this._hoveredFeatureId = null
 
     if (this._map) {
       this._map.remove()

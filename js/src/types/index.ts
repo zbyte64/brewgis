@@ -18,6 +18,7 @@ export interface LayerSource {
 export interface LayerConfig {
   id?: string
   key: string
+  name?: string
   type: 'fill' | 'line' | 'circle' | 'symbol' | 'fill-extrusion' | 'heatmap' | 'hillshade'
   source: LayerSource
   'source-layer'?: string
@@ -25,6 +26,10 @@ export interface LayerConfig {
   maxzoom?: number
   paint?: Record<string, unknown>
   layout?: Record<string, unknown>
+  /** Column driving this layer's symbology (e.g. built_form_key, vmt_total), for hover tooltips. */
+  attribute_column?: string
+  /** Human-readable label for attribute_column (e.g. "Built Form"). */
+  attribute_label?: string
 }
 
 export interface ViewportChangeEvent {

@@ -1049,6 +1049,15 @@
             // Silently ignore — inspect is a convenience feature, not critical path.
           });
       });
+
+      // The click handler highlights the clicked parcel (brew-gis-map.ts
+      // _handleInspectClick); clear it once the panel showing that
+      // parcel's data is dismissed, so the highlight doesn't linger.
+      document.body.addEventListener('panel-closed', function(e) {
+        if (e.detail && e.detail.side === 'right' && mapEl.clearHighlight) {
+          mapEl.clearHighlight();
+        }
+      });
     })();
 
     // ── Active filter auto-apply on map load ─────────────────

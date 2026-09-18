@@ -4,57 +4,101 @@
      id="feature-inspect-panel"
      data-feature-id="{{ feature_id }}"
      {% if paint_url %}data-paint-url="{{ paint_url }}"{% endif %}>
-  <div class="d-flex justify-content-between align-items-center mb-2">
-    <small class="text-muted">{% translate "Feature" %} <code>{{ feature_id }}</code></small>
-    {% if is_painted %}
-      <span class="badge bg-warning text-dark" style="font-size: 0.65rem">{% translate "Painted" %}</span>
-    {% endif %}
+  {% if layer_tabs %}
+    <ul class="nav nav-tabs mb-2" style="font-size: 0.75rem" role="tablist">
+      <li class="nav-item" role="presentation">
+        <button class="nav-link active"
+                data-bs-toggle="tab"
+                data-bs-target="#parcel-inspect-tab"
+                type="button"
+                role="tab">{% translate "Parcel" %}</button>
+      </li>
+      {% for tab in layer_tabs %}
+        <li class="nav-item" role="presentation">
+          <button class="nav-link"
+                  data-bs-toggle="tab"
+                  data-bs-target="#layer-inspect-tab-{{ tab.layer.pk }}"
+                  type="button"
+                  role="tab">{{ tab.layer.name }}</button>
+        </li>
+      {% endfor %}
+    </ul>
+  {% endif %}
+  <div class="tab-content">
+    <div class="tab-pane fade {% if layer_tabs %}show active{% endif %}"
+         id="parcel-inspect-tab"
+         role="tabpanel">
+      <div class="d-flex justify-content-between align-items-center mb-2">
+        <small class="text-muted">{% translate "Feature" %} <code>{{ feature_id }}</code></small>
+        {% if is_painted %}
+          <span class="badge bg-warning text-dark" style="font-size: 0.65rem">{% translate "Painted" %}</span>
+        {% endif %}
+      </div>
+      {% if not editable %}
+        <div class="alert alert-secondary py-1 px-2 mb-2"
+             style="font-size: 0.7rem">
+          {% translate "Select a scenario to edit this parcel's paintable values." %}
+        </div>
+      {% endif %}
+      {% if editable_rows %}
+        <h6 class="text-muted mb-1" style="font-size: 0.75rem">{% translate "Paintable" %}</h6>
+        <table class="table table-sm mb-3" style="font-size: 0.75rem">
+          <tbody>
+            {% for row in editable_rows %}
+              <tr>
+                <td class="text-muted">{{ row.label }}</td>
+                <td>
+                  {% if editable %}
+                    <input type="number"
+                           step="any"
+                           class="form-control form-control-sm feature-inspect-input"
+                           data-column="{{ row.name }}"
+                           data-original-value="{{ row.value|default_if_none:'' }}"
+                           value="{{ row.value|default_if_none:'' }}" />
+                  {% else %}
+                    {{ row.value|default_if_none:"—" }}
+                  {% endif %}
+                </td>
+              </tr>
+            {% endfor %}
+          </tbody>
+        </table>
+      {% endif %}
+      {% if static_rows %}
+        <h6 class="text-muted mb-1" style="font-size: 0.75rem">{% translate "Base Canvas (read-only)" %}</h6>
+        <table class="table table-sm mb-3" style="font-size: 0.75rem">
+          <tbody>
+            {% for row in static_rows %}
+              <tr>
+                <td class="text-muted">{{ row.label }}</td>
+                <td>{{ row.value|default_if_none:"—" }}</td>
+              </tr>
+            {% endfor %}
+          </tbody>
+        </table>
+      {% endif %}
+      {% if editable %}
+        <button type="button"
+                class="btn btn-sm btn-primary"
+                id="feature-inspect-save-btn">{% translate "Save Changes" %}</button>
+        <div id="feature-inspect-result" class="mt-2"></div>
+      {% endif %}
+    </div>
+    {% for tab in layer_tabs %}
+      <div class="tab-pane fade"
+           id="layer-inspect-tab-{{ tab.layer.pk }}"
+           role="tabpanel">
+        <table class="table table-sm mb-0" style="font-size: 0.75rem">
+          <tbody>
+            {% for row in tab.rows %}
+              <tr>
+                <td class="text-muted">{{ row.label }}</td>
+                <td>{{ row.value|default_if_none:"—" }}</td>
+              </tr>
+            {% endfor %}
+          </tbody>
+        </table>
+      </div>
+    {% endfor %}
   </div>
-  {% if not editable %}
-    <div class="alert alert-secondary py-1 px-2 mb-2"
-         style="font-size: 0.7rem">{% translate "Select a scenario to edit this parcel's paintable values." %}</div>
-  {% endif %}
-  {% if editable_rows %}
-    <h6 class="text-muted mb-1" style="font-size: 0.75rem">{% translate "Paintable" %}</h6>
-    <table class="table table-sm mb-3" style="font-size: 0.75rem">
-      <tbody>
-        {% for row in editable_rows %}
-          <tr>
-            <td class="text-muted">{{ row.label }}</td>
-            <td>
-              {% if editable %}
-                <input type="number"
-                       step="any"
-                       class="form-control form-control-sm feature-inspect-input"
-                       data-column="{{ row.name }}"
-                       data-original-value="{{ row.value|default_if_none:'' }}"
-                       value="{{ row.value|default_if_none:'' }}" />
-              {% else %}
-                {{ row.value|default_if_none:"—" }}
-              {% endif %}
-            </td>
-          </tr>
-        {% endfor %}
-      </tbody>
-    </table>
-  {% endif %}
-  {% if static_rows %}
-    <h6 class="text-muted mb-1" style="font-size: 0.75rem">{% translate "Base Canvas (read-only)" %}</h6>
-    <table class="table table-sm mb-3" style="font-size: 0.75rem">
-      <tbody>
-        {% for row in static_rows %}
-          <tr>
-            <td class="text-muted">{{ row.label }}</td>
-            <td>{{ row.value|default_if_none:"—" }}</td>
-          </tr>
-        {% endfor %}
-      </tbody>
-    </table>
-  {% endif %}
-  {% if editable %}
-    <button type="button"
-            class="btn btn-sm btn-primary"
-            id="feature-inspect-save-btn">{% translate "Save Changes" %}</button>
-    <div id="feature-inspect-result" class="mt-2"></div>
-  {% endif %}
 </div>

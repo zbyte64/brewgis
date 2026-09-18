@@ -13,15 +13,18 @@ import json
 from typing import TYPE_CHECKING
 
 from django.contrib.auth.decorators import user_passes_test
+from django.db import connection
 from django.http import JsonResponse
 from django.shortcuts import get_object_or_404
 from django.shortcuts import render
 from django.urls import reverse
 from django.views.decorators.http import require_POST
 
+from brewgis.workspace.analysis.layer_registry import PAINTED_FEATURES_LAYER_KEY
 from brewgis.workspace.analysis.layer_registry import ensure_painted_features_layer
 from brewgis.workspace.analysis.layer_registry import visible_layers_for_panel
 from brewgis.workspace.models import Basemap
+from brewgis.workspace.models import Layer
 from brewgis.workspace.models import Scenario
 from brewgis.workspace.models import ScenarioReport
 from brewgis.workspace.models import SymbologyConfig
@@ -37,6 +40,70 @@ if TYPE_CHECKING:
     from django.http import HttpResponse
 
 _NON_DISPLAY_PROPERTIES = frozenset({"geometry", "uf_is_painted"})
+_GEOM_UDT_TYPES = frozenset({"geometry", "geography"})
+_ID_COLUMN_CANDIDATES = (
+    "id",
+    "parcel_id",
+    "feature_id",
+    "__gid",
+    "gid",
+    "fid",
+    "ogc_fid",
+)
+
+
+def _fetch_layer_row_for_feature(
+    layer: Layer, feature_id: object
+) -> list[dict[str, object]] | None:
+    """Look up the row in *layer*'s table matching a clicked parcel.
+
+    Returns ``[{"name", "label", "value"}, ...]`` for every non-geometry
+    column, or ``None`` if the table has no recognizable id column or no
+    row matches *feature_id* (e.g. the layer covers a different subset of
+    parcels, or isn't parcel-keyed at all — an imported shapefile layer).
+    """
+    schema = layer.db_schema or layer.workspace.db_schema
+    table = layer.db_table
+    quoted_schema = connection.ops.quote_name(schema)
+    quoted_table = connection.ops.quote_name(table)
+
+    with connection.cursor() as cursor:
+        cursor.execute(
+            """
+            SELECT column_name, udt_name
+            FROM information_schema.columns
+            WHERE table_schema = %s AND table_name = %s
+            ORDER BY ordinal_position
+            """,
+            [schema, table],
+        )
+        columns = cursor.fetchall()
+        column_names = {name for name, _ in columns}
+
+        id_column = next((c for c in _ID_COLUMN_CANDIDATES if c in column_names), None)
+        if id_column is None:
+            return None
+
+        display_columns = [name for name, udt in columns if udt not in _GEOM_UDT_TYPES]
+        quoted_cols = ", ".join(connection.ops.quote_name(c) for c in display_columns)
+        quoted_id_col = connection.ops.quote_name(id_column)
+
+        cursor.execute(
+            f"SELECT {quoted_cols} FROM {quoted_schema}.{quoted_table} "  # noqa: S608
+            f"WHERE {quoted_id_col}::text = %s LIMIT 1",
+            [str(feature_id)],
+        )
+        row = cursor.fetchone()
+
+    if row is None:
+        return None
+
+    rows: list[dict[str, object]] = []
+    for name, value in zip(display_columns, row, strict=True):
+        col_def = BaseCanvasSchema.get(name)
+        label = col_def.label if col_def else name.replace("_", " ").title()
+        rows.append({"name": name, "label": label, "value": value})
+    return rows
 
 
 def is_panel_request(request: HttpRequest) -> bool:
@@ -256,6 +323,25 @@ def panel_feature_inspect(request: HttpRequest, workspace_pk: int) -> HttpRespon
                 }
             )
 
+    # Every other layer in the workspace ("Parcel" tab above already covers
+    # the base/canvas layer that was actually clicked) gets its own read-only
+    # tab if it has a matching row for this parcel — e.g. an analysis result
+    # table like vmt_{scenario_id}. Layers with no recognizable id column, or
+    # with no row for this parcel (a different subset, or a non-parcel
+    # import), are silently skipped rather than shown as an empty tab.
+    base_layer_key = ""
+    for layer in workspace.layers.all():
+        if layer._source_id() == workspace.base_table:  # noqa: SLF001
+            base_layer_key = layer.key
+            break
+
+    layer_tabs: list[dict[str, object]] = []
+    excluded_keys = {PAINTED_FEATURES_LAYER_KEY, base_layer_key}
+    for layer in workspace.layers.exclude(key__in=excluded_keys):
+        rows = _fetch_layer_row_for_feature(layer, feature_id)
+        if rows:
+            layer_tabs.append({"layer": layer, "rows": rows})
+
     context: dict[str, object] = {
         "workspace_pk": workspace_pk,
         "feature_id": feature_id,
@@ -263,6 +349,7 @@ def panel_feature_inspect(request: HttpRequest, workspace_pk: int) -> HttpRespon
         "static_rows": static_rows,
         "editable": scenario is not None,
         "is_painted": bool(properties.get("uf_is_painted")),
+        "layer_tabs": layer_tabs,
     }
     if scenario is not None:
         context["paint_url"] = reverse(
