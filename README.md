@@ -39,14 +39,14 @@ User Browser                    Docker Compose Stack
               |
               +-- Models: 20+ model classes
               +-- Views: 30+ view modules
-              +-- Analysis: dbt pipeline (40 models, 17 macros)
+              +-- Analysis: sqlmesh pipeline (40 models, 17 macros)
               +-- GIS I/O: geopandas, SQLAlchemy, PostGIS
 ```
 
 - **Request flow:** Browser -> Django -> View -> Template (Bootstrap 5, htmx for dynamic updates, Lit for map component)
 - **Map flow:** `<brew-gis-map>` Lit component fetches vector tiles from tipg or Martin -> tile server serves from PostGIS
 - **Async flow:** Celery beat dispatches periodic tasks -> Redis broker -> Celery workers
-- **Analysis pipeline:** dbt models execute in dependency order; outputs registered as Layers
+- **Analysis pipeline:** sqlmesh models execute in dependency order; outputs registered as Layers
 
 ## Quick Start
 
@@ -105,7 +105,7 @@ celery -A brewgis.config.celery_app worker -l info  # Celery on host
 | **Map** | Lit-based MapLibre GL JS web component with vector tile rendering |
 | **Paint** | Per-feature, per-column overrides with undo/redo via PaintEvent log |
 | **Symbology** | Single, categorical, and graduated classification with auto-generation |
-| **Analysis** | dbt-driven pipeline: transport, land use, energy, water, GHG, equity |
+| **Analysis** | sqlmesh-driven pipeline: transport, land use, energy, water, GHG, equity |
 | **Import** | GIS file upload (geopandas), Census ACS, LEHD/LODES, OSM POIs |
 | **Scenarios** | Side-by-side comparison with synchronized maps and Chart.js |
 | **Built Forms** | Building types, place types, place-type/building-type mix allocation |
@@ -120,7 +120,7 @@ celery -A brewgis.config.celery_app worker -l info  # Celery on host
 | Map | MapLibre GL JS 4.7+ via Lit web component |
 | Tiles | tipg (OGC Features API) and Martin (MVT) |
 | Async | Celery 5.4 + Redis 6 + django-celery-beat |
-| Analytics | dbt-core 1.8+ (SQL + Python models with numpy/pandas) |
+| Analytics | sqlmesh (SQL + Python models with numpy/pandas) |
 | Frontend | Bootstrap 5.2, htmx 2.0, Chart.js 4.4 |
 | Templates | Django templates with django-template-partials |
 | SEO/UX | django-allauth, crispy forms, role-based access |
@@ -134,11 +134,11 @@ brewgis/
     models.py          # 20+ model classes
     views/             # 30+ view modules
     services/          # 25+ service modules
-    analysis/          # dbt pipeline orchestrator, module/layer registries
+    analysis/          # sqlmesh pipeline orchestrator, module/layer registries
     symbology/         # Map style generation, classifiers, legends
     built_forms/       # BuildingType, PlaceType, allocation engine
     mcp/               # MCP server for AI assistant integration
-  dbt_project/         # dbt project (40 models, 17 macros, 4 seeds)
+  sqlmesh/             # sqlmesh project (40 models, 17 macros, 4 seeds)
   templates/           # Django templates + htmx partials
   static/js/           # Lit-based MapLibre GL JS web component
 config/
@@ -157,7 +157,7 @@ docs/                  # Project documentation
 
 - `AGENTS.md` — Full development guide, architecture, conventions, and command reference
 - `docs/mcp.md` — MCP server reference for AI assistant integration
-- `docs/data_tooling.md` — Postgres functions, dbt packages, Polars, SQLAlchemy, JupySQL
+- `docs/data_tooling.md` — Postgres functions, sqlmesh packages, Polars, SQLAlchemy, JupySQL
 - `docs/jupysql.md` — Interactive PostGIS analysis with JupySQL
 - `docs/design-review-checklist.md` — UX design review heuristics
 
@@ -169,9 +169,9 @@ make test-fast             # Fast-fail + reuse-db
 make test-parallel         # Parallel execution
 make test-models           # Model tests only
 make test-views            # View/HTTP tests only
-make test-integration      # PostGIS/dbt-dependent tests
+make test-integration      # PostGIS/sqlmesh-dependent tests
 make test-e2e              # Playwright BDD end-to-end tests
-make test-dbt              # dbt seed + run + test
+make test-sqlmesh          # sqlmesh seed + run + test
 make coverage              # Tests with coverage report (60% threshold)
 ```
 
@@ -181,7 +181,7 @@ make coverage              # Tests with coverage report (60% threshold)
 |--------|---------|
 | `@pytest.mark.models` | Django model unit tests |
 | `@pytest.mark.views` | View/HTTP tests |
-| `@pytest.mark.integration` | PostGIS/dbt-dependent tests |
+| `@pytest.mark.integration` | PostGIS/sqlmesh-dependent tests |
 | `@pytest.mark.slow` | Property-based or long-running |
 | `@pytest.mark.e2e` | Playwright browser end-to-end tests |
 | `@pytest.mark.review` | UX design review tests |
