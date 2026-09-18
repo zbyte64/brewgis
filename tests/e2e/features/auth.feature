@@ -31,3 +31,4 @@ Feature: Authentication
     Given the user is logged in
     When I log out
     Then I should be on the login page
+    And I should see "Sign In"

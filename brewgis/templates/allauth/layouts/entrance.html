@@ -16,6 +16,9 @@
 {% block body %}
   <div class="d-flex justify-content-center h-100 py-4">
     <div class="col-md-4 py-4 my-4 px-4">
+      <div class="text-center mb-4">
+        <a class="navbar-brand" href="{% url 'workspace:home' %}">Brew GIS</a>
+      </div>
       {% if messages %}
         {% for message in messages %}
           <div class="alert alert-dismissible {% if message.tags %}alert-{{ message.tags }}{% endif %}">

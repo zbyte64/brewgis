@@ -51,8 +51,8 @@
         {% if not is_public_view %}
           <a href="{% url 'workspace:home' %}"
              class="btn btn-sm btn-outline-secondary"
-             title="{% translate 'All Workspaces' %}"
-             aria-label="{% translate 'All Workspaces' %}">← {% translate "Workspaces" %}</a>
+             title="{% translate 'Back to all workspaces' %}"
+             aria-label="{% translate 'Back to all workspaces' %}">← {% translate "Back" %}</a>
         {% endif %}
         <span class="fw-semibold">{{ workspace.name }}</span>
         {% if scenario %}

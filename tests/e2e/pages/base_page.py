@@ -77,8 +77,14 @@ class BasePage:
         return self.page.title()
 
     def assert_text_visible(self, text: str) -> None:
-        """Assert the given text is visible on the page."""
-        expect(self.page.get_by_text(text, exact=False)).to_be_visible()
+        """Assert the given text is visible on the page.
+
+        `.first` because callers just want "this text shows up somewhere"
+        (e.g. it may legitimately appear in both a heading and a button) —
+        a multi-match locator would otherwise raise on `to_be_visible()`
+        instead of confirming visibility.
+        """
+        expect(self.page.get_by_text(text, exact=False).first).to_be_visible()
 
     def assert_text_not_visible(self, text: str) -> None:
         """Assert the given text is NOT visible on the page."""
