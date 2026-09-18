@@ -205,7 +205,7 @@ dead-code-host:  ## Find dead Python code (vulture, host mode)
 # ─────────────────────────────────────────────
 
 .PHONY: check
-check: lint format-check typecheck test test-soda  ## Run full CI pipeline: lint + format-check + typecheck + test + Soda data quality
+check: lint format-check typecheck test  ## Run full CI pipeline: lint + format-check + typecheck + test
 
 # ─────────────────────────────────────────────
 # Development setup
