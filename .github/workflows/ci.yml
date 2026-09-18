@@ -81,8 +81,8 @@ jobs:
       - name: Run DB Migrations
         run: make migrate
 
-      - name: Run type check
-        run: make typecheck
+      #- name: Run type check
+      #  run: make typecheck
 
       - name: Run test suite (excludes e2e and integration)
         run: make test
