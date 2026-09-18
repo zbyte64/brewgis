@@ -1,11 +1,21 @@
-"""Tile server maintenance — refreshing Martin after new tables appear.
+"""Tile server maintenance — keeping Martin in sync with the database.
 
-Martin (unlike tipg) scans the database for tables once at process
-startup and has no live-reload API — a newly-created schema/table (e.g.
-an analysis run's ``analysis__scenario_<id>`` results) is invisible to it
-until the process restarts. This module restarts the Martin container via
-the Docker socket so that happens automatically, without a human in the
-loop, right after something creates tables Martin needs to know about.
+Two distinct kinds of change need Martin to notice, handled by the two
+functions below:
+
+- A new schema/table (e.g. an analysis run's ``analysis__scenario_<id>``
+  results) is invisible to Martin until it restarts — it (unlike tipg)
+  scans the database for tables once at process startup and has no
+  live-reload API. :func:`restart_martin` restarts the container via the
+  Docker socket so that happens automatically, without a human in the
+  loop.
+- An existing view's *rows* changing (e.g. a paint operation, which
+  ``CREATE OR REPLACE``s a scenario's canvas view without touching its
+  schema) doesn't need a restart, but Martin's tile cache doesn't look at
+  the request's query string, so a tile it already served for that source
+  stays stale until something purges it. :func:`purge_martin_cache` calls
+  Martin's ``DELETE /cache/{source_id}`` (maplibre/martin#3194) to drop
+  just that source's cached tiles.
 """
 
 from __future__ import annotations
@@ -80,4 +90,43 @@ def restart_martin() -> bool:
         return False
 
     logger.info("Restarted Martin container %s to pick up new tables", container_name)
+    return True
+
+
+def purge_martin_cache(source_id: str) -> bool:
+    """Drop *source_id*'s cached tiles via Martin's ``DELETE /cache/{source_id}``.
+
+    *source_id* is Martin's ``{schema}.{table}`` source identifier (see
+    ``source_id_format`` in ``compose/local/martin/config.yaml``) — for a
+    scenario canvas view, its ``schema.view_name``.
+
+    Requires ``endpoints.purge_cache: true`` in Martin's own config; a
+    Martin version predating maplibre/martin#3194 (<1.15.0) doesn't have
+    this route at all. Either way this is best-effort like
+    :func:`restart_martin` — logged, not raised, so a purge failure can't
+    fail the paint operation that triggered it.
+    """
+    base_url = settings.TILE_SERVER_MARTIN_URL
+    try:
+        resp = requests.delete(f"{base_url}/cache/{source_id}", timeout=5)
+    except requests.RequestException:
+        logger.exception("Failed to purge Martin cache for source %s", source_id)
+        return False
+
+    if resp.status_code == requests.codes.not_found:
+        # Martin hasn't discovered this source yet (e.g. right after its
+        # view was first created) — nothing cached to purge.
+        logger.debug("Martin has no source %s yet, nothing to purge", source_id)
+        return False
+
+    if not resp.ok:
+        logger.warning(
+            "Unexpected %s purging Martin cache for source %s: %s",
+            resp.status_code,
+            source_id,
+            resp.text,
+        )
+        return False
+
+    logger.info("Purged Martin cache for source %s", source_id)
     return True

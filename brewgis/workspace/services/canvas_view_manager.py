@@ -18,6 +18,7 @@ from django.db import transaction
 
 from brewgis.workspace.models import ScenarioType
 from brewgis.workspace.services.base_canvas_schema import BaseCanvasSchema
+from brewgis.workspace.services.tile_server import purge_martin_cache
 
 if TYPE_CHECKING:
     from brewgis.workspace.models import Scenario
@@ -203,8 +204,15 @@ def refresh_canvas_view(scenario: Scenario) -> str:
     """Recreate the canvas view for *scenario* — after paint operations.
 
     Same as :func:`create_canvas_view` because we use ``CREATE OR REPLACE VIEW``.
+    The view's *rows* changed but not its schema, so (for workspaces on the
+    Martin backend) this also purges the view's Martin tile cache — Martin
+    doesn't otherwise notice the underlying data changed. See
+    ``brewgis.workspace.services.tile_server.purge_martin_cache``.
     """
-    return create_canvas_view(scenario)
+    source_id = create_canvas_view(scenario)
+    if scenario.workspace.tile_server_backend == "martin":
+        purge_martin_cache(source_id)
+    return source_id
 
 
 def drop_canvas_view(scenario: Scenario) -> None:

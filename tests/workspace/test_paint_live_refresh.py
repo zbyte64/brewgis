@@ -19,8 +19,10 @@ lives entirely *outside* what a Django view-level unit test can see:
    forever. Verified directly: painting a fixture feature and re-requesting
    its exact tile from Martin returned byte-identical, unchanged content
    (same ETag) even though the view's own SQL returned the new value.
-   Fixed by disabling Martin's cache (``--cache-size 0`` in
-   ``docker-compose.yml``).
+   Fixed by purging the view's Martin cache entry (``DELETE
+   /cache/{source_id}``, maplibre/martin#3194) from ``refresh_canvas_view()``
+   every time a paint operation replaces the view — see
+   ``brewgis.workspace.services.tile_server.purge_martin_cache``.
 3. ``BrewGisMap.refreshCanvasTiles()`` only busted the *highlight overlay*
    layer's MapLibre source (``canvasLayerId``), never the *base* layer's
    (``baseLayerId``) — the one actually rendered with the workspace's real
@@ -113,9 +115,11 @@ def _setup_fixture(conn: psycopg.Connection) -> dict[str, Any]:
     A dedicated tiny fixture table (one feature) rather than reusing any
     real workspace's full parcel dataset — a real base_canvas table here
     is 200k+ rows, and at low zoom Martin has to render every one of them
-    into a single tile (tens of MB) with no cache to fall back on now that
-    caching is disabled, which makes an already-real-network integration
-    test unnecessarily slow and flaky.
+    into a single tile (tens of MB). The test deliberately re-requests that
+    exact tile right after painting (to catch a stale cache), which purges
+    and re-renders it every run regardless of caching being on elsewhere —
+    doing that against the real table would make an already-real-network
+    integration test unnecessarily slow and flaky.
     """
     with conn.cursor() as cur:
         cur.execute(f"DROP TABLE IF EXISTS {FIXTURE_SCHEMA}.{FIXTURE_TABLE} CASCADE")

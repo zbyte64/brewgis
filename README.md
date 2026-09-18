@@ -194,7 +194,7 @@ make coverage              # Tests with coverage report (60% threshold)
 | `postgres` | Custom | PostgreSQL 17 + PostGIS 3.5 |
 | `redis` | `redis:6` | Cache/queue broker |
 | `tipg` | `developmentseed/tipg` | OGC Features API tile server (port 8081) |
-| `martin` | `maplibre/martin:v1.8` | MVT tile server (port 3000) |
+| `martin` | `maplibre/martin:1.16.1` | MVT tile server (port 3000) |
 | `celeryworker` | extends django | Celery task worker |
 | `celerybeat` | extends django | Celery beat scheduler |
 | `flower` | extends django | Celery monitoring (port 5555) |

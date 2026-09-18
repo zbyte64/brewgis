@@ -20,3 +20,15 @@ postgres:
   auto_publish:
     tables:
       source_id_format: "{schema}.{table}"
+
+# Serve DELETE /cache/{source_id}, which drops just that source's cached
+# tiles. brewgis calls this after every paint operation (see
+# brewgis.workspace.services.tile_server.purge_martin_cache) instead of
+# disabling Martin's cache outright. Per Martin's own docs the route has
+# no auth of its own and belongs behind a reverse proxy in production —
+# here it's only ever called from django/celeryworker directly against
+# martin:3000, and is never exposed through the public "/martin/" proxy
+# path (see brewgis/config/wsgi.py). A production deployment putting
+# Martin behind a public-facing proxy should block "/cache/" there too.
+endpoints:
+  purge_cache: true
