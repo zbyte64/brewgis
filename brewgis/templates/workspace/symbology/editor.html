@@ -24,7 +24,16 @@
       <div class="col-lg-10 mx-auto">
         <div class="card">
           <div class="card-header d-flex justify-content-between align-items-center">
-            <h5 class="card-title mb-0">Symbology: {{ layer.name }}</h5>
+            <h5 class="card-title mb-0">
+              Symbology: {{ layer.name }}
+              {% if sqlmesh_link %}
+                <a href="{{ sqlmesh_link }}"
+                   target="_blank"
+                   rel="noopener"
+                   class="ms-1 small"
+                   title="{% translate 'Open SQLMesh model' %}">↗</a>
+              {% endif %}
+            </h5>
             <div>
               <a href="{% url 'workspace:workspace_map' layer.workspace.pk %}"
                  class="btn btn-sm btn-outline-secondary">Back to Map</a>

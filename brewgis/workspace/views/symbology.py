@@ -30,6 +30,7 @@ from brewgis.workspace.models import StyleClass
 from brewgis.workspace.models import SymbologyConfig
 from brewgis.workspace.palettes import get_all_names
 from brewgis.workspace.palettes import preview_swatches
+from brewgis.workspace.services.sqlmesh_tables import sqlmesh_link_for_table
 from brewgis.workspace.symbology.auto import auto_generate_symbology
 from brewgis.workspace.symbology.generator import generate_maplibre_style
 from brewgis.workspace.symbology.legend import generate_legend
@@ -136,6 +137,9 @@ def _build_context(
         "column_choices": _column_choices(layer),
         "advanced_open": advanced_open,
         "scenario": scenario,
+        "sqlmesh_link": sqlmesh_link_for_table(
+            layer.db_schema or layer.workspace.db_schema, layer.db_table
+        ),
     }
 
 

@@ -28,6 +28,7 @@ from brewgis.workspace.models import Workspace
 from brewgis.workspace.services.sqlmesh_tables import get_table_preview
 from brewgis.workspace.services.sqlmesh_tables import list_sqlmesh_layer_candidates
 from brewgis.workspace.services.sqlmesh_tables import list_sqlmesh_tables
+from brewgis.workspace.services.sqlmesh_tables import sqlmesh_links_for_tables
 from brewgis.workspace.symbology.auto import auto_generate_symbology
 from brewgis.workspace.views.built_forms import HtmxResponseMixin
 
@@ -214,12 +215,20 @@ def layer_delete(request: HttpRequest, pk: int) -> HttpResponse:
                 continue
             swatch_colors[lyr.pk] = "#e0e0e0"
 
+        sqlmesh_links = sqlmesh_links_for_tables(
+            {
+                lyr.pk: (lyr.db_schema or workspace.db_schema, lyr.db_table)
+                for lyr in workspace.layers.all()
+            }
+        )
+
         context: dict[str, Any] = {
             "workspace": workspace,
             "scenario": None,
             "is_public_view": False,
             "layer_configs": {},
             "swatch_colors": swatch_colors,
+            "sqlmesh_links": sqlmesh_links,
             "layers_for_panel": visible_layers_for_panel(workspace, None),
         }
         response = render(

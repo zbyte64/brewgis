@@ -21,6 +21,7 @@ from brewgis.workspace.models import Layer
 from brewgis.workspace.models import LayerGroup
 from brewgis.workspace.models import SymbologyConfig
 from brewgis.workspace.models import Workspace
+from brewgis.workspace.services.sqlmesh_tables import sqlmesh_links_for_tables
 
 logger = logging.getLogger(__name__)
 
@@ -35,10 +36,17 @@ def _list_context(workspace: Workspace) -> dict[str, Any]:
     ungrouped = Layer.objects.filter(workspace=workspace, group__isnull=True).order_by(
         "display_order"
     )
+    sqlmesh_links = sqlmesh_links_for_tables(
+        {
+            layer.pk: (layer.db_schema or workspace.db_schema, layer.db_table)
+            for layer in workspace.layers.all()
+        }
+    )
     return {
         "workspace": workspace,
         "groups": groups,
         "ungrouped": ungrouped,
+        "sqlmesh_links": sqlmesh_links,
     }
 
 
@@ -148,12 +156,20 @@ def layer_group_move_layer(request: HttpRequest, layer_pk: int) -> HttpResponse:
                 continue
             swatch_colors[lyr.pk] = "#e0e0e0"
 
+        sqlmesh_links = sqlmesh_links_for_tables(
+            {
+                lyr.pk: (lyr.db_schema or workspace.db_schema, lyr.db_table)
+                for lyr in workspace.layers.all()
+            }
+        )
+
         context: dict[str, Any] = {
             "workspace": workspace,
             "scenario": None,
             "is_public_view": False,
             "layer_configs": {},
             "swatch_colors": swatch_colors,
+            "sqlmesh_links": sqlmesh_links,
             "layers_for_panel": visible_layers_for_panel(workspace, None),
         }
         return render(request, "workspace/partials/_layer_list_panel.html", context)

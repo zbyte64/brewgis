@@ -1,4 +1,4 @@
-{% load i18n %}
+{% load i18n workspace_tags %}
 
 <div id="layer-group-list">
   <div class="d-flex justify-content-between align-items-center mb-2">
@@ -41,7 +41,18 @@
               {% for layer in group.layers.all %}
                 <li class="list-group-item d-flex justify-content-between align-items-center py-1 px-2"
                     style="font-size: 0.7rem">
-                  <span class="text-truncate me-2">{{ layer.name|default:layer.key }}</span>
+                  <span class="text-truncate me-2">
+                    {{ layer.name|default:layer.key }}
+                    {% with sqlmesh_link=sqlmesh_links|dictlookup:layer.pk %}
+                      {% if sqlmesh_link %}
+                        <a href="{{ sqlmesh_link }}"
+                           target="_blank"
+                           rel="noopener"
+                           title="{% translate 'Open SQLMesh model' %}"
+                           aria-label="{% translate 'Open SQLMesh model' %}">↗</a>
+                      {% endif %}
+                    {% endwith %}
+                  </span>
                   <select class="form-select form-select-sm"
                           style="width: auto;
                                  font-size: 0.65rem;
@@ -72,7 +83,18 @@
             {% for layer in ungrouped %}
               <li class="list-group-item d-flex justify-content-between align-items-center py-1 px-2"
                   style="font-size: 0.7rem">
-                <span class="text-truncate me-2">{{ layer.name|default:layer.key }}</span>
+                <span class="text-truncate me-2">
+                  {{ layer.name|default:layer.key }}
+                  {% with sqlmesh_link=sqlmesh_links|dictlookup:layer.pk %}
+                    {% if sqlmesh_link %}
+                      <a href="{{ sqlmesh_link }}"
+                         target="_blank"
+                         rel="noopener"
+                         title="{% translate 'Open SQLMesh model' %}"
+                         aria-label="{% translate 'Open SQLMesh model' %}">↗</a>
+                    {% endif %}
+                  {% endwith %}
+                </span>
                 <select class="form-select form-select-sm"
                         style="width: auto;
                                font-size: 0.65rem;

@@ -6,6 +6,13 @@
      data-layer-key="{{ layer.key }}"
      data-layer-pk="{{ layer.pk }}"
      data-palettes="{{ palettes_json|json_attr }}">
+  {% if sqlmesh_link %}
+    <a href="{{ sqlmesh_link }}"
+       target="_blank"
+       rel="noopener"
+       class="small d-inline-block mb-2"
+       title="{% translate 'Open SQLMesh model' %}">{% translate "Open SQLMesh model" %} ↗</a>
+  {% endif %}
   <form method="post"
         hx-post="{% url 'workspace:symbology_edit' layer.pk %}?panel=1"
         hx-target="#right-panel-content"

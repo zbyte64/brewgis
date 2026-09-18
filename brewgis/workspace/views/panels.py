@@ -34,6 +34,7 @@ from brewgis.workspace.models import Workspace
 from brewgis.workspace.services.base_canvas_schema import BaseCanvasSchema
 from brewgis.workspace.services.canvas_view_manager import build_paintable_column_meta
 from brewgis.workspace.services.filter_compiler import FilterCompiler
+from brewgis.workspace.services.sqlmesh_tables import sqlmesh_links_for_tables
 from brewgis.workspace.views.basemaps import _get_selected_basemap_id
 from brewgis.workspace.views.workspace_detail import build_catalog_context
 
@@ -183,6 +184,15 @@ def panel_layer_list(request: HttpRequest, workspace_pk: int) -> HttpResponse:
         else:
             swatch_colors[layer.pk] = "#e0e0e0"
     context["swatch_colors"] = swatch_colors
+
+    # Pre-compute SQLMesh UI links for layers backed by a SQLMesh model
+    # (imported directly, or produced by an analysis run)
+    context["sqlmesh_links"] = sqlmesh_links_for_tables(
+        {
+            layer.pk: (layer.db_schema or workspace.db_schema, layer.db_table)
+            for layer in workspace.layers.all()
+        }
+    )
 
     # Pre-compute active filter expressions for map auto-apply
     active_maplibre_filters: dict[str, list | None] = {}

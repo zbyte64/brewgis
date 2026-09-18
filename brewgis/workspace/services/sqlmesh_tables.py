@@ -14,12 +14,15 @@ from dataclasses import dataclass
 from datetime import UTC
 from datetime import datetime
 from pathlib import Path
+from typing import Any
 
 from django.db import connection
 
 from brewgis.workspace.services.base_canvas_schema import BaseCanvasSchema
 
 _EXCLUDED_SCHEMAS = {"public", "information_schema", "sqlmesh_state"}
+
+_SCENARIO_ENVIRONMENT_SUFFIX = re.compile(r"__scenario_.+$")
 
 _POLYGON_TYPES = {"polygon", "multipolygon"}
 _LINE_TYPES = {"linestring", "multilinestring"}
@@ -39,6 +42,102 @@ def sqlmesh_model_ui_url(schema: str, table: str) -> str:
         f"{settings.SQLMESH_UI_URL}/data-catalog/models/"
         f"{SQLMESH_PROJECT_NAME}.{schema}.{table}"
     )
+
+
+def _canonical_schema(schema: str) -> str:
+    """Strip a SQLMesh scenario-environment suffix from a schema name.
+
+    Analysis-run result layers point at ``<schema>__scenario_<id>`` — the
+    schema SQLMesh's ``environment_suffix_target: schema`` promotes results
+    into (see ``AnalysisRun`` pipeline's ``env_schema``) — rather than the
+    model's own canonical schema (e.g. ``analysis``). Strip it back so the
+    schema can be matched against the canonical model catalog.
+    """
+    return _SCENARIO_ENVIRONMENT_SUFFIX.sub("", schema)
+
+
+def _known_model_table_stems() -> frozenset[str]:
+    """Bare table names (``.sql`` filename stems) of every real SQLMesh model.
+
+    ``list_sqlmesh_tables()`` enumerates *any* view/table living in a
+    non-excluded Postgres schema — including views this codebase creates
+    itself outside SQLMesh, like a scenario's painted-features canvas view
+    (``scenario_<slug>_canvas``, see ``Scenario.base_layer_source``), which
+    lives in its own non-excluded ``scenario_<slug>`` schema. That schema
+    check alone isn't enough to tell a real model apart from one of those.
+
+    A model's table name is stable regardless of schema templating (schema
+    can be blueprinted per region, e.g. ``@{region}``, but the table name
+    never is — see ``_model_descriptions_by_table_name``), so checking the
+    table name against actual model filenames is the reliable signal for
+    "is this really a SQLMesh model" that ``sqlmesh_link_for_table`` gates
+    on before trusting a live-table match.
+    """
+    if not _MODELS_ROOT.exists():
+        return frozenset()
+    return frozenset(path.stem for path in _MODELS_ROOT.rglob("*.sql"))
+
+
+def sqlmesh_link_for_table(
+    schema: str,
+    table: str,
+    known: frozenset[tuple[str, str]] | None = None,
+) -> str | None:
+    """Return a SQLMesh UI link for ``schema.table``, or ``None``.
+
+    ``schema`` may carry a scenario-environment suffix (see
+    ``_canonical_schema``); the link is built from the canonical schema.
+    Returns ``None`` unless *both*:
+
+    - ``table`` matches an actual SQLMesh model definition (see
+      ``_known_model_table_stems``) — ruling out non-model views that
+      happen to live in the same kind of schema (painted-features canvas
+      views, imported shapefiles, Census/OSM tables), and
+    - the (canonicalized) pair is a currently discovered live table (per
+      ``known``/``list_sqlmesh_tables()``) — ruling out a model that's
+      never actually been run for this workspace/scenario.
+
+    Pass ``known`` (a set of already-canonicalized ``(schema, table)``
+    pairs, as built in ``sqlmesh_links_for_tables``) to avoid re-querying
+    the catalog when checking several tables at once.
+    """
+    if table not in _known_model_table_stems():
+        return None
+    known_set = known
+    if known_set is None:
+        known_set = frozenset(
+            (_canonical_schema(info.schema), info.table)
+            for info in list_sqlmesh_tables()
+        )
+    canonical_schema = _canonical_schema(schema)
+    if (canonical_schema, table) not in known_set:
+        return None
+    return sqlmesh_model_ui_url(canonical_schema, table)
+
+
+def sqlmesh_links_for_tables(
+    table_refs: dict[Any, tuple[str, str]],
+) -> dict[Any, str]:
+    """Map arbitrary keys -> SQLMesh UI links, for SQLMesh-backed tables.
+
+    ``table_refs`` maps a caller-chosen key (e.g. ``Layer.pk``) to that
+    record's raw ``(schema, table)``. Keys whose pair isn't a real SQLMesh
+    model (per ``sqlmesh_link_for_table``) are simply omitted — callers
+    look up ``links.get(key)`` and render nothing when absent.
+
+    Queries the table catalog once regardless of how many refs are passed,
+    so this is the preferred entry point when linking a whole layer list
+    (as opposed to ``sqlmesh_link_for_table`` for a single layer).
+    """
+    known = frozenset(
+        (_canonical_schema(info.schema), info.table) for info in list_sqlmesh_tables()
+    )
+    links: dict[Any, str] = {}
+    for key, (schema, table) in table_refs.items():
+        link = sqlmesh_link_for_table(schema, table, known=known)
+        if link is not None:
+            links[key] = link
+    return links
 
 
 @dataclass(frozen=True)
