@@ -98,6 +98,8 @@ celery -A brewgis.config.celery_app worker -l info  # Celery on host
 
 ## Key Features
 
+![Project Screenshot](./docs/Screenshot_2026-09-17_18-22-29.png)
+
 | Feature | Description |
 |---------|-------------|
 | **Map** | Lit-based MapLibre GL JS web component with vector tile rendering |
