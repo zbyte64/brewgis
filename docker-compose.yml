@@ -23,7 +23,7 @@ x-shared-django: &django
   deploy:
     resources:
       limits:
-        cpus: '8'
+        cpus: '4'
         memory: 48G
       reservations:
         cpus: '2'
