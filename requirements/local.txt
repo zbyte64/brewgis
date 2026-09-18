@@ -11,7 +11,7 @@ fastapi>=0.115.0  # https://github.com/fastapi/fastapi — required by SQLMesh U
 mypy==1.14.1  # https://github.com/python/mypy
 django-stubs[compatible-mypy]==6.0.3  # https://github.com/typeddjango/django-stubs
 pandas-stubs==2.2.3.241009  # https://github.com/pandas-dev/pandas-stubs
-pytest==8.3.3  # https://github.com/pytest-dev/pytest
+pytest==9.1.1  # https://github.com/pytest-dev/pytest
 pytest-sugar==1.0.0  # https://github.com/Frozenball/pytest-sugar
 deal>=4.24  # https://github.com/life4/deal
 pytest-timeout>=2.3.0  # https://github.com/pytest-dev/pytest-timeout
