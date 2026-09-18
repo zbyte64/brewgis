@@ -6,6 +6,15 @@ volumes:
 x-shared-django: &django
   user: "${UID:-1000}:${GID:-1000}"
   image: brewgis_local_django
+  # HOME is pinned explicitly because the container's own /etc/passwd only
+  # knows uid 1000 (dev-user). When UID/GID above are overridden to match
+  # some other host user (e.g. CI's runner uid), the container has no
+  # passwd entry for that uid, so without this Docker falls back to
+  # HOME=/ and every ~/.cache-based tool (torch, pip, matplotlib,
+  # fontconfig) would try to write into the container's root filesystem
+  # instead of the ./cache bind mount below.
+  environment:
+    HOME: /home/dev-user
   depends_on:
     - postgres
     - redis
@@ -40,7 +49,11 @@ services:
     ports:
       - '8000:8000'
     command: /start
+    # NOTE: a service-level `environment:` key also REPLACES (not merges
+    # with) the anchor's `environment:` block, same as `volumes:` below —
+    # HOME is repeated here rather than silently lost.
     environment:
+      HOME: /home/dev-user
       MARTIN_CONTAINER_NAME: brewgis_local_martin
     # Docker socket: lets the app restart the martin container after an
     # analysis run creates new tables, since Martin only discovers tables
@@ -146,7 +159,11 @@ services:
     <<: *django
     container_name: brewgis_local_celeryworker
     command: /start-celeryworker
+    # NOTE: a service-level `environment:` key REPLACES (not merges with)
+    # the anchor's `environment:` block, so HOME is repeated here rather
+    # than silently lost.
     environment:
+      HOME: /home/dev-user
       # Celery's prefork pool runs tasks in daemonic worker processes, and
       # daemonic processes can't spawn their own children (Python's
       # multiprocessing forbids it). SQLMesh's model loader normally forks

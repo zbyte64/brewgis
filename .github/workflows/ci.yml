@@ -64,8 +64,27 @@ jobs:
       # gitignored (real installs copy .env.example -> .env, see README).
       # The django/postgres passwords in .env.example are dev-only fakes
       # scoped to this disposable container network, not real secrets.
+      #
+      # docker-compose.yml runs the django container as `${UID:-1000}:${GID:-1000}`
+      # so it can write into the bind-mounted repo without root. Locally that
+      # matches most devs' UID. On the GitHub-hosted runner, the checkout is
+      # owned by the runner user (uid 1001), not 1000, so without this the
+      # container can't create new files/dirs under the mount (e.g. test
+      # screenshot output) and fails with PermissionError. Writing UID/GID
+      # into .env (read directly by docker compose) sidesteps bash's
+      # readonly $UID builtin.
+      #
+      # `./cache` is gitignored, so it doesn't exist on a fresh checkout.
+      # docker compose would auto-create it as root on first mount, which
+      # the non-root container user then can't write into (PermissionError
+      # under /home/dev-user/.cache) — create it ourselves first so it's
+      # owned by the runner user instead.
       - name: Create local env file
-        run: cp .env.example .env
+        run: |
+          cp .env.example .env
+          echo "UID=$(id -u)" >> .env
+          echo "GID=$(id -g)" >> .env
+          mkdir -p cache
 
       - name: Build the Stack
         run: docker compose -f docker-compose.yml build django
@@ -109,7 +128,11 @@ jobs:
         uses: docker/setup-buildx-action@v3
 
       - name: Create local env file
-        run: cp .env.example .env
+        run: |
+          cp .env.example .env
+          echo "UID=$(id -u)" >> .env
+          echo "GID=$(id -g)" >> .env
+          mkdir -p cache
 
       - name: Build the Stack
         run: docker compose -f docker-compose.yml build django
