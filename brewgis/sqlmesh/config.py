@@ -301,7 +301,9 @@ def config_factory(**variables):
                         "cache_httpfs_type": "on_disk",
                         "cache_httpfs_cache_directory": "/app/planning/http_cache",
                         "cache_httpfs_evict_policy": "lru_sp",
-                        "cache_httpfs_cache_block_size": 65536,
+                        # this is a hazard for census data and other
+                        # non-stable responses, must be large
+                        "cache_httpfs_cache_block_size": 73741824,
                         "cache_httpfs_min_disk_bytes_for_cache": 1073741824,
                         "allow_asterisks_in_http_paths": True,
                         "httpfs_connection_caching": True,
