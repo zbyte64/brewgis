@@ -1147,13 +1147,13 @@ class TestUnfilteredTableScan:
             """
             SELECT p.*
             FROM source_table AS s
-            CROSS JOIN staging.parcels AS p
+            CROSS JOIN census.tiger_blocks AS p
             """,
             {"parcel_id": "BIGINT", "result": "BIGINT"},
         )
         violations = _check_unfiltered_scan(src, {})
         assert len(violations) == 1
-        assert "staging" in _violation_msg(violations[0])
+        assert "census" in _violation_msg(violations[0])
 
     def test_where_clause_passes(self) -> None:
         """Base table filtered by WHERE → no violation."""
@@ -1161,7 +1161,7 @@ class TestUnfilteredTableScan:
             "brewdb.public.analysis",
             """
             SELECT s.*
-            FROM staging.parcels AS p
+            FROM census.tiger_blocks AS p
             JOIN source_table AS s ON s.parcel_id = p.parcel_id
             WHERE p.owner_id = 42
             """,
@@ -1177,7 +1177,7 @@ class TestUnfilteredTableScan:
             """
             SELECT s.*
             FROM source_table AS s
-            JOIN staging.parcels AS p ON p.parcel_id = s.parcel_id
+            JOIN census.tiger_blocks AS p ON p.parcel_id = s.parcel_id
             """,
             {"parcel_id": "BIGINT", "result": "BIGINT"},
         )
@@ -1190,7 +1190,7 @@ class TestUnfilteredTableScan:
             "brewdb.public.analysis",
             """
             WITH filtered AS (
-                SELECT * FROM staging.parcels WHERE owner_id = 42
+                SELECT * FROM census.tiger_blocks WHERE owner_id = 42
             )
             SELECT f.*
             FROM filtered AS f
@@ -1207,7 +1207,7 @@ class TestUnfilteredTableScan:
             "brewdb.public.analysis",
             """
             SELECT s.*
-            FROM comparison.some_table AS t
+            FROM analysis.some_table AS t
             JOIN source_table AS s ON s.id = t.id
             """,
             {"id": "BIGINT", "result": "BIGINT"},
@@ -1219,7 +1219,7 @@ class TestUnfilteredTableScan:
         """SELECT * FROM base table alone → no violation (intentional load)."""
         src = _make_source_model(
             "brewdb.public.shim",
-            "SELECT parcel_id, owner_id FROM staging.source_table",
+            "SELECT parcel_id, owner_id FROM census.source_table",
             {"parcel_id": "BIGINT", "owner_id": "BIGINT"},
         )
         violations = _check_unfiltered_scan(src, {})
@@ -1656,7 +1656,7 @@ class TestDuckDBTransformWarning:
     def test_duckdb_model_with_transform_warned(self) -> None:
         """DuckDB model with ST_Transform to 3310 → 1 violation."""
         model = _make_duckdb_model(
-            "duckdb.staging.test_model",
+            "duckdb.census.test_model",
             "SELECT ST_Transform(geometry, 'EPSG:3310') AS local_geometry FROM source",
         )
         violations = _check_duckdb_transform(model, {})
@@ -1677,7 +1677,7 @@ class TestDuckDBTransformWarning:
     def test_duckdb_model_no_transform_passes(self) -> None:
         """DuckDB model without ST_Transform → 0 violations."""
         model = _make_duckdb_model(
-            "duckdb.staging.test_model",
+            "duckdb.census.test_model",
             "SELECT geometry FROM source",
         )
         violations = _check_duckdb_transform(model, {})

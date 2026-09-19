@@ -25,6 +25,7 @@ WITH parcel_data AS (
         es.du,
         es.geometry,
         es.land_development_category,
+        es.built_form_key,
         -- Infrastructure cost: annual service cost + amortized capital cost
         ROUND((es.du * @sprawl_infrastructure_cost_per_du)::numeric, 2) AS infrastructure_cost_annual,
         ROUND((es.du * @sprawl_capital_cost_per_du)::numeric, 2) AS capital_cost
@@ -36,6 +37,7 @@ SELECT
     pop,
     hh,
     du,
+    built_form_key,
     @sprawl_infrastructure_cost_per_du AS infrastructure_cost_per_du_annual,
     @sprawl_capital_cost_per_du AS capital_cost_per_du,
     infrastructure_cost_annual,

@@ -517,7 +517,7 @@ in rough descending order of frequency:
 
 When tuning, the reference dataset is the SACOG 2016 base map (~508K parcels).
 The comparison pipeline (`compare_sacog_basemap` command + SQLMesh comparison
-models under `models/comparison/`) computes per-field percentage differences
+models under `models/sacog/`) computes per-field percentage differences
 at aggregate and distributional levels. Key diagnostic metrics:
 
 - **Building area**: Target within ±15% of SACOG reference (category subtype)

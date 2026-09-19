@@ -41,22 +41,18 @@ class TestTopologyOrder:
     """Verify topological sort of model dependencies."""
 
     def test_single_model(self) -> None:
-        models = {"brewgis.comparison.leaf": _make_model("leaf")}
-        ordered = topology_order(models, {"brewgis.comparison.leaf"})
+        models = {"brewgis.sacog.leaf": _make_model("leaf")}
+        ordered = topology_order(models, {"brewgis.sacog.leaf"})
         assert len(ordered) == 1
         assert ordered[0].name == "leaf"
 
     def test_simple_chain(self) -> None:
         models = {
-            "brewgis.comparison.base": _make_model("base"),
-            "brewgis.comparison.mid": _make_model(
-                "mid", deps={"brewgis.comparison.base"}
-            ),
-            "brewgis.comparison.top": _make_model(
-                "top", deps={"brewgis.comparison.mid"}
-            ),
+            "brewgis.sacog.base": _make_model("base"),
+            "brewgis.sacog.mid": _make_model("mid", deps={"brewgis.sacog.base"}),
+            "brewgis.sacog.top": _make_model("top", deps={"brewgis.sacog.mid"}),
         }
-        ordered = topology_order(models, {"brewgis.comparison.top"})
+        ordered = topology_order(models, {"brewgis.sacog.top"})
         names = [m.name for m in ordered]
         assert names.index("base") < names.index("mid")
         assert names.index("mid") < names.index("top")

@@ -12,7 +12,7 @@ MODEL (
 -- Fresno Wetlands — PostGIS VIEW wrapping the DuckDB bridge table with
 -- proper SRID column metadata.
 --
--- The DuckDB bridge (brewgis.staging._fresno_wetlands_raw) materializes the
+-- The DuckDB bridge (brewgis.fresno.wetlands_raw) materializes the
 -- fetched wetlands with ST_SetCRS, then SQLMesh exposes it to PostGIS via
 -- FDW. The FDW drops SRID metadata, so all geometries arrive as SRID=0.
 --
@@ -26,4 +26,4 @@ SELECT
     wetland_type,
     acres,
     ST_SetSRID(geometry, 4326) AS geom
-FROM brewgis.staging._fresno_wetlands_raw;
+FROM brewgis.fresno.wetlands_raw;

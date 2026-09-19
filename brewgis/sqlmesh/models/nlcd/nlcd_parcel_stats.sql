@@ -15,7 +15,7 @@ MODEL (
     ),
     (
       region := fresno,
-      nlcd_parcel_source := 'brewgis.staging.fresno_parcels',
+      nlcd_parcel_source := 'brewgis.fresno.parcels',
       nlcd_parcel_srid := 4326,
       nlcd_parcel_id := 'parcel_id'
     )
@@ -35,7 +35,7 @@ MODEL (
 --
 -- Region-scoped parcel source (blueprint var @nlcd_parcel_source), e.g.
 -- sacog: public.sacog_comparison_parcels (geometry EPSG:3310)
--- fresno: brewgis.staging.fresno_parcels (raw ArcGIS fetch, lon/lat 4326,
+-- fresno: brewgis.fresno.parcels (raw ArcGIS fetch, lon/lat 4326,
 -- geometry stored without SRID -> @nlcd_parcel_srid = 4326).
 -- NLCD is a national dataset, so every region's parcels get real stats.
 

@@ -15,7 +15,7 @@ WITH actual AS (
 ),
 expected AS (
     SELECT COUNT(DISTINCT apn) AS cnt
-    FROM brewgis.comparison.training_parcel_map
+    FROM brewgis.sacog.training_parcel_map
     WHERE apn IS NOT NULL
 )
 SELECT

@@ -473,19 +473,19 @@ class Command(BaseCommand):
             self.stdout.write("  Parcels already loaded and unchanged, skipping")
 
         # TODO run vanilla sqlmesh plan here
-        # docker compose run --rm django sqlmesh -p brewgis/sqlmesh/ plan --auto-apply --select-model +brewgis.comparison.sacog_summary
-        # docker compose run --rm django sqlmesh -p brewgis/sqlmesh/ plan --auto-apply --select-model +brewgis.nlcd.overture_road_impervious
+        # docker compose run --rm django sqlmesh -p brewgis/sqlmesh/ plan --auto-apply --select-model +brewgis.sacog.summary
+        # docker compose run --rm django sqlmesh -p brewgis/sqlmesh/ plan --auto-apply --select-model +brewgis.overture.road_impervious
 
         context = get_context()
         # ── Phase 4: Read results from SQLMesh-materialized tables ─────────
         self.stdout.write("\n── Phase 4: Reading comparison data from SQLMesh ──")
         sacog_summary_table = context.table_name(
-            "brewgis.comparison.sacog_summary",
+            "brewgis.sacog.summary",
             environment,
         )
         summary = _query_table_as_dict(sacog_summary_table)
         # fetchdf assumes prod environment
-        # summary = context.fetchdf("SELECT * from brewgis.comparison.sacog_summary limit 1").iloc[0].to_dict()
+        # summary = context.fetchdf("SELECT * from brewgis.sacog.summary limit 1").iloc[0].to_dict()
 
         # Split summary columns by prefix
         ref_totals = {k[4:]: v for k, v in summary.items() if k.startswith("ref_")}
@@ -542,7 +542,7 @@ class Command(BaseCommand):
             environment,
         )
         overture_road_impervious_table = context.table_name(
-            "brewgis.nlcd.overture_road_impervious",
+            "brewgis.overture.road_impervious",
             environment,
         )
         _generate_report_markdown(

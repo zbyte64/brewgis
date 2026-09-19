@@ -8,7 +8,7 @@ def test_consolidated_parcel_has_positive_lot_size(context):
         start="2024-01-01",
         end="2024-01-01",
         inputs={
-            "brewgis.staging.sacog_assessor_parcels_raw": [
+            "brewgis.sacog.assessor_parcels_raw": [
                 {
                     "apn": "81000050040",
                     "lotsize": 0,

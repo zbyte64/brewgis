@@ -89,7 +89,7 @@ def _get_sqft_targets(df: pd.DataFrame) -> list[str]:
 
 def _fetch_sqft_training_data(context: ExecutionContext) -> pd.DataFrame:
     """Fetch reference building sqft data with features for regression training."""
-    training_map = context.resolve_table("brewgis.comparison.training_parcel_map")
+    training_map = context.resolve_table("brewgis.sacog.training_parcel_map")
     parcels = context.resolve_table("brewgis.sacog.assessor_parcels")
     bldg_sqft = context.resolve_table("brewgis.sacog.parcel_building_sqft_by_type")
     intersection = context.resolve_table("brewgis.sacog.overture_intersection_density")
@@ -263,7 +263,7 @@ def _feature_matrix(df, landuse_prefixes, zone_prefixes, ldev_cats=None):
         ("not_null", {"columns": "apn"}),
     ],
     depends_on=[
-        "brewgis.comparison.training_parcel_map",
+        "brewgis.sacog.training_parcel_map",
         "public.sac_cnty_region_base_canvas",
         "brewgis.sacog.assessor_parcels",
         "brewgis.sacog.parcel_building_sqft_by_type",

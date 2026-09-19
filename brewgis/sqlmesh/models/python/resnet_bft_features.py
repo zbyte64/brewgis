@@ -199,7 +199,7 @@ _RESNET_COLUMNS: dict[str, str] = {
     ],
     depends_on=[
         "public.sac_cnty_region_existing_land_use_parcels",
-        "brewgis.comparison.training_parcel_map",
+        "brewgis.sacog.training_parcel_map",
     ],
 )
 def execute(  # noqa: C901, PLR0912, PLR0915
@@ -397,7 +397,7 @@ def execute(  # noqa: C901, PLR0912, PLR0915
         results[_RESNET_PC_COLS[i]] = features[:, i].astype(np.float32)
 
     # Step 6: Join APN from training_parcel_map — pick largest-area parcel per APN
-    training_map_name = context.resolve_table("brewgis.comparison.training_parcel_map")
+    training_map_name = context.resolve_table("brewgis.sacog.training_parcel_map")
     apn_map = context.fetchdf(
         f"""SELECT DISTINCT ON (parcel_id)
                 parcel_id, apn, intersect_area_sqft

@@ -195,8 +195,7 @@ def fetch_pois(
     """Fetch POIs from Overpass API and return a categorized GeoDataFrame.
 
     Writes the raw Overpass response to a GeoParquet file at
-    ``/app/planning/poi/poi_raw.parquet`` so the DuckDB staging VIEW
-    (``duckdb.staging.poi_raw``) can read it.
+    ``/app/planning/poi/poi_raw.parquet`` for DuckDB to read.
 
     Args:
         min_lng: Western bound.

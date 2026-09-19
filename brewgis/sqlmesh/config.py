@@ -405,7 +405,7 @@ def config_factory(**variables):
             # nlcd_parcel_source / nlcd_parcel_srid are bound per region by the
             # nlcd_parcel_stats / nlcd_tree_canopy_parcel_stats blueprints
             # (sacog: public.sacog_comparison_parcels @3310; fresno:
-            # brewgis.staging.fresno_parcels @4326).
+            # brewgis.fresno.parcels @4326).
             "nlcd_land_cover_year": 2021,
             "nlcd_tree_canopy_year": 2016,
             # ---- CBP County Employment Scaling (wac_block.sql) ----
@@ -519,9 +519,6 @@ def config_factory(**variables):
             # Built form defaults
             "res_far_default": 0.5,
             "nonres_indoor_water_rate": 40.0,
-            # KNN test isolation variables (overridden in test environments)
-            "parcel_known_features_model": "brewgis.assessor.parcel_known_features",
-            "parcel_partition_stats_model": "brewgis.assessor.parcel_partition_stats",
             **variables,
         },
         gateway_managed_virtual_layer=True,

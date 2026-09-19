@@ -12,7 +12,7 @@ MODEL (
 -- Fresno City Boundary — PostGIS VIEW wrapping the DuckDB bridge table with
 -- proper SRID column metadata.
 --
--- The DuckDB bridge (brewgis.staging._fresno_city_boundary_raw) materializes
+-- The DuckDB bridge (brewgis.fresno.city_boundary_raw) materializes
 -- the fetched city limits with ST_SetCRS, then SQLMesh exposes it to PostGIS
 -- via FDW. The FDW drops SRID metadata, so all geometries arrive as SRID=0.
 --
@@ -24,4 +24,4 @@ SELECT
     agency_cod,
     agency_nam,
     ST_SetSRID(geometry, 4326) AS geom
-FROM brewgis.staging._fresno_city_boundary_raw;
+FROM brewgis.fresno.city_boundary_raw;

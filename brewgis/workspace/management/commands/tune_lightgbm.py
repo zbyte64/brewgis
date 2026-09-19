@@ -236,7 +236,7 @@ class Command(BaseCommand):
         # Materialize all upstream SQLMesh models needed by the regressor training queries
         # The + prefix includes transitive dependencies through the SQLMesh DAG.
         tune_selectors: list[str] = [
-            "+brewgis.comparison.training_parcel_map",
+            "+brewgis.sacog.training_parcel_map",
             "+brewgis.sacog.assessor_parcels",
             "+brewgis.sacog.parcel_building_sqft_by_type",
             "+brewgis.sacog.overture_intersection_density",

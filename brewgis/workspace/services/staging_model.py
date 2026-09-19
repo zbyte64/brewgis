@@ -21,7 +21,8 @@ from brewgis.workspace.services.base_canvas_schema import BaseCanvasSchema
 if TYPE_CHECKING:
     from brewgis.workspace.services.column_inspector import TableColumnInfo
 
-_STAGING_DIR = Path("brewgis/sqlmesh/models/staging")
+_ADAPTERS_DIR = Path("brewgis/sqlmesh/models/adapters")
+_BASE_CANVAS_DIR = Path("brewgis/sqlmesh/models/base_canvas")
 
 # Default built_form_key for parcels without one (2 = "SFR Standard").
 _DEFAULT_BUILT_FORM_KEY = 2
@@ -213,10 +214,10 @@ def write_parcel_staging(
 
     Returns the filename written (e.g. ``stage_parcels.sql``).
     """
-    _STAGING_DIR.mkdir(parents=True, exist_ok=True)
+    _ADAPTERS_DIR.mkdir(parents=True, exist_ok=True)
     sql = generate_parcel_staging(schema, table_name, info)
     filename = f"stage_{table_name}.sql"
-    path = _STAGING_DIR / filename
+    path = _ADAPTERS_DIR / filename
     path.write_text(
         "{# AUTO-GENERATED -- do not edit #}\n" + sql + "\n",
     )
@@ -232,10 +233,10 @@ def write_base_canvas_stub(
 
     Returns the filename written (e.g. ``stage_parcels_base_canvas.sql``).
     """
-    _STAGING_DIR.mkdir(parents=True, exist_ok=True)
+    _BASE_CANVAS_DIR.mkdir(parents=True, exist_ok=True)
     sql = generate_base_canvas_stub(schema, table_name, info)
     filename = f"stage_{table_name}_base_canvas.sql"
-    path = _STAGING_DIR / filename
+    path = _BASE_CANVAS_DIR / filename
     path.write_text(
         "{# AUTO-GENERATED -- do not edit #}\n" + sql + "\n",
     )

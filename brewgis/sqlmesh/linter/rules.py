@@ -1267,7 +1267,18 @@ def _func_args(func: exp.Func) -> list[exp.Expression]:
 
 _RANGE_OPERATORS = frozenset({"GT", "GTE", "LT", "LTE", "NEQ", "Like", "ILIKE"})
 
-_BASE_SCHEMAS = frozenset({"staging", "base_canvas", "assessor", "nlcd"})
+_BASE_SCHEMAS = frozenset(
+    {
+        "assessor",
+        "base_canvas",
+        "buildings",
+        "census",
+        "fresno",
+        "nlcd",
+        "overture",
+        "sacog",
+    }
+)
 
 
 _AGGREGATE_FUNCS = frozenset({"AVG", "SUM", "COUNT", "MIN", "MAX"})
@@ -1493,16 +1504,17 @@ class CrossJoinLikeJoin(Rule):
 
 
 class UnfilteredTableScan(Rule):
-    """Flags models that reference base-table models (in ``staging/``,
-    ``base_canvas/``, ``assessor/``, ``nlcd/`` schemas) without any WHERE
-    or JOIN ON clause restricting them. This pattern nearly always produces
-    sequential scans on large production tables.
+    """Flags models that reference base-table models (in ``census/``,
+    ``overture/``, ``buildings/``, ``sacog/``, ``fresno/``, ``base_canvas/``,
+    ``assessor/``, ``nlcd/`` schemas) without any WHERE or JOIN ON clause
+    restricting them. This pattern nearly always produces sequential scans
+    on large production tables.
 
     A WHERE clause, JOIN ON condition, or HAVING clause qualifies as a
     filter — any condition that restricts rows from the base table.
 
     Skips:
-    * Single-source passthrough models (``SELECT * FROM staging.parcels``)
+    * Single-source passthrough models (``SELECT * FROM census.tiger_blocks``)
     * Models that only reference tables via CTEs (intermediate, not base)
     """
 

@@ -10,8 +10,8 @@ MODEL (
     assert_row_count_greater_than_zero
   ),
   blueprints (
-    (region := sacog,  source_schema := 'public',      source_table := 'sacog_comparison_parcels', county_name := 'Sacramento'),
-    (region := fresno, source_schema := 'staging', source_table := 'fresno_parcels', county_name := 'Fresno')
+    (region := sacog,  source := 0, source_schema := 'public',      source_table := 'sacog_comparison_parcels', county_name := 'Sacramento'),
+    (region := fresno, source := 'brewgis.fresno.parcels', source_schema := 'brewgis', source_table := 'fresno.parcels', county_name := 'Fresno')
   )
 );
 
@@ -77,7 +77,7 @@ SELECT
     NULL::double precision AS area_parcel_emp,
     NULL::double precision AS area_parcel_mixed_use,
     NULL::double precision AS area_parcel_no_use
-FROM @{source_schema}.@{source_table};
+FROM @IF(@source, @ref_model(@source), @{source_schema}.@{source_table});
 
 -- post_statements
   CREATE INDEX IF NOT EXISTS idx_@{region}_parcel_shim_geometry_@snapshot_hash

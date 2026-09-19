@@ -4,8 +4,8 @@ Presents a uniform APN-level parcel contract (``apn, geometry, centroid,
 local_geometry, centroid_local, lot_size_acres, landuse, zone, jurisdiction,
 land_development_category``) to the shared enrichment pipeline.
 
-- SACOG: reads external county assessor data (``brewgis.staging.
-  sacog_assessor_parcels_raw``) and applies the sub-unit APN consolidation +
+- SACOG: reads external county assessor data (``brewgis.sacog.
+  assessor_parcels_raw``) and applies the sub-unit APN consolidation +
   land-use development-category mapping.
 - Fresno: no external assessor data — passes through ``@{region}.parcel_shim``
   rows with ``apn = parcel_id`` and all assessor-derived fields NULL (the
@@ -213,7 +213,7 @@ FROM brewgis.{region}.parcel_shim ps;
         ("unique_values", {"columns": [exp.to_column("apn")]}),
     ],
     depends_on=[
-        "@IF(@source_table != '', brewgis.staging.sacog_assessor_parcels_raw, brewgis.@{region}.parcel_shim)",
+        "@IF(@source_table != '', brewgis.sacog.assessor_parcels_raw, brewgis.@{region}.parcel_shim)",
     ],
     post_statements=[
         "CREATE INDEX IF NOT EXISTS idx_@{region}_assessor_parcels_geometry_@snapshot_hash ON @this_model USING GIST (geometry)",
@@ -226,7 +226,7 @@ FROM brewgis.{region}.parcel_shim ps;
     blueprints=[
         {
             "region": "sacog",
-            "source_table": "brewgis.staging.sacog_assessor_parcels_raw",
+            "source_table": "brewgis.sacog.assessor_parcels_raw",
         },
         {"region": "fresno", "source_table": ""},
     ],

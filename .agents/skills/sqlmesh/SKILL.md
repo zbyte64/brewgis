@@ -1029,10 +1029,10 @@ join against the bridge table. The placement depends on the consumer model's `ki
 -- Create a GiST expression index on the raw bridge table's geometry column
 -- so the CROSS JOIN LATERAL ST_Within can use an index scan.
 -- Must live here because the duckdb-gateway bridge model
--- (brewgis.staging._tiger_block_groups_raw) does not recognise PostGIS
+-- (brewgis.census.tiger_block_groups_raw) does not recognise PostGIS
 -- geometry indexes in post_statements.
   CREATE INDEX IF NOT EXISTS idx_tiger_block_groups_bridge_geometry
-  ON brewgis.staging._tiger_block_groups_raw USING GIST (ST_SetSRID(geometry, 4326));
+  ON brewgis.census.tiger_block_groups_raw USING GIST (ST_SetSRID(geometry, 4326));
 ```
 
 **Pattern — FULL consumer (pre hooks):**
@@ -1055,7 +1055,7 @@ the view's transform:
 
 ```sql
 CREATE INDEX IF NOT EXISTS idx_bridge_geom_4326
-ON brewgis.staging._tiger_block_groups_raw USING GIST (ST_SetSRID(geometry, 4326));
+ON brewgis.census.tiger_block_groups_raw USING GIST (ST_SetSRID(geometry, 4326));
 ```
 
 This lets `WHERE ST_Within(point, ST_SetSRID(geometry, 4326))` use the index.

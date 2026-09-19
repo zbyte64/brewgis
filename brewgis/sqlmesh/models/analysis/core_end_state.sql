@@ -4,10 +4,6 @@ MODEL (
   audits (
     not_null(columns := (parcel_id)),
     number_of_rows(threshold := 1)
-  ),
-  depends_on(
-    brewgis.sacog.parcel_shim,
-    @parcel_table
   )
 );
 
@@ -51,7 +47,7 @@ MODEL (
 --   parcel_acres_developed, parcel_acres_agriculture,
 --   parcel_acres_open_space, parcel_acres_vacant,
 --   intersection_density, land_development_category,
---   built_form_id, indoor_water_rate, outdoor_water_rate,
+--   built_form_id, built_form_key, indoor_water_rate, outdoor_water_rate,
 --   electricity_eui, gas_eui, household_size, geometry
 
 WITH parcel_base AS (
@@ -69,6 +65,7 @@ WITH parcel_base AS (
         bf.indoor_water_rate,
         bf.outdoor_water_rate,
         bf.id AS built_form_id,
+        bf.key AS built_form_key,
         bf.building_coverage,
         bf.electricity_eui,
         bf.gas_eui,
@@ -101,6 +98,7 @@ computed AS (
         indoor_water_rate,
         outdoor_water_rate,
         built_form_id,
+        built_form_key,
         building_coverage,
         electricity_eui,
         gas_eui,
@@ -171,7 +169,7 @@ SELECT
         WHEN c.is_residential
         THEN c.density_adjusted_acres
             * (1.0 - COALESCE(c.building_coverage, 30.0) / 100.0)
-            * COALESCE(c.irrigable_area_fraction, 0.0)
+            * COALESCE(c.irrigable_area_fraction, 0.3)
         ELSE 0.0
     END AS residential_irrigated_area,
 
@@ -179,7 +177,7 @@ SELECT
         WHEN c.is_nonresidential
         THEN c.density_adjusted_acres
             * (1.0 - COALESCE(c.building_coverage, 30.0) / 100.0)
-            * COALESCE(c.irrigable_area_fraction, 0.0)
+            * COALESCE(c.irrigable_area_fraction, 0.3)
         ELSE 0.0
     END AS commercial_irrigated_area,
 
@@ -197,10 +195,11 @@ SELECT
 
     -- Built form metadata
     c.built_form_id,
-    COALESCE(c.indoor_water_rate, 0.0) AS indoor_water_rate,
-    COALESCE(c.outdoor_water_rate, 0.0) AS outdoor_water_rate,
-    COALESCE(c.electricity_eui, 0.0) AS electricity_eui,
-    COALESCE(c.gas_eui, 0.0) AS gas_eui,
+    c.built_form_key,
+    COALESCE(c.indoor_water_rate, 200.0) AS indoor_water_rate,
+    COALESCE(c.outdoor_water_rate, 100.0) AS outdoor_water_rate,
+    COALESCE(c.electricity_eui, 100.0) AS electricity_eui,
+    COALESCE(c.gas_eui, 50.0) AS gas_eui,
     c.household_size,
     c.geometry
 FROM computed AS c;

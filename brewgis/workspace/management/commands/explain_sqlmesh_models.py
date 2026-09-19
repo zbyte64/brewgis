@@ -85,7 +85,7 @@ class PlanAnalysis:
 def _normalise_fqn(fqn: str) -> str:
     """Strip SQL quoting from a model FQN.
 
-    ``"brewgis"."comparison"."foo"`` → ``brewgis.comparison.foo``.
+    ``"brewgis"."sacog"."foo"`` → ``brewgis.sacog.foo``.
     """
     return fqn.replace('"', "")
 
@@ -109,7 +109,7 @@ def discover_models_from_sqlmesh() -> dict[str, ModelInfo]:
         normalised = _normalise_fqn(fqn)
         parts = normalised.split(".")
         # Only include brewgis-catalog models (skip pure-DuckDB catalog models
-        # like duckdb.staging.* whose SQL can't EXPLAIN on Postgres).
+        # like duckdb.census.* whose SQL can't EXPLAIN on Postgres).
         # Models with name brewgis.* but gateway: duckdb (e.g.
         # brewgis.sacog.overture_land_use bridge) ARE included — their
         # Postgres placeholders are auto-created by materialize_empty_tables.
@@ -407,7 +407,7 @@ def materialize_duckdb_gateway_models(ctx) -> int:
                     )
 
                 # Create the logical-name view so downstream model EXPLAIN can
-                # reference the schema.model_name (e.g. brewgis.staging.model).
+                # reference the schema.model_name (e.g. brewgis.sacog.model).
                 conn.execute(_text(f'CREATE SCHEMA IF NOT EXISTS "{schema}"'))
                 conn.execute(
                     _text(
@@ -1060,7 +1060,7 @@ class Command(BaseCommand):
                         self.style.WARNING(f"Model '{short_name}' not found; skipping.")
                     )
         else:
-            seeds = {q for q in models if q.startswith("brewgis.comparison.")}
+            seeds = {q for q in models if q.startswith("brewgis.sacog.")}
 
         if not seeds:
             self.stdout.write(self.style.ERROR("No seed models to audit."))

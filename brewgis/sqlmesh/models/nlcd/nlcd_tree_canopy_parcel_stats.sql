@@ -15,7 +15,7 @@ MODEL (
     ),
     (
       region := fresno,
-      nlcd_parcel_source := 'brewgis.staging.fresno_parcels',
+      nlcd_parcel_source := 'brewgis.fresno.parcels',
       nlcd_parcel_srid := 4326,
       nlcd_parcel_id := 'parcel_id'
     )

@@ -9,7 +9,7 @@ MODEL (
     unique_values(columns := (apn,))
   ),
   depends_on (
-    brewgis.staging._tiger_block_groups_raw
+    brewgis.census.tiger_block_groups_raw
   ),
   blueprints (
     (region := sacog),
@@ -22,10 +22,10 @@ MODEL (
 -- so the CROSS JOIN LATERAL ST_Within can use an index scan instead of a
 -- sequential scan across all 48K block group rows for each of 490K parcels.
 -- Must live here because the duckdb-gateway bridge model
--- (brewgis.staging._tiger_block_groups_raw) does not recognise PostGIS
+-- (brewgis.census.tiger_block_groups_raw) does not recognise PostGIS
 -- geometry indexes in post_statements.
   CREATE INDEX IF NOT EXISTS idx_tiger_block_groups_bridge_wgs84_geometry
-  ON brewgis.staging._tiger_block_groups_raw USING GIST (ST_SetSRID(wgs84_geometry, 4326));
+  ON brewgis.census.tiger_block_groups_raw USING GIST (ST_SetSRID(wgs84_geometry, 4326));
 
 -- Parcel Block Groups — spatial join assigning each assessor parcel to its
 -- overlapping TIGER/Line block group and tract.
@@ -44,7 +44,7 @@ SELECT
 FROM brewgis.@{region}.assessor_parcels sap
 CROSS JOIN LATERAL (
     SELECT tbg.geoid
-    FROM brewgis.staging.tiger_block_groups tbg
+    FROM brewgis.census.tiger_block_groups tbg
     WHERE ST_Within(sap.centroid, tbg.wgs84_geometry)
       AND tbg.vintage = @tiger_vintage
     LIMIT 1

@@ -4,7 +4,7 @@ Materializes the ``known`` parcels for the k-NN footprint imputation cascade:
 parcels with both Overture building footprint features AND assessor sales
 records.
 
-- SACOG: joins ``brewgis.staging.sacog_assessor_sales_raw`` (the known set).
+- SACOG: joins ``brewgis.sacog.assessor_sales_raw`` (the known set).
 - Fresno: no assessor sales — zero rows, so the imputation tiers find no
   neighbors and ``@{region}.parcel_footprint_imputed`` emits no rows (the
   authoritative-residential-area chain falls back to Overture footprints).
@@ -94,7 +94,7 @@ WHERE FALSE;
     depends_on=[
         "brewgis.@{region}.parcel_building_footprints",
         "brewgis.@{region}.parcel_block_groups",
-        "@IF(@sales_raw_table != '', brewgis.staging.sacog_assessor_sales_raw, brewgis.@{region}.parcel_shim)",
+        "@IF(@sales_raw_table != '', brewgis.sacog.assessor_sales_raw, brewgis.@{region}.parcel_shim)",
     ],
     post_statements=[
         "CREATE INDEX IF NOT EXISTS idx_@{region}_parcel_sales_features_geometry_@snapshot_hash ON @this_model USING GIST (geometry)",
@@ -107,7 +107,7 @@ WHERE FALSE;
     blueprints=[
         {
             "region": "sacog",
-            "sales_raw_table": "brewgis.staging.sacog_assessor_sales_raw",
+            "sales_raw_table": "brewgis.sacog.assessor_sales_raw",
         },
         {"region": "fresno", "sales_raw_table": ""},
     ],

@@ -12,7 +12,7 @@ MODEL (
 -- Fresno Farmland — PostGIS VIEW wrapping the DuckDB bridge table with
 -- proper SRID column metadata.
 --
--- The DuckDB bridge (brewgis.staging._fresno_farmland_raw) materializes the
+-- The DuckDB bridge (brewgis.fresno.farmland_raw) materializes the
 -- fetched Important Farmland with ST_SetCRS, then SQLMesh exposes it to
 -- PostGIS via FDW. The FDW drops SRID metadata, so all geometries arrive as
 -- SRID=0.
@@ -25,4 +25,4 @@ SELECT
     county,
     code,
     ST_SetSRID(geometry, 4326) AS geom
-FROM brewgis.staging._fresno_farmland_raw;
+FROM brewgis.fresno.farmland_raw;

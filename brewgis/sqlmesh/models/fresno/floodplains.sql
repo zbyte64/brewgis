@@ -12,7 +12,7 @@ MODEL (
 -- Fresno Floodplains — PostGIS VIEW wrapping the DuckDB bridge table with
 -- proper SRID column metadata.
 --
--- The DuckDB bridge (brewgis.staging._fresno_floodplains_raw) materializes
+-- The DuckDB bridge (brewgis.fresno.floodplains_raw) materializes
 -- the fetched FEMA NFHL flood zones with ST_SetCRS, then SQLMesh exposes it
 -- to PostGIS via FDW. The FDW drops SRID metadata, so all geometries arrive
 -- as SRID=0.
@@ -25,4 +25,4 @@ SELECT
     sfha_tf,
     static_bfe,
     ST_SetSRID(geometry, 4326) AS geom
-FROM brewgis.staging._fresno_floodplains_raw;
+FROM brewgis.fresno.floodplains_raw;

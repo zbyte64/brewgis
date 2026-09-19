@@ -3,7 +3,7 @@
 One row per APN with the best available sales observation (dedup logic runs
 once here instead of in 3+ consumer models).
 
-- SACOG: deduplicates ``brewgis.staging.sacog_assessor_sales_raw``.
+- SACOG: deduplicates ``brewgis.sacog.assessor_sales_raw``.
 - Fresno: no assessor sales — produces zero rows (consumers LEFT JOIN and
   fall back to regressor estimates).
 
@@ -78,14 +78,14 @@ WHERE FALSE;
         ("unique_values", {"columns": [exp.to_column("apn")]}),
     ],
     depends_on=[
-        "@IF(@source_table != '', brewgis.staging.sacog_assessor_sales_raw, brewgis.@{region}.parcel_shim)",
+        "@IF(@source_table != '', brewgis.sacog.assessor_sales_raw, brewgis.@{region}.parcel_shim)",
     ],
     post_statements=[
         "CREATE INDEX IF NOT EXISTS idx_@{region}_assessor_sales_deduped_apn_@snapshot_hash ON @this_model USING btree (apn)",
         "ANALYZE @this_model",
     ],
     blueprints=[
-        {"region": "sacog", "source_table": "brewgis.staging.sacog_assessor_sales_raw"},
+        {"region": "sacog", "source_table": "brewgis.sacog.assessor_sales_raw"},
         {"region": "fresno", "source_table": ""},
     ],
     is_sql=True,

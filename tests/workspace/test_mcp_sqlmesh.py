@@ -214,9 +214,7 @@ class TestExtractPostStatementIndexes:
 
     def test_model_with_no_indexes(self) -> None:
         """Returns empty list for models with no post_statements."""
-        indexes = _extract_post_statement_indexes(
-            "brewgis.comparison.sacog_correlations"
-        )
+        indexes = _extract_post_statement_indexes("brewgis.sacog.correlations")
         assert indexes == []
 
     def test_non_existent_model(self) -> None:

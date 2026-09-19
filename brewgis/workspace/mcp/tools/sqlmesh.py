@@ -315,12 +315,24 @@ def _extract_post_statement_indexes(fqn: str) -> list[str]:
     schema = parts[1]
     model_name = parts[2]
 
-    # Blueprinted models live in adapters/, shared/, or their original
-    # subdirectory (their schema is the blueprint region); legacy models live
-    # under models/{schema}/.
+    # Blueprinted models live in adapters/, or in a domain directory that
+    # differs from their blueprint schema (base_canvas/, census/, overture/,
+    # ...); region/domain models otherwise live under models/{schema}/.
     path = None
     for ext in (".sql", ".py"):
-        for subdir in (schema, "adapters", "shared", "python", "assessor"):
+        for subdir in (
+            schema,
+            "adapters",
+            "python",
+            "assessor",
+            "base_canvas",
+            "census",
+            "overture",
+            "buildings",
+            "sacog",
+            "fresno",
+            "nlcd",
+        ):
             candidate = Path(f"brewgis/sqlmesh/models/{subdir}/{model_name}{ext}")
             if candidate.exists():
                 path = candidate
