@@ -30,6 +30,7 @@ from brewgis.workspace.services.sqlmesh_tables import list_sqlmesh_layer_candida
 from brewgis.workspace.services.sqlmesh_tables import list_sqlmesh_tables
 from brewgis.workspace.services.sqlmesh_tables import sqlmesh_links_for_tables
 from brewgis.workspace.symbology.auto import auto_generate_symbology
+from brewgis.workspace.symbology.legend import swatch_background
 from brewgis.workspace.views.built_forms import HtmxResponseMixin
 
 
@@ -206,14 +207,13 @@ def layer_delete(request: HttpRequest, pk: int) -> HttpResponse:
     layer.delete()
 
     if request.headers.get("HX-Request") == "true":
-        # Build swatch colors for the legend list
-        swatch_colors: dict[int, str] = {}
+        # Build swatch backgrounds for the legend list
+        swatch_backgrounds: dict[int, str] = {}
         for lyr in workspace.layers.all():
             with suppress(SymbologyConfig.DoesNotExist):
-                cfg = lyr.symbology
-                swatch_colors[lyr.pk] = cfg.default_color or "#e0e0e0"
+                swatch_backgrounds[lyr.pk] = swatch_background(lyr.symbology)
                 continue
-            swatch_colors[lyr.pk] = "#e0e0e0"
+            swatch_backgrounds[lyr.pk] = swatch_background(None)
 
         sqlmesh_links = sqlmesh_links_for_tables(
             {
@@ -227,7 +227,7 @@ def layer_delete(request: HttpRequest, pk: int) -> HttpResponse:
             "scenario": None,
             "is_public_view": False,
             "layer_configs": {},
-            "swatch_colors": swatch_colors,
+            "swatch_backgrounds": swatch_backgrounds,
             "sqlmesh_links": sqlmesh_links,
             "layers_for_panel": visible_layers_for_panel(workspace, None),
         }

@@ -7,6 +7,7 @@ from django.test import TestCase
 
 from brewgis.workspace.symbology.legend import SymbologyLegend
 from brewgis.workspace.symbology.legend import generate_legend
+from brewgis.workspace.symbology.legend import swatch_background
 from tests.factories import LayerFactory
 from tests.factories import StyleClassFactory
 from tests.factories import SymbologyConfigFactory
@@ -292,3 +293,88 @@ class TestGenerateLegend(TestCase):
         legend = generate_legend(config)
         assert legend.zoom_min is None
         assert legend.zoom_max is None
+
+
+@pytest.mark.models
+class TestSwatchBackground(TestCase):
+    """Tests for :func:`swatch_background`."""
+
+    def setUp(self) -> None:
+        self.workspace = WorkspaceFactory()
+
+    def test_single_symbol_uses_default_color(self) -> None:
+        """A single-symbol layer's swatch is its one flat color."""
+        layer = LayerFactory(workspace=self.workspace)
+        config = SymbologyConfigFactory(
+            layer=layer,
+            symbology_type="single",
+            default_color="#123456",
+        )
+        # Stale classes must not leak into a single-symbol swatch
+        StyleClassFactory(symbology=config, label="Ignored", color="#ff0000")
+
+        assert swatch_background(config) == "#123456"
+
+    def test_missing_config_falls_back(self) -> None:
+        """A layer with no symbology config still gets a visible swatch."""
+        assert swatch_background(None) == "#e0e0e0"
+
+    def test_classes_without_colors_fall_back(self) -> None:
+        """A classification whose classes carry no colors falls back to the default."""
+        layer = LayerFactory(workspace=self.workspace)
+        config = SymbologyConfigFactory(
+            layer=layer,
+            symbology_type="graduated",
+            default_color="#abcdef",
+        )
+
+        assert swatch_background(config) == "#abcdef"
+
+    def test_single_class_uses_that_class_color(self) -> None:
+        """One class is a flat color, not a degenerate one-stop gradient."""
+        layer = LayerFactory(workspace=self.workspace)
+        config = SymbologyConfigFactory(
+            layer=layer,
+            symbology_type="categorical",
+            default_color="#abcdef",
+        )
+        StyleClassFactory(symbology=config, label="Only", color="#4CAF50")
+
+        assert swatch_background(config) == "#4CAF50"
+
+    def test_categorical_bands_every_class_color_in_order(self) -> None:
+        """The swatch bands each class color in sort_order with equal shares."""
+        layer = LayerFactory(workspace=self.workspace)
+        config = SymbologyConfigFactory(
+            layer=layer,
+            symbology_type="categorical",
+        )
+        StyleClassFactory(symbology=config, label="C", color="#00BCD4", sort_order=2)
+        StyleClassFactory(symbology=config, label="A", color="#4CAF50", sort_order=0)
+        StyleClassFactory(symbology=config, label="B", color="#9C27B0", sort_order=1)
+
+        assert swatch_background(config) == (
+            "linear-gradient(to right, "
+            "#4CAF50 0.00% 33.33%, #9C27B0 33.33% 66.67%, #00BCD4 66.67% 100.00%)"
+        )
+
+    def test_gradient_follows_legend_item_order(self) -> None:
+        """Swatch band order matches the legend's item order for the same config."""
+        layer = LayerFactory(workspace=self.workspace)
+        config = SymbologyConfigFactory(
+            layer=layer,
+            symbology_type="graduated",
+            null_handling="hide",
+        )
+        for i, color in enumerate(["#111111", "#222222", "#333333"]):
+            StyleClassFactory(
+                symbology=config, label=f"Class {i}", color=color, sort_order=i
+            )
+
+        legend_colors = [item.color for item in generate_legend(config).items]
+        gradient = swatch_background(config).removeprefix("linear-gradient(to right, ")
+        gradient_colors = [
+            stop.split(" ")[0] for stop in gradient.rstrip(")").split(", ")
+        ]
+
+        assert gradient_colors == legend_colors

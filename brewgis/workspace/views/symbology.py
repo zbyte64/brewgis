@@ -34,6 +34,7 @@ from brewgis.workspace.services.sqlmesh_tables import sqlmesh_link_for_table
 from brewgis.workspace.symbology.auto import auto_generate_symbology
 from brewgis.workspace.symbology.generator import generate_maplibre_style
 from brewgis.workspace.symbology.legend import generate_legend
+from brewgis.workspace.symbology.legend import swatch_background
 from brewgis.workspace.views.panels import is_panel_request
 
 _GEOMETRY_DATA_TYPES = {"geometry", "geography", "USER-DEFINED"}
@@ -204,7 +205,7 @@ def _legend_oob_html(
     them showing the pre-edit colors/classes until the panel is closed and
     reopened.
     """
-    swatch_color = config.default_color or "#e0e0e0"
+    swatch_css = swatch_background(config)
     legend_html = render_to_string(
         "workspace/symbology/legend_partial.html",
         {"legend": generate_legend(config)},
@@ -212,10 +213,10 @@ def _legend_oob_html(
     )
     swatch = format_html(
         '<span id="legend-swatch-{}" hx-swap-oob="true" class="legend-swatch-inline" '
-        'style="background-color: {}; width: 10px; height: 10px; '
+        'style="background: {}; width: 14px; height: 10px; '
         'display: inline-block; border-radius: 2px; vertical-align: middle"></span>',
         layer.pk,
-        swatch_color,
+        swatch_css,
     )
     legend_wrapper = format_html(
         '<div id="legend-{}" hx-swap-oob="true" class="ps-2">{}</div>',

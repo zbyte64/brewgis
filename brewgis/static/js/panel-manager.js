@@ -62,6 +62,14 @@
       },
 
       setSidebarTab: function (name) {
+        // Clicking the icon of the tab that is already showing collapses the
+        // sidebar — same result as the ☰ button, so an icon both opens and
+        // closes its panel instead of only ever opening it.
+        if (this.leftSidebarOpen && this.activePanel === name) {
+          this.leftSidebarOpen = false;
+          return;
+        }
+
         var content = document.getElementById('left-sidebar-content');
         if (!content) return;
 

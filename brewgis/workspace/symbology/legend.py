@@ -7,6 +7,8 @@ from dataclasses import field
 from typing import TYPE_CHECKING
 
 if TYPE_CHECKING:
+    from collections.abc import Sequence
+
     from brewgis.workspace.models import StyleClass
     from brewgis.workspace.models import SymbologyConfig
 
@@ -15,6 +17,8 @@ GEOMETRY_TYPE_MAP: dict[str, str] = {
     "line": "line",
     "circle": "circle",
 }
+
+FALLBACK_SWATCH_COLOR = "#e0e0e0"
 
 
 @dataclass
@@ -64,6 +68,39 @@ def _build_label(cls: StyleClass, index: int) -> str:
     if cls.min_value is not None and cls.max_value is not None:
         return f"{cls.min_value:.2f} — {cls.max_value:.2f}"
     return f"Class {index + 1}"
+
+
+def swatch_background(
+    config: SymbologyConfig | None, classes: Sequence[StyleClass] | None = None
+) -> str:
+    """Return the CSS ``background`` value for a layer row's legend swatch.
+
+    A single-symbol layer is one flat color, so its swatch is that color. A
+    categorical/graduated layer maps an attribute onto a series of class
+    colors, so its swatch bands every class color in sort order — the swatch
+    then reads as the layer's actual color mapping instead of one arbitrary
+    color shared with every other layer.
+
+    *classes*, when given, is used instead of querying ``config.classes.all()``
+    (same escape hatch as :func:`generate_legend`).
+    """
+    if config is None:
+        return FALLBACK_SWATCH_COLOR
+
+    if config.symbology_type != "single":
+        resolved = classes if classes is not None else list(config.classes.all())
+        colors = [cls.color for cls in resolved if cls.color]
+        if len(colors) == 1:
+            return colors[0]
+        if len(colors) > 1:
+            count = len(colors)
+            stops = ", ".join(
+                f"{color} {i / count:.2%} {(i + 1) / count:.2%}"
+                for i, color in enumerate(colors)
+            )
+            return f"linear-gradient(to right, {stops})"
+
+    return config.default_color or FALLBACK_SWATCH_COLOR
 
 
 def generate_legend(

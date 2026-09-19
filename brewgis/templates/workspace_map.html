@@ -268,37 +268,37 @@
     <button type="button"
             data-panel="layers"
             x-on:click="$store.panels.setSidebarTab('layers')"
-            x-bind:class="{ active: $store.panels.activePanel === 'layers' }"
+            x-bind:class="{ active: $store.panels.leftSidebarOpen && $store.panels.activePanel === 'layers' }"
             title="{% translate 'Layers' %}"
             aria-label="{% translate 'Layers' %}">🗂️</button>
     <button type="button"
             data-panel="catalog"
             x-on:click="$store.panels.setSidebarTab('catalog')"
-            x-bind:class="{ active: $store.panels.activePanel === 'catalog' }"
+            x-bind:class="{ active: $store.panels.leftSidebarOpen && $store.panels.activePanel === 'catalog' }"
             title="{% translate 'Data Catalog' %}"
             aria-label="{% translate 'Data Catalog' %}">📦</button>
     <button type="button"
             data-panel="import"
             x-on:click="$store.panels.setSidebarTab('import')"
-            x-bind:class="{ active: $store.panels.activePanel === 'import' }"
+            x-bind:class="{ active: $store.panels.leftSidebarOpen && $store.panels.activePanel === 'import' }"
             title="{% translate 'Import Data' %}"
             aria-label="{% translate 'Import Data' %}">📥</button>
     <button type="button"
             data-panel="analysis"
             x-on:click="$store.panels.setSidebarTab('analysis')"
-            x-bind:class="{ active: $store.panels.activePanel === 'analysis' }"
+            x-bind:class="{ active: $store.panels.leftSidebarOpen && $store.panels.activePanel === 'analysis' }"
             title="{% translate 'Analysis' %}"
             aria-label="{% translate 'Analysis' %}">📊</button>
     <button type="button"
             data-panel="reports"
             x-on:click="$store.panels.setSidebarTab('reports')"
-            x-bind:class="{ active: $store.panels.activePanel === 'reports' }"
+            x-bind:class="{ active: $store.panels.leftSidebarOpen && $store.panels.activePanel === 'reports' }"
             title="{% translate 'Reports' %}"
             aria-label="{% translate 'Reports' %}">📄</button>
     <button type="button"
             data-panel="basemap"
             x-on:click="$store.panels.setSidebarTab('basemap')"
-            x-bind:class="{ active: $store.panels.activePanel === 'basemap' }"
+            x-bind:class="{ active: $store.panels.leftSidebarOpen && $store.panels.activePanel === 'basemap' }"
             title="{% translate 'Basemap' %}"
             aria-label="{% translate 'Basemap' %}">🗺️</button>
   </div>

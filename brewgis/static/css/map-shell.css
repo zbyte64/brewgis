@@ -51,11 +51,13 @@
   display: flex;
   overflow: hidden;
 }
-.map-shell__left-sidebar.collapsed {
-  width: 44px;
-}
 .map-shell__left-sidebar.wide-panel {
   width: 460px;
+}
+/* Declared after .wide-panel: equal specificity, so collapsing a wide panel
+   (Analysis, Data Catalog) must win to actually hide it. */
+.map-shell__left-sidebar.collapsed {
+  width: 44px;
 }
 .map-shell__left-sidebar .sidebar-icons {
   width: 44px;

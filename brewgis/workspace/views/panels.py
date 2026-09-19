@@ -35,6 +35,7 @@ from brewgis.workspace.services.base_canvas_schema import BaseCanvasSchema
 from brewgis.workspace.services.canvas_view_manager import build_paintable_column_meta
 from brewgis.workspace.services.filter_compiler import FilterCompiler
 from brewgis.workspace.services.sqlmesh_tables import sqlmesh_links_for_tables
+from brewgis.workspace.symbology.legend import swatch_background
 from brewgis.workspace.views.basemaps import _get_selected_basemap_id
 from brewgis.workspace.views.workspace_detail import build_catalog_context
 
@@ -175,15 +176,11 @@ def panel_layer_list(request: HttpRequest, workspace_pk: int) -> HttpResponse:
             layer_configs[layer.pk] = layer.symbology
     context["layer_configs"] = layer_configs
 
-    # Pre-compute swatch colors for quick rendering (avoid template ORM access)
-    swatch_colors: dict[int, str] = {}
+    # Pre-compute swatch backgrounds for quick rendering (avoid template ORM access)
+    swatch_backgrounds: dict[int, str] = {}
     for layer in workspace.layers.all():
-        cfg = layer_configs.get(layer.pk)
-        if cfg:
-            swatch_colors[layer.pk] = cfg.default_color or "#e0e0e0"
-        else:
-            swatch_colors[layer.pk] = "#e0e0e0"
-    context["swatch_colors"] = swatch_colors
+        swatch_backgrounds[layer.pk] = swatch_background(layer_configs.get(layer.pk))
+    context["swatch_backgrounds"] = swatch_backgrounds
 
     # Pre-compute SQLMesh UI links for layers backed by a SQLMesh model
     # (imported directly, or produced by an analysis run)
