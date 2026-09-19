@@ -83,16 +83,10 @@ RUN apt-get update && apt-get install --no-install-recommends -y \
 ENV PLAYWRIGHT_BROWSERS_PATH=/usr/local/share/ms-playwright
 RUN pip install playwright==1.52.0 && \
     mkdir -p /usr/local/share/ms-playwright && \
-    playwright install chromium --with-deps && \
-    pip uninstall -y playwright
+    playwright install chromium --with-deps
 
-# All absolute dir copies ignore workdir instruction. All relative dir copies are wrt to the workdir instruction
-# copy python dependency wheels from python-build-stage
-COPY --from=python-build-stage /usr/src/app/wheels  /wheels/
-
-# use wheels to install python dependencies
-RUN pip install --no-cache-dir --no-index --find-links=/wheels/ /wheels/* \
-  && rm -rf /wheels/
+RUN --mount=type=bind,from=python-build-stage,source=/usr/src/app/wheels,target=/wheels \
+  pip install --no-cache-dir --no-index --find-links=/wheels/ /wheels/*
 
 # Patch: web.server.settings uses Generator[Context, None] (2 type args) which
 # typing_extensions >=4.12 rejects because Generator expects 3 (Yield, Send, Return).
