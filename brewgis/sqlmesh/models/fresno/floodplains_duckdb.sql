@@ -23,6 +23,11 @@ MODEL (
 -- from another relation. The page count is derived from the service's live
 -- count each render (falling back to a fixed ceiling), so the fetch scales if
 -- the flood zone set changes. Empty tail pages simply yield zero rows.
+--
+-- The envelope is the Fresno region bounding box (matching fresno.parcels) so
+-- the constraint layer covers every parcel in the base canvas — floodplains
+-- feed the env_constraint analysis, which discounts developable area, so a
+-- narrower envelope would silently exempt the uncovered parcels.
 
 SELECT
     feature.properties.FLD_ZONE::VARCHAR AS fld_zone,
@@ -34,7 +39,7 @@ FROM read_json_auto(
         'https://hazards.fema.gov/arcgis/rest/services/public/NFHL/MapServer/28/query',
         '1=1',
         'FLD_ZONE,SFHA_TF,STATIC_BFE',
-        geometry = '{"xmin":-119.82,"ymin":36.72,"xmax":-119.72,"ymax":36.80}'
+        geometry = '{"xmin":-119.95,"ymin":36.60,"xmax":-119.55,"ymax":36.92}'
     ),
     format = 'auto'
 ) r,

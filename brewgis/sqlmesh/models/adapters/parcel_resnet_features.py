@@ -43,6 +43,7 @@ from sqlmesh.core.model.definition import ModelKindName
 
 from brewgis.sqlmesh.models.python._feature_cols import _RESNET_PC_COLS
 from brewgis.sqlmesh.models.python.resnet_bft_features import _compute_cog_hash
+from brewgis.sqlmesh.models.python.resnet_bft_features import _embeddings_cache_key
 from brewgis.sqlmesh.models.python.resnet_bft_features import _get_cache_root
 from brewgis.sqlmesh.models.python.resnet_bft_features import _infer_batch
 from brewgis.sqlmesh.models.python.resnet_bft_features import _load_cached_embeddings
@@ -110,12 +111,16 @@ def _infer_fresno_features(context: ExecutionContext, region: str) -> pd.DataFra
     logger.info("Resolved %d NAIP COG URL(s)", len(cog_urls))
 
     cog_hash = _compute_cog_hash(cog_urls)
+    # The parcel set is part of the embeddings cache key — a wider region bbox
+    # keeps the same NAIP tiles, so an imagery-only key would serve the
+    # previous parcel set's embeddings and silently drop every new parcel.
+    embeddings_key = _embeddings_cache_key(cog_hash, gdf["parcel_id"])
 
     # Step 2.5: Download COG tiles to local cache for fast raster window reads
     cog_paths = download_cog_tiles(cog_urls)
 
     # Step 3: Extract chips + ResNet forward pass (or load cached)
-    cached = _load_cached_embeddings(cog_hash)
+    cached = _load_cached_embeddings(embeddings_key)
 
     def _dedup_embeddings(
         embeddings: np.ndarray, pids: list[str]
@@ -212,7 +217,7 @@ def _infer_fresno_features(context: ExecutionContext, region: str) -> pd.DataFra
             )
             raise RuntimeError(msg)
 
-        _save_embeddings(cog_hash, embeddings_np, parcel_ids)
+        _save_embeddings(embeddings_key, embeddings_np, parcel_ids)
 
     # Step 4: Load SACOG-trained PCA from planning/pca/ (inference only — no fitting)
     pca_dir = _get_cache_root() / "pca"

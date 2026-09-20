@@ -33,7 +33,10 @@ from sqlmesh import macro
 
 _PAGE_SIZE = 2000
 # Hard cap on the derived page count — guards against a misbehaving probe.
-_MAX_PAGE_COUNT = 64
+# Sized for the largest region fetch: the fresno region bbox (fresno.parcels)
+# is ~213k features = 107 pages, and clamping below that silently truncates
+# the fetch instead of failing.
+_MAX_PAGE_COUNT = 128
 # Extra pages beyond ceil(count / page_size) absorb source growth between the
 # count probe and the page fetches.
 _HEADROOM_PAGES = 1

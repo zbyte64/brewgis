@@ -302,8 +302,22 @@ def config_factory(**variables):
                         "cache_httpfs_cache_directory": "/app/planning/http_cache",
                         "cache_httpfs_evict_policy": "lru_sp",
                         # this is a hazard for census data and other
-                        # non-stable responses, must be large
-                        "cache_httpfs_cache_block_size": 73741824,
+                        # non-stable responses, must be large. cache_httpfs
+                        # caches one entry per (file, start, length) range, so
+                        # a response is only cached atomically — never as a mix
+                        # of blocks cached before and after it changed — when
+                        # its whole body fits in a single block. The value must
+                        # be a power of two; the extension rejects anything
+                        # else outright ("cache_httpfs_cache_block_size must be
+                        # a power of two").
+                        # 2^25 (32 MiB) is 4x the largest response this project
+                        # fetches — FEMA NFHL page 7.9 MiB, ArcGIS parcel page
+                        # 1.9 MiB (both measured 2026-09-19) — while keeping
+                        # the ranges requested from object storage at 32 MiB
+                        # instead of 128 MiB (under a 128 MiB block the cached
+                        # entries were 128 MiB ranges), which is over-fetch for
+                        # row-group-pushed parquet reads.
+                        "cache_httpfs_cache_block_size": 33554432,
                         "cache_httpfs_min_disk_bytes_for_cache": 1073741824,
                         "allow_asterisks_in_http_paths": True,
                         "httpfs_connection_caching": True,

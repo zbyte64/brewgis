@@ -22,9 +22,13 @@ MODEL (
 -- or lateral columns inside table functions, so the page list cannot be read
 -- from another relation. The page count is derived from the service's live
 -- count each render (falling back to a fixed ceiling), so the fetch scales if
--- the wetland set changes. The ATTRIBUTE LIKE '%Fresh%' filter matches the
+-- wetland set changes. The ATTRIBUTE LIKE '%Fresh%' filter matches the
 -- legacy fresno_downloader query; it legitimately yields zero features for
--- this envelope (verified), so the table may be empty.
+-- the fresno region envelope (verified against both the previous downtown
+-- box and the current region box), so the table may be empty.
+--
+-- The envelope is the Fresno region bounding box (matching fresno.parcels)
+-- so the constraint layer covers every parcel in the base canvas.
 
 SELECT
     feature.properties.ATTRIBUTE::VARCHAR AS attribute,
@@ -36,7 +40,7 @@ FROM read_json_auto(
         'https://services2.arcgis.com/Uq9r85Potqm3MfRV/ArcGIS/rest/services/biosds2630_fpu/FeatureServer/0/query',
         'ATTRIBUTE LIKE ''%Fresh%''',
         'ATTRIBUTE,WETLAND_TYPE,ACRES',
-        geometry = '{"xmin":-119.82,"ymin":36.72,"xmax":-119.72,"ymax":36.80}'
+        geometry = '{"xmin":-119.95,"ymin":36.60,"xmax":-119.55,"ymax":36.92}'
     ),
     format = 'auto'
 ) r,

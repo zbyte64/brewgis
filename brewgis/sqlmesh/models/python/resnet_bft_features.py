@@ -20,6 +20,7 @@ import hashlib
 import logging
 import os
 import pickle
+from collections.abc import Iterable  # noqa: TC003
 from collections.abc import Iterator  # noqa: TC003
 from pathlib import Path
 from typing import TYPE_CHECKING
@@ -116,6 +117,24 @@ def _compute_cog_hash(cog_urls: list[str]) -> str:
     for url in sorted(cog_urls):
         h.update(url.encode())
     return h.hexdigest()
+
+
+def _embeddings_cache_key(cog_hash: str, parcel_ids: Iterable[str]) -> str:
+    """Cache key for chip embeddings: imagery tiles *and* the parcel set.
+
+    Keying on the COG URLs alone is not enough, because the tile set and the
+    parcel set vary independently: a region's parcel extent can grow while the
+    NAIP tiles covering it stay identical (a wider fresno region bbox still
+    resolves to the same USGS base quad, so the same URL list). The
+    imagery-only key then serves embeddings extracted for the previous parcel
+    set, and every parcel added since is silently missing from the features
+    instead of failing. The PCA cache stays keyed on ``cog_hash`` — it is fit
+    on the imagery, not on a particular parcel set.
+    """
+    h = hashlib.sha256()
+    for parcel_id in sorted(str(pid) for pid in parcel_ids):
+        h.update(parcel_id.encode())
+    return f"{cog_hash}-{h.hexdigest()[:16]}"
 
 
 def _load_pca_cache(data_hash: str) -> IncrementalPCA | None:
@@ -262,6 +281,7 @@ def execute(  # noqa: C901, PLR0912, PLR0915
     logger.info("Resolved %d NAIP COG URL(s)", len(cog_urls))
 
     cog_hash = _compute_cog_hash(cog_urls)
+    embeddings_key = _embeddings_cache_key(cog_hash, gdf_4326["parcel_id"])
 
     # Step 2.5: Download COG tiles to local cache for fast raster window reads
     cog_paths = download_cog_tiles(cog_urls)
@@ -273,7 +293,7 @@ def execute(  # noqa: C901, PLR0912, PLR0915
         logger.info("COG cache: %d files, %.0f MB", len(cog_files), total_mb)
 
     # Step 3: Extract chips + ResNet forward pass (or load cached)
-    cached = _load_cached_embeddings(cog_hash)
+    cached = _load_cached_embeddings(embeddings_key)
 
     def _dedup_embeddings(
         embeddings: np.ndarray, pids: list[str]
@@ -369,7 +389,7 @@ def execute(  # noqa: C901, PLR0912, PLR0915
         logger.info("Deduplicated to %d unique parcels", len(parcel_ids))
 
         _check_min_pca_samples(len(embeddings_np))
-        _save_embeddings(cog_hash, embeddings_np, parcel_ids)
+        _save_embeddings(embeddings_key, embeddings_np, parcel_ids)
 
     # Also covers the cached-embeddings branch above (`if cached is not
     # None`), which has no min-sample check of its own — a cache written

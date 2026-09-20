@@ -198,3 +198,48 @@ class TestCheckMinPcaSamples:
         (see brewgis/sqlmesh/config.py's SQLMESH_DUCKDB_READONLY)."""
         self._reload_with_env(monkeypatch, "false")
         resnet_bft_features._check_min_pca_samples(10)  # does not raise
+
+
+class TestEmbeddingsCacheKey:
+    """Verify the chip-embeddings cache key covers the parcel set.
+
+    The key must identify *what was extracted*, which is the imagery tiles
+    AND the parcels chipped from them. Keying on the COG URLs alone let a
+    region whose parcel extent grew (a wider fresno region bbox still
+    resolves to the same NAIP tiles) reuse embeddings extracted for the
+    previous parcel set, silently dropping every parcel added since instead
+    of recomputing.
+    """
+
+    _COG_HASH = "b262d4555c90b9a6de40d7beeae8c1cd4d5264730ba98f45331afc7be1193451"
+
+    def test_same_imagery_and_parcels_reuse_the_cache(self) -> None:
+        """Identical inputs must hit the cached embeddings."""
+        parcels = ["apn-1", "apn-2", "apn-3"]
+        assert resnet_bft_features._embeddings_cache_key(
+            self._COG_HASH, parcels
+        ) == resnet_bft_features._embeddings_cache_key(self._COG_HASH, parcels)
+
+    def test_key_ignores_parcel_order(self) -> None:
+        """Parcel order is a query artifact, not part of the extraction —
+        a different row order must not discard a cached extraction."""
+        assert resnet_bft_features._embeddings_cache_key(
+            self._COG_HASH, ["apn-3", "apn-1", "apn-2"]
+        ) == resnet_bft_features._embeddings_cache_key(
+            self._COG_HASH, ["apn-1", "apn-2", "apn-3"]
+        )
+
+    def test_grown_parcel_extent_invalidates_the_cache(self) -> None:
+        """Adding parcels over unchanged imagery must force a recompute."""
+        assert resnet_bft_features._embeddings_cache_key(
+            self._COG_HASH, ["apn-1", "apn-2", "apn-3"]
+        ) != resnet_bft_features._embeddings_cache_key(
+            self._COG_HASH, ["apn-1", "apn-2", "apn-3", "apn-4"]
+        )
+
+    def test_same_parcels_over_different_imagery_invalidate_the_cache(self) -> None:
+        """New imagery means new chips, even for an unchanged parcel set."""
+        parcels = ["apn-1", "apn-2"]
+        assert resnet_bft_features._embeddings_cache_key(
+            self._COG_HASH, parcels
+        ) != resnet_bft_features._embeddings_cache_key("0" * 64, parcels)
