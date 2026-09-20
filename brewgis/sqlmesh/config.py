@@ -375,6 +375,11 @@ def config_factory(**variables):
             "state_fips": "06",
             "tiger_vintage": "2023",
             "tiger_block_vintage": "2020",
+            # Block-group vintage. The ACS and PDB staging models no longer read it:
+            # each region pins its own `bg_vintage` blueprint variable (fresno 2023,
+            # sacog 2013) because the TIGER block-group vintage has to match the
+            # vintage of the release being joined. Kept for the Django services that
+            # pass it as a run variable (census_fetcher / lehd_fetcher).
             "tiger_bg_vintage": "2013",
             "local_srid": 3310,
             "min_sqft_per_unit": 400,

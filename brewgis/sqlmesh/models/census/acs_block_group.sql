@@ -5,14 +5,15 @@ MODEL (
     batch_size 100000
   ),
   audits (
-    not_null(columns := (geoid, data_year))
+    not_null(columns := (geoid, data_year)),
+    assert_acs_block_group_coverage
   ),
   depends_on (
     brewgis.@{region}.acs_bridge
   ),
   blueprints (
-    (region := sacog,  county_fips := '067,005,017,061', acs_year := 2013),
-    (region := fresno, county_fips := '019',             acs_year := 2022)
+    (region := sacog,  county_fips := '067,005,017,061', acs_year := 2013, bg_vintage := '2013'),
+    (region := fresno, county_fips := '019',             acs_year := 2022, bg_vintage := '2023')
   )
 );
 
@@ -29,7 +30,17 @@ MODEL (
 --   detsf_sl_ratio: 0.40 (fallback small-lot ratio when geometry unavailable)
 --   sl_density_threshold: 8.0 (density threshold for small-lot sigmoid)
 --   k_steepness: 0.5 (sigmoid steepness)
---   tiger_bg_vintage: '2013'
+--
+-- bg_vintage (blueprint, per region) pins the TIGER/Line block group vintage that
+-- matches the ACS release being joined. An ACS 5-year release is published on one
+-- TIGER vintage — 2013 on 2010 block groups (sacog), 2022 on 2020 block groups
+-- (fresno) — and joining across vintages drops every block group whose geoid is not
+-- present in the older release. Measured 2026-09-20: fresno's source carries 637
+-- block groups for county 019 and exactly 637 of them exist in TIGER vintage 2023,
+-- while only 463 of them exist in the 589 block groups that vintage 2013 holds for
+-- the county. The former global '2013' default therefore left 174 block groups —
+-- covering 52,382 canvas parcels — without any ACS enrichment. assert_acs_block_group_coverage
+-- fails if this model's output is missing a block group the source provides.
 
 WITH raw_derived AS (
     SELECT
@@ -69,7 +80,7 @@ WITH raw_derived AS (
     FROM brewgis.@{region}.acs_bridge a
     JOIN brewgis.census.tiger_block_groups tbg
         ON tbg.geoid = a.state || a.county || a.tract || a.block_group
-        AND tbg.vintage = @tiger_bg_vintage
+        AND tbg.vintage = @bg_vintage
     WHERE a.year = @acs_year
       AND a.state = @state_fips
       AND a.county = ANY(STRING_TO_ARRAY(@county_fips, ','))

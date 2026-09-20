@@ -5,11 +5,12 @@ MODEL (
     batch_size 100000
   ),
   audits (
-    not_null(columns := (geoid, data_year))
+    not_null(columns := (geoid, data_year)),
+    assert_pdb_block_group_coverage
   ),
   blueprints (
-    (region := sacog,  county_fips := '067,005,017,061'),
-    (region := fresno, county_fips := '019')
+    (region := sacog,  county_fips := '067,005,017,061', bg_vintage := '2013'),
+    (region := fresno, county_fips := '019',             bg_vintage := '2023')
   )
 );
 
@@ -19,7 +20,13 @@ MODEL (
 -- and computes derived demographic columns (vacancy rate, group quarters
 -- population, low response score, renter %, below poverty %).
 --
--- PDB is ACS 2018-2022 vintage (data_year = 2024).
+-- PDB is ACS 2018-2022 vintage (data_year = 2024), so its block groups are 2020
+-- TIGER geography and bg_vintage (blueprint, per region) must name a TIGER vintage
+-- that carries them. Measured 2026-09-20: the fresno source holds 637 block groups
+-- for county 019, and the former global '2013' default matched only 463 of them,
+-- dropping 174 block groups — which cover 52,382 canvas parcels — from every
+-- PDB-derived column. assert_pdb_block_group_coverage fails if this model's output
+-- is missing a block group the source provides.
 
 WITH raw_derived AS (
     SELECT
@@ -41,7 +48,7 @@ WITH raw_derived AS (
     FROM brewgis.@{region}.pdb_bridge p
     JOIN brewgis.census.tiger_block_groups tbg
         ON p.gidbg = tbg.geoid
-        AND tbg.vintage = @tiger_bg_vintage
+        AND tbg.vintage = @bg_vintage
     WHERE p.state = @state_fips
       AND p.county = ANY(STRING_TO_ARRAY(@county_fips, ','))
 ),
