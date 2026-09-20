@@ -117,6 +117,6 @@ SELECT
 FROM assembled;
 
 -- post_statements
-  CREATE INDEX IF NOT EXISTS idx_@{region}_authoritative_residential_area_apn_@snapshot_hash
+  CREATE INDEX IF NOT EXISTS @snapshot_hash('idx_authoritative_residential_area_apn_')
   ON @this_model USING btree (apn);
 ANALYZE @this_model;

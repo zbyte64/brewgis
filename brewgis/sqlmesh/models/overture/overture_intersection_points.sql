@@ -22,10 +22,10 @@ MODEL (
 -- pre hooks
 -- (overture_transport is DuckDB gateway, so indexes must live here)
   DO $$ BEGIN PERFORM pg_advisory_xact_lock(hashtext('idx_overture_transport_geometry')::bigint); END $$;
-  CREATE INDEX IF NOT EXISTS idx_overture_transport_geometry_@snapshot_hash
+  CREATE INDEX IF NOT EXISTS @snapshot_hash('idx_overture_transport_geometry_')
   ON brewgis.@{region}.overture_transport USING GIST (wgs84_geometry);
   DO $$ BEGIN PERFORM pg_advisory_xact_lock(hashtext('idx_overture_transport_local_geometry')::bigint); END $$;
-  CREATE INDEX IF NOT EXISTS idx_overture_transport_local_geometry_@snapshot_hash
+  CREATE INDEX IF NOT EXISTS @snapshot_hash('idx_overture_transport_local_geometry_')
   ON brewgis.@{region}.overture_transport USING GIST (local_geometry);
 
 -- Region Overture Intersection Points — pre-computed road intersection points
@@ -69,6 +69,6 @@ FROM street_nodes
 WHERE street_count >= 3;
 
 -- post_statements
-  CREATE INDEX IF NOT EXISTS idx_@{region}_intersection_points_geometry_@snapshot_hash
+  CREATE INDEX IF NOT EXISTS @snapshot_hash('idx_intersection_points_geometry_')
   ON @this_model USING GIST (geometry);
   ANALYZE @this_model;

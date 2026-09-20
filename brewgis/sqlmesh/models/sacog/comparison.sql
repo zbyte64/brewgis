@@ -103,10 +103,10 @@ LEFT JOIN public.sacog_comparison_parcels sp
     ON bcr.parcel_id = sp.parcel_id;
 
 -- post_statements
-  CREATE INDEX IF NOT EXISTS idx_sacog_comparison_geom_@snapshot_hash
+  CREATE INDEX IF NOT EXISTS @snapshot_hash('idx_sacog_comparison_geom_')
   ON @this_model USING GIST (geometry);
-  CREATE INDEX IF NOT EXISTS idx_comparison_view_parcel_id_@snapshot_hash
+  CREATE INDEX IF NOT EXISTS @snapshot_hash('idx_comparison_view_parcel_id_')
   ON @this_model USING btree (parcel_id);
-  CREATE INDEX IF NOT EXISTS idx_comparison_view_geography_id_@snapshot_hash
+  CREATE INDEX IF NOT EXISTS @snapshot_hash('idx_comparison_view_geography_id_')
   ON @this_model USING btree (geography_id);
   ANALYZE @this_model;

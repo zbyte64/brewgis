@@ -27,8 +27,8 @@ FROM brewgis.@{region}.census_2020_block
 WHERE geometry IS NOT NULL;
 
 -- post_statements
-  CREATE INDEX IF NOT EXISTS idx_c2020_block_proj_geometry_@snapshot_hash
+  CREATE INDEX IF NOT EXISTS @snapshot_hash('idx_c2020_block_proj_geometry_')
   ON @this_model USING GIST (geometry);
-  CREATE INDEX IF NOT EXISTS idx_c2020_block_proj_geoid_@snapshot_hash
+  CREATE INDEX IF NOT EXISTS @snapshot_hash('idx_c2020_block_proj_geoid_')
   ON @this_model USING btree (geoid);
 ANALYZE @this_model;

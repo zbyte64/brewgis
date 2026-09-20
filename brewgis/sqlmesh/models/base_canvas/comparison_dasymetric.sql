@@ -192,10 +192,10 @@ FROM scaled
 GROUP BY parcel_id, geometry;
 
 -- post_statements
-  CREATE INDEX IF NOT EXISTS idx_@{region}_comparison_dasymetric_geom_@snapshot_hash
+  CREATE INDEX IF NOT EXISTS @snapshot_hash('idx_comparison_dasymetric_geom_')
   ON @this_model USING GIST (geometry);
-  CREATE INDEX IF NOT EXISTS idx_@{region}_comparison_dasymetric_parcel_id_@snapshot_hash
+  CREATE INDEX IF NOT EXISTS @snapshot_hash('idx_comparison_dasymetric_parcel_id_')
   ON @this_model USING btree (parcel_id);
-  CREATE INDEX IF NOT EXISTS idx_@{region}_comparison_dasymetric_apn_@snapshot_hash
+  CREATE INDEX IF NOT EXISTS @snapshot_hash('idx_comparison_dasymetric_apn_')
   ON @this_model USING btree (apn);
   ANALYZE @this_model;

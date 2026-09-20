@@ -32,8 +32,8 @@ FROM intersections
 ORDER BY parcel_id, apn, intersect_area_sqft DESC;
 
 -- post_statements
-  CREATE INDEX IF NOT EXISTS idx_training_parcel_map_parcel_id_@snapshot_hash
+  CREATE INDEX IF NOT EXISTS @snapshot_hash('idx_training_parcel_map_parcel_id_')
   ON @this_model USING btree (parcel_id);
-  CREATE INDEX IF NOT EXISTS idx_training_parcel_map_apn_@snapshot_hash
+  CREATE INDEX IF NOT EXISTS @snapshot_hash('idx_training_parcel_map_apn_')
   ON @this_model USING btree (apn);
 ANALYZE @this_model;

@@ -164,6 +164,6 @@ FROM final
 ORDER BY parcel_id;
 
 -- post_statements
-  CREATE INDEX IF NOT EXISTS idx_internal_capture_parcel_id_@snapshot_hash
+  CREATE INDEX IF NOT EXISTS @snapshot_hash('idx_internal_capture_parcel_id_')
   ON @this_model USING btree (parcel_id);
 ANALYZE @this_model;

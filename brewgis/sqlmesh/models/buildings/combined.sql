@@ -10,7 +10,7 @@ MODEL (
 
 /*
 // gets interpreted by duckdb and drops the gist index for a btree
-CREATE INDEX IF NOT EXISTS idx_buildings_combined_geometry_@snapshot_hash
+CREATE INDEX IF NOT EXISTS @snapshot_hash('idx_buildings_combined_geometry_')
 ON @this_model USING GIST (geometry);
 ANALYZE @this_model;
 */

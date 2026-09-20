@@ -554,7 +554,7 @@ FROM ...
 Most commonly used for conditional `post_statements`:
 ```sql
 @IF(@runtime_stage = 'evaluating',
-  CREATE INDEX IF NOT EXISTS idx_my_model_parcel_id_@snapshot_hash
+  CREATE INDEX IF NOT EXISTS @snapshot_hash('idx_my_model_parcel_id_')
   ON @this_model USING btree (parcel_id)
 );
 ```
@@ -871,6 +871,10 @@ def execute(
     return pd.DataFrame(result, columns=["origin_id", "destination_id", "trips"])
 ```
 
+
+Never use a python model when multiple sql models would suffice.
+
+
 ### 10. Seeds
 
 ```sql
@@ -930,18 +934,30 @@ Query `pg_indexes` for the active versioned tables and `CREATE INDEX`
 if missing.
 
 
-**⬆ Index naming: use `@snapshot_hash` to avoid name collisions across versions**
+**⬆ Index naming: call `@snapshot_hash` to avoid name collisions across versions**
 
 SQLMesh creates multiple snapshot versions of the same model in one schema (e.g.
-`assessor__sacog_assessor_parcels__962285576` and
-`assessor__sacog_assessor_parcels__4277093331`). PostgreSQL's `IF NOT EXISTS` is
-database-wide — it checks if the index **name** exists anywhere, not just on the
-target table. Without unique names, the first snapshot version gets the index and
-every subsequent version silently skips it because the name already exists.
+`fresno__parcel_shim__175860751` and `fresno__parcel_shim__1116429613`).
+PostgreSQL's `IF NOT EXISTS` is name-wide — it checks whether the index **name**
+exists anywhere, not whether the *target table* has an index. Without unique names
+the first snapshot version gets the index and every later version silently skips it
+because the name is already taken.
 
-**Always append `_@snapshot_hash` to every `CREATE INDEX` name.** The
-`@snapshot_hash` macro extracts the 9-digit fingerprint from the physical table
-name (defined in `brewgis/sqlmesh/macros/utility.py`).
+**The macro must be called: `@snapshot_hash('<prefix>_')`.** SQLMesh reaches the
+`@macro()` registry only through the call form `@name(...)`; a bare `@name` token is
+resolved against blueprint/config variables alone — that is why `@this_model` and
+`@runtime_stage` work bare. A bare `@snapshot_hash` glued into an index name is
+emitted **verbatim**, so every version writes the same name, only the first snapshot
+is ever indexed, and the live table runs unindexed. The linter rule
+`SnapshotHashIndexName` flags that spelling; the call form is the only one that works.
+
+The prefix must be **literal text**. A string argument is not variable-expanded,
+so `@snapshot_hash('idx_@{region}_parcel_shim_geometry_')` would put `@{region}`
+verbatim into the name — and SQLMesh drops blueprint variables that a model
+references only in its name or statements, so there is nothing to substitute.
+Region prefixes are unnecessary: index names are scoped to the physical schema
+(`sqlmesh__fresno` / `sqlmesh__sacog`). Defined in
+`brewgis/sqlmesh/macros/utility.py`.
 
 The `@this_model` reference resolves to the versioned physical table. Use it
 instead of the model FQN (views can't have indexes).
@@ -951,7 +967,7 @@ GiST index for geometry columns (spatial joins):
 
 ```sql
 -- post_statements
-CREATE INDEX IF NOT EXISTS idx_my_model_geometry_@snapshot_hash
+CREATE INDEX IF NOT EXISTS @snapshot_hash('idx_my_model_geometry_')
 ON @this_model USING GIST (geometry)
 ```
 
@@ -959,7 +975,7 @@ B-tree index for key columns (equality joins, GROUP BY, WHERE filters):
 
 ```sql
 -- post_statements
-CREATE INDEX IF NOT EXISTS idx_my_model_parcel_id_@snapshot_hash
+CREATE INDEX IF NOT EXISTS @snapshot_hash('idx_my_model_parcel_id_')
 ON @this_model USING btree (parcel_id)
 ```
 
@@ -968,7 +984,7 @@ B-tree index on columns used in downstream WHERE clause filters:
 ```sql
 -- post_statements
 -- indexes for columns used in downstream WHERE: parcel_acres_agriculture > 0
-CREATE INDEX IF NOT EXISTS idx_core_end_state_parcel_acres_ag_@snapshot_hash
+CREATE INDEX IF NOT EXISTS @snapshot_hash('idx_core_end_state_parcel_acres_ag_')
 ON @this_model USING btree (parcel_acres_agriculture)
 ```
 
@@ -981,7 +997,7 @@ These target an explicit table (not `@this_model`), so they do NOT use `@snapsho
 **INDEX + ANALYZE for freshly created indexes:**
 
 ```sql
-CREATE INDEX IF NOT EXISTS idx_intersection_density_geometry_@snapshot_hash
+CREATE INDEX IF NOT EXISTS @snapshot_hash('idx_intersection_density_geometry_')
 ON @this_model USING GIST (geometry);
 ANALYZE @this_model;
 ```
@@ -1040,9 +1056,9 @@ join against the bridge table. The placement depends on the consumer model's `ki
 ```sql
 -- pre hooks
 -- (overture_transport is DuckDB gateway, so indexes must live here)
-  CREATE INDEX IF NOT EXISTS idx_overture_transport_geometry_@snapshot_hash
+  CREATE INDEX IF NOT EXISTS @snapshot_hash('idx_overture_transport_geometry_')
   ON brewgis.staging.overture_transport USING GIST (geometry);
-  CREATE INDEX IF NOT EXISTS idx_overture_transport_local_geometry_@snapshot_hash
+  CREATE INDEX IF NOT EXISTS @snapshot_hash('idx_overture_transport_local_geometry_')
   ON brewgis.staging.overture_transport USING GIST (local_geometry);
 ```
 
@@ -1503,7 +1519,8 @@ other overture class-specific models exceeded the limit and were renamed:
 - **Use `SELECT *` in models that depend on blueprinted models** — if the upstream columns change, the downstream model breaks silently.
 - **Forget `columns={}` in Python `@model` decorator** — SQLMesh needs the schema to create the table before running the model.
 - **Mix timezones in `time_column`** — must be UTC. Use `cron_tz` for local time display, not storage.
-- **Use non-idempotent models (`INCREMENTAL_BY_UNIQUE_KEY`, etc.) with limited `--start` in non-prod** — they can only preview, not fully backfill.
+- **Use non-idempotent models (`INCREMENTAL_BY_UNIQUE_KEY`, etc.) with limited `--start` in non-prod** — they can only preview, not fully backfill.*
+- **Use python model to return SQL** — use macros or multiple sql models instead.
 
 ### DO:
 - **Length-check new model names against the Postgres 63-char limit** —

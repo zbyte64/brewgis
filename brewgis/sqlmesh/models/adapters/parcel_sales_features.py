@@ -97,11 +97,21 @@ WHERE FALSE;
         "@IF(@sales_raw_table != '', brewgis.sacog.assessor_sales_raw, brewgis.@{region}.parcel_shim)",
     ],
     post_statements=[
-        "CREATE INDEX IF NOT EXISTS idx_@{region}_parcel_sales_features_geometry_@snapshot_hash ON @this_model USING GIST (geometry)",
-        "CREATE INDEX IF NOT EXISTS idx_@{region}_parcel_sales_features_apn_@snapshot_hash ON @this_model USING btree (apn)",
-        "CREATE INDEX IF NOT EXISTS idx_@{region}_parcel_sales_features_bg_ldc_@snapshot_hash ON @this_model USING btree (block_group_geoid, land_development_category)",
-        "CREATE INDEX IF NOT EXISTS idx_@{region}_parcel_sales_features_tract_ldc_@snapshot_hash ON @this_model USING btree (tract_geoid, land_development_category)",
-        "CREATE INDEX IF NOT EXISTS idx_@{region}_parcel_sales_features_ldc_@snapshot_hash ON @this_model USING btree (land_development_category)",
+        "CREATE INDEX IF NOT EXISTS "
+        "@snapshot_hash('idx_parcel_sales_features_geometry_') "
+        "ON @this_model USING GIST (geometry)",
+        "CREATE INDEX IF NOT EXISTS "
+        "@snapshot_hash('idx_parcel_sales_features_apn_') "
+        "ON @this_model USING btree (apn)",
+        "CREATE INDEX IF NOT EXISTS "
+        "@snapshot_hash('idx_parcel_sales_features_bg_ldc_') "
+        "ON @this_model USING btree (block_group_geoid, land_development_category)",
+        "CREATE INDEX IF NOT EXISTS "
+        "@snapshot_hash('idx_parcel_sales_features_tract_ldc_') "
+        "ON @this_model USING btree (tract_geoid, land_development_category)",
+        "CREATE INDEX IF NOT EXISTS "
+        "@snapshot_hash('idx_parcel_sales_features_ldc_') "
+        "ON @this_model USING btree (land_development_category)",
         "ANALYZE @this_model",
     ],
     blueprints=[

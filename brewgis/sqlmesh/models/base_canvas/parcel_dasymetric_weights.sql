@@ -146,8 +146,8 @@ FROM parcel_features pf
 LEFT JOIN auth_res ar ON pf.apn = ar.apn;
 
 -- post_statements
-  CREATE INDEX IF NOT EXISTS idx_@{region}_dasymetric_weights_apn_@snapshot_hash
+  CREATE INDEX IF NOT EXISTS @snapshot_hash('idx_dasymetric_weights_apn_')
   ON @this_model USING btree (apn);
-  CREATE INDEX IF NOT EXISTS idx_@{region}_dasymetric_weights_int_dens_@snapshot_hash
+  CREATE INDEX IF NOT EXISTS @snapshot_hash('idx_dasymetric_weights_int_dens_')
   ON @this_model USING btree (intersection_density);
   ANALYZE @this_model;

@@ -46,8 +46,8 @@ SELECT
 FROM parcel_equity;
 
 -- post_statements
-  CREATE INDEX IF NOT EXISTS idx_displacement_risk_geometry_@snapshot_hash
+  CREATE INDEX IF NOT EXISTS @snapshot_hash('idx_displacement_risk_geometry_')
   ON @this_model USING GIST (geometry);
-  CREATE INDEX IF NOT EXISTS idx_displacement_risk_parcel_id_@snapshot_hash
+  CREATE INDEX IF NOT EXISTS @snapshot_hash('idx_displacement_risk_parcel_id_')
   ON @this_model USING btree (parcel_id);
 ANALYZE @this_model;

@@ -40,8 +40,8 @@ JOIN brewgis.@{region}.acs_block_group_projected a
     ON ST_Intersects(sap.local_geometry, a.geometry);
 
 -- post_statements
-  CREATE INDEX IF NOT EXISTS idx_parcel_acs_intersections_apn_@snapshot_hash
+  CREATE INDEX IF NOT EXISTS @snapshot_hash('idx_parcel_acs_intersections_apn_')
   ON @this_model USING btree (apn);
-  CREATE INDEX IF NOT EXISTS idx_parcel_acs_intersections_bg_geoid_@snapshot_hash
+  CREATE INDEX IF NOT EXISTS @snapshot_hash('idx_parcel_acs_intersections_bg_geoid_')
   ON @this_model USING btree (bg_geoid);
 ANALYZE @this_model;

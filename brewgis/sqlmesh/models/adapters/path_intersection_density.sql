@@ -42,8 +42,8 @@ FROM density d
 JOIN brewgis.@{region}.assessor_parcels sap ON d.apn = sap.apn;
 
 -- post_statements
-  CREATE INDEX IF NOT EXISTS idx_@{region}_path_density_apn_@snapshot_hash
+  CREATE INDEX IF NOT EXISTS @snapshot_hash('idx_path_density_apn_')
   ON @this_model USING btree (apn);
-  CREATE INDEX IF NOT EXISTS idx_@{region}_path_density_geometry_@snapshot_hash
+  CREATE INDEX IF NOT EXISTS @snapshot_hash('idx_path_density_geometry_')
   ON @this_model USING GIST (geometry);
   ANALYZE @this_model;

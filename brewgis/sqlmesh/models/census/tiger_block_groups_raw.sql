@@ -19,4 +19,5 @@ SELECT
 FROM duckdb.census.tiger_block_groups;
 
 -- post_statements
-  CREATE INDEX IF NOT EXISTS idx_tiger_block_groups_raw_geoid ON @this_model USING btree (geoid);
+  CREATE INDEX IF NOT EXISTS @snapshot_hash('idx_tiger_block_groups_raw_geoid_')
+  ON @this_model USING btree (geoid);

@@ -102,5 +102,5 @@ SELECT
 FROM wac_sub_sector_totals;
 
 -- post_statements
-  CREATE INDEX IF NOT EXISTS idx_wac_sub_sector_fallbacks_county_fips_@snapshot_hash
+  CREATE INDEX IF NOT EXISTS @snapshot_hash('idx_wac_sub_sector_fallbacks_county_fips_')
   ON @this_model USING btree (county_fips);

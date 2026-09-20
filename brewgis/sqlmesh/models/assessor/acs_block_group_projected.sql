@@ -41,8 +41,8 @@ WHERE a.du > 0
   AND a.geometry IS NOT NULL;
 
 -- post_statements
-  CREATE INDEX IF NOT EXISTS idx_acs_block_group_projected_geometry_@snapshot_hash
+  CREATE INDEX IF NOT EXISTS @snapshot_hash('idx_acs_block_group_projected_geometry_')
   ON @this_model USING GIST (geometry);
-  CREATE INDEX IF NOT EXISTS idx_acs_block_group_projected_geoid_@snapshot_hash
+  CREATE INDEX IF NOT EXISTS @snapshot_hash('idx_acs_block_group_projected_geoid_')
   ON @this_model USING btree (geoid);
 ANALYZE @this_model;

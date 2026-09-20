@@ -150,6 +150,6 @@ SELECT
 FROM du_estimation;
 
 -- post_statements
-  CREATE INDEX IF NOT EXISTS idx_@{region}_du_estimation_apn_@snapshot_hash
+  CREATE INDEX IF NOT EXISTS @snapshot_hash('idx_du_estimation_apn_')
   ON @this_model USING btree (apn);
   ANALYZE @this_model;

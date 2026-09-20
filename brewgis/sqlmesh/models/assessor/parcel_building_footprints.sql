@@ -140,10 +140,10 @@ FROM brewgis.@{region}.assessor_parcels sap
 LEFT JOIN building_stats bs ON sap.apn = bs.apn;
 
 -- post_statements
-  CREATE INDEX IF NOT EXISTS idx_@{region}_parcel_building_footprints_geometry_@snapshot_hash
+  CREATE INDEX IF NOT EXISTS @snapshot_hash('idx_parcel_building_footprints_geometry_')
   ON @this_model USING GIST (geometry);
-  CREATE INDEX IF NOT EXISTS idx_@{region}_parcel_building_footprints_apn_@snapshot_hash
+  CREATE INDEX IF NOT EXISTS @snapshot_hash('idx_parcel_building_footprints_apn_')
   ON @this_model USING btree (apn);
-  CREATE INDEX IF NOT EXISTS idx_@{region}_parcel_building_footprints_fp_ratio_@snapshot_hash
+  CREATE INDEX IF NOT EXISTS @snapshot_hash('idx_parcel_building_footprints_fp_ratio_')
   ON @this_model USING btree (footprint_ratio);
 ANALYZE @this_model;

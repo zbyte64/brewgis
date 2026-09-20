@@ -11,6 +11,7 @@ from __future__ import annotations
 
 import datetime
 import logging
+import re
 from pathlib import Path
 from typing import TYPE_CHECKING
 from typing import Any
@@ -44,6 +45,20 @@ NLCD_YEAR = 2011  # NLCD 2011 (closest to 2008-2012)
 
 LOCAL_SRID = 3310
 
+_SNAPSHOT_HASH_CALL = re.compile(r"@snapshot_hash\(\s*'([^']*)'\s*\)")
+
+
+def _expand_snapshot_hash(sql_text: str, hash_suffix: str) -> str:
+    """Resolve ``@snapshot_hash('prefix_')`` to ``prefix_<hash_suffix>``.
+
+    ``hash_suffix`` is the version suffix of the physical table name, e.g.
+    ``"sqlmesh__assessor.assessor__sacog_assessor_parcels__962285576"`` →
+    ``962285576``.
+    """
+    return _SNAPSHOT_HASH_CALL.sub(
+        lambda match: f"{match.group(1)}{hash_suffix}", sql_text
+    )
+
 
 def _repair_missing_indexes(
     context: Context, environment: str, model_fqns: list[str]
@@ -55,8 +70,6 @@ def _repair_missing_indexes(
     index lists).  Resolves ``@this_model`` to the physical table name via the
     latest snapshot's ``table_name()`` — the same version the plan will backfill.
     """
-    import re
-
     engine = get_engine()
     repaired = 0
 
@@ -98,10 +111,10 @@ def _repair_missing_indexes(
 
             # Resolve @this_model → physical table
             rendered = sql_text.replace("@this_model", physical_table)
-            # Resolve @snapshot_hash → hash digits from physical table name
-            # (e.g. "sqlmesh__assessor.assessor__sacog_assessor_parcels__962285576" → "962285576")
-            hash_suffix = physical_table.rsplit("__", 1)[-1]
-            rendered = rendered.replace("@snapshot_hash", hash_suffix)
+            # Resolve @snapshot_hash('prefix_') → 'prefix_<hash>'
+            rendered = _expand_snapshot_hash(
+                rendered, physical_table.rsplit("__", 1)[-1]
+            )
             m = re.search(r"IF\s+NOT\s+EXISTS\s+(\S+)", rendered)
             if not m:
                 continue

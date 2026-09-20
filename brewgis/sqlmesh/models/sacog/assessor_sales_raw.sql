@@ -13,5 +13,7 @@ MODEL (
 SELECT * FROM duckdb.sacog.assessor_sales;
 
 -- post_statements
-  CREATE INDEX IF NOT EXISTS idx_sacog_assessor_sales_raw_apn ON @this_model USING btree (apn);
-  CREATE INDEX IF NOT EXISTS idx_sacog_assessor_sales_raw_property_type ON @this_model USING btree (property_type);
+  CREATE INDEX IF NOT EXISTS @snapshot_hash('idx_sacog_assessor_sales_raw_apn_')
+  ON @this_model USING btree (apn);
+  CREATE INDEX IF NOT EXISTS @snapshot_hash('idx_sacog_assessor_sales_raw_property_type_')
+  ON @this_model USING btree (property_type);

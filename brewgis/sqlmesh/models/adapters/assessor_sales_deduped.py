@@ -81,7 +81,9 @@ WHERE FALSE;
         "@IF(@source_table != '', brewgis.sacog.assessor_sales_raw, brewgis.@{region}.parcel_shim)",
     ],
     post_statements=[
-        "CREATE INDEX IF NOT EXISTS idx_@{region}_assessor_sales_deduped_apn_@snapshot_hash ON @this_model USING btree (apn)",
+        "CREATE INDEX IF NOT EXISTS "
+        "@snapshot_hash('idx_assessor_sales_deduped_apn_') "
+        "ON @this_model USING btree (apn)",
         "ANALYZE @this_model",
     ],
     blueprints=[

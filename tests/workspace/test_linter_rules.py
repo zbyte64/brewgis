@@ -18,6 +18,7 @@ from brewgis.sqlmesh.linter.rules import CrossJoinLikeJoin
 from brewgis.sqlmesh.linter.rules import DegradingSRIDCast
 from brewgis.sqlmesh.linter.rules import DuckDBGeometryUsage
 from brewgis.sqlmesh.linter.rules import DuckDBTransformWarning
+from brewgis.sqlmesh.linter.rules import SnapshotHashIndexName
 from brewgis.sqlmesh.linter.rules import StaticComplexityScore
 from brewgis.sqlmesh.linter.rules import UnfilteredTableScan
 from brewgis.sqlmesh.linter.rules import UnindexedGroupBy
@@ -1756,3 +1757,89 @@ class TestDegradingSRIDCast:
         )
         violations = _check_degrading_srid(src, {"brewdb.staging.duckdb_ref": ref})
         assert violations == []
+
+
+# ── Snapshot Hash Index Name Tests ──────────────────────────────────
+
+
+def _check_snapshot_hash(model: Model) -> list[RuleViolation]:
+    """Run ``SnapshotHashIndexName`` on ``model``."""
+    rule = SnapshotHashIndexName(_FakeContext({}))  # type: ignore[arg-type]
+    result = rule.check_model(model)
+    if result is None:
+        return []
+    if isinstance(result, list):
+        return result
+    return [result]
+
+
+class TestSnapshotHashIndexName:
+    """``@snapshot_hash`` must be called, not embedded bare in an index name."""
+
+    def test_macro_call_passes(self) -> None:
+        """Called as a macro → the rendered name is snapshot-unique."""
+        model = _make_ref_model(
+            "brewdb.public.parcels",
+            {"parcel_id": "BIGINT", "geom": "GEOMETRY"},
+            post_statements=[
+                "CREATE INDEX IF NOT EXISTS @snapshot_hash('idx_parcels_parcel_id_') "
+                "ON @this_model USING btree (parcel_id)",
+            ],
+        )
+        assert _check_snapshot_hash(model) == []
+
+    def test_bare_token_violates(self) -> None:
+        """Bare ``_@snapshot_hash`` is emitted verbatim → violation."""
+        model = _make_ref_model(
+            "brewdb.public.parcels",
+            {"parcel_id": "BIGINT", "geom": "GEOMETRY"},
+            post_statements=[
+                "CREATE INDEX IF NOT EXISTS idx_parcels_parcel_id_@snapshot_hash "
+                "ON @this_model USING btree (parcel_id)",
+            ],
+        )
+        violations = _check_snapshot_hash(model)
+        assert len(violations) == 1
+        msg = _violation_msg(violations[0])
+        assert "not a macro call" in msg
+        assert "@snapshot_hash('<prefix>_')" in msg
+
+    def test_bare_token_in_pre_statements_violates(self) -> None:
+        """The trap applies to pre/on_virtual_update statements too."""
+        model = create_sql_model(
+            "brewdb.public.parcels",
+            query=exp.maybe_parse(
+                "SELECT 1 AS parcel_id FROM source_table", dialect="postgres"
+            ),
+            columns={"parcel_id": exp.DataType.build("BIGINT", dialect="postgres")},
+            path=Path("/dev/null/test_pre.sql"),
+            dialect="postgres",
+            depends_on=set(),
+            pre_statements=[
+                exp.maybe_parse(
+                    "CREATE INDEX IF NOT EXISTS idx_x_@snapshot_hash ON some_table (parcel_id)",
+                    dialect="postgres",
+                )
+            ],
+        )
+        violations = _check_snapshot_hash(model)
+        assert len(violations) == 1
+
+    def test_placeholder_in_prefix_violates(self) -> None:
+        """``@{region}`` in the prefix is not expanded → violation."""
+        model = _make_ref_model(
+            "brewdb.public.parcels",
+            {"parcel_id": "BIGINT", "geom": "GEOMETRY"},
+            post_statements=[
+                "CREATE INDEX IF NOT EXISTS @snapshot_hash('idx_@{region}_parcel_id_') "
+                "ON @this_model USING btree (parcel_id)",
+            ],
+        )
+        violations = _check_snapshot_hash(model)
+        assert len(violations) == 1
+        assert "not variable-expanded" in _violation_msg(violations[0])
+
+    def test_model_without_statements_passes(self) -> None:
+        """No pre/post statements → nothing to flag."""
+        model = _make_ref_model("brewdb.public.parcels", {"parcel_id": "BIGINT"})
+        assert _check_snapshot_hash(model) == []

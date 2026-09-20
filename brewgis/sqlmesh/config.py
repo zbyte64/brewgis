@@ -350,6 +350,7 @@ def config_factory(**variables):
                 "DuckDBGeometryUsage",
                 "MissingKeyIndex",
                 "PostStatementIndexTarget",
+                "SnapshotHashIndexName",
                 "MissingGeometryIndex",
                 "UnindexedJoin",
                 "UnindexedGroupBy",

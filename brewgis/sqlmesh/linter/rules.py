@@ -239,7 +239,7 @@ class MissingKeyIndex(Rule):
                 f"Missing B-tree index(es) for key column(s): "
                 f"{', '.join(missing)}. These columns are used as JOIN keys "
                 f"by downstream models. Add ``CREATE INDEX IF NOT EXISTS "
-                f"<idx_name>_@snapshot_hash ON @this_model (<col>)`` in post_statements."
+                f"@snapshot_hash('<idx_name>_') ON @this_model (<col>)`` in post_statements."
             )
 
         return None
@@ -291,6 +291,84 @@ class PostStatementIndexTarget(Rule):
                     f"view FQN (``{model_name}``). PostgreSQL cannot create "
                     f"indexes on views — this statement silently fails. "
                     f"Replace ``ON {target}`` with ``ON @this_model``."
+                )
+
+        return None
+
+
+_BARE_SNAPSHOT_HASH = re.compile(r"@snapshot_hash(?!\s*\()")
+_SNAPSHOT_HASH_ARG = re.compile(r"@snapshot_hash\(\s*'([^']*)'\s*\)")
+
+
+def _statement_texts(model: Model) -> list[str]:
+    """Return the SQL text of a model's pre/post/on_virtual_update statements.
+
+    ``ParsableSql`` entries (the ``*_statements_`` lists) expose ``.sql`` as a
+    string attribute; the parsed statement lists expose ``.sql()`` as a method.
+    """
+    texts: list[str] = []
+    for attr in ("pre_statements_", "post_statements_", "on_virtual_update_"):
+        texts.extend(
+            statement.sql if hasattr(statement, "sql") else str(statement)
+            for statement in getattr(model, attr, None) or []
+        )
+    for attr in ("pre_statements", "post_statements", "on_virtual_update"):
+        texts.extend(
+            statement.sql(dialect="postgres")
+            if hasattr(statement, "sql")
+            else str(statement)
+            for statement in getattr(model, attr, None) or []
+        )
+    return texts
+
+
+class SnapshotHashIndexName(Rule):
+    """``@snapshot_hash`` must be invoked as a macro call, with a literal prefix.
+
+    SQLMesh reaches the ``@macro()`` registry only through the call form
+    ``@name(...)``; a bare ``@name`` token is resolved against blueprint/config
+    variables only (``MacroEvaluator.template``). A bare ``@snapshot_hash`` in
+    an index name is therefore emitted verbatim, so every snapshot version
+    writes the *same* index name: ``CREATE INDEX IF NOT EXISTS`` creates the
+    index on the first snapshot's table, and every later version — including the
+    physical table backing the model's view — silently skips it and stays
+    unindexed.
+
+    For the same reason the prefix must be literal: a string argument is not
+    walked by the variable resolver, and SQLMesh drops blueprint variables that
+    a model references only in its name or statements, so ``@{region}`` inside
+    the prefix would land verbatim in the DDL.
+    """
+
+    def check_model(self, model: Model) -> RuleViolation | None:
+        if isinstance(model, SeedModel):
+            return None
+        if not isinstance(model, SqlModel):
+            return None
+
+        for text in _statement_texts(model):
+            match = _BARE_SNAPSHOT_HASH.search(text)
+            if match is not None:
+                snippet = text[max(0, match.start() - 42) : match.end() + 18].strip()
+                return self.violation(
+                    "``@snapshot_hash`` without parentheses is not a macro call, so "
+                    "SQLMesh writes it into the index name verbatim: every snapshot "
+                    "version then uses the same name and ``CREATE INDEX IF NOT "
+                    "EXISTS`` only ever creates the index on the first snapshot's "
+                    "table while later versions (including the live one) stay "
+                    f"unindexed. Use ``@snapshot_hash('<prefix>_')`` — found: ``{snippet}``"
+                )
+
+            for call in _SNAPSHOT_HASH_ARG.finditer(text):
+                prefix = call.group(1)
+                if "@" not in prefix:
+                    continue
+                return self.violation(
+                    "``@snapshot_hash(...)`` prefix contains a placeholder "
+                    f"(``{prefix}``). String arguments are not variable-expanded, "
+                    "so the placeholder ends up verbatim in the index name. Pass "
+                    "literal text — index names are already scoped to the physical "
+                    "schema."
                 )
 
         return None

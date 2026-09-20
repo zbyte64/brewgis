@@ -42,8 +42,8 @@ SELECT
 FROM brewgis.@{region}.parcel_building_footprints;
 
 -- post_statements
-  CREATE INDEX IF NOT EXISTS idx_@{region}_bldg_sqft_by_type_apn_@snapshot_hash
+  CREATE INDEX IF NOT EXISTS @snapshot_hash('idx_bldg_sqft_by_type_apn_')
   ON @this_model USING btree (apn);
-  CREATE INDEX IF NOT EXISTS idx_@{region}_bldg_sqft_by_type_geometry_@snapshot_hash
+  CREATE INDEX IF NOT EXISTS @snapshot_hash('idx_bldg_sqft_by_type_geometry_')
   ON @this_model USING GIST (geometry);
 ANALYZE @this_model;

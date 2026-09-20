@@ -51,6 +51,6 @@ CROSS JOIN LATERAL (
 ) tbg;
 
 -- post_statements
-  CREATE INDEX IF NOT EXISTS idx_@{region}_parcel_block_groups_apn_@snapshot_hash
+  CREATE INDEX IF NOT EXISTS @snapshot_hash('idx_parcel_block_groups_apn_')
   ON @this_model USING btree (apn);
 ANALYZE @this_model;

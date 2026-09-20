@@ -41,8 +41,8 @@ FROM intersections i
 JOIN brewgis.@{region}.parcel_dasymetric_weights dw ON i.apn = dw.apn;
 
 -- post_statements
-  CREATE INDEX IF NOT EXISTS idx_@{region}_dasymetric_ix_parcel_@snapshot_hash
+  CREATE INDEX IF NOT EXISTS @snapshot_hash('idx_dasymetric_ix_parcel_')
   ON @this_model USING btree (parcel_id);
-  CREATE INDEX IF NOT EXISTS idx_@{region}_dasymetric_ix_apn_@snapshot_hash
+  CREATE INDEX IF NOT EXISTS @snapshot_hash('idx_dasymetric_ix_apn_')
   ON @this_model USING btree (apn);
   ANALYZE @this_model;

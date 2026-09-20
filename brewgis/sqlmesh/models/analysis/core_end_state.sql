@@ -205,14 +205,14 @@ SELECT
 FROM computed AS c;
 
 -- post_statements
-  CREATE INDEX IF NOT EXISTS idx_core_end_state_geometry_@snapshot_hash
+  CREATE INDEX IF NOT EXISTS @snapshot_hash('idx_core_end_state_geometry_')
   ON @this_model USING GIST (geometry);
 
-  CREATE INDEX IF NOT EXISTS idx_core_end_state_parcel_id_@snapshot_hash
+  CREATE INDEX IF NOT EXISTS @snapshot_hash('idx_core_end_state_parcel_id_')
   ON @this_model USING btree (parcel_id);
-  CREATE INDEX IF NOT EXISTS idx_core_end_state_parcel_acres_ag_@snapshot_hash
+  CREATE INDEX IF NOT EXISTS @snapshot_hash('idx_core_end_state_parcel_acres_ag_')
   ON @this_model USING btree (parcel_acres_agriculture);
-  CREATE INDEX IF NOT EXISTS idx_core_end_state_land_dev_cat_@snapshot_hash
+  CREATE INDEX IF NOT EXISTS @snapshot_hash('idx_core_end_state_land_dev_cat_')
   ON @this_model USING btree (land_development_category);
-  CREATE INDEX IF NOT EXISTS idx_core_end_state_acres_dev_@snapshot_hash
+  CREATE INDEX IF NOT EXISTS @snapshot_hash('idx_core_end_state_acres_dev_')
   ON @this_model USING btree (acres_developed);

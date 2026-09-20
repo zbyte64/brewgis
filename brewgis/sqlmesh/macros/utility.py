@@ -48,27 +48,47 @@ def coalesce_zero(evaluator, expression: str) -> str:
 
 
 @macro()
-def snapshot_hash(evaluator) -> str:
-    """Return the snapshot version hash suffix of the current physical table.
+def snapshot_hash(evaluator, prefix: str) -> str:
+    """Return ``prefix`` suffixed with the current snapshot's version hash.
 
-    ``evaluator.this_model`` resolves to e.g.
-    ``"sqlmesh__assessor"."assessor__sacog_assessor_parcels__962285576"``.
-    This macro strips the leading identifiers and returns only the 9-digit
-    hash after the final ``__``.
+    The hash is the version suffix of the physical table, e.g.
+    ``"sqlmesh__fresno"."fresno__parcel_shim__1116429613"`` → ``1116429613``.
 
-    Usage in post_statements::
+    Usage in pre/post statements — **the call form is mandatory**::
 
-        CREATE INDEX idx_sacog_assessor_parcels_geometry_@snapshot_hash
+        CREATE INDEX IF NOT EXISTS @snapshot_hash('idx_parcel_shim_geometry_')
         ON @this_model USING GIST (geometry);
 
-    Produces index name e.g. ``idx_sacog_assessor_parcels_geometry_962285576``.
+    Produces the index name ``idx_parcel_shim_geometry_1116429613``.
+
+    The bare form (``idx_x_@snapshot_hash``) is **not** a macro call. SQLMesh
+    resolves bare ``@name`` tokens only against blueprint/config variables
+    (``MacroEvaluator.template``); the ``@macro()`` registry is reached solely
+    through ``@name(...)``. A bare placeholder therefore lands in the DDL
+    verbatim, every snapshot writes the same index name, and ``CREATE INDEX IF
+    NOT EXISTS`` creates it on the first snapshot's table only — every later
+    version, including the one backing the model view, silently skips it. The
+    linter rule ``SnapshotHashIndexName`` flags that spelling.
+
+    ``prefix`` must be literal text: an ``@{var}`` / ``@var`` placeholder inside
+    the string argument is **not** expanded (string literals are not walked by
+    the variable resolver, and SQLMesh drops variables that a model references
+    only in its name or statements), so it would end up verbatim in the index
+    name. Region prefixes are unnecessary — index names are scoped to the
+    physical schema (``sqlmesh__fresno`` / ``sqlmesh__sacog``).
+
+    Args:
+        prefix: Index-name prefix ending in ``_``, e.g.
+            ``'idx_parcel_shim_geometry_'``.
+
+    Returns:
+        ``prefix`` suffixed with the version hash of ``@this_model``.
     """
     physical = evaluator.this_model
-    # physical is something like '"sqlmesh__assessor"."assessor__sacog_assessor_parcels__962285576"'
-    # Extract the last segment after the final __
-    last_part = physical.rsplit("__", 1)[-1]
-    # Strip any trailing double-quote
-    return last_part.rstrip('"')
+    # physical is something like '"sqlmesh__fresno"."fresno__parcel_shim__1116429613"'
+    # Extract the last segment after the final __ and strip any trailing double-quote
+    suffix = physical.rsplit("__", 1)[-1].rstrip('"')
+    return f"{prefix}{suffix}"
 
 
 @macro()

@@ -12,9 +12,9 @@ MODEL (
 
 -- pre hooks
 -- (overture_transport is DuckDB gateway, so indexes must live here)
-  CREATE INDEX IF NOT EXISTS idx_overture_transport_geometry_@snapshot_hash
+  CREATE INDEX IF NOT EXISTS @snapshot_hash('idx_overture_transport_geometry_')
   ON brewgis.sacog.overture_transport USING GIST (geometry);
-  CREATE INDEX IF NOT EXISTS idx_overture_transport_local_geometry_@snapshot_hash
+  CREATE INDEX IF NOT EXISTS @snapshot_hash('idx_overture_transport_local_geometry_')
   ON brewgis.sacog.overture_transport USING GIST (local_geometry);
 
 -- Overture Road Surface — per-parcel road intersection statistics.
@@ -101,5 +101,5 @@ FROM all_parcels ap
 LEFT JOIN road_summary rs ON ap.parcel_id = rs.parcel_id;
 
 -- post_statements
-  CREATE INDEX IF NOT EXISTS idx_overture_road_impervious_parcel_id_@snapshot_hash
+  CREATE INDEX IF NOT EXISTS @snapshot_hash('idx_overture_road_impervious_parcel_id_')
   ON @this_model USING btree (parcel_id);

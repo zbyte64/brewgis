@@ -216,11 +216,21 @@ FROM brewgis.{region}.parcel_shim ps;
         "@IF(@source_table != '', brewgis.sacog.assessor_parcels_raw, brewgis.@{region}.parcel_shim)",
     ],
     post_statements=[
-        "CREATE INDEX IF NOT EXISTS idx_@{region}_assessor_parcels_geometry_@snapshot_hash ON @this_model USING GIST (geometry)",
-        "CREATE INDEX IF NOT EXISTS idx_@{region}_assessor_parcels_local_geometry_@snapshot_hash ON @this_model USING GIST (local_geometry)",
-        "CREATE INDEX IF NOT EXISTS idx_@{region}_assessor_parcels_centroid_local_@snapshot_hash ON @this_model USING GIST (centroid_local)",
-        "CREATE INDEX IF NOT EXISTS idx_@{region}_assessor_parcels_centroid_@snapshot_hash ON @this_model USING GIST (centroid)",
-        "CREATE INDEX IF NOT EXISTS idx_@{region}_assessor_parcels_apn_@snapshot_hash ON @this_model USING btree (apn)",
+        "CREATE INDEX IF NOT EXISTS "
+        "@snapshot_hash('idx_assessor_parcels_geometry_') "
+        "ON @this_model USING GIST (geometry)",
+        "CREATE INDEX IF NOT EXISTS "
+        "@snapshot_hash('idx_assessor_parcels_local_geometry_') "
+        "ON @this_model USING GIST (local_geometry)",
+        "CREATE INDEX IF NOT EXISTS "
+        "@snapshot_hash('idx_assessor_parcels_centroid_local_') "
+        "ON @this_model USING GIST (centroid_local)",
+        "CREATE INDEX IF NOT EXISTS "
+        "@snapshot_hash('idx_assessor_parcels_centroid_') "
+        "ON @this_model USING GIST (centroid)",
+        "CREATE INDEX IF NOT EXISTS "
+        "@snapshot_hash('idx_assessor_parcels_apn_') "
+        "ON @this_model USING btree (apn)",
         "ANALYZE @this_model",
     ],
     blueprints=[
