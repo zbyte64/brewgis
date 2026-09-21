@@ -52,7 +52,7 @@ MODEL (
 
 WITH parcel_base AS (
     SELECT
-        p.id AS parcel_id,
+        p.parcel_id,
         @st_area_projected(p.geometry) AS area_gross_acres,
         -- Developable acres from env_constraint if available, else raw area
         @st_area_projected(p.geometry) AS acres_developable,
