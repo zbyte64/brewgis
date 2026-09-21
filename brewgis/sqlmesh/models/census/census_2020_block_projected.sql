@@ -4,10 +4,7 @@ MODEL (
   audits (
     not_null(columns := (geoid))
   ),
-  blueprints (
-    (region := sacog),
-    (region := fresno)
-  )
+  blueprints @region_blueprints()
 );
 
 -- Census 2020 Block Projected — pre-projected geometry for indexed spatial joins.

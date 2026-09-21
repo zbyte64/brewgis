@@ -26,6 +26,7 @@ from sqlmesh import model
 from sqlmesh.core.engine_adapter.postgres import PostgresEngineAdapter
 from sqlmesh.core.model.definition import ModelKindName
 
+from brewgis.sqlmesh.macros.region_blueprints import REGIONS
 from brewgis.sqlmesh.models.python._cache import load_latest_model
 from brewgis.sqlmesh.models.python._feature_cols import _RESNET_PC_COLS
 from brewgis.sqlmesh.models.python._predict import predict_in_batches
@@ -66,6 +67,12 @@ def _load_du_model() -> tuple[MultiOutputRegressor, list[str]]:
     return model_obj, targets
 
 
+_TRAIN_MODEL = {
+    "sacog": "brewgis.assessor.parcel_du_regressor",
+    "fresno": "",
+}
+
+
 @model(
     "brewgis.@{region}.du_regressor",
     kind={"name": ModelKindName.FULL},
@@ -85,10 +92,7 @@ def _load_du_model() -> tuple[MultiOutputRegressor, list[str]]:
         "brewgis.@{region}.parcel_dasymetric_weights",
         "@IF(@train_model != '', brewgis.assessor.parcel_du_regressor, brewgis.@{region}.parcel_shim)",
     ],
-    blueprints=[
-        {"region": "sacog", "train_model": "brewgis.assessor.parcel_du_regressor"},
-        {"region": "fresno", "train_model": ""},
-    ],
+    blueprints=[{"region": r, "train_model": _TRAIN_MODEL[r]} for r in REGIONS],
 )
 def execute(
     context: ExecutionContext,

@@ -9,10 +9,7 @@ MODEL (
     unique_values(columns := (apn,))
   ),
   dialect postgres,
-  blueprints (
-    (region := sacog),
-    (region := fresno)
-  )
+  blueprints @region_blueprints()
 );
 
 -- Overture Intersection Density — per-parcel intersection density using

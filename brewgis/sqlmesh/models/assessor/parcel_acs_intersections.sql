@@ -7,10 +7,7 @@ MODEL (
   audits (
     not_null(columns := (apn, bg_geoid))
   ),
-  blueprints (
-    (region := sacog),
-    (region := fresno)
-  )
+  blueprints @region_blueprints()
 );
 
 -- Parcel × ACS Block Group Intersections — pre-computed intersection areas.

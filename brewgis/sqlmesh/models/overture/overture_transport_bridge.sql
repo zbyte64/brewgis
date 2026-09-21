@@ -2,10 +2,7 @@ MODEL (
   name brewgis.@{region}.overture_transport,
   kind FULL,
   gateway duckdb,
-  blueprints (
-    (region := sacog),
-    (region := fresno)
-  )
+  blueprints @region_blueprints()
 );
 
 -- NOTE: Audits intentionally omitted (gateway duckdb). Transport row-count

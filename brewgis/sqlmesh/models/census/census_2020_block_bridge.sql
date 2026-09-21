@@ -2,10 +2,7 @@ MODEL (
   name brewgis.@{region}.census_2020_block_raw,
   kind FULL,
   gateway duckdb,
-  blueprints (
-    (region := sacog),
-    (region := fresno)
-  )
+  blueprints @region_blueprints()
 );
 
 -- Census 2020 Block Raw Bridge — materializes the DuckDB VIEW (which reads

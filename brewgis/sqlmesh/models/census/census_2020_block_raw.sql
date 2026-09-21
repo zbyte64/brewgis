@@ -3,10 +3,7 @@ MODEL (
   kind VIEW,
   gateway duckdb,
   dialect duckdb,
-  blueprints (
-    (region := sacog,  county_fips := '067,005,017,061'),
-    (region := fresno, county_fips := '019')
-  )
+  blueprints @region_blueprints()
 );
 
 -- Census 2020 Decennial P.L. 94-171 block-level raw data — DuckDB reads

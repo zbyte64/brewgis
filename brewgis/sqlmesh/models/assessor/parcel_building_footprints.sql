@@ -12,10 +12,7 @@ MODEL (
     assert_overture_class_industrial,
     assert_overture_mixed_use_split
   ),
-  blueprints (
-    (region := sacog),
-    (region := fresno)
-  )
+  blueprints @region_blueprints()
 );
 
 -- Parcel Building Footprints — per-parcel building footprint features extracted

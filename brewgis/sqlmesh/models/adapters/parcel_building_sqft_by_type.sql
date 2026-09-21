@@ -9,10 +9,7 @@ MODEL (
     unique_values(columns := (apn,))
   ),
   dialect postgres,
-  blueprints (
-    (region := sacog),
-    (region := fresno)
-  )
+  blueprints @region_blueprints()
 );
 
 -- Region Parcel Building Square Footage by Type — per-parcel total building

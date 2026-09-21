@@ -8,10 +8,7 @@ MODEL (
     not_null(columns := (apn)),
     unique_values(columns := (apn,))
   ),
-  blueprints (
-    (region := sacog),
-    (region := fresno)
-  )
+  blueprints @region_blueprints()
 );
 
 -- Authoritative Residential Area — per-parcel authoritative residential and

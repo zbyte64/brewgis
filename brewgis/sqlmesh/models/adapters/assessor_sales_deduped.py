@@ -19,6 +19,8 @@ from sqlglot import exp
 from sqlmesh import model
 from sqlmesh.core.model.definition import ModelKindName
 
+from brewgis.sqlmesh.macros.region_blueprints import REGIONS
+
 if TYPE_CHECKING:
     from sqlmesh.core.macros import MacroEvaluator
 
@@ -62,6 +64,12 @@ WHERE FALSE;
 """
 
 
+_SOURCE_TABLE = {
+    "sacog": "brewgis.sacog.assessor_sales_raw",
+    "fresno": "",
+}
+
+
 @model(
     "brewgis.@{region}.assessor_sales_deduped",
     kind={"name": ModelKindName.FULL},
@@ -86,10 +94,7 @@ WHERE FALSE;
         "ON @this_model USING btree (apn)",
         "ANALYZE @this_model",
     ],
-    blueprints=[
-        {"region": "sacog", "source_table": "brewgis.sacog.assessor_sales_raw"},
-        {"region": "fresno", "source_table": ""},
-    ],
+    blueprints=[{"region": r, "source_table": _SOURCE_TABLE[r]} for r in REGIONS],
     is_sql=True,
 )
 def execute(evaluator: MacroEvaluator, **kwargs: Any) -> str:

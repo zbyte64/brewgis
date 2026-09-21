@@ -5,10 +5,7 @@ MODEL (
     assert_du_subtype_sum_equals_du,
     is_base_canvas_compatible
   ),
-  blueprints (
-    (region := sacog),
-    (region := fresno)
-  )
+  blueprints @region_blueprints()
 );
 
 -- Base Canvas Reconciled — recompute aggregate columns from sub-columns.

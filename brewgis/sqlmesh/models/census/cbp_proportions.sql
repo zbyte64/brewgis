@@ -4,10 +4,7 @@ MODEL (
   audits (
     not_null(columns := (state_fips, county_fips))
   ),
-  blueprints (
-    (region := sacog,  county_fips := '067,005,017,061', acs_year := 2013),
-    (region := fresno, county_fips := '019',             acs_year := 2022)
-  )
+  blueprints @region_blueprints()
 );
 
 -- CBP County Business Patterns → NAICS sub-sector proportions.

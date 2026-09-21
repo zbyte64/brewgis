@@ -41,6 +41,7 @@ from sqlglot import exp
 from sqlmesh import model
 from sqlmesh.core.model.definition import ModelKindName
 
+from brewgis.sqlmesh.macros.region_blueprints import REGIONS
 from brewgis.sqlmesh.models.python._feature_cols import _RESNET_PC_COLS
 from brewgis.sqlmesh.models.python.resnet_bft_features import _compute_cog_hash
 from brewgis.sqlmesh.models.python.resnet_bft_features import _embeddings_cache_key
@@ -248,6 +249,12 @@ def _infer_fresno_features(context: ExecutionContext, region: str) -> pd.DataFra
     return results[["parcel_id", "apn", *_RESNET_PC_COLS]]
 
 
+_SOURCE_TABLE = {
+    "sacog": "brewgis.assessor.parcel_resnet_features",
+    "fresno": "",
+}
+
+
 @model(
     "brewgis.@{region}.parcel_resnet_features",
     kind={"name": ModelKindName.FULL},
@@ -259,10 +266,7 @@ def _infer_fresno_features(context: ExecutionContext, region: str) -> pd.DataFra
     depends_on=[
         "@IF(@source_table != '', brewgis.assessor.parcel_resnet_features, brewgis.@{region}.parcel_shim)",
     ],
-    blueprints=[
-        {"region": "sacog", "source_table": "brewgis.assessor.parcel_resnet_features"},
-        {"region": "fresno", "source_table": ""},
-    ],
+    blueprints=[{"region": r, "source_table": _SOURCE_TABLE[r]} for r in REGIONS],
 )
 def execute(
     context: ExecutionContext,

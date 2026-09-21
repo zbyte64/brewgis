@@ -3,10 +3,7 @@ MODEL (
   kind VIEW,
   gateway duckdb,
   dialect duckdb,
-  blueprints (
-    (region := sacog,  county_fips := '067,005,017,061', acs_year := 2013),
-    (region := fresno, county_fips := '019',             acs_year := 2022)
-  )
+  blueprints @region_blueprints()
 );
 
 -- County Business Patterns raw data — DuckDB reads from Census API via httpfs.

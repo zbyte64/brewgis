@@ -6,20 +6,7 @@ MODEL (
   audits (
     not_null(columns := (parcel_id))
   ),
-  blueprints (
-    (
-      region := sacog,
-      nlcd_parcel_source := 'brewgis.public.sacog_comparison_parcels',
-      nlcd_parcel_srid := 3310,
-      nlcd_parcel_id := 'parcel_id'
-    ),
-    (
-      region := fresno,
-      nlcd_parcel_source := 'brewgis.fresno.parcels',
-      nlcd_parcel_srid := 4326,
-      nlcd_parcel_id := 'parcel_id'
-    )
-  )
+  blueprints @region_blueprints()
 );
 
 -- NLCD Parcel Statistics Model (DuckDB raster extension)

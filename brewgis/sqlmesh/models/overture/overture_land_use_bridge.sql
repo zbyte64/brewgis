@@ -2,10 +2,7 @@ MODEL (
   name brewgis.@{region}.overture_land_use,
   kind FULL,
   gateway duckdb,
-  blueprints (
-    (region := sacog),
-    (region := fresno)
-  )
+  blueprints @region_blueprints()
 );
 
 -- Overture Land Use — bridge model that materializes the DuckDB VIEW

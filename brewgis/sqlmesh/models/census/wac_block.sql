@@ -4,10 +4,7 @@ MODEL (
   audits (
     not_null(columns := (geoid))
   ),
-  blueprints (
-    (region := sacog),
-    (region := fresno)
-  )
+  blueprints @region_blueprints()
 );
 
 -- LEHD LODES WAC → Block Group Employment (CBP County Scaling)

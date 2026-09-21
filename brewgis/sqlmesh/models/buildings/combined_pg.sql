@@ -1,10 +1,7 @@
 MODEL (
   name brewgis.@{region}.buildings_combined_pg,
   kind FULL,
-  blueprints (
-    (region := sacog),
-    (region := fresno)
-  )
+  blueprints @region_blueprints()
 );
 
 -- Combined Building Footprints (PG copy) — PostgreSQL materialization of the

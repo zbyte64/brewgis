@@ -16,10 +16,7 @@ MODEL (
     @parcel_table,
     @dasymetric_source
   ),
-  blueprints (
-    (region := sacog,  parcel_table := 'brewgis.sacog.parcel_shim',   dasymetric_source := 'brewgis.sacog.comparison_dasymetric'),
-    (region := fresno, parcel_table := 'brewgis.fresno.parcel_shim',  dasymetric_source := 'brewgis.fresno.comparison_dasymetric')
-  )
+  blueprints @region_blueprints()
 );
 
 -- Base Canvas Geometry — first ETL step.

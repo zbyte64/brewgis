@@ -2,10 +2,7 @@ MODEL (
   name brewgis.@{region}.lodes_raw,
   kind FULL,
   gateway duckdb,
-  blueprints (
-    (region := sacog),
-    (region := fresno)
-  )
+  blueprints @region_blueprints()
 );
 
 -- LODES Raw Bridge — materializes the DuckDB VIEW (which reads gzipped CSV

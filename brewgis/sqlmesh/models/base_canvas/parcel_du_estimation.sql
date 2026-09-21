@@ -11,10 +11,7 @@ MODEL (
     assert_du_assessor_units_direct,
     assert_du_vacancy_rates
   ),
-  blueprints (
-    (region := sacog),
-    (region := fresno)
-  )
+  blueprints @region_blueprints()
 );
 
 -- Dwelling Unit Estimation — 2-tier cascade using LightGBM regressor.

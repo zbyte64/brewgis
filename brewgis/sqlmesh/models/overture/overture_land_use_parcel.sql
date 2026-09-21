@@ -8,10 +8,7 @@ MODEL (
     not_null(columns := (parcel_id)),
     unique_values(columns := (parcel_id,))
   ),
-  blueprints (
-    (region := sacog),
-    (region := fresno)
-  )
+  blueprints @region_blueprints()
 );
 
 -- pre_statements

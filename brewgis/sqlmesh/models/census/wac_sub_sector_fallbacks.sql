@@ -2,10 +2,7 @@ MODEL (
   name brewgis.@{region}.wac_sub_sector_fallbacks,
   kind FULL,
   grain (county_fips),
-  blueprints (
-    (region := sacog,  county_fips := '067,005,017,061'),
-    (region := fresno, county_fips := '019')
-  )
+  blueprints @region_blueprints()
 );
 
 WITH wac_sub_sector_totals AS (

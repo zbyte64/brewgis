@@ -8,10 +8,7 @@ MODEL (
     not_null(columns := (apn)),
     unique_values(columns := (apn,))
   ),
-  blueprints (
-    (region := sacog),
-    (region := fresno)
-  )
+  blueprints @region_blueprints()
 );
 
 -- Parcel Footprint Imputed — three-tier k-NN imputation of building

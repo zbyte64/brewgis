@@ -12,10 +12,7 @@ MODEL (
     assert_emp_dasym_weight_non_negative,
     assert_emp_dasym_weight_fallback
   ),
-  blueprints (
-    (region := sacog),
-    (region := fresno)
-  )
+  blueprints @region_blueprints()
 );
 
 -- Dasymetric Weights — lightweight weight computation only.

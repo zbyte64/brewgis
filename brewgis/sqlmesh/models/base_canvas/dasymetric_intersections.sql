@@ -4,10 +4,7 @@ MODEL (
   audits (
     not_null(columns := (parcel_id, apn))
   ),
-  blueprints (
-    (region := sacog),
-    (region := fresno)
-  )
+  blueprints @region_blueprints()
 );
 
 -- Region Dasymetric Intersections — pre-computed parcel_id ↔ apn crosswalk.

@@ -2,10 +2,7 @@ MODEL (
   name brewgis.@{region}.cbp_raw,
   kind FULL,
   gateway duckdb,
-  blueprints (
-    (region := sacog),
-    (region := fresno)
-  )
+  blueprints @region_blueprints()
 );
 
 -- CBP Raw Bridge — materializes the DuckDB VIEW (which reads from Census CBP API)

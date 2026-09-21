@@ -11,10 +11,7 @@ MODEL (
   depends_on (
     brewgis.census.tiger_block_groups_raw
   ),
-  blueprints (
-    (region := sacog),
-    (region := fresno)
-  )
+  blueprints @region_blueprints()
 );
 
 -- pre_statements

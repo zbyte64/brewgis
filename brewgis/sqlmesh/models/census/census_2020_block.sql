@@ -7,10 +7,7 @@ MODEL (
     not_null(columns := (geoid))
   ),
   dialect postgres,
-  blueprints (
-    (region := sacog),
-    (region := fresno)
-  )
+  blueprints @region_blueprints()
 );
 
 -- Census 2020 PL94-171 → Census Block Demographics Table

@@ -5,10 +5,7 @@ MODEL (
     geometry = "Intersection point (snapped to 10m grid) in local_srid (3310)",
     street_count = "Number of highway segments meeting at this intersection"
   ),
-  blueprints (
-    (region := sacog),
-    (region := fresno)
-  )
+  blueprints @region_blueprints()
 );
 
 -- pre hooks

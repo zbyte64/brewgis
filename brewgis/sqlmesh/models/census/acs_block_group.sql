@@ -11,10 +11,7 @@ MODEL (
   depends_on (
     brewgis.@{region}.acs_bridge
   ),
-  blueprints (
-    (region := sacog,  county_fips := '067,005,017,061', acs_year := 2013, bg_vintage := '2013'),
-    (region := fresno, county_fips := '019',             acs_year := 2022, bg_vintage := '2023')
-  )
+  blueprints @region_blueprints()
 );
 
 -- Census ACS → Block Group Demographics Table

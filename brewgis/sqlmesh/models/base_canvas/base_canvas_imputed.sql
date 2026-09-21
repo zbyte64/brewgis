@@ -7,10 +7,7 @@ MODEL (
   audits (
     not_null(columns := (parcel_id))
   ),
-  blueprints (
-    (region := sacog),
-    (region := fresno)
-  )
+  blueprints @region_blueprints()
 );
 
 -- Base Canvas Imputed — three-tier imputation cascade.

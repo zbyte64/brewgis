@@ -16,10 +16,7 @@ MODEL (
     brewgis.seeds.assessor_use_codes,
     @dasymetric_source
   ),
-  blueprints (
-    (region := sacog,  dasymetric_source := 'brewgis.sacog.comparison_dasymetric'),
-    (region := fresno, dasymetric_source := 'brewgis.fresno.comparison_dasymetric')
-  )
+  blueprints @region_blueprints()
 );
 
 -- Base Canvas Combined — single model replacing demographics + employment + attributes.

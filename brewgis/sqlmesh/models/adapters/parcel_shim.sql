@@ -9,10 +9,7 @@ MODEL (
     unique_values(columns := (parcel_id,)),
     assert_row_count_greater_than_zero
   ),
-  blueprints (
-    (region := sacog,  source := 0, source_schema := 'public',      source_table := 'sacog_comparison_parcels', county_name := 'Sacramento'),
-    (region := fresno, source := 'brewgis.fresno.parcels', source_schema := 'brewgis', source_table := 'fresno.parcels', county_name := 'Fresno')
-  )
+  blueprints @region_blueprints()
 );
 
 -- Region Parcel Column Shim — the sole raw-parcel adapter.

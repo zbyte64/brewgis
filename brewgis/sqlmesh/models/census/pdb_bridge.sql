@@ -2,10 +2,7 @@ MODEL (
   name brewgis.@{region}.pdb_bridge,
   kind FULL,
   gateway duckdb,
-  blueprints (
-    (region := sacog),
-    (region := fresno)
-  )
+  blueprints @region_blueprints()
 );
 
 -- PDB Raw Bridge — materializes the DuckDB VIEW (which reads from Census API)

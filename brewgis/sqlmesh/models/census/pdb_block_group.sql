@@ -8,10 +8,7 @@ MODEL (
     not_null(columns := (geoid, data_year)),
     assert_pdb_block_group_coverage
   ),
-  blueprints (
-    (region := sacog,  county_fips := '067,005,017,061', bg_vintage := '2013'),
-    (region := fresno, county_fips := '019',             bg_vintage := '2023')
-  )
+  blueprints @region_blueprints()
 );
 
 -- Census Planning Database (PDB) → Block Group Demographics Table

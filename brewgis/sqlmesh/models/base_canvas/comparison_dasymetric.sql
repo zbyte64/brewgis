@@ -4,10 +4,7 @@ MODEL (
   audits (
     not_null(columns := (parcel_id))
   ),
-  blueprints (
-    (region := sacog),
-    (region := fresno)
-  )
+  blueprints @region_blueprints()
 );
 
 -- Region Comparison Dasymetric Crosswalk — enriches parcels with dasymetric

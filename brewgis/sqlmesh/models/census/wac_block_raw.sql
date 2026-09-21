@@ -7,10 +7,7 @@ MODEL (
   audits (
     not_null(columns := (geoid, data_year))
   ),
-  blueprints (
-    (region := sacog,  county_fips := '067,005,017,061', lodes_year := 2008),
-    (region := fresno, county_fips := '019',             lodes_year := 2021)
-  )
+  blueprints @region_blueprints()
 );
 
 -- LEHD LODES WAC → Block-Level Employment (Raw CNS Split)

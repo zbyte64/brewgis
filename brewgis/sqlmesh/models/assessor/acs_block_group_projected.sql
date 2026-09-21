@@ -5,10 +5,7 @@ MODEL (
     not_null(columns := (geoid)),
     unique_values(columns := (geoid,))
   ),
-  blueprints (
-    (region := sacog),
-    (region := fresno)
-  )
+  blueprints @region_blueprints()
 );
 
 -- ACS Block Group Projected — pre-projected geometry for indexed spatial joins.

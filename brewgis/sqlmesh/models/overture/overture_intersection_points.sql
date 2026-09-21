@@ -13,10 +13,7 @@ MODEL (
     -- 20000 floor catches an empty/broken transport bridge for both.
     assert_row_count_between (min_rows := 20000, max_rows := 100000000)
   ),
-  blueprints (
-    (region := sacog),
-    (region := fresno)
-  )
+  blueprints @region_blueprints()
 );
 
 -- pre hooks
