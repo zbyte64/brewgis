@@ -82,13 +82,23 @@ def snapshot_hash(evaluator, prefix: str) -> str:
             ``'idx_parcel_shim_geometry_'``.
 
     Returns:
-        ``prefix`` suffixed with the version hash of ``@this_model``.
+        ``prefix`` suffixed with the version hash of ``@this_model``, or ``prefix``
+        alone when ``@this_model`` carries no snapshot version (see below).
     """
     physical = evaluator.this_model
-    # physical is something like '"sqlmesh__fresno"."fresno__parcel_shim__1116429613"'
-    # Extract the last segment after the final __ and strip any trailing double-quote
-    suffix = physical.rsplit("__", 1)[-1].rstrip('"')
-    return f"{prefix}{suffix}"
+    # Physical form: '"sqlmesh__fresno"."fresno__parcel_shim__1116429613"' — the last
+    # __-separated segment is the snapshot version. SQLMesh *also* renders statements
+    # with this_model set to the logical FQN ('"brewgis"."fresno"."parcel_shim"') when
+    # it compares statement text to classify a change as metadata-only
+    # (Model.is_metadata_only_change — reached by any query-only edit, because the
+    # rendered query is part of metadata_hash). The FQN carries no version, so return
+    # the bare prefix there. That render is only ever compared against the previous
+    # model's identical render, never executed as DDL.
+    _, separator, version = physical.rpartition("__")
+    version = version.rstrip('"')
+    if not separator or not version:
+        return prefix
+    return f"{prefix}{version}"
 
 
 @macro()
