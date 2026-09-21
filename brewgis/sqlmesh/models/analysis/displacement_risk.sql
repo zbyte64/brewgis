@@ -22,7 +22,7 @@ WITH parcel_equity AS (
         AS vulnerability_score
     FROM brewgis.analysis.core_end_state AS es
     LEFT JOIN brewgis.analysis.base_canvas AS bc
-        ON es.parcel_id = bc.id
+        ON es.parcel_id = bc.parcel_id
 )
 
 SELECT

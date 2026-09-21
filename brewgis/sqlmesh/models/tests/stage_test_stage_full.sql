@@ -2,7 +2,7 @@ MODEL (
   name brewgis.tests.stage_test_stage_full,
   kind VIEW,
   audits (
-    not_null(columns := (id))
+    not_null(columns := (parcel_id))
   )
 );
 
@@ -11,9 +11,8 @@ WITH raw AS (
 )
 SELECT
 
-    -- Map detected ID column to parcel_id and id
-    id AS parcel_id,
-    id AS id,
+    -- Map detected ID column to parcel_id
+    parcel_id,
     built_form_key,
     intersection_density,
     land_development_category,

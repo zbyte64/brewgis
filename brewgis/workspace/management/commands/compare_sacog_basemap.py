@@ -439,11 +439,10 @@ class Command(BaseCommand):
             self.stdout.write(f"  Loaded {len(parcels_gdf):,} parcels")
 
             # Normalize SACOG column names to SQLMesh contract
-            # SACOG source uses geography_id; SQLMesh models expect parcel_id and id.
+            # SACOG source uses geography_id; SQLMesh models expect parcel_id.
             parcels_gdf["parcel_id"] = parcels_gdf["geography_id"]
-            parcels_gdf["id"] = parcels_gdf["geography_id"]
             self.stdout.write(
-                f"  Normalized {len(parcels_gdf):,} rows: geography_id → parcel_id, id"
+                f"  Normalized {len(parcels_gdf):,} rows: geography_id → parcel_id"
             )
 
             # Drop with CASCADE — SQLMesh views may depend on this table

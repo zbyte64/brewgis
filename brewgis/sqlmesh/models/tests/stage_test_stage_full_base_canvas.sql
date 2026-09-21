@@ -2,13 +2,12 @@ MODEL (
   name brewgis.tests.stage_test_stage_full_base_canvas,
   kind VIEW,
   audits (
-    not_null(columns := (id))
+    not_null(columns := (parcel_id))
   )
 );
 
 SELECT
-    id AS parcel_id,
-    id AS id,
+    parcel_id,
     NULL::VARCHAR(64) AS id_source,
     NULL::VARCHAR(128) AS geometry_key,
     geometry AS geometry,

@@ -268,7 +268,7 @@ def view_workspace_map(request: HttpRequest, workspace_pk: int) -> HttpResponse:
             data["source"] = {
                 "type": "vector",
                 "tiles": [canvas_tiles_url],
-                "promoteId": "id",
+                "promoteId": "parcel_id",
             }
             base_source_layer = (
                 "default"
@@ -281,7 +281,7 @@ def view_workspace_map(request: HttpRequest, workspace_pk: int) -> HttpResponse:
                 # Same fix as the scenario canvas view below: non-numeric
                 # parcel ids aren't valid native MVT feature ids, so without
                 # this, click-to-inspect can never resolve a clicked feature.
-                data["source"]["promoteId"] = "id"
+                data["source"]["promoteId"] = "parcel_id"
             base_source_layer = None
 
         # Make tile URLs absolute (MapLibre v4+ requires absolute URLs

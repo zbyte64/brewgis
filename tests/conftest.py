@@ -165,7 +165,7 @@ def base_canvas_table(db) -> str:
 
     from brewgis.workspace.services.base_canvas_schema import BaseCanvasSchema
 
-    # Build column list for INSERT — all non-geometry columns, include id for stable ids
+    # Build column list for INSERT — all non-geometry columns, include parcel_id for stable ids
     insert_cols = [name for name in BaseCanvasSchema.COLUMN_NAMES if name != "geometry"]
     col_list = ", ".join(insert_cols)
     placeholders = ", ".join(f"%({name})s" for name in insert_cols)
@@ -260,10 +260,10 @@ def base_canvas_table(db) -> str:
         return row
 
     row1 = _row(du=100.0, pop=250.0, hh=80.0)
-    row1["id"] = 1
+    row1["parcel_id"] = 1
     row1["geography_id"] = 1
     row2 = _row(du=50.0, pop=120.0, hh=40.0)
-    row2["id"] = 2
+    row2["parcel_id"] = 2
     row2["geography_id"] = 2
 
     with connection.cursor() as cursor:

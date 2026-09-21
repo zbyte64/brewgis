@@ -92,7 +92,7 @@ class TestETLPipeline:
             )
             db_cols = {row[0] for row in cursor.fetchall()}
         expected = set(BaseCanvasSchema.COLUMN_NAMES)
-        # id is SERIAL but also a column
+        # parcel_id is the primary key
         missing = expected - db_cols
         assert not missing, f"Missing columns from DB: {missing}"
 

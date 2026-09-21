@@ -11,9 +11,8 @@ WITH raw AS (
 )
 SELECT
 
-    -- Map detected ID column to parcel_id and id
+    -- Map detected ID column to parcel_id
     parcel_id AS parcel_id,
-    parcel_id AS id,
     2 AS built_form_key,  -- SFR Standard default
     CASE
         WHEN ST_Area(geometry) / 4046.86 > 0

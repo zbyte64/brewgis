@@ -126,7 +126,7 @@ def layer_data_table(request: HttpRequest, layer_pk: int) -> HttpResponse:
 
         # Determine feature ID column for row-click highlight
         feature_id_column: str | None = None
-        id_candidates = ["__gid", "gid", "fid", "id", "ogc_fid"]
+        id_candidates = ["parcel_id", "__gid", "gid", "fid", "id", "ogc_fid"]
         for c in id_candidates:
             if c in all_column_names:
                 feature_id_column = c

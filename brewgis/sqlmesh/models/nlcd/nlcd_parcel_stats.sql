@@ -11,7 +11,7 @@ MODEL (
       region := sacog,
       nlcd_parcel_source := 'brewgis.public.sacog_comparison_parcels',
       nlcd_parcel_srid := 3310,
-      nlcd_parcel_id := 'id'
+      nlcd_parcel_id := 'parcel_id'
     ),
     (
       region := fresno,

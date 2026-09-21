@@ -8,7 +8,6 @@ MODEL (
 
 SELECT
     parcel_id AS parcel_id,
-    parcel_id AS id,
     NULL::VARCHAR(64) AS id_source,
     NULL::VARCHAR(128) AS geometry_key,
     geometry AS geometry,

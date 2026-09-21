@@ -269,7 +269,7 @@ def generate_synthetic_parcels(
             {
                 col: []
                 for col in BaseCanvasSchema.COLUMN_NAMES
-                if col not in ("id", "geometry")
+                if col not in ("parcel_id", "geometry")
             },
             geometry=[],
             crs="EPSG:4326",
@@ -415,7 +415,7 @@ def generate_synthetic_parcels(
 
     gdf = gpd.GeoDataFrame(rows_data, geometry=geometries, crs="EPSG:4326")
     # Sort columns to match base canvas schema order, preserve geometry
-    schema_cols = [c for c in BaseCanvasSchema.COLUMN_NAMES if c not in ("id",)]
+    schema_cols = [c for c in BaseCanvasSchema.COLUMN_NAMES if c not in ("parcel_id",)]
     existing = [c for c in schema_cols if c in gdf.columns]
     return gdf[existing]
 

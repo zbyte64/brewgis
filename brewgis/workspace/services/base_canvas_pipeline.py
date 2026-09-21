@@ -210,7 +210,7 @@ _RECONCILIATION_MAP: dict[str, list[str]] = {
 # Columns to exclude from imputation
 _IMPUTATION_EXCLUDE = frozenset(
     {
-        "id",
+        "parcel_id",
         "id_source",
         "geometry_key",
         "geometry",
@@ -339,6 +339,24 @@ def _q(name: str) -> str:
     return ".".join(connection.ops.quote_name(p) for p in parts)
 
 
+def _coerce_parcel_id(value: Any) -> int | None:
+    """Return *value* as an integer parcel key, or ``None`` if it isn't one.
+
+    ``parcel_id`` is always numeric (see ``BaseCanvasSchema``); a source
+    identifier that isn't — an APN, an OSM ``way/123`` — is not a parcel key
+    and must not be squeezed into one.
+    """
+    if isinstance(value, bool) or value is None:
+        return None
+    if isinstance(value, int):
+        return value
+    if isinstance(value, float) and value.is_integer():
+        return int(value)
+    if isinstance(value, str) and value.strip().isdigit():
+        return int(value.strip())
+    return None
+
+
 def _col_list(cols: list[str]) -> str:
     """Return a comma-separated list of quoted column names."""
     return ", ".join(_q(c) for c in cols)
@@ -376,10 +394,10 @@ def _truncate_table(target_table: str) -> None:
 
 def _ensure_target_table(target_table: str) -> None:
     """Create the target table if it does not exist, with all base canvas columns."""
-    col_defs = ["id SERIAL PRIMARY KEY"]
+    col_defs = ["parcel_id BIGINT PRIMARY KEY"]
     col_defs.append("geometry geometry(MultiPolygon, 4326)")
     for col in BaseCanvasSchema.COLUMN_NAMES:
-        if col in ("id", "geometry"):
+        if col in ("parcel_id", "geometry"):
             continue
         col_def = BaseCanvasSchema.get(col)
         if col_def is None:
@@ -396,7 +414,7 @@ def _ensure_target_table(target_table: str) -> None:
         """)
         # Ensure no NOT NULL constraints (pipeline fills data incrementally)
         for col in BaseCanvasSchema.COLUMN_NAMES:
-            if col in ("id", "geometry"):
+            if col in ("parcel_id", "geometry"):
                 continue
             cursor.execute(f"""
                 ALTER TABLE {_q(schema_name)}.{_q(table_name)}
@@ -422,17 +440,27 @@ def _load_from_table(source_table: str, target_table: str) -> None:
     )
     col_list = ", ".join(_q(c) for c in extra_cols) if extra_cols else ""
 
+    # The source parcel key, in preference order. Never insert NULL into the
+    # primary key — a source without one is a misconfiguration, not data.
+    src_id_cols = _available_columns(
+        ["parcel_id", "geography_id", "id"], src_schema, src_tbl
+    )
+    if not src_id_cols:
+        msg = f"source table {source_table} has no parcel id column"
+        raise ValueError(msg)
+    src_id = _q(src_id_cols[0])
+
     with connection.cursor() as cursor:
         if col_list:
             cursor.execute(f"""
-                INSERT INTO {_q(tgt_schema)}.{_q(tgt_name)} (geometry, {col_list})
-                SELECT ST_Transform(ST_Multi(geometry), 4326), {col_list}
+                INSERT INTO {_q(tgt_schema)}.{_q(tgt_name)} (parcel_id, geometry, {col_list})
+                SELECT {src_id}, ST_Transform(ST_Multi(geometry), 4326), {col_list}
                 FROM {_q(src_schema)}.{_q(src_tbl)}
             """)
         else:
             cursor.execute(f"""
-                INSERT INTO {_q(tgt_schema)}.{_q(tgt_name)} (geometry)
-                SELECT ST_Transform(ST_Multi(geometry), 4326)
+                INSERT INTO {_q(tgt_schema)}.{_q(tgt_name)} (parcel_id, geometry)
+                SELECT {src_id}, ST_Transform(ST_Multi(geometry), 4326)
                 FROM {_q(src_schema)}.{_q(src_tbl)}
             """)
 
@@ -450,12 +478,22 @@ def _load_from_geojson(geojson_path: str, target_table: str) -> None:
     from django.db import transaction
 
     with transaction.atomic(), connection.cursor() as cursor:
-        for feature in features:
+        for index, feature in enumerate(features):
             geom_json = json.dumps(feature.get("geometry", {}))
+            properties = feature.get("properties") or {}
+            # Source keys in preference order; a non-numeric candidate (APN,
+            # OSM id) is not a parcel key — skip it rather than mistype the PK.
+            parcel_id = _coerce_parcel_id(feature.get("id"))
+            if parcel_id is None:
+                parcel_id = _coerce_parcel_id(properties.get("parcel_id"))
+            if parcel_id is None:
+                parcel_id = _coerce_parcel_id(properties.get("id"))
+            if parcel_id is None:
+                parcel_id = index
             cursor.execute(
-                f"INSERT INTO {_q(schema)}.{_q(table)} (geometry) "
-                "SELECT ST_Multi(ST_GeomFromGeoJSON(%s))",
-                [geom_json],
+                f"INSERT INTO {_q(schema)}.{_q(table)} (parcel_id, geometry) "
+                "SELECT %s, ST_Multi(ST_GeomFromGeoJSON(%s))",
+                [parcel_id, geom_json],
             )
 
 
@@ -478,9 +516,9 @@ def _load_synthetic(n: int, target_table: str) -> None:
                 row.geometry.wkt if hasattr(row.geometry, "wkt") else str(row.geometry)
             )
             cursor.execute(
-                f"INSERT INTO {_q(schema)}.{_q(table)} (geography_id, geometry) "
-                "VALUES (%s, ST_Multi(ST_GeomFromText(%s, 4326)))",
-                [i, wkt],
+                f"INSERT INTO {_q(schema)}.{_q(table)} (parcel_id, geography_id, geometry) "
+                "VALUES (%s, %s, ST_Multi(ST_GeomFromText(%s, 4326)))",
+                [i, i, wkt],
             )
 
 
@@ -502,7 +540,7 @@ def _ensure_columns(target_table: str) -> None:
         existing = {row[0] for row in cursor.fetchall()}
 
         for col in BaseCanvasSchema.COLUMN_NAMES:
-            if col in ("id", "geometry") or col in existing:
+            if col in ("parcel_id", "geometry") or col in existing:
                 continue
             col_def = BaseCanvasSchema.get(col)
             if col_def is None:
@@ -679,7 +717,7 @@ def _allocate_via_spatial_join(
         cursor.execute(f"""
             DROP TABLE IF EXISTS _alloc_tgt;
             CREATE TEMP TABLE _alloc_tgt AS
-            SELECT id, ST_Transform(geometry, 6933) AS geom
+            SELECT parcel_id, ST_Transform(geometry, 6933) AS geom
             FROM {_q(tgt_schema)}.{_q(tgt_table)}
             WHERE geometry IS NOT NULL
         """)
@@ -689,13 +727,13 @@ def _allocate_via_spatial_join(
             SET {", ".join(set_exprs)}
             FROM (
                 SELECT
-                    t.id,
+                    t.parcel_id,
                     {", ".join(sum_exprs)}
                 FROM _alloc_tgt t
                 JOIN _alloc_src s ON ST_Intersects(t.geom, s.geom)
-                GROUP BY t.id
+                GROUP BY t.parcel_id
             ) sub
-            WHERE t.id = sub.id
+            WHERE t.parcel_id = sub.parcel_id
         """)
 
         # Clamp negatives for currency/percentage/count columns

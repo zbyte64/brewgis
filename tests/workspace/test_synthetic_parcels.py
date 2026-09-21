@@ -102,8 +102,8 @@ class TestSyntheticParcelGenerator:
         gdf = generate_synthetic_parcels(10, seed=42)
         schema_cols = set(BaseCanvasSchema.COLUMN_NAMES)
         gdf_cols = set(gdf.columns)
-        # id is SERIAL (auto-generated), geometry is the geometry column
-        missing = schema_cols - gdf_cols - {"id", "geometry", "geography_id"}
+        # parcel_id is assigned by the ETL loader, geometry is the geometry column
+        missing = schema_cols - gdf_cols - {"parcel_id", "geometry", "geography_id"}
         assert not missing, f"Missing columns: {missing}"
 
     def test_some_parcels_have_non_zero_values(self) -> None:

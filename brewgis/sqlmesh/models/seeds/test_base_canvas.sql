@@ -4,7 +4,7 @@ MODEL (
     path '../../seeds/test_base_canvas.csv'
   ),
   columns (
-    id TEXT,
+    parcel_id TEXT,
     geometry geometry(Geometry,4326),
     id_source TEXT,
     geometry_key TEXT,

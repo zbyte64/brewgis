@@ -15,7 +15,7 @@ AUDIT (
 -- brewgis.workspace.services.sqlmesh_tables.list_base_canvas_candidates,
 -- the Django-side picker that re-checks the same contract at query time).
 SELECT
-    id, id_source, geography_id, geometry_key, geometry,
+    parcel_id, id_source, geography_id, geometry_key, geometry,
     land_development_category, land_use, assessor_use_code, built_form_key,
     intersection_density,
     area_gross, area_parcel, area_dev_condition, area_row,

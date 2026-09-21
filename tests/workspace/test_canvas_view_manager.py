@@ -72,7 +72,7 @@ class TestCanvasViewManager:
             )
             cols = {row[0]: row[1] for row in cursor.fetchall()}
 
-        assert "id" in cols
+        assert "parcel_id" in cols
         assert "geometry" in cols
         assert "land_development_category" in cols
         assert "du" in cols
@@ -90,7 +90,7 @@ class TestCanvasViewManager:
 
         with connection.cursor() as cursor:
             cursor.execute(
-                f"SELECT du, pop, hh, uf_is_painted FROM {qview} ORDER BY id"
+                f"SELECT du, pop, hh, uf_is_painted FROM {qview} ORDER BY parcel_id"
             )
             rows = cursor.fetchall()
 
@@ -114,7 +114,9 @@ class TestCanvasViewManager:
         refresh_canvas_view(canvas_scenario)
 
         with connection.cursor() as cursor:
-            cursor.execute(f"SELECT du, pop, uf_is_painted FROM {qview} ORDER BY id")
+            cursor.execute(
+                f"SELECT du, pop, uf_is_painted FROM {qview} ORDER BY parcel_id"
+            )
             rows = cursor.fetchall()
 
         assert rows[0][0] == 999.0
@@ -154,7 +156,7 @@ class TestCanvasViewManager:
 
         with connection.cursor() as cursor:
             cursor.execute(
-                f"SELECT du, pop, hh, uf_is_painted FROM {qview} ORDER BY id"
+                f"SELECT du, pop, hh, uf_is_painted FROM {qview} ORDER BY parcel_id"
             )
             rows = cursor.fetchall()
 

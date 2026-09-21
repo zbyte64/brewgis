@@ -107,12 +107,12 @@ def _build_create_view_sql(
     q_base = _qi(f"{base_schema}.{base_table_name}")
 
     select_parts: list[str] = [
-        "bc.id",
+        "bc.parcel_id",
         "bc.geometry",
     ]
 
     # Static (non-paintable, non-geometry) columns
-    statics = [c for c in _static_columns(all_columns) if c != "id"]
+    statics = [c for c in _static_columns(all_columns) if c != "parcel_id"]
     select_parts.extend(f"bc.{c}" for c in statics)
 
     # Painted columns with COALESCE
@@ -146,7 +146,7 @@ LEFT JOIN (
     FROM workspace_paintedcanvas
     WHERE scenario_id = {scenario_id}
     GROUP BY feature_id
-) pc ON CAST(bc.id AS text) = pc._feature_id
+) pc ON CAST(bc.parcel_id AS text) = pc._feature_id
 """
 
 

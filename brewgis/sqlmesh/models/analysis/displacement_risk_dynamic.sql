@@ -43,7 +43,7 @@ WITH scenario_equity AS (
         es.geometry
     FROM brewgis.analysis.core_end_state AS es
     LEFT JOIN brewgis.analysis.@base_canvas_table AS bc
-        ON es.parcel_id = bc.id
+        ON es.parcel_id = bc.parcel_id
 )
 SELECT
     parcel_id,

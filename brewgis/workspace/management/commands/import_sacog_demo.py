@@ -24,6 +24,7 @@ from typing import Any
 from django.conf import settings
 from django.core.management.base import BaseCommand
 from django.core.management.base import CommandError
+from django.db import ProgrammingError
 
 logger = logging.getLogger(__name__)
 
@@ -304,8 +305,21 @@ class Command(BaseCommand):
             schema=WORKSPACE_SCHEMA,
             view_name=CANVAS_VIEW_NAME,
         )
-        with connection.cursor() as cursor:
-            cursor.execute(sql)
+        try:
+            with connection.cursor() as cursor:
+                cursor.execute(sql)
+        except ProgrammingError as exc:
+            if "cannot change name of view column" not in str(exc):
+                raise
+            # A view created before the parcel key was renamed (``id`` →
+            # ``parcel_id``) can't be replaced in place — Postgres'
+            # ``CREATE OR REPLACE VIEW`` only appends columns. Drop and
+            # recreate instead.
+            with connection.cursor() as cursor:
+                cursor.execute(
+                    f'DROP VIEW IF EXISTS "{WORKSPACE_SCHEMA}"."{CANVAS_VIEW_NAME}" CASCADE'
+                )
+                cursor.execute(sql)
 
         self.stdout.write(f"  ✓ Created view: {WORKSPACE_SCHEMA}.{CANVAS_VIEW_NAME}")
 
@@ -363,7 +377,7 @@ class Command(BaseCommand):
         # Check for NULLs in NON_NULL columns
         from brewgis.workspace.services.base_canvas_schema import BaseCanvasSchema
 
-        non_null = set(BaseCanvasSchema.NON_NULL_COLUMNS) - {"id", "geometry"}
+        non_null = set(BaseCanvasSchema.NON_NULL_COLUMNS) - {"parcel_id", "geometry"}
         null_cols = []
         with connection.cursor() as cursor:
             for col in sorted(non_null):

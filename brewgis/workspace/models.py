@@ -1158,6 +1158,10 @@ class BaseCanvas(models.Model):
     """
 
     # ── Identification & Geometry ──────────────────────────────────
+    # The parcel key. Explicit and named (rather than Django's implicit
+    # auto ``id``) so it survives the round trip through SQLMesh models,
+    # the scenario canvas view, and the map's promoted feature id.
+    parcel_id = models.BigIntegerField(primary_key=True)
     id_source = models.CharField(max_length=64, blank=True, null=True)
     geography_id = models.IntegerField(blank=True, null=True)
     geometry_key = models.CharField(max_length=128, blank=True, null=True)

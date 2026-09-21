@@ -405,16 +405,16 @@ export class PaintModeController {
 
   /**
    * Resolve a stable id for each queried feature, preferring the native/
-   * promoted MVT feature id but falling back to `properties.id` — the
-   * `promoteId: "id"` source option (see map.py) covers the common case,
-   * but a workspace whose base table's primary key isn't literally named
-   * "id" would otherwise leave every feature.id null and silently drop
-   * every result, making selection look like it does nothing.
+   * promoted MVT feature id but falling back to `properties.parcel_id` — the
+   * `promoteId: "parcel_id"` source option (see map.py) covers the common
+   * case, but a workspace whose base table doesn't expose a promoted feature
+   * id would otherwise leave every feature.id null and silently drop every
+   * result, making selection look like it does nothing.
    */
   private _resolveFeatureIds(features: maplibregl.MapGeoJSONFeature[]): { id: string }[] {
     const ids: { id: string }[] = []
     for (const f of features) {
-      const id = f.id ?? (f.properties && (f.properties as Record<string, unknown>).id)
+      const id = f.id ?? (f.properties && (f.properties as Record<string, unknown>).parcel_id)
       if (id != null) ids.push({ id: String(id) })
     }
     return ids

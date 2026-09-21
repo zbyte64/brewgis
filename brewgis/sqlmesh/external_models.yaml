@@ -1,6 +1,6 @@
 - name: '"brewgis"."public"."base_canvas"'
   columns:
-    id: BIGINT
+    parcel_id: BIGINT
     id_source: VARCHAR(64)
     geography_id: INT
     geometry_key: VARCHAR(128)
@@ -326,7 +326,6 @@
     gluc: TEXT
     geometry: GEOMETRY(MULTIPOLYGON, 3310)
     parcel_id: INT
-    id: INT
 - name: brewgis.public.sacog_comparison_parcels
   columns:
     geography_id: INT
@@ -349,4 +348,3 @@
     gluc: TEXT
     geometry: GEOMETRY(MULTIPOLYGON, 3310)
     parcel_id: INT
-    id: INT

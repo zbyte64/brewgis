@@ -67,9 +67,8 @@ def generate_parcel_staging(
     lines.append(")")
     lines.append("SELECT")
     lines.append("")
-    lines.append("    -- Map detected ID column to parcel_id and id")
+    lines.append("    -- Map detected ID column to parcel_id")
     lines.append(f"    {id_col} AS parcel_id,")
-    lines.append(f"    {id_col} AS id,")
 
     # built_form_key
     if info.has_built_form_key:
@@ -150,7 +149,6 @@ def generate_base_canvas_stub(
     lines.append("")
     lines.append("SELECT")
     lines.append(f"    {id_col} AS parcel_id,")
-    lines.append(f"    {id_col} AS id,")
     lines.append("    NULL::VARCHAR(64) AS id_source,")
     lines.append("    NULL::VARCHAR(128) AS geometry_key,")
     lines.append(f"    {geom_col} AS geometry,")
@@ -182,7 +180,7 @@ def generate_base_canvas_stub(
 
     # Zero out all remaining numeric base canvas columns
     skip = {
-        "id",
+        "parcel_id",
         "id_source",
         "geometry_key",
         "geometry",

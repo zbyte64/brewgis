@@ -21,7 +21,7 @@ Column categories (per ``planning/v2/09-base-canvas.md``):
     9. Equity & Environmental Quality
 
 **Static columns** (passed through verbatim by the painting system):
-    id, id_source, geometry_key, geometry, land_development_category,
+    parcel_id, id_source, geometry_key, geometry, land_development_category,
     intersection_density, area_gross
 
 All other columns are **paintable/summable**, except ``built_form_key`` which
@@ -55,7 +55,7 @@ class ColumnDef:
 # ── Static columns — passed through verbatim, never painted ───────────
 _STATIC_COLUMN_NAMES: frozenset[str] = frozenset(
     {
-        "id",
+        "parcel_id",
         "id_source",
         "geography_id",
         "geometry_key",
@@ -203,7 +203,13 @@ def _derive_default(
     field: Field, internal_type: str, name_lower: str
 ) -> float | str | None:
     """Derive a sensible default value for a column."""
-    if name_lower in ("id_source", "built_form_key", "geography_id", "geometry_key"):
+    if name_lower in (
+        "parcel_id",
+        "id_source",
+        "built_form_key",
+        "geography_id",
+        "geometry_key",
+    ):
         return None
     if name_lower == "land_development_category":
         return ""
@@ -218,7 +224,7 @@ def _derive_metatype(internal_type: str, name_lower: str) -> str:
     """Derive the metatype from the field type and name."""
     if internal_type in ("GeometryField",):
         return "geometry"
-    if name_lower in ("id", "id_source", "geography_id", "geometry_key"):
+    if name_lower in ("parcel_id", "id_source", "geography_id", "geometry_key"):
         return "identity"
     if name_lower in (
         "land_development_category",
@@ -314,8 +320,8 @@ class BaseCanvasSchema:
             col = cls.get(name)
             if col is None:
                 continue
-            if name == "id":
-                col_defs.append("    id SERIAL PRIMARY KEY")
+            if name == "parcel_id":
+                col_defs.append("    parcel_id BIGINT PRIMARY KEY")
                 continue
             if name == "geometry":
                 col_defs.append("    geometry GEOMETRY(MultiPolygon, 4326) NOT NULL")

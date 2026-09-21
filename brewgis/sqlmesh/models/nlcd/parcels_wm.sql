@@ -1,11 +1,11 @@
 MODEL (
   name brewgis.nlcd.parcels_wm,
   kind INCREMENTAL_BY_UNIQUE_KEY (
-    unique_key (id),
+    unique_key (parcel_id),
     batch_size 100000
   ),
   audits (
-    not_null(columns := (id))
+    not_null(columns := (parcel_id))
   )
 );
 
@@ -16,7 +16,7 @@ MODEL (
 -- Reads from the comparison parcels table.
 
 SELECT
-    parcel_id AS id,
+    parcel_id,
     ST_Transform(geometry, @VAR('wm_srid', 3857)) AS geometry
 FROM public.sacog_comparison_parcels
 WHERE geometry IS NOT NULL;

@@ -40,7 +40,6 @@ du_reconciled AS (
 
 SELECT
     parcel_id,
-    parcel_id AS id,
     parcel_id AS geometry_key,
     NULL::text AS id_source,
     NULL::integer AS geography_id,

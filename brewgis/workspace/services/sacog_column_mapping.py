@@ -70,7 +70,7 @@ class ColumnMapping:
 IDENTITY_MAPPINGS = [
     ColumnMapping(
         v1_column="geography_id",
-        v3_column="id",
+        v3_column="parcel_id",
         sql_expr="ROW_NUMBER() OVER (ORDER BY geography_id)",
         default=None,
     ),
