@@ -51,6 +51,9 @@
                           {% with badge_class=run.status|analysis_status_badge %}
                             <span class="badge bg-{{ badge_class }}">{{ run.status|title }}</span>
                           {% endwith %}
+                          {% if run.status == "failed" and run.failure_cause %}
+                            <div class="text-danger small mt-1">{{ run.failure_cause|truncatechars:90 }}</div>
+                          {% endif %}
                         </td>
                         <td>{{ run.started_at|default:"—" }}</td>
                         <td>{{ run.completed_at|default:"—" }}</td>

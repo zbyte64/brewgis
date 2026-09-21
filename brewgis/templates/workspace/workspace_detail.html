@@ -232,6 +232,9 @@
                 <div>
                   <strong>{{ run.modules|join:", " }}</strong>
                   <span class="text-muted ms-2">{{ run.created_at|date:"M j, Y H:i" }}</span>
+                  {% if run.status == "failed" and run.failure_cause %}
+                    <div class="text-danger small">{{ run.failure_cause|truncatechars:90 }}</div>
+                  {% endif %}
                 </div>
                 {% with badge_class=run.status|analysis_status_badge %}
                   <span class="badge bg-{{ badge_class }}">{{ run.status|title }}</span>

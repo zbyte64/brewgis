@@ -121,6 +121,7 @@ def register_tools(server: object) -> None:
             "status": run.status,
             "current_module": run.modules[-1] if run.modules else "",
             "completed_modules": run.modules or [],
+            "failure_cause": run.failure_cause or None,
             "error": run.error_log or None,
             "created_at": str(run.created_at),
         }

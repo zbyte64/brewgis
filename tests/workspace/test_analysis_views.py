@@ -4,6 +4,7 @@
 from __future__ import annotations
 
 import json
+from datetime import timedelta
 from unittest.mock import patch
 
 import pytest
@@ -11,6 +12,7 @@ from django.test import Client
 from django.test import RequestFactory
 from django.test import TestCase
 from django.urls import reverse
+from django.utils import timezone
 
 from brewgis.workspace.views.analysis import AnalysisLaunchForm
 from brewgis.workspace.views.analysis import AnalysisLaunchView
@@ -252,9 +254,52 @@ class TestAnalysisStatusView(TestCase):
         self.run.save()
         response = self.client.get(self.status_url)
         content = response.content.decode()
-        details_start = content.index("<details")
-        details_end = content.index(">", details_start)
-        assert "open" in content[details_start:details_end]
+        marker = content.index('id="analysis-log-output"')
+        details_end = content.index(">", marker)
+        assert "open" in content[marker:details_end]
+
+    def test_failed_run_shows_recorded_cause_and_parameters(self):
+        """The run page must answer "why did this fail?" without the user
+        reading a traceback, and must show the parameters the run was
+        launched with — a failing plan is usually a parameter mismatch."""
+        self.client.force_login(self.user)
+        self.run.status = "failed"
+        self.run.failure_cause = (
+            "brewgis.analysis.core_end_state — psycopg2.errors.UndefinedTable: "
+            'relation "scenario_default.scenario_default_canvas" does not exist'
+        )
+        self.run.vars = {"parcel_table": "fresno.base_canvas_reconciled"}
+        self.run.save()
+        response = self.client.get(self.status_url)
+        assert response.status_code == 200
+        self.assertContains(response, "Why this run failed")
+        self.assertContains(response, "brewgis.analysis.core_end_state")
+        self.assertContains(response, "scenario_default_canvas")
+        self.assertContains(response, "fresno.base_canvas_reconciled")
+
+    def test_failed_run_shows_second_precision_duration(self):
+        """A 21-second failure must not read as "0 minutes": the duration is
+        how a user tells a fast data error from a slow plan."""
+        self.client.force_login(self.user)
+        self.run.status = "failed"
+        self.run.started_at = timezone.now()
+        self.run.completed_at = self.run.started_at + timedelta(seconds=21)
+        self.run.save()
+        response = self.client.get(self.status_url)
+        assert response.status_code == 200
+        self.assertContains(response, "21s")
+
+    def test_failed_run_without_recoverable_cause_points_at_traceback(self):
+        """Older runs predate failure-cause recovery; the page must say so
+        rather than rendering an empty alert box."""
+        self.client.force_login(self.user)
+        self.run.status = "failed"
+        self.run.error_log = "Traceback (most recent call last): ..."
+        self.run.failure_cause = ""
+        self.run.save()
+        response = self.client.get(self.status_url)
+        assert response.status_code == 200
+        self.assertContains(response, "no failing model could be recovered")
 
 
 @pytest.mark.views

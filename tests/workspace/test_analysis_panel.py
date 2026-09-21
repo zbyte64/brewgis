@@ -265,3 +265,53 @@ class TestExecuteAnalysisRunLogCapture(TestCase):
         assert self.run.status == "failed"
         assert "too many clients already" in self.run.log_output
         assert "Plan application failed." in self.run.error_log
+
+    @patch("brewgis.workspace.analysis.pipeline.run_modules_sync")
+    def test_records_failure_cause_from_plan_log(self, mock_run_modules_sync):
+        """A plan failure must record *which model failed and why*, not just
+        SQLMesh's generic ``Plan application failed.`` traceback.
+
+        This is the difference between a run page that says nothing and one
+        that names the failing model and the database error under it.
+        """
+        import logging
+
+        from brewgis.workspace.analysis.pipeline import _execute_analysis_run
+
+        def _fake_run(**kwargs):
+            try:
+                raise ValueError(
+                    'relation "scenario_default.scenario_default_canvas" does not exist'
+                )
+            except ValueError:
+                logging.getLogger("sqlmesh.core.scheduler").info(
+                    "Execution failed for node EvaluateNode("
+                    'snapshot_name=\'"brewgis"."analysis"."core_end_state"\', '
+                    "interval=(1704067200000, 1789948800000), batch_index=0)",
+                    exc_info=True,
+                )
+            raise RuntimeError("Plan application failed.")
+
+        mock_run_modules_sync.side_effect = _fake_run
+        _execute_analysis_run(self.run)
+        self.run.refresh_from_db()
+        assert self.run.status == "failed"
+        assert self.run.failure_cause.startswith("brewgis.analysis.core_end_state — ")
+        assert (
+            'ValueError: relation "scenario_default.scenario_default_canvas" does not exist'
+            in self.run.failure_cause
+        )
+
+    @patch("brewgis.workspace.analysis.pipeline.run_modules_sync")
+    def test_failure_cause_empty_when_no_node_error_captured(
+        self, mock_run_modules_sync
+    ):
+        """Non-plan failures have no per-node error to recover — the field
+        must stay empty rather than inventing a cause."""
+        from brewgis.workspace.analysis.pipeline import _execute_analysis_run
+
+        mock_run_modules_sync.side_effect = RuntimeError("worker ran out of memory")
+        _execute_analysis_run(self.run)
+        self.run.refresh_from_db()
+        assert self.run.status == "failed"
+        assert self.run.failure_cause == ""

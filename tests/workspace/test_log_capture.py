@@ -4,12 +4,49 @@
 from __future__ import annotations
 
 import logging
+import logging.config
 import threading
 
 from brewgis.workspace.analysis.log_capture import capture_run_log
+from brewgis.workspace.analysis.log_capture import extract_plan_failure
 from brewgis.workspace.analysis.log_capture import truncate_log
 
 logger = logging.getLogger("brewgis.test_log_capture")
+
+# Verbatim shape of what SQLMesh's scheduler writes when a plan node fails:
+# the record message is the generic node error and ``exc_info`` appends the
+# chained traceback whose innermost exception is the database's own error.
+_NODE_FAILURE = (
+    "Execution failed for node EvaluateNode("
+    'snapshot_name=\'"brewgis"."analysis"."core_end_state"\', '
+    "interval=(1704067200000, 1789948800000), batch_index=0)"
+)
+PLAN_FAILURE_LOG = "\n".join(
+    [
+        "INFO 2026-09-21 20:33:40,428 sqlmesh.core.console some console warning",
+        'INFO 2026-09-21 20:33:52,055 sqlmesh.core.scheduler SKIPPED snapshot "brewgis"."analysis"."vmt"',
+        f"INFO 2026-09-21 20:33:52,055 sqlmesh.core.scheduler {_NODE_FAILURE}",
+        "Traceback (most recent call last):",
+        '  File "/usr/.../sqlmesh/utils/concurrency.py", line 69, in _process_node',
+        "    self.fn(node)",
+        '  File "/usr/.../sqlmesh/core/scheduler.py", line 554, in run_node',
+        "    audit_results = self.evaluate(",
+        '  File "/usr/.../sqlmesh/core/engine_adapter/base.py", line 2664, in _execute',
+        "    self.cursor.execute(sql, **kwargs)",
+        'psycopg2.errors.UndefinedTable: relation "scenario_default.scenario_default_canvas" does not exist',
+        'LINE 1: ..."emp_per_acre" > 0 AS "is_nonresidential" FROM "brewgis"....',
+        "                                                             ^",
+        "",
+        "The above exception was the direct cause of the following exception:",
+        "",
+        "Traceback (most recent call last):",
+        '  File "/usr/.../sqlmesh/utils/concurrency.py", line 62, in _process_node',
+        "    self.fn(node)",
+        "sqlmesh.utils.concurrency.NodeExecutionFailedError: " + _NODE_FAILURE,
+        "INFO 2026-09-21 20:33:53,907 sqlmesh.core.context Plan application failed.",
+        "",
+    ]
+)
 
 
 class TestCaptureRunLog:
@@ -62,6 +99,75 @@ class TestCaptureRunLog:
         output = stream.getvalue()
         assert "something failed" in output
         assert "ValueError: boom" in output
+
+    def test_survives_root_logger_reconfiguration(self):
+        """Capturing must outlive a ``logging.config.dictConfig`` re-run.
+
+        Django re-applies its LOGGING setting through dictConfig on every
+        ``django.setup()`` call, and SQLMesh calls that mid-plan when it
+        imports the project's Python models. dictConfig strips every handler
+        off the loggers it configures, so a root-only capture handler died a
+        few lines into each plan — leaving a failed run's stored log output
+        with startup noise instead of the per-node error.
+        """
+        root = logging.getLogger()
+        saved_handlers = list(root.handlers)
+        saved_level = root.level
+        try:
+            with capture_run_log() as stream:
+                logger.info("before reconfigure")
+                logging.config.dictConfig(
+                    {
+                        "version": 1,
+                        "disable_existing_loggers": False,
+                        "handlers": {"null": {"class": "logging.NullHandler"}},
+                        "root": {"level": "INFO", "handlers": ["null"]},
+                    }
+                )
+                logger.info("after reconfigure")
+        finally:
+            root.handlers[:] = saved_handlers
+            root.setLevel(saved_level)
+
+        output = stream.getvalue()
+        assert "before reconfigure" in output
+        assert "after reconfigure" in output
+
+    def test_records_are_not_duplicated_across_attached_loggers(self):
+        """The handler sits on several loggers so that dictConfig can't take
+        the last copy with it; a record must still be written exactly once."""
+        with capture_run_log() as stream:
+            logger.info("exactly once")
+        assert stream.getvalue().count("exactly once") == 1
+
+
+class TestExtractPlanFailure:
+    """Tests for recovering the real cause out of a captured plan log."""
+
+    def test_recovers_failing_model_and_database_error(self):
+        failure = extract_plan_failure(PLAN_FAILURE_LOG)
+        assert failure is not None
+        assert failure.model == "brewgis.analysis.core_end_state"
+        assert "psycopg2.errors.UndefinedTable" in failure.detail
+        assert 'relation "scenario_default.scenario_default_canvas" does not exist' in (
+            failure.detail
+        )
+        # The database's own context lines are what make the message actionable.
+        assert "LINE 1:" in failure.detail
+
+    def test_format_leads_with_the_model(self):
+        failure = extract_plan_failure(PLAN_FAILURE_LOG)
+        assert failure is not None
+        summary = failure.format()
+        assert summary.startswith("brewgis.analysis.core_end_state — ")
+        assert "UndefinedTable" in summary
+
+    def test_returns_none_without_a_node_failure(self):
+        assert extract_plan_failure("") is None
+        assert (
+            extract_plan_failure("INFO 2026-09-21 20:33:40,428 base Executing SQL:")
+            is None
+        )
 
 
 class TestTruncateLog:

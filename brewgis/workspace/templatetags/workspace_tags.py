@@ -3,11 +3,19 @@
 from __future__ import annotations
 
 import json
+from typing import TYPE_CHECKING
 
 from django import template
 from django.template.defaultfilters import stringfilter
+from django.utils import timezone
+
+if TYPE_CHECKING:
+    from datetime import datetime
 
 register = template.Library()
+
+_SECONDS_PER_MINUTE = 60
+_MINUTES_PER_HOUR = 60
 
 
 @register.filter
@@ -53,6 +61,29 @@ def analysis_status_badge(status: str) -> str:
         "failed": "danger",
     }
     return badge_map.get(status, "secondary")
+
+
+@register.filter
+def duration(start: datetime | None, end: datetime | None = None) -> str:
+    """Human-readable elapsed time between two datetimes.
+
+    Django's ``timesince`` rounds to whole minutes, which renders a
+    21-second analysis run as "0 minutes" — useless when the whole point of
+    showing a duration is telling a 20-second data error apart from a
+    20-minute plan. ``end`` defaults to now, so a still-running run shows
+    its time so far.
+    """
+    if start is None:
+        return ""
+    stop = end or timezone.now()
+    seconds = max(0, int((stop - start).total_seconds()))
+    if seconds < _SECONDS_PER_MINUTE:
+        return f"{seconds}s"
+    minutes, seconds = divmod(seconds, _SECONDS_PER_MINUTE)
+    if minutes < _MINUTES_PER_HOUR:
+        return f"{minutes}m {seconds}s"
+    hours, minutes = divmod(minutes, _MINUTES_PER_HOUR)
+    return f"{hours}h {minutes}m"
 
 
 @register.filter

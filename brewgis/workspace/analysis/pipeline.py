@@ -22,6 +22,7 @@ from django.utils import timezone
 
 from brewgis.workspace.analysis.layer_registry import register_result_layer
 from brewgis.workspace.analysis.log_capture import capture_run_log
+from brewgis.workspace.analysis.log_capture import extract_plan_failure
 from brewgis.workspace.analysis.log_capture import truncate_log
 from brewgis.workspace.analysis.module_registry import (
     MODULE_RESULT_TABLES,  # noqa: F401 -- re-exported for import_sacog_demo.py
@@ -173,7 +174,10 @@ def _execute_analysis_run(run: AnalysisRun) -> None:
     """
     run.status = "running"
     run.started_at = timezone.now()
-    run.save(update_fields=["status", "started_at"])
+    # A retry reuses the same record — don't let an earlier attempt's cause
+    # stick to a run that is now running again.
+    run.failure_cause = ""
+    run.save(update_fields=["status", "started_at", "failure_cause"])
 
     base_vars = run.vars
     workspace_id = run.workspace_id
@@ -195,15 +199,27 @@ def _execute_analysis_run(run: AnalysisRun) -> None:
             # log is often the only place that's still visible (e.g. a
             # psycopg2/duckdb error several frames below where SQLMesh
             # catches and re-raises generically).
-            logger.exception("AnalysisRun #%s failed", run.pk)
+            log_output = truncate_log(log_stream.getvalue())
+            failure = extract_plan_failure(log_output)
+            cause = failure.format() if failure else ""
+            # The plan's own traceback above names no model and no database
+            # error, so log the recovered cause alongside it — that is the
+            # difference between a worker log that says "failed" and one that
+            # says which model failed against what.
+            if failure is not None:
+                logger.exception("AnalysisRun #%s failed: %s", run.pk, cause)
+            else:
+                logger.exception("AnalysisRun #%s failed", run.pk)
             run.status = "failed"
             run.error_log = traceback.format_exc()
-            run.log_output = truncate_log(log_stream.getvalue())
+            run.failure_cause = cause
+            run.log_output = log_output
             run.completed_at = timezone.now()
             run.save(
                 update_fields=[
                     "status",
                     "error_log",
+                    "failure_cause",
                     "log_output",
                     "completed_at",
                 ]

@@ -456,6 +456,15 @@ class AnalysisRun(models.Model):
     started_at = models.DateTimeField(null=True, blank=True)
     completed_at = models.DateTimeField(null=True, blank=True)
     error_log = models.TextField(blank=True, default="")
+    failure_cause = models.TextField(
+        blank=True,
+        default="",
+        help_text=(
+            "Short, human-readable cause of a failed run (failing model plus "
+            "the database error underneath it), recovered from the SQLMesh plan "
+            "log. Empty when the failure produced no parseable per-node error."
+        ),
+    )
     log_output = models.TextField(
         blank=True,
         default="",
