@@ -25,7 +25,11 @@
     </ul>
   {% endif %}
   <div class="tab-content">
-    <div class="tab-pane fade {% if layer_tabs %}show active{% endif %}"
+    {# Bootstrap 5 hides every .tab-pane without .active/#}
+    {# (and fades out any without .show), so the Parcel pane must be#}
+    {# active even when it is the only pane — i.e. when no other layer#}
+    {# has a row for this feature and no tab strip is rendered.#}
+    <div class="tab-pane fade show active"
          id="parcel-inspect-tab"
          role="tabpanel">
       <div class="d-flex justify-content-between align-items-center mb-2">
