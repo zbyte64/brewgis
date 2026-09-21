@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+from django.core.validators import MaxValueValidator
+from django.core.validators import MinValueValidator
 from django.db import models
 
 
@@ -188,6 +190,7 @@ class BuildingType(models.Model):
     pass_by_trip_pct = models.FloatField(
         blank=True,
         default=0.0,
+        validators=[MinValueValidator(0.0), MaxValueValidator(100.0)],
         verbose_name="Pass-by trip (%)",
         help_text="Percent of trips that are pass-by (diverted from passing traffic).",
     )

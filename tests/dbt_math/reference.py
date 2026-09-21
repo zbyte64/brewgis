@@ -524,6 +524,7 @@ def compute_agriculture(
 @deal.pre(lambda du, bsqt, override, pass_by: np.all(bsqt >= 0))
 @deal.pre(lambda du, bsqt, override, pass_by: np.all(override >= 0))
 @deal.pre(lambda du, bsqt, override, pass_by: np.all(pass_by >= 0))
+@deal.pre(lambda du, bsqt, override, pass_by: np.all(pass_by <= 100))
 @deal.post(lambda result: np.all(result[0] >= 0))  # trips_res
 @deal.post(lambda result: np.all(result[1] >= 0))  # trips_nonres
 @deal.post(lambda result: np.all(result[2] >= 0))  # trips_total
@@ -532,15 +533,15 @@ def compute_agriculture(
 @deal.post(lambda result: np.all(result[5] >= 0))  # trips_nhb
 @deal.post(
     lambda result: np.all(
-        np.abs((result[3] + result[4] + result[5]) - result[2])
-        < 1e-6 | (result[2] == 0)
+        (np.abs((result[3] + result[4] + result[5]) - result[2]) < 1e-6)
+        | (result[2] == 0)
     )
 )
 def compute_trip_generation(
     dwelling_units_total: np.ndarray,
     building_sqft_total: np.ndarray,
     trip_rate_override: np.ndarray,  # 0 if no override (treated as 0)
-    pass_by_trip_pct: np.ndarray,  # 0-1, always a COALESCE'd value
+    pass_by_trip_pct: np.ndarray,  # percentage 0-100, always a COALESCE'd value
     nonres_rate: float = 42.94,
     hbw_pct: float = 0.18,
     hbo_pct: float = 0.42,
@@ -554,7 +555,7 @@ def compute_trip_generation(
     """
     trips_res = _c(dwelling_units_total * trip_rate_override)
     trips_nonres_raw = _c((building_sqft_total / 1000.0) * nonres_rate)
-    pb_adj = 1.0 - _c(pass_by_trip_pct)
+    pb_adj = 1.0 - _c(pass_by_trip_pct) / 100.0
 
     trips_nonres = trips_nonres_raw * pb_adj
     trips_total = trips_res + trips_nonres

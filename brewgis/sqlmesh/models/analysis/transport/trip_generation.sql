@@ -3,7 +3,9 @@ MODEL (
   kind FULL,
   audits (
     not_null(columns := (parcel_id,)),
-    unique_values(columns := (parcel_id,))
+    unique_values(columns := (parcel_id,)),
+    assert_column_non_negative(column_name := trips_total),
+    assert_column_non_negative(column_name := trips_nonres)
   )
 );
 
@@ -16,10 +18,13 @@ MODEL (
 --
 -- Variables:
 --   @transport_nonres_trip_rate: Trips/1000 sqft/day (default: 42.94).
---   @transport_pass_by_pct: Pass-by reduction fraction (default: 0.0).
 --   @transport_hbw_pct: Home-based work share (default: 0.18).
 --   @transport_hbo_pct: Home-based other share (default: 0.42).
 --   @transport_nhb_pct: Non-home-based share (default: 0.40).
+--
+-- Pass-by reduction comes from each built form's ``pass_by_trip_pct`` column
+-- (``BuildingType.pass_by_trip_pct``), which is stored as a percentage
+-- (0-100), not a fraction.
 
 WITH parcel_base AS (
     SELECT
@@ -57,7 +62,9 @@ trip_rates AS (
         COALESCE((building_sqft_total / 1000.0) * @transport_nonres_trip_rate, 0.0)
             AS trips_nonres_raw,
 
-        COALESCE(pass_by_trip_pct, 0.0) AS pass_by_trip_pct
+        -- pass_by_trip_pct is a percentage (0-100) — normalise to a fraction
+        -- before subtracting so the adjustment can never invert the sign.
+        1.0 - COALESCE(pass_by_trip_pct, 0.0) / 100.0 AS pass_by_factor
     FROM parcel_base
 )
 
@@ -65,14 +72,14 @@ SELECT
     parcel_id,
     area_gross_acres,
     -- Total primary trips with pass-by reduction
-    trips_res + trips_nonres_raw * (1.0 - pass_by_trip_pct) AS trips_total,
+    trips_res + trips_nonres_raw * pass_by_factor AS trips_total,
     trips_res,
     -- Non-residential trips after pass-by reduction
-    trips_nonres_raw * (1.0 - pass_by_trip_pct) AS trips_nonres,
+    trips_nonres_raw * pass_by_factor AS trips_nonres,
     -- Trip purpose split
-    (trips_res + trips_nonres_raw * (1.0 - pass_by_trip_pct)) * @transport_hbw_pct AS trips_hbw,
-    (trips_res + trips_nonres_raw * (1.0 - pass_by_trip_pct)) * @transport_hbo_pct AS trips_hbo,
-    (trips_res + trips_nonres_raw * (1.0 - pass_by_trip_pct)) * @transport_nhb_pct AS trips_nhb,
+    (trips_res + trips_nonres_raw * pass_by_factor) * @transport_hbw_pct AS trips_hbw,
+    (trips_res + trips_nonres_raw * pass_by_factor) * @transport_hbo_pct AS trips_hbo,
+    (trips_res + trips_nonres_raw * pass_by_factor) * @transport_nhb_pct AS trips_nhb,
     geometry
 FROM trip_rates;
 

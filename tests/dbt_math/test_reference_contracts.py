@@ -368,9 +368,15 @@ def test_agriculture_net_return_formula(data):
 
 
 @pytest.mark.slow
-@given(_quint(0, 5000, 0, 5e6, 0, 50, 0, 1, 0, 0))
+@given(_quint(0, 5000, 0, 5e6, 0, 50, 0, 100, 0, 0))
 @_N_HYPOTHESIS
 def test_trip_generation_purpose_split(quint):
+    """pass_by_trip_pct is drawn across its full 0-100 percentage range.
+
+    The 0-1 range this test previously used is what let a percent/fraction
+    unit mismatch in the SQL survive: the reference and the SQL agreed, but
+    both were wrong for the real (percent-valued) built-form data.
+    """
     du, bsqt, override, pass_by, _ = quint
     res, nonres, total, hbw, hbo, nhb = compute_trip_generation(
         du,

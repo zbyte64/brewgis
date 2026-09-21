@@ -3,7 +3,9 @@ MODEL (
   kind FULL,
   audits (
     not_null(columns := (parcel_id,)),
-    unique_values(columns := (parcel_id,))
+    unique_values(columns := (parcel_id,)),
+    assert_column_non_negative(column_name := vmt_total),
+    assert_column_non_negative(column_name := auto_trips)
   )
 );
 
