@@ -18,13 +18,25 @@ MODEL (
 );
 
 -- pre_statements
--- Create a GiST expression index on the raw bridge table's geometry column
--- so the CROSS JOIN LATERAL ST_Within can use an index scan instead of a
--- sequential scan across all 48K block group rows for each of 490K parcels.
--- Must live here because the duckdb-gateway bridge model
--- (brewgis.census.tiger_block_groups_raw) does not recognise PostGIS
--- geometry indexes in post_statements.
-  CREATE INDEX IF NOT EXISTS idx_tiger_block_groups_bridge_wgs84_geometry
+-- GiST expression index on the bridge table's geometry column, so the
+-- CROSS JOIN LATERAL ST_Within below can use an index scan instead of a sequential
+-- scan across all 16.9K block group rows for each parcel (measured: >1h for a single
+-- 50K-parcel batch without it).
+--
+-- The expression must match the consumer's predicate exactly. The
+-- brewgis.census.tiger_block_groups view inlines ST_SetSRID(wgs84_geometry, 4326)
+-- (the FDW drops SRID metadata), so an index on the bare column is never used, and
+-- the index cannot be declared in the bridge model's own post_statements: that model
+-- is duckdb-gateway, so its statements are bound and executed by DuckDB, which has no
+-- ST_SetSRID — only plain column DDL such as its geoid btree index reaches PostGIS.
+--
+-- The name is version-scoped via @snapshot_hash, and kept short because SQLMesh
+-- appends a suffix (e.g. _schema_tmp) for some migrations: Postgres caps identifiers
+-- at 63 characters. Index names are scoped to the schema, not the table, so a fixed
+-- name makes CREATE INDEX IF NOT EXISTS a no-op for every bridge snapshot after the
+-- first: the statement then keeps "succeeding" while the snapshot backing the model
+-- view has no geometry index at all.
+  CREATE INDEX IF NOT EXISTS @snapshot_hash('idx_tiger_bg_bridge_wgs84_geom_')
   ON brewgis.census.tiger_block_groups_raw USING GIST (ST_SetSRID(wgs84_geometry, 4326));
 
 -- Parcel Block Groups — spatial join assigning each assessor parcel to its
