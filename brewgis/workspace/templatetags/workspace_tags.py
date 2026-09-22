@@ -157,17 +157,6 @@ def json_attr(value: object) -> str:
 
 
 @register.filter
-def sqlmesh_model_url(schema: str, table: str) -> str:
-    """Deep link to a model's page in the sqlmesh UI data catalog.
-
-    Usage: ``{{ c.schema|sqlmesh_model_url:c.table }}``
-    """
-    from brewgis.workspace.services.sqlmesh_tables import sqlmesh_model_ui_url
-
-    return sqlmesh_model_ui_url(schema, table)
-
-
-@register.filter
 def filter_expression(filter_json: dict) -> str:
     """Human-readable rendering of a LayerFilter's expression tree.
 

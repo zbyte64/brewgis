@@ -14,6 +14,7 @@ from brewgis.workspace.services.sqlmesh_tables import SqlmeshTableInfo
 from brewgis.workspace.services.sqlmesh_tables import _model_schema
 from brewgis.workspace.services.sqlmesh_tables import sqlmesh_link_for_table
 from brewgis.workspace.services.sqlmesh_tables import sqlmesh_links_for_tables
+from brewgis.workspace.services.sqlmesh_tables import sqlmesh_model_ui_url
 
 
 class TestModelSchema:
@@ -28,6 +29,23 @@ class TestModelSchema:
     def test_leaves_a_plain_schema_unchanged(self) -> None:
         assert _model_schema("analysis") == "analysis"
         assert _model_schema("scenario_my-scenario") == "scenario_my-scenario"
+
+
+class TestSqlmeshModelUiUrl:
+    """``sqlmesh_model_ui_url`` names the model behind the table."""
+
+    def test_maps_a_result_view_to_the_model_schema(self) -> None:
+        # Regression: the import picker linked the table's own schema
+        # (".../brewgis.analysis__scenario_7.vmt"), which no model lives at —
+        # the SQLMesh UI answers that with "Model not found".
+        assert sqlmesh_model_ui_url("analysis__scenario_7", "vmt").endswith(
+            "/data-catalog/models/brewgis.ascn7.vmt"
+        )
+
+    def test_leaves_a_models_own_schema_alone(self) -> None:
+        assert sqlmesh_model_ui_url("fresno", "base_canvas_reconciled").endswith(
+            "/data-catalog/models/brewgis.fresno.base_canvas_reconciled"
+        )
 
 
 @pytest.fixture

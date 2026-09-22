@@ -28,6 +28,7 @@ from brewgis.workspace.models import Workspace
 from brewgis.workspace.services.sqlmesh_tables import get_table_preview
 from brewgis.workspace.services.sqlmesh_tables import list_sqlmesh_layer_candidates
 from brewgis.workspace.services.sqlmesh_tables import list_sqlmesh_tables
+from brewgis.workspace.services.sqlmesh_tables import sqlmesh_link_for_table
 from brewgis.workspace.services.sqlmesh_tables import sqlmesh_links_for_tables
 from brewgis.workspace.symbology.auto import auto_generate_symbology
 from brewgis.workspace.symbology.legend import swatch_background
@@ -131,7 +132,15 @@ class ImportSqlmeshLayerView(HtmxResponseMixin, FormView):
 
     def get_context_data(self, **kwargs: object) -> dict[str, object]:
         context = super().get_context_data(**kwargs)
-        context["candidates"] = list_sqlmesh_layer_candidates()
+        candidates = list_sqlmesh_layer_candidates()
+        context["candidates"] = candidates
+        # Only link tables that are actually backed by a model — the catalog
+        # also lists views this codebase creates itself (a scenario's
+        # painted-features canvas view, imported shapefiles), which have no
+        # model page to open.
+        context["sqlmesh_links"] = sqlmesh_links_for_tables(
+            {c.qualified: (c.schema, c.table) for c in candidates}
+        )
         return context
 
     def get_redirect_url(self) -> str:
@@ -172,6 +181,8 @@ def sqlmesh_table_preview(request: HttpRequest) -> HttpResponse:
             "preview": preview,
             "schema": schema,
             "table": table,
+            # None for a table with no model behind it (see the picker above).
+            "sqlmesh_link": sqlmesh_link_for_table(schema, table),
         },
     )
 

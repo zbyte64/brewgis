@@ -75,11 +75,15 @@
                     </td>
                     <td>
                       <label for="sqlmesh-table-{{ forloop.counter }}" class="mb-0">{{ c.table }}</label>
-                      <a href="{{ c.schema|sqlmesh_model_url:c.table }}"
-                         target="_blank"
-                         rel="noopener"
-                         class="ms-1 small"
-                         title="{% blocktranslate with qualified=c.qualified %}Open {{ qualified }} in the SQLMesh UI{% endblocktranslate %}">↗</a>
+                      {% with model_url=sqlmesh_links|dictlookup:c.qualified %}
+                        {% if model_url %}
+                          <a href="{{ model_url }}"
+                             target="_blank"
+                             rel="noopener"
+                             class="ms-1 small"
+                             title="{% blocktranslate with qualified=c.qualified %}Open the model behind {{ qualified }} in the SQLMesh UI{% endblocktranslate %}">↗</a>
+                        {% endif %}
+                      {% endwith %}
                     </td>
                     <td>
                       <span class="badge bg-secondary">{{ c.geometry_type }}</span>
