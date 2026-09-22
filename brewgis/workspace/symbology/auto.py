@@ -33,6 +33,20 @@ if TYPE_CHECKING:
     from cmap import Colormap
 
 
+def _resolve_zero_transparency(
+    existing: SymbologyConfig | None, requested: bool | None
+) -> bool:
+    """Whether this layer's zero values are drawn as transparent.
+
+    ``requested`` is what the caller asked for; ``None`` keeps the layer's
+    current setting, and a layer with no symbology config yet starts with the
+    zeros visible.
+    """
+    if requested is not None:
+        return requested
+    return bool(existing and existing.zero_transparent)
+
+
 def _suggest_palette(
     stats: ColumnStatistics,
 ) -> str:
@@ -121,6 +135,7 @@ def auto_generate_symbology(  # noqa: PLR0913
     reverse_palette: bool = False,
     commit: bool = True,
     scenario: Scenario | None = None,
+    zero_transparent: bool | None = None,
 ) -> SymbologyConfig:
     """Auto-generate a symbology configuration for *layer*.
 
@@ -161,6 +176,12 @@ def auto_generate_symbology(  # noqa: PLR0913
         (base canvas COALESCEd with any PaintedCanvas overrides) instead of
         the raw base table — so painted values are reflected. Ignored for
         any other layer.
+    zero_transparent:
+        Whether zero values are drawn as transparent. ``None`` (the default)
+        keeps the layer's current setting, and a new layer starts with it
+        off. When it is on, the zeros are also left out of the statistics and
+        the classification (see ``stats.compute_statistics``): a value the map
+        hides must not consume one of the requested classes.
 
     Returns
     -------
@@ -206,7 +227,13 @@ def auto_generate_symbology(  # noqa: PLR0913
     if not col:
         return _create_default_config(layer, commit=commit)
 
-    stats = compute_statistics(schema, table, col)
+    # Auto re-derives the classes; it does not get to decide how absent
+    # values are drawn, so an unspecified flag means "leave the layer's
+    # setting alone" rather than "reset it".
+    existing = SymbologyConfig.objects.filter(layer=layer).first()
+    excludes_zero = _resolve_zero_transparency(existing, zero_transparent)
+
+    stats = compute_statistics(schema, table, col, exclude_zero=excludes_zero)
 
     used_palette = (palette_name or _suggest_palette(stats)).lower()
     used_method = classification_method or _suggest_classification_method(stats)
@@ -242,6 +269,7 @@ def auto_generate_symbology(  # noqa: PLR0913
             schema=schema,
             table=table,
             column=col,
+            exclude_zero=excludes_zero,
         )
         palette = _resolve_palette(
             _get_palette_list(used_palette, stats),
@@ -272,9 +300,9 @@ def auto_generate_symbology(  # noqa: PLR0913
                 "reverse_palette": reverse_palette,
                 "num_classes": num_classes,
                 "classification_method": used_method,
-                "null_handling": "gray",
-                "null_color": "",
-                "zero_transparent": False,
+                "null_handling": existing.null_handling if existing else "gray",
+                "null_color": existing.null_color if existing else "",
+                "zero_transparent": excludes_zero,
                 "auto_generated": True,
             },
         )
@@ -297,6 +325,7 @@ def auto_generate_symbology(  # noqa: PLR0913
     config.reverse_palette = reverse_palette
     config.num_classes = num_classes
     config.classification_method = used_method
+    config.zero_transparent = excludes_zero
     config.preview_style_classes = [
         StyleClass(symbology=config, **row_data) for row_data in class_rows
     ]

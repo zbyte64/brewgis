@@ -261,10 +261,12 @@
                  class="form-check-input"
                  id="id_zero_transparent"
                  {% if config.zero_transparent %}checked{% endif %}
-                 hx-post="{% url 'workspace:symbology_preview_map' layer.pk %}"
+                 title="{% translate 'Hide zero values and leave them out of the classification' %}"
+                 hx-post="{% url 'workspace:symbology_preview_classify' layer.pk %}"
                  hx-trigger="change"
                  hx-include="closest form"
-                 hx-swap="none" />
+                 hx-target="#right-panel-content"
+                 hx-swap="innerMorph" />
           <label class="form-check-label"
                  for="id_zero_transparent"
                  style="font-size:0.75rem">{% translate "Zero Transparent" %}</label>

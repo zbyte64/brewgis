@@ -2,7 +2,7 @@
 
 Queries are executed directly against the database to avoid loading
 large feature tables into Python memory.  Statistics include counts,
-distribution percentiles, histograms, and type heuristics.
+distribution percentiles, and type heuristics.
 """
 
 from __future__ import annotations
@@ -11,15 +11,6 @@ from dataclasses import dataclass
 from typing import Any
 
 from django.db import connection
-
-
-@dataclass
-class HistogramBin:
-    """A single histogram bucket."""
-
-    min_val: float
-    max_val: float
-    count: int
 
 
 @dataclass
@@ -41,7 +32,6 @@ class ColumnStatistics:
     mean: float | None = None
     median: float | None = None
     stddev: float | None = None
-    histogram: list[HistogramBin] | None = None
     percentiles: dict[int, float] | None = None
     frequencies: dict[str, int] | None = None
     is_categorical: bool = False
@@ -84,7 +74,8 @@ def compute_statistics(
     schema: str,
     table: str,
     column: str,
-    num_histogram_bins: int = 10,
+    *,
+    exclude_zero: bool = False,
 ) -> ColumnStatistics:
     """Compute column statistics from a PostGIS table.
 
@@ -96,8 +87,14 @@ def compute_statistics(
         Table name.
     column:
         Column name.
-    num_histogram_bins:
-        Number of histogram buckets (default 10; used only for numeric columns).
+    exclude_zero:
+        Leave rows whose value is exactly 0 out of the statistics. That is
+        what the symbology's "Zero Transparent" option draws as invisible, and
+        a hidden value must not steer the classification: a zero-inflated
+        column would otherwise spend its classes on the zero mass (the whole
+        column, for the methods that read these statistics) instead of on the
+        values the map actually shows. A non-numeric column has no zero to
+        exclude, so the flag is ignored for it.
 
     Returns
     -------
@@ -106,18 +103,29 @@ def compute_statistics(
     """
     data_type = _column_data_type(schema, table, column) or "unknown"
     is_numeric = data_type in _NUMERIC_TYPES
+    exclude_zero = exclude_zero and is_numeric
+    included = f' AND "{column}" <> 0' if exclude_zero else ""
+    included_distincts = (
+        f'COUNT(DISTINCT "{column}") FILTER (WHERE "{column}" <> 0)'
+        if exclude_zero
+        else f'COUNT(DISTINCT "{column}")'
+    )
 
     # Base query - always available
     base_sql = f"""
         SELECT
             COUNT(*)                                                     AS total,
             COUNT(*) FILTER (WHERE "{column}" IS NULL)                   AS nulls,
-            COUNT(DISTINCT "{column}")                                   AS distincts
+            COUNT(DISTINCT "{column}")                                   AS distincts,
+            {included_distincts}                                         AS included_distincts
         FROM "{schema}"."{table}"
-    """
+    """  # noqa: S608 -- identifiers are catalog-sourced, never user input
     with connection.cursor() as cursor:
         cursor.execute(base_sql)
-        total, nulls, distincts = cursor.fetchone()
+        total, nulls, distincts, distincts_included = cursor.fetchone()
+
+    if exclude_zero:
+        distincts = distincts_included
 
     freq: dict[str, int] | None = None
     if distincts <= 50:
@@ -126,11 +134,11 @@ def compute_statistics(
                 f"""
                 SELECT "{column}"::text, COUNT(*)
                 FROM "{schema}"."{table}"
-                WHERE "{column}" IS NOT NULL
+                WHERE "{column}" IS NOT NULL{included}
                 GROUP BY "{column}"
                 ORDER BY COUNT(*) DESC
                 LIMIT 100
-                """,
+                """  # noqa: S608 -- identifiers are catalog-sourced, never user input,
             )
             freq = dict(cursor.fetchall())
 
@@ -145,7 +153,6 @@ def compute_statistics(
             frequencies=freq,
         )
 
-    epsilon = 1e-12
     stats_sql = f"""
         SELECT
             MIN("{column}")::double precision                              AS min_val,
@@ -154,8 +161,8 @@ def compute_statistics(
             PERCENTILE_CONT(0.5) WITHIN GROUP (ORDER BY "{column}")::double precision AS median,
             STDDEV_SAMP("{column}")::double precision                      AS stddev
         FROM "{schema}"."{table}"
-        WHERE "{column}" IS NOT NULL
-    """
+        WHERE "{column}" IS NOT NULL{included}
+    """  # noqa: S608 -- identifiers are catalog-sourced, never user input
     with connection.cursor() as cursor:
         cursor.execute(stats_sql)
         min_val, max_val, mean, median, stddev = cursor.fetchone()
@@ -169,8 +176,8 @@ def compute_statistics(
             PERCENTILE_CONT(0.75) WITHIN GROUP (ORDER BY "{column}")::double precision AS p75,
             PERCENTILE_CONT(0.9) WITHIN GROUP (ORDER BY "{column}")::double precision AS p90
         FROM "{schema}"."{table}"
-        WHERE "{column}" IS NOT NULL
-    """
+        WHERE "{column}" IS NOT NULL{included}
+    """  # noqa: S608 -- identifiers are catalog-sourced, never user input
     with connection.cursor() as cursor:
         cursor.execute(percentile_sql)
         p10, p25, p50, p75, p90 = cursor.fetchone()
@@ -181,42 +188,6 @@ def compute_statistics(
         75: p75,
         90: p90,
     }
-
-    # Histogram
-    histogram: list[HistogramBin] = []
-    if min_val is not None and max_val is not None and max_val - min_val > epsilon:
-        hist_sql = f"""
-            WITH bounds AS (
-                SELECT
-                    MIN("{column}") AS min_v,
-                    MAX("{column}") AS max_v
-                FROM "{schema}"."{table}"
-                WHERE "{column}" IS NOT NULL
-            )
-            SELECT
-                min_v + (max_v - min_v) * (bin - 1) / {num_histogram_bins}::double precision AS bin_min,
-                min_v + (max_v - min_v) * bin / {num_histogram_bins}::double precision AS bin_max,
-                COUNT(*) AS cnt
-            FROM bounds
-            CROSS JOIN LATERAL (
-                SELECT WIDTH_BUCKET("{column}", min_v, max_v * (1 + 1e-10), {num_histogram_bins}) AS bin
-                FROM "{schema}"."{table}"
-                WHERE "{column}" IS NOT NULL
-            ) b
-            WHERE bin IS NOT NULL
-            GROUP BY bin, bin_min, bin_max
-            ORDER BY bin
-        """
-        with connection.cursor() as cursor:
-            cursor.execute(hist_sql)
-            for row in cursor.fetchall():
-                histogram.append(
-                    HistogramBin(
-                        min_val=float(row[0]),
-                        max_val=float(row[1]),
-                        count=int(row[2]),
-                    )
-                )
 
     # Heuristic: if distinct count is small (<20), treat as categorical
     is_cat = distincts < 20
@@ -232,7 +203,6 @@ def compute_statistics(
         mean=mean,
         median=median,
         stddev=stddev,
-        histogram=histogram or None,
         percentiles=percentiles,
         frequencies=freq,
         is_categorical=is_cat or not is_numeric,

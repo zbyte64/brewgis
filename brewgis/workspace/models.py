@@ -241,7 +241,10 @@ class SymbologyConfig(models.Model):
     null_color = models.CharField(max_length=16, blank=True, default="")
     zero_transparent = models.BooleanField(
         default=False,
-        help_text="Make zero-values fully transparent.",
+        help_text=(
+            "Draw zero-values fully transparent, and leave them out of the "
+            "statistics and classification behind the symbology."
+        ),
     )
     auto_generated = models.BooleanField(
         default=True,

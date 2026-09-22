@@ -13,7 +13,6 @@ import pytest
 from django.db import connection
 
 from brewgis.workspace.symbology.stats import ColumnStatistics
-from brewgis.workspace.symbology.stats import HistogramBin
 from brewgis.workspace.symbology.stats import _column_data_type
 from brewgis.workspace.symbology.stats import compute_statistics
 from brewgis.workspace.symbology.stats import list_columns
@@ -237,29 +236,6 @@ class TestComputeStatistics:
         assert math.isclose(stats.percentiles[75], 7.75, rel_tol=1e-10)
         assert math.isclose(stats.percentiles[90], 9.1, rel_tol=1e-10)
 
-    def test_histogram(self, numeric_table: str) -> None:
-        """Verify each of ten bins contains exactly one value for 1..10."""
-        stats = compute_statistics(
-            "public", numeric_table, "value", num_histogram_bins=10
-        )
-        assert stats.histogram is not None
-        assert len(stats.histogram) == 10
-        for bin_ in stats.histogram:
-            assert isinstance(bin_, HistogramBin)
-            assert bin_.count == 1
-        # First bin starts at min and last bin includes max
-        assert stats.histogram[0].min_val == 1.0
-        assert math.isclose(stats.histogram[-1].max_val, 10.0, rel_tol=1e-10)
-
-    def test_histogram_fewer_bins(self, numeric_table: str) -> None:
-        """Verify histogram with 2 bins on 1..10."""
-        stats = compute_statistics(
-            "public", numeric_table, "value", num_histogram_bins=2
-        )
-        assert stats.histogram is not None
-        assert len(stats.histogram) == 2
-        assert stats.histogram[0].count + stats.histogram[1].count == 10
-
     def test_frequencies(self, numeric_table: str) -> None:
         """Verify frequencies when distinct count <= 50."""
         stats = compute_statistics("public", numeric_table, "value")
@@ -291,7 +267,6 @@ class TestComputeStatistics:
         assert stats.mean is None
         assert stats.median is None
         assert stats.stddev is None
-        assert stats.histogram is None
         assert stats.percentiles is not None
         assert stats.percentiles[10] is None
         assert (
@@ -308,7 +283,6 @@ class TestComputeStatistics:
         assert stats.max_value is None
         assert stats.mean is None
         assert stats.median is None
-        assert stats.histogram is None
         assert (
             stats.frequencies == {}
         )  # distinct=0 <= 50, frequency query runs but returns nothing
@@ -327,7 +301,6 @@ class TestComputeStatistics:
         assert stats.mean is None
         assert stats.median is None
         assert stats.stddev is None
-        assert stats.histogram is None
 
     def test_categorical_frequencies(self, categorical_table: str) -> None:
         """Verify frequency map for categorical data."""

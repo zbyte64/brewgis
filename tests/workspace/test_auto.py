@@ -9,6 +9,7 @@ from django.test import TestCase
 from brewgis.workspace.models import Layer
 from brewgis.workspace.models import Scenario
 from brewgis.workspace.models import ScenarioType
+from brewgis.workspace.models import SymbologyConfig
 from brewgis.workspace.models import Workspace
 from brewgis.workspace.symbology.auto import _suggest_classification_method
 from brewgis.workspace.symbology.auto import _suggest_palette
@@ -168,6 +169,93 @@ class TestAutoGenerate(TestCase):
     @patch("brewgis.workspace.symbology.auto.classify")
     @patch("brewgis.workspace.symbology.auto.compute_statistics")
     @patch("brewgis.workspace.symbology.auto.list_columns")
+    def test_keeps_the_layers_zero_transparency_setting(
+        self,
+        mock_list_columns,
+        mock_compute_stats,
+        mock_classify,
+    ) -> None:
+        """Re-running auto-generation leaves "Zero Transparent" alone.
+
+        It used to stamp the flag (and the null handling) back to their
+        defaults, so clicking Auto silently undid the user's choice — and the
+        exclusion of zeros it implies.
+        """
+        mock_list_columns.return_value = [{"name": "val", "type": "float8"}]
+        mock_compute_stats.return_value = _make_stats(distinct_count=50)
+        mock_classify.return_value = ClassificationResult(
+            method="quantile",
+            breaks=[0, 5000, 10000],
+            labels=["0 - 5000", "5000 - 10000"],
+        )
+        config = SymbologyConfig.objects.create(
+            layer=self.layer,
+            zero_transparent=True,
+            null_handling="custom_color",
+            null_color="#123456",
+        )
+
+        updated = auto_generate_symbology(self.layer, attribute_column="val")
+
+        self.assertEqual(updated.pk, config.pk)
+        self.assertTrue(updated.zero_transparent)
+        self.assertEqual(updated.null_handling, "custom_color")
+        self.assertEqual(updated.null_color, "#123456")
+        self.assertTrue(mock_compute_stats.call_args.kwargs["exclude_zero"])
+        self.assertTrue(mock_classify.call_args.kwargs["exclude_zero"])
+
+    @patch("brewgis.workspace.symbology.auto.classify")
+    @patch("brewgis.workspace.symbology.auto.compute_statistics")
+    @patch("brewgis.workspace.symbology.auto.list_columns")
+    def test_zero_transparent_excludes_zeros_from_classification(
+        self,
+        mock_list_columns,
+        mock_compute_stats,
+        mock_classify,
+    ) -> None:
+        """Turning it on reaches both the statistics and the classifier."""
+        mock_list_columns.return_value = [{"name": "val", "type": "float8"}]
+        mock_compute_stats.return_value = _make_stats(distinct_count=50)
+        mock_classify.return_value = ClassificationResult(
+            method="quantile",
+            breaks=[10, 5000, 10000],
+            labels=["10 - 5000", "5000 - 10000"],
+        )
+
+        config = auto_generate_symbology(
+            self.layer, attribute_column="val", zero_transparent=True
+        )
+
+        self.assertTrue(config.zero_transparent)
+        self.assertTrue(mock_compute_stats.call_args.kwargs["exclude_zero"])
+        self.assertTrue(mock_classify.call_args.kwargs["exclude_zero"])
+
+    @patch("brewgis.workspace.symbology.auto.classify")
+    @patch("brewgis.workspace.symbology.auto.compute_statistics")
+    @patch("brewgis.workspace.symbology.auto.list_columns")
+    def test_zeros_stay_in_the_classification_by_default(
+        self,
+        mock_list_columns,
+        mock_compute_stats,
+        mock_classify,
+    ) -> None:
+        mock_list_columns.return_value = [{"name": "val", "type": "float8"}]
+        mock_compute_stats.return_value = _make_stats(distinct_count=50)
+        mock_classify.return_value = ClassificationResult(
+            method="quantile",
+            breaks=[0, 5000, 10000],
+            labels=["0 - 5000", "5000 - 10000"],
+        )
+
+        config = auto_generate_symbology(self.layer, attribute_column="val")
+
+        self.assertFalse(config.zero_transparent)
+        self.assertFalse(mock_compute_stats.call_args.kwargs["exclude_zero"])
+        self.assertFalse(mock_classify.call_args.kwargs["exclude_zero"])
+
+    @patch("brewgis.workspace.symbology.auto.classify")
+    @patch("brewgis.workspace.symbology.auto.compute_statistics")
+    @patch("brewgis.workspace.symbology.auto.list_columns")
     def test_auto_generate_updates_existing(
         self,
         mock_list_columns,
@@ -306,6 +394,7 @@ class TestAutoGenerateScenarioAware(TestCase):
             self.scenario.target_schema,
             f"scenario_{self.scenario.slug}_canvas",
             "du",
+            exclude_zero=False,
         )
 
     @patch("brewgis.workspace.symbology.auto.classify")
@@ -326,4 +415,6 @@ class TestAutoGenerateScenarioAware(TestCase):
 
         auto_generate_symbology(self.base_layer, attribute_column="du")
 
-        mock_compute_stats.assert_called_once_with("public", "base_canvas", "du")
+        mock_compute_stats.assert_called_once_with(
+            "public", "base_canvas", "du", exclude_zero=False
+        )

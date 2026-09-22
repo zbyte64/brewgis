@@ -65,6 +65,18 @@ def _advanced_open(post_data: dict[str, str]) -> bool:
     return post_data.get("advanced_open") == "1"
 
 
+def _zero_transparent_from_form(post_data: dict[str, str]) -> bool | None:
+    """Read the "Zero Transparent" checkbox out of POST data.
+
+    ``None`` when the request carried no such field — a one-off call such as
+    the MCP tool, or an htmx request from outside the editor form — so
+    auto-generation keeps the layer's stored setting instead of clearing it.
+    """
+    if "zero_transparent" not in post_data:
+        return None
+    return post_data.get("zero_transparent") == "on"
+
+
 def _column_choices(layer: Layer) -> list[str]:
     """Return candidate column names for the "color by" dropdown.
 
@@ -320,6 +332,7 @@ def preview_classify(request: HttpRequest, layer_pk: int) -> HttpResponse:
     num_classes = int(request.POST.get("num_classes", "5"))
     classification_method = request.POST.get("classification_method") or None
     reverse_palette = request.POST.get("reverse_palette") == "on"
+    zero_transparent = _zero_transparent_from_form(request.POST)
 
     try:
         config = auto_generate_symbology(
@@ -331,6 +344,7 @@ def preview_classify(request: HttpRequest, layer_pk: int) -> HttpResponse:
             reverse_palette=reverse_palette,
             commit=False,
             scenario=scenario,
+            zero_transparent=zero_transparent,
         )
     except Exception:
         # Non-fatal — table may not exist or have no data for this column
@@ -366,6 +380,7 @@ def auto_generate(request: HttpRequest, layer_pk: int) -> HttpResponse:
     num_classes = int(request.POST.get("num_classes", "5"))
     classification_method = request.POST.get("classification_method") or None
     reverse_palette = request.POST.get("reverse_palette") == "on"
+    zero_transparent = _zero_transparent_from_form(request.POST)
 
     try:
         with transaction.atomic():
@@ -377,6 +392,7 @@ def auto_generate(request: HttpRequest, layer_pk: int) -> HttpResponse:
                 classification_method=classification_method,
                 reverse_palette=reverse_palette,
                 scenario=scenario,
+                zero_transparent=zero_transparent,
             )
     except Exception:
         # Non-fatal - table may not exist or have no data
