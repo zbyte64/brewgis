@@ -221,6 +221,15 @@ def _feature_matrix(df, landuse_prefixes, zone_prefixes, ldev_cats=None):
 @model(
     "brewgis.assessor.parcel_emp_ratios_regressor",
     kind=dict(name=ModelKindName.FULL),
+    description="EMP training cache: SACOG LightGBM jobs per acre by sector, read by the region emp models.",
+    column_descriptions={
+        "apn": "Assessor parcel number (APN) the prediction belongs to.",
+        "emp_ag_per_acre": "Predicted agricultural employment density (jobs per acre).",
+        "emp_ind_per_acre": "Predicted industrial employment density (jobs per acre).",
+        "emp_off_per_acre": "Predicted office employment density (jobs per acre).",
+        "emp_pub_per_acre": "Predicted public employment density (jobs per acre).",
+        "emp_ret_per_acre": "Predicted retail employment density (jobs per acre).",
+    },
     columns={
         "apn": "text",
         "emp_ret_per_acre": "float",

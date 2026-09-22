@@ -1,6 +1,15 @@
 MODEL (
   name duckdb.@{region}.overture_buildings,
   kind VIEW,
+  description 'Overture Maps building footprints for the region (release 2026-08-19.0 GeoParquet read from S3 by DuckDB via httpfs), reprojected to 3857, 4326 and the local CRS.',
+  column_descriptions (
+    geometry = 'Building footprint polygon reprojected from Overture CRS84 to Web Mercator (EPSG:3857).',
+    wgs84_geometry = 'Building footprint polygon reprojected from Overture CRS84 to EPSG:4326 (lon/lat).',
+    local_geometry = 'Building footprint polygon reprojected from Overture CRS84 to the region local CRS (EPSG:3310).',
+    height = 'Overture building height, NULL when the source value is NaN (meters).',
+    levels = 'Overture floor count from num_floors, NULL when the source value is NaN (levels).',
+    class = 'Overture building class, cast to VARCHAR.'
+  ),
   gateway duckdb,
   dialect duckdb,
   blueprints @region_blueprints()

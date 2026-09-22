@@ -1,6 +1,15 @@
 MODEL (
   name duckdb.fresno.parcels,
   kind VIEW,
+  description 'DuckDB staging VIEW fetching every page of the Fresno County parcel FeatureServer.',
+  column_descriptions (
+    parcel_id = 'Assessor parcel number (APN) from the FeatureServer feature properties, trimmed to non-empty values.',
+    apn = 'Assessor parcel number (APN) from the FeatureServer feature properties; same value as parcel_id.',
+    agency_cod = 'AGENCY_COD agency code from the FeatureServer feature properties.',
+    roll_year = 'ROLL_YEAR assessor roll year from the FeatureServer feature properties.',
+    shape_area = 'SHAPE_AREA attribute from the FeatureServer feature properties (source units).',
+    geometry = 'Feature geometry parsed from the page GeoJSON with ST_GeomFromGeoJSON (EPSG:4326 lon/lat).'
+  ),
   gateway duckdb,
   dialect duckdb,
   columns (

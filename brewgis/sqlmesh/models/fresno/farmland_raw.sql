@@ -1,6 +1,13 @@
 MODEL (
   name brewgis.fresno.farmland_raw,
   kind FULL,
+  description 'PostGIS bridge table materializing the DuckDB Important Farmland fetch, one polygon per row.',
+  column_descriptions (
+    objectid = 'OBJECTID of the farmland polygon, as fetched from the FeatureServer.',
+    county = 'County name (County) of the farmland polygon.',
+    code = 'Important Farmland class code (Code) published by the Dept of Conservation.',
+    geometry = 'Farmland geometry in EPSG:4326, wrapped in ST_SetCRS so the SRID survives the DuckDB-to-PostGIS FDW.'
+  ),
   gateway duckdb
 );
 

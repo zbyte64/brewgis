@@ -1,6 +1,14 @@
 MODEL (
   name duckdb.@{region}.overture_land_use,
   kind VIEW,
+  description 'Overture Maps land use polygons for the region (release 2026-08-19.0 GeoParquet read from S3 by DuckDB via httpfs), reprojected to 3857, 4326 and the local CRS.',
+  column_descriptions (
+    geometry = 'Land use polygon reprojected from Overture CRS84 to Web Mercator (EPSG:3857).',
+    wgs84_geometry = 'Land use polygon reprojected from Overture CRS84 to EPSG:4326 (lon/lat).',
+    local_geometry = 'Land use polygon reprojected from Overture CRS84 to the region local CRS (EPSG:3310).',
+    subtype = 'Overture land use subtype of the polygon, cast to VARCHAR.',
+    class = 'Overture land use class of the polygon, cast to VARCHAR.'
+  ),
   gateway duckdb,
   dialect duckdb,
   blueprints @region_blueprints()

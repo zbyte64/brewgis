@@ -4,6 +4,30 @@ MODEL (
     unique_key (geoid, data_year),
     batch_size 100000
   ),
+  description 'Block group demographics from ACS 5-year estimates joined to TIGER/Line block group geometry, with dwelling units split by type and cost burden shares computed, one row per block group and year.',
+  column_descriptions (
+    geoid = '12-digit block group GEOID (state+county+tract+block group FIPS).',
+    geometry = 'Block group polygon (EPSG:4326, multipolygon) from TIGER/Line vintage @bg_vintage.',
+    data_year = 'First day of the ACS data year (make_date(@acs_year, 1, 1)).',
+    pop = 'Total population of the block group (ACS B01001_001E, people).',
+    hh = 'Households, the occupied housing units of the block group (ACS B25003_001E).',
+    du = 'Total housing units (ACS B25024_001E).',
+    du_detsf = 'Detached single-family units, 1-unit detached structures (ACS B25024_002E).',
+    du_attsf = 'Attached single-family units, 1-unit attached structures (ACS B25024_003E).',
+    du_mf2to4 = 'Multi-family units in 2 to 4 unit structures (ACS B25024_004E plus B25024_005E).',
+    du_mf5p = 'Multi-family units in structures of 5 or more units (ACS B25024_006E to B25024_009E).',
+    du_mf = 'Multi-family dwelling units, the sum of du_mf2to4 and du_mf5p.',
+    du_detsf_sl = 'Detached single-family units assigned to small lots by the density-calibrated sigmoid ratio.',
+    du_detsf_ll = 'Detached single-family units assigned to large lots, the remainder of du_detsf.',
+    owner_occupied = 'Owner-occupied housing units (ACS B25003_002E).',
+    renter_occupied = 'Renter-occupied housing units (ACS B25003_003E).',
+    median_income = 'Median household income of the block group (ACS B19013_001E, dollars per year).',
+    rent_burden_pct = 'Rent-burdened renter households (30 percent of income or more), percent of renter households.',
+    cost_burden_pct = 'Owner and renter households paying 30 percent or more of income on housing, as a percent.',
+    total_population = 'Total population from the ACS Hispanic origin by race table (B03002_001E).',
+    pct_minority = 'Share of the population not reporting White alone (B03002_001E minus B03002_002E), as a percent.',
+    pct_college_educated = 'Share of adults 25 and over with a bachelors degree or higher (B15003_022E-025E).'
+  ),
   audits (
     not_null(columns := (geoid, data_year)),
     assert_acs_block_group_coverage

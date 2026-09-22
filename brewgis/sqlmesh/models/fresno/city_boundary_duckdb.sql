@@ -1,6 +1,13 @@
 MODEL (
   name duckdb.fresno.city_boundary,
   kind VIEW,
+  description 'DuckDB staging VIEW fetching the Fresno City Limits FeatureServer boundary record.',
+  column_descriptions (
+    objectid = 'Feature ID (FID) from the FeatureServer feature properties.',
+    agency_cod = 'AGENCY_COD agency code from the FeatureServer feature properties.',
+    agency_nam = 'AGENCY_NAM agency name from the FeatureServer feature properties; the fetch keeps only Fresno.',
+    geometry = 'Boundary geometry parsed from the page GeoJSON with ST_GeomFromGeoJSON (EPSG:4326 lon/lat).'
+  ),
   gateway duckdb,
   dialect duckdb,
   columns (

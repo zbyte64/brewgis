@@ -204,6 +204,19 @@ _SOURCE_TABLE = {
 @model(
     "brewgis.@{region}.assessor_parcels",
     kind={"name": ModelKindName.FULL},
+    description="Uniform APN-level assessor parcel contract: county assessor data or parcel_shim pass-through.",
+    column_descriptions={
+        "apn": "Assessor parcel number (APN); equals parcel_id where the region has no assessor data.",
+        "geometry": "Parcel boundary in WGS84 (EPSG:4326), repaired with ST_MakeValid.",
+        "centroid": "Centroid of the WGS84 parcel boundary (EPSG:4326).",
+        "local_geometry": "Parcel boundary in the local projected SRID (3310 CA Albers).",
+        "centroid_local": "Centroid of the parcel in the local SRID (3310 CA Albers), used for radius joins.",
+        "lot_size_acres": "Parcel lot size (acres) from the assessor lotsize field or parcel_shim acres.",
+        "landuse": "Assessor land use code of the parcel; NULL where the region has no assessor data.",
+        "zone": "Assessor zoning code of the parcel; NULL where the region has no assessor data.",
+        "jurisdiction": "Jurisdiction the parcel lies in; NULL where the region has no assessor data.",
+        "land_development_category": "Development category of the parcel from the assessor use code.",
+    },
     columns={
         "apn": "text",
         "geometry": "geometry",

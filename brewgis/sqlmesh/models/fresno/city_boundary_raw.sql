@@ -1,6 +1,13 @@
 MODEL (
   name brewgis.fresno.city_boundary_raw,
   kind FULL,
+  description 'PostGIS bridge table materializing the DuckDB Fresno city limits fetch, one boundary row.',
+  column_descriptions (
+    objectid = 'Feature ID (FID) of the city limits record, as fetched from the FeatureServer.',
+    agency_cod = 'AGENCY_COD code of the agency that publishes the boundary.',
+    agency_nam = 'AGENCY_NAM agency name of the boundary record.',
+    geometry = 'City limits geometry in EPSG:4326, ST_SetCRS-tagged so the FDW keeps the SRID.'
+  ),
   gateway duckdb
 );
 

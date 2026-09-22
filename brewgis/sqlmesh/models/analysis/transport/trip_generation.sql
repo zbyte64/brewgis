@@ -1,6 +1,18 @@
 MODEL (
   name brewgis.@{scenario_schema}.@{model_table},
   kind FULL,
+  description 'Daily trip generation per parcel from ITE and built-form trip rates, split by trip purpose.',
+  column_descriptions (
+    parcel_id = 'Parcel identifier from the scenario end state (core_end_state).',
+    area_gross_acres = 'Gross parcel area in acres, from the scenario end state.',
+    trips_total = 'Total primary trips per day: residential plus pass-by-adjusted non-residential trips.',
+    trips_res = 'Residential trips per day: dwelling units x the built-form residential trip rate.',
+    trips_nonres = 'Non-residential trips per day: floor area x ITE rate x the pass-by factor.',
+    trips_hbw = 'Home-based work share of the parcel daily trips.',
+    trips_hbo = 'Home-based other share of the parcel daily trips.',
+    trips_nhb = 'Non-home-based share of the parcel daily trips.',
+    geometry = 'Parcel geometry copied from the scenario end state (EPSG:4326).'
+  ),
   blueprints @analysis_blueprints('trip_generation'),
   audits (
     not_null(columns := (parcel_id,)),

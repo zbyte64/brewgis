@@ -4,6 +4,25 @@ MODEL (
     unique_key (apn),
     batch_size 100000
   ),
+  description 'APN-level dwelling unit estimate from a 2-tier cascade: assessor units, then the LightGBM regressor.',
+  column_descriptions (
+    apn = 'Assessor parcel number (APN) of the parcel.',
+    du = 'Final dwelling unit estimate from the 2-tier cascade (assessor units, then regressor).',
+    du_detsf_sl_regressor = 'Regressor estimate of detached single-family small-lot dwelling units.',
+    du_detsf_ll_regressor = 'Regressor estimate of detached single-family large-lot dwelling units.',
+    du_attsf_regressor = 'Regressor estimate of attached single-family dwelling units.',
+    du_mf2to4_regressor = 'Regressor estimate of multi-family 2-4 unit dwelling units.',
+    du_mf5p_regressor = 'Regressor estimate of multi-family 5+ unit dwelling units.',
+    du_total_regressor = 'Regressor estimate of total dwelling units across all types.',
+    hh_size = 'Area-weighted mean household size from the ACS block groups (people per household); defaults to 2.5.',
+    vacancy_rate = 'Housing vacancy rate (fraction 0-1); flat 0.05 default in this model.',
+    assessor_units = 'Dwelling units observed directly in the assessor sales data (Tier 1); 0 when absent.',
+    residential_building_sqft = 'Residential building floor area from the dasymetric weights (sq ft).',
+    land_development_category = 'Land development category from the dasymetric weights.',
+    pop_dasym_weight = 'Population weight: dwelling units times household size (people).',
+    hh_dasym_weight = 'Household weight: dwelling units times occupancy (households).',
+    hh = 'Households: dwelling units times occupancy (households).'
+  ),
   audits (
     not_null(columns := (apn)),
     unique_values(columns := (apn,)),

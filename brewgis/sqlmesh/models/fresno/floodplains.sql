@@ -1,6 +1,13 @@
 MODEL (
   name brewgis.fresno.floodplains,
   kind VIEW,
+  description 'FEMA NFHL flood zones over the Fresno region from MapServer layer 28, one polygon per row.',
+  column_descriptions (
+    fld_zone = 'FEMA flood hazard zone code (FLD_ZONE) of the polygon in the NFHL layer.',
+    sfha_tf = 'SFHA_TF flag marking whether the zone is a Special Flood Hazard Area.',
+    static_bfe = 'STATIC_BFE static base flood elevation from the NFHL record (source units, not rescaled).',
+    geom = 'Flood zone polygon at SRID 4326, restored with ST_SetSRID from the bridge table geometry.'
+  ),
   columns (
     fld_zone TEXT,
     sfha_tf TEXT,

@@ -1,6 +1,15 @@
 MODEL (
   name brewgis.@{scenario_schema}.@{model_table},
   kind FULL,
+  description 'Per-parcel net fiscal impact: property tax and sales tax revenue minus service costs.',
+  column_descriptions (
+    parcel_id = 'Assessor parcel number (APN) present in any of the three fiscal models.',
+    property_tax_revenue = 'Property tax revenue from the fiscal property tax model ($ per year).',
+    sales_tax_revenue = 'Sales tax revenue from the fiscal sales tax model ($ per year).',
+    service_cost_total = 'Total service cost from the fiscal service costs model ($ per year).',
+    net_fiscal_impact = 'Property tax plus sales tax revenue minus service costs ($ per year).',
+    geometry = 'Parcel boundary geometry from the first fiscal model that has one (EPSG:4326).'
+  ),
   blueprints @analysis_blueprints('fiscal_net_impact'),
   audits (
     not_null(columns := (parcel_id,)),

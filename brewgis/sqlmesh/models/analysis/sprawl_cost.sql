@@ -1,6 +1,21 @@
 MODEL (
   name brewgis.@{scenario_schema}.@{model_table},
   kind FULL,
+  description 'Per-parcel cost of sprawl: infrastructure and amortised capital cost per unit and household.',
+  column_descriptions (
+    parcel_id = 'Assessor parcel number (APN) of the parcel.',
+    area_gross_acres = 'Gross parcel area (acres).',
+    pop = 'Population allocated to the parcel (people).',
+    hh = 'Households allocated to the parcel (households).',
+    du = 'Dwelling units allocated to the parcel (units).',
+    built_form_key = 'Built form key assigned to the parcel in the end state.',
+    infrastructure_cost_per_du_annual = 'Annual infrastructure cost per dwelling unit ($ per unit per year).',
+    capital_cost_per_du = 'One-time capital cost per dwelling unit ($ per unit).',
+    infrastructure_cost_annual = 'Annual infrastructure cost of the parcel ($ per year).',
+    capital_cost = 'One-time capital cost of the parcel ($).',
+    infrastructure_cost_per_hh_annual = 'Infrastructure plus amortised capital cost per household ($ per year).',
+    geometry = 'Parcel boundary geometry (EPSG:4326).'
+  ),
   blueprints @analysis_blueprints('sprawl_cost'),
   audits (
     not_null(columns := (parcel_id,)),

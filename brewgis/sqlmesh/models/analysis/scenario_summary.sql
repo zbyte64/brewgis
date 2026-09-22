@@ -1,6 +1,26 @@
 MODEL (
   name brewgis.@{scenario_schema}.@{model_table},
   kind FULL,
+  description 'Single-row per-scenario rollup of the headline metrics from the analysis module outputs.',
+  column_descriptions (
+    scenario_id = 'Identifier of the scenario this summary row aggregates.',
+    total_population = 'Total population summed over core_end_state (people).',
+    total_households = 'Total households summed over core_end_state (households).',
+    du = 'Total dwelling units summed over core_end_state (units).',
+    total_employment = 'Total employment summed over core_end_state (jobs).',
+    vmt_total = 'Total vehicle miles travelled from the scenario vmt model.',
+    vmt_per_capita = 'Total VMT divided by total population (VMT per person).',
+    co2e_total_kg = 'Total CO2e summed over the scenario total_ghg model (kg).',
+    co2e_per_capita_kg = 'CO2e per resident of the parcels that have geometry (kg per person).',
+    cost_burdened_hh_pct = 'Average cost-burden percentage over housing_cost_burden (% as 0-100).',
+    avg_sprawl_index = 'Average sprawl index over the sprawl_index parcels (0-100).',
+    water_demand_total_af = 'Total water demand from the water_demand model (acre-feet per year).',
+    energy_demand_total_mwh = 'Electricity plus gas demand from energy_demand (MWh per year).',
+    land_consumed_acres = 'Total acres consumed from the land_consumption model (acres).',
+    land_consumed_pct = 'Average impervious percentage over land_consumption (% as 0-100).',
+    net_dalys = 'Total net DALYs from the health_impacts model (DALYs per year).',
+    displacement_risk_pct = 'Share of parcels rated at_risk or displacement_pressure (% as 0-100).'
+  ),
   blueprints @analysis_blueprints('scenario_summary'),
   audits (
     not_null(columns := (scenario_id,))

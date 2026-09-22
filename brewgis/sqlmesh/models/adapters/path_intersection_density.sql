@@ -4,6 +4,12 @@ MODEL (
     unique_key (apn),
     batch_size 100000
   ),
+  description 'Per-parcel Overture path intersection density within 1/4 mile of the parcel centroid.',
+  column_descriptions (
+    apn = 'Assessor parcel number (APN) the density belongs to.',
+    path_intersection_density = 'Overture bike/path intersection points within 402 m of the centroid (per sq mi).',
+    geometry = 'Parcel boundary geometry (EPSG:4326) from assessor_parcels.'
+  ),
   audits (
     not_null(columns := (apn)),
     unique_values(columns := (apn,))

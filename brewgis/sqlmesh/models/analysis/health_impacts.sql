@@ -1,6 +1,16 @@
 MODEL (
   name brewgis.@{scenario_schema}.@{model_table},
   kind FULL,
+  description 'Per-parcel health outcomes from physical activity and transport air quality, in deaths and DALYs.',
+  column_descriptions (
+    parcel_id = 'Assessor parcel number (APN) of the parcel.',
+    dalys_averted_pa = 'DALYs averted per year by physical activity, from averted deaths.',
+    dalys_added_air_quality = 'DALYs added per year by transport air quality, from added deaths.',
+    net_dalys = 'Averted minus added DALYs per year; zero for parcels without population.',
+    deaths_averted_pa = 'Deaths averted per year by physical activity, from MET-hours.',
+    deaths_added_air_quality = 'Deaths added per year by transport air quality, from transport CO2e.',
+    geometry = 'Parcel boundary geometry (EPSG:4326).'
+  ),
   blueprints @analysis_blueprints('health_impacts'),
   audits (
     not_null(columns := (parcel_id,)),

@@ -1,6 +1,16 @@
 MODEL (
   name brewgis.@{region}.overture_transport,
   kind FULL,
+  description 'PostGIS bridge table materializing the DuckDB Overture transportation VIEW, one row per road segment, with CRS tags set and local_geometry left NULL.',
+  column_descriptions (
+    geometry = 'Road segment geometry tagged EPSG:3857, reused from the DuckDB overture_transport view.',
+    wgs84_geometry = 'Road segment geometry tagged EPSG:4326, reused from the DuckDB overture_transport view.',
+    local_geometry = 'Always NULL here: local_geometry is computed downstream in the PostGIS intersection models.',
+    surface = 'Road surface type carried through from the DuckDB overture_transport view.',
+    class = 'Overture road class carried through from the DuckDB overture_transport view.',
+    subclass = 'Overture road subclass carried through from the DuckDB overture_transport view.',
+    width = 'Road width in meters carried through from the DuckDB overture_transport view.'
+  ),
   gateway duckdb,
   blueprints @region_blueprints()
 );

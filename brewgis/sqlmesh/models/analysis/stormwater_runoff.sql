@@ -1,6 +1,18 @@
 MODEL (
   name brewgis.@{scenario_schema}.@{model_table},
   kind FULL,
+  description 'Per-parcel stormwater runoff from impervious cover using the Simple Method, and its change.',
+  column_descriptions (
+    parcel_id = 'Assessor parcel number (APN) of the parcel.',
+    impervious_acres = 'Impervious area from the land consumption model (acres).',
+    impervious_pct = 'Impervious area as a share of the parcel (% as 0-100).',
+    runoff_coefficient = 'Runoff coefficient: 0.05 plus 0.009 per impervious percent (unitless).',
+    runoff_volume_acre_ft = 'Annual runoff volume from precipitation and the coefficient (acre-feet).',
+    runoff_baseline_acre_ft = 'Baseline annual runoff (acre-feet); currently equals the scenario value.',
+    geometry = 'Parcel boundary geometry (EPSG:4326).',
+    runoff_change_acre_ft = 'Scenario runoff minus baseline runoff (acre-feet per year).',
+    runoff_change_pct = 'Runoff change as a share of the baseline (% as 0-100); zero without one.'
+  ),
   blueprints @analysis_blueprints('stormwater_runoff'),
 );
 

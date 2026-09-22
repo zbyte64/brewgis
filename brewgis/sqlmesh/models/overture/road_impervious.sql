@@ -4,6 +4,16 @@ MODEL (
     unique_key (parcel_id),
     batch_size 100000
   ),
+  description 'Per-parcel Overture road length inside SACOG comparison parcels from exact geometry intersection, split paved and unpaved, plus the paved share and gross parcel area.',
+  column_descriptions (
+    parcel_id = 'Parcel identifier taken from public.sacog_comparison_parcels.geography_id.',
+    road_paved_length_m = 'Length of Overture road segments classified paved inside the parcel (meters).',
+    road_unpaved_length_m = 'Overture road segment length inside the parcel for unpaved surfaces (meters).',
+    road_other_length_m = 'Overture road segment length inside the parcel for other surface classes (meters).',
+    road_total_length_m = 'Total length of Overture road segments intersecting the parcel, all classes (meters).',
+    road_impervious_fraction = 'Fraction of parcel road length that is paved (0-1; 0 when the parcel has no road).',
+    parcel_area_gross = 'Gross parcel area from ST_Area of the parcel geometry divided by 4046.86 (acres).'
+  ),
   audits (
     not_null(columns := (parcel_id)),
     assert_road_length_valid

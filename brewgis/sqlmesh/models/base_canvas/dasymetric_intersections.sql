@@ -1,6 +1,12 @@
 MODEL (
   name brewgis.@{region}.dasymetric_intersections,
   kind FULL,
+  description 'Parcel-to-APN crosswalk with the envelope intersection area used to allocate dasymetric quantities.',
+  column_descriptions (
+    parcel_id = 'Unique parcel identifier from the parcel shim.',
+    apn = 'Assessor parcel number intersecting the parcel.',
+    intersect_area_sqft = 'Area of the intersection between the parcel and APN envelopes (sq ft).'
+  ),
   audits (
     not_null(columns := (parcel_id, apn))
   ),

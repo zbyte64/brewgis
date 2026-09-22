@@ -1,9 +1,10 @@
 MODEL (
   name brewgis.@{region}.overture_intersection_points,
   kind FULL,
+  description 'Pre-computed Overture road intersection points for the region: transport segment endpoints snapped to a 10 m grid and kept when at least three segments meet.',
   column_descriptions (
-    geometry = "Intersection point (snapped to 10m grid) in local_srid (3310)",
-    street_count = "Number of road segments meeting at this intersection"
+    geometry = 'Intersection point (snapped to 10m grid) in local_srid (3310)',
+    street_count = 'Number of road segments meeting at this intersection'
   ),
   audits (
     -- Also covers transport-data availability from overture_transport:

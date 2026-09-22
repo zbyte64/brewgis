@@ -4,6 +4,13 @@ MODEL (
     unique_key (apn),
     batch_size 100000
   ),
+  description 'Per-parcel authoritative residential and non-residential building floor area, one row per APN.',
+  column_descriptions (
+    apn = 'Assessor parcel number (APN) the authoritative areas belong to.',
+    authoritative_residential_sqft = 'Residential building floor area from the highest-priority source (sq ft).',
+    authoritative_non_residential_sqft = 'Non-residential floor area from the highest-priority source (sq ft).',
+    data_source = 'Source of the authoritative areas: overture_with_levels, overture_flat, assessor_sales or imputed.'
+  ),
   audits (
     not_null(columns := (apn)),
     unique_values(columns := (apn,))

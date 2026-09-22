@@ -1,6 +1,23 @@
 MODEL (
   name brewgis.tests.test_stage_building_footprints,
   kind VIEW,
+  description 'Test fixture: staging VIEW matching the parcel_building_sqft_by_type schema.',
+  column_descriptions (
+    apn = 'Assessor parcel number (APN) of the test parcel.',
+    total_footprint_sqft = 'Total building floor area (sq ft), summed footprint area times building levels.',
+    building_count = 'Number of Overture buildings intersecting the parcel (count).',
+    footprint_ratio = 'Total building floor area divided by parcel lot area (unitless ratio).',
+    lot_size_acres = 'Parcel lot size (acres) from the test assessor parcels seed.',
+    residential_building_sqft = 'Floor area (sq ft) of residential buildings, footprint times levels.',
+    commercial_building_sqft = 'Floor area (sq ft) of commercial buildings, footprint times levels.',
+    industrial_building_sqft = 'Floor area (sq ft) of industrial buildings, footprint times levels.',
+    other_building_sqft = 'Floor area (sq ft) of buildings whose class falls outside the main groups.',
+    residential_building_count = 'Number of buildings on the parcel, reused as the residential count.',
+    non_residential_building_count = 'Non-residential building count, hard-coded to zero in this fixture.',
+    max_levels = 'Maximum number of building levels among the buildings on the parcel (levels).',
+    land_development_category = 'Land development category, hard-coded to urban for every parcel here.',
+    geometry = 'Parcel geometry from the test assessor parcels seed (EPSG:4326).'
+  ),
   audits (
     not_null(columns := (apn))
   )

@@ -226,6 +226,16 @@ def _feature_matrix(
 @model(
     "brewgis.assessor.parcel_du_regressor",
     kind=dict(name=ModelKindName.FULL),
+    description="DU training cache: SACOG LightGBM dwelling units by type, read by the region du_regressor models.",
+    column_descriptions={
+        "apn": "Assessor parcel number (APN) the prediction belongs to.",
+        "du_attsf": "Predicted attached single-family dwelling units.",
+        "du_detsf_ll": "Predicted detached single-family large-lot dwelling units.",
+        "du_detsf_sl": "Predicted detached single-family small-lot dwelling units.",
+        "du_mf2to4": "Predicted multi-family 2-4 unit dwelling units.",
+        "du_mf5p": "Predicted multi-family 5+ unit dwelling units.",
+        "du_total": "Predicted total dwelling units across all types.",
+    },
     columns={
         "apn": "text",
         "du_detsf_sl": "float",

@@ -1,6 +1,20 @@
 MODEL (
   name brewgis.@{scenario_schema}.@{model_table},
   kind FULL,
+  description 'Per-parcel land use transition, acres consumed and preserved, and impervious surface estimate.',
+  column_descriptions (
+    parcel_id = 'Assessor parcel number (APN) of the parcel.',
+    land_use_transition = 'Transition class: vacant_to_category when developed, else unchanged.',
+    acres_consumed = 'Acres consumed by the development (acres); zero when unchanged.',
+    acres_preserved = 'Acres not developed, gross area minus consumed, else all acres (acres).',
+    development_type = 'Land development category, defaulting to undeveloped (text).',
+    area_gross_acres = 'Gross parcel area (acres).',
+    impervious_sqft = 'Impervious surface: footprint plus parking plus right-of-way (sq ft).',
+    impervious_acres = 'Impervious surface converted to acres (acres).',
+    pervious_acres = 'Gross area minus impervious acres, floored at zero (acres).',
+    impervious_pct = 'Impervious acres as a share of gross area (% as 0-100).',
+    geometry = 'Parcel boundary geometry (EPSG:4326).'
+  ),
   blueprints @analysis_blueprints('land_consumption'),
 );
 

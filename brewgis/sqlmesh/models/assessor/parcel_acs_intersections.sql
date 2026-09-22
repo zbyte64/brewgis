@@ -4,6 +4,14 @@ MODEL (
     unique_key (apn, bg_geoid),
     batch_size 100000
   ),
+  description 'Intersection areas between assessor parcels and ACS block groups, one row per pair.',
+  column_descriptions (
+    apn = 'Assessor parcel number (APN) of the intersecting parcel.',
+    bg_geoid = 'Census block group GEOID (12-digit FIPS) of the intersecting block group.',
+    hh = 'Households in the intersecting block group (count), passed through from ACS.',
+    du = 'Dwelling units in the intersecting block group (count), passed through from ACS.',
+    intersect_area_sqft = 'Area of the parcel and block group intersection in local_srid 3310 (metres squared).'
+  ),
   audits (
     not_null(columns := (apn, bg_geoid))
   ),

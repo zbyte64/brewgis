@@ -72,6 +72,11 @@ _ON_VIRTUAL_UPDATE = [
 @model(
     name=f"brewgis.{MODEL_SCHEMA}.@{{model_table}}",
     kind=ModelKindName.VIEW,
+    description=(
+        "One ALTERNATIVE scenario's painted canvas: the workspace base canvas"
+        " LEFT JOIN its PaintedCanvas overrides (COALESCE(painted, base),"
+        " copy-on-write), one row per parcel."
+    ),
     blueprints=[dict(profile) for profile in _PROFILES],
     on_virtual_update=_ON_VIRTUAL_UPDATE,
     is_sql=True,
@@ -86,6 +91,12 @@ def execute(evaluator: MacroEvaluator, **kwargs: Any) -> str:
     column list captured in the blueprint, which SQLMesh infers columns from.
     For the same reason there is no ``depends_on``: the
     ``FROM brewgis.<base_table>`` the generator emits establishes the edge.
+
+    No ``column_descriptions`` either, for that same reason: the column set is
+    the per-scenario base table's, so a static dict would name columns that
+    another scenario's base table does not have (each name it misses is a
+    ``COMMENT ON COLUMN`` SQLMesh logs a warning for). The SQLMesh UI infers
+    them through lineage from the base canvas model instead.
     """
     from brewgis.workspace.services.canvas_view_manager import build_canvas_view_select
 

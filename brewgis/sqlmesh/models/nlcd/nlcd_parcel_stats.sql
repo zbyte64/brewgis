@@ -1,6 +1,12 @@
 MODEL (
   name brewgis.@{region}.nlcd_parcel_stats,
   kind FULL,
+  description 'Per-parcel NLCD land cover statistics (development category, impervious fraction) from MRLC raster.',
+  column_descriptions (
+    parcel_id = 'Parcel identifier from the region parcel source (@nlcd_parcel_source), one row per parcel.',
+    land_development_category = 'Majority NLCD class: water, urban, natural, agricultural, wetland, unknown.',
+    impervious_fraction = 'Pixel-weighted mean impervious fraction (0-1) of the parcel; 0 with no NLCD pixel.'
+  ),
   gateway duckdb,
   dialect duckdb,
   audits (

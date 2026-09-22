@@ -3,6 +3,32 @@ MODEL (
   kind SEED (
     path '../../seeds/test_lodes_raw.csv'
   ),
+  description 'Test fixture: 2 LEHD LODES WAC rows matching the lodes_raw staging schema, one per block and year.',
+  column_descriptions (
+    w_geocode = '15-digit census block GEOID of the workplace the jobs are reported for.',
+    year = 'LEHD LODES release year the rows cover (2008 in the fixture).',
+    c000 = 'LODES C000 total jobs in the block.',
+    cns01 = 'LODES WAC segment CNS01 jobs in the block: goods producing (NAICS 11, 21 and 23).',
+    cns02 = 'LODES WAC segment CNS02 jobs in the block: manufacturing.',
+    cns03 = 'LODES WAC segment CNS03 jobs in the block: trade, transport and utilities.',
+    cns04 = 'LODES WAC segment CNS04 jobs in the block: information.',
+    cns05 = 'LODES WAC segment CNS05 jobs in the block: finance and insurance.',
+    cns06 = 'LODES WAC segment CNS06 jobs in the block: real estate.',
+    cns07 = 'LODES WAC segment CNS07 jobs in the block: professional services.',
+    cns08 = 'LODES WAC segment CNS08 jobs in the block: management.',
+    cns09 = 'LODES WAC segment CNS09 jobs in the block: admin and support.',
+    cns10 = 'LODES WAC segment CNS10 jobs in the block: educational services.',
+    cns11 = 'LODES WAC segment CNS11 jobs in the block: health care.',
+    cns12 = 'LODES WAC segment CNS12 jobs in the block: arts and entertainment.',
+    cns13 = 'LODES WAC segment CNS13 jobs in the block: accommodation and food.',
+    cns14 = 'LODES WAC segment CNS14 jobs in the block: other services.',
+    cns15 = 'LODES WAC segment CNS15 jobs in the block: public administration.',
+    cns16 = 'LODES WAC segment CNS16 jobs in the block: unclassified.',
+    cns17 = 'LODES WAC segment CNS17 jobs in the block: armed forces.',
+    cns18 = 'LODES WAC segment CNS18 jobs in the block: federal government.',
+    cns19 = 'LODES WAC segment CNS19 jobs in the block: state government.',
+    cns20 = 'LODES WAC segment CNS20 jobs in the block: local government.'
+  ),
   columns (
     w_geocode TEXT,
     year INTEGER,

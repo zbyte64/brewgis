@@ -1,6 +1,23 @@
 MODEL (
   name brewgis.@{scenario_schema}.@{model_table},
   kind FULL,
+  description 'Parcel-level residential and non-residential energy demand in kWh per year from end-state floor area.',
+  column_descriptions (
+    parcel_id = 'Assessor parcel number (APN) of the parcel.',
+    area_gross_acres = 'Gross parcel area (acres).',
+    acres_developed = 'Developed acres from the end state (acres).',
+    energy_electricity_res = 'Residential electricity demand (kWh per year) from unit area and EUI.',
+    energy_gas_res = 'Residential gas demand (kWh per year) from unit area and EUI.',
+    energy_electricity_nonres = 'Non-residential electricity demand (kWh per year) from floor area and EUI.',
+    energy_gas_nonres = 'Non-residential gas demand (kWh per year) from floor area and EUI.',
+    energy_total = 'Total energy demand, residential plus non-residential (kWh per year).',
+    energy_intensity_kwh_per_sqft = 'Energy demand per unit floor area (kWh per sq ft per year); zero without area.',
+    du = 'Dwelling units from the end state, used for residential unit area.',
+    building_sqft_total = 'Total building floor area from the end state (sq ft).',
+    pop = 'Population allocated to the parcel (people).',
+    emp = 'Employment allocated to the parcel (jobs).',
+    geometry = 'Parcel boundary geometry (EPSG:4326).'
+  ),
   blueprints @analysis_blueprints('energy_demand'),
 );
 

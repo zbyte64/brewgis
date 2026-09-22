@@ -1,6 +1,20 @@
 MODEL (
   name brewgis.@{scenario_schema}.@{model_table},
   kind FULL,
+  description 'Per-parcel displacement risk from four base-canvas equity indicators mapped to a risk category.',
+  column_descriptions (
+    parcel_id = 'Assessor parcel number (APN) of the parcel.',
+    area_gross_acres = 'Gross parcel area (acres).',
+    pop = 'Population allocated to the parcel (people).',
+    hh = 'Households allocated to the parcel (households).',
+    median_income = 'Median household income from the base canvas ($ per year).',
+    rent_burden_pct = 'Household rent burden from the base canvas (% as 0-100).',
+    pct_minority = 'Share of the population that is people of colour (% as 0-100).',
+    pct_college_educated = 'Share of adults with a college degree, from base canvas (% as 0-100).',
+    vulnerability_score = 'Count of the four equity thresholds the parcel fails (0-4).',
+    displacement_risk_category = 'Risk band: stable, vulnerable, at_risk or displacement_pressure.',
+    geometry = 'Parcel boundary geometry (EPSG:4326).'
+  ),
   blueprints @analysis_blueprints('displacement_risk'),
 );
 

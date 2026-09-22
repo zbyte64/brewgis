@@ -78,6 +78,15 @@ _TRAIN_MODEL = {
 @model(
     "brewgis.@{region}.emp_ratios_regressor",
     kind={"name": ModelKindName.FULL},
+    description="LightGBM prediction of employment per acre by sector for parcels, from the SACOG-trained cache.",
+    column_descriptions={
+        "apn": "Assessor parcel number (APN) the prediction belongs to.",
+        "emp_ret_per_acre": "Predicted retail employment density (jobs per acre).",
+        "emp_off_per_acre": "Predicted office employment density (jobs per acre).",
+        "emp_pub_per_acre": "Predicted public employment density (jobs per acre).",
+        "emp_ind_per_acre": "Predicted industrial employment density (jobs per acre).",
+        "emp_ag_per_acre": "Predicted agricultural employment density (jobs per acre).",
+    },
     columns={
         "apn": "text",
         "emp_ret_per_acre": "float",

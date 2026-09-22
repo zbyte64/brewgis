@@ -4,6 +4,11 @@ MODEL (
     unique_key (parcel_id),
     batch_size 100000
   ),
+  description 'Web mercator (EPSG:3857) parcel geometries for NLCD zonal statistics, one row per parcel_id.',
+  column_descriptions (
+    parcel_id = 'Parcel identifier from the source comparison parcels table (sacog_comparison_parcels).',
+    geometry = 'Parcel geometry transformed to web mercator (EPSG:3857 by default) to match the NLCD raster CRS.'
+  ),
   audits (
     not_null(columns := (parcel_id))
   )

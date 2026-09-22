@@ -1,6 +1,14 @@
 MODEL (
   name brewgis.census.tiger_blocks,
   kind VIEW,
+  description 'PostGIS VIEW over the TIGER blocks bridge that restores SRID metadata with ST_SetSRID.',
+  column_descriptions (
+    geoid = 'Census block GEOID from STATEFP20, COUNTYFP20, TRACTCE20 and BLOCKCE20 (15-digit FIPS).',
+    geometry = 'Block boundary MultiPolygon re-tagged as SRID 3857 (Web Mercator, meters).',
+    wgs84_geometry = 'Block boundary MultiPolygon re-tagged as SRID 4326 (degrees, EPSG:4326).',
+    state_fips = 'Two-digit state FIPS code from STATEFP20.',
+    vintage = 'TIGER/Line vintage of the source file, always 2020 for this model.'
+  ),
   columns (
     geoid TEXT,
     geometry GEOMETRY(MultiPolygon, 3857),

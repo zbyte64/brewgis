@@ -1,6 +1,15 @@
 MODEL (
   name brewgis.@{scenario_schema}.@{model_table},
   kind FULL,
+  description 'Daily vehicle miles travelled per parcel from trip generation, auto mode share and trip length.',
+  column_descriptions (
+    parcel_id = 'Parcel identifier from the scenario end state (core_end_state).',
+    vmt_total = 'Vehicle miles travelled per day for the parcel: trips x auto share x trip length x circuity.',
+    vmt_per_capita = 'Vehicle miles travelled per resident per day, zero where population is zero.',
+    auto_trips = 'Trips made by automobile per day (count): total trips x the auto mode share.',
+    avg_trip_length_mi = 'Average one-way trip length assumed by the model (miles).',
+    geometry = 'Parcel geometry copied from the scenario end state (EPSG:4326).'
+  ),
   blueprints @analysis_blueprints('vmt'),
   audits (
     not_null(columns := (parcel_id,)),

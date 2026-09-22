@@ -1,6 +1,15 @@
 MODEL (
   name brewgis.@{scenario_schema}.@{model_table},
   kind FULL,
+  description 'Per-parcel annual public service costs for schools, public safety and roads and transit.',
+  column_descriptions (
+    parcel_id = 'Assessor parcel number (APN) of the parcel.',
+    service_cost_schools = 'Annual schools and infrastructure cost per dwelling unit ($ per year).',
+    service_cost_public_safety = 'Annual police, fire and library cost per resident ($ per year).',
+    service_cost_roads = 'Annual roads and transit cost per employee ($ per year).',
+    service_cost_total = 'Sum of the schools, public safety and roads costs ($ per year).',
+    geometry = 'Parcel boundary geometry (EPSG:4326).'
+  ),
   blueprints @analysis_blueprints('fiscal_service_costs'),
   audits (
     not_null(columns := (parcel_id,)),

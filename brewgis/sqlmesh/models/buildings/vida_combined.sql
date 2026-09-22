@@ -1,6 +1,14 @@
 MODEL (
   name duckdb.buildings.vida_combined,
   kind VIEW,
+  description 'VIDA Google and Microsoft building footprints read from Source Cooperative GeoParquet in DuckDB.',
+  column_descriptions (
+    geometry = 'Building footprint projected from WGS84 to Web Mercator (EPSG:3857).',
+    wgs84_geometry = 'Building footprint in source WGS84 coordinates (EPSG:4326).',
+    confidence = 'VIDA confidence score for the building footprint.',
+    bf_source = 'Building-footprint source provider: google or microsoft (OSM rows are filtered out).',
+    area_in_meters = 'Footprint area reported by VIDA in square metres (m2).'
+  ),
   gateway duckdb,
   dialect duckdb
 );

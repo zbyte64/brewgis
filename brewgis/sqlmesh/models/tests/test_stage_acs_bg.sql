@@ -1,6 +1,26 @@
 MODEL (
   name brewgis.tests.test_stage_acs_bg,
   kind VIEW,
+  description 'Test fixture: staging VIEW matching the acs_block_group schema from the test_acs_block_group seed.',
+  column_descriptions (
+    geoid = 'Census block group GEOID the ACS demographics belong to.',
+    pop = 'Total population of the block group (people).',
+    hh = 'Households in the block group (count).',
+    du = 'Total housing units in the block group (count).',
+    du_detsf = 'Detached single-family dwelling units (count).',
+    du_detsf_sl = 'Detached single-family small lot dwelling units (count).',
+    du_detsf_ll = 'Detached single-family large lot dwelling units (count).',
+    du_attsf = 'Attached single-family dwelling units (count).',
+    du_mf = 'Multi-family dwelling units (count).',
+    du_mf2to4 = 'Multi-family 2 to 4 unit dwelling units (count).',
+    du_mf5p = 'Multi-family 5 plus unit dwelling units (count).',
+    median_income = 'Median household income of the block group ($ per year).',
+    rent_burden_pct = 'Share of households paying over 30 percent of income on rent (percent).',
+    pct_minority = 'Share of the block group population that is people of color (percent).',
+    pct_college_educated = 'Share of the block group population with a college education (percent).',
+    cost_burden_pct = 'Share of households that are cost burdened (percent).',
+    geometry = 'Block group geometry from the test seed (EPSG:4326).'
+  ),
   audits (
     not_null(columns := (geoid))
   )

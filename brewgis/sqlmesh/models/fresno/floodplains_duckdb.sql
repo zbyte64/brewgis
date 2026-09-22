@@ -1,6 +1,13 @@
 MODEL (
   name duckdb.fresno.floodplains,
   kind VIEW,
+  description 'DuckDB staging VIEW fetching FEMA NFHL MapServer layer 28 flood zone pages for Fresno.',
+  column_descriptions (
+    fld_zone = 'FLD_ZONE flood hazard zone code from the MapServer feature properties.',
+    sfha_tf = 'SFHA_TF Special Flood Hazard Area flag from the MapServer feature properties.',
+    static_bfe = 'STATIC_BFE static base flood elevation from the MapServer feature properties (source units).',
+    geometry = 'Flood zone polygon parsed from the page GeoJSON with ST_GeomFromGeoJSON (EPSG:4326 lon/lat).'
+  ),
   gateway duckdb,
   dialect duckdb,
   columns (

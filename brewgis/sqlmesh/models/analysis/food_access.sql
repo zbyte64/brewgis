@@ -1,6 +1,19 @@
 MODEL (
   name brewgis.@{scenario_schema}.@{model_table},
   kind FULL,
+  description 'Per-parcel food environment metrics combining population with outlet counts and the mRFEI.',
+  column_descriptions (
+    parcel_id = 'Assessor parcel number (APN) of the parcel.',
+    area_gross_acres = 'Gross parcel area (acres).',
+    pop = 'Population allocated to the parcel (people).',
+    hh = 'Households allocated to the parcel (households).',
+    healthy_count = 'Healthy food outlets joined from the input table (outlets).',
+    unhealthy_count = 'Unhealthy food outlets joined from the input table (outlets).',
+    mrfei = 'Modified Retail Food Environment Index; null without an input record.',
+    food_desert = 'True when the mRFEI is below 25, otherwise false.',
+    food_access_category = 'Band from mRFEI: food_desert, low_access, moderate_access or high_access.',
+    geometry = 'Parcel boundary geometry (EPSG:4326).'
+  ),
   blueprints @analysis_blueprints('food_access'),
 );
 

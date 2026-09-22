@@ -4,6 +4,13 @@ MODEL (
     unique_key (apn, data_year),
     batch_size 50000
   ),
+  description 'Assessor parcel to TIGER/Line block group assignment by parcel centroid, one row per vintage.',
+  column_descriptions (
+    apn = 'Assessor parcel number (APN) assigned to a block group.',
+    data_year = 'January 1 of the TIGER/Line vintage year the assignment came from (date).',
+    block_group_geoid = 'GEOID of the block group under the parcel centroid (12-digit FIPS).',
+    tract_geoid = 'Census tract GEOID derived from the block group GEOID (11-digit FIPS).'
+  ),
   audits (
     not_null(columns := (apn, data_year)),
     unique_values(columns := (apn,))

@@ -1,6 +1,17 @@
 MODEL (
   name duckdb.@{region}.overture_transport,
   kind VIEW,
+  description 'Overture Maps transportation road segments for the region (release 2026-08-19.0 GeoParquet read from S3 by DuckDB via httpfs), reprojected to 3857, 4326 and the local CRS.',
+  column_descriptions (
+    geometry = 'Road segment geometry reprojected from Overture CRS84 to Web Mercator (EPSG:3857).',
+    wgs84_geometry = 'Road segment geometry reprojected from Overture CRS84 to EPSG:4326 (lon/lat).',
+    local_geometry = 'Road segment geometry reprojected from Overture CRS84 to the region local CRS (EPSG:3310).',
+    surface = 'Surface type of the first Overture road_surface entry of the segment, e.g. paved, unpaved or gravel.',
+    class = 'Overture road class of the segment, e.g. motorway, primary or residential.',
+    subclass = 'Overture road subclass of the segment, cast to VARCHAR.',
+    subtype = 'Overture transportation subtype of the segment, cast to VARCHAR.',
+    width = 'Road width in meters from the first Overture width_rules entry of the segment.'
+  ),
   gateway duckdb,
   dialect duckdb,
   blueprints @region_blueprints()

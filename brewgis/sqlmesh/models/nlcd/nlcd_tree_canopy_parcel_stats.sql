@@ -1,6 +1,11 @@
 MODEL (
   name brewgis.@{region}.nlcd_tree_canopy_parcel_stats,
   kind FULL,
+  description 'Per-parcel NLCD USFS tree canopy cover over parcel pixels from the MRLC WCS raster.',
+  column_descriptions (
+    parcel_id = 'Parcel identifier from the region parcel source (@nlcd_parcel_source), one row per parcel.',
+    tree_canopy_fraction = 'Mean NLCD tree canopy percent (0-100) over the parcel pixels, clamped to that range.'
+  ),
   gateway duckdb,
   dialect duckdb,
   audits (

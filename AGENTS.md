@@ -210,6 +210,7 @@ npm run test      # vitest
 - **Audits (86):** 57 assert_* (row counts, coverage, conservation) + 29 audit_* (pipeline boundary checks)
 - **Naming:** `brewgis.{namespace}.{model_name}` where the namespace is a region (`sacog`, `fresno`) or a domain (`census`, `overture`, `buildings`, `base_canvas`, `assessor`, `nlcd`) (e.g. `brewgis.sacog.assessor_parcels`, `brewgis.census.tiger_blocks`). DuckDB-gateway raw views use the same namespaces under the `duckdb` catalog (e.g. `duckdb.census.tiger_blocks`)
 - **Variables:** 90+ config variables, gateway-managed virtual layer enabled
+- **Descriptions:** every model declares a MODEL DDL `description` (one sentence: what the rows are and where they come from) and a `column_descriptions` entry for every output column. The SQLMesh UI, the lineage column view and Postgres `COMMENT ON COLUMN` all read them, and they are metadata-only (they hash into `metadata_hash`, never `data_hash`, so documenting a model never triggers a backfill). Python models use the `@model(description=..., column_descriptions={...})` kwargs, external models the same keys in `external_models.yaml`. The one exception is `models/scenarios/scenario_canvas.py`, whose column set is per-scenario and is filled by SQLMesh lineage inference instead. A **Python** model's `description`/`column_descriptions` must not contain an `@` — SQLMesh re-parses any meta string containing one as SQL (blueprint rendering), so `@train_model` in a description fails the whole project load.
 
 ## Important Files
 

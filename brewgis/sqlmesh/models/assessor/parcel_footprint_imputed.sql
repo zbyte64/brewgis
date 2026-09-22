@@ -4,6 +4,28 @@ MODEL (
     unique_key (apn),
     batch_size 100000
   ),
+  description 'Three-tier k-nearest-neighbour imputation of building attributes for parcels with no sales data.',
+  column_descriptions (
+    apn = 'Assessor parcel number (APN) whose attributes are imputed.',
+    total_footprint_sqft = 'Building floor area on the parcel (sq ft), from parcel_building_footprints.',
+    building_count = 'Number of buildings intersecting the parcel, from parcel_building_footprints.',
+    footprint_ratio = 'Building floor area divided by lot area (sq ft per sq ft), a k-NN distance feature.',
+    lot_size_acres = 'Parcel lot size (acres), one of the k-NN distance features.',
+    land_development_category = 'Land development category used as the partition key for the imputation tiers.',
+    residential_building_sqft = 'Residential footprint area from parcel_building_footprints (sq ft).',
+    non_residential_building_sqft = 'Non-residential footprint area from parcel_building_footprints (sq ft).',
+    residential_building_count = 'Number of residential buildings intersecting the parcel.',
+    non_residential_building_count = 'Number of non-residential buildings intersecting the parcel.',
+    max_levels = 'Number of floors in the tallest building, from parcel_building_footprints.',
+    block_group_geoid = 'Census block group GEOID of the parcel (12-digit FIPS).',
+    tract_geoid = 'Census tract GEOID of the parcel (11-digit FIPS).',
+    imputed_property_type = 'Most common assessor property type among the nearest neighbours (mode).',
+    imputed_units = 'Median dwelling unit count among the nearest neighbour parcels.',
+    imputed_living_sqft = 'Median living area among the nearest neighbour parcels (sq ft).',
+    imputed_building_sqft = 'Median total building area among the nearest neighbour parcels (sq ft).',
+    imputed_from_tier = 'Narrowest tier that supplied neighbours: 1 block group, 2 tract, 3 county-wide.',
+    neighbor_count = 'Number of neighbour parcels used in the estimate, up to 5 per tier.'
+  ),
   audits (
     not_null(columns := (apn)),
     unique_values(columns := (apn,))

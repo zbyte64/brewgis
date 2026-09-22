@@ -1,6 +1,14 @@
 MODEL (
   name brewgis.sacog.assessor_building_medians,
-  kind VIEW
+  kind VIEW,
+  description 'Median living area, building square footage and lot size per assessor property type of sold parcels.',
+  column_descriptions (
+    property_type = 'Assessor property type of the group, blank values replaced by Other.',
+    parcel_count = 'Number of assessor sales rows in the group (count).',
+    median_living_area = 'Median living area of the sold buildings in the group (sq ft).',
+    median_building_sf = 'Median building square footage of the sold properties in the group (sq ft).',
+    median_lot_size_acres = 'Median lot size of the sold parcels in the group (acres).'
+  )
 );
 
 -- Assessor Building Medians — per-land-use median building characteristics.

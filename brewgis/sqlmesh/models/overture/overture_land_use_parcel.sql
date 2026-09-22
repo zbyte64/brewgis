@@ -4,6 +4,13 @@ MODEL (
     unique_key (parcel_id),
     batch_size 100000
   ),
+  description 'Per-parcel Overture land use classification for base canvas parcels: the centroid-containing polygon wins (smallest first), otherwise the largest intersecting polygon.',
+  column_descriptions (
+    parcel_id = 'Base canvas parcel identifier the Overture land use polygon was matched to.',
+    overture_land_use_subtype = 'Overture subtype of the land use polygon selected for the parcel.',
+    overture_land_use_class = 'Overture class of the land use polygon selected for the parcel.',
+    overture_category = 'Land development category matched on subtype and class, then subtype alone, else urban.'
+  ),
   audits (
     not_null(columns := (parcel_id)),
     unique_values(columns := (parcel_id,))

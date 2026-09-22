@@ -1,6 +1,14 @@
 MODEL (
   name duckdb.census.tiger_block_groups,
   kind VIEW,
+  description 'DuckDB staging VIEW of TIGER/Line 2023 and 2013 block group boundaries via zipfs.',
+  column_descriptions (
+    geoid = 'Block group GEOID from STATEFP, COUNTYFP, TRACTCE and BLKGRPCE (12-digit FIPS).',
+    geometry = 'Block group boundary transformed from EPSG:4269 to EPSG:3857 (Web Mercator, meters).',
+    wgs84_geometry = 'Block group boundary transformed from EPSG:4269 to EPSG:4326 (degrees, EPSG:4326).',
+    state_fips = 'Two-digit state FIPS code from STATEFP.',
+    vintage = 'TIGER/Line vintage of the source file, either 2023 or 2013.'
+  ),
   gateway duckdb,
   dialect duckdb
 );

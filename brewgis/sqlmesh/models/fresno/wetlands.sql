@@ -1,6 +1,13 @@
 MODEL (
   name brewgis.fresno.wetlands,
   kind VIEW,
+  description 'NWI freshwater wetlands over the Fresno region from the CA Fish and Wildlife BIOS service.',
+  column_descriptions (
+    attribute = 'ATTRIBUTE classification of the NWI record; the fetch keeps only values containing Fresh.',
+    wetland_type = 'WETLAND_TYPE wetland label of the polygon from the NWI record.',
+    acres = 'ACRES attribute of the wetland polygon as published by the source service (acres).',
+    geom = 'Wetland polygon at SRID 4326, restored with ST_SetSRID from the bridge table geometry.'
+  ),
   columns (
     attribute TEXT,
     wetland_type TEXT,

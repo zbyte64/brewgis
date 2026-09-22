@@ -4,6 +4,17 @@ MODEL (
     unique_key (geoid, data_year),
     batch_size 100000
   ),
+  description 'Block group demographics from the Census Planning Database joined to TIGER/Line block group geometry, with the rates rescaled to 0-1 fractions, one row per block group.',
+  column_descriptions (
+    geoid = '12-digit block group GEOID (state+county+tract+block group FIPS) from the PDB GIDBG field.',
+    geometry = 'Block group polygon (EPSG:4326, multipolygon) from TIGER/Line vintage @bg_vintage.',
+    data_year = 'PDB vintage date (2024-01-01) the block group record belongs to.',
+    vacancy_rate = 'Vacant housing units divided by total housing units, clamped to the 0-1 range (fraction).',
+    group_quarters_pop = 'Group quarters population from the 2020 Census enumeration (people).',
+    low_response_score = 'PDB low response score divided by 100 so it reads as a 0-1 fraction, NULL when absent.',
+    renter_occupied_pct = 'Renter-occupied share of occupied units, divided by 100 to a 0-1 fraction.',
+    below_poverty_pct = 'Share of persons below the poverty level divided by 100 to a 0-1 fraction, NULL when absent.'
+  ),
   audits (
     not_null(columns := (geoid, data_year)),
     assert_pdb_block_group_coverage

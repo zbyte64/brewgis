@@ -1,6 +1,14 @@
 MODEL (
   name duckdb.@{region}.cbp_raw,
   kind VIEW,
+  description 'DuckDB staging VIEW of County Business Patterns county employment from the Census API.',
+  column_descriptions (
+    year = 'CBP data year taken from the acs_year variable (2013 for sacog, 2022 for fresno).',
+    emp = 'Total employment reported for the county-industry record (count).',
+    naics_code = 'NAICS code from the API: 2017 when year is 2017 or later, 2012 when 2012 or later, else 2007.',
+    state = 'Two-digit state FIPS code returned by the Census API.',
+    county = 'Three-digit county FIPS code returned by the Census API.'
+  ),
   gateway duckdb,
   dialect duckdb,
   blueprints @region_blueprints()

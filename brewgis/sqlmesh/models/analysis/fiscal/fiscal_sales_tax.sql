@@ -1,6 +1,13 @@
 MODEL (
   name brewgis.@{scenario_schema}.@{model_table},
   kind FULL,
+  description 'Per-parcel sales tax revenue estimated from the retail employment share and sales per employee.',
+  column_descriptions (
+    parcel_id = 'Assessor parcel number (APN) of the parcel.',
+    retail_sales = 'Retail sales from the configured employment share and spending ($ per year).',
+    sales_tax_revenue = 'Sales tax on the estimated retail sales ($ per year).',
+    geometry = 'Parcel boundary geometry (EPSG:4326).'
+  ),
   blueprints @analysis_blueprints('fiscal_sales_tax'),
   audits (
     not_null(columns := (parcel_id,)),

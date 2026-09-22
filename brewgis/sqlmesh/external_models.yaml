@@ -1,4 +1,91 @@
 - name: '"brewgis"."public"."base_canvas"'
+  description: Existing-conditions base canvas, one row per parcel with geometry, area, people, housing and jobs.
+  column_descriptions:
+    parcel_id: Unique parcel identifier; one row per parcel in the base canvas.
+    id_source: Label of the dataset the parcel was ingested from; NULL when the ingest did not record one.
+    geography_id: Integer geography identifier of the source feature; NULL when the source has none.
+    geometry_key: Parcel identifier reused as the geometry join key (alias of parcel_id).
+    geometry: Parcel boundary geometry (MultiPolygon, EPSG:4326).
+    land_development_category: Land development category resolved from parcel, assessor code or land use crosswalk.
+    built_form_key: Built form key from the parcel source, defaulting to mixed_use when blank.
+    intersection_density: Intersection density (intersections per km2); OSM, else parcel, else calibration.
+    area_gross: Gross parcel area including right-of-way (acres).
+    area_parcel: Parcel area inside the parcel boundary (acres).
+    area_dev_condition: Portion of the parcel in developed condition (acres).
+    area_row: Portion of the parcel in public right-of-way (acres).
+    area_parcel_res_detsf: Residential detached single-family parcel area (acres).
+    area_parcel_res_detsf_sl: Residential detached single-family small-lot parcel area (acres).
+    area_parcel_res_detsf_ll: Residential detached single-family large-lot parcel area (acres).
+    area_parcel_res_attsf: Residential attached single-family parcel area (acres).
+    area_parcel_res_mf: Residential multi-family parcel area (acres).
+    area_parcel_res: Residential parcel area (acres); whole parcel when residential, else built-share, else zero.
+    area_parcel_emp: Total employment parcel area (acres); the whole parcel when industrial.
+    area_parcel_emp_ret: Retail employment parcel area (acres).
+    area_parcel_emp_off: Office employment parcel area (acres).
+    area_parcel_emp_pub: Public employment parcel area (acres).
+    area_parcel_emp_ind: Industrial employment parcel area (acres).
+    area_parcel_emp_ag: Agricultural employment parcel area (acres); the whole parcel when agricultural.
+    area_parcel_emp_military: Military employment parcel area (acres).
+    area_parcel_mixed_use: Mixed-use parcel area (acres); the whole parcel when mixed use.
+    area_parcel_no_use: Parcel area with no assigned use (acres); whole parcel when urban or undeveloped.
+    pop: Population allocated from intersecting Census 2020 blocks by the dasymetric DU weight (people).
+    pop_groupquarter: Group quarters population; zeroed by the Census block allocation step (people).
+    hh: Households allocated from Census 2020 blocks as DU times housing units times one minus vacancy (count).
+    du: Dwelling units allocated from Census 2020 blocks as regressor DU times the block DU share (count).
+    median_income: Median household income area-weighted from intersecting ACS block groups ($ per year).
+    rent_burden_pct: Rent-burdened household share area-weighted from intersecting ACS block groups (% as 0-100).
+    pct_minority: Share of people of color area-weighted from intersecting ACS block groups (% as 0-100).
+    pct_college_educated: College-educated adult share area-weighted from ACS block groups (% as 0-100).
+    cost_burden_pct: Cost-burdened household share area-weighted from ACS block groups (% as 0-100).
+    du_detsf: Detached single-family dwelling units from the regressor DU breakdown (count).
+    du_detsf_sl: Detached single-family small-lot dwelling units from the regressor breakdown (count).
+    du_detsf_ll: Detached single-family large-lot dwelling units from the regressor breakdown (count).
+    du_attsf: Attached single-family dwelling units from the regressor DU breakdown (count).
+    du_mf: Multi-family dwelling units from the regressor DU breakdown (count).
+    du_mf2to4: Multi-family 2-4 unit dwelling units from the regressor breakdown (count).
+    du_mf5p: Multi-family 5+ unit dwelling units from the regressor breakdown (count).
+    emp: Total employment allocated from intersecting LEHD WAC blocks by combined category weight (jobs).
+    emp_ret: Retail employment allocated from LEHD WAC blocks by the retail allocation weight (jobs).
+    emp_retail_services: Retail services employment allocated from LEHD WAC by the retail weight (jobs).
+    emp_restaurant: Restaurant employment allocated from LEHD WAC blocks by the parent sector weight (jobs).
+    emp_accommodation: Accommodation employment allocated from LEHD WAC blocks by the parent sector weight (jobs).
+    emp_arts_entertainment: Arts and entertainment employment allocated by the retail weight (jobs).
+    emp_other_services: Other services employment allocated from LEHD WAC by the retail weight (jobs).
+    emp_off: Office employment allocated from LEHD WAC blocks by the office allocation weight (jobs).
+    emp_office_services: Office services employment allocated from LEHD WAC by the office weight (jobs).
+    emp_medical_services: Medical services employment allocated from LEHD WAC by the office weight (jobs).
+    emp_pub: Public employment allocated from LEHD WAC blocks by the public allocation weight (jobs).
+    emp_public_admin: Public administration employment allocated by the public weight (jobs).
+    emp_education: Education employment allocated from LEHD WAC blocks by the parent sector weight (jobs).
+    emp_ind: Industrial employment allocated from LEHD WAC blocks by the industrial weight (jobs).
+    emp_manufacturing: Manufacturing employment allocated from LEHD WAC blocks by the parent sector weight (jobs).
+    emp_wholesale: Wholesale employment allocated from LEHD WAC blocks by the parent sector weight (jobs).
+    emp_transport_warehousing: Transport and warehousing employment allocated by the industrial weight (jobs).
+    emp_utilities: Utilities employment allocated from LEHD WAC blocks by the parent sector weight (jobs).
+    emp_construction: Construction employment allocated from LEHD WAC blocks by the parent sector weight (jobs).
+    emp_ag: Agricultural employment allocated from LEHD WAC blocks by the agricultural weight (jobs).
+    emp_agriculture: Agriculture employment allocated from LEHD WAC blocks by the parent sector weight (jobs).
+    emp_extraction: Extraction employment allocated from LEHD WAC blocks by the parent sector weight (jobs).
+    emp_military: Military employment allocated from LEHD WAC blocks using the public weight (jobs).
+    bldg_area_detsf_sl: Detached single-family small-lot building floor area (sq ft); regressor, else calibrated.
+    bldg_area_detsf_ll: Detached single-family large-lot building floor area (sq ft); regressor, else calibrated.
+    bldg_area_attsf: Attached single-family building floor area (sq ft); regressor value, else calibrated per job.
+    bldg_area_mf: Multi-family building floor area (sq ft); regressor value, else calibrated per job.
+    bldg_area_retail_services: Retail services building floor area (sq ft); regressor, else calibrated.
+    bldg_area_restaurant: Restaurant building floor area (sq ft); regressor value, else calibrated per job.
+    bldg_area_accommodation: Accommodation building floor area (sq ft); regressor value, else calibrated per job.
+    bldg_area_arts_entertainment: Arts and entertainment building floor area (sq ft); regressor, else calibrated.
+    bldg_area_other_services: Other services building floor area (sq ft); regressor value, else calibrated per job.
+    bldg_area_office_services: Office services building floor area (sq ft); regressor, else calibrated.
+    bldg_area_public_admin: Public administration building floor area (sq ft); regressor, else calibrated.
+    bldg_area_education: Education building floor area (sq ft); regressor value, else calibrated per job.
+    bldg_area_medical_services: Medical services building floor area (sq ft); regressor value, else calibrated per job.
+    bldg_area_transport_warehousing: Transport and warehousing building floor area (sq ft).
+    bldg_area_wholesale: Wholesale building floor area (sq ft); regressor value, else calibrated per job.
+    residential_irrigated_area: Residential irrigated area; NLCD impervious share of the residential area (acres).
+    commercial_irrigated_area: Commercial irrigated area; NLCD impervious share of the employment area (acres).
+    assessor_use_code: County assessor use code of the parcel, carried from the parcel source.
+    land_use: Land use label of the parcel, matched against the SACOG land use seed categories.
   columns:
     parcel_id: BIGINT
     id_source: VARCHAR(64)
@@ -87,6 +174,15 @@
     land_use: VARCHAR(255)
   gateway: postgis
 - name: '"brewgis"."public"."census_2020_block_raw"'
+  description: Census 2020 PL 94-171 block counts staged in PostGIS, one row per census block.
+  column_descriptions:
+    geoid: Census block GEOID built from the API state, county, tract and block codes (15-digit FIPS).
+    total_population: Total population of the block from the PL 94-171 P1_001N field (people).
+    total_housing_units: Total housing units in the block from the PL 94-171 H1_001N field (housing units).
+    state: Two-digit state FIPS code returned by the Census API.
+    county: Three-digit county FIPS code returned by the Census API.
+    _dlt_load_id: dlt load identifier of the batch that loaded the row.
+    _dlt_id: dlt-generated unique identifier of the loaded row.
   columns:
     geoid: VARCHAR
     total_population: BIGINT
@@ -97,6 +193,64 @@
     _dlt_id: VARCHAR
   gateway: postgis
 - name: '"brewgis"."public"."lodes_raw"'
+  description: LEHD LODES8 WAC workplace-area characteristics loaded by dlt, one row per census block and year.
+  column_descriptions:
+    year: LEHD LODES release year of the record.
+    w_geocode: 15-digit census block GEOID of the workplace the jobs are reported for.
+    c000: LODES C000 total jobs in the block.
+    cns01: 'LODES WAC segment CNS01 jobs in the block: goods producing (NAICS 11, 21 and 23).'
+    cns02: 'LODES WAC segment CNS02 jobs in the block: manufacturing.'
+    cns03: 'LODES WAC segment CNS03 jobs in the block: trade, transport and utilities.'
+    cns04: 'LODES WAC segment CNS04 jobs in the block: information.'
+    cns05: 'LODES WAC segment CNS05 jobs in the block: finance and insurance.'
+    cns06: 'LODES WAC segment CNS06 jobs in the block: real estate.'
+    cns07: 'LODES WAC segment CNS07 jobs in the block: professional services.'
+    cns08: 'LODES WAC segment CNS08 jobs in the block: management.'
+    cns09: 'LODES WAC segment CNS09 jobs in the block: admin and support.'
+    cns10: 'LODES WAC segment CNS10 jobs in the block: educational services.'
+    cns11: 'LODES WAC segment CNS11 jobs in the block: health care.'
+    cns12: 'LODES WAC segment CNS12 jobs in the block: arts and entertainment.'
+    cns13: 'LODES WAC segment CNS13 jobs in the block: accommodation and food.'
+    cns14: 'LODES WAC segment CNS14 jobs in the block: other services.'
+    cns15: 'LODES WAC segment CNS15 jobs in the block: public administration.'
+    cns16: 'LODES WAC segment CNS16 jobs in the block: unclassified.'
+    cns17: 'LODES WAC segment CNS17 jobs in the block: armed forces.'
+    cns18: 'LODES WAC segment CNS18 jobs in the block: federal government.'
+    cns19: 'LODES WAC segment CNS19 jobs in the block: state government.'
+    cns20: 'LODES WAC segment CNS20 jobs in the block: local government.'
+    ca01: Jobs for workers age 29 or younger (jobs).
+    ca02: Jobs for workers age 30 to 54 (jobs).
+    ca03: Jobs for workers age 55 or older (jobs).
+    ce01: Jobs with earnings of 1250 dollars per month or less (jobs).
+    ce02: Jobs with earnings of 1251 to 3333 dollars per month (jobs).
+    ce03: Jobs with earnings above 3333 dollars per month (jobs).
+    cr01: Jobs held by workers of White race alone (jobs).
+    cr02: Jobs held by workers of Black or African American race alone (jobs).
+    cr03: Jobs held by workers of American Indian or Alaska Native race alone (jobs).
+    cr04: Jobs held by workers of Asian race alone (jobs).
+    cr05: Jobs held by workers of Native Hawaiian or Other Pacific Islander race alone (jobs).
+    cr07: Jobs held by workers of two or more race groups (jobs).
+    ct01: Jobs held by workers who are not Hispanic or Latino (jobs).
+    ct02: Jobs held by Hispanic or Latino workers (jobs).
+    cd01: Jobs held by workers aged 30 and over with less than a high school education (jobs).
+    cd02: Jobs held by workers aged 30 and over with a high school diploma and no college (jobs).
+    cd03: Jobs held by workers aged 30 and over with some college or an associate degree (jobs).
+    cd04: Jobs held by workers aged 30 and over with a bachelor or higher degree (jobs).
+    cs01: Jobs held by male workers (jobs).
+    cs02: Jobs held by female workers (jobs).
+    cfa01: Jobs at firms aged 0 to 1 years (jobs).
+    cfa02: Jobs at firms aged 2 to 3 years (jobs).
+    cfa03: Jobs at firms aged 4 to 5 years (jobs).
+    cfa04: Jobs at firms aged 6 to 10 years (jobs).
+    cfa05: Jobs at firms aged 11 or more years (jobs).
+    cfs01: Jobs at firms with 0 to 19 employees (jobs).
+    cfs02: Jobs at firms with 20 to 49 employees (jobs).
+    cfs03: Jobs at firms with 50 to 249 employees (jobs).
+    cfs04: Jobs at firms with 250 to 499 employees (jobs).
+    cfs05: Jobs at firms with 500 or more employees (jobs).
+    createdate: Date the source LODES file was created (YYYYMMDD text).
+    _dlt_load_id: dlt load identifier of the batch that loaded the row.
+    _dlt_id: dlt-generated unique identifier of the loaded row.
   columns:
     year: BIGINT
     w_geocode: VARCHAR
@@ -156,16 +310,112 @@
     _dlt_id: VARCHAR
   gateway: postgis
 - name: '"brewgis"."public"."nlcd_raster"'
+  description: NLCD land-cover raster tiles (DuckDB-loaded) used for parcel-level land-cover statistics.
+  column_descriptions:
+    rid: Raster tile identifier (PostGIS raster primary key).
+    rast: PostGIS raster tile holding NLCD land-cover classes.
   columns:
     rid: INT
     rast: raster
   gateway: postgis
 - name: '"brewgis"."public"."nlcd_tree_canopy_raster"'
+  description: NLCD tree-canopy raster tiles (DuckDB-loaded) used for parcel-level tree-canopy statistics.
+  column_descriptions:
+    rid: Raster tile identifier (PostGIS raster primary key).
+    rast: PostGIS raster tile holding NLCD tree-canopy percent values.
   columns:
     rid: INT
     rast: raster
   gateway: postgis
 - name: '"brewgis"."public"."sac_cnty_region_base_canvas"'
+  description: SACOG v1 reference base canvas (2015 vintage), one row per parcel with acreage, population and jobs.
+  column_descriptions:
+    geography_id: Integer identifier of the parcel record in the SACOG v1 reference base canvas.
+    source_id: External parcel identifier from the SACOG v1 source data.
+    wkb_geometry: Parcel boundary geometry stored in the SACOG v1 PostGIS wkb_geometry column.
+    region_lu_code: SACOG v1 region land use code of the parcel; a region-specific code with no brewgis equivalent.
+    built_form_key: Built form classification key of the parcel, referencing the SACOG v1 built form definitions.
+    acres_developable: Developable acreage of the parcel after environmental constraint discounts (acres).
+    developable_proportion: Ratio of developable acres to gross acres of the parcel (0-1).
+    land_development_category: Land development category of the parcel (urban, compact, standard or rural).
+    intersection_density_sqmi: Intersection density around the parcel (intersections per square mile).
+    sqft_parcel: Parcel area in the SACOG v1 reference data (sq ft).
+    acres_gross: Gross area of the parcel (acres).
+    acres_parcel: Net parcel area of the parcel (acres).
+    acres_parcel_res: Total residential parcel area (acres).
+    acres_parcel_emp: Total employment parcel area (acres).
+    acres_parcel_mixed_use: Mixed use parcel area (acres).
+    acres_parcel_no_use: No use parcel area (acres).
+    pop: Total population of the parcel (people).
+    hh: Households on the parcel (count).
+    du: Dwelling units on the parcel (count).
+    du_detsf: Detached single family dwelling units on the parcel (count).
+    du_attsf: Attached single family dwelling units on the parcel (count).
+    du_mf: Multi-family dwelling units on the parcel (count).
+    emp: Total employment on the parcel (jobs).
+    emp_ret: Retail employment on the parcel, the sum of the five retail services subtypes (jobs).
+    emp_off: Office employment on the parcel, office services plus medical services (jobs).
+    emp_pub: Public employment on the parcel, public administration plus education (jobs).
+    emp_ind: Industrial employment on the parcel, the sum of the seven industrial subtypes (jobs).
+    emp_ag: Agricultural employment on the parcel, agriculture plus extraction (jobs).
+    emp_military: Military employment on the parcel (jobs).
+    du_detsf_ll: Detached single family large lot dwelling units on the parcel (count).
+    du_detsf_sl: Detached single family small lot dwelling units on the parcel (count).
+    du_mf2to4: Multi-family 2 to 4 unit dwelling units on the parcel (count).
+    du_mf5p: Multi-family 5 or more unit dwelling units on the parcel (count).
+    emp_retail_services: Retail services employment on the parcel (jobs; NAICS 44-45).
+    emp_restaurant: Restaurant employment on the parcel (jobs; NAICS 722).
+    emp_accommodation: Accommodation employment on the parcel (jobs; NAICS 721).
+    emp_arts_entertainment: Arts and entertainment employment on the parcel (jobs; NAICS 71).
+    emp_other_services: Other services employment on the parcel (jobs; NAICS 81).
+    emp_office_services: Office services employment on the parcel (jobs; NAICS 51-56).
+    emp_public_admin: Public administration employment on the parcel (jobs; NAICS 92).
+    emp_education: Education employment on the parcel (jobs; NAICS 61).
+    emp_medical_services: Medical services employment on the parcel (jobs; NAICS 62).
+    emp_manufacturing: Manufacturing employment on the parcel (jobs; NAICS 31-33).
+    emp_wholesale: Wholesale employment on the parcel (jobs; NAICS 42).
+    emp_transport_warehousing: Transport and warehousing employment on the parcel (jobs; NAICS 48-49).
+    emp_utilities: Utilities employment on the parcel (jobs; NAICS 22).
+    emp_construction: Construction employment on the parcel (jobs; NAICS 23).
+    emp_agriculture: Agriculture employment on the parcel (jobs; NAICS 11).
+    emp_extraction: Extraction employment on the parcel (jobs; NAICS 21).
+    bldg_sqft_detsf_sl: Detached single family small lot building area on the parcel (sq ft).
+    bldg_sqft_detsf_ll: Detached single family large lot building area on the parcel (sq ft).
+    bldg_sqft_attsf: Attached single family building area on the parcel (sq ft).
+    bldg_sqft_mf: Multi-family building area on the parcel (sq ft).
+    bldg_sqft_retail_services: Retail services building area on the parcel (sq ft).
+    bldg_sqft_restaurant: Restaurant building area on the parcel (sq ft).
+    bldg_sqft_accommodation: Accommodation building area on the parcel (sq ft).
+    bldg_sqft_arts_entertainment: Arts and entertainment building area on the parcel (sq ft).
+    bldg_sqft_other_services: Other services building area on the parcel (sq ft).
+    bldg_sqft_office_services: Office services building area on the parcel (sq ft).
+    bldg_sqft_public_admin: Public administration building area on the parcel (sq ft).
+    bldg_sqft_education: Education building area on the parcel (sq ft).
+    bldg_sqft_medical_services: Medical services building area on the parcel (sq ft).
+    bldg_sqft_transport_warehousing: Transport and warehousing building area on the parcel (sq ft).
+    bldg_sqft_wholesale: Wholesale building area on the parcel (sq ft).
+    acres_parcel_res_detsf: Detached single family residential parcel area (acres).
+    acres_parcel_res_detsf_sl: Detached single family small lot residential parcel area (acres).
+    acres_parcel_res_detsf_ll: Detached single family large lot residential parcel area (acres).
+    acres_parcel_res_attsf: Attached single family residential parcel area (acres).
+    acres_parcel_res_mf: Multi-family residential parcel area (acres).
+    acres_parcel_emp_ret: Retail employment parcel area (acres).
+    acres_parcel_emp_off: Office employment parcel area (acres).
+    acres_parcel_emp_pub: Public employment parcel area (acres).
+    acres_parcel_emp_ind: Industrial employment parcel area (acres).
+    acres_parcel_emp_ag: Agricultural employment parcel area (acres).
+    acres_parcel_emp_military: Military employment parcel area (acres).
+    residential_irrigated_sqft: Residential irrigated area on the parcel (sq ft).
+    commercial_irrigated_sqft: Commercial irrigated area on the parcel (sq ft).
+    created: Timestamp when the reference base canvas row was created.
+    updated: Timestamp when the reference base canvas row was last updated.
+    dev_pct: Share of developable acres developed on the parcel in the reference scenario (% as 0-100).
+    density_pct: Density adjustment applied to the built form after the gross-to-net step (% as 0-100).
+    gross_net_pct: Gross-to-net acreage ratio of the parcel, adjusting for roads and infrastructure (% as 0-100).
+    dirty_flag: Whether the feature has been modified since the last analysis run (boolean).
+    jurisdiction: Jurisdiction (city or county) the parcel lies in.
+    county: County name the parcel lies in.
+    clear_flag: Whether existing development is cleared before the new built form is applied (boolean).
   columns:
     geography_id: INT
     source_id: VARCHAR
@@ -255,6 +505,26 @@
     clear_flag: BOOLEAN
   gateway: postgis
 - name: '"brewgis"."public"."sac_cnty_region_existing_land_use_parcels"'
+  description: SACOG v1 reference land use parcels, one row per parcel with boundary geometry and land use.
+  column_descriptions:
+    geography_id: Integer identifier of the parcel in the SACOG v1 parcel layer; join key to the base canvas.
+    wkb_geometry: Parcel boundary geometry stored in the SACOG v1 PostGIS wkb_geometry column.
+    census_blockgroup: Census block group GEOID of the parcel (12-digit FIPS).
+    census_block: Census block GEOID of the parcel (15-digit FIPS).
+    land_use: Land use category of the parcel from the SACOG v1 reference layer.
+    acres: Parcel area from the SACOG v1 reference layer (acres).
+    du: Dwelling units on the parcel from the SACOG v1 reference layer (count).
+    jurisdiction: Jurisdiction (city or county) the parcel lies in.
+    notes: Free-form notes on the parcel from the SACOG v1 reference layer.
+    emp: Total employment on the parcel from the SACOG v1 reference layer (jobs).
+    ret: Retail employment on the parcel from the SACOG v1 reference layer (jobs).
+    off: Office employment on the parcel from the SACOG v1 reference layer (jobs).
+    pub: Public employment on the parcel from the SACOG v1 reference layer (jobs).
+    ind: Industrial employment on the parcel from the SACOG v1 reference layer (jobs).
+    other: Employment in other sectors on the parcel from the SACOG v1 reference layer (jobs).
+    assessor: Assessor use code of the parcel from the county parcel registry.
+    gp: Legacy gp field of the SACOG v1 parcel contract; unused by the brewgis pipeline.
+    gluc: Legacy gluc field of the SACOG v1 parcel contract; unused by the brewgis pipeline.
   columns:
     geography_id: INT
     wkb_geometry: GEOMETRY
@@ -276,6 +546,15 @@
     gluc: VARCHAR
   gateway: postgis
 - name: '"brewgis"."public"."sacog_assessor_parcels_raw"'
+  description: Sacramento County assessor parcel extract, one row per parcel with the land use code and zoning.
+  column_descriptions:
+    apn: Assessor parcel number (APN) of the parcel.
+    landuse: County assessor land use code of the parcel, the official land use classification.
+    zone: County zoning code of the parcel.
+    lotsize: Lot size recorded by the assessor for the parcel (sq ft).
+    jurisdiction: Jurisdiction (city or county) the parcel lies in.
+    shape: ArcGIS SHAPE field retained from the raw assessor extract (numeric; the boundary is in geometry).
+    geometry: Parcel boundary geometry as written by the assessor loader (EPSG:4326).
   columns:
     apn: TEXT
     landuse: TEXT
@@ -286,6 +565,23 @@
     geometry: GEOMETRY(GEOMETRY, 4326)
   gateway: postgis
 - name: '"brewgis"."public"."sacog_assessor_sales_raw"'
+  description: Sacramento County assessor sales extract, one row per sold parcel with building size and age.
+  column_descriptions:
+    apn: Assessor parcel number (APN) of the sold parcel.
+    living_area: Total living area of the building on the parcel (sq ft; ArcGIS TOTAL_LIVING_AREA).
+    building_sf: Total building square footage of the parcel (sq ft; ArcGIS BUILDING_SF).
+    year_built: Effective year built of the building (year; ArcGIS EFFECTIVE_YEAR_BUILT).
+    stories: Number of stories of the building (ArcGIS NUMBER_OF_STORIES).
+    bedrooms: Number of bedrooms in the building (ArcGIS NUMBER_OF_BEDROOMS).
+    baths: Number of bathrooms in the building (ArcGIS NUMBER_OF_BATHS).
+    ground_floor_gross: Gross ground floor area of the building (sq ft; ArcGIS GROUND_FLOOR_GROSS).
+    land_use_code: Assessor land use code recorded on the sale (ArcGIS LAND_USE_CODE).
+    property_type: Property type recorded by the assessor for the sale (ArcGIS Property_Type).
+    sales_price: Indicated sale price of the transaction (ArcGIS INDICATED_SALES_PRICE; stored as text).
+    lot_size_acres: Lot size of the parcel at the time of sale (acres; ArcGIS LOT_SIZE_ACRES).
+    units: Number of building units recorded by the assessor (ArcGIS Units).
+    shape: ArcGIS Shape field retained from the raw sales extract (numeric; the boundary is in geometry).
+    geometry: Parcel boundary geometry of the sold parcel as written by the assessor loader (EPSG:4326).
   columns:
     apn: TEXT
     living_area: DOUBLE PRECISION
@@ -304,6 +600,28 @@
     geometry: GEOMETRY(GEOMETRY, 4326)
   gateway: postgis
 - name: public.sacog_comparison_parcels
+  description: SACOG v1 parcels loaded for the brewgis comparison, one row per parcel with parcel_id and geometry.
+  column_descriptions:
+    geography_id: Integer identifier of the parcel in the SACOG v1 reference layer; retained for reference joins.
+    wkb_geometry: Parcel boundary geometry stored in the SACOG v1 PostGIS wkb_geometry column.
+    census_blockgroup: Census block group GEOID of the parcel (12-digit FIPS).
+    census_block: Census block GEOID of the parcel (15-digit FIPS).
+    land_use: Land use category of the parcel from the SACOG v1 reference layer.
+    acres: Parcel area from the SACOG v1 reference layer (acres).
+    du: Dwelling units on the parcel from the SACOG v1 reference layer (count).
+    jurisdiction: Jurisdiction (city or county) the parcel lies in.
+    notes: Free-form notes on the parcel from the SACOG v1 reference layer.
+    emp: Total employment on the parcel from the SACOG v1 reference layer (jobs).
+    ret: Retail employment on the parcel from the SACOG v1 reference layer (jobs).
+    off: Office employment on the parcel from the SACOG v1 reference layer (jobs).
+    pub: Public employment on the parcel from the SACOG v1 reference layer (jobs).
+    ind: Industrial employment on the parcel from the SACOG v1 reference layer (jobs).
+    other: Employment in other sectors on the parcel from the SACOG v1 reference layer (jobs).
+    assessor: Assessor use code of the parcel from the county parcel registry.
+    gp: Legacy gp field of the SACOG v1 parcel contract; unused by the brewgis pipeline.
+    gluc: Legacy gluc field of the SACOG v1 parcel contract; unused by the brewgis pipeline.
+    geometry: Parcel boundary geometry used by the brewgis comparison models (MultiPolygon, EPSG:3310).
+    parcel_id: BrewGIS parcel identifier, set to the SACOG v1 geography_id when the comparison table is loaded.
   gateway: postgis
   columns:
     geography_id: INT
@@ -327,6 +645,28 @@
     geometry: GEOMETRY(MULTIPOLYGON, 3310)
     parcel_id: INT
 - name: brewgis.public.sacog_comparison_parcels
+  description: SACOG v1 parcels loaded for the brewgis comparison, one row per parcel with parcel_id and geometry.
+  column_descriptions:
+    geography_id: Integer identifier of the parcel in the SACOG v1 reference layer; retained for reference joins.
+    wkb_geometry: Parcel boundary geometry stored in the SACOG v1 PostGIS wkb_geometry column.
+    census_blockgroup: Census block group GEOID of the parcel (12-digit FIPS).
+    census_block: Census block GEOID of the parcel (15-digit FIPS).
+    land_use: Land use category of the parcel from the SACOG v1 reference layer.
+    acres: Parcel area from the SACOG v1 reference layer (acres).
+    du: Dwelling units on the parcel from the SACOG v1 reference layer (count).
+    jurisdiction: Jurisdiction (city or county) the parcel lies in.
+    notes: Free-form notes on the parcel from the SACOG v1 reference layer.
+    emp: Total employment on the parcel from the SACOG v1 reference layer (jobs).
+    ret: Retail employment on the parcel from the SACOG v1 reference layer (jobs).
+    off: Office employment on the parcel from the SACOG v1 reference layer (jobs).
+    pub: Public employment on the parcel from the SACOG v1 reference layer (jobs).
+    ind: Industrial employment on the parcel from the SACOG v1 reference layer (jobs).
+    other: Employment in other sectors on the parcel from the SACOG v1 reference layer (jobs).
+    assessor: Assessor use code of the parcel from the county parcel registry.
+    gp: Legacy gp field of the SACOG v1 parcel contract; unused by the brewgis pipeline.
+    gluc: Legacy gluc field of the SACOG v1 parcel contract; unused by the brewgis pipeline.
+    geometry: Parcel boundary geometry used by the brewgis comparison models (MultiPolygon, EPSG:3310).
+    parcel_id: BrewGIS parcel identifier, set to the SACOG v1 geography_id when the comparison table is loaded.
   columns:
     geography_id: INT
     wkb_geometry: TEXT

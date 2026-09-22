@@ -3,6 +3,14 @@ MODEL (
   kind INCREMENTAL_BY_UNIQUE_KEY (
     unique_key (geoid)
   ),
+  description 'Census 2020 block population and housing units (PL 94-171) with TIGER/Line block geometry.',
+  column_descriptions (
+    geoid = 'Census block GEOID (15-digit FIPS), the unique key of the table.',
+    total_population = 'Total population of the block from PL 94-171, zero when the API reported no value (people).',
+    total_housing_units = 'Total housing units in the block from PL 94-171, zero when absent (housing units).',
+    total_group_quarters = 'Group quarters population of the block, always 0 because PL 94-171 omits it (people).',
+    geometry = 'Block boundary from TIGER/Line block vintage 2020, set to SRID 4326 (degrees, EPSG:4326).'
+  ),
   audits (
     not_null(columns := (geoid))
   ),

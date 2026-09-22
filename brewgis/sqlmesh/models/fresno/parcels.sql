@@ -1,6 +1,15 @@
 MODEL (
   name brewgis.fresno.parcels,
   kind VIEW,
+  description 'Fresno County parcel set from the county ArcGIS FeatureServer, one row per parcel_id at SRID 4326.',
+  column_descriptions (
+    parcel_id = 'Assessor parcel number (APN) from the county FeatureServer, the parcel key this VIEW collapses on.',
+    apn = 'Assessor parcel number (APN); the MIN of the feature-level APNs sharing this parcel_id.',
+    agency_cod = 'AGENCY_COD code of the source agency record (MIN across the collapsed features).',
+    roll_year = 'ROLL_YEAR assessor roll year of the source records (MIN across the collapsed features).',
+    shape_area = 'Sum of the source feature SHAPE_AREA attributes collapsed into this parcel_id (source units).',
+    geometry = 'Parcel footprint at SRID 4326: ST_Union of the validated feature geometries sharing this parcel_id.'
+  ),
   columns (
     parcel_id TEXT,
     apn TEXT,

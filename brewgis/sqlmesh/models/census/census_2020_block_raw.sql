@@ -1,6 +1,14 @@
 MODEL (
   name duckdb.@{region}.census_2020_block_raw,
   kind VIEW,
+  description 'DuckDB staging VIEW of Census 2020 PL 94-171 block counts from the Census API, one block per row.',
+  column_descriptions (
+    geoid = 'Census block GEOID from the API state, county, tract and block codes (15-digit FIPS).',
+    total_population = 'Total population of the block from the PL 94-171 P1_001N field (people).',
+    total_housing_units = 'Total housing units in the block from the PL 94-171 H1_001N field (housing units).',
+    state = 'Two-digit state FIPS code returned by the Census API.',
+    county = 'Three-digit county FIPS code returned by the Census API.'
+  ),
   gateway duckdb,
   dialect duckdb,
   blueprints @region_blueprints()

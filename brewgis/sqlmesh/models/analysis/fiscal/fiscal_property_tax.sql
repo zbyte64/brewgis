@@ -1,6 +1,14 @@
 MODEL (
   name brewgis.@{scenario_schema}.@{model_table},
   kind FULL,
+  description 'Per-parcel property tax revenue from assessed residential and non-residential value.',
+  column_descriptions (
+    parcel_id = 'Assessor parcel number (APN) of the parcel.',
+    assessed_value_res = 'Assessed residential value from dwelling units ($).',
+    assessed_value_nonres = 'Assessed non-residential value from floor area ($).',
+    property_tax_revenue = 'Property tax on the assessed value at the configured rate ($ per year).',
+    geometry = 'Parcel boundary geometry (EPSG:4326).'
+  ),
   blueprints @analysis_blueprints('fiscal_property_tax'),
   audits (
     not_null(columns := (parcel_id,)),

@@ -1,6 +1,13 @@
 MODEL (
   name duckdb.@{region}.overture_land_cover,
   kind VIEW,
+  description 'Overture Maps land cover polygons (ESA WorldCover derived) for the region, release 2026-08-19.0 GeoParquet read from S3 by DuckDB via httpfs.',
+  column_descriptions (
+    geometry = 'Land cover polygon reprojected from Overture CRS84 to Web Mercator (EPSG:3857).',
+    wgs84_geometry = 'Land cover polygon reprojected from Overture CRS84 to EPSG:4326 (lon/lat).',
+    local_geometry = 'Land cover polygon reprojected from Overture CRS84 to the region local CRS (EPSG:3310).',
+    subtype = 'Overture land cover subtype of the ESA WorldCover derived polygon, cast to VARCHAR.'
+  ),
   gateway duckdb,
   dialect duckdb,
   blueprints @region_blueprints()

@@ -1,6 +1,20 @@
 MODEL (
   name brewgis.@{scenario_schema}.@{model_table},
   kind FULL,
+  description 'Per-parcel VMT mitigation fee revenue from scenario VMT at a configured rate, with exempt VMT.',
+  column_descriptions (
+    parcel_id = 'Assessor parcel number (APN) of the parcel.',
+    area_gross_acres = 'Gross parcel area (acres).',
+    pop = 'Population allocated to the parcel (people).',
+    hh = 'Households allocated to the parcel (households).',
+    vmt_total = 'Vehicle miles travelled attributed to the parcel (miles).',
+    fee_rate_dollars_per_vmt = 'Configured fee rate applied to non-exempt VMT ($ per VMT).',
+    vmt_exempt = 'Exempt VMT, rounded to 2 decimals (miles).',
+    fee_revenue_total = 'Fee revenue on non-exempt VMT, rounded to 2 decimals ($).',
+    revenue_forgone = 'Revenue forgone on exempt VMT, rounded to 2 decimals ($).',
+    net_revenue = 'Net fee revenue after exemptions, rounded to 2 decimals ($).',
+    geometry = 'Parcel boundary geometry (EPSG:4326).'
+  ),
   blueprints @analysis_blueprints('vmt_fee'),
   audits (
     not_null(columns := (parcel_id,)),

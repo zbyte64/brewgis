@@ -1,6 +1,14 @@
 MODEL (
   name brewgis.@{region}.overture_land_use,
   kind FULL,
+  description 'PostGIS bridge table materializing the DuckDB Overture land use VIEW, one row per land use polygon, with CRS tags set and the WGS84 polygon area carried along.',
+  column_descriptions (
+    geometry = 'Land use polygon tagged EPSG:3857 (Web Mercator), reused from the DuckDB overture_land_use view.',
+    wgs84_geometry = 'Land use polygon tagged EPSG:4326 (lon/lat), reused from the DuckDB overture_land_use view.',
+    area = 'ST_Area of the EPSG:4326 land use polygon (square degrees).',
+    subtype = 'Overture land use subtype carried through from the DuckDB overture_land_use view.',
+    class = 'Overture land use class carried through from the DuckDB overture_land_use view.'
+  ),
   gateway duckdb,
   blueprints @region_blueprints()
 );

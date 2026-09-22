@@ -1,6 +1,15 @@
 MODEL (
   name duckdb.sacog.assessor_parcels,
   kind VIEW,
+  description 'DuckDB staging view of Sacramento County assessor parcels read from the local GeoParquet cache.',
+  column_descriptions (
+    apn = 'Assessor parcel number (APN) of the parcel.',
+    landuse = 'Assessor land-use code (LANDUSE) of the parcel.',
+    zone = 'Assessor zoning code (ZONE_) of the parcel.',
+    lotsize = 'Raw assessor lot size of the parcel (sq ft).',
+    jurisdiction = 'Jurisdiction the parcel sits in (JURISDICTION).',
+    geometry = 'Parcel geometry transformed from EPSG:4326 to EPSG:3857 (Web Mercator).'
+  ),
   gateway duckdb,
   dialect duckdb,
   columns (

@@ -1,6 +1,22 @@
 MODEL (
   name brewgis.@{scenario_schema}.@{model_table},
   kind FULL,
+  description 'Parcel-level residential and non-residential water demand in litres per year from end-state inputs.',
+  column_descriptions (
+    parcel_id = 'Assessor parcel number (APN) of the parcel.',
+    area_gross_acres = 'Gross parcel area (acres).',
+    acres_developed = 'Developed acres from the end state (acres).',
+    water_demand_res_indoor = 'Residential indoor demand (litres per year) from households and rate.',
+    water_demand_res_outdoor = 'Residential outdoor demand (litres per year) from irrigated area.',
+    water_demand_nonres_indoor = 'Non-residential indoor demand (litres per year) from employment.',
+    water_demand_nonres_outdoor = 'Non-residential outdoor demand (litres per year) from irrigated area.',
+    water_demand_total = 'Total water demand, indoor plus outdoor (litres per year).',
+    water_demand_per_unit = 'Total demand per resident plus job (litres per year); zero when both are zero.',
+    pop = 'Population allocated to the parcel (people).',
+    emp = 'Employment allocated to the parcel (jobs).',
+    du = 'Dwelling units allocated to the parcel (units).',
+    geometry = 'Parcel boundary geometry (EPSG:4326).'
+  ),
   blueprints @analysis_blueprints('water_demand'),
 );
 

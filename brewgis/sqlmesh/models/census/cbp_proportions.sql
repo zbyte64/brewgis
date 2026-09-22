@@ -1,6 +1,18 @@
 MODEL (
   name brewgis.@{region}.cbp_proportions,
   kind FULL,
+  description 'County-level NAICS employment proportions from County Business Patterns used to split LODES CNS sectors into sub-sectors, one row per county.',
+  column_descriptions (
+    state_fips = 'Two-digit state FIPS code the proportions were computed for (@state_fips).',
+    county_fips = 'Three-digit county code the proportions were computed for (@county_fips).',
+    cbp_11 = 'NAICS 11 agriculture share of CNS01 goods-producing employment, national default 0.05 without CBP.',
+    cbp_21 = 'NAICS 21 extraction share of CNS01 goods-producing employment, national default 0.02 without CBP.',
+    cbp_22 = 'NAICS 22 utilities share of CNS03 trade, transport and utilities employment, default 0.02.',
+    cbp_42 = 'NAICS 42 wholesale share of CNS03 trade, transport and utilities employment, default 0.10.',
+    cbp_48 = 'NAICS 48 transport share of CNS03 trade, transport and utilities employment, default 0.04.',
+    cbp_49 = 'NAICS 49 warehousing share of CNS03 trade, transport and utilities employment, default 0.02.',
+    cbp_721 = 'NAICS 721 accommodation share of CNS13 accommodation and food employment, national default 0.40.'
+  ),
   audits (
     not_null(columns := (state_fips, county_fips))
   ),

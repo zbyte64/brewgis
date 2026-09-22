@@ -1,6 +1,20 @@
 MODEL (
   name brewgis.@{region}.buildings_combined_pg,
   kind FULL,
+  description 'PostgreSQL copy of the DuckDB buildings_combined model with GiST indexes for spatial joins.',
+  column_descriptions (
+    wgs84_geometry = 'Building footprint in WGS84 (EPSG:4326) with lon/lat axis order.',
+    geometry = 'Building footprint in Web Mercator (EPSG:3857).',
+    local_geometry = 'Building footprint projected to local_srid (CA Albers, EPSG:3310).',
+    height = 'Building height in metres from the source dataset.',
+    levels = 'Number of building levels from the source dataset.',
+    class = 'Source building class label (Overture or VIDA).',
+    source = 'Origin dataset of the record: overture or vida.',
+    bf_source = 'Building-footprint provider (google or microsoft); null for Overture rows.',
+    confidence = 'VIDA confidence score for the building footprint; null for Overture rows.',
+    class_category = 'Building class grouped into residential, commercial, industrial, mixed or other.',
+    footprint_sqft = 'Building footprint area computed in local_srid and converted to square feet (sq ft).'
+  ),
   blueprints @region_blueprints()
 );
 

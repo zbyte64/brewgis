@@ -1,6 +1,18 @@
 MODEL (
   name brewgis.@{region}.buildings_combined,
   kind FULL,
+  description 'Spatially deduplicated union of Overture and VIDA (Google, Microsoft) building footprints.',
+  column_descriptions (
+    geometry = 'Building footprint in Web Mercator (EPSG:3857).',
+    wgs84_geometry = 'Building footprint in WGS84 (EPSG:4326) with lon/lat axis order.',
+    local_geometry = 'Building footprint projected to local_srid (CA Albers, EPSG:3310).',
+    height = 'Building height in metres; null for VIDA rows.',
+    levels = 'Number of building levels; null for VIDA rows.',
+    class = 'Source building class label; null for VIDA rows.',
+    source = 'Origin dataset of the record: overture or vida.',
+    bf_source = 'Building-footprint provider for VIDA rows (google or microsoft); null for Overture.',
+    confidence = 'VIDA confidence score for the footprint; null for Overture rows.'
+  ),
   gateway: duckdb,
   blueprints @region_blueprints()
 );

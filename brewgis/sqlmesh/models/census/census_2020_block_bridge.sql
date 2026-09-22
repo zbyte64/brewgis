@@ -1,6 +1,14 @@
 MODEL (
   name brewgis.@{region}.census_2020_block_raw,
   kind FULL,
+  description 'PostGIS bridge materializing the census_2020_block_raw DuckDB VIEW, one census block per row.',
+  column_descriptions (
+    geoid = 'Census block GEOID from the API state, county, tract and block codes (15-digit FIPS).',
+    total_population = 'Total population of the block from the PL 94-171 P1_001N field (people).',
+    total_housing_units = 'Total housing units in the block from the PL 94-171 H1_001N field (housing units).',
+    state = 'Two-digit state FIPS code returned by the Census API.',
+    county = 'Three-digit county FIPS code returned by the Census API.'
+  ),
   gateway duckdb,
   blueprints @region_blueprints()
 );

@@ -1,6 +1,13 @@
 MODEL (
   name duckdb.fresno.wetlands,
   kind VIEW,
+  description 'DuckDB staging VIEW fetching the CA Fish and Wildlife NWI wetland FeatureServer.',
+  column_descriptions (
+    attribute = 'ATTRIBUTE classification from the NWI feature properties; the fetch keeps Fresh values.',
+    wetland_type = 'WETLAND_TYPE wetland label from the NWI feature properties.',
+    acres = 'ACRES attribute from the NWI feature properties (acres, as published by the source).',
+    geometry = 'Wetland polygon parsed from the page GeoJSON with ST_GeomFromGeoJSON (EPSG:4326 lon/lat).'
+  ),
   gateway duckdb,
   dialect duckdb,
   columns (

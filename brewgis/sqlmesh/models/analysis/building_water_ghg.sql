@@ -1,6 +1,15 @@
 MODEL (
   name brewgis.@{scenario_schema}.@{model_table},
   kind FULL,
+  description 'Per-parcel CO2e from building energy use and water and wastewater treatment.',
+  column_descriptions (
+    parcel_id = 'Assessor parcel number (APN) of the parcel.',
+    co2e_energy_total_kg = 'CO2e from building electricity and gas use (kg per year).',
+    co2e_water_total_kg = 'CO2e from water supply and wastewater treatment (kg per year).',
+    co2e_total_kg = 'Building energy plus water CO2e (kg per year).',
+    co2e_per_capita_kg = 'Total CO2e divided by parcel population (kg per person per year).',
+    geometry = 'Parcel boundary geometry (EPSG:4326).'
+  ),
   blueprints @analysis_blueprints('building_water_ghg'),
   audits (
     not_null(columns := (parcel_id,)),

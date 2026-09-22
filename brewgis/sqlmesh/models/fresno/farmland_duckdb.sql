@@ -1,6 +1,13 @@
 MODEL (
   name duckdb.fresno.farmland,
   kind VIEW,
+  description 'DuckDB staging VIEW fetching the CA Important Farmland FeatureServer for Fresno County.',
+  column_descriptions (
+    objectid = 'OBJECTID of the farmland polygon from the FeatureServer feature properties.',
+    county = 'County name (County) from the FeatureServer feature properties; the fetch keeps Fresno.',
+    code = 'Important Farmland class code (Code) from the FeatureServer feature properties.',
+    geometry = 'Farmland polygon parsed from the page GeoJSON with ST_GeomFromGeoJSON (EPSG:4326 lon/lat).'
+  ),
   gateway duckdb,
   dialect duckdb,
   columns (

@@ -240,6 +240,32 @@ def _feature_matrix(df, landuse_prefixes, zone_prefixes, ldev_cats=None):
 @model(
     "brewgis.assessor.parcel_sqft_regressor",
     kind=dict(name=ModelKindName.FULL),
+    description=(
+        "LightGBM multi-output estimate of building square footage by type for every"
+        " SACOG assessor parcel, trained on reference base canvas parcels, with the"
+        " per-type predictions clamped at zero."
+    ),
+    column_descriptions={
+        "apn": "Assessor parcel number (APN) the estimates belong to.",
+        "bldg_sqft_detsf_sl": "Predicted detached single-family small-lot building square footage (sq ft).",
+        "bldg_sqft_detsf_ll": "Predicted detached single-family large-lot building square footage (sq ft).",
+        "bldg_sqft_attsf": "Predicted attached single-family building square footage (sq ft).",
+        "bldg_sqft_mf": "Predicted multi-family building square footage (sq ft).",
+        "bldg_sqft_retail_services": "Predicted retail services building square footage (sq ft).",
+        "bldg_sqft_restaurant": "Predicted restaurant building square footage (sq ft).",
+        "bldg_sqft_accommodation": "Predicted accommodation building square footage (sq ft).",
+        "bldg_sqft_arts_entertainment": "Predicted arts and entertainment building square footage (sq ft).",
+        "bldg_sqft_other_services": "Predicted other services building square footage (sq ft).",
+        "bldg_sqft_office_services": "Predicted office services building square footage (sq ft).",
+        "bldg_sqft_public_admin": "Predicted public administration building square footage (sq ft).",
+        "bldg_sqft_education": "Predicted education building square footage (sq ft).",
+        "bldg_sqft_medical_services": "Predicted medical services building square footage (sq ft).",
+        "bldg_sqft_transport_warehousing": (
+            "Predicted transport and warehousing building square footage (sq ft)."
+        ),
+        "bldg_sqft_wholesale": "Predicted wholesale building square footage (sq ft).",
+        "bldg_sqft_total": "Total predicted building square footage, the sum of the per-type estimates (sq ft).",
+    },
     columns={
         "apn": "text",
         "bldg_sqft_detsf_sl": "float",

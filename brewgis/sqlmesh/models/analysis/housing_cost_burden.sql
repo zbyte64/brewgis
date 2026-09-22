@@ -1,6 +1,19 @@
 MODEL (
   name brewgis.@{scenario_schema}.@{model_table},
   kind FULL,
+  description 'Per-parcel cost-burdened and severely cost-burdened household counts from configurable rates.',
+  column_descriptions (
+    parcel_id = 'Assessor parcel number (APN) of the parcel.',
+    area_gross_acres = 'Gross parcel area (acres).',
+    pop = 'Population allocated to the parcel (people).',
+    hh = 'Households allocated to the parcel (households).',
+    du = 'Dwelling units allocated to the parcel (units).',
+    cost_burdened_hh = 'Households times the configured burden rate (households).',
+    severely_cost_burdened_hh = 'Households times the configured severe burden rate (households).',
+    cost_burden_pct = 'Cost-burdened households as a share of households (% as 0-100).',
+    cost_burden_category = 'Band: low_burden, cost_burdened or severely_cost_burdened.',
+    geometry = 'Parcel boundary geometry (EPSG:4326).'
+  ),
   blueprints @analysis_blueprints('housing_cost_burden'),
 );
 

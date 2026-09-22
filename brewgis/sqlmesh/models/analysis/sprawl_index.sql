@@ -1,6 +1,21 @@
 MODEL (
   name brewgis.@{scenario_schema}.@{model_table},
   kind FULL,
+  description 'Per-parcel compactness index (0-100) from ranked density, connectivity and mixed use.',
+  column_descriptions (
+    parcel_id = 'Assessor parcel number (APN) of the parcel.',
+    area_gross_acres = 'Gross parcel area (acres).',
+    pop = 'Population allocated to the parcel (people).',
+    population_density = 'Population divided by gross parcel area (people per acre).',
+    intersection_density = 'Intersection density (intersections per km2).',
+    land_development_category = 'Land development category (urban, compact, standard or rural).',
+    emp = 'Employment allocated to the parcel (jobs).',
+    density_score = 'Percentile rank of the parcel population density (0-1).',
+    connectivity_score = 'Percentile rank of the parcel intersection density (0-1).',
+    mixed_use_score = 'One when the parcel has both population and employment, else zero.',
+    sprawl_index = 'Mean of the density, connectivity and mixed-use scores (0-100).',
+    geometry = 'Parcel boundary geometry (EPSG:4326).'
+  ),
   blueprints @analysis_blueprints('sprawl_index'),
 );
 

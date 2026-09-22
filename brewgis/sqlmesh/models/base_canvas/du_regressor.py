@@ -76,6 +76,16 @@ _TRAIN_MODEL = {
 @model(
     "brewgis.@{region}.du_regressor",
     kind={"name": ModelKindName.FULL},
+    description="LightGBM prediction of dwelling units by type for region parcels, from the SACOG-trained cache.",
+    column_descriptions={
+        "apn": "Assessor parcel number (APN) the prediction belongs to.",
+        "du_detsf_sl": "Predicted detached single-family small-lot dwelling units.",
+        "du_detsf_ll": "Predicted detached single-family large-lot dwelling units.",
+        "du_attsf": "Predicted attached single-family dwelling units.",
+        "du_mf2to4": "Predicted multi-family 2-4 unit dwelling units.",
+        "du_mf5p": "Predicted multi-family 5+ unit dwelling units.",
+        "du_total": "Predicted total dwelling units across all types.",
+    },
     columns={
         "apn": "text",
         "du_detsf_sl": "float",

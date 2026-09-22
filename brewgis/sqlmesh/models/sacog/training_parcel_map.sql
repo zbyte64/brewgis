@@ -1,6 +1,12 @@
 MODEL (
   name brewgis.sacog.training_parcel_map,
   kind FULL,
+  description 'Reference parcel to assessor APN crosswalk for regressor training, one row per intersecting pair.',
+  column_descriptions (
+    parcel_id = 'Reference parcel identifier (parcel_id) from brewgis.sacog.parcel_shim.',
+    apn = 'Assessor parcel number (APN) of the intersecting assessor parcel.',
+    intersect_area_sqft = 'Area of the intersection of the reference and assessor parcel bounding envelopes.'
+  ),
   audits (
     not_null(columns := (parcel_id, apn))
   )

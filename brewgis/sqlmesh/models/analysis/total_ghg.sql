@@ -1,6 +1,14 @@
 MODEL (
   name brewgis.@{scenario_schema}.@{model_table},
   kind FULL,
+  description 'Per-parcel greenhouse gas summary combining transport with building and water emissions.',
+  column_descriptions (
+    parcel_id = 'Assessor parcel number (APN) from either emissions model.',
+    co2e_transport = 'Transport CO2e from the transport GHG model (kg per year).',
+    co2e_buildings = 'Building energy CO2e from the building and water GHG model (kg per year).',
+    co2e_water = 'Water and wastewater CO2e from the building and water GHG model (kg per year).',
+    co2e_total = 'Transport plus building and water CO2e (kg per year).'
+  ),
   blueprints @analysis_blueprints('total_ghg'),
   audits (
     not_null(columns := (parcel_id,)),

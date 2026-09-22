@@ -1,6 +1,18 @@
 MODEL (
   name brewgis.@{scenario_schema}.@{model_table},
   kind FULL,
+  description 'Per-parcel displacement risk with scenario-versus-baseline change fields, still placeholders.',
+  column_descriptions (
+    parcel_id = 'Assessor parcel number (APN) of the parcel.',
+    area_gross_acres = 'Gross parcel area (acres).',
+    pop = 'Population allocated to the parcel (people).',
+    hh = 'Households allocated to the parcel (households).',
+    vulnerability_score = 'Count of the four equity thresholds the parcel fails (0-4).',
+    displacement_risk_category = 'Risk band: stable, vulnerable, at_risk or displacement_pressure.',
+    risk_change_vs_base = 'Change in risk category versus the base canvas; hard-coded to same.',
+    vulnerability_change = 'Change in vulnerability score versus base canvas; hard-coded to 0.',
+    geometry = 'Parcel boundary geometry (EPSG:4326).'
+  ),
   blueprints @analysis_blueprints('displacement_risk_dynamic'),
   audits (
     not_null(columns := (parcel_id,)),

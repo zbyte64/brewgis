@@ -1,9 +1,10 @@
 MODEL (
   name brewgis.@{region}.path_intersection_points,
   kind FULL,
+  description 'Pedestrian path intersection points (3 or more meeting path segments) snapped to a 10m grid.',
   column_descriptions (
-    geometry = "Intersection point (snapped to 10m grid) in local_srid (3310)",
-    street_count = "Number of path segments meeting at this intersection"
+    geometry = 'Intersection point (snapped to 10m grid) in local_srid (3310)',
+    street_count = 'Number of path segments meeting at this intersection'
   ),
   blueprints @region_blueprints()
 );

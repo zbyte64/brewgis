@@ -1,6 +1,13 @@
 MODEL (
   name brewgis.fresno.farmland,
   kind VIEW,
+  description 'California Important Farmland for Fresno County from the CA Dept of Conservation FeatureServer.',
+  column_descriptions (
+    objectid = 'OBJECTID of the farmland polygon in the CA Dept of Conservation Important Farmland FeatureServer.',
+    county = 'County name (County) of the farmland polygon; the fetch keeps County values matching Fresno.',
+    code = 'Important Farmland class code (Code) assigned by the Dept of Conservation.',
+    geom = 'Farmland polygon at SRID 4326, restored with ST_SetSRID from the bridge table geometry.'
+  ),
   columns (
     objectid INTEGER,
     county TEXT,

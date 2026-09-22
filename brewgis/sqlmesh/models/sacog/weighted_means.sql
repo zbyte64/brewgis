@@ -1,6 +1,15 @@
 MODEL (
   name brewgis.sacog.weighted_means,
-  kind FULL
+  kind FULL,
+  description 'Population-weighted means of base-canvas density and rate metrics: SUM(metric * pop) / SUM(pop).',
+  column_descriptions (
+    source = 'Source label for the row (literal brewgis).',
+    median_income_wavg = 'Population-weighted mean of base-canvas median household income ($ per year).',
+    pct_minority_wavg = 'Population-weighted mean of base-canvas percent people of color (% as 0-100).',
+    pct_college_educated_wavg = 'Population-weighted mean of base-canvas percent college-educated (% as 0-100).',
+    cost_burden_pct_wavg = 'Population-weighted mean of base-canvas cost-burdened household share (% as 0-100).',
+    rent_burden_pct_wavg = 'Population-weighted mean of base-canvas rent-burdened household share (% as 0-100).'
+  )
 );
 
 -- SACOG Weighted Means — area-weighted averages for density/rate equity columns.

@@ -1,6 +1,13 @@
 MODEL (
   name brewgis.@{scenario_schema}.@{model_table},
   kind FULL,
+  description 'Share of parcel trips that stay inside the study area, with internal and external trip volumes.',
+  column_descriptions (
+    parcel_id = 'Parcel identifier from the scenario end state (core_end_state).',
+    trips_internal = 'Trips per day with both ends inside the study area: intra-parcel plus internal outbound.',
+    internal_capture_pct = 'Fraction (0-1) of parcel trips kept inside the study area, after friction attenuation.',
+    trips_external = 'Trips per day leaving or crossing the study area: total trips minus internal trips.'
+  ),
   blueprints @analysis_blueprints('internal_capture'),
   audits (
     not_null(columns := (parcel_id,)),

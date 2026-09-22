@@ -4,6 +4,12 @@ MODEL (
     unique_key (apn),
     batch_size 100000
   ),
+  description 'Per-parcel Overture intersection density: intersection points counted within 402 m (a quarter mile) of the parcel local centroid, one row per assessor parcel APN.',
+  column_descriptions (
+    apn = 'Assessor parcel number (APN) of the parcel the density belongs to.',
+    intersection_density = 'Overture intersection points within 402 m of the parcel local centroid, per square mile.',
+    geometry = 'Parcel geometry taken from the region assessor parcels table, joined by APN.'
+  ),
   audits (
     not_null(columns := (apn)),
     unique_values(columns := (apn,))

@@ -1,6 +1,13 @@
 MODEL (
   name brewgis.fresno.wetlands_raw,
   kind FULL,
+  description 'PostGIS bridge table materializing the DuckDB NWI wetlands fetch, one wetland polygon per row.',
+  column_descriptions (
+    attribute = 'ATTRIBUTE classification of the NWI record.',
+    wetland_type = 'WETLAND_TYPE wetland label of the polygon.',
+    acres = 'ACRES attribute of the wetland polygon as published by the source service (acres).',
+    geometry = 'Wetland geometry in EPSG:4326, wrapped in ST_SetCRS so the SRID survives the DuckDB-to-PostGIS FDW.'
+  ),
   gateway duckdb
 );
 

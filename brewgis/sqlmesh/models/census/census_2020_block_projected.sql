@@ -1,6 +1,15 @@
 MODEL (
   name brewgis.@{region}.census_2020_block_projected,
   kind FULL,
+  description 'Census 2020 blocks with pre-projected local state plane geometry and envelope for spatial joins.',
+  column_descriptions (
+    geoid = 'Census block GEOID (15-digit FIPS).',
+    total_population = 'Total population of the block carried through from the census_2020_block model (people).',
+    total_housing_units = 'Total housing units carried through from the census_2020_block model (housing units).',
+    geometry = 'Block boundary in SRID 4326 (degrees, EPSG:4326).',
+    local_geometry = 'Block boundary transformed to the local state plane CRS from local_srid, default 3310.',
+    local_envelope = 'Bounding envelope of local_geometry in the local state plane CRS, for fast spatial preselection.'
+  ),
   audits (
     not_null(columns := (geoid))
   ),

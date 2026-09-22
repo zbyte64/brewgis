@@ -1,6 +1,14 @@
 MODEL (
   name brewgis.tests.test_stage_census_blocks,
   kind VIEW,
+  description 'Test fixture: staging VIEW matching the census_2020_block schema with three synthetic blocks.',
+  column_descriptions (
+    geoid = 'Synthetic census block GEOID (15-digit FIPS), three hand-written blocks here.',
+    total_population = 'Total population of the block (people), synthetic values in this fixture.',
+    total_housing_units = 'Total housing units in the block (count), synthetic values in this fixture.',
+    total_group_quarters = 'Group quarters population of the block (people), zero in this fixture.',
+    geometry = 'Block geometry (EPSG:4326), a seed parcel extent or a hand-written envelope.'
+  ),
   audits (
     not_null(columns := (geoid))
   )

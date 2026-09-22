@@ -1,6 +1,26 @@
 MODEL (
   name brewgis.@{region}.wac_sub_sector_fallbacks,
   kind FULL,
+  description 'County-level fallback shares of employment within each WAC super-sector, summed from the block sub-sectors of wac_block, one row per county.',
+  column_descriptions (
+    county_fips = 'Three-digit county FIPS code the fallback shares were computed for.',
+    emp_retail_services_frac = 'Retail services share of the five retail sub-sectors summed per county (fraction).',
+    emp_restaurant_frac = 'Restaurant share of the five retail sub-sectors summed per county (fraction).',
+    emp_accommodation_frac = 'Accommodation share of the five retail sub-sectors summed per county (fraction).',
+    emp_arts_entertainment_frac = 'Arts and entertainment share of the five retail sub-sectors summed per county.',
+    emp_other_services_frac = 'Other services share of the five retail sub-sectors summed per county (fraction).',
+    emp_office_services_frac = 'Office services share of office plus medical employment summed per county (fraction).',
+    emp_medical_services_frac = 'Medical services share of office plus medical employment summed per county.',
+    emp_public_admin_frac = 'Public administration share of public administration plus education summed per county.',
+    emp_education_frac = 'Education share of public administration plus education employment summed per county.',
+    emp_manufacturing_frac = 'Manufacturing share of the five industrial sub-sectors summed per county (fraction).',
+    emp_wholesale_frac = 'Wholesale share of the five industrial sub-sectors summed per county (fraction).',
+    emp_transport_warehousing_frac = 'Transport and warehousing share of the five industrial sub-sectors per county.',
+    emp_utilities_frac = 'Utilities share of the five industrial sub-sectors summed per county (fraction).',
+    emp_construction_frac = 'Construction share of the five industrial sub-sectors summed per county (fraction).',
+    emp_agriculture_frac = 'Agricultural share of agriculture plus extraction employment summed per county.',
+    emp_extraction_frac = 'Extraction share of agriculture plus extraction employment summed per county (fraction).'
+  ),
   grain (county_fips),
   blueprints @region_blueprints()
 );

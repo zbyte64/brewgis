@@ -81,6 +81,21 @@ _SALES_RAW_TABLE = {
 @model(
     "brewgis.@{region}.parcel_sales_features",
     kind={"name": ModelKindName.FULL},
+    description="Known parcel set for the k-NN footprint imputation: footprint features plus assessor sales.",
+    column_descriptions={
+        "apn": "Assessor parcel number (APN) of the parcel.",
+        "geometry": "Parcel boundary geometry (EPSG:4326) from parcel_building_footprints.",
+        "footprint_ratio": "Building floor area divided by parcel lot area (ratio 0-1).",
+        "building_count": "Number of buildings on the parcel.",
+        "lot_size_acres": "Parcel lot size (acres).",
+        "land_development_category": "Land development category assigned to the parcel.",
+        "block_group_geoid": "Census block group GEOID from the latest parcel_block_groups year.",
+        "tract_geoid": "Census tract GEOID from the latest parcel_block_groups year.",
+        "property_type": "Assessor property type of the sales record; rows without one are dropped.",
+        "units": "Assessor dwelling unit count of the sales record, defaulting to 1 when absent.",
+        "living_sqft": "Assessor living area of the sales record (sq ft, assessor_sales_raw.living_area).",
+        "building_sqft": "Assessor building area of the sales record (sq ft, assessor_sales_raw.building_sf).",
+    },
     columns={
         "apn": "text",
         "geometry": "geometry",

@@ -1,6 +1,13 @@
 MODEL (
   name brewgis.fresno.floodplains_raw,
   kind FULL,
+  description 'PostGIS bridge table materializing the DuckDB FEMA flood zone fetch, one zone per row.',
+  column_descriptions (
+    fld_zone = 'FEMA flood hazard zone code (FLD_ZONE) of the polygon.',
+    sfha_tf = 'SFHA_TF Special Flood Hazard Area flag from the NFHL record.',
+    static_bfe = 'STATIC_BFE static base flood elevation from the NFHL record.',
+    geometry = 'Flood zone geometry in EPSG:4326, wrapped in ST_SetCRS so the SRID survives the DuckDB-to-PostGIS FDW.'
+  ),
   gateway duckdb
 );
 

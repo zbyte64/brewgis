@@ -1,9 +1,10 @@
 MODEL (
   name brewgis.@{region}.hwy_intersection_points,
   kind FULL,
+  description 'Highway interchange points where 3+ Overture highway-class road segments meet, snapped to a 10m grid.',
   column_descriptions (
-    geometry = "Intersection point (snapped to 10m grid) in local_srid (3310)",
-    street_count = "Number of highway segments meeting at this intersection"
+    geometry = 'Intersection point (snapped to 10m grid) in local_srid (3310)',
+    street_count = 'Number of highway segments meeting at this intersection'
   ),
   blueprints @region_blueprints()
 );

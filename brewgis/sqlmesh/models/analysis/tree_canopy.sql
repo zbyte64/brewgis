@@ -1,6 +1,17 @@
 MODEL (
   name brewgis.@{scenario_schema}.@{model_table},
   kind FULL,
+  description 'Per-parcel tree canopy percentage from the land development category, with a heat exposure score.',
+  column_descriptions (
+    parcel_id = 'Assessor parcel number (APN) of the parcel.',
+    area_gross_acres = 'Gross parcel area (acres).',
+    pop = 'Population allocated to the parcel (people).',
+    hh = 'Households allocated to the parcel (households).',
+    canopy_pct = 'Assumed canopy cover from the land development category (% as 0-100).',
+    surface_temp_f = 'Surface temperature proxy, baseline minus 1 F per 10 percent canopy (F).',
+    heat_exposure_score = 'Heat exposure score, 100 minus 4 per canopy percent (0-100, worse higher).',
+    geometry = 'Parcel boundary geometry (EPSG:4326).'
+  ),
   blueprints @analysis_blueprints('tree_canopy')
 );
 

@@ -73,6 +73,15 @@ _SOURCE_TABLE = {
 @model(
     "brewgis.@{region}.assessor_sales_deduped",
     kind={"name": ModelKindName.FULL},
+    description="One row per APN with the best assessor sales observation, by completeness then year built.",
+    column_descriptions={
+        "apn": "Assessor parcel number (APN).",
+        "actual_living_sqft": "Assessor living area from the best sales row (sq ft).",
+        "actual_building_sqft": "Assessor building area from the best sales row (sq ft).",
+        "property_type": "Assessor property type code from the best sales row.",
+        "sales_lot_size_acres": "Assessor lot size from the best sales row (acres).",
+        "units": "Assessor dwelling unit count from the best sales row.",
+    },
     columns={
         "apn": "text",
         "actual_living_sqft": "double",

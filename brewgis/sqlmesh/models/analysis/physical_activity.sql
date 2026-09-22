@@ -1,6 +1,17 @@
 MODEL (
   name brewgis.@{scenario_schema}.@{model_table},
   kind FULL,
+  description 'Per-parcel physical activity from walking and cycling trips: MET-hours and the active share.',
+  column_descriptions (
+    parcel_id = 'Assessor parcel number (APN) of the parcel.',
+    walk_met_hours = 'Walking MET-hours from walk trips, trip duration and the MET value.',
+    bike_met_hours = 'Cycling MET-hours from bike trips, trip duration and the MET value.',
+    total_met_hours = 'Walking plus cycling metabolic equivalent hours.',
+    walk_trips = 'Walking trips attributed to the parcel (trips).',
+    bike_trips = 'Cycling trips attributed to the parcel (trips).',
+    active_trip_share = 'Walking plus cycling trips as a share of all trips (0-1).',
+    geometry = 'Parcel boundary geometry (EPSG:4326).'
+  ),
   blueprints @analysis_blueprints('physical_activity'),
   audits (
     not_null(columns := (parcel_id,)),
