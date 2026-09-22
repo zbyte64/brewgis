@@ -418,7 +418,7 @@ class Command(BaseCommand):
 
         from brewgis.workspace.analysis.pipeline import MODULE_RESULT_TABLES
         from brewgis.workspace.analysis.pipeline import resolve_module_order
-        from brewgis.workspace.analysis.pipeline import run_modules_sync
+        from brewgis.workspace.analysis.pipeline import run_analysis_pipeline
         from brewgis.workspace.models import Scenario
         from brewgis.workspace.models import Workspace
 
@@ -447,25 +447,25 @@ class Command(BaseCommand):
         self.stdout.write(f"  ✓ Module order: {', '.join(ordered_modules)}")
 
         # Run analysis SQLMesh models + create end_state passthrough for base case
-        svars = dict(PIPELINE_VARS)
-
         self._create_base_case_end_state()
 
-        result = run_modules_sync(
-            modules=ordered_modules,
-            base_vars={**svars, "completed_modules": ["core"]},
-            target_schema=WORKSPACE_SCHEMA,
-            workspace_id=ws.pk,
-            scenario_id=SCENARIO_SLUG,
+        # Record the run before planning: each scenario's analysis models are
+        # blueprinted, and the blueprint set comes from the scenarios that have
+        # an AnalysisRun (see sqlmesh/macros/analysis_blueprints.py), so the run
+        # has to exist before the plan loads the project.
+        run = run_analysis_pipeline(
+            scenario_id=scenario.pk,
+            module_names=ordered_modules,
         )
-        if result["success"]:
+        if run.status == "completed":
             self.stdout.write(
                 self.style.SUCCESS("  ✓ Analysis pipeline completed successfully")
             )
         else:
             self.stdout.write(
                 self.style.WARNING(
-                    f"  ⚠ Completed {len(result['completed'])}/{len(ordered_modules)} modules"
+                    f"  ⚠ Analysis run #{run.pk} {run.status}: "
+                    f"{run.failure_cause or 'see the run log'}"
                 )
             )
 
@@ -614,14 +614,13 @@ class Command(BaseCommand):
         """Verify that all analysis modules produced output tables."""
         from django.db import connection
 
+        from brewgis.workspace.analysis.module_registry import get_result_table_names
         from brewgis.workspace.analysis.pipeline import MODULE_RESULT_TABLES
 
         all_ok = True
-        for module_name, table_names in MODULE_RESULT_TABLES.items():
-            names = table_names  # MODULE_RESULT_TABLES is dict[str, list[str]]
-            for table_pattern in names:
-                table_name = table_pattern.format(scenario_id=scenario.slug)
-                schema = WORKSPACE_SCHEMA
+        for module_name in MODULE_RESULT_TABLES:
+            for qualified in get_result_table_names(module_name, scenario.pk):
+                schema, _, table_name = qualified.partition(".")
                 with connection.cursor() as cursor:
                     cursor.execute(
                         "SELECT count(*) FROM information_schema.tables WHERE table_schema=%s AND table_name=%s",

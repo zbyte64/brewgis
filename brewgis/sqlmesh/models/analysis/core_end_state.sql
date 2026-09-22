@@ -1,6 +1,7 @@
 MODEL (
-  name brewgis.analysis.core_end_state,
+  name brewgis.@{scenario_schema}.@{model_table},
   kind FULL,
+  blueprints @analysis_blueprints('core_end_state'),
   audits (
     not_null(columns := (parcel_id)),
     number_of_rows(threshold := 1)
@@ -216,3 +217,17 @@ FROM computed AS c;
   ON @this_model USING btree (land_development_category);
   CREATE INDEX IF NOT EXISTS @snapshot_hash('idx_core_end_state_acres_dev_')
   ON @this_model USING btree (acres_developed);
+
+
+-- Publish this model's result view where the Layers, Martin and UI paths read
+-- it. The view selects from this model's prod virtual view (never its physical
+-- table), so promoting a non-prod environment never repoints it. See
+-- sqlmesh/macros/analysis_blueprints.py.
+ON_VIRTUAL_UPDATE_BEGIN;
+
+CREATE SCHEMA IF NOT EXISTS "@{result_schema}";
+
+CREATE OR REPLACE VIEW "@{result_schema}"."@{model_table}" AS
+SELECT * FROM @{scenario_schema}."@{model_table}";
+
+ON_VIRTUAL_UPDATE_END;

@@ -1,6 +1,7 @@
 MODEL (
-  name brewgis.analysis.fiscal_net_impact,
+  name brewgis.@{scenario_schema}.@{model_table},
   kind FULL,
+  blueprints @analysis_blueprints('fiscal_net_impact'),
   audits (
     not_null(columns := (parcel_id,)),
     unique_values(columns := (parcel_id,))
@@ -28,10 +29,10 @@ SELECT
     - COALESCE(f3.service_cost_total, 0.0)
     AS net_fiscal_impact,
     COALESCE(f1.geometry, f2.geometry, f3.geometry) AS geometry
-FROM brewgis.analysis.fiscal_property_tax AS f1
-FULL OUTER JOIN brewgis.analysis.fiscal_sales_tax AS f2
+FROM @{scenario_schema}.fiscal_property_tax AS f1
+FULL OUTER JOIN @{scenario_schema}.fiscal_sales_tax AS f2
     ON f1.parcel_id = f2.parcel_id
-FULL OUTER JOIN brewgis.analysis.fiscal_service_costs AS f3
+FULL OUTER JOIN @{scenario_schema}.fiscal_service_costs AS f3
     ON f1.parcel_id = f3.parcel_id;
 
 -- post_statements
@@ -40,3 +41,17 @@ FULL OUTER JOIN brewgis.analysis.fiscal_service_costs AS f3
   CREATE INDEX IF NOT EXISTS @snapshot_hash('idx_fiscal_net_impact_parcel_id_')
   ON @this_model USING btree (parcel_id);
 ANALYZE @this_model;
+
+
+-- Publish this model's result view where the Layers, Martin and UI paths read
+-- it. The view selects from this model's prod virtual view (never its physical
+-- table), so promoting a non-prod environment never repoints it. See
+-- sqlmesh/macros/analysis_blueprints.py.
+ON_VIRTUAL_UPDATE_BEGIN;
+
+CREATE SCHEMA IF NOT EXISTS "@{result_schema}";
+
+CREATE OR REPLACE VIEW "@{result_schema}"."@{model_table}" AS
+SELECT * FROM @{scenario_schema}."@{model_table}";
+
+ON_VIRTUAL_UPDATE_END;

@@ -80,19 +80,47 @@ class TestAnalysisModuleForm(TestCase):
         assert "floodplain_discount_pct" not in form.fields
         assert "column_pop" not in form.fields
 
-    def test_defaults_parcel_table_to_scenario_canvas(self):
-        # ScenarioFactory defaults to scenario_type=BASE (matching the
-        # model's default), whose base_layer_table is the raw base table —
-        # use an ALTERNATIVE scenario here to exercise the canvas-view
-        # default this test is actually about.
+    def test_no_table_fields_the_models_derive_themselves(self):
+        """The parcel/built-form/base-canvas tables are derived per scenario by
+        the model blueprints, so the form must not offer them as inputs."""
+        form = AnalysisModuleForm(
+            workspace=self.workspace, scenario=self.scenario, module="water_demand"
+        )
+        for field in ("parcel_table", "built_form_table", "base_canvas_table"):
+            assert field not in form.fields
+
+    @patch(
+        "brewgis.workspace.views.analysis.check_analysis_prerequisites", return_value=[]
+    )
+    def test_apply_scenario_params_persists_constraints_and_column_mapping(
+        self, _mock_prereq
+    ):
+        """Launching with parameters stores them on the scenario, which is where
+        its analysis models read them from."""
         alt_scenario = ScenarioFactory(
             workspace=self.workspace, scenario_type=ScenarioType.ALTERNATIVE
         )
         form = AnalysisModuleForm(
-            workspace=self.workspace, scenario=alt_scenario, module="water_demand"
+            {
+                "scenario": alt_scenario.pk,
+                "floodplain_discount_pct": 50,
+                "column_pop": "population",
+            },
+            workspace=self.workspace,
+            scenario=alt_scenario,
+            module="water_demand",
         )
-        expected = f"{alt_scenario.target_schema}.scenario_{alt_scenario.slug}_canvas"
-        assert form.fields["parcel_table"].initial == expected
+        assert form.is_valid(), form.errors
+
+        form.apply_scenario_params(alt_scenario)
+
+        alt_scenario.refresh_from_db()
+        assert {
+            "table": "floodplains",
+            "discount_pct": 50,
+            "geom_col": "geom",
+        } in alt_scenario.constraints
+        assert alt_scenario.column_mapping == {"pop": "population"}
 
 
 @pytest.mark.views

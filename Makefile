@@ -162,6 +162,10 @@ plan-base:  ## Rebuild a base canvas model + its downstreams (BASE=brewgis.<regi
 reconcile-canvases:  ## Recreate any scenario canvas view a plan left missing/stale
 	$(COMPOSE_RUN) python manage.py reconcile_scenario_canvases
 
+.PHONY: reconcile-analyses
+reconcile-analyses:  ## Re-publish any scenario analysis result view a plan left missing/stale
+	$(COMPOSE_RUN) python manage.py reconcile_scenario_analyses
+
 # ─────────────────────────────────────────────
 # Linting & Formatting
 # ─────────────────────────────────────────────

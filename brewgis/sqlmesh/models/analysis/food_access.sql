@@ -1,6 +1,7 @@
 MODEL (
-  name brewgis.analysis.food_access,
+  name brewgis.@{scenario_schema}.@{model_table},
   kind FULL,
+  blueprints @analysis_blueprints('food_access'),
 );
 
 WITH food_data AS (
@@ -13,8 +14,8 @@ WITH food_data AS (
         fi.unhealthy_count,
         fi.mrfei,
         es.geometry
-    FROM brewgis.analysis.core_end_state AS es
-    LEFT JOIN brewgis.analysis.food_access_inputs AS fi
+    FROM @{scenario_schema}.core_end_state AS es
+    LEFT JOIN @{scenario_schema}.food_access_inputs AS fi
         ON es.parcel_id = fi.parcel_id
 )
 
@@ -52,3 +53,17 @@ FROM food_data;
   CREATE INDEX IF NOT EXISTS @snapshot_hash('idx_food_access_parcel_id_')
   ON @this_model USING btree (parcel_id);
 ANALYZE @this_model;
+
+
+-- Publish this model's result view where the Layers, Martin and UI paths read
+-- it. The view selects from this model's prod virtual view (never its physical
+-- table), so promoting a non-prod environment never repoints it. See
+-- sqlmesh/macros/analysis_blueprints.py.
+ON_VIRTUAL_UPDATE_BEGIN;
+
+CREATE SCHEMA IF NOT EXISTS "@{result_schema}";
+
+CREATE OR REPLACE VIEW "@{result_schema}"."@{model_table}" AS
+SELECT * FROM @{scenario_schema}."@{model_table}";
+
+ON_VIRTUAL_UPDATE_END;

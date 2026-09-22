@@ -9,6 +9,11 @@ from __future__ import annotations
 import warnings
 from typing import Any
 
+# ``model_fqn`` is re-exported: this registry is where "an analysis module and
+# the models implementing it" is defined.
+from brewgis.sqlmesh.model_names import model_fqn  # noqa: F401
+from brewgis.sqlmesh.model_names import result_schema_name
+
 # Module dependency graph: later modules depend on earlier ones
 MODULE_DEPENDENCIES: dict[str, list[str]] = {
     "env_constraint": [],
@@ -49,46 +54,50 @@ MODULE_DEPENDENCIES: dict[str, list[str]] = {
 }
 
 
-# Module → result table name templates (formatted with scenario_id)
+# Module → the bare SQLMesh model names whose result views the module produces.
+#
+# Each analysis model publishes its result view in the scenario's result schema
+# (see ``get_result_table_names``); the names here are the model names, which is
+# what the views are named after.
 MODULE_RESULT_TABLES: dict[str, list[str]] = {
-    "env_constraint": ["env_constraint_{scenario_id}"],
-    "core": ["end_state_{scenario_id}", "increment_{scenario_id}"],
-    "displacement_risk": ["displacement_risk_{scenario_id}"],
-    "water_demand": ["water_demand_{scenario_id}"],
-    "energy_demand": ["energy_demand_{scenario_id}"],
-    "land_consumption": [
-        "land_consumption_{scenario_id}",
-        "impervious_surface_{scenario_id}",
-    ],
+    "env_constraint": ["env_constraint"],
+    "core": ["core_end_state", "core_increment"],
+    "displacement_risk": ["displacement_risk"],
+    "water_demand": ["water_demand"],
+    "energy_demand": ["energy_demand"],
+    "land_consumption": ["land_consumption"],
     "fiscal": [
-        "fiscal_property_tax_{scenario_id}",
-        "fiscal_sales_tax_{scenario_id}",
-        "fiscal_service_costs_{scenario_id}",
-        "fiscal_net_impact_{scenario_id}",
+        "fiscal_property_tax",
+        "fiscal_sales_tax",
+        "fiscal_service_costs",
+        "fiscal_net_impact",
     ],
-    "agriculture": ["agriculture_{scenario_id}"],
-    "trip_generation": ["trip_generation_{scenario_id}"],
-    "vmt": ["vmt_{scenario_id}"],
-    "transport_ghg": ["transport_ghg_{scenario_id}"],
-    "building_water_ghg": ["building_water_ghg_{scenario_id}"],
-    "total_ghg": ["total_ghg_{scenario_id}"],
-    "health_impacts": ["health_impacts_{scenario_id}"],
-    "stormwater_runoff": ["stormwater_runoff_{scenario_id}"],
-    "food_access": ["food_access_{scenario_id}"],
+    "agriculture": ["agriculture"],
+    "trip_generation": ["trip_generation"],
+    "vmt": ["vmt"],
+    "transport_ghg": ["transport_ghg"],
+    "building_water_ghg": ["building_water_ghg"],
+    "total_ghg": ["total_ghg"],
+    "health_impacts": ["health_impacts"],
+    "stormwater_runoff": ["stormwater_runoff"],
+    "food_access": ["food_access"],
     "acs_equity": [],
-    "housing_cost_burden": ["housing_cost_burden_{scenario_id}"],
-    "sprawl_index": ["sprawl_index_{scenario_id}"],
-    "tree_canopy": ["tree_canopy_{scenario_id}"],
-    "vmt_fee": ["vmt_fee_{scenario_id}"],
-    "displacement_risk_dynamic": ["displacement_risk_dynamic_{scenario_id}"],
-    "scenario_summary": ["scenario_summary_{scenario_id}"],
-    "sprawl_cost": ["sprawl_cost_{scenario_id}"],
+    "housing_cost_burden": ["housing_cost_burden"],
+    "sprawl_index": ["sprawl_index"],
+    "tree_canopy": ["tree_canopy"],
+    "vmt_fee": ["vmt_fee"],
+    "displacement_risk_dynamic": ["displacement_risk_dynamic"],
+    "scenario_summary": ["scenario_summary"],
+    "sprawl_cost": ["sprawl_cost"],
 }
 
 
-# Module → SQLMesh model name patterns (model basename without brewgis.analysis. prefix)
+# Module → the SQLMesh models that implement it, by bare model name. These are
+# the models a module's run selects (see ``model_fqn``). Unlike
+# ``MODULE_RESULT_TABLES`` this holds only names that really are models —
+# ``env_constraint`` and ``acs_equity`` are Django-side/preprocessor steps with
+# no SQL model, so they are absent here and contribute nothing to a plan.
 MODULE_SQLMESH_SELECTORS: dict[str, list[str]] = {
-    "env_constraint": ["env_constraint"],
     "core": ["core_end_state", "core_increment"],
     "water_demand": ["water_demand"],
     "displacement_risk": ["displacement_risk"],
@@ -109,7 +118,6 @@ MODULE_SQLMESH_SELECTORS: dict[str, list[str]] = {
     "health_impacts": ["health_impacts"],
     "stormwater_runoff": ["stormwater_runoff"],
     "food_access": ["food_access"],
-    "acs_equity": [],
     "housing_cost_burden": ["housing_cost_burden"],
     "sprawl_index": ["sprawl_index"],
     "tree_canopy": ["tree_canopy"],
@@ -333,9 +341,10 @@ def resolve_module_order(module_names: list[str]) -> list[str]:
 
 
 def get_result_table_names(module: str, scenario_id: str) -> list[str]:
-    """Return the fully-qualified table names for a module's output."""
-    templates = MODULE_RESULT_TABLES.get(module, [])
-    return [t.format(scenario_id=scenario_id) for t in templates]
+    """Return the fully-qualified names of a module's result views."""
+    names = MODULE_RESULT_TABLES.get(module, [])
+    schema = result_schema_name(scenario_id)
+    return [f"{schema}.{name}" for name in names]
 
 
 def get_module_label(module: str) -> str:

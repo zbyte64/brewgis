@@ -72,7 +72,7 @@ Key rules:
 |`brewgis/workspace/mcp/`|MCP server: FastMCP stdio entrypoint, auth stub, 8 tool modules|
 |`brewgis/workspace/dlt_pipelines/`|dlt pipeline modules (nlcd) — load directly into DuckDB (caches HTTP, handles raster/zip)|
 |`brewgis/workspace/management/commands/`|Management commands: import_sacog_demo, populate_base_canvas, compare_sacog_basemap, onboard_geography, run_mcp, export_story_packet, restore_demo_db|
-|`brewgis/sqlmesh/`|SQLMesh project: ~162 models across 11 subdirs, 22 macros, 37 seeds, 86 audits, config.py|
+|`brewgis/sqlmesh/`|SQLMesh project: ~162 models across 13 subdirs, 22 macros, 37 seeds, 86 audits, config.py|
 |`brewgis/templates/`|~30 Django templates: base.html, workspace_map.html (main map page), workspace_detail.html, scenario_comparison.html, import_center.html, partials, allauth overrides|
 |`brewgis/static/js/`|Bundled frontend: brew-gis-map.js (1.3MB Lit+MapLibre ESM from Vite+TS)|
 |`brewgis/_ruff_rules/`|Custom Ruff lint rules for project-specific anti-patterns (replaces old pytestarch rules)|
@@ -208,7 +208,7 @@ npm run test      # vitest
 - **Macros (22):** allocation, utility, generic_tests, spatial_ops, geometry, delta_columns, gen_scenario_blueprints
 - **Seeds (37):** 5 real config seeds, 32 test seeds
 - **Audits (86):** 57 assert_* (row counts, coverage, conservation) + 29 audit_* (pipeline boundary checks)
-- **Naming:** `brewgis.{domain}.{model_name}` (e.g. `brewgis.staging.assessor_parcels`, `brewgis.assessor.parcel_du_estimation`)
+- **Naming:** `brewgis.{namespace}.{model_name}` where the namespace is a region (`sacog`, `fresno`) or a domain (`census`, `overture`, `buildings`, `base_canvas`, `assessor`, `nlcd`) (e.g. `brewgis.sacog.assessor_parcels`, `brewgis.census.tiger_blocks`). DuckDB-gateway raw views use the same namespaces under the `duckdb` catalog (e.g. `duckdb.census.tiger_blocks`)
 - **Variables:** 90+ config variables, gateway-managed virtual layer enabled
 
 ## Important Files
@@ -267,7 +267,7 @@ npm run test      # vitest
 |File|Role|
 |---|---|
 |`brewgis/sqlmesh/config.py`|Project config, 90+ vars, postgres dialect|
-|`brewgis/sqlmesh/models/`|~162 models across 11 directories (staging, assessor, nlcd, fresno, base_canvas, comparison, seeds, analysis, tests, shared, root)|
+|`brewgis/sqlmesh/models/`|~162 models across 13 directories (sacog, fresno, census, overture, buildings, base_canvas, assessor, nlcd, adapters, python, analysis, seeds, tests)|
 |`brewgis/sqlmesh/macros/`|7 macro files (22 macros total)|
 |`brewgis/sqlmesh/seeds/`|37 CSV seed files (5 real config + 32 test fixtures)|
 |`brewgis/sqlmesh/audits/`|86 audit SQL files for pipeline data quality|

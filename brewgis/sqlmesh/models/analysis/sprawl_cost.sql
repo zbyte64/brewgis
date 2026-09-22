@@ -1,6 +1,7 @@
 MODEL (
-  name brewgis.analysis.sprawl_cost,
+  name brewgis.@{scenario_schema}.@{model_table},
   kind FULL,
+  blueprints @analysis_blueprints('sprawl_cost'),
   audits (
     not_null(columns := (parcel_id,)),
     unique_values(columns := (parcel_id,))
@@ -29,7 +30,7 @@ WITH parcel_data AS (
         -- Infrastructure cost: annual service cost + amortized capital cost
         ROUND((es.du * @sprawl_infrastructure_cost_per_du)::numeric, 2) AS infrastructure_cost_annual,
         ROUND((es.du * @sprawl_capital_cost_per_du)::numeric, 2) AS capital_cost
-    FROM brewgis.analysis.core_end_state AS es
+    FROM @{scenario_schema}.core_end_state AS es
 )
 SELECT
     parcel_id,
@@ -56,3 +57,17 @@ FROM parcel_data;
   CREATE INDEX IF NOT EXISTS @snapshot_hash('idx_sprawl_cost_parcel_id_')
   ON @this_model USING btree (parcel_id);
 ANALYZE @this_model;
+
+
+-- Publish this model's result view where the Layers, Martin and UI paths read
+-- it. The view selects from this model's prod virtual view (never its physical
+-- table), so promoting a non-prod environment never repoints it. See
+-- sqlmesh/macros/analysis_blueprints.py.
+ON_VIRTUAL_UPDATE_BEGIN;
+
+CREATE SCHEMA IF NOT EXISTS "@{result_schema}";
+
+CREATE OR REPLACE VIEW "@{result_schema}"."@{model_table}" AS
+SELECT * FROM @{scenario_schema}."@{model_table}";
+
+ON_VIRTUAL_UPDATE_END;

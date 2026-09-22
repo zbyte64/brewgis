@@ -32,6 +32,7 @@ from brewgis.workspace.models import AnalysisRun
 from brewgis.workspace.models import Scenario
 from brewgis.workspace.models import ScenarioType
 from brewgis.workspace.models import Workspace
+from brewgis.workspace.services.preflight import PreflightError
 from brewgis.workspace.services.preflight import check_analysis_prerequisites
 from brewgis.workspace.views.built_forms import HtmxResponseMixin
 
@@ -43,6 +44,49 @@ _CONSTRAINTS_INITIAL = json.dumps(
     ],
     indent=2,
 )
+
+_BUILT_FORMS_TABLE = "built_forms"
+"""Table the analysis models read BuildingType definitions from.
+
+Schema-qualified with ``Workspace.db_schema`` on both sides — here and in
+``sqlmesh/macros/analysis_blueprints.py``, which bakes the same name into the
+scenario's model blueprints.
+"""
+
+
+def scenario_analysis_errors(
+    workspace: Workspace, scenario: Scenario
+) -> list[PreflightError]:
+    """Return the blocking prerequisite errors for analyzing *scenario*.
+
+    The analysis models derive everything they read from the scenario and its
+    workspace (see ``sqlmesh/macros/analysis_blueprints.py``), so those derived
+    inputs are what a launch is validated against — not values typed into a
+    form:
+
+    - the scenario's own parcel source: its canvas view for an ALTERNATIVE
+      scenario (base canvas + painted edits), the workspace's base canvas
+      otherwise (``Scenario.base_layer_table``);
+    - the workspace's exported built-forms table, which is mechanically
+      re-synced from the configured ``BuildingType`` rows first. That sync never
+      invents data — a workspace with no BuildingType rows still produces an
+      empty table, which the check below reports.
+
+    The export sync uses its own DB connection (not Django's request-scoped
+    one) so the write commits immediately: under ATOMIC_REQUESTS the whole view
+    runs in one transaction, but SQLMesh's engine adapter opens a separate
+    connection to run the plan — it can't see this table until it's actually
+    committed, not just pending in our own txn.
+    """
+    ensure_export_exists_isolated(
+        workspace, schema=workspace.db_schema, table=_BUILT_FORMS_TABLE
+    )
+    return check_analysis_prerequisites(
+        schema=workspace.db_schema,
+        parcel_table=scenario.base_layer_table,
+        built_form_table=_BUILT_FORMS_TABLE,
+        base_canvas_table=workspace.base_table,
+    )
 
 
 class AnalysisLaunchForm(forms.Form):
@@ -62,36 +106,16 @@ class AnalysisLaunchForm(forms.Form):
         queryset=Scenario.objects.all(),
         required=True,
         label="Scenario",
-        help_text="Select a scenario for this analysis run.",
-    )
-    parcel_table = forms.CharField(
-        max_length=128,
-        label="Parcel Table",
-        help_text="Table name containing parcels with built form assignments.",
-    )
-    built_form_table = forms.CharField(
-        max_length=128,
-        required=False,
-        widget=forms.HiddenInput(),
-        initial="built_forms",
-    )
-    source_schema = forms.CharField(
-        max_length=64,
-        required=False,
-        label="Source Schema",
-        help_text="Database schema containing source tables.",
-        initial="public",
-    )
-    base_canvas_table = forms.CharField(
-        max_length=128,
-        required=False,
-        label="Base Canvas Table",
-        help_text="Existing condition table for increment computation.",
-        initial="base_canvas",
+        help_text=(
+            "Select a scenario for this analysis run. Its parcel source and "
+            "the parameters below are stored on the scenario, so rerunning it "
+            "— from here or from the map's Analysis panel — uses the same "
+            "inputs."
+        ),
     )
 
     def __init__(self, *args: object, **kwargs: object) -> None:
-        """Initialize form, defaulting tables to the workspace's configuration."""
+        """Initialize form, defaulting the scenario to the workspace's own."""
         self._workspace: Workspace | None = cast(
             "Workspace | None", kwargs.pop("workspace", None)
         )
@@ -113,23 +137,6 @@ class AnalysisLaunchForm(forms.Form):
             self.fields["workspace"].initial = self._workspace.pk
             self.fields["workspace"].widget = forms.HiddenInput()
 
-            # The workspace's configured base canvas already has one row per
-            # parcel, so it doubles as the parcel table unless overridden.
-            self.fields["base_canvas_table"].initial = self._workspace.base_table
-
-            # Default to the scenario's effective base layer. For an
-            # ALTERNATIVE scenario that's its canvas view — it COALESCEs any
-            # painted overlay over the base canvas, so an analysis run picks
-            # up paint edits by default instead of silently ignoring them
-            # (harmless for an unpainted scenario since the view then falls
-            # through to base canvas values anyway). For the BASE scenario
-            # it's simply the raw base table.
-            self.fields["parcel_table"].initial = scenario.base_layer_table
-            self.fields["parcel_table"].help_text = (
-                "Defaults to the selected scenario's canvas view "
-                "(base canvas + painted edits). Override to use a "
-                "different parcel source."
-            )
             self.fields["scenario"].initial = scenario.pk
 
             # Filter scenario queryset to the selected workspace
@@ -209,6 +216,18 @@ class AnalysisLaunchForm(forms.Form):
                 )
         return parsed
 
+    def scenario_constraints(self) -> list[dict[str, Any]]:
+        """Constraint layers to persist on the scenario for this run."""
+        constraints: list[dict[str, Any]] = (
+            self.cleaned_data.get("constraints_json") or []
+        )
+        return constraints
+
+    def scenario_column_mapping(self) -> dict[str, str]:
+        """Parcel column mapping to persist on the scenario for this run."""
+        mapping: dict[str, str] = self.cleaned_data.get("column_mapping") or {}
+        return mapping
+
     def clean(self) -> dict[str, Any] | None:
         """Validate analysis prerequisites before launching."""
         data = super().clean()
@@ -218,47 +237,13 @@ class AnalysisLaunchForm(forms.Form):
             return None
 
         workspace: Workspace | None = data.get("workspace")
-        parcel_table = data.get("parcel_table", "")
-        if workspace and parcel_table:
-            schema = workspace.db_schema
-            built_form_table = data.get("built_form_table") or "built_forms"
-            base_canvas_table = data.get("base_canvas_table") or workspace.base_table
-            data["base_canvas_table"] = base_canvas_table
-
-            # Mechanically re-sync already-configured BuildingType rows into
-            # the workspace's built_forms table before checking for it. This
-            # never invents data — a workspace with no BuildingType rows
-            # configured still produces an empty table, which the prerequisite
-            # check below still catches and reports.
-            #
-            # Uses its own DB connection (not Django's request-scoped one) so
-            # the write commits immediately: under ATOMIC_REQUESTS the whole
-            # view runs in one transaction, but SQLMesh's engine adapter opens
-            # a separate connection to run the plan — it can't see this table
-            # until it's actually committed, not just pending in our own txn.
-            bt_schema, bt_table = (
-                built_form_table.split(".", 1)
-                if "." in built_form_table
-                else (schema, built_form_table)
-            )
-            ensure_export_exists_isolated(workspace, schema=bt_schema, table=bt_table)
-
-            errors = check_analysis_prerequisites(
-                schema=schema,
-                parcel_table=parcel_table,
-                built_form_table=built_form_table,
-                base_canvas_table=base_canvas_table,
-            )
-            if errors:
-                first = errors[0]
-                # A hidden field (e.g. built_form_table) renders without an
-                # inline error slot, so its message would otherwise vanish
-                # silently. Surface it as a non-field error instead so it's
-                # always visible regardless of which field it's attached to.
-                if self.fields[first.field].widget.is_hidden:
-                    self.add_error(None, first.message)
-                else:
-                    self.add_error(first.field, first.message)
+        scenario: Scenario | None = data.get("scenario")
+        if workspace and scenario:
+            # The checked tables are derived from the scenario and its
+            # workspace (they are no longer form inputs), so every failure is
+            # reported as a form-level error.
+            for error in scenario_analysis_errors(workspace, scenario):
+                self.add_error(None, error.message)
 
         return data
 
@@ -283,37 +268,18 @@ class AnalysisModuleForm(forms.Form):
     JSON textareas for constraints/column mapping), this form is bound to one
     specific analysis module and exposes every relevant parameter as its own
     field — no JSON entry required.
+
+    It collects only parameters a run can still act on: which scenario to run
+    against, how to discount constraint layers, and how the scenario's parcel
+    source names the canonical columns. The parcel/built-form/base-canvas
+    tables are derived (``sqlmesh/macros/analysis_blueprints.py``), so they are
+    validated rather than entered — see ``scenario_analysis_errors``.
     """
 
     scenario = forms.ModelChoiceField(
         queryset=Scenario.objects.all(),
         required=True,
         label="Scenario",
-    )
-    parcel_table = forms.CharField(
-        max_length=128,
-        label="Parcel Table",
-        help_text="Table name containing parcels with built form assignments.",
-    )
-    built_form_table = forms.CharField(
-        max_length=128,
-        required=False,
-        widget=forms.HiddenInput(),
-        initial="built_forms",
-    )
-    source_schema = forms.CharField(
-        max_length=64,
-        required=False,
-        label="Source Schema",
-        help_text="Database schema containing source tables.",
-        initial="public",
-    )
-    base_canvas_table = forms.CharField(
-        max_length=128,
-        required=False,
-        label="Base Canvas Table",
-        help_text="Existing condition table for increment computation.",
-        initial="base_canvas",
     )
 
     def __init__(self, *args: object, **kwargs: object) -> None:
@@ -354,18 +320,6 @@ class AnalysisModuleForm(forms.Form):
         self.helper.form_tag = False
 
         if self._workspace:
-            # The workspace's configured base canvas already has one row per
-            # parcel, so it doubles as the parcel table unless overridden.
-            self.fields["base_canvas_table"].initial = self._workspace.base_table
-
-            # Default to the scenario's effective base layer — see
-            # AnalysisLaunchForm.__init__ for the rationale.
-            self.fields["parcel_table"].initial = scenario.base_layer_table
-            self.fields["parcel_table"].help_text = (
-                "Defaults to the selected scenario's canvas view "
-                "(base canvas + painted edits). Override to use a "
-                "different parcel source."
-            )
             self.fields["scenario"].initial = scenario.pk
 
             self.fields["scenario"].queryset = Scenario.objects.filter(  # type: ignore[attr-defined]
@@ -381,69 +335,34 @@ class AnalysisModuleForm(forms.Form):
             return None
 
         workspace: Workspace | None = self._workspace
-        parcel_table = data.get("parcel_table", "")
-        if workspace and parcel_table:
-            schema = workspace.db_schema
-            built_form_table = data.get("built_form_table") or "built_forms"
-            base_canvas_table = data.get("base_canvas_table") or workspace.base_table
-            data["base_canvas_table"] = base_canvas_table
-
-            # See AnalysisLaunchForm.clean() for why this uses its own DB
-            # connection rather than Django's request-scoped one.
-            bt_schema, bt_table = (
-                built_form_table.split(".", 1)
-                if "." in built_form_table
-                else (schema, built_form_table)
-            )
-            ensure_export_exists_isolated(workspace, schema=bt_schema, table=bt_table)
-
-            errors = check_analysis_prerequisites(
-                schema=schema,
-                parcel_table=parcel_table,
-                built_form_table=built_form_table,
-                base_canvas_table=base_canvas_table,
-            )
-            if errors:
-                first = errors[0]
-                if self.fields[first.field].widget.is_hidden:
-                    self.add_error(None, first.message)
-                else:
-                    self.add_error(first.field, first.message)
+        scenario: Scenario | None = data.get("scenario")
+        if workspace and scenario:
+            for error in scenario_analysis_errors(workspace, scenario):
+                self.add_error(None, error.message)
 
         return data
 
-    def build_vars(self, workspace: Workspace) -> dict[str, Any]:
-        """Assemble the SQLMesh vars dict for this run from individual fields."""
-        data = self.cleaned_data
-        scenario: Scenario = data["scenario"]
-        vars_: dict[str, Any] = {
-            "source_schema": data.get("source_schema") or "public",
-            "parcel_table": data["parcel_table"],
-            "built_form_table": data.get("built_form_table") or "built_forms",
-            "base_canvas_table": data.get("base_canvas_table") or "base_canvas",
-            "target_schema": workspace.db_schema,
-            "scenario_id": scenario.slug,
-        }
+    def apply_scenario_params(self, scenario: Scenario) -> None:
+        """Persist this run's parameters onto *scenario*.
 
-        constraints = []
-        for field_name, table, geom_col, _default_pct in _CONSTRAINT_LAYERS:
-            pct = data.get(field_name)
-            if pct is not None:
-                constraints.append(
-                    {"table": table, "discount_pct": pct, "geom_col": geom_col}
-                )
-        if constraints:
-            vars_["constraints"] = constraints
-
+        The analysis models are blueprinted per scenario, so a run's inputs are
+        read from the Scenario at model-load time (see
+        ``sqlmesh/macros/analysis_blueprints.py``) — persisting them here is
+        what makes this launch, and any later rerun, use the same parameters.
+        """
+        constraints = [
+            {"table": table, "discount_pct": data, "geom_col": geom_col}
+            for field_name, table, geom_col, _default_pct in _CONSTRAINT_LAYERS
+            if (data := self.cleaned_data.get(field_name)) is not None
+        ]
         column_mapping = {
-            name: data[f"column_{name}"]
+            name: self.cleaned_data[f"column_{name}"]
             for name in CANONICAL_COLUMN_NAMES
-            if data.get(f"column_{name}")
+            if self.cleaned_data.get(f"column_{name}")
         }
-        if column_mapping:
-            vars_["column_mapping"] = column_mapping
-
-        return vars_
+        scenario.constraints = constraints
+        scenario.column_mapping = column_mapping
+        scenario.save(update_fields=["constraints", "column_mapping"])
 
 
 @method_decorator(user_passes_test(lambda u: u.is_authenticated), name="dispatch")
@@ -488,51 +407,22 @@ class AnalysisLaunchView(HtmxResponseMixin, FormView):
     def get_context_data(self, **kwargs: object) -> dict[str, object]:
         context = super().get_context_data(**kwargs)
         context["title"] = "Run Analysis"
-
-        workspace_pk = self.request.GET.get("workspace") or self.kwargs.get(
-            "workspace_pk",
-        )
-        if workspace_pk:
-            try:
-                workspace = Workspace.objects.get(pk=workspace_pk)
-            except Workspace.DoesNotExist:
-                workspace = None
-            if workspace is not None:
-                canvas_map = {
-                    str(s.pk): s.base_layer_table for s in workspace.scenarios.all()
-                }
-                canvas_map[""] = workspace.base_table
-                context["scenario_canvas_map"] = json.dumps(canvas_map)
         return context
 
     def form_valid(self, form: AnalysisLaunchForm) -> HttpResponse:
         data = form.cleaned_data
-        workspace: Workspace = data["workspace"]
         modules: list[str] = data["modules"]
         scenario: Scenario = data["scenario"]
 
-        # Build dbt vars dict
-        vars_: dict = {
-            "source_schema": data.get("source_schema", "public"),
-            "parcel_table": data["parcel_table"],
-            "built_form_table": data.get("built_form_table", "built_forms"),
-            "base_canvas_table": data.get("base_canvas_table", "base_canvas"),
-            "target_schema": workspace.db_schema,
-            "scenario_id": scenario.slug,
-        }
+        # The models are blueprinted per scenario, so this run's parameters are
+        # read off the Scenario when the plan loads it — persist them here.
+        scenario.constraints = form.scenario_constraints()
+        scenario.column_mapping = form.scenario_column_mapping()
+        scenario.save(update_fields=["constraints", "column_mapping"])
 
-        constraints = data.get("constraints_json")
-        if constraints:
-            vars_["constraints"] = constraints
-        column_mapping = data.get("column_mapping")
-        if column_mapping:
-            vars_["column_mapping"] = column_mapping
-
-        # Launch the pipeline
         run = run_analysis_pipeline(
             scenario_id=scenario.pk,
             module_names=modules,
-            vars_=vars_,
         )
 
         if self.request.htmx:  # type: ignore[attr-defined]
@@ -777,11 +667,10 @@ def analysis_module_launch(
         )
 
     scenario: Scenario = form.cleaned_data["scenario"]
-    vars_ = form.build_vars(workspace)
+    form.apply_scenario_params(scenario)
     run = launch_analysis_run(
         scenario_id=scenario.pk,
         module_names=[module_key],
-        vars_=vars_,
     )
 
     html = render_to_string(

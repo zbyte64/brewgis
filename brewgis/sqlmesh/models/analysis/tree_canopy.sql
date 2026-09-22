@@ -1,6 +1,7 @@
 MODEL (
-  name brewgis.analysis.tree_canopy,
+  name brewgis.@{scenario_schema}.@{model_table},
   kind FULL,
+  blueprints @analysis_blueprints('tree_canopy')
 );
 
 WITH parcel_canopy AS (
@@ -18,7 +19,7 @@ WITH parcel_canopy AS (
             WHEN es.land_development_category = 'rural' THEN 45.0     -- rural (high canopy)
             ELSE 20.0
         END AS canopy_pct
-    FROM brewgis.analysis.core_end_state AS es
+    FROM @{scenario_schema}.core_end_state AS es
 )
 SELECT
     parcel_id,
@@ -47,3 +48,17 @@ FROM parcel_canopy;
   CREATE INDEX IF NOT EXISTS @snapshot_hash('idx_tree_canopy_parcel_id_')
   ON @this_model USING btree (parcel_id);
 ANALYZE @this_model;
+
+
+-- Publish this model's result view where the Layers, Martin and UI paths read
+-- it. The view selects from this model's prod virtual view (never its physical
+-- table), so promoting a non-prod environment never repoints it. See
+-- sqlmesh/macros/analysis_blueprints.py.
+ON_VIRTUAL_UPDATE_BEGIN;
+
+CREATE SCHEMA IF NOT EXISTS "@{result_schema}";
+
+CREATE OR REPLACE VIEW "@{result_schema}"."@{model_table}" AS
+SELECT * FROM @{scenario_schema}."@{model_table}";
+
+ON_VIRTUAL_UPDATE_END;

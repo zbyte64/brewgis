@@ -1,6 +1,7 @@
 MODEL (
-  name brewgis.analysis.displacement_risk_dynamic,
+  name brewgis.@{scenario_schema}.@{model_table},
   kind FULL,
+  blueprints @analysis_blueprints('displacement_risk_dynamic'),
   audits (
     not_null(columns := (parcel_id,)),
     unique_values(columns := (parcel_id,))
@@ -41,8 +42,8 @@ WITH scenario_equity AS (
         + CASE WHEN COALESCE(bc.pct_college_educated, 0) < @displacement_college_education_threshold THEN 1 ELSE 0 END
         AS vulnerability_score,
         es.geometry
-    FROM brewgis.analysis.core_end_state AS es
-    LEFT JOIN brewgis.analysis.@base_canvas_table AS bc
+    FROM @{scenario_schema}.core_end_state AS es
+    LEFT JOIN @ref_model(@base_canvas_table) AS bc
         ON es.parcel_id = bc.parcel_id
 )
 SELECT
@@ -72,3 +73,17 @@ FROM scenario_equity;
   CREATE INDEX IF NOT EXISTS @snapshot_hash('idx_displacement_risk_dynamic_parcel_id_')
   ON @this_model USING btree (parcel_id);
 ANALYZE @this_model;
+
+
+-- Publish this model's result view where the Layers, Martin and UI paths read
+-- it. The view selects from this model's prod virtual view (never its physical
+-- table), so promoting a non-prod environment never repoints it. See
+-- sqlmesh/macros/analysis_blueprints.py.
+ON_VIRTUAL_UPDATE_BEGIN;
+
+CREATE SCHEMA IF NOT EXISTS "@{result_schema}";
+
+CREATE OR REPLACE VIEW "@{result_schema}"."@{model_table}" AS
+SELECT * FROM @{scenario_schema}."@{model_table}";
+
+ON_VIRTUAL_UPDATE_END;

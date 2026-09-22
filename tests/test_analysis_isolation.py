@@ -278,19 +278,18 @@ class TestScenarioIsolation(TestCase):
             self.assertNotIn("scenario-a", tb)
 
     def test_all_modules_produce_scenario_scoped_tables(self) -> None:
-        """Every registered module scopes its output tables by scenario_id.
+        """Every registered module scopes its result tables by scenario.
 
-        This is a regression guard: any new module must follow the
-        scenario-scoping convention.
+        This is a regression guard: a module's results must live under the
+        scenario that produced them, so two scenarios can't overwrite each
+        other's output.
         """
-        for module, templates in MODULE_RESULT_TABLES.items():
-            for template in templates:
-                self.assertIn(
-                    "{scenario_id}",
-                    template,
-                    f"Module '{module}' table template '{template}' "
-                    f"is missing {{scenario_id}} placeholder — "
-                    f"output would not be scoped by scenario",
+        for module in MODULE_RESULT_TABLES:
+            for qualified in get_result_table_names(module, "7"):
+                self.assertTrue(
+                    qualified.startswith("analysis__scenario_7."),
+                    f"Module '{module}' result '{qualified}' is not scoped to "
+                    f"scenario 7",
                 )
 
     @patch("brewgis.workspace.analysis.pipeline.run_modules_sync")

@@ -1,8 +1,12 @@
 # ruff: noqa: ANN201, ANN202, ANN003, PLC0415
-"""Tests that the MCP ``run_analysis`` tool defaults ``parcel_table`` to the
-scenario's painted-aware canvas view (mirroring AnalysisLaunchForm's default
-in views/analysis.py), instead of silently analyzing stale/unpainted data
-when a caller doesn't explicitly set it.
+"""Tests that the MCP ``run_analysis`` tool analyzes the scenario's own parcel
+source and persists per-run parameters on the scenario.
+
+The analysis models derive their inputs from the scenario (its painted-aware
+canvas view for an ALTERNATIVE scenario, the workspace's base canvas otherwise)
+and read constraints/column mapping off the Scenario row, so this tool validates
+those derived inputs and stores the parameters rather than passing plan
+variables (see ``sqlmesh/macros/analysis_blueprints.py``).
 """
 
 from __future__ import annotations
@@ -37,8 +41,8 @@ def _get_run_analysis_tool():
 
 
 @pytest.mark.django_db
-class TestRunAnalysisDefaults:
-    """Tests for parcel_table/base_canvas_table defaulting in run_analysis."""
+class TestRunAnalysisScenarioInputs:
+    """Tests for how ``run_analysis`` resolves and records a scenario's inputs."""
 
     def setup_method(self):
         self.workspace = WorkspaceFactory(base_table="public.base_canvas")
@@ -47,53 +51,9 @@ class TestRunAnalysisDefaults:
         )
         self.run_analysis = _get_run_analysis_tool()
 
-    def test_defaults_parcel_table_to_scenario_canvas_view(self):
-        """With no explicit parcel_table, it defaults to the scenario canvas view."""
-        with (
-            patch(
-                "brewgis.workspace.mcp.tools.analysis.check_analysis_prerequisites",
-                return_value=[],
-            ),
-            patch(
-                "brewgis.workspace.mcp.tools.analysis.run_analysis_pipeline"
-            ) as mock_run,
-        ):
-            mock_run.return_value = MagicMock(pk=1, status="pending")
-            self.run_analysis(
-                workspace_slug=str(self.workspace.pk),
-                scenario_slug=str(self.scenario.pk),
-            )
-
-        vars_ = mock_run.call_args.kwargs["vars_"]
-        assert (
-            vars_["parcel_table"]
-            == f"{self.scenario.target_schema}.scenario_{self.scenario.slug}_canvas"
-        )
-        assert vars_["base_canvas_table"] == "public.base_canvas"
-
-    def test_explicit_parcel_table_overrides_default(self):
-        """An explicit parcel_table in params is not clobbered by the default."""
-        with (
-            patch(
-                "brewgis.workspace.mcp.tools.analysis.check_analysis_prerequisites",
-                return_value=[],
-            ),
-            patch(
-                "brewgis.workspace.mcp.tools.analysis.run_analysis_pipeline"
-            ) as mock_run,
-        ):
-            mock_run.return_value = MagicMock(pk=1, status="pending")
-            self.run_analysis(
-                workspace_slug=str(self.workspace.pk),
-                scenario_slug=str(self.scenario.pk),
-                params={"parcel_table": "custom.override_table"},
-            )
-
-        vars_ = mock_run.call_args.kwargs["vars_"]
-        assert vars_["parcel_table"] == "custom.override_table"
-
-    def test_preflight_checked_against_defaulted_parcel_table(self):
-        """The preflight check itself sees the defaulted parcel_table, not empty."""
+    def test_preflight_checked_against_the_scenarios_own_parcel_source(self):
+        """An ALTERNATIVE scenario is checked against its canvas view — the
+        base canvas plus any painted edits — not the raw workspace table."""
         with (
             patch(
                 "brewgis.workspace.mcp.tools.analysis.check_analysis_prerequisites",
@@ -109,3 +69,59 @@ class TestRunAnalysisDefaults:
         assert mock_preflight.call_args.kwargs["parcel_table"] == (
             f"{self.scenario.target_schema}.scenario_{self.scenario.slug}_canvas"
         )
+        assert mock_preflight.call_args.kwargs["base_canvas_table"] == (
+            "public.base_canvas"
+        )
+
+    def test_parameters_are_persisted_on_the_scenario(self):
+        """``params`` become the scenario's stored parameters, so the models
+        loaded for this run (and any later rerun) use them."""
+        constraints = [{"table": "floodplains", "discount_pct": 50, "geom_col": "geom"}]
+        with (
+            patch(
+                "brewgis.workspace.mcp.tools.analysis.check_analysis_prerequisites",
+                return_value=[],
+            ),
+            patch(
+                "brewgis.workspace.mcp.tools.analysis.run_analysis_pipeline"
+            ) as mock_run,
+        ):
+            mock_run.return_value = MagicMock(pk=1, status="pending")
+            self.run_analysis(
+                workspace_slug=str(self.workspace.pk),
+                scenario_slug=str(self.scenario.pk),
+                modules=["core"],
+                params={
+                    "constraints": constraints,
+                    "column_mapping": {"pop": "population"},
+                },
+            )
+
+        self.scenario.refresh_from_db()
+        assert self.scenario.constraints == constraints
+        assert self.scenario.column_mapping == {"pop": "population"}
+        assert mock_run.call_args.kwargs["scenario_id"] == self.scenario.pk
+
+    def test_failed_preflight_does_not_persist_or_launch(self):
+        """A prerequisite failure stops the run before touching the scenario."""
+        from brewgis.workspace.services.preflight import PreflightError
+
+        with (
+            patch(
+                "brewgis.workspace.mcp.tools.analysis.check_analysis_prerequisites",
+                return_value=[PreflightError(field="parcel_table", message="nope")],
+            ),
+            patch(
+                "brewgis.workspace.mcp.tools.analysis.run_analysis_pipeline"
+            ) as mock_run,
+        ):
+            result = self.run_analysis(
+                workspace_slug=str(self.workspace.pk),
+                scenario_slug=str(self.scenario.pk),
+                params={"constraints": [{"table": "x", "discount_pct": 1}]},
+            )
+
+        assert result["status"] == "FAILURE"
+        mock_run.assert_not_called()
+        self.scenario.refresh_from_db()
+        assert self.scenario.constraints == []

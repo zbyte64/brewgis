@@ -1,6 +1,7 @@
 MODEL (
-  name brewgis.analysis.land_consumption,
+  name brewgis.@{scenario_schema}.@{model_table},
   kind FULL,
+  blueprints @analysis_blueprints('land_consumption'),
 );
 
 WITH parcel_data AS (
@@ -18,7 +19,7 @@ WITH parcel_data AS (
         es.parcel_acres_open_space,
         es.parcel_acres_vacant,
         es.geometry
-    FROM brewgis.analysis.core_end_state AS es
+    FROM @{scenario_schema}.core_end_state AS es
 ),
 
 -- L1: Land use change classification
@@ -125,3 +126,17 @@ FROM land_use AS lu;
   CREATE INDEX IF NOT EXISTS @snapshot_hash('idx_land_consumption_parcel_id_')
   ON @this_model USING btree (parcel_id);
 ANALYZE @this_model;
+
+
+-- Publish this model's result view where the Layers, Martin and UI paths read
+-- it. The view selects from this model's prod virtual view (never its physical
+-- table), so promoting a non-prod environment never repoints it. See
+-- sqlmesh/macros/analysis_blueprints.py.
+ON_VIRTUAL_UPDATE_BEGIN;
+
+CREATE SCHEMA IF NOT EXISTS "@{result_schema}";
+
+CREATE OR REPLACE VIEW "@{result_schema}"."@{model_table}" AS
+SELECT * FROM @{scenario_schema}."@{model_table}";
+
+ON_VIRTUAL_UPDATE_END;

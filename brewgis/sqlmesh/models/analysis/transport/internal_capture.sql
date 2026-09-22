@@ -1,6 +1,7 @@
 MODEL (
-  name brewgis.analysis.internal_capture,
+  name brewgis.@{scenario_schema}.@{model_table},
   kind FULL,
+  blueprints @analysis_blueprints('internal_capture'),
   audits (
     not_null(columns := (parcel_id,)),
     unique_values(columns := (parcel_id,))
@@ -56,10 +57,10 @@ parcel_locations AS (
         COALESCE(td.trips_inbound, 0) AS trips_inbound,
         COALESCE(td.avg_trip_length_km, 0) AS avg_trip_length_km,
         ces.geometry
-    FROM brewgis.analysis.trip_generation tg
-    LEFT JOIN brewgis.analysis.trip_distribution td
+    FROM @{scenario_schema}.trip_generation tg
+    LEFT JOIN @{scenario_schema}.trip_distribution td
         ON tg.parcel_id = td.parcel_id
-    LEFT JOIN brewgis.analysis.core_end_state ces
+    LEFT JOIN @{scenario_schema}.core_end_state ces
         ON tg.parcel_id = ces.parcel_id
 ),
 
@@ -167,3 +168,17 @@ ORDER BY parcel_id;
   CREATE INDEX IF NOT EXISTS @snapshot_hash('idx_internal_capture_parcel_id_')
   ON @this_model USING btree (parcel_id);
 ANALYZE @this_model;
+
+
+-- Publish this model's result view where the Layers, Martin and UI paths read
+-- it. The view selects from this model's prod virtual view (never its physical
+-- table), so promoting a non-prod environment never repoints it. See
+-- sqlmesh/macros/analysis_blueprints.py.
+ON_VIRTUAL_UPDATE_BEGIN;
+
+CREATE SCHEMA IF NOT EXISTS "@{result_schema}";
+
+CREATE OR REPLACE VIEW "@{result_schema}"."@{model_table}" AS
+SELECT * FROM @{scenario_schema}."@{model_table}";
+
+ON_VIRTUAL_UPDATE_END;

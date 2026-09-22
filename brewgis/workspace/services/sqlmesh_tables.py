@@ -18,6 +18,8 @@ from typing import Any
 
 from django.db import connection
 
+from brewgis.sqlmesh.model_names import MODEL_SCHEMA_PREFIX
+from brewgis.sqlmesh.model_names import RESULT_SCHEMA_PREFIX
 from brewgis.workspace.services.base_canvas_schema import BaseCanvasSchema
 
 # ``scenario_canvas`` holds the per-scenario canvas models (one model per
@@ -26,14 +28,16 @@ from brewgis.workspace.services.base_canvas_schema import BaseCanvasSchema
 # after the views they create). Those models are implementation detail backing
 # the scenario-named canvas views; listing them as importable tables would put
 # them in the data catalog and the base-canvas picker.
+#
+# ``ascn<scenario_pk>`` holds each analyzed scenario's analysis models
+# (``sqlmesh/macros/analysis_blueprints.py``) for the same reason: the result
+# views those models publish are the scenario-facing objects.
 _EXCLUDED_SCHEMAS = {
     "public",
     "information_schema",
     "sqlmesh_state",
     "scenario_canvas",
 }
-
-_SCENARIO_ENVIRONMENT_SUFFIX = re.compile(r"__scenario_.+$")
 
 _POLYGON_TYPES = {"polygon", "multipolygon"}
 _LINE_TYPES = {"linestring", "multilinestring"}
@@ -55,16 +59,19 @@ def sqlmesh_model_ui_url(schema: str, table: str) -> str:
     )
 
 
-def _canonical_schema(schema: str) -> str:
-    """Strip a SQLMesh scenario-environment suffix from a schema name.
+def _model_schema(schema: str) -> str:
+    """Return the schema of the SQLMesh model a table in *schema* belongs to.
 
-    Analysis-run result layers point at ``<schema>__scenario_<id>`` — the
-    schema SQLMesh's ``environment_suffix_target: schema`` promotes results
-    into (see ``AnalysisRun`` pipeline's ``env_schema``) — rather than the
-    model's own canonical schema (e.g. ``analysis``). Strip it back so the
-    schema can be matched against the canonical model catalog.
+    A scenario's analysis result views are published by that scenario's models
+    into ``analysis__scenario_<pk>``, while the models themselves live in the
+    internal ``ascn<pk>`` schema (see
+    ``sqlmesh/macros/analysis_blueprints.py``). A UI link to a result view has
+    to name the model that owns it — there is no model at the result schema.
+    Any other schema is a model's own schema and is returned unchanged.
     """
-    return _SCENARIO_ENVIRONMENT_SUFFIX.sub("", schema)
+    if not schema.startswith(RESULT_SCHEMA_PREFIX):
+        return schema
+    return MODEL_SCHEMA_PREFIX + schema[len(RESULT_SCHEMA_PREFIX) :]
 
 
 def _known_model_table_stems() -> frozenset[str]:
@@ -96,34 +103,35 @@ def sqlmesh_link_for_table(
 ) -> str | None:
     """Return a SQLMesh UI link for ``schema.table``, or ``None``.
 
-    ``schema`` may carry a scenario-environment suffix (see
-    ``_canonical_schema``); the link is built from the canonical schema.
+    The link names the model *behind* the table, not the table itself: a
+    scenario's analysis result views live in ``analysis__scenario_<pk>`` while
+    their models live in the internal ``ascn<pk>`` schema (see
+    ``_model_schema``).
+
     Returns ``None`` unless *both*:
 
     - ``table`` matches an actual SQLMesh model definition (see
       ``_known_model_table_stems``) — ruling out non-model views that
       happen to live in the same kind of schema (painted-features canvas
       views, imported shapefiles, Census/OSM tables), and
-    - the (canonicalized) pair is a currently discovered live table (per
+    - the pair is a currently discovered live table (per
       ``known``/``list_sqlmesh_tables()``) — ruling out a model that's
       never actually been run for this workspace/scenario.
 
-    Pass ``known`` (a set of already-canonicalized ``(schema, table)``
-    pairs, as built in ``sqlmesh_links_for_tables``) to avoid re-querying
-    the catalog when checking several tables at once.
+    Pass ``known`` (a set of ``(schema, table)`` pairs, as built in
+    ``sqlmesh_links_for_tables``) to avoid re-querying the catalog when
+    checking several tables at once.
     """
     if table not in _known_model_table_stems():
         return None
     known_set = known
     if known_set is None:
         known_set = frozenset(
-            (_canonical_schema(info.schema), info.table)
-            for info in list_sqlmesh_tables()
+            (info.schema, info.table) for info in list_sqlmesh_tables()
         )
-    canonical_schema = _canonical_schema(schema)
-    if (canonical_schema, table) not in known_set:
+    if (schema, table) not in known_set:
         return None
-    return sqlmesh_model_ui_url(canonical_schema, table)
+    return sqlmesh_model_ui_url(_model_schema(schema), table)
 
 
 def sqlmesh_links_for_tables(
@@ -140,9 +148,7 @@ def sqlmesh_links_for_tables(
     so this is the preferred entry point when linking a whole layer list
     (as opposed to ``sqlmesh_link_for_table`` for a single layer).
     """
-    known = frozenset(
-        (_canonical_schema(info.schema), info.table) for info in list_sqlmesh_tables()
-    )
+    known = frozenset((info.schema, info.table) for info in list_sqlmesh_tables())
     links: dict[Any, str] = {}
     for key, (schema, table) in table_refs.items():
         link = sqlmesh_link_for_table(schema, table, known=known)
@@ -166,7 +172,15 @@ class SqlmeshTableInfo:
 
 
 def _is_excluded_schema(schema: str) -> bool:
-    return schema in _EXCLUDED_SCHEMAS or schema.startswith(("pg_", "sqlmesh__"))
+    """Whether *schema* holds objects that must not appear in the table catalog.
+
+    ``scenario_canvas`` and ``ascn<scenario_pk>`` are internal model schemas:
+    the scenario-facing objects are the views those models publish
+    (``scenario_<slug>.scenario_<slug>_canvas`` / ``analysis__scenario_<pk>``).
+    """
+    return schema in _EXCLUDED_SCHEMAS or schema.startswith(
+        ("pg_", "sqlmesh__", "ascn")
+    )
 
 
 def list_sqlmesh_tables() -> list[SqlmeshTableInfo]:

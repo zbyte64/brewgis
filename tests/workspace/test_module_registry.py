@@ -11,9 +11,12 @@ from unittest.mock import patch
 import pytest
 
 from brewgis.workspace.analysis.module_registry import MODULE_DEPENDENCIES
+from brewgis.workspace.analysis.module_registry import MODULE_RESULT_TABLES
+from brewgis.workspace.analysis.module_registry import MODULE_SQLMESH_SELECTORS
 from brewgis.workspace.analysis.module_registry import get_module_label
 from brewgis.workspace.analysis.module_registry import get_result_table_names
 from brewgis.workspace.analysis.module_registry import get_vars_for_module
+from brewgis.workspace.analysis.module_registry import model_fqn
 from brewgis.workspace.analysis.module_registry import resolve_module_order
 
 
@@ -127,37 +130,60 @@ class TestResolveModuleOrderCircularDependency:
 
 
 class TestGetResultTableNames:
-    """Tests for ``get_result_table_names`` — table name formatting."""
+    """Tests for ``get_result_table_names`` — result view locations."""
 
-    def test_known_module_returns_formatted_names(self) -> None:
-        """A known module returns its result table names formatted with scenario_id."""
+    def test_known_module_returns_qualified_names(self) -> None:
+        """A module's tables are its result views in the scenario's result schema."""
         result = get_result_table_names("core", scenario_id="42")
-        assert result == ["end_state_42", "increment_42"]
+        assert result == [
+            "analysis__scenario_42.core_end_state",
+            "analysis__scenario_42.core_increment",
+        ]
 
     def test_env_constraint_returns_single_table(self) -> None:
         """env_constraint has a single result table."""
         result = get_result_table_names("env_constraint", scenario_id="99")
-        assert result == ["env_constraint_99"]
+        assert result == ["analysis__scenario_99.env_constraint"]
 
-    def test_land_consumption_returns_two_tables(self) -> None:
-        """land_consumption has two result tables."""
+    def test_land_consumption_returns_single_table(self) -> None:
+        """land_consumption's only result view is its own model's."""
         result = get_result_table_names("land_consumption", scenario_id="abc")
-        assert result == ["land_consumption_abc", "impervious_surface_abc"]
+        assert result == ["analysis__scenario_abc.land_consumption"]
 
     def test_fiscal_returns_four_tables(self) -> None:
         """fiscal has four result tables."""
         result = get_result_table_names("fiscal", scenario_id="1")
         assert result == [
-            "fiscal_property_tax_1",
-            "fiscal_sales_tax_1",
-            "fiscal_service_costs_1",
-            "fiscal_net_impact_1",
+            "analysis__scenario_1.fiscal_property_tax",
+            "analysis__scenario_1.fiscal_sales_tax",
+            "analysis__scenario_1.fiscal_service_costs",
+            "analysis__scenario_1.fiscal_net_impact",
         ]
+
+    def test_every_result_view_is_published_by_a_model(self) -> None:
+        """A module's result tables are exactly its own models.
+
+        The views a scenario reads are published by the scenario's models (see
+        ``sqlmesh/macros/analysis_blueprints.py``), so a module can only have a
+        result table for a model it actually has — and must list every one of
+        them (``env_constraint`` is deliberately absent: it is a Django-side
+        step with no SQL model of its own).
+        """
+        for module, selectors in MODULE_SQLMESH_SELECTORS.items():
+            assert MODULE_RESULT_TABLES[module] == selectors, module
 
     def test_unknown_module_returns_empty_list(self) -> None:
         """An unknown module returns an empty list."""
         result = get_result_table_names("nonexistent", scenario_id="1")
         assert result == []
+
+
+class TestModelFqn:
+    """Tests for ``model_fqn`` — the per-scenario model name scheme."""
+
+    def test_qualifies_with_the_scenario_schema(self) -> None:
+        """A model FQN names the scenario's own instance of that model."""
+        assert model_fqn("core_end_state", 42) == "brewgis.ascn42.core_end_state"
 
 
 class TestGetModuleLabel:

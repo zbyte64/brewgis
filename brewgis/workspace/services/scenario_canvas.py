@@ -26,7 +26,10 @@ from django.db import DatabaseError
 from django.db import connection
 from django.db import transaction
 
+from brewgis.workspace.analysis.sqlmesh_runner import normalize_fqn
+from brewgis.workspace.analysis.sqlmesh_runner import purge_models_from_environments
 from brewgis.workspace.analysis.sqlmesh_runner import run_sqlmesh_plan
+from brewgis.workspace.analysis.sqlmesh_runner import snapshot_name
 from brewgis.workspace.services.canvas_view_manager import _qi
 from brewgis.workspace.services.tile_server import purge_martin_cache
 
@@ -134,19 +137,24 @@ def _purge_models_for_deleted_scenarios(modeled: set[int]) -> list[str]:
     for environment in get_state_context().state_sync.get_environments():
         stale.extend(
             name
-            for name in (_snapshot_name(entry) for entry in environment.snapshots_)
+            for name in (snapshot_name(entry) for entry in environment.snapshots_)
             if _is_stale_canvas_model(name, modeled)
         )
     if not stale:
         return []
-    return purge_canvas_models_from_environments(stale)
+    return purge_models_from_environments(stale)
 
 
 def _is_stale_canvas_model(name: str, modeled: set[int]) -> bool:
-    """Whether *name* is a canvas model whose scenario is gone."""
-    if not name.startswith('brewgis."scenario_canvas".'):
+    """Whether *name* (a snapshot name, quotes and all) is a canvas model whose
+    scenario is gone."""
+    from brewgis.sqlmesh.macros.scenario_canvas_blueprints import MODEL_SCHEMA
+
+    unquoted = normalize_fqn(name)
+    prefix = f"brewgis.{MODEL_SCHEMA}."
+    if not unquoted.startswith(prefix):
         return False
-    raw_id = name.rsplit("_", 1)[-1].rstrip('"')
+    raw_id = unquoted[len(prefix) :].split(".", 1)[0].rsplit("_", 1)[-1]
     return raw_id.isdigit() and int(raw_id) not in modeled
 
 
@@ -214,72 +222,13 @@ def drop_scenario_canvas(scenario: Scenario) -> None:
             f"DROP VIEW IF EXISTS {_qi(canvas_view_qualifier(scenario))} CASCADE"
         )
         cursor.execute(f"DROP SCHEMA IF EXISTS {_qi(scenario.target_schema)} CASCADE")
-    purge_canvas_models_from_environments([canvas_model_fqn(scenario)])
+    purge_models_from_environments([canvas_model_fqn(scenario)])
     logger.info("Dropped canvas view %s", canvas_view_qualifier(scenario))
 
 
 def canvas_model_fqn(scenario: Scenario) -> str:
     """SQLMesh's name for *scenario*'s canvas model."""
     return f'brewgis."scenario_canvas"."canvas_{scenario.pk}"'
-
-
-def purge_canvas_models_from_environments(model_fqns: Iterable[str]) -> list[str]:
-    """Remove *model_fqns* from every SQLMesh environment.
-
-    Returns the names of the environments that listed any of them. Their own
-    physical/virtual objects are left to SQLMesh's janitor: with the snapshots
-    no longer referenced by an environment they are expired state.
-
-    No-op under tests — the SQLMesh state schema belongs to the running stack,
-    not to the test database a test process builds scenarios in.
-    """
-    from django.conf import settings
-
-    wanted = set(model_fqns)
-    if not wanted or settings.TESTING:
-        return []
-
-    import uuid
-
-    from brewgis.workspace.analysis.sqlmesh_runner import get_state_context
-
-    context = get_state_context()
-    touched: list[str] = []
-    for environment in context.state_sync.get_environments():
-        if not any(_snapshot_name(entry) in wanted for entry in environment.snapshots_):
-            continue
-        updated = environment.copy(deep=True)
-        updated.snapshots_ = [
-            entry
-            for entry in environment.snapshots_
-            if _snapshot_name(entry) not in wanted
-        ]
-        if environment.previous_finalized_snapshots_:
-            updated.previous_finalized_snapshots_ = [
-                entry
-                for entry in environment.previous_finalized_snapshots_
-                if _snapshot_name(entry) not in wanted
-            ]
-        # ``promote`` refuses to rewrite an environment whose plan chain moved on.
-        updated.previous_plan_id = environment.plan_id
-        updated.plan_id = uuid.uuid4().hex
-        context.state_sync.promote(updated, no_gaps_snapshot_names=set())
-        touched.append(environment.name)
-    if touched:
-        logger.info(
-            "Removed canvas model(s) %s from environment(s) %s",
-            sorted(wanted),
-            touched,
-        )
-    return touched
-
-
-def _snapshot_name(entry: object) -> str:
-    """Name of an environment snapshot entry (object or mapping)."""
-    name = getattr(entry, "name", None)
-    if name is None and isinstance(entry, dict):
-        name = entry.get("name")
-    return str(name)
 
 
 def purge_scenario_canvas_tiles(scenario: Scenario) -> None:

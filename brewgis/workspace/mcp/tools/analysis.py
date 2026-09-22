@@ -50,7 +50,15 @@ def register_tools(server: object) -> None:
         modules: list[str] | None = None,
         params: dict[str, Any] | None = None,
     ) -> dict[str, Any]:
-        """Run analysis modules for a scenario."""
+        """Run analysis modules for a scenario.
+
+        ``params`` accepts the same per-run parameters the map view's analysis
+        forms collect — ``constraints`` (list of
+        ``{table, discount_pct, geom_col}``) and ``column_mapping``
+        (``{canonical_name: user_column}``). They are persisted on the scenario
+        before the plan, because that is where the scenario's analysis models
+        read them from (see ``sqlmesh/macros/analysis_blueprints.py``).
+        """
         try:
             ws_pk = int(workspace_slug)
             s_pk = int(scenario_slug)
@@ -59,24 +67,15 @@ def register_tools(server: object) -> None:
         workspace = get_object_or_404(Workspace, pk=ws_pk)
         scenario = get_object_or_404(Scenario, pk=s_pk, workspace=workspace)
 
-        # Default parcel_table to the scenario's canvas view — it COALESCEs
-        # any painted overlay over the base canvas, so a run launched from
-        # here picks up paint edits by default instead of silently analyzing
-        # stale/unpainted data (mirrors AnalysisLaunchForm's default in
-        # views/analysis.py). base_canvas_table always stays the raw base
-        # table — it's the pristine "existing conditions" baseline, not
-        # meant to reflect scenario edits. Explicit overrides in `params`
-        # still win.
-        p_params = dict(params or {})
-        p_params.setdefault("parcel_table", scenario.base_layer_table)
-        p_params.setdefault("base_canvas_table", workspace.base_table)
-
-        # Check prerequisites
+        # The models derive their parcel source from the scenario itself (its
+        # canvas view for an ALTERNATIVE scenario, the workspace's base canvas
+        # otherwise — ``Scenario.base_layer_table``), so the prerequisites are
+        # checked against exactly those.
         preflight = check_analysis_prerequisites(
             schema=workspace.db_schema,
-            parcel_table=p_params.get("parcel_table", ""),
-            built_form_table=p_params.get("built_form_table"),
-            base_canvas_table=p_params.get("base_canvas_table"),
+            parcel_table=scenario.base_layer_table,
+            built_form_table="built_forms",
+            base_canvas_table=workspace.base_table,
         )
         if preflight:
             errors_str = "; ".join(e.message for e in preflight)
@@ -85,21 +84,20 @@ def register_tools(server: object) -> None:
                 "message": f"Prerequisites not met: {errors_str}",
             }
 
-        # Launch via pipeline (dispatches to Dagster or sync)
+        p_params = dict(params or {})
+        if "constraints" in p_params:
+            scenario.constraints = p_params["constraints"]
+        if "column_mapping" in p_params:
+            scenario.column_mapping = p_params["column_mapping"]
+        scenario.save(update_fields=["constraints", "column_mapping"])
 
         from brewgis.workspace.analysis.module_registry import resolve_module_order
 
         ordered = resolve_module_order(modules or list(MODULE_DEPENDENCIES))
-        scenario_id_str = str(scenario.pk)
 
         run = run_analysis_pipeline(
             scenario_id=scenario.pk,
             module_names=ordered,
-            vars_={
-                "scenario_id": scenario_id_str,
-                "target_schema": workspace.db_schema,
-                **p_params,
-            },
         )
         return {
             "run_id": run.pk,

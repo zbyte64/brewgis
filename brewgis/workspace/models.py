@@ -309,6 +309,22 @@ class Scenario(models.Model):
         blank=True,
         help_text="UUID token for public sharing link.",
     )
+    constraints = models.JSONField(
+        default=list,
+        blank=True,
+        help_text=(
+            "Analysis constraint layers: [{table, discount_pct, geom_col}]. "
+            "Baked into this scenario's analysis model blueprints."
+        ),
+    )
+    column_mapping = models.JSONField(
+        default=dict,
+        blank=True,
+        help_text=(
+            "Analysis column mapping {canonical_name: user_column} for this "
+            "scenario's parcel source (see module_registry.CANONICAL_COLUMN_NAMES)."
+        ),
+    )
     created_at = models.DateTimeField(auto_now_add=True)
     updated_at = models.DateTimeField(auto_now=True)
 
@@ -327,13 +343,18 @@ class Scenario(models.Model):
         super().save(*args, **kwargs)  # type: ignore[arg-type]
 
     def delete(self, *args: object, **kwargs: object) -> tuple[int, dict[str, int]]:
-        """Drop the canvas view then delete the model."""
+        """Drop the canvas view and analysis results, then delete the model."""
+        from brewgis.workspace.services.scenario_analysis import drop_scenario_analysis
         from brewgis.workspace.services.scenario_canvas import drop_scenario_canvas
 
         try:
             drop_scenario_canvas(self)
         except Exception:  # noqa: BLE001
             pass  # view may not exist
+        try:
+            drop_scenario_analysis(self.pk)
+        except Exception:  # noqa: BLE001
+            pass  # results may not exist
         return super().delete(*args, **kwargs)  # type: ignore[arg-type]
 
     @property

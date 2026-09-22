@@ -145,13 +145,14 @@ class TestAnalysisLaunchView(TestCase):
             "workspace",
             "modules",
             "scenario",
-            "parcel_table",
-            "built_form_table",
-            "source_schema",
-            "base_canvas_table",
             "constraints_json",
+            "column_mapping",
         }
         assert expected_fields.issubset(form.fields.keys())
+        # The parcel/built-form/base-canvas tables are derived per scenario by
+        # the model blueprints (validated, not entered).
+        for derived in ("parcel_table", "built_form_table", "base_canvas_table"):
+            assert derived not in form.fields
 
     def test_get_launch_page_uses_form_template(self):
         """GET response template name is 'form.html'."""

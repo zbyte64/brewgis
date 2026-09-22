@@ -20,6 +20,7 @@ import deal
 from django.db import connection
 from django.utils import timezone
 
+from brewgis.workspace.analysis import module_registry
 from brewgis.workspace.analysis.layer_registry import register_result_layer
 from brewgis.workspace.analysis.log_capture import capture_run_log
 from brewgis.workspace.analysis.log_capture import extract_plan_failure
@@ -32,6 +33,7 @@ from brewgis.workspace.analysis.module_registry import get_vars_for_module
 from brewgis.workspace.analysis.module_registry import (
     resolve_module_order as _resolve_module_order,
 )
+from brewgis.workspace.analysis.sqlmesh_runner import model_fqns_built_in
 from brewgis.workspace.analysis.sqlmesh_runner import run_sqlmesh_plan
 from brewgis.workspace.models import AnalysisRun
 from brewgis.workspace.models import Scenario
@@ -62,54 +64,12 @@ def _get_vars_for_module(module: str, base_vars: dict[str, Any]) -> dict[str, An
     return get_vars_for_module(module, base_vars)
 
 
-def _build_model_vars(base_vars: dict[str, Any], schema: str) -> dict[str, object]:
-    """Build SQLMesh plan variables from pipeline base_vars.
-
-    Qualifies unqualified table references with the target schema
-    and filters to keys that match SQLMesh model variable names.
-    """
-    model_vars: dict[str, object] = {}
-    target_schema = base_vars.get("target_schema", schema)
-
-    # Qualify table references with schema if not already qualified
-    for tbl_key in ("parcel_table", "constraint_table", "built_form_table"):
-        val = base_vars.get(tbl_key)
-        if val and "." not in str(val):
-            model_vars[tbl_key] = f"{target_schema}.{val}"
-        elif val:
-            model_vars[tbl_key] = val
-
-    # Forward constraints list
-    if "constraints" in base_vars:
-        model_vars["constraints"] = base_vars["constraints"]
-
-    # Forward canonical column mappings and known model variables
-    known_keys = {
-        "scenario_schema",
-        "scenario_id",
-        "scenario_slug",
-        "base_canvas_table",
-        "base_year",
-        "horizon_year",
-        "osm_intersection_table",
-    }
-    model_vars.update(
-        {
-            k: v
-            for k, v in base_vars.items()
-            if k.startswith("canonical_") or k in known_keys
-        }
-    )
-
-    return model_vars
-
-
 def _list_tables(schema: str) -> list[str]:
     """List table/view names actually present in *schema*.
 
     Used to discover which analysis result views a SQLMesh plan really
-    promoted into a scenario environment, rather than trusting the module
-    registries' static (and drift-prone) table-name lists.
+    published for a scenario, rather than trusting the module registries'
+    static (and drift-prone) table-name lists.
     """
     with connection.cursor() as cursor:
         cursor.execute(
@@ -119,47 +79,30 @@ def _list_tables(schema: str) -> list[str]:
         return [row[0] for row in cursor.fetchall()]
 
 
-def _build_sqlmesh_selectors(modules: list[str]) -> list[str]:
-    """Build SQLMesh model FQN selectors from analysis module names.
-
-    Converts module names (e.g. "core", "water_demand") to their
-    corresponding SQLMesh model FQNs (e.g. "brewgis.analysis.core_end_state",
-    "brewgis.analysis.water_demand") using MODULE_SQLMESH_SELECTORS.
-    """
-    selects: list[str] = []
-    for module in modules:
-        patterns = MODULE_SQLMESH_SELECTORS.get(module, [module])
-        selects.extend(f"brewgis.analysis.{p}" for p in patterns)
-    return selects
-
-
 def _create_analysis_run(
     scenario_id: int,
     module_names: list[str],
     vars_: dict[str, Any] | None,
 ) -> AnalysisRun:
     """Resolve dependencies and create a ``pending`` AnalysisRun record."""
-    base_vars = vars_ or {}
-    base_vars.setdefault("scenario_id", str(scenario_id))
-
-    workspace_id = Scenario.objects.get(pk=scenario_id).workspace_id
-
+    scenario = Scenario.objects.get(pk=scenario_id)
     ordered_modules = resolve_module_order(module_names)
-    column_mapping = base_vars.get("column_mapping", {})
 
     run = AnalysisRun.objects.create(
-        workspace_id=workspace_id,
+        workspace_id=scenario.workspace_id,
         scenario_id=scenario_id,
         modules=ordered_modules,
         status="pending",
-        vars=base_vars,
-        column_mapping=column_mapping,
+        vars=vars_ or {},
+        # Recorded for history only — the plan itself reads the mapping off the
+        # Scenario, which is where a run's parameters are now persisted.
+        column_mapping=scenario.column_mapping,
     )
 
     logger.info(
         "AnalysisRun #%s created for workspace %s, modules: %s",
         run.pk,
-        workspace_id,
+        scenario.workspace_id,
         ordered_modules,
     )
     return run
@@ -179,19 +122,12 @@ def _execute_analysis_run(run: AnalysisRun) -> None:
     run.failure_cause = ""
     run.save(update_fields=["status", "started_at", "failure_cause"])
 
-    base_vars = run.vars
-    workspace_id = run.workspace_id
-    scenario_id = run.scenario_id
-
     with capture_run_log() as log_stream:
         try:
             result = run_modules_sync(
                 modules=run.modules,
-                base_vars=base_vars,
-                target_schema=base_vars.get("target_schema", "public"),
-                workspace_id=workspace_id,
-                scenario_id=str(scenario_id),
-                module_selects=base_vars.get("module_selects"),
+                workspace_id=run.workspace_id,
+                scenario_id=run.scenario_id,
             )
         except Exception:
             # SQLMesh's own exception here (PlanError("Plan application
@@ -237,7 +173,9 @@ def _execute_analysis_run(run: AnalysisRun) -> None:
     # Martin has actually finished re-scanning (not just restarted) so the
     # map is correct the moment this run shows as "completed" — otherwise
     # the user can land on a map that briefly renders wrong/blank tiles.
-    if Workspace.objects.filter(pk=workspace_id, tile_server_backend="martin").exists():
+    if Workspace.objects.filter(
+        pk=run.workspace_id, tile_server_backend="martin"
+    ).exists():
         restart_martin()
         wait_until_martin_ready(result.get("fqtns", []))
 
@@ -282,25 +220,25 @@ def launch_analysis_run(
     return run
 
 
-def run_modules_sync(  # noqa: PLR0913
+def run_modules_sync(
     *,
     modules: list[str],
-    base_vars: dict[str, Any],
-    target_schema: str,
     workspace_id: int,
-    scenario_id: str,
-    module_selects: dict[str, list[str]] | None = None,
+    scenario_id: int,
 ) -> dict[str, Any]:
     """Run analysis modules via SQLMesh, registering result layers.
 
+    Selects the scenario's *blueprinted* models (one instance per scenario, see
+    ``sqlmesh/macros/analysis_blueprints.py``) and plans them into ``prod``:
+    the models are first-class project models, not per-run environment
+    variants, and each one republishes its result view as it is promoted.
+
     Args:
-        modules: Module names to run (e.g. ["env_constraint", "core", "water_demand"]).
-        base_vars: Base vars dict (scenario_id, target_schema, etc.).
-        target_schema: Schema where result tables are created.
+        modules: Module names to run (e.g. ["core", "water_demand"]).
         workspace_id: Workspace PK for layer registration.
-        scenario_id: Scenario slug/ID for table name formatting.
-        module_selects: Optional per-module SQLMesh select overrides.
-            If omitted, each module name is used as the select.
+        scenario_id: Scenario PK. Selects that scenario's model instances
+            (``module_registry.model_fqn``) and the result schema they publish
+            into.
 
     Returns:
         Dict with keys:
@@ -308,45 +246,35 @@ def run_modules_sync(  # noqa: PLR0913
             "completed": list[str] — modules that succeeded
     """
     ordered = resolve_module_order(modules)
-    environment = f"scenario_{scenario_id}"
-
-    # Build SQLMesh model selectors from module names.
-    # Convert module names to model FQNs via MODULE_SQLMESH_SELECTORS.
-    if module_selects:
-        selects = []
-        for module in ordered:
-            selects.extend(module_selects.get(module, []))
-    else:
-        selects = _build_sqlmesh_selectors(ordered)
-
-    # Build and forward model variables from base_vars to the SQLMesh plan
-    model_vars = _build_model_vars(base_vars, target_schema)
+    selects = [
+        module_registry.model_fqn(model_name, scenario_id)
+        for module in ordered
+        for model_name in MODULE_SQLMESH_SELECTORS.get(module, [])
+    ]
 
     run_sqlmesh_plan(
-        environment=environment,
+        environment="prod",
         select=selects or None,
         skip_tests=True,
-        variables=model_vars,
-        # Launching an analysis must always recompute the selected models,
-        # never trust SQLMesh's own snapshot-fingerprint staleness check.
-        # Upstream reference data (e.g. BuildingType/built_forms exports)
-        # can change without the model's SQL or vars changing at all, which
-        # SQLMesh has no way to detect on its own — without this, a rerun
-        # can silently keep serving a stale physical table with results
-        # computed against data that no longer exists.
-        restate_models=selects or None,
+        # Launching an analysis must always recompute the models already built
+        # for this scenario, never trust SQLMesh's own snapshot-fingerprint
+        # staleness check: upstream reference data (e.g. BuildingType/built_forms
+        # exports, or paint applied to the scenario's canvas) can change without
+        # the model's SQL or blueprints changing, so a rerun can silently keep
+        # serving results computed against data that no longer exists. A model
+        # this scenario has never built can't be *restated* (SQLMesh refuses
+        # that) — it is materialized because it is new.
+        restate_models=model_fqns_built_in("prod", selects) or None,
+        auto_apply=True,
+        no_prompts=True,
     )
-    # SQLMesh promotes each plan into its own environment (scenario_<id>)
-    # rather than materializing results directly into the workspace's own
-    # schema. With the default environment_suffix_target (SCHEMA), that
-    # means every brewgis.analysis.* model's virtual-layer view lives under
-    # "analysis__scenario_<id>", under its own bare model name — not in the
-    # workspace's schema, and not under the MODULE_RESULT_TABLES
-    # scenario-suffixed names. Discover the views actually promoted into
-    # that environment rather than trusting the module registries (which
-    # have drifted out of sync with the real model set on both counts —
-    # some listed models no longer exist, some real ones aren't listed).
-    env_schema = f"analysis__scenario_{scenario_id}"
+    # Each model's on_virtual_update statement publishes its result view at
+    # "<result schema>.<bare model name>" — the same location the map, the
+    # tile servers and the Layers panel read. Discover the views actually
+    # present rather than trusting the module registries (which have drifted
+    # out of sync with the real model set on both counts — some listed models
+    # no longer exist, some real ones aren't listed).
+    env_schema = module_registry.result_schema_name(scenario_id)
     fqtns = []
     for model_name in _list_tables(env_schema):
         register_result_layer(

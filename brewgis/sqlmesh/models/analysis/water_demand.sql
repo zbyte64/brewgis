@@ -1,6 +1,7 @@
 MODEL (
-  name brewgis.analysis.water_demand,
+  name brewgis.@{scenario_schema}.@{model_table},
   kind FULL,
+  blueprints @analysis_blueprints('water_demand'),
 );
 
 SELECT
@@ -41,7 +42,7 @@ SELECT
     es.emp,
     es.du,
     es.geometry
-FROM brewgis.analysis.core_end_state AS es;
+FROM @{scenario_schema}.core_end_state AS es;
 
 -- post_statements
   CREATE INDEX IF NOT EXISTS @snapshot_hash('idx_water_demand_geometry_')
@@ -58,3 +59,17 @@ FROM brewgis.analysis.core_end_state AS es;
 --   energy use intensities (EUI).
 -- Source (dbt): brewgis/dbt_project/models/energy_demand.sql
 -- ------------------------------------------------------------
+
+
+-- Publish this model's result view where the Layers, Martin and UI paths read
+-- it. The view selects from this model's prod virtual view (never its physical
+-- table), so promoting a non-prod environment never repoints it. See
+-- sqlmesh/macros/analysis_blueprints.py.
+ON_VIRTUAL_UPDATE_BEGIN;
+
+CREATE SCHEMA IF NOT EXISTS "@{result_schema}";
+
+CREATE OR REPLACE VIEW "@{result_schema}"."@{model_table}" AS
+SELECT * FROM @{scenario_schema}."@{model_table}";
+
+ON_VIRTUAL_UPDATE_END;

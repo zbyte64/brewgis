@@ -1,6 +1,7 @@
 MODEL (
-  name brewgis.analysis.core_increment,
+  name brewgis.@{scenario_schema}.@{model_table},
   kind FULL,
+  blueprints @analysis_blueprints('core_increment'),
   audits (
     not_null(columns := (parcel_id)),
     number_of_rows(threshold := 1)
@@ -17,7 +18,7 @@ MODEL (
 --     increment = COALESCE(end_state.value, 0) - COALESCE(base.value, 0)
 
 WITH end_state AS (
-    SELECT * FROM brewgis.analysis.core_end_state
+    SELECT * FROM @{scenario_schema}.core_end_state
 ),
 
 base AS (
@@ -93,3 +94,17 @@ FULL OUTER JOIN base AS b ON es.parcel_id = b.parcel_id;
 
   CREATE INDEX IF NOT EXISTS @snapshot_hash('idx_core_increment_parcel_id_')
   ON @this_model USING btree (parcel_id);
+
+
+-- Publish this model's result view where the Layers, Martin and UI paths read
+-- it. The view selects from this model's prod virtual view (never its physical
+-- table), so promoting a non-prod environment never repoints it. See
+-- sqlmesh/macros/analysis_blueprints.py.
+ON_VIRTUAL_UPDATE_BEGIN;
+
+CREATE SCHEMA IF NOT EXISTS "@{result_schema}";
+
+CREATE OR REPLACE VIEW "@{result_schema}"."@{model_table}" AS
+SELECT * FROM @{scenario_schema}."@{model_table}";
+
+ON_VIRTUAL_UPDATE_END;

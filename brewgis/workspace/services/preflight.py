@@ -134,8 +134,8 @@ def _split(schema: str, table: str) -> tuple[str, str]:
     """Split a possibly schema-qualified table reference.
 
     Falls back to *schema* when *table* has no schema prefix, matching the
-    qualification convention used elsewhere (e.g.
-    ``analysis.pipeline._build_model_vars``).
+    qualification convention the analysis models use for their built-form table
+    (see ``sqlmesh/macros/analysis_blueprints.py``).
     """
     if "." in table:
         table_schema, table_name = table.split(".", 1)

@@ -1,6 +1,7 @@
 MODEL (
-  name brewgis.analysis.scenario_summary,
+  name brewgis.@{scenario_schema}.@{model_table},
   kind FULL,
+  blueprints @analysis_blueprints('scenario_summary'),
   audits (
     not_null(columns := (scenario_id,))
   )
@@ -23,37 +24,37 @@ core_agg AS (
         COALESCE(SUM(du), 0) AS total_dwelling_units_total,
         COALESCE(SUM(emp), 0) AS total_employment,
         COALESCE(SUM(pop) FILTER (WHERE geometry IS NOT NULL), 0) AS total_pop_for_co2e_per_capita
-    FROM brewgis.analysis.core_end_state
+    FROM @{scenario_schema}.core_end_state
 ),
 vmt_agg AS (
     SELECT
         COALESCE(SUM(vmt_total), 0) AS total_vmt,
         COALESCE(AVG(vmt_per_capita) FILTER (WHERE pop > 0), 0) AS avg_vmt_per_capita
-    FROM brewgis.analysis.vmt
+    FROM @{scenario_schema}.vmt
 ),
 total_ghg_agg AS (
-    SELECT COALESCE(SUM(co2e_total), 0) AS total_co2e FROM brewgis.analysis.total_ghg
+    SELECT COALESCE(SUM(co2e_total), 0) AS total_co2e FROM @{scenario_schema}.total_ghg
 ),
 water_demand_agg AS (
-    SELECT COALESCE(SUM(water_demand_af), 0) AS total_water_demand FROM brewgis.analysis.water_demand
+    SELECT COALESCE(SUM(water_demand_af), 0) AS total_water_demand FROM @{scenario_schema}.water_demand
 ),
 land_consumption_agg AS (
     SELECT
         COALESCE(SUM(acres_consumed), 0) AS total_land_consumed,
         COALESCE(AVG(impervious_pct) FILTER (WHERE area_gross_acres > 0), 0) AS avg_impervious_pct
-    FROM brewgis.analysis.land_consumption
+    FROM @{scenario_schema}.land_consumption
 ),
 health_agg AS (
-    SELECT COALESCE(SUM(net_dalys), 0) AS total_net_dalys FROM brewgis.analysis.health_impacts
+    SELECT COALESCE(SUM(net_dalys), 0) AS total_net_dalys FROM @{scenario_schema}.health_impacts
 ),
 energy_agg AS (
-    SELECT COALESCE(SUM(electricity_mwh + gas_mwh), 0) AS total_energy_demand FROM brewgis.analysis.energy_demand
+    SELECT COALESCE(SUM(electricity_mwh + gas_mwh), 0) AS total_energy_demand FROM @{scenario_schema}.energy_demand
 ),
 housing_agg AS (
-    SELECT COALESCE(AVG(cost_burden_pct), 0) AS avg_cost_burden_pct FROM brewgis.analysis.housing_cost_burden
+    SELECT COALESCE(AVG(cost_burden_pct), 0) AS avg_cost_burden_pct FROM @{scenario_schema}.housing_cost_burden
 ),
 sprawl_agg AS (
-    SELECT COALESCE(AVG(sprawl_index), 0) AS avg_sprawl_index FROM brewgis.analysis.sprawl_index
+    SELECT COALESCE(AVG(sprawl_index), 0) AS avg_sprawl_index FROM @{scenario_schema}.sprawl_index
 ),
 displacement_agg AS (
     SELECT
@@ -62,7 +63,7 @@ displacement_agg AS (
             THEN COUNT(*) FILTER (WHERE displacement_risk_category IN ('at_risk', 'displacement_pressure')) * 100.0 / COUNT(*)
             ELSE 0.0
         END AS displacement_risk_pct
-    FROM brewgis.analysis.displacement_risk
+    FROM @{scenario_schema}.displacement_risk
 ),
 metrics AS (
     SELECT *
@@ -78,7 +79,7 @@ metrics AS (
     CROSS JOIN displacement_agg
 )
 SELECT
-    'blueprint'::text AS scenario_id,
+    @scenario_id AS scenario_id,
     total_population,
     total_households,
     total_dwelling_units_total AS du,
@@ -96,3 +97,17 @@ SELECT
     total_net_dalys AS net_dalys,
     ROUND(displacement_risk_pct::numeric, 1) AS displacement_risk_pct
 FROM metrics
+
+
+-- Publish this model's result view where the Layers, Martin and UI paths read
+-- it. The view selects from this model's prod virtual view (never its physical
+-- table), so promoting a non-prod environment never repoints it. See
+-- sqlmesh/macros/analysis_blueprints.py.
+ON_VIRTUAL_UPDATE_BEGIN;
+
+CREATE SCHEMA IF NOT EXISTS "@{result_schema}";
+
+CREATE OR REPLACE VIEW "@{result_schema}"."@{model_table}" AS
+SELECT * FROM @{scenario_schema}."@{model_table}";
+
+ON_VIRTUAL_UPDATE_END;

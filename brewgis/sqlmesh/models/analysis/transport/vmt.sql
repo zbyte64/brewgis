@@ -1,6 +1,7 @@
 MODEL (
-  name brewgis.analysis.vmt,
+  name brewgis.@{scenario_schema}.@{model_table},
   kind FULL,
+  blueprints @analysis_blueprints('vmt'),
   audits (
     not_null(columns := (parcel_id,)),
     unique_values(columns := (parcel_id,)),
@@ -31,8 +32,8 @@ WITH auto_trips AS (
         tg.trips_total * @transport_mode_share_auto
             * @transport_avg_trip_length_mi * @transport_circuity_factor
             AS vmt_total
-    FROM brewgis.analysis.trip_generation AS tg
-    LEFT JOIN brewgis.analysis.core_end_state AS es
+    FROM @{scenario_schema}.trip_generation AS tg
+    LEFT JOIN @{scenario_schema}.core_end_state AS es
         ON tg.parcel_id = es.parcel_id
 )
 
@@ -55,3 +56,17 @@ FROM auto_trips;
   CREATE INDEX IF NOT EXISTS @snapshot_hash('idx_vmt_parcel_id_')
   ON @this_model USING btree (parcel_id);
 ANALYZE @this_model;
+
+
+-- Publish this model's result view where the Layers, Martin and UI paths read
+-- it. The view selects from this model's prod virtual view (never its physical
+-- table), so promoting a non-prod environment never repoints it. See
+-- sqlmesh/macros/analysis_blueprints.py.
+ON_VIRTUAL_UPDATE_BEGIN;
+
+CREATE SCHEMA IF NOT EXISTS "@{result_schema}";
+
+CREATE OR REPLACE VIEW "@{result_schema}"."@{model_table}" AS
+SELECT * FROM @{scenario_schema}."@{model_table}";
+
+ON_VIRTUAL_UPDATE_END;

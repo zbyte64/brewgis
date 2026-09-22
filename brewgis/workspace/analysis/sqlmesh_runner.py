@@ -58,6 +58,99 @@ def _models_in_environment(context: Context, environment: str) -> list[str]:
     return [s.name.replace('"', "") for s in snapshots]
 
 
+def snapshot_name(entry: object) -> str:
+    """Name of an environment snapshot entry (object or mapping).
+
+    SQLMesh stores these fully quoted (``"brewgis"."ascn7"."core_end_state"``),
+    so anything comparing one against a model FQN must normalise it with
+    :func:`normalize_fqn` first.
+    """
+    name = getattr(entry, "name", None)
+    if name is None and isinstance(entry, dict):
+        name = entry.get("name")
+    return str(name)
+
+
+def normalize_fqn(name: str) -> str:
+    """Return *name* without its identifier quotes, for comparing against FQNs."""
+    return name.replace('"', "")
+
+
+def model_fqns_built_in(environment: str, model_fqns: Iterable[str]) -> list[str]:
+    """Return the subset of *model_fqns* that *environment* has already built.
+
+    ``restate_models`` refuses a model SQLMesh has no snapshot for ("Cannot
+    restate model '<fqn>'. Model does not exist.") — a plan cannot restate
+    something it has never materialized. Callers that always want the selected
+    models recomputed therefore have to ask for restatement only of the ones
+    that already exist: everything else is new to the plan and gets built
+    because of that.
+
+    No-op (empty list) when the environment doesn't exist yet.
+    """
+    state = get_state_context().state_reader.get_environment(environment)
+    if state is None:
+        return []
+
+    built = {normalize_fqn(snapshot_name(entry)) for entry in state.snapshots_}
+    return [fqn for fqn in model_fqns if normalize_fqn(fqn) in built]
+
+
+def purge_models_from_environments(model_fqns: Iterable[str]) -> list[str]:
+    """Remove *model_fqns* from every SQLMesh environment.
+
+    Used when a model leaves the project without a plan (a deleted scenario's
+    blueprinted analysis models, a dropped scenario canvas): the stored
+    environment would still list that snapshot, and a later plan that promotes
+    such a stale entry points it at a physical object the plan never creates,
+    failing the whole plan.
+
+    Returns the names of the environments that listed any of them. Their own
+    physical/virtual objects are left to SQLMesh's janitor: with the snapshots
+    no longer referenced by an environment they are expired state.
+
+    No-op under tests — the SQLMesh state schema belongs to the running stack,
+    not to the test database a test process builds scenarios in.
+    """
+    from django.conf import settings
+
+    wanted = {normalize_fqn(fqn) for fqn in model_fqns}
+    if not wanted or settings.TESTING:
+        return []
+
+    import uuid
+
+    context = get_state_context()
+    touched: list[str] = []
+    for environment in context.state_sync.get_environments():
+        entries = [
+            (entry, normalize_fqn(snapshot_name(entry)))
+            for entry in environment.snapshots_
+        ]
+        if not any(name in wanted for _, name in entries):
+            continue
+        updated = environment.copy(deep=True)
+        updated.snapshots_ = [entry for entry, name in entries if name not in wanted]
+        if environment.previous_finalized_snapshots_:
+            updated.previous_finalized_snapshots_ = [
+                entry
+                for entry in environment.previous_finalized_snapshots_
+                if normalize_fqn(snapshot_name(entry)) not in wanted
+            ]
+        # ``promote`` refuses to rewrite an environment whose plan chain moved on.
+        updated.previous_plan_id = environment.plan_id
+        updated.plan_id = uuid.uuid4().hex
+        context.state_sync.promote(updated, no_gaps_snapshot_names=set())
+        touched.append(environment.name)
+    if touched:
+        logger.info(
+            "Removed model(s) %s from environment(s) %s",
+            sorted(wanted),
+            touched,
+        )
+    return touched
+
+
 # deprecated
 def run_sqlmesh_plan(  # noqa: PLR0913
     environment: str = "prod",

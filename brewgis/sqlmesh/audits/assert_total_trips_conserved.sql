@@ -11,7 +11,7 @@ WITH trip_totals AS (
 ),
 trip_gen_totals AS (
   SELECT SUM(trips_total) AS total_trips_gen
-  FROM @scenario_schema.trip_generation
+  FROM @{scenario_schema}.trip_generation
 )
 SELECT
   tt.*,

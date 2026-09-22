@@ -58,33 +58,6 @@
       </div>
     </div>
   </div>
-  {% if scenario_canvas_map %}
-    <script>
-      (function() {
-        'use strict';
-        var scenarioCanvasMap = {
-          {
-            scenario_canvas_map | safe
-          }
-        };
-        var scenarioSelect = document.getElementById('id_scenario');
-        var parcelTableInput = document.getElementById('id_parcel_table');
-        if (!scenarioSelect || !parcelTableInput) return;
-
-        parcelTableInput.addEventListener('input', function() {
-          parcelTableInput.dataset.touched = 'true';
-        });
-
-        scenarioSelect.addEventListener('change', function() {
-          if (parcelTableInput.dataset.touched === 'true') return;
-          var mapped = scenarioCanvasMap[scenarioSelect.value];
-          if (mapped !== undefined) {
-            parcelTableInput.value = mapped;
-          }
-        });
-      })();
-    </script>
-  {% endif %}
 {% endpartialdef %}
 {% partial form-content %}
 {% endblock content %}

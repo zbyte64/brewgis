@@ -1,6 +1,7 @@
 MODEL (
-  name brewgis.analysis.building_water_ghg,
+  name brewgis.@{scenario_schema}.@{model_table},
   kind FULL,
+  blueprints @analysis_blueprints('building_water_ghg'),
   audits (
     not_null(columns := (parcel_id,)),
     unique_values(columns := (parcel_id,))
@@ -44,10 +45,10 @@ WITH energy_data AS (
                 * @ghg_egrid_co2_per_kwh
             ELSE 0.0
         END AS co2e_water_kg
-    FROM brewgis.analysis.energy_demand AS ed
-    LEFT JOIN brewgis.analysis.water_demand AS wd
+    FROM @{scenario_schema}.energy_demand AS ed
+    LEFT JOIN @{scenario_schema}.water_demand AS wd
         ON ed.parcel_id = wd.parcel_id
-    LEFT JOIN brewgis.analysis.core_end_state AS es
+    LEFT JOIN @{scenario_schema}.core_end_state AS es
         ON ed.parcel_id = es.parcel_id
 )
 
@@ -79,3 +80,17 @@ FROM energy_data;
 
   CREATE INDEX IF NOT EXISTS @snapshot_hash('idx_building_water_ghg_parcel_id_')
   ON @this_model USING btree (parcel_id);
+
+
+-- Publish this model's result view where the Layers, Martin and UI paths read
+-- it. The view selects from this model's prod virtual view (never its physical
+-- table), so promoting a non-prod environment never repoints it. See
+-- sqlmesh/macros/analysis_blueprints.py.
+ON_VIRTUAL_UPDATE_BEGIN;
+
+CREATE SCHEMA IF NOT EXISTS "@{result_schema}";
+
+CREATE OR REPLACE VIEW "@{result_schema}"."@{model_table}" AS
+SELECT * FROM @{scenario_schema}."@{model_table}";
+
+ON_VIRTUAL_UPDATE_END;
