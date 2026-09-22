@@ -199,6 +199,10 @@ def reconcile_scenario_canvases() -> list[int]:
         environment="prod",
         select=selectors,
         restate_models=selectors,
+        # Restating hides the project's models from the plan (SQLMesh reads
+        # them from state instead), so a scenario whose canvas model was never
+        # built would stay unbuilt — the state this pass exists to repair.
+        always_include_local_changes=True,
         auto_apply=True,
         no_prompts=True,
     )

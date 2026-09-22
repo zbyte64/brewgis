@@ -41,6 +41,7 @@ from brewgis.workspace.models import PaintRun
 from brewgis.workspace.models import Scenario
 from brewgis.workspace.models import ScenarioNotPaintableError
 from brewgis.workspace.models import Workspace
+from brewgis.workspace.services.built_form_keys import normalize_built_form_key
 from brewgis.workspace.services.canvas_view_manager import PAINTABLE_COLUMNS
 from brewgis.workspace.services.canvas_view_manager import TEXT_COLUMNS
 from brewgis.workspace.services.paint_constraints import ConstraintResult
@@ -974,7 +975,7 @@ def run_fill_built_form(
 
     building_types = list(BuildingType.objects.filter(workspace=workspace))
     bt_by_name: dict[str, BuildingType] = {
-        _normalize_bf_name(bt.name): bt for bt in building_types
+        normalize_built_form_key(bt.name): bt for bt in building_types
     }
 
     allocations: dict[str, AllocationResult] = {}
@@ -990,7 +991,7 @@ def run_fill_built_form(
             )
             continue
 
-        built_form = bt_by_name.get(_normalize_bf_name(built_form_key))
+        built_form = bt_by_name.get(normalize_built_form_key(built_form_key))
         if built_form is None:
             unmatched.append(
                 {
@@ -1133,21 +1134,6 @@ def _fetch_canvas_feature_data(
         rows = cursor.fetchall()
 
     return {str(row[0]): dict(zip(col_names, row, strict=True)) for row in rows}
-
-
-def _normalize_bf_name(value: str) -> str:
-    """Normalize a built-form identifier for loose name matching.
-
-    Strips common ETL key prefixes (e.g. ``"bt__"``) and collapses
-    underscores/hyphens to spaces so a base-layer ``built_form_key`` (slug-like)
-    can be matched against a workspace's ``BuildingType``/``PlaceType`` display names.
-    """
-    normalized = value.strip().lower()
-    for prefix in ("bt__", "pt__", "bf__"):
-        if normalized.startswith(prefix):
-            normalized = normalized[len(prefix) :]
-            break
-    return normalized.replace("_", " ").replace("-", " ").strip()
 
 
 def _allocation_to_painted_rows(  # noqa: C901

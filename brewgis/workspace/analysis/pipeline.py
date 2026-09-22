@@ -44,6 +44,28 @@ from brewgis.workspace.services.tile_server import wait_until_martin_ready
 logger = logging.getLogger(__name__)
 
 
+class MissingAnalysisResultsError(RuntimeError):
+    """A run's plan finished without publishing some requested module's results.
+
+    Raised by :func:`run_modules_sync` after the plan, from the result views
+    that actually exist — the module registries cannot tell a module that ran
+    from one that produced nothing, and a plan reports success either way.
+    """
+
+    def __init__(self, modules: dict[str, list[str]], schema: str) -> None:
+        self.modules = modules
+        self.schema = schema
+        detail = "; ".join(
+            f"{module} -> {', '.join(tables)}"
+            for module, tables in sorted(modules.items())
+        )
+        super().__init__(
+            f"The plan published no result view in {schema} for: {detail}. "
+            f"Each analysis model owns a view named after it, so these models "
+            f"were not materialized."
+        )
+
+
 @deal.ensure(lambda module_names, result: set(module_names).issubset(set(result)))
 @deal.raises(ValueError)
 def resolve_module_order(module_names: list[str]) -> list[str]:
@@ -129,7 +151,7 @@ def _execute_analysis_run(run: AnalysisRun) -> None:
                 workspace_id=run.workspace_id,
                 scenario_id=run.scenario_id,
             )
-        except Exception:
+        except Exception as exc:
             # SQLMesh's own exception here (PlanError("Plan application
             # failed.")) discards the actual per-node cause — the captured
             # log is often the only place that's still visible (e.g. a
@@ -137,12 +159,19 @@ def _execute_analysis_run(run: AnalysisRun) -> None:
             # catches and re-raises generically).
             log_output = truncate_log(log_stream.getvalue())
             failure = extract_plan_failure(log_output)
-            cause = failure.format() if failure else ""
+            if failure is not None:
+                cause = failure.format()
+            elif isinstance(exc, MissingAnalysisResultsError):
+                # Raised below the plan, so its message *is* the cause — there
+                # is no SQLMesh node to recover one from.
+                cause = str(exc)
+            else:
+                cause = ""
             # The plan's own traceback above names no model and no database
             # error, so log the recovered cause alongside it — that is the
             # difference between a worker log that says "failed" and one that
             # says which model failed against what.
-            if failure is not None:
+            if cause:
                 logger.exception("AnalysisRun #%s failed: %s", run.pk, cause)
             else:
                 logger.exception("AnalysisRun #%s failed", run.pk)
@@ -265,6 +294,11 @@ def run_modules_sync(
         # this scenario has never built can't be *restated* (SQLMesh refuses
         # that) — it is materialized because it is new.
         restate_models=model_fqns_built_in("prod", selects) or None,
+        # ...but restating is exactly what makes SQLMesh plan from state alone,
+        # which hides any model this scenario has never built — the case above.
+        # Without this, asking for a module the scenario has not run before
+        # plans nothing for it and the run still reports the module completed.
+        always_include_local_changes=True,
         auto_apply=True,
         no_prompts=True,
     )
@@ -275,8 +309,13 @@ def run_modules_sync(
     # out of sync with the real model set on both counts — some listed models
     # no longer exist, some real ones aren't listed).
     env_schema = module_registry.result_schema_name(scenario_id)
+    published = set(_list_tables(env_schema))
+    missing = _unpublished_modules(ordered, published)
+    if missing:
+        raise MissingAnalysisResultsError(missing, env_schema)
+
     fqtns = []
-    for model_name in _list_tables(env_schema):
+    for model_name in sorted(published):
         register_result_layer(
             workspace_id=workspace_id,
             schema=env_schema,
@@ -292,3 +331,26 @@ def run_modules_sync(
         "results": [],
         "fqtns": fqtns,
     }
+
+
+def _unpublished_modules(
+    ordered_modules: list[str], published: set[str]
+) -> dict[str, list[str]]:
+    """Requested modules with at least one model that published no result view.
+
+    Each analysis model owns a result view named after it (its
+    ``on_virtual_update`` statement creates it), so a selected model with no
+    view in the result schema produced nothing — either the plan skipped it or
+    its statement failed. Only the modules this run actually requested are
+    reported: the schema also holds results from earlier runs.
+    """
+    unpublished: dict[str, list[str]] = {}
+    for module in ordered_modules:
+        missing = [
+            model_name
+            for model_name in MODULE_SQLMESH_SELECTORS.get(module, [])
+            if model_name not in published
+        ]
+        if missing:
+            unpublished[module] = missing
+    return unpublished

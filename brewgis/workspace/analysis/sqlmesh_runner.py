@@ -11,8 +11,10 @@ from __future__ import annotations
 import logging
 from collections.abc import Iterable
 from pathlib import Path
+from typing import Any
 
 from sqlmesh.core.context import Context
+from sqlmesh.utils.errors import ConflictingPlanError
 
 from brewgis.sqlmesh.config import config_factory
 
@@ -165,6 +167,7 @@ def run_sqlmesh_plan(  # noqa: PLR0913
     create_from: str | None = None,
     variables: dict[str, object] = {},
     restate_models: Iterable[str] | bool = False,
+    always_include_local_changes: bool | None = None,
 ):
     """Run ``sqlmesh plan`` for the given environment via the Python API.
 
@@ -180,23 +183,97 @@ def run_sqlmesh_plan(  # noqa: PLR0913
         create_from: Source environment to create from (virtual environment).
         variables: Model variable overrides (e.g. ``parcel_table``, ``constraints``).
         restate_models: If True, re-evaluate the selected models even if unchanged.
+        always_include_local_changes: Whether the plan sees the models in the
+            project as they are on disk. Default (``None``) is SQLMesh's own
+            rule: **any** ``restate_models`` makes the plan read its model
+            definitions from state alone and ignore the filesystem, so a model
+            that has been added since this environment was last planned is not
+            part of the plan at all — it neither materializes nor reports
+            anything. Pass ``True`` whenever the selection can contain such a
+            model; pass ``False`` never.
+
+    ``Context.plan`` hard-wires that rule for a restating plan and exposes no
+    way to override it, so a plan that asks for ``always_include_local_changes``
+    is built through the same ``plan_builder`` that ``Context.plan`` builds and
+    applies (SQLMesh's own console does no more than
+    ``plan_builder.apply()`` when it is told to auto-apply) — it only passes the
+    flag through. The cost is the plan summary the console would have printed.
     """
     context = get_context(**variables)
+    restate = _resolve_restatements(
+        context, environment=environment, restate_models=restate_models
+    )
+    plan_kwargs: dict[str, Any] = {
+        "environment": environment,
+        "start": start,
+        "end": end,
+        "skip_tests": skip_tests,
+        "forward_only": forward_only,
+        "select_models": select,
+        "create_from": create_from,
+        "restate_models": restate,
+    }
     logger.info("SQLMesh plan applied for environment '%s'", environment)
-    return context.plan(
-        environment=environment,
-        start=start,
-        end=end,
-        skip_tests=skip_tests,
-        forward_only=forward_only,
-        no_prompts=no_prompts,
-        auto_apply=auto_apply,
-        select_models=select,
-        create_from=create_from,
-        restate_models=_models_in_environment(context, environment)
-        if restate_models is True
-        else (restate_models or None),
-    ), context
+    if always_include_local_changes is None:
+        return context.plan(
+            **plan_kwargs, no_prompts=no_prompts, auto_apply=auto_apply
+        ), context
+
+    # `plan_builder` takes the flag but neither `no_prompts` nor `auto_apply` —
+    # those two only steer the console flow this path stands in for.
+    builder = context.plan_builder(
+        **plan_kwargs, always_include_local_changes=always_include_local_changes
+    )
+    try:
+        if auto_apply:
+            builder.apply()
+    except ConflictingPlanError:
+        if not auto_apply or not restate:
+            raise
+        # SQLMesh refuses a plan that restates a model it is also redeploying
+        # ("Another plan deployed new versions ... while they were being
+        # restated"), and its advice — re-apply the plan — cannot work here:
+        # the promotion stage it aborts at is exactly what a second attempt
+        # would need to see. Neither half is droppable (a rerun must not serve
+        # results computed against data that changed underneath the models, and
+        # a changed model has to be deployed), so the two run as separate
+        # plans: deploy everything — which materializes what is new or changed,
+        # plus their downstreams — then restate, by which point every model the
+        # restatement covers is deployed at the version being restated.
+        logger.warning(
+            "Plan restates models it also redeploys — deploying first, then restating",
+        )
+        deploy_kwargs: dict[str, Any] = {
+            "environment": environment,
+            "select": select,
+            "start": start,
+            "end": end,
+            "skip_tests": skip_tests,
+            "forward_only": forward_only,
+            "no_prompts": no_prompts,
+            "auto_apply": auto_apply,
+            "create_from": create_from,
+            "variables": variables,
+            "always_include_local_changes": always_include_local_changes,
+        }
+        run_sqlmesh_plan(**deploy_kwargs)
+        return run_sqlmesh_plan(**deploy_kwargs, restate_models=restate), context
+    return builder.build(), context
+
+
+def _resolve_restatements(
+    context: Context, *, environment: str, restate_models: Iterable[str] | bool
+) -> list[str] | None:
+    """Resolve the plan's ``restate_models`` argument to a concrete model list.
+
+    ``True`` means "every model this environment has built" (see
+    ``_models_in_environment``). Materialized into a list so the plan can be
+    built more than once from the same argument — a generator would be spent
+    after the first one.
+    """
+    if restate_models is True:
+        return _models_in_environment(context, environment)
+    return list(restate_models) if restate_models else None
 
 
 def run_sqlmesh_run(

@@ -118,6 +118,11 @@ def reconcile_scenario_analyses() -> None:
         environment="prod",
         select=fqns,
         restate_models=restate,
+        # A restatement makes SQLMesh read its models from state, not from the
+        # project — which is how a scenario ends up missing the results of a
+        # module that was added after it was last planned, and precisely what
+        # this pass exists to repair. Without this the repair is a no-op.
+        always_include_local_changes=True,
         auto_apply=True,
         no_prompts=True,
     )

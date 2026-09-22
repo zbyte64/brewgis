@@ -89,6 +89,9 @@ class TestReconcileScenarioAnalyses:
         # has never built.
         assert plan["select"] == scenario_analysis_fqns(scenario.pk)
         assert plan["restate_models"] == built
+        # ...and the same pass must also materialize modules the scenario has
+        # never run, which a state-only plan would skip.
+        assert plan["always_include_local_changes"] is True
 
     def test_plans_nothing_when_no_model_has_been_built(self, db, monkeypatch):
         scenario = ScenarioFactory(

@@ -78,7 +78,14 @@ WITH parcel_base AS (
         bf.emp_per_acre IS NOT NULL AND bf.emp_per_acre > 0 AS is_nonresidential
     FROM @ref_model(@parcel_table) AS p
     LEFT JOIN @ref_model(@built_form_table) AS bf
-        ON p.built_form_key = bf.key
+        -- Key normalization (not a plain `=`): a canvas's built_form_key is
+        -- either an ETL slug written by the base-canvas layer or the display
+        -- name the paint surfaces wrote, while built_forms.key holds only the
+        -- latter. A raw comparison silently drops every slug-keyed parcel,
+        -- which zeroes the densities this model derives from them — and with
+        -- them trips, VMT and everything downstream. See the macro.
+        ON @normalize_built_form_key(p.built_form_key)
+            = @normalize_built_form_key(bf.key)
 ),
 
 computed AS (

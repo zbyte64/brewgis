@@ -43,7 +43,11 @@ WITH parcel_base AS (
         bf.pass_by_trip_pct
     FROM @{scenario_schema}.core_end_state AS es
     LEFT JOIN @ref_model(@built_form_table) AS bf
-        ON es.built_form_key = bf.key
+        -- Same key normalization core_end_state applies to the canvas: an
+        -- unmatched built form leaves both rates NULL, and the COALESCEs below
+        -- then turn it into zero trips for that parcel.
+        ON @normalize_built_form_key(es.built_form_key)
+            = @normalize_built_form_key(bf.key)
 ),
 
 trip_rates AS (
