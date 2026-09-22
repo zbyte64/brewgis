@@ -58,9 +58,9 @@ class TestPaintFeaturesView(TestCase):
         )
 
     def _patch_refresh(self) -> patch:
-        """Mock refresh_canvas_view to avoid PostGIS requirement."""
+        """Mock purge_scenario_canvas_tiles to avoid PostGIS requirement."""
         return patch(
-            "brewgis.workspace.views.paint.refresh_canvas_view",
+            "brewgis.workspace.views.paint.purge_scenario_canvas_tiles",
             return_value="public.mock_canvas_view",
         )
 
@@ -305,9 +305,9 @@ class TestPaintBuiltFormView(TestCase):
         )
 
     def _patch_refresh_and_data(self) -> tuple[patch, patch]:
-        """Mock refresh_canvas_view and _fetch_feature_data."""
+        """Mock purge_scenario_canvas_tiles and _fetch_feature_data."""
         patcher1 = patch(
-            "brewgis.workspace.views.paint.refresh_canvas_view",
+            "brewgis.workspace.views.paint.purge_scenario_canvas_tiles",
             return_value="public.mock_canvas_view",
         )
         patcher2 = patch(
@@ -535,7 +535,7 @@ class TestMatchBuiltFormView(TestCase):
 
     def _patch(self, canvas_data: dict) -> tuple[patch, patch]:
         patcher1 = patch(
-            "brewgis.workspace.views.paint.refresh_canvas_view",
+            "brewgis.workspace.views.paint.purge_scenario_canvas_tiles",
             return_value="public.mock_canvas_view",
         )
         patcher2 = patch(
@@ -619,7 +619,7 @@ class TestMatchBuiltFormView(TestCase):
             },
         )
         with patch(
-            "brewgis.workspace.views.paint.refresh_canvas_view",
+            "brewgis.workspace.views.paint.purge_scenario_canvas_tiles",
             return_value="public.mock_canvas_view",
         ):
             undo_response = self.client.post(
@@ -706,7 +706,7 @@ class TestFillBuiltFormView(TestCase):
 
     def _patch(self, feature_data: dict) -> tuple[patch, patch]:
         patcher1 = patch(
-            "brewgis.workspace.views.paint.refresh_canvas_view",
+            "brewgis.workspace.views.paint.purge_scenario_canvas_tiles",
             return_value="public.mock_canvas_view",
         )
         patcher2 = patch(

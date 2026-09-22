@@ -101,11 +101,13 @@ class TestSqlmeshLinkForTable:
         self, monkeypatch: pytest.MonkeyPatch
     ) -> None:
         # Regression: a scenario's painted-features overlay is a plain
-        # Postgres view this codebase creates itself (see
-        # Scenario.base_layer_source / canvas_view_manager), living in its
-        # own non-excluded "scenario_<slug>" schema — so it shows up in
-        # list_sqlmesh_tables() just like a real model would. It must never
-        # get a SQLMesh link since no such model exists.
+        # Postgres view SQLMesh creates (see Scenario.base_layer_source /
+        # sqlmesh/models/scenarios/scenario_canvas.py), living in its own
+        # non-excluded "scenario_<slug>" schema — so it shows up in
+        # list_sqlmesh_tables() just like a real model view would. It must
+        # never get a SQLMesh link: the model behind it is named after the
+        # scenario id in the internal "scenario_canvas" schema, not after
+        # this view.
         monkeypatch.setattr(
             sqlmesh_tables,
             "list_sqlmesh_tables",

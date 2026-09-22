@@ -659,3 +659,29 @@ def run_analysis_task(self, run_pk: int) -> None:  # type: ignore[no-untyped-def
 
     run = AnalysisRun.objects.select_related("workspace", "scenario").get(pk=run_pk)
     _execute_analysis_run(run)
+
+
+# ────────────────────────────────────────────────────────────
+#  Scenario canvases (SQLMesh-owned views the map and tile servers read)
+# ────────────────────────────────────────────────────────────
+
+
+@shared_task(bind=True, max_retries=1, default_retry_delay=30)
+def reconcile_scenario_canvases_task(self) -> dict:  # type: ignore[no-untyped-def]
+    """Re-materialize any scenario canvas view a plan left missing or stale.
+
+    A ``sqlmesh plan`` whose selection excludes the canvas models (an
+    upstream-only ``--select-model '+<base model>'`` does) can promote a canvas
+    model's virtual view without recreating it, leaving that scenario's canvas
+    view pointing at a physical object that no longer exists. Schedule this
+    after plans — via django-celery-beat — or run it on demand
+    (``manage.py reconcile_scenario_canvases``) to close that window.
+
+    Returns:
+        Dict with keys: success, unhealthy, error.
+    """
+    from brewgis.workspace.services.scenario_canvas import reconcile_scenario_canvases
+
+    unhealthy = reconcile_scenario_canvases()
+    logger.info("Scenario canvas reconciliation done; unhealthy before: %s", unhealthy)
+    return {"success": True, "unhealthy": unhealthy, "error": None}

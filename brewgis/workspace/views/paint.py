@@ -43,9 +43,9 @@ from brewgis.workspace.models import ScenarioNotPaintableError
 from brewgis.workspace.models import Workspace
 from brewgis.workspace.services.canvas_view_manager import PAINTABLE_COLUMNS
 from brewgis.workspace.services.canvas_view_manager import TEXT_COLUMNS
-from brewgis.workspace.services.canvas_view_manager import refresh_canvas_view
 from brewgis.workspace.services.paint_constraints import ConstraintResult
 from brewgis.workspace.services.paint_constraints import check_paint_batch
+from brewgis.workspace.services.scenario_canvas import purge_scenario_canvas_tiles
 
 if TYPE_CHECKING:
     from django.http import HttpRequest
@@ -203,8 +203,8 @@ def clear_paint(
                 ]
             )
 
-        # Refresh the canvas view
-        refresh_canvas_view(scenario)
+        # Purge the tile server's cache for the canvas view
+        purge_scenario_canvas_tiles(scenario)
 
     return JsonResponse(
         {
@@ -533,8 +533,8 @@ def undo_paint(  # noqa: C901, PLR0912
         ]
         PaintEvent.objects.bulk_create(undo_events)
 
-        # Refresh canvas view
-        refresh_canvas_view(scenario)
+        # Purge the tile server's cache for the canvas view
+        purge_scenario_canvas_tiles(scenario)
 
     return JsonResponse(
         {
@@ -777,8 +777,8 @@ def run_direct_paint(
             ]
         )
 
-        # Refresh the canvas view
-        refresh_canvas_view(scenario)
+        # Purge the tile server's cache for the canvas view
+        purge_scenario_canvas_tiles(scenario)
 
     warnings = _collect_warnings()
     return {
@@ -1392,7 +1392,7 @@ def _write_built_form_paint(  # noqa: C901, PLR0913
             ]
         )
 
-        refresh_canvas_view(scenario)
+        purge_scenario_canvas_tiles(scenario)
 
     painted_features = list(allocations.keys())
     response_body: dict[str, Any] = {

@@ -27,7 +27,7 @@ from brewgis.workspace.analysis.layer_registry import BASE_CANVAS_LAYER_KEY
 from brewgis.workspace.analysis.layer_registry import register_result_layer
 from brewgis.workspace.models import ScenarioType
 from brewgis.workspace.models import Workspace
-from brewgis.workspace.services.canvas_view_manager import refresh_canvas_view
+from brewgis.workspace.services.scenario_canvas import materialize_scenario_canvas
 from brewgis.workspace.services.sqlmesh_tables import list_base_canvas_candidates
 from brewgis.workspace.views.built_forms import HtmxResponseMixin
 
@@ -91,7 +91,7 @@ class SelectBaseCanvasView(HtmxResponseMixin, FormView):
         )
         for scenario in alternative_scenarios:
             with contextlib.suppress(Exception):
-                refresh_canvas_view(scenario)
+                materialize_scenario_canvas(scenario)
         logger.info(
             "Workspace %s base_table set to %s",
             self.workspace.pk,

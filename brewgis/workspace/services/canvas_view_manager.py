@@ -1,27 +1,26 @@
-"""Canvas SQL view manager — creates/replaces/drops per-scenario canvas views.
+"""Canvas SQL view manager — builds the SELECT body for per-scenario canvas views.
 
-Each scenario gets a SQL view ``scenario_{slug}_canvas`` that LEFT JOINs the
-base canvas table with pivoted :class:`~brewgis.workspace.models.PaintedCanvas`
-overrides, implementing copy-on-write for tile server consumption.
+Each ALTERNATIVE scenario gets a SQL view ``scenario_{slug}_canvas`` that
+LEFT JOINs the base canvas table with pivoted
+:class:`~brewgis.workspace.models.PaintedCanvas` overrides, implementing
+copy-on-write for tile server consumption. The view uses
+``COALESCE(painted, base)`` on every paintable column and includes an
+``uf_is_painted`` boolean flag.
 
-The view uses ``COALESCE(painted, base)`` on every paintable column and
-includes an ``uf_is_painted`` boolean flag.
+This module only *generates* that SELECT. SQLMesh owns the view: the
+blueprinted ``models/scenarios/scenario_canvas.py`` model wraps the output of
+:func:`build_canvas_view_select` in the ``kind VIEW`` DDL and creates the
+scenario-named view itself, so a ``sqlmesh plan`` that rebuilds a base canvas
+recreates the scenarios' canvas views as its downstreams instead of
+CASCADE-dropping them. Django never issues the DDL (see
+``brewgis.workspace.services.scenario_canvas``).
 """
 
 from __future__ import annotations
 
-from typing import TYPE_CHECKING
-
-from django.db import ProgrammingError
 from django.db import connection
-from django.db import transaction
 
-from brewgis.workspace.models import ScenarioType
 from brewgis.workspace.services.base_canvas_schema import BaseCanvasSchema
-from brewgis.workspace.services.tile_server import purge_martin_cache
-
-if TYPE_CHECKING:
-    from brewgis.workspace.models import Scenario
 
 # Paintable columns — sourced from the canonical BaseCanvasSchema.
 PAINTABLE_COLUMNS: frozenset[str] = BaseCanvasSchema.PAINTABLE_COLUMNS
@@ -84,27 +83,28 @@ def _static_columns(all_cols: list[str]) -> list[str]:
     return [c for c in all_cols if c not in paintable_set and c != "geometry"]
 
 
-def _build_create_view_sql(
+def build_canvas_view_select(
     *,
-    view_schema: str,
-    view_name: str,
-    base_schema: str,
-    base_table_name: str,
+    base_ref: str,
     all_columns: list[str],
     scenario_id: int,
 ) -> str:
-    """Generate the ``CREATE OR REPLACE VIEW`` statement."""
+    """Generate the SELECT body of a scenario's canvas view.
+
+    *base_ref* is the caller-supplied reference the view selects from, used
+    verbatim: the SQLMesh model passes a bare model FQN
+    (``brewgis.fresno.base_canvas_reconciled``), which SQLMesh
+    snapshot-resolves when rendering the query — that is what ties the view's
+    ``data_hash`` to the base layer's snapshot, and so makes the view get
+    recreated when the base changes. For a base table outside SQLMesh the
+    caller passes the raw ``schema.table``.
+    """
     # Iterate `all_columns` (a stable, DB-ordered list) rather than the
     # `PAINTABLE_COLUMNS` frozenset directly — Python's per-process string
     # hash randomization makes frozenset iteration order vary from run to
     # run, so the previous `[c for c in PAINTABLE_COLUMNS if ...]` produced
-    # a different SELECT column order on every process restart. Postgres'
-    # `CREATE OR REPLACE VIEW` cannot rename/reorder existing columns, so
-    # the very next refresh_canvas_view() after a restart would 500.
+    # a different SELECT column order on every process restart.
     paintable_in_table = [c for c in all_columns if c in PAINTABLE_COLUMNS]
-
-    q_view = _qi(f"{view_schema}.{view_name}")
-    q_base = _qi(f"{base_schema}.{base_table_name}")
 
     select_parts: list[str] = [
         "bc.parcel_id",
@@ -135,10 +135,9 @@ def _build_create_view_sql(
     ]
     pivot_clause = ",\n".join(pivot_cases)
 
-    return f"""CREATE OR REPLACE VIEW {q_view} AS
-SELECT
+    return f"""SELECT
     {select_clause}
-FROM {q_base} bc
+FROM {base_ref} bc
 LEFT JOIN (
     SELECT
         feature_id AS _feature_id,
@@ -148,78 +147,3 @@ LEFT JOIN (
     GROUP BY feature_id
 ) pc ON CAST(bc.parcel_id AS text) = pc._feature_id
 """
-
-
-def create_canvas_view(scenario: Scenario) -> str:
-    """Create a canvas view for *scenario* over its workspace's base table.
-
-    The view is named ``scenario_{slug}_canvas`` and lives in the
-    scenario's target schema (``scenario_{slug}``). Only ALTERNATIVE
-    scenarios get a view — a BASE scenario has nothing to COALESCE and
-    resolves straight to the workspace's base table via
-    :meth:`Scenario.base_layer_source`.
-
-    Returns the fully-qualified view name (``schema.view_name``).
-    """
-    if scenario.scenario_type == ScenarioType.BASE:
-        raise ValueError(
-            f"'{scenario.name}' is a BASE scenario — it has no canvas view."
-        )
-
-    view_name = f"scenario_{scenario.slug}_canvas"
-    view_schema = scenario.target_schema
-
-    schema, table_name, all_cols = _fetch_base_columns(scenario.workspace.base_table)
-
-    sql = _build_create_view_sql(
-        view_schema=view_schema,
-        view_name=view_name,
-        base_schema=schema,
-        base_table_name=table_name,
-        all_columns=all_cols,
-        scenario_id=scenario.pk,
-    )
-
-    try:
-        with transaction.atomic(), connection.cursor() as cursor:
-            cursor.execute(f"CREATE SCHEMA IF NOT EXISTS {_qi(view_schema)}")
-            cursor.execute(sql)
-    except ProgrammingError as exc:
-        if "cannot change name of view column" not in str(exc):
-            raise
-        # The existing view's column layout was baked in under a since-
-        # changed column order (e.g. a view created before the SELECT
-        # list became deterministic) — CREATE OR REPLACE can only add
-        # trailing columns, not rename/reorder existing ones, so fall
-        # back to a clean drop + recreate.
-        q_view = _qi(f"{view_schema}.{view_name}")
-        with transaction.atomic(), connection.cursor() as cursor:
-            cursor.execute(f"DROP VIEW IF EXISTS {q_view} CASCADE")
-            cursor.execute(sql)
-
-    return f"{view_schema}.{view_name}"
-
-
-def refresh_canvas_view(scenario: Scenario) -> str:
-    """Recreate the canvas view for *scenario* — after paint operations.
-
-    Same as :func:`create_canvas_view` because we use ``CREATE OR REPLACE VIEW``.
-    The view's *rows* changed but not its schema, so (for workspaces on the
-    Martin backend) this also purges the view's Martin tile cache — Martin
-    doesn't otherwise notice the underlying data changed. See
-    ``brewgis.workspace.services.tile_server.purge_martin_cache``.
-    """
-    source_id = create_canvas_view(scenario)
-    if scenario.workspace.tile_server_backend == "martin":
-        purge_martin_cache(source_id)
-    return source_id
-
-
-def drop_canvas_view(scenario: Scenario) -> None:
-    """Drop the canvas view for *scenario* (if it exists)."""
-    view_name = f"scenario_{scenario.slug}_canvas"
-    view_schema = scenario.target_schema
-    q_view = _qi(f"{view_schema}.{view_name}")
-
-    with connection.cursor() as cursor:
-        cursor.execute(f"DROP VIEW IF EXISTS {q_view} CASCADE")

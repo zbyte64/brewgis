@@ -13,8 +13,8 @@ from brewgis.workspace.models import Scenario
 from brewgis.workspace.models import ScenarioNotPaintableError
 from brewgis.workspace.models import Workspace
 from brewgis.workspace.services.canvas_view_manager import PAINTABLE_COLUMNS
-from brewgis.workspace.services.canvas_view_manager import refresh_canvas_view
 from brewgis.workspace.services.paint_constraints import check_paint_batch
+from brewgis.workspace.services.scenario_canvas import purge_scenario_canvas_tiles
 
 logger = logging.getLogger(__name__)
 
@@ -65,7 +65,7 @@ def register_tools(server: object) -> None:
                 errors.append({"feature_id": fid, "error": str(e)})
 
         if painted:
-            refresh_canvas_view(scenario)
+            purge_scenario_canvas_tiles(scenario)
 
         if note:
             PaintEvent.objects.create(

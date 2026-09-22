@@ -328,10 +328,10 @@ class Scenario(models.Model):
 
     def delete(self, *args: object, **kwargs: object) -> tuple[int, dict[str, int]]:
         """Drop the canvas view then delete the model."""
-        from brewgis.workspace.services.canvas_view_manager import drop_canvas_view
+        from brewgis.workspace.services.scenario_canvas import drop_scenario_canvas
 
         try:
-            drop_canvas_view(self)
+            drop_scenario_canvas(self)
         except Exception:  # noqa: BLE001
             pass  # view may not exist
         return super().delete(*args, **kwargs)  # type: ignore[arg-type]

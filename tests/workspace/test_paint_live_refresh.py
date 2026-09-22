@@ -20,9 +20,9 @@ lives entirely *outside* what a Django view-level unit test can see:
    its exact tile from Martin returned byte-identical, unchanged content
    (same ETag) even though the view's own SQL returned the new value.
    Fixed by purging the view's Martin cache entry (``DELETE
-   /cache/{source_id}``, maplibre/martin#3194) from ``refresh_canvas_view()``
-   every time a paint operation replaces the view — see
-   ``brewgis.workspace.services.tile_server.purge_martin_cache``.
+   /cache/{source_id}``, maplibre/martin#3194) from
+   ``purge_scenario_canvas_tiles()`` every time a paint operation writes —
+   see ``brewgis.workspace.services.tile_server.purge_martin_cache``.
 3. ``BrewGisMap.refreshCanvasTiles()`` only busted the *highlight overlay*
    layer's MapLibre source (``canvasLayerId``), never the *base* layer's
    (``baseLayerId``) — the one actually rendered with the workspace's real
@@ -224,15 +224,37 @@ def _setup_fixture(conn: psycopg.Connection) -> dict[str, Any]:
 
 
 def _create_canvas_view(ids: dict[str, Any]) -> None:
+    """Create the scenario's canvas view the way its SQLMesh model does.
+
+    The model itself can't be planned from here: its blueprint profiles read
+    the Django ORM (in a test process that is the *test* database) while this
+    fixture's scenario and base table live in the stack's real database —
+    a *separate* process's dev server is what serves the assertions below
+    (see ``_pg_dsn``). So build the same view from the same generator the
+    model renders its SELECT from.
+    """
+    from django.db import connection
+
     from brewgis.workspace.models import Scenario
-    from brewgis.workspace.services.canvas_view_manager import create_canvas_view
+    from brewgis.workspace.services.canvas_view_manager import _fetch_base_columns
+    from brewgis.workspace.services.canvas_view_manager import _qi
+    from brewgis.workspace.services.canvas_view_manager import build_canvas_view_select
 
     # Fetch the real row (rather than a bare in-memory Scenario(pk=...))
-    # so `.workspace` resolves — create_canvas_view derives the base table
-    # from `scenario.workspace.base_table` now, which the fixture's raw
-    # INSERT already points at f"{FIXTURE_SCHEMA}.{FIXTURE_TABLE}".
+    # so `.workspace` resolves — the generator derives the base table from
+    # `scenario.workspace.base_table` now, which the fixture's raw INSERT
+    # already points at f"{FIXTURE_SCHEMA}.{FIXTURE_TABLE}".
     scenario = Scenario.objects.get(pk=ids["scenario_id"])
-    create_canvas_view(scenario)
+    _, _, all_columns = _fetch_base_columns(scenario.workspace.base_table)
+    select = build_canvas_view_select(
+        base_ref=scenario.workspace.base_table,
+        all_columns=all_columns,
+        scenario_id=scenario.pk,
+    )
+    view = _qi(f"{scenario.target_schema}.scenario_{scenario.slug}_canvas")
+    with connection.cursor() as cursor:
+        cursor.execute(f"CREATE SCHEMA IF NOT EXISTS {_qi(scenario.target_schema)}")
+        cursor.execute(f"CREATE OR REPLACE VIEW {view} AS {select}")
 
 
 def _teardown_fixture(conn: psycopg.Connection, ids: dict[str, Any]) -> None:

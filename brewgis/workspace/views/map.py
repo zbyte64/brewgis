@@ -186,11 +186,12 @@ def view_workspace_map(request: HttpRequest, workspace_pk: int) -> HttpResponse:
         # Martin's tile responses carry no Cache-Control/Expires header, so
         # a plain page reload can have the browser reuse a previously
         # cached tile for an extent painted since — the canvas view itself
-        # is always live (see canvas_view_manager.refresh_canvas_view), but
-        # the *browser* doesn't know that. Stamp the tile URL with the most
-        # recent paint write for this scenario so a repaint always changes
-        # the URL (and therefore the browser's cache key), the same way
-        # brew-gis-map.ts's refreshCanvasTiles() cache-busts mid-session.
+        # is always live (it is a view over workspace_paintedcanvas; see
+        # services.scenario_canvas), but the *browser* doesn't know that.
+        # Stamp the tile URL with the most recent paint write for this
+        # scenario so a repaint always changes the URL (and therefore the
+        # browser's cache key), the same way brew-gis-map.ts's
+        # refreshCanvasTiles() cache-busts mid-session.
         last_painted = PaintedCanvas.objects.filter(scenario=scenario).aggregate(
             Max("painted_at")
         )["painted_at__max"]

@@ -1513,6 +1513,31 @@ other overture class-specific models exceeded the limit and were renamed:
 `overture_highway_intersection_points` → `hwy_intersection_points`,
 `overture_path_intersection_points` → `path_intersection_points`.
 
+### Selected Plans and Downstream View Models
+
+`--select-model` limits which models a plan **creates/backfills**, but promotion
+still updates the virtual layer for every snapshot in the environment. A
+downstream `kind VIEW` model the selection excludes — an upstream-only selector
+like `--select-model '+brewgis.fresno.base_canvas_reconciled'` excludes
+everything downstream of it — therefore gets its view re-pointed at a physical
+object the plan never created:
+
+```
+psycopg2.errors.UndefinedTable: relation "sqlmesh__scenario_canvas.scenario_canvas__canvas_7__3571590797" does not exist
+```
+
+The promotion transaction rolls back, so the previous view survives, but that
+model is now one version behind until a plan that includes it runs.
+
+**Rule:** rebuilding a model that has downstream view models means selecting the
+downstreams too — trailing `+`, i.e. `--select-model '<model>+'`. The scenario
+canvas views are the concrete case: use
+`make plan-base BASE=brewgis.fresno.base_canvas_reconciled` (adds the `+`) and
+`make reconcile-canvases` afterwards if a plan was run without it. That model
+is also named `scenario_canvas.canvas_<scenario_id>` rather than after the view
+it creates — the scenario-named view identifier is too long for the physical
+name budget above (see `models/scenarios/scenario_canvas.py`).
+
 ### DO NOT:
 - **Use Jinja when SQLMesh macros suffice** — Jinja is legacy support; SQLMesh macros are type-safe and composable.
 - **Create physical tables in pre/post-statements** — these run twice (at table creation and at query evaluation). Use `@IF(@runtime_stage = 'evaluating', ...)` to condition.
@@ -1521,6 +1546,7 @@ other overture class-specific models exceeded the limit and were renamed:
 - **Mix timezones in `time_column`** — must be UTC. Use `cron_tz` for local time display, not storage.
 - **Use non-idempotent models (`INCREMENTAL_BY_UNIQUE_KEY`, etc.) with limited `--start` in non-prod** — they can only preview, not fully backfill.*
 - **Use python model to return SQL** — use macros or multiple sql models instead.
+- **Suspect SQLMesh caching is to blame** — you are ALWAYS incorrect to suspect SQLMesh caching or staleness is at fault, it ALWAYS works and does so intuitively. The issue is with our own implementation logic.
 
 ### DO:
 - **Length-check new model names against the Postgres 63-char limit** —

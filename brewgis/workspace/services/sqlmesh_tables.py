@@ -20,7 +20,18 @@ from django.db import connection
 
 from brewgis.workspace.services.base_canvas_schema import BaseCanvasSchema
 
-_EXCLUDED_SCHEMAS = {"public", "information_schema", "sqlmesh_state"}
+# ``scenario_canvas`` holds the per-scenario canvas models (one model per
+# ALTERNATIVE scenario, ``canvas_<scenario_id>`` — see
+# ``sqlmesh/macros/scenario_canvas_blueprints.py`` for why they can't be named
+# after the views they create). Those models are implementation detail backing
+# the scenario-named canvas views; listing them as importable tables would put
+# them in the data catalog and the base-canvas picker.
+_EXCLUDED_SCHEMAS = {
+    "public",
+    "information_schema",
+    "sqlmesh_state",
+    "scenario_canvas",
+}
 
 _SCENARIO_ENVIRONMENT_SUFFIX = re.compile(r"__scenario_.+$")
 

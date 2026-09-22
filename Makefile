@@ -154,6 +154,14 @@ sqlmesh-migrate:  ## Run SQLMesh migration (migrate state database schema)
 test-sqlmesh:  ## Run SQLMesh tests, lint, and audits
 	$(COMPOSE_RUN) bash -c 'PYTHONPATH=/app sqlmesh -p brewgis/sqlmesh/ test && PYTHONPATH=/app sqlmesh -p brewgis/sqlmesh/ lint'
 
+.PHONY: plan-base
+plan-base:  ## Rebuild a base canvas model + its downstreams (BASE=brewgis.<region>.base_canvas_reconciled)
+	$(COMPOSE_RUN) sqlmesh -p brewgis/sqlmesh/ plan --auto-apply --select-model '$(BASE)+'
+
+.PHONY: reconcile-canvases
+reconcile-canvases:  ## Recreate any scenario canvas view a plan left missing/stale
+	$(COMPOSE_RUN) python manage.py reconcile_scenario_canvases
+
 # ─────────────────────────────────────────────
 # Linting & Formatting
 # ─────────────────────────────────────────────

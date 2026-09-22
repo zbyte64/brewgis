@@ -28,7 +28,7 @@ from tests.factories import WorkspaceFactory
 
 def _patch_refresh() -> patch:
     return patch(
-        "brewgis.workspace.views.paint.refresh_canvas_view",
+        "brewgis.workspace.views.paint.purge_scenario_canvas_tiles",
         return_value="public.mock_canvas_view",
     )
 

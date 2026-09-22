@@ -15,7 +15,7 @@ import logging
 from brewgis.workspace.models import Layer
 from brewgis.workspace.models import Scenario
 from brewgis.workspace.models import ScenarioType
-from brewgis.workspace.services.canvas_view_manager import create_canvas_view
+from brewgis.workspace.services.scenario_canvas import materialize_scenario_canvas
 
 logger = logging.getLogger(__name__)
 
@@ -66,9 +66,9 @@ def create_scenario(
         horizon_year=horizon_year if horizon_year is not None else parent.horizon_year,
     )
 
-    # Create the canvas SQL view so tile servers can query it.
+    # Materialize the canvas view (SQLMesh owns it) so tile servers can query it.
     # No PaintedCanvas rows are copied — canvas starts blank (pass-through to base).
-    create_canvas_view(new_scenario)
+    materialize_scenario_canvas(new_scenario)
     logger.info(
         "Created canvas view for scenario %s (%s)", new_scenario.pk, new_scenario.slug
     )

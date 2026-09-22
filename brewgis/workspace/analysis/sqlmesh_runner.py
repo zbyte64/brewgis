@@ -32,6 +32,17 @@ def get_context(**variables) -> Context:
     return Context(paths=str(SQLMESH_PROJECT_DIR), config=config)
 
 
+def get_state_context(**variables) -> Context:
+    """Return a Context that reads/rewrites SQLMesh state without loading models.
+
+    Needed when a model listed in state can no longer be evaluated — loading the
+    project would raise on it, so state hygiene (see
+    ``services.scenario_canvas``) has to work without parsing any model.
+    """
+    config = config_factory(**variables)
+    return Context(paths=str(SQLMESH_PROJECT_DIR), config=config, load=False)
+
+
 def _models_in_environment(context: Context, environment: str) -> list[str]:
     """Return FQNs of models materialized in *environment*.
 

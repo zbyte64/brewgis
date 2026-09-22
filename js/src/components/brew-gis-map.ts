@@ -275,12 +275,13 @@ export class BrewGisMap extends LitElement {
   /**
    * Force the canvas view layer's vector tiles to be re-fetched.
    *
-   * `refresh_canvas_view()` on the server does a `CREATE OR REPLACE VIEW`,
-   * which is picked up immediately by new tile requests — but MapLibre
-   * caches tiles it has already fetched for the current viewport, so a
-   * paint/clear/undo would otherwise stay invisible until an unrelated
-   * pan/zoom evicted the stale tiles. Bumping a cache-busting param on the
-   * source's tile URLs forces exactly that source to re-request.
+   * The scenario's canvas view is a live SQL view, so a paint write is
+   * visible to new tile requests immediately (the server purges the tile
+   * server's cached copy for it) — but MapLibre caches tiles it has already
+   * fetched for the current viewport, so a paint/clear/undo would otherwise
+   * stay invisible until an unrelated pan/zoom evicted the stale tiles.
+   * Bumping a cache-busting param on the source's tile URLs forces exactly
+   * that source to re-request.
    */
   refreshCanvasTiles(): void {
     if (!this._map) return
