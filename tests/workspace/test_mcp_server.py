@@ -94,3 +94,59 @@ class TestMcpToolFunctions:
         assert callable(di.register_tools)
         assert callable(rp.register_tools)
         assert callable(sm.register_tools)
+
+
+@pytest.mark.django_db
+class TestMcpListLayers:
+    """``list_layers`` reports a scenario's own layers, like the map does."""
+
+    def _list_layers_tool(self):
+        """Return the registered ``list_layers`` callable."""
+        from brewgis.workspace.mcp.tools import layer as layer_tools
+
+        captured: dict[str, object] = {}
+        mock_server = MagicMock()
+
+        def capture_tool(**kw: object) -> object:
+            def register(fn: object) -> object:
+                captured[fn.__name__] = fn  # type: ignore[attr-defined]
+                return fn
+
+            return register
+
+        mock_server.tool = capture_tool
+        layer_tools.register_tools(mock_server)
+        return captured["list_layers"]
+
+    def test_lists_only_the_named_scenarios_layers(self) -> None:
+        from brewgis.workspace.models import ScenarioType
+        from tests.factories import LayerFactory
+        from tests.factories import ScenarioFactory
+        from tests.factories import WorkspaceFactory
+
+        workspace = WorkspaceFactory(db_schema="public")
+        base = ScenarioFactory(workspace=workspace, scenario_type=ScenarioType.BASE)
+        alternative = ScenarioFactory(
+            workspace=workspace, scenario_type=ScenarioType.ALTERNATIVE
+        )
+        LayerFactory(workspace=workspace, key="vmt_base", scenario=base)
+        LayerFactory(workspace=workspace, key="vmt_alt", scenario=alternative)
+
+        list_layers = self._list_layers_tool()
+        keys = {
+            layer["key"]
+            for layer in list_layers(
+                workspace_slug=str(workspace.pk), scenario_slug=alternative.slug
+            )
+        }
+        assert keys == {"vmt_alt"}
+
+    def test_unknown_scenario_lists_nothing(self) -> None:
+        from tests.factories import LayerFactory
+        from tests.factories import WorkspaceFactory
+
+        workspace = WorkspaceFactory(db_schema="public")
+        LayerFactory(workspace=workspace, key="vmt_base")
+
+        list_layers = self._list_layers_tool()
+        assert list_layers(workspace_slug=str(workspace.pk), scenario_slug="nope") == []

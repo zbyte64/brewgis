@@ -11,10 +11,14 @@ import logging
 from typing import Any
 
 from django.db import connection
+from django.db.models import Q
+from django.db.models import QuerySet
 
 from brewgis.workspace.analysis.module_registry import get_primary_column
 from brewgis.workspace.models import Layer
 from brewgis.workspace.models import LayerGroup
+from brewgis.workspace.models import Scenario
+from brewgis.workspace.models import ScenarioType
 from brewgis.workspace.models import StyleClass
 from brewgis.workspace.models import SymbologyConfig
 from brewgis.workspace.models import Workspace
@@ -122,16 +126,31 @@ def ensure_painted_features_layer(
     return layer
 
 
-def visible_layers_for_panel(workspace: Workspace, scenario: object | None):
-    """Layers to render in the layer panel's Legends list.
+def visible_layers_for_panel(
+    workspace: Workspace, scenario: Scenario | None = None
+) -> QuerySet[Layer]:
+    """Layers the map shell renders for *scenario*.
+
+    The workspace's own layers — base canvas, the painted-features overlay
+    and imported data, none of which belong to a scenario — plus the active
+    scenario's own layers. Each scenario owns an instance of every analysis
+    model (see ``sqlmesh/macros/analysis_blueprints.py``), so without the
+    scenario filter a workspace shows the same analysis once per scenario it
+    has been run in, and the map draws all of those instances on top of each
+    other.
 
     The painted-features overlay only has a source while a scenario is
     active (see ``view_workspace_map``), so it's excluded here otherwise —
     keeping it out of the queryset (rather than skipping it in the template)
     means its "Scenario Layers" group header doesn't show up empty either.
     """
-    layers = workspace.layers.all()
-    if not scenario:
+    if scenario is None:
+        layers = workspace.layers.filter(scenario__isnull=True)
+    else:
+        layers = workspace.layers.filter(
+            Q(scenario__isnull=True) | Q(scenario=scenario)
+        )
+    if scenario is None or scenario.scenario_type != ScenarioType.ALTERNATIVE:
         layers = layers.exclude(key=PAINTED_FEATURES_LAYER_KEY)
     return layers
 
@@ -276,6 +295,7 @@ def register_result_layer(
     description: str | None = None,
     key: str | None = None,
     group_name: str | None = None,
+    scenario_id: int | None = None,
 ) -> Layer | None:
     """Register a PostGIS view/table as a Layer in the workspace.
 
@@ -296,6 +316,9 @@ def register_result_layer(
             doesn't exist yet). Only applied while the layer has no group of
             its own, so a group the user picked by hand (e.g. via drag/drop
             in the Layer Groups panel) is never overwritten on a later rerun.
+        scenario_id: Scenario this result belongs to — the map and the Layers
+            panel only show it while that scenario is active (see
+            ``visible_layers_for_panel``). None for workspace-level layers.
 
     Returns:
         The Layer instance, or None if registration fails.
@@ -329,6 +352,7 @@ def register_result_layer(
             "db_table": table,
             "db_schema": schema,
             "geometry_type": geometry_type,
+            "scenario_id": scenario_id,
         },
     )
 

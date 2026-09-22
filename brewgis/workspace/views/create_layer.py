@@ -33,6 +33,7 @@ from brewgis.workspace.services.sqlmesh_tables import sqlmesh_links_for_tables
 from brewgis.workspace.symbology.auto import auto_generate_symbology
 from brewgis.workspace.symbology.legend import swatch_background
 from brewgis.workspace.views.built_forms import HtmxResponseMixin
+from brewgis.workspace.views.panels import resolve_scenario_param
 
 
 class CreateLayerForm(forms.ModelForm):
@@ -218,9 +219,14 @@ def layer_delete(request: HttpRequest, pk: int) -> HttpResponse:
     layer.delete()
 
     if request.headers.get("HX-Request") == "true":
+        # Re-render the list the row was removed from, scoped to the scenario
+        # that list was showing (see resolve_scenario_param).
+        scenario = resolve_scenario_param(request, workspace)
+        visible = visible_layers_for_panel(workspace, scenario)
+
         # Build swatch backgrounds for the legend list
         swatch_backgrounds: dict[int, str] = {}
-        for lyr in workspace.layers.all():
+        for lyr in visible:
             with suppress(SymbologyConfig.DoesNotExist):
                 swatch_backgrounds[lyr.pk] = swatch_background(lyr.symbology)
                 continue
@@ -229,18 +235,18 @@ def layer_delete(request: HttpRequest, pk: int) -> HttpResponse:
         sqlmesh_links = sqlmesh_links_for_tables(
             {
                 lyr.pk: (lyr.db_schema or workspace.db_schema, lyr.db_table)
-                for lyr in workspace.layers.all()
+                for lyr in visible
             }
         )
 
         context: dict[str, Any] = {
             "workspace": workspace,
-            "scenario": None,
+            "scenario": scenario,
             "is_public_view": False,
             "layer_configs": {},
             "swatch_backgrounds": swatch_backgrounds,
             "sqlmesh_links": sqlmesh_links,
-            "layers_for_panel": visible_layers_for_panel(workspace, None),
+            "layers_for_panel": visible,
         }
         response = render(
             request,

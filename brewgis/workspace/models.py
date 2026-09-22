@@ -133,6 +133,20 @@ class Layer(models.Model):
         related_name="layers",
     )
 
+    scenario = models.ForeignKey(
+        "Scenario",
+        on_delete=models.CASCADE,
+        null=True,
+        blank=True,
+        related_name="layers",
+        help_text=(
+            "Scenario this layer belongs to, for per-scenario results (a "
+            "scenario's analysis views and its canvas view). Null for "
+            "workspace-level layers — the base canvas, the painted-features "
+            "overlay and imported data — which every scenario shows."
+        ),
+    )
+
     class Meta:
         # Group first (ungrouped layers sort last, after all named groups),
         # then each group's own display_order — so `{% regroup %}` in the

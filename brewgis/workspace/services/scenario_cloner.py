@@ -116,6 +116,7 @@ def _register_canvas_layer(scenario: Scenario, *, source_name: str) -> None:
             "display_order": 0,
             "layer_source": "canvas_view",
             "db_table": view_qualifier,
+            "scenario": scenario,
         },
     )
     if created:

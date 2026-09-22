@@ -323,6 +323,7 @@ def run_modules_sync(
             key=f"{model_name}_{scenario_id}",
             name=f"{model_name.replace('_', ' ').title()} {scenario_id}",
             group_name="Analysis Results",
+            scenario_id=scenario_id,
         )
         fqtns.append(f"{env_schema}.{model_name}")
     return {

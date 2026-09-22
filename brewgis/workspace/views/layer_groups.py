@@ -8,6 +8,7 @@ from typing import Any
 
 from django.contrib.auth.decorators import user_passes_test
 from django.db.models import Max
+from django.db.models import Prefetch
 from django.http import HttpRequest
 from django.http import HttpResponse
 from django.shortcuts import get_object_or_404
@@ -19,32 +20,41 @@ from django.views.decorators.http import require_POST
 from brewgis.workspace.analysis.layer_registry import visible_layers_for_panel
 from brewgis.workspace.models import Layer
 from brewgis.workspace.models import LayerGroup
+from brewgis.workspace.models import Scenario
 from brewgis.workspace.models import SymbologyConfig
 from brewgis.workspace.models import Workspace
 from brewgis.workspace.services.sqlmesh_tables import sqlmesh_links_for_tables
 from brewgis.workspace.symbology.legend import swatch_background
+from brewgis.workspace.views.panels import resolve_scenario_param
 
 logger = logging.getLogger(__name__)
 
 
-def _list_context(workspace: Workspace) -> dict[str, Any]:
-    """Build shared context for the layer group list partial."""
+def _list_context(workspace: Workspace, scenario: Scenario) -> dict[str, Any]:
+    """Build shared context for the layer group list partial.
+
+    Only the layers *scenario* shows are listed: a group holds every
+    scenario's layers, so an unfiltered ``prefetch_related`` would put another
+    scenario's analysis results in this one's group list.
+    """
+    visible = visible_layers_for_panel(workspace, scenario)
     groups = (
         LayerGroup.objects.filter(workspace=workspace)
-        .prefetch_related("layers")
+        .prefetch_related(
+            Prefetch("layers", queryset=visible, to_attr="visible_layers")
+        )
         .order_by("display_order")
     )
-    ungrouped = Layer.objects.filter(workspace=workspace, group__isnull=True).order_by(
-        "display_order"
-    )
+    ungrouped = visible.filter(group__isnull=True).order_by("display_order")
     sqlmesh_links = sqlmesh_links_for_tables(
         {
             layer.pk: (layer.db_schema or workspace.db_schema, layer.db_table)
-            for layer in workspace.layers.all()
+            for layer in visible
         }
     )
     return {
         "workspace": workspace,
+        "scenario": scenario,
         "groups": groups,
         "ungrouped": ungrouped,
         "sqlmesh_links": sqlmesh_links,
@@ -56,7 +66,7 @@ def _list_context(workspace: Workspace) -> dict[str, Any]:
 def layer_group_list(request: HttpRequest, workspace_pk: int) -> HttpResponse:
     """Return a partial listing all layer groups with their layers for a workspace."""
     workspace = get_object_or_404(Workspace, pk=workspace_pk)
-    context = _list_context(workspace)
+    context = _list_context(workspace, resolve_scenario_param(request, workspace))
     return render(request, "workspace/partials/_layer_group_list.html", context)
 
 
@@ -80,7 +90,7 @@ def layer_group_create(request: HttpRequest, workspace_pk: int) -> HttpResponse:
         LayerGroup.objects.create(
             workspace=workspace, name=name, display_order=next_order
         )
-        context = _list_context(workspace)
+        context = _list_context(workspace, resolve_scenario_param(request, workspace))
         return render(request, "workspace/partials/_layer_group_list.html", context)
     return render(
         request,
@@ -104,7 +114,9 @@ def layer_group_edit(request: HttpRequest, pk: int) -> HttpResponse:
             )
         group.name = name
         group.save()
-        context = _list_context(group.workspace)
+        context = _list_context(
+            group.workspace, resolve_scenario_param(request, group.workspace)
+        )
         return render(request, "workspace/partials/_layer_group_list.html", context)
     return render(
         request,
@@ -120,7 +132,7 @@ def layer_group_delete(request: HttpRequest, pk: int) -> HttpResponse:
     group = get_object_or_404(LayerGroup, pk=pk)
     workspace = group.workspace
     group.delete()
-    context = _list_context(workspace)
+    context = _list_context(workspace, resolve_scenario_param(request, workspace))
     return render(request, "workspace/partials/_layer_group_list.html", context)
 
 
@@ -136,6 +148,7 @@ def layer_group_move_layer(request: HttpRequest, layer_pk: int) -> HttpResponse:
     layer = get_object_or_404(Layer, pk=layer_pk)
     target_pk = request.POST.get("target_layer_pk", "")
     group_id = request.POST.get("group_id", "")
+    scenario = resolve_scenario_param(request, layer.workspace)
 
     if target_pk:
         # Reorder: swap display_order with target layer
@@ -149,8 +162,9 @@ def layer_group_move_layer(request: HttpRequest, layer_pk: int) -> HttpResponse:
 
         # Build swatch backgrounds for the layer list panel
         workspace = layer.workspace
+        visible = visible_layers_for_panel(workspace, scenario)
         swatch_backgrounds: dict[int, str] = {}
-        for lyr in workspace.layers.all():
+        for lyr in visible:
             with suppress(SymbologyConfig.DoesNotExist):
                 swatch_backgrounds[lyr.pk] = swatch_background(lyr.symbology)
                 continue
@@ -159,18 +173,18 @@ def layer_group_move_layer(request: HttpRequest, layer_pk: int) -> HttpResponse:
         sqlmesh_links = sqlmesh_links_for_tables(
             {
                 lyr.pk: (lyr.db_schema or workspace.db_schema, lyr.db_table)
-                for lyr in workspace.layers.all()
+                for lyr in visible
             }
         )
 
         context: dict[str, Any] = {
             "workspace": workspace,
-            "scenario": None,
+            "scenario": scenario,
             "is_public_view": False,
             "layer_configs": {},
             "swatch_backgrounds": swatch_backgrounds,
             "sqlmesh_links": sqlmesh_links,
-            "layers_for_panel": visible_layers_for_panel(workspace, None),
+            "layers_for_panel": visible,
         }
         return render(request, "workspace/partials/_layer_list_panel.html", context)
 
@@ -180,5 +194,5 @@ def layer_group_move_layer(request: HttpRequest, layer_pk: int) -> HttpResponse:
     else:
         layer.group = None
     layer.save()
-    context = _list_context(layer.workspace)
+    context = _list_context(layer.workspace, scenario)
     return render(request, "workspace/partials/_layer_group_list.html", context)

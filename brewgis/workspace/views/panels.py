@@ -11,6 +11,8 @@ from __future__ import annotations
 import contextlib
 import json
 from typing import TYPE_CHECKING
+from urllib.parse import parse_qs
+from urllib.parse import urlparse
 
 from django.contrib.auth.decorators import user_passes_test
 from django.db import connection
@@ -121,18 +123,45 @@ def is_panel_request(request: HttpRequest) -> bool:
     )
 
 
+def _scenario_from_current_url(
+    request: HttpRequest, workspace: Workspace
+) -> Scenario | None:
+    """The scenario of the page an htmx request was made from, if any.
+
+    Panel fragments re-render themselves in place — deleting a layer,
+    reordering one, editing a layer group all POST and swap the list they
+    live in — and htmx reports the page they came from in ``HX-Current-URL``.
+    Resolving the scenario from that URL keeps a refreshed panel scoped to the
+    scenario it is showing, instead of quietly reverting to the base one and
+    listing the wrong scenario's layers. Unknown/missing values are ignored
+    (a stale header from another workspace must not 404 the request).
+    """
+    current_url = request.headers.get("HX-Current-URL", "")
+    if not current_url:
+        return None
+    scenario_pk = parse_qs(urlparse(current_url).query).get("scenario", [""])[0]
+    if not scenario_pk.isdigit():
+        return None
+    return workspace.scenarios.filter(pk=int(scenario_pk)).first()
+
+
 def resolve_scenario_param(request: HttpRequest, workspace: Workspace) -> Scenario:
     """Resolve the active scenario from ``?scenario=<pk>``.
 
-    Defaults to the workspace's BASE scenario when no ``scenario`` param is
-    given — every workspace always has exactly one, so this never returns
-    ``None`` and callers never need an ``if scenario:`` branch, only
-    ``if scenario.scenario_type == ScenarioType.ALTERNATIVE:`` where
-    paint-specific behavior (not data resolution) is being decided.
+    Panels that only re-render themselves pass no such param; for those the
+    scenario of the page they were rendered from is used (see
+    ``_scenario_from_current_url``). Defaults to the workspace's BASE scenario
+    when neither is available — every workspace always has exactly one, so
+    this never returns ``None`` and callers never need an ``if scenario:``
+    branch, only ``if scenario.scenario_type == ScenarioType.ALTERNATIVE:``
+    where paint-specific behavior (not data resolution) is being decided.
     """
     scenario_pk = request.GET.get("scenario")
     if scenario_pk:
         return get_object_or_404(Scenario, pk=scenario_pk, workspace=workspace)
+    from_current_url = _scenario_from_current_url(request, workspace)
+    if from_current_url is not None:
+        return from_current_url
     return workspace.scenarios.get(scenario_type=ScenarioType.BASE)
 
 
@@ -161,12 +190,11 @@ def panel_layer_list(request: HttpRequest, workspace_pk: int) -> HttpResponse:
         "workspace": workspace,
         "scenario": scenario,
         "is_public_view": False,
-        # visible_layers_for_panel only shows the painted-features overlay
-        # while an ALTERNATIVE scenario is active (it has no source
-        # otherwise) — pass None for a BASE scenario to preserve that.
-        "layers_for_panel": visible_layers_for_panel(
-            workspace, scenario if is_alternative else None
-        ),
+        # Scoped to the active scenario — the list holds the workspace's own
+        # layers plus this scenario's results, never another scenario's (see
+        # visible_layers_for_panel). Passed for a BASE scenario too: its
+        # analysis results belong to it just as an ALTERNATIVE's do.
+        "layers_for_panel": visible_layers_for_panel(workspace, scenario),
     }
 
     # Pre-fetch symbology configs for inline legend swatches
@@ -349,12 +377,15 @@ def panel_feature_inspect(request: HttpRequest, workspace_pk: int) -> HttpRespon
                 }
             )
 
-    # Every other layer in the workspace ("Parcel" tab above already covers
-    # the base/canvas layer that was actually clicked) gets its own read-only
-    # tab if it has a matching row for this parcel — e.g. an analysis result
-    # table like vmt_{scenario_id}. Layers with no recognizable id column, or
-    # with no row for this parcel (a different subset, or a non-parcel
-    # import), are silently skipped rather than shown as an empty tab.
+    # Every other layer *this scenario* shows ("Parcel" tab above already
+    # covers the base/canvas layer that was actually clicked) gets its own
+    # read-only tab if it has a matching row for this parcel — e.g. this
+    # scenario's own vmt result. Another scenario's layers are excluded: they
+    # hold the same parcels, so including them would list the same analysis
+    # once per scenario under near-identical names. Layers with no
+    # recognizable id column, or with no row for this parcel (a different
+    # subset, or a non-parcel import), are silently skipped rather than shown
+    # as an empty tab.
     base_layer_key = ""
     for layer in workspace.layers.all():
         if layer.key == BASE_CANVAS_LAYER_KEY:
@@ -363,7 +394,9 @@ def panel_feature_inspect(request: HttpRequest, workspace_pk: int) -> HttpRespon
 
     layer_tabs: list[dict[str, object]] = []
     excluded_keys = {PAINTED_FEATURES_LAYER_KEY, base_layer_key}
-    for layer in workspace.layers.exclude(key__in=excluded_keys):
+    for layer in visible_layers_for_panel(workspace, scenario).exclude(
+        key__in=excluded_keys
+    ):
         rows = _fetch_layer_row_for_feature(layer, feature_id)
         if rows:
             layer_tabs.append({"layer": layer, "rows": rows})

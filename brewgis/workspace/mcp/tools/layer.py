@@ -7,8 +7,11 @@ from django.db import connection
 from django.shortcuts import get_object_or_404
 from pydantic import BaseModel
 
+from brewgis.workspace.analysis.layer_registry import visible_layers_for_panel
 from brewgis.workspace.models import Layer
 from brewgis.workspace.models import LayerFilter
+from brewgis.workspace.models import Scenario
+from brewgis.workspace.models import ScenarioType
 from brewgis.workspace.models import SymbologyConfig
 from brewgis.workspace.models import Workspace
 from brewgis.workspace.services.column_inspector import get_table_schema
@@ -66,7 +69,20 @@ def register_tools(server: object) -> None:
         except ValueError:
             return []
         workspace = get_object_or_404(Workspace, pk=ws_pk)
-        layers = Layer.objects.filter(workspace=workspace)
+        if scenario_slug:
+            scenario = Scenario.objects.filter(
+                workspace=workspace, slug=scenario_slug
+            ).first()
+            if scenario is None:
+                return []
+        else:
+            scenario = workspace.scenarios.filter(
+                scenario_type=ScenarioType.BASE
+            ).first()
+        # Scoped like the map's Layers panel: a scenario's analysis results
+        # belong to it, so an unscoped listing would report the same analysis
+        # once per scenario that has been run.
+        layers = visible_layers_for_panel(workspace, scenario)
         results = []
         for layer in layers:
             feat_count = None

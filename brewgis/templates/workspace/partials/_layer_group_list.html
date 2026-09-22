@@ -36,9 +36,11 @@
                       hx-confirm="{% translate 'Delete this group? Layers will become ungrouped.' %}">🗑️</button>
             </div>
           </div>
-          {% if group.layers.all %}
+          {# group.visible_layers is set by _list_context's Prefetch — the #}
+          {# layers of the active scenario, not of every scenario. #}
+          {% if group.visible_layers %}
             <ul class="list-group list-group-flush">
-              {% for layer in group.layers.all %}
+              {% for layer in group.visible_layers %}
                 <li class="list-group-item d-flex justify-content-between align-items-center py-1 px-2"
                     style="font-size: 0.7rem">
                   <span class="text-truncate me-2">

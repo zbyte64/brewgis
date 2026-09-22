@@ -25,6 +25,7 @@ from ninja import ModelSchema
 from brewgis.workspace.analysis.layer_registry import BASE_CANVAS_LAYER_KEY
 from brewgis.workspace.analysis.layer_registry import PAINTED_FEATURES_LAYER_KEY
 from brewgis.workspace.analysis.layer_registry import ensure_painted_features_layer
+from brewgis.workspace.analysis.layer_registry import visible_layers_for_panel
 from brewgis.workspace.built_forms.models import BuildingType
 from brewgis.workspace.built_forms.models import PlaceType
 from brewgis.workspace.models import Basemap
@@ -43,7 +44,9 @@ from brewgis.workspace.views.panels import resolve_scenario_param
 class LayerSchema(ModelSchema):
     class Meta:
         model = Layer
-        exclude = ["id"]
+        # `scenario` is a server-side scoping field — the frontend gets an
+        # already-scoped layer list, and `id` is replaced by the layer key.
+        exclude = ["id", "scenario"]
 
 
 _MIN_AUTO_ZOOM = 2.0
@@ -242,8 +245,12 @@ def view_workspace_map(request: HttpRequest, workspace_pk: int) -> HttpResponse:
             reverse("workspace:undo_paint", args=[workspace_pk, scenario.pk])
         )
 
-    # Build regular layer data
-    layers = workspace.layers.all()
+    # Build regular layer data. Scoped to the active scenario: a scenario's
+    # analysis results belong to it alone (each scenario owns an instance of
+    # every analysis model), so rendering another scenario's results here
+    # would draw the same analysis several times over, from data that isn't
+    # this scenario's.
+    layers = visible_layers_for_panel(workspace, scenario)
     layer_data = []
     for layer in layers:
         is_painted_features_layer = layer.key == PAINTED_FEATURES_LAYER_KEY
@@ -420,7 +427,7 @@ def view_workspace_map(request: HttpRequest, workspace_pk: int) -> HttpResponse:
         if is_alternative_scenario
         else "null",
         "scenario_url": scenario_url,
-        "canvas_view_name": canvas_view_name if canvas_view_name else "",
+        "canvas_view_name": canvas_view_name or "",
         "paintable_columns": paintable_column_meta,
         "built_forms": built_forms_data,
         "paint_url": paint_url,
@@ -454,7 +461,7 @@ def view_public_scenario_map(request: HttpRequest, token: str) -> HttpResponse:
     )
     workspace = scenario.workspace
 
-    layers = Layer.objects.filter(workspace=workspace).order_by("display_order")
+    layers = visible_layers_for_panel(workspace, scenario).order_by("display_order")
 
     layer_data = []
     for layer in layers:
