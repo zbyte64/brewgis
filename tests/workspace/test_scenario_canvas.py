@@ -40,7 +40,9 @@ def _build_canvas_view(scenario) -> None:
     )
     with connection.cursor() as cursor:
         cursor.execute(f"CREATE SCHEMA IF NOT EXISTS {_qi(scenario.target_schema)}")
-        cursor.execute(f"CREATE OR REPLACE VIEW {_qi(_qualified(scenario))} AS {select}")
+        cursor.execute(
+            f"CREATE OR REPLACE VIEW {_qi(_qualified(scenario))} AS {select}"
+        )
 
 
 @pytest.fixture
@@ -64,7 +66,9 @@ class TestCanvasViewHealth:
 
     def test_reports_unhealthy_when_the_view_is_gone(self, scenario_with_canvas_view):
         with connection.cursor() as cursor:
-            cursor.execute(f"DROP VIEW IF EXISTS {_qi(_qualified(scenario_with_canvas_view))}")
+            cursor.execute(
+                f"DROP VIEW IF EXISTS {_qi(_qualified(scenario_with_canvas_view))}"
+            )
 
         assert canvas_view_is_healthy(scenario_with_canvas_view) is False
 

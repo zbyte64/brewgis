@@ -55,9 +55,7 @@ class TestBuildCanvasViewSelect:
             "MAX(CASE WHEN column_name = 'built_form_key' THEN painted_text_value END)"
             " AS built_form_key" in sql
         )
-        assert (
-            "MAX(CASE WHEN column_name = 'du' THEN painted_value END) AS du" in sql
-        )
+        assert "MAX(CASE WHEN column_name = 'du' THEN painted_value END) AS du" in sql
 
     def test_column_order_follows_the_passed_column_list(self):
         # The list comes from the base table's ordinal order; iterating
@@ -69,7 +67,9 @@ class TestBuildCanvasViewSelect:
             base_ref=BASE_REF, all_columns=columns, scenario_id=1
         )
 
-        assert sql.index("COALESCE(pc.du, bc.du)") < sql.index("COALESCE(pc.pop, bc.pop)")
+        assert sql.index("COALESCE(pc.du, bc.du)") < sql.index(
+            "COALESCE(pc.pop, bc.pop)"
+        )
 
 
 @pytest.mark.integration

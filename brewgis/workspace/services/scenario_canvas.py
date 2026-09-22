@@ -134,9 +134,7 @@ def _purge_models_for_deleted_scenarios(modeled: set[int]) -> list[str]:
     for environment in get_state_context().state_sync.get_environments():
         stale.extend(
             name
-            for name in (
-                _snapshot_name(entry) for entry in environment.snapshots_
-            )
+            for name in (_snapshot_name(entry) for entry in environment.snapshots_)
             if _is_stale_canvas_model(name, modeled)
         )
     if not stale:
@@ -181,9 +179,7 @@ def reconcile_scenario_canvases() -> list[int]:
         return []
 
     unhealthy = [
-        scenario.pk
-        for scenario in scenarios
-        if not canvas_view_is_healthy(scenario)
+        scenario.pk for scenario in scenarios if not canvas_view_is_healthy(scenario)
     ]
     selectors = [canvas_model_selector(scenario) for scenario in scenarios]
     logger.info(
@@ -250,9 +246,7 @@ def purge_canvas_models_from_environments(model_fqns: Iterable[str]) -> list[str
     context = get_state_context()
     touched: list[str] = []
     for environment in context.state_sync.get_environments():
-        if not any(
-            _snapshot_name(entry) in wanted for entry in environment.snapshots_
-        ):
+        if not any(_snapshot_name(entry) in wanted for entry in environment.snapshots_):
             continue
         updated = environment.copy(deep=True)
         updated.snapshots_ = [

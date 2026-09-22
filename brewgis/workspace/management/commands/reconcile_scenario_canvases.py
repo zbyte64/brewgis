@@ -20,8 +20,7 @@ class Command(BaseCommand):
         if unhealthy:
             self.stdout.write(
                 self.style.SUCCESS(
-                    f"Reconciled scenario canvas views "
-                    f"(unhealthy before: {unhealthy})"
+                    f"Reconciled scenario canvas views (unhealthy before: {unhealthy})"
                 )
             )
             return

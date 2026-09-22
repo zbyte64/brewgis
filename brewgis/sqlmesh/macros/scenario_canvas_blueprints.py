@@ -182,8 +182,7 @@ def scenario_canvas_blueprints(evaluator) -> list[exp.Expr]:
         sqlglot.parse_one(
             "("
             + ", ".join(
-                f"{name} := {_variable_sql(value)}"
-                for name, value in profile.items()
+                f"{name} := {_variable_sql(value)}" for name, value in profile.items()
             )
             + ")",
             into=exp.Tuple,
