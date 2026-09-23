@@ -12,6 +12,7 @@ import pytest
 from django.db import connection
 
 from brewgis.sqlmesh.macros.scenario_canvas_blueprints import scenario_canvas_profiles
+from brewgis.workspace.analysis.log_capture import capture_run_log
 from brewgis.workspace.models import ScenarioType
 from brewgis.workspace.services.canvas_view_manager import TEXT_COLUMNS
 from brewgis.workspace.services.canvas_view_manager import _fetch_base_columns
@@ -206,6 +207,35 @@ class TestScenarioCanvasProfiles:
             for profile in scenario_canvas_profiles()
             if profile["scenario_id"] == scenario.pk
         ]
+
+    def test_skips_are_warned_once_per_build_not_per_scenario(
+        self, narrow_base_workspace
+    ):
+        """The warning is per build; the per-scenario detail stays at DEBUG.
+
+        This macro runs for every render of the scenario-canvas model, so a
+        warning per skipped scenario multiplied the skipped count by the render
+        count — a database with ~35 skippable test scenarios put ~200 KB of
+        warnings into an analysis run's log, filling it past its cap and pushing
+        the run's own error out of that log.
+
+        ``capture_run_log`` rather than ``caplog``: the profiles call
+        ``django.setup()``, which re-applies the LOGGING config and takes a
+        caplog handler attached to the root logger with it.
+        """
+        scenarios = ScenarioFactory.create_batch(
+            5,
+            workspace=narrow_base_workspace,
+            scenario_type=ScenarioType.ALTERNATIVE,
+        )
+
+        with capture_run_log() as stream:
+            scenario_canvas_profiles()
+
+        output = stream.getvalue()
+        assert output.count("Skipped") == 1
+        for scenario in scenarios:
+            assert str(scenario.pk) in output
 
     def test_duplicate_scenario_slugs_claim_one_view(self, workspace_on_base_canvas):
         # Scenario schemas are not workspace-scoped, so two workspaces may ask

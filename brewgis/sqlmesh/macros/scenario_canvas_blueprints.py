@@ -90,6 +90,13 @@ def scenario_canvas_profiles() -> list[dict[str, object]]:
     Duplicate ``schema.view_name`` pairs are also skipped (``scenario_<slug>``
     schemas aren't workspace-scoped, so two workspaces may claim the same view
     name) — deterministically, lowest scenario id first.
+
+    Skips are reported as one summary warning per call, not one per scenario
+    (the detail stays at DEBUG): this macro runs for every render of the
+    scenario-canvas model, so a per-scenario warning multiplied the skipped
+    count by the render count — on a database with ~35 skippable test scenarios
+    that was ~200 KB of log per load, enough to push a run's own error out of
+    the front-truncated run log.
     """
     import django
 
@@ -104,6 +111,8 @@ def scenario_canvas_profiles() -> list[dict[str, object]]:
     columns_by_base: dict[str, list[str]] = {}
     claimed_by_view: dict[tuple[str, str], int] = {}
     profiles: list[dict[str, object]] = []
+    not_a_canvas: list[str] = []
+    shared_view: list[str] = []
     scenarios = (
         Scenario.objects.filter(scenario_type=ScenarioType.ALTERNATIVE)
         .select_related("workspace")
@@ -115,7 +124,7 @@ def scenario_canvas_profiles() -> list[dict[str, object]]:
             columns_by_base[base_table] = _fetch_base_columns(base_table)[2]
         columns = columns_by_base[base_table]
         if not required.issubset(columns):
-            _logger.warning(
+            _logger.debug(
                 "Scenario %s (%s) has no canvas view model: base table %s is "
                 "not a base canvas (missing %s)",
                 scenario.pk,
@@ -123,12 +132,13 @@ def scenario_canvas_profiles() -> list[dict[str, object]]:
                 base_table,
                 sorted(required.difference(columns)),
             )
+            not_a_canvas.append(f"{scenario.pk} ({base_table})")
             continue
 
         view_key = (scenario.target_schema, f"scenario_{scenario.slug}_canvas")
         owner = claimed_by_view.setdefault(view_key, int(scenario.pk))
         if owner != int(scenario.pk):
-            _logger.warning(
+            _logger.debug(
                 "Scenario %s (%s) shares canvas view %s.%s with scenario %s — "
                 "skipping (scenario schemas are not workspace-scoped)",
                 scenario.pk,
@@ -136,6 +146,7 @@ def scenario_canvas_profiles() -> list[dict[str, object]]:
                 *view_key,
                 owner,
             )
+            shared_view.append(f"{scenario.pk} (with {owner})")
             continue
 
         profiles.append(
@@ -150,7 +161,32 @@ def scenario_canvas_profiles() -> list[dict[str, object]]:
                 "all_columns": columns,
             }
         )
+    if not_a_canvas or shared_view:
+        _logger.warning(
+            "Skipped %s scenario(s) with no canvas view model: %s not a base "
+            "canvas [%s]; %s sharing another scenario's canvas view [%s]",
+            len(not_a_canvas) + len(shared_view),
+            len(not_a_canvas),
+            _summarize(not_a_canvas),
+            len(shared_view),
+            _summarize(shared_view),
+        )
     return profiles
+
+
+# Enough skipped scenario ids to recognize the offenders without turning the
+# summary back into the log-filling list it replaced.
+_MAX_SUMMARY_IDS = 8
+
+
+def _summarize(skipped: list[str]) -> str:
+    """Render skipped scenario descriptions for the one-line skip summary."""
+    if len(skipped) <= _MAX_SUMMARY_IDS:
+        return "; ".join(skipped)
+    return (
+        "; ".join(skipped[:_MAX_SUMMARY_IDS])
+        + f"; +{len(skipped) - _MAX_SUMMARY_IDS} more"
+    )
 
 
 def _variable_sql(value: object) -> str:
