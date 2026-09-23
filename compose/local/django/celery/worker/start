@@ -4,4 +4,11 @@ set -o errexit
 set -o nounset
 
 
-exec watchfiles --filter python celery.__main__.main --args '-A brewgis.config.celery_app worker -l INFO'
+# -c 4 instead of Celery's default of one worker per host CPU: docker reports
+# the host's 16 cores inside the container, but compose caps it at 4 (see the
+# `deploy.resources.limits.cpus` on the shared service anchor). An AnalysisRun
+# loads the entire SQLMesh project in-process before it plans anything
+# (MAX_FORK_WORKERS=1 — see docker-compose.yml: prefork children are daemonic
+# and cannot fork), so 16 concurrent runs on 4 CPUs stretch every run's load
+# phase and spend the run's time limit waiting for CPU.
+exec watchfiles --filter python celery.__main__.main --args '-A brewgis.config.celery_app worker -l INFO -c 4'

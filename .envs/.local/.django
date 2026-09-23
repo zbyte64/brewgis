@@ -4,6 +4,17 @@ USE_DOCKER=yes
 DJANGO_DEBUG=True
 DJANGO_SECRET_KEY=CHANGE_ME_TO_A_RANDOM_SECRET_KEY
 IPYTHONDIR=/app/.ipython
+
+# Database
+# ------------------------------------------------------------------------------
+# Docker internal hostname, not localhost: `.env` holds the host-mode value
+# (host Django + infra containers, see AGENTS.md), and every container that
+# reads it from there — django, celeryworker, celerybeat, mcp, sqlmesh-ui —
+# would then dial the container's own loopback and fail. Overrides `.env`
+# because this file is loaded after it (see the env_file list in
+# docker-compose.yml).
+DATABASE_URL=postgres://rADfmsnMjDXKephNGWFkfdPkuSAjdASF:glm5bKLmVKkfdJaM9qkDREdor4y8uSEJZKZvLVwP5jeEX6YSnw6DnNG9EYvupSlg@postgres:5432/brewgis
+
 # Redis
 # ------------------------------------------------------------------------------
 REDIS_URL=redis://redis:6379/0
