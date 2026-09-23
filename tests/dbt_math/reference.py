@@ -21,6 +21,10 @@ from __future__ import annotations
 import deal
 import numpy as np
 
+# km -> mi. A physical constant, hardcoded in the SQL models rather than a
+# scenario parameter (the `transport_km_to_mi` config variable is dead).
+_MI_PER_KM = 0.621371
+
 # ══════════════════════════════════════════════════════════════════════
 #  Helper: safe coalesce
 # ══════════════════════════════════════════════════════════════════════
@@ -171,40 +175,156 @@ def compute_impervious_surface(
 
 
 # ══════════════════════════════════════════════════════════════════════
+#  Mode Choice  (mode_choice.sql)
+# ══════════════════════════════════════════════════════════════════════
+
+# Untuned literature defaults, identical to the SQL model's literals
+# (docs/sqlmesh-parameters.md §3.2).
+_MC_ASC_TRANSIT = -2.0
+_MC_ASC_WALK = -1.5
+_MC_ASC_BIKE = -2.5
+_MC_BETA_DENSITY = 0.15
+_MC_BETA_DESIGN_WALK = 0.05
+_MC_BETA_TRANSIT_DIST = 0.02
+
+
+@deal.pre(
+    lambda trips_outbound, density, intersection_density, transit_access: (
+        len(trips_outbound)
+        == len(density)
+        == len(intersection_density)
+        == len(transit_access)
+    )
+)
+@deal.pre(
+    lambda trips_outbound, density, intersection_density, transit_access: np.all(
+        density >= 0
+    )
+)
+@deal.pre(
+    lambda trips_outbound, density, intersection_density, transit_access: np.all(
+        intersection_density >= 0
+    )
+)
+@deal.pre(
+    lambda trips_outbound, density, intersection_density, transit_access: np.all(
+        trips_outbound >= 0
+    )
+)
+@deal.post(lambda result: len(result) == 8)
+@deal.post(lambda result: np.all(result[4] >= 0) and np.all(result[7] >= 0))
+@deal.post(
+    lambda result: np.all(
+        np.abs(result[4] + result[5] + result[6] + result[7] - 1.0) < 1e-6
+    )
+)
+@deal.post(lambda result: np.all(result[0] >= 0) and np.all(result[3] >= 0))
+@deal.ensure(
+    lambda trips_outbound, density, intersection_density, transit_access, result: (
+        np.all(
+            np.abs(result[0] + result[1] + result[2] + result[3] - trips_outbound)
+            < 1e-6
+        )
+    )
+)
+def compute_mode_choice(
+    trips_outbound: np.ndarray,
+    density: np.ndarray,
+    intersection_density: np.ndarray,
+    transit_access: np.ndarray,
+) -> tuple[
+    np.ndarray,
+    np.ndarray,
+    np.ndarray,
+    np.ndarray,
+    np.ndarray,
+    np.ndarray,
+    np.ndarray,
+    np.ndarray,
+]:
+    """SQL: ``mode_choice`` — multinomial logit mode split per parcel.
+
+    Auto is the reference alternative (``u_auto = 0``); the softmax subtracts the
+    largest utility before exponentiating, matching the SQL model's ``GREATEST``.
+
+    Returns (trips_auto, trips_transit, trips_walk, trips_bike,
+             share_auto, share_transit, share_walk, share_bike).
+    """
+    if len(trips_outbound) == 0:
+        empty = np.array([], dtype=float)
+        return (empty, empty, empty, empty, empty, empty, empty, empty)
+
+    trips_outbound = np.asarray(trips_outbound, dtype=float)
+    ln_density = np.log(np.asarray(density, dtype=float) + 1.0)
+    intersection_density = np.asarray(intersection_density, dtype=float)
+    transit_access = np.asarray(transit_access, dtype=float)
+
+    u_auto = np.zeros_like(trips_outbound)
+    u_transit = (
+        _MC_ASC_TRANSIT
+        + _MC_BETA_DENSITY * ln_density
+        + _MC_BETA_TRANSIT_DIST * transit_access
+    )
+    u_walk = (
+        _MC_ASC_WALK
+        + _MC_BETA_DENSITY * ln_density
+        + _MC_BETA_DESIGN_WALK * intersection_density
+    )
+    u_bike = (
+        _MC_ASC_BIKE
+        + _MC_BETA_DENSITY * ln_density
+        + _MC_BETA_DESIGN_WALK * intersection_density
+    )
+
+    utilities = np.column_stack([u_auto, u_transit, u_walk, u_bike])
+    exp_u = np.exp(utilities - np.max(utilities, axis=1, keepdims=True))
+    shares = exp_u / np.sum(exp_u, axis=1, keepdims=True)
+    trips_by_mode = trips_outbound.reshape(-1, 1) * shares
+
+    return (
+        trips_by_mode[:, 0],
+        trips_by_mode[:, 1],
+        trips_by_mode[:, 2],
+        trips_by_mode[:, 3],
+        shares[:, 0],
+        shares[:, 1],
+        shares[:, 2],
+        shares[:, 3],
+    )
+
+
+# ══════════════════════════════════════════════════════════════════════
 #  VMT  (vmt.sql)
 # ══════════════════════════════════════════════════════════════════════
 
 
-@deal.pre(lambda trips_total, pop: np.all(trips_total >= 0))
-@deal.pre(lambda trips_total, pop: np.all(pop >= 0))
+@deal.pre(lambda auto_trips, avg_trip_length_km, pop: np.all(auto_trips >= 0))
+@deal.pre(lambda auto_trips, avg_trip_length_km, pop: np.all(avg_trip_length_km >= 0))
+@deal.pre(lambda auto_trips, avg_trip_length_km, pop: np.all(pop >= 0))
 @deal.post(lambda result: np.all(result[0] >= 0))  # vmt_total
 @deal.post(lambda result: np.all(result[1] >= 0))  # vmt_per_capita
 @deal.post(lambda result: np.all(result[2] >= 0))  # avg_trip_length_mi
-@deal.post(
-    lambda result: np.all(
-        (result[1] == 0)
-        | (
-            np.abs(result[1] * result[3] - result[0]) < 1e-6
-        )  # per_capita * pop ≈ vmt_total
-    )
-)
+@deal.post(lambda result: np.all(result[3] >= 0))  # auto_trips
+@deal.post(lambda result: np.all(result[0] >= result[3] * result[2]))  # vmt >= trips*mi
 def compute_vmt(
-    trips_total: np.ndarray,
+    auto_trips: np.ndarray,
+    avg_trip_length_km: np.ndarray,
     population: np.ndarray,
-    mode_share_auto: float = 0.85,
-    avg_trip_length_mi: float = 5.0,
     circuity_factor: float = 1.2,
 ) -> tuple[np.ndarray, np.ndarray, np.ndarray, np.ndarray]:
-    """SQL: ``vmt`` — vehicle miles traveled, computed directly from trip
-    generation using a fixed auto mode share and average trip length (no
-    mode choice / trip distribution sub-models).
+    """SQL: ``vmt`` — vehicle miles traveled from mode-choice auto trips and the
+    trip-distribution average trip length.
+
+    ``avg_trip_length_km`` is converted to miles with the km -> mi constant the
+    SQL model hardcodes; ``vmt_total`` is then trips x miles x circuity.
 
     Returns (vmt_total, vmt_per_capita, avg_trip_length_mi, auto_trips).
     """
-    auto_trips = trips_total * mode_share_auto
-    vmt = auto_trips * avg_trip_length_mi * circuity_factor
+    auto_trips = np.asarray(auto_trips, dtype=float)
+    avg_trip_length_km = np.asarray(avg_trip_length_km, dtype=float)
+    vmt = auto_trips * avg_trip_length_km * _MI_PER_KM * circuity_factor
     vmt_per_cap = np.where(population > 0, vmt / population, 0.0)
-    trip_len_mi = np.full_like(np.asarray(trips_total, dtype=float), avg_trip_length_mi)
+    trip_len_mi = avg_trip_length_km * _MI_PER_KM
     return vmt, vmt_per_cap, trip_len_mi, auto_trips
 
 

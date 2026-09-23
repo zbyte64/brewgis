@@ -26,8 +26,12 @@ MODULE_DEPENDENCIES: dict[str, list[str]] = {
     "fiscal": ["core"],
     "agriculture": ["core"],
     "trip_generation": ["core"],
-    "vmt": ["trip_generation"],
+    "trip_distribution": ["trip_generation"],
+    "mode_choice": ["trip_distribution"],
+    "vmt": ["mode_choice", "trip_distribution"],
     "transport_ghg": ["vmt"],
+    "internal_capture": ["trip_distribution"],
+    "physical_activity": ["mode_choice", "trip_distribution"],
     "building_water_ghg": ["energy_demand", "water_demand"],
     "total_ghg": ["transport_ghg", "building_water_ghg"],
     "health_impacts": ["physical_activity", "transport_ghg"],
@@ -75,8 +79,12 @@ MODULE_RESULT_TABLES: dict[str, list[str]] = {
     ],
     "agriculture": ["agriculture"],
     "trip_generation": ["trip_generation"],
+    "trip_distribution": ["trip_distribution"],
+    "mode_choice": ["mode_choice"],
     "vmt": ["vmt"],
     "transport_ghg": ["transport_ghg"],
+    "internal_capture": ["internal_capture"],
+    "physical_activity": ["physical_activity"],
     "building_water_ghg": ["building_water_ghg"],
     "total_ghg": ["total_ghg"],
     "health_impacts": ["health_impacts"],
@@ -112,8 +120,12 @@ MODULE_SQLMESH_SELECTORS: dict[str, list[str]] = {
     ],
     "agriculture": ["agriculture"],
     "trip_generation": ["trip_generation"],
+    "trip_distribution": ["trip_distribution"],
+    "mode_choice": ["mode_choice"],
     "vmt": ["vmt"],
     "transport_ghg": ["transport_ghg"],
+    "internal_capture": ["internal_capture"],
+    "physical_activity": ["physical_activity"],
     "building_water_ghg": ["building_water_ghg"],
     "total_ghg": ["total_ghg"],
     "health_impacts": ["health_impacts"],
@@ -140,8 +152,12 @@ MODULE_LABELS: dict[str, str] = {
     "fiscal": "Fiscal Impact",
     "agriculture": "Agriculture",
     "trip_generation": "Trip Generation",
+    "trip_distribution": "Trip Distribution",
+    "mode_choice": "Mode Choice",
     "vmt": "VMT",
     "transport_ghg": "Transportation GHG",
+    "internal_capture": "Internal Capture",
+    "physical_activity": "Physical Activity",
     "building_water_ghg": "Buildings & Water GHG",
     "total_ghg": "Total GHG Emissions",
     "health_impacts": "Health Impacts",
@@ -193,13 +209,29 @@ MODULE_DESCRIPTIONS: dict[str, str] = {
     "trip_generation": (
         "Computes daily trip generation per parcel from ITE trip rates by land use."
     ),
+    "trip_distribution": (
+        "Distributes parcel trips to destinations with a gravity model: outbound, "
+        "inbound and internal trips plus average trip length."
+    ),
+    "mode_choice": (
+        "Splits outbound trips across auto, transit, walk and bike with a "
+        "multinomial logit model."
+    ),
     "vmt": (
-        "Computes vehicle miles traveled per parcel from trip generation, "
-        "auto mode share, and average trip length."
+        "Computes vehicle miles traveled per parcel from mode-choice auto trips "
+        "and the trip-distribution average trip length."
     ),
     "transport_ghg": (
         "Computes transportation greenhouse gas emissions (CO2e) from "
         "vehicle miles traveled."
+    ),
+    "internal_capture": (
+        "Estimates the share of parcel trips staying inside the study area vs. "
+        "crossing its boundary."
+    ),
+    "physical_activity": (
+        "Estimates walking and cycling MET-hours from active-mode trips and "
+        "trip distances."
     ),
     "building_water_ghg": (
         "Computes greenhouse gas emissions from building energy use and "
@@ -280,6 +312,10 @@ TABLE_PRIMARY_COLUMN: dict[str, str] = {
     "vmt_fee": "fee_revenue_total",
     "vmt": "vmt_total",
     "trip_generation": "trips_total",
+    "trip_distribution": "trips_outbound",
+    "mode_choice": "trips_auto",
+    "internal_capture": "internal_capture_pct",
+    "physical_activity": "total_met_hours",
     "fiscal_net_impact": "net_fiscal_impact",
     "fiscal_property_tax": "property_tax_revenue",
     "fiscal_sales_tax": "sales_tax_revenue",
@@ -482,11 +518,14 @@ ANALYSIS_PARAMETERS: tuple[AnalysisParameter, ...] = (
     AnalysisParameter("transport_hbo_pct", 0.42, "float", ("trip_generation",)),
     AnalysisParameter("transport_nhb_pct", 0.40, "float", ("trip_generation",)),
     # VMT
-    AnalysisParameter("transport_mode_share_auto", 0.85, "float", ("vmt",)),
-    AnalysisParameter("transport_avg_trip_length_mi", 5.0, "float", ("vmt",)),
     AnalysisParameter("transport_circuity_factor", 1.2, "float", ("vmt",)),
-    AnalysisParameter("transport_study_area_geometry", "", "str", ("vmt",)),
-    AnalysisParameter("transport_intrazonal_friction", 0.15, "float", ("vmt",)),
+    # Internal capture
+    AnalysisParameter(
+        "transport_study_area_geometry", "", "str", ("internal_capture",)
+    ),
+    AnalysisParameter(
+        "transport_intrazonal_friction", 0.15, "float", ("internal_capture",)
+    ),
     # Transport GHG
     AnalysisParameter("transport_ghg_co2_per_mile", 0.411, "float", ("transport_ghg",)),
     AnalysisParameter(
@@ -507,11 +546,12 @@ ANALYSIS_PARAMETERS: tuple[AnalysisParameter, ...] = (
     AnalysisParameter(
         "ghg_liters_per_million_gallons", 3785411.78, "float", ("building_water_ghg",)
     ),
-    # Health impacts (incl. its physical_activity dependency's params)
-    AnalysisParameter("health_walk_met", 3.5, "float", ("health_impacts",)),
-    AnalysisParameter("health_bike_met", 6.0, "float", ("health_impacts",)),
-    AnalysisParameter("health_walk_speed_kmh", 4.8, "float", ("health_impacts",)),
-    AnalysisParameter("health_bike_speed_kmh", 16.0, "float", ("health_impacts",)),
+    # Physical activity (the module health_impacts depends on)
+    AnalysisParameter("health_walk_met", 3.5, "float", ("physical_activity",)),
+    AnalysisParameter("health_bike_met", 6.0, "float", ("physical_activity",)),
+    AnalysisParameter("health_walk_speed_kmh", 4.8, "float", ("physical_activity",)),
+    AnalysisParameter("health_bike_speed_kmh", 16.0, "float", ("physical_activity",)),
+    # Health impacts
     AnalysisParameter(
         "health_heat_mortality_reduction_pct", 8.0, "float", ("health_impacts",)
     ),

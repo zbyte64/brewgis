@@ -16,11 +16,48 @@ import pytest
 from django.db import connection
 
 from brewgis.sqlmesh.macros.analysis_blueprints import _drop_inherited_connection
+from brewgis.sqlmesh.macros.analysis_blueprints import _parcel_key_type
 from brewgis.sqlmesh.macros.analysis_blueprints import analysis_blueprint_profiles
 from brewgis.workspace.analysis.module_registry import ANALYSIS_PARAMETERS
 from tests.factories import AnalysisRunFactory
 from tests.factories import ScenarioFactory
 from tests.factories import WorkspaceFactory
+
+
+class TestParcelKeyType:
+    """The parcel-key column type a scenario's models declare.
+
+    It has to come from the scenario's own parcel source: the demo regions key
+    parcels on the assessor APN (text) while the legacy base canvas keys them on
+    a numeric id, and a model that declares the wrong one fails its first insert
+    and cannot join the rest of the scenario's models.
+    """
+
+    @pytest.fixture
+    def parcel_tables(self, db):
+        from django.db import connection
+
+        with connection.cursor() as cursor:
+            cursor.execute("DROP SCHEMA IF EXISTS key_type_probe CASCADE")
+            cursor.execute("CREATE SCHEMA key_type_probe")
+            cursor.execute(
+                "CREATE TABLE key_type_probe.parcels "
+                "(parcel_id varchar(20), apn bigint)"
+            )
+        yield
+        with connection.cursor() as cursor:
+            cursor.execute("DROP SCHEMA IF EXISTS key_type_probe CASCADE")
+
+    def test_reads_a_text_key(self, parcel_tables):
+        assert _parcel_key_type("key_type_probe.parcels", {}) == "TEXT"
+
+    def test_reads_a_numeric_key(self, parcel_tables):
+        assert (
+            _parcel_key_type("key_type_probe.parcels", {"parcel_id": "apn"}) == "BIGINT"
+        )
+
+    def test_unknown_table_falls_back_to_text(self, db):
+        assert _parcel_key_type("no_such_schema.no_such_table", {}) == "TEXT"
 
 
 class TestScenarioProfiles:
@@ -38,7 +75,7 @@ class TestScenarioProfiles:
         """Every parameter is baked into the profile — the scenario's own value
         where it has one, the declared default otherwise — so the rendered model
         is self-contained rather than reading a config variable."""
-        analyzed_scenario.analysis_params = {"transport_avg_trip_length_mi": 9.87}
+        analyzed_scenario.analysis_params = {"transport_circuity_factor": 1.35}
         analyzed_scenario.save(update_fields=["analysis_params"])
 
         (profile,) = [
@@ -48,8 +85,8 @@ class TestScenarioProfiles:
         ]
 
         assert {param.name for param in ANALYSIS_PARAMETERS} <= set(profile)
-        assert profile["transport_avg_trip_length_mi"] == 9.87
-        assert profile["transport_circuity_factor"] == 1.2
+        assert profile["transport_circuity_factor"] == 1.35
+        assert profile["transport_intrazonal_friction"] == 0.15
         assert profile["model_table"] == "vmt"
 
 

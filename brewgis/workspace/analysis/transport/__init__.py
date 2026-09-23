@@ -1,17 +1,19 @@
-"""
-Transport model runners have been consolidated into SQLMesh Python models.  The
-pure computation functions (``_gravity_model``, ``_multinomial_logit``) live
-in ``brewgis/sqlmesh/models/python/trip_distribution.py`` and
-``brewgis/sqlmesh/models/python/mode_choice.py`` respectively, and are re-exported
-here for test use.
+"""Transport analysis pure-function re-exports.
+
+The gravity model's math lives in
+``brewgis/sqlmesh/models/python/_gravity_model.py`` — a module with no
+blueprint machinery, so a unit test can import it without a database — and is
+re-exported here for test use.
+
+Mode choice is a blueprinted SQL model
+(``brewgis/sqlmesh/models/analysis/transport/mode_choice.sql``), not a Python
+function, and the SQLMesh model that runs this gravity model
+(``brewgis/sqlmesh/models/python/trip_distribution.py``) is deliberately not
+imported here: importing it reads the scenario profiles from the database.
 """
 
 from __future__ import annotations
 
-from brewgis.sqlmesh.models.python.mode_choice import _multinomial_logit
-from brewgis.sqlmesh.models.python.trip_distribution import _gravity_model
+from brewgis.sqlmesh.models.python._gravity_model import _gravity_model
 
-__all__ = [
-    "_gravity_model",
-    "_multinomial_logit",
-]
+__all__ = ["_gravity_model"]

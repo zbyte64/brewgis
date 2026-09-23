@@ -95,26 +95,35 @@ class TestAnalysisModuleForm(TestCase):
         vmt_form = AnalysisModuleForm(
             workspace=self.workspace, scenario=self.scenario, module="vmt"
         )
-        for name in (
-            "transport_mode_share_auto",
-            "transport_avg_trip_length_mi",
-            "transport_circuity_factor",
-            "transport_study_area_geometry",
-            "transport_intrazonal_friction",
-        ):
-            assert name in vmt_form.fields
+        assert "transport_circuity_factor" in vmt_form.fields
         assert "crop_yield_per_acre" not in vmt_form.fields
+        # The study-area boundary and friction belong to the internal-capture
+        # model that reads them, not to vmt, whose chain does not include it.
+        assert "transport_study_area_geometry" not in vmt_form.fields
+        assert "transport_intrazonal_friction" not in vmt_form.fields
+
+    def test_internal_capture_form_shows_its_own_parameters(self):
+        """internal_capture's form exposes the study-area inputs its model reads."""
+        form = AnalysisModuleForm(
+            workspace=self.workspace, scenario=self.scenario, module="internal_capture"
+        )
+        assert "transport_study_area_geometry" in form.fields
+        assert "transport_intrazonal_friction" in form.fields
+        assert "transport_circuity_factor" not in form.fields
 
     def test_parameter_fields_initialize_from_the_scenario(self):
         """Reopening a form shows the scenario's stored value, not the default."""
-        self.scenario.analysis_params = {"transport_avg_trip_length_mi": 9.87}
+        self.scenario.analysis_params = {"transport_circuity_factor": 1.35}
         self.scenario.save(update_fields=["analysis_params"])
         form = AnalysisModuleForm(
             workspace=self.workspace, scenario=self.scenario, module="vmt"
         )
-        assert form.fields["transport_avg_trip_length_mi"].initial == 9.87
+        assert form.fields["transport_circuity_factor"].initial == 1.35
         # An unset parameter falls back to its registry default.
-        assert form.fields["transport_circuity_factor"].initial == 1.2
+        capture_form = AnalysisModuleForm(
+            workspace=self.workspace, scenario=self.scenario, module="internal_capture"
+        )
+        assert capture_form.fields["transport_intrazonal_friction"].initial == 0.15
 
     @patch(
         "brewgis.workspace.views.analysis.check_analysis_prerequisites", return_value=[]
@@ -125,27 +134,27 @@ class TestAnalysisModuleForm(TestCase):
         alt_scenario = ScenarioFactory(
             workspace=self.workspace, scenario_type=ScenarioType.ALTERNATIVE
         )
-        vmt_form = AnalysisModuleForm(
+        capture_form = AnalysisModuleForm(
             {
                 "scenario": alt_scenario.pk,
-                "transport_mode_share_auto": 0.4,
+                "transport_intrazonal_friction": 0.4,
             },
             workspace=self.workspace,
             scenario=alt_scenario,
-            module="vmt",
+            module="internal_capture",
         )
-        assert vmt_form.is_valid(), vmt_form.errors
-        vmt_form.apply_scenario_params(alt_scenario)
+        assert capture_form.is_valid(), capture_form.errors
+        capture_form.apply_scenario_params(alt_scenario)
 
         alt_scenario.refresh_from_db()
         assert alt_scenario.analysis_params == {
-            "transport_mode_share_auto": 0.4,
+            "transport_intrazonal_friction": 0.4,
             # A str parameter's empty value *is* its "unset" value, so it is
             # stored as-is rather than discarded like an empty number.
             "transport_study_area_geometry": "",
         }
 
-        # A *different* module's run must not erase the vmt values just stored.
+        # A *different* module's run must not erase the values just stored.
         crop_form = AnalysisModuleForm(
             {
                 "scenario": alt_scenario.pk,
@@ -160,7 +169,7 @@ class TestAnalysisModuleForm(TestCase):
 
         alt_scenario.refresh_from_db()
         assert alt_scenario.analysis_params == {
-            "transport_mode_share_auto": 0.4,
+            "transport_intrazonal_friction": 0.4,
             "transport_study_area_geometry": "",
             "crop_yield_per_acre": 11.5,
         }

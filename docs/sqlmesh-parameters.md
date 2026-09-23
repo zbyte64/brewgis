@@ -92,8 +92,9 @@ via the `**variables` dict when calling `config_factory()` or via plan overrides
 | `transport_circuity_factor` | `1.2` | vmt | Road network directness factor |
 | `transport_ghg_co2_per_mile` | `0.411` | transport_ghg | kg CO2e/mi (EPA fleet average) |
 | `transport_ghg_speed_adjust` | `False` | transport_ghg | Enable speed-based emission adjustment (+15%) |
+| `transport_study_area_geometry` | `''` | internal_capture | WKT polygon defining the study area ('' = all parcels internal) |
 | `transport_intrazonal_friction` | `0.15` | internal_capture | Intrazonal trip friction (0=no penalty, 1=max) |
-| `transport_km_to_mi` | `0.621371` | vmt | km→mi conversion (physical constant) |
+| `transport_km_to_mi` | `0.621371` | — | km→mi conversion. Dead config variable: the conversion is a physical constant hardcoded in `vmt.sql` and in the reference implementations |
 
 ### 1.9 GHG / Energy
 
@@ -366,31 +367,53 @@ that were historically the most frequently tuned values during validation.
 
 ## 3. Python Model Parameters
 
-### 3.1 `trip_distribution.py` — Gravity Model
+### 3.1 `_gravity_model.py` — Gravity Model (T2 trip distribution)
 
 | Parameter | Default | `_gravity_model()` | Purpose |
 |---|---|---|---|
 | `b` | `2.0` | keyword arg | Distance decay exponent |
 | `emp_weight` | `1.0` | keyword arg | Employment attraction weight |
 | `du_weight` | `0.5` | keyword arg | Dwelling unit attraction weight |
-| `MIN_DIST` | `1e-10` | local constant | Minimum distance to avoid division-by-zero |
-| `BATCH_SIZE` | `2000` | module constant | Batch processing size |
+| `_MIN_DIST` | `1e-10` | module constant | Distances at or below this are self-flows |
+
+The math lives in `models/python/_gravity_model.py`; the SQLMesh model that
+calls it is `models/python/trip_distribution.py` (it is blueprinted, so it reads
+the scenario profiles at import — the pure function is separate so it can be
+imported and unit-tested without a database).
+
+Distances are Euclidean between parcel centroids **projected to `local_srid`**
+(CA Albers, EPSG:3310), so `avg_trip_length_km` is kilometres and the models
+that scale by it (`vmt`, `physical_activity`) are in the units they claim. The
+scenario geometry itself is EPSG:4326, whose coordinates are degrees — taking
+the distance there understates trip length by a factor of ~111.
+
+Origins are distributed in batches (`_BATCH_ELEMENTS`, 4,000,000 elements of one
+origin batch's distance matrix ~ 32 MB per temporary): the demo regions have
+~213k parcels, whose whole N×N matrix would need terabytes, and the batched
+result is bit-identical to building it in one piece (see
+`tests/test_trip_distribution.py`). `BATCH_SIZE` and the dbt-era
+`transport_distance_source` network-distance branch are gone — the network
+distance preprocessor is not wired into any pipeline.
 
 **History**: These were carried forward from the dbt-era Python model and have
 not been formally calibrated. The `b=2.0` exponent is a standard gravity-model
 default, and the `emp_weight`/`du_weight` ratio is derived from trip generation
 attraction factors without local calibration.
 
-### 3.2 `mode_choice.py` — Multinomial Logit
+### 3.2 `mode_choice.sql` — Multinomial Logit (T3)
 
-| Parameter | Default | `_multinomial_logit()` | Purpose |
+| Parameter | Default | SQL literal in `mode_choice.sql` | Purpose |
 |---|---|---|---|
-| `asc_transit` | `-2.0` | keyword arg | Alternative-specific constant (transit) |
-| `asc_walk` | `-1.5` | keyword arg | ASC (walk) |
-| `asc_bike` | `-2.5` | keyword arg | ASC (bike) |
-| `beta_density` | `0.15` | keyword arg | Density sensitivity coefficient |
-| `beta_design_walk` | `0.05` | keyword arg | Walkability/intersection density sensitivity |
-| `beta_transit_dist` | `0.02` | keyword arg | Transit access sensitivity |
+| `asc_transit` | `-2.0` | `-2.0` | Alternative-specific constant (transit) |
+| `asc_walk` | `-1.5` | `-1.5` | ASC (walk) |
+| `asc_bike` | `-2.5` | `-2.5` | ASC (bike) |
+| `beta_density` | `0.15` | `0.15` | Density sensitivity coefficient |
+| `beta_design_walk` | `0.05` | `0.05` | Walkability/intersection density sensitivity |
+| `beta_transit_dist` | `0.02` | `0.02` | Transit access sensitivity |
+
+Mode choice is element-wise (a per-parcel logit, no cross-parcel aggregation),
+so it is a plain SQL model rather than a Python one. Auto is the reference
+alternative (`u_auto = 0`).
 
 **History**: These are **untuned literature defaults** from standard travel
 demand models (not calibrated to Sacramento region). They are high-priority
@@ -543,8 +566,8 @@ at aggregate and distributional levels. Key diagnostic metrics:
 | Building area imputation | `base_canvas_combined.sql` (GREATEST floors, multipliers) |
 | Dasymetric weight fallbacks | `parcel_dasymetric_weights.sql` (lot fractions, int-density divisor) |
 | Sigmoid SL/LL split | `parcel_bft_tier0_landuse.sql` (0.04 steepness, 225 midpoint) |
-| Gravity model parameters | `models/python/trip_distribution.py` (b, emp_weight, du_weight) |
-| Mode choice coefficients | `models/python/mode_choice.py` (asc_*, beta_*) |
+| Gravity model parameters | `models/python/_gravity_model.py` (b, emp_weight, du_weight) |
+| Mode choice coefficients | `models/analysis/transport/mode_choice.sql` (asc_*, beta_*) |
 | Per-category defaults | `seeds/calibration_parameters.csv` |
 | Dasymetric weights per category | `seeds/dasymetric_weights.csv` |
 | KNN imputation parameters | `parcel_bft_tier3_knn.sql`, `parcel_footprint_imputed.sql` |

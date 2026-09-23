@@ -84,9 +84,15 @@ def region_blueprints(evaluator) -> list[exp.Expr]:
     Models reference only the variables they need (e.g. ``@{region}``); SQLMesh
     drops unreferenced blueprint variables, so emitting the full profile per
     region leaves each model's data_hash unchanged.
+
+    The profiles are returned inside one enclosing tuple because SQLMesh only
+    wraps a *multi-element* rendered list itself: with a single region, a bare
+    list would be read as that region's individual variables, producing one
+    model per variable instead of one per region (see
+    ``analysis_blueprints.analysis_blueprints``).
     """
     profiles = region_profiles()
-    return [
+    entries = [
         sqlglot.parse_one(
             "("
             + ", ".join(
@@ -98,3 +104,4 @@ def region_blueprints(evaluator) -> list[exp.Expr]:
         )
         for region in REGIONS
     ]
+    return [exp.Tuple(expressions=entries)]

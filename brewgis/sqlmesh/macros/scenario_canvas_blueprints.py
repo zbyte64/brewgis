@@ -212,9 +212,12 @@ def scenario_canvas_blueprints(evaluator) -> list[exp.Expr]:
     which consumes ``scenario_canvas_profiles()`` as dicts directly — keeping
     the column list and the pivot's scenario id in their native Python types.
     Kept as the SQL-model counterpart so a ``scenario_canvas.sql`` model can be
-    swapped in without re-deriving the profiles.
+    swapped in without re-deriving the profiles. Like the other blueprint macros
+    it returns its entries inside one enclosing tuple — a bare single-element
+    list would be read as that profile's individual variables (see
+    ``analysis_blueprints.analysis_blueprints``).
     """
-    return [
+    entries = [
         sqlglot.parse_one(
             "("
             + ", ".join(
@@ -225,3 +228,4 @@ def scenario_canvas_blueprints(evaluator) -> list[exp.Expr]:
         )
         for profile in scenario_canvas_profiles()
     ]
+    return [exp.Tuple(expressions=entries)]

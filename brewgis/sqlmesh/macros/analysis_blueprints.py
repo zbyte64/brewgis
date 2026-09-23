@@ -64,8 +64,59 @@ _LOGGER_NAME = __name__
 # Profile keys whose value names an object rather than a literal, rendered as a
 # bare identifier — the form ``region_blueprints`` uses for ``region`` (they are
 # interpolated into object names, e.g. ``brewgis.@{scenario_schema}.<model>``,
-# where a quoted literal would become part of the identifier).
-_IDENTIFIER_VARS = {"scenario_schema", "result_schema", "model_table"}
+# where a quoted literal would become part of the identifier). ``parcel_key_type``
+# is a bare SQL *token* for the same reason: it is a Python model's column type
+# (SQLMesh renders an ``@``-bearing column type per blueprint and parses the
+# result, so a quoted literal would not parse as a type).
+_IDENTIFIER_VARS = {
+    "scenario_schema",
+    "result_schema",
+    "model_table",
+    "parcel_key_type",
+}
+
+# Postgres column type -> the type a model declares for the parcel key. The key
+# is whatever the scenario's parcel source keys on, and the demo regions do not
+# agree: the assessor APN is ``varchar`` while the legacy ``public.base_canvas``
+# and ``sacog.base_canvas_reconciled`` key on a numeric id. A model that declares
+# the wrong one cannot join the rest of its scenario's models (Postgres has no
+# text = integer operator), so the type travels in the blueprint.
+_PARCEL_KEY_TYPES = {
+    "character varying": "TEXT",
+    "text": "TEXT",
+    "integer": "INT",
+    "bigint": "BIGINT",
+    "smallint": "SMALLINT",
+    "numeric": "DOUBLE",
+    "double precision": "DOUBLE",
+    "real": "FLOAT",
+}
+
+
+def _parcel_key_type(base_table: str, column_mapping: dict[str, str]) -> str:
+    """The SQL type *base_table* keys its parcels on, as a model column type.
+
+    ``column_mapping`` is the scenario's canonical-name override: a scenario may
+    take its parcel id from a source column named something else.
+
+    Falls back to TEXT when the table or column is not found — the assessor APN
+    is the common case, and a wrong guess is not silent: the model's first insert
+    casts the key and fails.
+    """
+    from django.db import connection
+
+    column = column_mapping.get("parcel_id", "parcel_id")
+    schema, _, table = base_table.partition(".")
+    with connection.cursor() as cursor:
+        cursor.execute(
+            "SELECT data_type FROM information_schema.columns "
+            "WHERE table_schema = %s AND table_name = %s AND column_name = %s",
+            [schema, table, column],
+        )
+        row = cursor.fetchone()
+    if row is None:
+        return "TEXT"
+    return _PARCEL_KEY_TYPES.get(row[0], "TEXT")
 
 
 def _canvas_model_fqns() -> dict[int, str]:
@@ -229,6 +280,9 @@ def _scenario_profiles() -> list[dict[str, Any]]:
             "scenario_schema": f"{MODEL_SCHEMA_PREFIX}{scenario.pk}",
             "result_schema": RESULT_SCHEMA_TEMPLATE.format(pk=scenario.pk),
             "parcel_table": parcel_table,
+            "parcel_key_type": _parcel_key_type(
+                base_table, scenario.column_mapping or {}
+            ),
             "built_form_table": f"{workspace.db_schema}.built_forms",
             "base_canvas_table": base_table,
             "constraints": scenario.constraints,
@@ -313,8 +367,19 @@ def analysis_blueprints(evaluator, model_name: str) -> list[exp.Expr]:
     ``blueprints @analysis_blueprints('core_end_state')`` — the argument is the
     model's own bare name, which becomes its blueprint's ``model_table`` and so
     the name of the result view published over it.
+
+    The profiles are returned inside **one** enclosing tuple, and that matters:
+    SQLMesh reads a macro's rendered result as a list of expressions and only
+    wraps a *multi-element* list itself (``if len(rendered_blueprints) > 1``),
+    then treats whatever is left as the blueprints. A bare list of one profile
+    therefore degenerates — the loader sees that profile's individual
+    ``name := value`` pairs as blueprints, giving one model per *variable*,
+    each named ``brewgis.public.@{model_table}`` (``scenario_schema`` falls back
+    to the config default, ``model_table`` stays unrendered) and colliding with
+    every other analysis model: "Duplicate SQL model name". Wrapping makes the
+    shape identical for one scenario and for many.
     """
-    return [
+    profiles = [
         sqlglot.parse_one(
             "("
             + ", ".join(
@@ -326,3 +391,4 @@ def analysis_blueprints(evaluator, model_name: str) -> list[exp.Expr]:
         )
         for profile in analysis_blueprint_profiles(model_name)
     ]
+    return [exp.Tuple(expressions=profiles)]

@@ -16,6 +16,7 @@ from tests.dbt_math.reference import compute_building_water_ghg
 from tests.dbt_math.reference import compute_energy_demand
 from tests.dbt_math.reference import compute_impervious_surface
 from tests.dbt_math.reference import compute_internal_capture
+from tests.dbt_math.reference import compute_mode_choice
 from tests.dbt_math.reference import compute_physical_activity
 from tests.dbt_math.reference import compute_property_tax
 from tests.dbt_math.reference import compute_service_costs
@@ -120,6 +121,18 @@ def _ic_data(draw):
     )
 
 
+@st.composite
+def _mc_data(draw):
+    """Mode-choice inputs: outbound trips, density, intersection density, transit access."""
+    n = draw(st.integers(min_value=1, max_value=10))
+    return (
+        draw(_fa(n, 0, 50000)),
+        draw(_fa(n, 0, 2000)),
+        draw(_fa(n, 0, 500)),
+        draw(_fa(n, 0, 1)),
+    )
+
+
 # ══════════════════════════════════════════════════════════════════════
 #  Fiscal — Property Tax
 # ══════════════════════════════════════════════════════════════════════
@@ -188,21 +201,70 @@ def test_impervious_surface(quint):
 
 
 # ══════════════════════════════════════════════════════════════════════
+#  Mode Choice
+# ══════════════════════════════════════════════════════════════════════
+
+
+@pytest.mark.slow
+@given(_mc_data())
+@_N_HYPOTHESIS
+def test_mode_choice_shares_sum_to_one(data):
+    trips, density, intersection_density, transit_access = data
+    auto, transit, walk, bike, s_auto, s_transit, s_walk, s_bike = compute_mode_choice(
+        trips, density, intersection_density, transit_access
+    )
+    # The softmax always partitions the outbound trips across the four modes.
+    assert np.allclose(s_auto + s_transit + s_walk + s_bike, 1.0, atol=1e-9)
+    assert np.all(s_auto >= 0) and np.all(s_transit >= 0)
+    assert np.all(s_walk >= 0) and np.all(s_bike >= 0)
+    assert np.allclose(auto + transit + walk + bike, trips, atol=1e-6)
+
+
+@pytest.mark.slow
+@given(
+    st.lists(st.floats(0.0, 2000.0, allow_nan=False), min_size=2, max_size=10).map(
+        lambda values: np.array(values, dtype=float)
+    )
+)
+@_N_HYPOTHESIS
+def test_mode_choice_density_favours_active_modes(density):
+    """Higher density raises the walk share and lowers the auto share.
+
+    Only the walk/bike utilities carry a positive density coefficient, so the
+    reference alternative loses share as density grows — with intersection
+    density and transit access held equal, which is what makes the shares
+    directly comparable across the draws.
+    """
+    n = len(density)
+    trips = np.full(n, 100.0)
+    intersection_density = np.full(n, 10.0)
+    transit_access = np.zeros(n)
+    _, _, _, _, s_auto, _, s_walk, _ = compute_mode_choice(
+        trips, density, intersection_density, transit_access
+    )
+    order = np.argsort(density, kind="stable")
+    assert np.all(np.diff(s_auto[order]) <= 1e-12)
+    assert np.all(np.diff(s_walk[order]) >= -1e-12)
+
+
+# ══════════════════════════════════════════════════════════════════════
 #  VMT
 # ══════════════════════════════════════════════════════════════════════
 
 
 @pytest.mark.slow
-@given(_pair(0, 50000, 0, 15000))
+@given(_triple(0, 50000, 0, 100.0, 0, 15000))
 @_N_HYPOTHESIS
-def test_vmt_formulas(pair):
-    trips_total, pop = pair
-    vmt, vmt_pc, trip_mi, auto_trips = compute_vmt(trips_total, pop)
+def test_vmt_formulas(triple):
+    auto_trips, avg_trip_length_km, pop = triple
+    vmt, vmt_pc, trip_mi, auto_out = compute_vmt(auto_trips, avg_trip_length_km, pop)
     assert np.all(vmt >= 0)
     assert np.all(vmt_pc >= 0)
     assert np.all(trip_mi >= 0)
-    assert np.allclose(trip_mi, 5.0, atol=1e-6)
-    assert np.allclose(auto_trips, trips_total * 0.85, atol=1e-6)
+    # Trip length is only converted; auto trips pass through unchanged.
+    assert np.allclose(trip_mi, avg_trip_length_km * 0.621371, atol=1e-9)
+    assert np.allclose(auto_out, auto_trips, atol=1e-9)
+    assert np.allclose(vmt, auto_trips * trip_mi * 1.2, atol=1e-3)
     mask = pop > 0
     if np.any(mask):
         assert np.allclose(vmt[mask] / pop[mask], vmt_pc[mask], atol=1e-6)
@@ -425,7 +487,8 @@ def test_all_refs_handle_empty_input():
     cases = [
         ("property_tax", lambda: compute_property_tax(e, e)),
         ("service_costs", lambda: compute_service_costs(e, e, e)),
-        ("vmt", lambda: compute_vmt(e, e)),
+        ("mode_choice", lambda: compute_mode_choice(e, e, e, e)),
+        ("vmt", lambda: compute_vmt(e, e, e)),
         ("transport_ghg", lambda: compute_transport_ghg(e, e)),
         ("impervious", lambda: compute_impervious_surface(e, e, e, e, e)),
         ("physical_activity", lambda: compute_physical_activity(e, e, e, e, e)),
