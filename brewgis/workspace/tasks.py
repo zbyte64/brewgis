@@ -650,11 +650,16 @@ def run_paint_operation(self, run_pk: int) -> dict:  # type: ignore[no-untyped-d
     default_retry_delay=10,
     # A run loads the entire SQLMesh project before it plans anything —
     # measured at 25s of parse/render alone on the 293-model project — and the
-    # plan that follows materializes every selected model. That is well past
-    # the global CELERY_TASK_SOFT_TIME_LIMIT (60s), which a run would otherwise
-    # be killed by before its first model ran, so this task carries its own.
-    soft_time_limit=300,
-    time_limit=900,
+    # plan that follows materializes every selected model plus whatever
+    # upstream model the scenario has never built (parcel ResNet features, the
+    # assessor ArcGIS fetch and NLCD parcel stats are minutes each). That is
+    # well past the global CELERY_TASK_SOFT_TIME_LIMIT (60s), which killed run
+    # 67 inside ``Context.load()`` before its first model ran, and past the
+    # 300s this task used to carry, which killed run 69 while its backfill was
+    # still building models — so the limits live in settings and are sized for
+    # a cold plan (see ANALYSIS_TASK_*_TIME_LIMIT).
+    soft_time_limit=settings.ANALYSIS_TASK_SOFT_TIME_LIMIT,
+    time_limit=settings.ANALYSIS_TASK_TIME_LIMIT,
 )
 def run_analysis_task(self, run_pk: int) -> None:  # type: ignore[no-untyped-def]
     """Execute a background AnalysisRun (SQLMesh plan for its modules).

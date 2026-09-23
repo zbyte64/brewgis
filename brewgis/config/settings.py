@@ -262,6 +262,15 @@ CELERY_TASK_SERIALIZER = "json"
 CELERY_RESULT_SERIALIZER = "json"
 CELERY_TASK_TIME_LIMIT = 5 * 60
 CELERY_TASK_SOFT_TIME_LIMIT = 60
+# An analysis run needs far longer than the globals above: it loads the whole
+# SQLMesh project before planning anything, and a scenario's first plan then
+# materializes every upstream model it has never built — parcel ResNet
+# features, the assessor ArcGIS fetch and NLCD parcel stats are minutes each.
+# `run_analysis_task` carries these instead (its predecessor, 300s, killed a
+# run whose backfill was still building models); raise them for a deployment
+# whose cold plans run longer still.
+ANALYSIS_TASK_SOFT_TIME_LIMIT = env.int("ANALYSIS_TASK_SOFT_TIME_LIMIT", default=1800)
+ANALYSIS_TASK_TIME_LIMIT = env.int("ANALYSIS_TASK_TIME_LIMIT", default=3600)
 CELERY_BEAT_SCHEDULER = "django_celery_beat.schedulers:DatabaseScheduler"
 CELERY_WORKER_SEND_TASK_EVENTS = True
 CELERY_TASK_SEND_SENT_EVENT = True

@@ -11,10 +11,12 @@ from __future__ import annotations
 from typing import Any
 
 import pytest
+from django.conf import settings
 
 from brewgis.workspace.analysis.pipeline import MissingAnalysisResultsError
 from brewgis.workspace.analysis.pipeline import run_analysis_pipeline
 from brewgis.workspace.analysis.pipeline import run_modules_sync
+from brewgis.workspace.tasks import run_analysis_task
 from tests.factories import ScenarioFactory
 from tests.factories import WorkspaceFactory
 
@@ -130,3 +132,22 @@ class TestFailedRunReportsCause:
 
         assert run.status == "failed"
         assert "vmt -> vmt" in run.failure_cause
+
+
+class TestTaskTimeLimits:
+    """A run must not be governed by the short global Celery limits.
+
+    A run loads the whole project before it plans anything and then
+    materializes whatever upstream model the scenario has never built
+    (ResNet features, the assessor ArcGIS fetch, NLCD parcel stats), so the
+    global 60s soft limit killed run 67 inside ``Context.load()`` and a 300s
+    soft limit killed run 69 while its backfill was still building models.
+    """
+
+    def test_run_limits_outlive_the_global_ones_and_stay_ordered(self) -> None:
+        assert run_analysis_task.soft_time_limit > settings.CELERY_TASK_SOFT_TIME_LIMIT
+        assert run_analysis_task.time_limit > settings.CELERY_TASK_TIME_LIMIT
+
+        # A hard limit at or below the soft one SIGKILLs the worker outright,
+        # leaving the run stuck at "running" with nothing recorded.
+        assert run_analysis_task.soft_time_limit < run_analysis_task.time_limit
