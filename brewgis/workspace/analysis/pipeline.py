@@ -25,6 +25,7 @@ from django.utils import timezone
 from brewgis.workspace.analysis import module_registry
 from brewgis.workspace.analysis.layer_registry import register_result_layer
 from brewgis.workspace.analysis.log_capture import capture_run_log
+from brewgis.workspace.analysis.log_capture import describe_run_failure
 from brewgis.workspace.analysis.log_capture import extract_plan_failure
 from brewgis.workspace.analysis.log_capture import truncate_log
 from brewgis.workspace.analysis.module_registry import (
@@ -168,7 +169,13 @@ def _execute_analysis_run(run: AnalysisRun) -> None:
                 # is no SQLMesh node to recover one from.
                 cause = str(exc)
             else:
-                cause = ""
+                # Neither: the run died before the plan started. SQLMesh
+                # renders every model while loading the project, so a macro
+                # that raises — or the task's time limit landing mid-render —
+                # fails the run with no plan node behind it and nothing in the
+                # log to scrape. The exception chain still carries the model
+                # and the reason.
+                cause = describe_run_failure(exc)
             # The plan's own traceback above names no model and no database
             # error, so log the recovered cause alongside it — that is the
             # difference between a worker log that says "failed" and one that

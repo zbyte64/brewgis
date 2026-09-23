@@ -82,10 +82,7 @@
                     {% if run.failure_cause %}
                       <pre class="mb-0 small" style="white-space: pre-wrap;">{{ run.failure_cause }}</pre>
                     {% else %}
-                      <p class="mb-0 small">
-                        SQLMesh reported a plan failure but no failing model could be recovered
-                        from its log output — see the Python traceback below.
-                      </p>
+                      <p class="mb-0 small">SQLMesh did not report which step failed — see the Python traceback below.</p>
                     {% endif %}
                   </div>
                 {% endif %}
@@ -115,7 +112,7 @@
                 {% if run.error_log %}
                   <details class="mt-3"
                            id="analysis-error-traceback"
-                           {% if run.status == "failed" and not run.log_output %}open{% endif %}>
+                           {% if run.status == "failed" %}open{% endif %}>
                     <summary class="text-muted" style="cursor: pointer;">Python traceback</summary>
                     <pre class="mt-2 p-2 bg-light border rounded small"
                          style="max-height: 400px;
@@ -126,7 +123,7 @@
                 {% if run.log_output %}
                   <details class="mt-3"
                            id="analysis-log-output"
-                           {% if run.status == "failed" %}open{% endif %}>
+                           {% if run.status == "failed" and not run.failure_cause %}open{% endif %}>
                     <summary class="text-muted" style="cursor: pointer;">SQLMesh log output</summary>
                     <pre class="mt-2 p-2 bg-light border rounded small"
                          style="max-height: 400px;

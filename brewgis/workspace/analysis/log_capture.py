@@ -5,6 +5,12 @@ Python's ``logging`` module when it isn't attached to an interactive
 terminal (as in a Celery worker or a web request) — its own top-level
 exception (``PlanError("Plan application failed.")``) discards the actual
 cause. Capturing this is the only way to recover *why* a plan failed.
+
+A run can also die *before* the plan, while SQLMesh renders the project —
+``Context.load()`` renders every model, so a macro that raises, or a task
+that hits its time limit mid-render, fails the run with no plan node behind
+it and therefore nothing in the log to scrape: ``describe_run_failure``
+recovers a cause from the exception chain instead.
 """
 
 from __future__ import annotations
@@ -14,8 +20,11 @@ import io
 import logging
 import re
 import threading
+from pathlib import Path
 from typing import TYPE_CHECKING
 from typing import NamedTuple
+
+from celery.exceptions import SoftTimeLimitExceeded
 
 if TYPE_CHECKING:
     from collections.abc import Iterator
@@ -56,6 +65,20 @@ _RECORD_PREFIX = re.compile(
 # PostgreSQL's own ``LINE 1:`` context does not match this shape.
 _EXCEPTION_LINE = re.compile(r"^([A-Za-z_][\w.]*): (.+)$")
 _SNAPSHOT_NAME = re.compile(r"snapshot_name='([^']+)'")
+
+# SQLMesh's ConfigError ends with the model file it failed on, the same
+# location its CLI prints — e.g. "... at '/app/brewgis/sqlmesh/models/
+# fresno/assessor_parcels_duckdb.sql'".
+_MODEL_LOCATION = re.compile(r"at '[^']*sqlmesh/models/(?P<rel>[\w/.-]+\.sql)'")
+# The model's own name, as declared in its MODEL DDL (``name a.b.c,``).
+_MODEL_DDL_NAME = re.compile(r"\bname\s+(?P<name>[A-Za-z_][\w.]*)\s*,", re.MULTILINE)
+# A render failure names the macro that raised, which the model file alone
+# doesn't identify (``arcgis_page_urls`` is called from several models).
+_MACRO_EVALUATION = re.compile(
+    r"An error occurred during evaluation of '(?P<macro>[^']+)'"
+)
+# Guard against a self-referential exception chain.
+_MAX_EXCEPTION_CHAIN = 20
 
 
 class _ThreadScopedHandler(logging.Handler):
@@ -197,3 +220,90 @@ def extract_plan_failure(log_text: str) -> PlanFailure | None:
             detail=_detail_from_record(record),
         )
     return None
+
+
+_MODELS_DIR = Path(__file__).resolve().parents[2] / "sqlmesh" / "models"
+"""The project's model tree — resolves the bare file name from the message."""
+
+
+def _exception_chain(exc: BaseException) -> list[BaseException]:
+    """*exc*, then whatever it was raised from, outermost first.
+
+    ``Context.load()`` wraps a render failure several layers deep
+    (``SchemaError`` around SQLMesh's ``ConfigError`` around the macro's own
+    ``MacroEvalError`` around the exception that actually stopped it), and the
+    model file only appears in the middle of that chain.
+    """
+    chain: list[BaseException] = []
+    seen: set[int] = set()
+    current: BaseException | None = exc
+    while (
+        current is not None
+        and id(current) not in seen
+        and len(chain) < _MAX_EXCEPTION_CHAIN
+    ):
+        chain.append(current)
+        seen.add(id(current))
+        current = current.__cause__ or current.__context__
+    return chain
+
+
+def _declared_model_name(rel_path: str) -> str:
+    """The name a project model file declares in its MODEL DDL, if any.
+
+    The file name alone is ambiguous (``assessor_parcels_duckdb.sql`` is the
+    model ``duckdb.fresno.assessor_parcels``); the declared name is what the
+    lineage view, the audits and the database call it.
+    """
+    try:
+        text = (_MODELS_DIR / rel_path).read_text(encoding="utf-8")
+    except OSError:
+        return ""
+    match = _MODEL_DDL_NAME.search(text)
+    return match.group("name") if match else ""
+
+
+def _describe_exception(exc: BaseException) -> str:
+    """One readable line for the innermost exception of a chain."""
+    if isinstance(exc, SoftTimeLimitExceeded):
+        return "task killed by the Celery soft time limit before it finished"
+    message = " ".join(str(exc).split())
+    if not message:
+        return type(exc).__name__
+    return f"{type(exc).__name__}: {message[:200]}"
+
+
+def describe_run_failure(exc: BaseException) -> str:
+    """One-line cause for a failure that never reached a plan node.
+
+    A run that dies while SQLMesh renders the project — a macro raising, or the
+    task's time limit landing mid-render — logs no per-node record for
+    :func:`extract_plan_failure` to find, and SQLMesh's own exception names
+    neither the model in a form a reader can act on nor the reason underneath
+    it. Its chain does carry both: the model file SQLMesh appends to a
+    ``ConfigError`` (``... at '<path>'``), the macro that raised when one did,
+    and the innermost exception.
+
+    Returns the innermost exception alone when the chain names no model, so the
+    result is never empty.
+    """
+    model = ""
+    macro = ""
+    chain = _exception_chain(exc)
+    for candidate in chain:
+        text = str(candidate)
+        if not model:
+            match = _MODEL_LOCATION.search(text)
+            if match:
+                model = _declared_model_name(match.group("rel")) or match.group("rel")
+        if not macro:
+            match = _MACRO_EVALUATION.search(text)
+            if match:
+                macro = match.group("macro")
+        if model and macro:
+            break
+
+    detail = _describe_exception(chain[-1])
+    if macro:
+        detail = f"macro '{macro}': {detail}"
+    return f"{model} — {detail}" if model else detail

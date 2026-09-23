@@ -1,5 +1,6 @@
 # ruff: noqa: ANN201
-"""Tests for capture_run_log/truncate_log — the SQLMesh log-scraping helper."""
+"""Tests for the SQLMesh failure helpers — scraping the log and describing the
+exception chain."""
 
 from __future__ import annotations
 
@@ -7,7 +8,12 @@ import logging
 import logging.config
 import threading
 
+from celery.exceptions import SoftTimeLimitExceeded
+from sqlglot.errors import SchemaError
+from sqlmesh.utils.errors import ConfigError
+
 from brewgis.workspace.analysis.log_capture import capture_run_log
+from brewgis.workspace.analysis.log_capture import describe_run_failure
 from brewgis.workspace.analysis.log_capture import extract_plan_failure
 from brewgis.workspace.analysis.log_capture import truncate_log
 
@@ -167,6 +173,46 @@ class TestExtractPlanFailure:
         assert (
             extract_plan_failure("INFO 2026-09-21 20:33:40,428 base Executing SQL:")
             is None
+        )
+
+
+class TestDescribeRunFailure:
+    """Cause for a failure that never reached a plan node.
+
+    A run that dies while SQLMesh renders the project logs no per-node record,
+    so ``extract_plan_failure`` finds nothing and the run's own exception chain
+    is the only description left.
+    """
+
+    def test_names_the_model_and_macro_of_a_render_failure(self):
+        """Verbatim shape of run 67: the task's soft time limit landed inside a
+        macro while SQLMesh was rendering a model to load the project."""
+        config_error = ConfigError(
+            "Failed to resolve macros for\n\nSELECT 1\n\n"
+            "An error occurred during evaluation of 'arcgis_page_urls'\n"
+            " at '/app/brewgis/sqlmesh/models/fresno/assessor_parcels_duckdb.sql'"
+        )
+        config_error.__cause__ = SoftTimeLimitExceeded()
+        schema_error = SchemaError("Failed to update model schemas")
+        schema_error.__cause__ = config_error
+
+        # The model is named as the project declares it (assessor_parcels_duckdb
+        # is the model duckdb.fresno.assessor_parcels), and the macro names the
+        # call site the file alone can't.
+        assert describe_run_failure(schema_error) == (
+            "duckdb.fresno.assessor_parcels — macro 'arcgis_page_urls': "
+            "task killed by the Celery soft time limit before it finished"
+        )
+
+    def test_falls_back_to_the_innermost_exception(self):
+        outer = RuntimeError("plan blew up")
+        outer.__cause__ = ValueError('column "x" does not exist')
+
+        assert describe_run_failure(outer) == 'ValueError: column "x" does not exist'
+
+    def test_describes_a_bare_soft_time_limit(self):
+        assert describe_run_failure(SoftTimeLimitExceeded()) == (
+            "task killed by the Celery soft time limit before it finished"
         )
 
 

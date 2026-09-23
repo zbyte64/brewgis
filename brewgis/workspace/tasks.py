@@ -644,7 +644,18 @@ def run_paint_operation(self, run_pk: int) -> dict:  # type: ignore[no-untyped-d
 # ────────────────────────────────────────────────────────────
 
 
-@shared_task(bind=True, max_retries=1, default_retry_delay=10)
+@shared_task(
+    bind=True,
+    max_retries=1,
+    default_retry_delay=10,
+    # A run loads the entire SQLMesh project before it plans anything —
+    # measured at 25s of parse/render alone on the 293-model project — and the
+    # plan that follows materializes every selected model. That is well past
+    # the global CELERY_TASK_SOFT_TIME_LIMIT (60s), which a run would otherwise
+    # be killed by before its first model ran, so this task carries its own.
+    soft_time_limit=300,
+    time_limit=900,
+)
 def run_analysis_task(self, run_pk: int) -> None:  # type: ignore[no-untyped-def]
     """Execute a background AnalysisRun (SQLMesh plan for its modules).
 
