@@ -43,7 +43,8 @@ MODEL (
 -- Fallback: 0.0 (non-residential parcels).
 --
 -- Household size comes from ACS block groups via an area-weighted join of
--- the region assessor parcels (identical geometry to parcel_shim for Fresno).
+-- the region assessor parcels (the county roll's per-APN geometry, which
+-- covers the same parcel fabric parcel_shim carries).
 --
 -- Vacancy rate: flat 0.05 default.
 --

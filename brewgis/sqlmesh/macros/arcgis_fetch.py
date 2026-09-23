@@ -33,10 +33,11 @@ from sqlmesh import macro
 
 _PAGE_SIZE = 2000
 # Hard cap on the derived page count — guards against a misbehaving probe.
-# Sized for the largest region fetch: the fresno region bbox (fresno.parcels)
-# is ~213k features = 107 pages, and clamping below that silently truncates
-# the fetch instead of failing.
-_MAX_PAGE_COUNT = 128
+# Sized for the largest region fetch: the fresno region bbox
+# (fresno.assessor_parcels_raw, FC_PARCEL_SELECT) is ~340k features = 171
+# pages, and clamping below the real page count silently truncates the fetch
+# instead of failing.
+_MAX_PAGE_COUNT = 256
 # Extra pages beyond ceil(count / page_size) absorb source growth between the
 # count probe and the page fetches.
 _HEADROOM_PAGES = 1
@@ -98,14 +99,20 @@ def arcgis_page_urls(  # noqa: PLR0913
     out_fields: str,
     geometry: str | None = None,
     fallback_pages: int = 8,
+    order_by: str | None = None,
 ) -> str:
     """Return a DuckDB ``list_value(...)`` literal of paginated query URLs.
 
     Feature URLs request GeoJSON (f=geojson, outSR=4326); when *geometry* is
     given, both the feature URLs and the count probe filter to that envelope
-    (``esriGeometryEnvelope``). The count probe adds ``inSR=4326`` so the
-    server interprets the envelope as lon/lat — without it the count endpoint
-    returns 0.
+    (``esriGeometryEnvelope``), declared ``inSR=4326`` so the server interprets
+    the envelope as lon/lat — without it a projected layer (e.g. the Fresno
+    County assessor MapServer, SR 2228) reads the envelope in its own SR and
+    returns zero features or a zero count.
+
+    When *order_by* is given it is appended as ``orderByFields``, which makes
+    ``resultOffset`` paging deterministic (a county MapServer gives no stable
+    row order otherwise, so adjacent pages can overlap or skip features).
 
     The page count is derived from the live service count (plus headroom) so
     the fetch scales if the source dataset changes; it falls back to
@@ -116,6 +123,7 @@ def arcgis_page_urls(  # noqa: PLR0913
     quoted_out_fields = quote(_literal_value(out_fields), safe="")
     fallback_pages = int(_literal_value(fallback_pages))
     geometry = None if geometry is None else _literal_value(geometry)
+    order_by = None if order_by is None else _literal_value(order_by)
     if geometry is not None:
         quoted_geometry = quote(_literal_value(geometry), safe="")
         base_url = (
@@ -127,6 +135,11 @@ def arcgis_page_urls(  # noqa: PLR0913
             f"&resultRecordCount={_PAGE_SIZE}"
             f"&geometry={quoted_geometry}"
             "&geometryType=esriGeometryEnvelope"
+            # inSR declares the envelope is lon/lat. Required for services
+            # whose layer SR is projected (e.g. the Fresno County assessor
+            # MapServer is SR 2228): without it the server reads the envelope
+            # in the layer SR and returns zero features. A no-op for 4326.
+            "&inSR=4326"
         )
         count_url = (
             f"{endpoint}?where={quoted_where}"
@@ -146,6 +159,9 @@ def arcgis_page_urls(  # noqa: PLR0913
             f"&resultRecordCount={_PAGE_SIZE}"
         )
         count_url = f"{endpoint}?where={quoted_where}&f=json&returnCountOnly=true"
+
+    if order_by is not None:
+        base_url += "&orderByFields=" + quote(order_by, safe="")
 
     count = _fetch_feature_count(count_url)
     if count is None:

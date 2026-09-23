@@ -7,13 +7,18 @@ land_development_category``) to the shared enrichment pipeline.
 - SACOG: reads external county assessor data (``brewgis.sacog.
   assessor_parcels_raw``) and applies the sub-unit APN consolidation +
   land-use development-category mapping.
-- Fresno: no external assessor data — passes through ``@{region}.parcel_shim``
-  rows with ``apn = parcel_id`` and all assessor-derived fields NULL (the
-  enrichment pipeline falls back to regressor estimates).
+- Fresno: reads the county assessor roll (``brewgis.fresno.
+  assessor_parcels_raw``, the FC_PARCEL_SELECT MapServer), collapses its
+  situs-address feature grain to one row per APN, and maps the county's
+  ``use_high_best`` highest-and-best-use code to ``land_development_category``
+  (``use_primary`` is not a usable signal — its A## codes are apartment/condo
+  pads and apartment master parcels). ``zone``/``jurisdiction`` stay NULL — no
+  consumer needs a public per-parcel zoning join.
 
-The branch is driven by the ``source_table`` blueprint variable (a data
-availability concern, not a region check); shared methodology models never
-see the difference.
+The branch is driven by the region (Fresno's roll codes are a different code
+system from SACOG's); a region whose ``source_table`` blueprint variable is
+empty falls back to the ``@{region}.parcel_shim`` pass-through. Shared
+methodology models never see the difference.
 """
 
 from __future__ import annotations
@@ -179,7 +184,7 @@ LEFT JOIN brewgis.seeds.assessor_use_codes auc
     ON LEFT(COALESCE(c.landuse::text, ''), 2) = auc.use_code::text;
 """
 
-FRESNO_QUERY = """
+PASSTHROUGH_QUERY = """
 SELECT
     ps.parcel_id AS apn,
     ps.geometry,
@@ -194,27 +199,100 @@ SELECT
 FROM brewgis.{region}.parcel_shim ps;
 """
 
+# Fresno assessor roll: one row per APN. The roll is sourced at situs-address
+# feature grain (a parcel with several addresses appears more than once), so
+# collapse by APN with ST_Union (parcel extent = union of its features) and
+# mode() for the use code — the same consolidation pattern SACOG's sub-unit
+# pass uses. The DuckDB→PostGIS FDW drops SRID metadata, so the geometry
+# arrives as SRID 0 and is ST_SetSRID-tagged 4326 before the union (the
+# duckdb-geometry linter rule requires the raw column wrapped innermost).
+#
+# land_development_category comes from the county's own USE_HIGH_BEST
+# highest-and-best-use code, validated against the in-bbox roll (229,054
+# APNs): hb 'A' is 2,726 APNs at 24 acres mean (89% >= 5 acres, land-dominant
+# value) and hb 'O' is 1,759 APNs at 44 acres mean carrying the same crop-code
+# families (ALM, VIR, FIE, ORA, TRX, TVX, VIW, ...), so both are agricultural.
+# The settlement families stay urban: 'S' single family (0.4 acres mean), 'P'
+# (0.0), 'C' commercial (1.3), 'M' multi-family (0.6), 'I' industrial (2.6).
+# The 2-acre floor drops the ~200 rows the county mislabels (e.g. 103 hb-'O'
+# S01 single-family parcels at 1.4 acres median).
+#
+# USE_PRIMARY is NOT usable as the signal on its own: A01-A16 are 0.02-0.57
+# acre apartment/condo pads and A99 is an apartment *master* parcel (one APN
+# carries 6,963 situs addresses), and a hand-built crop-code list picks up
+# non-farm codes alongside the real ones (CHU, GAR and WAH are all under 1
+# acre median). Blank/XXX/000 codes have no assessable use → undeveloped.
+FRESNO_ASSESSOR_QUERY = """
+WITH collapsed AS (
+    SELECT
+        apn,
+        ST_Union(ST_MakeValid(ST_SetSRID(geometry, 4326))) AS wgs84_geometry,
+        mode() WITHIN GROUP (ORDER BY use_primary) AS use_primary,
+        mode() WITHIN GROUP (ORDER BY use_high_best) AS use_high_best,
+        MAX(total_assessed_value) AS total_assessed_value,
+        MAX(lot_size_acres) AS lot_size_acres
+    FROM {source_table}
+    WHERE apn IS NOT NULL AND trim(apn) <> ''
+    GROUP BY apn
+),
+resolved AS (
+    SELECT
+        apn,
+        wgs84_geometry,
+        use_primary,
+        use_high_best,
+        -- A non-positive LOT_AREA is a missing measurement, not a zero-acre
+        -- parcel (SACOG's adapter reads lotsize <= 0 the same way): 1,769 roll
+        -- rows carry LOT_AREA = 0 and all of them have a positive geometric
+        -- area. Left as 0 they zero out the lot-size employment fallback in
+        -- parcel_dasymetric_weights and fail assert_emp_dasym_weight_fallback.
+        COALESCE(
+            CASE WHEN lot_size_acres > 0 THEN lot_size_acres END,
+            (ST_Area(ST_Transform(wgs84_geometry, {local_srid})) / 4046.8564224)::double precision
+        ) AS lot_size_acres
+    FROM collapsed
+)
+SELECT
+    apn,
+    wgs84_geometry AS geometry,
+    ST_Centroid(wgs84_geometry) AS centroid,
+    ST_Transform(wgs84_geometry, {local_srid}) AS local_geometry,
+    ST_Centroid(ST_Transform(wgs84_geometry, {local_srid})) AS centroid_local,
+    lot_size_acres,
+    use_primary AS landuse,
+    NULL::text AS zone,
+    NULL::text AS jurisdiction,
+    CASE
+        WHEN use_primary IS NULL OR trim(use_primary) = '' OR use_primary IN ('XXX','000')
+            THEN 'undeveloped'
+        WHEN use_high_best IN ('A','O') AND lot_size_acres >= 2
+            THEN 'agricultural'
+        ELSE 'urban'
+    END AS land_development_category
+FROM resolved;
+"""
+
 
 _SOURCE_TABLE = {
     "sacog": "brewgis.sacog.assessor_parcels_raw",
-    "fresno": "",
+    "fresno": "brewgis.fresno.assessor_parcels_raw",
 }
 
 
 @model(
     "brewgis.@{region}.assessor_parcels",
     kind={"name": ModelKindName.FULL},
-    description="Uniform APN-level assessor parcel contract: county assessor data or parcel_shim pass-through.",
+    description="Uniform APN-level assessor parcel contract, sourced from each region's county assessor roll.",
     column_descriptions={
-        "apn": "Assessor parcel number (APN); equals parcel_id where the region has no assessor data.",
+        "apn": "Assessor parcel number (APN) of the parcel; unique per row.",
         "geometry": "Parcel boundary in WGS84 (EPSG:4326), repaired with ST_MakeValid.",
         "centroid": "Centroid of the WGS84 parcel boundary (EPSG:4326).",
         "local_geometry": "Parcel boundary in the local projected SRID (3310 CA Albers).",
         "centroid_local": "Centroid of the parcel in the local SRID (3310 CA Albers), used for radius joins.",
-        "lot_size_acres": "Parcel lot size (acres) from the assessor lotsize field or parcel_shim acres.",
-        "landuse": "Assessor land use code of the parcel; NULL where the region has no assessor data.",
-        "zone": "Assessor zoning code of the parcel; NULL where the region has no assessor data.",
-        "jurisdiction": "Jurisdiction the parcel lies in; NULL where the region has no assessor data.",
+        "lot_size_acres": "Parcel lot size (acres) from the assessor roll; parcel_shim acres in the pass-through case.",
+        "landuse": "Assessor land use code of the parcel (SACOG landuse, Fresno use_primary).",
+        "zone": "Assessor zoning code of the parcel; NULL where the region has no per-parcel zoning source.",
+        "jurisdiction": "Jurisdiction the parcel lies in; NULL where the region has no per-parcel zoning source.",
         "land_development_category": "Development category of the parcel from the assessor use code.",
     },
     columns={
@@ -234,7 +312,7 @@ _SOURCE_TABLE = {
         ("unique_values", {"columns": [exp.to_column("apn")]}),
     ],
     depends_on=[
-        "@IF(@source_table != '', brewgis.sacog.assessor_parcels_raw, brewgis.@{region}.parcel_shim)",
+        "@IF(@source_table != '', brewgis.@{region}.assessor_parcels_raw, brewgis.@{region}.parcel_shim)",
     ],
     post_statements=[
         "CREATE INDEX IF NOT EXISTS "
@@ -258,16 +336,22 @@ _SOURCE_TABLE = {
     is_sql=True,
 )
 def execute(evaluator: MacroEvaluator, **kwargs: Any) -> str:
-    """Return the region-appropriate adapter SQL (SACOG assessor vs Fresno pass-through).
+    """Return the region-appropriate adapter SQL (SACOG or Fresno assessor roll).
 
     The returned string is not macro-rendered again by SQLMesh, so @VAR(...)
     references are resolved here via the evaluator before formatting.
     """
     region = evaluator.blueprint_var("region")
     source_table = evaluator.blueprint_var("source_table", "")
-    if source_table:
-        return SACOG_QUERY.format(
+    local_srid = evaluator.var("local_srid", 3310)
+    if not source_table:
+        return PASSTHROUGH_QUERY.format(region=region)
+    if region == "fresno":
+        return FRESNO_ASSESSOR_QUERY.format(
             source_table=source_table,
-            local_srid=evaluator.var("local_srid", 3310),
+            local_srid=local_srid,
         )
-    return FRESNO_QUERY.format(region=region)
+    return SACOG_QUERY.format(
+        source_table=source_table,
+        local_srid=local_srid,
+    )

@@ -19,12 +19,11 @@ MODEL (
 -- assessor parcels with pre-computed intersection area, using a GiST
 -- index-driven && bbox pre-filter.
 --
--- For regions with real assessor APNs (SACOG) every intersecting parcel-APN
--- pair contributes, enabling correct proportional dasymetric allocation.
--- For regions without assessor data (Fresno) the assessor_parcels adapter is
--- a pass-through of parcel_shim (apn = parcel_id, identical geometry), so the
--- self-join yields exactly one row per parcel with its full area — the same
--- column contract, no region-specific code here.
+-- Both regions read a county assessor roll, so this is a true spatial
+-- crosswalk in each: a parcel_shim parcel overlapping several assessor APNs
+-- contributes one row per intersecting APN (correct proportional dasymetric
+-- allocation), and a parcel whose geometry intersects no assessor parcel
+-- contributes no row at all.
 
 WITH intersections AS (
     SELECT
