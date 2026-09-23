@@ -662,8 +662,8 @@ def analysis_module_launch(
     )
 
     html = render_to_string(
-        "workspace/analysis/_module_launch_confirm.html",
-        {"workspace": workspace, "scenario": scenario, "analysis": meta, "run": run},
+        "workspace/analysis/status.html#analysis-status",
+        {"run": run, "vmt_fee_data": None},
         request=request,
     )
     response = HttpResponse(html)

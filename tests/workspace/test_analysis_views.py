@@ -219,6 +219,13 @@ class TestAnalysisStatusView(TestCase):
 
         self.assertContains(response, "Pending")
 
+    def test_pending_run_polls_every_2s(self):
+        """A freshly launched run is 'pending', not 'running' — it must still poll."""
+        self.client.force_login(self.user)
+        response = self.client.get(self.status_url)
+        assert response.status_code == 200
+        self.assertContains(response, "every 2s")
+
     def test_status_missing_run_returns_404(self):
         """GET with invalid run_pk returns 404."""
         self.client.force_login(self.user)
@@ -308,7 +315,7 @@ class TestAnalysisStatusView(TestCase):
         self.run.save()
         response = self.client.get(self.status_url)
         assert response.status_code == 200
-        self.assertContains(response, "no failing model could be recovered")
+        self.assertContains(response, "see the Python traceback below")
 
 
 @pytest.mark.views

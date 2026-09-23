@@ -325,7 +325,12 @@ class TestAnalysisPanelViews(TestCase):
         _, kwargs = mock_launch.call_args
         assert kwargs["module_names"] == ["water_demand"]
         assert response.headers["HX-Trigger"]
-        self.assertContains(response, "kicked off")
+        run = mock_launch.return_value
+        self.assertContains(response, f'id="analysis-status-{run.pk}"')
+        self.assertContains(
+            response, reverse("workspace:analysis_status", kwargs={"run_pk": run.pk})
+        )
+        self.assertContains(response, "every 2s")
 
 
 class TestLaunchAnalysisRun(TestCase):
