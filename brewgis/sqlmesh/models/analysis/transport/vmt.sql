@@ -28,18 +28,18 @@ MODEL (
 -- VMT = total trips x auto mode share x avg trip length (mi) x circuity factor.
 --
 -- Variables:
---   @transport_mode_share_auto: Fraction of trips made by auto (default: 0.85).
---   @transport_avg_trip_length_mi: Average one-way trip length in miles (default: 5.0).
---   @transport_circuity_factor: Road network directness adjustment (default: 1.2).
+--   @blueprint_var('transport_mode_share_auto'): Fraction of trips made by auto (default: 0.85).
+--   @blueprint_var('transport_avg_trip_length_mi'): Average one-way trip length in miles (default: 5.0).
+--   @blueprint_var('transport_circuity_factor'): Road network directness adjustment (default: 1.2).
 
 WITH auto_trips AS (
     SELECT
         tg.parcel_id,
-        tg.trips_total * @transport_mode_share_auto AS auto_trips,
+        tg.trips_total * @blueprint_var('transport_mode_share_auto') AS auto_trips,
         es.pop,
         es.geometry,
-        tg.trips_total * @transport_mode_share_auto
-            * @transport_avg_trip_length_mi * @transport_circuity_factor
+        tg.trips_total * @blueprint_var('transport_mode_share_auto')
+            * @blueprint_var('transport_avg_trip_length_mi') * @blueprint_var('transport_circuity_factor')
             AS vmt_total
     FROM @{scenario_schema}.trip_generation AS tg
     LEFT JOIN @{scenario_schema}.core_end_state AS es
@@ -55,7 +55,7 @@ SELECT
         ELSE 0.0
     END AS vmt_per_capita,
     auto_trips,
-    @transport_avg_trip_length_mi AS avg_trip_length_mi,
+    @blueprint_var('transport_avg_trip_length_mi') AS avg_trip_length_mi,
     geometry
 FROM auto_trips;
 

@@ -39,7 +39,7 @@ SELECT
     hh,
     canopy_pct,
     -- Surface temp proxy: baseline minus cooling effect
-    ROUND((@tree_canopy_baseline_temp - (canopy_pct / 10.0 * @tree_canopy_temp_per_10pct))::numeric, 1) AS surface_temp_f,
+    ROUND((@blueprint_var('tree_canopy_baseline_temp') - (canopy_pct / 10.0 * @blueprint_var('tree_canopy_temp_per_10pct')))::numeric, 1) AS surface_temp_f,
     -- Heat exposure score: 0-100 (higher = worse, inverse of canopy)
     ROUND(GREATEST(0.0, 100.0 - (canopy_pct * 4.0))::numeric, 1) AS heat_exposure_score,
     geometry

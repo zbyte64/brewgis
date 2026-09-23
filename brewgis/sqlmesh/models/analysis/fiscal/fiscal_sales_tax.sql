@@ -24,21 +24,21 @@ MODEL (
 --   sales_tax_revenue = retail_sales x sales_tax_rate / 100
 --
 -- Variables:
---   @retail_employment_share: Percentage of employment that is retail (default: 15).
---   @sales_per_employee: Average sales per retail employee (default: 100000).
---   @sales_tax_rate: Sales tax rate in percent (default: 1.0).
+--   @blueprint_var('retail_employment_share'): Percentage of employment that is retail (default: 15).
+--   @blueprint_var('sales_per_employee'): Average sales per retail employee (default: 100000).
+--   @blueprint_var('sales_tax_rate'): Sales tax rate in percent (default: 1.0).
 
 SELECT
     es.parcel_id,
     -- Estimated retail sales
     COALESCE(
-        es.emp * @retail_employment_share / 100.0 * @sales_per_employee,
+        es.emp * @blueprint_var('retail_employment_share') / 100.0 * @blueprint_var('sales_per_employee'),
         0.0
     ) AS retail_sales,
     -- Sales tax revenue
     COALESCE(
-        es.emp * @retail_employment_share / 100.0 * @sales_per_employee
-        * @sales_tax_rate / 100.0,
+        es.emp * @blueprint_var('retail_employment_share') / 100.0 * @blueprint_var('sales_per_employee')
+        * @blueprint_var('sales_tax_rate') / 100.0,
         0.0
     ) AS sales_tax_revenue,
     es.geometry

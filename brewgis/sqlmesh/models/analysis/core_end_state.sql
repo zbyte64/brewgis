@@ -64,9 +64,9 @@ MODEL (
 --   @parcel_table:       Parcel geometries with built_form_key and attributes
 --   @built_form_table:   BuildingType definitions (du_per_acre, emp_per_acre,
 --                        far, household_size, vacancy_rate, etc.)
---   @dev_pct:            Development percentage (default 100)
---   @gross_net_pct:      Gross-to-net ratio (default 85)
---   @density_pct:        Density adjustment percentage (default 100)
+--   @blueprint_var('dev_pct'):            Development percentage (default 100)
+--   @blueprint_var('gross_net_pct'):      Gross-to-net ratio (default 85)
+--   @blueprint_var('density_pct'):        Density adjustment percentage (default 100)
 --
 -- Output columns:
 --   Column names follow the base_canvas convention wherever a base_canvas
@@ -139,9 +139,9 @@ computed AS (
         area_gross_acres,
         acres_developable,
         -- Density-adjusted acres
-        @compute_applied_acres(acres_developable, @dev_pct, @gross_net_pct) AS applied_acres,
-        @compute_applied_acres(acres_developable, @dev_pct, @gross_net_pct)
-            * @density_pct / 100.0 AS density_adjusted_acres,
+        @compute_applied_acres(acres_developable, @blueprint_var('dev_pct'), @blueprint_var('gross_net_pct')) AS applied_acres,
+        @compute_applied_acres(acres_developable, @blueprint_var('dev_pct'), @blueprint_var('gross_net_pct'))
+            * @blueprint_var('density_pct') / 100.0 AS density_adjusted_acres,
         du_per_acre,
         emp_per_acre,
         far,

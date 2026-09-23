@@ -342,6 +342,15 @@ class Scenario(models.Model):
             "scenario's parcel source (see module_registry.CANONICAL_COLUMN_NAMES)."
         ),
     )
+    analysis_params = models.JSONField(
+        default=dict,
+        blank=True,
+        help_text=(
+            "Analysis parameter overrides for this scenario's analysis models "
+            "(see module_registry.ANALYSIS_PARAMETERS). Baked into the "
+            "scenario's analysis model blueprints."
+        ),
+    )
     created_at = models.DateTimeField(auto_now_add=True)
     updated_at = models.DateTimeField(auto_now=True)
 

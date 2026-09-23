@@ -30,10 +30,10 @@ WITH parcel_equity AS (
         bc.pct_college_educated,
         es.geometry,
         -- Vulnerability indicators (each TRUE adds 1 point)
-        CASE WHEN COALESCE(bc.median_income, 0) < @displacement_income_threshold THEN 1 ELSE 0 END
-        + CASE WHEN COALESCE(bc.pct_minority, 0) > @displacement_minority_threshold THEN 1 ELSE 0 END
-        + CASE WHEN COALESCE(bc.rent_burden_pct, 0) > @displacement_rent_burden_threshold THEN 1 ELSE 0 END
-        + CASE WHEN COALESCE(bc.pct_college_educated, 0) < @displacement_college_education_threshold THEN 1 ELSE 0 END
+        CASE WHEN COALESCE(bc.median_income, 0) < @blueprint_var('displacement_income_threshold') THEN 1 ELSE 0 END
+        + CASE WHEN COALESCE(bc.pct_minority, 0) > @blueprint_var('displacement_minority_threshold') THEN 1 ELSE 0 END
+        + CASE WHEN COALESCE(bc.rent_burden_pct, 0) > @blueprint_var('displacement_rent_burden_threshold') THEN 1 ELSE 0 END
+        + CASE WHEN COALESCE(bc.pct_college_educated, 0) < @blueprint_var('displacement_college_education_threshold') THEN 1 ELSE 0 END
         AS vulnerability_score
     FROM @{scenario_schema}.core_end_state AS es
     LEFT JOIN @ref_model(@base_canvas_table) AS bc

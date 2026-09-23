@@ -28,21 +28,21 @@ MODEL (
 --                          x property_tax_rate / 100
 --
 -- Variables:
---   @res_assessed_value_per_du: Assessed value per dwelling unit (default: 350000).
---   @nonres_assessed_value_per_sqft: Assessed value per sqft non-res (default: 150).
---   @property_tax_rate: Property tax rate in percent (default: 1.0).
+--   @blueprint_var('res_assessed_value_per_du'): Assessed value per dwelling unit (default: 350000).
+--   @blueprint_var('nonres_assessed_value_per_sqft'): Assessed value per sqft non-res (default: 150).
+--   @blueprint_var('property_tax_rate'): Property tax rate in percent (default: 1.0).
 
 SELECT
     es.parcel_id,
     -- Residential assessed value
-    COALESCE(es.du * @res_assessed_value_per_du, 0.0) AS assessed_value_res,
+    COALESCE(es.du * @blueprint_var('res_assessed_value_per_du'), 0.0) AS assessed_value_res,
     -- Non-residential assessed value
-    COALESCE(es.building_sqft_total * @nonres_assessed_value_per_sqft, 0.0) AS assessed_value_nonres,
+    COALESCE(es.building_sqft_total * @blueprint_var('nonres_assessed_value_per_sqft'), 0.0) AS assessed_value_nonres,
     -- Property tax revenue
     COALESCE(
-        (es.du * @res_assessed_value_per_du
-         + es.building_sqft_total * @nonres_assessed_value_per_sqft)
-        * @property_tax_rate / 100.0,
+        (es.du * @blueprint_var('res_assessed_value_per_du')
+         + es.building_sqft_total * @blueprint_var('nonres_assessed_value_per_sqft'))
+        * @blueprint_var('property_tax_rate') / 100.0,
         0.0
     ) AS property_tax_revenue,
     es.geometry

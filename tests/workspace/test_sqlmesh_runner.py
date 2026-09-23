@@ -1,5 +1,5 @@
 """Tests for ``run_sqlmesh_plan`` — how a plan is asked for, and what it does
-when SQLMesh refuses it.
+when SQLMesh refuses it — and for the project config a plan is built from.
 
 A plan that restates models it is also redeploying is rejected by SQLMesh and
 cannot be retried as-is, so the runner has to turn it into two plans. That
@@ -15,6 +15,7 @@ from typing import Any
 import pytest
 from sqlmesh.utils.errors import ConflictingPlanError
 
+from brewgis.sqlmesh.config import config_factory
 from brewgis.workspace.analysis import sqlmesh_runner
 from brewgis.workspace.analysis.sqlmesh_runner import run_sqlmesh_plan
 
@@ -147,3 +148,18 @@ class TestConflictingPlan:
             )
 
         assert plans == []
+
+
+class TestConfigVariables:
+    """How a caller's run variables reach the models."""
+
+    def test_extra_arguments_become_config_variables(self) -> None:
+        """``get_context(**variables)`` (the MCP tools, and every plan that
+        passes ``variables``) forwards them here, so an argument that failed to
+        merge would silently render the models with the config defaults."""
+        config = config_factory(parcel_table="custom.parcels", min_sqft_per_unit=500)
+
+        assert config.variables["parcel_table"] == "custom.parcels"
+        assert config.variables["min_sqft_per_unit"] == 500
+        assert config.variables["default_srid"] == 4326
+        assert config.variables["transport_km_to_mi"] == 0.621371

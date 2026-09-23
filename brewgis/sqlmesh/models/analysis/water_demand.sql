@@ -32,7 +32,7 @@ SELECT
     es.residential_irrigated_area * 4046.8564224 * es.outdoor_water_rate AS water_demand_res_outdoor,
 
     -- Non-residential indoor (L/yr): employment * default_rate * 365
-    es.emp * @nonres_indoor_water_rate * 365.0 AS water_demand_nonres_indoor,
+    es.emp * @blueprint_var('nonres_indoor_water_rate') * 365.0 AS water_demand_nonres_indoor,
 
     -- Non-residential outdoor (L/yr): irrigated acres -> m2 * outdoor_water_rate
     es.commercial_irrigated_area * 4046.8564224 * es.outdoor_water_rate AS water_demand_nonres_outdoor,
@@ -40,7 +40,7 @@ SELECT
     -- Total water demand (L/yr)
     (es.hh * es.household_size * es.indoor_water_rate * 365.0)
       + (es.residential_irrigated_area * 4046.8564224 * es.outdoor_water_rate)
-      + (es.emp * @nonres_indoor_water_rate * 365.0)
+      + (es.emp * @blueprint_var('nonres_indoor_water_rate') * 365.0)
       + (es.commercial_irrigated_area * 4046.8564224 * es.outdoor_water_rate)
     AS water_demand_total,
 
@@ -48,7 +48,7 @@ SELECT
     CASE WHEN (es.pop + es.emp) > 0
         THEN ((es.hh * es.household_size * es.indoor_water_rate * 365.0)
               + (es.residential_irrigated_area * 4046.8564224 * es.outdoor_water_rate)
-              + (es.emp * @nonres_indoor_water_rate * 365.0)
+              + (es.emp * @blueprint_var('nonres_indoor_water_rate') * 365.0)
               + (es.commercial_irrigated_area * 4046.8564224 * es.outdoor_water_rate))
              / (es.pop + es.emp)
         ELSE 0.0

@@ -31,10 +31,10 @@ MODEL (
 -- demographics against base canvas baseline.
 --
 -- Variables:
---   @displacement_income_threshold:      default 50000
---   @displacement_minority_threshold:    default 50.0
---   @displacement_rent_burden_threshold: default 30.0
---   @displacement_college_education_threshold: default 25.0
+--   @blueprint_var('displacement_income_threshold'):      default 50000
+--   @blueprint_var('displacement_minority_threshold'):    default 50.0
+--   @blueprint_var('displacement_rent_burden_threshold'): default 30.0
+--   @blueprint_var('displacement_college_education_threshold'): default 25.0
 
 WITH scenario_equity AS (
     -- Scenario vulnerability using end-state projected demographics
@@ -48,10 +48,10 @@ WITH scenario_equity AS (
         COALESCE(bc.pct_minority, 0) AS pct_minority,
         COALESCE(bc.pct_college_educated, 0) AS pct_college_educated,
         -- Current vulnerability score
-        CASE WHEN COALESCE(bc.median_income, 0) < @displacement_income_threshold THEN 1 ELSE 0 END
-        + CASE WHEN COALESCE(bc.pct_minority, 0) > @displacement_minority_threshold THEN 1 ELSE 0 END
-        + CASE WHEN COALESCE(bc.rent_burden_pct, 0) > @displacement_rent_burden_threshold THEN 1 ELSE 0 END
-        + CASE WHEN COALESCE(bc.pct_college_educated, 0) < @displacement_college_education_threshold THEN 1 ELSE 0 END
+        CASE WHEN COALESCE(bc.median_income, 0) < @blueprint_var('displacement_income_threshold') THEN 1 ELSE 0 END
+        + CASE WHEN COALESCE(bc.pct_minority, 0) > @blueprint_var('displacement_minority_threshold') THEN 1 ELSE 0 END
+        + CASE WHEN COALESCE(bc.rent_burden_pct, 0) > @blueprint_var('displacement_rent_burden_threshold') THEN 1 ELSE 0 END
+        + CASE WHEN COALESCE(bc.pct_college_educated, 0) < @blueprint_var('displacement_college_education_threshold') THEN 1 ELSE 0 END
         AS vulnerability_score,
         es.geometry
     FROM @{scenario_schema}.core_end_state AS es

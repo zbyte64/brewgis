@@ -8,6 +8,7 @@ from datetime import timedelta
 from unittest.mock import patch
 
 import pytest
+from django import forms
 from django.test import Client
 from django.test import RequestFactory
 from django.test import TestCase
@@ -65,26 +66,29 @@ class TestAnalysisLaunchForm(TestCase):
         assert "workspace" not in form.errors
         assert "modules" not in form.errors
 
-    def test_form_initial_constraints_json(self):
-        """Form has a default constraints JSON initial value."""
+    def test_form_exposes_constraint_discount_fields_not_json(self):
+        """The launcher offers constraint discounts as plain number fields."""
         form = AnalysisLaunchForm()
-        initial = form.fields["constraints_json"].initial
-        assert initial is not None
-        parsed = json.loads(initial)
-        assert isinstance(parsed, list)
+        assert form.fields["floodplain_discount_pct"].initial == 100
+        assert form.fields["steep_slopes_discount_pct"].initial == 75
+        assert "column_pop" in form.fields
+        assert "constraints_json" not in form.fields
+        assert "column_mapping" not in form.fields
+        assert not any(
+            isinstance(field.widget, forms.Textarea) for field in form.fields.values()
+        )
 
-    def test_form_rejects_bad_constraints_json(self):
-        """Invalid JSON in constraints_json field raises validation error."""
+    def test_form_rejects_out_of_range_constraint_discount(self):
+        """A discount above 100% is rejected by the field's bounds."""
         form = AnalysisLaunchForm(
             data={
                 "workspace": self.workspace.pk,
                 "modules": ["env_constraint"],
-                "parcel_table": "parcels",
-                "constraints_json": "not valid json",
+                "floodplain_discount_pct": 150,
             },
         )
         assert not form.is_valid()
-        assert "constraints_json" in form.errors
+        assert "floodplain_discount_pct" in form.errors
 
 
 @pytest.mark.views
@@ -145,10 +149,14 @@ class TestAnalysisLaunchView(TestCase):
             "workspace",
             "modules",
             "scenario",
-            "constraints_json",
-            "column_mapping",
+            "floodplain_discount_pct",
+            "column_pop",
         }
         assert expected_fields.issubset(form.fields.keys())
+        # Constraints/column mapping are plain fields, never raw JSON textareas.
+        assert not any(
+            isinstance(field.widget, forms.Textarea) for field in form.fields.values()
+        )
         # The parcel/built-form/base-canvas tables are derived per scenario by
         # the model blueprints (validated, not entered).
         for derived in ("parcel_table", "built_form_table", "base_canvas_table"):

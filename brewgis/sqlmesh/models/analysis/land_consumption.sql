@@ -73,15 +73,15 @@ land_use AS (
         parcel_acres_developed,
         geometry,
         -- L2: Impervious surface estimation
-        COALESCE(building_sqft_total * @ground_coverage_factor, 0.0) AS building_footprint_sqft,
+        COALESCE(building_sqft_total * @blueprint_var('ground_coverage_factor'), 0.0) AS building_footprint_sqft,
         COALESCE(
-            (du * @parking_per_unit
-             + emp * @parking_per_employee)
-            * @parking_space_sqft,
+            (du * @blueprint_var('parking_per_unit')
+             + emp * @blueprint_var('parking_per_employee'))
+            * @blueprint_var('parking_space_sqft'),
             0.0
         ) AS parking_sqft,
         COALESCE(
-            acres_developed * @row_fraction * 43560.0,
+            acres_developed * @blueprint_var('row_fraction') * 43560.0,
             0.0
         ) AS row_sqft
     FROM parcel_data

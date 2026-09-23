@@ -59,11 +59,11 @@ runoff AS (
         impervious_pct,
         geometry,
         0.05 + 0.009 * impervious_pct AS runoff_coefficient,
-        @stormwater_annual_precipitation_in * 0.9
+        @blueprint_var('stormwater_annual_precipitation_in') * 0.9
         * (0.05 + 0.009 * impervious_pct)
         * area_gross_acres / 12.0 AS runoff_volume_acre_ft,
         0.05 + 0.009 * impervious_pct_baseline AS runoff_coefficient_baseline,
-        @stormwater_annual_precipitation_in * 0.9
+        @blueprint_var('stormwater_annual_precipitation_in') * 0.9
         * (0.05 + 0.009 * impervious_pct_baseline)
         * area_gross_acres / 12.0 AS runoff_baseline_acre_ft
     FROM baseline

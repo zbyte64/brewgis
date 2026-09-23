@@ -24,8 +24,8 @@ MODEL (
 -- VMT x emission factor (kg CO2e per mile), with optional speed adjustment.
 --
 -- Variables:
---   @transport_ghg_co2_per_mile: CO2e per mile (default: 0.411 kg/mi — EPA fleet avg).
---   @transport_ghg_speed_adjust: Enable speed-based emission adjustment (bool, default: false).
+--   @blueprint_var('transport_ghg_co2_per_mile'): CO2e per mile (default: 0.411 kg/mi — EPA fleet avg).
+--   @blueprint_var('transport_ghg_speed_adjust'): Enable speed-based emission adjustment (bool, default: false).
 
 WITH vmt_data AS (
     SELECT
@@ -44,16 +44,16 @@ SELECT
     parcel_id,
 
     -- CO2e total (kg): VMT x emission factor, with optional speed adjustment
-    vmt_total * @transport_ghg_co2_per_mile
-    * CASE WHEN @transport_ghg_speed_adjust THEN 1.15 ELSE 1.0 END
+    vmt_total * @blueprint_var('transport_ghg_co2_per_mile')
+    * CASE WHEN @blueprint_var('transport_ghg_speed_adjust') THEN 1.15 ELSE 1.0 END
         AS co2e_total_kg,
 
     -- CO2e per capita
     CASE
         WHEN pop > 0
         THEN (
-            vmt_total * @transport_ghg_co2_per_mile
-            * CASE WHEN @transport_ghg_speed_adjust THEN 1.15 ELSE 1.0 END
+            vmt_total * @blueprint_var('transport_ghg_co2_per_mile')
+            * CASE WHEN @blueprint_var('transport_ghg_speed_adjust') THEN 1.15 ELSE 1.0 END
         ) / pop
         ELSE 0.0
     END AS co2e_per_capita_kg,

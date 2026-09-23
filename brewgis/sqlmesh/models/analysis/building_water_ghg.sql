@@ -24,11 +24,11 @@ MODEL (
 -- and standard factors for natural gas.
 --
 -- Variables:
---   @ghg_egrid_co2_per_kwh: CO2e per kWh for electricity (default: 0.417 kg).
---   @ghg_gas_co2_per_kwh: CO2e per kWh for natural gas (default: 0.181 kg).
---   @ghg_water_supply_kwh_per_mg: kWh per million gallons for water supply (default: 1427).
---   @ghg_wastewater_kwh_per_mg: kWh per million gallons for wastewater (default: 1911).
---   @ghg_liters_per_million_gallons: Liters per million gallons (default: 3785411.8).
+--   @blueprint_var('ghg_egrid_co2_per_kwh'): CO2e per kWh for electricity (default: 0.417 kg).
+--   @blueprint_var('ghg_gas_co2_per_kwh'): CO2e per kWh for natural gas (default: 0.181 kg).
+--   @blueprint_var('ghg_water_supply_kwh_per_mg'): kWh per million gallons for water supply (default: 1427).
+--   @blueprint_var('ghg_wastewater_kwh_per_mg'): kWh per million gallons for wastewater (default: 1911).
+--   @blueprint_var('ghg_liters_per_million_gallons'): Liters per million gallons (default: 3785411.8).
 
 WITH energy_data AS (
     SELECT
@@ -42,16 +42,16 @@ WITH energy_data AS (
         es.geometry,
         -- Energy CO2e (kg): electric kWh x eGRID factor + gas kWh x gas factor
         COALESCE(
-            (ed.energy_electricity_res + ed.energy_electricity_nonres) * @ghg_egrid_co2_per_kwh
-            + (ed.energy_gas_res + ed.energy_gas_nonres) * @ghg_gas_co2_per_kwh,
+            (ed.energy_electricity_res + ed.energy_electricity_nonres) * @blueprint_var('ghg_egrid_co2_per_kwh')
+            + (ed.energy_gas_res + ed.energy_gas_nonres) * @blueprint_var('ghg_gas_co2_per_kwh'),
             0.0
         ) AS co2e_energy_kg,
         -- Water/wastewater CO2e (kg): L -> MG x (supply + wastewater kWh/MG) x eGRID factor
         CASE
             WHEN COALESCE(wd.water_demand_total, 0.0) > 0
-            THEN wd.water_demand_total / @ghg_liters_per_million_gallons
-                * (@ghg_water_supply_kwh_per_mg + @ghg_wastewater_kwh_per_mg)
-                * @ghg_egrid_co2_per_kwh
+            THEN wd.water_demand_total / @blueprint_var('ghg_liters_per_million_gallons')
+                * (@blueprint_var('ghg_water_supply_kwh_per_mg') + @blueprint_var('ghg_wastewater_kwh_per_mg'))
+                * @blueprint_var('ghg_egrid_co2_per_kwh')
             ELSE 0.0
         END AS co2e_water_kg
     FROM @{scenario_schema}.energy_demand AS ed

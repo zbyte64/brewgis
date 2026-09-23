@@ -30,9 +30,9 @@ MODEL (
 --   4. Intra-parcel trips (trips_internal from T2) are a subset of internal.
 --
 -- Variables:
---   @transport_study_area_geometry: WKT polygon defining the study area boundary
+--   @blueprint_var('transport_study_area_geometry'): WKT polygon defining the study area boundary
 --     (default: empty polygon — all parcels treated as internal).
---   @transport_intrazonal_friction: Friction factor for intra-zonal trips
+--   @blueprint_var('transport_intrazonal_friction'): Friction factor for intra-zonal trips
 --     (0.0 = no friction penalty, 1.0 = maximum penalty; default 0.15).
 --
 -- Dependencies: trip_generation, trip_distribution
@@ -43,9 +43,9 @@ WITH
 study_area AS (
     SELECT
         CASE
-            WHEN @transport_study_area_geometry != ''
+            WHEN @blueprint_var('transport_study_area_geometry') != ''
             THEN ST_SetSRID(
-                ST_GeomFromText(@transport_study_area_geometry),
+                ST_GeomFromText(@blueprint_var('transport_study_area_geometry')),
                 4326
             )
             ELSE NULL
@@ -134,7 +134,7 @@ capture_rates AS (
                 1.0,
                 as_.parcel_capture_fraction
                 * EXP(
-                    -@transport_intrazonal_friction
+                    -@blueprint_var('transport_intrazonal_friction')
                     * cp.avg_trip_length_km
                     / NULLIF(as_.study_area_radius_km, 0)
                 )

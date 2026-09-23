@@ -33,13 +33,13 @@ MODEL (
 --   intake fraction and concentration-response function.
 --
 -- Variables:
---   @health_heat_mortality_reduction_pct (default: 8.0)
---   @health_heat_baseline_met_hours_per_week (default: 11.25)
---   @health_pm25_intake_fraction (default: 1.6e-6)
---   @health_pm25_concentration_response (default: 0.0062)
---   @health_background_dalys_per_capita (default: 0.013)
---   @health_background_death_rate (default: 0.008)
---   @health_weeks_per_year (default: 52.0)
+--   @blueprint_var('health_heat_mortality_reduction_pct') (default: 8.0)
+--   @blueprint_var('health_heat_baseline_met_hours_per_week') (default: 11.25)
+--   @blueprint_var('health_pm25_intake_fraction') (default: 1.6e-6)
+--   @blueprint_var('health_pm25_concentration_response') (default: 0.0062)
+--   @blueprint_var('health_background_dalys_per_capita') (default: 0.013)
+--   @blueprint_var('health_background_death_rate') (default: 0.008)
+--   @blueprint_var('health_weeks_per_year') (default: 52.0)
 
 WITH input_data AS (
     SELECT
@@ -53,18 +53,18 @@ WITH input_data AS (
         -- PA benefit base: deaths averted from physical activity
         CASE
             WHEN es.pop > 0 AND COALESCE(pa.total_met_hours, 0.0) > 0
-            THEN @health_background_death_rate * es.pop
-                * LEAST((pa.total_met_hours / @health_weeks_per_year) / @health_heat_baseline_met_hours_per_week, 1.0)
-                * (@health_heat_mortality_reduction_pct / 100.0)
+            THEN @blueprint_var('health_background_death_rate') * es.pop
+                * LEAST((pa.total_met_hours / @blueprint_var('health_weeks_per_year')) / @blueprint_var('health_heat_baseline_met_hours_per_week'), 1.0)
+                * (@blueprint_var('health_heat_mortality_reduction_pct') / 100.0)
             ELSE 0.0
         END AS pa_death_reduction,
         -- AQ harm base: deaths added from air quality (transport emissions)
         CASE
             WHEN es.pop > 0 AND COALESCE(tg.co2e_total_kg, 0.0) > 0
-            THEN @health_background_death_rate * es.pop
+            THEN @blueprint_var('health_background_death_rate') * es.pop
                 * LEAST(
-                    (COALESCE(tg.co2e_total_kg, 0.0) / 1000.0) * @health_pm25_intake_fraction
-                    * @health_pm25_concentration_response * 100.0,
+                    (COALESCE(tg.co2e_total_kg, 0.0) / 1000.0) * @blueprint_var('health_pm25_intake_fraction')
+                    * @blueprint_var('health_pm25_concentration_response') * 100.0,
                     1.0
                 )
             ELSE 0.0
@@ -80,17 +80,17 @@ SELECT
     parcel_id,
 
     -- DALYs averted from physical activity
-    pa_death_reduction * (@health_background_dalys_per_capita / @health_background_death_rate)
+    pa_death_reduction * (@blueprint_var('health_background_dalys_per_capita') / @blueprint_var('health_background_death_rate'))
         AS dalys_averted_pa,
 
     -- DALYs added from air quality (transport emissions)
-    aq_death_addition * (@health_background_dalys_per_capita / @health_background_death_rate)
+    aq_death_addition * (@blueprint_var('health_background_dalys_per_capita') / @blueprint_var('health_background_death_rate'))
         AS dalys_added_air_quality,
 
     -- Net DALYs (positive = health benefit)
     CASE
         WHEN pop > 0
-        THEN (pa_death_reduction - aq_death_addition) * (@health_background_dalys_per_capita / @health_background_death_rate)
+        THEN (pa_death_reduction - aq_death_addition) * (@blueprint_var('health_background_dalys_per_capita') / @blueprint_var('health_background_death_rate'))
         ELSE 0.0
     END AS net_dalys,
 

@@ -99,7 +99,7 @@ metrics AS (
     CROSS JOIN displacement_agg
 )
 SELECT
-    @scenario_id AS scenario_id,
+    @blueprint_var('scenario_id') AS scenario_id,
     total_population,
     total_households,
     total_dwelling_units_total AS du,

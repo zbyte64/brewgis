@@ -30,14 +30,14 @@ SELECT
     -- Avg unit area = acres_developed * 43560 * FAR / dwelling_units
     COALESCE(
         es.du * es.electricity_eui * 0.092903
-        * (es.acres_developed * 43560.0 * @res_far_default / NULLIF(es.du, 0)),
+        * (es.acres_developed * 43560.0 * @blueprint_var('res_far_default') / NULLIF(es.du, 0)),
         0.0
     ) AS energy_electricity_res,
 
     -- Residential gas (kWh/yr)
     COALESCE(
         es.du * es.gas_eui * 0.092903
-        * (es.acres_developed * 43560.0 * @res_far_default / NULLIF(es.du, 0)),
+        * (es.acres_developed * 43560.0 * @blueprint_var('res_far_default') / NULLIF(es.du, 0)),
         0.0
     ) AS energy_gas_res,
 
@@ -50,12 +50,12 @@ SELECT
     -- Total energy (kWh/yr)
     COALESCE(
         es.du * es.electricity_eui * 0.092903
-        * (es.acres_developed * 43560.0 * @res_far_default / NULLIF(es.du, 0)),
+        * (es.acres_developed * 43560.0 * @blueprint_var('res_far_default') / NULLIF(es.du, 0)),
         0.0
     )
     + COALESCE(
         es.du * es.gas_eui * 0.092903
-        * (es.acres_developed * 43560.0 * @res_far_default / NULLIF(es.du, 0)),
+        * (es.acres_developed * 43560.0 * @blueprint_var('res_far_default') / NULLIF(es.du, 0)),
         0.0
     )
     + COALESCE(es.building_sqft_total * 0.092903 * es.electricity_eui, 0.0)
@@ -67,12 +67,12 @@ SELECT
         THEN (
             COALESCE(
                 es.du * es.electricity_eui * 0.092903
-                * (es.acres_developed * 43560.0 * @res_far_default / NULLIF(es.du, 0)),
+                * (es.acres_developed * 43560.0 * @blueprint_var('res_far_default') / NULLIF(es.du, 0)),
                 0.0
             )
             + COALESCE(
                 es.du * es.gas_eui * 0.092903
-                * (es.acres_developed * 43560.0 * @res_far_default / NULLIF(es.du, 0)),
+                * (es.acres_developed * 43560.0 * @blueprint_var('res_far_default') / NULLIF(es.du, 0)),
                 0.0
             )
             + COALESCE(es.building_sqft_total * 0.092903 * es.electricity_eui, 0.0)

@@ -29,8 +29,8 @@ MODEL (
 -- by number of households to compute cost per household.
 --
 -- Variables:
---   @sprawl_infrastructure_cost_per_du: Annual infrastructure cost per DU (default: 15000).
---   @sprawl_capital_cost_per_du: One-time capital cost per DU (default: 50000).
+--   @blueprint_var('sprawl_infrastructure_cost_per_du'): Annual infrastructure cost per DU (default: 15000).
+--   @blueprint_var('sprawl_capital_cost_per_du'): One-time capital cost per DU (default: 50000).
 
 WITH parcel_data AS (
     SELECT
@@ -43,8 +43,8 @@ WITH parcel_data AS (
         es.land_development_category,
         es.built_form_key,
         -- Infrastructure cost: annual service cost + amortized capital cost
-        ROUND((es.du * @sprawl_infrastructure_cost_per_du)::numeric, 2) AS infrastructure_cost_annual,
-        ROUND((es.du * @sprawl_capital_cost_per_du)::numeric, 2) AS capital_cost
+        ROUND((es.du * @blueprint_var('sprawl_infrastructure_cost_per_du'))::numeric, 2) AS infrastructure_cost_annual,
+        ROUND((es.du * @blueprint_var('sprawl_capital_cost_per_du'))::numeric, 2) AS capital_cost
     FROM @{scenario_schema}.core_end_state AS es
 )
 SELECT
@@ -54,8 +54,8 @@ SELECT
     hh,
     du,
     built_form_key,
-    @sprawl_infrastructure_cost_per_du AS infrastructure_cost_per_du_annual,
-    @sprawl_capital_cost_per_du AS capital_cost_per_du,
+    @blueprint_var('sprawl_infrastructure_cost_per_du') AS infrastructure_cost_per_du_annual,
+    @blueprint_var('sprawl_capital_cost_per_du') AS capital_cost_per_du,
     infrastructure_cost_annual,
     capital_cost,
     -- Infrastructure cost per household (annual)

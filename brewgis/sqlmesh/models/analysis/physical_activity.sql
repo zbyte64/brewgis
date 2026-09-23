@@ -29,10 +29,10 @@ MODEL (
 --   MET-hours = trips x (distance_km / speed_kmh) x MET
 --
 -- Variables:
---   @health_walk_met: Walking MET value (default: 3.5).
---   @health_bike_met: Biking MET value (default: 6.0).
---   @health_walk_speed_kmh: Walking speed in km/h (default: 4.8).
---   @health_bike_speed_kmh: Biking speed in km/h (default: 16.0).
+--   @blueprint_var('health_walk_met'): Walking MET value (default: 3.5).
+--   @blueprint_var('health_bike_met'): Biking MET value (default: 6.0).
+--   @blueprint_var('health_walk_speed_kmh'): Walking speed in km/h (default: 4.8).
+--   @blueprint_var('health_bike_speed_kmh'): Biking speed in km/h (default: 16.0).
 
 WITH mode_data AS (
     SELECT
@@ -55,16 +55,16 @@ SELECT
     parcel_id,
 
     -- Walking MET-hours: walk_trips x (avg_trip_length_km / walk_speed_kmh) x MET
-    COALESCE(walk_trips * (avg_trip_length_km / @health_walk_speed_kmh) * @health_walk_met, 0.0)
+    COALESCE(walk_trips * (avg_trip_length_km / @blueprint_var('health_walk_speed_kmh')) * @blueprint_var('health_walk_met'), 0.0)
         AS walk_met_hours,
 
     -- Biking MET-hours: bike_trips x (avg_trip_length_km / bike_speed_kmh) x MET
-    COALESCE(bike_trips * (avg_trip_length_km / @health_bike_speed_kmh) * @health_bike_met, 0.0)
+    COALESCE(bike_trips * (avg_trip_length_km / @blueprint_var('health_bike_speed_kmh')) * @blueprint_var('health_bike_met'), 0.0)
         AS bike_met_hours,
 
     -- Total MET-hours
-    COALESCE(walk_trips * (avg_trip_length_km / @health_walk_speed_kmh) * @health_walk_met, 0.0)
-    + COALESCE(bike_trips * (avg_trip_length_km / @health_bike_speed_kmh) * @health_bike_met, 0.0)
+    COALESCE(walk_trips * (avg_trip_length_km / @blueprint_var('health_walk_speed_kmh')) * @blueprint_var('health_walk_met'), 0.0)
+    + COALESCE(bike_trips * (avg_trip_length_km / @blueprint_var('health_bike_speed_kmh')) * @blueprint_var('health_bike_met'), 0.0)
         AS total_met_hours,
 
     walk_trips,

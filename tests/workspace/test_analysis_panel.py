@@ -89,6 +89,82 @@ class TestAnalysisModuleForm(TestCase):
         for field in ("parcel_table", "built_form_table", "base_canvas_table"):
             assert field not in form.fields
 
+    def test_parameter_fields_are_scoped_to_the_module(self):
+        """A module's form shows its own parameters — including those of the
+        models it pulls in as dependencies — and no other module's."""
+        vmt_form = AnalysisModuleForm(
+            workspace=self.workspace, scenario=self.scenario, module="vmt"
+        )
+        for name in (
+            "transport_mode_share_auto",
+            "transport_avg_trip_length_mi",
+            "transport_circuity_factor",
+            "transport_study_area_geometry",
+            "transport_intrazonal_friction",
+        ):
+            assert name in vmt_form.fields
+        assert "crop_yield_per_acre" not in vmt_form.fields
+
+    def test_parameter_fields_initialize_from_the_scenario(self):
+        """Reopening a form shows the scenario's stored value, not the default."""
+        self.scenario.analysis_params = {"transport_avg_trip_length_mi": 9.87}
+        self.scenario.save(update_fields=["analysis_params"])
+        form = AnalysisModuleForm(
+            workspace=self.workspace, scenario=self.scenario, module="vmt"
+        )
+        assert form.fields["transport_avg_trip_length_mi"].initial == 9.87
+        # An unset parameter falls back to its registry default.
+        assert form.fields["transport_circuity_factor"].initial == 1.2
+
+    @patch(
+        "brewgis.workspace.views.analysis.check_analysis_prerequisites", return_value=[]
+    )
+    def test_apply_scenario_params_persists_and_merges_parameters(self, _mock_prereq):
+        """Parameters from one module's run are stored, and saving a different
+        module's form does not discard them."""
+        alt_scenario = ScenarioFactory(
+            workspace=self.workspace, scenario_type=ScenarioType.ALTERNATIVE
+        )
+        vmt_form = AnalysisModuleForm(
+            {
+                "scenario": alt_scenario.pk,
+                "transport_mode_share_auto": 0.4,
+            },
+            workspace=self.workspace,
+            scenario=alt_scenario,
+            module="vmt",
+        )
+        assert vmt_form.is_valid(), vmt_form.errors
+        vmt_form.apply_scenario_params(alt_scenario)
+
+        alt_scenario.refresh_from_db()
+        assert alt_scenario.analysis_params == {
+            "transport_mode_share_auto": 0.4,
+            # A str parameter's empty value *is* its "unset" value, so it is
+            # stored as-is rather than discarded like an empty number.
+            "transport_study_area_geometry": "",
+        }
+
+        # A *different* module's run must not erase the vmt values just stored.
+        crop_form = AnalysisModuleForm(
+            {
+                "scenario": alt_scenario.pk,
+                "crop_yield_per_acre": 11.5,
+            },
+            workspace=self.workspace,
+            scenario=alt_scenario,
+            module="agriculture",
+        )
+        assert crop_form.is_valid(), crop_form.errors
+        crop_form.apply_scenario_params(alt_scenario)
+
+        alt_scenario.refresh_from_db()
+        assert alt_scenario.analysis_params == {
+            "transport_mode_share_auto": 0.4,
+            "transport_study_area_geometry": "",
+            "crop_yield_per_acre": 11.5,
+        }
+
     @patch(
         "brewgis.workspace.views.analysis.check_analysis_prerequisites", return_value=[]
     )
@@ -184,6 +260,40 @@ class TestAnalysisPanelViews(TestCase):
         )
         assert response.status_code == 200
         self.assertContains(response, "Run Analysis")
+        # The module's own parameters render as form inputs, and no other
+        # module's do — the panel form is scoped to the card it was opened from.
+        self.assertContains(response, "nonres_indoor_water_rate")
+        self.assertNotContains(response, "crop_yield_per_acre")
+        # Never a raw-JSON textarea.
+        self.assertNotContains(response, "textarea")
+
+    @patch(
+        "brewgis.workspace.views.analysis.check_analysis_prerequisites", return_value=[]
+    )
+    @patch("brewgis.workspace.views.analysis.launch_analysis_run")
+    def test_launch_persists_module_parameters(self, mock_launch, mock_prereq):
+        """A launch stores the module's parameter values on the scenario, which
+        is where its analysis models read them from."""
+        mock_launch.return_value = AnalysisRunFactory(
+            workspace=self.workspace,
+            scenario=self.scenario,
+            modules=["water_demand"],
+            status="pending",
+        )
+        self.client.force_login(self.user)
+        response = self.client.post(
+            reverse(
+                "workspace:analysis_module_launch",
+                args=[self.workspace.pk, "water_demand"],
+            ),
+            {
+                "scenario": self.scenario.pk,
+                "nonres_indoor_water_rate": 55,
+            },
+        )
+        assert response.status_code == 200
+        self.scenario.refresh_from_db()
+        assert self.scenario.analysis_params == {"nonres_indoor_water_rate": 55.0}
 
     @patch(
         "brewgis.workspace.views.analysis.check_analysis_prerequisites", return_value=[]

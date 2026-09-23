@@ -24,20 +24,20 @@ SELECT
     es.hh,
     es.du,
     -- Cost-burdened households
-    COALESCE(es.hh * @housing_cost_burden_rate, 0.0) AS cost_burdened_hh,
+    COALESCE(es.hh * @blueprint_var('housing_cost_burden_rate'), 0.0) AS cost_burdened_hh,
     -- Severely cost-burdened households
-    COALESCE(es.hh * @housing_severe_burden_rate, 0.0) AS severely_cost_burdened_hh,
+    COALESCE(es.hh * @blueprint_var('housing_severe_burden_rate'), 0.0) AS severely_cost_burdened_hh,
     -- Cost burden percentage
     COALESCE(
-        (es.hh * @housing_cost_burden_rate) / NULLIF(es.hh, 0) * 100.0,
+        (es.hh * @blueprint_var('housing_cost_burden_rate')) / NULLIF(es.hh, 0) * 100.0,
         0.0
     ) AS cost_burden_pct,
     -- Cost burden category
     CASE
         WHEN COALESCE(es.hh, 0) = 0 THEN 'low_burden'
-        WHEN (es.hh * @housing_cost_burden_rate) / NULLIF(es.hh, 0) * 100.0 < 30.0
+        WHEN (es.hh * @blueprint_var('housing_cost_burden_rate')) / NULLIF(es.hh, 0) * 100.0 < 30.0
             THEN 'low_burden'
-        WHEN (es.hh * @housing_cost_burden_rate) / NULLIF(es.hh, 0) * 100.0 <= 50.0
+        WHEN (es.hh * @blueprint_var('housing_cost_burden_rate')) / NULLIF(es.hh, 0) * 100.0 <= 50.0
             THEN 'cost_burdened'
         ELSE 'severely_cost_burdened'
     END AS cost_burden_category,

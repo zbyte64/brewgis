@@ -209,7 +209,8 @@ npm run test      # vitest
 - **Seeds (37):** 5 real config seeds, 32 test seeds
 - **Audits (86):** 57 assert_* (row counts, coverage, conservation) + 29 audit_* (pipeline boundary checks)
 - **Naming:** `brewgis.{namespace}.{model_name}` where the namespace is a region (`sacog`, `fresno`) or a domain (`census`, `overture`, `buildings`, `base_canvas`, `assessor`, `nlcd`) (e.g. `brewgis.sacog.assessor_parcels`, `brewgis.census.tiger_blocks`). DuckDB-gateway raw views use the same namespaces under the `duckdb` catalog (e.g. `duckdb.census.tiger_blocks`)
-- **Variables:** 90+ config variables, gateway-managed virtual layer enabled
+- **Variables:** 51 config variables (SRIDs, census/overture/NLCD/CBP, table names), gateway-managed virtual layer enabled
+- **Analysis parameters:** everything tunable in `models/analysis/**` is declared once in `module_registry.ANALYSIS_PARAMETERS` (default, form field kind, owning module), overridden per scenario on `Scenario.analysis_params`, and baked into every scenario's model blueprints by the `analysis_blueprints` macro. A model reads a *value* parameter as `@blueprint_var('name')` — `@{name}` splices the value as a bare identifier, so it fits object names only and would render `0.85` as the quoted identifier `"0.85"`. `run_modules_sync` renders each run in its own cache directory: SQLMesh's model cache is keyed on model-file mtimes, never on the Scenario rows those blueprints come from, so a shared cache would re-materialize the previous run's values.
 - **Descriptions:** every model declares a MODEL DDL `description` (one sentence: what the rows are and where they come from) and a `column_descriptions` entry for every output column. The SQLMesh UI, the lineage column view and Postgres `COMMENT ON COLUMN` all read them, and they are metadata-only (they hash into `metadata_hash`, never `data_hash`, so documenting a model never triggers a backfill). Python models use the `@model(description=..., column_descriptions={...})` kwargs, external models the same keys in `external_models.yaml`. The one exception is `models/scenarios/scenario_canvas.py`, whose column set is per-scenario and is filled by SQLMesh lineage inference instead. A **Python** model's `description`/`column_descriptions` must not contain an `@` — SQLMesh re-parses any meta string containing one as SQL (blueprint rendering), so `@train_model` in a description fails the whole project load.
 
 ## Important Files
@@ -226,14 +227,14 @@ npm run test      # vitest
 |`brewgis/workspace/admin.py`|9 admin registrations (12 including built_forms)|
 |`brewgis/workspace/palettes.py`|21 color palettes: 6 qualitative, 10 sequential, 5 diverging|
 |`brewgis/workspace/templatetags/workspace_tags.py`|6 custom template filters: json_attr, model_verbose_name, analysis_status_badge, report_status_badge, dictlookup, list_index|
-|`brewgis/workspace/analysis/module_registry.py`|Single source of truth for 28 analysis modules: DAG dependencies, result table names, SQLMesh selectors|
+|`brewgis/workspace/analysis/module_registry.py`|Single source of truth for 28 analysis modules: DAG dependencies, result table names, SQLMesh selectors, analysis parameters|
 |`brewgis/workspace/services/duckdb_pool.py`|DuckDB connection pool for data-loading operations — caches HTTP fetches, handles raster and zip files natively|
 |`brewgis/workspace/mcp/server.py`|FastMCP stdio server entrypoint with 8 tool modules|
 
 |`brewgis/workspace/dlt_pipelines/__init__.py`|dlt pipeline package: nlcd pipeline modules|
 |`brewgis/workspace/services/_db.py`|Cached SQLAlchemy engine singleton (functools.lru_cache)|
 |`brewgis/workspace/services/base_canvas_pipeline.py`|1047-line 11-step ETL pipeline (raw SQL with SQL injection quoting)|
-|`brewgis/sqlmesh/config.py`|SQLMesh config: Postgres dialect, 90+ config variables, gateway settings|
+|`brewgis/sqlmesh/config.py`|SQLMesh config: Postgres dialect, 51 config variables, gateway settings|
 |`brewgis/_ruff_rules/rules.py`|6 custom Ruff lint rules for project anti-patterns|
 |`_schema.yml`|Root-level column tests (not_null, unique, non_negative)|
 
@@ -267,7 +268,7 @@ npm run test      # vitest
 
 |File|Role|
 |---|---|
-|`brewgis/sqlmesh/config.py`|Project config, 90+ vars, postgres dialect|
+|`brewgis/sqlmesh/config.py`|Project config, 51 vars, postgres dialect|
 |`brewgis/sqlmesh/models/`|~162 models across 13 directories (sacog, fresno, census, overture, buildings, base_canvas, assessor, nlcd, adapters, python, analysis, seeds, tests)|
 |`brewgis/sqlmesh/macros/`|7 macro files (22 macros total)|
 |`brewgis/sqlmesh/seeds/`|37 CSV seed files (5 real config + 32 test fixtures)|

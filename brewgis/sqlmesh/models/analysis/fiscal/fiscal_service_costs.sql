@@ -29,22 +29,22 @@ MODEL (
 --   service_cost_total = sum of all three
 --
 -- Variables:
---   @cost_per_du: Annual cost per dwelling unit (default: 5000).
---   @cost_per_capita: Annual cost per capita (default: 2000).
---   @cost_per_employee: Annual cost per employee (default: 1500).
+--   @blueprint_var('cost_per_du'): Annual cost per dwelling unit (default: 5000).
+--   @blueprint_var('cost_per_capita'): Annual cost per capita (default: 2000).
+--   @blueprint_var('cost_per_employee'): Annual cost per employee (default: 1500).
 
 SELECT
     es.parcel_id,
     -- Schools and infrastructure
-    COALESCE(es.du * @cost_per_du, 0.0) AS service_cost_schools,
+    COALESCE(es.du * @blueprint_var('cost_per_du'), 0.0) AS service_cost_schools,
     -- Police, fire, libraries
-    COALESCE(es.pop * @cost_per_capita, 0.0) AS service_cost_public_safety,
+    COALESCE(es.pop * @blueprint_var('cost_per_capita'), 0.0) AS service_cost_public_safety,
     -- Roads and transit
-    COALESCE(es.emp * @cost_per_employee, 0.0) AS service_cost_roads,
+    COALESCE(es.emp * @blueprint_var('cost_per_employee'), 0.0) AS service_cost_roads,
     -- Total service cost
-    COALESCE(es.du * @cost_per_du, 0.0)
-    + COALESCE(es.pop * @cost_per_capita, 0.0)
-    + COALESCE(es.emp * @cost_per_employee, 0.0)
+    COALESCE(es.du * @blueprint_var('cost_per_du'), 0.0)
+    + COALESCE(es.pop * @blueprint_var('cost_per_capita'), 0.0)
+    + COALESCE(es.emp * @blueprint_var('cost_per_employee'), 0.0)
     AS service_cost_total,
     es.geometry
 FROM @{scenario_schema}.core_end_state AS es;

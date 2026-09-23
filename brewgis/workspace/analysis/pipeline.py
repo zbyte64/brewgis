@@ -13,6 +13,8 @@ them in dependency order via SQLMesh. The pipeline:
 from __future__ import annotations
 
 import logging
+import shutil
+import tempfile
 import traceback
 from typing import Any
 
@@ -281,27 +283,41 @@ def run_modules_sync(
         for model_name in MODULE_SQLMESH_SELECTORS.get(module, [])
     ]
 
-    run_sqlmesh_plan(
-        environment="prod",
-        select=selects or None,
-        skip_tests=True,
-        # Launching an analysis must always recompute the models already built
-        # for this scenario, never trust SQLMesh's own snapshot-fingerprint
-        # staleness check: upstream reference data (e.g. BuildingType/built_forms
-        # exports, or paint applied to the scenario's canvas) can change without
-        # the model's SQL or blueprints changing, so a rerun can silently keep
-        # serving results computed against data that no longer exists. A model
-        # this scenario has never built can't be *restated* (SQLMesh refuses
-        # that) — it is materialized because it is new.
-        restate_models=model_fqns_built_in("prod", selects) or None,
-        # ...but restating is exactly what makes SQLMesh plan from state alone,
-        # which hides any model this scenario has never built — the case above.
-        # Without this, asking for a module the scenario has not run before
-        # plans nothing for it and the run still reports the module completed.
-        always_include_local_changes=True,
-        auto_apply=True,
-        no_prompts=True,
-    )
+    # The scenario's parameters — like its constraints, column mapping and
+    # painted canvas — are baked into these models' blueprints when they are
+    # *rendered*, and SQLMesh caches rendered model definitions on disk keyed by
+    # model-file mtimes, never by the Scenario rows they come from. Loading from
+    # that shared cache would re-materialize whichever run rendered it last
+    # instead of this scenario's current values, so this run renders into a
+    # private, empty cache directory: correct by construction, and it never
+    # deletes a directory a concurrent plan (another worker, the SQLMesh UI) is
+    # writing to.
+    cache_dir = tempfile.mkdtemp(prefix="brewgis-sqlmesh-cache-")
+    try:
+        run_sqlmesh_plan(
+            environment="prod",
+            select=selects or None,
+            skip_tests=True,
+            cache_dir=cache_dir,
+            # Launching an analysis must always recompute the models already built
+            # for this scenario, never trust SQLMesh's own snapshot-fingerprint
+            # staleness check: upstream reference data (e.g. BuildingType/built_forms
+            # exports, or paint applied to the scenario's canvas) can change without
+            # the model's SQL or blueprints changing, so a rerun can silently keep
+            # serving results computed against data that no longer exists. A model
+            # this scenario has never built can't be *restated* (SQLMesh refuses
+            # that) — it is materialized because it is new.
+            restate_models=model_fqns_built_in("prod", selects) or None,
+            # ...but restating is exactly what makes SQLMesh plan from state alone,
+            # which hides any model this scenario has never built — the case above.
+            # Without this, asking for a module the scenario has not run before
+            # plans nothing for it and the run still reports the module completed.
+            always_include_local_changes=True,
+            auto_apply=True,
+            no_prompts=True,
+        )
+    finally:
+        shutil.rmtree(cache_dir, ignore_errors=True)
     # Each model's on_virtual_update statement publishes its result view at
     # "<result schema>.<bare model name>" — the same location the map, the
     # tile servers and the Layers panel read. Discover the views actually

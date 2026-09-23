@@ -129,7 +129,7 @@ ANALYSIS_MODULES: list[dict[str, object]] = [
 ]
 
 # Constraint tables checked by the analysis launch form's default configuration
-# (see AnalysisLaunchForm._CONSTRAINTS_INITIAL in views/analysis.py).
+# (see _CONSTRAINT_LAYERS in views/analysis.py).
 _CONSTRAINT_LAYER_TABLES: tuple[str, ...] = ("floodplains", "wetlands", "steep_slopes")
 
 

@@ -25,6 +25,7 @@ from brewgis.workspace.analysis.module_registry import CANONICAL_COLUMN_NAMES
 from brewgis.workspace.analysis.module_registry import MODULE_LABELS
 from brewgis.workspace.analysis.module_registry import get_available_analyses
 from brewgis.workspace.analysis.module_registry import get_module_label
+from brewgis.workspace.analysis.module_registry import get_module_parameters
 from brewgis.workspace.analysis.module_registry import resolve_module_order
 from brewgis.workspace.analysis.pipeline import launch_analysis_run
 from brewgis.workspace.analysis.pipeline import run_analysis_pipeline
@@ -35,15 +36,6 @@ from brewgis.workspace.models import Workspace
 from brewgis.workspace.services.preflight import PreflightError
 from brewgis.workspace.services.preflight import check_analysis_prerequisites
 from brewgis.workspace.views.built_forms import HtmxResponseMixin
-
-_CONSTRAINTS_INITIAL = json.dumps(
-    [
-        {"table": "floodplains", "discount_pct": 100, "geom_col": "geom"},
-        {"table": "wetlands", "discount_pct": 100, "geom_col": "geom"},
-        {"table": "steep_slopes", "discount_pct": 75, "geom_col": "geom"},
-    ],
-    indent=2,
-)
 
 _BUILT_FORMS_TABLE = "built_forms"
 """Table the analysis models read BuildingType definitions from.
@@ -144,89 +136,33 @@ class AnalysisLaunchForm(forms.Form):
                 workspace=self._workspace,
             )
 
-    # Constraint layers (repeating group — simplified with JSON field)
-    constraints_json = forms.CharField(
-        widget=forms.Textarea(
-            attrs={"rows": 6, "class": "form-control font-monospace"}
-        ),
-        required=False,
-        label="Constraints Configuration (JSON)",
-        help_text=(
-            "JSON array of constraint layer definitions. "
-            'Example: [{"table": "floodplains", "discount_pct": 100}]'
-        ),
-        initial=_CONSTRAINTS_INITIAL,
-    )
-    column_mapping = forms.CharField(
-        widget=forms.Textarea(
-            attrs={"rows": 4, "class": "form-control font-monospace"}
-        ),
-        required=False,
-        label="Column Mapping (JSON)",
-        help_text=(
-            "Optional JSON mapping of canonical column names to actual table "
-            'column names. Example: {"pop": "population", "hh": "households"}'
-        ),
-    )
+        # The parcel/built-form/base-canvas tables are derived per scenario by
+        # the model blueprints, but constraints and column mapping are per-run
+        # inputs — explicit fields, never JSON.
+        _add_scenario_input_fields(self, constraints=True, column_mapping=True)
 
-    def clean_constraints_json(self) -> list[dict] | None:
-        """Parse and validate the constraints JSON field."""
-        data = self.cleaned_data.get("constraints_json")
-        if not data:
-            return None
-
-        try:
-            parsed = json.loads(data)
-        except json.JSONDecodeError as e:
-            msg = f"Invalid JSON: {e}"
-            raise forms.ValidationError(msg) from e
-
-        if not isinstance(parsed, list):
-            msg = "Constraints must be a JSON array."
-            raise forms.ValidationError(msg)
-
-        for i, item in enumerate(parsed):
-            if not isinstance(item, dict):
-                msg = f"Item {i} must be an object."
-                raise forms.ValidationError(msg)
-            if "table" not in item:
-                msg = f"Item {i} missing required 'table' key."
-                raise forms.ValidationError(msg)
-            if "discount_pct" not in item:
-                msg = f"Item {i} missing required 'discount_pct' key."
-                raise forms.ValidationError(msg)
-
-        return parsed
-
-    def clean_column_mapping(self) -> dict[str, str] | None:
-        """Parse and validate the column mapping JSON field."""
-        data = self.cleaned_data.get("column_mapping")
-        if not data:
-            return None
-        try:
-            parsed = json.loads(data)
-        except json.JSONDecodeError as e:
-            raise forms.ValidationError(f"Invalid JSON: {e}") from e
-        if not isinstance(parsed, dict):
-            raise forms.ValidationError("Column mapping must be a JSON object.")
-        for key, value in parsed.items():
-            if not isinstance(key, str) or not isinstance(value, str):
-                raise forms.ValidationError(
-                    "All keys and values in column mapping must be strings."
-                )
-        return parsed
+    # Constraint-discount and column-mapping fields are added in ``__init__``
+    # (from ``_CONSTRAINT_LAYERS`` / ``CANONICAL_COLUMN_NAMES``, the same
+    # fields ``AnalysisModuleForm`` builds), so this multi-module launcher no
+    # longer requires typing JSON. Per-module analysis parameters are NOT
+    # offered here: this form launches several modules at once, so a parameter
+    # cannot be scoped to one of them (see ``AnalysisModuleForm``).
 
     def scenario_constraints(self) -> list[dict[str, Any]]:
         """Constraint layers to persist on the scenario for this run."""
-        constraints: list[dict[str, Any]] = (
-            self.cleaned_data.get("constraints_json") or []
-        )
-        return constraints
+        return [
+            {"table": table, "discount_pct": data, "geom_col": geom_col}
+            for field_name, table, geom_col, _default_pct in _CONSTRAINT_LAYERS
+            if (data := self.cleaned_data.get(field_name)) is not None
+        ]
 
     def scenario_column_mapping(self) -> dict[str, str]:
         """Parcel column mapping to persist on the scenario for this run."""
-        mapping: dict[str, str] = self.cleaned_data.get("column_mapping") or {}
-        return mapping
+        return {
+            name: self.cleaned_data[f"column_{name}"]
+            for name in CANONICAL_COLUMN_NAMES
+            if self.cleaned_data.get(f"column_{name}")
+        }
 
     def clean(self) -> dict[str, Any] | None:
         """Validate analysis prerequisites before launching."""
@@ -248,32 +184,83 @@ class AnalysisLaunchForm(forms.Form):
         return data
 
 
-# Fixed constraint layers offered as individual discount-% fields on
-# AnalysisModuleForm — mirrors _CONSTRAINTS_INITIAL above (the same three
-# layers AnalysisLaunchForm's constraints_json field defaults to), just
-# surfaced as plain number inputs instead of JSON so the map view's
-# per-analysis form never requires typing JSON.
+# Fixed constraint layers offered as individual discount-% fields on both
+# analysis forms, so neither requires typing JSON. Each entry is
+# field_name, table, geom_col, default_pct.
 _CONSTRAINT_LAYERS: list[tuple[str, str, str, int]] = [
-    # each entry is field_name, table, geom_col, default_pct
     ("floodplain_discount_pct", "floodplains", "geom", 100),
     ("wetlands_discount_pct", "wetlands", "geom", 100),
     ("steep_slopes_discount_pct", "steep_slopes", "geom", 75),
 ]
 
 
+def _add_scenario_input_fields(
+    form: forms.Form, *, constraints: bool, column_mapping: bool
+) -> None:
+    """Add the constraint-discount and column-mapping fields to *form*.
+
+    Shared by both analysis forms so their field definitions can never drift
+    apart: the full-page multi-module launcher always shows them, while a
+    single-module form shows them only when the module's dependency chain
+    actually resolves through ``env_constraint`` / ``core``.
+    """
+    if constraints:
+        for field_name, table, _geom_col, default_pct in _CONSTRAINT_LAYERS:
+            form.fields[field_name] = forms.IntegerField(
+                required=False,
+                min_value=0,
+                max_value=100,
+                initial=default_pct,
+                label=f"{table.replace('_', ' ').title()} discount %",
+                help_text="% of this layer's overlapping acreage excluded from developable land.",
+            )
+    if column_mapping:
+        for name in CANONICAL_COLUMN_NAMES:
+            form.fields[f"column_{name}"] = forms.CharField(
+                required=False,
+                label=f"{name.replace('_', ' ').title()} column override",
+                help_text=f"Use if your source table names this column something other than '{name}'.",
+            )
+
+
+def _add_parameter_fields(form: forms.Form, module: str, scenario: Scenario) -> None:
+    """Add *module*'s analysis-parameter fields, initialized from the scenario.
+
+    One field per ``module_registry.ANALYSIS_PARAMETERS`` entry whose
+    ``modules`` include *module*: the value the scenario has stored, falling
+    back to the parameter's default. The values are persisted by
+    ``AnalysisModuleForm.apply_scenario_params`` and baked into the scenario's
+    model blueprints.
+    """
+    field_classes: dict[str, type[forms.Field]] = {
+        "float": forms.FloatField,
+        "bool": forms.BooleanField,
+        "str": forms.CharField,
+    }
+    for param in get_module_parameters(module):
+        current = (scenario.analysis_params or {}).get(param.name, param.default)
+        form.fields[param.name] = field_classes[param.kind](
+            required=False,
+            initial=current,
+            label=param.name.replace("_", " ").title(),
+            help_text=f"Default: {param.default}",
+        )
+
+
 class AnalysisModuleForm(forms.Form):
     """Parameter form for launching a single analysis from its map-view card.
 
-    Unlike ``AnalysisLaunchForm`` (a generic multi-module launcher with raw
-    JSON textareas for constraints/column mapping), this form is bound to one
-    specific analysis module and exposes every relevant parameter as its own
-    field — no JSON entry required.
+    Unlike ``AnalysisLaunchForm`` (a generic multi-module launcher), this form
+    is bound to one specific analysis module and exposes every relevant
+    parameter as its own field — no JSON entry required.
 
-    It collects only parameters a run can still act on: which scenario to run
-    against, how to discount constraint layers, and how the scenario's parcel
-    source names the canonical columns. The parcel/built-form/base-canvas
-    tables are derived (``sqlmesh/macros/analysis_blueprints.py``), so they are
-    validated rather than entered — see ``scenario_analysis_errors``.
+    It collects the parameters a run can still act on: which scenario to run
+    against, how to discount constraint layers, how the scenario's parcel
+    source names the canonical columns, and that scenario's analysis
+    parameters (``module_registry.ANALYSIS_PARAMETERS``). The parcel/built-form/
+    base-canvas tables are derived
+    (``sqlmesh/macros/analysis_blueprints.py``), so they are validated rather
+    than entered — see ``scenario_analysis_errors``.
     """
 
     scenario = forms.ModelChoiceField(
@@ -293,28 +280,15 @@ class AnalysisModuleForm(forms.Form):
         module: str = cast("str", kwargs.pop("module"))
         super().__init__(*args, **kwargs)  # type: ignore[arg-type]
 
+        self._module = module
         deps = resolve_module_order([module])
-        needs_constraints = "env_constraint" in deps
-        needs_column_mapping = "core" in deps
 
-        if needs_constraints:
-            for field_name, _table, _geom_col, default_pct in _CONSTRAINT_LAYERS:
-                self.fields[field_name] = forms.IntegerField(
-                    required=False,
-                    min_value=0,
-                    max_value=100,
-                    initial=default_pct,
-                    label=f"{_table.replace('_', ' ').title()} discount %",
-                    help_text="% of this layer's overlapping acreage excluded from developable land.",
-                )
-
-        if needs_column_mapping:
-            for name in CANONICAL_COLUMN_NAMES:
-                self.fields[f"column_{name}"] = forms.CharField(
-                    required=False,
-                    label=f"{name.replace('_', ' ').title()} column override",
-                    help_text=f"Use if your source table names this column something other than '{name}'.",
-                )
+        _add_scenario_input_fields(
+            self,
+            constraints="env_constraint" in deps,
+            column_mapping="core" in deps,
+        )
+        _add_parameter_fields(self, module, scenario)
 
         self.helper = FormHelper()
         self.helper.form_tag = False
@@ -349,6 +323,12 @@ class AnalysisModuleForm(forms.Form):
         read from the Scenario at model-load time (see
         ``sqlmesh/macros/analysis_blueprints.py``) — persisting them here is
         what makes this launch, and any later rerun, use the same parameters.
+
+        Analysis parameters are *merged* rather than replaced: a module's form
+        only exposes its own parameters, so saving one must not discard the
+        values another module's run stored. A parameter whose field came back
+        empty is skipped — except a ``str`` parameter, whose empty value *is*
+        its "unset" value and is therefore stored as-is.
         """
         constraints = [
             {"table": table, "discount_pct": data, "geom_col": geom_col}
@@ -360,9 +340,17 @@ class AnalysisModuleForm(forms.Form):
             for name in CANONICAL_COLUMN_NAMES
             if self.cleaned_data.get(f"column_{name}")
         }
+        params = {
+            param.name: self.cleaned_data[param.name]
+            for param in get_module_parameters(self._module)
+            if self.cleaned_data.get(param.name) is not None
+        }
         scenario.constraints = constraints
         scenario.column_mapping = column_mapping
-        scenario.save(update_fields=["constraints", "column_mapping"])
+        scenario.analysis_params = {**scenario.analysis_params, **params}
+        scenario.save(
+            update_fields=["constraints", "column_mapping", "analysis_params"]
+        )
 
 
 @method_decorator(user_passes_test(lambda u: u.is_authenticated), name="dispatch")

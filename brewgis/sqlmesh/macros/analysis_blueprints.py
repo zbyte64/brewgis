@@ -96,7 +96,7 @@ def _canvas_model_fqns() -> dict[int, str]:
 
 
 def _drop_inherited_connection() -> None:
-    """Close the DB connection this process inherited from its parent, if any.
+    """Drop the DB connection this process inherited from its parent, if any.
 
     These profiles are read while SQLMesh loads models, which it does in forked
     worker processes. A forked child inherits the parent's already-open
@@ -107,17 +107,49 @@ def _drop_inherited_connection() -> None:
     scenario silently loses its models) or as a read that never returns (a plan
     that never loads).
 
-    Closing the inherited connection makes this child open its own, which is
-    what Django documents for forked children. Only the connection *this*
-    process holds is closed: the parent keeps its own, and its transaction is
-    unaffected. The check is deliberately "am I a fork?" rather than "am I in a
+    Dropping it is *not* simply ``connections.close_all()``: closing sends a
+    Terminate message over the socket this process shares with its parent, which
+    ends the parent's server-side session. The parent is still using that
+    connection — it keeps loading models, planning and writing result rows after
+    the fork — so the damage surfaces there, as
+    ``OperationalError: server closed the connection unexpectedly`` while it
+    loads the *next* model file. Closing this process's copy of the socket's
+    file descriptor first (which the server never hears about) leaves libpq
+    unable to write that Terminate, and the parent's own copy keeps the session
+    alive. The child then opens a fresh connection for its own reads.
+
+    The transaction flags are cleared before the close because a fork can land
+    inside the parent's atomic block, and ``close()`` would then leave the
+    wrapper reporting a connection it has already closed.
+
+    The check is deliberately "am I a fork?" rather than "am I in a
     transaction?" — the parent is in one for every request, and a child must
     still drop the connection it inherited from it.
     """
     if multiprocessing.parent_process() is None:
         return  # not a fork — leave this process's own connection alone
 
+    import contextlib
+    import os
+
     from django.db import connections
+
+    for alias in connections:
+        wrapper = connections[alias]
+        wrapper.in_atomic_block = False
+        wrapper.needs_rollback = False
+        wrapper.closed_in_transaction = False
+        wrapper.savepoint_ids = []
+        # The parent's post-commit hooks belong to the parent, not to this
+        # child, which must not replay them.
+        wrapper.run_on_commit = []
+
+        inherited = wrapper.connection
+        if inherited is None:
+            continue
+        with contextlib.suppress(OSError):
+            # Already closed, or a driver connection without a socket.
+            os.close(inherited.fileno())
 
     connections.close_all()
 
@@ -207,6 +239,17 @@ def _scenario_profiles() -> list[dict[str, Any]]:
                 for name, column in (scenario.column_mapping or {}).items()
             }
         )
+        # Every analysis parameter is baked into every blueprint, so a
+        # blueprinted model resolves it without a config var or a plan-time
+        # variable — rematerialization (which re-renders from these profiles
+        # alone) keeps the scenario's own values. Imported inside the function
+        # for the same reason as the Django imports above: SQLMesh serializes
+        # the module-level objects a macro's python_env references.
+        from brewgis.workspace.analysis.module_registry import ANALYSIS_PARAMETERS
+
+        overrides = scenario.analysis_params or {}
+        for param in ANALYSIS_PARAMETERS:
+            profile[param.name] = overrides.get(param.name, param.default)
         profiles.append(profile)
     return profiles
 
@@ -232,6 +275,16 @@ def _variable_sql(name: str, value: object) -> str:
     ``str`` becomes a quoted string literal, ``int`` an exact integer literal,
     and object names (``_IDENTIFIER_VARS``) a bare identifier.
 
+    Note the two ways a blueprint variable can be *referenced*, which is what
+    this text has to survive:
+
+    - ``@{name}`` splices this text into the query as a bare *identifier*, so it
+      only fits values that name an object (a schema, a table, a column) —
+      ``_IDENTIFIER_VARS``, and the analysis parameters of the identifier kind.
+    - ``@blueprint_var('name')`` re-parses this text as a SQL expression, which
+      is what every *value* parameter uses: it is what makes ``0.85`` a numeric
+      literal rather than the quoted identifier ``"0.85"``.
+
     ``list``/``dict`` values (``constraints`` is a list of
     ``{table, discount_pct, geom_col}`` objects) render as a *JSON string
     literal* rather than ``ARRAY[...]``: an array has no element type that can
@@ -241,6 +294,10 @@ def _variable_sql(name: str, value: object) -> str:
     """
     if name in _IDENTIFIER_VARS:
         return str(value)  # identifier, not a string literal
+    if isinstance(value, bool):
+        # Checked before the numeric fallback: ``str(False)`` is "False", which
+        # is not a SQL boolean literal and would fail to parse.
+        return "TRUE" if value else "FALSE"
     if isinstance(value, str):
         return "'" + value.replace("'", "''") + "'"
     if isinstance(value, (list, dict)):

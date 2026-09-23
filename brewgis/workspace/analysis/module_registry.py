@@ -7,6 +7,7 @@ to avoid duplicated MODULE_DEPENDENCIES, MODULE_RESULT_TABLES, and related mappi
 from __future__ import annotations
 
 import warnings
+from dataclasses import dataclass
 from typing import Any
 
 # ``model_fqn`` is re-exported: this registry is where "an analysis module and
@@ -392,6 +393,177 @@ CANONICAL_COLUMN_NAMES: list[str] = [
     "land_development_category",
     "built_form_key",
 ]
+
+
+@dataclass(frozen=True)
+class AnalysisParameter:
+    """One tunable parameter of an analysis model.
+
+    ``name`` is the blueprint variable (a ``@{name}`` reference in the model
+    SQL); ``default`` its value when the scenario overrides nothing; ``kind``
+    the form field type (``"float"`` | ``"bool"`` | ``"str"``); ``modules`` the
+    user-launchable module key(s) whose parameter form shows the field. The
+    scenario's own value (``Scenario.analysis_params``) is baked into the
+    scenario's model blueprints by
+    ``sqlmesh/macros/analysis_blueprints.py``.
+    """
+
+    name: str
+    default: object
+    kind: str
+    modules: tuple[str, ...]
+
+
+# The parameters consumed by ``sqlmesh/models/analysis/**``. These used to be
+# SQLMesh config variables (settable only in ``sqlmesh/config.py``); they are now
+# per-scenario values carried in the model blueprints — this registry is the
+# single source of truth for both the form fields (views/analysis.py) and the
+# blueprint baking (sqlmesh/macros/analysis_blueprints.py).
+ANALYSIS_PARAMETERS: tuple[AnalysisParameter, ...] = (
+    # Core development
+    AnalysisParameter("dev_pct", 100, "float", ("core",)),
+    AnalysisParameter("gross_net_pct", 85, "float", ("core",)),
+    AnalysisParameter("density_pct", 100, "float", ("core",)),
+    AnalysisParameter("nonres_indoor_water_rate", 40.0, "float", ("water_demand",)),
+    AnalysisParameter("res_far_default", 0.5, "float", ("energy_demand",)),
+    # Displacement
+    AnalysisParameter(
+        "displacement_income_threshold",
+        50000,
+        "float",
+        ("displacement_risk", "displacement_risk_dynamic"),
+    ),
+    AnalysisParameter(
+        "displacement_minority_threshold",
+        0.50,
+        "float",
+        ("displacement_risk", "displacement_risk_dynamic"),
+    ),
+    AnalysisParameter(
+        "displacement_rent_burden_threshold",
+        0.30,
+        "float",
+        ("displacement_risk", "displacement_risk_dynamic"),
+    ),
+    AnalysisParameter(
+        "displacement_college_education_threshold",
+        0.25,
+        "float",
+        ("displacement_risk", "displacement_risk_dynamic"),
+    ),
+    # Land consumption / parking
+    AnalysisParameter("parking_per_unit", 0.5, "float", ("land_consumption",)),
+    AnalysisParameter("parking_per_employee", 0.2, "float", ("land_consumption",)),
+    AnalysisParameter("ground_coverage_factor", 0.6, "float", ("land_consumption",)),
+    AnalysisParameter("parking_space_sqft", 300, "float", ("land_consumption",)),
+    AnalysisParameter("row_fraction", 0.15, "float", ("land_consumption",)),
+    # Fiscal
+    AnalysisParameter("res_assessed_value_per_du", 350000, "float", ("fiscal",)),
+    AnalysisParameter("nonres_assessed_value_per_sqft", 150, "float", ("fiscal",)),
+    AnalysisParameter("property_tax_rate", 1.0, "float", ("fiscal",)),
+    AnalysisParameter("retail_employment_share", 15, "float", ("fiscal",)),
+    AnalysisParameter("sales_per_employee", 100000, "float", ("fiscal",)),
+    AnalysisParameter("sales_tax_rate", 1.0, "float", ("fiscal",)),
+    AnalysisParameter("cost_per_du", 5000, "float", ("fiscal",)),
+    AnalysisParameter("cost_per_capita", 2000, "float", ("fiscal",)),
+    AnalysisParameter("cost_per_employee", 1500, "float", ("fiscal",)),
+    # Agriculture
+    AnalysisParameter("crop_yield_per_acre", 8.0, "float", ("agriculture",)),
+    AnalysisParameter("crop_market_price_per_ton", 200, "float", ("agriculture",)),
+    AnalysisParameter("crop_production_cost_per_acre", 800, "float", ("agriculture",)),
+    AnalysisParameter("crop_water_per_acre_af", 3.0, "float", ("agriculture",)),
+    AnalysisParameter("crop_labor_hours_per_acre", 15, "float", ("agriculture",)),
+    AnalysisParameter("crop_truck_trips_per_acre", 2, "float", ("agriculture",)),
+    # Trip generation
+    AnalysisParameter(
+        "transport_nonres_trip_rate", 42.94, "float", ("trip_generation",)
+    ),
+    AnalysisParameter("transport_hbw_pct", 0.18, "float", ("trip_generation",)),
+    AnalysisParameter("transport_hbo_pct", 0.42, "float", ("trip_generation",)),
+    AnalysisParameter("transport_nhb_pct", 0.40, "float", ("trip_generation",)),
+    # VMT
+    AnalysisParameter("transport_mode_share_auto", 0.85, "float", ("vmt",)),
+    AnalysisParameter("transport_avg_trip_length_mi", 5.0, "float", ("vmt",)),
+    AnalysisParameter("transport_circuity_factor", 1.2, "float", ("vmt",)),
+    AnalysisParameter("transport_study_area_geometry", "", "str", ("vmt",)),
+    AnalysisParameter("transport_intrazonal_friction", 0.15, "float", ("vmt",)),
+    # Transport GHG
+    AnalysisParameter("transport_ghg_co2_per_mile", 0.411, "float", ("transport_ghg",)),
+    AnalysisParameter(
+        name="transport_ghg_speed_adjust",
+        default=False,
+        kind="bool",
+        modules=("transport_ghg",),
+    ),
+    # Building / water GHG
+    AnalysisParameter("ghg_egrid_co2_per_kwh", 0.417, "float", ("building_water_ghg",)),
+    AnalysisParameter("ghg_gas_co2_per_kwh", 0.181, "float", ("building_water_ghg",)),
+    AnalysisParameter(
+        "ghg_water_supply_kwh_per_mg", 1427, "float", ("building_water_ghg",)
+    ),
+    AnalysisParameter(
+        "ghg_wastewater_kwh_per_mg", 1911, "float", ("building_water_ghg",)
+    ),
+    AnalysisParameter(
+        "ghg_liters_per_million_gallons", 3785411.78, "float", ("building_water_ghg",)
+    ),
+    # Health impacts (incl. its physical_activity dependency's params)
+    AnalysisParameter("health_walk_met", 3.5, "float", ("health_impacts",)),
+    AnalysisParameter("health_bike_met", 6.0, "float", ("health_impacts",)),
+    AnalysisParameter("health_walk_speed_kmh", 4.8, "float", ("health_impacts",)),
+    AnalysisParameter("health_bike_speed_kmh", 16.0, "float", ("health_impacts",)),
+    AnalysisParameter(
+        "health_heat_mortality_reduction_pct", 8.0, "float", ("health_impacts",)
+    ),
+    AnalysisParameter(
+        "health_heat_baseline_met_hours_per_week", 11.25, "float", ("health_impacts",)
+    ),
+    AnalysisParameter(
+        "health_pm25_intake_fraction", 1.6e-6, "float", ("health_impacts",)
+    ),
+    AnalysisParameter(
+        "health_pm25_concentration_response", 0.0062, "float", ("health_impacts",)
+    ),
+    AnalysisParameter(
+        "health_background_dalys_per_capita", 0.013, "float", ("health_impacts",)
+    ),
+    AnalysisParameter(
+        "health_background_death_rate", 0.008, "float", ("health_impacts",)
+    ),
+    AnalysisParameter("health_weeks_per_year", 52, "float", ("health_impacts",)),
+    # Housing cost burden
+    AnalysisParameter(
+        "housing_cost_burden_rate", 0.30, "float", ("housing_cost_burden",)
+    ),
+    AnalysisParameter(
+        "housing_severe_burden_rate", 0.50, "float", ("housing_cost_burden",)
+    ),
+    # Stormwater
+    AnalysisParameter(
+        "stormwater_annual_precipitation_in", 12.0, "float", ("stormwater_runoff",)
+    ),
+    # Tree canopy
+    AnalysisParameter("tree_canopy_baseline_temp", 95.0, "float", ("tree_canopy",)),
+    AnalysisParameter("tree_canopy_temp_per_10pct", 1.0, "float", ("tree_canopy",)),
+    # VMT mitigation fee
+    AnalysisParameter("vmt_fee_rate_dollars_per_vmt", 295.0, "float", ("vmt_fee",)),
+    AnalysisParameter("vmt_exempt_pct", 0.0, "float", ("vmt_fee",)),
+    # Cost of sprawl
+    AnalysisParameter(
+        "sprawl_infrastructure_cost_per_du", 15000, "float", ("sprawl_cost",)
+    ),
+    AnalysisParameter("sprawl_capital_cost_per_du", 50000, "float", ("sprawl_cost",)),
+)
+
+
+def get_module_parameters(module: str) -> list[AnalysisParameter]:
+    """Return the parameters shown on *module*'s per-analysis parameter form."""
+    return [p for p in ANALYSIS_PARAMETERS if module in p.modules]
+
+
+def analysis_parameter_defaults() -> dict[str, object]:
+    """Return each analysis parameter's default value, keyed by name."""
+    return {p.name: p.default for p in ANALYSIS_PARAMETERS}
 
 
 def get_column_mapping_vars(

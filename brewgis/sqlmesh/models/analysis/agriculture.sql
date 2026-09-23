@@ -32,59 +32,59 @@ SELECT
     -- Crop yield (tons)
     CASE
         WHEN es.parcel_acres_agriculture > 0
-            THEN es.parcel_acres_agriculture * @crop_yield_per_acre
+            THEN es.parcel_acres_agriculture * @blueprint_var('crop_yield_per_acre')
         WHEN es.land_development_category = 'rural' AND es.acres_developed > 0
-            THEN es.acres_developed * @crop_yield_per_acre
+            THEN es.acres_developed * @blueprint_var('crop_yield_per_acre')
         ELSE 0.0
     END AS crop_yield_tons,
     -- Market value
     CASE
         WHEN es.parcel_acres_agriculture > 0
-            THEN es.parcel_acres_agriculture * @crop_yield_per_acre * @crop_market_price_per_ton
+            THEN es.parcel_acres_agriculture * @blueprint_var('crop_yield_per_acre') * @blueprint_var('crop_market_price_per_ton')
         WHEN es.land_development_category = 'rural' AND es.acres_developed > 0
-            THEN es.acres_developed * @crop_yield_per_acre * @crop_market_price_per_ton
+            THEN es.acres_developed * @blueprint_var('crop_yield_per_acre') * @blueprint_var('crop_market_price_per_ton')
         ELSE 0.0
     END AS market_value,
     -- Production cost
     CASE
         WHEN es.parcel_acres_agriculture > 0
-            THEN es.parcel_acres_agriculture * @crop_production_cost_per_acre
+            THEN es.parcel_acres_agriculture * @blueprint_var('crop_production_cost_per_acre')
         WHEN es.land_development_category = 'rural' AND es.acres_developed > 0
-            THEN es.acres_developed * @crop_production_cost_per_acre
+            THEN es.acres_developed * @blueprint_var('crop_production_cost_per_acre')
         ELSE 0.0
     END AS production_cost,
     -- Net return = market_value - production_cost
     CASE
         WHEN es.parcel_acres_agriculture > 0
-            THEN es.parcel_acres_agriculture * @crop_yield_per_acre * @crop_market_price_per_ton
-                 - es.parcel_acres_agriculture * @crop_production_cost_per_acre
+            THEN es.parcel_acres_agriculture * @blueprint_var('crop_yield_per_acre') * @blueprint_var('crop_market_price_per_ton')
+                 - es.parcel_acres_agriculture * @blueprint_var('crop_production_cost_per_acre')
         WHEN es.land_development_category = 'rural' AND es.acres_developed > 0
-            THEN es.acres_developed * @crop_yield_per_acre * @crop_market_price_per_ton
-                 - es.acres_developed * @crop_production_cost_per_acre
+            THEN es.acres_developed * @blueprint_var('crop_yield_per_acre') * @blueprint_var('crop_market_price_per_ton')
+                 - es.acres_developed * @blueprint_var('crop_production_cost_per_acre')
         ELSE 0.0
     END AS net_return,
     -- Water consumption (acre-feet)
     CASE
         WHEN es.parcel_acres_agriculture > 0
-            THEN es.parcel_acres_agriculture * @crop_water_per_acre_af
+            THEN es.parcel_acres_agriculture * @blueprint_var('crop_water_per_acre_af')
         WHEN es.land_development_category = 'rural' AND es.acres_developed > 0
-            THEN es.acres_developed * @crop_water_per_acre_af
+            THEN es.acres_developed * @blueprint_var('crop_water_per_acre_af')
         ELSE 0.0
     END AS water_consumption_af,
     -- Labor hours
     CASE
         WHEN es.parcel_acres_agriculture > 0
-            THEN es.parcel_acres_agriculture * @crop_labor_hours_per_acre
+            THEN es.parcel_acres_agriculture * @blueprint_var('crop_labor_hours_per_acre')
         WHEN es.land_development_category = 'rural' AND es.acres_developed > 0
-            THEN es.acres_developed * @crop_labor_hours_per_acre
+            THEN es.acres_developed * @blueprint_var('crop_labor_hours_per_acre')
         ELSE 0.0
     END AS labor_hours,
     -- Truck trips
     CASE
         WHEN es.parcel_acres_agriculture > 0
-            THEN es.parcel_acres_agriculture * @crop_truck_trips_per_acre
+            THEN es.parcel_acres_agriculture * @blueprint_var('crop_truck_trips_per_acre')
         WHEN es.land_development_category = 'rural' AND es.acres_developed > 0
-            THEN es.acres_developed * @crop_truck_trips_per_acre
+            THEN es.acres_developed * @blueprint_var('crop_truck_trips_per_acre')
         ELSE 0.0
     END AS truck_trips,
     es.geometry

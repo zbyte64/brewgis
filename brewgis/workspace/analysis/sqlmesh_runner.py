@@ -23,14 +23,20 @@ logger = logging.getLogger(__name__)
 SQLMESH_PROJECT_DIR = Path(__file__).resolve().parent.parent.parent / "sqlmesh"
 
 
-def get_context(**variables) -> Context:
+def get_context(cache_dir: str | None = None, **variables) -> Context:
     """Return a SQLMesh Context for the BrewGIS project.
 
     The context loads all models, macros, seeds, and audits from the
     ``brewgis/sqlmesh/`` directory.  Callers should cache the result
     when making multiple calls within the same process lifetime.
+
+    ``cache_dir`` overrides SQLMesh's on-disk cache of rendered model
+    definitions. Pass a private, empty directory when the models' *contents* are
+    derived from database rows the cache cannot see — see
+    ``workspace.analysis.pipeline.run_modules_sync`` for why an analysis run
+    does.
     """
-    config = config_factory(**variables)
+    config = config_factory(cache_dir=cache_dir, **variables)
     return Context(paths=str(SQLMESH_PROJECT_DIR), config=config)
 
 
@@ -168,6 +174,7 @@ def run_sqlmesh_plan(  # noqa: PLR0913
     variables: dict[str, object] = {},
     restate_models: Iterable[str] | bool = False,
     always_include_local_changes: bool | None = None,
+    cache_dir: str | None = None,
 ):
     """Run ``sqlmesh plan`` for the given environment via the Python API.
 
@@ -191,6 +198,9 @@ def run_sqlmesh_plan(  # noqa: PLR0913
             part of the plan at all — it neither materializes nor reports
             anything. Pass ``True`` whenever the selection can contain such a
             model; pass ``False`` never.
+        cache_dir: SQLMesh cache directory to load models through (see
+            ``get_context``). Threaded into the follow-up plans a conflicting
+            restatement is split into, so those render from the same source.
 
     ``Context.plan`` hard-wires that rule for a restating plan and exposes no
     way to override it, so a plan that asks for ``always_include_local_changes``
@@ -199,7 +209,7 @@ def run_sqlmesh_plan(  # noqa: PLR0913
     ``plan_builder.apply()`` when it is told to auto-apply) — it only passes the
     flag through. The cost is the plan summary the console would have printed.
     """
-    context = get_context(**variables)
+    context = get_context(cache_dir=cache_dir, **variables)
     restate = _resolve_restatements(
         context, environment=environment, restate_models=restate_models
     )
@@ -255,6 +265,7 @@ def run_sqlmesh_plan(  # noqa: PLR0913
             "create_from": create_from,
             "variables": variables,
             "always_include_local_changes": always_include_local_changes,
+            "cache_dir": cache_dir,
         }
         run_sqlmesh_plan(**deploy_kwargs)
         return run_sqlmesh_plan(**deploy_kwargs, restate_models=restate), context
