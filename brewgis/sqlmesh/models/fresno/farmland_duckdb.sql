@@ -27,10 +27,12 @@ MODEL (
 -- 2000 records/request, so @arcgis_page_urls emits paginated URLs (step 2000)
 -- as a constant list_value(...) literal — DuckDB does not accept subqueries
 -- or lateral columns inside table functions, so the page list cannot be read
--- from another relation. The page count is derived from the service's live
--- count each render (falling back to a fixed ceiling of 12 pages ≈ 24,000
--- features), so the fetch scales if the farmland set changes. No envelope
--- filter — the county-wide layer is filtered by County LIKE '%Fresno%'.
+-- from another relation. The page count is declared by the call site, never
+-- probed, so rendering this model never touches the network (see
+-- @arcgis_page_urls). The county-wide farmland set had 10,495 features = 6
+-- pages when this was written (2026-09-23); the declared 12 pages cover
+-- ~24,000 features. No envelope filter — the county-wide layer is filtered by
+-- County LIKE '%Fresno%'.
 
 SELECT
     feature.properties.OBJECTID::INTEGER AS objectid,
@@ -43,7 +45,7 @@ FROM read_json_auto(
         'County LIKE ''%Fresno%''',
         'OBJECTID,County,Code',
         geometry = NULL,
-        fallback_pages = 12
+        pages = 12
     ),
     format = 'auto'
 ) r,

@@ -27,9 +27,11 @@ MODEL (
 -- 2000 records/request, so @arcgis_page_urls emits paginated URLs (step 2000)
 -- as a constant list_value(...) literal — DuckDB does not accept subqueries
 -- or lateral columns inside table functions, so the page list cannot be read
--- from another relation. The page count is derived from the service's live
--- count each render (falling back to a fixed ceiling), so the fetch scales if
--- the flood zone set changes. Empty tail pages simply yield zero rows.
+-- from another relation. The page count is declared by the call site, never
+-- probed, so rendering this model never touches the network (see
+-- @arcgis_page_urls). The NFHL zone set had 656 features in-bbox = 1 page when
+-- this was written (2026-09-23); the declared 4 pages cover ~8,000 polygons.
+-- Empty tail pages simply yield zero rows.
 --
 -- The envelope is the Fresno region bounding box (matching fresno.parcels) so
 -- the constraint layer covers every parcel in the base canvas — floodplains
@@ -46,7 +48,8 @@ FROM read_json_auto(
         'https://hazards.fema.gov/arcgis/rest/services/public/NFHL/MapServer/28/query',
         '1=1',
         'FLD_ZONE,SFHA_TF,STATIC_BFE',
-        geometry = '{"xmin":-119.95,"ymin":36.60,"xmax":-119.55,"ymax":36.92}'
+        geometry = '{"xmin":-119.95,"ymin":36.60,"xmax":-119.55,"ymax":36.92}',
+        pages = 4
     ),
     format = 'auto'
 ) r,

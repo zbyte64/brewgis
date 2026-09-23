@@ -26,10 +26,11 @@ MODEL (
 -- 2000 records/request, so @arcgis_page_urls emits paginated URLs (step 2000)
 -- as a constant list_value(...) literal — DuckDB does not accept subqueries
 -- or lateral columns inside table functions, so the page list cannot be read
--- from another relation. The page count is derived from the service's live
--- count each render (falling back to a fixed ceiling), so the fetch scales if
--- the boundary set changes. No envelope filter — the single city boundary is
--- selected by AGENCY_NAM = 'Fresno'.
+-- from another relation. The page count is declared by the call site, never
+-- probed, so rendering this model never touches the network (see
+-- @arcgis_page_urls). AGENCY_NAM = 'Fresno' selects exactly one boundary
+-- (1 feature = 1 page when this was written, 2026-09-23), so one page is the
+-- whole set; extra pages would come back empty.
 
 SELECT
     feature.properties.FID::INTEGER AS objectid,
@@ -40,7 +41,9 @@ FROM read_json_auto(
     @arcgis_page_urls(
         'https://services6.arcgis.com/Gs01XZPFhKUG8tKU/ArcGIS/rest/services/Fresno_City_Limits/FeatureServer/0/query',
         'AGENCY_NAM = ''Fresno''',
-        'FID,AGENCY_COD,AGENCY_NAM'
+        'FID,AGENCY_COD,AGENCY_NAM',
+        geometry = NULL,
+        pages = 1
     ),
     format = 'auto'
 ) r,

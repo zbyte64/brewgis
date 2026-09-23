@@ -40,13 +40,16 @@ MODEL (
 -- subqueries or lateral columns inside table functions, so the page list
 -- cannot be read from another relation. orderByFields=OBJECTID makes
 -- resultOffset paging deterministic (the MapServer gives no stable row order
--- otherwise); the page count is derived from the live count each render
--- (falling back to a fixed ceiling), so the fetch scales with the roll.
+-- otherwise). The page count is declared by the call site, never probed, so
+-- rendering this model never touches the network (see @arcgis_page_urls).
 --
 -- The envelope is the Fresno region bounding box (the same box fresno.parcels
 -- and the Overture fresno blueprints use), so this roll spans the same area as
--- every other fresno source. The roll has 340,005 features in-bbox = 171
--- pages, so _MAX_PAGE_COUNT was raised to 256 to avoid silent truncation.
+-- every other fresno source. The roll had 340,005 features in-bbox = 171 pages
+-- when this was written (2026-09-23); pages = 216 covers ~432k features, and
+-- _MAX_PAGE_COUNT was raised to 256 to stay above that. Extra pages come back
+-- empty; too few pages truncate the roll silently, so raise `pages` when the
+-- roll outgrows 432k features.
 --
 -- Grain is one row per situs-address feature (a parcel with several addresses
 -- appears more than once); the assessor adapter collapses to one row per APN.
@@ -69,7 +72,7 @@ FROM read_json_auto(
         '1=1',
         'APN,USE_PRIMARY,USE_SECONDARY,USE_HIGH_BEST,LOT_AREA,ASSESS_LAND_VAL,ASSESS_IMP_VAL,TOTAL_ASSESSED_VALUE,TAX_AREA_CODE',
         geometry = '{"xmin":-119.95,"ymin":36.60,"xmax":-119.55,"ymax":36.92}',
-        fallback_pages = 172,
+        pages = 216,
         order_by = 'OBJECTID'
     ),
     format = 'auto'

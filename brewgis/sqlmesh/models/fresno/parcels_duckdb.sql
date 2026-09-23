@@ -30,9 +30,10 @@ MODEL (
 -- at 2000 records/request, so @arcgis_page_urls emits paginated URLs
 -- (step 2000) as a constant list_value(...) literal — DuckDB does not
 -- accept subqueries or lateral columns inside table functions, so the page
--- list cannot be read from another relation. The page count is derived from
--- the service's live count each render (falling back to a fixed ceiling), so
--- the fetch scales if the parcel set changes.
+-- list cannot be read from another relation. The page count is declared by the
+-- call site, never probed, so rendering this model never touches the network
+-- (see @arcgis_page_urls). The parcel set had 213,145 features in-bbox = 107
+-- pages when this was written (2026-09-23); pages = 136 covers ~272k features.
 --
 -- The envelope is the Fresno region bounding box, and it MUST contain the
 -- whole City of Fresno: parcel_shim consumes this model verbatim (no spatial
@@ -61,7 +62,7 @@ FROM read_json_auto(
         '1=1',
         'APN,AGENCY_COD,ROLL_YEAR,SHAPE_AREA',
         geometry = '{"xmin":-119.95,"ymin":36.60,"xmax":-119.55,"ymax":36.92}',
-        fallback_pages = 120
+        pages = 136
     ),
     format = 'auto'
 ) r,

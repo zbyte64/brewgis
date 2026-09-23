@@ -27,12 +27,14 @@ MODEL (
 -- 2000 records/request, so @arcgis_page_urls emits paginated URLs (step 2000)
 -- as a constant list_value(...) literal — DuckDB does not accept subqueries
 -- or lateral columns inside table functions, so the page list cannot be read
--- from another relation. The page count is derived from the service's live
--- count each render (falling back to a fixed ceiling), so the fetch scales if
--- wetland set changes. The ATTRIBUTE LIKE '%Fresh%' filter matches the
--- legacy fresno_downloader query; it legitimately yields zero features for
--- the fresno region envelope (verified against both the previous downtown
--- box and the current region box), so the table may be empty.
+-- from another relation. The page count is declared by the call site, never
+-- probed, so rendering this model never touches the network (see
+-- @arcgis_page_urls). The ATTRIBUTE LIKE '%Fresh%' filter matches the legacy
+-- fresno_downloader query; it legitimately yields zero features for the fresno
+-- region envelope (0 features when this was written, 2026-09-23, verified
+-- against both the previous downtown box and the current region box), so the
+-- table may be empty. The declared 4 pages bound a future wetland layer at
+-- ~8,000 polygons.
 --
 -- The envelope is the Fresno region bounding box (matching fresno.parcels)
 -- so the constraint layer covers every parcel in the base canvas.
@@ -47,7 +49,8 @@ FROM read_json_auto(
         'https://services2.arcgis.com/Uq9r85Potqm3MfRV/ArcGIS/rest/services/biosds2630_fpu/FeatureServer/0/query',
         'ATTRIBUTE LIKE ''%Fresh%''',
         'ATTRIBUTE,WETLAND_TYPE,ACRES',
-        geometry = '{"xmin":-119.95,"ymin":36.60,"xmax":-119.55,"ymax":36.92}'
+        geometry = '{"xmin":-119.95,"ymin":36.60,"xmax":-119.55,"ymax":36.92}',
+        pages = 4
     ),
     format = 'auto'
 ) r,
