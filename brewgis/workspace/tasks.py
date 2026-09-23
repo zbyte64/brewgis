@@ -15,8 +15,10 @@ from brewgis.workspace.analysis.data_export import export_building_types
 from brewgis.workspace.analysis.sqlmesh_runner import run_sqlmesh_plan
 from brewgis.workspace.models import DataImportRun
 from brewgis.workspace.models import Layer
-from brewgis.workspace.services._db import get_engine
-from brewgis.workspace.services._db import text
+from brewgis.workspace.services.fetch_clone import PROD_ENVIRONMENT
+from brewgis.workspace.services.fetch_clone import clone_to_postgres
+from brewgis.workspace.services.fetch_clone import model_source_ref
+from brewgis.workspace.services.fetch_clone import region_for_county
 from brewgis.workspace.services.poi_fetcher import run_poi_pipeline
 from brewgis.workspace.services.raster_fetcher import run_raster_pipeline
 from brewgis.workspace.services.spatial_allocator import allocate_attributes
@@ -85,9 +87,10 @@ def run_census_fetch(  # type: ignore[no-untyped-def]
 ) -> dict:
     """Fetch Census ACS demographics data via SQLMesh and register as Layer.
 
-    The DuckDB staging VIEW reads directly from the Census API via httpfs;
-    the bridge model ``brewgis.sacog.acs_block_group`` materializes to
-    PostGIS with derived demographic columns.
+    The DuckDB staging VIEW reads directly from the Census API via httpfs; the
+    region's bridge model ``brewgis.<region>.acs_block_group`` materializes the
+    derived demographic columns to PostGIS, and that table is copied into
+    *schema* — the workspace's own table, which later SQLMesh plans never touch.
     """
 
     run = DataImportRun.objects.get(pk=run_pk)
@@ -95,9 +98,10 @@ def run_census_fetch(  # type: ignore[no-untyped-def]
     run.started_at = timezone.now()
     run.save(update_fields=["status", "started_at"])
 
+    region = region_for_county(county_fips)
     run_sqlmesh_plan(
-        environment="brewgis_prod",
-        select=["brewgis.sacog.acs_block_group"],
+        environment=PROD_ENVIRONMENT,
+        select=[f"brewgis.{region}.acs_block_group"],
         skip_tests=True,
         variables={
             "acs_year": year,
@@ -106,16 +110,12 @@ def run_census_fetch(  # type: ignore[no-untyped-def]
         },
     )
 
-    table_schema = "sacog__brewgis_prod"
     table_name = "acs_block_group"
-    engine = get_engine()
-    with engine.connect() as conn:
-        row_count = (
-            conn.execute(
-                text(f"SELECT COUNT(*) FROM {table_schema}.{table_name}")
-            ).scalar()
-            or 0
-        )
+    row_count = clone_to_postgres(
+        source_ref=model_source_ref(region=region, table=table_name),
+        dest_schema=schema,
+        dest_table=table_name,
+    )
     layer_key = f"census_acs_{year}_{state_fips}_{county_fips}"
 
     layer, created = Layer.objects.get_or_create(
@@ -123,7 +123,7 @@ def run_census_fetch(  # type: ignore[no-untyped-def]
         workspace=run.workspace,
         defaults={
             "name": f"ACS Demographics ({year}) ({state_fips}-{county_fips})",
-            "db_schema": table_schema,
+            "db_schema": schema,
             "db_table": table_name,
             "layer_source": "Census ACS",
             "geometry_type": "circle",
@@ -134,7 +134,7 @@ def run_census_fetch(  # type: ignore[no-untyped-def]
         auto_generate_symbology(layer)
     run.status = "completed"
     run.result = {
-        "table_name": f"{table_schema}.{table_name}",
+        "table_name": f"{schema}.{table_name}",
         "layer_key": layer_key,
         "layer_id": layer.pk,
         "row_count": row_count,
@@ -156,18 +156,20 @@ def run_lehd_fetch(  # type: ignore[no-untyped-def]
 ) -> dict:
     """Fetch LEHD employment data via SQLMesh and register as Layer.
 
-    The DuckDB staging VIEW reads gzipped CSVs from the LEHD CES FTP
-    via httpfs; the bridge model ``brewgis.sacog.wac_block_raw``
-    materialises CNS-split employment to PostGIS.
+    The DuckDB staging VIEW reads gzipped CSVs from the LEHD CES FTP via
+    httpfs; the region's bridge model ``brewgis.<region>.wac_block_raw``
+    materialises CNS-split employment to PostGIS, and that table is copied into
+    *schema* — the workspace's own table, which later SQLMesh plans never touch.
     """
     run = DataImportRun.objects.get(pk=run_pk)
     run.status = "running"
     run.started_at = timezone.now()
     run.save(update_fields=["status", "started_at"])
 
+    region = region_for_county(county_fips)
     run_sqlmesh_plan(
-        environment="brewgis_prod",
-        select=["brewgis.sacog.wac_block_raw"],
+        environment=PROD_ENVIRONMENT,
+        select=[f"brewgis.{region}.wac_block_raw"],
         skip_tests=True,
         variables={
             "lodes_year": year,
@@ -176,16 +178,12 @@ def run_lehd_fetch(  # type: ignore[no-untyped-def]
         },
     )
 
-    table_schema = "sacog__brewgis_prod"
     table_name = "wac_block_raw"
-    engine = get_engine()
-    with engine.connect() as conn:
-        row_count = (
-            conn.execute(
-                text(f"SELECT COUNT(*) FROM {table_schema}.{table_name}")
-            ).scalar()
-            or 0
-        )
+    row_count = clone_to_postgres(
+        source_ref=model_source_ref(region=region, table=table_name),
+        dest_schema=schema,
+        dest_table=table_name,
+    )
     layer_key = f"lehd_{state_fips}_{county_fips}"
 
     layer, created = Layer.objects.get_or_create(
@@ -193,7 +191,7 @@ def run_lehd_fetch(  # type: ignore[no-untyped-def]
         workspace=run.workspace,
         defaults={
             "name": f"LEHD Employment ({state_fips}-{county_fips})",
-            "db_schema": table_schema,
+            "db_schema": schema,
             "db_table": table_name,
             "layer_source": "Census LEHD",
             "geometry_type": "circle",
@@ -204,7 +202,7 @@ def run_lehd_fetch(  # type: ignore[no-untyped-def]
         auto_generate_symbology(layer)
     run.status = "completed"
     run.result = {
-        "table_name": f"{table_schema}.{table_name}",
+        "table_name": f"{schema}.{table_name}",
         "layer_key": layer_key,
         "layer_id": layer.pk,
         "row_count": row_count,
@@ -228,8 +226,9 @@ def run_poi_fetch(  # type: ignore[no-untyped-def]
 ) -> dict:
     """Fetch POIs from OpenStreetMap Overpass and register as a Layer.
 
-    Writes the categorized POI GeoDataFrame directly into a table in
-    *schema*, named deterministically from the request parameters.
+    ``run_poi_pipeline`` plans the SQLMesh Overpass models and copies their
+    result into a table in *schema*, named deterministically from the request
+    parameters.
     """
 
     run = DataImportRun.objects.get(pk=run_pk)
@@ -251,6 +250,7 @@ def run_poi_fetch(  # type: ignore[no-untyped-def]
         workspace=run.workspace,
         defaults={
             "name": f"POI ({cat_label})",
+            "db_schema": schema,
             "db_table": table_name,
             "layer_source": "OpenStreetMap",
             "geometry_type": "circle",

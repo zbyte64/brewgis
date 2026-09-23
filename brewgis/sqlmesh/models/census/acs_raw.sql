@@ -63,7 +63,7 @@ MODEL (
 --
 -- Columns 1-40 are ACS variables (in get= parameter order).
 -- Columns 41-44 are geography columns: state, county, tract, block_group.
--- Variables are listed in the same order as _all_vars() in census_fetcher.py.
+-- Variables are listed in the same order as ACS_TABLE_GROUPS in census_fetcher.py.
 --
 -- Variables (from SQLMesh blueprint columns; bare @refs resolve to the
 -- region's blueprint value over the config default):

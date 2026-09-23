@@ -11,7 +11,9 @@ Unhealthy sources: convenience stores, fast food.
 
 Workflow:
     1. Reads parcel bounding box from the end-state table.
-    2. Fetches food-related POIs from OSM Overpass API via ``fetch_pois``.
+    2. Fetches food-related POIs through ``run_poi_pipeline`` — the Overpass
+       fetch is the ``duckdb.osm.poi`` SQLMesh model, whose result is copied
+       into the workspace schema.
     3. Classifies POIs as healthy or unhealthy by OSM tag.
     4. Counts healthy/unhealthy POIs within 1 km of each parcel.
     5. Computes mRFEI and writes to ``food_access_inputs_{scenario_id}``.
@@ -26,13 +28,14 @@ from __future__ import annotations
 import logging
 import re
 from typing import Any
+from typing import cast
 
 import geopandas as gpd
 
 from brewgis.workspace.models import POICache
 from brewgis.workspace.services._db import get_engine
 from brewgis.workspace.services._db import text
-from brewgis.workspace.services.poi_fetcher import fetch_pois
+from brewgis.workspace.services.poi_fetcher import run_poi_pipeline
 
 logger = logging.getLogger(__name__)
 
@@ -143,27 +146,25 @@ class FoodAccessPreprocessor:
             max_lat,
         )
 
-        # Step 2: Fetch food-related POIs via dlt pipeline + staging
-        from brewgis.workspace.dlt_pipelines.poi import run_poi_pipeline
-
-        dlt_result = run_poi_pipeline(
+        # Step 2: Fetch food-related POIs through SQLMesh (the Overpass fetch is
+        # the duckdb.osm.poi model) and read the copy it lands in the workspace.
+        poi_table = run_poi_pipeline(
             min_lng,
             min_lat,
             max_lng,
             max_lat,
             categories=_REQUESTED_CATEGORIES,
             schema=schema,
+        )["table_name"]
+        pois = cast(
+            "gpd.GeoDataFrame",
+            gpd.read_postgis(
+                f"SELECT osm_id, subcategory, geometry FROM {schema}.{poi_table}",
+                self.engine,
+                geom_col="geometry",
+            ),
         )
-        logger.info("dlt pipeline loaded %d raw POIs", dlt_result.get("row_count", 0))
-
-        pois = fetch_pois(
-            min_lng=min_lng,
-            min_lat=min_lat,
-            max_lng=max_lng,
-            max_lat=max_lat,
-            categories=_REQUESTED_CATEGORIES,
-        )
-        logger.info("Fetched %d POIs from Overpass", len(pois))
+        logger.info("Loaded %d POIs from %s.%s", len(pois), schema, poi_table)
         # Cache the successful POI fetch for offline fallback
         if workspace_id is not None:
             try:
@@ -181,7 +182,9 @@ class FoodAccessPreprocessor:
         # Step 3: Classify POIs
         pois["is_healthy"] = pois["subcategory"].isin(_HEALTHY_TAGS)
         pois["is_unhealthy"] = pois["subcategory"].isin(_UNHEALTHY_TAGS)
-        food_pois = pois[pois["is_healthy"] | pois["is_unhealthy"]].copy()
+        food_pois = cast(
+            "gpd.GeoDataFrame", pois[pois["is_healthy"] | pois["is_unhealthy"]].copy()
+        )
 
         logger.info(
             "Classified %d food-related POIs (%d healthy, %d unhealthy)",

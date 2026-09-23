@@ -11,9 +11,9 @@ from django.template.loader import render_to_string
 from django.utils.decorators import method_decorator
 from django.views.generic.edit import FormView
 
+from brewgis.sqlmesh.macros.overpass_fetch import POI_CATEGORIES
 from brewgis.workspace.models import DataImportRun
 from brewgis.workspace.models import Workspace
-from brewgis.workspace.services.poi_fetcher import POI_CATEGORIES
 from brewgis.workspace.tasks import run_poi_fetch
 from brewgis.workspace.views.built_forms import HtmxResponseMixin
 
