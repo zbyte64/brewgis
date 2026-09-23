@@ -168,6 +168,8 @@ def view_workspace_map(request: HttpRequest, workspace_pk: int) -> HttpResponse:
     built_forms_data: dict[str, list[dict[str, object]]] = {}
     paint_url: str = ""
     clear_url: str = ""
+    grid_url: str = ""
+    merge_url: str = ""
     bf_paint_url: str = ""
     bf_match_url: str = ""
     bf_fill_url: str = ""
@@ -228,6 +230,12 @@ def view_workspace_map(request: HttpRequest, workspace_pk: int) -> HttpResponse:
         )
         clear_url = request.build_absolute_uri(
             reverse("workspace:clear_paint", args=[workspace_pk, scenario.pk])
+        )
+        grid_url = request.build_absolute_uri(
+            reverse("workspace:grid_parcels", args=[workspace_pk, scenario.pk])
+        )
+        merge_url = request.build_absolute_uri(
+            reverse("workspace:merge_parcels", args=[workspace_pk, scenario.pk])
         )
         bf_paint_url = request.build_absolute_uri(
             reverse("workspace:paint_built_form", args=[workspace_pk, scenario.pk])
@@ -432,6 +440,8 @@ def view_workspace_map(request: HttpRequest, workspace_pk: int) -> HttpResponse:
         "built_forms": built_forms_data,
         "paint_url": paint_url,
         "clear_url": clear_url,
+        "grid_url": grid_url,
+        "merge_url": merge_url,
         "bf_paint_url": bf_paint_url,
         "bf_match_url": bf_match_url,
         "bf_fill_url": bf_fill_url,

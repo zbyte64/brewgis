@@ -454,6 +454,79 @@ class PaintedCanvas(models.Model):
         return f"PaintedCanvas[{self.scenario_id}]({self.feature_id}.{self.column_name}={self.painted_value})"
 
 
+class ParcelGeometryEdit(models.Model):
+    """One scenario-local replacement of base parcels by edited geometry.
+
+    The write side of paint mode's grid (split) and merge tools. Each row is a
+    single *result* feature — one grid cell, or the surviving parcel of a merge
+    — holding that feature's geometry and every non-geometry base column in
+    ``values``. The scenario's canvas view
+    (:func:`brewgis.workspace.services.canvas_view_manager.build_canvas_view_select`)
+    UNIONs these rows in and drops the ``source_parcel_ids`` they replace, so a
+    geometry edit is copy-on-write over the workspace's base canvas exactly like
+    a :class:`PaintedCanvas` column override: ``public.base_canvas`` is never
+    mutated, and the tile servers and the analysis models — which both read the
+    canvas view — see the edit without any further write.
+    """
+
+    class Operation(models.TextChoices):
+        GRID = "grid", "Grid"
+        MERGE = "merge", "Merge"
+
+    scenario = models.ForeignKey(
+        Scenario, on_delete=models.CASCADE, related_name="parcel_geometry_edits"
+    )
+    parcel_id = models.CharField(
+        max_length=128,
+        help_text=(
+            "Result feature id: a negative-integer string for a grid cell, the "
+            "surviving parcel's id for a merge. Matches "
+            "PaintedCanvas.feature_id, so paint overrides join to edited features."
+        ),
+    )
+    geometry = gis_models.GeometryField(srid=4326, dim=2)
+    values = models.JSONField(
+        default=dict,
+        help_text=(
+            "Every base canvas column except parcel_id and geometry, allocated "
+            "from the replaced parcels (extensive totals conserved)."
+        ),
+    )
+    source_parcel_ids = models.JSONField(
+        default=list,
+        help_text=(
+            "Base feature ids (strings) this row replaces; the canvas view hides "
+            "these rows for as long as this edit exists."
+        ),
+    )
+    operation = models.CharField(max_length=8, choices=Operation)
+    created_by = models.ForeignKey(
+        settings.AUTH_USER_MODEL, on_delete=models.SET_NULL, null=True
+    )
+    created_at = models.DateTimeField(auto_now_add=True)
+    batch_id = models.CharField(max_length=64, db_index=True)
+
+    class Meta:
+        indexes = [models.Index(fields=["scenario", "parcel_id"])]
+        verbose_name = "parcel geometry edit"
+
+    def __str__(self) -> str:
+        return (
+            f"ParcelGeometryEdit[{self.scenario_id}]({self.operation} {self.parcel_id})"
+        )
+
+
+GEOMETRY_EDIT_ID_SEQUENCE = "parcel_geometry_edit_id_seq"
+"""Sequence the grid tool draws synthetic cell ids from (see migration 0058).
+
+A cell's feature id is ``str(-nextval(...))``: a negative integer cannot collide
+with a real parcel id in either key flavour — the published base canvas keys on
+a positive ``BIGINT``, a SQLMesh base on an APN string — so one scheme serves
+both, and the canvas view lets ``jsonb_populate_record`` cast the string back to
+whichever type the base's ``parcel_id`` actually is.
+"""
+
+
 class AnalysisRun(models.Model):
     """Tracks execution history of dbt analysis modules."""
 
@@ -697,6 +770,8 @@ class PaintEvent(models.Model):
         ("paint", "Paint"),
         ("clear", "Clear"),
         ("built_form", "Built Form Paint"),
+        ("grid", "Grid"),
+        ("merge", "Merge"),
         ("undo", "Undo"),
     ]
 
@@ -757,6 +832,8 @@ class PaintRun(models.Model):
         ("built_form", "Built Form Paint"),
         ("match", "Match Closest Built Form"),
         ("fill", "Fill From Built Form"),
+        ("grid", "Grid Parcels"),
+        ("merge", "Merge Parcels"),
     ]
 
     workspace = models.ForeignKey(

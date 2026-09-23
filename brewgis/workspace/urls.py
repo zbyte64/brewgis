@@ -22,6 +22,7 @@ from .views import edit_symbology
 from .views import employment_fetch
 from .views import employment_preview
 from .views import fill_built_form
+from .views import grid_parcels
 from .views import home
 from .views import import_center
 from .views import import_status
@@ -30,6 +31,7 @@ from .views import layer_legend
 from .views import layer_toggle_visibility
 from .views import match_built_form
 from .views import merge_paint_edits
+from .views import merge_parcels
 from .views import paint_built_form
 from .views import paint_features
 from .views import paint_history
@@ -184,6 +186,16 @@ urlpatterns = [
         "<int:workspace_pk>/scenario/<int:scenario_pk>/paint/",
         paint_features,
         name="paint_features",
+    ),
+    path(
+        "<int:workspace_pk>/scenario/<int:scenario_pk>/paint/grid/",
+        grid_parcels,
+        name="grid_parcels",
+    ),
+    path(
+        "<int:workspace_pk>/scenario/<int:scenario_pk>/paint/merge/",
+        merge_parcels,
+        name="merge_parcels",
     ),
     path(
         "<int:workspace_pk>/scenario/<int:scenario_pk>/paint-bf/",

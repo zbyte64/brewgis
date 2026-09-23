@@ -219,6 +219,37 @@
           <!-- Hidden fields for selected feature IDs -->
           <input type="hidden" id="paint-feature-ids" name="features" value="" />
           <input type="hidden" id="undo-event-id" name="event_id" value="" />
+          <!-- Geometry edits: grid unions the selection and cuts it into square
+               cells, merge unions the selection into one parcel -->
+          <input type="number"
+                 class="form-control form-control-sm"
+                 id="paint-grid-size-ft"
+                 placeholder="Cell size (ft)"
+                 step="any"
+                 min="0"
+                 style="width: 120px" />
+          <input type="number"
+                 class="form-control form-control-sm"
+                 id="paint-grid-offset-x-ft"
+                 placeholder="Offset X (ft)"
+                 step="any"
+                 style="width: 100px" />
+          <input type="number"
+                 class="form-control form-control-sm"
+                 id="paint-grid-offset-y-ft"
+                 placeholder="Offset Y (ft)"
+                 step="any"
+                 style="width: 100px" />
+          <button type="button"
+                  class="btn btn-sm btn-primary"
+                  id="paint-grid-btn"
+                  title="Union the selected parcels and cut the site into square cells of this size"
+                  disabled>Grid</button>
+          <button type="button"
+                  class="btn btn-sm btn-primary"
+                  id="paint-merge-btn"
+                  title="Merge the selected parcels into one"
+                  disabled>Merge</button>
           <!-- Buttons -->
           <button type="button"
                   class="btn btn-sm btn-primary"
@@ -435,9 +466,16 @@
       const paintValueInput = document.getElementById('paint-value');
       const bfMatchBtn = document.getElementById('paint-bf-match-btn');
       const bfFillBtn = document.getElementById('paint-bf-fill-btn');
+      const gridBtn = document.getElementById('paint-grid-btn');
+      const gridSizeInput = document.getElementById('paint-grid-size-ft');
+      const gridOffsetXInput = document.getElementById('paint-grid-offset-x-ft');
+      const gridOffsetYInput = document.getElementById('paint-grid-offset-y-ft');
+      const mergeBtn = document.getElementById('paint-merge-btn');
 
       const paintUrl = '{{ paint_url|safe }}';
       const clearUrl = '{{ clear_url|safe }}';
+      const gridUrl = '{{ grid_url|safe }}';
+      const mergeUrl = '{{ merge_url|safe }}';
       const bfPaintUrl = '{{ bf_paint_url|safe }}';
       const bfMatchUrl = '{{ bf_match_url|safe }}';
       const bfFillUrl = '{{ bf_fill_url|safe }}';
@@ -469,6 +507,8 @@
         clearBtn.disabled = selectedFeatures.length === 0;
         if (bfMatchBtn) bfMatchBtn.disabled = selectedFeatures.length === 0;
         if (bfFillBtn) bfFillBtn.disabled = selectedFeatures.length === 0;
+        if (gridBtn) gridBtn.disabled = selectedFeatures.length === 0;
+        if (mergeBtn) mergeBtn.disabled = selectedFeatures.length < 2;
       });
 
       // Selection mode radio buttons -> map component property
@@ -543,8 +583,10 @@
       function renderPaintResult(ok, data) {
         if (!paintResult) return;
         if (ok) {
-          var count = data.painted_count ?? data.cleared_count ?? data.undone_count ?? 0;
+          var count = data.painted_count ?? data.grid_count ?? data.merged_count ?? data.cleared_count ?? data.undone_count ?? 0;
           var label = data.painted_count !== undefined ? 'Painted' :
+            data.grid_count !== undefined ? 'Gridded' :
+            data.merged_count !== undefined ? 'Merged' :
             data.cleared_count !== undefined ? 'Cleared' :
             data.undone_count !== undefined ? 'Undid' : 'Updated';
           var html = '<div class="alert alert-success py-1 px-2 mb-0" style="font-size:0.75rem;">' +
@@ -631,6 +673,8 @@
             clearBtn.disabled = selectedFeatures.length === 0;
             if (bfMatchBtn) bfMatchBtn.disabled = selectedFeatures.length === 0;
             if (bfFillBtn) bfFillBtn.disabled = selectedFeatures.length === 0;
+            if (gridBtn) gridBtn.disabled = selectedFeatures.length === 0;
+            if (mergeBtn) mergeBtn.disabled = selectedFeatures.length < 2;
           });
       }
 
@@ -686,6 +730,40 @@
         });
       }
 
+      // Grid: union the selection and cut it into square cells. The cell size
+      // is the one required input, so it is checked here rather than left to
+      // the server's 400 — an empty cell size is the common case, not an error
+      // worth a round trip.
+      if (gridBtn) {
+        gridBtn.addEventListener('click', function() {
+          if (selectedFeatures.length === 0) return;
+          var sizeFt = gridSizeInput ? parseFloat(gridSizeInput.value) : NaN;
+          if (!Number.isFinite(sizeFt) || sizeFt <= 0) {
+            renderPaintResult(false, {
+              message: 'Enter a cell size in feet before gridding.'
+            });
+            return;
+          }
+          gridBtn.disabled = true;
+          postPaintAction(gridUrl, {
+            features: selectedFeatures,
+            cell_size_ft: sizeFt,
+            offset_x_ft: gridOffsetXInput ? (parseFloat(gridOffsetXInput.value) || 0) : 0,
+            offset_y_ft: gridOffsetYInput ? (parseFloat(gridOffsetYInput.value) || 0) : 0
+          });
+        });
+      }
+
+      if (mergeBtn) {
+        mergeBtn.addEventListener('click', function() {
+          if (selectedFeatures.length < 2) return;
+          mergeBtn.disabled = true;
+          postPaintAction(mergeUrl, {
+            features: selectedFeatures
+          });
+        });
+      }
+
       // ── Paint History & Undo ──────────────────────────────
       const undoBtn = document.getElementById('paint-undo-btn');
       const undoEventId = document.getElementById('undo-event-id');
@@ -719,8 +797,14 @@
                 evt.operation_type === 'clear' ? 'Clear' :
                 evt.operation_type === 'built_form' ? 'BF' :
                 evt.operation_type === 'built_form_match' ? 'BF Match' :
-                evt.operation_type === 'built_form_fill' ? 'BF Fill' : evt.operation_type;
-              var valStr = evt.old_value + ' → ' + evt.new_value;
+                evt.operation_type === 'built_form_fill' ? 'BF Fill' :
+                evt.operation_type === 'grid' ? 'Grid' :
+                evt.operation_type === 'merge' ? 'Merge' : evt.operation_type;
+              // Geometry edits log no old/new column value — they replace the
+              // parcel itself — so show what changed instead of "null → null".
+              var valStr = evt.column_name === 'geometry' ?
+                'parcel geometry' :
+                evt.old_value + ' → ' + evt.new_value;
               var rowClass = isUndone ? 'text-muted' : '';
               html += '<div class="' + rowClass + '" style="border-bottom: 1px solid #eee; padding: 2px 0;">';
               html += '<span class="badge bg-secondary me-1" style="font-size:0.6rem;">' + opLabel + '</span>';

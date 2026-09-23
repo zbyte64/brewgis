@@ -34,13 +34,69 @@ class TestBuildCanvasViewSelect:
         )
 
         assert f"FROM {BASE_REF} bc" in sql
-        assert "COALESCE(pc.du, bc.du) AS du" in sql
-        assert "COALESCE(pc.pop, bc.pop) AS pop" in sql
+        assert "COALESCE(pc.du, src.du) AS du" in sql
+        assert "COALESCE(pc.pop, src.pop) AS pop" in sql
         # Non-paintable columns pass through untouched.
-        assert "bc.geometry_key" in sql
-        assert "(pc._feature_id IS NOT NULL) AS uf_is_painted" in sql
+        assert "src.geometry_key" in sql
+        assert "(pc._feature_id IS NOT NULL OR src._is_edited) AS uf_is_painted" in sql
         assert "WHERE scenario_id = 12" in sql
         assert "GROUP BY feature_id" in sql
+
+    def test_unions_the_base_canvas_with_the_scenarios_geometry_edits(self):
+        sql = build_canvas_view_select(
+            base_ref=BASE_REF,
+            all_columns=["parcel_id", "geometry", "du", "pop", "geometry_key"],
+            scenario_id=12,
+        )
+
+        assert "WITH claims AS (" in sql
+        assert "FROM workspace_parcelgeometryedit e" in sql
+        assert "UNION ALL" in sql
+        # A parcel a geometry edit replaces is dropped from the base rows...
+        assert "CAST(bc.parcel_id AS text) NOT IN (SELECT parcel_id FROM claims)" in sql
+        # ...and an edited row survives only while no newer edit claims its id:
+        # a merge's survivor is one of its own sources, so it has to outrank
+        # nothing but a later edit that took it as a source in turn.
+        assert "c.claimant_id IS NULL OR c.claimant_id <= e.id" in sql
+
+    def test_edited_rows_take_their_column_types_from_a_template_base_row(self):
+        sql = build_canvas_view_select(
+            base_ref=BASE_REF,
+            all_columns=["parcel_id", "geometry", "du", "pop", "geometry_key"],
+            scenario_id=12,
+        )
+
+        assert "edit_template AS MATERIALIZED (" in sql
+        assert f"SELECT b FROM {BASE_REF} b LIMIT 1" in sql
+        assert "jsonb_populate_record(" in sql
+        assert (
+            "t.b, e.values::jsonb || jsonb_build_object('parcel_id', e.parcel_id)"
+            in sql
+        )
+        # Every base column travels through the edit row's values, so both union
+        # branches project the same list — parcel_id included, and geometry is
+        # the edit row's own column.
+        assert "(rec).parcel_id" in sql
+        assert "(rec).du" in sql
+        assert "(rec).pop" in sql
+        assert "(rec).geometry_key" in sql
+        assert "e.geometry," in sql
+
+    def test_synthetic_parcel_ids_take_the_bases_key_type(self):
+        # parcel_id is the parcel key and is not uniformly typed — a synthetic
+        # grid-cell id is a negative-integer *string* while the base's key may
+        # be a BIGINT — so it travels through the template record for exactly
+        # the same reason every other column does. Casting it to a fixed type
+        # in the generator fails the union outright on one key flavour or the
+        # other.
+        sql = build_canvas_view_select(
+            base_ref=BASE_REF,
+            all_columns=["parcel_id", "geometry", "du"],
+            scenario_id=1,
+        )
+
+        assert "(rec).parcel_id" in sql
+        assert "jsonb_build_object('parcel_id', e.parcel_id)" in sql
 
     def test_text_columns_pivot_from_painted_text_value(self):
         assert "built_form_key" in TEXT_COLUMNS
@@ -67,8 +123,8 @@ class TestBuildCanvasViewSelect:
             base_ref=BASE_REF, all_columns=columns, scenario_id=1
         )
 
-        assert sql.index("COALESCE(pc.du, bc.du)") < sql.index(
-            "COALESCE(pc.pop, bc.pop)"
+        assert sql.index("COALESCE(pc.du, src.du)") < sql.index(
+            "COALESCE(pc.pop, src.pop)"
         )
 
 

@@ -1,27 +1,31 @@
-"""Paint views — direct column painting, built form painting, paint history, and undo/redo.
+"""Paint views — direct column painting, built form painting, geometry edits, history, and undo/redo.
 
 Painting can touch a large number of parcels at once (a big box/polygon
-selection), and each of the four "apply" operations below does real work per
-feature (constraint checks, ``AllocationEngine`` calls, canvas-view
-refreshes) that scales with selection size. To keep the request from
-blocking on that, ``paint_features``/``paint_built_form``/``match_built_form``/
-``fill_built_form`` only validate the request synchronously; the actual work
-runs in ``run_paint_operation`` (a Celery task, see ``brewgis.workspace.tasks``)
-tracked by a ``PaintRun`` row. The view responds immediately with either the
-finished result (if the task already completed — always true in eager-mode
-tests/dev, per ``CELERY_TASK_ALWAYS_EAGER``) or a 202 + poll URL for the
-frontend to watch via ``paint_status``.
+selection), and each of the "apply" operations below does real work per feature
+(constraint checks, ``AllocationEngine`` calls, canvas-view refreshes) that
+scales with selection size. To keep the request from blocking on that,
+``paint_features``/``paint_built_form``/``match_built_form``/``fill_built_form``/
+``grid_parcels``/``merge_parcels`` only validate the request synchronously; the
+actual work runs in ``run_paint_operation`` (a Celery task, see
+``brewgis.workspace.tasks``) tracked by a ``PaintRun`` row. The view responds
+immediately with either the finished result (if the task already completed —
+always true in eager-mode tests/dev, per ``CELERY_TASK_ALWAYS_EAGER``) or a
+202 + poll URL for the frontend to watch via ``paint_status``.
 """
 
 from __future__ import annotations
 
 import json
 import uuid
+from decimal import Decimal
+from math import ceil
 from typing import TYPE_CHECKING
 from typing import Any
 
+import deal
 from celery import current_app
 from django.contrib.auth.decorators import login_required
+from django.contrib.gis.geos import GEOSGeometry
 from django.db import connection
 from django.db import transaction
 from django.http import JsonResponse
@@ -35,15 +39,19 @@ from brewgis.workspace.built_forms.allocation import AllocationEngine
 from brewgis.workspace.built_forms.allocation import AllocationResult
 from brewgis.workspace.built_forms.models import BuildingType
 from brewgis.workspace.built_forms.models import PlaceType
+from brewgis.workspace.models import GEOMETRY_EDIT_ID_SEQUENCE
 from brewgis.workspace.models import PaintedCanvas
 from brewgis.workspace.models import PaintEvent
 from brewgis.workspace.models import PaintRun
+from brewgis.workspace.models import ParcelGeometryEdit
 from brewgis.workspace.models import Scenario
 from brewgis.workspace.models import ScenarioNotPaintableError
 from brewgis.workspace.models import Workspace
+from brewgis.workspace.services.base_canvas_schema import BaseCanvasSchema
 from brewgis.workspace.services.built_form_keys import normalize_built_form_key
 from brewgis.workspace.services.canvas_view_manager import PAINTABLE_COLUMNS
 from brewgis.workspace.services.canvas_view_manager import TEXT_COLUMNS
+from brewgis.workspace.services.canvas_view_manager import _fetch_base_columns
 from brewgis.workspace.services.paint_constraints import ConstraintResult
 from brewgis.workspace.services.paint_constraints import check_paint_batch
 from brewgis.workspace.services.scenario_canvas import purge_scenario_canvas_tiles
@@ -365,6 +373,120 @@ def fill_built_form(
     return _enqueue(scenario, request.user, "fill", {"features": features})
 
 
+def _parse_geometry_edit_body(
+    request: HttpRequest, workspace_pk: int, scenario_pk: int
+) -> tuple[Scenario, list[str], dict[str, Any]] | JsonResponse:
+    """Resolve the scenario and validate the shared part of a geometry-edit body.
+
+    Both grid and merge take ``{"features": [...]}`` and differ only in the grid
+    extras, so the workspace/scenario lookup, the paintable check and the
+    feature-list validation are shared. Returns either the resolved parts or the
+    error response to send back verbatim.
+    """
+    workspace = get_object_or_404(Workspace, pk=workspace_pk)
+    scenario = get_object_or_404(Scenario, pk=scenario_pk, workspace=workspace)
+    try:
+        scenario.ensure_paintable()
+    except ScenarioNotPaintableError as exc:
+        return JsonResponse({"status": "error", "message": str(exc)}, status=400)
+
+    try:
+        body = json.loads(request.body)
+    except json.JSONDecodeError:
+        return JsonResponse(
+            {"status": "error", "message": "Invalid JSON body."}, status=400
+        )
+
+    features: list[str] = body.get("features", [])
+    if not features:
+        return JsonResponse(
+            {"status": "error", "message": "No features selected."}, status=400
+        )
+
+    return scenario, features, body
+
+
+@require_POST
+@login_required
+def grid_parcels(
+    request: HttpRequest, workspace_pk: int, scenario_pk: int
+) -> JsonResponse:
+    """Split the selected parcels into a square grid of smaller parcels.
+
+    Accepts JSON body::
+        {"features": ["1", "2"], "cell_size_ft": 100}
+
+    or, with an explicit grid origin offset::
+        {"features": ["1", "2"], "cell_size_ft": 100, "offset_x_ft": 50, "offset_y_ft": 0}
+
+    The selected parcels are unioned into one site and the site is cut into
+    square cells of *cell_size_ft* feet, the grid aligned to the offset (zero,
+    i.e. the projected origin, by default). Column values are allocated to each
+    cell from the parcels it covers, conserving totals — see
+    :func:`_allocate_grid_cell`.
+
+    Runs as a background ``PaintRun`` (see module docstring) — validates the
+    request shape here, then hands off to :func:`run_grid_parcels`.
+    """
+    resolved = _parse_geometry_edit_body(request, workspace_pk, scenario_pk)
+    if isinstance(resolved, JsonResponse):
+        return resolved
+    scenario, features, body = resolved
+
+    try:
+        cell_size_ft = float(body["cell_size_ft"])
+        offset_x_ft = float(body.get("offset_x_ft") or 0.0)
+        offset_y_ft = float(body.get("offset_y_ft") or 0.0)
+    except (KeyError, TypeError, ValueError):
+        return JsonResponse(
+            {
+                "status": "error",
+                "message": (
+                    "cell_size_ft is required and must be a number; "
+                    "offset_x_ft/offset_y_ft are optional numbers."
+                ),
+            },
+            status=400,
+        )
+
+    return _enqueue(
+        scenario,
+        request.user,
+        "grid",
+        {
+            "features": features,
+            "cell_size_ft": cell_size_ft,
+            "offset_x_ft": offset_x_ft,
+            "offset_y_ft": offset_y_ft,
+        },
+    )
+
+
+@require_POST
+@login_required
+def merge_parcels(
+    request: HttpRequest, workspace_pk: int, scenario_pk: int
+) -> JsonResponse:
+    """Merge the selected parcels into one.
+
+    Accepts JSON body::
+        {"features": ["1", "2", "3"]}
+
+    The parcels' geometry is dissolved into a single multi-polygon and one of
+    them (the lowest id, so the result is deterministic) survives as the merged
+    parcel, carrying the union of their values — see :func:`_allocate_merge`.
+
+    Runs as a background ``PaintRun`` (see module docstring) — validates the
+    request shape here, then hands off to :func:`run_merge_parcels`.
+    """
+    resolved = _parse_geometry_edit_body(request, workspace_pk, scenario_pk)
+    if isinstance(resolved, JsonResponse):
+        return resolved
+    scenario, features, _body = resolved
+
+    return _enqueue(scenario, request.user, "merge", {"features": features})
+
+
 @require_GET
 @login_required
 def paint_status(
@@ -516,6 +638,35 @@ def undo_paint(  # noqa: C901, PLR0912
 
             # Mark as undone
             PaintEvent.objects.filter(id=evt.id).update(undone_at=undo_now)
+
+        # Grid/merge batches keep their state in ParcelGeometryEdit rows rather
+        # than in PaintedCanvas, so undoing them means deleting those rows: the
+        # canvas view only hides a parcel for as long as an edit still claims it
+        # as a source, so the replaced parcels come straight back (including an
+        # earlier edit's cells if this grid was applied to them). Any paint
+        # applied to features that disappear with the edit goes too — an
+        # override on a parcel that no longer exists is unreachable — but a
+        # merge's result id is its own survivor, a parcel that is still there
+        # after the undo, and its overrides are restored by this batch's clear
+        # events instead.
+        edits = list(
+            ParcelGeometryEdit.objects.filter(
+                scenario=scenario,
+                batch_id__in={evt.batch_id for evt in events},
+            )
+        )
+        if edits:
+            vanishing_ids = [
+                str(edit.parcel_id)
+                for edit in edits
+                if str(edit.parcel_id) not in set(edit.source_parcel_ids)
+            ]
+            ParcelGeometryEdit.objects.filter(
+                pk__in=[edit.pk for edit in edits]
+            ).delete()
+            PaintedCanvas.objects.filter(
+                scenario=scenario, feature_id__in=vanishing_ids
+            ).delete()
 
         # Log the undo event(s)
         undo_events = [
@@ -1040,6 +1191,605 @@ def run_fill_built_form(
     )
 
 
+# ─── Geometry edits (grid / merge) ───────────────────────────────
+#
+# Paint mode's two parcel-boundary tools. Both are copy-on-write over the
+# workspace's base canvas: they write ParcelGeometryEdit rows for the *result*
+# features and the scenario's canvas view — the single source both the tile
+# servers and the analysis models read — UNIONs those rows in and hides the
+# parcels they replace (see
+# ``services.canvas_view_manager.build_canvas_view_select``). Neither tool ever
+# writes to the base canvas table.
+
+_FT_TO_M = 0.3048
+"""Feet per metre — grid cell sizes and offsets are entered in feet."""
+
+_MIN_CELL_AREA_M2 = 1.0
+"""Cells smaller than this (m²) are dropped as slivers of a clipped parcel."""
+
+_MAX_GRID_CELLS = 50_000
+"""Refuse a grid whose envelope would need more cells than this.
+
+Cells are generated over the selection's *envelope*, so a small cell size over
+a large or diagonally sparse selection would ask Postgres for millions of them
+before anything is clipped away. Comparing the envelope's area to the cell area
+is cheap and rejects the request up front with an actionable message instead.
+"""
+
+_MIN_MERGE_PARCELS = 2
+"""Parcels a merge needs before there is anything to merge."""
+
+_EDIT_AUX_KEYS: frozenset[str] = frozenset(
+    {"parcel_id", "geometry", "geometry_geojson", "area_m2"}
+)
+"""Source-dict keys that are not ParcelGeometryEdit.values columns.
+
+``parcel_id``/``geometry`` have dedicated model fields, and
+``geometry_geojson``/``area_m2`` are fetch-time decorations the canvas view
+never reads back out of ``values``.
+"""
+
+_EXTENSIVE_METATYPES: frozenset[str] = frozenset({"count", "area", "currency"})
+_INTENSIVE_METATYPES: frozenset[str] = frozenset({"density", "percentage"})
+_COPY_METATYPES: frozenset[str] = frozenset({"identity", "geometry", "classification"})
+
+
+def _all_numeric(values: list[Any]) -> bool:
+    """True when every non-null value is a real number (booleans excluded).
+
+    ``bool`` is an ``int`` subclass in Python, so it is excluded explicitly: a
+    flag column like ``is_residential`` reads as numeric otherwise and would be
+    summed into 3 for a parcel covering three sources.
+    """
+    seen = False
+    for value in values:
+        if value is None:
+            continue
+        if isinstance(value, bool) or not isinstance(value, (int, float, Decimal)):
+            return False
+        seen = True
+    return seen
+
+
+def _allocatable_columns(sources: dict[str, dict[str, Any]]) -> set[str]:
+    """Every column an edit row has to carry: the sources' keys minus the aux ones."""
+    columns: set[str] = set()
+    for row in sources.values():
+        columns.update(row)
+    return columns - _EDIT_AUX_KEYS
+
+
+def _column_basis(column: str, values: list[Any]) -> str:
+    """Return how *column* combines when one or more parcels become several.
+
+    One of ``"extensive"`` (summed in proportion to the area taken from each
+    source), ``"intensive"`` (averaged over the sources' areas) or ``"copy"``
+    (taken from a single source). ``BaseCanvasSchema``'s metatype decides, with
+    two type-safety fallbacks that keep its ``"count"`` default from being
+    summed where it does not apply: a column the schema has no definition for
+    (a base canvas may expose columns the base-canvas model does not, e.g.
+    ``county``) and a column whose values are not numbers (``du_subtype`` is
+    text, ``is_residential`` is boolean) are copied instead.
+    """
+    col_def = BaseCanvasSchema.get(column)
+    metatype = col_def.metatype if col_def is not None else ""
+    numeric = _all_numeric(values)
+    if metatype in _INTENSIVE_METATYPES and numeric:
+        return "intensive"
+    if metatype in _COPY_METATYPES or not numeric:
+        return "copy"
+    if metatype in _EXTENSIVE_METATYPES:
+        return "extensive"
+    return "extensive" if numeric else "copy"
+
+
+def _intensive_mean(
+    sources: dict[str, dict[str, Any]],
+    weights: dict[str, float],
+    column: str,
+) -> float:
+    """Area-weighted mean of *column* over *weights*.
+
+    Nulls drop out of both sides of the ratio, so a source that has no value
+    for *column* cannot drag the average toward zero. A zero total weight has no
+    meaningful mean and reads as 0.
+    """
+    weighted = 0.0
+    total = 0.0
+    for src_id, weight in weights.items():
+        value = sources[src_id].get(column)
+        if value is None:
+            continue
+        weighted += float(value) * weight
+        total += weight
+    return weighted / total if total else 0.0
+
+
+def _extensive_sum(
+    sources: dict[str, dict[str, Any]],
+    weights: dict[str, float],
+    column: str,
+) -> float | int:
+    """Sum *column* over *weights* — a fraction of each source, or 1 per source.
+
+    Nulls contribute nothing. A column whose source values are all plain ``int``
+    — which is what the driver returns for the base canvas's ``bigint``/
+    ``integer`` columns, ``building_count`` among them — is rounded back to an
+    int: a grid cell holding 0.4 of a building is not representable, and the
+    base's column type would reject the fraction outright. Rounding is the only
+    option for those columns, so a split conserves an integral column's total
+    only to within one unit per cell; every fractional column (``du``, the
+    areas, the building square footages) conserves exactly.
+    """
+    total = 0.0
+    integral = False
+    fractional = False
+    for src_id, weight in weights.items():
+        value = sources[src_id].get(column)
+        if value is None:
+            continue
+        if isinstance(value, int) and not isinstance(value, bool):
+            integral = True
+        else:
+            fractional = True
+        total += float(value) * weight
+    return round(total) if integral and not fractional else total
+
+
+@deal.pre(lambda _sources, overlap_m2, _cell_id: bool(overlap_m2))
+@deal.pre(lambda sources, overlap_m2, _cell_id: set(overlap_m2).issubset(sources))
+@deal.ensure(
+    lambda sources, _overlap_m2, _cell_id, result: (
+        set(result) == _allocatable_columns(sources)
+    )
+)
+@deal.ensure(
+    lambda _sources, _overlap_m2, cell_id, result: result["geometry_key"] == cell_id
+)
+def _allocate_grid_cell(
+    sources: dict[str, dict[str, Any]],
+    overlap_m2: dict[str, float],
+    cell_id: str,
+) -> dict[str, Any]:
+    """Allocate one grid cell's attributes from the parcels it covers.
+
+    Total-conserving: a cell takes each source's extensive values in proportion
+    to the part of that source's area it covers (``overlap / area``), and the
+    cells partition every source exactly, so the shares over one source sum to
+    1. Densities and percentages are averaged over the cell's own source
+    composition, and identity/classification columns come from whichever source
+    covers most of the cell.
+    """
+    columns = _allocatable_columns(sources)
+    overlap = {src: float(area) for src, area in overlap_m2.items() if area}
+    dominant = max(overlap, key=lambda src: overlap[src])
+
+    values: dict[str, Any] = {}
+    for column in sorted(columns):
+        if column == "geometry_key":
+            values[column] = cell_id
+            continue
+        basis = _column_basis(column, [sources[src].get(column) for src in overlap])
+        if basis == "copy":
+            values[column] = sources[dominant].get(column)
+        elif basis == "intensive":
+            values[column] = _intensive_mean(sources, overlap, column)
+        else:
+            shares = {
+                src: area / float(sources[src]["area_m2"])
+                for src, area in overlap.items()
+            }
+            values[column] = _extensive_sum(sources, shares, column)
+    return values
+
+
+@deal.pre(lambda sources, survivor, _merged_geometry_key: survivor in sources)
+@deal.ensure(
+    lambda sources, _survivor, _merged_geometry_key, result: (
+        set(result) == _allocatable_columns(sources)
+    )
+)
+@deal.ensure(
+    lambda _sources, _survivor, merged_geometry_key, result: (
+        result["geometry_key"] == merged_geometry_key
+    )
+)
+def _allocate_merge(
+    sources: dict[str, dict[str, Any]],
+    survivor: str,
+    merged_geometry_key: str,
+) -> dict[str, Any]:
+    """Allocate the merged parcel's attributes from the parcels merged into it.
+
+    Extensive values are summed — the merged parcel holds the whole of each —
+    densities and percentages are averaged weighted by the sources' areas, and
+    identity/classification columns come from the surviving parcel.
+    """
+    columns = _allocatable_columns(sources)
+    weights = {src: float(row.get("area_m2") or 0.0) for src, row in sources.items()}
+
+    values: dict[str, Any] = {}
+    for column in sorted(columns):
+        if column == "geometry_key":
+            values[column] = merged_geometry_key
+            continue
+        basis = _column_basis(column, [row.get(column) for row in sources.values()])
+        if basis == "copy":
+            values[column] = sources[survivor].get(column)
+        elif basis == "intensive":
+            values[column] = _intensive_mean(sources, weights, column)
+        else:
+            values[column] = _extensive_sum(
+                sources, dict.fromkeys(sources, 1.0), column
+            )
+    return values
+
+
+def _json_object(value: Any) -> dict[str, Any]:
+    """Normalize a ``jsonb`` column read through a raw cursor into a dict.
+
+    psycopg2 hands ``jsonb`` back as a parsed dict; psycopg 3 hands it back as
+    its text form unless json loaders are registered on the connection. Both
+    drivers are supported in this project, and this is read with a raw cursor.
+    ``None`` — a ``jsonb`` column that is null — reads as an empty object.
+    """
+    if isinstance(value, dict):
+        return value
+    if isinstance(value, str):
+        parsed: dict[str, Any] = json.loads(value)
+        return parsed
+    return {}
+
+
+def _next_geometry_edit_ids(count: int) -> list[str]:
+    """Reserve *count* synthetic feature ids from the edit id sequence.
+
+    Negative integers, so they cannot collide with a real parcel id in either
+    key flavour — the published base canvas keys on a positive ``BIGINT``, a
+    SQLMesh base on an APN string; the canvas view hands them to
+    ``jsonb_populate_record``, which casts them to whichever type that key
+    actually is. ``nextval`` is deliberately non-transactional: a rolled-back
+    grid leaves gaps, which costs nothing and keeps the ids unique.
+    """
+    if count <= 0:
+        return []
+    with connection.cursor() as cursor:
+        cursor.execute(
+            f"SELECT nextval('{GEOMETRY_EDIT_ID_SEQUENCE}') "  # noqa: S608
+            f"FROM generate_series(1, %s)",
+            [count],
+        )
+        return [str(-row[0]) for row in cursor.fetchall()]
+
+
+def _geojson_geometry(geojson: str) -> GEOSGeometry:
+    """Build a 4326 GEOS geometry from ``ST_AsGeoJSON`` output."""
+    # GEOSGeometry parses a GeoJSON object passed as a string directly (the
+    # WKT/HEX parsers are tried first and fail on a leading '{').
+    geometry = GEOSGeometry(geojson)
+    geometry.srid = 4326
+    return geometry
+
+
+def _grid_cell_estimate(quoted_view: str, sources: list[str], size_m: float) -> int:
+    """Cells a grid of *size_m* would generate over *sources*' envelope."""
+    query = (
+        f"SELECT ST_XMax(e) - ST_XMin(e), ST_YMax(e) - ST_YMin(e) "  # noqa: S608
+        f"FROM (SELECT ST_Extent(ST_Transform(geometry, 3857)) AS e "
+        f"FROM {quoted_view} WHERE CAST(parcel_id AS text) = ANY(%s)) s"
+    )
+    with connection.cursor() as cursor:
+        cursor.execute(query, [sources])
+        width, height = cursor.fetchone()
+    if width is None or height is None:
+        return 0
+    return ceil(float(width) / size_m) * ceil(float(height) / size_m)
+
+
+def _grid_cells(
+    quoted_view: str,
+    sources: list[str],
+    *,
+    size_m: float,
+    ox_m: float,
+    oy_m: float,
+) -> list[tuple[str, float, dict[str, float]]]:
+    """Cut the union of *sources* into square cells of *size_m* metres.
+
+    Returns ``[(cell_geojson, cell_area_m2, {source_id: overlap_m2}), ...]``.
+
+    One round trip. The grid is generated in Web Mercator so a "100 ft" cell is
+    square in metres rather than in degrees, then each cell is transformed back
+    to 4326 and intersected with the parcels it overlaps. Grouping those
+    intersections by grid index yields both the cell's geometry and its
+    per-source overlap areas in true m² — the shares the allocation divides by.
+    Because the cells that touch a parcel partition it exactly, those shares
+    always add up to the parcel's whole area (the total-conservation property
+    :func:`_allocate_grid_cell` relies on).
+    """
+    query = f"""
+WITH srcs AS MATERIALIZED (
+    SELECT parcel_id, ST_MakeValid(geometry) AS geometry
+    FROM {quoted_view}
+    WHERE CAST(parcel_id AS text) = ANY(%(sources)s)
+),
+bounds AS (
+    SELECT ST_SetSRID(ST_Extent(ST_Transform(geometry, 3857))::geometry, 3857) AS geometry
+    FROM srcs
+),
+cells AS (
+    SELECT ST_Transform(ST_Translate(g.geom, %(ox)s, %(oy)s), 4326) AS cell, g.i, g.j
+    FROM bounds b
+    CROSS JOIN LATERAL ST_SquareGrid(
+        %(size)s, ST_Translate(b.geometry, -%(ox)s, -%(oy)s)
+    ) AS g
+),
+parts AS (
+    SELECT c.i, c.j, src.parcel_id AS src_id,
+           ST_Intersection(c.cell, src.geometry) AS geometry
+    FROM cells c
+    JOIN srcs src ON ST_Intersects(c.cell, src.geometry)
+),
+cell_shapes AS (
+    SELECT i, j,
+           ST_CollectionExtract(ST_MakeValid(ST_Union(geometry)), 3) AS geometry,
+           jsonb_object_agg(
+               CAST(src_id AS text), ST_Area(geometry::geography)
+           ) AS overlap
+    FROM parts
+    GROUP BY i, j
+)
+SELECT ST_AsGeoJSON(geometry) AS cell_geojson,
+       ST_Area(geometry::geography) AS cell_area_m2,
+       overlap
+FROM cell_shapes
+WHERE ST_Area(geometry::geography) > %(min_area)s
+"""  # noqa: S608 — quoted_view is a quoted identifier pair
+    with connection.cursor() as cursor:
+        cursor.execute(
+            query,
+            {
+                "sources": sources,
+                "size": size_m,
+                "ox": ox_m,
+                "oy": oy_m,
+                "min_area": _MIN_CELL_AREA_M2,
+            },
+        )
+        rows = cursor.fetchall()
+    return [(row[0], float(row[1]), _json_object(row[2])) for row in rows]
+
+
+def run_grid_parcels(
+    *,
+    scenario: Scenario,
+    user: Any,
+    params: dict[str, Any],
+) -> dict[str, Any]:
+    """Split the selected parcels into a square grid of smaller parcels."""
+    features = [str(feature) for feature in params["features"]]
+    cell_size_ft = float(params["cell_size_ft"])
+    offset_x_ft = float(params.get("offset_x_ft") or 0.0)
+    offset_y_ft = float(params.get("offset_y_ft") or 0.0)
+
+    # Ids arrive as strings from the map and may repeat (a box selection can
+    # report a parcel twice); one id per parcel is what the grid math assumes.
+    unique_features = list(dict.fromkeys(features))
+    if not unique_features:
+        return {
+            "status": "error",
+            "message": "No features selected.",
+            "http_status": 400,
+        }
+    if cell_size_ft <= 0:
+        return {
+            "status": "error",
+            "message": "Cell size must be positive.",
+            "http_status": 400,
+        }
+
+    schema, table = scenario.base_layer_source()
+    quoted_view = _quote_qualified_table(schema, table)
+
+    sources = _fetch_canvas_feature_data(
+        scenario, unique_features, include_geometry=True
+    )
+    missing = [feature for feature in unique_features if feature not in sources]
+    if missing:
+        return {
+            "status": "error",
+            "message": (
+                "Parcels not found in this scenario's canvas: "
+                f"{', '.join(missing[:10])}."
+            ),
+            "http_status": 404,
+        }
+
+    size_m = cell_size_ft * _FT_TO_M
+    ox_m = offset_x_ft * _FT_TO_M
+    oy_m = offset_y_ft * _FT_TO_M
+    estimate = _grid_cell_estimate(quoted_view, unique_features, size_m)
+    if estimate > _MAX_GRID_CELLS:
+        return {
+            "status": "error",
+            "message": (
+                f"A {cell_size_ft:g} ft grid over this selection needs about "
+                f"{estimate} cells (limit {_MAX_GRID_CELLS}) — use a larger cell "
+                "size or select a smaller area."
+            ),
+            "http_status": 400,
+        }
+
+    with transaction.atomic():
+        cells = _grid_cells(
+            quoted_view,
+            unique_features,
+            size_m=size_m,
+            ox_m=ox_m,
+            oy_m=oy_m,
+        )
+        if not cells:
+            return {
+                "status": "error",
+                "message": "Grid produced no cells — choose a smaller cell size.",
+                "http_status": 400,
+            }
+
+        batch_id = uuid.uuid4().hex
+        cell_ids = _next_geometry_edit_ids(len(cells))
+        ParcelGeometryEdit.objects.bulk_create(
+            [
+                ParcelGeometryEdit(
+                    scenario=scenario,
+                    parcel_id=cell_id,
+                    geometry=_geojson_geometry(cell_geojson),
+                    values=_allocate_grid_cell(sources, overlap, cell_id),
+                    source_parcel_ids=sorted(unique_features),
+                    operation=ParcelGeometryEdit.Operation.GRID,
+                    batch_id=batch_id,
+                    created_by=user,
+                )
+                for (cell_geojson, _area, overlap), cell_id in zip(
+                    cells, cell_ids, strict=True
+                )
+            ]
+        )
+
+        # One event per grid, not per cell: a 5000-cell grid would otherwise
+        # bury every other operation in the history, and undo works per batch.
+        PaintEvent.objects.create(
+            scenario=scenario,
+            feature_id=cell_ids[0],
+            column_name="geometry",
+            operation_type="grid",
+            batch_id=batch_id,
+            painted_by=user,
+        )
+
+        purge_scenario_canvas_tiles(scenario)
+
+    return {
+        "status": "ok",
+        "grid_count": len(cell_ids),
+        "painted_features": _cap_list(cell_ids),
+        "painted_features_total": len(cell_ids),
+        "batch_id": batch_id,
+    }
+
+
+def run_merge_parcels(
+    *,
+    scenario: Scenario,
+    user: Any,
+    params: dict[str, Any],
+) -> dict[str, Any]:
+    """Merge the selected parcels into one."""
+    features = [str(feature) for feature in params["features"]]
+    unique_features = list(dict.fromkeys(features))
+    if len(unique_features) < _MIN_MERGE_PARCELS:
+        return {
+            "status": "error",
+            "message": "Select at least two distinct parcels to merge.",
+            "http_status": 400,
+        }
+
+    schema, table = scenario.base_layer_source()
+    quoted_view = _quote_qualified_table(schema, table)
+
+    rows = _fetch_canvas_feature_data(scenario, unique_features, include_geometry=True)
+    missing = [feature for feature in unique_features if feature not in rows]
+    if missing:
+        return {
+            "status": "error",
+            "message": (
+                "Parcels not found in this scenario's canvas: "
+                f"{', '.join(missing[:10])}."
+            ),
+            "http_status": 404,
+        }
+
+    # Lexicographic over the string ids — ids are not necessarily integers — so
+    # the survivor is deterministic for a given selection.
+    survivor = sorted(unique_features)[0]
+
+    with connection.cursor() as cursor:
+        cursor.execute(
+            f"SELECT ST_AsGeoJSON("  # noqa: S608
+            f"ST_Multi(ST_UnaryUnion(ST_Collect(ST_MakeValid(geometry))))) "
+            f"FROM {quoted_view} WHERE CAST(parcel_id AS text) = ANY(%s)",
+            [unique_features],
+        )
+        union_geojson = cursor.fetchone()[0]
+    if union_geojson is None:
+        return {
+            "status": "error",
+            "message": "No geometry found for the selected parcels.",
+            "http_status": 404,
+        }
+
+    with transaction.atomic():
+        batch_id = uuid.uuid4().hex
+        ParcelGeometryEdit.objects.create(
+            scenario=scenario,
+            parcel_id=survivor,
+            geometry=_geojson_geometry(union_geojson),
+            values=_allocate_merge(rows, survivor, survivor),
+            source_parcel_ids=sorted(unique_features),
+            operation=ParcelGeometryEdit.Operation.MERGE,
+            batch_id=batch_id,
+            created_by=user,
+        )
+
+        # The survivor keeps its own id, so paint already on it would mask the
+        # values the merge just computed for it — and those values already
+        # include that paint, read out of the canvas view. Drop the overrides
+        # and log them as clears in the same batch, so the undo that restores
+        # the source parcels restores the survivor's paint with them.
+        survivor_paint = list(
+            PaintedCanvas.objects.filter(scenario=scenario, feature_id=survivor).values(
+                "column_name", "painted_value", "painted_text_value"
+            )
+        )
+        if survivor_paint:
+            PaintEvent.objects.bulk_create(
+                [
+                    PaintEvent(
+                        scenario=scenario,
+                        feature_id=survivor,
+                        column_name=row["column_name"],
+                        old_value=row["painted_value"],
+                        old_text_value=row["painted_text_value"],
+                        operation_type="clear",
+                        batch_id=batch_id,
+                        painted_by=user,
+                    )
+                    for row in survivor_paint
+                ]
+            )
+            PaintedCanvas.objects.filter(
+                scenario=scenario, feature_id=survivor
+            ).delete()
+
+        PaintEvent.objects.create(
+            scenario=scenario,
+            feature_id=survivor,
+            column_name="geometry",
+            operation_type="merge",
+            batch_id=batch_id,
+            painted_by=user,
+        )
+
+        purge_scenario_canvas_tiles(scenario)
+
+    return {
+        "status": "ok",
+        "merged_count": 1,
+        "painted_features": [survivor],
+        "painted_features_total": 1,
+        "batch_id": batch_id,
+    }
+
+
 # ─── Helpers ─────────────────────────────────────────────────────
 
 
@@ -1107,15 +1857,33 @@ def _fetch_feature_data(base_table: str, feature_ids: list[str]) -> dict[str, di
     return {str(row[0]): dict(zip(col_names, row, strict=True)) for row in rows}
 
 
-def _fetch_canvas_feature_data(
-    scenario: Scenario, feature_ids: list[str]
-) -> dict[str, dict]:
-    """Fetch current du/emp/area/built_form_key values from the scenario's canvas view.
+def _json_scalar(value: Any) -> Any:
+    """Coerce one fetched base-canvas value into something JSON-serializable.
 
-    Reads from the per-scenario canvas view (base canvas COALESCEd with any
-    PaintedCanvas overlay) rather than the raw base table, so density
-    matching and built_form_key lookups reflect values already painted in
-    this scenario (e.g. a prior Match Closest or manual Built Form paint).
+    ``numeric`` columns — which SQLMesh-declared bases use for areas, densities
+    and the DU totals — arrive from psycopg as ``Decimal``, which ``JSONField``
+    refuses to serialize.
+    """
+    return float(value) if isinstance(value, Decimal) else value
+
+
+def _fetch_canvas_feature_data(
+    scenario: Scenario, feature_ids: list[str], *, include_geometry: bool = False
+) -> dict[str, dict]:
+    """Fetch current column values for *feature_ids* from the scenario's canvas view.
+
+    Reads from the per-scenario canvas view (base canvas UNION any parcel
+    geometry edits, COALESCEd with any PaintedCanvas overlay) rather than the
+    raw base table, so density matching, ``built_form_key`` lookups and the
+    grid/merge allocation all reflect what is already in effect for this
+    scenario.
+
+    With *include_geometry*, every column the base canvas exposes comes back —
+    a geometry edit row has to carry all of them — plus ``geometry_geojson``
+    and ``area_m2``, the parcel's true geodesic area and the denominator the
+    grid's area shares divide by. ``geometry`` itself is not selected: only its
+    GeoJSON form is used, and a parcel's EWKB hex is orders of magnitude larger
+    than the rest of the row.
     """
     if not feature_ids:
         return {}
@@ -1123,9 +1891,26 @@ def _fetch_canvas_feature_data(
     schema, table = scenario.base_layer_source()
     quoted_view = _quote_qualified_table(schema, table)
     placeholders = ", ".join("%s" for _ in feature_ids)
+
+    if include_geometry:
+        columns = [
+            column
+            for column in _fetch_base_columns(scenario.workspace.base_table)[2]
+            if column not in ("parcel_id", "geometry")
+        ]
+        selected = ", ".join(["parcel_id", *columns])
+        extra = (
+            "ST_AsGeoJSON(geometry) AS geometry_geojson, "
+            "ST_Area(geometry::geography) AS area_m2"
+        )
+    else:
+        selected = "parcel_id, du, emp, area_gross, area_parcel, built_form_key"
+        extra = ""
+
+    projected = f"{selected}, {extra}" if extra else selected
     query = (
-        f"SELECT id, du, emp, area_gross, area_parcel, built_form_key "  # noqa: S608
-        f"FROM {quoted_view} WHERE CAST(id AS text) IN ({placeholders})"
+        f"SELECT {projected} "  # noqa: S608 — quoted_view is a quoted identifier pair
+        f"FROM {quoted_view} WHERE CAST(parcel_id AS text) IN ({placeholders})"
     )
 
     with connection.cursor() as cursor:
@@ -1133,7 +1918,13 @@ def _fetch_canvas_feature_data(
         col_names = [desc[0] for desc in cursor.description]
         rows = cursor.fetchall()
 
-    return {str(row[0]): dict(zip(col_names, row, strict=True)) for row in rows}
+    return {
+        str(row[0]): {
+            column: _json_scalar(value)
+            for column, value in zip(col_names, row, strict=True)
+        }
+        for row in rows
+    }
 
 
 def _allocation_to_painted_rows(  # noqa: C901

@@ -24,7 +24,7 @@ User Browser                    Docker Compose Stack
      │                                 │
      └── brewgis.workspace ────────────┘
               │
-              ├─ Models: 23 classes (Workspace, Layer, PaintedCanvas, Scenario, etc.)
+              ├─ Models: 24 classes (Workspace, Layer, PaintedCanvas, Scenario, etc.)
               ├─ Views: 22 modules (~82 URL patterns)
               ├─ SQLMesh: ~162 models (152 SQL, 10 Python), 86 audits, 22 macros, 37 seeds
               ├─ dlt → DuckDB: 3 pipelines (NLCD, OSM) — DuckDB caches HTTP calls, handles raster/zip
@@ -37,7 +37,7 @@ User Browser                    Docker Compose Stack
 - **Async flow:** Celery Beat (DatabaseScheduler via django-celery-beat) dispatches periodic tasks → Redis broker → Celery workers execute tasks
 - **GIS ingest:** User uploads GIS file → geopandas reads → `df.to_postgis()` via SQLAlchemy
 - **Data pipeline (dlt → DuckDB → SQLMesh):** dlt pipelines load raw data into DuckDB (caches HTTP fetches, supports raster and zip files natively) → SQLMesh stages with DuckDB VIEWs (gateway-managed virtual layer) then FULL-bridges into PostGIS → downstream SQLMesh analysis models run entirely in PostGIS
-- **Paint/overrides:** `PaintedCanvas` model stores per-feature, per-column overrides with undo/redo via `PaintEvent` log. Canvas views dynamically LEFT JOIN paints onto base data.
+- **Paint/overrides:** `PaintedCanvas` model stores per-feature, per-column overrides with undo/redo via `PaintEvent` log. Canvas views dynamically LEFT JOIN paints onto base data. Paint mode's grid (split) and merge tools write `ParcelGeometryEdit` rows instead — a result parcel, its geometry, and every base column — which the canvas view UNIONs in while hiding the parcels each edit replaces, so parcel boundaries are copy-on-write too (no `public.base_canvas` write).
 - **MCP server:** FastMCP stdio server mirrors the view layer, exposing 8 tool modules for AI assistant integration
 - **Custom ruff rules:** `brewgis/_ruff_rules/rules.py` enforces 6 project-specific anti-patterns inline (replacing most old pytestarch rules)
 
@@ -63,7 +63,7 @@ Key rules:
 |---|---|
 |`brewgis/workspace/`|The sole Django app — models, views, tasks, templates, services, analysis modules, symbology, built_forms, MCP server, management commands|
 |`brewgis/workspace/views/`|22 view modules split by feature (paint, analysis, scenarios, map, reports, built_forms, etc.)|
-|`brewgis/workspace/models.py`|23 model classes (Workspace, Layer, SymbologyConfig, StyleClass, Scenario, PaintedCanvas, AnalysisRun, DataImportRun, POICache, PaintConstraint, MergeAudit, PaintEvent, ScenarioReport, County, DataSourceCategory, DataSource, LayerFilter, LayerGroup, ExternalMapService, Basemap, BaseCanvasColumn, BaseCanvas, BuiltFormDefinition)|
+|`brewgis/workspace/models.py`|24 model classes (Workspace, Layer, SymbologyConfig, StyleClass, Scenario, PaintedCanvas, AnalysisRun, DataImportRun, POICache, PaintConstraint, MergeAudit, PaintEvent, ParcelGeometryEdit, ScenarioReport, County, DataSourceCategory, DataSource, LayerFilter, LayerGroup, ExternalMapService, Basemap, BaseCanvasColumn, BaseCanvas, BuiltFormDefinition)|
 |`brewgis/workspace/built_forms/models.py`|Built form sub-app: BuildingType (27 fields), PlaceType, PlaceTypeBuildingTypeMix|
 |`brewgis/workspace/tasks.py`|8 Celery tasks for data import, export, allocation, stitching, report generation|
 |`brewgis/workspace/analysis/`|Pipeline orchestrator, module/layer registries, transport/food/equity preprocessors, network extractor|
@@ -218,7 +218,7 @@ npm run test      # vitest
 
 |File|Role|
 |---|---|
-|`brewgis/workspace/models.py`|23 model classes (1142 lines)|
+|`brewgis/workspace/models.py`|24 model classes|
 |`brewgis/workspace/built_forms/models.py`|Built form models: BuildingType (27 fields), PlaceType, PlaceTypeBuildingTypeMix|
 |`brewgis/workspace/urls.py`|82 URL patterns under `app_name='workspace'`|
 |`brewgis/workspace/views/__init__.py`|Exports 71 view function/class from 22 view modules|

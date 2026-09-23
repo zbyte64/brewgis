@@ -609,6 +609,8 @@ def run_paint_operation(self, run_pk: int) -> dict:  # type: ignore[no-untyped-d
         "built_form": paint_views.run_built_form_paint,
         "match": paint_views.run_match_built_form,
         "fill": paint_views.run_fill_built_form,
+        "grid": paint_views.run_grid_parcels,
+        "merge": paint_views.run_merge_parcels,
     }
     runner = runners.get(run.operation)
     if runner is None:
