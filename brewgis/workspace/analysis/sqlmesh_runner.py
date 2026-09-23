@@ -159,6 +159,32 @@ def purge_models_from_environments(model_fqns: Iterable[str]) -> list[str]:
     return touched
 
 
+def _release_shared_duckdb(context: Context) -> None:
+    """Release the shared DuckDB file the plan's gateway adapters hold open.
+
+    SQLMesh caches one adapter per DuckDB data file for the life of the process,
+    and that adapter keeps the file's exclusive lock for as long as its
+    connection is open — it is closed on the success path by SQLMesh's own
+    recycler, but a plan that *raises* leaves ``duckdb_cache.db`` locked inside
+    whichever long-lived process ran it. In the Celery worker, that is a daemonic
+    child that goes on to serve later tasks, so every later plan from another
+    process (a one-off ``manage.py`` run, the MCP server, another worker child)
+    fails with "Could not set lock on file … duckdb_cache.db" — the failure that
+    then hides the original one.
+
+    ``Context.close()`` is not enough on its own: it closes the snapshot
+    evaluator's adapters, not the gateway adapters a plan reaches through. Close
+    those explicitly first. The pooled connection reconnects lazily on next use,
+    so a later plan in this process is unaffected.
+
+    A failure here propagates rather than being swallowed — it is chained to
+    whatever the plan raised, which ``describe_run_failure`` still walks.
+    """
+    for adapter in (context.engine_adapters or {}).values():
+        adapter.close()
+    context.close()
+
+
 # deprecated
 def run_sqlmesh_plan(  # noqa: PLR0913
     environment: str = "prod",
@@ -225,9 +251,12 @@ def run_sqlmesh_plan(  # noqa: PLR0913
     }
     logger.info("SQLMesh plan applied for environment '%s'", environment)
     if always_include_local_changes is None:
-        return context.plan(
-            **plan_kwargs, no_prompts=no_prompts, auto_apply=auto_apply
-        ), context
+        try:
+            return context.plan(
+                **plan_kwargs, no_prompts=no_prompts, auto_apply=auto_apply
+            ), context
+        finally:
+            _release_shared_duckdb(context)
 
     # `plan_builder` takes the flag but neither `no_prompts` nor `auto_apply` —
     # those two only steer the console flow this path stands in for.
@@ -235,41 +264,44 @@ def run_sqlmesh_plan(  # noqa: PLR0913
         **plan_kwargs, always_include_local_changes=always_include_local_changes
     )
     try:
-        if auto_apply:
-            builder.apply()
-    except ConflictingPlanError:
-        if not auto_apply or not restate:
-            raise
-        # SQLMesh refuses a plan that restates a model it is also redeploying
-        # ("Another plan deployed new versions ... while they were being
-        # restated"), and its advice — re-apply the plan — cannot work here:
-        # the promotion stage it aborts at is exactly what a second attempt
-        # would need to see. Neither half is droppable (a rerun must not serve
-        # results computed against data that changed underneath the models, and
-        # a changed model has to be deployed), so the two run as separate
-        # plans: deploy everything — which materializes what is new or changed,
-        # plus their downstreams — then restate, by which point every model the
-        # restatement covers is deployed at the version being restated.
-        logger.warning(
-            "Plan restates models it also redeploys — deploying first, then restating",
-        )
-        deploy_kwargs: dict[str, Any] = {
-            "environment": environment,
-            "select": select,
-            "start": start,
-            "end": end,
-            "skip_tests": skip_tests,
-            "forward_only": forward_only,
-            "no_prompts": no_prompts,
-            "auto_apply": auto_apply,
-            "create_from": create_from,
-            "variables": variables,
-            "always_include_local_changes": always_include_local_changes,
-            "cache_dir": cache_dir,
-        }
-        run_sqlmesh_plan(**deploy_kwargs)
-        return run_sqlmesh_plan(**deploy_kwargs, restate_models=restate), context
-    return builder.build(), context
+        try:
+            if auto_apply:
+                builder.apply()
+        except ConflictingPlanError:
+            if not auto_apply or not restate:
+                raise
+            # SQLMesh refuses a plan that restates a model it is also redeploying
+            # ("Another plan deployed new versions ... while they were being
+            # restated"), and its advice — re-apply the plan — cannot work here:
+            # the promotion stage it aborts at is exactly what a second attempt
+            # would need to see. Neither half is droppable (a rerun must not serve
+            # results computed against data that changed underneath the models, and
+            # a changed model has to be deployed), so the two run as separate
+            # plans: deploy everything — which materializes what is new or changed,
+            # plus their downstreams — then restate, by which point every model the
+            # restatement covers is deployed at the version being restated.
+            logger.warning(
+                "Plan restates models it also redeploys — deploying first, then restating",
+            )
+            deploy_kwargs: dict[str, Any] = {
+                "environment": environment,
+                "select": select,
+                "start": start,
+                "end": end,
+                "skip_tests": skip_tests,
+                "forward_only": forward_only,
+                "no_prompts": no_prompts,
+                "auto_apply": auto_apply,
+                "create_from": create_from,
+                "variables": variables,
+                "always_include_local_changes": always_include_local_changes,
+                "cache_dir": cache_dir,
+            }
+            run_sqlmesh_plan(**deploy_kwargs)
+            return run_sqlmesh_plan(**deploy_kwargs, restate_models=restate), context
+        return builder.build(), context
+    finally:
+        _release_shared_duckdb(context)
 
 
 def _resolve_restatements(

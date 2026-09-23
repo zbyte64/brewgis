@@ -14,6 +14,7 @@ from typing import Any
 
 import pytest
 from sqlmesh.utils.errors import ConflictingPlanError
+from sqlmesh.utils.errors import PlanError
 
 from brewgis.sqlmesh.config import config_factory
 from brewgis.workspace.analysis import sqlmesh_runner
@@ -24,31 +25,50 @@ RUNNER = "brewgis.workspace.analysis.sqlmesh_runner"
 CONFLICT = ConflictingPlanError(
     "Another plan deployed new versions of 2 models while they were being restated"
 )
+PLAN_FAILED = PlanError("Plan application failed.")
 
 
 class _Builder:
     """Stands in for SQLMesh's ``PlanBuilder``."""
 
-    def __init__(self, *, conflict: bool) -> None:
+    def __init__(self, *, conflict: bool, fail: bool = False) -> None:
         self._conflict = conflict
+        self._fail = fail
         self.applied = False
 
     def apply(self) -> None:
         if self._conflict:
             raise CONFLICT
+        if self._fail:
+            raise PLAN_FAILED
         self.applied = True
 
     def build(self) -> str:
         return "plan"
 
 
+class _Adapter:
+    """Stands in for a SQLMesh engine adapter (one per gateway)."""
+
+    def __init__(self) -> None:
+        self.closed = False
+
+    def close(self) -> None:
+        self.closed = True
+
+
 class _Context:
     """Stands in for SQLMesh's ``Context``."""
 
-    def __init__(self, *, conflict: bool) -> None:
+    def __init__(self, *, conflict: bool, fail: bool = False) -> None:
         self._conflict = conflict
+        self._fail = fail
         self.plan_calls: list[dict[str, Any]] = []
         self.builders: list[dict[str, Any]] = []
+        # The DuckDB gateway adapter is the one holding the shared file's lock.
+        self.duckdb_adapter = _Adapter()
+        self.engine_adapters: dict[str, _Adapter] = {"duckdb": self.duckdb_adapter}
+        self.closed = False
 
     def plan(self, **kwargs: Any) -> str:
         self.plan_calls.append(kwargs)
@@ -56,15 +76,18 @@ class _Context:
 
     def plan_builder(self, **kwargs: Any) -> _Builder:
         self.builders.append(kwargs)
-        return _Builder(conflict=self._conflict)
+        return _Builder(conflict=self._conflict, fail=self._fail)
+
+    def close(self) -> None:
+        self.closed = True
 
 
 @pytest.fixture
 def context(monkeypatch: pytest.MonkeyPatch) -> Any:
     """A context factory that records how the plan was asked for."""
 
-    def _install(*, conflict: bool = False) -> _Context:
-        ctx = _Context(conflict=conflict)
+    def _install(*, conflict: bool = False, fail: bool = False) -> _Context:
+        ctx = _Context(conflict=conflict, fail=fail)
         monkeypatch.setattr(sqlmesh_runner, "get_context", lambda **_kw: ctx)
         return ctx
 
@@ -148,6 +171,57 @@ class TestConflictingPlan:
             )
 
         assert plans == []
+
+
+class TestReleasesTheSharedDuckDbFile:
+    """A plan must not leave the shared ``duckdb_cache.db`` locked behind it.
+
+    SQLMesh caches one DuckDB adapter per data file for the life of the process
+    and that adapter holds the file's lock while its connection is open, so a
+    plan that raises used to leave the file locked inside the long-lived Celery
+    worker child that ran it — every later plan from another process then failed
+    with "Could not set lock on file … duckdb_cache.db" until the worker was
+    restarted, which is what the analysis failures actually looked like.
+    """
+
+    def test_releases_the_gateway_adapter_after_a_successful_plan(
+        self, context
+    ) -> None:
+        ctx = context()
+
+        run_sqlmesh_plan(
+            environment="prod",
+            select=["brewgis.ascn7.vmt"],
+            restate_models=["brewgis.ascn7.vmt"],
+            always_include_local_changes=True,
+        )
+
+        assert ctx.duckdb_adapter.closed
+        assert ctx.closed
+
+    def test_releases_the_gateway_adapter_when_the_plan_fails(self, context) -> None:
+        ctx = context(fail=True)
+
+        with pytest.raises(PlanError):
+            run_sqlmesh_plan(
+                environment="prod",
+                select=["brewgis.ascn7.vmt"],
+                restate_models=["brewgis.ascn7.vmt"],
+                always_include_local_changes=True,
+            )
+
+        assert ctx.duckdb_adapter.closed
+        assert ctx.closed
+
+    def test_releases_on_the_context_plan_path_too(self, context) -> None:
+        """The ``always_include_local_changes=None`` shortcut is a separate
+        return; leaving it out would leak on every MCP/tool plan."""
+        ctx = context()
+
+        run_sqlmesh_plan(environment="prod", select=["brewgis.ascn7.vmt"])
+
+        assert ctx.duckdb_adapter.closed
+        assert ctx.closed
 
 
 class TestConfigVariables:
