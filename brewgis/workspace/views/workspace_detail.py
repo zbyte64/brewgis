@@ -166,7 +166,9 @@ def build_analysis_modules(workspace: Workspace) -> list[dict[str, object]]:
     Checks the actual tables/rows each module's inputs describe, scoped to
     this workspace, rather than the previous hardcoded empty status.
     """
-    base_schema, base_name = _split_table_ref(workspace.db_schema, workspace.base_table)
+    base_schema, base_name = _split_table_ref(
+        workspace.db_schema, workspace.effective_base_table()
+    )
     base_parcels_ready = _table_has_rows(base_schema, base_name)
     constraint_layers_ready = any(
         _table_has_rows(workspace.db_schema, table)

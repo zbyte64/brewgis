@@ -109,7 +109,11 @@ services:
       PORT: 8081
       TIPG_DEBUG: "True"
       TIPG_ROOT_PATH: /tipg
-      TIPG_DB_SCHEMAS: '["public", "tiger", "fresno_demo", "fresno"]'
+      # "built_form_fill" holds the per-workspace built-form fill models
+      # (one model per workspace with Workspace.fill_built_form on). A
+      # workspace using one reads its base canvas tiles straight out of that
+      # schema (Workspace.effective_base_table), so tipg must publish it.
+      TIPG_DB_SCHEMAS: '["public", "tiger", "fresno_demo", "fresno", "built_form_fill"]'
       DATABASE_URL: postgresql://rADfmsnMjDXKephNGWFkfdPkuSAjdASF:glm5bKLmVKkfdJaM9qkDREdor4y8uSEJZKZvLVwP5jeEX6YSnw6DnNG9EYvupSlg@postgres:5432/brewgis
     ports:
       - 8081

@@ -77,7 +77,7 @@ def scenario_analysis_errors(
         schema=workspace.db_schema,
         parcel_table=scenario.base_layer_table,
         built_form_table=_BUILT_FORMS_TABLE,
-        base_canvas_table=workspace.base_table,
+        base_canvas_table=workspace.effective_base_table(),
     )
 
 

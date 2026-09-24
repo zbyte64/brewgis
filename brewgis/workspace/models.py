@@ -52,9 +52,23 @@ class Workspace(models.Model):
         default="tipg",
         help_text="Vector tile server used to render this workspace's layers.",
     )
+    fill_built_form = models.BooleanField(
+        default=False,
+        help_text=(
+            "Fill NULL built-form columns (built_form_key, du, pop, hh, emp) on the "
+            "base layer from the closest-matching Building Type. Materializes a new "
+            "table; base_table itself is never modified."
+        ),
+    )
 
     def __str__(self) -> str:
         return self.name
+
+    def effective_base_table(self) -> str:
+        """The base layer in effect: the built-form fill output when enabled, else ``base_table``."""
+        if self.fill_built_form:
+            return f"built_form_fill.fill_{self.pk}"
+        return self.base_table
 
 
 def _tile_source_id(schema: str, table: str) -> str:
@@ -398,7 +412,7 @@ class Scenario(models.Model):
         is made.
         """
         if self.scenario_type == ScenarioType.BASE:
-            schema, _, table = self.workspace.base_table.rpartition(".")
+            schema, _, table = self.workspace.effective_base_table().rpartition(".")
             return (schema or "public"), table
         return self.target_schema, f"scenario_{self.slug}_canvas"
 

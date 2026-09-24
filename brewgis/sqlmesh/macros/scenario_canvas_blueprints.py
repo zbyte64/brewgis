@@ -63,13 +63,17 @@ def scenario_canvas_profiles() -> list[dict[str, object]]:
     (raw identifiers, not pre-quoted: the values are emitted into the model's
     SQL statements, where SQLMesh quotes identifiers itself).
 
-    ``base_model`` is the 3-part ``brewgis.<base_table>`` FQN the model body
-    selects from: SQLMesh snapshot-resolves a bare model FQN in a rendered
-    query, which is what makes the canvas view's ``data_hash`` change (and so
-    the view get recreated) when the base layer's snapshot does.
-    ``is_sqlmesh_base`` picks between that FQN and the raw external
-    ``base_table`` (a legacy base living in ``public`` isn't managed by
-    SQLMesh and is never CASCADE-dropped by a plan).
+    ``base_model`` is the 3-part ``brewgis.<effective_base_table>`` FQN the
+    model body selects from: SQLMesh snapshot-resolves a bare model FQN in a
+    rendered query, which is what makes the canvas view's ``data_hash`` change
+    (and so the view get recreated) when the base layer's snapshot does. It
+    names the workspace's *effective* base layer (see
+    ``Workspace.effective_base_table``), so a workspace with the built-form
+    fill enabled paints over the fill output. ``is_sqlmesh_base`` picks between
+    that FQN and the raw external ``base_table`` (a legacy base living in
+    ``public`` isn't managed by SQLMesh and is never CASCADE-dropped by a
+    plan). ``base_table`` itself stays the raw source, which is what the
+    column list above is read from.
 
     ``all_columns`` is the base table's column list, read here — at model-load
     time — rather than inside the model's ``execute``. The view's SQL has to
@@ -119,7 +123,12 @@ def scenario_canvas_profiles() -> list[dict[str, object]]:
         .order_by("id")
     )
     for scenario in scenarios:
+        # The column list always comes from the *raw* source: the built-form
+        # fill (``Workspace.fill_built_form``) preserves the column set
+        # verbatim, and reading the fill output here would query a table that
+        # this plan's own first materialization creates.
         base_table = scenario.workspace.base_table
+        effective_base = scenario.workspace.effective_base_table()
         if base_table not in columns_by_base:
             columns_by_base[base_table] = _fetch_base_columns(base_table)[2]
         columns = columns_by_base[base_table]
@@ -156,8 +165,8 @@ def scenario_canvas_profiles() -> list[dict[str, object]]:
                 "view_name": f"scenario_{scenario.slug}_canvas",
                 "scenario_id": int(scenario.pk),
                 "base_table": base_table,
-                "base_model": f"brewgis.{base_table}",
-                "is_sqlmesh_base": int(not base_table.startswith("public.")),
+                "base_model": f"brewgis.{effective_base}",
+                "is_sqlmesh_base": int(not effective_base.startswith("public.")),
                 "all_columns": columns,
             }
         )

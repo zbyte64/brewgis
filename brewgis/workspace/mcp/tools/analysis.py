@@ -75,7 +75,7 @@ def register_tools(server: object) -> None:
             schema=workspace.db_schema,
             parcel_table=scenario.base_layer_table,
             built_form_table="built_forms",
-            base_canvas_table=workspace.base_table,
+            base_canvas_table=workspace.effective_base_table(),
         )
         if preflight:
             errors_str = "; ".join(e.message for e in preflight)

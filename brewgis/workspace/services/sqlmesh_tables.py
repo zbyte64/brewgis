@@ -32,11 +32,19 @@ from brewgis.workspace.services.base_canvas_schema import BaseCanvasSchema
 # ``ascn<scenario_pk>`` holds each analyzed scenario's analysis models
 # (``sqlmesh/macros/analysis_blueprints.py``) for the same reason: the result
 # views those models publish are the scenario-facing objects.
+#
+# ``built_form_fill`` holds the per-workspace built-form fill models
+# (``sqlmesh/macros/built_form_fill_blueprints.py``), which a workspace reads as
+# its base canvas when ``Workspace.fill_built_form`` is on. A workspace's own
+# fill output is derived from the base table it is already configured with, so
+# offering it back as an importable source would let a workspace base itself on
+# its own derivative.
 _EXCLUDED_SCHEMAS = {
     "public",
     "information_schema",
     "sqlmesh_state",
     "scenario_canvas",
+    "built_form_fill",
 }
 
 _POLYGON_TYPES = {"polygon", "multipolygon"}

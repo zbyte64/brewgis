@@ -222,8 +222,13 @@ def _scenario_profiles() -> list[dict[str, Any]]:
     a slug may contain hyphens, which are not valid in an unquoted identifier.
 
     ``parcel_table``/``built_form_table``/``base_canvas_table`` are string
-    literals (the ``@ref_model`` call in the model bodies needs a ``str``), and
-    ``parcel_table`` is ``None`` when the scenario has no SQLMesh-backed parcel
+    literals (the ``@ref_model`` call in the model bodies needs a ``str``).
+    ``parcel_table`` names the workspace's *effective* base layer — the
+    built-form fill output when ``Workspace.fill_built_form`` is on, else its
+    ``base_table`` — because that is the layer the scenario's parcels really
+    live in; ``parcel_key_type`` and the road-network region stay derived from
+    the raw ``base_table``, since they describe the source data. ``parcel_table``
+    is ``None`` when the scenario has no SQLMesh-backed parcel
     source at all — such a scenario is skipped with a warning (mirroring
     ``scenario_canvas_profiles``): one unplannable scenario must not make the
     whole project unloadable, since these profiles are part of every model load.
@@ -252,7 +257,15 @@ def _scenario_profiles() -> list[dict[str, Any]]:
     )
     for scenario in scenarios:
         workspace = scenario.workspace
-        base_table = workspace.base_table
+        # Two distinct facts, deliberately read from different places: the
+        # *source* the workspace's data came from (region, parcel-key type —
+        # properties of the source data, and the only one of the two that
+        # exists at model-load time on a workspace whose fill has never been
+        # materialized) and the base layer actually *in effect* (the built-form
+        # fill output when ``Workspace.fill_built_form`` is on, else the
+        # source), which the analysis must read its parcels from.
+        raw_base_table = workspace.base_table
+        base_table = workspace.effective_base_table()
         if scenario.scenario_type == ScenarioType.ALTERNATIVE:
             # ``canvas_<pk>`` is the ALTERNATIVE scenario's painted-features
             # model (base canvas + PaintedCanvas overlay, COALESCEd).
@@ -273,7 +286,7 @@ def _scenario_profiles() -> list[dict[str, Any]]:
                 "SQLMesh, or the scenario has no canvas model)",
                 scenario.pk,
                 scenario.slug,
-                base_table,
+                raw_base_table,
             )
             continue
 
@@ -284,7 +297,7 @@ def _scenario_profiles() -> list[dict[str, Any]]:
             "result_schema": RESULT_SCHEMA_TEMPLATE.format(pk=scenario.pk),
             "parcel_table": parcel_table,
             "parcel_key_type": _parcel_key_type(
-                base_table, scenario.column_mapping or {}
+                raw_base_table, scenario.column_mapping or {}
             ),
             "built_form_table": f"{workspace.db_schema}.built_forms",
             "base_canvas_table": base_table,
@@ -292,8 +305,8 @@ def _scenario_profiles() -> list[dict[str, Any]]:
             # The region road network network_zone_distance routes over, and
             # whether that region really is the workspace's (see
             # ``fetch_clone.road_network_region``).
-            "road_network_region": road_network_region(base_table),
-            "road_network_available": region_for_base_table(base_table) is not None,
+            "road_network_region": road_network_region(raw_base_table),
+            "road_network_available": region_for_base_table(raw_base_table) is not None,
         }
         profile.update(
             {
