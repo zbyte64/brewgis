@@ -30,30 +30,6 @@ pytestmark = [
     # transaction=True so the `parity_scenario` fixture's committed rows are
     # visible to SQLMesh's forked model-loading workers, and flushed after.
     pytest.mark.django_db(transaction=True),
-    # These tests cannot run against the Django test database, and the reason is
-    # structural rather than a missing fixture: `brewgis/sqlmesh/config.py`
-    # builds its connection from `DATABASE_URL` (the live `brewgis` database),
-    # while the project's models are named `brewgis.<schema>.<table>` — for
-    # Postgres that first part is a *catalog*, and SQLMesh refuses to run a plan
-    # whose catalog differs from the connected one ("postgres requires that all
-    # catalog operations be against a single catalog: test_brewgis. Provided
-    # catalog: brewgis"). Renaming the connection's database to `test_brewgis`
-    # (which `conftest.py` does, so the suite at least touches the right
-    # database) hits exactly that check.
-    #
-    # The bodies below are kept current with the models' contracts (they are the
-    # comparison against `tests/dbt_math/reference.py`), and they run as soon as
-    # a `brewgis`-named database is what this harness plans into — which is how
-    # the repo verifies SQLMesh itself (`make test-sqlmesh` and
-    # `make plan-base` both run the CLI against the live stack).
-    pytest.mark.skip(
-        reason=(
-            "SQLMesh plans require a database named 'brewgis'; the Django test "
-            "database is 'test_brewgis' (catalog mismatch). Verify the SQL side "
-            "via the live stack instead: run the module and compare the "
-            "materialized rows against tests/dbt_math/reference.py."
-        )
-    ),
 ]
 
 

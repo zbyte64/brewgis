@@ -32,28 +32,23 @@ def sqlmesh_test_database(django_db_setup) -> None:
     ``relation "<empty schema>.<table>" does not exist`` — having mutated the
     developer's database on the way.
 
-    The module globals are patched (rather than the environment) because
-    ``config_factory`` reads them by name at call time, and the patch has to
+    The config module is re-pointed (rather than the environment) because
+    ``config_factory`` reads its globals at call time, and the change has to
     exist *before* SQLMesh forks its model-loading workers: a forked child
-    inherits it.
+    inherits it. The models keep their ``brewgis`` catalog — the config maps it
+    onto whatever the database is named.
+
+    The session starts from no SQLMesh state (see ``reset_sqlmesh_state``).
     """
     from django.conf import settings
 
     from brewgis.sqlmesh import config as sqlmesh_config
+    from tests.dbt_math.sqlmesh_model_runner import reset_sqlmesh_state
 
-    name = settings.DATABASES["default"]["NAME"]
-    previous = dict(sqlmesh_config._db_kwargs)
-    sqlmesh_config._db_kwargs["database"] = name
-    sqlmesh_config._pg_attach_path = (
-        f"dbname={sqlmesh_config._db_kwargs['database']} "
-        f"user={sqlmesh_config._db_kwargs['user']} "
-        f"host={sqlmesh_config._db_kwargs['host']} "
-        f"port={sqlmesh_config._db_kwargs['port']} "
-        f"password={sqlmesh_config._db_kwargs['password']}"
-    )
+    previous = sqlmesh_config.use_database(settings.DATABASES["default"]["NAME"])
+    reset_sqlmesh_state()
     yield
-    sqlmesh_config._db_kwargs.clear()
-    sqlmesh_config._db_kwargs.update(previous)
+    sqlmesh_config.use_database(previous)
 
 
 @pytest.fixture

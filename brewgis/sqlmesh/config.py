@@ -11,6 +11,11 @@ Monkey-patches
 - ``DuckDBEngineAdapter._create_table`` — when ``replace=True``, explicitly
   drops with CASCADE first to avoid DuckDB's internal DROP+CREATE translation
   failing on PostgreSQL due to dependent views.
+- ``PostgresConnectionConfig.get_catalog`` and ``PostgresEngineAdapter``'s
+  ``get_current_catalog`` / ``_to_sql`` / ``execute`` / ``_fetch_native_df`` —
+  keep the project catalog ``brewgis`` logical when the Postgres database has
+  another name (the Django test database, ``test_brewgis``); a no-op when the
+  database is named ``brewgis``. See ``_install_catalog_alias``.
 """
 
 from __future__ import annotations
@@ -29,6 +34,8 @@ from sqlmesh.core.config import ModelDefaultsConfig
 from sqlmesh.core.config import PostgresConnectionConfig
 from sqlmesh.core.config.connection import DuckDBAttachOptions
 from sqlmesh.core.config.connection import DuckDBConnectionConfig
+
+from brewgis.sqlmesh.model_names import SQLMESH_PROJECT_NAME
 
 if TYPE_CHECKING:
     from brewgis.workspace.services.duckdb_pool import DuckDBReadOnlyPool
@@ -243,14 +250,155 @@ _DATABASE_URL = os.environ.get(
 
 _db_kwargs = _parse_database_url(_DATABASE_URL)
 
-# Postgres connection string for DuckDB postgres_scanner attach
-_pg_attach_path = (
-    f"dbname={_db_kwargs['database']} "
-    f"user={_db_kwargs['user']} "
-    f"host={_db_kwargs['host']} "
-    f"port={_db_kwargs['port']} "
-    f"password={_db_kwargs['password']}"
-)
+
+def _attach_path(db_kwargs: dict[str, str | int]) -> str:
+    """Postgres connection string for the DuckDB postgres_scanner attach."""
+    return (
+        f"dbname={db_kwargs['database']} "
+        f"user={db_kwargs['user']} "
+        f"host={db_kwargs['host']} "
+        f"port={db_kwargs['port']} "
+        f"password={db_kwargs['password']}"
+    )
+
+
+_pg_attach_path = _attach_path(_db_kwargs)
+
+
+def use_database(name: str) -> str:
+    """Point both gateways at the Postgres database *name*; return the previous one.
+
+    Only contexts built by a later ``config_factory()`` call see the change. The
+    project's catalog stays ``brewgis`` whatever the database is called (see
+    ``_install_catalog_alias``), so this is how the Django test database
+    (``test_brewgis``) runs the same models the live one does.
+    """
+    global _pg_attach_path
+    previous = str(_db_kwargs["database"])
+    _db_kwargs["database"] = name
+    _pg_attach_path = _attach_path(_db_kwargs)
+    return previous
+
+
+# ── Logical catalog ↔ physical database ─────────────────────────────
+#
+# Every model is named ``brewgis.<schema>.<table>``, and for Postgres that first
+# part is a *catalog* — which SQLMesh takes to be the connected database's
+# name: the Postgres adapter's default catalog is the connection's ``database``
+# and its ``set_catalog`` guard refuses any operation against another catalog.
+# The DuckDB gateway attaches Postgres under the alias ``brewgis``, so on that
+# side the catalog is already independent of the database's name.
+#
+# These patches make ``brewgis`` a logical catalog on the Postgres side as well:
+# the adapter *reports* ``brewgis`` for its database, and every statement it
+# sends has a ``brewgis`` catalog replaced with the database's real name (the
+# only catalog Postgres accepts in a qualified name). Snapshot names, state and
+# the DuckDB side all keep ``brewgis``. When the database is itself named
+# ``brewgis`` — every deployment — each patch returns before touching anything.
+
+
+def _physical_database() -> str | None:
+    """The configured database's name when it differs from the project catalog."""
+    name = str(_db_kwargs["database"])
+    return None if name == SQLMESH_PROJECT_NAME else name
+
+
+def _rewrite_catalog(expression: _exp.Expr, physical: str) -> _exp.Expr:
+    """Copy *expression* with every ``brewgis`` catalog renamed to *physical*."""
+    expression = expression.copy()
+    for node in expression.find_all(_exp.Table, _exp.Column):
+        if node.catalog == SQLMESH_PROJECT_NAME:
+            node.set("catalog", _exp.to_identifier(physical))
+    return expression
+
+
+def _parse_for_rewrite(sql: str) -> list[_exp.Expr] | None:
+    """Parse raw SQL that names the project catalog, for ``_to_sql`` to rewrite.
+
+    Returns ``None`` when *sql* names no ``brewgis`` catalog (or sqlglot cannot
+    parse it), in which case the caller sends the string unchanged.
+    """
+    import sqlglot
+    from sqlglot.errors import ParseError
+
+    if SQLMESH_PROJECT_NAME not in sql:
+        return None
+    try:
+        parsed = [e for e in sqlglot.parse(sql, read="postgres") if e is not None]
+    except ParseError:
+        return None
+    if not any(
+        node.catalog == SQLMESH_PROJECT_NAME
+        for e in parsed
+        for node in e.find_all(_exp.Table, _exp.Column)
+    ):
+        return None
+    return parsed
+
+
+_pg_get_catalog_orig = None
+_pg_get_current_catalog_orig = None
+_pg_to_sql_orig = None
+_pg_execute_orig = None
+_pg_fetch_native_df_orig = None
+
+
+def _pg_get_catalog(self):
+    database = _pg_get_catalog_orig(self)
+    return SQLMESH_PROJECT_NAME if database == _physical_database() else database
+
+
+def _pg_get_current_catalog(self):
+    current = _pg_get_current_catalog_orig(self)
+    return SQLMESH_PROJECT_NAME if current == _physical_database() else current
+
+
+def _pg_to_sql(self, expression, quote=True, **kwargs):
+    physical = _physical_database()
+    if physical is not None:
+        expression = _rewrite_catalog(expression, physical)
+    return _pg_to_sql_orig(self, expression, quote=quote, **kwargs)
+
+
+def _pg_execute(self, expressions, *args, **kwargs):
+    # Raw strings (Python models' ``context.fetchdf(...)``, a resolved table name
+    # formatted into SQL) skip ``_to_sql``; parse the ones that name the catalog
+    # so they are rewritten on their way through it.
+    if _physical_database() is not None and isinstance(expressions, str):
+        expressions = _parse_for_rewrite(expressions) or expressions
+    return _pg_execute_orig(self, expressions, *args, **kwargs)
+
+
+def _pg_fetch_native_df(self, query, *args, **kwargs):
+    if _physical_database() is not None and isinstance(query, str):
+        parsed = _parse_for_rewrite(query)
+        if parsed is not None and len(parsed) == 1:
+            query = parsed[0]
+    return _pg_fetch_native_df_orig(self, query, *args, **kwargs)
+
+
+def _install_catalog_alias():
+    global _pg_get_catalog_orig, _pg_get_current_catalog_orig, _pg_to_sql_orig
+    global _pg_execute_orig, _pg_fetch_native_df_orig
+    from sqlmesh.core.engine_adapter.postgres import PostgresEngineAdapter
+
+    _pg_get_catalog_orig = PostgresConnectionConfig.get_catalog
+    PostgresConnectionConfig.get_catalog = _pg_get_catalog
+
+    _pg_get_current_catalog_orig = PostgresEngineAdapter.get_current_catalog
+    PostgresEngineAdapter.get_current_catalog = _pg_get_current_catalog
+
+    _pg_to_sql_orig = PostgresEngineAdapter._to_sql
+    PostgresEngineAdapter._to_sql = _pg_to_sql
+
+    _pg_execute_orig = PostgresEngineAdapter.execute
+    PostgresEngineAdapter.execute = _pg_execute
+
+    _pg_fetch_native_df_orig = PostgresEngineAdapter._fetch_native_df
+    PostgresEngineAdapter._fetch_native_df = _pg_fetch_native_df
+
+
+_install_catalog_alias()
 
 
 def config_factory(*, cache_dir: str | None = None, **variables):

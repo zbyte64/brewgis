@@ -49,6 +49,9 @@ import pandas as pd
 import psycopg
 from django.conf import settings
 
+from brewgis.sqlmesh.model_names import MODEL_SCHEMA_PREFIX
+from brewgis.sqlmesh.model_names import RESULT_SCHEMA_PREFIX
+from brewgis.sqlmesh.model_names import result_schema_name
 from brewgis.workspace.analysis.sqlmesh_runner import get_context
 from brewgis.workspace.analysis.sqlmesh_runner import run_sqlmesh_plan
 
@@ -135,9 +138,12 @@ def run_model(
         return _read_model(model_fqn, cache_dir)
     finally:
         shutil.rmtree(cache_dir, ignore_errors=True)
-        # Drop the scenario's schema (upstream tables included) so the next
-        # run's plan cannot reuse a physical table this run materialized.
-        _drop_schema(scenario_schema)
+        # Drop every schema the run wrote to, so it leaves no tables behind in
+        # the reused test database: the scenario's (upstream tables and the
+        # virtual-layer view), the physical one SQLMesh materialized the model
+        # into, and the one the model publishes its result view in.
+        for schema in _run_schemas(scenario_schema):
+            _drop_schema(schema)
         _drop_schema(scratch_schema)
         if source_schema != scratch_schema:
             _clean_schema(source_schema, list(source_tables))
@@ -195,6 +201,36 @@ def _drop_schema(schema: str) -> None:
     conn = _get_conn()
     with conn.cursor() as cur:
         cur.execute(f'DROP SCHEMA IF EXISTS "{schema}" CASCADE')
+    conn.commit()
+    conn.close()
+
+
+def _run_schemas(scenario_schema: str) -> tuple[str, ...]:
+    """The schemas a run on ``ascn<pk>`` writes: models, physical tables, results."""
+    pk = scenario_schema.removeprefix(MODEL_SCHEMA_PREFIX)
+    return (scenario_schema, f"sqlmesh__{scenario_schema}", result_schema_name(pk))
+
+
+def reset_sqlmesh_state() -> None:
+    """Drop everything SQLMesh has written into the test database.
+
+    The test database is reused across sessions, and so is the SQLMesh state
+    in it: every run promotes its model into ``prod``, and each later plan
+    re-creates the physical schema of every snapshot still in that environment
+    (empty — the runs dropped their tables). Starting a session from no state
+    keeps that bounded to the session's own runs.
+    """
+    conn = _get_conn()
+    with conn.cursor() as cur:
+        cur.execute(
+            "SELECT nspname FROM pg_namespace WHERE nspname ~ %s",
+            (
+                f"^(sqlmesh_state|sqlmesh__.+|{MODEL_SCHEMA_PREFIX}[0-9]+"
+                f"|{RESULT_SCHEMA_PREFIX}[0-9]+)$",
+            ),
+        )
+        for (schema,) in cur.fetchall():
+            cur.execute(f'DROP SCHEMA "{schema}" CASCADE')
     conn.commit()
     conn.close()
 

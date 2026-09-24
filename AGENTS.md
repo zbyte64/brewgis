@@ -317,6 +317,7 @@ npm run test      # vitest
 **Database fixture strategy:**
 - Tests run with `--reuse-db` — test DB created once and reused.
 - Raw SQL fixtures for PostGIS-dependent integration tests (CREATE EXTENSION IF NOT EXISTS postgis).
+- SQLMesh plans run against the test database: `brewgis/sqlmesh/config.py:use_database(name)` re-points both gateways, and its catalog-alias patches keep the models' `brewgis` catalog logical (reported as `brewgis`, rewritten to the real database name in every statement sent to Postgres). See the `sqlmesh_test_database` fixture in `tests/dbt_math/conftest.py`.
 - Two conftest.py levels: `tests/conftest.py` (factory-backed fixtures, hypothesis profiles, deal config) vs `brewgis/conftest.py` (direct `create_user`, management-command oriented).
 
 ## Gotchas & Patterns
