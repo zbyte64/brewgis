@@ -36,7 +36,6 @@ polars[lazy,pyarrow]>=1.0,<2.0  # https://github.com/pola-rs/polars — fast Dat
 GeoAlchemy2==0.16.0
 dlt[postgres]>=1.0,<2.0  # https://github.com/dlt-hub/dlt — reliable data extraction from external APIs
 sqlmesh[postgres, duckdb]>=0.236.1,<1.0  # https://github.com/TobikoData/sqlmesh — data transformation framework (replaces dbt)
-osmnx>=2.0,<3.0  # https://github.com/gboeing/osmnx — OSM network extraction for transport analysis
 statsmodels>=0.14,<1.0  # https://github.com/statsmodels/statsmodels — logit/regression for transport calibration
 weasyprint>=62,<64  # https://github.com/Kozea/WeasyPrint — HTML/CSS to PDF for reports
 

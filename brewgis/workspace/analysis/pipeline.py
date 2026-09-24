@@ -22,6 +22,7 @@ import deal
 from django.db import connection
 from django.utils import timezone
 
+from brewgis.sqlmesh.macros.region_blueprints import REGIONS
 from brewgis.workspace.analysis import module_registry
 from brewgis.workspace.analysis.layer_registry import register_result_layer
 from brewgis.workspace.analysis.log_capture import capture_run_log
@@ -289,6 +290,11 @@ def run_modules_sync(
         for module in ordered
         for model_name in MODULE_SQLMESH_SELECTORS.get(module, [])
     ]
+    # Computed before the network inputs join the selection: those are never
+    # restated (see ``_network_distance_inputs``).
+    restate = model_fqns_built_in("prod", selects) or None
+    if "trip_distribution" in ordered:
+        selects += _network_distance_inputs(scenario_id)
 
     # The scenario's parameters — like its constraints, column mapping and
     # painted canvas — are baked into these models' blueprints when they are
@@ -314,7 +320,7 @@ def run_modules_sync(
             # serving results computed against data that no longer exists. A model
             # this scenario has never built can't be *restated* (SQLMesh refuses
             # that) — it is materialized because it is new.
-            restate_models=model_fqns_built_in("prod", selects) or None,
+            restate_models=restate,
             # ...but restating is exactly what makes SQLMesh plan from state alone,
             # which hides any model this scenario has never built — the case above.
             # Without this, asking for a module the scenario has not run before
@@ -355,6 +361,30 @@ def run_modules_sync(
         "results": [],
         "fqtns": fqtns,
     }
+
+
+def _network_distance_inputs(scenario_id: int) -> list[str]:
+    """Models trip_distribution reads that are not analysis modules.
+
+    ``network_zone_distance`` and the region road network it routes over are
+    dependencies of every trip_distribution instance (see its ``execute``), so a
+    plan must be able to build them when they are new — but they are selected
+    only, never restated: their inputs are the parcel source and the Overture
+    network, not the scenario's end state, and the cached zone matrix is what
+    makes the network-distance option affordable to rerun.
+
+    The road network is selected for every region: which region a scenario
+    routes over is a blueprint fact (``road_network_region``), and a built
+    region network is a no-op in the plan.
+    """
+    return [
+        module_registry.model_fqn("network_zone_distance", scenario_id),
+        *(
+            f"brewgis.{region}.{table}"
+            for region in REGIONS
+            for table in ("road_network_vertices", "road_network_edges")
+        ),
+    ]
 
 
 def _unpublished_modules(

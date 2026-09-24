@@ -33,7 +33,7 @@ _MIN_DIST = 1e-10
 _BATCH_ELEMENTS = 4_000_000
 
 
-def _gravity_model(  # noqa: PLR0913
+def _gravity_model(  # noqa: PLR0913, PLR0915
     trips: np.ndarray,
     xs: np.ndarray,
     ys: np.ndarray,
@@ -43,6 +43,8 @@ def _gravity_model(  # noqa: PLR0913
     emp_weight: float = _EMP_WEIGHT,
     du_weight: float = _DU_WEIGHT,
     batch_elements: int = _BATCH_ELEMENTS,
+    zones: np.ndarray | None = None,
+    zone_distance_km: np.ndarray | None = None,
 ) -> tuple[np.ndarray, np.ndarray, np.ndarray, np.ndarray]:
     """Gravity model trip distribution (pure function).
 
@@ -60,6 +62,15 @@ def _gravity_model(  # noqa: PLR0913
         du_weight: Attractiveness weight for dwelling units (default 0.5).
         batch_elements: Upper bound on the elements of one origin batch's
             distance matrix (default ``_BATCH_ELEMENTS``).
+        zones: Optional 1-d int array, each parcel's dense zone code (see
+            ``_network_zones.zone_distance_matrix``). Given together with
+            ``zone_distance_km`` or not at all.
+        zone_distance_km: Optional Z x Z road-network distance between zones
+            (km), NaN where the network does not connect them. A pair of
+            parcels in different, connected zones travels
+            ``max(network, euclidean)`` — a road path is never shorter than the
+            straight line; same-zone and unconnected pairs keep the Euclidean
+            distance.
 
     Returns:
         (trips_outbound, trips_inbound, trips_internal, avg_trip_length_km).
@@ -69,6 +80,13 @@ def _gravity_model(  # noqa: PLR0913
     of its trips internal rather than dropping them, so the four outputs always
     conserve ``sum(trips)``.
     """
+    if (zones is None) != (zone_distance_km is None):
+        msg = "zones and zone_distance_km must be given together"
+        raise ValueError(msg)
+    if zones is not None:
+        zones = np.asarray(zones, dtype=np.int64)
+        zone_distance_km = np.asarray(zone_distance_km, dtype=float)
+
     n = len(trips)
     if n == 0:
         empty = np.array([], dtype=float)
@@ -107,6 +125,13 @@ def _gravity_model(  # noqa: PLR0913
         dx = xs[start:stop, np.newaxis] - xs[np.newaxis, :]
         dy = ys[start:stop, np.newaxis] - ys[np.newaxis, :]
         dist = np.sqrt(dx**2 + dy**2)
+        if zones is not None and zone_distance_km is not None:
+            # NaN-coordinate parcels keep a NaN distance (impedance 0): np.maximum
+            # propagates it, and np.where keeps it on the Euclidean branch.
+            zi = zones[start:stop, np.newaxis]
+            zj = zones[np.newaxis, :]
+            net = zone_distance_km[zi, zj]
+            dist = np.where(np.isnan(net) | (zi == zj), dist, np.maximum(net, dist))
 
         with np.errstate(divide="ignore", invalid="ignore"):
             safe_dist = np.where(dist > _MIN_DIST, dist, 0.0)

@@ -21,6 +21,8 @@ from hypothesis import assume
 from hypothesis import given
 from hypothesis import strategies as st
 
+from brewgis.sqlmesh.models.python._network_zones import zone_distance_matrix
+from brewgis.sqlmesh.models.python._network_zones import zone_indices
 from brewgis.workspace.analysis.transport import _gravity_model
 
 
@@ -239,6 +241,114 @@ def test_gravity_model_batching_matches_one_batch(
     many_batches = _gravity_model(trips, xs, ys, emp, du, batch_elements=2)
     for expected, got in zip(one_batch, many_batches, strict=True):
         np.testing.assert_array_equal(expected, got)
+
+
+def _test_zones(xs: np.ndarray) -> tuple[np.ndarray, np.ndarray]:
+    """Zone parcels into 20 km x-bands, with a finite, asymmetric zone matrix."""
+    _, zones = np.unique(np.floor(xs / 20_000), return_inverse=True)
+    zones = zones.reshape(-1).astype(np.int64)
+    codes = np.arange(zones.max() + 1, dtype=float)
+    matrix = np.abs(np.subtract.outer(codes, codes)) * 30_000.0 + codes[:, np.newaxis]
+    return zones, matrix
+
+
+@pytest.mark.slow
+@given(_GRAVITY_ARRAYS)
+def test_gravity_model_unrouted_zones_match_euclidean(
+    arrays: tuple[np.ndarray, np.ndarray, np.ndarray, np.ndarray, np.ndarray],
+) -> None:
+    """Zone pairs the network does not connect keep the Euclidean distance."""
+    trips, xs, ys, emp, du = arrays
+    zones, matrix = _test_zones(xs)
+    euclidean = _gravity_model(trips, xs, ys, emp, du)
+    unrouted = _gravity_model(
+        trips,
+        xs,
+        ys,
+        emp,
+        du,
+        zones=zones,
+        zone_distance_km=np.full_like(matrix, np.nan),
+    )
+    for expected, got in zip(euclidean, unrouted, strict=True):
+        np.testing.assert_array_equal(expected, got)
+
+
+@pytest.mark.slow
+@given(_GRAVITY_ARRAYS)
+def test_gravity_model_zone_batching_matches_one_batch(
+    arrays: tuple[np.ndarray, np.ndarray, np.ndarray, np.ndarray, np.ndarray],
+) -> None:
+    """Batching must not change the network-distance result either."""
+    trips, xs, ys, emp, du = arrays
+    zones, matrix = _test_zones(xs)
+    one_batch = _gravity_model(
+        trips, xs, ys, emp, du, zones=zones, zone_distance_km=matrix
+    )
+    many_batches = _gravity_model(
+        trips, xs, ys, emp, du, batch_elements=2, zones=zones, zone_distance_km=matrix
+    )
+    for expected, got in zip(one_batch, many_batches, strict=True):
+        np.testing.assert_array_equal(expected, got)
+
+
+class TestNetworkDistance:
+    """Road-network zone distances in the gravity model."""
+
+    def test_longer_network_path_shifts_trips_and_lengthens_them(self) -> None:
+        """A 5 km road path for a 1 km pair moves trips away from it."""
+        trips = np.array([100.0, 0.0, 0.0])
+        xs = np.array([0.0, 1.0, 2.0])
+        ys = np.zeros(3)
+        emp = np.array([10.0, 10.0, 10.0])
+        du = np.zeros(3)
+        zones = np.arange(3, dtype=np.int64)
+        matrix = np.full((3, 3), np.nan)
+        matrix[0, 1] = 5.0
+
+        euclidean = _gravity_model(trips, xs, ys, emp, du)
+        # Only parcel 0 generates trips, so inbound[j] is exactly the flow 0 -> j.
+        network = _gravity_model(
+            trips, xs, ys, emp, du, zones=zones, zone_distance_km=matrix
+        )
+        _, inbound_e, _, length_e = euclidean
+        _, inbound_n, _, length_n = network
+        assert inbound_n[1] < inbound_e[1]
+        assert inbound_n[2] > inbound_e[2]
+        assert length_n[0] > length_e[0]
+
+    def test_zones_without_distances_is_rejected(self) -> None:
+        trips = np.array([1.0, 1.0])
+        with pytest.raises(ValueError, match="given together"):
+            _gravity_model(
+                trips,
+                trips,
+                trips,
+                trips,
+                trips,
+                zones=np.array([0, 1], dtype=np.int64),
+            )
+
+    def test_zone_matrix_ignores_unknown_zones_and_unlocated_parcels(self) -> None:
+        """Pair rows outside the parcels' zones are dropped; no-geometry stays NaN."""
+        parcel_ix, parcel_iy = zone_indices(
+            np.array([100.0, 2500.0, np.nan]), np.array([100.0, 100.0, np.nan]), 1.0
+        )
+        zones, matrix = zone_distance_matrix(
+            parcel_ix=parcel_ix,
+            parcel_iy=parcel_iy,
+            origin_ix=np.array([0, 1, 9]),
+            origin_iy=np.array([0, 0, 9]),
+            dest_ix=np.array([1, 0, 0]),
+            dest_iy=np.array([0, 0, 0]),
+            distance_km=np.array([3.0, 4.0, 7.0]),
+        )
+        z0, z1, z_nan = zones
+        assert matrix[z0, z1] == 3.0
+        assert matrix[z1, z0] == 4.0
+        assert np.isnan(matrix[z_nan]).all()
+        assert np.isnan(matrix[:, z_nan]).all()
+        assert np.count_nonzero(~np.isnan(matrix)) == 2
 
 
 @pytest.mark.slow

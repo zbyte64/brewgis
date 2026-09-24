@@ -519,6 +519,26 @@ ANALYSIS_PARAMETERS: tuple[AnalysisParameter, ...] = (
     AnalysisParameter("transport_nhb_pct", 0.40, "float", ("trip_generation",)),
     # VMT
     AnalysisParameter("transport_circuity_factor", 1.2, "float", ("vmt",)),
+    # Network distance — trip_distribution's gravity model takes road-network
+    # zone distances (network_zone_distance) instead of crow-flies distances.
+    # Shown on every module downstream of trip length; mode_choice reads only
+    # trips_outbound, which distance does not change.
+    AnalysisParameter(
+        name="transport_use_network_distance",
+        default=False,
+        kind="bool",
+        modules=(
+            "trip_distribution",
+            "vmt",
+            "internal_capture",
+            "physical_activity",
+            "transport_ghg",
+            "total_ghg",
+            "health_impacts",
+            "vmt_fee",
+            "scenario_summary",
+        ),
+    ),
     # Internal capture
     AnalysisParameter(
         "transport_study_area_geometry", "", "str", ("internal_capture",)

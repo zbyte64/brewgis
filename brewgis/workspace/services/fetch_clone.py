@@ -36,6 +36,7 @@ from __future__ import annotations
 import logging
 from typing import Any
 
+from brewgis.sqlmesh.macros.region_blueprints import REGIONS
 from brewgis.sqlmesh.macros.region_blueprints import region_profiles
 from brewgis.workspace.services._db import get_engine
 from brewgis.workspace.services._db import text
@@ -149,6 +150,26 @@ def region_for_county(county_fips: str) -> str:
         if county_fips in counties:
             return region
     return DEFAULT_REGION
+
+
+def region_for_base_table(base_table: str) -> str | None:
+    """Return the region whose SQLMesh models *base_table* belongs to, if any.
+
+    A workspace base table is ``<schema>.<table>``; it belongs to a region when
+    its schema is one of :data:`region_blueprints.REGIONS`.
+    """
+    schema, _, _ = base_table.partition(".")
+    return schema if schema in REGIONS else None
+
+
+def road_network_region(base_table: str) -> str:
+    """Return the region whose road network models a scenario on *base_table* names.
+
+    Falls back to :data:`DEFAULT_REGION` so the dependency always names a real
+    model; ``network_zone_distance`` refuses to route when
+    :func:`region_for_base_table` is ``None``.
+    """
+    return region_for_base_table(base_table) or DEFAULT_REGION
 
 
 def _quote(identifier: str) -> str:

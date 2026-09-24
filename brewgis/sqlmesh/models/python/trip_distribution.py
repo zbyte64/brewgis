@@ -18,17 +18,16 @@ than SQL: the distance matrix, the row/column sums and the per-origin averages
 are one O(N^2) computation per scenario, distributed in origin batches so a
 213k-parcel scenario stays inside a few hundred MB (see ``_BATCH_ELEMENTS``).
 
-Distance source is the Euclidian centroid distance, taken in the region's
-projected CRS (``local_srid``) and scaled by that CRS's own metres-per-unit
-(:func:`brewgis.sqlmesh.macros.geometry.metres_per_unit`), so
+Distance source is, by default, the Euclidian centroid distance, taken in the
+region's projected CRS (``local_srid``) and scaled by that CRS's own
+metres-per-unit (:func:`brewgis.sqlmesh.macros.geometry.metres_per_unit`), so
 ``avg_trip_length_km`` is kilometres whatever the projection's linear unit and
 the models that scale by it (vmt, physical_activity) are in the units they
-claim. The network alternative —
-``workspace.analysis.transport.preprocessors.distance_matrix``, which snaps
-parcels onto the pgRouting network and writes
-``trip_distribution_inputs_<scenario_id>`` — is not wired into any pipeline, so
-no caller expects network distances today; adding a branch here would be dead
-code.
+claim. When the scenario sets ``transport_use_network_distance``, pairs of
+parcels in different 2 km grid zones travel the road-network zone distance
+instead (never less than the straight line), read from the scenario's
+``network_zone_distance`` model (see
+:mod:`brewgis.sqlmesh.models.python._network_zones`).
 
 Gravity-model coefficients (b, emp_weight, du_weight) are the untuned
 literature defaults documented in ``docs/sqlmesh-parameters.md`` §3.1 and are
@@ -51,6 +50,8 @@ from brewgis.sqlmesh.macros.analysis_blueprints import analysis_blueprint_profil
 from brewgis.sqlmesh.macros.geometry import metres_per_unit
 from brewgis.sqlmesh.macros.geometry import require_local_srid
 from brewgis.sqlmesh.models.python._gravity_model import _gravity_model
+from brewgis.sqlmesh.models.python._network_zones import zone_distance_matrix
+from brewgis.sqlmesh.models.python._network_zones import zone_indices
 
 if TYPE_CHECKING:
     from sqlmesh.core.context import ExecutionContext
@@ -144,6 +145,10 @@ def execute(
     core_end_state = context.resolve_table(
         f"brewgis.{context.blueprint_var('scenario_schema')}.core_end_state"
     )
+    # Resolved whether or not the option is on, so the dependency always exists.
+    zone_pairs = context.resolve_table(
+        f"brewgis.{context.blueprint_var('scenario_schema')}.network_zone_distance"
+    )
     # A scenario's geometry is EPSG:4326, so its coordinates are *degrees*:
     # distances are taken in the region's projected ``local_srid`` instead, whose
     # linear unit is whatever that CRS defines (metres, US survey feet, ...).
@@ -180,12 +185,43 @@ def execute(
             }
         )
 
+    network: dict[str, np.ndarray] = {}
+    if context.blueprint_var("transport_use_network_distance"):
+        pairs = context.fetchdf(
+            f"""
+            SELECT origin_ix, origin_iy, dest_ix, dest_iy, network_distance_km
+            FROM {zone_pairs}
+            """  # noqa: S608 — table name is a SQLMesh-resolved identifier
+        )
+        if pairs.empty:
+            msg = (
+                "transport_use_network_distance is enabled but network_zone_distance"
+                " has no rows for this scenario"
+            )
+            raise RuntimeError(msg)
+        parcel_ix, parcel_iy = zone_indices(
+            parcels["x"].to_numpy(dtype=float),
+            parcels["y"].to_numpy(dtype=float),
+            metres_per_unit(projected_srid),
+        )
+        zones, matrix = zone_distance_matrix(
+            parcel_ix=parcel_ix,
+            parcel_iy=parcel_iy,
+            origin_ix=pairs["origin_ix"].to_numpy(),
+            origin_iy=pairs["origin_iy"].to_numpy(),
+            dest_ix=pairs["dest_ix"].to_numpy(),
+            dest_iy=pairs["dest_iy"].to_numpy(),
+            distance_km=pairs["network_distance_km"].to_numpy(dtype=float),
+        )
+        network = {"zones": zones, "zone_distance_km": matrix}
+
     outbound, inbound, internal, avg_length = _gravity_model(
         trips=parcels["trips_total"].to_numpy(dtype=float),
         xs=parcels["x"].to_numpy(dtype=float) * km_per_unit,
         ys=parcels["y"].to_numpy(dtype=float) * km_per_unit,
         emp=parcels["emp"].to_numpy(dtype=float),
         du=parcels["du"].to_numpy(dtype=float),
+        **network,
     )
 
     return pd.DataFrame(

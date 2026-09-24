@@ -152,6 +152,8 @@ class TestAnalysisModuleForm(TestCase):
             # A str parameter's empty value *is* its "unset" value, so it is
             # stored as-is rather than discarded like an empty number.
             "transport_study_area_geometry": "",
+            # An unchecked box is an explicit "off", stored like any value.
+            "transport_use_network_distance": False,
         }
 
         # A *different* module's run must not erase the values just stored.
@@ -171,6 +173,7 @@ class TestAnalysisModuleForm(TestCase):
         assert alt_scenario.analysis_params == {
             "transport_intrazonal_friction": 0.4,
             "transport_study_area_geometry": "",
+            "transport_use_network_distance": False,
             "crop_yield_per_acre": 11.5,
         }
 

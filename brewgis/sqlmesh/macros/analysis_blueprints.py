@@ -73,6 +73,7 @@ _IDENTIFIER_VARS = {
     "result_schema",
     "model_table",
     "parcel_key_type",
+    "road_network_region",
 }
 
 # Postgres column type -> the type a model declares for the parcel key. The key
@@ -234,6 +235,8 @@ def _scenario_profiles() -> list[dict[str, Any]]:
     from brewgis.workspace.models import AnalysisRun
     from brewgis.workspace.models import Scenario
     from brewgis.workspace.models import ScenarioType
+    from brewgis.workspace.services.fetch_clone import region_for_base_table
+    from brewgis.workspace.services.fetch_clone import road_network_region
 
     _drop_inherited_connection()
 
@@ -286,6 +289,11 @@ def _scenario_profiles() -> list[dict[str, Any]]:
             "built_form_table": f"{workspace.db_schema}.built_forms",
             "base_canvas_table": base_table,
             "constraints": scenario.constraints,
+            # The region road network network_zone_distance routes over, and
+            # whether that region really is the workspace's (see
+            # ``fetch_clone.road_network_region``).
+            "road_network_region": road_network_region(base_table),
+            "road_network_available": region_for_base_table(base_table) is not None,
         }
         profile.update(
             {

@@ -90,6 +90,7 @@ via the `**variables` dict when calling `config_factory()` or via plan overrides
 | `transport_hbo_pct` | `0.42` | trip_generation | Home-based other trip share |
 | `transport_nhb_pct` | `0.40` | trip_generation | Non-home-based trip share |
 | `transport_circuity_factor` | `1.2` | vmt | Road network directness factor |
+| `transport_use_network_distance` | `False` | trip_distribution (and every module downstream of trip length) | Gravity model uses road-network distance between 2 km grid zones (`network_zone_distance`, pgRouting over the region's Overture drivable graph) instead of crow-flies distance |
 | `transport_ghg_co2_per_mile` | `0.411` | transport_ghg | kg CO2e/mi (EPA fleet average) |
 | `transport_ghg_speed_adjust` | `False` | transport_ghg | Enable speed-based emission adjustment (+15%) |
 | `transport_study_area_geometry` | `''` | internal_capture | WKT polygon defining the study area ('' = all parcels internal) |

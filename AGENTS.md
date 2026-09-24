@@ -29,7 +29,7 @@ User Browser                    Docker Compose Stack
               ├─ SQLMesh: ~162 models (152 SQL, 10 Python), 86 audits, 22 macros, 37 seeds
               ├─ dlt → DuckDB: 3 pipelines (NLCD, OSM) — DuckDB caches HTTP calls, handles raster/zip
               ├─ MCP server: 8 tool modules (FastMCP stdio)
-              └─ GIS I/O: geopandas, rasterio, osmnx for data ingest
+              └─ GIS I/O: geopandas, rasterio for data ingest
 ```
 
 - **Request flow:** Browser → Django → View (FBV, FormView, CreateView) → Template (Bootstrap 5, htmx, Lit map component)
@@ -66,7 +66,7 @@ Key rules:
 |`brewgis/workspace/models.py`|24 model classes (Workspace, Layer, SymbologyConfig, StyleClass, Scenario, PaintedCanvas, AnalysisRun, DataImportRun, POICache, PaintConstraint, MergeAudit, PaintEvent, ParcelGeometryEdit, ScenarioReport, County, DataSourceCategory, DataSource, LayerFilter, LayerGroup, ExternalMapService, Basemap, BaseCanvasColumn, BaseCanvas, BuiltFormDefinition)|
 |`brewgis/workspace/built_forms/models.py`|Built form sub-app: BuildingType (27 fields), PlaceType, PlaceTypeBuildingTypeMix|
 |`brewgis/workspace/tasks.py`|8 Celery tasks for data import, export, allocation, stitching, report generation|
-|`brewgis/workspace/analysis/`|Pipeline orchestrator, module/layer registries, transport/food/equity preprocessors, network extractor|
+|`brewgis/workspace/analysis/`|Pipeline orchestrator, module/layer registries, food/equity preprocessors (road-network distances are SQLMesh: `overture/road_network_*`, `python/network_zone_distance.py`)|
 |`brewgis/workspace/symbology/`|Map style generation (classifiers, generator, auto-config, legend, stats), 21 color palettes|
 |`brewgis/workspace/services/`|~33 service modules: base canvas ETL pipeline (1047 lines), schema, fetchers (Census, LEHD, POI, NLCD, assessor), spatial allocator, stitcher, imputation engine, built form classifier, paint constraints, scenario cloner, canvas view manager, `_db.py` (cached SQLAlchemy singleton)|
 |`brewgis/workspace/mcp/`|MCP server: FastMCP stdio entrypoint, auth stub, 8 tool modules|
