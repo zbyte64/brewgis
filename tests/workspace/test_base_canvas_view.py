@@ -1,0 +1,169 @@
+# ruff: noqa: ARG002
+"""Tests for the base-canvas picker form — the fill and the canvases it drives.
+
+Requires a PostgreSQL+PostGIS database: the form's source list is read from the
+database and ``scenario_canvas_profiles`` introspects the base table.
+"""
+
+from __future__ import annotations
+
+import re
+from dataclasses import dataclass
+from dataclasses import field
+from types import SimpleNamespace
+from typing import Any
+
+import pytest
+from django.urls import reverse
+
+from brewgis.workspace.analysis.layer_registry import BASE_CANVAS_LAYER_KEY
+from brewgis.workspace.models import Layer
+from brewgis.workspace.models import ScenarioType
+from brewgis.workspace.services.scenario_canvas import canvas_model_selector
+from tests.factories import ScenarioFactory
+from tests.factories import UserFactory
+from tests.factories import WorkspaceFactory
+
+BASE_TABLE = "public.base_canvas"
+VIEW_MODULE = "brewgis.workspace.views.base_canvas"
+
+
+@dataclass
+class _Spy:
+    """What the form asked SQLMesh to do, instead of doing it."""
+
+    plans: list[dict[str, Any]] = field(default_factory=list)
+    purged: list[list[str]] = field(default_factory=list)
+
+
+@pytest.fixture
+def chosen_source(monkeypatch) -> None:
+    """Offer the test database's base canvas as the form's only choice.
+
+    The real list is every SQLMesh-managed table with the required columns,
+    which the test database has none of.
+    """
+    monkeypatch.setattr(
+        f"{VIEW_MODULE}.list_base_canvas_candidates",
+        lambda: [SimpleNamespace(qualified=BASE_TABLE)],
+    )
+
+
+@pytest.fixture
+def spy(monkeypatch) -> _Spy:
+    captured = _Spy()
+    monkeypatch.setattr(
+        f"{VIEW_MODULE}.run_sqlmesh_plan",
+        lambda **kwargs: captured.plans.append(kwargs),
+    )
+    monkeypatch.setattr(
+        f"{VIEW_MODULE}.ensure_export_exists_isolated", lambda *_, **__: 1
+    )
+    monkeypatch.setattr(
+        f"{VIEW_MODULE}.purge_models_from_environments",
+        lambda fqns: captured.purged.append(list(fqns)) or [],
+    )
+    return captured
+
+
+def _submit(client: Any, workspace: Any, *, fill: bool) -> Any:
+    client.force_login(UserFactory())
+    data: dict[str, str] = {"base_table": BASE_TABLE}
+    if fill:
+        data["fill_built_form"] = "on"
+    return client.post(
+        reverse("workspace:select_base_canvas", args=[workspace.pk]), data
+    )
+
+
+def _alternative_scenario(workspace: Any, slug: str) -> Any:
+    return ScenarioFactory(
+        workspace=workspace,
+        slug=slug,
+        scenario_type=ScenarioType.ALTERNATIVE,
+    )
+
+
+@pytest.mark.views
+class TestFillAndCanvasPlans:
+    """The form plans the fill *and* the canvas models over it in one plan.
+
+    Any plan promotes the whole environment's virtual layer, which recreates
+    every snapshot's view — including the canvas models, whose base this form
+    just changed. A canvas a plan selects but does not *build* is promoted
+    anyway, with its view pointed at a physical object that does not exist:
+    that fails the promotion, fails the request that triggered it, and leaves
+    the environment broken for every later plan. Putting both models in one
+    plan is what keeps them in step, so the selection is the thing pinned here.
+    """
+
+    def test_the_fill_and_the_canvases_share_one_plan(
+        self, client, chosen_source, spy, base_canvas_table
+    ) -> None:
+        workspace = WorkspaceFactory(base_table=BASE_TABLE)
+        scenario = _alternative_scenario(workspace, "fill-canvas")
+        fill_fqn = f'brewgis."built_form_fill"."fill_{workspace.pk}"'
+
+        response = _submit(client, workspace, fill=True)
+
+        assert response.status_code == 302
+        assert len(spy.plans) == 1
+        assert spy.plans[0]["environment"] == "prod"
+        assert spy.plans[0]["select"] == [fill_fqn, canvas_model_selector(scenario)]
+
+        workspace.refresh_from_db()
+        assert workspace.fill_built_form is True
+        assert workspace.base_table == BASE_TABLE
+        assert (
+            workspace.effective_base_table() == f"built_form_fill.fill_{workspace.pk}"
+        )
+        layer = Layer.objects.get(workspace=workspace, key=BASE_CANVAS_LAYER_KEY)
+        assert (layer.db_schema, layer.db_table) == (
+            "built_form_fill",
+            f"fill_{workspace.pk}",
+        )
+
+    def test_unchecking_purges_the_fill_model_and_replans_the_canvases(
+        self, client, chosen_source, spy, base_canvas_table
+    ) -> None:
+        workspace = WorkspaceFactory(base_table=BASE_TABLE, fill_built_form=True)
+        scenario = _alternative_scenario(workspace, "unfill-canvas")
+
+        response = _submit(client, workspace, fill=False)
+
+        assert response.status_code == 302
+        assert spy.purged == [[f'brewgis."built_form_fill"."fill_{workspace.pk}"']]
+        assert len(spy.plans) == 1
+        assert spy.plans[0]["select"] == [canvas_model_selector(scenario)]
+
+        workspace.refresh_from_db()
+        assert workspace.fill_built_form is False
+        assert workspace.effective_base_table() == BASE_TABLE
+
+    def test_a_workspace_without_canvases_plans_the_fill_alone(
+        self, client, chosen_source, spy, base_canvas_table
+    ) -> None:
+        workspace = WorkspaceFactory(base_table=BASE_TABLE)
+
+        assert _submit(client, workspace, fill=True).status_code == 302
+
+        assert spy.plans[0]["select"] == [
+            f'brewgis."built_form_fill"."fill_{workspace.pk}"'
+        ]
+
+    def test_the_form_offers_the_flag_it_will_save(
+        self, client, chosen_source, base_canvas_table
+    ) -> None:
+        workspace = WorkspaceFactory(base_table=BASE_TABLE, fill_built_form=True)
+        client.force_login(UserFactory())
+
+        response = client.get(
+            reverse("workspace:select_base_canvas", args=[workspace.pk])
+        )
+
+        assert response.status_code == 200
+        checkbox = re.search(
+            r'<input[^>]*id="id_fill_built_form"[^>]*>', response.content.decode()
+        )
+        assert checkbox is not None, "the fill checkbox is not on the form"
+        assert "checked" in checkbox.group(0)

@@ -18,7 +18,6 @@ place, ``Workspace.effective_base_table``.
 
 from __future__ import annotations
 
-import contextlib
 import logging
 from typing import TYPE_CHECKING
 from typing import Any
@@ -39,7 +38,8 @@ from brewgis.workspace.analysis.sqlmesh_runner import purge_models_from_environm
 from brewgis.workspace.analysis.sqlmesh_runner import run_sqlmesh_plan
 from brewgis.workspace.models import ScenarioType
 from brewgis.workspace.models import Workspace
-from brewgis.workspace.services.scenario_canvas import materialize_scenario_canvas
+from brewgis.workspace.services.scenario_canvas import canvas_model_selector
+from brewgis.workspace.services.scenario_canvas import modeled_scenarios
 from brewgis.workspace.services.sqlmesh_tables import list_base_canvas_candidates
 from brewgis.workspace.views.built_forms import HtmxResponseMixin
 
@@ -115,25 +115,43 @@ class SelectBaseCanvasView(HtmxResponseMixin, FormView):
         self.workspace.fill_built_form = fill
         self.workspace.base_table = source
         self.workspace.save(update_fields=["base_table", "fill_built_form"])
+
+        # The fill and the canvas models over it go into a *single* plan. Any
+        # plan promotes the whole environment's virtual layer, which recreates
+        # every snapshot's view — including the canvases whose base this form
+        # just changed. A canvas that a plan selects but does not *build* is
+        # promoted anyway, with its view pointed at a physical object the plan
+        # never created; that fails the promotion, which fails this request
+        # before the canvases are ever rebuilt, and leaves the state broken for
+        # the next plan too. Building both in one plan leaves no such window.
+        selectors = [
+            canvas_model_selector(scenario)
+            for scenario in modeled_scenarios(
+                self.workspace.scenarios.filter(scenario_type=ScenarioType.ALTERNATIVE)
+            )
+        ]
         if fill:
             # The model's JOIN source. Exported on its own connection so it is
             # committed before the plan's engine adapter reads it.
             ensure_export_exists_isolated(
                 self.workspace, schema=self.workspace.db_schema, table="built_forms"
             )
-            # The source model is already materialized (the picker only offers
-            # existing tables), so the fill model alone is the selection.
-            run_sqlmesh_plan(
-                environment="prod",
-                select=[_fill_model_fqn(self.workspace.pk)],
-                auto_apply=True,
-                no_prompts=True,
-            )
+            # The selected source model is already materialized (the picker only
+            # offers existing tables), so the fill plus the canvases over it are
+            # the whole selection.
+            selectors.insert(0, _fill_model_fqn(self.workspace.pk))
         else:
             # Flipping the flag off de-lists this workspace's fill model from
             # the blueprint; drop the now-orphaned snapshot so a later plan
             # never promotes a model the project no longer defines.
             purge_models_from_environments([_fill_model_fqn(self.workspace.pk)])
+        if selectors:
+            run_sqlmesh_plan(
+                environment="prod",
+                select=selectors,
+                auto_apply=True,
+                no_prompts=True,
+            )
         schema, table = self.workspace.effective_base_table().split(".", 1)
         register_result_layer(
             self.workspace.pk,
@@ -143,16 +161,11 @@ class SelectBaseCanvasView(HtmxResponseMixin, FormView):
             name="Base Canvas",
             description=f"Workspace base canvas ({self.workspace.effective_base_table()})",
         )
-        alternative_scenarios = self.workspace.scenarios.filter(
-            scenario_type=ScenarioType.ALTERNATIVE
-        )
-        for scenario in alternative_scenarios:
-            with contextlib.suppress(Exception):
-                materialize_scenario_canvas(scenario)
         logger.info(
-            "Workspace %s base_table=%s fill_built_form=%s",
+            "Workspace %s base_table=%s fill_built_form=%s (planned %s)",
             self.workspace.pk,
             self.workspace.base_table,
             self.workspace.fill_built_form,
+            selectors,
         )
         return super().form_valid(form)

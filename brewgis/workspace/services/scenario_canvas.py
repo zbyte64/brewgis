@@ -123,6 +123,16 @@ def _modeled_scenario_ids() -> set[int]:
     return {int(profile["scenario_id"]) for profile in scenario_canvas_profiles()}
 
 
+def modeled_scenarios(scenarios: Iterable[Scenario]) -> list[Scenario]:
+    """The subset of *scenarios* that SQLMesh has a canvas model for.
+
+    Selecting a canvas model that the blueprint profiles skipped fails the whole
+    plan, so callers that plan canvases filter through here first.
+    """
+    modeled = _modeled_scenario_ids()
+    return [scenario for scenario in scenarios if int(scenario.pk) in modeled]
+
+
 def _purge_models_for_deleted_scenarios(modeled: set[int]) -> list[str]:
     """De-list canvas models whose scenario no longer exists.
 
@@ -175,13 +185,11 @@ def reconcile_scenario_canvases() -> list[int]:
     from brewgis.workspace.models import ScenarioType
 
     modeled = _modeled_scenario_ids()
-    scenarios = [
-        scenario
-        for scenario in Scenario.objects.filter(
-            scenario_type=ScenarioType.ALTERNATIVE
-        ).select_related("workspace")
-        if scenario.pk in modeled
-    ]
+    scenarios = modeled_scenarios(
+        Scenario.objects.filter(scenario_type=ScenarioType.ALTERNATIVE).select_related(
+            "workspace"
+        )
+    )
     _purge_models_for_deleted_scenarios(modeled)
     if not scenarios:
         return []
