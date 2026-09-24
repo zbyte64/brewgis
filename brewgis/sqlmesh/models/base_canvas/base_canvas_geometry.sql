@@ -8,7 +8,7 @@ MODEL (
   column_descriptions (
     parcel_id = 'Unique parcel identifier from the region parcel source.',
     geometry = 'Parcel geometry in WGS84 (EPSG:4326).',
-    local_geometry = 'Parcel geometry projected to local_srid (CA Albers, EPSG:3310).',
+    local_geometry = 'Parcel geometry projected to the region local_srid.',
     county = 'County name of the parcel from the parcels source.',
     land_development_category = 'Land development category, preferring the dasymetric value.',
     built_form_key = 'Built form key, preferring the dasymetric value over the parcel value.',
@@ -85,7 +85,7 @@ MODEL (
 --
 -- Reads raw parcel data from brewgis.parcels (via the parcels source),
 -- casts geometry to PostGIS geometry (EPSG:4326), computes area columns
--- from local_srid (CA Albers, SRID 3310), and passes through source columns.
+-- in local_srid (converted from that CRS's own unit), and passes through source columns.
 --
 -- Area columns use _acres suffix per BASE_MAP_METHODOLOGY.md.
 
@@ -97,7 +97,7 @@ parcel_geom AS (
     SELECT
         p.parcel_id,
         p.geometry,
-        ST_Transform(p.geometry, @VAR('local_srid', 3310)) AS local_geometry,
+        ST_Transform(p.geometry, @VAR('local_srid')) AS local_geometry,
         p.county,
         COALESCE(
             NULLIF(p.land_development_category, ''),
@@ -139,7 +139,7 @@ parcel_geom AS (
 parcel_area AS (
     SELECT
         parcel_geom.*,
-        ROUND((ST_Area(parcel_geom.local_geometry) / 4046.86)::numeric, 4) AS area_gross
+        ROUND((@local_area_sqm(ST_Area(parcel_geom.local_geometry)) / 4046.86)::numeric, 4) AS area_gross
     FROM parcel_geom
 ),
 

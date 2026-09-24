@@ -3,7 +3,7 @@ MODEL (
   kind FULL,
   description 'Highway interchange points where 3+ Overture highway-class road segments meet, snapped to a 10m grid.',
   column_descriptions (
-    geometry = 'Intersection point (snapped to 10m grid) in local_srid (3310)',
+    geometry = 'Intersection point (snapped to a 10 m grid) in local_srid',
     street_count = 'Number of highway segments meeting at this intersection'
   ),
   blueprints @region_blueprints()
@@ -31,7 +31,7 @@ WITH highway_segments AS (
     SELECT
         ST_Transform(
             ST_SetSRID(wgs84_geometry, @VAR('default_srid', 4326)),
-            @VAR('local_srid', 3310)
+            @VAR('local_srid')
         ) AS local_geometry
     FROM brewgis.@{region}.overture_transport
     WHERE class IN ('motorway', 'motorway_link', 'trunk', 'trunk_link')
@@ -45,7 +45,7 @@ endpoints AS (
 ),
 
 snapped_endpoints AS (
-    SELECT ST_SnapToGrid(pt, 10) AS snapped_location
+    SELECT ST_SnapToGrid(pt, @metres_in_local_units(10)) AS snapped_location
     FROM endpoints
 ),
 

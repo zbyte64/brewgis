@@ -3,7 +3,7 @@ MODEL (
   kind FULL,
   description 'Pre-computed Overture road intersection points for the region: transport segment endpoints snapped to a 10 m grid and kept when at least three segments meet.',
   column_descriptions (
-    geometry = 'Intersection point (snapped to 10m grid) in local_srid (3310)',
+    geometry = 'Intersection point (snapped to a 10 m grid) in local_srid',
     street_count = 'Number of road segments meeting at this intersection'
   ),
   audits (
@@ -38,7 +38,7 @@ WITH driveable_segments AS (
     SELECT
         ST_Transform(
             ST_SetSRID(wgs84_geometry, @VAR('default_srid', 4326)),
-            @VAR('local_srid', 3310)
+            @VAR('local_srid')
         ) AS local_geometry
     FROM brewgis.@{region}.overture_transport
     WHERE class IN ('motorway', 'primary', 'secondary', 'tertiary', 'residential', 'service')
@@ -52,7 +52,7 @@ endpoints AS (
 ),
 
 snapped_endpoints AS (
-    SELECT ST_SnapToGrid(pt, 10) AS snapped_location
+    SELECT ST_SnapToGrid(pt, @metres_in_local_units(10)) AS snapped_location
     FROM endpoints
 ),
 

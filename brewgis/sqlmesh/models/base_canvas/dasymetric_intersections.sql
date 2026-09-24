@@ -5,7 +5,7 @@ MODEL (
   column_descriptions (
     parcel_id = 'Unique parcel identifier from the parcel shim.',
     apn = 'Assessor parcel number intersecting the parcel.',
-    intersect_area_sqft = 'Area of the intersection between the parcel and APN envelopes (sq ft).'
+    intersect_area_sqft = 'Area of the intersection between the parcel and APN EPSG:4326 envelopes (square degrees); used only as a relative weight per APN, so no unit conversion applies.'
   ),
   audits (
     not_null(columns := (parcel_id, apn))

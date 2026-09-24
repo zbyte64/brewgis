@@ -18,9 +18,11 @@ than SQL: the distance matrix, the row/column sums and the per-origin averages
 are one O(N^2) computation per scenario, distributed in origin batches so a
 213k-parcel scenario stays inside a few hundred MB (see ``_BATCH_ELEMENTS``).
 
-Distance source is the Euclidian centroid distance, taken in the repo's local
-metric CRS (``local_srid``, CA Albers) so ``avg_trip_length_km`` is kilometres
-and the models that scale by it (vmt, physical_activity) are in the units they
+Distance source is the Euclidian centroid distance, taken in the region's
+projected CRS (``local_srid``) and scaled by that CRS's own metres-per-unit
+(:func:`brewgis.sqlmesh.macros.geometry.metres_per_unit`), so
+``avg_trip_length_km`` is kilometres whatever the projection's linear unit and
+the models that scale by it (vmt, physical_activity) are in the units they
 claim. The network alternative —
 ``workspace.analysis.transport.preprocessors.distance_matrix``, which snaps
 parcels onto the pgRouting network and writes
@@ -46,6 +48,8 @@ from sqlmesh import model
 from sqlmesh.core.model.definition import ModelKindName
 
 from brewgis.sqlmesh.macros.analysis_blueprints import analysis_blueprint_profiles
+from brewgis.sqlmesh.macros.geometry import metres_per_unit
+from brewgis.sqlmesh.macros.geometry import require_local_srid
 from brewgis.sqlmesh.models.python._gravity_model import _gravity_model
 
 if TYPE_CHECKING:
@@ -140,20 +144,22 @@ def execute(
     core_end_state = context.resolve_table(
         f"brewgis.{context.blueprint_var('scenario_schema')}.core_end_state"
     )
-    # Distances have to be metric: a scenario's geometry is EPSG:4326, so its
-    # coordinates are *degrees*. ``local_srid`` is the repo's projected CRS (CA
-    # Albers, metres — see ``base_canvas_geometry``), and dividing by 1000 gives
-    # the kilometres ``avg_trip_length_km`` promises its consumers (vmt and
-    # physical_activity both scale by it).
-    metric_srid = context.var("local_srid", 3310)
+    # A scenario's geometry is EPSG:4326, so its coordinates are *degrees*:
+    # distances are taken in the region's projected ``local_srid`` instead, whose
+    # linear unit is whatever that CRS defines (metres, US survey feet, ...).
+    # Scaling by the CRS's own metres-per-unit gives the kilometres
+    # ``avg_trip_length_km`` promises its consumers (vmt and physical_activity
+    # both scale by it).
+    projected_srid = require_local_srid(context)
+    km_per_unit = metres_per_unit(projected_srid) / 1000.0
 
     parcels = context.fetchdf(
         f"""
         SELECT
             tg.parcel_id,
             tg.trips_total,
-            ST_X(ST_Transform(ST_Centroid(es.geometry), {metric_srid})) / 1000.0 AS x,
-            ST_Y(ST_Transform(ST_Centroid(es.geometry), {metric_srid})) / 1000.0 AS y,
+            ST_X(ST_Transform(ST_Centroid(es.geometry), {projected_srid})) AS x,
+            ST_Y(ST_Transform(ST_Centroid(es.geometry), {projected_srid})) AS y,
             COALESCE(es.emp, 0) AS emp,
             COALESCE(es.du, 0) AS du
         FROM {trip_generation} AS tg
@@ -176,8 +182,8 @@ def execute(
 
     outbound, inbound, internal, avg_length = _gravity_model(
         trips=parcels["trips_total"].to_numpy(dtype=float),
-        xs=parcels["x"].to_numpy(dtype=float),
-        ys=parcels["y"].to_numpy(dtype=float),
+        xs=parcels["x"].to_numpy(dtype=float) * km_per_unit,
+        ys=parcels["y"].to_numpy(dtype=float) * km_per_unit,
         emp=parcels["emp"].to_numpy(dtype=float),
         du=parcels["du"].to_numpy(dtype=float),
     )

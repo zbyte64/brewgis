@@ -5,7 +5,7 @@ MODEL (
   column_descriptions (
     parcel_id = 'Reference parcel identifier (parcel_id) from brewgis.sacog.parcel_shim.',
     apn = 'Assessor parcel number (APN) of the intersecting assessor parcel.',
-    intersect_area_sqft = 'Area of the intersection of the reference and assessor parcel bounding envelopes.'
+    intersect_area_sqft = 'Area of the intersection of the reference and assessor parcel EPSG:4326 bounding envelopes (square degrees); used only to rank matches.'
   ),
   audits (
     not_null(columns := (parcel_id, apn))

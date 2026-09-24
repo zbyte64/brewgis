@@ -290,14 +290,20 @@ def execute(  # noqa: C901, PLR0912, PLR0915
 
     with_wkb = df_parcels.dropna(subset=["geometry"])
 
-    # Read the actual SRID from PostGIS — SACOG data is SRID 3310 (California Albers)
+    # The geometry's CRS is whatever PostGIS has it tagged with; an untagged
+    # (SRID 0) geometry has no knowable CRS, and guessing one would misplace
+    # every chip.
     srid = context.fetchdf(
         "SELECT ST_SRID(wkb_geometry) AS srid "
         "FROM public.sac_cnty_region_existing_land_use_parcels "
         "WHERE wkb_geometry IS NOT NULL LIMIT 1"
     ).iloc[0, 0]
     if not srid:
-        srid = 3310  # SACOG data default: California Albers Equal Area
+        msg = (
+            "public.sac_cnty_region_existing_land_use_parcels.wkb_geometry has no SRID;"
+            " tag it before extracting chips."
+        )
+        raise RuntimeError(msg)
     crs = f"EPSG:{srid}"
     logger.info("Parcel geometry SRID: %s", crs)
 

@@ -5,7 +5,7 @@ MODEL (
   column_descriptions (
     geometry = 'Land cover polygon reprojected from Overture CRS84 to Web Mercator (EPSG:3857).',
     wgs84_geometry = 'Land cover polygon reprojected from Overture CRS84 to EPSG:4326 (lon/lat).',
-    local_geometry = 'Land cover polygon reprojected from Overture CRS84 to the region local CRS (EPSG:3310).',
+    local_geometry = 'Land cover polygon reprojected from Overture CRS84 to the region local CRS (local_srid).',
     subtype = 'Overture land cover subtype of the ESA WorldCover derived polygon, cast to VARCHAR.'
   ),
   gateway duckdb,
@@ -27,7 +27,7 @@ MODEL (
 SELECT
   ST_Transform(geometry, 'CRS84', 'EPSG:3857', true) AS geometry,
   ST_Transform(geometry, 'CRS84', 'EPSG:4326', true) AS wgs84_geometry,
-  ST_Transform(geometry, 'CRS84', 'EPSG:' || @VAR('local_srid', 3310)::text, true) AS local_geometry,
+  ST_Transform(geometry, 'CRS84', 'EPSG:' || @VAR('local_srid')::text, true) AS local_geometry,
   subtype::VARCHAR AS subtype
 FROM read_parquet(@overture_land_cover_parquet_glob)
 WHERE bbox.xmin < @overture_bbox_max_x

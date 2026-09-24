@@ -3,7 +3,7 @@ MODEL (
   kind FULL,
   description 'Pedestrian path intersection points (3 or more meeting path segments) snapped to a 10m grid.',
   column_descriptions (
-    geometry = 'Intersection point (snapped to 10m grid) in local_srid (3310)',
+    geometry = 'Intersection point (snapped to a 10 m grid) in local_srid',
     street_count = 'Number of path segments meeting at this intersection'
   ),
   blueprints @region_blueprints()
@@ -31,7 +31,7 @@ WITH path_segments AS (
     SELECT
         ST_Transform(
             ST_SetSRID(wgs84_geometry, @VAR('default_srid', 4326)),
-            @VAR('local_srid', 3310)
+            @VAR('local_srid')
         ) AS local_geometry
     FROM brewgis.@{region}.overture_transport
     WHERE class IN ('footway', 'pedestrian', 'steps', 'path', 'cycleway')
@@ -45,7 +45,7 @@ endpoints AS (
 ),
 
 snapped_endpoints AS (
-    SELECT ST_SnapToGrid(pt, 10) AS snapped_location
+    SELECT ST_SnapToGrid(pt, @metres_in_local_units(10)) AS snapped_location
     FROM endpoints
 ),
 

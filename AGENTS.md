@@ -356,6 +356,7 @@ docker compose -f docker-compose.local.yml run --rm django bash /app/scripts/fix
 
 - **SQL identifier quoting:** Dynamic SQL composing identifiers from user-controlled strings must double-quote them. PostgreSQL treats unquoted hyphens as minus operators.
 - **Schema/namespace lifecycle:** All `CREATE SCHEMA`, `CREATE TABLE`, `CREATE VIEW` operations must use `IF NOT EXISTS`.
+- **Projected units:** `local_srid` is per-region and its linear unit is whatever that CRS defines (metres, US survey feet, international feet). Never convert a length/area measured in it with a metre constant (`/ 1000.0`, `/ 4046.86`, `public.acres`): in SQL use `@local_length_metres(...)`, `@local_area_sqm(...)`, `@metres_in_local_units(<metres>)` (radii, snapping grids) or `@st_area_projected(geom)`; in Python scale by `macros/geometry.py:metres_per_unit(srid)` (area by its square). Read the SRID with `require_local_srid` — never `@VAR('local_srid', 3310)`-style defaults. Never reproject to a coarser CRS (3857, 4326) to dodge the unit.
 - **PostGIS extension in tests:** Enable explicitly (`CREATE EXTENSION IF NOT EXISTS postgis`) — test DB template may not include it.
 - **Lifecycle hooks:** Delete/cascade/signal behavior must be explicitly wired.
 - **Route completeness:** Every new object/feature needs create, read, update, delete routes.

@@ -32,7 +32,7 @@ via the `**variables` dict when calling `config_factory()` or via plan overrides
 
 | Variable | Default | Used In | Notes |
 |---|---|---|---|
-| `local_srid` | `3310` | geometry macro, many models | CA Albers (feet-based) |
+| `local_srid` | `3310` | geometry macros, many models | Region's projected CRS (3310 = CA Albers, metres). Any projected EPSG CRS works: measurements scale by its own unit via `macros/geometry.py` (`metres_per_unit`, `@local_length_metres`, `@local_area_sqm`, `@metres_in_local_units`, `@st_area_projected`). No model supplies a fallback value |
 | `wm_srid` | `3857` | spatial_ops macro | Web Mercator |
 | `default_srid` | `4326` | multiple | WGS84 lon/lat |
 
@@ -381,9 +381,11 @@ calls it is `models/python/trip_distribution.py` (it is blueprinted, so it reads
 the scenario profiles at import — the pure function is separate so it can be
 imported and unit-tested without a database).
 
-Distances are Euclidean between parcel centroids **projected to `local_srid`**
-(CA Albers, EPSG:3310), so `avg_trip_length_km` is kilometres and the models
-that scale by it (`vmt`, `physical_activity`) are in the units they claim. The
+Distances are Euclidean between parcel centroids **projected to `local_srid`**,
+scaled from that CRS's linear unit (metres, US survey feet, ...) by
+`macros/geometry.py:metres_per_unit`, so `avg_trip_length_km` is kilometres for
+any projected region CRS and the models that scale by it (`vmt`,
+`physical_activity`) are in the units they claim. The
 scenario geometry itself is EPSG:4326, whose coordinates are degrees — taking
 the distance there understates trip length by a factor of ~111.
 

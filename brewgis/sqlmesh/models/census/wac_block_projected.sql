@@ -1,7 +1,7 @@
 MODEL (
   name brewgis.@{region}.wac_block_projected,
   kind FULL,
-  description 'wac_block with block geometry pre-projected to the local SRID (@VAR local_srid, default 3310) plus its envelope, so spatial joins skip the transform, one row per block.',
+  description 'wac_block with block geometry pre-projected to the region local SRID (local_srid) plus its envelope, so spatial joins skip the transform, one row per block.',
   column_descriptions (
     geoid = '15-digit census block GEOID (state+county+tract+block FIPS), carried through from wac_block.',
     geometry = 'Block geometry in EPSG:4326, carried through from wac_block.',
@@ -28,7 +28,7 @@ MODEL (
     emp_pub = 'Public employment (jobs) as published by wac_block.',
     emp_ind = 'Industrial employment (jobs) as published by wac_block.',
     emp_ag = 'Agricultural employment (jobs) as published by wac_block.',
-    local_geometry = 'Block geometry reprojected to the local SRID (@VAR local_srid, default 3310).',
+    local_geometry = 'Block geometry reprojected to the region local SRID (local_srid).',
     wac_envelope = 'Bounding box of the local-SRID block geometry, used for indexed spatial prefilters.'
   ),
   audits (
@@ -39,7 +39,7 @@ MODEL (
 
 -- WAC Block Projected — pre-projected geometry for indexed spatial joins.
 --
--- Pre-computes local_srid (3310) geometry and envelope so base_canvas_employment
+-- Pre-computes local_srid geometry and envelope so base_canvas_employment
 -- avoids repeated ST_Transform + ST_Envelope during spatial joins.
 -- kind FULL with GiST index for fast ST_Intersects lookups.
 
@@ -69,8 +69,8 @@ SELECT
     w.emp_pub,
     w.emp_ind,
     w.emp_ag,
-    ST_Transform(w.geometry, @VAR('local_srid', 3310)) AS local_geometry,
-    ST_Envelope(ST_Transform(w.geometry, @VAR('local_srid', 3310))) AS wac_envelope
+    ST_Transform(w.geometry, @VAR('local_srid')) AS local_geometry,
+    ST_Envelope(ST_Transform(w.geometry, @VAR('local_srid'))) AS wac_envelope
 FROM brewgis.@{region}.wac_block w
 WHERE w.geometry IS NOT NULL;
 

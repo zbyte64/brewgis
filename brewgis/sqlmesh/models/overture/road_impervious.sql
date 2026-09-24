@@ -12,7 +12,7 @@ MODEL (
     road_other_length_m = 'Overture road segment length inside the parcel for other surface classes (meters).',
     road_total_length_m = 'Total length of Overture road segments intersecting the parcel, all classes (meters).',
     road_impervious_fraction = 'Fraction of parcel road length that is paved (0-1; 0 when the parcel has no road).',
-    parcel_area_gross = 'Gross parcel area from ST_Area of the parcel geometry divided by 4046.86 (acres).'
+    parcel_area_gross = 'Gross parcel area from ST_Area of the parcel geometry in local_srid, converted to acres.'
   ),
   audits (
     not_null(columns := (parcel_id)),
@@ -38,7 +38,8 @@ MODEL (
 --   Paved: surface IN ('paved', 'asphalt', 'concrete') or NULL (assumed paved)
 --   Unpaved: surface IN ('unpaved', 'gravel', 'dirt', 'earth', 'ground')
 --
--- Road length is in meters. Parcel geometry is in LOCAL_SRID (3310, California Albers).
+-- Parcel geometry (public.sacog_comparison_parcels) is in local_srid; lengths and
+-- areas are measured there and converted from that CRS's own unit to metres.
 -- local_geometry is computed from wgs84_geometry since the bridge sets
 -- local_geometry=NULL (DuckDB geographic→projected ST_Transform is unreliable).
 
@@ -52,7 +53,7 @@ WITH parcels AS (
 
 transport AS (
     SELECT
-        ST_Transform(ST_SetSRID(wgs84_geometry, @VAR('default_srid', 4326)), @VAR('local_srid', 3310)) AS local_geometry,
+        ST_Transform(ST_SetSRID(wgs84_geometry, @VAR('default_srid', 4326)), @VAR('local_srid')) AS local_geometry,
         CASE
             WHEN surface IS NULL
                  OR surface IN ('paved', 'asphalt', 'concrete') THEN 'paved'
@@ -69,7 +70,7 @@ road_intersections AS (
     SELECT
         p.parcel_id,
         t.road_surface_class,
-        ST_Length(ST_Intersection(p.geometry, t.local_geometry)) AS length_m
+        @local_length_metres(ST_Length(ST_Intersection(p.geometry, t.local_geometry))) AS length_m
     FROM parcels p
     JOIN transport t
         ON ST_Intersects(p.geometry, t.local_geometry)
@@ -91,7 +92,7 @@ road_summary AS (
 all_parcels AS (
     SELECT
         geography_id AS parcel_id,
-        ST_Area(geometry) / 4046.86 AS area_gross_acres  -- sq meters → acres
+        @local_area_sqm(ST_Area(geometry)) / 4046.86 AS area_gross_acres  -- sq meters → acres
     FROM public.sacog_comparison_parcels
     WHERE geometry IS NOT NULL
 )

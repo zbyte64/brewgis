@@ -34,7 +34,7 @@ WITH density AS (
             / (PI() * 402.0 * 402.0 / 2589988.11) AS intersection_density
     FROM brewgis.@{region}.assessor_parcels sap
     LEFT JOIN brewgis.@{region}.overture_intersection_points i
-        ON ST_DWithin(sap.centroid_local, i.geometry, 402.0)
+        ON ST_DWithin(sap.centroid_local, i.geometry, @metres_in_local_units(402.0))
     GROUP BY sap.apn
 )
 SELECT

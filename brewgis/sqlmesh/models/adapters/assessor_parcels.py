@@ -30,6 +30,8 @@ from sqlglot import exp
 from sqlmesh import model
 from sqlmesh.core.model.definition import ModelKindName
 
+from brewgis.sqlmesh.macros.geometry import metres_per_unit
+from brewgis.sqlmesh.macros.geometry import require_local_srid
 from brewgis.sqlmesh.macros.region_blueprints import REGIONS
 
 if TYPE_CHECKING:
@@ -93,7 +95,7 @@ FROM (
                             )
                         )
                     ),
-                    5.0  -- 5m buffer ensures non-degenerate polygon for co-linear centroids
+                    {buffer_5m}  -- 5 m buffer ensures non-degenerate polygon for co-linear centroids
                 )
                 ELSE ST_Buffer(
                     ST_Centroid(
@@ -106,7 +108,7 @@ FROM (
                             )
                         )
                     ),
-                    30.0  -- 30m buffer ≈ 100ft radius, ~0.7 acres
+                    {buffer_30m}  -- 30 m buffer ≈ 100ft radius, ~0.7 acres
                 )
             END AS local_geometry,  -- SRID {local_srid}
             mode() WITHIN GROUP (ORDER BY landuse) AS landuse,
@@ -146,7 +148,7 @@ FROM (
             ST_Centroid(
                 ST_SetSRID(local_geometry, {local_srid})
             ) AS centroid_local,
-            (ST_Area(ST_SetSRID(local_geometry, {local_srid}))
+            (ST_Area(ST_SetSRID(local_geometry, {local_srid})) * {sqm_per_square_unit}
                 / 4046.8564224)::double precision AS lot_size_acres,
             landuse,
             zone,
@@ -248,7 +250,8 @@ resolved AS (
         -- parcel_dasymetric_weights and fail assert_emp_dasym_weight_fallback.
         COALESCE(
             CASE WHEN lot_size_acres > 0 THEN lot_size_acres END,
-            (ST_Area(ST_Transform(wgs84_geometry, {local_srid})) / 4046.8564224)::double precision
+            (ST_Area(ST_Transform(wgs84_geometry, {local_srid})) * {sqm_per_square_unit}
+                / 4046.8564224)::double precision
         ) AS lot_size_acres
     FROM collapsed
 )
@@ -287,8 +290,8 @@ _SOURCE_TABLE = {
         "apn": "Assessor parcel number (APN) of the parcel; unique per row.",
         "geometry": "Parcel boundary in WGS84 (EPSG:4326), repaired with ST_MakeValid.",
         "centroid": "Centroid of the WGS84 parcel boundary (EPSG:4326).",
-        "local_geometry": "Parcel boundary in the local projected SRID (3310 CA Albers).",
-        "centroid_local": "Centroid of the parcel in the local SRID (3310 CA Albers), used for radius joins.",
+        "local_geometry": "Parcel boundary in the region local projected SRID (local_srid).",
+        "centroid_local": "Centroid of the parcel in the region local_srid, used for radius joins.",
         "lot_size_acres": "Parcel lot size (acres) from the assessor roll; parcel_shim acres in the pass-through case.",
         "landuse": "Assessor land use code of the parcel (SACOG landuse, Fresno use_primary).",
         "zone": "Assessor zoning code of the parcel; NULL where the region has no per-parcel zoning source.",
@@ -339,19 +342,26 @@ def execute(evaluator: MacroEvaluator, **kwargs: Any) -> str:
     """Return the region-appropriate adapter SQL (SACOG or Fresno assessor roll).
 
     The returned string is not macro-rendered again by SQLMesh, so @VAR(...)
-    references are resolved here via the evaluator before formatting.
+    references are resolved here via the evaluator before formatting — and so
+    are the local CRS's unit conversions (``local_srid``'s linear unit is
+    whatever that CRS defines; areas and buffer radii are scaled by it).
     """
     region = evaluator.blueprint_var("region")
     source_table = evaluator.blueprint_var("source_table", "")
-    local_srid = evaluator.var("local_srid", 3310)
     if not source_table:
         return PASSTHROUGH_QUERY.format(region=region)
+    local_srid = require_local_srid(evaluator)
+    unit_m = metres_per_unit(local_srid)
     if region == "fresno":
         return FRESNO_ASSESSOR_QUERY.format(
             source_table=source_table,
             local_srid=local_srid,
+            sqm_per_square_unit=repr(unit_m**2),
         )
     return SACOG_QUERY.format(
         source_table=source_table,
         local_srid=local_srid,
+        sqm_per_square_unit=repr(unit_m**2),
+        buffer_5m=repr(5.0 / unit_m),
+        buffer_30m=repr(30.0 / unit_m),
     )

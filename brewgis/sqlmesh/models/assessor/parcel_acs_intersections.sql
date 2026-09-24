@@ -10,7 +10,7 @@ MODEL (
     bg_geoid = 'Census block group GEOID (12-digit FIPS) of the intersecting block group.',
     hh = 'Households in the intersecting block group (count), passed through from ACS.',
     du = 'Dwelling units in the intersecting block group (count), passed through from ACS.',
-    intersect_area_sqft = 'Area of the parcel and block group intersection in local_srid 3310 (metres squared).'
+    intersect_area_sqft = 'Area of the parcel and block group intersection, measured in the region local_srid (sq ft).'
   ),
   audits (
     not_null(columns := (apn, bg_geoid))
@@ -25,21 +25,21 @@ MODEL (
 -- instead of recomputing for every plan.
 --
 -- Relies on brewgis.@{region}.acs_block_group_projected for pre-projected ACS
--- geometry (local_srid 3310) with a GiST index, avoiding the unindexed nested
+-- geometry (local_srid) with a GiST index, avoiding the unindexed nested
 -- loop from joining against the DuckDB-built staging table directly.
 --
--- Uses ST_Intersection on local_srid (California Albers) for accurate
--- area-weighted ACS household size computation.
+-- Uses ST_Intersection in local_srid for accurate area-weighted ACS household
+-- size computation; the area is converted from that CRS's own unit to sq ft.
 
 SELECT
     sap.apn,
     a.geoid AS bg_geoid,
     a.hh,
     a.du,
-    ST_Area(ST_Intersection(
+    @local_area_sqm(ST_Area(ST_Intersection(
         sap.local_geometry,
         a.geometry
-    )) AS intersect_area_sqft
+    ))) * 10.7639 AS intersect_area_sqft
 FROM brewgis.@{region}.assessor_parcels sap
 JOIN brewgis.@{region}.acs_block_group_projected a
     ON ST_Intersects(sap.local_geometry, a.geometry);

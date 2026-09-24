@@ -5,7 +5,7 @@ MODEL (
   column_descriptions (
     geometry = 'Road segment geometry reprojected from Overture CRS84 to Web Mercator (EPSG:3857).',
     wgs84_geometry = 'Road segment geometry reprojected from Overture CRS84 to EPSG:4326 (lon/lat).',
-    local_geometry = 'Road segment geometry reprojected from Overture CRS84 to the region local CRS (EPSG:3310).',
+    local_geometry = 'Road segment geometry reprojected from Overture CRS84 to the region local CRS (local_srid).',
     surface = 'Surface type of the first Overture road_surface entry of the segment, e.g. paved, unpaved or gravel.',
     class = 'Overture road class of the segment, e.g. motorway, primary or residential.',
     subclass = 'Overture road subclass of the segment, cast to VARCHAR.',
@@ -39,7 +39,7 @@ MODEL (
 SELECT
   ST_Transform(geometry, 'CRS84', 'EPSG:3857', true) AS geometry,
   ST_Transform(geometry, 'CRS84', 'EPSG:4326', true) AS wgs84_geometry,
-  ST_Transform(geometry, 'CRS84', 'EPSG:' || @VAR('local_srid', 3310)::text, true) AS local_geometry,
+  ST_Transform(geometry, 'CRS84', 'EPSG:' || @VAR('local_srid')::text, true) AS local_geometry,
   road_surface[1].value::VARCHAR AS surface,
   class::VARCHAR AS class,
   subclass::VARCHAR AS subclass,

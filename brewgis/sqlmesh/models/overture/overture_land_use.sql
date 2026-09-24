@@ -5,7 +5,7 @@ MODEL (
   column_descriptions (
     geometry = 'Land use polygon reprojected from Overture CRS84 to Web Mercator (EPSG:3857).',
     wgs84_geometry = 'Land use polygon reprojected from Overture CRS84 to EPSG:4326 (lon/lat).',
-    local_geometry = 'Land use polygon reprojected from Overture CRS84 to the region local CRS (EPSG:3310).',
+    local_geometry = 'Land use polygon reprojected from Overture CRS84 to the region local CRS (local_srid).',
     subtype = 'Overture land use subtype of the polygon, cast to VARCHAR.',
     class = 'Overture land use class of the polygon, cast to VARCHAR.'
   ),
@@ -29,7 +29,7 @@ MODEL (
 SELECT
   ST_Transform(geometry, 'CRS84', 'EPSG:3857', true) AS geometry,
   ST_Transform(geometry, 'CRS84', 'EPSG:4326', true) AS wgs84_geometry,
-  ST_Transform(geometry, 'CRS84', 'EPSG:' || @VAR('local_srid', 3310)::text, true) AS local_geometry,
+  ST_Transform(geometry, 'CRS84', 'EPSG:' || @VAR('local_srid')::text, true) AS local_geometry,
   subtype::VARCHAR AS subtype,
   class::VARCHAR AS class
 FROM read_parquet(@overture_land_use_parquet_glob)

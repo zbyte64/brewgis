@@ -8,7 +8,7 @@ MODEL (
   column_descriptions (
     parcel_id = 'Parcel identifier from the region source parcel table.',
     geometry = 'Parcel boundary in WGS84 (EPSG:4326), repaired with ST_MakeValid.',
-    local_geometry = 'Parcel boundary reprojected to the local SRID (3310 CA Albers) for area and join work.',
+    local_geometry = 'Parcel boundary reprojected to the region local SRID (local_srid) for area and join work.',
     county = 'County name supplied by the region blueprint.',
     land_development_category = 'Land development category of the parcel; NULL here, filled downstream.',
     built_form_key = 'Built form classification key of the parcel; NULL here, filled downstream.',
@@ -70,14 +70,14 @@ MODEL (
 -- variables); the SQL body is identical for all regions.
 --
 -- geometry       — global WGS84 (4326), transformed from the source SRID
--- local_geometry — local projected SRID (3310 CA Albers) for area/join work
+-- local_geometry — the region's projected local_srid, for area/join work
 -- acres          — area from local_geometry (Fresno parcels rely on this for
 --                  lot_size_acres since they lack assessor data)
 
 SELECT
     parcel_id,
     ST_MakeValid(ST_Transform(geometry, @VAR('default_srid', 4326))) AS geometry,
-    ST_Transform(ST_MakeValid(geometry), @VAR('local_srid', 3310)) AS local_geometry,
+    ST_Transform(ST_MakeValid(geometry), @VAR('local_srid')) AS local_geometry,
     @county_name::text AS county,
     NULL::text AS land_development_category,
     NULL::text AS built_form_key,
@@ -88,8 +88,8 @@ SELECT
     NULL::double precision AS emp,
     NULL::text AS land_use,
     NULL::text AS assessor_use_code,
-    -- acres computed from local_geometry area
-    ROUND((ST_Area(ST_Transform(ST_MakeValid(geometry), @VAR('local_srid', 3310))) / 4046.86)::numeric, 4)
+    -- acres computed from local_geometry area, in that CRS's own unit
+    ROUND((@local_area_sqm(ST_Area(ST_Transform(ST_MakeValid(geometry), @VAR('local_srid')))) / 4046.86)::numeric, 4)
         AS acres,
     NULL::double precision AS ret,
     NULL::double precision AS off,

@@ -5,7 +5,7 @@ MODEL (
   column_descriptions (
     geometry = 'Building footprint in Web Mercator (EPSG:3857).',
     wgs84_geometry = 'Building footprint in WGS84 (EPSG:4326) with lon/lat axis order.',
-    local_geometry = 'Building footprint projected to local_srid (CA Albers, EPSG:3310).',
+    local_geometry = 'Building footprint projected to the region local_srid.',
     height = 'Building height in metres; null for VIDA rows.',
     levels = 'Number of building levels; null for VIDA rows.',
     class = 'Source building class label; null for VIDA rows.',
@@ -40,7 +40,7 @@ ANALYZE @this_model;
 -- Column conventions:
 --   geometry (EPSG:3857) — Web Mercator, projected with no axis ambiguity
 --   wgs84_geometry (EPSG:4326) — (lon,lat) axis via always_xy=true
---   local_geometry (EPSG:3310) — California Albers via always_xy=true
+--   local_geometry (local_srid) — the region's projected CRS via always_xy=true
 
 WITH overture_buildings AS (
     SELECT
@@ -101,7 +101,7 @@ vida_deduped AS (
 SELECT
     ST_SetCRS(geometry, 'EPSG:3857') AS geometry,
     ST_SetCRS(wgs84_geometry, 'EPSG:4326') AS wgs84_geometry,
-    ST_Transform(wgs84_geometry, 'EPSG:4326', 'EPSG:3310', true) AS local_geometry,
+    ST_Transform(wgs84_geometry, 'EPSG:4326', 'EPSG:' || @VAR('local_srid')::text, true) AS local_geometry,
     height,
     levels,
     class,
@@ -115,7 +115,7 @@ UNION ALL
 SELECT
     ST_SetCRS(geometry, 'EPSG:3857') AS geometry,
     ST_SetCRS(wgs84_geometry, 'EPSG:4326') AS wgs84_geometry,
-    ST_Transform(wgs84_geometry, 'EPSG:4326', 'EPSG:3310', true) AS local_geometry,
+    ST_Transform(wgs84_geometry, 'EPSG:4326', 'EPSG:' || @VAR('local_srid')::text, true) AS local_geometry,
     height,
     levels,
     class,
