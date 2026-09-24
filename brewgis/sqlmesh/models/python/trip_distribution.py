@@ -5,7 +5,9 @@ One instance of this model per analyzed scenario, materialized in
 models use (see ``sqlmesh/macros/analysis_blueprints.py``): ``_PROFILES`` is
 resolved while SQLMesh imports this module, so the model's name, its
 dependencies and its published result view come from the scenario rows that
-exist at load time.
+exist at load time. With none analyzed there is nothing to instantiate and the
+module registers no model at all (see
+:mod:`brewgis.sqlmesh.blueprint_models`).
 
 Distribution is a gravity model over parcel centroids::
 
@@ -46,6 +48,7 @@ from sqlglot import exp
 from sqlmesh import model
 from sqlmesh.core.model.definition import ModelKindName
 
+from brewgis.sqlmesh.blueprint_models import register_blueprint_model
 from brewgis.sqlmesh.macros.analysis_blueprints import analysis_blueprint_profiles
 from brewgis.sqlmesh.macros.geometry import metres_per_unit
 from brewgis.sqlmesh.macros.geometry import require_local_srid
@@ -74,7 +77,9 @@ _ON_VIRTUAL_UPDATE = [
 ]
 
 
-@model(
+# One declaration, applied once per analyzed scenario below: with none in the
+# database there is nothing to instantiate.
+_TRIP_DISTRIBUTION_MODEL = model(
     name="brewgis.@{scenario_schema}.@{model_table}",
     kind=ModelKindName.FULL,
     description=(
@@ -122,6 +127,8 @@ _ON_VIRTUAL_UPDATE = [
         ("assert_total_trips_conserved", {}),
     ],
 )
+
+
 def execute(
     context: ExecutionContext,
     start: TimeLike,  # noqa: ARG001
@@ -233,3 +240,8 @@ def execute(
             "avg_trip_length_km": avg_length,
         }
     )
+
+
+# One model per analyzed scenario: with none analyzed, registering nothing is
+# what keeps an empty blueprint list from becoming a phantom model.
+execute = register_blueprint_model(_TRIP_DISTRIBUTION_MODEL, execute, _PROFILES)

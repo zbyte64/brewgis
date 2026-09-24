@@ -6,7 +6,9 @@ sets ``transport_use_network_distance`` it holds the shortest drivable path, in
 km, between every connected pair of 2 km grid zones its parcels fall in, routed
 by ``pgr_dijkstraCost`` over the region's ``road_network_vertices`` /
 ``road_network_edges``; trip_distribution feeds it to the gravity model. With the
-option off it is empty and pgRouting is never called.
+option off it is empty and pgRouting is never called. With no analyzed scenario
+there is nothing to instantiate, and the module registers no model at all (see
+:mod:`brewgis.sqlmesh.blueprint_models`).
 
 Zones rather than parcels: a parcel-to-parcel matrix is ~4.5e10 pairs for a
 213k-parcel region (see :mod:`brewgis.sqlmesh.models.python._network_zones`).
@@ -31,6 +33,7 @@ from sqlglot import exp
 from sqlmesh import model
 from sqlmesh.core.model.definition import ModelKindName
 
+from brewgis.sqlmesh.blueprint_models import register_blueprint_model
 from brewgis.sqlmesh.macros.analysis_blueprints import analysis_blueprint_profiles
 from brewgis.sqlmesh.macros.geometry import metres_per_unit
 from brewgis.sqlmesh.macros.geometry import require_local_srid
@@ -61,7 +64,9 @@ _COLUMNS = {
 }
 
 
-@model(
+# One declaration, applied once per analyzed scenario below: with none in the
+# database there is nothing to instantiate.
+_NETWORK_ZONE_DISTANCE_MODEL = model(
     # The table is spelled out rather than ``@{model_table}``: SQLMesh registers
     # Python models by their unrendered name, which trip_distribution already
     # claims ("Duplicate name").
@@ -92,6 +97,8 @@ _COLUMNS = {
         ),
     ],
 )
+
+
 def execute(
     context: ExecutionContext,
     start: TimeLike,  # noqa: ARG001
@@ -226,3 +233,8 @@ def execute(
     # cost_m is metres, so agg_cost is too.
     pairs["network_distance_km"] = pairs["agg_cost"] / 1000.0
     yield pairs[list(_COLUMNS)].reset_index(drop=True)
+
+
+# One model per analyzed scenario: with none analyzed, registering nothing is
+# what keeps an empty blueprint list from becoming a phantom model.
+execute = register_blueprint_model(_NETWORK_ZONE_DISTANCE_MODEL, execute, _PROFILES)

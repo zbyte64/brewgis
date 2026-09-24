@@ -7,6 +7,11 @@ the view imperatively and any ``sqlmesh plan`` rebuilding the base layer
 CASCADE-dropped it with nothing to bring it back (the map and tile servers then
 read a view that no longer existed).
 
+One model per ALTERNATIVE scenario, resolved while SQLMesh imports this module.
+With none in the database there is nothing to instantiate and the module
+registers no model at all — see :mod:`brewgis.sqlmesh.blueprint_models` for why
+an empty list cannot be handed to ``@model`` instead.
+
 A plan only recreates these models if they are inside its selection: promotion
 updates the virtual layer for every snapshot in the environment, but a
 selection that excludes them (an upstream-only ``--select-model '+<base>'``)
@@ -46,6 +51,7 @@ from typing import Any
 from sqlmesh import model
 from sqlmesh.core.model.definition import ModelKindName
 
+from brewgis.sqlmesh.blueprint_models import register_blueprint_model
 from brewgis.sqlmesh.macros.scenario_canvas_blueprints import MODEL_SCHEMA
 from brewgis.sqlmesh.macros.scenario_canvas_blueprints import scenario_canvas_profiles
 
@@ -69,7 +75,9 @@ _ON_VIRTUAL_UPDATE = [
 ]
 
 
-@model(
+# One declaration, applied once per ALTERNATIVE scenario below: with none in the
+# database there is nothing to instantiate.
+_CANVAS_MODEL = model(
     name=f"brewgis.{MODEL_SCHEMA}.@{{model_table}}",
     kind=ModelKindName.VIEW,
     description=(
@@ -81,6 +89,8 @@ _ON_VIRTUAL_UPDATE = [
     on_virtual_update=_ON_VIRTUAL_UPDATE,
     is_sql=True,
 )
+
+
 def execute(evaluator: MacroEvaluator, **kwargs: Any) -> str:
     """Return the scenario's canvas SELECT body.
 
@@ -113,3 +123,8 @@ def execute(evaluator: MacroEvaluator, **kwargs: Any) -> str:
         all_columns=all_columns,
         scenario_id=scenario_id,
     )
+
+
+# One model per ALTERNATIVE scenario: with none in the database, registering
+# nothing is what keeps an empty blueprint list from becoming a phantom model.
+execute = register_blueprint_model(_CANVAS_MODEL, execute, _PROFILES)

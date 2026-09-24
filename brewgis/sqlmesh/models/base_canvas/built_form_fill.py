@@ -12,6 +12,11 @@ workspace reads its source again). ``models/base_canvas/`` is where the other
 Python models over derived base canvases live (``du_regressor.py`` and
 friends).
 
+One instance per opted-in workspace, resolved while SQLMesh imports this module.
+With none opted in the module registers no model at all — see
+:mod:`brewgis.sqlmesh.blueprint_models` for why an empty list cannot be handed
+to ``@model`` instead.
+
 Matching semantics — the SQL counterpart of the paint surfaces' two entries,
 ``views/paint.py:run_match_built_form`` (density match) and
 ``run_fill_built_form`` (built-form-key lookup), applied per parcel in one
@@ -45,6 +50,7 @@ from sqlglot import exp
 from sqlmesh import model
 from sqlmesh.core.model.definition import ModelKindName
 
+from brewgis.sqlmesh.blueprint_models import register_blueprint_model
 from brewgis.sqlmesh.macros.built_form_fill_blueprints import MODEL_SCHEMA
 from brewgis.sqlmesh.macros.built_form_fill_blueprints import built_form_fill_profiles
 from brewgis.sqlmesh.macros.built_form_keys import _PREFIX_ALTERNATION
@@ -108,7 +114,9 @@ def _fill_expression(column: str, acres: str) -> str:
     return column
 
 
-@model(
+# One declaration, applied once per opted-in workspace below: with no workspace
+# opted in there is nothing to instantiate.
+_FILL_MODEL = model(
     name=f"brewgis.{MODEL_SCHEMA}.@{{model_table}}",
     kind=ModelKindName.FULL,
     description=(
@@ -135,6 +143,8 @@ def _fill_expression(column: str, acres: str) -> str:
     blueprints=[dict(profile) for profile in _PROFILES],
     is_sql=True,
 )
+
+
 def execute(evaluator: MacroEvaluator, **kwargs: Any) -> str:
     """Return the workspace's fill SELECT.
 
@@ -207,3 +217,8 @@ SELECT
     {columns}
 FROM matched
 """
+
+
+# One model per opted-in workspace: with none opted in, registering nothing is
+# what keeps an empty blueprint list from becoming a phantom model.
+execute = register_blueprint_model(_FILL_MODEL, execute, _PROFILES)
