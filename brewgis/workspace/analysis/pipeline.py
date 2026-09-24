@@ -376,13 +376,24 @@ def _network_distance_inputs(scenario_id: int) -> list[str]:
     The road network is selected for every region: which region a scenario
     routes over is a blueprint fact (``road_network_region``), and a built
     region network is a no-op in the plan.
+
+    The subsegment bridge is named as well: it is the vertices' upstream, and a
+    model added to the project is only planned when a selector names it — the
+    vertices/edges selectors alone backfill the graph against a bridge the plan
+    never created (``relation "...overture_road_subsegments" does not exist``).
+    Selected, never restated, for the same reason as the vertices and edges it
+    feeds: its inputs are the Overture release, not the scenario.
     """
     return [
         module_registry.model_fqn("network_zone_distance", scenario_id),
         *(
             f"brewgis.{region}.{table}"
             for region in REGIONS
-            for table in ("road_network_vertices", "road_network_edges")
+            for table in (
+                "overture_road_subsegments",
+                "road_network_vertices",
+                "road_network_edges",
+            )
         ),
     ]
 

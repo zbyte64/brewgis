@@ -1,78 +1,67 @@
 MODEL (
   name brewgis.@{region}.road_network_edges,
   kind FULL,
-  description 'Edges of the region''s undirected drivable road graph: one row per drivable Overture transport segment, connecting the road_network_vertices its snapped endpoints fall on, costed by length in metres.',
+  description 'Edges of the region''s undirected drivable road graph: one row per Overture subsegment (consecutive connector pair), costed by its length in metres.',
   column_descriptions (
     id = 'pgRouting edge id (dense, ordered by source, target, cost_m)',
-    source = 'Vertex id (road_network_vertices.id) at the segment start point',
-    target = 'Vertex id (road_network_vertices.id) at the segment end point',
-    cost_m = 'Segment length in metres, the edge traversal cost',
-    geometry = 'Segment line in local_srid'
+    source = 'Vertex id (road_network_vertices.id) at the subsegment start connector',
+    target = 'Vertex id (road_network_vertices.id) at the subsegment end connector',
+    cost_m = 'Subsegment length in metres, the edge traversal cost',
+    geometry = 'Subsegment line in local_srid'
   ),
   audits (
     not_null(columns := (id, source, target)),
     assert_column_non_negative(column_name := cost_m),
     -- Same floor rationale as overture_intersection_points: SACOG and Fresno
-    -- both carry far more drivable segments than this, so the floor catches an
-    -- empty/broken transport bridge.
+    -- both carry far more drivable subsegments than this, so the floor catches
+    -- an empty/broken subsegment bridge.
     assert_row_count_between(min_rows := 20000, max_rows := 100000000)
   ),
   blueprints @region_blueprints()
 );
 
--- pre hooks
--- (overture_transport is DuckDB gateway, so indexes must live here)
-  DO $$ BEGIN PERFORM pg_advisory_xact_lock(hashtext('idx_overture_transport_geometry')::bigint); END $$;
-  CREATE INDEX IF NOT EXISTS @snapshot_hash('idx_overture_transport_geometry_')
-  ON brewgis.@{region}.overture_transport USING GIST (wgs84_geometry);
-  DO $$ BEGIN PERFORM pg_advisory_xact_lock(hashtext('idx_overture_transport_local_geometry')::bigint); END $$;
-  CREATE INDEX IF NOT EXISTS @snapshot_hash('idx_overture_transport_local_geometry_')
-  ON brewgis.@{region}.overture_transport USING GIST (local_geometry);
-
 -- Region road network edges — the edge table pgr_dijkstraCost walks for
 -- network_zone_distance.
 --
--- Simplifications (shared with road_network_vertices): undirected (one-way and
--- access rules ignored); a segment connects only at its endpoints, snapped to a
--- 10 m grid with the exact expression road_network_vertices uses, so the
--- (x, y) join below lands on the vertex rows. Segments whose two endpoints
--- snap to the same vertex are loops that never shorten a path and are dropped.
+-- One edge per consecutive connector pair of a drivable segment, with
+-- source/target resolved through road_network_vertices.connector_id, the
+-- junction topology Overture itself records.
+--
+-- Cost is the length of the substring between the pair's two `at` fractions,
+-- measured in local_srid and converted to metres, so a segment's subsegment
+-- costs still sum to its full length.
+--
+-- Simplifications (shared with road_network_vertices): undirected — one-way
+-- and access rules are ignored. A segment's consecutive connectors are always
+-- distinct, so the `source <> target` guard only drops degenerate rows.
+--
+-- Geometry is recomputed from the `at` fractions rather than carried per
+-- subsegment: the bridge stores one geometry per segment.
 
-WITH drive AS (
+WITH sub AS (
     SELECT
-        ST_Transform(
-            ST_SetSRID(wgs84_geometry, @VAR('default_srid', 4326)),
-            @VAR('local_srid')
-        ) AS g
-    FROM brewgis.@{region}.overture_transport
-    WHERE class IN (
-        'motorway', 'trunk', 'primary', 'secondary', 'tertiary',
-        'residential', 'living_street', 'unclassified', 'service'
-    )
-      AND wgs84_geometry IS NOT NULL
-      AND ST_GeometryType(wgs84_geometry) = 'ST_LineString'
-),
-
-snapped AS (
-    SELECT
-        g,
-        ST_SnapToGrid(ST_StartPoint(g), @metres_in_local_units(10)) AS sp,
-        ST_SnapToGrid(ST_EndPoint(g), @metres_in_local_units(10)) AS ep,
-        @local_length_metres(ST_Length(g)) AS cost_m
-    FROM drive
+        from_connector_id,
+        to_connector_id,
+        @local_length_metres(ST_Length(ST_LineSubstring(g, from_at, to_at))) AS cost_m,
+        ST_LineSubstring(g, from_at, to_at) AS geometry
+    FROM (
+        SELECT
+            from_connector_id, from_at, to_connector_id, to_at,
+            ST_Transform(ST_SetSRID(wgs84_geometry, @VAR('default_srid', 4326)), @VAR('local_srid')) AS g
+        FROM brewgis.@{region}.overture_road_subsegments
+    ) d
 )
-
 SELECT
-    ROW_NUMBER() OVER (ORDER BY s.id, t.id, snapped.cost_m)::BIGINT AS id,
+    ROW_NUMBER() OVER (ORDER BY s.id, t.id, sub.cost_m)::BIGINT AS id,
     s.id AS source,
     t.id AS target,
-    snapped.cost_m,
-    snapped.g AS geometry
-FROM snapped
+    sub.cost_m,
+    sub.geometry
+FROM sub
 INNER JOIN brewgis.@{region}.road_network_vertices AS s
-    ON s.x = ST_X(snapped.sp) AND s.y = ST_Y(snapped.sp)
+    ON s.connector_id = sub.from_connector_id
 INNER JOIN brewgis.@{region}.road_network_vertices AS t
-    ON t.x = ST_X(snapped.ep) AND t.y = ST_Y(snapped.ep)
+    ON t.connector_id = sub.to_connector_id
 WHERE s.id <> t.id;
 
 -- post_statements

@@ -267,10 +267,17 @@ CELERY_TASK_SOFT_TIME_LIMIT = 60
 # materializes every upstream model it has never built — parcel ResNet
 # features, the assessor ArcGIS fetch and NLCD parcel stats are minutes each.
 # `run_analysis_task` carries these instead (its predecessor, 300s, killed a
-# run whose backfill was still building models); raise them for a deployment
-# whose cold plans run longer still.
-ANALYSIS_TASK_SOFT_TIME_LIMIT = env.int("ANALYSIS_TASK_SOFT_TIME_LIMIT", default=1800)
-ANALYSIS_TASK_TIME_LIMIT = env.int("ANALYSIS_TASK_TIME_LIMIT", default=3600)
+# run whose backfill was still building models).
+#
+# Sized for a region of twice SACOG's parcel count (1,005,748 parcels): the
+# gravity model is O(N²) in parcels and dominates the run, so that target is
+# ~22x measured Fresno (213,005 parcels, 1682s network-on) — ~10.4 h — plus
+# the zone-to-zone network matrix. Raise them for a deployment whose regions
+# or cold plans run longer still. Soft stays below hard so an overrun is
+# raised as `SoftTimeLimitExceeded` inside the task and recorded as a failed
+# run, rather than SIGKILLing it into a stuck `running`.
+ANALYSIS_TASK_SOFT_TIME_LIMIT = env.int("ANALYSIS_TASK_SOFT_TIME_LIMIT", default=50400)
+ANALYSIS_TASK_TIME_LIMIT = env.int("ANALYSIS_TASK_TIME_LIMIT", default=57600)
 CELERY_BEAT_SCHEDULER = "django_celery_beat.schedulers:DatabaseScheduler"
 CELERY_WORKER_SEND_TASK_EVENTS = True
 CELERY_TASK_SEND_SENT_EVENT = True
