@@ -55,8 +55,9 @@ class Workspace(models.Model):
     fill_built_form = models.BooleanField(
         default=False,
         help_text=(
-            "Fill NULL built-form columns (built_form_key, du, pop, hh, emp) on the "
-            "base layer from the closest-matching Building Type. Materializes a new "
+            "Assign every parcel the closest-matching Building Type and fill NULL "
+            "built-form columns (du, pop, hh, emp). built_form_key is reassigned "
+            "from the match, replacing any key already set. Materializes a new "
             "table; base_table itself is never modified."
         ),
     )

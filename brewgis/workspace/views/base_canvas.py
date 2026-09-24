@@ -73,9 +73,10 @@ class SelectBaseCanvasForm(forms.Form):
         required=False,
         label="Fill built form by closest matching",
         help_text=(
-            "Assign each parcel the closest-matching Building Type and fill "
-            "NULL built-form columns (built_form_key, du, pop, hh, emp). "
-            "Materializes a new table; the selected source is not modified."
+            "Assign each parcel the closest-matching Building Type. The match "
+            "replaces the parcel's built_form_key; du, pop, hh and emp are filled "
+            "where they are NULL. Materializes a new table; the selected source is "
+            "not modified."
         ),
     )
 

@@ -2,9 +2,11 @@
 
 A workspace with ``Workspace.fill_built_form`` on reads this model instead of
 its ``base_table`` (see ``Workspace.effective_base_table``): the same rows and
-the same column set, but every parcel that has a built-form *signal* and no
-built-form attributes yet comes out with the closest-matching ``BuildingType``
-applied to ``built_form_key``/``du``/``pop``/``hh``/``emp``.
+the same column set, with every parcel assigned the closest-matching
+``BuildingType``. The match replaces ``built_form_key`` — the base-canvas ETL
+writes one uniform ``mixed_use`` key on every row of the reconciled canvases,
+so replacing it is the point of the feature — and fills ``du``/``pop``/``hh``/
+``emp`` where they are NULL.
 
 The source is never written to: this model materializes a table of its own, so
 the import stays reversible (unchecking the box drops the model and the
@@ -26,8 +28,8 @@ pass, priority-ordered:
 2. else the source has employment — closest ``emp_per_acre`` to ``emp / acres``;
 3. else an exact normalized ``built_form_key`` match (the fill's own fallback
    for the parcels neither density basis can place);
-4. else no match at all — every ``_bf_*`` value stays NULL and the COALESCE
-   leaves the source's NULLs as they were.
+4. else no match at all — every ``_bf_*`` value stays NULL, so the source's
+   ``built_form_key`` and any NULL numeric columns pass through untouched.
 
 ``du``/``emp`` are read through ``COALESCE(..., 0)`` so a NULL (the case this
 feature exists for) compares as "no density basis" rather than poisoning the
@@ -91,11 +93,19 @@ def _fill_expression(column: str, acres: str) -> str:
 
     Only the five built-form columns can differ from the source; every other
     column is selected verbatim, so the output keeps the source's column set,
-    order and values. A built-form column is filled only where the source value
-    is a literal NULL — 0 and the empty string are real values and are kept.
+    order and values.
+
+    ``built_form_key`` is the *assignment* — the Building Type this parcel was
+    matched to — so a match replaces whatever the source held, including the
+    uniform ``mixed_use`` placeholder the base-canvas ETL writes on every row.
+    Replacing only NULLs would leave the column saying ``mixed_use`` for every
+    parcel on exactly the canvases this feature exists for. The four numeric
+    columns are the parcel's own measurements, so they are filled only where
+    the source value is a literal NULL (0 and the empty string are real values
+    and are kept).
     """
     if column == "built_form_key":
-        return "COALESCE(built_form_key, _bf_key) AS built_form_key"
+        return "COALESCE(_bf_key, built_form_key) AS built_form_key"
     if column == "du":
         return f"COALESCE(du, {acres} * _bf_du_per_acre) AS du"
     if column == "pop":
@@ -121,8 +131,9 @@ _FILL_MODEL = model(
     kind=ModelKindName.FULL,
     description=(
         "One workspace's built-form-filled base canvas: the source base canvas"
-        " with built_form_key, du, pop, hh and emp filled from the"
-        " closest-matching Building Type where the source value is NULL."
+        " with every parcel's built_form_key reassigned to the closest-matching"
+        " Building Type and du, pop, hh and emp filled where the source value is"
+        " NULL."
     ),
     audits=[
         ("not_null", {"columns": [exp.to_column("parcel_id")]}),
