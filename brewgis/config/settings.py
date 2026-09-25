@@ -136,6 +136,13 @@ MIDDLEWARE = [
 STATIC_ROOT = str(BASE_DIR / "staticfiles")
 STATIC_URL = "/static/"
 STATICFILES_DIRS = [str(APPS_DIR / "static")]
+# The map bundle is a gitignored Vite build artifact. The images build it in a
+# Node stage and install it outside APPS_DIR, because the local repo is
+# bind-mounted over it at runtime and would hide a copy placed inside. Listed
+# after the repo's own static dir, so a bundle built there is found first.
+_FRONTEND_BUILD_DIR = Path("/opt/brewgis-frontend")
+if _FRONTEND_BUILD_DIR.is_dir():
+    STATICFILES_DIRS.append(str(_FRONTEND_BUILD_DIR))
 STATICFILES_FINDERS = [
     "django.contrib.staticfiles.finders.FileSystemFinder",
     "django.contrib.staticfiles.finders.AppDirectoriesFinder",

@@ -8,13 +8,15 @@ from tests.e2e.pages.base_page import BasePage
 class BuiltFormsPage(BasePage):
     """UX inspection methods for Built Forms (Building Types, Place Types, Mix)."""
 
-    def navigate_to_building_types(self, live_server_url: str) -> None:
+    def navigate_to_building_types(
+        self, live_server_url: str, workspace_pk: int
+    ) -> None:
         """Navigate to the building types list page."""
-        self.navigate(f"{live_server_url}/built-forms/building-types/")
+        self.navigate(f"{live_server_url}/{workspace_pk}/built-forms/building-types/")
 
-    def navigate_to_place_types(self, live_server_url: str) -> None:
+    def navigate_to_place_types(self, live_server_url: str, workspace_pk: int) -> None:
         """Navigate to the place types list page."""
-        self.navigate(f"{live_server_url}/built-forms/place-types/")
+        self.navigate(f"{live_server_url}/{workspace_pk}/built-forms/place-types/")
 
     def card_count(self) -> int:
         """Return the number of building type or place type cards visible."""
@@ -43,10 +45,6 @@ class BuiltFormsPage(BasePage):
             self.page.locator("text=No building types").is_visible()
             or self.page.locator("text=No place types").is_visible()
         )
-
-    def navigate_to_bake(self, live_server_url: str) -> None:
-        """Navigate to the bake/apply page."""
-        self.navigate(f"{live_server_url}/built-forms/building-types/bake/")
 
     def has_bake_button(self) -> bool:
         """Check if a bake/apply button or link is accessible."""

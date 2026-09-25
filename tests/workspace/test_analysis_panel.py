@@ -458,15 +458,16 @@ class TestExecuteAnalysisRunLogCapture(TestCase):
         )
 
     @patch("brewgis.workspace.analysis.pipeline.run_modules_sync")
-    def test_failure_cause_empty_when_no_node_error_captured(
+    def test_failure_cause_recovers_the_exception_when_no_node_error_captured(
         self, mock_run_modules_sync
     ):
-        """Non-plan failures have no per-node error to recover — the field
-        must stay empty rather than inventing a cause."""
+        """Non-plan failures have no per-node error to recover, so the cause
+        falls back to the exception chain: the innermost exception, with no
+        model name invented for it."""
         from brewgis.workspace.analysis.pipeline import _execute_analysis_run
 
         mock_run_modules_sync.side_effect = RuntimeError("worker ran out of memory")
         _execute_analysis_run(self.run)
         self.run.refresh_from_db()
         assert self.run.status == "failed"
-        assert self.run.failure_cause == ""
+        assert self.run.failure_cause == "RuntimeError: worker ran out of memory"

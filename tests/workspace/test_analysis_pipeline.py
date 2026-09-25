@@ -39,6 +39,8 @@ class TestPlanSelection:
             lambda _schema: [
                 "core_end_state",
                 "core_increment",
+                "mode_choice",
+                "trip_distribution",
                 "trip_generation",
                 "vmt",
             ],
@@ -87,6 +89,8 @@ class TestResultVerification:
             lambda _schema: [
                 "core_end_state",
                 "core_increment",
+                "mode_choice",
+                "trip_distribution",
                 "trip_generation",
                 "vmt",
                 "water_demand",
@@ -101,6 +105,8 @@ class TestResultVerification:
         assert registered == [
             "core_end_state",
             "core_increment",
+            "mode_choice",
+            "trip_distribution",
             "trip_generation",
             "vmt",
             "water_demand",
@@ -108,6 +114,8 @@ class TestResultVerification:
         assert result["fqtns"] == [
             "analysis__scenario_7.core_end_state",
             "analysis__scenario_7.core_increment",
+            "analysis__scenario_7.mode_choice",
+            "analysis__scenario_7.trip_distribution",
             "analysis__scenario_7.trip_generation",
             "analysis__scenario_7.vmt",
             "analysis__scenario_7.water_demand",

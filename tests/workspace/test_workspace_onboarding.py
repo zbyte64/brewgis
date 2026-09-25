@@ -509,8 +509,23 @@ class TestDataCatalogScoping(TestCase):
         assert b"OSM Points of Interest" in response.content
 
     def test_not_imported_badge(self) -> None:
-        """Sources should show 'Not Imported' status by default."""
+        """Sources with no import path should show a 'Not Imported' badge.
+
+        Every source in the shipped catalog is wired to an import action (see
+        migration 0042), so the badge only describes a source that was added
+        without one; that source is created here rather than assumed to be in
+        the default catalog.
+        """
         ws = WorkspaceFactory(county_fips_list=[{"state": "06", "county": "019"}])
+        DataSource.objects.create(
+            category=DataSourceCategory.objects.get(slug="environmental-constraints"),
+            name="Groundwater Basins",
+            slug="groundwater-basins",
+            provider="CA DWR",
+            acquisition_priority="p2",
+            is_importable=False,
+            data_format="vector",
+        )
         self.client.force_login(self.user)
         url = reverse("workspace:workspace_detail", kwargs={"pk": ws.pk})
         response = self.client.get(url)

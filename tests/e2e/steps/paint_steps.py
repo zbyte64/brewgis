@@ -15,6 +15,7 @@ from pytest_bdd import then
 from pytest_bdd import when
 
 from brewgis.workspace.models import Scenario
+from brewgis.workspace.models import ScenarioType
 from brewgis.workspace.models import Workspace
 from tests.e2e.pages.base_page import BasePage
 from tests.e2e.pages.map_page import MapPage
@@ -66,18 +67,37 @@ def logged_in_page(page: Page, live_server_url: str, logged_in_user: User) -> Pa
 
 @given(parsers.parse('a workspace "{ws_name}" with scenario "{scenario_name}" exists'))
 def workspace_with_scenario(ws_name: str, scenario_name: str, db) -> None:  # type: ignore[no-untyped-def]
-    """Create a workspace and a scenario."""
+    """Create a workspace with its BASE scenario plus the named alternative.
+
+    A real workspace is created with exactly one BASE scenario and every other
+    scenario is an ALTERNATIVE derived from it (``workspace_create`` +
+    ``create_scenario``). Both matter here: the map view resolves the BASE
+    scenario when no ``?scenario=`` is given, and Paint Mode only appears for
+    an ALTERNATIVE.
+    """
     ws = WorkspaceFactory(name=ws_name)
-    ScenarioFactory(workspace=ws, name=scenario_name)
+    base = ScenarioFactory(workspace=ws, name="Base Scenario")
+    ScenarioFactory(
+        workspace=ws,
+        name=scenario_name,
+        scenario_type=ScenarioType.ALTERNATIVE,
+        parent=base,
+    )
 
 
 @given(parsers.parse('a workspace "{ws_name}" with scenarios "{names}"'))
 def workspace_with_scenarios(ws_name: str, names: str, db) -> None:  # type: ignore[no-untyped-def]
-    """Create a workspace with multiple scenarios (comma-separated)."""
+    """Create a workspace with its BASE scenario plus the named alternatives."""
     ws = WorkspaceFactory(name=ws_name)
+    base = ScenarioFactory(workspace=ws, name="Base Scenario")
     for name_p in names.split(" and "):
         clean_name = name_p.strip().strip('"')
-        ScenarioFactory(workspace=ws, name=clean_name)
+        ScenarioFactory(
+            workspace=ws,
+            name=clean_name,
+            scenario_type=ScenarioType.ALTERNATIVE,
+            parent=base,
+        )
 
 
 @given(

@@ -1,3 +1,18 @@
+# Build the map bundle — a gitignored Vite artifact, so nothing else in the
+# image or the repo provides it. It cannot live under APP_HOME: the repo is
+# bind-mounted over /app at runtime, which hides anything baked into that path.
+# settings.py adds this directory to STATICFILES_DIRS *after* the repo's own
+# static dir, so a bundle a developer built into the repo still wins.
+FROM docker.io/node:22-bookworm-slim AS frontend-build-stage
+
+WORKDIR /src
+COPY ./package.json ./package-lock.json ./
+RUN npm ci
+COPY ./tsconfig.json ./vite.config.ts ./
+COPY ./js ./js
+RUN npm run build
+
+
 # define an alias for the specific python version used in this file.
 FROM docker.io/python:3.12.7-slim-bookworm AS python
 
@@ -126,6 +141,13 @@ RUN chmod +x /start-sqlmesh-ui
 
 # copy application code to WORKDIR
 COPY . ${APP_HOME}
+
+# The map bundle from the frontend stage, plus its sourcemap (the dev image is
+# where the map gets debugged). Kept outside APP_HOME — see the stage above.
+COPY --from=frontend-build-stage \
+  /src/brewgis/static/js/brew-gis-map.js \
+  /src/brewgis/static/js/brew-gis-map.js.map \
+  /opt/brewgis-frontend/js/
 
 # Pre-download DuckDB extensions so INSTALL is a no-op at runtime
 COPY ./compose/local/django/preload_duckdb.py /tmp/preload_duckdb.py

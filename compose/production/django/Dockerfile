@@ -1,3 +1,15 @@
+# Build the map bundle — a gitignored Vite artifact, so nothing else in the
+# image or the repo provides it, and collectstatic (compose/production/django/
+# start) would otherwise publish a static tree with no map in it.
+FROM docker.io/node:22-bookworm-slim AS frontend-build-stage
+
+WORKDIR /src
+COPY ./package.json ./package-lock.json ./
+RUN npm ci
+COPY ./tsconfig.json ./vite.config.ts ./
+COPY ./js ./js
+RUN npm run build
+
 
 # define an alias for the specific python version used in this file.
 FROM docker.io/python:3.12.7-slim-bookworm AS python
@@ -91,6 +103,12 @@ RUN chmod +x /start-flower
 
 # copy application code to WORKDIR
 COPY --chown=django:django . ${APP_HOME}
+
+# The map bundle from the frontend stage, next to the repo's own static files so
+# collectstatic publishes it (sourcemap left out — it is not served anyway).
+COPY --from=frontend-build-stage --chown=django:django \
+  /src/brewgis/static/js/brew-gis-map.js \
+  ${APP_HOME}/brewgis/static/js/
 
 # make django owner of the WORKDIR directory as well.
 RUN chown -R django:django ${APP_HOME}

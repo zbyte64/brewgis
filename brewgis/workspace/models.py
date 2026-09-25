@@ -597,7 +597,8 @@ class AnalysisRun(models.Model):
         help_text=(
             "Short, human-readable cause of a failed run (failing model plus "
             "the database error underneath it), recovered from the SQLMesh plan "
-            "log. Empty when the failure produced no parseable per-node error."
+            "log — or, when the plan never reached a node, from the exception "
+            "chain. Populated whenever the run fails."
         ),
     )
     log_output = models.TextField(
