@@ -6,6 +6,7 @@ scenario map view, and the scenario_toggle_publish endpoint.
 
 from __future__ import annotations
 
+import json
 import uuid
 
 from django.contrib.auth.models import User
@@ -137,6 +138,34 @@ class TestPublicScenarioMapView(TestCase):
         self.assertEqual(
             response.context["public_token"],
             self.scenario.public_token,
+        )
+
+    def test_public_view_renders_the_workspace_viewport(self):
+        """Without viewport_json the template renders viewport='' and the map
+        opens on the whole world at Null Island instead of the scenario's area."""
+        self.workspace.center_lng = -119.77
+        self.workspace.center_lat = 36.75
+        self.workspace.zoom = 11.0
+        self.workspace.save(update_fields=["center_lng", "center_lat", "zoom"])
+        self.scenario.published = True
+        self.scenario.save(update_fields=["published"])
+
+        response = self.client.get(self._url())
+
+        self.assertEqual(
+            json.loads(response.context["viewport_json"]),
+            {"center": [-119.77, 36.75], "zoom": 11.0},
+        )
+
+    def test_public_view_honours_a_query_viewport(self):
+        self.scenario.published = True
+        self.scenario.save(update_fields=["published"])
+
+        response = self.client.get(f"{self._url()}?lng=1&lat=2&zoom=3")
+
+        self.assertEqual(
+            json.loads(response.context["viewport_json"]),
+            {"center": [1.0, 2.0], "zoom": 3.0},
         )
 
 

@@ -53,6 +53,16 @@ _MIN_AUTO_ZOOM = 2.0
 _MAX_AUTO_ZOOM = 16.0
 _AUTO_ZOOM_PADDING = 1.0
 
+# Sanity bounds for a viewport handed in via query params. MapLibre's own
+# limits: latitude is clamped to the Mercator square, zoom tops out at 24,
+# and maxPitch defaults to 60 but never exceeds 85.
+_MIN_LAT = -90.0
+_MAX_LAT = 90.0
+_MIN_ZOOM = 0.0
+_MAX_ZOOM = 24.0
+_MIN_PITCH = 0.0
+_MAX_PITCH = 85.0
+
 
 def _table_extent(schema: str, table: str) -> tuple[float, float, float, float] | None:
     """Return (min_lng, min_lat, max_lng, max_lat) for a table's geometry, or None.
@@ -143,6 +153,53 @@ def _resolve_viewport(workspace: Workspace) -> dict[str, object]:
         "center": [workspace.center_lng, workspace.center_lat],
         "zoom": workspace.zoom,
     }
+
+
+def _finite_float_param(request: HttpRequest, name: str) -> float | None:
+    """Return ``?<name>`` as a finite float, or None when absent/garbage."""
+    raw = request.GET.get(name)
+    if not raw:
+        return None
+    try:
+        value = float(raw)
+    except ValueError:
+        return None
+    return value if math.isfinite(value) else None
+
+
+def _wrap_lng(value: float) -> float:
+    """Wrap a longitude/bearing into [-180, 180) — the same wrap MapLibre applies."""
+    return ((value + 180.0) % 360.0) - 180.0
+
+
+def _query_viewport(request: HttpRequest) -> dict[str, object] | None:
+    """Viewport carried over from a previous render of this page, or None.
+
+    Switching scenarios is a plain GET reload of this same URL, so the
+    template attaches the live map's center/zoom (and pitch/bearing, when
+    tilted or rotated) to that request — otherwise every switch snaps the
+    map back to the workspace's stored default and loses the user's place.
+    Values are validated here rather than persisted: a hand-edited or stale
+    query string must degrade to the workspace default (skip this) instead
+    of rendering a broken map, and the workspace's own saved viewport must
+    not be overwritten by someone else's pan.
+    """
+    lng = _finite_float_param(request, "lng")
+    lat = _finite_float_param(request, "lat")
+    zoom = _finite_float_param(request, "zoom")
+    if lng is None or lat is None or zoom is None:
+        return None
+    if not (_MIN_LAT <= lat <= _MAX_LAT) or not (_MIN_ZOOM <= zoom <= _MAX_ZOOM):
+        return None
+
+    viewport: dict[str, object] = {"center": [_wrap_lng(lng), lat], "zoom": zoom}
+    pitch = _finite_float_param(request, "pitch")
+    if pitch is not None and _MIN_PITCH <= pitch <= _MAX_PITCH:
+        viewport["pitch"] = pitch
+    bearing = _finite_float_param(request, "bearing")
+    if bearing is not None:
+        viewport["bearing"] = _wrap_lng(bearing)
+    return viewport
 
 
 @user_passes_test(lambda u: u.is_authenticated)
@@ -425,7 +482,9 @@ def view_workspace_map(request: HttpRequest, workspace_pk: int) -> HttpResponse:
     context: dict[str, object] = {
         "layers_json": json.dumps(layer_data).replace("'", "\\u0027"),
         "layer_data": layer_data,
-        "viewport_json": json.dumps(_resolve_viewport(workspace)),
+        "viewport_json": json.dumps(
+            _query_viewport(request) or _resolve_viewport(workspace)
+        ),
         "workspace": workspace,
         "scenario": scenario,
         "is_alternative_scenario": is_alternative_scenario,
@@ -496,6 +555,12 @@ def view_public_scenario_map(request: HttpRequest, token: str) -> HttpResponse:
         "workspace": workspace,
         "layers": layers,
         "layer_data": layer_data,
+        # Without this the template's ``viewport=''`` leaves the component's
+        # viewport null, and MapLibre opens on the whole world at Null Island
+        # instead of the scenario's own geography.
+        "viewport_json": json.dumps(
+            _query_viewport(request) or _resolve_viewport(workspace)
+        ),
         "scenario": scenario,
         "is_public_view": True,
         "disable_paint": True,

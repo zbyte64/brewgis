@@ -74,7 +74,7 @@
                 <select name="scenario"
                         class="form-select form-select-sm"
                         style="width: auto"
-                        onchange="this.form.submit()">
+                        id="scenario-select">
                   <option value="">{% translate "View mode" %}</option>
                   {% for s in workspace.scenarios.all %}
                     <option value="{{ s.pk }}"
@@ -442,6 +442,47 @@
         evt.detail.ctx.request.headers['X-CSRFToken'] = csrfToken.getAttribute('content');
       }
     });
+
+    // ── Scenario switching keeps the map viewport ──────────
+    // The scenario picker reloads this same page with ?scenario=..., so
+    // without this the map snaps back to the workspace's stored default
+    // center/zoom on every switch. Attach the live viewport (center, zoom,
+    // and pitch/bearing when the map is tilted or rotated) as query params
+    // for the view to fold back into viewport_json. A map that never
+    // finished initialising simply contributes nothing, and the view then
+    // falls back to the stored default.
+    (function() {
+      'use strict';
+
+      const form = document.getElementById('scenario-form');
+      const select = document.getElementById('scenario-select');
+      const mapEl = document.querySelector('brew-gis-map');
+      if (!form || !select) return;
+
+      function setParam(name, value) {
+        let input = form.querySelector('input[type="hidden"][name="' + name + '"]');
+        if (!input) {
+          input = document.createElement('input');
+          input.type = 'hidden';
+          input.name = name;
+          form.appendChild(input);
+        }
+        input.value = value;
+      }
+
+      select.addEventListener('change', function() {
+        const map = mapEl && mapEl.getMap ? mapEl.getMap() : null;
+        if (map) {
+          const center = map.getCenter();
+          setParam('lng', center.lng.toFixed(6));
+          setParam('lat', center.lat.toFixed(6));
+          setParam('zoom', map.getZoom().toFixed(3));
+          setParam('pitch', map.getPitch().toFixed(2));
+          setParam('bearing', map.getBearing().toFixed(2));
+        }
+        form.submit();
+      });
+    })();
 
     (function() {
       'use strict';
