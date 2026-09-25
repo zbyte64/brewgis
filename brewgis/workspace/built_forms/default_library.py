@@ -1263,17 +1263,6 @@ DEFAULT_BUILDING_TYPES: list[dict[str, Any]] = [
         "land_development_category": "urban",
     },
     {
-        "name": "UC DAVIS",
-        "description": "",
-        "du_per_acre": 1.5,
-        "emp_per_acre": 64.0,
-        "far": 0.3,
-        "household_size": 2.5,
-        "vacancy_rate": 5.0,
-        "jobs_by_sector": {"education": 100.0},
-        "land_development_category": "rural",
-    },
-    {
         "name": "Alfalfa",
         "description": "",
         "du_per_acre": 0.0,
