@@ -332,6 +332,66 @@ def get_primary_column(table: str) -> str | None:
     return TABLE_PRIMARY_COLUMN.get(table)
 
 
+# Result table (bare SQLMesh model name) → default palette for its headline
+# column (see ``TABLE_PRIMARY_COLUMN``).
+#
+# A registered result layer otherwise opens on the blank "Manual" palette:
+# the layer renders, but the Symbology editor shows no palette selected and
+# the legend has no ramp to show. Each entry names a palette whose meaning
+# matches the metric — a magnitude reads low→high on a sequential ramp, a
+# signed metric (net return, net fiscal impact, growth) diverges around zero —
+# and reuse follows the metric family (water metrics stay blue, canopy and
+# access stay green) rather than doubling up on one palette for everything.
+# A table absent here falls back to the statistics-driven suggestion in
+# ``symbology.auto``.
+TABLE_PALETTE: dict[str, str] = {
+    # Population & growth
+    "core_end_state": "viridis",
+    "core_increment": "prgn",
+    # Resource demand & emissions
+    "water_demand": "blues",
+    "energy_demand": "oranges",
+    "building_water_ghg": "purples",
+    "total_ghg": "magma",
+    "transport_ghg": "inferno",
+    # Land, cost & risk
+    "agriculture": "piyg",
+    "sprawl_cost": "reds",
+    "displacement_risk": "rdylbu",
+    "displacement_risk_dynamic": "spectral",
+    "land_consumption": "turbo",
+    "sprawl_index": "oranges",
+    "tree_canopy": "greens",
+    "stormwater_runoff": "blues",
+    # People & health
+    "food_access": "greens",
+    "health_impacts": "rdbu",
+    "housing_cost_burden": "plasma",
+    "physical_activity": "spectral",
+    # Travel
+    "vmt": "magma",
+    "vmt_fee": "greens",
+    "trip_generation": "viridis",
+    "trip_distribution": "plasma",
+    "mode_choice": "prgn",
+    "internal_capture": "purples",
+    # Fiscal
+    "fiscal_net_impact": "rdbu",
+    "fiscal_property_tax": "blues",
+    "fiscal_sales_tax": "oranges",
+    "fiscal_service_costs": "reds",
+}
+
+
+def get_default_palette(table: str) -> str | None:
+    """Return the default palette name for a result table, if one is known.
+
+    ``None`` for an unknown table — the caller lets the auto-generation
+    heuristics pick a palette from the column's own statistics instead.
+    """
+    return TABLE_PALETTE.get(table)
+
+
 def resolve_module_order(module_names: list[str]) -> list[str]:
     """Resolve requested modules into execution order respecting dependencies.
 

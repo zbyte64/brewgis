@@ -11,6 +11,7 @@ from brewgis.workspace.models import Scenario
 from brewgis.workspace.models import ScenarioType
 from brewgis.workspace.models import SymbologyConfig
 from brewgis.workspace.models import Workspace
+from brewgis.workspace.symbology.auto import _resolve_palette_name
 from brewgis.workspace.symbology.auto import _suggest_classification_method
 from brewgis.workspace.symbology.auto import _suggest_palette
 from brewgis.workspace.symbology.auto import _suggest_symbology_type
@@ -67,6 +68,32 @@ class TestSuggestionHeuristics:
         stats = _make_stats(mean=50, median=50)
         method = _suggest_classification_method(stats)
         assert method == "quantile"
+
+
+class TestResolvePaletteName:
+    """Palette precedence: caller, then the result table's registered default,
+    then the statistics-driven suggestion."""
+
+    def test_explicit_palette_wins(self) -> None:
+        """A caller's palette is never overridden by the registry default."""
+        stats = _make_stats()
+        assert _resolve_palette_name("greens", "vmt", stats) == "greens"
+
+    def test_result_table_default_applies(self) -> None:
+        """An analysis result table keeps the palette registered for its metric
+        even though the data shape would have suggested something else."""
+        stats = _make_stats(is_categorical=False)
+        assert _resolve_palette_name(None, "vmt", stats) == "magma"
+        assert _suggest_palette(stats) != "magma"
+
+    def test_unknown_table_falls_back_to_suggestion(self) -> None:
+        """A layer that is not an analysis result gets a suggested palette."""
+        stats = _make_stats(is_categorical=True)
+        assert _resolve_palette_name(None, "imported_parcels", stats) == "material_set1"
+
+    def test_suggestion_is_lowercased(self) -> None:
+        stats = _make_stats()
+        assert _resolve_palette_name("BLUES", "imported_parcels", stats) == "blues"
 
 
 class TestAutoGenerate(TestCase):

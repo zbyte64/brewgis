@@ -2,17 +2,21 @@
 
 from __future__ import annotations
 
+from itertools import pairwise
 from unittest.mock import MagicMock
 from unittest.mock import patch
 
 import pytest
+from django.db import connection
 from django.test import TestCase
 
 from brewgis.workspace.analysis.layer_registry import _find_numeric_column
 from brewgis.workspace.analysis.layer_registry import _get_geometry_type
 from brewgis.workspace.analysis.layer_registry import register_result_layer
 from brewgis.workspace.models import Layer
+from brewgis.workspace.models import Scenario
 from tests.factories import LayerFactory
+from tests.factories import StyleClassFactory
 from tests.factories import SymbologyConfigFactory
 from tests.factories import WorkspaceFactory
 
@@ -158,8 +162,52 @@ class TestGetGeometryType(TestCase):
 class TestRegisterResultLayer(TestCase):
     """Tests for register_result_layer."""
 
+    # A real result table: ``water_demand`` is a registered result table, so
+    # it also exercises the registry's default palette for it.
+    TABLE = "water_demand"
+
     def setUp(self) -> None:
         self.workspace = WorkspaceFactory()
+        # Every workspace has a BASE scenario in practice (created alongside
+        # it) — auto_generate_symbology resolves one to decide whether to read
+        # a layer's raw table or a scenario's paint overlay.
+        Scenario.objects.create(
+            name="Base Scenario",
+            workspace=self.workspace,
+            base_year=2020,
+            horizon_year=2050,
+        )
+
+    def _create_result_table(self, scale: int = 1) -> None:
+        """Create ``public.water_demand`` with 100 rows (values 1-100 × scale)."""
+        with connection.cursor() as cursor:
+            cursor.execute(f"DROP TABLE IF EXISTS {self.TABLE} CASCADE")
+            cursor.execute(
+                f"""
+                CREATE TABLE {self.TABLE} (
+                    parcel_id INTEGER,
+                    water_demand_total DOUBLE PRECISION
+                )
+                """
+            )
+            cursor.execute(
+                f"INSERT INTO {self.TABLE} (parcel_id, water_demand_total) "  # noqa: S608
+                f"SELECT g, g * {scale} FROM generate_series(1, 100) AS g"
+            )
+
+    def tearDown(self) -> None:
+        with connection.cursor() as cursor:
+            cursor.execute(f"DROP TABLE IF EXISTS {self.TABLE} CASCADE")
+
+    def _register(self) -> Layer:
+        """Register :attr:`TABLE` for this test's workspace."""
+        layer = register_result_layer(
+            workspace_id=self.workspace.pk,
+            schema="public",
+            table=self.TABLE,
+        )
+        assert layer is not None
+        return layer
 
     @patch("brewgis.workspace.analysis.layer_registry._get_geometry_type")
     @patch("brewgis.workspace.analysis.layer_registry._get_table_columns")
@@ -268,30 +316,57 @@ class TestRegisterResultLayer(TestCase):
         self.assertIsNone(result)
 
     @patch("brewgis.workspace.analysis.layer_registry._get_geometry_type")
-    @patch("brewgis.workspace.analysis.layer_registry._get_table_columns")
-    def test_creates_symbology_for_new_layer_with_numeric_column(
-        self, mock_columns: MagicMock, mock_geom: MagicMock
+    def test_creates_symbology_with_breaks_and_palette(
+        self, mock_geom: MagicMock
     ) -> None:
-        """A graduated SymbologyConfig should be auto-created when a numeric column exists."""
+        """Registering a result table should leave it with a real symbology:
+        class breaks computed from the published values, the registry's
+        palette for that table, and no leftover "Manual" palette."""
         mock_geom.return_value = "fill"
-        mock_columns.return_value = [
-            {"column_name": "id", "data_type": "integer", "numeric": True},
-            {"column_name": "population", "data_type": "bigint", "numeric": True},
-        ]
+        self._create_result_table()
 
-        layer = register_result_layer(
-            workspace_id=self.workspace.pk,
-            schema="public",
-            table="auto_symbology_view",
-        )
+        layer = self._register()
 
-        self.assertIsNotNone(layer)
         symbology = layer.symbology
-        self.assertIsNotNone(symbology)
         self.assertEqual(symbology.symbology_type, "graduated")
-        self.assertEqual(symbology.attribute_column, "population")
+        self.assertEqual(symbology.attribute_column, "water_demand_total")
         self.assertEqual(symbology.num_classes, 5)
+        self.assertEqual(symbology.palette_name, "blues")
         self.assertTrue(symbology.auto_generated)
+
+        classes = list(symbology.classes.order_by("sort_order"))
+        self.assertEqual(len(classes), 5)
+        self.assertEqual(classes[0].min_value, 1.0)
+        self.assertEqual(classes[-1].max_value, 100.0)
+        # Each class carries a color sampled from the palette, and the breaks
+        # are strictly increasing across the classes.
+        self.assertTrue(all(c.color for c in classes))
+        for previous, current in pairwise(classes):
+            self.assertEqual(previous.max_value, current.min_value)
+
+    @patch("brewgis.workspace.analysis.layer_registry._get_geometry_type")
+    def test_reregistration_refreshes_breaks(self, mock_geom: MagicMock) -> None:
+        """A rerun publishes new values; re-registering the layer must
+        recompute the breaks instead of leaving the previous run's."""
+        mock_geom.return_value = "fill"
+        self._create_result_table()
+        layer = self._register()
+        first_breaks = [
+            c.max_value for c in layer.symbology.classes.order_by("sort_order")
+        ]
+        self.assertEqual(first_breaks[-1], 100.0)
+
+        # The rerun published values 100× larger.
+        self._create_result_table(scale=100)
+        layer = self._register()
+
+        classes = list(layer.symbology.classes.order_by("sort_order"))
+        self.assertEqual(classes[0].min_value, 100.0)
+        self.assertEqual(classes[-1].max_value, 10_000.0)
+        self.assertNotEqual(
+            [c.max_value for c in classes],
+            first_breaks,
+        )
 
     @patch("brewgis.workspace.analysis.layer_registry._get_geometry_type")
     @patch("brewgis.workspace.analysis.layer_registry._get_table_columns")
@@ -316,33 +391,29 @@ class TestRegisterResultLayer(TestCase):
             layer.symbology
 
     @patch("brewgis.workspace.analysis.layer_registry._get_geometry_type")
-    @patch("brewgis.workspace.analysis.layer_registry._get_table_columns")
     def test_update_backfills_symbology_when_layer_has_none(
-        self, mock_columns: MagicMock, mock_geom: MagicMock
+        self, mock_geom: MagicMock
     ) -> None:
         """Updating a Layer with no existing SymbologyConfig should backfill
-        one — e.g. a Layer first registered when numeric_column was None
-        (table didn't exist yet) should get graduated symbology once the
-        table shows up with a usable numeric column."""
+        one — a Layer first registered before its table existed (so no
+        numeric column was found) gets symbology once the table shows up."""
         mock_geom.return_value = "fill"
-        mock_columns.return_value = [
-            {"column_name": "population", "data_type": "integer", "numeric": True},
-        ]
+        self._create_result_table()
 
-        LayerFactory(
-            workspace=self.workspace,
-            key="existing_no_sym",
-            db_table="existing_no_sym",
-        )
+        # First registration: the table isn't there yet, so there is nothing
+        # to classify and no config is written.
+        with patch(
+            "brewgis.workspace.analysis.layer_registry._get_table_columns",
+            return_value=[],
+        ):
+            layer = self._register()
+        with self.assertRaises(Layer.symbology.RelatedObjectDoesNotExist):
+            layer.symbology
 
-        layer = register_result_layer(
-            workspace_id=self.workspace.pk,
-            schema="public",
-            table="existing_no_sym",
-        )
+        layer = self._register()
 
-        self.assertIsNotNone(layer)
-        self.assertEqual(layer.symbology.attribute_column, "population")
+        self.assertEqual(layer.symbology.attribute_column, "water_demand_total")
+        self.assertEqual(layer.symbology.palette_name, "blues")
         self.assertTrue(layer.symbology.auto_generated)
 
     @patch("brewgis.workspace.analysis.layer_registry._get_geometry_type")
@@ -362,11 +433,14 @@ class TestRegisterResultLayer(TestCase):
             key="existing_customized",
             db_table="existing_customized",
         )
-        SymbologyConfigFactory(
+        config = SymbologyConfigFactory(
             layer=existing,
             symbology_type="categorical",
             attribute_column="my_custom_column",
             auto_generated=False,
+        )
+        StyleClassFactory(
+            symbology=config, label="custom", color="#123456", sort_order=0
         )
 
         layer = register_result_layer(
@@ -379,3 +453,4 @@ class TestRegisterResultLayer(TestCase):
         self.assertEqual(layer.symbology.attribute_column, "my_custom_column")
         self.assertEqual(layer.symbology.symbology_type, "categorical")
         self.assertFalse(layer.symbology.auto_generated)
+        self.assertEqual([c.label for c in layer.symbology.classes.all()], ["custom"])

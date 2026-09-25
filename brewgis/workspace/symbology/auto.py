@@ -14,6 +14,7 @@ from typing import TYPE_CHECKING
 from typing import Any
 
 from brewgis.workspace.analysis.layer_registry import BASE_CANVAS_LAYER_KEY
+from brewgis.workspace.analysis.module_registry import get_default_palette
 from brewgis.workspace.models import Layer
 from brewgis.workspace.models import Scenario
 from brewgis.workspace.models import ScenarioType
@@ -154,7 +155,9 @@ def auto_generate_symbology(  # noqa: PLR0913
         Column name to style on.  If ``None``, the first suitable column
         from the table is auto-selected.
     palette_name:
-        Palette to use.  ``None`` = auto-select.
+        Palette to use.  ``None`` = the result table's registered default if it
+        has one (see ``module_registry.TABLE_PALETTE``), else one suggested
+        from the column's statistics.
     num_classes:
         Number of classes (default 5).
     classification_method:
@@ -235,7 +238,7 @@ def auto_generate_symbology(  # noqa: PLR0913
 
     stats = compute_statistics(schema, table, col, exclude_zero=excludes_zero)
 
-    used_palette = (palette_name or _suggest_palette(stats)).lower()
+    used_palette = _resolve_palette_name(palette_name, table, stats)
     used_method = classification_method or _suggest_classification_method(stats)
     used_type = _suggest_symbology_type(stats)
 
@@ -338,6 +341,20 @@ def _resolve_palette(
     """Sample *count* colors from *colormap*, optionally reversed."""
     palette = sample_palette(colormap, count)
     return list(reversed(palette)) if reverse else palette
+
+
+def _resolve_palette_name(
+    requested: str | None, table: str, stats: ColumnStatistics
+) -> str:
+    """Pick the palette to classify with, in order of authority.
+
+    1. What the caller asked for — an explicit palette is never overridden.
+    2. The result table's registered default (``module_registry.TABLE_PALETTE``)
+       — an analysis layer keeps the palette chosen for its metric, whether it
+       is being registered by a run or re-generated from the editor.
+    3. A palette suggested by the column's own statistics.
+    """
+    return (requested or get_default_palette(table) or _suggest_palette(stats)).lower()
 
 
 def _get_palette_list(name: str, stats: ColumnStatistics) -> Colormap:

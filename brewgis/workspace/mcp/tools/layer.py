@@ -307,6 +307,10 @@ def register_tools(server: object) -> None:
         config.palette_name = (palette_name or "").lower()
         config.attribute_column = attribute_column or ""
         config.num_classes = num_classes
+        # An explicit call is the AI assistant's equivalent of the editor's
+        # Save: the config is no longer auto-managed, so re-registering the
+        # layer (e.g. an analysis rerun) must not recompute over it.
+        config.auto_generated = False
         config.save()
         return {"status": "updated", "symbology_type": symbology_type}
 

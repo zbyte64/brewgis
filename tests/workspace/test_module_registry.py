@@ -13,11 +13,16 @@ import pytest
 from brewgis.workspace.analysis.module_registry import MODULE_DEPENDENCIES
 from brewgis.workspace.analysis.module_registry import MODULE_RESULT_TABLES
 from brewgis.workspace.analysis.module_registry import MODULE_SQLMESH_SELECTORS
+from brewgis.workspace.analysis.module_registry import TABLE_PALETTE
+from brewgis.workspace.analysis.module_registry import TABLE_PRIMARY_COLUMN
+from brewgis.workspace.analysis.module_registry import get_default_palette
 from brewgis.workspace.analysis.module_registry import get_module_label
 from brewgis.workspace.analysis.module_registry import get_result_table_names
 from brewgis.workspace.analysis.module_registry import get_vars_for_module
 from brewgis.workspace.analysis.module_registry import model_fqn
 from brewgis.workspace.analysis.module_registry import resolve_module_order
+from brewgis.workspace.palettes import PALETTES
+from brewgis.workspace.palettes import get_diverging_names
 
 
 class TestResolveModuleOrder:
@@ -131,6 +136,40 @@ class TestResolveModuleOrderCircularDependency:
             pytest.raises(ValueError, match="circular"),
         ):
             resolve_module_order(["vmt"])
+
+
+class TestGetDefaultPalette:
+    """Tests for ``get_default_palette`` — the registered palette per result table."""
+
+    def test_every_primary_column_table_has_a_palette(self) -> None:
+        """A result layer's palette is only useful if every result table has
+        one: these are the layers a run registers, and a missing entry would
+        leave that layer on the blank "Manual" palette."""
+        missing = set(TABLE_PRIMARY_COLUMN) - set(TABLE_PALETTE)
+        assert not missing, f"result tables with no default palette: {missing}"
+
+    def test_every_palette_is_in_the_registry(self) -> None:
+        """A default palette must be a palette the editor can render."""
+        unknown = set(TABLE_PALETTE.values()) - set(PALETTES)
+        assert not unknown, f"palettes not in the registry: {unknown}"
+
+    def test_palettes_differ_across_tables(self) -> None:
+        """Analysis layers are stacked on one map, so the defaults must not
+        collapse onto a single palette (they used to be indistinguishable)."""
+        assert len(set(TABLE_PALETTE.values())) >= 12
+
+    def test_signed_metrics_use_a_diverging_palette(self) -> None:
+        """Metrics that read either side of zero diverge around it."""
+        diverging = set(get_diverging_names())
+        for table in ("core_increment", "agriculture", "fiscal_net_impact"):
+            assert get_default_palette(table) in diverging, table
+
+    def test_known_table_returns_its_palette(self) -> None:
+        assert get_default_palette("water_demand") == "blues"
+
+    def test_unknown_table_returns_none(self) -> None:
+        """An unknown table falls back to the statistics-driven suggestion."""
+        assert get_default_palette("not_a_result_table") is None
 
 
 class TestGetResultTableNames:

@@ -286,6 +286,46 @@ def _find_numeric_column(columns: list[dict[str, Any]], table: str) -> str | Non
     return None
 
 
+def _auto_configure_symbology(layer: Layer, numeric_column: str) -> None:
+    """Generate *layer*'s symbology for *numeric_column* from the table's data.
+
+    Delegates to the auto-generation pipeline (statistics → classification →
+    palette) rather than writing a bare ``graduated`` config: a config with no
+    ``StyleClass`` rows and no palette renders as one flat color and shows up
+    in the Symbology editor as "Manual", which is not what "auto-generated"
+    should mean. The pipeline picks the palette from the table's registered
+    default when it has one (``module_registry.TABLE_PALETTE``).
+
+    This runs on every registration of an auto-managed layer, so re-running an
+    analysis recomputes the breaks against the values the new run published
+    instead of leaving the previous run's breaks in place.
+
+    Best-effort by design: registration's job is the Layer, which is already
+    saved by the time this runs, and a result view that is empty, unreadable,
+    or whose table has since been dropped must not fail the plan's aftermath —
+    the layer stays registered and its symbology is editable by hand. The
+    failure is logged with its stack trace rather than swallowed silently.
+    """
+    # Imported here: ``symbology.auto`` imports this module (BASE_CANVAS_LAYER_KEY).
+    from brewgis.workspace.symbology.auto import auto_generate_symbology
+
+    try:
+        auto_generate_symbology(layer, numeric_column, num_classes=5)
+    except Exception:
+        logger.exception(
+            "Symbology auto-generation failed for layer %s (column %s)",
+            layer.key,
+            numeric_column,
+        )
+        return
+
+    logger.info(
+        "Auto-generated symbology for %s on column %s",
+        layer.key,
+        numeric_column,
+    )
+
+
 def register_result_layer(
     workspace_id: int,
     schema: str,
@@ -299,8 +339,12 @@ def register_result_layer(
 ) -> Layer | None:
     """Register a PostGIS view/table as a Layer in the workspace.
 
-    Creates a new Layer or updates an existing one. Also creates an
-    auto-generated SymbologyConfig if the Layer is new.
+    Creates a new Layer or updates an existing one. Keeps the layer's
+    symbology in step with the registered table: an auto-generated config (a
+    new layer's, or one no user has saved by hand) is (re)built from the
+    table's current values — class breaks, palette and all — every time this
+    runs, so re-registering after a rerun refreshes the breaks instead of
+    leaving stale ones. A config the user has saved is left untouched.
 
     Args:
         workspace_id: Workspace primary key.
@@ -371,32 +415,17 @@ def register_result_layer(
         layer.group = group
         layer.save(update_fields=["group"])
 
-    # Auto-generate symbology for new layers. Also backfill it for an
-    # existing layer whose config was never customized and never got past
-    # the bare defaults (symbology_type="single", attribute_column="") —
-    # e.g. one first registered against a table that didn't exist yet
-    # (a stale schema/table pointer), where numeric_column was None back
-    # then and this never ran. A config the user has actually touched
-    # (auto_generated=False) or a previously-successful auto-config is
-    # left untouched either way.
+    # Auto-generate symbology for a layer whose config is still auto-managed:
+    # a brand-new layer, or an existing one being re-registered by a rerun
+    # whose config nobody has saved by hand. Recomputing on re-registration is
+    # the point — a rerun publishes a result view whose values (and so whose
+    # class breaks, and whose headline column) may differ from the run that
+    # produced the breaks the layer is currently rendering. A config the user
+    # has saved (``auto_generated=False``, set by views/symbology.py) is never
+    # touched. A layer whose table has no usable numeric column keeps whatever
+    # it has, or gets none when it is new.
     existing_config = SymbologyConfig.objects.filter(layer=layer).first()
-    needs_auto_config = existing_config is None or (
-        existing_config.auto_generated and not existing_config.attribute_column
-    )
-    if numeric_column and (created or needs_auto_config):
-        SymbologyConfig.objects.update_or_create(
-            layer=layer,
-            defaults={
-                "symbology_type": "graduated",
-                "attribute_column": numeric_column,
-                "num_classes": 5,
-                "auto_generated": True,
-            },
-        )
-        logger.info(
-            "Auto-generated graduated symbology for %s on column %s",
-            layer_key,
-            numeric_column,
-        )
+    if numeric_column and (existing_config is None or existing_config.auto_generated):
+        _auto_configure_symbology(layer, numeric_column)
 
     return layer
