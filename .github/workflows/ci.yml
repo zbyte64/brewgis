@@ -115,11 +115,6 @@ jobs:
 
   e2e:
     runs-on: ubuntu-latest
-    # Non-blocking for now: the e2e suite has pre-existing failures
-    # unrelated to most day-to-day changes (a live_server threading issue
-    # hitting the real login view — see git history around 2026-09-13/14).
-    # Flip this to a hard gate once that's fixed.
-    continue-on-error: true
     steps:
       - name: Checkout Code Repository
         uses: actions/checkout@v4
