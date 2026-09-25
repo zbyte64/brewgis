@@ -13,8 +13,21 @@ x-shared-django: &django
   # HOME=/ and every ~/.cache-based tool (torch, pip, matplotlib,
   # fontconfig) would try to write into the container's root filesystem
   # instead of the ./cache bind mount below.
+  #
+  # SQLMESH_HOME is pinned for the same reason HOME is: SQLMesh resolves its
+  # per-user directory (`SQLMESH_HOME`, default ~/.sqlmesh) at import time and
+  # writes `user.yaml` there on the first analytics event — including when
+  # anonymized analytics are disabled, since `disable_analytics()` only swaps
+  # the event dispatcher, not the user lookup. /home/dev-user itself stays
+  # owned by uid 1000, so with any other UID/GID (CI's runner uid, a macOS
+  # host uid) that write raises EACCES inside the state migration. SQLMesh then
+  # reports it as the unrelated "There are no prior migrations to roll back
+  # to." error and `sqlmesh test` fails on a database whose state was never
+  # initialized. Point it inside the ./cache mount, which the container user
+  # owns in every environment.
   environment:
     HOME: /home/dev-user
+    SQLMESH_HOME: /home/dev-user/.cache/sqlmesh
   depends_on:
     - postgres
     - redis
@@ -51,9 +64,10 @@ services:
     command: /start
     # NOTE: a service-level `environment:` key also REPLACES (not merges
     # with) the anchor's `environment:` block, same as `volumes:` below —
-    # HOME is repeated here rather than silently lost.
+    # HOME and SQLMESH_HOME are repeated here rather than silently lost.
     environment:
       HOME: /home/dev-user
+      SQLMESH_HOME: /home/dev-user/.cache/sqlmesh
       MARTIN_CONTAINER_NAME: brewgis_local_martin
     # Docker socket: lets the app restart the martin container after an
     # analysis run creates new tables, since Martin only discovers tables
@@ -166,10 +180,11 @@ services:
     container_name: brewgis_local_celeryworker
     command: /start-celeryworker
     # NOTE: a service-level `environment:` key REPLACES (not merges with)
-    # the anchor's `environment:` block, so HOME is repeated here rather
-    # than silently lost.
+    # the anchor's `environment:` block, so HOME and SQLMESH_HOME are
+    # repeated here rather than silently lost.
     environment:
       HOME: /home/dev-user
+      SQLMESH_HOME: /home/dev-user/.cache/sqlmesh
       # Celery's prefork pool runs tasks in daemonic worker processes, and
       # daemonic processes can't spawn their own children (Python's
       # multiprocessing forbids it). SQLMesh's model loader normally forks
