@@ -63,7 +63,7 @@ Key rules:
 |---|---|
 |`brewgis/workspace/`|The sole Django app — models, views, tasks, templates, services, analysis modules, symbology, built_forms, MCP server, management commands|
 |`brewgis/workspace/views/`|22 view modules split by feature (paint, analysis, scenarios, map, reports, built_forms, etc.)|
-|`brewgis/workspace/models.py`|24 model classes (Workspace, Layer, SymbologyConfig, StyleClass, Scenario, PaintedCanvas, AnalysisRun, DataImportRun, POICache, PaintConstraint, MergeAudit, PaintEvent, ParcelGeometryEdit, ScenarioReport, County, DataSourceCategory, DataSource, LayerFilter, LayerGroup, ExternalMapService, Basemap, BaseCanvasColumn, BaseCanvas, BuiltFormDefinition)|
+|`brewgis/workspace/models.py`|24 model classes (Workspace, Layer, SymbologyConfig, StyleClass, Scenario, PaintedCanvas, AnalysisRun, DataImportRun, POICache, PaintConstraint, MergeAudit, PaintEvent, PaintRun, ParcelGeometryEdit, ScenarioReport, County, DataSourceCategory, DataSource, LayerFilter, LayerGroup, ExternalMapService, Basemap, BaseCanvasColumn, BaseCanvas)|
 |`brewgis/workspace/built_forms/models.py`|Built form sub-app: BuildingType (27 fields), PlaceType, PlaceTypeBuildingTypeMix|
 |`brewgis/workspace/tasks.py`|8 Celery tasks for data import, export, allocation, stitching, report generation|
 |`brewgis/workspace/analysis/`|Pipeline orchestrator, module/layer registries, food/equity preprocessors (road-network distances are SQLMesh: `overture/road_network_*`, `python/network_zone_distance.py`)|

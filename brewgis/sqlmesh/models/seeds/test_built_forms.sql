@@ -3,7 +3,7 @@ MODEL (
   kind SEED (
     path '../../seeds/test_built_forms.csv'
   ),
-  description 'Test fixture: 3 built form definitions matching the built_form_definitions seed schema.',
+  description 'Test fixture: 3 built form keys, each with a description and density category.',
   column_descriptions (
     built_form_key = 'Built form key being defined.',
     description = 'Human-readable description of the built form.',
