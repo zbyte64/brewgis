@@ -5,7 +5,7 @@ MODEL (
   column_descriptions (
     apn = 'Assessor parcel number (APN) of the test parcel.',
     geometry = 'Parcel geometry from the test seed (EPSG:4326).',
-    lot_size_acres = 'Parcel lot size (acres), with zero lots replaced by a 0.01 acre floor.',
+    lot_size_acres = 'Parcel lot size (acres), with missing lots replaced by a 0.01 acre floor.',
     landuse = 'Assessor land use code of the parcel.',
     zone = 'Assessor zoning designation of the parcel.',
     jurisdiction = 'Jurisdiction code the parcel sits in.'
@@ -21,7 +21,7 @@ MODEL (
 SELECT
     apn,
     geometry,
-    COALESCE(NULLIF(lotsize, 0), 0.01)::double precision AS lot_size_acres,
+    COALESCE(lotsize, 0.01)::double precision AS lot_size_acres,
     landuse,
     zone,
     jurisdiction

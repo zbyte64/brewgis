@@ -101,7 +101,7 @@ parcel_geom AS (
         p.county,
         COALESCE(
             NULLIF(p.land_development_category, ''),
-            ac.category, ''
+            ac.category
         ) AS land_development_category,
         p.built_form_key,
         p.intersection_density,

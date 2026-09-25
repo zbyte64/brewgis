@@ -148,7 +148,7 @@ def execute(
             COALESCE(total_footprint_sqft, 0) AS total_footprint_sqft,
             COALESCE(building_count, 0) AS building_count,
             COALESCE(footprint_ratio, 0) AS footprint_ratio,
-            COALESCE(NULLIF(max_levels, 0), 1) AS max_levels,
+            COALESCE(max_levels, 1) AS max_levels,
             COALESCE(intersection_density, 0) AS intersection_density,
             COALESCE(highway_intersection_density, 0) AS highway_intersection_density,
             COALESCE(path_intersection_density, 0) AS path_intersection_density,

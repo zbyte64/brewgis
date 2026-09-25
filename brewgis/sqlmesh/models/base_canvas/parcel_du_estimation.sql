@@ -16,7 +16,7 @@ MODEL (
     du_total_regressor = 'Regressor estimate of total dwelling units across all types.',
     hh_size = 'Area-weighted mean household size from the ACS block groups (people per household); defaults to 2.5.',
     vacancy_rate = 'Housing vacancy rate (fraction 0-1); flat 0.05 default in this model.',
-    assessor_units = 'Dwelling units observed directly in the assessor sales data (Tier 1); 0 when absent.',
+    assessor_units = 'Dwelling units observed directly in the assessor sales data (Tier 1); NULL when absent.',
     residential_building_sqft = 'Residential building floor area from the dasymetric weights (sq ft).',
     land_development_category = 'Land development category from the dasymetric weights.',
     pop_dasym_weight = 'Population weight: dwelling units times household size (people).',
@@ -78,7 +78,7 @@ WITH parcel_input AS (
 assessor_units AS (
     SELECT
         apn,
-        COALESCE(NULLIF(units, 0), 0) AS units,
+        units,
         property_type
     FROM brewgis.@{region}.assessor_sales_deduped
 ),
@@ -87,11 +87,13 @@ assessor_units AS (
 acs_hh_size AS (
     SELECT
         ap.apn,
-        SUM(
-            a.hh / NULLIF(a.du, 0)
-            * ST_Area(ST_Intersection(ap.local_geometry, a.local_envelope))
-        ) / NULLIF(SUM(ST_Area(ST_Intersection(ap.local_geometry, a.local_envelope))), 0)
-            AS hh_size
+        NULLIF(
+            SUM(
+                a.hh / NULLIF(a.du, 0)
+                * ST_Area(ST_Intersection(ap.local_geometry, a.local_envelope))
+            ) / NULLIF(SUM(ST_Area(ST_Intersection(ap.local_geometry, a.local_envelope))), 0),
+            0
+        ) AS hh_size
     FROM brewgis.@{region}.assessor_parcels ap
     JOIN brewgis.@{region}.acs_block_group_projected a
         ON ST_Intersects(ap.local_geometry, a.geometry)
@@ -111,7 +113,7 @@ parcel_data AS (
         p.land_development_category,
         p.lot_size_acres,
         p.residential_building_sqft,
-        COALESCE(au.units, 0) AS assessor_units,
+        au.units AS assessor_units,
         COALESCE(acs.hh_size, 2.5) AS hh_size
     FROM parcel_input p
     LEFT JOIN assessor_units au ON p.apn = au.apn
@@ -126,7 +128,7 @@ du_estimation AS (
     SELECT
         apn,
         COALESCE(
-            NULLIF(assessor_units::double precision, 0),
+            assessor_units::double precision,
             du_total_regressor,
             0.0
         ) AS du,
@@ -159,7 +161,7 @@ SELECT
     residential_building_sqft::double precision AS residential_building_sqft,
     land_development_category,
     -- Population weight: du × household_size
-    (du * COALESCE(NULLIF(hh_size, 0), 2.5))::double precision AS pop_dasym_weight,
+    (du * COALESCE(hh_size, 2.5))::double precision AS pop_dasym_weight,
     -- Household weight: du × (1 - vacancy_rate)
     (du * (1.0 - COALESCE(vacancy_rate, 0.05)))::double precision AS hh_dasym_weight,
     -- Households: du × (1 - vacancy_rate)

@@ -30,8 +30,8 @@ SELECT
     living_area AS actual_living_sqft,
     building_sf AS actual_building_sqft,
     property_type,
-    lot_size_acres AS sales_lot_size_acres,
-    units
+    NULLIF(lot_size_acres, 0) AS sales_lot_size_acres,
+    NULLIF(units, 0) AS units
 FROM (
     SELECT *,
         ROW_NUMBER() OVER (
@@ -79,8 +79,8 @@ _SOURCE_TABLE = {
         "actual_living_sqft": "Assessor living area from the best sales row (sq ft).",
         "actual_building_sqft": "Assessor building area from the best sales row (sq ft).",
         "property_type": "Assessor property type code from the best sales row.",
-        "sales_lot_size_acres": "Assessor lot size from the best sales row (acres).",
-        "units": "Assessor dwelling unit count from the best sales row.",
+        "sales_lot_size_acres": "Assessor lot size from the best sales row (acres); NULL when the assessor reports 0.",
+        "units": "Assessor dwelling unit count from the best sales row; NULL when the assessor reports 0.",
     },
     columns={
         "apn": "text",

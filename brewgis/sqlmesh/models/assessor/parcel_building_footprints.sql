@@ -59,7 +59,7 @@ MODEL (
 WITH building_stats AS (
     SELECT
         sap.apn,
-        SUM(bwa.footprint_sqft * COALESCE(NULLIF(bwa.levels, 0), 1) * bwa.overlap_ratio) AS total_footprint_sqft,
+        SUM(bwa.footprint_sqft * COALESCE(bwa.levels, 1) * bwa.overlap_ratio) AS total_footprint_sqft,
         COUNT(*) AS building_count,
         MAX(bwa.height) AS max_height,
         MAX(bwa.levels) AS max_levels,
@@ -83,11 +83,11 @@ WITH building_stats AS (
             CASE
                 WHEN bwa.class_category = 'mixed' THEN
                     CASE
-                        WHEN COALESCE(NULLIF(bwa.levels, 0), 1) > 1
+                        WHEN COALESCE(bwa.levels, 1) > 1
                         THEN bwa.footprint_sqft
                         ELSE bwa.footprint_sqft * 0.5
                     END
-                WHEN bwa.class_category = 'commercial' THEN bwa.footprint_sqft * COALESCE(NULLIF(bwa.levels, 0), 1)
+                WHEN bwa.class_category = 'commercial' THEN bwa.footprint_sqft * COALESCE(bwa.levels, 1)
                 ELSE 0
             END * bwa.overlap_ratio
         )::double precision AS overture_commercial_sqft,
@@ -95,21 +95,21 @@ WITH building_stats AS (
             CASE
                 WHEN bwa.class_category = 'mixed' THEN
                     CASE
-                        WHEN COALESCE(NULLIF(bwa.levels, 0), 1) > 1
-                        THEN bwa.footprint_sqft * (COALESCE(NULLIF(bwa.levels, 0), 1) - 1)
+                        WHEN COALESCE(bwa.levels, 1) > 1
+                        THEN bwa.footprint_sqft * (COALESCE(bwa.levels, 1) - 1)
                         ELSE bwa.footprint_sqft * 0.5
                     END
-                WHEN bwa.class_category = 'residential' THEN bwa.footprint_sqft * COALESCE(NULLIF(bwa.levels, 0), 1)
+                WHEN bwa.class_category = 'residential' THEN bwa.footprint_sqft * COALESCE(bwa.levels, 1)
                 ELSE 0
             END * bwa.overlap_ratio
         )::double precision AS overture_residential_sqft,
         SUM(
-            CASE WHEN bwa.class_category = 'industrial' THEN bwa.footprint_sqft * COALESCE(NULLIF(bwa.levels, 0), 1) ELSE 0 END * bwa.overlap_ratio
+            CASE WHEN bwa.class_category = 'industrial' THEN bwa.footprint_sqft * COALESCE(bwa.levels, 1) ELSE 0 END * bwa.overlap_ratio
         )::double precision AS overture_industrial_sqft,
         SUM(
             CASE
                 WHEN bwa.class_category = 'other'
-                THEN bwa.footprint_sqft * COALESCE(NULLIF(bwa.levels, 0), 1)
+                THEN bwa.footprint_sqft * COALESCE(bwa.levels, 1)
                 ELSE 0
             END * bwa.overlap_ratio
         )::double precision AS overture_other_sqft

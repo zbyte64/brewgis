@@ -48,18 +48,18 @@ WITH building_footprints AS (
 building_metrics AS (
     SELECT
         apn,
-        SUM(footprint_sqft * COALESCE(NULLIF(levels, 0), 1)) AS total_footprint_sqft,
+        SUM(footprint_sqft * COALESCE(levels, 1)) AS total_footprint_sqft,
         COUNT(*) AS building_count,
-        MAX(COALESCE(NULLIF(levels, 0), 1)) AS max_levels,
-        SUM(footprint_sqft * COALESCE(NULLIF(levels, 0), 1)) / NULLIF(MIN(lot_size_acres) * 43560, 0) AS footprint_ratio,
+        MAX(COALESCE(levels, 1)) AS max_levels,
+        SUM(footprint_sqft * COALESCE(levels, 1)) / NULLIF(MIN(lot_size_acres) * 43560, 0) AS footprint_ratio,
         SUM(
             CASE
                 WHEN class IS NULL OR class = 'mixed' THEN
                     CASE
-                        WHEN COALESCE(NULLIF(levels, 0), 1) > 1 THEN footprint_sqft
+                        WHEN COALESCE(levels, 1) > 1 THEN footprint_sqft
                         ELSE footprint_sqft * 0.5
                     END
-                WHEN class = 'commercial' THEN footprint_sqft * COALESCE(NULLIF(levels, 0), 1)
+                WHEN class = 'commercial' THEN footprint_sqft * COALESCE(levels, 1)
                 ELSE 0
             END
         )::double precision AS commercial_building_sqft,
@@ -67,17 +67,17 @@ building_metrics AS (
             CASE
                 WHEN class IS NULL OR class = 'mixed' THEN
                     CASE
-                        WHEN COALESCE(NULLIF(levels, 0), 1) > 1
-                        THEN footprint_sqft * (COALESCE(NULLIF(levels, 0), 1) - 1)
+                        WHEN COALESCE(levels, 1) > 1
+                        THEN footprint_sqft * (COALESCE(levels, 1) - 1)
                         ELSE footprint_sqft * 0.5
                     END
                 WHEN class IN ('house', 'apartment', 'residential', 'semi', 'detached', 'terrace', 'bungalow', 'dwelling_house', 'cabin', 'ger', 'houseboat', 'stilt_house', 'static_caravan', 'trullo', 'dormitory', 'semidetached')
-                    THEN footprint_sqft * COALESCE(NULLIF(levels, 0), 1)
+                    THEN footprint_sqft * COALESCE(levels, 1)
                 ELSE 0
             END
         )::double precision AS residential_building_sqft,
         SUM(
-            CASE WHEN class = 'industrial' THEN footprint_sqft * COALESCE(NULLIF(levels, 0), 1) ELSE 0 END
+            CASE WHEN class = 'industrial' THEN footprint_sqft * COALESCE(levels, 1) ELSE 0 END
         )::double precision AS industrial_building_sqft,
         SUM(
             CASE
@@ -86,7 +86,7 @@ building_metrics AS (
                           'semi', 'detached', 'terrace', 'bungalow', 'dwelling_house', 'cabin', 'ger',
                           'houseboat', 'stilt_house', 'static_caravan', 'trullo', 'dormitory', 'semidetached',
                           'agricultural', 'civic')
-                THEN footprint_sqft * COALESCE(NULLIF(levels, 0), 1)
+                THEN footprint_sqft * COALESCE(levels, 1)
                 ELSE 0
             END
         )::double precision AS other_building_sqft

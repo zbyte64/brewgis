@@ -12,6 +12,13 @@
 4. **Unit in name when ambiguous.** `_sqft`, `_acres`, `_kwh`, `_kg`, `_af`
    suffixed where raw count would be ambiguous.
 5. **No Hungarian notation.** No `f_`, `i_`, `str_` prefixes.
+6. **Missing values are NULL.** `0` and `''` are real values, never sentinels: a
+   parcel with no buildings has `building_count = 0`, an unrecorded floor count
+   has `levels` NULL. A model that receives a sentinel from an unclean source
+   converts it once, at that model (e.g. `NULLIF(units, 0)` in the assessor
+   sales adapter, `NULLIF(levels, 0)` in the Overture staging view); everything
+   downstream then COALESCEs only on NULL — `COALESCE(levels, 1)`, never
+   `COALESCE(NULLIF(levels, 0), 1)`.
 
 ## Key Identifiers
 

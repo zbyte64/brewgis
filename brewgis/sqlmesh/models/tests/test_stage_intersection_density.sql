@@ -18,7 +18,7 @@ MODEL (
 SELECT
     apn,
     CASE
-        WHEN NULLIF(lotsize, 0) IS NOT NULL AND lotsize > 0
+        WHEN lotsize > 0
         THEN GREATEST(0.5, LEAST(50.0, 15.0 / SQRT(lotsize)))
         ELSE 0.5
     END::double precision AS intersection_density,

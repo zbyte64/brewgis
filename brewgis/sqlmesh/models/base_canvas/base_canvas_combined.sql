@@ -8,7 +8,7 @@ MODEL (
     local_geometry = 'Parcel boundary in the local projected SRID used for area and clipping math.',
     county = 'County the parcel falls in, carried from the parcel source.',
     land_development_category = 'Land development category resolved from parcel, assessor code or land use crosswalk.',
-    built_form_key = 'Built form key from the parcel source, defaulting to mixed_use when blank.',
+    built_form_key = 'Built form key from the parcel source, defaulting to mixed_use when null.',
     intersection_density = 'Intersection density (intersections per km2); OSM, else parcel, else calibration.',
     area_gross = 'Gross parcel area including right-of-way (acres).',
     area_gross_acres = 'Gross parcel area including right-of-way (acres, explicit unit alias of area_gross).',
@@ -703,7 +703,7 @@ sacog_use AS (
 with_cal AS (
     SELECT
         s.*,
-        COALESCE(NULLIF(s.land_development_category, ''), 'urban') AS lc_key,
+        COALESCE(s.land_development_category, 'urban') AS lc_key,
         c.sqft_per_du,
         c.sqft_per_emp_retail,
         c.sqft_per_emp_office,
@@ -714,7 +714,7 @@ with_cal AS (
         c.intersection_density AS calib_int_density
     FROM employment_data s
     LEFT JOIN calibration c
-        ON COALESCE(NULLIF(s.land_development_category, ''), 'urban') = c.land_development_category
+        ON COALESCE(s.land_development_category, 'urban') = c.land_development_category
 ),
 
 demographics_attr AS (
@@ -861,13 +861,13 @@ classified AS (
     SELECT
         b.*,
         COALESCE(
-            NULLIF(b.land_development_category, ''),
+            b.land_development_category,
             ac.category,
             su.category,
             olu.overture_category,
             'urban'
         ) AS lnd_v,
-        COALESCE(NULLIF(b.built_form_key, ''), 'mixed_use') AS bf_v
+        COALESCE(b.built_form_key, 'mixed_use') AS bf_v
     FROM building_areas b
     LEFT JOIN assessor_codes ac
         ON LEFT(COALESCE(b.assessor_use_code, ''), 2) = ac.use_code::text

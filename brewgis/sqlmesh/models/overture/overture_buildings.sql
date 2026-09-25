@@ -7,7 +7,7 @@ MODEL (
     wgs84_geometry = 'Building footprint polygon reprojected from Overture CRS84 to EPSG:4326 (lon/lat).',
     local_geometry = 'Building footprint polygon reprojected from Overture CRS84 to the region local CRS (local_srid).',
     height = 'Overture building height, NULL when the source value is NaN (meters).',
-    levels = 'Overture floor count from num_floors, NULL when the source value is NaN (levels).',
+    levels = 'Overture floor count from num_floors, NULL when the source value is NaN or 0 (levels).',
     class = 'Overture building class, cast to VARCHAR.'
   ),
   gateway duckdb,
@@ -38,7 +38,7 @@ SELECT
   ST_Transform(geometry, 'CRS84', 'EPSG:4326', true) AS wgs84_geometry,
   ST_Transform(geometry, 'CRS84', 'EPSG:' || @VAR('local_srid')::text, true) AS local_geometry,
   CASE WHEN NOT is_nan(height) THEN height END AS height,
-  CASE WHEN NOT is_nan(num_floors::DOUBLE) THEN num_floors::INTEGER END AS levels,
+  NULLIF(CASE WHEN NOT is_nan(num_floors::DOUBLE) THEN num_floors::INTEGER END, 0) AS levels,
   class::VARCHAR AS class
 FROM read_parquet(@overture_parquet_glob)
 WHERE bbox.xmin < @overture_bbox_max_x
