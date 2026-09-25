@@ -14,6 +14,7 @@ from types import SimpleNamespace
 from typing import Any
 
 import pytest
+from django.conf import settings
 from django.urls import reverse
 
 from brewgis.workspace.analysis.layer_registry import BASE_CANVAS_LAYER_KEY
@@ -36,6 +37,14 @@ class _Spy:
 
     plans: list[dict[str, Any]] = field(default_factory=list)
     purged: list[list[str]] = field(default_factory=list)
+
+
+@dataclass
+class _TileRequests:
+    """What the form asked of the tile server: cache purges, catalog reads."""
+
+    deletes: list[str] = field(default_factory=list)
+    catalog_reads: int = 0
 
 
 @pytest.fixture
@@ -169,6 +178,86 @@ class TestFillAndCanvasPlans:
         )
         assert checkbox is not None, "the fill checkbox is not on the form"
         assert "checked" in checkbox.group(0)
+
+
+@pytest.mark.views
+class TestPlanInvalidatesRenderedTiles:
+    """A plan's rewritten rows must not keep coming back from a tile cache.
+
+    Regression: Martin renders tiles from the database and then keeps them,
+    keyed by ``(source, z, x, y)`` with no regard for the request that asked.
+    Re-running the fill rewrites rows under a view name Martin already served
+    tiles for, so the map went on drawing the *previous* run's parcels — every
+    one of them that run's Mixed Use — at exactly the tile extents already
+    requested. Zooming in showed the new rows only because those tiles had
+    never been rendered before. The form now drops the cached tiles for the
+    base layer and for every canvas view over it, which is what the map reads.
+    """
+
+    def _record_tile_requests(
+        self, monkeypatch: pytest.MonkeyPatch, published: set[str]
+    ) -> _TileRequests:
+        """Record what the form asks of the tile server, with Martin stubbed out."""
+        calls = _TileRequests()
+
+        def fake_delete(url: str, **kwargs: Any) -> Any:
+            calls.deletes.append(url)
+            return SimpleNamespace(status_code=200, ok=True, text="")
+
+        def fake_catalog() -> set[str]:
+            calls.catalog_reads += 1
+            return set(published)
+
+        monkeypatch.setattr(
+            "brewgis.workspace.services.tile_server.martin_source_ids", fake_catalog
+        )
+        monkeypatch.setattr(
+            "brewgis.workspace.services.tile_server.requests.delete", fake_delete
+        )
+        return calls
+
+    def test_the_base_canvas_and_the_canvases_over_it_are_purged(
+        self,
+        client,
+        chosen_source,
+        spy,
+        base_canvas_table,
+        monkeypatch: pytest.MonkeyPatch,
+    ) -> None:
+        workspace = WorkspaceFactory(
+            base_table=BASE_TABLE, tile_server_backend="martin"
+        )
+        scenario = _alternative_scenario(workspace, "fill-refresh")
+        base_source = f"built_form_fill.fill_{workspace.pk}"
+        canvas_source = f"scenario_{scenario.slug}.scenario_{scenario.slug}_canvas"
+        calls = self._record_tile_requests(
+            monkeypatch, published={base_source, canvas_source}
+        )
+
+        assert _submit(client, workspace, fill=True).status_code == 302
+
+        base = settings.TILE_SERVER_MARTIN_URL
+        assert calls.deletes == [
+            f"{base}/cache/{canvas_source}",
+            f"{base}/cache/{base_source}",
+        ]
+
+    def test_a_tipg_workspace_asks_the_tile_server_for_nothing(
+        self,
+        client,
+        chosen_source,
+        spy,
+        base_canvas_table,
+        monkeypatch: pytest.MonkeyPatch,
+    ) -> None:
+        """tipg answers straight from the database, so there is nothing to purge."""
+        workspace = WorkspaceFactory(base_table=BASE_TABLE)
+        _alternative_scenario(workspace, "tipg-refresh")
+        calls = self._record_tile_requests(monkeypatch, published=set())
+
+        assert _submit(client, workspace, fill=True).status_code == 302
+
+        assert (calls.deletes, calls.catalog_reads) == ([], 0)
 
 
 @pytest.mark.views

@@ -40,7 +40,9 @@ from brewgis.workspace.models import ScenarioType
 from brewgis.workspace.models import Workspace
 from brewgis.workspace.services.scenario_canvas import canvas_model_selector
 from brewgis.workspace.services.scenario_canvas import modeled_scenarios
+from brewgis.workspace.services.scenario_canvas import purge_scenario_canvas_tiles
 from brewgis.workspace.services.sqlmesh_tables import list_base_canvas_candidates
+from brewgis.workspace.services.tile_server import ensure_martin_source
 from brewgis.workspace.views.built_forms import HtmxResponseMixin
 
 if TYPE_CHECKING:
@@ -124,12 +126,10 @@ class SelectBaseCanvasView(HtmxResponseMixin, FormView):
         # never created; that fails the promotion, which fails this request
         # before the canvases are ever rebuilt, and leaves the state broken for
         # the next plan too. Building both in one plan leaves no such window.
-        selectors = [
-            canvas_model_selector(scenario)
-            for scenario in modeled_scenarios(
-                self.workspace.scenarios.filter(scenario_type=ScenarioType.ALTERNATIVE)
-            )
-        ]
+        canvas_scenarios = modeled_scenarios(
+            self.workspace.scenarios.filter(scenario_type=ScenarioType.ALTERNATIVE)
+        )
+        selectors = [canvas_model_selector(scenario) for scenario in canvas_scenarios]
         if fill:
             # The model's JOIN source. Exported on its own connection so it is
             # committed before the plan's engine adapter reads it.
@@ -170,6 +170,21 @@ class SelectBaseCanvasView(HtmxResponseMixin, FormView):
             name="Base Canvas",
             description=f"Workspace base canvas ({self.workspace.effective_base_table()})",
         )
+
+        # That plan rewrote the rows behind this workspace's base layer — the
+        # fill output under a stable view name, or a different source table
+        # entirely — and promoted every canvas view over it. Martin caches
+        # rendered tile bytes per source without ever looking at the request,
+        # and discovers tables only at its own startup, so without this the map
+        # keeps drawing whatever it rendered before the plan: the exact state a
+        # fill re-run exists to replace. Purge the canvas views (a new base
+        # changes their rows too) and the base layer itself, restarting Martin
+        # when it has never published one of them.
+        if self.workspace.tile_server_backend == "martin":
+            for scenario in canvas_scenarios:
+                purge_scenario_canvas_tiles(scenario)
+            ensure_martin_source(self.workspace.effective_base_table())
+
         logger.info(
             "Workspace %s base_table=%s fill_built_form=%s (planned %s)",
             self.workspace.pk,
