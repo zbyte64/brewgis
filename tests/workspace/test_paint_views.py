@@ -633,6 +633,201 @@ class TestMatchBuiltFormView(TestCase):
             scenario=self.scenario, feature_id="1"
         ).exists()
 
+    def test_prefers_same_land_development_category(self):
+        """A category-matching type wins over one whose density is closer."""
+        urban_bt = BuildingTypeFactory(
+            workspace=self.workspace,
+            name="Urban Type",
+            du_per_acre=21.0,
+            emp_per_acre=0.0,
+            land_development_category="urban",
+        )
+        BuildingTypeFactory(
+            workspace=self.workspace,
+            name="Rural Type",
+            du_per_acre=19.0,
+            emp_per_acre=0.0,
+            land_development_category="rural",
+        )
+        self.client.force_login(self.user)
+        # 20 du/acre: the rural type (19) is nearer than the urban one (21),
+        # and the low-density type (2) is nearer still.
+        p1, p2 = self._patch(
+            {
+                "1": {
+                    "id": 1,
+                    "du": 200.0,
+                    "emp": 0.0,
+                    "area_gross": 10.0,
+                    "area_parcel": 10.0,
+                    "land_development_category": "urban",
+                }
+            }
+        )
+        try:
+            response = self.client.post(
+                self.match_url,
+                json.dumps({"features": ["1"]}),
+                content_type="application/json",
+            )
+        finally:
+            p1.stop()
+            p2.stop()
+
+        assert response.status_code == 200
+        assert response.json()["matches"][0]["building_type_id"] == urban_bt.pk
+
+    def test_falls_back_to_density_without_category_candidate(self):
+        """With no same-category type, the closest density still matches."""
+        BuildingTypeFactory(
+            workspace=self.workspace,
+            name="Urban Type",
+            du_per_acre=21.0,
+            emp_per_acre=0.0,
+            land_development_category="urban",
+        )
+        self.client.force_login(self.user)
+        p1, p2 = self._patch(
+            {
+                "1": {
+                    "id": 1,
+                    "du": 200.0,
+                    "emp": 0.0,
+                    "area_gross": 10.0,
+                    "area_parcel": 10.0,
+                    "land_development_category": "conservation",
+                }
+            }
+        )
+        try:
+            response = self.client.post(
+                self.match_url,
+                json.dumps({"features": ["1"]}),
+                content_type="application/json",
+            )
+        finally:
+            p1.stop()
+            p2.stop()
+
+        assert response.status_code == 200
+        assert response.json()["matches"][0]["building_type_id"] == self.dense_bt.pk
+
+    def test_prefers_the_type_sharing_the_parcels_employment_sector(self):
+        """A parcel whose jobs are military takes the military type."""
+        military_bt = BuildingTypeFactory(
+            workspace=self.workspace,
+            name="Military",
+            emp_per_acre=0.3,
+            jobs_by_sector={"military": 100.0},
+        )
+        # nearer to the parcel's 0.5 jobs/acre than the military type's 0.3, so
+        # only the sector preference can put the military type first
+        BuildingTypeFactory(
+            workspace=self.workspace,
+            name="Parking Lot",
+            emp_per_acre=0.4,
+            jobs_by_sector={"other_services": 100.0},
+        )
+        self.client.force_login(self.user)
+        p1, p2 = self._patch(
+            {
+                "1": {
+                    "id": 1,
+                    "du": 0.0,
+                    "emp": 5.0,
+                    "area_gross": 10.0,
+                    "area_parcel": 10.0,
+                    "emp_military": 4.0,
+                    "emp_office_services": 1.0,
+                }
+            }
+        )
+        try:
+            response = self.client.post(
+                self.match_url,
+                json.dumps({"features": ["1"]}),
+                content_type="application/json",
+            )
+        finally:
+            p1.stop()
+            p2.stop()
+
+        assert response.status_code == 200
+        assert response.json()["matches"][0]["building_type_id"] == military_bt.pk
+
+    def test_falls_back_to_density_without_sector_candidate(self):
+        """With no type declaring the parcel's sector, density still decides."""
+        self.client.force_login(self.user)
+        p1, p2 = self._patch(
+            {
+                "1": {
+                    "id": 1,
+                    "du": 190.0,
+                    "emp": 0.0,
+                    "area_gross": 10.0,
+                    "area_parcel": 10.0,
+                    "emp_military": 4.0,
+                }
+            }
+        )
+        try:
+            response = self.client.post(
+                self.match_url,
+                json.dumps({"features": ["1"]}),
+                content_type="application/json",
+            )
+        finally:
+            p1.stop()
+            p2.stop()
+
+        assert response.status_code == 200
+        # neither setUp type declares a sector, so the density basis stands
+        assert response.json()["matches"][0]["building_type_id"] == self.dense_bt.pk
+
+    def test_sector_outranks_category(self):
+        """A sector match in another category beats a same-category type."""
+        BuildingTypeFactory(
+            workspace=self.workspace,
+            name="Urban Type",
+            emp_per_acre=5.0,
+            land_development_category="urban",
+            jobs_by_sector={"office_services": 100.0},
+        )
+        military_bt = BuildingTypeFactory(
+            workspace=self.workspace,
+            name="Military",
+            emp_per_acre=4.0,
+            land_development_category="rural",
+            jobs_by_sector={"military": 100.0},
+        )
+        self.client.force_login(self.user)
+        p1, p2 = self._patch(
+            {
+                "1": {
+                    "id": 1,
+                    "du": 0.0,
+                    "emp": 50.0,
+                    "area_gross": 10.0,
+                    "area_parcel": 10.0,
+                    "land_development_category": "urban",
+                    "emp_military": 3.0,
+                    "emp_office_services": 2.0,
+                }
+            }
+        )
+        try:
+            response = self.client.post(
+                self.match_url,
+                json.dumps({"features": ["1"]}),
+                content_type="application/json",
+            )
+        finally:
+            p1.stop()
+            p2.stop()
+
+        assert response.status_code == 200
+        assert response.json()["matches"][0]["building_type_id"] == military_bt.pk
+
     def test_no_du_or_emp_reports_unmatched(self):
         """A parcel with no du/emp value is skipped and reported unmatched."""
         self.client.force_login(self.user)

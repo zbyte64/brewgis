@@ -145,6 +145,7 @@ class BuildingTypeForm(forms.ModelForm):
             "ite_land_use_code",
             "trip_rate_override",
             "pass_by_trip_pct",
+            "land_development_category",
         ]
         widgets = {
             "description": forms.Textarea(attrs={"rows": 3}),

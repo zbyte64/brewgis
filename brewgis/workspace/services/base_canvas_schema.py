@@ -81,6 +81,35 @@ _STATIC_COLUMN_NAMES: frozenset[str] = frozenset(
 # PaintedCanvas.painted_text_value instead of the numeric painted_value ──
 TEXT_COLUMN_NAMES: frozenset[str] = frozenset({"built_form_key"})
 
+# ── Employment sectors ────────────────────────────────────────────────
+# The fine-grained employment columns: each sector is the ``<sector>`` part of
+# the base canvas's ``emp_<sector>`` column, and is exactly the key a
+# ``BuildingType.jobs_by_sector`` declares jobs under (the column and the dict
+# key are the same word, which is what lets matching compare the two).
+# Everything above the sectors (``emp``, ``emp_ret``, ``emp_off``, ``emp_pub``,
+# ``emp_ind``, ``emp_ag``) is an aggregate of these and is never matched on;
+# see :py:data:`brewgis.workspace.services.lehd_fetcher.AGGREGATE_MAPPINGS`,
+# which this order follows.
+EMPLOYMENT_SECTORS: tuple[str, ...] = (
+    "retail_services",
+    "restaurant",
+    "accommodation",
+    "arts_entertainment",
+    "other_services",
+    "office_services",
+    "medical_services",
+    "public_admin",
+    "education",
+    "manufacturing",
+    "wholesale",
+    "transport_warehousing",
+    "utilities",
+    "construction",
+    "agriculture",
+    "extraction",
+    "military",
+)
+
 # ── Nullable columns ──────────────────────────────────────────────────
 _NULLABLE_NAMES: frozenset[str] = frozenset(
     {"id_source", "geography_id", "geometry_key", "built_form_key"}

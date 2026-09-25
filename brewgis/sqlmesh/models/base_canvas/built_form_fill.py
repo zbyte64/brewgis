@@ -167,7 +167,12 @@ def execute(evaluator: MacroEvaluator, **kwargs: Any) -> str:
     No ``columns`` declaration and no ``column_descriptions``: the output's
     column set is the per-workspace source's, which SQLMesh infers through
     lineage (same rationale as ``models/scenarios/scenario_canvas.py``).
+
+    The two imports are inside ``execute`` because SQLMesh imports this module
+    while loading the project, before anything has configured Django — and both
+    ``_qi`` and the sector rule live in modules that import Django.
     """
+    from brewgis.workspace.built_forms.matching import sector_preference_sql
     from brewgis.workspace.services.canvas_view_manager import _qi
 
     source_ref = str(evaluator.blueprint_var("source_ref"))
@@ -186,6 +191,14 @@ def execute(evaluator: MacroEvaluator, **kwargs: Any) -> str:
         f" {_normalize_sql('s.built_form_key')} = {_normalize_sql('bf.key')})"
     )
     columns = ", ".join(_fill_expression(column, acres) for column in all_columns)
+    category_preference = (
+        "CASE"
+        " WHEN bf.land_development_category IS NOT NULL"
+        " AND bf.land_development_category <> ''"
+        " AND bf.land_development_category = s.land_development_category"
+        " THEN 0 ELSE 1 END"
+    )
+    sector_preference = sector_preference_sql(parcel_prefix="s.", form_prefix="bf.")
 
     return f"""
 WITH source AS (
@@ -207,6 +220,12 @@ matched AS (
            OR {emp_basis}
            OR {key_basis}
         ORDER BY
+            -- Two narrowing preferences on top of the bases below, never
+            -- bases of their own — the sector the parcel's jobs are in first,
+            -- then its land development category. `matching` holds the rule
+            -- and its Python twin, which the paint surfaces use.
+            {sector_preference},
+            {category_preference},
             CASE
                 WHEN {du_basis} THEN 1
                 WHEN {emp_basis} THEN 2

@@ -6,9 +6,18 @@ import pytest
 from django.db import IntegrityError
 from django.test import TestCase
 
+from brewgis.workspace.built_forms.default_library import DEFAULT_BUILDING_TYPES
+from brewgis.workspace.built_forms.default_library import RETIRED_LIBRARY_NAMES
+from brewgis.workspace.built_forms.default_library import backfill_library_fields
+from brewgis.workspace.built_forms.default_library import retire_library_entries
+from brewgis.workspace.built_forms.default_library import seed_default_built_forms
 from brewgis.workspace.built_forms.models import BuildingType
 from brewgis.workspace.built_forms.models import PlaceType
 from brewgis.workspace.built_forms.models import PlaceTypeBuildingTypeMix
+from brewgis.workspace.models import ScenarioType
+from brewgis.workspace.services.base_canvas_schema import EMPLOYMENT_SECTORS
+from tests.factories import PaintedCanvasFactory
+from tests.factories import ScenarioFactory
 from tests.factories import WorkspaceFactory
 
 
@@ -215,3 +224,158 @@ class TestPlaceTypeBuildingTypeMix(TestCase):
         mixes = PlaceTypeBuildingTypeMix.objects.filter(place_type=self.pt)
         self.assertEqual(mixes[0].building_type.name, "BT B")
         self.assertEqual(mixes[1].building_type.name, "Test BT")
+
+
+@pytest.mark.models
+class TestDefaultBuiltFormsLibrary(TestCase):
+    """Default library seeding — additive — and the category/sector backfill."""
+
+    def setUp(self) -> None:
+        self.workspace = WorkspaceFactory()
+        self.library_names = {entry["name"] for entry in DEFAULT_BUILDING_TYPES}
+        first = DEFAULT_BUILDING_TYPES[0]
+        self.library_name = first["name"]
+        self.library_category = first["land_development_category"]
+        with_sectors = next(
+            entry for entry in DEFAULT_BUILDING_TYPES if entry["jobs_by_sector"]
+        )
+        self.library_with_sectors = with_sectors["name"]
+        self.library_jobs_by_sector = with_sectors["jobs_by_sector"]
+        self.library_category_of_sectors = with_sectors["land_development_category"]
+
+    def test_seed_adds_only_what_is_missing(self) -> None:
+        """An existing catalogue is completed, never rewritten, and re-seeding is a no-op."""
+        kept = BuildingType.objects.create(
+            workspace=self.workspace,
+            name=self.library_name,
+            du_per_acre=123.0,
+        )
+        own = BuildingType.objects.create(
+            workspace=self.workspace, name="Hand-authored Type"
+        )
+
+        created = seed_default_built_forms(self.workspace)
+
+        self.assertEqual(created, len(DEFAULT_BUILDING_TYPES) - 1)
+        self.assertEqual(seed_default_built_forms(self.workspace), 0)
+        kept.refresh_from_db()
+        self.assertEqual(kept.du_per_acre, 123.0)
+        self.assertEqual(
+            BuildingType.objects.filter(workspace=self.workspace).count(),
+            len(DEFAULT_BUILDING_TYPES) + 1,
+        )
+        # every library name is present exactly once, and the workspace's own
+        # type is still there
+        names = list(
+            BuildingType.objects.filter(workspace=self.workspace).values_list(
+                "name", flat=True
+            )
+        )
+        self.assertEqual(len(names), len(set(names)))
+        self.assertTrue(self.library_names.issubset(set(names)))
+        self.assertIn(own.name, names)
+
+    def test_backfill_realigns_library_named_types(self) -> None:
+        """A type sharing a library name is aligned to that entry."""
+        stale = BuildingType.objects.create(
+            workspace=self.workspace,
+            name=self.library_with_sectors,
+            land_development_category="conservation",
+            jobs_by_sector={"retail": 80, "food_service": 20},
+            household_size=9.0,
+            vacancy_rate=42.0,
+        )
+        own = BuildingType.objects.create(
+            workspace=self.workspace,
+            name="Hand-authored Type",
+            land_development_category="rural",
+            jobs_by_sector={"military": 100.0},
+            household_size=9.0,
+        )
+
+        self.assertEqual(backfill_library_fields(self.workspace), 1)
+
+        stale.refresh_from_db()
+        own.refresh_from_db()
+        self.assertEqual(stale.jobs_by_sector, self.library_jobs_by_sector)
+        self.assertEqual(
+            stale.land_development_category, self.library_category_of_sectors
+        )
+        # the library entry has no dwellings, so the row it stands for must not
+        # claim a household size either
+        self.assertIsNone(stale.household_size)
+        self.assertIsNone(stale.vacancy_rate)
+        # a profile the library does not name is never touched
+        self.assertEqual(own.land_development_category, "rural")
+        self.assertEqual(own.jobs_by_sector, {"military": 100.0})
+        self.assertEqual(own.household_size, 9.0)
+        self.assertEqual(backfill_library_fields(self.workspace), 0)
+
+
+@pytest.mark.models
+class TestRetiredLibraryEntries(TestCase):
+    """A name the library dropped is deleted where nothing points at it."""
+
+    def setUp(self) -> None:
+        self.workspace = WorkspaceFactory()
+        self.scenario = ScenarioFactory(
+            workspace=self.workspace, scenario_type=ScenarioType.ALTERNATIVE
+        )
+        self.retired_name = next(iter(RETIRED_LIBRARY_NAMES))
+
+    def test_retired_entry_is_deleted_when_unreferenced(self) -> None:
+        BuildingType.objects.create(workspace=self.workspace, name=self.retired_name)
+        keep = BuildingType.objects.create(
+            workspace=self.workspace, name="Hand-authored Type"
+        )
+
+        self.assertEqual(retire_library_entries(self.workspace), 1)
+
+        assert not BuildingType.objects.filter(
+            workspace=self.workspace, name=self.retired_name
+        ).exists()
+        assert BuildingType.objects.filter(pk=keep.pk).exists()
+
+    def test_retired_entry_a_paint_names_is_kept(self) -> None:
+        building_type = BuildingType.objects.create(
+            workspace=self.workspace, name=self.retired_name
+        )
+        PaintedCanvasFactory(
+            scenario=self.scenario,
+            column_name="built_form_key",
+            painted_text_value=self.retired_name,
+        )
+
+        self.assertEqual(retire_library_entries(self.workspace), 0)
+
+        assert BuildingType.objects.filter(pk=building_type.pk).exists()
+
+
+@pytest.mark.models
+class TestDefaultLibraryEntries(TestCase):
+    """What each library entry claims about its own land use."""
+
+    def test_entries_without_dwellings_claim_no_households(self) -> None:
+        """An office, a warehouse or a crop type has no household size."""
+        for entry in DEFAULT_BUILDING_TYPES:
+            if entry["du_per_acre"]:
+                continue
+            assert entry["household_size"] is None, entry["name"]
+            assert entry["vacancy_rate"] is None, entry["name"]
+
+    def test_dwelling_entries_keep_a_household_size(self) -> None:
+        """A type that houses people still says how many live in a unit."""
+        for entry in DEFAULT_BUILDING_TYPES:
+            if not entry["du_per_acre"]:
+                continue
+            assert entry["household_size"], entry["name"]
+
+    def test_no_two_entries_share_a_name(self) -> None:
+        names = [entry["name"] for entry in DEFAULT_BUILDING_TYPES]
+        assert len(names) == len(set(names))
+
+    def test_sector_mixes_use_the_parcel_sector_vocabulary(self) -> None:
+        """A mix a parcel column cannot be compared with would never match."""
+        for entry in DEFAULT_BUILDING_TYPES:
+            unknown = set(entry["jobs_by_sector"]) - set(EMPLOYMENT_SECTORS)
+            assert not unknown, (entry["name"], unknown)

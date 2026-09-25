@@ -149,6 +149,15 @@ class SelectBaseCanvasView(HtmxResponseMixin, FormView):
             run_sqlmesh_plan(
                 environment="prod",
                 select=selectors,
+                # A Python model's SQLMesh fingerprint covers its *definition*,
+                # not the SQL its ``execute`` returns — so a change to the fill
+                # rule (or to the library it matches against) leaves the
+                # snapshot looking unchanged, and the workspace would keep
+                # reading a table built by the previous rule. Flipping the
+                # switch is a request to rebuild, so the fill model is always
+                # recomputed; the canvases over it follow their parent's data
+                # change into the same plan.
+                restate_models=[_fill_model_fqn(self.workspace.pk)] if fill else False,
                 auto_apply=True,
                 no_prompts=True,
             )

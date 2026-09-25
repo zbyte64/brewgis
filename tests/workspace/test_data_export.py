@@ -3,6 +3,8 @@
 
 from __future__ import annotations
 
+import json
+
 import pytest
 from django.db import connection
 from django.test import TestCase
@@ -55,6 +57,7 @@ class TestExportBuildingTypes(TestCase):
         expected = [
             "id",
             "key",
+            "land_development_category",
             "du_per_acre",
             "emp_per_acre",
             "far",
@@ -73,6 +76,98 @@ class TestExportBuildingTypes(TestCase):
             "pass_by_trip_pct",
         ]
         assert columns == expected
+
+    def test_export_of_a_table_predating_the_category_column(self) -> None:
+        """An older table regains the column, with its values aligned by name."""
+        BuildingTypeFactory(
+            workspace=self.workspace,
+            name="Urban One",
+            du_per_acre=21.0,
+            land_development_category="urban",
+        )
+        BuildingTypeFactory(
+            workspace=self.workspace,
+            name="Crop One",
+            du_per_acre=0.0,
+            land_development_category="agricultural",
+        )
+        export_building_types(self.workspace, schema=TEST_SCHEMA, table=TEST_TABLE)
+        # the shape a table exported by the previous release has: the column the
+        # export grew later is absent and the next export appends it
+        with connection.cursor() as cursor:
+            cursor.execute(
+                f'ALTER TABLE "{TEST_SCHEMA}"."{TEST_TABLE}" '
+                "DROP COLUMN land_development_category"
+            )
+
+        count = export_building_types(
+            self.workspace, schema=TEST_SCHEMA, table=TEST_TABLE
+        )
+        assert count == 2
+
+        with connection.cursor() as cursor:
+            cursor.execute(
+                f"SELECT key, du_per_acre, land_development_category FROM "
+                f'"{TEST_SCHEMA}"."{TEST_TABLE}" ORDER BY key'
+            )
+            rows = cursor.fetchall()
+        # key/du_per_acre/category all survive together: the export inserts into
+        # named columns, so the ALTER-appended column cannot shift a value
+        assert rows == [
+            ("Crop One", 0.0, "agricultural"),
+            ("Urban One", 21.0, "urban"),
+        ]
+
+    def test_ensure_export_rebuilds_a_table_missing_a_column(self) -> None:
+        """A populated table without the current column set is re-exported."""
+        BuildingTypeFactory.create_batch(2, workspace=self.workspace)
+        export_building_types(self.workspace, schema=TEST_SCHEMA, table=TEST_TABLE)
+        with connection.cursor() as cursor:
+            cursor.execute(
+                f'ALTER TABLE "{TEST_SCHEMA}"."{TEST_TABLE}" '
+                "DROP COLUMN land_development_category"
+            )
+
+        count = ensure_export_exists(
+            self.workspace, schema=TEST_SCHEMA, table=TEST_TABLE
+        )
+
+        assert count == 2
+        with connection.cursor() as cursor:
+            cursor.execute(
+                "SELECT column_name FROM information_schema.columns "
+                "WHERE table_schema = %s AND table_name = %s",
+                [TEST_SCHEMA, TEST_TABLE],
+            )
+            columns = {row[0] for row in cursor.fetchall()}
+        assert "land_development_category" in columns
+
+    def test_ensure_export_rebuilds_a_table_of_stale_rows(self) -> None:
+        """A built form edited since the last export is re-exported."""
+        building_type = BuildingTypeFactory(
+            workspace=self.workspace,
+            name="Crop One",
+            jobs_by_sector={"agriculture": 100.0},
+        )
+        export_building_types(self.workspace, schema=TEST_SCHEMA, table=TEST_TABLE)
+        building_type.jobs_by_sector = {"military": 100.0}
+        building_type.save(update_fields=["jobs_by_sector", "updated_at"])
+
+        assert (
+            ensure_export_exists(self.workspace, schema=TEST_SCHEMA, table=TEST_TABLE)
+            == 1
+        )
+
+        with connection.cursor() as cursor:
+            cursor.execute(f'SELECT jobs_by_sector FROM "{TEST_SCHEMA}"."{TEST_TABLE}"')
+            assert json.loads(cursor.fetchone()[0]) == {"military": 100.0}
+
+        # and a table already holding the current rows is left alone
+        export_building_types(self.workspace, schema=TEST_SCHEMA, table=TEST_TABLE)
+        assert (
+            ensure_export_exists(self.workspace, schema=TEST_SCHEMA, table=TEST_TABLE)
+            == 1
+        )
 
     def test_all_building_types_exported(self) -> None:
         """All BuildingType rows appear in the output table."""
@@ -234,26 +329,25 @@ class TestEnsureExportExists(TestCase):
             cursor.execute(f'SELECT COUNT(*) FROM "{TEST_SCHEMA}"."{TEST_TABLE}"')
             assert cursor.fetchone()[0] == 3
 
-    def test_second_call_is_no_op_when_table_has_rows(self) -> None:
-        """Calling again with non-empty table returns row count without re-exporting."""
+    def test_second_call_re_exports_when_rows_changed(self) -> None:
+        """Building Types added since the last export reach the table."""
         BuildingTypeFactory.create_batch(2, workspace=self.workspace)
         count1 = ensure_export_exists(
             self.workspace, schema=TEST_SCHEMA, table=TEST_TABLE
         )
         assert count1 == 2
 
-        # Add more rows — ensure_export_exists should skip since table already has rows
+        # the table is a cache of the workspace's Building Types, so rows added
+        # since the last export have to be exported, not served around
         BuildingTypeFactory.create_batch(3, workspace=self.workspace)
         count2 = ensure_export_exists(
             self.workspace, schema=TEST_SCHEMA, table=TEST_TABLE
         )
-        # Should return the original count (2), not the new count (5)
-        assert count2 == 2
+        assert count2 == 5
 
         with connection.cursor() as cursor:
             cursor.execute(f'SELECT COUNT(*) FROM "{TEST_SCHEMA}"."{TEST_TABLE}"')
-            # Table still has only the original 2 rows
-            assert cursor.fetchone()[0] == 2
+            assert cursor.fetchone()[0] == 5
 
     def test_re_exports_when_table_is_empty(self) -> None:
         """If the table exists but is empty, it re-exports."""

@@ -132,3 +132,52 @@ building classifications, which identify them more reliably than parcel features
 | `bt__publicquasi_public` | Public/Quasi-Public | Assessor land use code |
 | `bt__civic_institution` | Civic Institution | Assessor land use code |
 | `bt__agricultural_processingretail_employment` | Agricultural Processing | Assessor land use code |
+
+## Workspace Building Type library
+
+Every workspace owns its own `BuildingType` rows (Django model
+`workspace_buildingtype`, exported to `<db_schema>.built_forms` for SQLMesh) —
+the catalogue the paint "Match Closest"/"Fill" tools and the base-layer-import
+"Fill built form by closest matching" model assign from. A new workspace is
+seeded with a 96-entry default library
+(`brewgis/workspace/built_forms/default_library.py`): the 15 generic archetypes,
+the SACOG land-use rows of `sacog_land_use_translation_table` (two of its 49
+rows are not entries — one duplicates the generic civic archetype, one is
+renamed for the unique-name constraint) and the 33 UrbanFootprint crop types of
+`croptypes`. Seeding is additive — an entry whose
+name a workspace already holds is skipped — and migration
+`0065_seed_default_built_forms` applies it to workspaces that predate the
+library.
+
+Each entry carries a `land_development_category` (urban, suburban, rural,
+agricultural, industrial, undeveloped, conservation). That is the **parcel-level
+vocabulary** the base canvas uses, deliberately not the density-derived
+urban/compact/standard/rural vocabulary described above: closest-matching
+compares the two columns directly.
+
+An entry describes only what its land use is: a type with no dwellings (an
+office, a warehouse, a parking structure, a crop type) carries no
+`household_size` and no `vacancy_rate`, because it has no households to count.
+The models that read those columns fall back to their own defaults when they are
+null.
+
+Each entry may also carry a `jobs_by_sector` mix keyed by the base canvas's
+employment sectors — the same words as its `emp_<sector>` columns
+(`retail_services`, `restaurant`, `accommodation`, `arts_entertainment`,
+`other_services`, `office_services`, `medical_services`, `public_admin`,
+`education`, `manufacturing`, `wholesale`, `transport_warehousing`,
+`utilities`, `construction`, `agriculture`, `extraction`, `military`). A SACOG
+entry's mix comes from its land-use row's coarse retail/office/industrial/
+public shares: a group counts when it is at least 15% of the type's jobs (below
+that it is a residual of the coarse grouping), and a group that counts is spread
+across that group's own sectors. A row that is not an employment composition at
+all declares none.
+
+Both fields are used by closest-matching as **preferences** on top of the
+density bases — the sector the parcel's jobs are in first, then its land
+development category, each falling back to the candidate list it was given when
+nothing matches (`views.paint.run_match_built_form`,
+`models/base_canvas/built_form_fill.py`, rule in `built_forms/matching.py`).
+Neither is a match basis of its own, so a parcel with no density or key signal
+still matches nothing, and the density basis always decides *within* whatever
+the preferences left.

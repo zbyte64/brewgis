@@ -25,6 +25,24 @@ class StreetPatternChoices(models.TextChoices):
     HYBRID = "hybrid", "Hybrid"
 
 
+class LandDevelopmentCategoryChoices(models.TextChoices):
+    """Development categories, as the base canvas records them per parcel.
+
+    Deliberately the parcel-level vocabulary (``land_development_category`` on
+    the base canvas), not the density-derived one
+    (``classify_land_dev_category``'s urban/compact/standard/rural): the two
+    sides are compared directly when a parcel is matched to a Building Type.
+    """
+
+    URBAN = "urban", "Urban"
+    SUBURBAN = "suburban", "Suburban"
+    RURAL = "rural", "Rural"
+    AGRICULTURAL = "agricultural", "Agricultural"
+    INDUSTRIAL = "industrial", "Industrial"
+    UNDEVELOPED = "undeveloped", "Undeveloped"
+    CONSERVATION = "conservation", "Conservation"
+
+
 class BuildingType(models.Model):
     """A built form archetype with physical, demographic, and resource parameters."""
 
@@ -61,9 +79,10 @@ class BuildingType(models.Model):
     # Housing / Household
     household_size = models.FloatField(
         blank=True,
+        null=True,
         default=2.5,
         verbose_name="Household size",
-        help_text="Average persons per household.",
+        help_text="Average persons per household. Null = the type has no housing.",
     )
     tenure_owner_pct = models.FloatField(
         blank=True,
@@ -77,9 +96,10 @@ class BuildingType(models.Model):
     )
     vacancy_rate = models.FloatField(
         blank=True,
+        null=True,
         default=5.0,
         verbose_name="Vacancy rate (%)",
-        help_text="Percent of dwelling units vacant.",
+        help_text="Percent of dwelling units vacant. Null = the type has no housing.",
     )
 
     # Physical form
@@ -193,6 +213,19 @@ class BuildingType(models.Model):
         validators=[MinValueValidator(0.0), MaxValueValidator(100.0)],
         verbose_name="Pass-by trip (%)",
         help_text="Percent of trips that are pass-by (diverted from passing traffic).",
+    )
+
+    # Matching
+    land_development_category = models.CharField(
+        max_length=32,
+        choices=LandDevelopmentCategoryChoices,
+        blank=True,
+        default="",
+        verbose_name="Land development category",
+        help_text=(
+            "Development category used to prefer same-category matches when "
+            "assigning built forms."
+        ),
     )
 
     # Meta

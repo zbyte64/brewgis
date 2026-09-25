@@ -18,6 +18,7 @@ from django.utils.decorators import method_decorator
 from django.utils.text import slugify
 from django.views.generic.edit import FormView
 
+from brewgis.workspace.built_forms.default_library import seed_default_built_forms
 from brewgis.workspace.models import County
 from brewgis.workspace.models import Scenario
 from brewgis.workspace.models import ScenarioType
@@ -122,6 +123,7 @@ class WorkspaceCreateView(FormView):
             db_schema=slugify(name),
             county_fips_list=county_fips,
         )
+        seed_default_built_forms(workspace)
         self._create_default_scenario(workspace)
         return redirect(
             reverse("workspace:workspace_detail", kwargs={"pk": workspace.pk})

@@ -64,7 +64,7 @@ Key rules:
 |`brewgis/workspace/`|The sole Django app — models, views, tasks, templates, services, analysis modules, symbology, built_forms, MCP server, management commands|
 |`brewgis/workspace/views/`|22 view modules split by feature (paint, analysis, scenarios, map, reports, built_forms, etc.)|
 |`brewgis/workspace/models.py`|24 model classes (Workspace, Layer, SymbologyConfig, StyleClass, Scenario, PaintedCanvas, AnalysisRun, DataImportRun, POICache, PaintConstraint, MergeAudit, PaintEvent, PaintRun, ParcelGeometryEdit, ScenarioReport, County, DataSourceCategory, DataSource, LayerFilter, LayerGroup, ExternalMapService, Basemap, BaseCanvasColumn, BaseCanvas)|
-|`brewgis/workspace/built_forms/models.py`|Built form sub-app: BuildingType (27 fields), PlaceType, PlaceTypeBuildingTypeMix|
+|`brewgis/workspace/built_forms/models.py`|Built form sub-app: BuildingType (28 fields), PlaceType, PlaceTypeBuildingTypeMix|
 |`brewgis/workspace/tasks.py`|8 Celery tasks for data import, export, allocation, stitching, report generation|
 |`brewgis/workspace/analysis/`|Pipeline orchestrator, module/layer registries, food/equity preprocessors (road-network distances are SQLMesh: `overture/road_network_*`, `python/network_zone_distance.py`)|
 |`brewgis/workspace/symbology/`|Map style generation (classifiers, generator, auto-config, legend, stats), 21 color palettes|
@@ -220,7 +220,9 @@ npm run test      # vitest
 |File|Role|
 |---|---|
 |`brewgis/workspace/models.py`|24 model classes|
-|`brewgis/workspace/built_forms/models.py`|Built form models: BuildingType (27 fields), PlaceType, PlaceTypeBuildingTypeMix|
+|`brewgis/workspace/built_forms/models.py`|Built form models: BuildingType (28 fields), PlaceType, PlaceTypeBuildingTypeMix|
+|`brewgis/workspace/built_forms/default_library.py`|96-type default Building Type library (15 generic + 48 SACOG + 33 UF crop types) seeded into every workspace; `seed_default_built_forms`, `backfill_library_fields`|
+|`brewgis/workspace/built_forms/matching.py`|Closest-matching preferences over the density bases: same employment sector, then same land development category (Python rule + its SQL twin for the fill model)|
 |`brewgis/workspace/urls.py`|82 URL patterns under `app_name='workspace'`|
 |`brewgis/workspace/views/__init__.py`|Exports 71 view function/class from 22 view modules|
 |`brewgis/workspace/tasks.py`|8 Celery shared tasks (census, LEHD, POI, raster, allocation, stitching, report, building type export)|

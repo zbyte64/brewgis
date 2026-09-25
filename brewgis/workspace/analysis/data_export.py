@@ -31,6 +31,7 @@ logger = logging.getLogger(__name__)
 BUILT_FORM_COLUMNS: dict[str, str] = {
     "id": "id",
     "key": "name",
+    "land_development_category": "land_development_category",
     "du_per_acre": "du_per_acre",
     "emp_per_acre": "emp_per_acre",
     "far": "far",
@@ -141,10 +142,21 @@ def _export_building_types(
             """
         )
 
+    # A ``built_forms`` table created before ``land_development_category``
+    # existed keeps its old column set through the CREATE TABLE IF NOT EXISTS
+    # above; without this the INSERT below would fail on the missing column.
+    cursor.execute(
+        f'ALTER TABLE "{schema}"."{table}" '
+        "ADD COLUMN IF NOT EXISTS land_development_category VARCHAR(32)"
+    )
+
     cursor.execute(f'TRUNCATE TABLE "{schema}"."{table}"')
+    # Named target columns: ALTER TABLE appends a column *after* the ones the
+    # table already had, so the physical order of a migrated table differs from
+    # ``BUILT_FORM_COLUMNS`` and a positional INSERT would misalign.
     cursor.execute(
         f"""
-        INSERT INTO "{schema}"."{table}"
+        INSERT INTO "{schema}"."{table}" ({", ".join(BUILT_FORM_COLUMNS)})
         SELECT {cols}
         FROM {source_table}
         """
@@ -152,18 +164,58 @@ def _export_building_types(
     return row_count  # type: ignore[no-any-return]
 
 
-def _is_already_populated(cursor: Any, schema: str, table: str) -> int | None:
-    """Return the row count if {schema}.{table} already exists and is non-empty."""
+def _export_is_current(
+    cursor: Any, workspace: Workspace, schema: str, table: str
+) -> int | None:
+    """Return ``{schema}.{table}``'s row count if it needs no re-export, else None.
+
+    A table needs no re-export when it exists, holds rows, carries every column
+    declared in :py:data:`BUILT_FORM_COLUMNS` and holds exactly the rows an
+    export would write now. Anything else has to be rebuilt:
+
+    - **Missing columns** — ``CREATE TABLE IF NOT EXISTS`` leaves an older
+      column set alone, and the fill and analysis models select the declared
+      columns by name.
+    - **Different rows** — the table is a cache of the workspace's Building
+      Types, so a workspace whose types were seeded, edited or enriched since
+      the last export would otherwise keep matching against the old profiles.
+      The comparison is on the exported column set, and ``EXCEPT ALL`` on both
+      directions leaves nothing when the two sides are equal.
+    """
     cursor.execute(
-        "SELECT COUNT(*) FROM information_schema.tables "
+        "SELECT column_name FROM information_schema.columns "
         "WHERE table_schema = %s AND table_name = %s",
         [schema, table],
     )
-    if cursor.fetchone()[0] == 0:
+    columns = {row[0] for row in cursor.fetchall()}
+    if not set(BUILT_FORM_COLUMNS).issubset(columns):
         return None
-    cursor.execute(f'SELECT COUNT(*) FROM "{schema}"."{table}"')
-    count = cursor.fetchone()[0]
-    return count or None
+
+    cursor.execute(
+        f'SELECT (SELECT COUNT(*) FROM "{schema}"."{table}"),'
+        " (SELECT COUNT(*) FROM public.workspace_buildingtype"
+        " WHERE workspace_id = %s)",
+        [workspace.pk],
+    )
+    exported_count, source_count = cursor.fetchone()
+    if not exported_count or exported_count != source_count:
+        return None
+
+    # Equal row counts and nothing left of the export's rows after removing the
+    # source's rows means the two sides hold the same rows.
+    cursor.execute(
+        f"""
+        SELECT 1 FROM (
+            (SELECT {", ".join(BUILT_FORM_COLUMNS)} FROM "{schema}"."{table}")
+            EXCEPT ALL
+            (SELECT {_column_defs(BUILT_FORM_COLUMNS)}
+             FROM public.workspace_buildingtype WHERE workspace_id = %s)
+        ) AS difference
+        LIMIT 1
+        """,
+        [workspace.pk],
+    )
+    return None if cursor.fetchone() is not None else exported_count
 
 
 def _dsn_from_settings() -> str:
@@ -247,16 +299,18 @@ def ensure_export_exists(
     table: str = "built_forms",
     **kwargs: Any,
 ) -> int:
-    """Idempotent export wrapper — only exports if the target table is empty.
+    """Export unless the target table already holds the workspace's current rows.
 
-    Useful when the export is called before every pipeline run and the
-    data hasn't changed (e.g. during development).
+    "Current" is ``_export_is_current``: the table exists, holds rows, has the
+    current column set and matches the workspace's Building Types row for row.
+    Called before every pipeline run, so an unchanged workspace costs one
+    comparison instead of a re-export.
     """
     with connection.cursor() as cursor:
-        count = _is_already_populated(cursor, schema, table)
+        count = _export_is_current(cursor, workspace, schema, table)
         if count is not None:
             logger.info(
-                "Export table %s.%s already exists with %d rows — skipping",
+                "Export table %s.%s already holds the current %d rows — skipping",
                 schema,
                 table,
                 count,
@@ -281,12 +335,12 @@ def ensure_export_exists_isolated(
     conn = psycopg.connect(_dsn_from_settings())
     try:
         with conn.cursor() as cursor:
-            count = _is_already_populated(cursor, schema, table)
+            count = _export_is_current(cursor, workspace, schema, table)
     finally:
         conn.close()
     if count is not None:
         logger.info(
-            "Export table %s.%s already exists with %d rows — skipping",
+            "Export table %s.%s already holds the current %d rows — skipping",
             schema,
             table,
             count,

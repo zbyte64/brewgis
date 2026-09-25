@@ -37,6 +37,9 @@ from django.views.decorators.http import require_POST
 
 from brewgis.workspace.built_forms.allocation import AllocationEngine
 from brewgis.workspace.built_forms.allocation import AllocationResult
+from brewgis.workspace.built_forms.matching import dominant_employment_sector
+from brewgis.workspace.built_forms.matching import prefer_same_category
+from brewgis.workspace.built_forms.matching import prefer_same_sector
 from brewgis.workspace.built_forms.models import BuildingType
 from brewgis.workspace.built_forms.models import PlaceType
 from brewgis.workspace.models import GEOMETRY_EDIT_ID_SEQUENCE
@@ -47,6 +50,7 @@ from brewgis.workspace.models import ParcelGeometryEdit
 from brewgis.workspace.models import Scenario
 from brewgis.workspace.models import ScenarioNotPaintableError
 from brewgis.workspace.models import Workspace
+from brewgis.workspace.services.base_canvas_schema import EMPLOYMENT_SECTORS
 from brewgis.workspace.services.base_canvas_schema import BaseCanvasSchema
 from brewgis.workspace.services.built_form_keys import normalize_built_form_key
 from brewgis.workspace.services.canvas_view_manager import PAINTABLE_COLUMNS
@@ -1066,6 +1070,18 @@ def run_match_built_form(
             )
             continue
 
+        # Two narrowing preferences on top of the density basis — never bases
+        # of their own, and each falling back to the list it was given: the
+        # sector the parcel's jobs are in first, then its land development
+        # category. A workspace whose types carry neither matches exactly as it
+        # did before they existed.
+        candidates = list(
+            prefer_same_sector(candidates, dominant_employment_sector(row))
+        )
+        candidates = list(
+            prefer_same_category(candidates, row.get("land_development_category"))
+        )
+
         best = min(candidates, key=lambda bt: abs(getattr(bt, basis) - density))
         allocations[fid] = AllocationEngine.allocation_building_type(
             parcel_acres=acres,
@@ -1904,7 +1920,18 @@ def _fetch_canvas_feature_data(
             "ST_Area(geometry::geography) AS area_m2"
         )
     else:
-        selected = "parcel_id, du, emp, area_gross, area_parcel, built_form_key"
+        selected = ", ".join(
+            [
+                "parcel_id",
+                "du",
+                "emp",
+                "area_gross",
+                "area_parcel",
+                "built_form_key",
+                "land_development_category",
+                *(f"emp_{sector}" for sector in EMPLOYMENT_SECTORS),
+            ]
+        )
         extra = ""
 
     projected = f"{selected}, {extra}" if extra else selected
