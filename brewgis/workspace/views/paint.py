@@ -19,6 +19,9 @@ import json
 import uuid
 from decimal import Decimal
 from math import ceil
+from math import cos
+from math import radians
+from math import sin
 from typing import TYPE_CHECKING
 from typing import Any
 
@@ -423,11 +426,15 @@ def grid_parcels(
     or, with an explicit grid origin offset::
         {"features": ["1", "2"], "cell_size_ft": 100, "offset_x_ft": 50, "offset_y_ft": 0}
 
+    or, with the cell grid rotated clockwise by an angle in degrees::
+        {"features": ["1", "2"], "cell_size_ft": 100, "rotation_deg": 15}
+
     The selected parcels are unioned into one site and the site is cut into
     square cells of *cell_size_ft* feet, the grid aligned to the offset (zero,
-    i.e. the projected origin, by default). Column values are allocated to each
-    cell from the parcels it covers, conserving totals — see
-    :func:`_allocate_grid_cell`.
+    i.e. the projected origin, by default) and rotated by *rotation_deg* about
+    the selection's centre (zero, i.e. the projected axes, by default). Column
+    values are allocated to each cell from the parcels it covers, conserving
+    totals — see :func:`_allocate_grid_cell`.
 
     Runs as a background ``PaintRun`` (see module docstring) — validates the
     request shape here, then hands off to :func:`run_grid_parcels`.
@@ -441,13 +448,14 @@ def grid_parcels(
         cell_size_ft = float(body["cell_size_ft"])
         offset_x_ft = float(body.get("offset_x_ft") or 0.0)
         offset_y_ft = float(body.get("offset_y_ft") or 0.0)
+        rotation_deg = float(body.get("rotation_deg") or 0.0)
     except (KeyError, TypeError, ValueError):
         return JsonResponse(
             {
                 "status": "error",
                 "message": (
                     "cell_size_ft is required and must be a number; "
-                    "offset_x_ft/offset_y_ft are optional numbers."
+                    "offset_x_ft/offset_y_ft/rotation_deg are optional numbers."
                 ),
             },
             status=400,
@@ -462,6 +470,7 @@ def grid_parcels(
             "cell_size_ft": cell_size_ft,
             "offset_x_ft": offset_x_ft,
             "offset_y_ft": offset_y_ft,
+            "rotation_deg": rotation_deg,
         },
     )
 
@@ -489,6 +498,142 @@ def merge_parcels(
     scenario, features, _body = resolved
 
     return _enqueue(scenario, request.user, "merge", {"features": features})
+
+
+@require_POST
+@login_required
+def grid_preview(
+    request: HttpRequest, workspace_pk: int, scenario_pk: int
+) -> JsonResponse:
+    """Return the cells a grid request *would* produce, without writing anything.
+
+    Accepts the same JSON body as :func:`grid_parcels`::
+
+        {"features": ["1", "2"], "cell_size_ft": 100, "rotation_deg": 15}
+
+    Draws the pending geometry edit as a temporary overlay in paint mode, so the
+    user can judge a cell size/offset/rotation before committing to it. Never
+    writes: no ``ParcelGeometryEdit`` rows, no ``PaintRun``, no tile purge — it
+    shares :func:`_compute_grid_cells` with the write path, so the preview and
+    the grid it precedes are the same cells.
+    """
+    resolved = _parse_geometry_edit_body(request, workspace_pk, scenario_pk)
+    if isinstance(resolved, JsonResponse):
+        return resolved
+    scenario, features, body = resolved
+
+    try:
+        cell_size_ft = float(body["cell_size_ft"])
+        offset_x_ft = float(body.get("offset_x_ft") or 0.0)
+        offset_y_ft = float(body.get("offset_y_ft") or 0.0)
+        rotation_deg = float(body.get("rotation_deg") or 0.0)
+    except (KeyError, TypeError, ValueError):
+        return JsonResponse(
+            {
+                "status": "error",
+                "message": (
+                    "cell_size_ft is required and must be a number; "
+                    "offset_x_ft/offset_y_ft/rotation_deg are optional numbers."
+                ),
+            },
+            status=400,
+        )
+
+    cells, _sources, error = _compute_grid_cells(
+        scenario,
+        features,
+        cell_size_ft=cell_size_ft,
+        offset_x_ft=offset_x_ft,
+        offset_y_ft=offset_y_ft,
+        rotation_deg=rotation_deg,
+    )
+    if error is not None:
+        return JsonResponse({"status": "error", "message": error[0]}, status=error[1])
+
+    geojson = {
+        "type": "FeatureCollection",
+        "features": [
+            {"type": "Feature", "properties": {}, "geometry": json.loads(cell_geojson)}
+            for (cell_geojson, _area, _overlap) in cells
+        ],
+    }
+    return JsonResponse({"status": "ok", "geojson": geojson})
+
+
+@require_POST
+@login_required
+def merge_preview(
+    request: HttpRequest, workspace_pk: int, scenario_pk: int
+) -> JsonResponse:
+    """Return the union a merge request *would* write, without writing anything.
+
+    Accepts the same JSON body as :func:`merge_parcels`::
+
+        {"features": ["1", "2", "3"]}
+
+    Shares :func:`_merge_union_geojson` with the write path, so the overlay the
+    user approves is exactly the geometry the merge then persists.
+    """
+    resolved = _parse_geometry_edit_body(request, workspace_pk, scenario_pk)
+    if isinstance(resolved, JsonResponse):
+        return resolved
+    scenario, features, _body = resolved
+
+    unique_features = list(dict.fromkeys([str(feature) for feature in features]))
+    if len(unique_features) < _MIN_MERGE_PARCELS:
+        return JsonResponse(
+            {
+                "status": "error",
+                "message": "Select at least two distinct parcels to merge.",
+            },
+            status=400,
+        )
+
+    schema, table = scenario.base_layer_source()
+    quoted_view = _quote_qualified_table(schema, table)
+
+    # Every base column comes back because which columns a canvas exposes is
+    # per-workspace; the preview only needs the ids to resolve, but the fetch
+    # that proves that is the same one the write path uses.
+    rows = _fetch_canvas_feature_data(scenario, unique_features, include_geometry=True)
+    missing = [feature for feature in unique_features if feature not in rows]
+    if missing:
+        return JsonResponse(
+            {
+                "status": "error",
+                "message": (
+                    "Parcels not found in this scenario's canvas: "
+                    f"{', '.join(missing[:10])}."
+                ),
+            },
+            status=404,
+        )
+
+    union_geojson = _merge_union_geojson(quoted_view, unique_features)
+    if union_geojson is None:
+        return JsonResponse(
+            {
+                "status": "error",
+                "message": "No geometry found for the selected parcels.",
+            },
+            status=404,
+        )
+
+    return JsonResponse(
+        {
+            "status": "ok",
+            "geojson": {
+                "type": "FeatureCollection",
+                "features": [
+                    {
+                        "type": "Feature",
+                        "properties": {},
+                        "geometry": json.loads(union_geojson),
+                    }
+                ],
+            },
+        }
+    )
 
 
 @require_GET
@@ -1487,8 +1632,20 @@ def _geojson_geometry(geojson: str) -> GEOSGeometry:
     return geometry
 
 
-def _grid_cell_estimate(quoted_view: str, sources: list[str], size_m: float) -> int:
-    """Cells a grid of *size_m* would generate over *sources*' envelope."""
+def _grid_cell_estimate(
+    quoted_view: str,
+    sources: list[str],
+    size_m: float,
+    *,
+    angle_rad: float = 0.0,
+) -> int:
+    """Cells a grid of *size_m* would generate over *sources*' envelope.
+
+    With *angle_rad* set, the grid is built over the envelope's axis-aligned
+    bounding box *in the rotated frame* (see :func:`_grid_cells`), so the
+    envelope is inflated by ``w·|cos| + h·|sin|`` on each axis first — otherwise
+    a rotated grid would slip past the cell-count guard.
+    """
     query = (
         f"SELECT ST_XMax(e) - ST_XMin(e), ST_YMax(e) - ST_YMin(e) "  # noqa: S608
         f"FROM (SELECT ST_Extent(ST_Transform(geometry, 3857)) AS e "
@@ -1499,16 +1656,21 @@ def _grid_cell_estimate(quoted_view: str, sources: list[str], size_m: float) -> 
         width, height = cursor.fetchone()
     if width is None or height is None:
         return 0
-    return ceil(float(width) / size_m) * ceil(float(height) / size_m)
+    width, height = float(width), float(height)
+    if angle_rad:
+        c, s = abs(cos(angle_rad)), abs(sin(angle_rad))
+        width, height = width * c + height * s, width * s + height * c
+    return ceil(width / size_m) * ceil(height / size_m)
 
 
-def _grid_cells(
+def _grid_cells(  # noqa: PLR0913 — the grid is defined by four independent knobs
     quoted_view: str,
     sources: list[str],
     *,
     size_m: float,
     ox_m: float,
     oy_m: float,
+    angle_rad: float = 0.0,
 ) -> list[tuple[str, float, dict[str, float]]]:
     """Cut the union of *sources* into square cells of *size_m* metres.
 
@@ -1522,6 +1684,14 @@ def _grid_cells(
     Because the cells that touch a parcel partition it exactly, those shares
     always add up to the parcel's whole area (the total-conservation property
     :func:`_allocate_grid_cell` relies on).
+
+    *angle_rad* rotates the cell lattice clockwise about the selection
+    envelope's centroid, so a site can be cut on a parcel-line angle rather
+    than on the projected axes. The rotation is applied by rotating the
+    *sources* into a frame where the lattice is axis-aligned, generating the
+    grid there with the usual offsets, then rotating each cell back out — so
+    the lattice, the offsets and the clipping behave exactly as they do at an
+    angle of zero.
     """
     query = f"""
 WITH srcs AS MATERIALIZED (
@@ -1533,9 +1703,25 @@ bounds AS (
     SELECT ST_SetSRID(ST_Extent(ST_Transform(geometry, 3857))::geometry, 3857) AS geometry
     FROM srcs
 ),
+origin AS (
+    SELECT ST_Centroid(geometry) AS geom FROM bounds
+),
+rot_srcs AS (
+    SELECT s.parcel_id,
+           ST_Rotate(ST_Transform(s.geometry, 3857), -%(angle_rad)s, o.geom) AS geometry
+    FROM srcs s CROSS JOIN origin o
+),
+rot_bounds AS (
+    SELECT ST_SetSRID(ST_Extent(geometry)::geometry, 3857) AS geometry
+    FROM rot_srcs
+),
 cells AS (
-    SELECT ST_Transform(ST_Translate(g.geom, %(ox)s, %(oy)s), 4326) AS cell, g.i, g.j
-    FROM bounds b
+    SELECT ST_Transform(
+               ST_Rotate(ST_Translate(g.geom, %(ox)s, %(oy)s), %(angle_rad)s, o.geom),
+               4326
+           ) AS cell, g.i, g.j
+    FROM rot_bounds b
+    CROSS JOIN origin o
     CROSS JOIN LATERAL ST_SquareGrid(
         %(size)s, ST_Translate(b.geometry, -%(ox)s, -%(oy)s)
     ) AS g
@@ -1569,11 +1755,103 @@ WHERE ST_Area(geometry::geography) > %(min_area)s
                 "size": size_m,
                 "ox": ox_m,
                 "oy": oy_m,
+                "angle_rad": angle_rad,
                 "min_area": _MIN_CELL_AREA_M2,
             },
         )
         rows = cursor.fetchall()
     return [(row[0], float(row[1]), _json_object(row[2])) for row in rows]
+
+
+def _merge_union_geojson(quoted_view: str, sources: list[str]) -> str | None:
+    """GeoJSON of the MultiPolygon dissolving *sources*' geometry, or ``None``.
+
+    The shared half of merge: the write path (:func:`run_merge_parcels`)
+    persists this geometry as the survivor's ``ParcelGeometryEdit``, and the
+    preview endpoint hands the very same geometry to the map as a temporary
+    overlay, so what the user sees before applying is what gets written.
+    """
+    with connection.cursor() as cursor:
+        cursor.execute(
+            f"SELECT ST_AsGeoJSON("  # noqa: S608
+            f"ST_Multi(ST_UnaryUnion(ST_Collect(ST_MakeValid(geometry))))) "
+            f"FROM {quoted_view} WHERE CAST(parcel_id AS text) = ANY(%s)",
+            [sources],
+        )
+        return cursor.fetchone()[0]
+
+
+def _compute_grid_cells(  # noqa: PLR0913 — mirrors the grid request's knobs
+    scenario: Scenario,
+    features: list[str],
+    *,
+    cell_size_ft: float,
+    offset_x_ft: float,
+    offset_y_ft: float,
+    rotation_deg: float,
+) -> tuple[
+    list[tuple[str, float, dict[str, float]]], dict[str, dict], tuple[str, int] | None
+]:
+    """Validate a grid request and cut the selection into its cells.
+
+    Shared by the write path (:func:`run_grid_parcels`, which turns the cells
+    into ``ParcelGeometryEdit`` rows) and the preview endpoint, which returns
+    the same cells as GeoJSON and writes nothing — so a preview can never
+    disagree with the grid the user then applies.
+
+    Returns ``(cells, sources, error)``: the cells, the canvas row of every
+    selected parcel (which the caller needs for the per-cell allocation and
+    would otherwise have to fetch a second time), and the ``(message,
+    http_status)`` to return verbatim on failure — ``error`` is ``None`` when
+    the grid was computed, and ``([], {}, error)`` otherwise.
+    """
+    # Ids arrive as strings from the map and may repeat (a box selection can
+    # report a parcel twice); one id per parcel is what the grid math assumes.
+    unique_features = list(dict.fromkeys([str(feature) for feature in features]))
+    if not unique_features:
+        return [], {}, ("No features selected.", 400)
+    if cell_size_ft <= 0:
+        return [], {}, ("Cell size must be positive.", 400)
+
+    schema, table = scenario.base_layer_source()
+    quoted_view = _quote_qualified_table(schema, table)
+
+    sources = _fetch_canvas_feature_data(
+        scenario, unique_features, include_geometry=True
+    )
+    missing = [feature for feature in unique_features if feature not in sources]
+    if missing:
+        message = (
+            f"Parcels not found in this scenario's canvas: {', '.join(missing[:10])}."
+        )
+        return [], {}, (message, 404)
+
+    size_m = cell_size_ft * _FT_TO_M
+    ox_m = offset_x_ft * _FT_TO_M
+    oy_m = offset_y_ft * _FT_TO_M
+    angle_rad = radians(rotation_deg)
+    estimate = _grid_cell_estimate(
+        quoted_view, unique_features, size_m, angle_rad=angle_rad
+    )
+    if estimate > _MAX_GRID_CELLS:
+        message = (
+            f"A {cell_size_ft:g} ft grid over this selection needs about "
+            f"{estimate} cells (limit {_MAX_GRID_CELLS}) — use a larger cell "
+            "size or select a smaller area."
+        )
+        return [], {}, (message, 400)
+
+    cells = _grid_cells(
+        quoted_view,
+        unique_features,
+        size_m=size_m,
+        ox_m=ox_m,
+        oy_m=oy_m,
+        angle_rad=angle_rad,
+    )
+    if not cells:
+        return [], {}, ("Grid produced no cells — choose a smaller cell size.", 400)
+    return cells, sources, None
 
 
 def run_grid_parcels(
@@ -1587,70 +1865,22 @@ def run_grid_parcels(
     cell_size_ft = float(params["cell_size_ft"])
     offset_x_ft = float(params.get("offset_x_ft") or 0.0)
     offset_y_ft = float(params.get("offset_y_ft") or 0.0)
+    rotation_deg = float(params.get("rotation_deg") or 0.0)
 
-    # Ids arrive as strings from the map and may repeat (a box selection can
-    # report a parcel twice); one id per parcel is what the grid math assumes.
-    unique_features = list(dict.fromkeys(features))
-    if not unique_features:
-        return {
-            "status": "error",
-            "message": "No features selected.",
-            "http_status": 400,
-        }
-    if cell_size_ft <= 0:
-        return {
-            "status": "error",
-            "message": "Cell size must be positive.",
-            "http_status": 400,
-        }
-
-    schema, table = scenario.base_layer_source()
-    quoted_view = _quote_qualified_table(schema, table)
-
-    sources = _fetch_canvas_feature_data(
-        scenario, unique_features, include_geometry=True
+    cells, sources, error = _compute_grid_cells(
+        scenario,
+        features,
+        cell_size_ft=cell_size_ft,
+        offset_x_ft=offset_x_ft,
+        offset_y_ft=offset_y_ft,
+        rotation_deg=rotation_deg,
     )
-    missing = [feature for feature in unique_features if feature not in sources]
-    if missing:
-        return {
-            "status": "error",
-            "message": (
-                "Parcels not found in this scenario's canvas: "
-                f"{', '.join(missing[:10])}."
-            ),
-            "http_status": 404,
-        }
+    if error is not None:
+        return {"status": "error", "message": error[0], "http_status": error[1]}
 
-    size_m = cell_size_ft * _FT_TO_M
-    ox_m = offset_x_ft * _FT_TO_M
-    oy_m = offset_y_ft * _FT_TO_M
-    estimate = _grid_cell_estimate(quoted_view, unique_features, size_m)
-    if estimate > _MAX_GRID_CELLS:
-        return {
-            "status": "error",
-            "message": (
-                f"A {cell_size_ft:g} ft grid over this selection needs about "
-                f"{estimate} cells (limit {_MAX_GRID_CELLS}) — use a larger cell "
-                "size or select a smaller area."
-            ),
-            "http_status": 400,
-        }
+    unique_features = list(dict.fromkeys(features))
 
     with transaction.atomic():
-        cells = _grid_cells(
-            quoted_view,
-            unique_features,
-            size_m=size_m,
-            ox_m=ox_m,
-            oy_m=oy_m,
-        )
-        if not cells:
-            return {
-                "status": "error",
-                "message": "Grid produced no cells — choose a smaller cell size.",
-                "http_status": 400,
-            }
-
         batch_id = uuid.uuid4().hex
         cell_ids = _next_geometry_edit_ids(len(cells))
         ParcelGeometryEdit.objects.bulk_create(
@@ -1728,14 +1958,7 @@ def run_merge_parcels(
     # the survivor is deterministic for a given selection.
     survivor = sorted(unique_features)[0]
 
-    with connection.cursor() as cursor:
-        cursor.execute(
-            f"SELECT ST_AsGeoJSON("  # noqa: S608
-            f"ST_Multi(ST_UnaryUnion(ST_Collect(ST_MakeValid(geometry))))) "
-            f"FROM {quoted_view} WHERE CAST(parcel_id AS text) = ANY(%s)",
-            [unique_features],
-        )
-        union_geojson = cursor.fetchone()[0]
+    union_geojson = _merge_union_geojson(quoted_view, unique_features)
     if union_geojson is None:
         return {
             "status": "error",

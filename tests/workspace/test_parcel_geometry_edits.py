@@ -14,14 +14,19 @@ from __future__ import annotations
 
 import json
 from dataclasses import replace
+from math import radians
 from typing import TYPE_CHECKING
 from typing import Any
 
 import pytest
+from django.contrib.gis.geos import GEOSGeometry
 from django.db import connection
+from django.db.models import Max
+from django.db.models.expressions import RawSQL
 from django.urls import reverse
 
 from brewgis.workspace.models import PaintedCanvas
+from brewgis.workspace.models import PaintRun
 from brewgis.workspace.models import ParcelGeometryEdit
 from brewgis.workspace.models import ScenarioType
 from brewgis.workspace.services.base_canvas_schema import BaseCanvasSchema
@@ -30,6 +35,8 @@ from brewgis.workspace.services.canvas_view_manager import _qi
 from brewgis.workspace.services.canvas_view_manager import build_canvas_view_select
 from brewgis.workspace.views.paint import _allocate_grid_cell
 from brewgis.workspace.views.paint import _allocate_merge
+from brewgis.workspace.views.paint import _grid_cell_estimate
+from brewgis.workspace.views.paint import _quote_qualified_table
 from tests.factories import ScenarioFactory
 from tests.factories import UserFactory
 from tests.factories import WorkspaceFactory
@@ -162,11 +169,18 @@ class _Harness:
             content_type="application/json",
         )
 
-    def grid(self, features: Any, cell_size_ft: float = CELL_FT) -> Any:
-        return self.post(
-            "grid_parcels",
-            {"features": list(features), "cell_size_ft": cell_size_ft},
-        )
+    def grid(
+        self, features: Any, cell_size_ft: float = CELL_FT, *, rotation_deg: float = 0.0
+    ) -> Any:
+        body: dict[str, Any] = {
+            "features": list(features),
+            "cell_size_ft": cell_size_ft,
+        }
+        # Left out entirely at zero so the unrotated request stays byte-identical
+        # to the one the toolbar sent before rotation existed.
+        if rotation_deg:
+            body["rotation_deg"] = rotation_deg
+        return self.post("grid_parcels", body)
 
     def view_rows(self) -> list[tuple[Any, ...]]:
         """Every canvas-view row, as ``(…columns…, geometry area)``."""
@@ -248,6 +262,68 @@ def _touching_cell_pair(harness: _Harness) -> list[str]:
         return list(cursor.fetchone())
 
 
+def _cell_area_m2(size_ft: float) -> float:
+    """Geodesic area (m²) of one lattice cell of *size_ft* feet on the fixture.
+
+    The fixture sits on the equator, where Web Mercator's metre is the
+    ellipsoid's equatorial metre rather than a ground metre: a "100 ft" cell
+    measures ≈922.8 m² on the ellipsoid, not 100² ft² — which is why the
+    expected area is measured here rather than computed from ``FT_TO_M``.
+    """
+    side = size_ft * FT_TO_M
+    with connection.cursor() as cursor:
+        cursor.execute(
+            "SELECT ST_Area(ST_Transform("
+            "ST_SetSRID(ST_MakeEnvelope(0, 0, %s, %s), 3857), 4326)::geography)",
+            [side, side],
+        )
+        return float(cursor.fetchone()[0])
+
+
+def _edit_areas(harness: _Harness, operation: str = "grid") -> list[float]:
+    """Geodesic area (m²) of every edit row of *operation*, ascending."""
+    rows = ParcelGeometryEdit.objects.filter(
+        scenario=harness.scenario, operation=operation
+    ).annotate(area=RawSQL("ST_Area(geometry::geography)", []))
+    return sorted(float(row.area) for row in rows)
+
+
+def _widest_edit_bbox_m(harness: _Harness) -> float:
+    """Widest projected (3857) bounding box among the grid's cells.
+
+    An axis-aligned cell of the fixture's 100 ft lattice is exactly its side
+    wide; a rotated one is wider by however much the lattice is turned, which
+    is what tells the two grids apart independently of the cell count.
+    """
+    rows = ParcelGeometryEdit.objects.filter(
+        scenario=harness.scenario, operation=ParcelGeometryEdit.Operation.GRID
+    ).annotate(
+        width=RawSQL(
+            "ST_XMax(ST_Transform(geometry, 3857)) "
+            "- ST_XMin(ST_Transform(geometry, 3857))",
+            [],
+        )
+    )
+    return float(rows.aggregate(widest=Max("width"))["widest"])
+
+
+def _geojson_areas(features: list[dict[str, Any]]) -> list[float]:
+    """Geodesic area (m²) of previewed GeoJSON features, measured in PostGIS.
+
+    A preview and the apply that follows it hand out the same cells, so their
+    areas have to match to the last decimal — measuring the preview's GeoJSON
+    through the same ``ST_Area(geometry::geography)`` keeps the comparison
+    honest rather than re-deriving it in Python.
+    """
+    with connection.cursor() as cursor:
+        cursor.execute(
+            "SELECT ST_Area(ST_GeomFromGeoJSON(g)::geography) "
+            "FROM unnest(%s::text[]) AS g",
+            [[json.dumps(feature["geometry"]) for feature in features]],
+        )
+        return sorted(float(row[0]) for row in cursor.fetchall())
+
+
 @pytest.mark.integration
 class TestGridParcels:
     """POST grid — the split itself, its conservation and its key typing."""
@@ -314,6 +390,61 @@ class TestGridParcels:
         with connection.cursor() as cursor:
             cursor.execute(f"SELECT count(*), sum(du) FROM {INT_TABLE}")  # noqa: S608
             assert cursor.fetchone() == (2, sum(PARCEL_DU))
+
+    def test_grid_rotation_cuts_on_the_rotated_lattice_and_conserves_the_site(
+        self, int_harness: _Harness
+    ) -> None:
+        response = int_harness.grid(INT_IDS, rotation_deg=45)
+
+        assert response.status_code == 200
+        # A 400 x 200 ft site on a lattice turned 45° is cut into its four
+        # interior diamonds plus a triangle along each edge — 18 cells where the
+        # axis-aligned grid gave 8.
+        assert response.json()["grid_count"] == 18
+        areas = _edit_areas(int_harness)
+        assert sum(areas) == pytest.approx(int_harness.base_geometry_area())
+        # Full cells are still full cells: the diamond keeps the 100 ft cell's
+        # area and only its bounding box grows, by √2.
+        assert max(areas) == pytest.approx(_cell_area_m2(CELL_FT), rel=1e-4)
+        assert _widest_edit_bbox_m(int_harness) == pytest.approx(
+            CELL_FT * FT_TO_M * 2**0.5, rel=1e-4
+        )
+
+    def test_grid_rotation_of_zero_is_the_axis_aligned_grid(
+        self, int_harness: _Harness
+    ) -> None:
+        response = int_harness.post(
+            "grid_parcels",
+            {
+                "features": list(INT_IDS),
+                "cell_size_ft": CELL_FT,
+                "rotation_deg": 0,
+            },
+        )
+
+        assert response.status_code == 200
+        assert response.json()["grid_count"] == 8
+        areas = _edit_areas(int_harness)
+        assert max(areas) == pytest.approx(min(areas), rel=0.001)
+        assert _widest_edit_bbox_m(int_harness) == pytest.approx(
+            CELL_FT * FT_TO_M, rel=1e-4
+        )
+
+    def test_grid_rotation_inflates_the_cell_count_guard(
+        self, int_harness: _Harness
+    ) -> None:
+        # The guard sizes the lattice on the selection's envelope; a rotated
+        # lattice covers the envelope's *rotated* bounding box instead, so the
+        # estimate has to grow with the angle or a diagonal grid would slip
+        # past the 50k-cell limit.
+        quoted = _quote_qualified_table(*int_harness.scenario.base_layer_source())
+        size_m = CELL_FT * FT_TO_M
+
+        assert _grid_cell_estimate(quoted, list(INT_IDS), size_m) == 8
+        assert (
+            _grid_cell_estimate(quoted, list(INT_IDS), size_m, angle_rad=radians(45))
+            == 25
+        )
 
     def test_grid_of_an_already_gridded_cell_replaces_it(
         self, int_harness: _Harness
@@ -476,6 +607,90 @@ class TestMergeParcels:
         assert restored.painted_value == pytest.approx(99.0)
         assert {str(row[0]) for row in int_harness.view_rows()} == set(INT_IDS)
         assert int_harness.view_by_id()[survivor][1] == pytest.approx(99.0)
+
+
+@pytest.mark.integration
+class TestGeometryEditPreviews:
+    """POST grid/merge preview — the geometry the apply writes, and nothing else."""
+
+    def test_grid_preview_returns_the_cells_the_grid_then_writes(
+        self, int_harness: _Harness
+    ) -> None:
+        body = {"features": list(INT_IDS), "cell_size_ft": CELL_FT, "rotation_deg": 45}
+
+        preview = int_harness.post("grid_preview", body)
+
+        assert preview.status_code == 200
+        geojson = preview.json()["geojson"]
+        assert geojson["type"] == "FeatureCollection"
+        assert len(geojson["features"]) == 18
+        # A preview is a read: no edit rows, and not even the PaintRun row the
+        # apply endpoints create.
+        assert not int_harness.edits()
+        assert not PaintRun.objects.filter(scenario=int_harness.scenario).exists()
+
+        applied = int_harness.post("grid_parcels", body)
+
+        assert applied.status_code == 200
+        assert applied.json()["grid_count"] == len(geojson["features"])
+        assert _geojson_areas(geojson["features"]) == pytest.approx(
+            _edit_areas(int_harness)
+        )
+
+    def test_grid_preview_without_rotation_previews_the_axis_aligned_cells(
+        self, int_harness: _Harness
+    ) -> None:
+        preview = int_harness.post(
+            "grid_preview", {"features": list(INT_IDS), "cell_size_ft": CELL_FT}
+        )
+
+        assert preview.status_code == 200
+        features = preview.json()["geojson"]["features"]
+        assert len(features) == 8
+        areas = _geojson_areas(features)
+        # Eight equal cells tiling the site exactly, as the applied grid's are.
+        assert max(areas) == pytest.approx(_cell_area_m2(CELL_FT), rel=1e-4)
+        assert max(areas) == pytest.approx(min(areas), rel=0.001)
+        assert sum(areas) == pytest.approx(int_harness.base_geometry_area())
+
+    def test_merge_preview_returns_the_union_the_merge_then_writes(
+        self, int_harness: _Harness
+    ) -> None:
+        preview = int_harness.post("merge_preview", {"features": list(INT_IDS)})
+
+        assert preview.status_code == 200
+        features = preview.json()["geojson"]["features"]
+        assert len(features) == 1
+        assert not int_harness.edits()
+
+        applied = int_harness.post("merge_parcels", {"features": list(INT_IDS)})
+
+        assert applied.status_code == 200
+        assert int_harness.edits("merge")[0].geometry.equals(
+            GEOSGeometry(json.dumps(features[0]["geometry"]))
+        )
+
+    def test_previews_reject_what_the_applies_reject(
+        self, int_harness: _Harness
+    ) -> None:
+        # The same shared validation, so a preview never reports a grid or merge
+        # the apply would then refuse.
+        assert (
+            int_harness.post("grid_preview", {"features": list(INT_IDS)}).status_code
+            == 400
+        )
+        assert (
+            int_harness.post(
+                "grid_preview",
+                {"features": [*INT_IDS, "999999"], "cell_size_ft": CELL_FT},
+            ).status_code
+            == 404
+        )
+        assert (
+            int_harness.post("merge_preview", {"features": [INT_IDS[0]]}).status_code
+            == 400
+        )
+        assert not int_harness.edits()
 
 
 @pytest.mark.integration

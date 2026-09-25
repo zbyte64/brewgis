@@ -226,7 +226,9 @@ def view_workspace_map(request: HttpRequest, workspace_pk: int) -> HttpResponse:
     paint_url: str = ""
     clear_url: str = ""
     grid_url: str = ""
+    grid_preview_url: str = ""
     merge_url: str = ""
+    merge_preview_url: str = ""
     bf_paint_url: str = ""
     bf_match_url: str = ""
     bf_fill_url: str = ""
@@ -291,8 +293,14 @@ def view_workspace_map(request: HttpRequest, workspace_pk: int) -> HttpResponse:
         grid_url = request.build_absolute_uri(
             reverse("workspace:grid_parcels", args=[workspace_pk, scenario.pk])
         )
+        grid_preview_url = request.build_absolute_uri(
+            reverse("workspace:grid_preview", args=[workspace_pk, scenario.pk])
+        )
         merge_url = request.build_absolute_uri(
             reverse("workspace:merge_parcels", args=[workspace_pk, scenario.pk])
+        )
+        merge_preview_url = request.build_absolute_uri(
+            reverse("workspace:merge_preview", args=[workspace_pk, scenario.pk])
         )
         bf_paint_url = request.build_absolute_uri(
             reverse("workspace:paint_built_form", args=[workspace_pk, scenario.pk])
@@ -500,7 +508,9 @@ def view_workspace_map(request: HttpRequest, workspace_pk: int) -> HttpResponse:
         "paint_url": paint_url,
         "clear_url": clear_url,
         "grid_url": grid_url,
+        "grid_preview_url": grid_preview_url,
         "merge_url": merge_url,
+        "merge_preview_url": merge_preview_url,
         "bf_paint_url": bf_paint_url,
         "bf_match_url": bf_match_url,
         "bf_fill_url": bf_fill_url,

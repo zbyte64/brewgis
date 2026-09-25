@@ -1,8 +1,9 @@
-import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest'
+import { describe, it, expect, vi, beforeEach, afterEach, type Mock } from 'vitest'
 import maplibregl from 'maplibre-gl'
 
 // Import the component to trigger custom element registration
 import '../index.js'
+import type { BrewGisMap } from '../components/brew-gis-map.js'
 import { mockMap, triggerMockEvent } from './setup.js'
 
 function createMapElement() {
@@ -300,5 +301,107 @@ describe('brew-gis-map', () => {
     const detail = eventSpy.mock.calls[0][0].detail
     expect(detail).toHaveProperty('features')
     expect(detail).toHaveProperty('selectionMode')
+  })
+
+  const previewCollection = (id: number): GeoJSON.FeatureCollection => ({
+    type: 'FeatureCollection',
+    features: [
+      { type: 'Feature', properties: { id }, geometry: { type: 'Point', coordinates: [0, 0] } },
+    ],
+  })
+
+  // `vi.clearAllMocks()` clears call history but not the return values a test
+  // sets, and these spies are one shared map mock for the whole file — so each
+  // test states the source/layer state it expects instead of inheriting it.
+  type PreviewMapMock = {
+    getLayer: Mock
+    getSource: Mock
+    addSource: Mock
+    addLayer: Mock
+    removeLayer: Mock
+    removeSource: Mock
+  }
+  const withNoPreviewOnMap = (map: PreviewMapMock) => {
+    map.getLayer.mockReturnValue(null)
+    map.getSource.mockReturnValue(null)
+    map.addSource.mockClear()
+    map.addLayer.mockClear()
+    map.removeLayer.mockClear()
+    map.removeSource.mockClear()
+  }
+
+  it('showPaintPreview adds the preview source and its two layers', async () => {
+    const { el, mockMap } = await createAndAttach()
+    withNoPreviewOnMap(mockMap)
+    const geojson = previewCollection(1)
+
+    ;(el as BrewGisMap).showPaintPreview(geojson)
+
+    expect(mockMap.addSource).toHaveBeenCalledWith(
+      'brew-gis-paint-preview',
+      expect.objectContaining({ type: 'geojson', data: geojson }),
+    )
+    expect(mockMap.addLayer).toHaveBeenCalledWith(
+      expect.objectContaining({
+        id: 'brew-gis-paint-preview-fill',
+        source: 'brew-gis-paint-preview',
+      }),
+      undefined,
+    )
+    expect(mockMap.addLayer).toHaveBeenCalledWith(
+      expect.objectContaining({
+        id: 'brew-gis-paint-preview-line',
+        source: 'brew-gis-paint-preview',
+      }),
+      undefined,
+    )
+  })
+
+  it('showPaintPreview replaces the geometry of an existing preview', async () => {
+    const { el, mockMap } = await createAndAttach()
+    const setData = vi.fn()
+    withNoPreviewOnMap(mockMap)
+    mockMap.getSource.mockReturnValue({ setData })
+    ;(el as BrewGisMap).showPaintPreview(previewCollection(1))
+    ;(el as BrewGisMap).showPaintPreview(previewCollection(2))
+
+    expect(setData).toHaveBeenCalledTimes(2)
+    expect(setData).toHaveBeenLastCalledWith(previewCollection(2))
+    // One preview at a time: a second call must not stack a second source.
+    expect(mockMap.addSource).not.toHaveBeenCalled()
+    expect(mockMap.addLayer).not.toHaveBeenCalled()
+  })
+
+  it('showPaintPreview inserts the preview below the selection highlight', async () => {
+    const { el, mockMap } = await createAndAttach()
+    withNoPreviewOnMap(mockMap)
+    mockMap.getLayer.mockReturnValue({ id: 'brew-gis-selection-highlight' })
+    ;(el as BrewGisMap).showPaintPreview(previewCollection(1))
+
+    const fillCall = mockMap.addLayer.mock.calls.find(
+      (call: [{ id?: string }, unknown]) => call[0].id === 'brew-gis-paint-preview-fill',
+    )
+    expect(fillCall?.[1]).toBe('brew-gis-selection-highlight')
+  })
+
+  it('clearPaintPreview removes the preview layers and source', async () => {
+    const { el, mockMap } = await createAndAttach()
+    withNoPreviewOnMap(mockMap)
+    mockMap.getLayer.mockReturnValue({ id: 'brew-gis-paint-preview-fill' })
+    mockMap.getSource.mockReturnValue({ setData: vi.fn() })
+    ;(el as BrewGisMap).clearPaintPreview()
+
+    expect(mockMap.removeLayer).toHaveBeenCalledWith('brew-gis-paint-preview-fill')
+    expect(mockMap.removeLayer).toHaveBeenCalledWith('brew-gis-paint-preview-line')
+    expect(mockMap.removeSource).toHaveBeenCalledWith('brew-gis-paint-preview')
+  })
+
+  it('clearPaintPreview is a no-op when no preview was shown', async () => {
+    const { el, mockMap } = await createAndAttach()
+    withNoPreviewOnMap(mockMap)
+    ;(el as BrewGisMap).clearPaintPreview()
+
+    expect(mockMap.removeLayer).not.toHaveBeenCalled()
+    expect(mockMap.removeSource).not.toHaveBeenCalled()
   })
 })

@@ -134,24 +134,52 @@
                    for="sel-mode-polygon"
                    title="Draw a polygon to select features">Polygon</label>
           </div>
-          <!-- Paint mode tabs -->
-          <div class="btn-group btn-group-sm" role="group">
+          <!-- Paint operation tabs: one operation at a time, so an
+               attribute paint never sits next to regrid controls -->
+          <div class="btn-group btn-group-sm"
+               role="group"
+               aria-label="Paint operation">
             <input type="radio"
                    class="btn-check"
-                   name="paint-mode"
-                   id="paint-mode-direct"
-                   value="direct"
+                   name="paint-operation"
+                   id="paint-op-attribute"
+                   value="attribute"
                    checked />
-            <label class="btn btn-outline-secondary" for="paint-mode-direct">Direct Paint</label>
+            <label class="btn btn-outline-secondary" for="paint-op-attribute">Paint Attribute</label>
             <input type="radio"
                    class="btn-check"
-                   name="paint-mode"
-                   id="paint-mode-bf"
+                   name="paint-operation"
+                   id="paint-op-built-form"
                    value="built_form" />
-            <label class="btn btn-outline-secondary" for="paint-mode-bf">Built Form</label>
+            <label class="btn btn-outline-secondary" for="paint-op-built-form">Assign Built Form</label>
+            <input type="radio"
+                   class="btn-check"
+                   name="paint-operation"
+                   id="paint-op-match"
+                   value="match" />
+            <label class="btn btn-outline-secondary" for="paint-op-match">Match Closest</label>
+            <input type="radio"
+                   class="btn-check"
+                   name="paint-operation"
+                   id="paint-op-fill"
+                   value="fill" />
+            <label class="btn btn-outline-secondary" for="paint-op-fill">Fill from Base</label>
+            <input type="radio"
+                   class="btn-check"
+                   name="paint-operation"
+                   id="paint-op-grid"
+                   value="grid" />
+            <label class="btn btn-outline-secondary" for="paint-op-grid">Grid Parcels</label>
+            <input type="radio"
+                   class="btn-check"
+                   name="paint-operation"
+                   id="paint-op-merge"
+                   value="merge" />
+            <label class="btn btn-outline-secondary" for="paint-op-merge">Merge Parcels</label>
           </div>
-          <!-- Direct Paint Controls -->
-          <select class="form-select form-select-sm paint-control-group"
+          <!-- Paint Attribute controls -->
+          <select class="form-select form-select-sm"
+                  data-paint-op="attribute"
                   id="paint-column"
                   name="column"
                   aria-label="Column"
@@ -160,41 +188,41 @@
             {% for column in paintable_columns %}<option value="{{ column.name }}">{{ column.label }}</option>{% endfor %}
           </select>
           <input type="number"
-                 class="form-control form-control-sm paint-control-group"
+                 class="form-control form-control-sm"
+                 data-paint-op="attribute"
                  id="paint-value"
                  name="value"
                  placeholder="Value"
                  step="any"
                  style="width: 100px" />
-          <!-- Built Form Controls (hidden by default) -->
-          <!-- Built Form auto-fill actions (hidden by default) -->
+          <!-- Built Form auto-fill actions -->
           <button type="button"
-                  class="btn btn-sm btn-primary paint-bf-group"
+                  class="btn btn-sm btn-primary"
+                  data-paint-op="match"
                   id="paint-bf-match-btn"
                   title="Assign each selected parcel the Building Type whose du/emp density is closest to its own"
-                  style="display: none"
                   disabled>Match Closest</button>
           <button type="button"
-                  class="btn btn-sm btn-primary paint-bf-group"
+                  class="btn btn-sm btn-primary"
+                  data-paint-op="fill"
                   id="paint-bf-fill-btn"
                   title="Fill in du/emp for each selected parcel from its base-layer built form"
-                  style="display: none"
                   disabled>Fill from Base Layer</button>
-          <select class="form-select form-select-sm paint-bf-group"
+          <select class="form-select form-select-sm"
+                  data-paint-op="built_form"
                   id="paint-bf-type"
                   name="bf_type"
                   aria-label="Built Form Type"
-                  style="width: auto;
-                         display: none">
+                  style="width: auto">
             <option value="building">Building Type</option>
             <option value="place">Place Type</option>
           </select>
-          <select class="form-select form-select-sm paint-bf-group"
+          <select class="form-select form-select-sm"
+                  data-paint-op="built_form"
                   id="paint-bf-id"
                   name="bf_id"
                   aria-label="Built Form"
-                  style="width: auto;
-                         display: none">
+                  style="width: auto">
             <option value="">Select...</option>
             {% if built_forms %}
               {% if built_forms.building_types %}
@@ -220,9 +248,11 @@
           <input type="hidden" id="paint-feature-ids" name="features" value="" />
           <input type="hidden" id="undo-event-id" name="event_id" value="" />
           <!-- Geometry edits: grid unions the selection and cuts it into square
-               cells, merge unions the selection into one parcel -->
+               cells, merge unions the selection into one parcel. Each draws a
+               preview overlay of its result before it is applied. -->
           <input type="number"
                  class="form-control form-control-sm"
+                 data-paint-op="grid"
                  id="paint-grid-size-ft"
                  placeholder="Cell size (ft)"
                  step="any"
@@ -230,23 +260,34 @@
                  style="width: 120px" />
           <input type="number"
                  class="form-control form-control-sm"
+                 data-paint-op="grid"
                  id="paint-grid-offset-x-ft"
                  placeholder="Offset X (ft)"
                  step="any"
                  style="width: 100px" />
           <input type="number"
                  class="form-control form-control-sm"
+                 data-paint-op="grid"
                  id="paint-grid-offset-y-ft"
                  placeholder="Offset Y (ft)"
                  step="any"
                  style="width: 100px" />
+          <input type="number"
+                 class="form-control form-control-sm"
+                 data-paint-op="grid"
+                 id="paint-grid-rotation-deg"
+                 placeholder="Rotation (deg)"
+                 step="any"
+                 style="width: 100px" />
           <button type="button"
                   class="btn btn-sm btn-primary"
+                  data-paint-op="grid"
                   id="paint-grid-btn"
                   title="Union the selected parcels and cut the site into square cells of this size"
                   disabled>Grid</button>
           <button type="button"
                   class="btn btn-sm btn-primary"
+                  data-paint-op="merge"
                   id="paint-merge-btn"
                   title="Merge the selected parcels into one"
                   disabled>Merge</button>
@@ -495,10 +536,6 @@
       const applyBtn = document.getElementById('paint-apply-btn');
       const clearBtn = document.getElementById('paint-clear-btn');
       const paintResult = document.getElementById('paint-result');
-      const paintModeDirect = document.getElementById('paint-mode-direct');
-      const paintModeBf = document.getElementById('paint-mode-bf');
-      const directControls = document.querySelectorAll('.paint-control-group');
-      const bfControls = document.querySelectorAll('.paint-bf-group');
       const bfTypeSelect = document.getElementById('paint-bf-type');
       const bfIdSelect = document.getElementById('paint-bf-id');
       const bfOptgroupBuilding = document.getElementById('bf-optgroup-building');
@@ -511,12 +548,15 @@
       const gridSizeInput = document.getElementById('paint-grid-size-ft');
       const gridOffsetXInput = document.getElementById('paint-grid-offset-x-ft');
       const gridOffsetYInput = document.getElementById('paint-grid-offset-y-ft');
+      const gridRotationInput = document.getElementById('paint-grid-rotation-deg');
       const mergeBtn = document.getElementById('paint-merge-btn');
 
       const paintUrl = '{{ paint_url|safe }}';
       const clearUrl = '{{ clear_url|safe }}';
       const gridUrl = '{{ grid_url|safe }}';
+      const gridPreviewUrl = '{{ grid_preview_url|safe }}';
       const mergeUrl = '{{ merge_url|safe }}';
+      const mergePreviewUrl = '{{ merge_preview_url|safe }}';
       const bfPaintUrl = '{{ bf_paint_url|safe }}';
       const bfMatchUrl = '{{ bf_match_url|safe }}';
       const bfFillUrl = '{{ bf_fill_url|safe }}';
@@ -535,6 +575,7 @@
         toggleBtn.classList.toggle('btn-outline-primary', !paintActive);
         toggleBtn.classList.toggle('btn-primary', paintActive);
         mapEl.mode = paintActive ? 'paint' : 'view';
+        if (!paintActive) clearPreview();
       });
 
       // Listen for feature selection changes from the map component
@@ -550,6 +591,7 @@
         if (bfFillBtn) bfFillBtn.disabled = selectedFeatures.length === 0;
         if (gridBtn) gridBtn.disabled = selectedFeatures.length === 0;
         if (mergeBtn) mergeBtn.disabled = selectedFeatures.length < 2;
+        schedulePreview();
       });
 
       // Selection mode radio buttons -> map component property
@@ -561,21 +603,38 @@
         });
       });
 
-      // Paint mode radio buttons
-      function updatePaintMode() {
-        var isDirect = paintModeDirect && paintModeDirect.checked;
-        directControls.forEach(function(el) {
-          el.style.display = isDirect ? '' : 'none';
-        });
-        bfControls.forEach(function(el) {
-          el.style.display = isDirect ? 'none' : '';
-        });
+      // Paint operation radio buttons: exactly one operation's controls are
+      // visible at a time, so a user never sees regrid inputs while painting an
+      // attribute (or the building-type picker while matching).
+      function currentOperation() {
+        var checked = document.querySelector('input[name="paint-operation"]:checked');
+        return checked ? checked.value : 'attribute';
       }
 
-      if (paintModeDirect) {
-        paintModeDirect.addEventListener('change', updatePaintMode);
-        paintModeBf.addEventListener('change', updatePaintMode);
+      function updatePaintOperation() {
+        var op = currentOperation();
+        // Every operation-scoped control carries the operation it belongs to,
+        // so a new control only has to declare itself to join one.
+        document.querySelectorAll('[data-paint-op]').forEach(function(el) {
+          el.style.display = (el.getAttribute('data-paint-op') === op) ? '' : 'none';
+        });
+        // Apply paints a column or a built form; every other operation has its
+        // own action button.
+        if (applyBtn) {
+          applyBtn.style.display = (op === 'attribute' || op === 'built_form') ? '' : 'none';
+        }
       }
+
+      document.querySelectorAll('input[name="paint-operation"]').forEach(function(radio) {
+        radio.addEventListener('change', function() {
+          if (this.checked) {
+            updatePaintOperation();
+            schedulePreview();
+          }
+        });
+      });
+
+      updatePaintOperation();
 
       // BF type selector toggles which optgroup is visible
       if (bfTypeSelect) {
@@ -723,15 +782,15 @@
         applyBtn.addEventListener('click', function() {
           if (selectedFeatures.length === 0) return;
           applyBtn.disabled = true;
-          var isDirect = paintModeDirect && paintModeDirect.checked;
-          if (isDirect) {
+          var op = currentOperation();
+          if (op === 'attribute') {
             var rawValue = paintValueInput ? paintValueInput.value : '';
             postPaintAction(paintUrl, {
               features: selectedFeatures,
               column: paintColumnSelect ? paintColumnSelect.value : '',
               value: rawValue === '' ? null : parseFloat(rawValue)
             });
-          } else {
+          } else if (op === 'built_form') {
             postPaintAction(bfPaintUrl, {
               features: selectedFeatures,
               bf_type: bfTypeSelect ? bfTypeSelect.value : '',
@@ -771,6 +830,77 @@
         });
       }
 
+      // ── Pending-edit preview ───────────────────────────────
+      // Grid and merge are the two operations whose result is geometry rather
+      // than an attribute value, so they are the two whose result can be drawn
+      // beforehand: both endpoints answer with a GeoJSON FeatureCollection and
+      // write nothing, and both share their geometry code with the apply, so
+      // the preview is what applying produces.
+      let previewDebounce = null;
+
+      function clearPreview() {
+        if (mapEl && typeof mapEl.clearPaintPreview === 'function') {
+          mapEl.clearPaintPreview();
+        }
+      }
+
+      function requestPreview() {
+        clearPreview();
+        var op = currentOperation();
+        var headers = {
+          'X-CSRFToken': '{{ csrf_token }}',
+          'Content-Type': 'application/json'
+        };
+        if (op === 'grid') {
+          var sizeFt = gridSizeInput ? parseFloat(gridSizeInput.value) : NaN;
+          if (!Number.isFinite(sizeFt) || sizeFt <= 0 || selectedFeatures.length === 0) return;
+          fetchJson(gridPreviewUrl, {
+            method: 'POST',
+            headers: headers,
+            body: JSON.stringify({
+              features: selectedFeatures,
+              cell_size_ft: sizeFt,
+              offset_x_ft: gridOffsetXInput ? (parseFloat(gridOffsetXInput.value) || 0) : 0,
+              offset_y_ft: gridOffsetYInput ? (parseFloat(gridOffsetYInput.value) || 0) : 0,
+              rotation_deg: gridRotationInput ? (parseFloat(gridRotationInput.value) || 0) : 0
+            })
+          }).then(function(result) {
+            if (result.ok && result.data && result.data.geojson &&
+              mapEl && typeof mapEl.showPaintPreview === 'function') {
+              mapEl.showPaintPreview(result.data.geojson);
+            }
+          });
+        } else if (op === 'merge') {
+          if (selectedFeatures.length < 2) return;
+          fetchJson(mergePreviewUrl, {
+            method: 'POST',
+            headers: headers,
+            body: JSON.stringify({
+              features: selectedFeatures
+            })
+          }).then(function(result) {
+            if (result.ok && result.data && result.data.geojson &&
+              mapEl && typeof mapEl.showPaintPreview === 'function') {
+              mapEl.showPaintPreview(result.data.geojson);
+            }
+          });
+        }
+      }
+
+      // Debounced: a cell size is typed digit by digit, and each keystroke would
+      // otherwise be a PostGIS grid over the selection.
+      function schedulePreview() {
+        if (previewDebounce) clearTimeout(previewDebounce);
+        previewDebounce = setTimeout(requestPreview, 350);
+      }
+
+      ['paint-grid-size-ft', 'paint-grid-offset-x-ft', 'paint-grid-offset-y-ft',
+        'paint-grid-rotation-deg'
+      ].forEach(function(id) {
+        var el = document.getElementById(id);
+        if (el) el.addEventListener('input', schedulePreview);
+      });
+
       // Grid: union the selection and cut it into square cells. The cell size
       // is the one required input, so it is checked here rather than left to
       // the server's 400 — an empty cell size is the common case, not an error
@@ -786,11 +916,13 @@
             return;
           }
           gridBtn.disabled = true;
+          clearPreview();
           postPaintAction(gridUrl, {
             features: selectedFeatures,
             cell_size_ft: sizeFt,
             offset_x_ft: gridOffsetXInput ? (parseFloat(gridOffsetXInput.value) || 0) : 0,
-            offset_y_ft: gridOffsetYInput ? (parseFloat(gridOffsetYInput.value) || 0) : 0
+            offset_y_ft: gridOffsetYInput ? (parseFloat(gridOffsetYInput.value) || 0) : 0,
+            rotation_deg: gridRotationInput ? (parseFloat(gridRotationInput.value) || 0) : 0
           });
         });
       }
@@ -799,6 +931,7 @@
         mergeBtn.addEventListener('click', function() {
           if (selectedFeatures.length < 2) return;
           mergeBtn.disabled = true;
+          clearPreview();
           postPaintAction(mergeUrl, {
             features: selectedFeatures
           });

@@ -221,6 +221,76 @@ export class BrewGisMap extends LitElement {
   }
 
   /**
+   * Draw a temporary overlay of a pending geometry edit — the cells a grid
+   * would cut, or the shape a merge would leave — so the user can judge an
+   * operation before applying it.
+   *
+   * One fixed source and two fixed layers: shown again, it replaces the
+   * previous preview rather than stacking a second one. It is deliberately not
+   * part of `layers`, which is the layer set `_syncLayers` diffs and removes
+   * against.
+   */
+  showPaintPreview(geojson: GeoJSON.FeatureCollection): void {
+    if (!this._map) return
+
+    const sourceId = 'brew-gis-paint-preview'
+    const source = this._map.getSource(sourceId) as maplibregl.GeoJSONSource | undefined
+    if (source) {
+      source.setData(geojson)
+      return
+    }
+
+    this._map.addSource(sourceId, { type: 'geojson', data: geojson })
+    // Below the selection highlight when it exists: the marks showing which
+    // parcels are selected belong on top of the preview of what they become.
+    const before = this._map.getLayer('brew-gis-selection-highlight')
+      ? 'brew-gis-selection-highlight'
+      : undefined
+
+    this._map.addLayer(
+      {
+        id: 'brew-gis-paint-preview-fill',
+        type: 'fill',
+        source: sourceId,
+        paint: {
+          'fill-color': '#f59e0b',
+          'fill-opacity': 0.18,
+        },
+      },
+      before,
+    )
+
+    this._map.addLayer(
+      {
+        id: 'brew-gis-paint-preview-line',
+        type: 'line',
+        source: sourceId,
+        paint: {
+          'line-color': '#d97706',
+          'line-width': 2,
+          'line-dasharray': [2, 2],
+        },
+      },
+      before,
+    )
+  }
+
+  /**
+   * Remove the pending-edit preview overlay. A no-op when there is none, so
+   * callers can clear it unconditionally.
+   */
+  clearPaintPreview(): void {
+    if (!this._map) return
+
+    for (const id of ['brew-gis-paint-preview-fill', 'brew-gis-paint-preview-line']) {
+      if (this._map.getLayer(id)) this._map.removeLayer(id)
+    }
+    if (this._map.getSource('brew-gis-paint-preview')) {
+      this._map.removeSource('brew-gis-paint-preview')
+    }
+  }
+
+  /**
    * Set a layer's visibility.
    */
   setLayerVisibility(layerId: string, visible: boolean): void {
