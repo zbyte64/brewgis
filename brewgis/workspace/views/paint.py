@@ -1104,6 +1104,9 @@ def run_built_form_paint(
     ``bf_id``/``bf_type`` were already resolved to a real Building/Place
     Type by the view (so an unknown id 404s immediately) — re-resolve here
     from the same (validated) params for the actual allocation work.
+
+    Each feature's area comes from the scenario's canvas view, so a parcel a
+    grid or merge edit produced is painted like any other.
     """
     features: list[str] = params["features"]
     bf_type: str = params["bf_type"]
@@ -1116,18 +1119,24 @@ def run_built_form_paint(
     else:
         built_form = get_object_or_404(PlaceType, pk=bf_id, workspace=workspace)
 
-    base_table = workspace.base_table
-    feature_data = _fetch_feature_data(base_table, features)
+    # Read the areas out of the scenario's canvas view, not the raw base table:
+    # a grid/merge result parcel exists only as a ParcelGeometryEdit row, and
+    # the base canvas keys its parcels on ``parcel_id`` — reading the base
+    # directly fails outright on a real base canvas ("column \"id\" does not
+    # exist") and would miss regridded parcels even where it does not.
+    feature_data = _fetch_canvas_feature_data(
+        scenario, features, columns=("area_gross", "area_parcel")
+    )
     if not feature_data:
         return {
             "status": "error",
-            "message": "No base canvas data found for selected features.",
+            "message": "No canvas data found for selected features.",
             "http_status": 400,
         }
 
     allocations: dict[str, AllocationResult] = {}
     for fid, row in feature_data.items():
-        parcel_acres = float(row.get("area_gross", row.get("area_parcel", 1.0)))
+        parcel_acres = float(row.get("area_gross") or row.get("area_parcel") or 1.0)
 
         if bf_type == "building":
             assert isinstance(built_form, BuildingType)
@@ -2071,31 +2080,6 @@ def _quote_qualified_table(schema: str, table: str) -> str:
     return f"{connection.ops.quote_name(schema)}.{connection.ops.quote_name(table)}"
 
 
-def _fetch_feature_data(base_table: str, feature_ids: list[str]) -> dict[str, dict]:
-    """Fetch base canvas data for given feature IDs.
-
-    Returns a dict mapping feature_id → row dict (with string keys).
-    Uses parameterized query to avoid SQL injection.
-    """
-    if not feature_ids:
-        return {}
-
-    schema, _, table = base_table.rpartition(".")
-    quoted_table = _quote_qualified_table(schema or "public", table)
-    placeholders = ", ".join("%s" for _ in feature_ids)
-    query = (
-        f"SELECT id, area_gross, area_parcel, built_form_key FROM {quoted_table} "  # noqa: S608
-        f"WHERE CAST(id AS text) IN ({placeholders})"
-    )
-
-    with connection.cursor() as cursor:
-        cursor.execute(query, feature_ids)
-        col_names = [desc[0] for desc in cursor.description]
-        rows = cursor.fetchall()
-
-    return {str(row[0]): dict(zip(col_names, row, strict=True)) for row in rows}
-
-
 def _json_scalar(value: Any) -> Any:
     """Coerce one fetched base-canvas value into something JSON-serializable.
 
@@ -2106,8 +2090,28 @@ def _json_scalar(value: Any) -> Any:
     return float(value) if isinstance(value, Decimal) else value
 
 
+_CANVAS_COLUMNS: tuple[str, ...] = (
+    "du",
+    "emp",
+    "area_gross",
+    "area_parcel",
+    "built_form_key",
+    "land_development_category",
+    *(f"emp_{sector}" for sector in EMPLOYMENT_SECTORS),
+)
+"""Default projection of :func:`_fetch_canvas_feature_data`.
+
+Everything the density match, the built-form fill, the grid and the merge
+allocate from — and nothing else.
+"""
+
+
 def _fetch_canvas_feature_data(
-    scenario: Scenario, feature_ids: list[str], *, include_geometry: bool = False
+    scenario: Scenario,
+    feature_ids: list[str],
+    *,
+    columns: tuple[str, ...] = _CANVAS_COLUMNS,
+    include_geometry: bool = False,
 ) -> dict[str, dict]:
     """Fetch current column values for *feature_ids* from the scenario's canvas view.
 
@@ -2115,14 +2119,17 @@ def _fetch_canvas_feature_data(
     geometry edits, COALESCEd with any PaintedCanvas overlay) rather than the
     raw base table, so density matching, ``built_form_key`` lookups and the
     grid/merge allocation all reflect what is already in effect for this
-    scenario.
+    scenario. It is also the only source that *has* a grid/merge result parcel:
+    those exist as ``ParcelGeometryEdit`` rows, and the base canvas keys its
+    parcels on ``parcel_id`` rather than a bare ``id``.
 
-    With *include_geometry*, every column the base canvas exposes comes back —
-    a geometry edit row has to carry all of them — plus ``geometry_geojson``
-    and ``area_m2``, the parcel's true geodesic area and the denominator the
-    grid's area shares divide by. ``geometry`` itself is not selected: only its
-    GeoJSON form is used, and a parcel's EWKB hex is orders of magnitude larger
-    than the rest of the row.
+    *columns* narrows the projection — the Built Form paint reads only the two
+    areas it allocates from. With *include_geometry*, every column the base
+    canvas exposes comes back instead (a geometry edit row has to carry all of
+    them) — plus ``geometry_geojson`` and ``area_m2``, the parcel's true
+    geodesic area and the denominator the grid's area shares divide by.
+    ``geometry`` itself is not selected: only its GeoJSON form is used, and a
+    parcel's EWKB hex is orders of magnitude larger than the rest of the row.
     """
     if not feature_ids:
         return {}
@@ -2132,29 +2139,18 @@ def _fetch_canvas_feature_data(
     placeholders = ", ".join("%s" for _ in feature_ids)
 
     if include_geometry:
-        columns = [
+        base_columns = [
             column
             for column in _fetch_base_columns(scenario.workspace.base_table)[2]
             if column not in ("parcel_id", "geometry")
         ]
-        selected = ", ".join(["parcel_id", *columns])
+        selected = ", ".join(["parcel_id", *base_columns])
         extra = (
             "ST_AsGeoJSON(geometry) AS geometry_geojson, "
             "ST_Area(geometry::geography) AS area_m2"
         )
     else:
-        selected = ", ".join(
-            [
-                "parcel_id",
-                "du",
-                "emp",
-                "area_gross",
-                "area_parcel",
-                "built_form_key",
-                "land_development_category",
-                *(f"emp_{sector}" for sector in EMPLOYMENT_SECTORS),
-            ]
-        )
+        selected = ", ".join(["parcel_id", *columns])
         extra = ""
 
     projected = f"{selected}, {extra}" if extra else selected

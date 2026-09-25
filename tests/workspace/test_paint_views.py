@@ -305,15 +305,15 @@ class TestPaintBuiltFormView(TestCase):
         )
 
     def _patch_refresh_and_data(self) -> tuple[patch, patch]:
-        """Mock purge_scenario_canvas_tiles and _fetch_feature_data."""
+        """Mock purge_scenario_canvas_tiles and _fetch_canvas_feature_data."""
         patcher1 = patch(
             "brewgis.workspace.views.paint.purge_scenario_canvas_tiles",
             return_value="public.mock_canvas_view",
         )
         patcher2 = patch(
-            "brewgis.workspace.views.paint._fetch_feature_data",
+            "brewgis.workspace.views.paint._fetch_canvas_feature_data",
             return_value={
-                "1": {"id": 1, "area_gross": 10.0, "area_parcel": 8.0},
+                "1": {"parcel_id": "1", "area_gross": 10.0, "area_parcel": 8.0},
             },
         )
         patcher1.start()

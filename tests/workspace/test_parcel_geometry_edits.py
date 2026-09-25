@@ -37,6 +37,7 @@ from brewgis.workspace.views.paint import _allocate_grid_cell
 from brewgis.workspace.views.paint import _allocate_merge
 from brewgis.workspace.views.paint import _grid_cell_estimate
 from brewgis.workspace.views.paint import _quote_qualified_table
+from tests.factories import BuildingTypeFactory
 from tests.factories import ScenarioFactory
 from tests.factories import UserFactory
 from tests.factories import WorkspaceFactory
@@ -66,6 +67,7 @@ _FIXTURE_COLUMNS = """
     du double precision NOT NULL DEFAULT 0,
     pop double precision NOT NULL DEFAULT 0,
     area_gross double precision NOT NULL DEFAULT 0,
+    area_parcel double precision NOT NULL DEFAULT 0,
     built_form_key text,
     land_development_category text,
     geometry_key text,
@@ -94,13 +96,13 @@ def _create_fixture_table(table: str, key_type: str, ids: tuple[str, str]) -> No
             high_x = (index + 1) * SIDE_M
             cursor.execute(
                 f"INSERT INTO {table} "  # noqa: S608 — table is a module constant
-                "(parcel_id, geometry, du, pop, area_gross, built_form_key, "
-                " land_development_category, geometry_key, building_count, "
-                " is_residential) "
+                "(parcel_id, geometry, du, pop, area_gross, area_parcel, "
+                " built_form_key, land_development_category, geometry_key, "
+                " building_count, is_residential) "
                 "VALUES (%(parcel_id)s, ST_Transform(ST_SetSRID(ST_MakeEnvelope("
                 "%(low_x)s, 0, %(high_x)s, %(side)s), 3857), 4326), "
-                "%(du)s, %(pop)s, %(area_gross)s, 'sf_detached', 'urban', "
-                "%(geometry_key)s, %(buildings)s, %(residential)s)",
+                "%(du)s, %(pop)s, %(area_gross)s, %(area_gross)s, 'sf_detached', "
+                "'urban', %(geometry_key)s, %(buildings)s, %(residential)s)",
                 {
                     "parcel_id": parcel_id,
                     "low_x": low_x,
@@ -607,6 +609,87 @@ class TestMergeParcels:
         assert restored.painted_value == pytest.approx(99.0)
         assert {str(row[0]) for row in int_harness.view_rows()} == set(INT_IDS)
         assert int_harness.view_by_id()[survivor][1] == pytest.approx(99.0)
+
+
+@pytest.mark.integration
+class TestBuiltFormPaintOnEditedParcels:
+    """POST paint_built_form — "Assign Built Form" reads the scenario canvas.
+
+    The base canvas keys its parcels on ``parcel_id``, and a grid/merge result
+    parcel exists only as a ``ParcelGeometryEdit`` row, so the assignment has to
+    read the scenario's canvas view. Reading the raw base table instead — with
+    the legacy ``id`` key — failed outright on a real base canvas
+    (``column "id" does not exist``) and could never have found a regridded
+    parcel even where it did not.
+    """
+
+    def _assign(self, harness: _Harness, features: list[str]) -> tuple[Any, Any]:
+        """Assign one Building Type to *features*; return ``(response, type)``."""
+        building_type = BuildingTypeFactory(
+            workspace=harness.workspace,
+            name="Assign Built Form Fixture",
+            du_per_acre=10.0,
+            emp_per_acre=0.0,
+            household_size=2.5,
+            vacancy_rate=5.0,
+            far=0.5,
+        )
+        return (
+            harness.post(
+                "paint_built_form",
+                {
+                    "features": features,
+                    "bf_type": "building",
+                    "bf_id": building_type.pk,
+                },
+            ),
+            building_type,
+        )
+
+    def _assert_assigned(
+        self,
+        harness: _Harness,
+        feature_id: str,
+        building_type: Any,
+        area_gross: float,
+    ) -> None:
+        painted = PaintedCanvas.objects.filter(
+            scenario=harness.scenario, feature_id=feature_id
+        )
+        assert painted.get(column_name="built_form_key").painted_text_value == (
+            building_type.name
+        )
+        # row_allocation_pct is 0.0 for this path, so du is the feature's whole
+        # area at the type's density.
+        assert painted.get(column_name="du").painted_value == pytest.approx(
+            area_gross * 10.0
+        )
+
+    def test_assign_built_form_on_a_regridded_cell(self, int_harness: _Harness) -> None:
+        int_harness.grid(INT_IDS)
+        cell = str(int_harness.edits("grid")[0].parcel_id)
+        area_gross = int_harness.view_by_id()[cell][3]
+
+        response, building_type = self._assign(int_harness, [cell])
+
+        assert response.status_code == 200
+        body = response.json()
+        assert body["status"] == "ok"
+        assert body["painted_features"] == [cell]
+        self._assert_assigned(int_harness, cell, building_type, area_gross)
+
+    def test_assign_built_form_on_a_base_parcel_of_a_text_keyed_base(
+        self, text_harness: _Harness
+    ) -> None:
+        # The other branch of the canvas view: a base row, keyed on an APN
+        # string rather than the published canvas' bigint.
+        area_gross = text_harness.view_by_id()[TEXT_IDS[0]][3]
+
+        response, building_type = self._assign(text_harness, [TEXT_IDS[0]])
+
+        assert response.status_code == 200
+        assert response.json()["status"] == "ok"
+        self._assert_assigned(text_harness, TEXT_IDS[0], building_type, area_gross)
 
 
 @pytest.mark.integration

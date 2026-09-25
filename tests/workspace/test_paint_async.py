@@ -188,8 +188,10 @@ class TestPaintRunTrackingBuiltFormOperations(TestCase):
         with (
             _patch_refresh(),
             patch(
-                "brewgis.workspace.views.paint._fetch_feature_data",
-                return_value={"1": {"id": 1, "area_gross": 10.0, "area_parcel": 8.0}},
+                "brewgis.workspace.views.paint._fetch_canvas_feature_data",
+                return_value={
+                    "1": {"parcel_id": "1", "area_gross": 10.0, "area_parcel": 8.0}
+                },
             ),
         ):
             response = self.client.post(
