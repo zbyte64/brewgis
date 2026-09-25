@@ -67,7 +67,7 @@ Key rules:
 |`brewgis/workspace/built_forms/models.py`|Built form sub-app: BuildingType (28 fields), PlaceType, PlaceTypeBuildingTypeMix|
 |`brewgis/workspace/tasks.py`|8 Celery tasks for data import, export, allocation, stitching, report generation|
 |`brewgis/workspace/analysis/`|Pipeline orchestrator, module/layer registries, food/equity preprocessors (road-network distances are SQLMesh: `overture/road_network_*`, `python/network_zone_distance.py`)|
-|`brewgis/workspace/symbology/`|Map style generation (classifiers, generator, auto-config, legend, stats), 21 color palettes|
+|`brewgis/workspace/symbology/`|Map style generation (classifiers, generator, auto-config, legend, stats), 22 color palettes|
 |`brewgis/workspace/services/`|~33 service modules: base canvas ETL pipeline (1047 lines), schema, fetchers (Census, LEHD, POI, NLCD, assessor), spatial allocator, stitcher, imputation engine, built form classifier, paint constraints, scenario cloner, canvas view manager, `_db.py` (cached SQLAlchemy singleton)|
 |`brewgis/workspace/mcp/`|MCP server: FastMCP stdio entrypoint, auth stub, 8 tool modules|
 |`brewgis/workspace/dlt_pipelines/`|dlt pipeline modules (nlcd) — load directly into DuckDB (caches HTTP, handles raster/zip)|
@@ -227,7 +227,7 @@ npm run test      # vitest
 |`brewgis/workspace/views/__init__.py`|Exports 71 view function/class from 22 view modules|
 |`brewgis/workspace/tasks.py`|8 Celery shared tasks (census, LEHD, POI, raster, allocation, stitching, report, building type export)|
 |`brewgis/workspace/admin.py`|9 admin registrations (12 including built_forms)|
-|`brewgis/workspace/palettes.py`|21 color palettes: 6 qualitative, 10 sequential, 5 diverging|
+|`brewgis/workspace/palettes.py`|22 color palettes: 7 qualitative (incl. glasbey, ~200 distinct colors for 40+ categories), 10 sequential, 5 diverging|
 |`brewgis/workspace/templatetags/workspace_tags.py`|6 custom template filters: json_attr, model_verbose_name, analysis_status_badge, report_status_badge, dictlookup, list_index|
 |`brewgis/workspace/analysis/module_registry.py`|Single source of truth for 28 analysis modules: DAG dependencies, result table names, SQLMesh selectors, analysis parameters|
 |`brewgis/workspace/services/duckdb_pool.py`|DuckDB connection pool for data-loading operations — caches HTTP fetches, handles raster and zip files natively|

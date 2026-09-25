@@ -12,6 +12,8 @@ from typing import Any
 
 from django.db import connection
 
+from brewgis.workspace.palettes import MAX_CATEGORICAL_COLORS
+
 
 @dataclass
 class ColumnStatistics:
@@ -128,7 +130,11 @@ def compute_statistics(
         distincts = distincts_included
 
     freq: dict[str, int] | None = None
-    if distincts <= 50:
+    if distincts <= MAX_CATEGORICAL_COLORS:
+        # One class per distinct value, so the ceiling is the largest
+        # qualitative palette: past it the extra classes would have to share
+        # colors (see ``sample_palette``), and a base canvas over a full
+        # built-form library (96 types) does go past the old 50.
         with connection.cursor() as cursor:
             cursor.execute(
                 f"""
@@ -137,7 +143,7 @@ def compute_statistics(
                 WHERE "{column}" IS NOT NULL{included}
                 GROUP BY "{column}"
                 ORDER BY COUNT(*) DESC
-                LIMIT 100
+                LIMIT {MAX_CATEGORICAL_COLORS}
                 """  # noqa: S608 -- identifiers are catalog-sourced, never user input,
             )
             freq = dict(cursor.fetchall())

@@ -10,6 +10,7 @@ import pytest
 from django.db import connection
 from django.test import TestCase
 
+from brewgis.workspace.analysis.layer_registry import BASE_CANVAS_LAYER_KEY
 from brewgis.workspace.analysis.layer_registry import _find_numeric_column
 from brewgis.workspace.analysis.layer_registry import _get_geometry_type
 from brewgis.workspace.analysis.layer_registry import register_result_layer
@@ -166,6 +167,9 @@ class TestRegisterResultLayer(TestCase):
     # it also exercises the registry's default palette for it.
     TABLE = "water_demand"
 
+    # Shaped like a workspace's base canvas: a built form key per parcel.
+    BASE_CANVAS_TABLE = "base_canvas_default_symbology"
+
     def setUp(self) -> None:
         self.workspace = WorkspaceFactory()
         # Every workspace has a BASE scenario in practice (created alongside
@@ -198,6 +202,7 @@ class TestRegisterResultLayer(TestCase):
     def tearDown(self) -> None:
         with connection.cursor() as cursor:
             cursor.execute(f"DROP TABLE IF EXISTS {self.TABLE} CASCADE")
+            cursor.execute(f"DROP TABLE IF EXISTS {self.BASE_CANVAS_TABLE} CASCADE")
 
     def _register(self) -> Layer:
         """Register :attr:`TABLE` for this test's workspace."""
@@ -208,6 +213,31 @@ class TestRegisterResultLayer(TestCase):
         )
         assert layer is not None
         return layer
+
+    def _create_base_canvas_table(self) -> None:
+        """Create a base-canvas-shaped table: 60 parcels, 60 built form keys.
+
+        The workspace's ``base_table`` points at it, because that is what the
+        base-canvas layer's symbology is read from (``base_layer_source``).
+        """
+        with connection.cursor() as cursor:
+            cursor.execute(f"DROP TABLE IF EXISTS {self.BASE_CANVAS_TABLE} CASCADE")
+            cursor.execute(
+                f"""
+                CREATE TABLE {self.BASE_CANVAS_TABLE} (
+                    parcel_id INTEGER,
+                    built_form_key TEXT,
+                    population DOUBLE PRECISION
+                )
+                """
+            )
+            cursor.execute(
+                f"INSERT INTO {self.BASE_CANVAS_TABLE} "  # noqa: S608
+                f"(parcel_id, built_form_key, population) "
+                f"SELECT g, 'bf_' || g, g * 2 FROM generate_series(1, 60) AS g"
+            )
+        self.workspace.base_table = f"public.{self.BASE_CANVAS_TABLE}"
+        self.workspace.save(update_fields=["base_table"])
 
     @patch("brewgis.workspace.analysis.layer_registry._get_geometry_type")
     @patch("brewgis.workspace.analysis.layer_registry._get_table_columns")
@@ -367,6 +397,70 @@ class TestRegisterResultLayer(TestCase):
             [c.max_value for c in classes],
             first_breaks,
         )
+
+    @patch("brewgis.workspace.analysis.layer_registry._get_geometry_type")
+    def test_base_canvas_defaults_to_built_form_key_in_glasbey(
+        self, mock_geom: MagicMock
+    ) -> None:
+        """The base canvas layer draws ``built_form_key``, not a numeric column.
+
+        Every key gets its own class *and* its own color: 60 keys is past the
+        10-color categorical palettes, so the default has to be the large one.
+        """
+        mock_geom.return_value = "fill"
+        self._create_base_canvas_table()
+
+        layer = register_result_layer(
+            workspace_id=self.workspace.pk,
+            schema="public",
+            table=self.BASE_CANVAS_TABLE,
+            key=BASE_CANVAS_LAYER_KEY,
+            name="Base Canvas",
+        )
+
+        self.assertIsNotNone(layer)
+        symbology = layer.symbology
+        self.assertEqual(symbology.symbology_type, "categorical")
+        self.assertEqual(symbology.attribute_column, "built_form_key")
+        self.assertEqual(symbology.palette_name, "glasbey")
+
+        classes = list(symbology.classes.order_by("sort_order"))
+        self.assertEqual(len(classes), 60)
+        self.assertEqual({c.label for c in classes}, {f"bf_{g}" for g in range(1, 61)})
+        self.assertEqual(len({c.color for c in classes}), 60)
+
+    @patch("brewgis.workspace.analysis.layer_registry._get_geometry_type")
+    def test_base_canvas_falls_back_to_a_numeric_column(
+        self, mock_geom: MagicMock
+    ) -> None:
+        """A base canvas without a built form key column keeps the generic rule."""
+        mock_geom.return_value = "fill"
+        with connection.cursor() as cursor:
+            cursor.execute(f"DROP TABLE IF EXISTS {self.BASE_CANVAS_TABLE} CASCADE")
+            cursor.execute(
+                f"""
+                CREATE TABLE {self.BASE_CANVAS_TABLE} (
+                    parcel_id INTEGER,
+                    population DOUBLE PRECISION
+                )
+                """
+            )
+            cursor.execute(
+                f"INSERT INTO {self.BASE_CANVAS_TABLE} (parcel_id, population) "  # noqa: S608
+                f"SELECT g, g FROM generate_series(1, 100) AS g"
+            )
+        self.workspace.base_table = f"public.{self.BASE_CANVAS_TABLE}"
+        self.workspace.save(update_fields=["base_table"])
+
+        layer = register_result_layer(
+            workspace_id=self.workspace.pk,
+            schema="public",
+            table=self.BASE_CANVAS_TABLE,
+            key=BASE_CANVAS_LAYER_KEY,
+        )
+
+        self.assertEqual(layer.symbology.attribute_column, "population")
+        self.assertEqual(layer.symbology.symbology_type, "graduated")
 
     @patch("brewgis.workspace.analysis.layer_registry._get_geometry_type")
     @patch("brewgis.workspace.analysis.layer_registry._get_table_columns")

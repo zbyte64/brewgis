@@ -47,6 +47,23 @@ _PAINTED_FEATURES_GROUP_NAME = "Scenario Layers"
 _PAINTED_TRUE_COLOR = "#ffeb3b"
 _PAINTED_FALSE_COLOR = "#e0e0e0"
 
+BASE_CANVAS_SYMBOLOGY_COLUMN = "built_form_key"
+"""Column the base canvas layer's symbology defaults to.
+
+The base canvas is the workspace's parcel fabric, and the built form key is
+what a planner reads off it — a numeric column (the generic default for a
+result table) says nothing about what is drawn there.
+"""
+
+BASE_CANVAS_SYMBOLOGY_PALETTE = "glasbey"
+"""Palette the base canvas layer's symbology defaults to.
+
+A geography holds 40+ built form keys — the default workspace library alone
+is 96 types — which is well past every other categorical palette's 8-12
+stops. Glasbey carries ~200 distinct colors, so each key still reads as its
+own color instead of repeating one of ten.
+"""
+
 
 def ensure_painted_features_layer(
     workspace: Workspace, *, schema: str = "", table: str = ""
@@ -286,15 +303,21 @@ def _find_numeric_column(columns: list[dict[str, Any]], table: str) -> str | Non
     return None
 
 
-def _auto_configure_symbology(layer: Layer, numeric_column: str) -> None:
-    """Generate *layer*'s symbology for *numeric_column* from the table's data.
+def _auto_configure_symbology(
+    layer: Layer,
+    column: str,
+    *,
+    palette_name: str | None = None,
+) -> None:
+    """Generate *layer*'s symbology for *column* from the table's data.
 
     Delegates to the auto-generation pipeline (statistics → classification →
     palette) rather than writing a bare ``graduated`` config: a config with no
     ``StyleClass`` rows and no palette renders as one flat color and shows up
     in the Symbology editor as "Manual", which is not what "auto-generated"
-    should mean. The pipeline picks the palette from the table's registered
-    default when it has one (``module_registry.TABLE_PALETTE``).
+    should mean. The palette comes from *palette_name* when the caller has one
+    (the base canvas draws built forms in glasbey), else from the table's
+    registered default when it has one (``module_registry.TABLE_PALETTE``).
 
     This runs on every registration of an auto-managed layer, so re-running an
     analysis recomputes the breaks against the values the new run published
@@ -310,19 +333,19 @@ def _auto_configure_symbology(layer: Layer, numeric_column: str) -> None:
     from brewgis.workspace.symbology.auto import auto_generate_symbology
 
     try:
-        auto_generate_symbology(layer, numeric_column, num_classes=5)
+        auto_generate_symbology(layer, column, palette_name=palette_name, num_classes=5)
     except Exception:
         logger.exception(
             "Symbology auto-generation failed for layer %s (column %s)",
             layer.key,
-            numeric_column,
+            column,
         )
         return
 
     logger.info(
         "Auto-generated symbology for %s on column %s",
         layer.key,
-        numeric_column,
+        column,
     )
 
 
@@ -345,6 +368,11 @@ def register_result_layer(
     table's current values — class breaks, palette and all — every time this
     runs, so re-registering after a rerun refreshes the breaks instead of
     leaving stale ones. A config the user has saved is left untouched.
+
+    What the config is built *on* depends on the layer: the base canvas
+    (``key=BASE_CANVAS_LAYER_KEY``) draws ``built_form_key`` in the glasbey
+    palette, every other layer its headline numeric column in the palette
+    registered for its result table.
 
     Args:
         workspace_id: Workspace primary key.
@@ -381,10 +409,20 @@ def register_result_layer(
 
     # Look up columns for auto-configuration
     columns = _get_table_columns(schema, table)
-    numeric_column = _find_numeric_column(columns, table)
 
-    # Create or update the Layer
     layer_key = key or table
+
+    # What the layer's symbology is built on: the base canvas draws its built
+    # form key (categorical, glasbey), everything else its headline numeric
+    # column in the registry's palette for that result table.
+    if layer_key == BASE_CANVAS_LAYER_KEY and any(
+        column["column_name"] == BASE_CANVAS_SYMBOLOGY_COLUMN for column in columns
+    ):
+        symbology_column: str | None = BASE_CANVAS_SYMBOLOGY_COLUMN
+        symbology_palette: str | None = BASE_CANVAS_SYMBOLOGY_PALETTE
+    else:
+        symbology_column = _find_numeric_column(columns, table)
+        symbology_palette = None
 
     layer, created = Layer.objects.update_or_create(
         workspace=workspace,
@@ -422,10 +460,13 @@ def register_result_layer(
     # class breaks, and whose headline column) may differ from the run that
     # produced the breaks the layer is currently rendering. A config the user
     # has saved (``auto_generated=False``, set by views/symbology.py) is never
-    # touched. A layer whose table has no usable numeric column keeps whatever
-    # it has, or gets none when it is new.
+    # touched. A layer whose table offers no column to classify (no
+    # ``built_form_key`` for the base canvas, no numeric column otherwise)
+    # keeps whatever it has, or gets none when it is new.
     existing_config = SymbologyConfig.objects.filter(layer=layer).first()
-    if numeric_column and (existing_config is None or existing_config.auto_generated):
-        _auto_configure_symbology(layer, numeric_column)
+    if symbology_column and (existing_config is None or existing_config.auto_generated):
+        _auto_configure_symbology(
+            layer, symbology_column, palette_name=symbology_palette
+        )
 
     return layer

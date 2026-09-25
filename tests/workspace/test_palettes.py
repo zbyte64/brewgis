@@ -7,7 +7,9 @@ import json
 import pytest
 from cmap import Colormap
 
+from brewgis.workspace.palettes import MAX_CATEGORICAL_COLORS
 from brewgis.workspace.palettes import PALETTES
+from brewgis.workspace.palettes import _relative_luminance
 from brewgis.workspace.palettes import get_all_names
 from brewgis.workspace.palettes import get_diverging_names
 from brewgis.workspace.palettes import get_palette
@@ -74,6 +76,22 @@ class TestPaletteRegistry:
         colormap = get_palette("material_set1")
         assert isinstance(colormap, Colormap)
         assert colormap.color_stops[0].color.hex.lower() == "#4caf50"
+
+    def test_glasbey_colors_40_categories_distinctly(self) -> None:
+        """Glasbey is the large categorical palette: it gives every one of 40
+        categories its own color, where the other qualitative palettes hold
+        8-12 stops and so repeat themselves."""
+        colormap = get_palette("glasbey")
+        assert colormap.category == "qualitative"
+        assert "glasbey" in get_qualitative_names()
+        assert len(colormap.color_stops) == MAX_CATEGORICAL_COLORS
+        assert len(set(sample_palette(colormap, 40))) == 40
+
+    def test_glasbey_omits_colors_the_map_cannot_show(self) -> None:
+        """Neither near-white (invisible over a light basemap) nor near-black
+        (reads as a hole) colors survive into the palette."""
+        for stop in get_palette("glasbey").color_stops:
+            assert 0.02 <= _relative_luminance(stop.color.hex) <= 0.75
 
 
 class TestInterpolateColor:

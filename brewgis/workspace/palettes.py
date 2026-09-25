@@ -4,10 +4,13 @@ Palettes are `cmap <https://github.com/pyapp-kit/cmap>`_ ``Colormap`` objects.
 cmap is the source of truth for color data (ColorBrewer, matplotlib, and
 other well-known catalogs) *and* for sampling/interpolating within a
 palette - this module only decides which catalog entry backs each named
-palette, and lets ``Colormap`` do the rest. The one exception is
-``material_set1``: Material Design's palette isn't in cmap's catalog, so its
-colors are a literal list, wrapped in a ``Colormap`` like everything else so
-it behaves identically to every other registry entry.
+palette, and lets ``Colormap`` do the rest. Two entries are built here
+instead of taken from the catalog as-is: ``material_set1``, whose Material
+Design colors aren't in cmap at all, and ``glasbey``, whose colors are -
+but under a continuous ``miscellaneous`` entry, and with the near-white and
+near-black ends of the sequence dropped (see ``_glasbey_colors``). Both are
+wrapped in a ``Colormap`` like everything else so they behave identically to
+every other registry entry.
 
 Palette types
 =============
@@ -49,8 +52,46 @@ _MATERIAL_SET1_COLORS: Final[list[str]] = [
     "#607D8B",  # Blue Grey
 ]
 
+# Glasbey's categorical colors: cmap ships them as a 256-stop continuous
+# "miscellaneous" entry, but the sequence is not a gradient - it is ordered so
+# that every prefix is as distinct as the method (Glasbey et al., "Colour
+# displays for categorical images") could make it, which is what a layer with
+# 40+ categories needs. The ends of the sequence are dropped, because a map
+# cannot show them: the near-white stops are invisible over a light basemap,
+# and the near-black ones read as holes - and disappear against dark UI chrome.
+_GLASBEY_MIN_LUMINANCE: Final[float] = 0.02
+_GLASBEY_MAX_LUMINANCE: Final[float] = 0.75
+
+# sRGB's linear-segment cutoff (WCAG's relative-luminance definition).
+_SRGB_LINEAR_THRESHOLD: Final[float] = 0.03928
+
+
+def _relative_luminance(hex_color: str) -> float:
+    """Return the WCAG relative luminance of a ``#rrggbb`` color."""
+    channels = [int(hex_color[i : i + 2], 16) / 255 for i in (1, 3, 5)]
+    linear = [
+        c / 12.92 if c <= _SRGB_LINEAR_THRESHOLD else ((c + 0.055) / 1.055) ** 2.4
+        for c in channels
+    ]
+    return 0.2126 * linear[0] + 0.7152 * linear[1] + 0.0722 * linear[2]
+
+
+def _glasbey_colors() -> list[str]:
+    """Return cmap's glasbey colors, minus those a map cannot show."""
+    return [
+        stop.color.hex.lower()
+        for stop in Colormap("glasbey").color_stops
+        if _GLASBEY_MIN_LUMINANCE
+        <= _relative_luminance(stop.color.hex)
+        <= _GLASBEY_MAX_LUMINANCE
+    ]
+
+
+_GLASBEY_COLORS: Final[list[str]] = _glasbey_colors()
+
 # cmap catalog identifiers backing each named palette (everything but
-# "material_set1", which is built from the literal list above).
+# "material_set1", built from the literal list above, and "glasbey", built
+# from the filtered ``_GLASBEY_COLORS``).
 _CATALOG_NAMES: Final[dict[str, str]] = {
     # Qualitative
     "d3_category10": "tab10",
@@ -78,7 +119,15 @@ _CATALOG_NAMES: Final[dict[str, str]] = {
 }
 
 QUALITATIVE_NAMES: Final[frozenset[str]] = frozenset(
-    {"material_set1", "d3_category10", "brewer_set1", "pastel1", "dark2", "paired"}
+    {
+        "material_set1",
+        "glasbey",
+        "d3_category10",
+        "brewer_set1",
+        "pastel1",
+        "dark2",
+        "paired",
+    }
 )
 SEQUENTIAL_NAMES: Final[frozenset[str]] = frozenset(
     {
@@ -108,6 +157,16 @@ def _build_colormap(name: str) -> Colormap:
             category="qualitative",
             interpolation="nearest",
         )
+    if name == "glasbey":
+        # cmap files it under "miscellaneous" with linear interpolation, which
+        # would have the generator blend neighbouring categories; re-wrap it so
+        # it samples stop-to-stop like every other categorical palette.
+        return Colormap(
+            _GLASBEY_COLORS,
+            name=name,
+            category="qualitative",
+            interpolation="nearest",
+        )
     return Colormap(_CATALOG_NAMES[name])
 
 
@@ -115,6 +174,17 @@ PALETTES: Final[dict[str, Colormap]] = {
     name: _build_colormap(name)
     for name in (*QUALITATIVE_NAMES, *SEQUENTIAL_NAMES, *DIVERGING_NAMES)
 }
+
+MAX_CATEGORICAL_COLORS: Final[int] = max(
+    len(PALETTES[name].color_stops) for name in QUALITATIVE_NAMES
+)
+"""Number of colors in the largest qualitative palette.
+
+A categorical layer cannot distinguish more values than this — past it the
+palette repeats colors (see :func:`sample_palette`) — so callers that build
+one class per distinct value (``symbology.stats.compute_statistics``) stop
+fetching there.
+"""
 
 
 def get_palette(name: str) -> Colormap:
@@ -211,8 +281,10 @@ def preview_swatches(max_swatches: int = 11) -> dict[str, list[str]]:
     Used to hand the palette picker UI something to render swatches from,
     since ``Colormap`` objects (unlike the hex lists this used to return)
     aren't JSON-serializable themselves. Each list is the palette's native
-    classes, or ``max_swatches`` evenly-sampled colors for palettes with more
-    classes than that (e.g. cmap's continuous, 256-stop matplotlib entries).
+    classes when it has at most *max_swatches* of them; a palette with more
+    (glasbey's ~200, cmap's 256-stop continuous entries) is shown as its
+    first *max_swatches* — the leading, most-distinct classes for a
+    qualitative palette, evenly-spaced samples for a continuous one.
     """
     swatches: dict[str, list[str]] = {}
     for name, colormap in PALETTES.items():

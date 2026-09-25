@@ -138,6 +138,31 @@ def high_card_table(db) -> str:
         cursor.execute(f"DROP TABLE IF EXISTS {table_name} CASCADE")
 
 
+@pytest.fixture
+def built_form_key_table(db) -> str:
+    """Create a table shaped like a base canvas: a text key column, 60 keys.
+
+    60 distinct keys is past the old 50-value gate on the frequency query and
+    near the 96 types the default workspace library ships.
+    """
+    table_name = "test_stats_built_forms"
+    with connection.cursor() as cursor:
+        cursor.execute(f"DROP TABLE IF EXISTS {table_name} CASCADE")
+        cursor.execute(f"""
+            CREATE TABLE {table_name} (
+                id SERIAL PRIMARY KEY,
+                built_form_key TEXT
+            )
+        """)
+        cursor.execute(
+            f"INSERT INTO {table_name} (built_form_key) "  # noqa: S608
+            f"SELECT 'bf_' || g FROM generate_series(1, 60) AS g"
+        )
+    yield table_name
+    with connection.cursor() as cursor:
+        cursor.execute(f"DROP TABLE IF EXISTS {table_name} CASCADE")
+
+
 # ---------------------------------------------------------------------------
 # _column_data_type
 # ---------------------------------------------------------------------------
@@ -271,7 +296,7 @@ class TestComputeStatistics:
         assert stats.percentiles[10] is None
         assert (
             stats.frequencies == {}
-        )  # distinct=0 <= 50, frequency query runs but returns nothing
+        )  # distinct=0 is within the categorical ceiling; the query returns nothing
 
     def test_empty_table(self, empty_table: str) -> None:
         """Verify behavior for a table with no rows."""
@@ -285,7 +310,7 @@ class TestComputeStatistics:
         assert stats.median is None
         assert (
             stats.frequencies == {}
-        )  # distinct=0 <= 50, frequency query runs but returns nothing
+        )  # distinct=0 is within the categorical ceiling; the query returns nothing
 
     def test_categorical_detection(self, categorical_table: str) -> None:
         """Verify text column with few values is marked categorical."""
@@ -315,10 +340,26 @@ class TestComputeStatistics:
         stats = compute_statistics("public", high_card_table, "value")
         assert not stats.is_categorical
         assert stats.distinct_count == 30
-        assert stats.frequencies is not None  # 30 <= 50, so still computed
+        assert stats.frequencies is not None  # within the categorical ceiling
         assert len(stats.frequencies) == 30
         assert stats.min_value == 1.0
         assert stats.max_value == 30.0
+
+    def test_frequencies_cover_a_built_form_library(
+        self, built_form_key_table: str
+    ) -> None:
+        """A key column with 60 values still yields one frequency per value.
+
+        The frequency map is what the categorical symbology turns into one
+        class (and one color) per value, so a ceiling below the number of keys
+        a real base canvas holds would leave the base layer a flat fill.
+        """
+        stats = compute_statistics("public", built_form_key_table, "built_form_key")
+        assert stats.is_categorical
+        assert stats.distinct_count == 60
+        assert stats.frequencies is not None
+        assert len(stats.frequencies) == 60
+        assert set(stats.frequencies) == {f"bf_{g}" for g in range(1, 61)}
 
     def test_non_existent_table(self, db) -> None:
         """Verify graceful error on missing table."""

@@ -246,10 +246,15 @@ def auto_generate_symbology(  # noqa: PLR0913
     class_rows: list[dict[str, Any]] = []
 
     if used_type == "categorical":
-        # One class per distinct value
+        # One class per distinct value, and the palette is sampled for exactly
+        # that many classes: the index is what pairs a class with its color, so
+        # sampling a fixed 20 left every value past the 20th reusing a color
+        # from earlier in the palette — 44 built form keys over a 10-color
+        # palette came out 4 colors deep. A palette with fewer stops than there
+        # are classes still repeats them, per ``sample_palette``.
         palette = _resolve_palette(
             _get_palette_list(used_palette, stats),
-            min(stats.distinct_count, 20),
+            stats.distinct_count,
             reverse=reverse_palette,
         )
         if stats.frequencies:
