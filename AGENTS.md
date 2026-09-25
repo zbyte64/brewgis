@@ -321,6 +321,7 @@ npm run test      # vitest
 - Raw SQL fixtures for PostGIS-dependent integration tests (CREATE EXTENSION IF NOT EXISTS postgis).
 - SQLMesh plans run against the test database: `brewgis/sqlmesh/config.py:use_database(name)` re-points both gateways, and its catalog-alias patches keep the models' `brewgis` catalog logical (reported as `brewgis`, rewritten to the real database name in every statement sent to Postgres). See the `sqlmesh_test_database` fixture in `tests/dbt_math/conftest.py`.
 - Two conftest.py levels: `tests/conftest.py` (factory-backed fixtures, hypothesis profiles, deal config) vs `brewgis/conftest.py` (direct `create_user`, management-command oriented).
+- e2e tests (`transaction=True`) flush the whole test DB at teardown with a `TRUNCATE`, while the live server's request threads run each request inside one transaction (`ATOMIC_REQUESTS`). A request still in flight deadlocks the flush, so `tests/e2e/conftest.py::_quiet_server_before_flush` closes the page and waits for every other connection to leave its transaction before the flush starts.
 
 ## Gotchas & Patterns
 

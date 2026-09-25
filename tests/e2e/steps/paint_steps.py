@@ -258,10 +258,11 @@ def feature_count_matches(page: Page, expected: str) -> None:
 def url_contains(page: Page, text: str) -> None:
     """Check the URL contains the given substring.
 
-    Waits for network idle first so any tile/map requests the navigation
-    triggered finish before the test ends — otherwise the live_server
-    thread can still be mid-request when teardown's table flush starts,
-    deadlocking against it.
+    Selecting from the dropdown is a full page navigation, so wait for the
+    new document to finish loading its map before reading ``page.url``.
+    Requests still in flight when a test ends are not this step's problem:
+    ``_quiet_server_before_flush`` in tests/e2e/conftest.py drains them
+    before the teardown flush, which otherwise deadlocks against them.
     """
     page.wait_for_load_state("networkidle")
     assert text in page.url, f"Expected URL to contain '{text}', got '{page.url}'"

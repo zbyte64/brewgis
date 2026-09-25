@@ -4,11 +4,13 @@ from __future__ import annotations
 
 import os
 import sys
+import time
 from contextlib import suppress
 from pathlib import Path
 from typing import TYPE_CHECKING
 
 import pytest
+from django.db import connection
 from django.test import override_settings
 
 from tests.factories import UserFactory
@@ -57,6 +59,8 @@ def pytest_collection_modifyitems(items: list[pytest.Item]) -> None:
 
 
 if TYPE_CHECKING:
+    from collections.abc import Generator
+
     from django.contrib.auth.models import User
     from playwright.sync_api import Browser
     from playwright.sync_api import ConsoleMessage
@@ -126,6 +130,69 @@ def page(context) -> Page:
 def live_server_url(live_server: LiveServer) -> str:
     """Return the live server URL for the test function."""
     return live_server.url
+
+
+# ── Live-server drain ──────────────────────────────────────────────────
+#
+# Every request runs in one transaction (``DATABASES["default"]
+# ["ATOMIC_REQUESTS"]``), so a request the live server is still serving holds
+# AccessShareLocks on every table it has read for the request's whole
+# lifetime. The teardown of a ``transaction=True`` test TRUNCATEs every table —
+# ACCESS EXCLUSIVE on each — and two sessions that each hold a lock the other
+# needs deadlock. The flush is the one that dies ("ERROR at teardown …
+# Database test_brewgis couldn't be flushed"), because the test returns while
+# the page it had just navigated is still being rendered: a browser-side
+# ``networkidle`` only means the *client* stopped asking, never that the
+# server finished, and closing the page does not cancel a request Django is
+# already running.
+#
+# Letting those requests finish before the flush starts keeps the truncate and
+# the live server out of each other's locks. This fixture must be finalized
+# before the flush, which is why it requests ``db``: fixtures finalize in
+# reverse setup order, and ``db`` owns the flush.
+
+_DRAIN_TIMEOUT_SECONDS = 30.0
+_DRAIN_POLL_SECONDS = 0.05
+
+# ``state`` is only NULL for backends that serve no client statement (a
+# background writer, a walsender), none of which hold a user table's lock.
+_BUSY_BACKENDS_SQL = """
+SELECT count(*) FROM pg_stat_activity
+WHERE datname = current_database()
+  AND backend_type = 'client backend'
+  AND pid <> pg_backend_pid()
+  AND state IS DISTINCT FROM 'idle'
+"""
+
+
+def wait_for_requests_to_finish(timeout: float = _DRAIN_TIMEOUT_SECONDS) -> int:
+    """Block until no other connection to the test database holds a transaction.
+
+    Returns the number of connections still busy when ``timeout`` expired — 0
+    when the database went quiet.
+    """
+    deadline = time.monotonic() + timeout
+    while True:
+        with connection.cursor() as cursor:
+            cursor.execute(_BUSY_BACKENDS_SQL)
+            busy = int(cursor.fetchone()[0])
+        if not busy or time.monotonic() >= deadline:
+            return busy
+        time.sleep(_DRAIN_POLL_SECONDS)
+
+
+@pytest.fixture(autouse=True)
+def _quiet_server_before_flush(db, page: Page) -> Generator[None, None, None]:
+    """Let the live server's requests finish before the test's table flush."""
+    yield
+    page.close()
+    busy = wait_for_requests_to_finish()
+    if busy:
+        print(  # noqa: T201
+            f"[DX] {busy} connection(s) still in a transaction after "
+            f"{_DRAIN_TIMEOUT_SECONDS:.0f}s — the flush may deadlock against them",
+            file=sys.stderr,
+        )
 
 
 @pytest.fixture
