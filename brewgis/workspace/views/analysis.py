@@ -437,31 +437,40 @@ class AnalysisLaunchView(HtmxResponseMixin, FormView):
         )
 
 
+def _vmt_fee_data(run: AnalysisRun) -> dict[str, float] | None:
+    """Return the run's VMT fee totals, or None when the run has none to show.
+
+    Only a completed run whose modules include ``vmt_fee`` has a fee table to
+    read; the table itself is per-scenario and may not exist yet, which is not
+    a render failure — the detail view simply omits the fee block.
+    """
+    if run.status != "completed" or "vmt_fee" not in (run.modules or []):
+        return None
+    vmt_fee_table = f"vmt_fee_{run.scenario.slug}"
+    schema = run.workspace.db_schema
+    try:
+        with connection.cursor() as cursor:
+            cursor.execute(
+                f"SELECT COALESCE(SUM(fee_revenue_total), 0), "
+                f"COALESCE(SUM(revenue_forgone), 0), "
+                f"COALESCE(SUM(vmt_exempt), 0) "
+                f'FROM "{schema}"."{vmt_fee_table}"'
+            )
+            row = cursor.fetchone()
+    except Exception:
+        return None
+    if not row:
+        return None
+    return {
+        "revenue": round(row[0], 2),
+        "revenue_forgone": round(row[1], 2),
+        "vmt_exempt": round(row[2], 2),
+    }
+
+
 def analysis_status(request: HttpRequest, run_pk: int) -> HttpResponse:
     """Analysis run detail — full page on a direct visit, htmx-polled partial otherwise."""
     run = get_object_or_404(AnalysisRun, pk=run_pk)
-
-    vmt_fee_data = None
-    if run.status == "completed" and "vmt_fee" in (run.modules or []):
-        vmt_fee_table = f"vmt_fee_{run.scenario.slug}"
-        schema = run.workspace.db_schema
-        try:
-            with connection.cursor() as cursor:
-                cursor.execute(
-                    f"SELECT COALESCE(SUM(fee_revenue_total), 0), "
-                    f"COALESCE(SUM(revenue_forgone), 0), "
-                    f"COALESCE(SUM(vmt_exempt), 0) "
-                    f'FROM "{schema}"."{vmt_fee_table}"'
-                )
-                row = cursor.fetchone()
-                if row:
-                    vmt_fee_data = {
-                        "revenue": round(row[0], 2),
-                        "revenue_forgone": round(row[1], 2),
-                        "vmt_exempt": round(row[2], 2),
-                    }
-        except Exception:
-            pass
 
     template_name = (
         "workspace/analysis/status.html#analysis-status"
@@ -471,7 +480,7 @@ def analysis_status(request: HttpRequest, run_pk: int) -> HttpResponse:
     return render(
         request,
         template_name,
-        {"run": run, "vmt_fee_data": vmt_fee_data},
+        {"run": run, "vmt_fee_data": _vmt_fee_data(run)},
     )
 
 
@@ -551,6 +560,20 @@ def _get_analysis_meta(module_key: str) -> dict[str, Any]:
     return meta
 
 
+def _module_last_run(
+    workspace: Workspace, scenario: Scenario | None, module_key: str
+) -> AnalysisRun | None:
+    """Return the newest run that included *module_key*, scoped like the cards.
+
+    A module's card and the details it opens both read this one definition of
+    "its last run", so the badge and the details can never disagree.
+    """
+    runs = AnalysisRun.objects.filter(workspace=workspace).select_related("scenario")
+    if scenario is not None:
+        runs = runs.filter(scenario=scenario)
+    return runs.filter(modules__contains=[module_key]).order_by("-created_at").first()
+
+
 def _analysis_card_context(
     workspace: Workspace,
     scenario: Scenario | None,
@@ -561,23 +584,18 @@ def _analysis_card_context(
     Shared by the card-list panel and the single-card polling endpoint so
     both always render identical markup.
     """
-    runs = AnalysisRun.objects.filter(workspace=workspace)
-    if scenario is not None:
-        runs = runs.filter(scenario=scenario)
-    last_run = (
-        runs.filter(modules__contains=[meta["key"]]).order_by("-created_at").first()
-    )
     return {
         "workspace": workspace,
         "scenario": scenario,
         "analysis": meta,
-        "last_run": last_run,
+        "last_run": _module_last_run(workspace, scenario, meta["key"]),
     }
 
 
 @user_passes_test(lambda u: u.is_authenticated)
 def panel_analysis_card_list(request: HttpRequest, workspace_pk: int) -> HttpResponse:
-    """Left-sidebar Analysis panel — a card per available analysis module."""
+    """Left-sidebar Analysis panel — a card per available analysis module, each
+    carrying its own last run."""
     workspace = get_object_or_404(Workspace, pk=workspace_pk)
     scenario = _get_active_scenario(request, workspace)
     cards = [
@@ -588,6 +606,31 @@ def panel_analysis_card_list(request: HttpRequest, workspace_pk: int) -> HttpRes
         request,
         "workspace/analysis/_analysis_panel.html",
         {"workspace": workspace, "scenario": scenario, "cards": cards},
+    )
+
+
+@user_passes_test(lambda u: u.is_authenticated)
+def analysis_module_details(
+    request: HttpRequest, workspace_pk: int, module_key: str
+) -> HttpResponse:
+    """One analysis module's last run, rendered into its card in the map view.
+
+    Reuses the run-detail fragment the status page and the launch response
+    render, so the map's Analysis panel shows the same modules, timings, run
+    parameters, failure cause, traceback and log — and keeps polling while the
+    run is active — without sending the user off the map. An analysis that has
+    never run has no details, so it renders as nothing.
+    """
+    workspace = get_object_or_404(Workspace, pk=workspace_pk)
+    meta = _get_analysis_meta(module_key)
+    scenario = _get_active_scenario(request, workspace)
+    run = _module_last_run(workspace, scenario, module_key)
+    if run is None:
+        return HttpResponse("")
+    return render(
+        request,
+        "workspace/analysis/_analysis_details.html",
+        {"analysis": meta, "run": run, "vmt_fee_data": _vmt_fee_data(run)},
     )
 
 

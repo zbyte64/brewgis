@@ -3,6 +3,7 @@ from .analysis import AnalysisLaunchView as analysis_launch  # noqa: F401
 from .analysis import analysis_card_status  # noqa: F401
 from .analysis import analysis_list  # noqa: F401
 from .analysis import analysis_module_configure  # noqa: F401
+from .analysis import analysis_module_details  # noqa: F401
 from .analysis import analysis_module_launch  # noqa: F401
 from .analysis import analysis_status  # noqa: F401
 from .analysis import check_prerequisites  # noqa: F401

@@ -35,14 +35,18 @@
       {% endif %}
     </p>
     {% if last_run.status == "failed" %}
-      <p class="text-danger mb-1" style="font-size: 0.7rem;">
+      <p class="text-danger mb-2" style="font-size: 0.7rem;">
         {{ last_run.failure_cause|default:last_run.error_log|truncatechars:140 }}
       </p>
-      <p class="mb-2">
-        <a href="{% url 'workspace:analysis_status' last_run.pk %}"
-           target="_blank"
-           style="font-size: 0.7rem">{% translate "View full log" %}</a>
-      </p>
+    {% endif %}
+    {% if last_run %}
+      <button type="button"
+              class="btn btn-sm btn-outline-secondary w-100 mb-1"
+              style="font-size: 0.7rem"
+              hx-get="{% url 'workspace:analysis_module_details' workspace.pk analysis.key %}{% if scenario %}?scenario={{ scenario.pk }}{% endif %}"
+              hx-trigger="click"
+              hx-target="#analysis-details-{{ analysis.key }}"
+              hx-swap="innerHTML">{% translate "Show run details" %}</button>
     {% endif %}
     <button type="button"
             class="btn btn-sm btn-outline-primary w-100"

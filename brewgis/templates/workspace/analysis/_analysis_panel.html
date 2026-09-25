@@ -14,5 +14,6 @@
   {% endif %}
   {% for card in cards %}
     {% include "workspace/analysis/_analysis_card.html" with analysis=card.analysis last_run=card.last_run %}
+    <div id="analysis-details-{{ card.analysis.key }}"></div>
   {% endfor %}
 </div>

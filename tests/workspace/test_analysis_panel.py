@@ -4,12 +4,14 @@ non-blocking (Celery) launch."""
 
 from __future__ import annotations
 
+from datetime import timedelta
 from unittest.mock import patch
 
 import pytest
 from django import forms
 from django.test import TestCase
 from django.urls import reverse
+from django.utils import timezone
 
 from brewgis.workspace.analysis.module_registry import get_available_analyses
 from brewgis.workspace.analysis.pipeline import launch_analysis_run
@@ -250,6 +252,165 @@ class TestAnalysisPanelViews(TestCase):
         )
         assert response.status_code == 200
         self.assertContains(response, "Completed")
+
+    def test_card_list_links_each_card_to_its_own_run_details(self):
+        """Every card with a run can open that run's details in place, without
+        leaving the map — each slot addressed by its own analysis key."""
+        AnalysisRunFactory(
+            workspace=self.workspace,
+            scenario=self.scenario,
+            modules=["water_demand"],
+            status="completed",
+        )
+        self.client.force_login(self.user)
+        response = self.client.get(
+            reverse("workspace:panel_analysis_launch", args=[self.workspace.pk]),
+            {"scenario": self.scenario.pk},
+        )
+        assert response.status_code == 200
+        self.assertContains(response, 'id="analysis-details-water_demand"')
+        self.assertContains(
+            response,
+            reverse(
+                "workspace:analysis_module_details",
+                args=[self.workspace.pk, "water_demand"],
+            ),
+        )
+        # A module that never ran has no details slot to open.
+        self.assertNotContains(
+            response,
+            reverse(
+                "workspace:analysis_module_details",
+                args=[self.workspace.pk, "energy_demand"],
+            ),
+        )
+
+    def test_details_renders_the_modules_last_run(self):
+        started = timezone.now() - timedelta(minutes=22)
+        run = AnalysisRunFactory(
+            workspace=self.workspace,
+            scenario=self.scenario,
+            modules=["env_constraint", "core", "water_demand"],
+            status="failed",
+            started_at=started,
+            completed_at=started + timedelta(minutes=22),
+            failure_cause="water_demand: missing water rate",
+            error_log="Traceback: boom",
+            vars={"nonres_indoor_water_rate": 55},
+        )
+        self.client.force_login(self.user)
+        response = self.client.get(
+            reverse(
+                "workspace:analysis_module_details",
+                args=[self.workspace.pk, "water_demand"],
+            ),
+            {"scenario": self.scenario.pk},
+        )
+        assert response.status_code == 200
+        self.assertContains(response, f"analysis-status-{run.pk}")
+        self.assertContains(response, "22m 0s")
+        self.assertContains(response, "water_demand: missing water rate")
+        self.assertContains(response, "Traceback: boom")
+        self.assertContains(response, "nonres_indoor_water_rate")
+
+    def test_details_takes_the_module_s_own_latest_run(self):
+        """The newest run containing the module wins, even when a later run of
+        other modules exists — the card's badge and its details agree."""
+        AnalysisRunFactory(
+            workspace=self.workspace,
+            scenario=self.scenario,
+            modules=["water_demand"],
+            status="completed",
+        )
+        newest = AnalysisRunFactory(
+            workspace=self.workspace,
+            scenario=self.scenario,
+            modules=["vmt"],
+            status="failed",
+            failure_cause="vmt: division by zero",
+        )
+        self.client.force_login(self.user)
+        response = self.client.get(
+            reverse(
+                "workspace:analysis_module_details",
+                args=[self.workspace.pk, "water_demand"],
+            ),
+            {"scenario": self.scenario.pk},
+        )
+        assert response.status_code == 200
+        self.assertNotContains(response, f"analysis-status-{newest.pk}")
+
+    def test_details_is_empty_for_a_module_that_never_ran(self):
+        self.client.force_login(self.user)
+        response = self.client.get(
+            reverse(
+                "workspace:analysis_module_details",
+                args=[self.workspace.pk, "water_demand"],
+            ),
+            {"scenario": self.scenario.pk},
+        )
+        assert response.status_code == 200
+        assert response.content.strip() == b""
+
+    def test_details_ignores_another_scenarios_run(self):
+        other_scenario = ScenarioFactory(workspace=self.workspace)
+        AnalysisRunFactory(
+            workspace=self.workspace,
+            scenario=other_scenario,
+            modules=["water_demand"],
+            status="completed",
+        )
+        self.client.force_login(self.user)
+        response = self.client.get(
+            reverse(
+                "workspace:analysis_module_details",
+                args=[self.workspace.pk, "water_demand"],
+            ),
+            {"scenario": self.scenario.pk},
+        )
+        assert response.content.strip() == b""
+
+    def test_details_polls_while_the_run_is_active_and_stops_after(self):
+        run = AnalysisRunFactory(
+            workspace=self.workspace,
+            scenario=self.scenario,
+            modules=["water_demand"],
+            status="running",
+            started_at=timezone.now(),
+        )
+        self.client.force_login(self.user)
+        url = reverse(
+            "workspace:analysis_module_details",
+            args=[self.workspace.pk, "water_demand"],
+        )
+        response = self.client.get(url, {"scenario": self.scenario.pk})
+        assert response.status_code == 200
+        self.assertContains(response, f"analysis-status-{run.pk}")
+        self.assertContains(response, "every 2s")
+        run.status = "completed"
+        run.completed_at = timezone.now()
+        run.save(update_fields=["status", "completed_at"])
+        response = self.client.get(url, {"scenario": self.scenario.pk})
+        self.assertNotContains(response, "every 2s")
+
+    def test_details_unauthenticated_redirects(self):
+        response = self.client.get(
+            reverse(
+                "workspace:analysis_module_details",
+                args=[self.workspace.pk, "water_demand"],
+            )
+        )
+        assert response.status_code == 302
+
+    def test_details_unknown_module_404s(self):
+        self.client.force_login(self.user)
+        response = self.client.get(
+            reverse(
+                "workspace:analysis_module_details",
+                args=[self.workspace.pk, "not_a_real_module"],
+            )
+        )
+        assert response.status_code == 404
 
     def test_card_status_unknown_module_404s(self):
         self.client.force_login(self.user)

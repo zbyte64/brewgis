@@ -1,0 +1,16 @@
+{% load i18n %}
+
+{% comment %}
+The module's last run, opened from its card in the map view's Analysis panel.
+The run detail itself is the fragment the status page and the launch response
+render — it carries its own htmx poll, so an active run keeps refreshing here.
+{% endcomment %}
+<div class="analysis-details mb-2">
+  <div class="d-flex justify-content-end">
+    <button type="button"
+            class="btn btn-sm btn-outline-secondary py-0 px-1"
+            style="font-size: 0.7rem"
+            hx-on:click="this.closest('.analysis-details').remove()">{% translate "Hide details" %}</button>
+  </div>
+  {% include "workspace/analysis/status.html#analysis-status" %}
+</div>
