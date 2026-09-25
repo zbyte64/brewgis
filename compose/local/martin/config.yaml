@@ -20,6 +20,37 @@ postgres:
   auto_publish:
     tables:
       source_id_format: "{schema}.{table}"
+  # `reload_interval` (default 10m, and active even when unset: measured
+  # re-runs of Martin's catalog-discovery query at an exact 600 s cadence)
+  # re-runs source discovery without a restart, so a table/view created
+  # after startup appears, and a dropped one disappears, by itself. Two
+  # things it does NOT do, both verified against this database (~1500
+  # sources):
+  #   - It does not notice changed *rows*: a rewritten table served a
+  #     byte-identical tile across four reloads at reload_interval: 3s.
+  #     That staleness is what DELETE /cache/{source_id} (below) is for.
+  #     It flushes a source's cached tiles only when the source is
+  #     rebuilt, i.e. when its table/column metadata changed.
+  #   - It is not free: each pass re-logged ~2.1k lines for our sources
+  #     (SRID notes, tilejson-comment and spatial-index warnings), so a
+  #     5s interval would emit ~25k lines/minute and bury real warnings,
+  #     on top of ~0.3s of catalog SQL per pass (vs ~25s for a restart,
+  #     which also recomputes every source's bounds).
+  # Leave the default; brewgis restarts Martin explicitly when it needs a
+  # new source visible immediately.
+  #
+  # `cache.tile_expiry` (a TTL on cached tiles) is deliberately NOT set:
+  # at a TTL short enough to fix staleness, it is the cache disabled in
+  # all but name. Expiry is measured from *creation*, not last access, so
+  # a tile in active use dies and re-renders regardless — measured at
+  # tile_expiry: 5s on this source's z=12 tile, the same URL re-rendered
+  # at t+6s (0.148s) between 0.007s cache hits, then again ~5s later while
+  # it was still being requested every 2s. The hit/miss gap on these tiles
+  # is what makes that fatal: a cold render costs 0.98s (urban z=11 tile,
+  # 15.5 MB) versus 0.017s cached, and the 256 MB default tile cache
+  # cannot even hold one z=10 viewport of this source (a single z=10 tile
+  # is 121 MB; z=8 is 83 MB). Purging after a write re-renders the changed
+  # sources once, on the next request, instead of on a timer.
 
 # Serve DELETE /cache/{source_id}, which drops just that source's cached
 # tiles. brewgis calls this after every paint operation (see
