@@ -48,6 +48,23 @@ class TestSqlmeshModelUiUrl:
         )
 
 
+@pytest.fixture(autouse=True)
+def no_blueprinted_models(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Stub the database-backed half of model discovery.
+
+    ``_blueprinted_model_tables`` reads the workspaces with the built-form
+    fill enabled, because a blueprinted model's name (``fill_<workspace pk>``)
+    exists only in the database. These tests run without one by design; the
+    blueprinted path is pinned by the database-backed regression tests in
+    ``tests/workspace/test_base_canvas_view.py``.
+    """
+
+    def none_enabled() -> frozenset[tuple[str, str]]:
+        return frozenset()
+
+    monkeypatch.setattr(sqlmesh_tables, "_blueprinted_model_tables", none_enabled)
+
+
 @pytest.fixture
 def known_tables(monkeypatch: pytest.MonkeyPatch) -> list[SqlmeshTableInfo]:
     tables = [
@@ -100,6 +117,34 @@ class TestSqlmeshLinkForTable:
         self, known_tables: list[SqlmeshTableInfo]
     ) -> None:
         assert sqlmesh_link_for_table("ascn7", "not_a_real_model") is None
+
+    def test_links_a_model_written_in_python(
+        self, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        """A model's table name is its file's stem, whatever language that is.
+
+        Regression: only ``*.sql`` files were scanned, so the view a Python
+        model publishes (``fresno.du_regressor``, from
+        ``models/base_canvas/du_regressor.py``) resolved to no link even
+        though the model is right there in the UI catalog.
+        """
+        monkeypatch.setattr(
+            sqlmesh_tables,
+            "list_sqlmesh_tables",
+            lambda: [
+                SqlmeshTableInfo(
+                    schema="fresno",
+                    table="du_regressor",
+                    has_geometry=True,
+                    geometry_type="fill",
+                ),
+            ],
+        )
+
+        link = sqlmesh_link_for_table("fresno", "du_regressor")
+
+        assert link is not None
+        assert link.endswith("/data-catalog/models/brewgis.fresno.du_regressor")
 
     def test_returns_none_for_a_painted_features_canvas_view(
         self, monkeypatch: pytest.MonkeyPatch

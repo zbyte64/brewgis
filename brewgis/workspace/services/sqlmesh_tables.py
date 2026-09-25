@@ -20,6 +20,7 @@ from django.db import connection
 
 from brewgis.sqlmesh.model_names import MODEL_SCHEMA_PREFIX
 from brewgis.sqlmesh.model_names import RESULT_SCHEMA_PREFIX
+from brewgis.workspace.models import Workspace
 from brewgis.workspace.services.base_canvas_schema import BaseCanvasSchema
 
 # ``scenario_canvas`` holds the per-scenario canvas models (one model per
@@ -91,7 +92,19 @@ def _model_schema(schema: str) -> str:
 
 
 def _known_model_table_stems() -> frozenset[str]:
-    """Bare table names (``.sql`` filename stems) of every real SQLMesh model.
+    """Bare table names of every real SQLMesh model in the model tree.
+
+    A model's table name is the stem of the file that declares it —
+    ``models/<category>/<table>.sql`` or ``.py``, so a model written in Python
+    counts the same as one written in SQL (``models/python/trip_distribution.py``
+    publishes ``<schema>.trip_distribution``) — and only the schema is
+    templated: it can be blueprinted per region, e.g. ``@{region}``, but the
+    table name never is (see ``_model_descriptions_by_table_name``). Checking
+    a table name against actual model filenames is therefore the reliable
+    signal for "is this really a SQLMesh model" that ``sqlmesh_link_for_table``
+    gates on before trusting a live-table match. Files whose name starts with
+    ``_`` are helper modules a model imports (``models/python/_predict.py``),
+    not models.
 
     ``list_sqlmesh_tables()`` enumerates *any* view/table living in a
     non-excluded Postgres schema — including views this codebase creates
@@ -99,17 +112,64 @@ def _known_model_table_stems() -> frozenset[str]:
     (``scenario_<slug>_canvas``, see ``Scenario.base_layer_source``), which
     lives in its own non-excluded ``scenario_<slug>`` schema. That schema
     check alone isn't enough to tell a real model apart from one of those.
-
-    A model's table name is stable regardless of schema templating (schema
-    can be blueprinted per region, e.g. ``@{region}``, but the table name
-    never is — see ``_model_descriptions_by_table_name``), so checking the
-    table name against actual model filenames is the reliable signal for
-    "is this really a SQLMesh model" that ``sqlmesh_link_for_table`` gates
-    on before trusting a live-table match.
     """
     if not _MODELS_ROOT.exists():
         return frozenset()
-    return frozenset(path.stem for path in _MODELS_ROOT.rglob("*.sql"))
+    return frozenset(
+        path.stem
+        for path in _MODELS_ROOT.rglob("*")
+        if path.suffix in {".sql", ".py"} and not path.stem.startswith("_")
+    )
+
+
+def _blueprinted_model_tables() -> frozenset[tuple[str, str]]:
+    """``(schema, table)`` of the models the project generates from the database.
+
+    Every other model is named after its file — ``models/<category>/<table>``
+    (see ``_known_model_table_stems``) — so its table name can be verified
+    against the model tree. A blueprinted model is named after a *row*, and
+    its name therefore exists nowhere but the database: a workspace with the
+    built-form fill on has one ``built_form_fill.fill_<workspace pk>`` (see
+    ``sqlmesh/macros/built_form_fill_blueprints.py``). Reading the same rows
+    the blueprint macro filters on (``Workspace.fill_built_form``) is what
+    makes this authoritative: the model is in the project exactly while its
+    workspace has the feature enabled.
+
+    The name comes from ``Workspace.effective_base_table`` — the one place
+    that resolves which layer the workspace reads — so a link built from this
+    can never disagree with the table the base canvas layer is registered
+    under.
+    """
+    tables: set[tuple[str, str]] = set()
+    for workspace in Workspace.objects.filter(fill_built_form=True).only(
+        "pk", "fill_built_form"
+    ):
+        schema, _, table = workspace.effective_base_table().rpartition(".")
+        tables.add((schema or "public", table))
+    return frozenset(tables)
+
+
+def _model_backed_tables() -> frozenset[tuple[str, str]]:
+    """``(schema, table)`` pairs a live SQLMesh model can be read through.
+
+    The tables the catalog discovers in model schemas whose name is a real
+    model file's, plus the blueprint-generated models
+    (``_blueprinted_model_tables``) the catalog deliberately omits.
+
+    The two differ because the catalog answers "what may a workspace import as
+    a source" — it excludes ``built_form_fill`` so a workspace cannot base
+    itself on its own fill output (``_EXCLUDED_SCHEMAS``) — while this answers
+    "what is a model-backed table a layer may be drawing". The workspace's
+    base canvas layer reads exactly that excluded fill model, so it is in this
+    pool and not in that catalog.
+    """
+    stems = _known_model_table_stems()
+    discovered = {
+        (info.schema, info.table)
+        for info in list_sqlmesh_tables()
+        if info.table in stems
+    }
+    return frozenset(discovered | _blueprinted_model_tables())
 
 
 def sqlmesh_link_for_table(
@@ -124,27 +184,18 @@ def sqlmesh_link_for_table(
     their models live in the internal ``ascn<pk>`` schema (see
     ``_model_schema``).
 
-    Returns ``None`` unless *both*:
-
-    - ``table`` matches an actual SQLMesh model definition (see
-      ``_known_model_table_stems``) — ruling out non-model views that
-      happen to live in the same kind of schema (painted-features canvas
-      views, imported shapefiles, Census/OSM tables), and
-    - the pair is a currently discovered live table (per
-      ``known``/``list_sqlmesh_tables()``) — ruling out a model that's
-      never actually been run for this workspace/scenario.
+    Returns ``None`` unless ``(schema, table)`` is a table a live SQLMesh
+    model is read through (see ``_model_backed_tables``) — which rules out
+    both the non-model views that live in the same kind of schema
+    (painted-features canvas views, imported shapefiles, Census/OSM tables)
+    and a model that has never actually been built for this
+    workspace/scenario.
 
     Pass ``known`` (a set of ``(schema, table)`` pairs, as built in
     ``sqlmesh_links_for_tables``) to avoid re-querying the catalog when
     checking several tables at once.
     """
-    if table not in _known_model_table_stems():
-        return None
-    known_set = known
-    if known_set is None:
-        known_set = frozenset(
-            (info.schema, info.table) for info in list_sqlmesh_tables()
-        )
+    known_set = _model_backed_tables() if known is None else known
     if (schema, table) not in known_set:
         return None
     return sqlmesh_model_ui_url(schema, table)
@@ -160,11 +211,11 @@ def sqlmesh_links_for_tables(
     model (per ``sqlmesh_link_for_table``) are simply omitted — callers
     look up ``links.get(key)`` and render nothing when absent.
 
-    Queries the table catalog once regardless of how many refs are passed,
-    so this is the preferred entry point when linking a whole layer list
-    (as opposed to ``sqlmesh_link_for_table`` for a single layer).
+    Resolves the model-backed table set once regardless of how many refs are
+    passed, so this is the preferred entry point when linking a whole layer
+    list (as opposed to ``sqlmesh_link_for_table`` for a single layer).
     """
-    known = frozenset((info.schema, info.table) for info in list_sqlmesh_tables())
+    known = _model_backed_tables()
     links: dict[Any, str] = {}
     for key, (schema, table) in table_refs.items():
         link = sqlmesh_link_for_table(schema, table, known=known)

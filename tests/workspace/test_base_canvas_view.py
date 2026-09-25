@@ -20,6 +20,8 @@ from brewgis.workspace.analysis.layer_registry import BASE_CANVAS_LAYER_KEY
 from brewgis.workspace.models import Layer
 from brewgis.workspace.models import ScenarioType
 from brewgis.workspace.services.scenario_canvas import canvas_model_selector
+from brewgis.workspace.services.sqlmesh_tables import sqlmesh_link_for_table
+from brewgis.workspace.services.sqlmesh_tables import sqlmesh_links_for_tables
 from tests.factories import ScenarioFactory
 from tests.factories import UserFactory
 from tests.factories import WorkspaceFactory
@@ -167,3 +169,60 @@ class TestFillAndCanvasPlans:
         )
         assert checkbox is not None, "the fill checkbox is not on the form"
         assert "checked" in checkbox.group(0)
+
+
+@pytest.mark.views
+class TestFillBackedBaseCanvasSqlmeshLink:
+    """The base canvas layer links to the model it actually reads.
+
+    Regression: with the fill on, the base canvas reads a *blueprinted* model
+    — ``built_form_fill.fill_<workspace pk>``, one per opted-in workspace —
+    instead of the source the user picked. That name exists nowhere but the
+    database (the model it comes from is ``models/base_canvas/built_form_fill.py``
+    instantiated per profile), so the layer resolved to no model: its
+    ``db_schema`` is the deliberately unimportable ``built_form_fill`` and its
+    table name matches no model file, while the model is sitting right there in
+    the SQLMesh UI data catalog. The layer panel, the layer-groups panel and
+    the symbology editor all read the link through ``sqlmesh_links_for_tables``.
+    """
+
+    def _links_for(self, workspace: Any, layer: Any) -> dict[Any, str]:
+        return sqlmesh_links_for_tables(
+            {layer.pk: (layer.db_schema or workspace.db_schema, layer.db_table)}
+        )
+
+    def test_the_fill_backed_base_canvas_links_to_its_fill_model(
+        self, client, chosen_source, spy, base_canvas_table
+    ) -> None:
+        workspace = WorkspaceFactory(base_table=BASE_TABLE)
+        assert _submit(client, workspace, fill=True).status_code == 302
+
+        layer = Layer.objects.get(workspace=workspace, key=BASE_CANVAS_LAYER_KEY)
+        links = self._links_for(workspace, layer)
+
+        assert links[layer.pk].endswith(
+            f"/data-catalog/models/brewgis.built_form_fill.fill_{workspace.pk}"
+        )
+
+    def test_a_fill_model_links_only_while_its_workspace_has_the_fill_on(
+        self, base_canvas_table
+    ) -> None:
+        """The worked-through case and its boundary in one place.
+
+        A workspace with the fill on has exactly one fill model in the project
+        (that is what the blueprint macro filters on), so the link must exist;
+        flipping the flag off takes the model out of the project, so a layer
+        still pointing at its name must not keep a link to a model that is no
+        longer defined.
+        """
+        workspace = WorkspaceFactory(base_table=BASE_TABLE, fill_built_form=True)
+        qualified = f"built_form_fill.fill_{workspace.pk}"
+
+        link = sqlmesh_link_for_table(*qualified.split("."))
+        assert link is not None, "the fill model has no link"
+        assert link.endswith(f"/data-catalog/models/brewgis.{qualified}")
+
+        workspace.fill_built_form = False
+        workspace.save(update_fields=["fill_built_form"])
+
+        assert sqlmesh_link_for_table(*qualified.split(".")) is None
