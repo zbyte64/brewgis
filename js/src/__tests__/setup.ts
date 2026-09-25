@@ -47,8 +47,10 @@ const mockMap = {
     return mockMap
   }),
   resize: vi.fn(),
+  dragPan: { enable: vi.fn(), disable: vi.fn() },
   dragRotate: { enable: vi.fn(), disable: vi.fn() },
   touchZoomRotate: { enable: vi.fn(), disable: vi.fn() },
+  boxZoom: { enable: vi.fn(), disable: vi.fn() },
   addControl: vi.fn(),
   removeControl: vi.fn(),
   setFeatureState: vi.fn(),

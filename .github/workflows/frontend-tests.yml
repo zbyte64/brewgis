@@ -1,0 +1,63 @@
+name: Frontend Tests
+
+# The vitest suite (js/src/__tests__) was not wired into CI before this
+# workflow. `ci.yml`'s linter job runs pre-commit's default stage only, and
+# both TS hooks (tsc, eslint) are `stages: [manual]`; the docker frontend
+# build stage runs `npm run build` = `tsc --noEmit && vite build`, so type
+# errors fail CI but test failures did not. This job runs the tests with the
+# same Node version the image builds with (node:22-bookworm-slim).
+#
+# NOTE: the concurrency group is prefixed with github.workflow on purpose —
+# ci.yml uses the bare `${{ github.head_ref || github.run_id }}` group, and
+# group names are repo-wide, so reusing that literal here would make the two
+# workflows cancel each other on every PR.
+
+on:
+  pull_request:
+    branches: ['master', 'main']
+    paths:
+      - 'js/**'
+      - 'package.json'
+      - 'package-lock.json'
+      - 'tsconfig.json'
+      - 'vite.config.ts'
+      - 'vitest.config.ts'
+      - '.github/workflows/frontend-tests.yml'
+
+  push:
+    branches: ['master', 'main']
+    paths:
+      - 'js/**'
+      - 'package.json'
+      - 'package-lock.json'
+      - 'tsconfig.json'
+      - 'vite.config.ts'
+      - 'vitest.config.ts'
+      - '.github/workflows/frontend-tests.yml'
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.head_ref || github.run_id }}
+  cancel-in-progress: true
+
+defaults:
+  run:
+    shell: bash
+
+jobs:
+  vitest:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout Code Repository
+        uses: actions/checkout@v4
+
+      - name: Set up Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: 'npm'
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Run vitest
+        run: npm run test
