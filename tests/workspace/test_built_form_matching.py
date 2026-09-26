@@ -1,15 +1,24 @@
-"""Tests for the built-form matching preferences (``built_forms.matching``)."""
+# ruff: noqa: ARG002 — the ``db`` fixture is an argument, not a reference
+"""Tests for the built-form matching rules (``built_forms.matching``).
+
+One constraint (the parcel's land development category) and one preference (the
+parcel's dominant employment sector) sit on top of the density bases. Each is
+implemented twice — Python for the paint surfaces, SQL for the base-canvas fill
+model — so each pair is tested for agreement, not just for its own behavior.
+"""
 
 from __future__ import annotations
 
 from typing import Any
 
 import pytest
+from django.db import connection
 
+from brewgis.workspace.built_forms.matching import category_requirement_sql
 from brewgis.workspace.built_forms.matching import declared_sectors
 from brewgis.workspace.built_forms.matching import dominant_employment_sector
-from brewgis.workspace.built_forms.matching import prefer_same_category
 from brewgis.workspace.built_forms.matching import prefer_same_sector
+from brewgis.workspace.built_forms.matching import require_same_category
 from brewgis.workspace.built_forms.models import BuildingType
 
 
@@ -43,7 +52,7 @@ class TestDominantEmploymentSector:
 
 @pytest.mark.models
 class TestPreferences:
-    """The two narrowing preferences and their fallbacks."""
+    """The category constraint, the sector preference, and their fallbacks."""
 
     def _candidates(self) -> tuple[BuildingType, BuildingType]:
         urban_military = _building_type(
@@ -58,15 +67,26 @@ class TestPreferences:
         )
         return urban_military, rural_office
 
-    def test_category_preference_narrows(self) -> None:
-        narrowed = prefer_same_category(list(self._candidates()), "urban")
+    def test_category_constraint_keeps_only_that_category(self) -> None:
+        narrowed = require_same_category(list(self._candidates()), "urban")
         assert [building_type.name for building_type in narrowed] == ["Urban Military"]
 
-    def test_category_preference_falls_back(self) -> None:
+    def test_a_category_no_candidate_names_matches_nothing(self) -> None:
+        """The constraint never falls back to the nearest other category."""
+        assert require_same_category(list(self._candidates()), "conservation") == []
+
+    def test_an_unset_parcel_category_constrains_nothing(self) -> None:
+        """A parcel that names no category — NULL or blank — keeps every candidate."""
         candidates = list(self._candidates())
-        assert prefer_same_category(candidates, "conservation") == candidates
-        assert prefer_same_category(candidates, "") == candidates
-        assert prefer_same_category(candidates, None) == candidates
+        assert require_same_category(candidates, None) == candidates
+        assert require_same_category(candidates, "") == candidates
+        assert require_same_category(candidates, "   ") == candidates
+
+    def test_a_blank_candidate_category_is_not_a_wildcard(self) -> None:
+        uncategorised = _building_type(name="Mixed Use", land_development_category="")
+        assert require_same_category([uncategorised], "urban") == []
+        # an unset parcel category still admits it — that is the only case it can serve
+        assert require_same_category([uncategorised], None) == [uncategorised]
 
     def test_sector_preference_narrows(self) -> None:
         narrowed = prefer_same_sector(list(self._candidates()), "office_services")
@@ -80,6 +100,52 @@ class TestPreferences:
     def test_a_zero_share_declares_nothing(self) -> None:
         zeroed = _building_type(name="Zero", jobs_by_sector={"military": 0.0})
         assert prefer_same_sector([zeroed], "military") == [zeroed]
+
+
+# The parcel column can be NULL, blank, padded or set; the form column is NOT
+# NULL in the database, so it has no NULL case of its own. One entry per shape
+# either runtime sees.
+PARCEL_CATEGORIES: list[str | None] = [None, "", "   ", "urban", "urban ", "rural"]
+FORM_CATEGORIES: list[str] = ["", "   ", "urban", " rural ", "conservation"]
+
+
+@pytest.mark.models
+class TestCategoryConstraintSqlMatchesPythonRule:
+    """The predicate the fill model filters candidates with is the Python rule.
+
+    Both runtimes apply the constraint — the paint surfaces in Python, the
+    base-canvas fill model in a ``WHERE`` — and a parcel the two disagree about
+    is a parcel that paints one way and imports as another.
+    """
+
+    def test_agrees_on_every_parcel_and_form_category(self, db) -> None:
+        predicate = category_requirement_sql(parcel_prefix="s.", form_prefix="bf.")
+        parcels = ", ".join(["(%s::text)"] * len(PARCEL_CATEGORIES))
+        forms = ", ".join(["(%s::text)"] * len(FORM_CATEGORIES))
+        # The predicate's own ``WHERE`` semantics: SQL's NULL is a dropped row,
+        # not a false — ``CASE`` turns it into the same answer for the assert.
+        # The interpolated text is the rule under test and every value is a
+        # placeholder, so this is not injection-shaped.
+        query = (
+            "SELECT s.land_development_category, bf.land_development_category,"  # noqa: S608
+            " CASE WHEN " + predicate + " THEN true ELSE false END"
+            " FROM (VALUES " + parcels + ") AS s(land_development_category)"
+            " CROSS JOIN (VALUES " + forms + ") AS bf(land_development_category)"
+        )
+
+        with connection.cursor() as cursor:
+            cursor.execute(query, [*PARCEL_CATEGORIES, *FORM_CATEGORIES])
+            rows = cursor.fetchall()
+
+        assert len(rows) == len(PARCEL_CATEGORIES) * len(FORM_CATEGORIES)
+        for parcel_category, form_category, admitted in rows:
+            candidate = _building_type(
+                name="Candidate",
+                # A Building Type's column is NOT NULL: '' is what an unset one holds.
+                land_development_category=form_category or "",
+            )
+            expected = bool(require_same_category([candidate], parcel_category))
+            assert admitted is expected, (parcel_category, form_category)
 
 
 @pytest.mark.models

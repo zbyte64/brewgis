@@ -223,8 +223,10 @@ class BuildingType(models.Model):
         default="",
         verbose_name="Land development category",
         help_text=(
-            "Development category used to prefer same-category matches when "
-            "assigning built forms."
+            "Category closest-matching requires: this type is only ever "
+            "assigned to a parcel whose own land development category is the "
+            "same value. A type left blank is never assigned to a parcel that "
+            "names a category."
         ),
     )
 

@@ -173,11 +173,20 @@ that it is a residual of the coarse grouping), and a group that counts is spread
 across that group's own sectors. A row that is not an employment composition at
 all declares none.
 
-Both fields are used by closest-matching as **preferences** on top of the
-density bases — the sector the parcel's jobs are in first, then its land
-development category, each falling back to the candidate list it was given when
-nothing matches (`views.paint.run_match_built_form`,
-`models/base_canvas/built_form_fill.py`, rule in `built_forms/matching.py`).
+Both fields are used by closest-matching on top of the density bases
+(`views.paint.run_match_built_form`, `models/base_canvas/built_form_fill.py`,
+rule in `built_forms/matching.py`) — one as a constraint, one as a preference.
+
+`land_development_category` is a **constraint**: a parcel that names a category
+(not NULL, not blank) admits only the Building Types naming that same value. A
+type naming none is not eligible for it, so a type left blank serves only a
+parcel that names no category, and a parcel whose category no type declares
+matches nothing at all rather than taking a neighbouring category's archetype.
+
+`jobs_by_sector` is a **preference** within what the constraint admits: a type
+declaring the parcel's largest employment sector ranks ahead of one that does
+not, falling back to the whole eligible set when no type declares it.
+
 Neither is a match basis of its own, so a parcel with no density or key signal
 still matches nothing, and the density basis always decides *within* whatever
-the preferences left.
+the two left.

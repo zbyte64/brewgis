@@ -1,41 +1,52 @@
-"""Which Building Type a parcel should take — the preferences over the density bases.
+"""Which Building Type a parcel should take — one constraint and one preference.
 
 Closest-matching is a density match, and density alone cannot tell two
 archetypes apart that share a dwelling-unit rate but not a land use: a parcel
 whose jobs are military employment is not the same parcel as one whose jobs are
-office employment, yet both may sit at the same employment density. Two
-*ranking preferences* sit on top of the density bases (``du``, ``emp``,
-``built_form_key``) — never replacing them, and each falling back to the list
-it was given when nothing matches:
+office employment, yet both may sit at the same employment density. Two rules
+sit on top of the density bases (``du``, ``emp``, ``built_form_key``) — never
+replacing them:
 
-1. **Employment sector** — a Building Type that declares jobs in the parcel's
-   largest employment sector is preferred over one that does not. A parcel's
-   own jobs are the most specific thing matching knows about it.
-2. **Land development category** — a Building Type of the parcel's own
-   :class:`~brewgis.workspace.built_forms.models.LandDevelopmentCategoryChoices`
-   is preferred over one in a different category.
+1. **Land development category — a constraint.** When the parcel names a
+   category (not NULL, not blank: the parcel column is the ETL's own
+   classification of the land), the only eligible Building Types are the ones
+   naming that same category. A type that names none is not eligible either —
+   an unset category is not a wildcard — so a parcel whose category no
+   Building Type declares matches nothing at all rather than falling out to a
+   neighbouring category. A parcel that names no category is not constrained.
+2. **Employment sector — a preference.** Within what is left, a Building Type
+   that declares jobs in the parcel's largest employment sector is preferred
+   over one that does not, falling back to the whole eligible set when no type
+   declares it. A parcel's own jobs are the most specific thing matching knows
+   about it, but a library may simply not model a sector: a parking
+   structure's handful of jobs are attendants, and no sector in the vocabulary
+   is one.
 
-Sector first is what keeps a sector out of the reach of the coarser category: a
-parcel whose jobs are in a sector only *non*-urban archetypes employ would
-otherwise lose that match to the category narrowing before it was ever tried.
-The category governs the parcels the sector cannot speak for — a residential
-parcel has no jobs at all, so only its category and its density rank it.
+The category is a constraint because it is a claim about the land, not a
+tiebreaker between two plausible archetypes: a rural parcel is no more an
+urban office tower for having office jobs near it, and leaving the rule soft
+is how a vacant or agricultural parcel came to be assigned an urban mixed-use
+archetype whose density then filled it with dwelling units it does not have.
+The sector stays a preference because it is a claim about the *building*, and
+absent a sector match the density bases still know something useful.
 
-Both are narrowing preferences: within whatever the previous step left, the
-density basis still chooses. A parcel with no sector match keeps the full list;
-a parcel with no category match keeps the sector-narrowed list.
+The density basis then chooses within whatever the two left — a parcel with no
+sector match keeps the full eligible set.
 
 The sector vocabulary is the base canvas's own
 (:py:data:`~brewgis.workspace.services.base_canvas_schema.EMPLOYMENT_SECTORS`):
 a parcel's jobs are read from its ``emp_<sector>`` columns and a Building Type
 declares them under the same ``<sector>`` key in ``jobs_by_sector``.
 
-:func:`dominant_employment_sector` and :func:`dominant_employment_sector_sql`
-are the two implementations of the same rule — one for the paint surfaces,
-which hold a parcel row in Python, and one for the base-canvas fill model,
-which ranks candidates inside a ``LEFT JOIN LATERAL``. They must agree on the
-tie-break (the alphabetically first sector), so a change to one is a change to
-the other.
+Each rule exists twice — once for the paint surfaces, which hold a parcel row
+in Python, and once for the base-canvas fill model, which applies it inside a
+``LEFT JOIN LATERAL``: :func:`require_same_category` /
+:func:`category_requirement_sql` and :func:`dominant_employment_sector` /
+:func:`dominant_employment_sector_sql` (with the ranking form
+:func:`sector_preference_sql`). Each pair must agree — on the sector tie-break
+(the alphabetically first sector), on what counts as a blank category, and on
+whose category is compared with whose — so a change to one is a change to the
+other.
 """
 
 # ruff: noqa: S608 — the SQL built here interpolates column names from
@@ -73,27 +84,29 @@ def dominant_employment_sector(row: Mapping[str, Any]) -> str | None:
     return best_sector
 
 
-def prefer_same_category(
+def require_same_category(
     candidates: Sequence[BuildingType], category: str | None
 ) -> Sequence[BuildingType]:
-    """Narrow *candidates* to the ones matching *category*, when any do.
+    """Return the *candidates* naming *category*; all of them when it is unset.
 
-    Returns *candidates* unchanged when *category* is empty or no candidate
-    carries it, so a workspace whose Building Types have no category (or a
-    parcel whose category no type covers) matches exactly as it did before the
-    preference existed.
+    *category* is the parcel's own ``land_development_category``. A parcel that
+    names no category — NULL, or blank — is not narrowed at all: there is
+    nothing to match against. Any other category is a requirement, so the
+    result holds only types naming it, a Building Type naming none is not
+    among them, and the result is *empty* when the library declares no type in
+    the parcel's category. An empty list is the answer, not a licence to fall
+    back to a neighbouring category — the caller reports the parcel unmatched.
     """
     if not category:
         return candidates
-    category = str(category).strip()
-    if not category:
+    wanted = str(category).strip()
+    if not wanted:
         return candidates
-    same_category = [
+    return [
         building_type
         for building_type in candidates
-        if building_type.land_development_category == category
+        if str(building_type.land_development_category or "").strip() == wanted
     ]
-    return same_category or candidates
 
 
 def prefer_same_sector(
@@ -129,6 +142,26 @@ def declared_sectors(building_type: BuildingType) -> dict[str, float]:
         for sector in EMPLOYMENT_SECTORS
         if sector in declared and float(declared[sector] or 0.0) > 0.0
     }
+
+
+def category_requirement_sql(*, parcel_prefix: str, form_prefix: str) -> str:
+    """Return SQL admitting only *form_prefix* rows naming *parcel_prefix*'s category.
+
+    The SQL twin of :func:`require_same_category`, written for a ``WHERE``
+    clause: a parcel naming no category constrains nothing, any other parcel
+    admits only the Building Types naming the same one, and a form side that
+    names none fails the comparison — SQL's ``NULL`` is not a match, so the row
+    is dropped. Strictness is the point; a blank category is not a wildcard.
+
+    Both sides are compared ``btrim``ed, which is how the blank test agrees
+    with the Python side's ``str.strip``: a category of spaces is no category.
+    """
+    parcel_category = f"btrim({parcel_prefix}land_development_category)"
+    form_category = f"btrim({form_prefix}land_development_category)"
+    return (
+        f"({parcel_category} IS NULL OR {parcel_category} = ''"
+        f" OR {form_category} = {parcel_category})"
+    )
 
 
 def dominant_employment_sector_sql(prefix: str) -> str:

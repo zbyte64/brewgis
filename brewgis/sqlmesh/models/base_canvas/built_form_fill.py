@@ -19,10 +19,24 @@ With none opted in the module registers no model at all — see
 :mod:`brewgis.sqlmesh.blueprint_models` for why an empty list cannot be handed
 to ``@model`` instead.
 
-Matching semantics — the SQL counterpart of the paint surfaces' two entries,
-``views/paint.py:run_match_built_form`` (density match) and
-``run_fill_built_form`` (built-form-key lookup), applied per parcel in one
-pass, priority-ordered:
+Matching semantics — the SQL counterpart of the paint surfaces' entry,
+``views/paint.py:run_match_built_form`` (the same density match, run per parcel),
+applied per parcel in one pass. One constraint, then one preference, then the
+density bases — ``built_forms.matching`` holds all of them and the Python twins
+the paint surfaces call:
+
+- **Eligibility.** A parcel whose ``land_development_category`` is set (not
+  NULL, not blank) admits only the Building Types naming that same category —
+  a type naming none is not eligible, and a parcel whose category no type
+  declares matches nothing here rather than taking a neighbouring category's
+  archetype. This gates the key basis below exactly as it gates the density
+  ones.
+- **Sector preference.** Among what is eligible, a Building Type declaring the
+  parcel's dominant employment sector ranks ahead of one that does not, and
+  ahead of the basis ranking below. With no sector declared on either side the
+  preference is a no-op.
+
+What is left competes on the density bases, priority-ordered:
 
 1. the source has dwelling units — closest ``du_per_acre`` to ``du / acres``;
 2. else the source has employment — closest ``emp_per_acre`` to ``emp / acres``;
@@ -42,6 +56,10 @@ A matched row's ``pop``/``hh`` come from the Building Type's ``household_size``
 and ``vacancy_rate`` with the same defaults the analysis models use
 (``COALESCE(household_size, 2.5)``, ``COALESCE(vacancy_rate, 5.0) / 100``).
 """
+
+# ruff: noqa: PLC0415 — the matching rules and ``_qi`` live in modules that
+# import Django, and SQLMesh imports this module while loading the project,
+# before anything has configured it. They are imported inside ``execute``.
 
 from __future__ import annotations
 
@@ -132,8 +150,8 @@ _FILL_MODEL = model(
     description=(
         "One workspace's built-form-filled base canvas: the source base canvas"
         " with every parcel's built_form_key reassigned to the closest-matching"
-        " Building Type and du, pop, hh and emp filled where the source value is"
-        " NULL."
+        " Building Type of the parcel's own land development category, and du,"
+        " pop, hh and emp filled where the source value is NULL."
     ),
     audits=[
         ("not_null", {"columns": [exp.to_column("parcel_id")]}),
@@ -168,10 +186,11 @@ def execute(evaluator: MacroEvaluator, **kwargs: Any) -> str:
     column set is the per-workspace source's, which SQLMesh infers through
     lineage (same rationale as ``models/scenarios/scenario_canvas.py``).
 
-    The two imports are inside ``execute`` because SQLMesh imports this module
+    The imports are inside ``execute`` because SQLMesh imports this module
     while loading the project, before anything has configured Django — and both
-    ``_qi`` and the sector rule live in modules that import Django.
+    ``_qi`` and the matching rules live in modules that import Django.
     """
+    from brewgis.workspace.built_forms.matching import category_requirement_sql
     from brewgis.workspace.built_forms.matching import sector_preference_sql
     from brewgis.workspace.services.canvas_view_manager import _qi
 
@@ -191,12 +210,8 @@ def execute(evaluator: MacroEvaluator, **kwargs: Any) -> str:
         f" {_normalize_sql('s.built_form_key')} = {_normalize_sql('bf.key')})"
     )
     columns = ", ".join(_fill_expression(column, acres) for column in all_columns)
-    category_preference = (
-        "CASE"
-        " WHEN bf.land_development_category IS NOT NULL"
-        " AND bf.land_development_category <> ''"
-        " AND bf.land_development_category = s.land_development_category"
-        " THEN 0 ELSE 1 END"
+    category_requirement = category_requirement_sql(
+        parcel_prefix="s.", form_prefix="bf."
     )
     sector_preference = sector_preference_sql(parcel_prefix="s.", form_prefix="bf.")
 
@@ -216,16 +231,18 @@ matched AS (
     LEFT JOIN LATERAL (
         SELECT *
         FROM {_qi(built_form_table)} bf
-        WHERE {du_basis}
+        WHERE ({du_basis}
            OR {emp_basis}
-           OR {key_basis}
+           OR {key_basis})
+          AND {category_requirement}
         ORDER BY
-            -- Two narrowing preferences on top of the bases below, never
-            -- bases of their own — the sector the parcel's jobs are in first,
-            -- then its land development category. `matching` holds the rule
-            -- and its Python twin, which the paint surfaces use.
+            -- A preference on top of the bases below, never a basis of its
+            -- own: the sector the parcel's jobs are in. Its constraint — the
+            -- parcel's land development category — sits in the WHERE above,
+            -- so no candidate here names a different category. `matching`
+            -- holds both rules and their Python twins, which the paint
+            -- surfaces use; the three bases are ranked below.
             {sector_preference},
-            {category_preference},
             CASE
                 WHEN {du_basis} THEN 1
                 WHEN {emp_basis} THEN 2

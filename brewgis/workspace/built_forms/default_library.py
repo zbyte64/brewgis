@@ -63,9 +63,13 @@ dump, ``planning/urbanfootprint-sacog-source-db.sql.gz``):
 not the density vocabulary of
 :func:`brewgis.sqlmesh.macros.geometry.classify_land_dev_category`. That choice
 is deliberate: it makes the field directly comparable with the parcel column of
-the same name, which is how closest-matching prefers a same-category Building
-Type — see ``views.paint.run_match_built_form`` and
-``sqlmesh/models/base_canvas/built_form_fill.py``.
+the same name, which closest-matching *requires* — a parcel is only ever
+assigned a type naming its own category — see ``views.paint.run_match_built_form``
+and ``sqlmesh/models/base_canvas/built_form_fill.py``. The ETL classifies a
+parcel as ``urban``, ``industrial``, ``agricultural``, ``undeveloped`` or
+SACOG's ``mixed_use`` (``services.base_canvas_pipeline._classify_land_use``),
+and the last of those is no entry's category: a parcel category the library
+cannot name is a library gap, not a licence to match across categories.
 """
 
 # ruff: noqa: E501 — Building-Type descriptions are single-line phrases carried over from the source catalogs

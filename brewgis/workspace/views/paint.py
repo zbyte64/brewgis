@@ -41,8 +41,8 @@ from django.views.decorators.http import require_POST
 from brewgis.workspace.built_forms.allocation import AllocationEngine
 from brewgis.workspace.built_forms.allocation import AllocationResult
 from brewgis.workspace.built_forms.matching import dominant_employment_sector
-from brewgis.workspace.built_forms.matching import prefer_same_category
 from brewgis.workspace.built_forms.matching import prefer_same_sector
+from brewgis.workspace.built_forms.matching import require_same_category
 from brewgis.workspace.built_forms.models import BuildingType
 from brewgis.workspace.built_forms.models import PlaceType
 from brewgis.workspace.models import GEOMETRY_EDIT_ID_SEQUENCE
@@ -1224,16 +1224,29 @@ def run_match_built_form(
             )
             continue
 
-        # Two narrowing preferences on top of the density basis — never bases
-        # of their own, and each falling back to the list it was given: the
-        # sector the parcel's jobs are in first, then its land development
-        # category. A workspace whose types carry neither matches exactly as it
-        # did before they existed.
+        # One rule on top of the density basis, never a basis of its own: the
+        # parcel's land development category is a constraint — only Building
+        # Types naming it survive — and the employment sector is a preference
+        # within what survives. A parcel whose category no type declares has no
+        # candidates at all rather than falling through to a neighbouring
+        # category; a parcel that names no category is not constrained.
+        candidates = list(
+            require_same_category(candidates, row.get("land_development_category"))
+        )
+        if not candidates:
+            unmatched.append(
+                {
+                    "feature_id": fid,
+                    "message": (
+                        "No Building Type in land development category "
+                        f"'{row.get('land_development_category')}' matches this "
+                        "parcel's density."
+                    ),
+                }
+            )
+            continue
         candidates = list(
             prefer_same_sector(candidates, dominant_employment_sector(row))
-        )
-        candidates = list(
-            prefer_same_category(candidates, row.get("land_development_category"))
         )
 
         best = min(candidates, key=lambda bt: abs(getattr(bt, basis) - density))
