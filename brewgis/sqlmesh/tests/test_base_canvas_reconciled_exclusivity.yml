@@ -1,0 +1,416 @@
+# Unit tests for the DU and employment exclusivity reconciliation in
+# brewgis.sacog.base_canvas_reconciled.
+#
+# The SACOG source parcel layer proves two hard, cross-column invariants that the
+# LightGBM/ResNet sub-sector regressors violate when they predict each sub-sector
+# independently:
+#   - du_detsf never co-occurs with du_attsf/du_mf; du_detsf_ll XOR du_detsf_sl
+#     (0 of 393,426 DU parcels violate either).
+#   - emp_pub never co-occurs with emp_ret/emp_ind (0 of 21,626 employment parcels
+#     violate it) and emp_military is exclusive against every other sector.
+#
+# The reconciliation is winner-take-all per tier (ties go to detached, military
+# and public) and TRANSFERS the loser into the dominant sub-sector of the winning
+# side, so no parcel ever loses units or jobs. Employment tier 2 (pub versus
+# retail/industrial) is judged on the state tier 1 left behind, which is why the
+# final case below chains both tiers. Fixtures keep the subtype sum equal to du so
+# du_scale is exactly 1 and every asserted value is exact.
+
+#  COLUMNS_MARKER
+
+test_detsf_family_wins_over_attsf_mf:
+  description: "Detached 6 vs attached/multi-family 4 -> detached wins and absorbs the mix, sum preserved"
+  model: brewgis.sacog.base_canvas_reconciled
+  gateway: postgis
+  inputs:
+    brewgis.sacog.base_canvas_imputed:
+      rows:
+        - parcel_id: 101
+          du: 10.0
+          du_detsf_sl: 0.0
+          du_detsf_ll: 6.0
+          du_attsf: 3.0
+          du_mf2to4: 1.0
+
+      columns: &imputed_columns
+          parcel_id: INT
+          geometry: TEXT
+          local_geometry: TEXT
+          county: TEXT
+          land_development_category: TEXT
+          built_form_key: TEXT
+          intersection_density: DECIMAL
+          area_gross: DECIMAL
+          area_gross_acres: DECIMAL
+          area_parcel_acres: DECIMAL
+          area_dev_condition_acres: DECIMAL
+          area_row_acres: DECIMAL
+          area_parcel_res: DOUBLE
+          area_parcel_res_acres: DOUBLE
+          area_parcel_emp_ag: DOUBLE
+          area_parcel_emp_ag_acres: DOUBLE
+          area_parcel_emp: DOUBLE
+          area_parcel_emp_acres: DOUBLE
+          area_parcel_mixed_use: DOUBLE
+          area_parcel_mixed_use_acres: DOUBLE
+          area_parcel_no_use: DOUBLE
+          area_parcel_no_use_acres: DOUBLE
+          pop: DOUBLE
+          pop_groupquarter: DOUBLE
+          hh: DOUBLE
+          du: DOUBLE
+          du_detsf: DOUBLE
+          du_detsf_sl: DOUBLE
+          du_detsf_ll: DOUBLE
+          du_attsf: DOUBLE
+          du_mf: DOUBLE
+          du_mf2to4: DOUBLE
+          du_mf5p: DOUBLE
+          du_subtype: TEXT
+          is_residential: INT
+          residential_building_sqft: DOUBLE
+          commercial_building_sqft: DOUBLE
+          industrial_building_sqft: DOUBLE
+          other_building_sqft: DOUBLE
+          total_footprint_sqft: DOUBLE
+          building_count: BIGINT
+          footprint_ratio: DOUBLE
+          max_levels: DOUBLE
+          emp: DOUBLE
+          emp_ret: DOUBLE
+          emp_retail_services: DOUBLE
+          emp_restaurant: DOUBLE
+          emp_accommodation: DOUBLE
+          emp_arts_entertainment: DOUBLE
+          emp_other_services: DOUBLE
+          emp_off: DOUBLE
+          emp_office_services: DOUBLE
+          emp_medical_services: DOUBLE
+          emp_pub: DOUBLE
+          emp_public_admin: DOUBLE
+          emp_education: DOUBLE
+          emp_ind: DOUBLE
+          emp_manufacturing: DOUBLE
+          emp_wholesale: DOUBLE
+          emp_transport_warehousing: DOUBLE
+          emp_utilities: DOUBLE
+          emp_construction: DOUBLE
+          emp_ag: DOUBLE
+          emp_agriculture: DOUBLE
+          emp_extraction: DOUBLE
+          emp_military: DOUBLE
+          bldg_area_detsf_sl: DOUBLE
+          bldg_area_detsf_ll: DOUBLE
+          bldg_area_attsf: DOUBLE
+          bldg_area_mf: DOUBLE
+          bldg_area_retail_services: DOUBLE
+          bldg_area_restaurant: DOUBLE
+          bldg_area_accommodation: DOUBLE
+          bldg_area_arts_entertainment: DOUBLE
+          bldg_area_other_services: DOUBLE
+          bldg_area_office_services: DOUBLE
+          bldg_area_public_admin: DOUBLE
+          bldg_area_education: DOUBLE
+          bldg_area_medical_services: DOUBLE
+          bldg_area_transport_warehousing: DOUBLE
+          bldg_area_wholesale: DOUBLE
+          residential_irrigated_area: DOUBLE
+          commercial_irrigated_area: DOUBLE
+          median_income: DOUBLE
+          rent_burden_pct: DOUBLE
+          pct_minority: DOUBLE
+          pct_college_educated: DOUBLE
+          cost_burden_pct: DOUBLE
+          vacancy_rate: DOUBLE
+          occupied_du: DECIMAL
+          land_use: TEXT
+          assessor_use_code: TEXT
+  outputs:
+    query:
+      partial: true
+      rows:
+        -
+          du_detsf_ll: 10.0
+          du_detsf: 10.0
+          du_attsf: 0.0
+          du_mf2to4: 0.0
+          du_mf: 0.0
+
+test_mix_family_wins_over_detsf:
+  description: "Detached 2 vs attached/multi-family 4 -> mix wins, detached units land in the dominant mix subtype"
+  model: brewgis.sacog.base_canvas_reconciled
+  gateway: postgis
+  inputs:
+    brewgis.sacog.base_canvas_imputed:
+      rows:
+        - parcel_id: 102
+          du: 6.0
+          du_detsf_sl: 0.0
+          du_detsf_ll: 2.0
+          du_attsf: 1.0
+          du_mf2to4: 3.0
+
+      columns: *imputed_columns
+  outputs:
+    query:
+      partial: true
+      rows:
+        -
+          du_detsf_ll: 0.0
+          du_detsf: 0.0
+          du_attsf: 1.0
+          du_mf2to4: 5.0
+          du_mf: 5.0
+
+test_detsf_ll_sl_exclusive:
+  description: "du_detsf_ll == du_detsf_sl -> the large-lot winner carries both lot sizes"
+  model: brewgis.sacog.base_canvas_reconciled
+  gateway: postgis
+  inputs:
+    brewgis.sacog.base_canvas_imputed:
+      rows:
+        - parcel_id: 103
+          du: 6.0
+          du_detsf_sl: 3.0
+          du_detsf_ll: 3.0
+
+      columns: *imputed_columns
+  outputs:
+    query:
+      partial: true
+      rows:
+        -
+          du_detsf_ll: 6.0
+          du_detsf_sl: 0.0
+          du_detsf: 6.0
+          du_attsf: 0.0
+          du_mf: 0.0
+
+test_attached_soft_mix_preserved:
+  description: "attsf + mf2to4 + mf5p mix freely - none may be zeroed or moved"
+  model: brewgis.sacog.base_canvas_reconciled
+  gateway: postgis
+  inputs:
+    brewgis.sacog.base_canvas_imputed:
+      rows:
+        - parcel_id: 104
+          du: 10.0
+          du_detsf_sl: 0.0
+          du_detsf_ll: 0.0
+          du_attsf: 4.0
+          du_mf2to4: 3.0
+          du_mf5p: 3.0
+
+      columns: *imputed_columns
+  outputs:
+    query:
+      partial: true
+      rows:
+        -
+          du_detsf: 0.0
+          du_attsf: 4.0
+          du_mf2to4: 3.0
+          du_mf5p: 3.0
+          du_mf: 6.0
+
+test_pub_not_colocated_ret:
+  description: "pub 8 vs retail 2 -> public wins and absorbs retail; emp keeps the parcel total"
+  model: brewgis.sacog.base_canvas_reconciled
+  gateway: postgis
+  inputs:
+    brewgis.sacog.base_canvas_imputed:
+      rows:
+        - parcel_id: 105
+          emp_education: 8.0
+          emp_retail_services: 2.0
+
+      columns: *imputed_columns
+  outputs:
+    query:
+      partial: true
+      rows:
+        -
+          emp_pub: 10.0
+          emp_education: 10.0
+          emp_ret: 0.0
+          emp_retail_services: 0.0
+          emp: 10.0
+
+test_pub_not_colocated_ind:
+  description: "pub 1 vs industrial 5 -> industrial wins and absorbs public"
+  model: brewgis.sacog.base_canvas_reconciled
+  gateway: postgis
+  inputs:
+    brewgis.sacog.base_canvas_imputed:
+      rows:
+        - parcel_id: 106
+          emp_public_admin: 1.0
+          emp_manufacturing: 5.0
+
+      columns: *imputed_columns
+  outputs:
+    query:
+      partial: true
+      rows:
+        -
+          emp_pub: 0.0
+          emp_public_admin: 0.0
+          emp_ind: 6.0
+          emp_manufacturing: 6.0
+          emp: 6.0
+
+test_pub_off_allowed:
+  description: "pub + office is a legal mix (source P(pub->off) = 31.9%) - neither may be moved"
+  model: brewgis.sacog.base_canvas_reconciled
+  gateway: postgis
+  inputs:
+    brewgis.sacog.base_canvas_imputed:
+      rows:
+        - parcel_id: 107
+          emp_education: 5.0
+          emp_office_services: 2.0
+
+      columns: *imputed_columns
+  outputs:
+    query:
+      partial: true
+      rows:
+        -
+          emp_pub: 5.0
+          emp_off: 2.0
+          emp: 7.0
+
+test_military_exclusive_wins:
+  description: "military 9 vs public 3 -> military wins and absorbs every other sector"
+  model: brewgis.sacog.base_canvas_reconciled
+  gateway: postgis
+  inputs:
+    brewgis.sacog.base_canvas_imputed:
+      rows:
+        - parcel_id: 108
+          emp_military: 9.0
+          emp_education: 3.0
+
+      columns: *imputed_columns
+  outputs:
+    query:
+      partial: true
+      rows:
+        -
+          emp_military: 12.0
+          emp_pub: 0.0
+          emp: 12.0
+
+test_military_exclusive_loses:
+  description: "military 1 vs public 5 -> public wins, military jobs move into the dominant non-military sector"
+  model: brewgis.sacog.base_canvas_reconciled
+  gateway: postgis
+  inputs:
+    brewgis.sacog.base_canvas_imputed:
+      rows:
+        - parcel_id: 109
+          emp_military: 1.0
+          emp_education: 5.0
+
+      columns: *imputed_columns
+  outputs:
+    query:
+      partial: true
+      rows:
+        -
+          emp_military: 0.0
+          emp_pub: 6.0
+          emp_education: 6.0
+          emp: 6.0
+
+test_military_loser_transfers_to_dominant_nonmil:
+  description: "military 2 vs retail 3 + manufacturing 5 -> manufacturing is dominant and takes the military jobs"
+  model: brewgis.sacog.base_canvas_reconciled
+  gateway: postgis
+  inputs:
+    brewgis.sacog.base_canvas_imputed:
+      rows:
+        - parcel_id: 110
+          emp_military: 2.0
+          emp_retail_services: 3.0
+          emp_manufacturing: 5.0
+      columns: *imputed_columns
+  outputs:
+    query:
+      partial: true
+      rows:
+        - emp_military: 0.0
+          emp_ret: 3.0
+          emp_manufacturing: 7.0
+          emp_ind: 7.0
+          emp: 10.0
+
+test_pub_tier_judges_tier_one_output:
+  description: "military 2 + public 5 vs retail 1 -> public absorbs military, then retail, in that order"
+  model: brewgis.sacog.base_canvas_reconciled
+  gateway: postgis
+  inputs:
+    brewgis.sacog.base_canvas_imputed:
+      rows:
+        - parcel_id: 111
+          emp_military: 2.0
+          emp_public_admin: 5.0
+          emp_retail_services: 1.0
+
+      columns: *imputed_columns
+  outputs:
+    query:
+      partial: true
+      rows:
+        -
+          emp_military: 0.0
+          emp_pub: 8.0
+          emp_public_admin: 8.0
+          emp_ret: 0.0
+          emp: 8.0
+
+test_military_jobs_survive_the_pub_tier_transfer:
+  description: "military 1 + retail 5 vs public 4+4 -> retail holds the military jobs, public wins and absorbs the whole mix side"
+  model: brewgis.sacog.base_canvas_reconciled
+  gateway: postgis
+  inputs:
+    brewgis.sacog.base_canvas_imputed:
+      rows:
+        - parcel_id: 112
+          emp_military: 1.0
+          emp_retail_services: 5.0
+          emp_public_admin: 4.0
+          emp_education: 4.0
+      columns: *imputed_columns
+  outputs:
+    query:
+      partial: true
+      rows:
+        - emp_military: 0.0
+          emp_ret: 0.0
+          emp_retail_services: 0.0
+          emp_pub: 14.0
+          emp_public_admin: 10.0
+          emp_education: 4.0
+          emp: 14.0
+
+test_military_wipeout_with_multi_group_block:
+  description: "military 10 vs retail 3 + public 2 -> military takes everything, both groups zeroed"
+  model: brewgis.sacog.base_canvas_reconciled
+  gateway: postgis
+  inputs:
+    brewgis.sacog.base_canvas_imputed:
+      rows:
+        - parcel_id: 113
+          emp_military: 10.0
+          emp_retail_services: 3.0
+          emp_education: 2.0
+      columns: *imputed_columns
+  outputs:
+    query:
+      partial: true
+      rows:
+        - emp_military: 15.0
+          emp_ret: 0.0
+          emp_pub: 0.0
+          emp: 15.0
