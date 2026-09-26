@@ -17,11 +17,16 @@ page load of the workspace map view and clicks the "Export Map" button
 exact MapLibre GL styling code (brewgis.workspace.symbology.generator) and
 tile sources a user actually sees, not a reimplementation of them.
 
+The basemap is replaced with a blank offline style (``_OFFLINE_BASEMAP_JS``):
+the seeded default is CARTO's vector style, which has no tiles at this
+fixture's coordinates, and a third-party CDN has no business deciding whether
+this test can run or what its pixels are.
+
 Requires the full local docker stack running (``docker compose up``) and a
 reachable server at ``BREWGIS_TEST_BASE_URL`` (default
-``http://localhost:8000``). Run explicitly, e.g.::
+``http://localhost:8000``). Run it with ``make test-live-stack``, or directly::
 
-    pytest tests/workspace/test_map_render_parity.py -m integration -v
+    pytest tests/workspace/test_map_render_parity.py -m live_stack -v
 
 To regenerate the checked-in tipg baseline (only do this deliberately, and
 inspect the new image before committing it)::
@@ -45,6 +50,9 @@ from django.conf import settings
 from PIL import Image
 from PIL import ImageChops
 from playwright.sync_api import sync_playwright
+
+from tests.workspace.live_stack import delete_user_rows
+from tests.workspace.live_stack import delete_workspace_rows
 
 pytestmark = [pytest.mark.integration, pytest.mark.live_stack]
 
@@ -254,37 +262,19 @@ def _setup_fixture(conn: psycopg.Connection) -> dict[str, Any]:
 def _teardown_fixture(conn: psycopg.Connection, ids: dict[str, Any]) -> None:
     """Drop everything the fixture created, children first.
 
-    Scoped to the fixture workspace rather than the ids ``_setup_fixture``
-    returned: rendering the map page registers layers of its own (the
-    painted-features overlay), and a leftover child row blocks the workspace
-    delete — these FKs carry no ``ON DELETE CASCADE``.
+    The database side is scoped to the fixture workspace rather than the ids
+    ``_setup_fixture`` returned: rendering the map page registers layers of its
+    own (the painted-features overlay) with symbology of their own, and a
+    leftover child row blocks the workspace delete — these FKs carry no
+    ``ON DELETE CASCADE``.
     """
     with conn.cursor() as cur:
-        # ``layers`` is this function's own fixed sub-select, not user input.
-        layers = "SELECT id FROM workspace_layer WHERE workspace_id = %s"
-        cur.execute(
-            "DELETE FROM workspace_styleclass WHERE symbology_id IN "  # noqa: S608
-            f"(SELECT id FROM workspace_symbologyconfig WHERE layer_id IN ({layers}))",
-            (ids["workspace_id"],),
-        )
-        cur.execute(
-            f"DELETE FROM workspace_symbologyconfig WHERE layer_id IN ({layers})",  # noqa: S608
-            (ids["workspace_id"],),
-        )
-        cur.execute(
-            "DELETE FROM workspace_layer WHERE workspace_id = %s",
-            (ids["workspace_id"],),
-        )
-        cur.execute(
-            "DELETE FROM workspace_scenario WHERE workspace_id = %s",
-            (ids["workspace_id"],),
-        )
-        cur.execute(
-            "DELETE FROM workspace_workspace WHERE id = %s", (ids["workspace_id"],)
-        )
         cur.execute(f"DROP TABLE IF EXISTS {FIXTURE_SCHEMA}.{FIXTURE_TABLE}")
-        cur.execute("DELETE FROM auth_user WHERE username = %s", (TEST_USERNAME,))
     conn.commit()
+    delete_workspace_rows(conn, ids["workspace_id"])
+    # Last, and defensively: rows in the workspace above (and in any workspace
+    # a previous failed run leaked) reference this user.
+    delete_user_rows(conn, TEST_USERNAME)
 
 
 def _set_backend(conn: psycopg.Connection, workspace_id: int, backend: str) -> None:
@@ -360,6 +350,40 @@ _LAYER_RENDERED_JS = """
 }
 """
 
+# The fixture workspace renders against whatever ``Basemap`` row the seeds mark
+# default — CARTO's vector style. That tileset has *no data* at the fixture's
+# location: every basemap tile answers ``404 Error: Not found from db
+# (12/2161/2317)`` (the same tile from CARTO's raster style is a 200). MapLibre
+# marks those eight tiles ``errored``, and that path never re-schedules a
+# render, so the map's ``load`` event — the only thing that adds our data
+# layers (``brew-gis-map.ts``: ``map.on('load')``) — never fires, leaving an
+# empty canvas behind a "loaded" style. The parity test is about *our*
+# symbology and tiles, not CARTO's tile coverage, so it substitutes a blank
+# offline style: no sources to fetch, nothing to 404, deterministic pixels.
+_OFFLINE_BASEMAP_JS = """
+(() => {
+    const blankStyle = JSON.stringify({
+        version: 8,
+        sources: {},
+        layers: [
+            { id: 'test-background', type: 'background', paint: { 'background-color': '#000000' } },
+        ],
+    });
+    const getElementById = Document.prototype.getElementById;
+    Document.prototype.getElementById = function (id) {
+        if (id === 'basemap-style-data') {
+            return { textContent: blankStyle };
+        }
+        return getElementById.call(this, id);
+    };
+})();
+"""
+
+
+def _use_offline_basemap(page: Any) -> None:
+    """Make ``brew-gis-map`` render a blank basemap instead of CARTO's."""
+    page.add_init_script(script=_OFFLINE_BASEMAP_JS)
+
 
 def _wait_until_layer_rendered(page: Any, timeout: float = 60.0) -> None:
     """Wait until the fixture layer has actually painted features.
@@ -382,6 +406,7 @@ def _wait_until_layer_rendered(page: Any, timeout: float = 60.0) -> None:
 def _export_map_png(page: Any, workspace_id: int, out_path: Path) -> None:
     """Log in, open the fixture workspace's map, and capture it via the
     real "Export Map" button — the same code path a user would click."""
+    _use_offline_basemap(page)
     page.goto(f"{BASE_URL}/accounts/login/")
     page.wait_for_load_state("networkidle")
     page.fill('input[name="login"]', TEST_USERNAME)

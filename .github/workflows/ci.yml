@@ -157,3 +157,67 @@ jobs:
       - name: Tear down the Stack
         if: always()
         run: docker compose -f docker-compose.yml down -v
+
+  # The three tests that need a *running* stack rather than a test database:
+  # an alternative scenario's canvas view tiled by Martin, a real MapLibre
+  # render after painting (twice, to compare tipg's pixels against Martin's),
+  # and a real (non-eager) Celery paint task in between. They are excluded from
+  # `make test` and `make test-integration` by the live_stack marker.
+  #
+  # They cannot use pytest-django's test database: Martin and tipg read the dev
+  # database directly, so the fixtures go through psycopg and the browser talks
+  # to the compose stack's own dev server on :8000 — hence `exec` into the
+  # running django container rather than `run --rm`. Restarting tipg/Martin to
+  # re-discover a freshly created fixture table goes through the docker socket
+  # docker-compose.yml already mounts into that container.
+  #
+  # continue-on-error until this job has a green history on CI: everything it
+  # needs exists here (the stack, the socket, Chromium, a Celery worker), but a
+  # gate that has never run in this environment is worth watching before it is
+  # allowed to block other people's pull requests.
+  live-stack:
+    runs-on: ubuntu-latest
+    continue-on-error: true
+    steps:
+      - name: Checkout Code Repository
+        uses: actions/checkout@v7
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Create local env file
+        run: |
+          cp .env.example .env
+          echo "UID=$(id -u)" >> .env
+          echo "GID=$(id -g)" >> .env
+          mkdir -p cache
+
+      - name: Build the Stack
+        run: docker compose -f docker-compose.yml build django
+
+      - name: Start the Stack
+        run: |
+          docker compose -f docker-compose.yml up -d \
+            postgres redis tipg martin celeryworker django
+
+      - name: Run DB Migrations
+        run: make migrate
+
+      - name: Wait for the dev server
+        run: |
+          for _ in $(seq 1 60); do
+            if curl -fsS -o /dev/null http://localhost:8000/accounts/login/; then
+              exit 0
+            fi
+            sleep 2
+          done
+          echo "django dev server never answered on :8000" >&2
+          docker compose -f docker-compose.yml logs django | tail -50
+          exit 1
+
+      - name: Run live-stack tests (real browser, Martin/tipg, Celery)
+        run: make test-live-stack
+
+      - name: Tear down the Stack
+        if: always()
+        run: docker compose -f docker-compose.yml down -v

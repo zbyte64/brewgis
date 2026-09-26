@@ -114,6 +114,7 @@ make test-parallel         # Parallel (excludes slow and e2e)
 make test-models           # Model tests only
 make test-views            # View/HTTP tests only
 make test-integration      # PostGIS/SQLMesh-dependent tests
+make test-live-stack       # Live-stack tests: running server + Martin/tipg + browser
 make test-e2e              # Playwright BDD end-to-end tests (sequential)
 make test-review           # UX design review tests (Playwright)
 make test-deal             # Deal property-based tests (sequential, DEAL_ENABLED=1)
@@ -312,6 +313,7 @@ npm run test      # vitest
 |`@pytest.mark.models`|Django model unit tests|DB|
 |`@pytest.mark.views`|View/HTTP tests|DB, client|
 |`@pytest.mark.integration`|PostGIS/SQLMesh-dependent tests|Running PostGIS|
+|`@pytest.mark.live_stack`|Tests needing the running stack (dev server, Martin/tipg, Celery, browser); run by `make test-live-stack`, excluded from `make test-integration`|Full `docker compose up` stack|
 |`@pytest.mark.slow`|Property-based or long-running|hypothesis, external services|
 |`@pytest.mark.e2e`|Playwright BDD e2e tests|Full stack|
 |`@pytest.mark.review`|UX design review tests|Playwright|

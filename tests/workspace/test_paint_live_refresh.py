@@ -36,13 +36,19 @@ a live run of the actual stack — the real docker Celery worker, the real
 Martin container, a real MapLibre instance in a real browser — exercises
 the code paths where all three bugs actually lived.
 
+Like the parity test, the basemap is replaced with a blank offline style
+(``_OFFLINE_BASEMAP_JS``) — the seeded CARTO default has no tiles at the
+fixture's coordinates, and MapLibre only installs the app's data layers (the
+painted-features overlay and the scenario canvas view the paint result has to
+reach) once its ``load`` event fires, which failed basemap tiles prevent.
+
 Requires the full local docker stack running (``docker compose up``) with
 Martin's docker socket mounted (so ``restart_martin()`` works) and
 ``CELERY_TASK_ALWAYS_EAGER=False`` in the running django/celeryworker
 containers (already brewgis's dev default — see ``.envs/.local/.django``).
-Run explicitly, e.g.::
+Run it with ``make test-live-stack``, or directly::
 
-    pytest tests/workspace/test_paint_live_refresh.py -m integration -v
+    pytest tests/workspace/test_paint_live_refresh.py -m live_stack -v
 """
 
 from __future__ import annotations
@@ -57,6 +63,10 @@ import requests
 from django.conf import settings
 from playwright.sync_api import Page
 from playwright.sync_api import sync_playwright
+
+from brewgis.workspace.analysis.layer_registry import BASE_CANVAS_LAYER_KEY
+from tests.workspace.live_stack import delete_user_rows
+from tests.workspace.live_stack import delete_workspace_rows
 
 pytestmark = [pytest.mark.integration, pytest.mark.live_stack]
 
@@ -177,7 +187,7 @@ def _setup_fixture(conn: psycopg.Connection) -> dict[str, Any]:
             RETURNING id
             """,
             (
-                "fixture_layer",
+                BASE_CANVAS_LAYER_KEY,
                 "Fixture Layer",
                 FIXTURE_TABLE,
                 workspace_id,
@@ -286,34 +296,12 @@ def _teardown_fixture(conn: psycopg.Connection, ids: dict[str, Any]) -> None:
             f'DROP VIEW IF EXISTS "{ids["schema_name"]}"."scenario_{ids["slug"]}_canvas"'
         )
         cur.execute(f'DROP SCHEMA IF EXISTS "{ids["schema_name"]}" CASCADE')
-        cur.execute(
-            "DELETE FROM workspace_paintedcanvas WHERE scenario_id = %s",
-            (ids["scenario_id"],),
-        )
-        cur.execute(
-            "DELETE FROM workspace_paintrun WHERE scenario_id = %s",
-            (ids["scenario_id"],),
-        )
-        cur.execute(
-            "DELETE FROM workspace_paintevent WHERE scenario_id = %s",
-            (ids["scenario_id"],),
-        )
-        cur.execute(
-            "DELETE FROM workspace_scenario WHERE workspace_id = %s",
-            (ids["workspace_id"],),
-        )
-        # By workspace, not by the ids created above: rendering the map page
-        # registers layers of its own (the painted-features overlay).
-        cur.execute(
-            "DELETE FROM workspace_layer WHERE workspace_id = %s",
-            (ids["workspace_id"],),
-        )
-        cur.execute(
-            "DELETE FROM workspace_workspace WHERE id = %s", (ids["workspace_id"],)
-        )
         cur.execute(f"DROP TABLE IF EXISTS {FIXTURE_SCHEMA}.{FIXTURE_TABLE} CASCADE")
-        cur.execute("DELETE FROM auth_user WHERE username = %s", (TEST_USERNAME,))
     conn.commit()
+    delete_workspace_rows(conn, ids["workspace_id"])
+    # Last, and defensively: rows in the workspace above (and in any workspace
+    # a previous failed run leaked) reference this user.
+    delete_user_rows(conn, TEST_USERNAME)
 
 
 def _wait_until_ready(fqtn: str, timeout: float = 90.0) -> None:
@@ -362,6 +350,36 @@ def fixture_ids(pg_conn: Any, django_db_blocker: Any) -> Any:
         _teardown_fixture(pg_conn, ids)
 
 
+# See test_map_render_parity.py for the full story: the seeded default CARTO
+# basemap serves no vector tiles at our fixture coordinates (404s), MapLibre's
+# errored-tile path never re-schedules a render, and so `load` — which is what
+# installs our data layers and the paint overlay — never fires. Rendering
+# against a blank offline style removes the third-party basemap from the test.
+_OFFLINE_BASEMAP_JS = """
+(() => {
+    const blankStyle = JSON.stringify({
+        version: 8,
+        sources: {},
+        layers: [
+            { id: 'test-background', type: 'background', paint: { 'background-color': '#000000' } },
+        ],
+    });
+    const getElementById = Document.prototype.getElementById;
+    Document.prototype.getElementById = function (id) {
+        if (id === 'basemap-style-data') {
+            return { textContent: blankStyle };
+        }
+        return getElementById.call(this, id);
+    };
+})();
+"""
+
+
+def _use_offline_basemap(page: Page) -> None:
+    """Make ``brew-gis-map`` render a blank basemap instead of CARTO's."""
+    page.add_init_script(script=_OFFLINE_BASEMAP_JS)
+
+
 def _login(page: Page) -> None:
     """Log in and verify it actually worked.
 
@@ -371,6 +389,7 @@ def _login(page: Page) -> None:
     so every downstream step silently ran unauthenticated instead of
     failing here where the real problem is.
     """
+    _use_offline_basemap(page)
     page.goto(f"{BASE_URL}/accounts/login/")
     page.wait_for_load_state("networkidle")
     page.fill('input[name="login"]', TEST_USERNAME)
@@ -383,29 +402,43 @@ def _login(page: Page) -> None:
     )
 
 
+# The feature's properties as the *visible* layer has them. For an
+# alternative scenario that layer is the workspace's base layer
+# (``baseLayerId``), whose source map.py swaps to the scenario canvas view —
+# the layer a user is actually looking at, and the one the paint result has to
+# reach. Reading the id off the component keeps this honest if the key ever
+# changes (it is ``BASE_CANVAS_LAYER_KEY``), instead of pinning a string that
+# silently stops matching a layer name.
 _QUERY_FEATURE_JS = """
 () => {{
-    const map = document.querySelector('brew-gis-map').getMap();
+    const el = document.querySelector('brew-gis-map');
+    const map = el.getMap();
     const feats = map.queryRenderedFeatures(
-        [{x}, {y}], {{ layers: ['fixture_layer'] }}
+        [{x}, {y}], {{ layers: [el.baseLayerId] }}
     );
     return feats.length ? feats[0].properties : null;
 }}
 """
 
 # Paint mode's click-to-select handler queries the *highlight overlay*
-# layer (canvasLayerId), not the visible fixture_layer — both come from
-# the same canvas view/source and normally render together, but waiting
-# on this one too (not just fixture_layer) avoids a race where a click is
-# fired a moment before the overlay layer specifically has tiles loaded.
+# layer (canvasLayerId), not the base layer — both come from the same canvas
+# view and normally render together, but waiting on this one too (not just the
+# base layer) avoids a race where a click is fired a moment before the overlay
+# layer specifically has tiles loaded. Both ids come from the component:
+# the overlay is ``PAINTED_FEATURES_LAYER_KEY`` ("painted_features"), while
+# "scenario_test_canvas" — the *view* this fixture creates — is what the
+# overlay's source points at and was never a layer name.
 _BOTH_LAYERS_READY_JS = """
 () => {{
-    const map = document.querySelector('brew-gis-map').getMap();
+    const el = document.querySelector('brew-gis-map');
+    const map = el.getMap();
+    const base = el.baseLayerId;
+    const overlay = el.canvasLayerId;
     const feats = map.queryRenderedFeatures(
-        [{x}, {y}], {{ layers: ['fixture_layer', 'scenario_test_canvas'] }}
+        [{x}, {y}], {{ layers: [base, overlay] }}
     );
     const layers = new Set(feats.map(f => f.layer.id));
-    return layers.has('fixture_layer') && layers.has('scenario_test_canvas');
+    return layers.has(base) && layers.has(overlay);
 }}
 """
 
