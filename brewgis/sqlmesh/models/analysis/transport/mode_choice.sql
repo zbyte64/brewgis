@@ -11,7 +11,8 @@ MODEL (
     mode_share_auto = 'Auto mode share (0-1).',
     mode_share_transit = 'Transit mode share (0-1).',
     mode_share_walk = 'Walk mode share (0-1).',
-    mode_share_bike = 'Bike mode share (0-1).'
+    mode_share_bike = 'Bike mode share (0-1).',
+    geometry = 'Parcel geometry copied from the scenario end state (EPSG:4326).'
   ),
   blueprints @analysis_blueprints('mode_choice'),
   audits (
@@ -62,7 +63,10 @@ WITH attrs AS (
             THEN 1.0
             ELSE 0.0
         END AS transit_access,
-        COALESCE(es.intersection_density, 0.0) AS intersection_density
+        COALESCE(es.intersection_density, 0.0) AS intersection_density,
+        -- The result view is a map layer (see the layer registry), so the model
+        -- has to project the parcel geometry every other analysis model does.
+        es.geometry
     FROM @{scenario_schema}.trip_distribution AS td
     LEFT JOIN @{scenario_schema}.core_end_state AS es
         ON td.parcel_id = es.parcel_id
@@ -74,6 +78,7 @@ utilities AS (
     SELECT
         parcel_id,
         trips_outbound,
+        geometry,
         -2.0 + 0.15 * ln_density + 0.02 * transit_access AS u_transit,
         -1.5 + 0.15 * ln_density + 0.05 * intersection_density AS u_walk,
         -2.5 + 0.15 * ln_density + 0.05 * intersection_density AS u_bike
@@ -87,6 +92,7 @@ softmax AS (
     SELECT
         parcel_id,
         trips_outbound,
+        geometry,
         u_transit,
         u_walk,
         u_bike,
@@ -98,6 +104,7 @@ weights AS (
     SELECT
         parcel_id,
         trips_outbound,
+        geometry,
         EXP(-max_utility) AS e_auto,
         EXP(u_transit - max_utility) AS e_transit,
         EXP(u_walk - max_utility) AS e_walk,
@@ -109,6 +116,7 @@ totals AS (
     SELECT
         parcel_id,
         trips_outbound,
+        geometry,
         e_auto,
         e_transit,
         e_walk,
@@ -128,11 +136,14 @@ SELECT
     e_auto / denom AS mode_share_auto,
     e_transit / denom AS mode_share_transit,
     e_walk / denom AS mode_share_walk,
-    e_bike / denom AS mode_share_bike
+    e_bike / denom AS mode_share_bike,
+    geometry
 FROM totals
 ORDER BY parcel_id;
 
 -- post_statements
+  CREATE INDEX IF NOT EXISTS @snapshot_hash('idx_mode_choice_geometry_')
+  ON @this_model USING GIST (geometry);
   CREATE INDEX IF NOT EXISTS @snapshot_hash('idx_mode_choice_parcel_id_')
   ON @this_model USING btree (parcel_id);
 ANALYZE @this_model;

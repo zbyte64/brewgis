@@ -6,7 +6,8 @@ MODEL (
     parcel_id = 'Parcel identifier from the scenario end state (core_end_state).',
     trips_internal = 'Trips per day with both ends inside the study area: intra-parcel plus internal outbound.',
     internal_capture_pct = 'Fraction (0-1) of parcel trips kept inside the study area, after friction attenuation.',
-    trips_external = 'Trips per day leaving or crossing the study area: total trips minus internal trips.'
+    trips_external = 'Trips per day leaving or crossing the study area: total trips minus internal trips.',
+    geometry = 'Parcel geometry copied from the scenario end state (EPSG:4326).'
   ),
   blueprints @analysis_blueprints('internal_capture'),
   audits (
@@ -127,6 +128,7 @@ capture_rates AS (
         cp.trips_outbound,
         cp.in_study_area,
         cp.avg_trip_length_km,
+        cp.geometry,
         CASE
             WHEN NOT cp.in_study_area THEN 0.0
             WHEN cp.trips_total = 0 THEN 1.0
@@ -148,18 +150,28 @@ capture_rates AS (
 final AS (
     SELECT
         parcel_id,
-        -- Internal trips = intra-parcel trips + internal portion of outbound trips
+        -- Internal trips = intra-parcel trips + internal portion of outbound
+        -- trips. Every ROUND here takes NUMERIC: Postgres has no
+        -- ``round(double precision, int)``, and a numeric cast *inside* a float
+        -- expression still leaves the expression (and so the ROUND) a float.
         ROUND(
-            trips_intra_parcel
-            + (trips_outbound * internal_capture_pct)::FLOAT,
+            (trips_intra_parcel + trips_outbound * internal_capture_pct)::NUMERIC,
             4
         ) AS trips_internal,
-        ROUND(internal_capture_pct, 4) AS internal_capture_pct,
-        -- External trips = total trips - internal trips
+        ROUND(internal_capture_pct::NUMERIC, 4) AS internal_capture_pct,
+        -- External trips = total trips - internal trips, never negative (the
+        -- capture fraction is capped below 1, but a rounding error must not
+        -- turn a fully-internal parcel into a negative volume).
         ROUND(
-            GREATEST(0, trips_total - trips_intra_parcel - (trips_outbound * internal_capture_pct)::FLOAT),
+            GREATEST(
+                0,
+                (trips_total - trips_intra_parcel - trips_outbound * internal_capture_pct)::NUMERIC
+            ),
             4
-        ) AS trips_external
+        ) AS trips_external,
+        -- The result view is a map layer (see the layer registry), so the model
+        -- has to project the parcel geometry every other analysis model does.
+        geometry
     FROM capture_rates
 )
 
@@ -167,11 +179,14 @@ SELECT
     parcel_id,
     trips_internal,
     internal_capture_pct,
-    trips_external
+    trips_external,
+    geometry
 FROM final
 ORDER BY parcel_id;
 
 -- post_statements
+  CREATE INDEX IF NOT EXISTS @snapshot_hash('idx_internal_capture_geometry_')
+  ON @this_model USING GIST (geometry);
   CREATE INDEX IF NOT EXISTS @snapshot_hash('idx_internal_capture_parcel_id_')
   ON @this_model USING btree (parcel_id);
 ANALYZE @this_model;

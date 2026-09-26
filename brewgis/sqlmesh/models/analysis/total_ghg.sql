@@ -7,7 +7,8 @@ MODEL (
     co2e_transport = 'Transport CO2e from the transport GHG model (kg per year).',
     co2e_buildings = 'Building energy CO2e from the building and water GHG model (kg per year).',
     co2e_water = 'Water and wastewater CO2e from the building and water GHG model (kg per year).',
-    co2e_total = 'Transport plus building and water CO2e (kg per year).'
+    co2e_total = 'Transport plus building and water CO2e (kg per year).',
+    geometry = 'Parcel geometry from either emissions model (EPSG:4326).'
   ),
   blueprints @analysis_blueprints('total_ghg'),
   audits (
@@ -29,12 +30,19 @@ SELECT
     COALESCE(b.co2e_energy_total_kg, 0.0) AS co2e_buildings,
     COALESCE(b.co2e_water_total_kg, 0.0) AS co2e_water,
     COALESCE(t.co2e_total_kg, 0.0)
-    + COALESCE(b.co2e_total_kg, 0.0) AS co2e_total
+    + COALESCE(b.co2e_total_kg, 0.0) AS co2e_total,
+    -- Both parents copy the same parcel geometry from the scenario end state;
+    -- whichever side of the FULL OUTER JOIN a parcel lands on carries it. The
+    -- result view is a map layer (see the layer registry), so the model has to
+    -- project the geometry every other analysis model does.
+    COALESCE(t.geometry, b.geometry) AS geometry
 FROM @{scenario_schema}.transport_ghg AS t
 FULL OUTER JOIN @{scenario_schema}.building_water_ghg AS b
     ON t.parcel_id = b.parcel_id;
 
 -- post_statements
+  CREATE INDEX IF NOT EXISTS @snapshot_hash('idx_total_ghg_geometry_')
+  ON @this_model USING GIST (geometry);
   CREATE INDEX IF NOT EXISTS @snapshot_hash('idx_total_ghg_parcel_id_')
   ON @this_model USING btree (parcel_id);
 ANALYZE @this_model;

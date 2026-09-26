@@ -68,11 +68,23 @@ _PROFILES = analysis_blueprint_profiles("trip_distribution")
 # (see the SQL analysis models' ON_VIRTUAL_UPDATE block). The view selects from
 # the scenario schema's own table, never from this model's ``@this_model``: a
 # non-prod environment's promotion must not repoint it.
+#
+# Unlike this model's own table, the result view also carries the parcel
+# geometry. This is a DataFrame model and a pandas frame cannot hand PostGIS a
+# geometry column, while the map needs one: a table without geometry is not a
+# tileable source — Martin publishes no source for it and the layer registered
+# by the run renders nothing (its rows still show in the attribute table). Every
+# other analysis model copies the geometry from the scenario end state, and this
+# view reads the same table, so it joins that geometry in. The column is
+# appended last so ``CREATE OR REPLACE VIEW`` can extend the existing view.
 _ON_VIRTUAL_UPDATE = [
     'CREATE SCHEMA IF NOT EXISTS "@{result_schema}"',
     (
         'CREATE OR REPLACE VIEW "@{result_schema}"."@{model_table}" AS '
-        'SELECT * FROM @{scenario_schema}."@{model_table}"'
+        "SELECT td.*, es.geometry "
+        'FROM @{scenario_schema}."@{model_table}" AS td '
+        "LEFT JOIN @{scenario_schema}.core_end_state AS es "
+        "ON td.parcel_id = es.parcel_id"
     ),
 ]
 
