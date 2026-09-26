@@ -19,6 +19,8 @@ from brewgis.workspace.analysis.layer_registry import _get_table_columns
 from brewgis.workspace.models import Layer
 from brewgis.workspace.models import LayerFilter
 from brewgis.workspace.services.filter_compiler import FilterCompiler
+from brewgis.workspace.services.spatial_filter import has_spatial_node
+from brewgis.workspace.services.spatial_filter import refresh_spatial_filter_layer
 
 _GEOMETRY_DATA_TYPES = {"geometry", "geography", "USER-DEFINED"}
 
@@ -42,6 +44,36 @@ def _filter_list_context(layer: Layer) -> dict[str, Any]:
     }
 
 
+def _spatial_layer_options(layer: Layer) -> list[dict[str, Any]]:
+    """Other-layer choices for a spatial condition in the filter builder.
+
+    ``value`` is the ``schema.table`` the compiled predicate reads (the condition
+    stores it verbatim), ``geometry`` the other table's geometry column, so
+    picking a layer in the builder fixes both. Only layers whose geometry
+    ``geometry_columns`` actually registers are offered — a layer with nothing
+    to intersect against would produce a condition that materializes to a parse
+    error. Point layers are ordinary layers with a point geometry: a POI layer
+    is a distance buffer around its points, and needs no special case.
+    """
+    from brewgis.workspace.services.spatial_filter import registered_geometry_column
+
+    options: list[dict[str, Any]] = []
+    others = layer.workspace.layers.exclude(pk=layer.pk).order_by("key")
+    for other in others:
+        schema = other.db_schema or other.workspace.db_schema
+        geometry = registered_geometry_column(schema, other.db_table)
+        if geometry is None:
+            continue
+        options.append(
+            {
+                "value": f"{schema}.{other.db_table}",
+                "label": other.name or other.key,
+                "geometry": geometry,
+            }
+        )
+    return options
+
+
 def _editor_context(
     layer: Layer,
     flt: LayerFilter | None = None,
@@ -54,6 +86,7 @@ def _editor_context(
         "filter_value": flt.filter_json if flt else {},
         "error": error,
         "columns": _column_metadata(layer),
+        "layers": _spatial_layer_options(layer),
     }
 
 
@@ -132,10 +165,22 @@ def layer_filter_edit(request: HttpRequest, pk: int) -> HttpResponse:
                 _editor_context(flt.layer, flt, error=f"Invalid filter JSON: {e}"),
             )
         flt.name = name
+        was_spatial = flt.is_active and has_spatial_node(flt.filter_json)
         flt.filter_json = parsed
         flt.save()
+        # A spatial condition lives in a materialized table, so editing one into
+        # or out of the filter changes which table the layer draws from. The
+        # plan is synchronous, like the base-canvas fill toggle.
+        source_changed = was_spatial or (flt.is_active and has_spatial_node(parsed))
+        if source_changed:
+            refresh_spatial_filter_layer(flt.layer)
         context = _filter_list_context(flt.layer)
-        return render(request, "workspace/filter/list.html", context)
+        response = render(request, "workspace/filter/list.html", context)
+        if source_changed:
+            # The map resolves the tile source from the database on render — see
+            # ``layer_filter_toggle`` for why this cannot be a MapLibre filter.
+            response["HX-Refresh"] = "true"
+        return response
     # GET — return editor with existing data
     return render(
         request,
@@ -150,9 +195,18 @@ def layer_filter_delete(request: HttpRequest, pk: int) -> HttpResponse:
     """Delete a filter and return the list partial."""
     flt = get_object_or_404(LayerFilter, pk=pk)
     layer = flt.layer
+    # Deleting the last active spatial filter must drop the layer's materialized
+    # filter table, so the layer goes back to reading its declared source (and
+    # the page must reload to pick that source up — see ``layer_filter_toggle``).
+    was_active_spatial = flt.is_active and has_spatial_node(flt.filter_json)
     flt.delete()
+    if was_active_spatial:
+        refresh_spatial_filter_layer(layer)
     context = _filter_list_context(layer)
-    return render(request, "workspace/filter/list.html", context)
+    response = render(request, "workspace/filter/list.html", context)
+    if was_active_spatial:
+        response["HX-Refresh"] = "true"
+    return response
 
 
 @require_POST
@@ -163,8 +217,23 @@ def layer_filter_toggle(request: HttpRequest, pk: int) -> HttpResponse:
     flt.is_active = not flt.is_active
     flt.save()
 
-    # Build combined filter expression for all active filters on this layer
     layer = flt.layer
+    if has_spatial_node(flt.filter_json):
+        # Toggling a spatial filter on materializes the layer's filtered table
+        # and toggling it off drops it — either way the layer's tile source
+        # changes, so the plan/purge runs and the page reloads. The map resolves
+        # a layer's tile source from the database when it renders, so setting a
+        # MapLibre filter cannot show the change: the browser keeps requesting
+        # the table the page was loaded with. The base-canvas fill toggle answers
+        # the same problem with a page load.
+        refresh_spatial_filter_layer(layer)
+        response = render(
+            request, "workspace/filter/list.html", _filter_list_context(layer)
+        )
+        response["HX-Refresh"] = "true"
+        return response
+
+    # Build combined filter expression for all active filters on this layer
     compiler = FilterCompiler()
     active = layer.filters.filter(is_active=True)
     if active:
@@ -264,6 +333,12 @@ def _human_readable_expression(filter_json: dict) -> str:
         if op in ("is_null", "is_not_null"):
             return f"{field} {display_op}"
         return f"{field} {display_op} {value}"
+    if filter_type == "spatial":
+        mode = filter_json.get("mode", "intersects")
+        source = filter_json.get("source", "?")
+        buffer_m = filter_json.get("buffer_meters")
+        buffer = f" +{buffer_m}m" if buffer_m else ""
+        return f"[{mode}: {source}{buffer}]"
     if filter_type == "geometry":
         geo_type = filter_json.get("geometry_type", "?")
         return f"[geometry: {geo_type}]"

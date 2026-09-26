@@ -68,11 +68,11 @@ Key rules:
 |`brewgis/workspace/tasks.py`|8 Celery tasks for data import, export, allocation, stitching, report generation|
 |`brewgis/workspace/analysis/`|Pipeline orchestrator, module/layer registries, food/equity preprocessors (road-network distances are SQLMesh: `overture/road_network_*`, `python/network_zone_distance.py`)|
 |`brewgis/workspace/symbology/`|Map style generation (classifiers, generator, auto-config, legend, stats), 22 color palettes|
-|`brewgis/workspace/services/`|~33 service modules: base canvas ETL pipeline (1047 lines), schema, fetchers (Census, LEHD, POI, NLCD, assessor), spatial allocator, stitcher, imputation engine, built form classifier, paint constraints, scenario cloner, canvas view manager, `_db.py` (cached SQLAlchemy singleton)|
+|`brewgis/workspace/services/`|~34 service modules: base canvas ETL pipeline (1047 lines), schema, fetchers (Census, LEHD, POI, NLCD, assessor), spatial allocator, stitcher, imputation engine, built form classifier, paint constraints, scenario cloner, canvas view manager, geospatial filter models + predicate (`spatial_filter.py`), `_db.py` (cached SQLAlchemy singleton)|
 |`brewgis/workspace/mcp/`|MCP server: FastMCP stdio entrypoint, auth stub, 8 tool modules|
 |`brewgis/workspace/dlt_pipelines/`|dlt pipeline modules (nlcd) — load directly into DuckDB (caches HTTP, handles raster/zip)|
 |`brewgis/workspace/management/commands/`|Management commands: import_sacog_demo, populate_base_canvas, compare_sacog_basemap, onboard_geography, run_mcp, export_story_packet, restore_demo_db|
-|`brewgis/sqlmesh/`|SQLMesh project: ~162 models across 13 subdirs, 22 macros, 37 seeds, 86 audits, config.py|
+|`brewgis/sqlmesh/`|SQLMesh project: ~164 models across 14 subdirs, 22 macros, 37 seeds, 86 audits, config.py|
 |`brewgis/templates/`|~30 Django templates: base.html, workspace_map.html (main map page), workspace_detail.html, scenario_comparison.html, import_center.html, partials, allauth overrides|
 |`brewgis/static/js/`|Bundled frontend: brew-gis-map.js (1.3MB Lit+MapLibre ESM from Vite+TS)|
 |`brewgis/_ruff_rules/`|Custom Ruff lint rules for project-specific anti-patterns (replaces old pytestarch rules)|
@@ -235,8 +235,9 @@ npm run test      # vitest
 |`brewgis/workspace/mcp/server.py`|FastMCP stdio server entrypoint with 8 tool modules|
 
 |`brewgis/workspace/dlt_pipelines/__init__.py`|dlt pipeline package: nlcd pipeline modules|
-|`brewgis/workspace/services/_db.py`|Cached SQLAlchemy engine singleton (functools.lru_cache)|
 |`brewgis/workspace/services/base_canvas_pipeline.py`|1047-line 11-step ETL pipeline (raw SQL with SQL injection quoting)|
+|`brewgis/workspace/services/spatial_filter.py`|Geospatial filters: `Layer.effective_source`'s filtered table + the SQL predicate (index-driven probe of a projected filter source)|
+|`brewgis/workspace/services/_db.py`|Cached SQLAlchemy engine singleton (functools.lru_cache)|
 |`brewgis/sqlmesh/config.py`|SQLMesh config: Postgres dialect, 51 config variables, gateway settings|
 |`brewgis/_ruff_rules/rules.py`|6 custom Ruff lint rules for project anti-patterns|
 |`_schema.yml`|Root-level column tests (not_null, unique, non_negative)|
@@ -272,7 +273,7 @@ npm run test      # vitest
 |File|Role|
 |---|---|
 |`brewgis/sqlmesh/config.py`|Project config, 51 vars, postgres dialect|
-|`brewgis/sqlmesh/models/`|~162 models across 13 directories (sacog, fresno, census, overture, buildings, base_canvas, assessor, nlcd, adapters, python, analysis, seeds, tests)|
+|`brewgis/sqlmesh/models/`|~164 models across 14 directories (sacog, fresno, census, overture, buildings, base_canvas, assessor, nlcd, adapters, python, analysis, scenarios, spatial_filter, seeds, tests)|
 |`brewgis/sqlmesh/macros/`|7 macro files (22 macros total)|
 |`brewgis/sqlmesh/seeds/`|37 CSV seed files (5 real config + 32 test fixtures)|
 |`brewgis/sqlmesh/audits/`|86 audit SQL files for pipeline data quality|

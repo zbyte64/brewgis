@@ -173,26 +173,45 @@ class Layer(models.Model):
     def __str__(self) -> str:
         return self.name
 
+    def effective_source(self) -> tuple[str, str]:
+        """The ``(schema, table)`` this layer's tiles are drawn from.
+
+        A layer with an active spatial filter cannot be filtered client-side, so
+        it reads the materialized copy of itself that SQLMesh builds
+        (``services.spatial_filter``); every other layer reads its declared
+        source. The MapLibre layer id stays ``self.key`` either way, so the
+        client-side column-filter mapping (keyed by layer key) is unaffected.
+        """
+        from brewgis.workspace.services.spatial_filter import SPATIAL_FILTER_SCHEMA
+        from brewgis.workspace.services.spatial_filter import filter_model_table
+        from brewgis.workspace.services.spatial_filter import (
+            layer_has_active_spatial_filter,
+        )
+
+        if layer_has_active_spatial_filter(self):
+            return (SPATIAL_FILTER_SCHEMA, filter_model_table(self.pk))
+        return (self.db_schema or self.workspace.db_schema, self.db_table)
+
     def _source_id(self) -> str:
         """Return the tile server source identifier (schema.table)."""
-        schema = self.db_schema or self.workspace.db_schema
-        return _tile_source_id(schema, self.db_table)
+        schema, table = self.effective_source()
+        return _tile_source_id(schema, table)
 
     def resolve_tiles_url(self, tile_matrix_set: str = "WebMercatorQuad") -> str:
         """Return the raw tile URL template (tipg only; for backward compat)."""
-        schema = self.db_schema or self.workspace.db_schema
+        schema, table = self.effective_source()
         return _tile_url_template(
             schema,
-            self.db_table,
+            table,
             tile_matrix_set,
             backend=self.workspace.tile_server_backend,
         )
 
     def to_maplibre_source(self) -> dict:
         """Return a MapLibre GL JS source specification dict."""
-        schema = self.db_schema or self.workspace.db_schema
+        schema, table = self.effective_source()
         return _maplibre_vector_source(
-            schema, self.db_table, backend=self.workspace.tile_server_backend
+            schema, table, backend=self.workspace.tile_server_backend
         )
 
 

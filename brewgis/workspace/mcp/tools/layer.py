@@ -1,5 +1,6 @@
 """MCP tools for layer CRUD, symbology, and filter operations."""
 
+import json
 import logging
 from typing import Any
 
@@ -15,6 +16,8 @@ from brewgis.workspace.models import ScenarioType
 from brewgis.workspace.models import SymbologyConfig
 from brewgis.workspace.models import Workspace
 from brewgis.workspace.services.column_inspector import get_table_schema
+from brewgis.workspace.services.spatial_filter import has_spatial_node
+from brewgis.workspace.services.spatial_filter import refresh_spatial_filter_layer
 from brewgis.workspace.symbology.auto import auto_generate_symbology
 from brewgis.workspace.symbology.generator import generate_maplibre_style
 
@@ -419,9 +422,12 @@ def register_tools(server: object) -> None:
         f = LayerFilter.objects.create(
             layer=layer,
             name=name,
-            filter_json=filter_json,
+            filter_json=json.loads(filter_json),
             is_active=True,
         )
+        # Created active, so a spatial condition must materialize the layer's
+        # filtered table before the map reads it (synchronous, like the view).
+        refresh_spatial_filter_layer(layer)
         return {"id": f.pk, "name": f.name}
 
     @server.tool()  # type: ignore[attr-defined]
@@ -441,6 +447,10 @@ def register_tools(server: object) -> None:
         f = get_object_or_404(LayerFilter, pk=filter_id)
         f.is_active = enabled
         f.save()
+        if has_spatial_node(f.filter_json):
+            # Enabling materializes the layer's filtered table, disabling drops
+            # it — either way the layer's tile source changes.
+            refresh_spatial_filter_layer(f.layer)
         return {"id": f.pk, "is_active": f.is_active}
 
     @server.tool()  # type: ignore[attr-defined]
@@ -457,5 +467,11 @@ def register_tools(server: object) -> None:
         workspace = get_object_or_404(Workspace, pk=ws_pk)
         get_object_or_404(Layer, key=layer_key, workspace=workspace)
         f = get_object_or_404(LayerFilter, pk=filter_id)
+        # Deleting the last active spatial filter must drop the layer's
+        # materialized filter table, so the layer reverts to its source.
+        was_active_spatial = f.is_active and has_spatial_node(f.filter_json)
+        layer = f.layer
         f.delete()
+        if was_active_spatial:
+            refresh_spatial_filter_layer(layer)
         return {"deleted": True, "id": filter_id}

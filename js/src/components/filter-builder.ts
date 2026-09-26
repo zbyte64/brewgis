@@ -6,6 +6,9 @@ import type {
   ColumnOperator,
   FilterNode,
   GroupNode,
+  SpatialLayerOption,
+  SpatialMode,
+  SpatialNode,
 } from '../types/index.js'
 
 const NUMERIC_OPERATORS: { value: ColumnOperator; label: string }[] = [
@@ -33,6 +36,10 @@ function isGroup(node: FilterNode): node is GroupNode {
   return node != null && node.type === 'group'
 }
 
+function isSpatial(node: FilterNode): node is SpatialNode {
+  return node?.type === 'spatial'
+}
+
 function emptyGroup(): GroupNode {
   return { type: 'group', operator: 'AND', children: [] }
 }
@@ -56,6 +63,10 @@ export class FilterBuilder extends LitElement {
   /** Available fields to filter on, with a numeric flag driving which operators show. */
   @property({ type: Array })
   columns: ColumnMeta[] = []
+
+  /** Other layers offered as the target of a spatial condition. */
+  @property({ type: Array })
+  layers: SpatialLayerOption[] = []
 
   /** Initial expression tree (a LayerFilter's `filter_json`). */
   @property({ type: Object })
@@ -116,6 +127,20 @@ export class FilterBuilder extends LitElement {
     this._setTree(clone)
   }
 
+  private _addSpatial(path: number[]): void {
+    const clone = deepClone(this._tree)
+    const first = this.layers[0]
+    const node: SpatialNode = {
+      type: 'spatial',
+      mode: 'intersects',
+      source: first?.value ?? '',
+      source_geom: first?.geometry ?? 'geometry',
+      buffer_meters: null,
+    }
+    this._navigateGroup(clone, path).children.push(node)
+    this._setTree(clone)
+  }
+
   private _removeChild(path: number[]): void {
     const clone = deepClone(this._tree)
     const parent = this._navigateGroup(clone, path.slice(0, -1))
@@ -134,6 +159,13 @@ export class FilterBuilder extends LitElement {
     const parent = this._navigateGroup(clone, path.slice(0, -1))
     const node = parent.children[path[path.length - 1]] as ColumnNode
     Object.assign(node, patch)
+    this._setTree(clone)
+  }
+
+  private _updateSpatial(path: number[], patch: Partial<SpatialNode>): void {
+    const clone = deepClone(this._tree)
+    const parent = this._navigateGroup(clone, path.slice(0, -1))
+    Object.assign(parent.children[path[path.length - 1]], patch)
     this._setTree(clone)
   }
 
@@ -174,7 +206,9 @@ export class FilterBuilder extends LitElement {
           ${group.children.map((child, i) =>
             isGroup(child)
               ? this._renderGroup(child, [...path, i], false)
-              : this._renderCondition(child as ColumnNode, [...path, i]),
+              : isSpatial(child)
+                ? this._renderSpatial(child, [...path, i])
+                : this._renderCondition(child, [...path, i]),
           )}
         </div>
         <div class="d-flex gap-1 mt-1">
@@ -185,6 +219,16 @@ export class FilterBuilder extends LitElement {
             @click=${() => this._addCondition(path)}
           >
             + Condition
+          </button>
+          <button
+            type="button"
+            class="btn btn-sm btn-outline-info py-0 px-1"
+            style="font-size: 0.65rem;"
+            @click=${() => {
+              this._addSpatial(path)
+            }}
+          >
+            + Spatial
           </button>
           <button
             type="button"
@@ -273,6 +317,93 @@ export class FilterBuilder extends LitElement {
           class="btn btn-sm btn-outline-danger py-0 px-1"
           style="font-size: 0.65rem;"
           @click=${() => this._removeChild(path)}
+        >
+          ✕
+        </button>
+      </div>
+    `
+  }
+
+  private _renderSpatial(node: SpatialNode, path: number[]): TemplateResult {
+    const hasLayers = this.layers.length > 0
+    // A saved condition can name a layer the current workspace no longer offers
+    // (a deleted layer, or a table without a registered geometry). Keep it as a
+    // selectable option so opening the editor never silently rewrites it.
+    const knownSource = this.layers.some((l) => l.value === node.source)
+
+    return html`
+      <div class="d-flex align-items-center gap-1 flex-wrap">
+        <select
+          class="form-select form-select-sm"
+          style="font-size: 0.7rem; max-width: 110px;"
+          @change=${(e: Event) => {
+            this._updateSpatial(path, {
+              mode: (e.target as HTMLSelectElement).value as SpatialMode,
+            })
+          }}
+        >
+          <option value="intersects" ?selected=${node.mode === 'intersects'}>intersects</option>
+          <option value="excludes" ?selected=${node.mode === 'excludes'}>excludes</option>
+        </select>
+        ${hasLayers
+          ? html`
+              <select
+                class="form-select form-select-sm"
+                style="font-size: 0.7rem; max-width: 180px;"
+                @change=${(e: Event) => {
+                  const source = (e.target as HTMLSelectElement).value
+                  const option = this.layers.find((l) => l.value === source)
+                  this._updateSpatial(path, {
+                    source,
+                    source_geom: option?.geometry ?? 'geometry',
+                  })
+                }}
+              >
+                ${knownSource
+                  ? nothing
+                  : html`<option value=${node.source}>${node.source}</option>`}
+                ${this.layers.map(
+                  (l) =>
+                    html`<option value=${l.value} ?selected=${l.value === node.source}>
+                      ${l.label}
+                    </option>`,
+                )}
+              </select>
+            `
+          : html`
+              <input
+                type="text"
+                class="form-control form-control-sm"
+                style="font-size: 0.7rem; max-width: 180px;"
+                placeholder="schema.table"
+                .value=${node.source}
+                @input=${(e: Event) => {
+                  this._updateSpatial(path, {
+                    source: (e.target as HTMLInputElement).value,
+                  })
+                }}
+              />
+            `}
+        <input
+          type="number"
+          class="form-control form-control-sm"
+          style="font-size: 0.7rem; max-width: 90px;"
+          placeholder="buffer"
+          min="0"
+          .value=${node.buffer_meters ?? ''}
+          @input=${(e: Event) => {
+            const raw = (e.target as HTMLInputElement).value
+            this._updateSpatial(path, { buffer_meters: raw === '' ? null : Number(raw) })
+          }}
+        />
+        <span class="text-muted" style="font-size: 0.65rem;">m buffer</span>
+        <button
+          type="button"
+          class="btn btn-sm btn-outline-danger py-0 px-1"
+          style="font-size: 0.65rem;"
+          @click=${() => {
+            this._removeChild(path)
+          }}
         >
           ✕
         </button>

@@ -40,12 +40,19 @@ from brewgis.workspace.services.base_canvas_schema import BaseCanvasSchema
 # fill output is derived from the base table it is already configured with, so
 # offering it back as an importable source would let a workspace base itself on
 # its own derivative.
+#
+# ``spatial_filter`` holds the per-layer spatial-filter models
+# (``sqlmesh/macros/spatial_filter_blueprints.py``), which a layer draws from
+# while it has an active spatial filter (``Layer.effective_source``). Like the
+# fill output it is derived from a source the layer already points at, so it is
+# not itself an importable source.
 _EXCLUDED_SCHEMAS = {
     "public",
     "information_schema",
     "sqlmesh_state",
     "scenario_canvas",
     "built_form_fill",
+    "spatial_filter",
 }
 
 _POLYGON_TYPES = {"polygon", "multipolygon"}

@@ -4,6 +4,8 @@ from __future__ import annotations
 
 from typing import Any
 
+from brewgis.workspace.services.spatial_filter import SPATIAL_NODE_TYPE
+
 
 class FilterCompiler:
     """Compile LayerFilter expression trees to SQL WHERE clauses."""
@@ -98,6 +100,12 @@ class FilterCompiler:
             return self._compile_maplibre_column(node)
         if node_type == "group":
             return self._compile_maplibre_group(node)
+        if node_type == SPATIAL_NODE_TYPE:
+            # A spatial predicate has no MapLibre expression: it is evaluated
+            # server-side by materializing a filtered table the layer draws
+            # from (``services.spatial_filter``), so its rows are already gone
+            # by the time the client sees them. Always true here.
+            return ["literal", True]
         msg = f"Unknown node type: {node_type}"
         raise ValueError(msg)
 
@@ -148,8 +156,15 @@ class FilterCompiler:
 
     def _compile_maplibre_group(self, node: dict) -> list:
         children = node.get("children", [])
-        # Skip empty children (e.g. filters with empty filter_json)
-        valid_children = [c for c in children if c and c.get("type")]
+        # Skip empty children (e.g. filters with empty filter_json) and spatial
+        # children — the latter are already applied by the layer's materialized
+        # filter table, so re-applying them client-side (an always-true literal)
+        # would only pad the expression.
+        valid_children = [
+            c
+            for c in children
+            if c and c.get("type") and c.get("type") != SPATIAL_NODE_TYPE
+        ]
         if not valid_children:
             return ["literal", True]
         operator = node.get("operator", "AND")

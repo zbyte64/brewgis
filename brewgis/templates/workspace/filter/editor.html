@@ -24,7 +24,7 @@
                name="filter_json"
                id="filter_json_input_{{ layer.pk }}"
                value='{{ filter_value|json_attr }}' />
-        <filter-builder columns='{{ columns|json_attr }}' value='{{ filter_value|json_attr }}' target-input="filter_json_input_{{ layer.pk }}"></filter-builder>
+        <filter-builder columns='{{ columns|json_attr }}' layers='{{ layers|json_attr }}' value='{{ filter_value|json_attr }}' target-input="filter_json_input_{{ layer.pk }}"></filter-builder>
       </div>
       <div class="d-flex gap-1">
         <button type="submit"

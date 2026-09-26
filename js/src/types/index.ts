@@ -105,7 +105,33 @@ export interface GroupNode {
   children: FilterNode[]
 }
 
-export type FilterNode = GroupNode | ColumnNode
+export type SpatialMode = 'intersects' | 'excludes'
+
+/**
+ * A geospatial condition: intersect with (or exclude from) another layer's
+ * geometry, optionally within a distance buffer. The server materializes a
+ * filtered table for the layer and evaluates this predicate there
+ * (`services.spatial_filter`), so the map's own filter expression ignores it.
+ */
+export interface SpatialNode {
+  type: 'spatial'
+  mode: SpatialMode
+  /** `schema.table` of the layer to test against. */
+  source: string
+  /** Geometry column of `source`. */
+  source_geom: string
+  /** Buffer distance in metres around `source`; null for a plain intersection. */
+  buffer_meters: number | null
+}
+
+/** One other-layer choice offered to a `SpatialNode`, from the server. */
+export interface SpatialLayerOption {
+  value: string
+  label: string
+  geometry: string
+}
+
+export type FilterNode = GroupNode | ColumnNode | SpatialNode
 
 declare global {
   interface HTMLElementTagNameMap {
