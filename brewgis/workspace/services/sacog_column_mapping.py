@@ -17,6 +17,10 @@ from __future__ import annotations
 
 import logging
 from dataclasses import dataclass
+from typing import TYPE_CHECKING
+
+if TYPE_CHECKING:
+    from brewgis.workspace.services.base_canvas_schema import ColumnDef
 
 logger = logging.getLogger(__name__)
 
@@ -265,6 +269,109 @@ SELECT
     {select_clause}
 FROM {q_table};
 """
+
+
+# Columns whose values must come from the source's own parcel identity rather
+# than from ``ALL_MAPPINGS``. ``build_create_view_sql`` numbers ``parcel_id``
+# with ``ROW_NUMBER()`` and passes ``wkb_geometry`` through in its source CRS,
+# which is enough for a view the demo workspace only reads through; a table a
+# workspace *adopts* has to carry the source parcel key itself — the convention
+# the comparison pipeline states as "SACOG source uses geography_id; SQLMesh
+# models expect parcel_id" (``management/commands/compare_sacog_basemap.py``) —
+# and the geometry every canvas view, tile server and model expects.
+SOURCE_IDENTITY_SQL: dict[str, str] = {
+    "parcel_id": "geography_id",
+    "geography_id": "geography_id",
+    "geometry": "ST_Multi(ST_Transform(wkb_geometry, {srid}))",
+}
+
+
+def _quote(identifier: str) -> str:
+    """Double-quote an identifier, refusing anything that is not a plain name."""
+    if not identifier.replace("_", "").isalnum():
+        msg = f"Refusing to quote unexpected identifier: {identifier!r}"
+        raise ValueError(msg)
+    return f'"{identifier}"'
+
+
+def _default_literal(col: ColumnDef) -> str:
+    """Render a column's declared default as a SQL literal of its own type."""
+    value = col.default_value
+    if isinstance(value, str):
+        return "'" + value.replace("'", "''") + "'"
+    if isinstance(value, (int, float)):
+        return repr(float(value))
+    # No default declared (or Django's NOT_PROVIDED sentinel): an empty string
+    # for a text column, otherwise the zero the imputation pass would write.
+    return (
+        "''" if col.pg_type.upper().startswith(("VARCHAR", "TEXT", "CHAR")) else "0.0"
+    )
+
+
+def _typed_expression(
+    v3_col: str, col: ColumnDef, *, srid: int, fill_nulls: bool
+) -> str:
+    """Return the source expression for *v3_col*.
+
+    *col* supplies the declared default for a column v1 has no counterpart for
+    and the value used to fill a NULL in an expression that reads the source,
+    *srid* the CRS the base canvas contract mandates, *fill_nulls* whether such a
+    NULL must be filled — true only for a column that is NOT NULL in the
+    contract, the same values ``import_sacog_demo --step stitch`` coalesces.
+    """
+    override = SOURCE_IDENTITY_SQL.get(v3_col)
+    if override is not None:
+        # Never filled: a source parcel without a key or a geometry is not a
+        # base canvas row, and inventing one would corrupt the canvas silently.
+        return override.format(srid=srid)
+    mapping = V3_TO_MAPPING.get(v3_col)
+    if mapping is not None and mapping.sql_expr:
+        expression = mapping.sql_expr
+    elif mapping is not None and mapping.v1_column:
+        expression = _quote(mapping.v1_column)
+    else:
+        # No v1 counterpart (land_use, assessor_use_code, the equity
+        # percentages): the schema's own default. Nothing to fill.
+        return _default_literal(col)
+    if fill_nulls:
+        return f"COALESCE({expression}, {_default_literal(col)})"
+    return expression
+
+
+def build_materialized_select_sql(v1_table: str = V1_BASE_TABLE) -> str:
+    """Generate the ``SELECT`` mapping a v1-shaped table onto ``BaseCanvasSchema``.
+
+    Unlike ``build_create_view_sql`` — which feeds a view read only through the
+    workspace — every column here is cast to the type the base canvas contract
+    declares, so the statement can be handed straight to
+    ``INSERT INTO <base canvas table> (…)``: an untransformed geometry, a
+    ``ROW_NUMBER()`` key or a float default on a ``VARCHAR`` column would all be
+    wrong in a table whose typmods are part of the contract. A NULL in a NOT NULL
+    column is filled with that column's declared default — most of them are counts
+    the ETL pipeline's imputation pass zeroes anyway — except the parcel key and
+    the geometry, which fail the insert instead.
+
+    Returns a ``SELECT`` (no trailing semicolon) over *v1_table*, with one
+    output column per ``BaseCanvasSchema.COLUMN_NAMES`` entry, in that order.
+    """
+    from brewgis.workspace.services.base_canvas_schema import BaseCanvasSchema
+
+    select_parts: list[str] = []
+    for v3_col in BaseCanvasSchema.COLUMN_NAMES:
+        col = BaseCanvasSchema.get(v3_col)
+        if col is None:
+            continue
+        pg_type = (
+            BaseCanvasSchema.GEOMETRY_TYPE if v3_col == "geometry" else col.pg_type
+        )
+        expression = _typed_expression(
+            v3_col,
+            col,
+            srid=BaseCanvasSchema.GEOMETRY_SRID,
+            fill_nulls=v3_col in BaseCanvasSchema.NON_NULL_COLUMNS,
+        )
+        select_parts.append(f"    CAST({expression} AS {pg_type}) AS {_quote(v3_col)}")
+    return "SELECT\n" + ",\n".join(select_parts) + f"\nFROM {v1_table}"
 
 
 def get_v1_columns_for_verification() -> dict[str, str]:

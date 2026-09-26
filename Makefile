@@ -175,6 +175,10 @@ reconcile-canvases:  ## Recreate any scenario canvas view a plan left missing/st
 reconcile-analyses:  ## Re-publish any scenario analysis result view a plan left missing/stale
 	$(COMPOSE_RUN) python manage.py reconcile_scenario_analyses
 
+.PHONY: sacog-base-canvas
+sacog-base-canvas:  ## Materialize the imported SACOG v1 parcels as an adoptable base canvas table
+	$(COMPOSE_RUN) python manage.py materialize_sacog_base_canvas
+
 # ─────────────────────────────────────────────
 # Linting & Formatting
 # ─────────────────────────────────────────────

@@ -71,7 +71,7 @@ Key rules:
 |`brewgis/workspace/services/`|~34 service modules: base canvas ETL pipeline (1047 lines), schema, fetchers (Census, LEHD, POI, NLCD, assessor), spatial allocator, stitcher, imputation engine, built form classifier, paint constraints, scenario cloner, canvas view manager, geospatial filter models + predicate (`spatial_filter.py`), `_db.py` (cached SQLAlchemy singleton)|
 |`brewgis/workspace/mcp/`|MCP server: FastMCP stdio entrypoint, auth stub, 8 tool modules|
 |`brewgis/workspace/dlt_pipelines/`|dlt pipeline modules (nlcd) — load directly into DuckDB (caches HTTP, handles raster/zip)|
-|`brewgis/workspace/management/commands/`|Management commands: import_sacog_demo, populate_base_canvas, compare_sacog_basemap, onboard_geography, run_mcp, export_story_packet, restore_demo_db|
+|`brewgis/workspace/management/commands/`|Management commands: import_sacog_demo, populate_base_canvas, materialize_sacog_base_canvas, compare_sacog_basemap, onboard_geography, run_mcp, export_story_packet, restore_demo_db|
 |`brewgis/sqlmesh/`|SQLMesh project: ~164 models across 14 subdirs, 22 macros, 37 seeds, 86 audits, config.py|
 |`brewgis/templates/`|~30 Django templates: base.html, workspace_map.html (main map page), workspace_detail.html, scenario_comparison.html, import_center.html, partials, allauth overrides|
 |`brewgis/static/js/`|Bundled frontend: brew-gis-map.js (1.3MB Lit+MapLibre ESM from Vite+TS)|

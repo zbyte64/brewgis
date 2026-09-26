@@ -380,6 +380,38 @@ convention. These are the v1 → v3 mappings:
 | `intersection_density_sqmi` | `intersection_density` | Network |
 | `geography_id` | `geography_id` | Identity |
 
+The v1 table lacks a base canvas' other columns (`area_dev_condition`, the
+`emp_*` breakdowns, …), so it cannot be adopted as a workspace's base canvas
+directly. `make sacog-base-canvas` materializes it as
+`public.sacog_parcels_base_canvas` with the full 85-column set, which the base
+canvas picker then offers as an imported table:
+
+```bash
+make sacog-base-canvas
+python manage.py materialize_sacog_base_canvas --source-table public.elk_grove_base_canvas \
+  --target-table public.elk_grove_base_canvas_v3
+```
+
+Three decisions distinguish it from the v1 view `import_sacog_demo` creates
+(`services/sacog_column_mapping.py`, `build_create_view_sql` vs.
+`build_materialized_select_sql`):
+
+- `parcel_id` and `geography_id` carry the v1 `geography_id` verbatim, not a
+  `ROW_NUMBER()`. The comparison pipeline and the models join SACOG parcels by
+  that id (`compare_sacog_basemap`: "SACOG source uses geography_id; SQLMesh
+  models expect parcel_id").
+- `geometry` is reprojected from the source CRS (3310) to the contract's
+  `GEOMETRY(MultiPolygon, 4326)`.
+- A NULL in a NOT NULL column takes the schema's default (`land_development_category`
+  → `''`, counts → `0`) — what `import_sacog_demo --step stitch` writes — except
+  the parcel key and geometry, which fail the insert instead of being invented.
+  `land_use` and `assessor_use_code` have no v1 counterpart and are empty.
+
+Rebuilding truncates and reloads, so the scenario canvas views reading the table
+stay valid; `--replace` drops it first and PostgreSQL cascades that to those
+views. Restoring the SACOG demo database drops and recreates the `public` v1
+tables, so re-run the command afterwards.
+
 ## dlt / Staging Columns
 
 ### Census ACS staging (`census_acs`)

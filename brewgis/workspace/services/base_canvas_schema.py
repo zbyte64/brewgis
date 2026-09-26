@@ -309,6 +309,13 @@ class BaseCanvasSchema:
     not yet available (during initial migration).
     """
 
+    # The parcel geometry the canvas views, the tile servers and every model
+    # expect. Declared once: ``create_table_sql`` appends it to the DDL and
+    # anything projecting into a base canvas table casts to it, so a table can
+    # never disagree with the contract about its geometry type or CRS.
+    GEOMETRY_TYPE: str = "GEOMETRY(MultiPolygon, 4326)"
+    GEOMETRY_SRID: int = 4326
+
     COLUMN_NAMES: tuple[str, ...] = _get_cache()["column_names"]
     STATIC_COLUMNS: frozenset[str] = _get_cache()["static_columns"]
     PAINTABLE_COLUMNS: frozenset[str] = _get_cache()["paintable_columns"]
@@ -353,7 +360,7 @@ class BaseCanvasSchema:
                 col_defs.append("    parcel_id BIGINT PRIMARY KEY")
                 continue
             if name == "geometry":
-                col_defs.append("    geometry GEOMETRY(MultiPolygon, 4326) NOT NULL")
+                col_defs.append(f"    geometry {cls.GEOMETRY_TYPE} NOT NULL")
                 continue
             nullable = " NOT NULL" if name in cls.NON_NULL_COLUMNS else ""
             col_defs.append(f"    {name} {col.pg_type}{nullable}")
@@ -365,18 +372,29 @@ class BaseCanvasSchema:
 """
 
     @classmethod
-    def create_indexes_sql(cls, table_name: str = "public.base_canvas") -> list[str]:
+    def create_indexes_sql(
+        cls,
+        table_name: str = "public.base_canvas",
+        *,
+        index_basename: str = "idx_base_canvas",
+    ) -> list[str]:
         """Return SQL statements for recommended indexes on the base canvas table.
 
         Args:
             table_name: Fully qualified target table name (default ``public.base_canvas``).
+            index_basename: Prefix for the index names. Index names are unique per
+                *schema*, not per table, so ``IF NOT EXISTS`` on a second base
+                canvas table in ``public`` would silently reuse the first table's
+                indexes and leave the new table unindexed. Pass a name derived
+                from the table (e.g. ``f"idx_{table}"``) for any table but the
+                default one.
         """
         gist_idx = (
-            "CREATE INDEX IF NOT EXISTS idx_base_canvas_geometry "
+            f"CREATE INDEX IF NOT EXISTS {index_basename}_geometry "
             f"ON {table_name} USING GIST (geometry)"
         )
         btree_idx = (
-            "CREATE INDEX IF NOT EXISTS idx_base_canvas_land_development_category "
+            f"CREATE INDEX IF NOT EXISTS {index_basename}_land_development_category "
             f"ON {table_name} (land_development_category)"
         )
         return [gist_idx, btree_idx]
