@@ -3,6 +3,7 @@ from django.contrib import admin
 from brewgis.workspace.built_forms.admin import *  # noqa: F403
 
 from .models import AnalysisRun
+from .models import County
 from .models import DataSource
 from .models import DataSourceCategory
 from .models import PaintConstraint
@@ -78,6 +79,24 @@ class PaintConstraintAdmin(admin.ModelAdmin):
     list_display = ("workspace", "column", "operator", "value", "severity")
     list_filter = ("workspace", "column", "severity")
     search_fields = ("column",)
+
+
+@admin.register(County)
+class CountyAdmin(admin.ModelAdmin):
+    """Admin for the Census county FIPS lookup.
+
+    Seeded by migration ``0015_seed_county_fips``; re-seed with
+    ``manage.py seed_counties`` when the rows are lost.
+    """
+
+    list_display = ("name", "state_fips", "county_fips", "fips")
+    list_filter = ("state_fips",)
+    search_fields = ("name", "state_fips", "county_fips")
+    ordering = ("state_fips", "county_fips")
+
+    @admin.display(description="FIPS")
+    def fips(self, obj: County) -> str:
+        return f"{obj.state_fips}{obj.county_fips}"
 
 
 @admin.register(DataSourceCategory)
