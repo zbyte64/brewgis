@@ -106,6 +106,7 @@ markers = [
     "models: database model tests",
     "views: view/HTTP tests",
     "integration: tests requiring full Docker stack (PostGIS or external services)",
+    "live_stack: integration tests needing the stack running (server, tile containers, browser) — excluded from test-integration",
     "timeout: mark test with per-test timeout for pytest-timeout",
     "review: UX design review tests (macro-level UX validation, not pixel/CSS checks)",
 ]

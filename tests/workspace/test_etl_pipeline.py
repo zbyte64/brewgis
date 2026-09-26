@@ -7,13 +7,94 @@ and reasonable aggregate values.
 
 from __future__ import annotations
 
+from typing import TYPE_CHECKING
+
 import pytest
 from django.core.management import call_command
 from django.db import connection
 
 from brewgis.workspace.services.base_canvas_manager import BaseCanvasManager
+from brewgis.workspace.services.base_canvas_pipeline import _DEMOGRAPHIC_COLUMNS
+from brewgis.workspace.services.base_canvas_pipeline import _EMPLOYMENT_COLUMNS
 from brewgis.workspace.services.base_canvas_pipeline import run_pipeline
 from brewgis.workspace.services.base_canvas_schema import BaseCanvasSchema
+
+if TYPE_CHECKING:
+    from collections.abc import Iterator
+
+# The synthetic generator places its parcels inside this box (see
+# ``synthetic_parcel_generator``); the fabricated staging blocks cover it.
+_SYNTHETIC_BBOX = (-122.5, 36.5, -121.5, 37.5)
+
+_BLOCKS_PER_AXIS = 3
+"""Blocks per axis the fabricated staging lattices are cut into."""
+
+_BLOCK_VALUE = 100.0
+"""Value every allocatable staging column carries — enough to allocate from."""
+
+
+def _create_staging_table(schema: str, table: str, columns: list[str]) -> None:
+    """Create *schema*.*table*: a block key, a 4326 geometry, and *columns*.
+
+    One lattice of blocks over ``_SYNTHETIC_BBOX``, each column carrying
+    ``_BLOCK_VALUE``, so the pipeline's area-weighted allocation has data to
+    transfer into every synthetic parcel.
+    """
+    min_x, min_y, max_x, max_y = _SYNTHETIC_BBOX
+    step_x = (max_x - min_x) / _BLOCKS_PER_AXIS
+    step_y = (max_y - min_y) / _BLOCKS_PER_AXIS
+    measurements = ", ".join(
+        f"{column} double precision NOT NULL" for column in columns
+    )
+    placeholders = ", ".join(["%s"] * len(columns))
+
+    with connection.cursor() as cursor:
+        cursor.execute(f"CREATE SCHEMA IF NOT EXISTS {schema}")
+        cursor.execute(f"DROP TABLE IF EXISTS {schema}.{table} CASCADE")
+        cursor.execute(
+            f"CREATE TABLE {schema}.{table} ("
+            f"geoid text PRIMARY KEY, "
+            f"geometry geometry(Polygon, 4326) NOT NULL, {measurements})"
+        )
+        for ix in range(_BLOCKS_PER_AXIS):
+            for iy in range(_BLOCKS_PER_AXIS):
+                cursor.execute(
+                    f"INSERT INTO {schema}.{table} ("  # noqa: S608 — identifiers are fixture constants
+                    f"geoid, geometry, {', '.join(columns)}) "
+                    f"VALUES (%s, ST_MakeEnvelope(%s, %s, %s, %s, 4326), "
+                    f"{placeholders})",
+                    [
+                        f"{ix}-{iy}",
+                        min_x + ix * step_x,
+                        min_y + iy * step_y,
+                        min_x + (ix + 1) * step_x,
+                        min_y + (iy + 1) * step_y,
+                        *([_BLOCK_VALUE] * len(columns)),
+                    ],
+                )
+
+
+@pytest.fixture(autouse=True)
+def staging_tables() -> Iterator[None]:
+    """Create the census/LEHD staging tables the ETL pipeline allocates from.
+
+    Steps 4-5 allocate demographics and employment from
+    ``census.acs_block_group`` and ``lehd.wac_block`` and raise without them. In
+    a real install those tables are the SQLMesh bridges over the dlt pipelines'
+    cached downloads, so a test database has neither — which is why every test
+    here but :func:`test_missing_census_table_raises` failed at step 4.
+    ``run_pipeline``'s contract is "given staging tables, produce a valid
+    canvas", so the fixture fabricates them instead of requiring an install to
+    have run the ingestion pipelines first.
+    """
+    _create_staging_table("census", "acs_block_group", _DEMOGRAPHIC_COLUMNS)
+    _create_staging_table("lehd", "wac_block", _EMPLOYMENT_COLUMNS)
+    try:
+        yield
+    finally:
+        with connection.cursor() as cursor:
+            cursor.execute("DROP TABLE IF EXISTS census.acs_block_group CASCADE")
+            cursor.execute("DROP TABLE IF EXISTS lehd.wac_block CASCADE")
 
 
 @pytest.mark.integration

@@ -106,6 +106,14 @@ jobs:
       - name: Run test suite (excludes e2e and integration)
         run: make test
 
+      # The integration tests that need only Postgres/PostGIS (the stack's
+      # database, not its server or tile containers) — `make test` deselects
+      # them, which is how a broken pipeline step and a stale canvas-view
+      # assertion stayed green. `make test-live-stack` (a running server,
+      # Martin/tipg and a browser) is still run by hand.
+      - name: Run integration tests (PostGIS)
+        run: make test-integration
+
       - name: Run SQLMesh model tests + lint
         run: make test-sqlmesh
 

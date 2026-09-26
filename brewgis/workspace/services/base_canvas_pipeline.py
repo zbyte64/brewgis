@@ -497,11 +497,27 @@ def _load_from_geojson(geojson_path: str, target_table: str) -> None:
             )
 
 
+def _sql_scalar(value: Any) -> Any:
+    """Unwrap a ``numpy`` scalar so the driver can adapt it.
+
+    ``geopandas`` hands ``iterrows()`` its values as numpy scalars, and psycopg2
+    adapts ``np.float64`` (a ``float`` subclass) but not ``np.int64``.
+    """
+    return value.item() if hasattr(value, "item") else value
+
+
 def _load_synthetic(n: int, target_table: str) -> None:
     """Generate synthetic parcels using numpy, inserted via WKT.
 
     Synthetic parcel generation is the one step that genuinely benefits
     from numpy (controlled random distributions).
+
+    Every column the generator produces is loaded, not just the geometry: it
+    emits the schema's input-only columns (``land_use``, ``assessor_use_code``)
+    as well, and those are exactly what :func:`_classify_land_use` classifies
+    from — nothing downstream synthesizes them, and imputation deliberately
+    skips them (``_IMPUTATION_EXCLUDE``). See :func:`_load_from_table`, which
+    carries the same columns through for a real source.
     """
     from brewgis.workspace.services.synthetic_parcel_generator import (
         generate_synthetic_parcels,
@@ -509,6 +525,9 @@ def _load_synthetic(n: int, target_table: str) -> None:
 
     gdf = generate_synthetic_parcels(n)
     schema, table = target_table.split(".")
+    columns = [column for column in gdf.columns if column != "geometry"]
+    column_sql = ", ".join(_q(column) for column in columns)
+    placeholders = ", ".join(["%s"] * len(columns))
 
     with connection.cursor() as cursor:
         for i, (_, row) in enumerate(gdf.iterrows()):
@@ -516,9 +535,10 @@ def _load_synthetic(n: int, target_table: str) -> None:
                 row.geometry.wkt if hasattr(row.geometry, "wkt") else str(row.geometry)
             )
             cursor.execute(
-                f"INSERT INTO {_q(schema)}.{_q(table)} (parcel_id, geography_id, geometry) "
-                "VALUES (%s, %s, ST_Multi(ST_GeomFromText(%s, 4326)))",
-                [i, i, wkt],
+                f"INSERT INTO {_q(schema)}.{_q(table)} "
+                f"(parcel_id, {column_sql}, geometry) "
+                f"VALUES (%s, {placeholders}, ST_Multi(ST_GeomFromText(%s, 4326)))",
+                [i, *(_sql_scalar(row[column]) for column in columns), wkt],
             )
 
 

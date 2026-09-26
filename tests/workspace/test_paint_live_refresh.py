@@ -58,7 +58,7 @@ from django.conf import settings
 from playwright.sync_api import Page
 from playwright.sync_api import sync_playwright
 
-pytestmark = pytest.mark.integration
+pytestmark = [pytest.mark.integration, pytest.mark.live_stack]
 
 BASE_URL = os.environ.get("BREWGIS_TEST_BASE_URL", "http://localhost:8000")
 
@@ -126,7 +126,7 @@ def _setup_fixture(conn: psycopg.Connection) -> dict[str, Any]:
         cur.execute(
             f"""
             CREATE TABLE {FIXTURE_SCHEMA}.{FIXTURE_TABLE} (
-                id text PRIMARY KEY,
+                parcel_id text PRIMARY KEY,
                 geometry geometry(Polygon, 4326) NOT NULL,
                 du double precision NOT NULL,
                 built_form_key text
@@ -135,7 +135,9 @@ def _setup_fixture(conn: psycopg.Connection) -> dict[str, Any]:
         )
         cur.execute(
             f"""
-            INSERT INTO {FIXTURE_SCHEMA}.{FIXTURE_TABLE} (id, geometry, du, built_form_key)
+            INSERT INTO {FIXTURE_SCHEMA}.{FIXTURE_TABLE} (
+                parcel_id, geometry, du, built_form_key
+            )
             VALUES (%s, ST_GeomFromText(%s, 4326), %s, %s)
             """,  # noqa: S608 -- FIXTURE_SCHEMA/FIXTURE_TABLE are fixed module constants
             (
@@ -150,8 +152,9 @@ def _setup_fixture(conn: psycopg.Connection) -> dict[str, Any]:
             """
             INSERT INTO workspace_workspace
                 (name, db_connection, db_schema, county_fips_list,
-                 center_lat, center_lng, zoom, base_table, tile_server_backend)
-            VALUES (%s, 'default', %s, '[]', %s, %s, %s, %s, 'martin')
+                 center_lat, center_lng, zoom, base_table, tile_server_backend,
+                 fill_built_form)
+            VALUES (%s, 'default', %s, '[]', %s, %s, %s, %s, 'martin', false)
             RETURNING id
             """,
             (
@@ -190,14 +193,34 @@ def _setup_fixture(conn: psycopg.Connection) -> dict[str, Any]:
             INSERT INTO workspace_scenario
                 (name, slug, description, workspace_id, scenario_type,
                  base_year, horizon_year, schema_name, published,
-                 public_token, created_at, updated_at)
+                 public_token, created_at, updated_at,
+                 column_mapping, constraints, analysis_params)
             VALUES (%s, %s, '', %s, 'alternative', 2023, 2050, %s, false,
-                    gen_random_uuid(), now(), now())
+                    gen_random_uuid(), now(), now(),
+                    '{}'::jsonb, '{}'::jsonb, '{}'::jsonb)
             RETURNING id
             """,
             ("Test Scenario", slug, workspace_id, schema_name),
         )
         scenario_id = cur.fetchone()[0]
+
+        # The map page's scenario switcher (and with it the Paint Mode toggle
+        # the test clicks) only renders for a workspace with more than one
+        # scenario, and every real workspace has the BASE scenario the app
+        # creates alongside its alternatives — so the fixture needs one too.
+        cur.execute(
+            """
+            INSERT INTO workspace_scenario
+                (name, slug, description, workspace_id, scenario_type,
+                 base_year, horizon_year, schema_name, published,
+                 public_token, created_at, updated_at,
+                 column_mapping, constraints, analysis_params)
+            VALUES ('Fixture Baseline', 'test-base', '', %s, 'base', 2023, 2050,
+                    'scenario_test-base', false, gen_random_uuid(), now(), now(),
+                    '{}'::jsonb, '{}'::jsonb, '{}'::jsonb)
+            """,
+            (workspace_id,),
+        )
 
         from django.contrib.auth.hashers import make_password
 
@@ -276,9 +299,15 @@ def _teardown_fixture(conn: psycopg.Connection, ids: dict[str, Any]) -> None:
             (ids["scenario_id"],),
         )
         cur.execute(
-            "DELETE FROM workspace_scenario WHERE id = %s", (ids["scenario_id"],)
+            "DELETE FROM workspace_scenario WHERE workspace_id = %s",
+            (ids["workspace_id"],),
         )
-        cur.execute("DELETE FROM workspace_layer WHERE id = %s", (ids["layer_id"],))
+        # By workspace, not by the ids created above: rendering the map page
+        # registers layers of its own (the painted-features overlay).
+        cur.execute(
+            "DELETE FROM workspace_layer WHERE workspace_id = %s",
+            (ids["workspace_id"],),
+        )
         cur.execute(
             "DELETE FROM workspace_workspace WHERE id = %s", (ids["workspace_id"],)
         )

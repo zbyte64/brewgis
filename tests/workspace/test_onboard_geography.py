@@ -4,7 +4,6 @@ from __future__ import annotations
 
 from unittest.mock import patch
 
-import pyogrio
 import pytest
 from django.core.management import call_command
 from django.core.management.base import CommandError
@@ -32,7 +31,10 @@ class TestOnboardGeography:
 
     def test_invalid_parcels_path(self) -> None:
         """Command should error with invalid parcel file path."""
-        with pytest.raises(pyogrio.errors.DataSourceError):
+        # ``run_pipeline`` reads the GeoJSON with ``Path.read_text()``, so a
+        # path that does not exist fails there — before any geospatial reader
+        # gets a chance to raise its own error.
+        with pytest.raises(FileNotFoundError):
             call_command(
                 "onboard_geography",
                 name="Test Geography",
@@ -41,7 +43,7 @@ class TestOnboardGeography:
                 county_fips="019",
             )
 
-    @patch("brewgis.workspace.services.base_canvas_pipeline.run_pipeline")
+    @patch("brewgis.workspace.management.commands.onboard_geography.run_pipeline")
     def test_successful_onboarding(self, mock_etl_run) -> None:
         """Successful ETL should produce summary output."""
         mock_etl_run.return_value = {
@@ -100,7 +102,7 @@ class TestOnboardGeography:
     @patch(
         "brewgis.workspace.management.commands.onboard_geography.Command._print_summary"
     )
-    @patch("brewgis.workspace.services.base_canvas_pipeline.run_pipeline")
+    @patch("brewgis.workspace.management.commands.onboard_geography.run_pipeline")
     def test_onboarding_with_synthetic(self, mock_etl_run, mock_summary) -> None:
         """Onboarding should work with synthetic parcels (testing ETL integration)."""
         # Create synthetic GeoJSON

@@ -101,8 +101,17 @@ test-views:  ## Run view/HTTP tests only
 	$(COMPOSE_TEST_RUN) pytest -m views --reuse-db
 
 .PHONY: test-integration
-test-integration:  ## Run integration tests only
-	$(COMPOSE_TEST_RUN) pytest -m integration --reuse-db
+test-integration:  ## Run integration tests only (PostGIS/SQLMesh; excludes live-stack)
+	$(COMPOSE_TEST_RUN) pytest -m "integration and not live_stack" --reuse-db
+
+.PHONY: test-live-stack
+test-live-stack:  ## Run live-stack tests inside the running django container (needs `make up`)
+	# Deliberately *not* DJANGO_TESTING=true: these tests drive the running
+	# server against its own (dev) database, and a fixture password hashed by
+	# the TESTING settings' MD5 hasher can't be verified by a dev-settings
+	# process — the hasher isn't registered there, so every login silently
+	# bounces off the login page.
+	docker compose -f $(COMPOSE_FILE) exec django pytest -m live_stack
 
 .PHONY: test-safe
 test-safe:  ## Run tests excluding slow and e2e (safe for parallel execution)

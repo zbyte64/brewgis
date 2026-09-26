@@ -46,7 +46,7 @@ from PIL import Image
 from PIL import ImageChops
 from playwright.sync_api import sync_playwright
 
-pytestmark = pytest.mark.integration
+pytestmark = [pytest.mark.integration, pytest.mark.live_stack]
 
 BASE_URL = os.environ.get("BREWGIS_TEST_BASE_URL", "http://localhost:8000")
 BASELINE_PATH = (
@@ -148,8 +148,9 @@ def _setup_fixture(conn: psycopg.Connection) -> dict[str, Any]:
             """
             INSERT INTO workspace_workspace
                 (name, db_connection, db_schema, county_fips_list,
-                 center_lat, center_lng, zoom, base_table, tile_server_backend)
-            VALUES (%s, 'default', %s, '[]', %s, %s, %s, %s, 'tipg')
+                 center_lat, center_lng, zoom, base_table, tile_server_backend,
+                 fill_built_form)
+            VALUES (%s, 'default', %s, '[]', %s, %s, %s, %s, 'tipg', false)
             RETURNING id
             """,
             (
@@ -162,6 +163,26 @@ def _setup_fixture(conn: psycopg.Connection) -> dict[str, Any]:
             ),
         )
         workspace_id = cur.fetchone()[0]
+
+        # The map view resolves the workspace's BASE scenario for every
+        # render (``?scenario=`` only overrides it) and 500s without one, so
+        # the fixture needs the scenario the app guarantees every workspace
+        # has. A BASE scenario's tile source is the base table itself — no
+        # canvas view to build.
+        cur.execute(
+            """
+            INSERT INTO workspace_scenario
+                (name, slug, description, workspace_id, scenario_type,
+                 base_year, horizon_year, schema_name, published,
+                 public_token, created_at, updated_at,
+                 column_mapping, constraints, analysis_params)
+            VALUES ('Baseline', 'parity-base', '', %s, 'base', 2023, 2050,
+                    'scenario_parity-base', false, gen_random_uuid(),
+                    now(), now(),
+                    '{}'::jsonb, '{}'::jsonb, '{}'::jsonb)
+            """,
+            (workspace_id,),
+        )
 
         cur.execute(
             """
@@ -231,17 +252,33 @@ def _setup_fixture(conn: psycopg.Connection) -> dict[str, Any]:
 
 
 def _teardown_fixture(conn: psycopg.Connection, ids: dict[str, Any]) -> None:
+    """Drop everything the fixture created, children first.
+
+    Scoped to the fixture workspace rather than the ids ``_setup_fixture``
+    returned: rendering the map page registers layers of its own (the
+    painted-features overlay), and a leftover child row blocks the workspace
+    delete — these FKs carry no ``ON DELETE CASCADE``.
+    """
     with conn.cursor() as cur:
+        # ``layers`` is this function's own fixed sub-select, not user input.
+        layers = "SELECT id FROM workspace_layer WHERE workspace_id = %s"
         cur.execute(
-            "DELETE FROM workspace_styleclass WHERE symbology_id IN "
-            "(SELECT id FROM workspace_symbologyconfig WHERE layer_id = %s)",
-            (ids["layer_id"],),
+            "DELETE FROM workspace_styleclass WHERE symbology_id IN "  # noqa: S608
+            f"(SELECT id FROM workspace_symbologyconfig WHERE layer_id IN ({layers}))",
+            (ids["workspace_id"],),
         )
         cur.execute(
-            "DELETE FROM workspace_symbologyconfig WHERE layer_id = %s",
-            (ids["layer_id"],),
+            f"DELETE FROM workspace_symbologyconfig WHERE layer_id IN ({layers})",  # noqa: S608
+            (ids["workspace_id"],),
         )
-        cur.execute("DELETE FROM workspace_layer WHERE id = %s", (ids["layer_id"],))
+        cur.execute(
+            "DELETE FROM workspace_layer WHERE workspace_id = %s",
+            (ids["workspace_id"],),
+        )
+        cur.execute(
+            "DELETE FROM workspace_scenario WHERE workspace_id = %s",
+            (ids["workspace_id"],),
+        )
         cur.execute(
             "DELETE FROM workspace_workspace WHERE id = %s", (ids["workspace_id"],)
         )
@@ -316,6 +353,32 @@ def _wait_until_ready(backend: str, timeout: float = 90.0) -> None:
     raise TimeoutError(msg)
 
 
+_LAYER_RENDERED_JS = """
+() => {
+    const map = document.querySelector('brew-gis-map').getMap();
+    return map.queryRenderedFeatures({ layers: ['fixture_layer'] }).length > 0;
+}
+"""
+
+
+def _wait_until_layer_rendered(page: Any, timeout: float = 60.0) -> None:
+    """Wait until the fixture layer has actually painted features.
+
+    ``_wait_until_ready`` only proves the tile backend *lists* the fixture
+    table; right after its container restart it takes a moment more before the
+    tiles render. Exporting before that captures an empty map, which reads as a
+    render difference against the baseline — and did: the failure was exactly
+    7% of the image, the combined area of the fixture's five squares.
+    """
+    deadline = time.monotonic() + timeout
+    while time.monotonic() < deadline:
+        if page.evaluate(_LAYER_RENDERED_JS):
+            return
+        page.wait_for_timeout(200)
+    msg = f"fixture_layer rendered no features within {timeout}s"
+    raise TimeoutError(msg)
+
+
 def _export_map_png(page: Any, workspace_id: int, out_path: Path) -> None:
     """Log in, open the fixture workspace's map, and capture it via the
     real "Export Map" button — the same code path a user would click."""
@@ -335,6 +398,7 @@ def _export_map_png(page: Any, workspace_id: int, out_path: Path) -> None:
     page.goto(f"{BASE_URL}/{workspace_id}/map/")
     page.wait_for_load_state("networkidle")
     page.wait_for_timeout(2000)
+    _wait_until_layer_rendered(page)
 
     page.click("#export-map-btn")
     page.wait_for_timeout(300)

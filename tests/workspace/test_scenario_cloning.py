@@ -10,8 +10,43 @@ import pytest
 from django.db import connection
 
 from brewgis.workspace.models import Layer
+from brewgis.workspace.services.canvas_view_manager import _fetch_base_columns
+from brewgis.workspace.services.canvas_view_manager import _qi
+from brewgis.workspace.services.canvas_view_manager import build_canvas_view_select
 from brewgis.workspace.services.scenario_cloner import clone_scenario
 from tests.factories import PaintedCanvasFactory
+
+
+def _build_canvas_view(scenario) -> None:
+    """Create *scenario*'s canvas view the way its SQLMesh model would.
+
+    The model itself can't be planned from a test process: ``run_sqlmesh_plan``
+    plans against the stack's database while the model's blueprint profiles read
+    the Django ORM — i.e. the *test* database — so a plan here would create the
+    view somewhere else entirely (and mutate the developer's database on the
+    way). Build the same view from the same generator instead, exactly as
+    ``test_scenario_canvas.py`` does, so cloning and deletion still act on the
+    view they create and drop.
+    """
+    _, _, all_columns = _fetch_base_columns(scenario.workspace.base_table)
+    select = build_canvas_view_select(
+        base_ref=scenario.workspace.base_table,
+        all_columns=all_columns,
+        scenario_id=scenario.pk,
+    )
+    view = _qi(f"{scenario.target_schema}.scenario_{scenario.slug}_canvas")
+    with connection.cursor() as cursor:
+        cursor.execute(f"CREATE SCHEMA IF NOT EXISTS {_qi(scenario.target_schema)}")
+        cursor.execute(f"CREATE OR REPLACE VIEW {view} AS {select}")
+
+
+@pytest.fixture(autouse=True)
+def _canvas_views(monkeypatch) -> None:
+    """Give every test in this module the canvas-view builder, not a plan."""
+    monkeypatch.setattr(
+        "brewgis.workspace.services.scenario_cloner.materialize_scenario_canvas",
+        _build_canvas_view,
+    )
 
 
 @pytest.mark.integration
