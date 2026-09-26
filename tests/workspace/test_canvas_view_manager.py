@@ -178,6 +178,71 @@ class TestScenarioCanvasProfiles:
         assert isinstance(columns, list)
         assert sorted(columns) == sorted(_fetch_base_columns(BASE_TABLE)[2])
 
+    def test_an_imported_base_is_read_as_the_table_it_is(self, base_canvas_table):
+        """A base canvas that is not a model is named as a plain table.
+
+        The picker offers every loaded table with the base-canvas columns, and
+        the ones a workspace imports are not models: naming one as a model FQN
+        would render a reference no model backs (and no snapshot to resolve).
+        """
+        with connection.cursor() as cursor:
+            cursor.execute("DROP SCHEMA IF EXISTS imported CASCADE")
+            cursor.execute("CREATE SCHEMA imported")
+            cursor.execute(
+                "CREATE TABLE imported.base_canvas "
+                "(LIKE public.base_canvas INCLUDING ALL)"
+            )
+        try:
+            workspace = WorkspaceFactory(base_table="imported.base_canvas")
+            scenario = ScenarioFactory(
+                workspace=workspace,
+                slug="imported-base",
+                scenario_type=ScenarioType.ALTERNATIVE,
+            )
+
+            profiles = [
+                profile
+                for profile in scenario_canvas_profiles()
+                if profile["scenario_id"] == scenario.pk
+            ]
+        finally:
+            with connection.cursor() as cursor:
+                cursor.execute("DROP SCHEMA IF EXISTS imported CASCADE")
+
+        assert len(profiles) == 1
+        assert profiles[0]["is_sqlmesh_base"] == 0
+
+    def test_a_model_base_is_read_as_a_model(self, base_canvas_table):
+        """The other half of that switch: a model base keeps its FQN, so the
+        canvas view's ``data_hash`` follows the base model's snapshot."""
+        with connection.cursor() as cursor:
+            cursor.execute("DROP SCHEMA IF EXISTS modeled CASCADE")
+            cursor.execute("CREATE SCHEMA modeled")
+            cursor.execute(
+                "CREATE TABLE modeled.base_canvas_reconciled "
+                "(LIKE public.base_canvas INCLUDING ALL)"
+            )
+        try:
+            workspace = WorkspaceFactory(base_table="modeled.base_canvas_reconciled")
+            scenario = ScenarioFactory(
+                workspace=workspace,
+                slug="modeled-base",
+                scenario_type=ScenarioType.ALTERNATIVE,
+            )
+
+            profiles = [
+                profile
+                for profile in scenario_canvas_profiles()
+                if profile["scenario_id"] == scenario.pk
+            ]
+        finally:
+            with connection.cursor() as cursor:
+                cursor.execute("DROP SCHEMA IF EXISTS modeled CASCADE")
+
+        assert len(profiles) == 1
+        assert profiles[0]["is_sqlmesh_base"] == 1
+        assert profiles[0]["base_model"] == "brewgis.modeled.base_canvas_reconciled"
+
     def test_base_scenario_yields_no_profile(self, workspace_on_base_canvas):
         scenario = ScenarioFactory(
             workspace=workspace_on_base_canvas,

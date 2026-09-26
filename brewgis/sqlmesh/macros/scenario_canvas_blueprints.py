@@ -70,10 +70,12 @@ def scenario_canvas_profiles() -> list[dict[str, object]]:
     names the workspace's *effective* base layer (see
     ``Workspace.effective_base_table``), so a workspace with the built-form
     fill enabled paints over the fill output. ``is_sqlmesh_base`` picks between
-    that FQN and the raw external ``base_table`` (a legacy base living in
-    ``public`` isn't managed by SQLMesh and is never CASCADE-dropped by a
-    plan). ``base_table`` itself stays the raw source, which is what the
-    column list above is read from.
+    that FQN and the raw external ``base_table``: a base canvas need not be a
+    model at all (the base-canvas picker offers every loaded table with the
+    base-canvas columns, see
+    ``sqlmesh_tables.list_base_canvas_candidates``) and a bare table name is
+    what SQLMesh must render for one — a model FQN naming a table no model
+    publishes renders as a reference nothing backs.
 
     ``all_columns`` is the base table's column list, read here — at model-load
     time — rather than inside the model's ``execute``. The view's SQL has to
@@ -109,9 +111,12 @@ def scenario_canvas_profiles() -> list[dict[str, object]]:
     from brewgis.workspace.models import Scenario
     from brewgis.workspace.models import ScenarioType
     from brewgis.workspace.services.canvas_view_manager import _fetch_base_columns
+    from brewgis.workspace.services.sqlmesh_tables import _model_backed_tables
     from brewgis.workspace.services.sqlmesh_tables import _required_base_canvas_columns
+    from brewgis.workspace.services.sqlmesh_tables import is_model_backed
 
     required = _required_base_canvas_columns()
+    model_backed = _model_backed_tables()
     columns_by_base: dict[str, list[str]] = {}
     claimed_by_view: dict[tuple[str, str], int] = {}
     profiles: list[dict[str, object]] = []
@@ -166,7 +171,7 @@ def scenario_canvas_profiles() -> list[dict[str, object]]:
                 "scenario_id": int(scenario.pk),
                 "base_table": base_table,
                 "base_model": f"brewgis.{effective_base}",
-                "is_sqlmesh_base": int(not effective_base.startswith("public.")),
+                "is_sqlmesh_base": int(is_model_backed(effective_base, model_backed)),
                 "all_columns": columns,
             }
         )

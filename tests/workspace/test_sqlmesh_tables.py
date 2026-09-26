@@ -1,20 +1,31 @@
 # ruff: noqa: ARG002
-"""Tests for pure-python helpers in ``services/sqlmesh_tables.py``.
+"""Tests for ``services/sqlmesh_tables.py``.
 
-Table discovery itself requires a live database (see ``list_sqlmesh_tables``)
-so these tests monkeypatch it and only exercise the link-building logic.
+The link-building helpers are pure python — table discovery (what
+``list_sqlmesh_tables`` returns) needs a live database, so those tests
+monkeypatch it and only exercise the link logic. The base-canvas candidate list
+is discovery itself and is tested against the database
+(``TestBaseCanvasCandidates``).
 """
 
 from __future__ import annotations
 
+from typing import TYPE_CHECKING
+
 import pytest
+from django.db import connection
 
 from brewgis.workspace.services import sqlmesh_tables
+from brewgis.workspace.services.sqlmesh_tables import BaseCanvasCandidate
 from brewgis.workspace.services.sqlmesh_tables import SqlmeshTableInfo
 from brewgis.workspace.services.sqlmesh_tables import _model_schema
+from brewgis.workspace.services.sqlmesh_tables import list_base_canvas_candidates
 from brewgis.workspace.services.sqlmesh_tables import sqlmesh_link_for_table
 from brewgis.workspace.services.sqlmesh_tables import sqlmesh_links_for_tables
 from brewgis.workspace.services.sqlmesh_tables import sqlmesh_model_ui_url
+
+if TYPE_CHECKING:
+    from collections.abc import Iterator
 
 
 class TestModelSchema:
@@ -188,3 +199,114 @@ class TestSqlmeshLinksForTables:
         )
         assert set(links) == {1}
         assert links[1].endswith("/data-catalog/models/brewgis.ascn7.core_end_state")
+
+
+@pytest.mark.integration
+class TestBaseCanvasCandidates:
+    """What a workspace may adopt as its base canvas.
+
+    The contract is the column set, not the producer: a SQLMesh model's view
+    satisfies it, and so does a table a user imported. Discovery therefore spans
+    every schema but the internal ones, ``public`` included — that is where the
+    legacy shared base canvas and every table imported into a workspace whose
+    ``db_schema`` is ``public`` live.
+    """
+
+    @pytest.fixture
+    def adoptable_tables(self, base_canvas_table: str) -> Iterator[None]:
+        """One table per location the picker has to get right."""
+
+        def _like(schema: str, table: str) -> None:
+            cursor.execute(f'CREATE SCHEMA IF NOT EXISTS "{schema}"')
+            cursor.execute(
+                f'CREATE TABLE "{schema}"."{table}" '
+                "(LIKE public.base_canvas INCLUDING ALL)"
+            )
+
+        with connection.cursor() as cursor:
+            _like("public", "candidate_import")
+            _like("adoptable", "candidate_import")
+            # A model's own (blueprint-generated) table: internal schema.
+            _like("built_form_fill", "fill_999")
+            # A model-backed table: the name is a model file's stem.
+            _like("fresno", "base_canvas_reconciled")
+            # Every required column but one.
+            _like("adoptable", "candidate_missing_du")
+            cursor.execute(
+                'ALTER TABLE "adoptable"."candidate_missing_du" DROP COLUMN du'
+            )
+            # Every required column, but a paintable number as text.
+            _like("adoptable", "candidate_text_number")
+            cursor.execute(
+                'ALTER TABLE "adoptable"."candidate_text_number" '
+                "ALTER COLUMN du TYPE text USING du::text"
+            )
+            # The same columns at a different numeric type than the schema
+            # declares (``numeric`` for what the model calls ``float8``).
+            cursor.execute(
+                'ALTER TABLE "public"."candidate_import" ALTER COLUMN emp TYPE numeric'
+            )
+        yield
+        with connection.cursor() as cursor:
+            cursor.execute("DROP SCHEMA IF EXISTS adoptable CASCADE")
+            cursor.execute("DROP SCHEMA IF EXISTS built_form_fill CASCADE")
+            cursor.execute('DROP TABLE IF EXISTS "fresno"."base_canvas_reconciled"')
+            cursor.execute('DROP TABLE IF EXISTS "public"."candidate_import"')
+
+    @pytest.fixture
+    def candidates(self, adoptable_tables) -> dict[str, BaseCanvasCandidate]:
+        return {
+            candidate.qualified: candidate
+            for candidate in list_base_canvas_candidates()
+        }
+
+    def test_offers_an_imported_table(
+        self, candidates: dict[str, BaseCanvasCandidate]
+    ) -> None:
+        assert candidates["public.candidate_import"].is_sqlmesh_model is False
+
+    def test_offers_a_table_from_any_schema(
+        self, candidates: dict[str, BaseCanvasCandidate]
+    ) -> None:
+        assert "adoptable.candidate_import" in candidates
+
+    def test_offers_the_legacy_shared_base_canvas(
+        self, candidates: dict[str, BaseCanvasCandidate]
+    ) -> None:
+        assert candidates["public.base_canvas"].is_sqlmesh_model is False
+
+    def test_names_a_model_backed_table_as_a_model(
+        self, candidates: dict[str, BaseCanvasCandidate]
+    ) -> None:
+        assert candidates["fresno.base_canvas_reconciled"].is_sqlmesh_model is True
+
+    def test_omits_a_table_missing_a_required_column(
+        self, candidates: dict[str, BaseCanvasCandidate]
+    ) -> None:
+        # Downstream consumers (paint, canvas views, analysis) read a fixed
+        # column set, so a partial match has to be rejected here rather than
+        # break at query time.
+        assert "adoptable.candidate_missing_du" not in candidates
+
+    def test_omits_a_paintable_number_stored_as_text(
+        self, candidates: dict[str, BaseCanvasCandidate]
+    ) -> None:
+        """The canvas view COALESCEs every paintable column against its own
+        double precision paint value, so a text one fails the plan *after* the
+        base table has been saved on the workspace."""
+        assert "adoptable.candidate_text_number" not in candidates
+
+    def test_keeps_a_number_in_any_numeric_type(
+        self, candidates: dict[str, BaseCanvasCandidate]
+    ) -> None:
+        # The rule is the type family, not the schema's declared type: a base
+        # canvas counting in ``numeric`` is as usable as one in ``float8``.
+        assert "public.candidate_import" in candidates
+
+    def test_omits_a_blueprinted_models_own_table(
+        self, candidates: dict[str, BaseCanvasCandidate]
+    ) -> None:
+        # ``built_form_fill.fill_<workspace>`` is the workspace's own fill
+        # output; offering it back would let a workspace base itself on its
+        # own derivative.
+        assert "built_form_fill.fill_999" not in candidates

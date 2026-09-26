@@ -2,10 +2,11 @@
 
 A workspace's base canvas is the parcel/feature table that scenarios paint
 over (``Workspace.base_table``, defaulting to the shared ``public.base_canvas``
-table). This lets a workspace instead point at a SQLMesh-generated table that
-already has every required base-canvas column (see
-``services.sqlmesh_tables.list_base_canvas_candidates``), skipping the manual
-ETL pipeline entirely.
+table). This lets a workspace instead point at any loaded Postgres table that
+already has every required base-canvas column — a SQLMesh model's view, an
+imported shapefile, the ETL pipeline's ``public.base_canvas`` — skipping the
+manual ETL pipeline entirely (see
+``services.sqlmesh_tables.list_base_canvas_candidates``).
 
 The form also carries the workspace's built-form fill toggle
 (``Workspace.fill_built_form``). With it on, the selected source is left exactly
@@ -52,8 +53,26 @@ if TYPE_CHECKING:
 logger = logging.getLogger(__name__)
 
 
-def _base_canvas_choices() -> list[tuple[str, str]]:
-    return [(info.qualified, info.qualified) for info in list_base_canvas_candidates()]
+def _base_canvas_choices() -> list[tuple[str | None, list[tuple[str, str]]]]:
+    """Group the candidates into SQLMesh models and plain tables.
+
+    Both are adoptable; they differ in where they come from — a model's view is
+    something the project builds, a plain table is something the user loaded —
+    and the plan treats them differently for exactly that reason (a model is
+    snapshot-resolved, a plain table read as an external table). Naming the
+    group is what lets a workspace find the table it just imported.
+    """
+    models: list[tuple[str, str]] = []
+    tables: list[tuple[str, str]] = []
+    for candidate in list_base_canvas_candidates():
+        target = models if candidate.is_sqlmesh_model else tables
+        target.append((candidate.qualified, candidate.qualified))
+    # An empty optgroup renders as a bare label with nothing under it.
+    return [
+        (label, options)
+        for label, options in (("SQLMesh models", models), ("Imported tables", tables))
+        if options
+    ]
 
 
 def _fill_model_fqn(workspace_pk: int) -> str:
@@ -69,7 +88,12 @@ class SelectBaseCanvasForm(forms.Form):
     base_table = forms.ChoiceField(
         label="Base canvas table",
         choices=_base_canvas_choices,
-        help_text="Only SQLMesh tables with every required base canvas column are listed.",
+        help_text=(
+            "Any loaded table carrying every required base canvas column, at the "
+            "types the canvas views need, is listed — a SQLMesh model's view or a "
+            "table you imported. A plain table is read as-is; scenarios paint over "
+            "a copy-on-write view of it."
+        ),
     )
     fill_built_form = forms.BooleanField(
         required=False,

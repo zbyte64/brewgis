@@ -40,7 +40,8 @@ class Workspace(models.Model):
         help_text=(
             "schema.table for this workspace's base canvas — the parcel/feature "
             "table that scenarios paint over. Defaults to the shared public.base_canvas "
-            "table; can point at a SQLMesh-generated table with the required columns."
+            "table; can point at any loaded table with the required base-canvas "
+            "columns, a SQLMesh model's view or an imported one alike."
         ),
     )
     tile_server_backend = models.CharField(

@@ -227,11 +227,15 @@ def _scenario_profiles() -> list[dict[str, Any]]:
     built-form fill output when ``Workspace.fill_built_form`` is on, else its
     ``base_table`` — because that is the layer the scenario's parcels really
     live in; ``parcel_key_type`` and the road-network region stay derived from
-    the raw ``base_table``, since they describe the source data. ``parcel_table``
-    is ``None`` when the scenario has no SQLMesh-backed parcel
-    source at all — such a scenario is skipped with a warning (mirroring
-    ``scenario_canvas_profiles``): one unplannable scenario must not make the
-    whole project unloadable, since these profiles are part of every model load.
+    the raw ``base_table``, since they describe the source data. A base layer a
+    SQLMesh model publishes is named as the 3-part model FQN so the analysis
+    depends on it; any other base layer (an imported table — the picker offers
+    every loaded table with the base-canvas columns) is named as the plain
+    ``schema.table`` it is. ``parcel_table`` is ``None`` only for an ALTERNATIVE
+    scenario whose canvas model was not emitted (see
+    ``scenario_canvas_profiles``) — such a scenario is skipped with a warning
+    (mirroring that macro): one unplannable scenario must not make the whole
+    project unloadable, since these profiles are part of every model load.
     """
     import django
 
@@ -242,6 +246,8 @@ def _scenario_profiles() -> list[dict[str, Any]]:
     from brewgis.workspace.models import ScenarioType
     from brewgis.workspace.services.fetch_clone import region_for_base_table
     from brewgis.workspace.services.fetch_clone import road_network_region
+    from brewgis.workspace.services.sqlmesh_tables import _model_backed_tables
+    from brewgis.workspace.services.sqlmesh_tables import is_model_backed
 
     _drop_inherited_connection()
 
@@ -249,6 +255,7 @@ def _scenario_profiles() -> list[dict[str, Any]]:
         AnalysisRun.objects.values_list("scenario_id", flat=True).distinct()
     )
     canvas_fqns: dict[int, str] | None = None
+    model_backed = _model_backed_tables()
     profiles: list[dict[str, Any]] = []
     scenarios = (
         Scenario.objects.filter(pk__in=scenario_ids)
@@ -272,18 +279,23 @@ def _scenario_profiles() -> list[dict[str, Any]]:
             if canvas_fqns is None:
                 canvas_fqns = _canvas_model_fqns()
             parcel_table = canvas_fqns.get(int(scenario.pk))
-        elif not base_table.startswith("public."):
+        elif is_model_backed(base_table, model_backed):
             # A base canvas managed by SQLMesh: reference it as a model FQN so
-            # the analysis depends on it (a ``public.`` table is not a model).
+            # the analysis depends on it.
             parcel_table = f"brewgis.{base_table}"
         else:
-            parcel_table = None
+            # A base canvas that is not a model — any imported table carrying
+            # the base-canvas columns (the picker offers them all, see
+            # ``sqlmesh_tables.list_base_canvas_candidates``). Named as the
+            # plain ``schema.table`` it is: there is no snapshot to depend on,
+            # and a model FQN would name a table no model publishes.
+            parcel_table = base_table
 
         if parcel_table is None:
             logging.getLogger(_LOGGER_NAME).warning(
-                "Scenario %s (%s) has no analysis models: no SQLMesh-backed "
-                "parcel source (workspace base table %s is not managed by "
-                "SQLMesh, or the scenario has no canvas model)",
+                "Scenario %s (%s) has no analysis models: the ALTERNATIVE "
+                "scenario has no canvas model (workspace base table %s cannot "
+                "carry one)",
                 scenario.pk,
                 scenario.slug,
                 raw_base_table,

@@ -15,12 +15,14 @@ from typing import Any
 
 import pytest
 from django.conf import settings
+from django.db import connection
 from django.urls import reverse
 
 from brewgis.workspace.analysis.layer_registry import BASE_CANVAS_LAYER_KEY
 from brewgis.workspace.models import Layer
 from brewgis.workspace.models import ScenarioType
 from brewgis.workspace.services.scenario_canvas import canvas_model_selector
+from brewgis.workspace.services.sqlmesh_tables import BaseCanvasCandidate
 from brewgis.workspace.services.sqlmesh_tables import sqlmesh_link_for_table
 from brewgis.workspace.services.sqlmesh_tables import sqlmesh_links_for_tables
 from tests.factories import ScenarioFactory
@@ -51,12 +53,19 @@ class _TileRequests:
 def chosen_source(monkeypatch) -> None:
     """Offer the test database's base canvas as the form's only choice.
 
-    The real list is every SQLMesh-managed table with the required columns,
-    which the test database has none of.
+    The real list is every loaded table carrying the base-canvas columns, which
+    on a test database is the Django-managed ``public.base_canvas`` plus
+    whatever another test left behind — pinning it to one source keeps these
+    tests about what the form *does* with a choice
+    (``TestPickerChoices`` pins what it offers).
     """
     monkeypatch.setattr(
         f"{VIEW_MODULE}.list_base_canvas_candidates",
-        lambda: [SimpleNamespace(qualified=BASE_TABLE)],
+        lambda: [
+            BaseCanvasCandidate(
+                schema="public", table="base_canvas", is_sqlmesh_model=False
+            )
+        ],
     )
 
 
@@ -93,6 +102,57 @@ def _alternative_scenario(workspace: Any, slug: str) -> Any:
         slug=slug,
         scenario_type=ScenarioType.ALTERNATIVE,
     )
+
+
+@pytest.mark.views
+class TestPickerChoices:
+    """What the picker offers a workspace as a base canvas.
+
+    The contract is the column set, not the producer: a table a user imported
+    is as adoptable as a model's view, and the picker says which is which.
+    """
+
+    def test_a_plain_table_is_offered_as_an_imported_table(
+        self, client, base_canvas_table
+    ) -> None:
+        client.force_login(UserFactory())
+        workspace = WorkspaceFactory(base_table=BASE_TABLE)
+
+        body = client.get(
+            reverse("workspace:select_base_canvas", args=[workspace.pk])
+        ).content.decode()
+
+        assert '<optgroup label="Imported tables">' in body
+        assert f'value="{BASE_TABLE}"' in body
+
+    def test_a_model_backed_table_is_offered_as_a_model(
+        self, client, base_canvas_table
+    ) -> None:
+        """The other group, on a table a live model publishes (a plan's view,
+        which is what makes a name resolvable as a model FQN at all)."""
+        with connection.cursor() as cursor:
+            cursor.execute("DROP SCHEMA IF EXISTS modeled CASCADE")
+            cursor.execute("CREATE SCHEMA modeled")
+            cursor.execute(
+                "CREATE TABLE modeled.base_canvas_reconciled "
+                "(LIKE public.base_canvas INCLUDING ALL)"
+            )
+        try:
+            client.force_login(UserFactory())
+            workspace = WorkspaceFactory()
+
+            body = client.get(
+                reverse("workspace:select_base_canvas", args=[workspace.pk])
+            ).content.decode()
+        finally:
+            with connection.cursor() as cursor:
+                cursor.execute("DROP SCHEMA IF EXISTS modeled CASCADE")
+
+        models_group = re.search(
+            r'<optgroup label="SQLMesh models">(.*?)</optgroup>', body, re.DOTALL
+        )
+        assert models_group is not None
+        assert 'value="modeled.base_canvas_reconciled"' in models_group.group(1)
 
 
 @pytest.mark.views

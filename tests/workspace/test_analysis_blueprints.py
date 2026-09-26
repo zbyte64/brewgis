@@ -71,6 +71,71 @@ class TestScenarioProfiles:
         AnalysisRunFactory(workspace=workspace, scenario=scenario)
         return scenario
 
+    def test_an_imported_base_is_the_parcel_source_itself(self, db):
+        """A base canvas that is not a model is read as the table it is.
+
+        The picker offers every loaded table with the base-canvas columns, so
+        the analysis models have to read such a base directly — a model FQN
+        would name a table no model publishes, and skipping the scenario
+        entirely leaves a workspace with an imported base canvas unanalyzable.
+        """
+        with connection.cursor() as cursor:
+            cursor.execute("DROP SCHEMA IF EXISTS imported CASCADE")
+            cursor.execute("CREATE SCHEMA imported")
+            cursor.execute(
+                "CREATE TABLE imported.base_canvas "
+                "(parcel_id bigint PRIMARY KEY, geometry geometry(Polygon, 4326))"
+            )
+        try:
+            workspace = WorkspaceFactory(base_table="imported.base_canvas")
+            scenario = ScenarioFactory(workspace=workspace)
+            AnalysisRunFactory(workspace=workspace, scenario=scenario)
+
+            (profile,) = [
+                profile
+                for profile in analysis_blueprint_profiles("vmt")
+                if profile["scenario_pk"] == scenario.pk
+            ]
+        finally:
+            with connection.cursor() as cursor:
+                cursor.execute("DROP SCHEMA IF EXISTS imported CASCADE")
+
+        assert profile["parcel_table"] == "imported.base_canvas"
+        assert profile["base_canvas_table"] == "imported.base_canvas"
+        # The key type still comes from the source's own column.
+        assert profile["parcel_key_type"] == "BIGINT"
+
+    def test_a_model_base_is_named_as_a_model(self, base_canvas_table):
+        """The other half of the switch: a base a model publishes keeps its FQN,
+        so the analysis depends on the model's snapshot.
+
+        Live-table based, like ``sqlmesh_link_for_table``: a model's view exists
+        once a plan has built it, so the table is created here the way a plan
+        would leave it.
+        """
+        with connection.cursor() as cursor:
+            cursor.execute("DROP SCHEMA IF EXISTS modeled CASCADE")
+            cursor.execute("CREATE SCHEMA modeled")
+            cursor.execute(
+                "CREATE TABLE modeled.base_canvas_reconciled "
+                "(LIKE public.base_canvas INCLUDING ALL)"
+            )
+        try:
+            workspace = WorkspaceFactory(base_table="modeled.base_canvas_reconciled")
+            scenario = ScenarioFactory(workspace=workspace)
+            AnalysisRunFactory(workspace=workspace, scenario=scenario)
+
+            (profile,) = [
+                profile
+                for profile in analysis_blueprint_profiles("vmt")
+                if profile["scenario_pk"] == scenario.pk
+            ]
+        finally:
+            with connection.cursor() as cursor:
+                cursor.execute("DROP SCHEMA IF EXISTS modeled CASCADE")
+
+        assert profile["parcel_table"] == "brewgis.modeled.base_canvas_reconciled"
+
     def test_bakes_the_defaults_and_the_scenarios_overrides(self, analyzed_scenario):
         """Every parameter is baked into the profile — the scenario's own value
         where it has one, the declared default otherwise — so the rendered model

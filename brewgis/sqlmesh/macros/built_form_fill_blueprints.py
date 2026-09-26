@@ -55,10 +55,12 @@ MODEL_SCHEMA = "built_form_fill"
 def built_form_fill_profiles() -> list[dict[str, object]]:
     """Per-workspace blueprint facts for every workspace with the fill enabled.
 
-    ``source_ref`` is always a 3-part ``brewgis.<base_table>`` FQN: the base
-    canvas picker only offers SQLMesh-managed tables, so the source is always a
-    model, and the FQN is what gives the fill model a real dependency on it
-    (SQLMesh snapshot-resolves a bare model FQN in a rendered query).
+    ``source_ref`` is the 3-part ``brewgis.<base_table>`` FQN when the base
+    canvas is a SQLMesh model — the FQN is what gives the fill model a real
+    dependency on it (SQLMesh snapshot-resolves a bare model FQN in a rendered
+    query) — and the plain ``<base_table>`` otherwise: the picker offers every
+    loaded table with the base-canvas columns, and a table no model publishes
+    has no snapshot to depend on.
 
     ``all_columns`` is the source table's column list, read here — at model-load
     time — rather than inside the model's ``execute``, for the reason
@@ -77,9 +79,12 @@ def built_form_fill_profiles() -> list[dict[str, object]]:
 
     from brewgis.workspace.models import Workspace
     from brewgis.workspace.services.canvas_view_manager import _fetch_base_columns
+    from brewgis.workspace.services.sqlmesh_tables import _model_backed_tables
     from brewgis.workspace.services.sqlmesh_tables import _required_base_canvas_columns
+    from brewgis.workspace.services.sqlmesh_tables import is_model_backed
 
     required = _required_base_canvas_columns()
+    model_backed = _model_backed_tables()
     skipped: list[str] = []
     profiles: list[dict[str, object]] = []
     for workspace in Workspace.objects.filter(fill_built_form=True).order_by("pk"):
@@ -99,7 +104,17 @@ def built_form_fill_profiles() -> list[dict[str, object]]:
         profiles.append(
             {
                 "model_table": f"fill_{workspace.pk}",
-                "source_ref": f"brewgis.{source}",
+                # A model FQN gives the fill model a real dependency on the
+                # source, so a plan rebuilds the fill when the base is
+                # rebuilt; a base canvas that is not a model (any imported
+                # table — see ``sqlmesh_tables.list_base_canvas_candidates``)
+                # has no snapshot to depend on and is named as the plain
+                # ``schema.table`` it is.
+                "source_ref": (
+                    f"brewgis.{source}"
+                    if is_model_backed(source, model_backed)
+                    else source
+                ),
                 "built_form_table": f"{workspace.db_schema}.built_forms",
                 "all_columns": columns,
             }

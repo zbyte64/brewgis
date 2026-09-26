@@ -46,14 +46,21 @@ from brewgis.workspace.services.base_canvas_schema import BaseCanvasSchema
 # while it has an active spatial filter (``Layer.effective_source``). Like the
 # fill output it is derived from a source the layer already points at, so it is
 # not itself an importable source.
-_EXCLUDED_SCHEMAS = {
-    "public",
+#
+# The same schemas plus ``public`` are what the *data catalog* hides: ``public``
+# holds Django's own tables and the legacy ``public.base_canvas``, none of which
+# is an importable SQLMesh source. A base canvas asks a different question (is
+# there a table with the base-canvas columns?) and answers it against
+# ``_INTERNAL_SCHEMAS`` only — see ``list_base_canvas_candidates``.
+_INTERNAL_SCHEMAS = {
     "information_schema",
     "sqlmesh_state",
     "scenario_canvas",
     "built_form_fill",
     "spatial_filter",
 }
+
+_EXCLUDED_SCHEMAS = _INTERNAL_SCHEMAS | {"public"}
 
 _POLYGON_TYPES = {"polygon", "multipolygon"}
 _LINE_TYPES = {"linestring", "multilinestring"}
@@ -179,6 +186,31 @@ def _model_backed_tables() -> frozenset[tuple[str, str]]:
     return frozenset(discovered | _blueprinted_model_tables())
 
 
+def is_model_backed(
+    base_table: str,
+    known: frozenset[tuple[str, str]] | None = None,
+) -> bool:
+    """Whether ``schema.table`` is a table a live SQLMesh model is read through.
+
+    The question a caller holding a workspace's ``base_table`` has to answer
+    before naming it as a model: a base canvas may be any loaded table with the
+    base-canvas columns (see ``list_base_canvas_candidates``), and only the ones
+    a model publishes may be referenced by FQN — SQLMesh resolves an FQN against
+    its snapshots, so a name no model publishes renders as a reference nothing
+    backs. Everything else is referenced as the plain ``schema.table`` it is.
+
+    A bare ``table`` (no schema) is read as ``public.table``, matching
+    ``canvas_view_manager._split_base_table``.
+
+    Pass ``known`` (a ``_model_backed_tables()`` result) when asking about
+    several tables — that catalog read is not free, and the blueprint macros
+    ask once per scenario or workspace.
+    """
+    schema, _, table = base_table.rpartition(".")
+    backed = _model_backed_tables() if known is None else known
+    return (schema or "public", table) in backed
+
+
 def sqlmesh_link_for_table(
     schema: str,
     table: str,
@@ -245,16 +277,29 @@ class SqlmeshTableInfo:
         return f"{self.schema}.{self.table}"
 
 
-def _is_excluded_schema(schema: str) -> bool:
-    """Whether *schema* holds objects that must not appear in the table catalog.
+def _is_internal_schema(schema: str) -> bool:
+    """Whether *schema* holds implementation detail rather than adoptable tables.
 
     ``scenario_canvas`` and ``ascn<scenario_pk>`` are internal model schemas:
     the scenario-facing objects are the views those models publish
     (``scenario_<slug>.scenario_<slug>_canvas`` / ``analysis__scenario_<pk>``).
+    ``sqlmesh__<schema>`` holds SQLMesh's fingerprinted physical tables and
+    ``pg_*`` Postgres' own catalogs.
     """
-    return schema in _EXCLUDED_SCHEMAS or schema.startswith(
+    return schema in _INTERNAL_SCHEMAS or schema.startswith(
         ("pg_", "sqlmesh__", "ascn")
     )
+
+
+def _is_excluded_schema(schema: str) -> bool:
+    """Whether *schema* holds objects that must not appear in the table catalog.
+
+    The data catalog additionally hides ``public`` — Django's own tables and the
+    legacy ``public.base_canvas`` live there, and neither is a source a layer
+    should be importable from. A base canvas is not scoped that way: see
+    ``list_base_canvas_candidates``.
+    """
+    return schema == "public" or _is_internal_schema(schema)
 
 
 def list_sqlmesh_tables() -> list[SqlmeshTableInfo]:
@@ -552,31 +597,154 @@ def _required_base_canvas_columns() -> frozenset[str]:
     return frozenset(BaseCanvasSchema.COLUMN_NAMES)
 
 
-def list_base_canvas_candidates() -> list[SqlmeshTableInfo]:
-    """Return sqlmesh tables/views that contain every required base-canvas column.
+# ``information_schema.columns.data_type`` values per requirement below. A
+# numeric ballpark rather than the schema's exact declared type: a base canvas
+# that measures its areas as ``numeric`` or its counts as ``integer`` is as
+# usable as one using ``double precision``/``bigint``.
+_NUMERIC_DATA_TYPES = frozenset(
+    {"smallint", "integer", "bigint", "numeric", "real", "double precision"}
+)
+_TEXT_DATA_TYPES = frozenset({"character varying", "character", "text"})
+_GEOMETRY_UDT_NAMES = frozenset({"geometry", "geography"})
 
-    A table qualifies as a base canvas candidate when it already has all of
-    ``BaseCanvasSchema.COLUMN_NAMES`` (e.g. sqlmesh's own
-    ``base_canvas_reconciled`` models) — no further ETL/allocation is needed,
-    the table can be adopted as-is.
+
+def _column_type_requirement(column: str) -> str:
+    """The type family *column* has to carry in a table a workspace adopts.
+
+    ``"geometry"`` or ``"text"`` for the columns that need one, ``"numeric"``
+    for the rest that do, and ``"any"`` for the ones the canvas view passes
+    through verbatim.
+
+    The constraint comes from the canvas view, not from the schema's declared
+    types: it COALESCEs every *paintable* column against its own
+    ``PaintedCanvas`` value — ``painted_value`` (double precision) for the
+    numeric ones and ``painted_text_value`` (text) for the text ones
+    (``built_form_key``) — so a number stored as text there does not make the
+    view wrong, it makes it fail to compile ("COALESCE types double precision
+    and text cannot be matched"), after the base table has already been saved
+    on the workspace. ``geometry`` is unioned with the geometry a
+    ``ParcelGeometryEdit`` carries, which is likewise not a type a text column
+    can satisfy.
+    """
+    if column == "geometry":
+        return "geometry"
+    if column in BaseCanvasSchema.TEXT_COLUMNS:
+        return "text"
+    if column in BaseCanvasSchema.PAINTABLE_COLUMNS:
+        return "numeric"
+    return "any"
+
+
+def _satisfies_type_contract(column_types: dict[str, tuple[str, str]]) -> bool:
+    """Whether every required column's type satisfies ``_column_type_requirement``.
+
+    *column_types* maps column name -> ``(data_type, udt_name)`` as
+    ``information_schema.columns`` reports them.
+    """
+    for column, (data_type, udt_name) in column_types.items():
+        requirement = _column_type_requirement(column)
+        if requirement == "geometry" and udt_name not in _GEOMETRY_UDT_NAMES:
+            return False
+        if requirement == "text" and data_type not in _TEXT_DATA_TYPES:
+            return False
+        if requirement == "numeric" and data_type not in _NUMERIC_DATA_TYPES:
+            return False
+    return True
+
+
+def _adoptable_tables() -> list[tuple[str, str]]:
+    """Every ``(schema, table)`` a workspace could adopt as its base canvas.
+
+    Any schema but the internal ones (see ``_is_internal_schema``) — a base
+    canvas need not be a SQLMesh model, so ``public`` is included: that is where
+    the legacy shared ``public.base_canvas`` and every table a user imports into
+    a workspace whose ``db_schema`` is ``public`` live.
+    """
+    with connection.cursor() as cursor:
+        cursor.execute("SELECT table_schema, table_name FROM information_schema.tables")
+        return [
+            (schema, table)
+            for schema, table in cursor.fetchall()
+            if not _is_internal_schema(schema)
+        ]
+
+
+def _required_column_types() -> dict[tuple[str, str], dict[str, tuple[str, str]]]:
+    """``(schema, table)`` -> ``{required column: (data_type, udt_name)}``.
+
+    One catalog read for the whole database, filtered to the columns the
+    base-canvas contract names.
+    """
+    required = _required_base_canvas_columns()
+    with connection.cursor() as cursor:
+        cursor.execute(
+            "SELECT table_schema, table_name, column_name, data_type, udt_name "
+            "FROM information_schema.columns"
+        )
+        rows = cursor.fetchall()
+
+    columns_by_table: dict[tuple[str, str], dict[str, tuple[str, str]]] = {}
+    for schema, table, column, data_type, udt_name in rows:
+        if column in required:
+            columns_by_table.setdefault((schema, table), {})[column] = (
+                data_type,
+                udt_name,
+            )
+    return columns_by_table
+
+
+@dataclass(frozen=True)
+class BaseCanvasCandidate:
+    """One loaded table a workspace can adopt as its base canvas."""
+
+    schema: str
+    table: str
+    is_sqlmesh_model: bool
+
+    @property
+    def qualified(self) -> str:
+        return f"{self.schema}.{self.table}"
+
+
+def list_base_canvas_candidates() -> list[BaseCanvasCandidate]:
+    """Return every loaded table that carries the base-canvas columns and types.
+
+    The contract a base canvas has to satisfy is its columns — every name in
+    ``BaseCanvasSchema.COLUMN_NAMES``, at the types the canvas views need (see
+    ``_column_type_requirement``). That is what the canvas views, the paint
+    surfaces and the analysis models read, so a table that only half satisfies
+    it is left out rather than repaired: the alternative is a plan that fails
+    after the table has already been saved on the workspace.
+
+    Candidates come from the whole database, not just SQLMesh's schemas: an
+    imported shapefile or the ETL pipeline's ``public.base_canvas`` satisfies
+    the contract exactly as a model's view does. ``is_sqlmesh_model`` says which
+    of the two it is, so the picker can tell them apart, and the plan that binds
+    the table reads it as an external table rather than as a model when it is
+    not (see ``macros/scenario_canvas_blueprints.is_sqlmesh_base``).
+
+    A blueprint-generated model's own table is not offered (its schema is
+    internal): the published view is the object callers see, and offering the
+    model back would let a workspace base itself on its own derivative.
     """
     required = _required_base_canvas_columns()
     if not required:
         return []
 
-    with connection.cursor() as cursor:
-        cursor.execute(
-            "SELECT table_schema, table_name, column_name "
-            "FROM information_schema.columns"
+    columns_by_table = _required_column_types()
+    model_backed = _model_backed_tables()
+    candidates: list[BaseCanvasCandidate] = []
+    for schema, table in sorted(_adoptable_tables()):
+        column_types = columns_by_table.get((schema, table), {})
+        if not required.issubset(column_types):
+            continue
+        if not _satisfies_type_contract(column_types):
+            continue
+        candidates.append(
+            BaseCanvasCandidate(
+                schema=schema,
+                table=table,
+                is_sqlmesh_model=(schema, table) in model_backed,
+            )
         )
-        rows = cursor.fetchall()
-
-    columns_by_table: dict[tuple[str, str], set[str]] = {}
-    for schema, table, column in rows:
-        columns_by_table.setdefault((schema, table), set()).add(column)
-
-    return [
-        info
-        for info in list_sqlmesh_tables()
-        if required.issubset(columns_by_table.get((info.schema, info.table), set()))
-    ]
+    return candidates

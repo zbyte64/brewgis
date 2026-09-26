@@ -1,6 +1,15 @@
-import logging
+"""Upload a GIS file into a workspace's schema.
+
+A file that already carries every base-canvas column is written at the types
+the base-canvas contract needs (see ``base_canvas_dtypes``); anything else is
+written as the file typed it.
+"""
+
+from __future__ import annotations
+
 import os
-from io import BufferedReader
+from typing import TYPE_CHECKING
+from typing import Any
 from typing import cast
 
 import geopandas
@@ -15,13 +24,16 @@ from django.utils.decorators import method_decorator
 from django.views.generic.edit import FormView
 
 from brewgis.workspace.models import Workspace
+from brewgis.workspace.services._db import BigInteger
+from brewgis.workspace.services._db import Float
+from brewgis.workspace.services._db import Integer
+from brewgis.workspace.services._db import Text
 from brewgis.workspace.services._db import get_engine
-from brewgis.workspace.services.column_inspector import inspect_table
-from brewgis.workspace.services.staging_model import write_base_canvas_stub
-from brewgis.workspace.services.staging_model import write_parcel_staging
+from brewgis.workspace.services.base_canvas_schema import BaseCanvasSchema
 from brewgis.workspace.views.built_forms import HtmxResponseMixin
 
-logger = logging.getLogger(__name__)
+if TYPE_CHECKING:
+    from io import BufferedReader
 
 
 class ImportGISFileForm(forms.Form):
@@ -71,6 +83,50 @@ class ImportGISFileForm(forms.Form):
         return cast("forms.FileField", file)
 
 
+def _postgis_type(pg_type: str) -> Any:
+    """Map a ``BaseCanvasSchema`` pg_type name to the type to declare on ingest."""
+    upper = pg_type.upper()
+    if "CHAR" in upper or "TEXT" in upper:
+        return Text
+    if "BIGINT" in upper or "SERIAL" in upper:
+        return BigInteger
+    if "INTEGER" in upper:
+        return Integer
+    return Float
+
+
+def base_canvas_dtypes(frame: geopandas.GeoDataFrame) -> dict[str, Any]:
+    """Column types to declare when *frame* is an uploaded base canvas.
+
+    The base-canvas contract (every ``BaseCanvasSchema.COLUMN_NAMES`` column, at
+    the types the canvas views need) is checked against the database, not the
+    file — so a file that carries the right *columns* has to land with the right
+    *types* or the table it produces is not adoptable at all. What a file's own
+    typing is worth varies by format: GeoJSON has no column types, so a column
+    that is empty in every row reads back as an object column and would land as
+    ``text`` — in a column the paint surfaces COALESCE against a double
+    precision value (see ``sqlmesh_tables._column_type_requirement``).
+
+    Returns an empty mapping for a frame that is not base-canvas-shaped, leaving
+    an ordinary upload's own typing untouched. ``geometry`` is deliberately left
+    out: ``to_postgis`` writes that column's declaration itself, from the
+    frame's CRS and geometry type.
+    """
+    required = set(BaseCanvasSchema.COLUMN_NAMES)
+    if not required.issubset({str(column).lower() for column in frame.columns}):
+        return {}
+
+    dtypes: dict[str, Any] = {}
+    for column in frame.columns:
+        name = str(column).lower()
+        if name == "geometry" or name not in required:
+            continue
+        column_def = BaseCanvasSchema.get(name)
+        if column_def is not None:
+            dtypes[column] = _postgis_type(column_def.pg_type)
+    return dtypes
+
+
 def read_gis_file_into_table(
     file_obj: BufferedReader, schema: str, table_name: str
 ) -> None:
@@ -79,31 +135,9 @@ def read_gis_file_into_table(
     if settings.TILE_SERVER_BACKEND == "tipg":
         df.columns = map(str.lower, df.columns)
     con = get_engine()
-    df.to_postgis(table_name, con, schema, chunksize=50000)
-    # Phase 1c: generate dbt staging models for the imported table
-    try:
-        info = inspect_table(schema, table_name)
-        if info is not None and info.id_column and info.has_geom:
-            write_parcel_staging(schema, table_name, info)
-            write_base_canvas_stub(schema, table_name, info)
-            logger.info(
-                "Generated staging models for %s.%s",
-                schema,
-                table_name,
-            )
-        else:
-            logger.warning(
-                "Skipping staging model generation for %s.%s: "
-                "missing ID column or geometry",
-                schema,
-                table_name,
-            )
-    except Exception:
-        logger.exception(
-            "Failed to generate staging models for %s.%s",
-            schema,
-            table_name,
-        )
+    df.to_postgis(
+        table_name, con, schema, chunksize=50000, dtype=base_canvas_dtypes(df)
+    )
 
 
 @method_decorator(user_passes_test(lambda u: u.is_authenticated), name="dispatch")
