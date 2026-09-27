@@ -82,10 +82,13 @@ MODEL (
 -- Regressor predictions are NOT joined here (that would create a cycle:
 -- the regressors read their feature matrix FROM this model). Instead the
 -- regressor columns are populated by the region regressors themselves and
--- joined at the comparison_dasymetric / du_estimation stage. Adapters that
--- have no data source (Fresno sales, building sqft, authoritative area,
--- highway/path density) yield zero rows; the LEFT JOINs + COALESCE fall
--- back to lot-size-based weights.
+-- joined at the comparison_dasymetric / du_estimation stage.
+--
+-- Every adapter is blueprinted per region and LEFT JOINed, so an adapter whose
+-- source is empty yields zero rows and COALESCE falls back to lot-size-based
+-- weights. Fresno's assessor sales adapter is the one empty source: its
+-- Overture building area, intersection densities, ResNet PCA and authoritative
+-- areas are all populated, so Fresno parcels carry real features, not zeros.
 
 WITH parcel_features AS (
     SELECT

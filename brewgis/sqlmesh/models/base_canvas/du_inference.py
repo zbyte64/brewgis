@@ -9,9 +9,9 @@ cache and predicts per-parcel DU subtype breakdown for the region.
   a hard stop (run compare_sacog_basemap first).
 
 Features are read uniformly from ``@{region}.parcel_dasymetric_weights``; the
-predicted du-per-square-foot ratios are scaled back to dwelling units with the
-per-type ``bldg_sqft_*`` that ``@{region}.sqft_inference`` predicts (the region
-building adapters carry no per-type building area).
+predicted ratios are dwelling units per square foot of Overture building area
+(``total_footprint_sqft``, footprint x levels) and are scaled back by that same
+observed column.
 No training logic, no region branching — only data availability differs.
 """
 
@@ -35,7 +35,7 @@ from brewgis.sqlmesh.models.python._feature_cols import _RESNET_PC_COLS
 from brewgis.sqlmesh.models.python._feature_cols import LDC_FALLBACK
 from brewgis.sqlmesh.models.python._feature_cols import LDC_PREFIX
 from brewgis.sqlmesh.models.python._feature_cols import fitted_feature_names
-from brewgis.sqlmesh.models.python.parcel_du_regressor import DU_TARGET_SQFT
+from brewgis.sqlmesh.models.python.parcel_du_regressor import DU_RATIO_DENOMINATOR
 from brewgis.sqlmesh.models.python.parcel_du_regressor import DU_TARGETS
 from brewgis.sqlmesh.models.python.parcel_du_regressor import NUMERIC_FEATURES
 
@@ -80,34 +80,28 @@ _TRAIN_MODEL = {
 }
 
 
-def _base_query(dw_table: str, sqft_table: str) -> str:
-    """Build the streaming query: dw features plus the per-type building stock.
+def _base_query(dw_table: str) -> str:
+    """Build the streaming query: dw features plus the ratio denominator.
 
-    The stock columns come from ``@{region}.sqft_inference``, because the region
-    building adapters carry the 4-way split and never the per-type one. They are
-    not model features — they only scale the predicted du-per-square-foot ratios
-    back to dwelling units.
+    ``total_footprint_sqft`` is Overture building area (footprint x levels) —
+    the same quantity the trainer divides by, so the served prediction is that
+    ratio times an observed per-parcel number.
     """
     pc_cols_sql = ", ".join(f"COALESCE({c}, 0.0) AS {c}" for c in _RESNET_PC_COLS)
-    sqft_sql = ", ".join(
-        f"COALESCE(sq.{c}, 0) AS {c}" for c in sorted(set(DU_TARGET_SQFT.values()))
-    )
     return f"""
         SELECT
             dw.apn,
             dw.lot_size_acres,
             COALESCE(dw.land_development_category, '{LDC_FALLBACK}') AS land_development_category,
-            COALESCE(dw.total_footprint_sqft, 0) AS total_footprint_sqft,
+            COALESCE(dw.{DU_RATIO_DENOMINATOR}, 0) AS {DU_RATIO_DENOMINATOR},
             COALESCE(dw.building_count, 0) AS building_count,
             COALESCE(dw.footprint_ratio, 0) AS footprint_ratio,
             COALESCE(dw.max_levels, 1) AS max_levels,
             COALESCE(dw.intersection_density, 0) AS intersection_density,
             COALESCE(dw.highway_intersection_density, 0) AS highway_intersection_density,
             COALESCE(dw.path_intersection_density, 0) AS path_intersection_density,
-            {pc_cols_sql},
-            {sqft_sql}
+            {pc_cols_sql}
         FROM {dw_table} dw
-        LEFT JOIN {sqft_table} sq ON dw.apn = sq.apn
         ORDER BY dw.apn
     """
 
@@ -139,9 +133,6 @@ def _base_query(dw_table: str, sqft_table: str) -> str:
     ],
     depends_on=[
         "brewgis.@{region}.parcel_dasymetric_weights",
-        # The model predicts du per square foot of building stock; sqft_inference
-        # is the only per-type bldg_sqft_* the regions produce.
-        "brewgis.@{region}.sqft_inference",
         "@IF(@train_model != '', brewgis.assessor.parcel_du_regressor, brewgis.@{region}.parcel_shim)",
     ],
     blueprints=[{"region": r, "train_model": _TRAIN_MODEL[r]} for r in REGIONS],
@@ -175,8 +166,7 @@ def execute(
 
     # --- 3. Stream inference data from @{region}.parcel_dasymetric_weights --
     dw_table = context.resolve_table(f"brewgis.{region}.parcel_dasymetric_weights")
-    sqft_table = context.resolve_table(f"brewgis.{region}.sqft_inference")
-    base_query = _base_query(dw_table, sqft_table)
+    base_query = _base_query(dw_table)
 
     def _stream_region_data(
         ctx: ExecutionContext,
@@ -229,12 +219,11 @@ def execute(
     results_parts: list[pd.DataFrame] = []
     for batch, apns, y_batch, x_batch in _stream_region_data(context):
         partial = apns
-        # The model predicts du per square foot of building stock; scale each
-        # subtype by the stock it is per square foot of.
+        # The model predicts dwelling units per square foot of Overture building
+        # area; scale by that observed area to get dwelling units.
         for i, target in enumerate(DU_TARGETS):
-            # du_detsf_sl => bldg_sqft_detsf_sl, du_mf2to4/du_mf5p => bldg_sqft_mf
             partial[target] = np.round(
-                np.maximum(y_batch[:, i], 0.0) * batch[DU_TARGET_SQFT[target]]
+                np.maximum(y_batch[:, i], 0.0) * batch[DU_RATIO_DENOMINATOR]
             ).astype(np.float32)
         results_parts.append(partial)
 

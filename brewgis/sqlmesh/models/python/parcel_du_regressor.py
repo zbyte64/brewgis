@@ -2,7 +2,8 @@
 
 Trains a multi-output LightGBM regressor on reference base canvas data to predict
 per-parcel dwelling unit breakdown (du_detsf_sl, du_detsf_ll, du_attsf,
-du_mf2to4, du_mf5p) from assessor features. du/sqft ratio, not actual du
+du_mf2to4, du_mf5p) from assessor features, as dwelling units per square foot of
+Overture building area — not actual dwelling units.
 """
 
 from __future__ import annotations
@@ -42,20 +43,15 @@ DU_TARGETS = [
     "du_mf5p",
 ]
 
-# Building stock each DU target is expressed per square foot of. The reference
-# canvas splits multi-family building area only as ``bldg_sqft_mf``, so both
-# multi-family DU subtypes share that denominator — ``du_mf2to4``/``du_mf5p``
-# have no matching ``bldg_sqft_*`` column of their own. Serving multiplies the
-# predicted ratio back by the same-named column, which only ``sqft_inference``
-# produces: the region building adapters carry the 4-way split
-# (residential/commercial/industrial/other), never the per-type one.
-DU_TARGET_SQFT = {
-    "du_detsf_sl": "bldg_sqft_detsf_sl",
-    "du_detsf_ll": "bldg_sqft_detsf_ll",
-    "du_attsf": "bldg_sqft_attsf",
-    "du_mf2to4": "bldg_sqft_mf",
-    "du_mf5p": "bldg_sqft_mf",
-}
+# Every DU target is dwelling units per square foot of Overture building area
+# (footprint x levels), the single per-parcel stock the regions actually
+# observe: the trainer divides by it and serving multiplies by the same column
+# from the dasymetric weights. Per-subtype stocks are not used — the reference
+# canvas splits multi-family area only as ``bldg_sqft_mf``, and the region
+# adapters carry no per-type area at all, so a per-subtype denominator could
+# never be reconstructed at serving time. This mirrors the SQFT regressor,
+# whose targets are also shares of this same footprint.
+DU_RATIO_DENOMINATOR = "total_footprint_sqft"
 
 NUMERIC_FEATURES = [
     "lot_size_acres",
@@ -104,12 +100,11 @@ def _fetch_du_training_data(context: ExecutionContext) -> pd.DataFrame:
         f"COALESCE(rf.{c}, 0.0) AS {c}" for c in _RESNET_PC_COLS
     )
 
-    # Divide by the square footage of the building stock the subtype occupies.
-    # du_detsf_sl => bldg_sqft_detsf_sl, du_mf2to4/du_mf5p => bldg_sqft_mf.
-    # NULLIF guards the parcels with no building stock (the ratio is 0 there),
-    # matching the employment-ratio trainer.
+    # Dwelling units per square foot of Overture building area. NULLIF guards
+    # parcels with no observed building area (the ratio is 0 there), matching
+    # the SQFT trainer and the employment-ratio trainer.
     target_col = ",\n\t".join(
-        f"COALESCE(ref.{t} / NULLIF(ref.{DU_TARGET_SQFT[t]}, 0), 0) AS {t}"
+        f"COALESCE(ref.{t} / NULLIF(bs.{DU_RATIO_DENOMINATOR}, 0), 0) AS {t}"
         for t in DU_TARGETS
     )
 
