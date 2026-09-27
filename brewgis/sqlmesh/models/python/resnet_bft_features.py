@@ -326,16 +326,7 @@ def execute(  # noqa: C901, PLR0912, PLR0915
     cog_hash = _compute_cog_hash(cog_urls)
     embeddings_key = _embeddings_cache_key(cog_hash, gdf_4326["parcel_id"])
 
-    # Step 2.5: Download COG tiles to local cache for fast raster window reads
-    cog_paths = download_cog_tiles(cog_urls)
-
-    # Log COG cache directory size
-    cog_files = list(_get_cache_root().glob("cog/*.tif"))
-    if cog_files:
-        total_mb = sum(f.stat().st_size for f in cog_files) / 1_048_576
-        logger.info("COG cache: %d files, %.0f MB", len(cog_files), total_mb)
-
-    # Step 3: Extract chips + ResNet forward pass (or load cached)
+    # Step 2.5: Extract chips + ResNet forward pass (or load cached)
     cached = _load_cached_embeddings(embeddings_key)
 
     def _dedup_embeddings(
@@ -361,6 +352,15 @@ def execute(  # noqa: C901, PLR0912, PLR0915
             embeddings_np.shape,
         )
     else:
+        # Download the resolved tiles only now — a cached embeddings hit needs
+        # no imagery on disk, and each tile is several hundred megabytes.
+        cog_paths = download_cog_tiles(cog_urls)
+
+        cog_files = list(_get_cache_root().glob("cog/*.tif"))
+        if cog_files:
+            total_mb = sum(f.stat().st_size for f in cog_files) / 1_048_576
+            logger.info("COG cache: %d files, %.0f MB", len(cog_files), total_mb)
+
         device = torch.device("cpu")
         backbone = _load_resnet_backbone(device)
         all_embeddings: list[np.ndarray] = []

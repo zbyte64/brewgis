@@ -2,7 +2,9 @@
 
 Resolves NAIP 60cm RGBN imagery COG URLs by discovering available tiles
 directly from Azure blob storage, using the official USDA NAIP quad
-shapefile to identify quads overlapping the target bounding box.
+shapefile to identify the individual quarter-quad tiles overlapping the
+target bounding box — a base-quad listing holds every tile of that quad,
+only a small fraction of which the bbox needs.
 
 Shapefile format: ca_naip22qq (CA NAIP 2022 quarter-quad grid), available
 from the USDA Aerial Photography Field Office. Each record corresponds to
@@ -36,9 +38,21 @@ _NAIP_YEAR = 2022
 _QUAD_SHAPEFILE = _CACHE_ROOT / "ca_naip22qq"
 _AZURE_LIST_TIMEOUT = 15
 
-# Compiled regex to extract base quad (first 5 digits) from NAIP tile filename
-# e.g. m_3812118_nw_10_060_20220709.tif → 38121
-_RE_TILE_QUAD = re.compile(r"m_(\d{5})\d\d_\w+_\d+_\d+_\d[\d_]*\.tif$")
+# NAIP tile filenames — the first 12 characters name the quarter-quad
+# (``m_<7-digit tile id>_<quadrant>``), which stays stable across acquisition
+# dates. The USDA shapefile spells a tile ``m_3812118_nw_10_060_20220709_20220909.tif``
+# while the Azure blob drops the second date, so one pattern matches both.
+_RE_TILE_NAME = re.compile(r"^(?P<stem>m_\d{7}_[a-z]{2})_\d+_\d+_\d[\d_]*\.tif$")
+
+
+def _tile_stem(filename: str) -> str | None:
+    """Quarter-quad tile stem of a NAIP tile filename, or None if not one.
+
+    Returns:
+        ``m_3812118_nw`` for a NAIP quarter-quad tile filename, else ``None``.
+    """
+    match = _RE_TILE_NAME.match(filename)
+    return match["stem"] if match else None
 
 
 def _load_quad_shapefile() -> gpd.GeoDataFrame:
@@ -54,52 +68,72 @@ def _load_quad_shapefile() -> gpd.GeoDataFrame:
     return gdf
 
 
-def _overlapping_base_quads(
+def _overlapping_tile_stems(
     bbox: tuple[float, float, float, float],
-) -> set[str]:
-    """Find NAIP base quads whose quarter-quad tiles overlap ``bbox``.
+) -> dict[str, set[str]]:
+    """Find the NAIP quarter-quad tiles whose footprint intersects ``bbox``.
 
-    Uses the USDA shapefile to perform a spatial filter, then extracts
-    the base quad (first 5 digits of the tile filename).
+    Uses the USDA shapefile to perform a spatial filter, then keeps each
+    surviving tile's stem, grouped by the base quad its blob lives under.
 
     Returns:
-        Set of 5-digit base quad strings (e.g. ``{"38121"}``).
+        Mapping of 5-digit base quad to the set of tile stems inside it that
+        overlap ``bbox`` (e.g. ``{"38121": {"m_3812118_nw"}}``).
     """
     quads = _load_quad_shapefile()
     search_box = box(*bbox)
-    mask = quads.intersects(search_box)
-    overlapping = quads[mask]
+    overlapping = quads[quads.intersects(search_box)]
 
-    base_quads: set[str] = set()
+    stems: dict[str, set[str]] = {}
     for fn in overlapping["FileName"]:
-        m = _RE_TILE_QUAD.match(str(fn))
-        if m:
-            base_quads.add(m.group(1))
-    return base_quads
+        stem = _tile_stem(str(fn))
+        if stem is None:
+            continue
+        stems.setdefault(stem[2:7], set()).add(stem)
+    return stems
 
 
 def _list_quad_tiles(base_quad: str, year: int) -> list[str]:
-    """List NAIP .tif COG URLs for one USGS base quad in a specific year."""
+    """List NAIP .tif COG URLs for one USGS base quad in a specific year.
+
+    Follows the listing's ``NextMarker`` so a quad directory larger than one
+    page comes back in full rather than silently truncated.
+
+    Returns:
+        Every ``.tif`` blob URL under the quad, in listing order.
+    """
     prefix = f"v002/ca/{year}/ca_060cm_{year}/{base_quad}/"
-    list_url = (
-        f"{_AZURE_NAIP_BASE}?restype=container&comp=list"
-        f"&prefix={prefix}&maxresults=5000"
-    )
-    try:
-        resp = requests.get(list_url, timeout=_AZURE_LIST_TIMEOUT)
+    urls: list[str] = []
+    marker: str | None = None
+    while True:
+        params: dict[str, str | int] = {
+            "restype": "container",
+            "comp": "list",
+            "prefix": prefix,
+            "maxresults": 5000,
+        }
+        if marker:
+            params["marker"] = marker
+        resp = requests.get(
+            _AZURE_NAIP_BASE, params=params, timeout=_AZURE_LIST_TIMEOUT
+        )
         if resp.status_code != 200:  # noqa: PLR2004
-            return []
+            msg = (
+                f"Azure blob listing failed for quad {base_quad}: "
+                f"HTTP {resp.status_code}"
+            )
+            raise RuntimeError(msg)
         root = ET.fromstring(resp.content)  # noqa: S314
-        urls: list[str] = []
         for blob in root.findall(".//Blob"):
-            name = blob.find("Name").text
-            if not name.endswith(".tif"):
-                continue
-            urls.append(f"{_AZURE_NAIP_BASE}/{name}")
-    except Exception:  # noqa: BLE001
-        return []
-    else:
-        return urls
+            name_blob = blob.find("Name")
+            name = name_blob.text if name_blob is not None else None
+            if name and name.endswith(".tif"):
+                urls.append(f"{_AZURE_NAIP_BASE}/{name}")
+
+        next_marker = root.find(".//NextMarker")
+        marker = next_marker.text if next_marker is not None else None
+        if not marker:
+            return urls
 
 
 def _discover_naip_tiles_from_azure(
@@ -109,32 +143,51 @@ def _discover_naip_tiles_from_azure(
     """Discover NAIP COG URLs from Azure blob storage for the given bbox.
 
     Uses the official USDA NAIP quarter-quad shapefile to identify which
-    USGS quads overlap the bounding box, then lists available .tif files
-    for each quad on Azure blob storage.
+    tiles overlap the bounding box, then keeps only those tiles out of each
+    base quad's Azure listing — a quad directory holds every tile of the
+    quad (all quadrants, all acquisition dates), and a given bbox touches
+    only a fraction of them.
 
     Returns:
         List of COG URLs for rasterio VSICurl access.
     """
-    base_quads = _overlapping_base_quads(bbox)
-    if not base_quads:
+    wanted = _overlapping_tile_stems(bbox)
+    if not wanted:
         return []
 
-    logger.info("Azure discovery: %d base quad(s) overlap bbox", len(base_quads))
+    logger.info("Azure discovery: %d base quad(s) overlap bbox", len(wanted))
 
     all_urls: list[str] = []
     seen: set[str] = set()
-    for quad in sorted(base_quads):
-        urls = _list_quad_tiles(quad, year)
-        for url in urls:
-            if url not in seen:
-                seen.add(url)
-                all_urls.append(url)
-        logger.info("  Quad %s: %d tile(s)", quad, len(urls))
+    for quad in sorted(wanted):
+        quad_stems = wanted[quad]
+        matched: set[str] = set()
+        for url in _list_quad_tiles(quad, year):
+            stem = _tile_stem(url.rsplit("/", 1)[-1])
+            if stem is None or stem not in quad_stems or url in seen:
+                continue
+            seen.add(url)
+            matched.add(stem)
+            all_urls.append(url)
+        logger.info(
+            "  Quad %s: %d of %d overlapping tile(s) listed",
+            quad,
+            len(matched),
+            len(quad_stems),
+        )
+        missing = quad_stems - matched
+        if missing:
+            logger.warning(
+                "  Quad %s: %d overlapping tile(s) absent from Azure listing: %s",
+                quad,
+                len(missing),
+                sorted(missing),
+            )
 
     logger.info(
         "Azure discovery: %d total COG URL(s) from %d quad(s)",
         len(all_urls),
-        len(base_quads),
+        len(wanted),
     )
     return all_urls
 
