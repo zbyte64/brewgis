@@ -108,11 +108,11 @@ def _fetch_sqft_training_data(context: ExecutionContext) -> pd.DataFrame:
     highway = context.resolve_table("brewgis.sacog.hwy_intersection_density")
     path = context.resolve_table("brewgis.sacog.path_intersection_density")
     features = context.resolve_table("brewgis.assessor.parcel_resnet_features")
-    cols = ", ".join(f"ref.{c}" for c in SQFT_TARGETS)
     total = "COALESCE(bs.total_footprint_sqft, 0)"
+    cols = ", ".join(f"(ref.{c} / {total}) as {c}" for c in SQFT_TARGETS)
 
     pc_cols_sql = ",\n            ".join(
-        f"COALESCE(rf.{c}, 0.0) / {total} AS {c}_ratio" for c in _RESNET_PC_COLS
+        f"COALESCE(rf.{c}, 0.0) AS {c}_ratio" for c in _RESNET_PC_COLS
     )
 
     return context.fetchdf(
