@@ -62,7 +62,7 @@ vida_buildings AS (
         vb.wgs84_geometry,
         NULL::geometry AS local_geometry,
         NULL::double precision AS height,
-        NULL::integer AS levels,
+        1::integer AS levels,
         NULL::text AS class,
         'vida' AS source,
         vb.bf_source,

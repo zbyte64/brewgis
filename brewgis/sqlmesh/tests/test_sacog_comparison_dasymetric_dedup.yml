@@ -75,7 +75,7 @@ test_apn_shared_across_two_parcels_du_proportional:
         pop_dasym_weight: DOUBLE
         hh_dasym_weight: DOUBLE
         hh: DOUBLE
-    brewgis.sacog.sqft_regressor:
+    brewgis.sacog.sqft_inference:
       rows: []
       columns:
         apn: TEXT
@@ -95,7 +95,7 @@ test_apn_shared_across_two_parcels_du_proportional:
         bldg_sqft_transport_warehousing: DOUBLE
         bldg_sqft_wholesale: DOUBLE
         bldg_sqft_total: DOUBLE
-    brewgis.sacog.emp_ratios_regressor:
+    brewgis.sacog.emp_ratios_inference:
       rows: []
       columns:
         apn: TEXT
@@ -191,7 +191,7 @@ test_single_apn_no_duplication_passes_through:
         pop_dasym_weight: DOUBLE
         hh_dasym_weight: DOUBLE
         hh: DOUBLE
-    brewgis.sacog.sqft_regressor:
+    brewgis.sacog.sqft_inference:
       rows: []
       columns:
         apn: TEXT
@@ -211,7 +211,7 @@ test_single_apn_no_duplication_passes_through:
         bldg_sqft_transport_warehousing: DOUBLE
         bldg_sqft_wholesale: DOUBLE
         bldg_sqft_total: DOUBLE
-    brewgis.sacog.emp_ratios_regressor:
+    brewgis.sacog.emp_ratios_inference:
       rows: []
       columns:
         apn: TEXT

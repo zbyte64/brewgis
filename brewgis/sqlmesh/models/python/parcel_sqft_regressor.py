@@ -2,9 +2,7 @@
 
 Trains a multi-output LightGBM regressor on reference base canvas data to predict
 per-parcel building square footage breakdown by type (15 bldg_sqft_* columns)
-from assessor features + predicted built_form_key.
-
-Replaces the heuristic building area formulas in base_canvas_combined.sql.
+from assessor features. Predicts ratios of square footage, not square footage itself
 """
 
 from __future__ import annotations
@@ -41,15 +39,29 @@ NUMERIC_FEATURES = [
     "intersection_density",
     "highway_intersection_density",
     "path_intersection_density",
+    # "land_development_category" is covered by one_hot
     "footprint_ratio",
     "building_count",
     "max_levels",
-    # CONSIDER: could be presented as a ratio
-    "residential_building_sqft",
-    "commercial_building_sqft",
-    "industrial_building_sqft",
-    "other_building_sqft",
     "total_footprint_sqft",
+]
+
+SQFT_TARGETS = [
+    "bldg_sqft_detsf_sl",
+    "bldg_sqft_detsf_ll",
+    "bldg_sqft_attsf",
+    "bldg_sqft_mf",
+    "bldg_sqft_retail_services",
+    "bldg_sqft_restaurant",
+    "bldg_sqft_accommodation",
+    "bldg_sqft_arts_entertainment",
+    "bldg_sqft_other_services",
+    "bldg_sqft_office_services",
+    "bldg_sqft_public_admin",
+    "bldg_sqft_education",
+    "bldg_sqft_medical_services",
+    "bldg_sqft_transport_warehousing",
+    "bldg_sqft_wholesale",
 ]
 
 LGBM_PARAMS: dict[str, Any] = {
@@ -96,27 +108,11 @@ def _fetch_sqft_training_data(context: ExecutionContext) -> pd.DataFrame:
     highway = context.resolve_table("brewgis.sacog.hwy_intersection_density")
     path = context.resolve_table("brewgis.sacog.path_intersection_density")
     features = context.resolve_table("brewgis.assessor.parcel_resnet_features")
-    sqft_cols = [
-        "bldg_sqft_detsf_sl",
-        "bldg_sqft_detsf_ll",
-        "bldg_sqft_attsf",
-        "bldg_sqft_mf",
-        "bldg_sqft_retail_services",
-        "bldg_sqft_restaurant",
-        "bldg_sqft_accommodation",
-        "bldg_sqft_arts_entertainment",
-        "bldg_sqft_other_services",
-        "bldg_sqft_office_services",
-        "bldg_sqft_public_admin",
-        "bldg_sqft_education",
-        "bldg_sqft_medical_services",
-        "bldg_sqft_transport_warehousing",
-        "bldg_sqft_wholesale",
-    ]
-    cols = ", ".join(f"ref.{c}" for c in sqft_cols)
+    cols = ", ".join(f"ref.{c}" for c in SQFT_TARGETS)
+    total = "COALESCE(bs.total_footprint_sqft, 0)"
 
     pc_cols_sql = ",\n            ".join(
-        f"COALESCE(rf.{c}, 0.0) AS {c}" for c in _RESNET_PC_COLS
+        f"COALESCE(rf.{c}, 0.0) / {total} AS {c}_ratio" for c in _RESNET_PC_COLS
     )
 
     return context.fetchdf(
@@ -125,12 +121,8 @@ def _fetch_sqft_training_data(context: ExecutionContext) -> pd.DataFrame:
             ap.apn,
             {cols},
             ref.built_form_key,
-            ap.lot_size_acres, ap.landuse, ap.zone,
-            COALESCE(ap.land_development_category, 'standard') AS land_development_category,
-            COALESCE(bs.residential_building_sqft, 0) AS residential_building_sqft,
-            COALESCE(bs.commercial_building_sqft, 0) AS commercial_building_sqft,
-            COALESCE(bs.industrial_building_sqft, 0) AS industrial_building_sqft,
-            COALESCE(bs.other_building_sqft, 0) AS other_building_sqft,
+            ap.lot_size_acres,
+            COALESCE(ap.land_development_category, '') AS land_development_category,
             COALESCE(bs.total_footprint_sqft, 0) AS total_footprint_sqft,
             COALESCE(bs.building_count, 0) AS building_count,
             COALESCE(bs.footprint_ratio, 0) AS footprint_ratio,
@@ -171,12 +163,8 @@ def _stream_sqft_inference_data(
     query = f"""
         SELECT DISTINCT ON (ap.apn)
             ap.apn,
-            ap.lot_size_acres, ap.landuse, ap.zone,
-            COALESCE(ap.land_development_category, 'standard') AS land_development_category,
-            COALESCE(bs.residential_building_sqft, 0) AS residential_building_sqft,
-            COALESCE(bs.commercial_building_sqft, 0) AS commercial_building_sqft,
-            COALESCE(bs.industrial_building_sqft, 0) AS industrial_building_sqft,
-            COALESCE(bs.other_building_sqft, 0) AS other_building_sqft,
+            ap.lot_size_acres,
+            COALESCE(ap.land_development_category, '') AS land_development_category,
             COALESCE(bs.total_footprint_sqft, 0) AS total_footprint_sqft,
             COALESCE(bs.building_count, 0) AS building_count,
             COALESCE(bs.footprint_ratio, 0) AS footprint_ratio,
@@ -203,16 +191,8 @@ def _stream_sqft_inference_data(
         offset += batch_size
 
 
-def _encode_one_hots(df, landuse_prefixes, zone_prefixes, ldev_cats=None):
-    landuse_oh = pd.get_dummies(df["landuse_prefix"], prefix="lu")
-    landuse_oh = landuse_oh.reindex(
-        columns=[f"lu_{p}" for p in landuse_prefixes], fill_value=0
-    )
-    zone_oh = pd.get_dummies(df["zone_prefix"], prefix="zone")
-    zone_oh = zone_oh.reindex(
-        columns=[f"zone_{p}" for p in zone_prefixes], fill_value=0
-    )
-    parts = [df, landuse_oh, zone_oh]
+def _encode_one_hots(df, ldev_cats=None):
+    parts = [df]
     if ldev_cats is not None:
         ldev_oh = pd.get_dummies(df["land_development_category"], prefix="ldc")
         ldev_oh = ldev_oh.reindex(columns=[f"ldc_{c}" for c in ldev_cats], fill_value=0)
@@ -220,18 +200,14 @@ def _encode_one_hots(df, landuse_prefixes, zone_prefixes, ldev_cats=None):
     return pd.concat(parts, axis=1)
 
 
-def _feature_matrix(df, landuse_prefixes, zone_prefixes, ldev_cats=None):
+def _feature_matrix(df, ldev_cats=None):
     df = df.copy()
-    df["landuse_prefix"] = df["landuse"].fillna("XX").str[:2]
-    df["zone_prefix"] = df["zone"].fillna("X").str[:1]
     df["building_count"] = np.clip(df["building_count"], 0, 50).astype(np.int32)
     df["max_levels"] = df["max_levels"].fillna(1).astype(np.int32)
     for col in NUMERIC_FEATURES:
         df[col] = df[col].astype(np.float32)
-    df = _encode_one_hots(df, landuse_prefixes, zone_prefixes, ldev_cats)
-    oh_cols = [f"lu_{p}" for p in landuse_prefixes] + [
-        f"zone_{p}" for p in zone_prefixes
-    ]
+    df = _encode_one_hots(df, ldev_cats)
+    oh_cols = []
     if ldev_cats is not None:
         oh_cols += [f"ldc_{c}" for c in ldev_cats]
     return df[NUMERIC_FEATURES + oh_cols + _RESNET_PC_COLS]
@@ -329,16 +305,9 @@ def execute(
         yield results
         return
 
-    train_df["landuse_prefix"] = train_df["landuse"].fillna("XX").str[:2]
-    train_df["zone_prefix"] = train_df["zone"].fillna("X").str[:1]
-
-    landuse_prefixes = sorted(
-        train_df["landuse_prefix"].value_counts().head(20).index.tolist()
-    )
-    zone_prefixes = sorted(train_df["zone_prefix"].unique().tolist())
     ldev_cats = sorted(train_df["land_development_category"].unique().tolist())
 
-    x_train = _feature_matrix(train_df, landuse_prefixes, zone_prefixes, ldev_cats)
+    x_train = _feature_matrix(train_df, ldev_cats)
     y_train = train_df[sqft_targets].to_numpy()
 
     # Train or load cached model (type-keyed: one cache namespace per regressor)
@@ -374,7 +343,7 @@ def execute(
     del y_train
 
     def _features(df: pd.DataFrame) -> pd.DataFrame:
-        return _feature_matrix(df, landuse_prefixes, zone_prefixes, ldev_cats)
+        return _feature_matrix(df, ldev_cats)
 
     results_parts: list[pd.DataFrame] = []
     for apns, y_batch in predict_in_batches(

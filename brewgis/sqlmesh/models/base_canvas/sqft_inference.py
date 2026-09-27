@@ -29,47 +29,16 @@ from sqlmesh.core.model.definition import ModelKindName
 from brewgis.sqlmesh.macros.region_blueprints import REGIONS
 from brewgis.sqlmesh.models.python._cache import load_latest_model
 from brewgis.sqlmesh.models.python._feature_cols import _RESNET_PC_COLS
-from brewgis.sqlmesh.models.python._predict import predict_in_batches
+from brewgis.sqlmesh.models.python.parcel_sqft_regressor import NUMERIC_FEATURES
+from brewgis.sqlmesh.models.python.parcel_sqft_regressor import SQFT_TARGETS
+from brewgis.sqlmesh.models.python.parcel_sqft_regressor import _encode_one_hots
 
 if TYPE_CHECKING:
     from sqlmesh.core.context import ExecutionContext
     from sqlmesh.utils.date import TimeLike
 
-SQFT_TARGETS = [
-    "bldg_sqft_detsf_sl",
-    "bldg_sqft_detsf_ll",
-    "bldg_sqft_attsf",
-    "bldg_sqft_mf",
-    "bldg_sqft_retail_services",
-    "bldg_sqft_restaurant",
-    "bldg_sqft_accommodation",
-    "bldg_sqft_arts_entertainment",
-    "bldg_sqft_other_services",
-    "bldg_sqft_office_services",
-    "bldg_sqft_public_admin",
-    "bldg_sqft_education",
-    "bldg_sqft_medical_services",
-    "bldg_sqft_transport_warehousing",
-    "bldg_sqft_wholesale",
-]
 
-NUMERIC_FEATURES = [
-    "lot_size_acres",
-    "intersection_density",
-    "highway_intersection_density",
-    "path_intersection_density",
-    "footprint_ratio",
-    "building_count",
-    "max_levels",
-    "residential_building_sqft",
-    "commercial_building_sqft",
-    "industrial_building_sqft",
-    "other_building_sqft",
-    "total_footprint_sqft",
-]
-
-
-def _load_model() -> tuple[Any, list[str]]:
+def _load_model():
     """Load the most recent trained LightGBM SQFT model from cache.
 
     Only ``sqft__*.pkl`` files are considered, so this regressor can never
@@ -106,54 +75,26 @@ def _get_model_expected_cols(model_obj: Any) -> list[str]:
     return model_obj.estimators_[0].booster_.feature_name()
 
 
-def _encode_one_hots(
-    df: pd.DataFrame,
-    landuse_prefixes: list[str],
-    zone_prefixes: list[str],
-    ldev_cats: list[str] | None = None,
-) -> pd.DataFrame:
-    """One-hot encode categorical features (no built_form_key encoding)."""
-    landuse_oh = pd.get_dummies(df["landuse_prefix"], prefix="lu")
-    landuse_oh = landuse_oh.reindex(
-        columns=[f"lu_{p}" for p in landuse_prefixes], fill_value=0
-    )
-    zone_oh = pd.get_dummies(df["zone_prefix"], prefix="zone")
-    zone_oh = zone_oh.reindex(
-        columns=[f"zone_{p}" for p in zone_prefixes], fill_value=0
-    )
-    parts = [df, landuse_oh, zone_oh]
-    if ldev_cats is not None:
-        ldev_oh = pd.get_dummies(df["land_development_category"], prefix="ldc")
-        ldev_oh = ldev_oh.reindex(columns=[f"ldc_{c}" for c in ldev_cats], fill_value=0)
-        parts.append(ldev_oh)
-    return pd.concat(parts, axis=1)
-
-
 def _build_feature_matrix(
     df: pd.DataFrame,
     expected_cols: list[str],
 ) -> pd.DataFrame:
     """Build feature matrix matching the SACOG-trained model's expected columns.
 
-    Regions without ``landuse``/``zone`` default to ``"XX"``/``"X"``. The
-    one-hot encoder maps them to a "missing" category. ``reindex`` ensures the
+    ``reindex`` ensures the
     output column order exactly matches what the model expects; any unexpected
     one-hot categories are silently zeroed.
     """
     df = df.copy()
-    df["landuse_prefix"] = df["landuse"].fillna("XX").str[:2]
-    df["zone_prefix"] = df["zone"].fillna("X").str[:1]
     df["building_count"] = np.clip(df["building_count"], 0, 50).astype(np.int32)
     df["max_levels"] = df["max_levels"].fillna(1).astype(np.int32)
     for col in NUMERIC_FEATURES:
         df[col] = df[col].astype(np.float32)
 
     # Derive one-hot category sets from expected column names
-    lu_prefixes = sorted({c[3:] for c in expected_cols if c.startswith("lu_")})
-    zone_prefixes = sorted({c[5:] for c in expected_cols if c.startswith("zone_")})
     ldc_cats = sorted({c[4:] for c in expected_cols if c.startswith("ldc_")}) or None
 
-    df = _encode_one_hots(df, lu_prefixes, zone_prefixes, ldc_cats)
+    df = _encode_one_hots(df, ldc_cats)
 
     # Reindex to match exactly; missing cols zero-filled
     return df.reindex(columns=expected_cols, fill_value=0.0).astype(np.float32)
@@ -166,7 +107,7 @@ _TRAIN_MODEL = {
 
 
 @model(
-    "brewgis.@{region}.sqft_regressor",
+    "brewgis.@{region}.sqft_inference",
     kind={"name": ModelKindName.FULL},
     description="LightGBM prediction of building floor area by type for parcels, from the SACOG-trained cache.",
     column_descriptions={
@@ -243,9 +184,7 @@ def execute(
     query = f"""
         SELECT
             dw.apn,
-            dw.landuse AS landuse,
-            dw.zone AS zone,
-            COALESCE(dw.land_development_category, 'urban')
+            COALESCE(dw.land_development_category, '')
                 AS land_development_category,
             COALESCE(dw.lot_size_acres, 0)::double precision
                 AS lot_size_acres,
@@ -259,14 +198,6 @@ def execute(
                 AS footprint_ratio,
             COALESCE(dw.building_count, 0)::integer AS building_count,
             COALESCE(dw.max_levels, 1)::integer AS max_levels,
-            COALESCE(dw.residential_building_sqft, 0)::double precision
-                AS residential_building_sqft,
-            COALESCE(dw.commercial_building_sqft, 0)::double precision
-                AS commercial_building_sqft,
-            COALESCE(dw.industrial_building_sqft, 0)::double precision
-                AS industrial_building_sqft,
-            COALESCE(dw.other_building_sqft, 0)::double precision
-                AS other_building_sqft,
             COALESCE(dw.total_footprint_sqft, 0)::double precision
                 AS total_footprint_sqft,
             {pc_cols_sql}
@@ -277,28 +208,30 @@ def execute(
     def _stream_region_data(
         ctx: ExecutionContext,
         batch_size: int = 50000,
-    ) -> Iterator[pd.DataFrame]:
+    ):
         """Yield region inference feature batches from the dasymetric weights."""
         offset = 0
         while True:
             batch = ctx.fetchdf(f"{query} LIMIT {batch_size} OFFSET {offset}")
             if len(batch) == 0:
                 break
-            yield batch
+            apns = batch[["apn"]].copy()
+            x_batch = _build_feature_matrix(batch, expected_cols)
+            y_batch = model_obj.predict(x_batch)
+            yield batch, apns, y_batch, x_batch
             offset += batch_size
 
-    def _features(df: pd.DataFrame) -> pd.DataFrame:
-        return _build_feature_matrix(df, expected_cols)
-
     results_parts: list[pd.DataFrame] = []
-    for apns, y_batch in predict_in_batches(
-        _stream_region_data(context),
-        model_obj,
-        _features,
-    ):
+    for batch, apns, y_batch, x_batch in _stream_region_data(context):
+        # TODO y_batch should apply mutually exclusive subcategory rules (ie military & public is exclusive)
+        # output is predicted ratios, needs to be scaled by predict sqft of building
+        # CONSIDER: we may want to softmax the outputs (all should sum to 1)
         partial = apns
         for i, target in enumerate(sqft_targets):
-            partial[target] = np.maximum(y_batch[:, i], 0.0).astype(np.float32)
+            partial[target] = (
+                np.maximum(y_batch[:, i], 0.0).astype(np.float32)
+                * batch["total_footprint_sqft"]
+            )
         results_parts.append(partial)
 
     results = pd.concat(results_parts, ignore_index=True)

@@ -117,10 +117,7 @@ def _infer_fresno_features(context: ExecutionContext, region: str) -> pd.DataFra
     # previous parcel set's embeddings and silently drop every new parcel.
     embeddings_key = _embeddings_cache_key(cog_hash, gdf["parcel_id"])
 
-    # Step 2.5: Download COG tiles to local cache for fast raster window reads
-    cog_paths = download_cog_tiles(cog_urls)
-
-    # Step 3: Extract chips + ResNet forward pass (or load cached)
+    # Step 2.5: Extract chips + ResNet forward pass (or load cached)
     cached = _load_cached_embeddings(embeddings_key)
 
     def _dedup_embeddings(
@@ -146,6 +143,9 @@ def _infer_fresno_features(context: ExecutionContext, region: str) -> pd.DataFra
             embeddings_np.shape,
         )
     else:
+        # Download the resolved tiles only now — a cached embeddings hit needs
+        # no imagery on disk, and each tile is several hundred megabytes.
+        cog_paths = download_cog_tiles(cog_urls)
         device = torch.device("cpu")
         backbone = _load_resnet_backbone(device)
         all_embeddings: list[np.ndarray] = []

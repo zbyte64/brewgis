@@ -35,8 +35,7 @@ MODEL (
 
 -- Dwelling Unit Estimation — 2-tier cascade using LightGBM regressor.
 --
--- Tier 1: Direct assessor unit observation (from the region sales adapter —
---         Fresno's is empty, so Tier 1 falls through).
+-- Tier 1: Direct assessor unit observation (from the region sales adapter)
 -- Tier 2: LightGBM regressor prediction (du_total_regressor from
 --         @{region}.du_regressor, which reads features from
 --         @{region}.parcel_dasymetric_weights).
@@ -71,7 +70,7 @@ WITH parcel_input AS (
         dw.actual_living_sqft,
         dw.actual_building_sqft
     FROM brewgis.@{region}.parcel_dasymetric_weights dw
-    LEFT JOIN brewgis.@{region}.du_regressor dr ON dw.apn = dr.apn
+    LEFT JOIN brewgis.@{region}.du_inference dr ON dw.apn = dr.apn
 ),
 
 -- ── Assessor units (Tier 1 source; empty for regions without sales data) ──

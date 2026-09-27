@@ -171,9 +171,9 @@ scaled AS (
         ON aw.apn = dw.apn
     LEFT JOIN brewgis.@{region}.parcel_du_estimation de
         ON aw.apn = de.apn
-    LEFT JOIN brewgis.@{region}.sqft_regressor dr
+    LEFT JOIN brewgis.@{region}.sqft_inference dr
         ON aw.apn = dr.apn
-    LEFT JOIN brewgis.@{region}.emp_ratios_regressor er
+    LEFT JOIN brewgis.@{region}.emp_ratios_inference er
         ON aw.apn = er.apn
 )
 
