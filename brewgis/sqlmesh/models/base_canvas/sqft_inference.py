@@ -29,6 +29,9 @@ from sqlmesh.core.model.definition import ModelKindName
 from brewgis.sqlmesh.macros.region_blueprints import REGIONS
 from brewgis.sqlmesh.models.python._cache import load_latest_model
 from brewgis.sqlmesh.models.python._feature_cols import _RESNET_PC_COLS
+from brewgis.sqlmesh.models.python._feature_cols import LDC_FALLBACK
+from brewgis.sqlmesh.models.python._feature_cols import LDC_PREFIX
+from brewgis.sqlmesh.models.python._feature_cols import fitted_feature_names
 from brewgis.sqlmesh.models.python.parcel_sqft_regressor import NUMERIC_FEATURES
 from brewgis.sqlmesh.models.python.parcel_sqft_regressor import SQFT_TARGETS
 from brewgis.sqlmesh.models.python.parcel_sqft_regressor import _encode_one_hots
@@ -42,13 +45,14 @@ def _load_model():
     """Load the most recent trained LightGBM SQFT model from cache.
 
     Only ``sqft__*.pkl`` files are considered, so this regressor can never
-    load another model type (du/emp_ratios) by accident.
+    load another model type (du/emp_ratios) by accident, and artifacts fitted
+    on a feature set the current builder cannot produce are skipped.
 
     Returns the fitted model and its ordered target columns. Raises
-    RuntimeError if no SQFT model is found or the cached targets do not
+    RuntimeError if no usable SQFT model is found or the cached targets do not
     match the expected ``SQFT_TARGETS``.
     """
-    payload = load_latest_model("sqft")
+    payload = load_latest_model("sqft", NUMERIC_FEATURES)
     if payload is None:
         raise RuntimeError(
             "No trained LightGBM SQFT model found in planning/lightgbm_cache/. "
@@ -66,24 +70,18 @@ def _load_model():
     return model_obj, targets
 
 
-def _get_model_expected_cols(model_obj: Any) -> list[str]:
-    """Extract expected feature names from the loaded LightGBM model.
-
-    MultiOutputRegressor wraps individual LGBMRegressor instances; all share
-    the same feature set.
-    """
-    return model_obj.estimators_[0].booster_.feature_name()
-
-
 def _build_feature_matrix(
     df: pd.DataFrame,
     expected_cols: list[str],
 ) -> pd.DataFrame:
-    """Build feature matrix matching the SACOG-trained model's expected columns.
+    """Build the feature matrix the cached model was fitted on.
 
-    ``reindex`` ensures the
-    output column order exactly matches what the model expects; any unexpected
-    one-hot categories are silently zeroed.
+    Same contract as the trainer's ``_feature_matrix``: numeric features plus
+    one ``ldc_*`` column per category the model was fitted on plus the ResNet
+    PCA columns. ``expected_cols`` drives the selection, and
+    ``load_latest_model`` only returns artifacts this builder can feed, so the
+    selection never invents a zero column for a feature the model was not
+    fitted on.
     """
     df = df.copy()
     df["building_count"] = np.clip(df["building_count"], 0, 50).astype(np.int32)
@@ -91,13 +89,14 @@ def _build_feature_matrix(
     for col in NUMERIC_FEATURES:
         df[col] = df[col].astype(np.float32)
 
-    # Derive one-hot category sets from expected column names
-    ldc_cats = sorted({c[4:] for c in expected_cols if c.startswith("ldc_")}) or None
+    # One-hot categories are the ones the fitted model records.
+    ldc_cats = sorted(
+        {c.removeprefix(LDC_PREFIX) for c in expected_cols if c.startswith(LDC_PREFIX)}
+    )
 
-    df = _encode_one_hots(df, ldc_cats)
+    df = _encode_one_hots(df, ldc_cats or None)
 
-    # Reindex to match exactly; missing cols zero-filled
-    return df.reindex(columns=expected_cols, fill_value=0.0).astype(np.float32)
+    return df[expected_cols].astype(np.float32)
 
 
 _TRAIN_MODEL = {
@@ -169,7 +168,9 @@ def execute(
     region = context.blueprint_var("region")
 
     model_obj, sqft_targets = _load_model()
-    expected_cols = _get_model_expected_cols(model_obj)
+    # load_latest_model only hands back artifacts the current feature set can build.
+    expected_cols = fitted_feature_names(model_obj)
+    assert expected_cols is not None
     logger.info(
         "%s SQFT: loaded model with %d expected features and %d targets",
         region,
@@ -184,7 +185,7 @@ def execute(
     query = f"""
         SELECT
             dw.apn,
-            COALESCE(dw.land_development_category, '')
+            COALESCE(dw.land_development_category, '{LDC_FALLBACK}')
                 AS land_development_category,
             COALESCE(dw.lot_size_acres, 0)::double precision
                 AS lot_size_acres,

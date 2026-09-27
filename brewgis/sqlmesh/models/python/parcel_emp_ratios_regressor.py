@@ -26,6 +26,7 @@ from brewgis.sqlmesh.models.python._cache import compute_data_hash
 from brewgis.sqlmesh.models.python._cache import save_model
 from brewgis.sqlmesh.models.python._cache import try_load_cached
 from brewgis.sqlmesh.models.python._feature_cols import _RESNET_PC_COLS
+from brewgis.sqlmesh.models.python._feature_cols import LDC_FALLBACK
 from brewgis.sqlmesh.models.python._predict import predict_in_batches
 
 if TYPE_CHECKING:
@@ -99,7 +100,7 @@ def _fetch_emp_training_data(context: ExecutionContext) -> pd.DataFrame:
             COALESCE(ref.emp_ind / NULLIF(ref.acres_parcel_emp, 0), 0) AS emp_ind_per_acre,
             COALESCE(ref.emp_ag / NULLIF(ref.acres_parcel_emp, 0), 0) AS emp_ag_per_acre,
             ap.lot_size_acres,
-            COALESCE(ap.land_development_category, 'standard') AS land_development_category,
+            COALESCE(ap.land_development_category, '{LDC_FALLBACK}') AS land_development_category,
             COALESCE(bs.total_footprint_sqft, 0) AS total_footprint_sqft,
             COALESCE(bs.building_count, 0) AS building_count,
             COALESCE(bs.footprint_ratio, 0) AS footprint_ratio,
@@ -141,7 +142,7 @@ def _stream_emp_inference_data(
         SELECT DISTINCT ON (ap.apn)
             ap.apn,
             ap.lot_size_acres,
-            COALESCE(ap.land_development_category, 'standard') AS land_development_category,
+            COALESCE(ap.land_development_category, '{LDC_FALLBACK}') AS land_development_category,
             COALESCE(bs.total_footprint_sqft, 0) AS total_footprint_sqft,
             COALESCE(bs.building_count, 0) AS building_count,
             COALESCE(bs.footprint_ratio, 0) AS footprint_ratio,

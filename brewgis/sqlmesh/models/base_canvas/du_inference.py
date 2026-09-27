@@ -8,7 +8,10 @@ cache and predicts per-parcel DU subtype breakdown for the region.
 - Fresno: no training — the SACOG-trained cache is reused; a missing cache is
   a hard stop (run compare_sacog_basemap first).
 
-Features are read uniformly from ``@{region}.parcel_dasymetric_weights``.
+Features are read uniformly from ``@{region}.parcel_dasymetric_weights``; the
+predicted du-per-square-foot ratios are scaled back to dwelling units with the
+per-type ``bldg_sqft_*`` that ``@{region}.sqft_inference`` predicts (the region
+building adapters carry no per-type building area).
 No training logic, no region branching — only data availability differs.
 """
 
@@ -29,6 +32,10 @@ from sqlmesh.core.model.definition import ModelKindName
 from brewgis.sqlmesh.macros.region_blueprints import REGIONS
 from brewgis.sqlmesh.models.python._cache import load_latest_model
 from brewgis.sqlmesh.models.python._feature_cols import _RESNET_PC_COLS
+from brewgis.sqlmesh.models.python._feature_cols import LDC_FALLBACK
+from brewgis.sqlmesh.models.python._feature_cols import LDC_PREFIX
+from brewgis.sqlmesh.models.python._feature_cols import fitted_feature_names
+from brewgis.sqlmesh.models.python.parcel_du_regressor import DU_TARGET_SQFT
 from brewgis.sqlmesh.models.python.parcel_du_regressor import DU_TARGETS
 from brewgis.sqlmesh.models.python.parcel_du_regressor import NUMERIC_FEATURES
 
@@ -42,12 +49,13 @@ def _load_du_model() -> tuple[MultiOutputRegressor, list[str]]:
     """Load the most recently trained DU model from the type-keyed cache.
 
     Only ``du__*.pkl`` files are considered, so this regressor can never load
-    another model type (sqft/emp_ratios) by accident.
+    another model type (sqft/emp_ratios) by accident, and artifacts fitted on a
+    feature set the current builder cannot produce are skipped.
 
-    Raises RuntimeError if no DU model is cached or its targets no longer
-    match the expected ``DU_TARGETS``.
+    Raises RuntimeError if no usable DU model is cached or its targets no
+    longer match the expected ``DU_TARGETS``.
     """
-    payload = load_latest_model("du")
+    payload = load_latest_model("du", NUMERIC_FEATURES)
     if payload is None:
         raise RuntimeError(
             "No cached LightGBM DU model found for the DU regressor. "
@@ -70,6 +78,38 @@ _TRAIN_MODEL = {
     "sacog": "brewgis.assessor.parcel_du_regressor",
     "fresno": "",
 }
+
+
+def _base_query(dw_table: str, sqft_table: str) -> str:
+    """Build the streaming query: dw features plus the per-type building stock.
+
+    The stock columns come from ``@{region}.sqft_inference``, because the region
+    building adapters carry the 4-way split and never the per-type one. They are
+    not model features — they only scale the predicted du-per-square-foot ratios
+    back to dwelling units.
+    """
+    pc_cols_sql = ", ".join(f"COALESCE({c}, 0.0) AS {c}" for c in _RESNET_PC_COLS)
+    sqft_sql = ", ".join(
+        f"COALESCE(sq.{c}, 0) AS {c}" for c in sorted(set(DU_TARGET_SQFT.values()))
+    )
+    return f"""
+        SELECT
+            dw.apn,
+            dw.lot_size_acres,
+            COALESCE(dw.land_development_category, '{LDC_FALLBACK}') AS land_development_category,
+            COALESCE(dw.total_footprint_sqft, 0) AS total_footprint_sqft,
+            COALESCE(dw.building_count, 0) AS building_count,
+            COALESCE(dw.footprint_ratio, 0) AS footprint_ratio,
+            COALESCE(dw.max_levels, 1) AS max_levels,
+            COALESCE(dw.intersection_density, 0) AS intersection_density,
+            COALESCE(dw.highway_intersection_density, 0) AS highway_intersection_density,
+            COALESCE(dw.path_intersection_density, 0) AS path_intersection_density,
+            {pc_cols_sql},
+            {sqft_sql}
+        FROM {dw_table} dw
+        LEFT JOIN {sqft_table} sq ON dw.apn = sq.apn
+        ORDER BY dw.apn
+    """
 
 
 @model(
@@ -99,6 +139,9 @@ _TRAIN_MODEL = {
     ],
     depends_on=[
         "brewgis.@{region}.parcel_dasymetric_weights",
+        # The model predicts du per square foot of building stock; sqft_inference
+        # is the only per-type bldg_sqft_* the regions produce.
+        "brewgis.@{region}.sqft_inference",
         "@IF(@train_model != '', brewgis.assessor.parcel_du_regressor, brewgis.@{region}.parcel_shim)",
     ],
     blueprints=[{"region": r, "train_model": _TRAIN_MODEL[r]} for r in REGIONS],
@@ -119,36 +162,21 @@ def execute(
     logger.info("Loaded DU model with %d targets", len(du_targets))
 
     # --- 2. Learn expected feature columns from the trained model ----------
-    expected_cols: list[str] = list(model_obj.estimators_[0].feature_names_in_)  # type: ignore[union-attr]
+    # load_latest_model only hands back artifacts the current feature set can build.
+    expected_cols = fitted_feature_names(model_obj)
+    assert expected_cols is not None
     logger.info(
         "DU model expects %d feature columns (%d numeric, %d one-hot, %d ResNet PC)",
         len(expected_cols),
         sum(1 for c in expected_cols if c in NUMERIC_FEATURES),
-        sum(1 for c in expected_cols if c.startswith("ldc_")),
+        sum(1 for c in expected_cols if c.startswith(LDC_PREFIX)),
         sum(1 for c in expected_cols if c.startswith("pc")),
     )
 
     # --- 3. Stream inference data from @{region}.parcel_dasymetric_weights --
     dw_table = context.resolve_table(f"brewgis.{region}.parcel_dasymetric_weights")
-
-    pc_cols_sql = ", ".join(f"COALESCE({c}, 0.0) AS {c}" for c in _RESNET_PC_COLS)
-
-    base_query = f"""
-        SELECT
-            apn,
-            lot_size_acres,
-            COALESCE(land_development_category, 'urban') AS land_development_category,
-            COALESCE(total_footprint_sqft, 0) AS total_footprint_sqft,
-            COALESCE(building_count, 0) AS building_count,
-            COALESCE(footprint_ratio, 0) AS footprint_ratio,
-            COALESCE(max_levels, 1) AS max_levels,
-            COALESCE(intersection_density, 0) AS intersection_density,
-            COALESCE(highway_intersection_density, 0) AS highway_intersection_density,
-            COALESCE(path_intersection_density, 0) AS path_intersection_density,
-            {pc_cols_sql}
-        FROM {dw_table}
-        ORDER BY apn
-    """
+    sqft_table = context.resolve_table(f"brewgis.{region}.sqft_inference")
+    base_query = _base_query(dw_table, sqft_table)
 
     def _stream_region_data(
         ctx: ExecutionContext,
@@ -168,11 +196,12 @@ def execute(
 
     # --- 4. Feature matrix builder ------------------------------------------
     def _feature_fn(df: pd.DataFrame) -> pd.DataFrame:
-        """Build full feature matrix that exactly matches ``expected_cols``.
+        """Build the feature matrix the cached model was fitted on.
 
-        Real assessor ``landuse``/``zone`` (SACOG) are one-hot encoded;
-        regions without them (Fresno) fall back to ``'XX'``/``'X'`` which
-        zeroes every trained category the model handles gracefully.
+        Every column in ``expected_cols`` is present: the query selects the
+        numeric features and the ResNet PCA components, and the one-hot block
+        is zero-initialised here. ``load_latest_model`` only returns artifacts
+        this builder can feed, so the final selection cannot miss a column.
         """
         df = df.copy()
         df["building_count"] = np.clip(df["building_count"], 0, 50).astype(np.int32)
@@ -182,13 +211,15 @@ def execute(
             if col in df.columns:
                 df[col] = df[col].astype(np.float32)
 
-        # One-hot columns: zero-initialise all, then set known values.
+        # One-hot columns: zero-initialise every trained category, then set the
+        # ones this parcel belongs to; categories absent here stay zero.
         for col in expected_cols:
-            if col.startswith("ldc_"):
+            if col.startswith(LDC_PREFIX):
                 df[col] = 0
-        ldc_series = df.get("land_development_category", pd.Series(["urban"] * len(df)))
+
+        ldc_series = df["land_development_category"]
         for cat in ldc_series.unique():
-            col = f"ldc_{cat}"
+            col = f"{LDC_PREFIX}{cat}"
             if col in df.columns:
                 df[col] = (ldc_series == cat).astype(int)
 
@@ -197,13 +228,13 @@ def execute(
     # --- 5. Run inference ---------------------------------------------------
     results_parts: list[pd.DataFrame] = []
     for batch, apns, y_batch, x_batch in _stream_region_data(context):
-        # prediction is du/sqft ratios, multiply by sqft for du
         partial = apns
+        # The model predicts du per square foot of building stock; scale each
+        # subtype by the stock it is per square foot of.
         for i, target in enumerate(DU_TARGETS):
-            # du_detsf_sl => bldg_sqft_detsf_sl
+            # du_detsf_sl => bldg_sqft_detsf_sl, du_mf2to4/du_mf5p => bldg_sqft_mf
             partial[target] = np.round(
-                np.maximum(y_batch[:, i], 0.0)
-                * batch[target.replace("du_", "bldg_sqft_")]
+                np.maximum(y_batch[:, i], 0.0) * batch[DU_TARGET_SQFT[target]]
             ).astype(np.float32)
         results_parts.append(partial)
 

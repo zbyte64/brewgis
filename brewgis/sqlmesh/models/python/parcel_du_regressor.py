@@ -26,6 +26,7 @@ from brewgis.sqlmesh.models.python._cache import compute_data_hash
 from brewgis.sqlmesh.models.python._cache import save_model
 from brewgis.sqlmesh.models.python._cache import try_load_cached
 from brewgis.sqlmesh.models.python._feature_cols import _RESNET_PC_COLS
+from brewgis.sqlmesh.models.python._feature_cols import LDC_FALLBACK
 from brewgis.sqlmesh.models.python._predict import predict_in_batches
 
 if TYPE_CHECKING:
@@ -37,10 +38,24 @@ DU_TARGETS = [
     "du_detsf_sl",
     "du_detsf_ll",
     "du_attsf",
-    # CONSIDER: we might only have du_mf in our training data! (confirm this)
     "du_mf2to4",
     "du_mf5p",
 ]
+
+# Building stock each DU target is expressed per square foot of. The reference
+# canvas splits multi-family building area only as ``bldg_sqft_mf``, so both
+# multi-family DU subtypes share that denominator — ``du_mf2to4``/``du_mf5p``
+# have no matching ``bldg_sqft_*`` column of their own. Serving multiplies the
+# predicted ratio back by the same-named column, which only ``sqft_inference``
+# produces: the region building adapters carry the 4-way split
+# (residential/commercial/industrial/other), never the per-type one.
+DU_TARGET_SQFT = {
+    "du_detsf_sl": "bldg_sqft_detsf_sl",
+    "du_detsf_ll": "bldg_sqft_detsf_ll",
+    "du_attsf": "bldg_sqft_attsf",
+    "du_mf2to4": "bldg_sqft_mf",
+    "du_mf5p": "bldg_sqft_mf",
+}
 
 NUMERIC_FEATURES = [
     "lot_size_acres",
@@ -89,11 +104,13 @@ def _fetch_du_training_data(context: ExecutionContext) -> pd.DataFrame:
         f"COALESCE(rf.{c}, 0.0) AS {c}" for c in _RESNET_PC_COLS
     )
 
-    # divide by square footage of the same category for du density
-    # du_detsf_sl => bldg_sqft_detsf_sl
+    # Divide by the square footage of the building stock the subtype occupies.
+    # du_detsf_sl => bldg_sqft_detsf_sl, du_mf2to4/du_mf5p => bldg_sqft_mf.
+    # NULLIF guards the parcels with no building stock (the ratio is 0 there),
+    # matching the employment-ratio trainer.
     target_col = ",\n\t".join(
-        f"COALESCE(ref.{c}, 0.0)/ref.{c.replace('du_', 'bldg_sqft_')} AS {c}"
-        for c in DU_TARGETS
+        f"COALESCE(ref.{t} / NULLIF(ref.{DU_TARGET_SQFT[t]}, 0), 0) AS {t}"
+        for t in DU_TARGETS
     )
 
     df = context.fetchdf(
@@ -101,7 +118,7 @@ def _fetch_du_training_data(context: ExecutionContext) -> pd.DataFrame:
         SELECT DISTINCT ON (ap.apn)
             {target_col},
             ap.lot_size_acres,
-            COALESCE(ap.land_development_category, 'standard') AS land_development_category,
+            COALESCE(ap.land_development_category, '{LDC_FALLBACK}') AS land_development_category,
             COALESCE(bs.total_footprint_sqft, 0) AS total_footprint_sqft,
             COALESCE(bs.building_count, 0) AS building_count,
             COALESCE(bs.footprint_ratio, 0) AS footprint_ratio,
@@ -144,7 +161,7 @@ def _stream_inference_data(
         SELECT DISTINCT ON (ap.apn)
             ap.apn,
             ap.lot_size_acres,
-            COALESCE(ap.land_development_category, 'standard') AS land_development_category,
+            COALESCE(ap.land_development_category, '{LDC_FALLBACK}') AS land_development_category,
             COALESCE(bs.total_footprint_sqft, 0) AS total_footprint_sqft,
             COALESCE(bs.building_count, 0) AS building_count,
             COALESCE(bs.footprint_ratio, 0) AS footprint_ratio,

@@ -29,6 +29,9 @@ from sqlmesh.core.model.definition import ModelKindName
 from brewgis.sqlmesh.macros.region_blueprints import REGIONS
 from brewgis.sqlmesh.models.python._cache import load_latest_model
 from brewgis.sqlmesh.models.python._feature_cols import _RESNET_PC_COLS
+from brewgis.sqlmesh.models.python._feature_cols import LDC_FALLBACK
+from brewgis.sqlmesh.models.python._feature_cols import LDC_PREFIX
+from brewgis.sqlmesh.models.python._feature_cols import fitted_feature_names
 from brewgis.sqlmesh.models.python._predict import predict_in_batches
 from brewgis.sqlmesh.models.python.parcel_emp_ratios_regressor import EMP_RATIO_TARGETS
 from brewgis.sqlmesh.models.python.parcel_emp_ratios_regressor import NUMERIC_FEATURES
@@ -42,14 +45,16 @@ def _load_emp_model() -> tuple[Any, list[str]]:
     """Load the most recently trained employment-ratio model from cache.
 
     Only ``emp_ratios__*.pkl`` files are considered, so this regressor can
-    never load another model type (du/sqft) by accident. The trained target
-    set is variable — zero-sum reference columns are excluded at training
-    time — so the stored target list drives the output column mapping.
+    never load another model type (du/sqft) by accident, and artifacts fitted
+    on a feature set the current builder cannot produce are skipped. The
+    trained target set is variable — zero-sum reference columns are excluded
+    at training time — so the stored target list drives the output column
+    mapping.
 
-    Raises RuntimeError if no model is cached or its targets are not a
+    Raises RuntimeError if no usable model is cached or its targets are not a
     subset of ``EMP_RATIO_TARGETS``.
     """
-    payload = load_latest_model("emp_ratios")
+    payload = load_latest_model("emp_ratios", NUMERIC_FEATURES)
     if payload is None:
         raise RuntimeError(
             "No cached LightGBM model found for employment ratios regressor. "
@@ -120,12 +125,14 @@ def execute(
     logger.info("Loaded EMP model with %d targets", len(emp_targets))
 
     # --- 2. Learn expected feature columns from the trained model ----------
-    expected_cols: list[str] = list(model_obj.estimators_[0].feature_names_in_)  # type: ignore[union-attr]
+    # load_latest_model only hands back artifacts the current feature set can build.
+    expected_cols = fitted_feature_names(model_obj)
+    assert expected_cols is not None
     logger.info(
         "EMP model expects %d feature columns (%d numeric, %d one-hot, %d ResNet PC)",
         len(expected_cols),
         sum(1 for c in expected_cols if c in NUMERIC_FEATURES),
-        sum(1 for c in expected_cols if c.startswith(("lu_", "zone_", "ldc_"))),
+        sum(1 for c in expected_cols if c.startswith(LDC_PREFIX)),
         sum(1 for c in expected_cols if c.startswith("pc")),
     )
 
@@ -138,7 +145,7 @@ def execute(
         SELECT
             apn,
             lot_size_acres,
-            COALESCE(land_development_category, 'urban') AS land_development_category,
+            COALESCE(land_development_category, '{LDC_FALLBACK}') AS land_development_category,
             COALESCE(total_footprint_sqft, 0) AS total_footprint_sqft,
             COALESCE(building_count, 0) AS building_count,
             COALESCE(footprint_ratio, 0) AS footprint_ratio,
@@ -166,11 +173,12 @@ def execute(
 
     # --- 4. Feature matrix builder ------------------------------------------
     def _feature_fn(df: pd.DataFrame) -> pd.DataFrame:
-        """Build full feature matrix that exactly matches ``expected_cols``.
+        """Build the feature matrix the cached model was fitted on.
 
-        Real assessor ``landuse``/``zone`` (SACOG) are one-hot encoded;
-        regions without them (Fresno) fall back to ``'XX'``/``'X'`` which
-        zeroes every trained category the model handles gracefully.
+        Every column in ``expected_cols`` is present: the query selects the
+        numeric features and the ResNet PCA components, and the one-hot block
+        is zero-initialised here. ``load_latest_model`` only returns artifacts
+        this builder can feed, so the final selection cannot miss a column.
         """
         df = df.copy()
         df["building_count"] = np.clip(df["building_count"], 0, 50).astype(np.int32)
@@ -180,14 +188,15 @@ def execute(
             if col in df.columns:
                 df[col] = df[col].astype(np.float32)
 
-        # One-hot columns: zero-initialise all, then set known values.
+        # One-hot columns: zero-initialise every trained category, then set the
+        # ones this parcel belongs to; categories absent here stay zero.
         for col in expected_cols:
-            if col.startswith("ldc_"):
+            if col.startswith(LDC_PREFIX):
                 df[col] = 0
 
-        ldc_series = df.get("land_development_category", pd.Series(["urban"] * len(df)))
+        ldc_series = df["land_development_category"]
         for cat in ldc_series.unique():
-            col = f"ldc_{cat}"
+            col = f"{LDC_PREFIX}{cat}"
             if col in df.columns:
                 df[col] = (ldc_series == cat).astype(int)
 

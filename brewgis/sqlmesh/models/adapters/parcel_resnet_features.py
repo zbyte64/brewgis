@@ -15,7 +15,8 @@ The branch is driven by the ``source_table`` blueprint variable: a non-empty
 value means "an existing model already produced these features" (SACOG);
 an empty value means "compute them from ``@{region}.parcel_shim``" (Fresno).
 """
-
+# CONSIDER: eat/merge in brewgis.assessor.parcel_resnet_features 
+# and train PCA on all chips
 from __future__ import annotations
 
 import sys

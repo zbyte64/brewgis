@@ -1,8 +1,10 @@
 """One-shot hyperparameter tuning for LightGBM regressors.
 
-Uses the exact same training-data fetch functions as the SQLMesh regressor
-models — no duplicated logic. Automatically materializes needed models
-via SQLMesh before fetching training data.
+Takes its training-data fetch functions, feature matrix, numeric feature list
+and target list from the SQLMesh regressor modules themselves. A tuner that
+builds its own features searches a model nobody trains, so nothing here may
+hold a second copy of the feature contract. Automatically materializes needed
+models via SQLMesh before fetching training data.
 
 Usage: docker compose run --rm django python manage.py tune_lightgbm
 """
@@ -14,7 +16,6 @@ import time
 from typing import TYPE_CHECKING
 
 import numpy as np
-import pandas as pd
 from django.core.management.base import BaseCommand
 from lightgbm import LGBMRegressor
 from sklearn.model_selection import RandomizedSearchCV
@@ -22,36 +23,40 @@ from sklearn.model_selection import RandomizedSearchCV
 if TYPE_CHECKING:
     from sqlmesh import Context
 
+from brewgis.sqlmesh.models.python.parcel_du_regressor import DU_TARGETS
+from brewgis.sqlmesh.models.python.parcel_du_regressor import (
+    NUMERIC_FEATURES as DU_NUMERIC_FEATURES,
+)
+from brewgis.sqlmesh.models.python.parcel_du_regressor import (
+    _feature_matrix as du_feature_matrix,
+)
 from brewgis.sqlmesh.models.python.parcel_du_regressor import (
     _fetch_du_training_data as fetch_du_training_data,
+)
+from brewgis.sqlmesh.models.python.parcel_emp_ratios_regressor import EMP_RATIO_TARGETS
+from brewgis.sqlmesh.models.python.parcel_emp_ratios_regressor import (
+    NUMERIC_FEATURES as EMP_NUMERIC_FEATURES,
+)
+from brewgis.sqlmesh.models.python.parcel_emp_ratios_regressor import (
+    _feature_matrix as emp_feature_matrix,
 )
 from brewgis.sqlmesh.models.python.parcel_emp_ratios_regressor import (
     _fetch_emp_training_data as fetch_emp_training_data,
 )
 from brewgis.sqlmesh.models.python.parcel_sqft_regressor import (
+    NUMERIC_FEATURES as SQFT_NUMERIC_FEATURES,
+)
+from brewgis.sqlmesh.models.python.parcel_sqft_regressor import (
+    _feature_matrix as sqft_feature_matrix,
+)
+from brewgis.sqlmesh.models.python.parcel_sqft_regressor import (
     _fetch_sqft_training_data as fetch_sqft_training_data,
 )
+from brewgis.sqlmesh.models.python.parcel_sqft_regressor import _get_sqft_targets
 from brewgis.workspace.analysis.sqlmesh_runner import get_context
 from brewgis.workspace.analysis.sqlmesh_runner import run_sqlmesh_plan
 
 logger = logging.getLogger("tune_lightgbm")
-
-NUMERIC_FEATURES = [
-    "lot_size_acres",
-    "intersection_density",
-    "highway_intersection_density",
-    "path_intersection_density",
-    "footprint_ratio",
-    "building_count",
-    "max_levels",
-    "residential_building_sqft",
-    "commercial_building_sqft",
-    "industrial_building_sqft",
-    "other_building_sqft",
-    "total_footprint_sqft",
-]
-
-DU_TARGETS = ["du_detsf_sl", "du_detsf_ll", "du_attsf", "du_mf2to4", "du_mf5p"]
 
 HP_DISTRIBUTIONS: dict[str, list] = {
     "estimator__num_leaves": [15, 31, 63, 127, 255],
@@ -68,42 +73,6 @@ HP_DISTRIBUTIONS: dict[str, list] = {
 }
 
 
-def _extract_top_prefixes(train_df, inference_df, col, n=5):
-    train_vals = train_df[col].value_counts().head(n).index.tolist()
-    inference_vals = inference_df[col].unique().tolist()
-    combined = list(dict.fromkeys(train_vals + inference_vals))
-    return combined[: n + len(inference_vals)]
-
-
-def _feature_matrix(df, landuse_prefixes, zone_prefixes, ldev_cats, features=None):
-    """Build feature matrix using pd.concat to avoid fragmentation warnings."""
-    if features is None:
-        features = [c for c in NUMERIC_FEATURES if c in df.columns]
-    landuse_oh = pd.get_dummies(df["landuse_prefix"], prefix="lu")
-    landuse_oh = landuse_oh.reindex(
-        columns=[f"lu_{p}" for p in landuse_prefixes], fill_value=0
-    )
-    zone_oh = pd.get_dummies(df["zone_prefix"], prefix="zone")
-    zone_oh = zone_oh.reindex(
-        columns=[f"zone_{p}" for p in zone_prefixes], fill_value=0
-    )
-    parts = [df[features], landuse_oh, zone_oh]
-    if ldev_cats:
-        ldev_oh = pd.get_dummies(df["land_development_category"], prefix="ldc")
-        ldev_oh = ldev_oh.reindex(columns=[f"ldc_{c}" for c in ldev_cats], fill_value=0)
-        parts.append(ldev_oh)
-    return pd.concat(parts, axis=1).to_numpy()
-
-
-EMP_RATIO_TARGETS = [
-    "emp_ret_per_acre",
-    "emp_off_per_acre",
-    "emp_pub_per_acre",
-    "emp_ind_per_acre",
-    "emp_ag_per_acre",
-]
-
-
 def _tune_model(
     context: Context,
     is_du: bool,
@@ -112,40 +81,62 @@ def _tune_model(
     cv: int = 3,
     tune_fraction: float = 0.2,
 ):
-    """Run hyperparameter search for one model and print results."""
+    """Run hyperparameter search for one model and print results.
+
+    Fits a single-output ``LGBMRegressor`` on the model's first target: these
+    params go into the shared ``LGBM_PARAMS`` the multi-output trainers reuse
+    for every target, so the first target is the proxy being optimised.
+
+    The feature matrix, numeric feature list, target list and training-row
+    selection are the ones the corresponding trainer uses, so the search runs
+    on the model that actually gets fitted.
+    """
     if is_emp:
         label = "EMP"
         df = fetch_emp_training_data(context)
-        targets = [c for c in EMP_RATIO_TARGETS if c in df.columns]
-        objective = "tweedie"
+        # Tweedie needs a positive label sum; the trainer drops zero-sum columns.
+        targets = [c for c in EMP_RATIO_TARGETS if c in df.columns and df[c].sum() > 0]
+        numeric_features = EMP_NUMERIC_FEATURES
+        feature_matrix = emp_feature_matrix
+        # ~96% of parcels have no employment; the trainer keeps them.
+        train_df = df.copy()
     elif is_du:
         label = "DU"
         df = fetch_du_training_data(context)
         targets = DU_TARGETS
-        objective = "tweedie"
+        numeric_features = DU_NUMERIC_FEATURES
+        feature_matrix = du_feature_matrix
+        # DU=0 parcels teach the regressor the zero case, so they stay in.
+        train_df = df.copy()
     else:
         label = "SQFT"
         df = fetch_sqft_training_data(context)
-        sqft_cols = [c for c in df.columns if c.startswith("bldg_sqft_")]
-        targets = sqft_cols
-        objective = "tweedie"
+        targets = _get_sqft_targets(df)
+        numeric_features = SQFT_NUMERIC_FEATURES
+        feature_matrix = sqft_feature_matrix
+        train_df = df[df[targets].sum(axis=1) > 0].copy()
 
     logger.info("%s: loaded %d training parcels", label, len(df))
+    logger.info(
+        "%s: tuning on %d parcels, %d targets (%s)",
+        label,
+        len(train_df),
+        len(targets),
+        targets[0] if targets else "-",
+    )
+    logger.info(
+        "%s: available features: %s",
+        label,
+        [c for c in numeric_features if c in df.columns],
+    )
 
-    available = [c for c in NUMERIC_FEATURES if c in df.columns]
-    logger.info("%s: available features: %s", label, available)
+    if not targets or train_df.empty:
+        logger.warning("%s: no training rows with a usable target, skipping", label)
+        return
 
-    df["landuse_prefix"] = df["landuse"].fillna("XX").str[:2]
-    df["zone_prefix"] = df["zone"].fillna("X").str[:1]
-    has_target = df[targets].sum(axis=1) > 0
-    train_df = df[has_target].copy()
-    logger.info("%s: %d parcels with target > 0", label, len(train_df))
-
-    landuse_prefixes = _extract_top_prefixes(train_df, train_df, "landuse_prefix")
-    zone_prefixes = sorted(train_df["zone_prefix"].unique().tolist())
     ldev_cats = sorted(train_df["land_development_category"].unique().tolist())
 
-    x_all = _feature_matrix(train_df, landuse_prefixes, zone_prefixes, ldev_cats)
+    x_all = feature_matrix(train_df, ldev_cats).to_numpy()
     y_all = train_df[targets].to_numpy()
 
     n = len(x_all)
@@ -165,7 +156,7 @@ def _tune_model(
     )
 
     tuner = LGBMRegressor(
-        objective=objective,
+        objective="tweedie",
         metric="rmse",
         boosting_type="gbdt",
         verbose=-1,

@@ -11,6 +11,14 @@ single most recently modified ``*.pkl`` — which was always the SQFT model
 (trained last), so the DU and employment-ratio regressors predicted with the
 wrong model.
 
+``load_latest_model`` additionally refuses an artifact the caller's current
+feature set cannot build. A pickle outlives any single deploy of the code that
+trained it: when the feature set changes, the cached model still expects the
+old columns, and feeding it the new matrix either raises deep inside
+``model.predict`` or, with a zero-filling reindex, silently predicts from
+columns that are always zero. The loader compares the artifact's recorded
+feature names against the caller's contract and skips what does not match.
+
 NOTE: keep module level free of unpicklable objects (e.g. a module-level
 ``Logger``). SQLMesh serializes Python-model module namespaces; a logger
 broke model loading with "cannot be serialized".
@@ -29,10 +37,19 @@ from typing import cast
 
 import pandas as pd
 
+from brewgis.sqlmesh.models.python._feature_cols import fitted_feature_names
+from brewgis.sqlmesh.models.python._feature_cols import unbuildable_feature_columns
+
 if TYPE_CHECKING:
+    from collections.abc import Sequence
+
     from sklearn.multioutput import MultiOutputRegressor
 
 _CACHE_DIR: Path | None = None
+
+# How many unbuildable columns the "ignoring stale artifact" warning names
+# before eliding the rest.
+_PREVIEW_COLUMNS = 4
 
 
 class ModelPayload(TypedDict):
@@ -54,8 +71,16 @@ def _ensure_cache_dir() -> Path:
 
 
 def compute_data_hash(df: pd.DataFrame) -> str:
-    """Compute a content hash of a DataFrame for cache key."""
+    """Compute a content hash of a DataFrame for cache key.
+
+    The column labels are part of the digest. ``hash_pandas_object`` hashes the
+    cells row-wise, so two frames holding identical values under different
+    feature names would otherwise share a key, and a model cached for the older
+    names would silently skip retraining.
+    """
     h = hashlib.sha256()
+    for col in df.columns:
+        h.update(f"{col}\x00".encode())
     h.update(pd.util.hash_pandas_object(df).to_numpy().tobytes())
     return h.hexdigest()
 
@@ -120,11 +145,17 @@ def try_load_cached(data_hash: str, model_type: str) -> ModelPayload | None:
     return payload
 
 
-def load_latest_model(model_type: str) -> ModelPayload | None:
-    """Load the most recently trained model of *model_type*.
+def load_latest_model(
+    model_type: str,
+    numeric_features: Sequence[str],
+) -> ModelPayload | None:
+    """Load the most recently trained model of *model_type* the caller can feed.
 
     Scans ``{model_type}__*.pkl`` newest-first and returns the first valid
-    payload; None if no valid model of that type exists.
+    payload whose fitted feature list *numeric_features* and the shared
+    one-hot/PCA columns can build (see ``_unusable_reason``). None if no
+    usable model of that type exists — including the case where every artifact
+    of the type predates a feature-set change and only a retrain can fix it.
     """
     cache_dir = _ensure_cache_dir()
     pkl_files = sorted(
@@ -141,20 +172,53 @@ def load_latest_model(model_type: str) -> ModelPayload | None:
             )
             continue
         payload = _validate_payload(raw, model_type)
-        if payload is not None:
-            logging.getLogger(__name__).info(
-                "Loading %s model from %s (mtime=%s)",
+        if payload is None:
+            logging.getLogger(__name__).warning(
+                "Ignoring %s cache file %s with mismatched targets/outputs",
                 model_type,
                 path.name,
-                path.stat().st_mtime,
             )
-            return payload
-        logging.getLogger(__name__).warning(
-            "Ignoring %s cache file %s with mismatched targets/outputs",
+            continue
+        reason = _unusable_reason(payload, numeric_features)
+        if reason is not None:
+            logging.getLogger(__name__).warning(
+                "Ignoring %s cache file %s: %s", model_type, path.name, reason
+            )
+            continue
+        logging.getLogger(__name__).info(
+            "Loading %s model from %s (mtime=%s)",
             model_type,
             path.name,
+            path.stat().st_mtime,
         )
+        return payload
     return None
+
+
+def _unusable_reason(
+    payload: ModelPayload,
+    numeric_features: Sequence[str],
+) -> str | None:
+    """Why the caller's feature builder cannot feed *payload*'s model, or None.
+
+    An artifact that records no fitted feature names is unusable too: there is
+    no way to check that its inputs still exist, and the inference models read
+    the feature list out of the artifact.
+    """
+    names = fitted_feature_names(payload["model"])
+    if names is None:
+        return "it records no fitted feature names"
+    stale = unbuildable_feature_columns(names, numeric_features)
+    if not stale:
+        return None
+    preview = ", ".join(stale[:_PREVIEW_COLUMNS])
+    if len(stale) > _PREVIEW_COLUMNS:
+        preview += ", ..."
+    return (
+        f"it was fitted on {len(stale)} feature column(s) the current feature set "
+        f"cannot build ({preview}). Delete planning/lightgbm_cache/"
+        f"{payload['model_type']}__*.pkl and retrain it"
+    )
 
 
 def _validate_payload(raw: Any, model_type: str) -> ModelPayload | None:
