@@ -66,7 +66,7 @@ Key rules:
 |`brewgis/workspace/models.py`|24 model classes (Workspace, Layer, SymbologyConfig, StyleClass, Scenario, PaintedCanvas, AnalysisRun, DataImportRun, POICache, PaintConstraint, MergeAudit, PaintEvent, PaintRun, ParcelGeometryEdit, ScenarioReport, County, DataSourceCategory, DataSource, LayerFilter, LayerGroup, ExternalMapService, Basemap, BaseCanvasColumn, BaseCanvas)|
 |`brewgis/workspace/built_forms/models.py`|Built form sub-app: BuildingType (28 fields), PlaceType, PlaceTypeBuildingTypeMix|
 |`brewgis/workspace/tasks.py`|8 Celery tasks for data import, export, allocation, stitching, report generation|
-|`brewgis/workspace/analysis/`|Pipeline orchestrator, module/layer registries, food/equity preprocessors (road-network distances are SQLMesh: `overture/road_network_*`, `python/network_zone_distance.py`)|
+|`brewgis/workspace/analysis/`|Pipeline orchestrator, module/layer registries, equity preprocessor (food access is SQLMesh: `osm/food_pois*.sql`; road-network distances: `overture/road_network_*`, `python/network_zone_distance.py`) |
 |`brewgis/workspace/symbology/`|Map style generation (classifiers, generator, auto-config, legend, stats), 22 color palettes|
 |`brewgis/workspace/services/`|~34 service modules: base canvas ETL pipeline (1047 lines), schema, fetchers (Census, LEHD, POI, NLCD, assessor), spatial allocator, stitcher, imputation engine, built form classifier, paint constraints, scenario cloner, canvas view manager, geospatial filter models + predicate (`spatial_filter.py`), `_db.py` (cached SQLAlchemy singleton)|
 |`brewgis/workspace/mcp/`|MCP server: FastMCP stdio entrypoint, auth stub, 8 tool modules|

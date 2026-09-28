@@ -7,9 +7,9 @@ MODEL (
     area_gross_acres = 'Gross parcel area (acres).',
     pop = 'Population allocated to the parcel (people).',
     hh = 'Households allocated to the parcel (households).',
-    healthy_count = 'Healthy food outlets joined from the input table (outlets).',
-    unhealthy_count = 'Unhealthy food outlets joined from the input table (outlets).',
-    mrfei = 'Modified Retail Food Environment Index; null without an input record.',
+    healthy_count = 'Grocery outlets within 1 km of the parcel (outlets).',
+    unhealthy_count = 'Convenience stores and fast-food outlets within 1 km of the parcel (outlets).',
+    mrfei = 'Modified Retail Food Environment Index: healthy outlets as a share of all outlets within 1 km (% as 0-100); null when the parcel has none within reach.',
     food_desert = 'True when the mRFEI is below 25, otherwise false.',
     food_access_category = 'Band from mRFEI: food_desert, low_access, moderate_access or high_access.',
     geometry = 'Parcel boundary geometry (EPSG:4326).'
@@ -17,19 +17,66 @@ MODEL (
   blueprints @analysis_blueprints('food_access'),
 );
 
-WITH food_data AS (
+-- H2 — Food Access (mRFEI)
+--
+-- Counts the food outlets within reach of each parcel and scores them:
+--
+--   mRFEI = healthy / (healthy + unhealthy) * 100
+--
+-- The outlets are the region's Overpass fetch (``osm/food_pois_local.sql``),
+-- projected to the local CRS and indexed there, which is what lets the 1 km
+-- radius be a constant against a GiST index rather than a per-pair geography
+-- computation. The parcel side is projected in the join: the analysis reads the
+-- scenario's end state, whose geometry is EPSG:4326.
+--
+-- A parcel with no outlet within 1 km has a NULL mRFEI, not a zero one: the
+-- metric is undefined without outlets to divide, and every downstream band and
+-- the ``food_desert`` flag read null as unknown rather than as worst case.
+
+WITH parcels AS (
+    -- The scenario end state is EPSG:4326; the outlets are in local_srid, which
+    -- is where the 1 km radius is a plain index-usable constant. The transform is
+    -- pre-computed here rather than in the join: PostgreSQL keeps the GiST
+    -- pushdown on the outlet geometry either way, but a transform inside a join
+    -- condition is what the SQLMesh linter's notransforminjoinwhere flags.
+    SELECT
+        parcel_id,
+        ST_Transform(geometry, @local_srid()) AS local_geometry
+    FROM @{scenario_schema}.core_end_state
+),
+
+counts AS (
+    SELECT
+        p.parcel_id,
+        COUNT(*) FILTER (WHERE fp.is_healthy) AS healthy_count,
+        COUNT(*) FILTER (WHERE fp.is_unhealthy) AS unhealthy_count
+    FROM parcels AS p
+    JOIN brewgis.@{road_network_region}.food_pois_local AS fp
+        ON ST_DWithin(
+            p.local_geometry,
+            fp.geometry,
+            @metres_in_local_units(1000.0)
+        )
+    GROUP BY p.parcel_id
+),
+
+food_data AS (
     SELECT
         es.parcel_id,
         es.area_gross_acres,
         es.pop,
         es.hh,
-        fi.healthy_count,
-        fi.unhealthy_count,
-        fi.mrfei,
+        COALESCE(counts.healthy_count, 0) AS healthy_count,
+        COALESCE(counts.unhealthy_count, 0) AS unhealthy_count,
+        CASE
+            WHEN counts.parcel_id IS NULL THEN NULL
+            ELSE counts.healthy_count::DOUBLE PRECISION
+                / NULLIF(counts.healthy_count + counts.unhealthy_count, 0) * 100.0
+        END AS mrfei,
         es.geometry
     FROM @{scenario_schema}.core_end_state AS es
-    LEFT JOIN @{scenario_schema}.food_access_inputs AS fi
-        ON es.parcel_id = fi.parcel_id
+    LEFT JOIN counts
+        ON counts.parcel_id = es.parcel_id
 )
 
 SELECT
@@ -37,8 +84,8 @@ SELECT
     area_gross_acres,
     pop,
     hh,
-    COALESCE(healthy_count, 0) AS healthy_count,
-    COALESCE(unhealthy_count, 0) AS unhealthy_count,
+    healthy_count,
+    unhealthy_count,
     mrfei,
     COALESCE(mrfei < 25, FALSE) AS food_desert,
     CASE
@@ -51,14 +98,6 @@ SELECT
     geometry
 FROM food_data;
 
-
--- ------------------------------------------------------------
--- Sprawl Index (SX)
---   Per-parcel compactness/sprawl index (scored 0-100) from
---   population density, intersection connectivity, and land-use
---   mix (presence of both population and employment).
--- Source (dbt): brewgis/dbt_project/models/sprawl_index.sql
--- ------------------------------------------------------------
 
 -- post_statements
   CREATE INDEX IF NOT EXISTS @snapshot_hash('idx_food_access_geometry_')

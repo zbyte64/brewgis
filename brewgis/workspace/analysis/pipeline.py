@@ -42,6 +42,7 @@ from brewgis.workspace.analysis.sqlmesh_runner import run_sqlmesh_plan
 from brewgis.workspace.models import AnalysisRun
 from brewgis.workspace.models import Scenario
 from brewgis.workspace.models import Workspace
+from brewgis.workspace.services.fetch_clone import road_network_region
 from brewgis.workspace.services.tile_server import restart_martin
 from brewgis.workspace.services.tile_server import wait_until_martin_ready
 
@@ -295,6 +296,11 @@ def run_modules_sync(
     restate = model_fqns_built_in("prod", selects) or None
     if "trip_distribution" in ordered:
         selects += _network_distance_inputs(scenario_id)
+    if "food_access" in ordered:
+        base_table = (
+            Workspace.objects.only("base_table").get(pk=workspace_id).base_table
+        )
+        selects += _food_access_inputs(road_network_region(base_table))
 
     # The scenario's parameters — like its constraints, column mapping and
     # painted canvas — are baked into these models' blueprints when they are
@@ -395,6 +401,27 @@ def _network_distance_inputs(scenario_id: int) -> list[str]:
                 "road_network_edges",
             )
         ),
+    ]
+
+
+def _food_access_inputs(region: str) -> list[str]:
+    """Models the food-access analysis reads that are not analysis modules.
+
+    The region's outlet fetch: the DuckDB Overpass VIEW, the PostGIS bridge it
+    lands in, and the projected, indexed model the 1 km search reads. All three
+    are dependencies of every ``food_access`` instance and none of them is an
+    analysis module — the fetch is per *region* (the bounding box is the
+    region's), so one build serves every scenario that analyzes against it.
+
+    Named in order for the same reason as ``_network_distance_inputs`` names its
+    bridge: a model is only planned when a selector names it, and the bridge
+    backfills against the DuckDB VIEW. Selected, never restated: their inputs are
+    OpenStreetMap and the region bounding box, not the scenario's end state.
+    """
+    return [
+        f"duckdb.{region}.food_pois",
+        f"brewgis.{region}.food_pois",
+        f"brewgis.{region}.food_pois_local",
     ]
 
 

@@ -215,11 +215,12 @@ def _scenario_profiles() -> list[dict[str, Any]]:
     for nothing. The run row is created *before* the plan loads models (see
     ``analysis.pipeline``), so a first launch still finds its profiles.
 
-    ``scenario_id`` is the scenario *slug* (the identifier the result tables used
-    to carry, e.g. in preprocessor-written names such as
-    ``food_access_inputs_<slug>``); ``scenario_pk`` is the primary key and what
-    the model/result schema names are built from. Do not use the slug for those:
-    a slug may contain hyphens, which are not valid in an unquoted identifier.
+    ``scenario_id`` is the scenario *slug* — the value a scenario's rows are
+    stamped with (``scenario_summary``'s own ``scenario_id`` column), not a name
+    any schema or model is built from; ``scenario_pk`` is the primary key and
+    what the model/result schema names are built from. Do not use the slug for
+    those: a slug may contain hyphens, which are not valid in an unquoted
+    identifier.
 
     ``parcel_table``/``built_form_table``/``base_canvas_table`` are string
     literals (the ``@ref_model`` call in the model bodies needs a ``str``).

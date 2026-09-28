@@ -118,3 +118,19 @@ def metres_in_local_units(evaluator: MacroEvaluator, metres: str) -> str:
         ST_DWithin(p.centroid_local, i.geometry, @metres_in_local_units(402.0))
     """
     return f"(({metres}) / {metres_per_unit(require_local_srid(evaluator))!r})"
+
+
+@macro()
+def local_srid(evaluator: MacroEvaluator) -> str:
+    """Render ``local_srid`` as the bare integer literal to project a geometry into.
+
+    The SQL face of :func:`require_local_srid`, for models that have to reproject
+    a geometry into the CRS the ``*_local`` geometries and
+    ``@metres_in_local_units`` radii are measured in — and which therefore must
+    fail as loudly as they do when the variable is unset.
+
+    Usage in model SQL::
+
+        ST_Transform(es.geometry, @local_srid()) AS geometry
+    """
+    return str(require_local_srid(evaluator))

@@ -1,9 +1,16 @@
-"""Overpass API query construction for the DuckDB POI fetch model.
+"""Overpass API query construction for the DuckDB POI fetch models.
 
 Single source of truth for the OpenStreetMap tag taxonomy behind
 ``duckdb.osm.poi``: the URL that model fetches, the category/subcategory CASE
 expressions it classifies rows with, and — through :data:`POI_CATEGORIES` — the
 category list Django's POI import form offers.
+
+It also holds the food-outlet tag set behind ``duckdb.@region.food_pois``, the
+fetch the food-access analysis counts healthy and unhealthy outlets from. That
+set is deliberately separate from :data:`POI_CATEGORIES`: the import taxonomy
+classifies an element into one *category* for the map's POI layers, while food
+access needs the healthy/unhealthy split the mRFEI is defined over, and the
+import's ``shopping`` category does not carry every tag that split names.
 
 The taxonomy is emitted as one anchored-regex clause per OSM key
 (``node["amenity"~"^(cafe|bar)$"](bbox)``) instead of one exact-match clause per
@@ -20,11 +27,15 @@ change of which POIs are fetched.
 from __future__ import annotations
 
 import re
+from typing import TYPE_CHECKING
 from typing import Any
 from urllib.parse import quote
 
 from sqlglot import exp
 from sqlmesh import macro
+
+if TYPE_CHECKING:
+    from sqlmesh.core.macros import MacroEvaluator
 
 # Overpass endpoint. The main instance (overpass-api.de) stalls DuckDB's httpfs
 # GET for this query shape — measured 2026-09-22: httpfs reported "Could not
@@ -241,3 +252,81 @@ def poi_category_case(evaluator, subcategory: Any) -> str:
         for category, entries in POI_CATEGORIES.items()
     )
     return f"CASE {conditions} ELSE 'unknown' END"
+
+
+# ── Food access (mRFEI) ───────────────────────────────────────────────────────
+#
+# The tag set the food-access analysis is defined over, and the class each tag
+# lands in. The mRFEI counts outlets a parcel can reach, split into what the
+# metric calls healthy (a place to buy groceries) and unhealthy (convenience
+# stores and fast food).
+#
+# Classes are tested in this order, so an element carrying several of these tags
+# lands in exactly one class: a place that is also a fast-food outlet is not
+# counted as healthy. The order matters for the count, which is why it is stated
+# here rather than left to a CASE's fall-through.
+FOOD_ACCESS_CLASSES: tuple[tuple[str, tuple[tuple[str, str], ...]], ...] = (
+    ("unhealthy", (("amenity", "fast_food"), ("shop", "convenience"))),
+    (
+        "healthy",
+        (
+            ("shop", "supermarket"),
+            ("shop", "grocery"),
+            ("shop", "grocer"),
+            ("shop", "farmers_market"),
+        ),
+    ),
+)
+
+# Degrees the food fetch expands the region bounding box by before querying
+# Overpass. The mRFEI counts outlets within 1 km of a parcel, so the fetch has to
+# reach past the region window the other region models are cut to: the Fresno
+# demo's parcels run ~1.8 km south of its Overture bbox, whose edge parcels
+# would otherwise see no outlets at all.
+FOOD_ACCESS_BBOX_MARGIN = 0.02
+
+
+def _food_access_tags() -> list[tuple[str, str]]:
+    """Every ``(key, value)`` pair the food-access fetch asks Overpass for."""
+    return [tag for _label, entries in FOOD_ACCESS_CLASSES for tag in entries]
+
+
+@macro()
+def food_access_url(
+    evaluator: MacroEvaluator, min_lng: Any, min_lat: Any, max_lng: Any, max_lat: Any
+) -> str:
+    """Return the Overpass URL for the food-outlet tag set over *bbox* + margin.
+
+    Same shape as :func:`overpass_url`, but the tags are the food set rather than
+    the ``poi_categories`` variable's selection: the food fetch is not an import
+    the user configures, and its rows are classified by the mRFEI's own split.
+
+    The expanded bounding box is rounded to six decimals — the blueprint bbox is
+    a ``Decimal``, and the margin arithmetic on it would otherwise leave a
+    binary-float tail (``36.940000000000005``) in the URL text.
+    """
+    query = _overpass_query(
+        min_lng=round(float(_value(min_lng)) - FOOD_ACCESS_BBOX_MARGIN, 6),
+        min_lat=round(float(_value(min_lat)) - FOOD_ACCESS_BBOX_MARGIN, 6),
+        max_lng=round(float(_value(max_lng)) + FOOD_ACCESS_BBOX_MARGIN, 6),
+        max_lat=round(float(_value(max_lat)) + FOOD_ACCESS_BBOX_MARGIN, 6),
+        tags=_food_access_tags(),
+    )
+    return repr(f"{OVERPASS_URL}?data={quote(query, safe='')}")
+
+
+@macro()
+def food_access_class_case(evaluator: MacroEvaluator, tags: Any) -> str:
+    """Return the CASE mapping a JSON tags object to its food-access class.
+
+    Emits ``'healthy'``, ``'unhealthy'`` or ``'other'``; the mRFEI reads the
+    first two, and ``'other'`` cannot occur for rows this fetch asked for (see
+    :data:`FOOD_ACCESS_CLASSES`).
+    """
+    expression = _sql_text(tags)
+    conditions = " ".join(
+        f"WHEN json_extract_string({expression}, '$.{key}') = '{value}' THEN '{label}'"
+        for label, entries in FOOD_ACCESS_CLASSES
+        for key, value in entries
+    )
+    return f"CASE {conditions} ELSE 'other' END"
