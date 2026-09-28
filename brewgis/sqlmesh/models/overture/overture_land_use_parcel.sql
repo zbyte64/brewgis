@@ -18,13 +18,6 @@ MODEL (
   blueprints @region_blueprints()
 );
 
--- pre_statements
-  CREATE INDEX IF NOT EXISTS idx_overture_land_use_bridge_wgs84_geometry
-  ON brewgis.@{region}.overture_land_use USING GIST (wgs84_geometry);
-  CREATE INDEX IF NOT EXISTS idx_overture_land_use_area
-  ON brewgis.@{region}.overture_land_use USING BTREE (area);
-  ANALYZE brewgis.@{region}.overture_land_use;
-
 -- Overture Land Use per Parcel — spatial join of Overture land use polygons
 -- to base canvas parcels.
 --
@@ -48,10 +41,9 @@ WITH
 -- Priority 1: centroid-inside-polygon join
 -- References base_canvas_geometry directly (not via CTE) so the GIST
 -- expression index on ST_Centroid(geometry) is visible to the planner.
--- The overture data uses a subquery (not CTE) for ST_SetSRID — necessary
--- because overture.geometry has SRID 0 and ST_Contains requires matching
--- SRIDs. The planner inverts the join: seq-scan overture + index-look-up
--- parcels, completing in ~1s.
+-- The overture data uses a subquery (not CTE) so its WGS84 polygon reaches the
+-- join as `geometry`, already tagged 4326 by the published table. The planner
+-- inverts the join: seq-scan overture + index-look-up parcels, completing in ~1s.
 centroid_match AS (
     SELECT DISTINCT ON (bg.parcel_id)
         bg.parcel_id,
@@ -59,7 +51,7 @@ centroid_match AS (
         olu.class AS overture_land_use_class
     FROM brewgis.@{region}.base_canvas_geometry bg
     JOIN (
-        SELECT ST_SetSRID(wgs84_geometry, @VAR('default_srid', 4326)) AS geometry,
+        SELECT wgs84_geometry AS geometry,
                area,
                subtype, class
         FROM brewgis.@{region}.overture_land_use
@@ -79,9 +71,11 @@ unmatched AS (
 ),
 
 -- Priority 2: LATERAL index-lookup for unmatched parcels
--- For each unmatched parcel, index-scans overture_land_use via GIST
--- on raw geometry (bypasses ST_SetSRID wrapper so index is usable).
--- Casts parcel geometry to SRID 0 to match overture's unset SRID.
+-- Both sides carry their CRS — the parcel geometry comes from
+-- base_canvas_geometry in 4326, and the published overture_land_use table tags
+-- its own wgs84_geometry 4326 — so the predicate names that column directly and
+-- uses its GiST index. (Were the two ever to disagree, PostGIS would raise a
+-- mixed-SRID error rather than answer from the wrong CRS.)
 area_vote AS (
     SELECT
         u.parcel_id,
@@ -91,7 +85,7 @@ area_vote AS (
     CROSS JOIN LATERAL (
         SELECT olu2.subtype, olu2.class
         FROM brewgis.@{region}.overture_land_use olu2
-        WHERE ST_Intersects(olu2.wgs84_geometry, ST_SetSRID(u.geometry, 0))
+        WHERE ST_Intersects(olu2.wgs84_geometry, u.geometry)
         ORDER BY ST_Area(olu2.wgs84_geometry) DESC
         LIMIT 1
     ) olu

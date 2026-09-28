@@ -1,0 +1,130 @@
+MODEL (
+  name brewgis.@{region}.buildings_combined_raw,
+  kind FULL,
+  description 'Spatially deduplicated union of Overture and VIDA (Google, Microsoft) building footprints; every geometry lands as SRID 0.',
+  column_descriptions (
+    geometry = 'Building footprint in Web Mercator (EPSG:3857) stored as SRID 0; the published buildings_combined VIEW re-tags it.',
+    wgs84_geometry = 'Building footprint in WGS84 (EPSG:4326) with lon/lat axis order, stored as SRID 0; the published buildings_combined VIEW re-tags it.',
+    local_geometry = 'Building footprint projected to the region local_srid and stored as SRID 0; the published buildings_combined VIEW re-tags it.',
+    height = 'Building height in metres; null for VIDA rows.',
+    levels = 'Number of building levels; null for VIDA rows.',
+    class = 'Source building class label; null for VIDA rows.',
+    source = 'Origin dataset of the record: overture or vida.',
+    bf_source = 'Building-footprint provider for VIDA rows (google or microsoft); null for Overture.',
+    confidence = 'VIDA confidence score for the footprint; null for Overture rows.'
+  ),
+  gateway: duckdb,
+  blueprints @region_blueprints()
+);
+
+-- The GiST indexes this model cannot carry live on the PostGIS copy,
+-- ``buildings/combined_pg.sql``: a DuckDB-gateway table is written through
+-- DuckDB, which drops a GiST index for a B-tree.
+
+-- Combined Building Footprints — spatial dedup union of Overture Maps
+-- and VIDA (Google + Microsoft) building footprints.
+--
+-- Dedup strategy:
+--   - ALL Overture buildings are carried through (they have height,
+--     levels, class metadata that VIDA lacks).
+--   - VIDA buildings with bf_source IN ('google', 'microsoft') that do
+--     NOT spatially overlap (>50% area) with any Overture building are
+--     included.
+--   - VIDA bf_source = 'openstreetmap' buildings are dropped entirely
+--     — they are redundant with Overture (also OSM-derived) and have less
+--     metadata.
+--
+-- Column conventions:
+--   geometry (EPSG:3857) — Web Mercator, projected with no axis ambiguity
+--   wgs84_geometry (EPSG:4326) — (lon,lat) axis via always_xy=true
+--   local_geometry (local_srid) — the region's projected CRS via always_xy=true
+--
+-- All three land as SRID 0: the DuckDB-to-PostGIS transfer writes SRID-less WKB,
+-- so the ``ST_SetCRS`` calls below do not survive it (measured against this
+-- stack; the probe is recorded in ``osm/food_pois_raw.sql``). The published
+-- ``brewgis.<region>.buildings_combined`` VIEW re-tags each column with
+-- ``ST_SetSRID``. The projected values themselves are trustworthy: DuckDB's
+-- 4326-to-local transform agreed with PostGIS's ``ST_Transform`` to 0.000000 m
+-- across a 2834-row sample of the built table (2026-09-27).
+
+WITH overture_buildings AS (
+    SELECT
+        ob.geometry,
+        ob.wgs84_geometry,
+        ob.local_geometry,
+        ob.height,
+        ob.levels,
+        ob.class,
+        'overture' AS source,
+        NULL::text AS bf_source,
+        NULL::double precision AS confidence
+    FROM duckdb.@{region}.overture_buildings ob
+),
+
+vida_buildings AS (
+    SELECT
+        vb.geometry,
+        vb.wgs84_geometry,
+        NULL::geometry AS local_geometry,
+        NULL::double precision AS height,
+        1::integer AS levels,
+        NULL::text AS class,
+        'vida' AS source,
+        vb.bf_source,
+        vb.confidence
+    FROM duckdb.buildings.vida_combined vb
+    WHERE vb.bf_source IN ('google', 'microsoft')
+),
+
+-- VIDA buildings that do NOT overlap more than 50% with any Overture building
+vida_deduped AS (
+    SELECT
+        vb.geometry,
+        vb.wgs84_geometry,
+        vb.local_geometry,
+        vb.height,
+        vb.levels,
+        vb.class,
+        vb.source,
+        vb.bf_source,
+        vb.confidence
+    FROM vida_buildings vb
+    WHERE vb.geometry && (SELECT ST_Extent(geometry) FROM overture_buildings LIMIT 1)
+      AND NOT EXISTS (
+        SELECT 1
+        FROM overture_buildings ob
+        WHERE ST_Intersects(vb.geometry, ob.geometry)
+          AND ST_Area(ST_Intersection(vb.geometry, ob.geometry))
+              > 0.5 * ST_Area(vb.geometry)
+        LIMIT 1
+    )
+)
+
+-- DuckDB ST_Transform with always_xy=true produces correct axis order.
+-- geometry (3857) and wgs84_geometry (4326) need no axis flips.
+-- local_geometry computed from wgs84_geometry via always_xy transform.
+SELECT
+    ST_SetCRS(geometry, 'EPSG:3857') AS geometry,
+    ST_SetCRS(wgs84_geometry, 'EPSG:4326') AS wgs84_geometry,
+    ST_Transform(wgs84_geometry, 'EPSG:4326', 'EPSG:' || @VAR('local_srid')::text, true) AS local_geometry,
+    height,
+    levels,
+    class,
+    source,
+    bf_source,
+    confidence
+FROM overture_buildings
+
+UNION ALL
+
+SELECT
+    ST_SetCRS(geometry, 'EPSG:3857') AS geometry,
+    ST_SetCRS(wgs84_geometry, 'EPSG:4326') AS wgs84_geometry,
+    ST_Transform(wgs84_geometry, 'EPSG:4326', 'EPSG:' || @VAR('local_srid')::text, true) AS local_geometry,
+    height,
+    levels,
+    class,
+    source,
+    bf_source,
+    confidence
+FROM vida_deduped;

@@ -6,7 +6,7 @@ MODEL (
     objectid = 'Feature ID (FID) of the city limits record, as fetched from the FeatureServer.',
     agency_cod = 'AGENCY_COD code of the agency that publishes the boundary.',
     agency_nam = 'AGENCY_NAM agency name of the boundary record.',
-    geometry = 'City limits geometry in EPSG:4326, ST_SetCRS-tagged so the FDW keeps the SRID.'
+    geometry = 'City limits geometry in EPSG:4326 stored as SRID 0: the DuckDB-to-PostGIS transfer writes SRID-less WKB. Read brewgis.fresno.city_boundary for the re-tagged column.'
   ),
   gateway duckdb
 );
@@ -14,10 +14,10 @@ MODEL (
 -- Fresno City Boundary Bridge — materializes the DuckDB fetch VIEW into
 -- PostGIS.
 --
--- DuckDB ST_Read emits EPSG:4326 geometry (GeoJSON lon/lat). ST_SetCRS
--- records the SRID explicitly because the DuckDB→PostGIS FDW drops SRID
--- metadata (all geometries arrive as SRID 0), mirroring
--- staging/fresno_parcels_bridge.sql.
+-- DuckDB ST_Read emits EPSG:4326 geometry (GeoJSON lon/lat), but the
+-- DuckDB-to-PostGIS transfer writes SRID-less WKB: the ST_SetCRS this SELECT
+-- applies is not carried over, so the geometry lands as SRID 0 (measured; the
+-- probe is recorded in osm/food_pois_raw.sql).
 
 SELECT
     objectid,

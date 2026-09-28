@@ -1,7 +1,7 @@
 MODEL (
-  name brewgis.osm.poi,
+  name brewgis.osm.poi_raw,
   kind FULL,
-  description 'PostGIS bridge table materializing the DuckDB Overpass POI fetch, one point per OSM node or way.',
+  description 'PostGIS bridge table materializing the DuckDB Overpass POI fetch, one point per OSM node or way; the geometry column lands as SRID 0.',
   column_descriptions (
     osm_id = 'OpenStreetMap element id within its element type.',
     osm_type = 'OpenStreetMap element type, node or way.',
@@ -12,20 +12,23 @@ MODEL (
     shop = 'Element shop tag value, empty string when absent.',
     leisure = 'Element leisure tag value, empty string when absent.',
     tourism = 'Element tourism tag value, empty string when absent.',
-    geometry = 'POI point in EPSG:4326, wrapped in ST_SetCRS so the SRID survives the DuckDB-to-PostGIS FDW.'
+    geometry = 'POI point in EPSG:4326 stored as SRID 0: the DuckDB-to-PostGIS transfer writes SRID-less WKB (see the header). Read brewgis.osm.poi for the re-tagged column.'
   ),
   gateway duckdb
 );
 
 -- Overpass POI bridge — materializes the DuckDB fetch VIEW into PostGIS.
 --
--- DuckDB ST_Point emits EPSG:4326 geometry. ST_SetCRS records the SRID
--- explicitly because the DuckDB→PostGIS FDW drops SRID metadata (all
--- geometries arrive as SRID 0), mirroring fresno/farmland_raw.sql.
+-- DuckDB ST_Point emits EPSG:4326 geometry, but the DuckDB-to-PostGIS transfer
+-- writes SRID-less WKB: the ``ST_SetCRS`` this SELECT applies is not carried
+-- over, and every geometry lands as SRID 0 (measured against this stack; the
+-- probe is recorded in ``osm/food_pois_raw.sql``). PostGIS consumers therefore
+-- read the published ``brewgis.osm.poi`` VIEW, which re-tags the column, rather
+-- than this bridge.
 --
--- The bridge is what Django's POI import copies out: tasks.run_poi_fetch runs
--- the plan that materializes this model and then clones it into the
--- workspace's own schema.
+-- Django's POI import drives this model through ``services/poi_fetcher.py`` and
+-- clones the published VIEW into the workspace's own schema, so the copy carries
+-- a recorded CRS.
 
 SELECT
     osm_id,

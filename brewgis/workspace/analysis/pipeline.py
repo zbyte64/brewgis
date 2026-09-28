@@ -383,9 +383,10 @@ def _network_distance_inputs(scenario_id: int) -> list[str]:
     routes over is a blueprint fact (``road_network_region``), and a built
     region network is a no-op in the plan.
 
-    The subsegment bridge is named as well: it is the vertices' upstream, and a
-    model added to the project is only planned when a selector names it — the
-    vertices/edges selectors alone backfill the graph against a bridge the plan
+    The subsegment chain is named as well: the DuckDB fetch VIEW, the bridge it
+    lands in, and the published VIEW that re-tags the bridge's SRID. A model
+    added to the project is only planned when a selector names it — the
+    vertices/edges selectors alone backfill the graph against a chain the plan
     never created (``relation "...overture_road_subsegments" does not exist``).
     Selected, never restated, for the same reason as the vertices and edges it
     feeds: its inputs are the Overture release, not the scenario.
@@ -396,6 +397,7 @@ def _network_distance_inputs(scenario_id: int) -> list[str]:
             f"brewgis.{region}.{table}"
             for region in REGIONS
             for table in (
+                "overture_road_subsegments_raw",
                 "overture_road_subsegments",
                 "road_network_vertices",
                 "road_network_edges",

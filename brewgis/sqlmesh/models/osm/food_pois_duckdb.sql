@@ -12,7 +12,7 @@ MODEL (
   ),
   gateway duckdb,
   dialect duckdb,
-  -- Declared, as in osm/poi.sql, to pin the view's column order and types for
+  -- Declared, as in osm/poi_duckdb.sql, to pin the view's column order and types for
   -- the bridge reading through it. It does not spare the fetch: binding the
   -- SELECT against read_json_auto needs the response's schema, so creating this
   -- view issues the Overpass request (measured 2026-09-27: ~140 s cold), and

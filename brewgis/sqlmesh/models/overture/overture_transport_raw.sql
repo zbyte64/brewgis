@@ -1,10 +1,10 @@
 MODEL (
-  name brewgis.@{region}.overture_transport,
+  name brewgis.@{region}.overture_transport_raw,
   kind FULL,
-  description 'PostGIS bridge table materializing the DuckDB Overture transportation VIEW, one row per road segment, with CRS tags set and local_geometry left NULL.',
+  description 'PostGIS bridge table materializing the DuckDB Overture transportation VIEW, one row per road segment, with local_geometry left NULL and every geometry landing as SRID 0.',
   column_descriptions (
-    geometry = 'Road segment geometry tagged EPSG:3857, reused from the DuckDB overture_transport view.',
-    wgs84_geometry = 'Road segment geometry tagged EPSG:4326, reused from the DuckDB overture_transport view.',
+    geometry = 'Road segment geometry in EPSG:3857 stored as SRID 0; the published overture_transport VIEW re-tags it.',
+    wgs84_geometry = 'Road segment geometry in EPSG:4326 stored as SRID 0; the published overture_transport VIEW re-tags it.',
     local_geometry = 'Always NULL here: local_geometry is computed downstream in the PostGIS intersection models.',
     surface = 'Road surface type carried through from the DuckDB overture_transport view.',
     class = 'Overture road class carried through from the DuckDB overture_transport view.',
@@ -26,6 +26,14 @@ MODEL (
 -- and (x,y) for 3857 — no axis flip needed.
 -- local_geometry is computed in downstream PostGIS intersection models
 -- to avoid DuckDB geographic→projected transform issues.
+--
+-- The DuckDB-to-PostGIS transfer writes SRID-less WKB, so the ``ST_SetCRS``
+-- calls below do not survive it: both geometry columns land as SRID 0 (measured
+-- against this stack; the probe is recorded in ``osm/food_pois_raw.sql``). The
+-- published ``brewgis.<region>.overture_transport`` VIEW restores the two CRSs
+-- with ``ST_SetSRID``, while the intersection-point models index *this* table
+-- (their GiST indexes are created here because a DuckDB-gateway table is the
+-- only indexable relation in the chain).
 
 SELECT
     ST_SetCRS(geometry, 'EPSG:3857') AS geometry,
@@ -36,3 +44,8 @@ SELECT
     subclass,
     width
 FROM duckdb.@{region}.overture_transport;
+
+-- NOTE: no post_statements — this model runs through DuckDB, and DuckDB cannot
+-- create a PostGIS index on its attached table ("Only altering tables is
+-- supported for now"). The consumers read the published VIEW for values and
+-- filter it by road class, which needs no spatial index.

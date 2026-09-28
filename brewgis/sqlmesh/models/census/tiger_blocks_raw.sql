@@ -4,8 +4,8 @@ MODEL (
   description 'PostGIS bridge materializing the DuckDB staging VIEW of TIGER/Line 2020 block boundaries.',
   column_descriptions (
     geoid = 'Census block GEOID from STATEFP20, COUNTYFP20, TRACTCE20 and BLOCKCE20 (15-digit FIPS).',
-    geometry = 'Block boundary from the DuckDB VIEW with CRS tagged EPSG:3857 (Web Mercator, meters).',
-    wgs84_geometry = 'Block boundary from the DuckDB VIEW with CRS tagged EPSG:4326 (degrees, EPSG:4326).',
+    geometry = 'Block boundary in EPSG:3857 (Web Mercator, meters) stored as SRID 0; the published tiger_blocks VIEW re-tags it.',
+    wgs84_geometry = 'Block boundary in EPSG:4326 (degrees) stored as SRID 0; the published tiger_blocks VIEW re-tags it.',
     state_fips = 'Two-digit state FIPS code from STATEFP20.',
     vintage = 'TIGER/Line vintage of the source file, always 2020 for this model.'
   ),

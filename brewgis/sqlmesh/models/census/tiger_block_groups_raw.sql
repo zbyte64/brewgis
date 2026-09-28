@@ -4,8 +4,8 @@ MODEL (
   description 'PostGIS bridge materializing the DuckDB staging VIEW of TIGER/Line block group boundaries.',
   column_descriptions (
     geoid = 'Block group GEOID from STATEFP, COUNTYFP, TRACTCE and BLKGRPCE (12-digit FIPS).',
-    geometry = 'Block group boundary from the DuckDB VIEW with CRS tagged EPSG:3857 (Web Mercator, meters).',
-    wgs84_geometry = 'Block group boundary from the DuckDB VIEW with CRS tagged EPSG:4326 (degrees, EPSG:4326).',
+    geometry = 'Block group boundary in EPSG:3857 (Web Mercator, meters) stored as SRID 0; the published tiger_block_groups VIEW re-tags it.',
+    wgs84_geometry = 'Block group boundary in EPSG:4326 (degrees) stored as SRID 0; the published tiger_block_groups VIEW re-tags it.',
     state_fips = 'Two-digit state FIPS code from STATEFP.',
     vintage = 'TIGER/Line vintage of the source file, either 2023 or 2013.'
   ),

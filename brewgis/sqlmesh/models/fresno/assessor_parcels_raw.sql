@@ -12,17 +12,17 @@ MODEL (
     assess_imp_val = 'ASSESS_IMP_VAL assessed improvement value of the parcel (dollars).',
     total_assessed_value = 'TOTAL_ASSESSED_VALUE total assessed value of the parcel (dollars).',
     tax_area_code = 'TAX_AREA_CODE county tax-area code of the parcel.',
-    geometry = 'Feature geometry in EPSG:4326, ST_SetCRS-tagged so the FDW keeps the SRID.'
+    geometry = 'Feature geometry in EPSG:4326 stored as SRID 0: the DuckDB-to-PostGIS transfer writes SRID-less WKB. Read brewgis.fresno.assessor_parcels for the re-tagged column.'
   ),
   gateway duckdb
 );
 
 -- Fresno Assessor Parcels Bridge — materializes the DuckDB fetch VIEW into PostGIS.
 --
--- DuckDB ST_GeomFromGeoJSON emits EPSG:4326 geometry (GeoJSON lon/lat).
--- ST_SetCRS records the SRID explicitly because the DuckDB→PostGIS FDW drops
--- SRID metadata (all geometries arrive as SRID 0), mirroring
--- fresno/parcels_raw.sql and sacog/assessor_parcels_raw.sql.
+-- DuckDB ST_GeomFromGeoJSON emits EPSG:4326 geometry (GeoJSON lon/lat), but the
+-- DuckDB-to-PostGIS transfer writes SRID-less WKB: the ST_SetCRS this SELECT
+-- applies is not carried over, so the geometry lands as SRID 0 (measured; the
+-- probe is recorded in osm/food_pois_raw.sql).
 --
 -- Grain is one row per situs-address feature; brewgis.fresno.assessor_parcels
 -- (the adapter) collapses to one row per APN. PostGIS models should use that

@@ -1,10 +1,11 @@
 """Points of Interest import — the Overpass fetch is a SQLMesh model.
 
 The Overpass query, its response parsing, and the POI classification live in
-SQLMesh (``models/osm/poi.sql`` fetches from DuckDB, ``models/osm/poi_bridge.sql``
-bridges to PostGIS, ``macros/overpass_fetch.py`` holds the tag taxonomy).  Like
+SQLMesh (``models/osm/poi_duckdb.sql`` fetches from DuckDB, ``models/osm/poi_raw.sql``
+bridges to PostGIS, ``models/osm/poi.sql`` re-tags the bridge's CRS for PostGIS
+consumers, ``macros/overpass_fetch.py`` holds the tag taxonomy).  Like
 every other web import, the fetch is cached by DuckDB rather than repeated per
-request.  This module only drives the plan that materializes the bridge and
+request.  This module only drives the plan that materializes the chain and
 copies the result into the workspace's own schema.
 """
 
@@ -21,12 +22,18 @@ from brewgis.workspace.services.fetch_clone import model_source_ref
 
 logger = logging.getLogger(__name__)
 
-# SQLMesh models behind a POI import: the DuckDB fetch VIEW and the PostGIS
-# bridge whose rows the clone copies. Selecting both keeps the fetch view and
-# the bridge planned together, whichever of them changed.
-POI_MODELS: tuple[str, ...] = ("duckdb.osm.poi", "brewgis.osm.poi")
+# SQLMesh models behind a POI import: the DuckDB fetch VIEW, the PostGIS bridge
+# it lands in, and the published VIEW that restores the bridge's SRID. Selecting
+# all three keeps the chain planned together, whichever of them changed. The
+# clone copies the published VIEW, so it must be in the same plan as the bridge.
+POI_MODELS: tuple[str, ...] = (
+    "duckdb.osm.poi",
+    "brewgis.osm.poi_raw",
+    "brewgis.osm.poi",
+)
 
-# Namespace and table the bridge materializes under, which the clone reads from.
+# Namespace and table the published VIEW materializes under, which the clone
+# reads from.
 _POI_BRIDGE_REGION = "osm"
 _POI_BRIDGE_TABLE = "poi"
 

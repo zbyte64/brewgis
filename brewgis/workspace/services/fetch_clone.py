@@ -109,7 +109,7 @@ def _restore_srid(
 
     A gateway-duckdb bridge cannot carry a geometry SRID through
     ``postgres_scanner`` — it transfers geometry as SRID-less WKB, so those
-    tables store their geometry as SRID 0 (see ``models/osm/poi_bridge.sql``) and
+    tables store their geometry as SRID 0 (see ``models/osm/poi_raw.sql``) and
     a copy of one inherits it. PostGIS operations and the tile servers read that
     SRID, so the copy records the CRS every fetch bridge produces.
     """

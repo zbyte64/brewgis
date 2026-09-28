@@ -1,39 +1,59 @@
 MODEL (
-  name duckdb.@{region}.overture_land_use,
-  kind VIEW,
-  description 'Overture Maps land use polygons for the region (release 2026-08-19.0 GeoParquet read from S3 by DuckDB via httpfs), reprojected to 3857, 4326 and the local CRS.',
+  name brewgis.@{region}.overture_land_use,
+  kind FULL,
+  description 'PostGIS materialization of the Overture land use bridge with both CRSs tagged and the indexes the parcel lookup needs: Overture Maps land use geometry for the region.',
   column_descriptions (
-    geometry = 'Land use polygon reprojected from Overture CRS84 to Web Mercator (EPSG:3857).',
-    wgs84_geometry = 'Land use polygon reprojected from Overture CRS84 to EPSG:4326 (lon/lat).',
-    local_geometry = 'Land use polygon reprojected from Overture CRS84 to the region local CRS (local_srid).',
-    subtype = 'Overture land use subtype of the polygon, cast to VARCHAR.',
-    class = 'Overture land use class of the polygon, cast to VARCHAR.'
+    geometry = 'Land use geometry tagged SRID 3857 (Web Mercator, meters); the source subtype carries lines and polygons.',
+    wgs84_geometry = 'Land use geometry tagged SRID 4326 (degrees, EPSG:4326).',
+    area = 'ST_Area of the EPSG:4326 land use geometry (square degrees), carried through from the bridge.',
+    subtype = 'Overture land use subtype, carried through from the bridge.',
+    class = 'Overture land use class, carried through from the bridge.'
   ),
-  gateway duckdb,
-  dialect duckdb,
+  columns (
+    geometry GEOMETRY(GEOMETRY, 3857),
+    wgs84_geometry GEOMETRY(GEOMETRY, 4326),
+    area DOUBLE,
+    subtype TEXT,
+    class TEXT
+  ),
   blueprints @region_blueprints()
 );
 
--- Overture Maps land use for Sacramento County, CA.
--- DuckDB reads GeoParquet directly from S3 via httpfs extension.
--- Land use contains polygons with subtype (agriculture, residential, industrial, etc.)
--- and optional class fields (farmland, commercial, retail, etc.).
--- Row-group filter pushdown on the bbox struct column ensures only
--- Sacramento-relevant row groups are fetched from S3.
--- Post-statements materialize the result in public.overture_land_use in
--- PostGIS via the postgres_scanner-attached pg catalog.
+-- Overture land use — PostGIS table copied from the DuckDB bridge with real
+-- SRIDs and the indexes ``overture_land_use_parcel`` needs.
 --
--- Source CRS: CRS84 (lon/lat axis). Overture Maps GeoParquet via S3 httpfs.
--- ST_Transform with always_xy=true ensures (lon,lat) input axis order.
+-- The bridge (``brewgis.<region>.overture_land_use_raw``) materializes the S3
+-- GeoParquet read through DuckDB, and that transfer writes SRID-less WKB: every
+-- geometry in the bridge lands as SRID 0 however the SELECT tagged it (see the
+-- bridge's header). Anything that reads the CRS — the tile server per tile,
+-- ``ST_Transform``, a registered Layer — then fails on the bridge's own column.
+--
+-- This model restores both CRSs with ``ST_SetSRID``, the same repair
+-- ``census/tiger_blocks.sql`` makes in a VIEW. It is a materialized table rather
+-- than a VIEW because its predicate columns must be indexed, and neither the
+-- bridge (DuckDB cannot create a PostGIS index) nor a VIEW (not indexable, and
+-- an index cannot cover an ``ST_SetSRID`` expression) can carry one — the same
+-- reason ``buildings/combined_pg.sql`` exists next to ``buildings_combined``.
+--
+-- Consequence for consumers: this table's columns carry their real CRS, so a
+-- spatial predicate can be written directly against ``wgs84_geometry`` and use
+-- the GiST index below — no ``ST_SetSRID`` wrapper, and no SRID-0 stand-in.
 
 SELECT
-  ST_Transform(geometry, 'CRS84', 'EPSG:3857', true) AS geometry,
-  ST_Transform(geometry, 'CRS84', 'EPSG:4326', true) AS wgs84_geometry,
-  ST_Transform(geometry, 'CRS84', 'EPSG:' || @VAR('local_srid')::text, true) AS local_geometry,
-  subtype::VARCHAR AS subtype,
-  class::VARCHAR AS class
-FROM read_parquet(@overture_land_use_parquet_glob)
-WHERE bbox.xmin < @overture_bbox_max_x
-  AND bbox.xmax > @overture_bbox_min_x
-  AND bbox.ymin < @overture_bbox_max_y
-  AND bbox.ymax > @overture_bbox_min_y;
+    ST_SetSRID(geometry, 3857) AS geometry,
+    ST_SetSRID(wgs84_geometry, 4326) AS wgs84_geometry,
+    area,
+    subtype,
+    class
+FROM brewgis.@{region}.overture_land_use_raw;
+
+-- post_statements
+-- ``overture_land_use_parcel`` index-scans ``wgs84_geometry`` for the parcels
+-- its centroid test misses, and orders the candidates by ``area``. The advisory
+-- lock serializes concurrent plans building this snapshot.
+  DO $$ BEGIN PERFORM pg_advisory_xact_lock(hashtext('idx_overture_land_use_wgs84_geometry')::bigint); END $$;
+  CREATE INDEX IF NOT EXISTS @snapshot_hash('idx_overture_land_use_wgs84_geometry_')
+  ON @this_model USING GIST (wgs84_geometry);
+  CREATE INDEX IF NOT EXISTS @snapshot_hash('idx_overture_land_use_area_')
+  ON @this_model USING BTREE (area);
+  ANALYZE @this_model;

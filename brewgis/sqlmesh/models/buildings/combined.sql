@@ -1,11 +1,11 @@
 MODEL (
   name brewgis.@{region}.buildings_combined,
-  kind FULL,
-  description 'Spatially deduplicated union of Overture and VIDA (Google, Microsoft) building footprints.',
+  kind VIEW,
+  description 'PostGIS VIEW over the buildings bridge that restores SRID metadata with ST_SetSRID: the spatially deduplicated union of Overture and VIDA (Google, Microsoft) building footprints.',
   column_descriptions (
-    geometry = 'Building footprint in Web Mercator (EPSG:3857).',
-    wgs84_geometry = 'Building footprint in WGS84 (EPSG:4326) with lon/lat axis order.',
-    local_geometry = 'Building footprint projected to the region local_srid.',
+    geometry = 'Building footprint re-tagged as SRID 3857 (Web Mercator, meters).',
+    wgs84_geometry = 'Building footprint re-tagged as SRID 4326 (degrees, EPSG:4326).',
+    local_geometry = 'Building footprint re-tagged as the region local_srid; the bridge projects it from wgs84_geometry in DuckDB.',
     height = 'Building height in metres; null for VIDA rows.',
     levels = 'Number of building levels; null for VIDA rows.',
     class = 'Source building class label; null for VIDA rows.',
@@ -13,113 +13,45 @@ MODEL (
     bf_source = 'Building-footprint provider for VIDA rows (google or microsoft); null for Overture.',
     confidence = 'VIDA confidence score for the footprint; null for Overture rows.'
   ),
-  gateway: duckdb,
+  columns (
+    geometry GEOMETRY(GEOMETRY, 3857),
+    wgs84_geometry GEOMETRY(GEOMETRY, 4326),
+    local_geometry GEOMETRY(GEOMETRY, @local_srid()),
+    height DOUBLE,
+    levels INTEGER,
+    class TEXT,
+    source TEXT,
+    bf_source TEXT,
+    confidence DOUBLE
+  ),
   blueprints @region_blueprints()
 );
 
-/*
-// gets interpreted by duckdb and drops the gist index for a btree
-CREATE INDEX IF NOT EXISTS @snapshot_hash('idx_buildings_combined_geometry_')
-ON @this_model USING GIST (geometry);
-ANALYZE @this_model;
-*/
-
--- Combined Building Footprints — spatial dedup union of Overture Maps
--- and VIDA (Google + Microsoft) building footprints.
+-- Combined building footprints — PostGIS VIEW wrapping the DuckDB bridge table
+-- with real SRIDs.
 --
--- Dedup strategy:
---   - ALL Overture buildings are carried through (they have height,
---     levels, class metadata that VIDA lacks).
---   - VIDA buildings with bf_source IN ('google', 'microsoft') that do
---     NOT spatially overlap (>50% area) with any Overture building are
---     included.
---   - VIDA bf_source = 'openstreetmap' buildings are dropped entirely
---     — they are redundant with Overture (also OSM-derived) and have less
---     metadata.
+-- The bridge (``brewgis.<region>.buildings_combined_raw``) materializes the
+-- Overture/VIDA dedup union through DuckDB, and that transfer writes SRID-less
+-- WKB: every geometry in the bridge lands as SRID 0 however the SELECT tagged it
+-- (see the bridge's header). Anything that reads the CRS — a tile server
+-- transforming a source per tile, ``ST_Transform``, a ``create_layer``
+-- registration — then fails on the bridge's own column.
 --
--- Column conventions:
---   geometry (EPSG:3857) — Web Mercator, projected with no axis ambiguity
---   wgs84_geometry (EPSG:4326) — (lon,lat) axis via always_xy=true
---   local_geometry (local_srid) — the region's projected CRS via always_xy=true
+-- This VIEW restores all three CRSs with ``ST_SetSRID``, the same repair
+-- ``census/tiger_blocks.sql`` makes for its bridge.
+--
+-- ``buildings_combined_pg`` materializes the GiST-indexed PostGIS copy that
+-- ``parcel_building_footprints`` joins against; the bridge itself cannot be
+-- indexed from DuckDB.
 
-WITH overture_buildings AS (
-    SELECT
-        ob.geometry,
-        ob.wgs84_geometry,
-        ob.local_geometry,
-        ob.height,
-        ob.levels,
-        ob.class,
-        'overture' AS source,
-        NULL::text AS bf_source,
-        NULL::double precision AS confidence
-    FROM duckdb.@{region}.overture_buildings ob
-),
-
-vida_buildings AS (
-    SELECT
-        vb.geometry,
-        vb.wgs84_geometry,
-        NULL::geometry AS local_geometry,
-        NULL::double precision AS height,
-        1::integer AS levels,
-        NULL::text AS class,
-        'vida' AS source,
-        vb.bf_source,
-        vb.confidence
-    FROM duckdb.buildings.vida_combined vb
-    WHERE vb.bf_source IN ('google', 'microsoft')
-),
-
--- VIDA buildings that do NOT overlap more than 50% with any Overture building
-vida_deduped AS (
-    SELECT
-        vb.geometry,
-        vb.wgs84_geometry,
-        vb.local_geometry,
-        vb.height,
-        vb.levels,
-        vb.class,
-        vb.source,
-        vb.bf_source,
-        vb.confidence
-    FROM vida_buildings vb
-    WHERE vb.geometry && (SELECT ST_Extent(geometry) FROM overture_buildings LIMIT 1)
-      AND NOT EXISTS (
-        SELECT 1
-        FROM overture_buildings ob
-        WHERE ST_Intersects(vb.geometry, ob.geometry)
-          AND ST_Area(ST_Intersection(vb.geometry, ob.geometry))
-              > 0.5 * ST_Area(vb.geometry)
-        LIMIT 1
-    )
-)
-
--- DuckDB ST_Transform with always_xy=true produces correct axis order.
--- geometry (3857) and wgs84_geometry (4326) need no axis flips.
--- local_geometry computed from wgs84_geometry via always_xy transform.
 SELECT
-    ST_SetCRS(geometry, 'EPSG:3857') AS geometry,
-    ST_SetCRS(wgs84_geometry, 'EPSG:4326') AS wgs84_geometry,
-    ST_Transform(wgs84_geometry, 'EPSG:4326', 'EPSG:' || @VAR('local_srid')::text, true) AS local_geometry,
+    ST_SetSRID(geometry, 3857) AS geometry,
+    ST_SetSRID(wgs84_geometry, 4326) AS wgs84_geometry,
+    ST_SetSRID(local_geometry, @local_srid()) AS local_geometry,
     height,
     levels,
     class,
     source,
     bf_source,
     confidence
-FROM overture_buildings
-
-UNION ALL
-
-SELECT
-    ST_SetCRS(geometry, 'EPSG:3857') AS geometry,
-    ST_SetCRS(wgs84_geometry, 'EPSG:4326') AS wgs84_geometry,
-    ST_Transform(wgs84_geometry, 'EPSG:4326', 'EPSG:' || @VAR('local_srid')::text, true) AS local_geometry,
-    height,
-    levels,
-    class,
-    source,
-    bf_source,
-    confidence
-FROM vida_deduped;
+FROM brewgis.@{region}.buildings_combined_raw;

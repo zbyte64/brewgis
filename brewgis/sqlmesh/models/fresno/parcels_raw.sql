@@ -8,17 +8,17 @@ MODEL (
     agency_cod = 'AGENCY_COD agency code of the parcel feature.',
     roll_year = 'ROLL_YEAR assessor roll year of the parcel feature.',
     shape_area = 'SHAPE_AREA attribute of the parcel feature as published by the FeatureServer (source units).',
-    geometry = 'Parcel feature geometry in EPSG:4326, ST_SetCRS-tagged so the FDW keeps the SRID.'
+    geometry = 'Parcel feature geometry in EPSG:4326 stored as SRID 0: the DuckDB-to-PostGIS transfer writes SRID-less WKB. Read brewgis.fresno.parcels for the re-tagged column.'
   ),
   gateway duckdb
 );
 
 -- Fresno Parcels Bridge — materializes the DuckDB fetch VIEW into PostGIS.
 --
--- DuckDB ST_Read emits EPSG:4326 geometry (GeoJSON lon/lat). ST_SetCRS
--- records the SRID explicitly because the DuckDB→PostGIS FDW drops SRID
--- metadata (all geometries arrive as SRID 0), mirroring
--- staging/tiger_blocks_bridge.sql and assessor/overture_land_use_bridge.sql.
+-- DuckDB ST_Read emits EPSG:4326 geometry (GeoJSON lon/lat), but the
+-- DuckDB-to-PostGIS transfer writes SRID-less WKB: the ST_SetCRS this SELECT
+-- applies is not carried over, so the geometry lands as SRID 0 (measured; the
+-- probe is recorded in osm/food_pois_raw.sql).
 --
 -- PostGIS models should use brewgis.fresno.parcels (the PostGIS VIEW
 -- wrapping this table) rather than referencing this model directly, to get
