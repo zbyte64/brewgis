@@ -422,6 +422,55 @@ class TestAnalysisPanelViews(TestCase):
         )
         assert response.status_code == 404
 
+    def test_card_status_records_a_dead_run_as_failed_and_stops_polling(self):
+        """A run whose worker was killed never writes its own status, so the
+        card's poll has to notice and record it — otherwise every card spins
+        forever on a run that is not running."""
+        run = AnalysisRunFactory(
+            workspace=self.workspace,
+            scenario=self.scenario,
+            modules=["water_demand"],
+            status="running",
+            started_at=timezone.now() - timedelta(minutes=30),
+            heartbeat_at=timezone.now() - timedelta(minutes=10),
+        )
+        self.client.force_login(self.user)
+        response = self.client.get(
+            reverse(
+                "workspace:analysis_card_status",
+                args=[self.workspace.pk, "water_demand"],
+            ),
+            {"scenario": self.scenario.pk},
+        )
+        assert response.status_code == 200
+        assert "every 2s" not in response.content.decode()
+        self.assertContains(response, "Failed")
+        self.assertContains(response, "Abandoned")
+        run.refresh_from_db()
+        assert run.status == "failed"
+        assert run.completed_at is not None
+
+    def test_card_status_leaves_a_live_run_polling(self):
+        AnalysisRunFactory(
+            workspace=self.workspace,
+            scenario=self.scenario,
+            modules=["water_demand"],
+            status="running",
+            started_at=timezone.now(),
+            heartbeat_at=timezone.now(),
+        )
+        self.client.force_login(self.user)
+        response = self.client.get(
+            reverse(
+                "workspace:analysis_card_status",
+                args=[self.workspace.pk, "water_demand"],
+            ),
+            {"scenario": self.scenario.pk},
+        )
+        assert response.status_code == 200
+        self.assertContains(response, "every 2s")
+        self.assertContains(response, "Running")
+
     def test_configure_view_renders_form(self):
         self.client.force_login(self.user)
         response = self.client.get(

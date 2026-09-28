@@ -29,6 +29,8 @@ from brewgis.workspace.analysis.module_registry import get_module_parameters
 from brewgis.workspace.analysis.module_registry import resolve_module_order
 from brewgis.workspace.analysis.pipeline import launch_analysis_run
 from brewgis.workspace.analysis.pipeline import run_analysis_pipeline
+from brewgis.workspace.analysis.run_health import reconcile_abandoned_run
+from brewgis.workspace.analysis.run_health import reconcile_abandoned_runs
 from brewgis.workspace.models import AnalysisRun
 from brewgis.workspace.models import Scenario
 from brewgis.workspace.models import ScenarioType
@@ -471,6 +473,9 @@ def _vmt_fee_data(run: AnalysisRun) -> dict[str, float] | None:
 def analysis_status(request: HttpRequest, run_pk: int) -> HttpResponse:
     """Analysis run detail — full page on a direct visit, htmx-polled partial otherwise."""
     run = get_object_or_404(AnalysisRun, pk=run_pk)
+    # Polled every 2s while the run reads as live, so this is where a run whose
+    # worker died gets recorded as failed and the poll stops.
+    reconcile_abandoned_run(run)
 
     template_name = (
         "workspace/analysis/status.html#analysis-status"
@@ -488,6 +493,7 @@ def analysis_status(request: HttpRequest, run_pk: int) -> HttpResponse:
 def analysis_list(request: HttpRequest) -> HttpResponse:
     """List recent analysis runs for the current user's workspaces."""
     runs = AnalysisRun.objects.select_related("workspace").order_by("-created_at")[:50]
+    reconcile_abandoned_runs(runs)
     return render(
         request,
         "workspace/analysis/list.html",
@@ -566,12 +572,16 @@ def _module_last_run(
     """Return the newest run that included *module_key*, scoped like the cards.
 
     A module's card and the details it opens both read this one definition of
-    "its last run", so the badge and the details can never disagree.
+    "its last run", so the badge and the details can never disagree. The run is
+    reconciled before it is returned: the card polls this every 2s while the run
+    reads as live, so a run whose worker died is recorded as failed here and the
+    poll ends (see :mod:`brewgis.workspace.analysis.run_health`).
     """
     runs = AnalysisRun.objects.filter(workspace=workspace).select_related("scenario")
     if scenario is not None:
         runs = runs.filter(scenario=scenario)
-    return runs.filter(modules__contains=[module_key]).order_by("-created_at").first()
+    run = runs.filter(modules__contains=[module_key]).order_by("-created_at").first()
+    return None if run is None else reconcile_abandoned_run(run)
 
 
 def _analysis_card_context(

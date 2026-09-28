@@ -12,6 +12,7 @@ from django.shortcuts import render
 from django.urls import reverse
 from django.views.decorators.http import require_POST
 
+from brewgis.workspace.analysis.run_health import reconcile_abandoned_runs
 from brewgis.workspace.built_forms.models import BuildingType
 from brewgis.workspace.models import AnalysisRun
 from brewgis.workspace.models import County
@@ -274,13 +275,18 @@ def workspace_detail(request: HttpRequest, pk: int) -> HttpResponse:
             county_fips=entry["county"],
         )
 
+    # The hub lists each recent run's status; reconcile first so a run whose
+    # worker died reads as failed here rather than as perpetually running.
+    recent_runs = list(
+        AnalysisRun.objects.filter(workspace=workspace).order_by("-created_at")[:5]
+    )
+    reconcile_abandoned_runs(recent_runs)
+
     context: dict[str, object] = {
         "counties": County.objects.filter(county_q),
         "region_summary": _build_region_summary(workspace),
         "analysis_modules": build_analysis_modules(workspace),
-        "recent_runs": AnalysisRun.objects.filter(workspace=workspace).order_by(
-            "-created_at"
-        )[:5],
+        "recent_runs": recent_runs,
         "settings_form": WorkspaceSettingsForm(instance=workspace),
         **build_catalog_context(workspace),
     }

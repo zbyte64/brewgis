@@ -37,6 +37,7 @@ from brewgis.workspace.analysis.module_registry import get_vars_for_module
 from brewgis.workspace.analysis.module_registry import (
     resolve_module_order as _resolve_module_order,
 )
+from brewgis.workspace.analysis.run_health import run_heartbeat
 from brewgis.workspace.analysis.sqlmesh_runner import model_fqns_built_in
 from brewgis.workspace.analysis.sqlmesh_runner import run_sqlmesh_plan
 from brewgis.workspace.models import AnalysisRun
@@ -141,15 +142,22 @@ def _execute_analysis_run(run: AnalysisRun) -> None:
     Mutates and saves ``run``'s status as it goes, so both the synchronous
     caller (:func:`run_analysis_pipeline`) and the Celery task that backs
     :func:`launch_analysis_run` can share the exact same execution logic.
+
+    The whole attempt runs under :func:`run_heartbeat`, so a worker that dies
+    without reaching either terminal write below (Celery's hard time limit, a
+    container restart, an OOM kill) leaves a heartbeat that has gone quiet —
+    which is what lets a reader record the run as failed instead of polling it
+    forever.
     """
     run.status = "running"
     run.started_at = timezone.now()
+    run.heartbeat_at = timezone.now()
     # A retry reuses the same record — don't let an earlier attempt's cause
     # stick to a run that is now running again.
     run.failure_cause = ""
-    run.save(update_fields=["status", "started_at", "failure_cause"])
+    run.save(update_fields=["status", "started_at", "heartbeat_at", "failure_cause"])
 
-    with capture_run_log() as log_stream:
+    with run_heartbeat(run.pk), capture_run_log() as log_stream:
         try:
             result = run_modules_sync(
                 modules=run.modules,
@@ -251,11 +259,29 @@ def launch_analysis_run(
     returns, so the run is already ``completed``/``failed`` by the time this
     function returns in those environments; the real behavior of returning
     immediately only takes effect where Celery workers are running async.
+
+    A dispatch that never reaches the broker fails the run on the spot and
+    returns it that way, exactly as the eager path returns a run whose task
+    failed inline: the run row already exists, and nothing else would ever
+    write to it, so it would otherwise sit ``pending`` until a reader
+    reconciled it.
     """
     from brewgis.workspace.tasks import run_analysis_task
 
     run = _create_analysis_run(scenario_id, module_names, vars_)
-    run_analysis_task.delay(run.pk)
+    try:
+        run_analysis_task.delay(run.pk)
+    except Exception as exc:
+        logger.exception("AnalysisRun #%s could not be dispatched", run.pk)
+        run.status = "failed"
+        run.failure_cause = (
+            f"Never dispatched: handing this run to a Celery worker failed "
+            f"({type(exc).__name__}: {exc}). Check that the broker and its workers "
+            "are running, then re-run the analysis."
+        )
+        run.completed_at = timezone.now()
+        run.save(update_fields=["status", "failure_cause", "completed_at"])
+        return run
     run.refresh_from_db()
     return run
 

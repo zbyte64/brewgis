@@ -9,6 +9,7 @@ from brewgis.workspace.analysis.module_registry import MODULE_DEPENDENCIES
 from brewgis.workspace.analysis.module_registry import get_module_label
 from brewgis.workspace.analysis.module_registry import get_result_table_names
 from brewgis.workspace.analysis.pipeline import run_analysis_pipeline
+from brewgis.workspace.analysis.run_health import reconcile_abandoned_run
 from brewgis.workspace.models import AnalysisRun
 from brewgis.workspace.models import Scenario
 from brewgis.workspace.models import Workspace
@@ -114,6 +115,9 @@ def register_tools(server: object) -> None:
             return {"error": "Invalid workspace slug"}
         workspace = get_object_or_404(Workspace, pk=ws_pk)
         run = get_object_or_404(AnalysisRun, pk=run_id, workspace=workspace)
+        # An assistant polling this tool must not be told a run is still going
+        # when its worker died; see brewgis.workspace.analysis.run_health.
+        reconcile_abandoned_run(run)
         return {
             "id": run.pk,
             "status": run.status,

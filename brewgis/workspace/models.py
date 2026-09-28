@@ -610,6 +610,15 @@ class AnalysisRun(models.Model):
     )
     started_at = models.DateTimeField(null=True, blank=True)
     completed_at = models.DateTimeField(null=True, blank=True)
+    heartbeat_at = models.DateTimeField(
+        null=True,
+        blank=True,
+        help_text=(
+            "Wall-clock of the last liveness ping from whoever is executing this "
+            "run. A pending/running run whose ping has gone quiet has no executor "
+            "left — see brewgis.workspace.analysis.run_health."
+        ),
+    )
     error_log = models.TextField(blank=True, default="")
     failure_cause = models.TextField(
         blank=True,

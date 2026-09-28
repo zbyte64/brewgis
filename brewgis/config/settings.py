@@ -282,7 +282,10 @@ CELERY_TASK_SOFT_TIME_LIMIT = 60
 # the zone-to-zone network matrix. Raise them for a deployment whose regions
 # or cold plans run longer still. Soft stays below hard so an overrun is
 # raised as `SoftTimeLimitExceeded` inside the task and recorded as a failed
-# run, rather than SIGKILLing it into a stuck `running`.
+# run, rather than SIGKILLing it into a stuck `running` — and a run killed
+# regardless (by the hard limit, a worker restart, an OOM kill) is reconciled
+# from the heartbeat it leaves behind, see
+# brewgis.workspace.analysis.run_health.
 ANALYSIS_TASK_SOFT_TIME_LIMIT = env.int("ANALYSIS_TASK_SOFT_TIME_LIMIT", default=50400)
 ANALYSIS_TASK_TIME_LIMIT = env.int("ANALYSIS_TASK_TIME_LIMIT", default=57600)
 CELERY_BEAT_SCHEDULER = "django_celery_beat.schedulers:DatabaseScheduler"
