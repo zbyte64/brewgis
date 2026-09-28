@@ -135,8 +135,8 @@ class TestSqlmeshLinkForTable:
         """A model's table name is its file's stem, whatever language that is.
 
         Regression: only ``*.sql`` files were scanned, so the view a Python
-        model publishes (``fresno.du_regressor``, from
-        ``models/base_canvas/du_regressor.py``) resolved to no link even
+        model publishes (``fresno.du_inference``, from
+        ``models/base_canvas/du_inference.py``) resolved to no link even
         though the model is right there in the UI catalog.
         """
         monkeypatch.setattr(
@@ -145,17 +145,17 @@ class TestSqlmeshLinkForTable:
             lambda: [
                 SqlmeshTableInfo(
                     schema="fresno",
-                    table="du_regressor",
+                    table="du_inference",
                     has_geometry=True,
                     geometry_type="fill",
                 ),
             ],
         )
 
-        link = sqlmesh_link_for_table("fresno", "du_regressor")
+        link = sqlmesh_link_for_table("fresno", "du_inference")
 
         assert link is not None
-        assert link.endswith("/data-catalog/models/brewgis.fresno.du_regressor")
+        assert link.endswith("/data-catalog/models/brewgis.fresno.du_inference")
 
     def test_returns_none_for_a_painted_features_canvas_view(
         self, monkeypatch: pytest.MonkeyPatch
