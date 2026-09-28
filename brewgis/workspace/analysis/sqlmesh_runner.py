@@ -11,16 +11,29 @@ from __future__ import annotations
 import logging
 from collections.abc import Iterable
 from pathlib import Path
+from typing import TYPE_CHECKING
 from typing import Any
 
+from django.db import connection
 from sqlmesh.core.context import Context
 from sqlmesh.utils.errors import ConflictingPlanError
 
 from brewgis.sqlmesh.config import config_factory
 
+if TYPE_CHECKING:
+    from sqlmesh.core.plan import Plan
+    from sqlmesh.core.plan import PlanBuilder
+    from sqlmesh.core.snapshot import SnapshotTableInfo
+
 logger = logging.getLogger(__name__)
 
 SQLMESH_PROJECT_DIR = Path(__file__).resolve().parent.parent.parent / "sqlmesh"
+
+# How many times a plan is rebuilt while the models it would publish unbuilt are
+# added to its plan. Every pass can only add models to that set, so one pass
+# covers everything a plan can report and the second merely confirms the plan is
+# clean.
+_MAX_REBUILD_PASSES = 2
 
 
 def get_context(cache_dir: str | None = None, **variables) -> Context:
@@ -185,6 +198,139 @@ def _release_shared_duckdb(context: Context) -> None:
     context.close()
 
 
+def _published_snapshots(context: Context, plan: Plan) -> list[SnapshotTableInfo]:
+    """Snapshots whose views this plan's promotion stage will (re)create.
+
+    Mirrors SQLMesh's own promotion set (``PlanStagesBuilder``): the target
+    environment's promoted snapshots minus the ones the stored environment
+    already promotes under the same fingerprint — and only when SQLMesh would
+    partially promote at all. An environment that is not finalized, which is
+    what a plan that died in its promotion stage leaves behind, is re-promoted
+    whole.
+    """
+    target = plan.environment.promoted_snapshots
+    stored = context.state_reader.get_environment(plan.environment.name)
+    if stored is None or not plan.environment.can_partially_promote(stored):
+        return list(target)
+    already = {info.name: info for info in stored.promoted_snapshots}
+    return [info for info in target if already.get(info.name) != info]
+
+
+def _existing_relations(tables: Iterable[str]) -> set[str]:
+    """Which of *tables* — ``schema.table`` — exist in the PostGIS database."""
+    wanted = sorted(set(tables))
+    if not wanted:
+        return set()
+    with connection.cursor() as cursor:
+        cursor.execute(
+            "SELECT n.nspname || '.' || c.relname FROM pg_class c"
+            " JOIN pg_namespace n ON n.oid = c.relnamespace"
+            " WHERE (n.nspname || '.' || c.relname) = ANY(%s::text[])",
+            [wanted],
+        )
+        return {row[0] for row in cursor.fetchall()}
+
+
+def unbuilt_published_models(context: Context, plan: Plan) -> list[str]:
+    """FQNs *plan* would publish without a physical table to publish.
+
+    SQLMesh decides what to materialize (``models_to_backfill``) and what to
+    publish (the environment's promoted snapshots) from two different inputs.
+    ``models_to_backfill`` is derived from the plan's *selection* — a selection
+    narrows it to the selected models and their downstream graph, and
+    ``restate_models`` narrows it again to the restated models — while promotion
+    covers every snapshot the environment changes. A snapshot that lands in the
+    second set but not the first is promoted into a view over a physical table
+    nothing built: a dependency the plan re-versions (its own parent changed)
+    that it never selected, e.g. the region road network a module routes over.
+    The promotion stage then fails with ``UndefinedTable: relation
+    "sqlmesh__…" does not exist`` — after everything else in the run has already
+    been backfilled.
+
+    Returns the snapshots' own (quoted) FQNs, which is the spelling SQLMesh's
+    ``backfill_models`` and ``restate_models`` both accept. Only the default
+    gateway's models are judged: a DuckDB gateway materializes its models inside
+    the DuckDB file, where an existence check against Postgres would report a
+    false miss.
+    """
+    gateway = context.config.default_gateway
+    candidates: list[tuple[str, str]] = []
+    for info in _published_snapshots(context, plan):
+        snapshot = plan.snapshots.get(info.snapshot_id)
+        if snapshot is None or not snapshot.is_model or not snapshot.evaluatable:
+            continue
+        if (snapshot.model_gateway or gateway) != gateway:
+            continue
+        # The plan is going to build this one itself.
+        if plan.is_selected_for_backfill(snapshot.name):
+            continue
+        # ``table_name()`` is ``catalog.schema.table`` and the catalog is the
+        # project's logical one, which the plan's own connection rewrites to the
+        # real database — only the schema and table name a relation on disk.
+        physical = ".".join(snapshot.table_name().split(".")[-2:])
+        candidates.append((snapshot.name, physical))
+    if not candidates:
+        return []
+    existing = _existing_relations(table for _, table in candidates)
+    return [name for name, table in candidates if table not in existing]
+
+
+def _rebuild_unbuilt_published(
+    context: Context,
+    plan_kwargs: dict[str, Any],
+    builder: PlanBuilder,
+    *,
+    always_include_local_changes: bool | None,
+) -> tuple[PlanBuilder, dict[str, Any]]:
+    """Rebuild *builder* until nothing its plan publishes is missing a table.
+
+    Every model that is missing one is named in ``backfill_models`` — SQLMesh's
+    "materialize these too" selector — which makes it eligible to be scheduled at
+    all. Passing that set replaces the one SQLMesh derives from the selection and
+    from ``restate_models``, so the caller's own restatements are named in it as
+    well: a restated model missing from it would silently stop being recomputed.
+
+    A model whose snapshot *has* intervals — the state calls it built, or partly
+    built — is restated on top of that. A snapshot is only ever scheduled for the
+    intervals it is missing, so a table that a plan recorded as built before
+    publishing it as missing (a promotion that died, a table dropped since) has
+    nothing left to schedule: restating drops the intervals it holds, which is
+    what makes SQLMesh build it again. Its downstream is restated with it, since
+    their results were computed from the table that went missing — the one case
+    where the cheap repair is not enough.
+    """
+    restate = set(plan_kwargs.get("restate_models") or ())
+    rebuilt = set(restate)
+    for _ in range(_MAX_REBUILD_PASSES):
+        plan = builder.build()
+        unbuilt = [
+            name
+            for name in unbuilt_published_models(context, plan)
+            if name not in rebuilt
+        ]
+        if not unbuilt:
+            break
+        snapshots = {snapshot.name: snapshot for snapshot in plan.snapshots.values()}
+        restate.update(
+            name for name in unbuilt if name in snapshots and snapshots[name].intervals
+        )
+        rebuilt.update(unbuilt)
+        logger.warning(
+            "Plan would publish %s with no physical table — rebuilding them in the same plan",
+            ", ".join(sorted(unbuilt)),
+        )
+        plan_kwargs = {
+            **plan_kwargs,
+            # An empty list is SQLMesh's "selector matched nothing" error.
+            "restate_models": sorted(restate) or None,
+            "backfill_models": sorted(rebuilt),
+        }
+        builder = context.plan_builder(
+            **plan_kwargs, always_include_local_changes=always_include_local_changes
+        )
+    return builder, plan_kwargs
+
+
 # deprecated
 def run_sqlmesh_plan(  # noqa: PLR0913
     environment: str = "prod",
@@ -201,6 +347,7 @@ def run_sqlmesh_plan(  # noqa: PLR0913
     restate_models: Iterable[str] | bool = False,
     always_include_local_changes: bool | None = None,
     cache_dir: str | None = None,
+    repair_unbuilt_promotions: bool = False,
 ):
     """Run ``sqlmesh plan`` for the given environment via the Python API.
 
@@ -227,6 +374,10 @@ def run_sqlmesh_plan(  # noqa: PLR0913
         cache_dir: SQLMesh cache directory to load models through (see
             ``get_context``). Threaded into the follow-up plans a conflicting
             restatement is split into, so those render from the same source.
+        repair_unbuilt_promotions: Rebuild the plan until nothing it publishes
+            is missing a physical table (see :func:`unbuilt_published_models`).
+            Requires the ``plan_builder`` path, which is the only one that
+            exposes the plan before it is applied.
 
     ``Context.plan`` hard-wires that rule for a restating plan and exposes no
     way to override it, so a plan that asks for ``always_include_local_changes``
@@ -235,6 +386,9 @@ def run_sqlmesh_plan(  # noqa: PLR0913
     ``plan_builder.apply()`` when it is told to auto-apply) — it only passes the
     flag through. The cost is the plan summary the console would have printed.
     """
+    if repair_unbuilt_promotions and always_include_local_changes is None:
+        msg = "repair_unbuilt_promotions needs the plan_builder path: pass always_include_local_changes"
+        raise ValueError(msg)
     context = get_context(cache_dir=cache_dir, **variables)
     restate = _resolve_restatements(
         context, environment=environment, restate_models=restate_models
@@ -264,6 +418,16 @@ def run_sqlmesh_plan(  # noqa: PLR0913
         **plan_kwargs, always_include_local_changes=always_include_local_changes
     )
     try:
+        if repair_unbuilt_promotions:
+            builder, plan_kwargs = _rebuild_unbuilt_published(
+                context,
+                plan_kwargs,
+                builder,
+                always_include_local_changes=always_include_local_changes,
+            )
+            # The split below re-plans through ``restate_models``; it has to name
+            # everything this repair added, not just the caller's own list.
+            restate = plan_kwargs["restate_models"]
         try:
             if auto_apply:
                 builder.apply()
@@ -296,6 +460,7 @@ def run_sqlmesh_plan(  # noqa: PLR0913
                 "variables": variables,
                 "always_include_local_changes": always_include_local_changes,
                 "cache_dir": cache_dir,
+                "repair_unbuilt_promotions": repair_unbuilt_promotions,
             }
             run_sqlmesh_plan(**deploy_kwargs)
             return run_sqlmesh_plan(**deploy_kwargs, restate_models=restate), context

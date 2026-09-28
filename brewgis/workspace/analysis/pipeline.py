@@ -358,6 +358,16 @@ def run_modules_sync(
             # Without this, asking for a module the scenario has not run before
             # plans nothing for it and the run still reports the module completed.
             always_include_local_changes=True,
+            # A selection narrows the plan's backfill to the selected models,
+            # while promotion covers every snapshot whose version the environment
+            # changes. A dependency this plan re-versions but never selected — the
+            # region road network a routing module reads, say — is then promoted
+            # into a view over a physical table nothing built, and the run dies in
+            # its promotion stage with `UndefinedTable: relation "sqlmesh__…" does
+            # not exist` after backfilling everything else. Rebuild whatever the
+            # plan would publish that way instead of trusting the two sets to
+            # agree.
+            repair_unbuilt_promotions=True,
             auto_apply=True,
             no_prompts=True,
         )

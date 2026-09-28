@@ -57,6 +57,11 @@ class TestPlanSelection:
         # trip_generation/vmt — never built for this scenario — used to be
         # dropped from the plan without a word.
         assert plan["always_include_local_changes"] is True
+        # Restating also narrows the plan's backfill to the restated models,
+        # while promotion covers every snapshot the environment re-versions: a
+        # dependency the plan publishes without selecting it is promoted into a
+        # view over a table nothing built, and the run dies there.
+        assert plan["repair_unbuilt_promotions"] is True
 
 
 class TestResultVerification:
