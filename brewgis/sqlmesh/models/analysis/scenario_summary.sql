@@ -47,16 +47,18 @@ core_agg AS (
     FROM @{scenario_schema}.core_end_state
 ),
 vmt_agg AS (
-    SELECT
-        COALESCE(SUM(vmt_total), 0) AS total_vmt,
-        COALESCE(AVG(vmt_per_capita) FILTER (WHERE pop > 0), 0) AS avg_vmt_per_capita
+    SELECT COALESCE(SUM(vmt_total), 0) AS total_vmt
     FROM @{scenario_schema}.vmt
 ),
 total_ghg_agg AS (
     SELECT COALESCE(SUM(co2e_total), 0) AS total_co2e FROM @{scenario_schema}.total_ghg
 ),
 water_demand_agg AS (
-    SELECT COALESCE(SUM(water_demand_af), 0) AS total_water_demand FROM @{scenario_schema}.water_demand
+    -- water_demand measures litres per year; this model's output column is named
+    -- and described in acre-feet (1 acre-foot = 1,233,481.83754752 L).
+    SELECT
+        COALESCE(SUM(water_demand_total), 0) / 1233481.83754752 AS total_water_demand
+    FROM @{scenario_schema}.water_demand
 ),
 land_consumption_agg AS (
     SELECT
@@ -68,7 +70,11 @@ health_agg AS (
     SELECT COALESCE(SUM(net_dalys), 0) AS total_net_dalys FROM @{scenario_schema}.health_impacts
 ),
 energy_agg AS (
-    SELECT COALESCE(SUM(electricity_mwh + gas_mwh), 0) AS total_energy_demand FROM @{scenario_schema}.energy_demand
+    -- energy_demand measures kWh per year; this model's output column is named
+    -- and described in MWh.
+    SELECT
+        COALESCE(SUM(energy_total), 0) / 1000.0 AS total_energy_demand
+    FROM @{scenario_schema}.energy_demand
 ),
 housing_agg AS (
     SELECT COALESCE(AVG(cost_burden_pct), 0) AS avg_cost_burden_pct FROM @{scenario_schema}.housing_cost_burden
