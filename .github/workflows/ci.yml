@@ -202,28 +202,35 @@ jobs:
         run: docker compose -f docker-compose.yml build django
 
       # The tile servers and the database come up first, then migrations, then
-      # the two services that run application code. `make migrate` is a
-      # `docker compose run --rm django`, i.e. a one-off container that (re)creates
-      # its `depends_on` services — including postgres, which compose considers
-      # stale here and recreates. Starting django before that happens makes its
-      # own boot-time `python manage.py migrate` (see compose/local/django/start)
-      # race the postgres restart, so the migration aborts with "Temporary
-      # failure in name resolution", the container exits on `errexit`, and the
-      # dev server never answers on :8000 — which is exactly how this job failed
-      # before the ordering was changed.
+      # the two services that run application code. `docker compose run` also
+      # reconciles its `depends_on` services, and here it recreates postgres —
+      # starting django before that happens made its own boot-time
+      # `python manage.py migrate` (see compose/local/django/start) race the
+      # postgres restart, so the migration aborted with "Temporary failure in
+      # name resolution", the container exited on `errexit`, and the dev server
+      # never answered on :8000. `--no-deps` keeps this step from touching the
+      # already-running containers at all, which is what makes the ordering
+      # deterministic; the entrypoint's `wait-for-it` still covers postgres
+      # being slow to accept connections.
       - name: Start the database and the tile servers
         run: |
           docker compose -f docker-compose.yml up -d \
             postgres redis tipg martin
 
       - name: Run DB Migrations
-        run: make migrate
+        run: |
+          docker compose -f docker-compose.yml run --rm --no-deps \
+            django python manage.py migrate
 
       - name: Start the dev server and the Celery worker
         run: |
           docker compose -f docker-compose.yml up -d \
             celeryworker django
 
+      # The dump on failure is what makes a red run diagnosable: a container
+      # that dies during its boot-time migrate only shows up as "never answered
+      # on :8000" otherwise, and 50 lines of `django` logs is not always enough
+      # to reach the top of the traceback.
       - name: Wait for the dev server
         run: |
           for _ in $(seq 1 60); do
@@ -233,7 +240,11 @@ jobs:
             sleep 2
           done
           echo "django dev server never answered on :8000" >&2
-          docker compose -f docker-compose.yml logs django | tail -50
+          # `|| true` on both: this step already exits non-zero, and a
+          # diagnostic that itself fails under `bash -e` would hide the logs it
+          # was added to show (e.g. logging a service that `up` never created).
+          docker compose -f docker-compose.yml ps -a || true
+          docker compose -f docker-compose.yml logs celeryworker django | tail -200 || true
           exit 1
 
       - name: Run live-stack tests (real browser, Martin/tipg, Celery)
