@@ -33,7 +33,7 @@ cmap==0.7.2  # https://github.com/pyapp-kit/cmap — colormaps for layer symbolo
 geopandas[all]==1.0.1
 pandas==2.2.3
 polars[lazy,pyarrow]>=1.0,<2.0  # https://github.com/pola-rs/polars — fast DataFrame library for non-spatial pipelines
-GeoAlchemy2==0.16.0
+GeoAlchemy2==0.20.0  # 0.19 and older build a bare sqlalchemy ColumnCollection (abstract since SQLAlchemy 2.1)
 dlt[postgres]>=1.0,<2.0  # https://github.com/dlt-hub/dlt — reliable data extraction from external APIs
 sqlmesh[postgres, duckdb]>=0.236.1,<1.0  # https://github.com/TobikoData/sqlmesh — data transformation framework (replaces dbt)
 statsmodels>=0.14,<1.0  # https://github.com/statsmodels/statsmodels — logit/regression for transport calibration

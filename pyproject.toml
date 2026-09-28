@@ -38,7 +38,7 @@ dependencies = [
     "dlt[postgres]>=1.0,<2.0",
     "factory-boy==3.3.1",
     "flower==2.0.1",
-    "geoalchemy2==0.16.0",
+    "geoalchemy2==0.20.0",
     "geopandas[all]==1.0.1",
     "gunicorn==23.0.0",
     "hiredis==3.0.0",

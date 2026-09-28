@@ -190,18 +190,39 @@ jobs:
           cp .env.example .env
           echo "UID=$(id -u)" >> .env
           echo "GID=$(id -g)" >> .env
+          # docker-compose.yml's `group_add: ${DOCKER_GID:-999}` gives the
+          # container's user access to the Docker socket that the live-stack
+          # tests use to restart Martin. The runner's socket is rarely owned by
+          # gid 999, so the default left the tests with PermissionError(13) on
+          # /var/run/docker.sock — read the real gid off the socket instead.
+          echo "DOCKER_GID=$(stat -c '%g' /var/run/docker.sock)" >> .env
           mkdir -p cache
 
       - name: Build the Stack
         run: docker compose -f docker-compose.yml build django
 
-      - name: Start the Stack
+      # The tile servers and the database come up first, then migrations, then
+      # the two services that run application code. `make migrate` is a
+      # `docker compose run --rm django`, i.e. a one-off container that (re)creates
+      # its `depends_on` services — including postgres, which compose considers
+      # stale here and recreates. Starting django before that happens makes its
+      # own boot-time `python manage.py migrate` (see compose/local/django/start)
+      # race the postgres restart, so the migration aborts with "Temporary
+      # failure in name resolution", the container exits on `errexit`, and the
+      # dev server never answers on :8000 — which is exactly how this job failed
+      # before the ordering was changed.
+      - name: Start the database and the tile servers
         run: |
           docker compose -f docker-compose.yml up -d \
-            postgres redis tipg martin celeryworker django
+            postgres redis tipg martin
 
       - name: Run DB Migrations
         run: make migrate
+
+      - name: Start the dev server and the Celery worker
+        run: |
+          docker compose -f docker-compose.yml up -d \
+            celeryworker django
 
       - name: Wait for the dev server
         run: |

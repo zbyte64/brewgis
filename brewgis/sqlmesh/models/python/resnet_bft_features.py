@@ -5,6 +5,7 @@ reference parcel, using a pre-trained ResNet-34 backbone (ImageNet weights,
 no fine-tuning). These ``pc01``-``pc32`` columns feed into the LightGBM
 DU, SQFT, and employment ratio regressors as additional tabular features.
 """
+
 # CONSIDER: this is incredibly slow, 4hrs+ - only needs update if parcel geos change
 # TODO: instead of windowing each parcel, read a large image area and slice it up like a puzzle in memory
 from __future__ import annotations
