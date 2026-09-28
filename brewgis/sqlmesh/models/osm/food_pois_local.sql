@@ -26,9 +26,11 @@ MODEL (
 --
 -- The projection happens here rather than in the DuckDB fetch because DuckDB's
 -- ST_Transform to a projected CRS produces NaN/Infinity coordinates (see the
--- gateway linter's duckdbtransformwarning): the bridge carries EPSG:4326, and
--- this PostGIS model is the one that owns the projected geometry, its index, and
--- therefore the radius searches measured by ``@metres_in_local_units``.
+-- gateway linter's duckdbtransformwarning): the source is EPSG:4326 — the
+-- bridge's SRID 0 is re-tagged by ``osm/food_pois.sql``, the VIEW read here —
+-- and this PostGIS model is the one that owns the projected geometry, its
+-- index, and therefore the radius searches measured by
+-- ``@metres_in_local_units``.
 
 SELECT
     osm_id,
@@ -37,11 +39,7 @@ SELECT
     amenity,
     food_class = 'healthy' AS is_healthy,
     food_class = 'unhealthy' AS is_unhealthy,
-    -- ST_SetSRID, not a bare transform: the DuckDB-to-PostGIS transfer drops
-    -- SRID metadata (the bridge's points arrive as SRID 0), so the CRS the
-    -- fetch produced in is re-tagged here before projecting — the same repair
-    -- overture_intersection_points.sql makes on its bridge's wgs84_geometry.
-    ST_Transform(ST_SetSRID(geometry, 4326), @local_srid()) AS geometry
+    ST_Transform(geometry, @local_srid()) AS geometry
 FROM brewgis.@{region}.food_pois;
 
 -- post_statements

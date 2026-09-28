@@ -1,99 +1,47 @@
 MODEL (
-  name duckdb.@{region}.food_pois,
+  name brewgis.@{region}.food_pois,
   kind VIEW,
-  description 'OpenStreetMap food outlets for the region, fetched from the Overpass API by DuckDB, one row per node or way, classified healthy or unhealthy for the food-access mRFEI.',
+  description 'PostGIS VIEW over the food-outlet bridge that restores SRID metadata with ST_SetSRID: the region''s Overpass food outlets, one point per OSM node or way.',
   column_descriptions (
     osm_id = 'OpenStreetMap element id within its element type.',
-    name = 'Element name tag, empty string when the element is unnamed.',
-    shop = 'Element shop tag value, empty string when absent.',
-    amenity = 'Element amenity tag value, empty string when absent.',
-    food_class = 'healthy for a grocery outlet, unhealthy for a convenience store or fast-food outlet (macros/overpass_fetch.py FOOD_ACCESS_CLASSES).',
-    geometry = 'Outlet point in EPSG:4326: node lon/lat, or the way''s center.'
+    name = 'Element name tag carried through from the region fetch.',
+    shop = 'Element shop tag value carried through from the region fetch.',
+    amenity = 'Element amenity tag value carried through from the region fetch.',
+    food_class = 'healthy for a grocery outlet, unhealthy for a convenience store or fast-food outlet.',
+    geometry = 'Outlet point re-tagged as SRID 4326 (degrees, EPSG:4326).'
   ),
-  gateway duckdb,
-  dialect duckdb,
-  -- Declared, as in osm/poi.sql, to pin the view's column order and types for
-  -- the bridge reading through it. It does not spare the fetch: binding the
-  -- SELECT against read_json_auto needs the response's schema, so creating this
-  -- view issues the Overpass request (measured 2026-09-27: ~140 s cold), and
-  -- DuckDB's httpfs cache is what makes a repeat read cheap — see the pre hook.
   columns (
     osm_id BIGINT,
-    name VARCHAR,
-    shop VARCHAR,
-    amenity VARCHAR,
-    food_class VARCHAR,
-    geometry GEOMETRY
+    name TEXT,
+    shop TEXT,
+    amenity TEXT,
+    food_class TEXT,
+    geometry GEOMETRY(Point, 4326)
   ),
   blueprints @region_blueprints()
 );
 
--- Overpass food outlets for the region — the fetch the food-access analysis
--- counts from, separate from the POI import's taxonomy-driven
--- ``duckdb.osm.poi``: this asks for exactly the tags the mRFEI splits on.
+-- Food outlets — PostGIS VIEW wrapping the DuckDB bridge table with a real SRID.
 --
--- The bounding box is the region's Overture window expanded by
--- ``FOOD_ACCESS_BBOX_MARGIN`` degrees, because the metric counts outlets within
--- 1 km of a parcel and the demo regions' parcels run past that window (Fresno's
--- ~1.8 km south of its Overture bbox) — outlets there are only found if the
--- query reaches past it.
+-- The bridge (``brewgis.<region>.food_pois_raw``) materializes the Overpass
+-- fetch through DuckDB, and that transfer writes SRID-less WKB: every geometry
+-- in the bridge lands as SRID 0 however the SELECT tagged it (see the bridge's
+-- header). The tile server cannot repair that — Martin publishes a source from
+-- the column's CRS and transforms it per tile, so a 0-SRID column answers every
+-- tile request with ``ST_Transform: Input geometry has unknown (0) SRID`` — and
+-- a registered Layer over the bridge therefore drew nothing on the map while its
+-- rows still showed in the attribute table.
 --
--- Overpass is queried over HTTP GET (DuckDB's httpfs cannot POST), with the
--- Overpass QL percent-encoded into the ``data`` parameter by
--- ``@food_access_url``. DuckDB's httpfs block cache holds the response, so a
--- repeated plan re-reads it instead of re-requesting it. ``out center;`` gives
--- ways a center coordinate, so node and way results both carry a point.
-
--- pre hooks
--- Creating this VIEW is what executes the Overpass request (DuckDB resolves its
--- schema even with the columns declared above), and httpfs gives a read 30 s per
--- attempt by default — shorter than this fetch's response time (~2 minutes; see
--- macros/overpass_fetch.py OVERPASS_URL). Raised for the session doing the read;
--- cache_httpfs serves the response from disk afterwards.
-  SET http_timeout = 900;
-
-WITH elements AS (
-    SELECT unnest(elements) AS e
-    FROM read_json_auto(
-        @food_access_url(
-            @overture_bbox_min_x,
-            @overture_bbox_min_y,
-            @overture_bbox_max_x,
-            @overture_bbox_max_y
-        ),
-        format = 'auto'
-    )
-),
-
-raw AS (
-    SELECT
-        e.id::BIGINT AS osm_id,
-        e.type::VARCHAR AS osm_type,
-        to_json(e) AS element_json,
-        to_json(e.tags) AS tags_json
-    FROM elements
-    WHERE e.type IN ('node', 'way')
-)
+-- This VIEW restores the SRID with ``ST_SetSRID``, the same repair
+-- ``census/tiger_blocks.sql`` makes for its bridge, so both the tile server and
+-- every PostGIS consumer read a geometry column that carries its CRS instead of
+-- re-tagging it by hand.
 
 SELECT
     osm_id,
-    COALESCE(json_extract_string(tags_json, '$.name'), '')::VARCHAR AS name,
-    COALESCE(json_extract_string(tags_json, '$.shop'), '')::VARCHAR AS shop,
-    COALESCE(json_extract_string(tags_json, '$.amenity'), '')::VARCHAR AS amenity,
-    @food_access_class_case(tags_json) AS food_class,
-    ST_SetCRS(
-        ST_Point(
-            COALESCE(
-                json_extract_string(element_json, '$.lon'),
-                json_extract_string(element_json, '$.center.lon'),
-                '0'
-            )::DOUBLE,
-            COALESCE(
-                json_extract_string(element_json, '$.lat'),
-                json_extract_string(element_json, '$.center.lat'),
-                '0'
-            )::DOUBLE
-        ),
-        'EPSG:4326'
-    ) AS geometry
-FROM raw;
+    name,
+    shop,
+    amenity,
+    food_class,
+    ST_SetSRID(geometry, 4326) AS geometry
+FROM brewgis.@{region}.food_pois_raw;

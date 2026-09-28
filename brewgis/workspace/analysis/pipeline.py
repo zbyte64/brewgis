@@ -408,10 +408,11 @@ def _food_access_inputs(region: str) -> list[str]:
     """Models the food-access analysis reads that are not analysis modules.
 
     The region's outlet fetch: the DuckDB Overpass VIEW, the PostGIS bridge it
-    lands in, and the projected, indexed model the 1 km search reads. All three
-    are dependencies of every ``food_access`` instance and none of them is an
-    analysis module — the fetch is per *region* (the bounding box is the
-    region's), so one build serves every scenario that analyzes against it.
+    lands in, the PostGIS VIEW that restores the bridge's SRID, and the
+    projected, indexed model the 1 km search reads. All four are dependencies of
+    every ``food_access`` instance and none of them is an analysis module — the
+    fetch is per *region* (the bounding box is the region's), so one build serves
+    every scenario that analyzes against it.
 
     Named in order for the same reason as ``_network_distance_inputs`` names its
     bridge: a model is only planned when a selector names it, and the bridge
@@ -420,6 +421,7 @@ def _food_access_inputs(region: str) -> list[str]:
     """
     return [
         f"duckdb.{region}.food_pois",
+        f"brewgis.{region}.food_pois_raw",
         f"brewgis.{region}.food_pois",
         f"brewgis.{region}.food_pois_local",
     ]

@@ -372,7 +372,7 @@ that were historically the most frequently tuned values during validation.
 | `100.0` | `food_access.sql` | mRFEI scale: healthy outlets as a percentage of all outlets in reach |
 | `25`, `50`, `75` | `food_access.sql` | mRFEI band thresholds: food_desert, low_access, moderate_access, else high_access |
 | `0.02` (degrees, ~2 km) | `macros/overpass_fetch.py:FOOD_ACCESS_BBOX_MARGIN` | Region bbox expansion for the Overpass food fetch, so outlets just outside the region window are found for parcels on its edge |
-| `900` (seconds) | `osm/food_pois_bridge.sql` pre-hook | DuckDB `http_timeout`; the Overpass mirror answers a region-wide food query in ~2 minutes, past httpfs' 30 s default |
+| `900` (seconds) | `osm/food_pois_raw.sql` pre-hook | DuckDB `http_timeout`; the Overpass mirror answers a region-wide food query in ~2 minutes, past httpfs' 30 s default |
 
 The mRFEI itself is `healthy / (healthy + unhealthy) * 100`, with outlets counted
 from the region's `food_pois_local` (see §2.20's models) and `NULL` for a parcel
