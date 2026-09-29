@@ -190,3 +190,12 @@ not, falling back to the whole eligible set when no type declares it.
 Neither is a match basis of its own, so a parcel with no density or key signal
 still matches nothing, and the density basis always decides *within* whatever
 the two left.
+
+The base-layer import's fill writes that match into `built_form_key` only where
+the parcel's own key names no Building Type: the ETL's uniform `mixed_use`
+placeholder, a blank and a NULL all name nothing, while a key that resolves to a
+library entry — an ETL slug or a display name — is the canvas's own assertion
+and is kept. The placeholder is compared by its raw spelling precisely because
+normalized, `mixed_use` resolves to the library's `Mixed Use` entry; reading
+that as an assertion is what would turn the feature into a no-op on the
+canvases it exists for.

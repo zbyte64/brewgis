@@ -56,10 +56,12 @@ class Workspace(models.Model):
     fill_built_form = models.BooleanField(
         default=False,
         help_text=(
-            "Assign every parcel the closest-matching Building Type and fill NULL "
-            "built-form columns (du, pop, hh, emp). built_form_key is reassigned "
-            "from the match, replacing any key already set. Materializes a new "
-            "table; base_table itself is never modified."
+            "Assign every parcel the closest-matching Building Type where its "
+            "built_form_key names none of this workspace's Building Types — the "
+            "pipeline's mixed_use placeholder, a blank and a NULL — and fill NULL "
+            "built-form columns (du, pop, hh, emp). A key that already names a "
+            "Building Type is kept. Materializes a new table; base_table itself "
+            "is never modified."
         ),
     )
 

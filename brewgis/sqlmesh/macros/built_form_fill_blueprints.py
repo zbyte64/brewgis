@@ -2,8 +2,12 @@
 
 A workspace whose ``Workspace.fill_built_form`` is on does not paint over its
 ``base_table`` directly: it reads a *derived* base layer in which every parcel
-that has a built-form signal but no built-form attributes is assigned the
-closest-matching :class:`~brewgis.workspace.built_forms.models.BuildingType`.
+whose ``built_form_key`` names no Building Type of the workspace — the ETL's
+uniform ``mixed_use`` placeholder, a blank, a NULL, a slug no entry answers to —
+is assigned the closest-matching
+:class:`~brewgis.workspace.built_forms.models.BuildingType`, and the NULL
+``du``/``pop``/``hh``/``emp`` columns are filled from that match. A key the
+source did assert is kept.
 ``Workspace.effective_base_table`` is the single place that resolves which of
 the two is in effect.
 

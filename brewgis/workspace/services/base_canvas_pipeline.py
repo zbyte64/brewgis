@@ -22,12 +22,12 @@ from django.db import connection
 
 from brewgis.workspace.services.base_canvas_manager import BaseCanvasManager
 from brewgis.workspace.services.base_canvas_schema import BaseCanvasSchema
+from brewgis.workspace.services.built_form_keys import PLACEHOLDER_BUILT_FORM_KEY
 
 logger = logging.getLogger(__name__)
 
 # ── Default imputation values ─────────────────────────────────────────
 _DEFAULT_INTERSECTION_DENSITY = 12.5
-_DEFAULT_BUILT_FORM_KEY = "mixed_use"
 _DEFAULT_BLDG_SQFT_PER_DU = 1200.0
 _DEFAULT_BLDG_SQFT_PER_EMP = 300.0
 _DEFAULT_IRRIGATION_RES_FRAC = 0.25
@@ -914,7 +914,7 @@ def _classify_land_use(target_table: str) -> None:
                     {fallback_sql}
                 ),
                 built_form_key = COALESCE(
-                    built_form_key, '{_DEFAULT_BUILT_FORM_KEY}'
+                    built_form_key, '{PLACEHOLDER_BUILT_FORM_KEY}'
                 )
         """)
 

@@ -3,10 +3,13 @@
 A workspace with ``Workspace.fill_built_form`` on reads this model instead of
 its ``base_table`` (see ``Workspace.effective_base_table``): the same rows and
 the same column set, with every parcel assigned the closest-matching
-``BuildingType``. The match replaces ``built_form_key`` — the base-canvas ETL
-writes one uniform ``mixed_use`` key on every row of the reconciled canvases,
-so replacing it is the point of the feature — and fills ``du``/``pop``/``hh``/
-``emp`` where they are NULL.
+``BuildingType``. The match fills ``du``/``pop``/``hh``/``emp`` where they are
+NULL, and replaces ``built_form_key`` where the source's own key names no
+Building Type of the workspace: the base-canvas ETL writes one uniform
+``mixed_use`` key on every parcel of a reconciled canvas, and resolving *that*
+is the point of the feature, while a key a source did assert — an ETL slug or a
+display name that resolves to a library entry — is the parcel's own built form
+and is kept.
 
 The source is never written to: this model materializes a table of its own, so
 the import stays reversible (unchecking the box drops the model and the
@@ -106,24 +109,56 @@ def _normalize_sql(expression: str) -> str:
     )
 
 
-def _fill_expression(column: str, acres: str) -> str:
+def _keeps_source_key(placeholder: str) -> str:
+    """Return SQL that is true on a source row whose own key is an assignment.
+
+    A key that resolves to a row of the workspace's own Building Type library
+    is the source saying what this parcel is built as — an ETL slug or a
+    display name — so the fill keeps it, whatever the density match found.
+
+    Two things are not an assignment. The ETL's ``placeholder`` is what a
+    canvas carries where its source had no built form at all (see
+    ``services.built_form_keys.PLACEHOLDER_BUILT_FORM_KEY`` — it is compared by
+    its raw spelling, because normalized it resolves to the library's ``Mixed
+    Use`` entry and would read as an assignment), and a blank or NULL key names
+    nothing. Both are replaced by the match.
+
+    ``_bf_key_known`` is the matched row's flag for "the source's key resolves
+    to some library entry". It is read only here, and only in the branch where
+    a candidate exists — a parcel with no candidate keeps its own key anyway
+    (the outer ``COALESCE``) — which is why it can ride on the matched row.
+    """
+    key = "btrim(CAST(built_form_key AS TEXT))"
+    return (
+        "(built_form_key IS NOT NULL"
+        f" AND {key} <> ''"
+        f" AND lower({key}) <> '{placeholder}'"
+        " AND _bf_key_known)"
+    )
+
+
+def _fill_expression(column: str, acres: str, *, placeholder: str) -> str:
     """Return the output expression for one source column.
 
     Only the five built-form columns can differ from the source; every other
     column is selected verbatim, so the output keeps the source's column set,
     order and values.
 
-    ``built_form_key`` is the *assignment* — the Building Type this parcel was
-    matched to — so a match replaces whatever the source held, including the
-    uniform ``mixed_use`` placeholder the base-canvas ETL writes on every row.
-    Replacing only NULLs would leave the column saying ``mixed_use`` for every
-    parcel on exactly the canvases this feature exists for. The four numeric
-    columns are the parcel's own measurements, so they are filled only where
-    the source value is a literal NULL (0 and the empty string are real values
-    and are kept).
+    ``built_form_key`` is the *assignment* — the Building Type this parcel is
+    built as — so a source key that names one of the workspace's Building Types
+    is kept and anything else (the ETL's uniform ``mixed_use`` placeholder, a
+    blank, a NULL, or a slug no library entry answers to) is replaced by the
+    match. Replacing only NULLs would leave the column saying ``mixed_use`` for
+    every parcel on exactly the canvases this feature exists for. The four
+    numeric columns are the parcel's own measurements, so they are filled only
+    where the source value is a literal NULL (0 and the empty string are real
+    values and are kept).
     """
     if column == "built_form_key":
-        return "COALESCE(_bf_key, built_form_key) AS built_form_key"
+        return (
+            f"CASE WHEN {_keeps_source_key(placeholder)} THEN built_form_key"
+            " ELSE COALESCE(_bf_key, built_form_key) END AS built_form_key"
+        )
     if column == "du":
         return f"COALESCE(du, {acres} * _bf_du_per_acre) AS du"
     if column == "pop":
@@ -149,9 +184,10 @@ _FILL_MODEL = model(
     kind=ModelKindName.FULL,
     description=(
         "One workspace's built-form-filled base canvas: the source base canvas"
-        " with every parcel's built_form_key reassigned to the closest-matching"
-        " Building Type of the parcel's own land development category, and du,"
-        " pop, hh and emp filled where the source value is NULL."
+        " with every parcel whose built_form_key names no Building Type of the"
+        " workspace assigned the closest-matching one of the parcel's own land"
+        " development category, and du, pop, hh and emp filled where the source"
+        " value is NULL."
     ),
     audits=[
         ("not_null", {"columns": [exp.to_column("parcel_id")]}),
@@ -192,6 +228,7 @@ def execute(evaluator: MacroEvaluator, **kwargs: Any) -> str:
     """
     from brewgis.workspace.built_forms.matching import category_requirement_sql
     from brewgis.workspace.built_forms.matching import sector_preference_sql
+    from brewgis.workspace.services.built_form_keys import PLACEHOLDER_BUILT_FORM_KEY
     from brewgis.workspace.services.canvas_view_manager import _qi
 
     source_ref = str(evaluator.blueprint_var("source_ref"))
@@ -209,7 +246,10 @@ def execute(evaluator: MacroEvaluator, **kwargs: Any) -> str:
         f"(s.built_form_key IS NOT NULL AND"
         f" {_normalize_sql('s.built_form_key')} = {_normalize_sql('bf.key')})"
     )
-    columns = ", ".join(_fill_expression(column, acres) for column in all_columns)
+    columns = ", ".join(
+        _fill_expression(column, acres, placeholder=PLACEHOLDER_BUILT_FORM_KEY)
+        for column in all_columns
+    )
     category_requirement = category_requirement_sql(
         parcel_prefix="s.", form_prefix="bf."
     )
@@ -219,15 +259,27 @@ def execute(evaluator: MacroEvaluator, **kwargs: Any) -> str:
 WITH source AS (
     SELECT * FROM {source_ref}
 ),
+known_keys AS (
+    -- Every key the match below can assign, normalized the way it compares
+    -- them: a source key that names one of these is an assignment the fill
+    -- keeps (see ``_keeps_source_key``), so the match may only replace a key
+    -- that names none of them. Two library entries can share a normalized key,
+    -- so the set is deduplicated and joined, not searched per parcel.
+    SELECT DISTINCT {_normalize_sql("key")} AS normalized_key
+    FROM {_qi(built_form_table)}
+),
 matched AS (
     SELECT
         s.*,
         bf.key AS _bf_key,
+        k.normalized_key IS NOT NULL AS _bf_key_known,
         bf.du_per_acre AS _bf_du_per_acre,
         bf.emp_per_acre AS _bf_emp_per_acre,
         bf.household_size AS _bf_household_size,
         bf.vacancy_rate AS _bf_vacancy_rate
     FROM source s
+    LEFT JOIN known_keys k
+        ON k.normalized_key = {_normalize_sql("s.built_form_key")}
     LEFT JOIN LATERAL (
         SELECT *
         FROM {_qi(built_form_table)} bf

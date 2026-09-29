@@ -38,6 +38,23 @@ ETL_KEY_PREFIXES: tuple[str, ...] = ("bt__", "pt__", "bf__")
 # Characters an ETL key uses where a display name uses a space.
 KEY_SEPARATORS: str = "_-"
 
+PLACEHOLDER_BUILT_FORM_KEY: str = "mixed_use"
+"""The canvas key that means "the source carried no built form".
+
+Written uniformly by the base-canvas ETL — ``services.base_canvas_pipeline`` on
+a staging parcel with no key of its own, ``models/base_canvas/base_canvas_combined.sql``
+on the reconciled canvas — so it is a *gap*, not an assignment: a canvas that
+names nothing carries it on every parcel.
+
+It has to be told apart by its raw spelling. Normalized, ``mixed_use`` is
+``mixed use`` and resolves to the library's ``Mixed Use`` entry
+(``built_forms.default_library``), so "the key resolves to a Building Type" is
+not the same question as "the source asserted a Building Type". The consumer
+that needs the distinction — the built-form fill, which keeps the keys a source
+did assert — compares the raw text; see
+``sqlmesh/models/base_canvas/built_form_fill.py``.
+"""
+
 
 def normalize_built_form_key(value: str) -> str:
     """Return *value* in the normalized form used to match built form keys."""

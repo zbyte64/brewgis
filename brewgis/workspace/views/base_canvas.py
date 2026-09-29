@@ -12,9 +12,11 @@ The form also carries the workspace's built-form fill toggle
 (``Workspace.fill_built_form``). With it on, the selected source is left exactly
 as it is and a *new* table is materialized for the workspace to read instead
 (``models/base_canvas/built_form_fill.py``): the closest-matching Building Type
-fills the NULL built-form columns. The workspace's effective base layer — what
-the map, the canvas views and the analysis models read — is resolved in one
-place, ``Workspace.effective_base_table``.
+replaces a ``built_form_key`` that names no Building Type of the workspace (the
+pipeline's ``mixed_use`` placeholder, a blank, a NULL) and fills the NULL
+built-form columns, while a key the source asserted is kept. The workspace's
+effective base layer — what the map, the canvas views and the analysis models
+read — is resolved in one place, ``Workspace.effective_base_table``.
 """
 
 from __future__ import annotations
@@ -99,8 +101,10 @@ class SelectBaseCanvasForm(forms.Form):
         required=False,
         label="Fill built form by closest matching",
         help_text=(
-            "Assign each parcel the closest-matching Building Type. The match "
-            "replaces the parcel's built_form_key; du, pop, hh and emp are filled "
+            "Assign each parcel the closest-matching Building Type where its "
+            "built_form_key names none of this workspace's Building Types — the "
+            "pipeline's mixed_use placeholder, a blank and a NULL. A key that "
+            "already names a Building Type is kept; du, pop, hh and emp are filled "
             "where they are NULL. Materializes a new table; the selected source is "
             "not modified."
         ),
