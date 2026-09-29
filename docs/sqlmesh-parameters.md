@@ -100,6 +100,7 @@ via the `**variables` dict when calling `config_factory()` or via plan overrides
 | `transport_circuity_factor` | `1.2` | vmt | Road network directness factor |
 | `transport_use_network_distance` | `False` | trip_distribution (and every module downstream of trip length) | Gravity model uses road-network distance between 2 km grid zones (`network_zone_distance`, pgRouting over the region's Overture drivable graph) instead of crow-flies distance |
 | `transport_ghg_co2_per_mile` | `0.411` | transport_ghg | kg CO2e/mi (EPA fleet average) |
+| `transport_ghg_days_per_year` | `365.0` | transport_ghg | Days of travel the annual emissions column (`co2e_annual_kg`) stands for; the yearly building/water/health models read that column |
 | `transport_ghg_speed_adjust` | `False` | transport_ghg | Enable speed-based emission adjustment (+15%) |
 | `transport_study_area_geometry` | `''` | internal_capture | WKT polygon defining the study area ('' = all parcels internal) |
 | `transport_intrazonal_friction` | `0.15` | internal_capture | Intrazonal trip friction (0=no penalty, 1=max) |

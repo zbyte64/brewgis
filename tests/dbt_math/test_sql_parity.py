@@ -224,7 +224,7 @@ def test_transport_ghg_parity(parity_scenario: str) -> None:
     pop = np.array([0.0, 10.0, 250.0], dtype=float)
     pid = np.arange(len(vmt), dtype=int)
 
-    co2e_ref, pc_ref = compute_transport_ghg(vmt, pop)
+    co2e_ref, co2e_annual_ref, pc_ref = compute_transport_ghg(vmt, pop)
 
     vmt_df = pd.DataFrame(
         {
@@ -244,6 +244,7 @@ def test_transport_ghg_parity(parity_scenario: str) -> None:
     )
 
     assert np.allclose(result["co2e_total_kg"], co2e_ref, atol=1e-3)
+    assert np.allclose(result["co2e_annual_kg"], co2e_annual_ref, atol=1e-3)
     assert np.allclose(result["co2e_per_capita_kg"], pc_ref, atol=1e-3)
 
 

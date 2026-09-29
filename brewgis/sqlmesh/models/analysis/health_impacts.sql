@@ -49,7 +49,9 @@ WITH input_data AS (
         pa.bike_trips,
         es.pop,
         es.geometry,
-        COALESCE(tg.co2e_total_kg, 0.0) AS co2e_transport_kg,
+        -- Annual transport CO2e: the outcome functions below are per year, and
+        -- the transport model's daily column would understate the dose 365x.
+        COALESCE(tg.co2e_annual_kg, 0.0) AS co2e_transport_kg,
         -- PA benefit base: deaths averted from physical activity
         CASE
             WHEN es.pop > 0 AND COALESCE(pa.total_met_hours, 0.0) > 0
@@ -60,10 +62,10 @@ WITH input_data AS (
         END AS pa_death_reduction,
         -- AQ harm base: deaths added from air quality (transport emissions)
         CASE
-            WHEN es.pop > 0 AND COALESCE(tg.co2e_total_kg, 0.0) > 0
+            WHEN es.pop > 0 AND COALESCE(tg.co2e_annual_kg, 0.0) > 0
             THEN @blueprint_var('health_background_death_rate') * es.pop
                 * LEAST(
-                    (COALESCE(tg.co2e_total_kg, 0.0) / 1000.0) * @blueprint_var('health_pm25_intake_fraction')
+                    (COALESCE(tg.co2e_annual_kg, 0.0) / 1000.0) * @blueprint_var('health_pm25_intake_fraction')
                     * @blueprint_var('health_pm25_concentration_response') * 100.0,
                     1.0
                 )

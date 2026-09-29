@@ -669,6 +669,13 @@ ANALYSIS_PARAMETERS: tuple[AnalysisParameter, ...] = (
     ),
     # Transport GHG
     AnalysisParameter("transport_ghg_co2_per_mile", 0.411, "float", ("transport_ghg",)),
+    # Days a year of travel the annual emissions column stands for. The
+    # building, water and health models all measure a year, so this is what
+    # makes transport comparable with them. (UrbanFootprint annualises VMT with
+    # 347 days; 365 is the plain calendar year.)
+    AnalysisParameter(
+        "transport_ghg_days_per_year", 365.0, "float", ("transport_ghg",)
+    ),
     AnalysisParameter(
         name="transport_ghg_speed_adjust",
         default=False,

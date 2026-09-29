@@ -342,21 +342,25 @@ def compute_vmt(
 @deal.pre(lambda vmt, pop: np.all(vmt >= 0))
 @deal.pre(lambda vmt, pop: np.all(pop >= 0))
 @deal.post(lambda result: np.all(result[0] >= 0))  # co2e_total_kg
-@deal.post(lambda result: np.all(result[1] >= 0))  # co2e_per_capita_kg
+@deal.post(lambda result: np.all(result[1] >= 0))  # co2e_annual_kg
+@deal.post(lambda result: np.all(result[2] >= 0))  # co2e_per_capita_kg
 def compute_transport_ghg(
     vmt_total: np.ndarray,
     population: np.ndarray,
     co2_per_mile: float = 0.411,
     speed_adjust: bool = False,
-) -> tuple[np.ndarray, np.ndarray]:
+    days_per_year: float = 365.0,
+) -> tuple[np.ndarray, np.ndarray, np.ndarray]:
     """SQL: ``transport_ghg`` — CO₂e from VMT.
 
-    Returns (co2e_total_kg, co2e_per_capita_kg).
+    Returns (co2e_total_kg, co2e_annual_kg, co2e_per_capita_kg): the daily
+    figure, the same figure over ``days_per_year`` (what the yearly building,
+    water and health models read), and the daily per-capita figure.
     """
     factor = 1.15 if speed_adjust else 1.0
     co2e = vmt_total * co2_per_mile * factor
     co2e_pc = np.where(population > 0, co2e / population, 0.0)
-    return co2e, co2e_pc
+    return co2e, co2e * days_per_year, co2e_pc
 
 
 # ══════════════════════════════════════════════════════════════════════

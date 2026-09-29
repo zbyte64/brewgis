@@ -22,14 +22,19 @@ MODEL (
 -- Aggregates transportation (G1) and building/water (G2) emissions into
 -- a per-parcel summary.
 --
+-- Every term is annual (kg per year). The transport model measures a day, so
+-- this reads its ``co2e_annual_kg``: summing the daily column into the yearly
+-- building and water terms understated transport 365x, leaving it at 0.065% of
+-- the scenario's greenhouse gases when a year of it is 19.2%.
+--
 -- Dependencies: transport_ghg (G1), building_water_ghg (G2)
 
 SELECT
     COALESCE(t.parcel_id, b.parcel_id) AS parcel_id,
-    COALESCE(t.co2e_total_kg, 0.0) AS co2e_transport,
+    COALESCE(t.co2e_annual_kg, 0.0) AS co2e_transport,
     COALESCE(b.co2e_energy_total_kg, 0.0) AS co2e_buildings,
     COALESCE(b.co2e_water_total_kg, 0.0) AS co2e_water,
-    COALESCE(t.co2e_total_kg, 0.0)
+    COALESCE(t.co2e_annual_kg, 0.0)
     + COALESCE(b.co2e_total_kg, 0.0) AS co2e_total,
     -- Both parents copy the same parcel geometry from the scenario end state;
     -- whichever side of the FULL OUTER JOIN a parcel lands on carries it. The

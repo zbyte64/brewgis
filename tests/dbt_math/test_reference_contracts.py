@@ -280,11 +280,14 @@ def test_vmt_formulas(triple):
 @_N_HYPOTHESIS
 def test_transport_ghg_formulas(pair):
     vmt, pop = pair
-    co2e, co2e_pc = compute_transport_ghg(vmt, pop)
+    co2e, co2e_annual, co2e_pc = compute_transport_ghg(vmt, pop)
     assert np.all(co2e >= 0)
+    assert np.all(co2e_annual >= 0)
     assert np.all(co2e_pc >= 0)
     assert np.allclose(co2e, vmt * 0.411, atol=1e-6)
-    co2e_adj, _ = compute_transport_ghg(vmt, pop, speed_adjust=True)
+    # the annual column is what the yearly building/water/health models read
+    assert np.allclose(co2e_annual, co2e * 365.0, atol=1e-6)
+    co2e_adj, _, _ = compute_transport_ghg(vmt, pop, speed_adjust=True)
     assert np.allclose(co2e_adj, co2e * 1.15, atol=1e-6)
     mask = pop > 0
     if np.any(mask):
