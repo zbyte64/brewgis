@@ -143,8 +143,16 @@ def test_internal_capture_materializes_with_geometry(parity_scenario: str) -> No
 
 
 def test_total_ghg_materializes_with_geometry(parity_scenario: str) -> None:
-    """``total_ghg`` carries the geometry of whichever parent has the parcel."""
+    """``total_ghg`` carries the geometry of whichever parent has the parcel.
+
+    ``transport_ghg`` measures a day and ``building_water_ghg`` a year, so the
+    summary reads the transport model's annual column, not its daily one: the
+    two are given different magnitudes here so reading the daily column fails
+    the sum below 365x over.
+    """
     parcel_id = np.array([1, 2], dtype=int)
+    co2e_transport_annual = np.array([3650.0, 7300.0])
+    co2e_buildings_total = np.array([8.0, 10.0])
 
     result = run_model(
         "total_ghg",
@@ -152,7 +160,8 @@ def test_total_ghg_materializes_with_geometry(parity_scenario: str) -> None:
             "transport_ghg": pd.DataFrame(
                 {
                     "parcel_id": parcel_id,
-                    "co2e_total_kg": np.array([1.0, 2.0]),
+                    "co2e_total_kg": np.array([10.0, 20.0]),
+                    "co2e_annual_kg": co2e_transport_annual,
                     "geometry": np.full(2, _WKT),
                 }
             ),
@@ -161,7 +170,7 @@ def test_total_ghg_materializes_with_geometry(parity_scenario: str) -> None:
                     "parcel_id": parcel_id,
                     "co2e_energy_total_kg": np.array([3.0, 4.0]),
                     "co2e_water_total_kg": np.array([5.0, 6.0]),
-                    "co2e_total_kg": np.array([8.0, 10.0]),
+                    "co2e_total_kg": co2e_buildings_total,
                     "geometry": np.full(2, _WKT),
                 }
             ),
@@ -170,4 +179,9 @@ def test_total_ghg_materializes_with_geometry(parity_scenario: str) -> None:
     )
 
     assert result["geometry"].notna().all()
-    assert result["co2e_total"].tolist() == pytest.approx([9.0, 12.0])
+    assert result["co2e_transport"].tolist() == pytest.approx(
+        co2e_transport_annual.tolist()
+    )
+    assert result["co2e_total"].tolist() == pytest.approx(
+        (co2e_transport_annual + co2e_buildings_total).tolist()
+    )
