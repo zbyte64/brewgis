@@ -42,13 +42,22 @@
                   hx-post="{% if form_action %}{{ form_action }}{% else %}{{ request.path }}{% endif %}"
                   hx-target="#form-content"
                   hx-swap="outerHTML"
-                  hx-trigger="submit">
+                  hx-trigger="submit"
+                  hx-disable="find button[type=submit]">
+              {% comment %}
+                htmx 4 reads hx-disable off the element that issues the
+                request — this form, not its submit button — so the form
+                names the button to disable for the request's duration.
+                (htmx 2's hx-disabled-elt here was inert for the same
+                reason.) htmx 4's upgrade-check still suggests renaming
+                hx-disable to hx-ignore; that advice is for htmx 2's
+                hx-disable, which stops htmx processing — not for this.
+              {% endcomment %}
               {% csrf_token %}
               {% crispy form %}
               <div class="mt-3">
                 <button type="submit"
                         class="btn btn-primary"
-                        hx-disabled-elt="this"
                         hx-indicator="#form-save-spinner">Save</button>
                 <span id="form-save-spinner"
                       class="htmx-indicator spinner-border spinner-border-sm ms-2"></span>

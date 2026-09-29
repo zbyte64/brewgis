@@ -37,7 +37,6 @@
 {% endblock title %}
 {% block content %}
   <div class="map-shell"
-       hx-ext="alpine-compat"
        x-data="{}"
        x-on:keydown.escape.window="$store.panels.handleEscape()">
     <!-- Top bar overlay -->

@@ -4,13 +4,14 @@
   <p class="text-muted mb-3">{{ analysis.description }}</p>
   <form hx-post="{% url 'workspace:analysis_module_launch' workspace.pk analysis.key %}"
         hx-target="#right-panel-content"
-        hx-swap="innerHTML">
+        hx-swap="innerHTML"
+        hx-disable="find button[type=submit]">
+    {# htmx 4 reads hx-disable off the requesting form, so the form names the submit button to disable. #}
     {% csrf_token %}
     {% crispy form %}
     <div class="mt-3 d-flex gap-2">
       <button type="submit"
               class="btn btn-sm btn-primary"
-              hx-disabled-elt="this"
               hx-indicator="#analysis-launch-spinner">{% translate "Run Analysis" %}</button>
       <span id="analysis-launch-spinner"
             class="htmx-indicator spinner-border spinner-border-sm ms-1"></span>
