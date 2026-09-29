@@ -1,5 +1,8 @@
 import type * as GeoJSON from 'geojson'
 
+/** A lng/lat bounding box: [[west, south], [east, north]]. */
+export type LngLatBoundsTuple = [[number, number], [number, number]]
+
 export interface Viewport {
   center: [number, number]
   zoom: number
@@ -37,7 +40,7 @@ export interface ViewportChangeEvent {
   zoom: number
   pitch: number
   bearing: number
-  bounds: [[number, number], [number, number]]
+  bounds: LngLatBoundsTuple
 }
 
 export interface LayerClickEvent {

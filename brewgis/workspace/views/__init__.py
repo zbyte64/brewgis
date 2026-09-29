@@ -17,6 +17,7 @@ from .create_layer import layer_delete  # noqa: F401
 from .create_layer import layer_toggle_visibility  # noqa: F401
 from .create_layer import sqlmesh_table_preview  # noqa: F401
 from .data_table import layer_data_table  # noqa: F401
+from .data_table import layer_feature_bounds  # noqa: F401
 from .external_services import external_service_add  # noqa: F401
 from .external_services import external_service_delete  # noqa: F401
 from .external_services import external_service_list  # noqa: F401

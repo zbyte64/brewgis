@@ -1,9 +1,21 @@
 import { LitElement, html, type PropertyValues } from 'lit'
 import { property } from 'lit/decorators.js'
 import maplibregl from 'maplibre-gl'
-import type { Viewport, LayerConfig, ViewportChangeEvent, LayerClickEvent } from '../types/index.js'
+import type {
+  Viewport,
+  LayerConfig,
+  ViewportChangeEvent,
+  LayerClickEvent,
+  LngLatBoundsTuple,
+} from '../types/index.js'
 import { generateLayerId, diffLayers } from '../utils/maplibre-helpers.js'
 import { PaintModeController } from './paint-mode.js'
+
+/** Padding, in pixels, kept clear around a located feature. */
+const FOCUS_PADDING_PX = 80
+/** Zoom a located feature is fitted to at most, so one small parcel (or a
+ * zero-area box around a point) doesn't fill the screen with a single lot. */
+const FOCUS_MAX_ZOOM = 18
 
 /** Escape text for safe interpolation into hover-tooltip HTML. */
 function _escapeHtml(value: string): string {
@@ -303,43 +315,32 @@ export class BrewGisMap extends LitElement {
   }
 
   /**
-   * Zoom to fit a feature by its ID.
-   * Queries the resolved layer ID and fits the map bounds.
+   * Centre the map on one feature and select-highlight it — what the data
+   * table's "Locate on map" button does.
+   *
+   * `bounds` is `[[west, south], [east, north]]` in lng/lat, read from the
+   * feature's own table by the server (`layer_feature_bounds`) instead of
+   * from this component's loaded tiles: `querySourceFeatures` only sees the
+   * tiles the current viewport has fetched, so a row for a parcel a page
+   * away in the table would find nothing to fit. `maxZoom` keeps a
+   * single small parcel — or a point with a zero-area box — from being
+   * zoomed to the tile server's own limit.
+   *
+   * The highlight is the same `selected` feature state a map click sets, so
+   * it outlines the feature on the active parcel layer (the scenario's canvas
+   * view when a scenario is active, else the base canvas) — the only source
+   * this component draws a selection for. A row whose id is not a feature of
+   * that source still zooms; it just has nothing to outline.
    */
-  zoomToFeature(featureId: string): void {
+  focusFeature(featureId: string, bounds: LngLatBoundsTuple): void {
     if (!this._map) return
-    const sourceId = this._findCanvasSourceId()
-    if (!sourceId) return
-    const canvasConfig = this.layers.find(
-      (l) => l.id === this.canvasLayerId || l.key === this.canvasLayerId,
-    )
-    const sourceLayer = canvasConfig?.['source-layer']
-    try {
-      const features = this._map.querySourceFeatures(sourceId, {
-        sourceLayer: sourceLayer,
-        filter: ['==', ['id'], featureId],
-      })
-      if (features.length > 0) {
-        const bounds = new maplibregl.LngLatBounds()
-        for (const f of features) {
-          if (f.geometry?.type === 'Point') {
-            const coords = f.geometry.coordinates
-            if (
-              coords.length >= 2 &&
-              typeof coords[0] === 'number' &&
-              typeof coords[1] === 'number'
-            ) {
-              bounds.extend([coords[0], coords[1]] as [number, number])
-            }
-          }
-        }
-        if (!bounds.isEmpty()) {
-          this._map.fitBounds(bounds, { padding: 50 })
-        }
-      }
-    } catch {
-      // Feature query failed
-    }
+
+    this._map.fitBounds(bounds, {
+      padding: FOCUS_PADDING_PX,
+      maxZoom: FOCUS_MAX_ZOOM,
+      duration: 600,
+    })
+    this.highlightFeatures([featureId])
   }
 
   /**

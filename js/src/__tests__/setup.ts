@@ -21,6 +21,7 @@ const mockMap = {
   remove: vi.fn(),
   jumpTo: vi.fn().mockReturnThis(),
   flyTo: vi.fn().mockReturnThis(),
+  fitBounds: vi.fn().mockReturnThis(),
   getCenter: vi.fn().mockReturnValue({ lng: 0, lat: 0 }),
   getZoom: vi.fn().mockReturnValue(1),
   getPitch: vi.fn().mockReturnValue(0),

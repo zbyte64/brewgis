@@ -82,6 +82,7 @@ from .views.built_forms import building_type_list
 from .views.built_forms import place_type_bake
 from .views.built_forms import place_type_list
 from .views.data_table import layer_data_table
+from .views.data_table import layer_feature_bounds
 from .views.external_services import external_service_add
 from .views.external_services import external_service_delete
 from .views.external_services import external_service_list
@@ -500,6 +501,12 @@ urlpatterns = [
         "layers/<int:layer_pk>/data/",
         layer_data_table,
         name="layer_data_table",
+    ),
+    # Bounding box of one row of that table, for "Locate on map"
+    path(
+        "layers/<int:layer_pk>/data/feature-bounds/",
+        layer_feature_bounds,
+        name="layer_feature_bounds",
     ),
     # Panel endpoints (return partial HTML for map shell panels)
     path(

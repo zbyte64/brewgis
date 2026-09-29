@@ -329,6 +329,30 @@
     }
   }
 
+  /** Render a transient toast; also the handler for `show-toast` events. */
+  function showToast(msg) {
+    if (!msg) return;
+    var toast = document.getElementById('toast-container');
+    if (!toast) {
+      toast = document.createElement('div');
+      toast.id = 'toast-container';
+      toast.style.cssText = 'position:fixed;bottom:20px;right:20px;z-index:9999;';
+      document.body.appendChild(toast);
+    }
+    var el = document.createElement('div');
+    el.className = 'alert alert-info alert-dismissible fade show py-1 px-2 mb-1';
+    el.style.fontSize = '0.75rem';
+    el.textContent = typeof msg === 'string' ? msg : msg.toString();
+    var closeBtn = document.createElement('button');
+    closeBtn.type = 'button';
+    closeBtn.className = 'btn-close py-1';
+    closeBtn.style.fontSize = '0.6rem';
+    closeBtn.onclick = function() { el.remove(); };
+    el.appendChild(closeBtn);
+    toast.appendChild(el);
+    setTimeout(function() { el.remove(); }, 4000);
+  }
+
   // ─── Window Resize ────────────────────────────────────────
   var resizeTimer = null;
 
@@ -402,15 +426,41 @@
     });
 
     // ─── Data table locate feature ──────────────────────────
+    // Zooms to a row's own feature and highlights it. The box comes from the
+    // server (the row's table), not from the map's loaded tiles: only the
+    // tiles covering the current viewport are queryable, so a row for a
+    // feature off-screen — most of a page of rows — would otherwise find
+    // nothing to zoom to and the button would look dead.
     document.addEventListener('click', function(evt) {
       var btn = evt.target.closest('.locate-feature-btn');
       if (!btn) return;
       evt.stopPropagation();
       var featureId = btn.getAttribute('data-feature-id');
-      if (!featureId) return;
+      var url = btn.getAttribute('data-locate-url');
+      if (!featureId || !url) return;
       var mapEl = getMapEl();
-      if (!mapEl || typeof mapEl.zoomToFeature !== 'function') return;
-      mapEl.zoomToFeature(featureId);
+      if (!mapEl || typeof mapEl.focusFeature !== 'function') return;
+
+      var query = url + (url.indexOf('?') === -1 ? '?' : '&') +
+        'feature_id=' + encodeURIComponent(featureId);
+      btn.disabled = true;
+      fetch(query, { headers: { 'X-Requested-With': 'XMLHttpRequest' } })
+        .then(function(resp) {
+          return resp.json()
+            .catch(function() { return {}; })
+            .then(function(data) { return { ok: resp.ok, data: data }; });
+        })
+        .then(function(res) {
+          if (!res.ok || !res.data.bounds) {
+            showToast(res.data.error || 'Could not locate this feature on the map.');
+            return;
+          }
+          mapEl.focusFeature(featureId, res.data.bounds);
+        })
+        .catch(function() {
+          showToast('Could not locate this feature on the map.');
+        })
+        .finally(function() { btn.disabled = false; });
     });
 
     // ─── Filter preview on map ─────────────────────────────
@@ -439,27 +489,7 @@
     document.body.addEventListener('show-toast', function(evt) {
       // htmx wraps non-object HX-Trigger payloads as {value: <payload>}
       var detail = evt.detail;
-      var msg = detail && typeof detail === 'object' ? detail.value : detail;
-      if (!msg) return;
-      var toast = document.getElementById('toast-container');
-      if (!toast) {
-        toast = document.createElement('div');
-        toast.id = 'toast-container';
-        toast.style.cssText = 'position:fixed;bottom:20px;right:20px;z-index:9999;';
-        document.body.appendChild(toast);
-      }
-      var el = document.createElement('div');
-      el.className = 'alert alert-info alert-dismissible fade show py-1 px-2 mb-1';
-      el.style.fontSize = '0.75rem';
-      el.textContent = typeof msg === 'string' ? msg : msg.toString();
-      var closeBtn = document.createElement('button');
-      closeBtn.type = 'button';
-      closeBtn.className = 'btn-close py-1';
-      closeBtn.style.fontSize = '0.6rem';
-      closeBtn.onclick = function() { el.remove(); };
-      el.appendChild(closeBtn);
-      toast.appendChild(el);
-      setTimeout(function() { el.remove(); }, 4000);
+      showToast(detail && typeof detail === 'object' ? detail.value : detail);
     });
   }
 

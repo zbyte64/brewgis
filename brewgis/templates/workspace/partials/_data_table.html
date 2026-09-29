@@ -103,6 +103,7 @@
                         style="font-size: 0.65rem;
                                line-height: 1"
                         data-feature-id="{{ row|list_index:feature_id_col_index }}"
+                        data-locate-url="{% url 'workspace:layer_feature_bounds' layer.pk %}{% if scenario %}?scenario={{ scenario.pk }}{% endif %}"
                         title="{% translate 'Locate on map' %}">&oplus;</button>
               </td>
               {% for val in row %}

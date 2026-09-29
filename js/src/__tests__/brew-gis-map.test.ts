@@ -4,7 +4,19 @@ import maplibregl from 'maplibre-gl'
 // Import the component to trigger custom element registration
 import '../index.js'
 import type { BrewGisMap } from '../components/brew-gis-map.js'
+import type { LayerConfig, LngLatBoundsTuple } from '../types/index.js'
 import { mockMap, triggerMockEvent } from './setup.js'
+
+/**
+ * The component surface `focusFeature`'s test drives directly. Lit exposes
+ * these at runtime; the class types the property setters and the element as
+ * private, so reaching them needs an explicit cast.
+ */
+interface MapInternals {
+  canvasLayerId: string
+  layers: LayerConfig[]
+  focusFeature(featureId: string, bounds: LngLatBoundsTuple): void
+}
 
 function createMapElement() {
   return document.createElement('brew-gis-map')
@@ -261,6 +273,39 @@ describe('brew-gis-map', () => {
     expect(call[0]).toHaveProperty('source')
     // Source ID is derived from the layer config id
     expect(call[0].source).toBe('scenario_test_canvas')
+    expect(call[1]).toEqual({ selected: true })
+  })
+
+  it('focusFeature fits the given bounds and selects the feature it was given', async () => {
+    const { el, mockMap } = await createAndAttach({
+      mode: 'paint',
+      scenarioId: 1,
+    })
+    const brew = el as unknown as MapInternals
+    brew.canvasLayerId = 'scenario_test_canvas'
+    brew.layers = [
+      {
+        key: 'scenario_test_canvas',
+        id: 'scenario_test_canvas',
+        type: 'fill',
+        source: { type: 'vector', tiles: [] },
+      },
+    ]
+
+    const bounds: LngLatBoundsTuple = [
+      [-119.8, 36.7],
+      [-119.7, 36.8],
+    ]
+    brew.focusFeature('parcel-123', bounds)
+
+    expect(mockMap.fitBounds).toHaveBeenCalledTimes(1)
+    expect(mockMap.fitBounds.mock.calls[0][0]).toEqual(bounds)
+    const call = mockMap.setFeatureState.mock.calls[0]
+    expect(call[0]).toEqual({
+      source: 'scenario_test_canvas',
+      sourceLayer: 'default',
+      id: 'parcel-123',
+    })
     expect(call[1]).toEqual({ selected: true })
   })
 
