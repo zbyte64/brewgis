@@ -39,6 +39,7 @@ from brewgis.workspace.services.filter_compiler import FilterCompiler
 from brewgis.workspace.services.sqlmesh_tables import sqlmesh_links_for_tables
 from brewgis.workspace.symbology.legend import swatch_background
 from brewgis.workspace.views.basemaps import _get_selected_basemap_id
+from brewgis.workspace.views.built_forms import built_forms_panel_context
 from brewgis.workspace.views.workspace_detail import build_catalog_context
 
 if TYPE_CHECKING:
@@ -313,6 +314,39 @@ def panel_report_list(request: HttpRequest, workspace_pk: int) -> HttpResponse:
         request,
         "workspace/partials/_report_list_panel.html",
         context,
+    )
+
+
+@user_passes_test(lambda u: u.is_authenticated)
+def panel_built_forms(request: HttpRequest, workspace_pk: int) -> HttpResponse:
+    """Return the Built Forms panel (this workspace's library) for the left sidebar.
+
+    The library has no page of its own — this panel is it. Its lists re-fetch
+    themselves on the ``built-forms-changed`` event the CRUD views fire, so a
+    save or delete made from the panel's own drawer shows up without a reload.
+    """
+    workspace = get_object_or_404(Workspace, pk=workspace_pk)
+    return render(
+        request,
+        "workspace/partials/_built_forms_panel.html",
+        built_forms_panel_context(workspace),
+    )
+
+
+@user_passes_test(lambda u: u.is_authenticated)
+def panel_built_form_options(request: HttpRequest, workspace_pk: int) -> HttpResponse:
+    """Return the paint toolbar's built-form ``<option>`` list.
+
+    Separate from the panel above because it is a different surface of the
+    same library: the toolbar's picker is rendered into the map page itself,
+    so it re-fetches these options on ``built-forms-changed`` rather than
+    keep offering a type the panel just renamed or deleted.
+    """
+    workspace = get_object_or_404(Workspace, pk=workspace_pk)
+    return render(
+        request,
+        "workspace/partials/_built_form_options.html",
+        built_forms_panel_context(workspace),
     )
 
 

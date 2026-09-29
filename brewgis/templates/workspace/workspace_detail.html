@@ -33,10 +33,8 @@
          class="btn btn-outline-primary">{% translate "Run Analysis" %}</a>
       <a href="{% url 'workspace:report_list' workspace.pk %}"
          class="btn btn-outline-primary">{% translate "Reports" %}</a>
-      <a href="{% url 'workspace:building_type_list' workspace.pk %}"
-         class="btn btn-outline-secondary">{% translate "Building Types" %}</a>
-      <a href="{% url 'workspace:place_type_list' workspace.pk %}"
-         class="btn btn-outline-secondary">{% translate "Place Types" %}</a>
+      <a href="{% url 'workspace:workspace_map' workspace.pk %}?panel=built-forms"
+         class="btn btn-outline-secondary">{% translate "Building and Place Types" %}</a>
     </div>
     <!-- Workspace Settings -->
     <div class="card mb-4">

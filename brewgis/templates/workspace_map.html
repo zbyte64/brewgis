@@ -217,32 +217,20 @@
             <option value="building">Building Type</option>
             <option value="place">Place Type</option>
           </select>
+          {# The library is editable from the map's Built Forms panel, so
+             re-fetch these options whenever it changes rather than keep
+             offering a type that was just renamed or deleted. #}
           <select class="form-select form-select-sm"
                   data-paint-op="built_form"
                   id="paint-bf-id"
                   name="bf_id"
                   aria-label="Built Form"
-                  style="width: auto">
-            <option value="">Select...</option>
-            {% if built_forms %}
-              {% if built_forms.building_types %}
-                <optgroup label="Building Types" id="bf-optgroup-building" data-type="building">
-                  {% for bf in built_forms.building_types %}
-                    <option value="{{ bf.id }}" data-type="building">{{ bf.name }}</option>
-                  {% endfor %}
-                </optgroup>
-              {% endif %}
-              {% if built_forms.place_types %}
-                <optgroup label="Place Types"
-                          id="bf-optgroup-place"
-                          data-type="place"
-                          style="display: none">
-                  {% for bf in built_forms.place_types %}
-                    <option value="{{ bf.id }}" data-type="place">{{ bf.name }}</option>
-                  {% endfor %}
-                </optgroup>
-              {% endif %}
-            {% endif %}
+                  style="width: auto"
+                  hx-get="{% url 'workspace:panel_built_form_options' workspace.pk %}"
+                  hx-trigger="built-forms-changed from:body"
+                  hx-target="this"
+                  hx-swap="innerHTML">
+            {% include "workspace/partials/_built_form_options.html" with building_types=built_forms.building_types place_types=built_forms.place_types %}
           </select>
           <!-- Hidden fields for selected feature IDs -->
           <input type="hidden" id="paint-feature-ids" name="features" value="" />
@@ -367,6 +355,12 @@
             x-bind:class="{ active: $store.panels.leftSidebarOpen && $store.panels.activePanel === 'reports' }"
             title="{% translate 'Reports' %}"
             aria-label="{% translate 'Reports' %}">📄</button>
+    <button type="button"
+            data-panel="built-forms"
+            x-on:click="$store.panels.setSidebarTab('built-forms')"
+            x-bind:class="{ active: $store.panels.leftSidebarOpen && $store.panels.activePanel === 'built-forms' }"
+            title="{% translate 'Building and Place Types' %}"
+            aria-label="{% translate 'Building and Place Types' %}">🏢</button>
     <button type="button"
             data-panel="basemap"
             x-on:click="$store.panels.setSidebarTab('basemap')"
@@ -538,8 +532,6 @@
       const paintResult = document.getElementById('paint-result');
       const bfTypeSelect = document.getElementById('paint-bf-type');
       const bfIdSelect = document.getElementById('paint-bf-id');
-      const bfOptgroupBuilding = document.getElementById('bf-optgroup-building');
-      const bfOptgroupPlace = document.getElementById('bf-optgroup-place');
       const paintColumnSelect = document.getElementById('paint-column');
       const paintValueInput = document.getElementById('paint-value');
       const bfMatchBtn = document.getElementById('paint-bf-match-btn');
@@ -636,15 +628,20 @@
 
       updatePaintOperation();
 
-      // BF type selector toggles which optgroup is visible
+      // BF type selector toggles which optgroup is visible. The optgroups are
+      // looked up on each change rather than captured once: the picker
+      // re-fetches its options (the hx-get on built-forms-changed above),
+      // which replaces every option and optgroup node.
       if (bfTypeSelect) {
         bfTypeSelect.addEventListener('change', function() {
           var type = this.value;
-          if (bfOptgroupBuilding) {
-            bfOptgroupBuilding.style.display = type === 'building' ? '' : 'none';
+          var optgroupBuilding = document.getElementById('bf-optgroup-building');
+          var optgroupPlace = document.getElementById('bf-optgroup-place');
+          if (optgroupBuilding) {
+            optgroupBuilding.style.display = type === 'building' ? '' : 'none';
           }
-          if (bfOptgroupPlace) {
-            bfOptgroupPlace.style.display = type === 'place' ? '' : 'none';
+          if (optgroupPlace) {
+            optgroupPlace.style.display = type === 'place' ? '' : 'none';
           }
         });
       }

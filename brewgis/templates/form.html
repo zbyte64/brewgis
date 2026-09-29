@@ -18,9 +18,11 @@
 {% endblock title %}
 {% block content %}
   {% partialdef form-content %}
-  {% load crispy_forms_tags workspace_tags %}
+  {% load crispy_forms_tags workspace_tags i18n %}
 
-  <div class="container mt-4" id="form-content">
+  <div class="container mt-4"
+       id="form-content"
+       {% if wide_panel %}data-wide-panel="true"{% endif %}>
     <div class="row">
       <div class="col-lg-8 mx-auto">
         <div class="card">
@@ -35,9 +37,9 @@
           </div>
           <div class="card-body">
             <form method="post"
-                  action="{{ request.path }}"
+                  action="{% if form_action %}{{ form_action }}{% else %}{{ request.path }}{% endif %}"
                   enctype="multipart/form-data"
-                  hx-post="{{ request.path }}"
+                  hx-post="{% if form_action %}{{ form_action }}{% else %}{{ request.path }}{% endif %}"
                   hx-target="#form-content"
                   hx-swap="outerHTML"
                   hx-trigger="submit">
@@ -50,7 +52,22 @@
                         hx-indicator="#form-save-spinner">Save</button>
                 <span id="form-save-spinner"
                       class="htmx-indicator spinner-border spinner-border-sm ms-2"></span>
-                <a href="{% url 'workspace:home' %}" class="btn btn-outline-secondary">Cancel</a>
+                {% comment %}
+                  A form opened in the map shell's drawer ("panel_form") is
+                  cancelled by closing that drawer — navigating away would
+                  throw the map, its viewport and any paint selection with it.
+                  A direct visit has no drawer to close, so its Cancel is a
+                  plain link (the view supplies "cancel_url" when it has a
+                  better destination than the workspace list).
+                {% endcomment %}
+                {% if panel_form %}
+                  <button type="button"
+                          class="btn btn-outline-secondary"
+                          x-on:click="$store.panels.closePanel()">{% translate "Cancel" %}</button>
+                {% else %}
+                  <a href="{% if cancel_url %}{{ cancel_url }}{% else %}{% url 'workspace:home' %}{% endif %}"
+                     class="btn btn-outline-secondary">{% translate "Cancel" %}</a>
+                {% endif %}
               </div>
             </form>
           </div>

@@ -138,7 +138,11 @@ building classifications, which identify them more reliably than parcel features
 Every workspace owns its own `BuildingType` rows (Django model
 `workspace_buildingtype`, exported to `<db_schema>.built_forms` for SQLMesh) —
 the catalogue the paint "Match Closest"/"Fill" tools and the base-layer-import
-"Fill built form by closest matching" model assign from. A new workspace is
+"Fill built form by closest matching" model assign from. The catalogue is
+browsed and edited in the map shell's **Built Forms** sidebar panel
+(`/workspace/<pk>/map/?panel=built-forms`): it lists both libraries, opens
+create/edit forms in the map's right-hand drawer, and deletes in place, so
+managing it never leaves the map. A new workspace is
 seeded with a 96-entry default library
 (`brewgis/workspace/built_forms/default_library.py`): the 15 generic archetypes,
 the SACOG land-use rows of `sacog_land_use_translation_table` (two of its 49

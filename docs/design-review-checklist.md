@@ -171,15 +171,15 @@ navigation, workflow integrity, error/empty states, consistency, and accessibili
 
 | # | Heuristic | Pass/Fail | Notes |
 |---|---|---|---|
-| 1 | Building types and place types have separate list pages | | |
-| 2 | Cards show name, density, and key parameters | | |
-| 3 | Create/edit forms have logical field groupings | | |
+| 1 | Building types and place types are both listed in the map's Built Forms panel | | |
+| 2 | Rows show the name, and a create action sits with each list | | |
+| 3 | Create/edit forms open in the map's drawer with logical field groupings | | |
 
 ### Data Presentation
 
 | # | Heuristic | Pass/Fail | Notes |
 |---|---|---|---|
-| 1 | Card layout is scannable with consistent title placement | | |
+| 1 | Row layout is scannable with consistent title placement | | |
 | 2 | Density and allocation percentages are clearly labeled | | |
 | 3 | Mix configuration (place type ↔ building type) is intuitive | | |
 
@@ -187,15 +187,15 @@ navigation, workflow integrity, error/empty states, consistency, and accessibili
 
 | # | Heuristic | Pass/Fail | Notes |
 |---|---|---|---|
-| 1 | Create button is visible on list pages | | |
-| 2 | Edit links are accessible from card/list items | | |
-| 3 | Bake button is accessible for applying built form changes | | |
+| 1 | Create button is visible on both lists in the panel | | |
+| 2 | Edit and delete actions are accessible from every row | | |
+| 3 | Editing a type never leaves the map (drawer in, list refreshed on save) | | |
 
 ### Error & Empty States
 
 | # | Heuristic | Pass/Fail | Notes |
 |---|---|---|---|
-| 1 | No building types shows "No building types" empty state | | |
+| 1 | No building types shows "No building types yet" empty state | | |
 | 2 | Form validation errors are shown inline | | |
 
 ---

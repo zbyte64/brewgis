@@ -1,26 +1,66 @@
-"""CRUD and baking views for BuildingTypes and PlaceTypes — workspace-scoped."""
+"""Create/edit/delete views for BuildingTypes and PlaceTypes.
+
+The built-form library has no page of its own: it is the map shell's
+"Built Forms" left-sidebar panel (``views.panels.panel_built_forms``). That
+panel lists the workspace's types, opens these create/edit forms in the map's
+right-hand drawer, and POSTs deletes back here — the same shape as the layer
+list and the symbology editor, so managing the library never navigates away
+from the map. Every mutation therefore answers with the htmx protocol instead
+of a page: a saved form re-renders itself with a ``built-forms-changed`` event,
+a delete swaps nothing and lets that same event refresh the panel.
+"""
 
 from __future__ import annotations
 
+import json
 from typing import Any
 
 from crispy_forms.helper import FormHelper
 from django import forms
+from django.contrib.auth.decorators import login_required
 from django.contrib.auth.decorators import user_passes_test
 from django.http import HttpRequest
 from django.http import HttpResponse
+from django.http import HttpResponseRedirect
 from django.shortcuts import get_object_or_404
 from django.shortcuts import render
 from django.urls import reverse
 from django.utils.decorators import method_decorator
+from django.views.decorators.http import require_POST
 from django.views.generic.edit import CreateView
-from django.views.generic.edit import DeleteView
 from django.views.generic.edit import UpdateView
 
-from brewgis.workspace.built_forms.allocation import AllocationEngine
 from brewgis.workspace.built_forms.models import BuildingType
 from brewgis.workspace.built_forms.models import PlaceType
 from brewgis.workspace.models import Workspace
+
+#: The map shell fires this on every library mutation; the Built Forms panel
+#: (and the paint toolbar's built-form picker) listen for it and re-fetch.
+BUILT_FORMS_CHANGED_EVENT = "built-forms-changed"
+
+
+def built_forms_panel_context(workspace: Workspace) -> dict[str, object]:
+    """Context for the map shell's Built Forms panel and its re-renders."""
+    return {
+        "workspace": workspace,
+        "building_types": BuildingType.objects.filter(workspace=workspace),
+        "place_types": PlaceType.objects.filter(workspace=workspace),
+    }
+
+
+def _changed(*, toast: str | None = None) -> dict[str, object]:
+    """``HX-Trigger`` payload announcing a library mutation.
+
+    The event is what keeps every other view of the library current — the
+    panel's own lists and the paint toolbar's picker — so a caller that only
+    needs those refreshed can answer with an empty body (see the delete
+    views), while the create/edit forms additionally re-render themselves.
+    """
+    payload: dict[str, object] = {BUILT_FORMS_CHANGED_EVENT: True}
+    if toast:
+        payload["show-toast"] = toast
+    return payload
+
 
 # ── HtmxResponseMixin ─────────────────────────────────────────────────
 
@@ -86,8 +126,8 @@ class WorkspaceScopedMixin:
 
     BuildingTypes and PlaceTypes belong to exactly one workspace, so every
     CRUD view for them needs the workspace up front: to scope the queryset
-    (an edit/delete can't reach another workspace's row), to stamp new rows
-    on create, and to build the redirect back to that workspace's list.
+    (an edit can't reach another workspace's row), to stamp new rows on
+    create, and to build the redirect back to that workspace's map.
     """
 
     kwargs: dict[str, Any]
@@ -101,14 +141,70 @@ class WorkspaceScopedMixin:
         return super().get_queryset().filter(workspace=self.workspace)  # type: ignore[misc]
 
     def form_valid(self, form: Any) -> HttpResponse:
-        # DeleteView's confirmation POST uses a plain Form (no `.instance`)
-        # — only Create/UpdateView's ModelForm needs the workspace stamped.
+        # Create/UpdateView's ModelForm needs the workspace stamped; the
+        # delete views are plain functions and never reach this.
         if hasattr(form, "instance"):
             form.instance.workspace = self.workspace
         return super().form_valid(form)  # type: ignore[misc, no-any-return]
 
     def get_redirect_url(self) -> str:
         return reverse(self.success_url_name, args=[self.workspace.pk])  # type: ignore[attr-defined]
+
+
+# ── BuiltFormPanelMixin ───────────────────────────────────────────────
+
+
+class BuiltFormPanelMixin(HtmxResponseMixin):
+    """Saves a built form and keeps the map's drawer showing it.
+
+    The library is a map panel, so there is no list page left to redirect to:
+    a save re-renders the saved form (the map's right-hand drawer holds it)
+    and fires ``built-forms-changed`` so the panel's own lists — and the paint
+    toolbar's picker — pick the change up. A non-htmx visit (the create/edit
+    URL opened directly) still redirects to the workspace map, which is where
+    the library now lives.
+
+    Subclasses MUST define ``edit_url_name``: a create re-renders the form of
+    the row it just made, so it has to post to that row's edit URL next rather
+    than to the create URL a second time.
+    """
+
+    edit_url_name: str
+    workspace: Workspace
+
+    def get_success_url(self) -> str:
+        return reverse("workspace:workspace_map", args=[self.workspace.pk])
+
+    def panel_form_action(self) -> str:
+        """URL the re-rendered form must POST to."""
+        obj = getattr(self, "object", None)
+        if obj is None:
+            return self.request.path
+        return reverse(self.edit_url_name, args=[self.workspace.pk, obj.pk])
+
+    def get_context_data(self, **kwargs: Any) -> dict[str, Any]:
+        context: dict[str, Any] = super().get_context_data(**kwargs)  # type: ignore[misc]
+        context["form_action"] = self.panel_form_action()
+        context["panel_form"] = bool(getattr(self.request, "htmx", False))
+        context["cancel_url"] = reverse(
+            "workspace:workspace_map", args=[self.workspace.pk]
+        )
+        # BuildingType carries 25 fields; the default 400px drawer would show
+        # them one screenful at a time (see .map-shell__right-panel.wide).
+        context["wide_panel"] = True
+        return context
+
+    def form_valid(self, form: Any) -> HttpResponse:
+        self.object = form.save()
+        if not getattr(self.request, "htmx", False):
+            return HttpResponseRedirect(self.get_success_url())
+        response = render(
+            self.request,
+            self.get_template_names()[0],
+            self.get_context_data(form=form),
+        )
+        response["HX-Trigger"] = json.dumps(_changed(toast=f"Saved {self.object}"))
+        return response
 
 
 # ── ModelForms ──────────────────────────────────────────────────────────
@@ -188,165 +284,94 @@ auth_method = user_passes_test(lambda u: u.is_authenticated)
 
 
 @method_decorator(auth_method, name="dispatch")
-class BuildingTypeCreateView(WorkspaceScopedMixin, HtmxResponseMixin, CreateView):
+class BuildingTypeCreateView(WorkspaceScopedMixin, BuiltFormPanelMixin, CreateView):
     """Create a new BuildingType in a workspace."""
 
     form_class = BuildingTypeForm
     template_name = "form.html"
-    success_url_name = "workspace:building_type_list"
+    success_url_name = "workspace:workspace_map"
+    edit_url_name = "workspace:building_type_edit"
 
 
 @method_decorator(auth_method, name="dispatch")
-class BuildingTypeUpdateView(WorkspaceScopedMixin, HtmxResponseMixin, UpdateView):
+class BuildingTypeUpdateView(WorkspaceScopedMixin, BuiltFormPanelMixin, UpdateView):
     """Edit an existing BuildingType."""
 
     model = BuildingType
     form_class = BuildingTypeForm
     template_name = "form.html"
-    success_url_name = "workspace:building_type_list"
-
-
-@method_decorator(auth_method, name="dispatch")
-class BuildingTypeDeleteView(WorkspaceScopedMixin, HtmxResponseMixin, DeleteView):  # type: ignore[misc]
-    """Delete a BuildingType."""
-
-    model = BuildingType
-    success_url_name = "workspace:building_type_list"
+    success_url_name = "workspace:workspace_map"
+    edit_url_name = "workspace:building_type_edit"
 
 
 # ── Place Type CRUD ─────────────────────────────────────────────────────
 
 
 @method_decorator(auth_method, name="dispatch")
-class PlaceTypeCreateView(WorkspaceScopedMixin, HtmxResponseMixin, CreateView):
+class PlaceTypeCreateView(WorkspaceScopedMixin, BuiltFormPanelMixin, CreateView):
     """Create a new PlaceType in a workspace."""
 
     form_class = PlaceTypeForm
     template_name = "form.html"
-    success_url_name = "workspace:place_type_list"
+    success_url_name = "workspace:workspace_map"
+    edit_url_name = "workspace:place_type_edit"
 
 
 @method_decorator(auth_method, name="dispatch")
-class PlaceTypeUpdateView(WorkspaceScopedMixin, HtmxResponseMixin, UpdateView):
+class PlaceTypeUpdateView(WorkspaceScopedMixin, BuiltFormPanelMixin, UpdateView):
     """Edit an existing PlaceType."""
 
     model = PlaceType
     form_class = PlaceTypeForm
     template_name = "form.html"
-    success_url_name = "workspace:place_type_list"
+    success_url_name = "workspace:workspace_map"
+    edit_url_name = "workspace:place_type_edit"
 
 
-@method_decorator(auth_method, name="dispatch")
-class PlaceTypeDeleteView(WorkspaceScopedMixin, HtmxResponseMixin, DeleteView):  # type: ignore[misc]
-    """Delete a PlaceType."""
-
-    model = PlaceType
-    success_url_name = "workspace:place_type_list"
+# ── Delete Views ────────────────────────────────────────────────────────
 
 
-# ── List Views ──────────────────────────────────────────────────────────
-
-
-@user_passes_test(lambda u: u.is_authenticated)
-def building_type_list(request: HttpRequest, workspace_pk: int) -> HttpResponse:
-    """List a workspace's BuildingTypes."""
-    workspace = get_object_or_404(Workspace, pk=workspace_pk)
-    building_types = BuildingType.objects.filter(workspace=workspace)
-    return render(
-        request,
-        "workspace/built_forms/building_type_list.html",
-        {"workspace": workspace, "building_types": building_types},
-    )
-
-
-@user_passes_test(lambda u: u.is_authenticated)
-def place_type_list(request: HttpRequest, workspace_pk: int) -> HttpResponse:
-    """List a workspace's PlaceTypes."""
-    workspace = get_object_or_404(Workspace, pk=workspace_pk)
-    place_types = PlaceType.objects.filter(workspace=workspace)
-    return render(
-        request,
-        "workspace/built_forms/place_type_list.html",
-        {"workspace": workspace, "place_types": place_types},
-    )
-
-
-# ── Baking Views ────────────────────────────────────────────────────────
-
-
-def building_type_bake(
+@require_POST
+@login_required
+def building_type_delete(
     request: HttpRequest, workspace_pk: int, pk: int
 ) -> HttpResponse:
-    """Show bake form (GET) or run allocation (POST) for a BuildingType."""
-    building_type = get_object_or_404(BuildingType, pk=pk, workspace_id=workspace_pk)
+    """Delete a BuildingType; the panel refreshes off the event.
 
-    if request.method == "GET":
-        return render(
-            request,
-            "workspace/built_forms/building_type_bake.html",
-            {"building_type": building_type},
+    The type's ``PlaceTypeBuildingTypeMix`` rows cascade with it, so the
+    whole panel re-renders from the ``built-forms-changed`` event rather than
+    this response carrying a body — both lists can change. A plain POST
+    (no htmx, so nothing can consume the event) lands back on the map.
+    """
+    workspace = get_object_or_404(Workspace, pk=workspace_pk)
+    building_type = get_object_or_404(BuildingType, pk=pk, workspace=workspace)
+    name = str(building_type)
+    building_type.delete()
+
+    if not getattr(request, "htmx", False):
+        return HttpResponseRedirect(
+            reverse("workspace:workspace_map", args=[workspace.pk])
         )
 
-    try:
-        acres = float(request.POST.get("acres", 10.0))
-    except (ValueError, TypeError):
-        acres = 10.0
-
-    row_pct = float(request.POST.get("row_pct", 25.0))
-    result = AllocationEngine.allocation_building_type(
-        parcel_acres=acres,
-        building_type=building_type,
-        row_allocation_pct=row_pct,
-    )
-
-    return render(
-        request,
-        "workspace/built_forms/building_type_bake.html#bake-results",
-        {
-            "result": result,
-            "built_form_name": building_type.name,
-            "built_form_type": "building_type",
-            "acres": acres,
-            "row_pct": row_pct,
-        },
-    )
+    response = HttpResponse()
+    response["HX-Trigger"] = json.dumps(_changed(toast=f"Deleted {name}"))
+    return response
 
 
-def place_type_bake(request: HttpRequest, workspace_pk: int, pk: int) -> HttpResponse:
-    """Show bake form (GET) or run allocation (POST) for a PlaceType."""
-    place_type = get_object_or_404(
-        PlaceType.objects.prefetch_related(
-            "building_type_mixes__building_type",
-        ),
-        pk=pk,
-        workspace_id=workspace_pk,
-    )
+@require_POST
+@login_required
+def place_type_delete(request: HttpRequest, workspace_pk: int, pk: int) -> HttpResponse:
+    """Delete a PlaceType; the panel refreshes off the event."""
+    workspace = get_object_or_404(Workspace, pk=workspace_pk)
+    place_type = get_object_or_404(PlaceType, pk=pk, workspace=workspace)
+    name = str(place_type)
+    place_type.delete()
 
-    if request.method == "GET":
-        return render(
-            request,
-            "workspace/built_forms/place_type_bake.html",
-            {"place_type": place_type},
+    if not getattr(request, "htmx", False):
+        return HttpResponseRedirect(
+            reverse("workspace:workspace_map", args=[workspace.pk])
         )
 
-    try:
-        acres = float(request.POST.get("acres", 40.0))
-    except (ValueError, TypeError):
-        acres = 40.0
-
-    result = AllocationEngine.allocation_place_type(
-        parcel_acres=acres,
-        place_type=place_type,
-    )
-
-    return render(
-        request,
-        "workspace/built_forms/place_type_bake.html#bake-results",
-        {
-            "result": result,
-            "built_form_name": place_type.name,
-            "built_form_type": "place_type",
-            "acres": acres,
-            "row_pct": place_type.row_allocation_pct or 25.0,
-        },
-    )
+    response = HttpResponse()
+    response["HX-Trigger"] = json.dumps(_changed(toast=f"Deleted {name}"))
+    return response

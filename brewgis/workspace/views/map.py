@@ -272,12 +272,13 @@ def view_workspace_map(request: HttpRequest, workspace_pk: int) -> HttpResponse:
         # Build column metadata for the paint toolbar dropdown
         paintable_column_meta = build_paintable_column_meta()
 
-        # Build built forms data for toolbar dropdowns
-        bts = BuildingType.objects.filter(workspace=workspace).order_by("name")
-        pts = PlaceType.objects.filter(workspace=workspace).order_by("name")
+        # The paint toolbar's built-form picker lists this workspace's own
+        # library — the same querysets the Built Forms panel renders, so the
+        # picker can re-fetch its options from panel_built_form_options
+        # whenever the panel changes the library.
         built_forms_data = {
-            "building_types": [{"id": bt.pk, "name": bt.name} for bt in bts],
-            "place_types": [{"id": pt.pk, "name": pt.name} for pt in pts],
+            "building_types": BuildingType.objects.filter(workspace=workspace),
+            "place_types": PlaceType.objects.filter(workspace=workspace),
         }
 
         # Build paint action URLs via reverse() — these previously

@@ -1,0 +1,27 @@
+{% load i18n %}
+
+{% comment %}
+  Options for the paint toolbar's "Assign Built Form" picker. Kept in its own
+  fragment because the toolbar lives on the map page rather than in a panel:
+  it re-fetches these on the `built-forms-changed` event, so a type the Built
+  Forms panel just renamed or deleted never lingers in the picker.
+
+  The two `optgroup`s are toggled by the Built Form Type select (building vs.
+  place) — see the paint toolbar script in workspace_map.html.
+{% endcomment %}
+<option value="">{% translate "Select..." %}</option>
+{% if building_types %}
+  <optgroup label="{% translate 'Building Types' %}"
+            id="bf-optgroup-building"
+            data-type="building">
+    {% for bt in building_types %}<option value="{{ bt.pk }}" data-type="building">{{ bt.name }}</option>{% endfor %}
+  </optgroup>
+{% endif %}
+{% if place_types %}
+  <optgroup label="{% translate 'Place Types' %}"
+            id="bf-optgroup-place"
+            data-type="place"
+            style="display: none">
+    {% for pt in place_types %}<option value="{{ pt.pk }}" data-type="place">{{ pt.name }}</option>{% endfor %}
+  </optgroup>
+{% endif %}

@@ -8,20 +8,19 @@ Feature: Place Types
     And a workspace named "Place Types WS" exists
 
   @e2e
-  Scenario: Place types list shows empty state
+  Scenario: Place types panel shows empty state
     When I navigate to the place types page
     Then I should see "No place types yet"
-    And I should see a "+ New Place Type" link
+    And the built form panel should offer a new place type
 
   @e2e
   Scenario: Create a place type
     When I navigate to the place types page
-    And I click "+ New Place Type"
-    Then New Place Type in the page title
-    And I should see a form with name and ROW allocation fields
+    And I click the new place type button
+    Then I should see a form with name and ROW allocation fields
 
   @e2e
-  Scenario: Place types page requires authentication
+  Scenario: Place types panel requires authentication
     Given the user is not logged in
     When I navigate to the place types page
     Then I should be on the login page

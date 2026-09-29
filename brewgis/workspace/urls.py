@@ -41,6 +41,8 @@ from .views import paint_history
 from .views import paint_status
 from .views import panel_analysis_launch
 from .views import panel_basemap_picker
+from .views import panel_built_form_options
+from .views import panel_built_forms
 from .views import panel_data_catalog
 from .views import panel_feature_inspect
 from .views import panel_import_center
@@ -69,18 +71,12 @@ from .views.built_forms import (
     BuildingTypeCreateView as building_type_create,  # noqa: N813
 )
 from .views.built_forms import (
-    BuildingTypeDeleteView as building_type_delete,  # noqa: N813
-)
-from .views.built_forms import (
     BuildingTypeUpdateView as building_type_edit,  # noqa: N813
 )
 from .views.built_forms import PlaceTypeCreateView as place_type_create  # noqa: N813
-from .views.built_forms import PlaceTypeDeleteView as place_type_delete  # noqa: N813
 from .views.built_forms import PlaceTypeUpdateView as place_type_edit  # noqa: N813
-from .views.built_forms import building_type_bake
-from .views.built_forms import building_type_list
-from .views.built_forms import place_type_bake
-from .views.built_forms import place_type_list
+from .views.built_forms import building_type_delete
+from .views.built_forms import place_type_delete
 from .views.data_table import layer_data_table
 from .views.data_table import layer_feature_bounds
 from .views.external_services import external_service_add
@@ -283,12 +279,8 @@ urlpatterns = [
         layer_legend,
         name="layer_legend",
     ),
-    # Built Forms (workspace-scoped)
-    path(
-        "<int:workspace_pk>/built-forms/building-types/",
-        building_type_list,
-        name="building_type_list",
-    ),
+    # Built Forms (workspace-scoped) — the library itself is the map shell's
+    # Built Forms panel; these are the form/delete endpoints it drives.
     path(
         "<int:workspace_pk>/built-forms/building-types/create/",
         building_type_create.as_view(),
@@ -301,18 +293,8 @@ urlpatterns = [
     ),
     path(
         "<int:workspace_pk>/built-forms/building-types/<int:pk>/delete/",
-        building_type_delete.as_view(),
+        building_type_delete,
         name="building_type_delete",
-    ),
-    path(
-        "<int:workspace_pk>/built-forms/building-types/<int:pk>/bake/",
-        building_type_bake,
-        name="building_type_bake",
-    ),
-    path(
-        "<int:workspace_pk>/built-forms/place-types/",
-        place_type_list,
-        name="place_type_list",
     ),
     path(
         "<int:workspace_pk>/built-forms/place-types/create/",
@@ -326,13 +308,8 @@ urlpatterns = [
     ),
     path(
         "<int:workspace_pk>/built-forms/place-types/<int:pk>/delete/",
-        place_type_delete.as_view(),
+        place_type_delete,
         name="place_type_delete",
-    ),
-    path(
-        "<int:workspace_pk>/built-forms/place-types/<int:pk>/bake/",
-        place_type_bake,
-        name="place_type_bake",
     ),
     # Analysis Pipeline
     path("analysis/launch/", analysis_launch.as_view(), name="analysis_launch"),
@@ -523,6 +500,16 @@ urlpatterns = [
         "workspace/<int:workspace_pk>/panel/import/",
         panel_import_center,
         name="panel_import_center",
+    ),
+    path(
+        "workspace/<int:workspace_pk>/panel/built-forms/",
+        panel_built_forms,
+        name="panel_built_forms",
+    ),
+    path(
+        "workspace/<int:workspace_pk>/panel/built-form-options/",
+        panel_built_form_options,
+        name="panel_built_form_options",
     ),
     path(
         "workspace/<int:workspace_pk>/panel/analysis/",

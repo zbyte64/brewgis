@@ -18,6 +18,44 @@
     return document.querySelector('brew-gis-map');
   }
 
+  /** Panel endpoints, keyed by left-sidebar tab name. */
+  function panelUrls(wsId, scenarioQuery) {
+    return {
+      layers: '/workspace/' + wsId + '/panel/layer-list/' + scenarioQuery,
+      catalog: '/workspace/' + wsId + '/panel/catalog/',
+      import: '/workspace/' + wsId + '/panel/import/',
+      analysis: '/workspace/' + wsId + '/panel/analysis/' + scenarioQuery,
+      reports: '/workspace/' + wsId + '/panel/reports/',
+      basemap: '/workspace/' + wsId + '/panel/basemap/',
+      'built-forms': '/workspace/' + wsId + '/panel/built-forms/',
+    };
+  }
+
+  /**
+   * Fetch one left-sidebar panel into the sidebar's content container.
+   * Returns false when the tab has no endpoint or the shell isn't on the page.
+   *
+   * The map's active scenario (if any) is carried via ?scenario= so panel
+   * views can default to its data (e.g. the Analysis panel defaulting "Parcel
+   * Table" to the scenario's canvas view instead of the raw, unpainted base
+   * table).
+   */
+  function loadSidebarPanel(name) {
+    var content = document.getElementById('left-sidebar-content');
+    if (!content) return false;
+
+    var wsId = document.getElementById('left-sidebar')?.getAttribute('data-workspace-pk');
+    if (!wsId) return false;
+
+    var scenarioId = getMapEl()?.getAttribute('scenario-id');
+    var scenarioQuery = scenarioId ? '?scenario=' + encodeURIComponent(scenarioId) : '';
+    var url = panelUrls(wsId, scenarioQuery)[name];
+    if (!url) return false;
+
+    htmx.ajax('GET', url, { target: '#left-sidebar-content', swap: 'innerHTML' });
+    return true;
+  }
+
   document.addEventListener('alpine:init', function () {
     Alpine.store('panels', {
       leftSidebarOpen: false,
@@ -70,31 +108,7 @@
           return;
         }
 
-        var content = document.getElementById('left-sidebar-content');
-        if (!content) return;
-
-        var wsId = document.getElementById('left-sidebar')?.getAttribute('data-workspace-pk');
-        if (!wsId) return;
-
-        // The map's active scenario (if any) is carried via ?scenario= so
-        // panel views can default to its data (e.g. the Analysis panel
-        // defaulting "Parcel Table" to the scenario's canvas view instead
-        // of the raw, unpainted base table).
-        var scenarioId = getMapEl()?.getAttribute('scenario-id');
-        var scenarioQuery = scenarioId ? '?scenario=' + encodeURIComponent(scenarioId) : '';
-
-        var urls = {
-          layers: '/workspace/' + wsId + '/panel/layer-list/' + scenarioQuery,
-          catalog: '/workspace/' + wsId + '/panel/catalog/',
-          import: '/workspace/' + wsId + '/panel/import/',
-          analysis: '/workspace/' + wsId + '/panel/analysis/' + scenarioQuery,
-          reports: '/workspace/' + wsId + '/panel/reports/',
-          basemap: '/workspace/' + wsId + '/panel/basemap/',
-        };
-
-        var url = urls[name];
-        if (url) {
-          htmx.ajax('GET', url, { target: '#left-sidebar-content', swap: 'innerHTML' });
+        if (loadSidebarPanel(name)) {
           this.activePanel = name;
         }
 
@@ -272,6 +286,15 @@
       },
     });
 
+    // Deep link: /workspace/<pk>/map/?panel=<tab> opens that sidebar tab on
+    // load. The workspace hub's quick actions use it — the built-form library
+    // has no page of its own, so "Building Types"/"Place Types" there have to
+    // land on the map with the Built Forms panel already open.
+    var initialPanel = new URLSearchParams(window.location.search).get('panel');
+    if (initialPanel) {
+      Alpine.store('panels').setSidebarTab(initialPanel);
+    }
+
     // Compatibility shim: several server-rendered partials swapped into
     // these panels still call window.__panelManager directly rather than
     // binding to the Alpine store.
@@ -378,6 +401,20 @@
 
     // Map resize observer
     setupMapResizeObserver();
+
+    // ─── Built Forms library changed ────────────────────────
+    // The create/edit/delete endpoints fire this (see views/built_forms.py).
+    // The paint toolbar's picker re-fetches its own options off the same event
+    // (the hx-get on #paint-bf-id); the panel is refreshed from here instead
+    // of with an hx-get on its root, because htmx's implicit attribute
+    // inheritance would then give every row button that root's trigger rather
+    // than its own click.
+    document.body.addEventListener('built-forms-changed', function () {
+      var panels = Alpine.store('panels');
+      if (panels.leftSidebarOpen && panels.activePanel === 'built-forms') {
+        loadSidebarPanel('built-forms');
+      }
+    });
 
     // ─── Symbology preview (Step 2) ──────────────────────────
     document.body.addEventListener('layer-style-preview', function(evt) {

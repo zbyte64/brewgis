@@ -1,0 +1,92 @@
+{% load i18n %}
+
+{% comment %}
+  The map shell's Built Forms panel — this workspace's Building Types and
+  Place Types. It is the library's only browsing surface: rows open their
+  create/edit form in the right-hand drawer, and delete POSTs in place.
+
+  A save or delete fires `built-forms-changed` (see views/built_forms.py),
+  which panel-manager.js turns into a re-fetch of this panel — the wiring
+  cannot live on this root element, because htmx's implicit attribute
+  inheritance (`implicitInheritance: true` in base.html) would then hand
+  every row button this element's trigger instead of its own click.
+{% endcomment %}
+<div id="built-forms-body" class="built-forms-panel">
+  <div class="d-flex align-items-center justify-content-between mb-1">
+    <h6 class="mb-0 text-muted" style="font-size: 0.8rem">{% translate "Building Types" %}</h6>
+    <button type="button"
+            id="new-building-type-btn"
+            class="btn btn-sm py-0 px-1 text-primary"
+            style="font-size: 0.7rem;
+                   line-height: 1.4"
+            title="{% translate 'New building type' %}"
+            hx-get="{% url 'workspace:building_type_create' workspace.pk %}"
+            hx-target="#right-panel-content"
+            hx-swap="innerHTML"
+            data-panel-event="open-panel:{% translate 'New Building Type' %}">+ {% translate "New" %}</button>
+  </div>
+  {% for bt in building_types %}
+    <div class="d-flex align-items-center justify-content-between gap-1"
+         data-building-type-pk="{{ bt.pk }}">
+      <button type="button"
+              class="btn btn-sm btn-link p-0 text-start text-decoration-none text-truncate"
+              style="font-size: 0.75rem"
+              hx-get="{% url 'workspace:building_type_edit' workspace.pk bt.pk %}"
+              hx-target="#right-panel-content"
+              hx-swap="innerHTML"
+              data-panel-event="open-panel:{% blocktranslate with name=bt.name %}Building Type: {{ name }}{% endblocktranslate %}">
+        {{ bt.name }}
+      </button>
+      <button type="button"
+              class="btn btn-sm py-0 px-1 text-danger"
+              style="font-size: 0.65rem;
+                     line-height: 1"
+              title="{% translate 'Delete building type' %}"
+              aria-label="{% blocktranslate with name=bt.name %}Delete building type {{ name }}{% endblocktranslate %}"
+              hx-post="{% url 'workspace:building_type_delete' workspace.pk bt.pk %}"
+              hx-confirm="{% blocktranslate with name=bt.name %}Delete building type '{{ name }}'? This cannot be undone.{% endblocktranslate %}"
+              hx-swap="none">🗑️</button>
+    </div>
+  {% empty %}
+    <p class="text-muted mb-1" style="font-size: 0.7rem">{% translate "No building types yet." %}</p>
+  {% endfor %}
+  <hr class="my-2" />
+  <div class="d-flex align-items-center justify-content-between mb-1">
+    <h6 class="mb-0 text-muted" style="font-size: 0.8rem">{% translate "Place Types" %}</h6>
+    <button type="button"
+            id="new-place-type-btn"
+            class="btn btn-sm py-0 px-1 text-primary"
+            style="font-size: 0.7rem;
+                   line-height: 1.4"
+            title="{% translate 'New place type' %}"
+            hx-get="{% url 'workspace:place_type_create' workspace.pk %}"
+            hx-target="#right-panel-content"
+            hx-swap="innerHTML"
+            data-panel-event="open-panel:{% translate 'New Place Type' %}">+ {% translate "New" %}</button>
+  </div>
+  {% for pt in place_types %}
+    <div class="d-flex align-items-center justify-content-between gap-1"
+         data-place-type-pk="{{ pt.pk }}">
+      <button type="button"
+              class="btn btn-sm btn-link p-0 text-start text-decoration-none text-truncate"
+              style="font-size: 0.75rem"
+              hx-get="{% url 'workspace:place_type_edit' workspace.pk pt.pk %}"
+              hx-target="#right-panel-content"
+              hx-swap="innerHTML"
+              data-panel-event="open-panel:{% blocktranslate with name=pt.name %}Place Type: {{ name }}{% endblocktranslate %}">
+        {{ pt.name }}
+      </button>
+      <button type="button"
+              class="btn btn-sm py-0 px-1 text-danger"
+              style="font-size: 0.65rem;
+                     line-height: 1"
+              title="{% translate 'Delete place type' %}"
+              aria-label="{% blocktranslate with name=pt.name %}Delete place type {{ name }}{% endblocktranslate %}"
+              hx-post="{% url 'workspace:place_type_delete' workspace.pk pt.pk %}"
+              hx-confirm="{% blocktranslate with name=pt.name %}Delete place type '{{ name }}'? This cannot be undone.{% endblocktranslate %}"
+              hx-swap="none">🗑️</button>
+    </div>
+  {% empty %}
+    <p class="text-muted mb-1" style="font-size: 0.7rem">{% translate "No place types yet." %}</p>
+  {% endfor %}
+</div>

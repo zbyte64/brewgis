@@ -18,14 +18,20 @@ as of Django 5.x (it accesses a private API).  Use the
 
 CRUD view conventions
 ---------------------
-- All built-forms CRUD class-based views **MUST** use
-  ``HtmxResponseMixin`` as the first base class before ``CreateView``,
-  ``UpdateView``, or ``DeleteView``.
+- The library has no page of its own: it is the map shell's Built Forms
+  panel (``views.panels.panel_built_forms``). That panel opens
+  ``views.built_forms``' create/edit forms into the map's right-hand drawer
+  and POSTs its deletes back to the same module.
+- Built-form create/edit views use ``BuiltFormPanelMixin`` (a
+  ``HtmxResponseMixin``) so a save re-renders the drawer with a
+  ``built-forms-changed`` event instead of redirecting to a page that no
+  longer exists.  A non-htmx POST still redirects to the workspace map.
 - Every view that uses ``HtmxResponseMixin`` **MUST** define
   ``success_url_name`` (a ``str`` — the URL pattern name for the redirect
-  after success).
-- The mixin handles htmx vs. non-htmx redirects automatically.  Subclasses
-  only override ``form_valid`` when they have extra logic (e.g., triggering
-  symbology generation), and **MUST** delegate to ``super().form_valid(form)``
-  for the redirect.
+  after success), and ``BuiltFormPanelMixin`` subclasses additionally define
+  ``edit_url_name`` (the URL a just-created row is re-rendered against).
+- ``HtmxResponseMixin`` handles htmx vs. non-htmx redirects automatically.
+  Subclasses only override ``form_valid`` when they have extra logic, and
+  **MUST** either delegate to ``super().form_valid(form)`` for the redirect
+  or return one of their own (as ``BuiltFormPanelMixin`` does).
 """
