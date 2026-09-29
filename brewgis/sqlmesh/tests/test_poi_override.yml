@@ -1,0 +1,427 @@
+# Unit tests for the POI built-form override in brewgis.sacog.base_canvas_poi_override.
+#
+# A parcel containing a point of an OpenStreetMap POI category takes the built
+# form key that category maps to (brewgis.seeds.poi_built_form_map) and reads its
+# dwelling units and employment from that built form's densities and
+# jobs_by_sector mix (brewgis.seeds.default_built_forms) times the parcel's acres:
+#   - the mapped category with the lowest priority number wins when a parcel
+#     contains several (hospitals before schools before parks);
+#   - the built form's shares split its job total across the sectors it declares,
+#     and the base canvas group columns (emp_ret/emp_off/...) are their sums;
+#   - every mapped form is non-residential, so du and its subtypes are zero;
+#   - a parcel no POI matched passes base_canvas_combined through untouched.
+#
+# The two seed inputs are stubbed with the library's own values so the assertions
+# do not move when a density is retuned in default_library.py — the shape of the
+# override is what is under test here, not the library's numbers. Both fixtures
+# declare geometry as plain GEOMETRY so the parcels' and the points' SRID agree;
+# every parcel is 2.0 acres.
+
+test_school_parcel_takes_k12_school:
+  description: "Parcel containing a school point takes K-12 School: no dwellings, all jobs in education"
+  model: brewgis.sacog.base_canvas_poi_override
+  gateway: postgis
+  inputs:
+    brewgis.sacog.base_canvas_combined:
+      rows:
+        - parcel_id: 1
+          geometry: "MULTIPOLYGON(((0 0, 2 0, 2 2, 0 2, 0 0)))"
+          county: Fresno
+          land_development_category: urban
+          built_form_key: mixed_use
+          area_gross: 2.0
+          area_parcel_acres: 2.0
+          du: 10.0
+          du_detsf_sl: 10.0
+          du_mf2to4: 0.0
+          du_mf5p: 0.0
+          du_attsf: 0.0
+          is_residential: 1
+          emp: 3.0
+          emp_ret: 3.0
+          emp_retail_services: 3.0
+          vacancy_rate: 0.05
+          occupied_du: 9.5
+      columns: &combined_columns
+          parcel_id: INT
+          geometry: GEOMETRY(MultiPolygon, 4326)
+          local_geometry: GEOMETRY
+          county: TEXT
+          land_development_category: TEXT
+          built_form_key: TEXT
+          intersection_density: DECIMAL
+          area_gross: DOUBLE
+          area_gross_acres: DOUBLE
+          area_parcel_acres: DOUBLE
+          area_dev_condition_acres: DOUBLE
+          area_row_acres: DOUBLE
+          area_parcel_res: DOUBLE
+          area_parcel_res_acres: DOUBLE
+          area_parcel_emp_ag: DOUBLE
+          area_parcel_emp_ag_acres: DOUBLE
+          area_parcel_emp: DOUBLE
+          area_parcel_emp_acres: DOUBLE
+          area_parcel_mixed_use: DOUBLE
+          area_parcel_mixed_use_acres: DOUBLE
+          area_parcel_no_use: DOUBLE
+          area_parcel_no_use_acres: DOUBLE
+          pop: DOUBLE
+          pop_groupquarter: DOUBLE
+          hh: DOUBLE
+          du: DOUBLE
+          du_estimated: DOUBLE
+          du_detsf: DOUBLE
+          du_detsf_sl: DOUBLE
+          du_detsf_ll: DOUBLE
+          du_attsf: DOUBLE
+          du_mf: DOUBLE
+          du_mf2to4: DOUBLE
+          du_mf5p: DOUBLE
+          du_subtype: TEXT
+          is_residential: INT
+          residential_building_sqft: DOUBLE
+          commercial_building_sqft: DOUBLE
+          industrial_building_sqft: DOUBLE
+          other_building_sqft: DOUBLE
+          total_footprint_sqft: DOUBLE
+          building_count: INT
+          footprint_ratio: DOUBLE
+          max_levels: DECIMAL
+          emp_dasym_weight: DOUBLE
+          emp: DOUBLE
+          emp_ret: DOUBLE
+          emp_off: DOUBLE
+          emp_pub: DOUBLE
+          emp_ind: DOUBLE
+          emp_ag: DOUBLE
+          emp_military: DOUBLE
+          emp_retail_services: DOUBLE
+          emp_restaurant: DOUBLE
+          emp_accommodation: DOUBLE
+          emp_arts_entertainment: DOUBLE
+          emp_other_services: DOUBLE
+          emp_office_services: DOUBLE
+          emp_medical_services: DOUBLE
+          emp_public_admin: DOUBLE
+          emp_education: DOUBLE
+          emp_manufacturing: DOUBLE
+          emp_wholesale: DOUBLE
+          emp_transport_warehousing: DOUBLE
+          emp_utilities: DOUBLE
+          emp_construction: DOUBLE
+          emp_agriculture: DOUBLE
+          emp_extraction: DOUBLE
+          bldg_area_detsf_sl: DOUBLE
+          bldg_area_detsf_ll: DOUBLE
+          bldg_area_attsf: DOUBLE
+          bldg_area_mf: DOUBLE
+          bldg_area_retail_services: DOUBLE
+          bldg_area_restaurant: DOUBLE
+          bldg_area_accommodation: DOUBLE
+          bldg_area_arts_entertainment: DOUBLE
+          bldg_area_other_services: DOUBLE
+          bldg_area_office_services: DOUBLE
+          bldg_area_public_admin: DOUBLE
+          bldg_area_education: DOUBLE
+          bldg_area_medical_services: DOUBLE
+          bldg_area_transport_warehousing: DOUBLE
+          bldg_area_wholesale: DOUBLE
+          residential_irrigated_area: DOUBLE
+          commercial_irrigated_area: DOUBLE
+          median_income: DOUBLE
+          rent_burden_pct: DOUBLE
+          pct_minority: DOUBLE
+          pct_college_educated: DOUBLE
+          cost_burden_pct: DOUBLE
+          tree_canopy_fraction: DOUBLE
+          vacancy_rate: DOUBLE
+          du_pop_dasym_weight: DOUBLE
+          occupied_du: DECIMAL
+          land_use: TEXT
+          assessor_use_code: TEXT
+    brewgis.sacog.poi:
+      rows: &poi_rows
+        - osm_id: 101
+          osm_type: node
+          category: schools
+          subcategory: "amenity=school"
+          geometry: "POINT(1 1)"
+        - osm_id: 102
+          osm_type: node
+          category: parks
+          subcategory: "leisure=park"
+          geometry: "POINT(3 1)"
+        - osm_id: 103
+          osm_type: node
+          category: schools
+          subcategory: "amenity=school"
+          geometry: "POINT(5 1)"
+        - osm_id: 104
+          osm_type: node
+          category: parks
+          subcategory: "leisure=park"
+          geometry: "POINT(5.5 1)"
+        - osm_id: 105
+          osm_type: node
+          category: hospitals
+          subcategory: "amenity=hospital"
+          geometry: "POINT(7 1)"
+        - osm_id: 106
+          osm_type: node
+          category: schools
+          subcategory: "amenity=school"
+          geometry: "POINT(7.5 1)"
+        - osm_id: 107
+          osm_type: node
+          category: shopping
+          subcategory: "shop=supermarket"
+          geometry: "POINT(9 1)"
+    brewgis.seeds.default_built_forms:
+      rows: &library_rows
+        # The library's own densities and mixes, so a retune in
+        # default_library.py does not move these assertions.
+        - {id: 1, key: K-12 School, du_per_acre: 0.0, emp_per_acre: 20.0, jobs_by_sector: '{"education": 100.0}'}
+        - {id: 2, key: Medical Facility, du_per_acre: 0.0, emp_per_acre: 176.0, jobs_by_sector: '{"medical_services": 100.0}'}
+        - {id: 3, key: Neighborhood Retail, du_per_acre: 0.0, emp_per_acre: 25.0, jobs_by_sector: '{"retail_services": 80.0, "restaurant": 20.0}'}
+        - {id: 4, key: Hotel, du_per_acre: 0.0, emp_per_acre: 150.0, jobs_by_sector: '{"accommodation": 100.0}'}
+        - {id: 5, key: Entertainment, du_per_acre: 0.0, emp_per_acre: 25.0, jobs_by_sector: '{"arts_entertainment": 100.0}'}
+        - {id: 6, key: Sports/Recreation, du_per_acre: 0.0, emp_per_acre: 10.0, jobs_by_sector: '{"arts_entertainment": 100.0}'}
+        - {id: 7, key: Place of Worship, du_per_acre: 0.0, emp_per_acre: 5.0, jobs_by_sector: '{"other_services": 100.0}'}
+        - {id: 8, key: Public/Quasi-Public, du_per_acre: 0.0, emp_per_acre: 20.0, jobs_by_sector: '{"public_admin": 100.0}'}
+        - {id: 9, key: Transit Station, du_per_acre: 0.0, emp_per_acre: 10.0, jobs_by_sector: '{"transport_warehousing": 100.0}'}
+        - {id: 10, key: Park and/or Open Space, du_per_acre: 0.0, emp_per_acre: 0.0, jobs_by_sector: '{}'}
+    brewgis.seeds.poi_built_form_map:
+      rows: &map_rows
+        - {poi_category: hospitals, built_form_key: Medical Facility, priority: 1}
+        - {poi_category: schools, built_form_key: K-12 School, priority: 2}
+        - {poi_category: shopping, built_form_key: Neighborhood Retail, priority: 3}
+        - {poi_category: restaurants, built_form_key: Neighborhood Retail, priority: 4}
+        - {poi_category: lodging, built_form_key: Hotel, priority: 5}
+        - {poi_category: entertainment, built_form_key: Entertainment, priority: 6}
+        - {poi_category: public_services, built_form_key: Public/Quasi-Public, priority: 7}
+        - {poi_category: transit, built_form_key: Transit Station, priority: 8}
+        - {poi_category: sports, built_form_key: Sports/Recreation, priority: 9}
+        - {poi_category: places_of_worship, built_form_key: Place of Worship, priority: 10}
+        - {poi_category: parks, built_form_key: Park and/or Open Space, priority: 11}
+  outputs:
+    query:
+      partial: true
+      rows:
+        - built_form_key: K-12 School
+          du: 0.0
+          du_detsf: 0.0
+          du_detsf_sl: 0.0
+          du_detsf_ll: 0.0
+          du_attsf: 0.0
+          du_mf: 0.0
+          du_mf2to4: 0.0
+          du_mf5p: 0.0
+          is_residential: 0
+          emp: 40.0
+          emp_pub: 40.0
+          emp_education: 40.0
+          emp_ret: 0.0
+          emp_off: 0.0
+          emp_ind: 0.0
+          emp_ag: 0.0
+          emp_military: 0.0
+          emp_retail_services: 0.0
+          emp_medical_services: 0.0
+          emp_public_admin: 0.0
+          occupied_du: 0.0
+
+test_park_parcel_gets_no_dwellings_and_no_jobs:
+  description: "Parcel containing only a park point takes Park and/or Open Space: zero dwellings and zero jobs"
+  model: brewgis.sacog.base_canvas_poi_override
+  gateway: postgis
+  inputs:
+    brewgis.sacog.base_canvas_combined:
+      rows:
+        - parcel_id: 2
+          geometry: "MULTIPOLYGON(((2.5 0, 3.5 0, 3.5 2, 2.5 2, 2.5 0)))"
+          county: Fresno
+          land_development_category: urban
+          built_form_key: mixed_use
+          area_gross: 2.0
+          du: 10.0
+          is_residential: 1
+          emp: 3.0
+          occupied_du: 9.5
+      columns: *combined_columns
+    brewgis.sacog.poi:
+      rows: *poi_rows
+    brewgis.seeds.default_built_forms:
+      rows: *library_rows
+    brewgis.seeds.poi_built_form_map:
+      rows: *map_rows
+  outputs:
+    query:
+      partial: true
+      rows:
+        - built_form_key: Park and/or Open Space
+          du: 0.0
+          du_detsf_sl: 0.0
+          is_residential: 0
+          emp: 0.0
+          emp_ret: 0.0
+          emp_off: 0.0
+          emp_pub: 0.0
+          emp_ind: 0.0
+          emp_ag: 0.0
+          emp_military: 0.0
+          emp_education: 0.0
+          emp_retail_services: 0.0
+
+test_parcel_without_poi_is_unchanged:
+  description: "Parcel containing no point keeps base_canvas_combined's built form, dwellings, jobs and occupancy"
+  model: brewgis.sacog.base_canvas_poi_override
+  gateway: postgis
+  inputs:
+    brewgis.sacog.base_canvas_combined:
+      rows:
+        - parcel_id: 3
+          geometry: "MULTIPOLYGON(((4 0.5, 4.2 0.5, 4.2 0.7, 4 0.7, 4 0.5)))"
+          county: Fresno
+          land_development_category: urban
+          built_form_key: mixed_use
+          area_gross: 2.0
+          du: 10.0
+          du_detsf: 6.0
+          du_detsf_sl: 6.0
+          du_mf2to4: 0.0
+          du_mf5p: 0.0
+          du_attsf: 0.0
+          is_residential: 1
+          emp: 3.0
+          emp_ret: 3.0
+          emp_retail_services: 3.0
+          vacancy_rate: 0.05
+          occupied_du: 9.5
+      columns: *combined_columns
+    brewgis.sacog.poi:
+      rows: *poi_rows
+    brewgis.seeds.default_built_forms:
+      rows: *library_rows
+    brewgis.seeds.poi_built_form_map:
+      rows: *map_rows
+  outputs:
+    query:
+      partial: true
+      rows:
+        - built_form_key: mixed_use
+          du: 10.0
+          du_detsf: 6.0
+          du_detsf_sl: 6.0
+          is_residential: 1
+          emp: 3.0
+          emp_ret: 3.0
+          emp_retail_services: 3.0
+          occupied_du: 9.5
+
+test_school_beats_park_on_priority:
+  description: "Parcel containing a school point and a park point takes the school (lower priority number)"
+  model: brewgis.sacog.base_canvas_poi_override
+  gateway: postgis
+  inputs:
+    brewgis.sacog.base_canvas_combined:
+      rows:
+        - parcel_id: 4
+          geometry: "MULTIPOLYGON(((4.8 0.5, 5.7 0.5, 5.7 1.5, 4.8 1.5, 4.8 0.5)))"
+          county: Fresno
+          land_development_category: urban
+          built_form_key: mixed_use
+          area_gross: 2.0
+          du: 10.0
+          is_residential: 1
+          emp: 3.0
+          occupied_du: 9.5
+      columns: *combined_columns
+    brewgis.sacog.poi:
+      rows: *poi_rows
+    brewgis.seeds.default_built_forms:
+      rows: *library_rows
+    brewgis.seeds.poi_built_form_map:
+      rows: *map_rows
+  outputs:
+    query:
+      partial: true
+      rows:
+        - built_form_key: K-12 School
+          du: 0.0
+          is_residential: 0
+          emp: 40.0
+          emp_pub: 40.0
+          emp_education: 40.0
+
+test_hospital_beats_school_on_priority:
+  description: "Parcel containing a hospital point and a school point takes the hospital, with all jobs in medical services"
+  model: brewgis.sacog.base_canvas_poi_override
+  gateway: postgis
+  inputs:
+    brewgis.sacog.base_canvas_combined:
+      rows:
+        - parcel_id: 5
+          geometry: "MULTIPOLYGON(((6.9 0.5, 7.7 0.5, 7.7 1.5, 6.9 1.5, 6.9 0.5)))"
+          county: Fresno
+          land_development_category: urban
+          built_form_key: mixed_use
+          area_gross: 2.0
+          du: 10.0
+          is_residential: 1
+          emp: 3.0
+          occupied_du: 9.5
+      columns: *combined_columns
+    brewgis.sacog.poi:
+      rows: *poi_rows
+    brewgis.seeds.default_built_forms:
+      rows: *library_rows
+    brewgis.seeds.poi_built_form_map:
+      rows: *map_rows
+  outputs:
+    query:
+      partial: true
+      rows:
+        - built_form_key: Medical Facility
+          du: 0.0
+          emp: 352.0
+          emp_off: 352.0
+          emp_medical_services: 352.0
+          emp_pub: 0.0
+          emp_education: 0.0
+
+test_shopping_splits_its_jobs_across_sectors:
+  description: "Parcel containing a supermarket point takes Neighborhood Retail: 80% retail services, 20% restaurant of its job total"
+  model: brewgis.sacog.base_canvas_poi_override
+  gateway: postgis
+  inputs:
+    brewgis.sacog.base_canvas_combined:
+      rows:
+        - parcel_id: 6
+          geometry: "MULTIPOLYGON(((8.6 0.5, 9.4 0.5, 9.4 1.5, 8.6 1.5, 8.6 0.5)))"
+          county: Fresno
+          land_development_category: urban
+          built_form_key: mixed_use
+          area_gross: 2.0
+          du: 10.0
+          is_residential: 1
+          emp: 3.0
+          occupied_du: 9.5
+      columns: *combined_columns
+    brewgis.sacog.poi:
+      rows: *poi_rows
+    brewgis.seeds.default_built_forms:
+      rows: *library_rows
+    brewgis.seeds.poi_built_form_map:
+      rows: *map_rows
+  outputs:
+    query:
+      partial: true
+      rows:
+        - built_form_key: Neighborhood Retail
+          du: 0.0
+          emp: 50.0
+          emp_ret: 50.0
+          emp_retail_services: 40.0
+          emp_restaurant: 10.0
+          emp_off: 0.0
+          emp_pub: 0.0

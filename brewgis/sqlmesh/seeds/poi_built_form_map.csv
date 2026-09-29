@@ -1,0 +1,12 @@
+poi_category,built_form_key,priority
+hospitals,Medical Facility,1
+schools,K-12 School,2
+shopping,Neighborhood Retail,3
+restaurants,Neighborhood Retail,4
+lodging,Hotel,5
+entertainment,Entertainment,6
+public_services,Public/Quasi-Public,7
+transit,Transit Station,8
+sports,Sports/Recreation,9
+places_of_worship,Place of Worship,10
+parks,Park and/or Open Space,11
