@@ -186,6 +186,15 @@ class SelectBaseCanvasView(HtmxResponseMixin, FormView):
                 # recomputed; the canvases over it follow their parent's data
                 # change into the same plan.
                 restate_models=[_fill_model_fqn(self.workspace.pk)] if fill else False,
+                # A restating plan otherwise reads every model's definition from
+                # SQLMesh's state rather than from the project (SQLMesh's own
+                # rule, with no way to opt out through ``Context.plan``) — so
+                # the fill rule that would run is the one that was in state the
+                # last time this environment was planned, and a change to
+                # ``built_form_fill`` would never reach the workspace at all.
+                # The analysis repair pass asks for the same thing for the same
+                # reason (``services.scenario_analysis``).
+                always_include_local_changes=True,
                 auto_apply=True,
                 no_prompts=True,
             )

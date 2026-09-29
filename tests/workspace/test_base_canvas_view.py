@@ -181,6 +181,10 @@ class TestFillAndCanvasPlans:
         assert len(spy.plans) == 1
         assert spy.plans[0]["environment"] == "prod"
         assert spy.plans[0]["select"] == [fill_fqn, canvas_model_selector(scenario)]
+        # A restating plan reads its models from SQLMesh's state unless it is
+        # told to include local changes — and the fill rule this request serves
+        # is the one in the project, not the one that was in state last time.
+        assert spy.plans[0]["always_include_local_changes"] is True
 
         workspace.refresh_from_db()
         assert workspace.fill_built_form is True
