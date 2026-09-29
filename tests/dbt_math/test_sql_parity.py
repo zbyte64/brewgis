@@ -14,6 +14,8 @@ No SQL is duplicated — the dbt model files are the single source of truth.
 
 from __future__ import annotations
 
+import json
+
 import numpy as np
 import pandas as pd
 import pytest
@@ -22,6 +24,7 @@ from tests.dbt_math.reference import compute_mode_choice
 from tests.dbt_math.reference import compute_property_tax
 from tests.dbt_math.reference import compute_service_costs
 from tests.dbt_math.reference import compute_transport_ghg
+from tests.dbt_math.reference import compute_trip_generation
 from tests.dbt_math.reference import compute_vmt
 from tests.dbt_math.sqlmesh_model_runner import run_model
 
@@ -242,3 +245,94 @@ def test_transport_ghg_parity(parity_scenario: str) -> None:
 
     assert np.allclose(result["co2e_total_kg"], co2e_ref, atol=1e-3)
     assert np.allclose(result["co2e_per_capita_kg"], pc_ref, atol=1e-3)
+
+
+# ══════════════════════════════════════════════════════════════════════
+#  Trip Generation
+# ══════════════════════════════════════════════════════════════════════
+
+
+@pytest.mark.slow
+def test_trip_generation_parity(parity_scenario: str) -> None:
+    """SQLMesh trip_generation output matches the Python reference.
+
+    Every employment bucket is exercised, one row carries jobs but no sector
+    mix (the retail fallback), and one is mixed-use — dwelling units AND jobs.
+    A model that picked "residential" or "non-residential" per parcel from a
+    density being non-zero, or that priced anything by floor area, would
+    disagree with the reference on this input.
+    """
+    pid = np.arange(8, dtype=int)
+    du_detsf_ll = np.array([10.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 5.0])
+    du_detsf_sl = np.array([4.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0])
+    du_attsf = np.array([0.0, 7.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0])
+    du_mf2to4 = np.array([0.0, 12.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0])
+    du_mf5p = np.array([0.0, 0.0, 20.0, 0.0, 0.0, 60.0, 0.0, 0.0])
+    emp = np.array([0.0, 0.0, 0.0, 100.0, 25.0, 80.0, 0.0, 50.0])
+    # Percent shares of emp_per_acre as the built forms table carries them; row
+    # 3 leaves a residual for sectors SACOG does not publish, which both sides
+    # have to normalize, and row 4 declares no mix at all.
+    shares = [
+        {},
+        {},
+        {},
+        {"retail_services": 60.0, "office_services": 20.0, "arts_entertainment": 10.0},
+        {},
+        {"restaurant": 40.0, "public_admin": 30.0},
+        {},
+        {"manufacturing": 70.0, "education": 30.0},
+    ]
+    reference = compute_trip_generation(
+        du_detsf_ll + du_detsf_sl,
+        du_mf2to4,
+        du_mf5p,
+        du_attsf,
+        emp,
+        shares,
+    )
+
+    es_df = _core_es_df(
+        pid,
+        du=du_detsf_ll + du_detsf_sl + du_mf2to4 + du_mf5p,
+        emp=emp,
+        du_detsf_ll=du_detsf_ll,
+        du_detsf_sl=du_detsf_sl,
+        du_attsf=du_attsf,
+        du_mf2to4=du_mf2to4,
+        du_mf5p=du_mf5p,
+        # The model's du_type audit reads these two off core_end_state: every
+        # parcel holding dwelling units has to name a housing class.
+        du_type=np.array(
+            [
+                "detsf_ll",
+                "mf2to4",
+                "mf5p",
+                "",
+                "",
+                "mf5p",
+                "",
+                "detsf_sl",
+            ],
+            dtype=object,
+        ),
+        built_form_key=np.array([f"bf {i}" for i in pid], dtype=object),
+        jobs_by_sector=np.array([json.dumps(s) for s in shares], dtype=object),
+    )
+
+    result = run_model(
+        "trip_generation",
+        upstream={"core_end_state": es_df},
+        scenario_schema=parity_scenario,
+    )
+
+    columns = (
+        "trips_res",
+        "trips_school",
+        "trips_nonres",
+        "trips_total",
+        "trips_hbw",
+        "trips_hbo",
+        "trips_nhb",
+    )
+    for column, expected in zip(columns, reference, strict=True):
+        assert np.allclose(result[column], expected, atol=1e-6), column

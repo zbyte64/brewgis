@@ -430,27 +430,64 @@ def test_agriculture_net_return_formula(data):
 
 
 @pytest.mark.slow
-@given(_quint(0, 5000, 0, 5e6, 0, 50, 0, 100, 0, 0))
+@given(_quint(0, 500, 0, 500, 0, 500, 0, 10000, 0, 100))
 @_N_HYPOTHESIS
-def test_trip_generation_purpose_split(quint):
-    """pass_by_trip_pct is drawn across its full 0-100 percentage range.
+def test_trip_generation_activity_terms(quint):
+    """Trips come from dwelling units by class and jobs by sector, additively.
 
-    The 0-1 range this test previously used is what let a percent/fraction
-    unit mismatch in the SQL survive: the reference and the SQL agreed, but
-    both were wrong for the real (percent-valued) built-form data.
+    The blend of activity in each row is what the old per-form rate could not
+    express: a mixed-use row (dwelling units AND jobs) has to produce both
+    terms, and a row with jobs but no sector mix has to fall to the retail
+    rate rather than to zero.
     """
-    du, bsqt, override, pass_by, _ = quint
-    res, nonres, total, hbw, hbo, nhb = compute_trip_generation(
-        du,
-        bsqt,
-        override,
-        pass_by,
+    du_detsf, du_mf2to4, du_mf5p, emp, du_attsf = quint
+    shares = [
+        {}
+        if employment == 0
+        else {
+            "retail_services": 40.0 + (i % 5) * 10.0,
+            "office_services": 30.0,
+            "accommodation": 30.0,
+        }
+        for i, employment in enumerate(emp)
+    ]
+    res, school, nonres, total, hbw, hbo, nhb = compute_trip_generation(
+        du_detsf,
+        du_mf2to4,
+        du_mf5p,
+        du_attsf,
+        emp,
+        shares,
     )
     assert np.all(res >= 0)
+    assert np.all(school >= 0)
     assert np.all(nonres >= 0)
     assert np.all(total >= 0)
     assert np.all(hbw >= 0) and np.all(hbo >= 0) and np.all(nhb >= 0)
+    assert np.allclose(
+        res,
+        du_detsf * 9.57 + du_mf2to4 * 6.65 + (du_mf5p + du_attsf) * 4.18,
+        atol=1e-9,
+    )
+    assert np.allclose(school, res * 0.097, atol=1e-9)
+    assert np.allclose(total, res + school + nonres, atol=1e-9)
     assert np.allclose(hbw + hbo + nhb, total, atol=1e-6)
+    # Employment is the only source of non-residential trips.
+    assert np.all(nonres[emp == 0] == 0)
+
+
+def test_trip_generation_unattributed_jobs_fall_to_retail():
+    """A built form with jobs and no sector mix prices them at the retail rate."""
+    emp = np.array([100.0])
+    _, _, nonres, _, _, _, _ = compute_trip_generation(
+        np.array([0.0]),
+        np.array([0.0]),
+        np.array([0.0]),
+        np.array([0.0]),
+        emp,
+        [{}],
+    )
+    assert np.allclose(nonres, 100.0 * 21.47)
 
 
 # ══════════════════════════════════════════════════════════════════════
@@ -496,7 +533,7 @@ def test_all_refs_handle_empty_input():
         ("water_demand", lambda: compute_water_demand(e, e, e, e, e, e, e, e)),
         ("building_ghg", lambda: compute_building_water_ghg(e, e, e, e, e, e)),
         ("agriculture", lambda: compute_agriculture(e, e, e)),
-        ("trip_generation", lambda: compute_trip_generation(e, e, e, e)),
+        ("trip_generation", lambda: compute_trip_generation(e, e, e, e, e, [])),
     ]
     for name, fn in cases:
         result = fn()

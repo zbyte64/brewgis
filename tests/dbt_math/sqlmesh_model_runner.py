@@ -59,6 +59,10 @@ from brewgis.workspace.analysis.sqlmesh_runner import run_sqlmesh_plan
 # per-run FQN, so nothing collides between runs.
 _ENVIRONMENT = "prod"
 
+# DataFrame columns written as jsonb rather than text — a model expands these
+# with jsonb_each_text, which a text column rejects.
+_JSONB_COLUMNS: frozenset[str] = frozenset({"jobs_by_sector"})
+
 
 def run_model(
     model_name: str,
@@ -262,6 +266,12 @@ def _write_df(schema: str, table: str, df: pd.DataFrame) -> str:
         if col == "geometry":
             geometry_columns.add(col)
             col_defs.append(f'"{col}" GEOMETRY(Geometry, 4326)')
+        elif col in _JSONB_COLUMNS:
+            # A JSON object column (e.g. core_end_state.jobs_by_sector) arrives
+            # as a JSON string in the DataFrame and has to land as jsonb: the
+            # models expand it with jsonb_each_text, which a text column does
+            # not accept.
+            col_defs.append(f'"{col}" JSONB')
         elif np.issubdtype(dtype, np.floating):
             col_defs.append(f'"{col}" DOUBLE PRECISION')
         elif np.issubdtype(dtype, np.integer):

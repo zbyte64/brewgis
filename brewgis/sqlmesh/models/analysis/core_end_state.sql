@@ -9,11 +9,11 @@ MODEL (
     acres_developed = 'Developed acres after the development and gross-to-net adjustments (acres).',
     pop = 'Population from the allocated dwelling units and the built form household size (people).',
     hh = 'Households from the allocated dwelling units and the built form vacancy rate (households).',
-    du_detsf_ll = 'Detached single-family large-lot units; the only subtype this model populates.',
-    du_detsf_sl = 'Detached single-family small-lot dwelling units (always zero here).',
-    du_attsf = 'Attached single-family dwelling units (always zero here).',
-    du_mf2to4 = 'Multi-family 2-4 unit dwelling units (always zero here).',
-    du_mf5p = 'Multi-family 5 or more unit dwelling units (always zero here).',
+    du_detsf_ll = 'Dwelling units on a large-lot detached built form (du_type detsf_ll); zero on every other class.',
+    du_detsf_sl = 'Dwelling units on a small-lot detached built form (du_type detsf_sl); zero on every other class.',
+    du_attsf = 'Dwelling units on an attached single-family built form (du_type attsf); zero on every other class.',
+    du_mf2to4 = 'Dwelling units on a 2-4 unit multifamily built form (du_type mf2to4); zero on every other class.',
+    du_mf5p = 'Dwelling units on a 5+ unit multifamily built form (du_type mf5p); zero on every other class.',
     du = 'Total dwelling units from the developed acres and the du_per_acre rate.',
     emp = 'Employment from developed acres and the built form emp_per_acre rate (jobs).',
     building_sqft_total = 'Total floor area from developed acres and the FAR (sq ft).',
@@ -39,6 +39,8 @@ MODEL (
     land_development_category = 'Land development category from the built form du_per_acre rate.',
     built_form_id = 'Identifier of the built form assigned to the parcel.',
     built_form_key = 'Key of the built form assigned to the parcel.',
+    du_type = 'Housing class of the assigned built form (detsf_ll, detsf_sl, attsf, mf2to4, mf5p); empty when the form has no dwelling units.',
+    jobs_by_sector = 'Employment sector shares of the assigned built form, as percent of emp_per_acre; empty when the form declares no mix.',
     indoor_water_rate = 'Built form indoor water rate (litres per person per day), default 200.',
     outdoor_water_rate = 'Built form outdoor water rate (litres per sq metre per year).',
     electricity_eui = 'Built form electricity use intensity (kWh per sq metre per year).',
@@ -93,7 +95,8 @@ MODEL (
 --   parcel_acres_developed, parcel_acres_agriculture,
 --   parcel_acres_open_space, parcel_acres_vacant,
 --   intersection_density, land_development_category,
---   built_form_id, built_form_key, indoor_water_rate, outdoor_water_rate,
+--   built_form_id, built_form_key, du_type, jobs_by_sector,
+--   indoor_water_rate, outdoor_water_rate,
 --   electricity_eui, gas_eui, household_size, geometry
 
 WITH parcel_base AS (
@@ -103,6 +106,7 @@ WITH parcel_base AS (
         -- Developable acres from env_constraint if available, else raw area
         @st_area_projected(p.geometry) AS acres_developable,
         bf.du_per_acre,
+        bf.du_type,
         bf.emp_per_acre,
         bf.far,
         bf.household_size,
@@ -143,6 +147,7 @@ computed AS (
         @compute_applied_acres(acres_developable, @blueprint_var('dev_pct'), @blueprint_var('gross_net_pct'))
             * @blueprint_var('density_pct') / 100.0 AS density_adjusted_acres,
         du_per_acre,
+        du_type,
         emp_per_acre,
         far,
         household_size,
@@ -185,12 +190,24 @@ SELECT
         COALESCE(c.vacancy_rate, 5.0)
     ) AS hh,
 
-    -- Dwelling unit breakdown
-    @compute_dwelling_units(c.density_adjusted_acres, c.du_per_acre) AS du_detsf_ll,
-    0.0 AS du_detsf_sl,
-    0.0 AS du_attsf,
-    0.0 AS du_mf2to4,
-    0.0 AS du_mf5p,
+    -- Dwelling unit breakdown. Each built form declares one housing class
+    -- (BuildingType.du_type), so exactly one of these columns is non-zero and
+    -- their sum is `du` — the same partition the SACOG base canvas holds.
+    CASE WHEN c.du_type = 'detsf_ll'
+        THEN @compute_dwelling_units(c.density_adjusted_acres, c.du_per_acre)
+        ELSE 0.0 END AS du_detsf_ll,
+    CASE WHEN c.du_type = 'detsf_sl'
+        THEN @compute_dwelling_units(c.density_adjusted_acres, c.du_per_acre)
+        ELSE 0.0 END AS du_detsf_sl,
+    CASE WHEN c.du_type = 'attsf'
+        THEN @compute_dwelling_units(c.density_adjusted_acres, c.du_per_acre)
+        ELSE 0.0 END AS du_attsf,
+    CASE WHEN c.du_type = 'mf2to4'
+        THEN @compute_dwelling_units(c.density_adjusted_acres, c.du_per_acre)
+        ELSE 0.0 END AS du_mf2to4,
+    CASE WHEN c.du_type = 'mf5p'
+        THEN @compute_dwelling_units(c.density_adjusted_acres, c.du_per_acre)
+        ELSE 0.0 END AS du_mf5p,
 
     @compute_dwelling_units(c.density_adjusted_acres, c.du_per_acre) AS du,
 
@@ -249,6 +266,8 @@ SELECT
     -- Built form metadata
     c.built_form_id,
     c.built_form_key,
+    COALESCE(c.du_type, '') AS du_type,
+    COALESCE(c.jobs_by_sector, '{}'::jsonb) AS jobs_by_sector,
     COALESCE(c.indoor_water_rate, 200.0) AS indoor_water_rate,
     COALESCE(c.outdoor_water_rate, 100.0) AS outdoor_water_rate,
     COALESCE(c.electricity_eui, 100.0) AS electricity_eui,

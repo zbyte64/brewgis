@@ -44,7 +44,6 @@ def gen_scenario_blueprints(
     COALESCE(gas_eui, 0.0) AS gas_eui,
     COALESCE(jobs_by_sector, '{{}}'::jsonb) AS jobs_by_sector,
     vintage,
-    COALESCE(trip_rate_override, 0.0) AS trip_rate_override,
-    ite_land_use_code,
-    COALESCE(pass_by_trip_pct, 0.0) AS pass_by_trip_pct
+    du_type,
+    ite_land_use_code
 FROM {built_form_table}"""

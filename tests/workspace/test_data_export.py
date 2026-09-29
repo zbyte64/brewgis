@@ -71,9 +71,8 @@ class TestExportBuildingTypes(TestCase):
             "electricity_eui",
             "gas_eui",
             "vintage",
-            "trip_rate_override",
+            "du_type",
             "ite_land_use_code",
-            "pass_by_trip_pct",
         ]
         assert columns == expected
 
@@ -232,7 +231,7 @@ class TestExportBuildingTypes(TestCase):
             building_coverage=None,
             electricity_eui=None,
             gas_eui=None,
-            trip_rate_override=None,
+            du_type="mf5p",
         )
 
         export_building_types(self.workspace, schema=TEST_SCHEMA, table=TEST_TABLE)
@@ -269,7 +268,6 @@ class TestExportBuildingTypes(TestCase):
                 "building_coverage",
                 "electricity_eui",
                 "gas_eui",
-                "trip_rate_override",
             }
             for col in nullable:
                 assert row_dict[col] == 0.0, (
@@ -279,7 +277,8 @@ class TestExportBuildingTypes(TestCase):
             # Non-nullable COALESCE columns should keep their default values
             assert row_dict["household_size"] == 2.5
             assert row_dict["vacancy_rate"] == 5.0
-            assert row_dict["pass_by_trip_pct"] == 0.0
+            # du_type is a text column, not COALESCE'd to zero: it round-trips
+            assert row_dict["du_type"] == "mf5p"
 
     def test_jobs_by_sector_is_jsonb(self) -> None:
         """jobs_by_sector is exported as a JSONB column."""
@@ -392,3 +391,33 @@ class TestEnsureExportExists(TestCase):
             assert cursor.fetchone()[0] == 1
             cursor.execute(f'SELECT COUNT(*) FROM "{TEST_SCHEMA}"."{TEST_TABLE}"')
             assert cursor.fetchone()[0] == 0
+
+    def test_rebuilds_table_that_predates_a_declared_column(self) -> None:
+        """A table exported before a column joined the contract is rebuilt.
+
+        The export names every declared column in its INSERT while
+        ``CREATE TABLE IF NOT EXISTS`` leaves an existing table's shape alone,
+        so a table from an older contract cannot be written to — and a deploy
+        that adds a column hits exactly this on the next pipeline run. The
+        table is a cache, so it is dropped and rebuilt from the source rows.
+        """
+        BuildingTypeFactory(workspace=self.workspace, name="Cell Check", du_type="mf5p")
+        ensure_export_exists(self.workspace, schema=TEST_SCHEMA, table=TEST_TABLE)
+
+        # Simulate a table exported before `du_type` was part of the contract.
+        with connection.cursor() as cursor:
+            cursor.execute(
+                f'ALTER TABLE "{TEST_SCHEMA}"."{TEST_TABLE}" DROP COLUMN du_type'
+            )
+
+        count = ensure_export_exists(
+            self.workspace, schema=TEST_SCHEMA, table=TEST_TABLE
+        )
+        assert count == 1
+
+        with connection.cursor() as cursor:
+            cursor.execute(
+                f'SELECT du_type FROM "{TEST_SCHEMA}"."{TEST_TABLE}" WHERE key = %s',
+                ["Cell Check"],
+            )
+            assert cursor.fetchone()[0] == "mf5p"

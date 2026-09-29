@@ -26,7 +26,7 @@ class UserFactory(factory.django.DjangoModelFactory):
     password = factory.PostGenerationMethodCall("set_password", "testpass123")
 
     @classmethod
-    def _after_postgeneration(cls, instance, create, results=None):
+    def _after_postgeneration(cls, instance, create, results=None) -> None:
         """Save after post-generation hooks to persist password hash."""
         super()._after_postgeneration(instance, create, results)
         if create:
@@ -126,7 +126,7 @@ class BuildingTypeFactory(factory.django.DjangoModelFactory):
     household_size = 2.5
     vacancy_rate = 5.0
     parking_sqft_per_space = 300.0
-    pass_by_trip_pct = 0.0
+    du_type = "mf5p"
 
 
 class PlaceTypeFactory(factory.django.DjangoModelFactory):

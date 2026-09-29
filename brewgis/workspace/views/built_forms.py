@@ -139,12 +139,11 @@ class BuildingTypeForm(forms.ModelForm):
             "electricity_eui",
             "gas_eui",
             "vintage",
+            "du_type",
             "parking_spaces_per_unit",
             "parking_spaces_per_1000sqft",
             "parking_sqft_per_space",
             "ite_land_use_code",
-            "trip_rate_override",
-            "pass_by_trip_pct",
             "land_development_category",
         ]
         widgets = {

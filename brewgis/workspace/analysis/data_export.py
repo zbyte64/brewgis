@@ -45,9 +45,8 @@ BUILT_FORM_COLUMNS: dict[str, str] = {
     "electricity_eui": "electricity_eui",
     "gas_eui": "gas_eui",
     "vintage": "vintage",
-    "trip_rate_override": "trip_rate_override",
+    "du_type": "du_type",
     "ite_land_use_code": "ite_land_use_code",
-    "pass_by_trip_pct": "pass_by_trip_pct",
 }
 
 # Columns that need a COALESCE wrapper so None becomes 0 in the output table
@@ -61,7 +60,6 @@ _NULLABLE_TO_ZERO: set[str] = {
     "building_coverage",
     "electricity_eui",
     "gas_eui",
-    "trip_rate_override",
 }
 
 _BOOL_COLUMNS: set[str] = set()
@@ -122,6 +120,27 @@ def _export_building_types(
         f"WHERE workspace_id = {workspace.pk}) AS workspace_buildingtype"
     )
 
+    # A ``built_forms`` table is a cache of this workspace's Building Types, and
+    # ``CREATE TABLE IF NOT EXISTS`` below leaves an existing table's column set
+    # exactly as it found it. So a table built before a declared column was
+    # added keeps its old shape, and the INSERT — which names every declared
+    # column — fails on the missing one. Nothing can be added in place: the
+    # column's value has to come from the source rows, so the table is rebuilt.
+    cursor.execute(
+        "SELECT column_name FROM information_schema.columns "
+        "WHERE table_schema = %s AND table_name = %s",
+        [schema, table],
+    )
+    existing_columns = {row[0] for row in cursor.fetchall()}
+    if existing_columns and not set(BUILT_FORM_COLUMNS).issubset(existing_columns):
+        logger.info(
+            "Export table %s.%s is missing %s — rebuilding it",
+            schema,
+            table,
+            ", ".join(sorted(set(BUILT_FORM_COLUMNS) - existing_columns)),
+        )
+        force_recreate = True
+
     if force_recreate:
         cursor.execute(f'DROP TABLE IF EXISTS "{schema}"."{table}"')
         cursor.execute(
@@ -141,14 +160,6 @@ def _export_building_types(
             WITH NO DATA
             """
         )
-
-    # A ``built_forms`` table created before ``land_development_category``
-    # existed keeps its old column set through the CREATE TABLE IF NOT EXISTS
-    # above; without this the INSERT below would fail on the missing column.
-    cursor.execute(
-        f'ALTER TABLE "{schema}"."{table}" '
-        "ADD COLUMN IF NOT EXISTS land_development_category VARCHAR(32)"
-    )
 
     cursor.execute(f'TRUNCATE TABLE "{schema}"."{table}"')
     # Named target columns: ALTER TABLE appends a column *after* the ones the

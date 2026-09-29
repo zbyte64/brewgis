@@ -18,8 +18,14 @@ to be non-None and have matching lengths (validated by contracts).
 
 from __future__ import annotations
 
+from typing import TYPE_CHECKING
+
 import deal
 import numpy as np
+
+if TYPE_CHECKING:
+    from collections.abc import Mapping
+    from collections.abc import Sequence
 
 # km -> mi. A physical constant, hardcoded in the SQL models rather than a
 # scenario parameter (the `transport_km_to_mi` config variable is dead).
@@ -640,49 +646,145 @@ def compute_agriculture(
 # ══════════════════════════════════════════════════════════════════════
 
 
-@deal.pre(lambda du, bsqt, override, pass_by: np.all(du >= 0))
-@deal.pre(lambda du, bsqt, override, pass_by: np.all(bsqt >= 0))
-@deal.pre(lambda du, bsqt, override, pass_by: np.all(override >= 0))
-@deal.pre(lambda du, bsqt, override, pass_by: np.all(pass_by >= 0))
-@deal.pre(lambda du, bsqt, override, pass_by: np.all(pass_by <= 100))
+# Sector name -> the employment bucket the SQL groups it into
+# (``trip_generation.sql``, CTE ``bucket_weights``). Deliberately a second,
+# independent copy: the SQL writes this mapping as literal key lists, and a
+# parity test can only catch a drift between the two if they are not the same
+# object.
+TRIP_SECTOR_BUCKETS: dict[str, str] = {
+    "retail_services": "retail",
+    "other_services": "retail",
+    "restaurant": "food",
+    "accommodation": "food",
+    "arts_entertainment": "arts",
+    "office_services": "office",
+    "medical_services": "office",
+    "public_admin": "public",
+    "education": "public",
+    "manufacturing": "industry",
+    "wholesale": "industry",
+    "transport_warehousing": "industry",
+    "construction": "industry",
+    "utilities": "industry",
+    "agriculture": "industry",
+    "military": "industry",
+}
+
+# Trips per job per day, per bucket. UrbanFootprint's rates
+# (vmt_raw_trip_generation.py); `retail` is also the rate an unattributed job
+# and a sector name outside TRIP_SECTOR_BUCKETS both fall to.
+TRIP_BUCKET_RATES: dict[str, float] = {
+    "retail": 21.47,
+    "food": 37.5,
+    "arts": 10.0,
+    "office": 3.32,
+    "public": 3.32,
+    "industry": 3.02,
+}
+
+
+def trip_employment(
+    employment: float, sector_shares: Mapping[str, float] | None
+) -> float:
+    """Daily employment trips for *employment* jobs under *sector_shares*.
+
+    Shares are percentages of the jobs and are normalized over the sectors the
+    built form declares — SACOG's ``pct_*`` columns leave a residual for
+    sectors it does not publish. No usable share at all puts every job on the
+    retail rate, which is what an unrecognised sector name gets too.
+    """
+    weights = {k: float(v) for k, v in (sector_shares or {}).items() if v}
+    total_weight = sum(weights.values())
+    if employment <= 0:
+        return 0.0
+    if total_weight <= 0:
+        return employment * TRIP_BUCKET_RATES["retail"]
+    return sum(
+        employment
+        * weight
+        / total_weight
+        * TRIP_BUCKET_RATES[TRIP_SECTOR_BUCKETS[sector]]
+        for sector, weight in weights.items()
+    )
+
+
+@deal.pre(
+    lambda du_detsf, du_mf2to4, du_mf5p, du_attsf, emp, shares: np.all(du_detsf >= 0)
+)
+@deal.pre(
+    lambda du_detsf, du_mf2to4, du_mf5p, du_attsf, emp, shares: np.all(du_mf2to4 >= 0)
+)
+@deal.pre(
+    lambda du_detsf, du_mf2to4, du_mf5p, du_attsf, emp, shares: np.all(du_mf5p >= 0)
+)
+@deal.pre(
+    lambda du_detsf, du_mf2to4, du_mf5p, du_attsf, emp, shares: np.all(du_attsf >= 0)
+)
+@deal.pre(lambda du_detsf, du_mf2to4, du_mf5p, du_attsf, emp, shares: np.all(emp >= 0))
 @deal.post(lambda result: np.all(result[0] >= 0))  # trips_res
-@deal.post(lambda result: np.all(result[1] >= 0))  # trips_nonres
-@deal.post(lambda result: np.all(result[2] >= 0))  # trips_total
-@deal.post(lambda result: np.all(result[3] >= 0))  # trips_hbw
-@deal.post(lambda result: np.all(result[4] >= 0))  # trips_hbo
-@deal.post(lambda result: np.all(result[5] >= 0))  # trips_nhb
+@deal.post(lambda result: np.all(result[1] >= 0))  # trips_school
+@deal.post(lambda result: np.all(result[2] >= 0))  # trips_nonres
+@deal.post(lambda result: np.all(result[3] >= 0))  # trips_total
+@deal.post(lambda result: np.all(result[4] >= 0))  # trips_hbw
+@deal.post(lambda result: np.all(result[5] >= 0))  # trips_hbo
+@deal.post(lambda result: np.all(result[6] >= 0))  # trips_nhb
 @deal.post(
     lambda result: np.all(
-        (np.abs((result[3] + result[4] + result[5]) - result[2]) < 1e-6)
-        | (result[2] == 0)
+        (np.abs((result[4] + result[5] + result[6]) - result[3]) < 1e-6)
+        | (result[3] == 0)
     )
 )
 def compute_trip_generation(
-    dwelling_units_total: np.ndarray,
-    building_sqft_total: np.ndarray,
-    trip_rate_override: np.ndarray,  # 0 if no override (treated as 0)
-    pass_by_trip_pct: np.ndarray,  # percentage 0-100, always a COALESCE'd value
-    nonres_rate: float = 42.94,
+    du_detsf: np.ndarray,
+    du_mf2to4: np.ndarray,
+    du_mf5p: np.ndarray,
+    du_attsf: np.ndarray,
+    emp: np.ndarray,
+    sector_shares: Sequence[Mapping[str, float] | None],
+    du_rate_detsf: float = 9.57,
+    du_rate_mf2to4: float = 6.65,
+    du_rate_mf5p: float = 4.18,
+    school_share: float = 0.097,
     hbw_pct: float = 0.18,
     hbo_pct: float = 0.42,
     nhb_pct: float = 0.40,
-) -> tuple[np.ndarray, np.ndarray, np.ndarray, np.ndarray, np.ndarray, np.ndarray]:
-    """SQL: ``trip_generation`` — daily trips with pass-by reduction.
+) -> tuple[np.ndarray, ...]:
+    """SQL: ``trip_generation`` — daily trips from activity, not floor area.
 
-    Returns (trips_res, trips_nonres, trips_total,
+    Housing classes: ``du_detsf`` is detached (large- and small-lot together),
+    ``du_mf2to4`` 2-4 units, ``du_mf5p`` 5+ units, ``du_attsf`` attached
+    single-family. The reference implementation computes attached units and
+    then omits them from trip generation entirely; the SQL prices them at the
+    5+ rate instead of dropping them, so they are folded here too — that is the
+    one deliberate deviation from the reference, and this is where it is pinned.
+
+    Returns (trips_res, trips_school, trips_nonres, trips_total,
              trips_hbw, trips_hbo, trips_nhb).
     Post-condition: hbw + hbo + nhb ≈ total (trip purpose split).
     """
-    trips_res = _c(dwelling_units_total * trip_rate_override)
-    trips_nonres_raw = _c((building_sqft_total / 1000.0) * nonres_rate)
-    pb_adj = 1.0 - _c(pass_by_trip_pct) / 100.0
-
-    trips_nonres = trips_nonres_raw * pb_adj
-    trips_total = trips_res + trips_nonres
+    trips_res = _c(du_detsf) * du_rate_detsf + _c(du_mf2to4) * du_rate_mf2to4
+    trips_res = trips_res + (_c(du_mf5p) + _c(du_attsf)) * du_rate_mf5p
+    trips_school = trips_res * school_share
+    trips_nonres = np.array(
+        [
+            trip_employment(employment, shares)
+            for employment, shares in zip(_c(emp), sector_shares, strict=True)
+        ],
+        dtype=float,
+    )
+    trips_total = trips_res + trips_school + trips_nonres
     trips_hbw = trips_total * hbw_pct
     trips_hbo = trips_total * hbo_pct
     trips_nhb = trips_total * nhb_pct
-    return trips_res, trips_nonres, trips_total, trips_hbw, trips_hbo, trips_nhb
+    return (
+        trips_res,
+        trips_school,
+        trips_nonres,
+        trips_total,
+        trips_hbw,
+        trips_hbo,
+        trips_nhb,
+    )
 
 
 # ══════════════════════════════════════════════════════════════════════

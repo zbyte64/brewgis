@@ -22,6 +22,9 @@ from typing import TYPE_CHECKING
 
 import deal
 
+from brewgis.workspace.built_forms.trip_rates import sector_jobs
+from brewgis.workspace.built_forms.trip_rates import total_trips
+
 if TYPE_CHECKING:
     from brewgis.workspace.built_forms.models import BuildingType
     from brewgis.workspace.built_forms.models import PlaceType
@@ -138,16 +141,13 @@ class AllocationEngine:
         else:
             result.total_employment = 0.0
 
-        # Employment by sector
+        # Employment by sector — shares of the parcel's jobs, normalized
+        # (see built_forms.trip_rates.sector_jobs, which the trip model's SQL
+        # mirrors).
         jobs_by_sector = building_type.jobs_by_sector or {}
-        total_jobs = result.total_employment
-        if total_jobs > 0 and jobs_by_sector:
-            sector_total = sum(jobs_by_sector.values())
-            if sector_total > 0:
-                for sector, pct in jobs_by_sector.items():
-                    result.employment_by_sector[sector] = total_jobs * (
-                        pct / sector_total
-                    )
+        result.employment_by_sector = sector_jobs(
+            result.total_employment, jobs_by_sector
+        )
 
         # 5. Floor area
         far = building_type.far
@@ -197,13 +197,16 @@ class AllocationEngine:
             result.energy_gas_kwh = result.floor_area_m2 * building_type.gas_eui
 
         # 8. Trips
-        ite_rate = building_type.trip_rate_override
-        if ite_rate is None and building_type.ite_land_use_code is not None:
-            # Default ITE rates by land use code — simplified fallback
-            # In production these would come from a reference table
-            pass
-        if ite_rate is not None and units > 0:
-            result.trips_per_day = units * ite_rate
+        # Residential trips come from the dwelling units and the built form's
+        # housing class, employment trips from the jobs and their sector mix
+        # (see built_forms.trip_rates). A parcel that both houses and employs
+        # people emits both terms.
+        result.trips_per_day = total_trips(
+            units,
+            building_type.du_type or "",
+            result.total_employment,
+            jobs_by_sector,
+        )
 
         # 9. Parking
         floor_area_1000sqft = (result.floor_area_m2 / SQFT_TO_SQM) / 1000.0

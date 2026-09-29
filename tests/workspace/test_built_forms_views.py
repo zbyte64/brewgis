@@ -1,3 +1,4 @@
+# ruff: noqa: PT009 — unittest-style TestCase assertions.
 """Tests for built forms CRUD and baking views."""
 
 from __future__ import annotations
@@ -265,7 +266,7 @@ class TestBakingViews(TestCase):
             electricity_eui=70.0,
             gas_eui=100.0,
             parking_spaces_per_unit=1.5,
-            trip_rate_override=5.0,
+            du_type="mf5p",
         )
         self.pt = PlaceType.objects.create(
             workspace=self.workspace,

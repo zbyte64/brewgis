@@ -186,7 +186,8 @@ def _build_profile(v: Sequence[float]) -> dict[str, Any]:
         "far": max(far, 0.1),
         "household_size": 2.5,
         "vacancy_rate": 5.0,
-        "jobs_by_sector": _build_jobs_by_sector(v, gnr),
+        "du_type": _derive_du_type(v),
+        "jobs_by_sector": _build_jobs_by_sector(v),
         "indoor_water_rate": 200.0,
         "outdoor_water_rate": v[26] * 0.01 if v[26] > 0 else 300.0,
         "irrigable_area_fraction": 0.25,
@@ -196,8 +197,39 @@ def _build_profile(v: Sequence[float]) -> dict[str, Any]:
     }
 
 
-def _build_jobs_by_sector(v: Sequence[float], gnr: float) -> dict[str, float]:
-    """Map FlatBuiltForm density columns to sector-based jobs dict."""
+def _derive_du_type(v: Sequence[float]) -> str:
+    """The housing class the catalogue declares a density for.
+
+    Indices follow :func:`_build_profile`. A built form declares exactly one
+    non-zero dwelling-unit density column, which is the class its units belong
+    to — and the class the residential trip rate is chosen by
+    (``built_forms.trip_rates``). A form with no housing density gets ``""``.
+    """
+    for idx, du_type in (
+        (3, "detsf_ll"),
+        (4, "detsf_sl"),
+        (5, "attsf"),
+        (6, "mf2to4"),
+        (7, "mf5p"),
+    ):
+        if v[idx] > 0:
+            return du_type
+    return ""
+
+
+def _build_jobs_by_sector(v: Sequence[float]) -> dict[str, float]:
+    """Map FlatBuiltForm density columns to employment-sector share percentages.
+
+    ``BuildingType.jobs_by_sector`` holds percentage shares of ``emp_per_acre``
+    — the trip model multiplies each by the parcel's jobs and normalizes over
+    the sectors present (see ``built_forms.trip_rates.sector_jobs``). The
+    catalogue's sector densities are jobs/acre, so each is divided by the form's
+    total employment density: writing the densities themselves would make a
+    form's trip rate scale with its size twice over.
+    """
+    emp_density = v[1]
+    if emp_density <= 0:
+        return {}
     sector_map: dict[str, int] = {
         "retail_services": 8,
         "restaurant": 9,
@@ -221,7 +253,7 @@ def _build_jobs_by_sector(v: Sequence[float], gnr: float) -> dict[str, float]:
     for name, idx in sector_map.items():
         val = v[idx] if idx < len(v) else 0.0
         if val > 0:
-            jobs[name] = val * gnr
+            jobs[name] = 100.0 * val / emp_density
     return jobs
 
 
@@ -230,6 +262,10 @@ def _default_profile() -> dict[str, Any]:
     return {
         "description": "Default profile (no v1 FlatBuiltForm data)",
         "du_per_acre": 5.0,
+        # 5 units/acre is the small-lot detached class (the library's
+        # "Single-Family Detached - Standard" carries the same density). Left
+        # blank, the trip model could not price this profile's units at all.
+        "du_type": "detsf_sl",
         "emp_per_acre": 0.0,
         "far": 0.3,
         "household_size": 2.5,

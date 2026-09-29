@@ -1,3 +1,4 @@
+# ruff: noqa: PT009 — unittest-style TestCase assertions.
 """Tests for the allocation engine."""
 
 from __future__ import annotations
@@ -6,6 +7,7 @@ import pytest
 from django.test import TestCase
 
 from brewgis.workspace.built_forms.allocation import AllocationEngine
+from brewgis.workspace.built_forms.allocation import AllocationResult
 from brewgis.workspace.built_forms.models import PlaceTypeBuildingTypeMix
 from tests.factories import BuildingTypeFactory
 from tests.factories import PlaceTypeFactory
@@ -22,11 +24,12 @@ class TestAllocationBuildingType(TestCase):
             outdoor_water_rate=300.0,
             electricity_eui=70.0,
             gas_eui=100.0,
-            trip_rate_override=5.0,
+            du_type="mf5p",
         )
         self.employment = BuildingTypeFactory(
             name="Employment Test",
             du_per_acre=None,
+            du_type="",
             emp_per_acre=50.0,
             far=0.5,
             jobs_by_sector={"retail": 100},
@@ -50,7 +53,7 @@ class TestAllocationBuildingType(TestCase):
             gas_eui=60.0,
             parking_spaces_per_unit=1.0,
             parking_spaces_per_1000sqft=2.0,
-            trip_rate_override=4.0,
+            du_type="mf5p",
         )
 
     def test_developable_acres_calculation(self) -> None:
@@ -186,16 +189,57 @@ class TestAllocationBuildingType(TestCase):
         )
 
     def test_trips(self) -> None:
-        """Trips should be units * trip_rate_override."""
+        """Residential trips come from the housing class, not a blended rate."""
         result = AllocationEngine.allocation_building_type(
-            parcel_acres=10.0,
+            parcel_acres=1.0,
             building_type=self.residential,
-            row_allocation_pct=25.0,
+            row_allocation_pct=0.0,
         )
-        developable = 7.5
-        units = developable * 10.0
-        expected_trips = units * 5.0
-        self.assertAlmostEqual(result.trips_per_day, expected_trips)
+        self.assertAlmostEqual(result.total_dwelling_units, 10.0)
+        self.assertEqual(result.total_employment, 0.0)
+        # mf5p = 4.18 trips per dwelling unit per day → 10 units = 41.8, plus
+        # the K-12 trips UrbanFootprint derives from the residential term (9.7%)
+        residential_trips = 10.0 * 4.18
+        self.assertAlmostEqual(result.trips_per_day, residential_trips * 1.097)
+
+    def test_trips_employment_only(self) -> None:
+        """Jobs generate trips at their sector's rate, with no residential term."""
+        offices = BuildingTypeFactory(
+            name="Office Only",
+            du_per_acre=None,
+            du_type="",
+            emp_per_acre=100.0,
+            jobs_by_sector={"office_services": 100.0},
+        )
+        result = AllocationEngine.allocation_building_type(
+            parcel_acres=1.0,
+            building_type=offices,
+            row_allocation_pct=0.0,
+        )
+        self.assertEqual(result.total_dwelling_units, 0.0)
+        self.assertAlmostEqual(result.total_employment, 100.0)
+        # office_services = 3.32 trips per job per day → 100 jobs = 332.0
+        self.assertAlmostEqual(result.trips_per_day, 100.0 * 3.32)
+
+    def test_trips_mixed_use(self) -> None:
+        """A built form that houses and employs people emits both trip terms."""
+        mixed = BuildingTypeFactory(
+            name="Mixed Activity",
+            du_per_acre=10.0,
+            du_type="mf5p",
+            emp_per_acre=100.0,
+            jobs_by_sector={"office_services": 100.0},
+        )
+        result = AllocationEngine.allocation_building_type(
+            parcel_acres=1.0,
+            building_type=mixed,
+            row_allocation_pct=0.0,
+        )
+        self.assertAlmostEqual(result.total_dwelling_units, 10.0)
+        self.assertAlmostEqual(result.total_employment, 100.0)
+        # 10 mf5p units * 4.18 = 41.8 residential trips (+ 9.7% K-12),
+        # 100 office jobs * 3.32 = 332.0 employment trips
+        self.assertAlmostEqual(result.trips_per_day, 10.0 * 4.18 * 1.097 + 100.0 * 3.32)
 
     def test_parking(self) -> None:
         """Parking should combine unit-based and floor-area-based requirements."""
@@ -214,7 +258,10 @@ class TestAllocationBuildingType(TestCase):
             building_type=self.mixed,
             row_allocation_pct=0.0,  # Use 0% ROW to simplify
         )
-        self.assertGreater(result_with_far.parking_spaces, 0)
+        # the non-res floor area adds spaces on top of the unit requirement, and
+        # the reduced developable area at 25% ROW yields fewer spaces overall
+        self.assertGreater(result_with_far.parking_spaces, spaces_units)
+        self.assertGreater(result_with_far.parking_spaces, result.parking_spaces)
 
     def test_zero_du_per_acre(self) -> None:
         """Employment-only building type should have 0 dwelling units."""
@@ -249,8 +296,6 @@ class TestAllocationBuildingType(TestCase):
 
     def test_allocation_result_defaults(self) -> None:
         """AllocationResult should have sensible defaults including empty dicts/lists."""
-        from brewgis.workspace.built_forms.allocation import AllocationResult
-
         result = AllocationResult()
         self.assertEqual(result.employment_by_sector, {})
         self.assertEqual(result.per_building_type_breakdown, [])
@@ -273,7 +318,7 @@ class TestAllocationPlaceType(TestCase):
             electricity_eui=75.0,
             gas_eui=110.0,
             parking_spaces_per_unit=2.0,
-            trip_rate_override=9.5,
+            du_type="detsf_sl",
         )
         self.bt_townhouse = BuildingTypeFactory(
             name="Townhouse",
@@ -284,11 +329,12 @@ class TestAllocationPlaceType(TestCase):
             electricity_eui=70.0,
             gas_eui=100.0,
             parking_spaces_per_unit=1.5,
-            trip_rate_override=6.5,
+            du_type="mf2to4",
         )
         self.bt_retail = BuildingTypeFactory(
             name="Neighborhood Retail",
             du_per_acre=None,
+            du_type="",
             emp_per_acre=25.0,
             far=0.5,
             jobs_by_sector={"retail": 80, "food_service": 20},

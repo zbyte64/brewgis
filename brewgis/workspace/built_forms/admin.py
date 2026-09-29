@@ -73,7 +73,7 @@ class BuildingTypeAdmin(admin.ModelAdmin):
         ),
         (
             "Trip Generation",
-            {"fields": ("ite_land_use_code", "trip_rate_override", "pass_by_trip_pct")},
+            {"fields": ("du_type", "ite_land_use_code")},
         ),
         ("Matching", {"fields": ("land_development_category",)}),
     )

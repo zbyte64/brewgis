@@ -14,6 +14,9 @@ from typing import Any
 # the models implementing it" is defined.
 from brewgis.sqlmesh.model_names import model_fqn  # noqa: F401
 from brewgis.sqlmesh.model_names import result_schema_name
+from brewgis.workspace.built_forms.trip_rates import EMPLOYMENT_TRIP_RATES
+from brewgis.workspace.built_forms.trip_rates import RESIDENTIAL_TRIP_RATES
+from brewgis.workspace.built_forms.trip_rates import SCHOOL_TRIP_SHARE
 
 # Module dependency graph: later modules depend on earlier ones
 MODULE_DEPENDENCIES: dict[str, list[str]] = {
@@ -570,9 +573,67 @@ ANALYSIS_PARAMETERS: tuple[AnalysisParameter, ...] = (
     AnalysisParameter("crop_water_per_acre_af", 3.0, "float", ("agriculture",)),
     AnalysisParameter("crop_labor_hours_per_acre", 15, "float", ("agriculture",)),
     AnalysisParameter("crop_truck_trips_per_acre", 2, "float", ("agriculture",)),
-    # Trip generation
+    # Trip generation — UrbanFootprint's per-activity rates. The defaults are
+    # read from built_forms.trip_rates rather than repeated here: that module is
+    # where the rates are documented (and where the model's provenance from the
+    # reference implementation lives), and it is what the non-SQLMesh consumers
+    # (built_forms.allocation, tests/dbt_math) call.
     AnalysisParameter(
-        "transport_nonres_trip_rate", 42.94, "float", ("trip_generation",)
+        "transport_du_rate_detsf",
+        RESIDENTIAL_TRIP_RATES["detsf_ll"],
+        "float",
+        ("trip_generation",),
+    ),
+    AnalysisParameter(
+        "transport_du_rate_mf2to4",
+        RESIDENTIAL_TRIP_RATES["mf2to4"],
+        "float",
+        ("trip_generation",),
+    ),
+    AnalysisParameter(
+        "transport_du_rate_mf5p",
+        RESIDENTIAL_TRIP_RATES["mf5p"],
+        "float",
+        ("trip_generation",),
+    ),
+    AnalysisParameter(
+        "transport_school_trip_share", SCHOOL_TRIP_SHARE, "float", ("trip_generation",)
+    ),
+    AnalysisParameter(
+        "transport_emp_rate_retail",
+        EMPLOYMENT_TRIP_RATES["retail_services"],
+        "float",
+        ("trip_generation",),
+    ),
+    AnalysisParameter(
+        "transport_emp_rate_food",
+        EMPLOYMENT_TRIP_RATES["restaurant"],
+        "float",
+        ("trip_generation",),
+    ),
+    AnalysisParameter(
+        "transport_emp_rate_arts",
+        EMPLOYMENT_TRIP_RATES["arts_entertainment"],
+        "float",
+        ("trip_generation",),
+    ),
+    AnalysisParameter(
+        "transport_emp_rate_office",
+        EMPLOYMENT_TRIP_RATES["office_services"],
+        "float",
+        ("trip_generation",),
+    ),
+    AnalysisParameter(
+        "transport_emp_rate_public",
+        EMPLOYMENT_TRIP_RATES["public_admin"],
+        "float",
+        ("trip_generation",),
+    ),
+    AnalysisParameter(
+        "transport_emp_rate_industry",
+        EMPLOYMENT_TRIP_RATES["manufacturing"],
+        "float",
+        ("trip_generation",),
     ),
     AnalysisParameter("transport_hbw_pct", 0.18, "float", ("trip_generation",)),
     AnalysisParameter("transport_hbo_pct", 0.42, "float", ("trip_generation",)),

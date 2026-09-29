@@ -2,9 +2,9 @@
 
 from __future__ import annotations
 
-from django.core.validators import MaxValueValidator
-from django.core.validators import MinValueValidator
 from django.db import models
+
+from brewgis.workspace.built_forms.trip_rates import DU_TYPES
 
 
 class VintageChoices(models.TextChoices):
@@ -202,17 +202,17 @@ class BuildingType(models.Model):
         verbose_name="ITE Land Use Code",
         help_text="ITE Trip Generation manual land use code.",
     )
-    trip_rate_override = models.FloatField(
+    du_type = models.CharField(
+        max_length=16,
+        choices=DU_TYPES,
         blank=True,
-        null=True,
-        verbose_name="Trip rate override (trips/unit)",
-    )
-    pass_by_trip_pct = models.FloatField(
-        blank=True,
-        default=0.0,
-        validators=[MinValueValidator(0.0), MaxValueValidator(100.0)],
-        verbose_name="Pass-by trip (%)",
-        help_text="Percent of trips that are pass-by (diverted from passing traffic).",
+        default="",
+        verbose_name="Dwelling unit type",
+        help_text=(
+            "Housing class the dwelling units belong to. Selects the "
+            "residential trip rate (see built_forms.trip_rates); blank means "
+            "the type has no dwelling units."
+        ),
     )
 
     # Matching

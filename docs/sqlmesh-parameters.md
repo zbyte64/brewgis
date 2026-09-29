@@ -84,8 +84,16 @@ via the `**variables` dict when calling `config_factory()` or via plan overrides
 
 | Variable | Default | Used In | Notes |
 |---|---|---|---|
-| `transport_nonres_trip_rate` | `42.94` | trip_generation | Trips/1000 sqft/day (ITE trip gen rate) |
-| `transport_pass_by_pct` | `0.0` | trip_generation | Pass-by trip reduction fraction |
+| `transport_du_rate_detsf` | `9.57` | trip_generation | Trips/dwelling unit/day, detached single-family (`detsf_ll`/`detsf_sl`) |
+| `transport_du_rate_mf2to4` | `6.65` | trip_generation | Trips/dwelling unit/day, 2–4 unit multifamily (`mf2to4`) |
+| `transport_du_rate_mf5p` | `4.18` | trip_generation | Trips/dwelling unit/day, 5+ unit multifamily (`mf5p`) and attached single-family (`attsf`) |
+| `transport_school_trip_share` | `0.097` | trip_generation | K-12 trips as a share of the residential trip term (UF derives them from households, not a school land use) |
+| `transport_emp_rate_retail` | `21.47` | trip_generation | Trips/job/day, `retail_services`/`other_services` (ITE shopping-centre 42.94 trips/1000 sqft ÷ 2 jobs/1000 sqft); also the fallback for a built form declaring no sector mix |
+| `transport_emp_rate_food` | `37.5` | trip_generation | Trips/job/day, `restaurant`/`accommodation` |
+| `transport_emp_rate_arts` | `10.0` | trip_generation | Trips/job/day, `arts_entertainment` |
+| `transport_emp_rate_office` | `3.32` | trip_generation | Trips/job/day, `office_services`/`medical_services` |
+| `transport_emp_rate_public` | `3.32` | trip_generation | Trips/job/day, `public_admin`/`education` |
+| `transport_emp_rate_industry` | `3.02` | trip_generation | Trips/job/day, `manufacturing`/`wholesale`/`transport_warehousing`/`construction`/`utilities`/`agriculture`/`military` |
 | `transport_hbw_pct` | `0.18` | trip_generation | Home-based work trip share |
 | `transport_hbo_pct` | `0.42` | trip_generation | Home-based other trip share |
 | `transport_nhb_pct` | `0.40` | trip_generation | Non-home-based trip share |
@@ -573,7 +581,7 @@ at aggregate and distributional levels. Key diagnostic metrics:
 | What you want to change | File(s) to edit |
 |---|---|
 | Scenario development assumptions | Config: `dev_pct`, `gross_net_pct`, `density_pct` |
-| Trip generation rates | Config: `transport_nonres_trip_rate`, `transport_hbw/hbo/nhb_pct` |
+| Trip generation rates | Config: `transport_du_rate_*`, `transport_emp_rate_*`, `transport_school_trip_share`, `transport_hbw/hbo/nhb_pct` |
 | GHG emission factors | Config: `ghg_egrid_co2_per_kwh`, `transport_ghg_co2_per_mile` |
 | Health impact coefficients | Config: `health_*` variables |
 | Fiscal parameters | Config: `res_assessed_value_per_du`, `property_tax_rate`, etc. |

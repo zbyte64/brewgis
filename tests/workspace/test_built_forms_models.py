@@ -1,3 +1,4 @@
+# ruff: noqa: PT009, PT027 — unittest-style TestCase assertions.
 """Tests for built forms models."""
 
 from __future__ import annotations
@@ -35,7 +36,7 @@ class TestBuildingType(TestCase):
         self.assertEqual(bt.household_size, 2.5)
         self.assertEqual(bt.vacancy_rate, 5.0)
         self.assertEqual(bt.parking_sqft_per_space, 300.0)
-        self.assertEqual(bt.pass_by_trip_pct, 0.0)
+        self.assertEqual(bt.du_type, "")
 
     def test_unique_name_constraint(self) -> None:
         """Duplicate names should be rejected."""
@@ -70,12 +71,12 @@ class TestBuildingType(TestCase):
             parking_spaces_per_1000sqft=2.0,
             parking_sqft_per_space=350.0,
             ite_land_use_code=220,
-            trip_rate_override=5.0,
-            pass_by_trip_pct=10.0,
+            du_type="mf5p",
         )
         self.assertEqual(bt.du_per_acre, 20.0)
         self.assertEqual(bt.emp_per_acre, 5.0)
         self.assertEqual(bt.jobs_by_sector, {"retail": 60, "office": 40})
+        self.assertEqual(bt.du_type, "mf5p")
         self.assertEqual(bt.get_vintage_display(), "Post-2000")
 
     def test_nullable_density_fields(self) -> None:
@@ -236,8 +237,15 @@ class TestDefaultBuiltFormsLibrary(TestCase):
         first = DEFAULT_BUILDING_TYPES[0]
         self.library_name = first["name"]
         self.library_category = first["land_development_category"]
+        # A library entry that declares employment and no dwelling units: the
+        # backfill's job here is to clear a stale residential profile off a row
+        # whose library entry has no dwellings, so the entry has to be one of
+        # those (`jobs_by_sector` alone is not enough — a mixed-use entry
+        # carries both).
         with_sectors = next(
-            entry for entry in DEFAULT_BUILDING_TYPES if entry["jobs_by_sector"]
+            entry
+            for entry in DEFAULT_BUILDING_TYPES
+            if entry["jobs_by_sector"] and not entry["du_per_acre"]
         )
         self.library_with_sectors = with_sectors["name"]
         self.library_jobs_by_sector = with_sectors["jobs_by_sector"]
