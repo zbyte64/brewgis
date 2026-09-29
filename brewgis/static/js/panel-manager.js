@@ -455,7 +455,7 @@
             showToast(res.data.error || 'Could not locate this feature on the map.');
             return;
           }
-          mapEl.focusFeature(featureId, res.data.bounds);
+          mapEl.focusFeature(featureId, res.data.bounds, res.data.geometry || null);
         })
         .catch(function() {
           showToast('Could not locate this feature on the map.');

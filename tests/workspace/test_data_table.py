@@ -64,6 +64,11 @@ def feature_probe_tables(db) -> Iterator[None]:
             f"INSERT INTO {_PROBE_SCHEMA}.pois (id, name, geometry) VALUES "
             "(7, 'cafe', ST_SetSRID(ST_MakePoint(-119.77, 36.75), 4326))"
         )
+        # A row with no geometry at all: it exists, but nothing can be located.
+        cursor.execute(
+            f"INSERT INTO {_PROBE_SCHEMA}.pois (id, name, geometry) VALUES "
+            "(9, 'unmapped', NULL)"
+        )
         cursor.execute(
             f"CREATE TABLE {_PROBE_SCHEMA}.projected_parcels ("
             f"parcel_id varchar, name text, geometry geometry(Polygon, {_CA_SRID}))"
@@ -152,6 +157,19 @@ class TestLayerFeatureBounds(DataTableProbe):
 
         assert response.status_code == 200
         assert response.json()["bounds"] == [[-119.8, 36.7], [-119.7, 36.8]]
+        # Also the outline the map draws for the row: the same four corners —
+        # compared as a set, since which corner a ring starts at is PostGIS's
+        # business — in degrees, and closed.
+        geometry = response.json()["geometry"]
+        assert geometry["type"] == "Polygon"
+        ring = geometry["coordinates"][0]
+        assert {(round(x, 3), round(y, 3)) for x, y in ring} == {
+            (-119.8, 36.7),
+            (-119.7, 36.7),
+            (-119.7, 36.8),
+            (-119.8, 36.8),
+        }
+        assert ring[0] == ring[-1]
 
     def test_projected_geometry_is_returned_as_lng_lat(self, client, workspace) -> None:
         layer = LayerFactory(
@@ -161,22 +179,41 @@ class TestLayerFeatureBounds(DataTableProbe):
             db_table="projected_parcels",
         )
 
-        bounds = client.get(
+        body = client.get(
             reverse("workspace:layer_feature_bounds", args=[layer.pk]),
             {"feature_id": "31302103T"},
-        ).json()["bounds"]
+        ).json()
+        bounds = body["bounds"]
 
         assert [round(value, 3) for value in bounds[0]] == [-119.8, 36.7]
         assert [round(value, 3) for value in bounds[1]] == [-119.7, 36.8]
+        # The outline is reprojected too: in the layer's own CRS these numbers
+        # would be ~2 million (metres), not degrees.
+        ring = body["geometry"]["coordinates"][0]
+        assert [round(value, 3) for value in ring[0]] == [-119.8, 36.7]
+        assert [round(value, 3) for value in ring[2]] == [-119.7, 36.8]
 
     def test_point_feature_has_a_degenerate_box(self, client, pois) -> None:
         """A point has no extent, so both corners sit on the point itself."""
-        bounds = client.get(
+        body = client.get(
             reverse("workspace:layer_feature_bounds", args=[pois.pk]),
             {"feature_id": "7"},
-        ).json()["bounds"]
+        ).json()
 
-        assert bounds == [[-119.77, 36.75], [-119.77, 36.75]]
+        assert body["bounds"] == [[-119.77, 36.75], [-119.77, 36.75]]
+        # The point itself is what the map rings — a zero-area box would fit
+        # to nothing, and feature-state highlighting never reaches this layer.
+        assert body["geometry"] == {"type": "Point", "coordinates": [-119.77, 36.75]}
+
+    def test_row_without_geometry_is_404(self, client, pois) -> None:
+        """A row whose geometry is NULL exists but cannot be located."""
+        response = client.get(
+            reverse("workspace:layer_feature_bounds", args=[pois.pk]),
+            {"feature_id": "9"},
+        )
+
+        assert response.status_code == 404
+        assert "error" in response.json()
 
     def test_numeric_id_column_accepts_a_numeric_feature_id(self, client, pois) -> None:
         """An integer id never reaches the query as text, so it cannot 500."""

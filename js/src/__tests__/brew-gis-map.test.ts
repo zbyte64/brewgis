@@ -15,11 +15,37 @@ import { mockMap, triggerMockEvent } from './setup.js'
 interface MapInternals {
   canvasLayerId: string
   layers: LayerConfig[]
-  focusFeature(featureId: string, bounds: LngLatBoundsTuple): void
+  focusFeature(
+    featureId: string,
+    bounds: LngLatBoundsTuple,
+    geometry: GeoJSON.Geometry | null,
+  ): void
+  clearHighlight(): void
 }
 
 function createMapElement() {
   return document.createElement('brew-gis-map')
+}
+
+/**
+ * Make the map mock's sources behave like real ones: `getSource` returns what
+ * `addSource` registered, so a second overlay call reuses the source instead
+ * of adding a second. The values are the registered sources, `setData` spy
+ * included.
+ */
+function trackSources(): Record<string, { type: string; setData: Mock }> {
+  const sources: Record<string, { type: string; setData: Mock }> = {}
+  mockMap.getSource.mockImplementation((id: string) => sources[id] ?? null)
+  mockMap.addSource.mockImplementation((id: string, spec: { type: string }) => {
+    sources[id] = { ...spec, setData: vi.fn() }
+  })
+  return sources
+}
+
+/** Undo `trackSources`, so later tests see the map's default empty style. */
+function untrackSources() {
+  mockMap.getSource.mockImplementation(() => null)
+  mockMap.addSource.mockImplementation(() => undefined)
 }
 
 async function createAndAttach(opts?: {
@@ -296,7 +322,14 @@ describe('brew-gis-map', () => {
       [-119.8, 36.7],
       [-119.7, 36.8],
     ]
-    brew.focusFeature('parcel-123', bounds)
+    const geometry: GeoJSON.Geometry = {
+      type: 'Point',
+      coordinates: [-119.75, 36.75],
+    }
+    // The source is created empty and then given its data: a source added
+    // *with* its data in the same frame renders blank until a later reload.
+    const sources = trackSources()
+    brew.focusFeature('parcel-123', bounds, geometry)
 
     expect(mockMap.fitBounds).toHaveBeenCalledTimes(1)
     expect(mockMap.fitBounds.mock.calls[0][0]).toEqual(bounds)
@@ -307,6 +340,80 @@ describe('brew-gis-map', () => {
       id: 'parcel-123',
     })
     expect(call[1]).toEqual({ selected: true })
+
+    // The outline the feature-state highlight cannot reach — a point layer's
+    // POI, say — is drawn from the served geometry, on top of every layer.
+    expect(mockMap.addSource).toHaveBeenCalledWith('brew-gis-locate-highlight', {
+      type: 'geojson',
+      data: { type: 'FeatureCollection', features: [] },
+    })
+    expect(sources['brew-gis-locate-highlight'].setData).toHaveBeenCalledWith({
+      type: 'FeatureCollection',
+      features: [{ type: 'Feature', properties: {}, geometry }],
+    })
+    expect(mockMap.addLayer).toHaveBeenCalledWith({
+      id: 'brew-gis-locate-highlight-point',
+      type: 'circle',
+      source: 'brew-gis-locate-highlight',
+      paint: {
+        'circle-radius': 11,
+        'circle-color': 'rgba(0,0,0,0)',
+        'circle-stroke-color': '#1565c0',
+        'circle-stroke-width': 2.5,
+      },
+    })
+    untrackSources()
+  })
+
+  it('replaces the located outline instead of stacking a second one, and clears it with the selection', async () => {
+    const { el, mockMap } = await createAndAttach({
+      mode: 'paint',
+      scenarioId: 1,
+    })
+    const brew = el as unknown as MapInternals
+    brew.canvasLayerId = 'scenario_test_canvas'
+    brew.layers = [
+      {
+        key: 'scenario_test_canvas',
+        id: 'scenario_test_canvas',
+        type: 'fill',
+        source: { type: 'vector', tiles: [] },
+      },
+    ]
+
+    const bounds: LngLatBoundsTuple = [
+      [-119.8, 36.7],
+      [-119.7, 36.8],
+    ]
+    const sources = trackSources()
+    brew.focusFeature('poi-1', bounds, { type: 'Point', coordinates: [-119.75, 36.75] })
+    const layersAfterFirst = mockMap.addLayer.mock.calls.length
+    const overlay = sources['brew-gis-locate-highlight']
+
+    // The overlay's source is now in the style: locating again must reuse it.
+    brew.focusFeature('poi-2', bounds, { type: 'Point', coordinates: [-119.76, 36.74] })
+
+    expect(mockMap.addLayer.mock.calls.length).toBe(layersAfterFirst)
+    expect(mockMap.addSource).toHaveBeenCalledTimes(1)
+    expect(overlay.setData).toHaveBeenLastCalledWith({
+      type: 'FeatureCollection',
+      features: [
+        {
+          type: 'Feature',
+          properties: {},
+          geometry: { type: 'Point', coordinates: [-119.76, 36.74] },
+        },
+      ],
+    })
+
+    // Clicking another feature clears it, like any other selection change.
+    brew.clearHighlight()
+
+    expect(overlay.setData).toHaveBeenLastCalledWith({
+      type: 'FeatureCollection',
+      features: [],
+    })
+    untrackSources()
   })
 
   it('clearHighlight uses canvas source when canvas-layer-id is set', async () => {

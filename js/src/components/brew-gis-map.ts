@@ -96,6 +96,11 @@ export class BrewGisMap extends LitElement {
   /** Floating tooltip shown over a hovered parcel in view mode. */
   private _hoverPopup: maplibregl.Popup | null = null
 
+  /** Geometry the located-feature outline was last drawn for, or null. Kept
+   * so a style reload — which drops the overlay's own source and layers —
+   * can restore it. */
+  private _locatedGeometry: GeoJSON.Geometry | null = null
+
   constructor() {
     super()
   }
@@ -185,6 +190,10 @@ export class BrewGisMap extends LitElement {
 
   /** Clear all feature state highlights. */
   clearHighlight(): void {
+    // Before the source check below: the located-feature outline is drawn
+    // from the server's geometry, not from a source this map owns, so it
+    // must go even when there is no canvas source to clear state on.
+    this.clearLocatedFeature()
     if (!this._map) return
     const sourceId = this._findCanvasSourceId()
     if (!sourceId) return
@@ -326,13 +335,17 @@ export class BrewGisMap extends LitElement {
    * single small parcel — or a point with a zero-area box — from being
    * zoomed to the tile server's own limit.
    *
-   * The highlight is the same `selected` feature state a map click sets, so
-   * it outlines the feature on the active parcel layer (the scenario's canvas
-   * view when a scenario is active, else the base canvas) — the only source
-   * this component draws a selection for. A row whose id is not a feature of
-   * that source still zooms; it just has nothing to outline.
+   * The highlight is the same `selected` feature state a map click sets
+   * (which only reaches the active parcel layer: the scenario's canvas view
+   * when a scenario is active, else the base canvas), plus `showLocatedFeature`
+   * for the rows that source cannot mark — a point layer's POIs, whose
+   * circle symbology is drawn by a layer of its own.
    */
-  focusFeature(featureId: string, bounds: LngLatBoundsTuple): void {
+  focusFeature(
+    featureId: string,
+    bounds: LngLatBoundsTuple,
+    geometry: GeoJSON.Geometry | null,
+  ): void {
     if (!this._map) return
 
     this._map.fitBounds(bounds, {
@@ -340,7 +353,91 @@ export class BrewGisMap extends LitElement {
       maxZoom: FOCUS_MAX_ZOOM,
       duration: 600,
     })
+    // Clears any previous outline of this same overlay (see clearHighlight).
     this.highlightFeatures([featureId])
+    this.showLocatedFeature(geometry)
+  }
+
+  /**
+   * Draw the located feature's own geometry on top of every layer.
+   *
+   * Feature-state highlighting only reaches the active parcel source, so a
+   * located row of a point layer — `food_pois`, drawn as circles — would
+   * otherwise zoom with nothing marking which circle it was. This draws the
+   * geometry the server read from the row's table, in the same blue as a
+   * clicked parcel's selection: a fill and thick outline for an area, a ring
+   * around a point. `null` clears it.
+   *
+   * One fixed source and three fixed layers, shown again it replaces the
+   * previous feature rather than stacking a second outline. Like the
+   * paint-preview overlay it is deliberately not part of `layers`, the set
+   * `_syncLayers` diffs and removes against.
+   */
+  showLocatedFeature(geometry: GeoJSON.Geometry | null): void {
+    if (!this._map) return
+
+    this._locatedGeometry = geometry
+    const sourceId = 'brew-gis-locate-highlight'
+
+    if (!this._map.getSource(sourceId)) {
+      // Added empty, and given its data by the `setData` below on every call:
+      // a source created *with* data and layers in the same frame stays blank
+      // until some later reload (verified in the browser — the first locate
+      // drew nothing until the second one called setData on it).
+      this._map.addSource(sourceId, {
+        type: 'geojson',
+        data: { type: 'FeatureCollection', features: [] },
+      })
+      // Topmost, unlike the parcel highlight layers: the layer's own symbology
+      // (a POI's circle) is drawn over anything inserted beneath it, and what
+      // is being marked here can be only a few pixels wide.
+      this._map.addLayer({
+        id: 'brew-gis-locate-highlight-fill',
+        type: 'fill',
+        source: sourceId,
+        paint: { 'fill-color': '#2196f3', 'fill-opacity': 0.18 },
+      })
+      this._map.addLayer({
+        id: 'brew-gis-locate-highlight-outline',
+        type: 'line',
+        source: sourceId,
+        paint: { 'line-color': '#1565c0', 'line-width': 3 },
+      })
+      // A ring around a point, wide enough to be seen outside the symbology's
+      // own circle; a fill/line layer draws nothing for a point geometry, and
+      // a circle layer draws nothing for a parcel, so one overlay serves both.
+      this._map.addLayer({
+        id: 'brew-gis-locate-highlight-point',
+        type: 'circle',
+        source: sourceId,
+        paint: {
+          'circle-radius': 11,
+          'circle-color': 'rgba(0,0,0,0)',
+          'circle-stroke-color': '#1565c0',
+          'circle-stroke-width': 2.5,
+        },
+      })
+    }
+
+    // Cast: `getSource` is typed as the whole `Source` union, which has no
+    // `setData` — same as showPaintPreview below.
+    const source = this._map.getSource(sourceId) as maplibregl.GeoJSONSource | undefined
+    source?.setData({
+      type: 'FeatureCollection',
+      features: geometry ? [{ type: 'Feature', properties: {}, geometry }] : [],
+    })
+  }
+
+  /**
+   * Drop the located-feature outline. A no-op when nothing was located, so
+   * callers can clear it unconditionally.
+   */
+  clearLocatedFeature(): void {
+    this._locatedGeometry = null
+    const source = this._map?.getSource('brew-gis-locate-highlight') as
+      | maplibregl.GeoJSONSource
+      | undefined
+    source?.setData({ type: 'FeatureCollection', features: [] })
   }
 
   /**
@@ -1010,6 +1107,9 @@ export class BrewGisMap extends LitElement {
     // plain view mode, with no scenario and no paint mode ever activated.
     this._addHoverHighlightLayer()
     this._addSelectionHighlightLayer()
+    // Not part of `layers` either — and a new style drops its source and
+    // layers, so redraw it from the geometry it was last drawn for.
+    if (this._locatedGeometry) this.showLocatedFeature(this._locatedGeometry)
   }
 
   private _destroyMap(): void {
@@ -1021,6 +1121,7 @@ export class BrewGisMap extends LitElement {
     this._hoverPopup?.remove()
     this._hoverPopup = null
     this._hoveredFeatureId = null
+    this._locatedGeometry = null
 
     if (this._map) {
       this._map.remove()

@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import json
 import logging
 from typing import Any
 
@@ -225,13 +226,16 @@ def layer_data_table(request: HttpRequest, layer_pk: int) -> HttpResponse:
 @user_passes_test(lambda u: u.is_authenticated)
 @require_GET
 def layer_feature_bounds(request: HttpRequest, layer_pk: int) -> JsonResponse:
-    """Return one feature's bounding box, in EPSG:4326, as ``{"bounds": ...}``.
+    """Return one feature's geometry and bounding box, both in EPSG:4326.
 
-    Answers the data table's "Locate on map" button. The box is read straight
-    from the layer's own table rather than from the map's loaded vector tiles:
-    the client can only query features the current viewport has already
-    fetched, so a row for a parcel a page away — or anywhere off-screen —
-    would find nothing to zoom to.
+    Answers the data table's "Locate on map" button: ``bounds`` is what the map
+    fits, ``geometry`` is the GeoJSON outline it draws over the feature — the
+    way a located row of a point layer (a POI's circle) gets marked, since
+    feature-state highlighting only reaches the active parcel source. Both are
+    read straight from the layer's own table rather than from the map's loaded
+    vector tiles: the client can only query features the current viewport has
+    already fetched, so a row for a parcel a page away — or anywhere off-screen
+    — would find nothing to zoom to.
     """
     layer = get_object_or_404(Layer, pk=layer_pk)
     workspace = layer.workspace
@@ -261,26 +265,33 @@ def layer_feature_bounds(request: HttpRequest, layer_pk: int) -> JsonResponse:
     quote = connection.ops.quote_name
     # Its own savepoint: an unreadable geometry (a table whose geometry has no
     # SRID, say) must not abort the request's transaction and take the rest of
-    # the page's queries down with it.
+    # the page's queries down with it. One row, one query: the bounds and the
+    # outline are the same geometry. 6 decimal places is ~0.1 m — the overlay
+    # is drawn at screen resolution, and a whole parcel's coordinates at the
+    # default 9 would be several times the payload.
     try:
         with transaction.atomic(), connection.cursor() as cursor:
             cursor.execute(
-                f"SELECT ST_XMin(e), ST_YMin(e), ST_XMax(e), ST_YMax(e) "  # noqa: S608
-                f"FROM (SELECT ST_Extent(ST_Transform("
-                f"{quote(geometry_column)}, 4326)) AS e "
+                "WITH located AS ("  # noqa: S608
+                f"SELECT ST_Transform({quote(geometry_column)}, 4326) AS geom "
                 f"FROM {quote(schema)}.{quote(table)} "
-                f"WHERE {quote(feature_id_column)} = %s) t",
+                f"WHERE {quote(feature_id_column)} = %s LIMIT 1) "
+                "SELECT ST_XMin(geom), ST_YMin(geom), ST_XMax(geom), ST_YMax(geom), "
+                "ST_AsGeoJSON(geom, 6) FROM located",
                 [feature_id_value],
             )
             row = cursor.fetchone()
     except DatabaseError:
         logger.warning(
-            "Could not read feature bounds for layer %s", layer_pk, exc_info=True
+            "Could not read feature geometry for layer %s", layer_pk, exc_info=True
         )
         return JsonResponse({"error": "Feature geometry could not be read"}, status=400)
 
     if not row or row[0] is None:
         return JsonResponse({"error": f"No feature {feature_id!r}"}, status=404)
 
-    min_lng, min_lat, max_lng, max_lat = (float(value) for value in row)
-    return JsonResponse({"bounds": [[min_lng, min_lat], [max_lng, max_lat]]})
+    min_lng, min_lat, max_lng, max_lat = (float(value) for value in row[:4])
+    geometry: Any = json.loads(row[4]) if row[4] is not None else None
+    return JsonResponse(
+        {"bounds": [[min_lng, min_lat], [max_lng, max_lat]], "geometry": geometry}
+    )
