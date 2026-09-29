@@ -37,14 +37,23 @@ from sqlmesh import macro
 if TYPE_CHECKING:
     from sqlmesh.core.macros import MacroEvaluator
 
-# Overpass endpoint. The main instance (overpass-api.de) stalls DuckDB's httpfs
-# GET for this query shape — measured 2026-09-22: httpfs reported "Could not
-# connect to server" after 30 s and, from SQLMesh's gateway connection, HTTP 504,
-# while urllib fetched the identical URL from the same host in about a second
-# (88 elements). The Kumi mirror serves the same query to httpfs in ~19 s, so it
-# is what this model fetches from; swapping the host here is the only change a
-# future move back to the main instance needs.
-OVERPASS_URL = "https://overpass.kumi.systems/api/interpreter"
+# Overpass endpoint. These fetches go through DuckDB's httpfs, which is picky
+# about how a mirror answers — it asks for byte ranges, so a mirror that ignores
+# them or sends a length httpfs does not expect fails the read with "Server sent
+# back more data than expected" or a bare "HTTP GET error". Measured 2026-09-28
+# by reading the model's own default-bbox URL through a DuckDB session set up
+# like the gateway's:
+#   overpass.kumi.systems    160 s, and then every plan read that day failed
+#                            (analysis runs 108, 109, 110) with those two errors
+#   overpass.private.coffee  211 s, no error
+#   overpass-api.de          87 s, then "more data than expected", every time
+#   overpass.osm.jp          74 s, then a TLS "peer certificate ... is not OK"
+# (The same URL through urllib answers in 24 s — httpfs requests it several times
+# over, which is why a mirror's range handling decides this.) Kumi was the host
+# before this move, picked 2026-09-22 because the main instance stalled httpfs'
+# GET (30 s, then HTTP 504) while urllib fetched the identical URL in about a
+# second. Swapping this constant is the whole of a mirror move.
+OVERPASS_URL = "https://overpass.private.coffee/api/interpreter"
 
 # POI category definitions: category -> list of (tag key, tag value) filters.
 # An element belongs to the first category in this order that owns one of its

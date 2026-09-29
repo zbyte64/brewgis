@@ -43,14 +43,12 @@ MODEL (
 -- ``@food_access_url``. DuckDB's httpfs block cache holds the response, so a
 -- repeated plan re-reads it instead of re-requesting it. ``out center;`` gives
 -- ways a center coordinate, so node and way results both carry a point.
-
--- pre hooks
+--
 -- Creating this VIEW is what executes the Overpass request (DuckDB resolves its
--- schema even with the columns declared above), and httpfs gives a read 30 s per
--- attempt by default — shorter than this fetch's response time (~2 minutes; see
--- macros/overpass_fetch.py OVERPASS_URL). Raised for the session doing the read;
--- cache_httpfs serves the response from disk afterwards.
-  SET http_timeout = 900;
+-- schema even with the columns declared above), so the read has to outlast this
+-- fetch's ~140 s cold answer: that timeout and the retries around it come from
+-- the gateway's connector_config (config.py). They used to be SET here, which
+-- only bound the thread-local connection that ran the statement.
 
 WITH elements AS (
     SELECT unnest(elements) AS e

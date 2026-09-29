@@ -372,7 +372,7 @@ that were historically the most frequently tuned values during validation.
 | `100.0` | `food_access.sql` | mRFEI scale: healthy outlets as a percentage of all outlets in reach |
 | `25`, `50`, `75` | `food_access.sql` | mRFEI band thresholds: food_desert, low_access, moderate_access, else high_access |
 | `0.02` (degrees, ~2 km) | `macros/overpass_fetch.py:FOOD_ACCESS_BBOX_MARGIN` | Region bbox expansion for the Overpass food fetch, so outlets just outside the region window are found for parcels on its edge |
-| `900` (seconds) | `osm/food_pois_raw.sql` pre-hook | DuckDB `http_timeout`; the Overpass mirror answers a region-wide food query in ~2 minutes, past httpfs' 30 s default |
+| `900`, `4`, `10000`, `2` | `sqlmesh/config.py` `connector_config` | DuckDB `http_timeout` (seconds) / `http_retries` / `http_retry_wait_ms` / `http_retry_backoff`, applied to **every** DuckDB session at cursor init: the Overpass mirror answers a one-element probe anywhere from 43 s to 639 s (measured 2026-09-28), past httpfs' 30 s default, and a mirror that never answers is bounded to ~76 min (5 attempts spaced 10/20/40/80 s). A per-model `SET` — an inline statement or a pre-hook — cannot carry this: it binds the thread-local connection that ran it, so it both fails to scope itself to its model and leaks to whatever runs next on that thread |
 
 The mRFEI itself is `healthy / (healthy + unhealthy) * 100`, with outlets counted
 from the region's `food_pois_local` (see §2.20's models) and `NULL` for a parcel

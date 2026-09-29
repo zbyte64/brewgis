@@ -475,8 +475,42 @@ def config_factory(*, cache_dir: str | None = None, **variables):
                         "cache_httpfs_min_disk_bytes_for_cache": 1073741824,
                         "allow_asterisks_in_http_paths": True,
                         "httpfs_connection_caching": True,
-                        "http_retry_wait_ms": 1000,
                         "unsafe_disable_etag_checks": True,
+                        # ── network timeout / retry policy ──────────────────
+                        # One policy for every DuckDB session, set at cursor
+                        # init (SQLMesh runs the connector_config items as SET
+                        # after loading the extensions). It belongs here rather
+                        # than in a model: a `SET` in a model body or pre hook
+                        # lands on the one thread-local connection that executed
+                        # it (ThreadLocalSharedConnectionPool) and leaks to
+                        # whatever runs next on that thread, so it cannot
+                        # express a per-model policy — overture_buildings.sql's
+                        # `SET http_timeout = 30` is how a 30 s timeout reached
+                        # the food-access fetch of an unrelated node.
+                        #
+                        # Overpass (models/osm/poi_duckdb.sql,
+                        # models/osm/food_pois_duckdb.sql) is slow and bursts
+                        # into outright stalls: measured 2026-09-28 against the
+                        # Kumi mirror, a one-element bounding-box probe answered
+                        # in 43 s / 144 s / 155 s / 188 s / 356 s / 639 s across
+                        # six identical requests (19 s on 2026-09-22, ~140 s for
+                        # a region-wide food fetch on 2026-09-27), and the query
+                        # gives Overpass only `[timeout:60]` for its own
+                        # execution. httpfs aborts a read after 30 s by default
+                        # and its retries re-enter that same wall, so the fetch
+                        # died after ~2.4 min = 4 attempts x 30 s (analysis run
+                        # 107), and one HTTP response came back malformed —
+                        # "Server sent back more data than expected" — which is
+                        # what the retries are for. 900 s covers the whole
+                        # measured spread several times over; 5 attempts spaced
+                        # 10/20/40/80 s bound a mirror that never answers to
+                        # ~76 min instead of the hours an unbounded backoff chain
+                        # would stall for (the analysis task's own soft limit is
+                        # 14 h).
+                        "http_timeout": 900,
+                        "http_retries": 4,
+                        "http_retry_wait_ms": 10000,
+                        "http_retry_backoff": 2,
                     },
                     secrets=[
                         {

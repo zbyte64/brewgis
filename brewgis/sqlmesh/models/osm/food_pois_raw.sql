@@ -16,13 +16,10 @@ MODEL (
 
 -- NOTE: Audits intentionally omitted (gateway duckdb); the region's
 -- food_pois_local audits the row count that reaches the analysis.
-
--- pre hooks
--- Reading the DuckDB VIEW executes the Overpass request, and httpfs gives it
--- 30 s per attempt by default — shorter than this fetch's response time (~2
--- minutes; see macros/overpass_fetch.py OVERPASS_URL). Raised for the session
--- doing the read; cache_httpfs serves the response from disk afterwards.
-  SET http_timeout = 900;
+--
+-- Reading the DuckDB VIEW is what executes the Overpass request, so it needs the
+-- gateway-wide httpfs timeout and retries (config.py connector_config) rather
+-- than a SET here — see osm/food_pois_duckdb.sql.
 
 -- Food outlets — bridge model that materializes the DuckDB Overpass VIEW into a
 -- PostGIS-accessible table.

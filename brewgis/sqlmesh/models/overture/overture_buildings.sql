@@ -24,14 +24,13 @@ MODEL (
 --
 -- Source CRS: CRS84 (lon/lat axis). Overture Maps GeoParquet via S3 httpfs.
 -- ST_Transform with always_xy=true ensures (lon,lat) input axis order.
-
--- Increase the maximum number of network retries (Default is usually 3)
-SET http_retries = 10;
-
--- Change the network timeout limit (e.g., to 30 seconds)
-SET http_timeout = 30;
-SET http_retry_wait_ms = 1000;
-SET httpfs_connection_caching = true;
+--
+-- The httpfs timeout, retry and connection-caching settings this model used to
+-- SET inline now come from the gateway's connector_config (config.py): a SET in
+-- a model body binds the thread-local connection that executed it, so it both
+-- fails to scope itself to this model and leaks to whatever runs next on that
+-- thread — a 30 s read timeout set here is what an Overpass fetch scheduled
+-- later on the same connection inherited.
 
 SELECT
   ST_Transform(geometry, 'CRS84', 'EPSG:3857', true) AS geometry,
