@@ -140,7 +140,7 @@ class TestScenarioProfiles:
         """Every parameter is baked into the profile — the scenario's own value
         where it has one, the declared default otherwise — so the rendered model
         is self-contained rather than reading a config variable."""
-        analyzed_scenario.analysis_params = {"transport_circuity_factor": 1.35}
+        analyzed_scenario.analysis_params = {"transport_truck_factor": 0.05}
         analyzed_scenario.save(update_fields=["analysis_params"])
 
         (profile,) = [
@@ -150,8 +150,10 @@ class TestScenarioProfiles:
         ]
 
         assert {param.name for param in ANALYSIS_PARAMETERS} <= set(profile)
-        assert profile["transport_circuity_factor"] == 1.35
+        assert profile["transport_truck_factor"] == 0.05
         assert profile["transport_intrazonal_friction"] == 0.15
+        # The scenario type travels as a value: core_end_state branches on it.
+        assert profile["scenario_type"] == analyzed_scenario.scenario_type
         assert profile["model_table"] == "vmt"
 
 

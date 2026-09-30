@@ -709,6 +709,27 @@
     assessor_use_code: Assessor use code; empty, the v1 table carries none.
     residential_irrigated_area: Residential irrigated area from the v1 source (acres).
     commercial_irrigated_area: Non-residential irrigated area from the v1 source (acres).
+    du_detsf_ll: Dwelling units in large-lot detached single-family built forms from the v1 source (units).
+    du_detsf_sl: Dwelling units in small-lot detached single-family built forms from the v1 source (units).
+    du_attsf: Dwelling units in attached single-family built forms from the v1 source (units).
+    du_mf2to4: Dwelling units in 2-4 unit multifamily built forms from the v1 source (units).
+    du_mf5p: Dwelling units in 5+ unit multifamily built forms from the v1 source (units).
+    emp_retail_services: Employment in retail services from the v1 source (jobs).
+    emp_other_services: Employment in other services from the v1 source (jobs).
+    emp_restaurant: Employment in restaurants from the v1 source (jobs).
+    emp_accommodation: Employment in accommodation from the v1 source (jobs).
+    emp_arts_entertainment: Employment in arts and entertainment from the v1 source (jobs).
+    emp_office_services: Employment in office services from the v1 source (jobs).
+    emp_medical_services: Employment in medical services from the v1 source (jobs).
+    emp_public_admin: Employment in public administration from the v1 source (jobs).
+    emp_education: Employment in education from the v1 source (jobs).
+    emp_manufacturing: Employment in manufacturing from the v1 source (jobs).
+    emp_wholesale: Employment in wholesale trade from the v1 source (jobs).
+    emp_transport_warehousing: Employment in transport and warehousing from the v1 source (jobs).
+    emp_utilities: Employment in utilities from the v1 source (jobs).
+    emp_construction: Employment in construction from the v1 source (jobs).
+    emp_agriculture: Employment in agriculture from the v1 source (jobs).
+    emp_military: Employment in military uses from the v1 source (jobs).
   columns:
     parcel_id: BIGINT
     id_source: VARCHAR(64)
@@ -728,4 +749,25 @@
     assessor_use_code: VARCHAR(32)
     residential_irrigated_area: DOUBLE PRECISION
     commercial_irrigated_area: DOUBLE PRECISION
+    du_detsf_ll: DOUBLE PRECISION
+    du_detsf_sl: DOUBLE PRECISION
+    du_attsf: DOUBLE PRECISION
+    du_mf2to4: DOUBLE PRECISION
+    du_mf5p: DOUBLE PRECISION
+    emp_retail_services: DOUBLE PRECISION
+    emp_other_services: DOUBLE PRECISION
+    emp_restaurant: DOUBLE PRECISION
+    emp_accommodation: DOUBLE PRECISION
+    emp_arts_entertainment: DOUBLE PRECISION
+    emp_office_services: DOUBLE PRECISION
+    emp_medical_services: DOUBLE PRECISION
+    emp_public_admin: DOUBLE PRECISION
+    emp_education: DOUBLE PRECISION
+    emp_manufacturing: DOUBLE PRECISION
+    emp_wholesale: DOUBLE PRECISION
+    emp_transport_warehousing: DOUBLE PRECISION
+    emp_utilities: DOUBLE PRECISION
+    emp_construction: DOUBLE PRECISION
+    emp_agriculture: DOUBLE PRECISION
+    emp_military: DOUBLE PRECISION
   gateway: postgis

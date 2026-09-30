@@ -22,8 +22,9 @@ MODEL (
 -- H1 — Physical Activity (MET-hours)
 --
 -- Computes metabolic equivalent (MET) hours from active transportation
--- (walking and cycling) using mode choice trip data and trip distribution
--- distances.
+-- (walking and cycling) using mode choice trip data and the parcel trip length
+-- (``trip_lengths``: the region's reference length where it has one, else the
+-- gravity fallback scaled to a realistic regional mean).
 --
 -- Formula:
 --   MET-hours = trips x (distance_km / speed_kmh) x MET
@@ -41,12 +42,12 @@ WITH mode_data AS (
         mc.trips_bike AS bike_trips,
         mc.trips_auto AS auto_trips,
         mc.trips_transit AS transit_trips,
-        td.avg_trip_length_km,
+        tl.avg_trip_length_km,
         es.pop,
         es.geometry
     FROM @{scenario_schema}.mode_choice AS mc
-    LEFT JOIN @{scenario_schema}.trip_distribution AS td
-        ON mc.parcel_id = td.parcel_id
+    LEFT JOIN @{scenario_schema}.trip_lengths AS tl
+        ON mc.parcel_id = tl.parcel_id
     LEFT JOIN @{scenario_schema}.core_end_state AS es
         ON mc.parcel_id = es.parcel_id
 )

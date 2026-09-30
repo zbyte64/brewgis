@@ -513,6 +513,25 @@ class AnalysisParameter:
     modules: tuple[str, ...]
 
 
+# The modules whose trip lengths come out of the ``trip_lengths`` support model:
+# the two that read its table outright (``vmt``, ``physical_activity``) and every
+# module downstream of them, so the parameter shows on each run that is affected
+# by it. ``internal_capture`` is deliberately absent even though its sibling
+# ``transport_use_network_distance`` lists it: that option moves
+# ``trip_distribution``'s own length, which internal capture reads, while these
+# two parameters only move ``trip_lengths``.
+TRIP_LENGTH_MODULES: tuple[str, ...] = (
+    "trip_distribution",
+    "vmt",
+    "physical_activity",
+    "transport_ghg",
+    "total_ghg",
+    "health_impacts",
+    "vmt_fee",
+    "scenario_summary",
+)
+
+
 # The parameters consumed by ``sqlmesh/models/analysis/**``. These used to be
 # SQLMesh config variables (settable only in ``sqlmesh/config.py``); they are now
 # per-scenario values carried in the model blueprints — this registry is the
@@ -655,8 +674,24 @@ ANALYSIS_PARAMETERS: tuple[AnalysisParameter, ...] = (
     AnalysisParameter("transport_bike_beta_design", 0.20, "float", ("mode_choice",)),
     AnalysisParameter("transport_bike_beta_hhsize", -0.6, "float", ("mode_choice",)),
     AnalysisParameter("transport_bike_beta_veh", -0.9, "float", ("mode_choice",)),
-    # VMT
-    AnalysisParameter("transport_circuity_factor", 1.2, "float", ("vmt",)),
+    # VMT — the truck factor is UrbanFootprint's ``truck_adjustment_factor``
+    # (``vmt_updater_tool.py``), applied on top of the daily VMT as
+    # ``vmt_daily_w_trucks``.
+    AnalysisParameter("transport_truck_factor", 0.031, "float", ("vmt",)),
+    # Trip length — where a region's one-way trip length comes from. The
+    # ``trip_lengths`` support model reads the table named here when a scenario
+    # sets one (SACOG's SACSIM reference zones, restored from the source dump
+    # and pointed at by ``import_sacog_demo``); an empty value is the fallback —
+    # the gravity model's own spatial gradient, rescaled to
+    # ``transport_target_avg_trip_length_km`` so any region lands on a realistic
+    # regional mean instead of the ~1 km a pure centroid distribution produces.
+    AnalysisParameter("transport_trip_length_table", "", "str", TRIP_LENGTH_MODULES),
+    AnalysisParameter(
+        "transport_target_avg_trip_length_km",
+        6.42,
+        "float",
+        TRIP_LENGTH_MODULES,
+    ),
     # Network distance — trip_distribution's gravity model takes road-network
     # zone distances (network_zone_distance) instead of crow-flies distances.
     # Shown on every module downstream of trip length; mode_choice reads only

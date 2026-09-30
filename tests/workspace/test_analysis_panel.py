@@ -97,7 +97,7 @@ class TestAnalysisModuleForm(TestCase):
         vmt_form = AnalysisModuleForm(
             workspace=self.workspace, scenario=self.scenario, module="vmt"
         )
-        assert "transport_circuity_factor" in vmt_form.fields
+        assert "transport_truck_factor" in vmt_form.fields
         assert "crop_yield_per_acre" not in vmt_form.fields
         # The study-area boundary and friction belong to the internal-capture
         # model that reads them, not to vmt, whose chain does not include it.
@@ -111,16 +111,16 @@ class TestAnalysisModuleForm(TestCase):
         )
         assert "transport_study_area_geometry" in form.fields
         assert "transport_intrazonal_friction" in form.fields
-        assert "transport_circuity_factor" not in form.fields
+        assert "transport_truck_factor" not in form.fields
 
     def test_parameter_fields_initialize_from_the_scenario(self):
         """Reopening a form shows the scenario's stored value, not the default."""
-        self.scenario.analysis_params = {"transport_circuity_factor": 1.35}
+        self.scenario.analysis_params = {"transport_truck_factor": 0.05}
         self.scenario.save(update_fields=["analysis_params"])
         form = AnalysisModuleForm(
             workspace=self.workspace, scenario=self.scenario, module="vmt"
         )
-        assert form.fields["transport_circuity_factor"].initial == 1.35
+        assert form.fields["transport_truck_factor"].initial == 0.05
         # An unset parameter falls back to its registry default.
         capture_form = AnalysisModuleForm(
             workspace=self.workspace, scenario=self.scenario, module="internal_capture"

@@ -371,7 +371,7 @@ def test_vmt_formulas(triple):
     # Trip length is only converted; auto trips pass through unchanged.
     assert np.allclose(trip_mi, avg_trip_length_km * 0.621371, atol=1e-9)
     assert np.allclose(auto_out, auto_trips, atol=1e-9)
-    assert np.allclose(vmt, auto_trips * trip_mi * 1.2, atol=1e-3)
+    assert np.allclose(vmt, auto_trips * trip_mi, atol=1e-3)
     mask = pop > 0
     if np.any(mask):
         assert np.allclose(vmt[mask] / pop[mask], vmt_pc[mask], atol=1e-6)

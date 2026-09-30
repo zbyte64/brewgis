@@ -52,6 +52,10 @@ class TestPlanSelection:
         )
 
         (plan,) = plans
+        # vmt's trip-length source is a support model, not a module: a plan that
+        # never selects it fails with a missing relation the first time a
+        # scenario runs vmt (see ``_trip_length_input``).
+        assert "brewgis.ascn7.trip_lengths" in plan["select"]
         assert plan["restate_models"] == ["brewgis.ascn7.core_end_state"]
         # Restating makes SQLMesh read its models from state, which is how
         # trip_generation/vmt — never built for this scenario — used to be

@@ -42,6 +42,14 @@ HORIZON_YEAR = 2050
 V1_BASE_TABLE = "public.elk_grove_base_canvas"
 BASE_CANVAS_TABLE = "base_canvas_v1"
 
+# SACSIM's zone-to-zone trip lengths, restored from the v1 source dump: the
+# reference data UrbanFootprint reads instead of deriving a trip length. The
+# scenario's ``trip_lengths`` model joins each parcel centroid to its zone and
+# uses that zone's mean one-way length (6 zones of round-trip miles / 6 / 2),
+# which is what makes this region's VMT comparable with UF's. Every other region
+# leaves ``transport_trip_length_table`` empty and gets the gravity fallback.
+TRIP_LENGTH_TABLE = "public.elk_grove_vmt_base_trip_lengths"
+
 SCENARIO_SLUG = "base"
 
 CONSTRAINT_LAYER_TABLES: dict[str, dict[str, str]] = {
@@ -247,6 +255,17 @@ class Command(BaseCommand):
             self.stdout.write(f"  ✓ Created scenario: {SCENARIO_NAME} ({BASE_YEAR})")
         else:
             self.stdout.write(f"  ✓ Scenario already exists: {SCENARIO_NAME}")
+
+        # The region's SACSIM reference trip lengths, so the scenario's
+        # ``trip_lengths`` model reads real zone lengths rather than the gravity
+        # fallback (see TRIP_LENGTH_TABLE). Region configuration lives in this
+        # region's loader: the model itself stays region-agnostic.
+        scenario.analysis_params = {
+            **(scenario.analysis_params or {}),
+            "transport_trip_length_table": TRIP_LENGTH_TABLE,
+        }
+        scenario.save(update_fields=["analysis_params"])
+
         # Register constraint layers
         constraint_count = self._register_constraint_layers(ws)
         self.stdout.write(f"  ✓ Registered {constraint_count} constraint layers")

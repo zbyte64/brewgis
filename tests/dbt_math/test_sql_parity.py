@@ -252,17 +252,19 @@ def test_vmt_parity(parity_scenario: str) -> None:
 
     v_ref, vpc_ref, tl_ref, _ = compute_vmt(auto_trips, avg_trip_length_km, pop)
 
-    # VMT now reads the mode-choice auto trips and the trip-distribution
-    # average trip length.
+    # VMT reads the mode-choice auto trips and the ``trip_lengths`` model — the
+    # region's reference zone length where it has one, else the scaled gravity
+    # length — not ``trip_distribution``'s own gravity length.
     mc_df = pd.DataFrame({"parcel_id": pid, "trips_auto": auto_trips})
-    td_df = pd.DataFrame({"parcel_id": pid, "avg_trip_length_km": avg_trip_length_km})
-    es_df = _core_es_df(pid, pop=pop)
+    tl_df = pd.DataFrame({"parcel_id": pid, "avg_trip_length_km": avg_trip_length_km})
+    # vmt reads ``es.hh`` for its per-household columns.
+    es_df = _core_es_df(pid, pop=pop, hh=np.full(len(pid), 40.0))
 
     result = run_model(
         "vmt",
         upstream={
             "mode_choice": mc_df,
-            "trip_distribution": td_df,
+            "trip_lengths": tl_df,
             "core_end_state": es_df,
         },
         scenario_schema=parity_scenario,

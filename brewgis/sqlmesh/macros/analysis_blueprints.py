@@ -306,6 +306,11 @@ def _scenario_profiles() -> list[dict[str, Any]]:
         profile: dict[str, Any] = {
             "scenario_pk": int(scenario.pk),
             "scenario_id": scenario.slug,
+            # The scenario's type as a blueprint *value* ("base"/"alternative"):
+            # a BASE scenario changes nothing, so its end state carries the base
+            # canvas's own pop/hh/du/emp and sector mix rather than recomputing
+            # them from the built form (see core_end_state.sql).
+            "scenario_type": scenario.scenario_type,
             "scenario_schema": f"{MODEL_SCHEMA_PREFIX}{scenario.pk}",
             "result_schema": RESULT_SCHEMA_TEMPLATE.format(pk=scenario.pk),
             "parcel_table": parcel_table,

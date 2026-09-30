@@ -487,19 +487,21 @@ def compute_vmt(
     auto_trips: np.ndarray,
     avg_trip_length_km: np.ndarray,
     population: np.ndarray,
-    circuity_factor: float = 1.2,
 ) -> tuple[np.ndarray, np.ndarray, np.ndarray, np.ndarray]:
     """SQL: ``vmt`` — vehicle miles traveled from mode-choice auto trips and the
-    trip-distribution average trip length.
+    parcel one-way trip length.
 
-    ``avg_trip_length_km`` is converted to miles with the km -> mi constant the
-    SQL model hardcodes; ``vmt_total`` is then trips x miles x circuity.
+    ``avg_trip_length_km`` is the ``trip_lengths`` model's value — the region's
+    reference zone length where it has one, else the gravity length scaled to
+    the regional target — converted to miles with the km -> mi constant the SQL
+    model hardcodes; ``vmt_total`` is then trips x miles. There is no circuity
+    factor on top of it: a reference length is already a network distance.
 
     Returns (vmt_total, vmt_per_capita, avg_trip_length_mi, auto_trips).
     """
     auto_trips = np.asarray(auto_trips, dtype=float)
     avg_trip_length_km = np.asarray(avg_trip_length_km, dtype=float)
-    vmt = auto_trips * avg_trip_length_km * _MI_PER_KM * circuity_factor
+    vmt = auto_trips * avg_trip_length_km * _MI_PER_KM
     vmt_per_cap = np.where(population > 0, vmt / population, 0.0)
     trip_len_mi = avg_trip_length_km * _MI_PER_KM
     return vmt, vmt_per_cap, trip_len_mi, auto_trips

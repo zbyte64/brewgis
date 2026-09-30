@@ -103,7 +103,9 @@ via the `**variables` dict when calling `config_factory()` or via plan overrides
 | `transport_bike_beta_design` | `0.20` | mode_choice | ln(intersections per sq mi) coefficient. Reads the all-road `intersection_density`: the canvas materializes no bike-lane/path density (`path_intersection_density` exists but is not bridged into a base canvas) |
 | `transport_bike_beta_hhsize` | `-0.6` | mode_choice | ln(household size) coefficient |
 | `transport_bike_beta_veh` | `-0.9` | mode_choice | ln(vehicles per capita) coefficient |
-| `transport_circuity_factor` | `1.2` | vmt | Road network directness factor |
+| `transport_truck_factor` | `0.031` | vmt | UrbanFootprint's `truck_adjustment_factor`, applied to the daily VMT as `vmt_daily_w_trucks` (and its annual form) |
+| `transport_trip_length_table` | `''` | vmt, physical_activity (and the modules downstream of them) | `schema.table` of the region's reference trip-length zones (`wkb_geometry` + the six `productions_*`/`attractions_*` round-trip-mile columns). SACOG points at `public.elk_grove_vmt_base_trip_lengths`; empty means the gravity fallback |
+| `transport_target_avg_trip_length_km` | `6.42` | vmt, physical_activity (and the modules downstream of them) | Regional mean one-way trip length (km) the gravity fallback is rescaled to; 6.42 km = 3.99 mi, SACSIM's regional one-way mean |
 | `transport_use_network_distance` | `False` | trip_distribution (and every module downstream of trip length) | Gravity model uses road-network distance between 2 km grid zones (`network_zone_distance`, pgRouting over the region's Overture drivable graph) instead of crow-flies distance |
 | `transport_ghg_co2_per_mile` | `0.411` | transport_ghg | kg CO2e/mi (EPA fleet average) |
 | `transport_ghg_days_per_year` | `365.0` | transport_ghg | Days of travel the annual emissions column (`co2e_annual_kg`) stands for; the yearly building/water/health models read that column |
@@ -431,6 +433,29 @@ distance preprocessor is not wired into any pipeline.
 not been formally calibrated. The `b=2.0` exponent is a standard gravity-model
 default, and the `emp_weight`/`du_weight` ratio is derived from trip generation
 attraction factors without local calibration.
+
+**Trip length** — the gravity model's own `avg_trip_length_km` is an artifact of
+parcel size and density: SACOG's canvas lands on ~1.2 km one-way against
+SACSIM's ~6.4 km, and VMT is proportional to it. `models/python/trip_lengths.py`
+is therefore the model every trip-length consumer reads (`vmt`,
+`physical_activity`):
+
+* a scenario that names `transport_trip_length_table` (SACOG's SACSIM reference
+  zones, restored from the source dump and set by `import_sacog_demo`) gets the
+  zone each parcel centroid falls in — the mean of that zone's six round-trip
+  lengths, halved and converted to km, i.e. a real network distance — rescaled
+  by the ratio of the table's regional mean to the parcels' own mean. Assigning
+  each parcel its zone's length weights the zones by parcel density, which
+  shrinks the regional mean (SACOG: 5.76 km against the table's 6.42 km); the
+  rescale keeps the table's spatial structure and puts the region on its
+  published mean;
+* a region without such a table gets the gravity gradient rescaled so its
+  regional mean equals `transport_target_avg_trip_length_km` (6.42 km), which
+  keeps the *shape* (near-employment parcels short, rural long) and fixes only
+  the level.
+
+`trip_distribution` itself is unchanged: it is what produces the gradient, and
+`internal_capture` still reads its own length.
 
 ### 3.2 `mode_choice.sql` — UrbanFootprint hierarchical sigmoid (T3)
 

@@ -322,6 +322,12 @@ def run_modules_sync(
     # it buffers the scenario's own end state, so a rerun has to recompute it.
     if "mode_choice" in ordered:
         selects += _quarter_mile_context_input(scenario_id)
+    # trip_lengths is the trip-length source ``vmt`` and ``physical_activity``
+    # read, named here for the same reason as quarter_mile_context — and
+    # restated with the run, because it derives from the scenario's own trip
+    # distribution and end state.
+    if "vmt" in ordered or "physical_activity" in ordered:
+        selects += _trip_length_input(scenario_id)
     # Computed before the network inputs join the selection: those are never
     # restated (see ``_network_distance_inputs``).
     restate = model_fqns_built_in("prod", selects) or None
@@ -464,6 +470,26 @@ def _quarter_mile_context_input(scenario_id: int) -> list[str]:
     have changed.
     """
     return [module_registry.model_fqn("quarter_mile_context", scenario_id)]
+
+
+def _trip_length_input(scenario_id: int) -> list[str]:
+    """The trip-length support model the vmt / physical-activity selectors do not name.
+
+    ``trip_lengths`` resolves each parcel's one-way trip length from the
+    region's reference zones — or, for a region that ships none, from the
+    gravity model's gradient rescaled to the target regional mean — and ``vmt``
+    and ``physical_activity`` read it instead of ``trip_distribution``'s own
+    length. It is not an analysis module (no ``MODULE_SQLMESH_SELECTORS``
+    entry), and nothing else in a plan pulls it in: a model added to the project
+    is only planned when a selector names it (``relation "ascn<id>.trip_lengths"
+    does not exist`` without this — the failure ``_quarter_mile_context_input``
+    documents).
+
+    Named while the restatement set is still being computed, so a rerun
+    recomputes it: its inputs are the scenario's own trip distribution and end
+    state.
+    """
+    return [module_registry.model_fqn("trip_lengths", scenario_id)]
 
 
 def _food_access_inputs(region: str) -> list[str]:
