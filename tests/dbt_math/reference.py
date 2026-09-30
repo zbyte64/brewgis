@@ -14,7 +14,7 @@ All functions are pure: no I/O, no mutations.  numpy arrays are assumed
 to be non-None and have matching lengths (validated by contracts).
 """
 # mypy: ignore-errors
-# ruff: noqa: ANN201, ARG005, PLR0913, ERA001
+# ruff: noqa: ARG005, PLR0913, PLR0917, ERA001
 
 from __future__ import annotations
 
@@ -184,60 +184,115 @@ def compute_impervious_surface(
 #  Mode Choice  (mode_choice.sql)
 # ══════════════════════════════════════════════════════════════════════
 
-# Untuned literature defaults, identical to the SQL model's literals
-# (docs/sqlmesh-parameters.md §3.2).
-_MC_ASC_TRANSIT = -2.0
-_MC_ASC_WALK = -1.5
-_MC_ASC_BIKE = -2.5
-_MC_BETA_DENSITY = 0.15
-_MC_BETA_DESIGN_WALK = 0.05
-_MC_BETA_TRANSIT_DIST = 0.02
+# The bike sigmoid's five coefficients are the scenario's ``transport_bike_*``
+# parameters; these are ``ANALYSIS_PARAMETERS``' defaults, which is what a
+# parity run renders when it passes no variables of its own. Keyed by parameter
+# name because that is what the drift guard in
+# ``tests/workspace/test_module_registry.py`` compares them against — this
+# module is deliberately Django-free, so it cannot read the registry itself.
+# ``transport_vehicles_per_capita`` is the same kind of default and travels as
+# an explicit argument instead, since the model substitutes it in one place.
+BIKE_PARAMETER_DEFAULTS: dict[str, float] = {
+    "transport_bike_asc": -6.5,
+    "transport_bike_beta_density": 0.20,
+    "transport_bike_beta_design": 0.20,
+    "transport_bike_beta_hhsize": -0.6,
+    "transport_bike_beta_veh": -0.9,
+}
+
+# The two link helpers the hierarchical sigmoid needs. Both are shared by the
+# reference and the SQL model's intent: the guards are what make ln(0) a
+# skipped term rather than a -infinity, and 1/(1+exp(-x)) is the same number as
+# exp(x)/(exp(x)+1) without overflowing.
 
 
-@deal.pre(
-    lambda trips_outbound, density, intersection_density, transit_access: (
-        len(trips_outbound)
-        == len(density)
-        == len(intersection_density)
-        == len(transit_access)
+def _gln(x: np.ndarray) -> np.ndarray:
+    """The reference's ``if x > 0: term * log(x) else: 0.0`` — a guarded ln."""
+    x = np.asarray(x, dtype=float)
+    positive = x > 0
+    return np.where(positive, np.log(np.where(positive, x, 1.0)), 0.0)
+
+
+def _sigma(x: np.ndarray) -> np.ndarray:
+    """Logistic link: ``1 / (1 + exp(-x))``."""
+    return 1.0 / (1.0 + np.exp(-np.asarray(x, dtype=float)))
+
+
+def _mode_choice_inputs_aligned(
+    trips_hbw: np.ndarray,
+    trips_hbo: np.ndarray,
+    trips_nhb: np.ndarray,
+    area_gross_acres: np.ndarray,
+    intersection_density: np.ndarray,
+    pop: np.ndarray,
+    hh: np.ndarray,
+    emp: np.ndarray,
+    household_size: np.ndarray,
+    qmb_pop: np.ndarray,
+    qmb_emp: np.ndarray,
+    qmb_res_acres: np.ndarray,
+    qmb_emp_acres: np.ndarray,
+    qmb_mixed_acres: np.ndarray,
+    emp_1mile: np.ndarray,
+    vehicles_per_capita: float,
+) -> bool:
+    """``@deal.pre``: purpose trips are counts, and every input is per-parcel.
+
+    Named rather than a lambda so the sixteen-parameter formatter keeps it
+    readable (a lambda's parameter list cannot carry the magic trailing comma
+    that would otherwise force one name per line).
+    """
+    length = len(trips_hbw)
+    return all(
+        len(array) == length
+        for array in (
+            trips_hbo,
+            trips_nhb,
+            area_gross_acres,
+            intersection_density,
+            pop,
+            hh,
+            emp,
+            household_size,
+            qmb_pop,
+            qmb_emp,
+            qmb_res_acres,
+            qmb_emp_acres,
+            qmb_mixed_acres,
+            emp_1mile,
+        )
+    ) and all(
+        np.all(_c(np.asarray(trips, dtype=float)) >= 0)
+        for trips in (trips_hbw, trips_hbo, trips_nhb)
     )
-)
-@deal.pre(
-    lambda trips_outbound, density, intersection_density, transit_access: np.all(
-        density >= 0
-    )
-)
-@deal.pre(
-    lambda trips_outbound, density, intersection_density, transit_access: np.all(
-        intersection_density >= 0
-    )
-)
-@deal.pre(
-    lambda trips_outbound, density, intersection_density, transit_access: np.all(
-        trips_outbound >= 0
-    )
-)
-@deal.post(lambda result: len(result) == 8)
-@deal.post(lambda result: np.all(result[4] >= 0) and np.all(result[7] >= 0))
+
+
+@deal.pre(_mode_choice_inputs_aligned)
+@deal.post(lambda result: len(result) == 10)
+@deal.post(lambda result: np.all(result[0] >= 0) and np.all(result[2] >= 0))
 @deal.post(
     lambda result: np.all(
-        np.abs(result[4] + result[5] + result[6] + result[7] - 1.0) < 1e-6
-    )
-)
-@deal.post(lambda result: np.all(result[0] >= 0) and np.all(result[3] >= 0))
-@deal.ensure(
-    lambda trips_outbound, density, intersection_density, transit_access, result: (
-        np.all(
-            np.abs(result[0] + result[1] + result[2] + result[3] - trips_outbound)
-            < 1e-6
-        )
+        np.isnan(result[5])
+        | ((result[5] + result[6] + result[7] + result[8] + result[9]) >= 1.0 - 1e-9)
     )
 )
 def compute_mode_choice(
-    trips_outbound: np.ndarray,
-    density: np.ndarray,
+    trips_hbw: np.ndarray,
+    trips_hbo: np.ndarray,
+    trips_nhb: np.ndarray,
+    area_gross_acres: np.ndarray,
     intersection_density: np.ndarray,
-    transit_access: np.ndarray,
+    pop: np.ndarray,
+    hh: np.ndarray,
+    emp: np.ndarray,
+    household_size: np.ndarray,
+    qmb_pop: np.ndarray,
+    qmb_emp: np.ndarray,
+    qmb_res_acres: np.ndarray,
+    qmb_emp_acres: np.ndarray,
+    qmb_mixed_acres: np.ndarray,
+    emp_1mile: np.ndarray,
+    vehicles_per_capita: float,
 ) -> tuple[
     np.ndarray,
     np.ndarray,
@@ -247,55 +302,171 @@ def compute_mode_choice(
     np.ndarray,
     np.ndarray,
     np.ndarray,
+    np.ndarray,
+    np.ndarray,
 ]:
-    """SQL: ``mode_choice`` — multinomial logit mode split per parcel.
+    """SQL: ``mode_choice`` — UrbanFootprint's hierarchical sigmoid split.
 
-    Auto is the reference alternative (``u_auto = 0``); the softmax subtracts the
-    largest utility before exponentiating, matching the SQL model's ``GREATEST``.
+    Mirrors the SQL model's purpose-by-purpose sequence: internal capture,
+    then walk / transit / bike on what the capture left, with auto as the
+    residual. The coefficients are UrbanFootprint's published log-odds
+    constants (``vmt_model_constants.py``); the transit-accessibility terms
+    (``emp30m_transit``, ``hh_within_quarter_mile_trans``) are dropped in both
+    because BrewGIS has no transit network to source them.
+
+    ``vehicles_per_capita`` is the single scalar knob (the scenario's
+    ``transport_vehicles_per_capita``); the bike sigmoid's five coefficients
+    are the scenario's ``transport_bike_*`` parameters, taken from
+    ``BIKE_PARAMETER_DEFAULTS``.
 
     Returns (trips_auto, trips_transit, trips_walk, trips_bike,
-             share_auto, share_transit, share_walk, share_bike).
+             trips_internal_capture, share_auto, share_transit, share_walk,
+             share_bike, share_internal_capture). A parcel with zero trips has
+             no split to make: its shares are NaN (the SQL side divides by a
+             NULLIF-guarded total) while its trip counts are all zero.
     """
-    if len(trips_outbound) == 0:
+    if len(trips_hbw) == 0:
         empty = np.array([], dtype=float)
-        return (empty, empty, empty, empty, empty, empty, empty, empty)
+        return (empty,) * 10
 
-    trips_outbound = np.asarray(trips_outbound, dtype=float)
-    ln_density = np.log(np.asarray(density, dtype=float) + 1.0)
-    intersection_density = np.asarray(intersection_density, dtype=float)
-    transit_access = np.asarray(transit_access, dtype=float)
+    # The SQL wraps each purpose's trips in COALESCE(..., 0.0); NaN is this
+    # module's sentinel for a NULL the coalesce already replaced.
+    trips_hbw = _c(np.asarray(trips_hbw, dtype=float))
+    trips_hbo = _c(np.asarray(trips_hbo, dtype=float))
+    trips_nhb = _c(np.asarray(trips_nhb, dtype=float))
 
-    u_auto = np.zeros_like(trips_outbound)
-    u_transit = (
-        _MC_ASC_TRANSIT
-        + _MC_BETA_DENSITY * ln_density
-        + _MC_BETA_TRANSIT_DIST * transit_access
+    area_sqmi = _c(np.asarray(area_gross_acres, dtype=float)) / 640.0
+    # intersections per km2 -> per square mile
+    int_sqmi = _c(np.asarray(intersection_density, dtype=float)) * 2.58998811
+    pop_m = _c(np.asarray(pop, dtype=float))
+    emp_cell = _c(np.asarray(emp, dtype=float))
+    emp_1m = _c(np.asarray(emp_1mile, dtype=float))
+    qmb_pop_m = _c(np.asarray(qmb_pop, dtype=float))
+    qmb_emp_m = _c(np.asarray(qmb_emp, dtype=float))
+
+    # hh_avg_size = COALESCE(NULLIF(pop / NULLIF(hh, 0), 0), household_size, 2.577)
+    hh_arr = np.asarray(hh, dtype=float)
+    ratio = np.where(hh_arr != 0, pop_m / np.where(hh_arr != 0, hh_arr, 1.0), np.nan)
+    ratio = np.where(np.isnan(ratio) | (ratio == 0), np.nan, ratio)
+    hs = np.asarray(household_size, dtype=float)
+    hh_size = np.where(~np.isnan(ratio), ratio, np.where(~np.isnan(hs), hs, 2.577))
+
+    veh = float(vehicles_per_capita)
+    # Broadcast: every logit below is a length-n array, so the vehicles term has
+    # to be one too (``np.column_stack`` rejects a 0-d entry).
+    ln_veh = np.full_like(trips_hbw, _gln(np.asarray(veh, dtype=float)))
+
+    # pop+emp per square mile over the quarter-mile acres, and the jobs-vs-
+    # population mix (the reference's tMXD_pop_emp_m_sq / tMXD_jobs_v_pop).
+    pop_emp_sqmi = (
+        (qmb_pop_m + qmb_emp_m)
+        / np.maximum(
+            _c(np.asarray(qmb_res_acres, dtype=float))
+            + _c(np.asarray(qmb_emp_acres, dtype=float))
+            + _c(np.asarray(qmb_mixed_acres, dtype=float)),
+            1e-9,
+        )
+        * 640.0
     )
-    u_walk = (
-        _MC_ASC_WALK
-        + _MC_BETA_DENSITY * ln_density
-        + _MC_BETA_DESIGN_WALK * intersection_density
-    )
-    u_bike = (
-        _MC_ASC_BIKE
-        + _MC_BETA_DENSITY * ln_density
-        + _MC_BETA_DESIGN_WALK * intersection_density
+    mix = np.maximum(
+        1.0
+        - np.abs(0.2 * qmb_pop_m - qmb_emp_m)
+        / np.maximum(0.2 * qmb_pop_m + qmb_emp_m, 1e-9),
+        0.01,
     )
 
-    utilities = np.column_stack([u_auto, u_transit, u_walk, u_bike])
-    exp_u = np.exp(utilities - np.max(utilities, axis=1, keepdims=True))
-    shares = exp_u / np.sum(exp_u, axis=1, keepdims=True)
-    trips_by_mode = trips_outbound.reshape(-1, 1) * shares
+    ln_mix = _gln(mix)
+    ln_area_sqmi = _gln(area_sqmi)
+    ln_int_sqmi = _gln(int_sqmi)
+    ln_hh_size = _gln(hh_size)
+    ln_emp_cell = _gln(emp_cell)
+    ln_pop_emp_sqmi = _gln(pop_emp_sqmi)
+    ln_emp_1m = _gln(emp_1m)
+
+    # One column per purpose: hbw, hbo, nhb.
+    icpm_logit = np.column_stack(
+        [
+            -1.75 + 0.389 * ln_mix - 1.33 * ln_hh_size - 0.99 * ln_veh,
+            -2.43
+            + 0.486 * ln_area_sqmi
+            + 0.399 * ln_mix
+            + 0.385 * ln_int_sqmi
+            - 0.867 * ln_hh_size
+            - 0.59 * ln_veh,
+            -5.32
+            + 0.208 * ln_emp_cell
+            + 0.468 * ln_area_sqmi
+            + 0.638 * ln_int_sqmi
+            - 0.237 * ln_hh_size
+            - 0.163 * ln_veh,
+        ]
+    )
+    wtpm_logit = np.column_stack(
+        [
+            -5.55
+            + 0.226 * ln_mix
+            + 0.385 * ln_emp_1m
+            - 1.57 * ln_hh_size
+            - 1.84 * ln_veh,
+            -10.96
+            - 0.415 * ln_area_sqmi
+            + 0.37 * ln_pop_emp_sqmi
+            + 0.219 * ln_mix
+            + 0.45 * ln_emp_1m
+            - 0.486 * ln_hh_size
+            - 0.768 * ln_veh,
+            -15.09
+            + 0.377 * ln_pop_emp_sqmi
+            + 0.803 * ln_int_sqmi
+            + 0.44 * ln_emp_1m
+            - 0.281 * ln_hh_size
+            - 0.242 * ln_veh,
+        ]
+    )
+    ttpm_logit = np.column_stack(
+        [
+            -8.05 + 1.12 * ln_int_sqmi - 1.14 * ln_hh_size - 1.68 * ln_veh,
+            -6.08 + 0.324 * ln_pop_emp_sqmi - 0.958 * ln_hh_size - 1.09 * ln_veh,
+            -2.69 - 0.34 * ln_veh,
+        ]
+    )
+    btpm_logit = (
+        BIKE_PARAMETER_DEFAULTS["transport_bike_asc"]
+        + BIKE_PARAMETER_DEFAULTS["transport_bike_beta_density"] * ln_pop_emp_sqmi
+        + BIKE_PARAMETER_DEFAULTS["transport_bike_beta_design"] * ln_int_sqmi
+        + BIKE_PARAMETER_DEFAULTS["transport_bike_beta_hhsize"] * ln_hh_size
+        + BIKE_PARAMETER_DEFAULTS["transport_bike_beta_veh"] * ln_veh
+    )
+
+    trips = np.column_stack([trips_hbw, trips_hbo, trips_nhb])
+    icpm = trips * _sigma(icpm_logit)
+    remaining = trips - icpm
+    walk = remaining * _sigma(wtpm_logit)
+    transit = remaining * _sigma(ttpm_logit)
+    bike = remaining * _sigma(btpm_logit)[:, np.newaxis]
+    auto = np.maximum(0.0, remaining - walk - transit - bike)
+
+    trips_auto = auto.sum(axis=1)
+    trips_transit = transit.sum(axis=1)
+    trips_walk = walk.sum(axis=1)
+    trips_bike = bike.sum(axis=1)
+    trips_capture = icpm.sum(axis=1)
+
+    total = trips.sum(axis=1)
+    # NULLIF(total, 0): a zero-trip parcel has no share to compute.
+    denom = np.where(total != 0, total, np.nan)
 
     return (
-        trips_by_mode[:, 0],
-        trips_by_mode[:, 1],
-        trips_by_mode[:, 2],
-        trips_by_mode[:, 3],
-        shares[:, 0],
-        shares[:, 1],
-        shares[:, 2],
-        shares[:, 3],
+        trips_auto,
+        trips_transit,
+        trips_walk,
+        trips_bike,
+        trips_capture,
+        trips_auto / denom,
+        trips_transit / denom,
+        trips_walk / denom,
+        trips_bike / denom,
+        trips_capture / denom,
     )
 
 

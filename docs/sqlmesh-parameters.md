@@ -97,6 +97,12 @@ via the `**variables` dict when calling `config_factory()` or via plan overrides
 | `transport_hbw_pct` | `0.18` | trip_generation | Home-based work trip share |
 | `transport_hbo_pct` | `0.42` | trip_generation | Home-based other trip share |
 | `transport_nhb_pct` | `0.40` | trip_generation | Non-home-based trip share |
+| `transport_vehicles_per_capita` | `0.8` | mode_choice | Vehicles per capita, the hierarchical sigmoid's `tMXD_vehicles_per_capita`. UrbanFootprint's fallback for a parcel whose built form gives no household size; the demo canvas carries no income/worker/age data to predict auto ownership from (a follow-up port of `vmt_auto_ownership_model.py` would) |
+| `transport_bike_asc` | `-6.5` | mode_choice | Bike sigmoid alternative constant — the single knob for bike's overall level |
+| `transport_bike_beta_density` | `0.20` | mode_choice | ln(population + employment per sq mi) coefficient |
+| `transport_bike_beta_design` | `0.20` | mode_choice | ln(intersections per sq mi) coefficient. Reads the all-road `intersection_density`: the canvas materializes no bike-lane/path density (`path_intersection_density` exists but is not bridged into a base canvas) |
+| `transport_bike_beta_hhsize` | `-0.6` | mode_choice | ln(household size) coefficient |
+| `transport_bike_beta_veh` | `-0.9` | mode_choice | ln(vehicles per capita) coefficient |
 | `transport_circuity_factor` | `1.2` | vmt | Road network directness factor |
 | `transport_use_network_distance` | `False` | trip_distribution (and every module downstream of trip length) | Gravity model uses road-network distance between 2 km grid zones (`network_zone_distance`, pgRouting over the region's Overture drivable graph) instead of crow-flies distance |
 | `transport_ghg_co2_per_mile` | `0.411` | transport_ghg | kg CO2e/mi (EPA fleet average) |
@@ -426,24 +432,71 @@ not been formally calibrated. The `b=2.0` exponent is a standard gravity-model
 default, and the `emp_weight`/`du_weight` ratio is derived from trip generation
 attraction factors without local calibration.
 
-### 3.2 `mode_choice.sql` — Multinomial Logit (T3)
+### 3.2 `mode_choice.sql` — UrbanFootprint hierarchical sigmoid (T3)
 
-| Parameter | Default | SQL literal in `mode_choice.sql` | Purpose |
+Mode choice is element-wise (a per-parcel chain of binary logits, no cross-parcel
+aggregation), so it is a plain SQL model rather than a Python one. Each purpose
+(`hbw` / `hbo` / `nhb`) runs UrbanFootprint's own sequence — internal capture,
+then walk, transit and bike on what the capture left — with auto as the residual,
+clamped at zero:
+
+```
+icpm_p    = trips_p * sigma(ICPM_p)
+walk_p    = (trips_p - icpm_p) * sigma(WTPM_p)
+transit_p = (trips_p - icpm_p) * sigma(TTPM_p)
+bike_p    = (trips_p - icpm_p) * sigma(BTPM)
+auto_p    = GREATEST(0, trips_p - icpm_p - walk_p - transit_p - bike_p)
+```
+
+with `sigma(x) = 1 / (1 + exp(-x))`.
+
+**Literals** — UrbanFootprint's published constants
+(`vmt_model_constants.py`), hardcoded in both the model and
+`tests/dbt_math/reference.py`: `cICPM_*_107/108/109/110/112/113/114`,
+`cWTPM_*_121/122/123/124/126/127/128/129`,
+`cTTPM_*_136/137/138/139/140/141/142`. The model's own comment block carries the
+per-purpose expressions. The two transit-accessibility terms
+(`emp30m_transit`, `hh_within_quarter_mile_trans`) are dropped in both: BrewGIS
+has no transit stops or transit network to source them.
+
+**Tunable** (Section 1.8 holds the same table):
+
+| Parameter | Default | SQL literal | Purpose |
 |---|---|---|---|
-| `asc_transit` | `-2.0` | `-2.0` | Alternative-specific constant (transit) |
-| `asc_walk` | `-1.5` | `-1.5` | ASC (walk) |
-| `asc_bike` | `-2.5` | `-2.5` | ASC (bike) |
-| `beta_density` | `0.15` | `0.15` | Density sensitivity coefficient |
-| `beta_design_walk` | `0.05` | `0.05` | Walkability/intersection density sensitivity |
-| `beta_transit_dist` | `0.02` | `0.02` | Transit access sensitivity |
+| `transport_vehicles_per_capita` | `0.8` | `@blueprint_var(...)` | Vehicles per capita |
+| `transport_bike_asc` | `-6.5` | `@blueprint_var(...)` | Bike sigmoid constant |
+| `transport_bike_beta_density` | `0.20` | `@blueprint_var(...)` | ln(pop + emp per sq mi) |
+| `transport_bike_beta_design` | `0.20` | `@blueprint_var(...)` | ln(intersections per sq mi) |
+| `transport_bike_beta_hhsize` | `-0.6` | `@blueprint_var(...)` | ln(household size) |
+| `transport_bike_beta_veh` | `-0.9` | `@blueprint_var(...)` | ln(vehicles per capita) |
 
-Mode choice is element-wise (a per-parcel logit, no cross-parcel aggregation),
-so it is a plain SQL model rather than a Python one. Auto is the reference
-alternative (`u_auto = 0`).
+Bike is BrewGIS's own purpose-agnostic sigmoid (the reference has no bike model):
+`transport_bike_asc` is the knob that sets its level.
 
-**History**: These are **untuned literature defaults** from standard travel
-demand models (not calibrated to Sacramento region). They are high-priority
-candidates for sensitivity analysis.
+The context terms the logits read — land-use mix, quarter-mile population /
+employment / acreage, one-mile employment, population and employment per square
+mile — come from the `quarter_mile_context` **support model**, which buffers each
+parcel's projected centroid (`core_end_state.centroid_local`, GiST-indexed) at
+403 m and 1609 m. It publishes no result view and is not an analysis module, so
+`module_registry` does not list it; `analysis/pipeline.py` selects it explicitly
+for a `mode_choice` run (`_quarter_mile_context_input`), because a model is only
+planned when a selector names it.
+
+A parcel with no trips has no split to make: the shares divide by a
+`NULLIF`-guarded total, so every share is NULL there rather than a fabricated
+100 % auto, and `assert_mode_share_sum` skips those rows.
+
+**History**: the previous model was a four-way softmax over untuned literature
+defaults (`asc_transit = -2.0`, `asc_walk = -1.5`, `asc_bike = -2.5`,
+`beta_density = 0.15`, `beta_design_walk = 0.05`, `beta_transit_dist = 0.02`)
+applied to a per-km² intersection density, which put a dense parcel's walk
+utility out of range: it produced 26.9 % auto / 50.6 % walk for the Elk Grove
+demo, an implausible split (the reference implementation lands on 84.5 % auto for
+the same area, see `planning/uf_vmt_comparison_20260929.md`). The port above
+lands on 83.3 % auto / 9.2 % walk / 4.5 % transit / 1.8 % bike / 1.2 % internal
+capture for that scenario. Note that the four sigmoids are applied
+independently, so they can over-claim on a pathological parcel; auto's zero clamp
+absorbs it, and the shares sum to exactly 1 wherever the clamp does not bind.
 
 ---
 
@@ -593,7 +646,7 @@ at aggregate and distributional levels. Key diagnostic metrics:
 | Dasymetric weight fallbacks | `parcel_dasymetric_weights.sql` (lot fractions, int-density divisor) |
 | Sigmoid SL/LL split | `parcel_bft_tier0_landuse.sql` (0.04 steepness, 225 midpoint) |
 | Gravity model parameters | `models/python/_gravity_model.py` (b, emp_weight, du_weight) |
-| Mode choice coefficients | `models/analysis/transport/mode_choice.sql` (asc_*, beta_*) |
+| Mode choice parameters | Config: `transport_vehicles_per_capita`, `transport_bike_*`; published log-odds literals live in `models/analysis/transport/mode_choice.sql` |
 | Per-category defaults | `seeds/calibration_parameters.csv` |
 | Dasymetric weights per category | `seeds/dasymetric_weights.csv` |
 | KNN imputation parameters | `parcel_bft_tier3_knn.sql`, `parcel_footprint_imputed.sql` |

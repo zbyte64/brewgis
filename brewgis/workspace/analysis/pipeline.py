@@ -317,6 +317,11 @@ def run_modules_sync(
         for module in ordered
         for model_name in MODULE_SQLMESH_SELECTORS.get(module, [])
     ]
+    # quarter_mile_context is named while the selection is still the module
+    # models alone, because — unlike the inputs added below — it *is* restated:
+    # it buffers the scenario's own end state, so a rerun has to recompute it.
+    if "mode_choice" in ordered:
+        selects += _quarter_mile_context_input(scenario_id)
     # Computed before the network inputs join the selection: those are never
     # restated (see ``_network_distance_inputs``).
     restate = model_fqns_built_in("prod", selects) or None
@@ -440,6 +445,25 @@ def _network_distance_inputs(scenario_id: int) -> list[str]:
             )
         ),
     ]
+
+
+def _quarter_mile_context_input(scenario_id: int) -> list[str]:
+    """The mode-choice support model its module selector does not name.
+
+    ``quarter_mile_context`` buffers each parcel's projected centroid into the
+    quarter-mile and one-mile context terms ``mode_choice`` reads. It is not an
+    analysis module: it publishes no result view, so ``MODULE_SQLMESH_SELECTORS``
+    cannot carry it (a module's selectors and its result tables are the same
+    list — see ``test_every_result_view_is_published_by_a_model``) and nothing
+    else in a plan pulls it in — a model added to the project is only planned
+    when a selector names it (``relation "ascn<id>.quarter_mile_context" does
+    not exist`` without this).
+
+    Named as a module selector would be, so it is restated with the rest of the
+    run: its input is the scenario's end state, which a rerun is expected to
+    have changed.
+    """
+    return [module_registry.model_fqn("quarter_mile_context", scenario_id)]
 
 
 def _food_access_inputs(region: str) -> list[str]:

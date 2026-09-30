@@ -30,7 +30,7 @@ MODULE_DEPENDENCIES: dict[str, list[str]] = {
     "agriculture": ["core"],
     "trip_generation": ["core"],
     "trip_distribution": ["trip_generation"],
-    "mode_choice": ["trip_distribution"],
+    "mode_choice": ["trip_generation"],
     "vmt": ["mode_choice", "trip_distribution"],
     "transport_ghg": ["vmt"],
     "internal_capture": ["trip_distribution"],
@@ -217,8 +217,8 @@ MODULE_DESCRIPTIONS: dict[str, str] = {
         "inbound and internal trips plus average trip length."
     ),
     "mode_choice": (
-        "Splits outbound trips across auto, transit, walk and bike with a "
-        "multinomial logit model."
+        "Splits purpose trips across auto, transit, walk and bike with "
+        "UrbanFootprint's hierarchical sigmoid model."
     ),
     "vmt": (
         "Computes vehicle miles traveled per parcel from mode-choice auto trips "
@@ -638,12 +638,29 @@ ANALYSIS_PARAMETERS: tuple[AnalysisParameter, ...] = (
     AnalysisParameter("transport_hbw_pct", 0.18, "float", ("trip_generation",)),
     AnalysisParameter("transport_hbo_pct", 0.42, "float", ("trip_generation",)),
     AnalysisParameter("transport_nhb_pct", 0.40, "float", ("trip_generation",)),
+    # Mode choice — UrbanFootprint's hierarchical sigmoid. Only the knobs a
+    # region could legitimately tune are parameters; the reference's published
+    # log-odds constants are literals in the model (see mode_choice.sql).
+    #
+    # Vehicles per capita: UrbanFootprint's 0.8 fallback, used when the built
+    # form carries no household size. The demo canvas has no ACS income, so
+    # there is nothing to predict auto ownership from yet (a follow-up port of
+    # vmt_auto_ownership_model.py would take this over).
+    AnalysisParameter("transport_vehicles_per_capita", 0.8, "float", ("mode_choice",)),
+    # Bike is BrewGIS's own purpose-agnostic sigmoid: there is no bike-lane
+    # layer on the canvas, so its design term reads the all-road intersection
+    # density. `transport_bike_asc` is the single knob for its overall level.
+    AnalysisParameter("transport_bike_asc", -6.5, "float", ("mode_choice",)),
+    AnalysisParameter("transport_bike_beta_density", 0.20, "float", ("mode_choice",)),
+    AnalysisParameter("transport_bike_beta_design", 0.20, "float", ("mode_choice",)),
+    AnalysisParameter("transport_bike_beta_hhsize", -0.6, "float", ("mode_choice",)),
+    AnalysisParameter("transport_bike_beta_veh", -0.9, "float", ("mode_choice",)),
     # VMT
     AnalysisParameter("transport_circuity_factor", 1.2, "float", ("vmt",)),
     # Network distance — trip_distribution's gravity model takes road-network
     # zone distances (network_zone_distance) instead of crow-flies distances.
     # Shown on every module downstream of trip length; mode_choice reads only
-    # trips_outbound, which distance does not change.
+    # purpose trips, which distance does not change.
     AnalysisParameter(
         name="transport_use_network_distance",
         default=False,

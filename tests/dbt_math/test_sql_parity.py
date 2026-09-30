@@ -35,6 +35,12 @@ pytestmark = [
     pytest.mark.django_db(transaction=True),
 ]
 
+# transport_vehicles_per_capita's default (module_registry.ANALYSIS_PARAMETERS):
+# what a run with no scenario overrides renders, and therefore what the parity
+# reference has to be handed. The drift guard for it and the reference's bike
+# coefficients is tests/workspace/test_module_registry.py.
+_VEHICLES_PER_CAPITA = 0.8
+
 
 def _core_es_df(
     parcel_id: np.ndarray,
@@ -133,31 +139,85 @@ def test_fiscal_service_costs_parity(parity_scenario: str) -> None:
 @pytest.mark.slow
 def test_mode_choice_parity(parity_scenario: str) -> None:
     """SQLMesh mode_choice output matches the Python reference."""
-    trips = np.array([0.0, 100.0, 250.0, 40.0], dtype=float)
-    du = np.array([0.0, 10.0, 40.0, 5.0], dtype=float)
+    # Purpose trips, the end-state attributes the D-variables read, and the
+    # quarter-mile / one-mile context. Parcel 0 has no trips at all, which is
+    # the zero-denominator case (its shares are NULL, its trip counts zero).
+    trips_hbw = np.array([0.0, 30.0, 80.0, 12.0], dtype=float)
+    trips_hbo = np.array([0.0, 70.0, 175.0, 28.0], dtype=float)
+    trips_nhb = np.array([0.0, 40.0, 100.0, 16.0], dtype=float)
     area = np.array([1.0, 0.5, 4.0, 2.0], dtype=float)
     intersection_density = np.array([0.0, 5.0, 30.0, 2.0], dtype=float)
-    categories = np.array(["rural", "urban", "compact", "standard"], dtype=object)
-    pid = np.arange(len(trips), dtype=int)
+    pop = np.array([0.0, 60.0, 250.0, 40.0], dtype=float)
+    hh = np.array([0.0, 25.0, 100.0, 16.0], dtype=float)
+    emp = np.array([0.0, 4.0, 40.0, 2.0], dtype=float)
+    # NULL on two parcels: the model then falls back to the built form's
+    # household size (or 2.577).
+    household_size = np.array([np.nan, 2.4, np.nan, 2.6], dtype=float)
+    qmb_pop = np.array([0.0, 800.0, 4000.0, 300.0], dtype=float)
+    qmb_emp = np.array([0.0, 200.0, 1500.0, 50.0], dtype=float)
+    qmb_res_acres = np.array([0.0, 40.0, 100.0, 20.0], dtype=float)
+    qmb_emp_acres = np.array([0.0, 10.0, 30.0, 5.0], dtype=float)
+    qmb_mixed_acres = np.array([0.0, 5.0, 12.0, 2.0], dtype=float)
+    emp_1mile = np.array([0.0, 900.0, 6000.0, 250.0], dtype=float)
+    pid = np.arange(len(trips_hbw), dtype=int)
 
-    density = np.where(area > 0, du / area, 0.0)
-    transit_access = np.where(np.isin(categories, ["urban", "compact"]), 1.0, 0.0)
     reference = compute_mode_choice(
-        trips, density, intersection_density, transit_access
+        trips_hbw,
+        trips_hbo,
+        trips_nhb,
+        area,
+        intersection_density,
+        pop,
+        hh,
+        emp,
+        household_size,
+        qmb_pop,
+        qmb_emp,
+        qmb_res_acres,
+        qmb_emp_acres,
+        qmb_mixed_acres,
+        emp_1mile,
+        # transport_vehicles_per_capita's default, which is what a run with no
+        # scenario overrides renders.
+        _VEHICLES_PER_CAPITA,
     )
 
-    td_df = pd.DataFrame({"parcel_id": pid, "trips_outbound": trips})
+    tg_df = pd.DataFrame(
+        {
+            "parcel_id": pid,
+            "trips_hbw": trips_hbw,
+            "trips_hbo": trips_hbo,
+            "trips_nhb": trips_nhb,
+        }
+    )
     es_df = _core_es_df(
         pid,
-        du=du,
         area_gross_acres=area,
         intersection_density=intersection_density,
-        land_development_category=categories,
+        pop=pop,
+        emp=emp,
+        hh=hh,
+        household_size=household_size,
+    )
+    qm_df = pd.DataFrame(
+        {
+            "parcel_id": pid,
+            "qmb_pop": qmb_pop,
+            "qmb_emp": qmb_emp,
+            "qmb_res_acres": qmb_res_acres,
+            "qmb_emp_acres": qmb_emp_acres,
+            "qmb_mixed_acres": qmb_mixed_acres,
+            "emp_1mile": emp_1mile,
+        }
     )
 
     result = run_model(
         "mode_choice",
-        upstream={"trip_distribution": td_df, "core_end_state": es_df},
+        upstream={
+            "trip_generation": tg_df,
+            "core_end_state": es_df,
+            "quarter_mile_context": qm_df,
+        },
         scenario_schema=parity_scenario,
     )
 
@@ -166,13 +226,15 @@ def test_mode_choice_parity(parity_scenario: str) -> None:
         "trips_transit",
         "trips_walk",
         "trips_bike",
+        "trips_internal_capture",
         "mode_share_auto",
         "mode_share_transit",
         "mode_share_walk",
         "mode_share_bike",
+        "mode_share_internal_capture",
     )
     for column, expected in zip(columns, reference, strict=True):
-        assert np.allclose(result[column], expected, atol=1e-8), column
+        assert np.allclose(result[column], expected, atol=1e-8, equal_nan=True), column
 
 
 # ══════════════════════════════════════════════════════════════════════

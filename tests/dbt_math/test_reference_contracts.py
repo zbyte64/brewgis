@@ -121,15 +121,52 @@ def _ic_data(draw):
     )
 
 
+# Hypothesis explores denormals (5e-324 acres, jobs, households) at the edges of
+# a range, and the reference's guarded ``ln`` turns one into a logit of about
+# -700 — where the sigmoid's exponent overflows. Such a value is degenerate
+# rather than a case the model claims to handle (the SQL's ``EXP`` would raise on
+# it), and the ``ln`` guard needs a floor anyway for a count below 1, so the
+# mode-choice draws round anything under this to zero.
+_DEGENERATE_BELOW = 1e-6
+
+
+def _mc_float(n, lo, hi):
+    """``_fa`` for the mode-choice draws, with denormals rounded to zero."""
+
+    def normalize(values):
+        array = np.array(values, dtype=float)
+        return np.where(array < _DEGENERATE_BELOW, 0.0, array)
+
+    return st.lists(st.floats(lo, hi, allow_nan=False), min_size=n, max_size=n).map(
+        normalize
+    )
+
+
 @st.composite
 def _mc_data(draw):
-    """Mode-choice inputs: outbound trips, density, intersection density, transit access."""
+    """Mode-choice inputs: purpose trips, end-state attributes, buffer context.
+
+    Wide, deliberately: the auto residual's zero clamp is a bound the model
+    itself carries, so the properties asserted on these draws hold whether or
+    not it binds.
+    """
     n = draw(st.integers(min_value=1, max_value=10))
     return (
-        draw(_fa(n, 0, 50000)),
-        draw(_fa(n, 0, 2000)),
-        draw(_fa(n, 0, 500)),
-        draw(_fa(n, 0, 1)),
+        draw(_mc_float(n, 0, 50000)),
+        draw(_mc_float(n, 0, 50000)),
+        draw(_mc_float(n, 0, 50000)),
+        draw(_mc_float(n, 0, 10)),
+        draw(_mc_float(n, 0, 500)),
+        draw(_mc_float(n, 0, 20000)),
+        draw(_mc_float(n, 0, 2000)),
+        draw(_mc_float(n, 0, 20000)),
+        draw(_mc_float(n, 0, 8)),
+        draw(_mc_float(n, 0, 50000)),
+        draw(_mc_float(n, 0, 50000)),
+        draw(_mc_float(n, 0, 2000)),
+        draw(_mc_float(n, 0, 2000)),
+        draw(_mc_float(n, 0, 2000)),
+        draw(_mc_float(n, 0, 20000)),
     )
 
 
@@ -205,46 +242,116 @@ def test_impervious_surface(quint):
 # ══════════════════════════════════════════════════════════════════════
 
 
+def _mode_choice(data, vehicles_per_capita=0.8):
+    """Call the reference with a 15-array ``_mc_data`` tuple and the knob."""
+    return compute_mode_choice(*data, vehicles_per_capita)
+
+
 @pytest.mark.slow
 @given(_mc_data())
 @_N_HYPOTHESIS
-def test_mode_choice_shares_sum_to_one(data):
-    trips, density, intersection_density, transit_access = data
-    auto, transit, walk, bike, s_auto, s_transit, s_walk, s_bike = compute_mode_choice(
-        trips, density, intersection_density, transit_access
+def test_mode_choice_shares_are_bounded(data):
+    """Every share is a probability, and the split never under-claims.
+
+    UrbanFootprint applies each non-auto sigmoid independently to what the
+    internal capture left, so the four together can over-claim: ``auto`` is the
+    difference, clamped at zero, and the five shares sum to at least 1 — exactly
+    1 (the partition the ``assert_mode_share_sum`` audit enforces) whenever the
+    clamp does not bind, which is the realistic case the test below pins. A
+    parcel with no trips has no split at all: every share is NaN and every trip
+    count is zero.
+    """
+    auto, transit, walk, bike, capture, s_auto, s_transit, s_walk, s_bike, s_cap = (
+        _mode_choice(data)
     )
-    # The softmax always partitions the outbound trips across the four modes.
-    assert np.allclose(s_auto + s_transit + s_walk + s_bike, 1.0, atol=1e-9)
-    assert np.all(s_auto >= 0) and np.all(s_transit >= 0)
-    assert np.all(s_walk >= 0) and np.all(s_bike >= 0)
-    assert np.allclose(auto + transit + walk + bike, trips, atol=1e-6)
+    total = data[0] + data[1] + data[2]
+    split = total > 0
+    for share in (s_auto, s_transit, s_walk, s_bike, s_cap):
+        assert np.all(share[split] >= 0.0)
+        assert np.all(share[split] <= 1.0 + 1e-9)
+        assert np.all(np.isnan(share[~split]))
+    for count in (auto, transit, walk, bike, capture):
+        assert np.all(count[split] >= 0.0)
+        assert np.all(count[~split] == 0.0)
+    shares = s_auto + s_transit + s_walk + s_bike + s_cap
+    assert np.all(shares[split] >= 1.0 - 1e-9)
+
+
+@pytest.mark.slow
+def test_mode_choice_partitions_a_realistic_canvas():
+    """At realistic magnitudes the five shares partition the trips exactly.
+
+    Sprawl-like, modest and dense parcels; the auto residual's zero clamp never
+    binds here, which is the case the ``assert_mode_share_sum`` audit judges.
+    """
+    data = (
+        np.array([120.0, 340.0, 900.0]),  # trips_hbw
+        np.array([280.0, 800.0, 2100.0]),  # trips_hbo
+        np.array([160.0, 460.0, 1200.0]),  # trips_nhb
+        np.array([0.4, 1.6, 8.0]),  # area_gross_acres
+        np.array([40.0, 180.0, 420.0]),  # intersection_density
+        np.array([30.0, 220.0, 1400.0]),  # pop
+        np.array([12.0, 90.0, 560.0]),  # hh
+        np.array([0.0, 60.0, 900.0]),  # emp
+        np.array([2.5, np.nan, 2.9]),  # household_size
+        np.array([200.0, 2400.0, 18000.0]),  # qmb_pop
+        np.array([0.0, 400.0, 6000.0]),  # qmb_emp
+        np.array([20.0, 120.0, 400.0]),  # qmb_res_acres
+        np.array([10.0, 40.0, 120.0]),  # qmb_emp_acres
+        np.array([0.0, 10.0, 60.0]),  # qmb_mixed_acres
+        np.array([0.0, 3000.0, 25000.0]),  # emp_1mile
+    )
+    auto, transit, walk, bike, capture, s_auto, s_transit, s_walk, s_bike, s_cap = (
+        _mode_choice(data)
+    )
+    total = data[0] + data[1] + data[2]
+    assert np.all(auto > 0.0)
+    assert np.allclose(auto + transit + walk + bike + capture, total, atol=1e-6)
+    assert np.allclose(s_auto + s_transit + s_walk + s_bike + s_cap, 1.0, atol=1e-9)
 
 
 @pytest.mark.slow
 @given(
-    st.lists(st.floats(0.0, 2000.0, allow_nan=False), min_size=2, max_size=10).map(
+    # From 1.0: the reference adds a log term only when its input is positive,
+    # so an employment count below one is *penalised* relative to none at all
+    # (ln(0.5) is negative) — an artefact of the guard, not a property worth
+    # asserting. Real counts are whole jobs.
+    st.lists(st.floats(1.0, 20000.0, allow_nan=False), min_size=2, max_size=10).map(
         lambda values: np.array(values, dtype=float)
     )
 )
 @_N_HYPOTHESIS
-def test_mode_choice_density_favours_active_modes(density):
-    """Higher density raises the walk share and lowers the auto share.
+def test_mode_choice_walk_access_favours_walk(emp_1mile):
+    """More employment within a mile raises the walk share, and lowers auto's.
 
-    Only the walk/bike utilities carry a positive density coefficient, so the
-    reference alternative loses share as density grows — with intersection
-    density and transit access held equal, which is what makes the shares
-    directly comparable across the draws.
+    ``emp_1mile`` enters only the three walk log-odds, all with a positive
+    coefficient, and no capture, transit or bike term — so the walk share is
+    monotone in it, with the buffer context and the trips held equal. That is
+    what makes the shares directly comparable across the draws.
     """
-    n = len(density)
-    trips = np.full(n, 100.0)
-    intersection_density = np.full(n, 10.0)
-    transit_access = np.zeros(n)
-    _, _, _, _, s_auto, _, s_walk, _ = compute_mode_choice(
-        trips, density, intersection_density, transit_access
+    n = len(emp_1mile)
+    ones = np.ones(n)
+    data = (
+        ones * 400.0,  # trips_hbw
+        ones * 900.0,  # trips_hbo
+        ones * 500.0,  # trips_nhb
+        ones * 2.0,  # area_gross_acres
+        ones * 200.0,  # intersection_density
+        ones * 200.0,  # pop
+        ones * 80.0,  # hh
+        ones * 100.0,  # emp
+        ones * 2.5,  # household_size
+        ones * 2000.0,  # qmb_pop
+        ones * 600.0,  # qmb_emp
+        ones * 100.0,  # qmb_res_acres
+        ones * 40.0,  # qmb_emp_acres
+        ones * 20.0,  # qmb_mixed_acres
+        emp_1mile,
     )
-    order = np.argsort(density, kind="stable")
-    assert np.all(np.diff(s_auto[order]) <= 1e-12)
+    _, _, _, _, _, s_auto, _, s_walk, _, _ = _mode_choice(data)
+    order = np.argsort(emp_1mile, kind="stable")
     assert np.all(np.diff(s_walk[order]) >= -1e-12)
+    assert np.all(np.diff(s_auto[order]) <= 1e-12)
 
 
 # ══════════════════════════════════════════════════════════════════════
@@ -527,7 +634,7 @@ def test_all_refs_handle_empty_input():
     cases = [
         ("property_tax", lambda: compute_property_tax(e, e)),
         ("service_costs", lambda: compute_service_costs(e, e, e)),
-        ("mode_choice", lambda: compute_mode_choice(e, e, e, e)),
+        ("mode_choice", lambda: compute_mode_choice(*([e] * 15), 0.8)),
         ("vmt", lambda: compute_vmt(e, e, e)),
         ("transport_ghg", lambda: compute_transport_ghg(e, e)),
         ("impervious", lambda: compute_impervious_surface(e, e, e, e, e)),

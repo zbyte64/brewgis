@@ -15,6 +15,7 @@ from brewgis.workspace.analysis.module_registry import MODULE_RESULT_TABLES
 from brewgis.workspace.analysis.module_registry import MODULE_SQLMESH_SELECTORS
 from brewgis.workspace.analysis.module_registry import TABLE_PALETTE
 from brewgis.workspace.analysis.module_registry import TABLE_PRIMARY_COLUMN
+from brewgis.workspace.analysis.module_registry import analysis_parameter_defaults
 from brewgis.workspace.analysis.module_registry import get_default_palette
 from brewgis.workspace.analysis.module_registry import get_module_label
 from brewgis.workspace.analysis.module_registry import get_result_table_names
@@ -23,6 +24,7 @@ from brewgis.workspace.analysis.module_registry import model_fqn
 from brewgis.workspace.analysis.module_registry import resolve_module_order
 from brewgis.workspace.palettes import PALETTES
 from brewgis.workspace.palettes import get_diverging_names
+from tests.dbt_math import reference
 
 
 class TestResolveModuleOrder:
@@ -41,13 +43,13 @@ class TestResolveModuleOrder:
     def test_modules_in_correct_order(self) -> None:
         """Full transitive dependency chain is resolved."""
         result = resolve_module_order(["vmt"])
-        # vmt -> mode_choice -> trip_distribution -> trip_generation -> core -> env_constraint
+        # vmt -> mode_choice -> trip_generation -> core -> env_constraint
         assert result == [
             "env_constraint",
             "core",
             "trip_generation",
-            "trip_distribution",
             "mode_choice",
+            "trip_distribution",
             "vmt",
         ]
 
@@ -65,14 +67,15 @@ class TestResolveModuleOrder:
     def test_interleaved_chain(self) -> None:
         """Full transitive chain for each requested module is resolved."""
         result = resolve_module_order(["vmt", "land_consumption"])
-        # vmt -> mode_choice -> trip_distribution -> trip_generation -> core -> env_constraint
+        # vmt -> mode_choice -> trip_generation -> core -> env_constraint
+        # trip_distribution -> trip_generation (already seen)
         # land_consumption -> core -> env_constraint (already seen)
         assert result == [
             "env_constraint",
             "core",
             "trip_generation",
-            "trip_distribution",
             "mode_choice",
+            "trip_distribution",
             "vmt",
             "land_consumption",
         ]
@@ -320,3 +323,28 @@ class TestGetVarsForModule:
         base = {"scenario_id": "7", "completed_modules": ["env_constraint"]}
         result = get_vars_for_module("core", base)
         assert result["constraints_output"] == "public.env_constraint_7"
+
+
+class TestModeChoiceParameterDefaults:
+    """The mode-choice reference restates these defaults; they must agree.
+
+    ``tests/dbt_math/reference.py`` has to stay importable without Django, so
+    the bike sigmoid's coefficients live there rather than reading
+    ``ANALYSIS_PARAMETERS``. A parity run renders whatever this registry says,
+    so a default changed on one side only would fail the parity test with an
+    opaque numeric diff — this test names the drift instead.
+    """
+
+    def test_bike_and_vehicle_defaults_match_the_reference(self) -> None:
+        defaults = analysis_parameter_defaults()
+        assert defaults["transport_vehicles_per_capita"] == 0.8
+        for name, value in reference.BIKE_PARAMETER_DEFAULTS.items():
+            assert defaults[name] == value, name
+
+    def test_mode_choice_reads_the_purpose_trips(self) -> None:
+        """mode_choice no longer depends on trip_distribution.
+
+        It runs UrbanFootprint's hierarchical sigmoid over trip_generation's
+        purpose trips, so trip_distribution is a sibling, not an input.
+        """
+        assert MODULE_DEPENDENCIES["mode_choice"] == ["trip_generation"]

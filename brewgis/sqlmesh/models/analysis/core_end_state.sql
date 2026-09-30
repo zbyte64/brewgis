@@ -46,7 +46,8 @@ MODEL (
     electricity_eui = 'Built form electricity use intensity (kWh per sq metre per year).',
     gas_eui = 'Built form gas use intensity (kWh per sq metre per year).',
     household_size = 'Household size of the assigned built form (persons); null when unset.',
-    geometry = 'Parcel boundary geometry (EPSG:4326).'
+    geometry = 'Parcel boundary geometry (EPSG:4326).',
+    centroid_local = 'Parcel centroid projected to the region local SRID (indexed for buffer joins).'
   ),
   blueprints @analysis_blueprints('core_end_state'),
   audits (
@@ -97,7 +98,7 @@ MODEL (
 --   intersection_density, land_development_category,
 --   built_form_id, built_form_key, du_type, jobs_by_sector,
 --   indoor_water_rate, outdoor_water_rate,
---   electricity_eui, gas_eui, household_size, geometry
+--   electricity_eui, gas_eui, household_size, geometry, centroid_local
 
 WITH parcel_base AS (
     SELECT
@@ -273,7 +274,13 @@ SELECT
     COALESCE(c.electricity_eui, 100.0) AS electricity_eui,
     COALESCE(c.gas_eui, 50.0) AS gas_eui,
     c.household_size,
-    c.geometry
+    c.geometry,
+
+    -- Projected centroid, indexed below: the quarter-mile / one-mile context
+    -- joins filter parcels by a distance expressed in local units, so the
+    -- radius is a constant and the join is index-driven. Never reproject the
+    -- geometry for the distance itself (see the AGENTS local-unit rule).
+    ST_Transform(ST_Centroid(c.geometry), @local_srid()) AS centroid_local
 FROM computed AS c;
 
 -- post_statements
@@ -288,6 +295,9 @@ FROM computed AS c;
   ON @this_model USING btree (land_development_category);
   CREATE INDEX IF NOT EXISTS @snapshot_hash('idx_core_end_state_acres_dev_')
   ON @this_model USING btree (acres_developed);
+
+  CREATE INDEX IF NOT EXISTS @snapshot_hash('idx_core_end_state_centroid_local_')
+  ON @this_model USING GIST (centroid_local);
 
 
 -- Publish this model's result view where the Layers, Martin and UI paths read

@@ -409,8 +409,8 @@ class TestSingleModuleExecution(TestCase):
             "env_constraint",
             "core",
             "trip_generation",
-            "trip_distribution",
             "mode_choice",
+            "trip_distribution",
             "vmt",
         ]
         self.assertEqual(ordered, expected)
