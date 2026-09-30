@@ -2,23 +2,12 @@
 
 from __future__ import annotations
 
-import json
 import logging
-from pathlib import Path
 from typing import Any
 
-from django.conf import settings
 from django.db import connection
 
 logger = logging.getLogger(__name__)
-
-MANIFEST_PATH = (
-    Path(settings.BASE_DIR)
-    / "brewgis"
-    / "workspace"
-    / "services"
-    / "sacog_schema_manifest.json"
-)
 
 # Tables whose schemas describe SACOG v1 parcel data
 KEY_V1_TABLES = {
@@ -43,10 +32,7 @@ KEY_V1_TABLES = {
 
 
 def discover_schema() -> dict:
-    """Discover all restored v1 tables and columns.
-
-    Returns the manifest dict and writes it to MANIFEST_PATH as JSON.
-    """
+    """Discover every restored v1 table and its columns, as a print-ready manifest."""
     with connection.cursor() as cursor:
         cursor.execute("""
             SELECT schema_name
@@ -63,13 +49,6 @@ def discover_schema() -> dict:
         with connection.cursor() as cursor:
             manifest[schema] = _discover_schema_tables(cursor, schema)
 
-    MANIFEST_PATH.parent.mkdir(parents=True, exist_ok=True)
-    with open(MANIFEST_PATH, "w") as f:
-        json.dump(manifest, f, indent=2, default=str)
-
-    logger.info(
-        "Schema manifest written to %s (%d schemas)", MANIFEST_PATH, len(manifest)
-    )
     return manifest
 
 
@@ -124,18 +103,8 @@ def _table_row_count(cursor: Any, schema: str, table_name: str) -> int:
     return cursor.fetchone()[0]  # type: ignore[no-any-return]
 
 
-def load_manifest() -> dict:
-    """Load the cached schema manifest from disk, or discover fresh if missing."""
-    if MANIFEST_PATH.exists():
-        with open(MANIFEST_PATH) as f:
-            return dict(json.load(f))
-    return discover_schema()
-
-
-def print_summary(manifest: dict | None = None) -> None:
+def print_summary(manifest: dict) -> None:
     """Print a human-readable summary of the schema."""
-    if manifest is None:
-        manifest = load_manifest()
     for schema, tables in manifest.items():
         print(f"\n=== Schema: {schema} ({len(tables)} tables) ===")
         for table_name, info in sorted(tables.items()):

@@ -392,9 +392,10 @@ python manage.py materialize_sacog_base_canvas --source-table public.elk_grove_b
   --target-table public.elk_grove_base_canvas_v3
 ```
 
-Three decisions distinguish it from the v1 view `import_sacog_demo` creates
-(`services/sacog_column_mapping.py`, `build_create_view_sql` vs.
-`build_materialized_select_sql`):
+Three decisions distinguish the projection from what the v1 table itself holds
+(`services/sacog_column_mapping.py`, `build_materialized_select_sql`) — and they
+are the reason `import_sacog_demo --step base_canvas` materializes its demo
+canvas the same way rather than creating a view over the v1 table:
 
 - `parcel_id` and `geography_id` carry the v1 `geography_id` verbatim, not a
   `ROW_NUMBER()`. The comparison pipeline and the models join SACOG parcels by
@@ -403,14 +404,35 @@ Three decisions distinguish it from the v1 view `import_sacog_demo` creates
 - `geometry` is reprojected from the source CRS (3310) to the contract's
   `GEOMETRY(MultiPolygon, 4326)`.
 - A NULL in a NOT NULL column takes the schema's default (`land_development_category`
-  → `''`, counts → `0`) — what `import_sacog_demo --step stitch` writes — except
-  the parcel key and geometry, which fail the insert instead of being invented.
-  `land_use` and `assessor_use_code` have no v1 counterpart and are empty.
+  → `''`, counts → `0`), except the parcel key and geometry, which fail the
+  insert instead of being invented. `land_use` and `assessor_use_code` have no
+  v1 counterpart and are empty.
 
 Rebuilding truncates and reloads, so the scenario canvas views reading the table
 stay valid; `--replace` drops it first and PostgreSQL cascades that to those
 views. Restoring the SACOG demo database drops and recreates the `public` v1
 tables, so re-run the command afterwards.
+
+### An imported canvas the analysis reads
+
+The analysis reads a workspace's parcels by the base layer's *model* name
+(`sqlmesh/macros/analysis_blueprints.py`), and SQLMesh resolves such a name
+against its environments rather than against its model tree. A canvas that is
+not a model — anything the picker offers as an imported table — therefore needs
+two things before a scenario on it can be analysed:
+
+- an entry in `brewgis/sqlmesh/external_models.yaml` naming the table, so the
+  name stands for something (`"brewgis"."sacog_demo"."base_canvas_v1"` is the
+  SACOG demo's);
+- that entry **promoted** into the environment, because
+  `ExecutionContext.resolve_table` looks the name up in the plan's snapshots and
+  every Python analysis model calls it for its inputs whether or not it ends up
+  reading them. `import_sacog_demo --step base_canvas` does this for its own
+  canvas; a workspace adopted through the base canvas picker needs its
+  declaration added by hand.
+
+Neither is needed for a base canvas a SQLMesh model publishes
+(`fresno.base_canvas_reconciled`): the model is already in the environment.
 
 ## dlt / Staging Columns
 

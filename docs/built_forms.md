@@ -153,6 +153,16 @@ name a workspace already holds is skipped — and migration
 `0065_seed_default_built_forms` applies it to workspaces that predate the
 library.
 
+The library's entries are named for the *land use* ("Rural Residential"), while
+a canvas built from SACOG data names its built forms with the v1 **key**
+(`bt__rural_residential_sacog`, what `parcel_bft_lightgbm` predicts). The
+matching rule bridges the two for the keys whose slug is the name lowercased —
+and for the rest the SACOG demo workspace
+(`manage.py import_sacog_demo --step built_forms`) adds an entry named after the
+key itself, profiled from the release's own built-type catalogue
+(`sacog_building_types_may14`). Seeding runs before that extraction precisely so
+the two sets do not both answer for one key.
+
 Each entry carries a `land_development_category` (urban, suburban, rural,
 agricultural, industrial, undeveloped, conservation). That is the **parcel-level
 vocabulary** the base canvas uses, deliberately not the density-derived

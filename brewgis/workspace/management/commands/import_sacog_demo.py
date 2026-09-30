@@ -6,25 +6,30 @@ Usage:
 Steps:
     all         — full pipeline (default)
     discover    — schema discovery & manifest generation
-    built_forms — extract v1 built forms to BuildingType records
+    built_forms — complete the Building Type library, then extract the v1 built forms
     workspace   — create workspace, scenario, layers
-    base_canvas — build base canvas view over v1 parcels
-    stitch      — run imputation (stitch the canvas)
+    base_canvas — materialize the base canvas table over the v1 parcels
     analysis    — run analysis pipeline
     validate    — imputation validation report
+
+The base canvas is a *table* materialized with
+``sacog_column_mapping.build_materialized_select_sql``, the same projection
+``materialize_sacog_base_canvas`` loads its adoptable canvas from: every column
+is cast to the type ``BaseCanvasSchema`` declares, the parcel key is the source
+``geography_id`` and the geometry is reprojected from the source CRS (3310) to
+the contract's ``GEOMETRY(MultiPolygon, 4326)``. That is what makes the table
+tileable, adoptable through the base canvas picker, and readable by the
+blueprinted analysis models — and it fills the contract's NOT NULL columns as it
+loads, so it needs no separate NULL-filling pass.
 """
 
 from __future__ import annotations
 
-import json
 import logging
-from pathlib import Path
 from typing import Any
 
-from django.conf import settings
 from django.core.management.base import BaseCommand
 from django.core.management.base import CommandError
-from django.db import ProgrammingError
 
 logger = logging.getLogger(__name__)
 
@@ -35,64 +40,25 @@ BASE_YEAR = 2012
 HORIZON_YEAR = 2050
 
 V1_BASE_TABLE = "public.elk_grove_base_canvas"
-CANVAS_VIEW_NAME = "base_canvas_v1"
+BASE_CANVAS_TABLE = "base_canvas_v1"
 
 SCENARIO_SLUG = "base"
 
-CACHE_DIR = Path(settings.BASE_DIR) / "planning" / "sacog_demo"
-CACHE_DIR.mkdir(parents=True, exist_ok=True)
-
-PIPELINE_VARS: dict[str, object] = {
-    "source_schema": WORKSPACE_SCHEMA,
-    "base_table_schema": WORKSPACE_SCHEMA,
-    "base_table_name": CANVAS_VIEW_NAME,
-    "scenario_slug": SCENARIO_SLUG,
-    "parcel_table": "parcels",
-    "base_canvas_table": CANVAS_VIEW_NAME,
-    "constraint_table": "parcel_tag",
-    "constraints": [],
-    "built_forms_schema": WORKSPACE_SCHEMA,
-    "built_forms_table": "built_forms",
-    "census_schema": "public",
-    "census_table": "elk_grove_census_rates",
-    "climate_zone_schema": "public",
-    "climate_zone_table": "sac_cnty_climate_zones",
-    "transit_base_schema": "public",
-    "transit_base_table": "elk_grove_base_transit_stops",
-    "transit_future_schema": "public",
-    "transit_future_table": "elk_grove_future_transit_stops",
-    "vmt_base_trip_lengths_schema": "public",
-    "vmt_base_trip_lengths_table": "elk_grove_vmt_base_trip_lengths",
-    "vmt_future_trip_lengths_schema": "public",
-    "vmt_future_trip_lengths_table": "elk_grove_vmt_future_trip_lengths",
-    "water_demand_model_version": "maddaus_2013",
-    "energy_demand_model_version": "standard",
-    "residential_energy_model": "comstock",
-    "base_year": BASE_YEAR,
-    "horizon_year": HORIZON_YEAR,
-    "scenario_id": SCENARIO_SLUG,
-    "target_schema": WORKSPACE_SCHEMA,
-}
-
-CONSTRAINT_LAYER_TABLES: dict[str, dict[str, str | None]] = {
+CONSTRAINT_LAYER_TABLES: dict[str, dict[str, str]] = {
     "sacog_floodplains": {
         "table": "parcel_tag",
-        "filter": "flood IS NOT NULL AND flood != ''",
         "description": "FEMA Flood Hazard Zones (from v1 parcel_tag)",
     },
     "sacog_habitat": {
         "table": "parcel_tag",
-        "filter": "habitat IS NOT NULL AND habitat != ''",
         "description": "Critical Habitat Areas (from v1 parcel_tag)",
     },
     "sacog_endangered_species": {
         "table": "parcel_tag",
-        "filter": "endanger IS NOT NULL AND endanger != ''",
         "description": "Endangered Species Zones (from v1 parcel_tag)",
     },
     "sacog_conservation_areas": {
         "table": "sac_cnty_cpad_holdings",
-        "filter": None,
         "description": "CPAD Conservation Holdings",
     },
 }
@@ -111,7 +77,6 @@ class Command(BaseCommand):
                 "built_forms",
                 "workspace",
                 "base_canvas",
-                "stitch",
                 "analysis",
                 "validate",
             ],
@@ -137,7 +102,6 @@ class Command(BaseCommand):
             "built_forms",
             "workspace",
             "base_canvas",
-            "stitch",
             "analysis",
             "validate",
         ]
@@ -154,7 +118,7 @@ class Command(BaseCommand):
     # ── Step: discover ────────────────────────────────────────────────
 
     def _step_discover(self, *, force: bool = False) -> None:
-        """Discover schema and generate manifest."""
+        """Report the schemas and tables the restored v1 dump holds."""
         self.stdout.write("Phase 1: Schema Discovery...")
 
         from brewgis.workspace.services.sacog_schema_discovery import discover_schema
@@ -166,40 +130,84 @@ class Command(BaseCommand):
         n_tables = sum(len(tables) for tables in manifest.values())
         self.stdout.write(
             self.style.SUCCESS(
-                f"  ✓ Manifest generated: {n_tables} tables across {len(manifest)} schemas"
+                f"  ✓ Discovered {n_tables} tables across {len(manifest)} schemas"
             )
         )
 
     # ── Step: built_forms ─────────────────────────────────────────────
 
     def _step_built_forms(self, *, force: bool = False) -> None:
-        """Extract v1 FlatBuiltForm → BuildingType records."""
+        """Complete the Building Type library, then extract the v1 built forms."""
         self.stdout.write("Phase 3: Built Form Extraction...")
 
+        from brewgis.workspace.built_forms.default_library import (
+            backfill_library_fields,
+        )
+        from brewgis.workspace.built_forms.default_library import (
+            seed_default_built_forms,
+        )
+        from brewgis.workspace.built_forms.models import BuildingType
         from brewgis.workspace.services.sacog_built_form_extractor import (
             extract_built_forms,
         )
 
         workspace = self._resolve_workspace()
-        count = extract_built_forms(workspace, overwrite=force)
-        if count > 0:
-            self.stdout.write(
-                self.style.SUCCESS(f"  ✓ Created {count} BuildingType records")
-            )
-        else:
-            from brewgis.workspace.built_forms.models import BuildingType
 
-            n = BuildingType.objects.filter(workspace=workspace).count()
-            self.stdout.write(f"  ✓ BuildingType records already exist ({n} found)")
+        # ``--force`` rebuilds the catalogue from scratch: wipe first, so the
+        # library is re-seeded onto a clean workspace rather than the wipe
+        # landing after it and leaving the 29 v1 keys with no library beside
+        # them.
+        if force:
+            deleted, _ = BuildingType.objects.filter(workspace=workspace).delete()
+            self.stdout.write(f"  ✓ Cleared {deleted} existing Building Type rows")
+
+        # The library is seeded before the extraction, and that order is
+        # load-bearing. A Building Type answers for a canvas key by name
+        # (``services.built_form_keys``): the library's entries are named for the
+        # land uses, and 14 of the demo's 29 keys normalize onto one of those
+        # names, so the library already answers for them. The extraction then
+        # adds an entry only for the keys nothing answers for. Run the other way
+        # round, the extraction would claim all 29 keys first and the seeding
+        # that followed would add the library's own names beside them — two
+        # Building Types matching one key, and every parcel carrying it counted
+        # twice by ``core_end_state``.
+        seeded = seed_default_built_forms(workspace)
+        backfilled = backfill_library_fields(workspace)
+        self.stdout.write(f"  ✓ Library: {seeded} seeded, {backfilled} realigned")
+
+        count = extract_built_forms(workspace)
+        total = BuildingType.objects.filter(workspace=workspace).count()
+        self.stdout.write(
+            f"  ✓ Extracted {count} SACOG v1 built forms; "
+            f"{total} Building Types in the workspace"
+        )
 
     def _resolve_workspace(self) -> Any:
-        """Get-or-create the demo workspace (built_forms may run before workspace step)."""
+        """Get-or-create the demo workspace, pointed at this demo's base canvas.
+
+        Get-or-create rather than create because ``built_forms`` and
+        ``base_canvas`` may run before the ``workspace`` step. An existing
+        workspace is repaired rather than left alone: one left on the
+        ``base_table`` column's default (``public.base_canvas``) has the analysis
+        blueprints read a canvas that has nothing to do with this demo.
+        """
         from brewgis.workspace.models import Workspace
 
+        base_table = f"{WORKSPACE_SCHEMA}.{BASE_CANVAS_TABLE}"
         workspace, _created = Workspace.objects.get_or_create(
             name=WORKSPACE_NAME,
-            defaults={"db_schema": WORKSPACE_SCHEMA},
+            defaults={
+                "db_schema": WORKSPACE_SCHEMA,
+                "base_table": base_table,
+            },
         )
+        if (workspace.db_schema, workspace.base_table) != (
+            WORKSPACE_SCHEMA,
+            base_table,
+        ):
+            workspace.db_schema = WORKSPACE_SCHEMA
+            workspace.base_table = base_table
+            workspace.save(update_fields=["db_schema", "base_table"])
         return workspace
 
     # ── Step: workspace ───────────────────────────────────────────────
@@ -211,21 +219,12 @@ class Command(BaseCommand):
         from django.db import connection
 
         from brewgis.workspace.models import Scenario
-        from brewgis.workspace.models import Workspace
 
-        # Create workspace
-        ws, created = Workspace.objects.get_or_create(
-            name=WORKSPACE_NAME,
-            defaults={
-                "db_schema": WORKSPACE_SCHEMA,
-            },
+        ws = self._resolve_workspace()
+        self.stdout.write(
+            f"  ✓ Workspace: {WORKSPACE_NAME} (schema: {WORKSPACE_SCHEMA}, "
+            f"base table: {ws.base_table})"
         )
-        if created:
-            self.stdout.write(
-                f"  ✓ Created workspace: {WORKSPACE_NAME} (schema: {WORKSPACE_SCHEMA})"
-            )
-        else:
-            self.stdout.write(f"  ✓ Workspace already exists: {WORKSPACE_NAME}")
 
         # Create schema
         with connection.cursor() as cursor:
@@ -252,12 +251,6 @@ class Command(BaseCommand):
         constraint_count = self._register_constraint_layers(ws)
         self.stdout.write(f"  ✓ Registered {constraint_count} constraint layers")
 
-        # Write pipeline vars
-        vars_path = CACHE_DIR / "pipeline_vars.json"
-        with open(vars_path, "w") as f:
-            json.dump(PIPELINE_VARS, f, indent=2)
-        self.stdout.write(f"  ✓ Pipeline vars written to {vars_path}")
-
         self.stdout.write(self.style.SUCCESS("  ✓ Workspace bootstrap complete"))
 
     def _register_constraint_layers(self, ws: Any) -> int:
@@ -266,155 +259,91 @@ class Command(BaseCommand):
 
         count = 0
         for name, info in CONSTRAINT_LAYER_TABLES.items():
-            _, created = Layer.objects.get_or_create(
+            layer, created = Layer.objects.get_or_create(
                 workspace=ws,
                 key=name,
                 defaults={
                     "name": name,
                     "description": info["description"],
                     "db_table": info["table"],
+                    # The v1 constraint tables live in ``public``, not in the
+                    # workspace schema: a blank ``db_schema`` would inherit
+                    # ``sacog_demo`` and point the layer at a table that does
+                    # not exist.
+                    "db_schema": "public",
                     "layer_source": f"public.{info['table']}",
                     "geometry_type": "fill",
                 },
             )
             if created:
                 count += 1
+            elif layer.db_schema != "public":
+                # Registered by an earlier run that left the schema blank, so it
+                # inherited the workspace schema and resolves to a table that
+                # does not exist.
+                layer.db_schema = "public"
+                layer.save(update_fields=["db_schema"])
         return count
 
     def _step_base_canvas(self, *, force: bool = False) -> None:
-        """Create the base canvas SQL view over v1 parcels."""
-        self.stdout.write("Phase 2/5: Base Canvas View...")
+        """Materialize the base canvas table over the v1 parcels."""
+        self.stdout.write("Phase 2/5: Base Canvas Materialization...")
 
-        from django.db import connection
+        from django.core.management import call_command
 
-        from brewgis.workspace.services.sacog_column_mapping import (
-            build_create_view_sql,
+        # The projection, the DDL and the contract verification are
+        # ``materialize_sacog_base_canvas``'s — one implementation of "a v1 table
+        # as an adoptable base canvas", not a second one here. It also verifies
+        # the result against the projection column by column and checks that the
+        # base canvas picker will offer it, neither of which this command would
+        # get around to.
+        target = f"{WORKSPACE_SCHEMA}.{BASE_CANVAS_TABLE}"
+        call_command(
+            "materialize_sacog_base_canvas",
+            source_table=V1_BASE_TABLE,
+            target_table=target,
+            replace=force,
+            stdout=self.stdout,
         )
-        from brewgis.workspace.services.sacog_schema_discovery import load_manifest
 
-        # Verify the v1 table exists
-        manifest = load_manifest()
-        public_tables = manifest.get("public", {})
-        if V1_BASE_TABLE.rsplit(".", maxsplit=1)[-1] not in public_tables:
-            raise CommandError(
-                f"V1 base table not found: {V1_BASE_TABLE}. Run 'python manage.py restore_demo_db' first."
-            )
+        self._register_base_canvas_layer(self._resolve_workspace())
+        self._promote_base_canvas_model(target)
+        self.stdout.write(self.style.SUCCESS("  ✓ Base canvas ready"))
 
-        # Build and create the view
-        sql = build_create_view_sql(
-            schema=WORKSPACE_SCHEMA,
-            view_name=CANVAS_VIEW_NAME,
+    def _promote_base_canvas_model(self, target: str) -> None:
+        """Promote the base canvas's model into ``prod`` so the analysis can read it.
+
+        The analysis reads the workspace's parcels by the canvas's *model* name
+        (``sqlmesh/macros/analysis_blueprints.py``: the base canvas, whichever
+        layer that is) and SQLMesh resolves such a name against its
+        *environments*, not against the project: the declaration in
+        ``sqlmesh/external_models.yaml`` says which physical table the name
+        stands for, but a snapshot that was never promoted is still unknown to
+        ``ExecutionContext.resolve_table`` — which every Python analysis model
+        calls for its inputs at plan time, whether or not it ends up reading
+        them. So the canvas has to be promoted once, before the first plan that
+        names it; ``pipeline._network_distance_inputs`` selects the region road
+        networks it routes over for the same reason.
+
+        Nothing is built or restated: the rows are already in the table this
+        model stands for, and re-promoting an unchanged snapshot is a no-op.
+        """
+        from brewgis.workspace.analysis.sqlmesh_runner import run_sqlmesh_plan
+
+        run_sqlmesh_plan(
+            environment="prod",
+            select=[f"brewgis.{target}"],
+            skip_tests=True,
+            auto_apply=True,
+            no_prompts=True,
         )
-        try:
-            with connection.cursor() as cursor:
-                cursor.execute(sql)
-        except ProgrammingError as exc:
-            if "cannot change name of view column" not in str(exc):
-                raise
-            # A view created before the parcel key was renamed (``id`` →
-            # ``parcel_id``) can't be replaced in place — Postgres'
-            # ``CREATE OR REPLACE VIEW`` only appends columns. Drop and
-            # recreate instead.
-            with connection.cursor() as cursor:
-                cursor.execute(
-                    f'DROP VIEW IF EXISTS "{WORKSPACE_SCHEMA}"."{CANVAS_VIEW_NAME}" CASCADE'
-                )
-                cursor.execute(sql)
-
-        self.stdout.write(f"  ✓ Created view: {WORKSPACE_SCHEMA}.{CANVAS_VIEW_NAME}")
-
-        # Verify row count
-        with connection.cursor() as cursor:
-            cursor.execute(
-                f'SELECT count(*) FROM "{WORKSPACE_SCHEMA}"."{CANVAS_VIEW_NAME}"'
-            )
-            row_count = cursor.fetchone()[0]
-        self.stdout.write(f"  ✓ View has {row_count} rows")
-
-        # Verify column count matches BaseCanvasSchema
-        from brewgis.workspace.services.base_canvas_schema import BaseCanvasSchema
-
-        with connection.cursor() as cursor:
-            cursor.execute(
-                """SELECT count(*) FROM information_schema.columns
-                   WHERE table_schema = %s AND table_name = %s""",
-                [WORKSPACE_SCHEMA, CANVAS_VIEW_NAME],
-            )
-            actual_cols = cursor.fetchone()[0]
-        expected_cols = len(BaseCanvasSchema.COLUMN_NAMES)
-        if actual_cols == expected_cols:
-            self.stdout.write(
-                f"  ✓ View has {actual_cols}/{expected_cols} columns (correct)"
-            )
-        else:
-            self.stdout.write(
-                self.style.WARNING(
-                    f"  ⚠ View has {actual_cols} columns, expected {expected_cols}"
-                )
-            )
-
-        self.stdout.write(self.style.SUCCESS("  ✓ Base canvas view ready"))
-        # Create analysis compat view (renames geometry→geom)
-        with connection.cursor() as cursor:
-            cursor.execute(f"""
-                CREATE OR REPLACE VIEW "{WORKSPACE_SCHEMA}".parcels AS
-                SELECT *, geometry AS geom
-                FROM "{WORKSPACE_SCHEMA}"."{CANVAS_VIEW_NAME}"
-            """)
-        self.stdout.write(f"  ✓ Created compat view: {WORKSPACE_SCHEMA}.parcels")
-        self.stdout.write(self.style.SUCCESS("  ✓ Base canvas views ready"))
-
-    # ── Step: stitch ──────────────────────────────────────────────────
-
-    def _step_stitch(self, *, force: bool = False) -> None:
-        """Run imputation to fill NULLs in the base canvas view."""
-        self.stdout.write("Phase 5: Imputation (Stitch)...")
-
-        from django.db import connection
-
-        q_view = f'"{WORKSPACE_SCHEMA}"."{CANVAS_VIEW_NAME}"'
-
-        # Check for NULLs in NON_NULL columns
-        from brewgis.workspace.services.base_canvas_schema import BaseCanvasSchema
-
-        non_null = set(BaseCanvasSchema.NON_NULL_COLUMNS) - {"parcel_id", "geometry"}
-        null_cols = []
-        with connection.cursor() as cursor:
-            for col in sorted(non_null):
-                cursor.execute(f"SELECT count(*) FROM {q_view} WHERE {col} IS NULL")
-                null_count = cursor.fetchone()[0]
-                if null_count > 0:
-                    null_cols.append((col, null_count))
-                    cursor.execute(
-                        f"UPDATE {q_view} SET {col} = COALESCE({col}, 0.0) WHERE {col} IS NULL"
-                    )
-
-        if null_cols:
-            for col, n in null_cols:
-                self.stdout.write(f"  ✓ Fixed {n} NULLs in {col}")
-        else:
-            self.stdout.write("  ✓ No NULLs found in NON_NULL columns")
-
-        # Log summary stats
-        with connection.cursor() as cursor:
-            cursor.execute(
-                f"""SELECT
-                    sum(pop) as total_pop, sum(hh) as total_hh,
-                    sum(du) as total_du, sum(emp) as total_emp
-                FROM {q_view}"""
-            )
-            r = cursor.fetchone()
-            self.stdout.write(
-                f"  Summary: pop={r[0]:.0f}, hh={r[1]:.0f}, du={r[2]:.0f}, emp={r[3]:.0f}"
-            )
-
-        self.stdout.write(self.style.SUCCESS("  ✓ Imputation complete"))
+        self.stdout.write(f"  ✓ Promoted brewgis.{target} into prod")
 
     # ── Step: analysis ────────────────────────────────────────────────
 
     def _step_analysis(self, *, force: bool = False) -> None:
         """Run the full analysis pipeline."""
-        self.stdout.write("Phase 6: Analysis Pipeline...")
+        self.stdout.write("Phase 5: Analysis Pipeline...")
 
         from brewgis.workspace.analysis.pipeline import MODULE_RESULT_TABLES
         from brewgis.workspace.analysis.pipeline import resolve_module_order
@@ -438,21 +367,17 @@ class Command(BaseCommand):
         # Export built forms for analysis pipeline
         self._export_built_forms(ws)
 
-        # Register base canvas as a Layer
-        self._register_base_canvas_layer(ws)
-
         # Resolve module order
         all_modules = list(MODULE_RESULT_TABLES.keys())
         ordered_modules = resolve_module_order(all_modules)
         self.stdout.write(f"  ✓ Module order: {', '.join(ordered_modules)}")
 
-        # Run analysis SQLMesh models + create end_state passthrough for base case
-        self._create_base_case_end_state()
-
         # Record the run before planning: each scenario's analysis models are
         # blueprinted, and the blueprint set comes from the scenarios that have
         # an AnalysisRun (see sqlmesh/macros/analysis_blueprints.py), so the run
-        # has to exist before the plan loads the project.
+        # has to exist before the plan loads the project. The plan itself reads
+        # every input off the Scenario and the Workspace — there are no plan-time
+        # variables to pass.
         run = run_analysis_pipeline(
             scenario_id=scenario.pk,
             module_names=ordered_modules,
@@ -472,90 +397,17 @@ class Command(BaseCommand):
         # Verify output tables
         self._verify_output_tables(scenario)
 
-    def _create_base_case_end_state(self) -> None:
-        """Create end_state_base + increment_base as direct v1 passthrough for base case.
-
-        The core analysis models allocate from built form densities, which requires
-        correct built_form_key → main_builtform → FlatBuiltForm matching.
-        For the base case, pass through v1 source data directly so downstream
-        modules (water, energy, land_consumption, fiscal) work correctly.
-        """
-        from django.db import connection
-
-        with connection.cursor() as cursor:
-            cursor.execute("DROP VIEW IF EXISTS sacog_demo.end_state_base CASCADE")
-            cursor.execute("DROP VIEW IF EXISTS sacog_demo.increment_base CASCADE")
-
-            cursor.execute("""
-                CREATE OR REPLACE VIEW sacog_demo.end_state_base AS
-                SELECT
-                    bc.geography_id::BIGINT AS parcel_id,
-                    bc.acres_gross::DOUBLE PRECISION AS gross_acres,
-                    COALESCE(bc.acres_developable, bc.acres_gross)::DOUBLE PRECISION AS acres_developable,
-                    bc.acres_developable::DOUBLE PRECISION AS acres_developed,
-                    0.0::DOUBLE PRECISION AS dwelling_units_sf_sl,
-                    0.0::DOUBLE PRECISION AS dwelling_units_attached_sf,
-                    0.0::DOUBLE PRECISION AS dwelling_units_mf_2_4,
-                    0.0::DOUBLE PRECISION AS dwelling_units_mf_5p,
-                    0.0::DOUBLE PRECISION AS building_sqft_residential,
-                    0.0::DOUBLE PRECISION AS building_sqft_commercial,
-                    0.0::DOUBLE PRECISION AS building_sqft_office,
-                    0.0::DOUBLE PRECISION AS building_sqft_industrial,
-                    0.0::DOUBLE PRECISION AS building_sqft_public,
-                    0.0::DOUBLE PRECISION AS building_sqft_retail,
-                    0.0::DOUBLE PRECISION AS building_sqft_wholesale,
-                    0.0::DOUBLE PRECISION AS building_sqft_education,
-                    0.0::DOUBLE PRECISION AS building_sqft_healthcare,
-                    0.0::DOUBLE PRECISION AS building_sqft_hotel_lodging,
-                    0.0::DOUBLE PRECISION AS building_sqft_entertainment,
-                    0.0::DOUBLE PRECISION AS building_sqft_other,
-                    COALESCE(bc.residential_irrigated_sqft, 0.0)::DOUBLE PRECISION AS res_irrigated_sqft,
-                    COALESCE(bc.commercial_irrigated_sqft, 0.0)::DOUBLE PRECISION AS com_irrigated_sqft,
-                    bc.acres_parcel::DOUBLE PRECISION AS parcel_acres_developed,
-                    0.0::DOUBLE PRECISION AS parcel_acres_agriculture,
-                    0.0::DOUBLE PRECISION AS parcel_acres_open_space,
-                    0.0::DOUBLE PRECISION AS parcel_acres_vacant,
-                    COALESCE(bc.intersection_density_sqmi, 0.0)::DOUBLE PRECISION AS intersection_density,
-                    COALESCE(bc.du, 0.0)::DOUBLE PRECISION AS dwelling_units_total,
-                    COALESCE(bc.pop, 0.0)::DOUBLE PRECISION AS population,
-                    COALESCE(bc.hh, 0.0)::DOUBLE PRECISION AS households,
-                    COALESCE(bc.du_detsf_ll, 0.0)::DOUBLE PRECISION AS dwelling_units_sf_ll,
-                    COALESCE(bc.emp, 0.0)::DOUBLE PRECISION AS employment_total,
-                    COALESCE(
-                        bc.bldg_sqft_detsf_sl + bc.bldg_sqft_detsf_ll + bc.bldg_sqft_attsf
-                        + bc.bldg_sqft_mf + bc.bldg_sqft_retail_services + bc.bldg_sqft_restaurant
-                        + bc.bldg_sqft_accommodation + bc.bldg_sqft_arts_entertainment
-                        + bc.bldg_sqft_other_services + bc.bldg_sqft_office_services
-                        + bc.bldg_sqft_public_admin + bc.bldg_sqft_education
-                        + bc.bldg_sqft_medical_services + bc.bldg_sqft_transport_warehousing
-                        + bc.bldg_sqft_wholesale, 0.0
-                    )::DOUBLE PRECISION AS building_sqft_total,
-                    COALESCE(bc.land_development_category, '')::TEXT AS land_dev_category,
-                    bc.built_form_key::TEXT AS built_form_id,
-                    200.0::DOUBLE PRECISION AS indoor_water_rate,
-                    300.0::DOUBLE PRECISION AS outdoor_water_rate,
-                    70.0::DOUBLE PRECISION AS electricity_eui,
-                    100.0::DOUBLE PRECISION AS gas_eui,
-                    2.5::DOUBLE PRECISION AS household_size,
-                    bc.wkb_geometry AS geom
-                FROM public.elk_grove_base_canvas bc
-            """)
-            cursor.execute(
-                "CREATE OR REPLACE VIEW sacog_demo.increment_base AS "
-                "SELECT * FROM sacog_demo.end_state_base WHERE 1=0"
-            )
-        self.stdout.write(
-            "  ✓ Created end_state_base + increment_base (direct v1 passthrough)"
-        )
-
     def _check_prerequisites(self) -> None:
         """Check that the environment and tables are ready for analysis."""
         from django.db import connection
 
         required_tables = [
             (V1_BASE_TABLE, "v1 base parcel table"),
-            (f"{WORKSPACE_SCHEMA}.{CANVAS_VIEW_NAME}", "base canvas view"),
-            ("public.footprint_flatbuiltform", "v1 built form catalog"),
+            (
+                f"{WORKSPACE_SCHEMA}.{BASE_CANVAS_TABLE}",
+                "materialized base canvas table",
+            ),
+            ("public.sacog_building_types_may14", "SACOG v1 built-type catalogue"),
             ("public.sac_cnty_climate_zones", "climate zones"),
             ("public.elk_grove_base_transit_stops", "transit stops"),
         ]
@@ -595,17 +447,21 @@ class Command(BaseCommand):
         )
 
     def _register_base_canvas_layer(self, ws: Any) -> None:
-        """Register the base canvas view as a Layer record."""
+        """Register the materialized base canvas as a Layer record."""
         from brewgis.workspace.models import Layer
 
         Layer.objects.get_or_create(
             workspace=ws,
-            key=CANVAS_VIEW_NAME,
+            key=BASE_CANVAS_TABLE,
             defaults={
-                "name": f"SACOG Base Canvas ({CANVAS_VIEW_NAME})",
-                "description": f"Base canvas view over v1 {V1_BASE_TABLE}",
-                "db_table": CANVAS_VIEW_NAME,
-                "layer_source": f"{WORKSPACE_SCHEMA}.{CANVAS_VIEW_NAME}",
+                "name": f"SACOG Base Canvas ({BASE_CANVAS_TABLE})",
+                "description": f"Base canvas materialized from v1 {V1_BASE_TABLE}",
+                "db_table": BASE_CANVAS_TABLE,
+                # Left blank it would inherit the workspace schema, which is
+                # where the table is — stating it keeps the layer readable even
+                # if the workspace's ``db_schema`` is repointed later.
+                "db_schema": WORKSPACE_SCHEMA,
+                "layer_source": f"{WORKSPACE_SCHEMA}.{BASE_CANVAS_TABLE}",
                 "geometry_type": "fill",
             },
         )
@@ -648,7 +504,7 @@ class Command(BaseCommand):
 
     def _step_validate(self, *, force: bool = False) -> None:
         """Run imputation validation report."""
-        self.stdout.write("Phase 7: Imputation Validation...")
+        self.stdout.write("Phase 6: Imputation Validation...")
 
         from brewgis.workspace.services.sacog_imputation_validator import (
             run_validation_report,
@@ -656,7 +512,7 @@ class Command(BaseCommand):
 
         results = run_validation_report(
             scenario_schema=WORKSPACE_SCHEMA,
-            base_canvas_view=CANVAS_VIEW_NAME,
+            base_canvas_view=BASE_CANVAS_TABLE,
         )
 
         if results:

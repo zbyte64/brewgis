@@ -10,7 +10,6 @@ key, the geometry CRS, and where a truncated or mistyped value could come from.
 from __future__ import annotations
 
 from brewgis.workspace.services.base_canvas_schema import BaseCanvasSchema
-from brewgis.workspace.services.sacog_column_mapping import build_create_view_sql
 from brewgis.workspace.services.sacog_column_mapping import (
     build_materialized_select_sql,
 )
@@ -39,7 +38,7 @@ class TestMaterializedProjection:
         assert list(_projection()) == list(BaseCanvasSchema.COLUMN_NAMES)
 
     def test_keeps_the_source_parcel_identity(self) -> None:
-        # Not ``build_create_view_sql``'s ROW_NUMBER(): the comparison pipeline
+        # Not a rendered ROW_NUMBER(): the comparison pipeline
         # (compare_sacog_basemap) and every model join SACOG parcels by the v1
         # geography_id, so a materialized canvas has to carry it in both keys.
         projection = _projection()
@@ -129,11 +128,3 @@ class TestMaterializedProjection:
         assert build_materialized_select_sql("public.other_v1").endswith(
             "\nFROM public.other_v1"
         )
-
-    def test_covers_the_same_columns_as_the_v1_view_projection(self) -> None:
-        # Two projections of one mapping table: a column added to the schema has
-        # to be handled by both, and neither may silently drop one.
-        view_sql = build_create_view_sql(schema="public", view_name="probe_v1")
-        for name in BaseCanvasSchema.COLUMN_NAMES:
-            assert f" AS {name}" in view_sql
-            assert name in _projection()

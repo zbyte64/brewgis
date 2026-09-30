@@ -688,3 +688,44 @@
     gluc: TEXT
     geometry: GEOMETRY(MULTIPOLYGON, 3310)
     parcel_id: INT
+- name: '"brewgis"."sacog_demo"."base_canvas_v1"'
+  description: SACOG v1 demo base canvas, one row per parcel with geometry, area, people, housing and jobs.
+  column_descriptions:
+    parcel_id: BrewGIS parcel identifier, set to the SACOG v1 geography_id when the canvas is loaded.
+    id_source: Always 'sacog_v1' for this canvas.
+    geography_id: Integer geography identifier of the source feature.
+    geometry_key: Parcel identifier reused as the geometry join key.
+    geometry: Parcel boundary geometry (MultiPolygon, EPSG:4326).
+    land_development_category: Land development category from the v1 source; blank where the source names none.
+    built_form_key: Built form key from the v1 source, the SACOG v1 bt__ key.
+    intersection_density: Intersection density (intersections per km2).
+    area_gross: Gross parcel area including right-of-way (acres).
+    area_parcel: Parcel area inside the parcel boundary (acres).
+    pop: Population from the v1 source (people).
+    hh: Households from the v1 source (households).
+    du: Dwelling units from the v1 source (units).
+    emp: Employment from the v1 source (jobs).
+    land_use: Land use label; empty, the v1 table carries none.
+    assessor_use_code: Assessor use code; empty, the v1 table carries none.
+    residential_irrigated_area: Residential irrigated area from the v1 source (acres).
+    commercial_irrigated_area: Non-residential irrigated area from the v1 source (acres).
+  columns:
+    parcel_id: BIGINT
+    id_source: VARCHAR(64)
+    geography_id: INT
+    geometry_key: VARCHAR(128)
+    geometry: GEOMETRY(MULTIPOLYGON, 4326)
+    land_development_category: VARCHAR(64)
+    built_form_key: VARCHAR(128)
+    intersection_density: DOUBLE PRECISION
+    area_gross: DOUBLE PRECISION
+    area_parcel: DOUBLE PRECISION
+    pop: DOUBLE PRECISION
+    hh: DOUBLE PRECISION
+    du: DOUBLE PRECISION
+    emp: DOUBLE PRECISION
+    land_use: VARCHAR(255)
+    assessor_use_code: VARCHAR(32)
+    residential_irrigated_area: DOUBLE PRECISION
+    commercial_irrigated_area: DOUBLE PRECISION
+  gateway: postgis

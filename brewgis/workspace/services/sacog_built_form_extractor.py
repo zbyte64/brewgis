@@ -1,11 +1,17 @@
-"""SACOG v1 FlatBuiltForm → BuildingType extraction.
+"""SACOG v1 built forms → BuildingType extraction.
 
-Relationship chain:
-  parcel.built_form_key → main_builtform.key → main_builtform.id
-  → footprint_flatbuiltform.built_form_id → density/intensity values
+Each built form the v1 canvas names is profiled from the SACOG release's own
+built-type catalogue, ``public.sacog_building_types_may14`` — one ``BuildingType``
+row per ``bt__…`` key, holding dwelling units per acre, jobs per acre, the
+``gross_net_ratio`` they are carried at, the per-housing-class and
+per-employment-sector densities, the floor area and the irrigated area. The
+relationship is the key itself:
 
-We aggregate all PrimaryComponent rows for each built_form_id to produce
-a composite BuildingType profile per key.
+  parcel.built_form_key → sacog_building_types_may14.key → density/intensity values
+
+Each resulting record is *named after that key*, so the analysis models' key join
+resolves it — see :func:`extract_built_forms` and
+:mod:`brewgis.workspace.services.built_form_keys` for why.
 """
 
 from __future__ import annotations
@@ -18,81 +24,129 @@ from typing import Any
 from django.db import connection
 
 from brewgis.workspace.built_forms.models import BuildingType
+from brewgis.workspace.services.built_form_keys import normalize_built_form_key
 
 if TYPE_CHECKING:
     from brewgis.workspace.models import Workspace
 
 logger = logging.getLogger(__name__)
 
+#: The catalogue's row class holding a parcel-level built form — the
+#: ``PlacetypeComponent``/``Placetype`` rows describe place types, not parcels.
+BUILT_FORM_TYPE = "BuildingType"
 
-def extract_built_forms(workspace: Workspace, overwrite: bool = False) -> int:
-    """Extract v1 FlatBuiltForm records into BuildingType records for *workspace*.
 
-    Traces parcel built_form_key → main_builtform → footprint_flatbuiltform,
-    aggregates PrimaryComponent density values, and creates BuildingType records.
+def extract_built_forms(workspace: Workspace) -> int:
+    """Extract the v1 built forms into BuildingType records for *workspace*.
+
+    Profiles every built form the v1 canvas names from the SACOG built-type
+    catalogue, and creates one BuildingType per key, named after that key.
+
+    Additive and idempotent: a key an existing Building Type already resolves to
+    is skipped, so a second call adds nothing, and the default library a
+    workspace already holds is never touched. A caller rebuilding the catalogue
+    deletes the workspace's Building Types itself and re-seeds the library
+    (``default_library.seed_default_built_forms``) — this function cannot do that
+    for it, because deleting them *after* the seeding is what would leave the
+    workspace holding the 29 v1 keys and none of the library.
 
     Returns the number of new records created.
     """
-    existing = BuildingType.objects.filter(workspace=workspace)
-    if not overwrite and existing.exists():
-        logger.info(
-            "BuildingType records already exist for workspace %s (%d), skipping. "
-            "Use overwrite=True to replace.",
-            workspace.pk,
-            existing.count(),
-        )
-        return 0
-
-    if overwrite:
-        existing.delete()
-
     created = 0
-    for key, bf_id, name in _get_parcel_built_form_keys():
-        profile = _aggregate_built_form_profile(bf_id)
+    # The names a canvas key already resolves to, so a v1 key that an existing
+    # (library) Building Type answers for is not answered a second time: two
+    # rows matching one canvas key would duplicate every parcel that carries it
+    # in ``core_end_state``'s join — and double its population, trips and VMT.
+    resolved = {
+        normalize_built_form_key(name)
+        for name in BuildingType.objects.filter(workspace=workspace).values_list(
+            "name", flat=True
+        )
+    }
+    for key, catalogue_name in _get_parcel_built_forms():
+        normalized = normalize_built_form_key(key)
+        if normalized in resolved:
+            logger.info(
+                "Skipping v1 built form %s: this workspace already holds a "
+                "Building Type that key resolves to",
+                key,
+            )
+            continue
+
+        profile = _catalogue_profile(key)
         if profile is None:
-            logger.debug(
-                "No FlatBuiltForm rows for built_form_id=%s (key=%s)", bf_id, key
+            logger.warning(
+                "public.sacog_building_types_may14 names no %s row for %s; "
+                "using the default profile",
+                BUILT_FORM_TYPE,
+                key,
             )
             profile = _default_profile()
 
-        profile["name"] = name or key
-
-        bt, was_created = BuildingType.objects.update_or_create(
-            workspace=workspace,
-            name=key,
-            defaults=profile,
+        # Named after the canvas key, not the catalogue's display name, because
+        # the key is what a canvas row names its built form with and
+        # ``services.built_form_keys`` is the rule that pairs the two —
+        # lowercased, ETL prefix dropped, ``_``/``-`` read as spaces. A
+        # catalogue name does not survive that rule ("Rural Residential (SACOG)"
+        # normalizes to "rural residential (sacog)" where the canvas key gives
+        # "rural residential sacog"), so 13 of the demo's 29 keys would be
+        # matched by no form at all: every parcel keyed to one at zero
+        # population, zero dwelling units and zero employment, and with them
+        # zero trip generation and zero VMT.
+        profile["name"] = key
+        # The catalogue's own label is kept as the description, so the Built
+        # Forms panel shows what the slug stands for.
+        profile["description"] = (
+            f"SACOG v1 built form {catalogue_name!r} ({key})."
+            if catalogue_name
+            else f"SACOG v1 built form {key}."
         )
-        if was_created:
-            created += 1
+
+        BuildingType.objects.create(workspace=workspace, **profile)
+        resolved.add(normalized)
+        created += 1
 
     logger.info("Created %d BuildingType records from v1 built form catalog", created)
     return created
 
 
-def _get_parcel_built_form_keys() -> list[tuple[str, int | None, str | None]]:
-    """Return (parcel_key, main_builtform_id, main_builtform_name) tuples.
+def _get_parcel_built_forms() -> list[tuple[str, str | None]]:
+    """Return ``(canvas_key, catalogue_name)`` for every built form the v1 canvas names.
 
-    Joins the parcel table with main_builtform on built_form_key.
+    The canvas and the catalogue agree on the key (both spell the parcel's built
+    form ``bt__…``), which is what makes the join the identity one — the
+    catalogue's numeric ``built_form_id`` is its own id space and joins
+    ``main_builtform`` only by coincidence of numbering, which is exactly the
+    trap :func:`_catalogue_profile` documents.
     """
     with connection.cursor() as cursor:
         cursor.execute("""
-            SELECT DISTINCT bc.built_form_key, mf.id, mf.name
+            SELECT DISTINCT bc.built_form_key, c.name
             FROM public.elk_grove_base_canvas bc
-            LEFT JOIN public.main_builtform mf ON bc.built_form_key = mf.key
+            LEFT JOIN public.sacog_building_types_may14 c
+                ON c.key = bc.built_form_key
             WHERE bc.built_form_key IS NOT NULL AND bc.built_form_key != ''
             ORDER BY bc.built_form_key
         """)
-        return [(r[0], r[1], r[2]) for r in cursor.fetchall()]
+        return [(row[0], row[1]) for row in cursor.fetchall()]
 
 
-def _aggregate_built_form_profile(bf_id: int | None) -> dict[str, Any] | None:
-    """Aggregate PrimaryComponent FlatBuiltForm rows for a built_form_id.
+def _catalogue_profile(key: str) -> dict[str, Any] | None:
+    """The catalogue's profile for *key*, or ``None`` when it names none.
 
-    Returns a dict of averaged density/intensity values, or None if no rows.
+    One row per built form: ``public.sacog_building_types_may14`` is the SACOG
+    release's own built-type catalogue — 50 ``BuildingType`` rows, one per key,
+    densities in dwelling units and jobs per acre and ``gross_net_ratio`` the
+    factor the two are carried at. It is keyed by the ``bt__…`` key the canvas
+    uses.
+
+    Not ``public.footprint_flatbuiltform``: its ``built_form_id`` does not
+    number the same forms as ``main_builtform.id``, so the two join without
+    error and without meaning — the row for ``bt__rural_residential_sacog``
+    there is the component catalogue's "Very Small Lot 2500 (The Boulders,
+    Seattle WA)", and reading it as a rural density produced 26.24 units/acre
+    against the canvas's own 0.24.
     """
-    if bf_id is None:
-        return None
-
     with connection.cursor() as cursor:
         cursor.execute(
             """SELECT
@@ -124,25 +178,15 @@ def _aggregate_built_form_profile(bf_id: int | None) -> dict[str, Any] | None:
                 building_sqft_total,
                 residential_irrigated_square_feet,
                 commercial_irrigated_square_feet
-               FROM public.footprint_flatbuiltform
-               WHERE built_form_id = %s AND built_form_type = ANY(%s)""",
-            [bf_id, ["PrimaryComponent"]],
+               FROM public.sacog_building_types_may14
+               WHERE key = %s AND built_form_type = %s""",
+            [key, BUILT_FORM_TYPE],
         )
-        rows = cursor.fetchall()
+        row = cursor.fetchone()
 
-    if not rows:
+    if row is None:
         return None
-
-    # Average across all PrimaryComponents
-    n = len(rows)
-    summed = [0.0] * len(rows[0])
-    for row in rows:
-        for i, val in enumerate(row):
-            if val is not None:
-                summed[i] += float(val)
-
-    avg = [s / n for s in summed]
-    return _build_profile(avg)
+    return _build_profile([float(value) if value is not None else 0.0 for value in row])
 
 
 def _build_profile(v: Sequence[float]) -> dict[str, Any]:

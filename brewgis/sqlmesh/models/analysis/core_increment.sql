@@ -65,7 +65,12 @@ base AS (
 
 SELECT
     COALESCE(es.parcel_id, b.parcel_id) AS parcel_id,
-    b.area_gross_acres,
+    -- ``area_gross`` is the base canvas contract's name for this column; the
+    -- ``area_gross_acres`` the ETL models carry beside it is a unit alias of
+    -- the same value, and a base canvas a workspace *adopts* — any loaded table
+    -- with the contract's columns (``services.sqlmesh_tables``) — carries only
+    -- the contract's, so reading the alias fails the model for those canvases.
+    b.area_gross AS area_gross_acres,
     -- Scenario-only quantities (no existing-condition analog in base_canvas)
     -- pass through from the end-state alone rather than diffing.
     es.acres_developable,

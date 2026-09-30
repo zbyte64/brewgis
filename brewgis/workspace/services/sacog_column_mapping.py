@@ -227,58 +227,13 @@ def v1_columns_present() -> list[str]:
     ]
 
 
-def build_create_view_sql(
-    schema: str,
-    view_name: str,
-    v1_table: str = V1_BASE_TABLE,
-    built_form_table: str = "public.footprint_flatbuiltform",
-    order_by: str = "geography_id",
-) -> str:
-    """Generate CREATE OR REPLACE VIEW SQL mapping v1 columns to BaseCanvasSchema.
-
-    Builds a view that renames v1 columns to v3 names, handles unit conversions,
-    and provides defaults for missing columns.
-    """
-    select_parts: list[str] = []
-
-    # Ordered list of BaseCanvasSchema column names
-    from brewgis.workspace.services.base_canvas_schema import BaseCanvasSchema
-
-    for v3_col in BaseCanvasSchema.COLUMN_NAMES:
-        mapping = V3_TO_MAPPING.get(v3_col)
-        if mapping is None:
-            # No mapping defined — use COALESCE with default
-            col_def = BaseCanvasSchema.get(v3_col)
-            default = col_def.default_value if col_def else 0.0
-            select_parts.append(f"CAST({default!r} AS DOUBLE PRECISION) AS {v3_col}")
-        elif mapping.sql_expr:
-            # Custom SQL expression
-            select_parts.append(f"{mapping.sql_expr} AS {v3_col}")
-        elif mapping.v1_column:
-            # Direct passthrough
-            select_parts.append(f"{mapping.v1_column} AS {v3_col}")
-        else:
-            select_parts.append(f"CAST(0.0 AS DOUBLE PRECISION) AS {v3_col}")
-
-    select_clause = ",\n    ".join(select_parts)
-    q_view = f'"{schema}"."{view_name}"'
-    q_table = v1_table
-
-    return f"""CREATE OR REPLACE VIEW {q_view} AS
-SELECT
-    {select_clause}
-FROM {q_table};
-"""
-
-
 # Columns whose values must come from the source's own parcel identity rather
-# than from ``ALL_MAPPINGS``. ``build_create_view_sql`` numbers ``parcel_id``
-# with ``ROW_NUMBER()`` and passes ``wkb_geometry`` through in its source CRS,
-# which is enough for a view the demo workspace only reads through; a table a
-# workspace *adopts* has to carry the source parcel key itself — the convention
-# the comparison pipeline states as "SACOG source uses geography_id; SQLMesh
-# models expect parcel_id" (``management/commands/compare_sacog_basemap.py``) —
-# and the geometry every canvas view, tile server and model expects.
+# than from ``ALL_MAPPINGS``. Every projection a workspace adopts has to carry
+# the source parcel key itself — the convention the comparison pipeline states
+# as "SACOG source uses geography_id; SQLMesh models expect parcel_id"
+# (``management/commands/compare_sacog_basemap.py``) — and the geometry every
+# canvas view, tile server and model expects, in the contract's CRS rather than
+# the source's.
 SOURCE_IDENTITY_SQL: dict[str, str] = {
     "parcel_id": "geography_id",
     "geography_id": "geography_id",
@@ -317,7 +272,7 @@ def _typed_expression(
     and the value used to fill a NULL in an expression that reads the source,
     *srid* the CRS the base canvas contract mandates, *fill_nulls* whether such a
     NULL must be filled — true only for a column that is NOT NULL in the
-    contract, the same values ``import_sacog_demo --step stitch`` coalesces.
+    contract, so one load can insert straight into the base canvas table.
     """
     override = SOURCE_IDENTITY_SQL.get(v3_col)
     if override is not None:
@@ -341,9 +296,8 @@ def _typed_expression(
 def build_materialized_select_sql(v1_table: str = V1_BASE_TABLE) -> str:
     """Generate the ``SELECT`` mapping a v1-shaped table onto ``BaseCanvasSchema``.
 
-    Unlike ``build_create_view_sql`` — which feeds a view read only through the
-    workspace — every column here is cast to the type the base canvas contract
-    declares, so the statement can be handed straight to
+    Every column is cast to the type the base canvas contract declares, so the
+    statement can be handed straight to
     ``INSERT INTO <base canvas table> (…)``: an untransformed geometry, a
     ``ROW_NUMBER()`` key or a float default on a ``VARCHAR`` column would all be
     wrong in a table whose typmods are part of the contract. A NULL in a NOT NULL
@@ -377,7 +331,8 @@ def build_materialized_select_sql(v1_table: str = V1_BASE_TABLE) -> str:
 def get_v1_columns_for_verification() -> dict[str, str]:
     """Return ``{v3_column: v1_column}`` for columns that have a direct v1 counterpart.
 
-    Used by the imputation validator to compare imputed vs. original.
+    The identity columns are left out: they are produced rather than copied
+    (the parcel key from ``geography_id``, the geometry from ``wkb_geometry``).
     """
     result: dict[str, str] = {}
     for mapping in ALL_MAPPINGS:
