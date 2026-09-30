@@ -216,9 +216,15 @@
             <option value="building">Building Type</option>
             <option value="place">Place Type</option>
           </select>
-          {# The library is editable from the map's Built Forms panel, so
-             re-fetch these options whenever it changes rather than keep
-             offering a type that was just renamed or deleted. #}
+          {% comment %}
+            The library is editable from the map's Built Forms panel, so
+            re-fetch these options whenever it changes rather than keep
+            offering a type that was just renamed or deleted. (Must be a
+            block comment: {# #} cannot span lines — Django's lexer only
+            folds a one-line {# ... #}, so a multi-line one is served as
+            literal text, which landed in this row as a wide text item and
+            squeezed the toolbar into a ~600px-tall overlay over the map.)
+          {% endcomment %}
           <select class="form-select form-select-sm"
                   data-paint-op="built_form"
                   id="paint-bf-id"

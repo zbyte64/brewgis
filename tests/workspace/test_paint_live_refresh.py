@@ -540,7 +540,29 @@ def test_paint_result_renders_on_the_live_map_without_reload(fixture_ids: Any) -
             # viewport-relative coordinates, so offset by the canvas's own
             # page position (it sits below a topbar, not at (0, 0)).
             canvas_box = page.query_selector("canvas").bounding_box()
-            page.mouse.click(canvas_box["x"] + point["x"], canvas_box["y"] + point["y"])
+            click_x = canvas_box["x"] + point["x"]
+            click_y = canvas_box["y"] + point["y"]
+            # The paint toolbar lives in the topbar overlay (z-index 1000 over
+            # the map), so content that squeezes its flex row can grow the
+            # overlay over the map's centre — the click then lands on the
+            # toolbar and no feature is ever selected, which otherwise
+            # surfaces only as "0 features selected" below.
+            covering = page.evaluate(
+                "([x, y]) => {"
+                " const el = document.elementFromPoint(x, y);"
+                " return el && { tag: el.tagName, id: el.id, cls: String(el.className || '') };"
+                " }",
+                [click_x, click_y],
+            )
+            assert covering is not None, (
+                f"No element at the click point ({click_x}, {click_y})"
+            )
+            assert covering["tag"] == "CANVAS", (
+                f"The map canvas is not the click target at ({click_x}, {click_y}): "
+                f"{covering} covers it — the paint toolbar/topbar overlay swallowed "
+                "the click, so no feature can be selected"
+            )
+            page.mouse.click(click_x, click_y)
             page.wait_for_timeout(300)
             feature_count = page.eval_on_selector(
                 "#paint-feature-count", "el => el.textContent"
