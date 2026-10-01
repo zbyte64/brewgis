@@ -29,6 +29,9 @@ MODEL (
     bldg_area_medical_services = 'Medical services floor area from the base layer (sq ft).',
     bldg_area_accommodation = 'Accommodation floor area from the base layer (sq ft).',
     bldg_area_arts_entertainment = 'Arts and entertainment floor area from the base layer (sq ft).',
+    bldg_area_restaurant = 'Restaurant floor area from the base layer (sq ft).',
+    bldg_area_other_services = 'Other-services floor area from the base layer (sq ft).',
+    bldg_area_transport_warehousing = 'Transport and warehousing floor area from the base layer (sq ft).',
     residential_irrigated_area = 'Residential irrigated area, read from the base layer (acres).',
     commercial_irrigated_area = 'Non-residential irrigated area, read from the base layer (acres).',
     parcel_acres_developed = 'Parcel acres in the developed use: residential + employment + mixed-use (acres).',
@@ -37,6 +40,10 @@ MODEL (
     parcel_acres_vacant = 'Parcel acres in no use, read from the base layer (acres).',
     intersection_density = 'Intersection density (intersections per km2), read from the base layer.',
     land_development_category = 'Land development category, read from the base layer.',
+    title24_zone = 'CEC Title-24 Building Climate Zone (1-16) whose polygon contains the parcel centroid; null for a parcel outside California.',
+    fcz_zone = 'CEC electricity-demand Forecasting Climate Zone (0-20) whose polygon contains the parcel centroid; null for a parcel outside California.',
+    eto_zone = 'CIMIS Reference Evapotranspiration Zone (1-18) whose polygon contains the parcel centroid; null for a parcel outside California.',
+    annual_eto_mm = 'Annual reference evapotranspiration depth of the parcel''s ETo zone (mm per year, numerically litres per square metre per year); null when no ETo zone matches the parcel.',
     built_form_id = 'Identifier of the built form assigned to the parcel (null when the canvas key matches no built form).',
     built_form_key = 'Built form key of the parcel: the canvas''s own key, else the matched built form''s key.',
     du_type = 'Housing class of the assigned built form (detsf_ll, detsf_sl, attsf, mf2to4, mf5p); empty when the form has no dwelling units.',
@@ -50,11 +57,62 @@ MODEL (
     centroid_local = 'Parcel centroid projected to the region local SRID (indexed for buffer joins).'
   ),
   blueprints @analysis_blueprints('core_end_state'),
+  -- The zone *bridges*, in addition to the published zone views the SELECT
+  -- reads. SQLMesh substitutes the physical table name for a referenced model
+  -- in this model's statements only when that model is one of its declared
+  -- dependencies, and the GiST expression indexes in the pre_statements must
+  -- land on the bridge's physical table (a CREATE INDEX on the published VIEW
+  -- is rejected — "cannot create index on relation ... This operation is not
+  -- supported for views"). assessor/parcel_block_groups.sql declares the same
+  -- dependency for the same reason.
+  depends_on (
+    brewgis.california.building_climate_zones_raw,
+    brewgis.california.forecasting_climate_zones_raw,
+    brewgis.california.eto_zones_raw
+  ),
   audits (
     not_null(columns := (parcel_id)),
     number_of_rows(threshold := 1)
   )
 );
+
+-- pre_statements
+-- GiST expression indexes on the three climate-zone bridges, so the
+-- point-in-polygon zone joins in parcel_base are index probes instead of full
+-- scans of the zone tables once per parcel. Measured on the 52,187 SACOG
+-- parcels: 34.6 s without them, 1.9 s with them.
+--
+-- The expression must be the consumer's predicate argument *exactly*. The
+-- published zone models are VIEWs over their bridges, the FDW inlines the
+-- view's expression into this query, and the predicate therefore reads
+-- ST_Within(ST_Centroid(p.geometry), ST_Multi(ST_SetSRID(z.geometry, 4326))) —
+-- so the index has to carry that same ST_Multi(ST_SetSRID(...)) wrapper. An
+-- index on the bare geometry column is never used (it holds SRID 0), and
+-- neither is one missing the ST_Multi wrapper: both measured as sequential
+-- scans.
+--
+-- The indexes cannot live in the bridge models' own post_statements: those
+-- models are duckdb-gateway, so their statements are executed by DuckDB, which
+-- has no ST_SetSRID or ST_Multi — only plain column DDL such as the bridges'
+-- geoid btree indexes reaches PostGIS. The same reason
+-- assessor/parcel_block_groups.sql carries this index for its own bridge.
+--
+-- Names are version-scoped via @snapshot_hash and kept short because SQLMesh
+-- appends a suffix (e.g. _schema_tmp) for some migrations and Postgres caps
+-- identifiers at 63 characters. Index names are scoped to the schema, not the
+-- table, so a fixed name would make CREATE INDEX IF NOT EXISTS a no-op for
+-- every bridge snapshot after the first.
+  CREATE INDEX IF NOT EXISTS @snapshot_hash('idx_ca_t24_zone_bridge_geom_')
+  ON brewgis.california.building_climate_zones_raw
+  USING GIST (ST_Multi(ST_SetSRID(geometry, 4326)));
+
+  CREATE INDEX IF NOT EXISTS @snapshot_hash('idx_ca_fcz_zone_bridge_geom_')
+  ON brewgis.california.forecasting_climate_zones_raw
+  USING GIST (ST_Multi(ST_SetSRID(geometry, 4326)));
+
+  CREATE INDEX IF NOT EXISTS @snapshot_hash('idx_ca_eto_zone_bridge_geom_')
+  ON brewgis.california.eto_zones_raw
+  USING GIST (ST_Multi(ST_SetSRID(geometry, 4326)));
 
 -- Core EndState Model — Scenario Builder
 --
@@ -77,6 +135,14 @@ MODEL (
 -- emp_per_acre and far are painting inputs (what a paint operation writes as
 -- explicit du/pop/hh/emp overrides), never a substitute this model recomputes
 -- from.
+--
+-- Climate zones (title24_zone, fcz_zone, eto_zone, annual_eto_mm) are the one
+-- piece of *location-derived reference* geography this model adds: they come
+-- from the statewide CEC/CIMIS SQLMesh models brewgis.california.*, which are
+-- project models shared by every scenario and every region, and are assigned
+-- to the parcel by point-in-polygon on its centroid. energy_demand and
+-- water_demand key their CEC baselines on them. Nothing per-region is
+-- required: a Fresno scenario gets the same columns from the same models.
 --
 -- Input variables:
 --   @parcel_table:       The scenario canvas: parcel geometry, stock columns
@@ -106,11 +172,14 @@ MODEL (
 --   bldg_area_retail_services, bldg_area_wholesale,
 --   bldg_area_education, bldg_area_medical_services,
 --   bldg_area_accommodation, bldg_area_arts_entertainment,
+--   bldg_area_restaurant, bldg_area_other_services,
+--   bldg_area_transport_warehousing,
 --   building_sqft_other,
 --   residential_irrigated_area, commercial_irrigated_area,
 --   parcel_acres_developed, parcel_acres_agriculture,
 --   parcel_acres_open_space, parcel_acres_vacant,
 --   intersection_density, land_development_category,
+--   title24_zone, fcz_zone, eto_zone, annual_eto_mm,
 --   built_form_id, built_form_key, du_type, jobs_by_sector,
 --   indoor_water_rate, outdoor_water_rate,
 --   electricity_eui, gas_eui, household_size, geometry, centroid_local
@@ -174,6 +243,25 @@ WITH parcel_base AS (
         COALESCE(p.area_parcel_emp_ag, 0.0) AS area_parcel_emp_ag,
         COALESCE(p.land_development_category, '') AS land_development_category,
         COALESCE(p.intersection_density, 0.0) AS intersection_density,
+        -- Climate zones: location-derived statewide reference geography, not
+        -- stock, so they are assigned here (as trip_lengths assigns its own
+        -- reference zones) rather than read from the base layer — every
+        -- scenario's core_end_state then shares one assignment and any region
+        -- gets the columns for free. Point-in-polygon on the parcel *centroid*,
+        -- the same rule assessor/parcel_block_groups.sql uses for block groups:
+        -- LIMIT 1 keeps it deterministic for a straddler, and LEFT JOIN keeps a
+        -- parcel outside California (no zone) as NULL rather than dropping it.
+        --
+        -- Each of these three joins is index-driven only because the consumer
+        -- creates a GiST index on the bridge's ST_Multi(ST_SetSRID(geometry,
+        -- 4326)) expression (see the pre_statements); measured on the 52,187
+        -- SACOG parcels: 34.6 s of sequential scans without it, 1.9 s with it.
+        tz.title24_zone,
+        fz.fcz_zone,
+        ez.eto_zone,
+        -- Depth in mm, which is litres per square metre: 1 inch = 25.4 mm. NULL
+        -- for a parcel in no ETo zone, which water_demand falls back on.
+        ez.annual_eto_in * 25.4 AS annual_eto_mm,
         -- Built-form-only rate/metadata fields (the base layer carries none of
         -- these). A parcel whose canvas key matches no built form still gets
         -- the documented defaults.
@@ -196,6 +284,24 @@ WITH parcel_base AS (
         -- which strips the rate fields (water, EUI) it resolves. See the macro.
         ON @normalize_built_form_key(p.built_form_key)
             = @normalize_built_form_key(bf.key)
+    LEFT JOIN LATERAL (
+        SELECT z.title24_zone
+        FROM @ref_model('brewgis.california.building_climate_zones') AS z
+        WHERE ST_Within(ST_Centroid(p.geometry), z.geometry)
+        LIMIT 1
+    ) AS tz ON TRUE
+    LEFT JOIN LATERAL (
+        SELECT z.fcz_zone
+        FROM @ref_model('brewgis.california.forecasting_climate_zones') AS z
+        WHERE ST_Within(ST_Centroid(p.geometry), z.geometry)
+        LIMIT 1
+    ) AS fz ON TRUE
+    LEFT JOIN LATERAL (
+        SELECT z.eto_zone, z.annual_eto_in
+        FROM @ref_model('brewgis.california.eto_zones') AS z
+        WHERE ST_Within(ST_Centroid(p.geometry), z.geometry)
+        LIMIT 1
+    ) AS ez ON TRUE
 )
 
 SELECT
@@ -235,6 +341,11 @@ SELECT
     bldg_area_medical_services,
     bldg_area_accommodation,
     bldg_area_arts_entertainment,
+    -- The three commercial uses that had no per-use column of their own, so
+    -- energy_demand can key each use's zone baseline on its own floor area.
+    bldg_area_restaurant,
+    bldg_area_other_services,
+    bldg_area_transport_warehousing,
     residential_irrigated_area,
     commercial_irrigated_area,
 
@@ -252,6 +363,13 @@ SELECT
     -- Network indicator + classification: the base layer's own values.
     intersection_density,
     land_development_category,
+
+    -- Climate zones assigned above from the statewide CEC/CIMIS reference
+    -- layers; NULL outside California.
+    title24_zone,
+    fcz_zone,
+    eto_zone,
+    annual_eto_mm,
 
     -- Built form metadata + rate pass-throughs.
     built_form_id,

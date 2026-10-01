@@ -44,6 +44,22 @@ def _c(arr: np.ndarray, default: float = 0.0) -> np.ndarray:
     return np.where(np.isnan(arr), default, arr)
 
 
+def _fallback(nullable: np.ndarray, built_form: np.ndarray) -> np.ndarray:
+    """``COALESCE(nullable, built_form, 0.0)`` over arrays.
+
+    *nullable* is the zone-keyed expression, NaN wherever the parcel's climate
+    zone has no baseline (or the parcel has no zone at all) — the same NULL SQL's
+    NULL arithmetic produces. *built_form* is the pre-climate-zone built-form
+    expression the models fall back to there, itself NaN-safe through ``_c``.
+    """
+    return np.where(np.isnan(nullable), _c(built_form), nullable)
+
+
+def _nullable_nonneg(*arrays: np.ndarray) -> bool:
+    """Every entry of each array is non-negative or NaN (the SQL NULL sentinel)."""
+    return all(np.all(np.isnan(a) | (a >= 0)) for a in arrays)
+
+
 # ══════════════════════════════════════════════════════════════════════
 #  Fiscal — Property Tax  (fiscal_property_tax.sql)
 # ══════════════════════════════════════════════════════════════════════
@@ -586,10 +602,7 @@ def compute_physical_activity(
 # ══════════════════════════════════════════════════════════════════════
 
 
-@deal.pre(lambda rsq, csq, ee, ge: np.all(rsq >= 0))
-@deal.pre(lambda rsq, csq, ee, ge: np.all(csq >= 0))
-@deal.pre(lambda rsq, csq, ee, ge: np.all(ee >= 0))
-@deal.pre(lambda rsq, csq, ee, ge: np.all(ge >= 0))
+@deal.pre(lambda *args, **kwargs: _nullable_nonneg(*args))
 @deal.post(lambda result: np.all(result[0] >= 0))  # energy_electricity_res
 @deal.post(lambda result: np.all(result[1] >= 0))  # energy_gas_res
 @deal.post(lambda result: np.all(result[2] >= 0))  # energy_electricity_nonres
@@ -602,25 +615,52 @@ def compute_physical_activity(
     )
 )
 def compute_energy_demand(
+    du: np.ndarray,
+    du_elec_rate: np.ndarray,
+    du_gas_rate: np.ndarray,
+    com_area: np.ndarray,
+    com_elec_rate: np.ndarray,
+    com_gas_rate: np.ndarray,
     building_sqft_residential: np.ndarray,
     building_sqft_commercial: np.ndarray,
     electricity_eui: np.ndarray,
     gas_eui: np.ndarray,
 ) -> tuple[np.ndarray, np.ndarray, np.ndarray, np.ndarray, np.ndarray, np.ndarray]:
-    """SQL: ``energy_demand`` — kWh/year by fuel type.
+    """SQL: ``energy_demand`` — kWh/year by fuel type, keyed on the CEC zone.
 
-    Residential demand is the end state's own residential floor area; commercial
-    demand its commercial floor area. Both are converted sqft -> m2 and scaled
-    by the built form's EUI.
+    Residential demand is the end state's dwelling units by housing class at the
+    parcel's CEC Building Climate Zone per-dwelling-unit site intensity; commercial
+    demand is its floor area by use at the zone's per-square-foot intensity. Gas is
+    published in therms and returned in kWh at 29.3071 kWh/therm.
+
+    The rate matrices are ``(n, 4)`` (dwelling units: detsf_ll, detsf_sl, attsf, mf)
+    and ``(n, 11)`` (commercial uses, in ``energy_demand.sql``'s order), and a NaN
+    entry is the SQL NULL of a parcel whose zone the baseline does not cover — the
+    same signal ``_fallback`` uses to reproduce the model's COALESCE onto the built
+    form's flat EUI, which is what a parcel outside California keeps.
 
     Returns (elec_res, gas_res, elec_nonres, gas_nonres, total, intensity_kwh_per_sqft).
     """
     sqft_to_m2 = 0.092903
+    kwh_per_therm = 29.3071
 
-    res_elec = _c(building_sqft_residential * sqft_to_m2 * electricity_eui)
-    res_gas = _c(building_sqft_residential * sqft_to_m2 * gas_eui)
-    nonres_elec = _c(building_sqft_commercial * sqft_to_m2 * electricity_eui)
-    nonres_gas = _c(building_sqft_commercial * sqft_to_m2 * gas_eui)
+    # Zone expression: NULL (NaN) whenever any rate it needs is NULL, exactly as
+    # SQL's NULL arithmetic propagates — 0.0 * NULL is NULL, not zero.
+    res_elec_zone = (du * du_elec_rate).sum(axis=1)
+    res_gas_zone = (du * du_gas_rate).sum(axis=1) * kwh_per_therm
+    nonres_elec_zone = (com_area * com_elec_rate).sum(axis=1)
+    nonres_gas_zone = (com_area * com_gas_rate).sum(axis=1) * kwh_per_therm
+
+    res_elec = _fallback(
+        res_elec_zone, building_sqft_residential * sqft_to_m2 * electricity_eui
+    )
+    res_gas = _fallback(res_gas_zone, building_sqft_residential * sqft_to_m2 * gas_eui)
+    nonres_elec = _fallback(
+        nonres_elec_zone, building_sqft_commercial * sqft_to_m2 * electricity_eui
+    )
+    nonres_gas = _fallback(
+        nonres_gas_zone, building_sqft_commercial * sqft_to_m2 * gas_eui
+    )
 
     total = res_elec + res_gas + nonres_elec + nonres_gas
     total_sqft = _c(building_sqft_residential) + _c(building_sqft_commercial)
@@ -633,12 +673,7 @@ def compute_energy_demand(
 # ══════════════════════════════════════════════════════════════════════
 
 
-@deal.pre(lambda pop, indoor, emp, res_irr, com_irr, outdoor: np.all(pop >= 0))
-@deal.pre(lambda pop, indoor, emp, res_irr, com_irr, outdoor: np.all(indoor >= 0))
-@deal.pre(lambda pop, indoor, emp, res_irr, com_irr, outdoor: np.all(emp >= 0))
-@deal.pre(lambda pop, indoor, emp, res_irr, com_irr, outdoor: np.all(res_irr >= 0))
-@deal.pre(lambda pop, indoor, emp, res_irr, com_irr, outdoor: np.all(com_irr >= 0))
-@deal.pre(lambda pop, indoor, emp, res_irr, com_irr, outdoor: np.all(outdoor >= 0))
+@deal.pre(lambda *args, **kwargs: _nullable_nonneg(*args))
 @deal.post(lambda result: np.all(result[0] >= 0))  # water_demand_res_indoor
 @deal.post(lambda result: np.all(result[1] >= 0))  # water_demand_res_outdoor
 @deal.post(lambda result: np.all(result[2] >= 0))  # water_demand_nonres_indoor
@@ -656,21 +691,30 @@ def compute_water_demand(
     employment_total: np.ndarray,
     res_irrigated_area: np.ndarray,
     com_irrigated_area: np.ndarray,
+    annual_eto_mm: np.ndarray,
     outdoor_water_rate: np.ndarray,
     nonres_indoor_water_rate: float = 40.0,
 ) -> tuple[np.ndarray, np.ndarray, np.ndarray, np.ndarray, np.ndarray, np.ndarray]:
     """SQL: ``water_demand`` — liters/year by category.
 
     Indoor demand is the end state's own population (not households times a
-    household size), outdoor demand the end state's own irrigated acres.
+    household size), outdoor demand the end state's own irrigated acres at the
+    parcel's CIMIS ETo-zone reference evapotranspiration depth (mm/year, which is
+    liters per square metre per year).
+
+    A NaN *annual_eto_mm* is the SQL NULL of a parcel in no ETo zone (outside
+    California): its outdoor terms fall back to the built form's flat
+    ``outdoor_water_rate``, the model's COALESCE onto the rate it used before ETo
+    replaced it.
 
     Returns (res_indoor, res_outdoor, nonres_indoor, nonres_outdoor,
              total, per_unit).
     """
+    depth = _fallback(annual_eto_mm, outdoor_water_rate)
     res_in = _c(population) * _c(indoor_water_rate) * 365.0
-    res_out = _c(res_irrigated_area) * 4046.8564224 * _c(outdoor_water_rate)
+    res_out = _c(res_irrigated_area) * 4046.8564224 * depth
     nonres_in = _c(employment_total) * nonres_indoor_water_rate * 365.0
-    nonres_out = _c(com_irrigated_area) * 4046.8564224 * _c(outdoor_water_rate)
+    nonres_out = _c(com_irrigated_area) * 4046.8564224 * depth
 
     total = res_in + res_out + nonres_in + nonres_out
     per_unit = np.where(

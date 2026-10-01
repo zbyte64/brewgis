@@ -89,6 +89,32 @@ def _wdata(draw):
         draw(_fa(n, 0, 10000)),
         draw(_fa(n, 0, 1e6)),
         draw(_fa(n, 0, 1e6)),
+        draw(_fa(n, 0, 2000)),
+        draw(_fa(n, 0, 500)),
+    )
+
+
+def _fm(n, k, lo=0.0, hi=1e6):
+    """An ``(n, k)`` float matrix, one strategy row per class (numpy shape (n, k))."""
+    return st.lists(_fa(k, lo, hi), min_size=n, max_size=n).map(
+        lambda rows: np.array(rows, dtype=float)
+    )
+
+
+@st.composite
+def _energy_inputs(draw):
+    """The ``compute_energy_demand`` inputs: DU counts, 4 du-class rates, 11 uses, fallback."""
+    n = draw(st.integers(min_value=1, max_value=10))
+    return (
+        draw(_fm(n, 4, 0, 2e4)),
+        draw(_fm(n, 4, 0, 2e4)),
+        draw(_fm(n, 4, 0, 2e3)),
+        draw(_fm(n, 11, 0, 1e5)),
+        draw(_fm(n, 11, 0, 200)),
+        draw(_fm(n, 11, 0, 5)),
+        draw(_fa(n)),
+        draw(_fa(n)),
+        draw(_fa(n, 0, 500)),
         draw(_fa(n, 0, 500)),
     )
 
@@ -430,11 +456,28 @@ def test_physical_activity_met_hours(quint):
 
 
 @pytest.mark.slow
-@given(_quint(0, 5e6, 0, 5e6, 0, 500, 0, 500))
+@given(_energy_inputs())
 @_N_HYPOTHESIS
-def test_energy_demand_sum_and_intensity(quint):
-    res_sqft, com_sqft, elec_eui, gas_eui, _ = quint
+def test_energy_demand_sum_and_intensity(inputs):
+    (
+        du,
+        du_elec,
+        du_gas,
+        com_area,
+        com_elec,
+        com_gas,
+        res_sqft,
+        com_sqft,
+        elec_eui,
+        gas_eui,
+    ) = inputs
     er, gr, enr, gnr, total, intensity = compute_energy_demand(
+        du,
+        du_elec,
+        du_gas,
+        com_area,
+        com_elec,
+        com_gas,
         res_sqft,
         com_sqft,
         elec_eui,
@@ -452,6 +495,76 @@ def test_energy_demand_sum_and_intensity(quint):
         )
 
 
+def test_energy_demand_uses_the_zone_baseline_and_keeps_zero_du_at_zero():
+    """A parcel with a zone baseline takes it, and 0 dwelling units stay 0 there.
+
+    The zone branch is not an area estimate: a parcel the baseline covers but
+    with no dwelling units reports 0 residential demand rather than falling
+    through to the built-form floor-area figure.
+    """
+    du = np.array([[1.0, 2.0, 0.0, 3.0]])
+    elec = np.array([[10.0, 20.0, 30.0, 40.0]])
+    gas = np.array([[1.0, 2.0, 3.0, 4.0]])
+    zero_uses = np.zeros((1, 11))
+    er, gr, enr, gnr, total, _ = compute_energy_demand(
+        du,
+        elec,
+        gas,
+        zero_uses,
+        zero_uses,
+        zero_uses,
+        np.array([1000.0]),
+        np.array([500.0]),
+        np.array([100.0]),
+        np.array([50.0]),
+    )
+    assert np.allclose(er, 1 * 10 + 2 * 20 + 0 * 30 + 3 * 40)  # 170 kWh
+    assert np.allclose(gr, (1 * 1 + 2 * 2 + 0 * 3 + 3 * 4) * 29.3071)
+    assert np.allclose(enr, 0.0)
+    assert np.allclose(gnr, 0.0)
+    assert np.allclose(total, er + gr)
+
+    zero_du = np.zeros((1, 4))
+    er, _, enr, _, total, _ = compute_energy_demand(
+        zero_du,
+        elec,
+        gas,
+        zero_uses,
+        zero_uses,
+        zero_uses,
+        np.array([1000.0]),
+        np.array([500.0]),
+        np.array([100.0]),
+        np.array([50.0]),
+    )
+    assert np.allclose(er, 0.0)
+    assert np.allclose(enr, 0.0)
+    assert np.allclose(total, 0.0)
+
+
+def test_energy_demand_falls_back_to_the_built_form_eui_without_a_zone():
+    """No zone baseline (NaN rates) keeps the sq ft x EUI branch for both fuels."""
+    nan_du_rates = np.full((1, 4), np.nan)
+    nan_use_rates = np.full((1, 11), np.nan)
+    er, gr, enr, gnr, total, intensity = compute_energy_demand(
+        np.zeros((1, 4)),
+        nan_du_rates,
+        nan_du_rates,
+        np.zeros((1, 11)),
+        nan_use_rates,
+        nan_use_rates,
+        np.array([1000.0]),
+        np.array([500.0]),
+        np.array([100.0]),
+        np.array([50.0]),
+    )
+    assert np.allclose(er, 1000.0 * 0.092903 * 100.0)
+    assert np.allclose(gr, 1000.0 * 0.092903 * 50.0)
+    assert np.allclose(enr, 500.0 * 0.092903 * 100.0)
+    assert np.allclose(gnr, 500.0 * 0.092903 * 50.0)
+    assert np.allclose(intensity, (er + gr + enr + gnr) / 1500.0)
+
+
 # ══════════════════════════════════════════════════════════════════════
 #  Water Demand
 # ══════════════════════════════════════════════════════════════════════
@@ -461,13 +574,14 @@ def test_energy_demand_sum_and_intensity(quint):
 @given(_wdata())
 @_N_HYPOTHESIS
 def test_water_demand_total_identity(data):
-    pop, indoor_rate, emp, res_irr, com_irr, outdoor_rate = data
+    pop, indoor_rate, emp, res_irr, com_irr, eto_mm, outdoor_rate = data
     ri, ro, ni, no, total, per_unit = compute_water_demand(
         pop,
         indoor_rate,
         emp,
         res_irr,
         com_irr,
+        eto_mm,
         outdoor_rate,
     )
     assert np.all(total >= 0)
@@ -480,6 +594,31 @@ def test_water_demand_total_identity(data):
             total[mask] / (pop + emp)[mask],
             atol=1e-6,
         )
+
+
+def test_water_demand_outdoor_is_the_eto_depth_and_falls_back_without_a_zone():
+    """Outdoor terms are irrigated area x ETo depth; neither zone -> built-form rate."""
+    pop = np.array([100.0])
+    indoor = np.array([200.0])
+    emp = np.array([10.0])
+    res_irr = np.array([1.0])
+    com_irr = np.array([2.0])
+    built_form_rate = np.array([100.0])
+
+    ri, ro, ni, no, total, _ = compute_water_demand(
+        pop, indoor, emp, res_irr, com_irr, np.array([1449.0]), built_form_rate
+    )
+    assert np.allclose(ro, 1.0 * 4046.8564224 * 1449.0)
+    assert np.allclose(no, 2.0 * 4046.8564224 * 1449.0)
+    assert np.allclose(total, ri + ro + ni + no)
+
+    # No ETo zone (NaN depth): the flat built-form rate the model used before ETo.
+    _, ro_off, _, no_off, _, _ = compute_water_demand(
+        pop, indoor, emp, res_irr, com_irr, np.array([np.nan]), built_form_rate
+    )
+    assert np.allclose(ro_off, 1.0 * 4046.8564224 * 100.0)
+    assert np.allclose(no_off, 2.0 * 4046.8564224 * 100.0)
+    assert ro_off[0] < ro[0]
 
 
 # ══════════════════════════════════════════════════════════════════════
@@ -637,6 +776,8 @@ def test_internal_capture_bounds(data):
 
 def test_all_refs_handle_empty_input():
     e = np.array([], dtype=float)
+    du_cols = np.empty((0, 4), dtype=float)
+    use_cols = np.empty((0, 11), dtype=float)
     cases = [
         ("property_tax", lambda: compute_property_tax(e, e)),
         ("service_costs", lambda: compute_service_costs(e, e, e)),
@@ -645,8 +786,16 @@ def test_all_refs_handle_empty_input():
         ("transport_ghg", lambda: compute_transport_ghg(e, e)),
         ("impervious", lambda: compute_impervious_surface(e, e, e, e, e)),
         ("physical_activity", lambda: compute_physical_activity(e, e, e, e, e)),
-        ("energy_demand", lambda: compute_energy_demand(e, e, e, e)),
-        ("water_demand", lambda: compute_water_demand(e, e, e, e, e, e)),
+        (
+            "energy_demand",
+            lambda: compute_energy_demand(
+                du_cols, du_cols, du_cols, use_cols, use_cols, use_cols, e, e, e, e
+            ),
+        ),
+        (
+            "water_demand",
+            lambda: compute_water_demand(e, e, e, e, e, e, e),
+        ),
         ("building_ghg", lambda: compute_building_water_ghg(e, e, e, e, e, e)),
         ("agriculture", lambda: compute_agriculture(e, e, e)),
         ("trip_generation", lambda: compute_trip_generation(e, e, e, e, e, [])),

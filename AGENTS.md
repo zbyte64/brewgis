@@ -26,7 +26,7 @@ User Browser                    Docker Compose Stack
               │
               ├─ Models: 24 classes (Workspace, Layer, PaintedCanvas, Scenario, etc.)
               ├─ Views: 22 modules (~82 URL patterns)
-              ├─ SQLMesh: ~162 models (152 SQL, 10 Python), 86 audits, 22 macros, 37 seeds
+              ├─ SQLMesh: ~173 models (163 SQL, 10 Python), 86 audits, 22 macros, 39 seeds
               ├─ dlt → DuckDB: 3 pipelines (NLCD, OSM) — DuckDB caches HTTP calls, handles raster/zip
               ├─ MCP server: 8 tool modules (FastMCP stdio)
               └─ GIS I/O: geopandas, rasterio for data ingest
@@ -56,7 +56,7 @@ Key rules:
 - Use SQLMesh audits for row-level assertions; use `_schema.yml` column-level tests for `not_null`, `unique`, `non_negative`.
 - SQLMesh Python models are for compute that SQL cannot express (numpy gravity model, multinomial logit). They are the exception, not the pattern.
 - Django services call tools (SQLMesh runner, dlt pipelines). They do not implement the data work.
-- **Analysis reads every stock column from the base layer; built forms supply only rates.** Dwelling units, population, households, employment (and its sector breakdown), floor area (`bldg_area_*`/`building_sqft_*`), parcel acres, irrigated areas, `land_development_category` and `intersection_density` are existing-condition fields carried on the base canvas and are read from `@parcel_table` unconditionally — no `scenario_type`, painted, or alternative branch (the reference is already the selected scenario's canvas, so a painted override arrives by itself). Built forms (`BuildingType`) supply only the rate/parameter fields the base layer does not carry: `indoor_water_rate`, `outdoor_water_rate`, `electricity_eui`, `gas_eui`, `household_size`, `du_type`, plus the `built_form_id` metadata. `du_per_acre`/`emp_per_acre`/`FAR` are painting inputs (what a paint operation writes as explicit `du`/`pop`/`hh`/`emp` overrides), never a substitute the analysis computes from.
+- **Analysis reads every stock column from the base layer; built forms supply only rates.** Dwelling units, population, households, employment (and its sector breakdown), floor area (`bldg_area_*`/`building_sqft_*`), parcel acres, irrigated areas, `land_development_category` and `intersection_density` are existing-condition fields carried on the base canvas and are read from `@parcel_table` unconditionally — no `scenario_type`, painted, or alternative branch (the reference is already the selected scenario's canvas, so a painted override arrives by itself). Built forms (`BuildingType`) supply only the rate/parameter fields the base layer does not carry: `indoor_water_rate`, `outdoor_water_rate`, `electricity_eui`, `gas_eui`, `household_size`, `du_type`, plus the `built_form_id` metadata. `du_per_acre`/`emp_per_acre`/`FAR` are painting inputs (what a paint operation writes as explicit `du`/`pop`/`hh`/`emp` overrides), never a substitute the analysis computes from. Energy and water demand key their *rates* on the parcel's CEC climate zones instead: `core_end_state` assigns `title24_zone`/`fcz_zone`/`eto_zone`/`annual_eto_mm` from the statewide `brewgis.california.*` CEC/CIMIS models and `energy_demand`/`water_demand` apply `brewgis.seeds.residential_energy_baseline` / `commercial_energy_baseline` (per CEC Building Climate Zone) and the ETo depth — falling back to the built form's `electricity_eui`/`gas_eui`/`outdoor_water_rate` only outside the zones' coverage.
 
 ## Key Directories
 
@@ -73,7 +73,7 @@ Key rules:
 |`brewgis/workspace/mcp/`|MCP server: FastMCP stdio entrypoint, auth stub, 8 tool modules|
 |`brewgis/workspace/dlt_pipelines/`|dlt pipeline modules (nlcd) — load directly into DuckDB (caches HTTP, handles raster/zip)|
 |`brewgis/workspace/management/commands/`|Management commands: import_sacog_demo, populate_base_canvas, materialize_sacog_base_canvas, compare_sacog_basemap, onboard_geography, run_mcp, export_story_packet, restore_demo_db|
-|`brewgis/sqlmesh/`|SQLMesh project: ~164 models across 14 subdirs, 22 macros, 37 seeds, 86 audits, config.py|
+|`brewgis/sqlmesh/`|SQLMesh project: ~175 models across 15 subdirs, 22 macros, 39 seeds, 86 audits, config.py|
 |`brewgis/templates/`|~30 Django templates: base.html, workspace_map.html (main map page), workspace_detail.html, scenario_comparison.html, import_center.html, partials, allauth overrides|
 |`brewgis/static/js/`|Bundled frontend: brew-gis-map.js (1.3MB Lit+MapLibre ESM from Vite+TS)|
 |`brewgis/_ruff_rules/`|Custom Ruff lint rules for project-specific anti-patterns (replaces old pytestarch rules)|
@@ -204,14 +204,14 @@ npm run test      # vitest
 ### SQLMesh Patterns (replaced dbt)
 
 - **Project:** `brewgis/sqlmesh/config.py` with Postgres dialect, `local` gateway
-- **162 models:** VIEW = DuckDB raw parsing (staging pattern: DuckDB VIEW → FULL bridge to Postgres → downstream). DuckDB is the preferred data-loading target — it caches HTTP calls and natively handles raster tiles and zip archives
-- **Materialization:** VIEW for DuckDB staging, FULL for bridge/analysis, INCREMENTAL_BY_UNIQUE_KEY for per-parcel/assessor models, SEED for 37 CSV files
+- **173 models:** VIEW = DuckDB raw parsing (staging pattern: DuckDB VIEW → FULL bridge to Postgres → downstream). DuckDB is the preferred data-loading target — it caches HTTP calls and natively handles raster tiles and zip archives
+- **Materialization:** VIEW for DuckDB staging, FULL for bridge/analysis, INCREMENTAL_BY_UNIQUE_KEY for per-parcel/assessor models, SEED for 39 CSV files
 - **Python models (10):** LightGBM regressors, gravity model, multinomial logit, ResNet features
 - **Macros (22):** allocation, utility, generic_tests, spatial_ops, geometry, delta_columns, gen_scenario_blueprints
-- **Seeds (37):** 5 real config seeds, 32 test seeds
+- **Seeds (39):** 7 real config seeds, 32 test seeds
 - **Audits (86):** 57 assert_* (row counts, coverage, conservation) + 29 audit_* (pipeline boundary checks)
-- **Naming:** `brewgis.{namespace}.{model_name}` where the namespace is a region (`sacog`, `fresno`) or a domain (`census`, `overture`, `buildings`, `base_canvas`, `assessor`, `nlcd`) (e.g. `brewgis.sacog.assessor_parcels`, `brewgis.census.tiger_blocks`). DuckDB-gateway raw views use the same namespaces under the `duckdb` catalog (e.g. `duckdb.census.tiger_blocks`)
-- **DuckDB bridges:** a `gateway duckdb` model that targets PostGIS cannot carry a geometry SRID — that transfer writes SRID-less WKB, so `ST_SetCRS` in its SELECT is discarded and every geometry column lands as `SRID 0`. Such a bridge is named `_raw` (`brewgis.<ns>.<name>_raw`, file `<name>_raw.sql`) and the published name `brewgis.<ns>.<name>` is a PostGIS `kind VIEW` that re-tags each geometry column with `ST_SetSRID` and declares `columns (… GEOMETRY(<Type>, <srid>))` — see `census/tiger_blocks.sql`, `osm/poi.sql`, `overture/overture_transport.sql`. A consumer that needs a GiST index on the bridge names the `_raw` model directly (a predicate on the VIEW's `ST_SetSRID` expression cannot use it). Never register the `_raw` table as a Layer: the tile server answers every tile for it with `ST_Transform: Input geometry has unknown (0) SRID`.
+- **Naming:** `brewgis.{namespace}.{model_name}` where the namespace is a region (`sacog`, `fresno`) or a domain (`census`, `overture`, `buildings`, `base_canvas`, `assessor`, `nlcd`, `california`) (e.g. `brewgis.sacog.assessor_parcels`, `brewgis.census.tiger_blocks`). DuckDB-gateway raw views use the same namespaces under the `duckdb` catalog (e.g. `duckdb.census.tiger_blocks`)
+- **DuckDB bridges:** a `gateway duckdb` model that targets PostGIS cannot carry a geometry SRID — that transfer writes SRID-less WKB, so `ST_SetCRS` in its SELECT is discarded and every geometry column lands as `SRID 0`. Such a bridge is named `_raw` (`brewgis.<ns>.<name>_raw`, file `<name>_raw.sql`) and the published name `brewgis.<ns>.<name>` is a PostGIS `kind VIEW` that re-tags each geometry column with `ST_SetSRID` and declares `columns (… GEOMETRY(<Type>, <srid>))` — see `census/tiger_blocks.sql`, `osm/poi.sql`, `overture/overture_transport.sql`. A consumer that needs a GiST index on the bridge's geometry creates it in its own `pre_statements`, on the expression the published VIEW inlines *exactly* — including any wrapper the VIEW adds, e.g. `USING GIST (ST_Multi(ST_SetSRID(geometry, 4326)))` for `models/california/*` — and must name the bridge in its `depends_on`: SQLMesh substitutes a referenced model's physical table in those statements only for a declared dependency, so without it the statement is emitted against the VIEW and Postgres rejects it with `cannot create index on relation … (views)`. Never register the `_raw` table as a Layer: the tile server answers every tile for it with `ST_Transform: Input geometry has unknown (0) SRID`.
 - **Variables:** 51 config variables (SRIDs, census/overture/NLCD/CBP, table names), gateway-managed virtual layer enabled
 - **Analysis parameters:** everything tunable in `models/analysis/**` is declared once in `module_registry.ANALYSIS_PARAMETERS` (default, form field kind, owning module), overridden per scenario on `Scenario.analysis_params`, and baked into every scenario's model blueprints by the `analysis_blueprints` macro. A model reads a *value* parameter as `@blueprint_var('name')` — `@{name}` splices the value as a bare identifier, so it fits object names only and would render `0.85` as the quoted identifier `"0.85"`. `run_modules_sync` renders each run in its own cache directory: SQLMesh's model cache is keyed on model-file mtimes, never on the Scenario rows those blueprints come from, so a shared cache would re-materialize the previous run's values.
 - **Descriptions:** every model declares a MODEL DDL `description` (one sentence: what the rows are and where they come from) and a `column_descriptions` entry for every output column. The SQLMesh UI, the lineage column view and Postgres `COMMENT ON COLUMN` all read them, and they are metadata-only (they hash into `metadata_hash`, never `data_hash`, so documenting a model never triggers a backfill). Python models use the `@model(description=..., column_descriptions={...})` kwargs, external models the same keys in `external_models.yaml`. The one exception is `models/scenarios/scenario_canvas.py`, whose column set is per-scenario and is filled by SQLMesh lineage inference instead. A **Python** model's `description`/`column_descriptions` must not contain an `@` — SQLMesh re-parses any meta string containing one as SQL (blueprint rendering), so `@train_model` in a description fails the whole project load.
@@ -275,9 +275,9 @@ npm run test      # vitest
 |File|Role|
 |---|---|
 |`brewgis/sqlmesh/config.py`|Project config, 51 vars, postgres dialect|
-|`brewgis/sqlmesh/models/`|~164 models across 14 directories (sacog, fresno, census, overture, buildings, base_canvas, assessor, nlcd, adapters, python, analysis, scenarios, spatial_filter, seeds, tests)|
+|`brewgis/sqlmesh/models/`|~175 models across 15 directories (sacog, fresno, california, census, overture, buildings, base_canvas, assessor, nlcd, adapters, python, analysis, scenarios, spatial_filter, seeds, tests)|
 |`brewgis/sqlmesh/macros/`|7 macro files (22 macros total)|
-|`brewgis/sqlmesh/seeds/`|37 CSV seed files (5 real config + 32 test fixtures)|
+|`brewgis/sqlmesh/seeds/`|39 CSV seed files (7 real config + 32 test fixtures)|
 |`brewgis/sqlmesh/audits/`|86 audit SQL files for pipeline data quality|
 
 ## Runtime & Tooling Preferences
