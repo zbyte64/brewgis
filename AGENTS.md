@@ -56,6 +56,7 @@ Key rules:
 - Use SQLMesh audits for row-level assertions; use `_schema.yml` column-level tests for `not_null`, `unique`, `non_negative`.
 - SQLMesh Python models are for compute that SQL cannot express (numpy gravity model, multinomial logit). They are the exception, not the pattern.
 - Django services call tools (SQLMesh runner, dlt pipelines). They do not implement the data work.
+- **Analysis reads every stock column from the base layer; built forms supply only rates.** Dwelling units, population, households, employment (and its sector breakdown), floor area (`bldg_area_*`/`building_sqft_*`), parcel acres, irrigated areas, `land_development_category` and `intersection_density` are existing-condition fields carried on the base canvas and are read from `@parcel_table` unconditionally — no `scenario_type`, painted, or alternative branch (the reference is already the selected scenario's canvas, so a painted override arrives by itself). Built forms (`BuildingType`) supply only the rate/parameter fields the base layer does not carry: `indoor_water_rate`, `outdoor_water_rate`, `electricity_eui`, `gas_eui`, `household_size`, `du_type`, plus the `built_form_id` metadata. `du_per_acre`/`emp_per_acre`/`FAR` are painting inputs (what a paint operation writes as explicit `du`/`pop`/`hh`/`emp` overrides), never a substitute the analysis computes from.
 
 ## Key Directories
 

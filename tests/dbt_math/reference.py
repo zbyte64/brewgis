@@ -57,7 +57,7 @@ def _c(arr: np.ndarray, default: float = 0.0) -> np.ndarray:
 @deal.post(lambda result: np.all(result[2] >= 0))  # property_tax_revenue
 def compute_property_tax(
     dwelling_units_total: np.ndarray,
-    building_sqft_total: np.ndarray,
+    building_sqft_commercial: np.ndarray,
     res_assessed_value_per_du: float = 350000.0,
     nonres_assessed_value_per_sqft: float = 150.0,
     property_tax_rate: float = 1.0,
@@ -67,11 +67,11 @@ def compute_property_tax(
     Returns (assessed_value_res, assessed_value_nonres, property_tax_revenue).
     """
     av_res = _c(dwelling_units_total * res_assessed_value_per_du)
-    av_nonres = _c(building_sqft_total * nonres_assessed_value_per_sqft)
+    av_nonres = _c(building_sqft_commercial * nonres_assessed_value_per_sqft)
     revenue = _c(
         (
             _c(dwelling_units_total * res_assessed_value_per_du)
-            + _c(building_sqft_total * nonres_assessed_value_per_sqft)
+            + _c(building_sqft_commercial * nonres_assessed_value_per_sqft)
         )
         * property_tax_rate
         / 100.0
@@ -586,11 +586,10 @@ def compute_physical_activity(
 # ══════════════════════════════════════════════════════════════════════
 
 
-@deal.pre(lambda du, bsqt, acres_dev, elec_eui, gas_eui: np.all(du >= 0))
-@deal.pre(lambda du, bsqt, acres_dev, elec_eui, gas_eui: np.all(bsqt >= 0))
-@deal.pre(lambda du, bsqt, acres_dev, elec_eui, gas_eui: np.all(acres_dev >= 0))
-@deal.pre(lambda du, bsqt, acres_dev, elec_eui, gas_eui: np.all(elec_eui >= 0))
-@deal.pre(lambda du, bsqt, acres_dev, elec_eui, gas_eui: np.all(gas_eui >= 0))
+@deal.pre(lambda rsq, csq, ee, ge: np.all(rsq >= 0))
+@deal.pre(lambda rsq, csq, ee, ge: np.all(csq >= 0))
+@deal.pre(lambda rsq, csq, ee, ge: np.all(ee >= 0))
+@deal.pre(lambda rsq, csq, ee, ge: np.all(ge >= 0))
 @deal.post(lambda result: np.all(result[0] >= 0))  # energy_electricity_res
 @deal.post(lambda result: np.all(result[1] >= 0))  # energy_gas_res
 @deal.post(lambda result: np.all(result[2] >= 0))  # energy_electricity_nonres
@@ -603,41 +602,29 @@ def compute_physical_activity(
     )
 )
 def compute_energy_demand(
-    dwelling_units_total: np.ndarray,
-    building_sqft_total: np.ndarray,
-    acres_developed: np.ndarray,
+    building_sqft_residential: np.ndarray,
+    building_sqft_commercial: np.ndarray,
     electricity_eui: np.ndarray,
     gas_eui: np.ndarray,
-    res_far_default: float = 0.5,
 ) -> tuple[np.ndarray, np.ndarray, np.ndarray, np.ndarray, np.ndarray, np.ndarray]:
     """SQL: ``energy_demand`` — kWh/year by fuel type.
 
-    SQL formula simplification: when du > 0,
-      res_electric = elec_eui * 0.092903 * acres_dev * 43560 * res_far
-                   = elec_eui * acres_dev * 4046.86 * res_far
-    When du == 0, the NULLIF(du, 0) produces NULL and COALESCE gives 0.
+    Residential demand is the end state's own residential floor area; commercial
+    demand its commercial floor area. Both are converted sqft -> m2 and scaled
+    by the built form's EUI.
 
     Returns (elec_res, gas_res, elec_nonres, gas_nonres, total, intensity_kwh_per_sqft).
     """
     sqft_to_m2 = 0.092903
-    acres_to_sqft = 43560.0
-    factor = sqft_to_m2 * acres_to_sqft * res_far_default  # 2023.43
 
-    res_elec = np.where(
-        dwelling_units_total > 0,
-        electricity_eui * acres_developed * factor,
-        0.0,
-    )
-    res_gas = np.where(
-        dwelling_units_total > 0,
-        gas_eui * acres_developed * factor,
-        0.0,
-    )
-    nonres_elec = _c(building_sqft_total * sqft_to_m2 * electricity_eui)
-    nonres_gas = _c(building_sqft_total * sqft_to_m2 * gas_eui)
+    res_elec = _c(building_sqft_residential * sqft_to_m2 * electricity_eui)
+    res_gas = _c(building_sqft_residential * sqft_to_m2 * gas_eui)
+    nonres_elec = _c(building_sqft_commercial * sqft_to_m2 * electricity_eui)
+    nonres_gas = _c(building_sqft_commercial * sqft_to_m2 * gas_eui)
 
-    total = _c(res_elec) + _c(res_gas) + nonres_elec + nonres_gas
-    intensity = np.where(building_sqft_total > 0, total / building_sqft_total, 0.0)
+    total = res_elec + res_gas + nonres_elec + nonres_gas
+    total_sqft = _c(building_sqft_residential) + _c(building_sqft_commercial)
+    intensity = np.where(total_sqft > 0, total / total_sqft, 0.0)
     return res_elec, res_gas, nonres_elec, nonres_gas, total, intensity
 
 
@@ -646,15 +633,12 @@ def compute_energy_demand(
 # ══════════════════════════════════════════════════════════════════════
 
 
-@deal.pre(
-    lambda hh, hh_size, indoor, emp, res_irr, com_irr, outdoor, pop: np.all(hh >= 0)
-)
-@deal.pre(
-    lambda hh, hh_size, indoor, emp, res_irr, com_irr, outdoor, pop: np.all(emp >= 0)
-)
-@deal.pre(
-    lambda hh, hh_size, indoor, emp, res_irr, com_irr, outdoor, pop: np.all(pop >= 0)
-)
+@deal.pre(lambda pop, indoor, emp, res_irr, com_irr, outdoor: np.all(pop >= 0))
+@deal.pre(lambda pop, indoor, emp, res_irr, com_irr, outdoor: np.all(indoor >= 0))
+@deal.pre(lambda pop, indoor, emp, res_irr, com_irr, outdoor: np.all(emp >= 0))
+@deal.pre(lambda pop, indoor, emp, res_irr, com_irr, outdoor: np.all(res_irr >= 0))
+@deal.pre(lambda pop, indoor, emp, res_irr, com_irr, outdoor: np.all(com_irr >= 0))
+@deal.pre(lambda pop, indoor, emp, res_irr, com_irr, outdoor: np.all(outdoor >= 0))
 @deal.post(lambda result: np.all(result[0] >= 0))  # water_demand_res_indoor
 @deal.post(lambda result: np.all(result[1] >= 0))  # water_demand_res_outdoor
 @deal.post(lambda result: np.all(result[2] >= 0))  # water_demand_nonres_indoor
@@ -667,25 +651,26 @@ def compute_energy_demand(
     )
 )
 def compute_water_demand(
-    households: np.ndarray,
-    household_size: np.ndarray,
+    population: np.ndarray,
     indoor_water_rate: np.ndarray,
     employment_total: np.ndarray,
-    res_irrigated_sqft: np.ndarray,
-    com_irrigated_sqft: np.ndarray,
+    res_irrigated_area: np.ndarray,
+    com_irrigated_area: np.ndarray,
     outdoor_water_rate: np.ndarray,
-    population: np.ndarray,
-    nonres_indoor_water_rate: float = 50.0,
+    nonres_indoor_water_rate: float = 40.0,
 ) -> tuple[np.ndarray, np.ndarray, np.ndarray, np.ndarray, np.ndarray, np.ndarray]:
     """SQL: ``water_demand`` — liters/year by category.
+
+    Indoor demand is the end state's own population (not households times a
+    household size), outdoor demand the end state's own irrigated acres.
 
     Returns (res_indoor, res_outdoor, nonres_indoor, nonres_outdoor,
              total, per_unit).
     """
-    res_in = _c(households) * _c(household_size) * _c(indoor_water_rate) * 365.0
-    res_out = _c(res_irrigated_sqft) * 0.092903 * _c(outdoor_water_rate)
+    res_in = _c(population) * _c(indoor_water_rate) * 365.0
+    res_out = _c(res_irrigated_area) * 4046.8564224 * _c(outdoor_water_rate)
     nonres_in = _c(employment_total) * nonres_indoor_water_rate * 365.0
-    nonres_out = _c(com_irrigated_sqft) * 0.092903 * _c(outdoor_water_rate)
+    nonres_out = _c(com_irrigated_area) * 4046.8564224 * _c(outdoor_water_rate)
 
     total = res_in + res_out + nonres_in + nonres_out
     per_unit = np.where(

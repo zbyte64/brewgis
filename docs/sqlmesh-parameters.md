@@ -56,15 +56,13 @@ via the `**variables` dict when calling `config_factory()` or via plan overrides
 
 | Variable | Default | Notes |
 |---|---|---|
-| `res_far_default` | `0.5` | Residential floor-area ratio default when building data missing |
+| — | — | **Removed.** `res_far_default` no longer exists: `energy_demand` reads the end state's own `building_sqft_residential` / `building_sqft_commercial`. |
 
 ### 1.6 Development
 
 | Variable | Default | Used In | Units | Notes |
 |---|---|---|---|---|
-| `dev_pct` | `100` | allocation macro | % | % of developable acres actually developed |
-| `gross_net_pct` | `85` | allocation macro | % | Gross-to-net acreage ratio (roads, infrastructure) |
-| `density_pct` | `100` | core_end_state | % | Density adjustment applied after gross→net |
+| — | — | — | — | **Removed.** `dev_pct`, `gross_net_pct` and `density_pct` no longer exist: `core_end_state` reads developed acres and floor area off the base layer (`area_parcel_*`, `bldg_area_*`) instead of deriving them from the built form. |
 
 ### 1.7 Fiscal
 
@@ -531,10 +529,13 @@ absorbs it, and the shares sum to exactly 1 wherever the clamp does not bind.
 
 | Macro | Parameter | Default | Purpose |
 |---|---|---|---|
-| `compute_applied_acres` | `dev_pct`, `gross_net_pct` | — | Passed through from `@variable` |
-| `compute_households` | — | — | Uses `1.0 - vacancy_rate/100` |
-| `compute_floor_area` | — | `43560` | acres → sqft (physical constant) |
-| `classify_land_dev_category` | `urban_threshold` | `10.0` du/acre | **History**: SACOG-typical threshold |
+| `compute_applied_acres` | `dev_pct`, `gross_net_pct` | — | **Unused** since `core_end_state` stopped deriving acres from the built form |
+| `compute_dwelling_units` | — | — | **Unused**: `core_end_state` reads `du`/`du_*` from the base layer |
+| `compute_population` | — | — | **Unused**: `core_end_state` reads `pop` from the base layer |
+| `compute_households` | — | — | **Unused**: `core_end_state` reads `hh` from the base layer (uses `1.0 - vacancy_rate/100`) |
+| `compute_employment` | — | — | **Unused**: `core_end_state` reads `emp` from the base layer |
+| `compute_floor_area` | — | `43560` | **Unused**: `core_end_state` reads `bldg_area_*` from the base layer (acres → sqft, physical constant) |
+| `classify_land_dev_category` | `urban_threshold` | `10.0` du/acre | **Unused**: `core_end_state` reads `land_development_category` from the base layer (**History**: SACOG-typical threshold) |
 | | `compact_threshold` | `5.0` du/acre | |
 | | `standard_threshold` | `1.0` du/acre | |
 
@@ -659,7 +660,7 @@ at aggregate and distributional levels. Key diagnostic metrics:
 
 | What you want to change | File(s) to edit |
 |---|---|
-| Scenario development assumptions | Config: `dev_pct`, `gross_net_pct`, `density_pct` |
+| Scenario development assumptions | Base layer: `area_parcel_*`, `bldg_area_*` (no parameter — the analysis reads the canvas) |
 | Trip generation rates | Config: `transport_du_rate_*`, `transport_emp_rate_*`, `transport_school_trip_share`, `transport_hbw/hbo/nhb_pct` |
 | GHG emission factors | Config: `ghg_egrid_co2_per_kwh`, `transport_ghg_co2_per_mile` |
 | Health impact coefficients | Config: `health_*` variables |

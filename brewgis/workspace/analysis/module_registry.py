@@ -185,8 +185,9 @@ MODULE_DESCRIPTIONS: dict[str, str] = {
         "discount developable land before scenario allocation."
     ),
     "core": (
-        "Computes each parcel's end-state population, households, dwelling "
-        "units, employment, and building area from its built form assignment."
+        "Reads each parcel's end-state population, households, dwelling units, "
+        "employment and building area from the scenario canvas; the assigned "
+        "built form supplies the water and energy rates."
     ),
     "water_demand": (
         "Estimates residential and non-residential indoor/outdoor water "
@@ -539,11 +540,7 @@ TRIP_LENGTH_MODULES: tuple[str, ...] = (
 # blueprint baking (sqlmesh/macros/analysis_blueprints.py).
 ANALYSIS_PARAMETERS: tuple[AnalysisParameter, ...] = (
     # Core development
-    AnalysisParameter("dev_pct", 100, "float", ("core",)),
-    AnalysisParameter("gross_net_pct", 85, "float", ("core",)),
-    AnalysisParameter("density_pct", 100, "float", ("core",)),
     AnalysisParameter("nonres_indoor_water_rate", 40.0, "float", ("water_demand",)),
-    AnalysisParameter("res_far_default", 0.5, "float", ("energy_demand",)),
     # Displacement
     AnalysisParameter(
         "displacement_income_threshold",

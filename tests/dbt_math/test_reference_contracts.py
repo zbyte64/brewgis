@@ -84,14 +84,12 @@ def _quint(
 def _wdata(draw):
     n = draw(st.integers(min_value=1, max_value=10))
     return (
-        draw(_fa(n, 0, 5000)),
-        draw(_fa(n, 0, 10)),
+        draw(_fa(n, 0, 15000)),
         draw(_fa(n, 0, 500)),
         draw(_fa(n, 0, 10000)),
         draw(_fa(n, 0, 1e6)),
         draw(_fa(n, 0, 1e6)),
         draw(_fa(n, 0, 500)),
-        draw(_fa(n, 0, 15000)),
     )
 
 
@@ -432,23 +430,26 @@ def test_physical_activity_met_hours(quint):
 
 
 @pytest.mark.slow
-@given(_quint(0, 5000, 0, 5e6, 0, 100, 0, 500, 0, 500))
+@given(_quint(0, 5e6, 0, 5e6, 0, 500, 0, 500))
 @_N_HYPOTHESIS
 def test_energy_demand_sum_and_intensity(quint):
-    du, bsqt, acres_dev, elec_eui, gas_eui = quint
+    res_sqft, com_sqft, elec_eui, gas_eui, _ = quint
     er, gr, enr, gnr, total, intensity = compute_energy_demand(
-        du,
-        bsqt,
-        acres_dev,
+        res_sqft,
+        com_sqft,
         elec_eui,
         gas_eui,
     )
     assert np.all(total >= 0)
     assert np.allclose(total, er + gr + enr + gnr, atol=1e-6)
     assert np.all(intensity >= 0)
-    mask = bsqt > 0
+    mask = (res_sqft + com_sqft) > 0
     if np.any(mask):
-        assert np.allclose(intensity[mask], total[mask] / bsqt[mask], atol=1e-6)
+        assert np.allclose(
+            intensity[mask],
+            total[mask] / (res_sqft + com_sqft)[mask],
+            atol=1e-6,
+        )
 
 
 # ══════════════════════════════════════════════════════════════════════
@@ -460,20 +461,25 @@ def test_energy_demand_sum_and_intensity(quint):
 @given(_wdata())
 @_N_HYPOTHESIS
 def test_water_demand_total_identity(data):
-    hh, hh_size, indoor_rate, emp, res_irr, com_irr, outdoor_rate, pop = data
+    pop, indoor_rate, emp, res_irr, com_irr, outdoor_rate = data
     ri, ro, ni, no, total, per_unit = compute_water_demand(
-        hh,
-        hh_size,
+        pop,
         indoor_rate,
         emp,
         res_irr,
         com_irr,
         outdoor_rate,
-        pop,
     )
     assert np.all(total >= 0)
     assert np.allclose(total, ri + ro + ni + no, atol=1e-3)
     assert np.all(per_unit >= 0)
+    mask = (pop + emp) > 0
+    if np.any(mask):
+        assert np.allclose(
+            per_unit[mask],
+            total[mask] / (pop + emp)[mask],
+            atol=1e-6,
+        )
 
 
 # ══════════════════════════════════════════════════════════════════════
@@ -639,8 +645,8 @@ def test_all_refs_handle_empty_input():
         ("transport_ghg", lambda: compute_transport_ghg(e, e)),
         ("impervious", lambda: compute_impervious_surface(e, e, e, e, e)),
         ("physical_activity", lambda: compute_physical_activity(e, e, e, e, e)),
-        ("energy_demand", lambda: compute_energy_demand(e, e, e, e, e)),
-        ("water_demand", lambda: compute_water_demand(e, e, e, e, e, e, e, e)),
+        ("energy_demand", lambda: compute_energy_demand(e, e, e, e)),
+        ("water_demand", lambda: compute_water_demand(e, e, e, e, e, e)),
         ("building_ghg", lambda: compute_building_water_ghg(e, e, e, e, e, e)),
         ("agriculture", lambda: compute_agriculture(e, e, e)),
         ("trip_generation", lambda: compute_trip_generation(e, e, e, e, e, [])),

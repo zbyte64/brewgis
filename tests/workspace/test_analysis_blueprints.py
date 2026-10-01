@@ -152,7 +152,8 @@ class TestScenarioProfiles:
         assert {param.name for param in ANALYSIS_PARAMETERS} <= set(profile)
         assert profile["transport_truck_factor"] == 0.05
         assert profile["transport_intrazonal_friction"] == 0.15
-        # The scenario type travels as a value: core_end_state branches on it.
+        # The scenario type travels as a value: scenario identity metadata every
+        # blueprint carries.
         assert profile["scenario_type"] == analyzed_scenario.scenario_type
         assert profile["model_table"] == "vmt"
 

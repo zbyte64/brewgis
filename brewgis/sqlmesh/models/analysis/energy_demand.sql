@@ -6,13 +6,13 @@ MODEL (
     parcel_id = 'Assessor parcel number (APN) of the parcel.',
     area_gross_acres = 'Gross parcel area (acres).',
     acres_developed = 'Developed acres from the end state (acres).',
-    energy_electricity_res = 'Residential electricity demand (kWh per year) from unit area and EUI.',
-    energy_gas_res = 'Residential gas demand (kWh per year) from unit area and EUI.',
-    energy_electricity_nonres = 'Non-residential electricity demand (kWh per year) from floor area and EUI.',
-    energy_gas_nonres = 'Non-residential gas demand (kWh per year) from floor area and EUI.',
+    energy_electricity_res = 'Residential electricity demand (kWh per year) from residential floor area and EUI.',
+    energy_gas_res = 'Residential gas demand (kWh per year) from residential floor area and EUI.',
+    energy_electricity_nonres = 'Non-residential electricity demand (kWh per year) from commercial floor area and EUI.',
+    energy_gas_nonres = 'Non-residential gas demand (kWh per year) from commercial floor area and EUI.',
     energy_total = 'Total energy demand, residential plus non-residential (kWh per year).',
     energy_intensity_kwh_per_sqft = 'Energy demand per unit floor area (kWh per sq ft per year); zero without area.',
-    du = 'Dwelling units from the end state, used for residential unit area.',
+    du = 'Dwelling units from the end state (units).',
     building_sqft_total = 'Total building floor area from the end state (sq ft).',
     pop = 'Population allocated to the parcel (people).',
     emp = 'Employment allocated to the parcel (jobs).',
@@ -21,81 +21,61 @@ MODEL (
   blueprints @analysis_blueprints('energy_demand'),
 );
 
+WITH demand AS (
+    SELECT
+        es.parcel_id,
+        es.area_gross_acres,
+        es.acres_developed,
+        es.du,
+        es.building_sqft_total,
+        es.pop,
+        es.emp,
+        es.geometry,
+
+        -- Residential electric (kWh/yr): residential floor area (sq ft) -> m2 * EUI (kWh/m2/yr)
+        COALESCE(es.building_sqft_residential * 0.092903 * es.electricity_eui, 0.0)
+            AS energy_electricity_res,
+
+        -- Residential gas (kWh/yr)
+        COALESCE(es.building_sqft_residential * 0.092903 * es.gas_eui, 0.0)
+            AS energy_gas_res,
+
+        -- Non-residential electric (kWh/yr): commercial floor area -> m2 * EUI
+        COALESCE(es.building_sqft_commercial * 0.092903 * es.electricity_eui, 0.0)
+            AS energy_electricity_nonres,
+
+        -- Non-residential gas (kWh/yr)
+        COALESCE(es.building_sqft_commercial * 0.092903 * es.gas_eui, 0.0)
+            AS energy_gas_nonres
+    FROM @{scenario_schema}.core_end_state AS es
+)
+
 SELECT
-    es.parcel_id,
-    es.area_gross_acres,
-    es.acres_developed,
+    parcel_id,
+    area_gross_acres,
+    acres_developed,
+    energy_electricity_res,
+    energy_gas_res,
+    energy_electricity_nonres,
+    energy_gas_nonres,
 
-    -- Residential electric (kWh/yr): dwelling units * avg_unit_area_m2 * EUI (kWh/m2/yr)
-    -- Avg unit area = acres_developed * 43560 * FAR / dwelling_units
-    COALESCE(
-        es.du * es.electricity_eui * 0.092903
-        * (es.acres_developed * 43560.0 * @blueprint_var('res_far_default') / NULLIF(es.du, 0)),
-        0.0
-    ) AS energy_electricity_res,
+    -- Total energy (kWh/yr): each fuel's residential plus non-residential demand.
+    (energy_electricity_res + energy_gas_res + energy_electricity_nonres + energy_gas_nonres)
+        AS energy_total,
 
-    -- Residential gas (kWh/yr)
-    COALESCE(
-        es.du * es.gas_eui * 0.092903
-        * (es.acres_developed * 43560.0 * @blueprint_var('res_far_default') / NULLIF(es.du, 0)),
-        0.0
-    ) AS energy_gas_res,
-
-    -- Non-residential electric (kWh/yr): building_sqft -> m2 * EUI
-    COALESCE(es.building_sqft_total * 0.092903 * es.electricity_eui, 0.0) AS energy_electricity_nonres,
-
-    -- Non-residential gas (kWh/yr)
-    COALESCE(es.building_sqft_total * 0.092903 * es.gas_eui, 0.0) AS energy_gas_nonres,
-
-    -- Total energy (kWh/yr)
-    COALESCE(
-        es.du * es.electricity_eui * 0.092903
-        * (es.acres_developed * 43560.0 * @blueprint_var('res_far_default') / NULLIF(es.du, 0)),
-        0.0
-    )
-    + COALESCE(
-        es.du * es.gas_eui * 0.092903
-        * (es.acres_developed * 43560.0 * @blueprint_var('res_far_default') / NULLIF(es.du, 0)),
-        0.0
-    )
-    + COALESCE(es.building_sqft_total * 0.092903 * es.electricity_eui, 0.0)
-    + COALESCE(es.building_sqft_total * 0.092903 * es.gas_eui, 0.0)
-    AS energy_total,
-
-    -- Energy intensity (kWh/sqft)
-    CASE WHEN es.building_sqft_total > 0
-        THEN (
-            COALESCE(
-                es.du * es.electricity_eui * 0.092903
-                * (es.acres_developed * 43560.0 * @blueprint_var('res_far_default') / NULLIF(es.du, 0)),
-                0.0
-            )
-            + COALESCE(
-                es.du * es.gas_eui * 0.092903
-                * (es.acres_developed * 43560.0 * @blueprint_var('res_far_default') / NULLIF(es.du, 0)),
-                0.0
-            )
-            + COALESCE(es.building_sqft_total * 0.092903 * es.electricity_eui, 0.0)
-            + COALESCE(es.building_sqft_total * 0.092903 * es.gas_eui, 0.0)
-        ) / es.building_sqft_total
+    -- Energy intensity (kWh/sqft of total floor area)
+    CASE WHEN building_sqft_total > 0
+        THEN (energy_electricity_res + energy_gas_res + energy_electricity_nonres + energy_gas_nonres)
+            / building_sqft_total
         ELSE 0.0
     END AS energy_intensity_kwh_per_sqft,
 
-    es.du,
-    es.building_sqft_total,
-    es.pop,
-    es.emp,
-    es.geometry
-
-FROM @{scenario_schema}.core_end_state AS es;
-
-
--- ------------------------------------------------------------
--- Land Consumption (L1 + L2)
---   L1: Land use transition classification and acres consumed
---   L2: Impervious surface estimation (building, parking, ROW)
--- Source (dbt): brewgis/dbt_project/models/land_consumption.sql
--- ------------------------------------------------------------
+    du,
+    building_sqft_total,
+    pop,
+    emp,
+    geometry
+FROM demand;
 
 -- post_statements
   CREATE INDEX IF NOT EXISTS @snapshot_hash('idx_energy_demand_geometry_')

@@ -6,7 +6,7 @@ MODEL (
     parcel_id = 'Assessor parcel number (APN) of the parcel.',
     area_gross_acres = 'Gross parcel area (acres).',
     acres_developed = 'Developed acres from the end state (acres).',
-    water_demand_res_indoor = 'Residential indoor demand (litres per year) from households and rate.',
+    water_demand_res_indoor = 'Residential indoor demand (litres per year) from population and rate.',
     water_demand_res_outdoor = 'Residential outdoor demand (litres per year) from irrigated area.',
     water_demand_nonres_indoor = 'Non-residential indoor demand (litres per year) from employment.',
     water_demand_nonres_outdoor = 'Non-residential outdoor demand (litres per year) from irrigated area.',
@@ -25,8 +25,8 @@ SELECT
     es.area_gross_acres,
     es.acres_developed,
 
-    -- Residential indoor (L/yr): households * household_size * indoor_water_rate * 365
-    es.hh * es.household_size * es.indoor_water_rate * 365.0 AS water_demand_res_indoor,
+    -- Residential indoor (L/yr): population * indoor_water_rate * 365
+    es.pop * es.indoor_water_rate * 365.0 AS water_demand_res_indoor,
 
     -- Residential outdoor (L/yr): irrigated acres -> m2 * outdoor_water_rate (L/m2/yr)
     es.residential_irrigated_area * 4046.8564224 * es.outdoor_water_rate AS water_demand_res_outdoor,
@@ -38,7 +38,7 @@ SELECT
     es.commercial_irrigated_area * 4046.8564224 * es.outdoor_water_rate AS water_demand_nonres_outdoor,
 
     -- Total water demand (L/yr)
-    (es.hh * es.household_size * es.indoor_water_rate * 365.0)
+    (es.pop * es.indoor_water_rate * 365.0)
       + (es.residential_irrigated_area * 4046.8564224 * es.outdoor_water_rate)
       + (es.emp * @blueprint_var('nonres_indoor_water_rate') * 365.0)
       + (es.commercial_irrigated_area * 4046.8564224 * es.outdoor_water_rate)
@@ -46,7 +46,7 @@ SELECT
 
     -- Per-unit water demand (L/person+job/yr)
     CASE WHEN (es.pop + es.emp) > 0
-        THEN ((es.hh * es.household_size * es.indoor_water_rate * 365.0)
+        THEN ((es.pop * es.indoor_water_rate * 365.0)
               + (es.residential_irrigated_area * 4046.8564224 * es.outdoor_water_rate)
               + (es.emp * @blueprint_var('nonres_indoor_water_rate') * 365.0)
               + (es.commercial_irrigated_area * 4046.8564224 * es.outdoor_water_rate))

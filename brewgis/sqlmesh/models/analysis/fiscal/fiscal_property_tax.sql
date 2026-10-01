@@ -5,7 +5,7 @@ MODEL (
   column_descriptions (
     parcel_id = 'Assessor parcel number (APN) of the parcel.',
     assessed_value_res = 'Assessed residential value from dwelling units ($).',
-    assessed_value_nonres = 'Assessed non-residential value from floor area ($).',
+    assessed_value_nonres = 'Assessed non-residential value from non-residential floor area ($).',
     property_tax_revenue = 'Property tax on the assessed value at the configured rate ($ per year).',
     geometry = 'Parcel boundary geometry (EPSG:4326).'
   ),
@@ -23,7 +23,7 @@ MODEL (
 --
 -- Formula:
 --   assessed_value_res = dwelling_units_total x res_assessed_value_per_du
---   assessed_value_nonres = building_sqft_total x nonres_assessed_value_per_sqft
+--   assessed_value_nonres = building_sqft_commercial x nonres_assessed_value_per_sqft
 --   property_tax_revenue = (assessed_value_res + assessed_value_nonres)
 --                          x property_tax_rate / 100
 --
@@ -37,11 +37,11 @@ SELECT
     -- Residential assessed value
     COALESCE(es.du * @blueprint_var('res_assessed_value_per_du'), 0.0) AS assessed_value_res,
     -- Non-residential assessed value
-    COALESCE(es.building_sqft_total * @blueprint_var('nonres_assessed_value_per_sqft'), 0.0) AS assessed_value_nonres,
+    COALESCE(es.building_sqft_commercial * @blueprint_var('nonres_assessed_value_per_sqft'), 0.0) AS assessed_value_nonres,
     -- Property tax revenue
     COALESCE(
         (es.du * @blueprint_var('res_assessed_value_per_du')
-         + es.building_sqft_total * @blueprint_var('nonres_assessed_value_per_sqft'))
+         + es.building_sqft_commercial * @blueprint_var('nonres_assessed_value_per_sqft'))
         * @blueprint_var('property_tax_rate') / 100.0,
         0.0
     ) AS property_tax_revenue,

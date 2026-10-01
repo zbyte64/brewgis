@@ -48,6 +48,8 @@ def _core_es_df(
     pop: np.ndarray | None = None,
     emp: np.ndarray | None = None,
     building_sqft_total: np.ndarray | None = None,
+    building_sqft_residential: np.ndarray | None = None,
+    building_sqft_commercial: np.ndarray | None = None,
     **extra: np.ndarray,
 ) -> pd.DataFrame:
     """Build a synthetic ``core_end_state`` DataFrame with the model's real columns.
@@ -66,6 +68,16 @@ def _core_es_df(
         "emp": emp if emp is not None else np.full(n, 20.0),
         "building_sqft_total": (
             building_sqft_total if building_sqft_total is not None else np.full(n, 1e4)
+        ),
+        "building_sqft_residential": (
+            building_sqft_residential
+            if building_sqft_residential is not None
+            else np.full(n, 1e4)
+        ),
+        "building_sqft_commercial": (
+            building_sqft_commercial
+            if building_sqft_commercial is not None
+            else np.full(n, 1e4)
         ),
         "area_gross_acres": np.full(n, 1.0),
         "land_development_category": np.full(n, "urban"),
@@ -90,7 +102,7 @@ def test_fiscal_property_tax_parity(parity_scenario: str) -> None:
 
     av_ref, an_ref, rev_ref = compute_property_tax(du, bsqt)
 
-    es_df = _core_es_df(pid, du=du, building_sqft_total=bsqt)
+    es_df = _core_es_df(pid, du=du, building_sqft_commercial=bsqt)
     result = run_model(
         "fiscal_property_tax",
         upstream={"core_end_state": es_df},
