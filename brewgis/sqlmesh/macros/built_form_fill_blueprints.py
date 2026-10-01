@@ -17,7 +17,7 @@ model ``models/base_canvas/built_form_fill.py``::
 
     {model_table: "fill_<workspace pk>",
      source_ref: "brewgis.<base_table>",
-     built_form_table: "<db_schema>.built_forms",
+     workspace_id: <workspace pk>,
      all_columns: [<base table's columns, in DB order>]}
 
 The selected source is never modified — the model materializes a new table, and
@@ -119,7 +119,10 @@ def built_form_fill_profiles() -> list[dict[str, object]]:
                     if is_model_backed(source, model_backed)
                     else source
                 ),
-                "built_form_table": f"{workspace.db_schema}.built_forms",
+                # The match reads the workspace's Building Types straight from
+                # the Django table, filtered to this workspace — never an
+                # exported copy, which can lag behind the library.
+                "workspace_id": workspace.pk,
                 "all_columns": columns,
             }
         )

@@ -60,9 +60,9 @@ and ``vacancy_rate`` with the same defaults the analysis models use
 (``COALESCE(household_size, 2.5)``, ``COALESCE(vacancy_rate, 5.0) / 100``).
 """
 
-# ruff: noqa: PLC0415 — the matching rules and ``_qi`` live in modules that
-# import Django, and SQLMesh imports this module while loading the project,
-# before anything has configured it. They are imported inside ``execute``.
+# ruff: noqa: PLC0415 — the matching rules live in modules that import Django,
+# and SQLMesh imports this module while loading the project, before anything
+# has configured it. They are imported inside ``execute``.
 
 from __future__ import annotations
 
@@ -215,24 +215,26 @@ def execute(evaluator: MacroEvaluator, **kwargs: Any) -> str:
 
     The returned string is not macro-rendered again by SQLMesh, so the
     blueprint variables are resolved here through the evaluator and the
-    ``built_forms`` export is referenced as the physical table it is
-    (double-quoted per part; see ``canvas_view_manager._qi``).
+    workspace's Building Type library is read from the Django table itself
+    (``public.workspace_buildingtype``, ``BuildingType``'s table), filtered to
+    the blueprint's workspace. Its ``name`` is the key the match assigns — the
+    display name the paint surfaces write — and a NULL density reads as 0, the
+    "none" ``du_per_acre`` and ``emp_per_acre`` document.
 
     No ``columns`` declaration and no ``column_descriptions``: the output's
     column set is the per-workspace source's, which SQLMesh infers through
     lineage (same rationale as ``models/scenarios/scenario_canvas.py``).
 
     The imports are inside ``execute`` because SQLMesh imports this module
-    while loading the project, before anything has configured Django — and both
-    ``_qi`` and the matching rules live in modules that import Django.
+    while loading the project, before anything has configured Django — and the
+    matching rules live in modules that import Django.
     """
     from brewgis.workspace.built_forms.matching import category_requirement_sql
     from brewgis.workspace.built_forms.matching import sector_preference_sql
     from brewgis.workspace.services.built_form_keys import PLACEHOLDER_BUILT_FORM_KEY
-    from brewgis.workspace.services.canvas_view_manager import _qi
 
     source_ref = str(evaluator.blueprint_var("source_ref"))
-    built_form_table = str(evaluator.blueprint_var("built_form_table"))
+    workspace_id = int(str(evaluator.blueprint_var("workspace_id")))
     all_columns = [str(column) for column in evaluator.blueprint_var("all_columns", [])]
 
     acres = _ACRES.format(p="")
@@ -259,6 +261,21 @@ def execute(evaluator: MacroEvaluator, **kwargs: Any) -> str:
 WITH source AS (
     SELECT * FROM {source_ref}
 ),
+built_forms AS (
+    -- The workspace's own Building Type library, live: an edit to the library
+    -- reaches the next fill without an export step in between.
+    SELECT
+        id,
+        name AS key,
+        land_development_category,
+        COALESCE(du_per_acre, 0.0) AS du_per_acre,
+        COALESCE(emp_per_acre, 0.0) AS emp_per_acre,
+        household_size,
+        vacancy_rate,
+        jobs_by_sector
+    FROM public.workspace_buildingtype
+    WHERE workspace_id = {workspace_id}
+),
 known_keys AS (
     -- Every key the match below can assign, normalized the way it compares
     -- them: a source key that names one of these is an assignment the fill
@@ -266,7 +283,7 @@ known_keys AS (
     -- that names none of them. Two library entries can share a normalized key,
     -- so the set is deduplicated and joined, not searched per parcel.
     SELECT DISTINCT {_normalize_sql("key")} AS normalized_key
-    FROM {_qi(built_form_table)}
+    FROM built_forms
 ),
 matched AS (
     SELECT
@@ -282,7 +299,7 @@ matched AS (
         ON k.normalized_key = {_normalize_sql("s.built_form_key")}
     LEFT JOIN LATERAL (
         SELECT *
-        FROM {_qi(built_form_table)} bf
+        FROM built_forms bf
         WHERE ({du_basis}
            OR {emp_basis}
            OR {key_basis})

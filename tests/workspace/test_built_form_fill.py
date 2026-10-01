@@ -21,6 +21,8 @@ from django.db import connection
 
 from brewgis.workspace.services.base_canvas_schema import EMPLOYMENT_SECTORS
 from brewgis.workspace.services.built_form_keys import PLACEHOLDER_BUILT_FORM_KEY
+from tests.factories import BuildingTypeFactory
+from tests.factories import WorkspaceFactory
 
 if TYPE_CHECKING:
     from collections.abc import Iterator
@@ -45,16 +47,16 @@ _COLUMNS: tuple[str, ...] = (
     *(f"emp_{sector}" for sector in EMPLOYMENT_SECTORS),
 )
 
-# One workspace's Building Type library, as the fill's join table sees it: the
-# display names the paint surfaces write, one entry naming no category (the
-# library's own Mixed Use, whose category no parcel vocabulary can express) and
-# densities far enough apart that the closest match is never ambiguous.
-_LIBRARY: tuple[tuple[int, str, str, float, float], ...] = (
-    (1, "Single-Family Detached - Large Lot", "urban", 2.0, 0.0),
-    (2, "Courtyard Apartment", "urban", 40.0, 0.0),
-    (3, "Neighborhood Retail", "urban", 0.0, 30.0),
-    (4, "Office - Mid/High Rise", "urban", 30.0, 60.0),
-    (5, "Mixed Use", "", 25.0, 25.0),
+# One workspace's Building Type library: the display names the paint surfaces
+# write, one entry naming no category (the library's own Mixed Use, whose
+# category no parcel vocabulary can express) and densities far enough apart that
+# the closest match is never ambiguous.
+_LIBRARY: tuple[tuple[str, str, float, float], ...] = (
+    ("Single-Family Detached - Large Lot", "urban", 2.0, 0.0),
+    ("Courtyard Apartment", "urban", 40.0, 0.0),
+    ("Neighborhood Retail", "urban", 0.0, 30.0),
+    ("Office - Mid/High Rise", "urban", 30.0, 60.0),
+    ("Mixed Use", "", 25.0, 25.0),
 )
 
 # parcel id → (built_form_key, du, emp). Every parcel is 10 acres in the urban
@@ -106,13 +108,31 @@ class _Evaluator:
 
 @pytest.fixture
 def probe(db) -> Iterator[dict[str, Any]]:
-    """A base-canvas-shaped source and a Building Type library beside it.
+    """A base-canvas-shaped source and one workspace's Building Type library.
 
     The fill's SQL is built from the workspace's blueprint, which the model
     resolves while SQLMesh loads the project — so the shape that matters here is
     what that blueprint carries: the source's name, its column list, and the
-    library table the match joins against.
+    workspace whose Building Types the match joins against. A second workspace
+    holds a library entry that would win every match, so a fill that read past
+    its own workspace's rows would show it.
     """
+    workspace = WorkspaceFactory()
+    for name, category, du_per_acre, emp_per_acre in _LIBRARY:
+        BuildingTypeFactory(
+            workspace=workspace,
+            name=name,
+            land_development_category=category,
+            du_per_acre=du_per_acre,
+            emp_per_acre=emp_per_acre,
+        )
+    BuildingTypeFactory(
+        name="Another Workspace's Exact Match",
+        land_development_category="urban",
+        du_per_acre=4.0,
+        emp_per_acre=60.0,
+    )
+
     sector_columns = ", ".join(
         f"emp_{sector} DOUBLE PRECISION" for sector in EMPLOYMENT_SECTORS
     )
@@ -138,24 +158,6 @@ def probe(db) -> Iterator[dict[str, Any]]:
                 {sector_columns}
             )
         """)
-        cursor.execute(f"""
-            CREATE TABLE {_SCHEMA}.built_forms (
-                id BIGINT PRIMARY KEY,
-                key TEXT,
-                land_development_category TEXT,
-                du_per_acre DOUBLE PRECISION,
-                emp_per_acre DOUBLE PRECISION,
-                household_size DOUBLE PRECISION,
-                vacancy_rate DOUBLE PRECISION,
-                jobs_by_sector JSONB
-            )
-        """)
-        cursor.execute(
-            f"INSERT INTO {_SCHEMA}.built_forms"
-            " (id, key, land_development_category, du_per_acre, emp_per_acre)"
-            f" VALUES {', '.join(['(%s, %s, %s, %s, %s)'] * len(_LIBRARY))}",
-            [value for entry in _LIBRARY for value in entry],
-        )
         cursor.execute(
             f"INSERT INTO {_SCHEMA}.parcels"
             f" ({', '.join(_COLUMNS)}) VALUES {', '.join(row for _ in _PARCELS)}",
@@ -164,7 +166,7 @@ def probe(db) -> Iterator[dict[str, Any]]:
     try:
         yield {
             "source_ref": f"{_SCHEMA}.parcels",
-            "built_form_table": f"{_SCHEMA}.built_forms",
+            "workspace_id": workspace.pk,
             "all_columns": list(_COLUMNS),
         }
     finally:

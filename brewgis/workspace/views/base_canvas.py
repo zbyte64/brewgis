@@ -34,7 +34,6 @@ from django.utils.decorators import method_decorator
 from django.views.generic.edit import FormView
 
 from brewgis.sqlmesh.macros.built_form_fill_blueprints import MODEL_SCHEMA
-from brewgis.workspace.analysis.data_export import ensure_export_exists_isolated
 from brewgis.workspace.analysis.layer_registry import BASE_CANVAS_LAYER_KEY
 from brewgis.workspace.analysis.layer_registry import register_result_layer
 from brewgis.workspace.analysis.sqlmesh_runner import purge_models_from_environments
@@ -159,11 +158,6 @@ class SelectBaseCanvasView(HtmxResponseMixin, FormView):
         )
         selectors = [canvas_model_selector(scenario) for scenario in canvas_scenarios]
         if fill:
-            # The model's JOIN source. Exported on its own connection so it is
-            # committed before the plan's engine adapter reads it.
-            ensure_export_exists_isolated(
-                self.workspace, schema=self.workspace.db_schema, table="built_forms"
-            )
             # The selected source model is already materialized (the picker only
             # offers existing tables), so the fill plus the canvases over it are
             # the whole selection.

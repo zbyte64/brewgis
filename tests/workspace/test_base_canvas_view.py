@@ -77,9 +77,6 @@ def spy(monkeypatch) -> _Spy:
         lambda **kwargs: captured.plans.append(kwargs),
     )
     monkeypatch.setattr(
-        f"{VIEW_MODULE}.ensure_export_exists_isolated", lambda *_, **__: 1
-    )
-    monkeypatch.setattr(
         f"{VIEW_MODULE}.purge_models_from_environments",
         lambda fqns: captured.purged.append(list(fqns)) or [],
     )
