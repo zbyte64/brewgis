@@ -17,7 +17,7 @@ from typing import TYPE_CHECKING
 
 from sqlmesh import macro
 
-from brewgis.sqlmesh.macros.geometry import require_local_srid
+from brewgis.sqlmesh.crs import require_local_srid
 
 if TYPE_CHECKING:
     from sqlglot import exp
