@@ -21,6 +21,7 @@ from django.views.decorators.http import require_GET
 from brewgis.workspace.analysis.layer_registry import BASE_CANVAS_LAYER_KEY
 from brewgis.workspace.models import Layer
 from brewgis.workspace.models import Scenario
+from brewgis.workspace.services.analysis_column_units import resolve_column_unit
 from brewgis.workspace.services.canvas_view_manager import PAINTABLE_COLUMNS
 from brewgis.workspace.views.panels import resolve_scenario_param
 
@@ -203,10 +204,20 @@ def layer_data_table(request: HttpRequest, layer_pk: int) -> HttpResponse:
     if feature_id_column and feature_id_column in data_columns:
         feature_id_col_index = data_columns.index(feature_id_column)
 
+    # Column header tooltips: the model that publishes *table* declares a
+    # unit for its own columns (see ``analysis_column_units``), the base
+    # canvas schema covers the parcel columns every canvas-derived table
+    # carries. Only non-empty units are kept, so the template's ``{% if %}``
+    # is a plain truthiness check.
+    column_units = {
+        col: unit for col in data_columns if (unit := resolve_column_unit(table, col))
+    }
+
     context: dict[str, Any] = {
         "layer": layer,
         "scenario": scenario,
         "columns": data_columns,
+        "column_units": column_units,
         "rows": rows,
         "feature_id_column": feature_id_column,
         "feature_id_col_index": feature_id_col_index,

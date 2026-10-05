@@ -43,54 +43,64 @@
           <tr>
             <th scope="col" style="width: 24px; font-size: 0.75rem;"></th>
             {% for col in columns %}
-              {% if sort_field == col and not sort_desc %}
-                {% translate "Switch to descending sort" as sort_aria %}
-                <th scope="col"
-                    style="font-size: 0.75rem;
-                           white-space: nowrap;
-                           cursor: pointer;
-                           user-select: none"
-                    hx-get="{% url 'workspace:layer_data_table' layer.pk %}?sort=-{{ col }}&amp;page_size={{ page_size }}&amp;page=1{% if scenario %}&amp;scenario={{ scenario.pk }}{% endif %}"
-                    hx-target="#data-table-{{ layer.pk }}"
-                    hx-swap="outerHTML"
-                    aria-label="{{ sort_aria }}">
-                  <span class="d-inline-flex align-items-center gap-1">
-                    {{ col }}
-                    <span class="small lh-1" style="font-size: 0.6rem;">&#9650;</span>
-                  </span>
-                </th>
-              {% elif sort_field == col and sort_desc %}
-                {% translate "Remove sort" as sort_aria %}
-                <th scope="col"
-                    style="font-size: 0.75rem;
-                           white-space: nowrap;
-                           cursor: pointer;
-                           user-select: none"
-                    hx-get="{% url 'workspace:layer_data_table' layer.pk %}?page_size={{ page_size }}&amp;page=1{% if scenario %}&amp;scenario={{ scenario.pk }}{% endif %}"
-                    hx-target="#data-table-{{ layer.pk }}"
-                    hx-swap="outerHTML"
-                    aria-label="{{ sort_aria }}">
-                  <span class="d-inline-flex align-items-center gap-1">
-                    {{ col }}
-                    <span class="small lh-1" style="font-size: 0.6rem;">&#9660;</span>
-                  </span>
-                </th>
-              {% else %}
-                {% blocktranslate trimmed with col=col asvar sort_aria %}
-                  Sort by {{ col }} ascending
-                {% endblocktranslate %}
-                <th scope="col"
-                    style="font-size: 0.75rem;
-                           white-space: nowrap;
-                           cursor: pointer;
-                           user-select: none"
-                    hx-get="{% url 'workspace:layer_data_table' layer.pk %}?sort={{ col }}&amp;page_size={{ page_size }}&amp;page=1{% if scenario %}&amp;scenario={{ scenario.pk }}{% endif %}"
-                    hx-target="#data-table-{{ layer.pk }}"
-                    hx-swap="outerHTML"
-                    aria-label="{{ sort_aria }}">
-                  <span class="d-inline-flex align-items-center gap-1">{{ col }}</span>
-                </th>
-              {% endif %}
+              {% with unit=column_units|dictlookup:col %}
+                {% if unit %}
+                  {% blocktranslate trimmed with unit=unit asvar unit_title %}
+                    Unit: {{ unit }}
+                  {% endblocktranslate %}
+                {% endif %}
+                {% if sort_field == col and not sort_desc %}
+                  {% translate "Switch to descending sort" as sort_aria %}
+                  <th scope="col"
+                      style="font-size: 0.75rem;
+                             white-space: nowrap;
+                             cursor: pointer;
+                             user-select: none"
+                      hx-get="{% url 'workspace:layer_data_table' layer.pk %}?sort=-{{ col }}&amp;page_size={{ page_size }}&amp;page=1{% if scenario %}&amp;scenario={{ scenario.pk }}{% endif %}"
+                      hx-target="#data-table-{{ layer.pk }}"
+                      hx-swap="outerHTML"
+                      {% if unit %}title="{{ unit_title }}"{% endif %}
+                      aria-label="{{ sort_aria }}">
+                    <span class="d-inline-flex align-items-center gap-1">
+                      {{ col }}
+                      <span class="small lh-1" style="font-size: 0.6rem;">&#9650;</span>
+                    </span>
+                  </th>
+                {% elif sort_field == col and sort_desc %}
+                  {% translate "Remove sort" as sort_aria %}
+                  <th scope="col"
+                      style="font-size: 0.75rem;
+                             white-space: nowrap;
+                             cursor: pointer;
+                             user-select: none"
+                      hx-get="{% url 'workspace:layer_data_table' layer.pk %}?page_size={{ page_size }}&amp;page=1{% if scenario %}&amp;scenario={{ scenario.pk }}{% endif %}"
+                      hx-target="#data-table-{{ layer.pk }}"
+                      hx-swap="outerHTML"
+                      {% if unit %}title="{{ unit_title }}"{% endif %}
+                      aria-label="{{ sort_aria }}">
+                    <span class="d-inline-flex align-items-center gap-1">
+                      {{ col }}
+                      <span class="small lh-1" style="font-size: 0.6rem;">&#9660;</span>
+                    </span>
+                  </th>
+                {% else %}
+                  {% blocktranslate trimmed with col=col asvar sort_aria %}
+                    Sort by {{ col }} ascending
+                  {% endblocktranslate %}
+                  <th scope="col"
+                      style="font-size: 0.75rem;
+                             white-space: nowrap;
+                             cursor: pointer;
+                             user-select: none"
+                      hx-get="{% url 'workspace:layer_data_table' layer.pk %}?sort={{ col }}&amp;page_size={{ page_size }}&amp;page=1{% if scenario %}&amp;scenario={{ scenario.pk }}{% endif %}"
+                      hx-target="#data-table-{{ layer.pk }}"
+                      hx-swap="outerHTML"
+                      {% if unit %}title="{{ unit_title }}"{% endif %}
+                      aria-label="{{ sort_aria }}">
+                    <span class="d-inline-flex align-items-center gap-1">{{ col }}</span>
+                  </th>
+                {% endif %}
+              {% endwith %}
             {% endfor %}
           </tr>
         </thead>

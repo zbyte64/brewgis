@@ -10,6 +10,7 @@ noqa covers those DDL statements, whose identifiers are module constants.
 
 from __future__ import annotations
 
+import re
 from typing import TYPE_CHECKING
 
 import pytest
@@ -97,6 +98,21 @@ def feature_probe_tables(db) -> Iterator[None]:
         cursor.execute(
             f"INSERT INTO {_PROBE_SCHEMA}.geom_first (geometry, label) VALUES "
             "(ST_SetSRID(ST_MakePoint(-119.77, 36.75), 4326), 'pumphouse')"
+        )
+        # A base canvas column (acres), an analysis-style currency column
+        # ($/yr) and a plain count (no unit) — the column header tooltip
+        # test's fixture.
+        cursor.execute(
+            f"CREATE TABLE {_PROBE_SCHEMA}.units_probe ("
+            "parcel_id varchar, area_parcel double precision, "
+            "median_income double precision, pop double precision, "
+            "geometry geometry(Point, 4326))"
+        )
+        cursor.execute(
+            f"INSERT INTO {_PROBE_SCHEMA}.units_probe "
+            "(parcel_id, area_parcel, median_income, pop, geometry) VALUES "
+            "('UNITS001', 24.73, 54321.0, 1200.0, "
+            "ST_SetSRID(ST_MakePoint(-119.77, 36.75), 4326))"
         )
     yield
     with connection.cursor() as cursor:
@@ -347,3 +363,56 @@ class TestDataTableFeatureId(DataTableProbe):
         ).content.decode()
 
         assert f"feature-bounds/?scenario={scenario.pk}" in html
+
+
+def _header_for_column(html: str, col: str) -> str:
+    """Return the ``<th>...</th>`` block whose label is *col*, or ``""``."""
+    for block in re.findall(r"<th\b.*?</th>", html, flags=re.DOTALL):
+        if re.search(rf">\s*{re.escape(col)}\s*<", block):
+            return block
+    return ""
+
+
+@pytest.mark.views
+class TestDataTableColumnUnits(DataTableProbe):
+    """Column header tooltips showing each column's display unit."""
+
+    @pytest.fixture
+    def units_probe(self, workspace) -> Layer:
+        return LayerFactory(
+            workspace=workspace,
+            key="units_probe",
+            db_schema=_PROBE_SCHEMA,
+            db_table="units_probe",
+        )
+
+    def test_base_canvas_column_header_shows_its_unit(
+        self, client, units_probe
+    ) -> None:
+        html = client.get(
+            reverse("workspace:layer_data_table", args=[units_probe.pk])
+        ).content.decode()
+
+        assert 'title="Unit: acres"' in _header_for_column(html, "area_parcel")
+        assert 'title="Unit: $/yr"' in _header_for_column(html, "median_income")
+
+    def test_count_column_header_has_no_unit_tooltip(self, client, units_probe) -> None:
+        """A plain count (``pop``) gets no tooltip — nothing to show."""
+        html = client.get(
+            reverse("workspace:layer_data_table", args=[units_probe.pk])
+        ).content.decode()
+
+        pop_header = _header_for_column(html, "pop")
+        assert pop_header
+        assert "title=" not in pop_header
+
+    def test_sorted_column_header_keeps_its_unit_tooltip(
+        self, client, units_probe
+    ) -> None:
+        """Sorting swaps the header's markup branch; the tooltip must survive it."""
+        html = client.get(
+            reverse("workspace:layer_data_table", args=[units_probe.pk]),
+            {"sort": "area_parcel"},
+        ).content.decode()
+
+        assert 'title="Unit: acres"' in _header_for_column(html, "area_parcel")
