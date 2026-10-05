@@ -439,6 +439,7 @@ def test_physical_activity_met_hours(quint):
         walk,
         bike,
         length,
+        length,
         auto,
         transit,
     )
@@ -785,7 +786,7 @@ def test_all_refs_handle_empty_input():
         ("vmt", lambda: compute_vmt(e, e, e)),
         ("transport_ghg", lambda: compute_transport_ghg(e, e)),
         ("impervious", lambda: compute_impervious_surface(e, e, e, e, e)),
-        ("physical_activity", lambda: compute_physical_activity(e, e, e, e, e)),
+        ("physical_activity", lambda: compute_physical_activity(e, e, e, e, e, e)),
         (
             "energy_demand",
             lambda: compute_energy_demand(

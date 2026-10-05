@@ -5,7 +5,7 @@ MODEL (
   column_descriptions (
     parcel_id = 'Assessor parcel number (APN) of the parcel.',
     area_gross_acres = 'Gross parcel area (acres).',
-    acres_developable = 'Acres available for development; currently the full gross area (acres).',
+    acres_developable = 'Acres available for development: gross area less the environmental constraint overlap (acres).',
     acres_developed = 'Developed acres: residential + employment + mixed-use parcel acres (acres).',
     pop = 'Population, read from the base layer (@parcel_table) unconditionally (people).',
     hh = 'Households, read from the base layer (households).',
@@ -189,7 +189,10 @@ WITH parcel_base AS (
         p.parcel_id,
         p.geometry,
         @st_area_projected(p.geometry) AS area_gross_acres,
-        @st_area_projected(p.geometry) AS acres_developable,
+        -- Developable acres come from the env_constraint model (gross area less
+        -- the constrained overlap); the gross area is the fallback for a parcel
+        -- it has no row for, which cannot happen for a canvased parcel.
+        COALESCE(ec.acres_developable, @st_area_projected(p.geometry)) AS acres_developable,
         -- Stock: population / households / dwelling units (base layer).
         COALESCE(p.pop, 0.0) AS pop,
         COALESCE(p.hh, 0.0) AS hh,
@@ -276,6 +279,12 @@ WITH parcel_base AS (
         bf.id AS built_form_id,
         COALESCE(p.built_form_key, bf.key) AS built_form_key
     FROM @ref_model(@parcel_table) AS p
+    -- The scenario's constrained acreage, from the env_constraint model that
+    -- this module depends on (MODULE_DEPENDENCIES: core <- env_constraint).
+    -- Left-joined so the column reference above stays valid for a parcel the
+    -- constraint model has no row for.
+    LEFT JOIN @{scenario_schema}.env_constraint AS ec
+        ON ec.parcel_id = p.parcel_id
     LEFT JOIN @ref_model(@built_form_table) AS bf
         -- Key normalization (not a plain `=`): a canvas's built_form_key is
         -- either an ETL slug written by the base-canvas layer or the display

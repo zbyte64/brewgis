@@ -34,7 +34,7 @@ MODULE_DEPENDENCIES: dict[str, list[str]] = {
     "vmt": ["mode_choice", "trip_distribution"],
     "transport_ghg": ["vmt"],
     "internal_capture": ["trip_distribution"],
-    "physical_activity": ["mode_choice", "trip_distribution"],
+    "physical_activity": ["mode_choice"],
     "building_water_ghg": ["energy_demand", "water_demand"],
     "total_ghg": ["transport_ghg", "building_water_ghg"],
     "health_impacts": ["physical_activity", "transport_ghg"],
@@ -107,9 +107,10 @@ MODULE_RESULT_TABLES: dict[str, list[str]] = {
 # Module → the SQLMesh models that implement it, by bare model name. These are
 # the models a module's run selects (see ``model_fqn``). Unlike
 # ``MODULE_RESULT_TABLES`` this holds only names that really are models —
-# ``env_constraint`` and ``acs_equity`` are Django-side/preprocessor steps with
-# no SQL model, so they are absent here and contribute nothing to a plan.
+# ``acs_equity`` is a Django-side data wrapper with no model of its own, so it
+# is absent here and contributes nothing to a plan.
 MODULE_SQLMESH_SELECTORS: dict[str, list[str]] = {
+    "env_constraint": ["env_constraint"],
     "core": ["core_end_state", "core_increment"],
     "water_demand": ["water_demand"],
     "displacement_risk": ["displacement_risk"],
@@ -297,6 +298,7 @@ MODULE_DESCRIPTIONS: dict[str, str] = {
 TABLE_PRIMARY_COLUMN: dict[str, str] = {
     "core_end_state": "pop",
     "core_increment": "pop",
+    "env_constraint": "constraint_acres",
     "water_demand": "water_demand_total",
     "energy_demand": "energy_total",
     "building_water_ghg": "co2e_total_kg",
@@ -360,6 +362,7 @@ TABLE_PALETTE: dict[str, str] = {
     "transport_ghg": "inferno",
     # Land, cost & risk
     "agriculture": "piyg",
+    "env_constraint": "greens",
     "sprawl_cost": "reds",
     "displacement_risk": "rdylbu",
     "displacement_risk_dynamic": "spectral",
@@ -515,16 +518,18 @@ class AnalysisParameter:
 
 
 # The modules whose trip lengths come out of the ``trip_lengths`` support model:
-# the two that read its table outright (``vmt``, ``physical_activity``) and every
-# module downstream of them, so the parameter shows on each run that is affected
-# by it. ``internal_capture`` is deliberately absent even though its sibling
+# ``vmt`` reads its table outright, plus every module downstream of ``vmt``, so
+# the parameter shows on each run that is affected by it. ``physical_activity``
+# is deliberately absent: it measures walking and cycling trips, which carry
+# their own mean distance (``health_walk_trip_length_km`` /
+# ``health_bike_trip_length_km``) rather than the region's vehicle trip length.
+# ``internal_capture`` is deliberately absent even though its sibling
 # ``transport_use_network_distance`` lists it: that option moves
 # ``trip_distribution``'s own length, which internal capture reads, while these
 # two parameters only move ``trip_lengths``.
 TRIP_LENGTH_MODULES: tuple[str, ...] = (
     "trip_distribution",
     "vmt",
-    "physical_activity",
     "transport_ghg",
     "total_ghg",
     "health_impacts",
@@ -748,6 +753,16 @@ ANALYSIS_PARAMETERS: tuple[AnalysisParameter, ...] = (
     AnalysisParameter("health_bike_met", 6.0, "float", ("physical_activity",)),
     AnalysisParameter("health_walk_speed_kmh", 4.8, "float", ("physical_activity",)),
     AnalysisParameter("health_bike_speed_kmh", 16.0, "float", ("physical_activity",)),
+    # Mean one-way trip distance per active mode. Walking and cycling trips are
+    # far shorter than the region's vehicle trip length (`trip_lengths`), so
+    # they carry their own means: US travel surveys put the average walk trip at
+    # ~0.5 mi and the average bike trip at ~2 mi.
+    AnalysisParameter(
+        "health_walk_trip_length_km", 0.8, "float", ("physical_activity",)
+    ),
+    AnalysisParameter(
+        "health_bike_trip_length_km", 3.2, "float", ("physical_activity",)
+    ),
     # Health impacts
     AnalysisParameter(
         "health_heat_mortality_reduction_pct", 8.0, "float", ("health_impacts",)
@@ -827,23 +842,4 @@ def get_column_mapping_vars(
                 f"Unknown canonical column name '{canonical_name}' in "
                 f"column_mapping. Valid names: {CANONICAL_COLUMN_NAMES}"
             )
-    return vars_
-
-
-def get_vars_for_module(module: str, base_vars: dict[str, Any]) -> dict[str, Any]:
-    """Prepare the vars dict for a specific module, inheriting global vars.
-
-    For modules that depend on env_constraint, inject the constraint output
-    table name so the core module can reference it.
-    """
-    vars_ = dict(base_vars)
-
-    if module == "core":
-        scenario_id = base_vars.get("scenario_id", "default")
-        if "env_constraint" in base_vars.get("completed_modules", []):
-            target_schema = base_vars.get("target_schema", "public")
-            vars_["constraints_output"] = (
-                f"{target_schema}.env_constraint_{scenario_id}"
-            )
-
     return vars_

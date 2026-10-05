@@ -37,6 +37,7 @@ class TestPlanSelection:
         monkeypatch.setattr(
             PUBLISHED,
             lambda _schema: [
+                "env_constraint",
                 "core_end_state",
                 "core_increment",
                 "mode_choice",
@@ -96,6 +97,7 @@ class TestResultVerification:
         monkeypatch.setattr(
             PUBLISHED,
             lambda _schema: [
+                "env_constraint",
                 "core_end_state",
                 "core_increment",
                 "mode_choice",
@@ -114,6 +116,7 @@ class TestResultVerification:
         assert registered == [
             "core_end_state",
             "core_increment",
+            "env_constraint",
             "mode_choice",
             "trip_distribution",
             "trip_generation",
@@ -123,6 +126,7 @@ class TestResultVerification:
         assert result["fqtns"] == [
             "analysis__scenario_7.core_end_state",
             "analysis__scenario_7.core_increment",
+            "analysis__scenario_7.env_constraint",
             "analysis__scenario_7.mode_choice",
             "analysis__scenario_7.trip_distribution",
             "analysis__scenario_7.trip_generation",

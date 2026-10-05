@@ -557,11 +557,12 @@ def compute_transport_ghg(
 # ══════════════════════════════════════════════════════════════════════
 
 
-@deal.pre(lambda wk, bk, length, auto, transit: np.all(wk >= 0))
-@deal.pre(lambda wk, bk, length, auto, transit: np.all(bk >= 0))
-@deal.pre(lambda wk, bk, length, auto, transit: np.all(length >= 0))
-@deal.pre(lambda wk, bk, length, auto, transit: np.all(auto >= 0))
-@deal.pre(lambda wk, bk, length, auto, transit: np.all(transit >= 0))
+@deal.pre(lambda wk, bk, wlen, blen, auto, transit: np.all(wk >= 0))
+@deal.pre(lambda wk, bk, wlen, blen, auto, transit: np.all(bk >= 0))
+@deal.pre(lambda wk, bk, wlen, blen, auto, transit: np.all(wlen >= 0))
+@deal.pre(lambda wk, bk, wlen, blen, auto, transit: np.all(blen >= 0))
+@deal.pre(lambda wk, bk, wlen, blen, auto, transit: np.all(auto >= 0))
+@deal.pre(lambda wk, bk, wlen, blen, auto, transit: np.all(transit >= 0))
 @deal.post(lambda result: np.all(result[0] >= 0))  # walk_met_hours
 @deal.post(lambda result: np.all(result[1] >= 0))  # bike_met_hours
 @deal.post(lambda result: np.all(result[2] >= 0))  # total_met_hours
@@ -571,7 +572,8 @@ def compute_transport_ghg(
 def compute_physical_activity(
     walk_trips: np.ndarray,
     bike_trips: np.ndarray,
-    avg_trip_length_km: np.ndarray,
+    walk_trip_length_km: float,
+    bike_trip_length_km: float,
     auto_trips: np.ndarray,
     transit_trips: np.ndarray,
     walk_met: float = 3.5,
@@ -581,11 +583,14 @@ def compute_physical_activity(
 ) -> tuple[np.ndarray, np.ndarray, np.ndarray, np.ndarray, np.ndarray, np.ndarray]:
     """SQL: ``physical_activity`` — MET-hours from active transport.
 
+    Each active mode uses its own mean one-way trip distance; the region's
+    vehicle trip length is not a walking or cycling distance.
+
     Returns (walk_met_hours, bike_met_hours, total_met_hours,
              walk_trips, bike_trips, active_trip_share).
     """
-    walk_met_h = _c(walk_trips * (avg_trip_length_km / walk_speed_kmh) * walk_met)
-    bike_met_h = _c(bike_trips * (avg_trip_length_km / bike_speed_kmh) * bike_met)
+    walk_met_h = _c(walk_trips * (walk_trip_length_km / walk_speed_kmh) * walk_met)
+    bike_met_h = _c(bike_trips * (bike_trip_length_km / bike_speed_kmh) * bike_met)
     total_met = walk_met_h + bike_met_h
 
     total_trips = _c(walk_trips) + _c(bike_trips) + _c(auto_trips) + _c(transit_trips)

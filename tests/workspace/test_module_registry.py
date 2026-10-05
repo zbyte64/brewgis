@@ -19,7 +19,6 @@ from brewgis.workspace.analysis.module_registry import analysis_parameter_defaul
 from brewgis.workspace.analysis.module_registry import get_default_palette
 from brewgis.workspace.analysis.module_registry import get_module_label
 from brewgis.workspace.analysis.module_registry import get_result_table_names
-from brewgis.workspace.analysis.module_registry import get_vars_for_module
 from brewgis.workspace.analysis.module_registry import model_fqn
 from brewgis.workspace.analysis.module_registry import resolve_module_order
 from brewgis.workspace.palettes import PALETTES
@@ -258,71 +257,6 @@ class TestGetModuleLabel:
     def test_unknown_with_underscores(self) -> None:
         """Underscores in unknown module names are replaced with spaces."""
         assert get_module_label("some_long_name") == "Some Long Name"
-
-
-class TestGetVarsForModule:
-    """Tests for ``get_vars_for_module`` — variable dict preparation."""
-
-    def test_inherits_global_vars(self) -> None:
-        """The returned dict inherits all keys from the base vars."""
-        base = {"scenario_id": "42", "target_schema": "public", "target_year": 2050}
-        result = get_vars_for_module("water_demand", base)
-        assert result["scenario_id"] == "42"
-        assert result["target_schema"] == "public"
-        assert result["target_year"] == 2050
-
-    def test_does_not_mutate_base_vars(self) -> None:
-        """The original base_vars dict is not modified."""
-        base = {"scenario_id": "42"}
-        get_vars_for_module("core", base)
-        assert "constraints_output" not in base
-
-    def test_core_with_env_constraint_completed(self) -> None:
-        """core module injects constraints_output when env_constraint is completed."""
-        base = {
-            "scenario_id": "99",
-            "target_schema": "my_schema",
-            "completed_modules": ["env_constraint"],
-        }
-        result = get_vars_for_module("core", base)
-        assert result["constraints_output"] == "my_schema.env_constraint_99"
-
-    def test_core_without_env_constraint_no_injection(self) -> None:
-        """core module does NOT inject constraints_output when env_constraint is absent."""
-        base = {"scenario_id": "42", "target_schema": "public", "completed_modules": []}
-        result = get_vars_for_module("core", base)
-        assert "constraints_output" not in result
-
-    def test_core_without_completed_modules_key_no_injection(self) -> None:
-        """core module does NOT inject when completed_modules key is missing."""
-        base = {"scenario_id": "1", "target_schema": "public"}
-        result = get_vars_for_module("core", base)
-        assert "constraints_output" not in result
-
-    def test_non_core_module_no_injection(self) -> None:
-        """A non-core module does not get constraints_output injected."""
-        base = {
-            "scenario_id": "42",
-            "target_schema": "public",
-            "completed_modules": ["env_constraint"],
-        }
-        result = get_vars_for_module("water_demand", base)
-        assert "constraints_output" not in result
-
-    def test_core_default_scenario_id(self) -> None:
-        """If scenario_id is missing, 'default' is used as fallback."""
-        base = {
-            "target_schema": "public",
-            "completed_modules": ["env_constraint"],
-        }
-        result = get_vars_for_module("core", base)
-        assert result["constraints_output"] == "public.env_constraint_default"
-
-    def test_core_default_schema(self) -> None:
-        """If target_schema is missing, 'public' is used as fallback."""
-        base = {"scenario_id": "7", "completed_modules": ["env_constraint"]}
-        result = get_vars_for_module("core", base)
-        assert result["constraints_output"] == "public.env_constraint_7"
 
 
 class TestModeChoiceParameterDefaults:

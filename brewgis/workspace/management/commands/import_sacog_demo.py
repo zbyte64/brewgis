@@ -50,6 +50,30 @@ BASE_CANVAS_TABLE = "base_canvas_v1"
 # leaves ``transport_trip_length_table`` empty and gets the gravity fallback.
 TRIP_LENGTH_TABLE = "public.elk_grove_vmt_base_trip_lengths"
 
+# The scenario's environmental constraints (``Scenario.constraints``): the v1
+# dump's own constraint polygons, restored in ``public``. UrbanFootprint's
+# environmental-constraint module reads the same three layers — streams,
+# wetlands and vernal pools — so the demo's constrained acreage is comparable
+# with its export. Each layer takes the whole overlap (100 %), and the geometry
+# column is the dump's own ``wkb_geometry`` rather than the default ``geom``.
+CONSTRAINT_SOURCES: list[dict[str, object]] = [
+    {
+        "table": "public.sac_cnty_streams",
+        "discount_pct": 100,
+        "geom_col": "wkb_geometry",
+    },
+    {
+        "table": "public.sac_cnty_wetlands",
+        "discount_pct": 100,
+        "geom_col": "wkb_geometry",
+    },
+    {
+        "table": "public.sac_cnty_vernal_pools",
+        "discount_pct": 100,
+        "geom_col": "wkb_geometry",
+    },
+]
+
 SCENARIO_SLUG = "base"
 
 CONSTRAINT_LAYER_TABLES: dict[str, dict[str, str]] = {
@@ -264,7 +288,10 @@ class Command(BaseCommand):
             **(scenario.analysis_params or {}),
             "transport_trip_length_table": TRIP_LENGTH_TABLE,
         }
-        scenario.save(update_fields=["analysis_params"])
+        # The region's constraint layers, so the env_constraint module discounts
+        # developable acreage (see CONSTRAINT_SOURCES).
+        scenario.constraints = CONSTRAINT_SOURCES
+        scenario.save(update_fields=["analysis_params", "constraints"])
 
         # Register constraint layers
         constraint_count = self._register_constraint_layers(ws)
@@ -429,6 +456,9 @@ class Command(BaseCommand):
             ("public.sacog_building_types_may14", "SACOG v1 built-type catalogue"),
             ("public.sac_cnty_climate_zones", "climate zones"),
             ("public.elk_grove_base_transit_stops", "transit stops"),
+            ("public.sac_cnty_streams", "streams constraint layer"),
+            ("public.sac_cnty_wetlands", "wetlands constraint layer"),
+            ("public.sac_cnty_vernal_pools", "vernal-pool constraint layer"),
         ]
 
         missing = []

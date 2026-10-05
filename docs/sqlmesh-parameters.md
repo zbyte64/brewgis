@@ -102,8 +102,8 @@ via the `**variables` dict when calling `config_factory()` or via plan overrides
 | `transport_bike_beta_hhsize` | `-0.6` | mode_choice | ln(household size) coefficient |
 | `transport_bike_beta_veh` | `-0.9` | mode_choice | ln(vehicles per capita) coefficient |
 | `transport_truck_factor` | `0.031` | vmt | UrbanFootprint's `truck_adjustment_factor`, applied to the daily VMT as `vmt_daily_w_trucks` (and its annual form) |
-| `transport_trip_length_table` | `''` | vmt, physical_activity (and the modules downstream of them) | `schema.table` of the region's reference trip-length zones (`wkb_geometry` + the six `productions_*`/`attractions_*` round-trip-mile columns). SACOG points at `public.elk_grove_vmt_base_trip_lengths`; empty means the gravity fallback |
-| `transport_target_avg_trip_length_km` | `6.42` | vmt, physical_activity (and the modules downstream of them) | Regional mean one-way trip length (km) the gravity fallback is rescaled to; 6.42 km = 3.99 mi, SACSIM's regional one-way mean |
+| `transport_trip_length_table` | `''` | vmt (and the modules downstream of it) | `schema.table` of the region's reference trip-length zones (`wkb_geometry` + the six `productions_*`/`attractions_*` round-trip-mile columns). SACOG points at `public.elk_grove_vmt_base_trip_lengths`; empty means the gravity fallback |
+| `transport_target_avg_trip_length_km` | `6.42` | vmt (and the modules downstream of it) | Regional mean one-way trip length (km) the gravity fallback is rescaled to; 6.42 km = 3.99 mi, SACSIM's regional one-way mean |
 | `transport_use_network_distance` | `False` | trip_distribution (and every module downstream of trip length) | Gravity model uses road-network distance between 2 km grid zones (`network_zone_distance`, pgRouting over the region's Overture drivable graph) instead of crow-flies distance |
 | `transport_ghg_co2_per_mile` | `0.411` | transport_ghg | kg CO2e/mi (EPA fleet average) |
 | `transport_ghg_days_per_year` | `365.0` | transport_ghg | Days of travel the annual emissions column (`co2e_annual_kg`) stands for; the yearly building/water/health models read that column |
@@ -130,6 +130,8 @@ via the `**variables` dict when calling `config_factory()` or via plan overrides
 | `health_bike_met` | `6.0` | physical_activity | MET (biking) |
 | `health_walk_speed_kmh` | `4.8` | physical_activity | Walking speed km/h |
 | `health_bike_speed_kmh` | `16.0` | physical_activity | Biking speed km/h |
+| `health_walk_trip_length_km` | `0.8` | physical_activity | Mean one-way walking trip distance (km); 0.8 km = 0.5 mi. Walk trips do not use the region's vehicle trip length |
+| `health_bike_trip_length_km` | `3.2` | physical_activity | Mean one-way cycling trip distance (km); 3.2 km = 2.0 mi |
 | `health_heat_mortality_reduction_pct` | `8.0` | health_impacts | % reduction in heat mortality from physical activity |
 | `health_heat_baseline_met_hours_per_week` | `11.25` | health_impacts | Baseline MET-hours/week |
 | `health_pm25_intake_fraction` | `1.6e-6` | health_impacts | Fraction of PM2.5 intake from transport emissions |
@@ -414,8 +416,8 @@ imported and unit-tested without a database).
 Distances are Euclidean between parcel centroids **projected to `local_srid`**,
 scaled from that CRS's linear unit (metres, US survey feet, ...) by
 `macros/geometry.py:metres_per_unit`, so `avg_trip_length_km` is kilometres for
-any projected region CRS and the models that scale by it (`vmt`,
-`physical_activity`) are in the units they claim. The
+any projected region CRS and the model that scales by it (`vmt`) is in the
+units it claims. The
 scenario geometry itself is EPSG:4326, whose coordinates are degrees — taking
 the distance there understates trip length by a factor of ~111.
 
@@ -435,8 +437,7 @@ attraction factors without local calibration.
 **Trip length** — the gravity model's own `avg_trip_length_km` is an artifact of
 parcel size and density: SACOG's canvas lands on ~1.2 km one-way against
 SACSIM's ~6.4 km, and VMT is proportional to it. `models/python/trip_lengths.py`
-is therefore the model every trip-length consumer reads (`vmt`,
-`physical_activity`):
+is therefore the model every trip-length consumer reads (`vmt`):
 
 * a scenario that names `transport_trip_length_table` (SACOG's SACSIM reference
   zones, restored from the source dump and set by `import_sacog_demo`) gets the
@@ -541,10 +542,11 @@ absorbs it, and the shares sum to exactly 1 wherever the clamp does not bind.
 
 ### 4.2 `spatial_ops.py`
 
-| Macro | Internal Constant | Purpose |
+| Macro | Arguments | Purpose |
 |---|---|---|
-| `compute_allocation_weight` | `4046.86` | Square meters per acre |
-| `apply_constraint_discount` | `discount_pct` | % to discount (from constraint_data table) |
+| `constraint_geometries` | `constraints_json` | Expands `Scenario.constraints` (`[{table, discount_pct, geom_col}]`) into the constraint-polygon relation `env_constraint` reads: `probe_geom` (EPSG:4326, for the index-driven `ST_Intersects`), `local_geom` (`local_srid`, for `ST_Intersection` and area), `discount_pct`. Names are validated as plain identifiers; an empty list yields the empty relation, so a scenario with no constraints keeps its gross area developable |
+| `constraint_min_overlap_sqm` | — | The minimum overlap (`5.0` m²) a constraint piece must have to count; smaller pieces are boundary noise (UrbanFootprint's own threshold) |
+| `compute_allocation_weight` | `source_alias`, `target_alias`, `source_geom`, `target_geom` | Area-weighted allocation factor (intersection area ÷ source area) between two geometries, both projected to `wm_srid` (default `3857`) |
 
 ### 4.3 `gen_scenario_blueprints.py`
 

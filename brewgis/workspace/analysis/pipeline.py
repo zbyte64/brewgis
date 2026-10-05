@@ -33,7 +33,6 @@ from brewgis.workspace.analysis.module_registry import (
     MODULE_RESULT_TABLES,  # noqa: F401 -- re-exported for import_sacog_demo.py
 )
 from brewgis.workspace.analysis.module_registry import MODULE_SQLMESH_SELECTORS
-from brewgis.workspace.analysis.module_registry import get_vars_for_module
 from brewgis.workspace.analysis.module_registry import (
     resolve_module_order as _resolve_module_order,
 )
@@ -81,15 +80,6 @@ def resolve_module_order(module_names: list[str]) -> list[str]:
     implementation.
     """
     return _resolve_module_order(module_names)
-
-
-def _get_vars_for_module(module: str, base_vars: dict[str, Any]) -> dict[str, Any]:
-    """Prepare the vars dict for a specific module, inheriting global vars.
-
-    For modules that depend on env_constraint, inject the constraint output
-    table name so the core module can reference it.
-    """
-    return get_vars_for_module(module, base_vars)
 
 
 def _list_tables(schema: str) -> list[str]:
@@ -322,11 +312,13 @@ def run_modules_sync(
     # it buffers the scenario's own end state, so a rerun has to recompute it.
     if "mode_choice" in ordered:
         selects += _quarter_mile_context_input(scenario_id)
-    # trip_lengths is the trip-length source ``vmt`` and ``physical_activity``
-    # read, named here for the same reason as quarter_mile_context — and
-    # restated with the run, because it derives from the scenario's own trip
-    # distribution and end state.
-    if "vmt" in ordered or "physical_activity" in ordered:
+    # trip_lengths is the trip-length source ``vmt`` reads, named here for the
+    # same reason as quarter_mile_context — and restated with the run, because it
+    # derives from the scenario's own trip distribution and end state.
+    # ``physical_activity`` is deliberately absent: it measures walking and
+    # cycling trips, which carry their own mean distance rather than the
+    # region's vehicle trip length.
+    if "vmt" in ordered:
         selects += _trip_length_input(scenario_id)
     # Computed before the network inputs join the selection: those are never
     # restated (see ``_network_distance_inputs``).
