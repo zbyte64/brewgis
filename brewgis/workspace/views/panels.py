@@ -34,6 +34,7 @@ from brewgis.workspace.models import ScenarioReport
 from brewgis.workspace.models import ScenarioType
 from brewgis.workspace.models import SymbologyConfig
 from brewgis.workspace.models import Workspace
+from brewgis.workspace.services.analysis_column_units import resolve_column_unit
 from brewgis.workspace.services.base_canvas_schema import BaseCanvasSchema
 from brewgis.workspace.services.canvas_view_manager import build_paintable_column_meta
 from brewgis.workspace.services.filter_compiler import FilterCompiler
@@ -110,7 +111,14 @@ def _fetch_layer_row_for_feature(
     for name, value in zip(display_columns, row, strict=True):
         col_def = BaseCanvasSchema.get(name)
         label = col_def.label if col_def else name.replace("_", " ").title()
-        rows.append({"name": name, "label": label, "value": value})
+        rows.append(
+            {
+                "name": name,
+                "label": label,
+                "value": value,
+                "unit": resolve_column_unit(layer.db_table, name),
+            }
+        )
     return rows
 
 
@@ -365,7 +373,9 @@ def panel_feature_inspect(request: HttpRequest, workspace_pk: int) -> HttpRespon
     the properties come straight from the already-decoded vector tile
     (``queryRenderedFeatures``), since the canvas view's own ``SELECT``
     already exposes every base + painted column, so no extra DB round trip
-    is needed just to display them. Editing is only offered when a
+    is needed just to display them. Every row also carries the column's
+    display unit (``BaseCanvasSchema.unit``) for the template to suffix.
+    Editing is only offered when a
     scenario is active, since that's the only context with a non-destructive
     write path (:func:`brewgis.workspace.views.paint.paint_features`) —
     there is nowhere to write an edit against the raw, immutable base table.
@@ -403,9 +413,17 @@ def panel_feature_inspect(request: HttpRequest, workspace_pk: int) -> HttpRespon
         (k for k in properties if k not in _NON_DISPLAY_PROPERTIES), key=_sort_key
     ):
         value = properties[name]
+        # The clicked feature is always the canvas (base + painted) layer —
+        # its columns are base canvas ones, so no model table is consulted.
+        unit = resolve_column_unit("", name)
         if name in paintable_labels:
             editable_rows.append(
-                {"name": name, "label": paintable_labels[name], "value": value}
+                {
+                    "name": name,
+                    "label": paintable_labels[name],
+                    "value": value,
+                    "unit": unit,
+                }
             )
         else:
             col_def = BaseCanvasSchema.get(name)
@@ -414,6 +432,7 @@ def panel_feature_inspect(request: HttpRequest, workspace_pk: int) -> HttpRespon
                     "name": name,
                     "label": col_def.label if col_def else name,
                     "value": value,
+                    "unit": unit,
                 }
             )
 

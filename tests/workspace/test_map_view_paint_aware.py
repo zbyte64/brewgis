@@ -18,6 +18,7 @@ from brewgis.workspace.analysis.layer_registry import PAINTED_FEATURES_LAYER_KEY
 from brewgis.workspace.models import ScenarioType
 from tests.factories import LayerFactory
 from tests.factories import ScenarioFactory
+from tests.factories import SymbologyConfigFactory
 from tests.factories import UserFactory
 from tests.factories import WorkspaceFactory
 
@@ -103,3 +104,41 @@ class TestMapViewBaseLayerSource(TestCase):
         other = next(layer for layer in layer_data if layer["id"] == other_layer.key)
         assert "zoning_districts" in str(other["source"])
         assert "scenario_" not in str(other["source"])
+
+    def test_symbology_attribute_column_carries_its_unit(self):
+        """The hover tooltip gets the styled column *and* its display unit."""
+        SymbologyConfigFactory(layer=self.layer, attribute_column="area_parcel")
+
+        layer_data = self._get_layer_data()
+        base = next(layer for layer in layer_data if layer["id"] == "base_canvas")
+
+        assert base["attribute_column"] == "area_parcel"
+        assert base["attribute_unit"] == "acres"
+
+    def test_count_attribute_column_carries_no_unit(self):
+        """A count column reaches the tooltip with an empty unit, not a
+        suffix the label already provides."""
+        SymbologyConfigFactory(layer=self.layer, attribute_column="pop")
+
+        layer_data = self._get_layer_data()
+        base = next(layer for layer in layer_data if layer["id"] == "base_canvas")
+
+        assert base["attribute_column"] == "pop"
+        assert base["attribute_unit"] == ""
+
+    def test_analysis_layer_carries_its_model_column_unit(self):
+        """An analysis layer's styled column gets the unit its SQLMesh model
+        declares — the base canvas schema cannot know these columns."""
+        analysis_layer = LayerFactory(
+            workspace=self.workspace,
+            key="total_ghg_55",
+            db_schema="analysis__scenario_55",
+            db_table="total_ghg",
+        )
+        SymbologyConfigFactory(layer=analysis_layer, attribute_column="co2e_total")
+
+        layer_data = self._get_layer_data(f"?scenario={self.scenario.pk}")
+        layer = next(entry for entry in layer_data if entry["id"] == analysis_layer.key)
+
+        assert layer["attribute_column"] == "co2e_total"
+        assert layer["attribute_unit"] == "kg/yr"

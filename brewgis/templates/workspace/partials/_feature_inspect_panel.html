@@ -62,6 +62,7 @@
                   {% else %}
                     {{ row.value|default_if_none:"—" }}
                   {% endif %}
+                  {% if row.unit %}<span class="text-muted">{{ row.unit }}</span>{% endif %}
                 </td>
               </tr>
             {% endfor %}
@@ -75,7 +76,10 @@
             {% for row in static_rows %}
               <tr>
                 <td class="text-muted">{{ row.label }}</td>
-                <td>{{ row.value|default_if_none:"—" }}</td>
+                <td>
+                  {{ row.value|default_if_none:"—" }}
+                  {% if row.unit %}<span class="text-muted">{{ row.unit }}</span>{% endif %}
+                </td>
               </tr>
             {% endfor %}
           </tbody>
@@ -97,7 +101,10 @@
             {% for row in tab.rows %}
               <tr>
                 <td class="text-muted">{{ row.label }}</td>
-                <td>{{ row.value|default_if_none:"—" }}</td>
+                <td>
+                  {{ row.value|default_if_none:"—" }}
+                  {% if row.unit %}<span class="text-muted">{{ row.unit }}</span>{% endif %}
+                </td>
               </tr>
             {% endfor %}
           </tbody>

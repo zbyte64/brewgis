@@ -4,9 +4,9 @@ MODEL (
   description 'Per-parcel physical activity from walking and cycling trips: MET-hours and the active share.',
   column_descriptions (
     parcel_id = 'Assessor parcel number (APN) of the parcel.',
-    walk_met_hours = 'Walking MET-hours from walk trips at the mean walk trip distance, its walk speed and the MET value.',
-    bike_met_hours = 'Cycling MET-hours from bike trips at the mean bike trip distance, its bike speed and the MET value.',
-    total_met_hours = 'Walking plus cycling metabolic equivalent hours.',
+    walk_met_hours = 'Walking metabolic equivalent hours (MET-hours) from walk trips at the mean walk trip distance, its walk speed and the MET value.',
+    bike_met_hours = 'Cycling metabolic equivalent hours (MET-hours) from bike trips at the mean bike trip distance, its bike speed and the MET value.',
+    total_met_hours = 'Walking plus cycling metabolic equivalent hours (MET-hours).',
     walk_trips = 'Walking trips attributed to the parcel (trips).',
     bike_trips = 'Cycling trips attributed to the parcel (trips).',
     active_trip_share = 'Walking plus cycling trips as a share of all trips (0-1).',

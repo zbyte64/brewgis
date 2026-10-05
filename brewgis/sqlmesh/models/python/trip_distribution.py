@@ -100,9 +100,9 @@ _TRIP_DISTRIBUTION_MODEL = model(
     ),
     column_descriptions={
         "parcel_id": "Parcel identifier from the scenario end state (core_end_state).",
-        "trips_outbound": "Trips per day from the parcel to other parcels.",
-        "trips_inbound": "Trips per day from other parcels to the parcel.",
-        "trips_internal": "Trips per day that start and end inside the parcel.",
+        "trips_outbound": "Trips from the parcel to other parcels (trips per day).",
+        "trips_inbound": "Trips from other parcels to the parcel (trips per day).",
+        "trips_internal": "Trips that start and end inside the parcel (trips per day).",
         "avg_trip_length_km": (
             "Trip-weighted mean distance of the parcel's outbound trips (km)."
         ),

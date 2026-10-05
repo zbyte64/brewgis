@@ -4,17 +4,17 @@ MODEL (
   description 'Daily vehicle miles travelled per parcel from mode-choice auto trips and the parcel trip length, with the truck-adjusted and annual figures UrbanFootprint reports.',
   column_descriptions (
     parcel_id = 'Parcel identifier from the scenario end state (core_end_state).',
-    vmt_total = 'Vehicle miles travelled per day for the parcel: auto trips x one-way trip length.',
-    vmt_per_capita = 'Daily vehicle miles travelled per resident, zero where population is zero.',
-    auto_trips = 'Trips made by automobile per day (count), from the mode-choice auto share.',
+    vmt_total = 'Vehicle miles travelled for the parcel (miles per day): auto trips x one-way trip length.',
+    vmt_per_capita = 'Vehicle miles travelled per resident (miles per person per day), zero where population is zero.',
+    auto_trips = 'Trips made by automobile (trips per day), from the mode-choice auto share.',
     avg_trip_length_mi = 'Average one-way trip length used by this model (miles).',
     geometry = 'Parcel geometry copied from the scenario end state (EPSG:4326).',
     vmt_daily_w_trucks = 'Daily vehicle miles travelled including the truck adjustment (miles per day).',
-    vmt_per_hh = 'Daily vehicle miles travelled per household, zero where households are zero.',
-    vmt_annual = 'Vehicle miles travelled per year at UrbanFootprint''s 347-day travel year (miles).',
-    vmt_annual_w_trucks = 'Annual vehicle miles travelled including the truck adjustment (miles).',
-    vmt_annual_per_capita = 'Annual vehicle miles travelled per resident, zero where population is zero.',
-    vmt_annual_per_hh = 'Annual vehicle miles travelled per household, zero where households are zero.'
+    vmt_per_hh = 'Vehicle miles travelled per household (miles per household per day), zero where households are zero.',
+    vmt_annual = 'Vehicle miles travelled per year at UrbanFootprint''s 347-day travel year (miles per year).',
+    vmt_annual_w_trucks = 'Annual vehicle miles travelled including the truck adjustment (miles per year).',
+    vmt_annual_per_capita = 'Vehicle miles travelled per resident (miles per person per year), zero where population is zero.',
+    vmt_annual_per_hh = 'Vehicle miles travelled per household (miles per household per year), zero where households are zero.'
   ),
   blueprints @analysis_blueprints('vmt'),
   audits (

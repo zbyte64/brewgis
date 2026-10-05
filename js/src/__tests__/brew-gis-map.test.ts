@@ -5,7 +5,7 @@ import maplibregl from 'maplibre-gl'
 import '../index.js'
 import type { BrewGisMap } from '../components/brew-gis-map.js'
 import type { LayerConfig, LngLatBoundsTuple } from '../types/index.js'
-import { mockMap, triggerMockEvent } from './setup.js'
+import { mockMap, mockPopup, triggerMockEvent } from './setup.js'
 
 /**
  * The component surface `focusFeature`'s test drives directly. Lit exposes
@@ -15,6 +15,11 @@ import { mockMap, triggerMockEvent } from './setup.js'
 interface MapInternals {
   canvasLayerId: string
   layers: LayerConfig[]
+  /** Drives the hover path directly: pointer/feature lookups are the map's. */
+  _handleHoverMove(e: {
+    point: { x: number; y: number }
+    lngLat: { lng: number; lat: number }
+  }): void
   focusFeature(
     featureId: string,
     bounds: LngLatBoundsTuple,
@@ -430,6 +435,45 @@ describe('brew-gis-map', () => {
     ;(el as any).clearHighlight()
 
     expect(mockMap.removeFeatureState).toHaveBeenCalled()
+  })
+
+  it('suffixes hovered attribute values with the styled column unit', async () => {
+    const { el, mockMap } = await createAndAttach({
+      layers: [
+        {
+          key: 'base_canvas',
+          type: 'fill',
+          source: { type: 'vector' },
+          attribute_column: 'area_parcel',
+          attribute_label: 'Parcel Area',
+          attribute_unit: 'acres',
+        },
+        {
+          key: 'population',
+          type: 'fill',
+          source: { type: 'vector' },
+          attribute_column: 'pop',
+          attribute_label: 'Population',
+          attribute_unit: '',
+        },
+      ],
+    })
+    mockMap.getLayer.mockReturnValue({})
+    mockMap.queryRenderedFeatures.mockReturnValue([
+      { id: '1', properties: { area_parcel: 24.7304, pop: 1204 } },
+    ])
+    ;(el as unknown as MapInternals)._handleHoverMove({
+      point: { x: 0, y: 0 },
+      lngLat: { lng: 0, lat: 0 },
+    })
+
+    const html = String(mockPopup.setHTML.mock.calls.at(-1)?.[0])
+    expect(html).toContain('Parcel Area')
+    expect(html).toContain('Population')
+    // The area value is suffixed with its unit ...
+    expect(html).toMatch(/24\.73\s*<span[^>]*>acres<\/span>/)
+    // ... while a plain count stays bare rather than reading "1204 count".
+    expect(html).toMatch(/font-weight:600;">1204<\/span>/)
   })
 
   it('dispatches featureselected event in polygon mode on draw.selectionchange', async () => {

@@ -158,7 +158,7 @@ def _build_hardcoded_state() -> dict:
             name=name,
             label=name,
             pg_type=pg_type,
-            unit="",
+            unit=_derive_unit(name),
             metatype=metatype,
             aggregation_hint=agg_hint,
             behavior_category=behavior,
@@ -274,6 +274,29 @@ def _derive_agg_hint(metatype: str) -> str:
     return "sum"
 
 
+def _derive_unit(name: str) -> str:
+    """Derive the display unit appended to a value in the UI, or ``""``.
+
+    Read by the map's hover tooltip (via the layer's ``attribute_unit``) and
+    the feature-inspect panel, so a parcel shows ``24.73 acres`` and
+    ``43,210 $/yr`` rather than bare numbers. Plain counts (``pop``, ``du``,
+    ``emp_*``) and identity/text columns deliberately carry no unit: the row
+    label already names them, and ``Population 1,204 count`` reads worse than
+    the bare number.
+    """
+    if name == "intersection_density":
+        return "intersections/km²"
+    if name == "median_income":
+        return "$/yr"
+    if name.endswith("_pct") or name.startswith("pct_"):
+        return "%"
+    if name.startswith("area_") or name.endswith(("_acres", "irrigated_area")):
+        return "acres"
+    if name.startswith(("bldg_area", "building_sqft")):
+        return "sq ft"
+    return ""
+
+
 # Module-level cache populated once at first access.
 _cache: dict | None = None
 
@@ -337,6 +360,21 @@ class BaseCanvasSchema:
     def get(cls, name: str) -> ColumnDef | None:
         """Get ``ColumnDef`` for *name*, or ``None`` if not found."""
         return cls._COLUMNS.get(name)
+
+    @classmethod
+    def unit(cls, name: str) -> str:
+        """Display unit suffix for *name*, or ``""`` when it has none.
+
+        Only columns the schema actually defines answer: an analysis result
+        column (``vmt_total``) or an imported layer's column (``area_sqft``)
+        would otherwise have a unit guessed from its name alone. The
+        exception is the acreage aliases the schema knows by name but does not
+        define as model fields (``area_gross_acres`` beside ``area_gross``).
+        """
+        col = cls.get(name)
+        if col is not None:
+            return col.unit
+        return _derive_unit(name) if name in cls.STATIC_COLUMN_NAMES else ""
 
     @classmethod
     def default_value(cls, name: str) -> float | str | None:

@@ -18,6 +18,7 @@ from django.test import TestCase
 from django.urls import reverse
 
 from brewgis.workspace.analysis.layer_registry import BASE_CANVAS_LAYER_KEY
+from brewgis.workspace.models import ScenarioType
 from tests.factories import LayerFactory
 from tests.factories import ScenarioFactory
 from tests.factories import UserFactory
@@ -64,9 +65,9 @@ class TestPanelFeatureInspect(TestCase):
         self.url = reverse(PANEL_URL_NAME, kwargs={"workspace_pk": self.workspace.pk})
         self.client.force_login(self.user)
 
-    def _inspect(self, properties: dict | None = None) -> HttpResponse:
+    def _inspect(self, properties: dict | None = None, query: str = "") -> HttpResponse:
         return self.client.post(
-            self.url,
+            f"{self.url}{query}",
             json.dumps(
                 {"feature_id": FEATURE_ID, "properties": properties or TILE_PROPERTIES}
             ),
@@ -91,13 +92,56 @@ class TestPanelFeatureInspect(TestCase):
         assert "24.7304" in html
         assert "mixed_use" in html
 
+    def test_values_are_suffixed_with_units(self):
+        """Area and currency rows carry their unit; plain counts stay bare.
+
+        The value must be *followed* by the unit inside the same cell — a
+        unit rendered elsewhere in the panel would not read as belonging to
+        the value beside it.
+        """
+        response = self._inspect({**TILE_PROPERTIES, "median_income": 43521.0})
+
+        assert response.status_code == 200
+        html = response.content.decode()
+        assert re.search(r'24\.7304\s*<span class="text-muted">acres</span>', html)
+        assert re.search(r'43521\.0\s*<span class="text-muted">\$/yr</span>', html)
+        # `pop` is a plain count — the row label already names it, so the
+        # cell holds the bare value and no unit span.
+        assert re.search(r"<td>\s*0\.0\s*</td>", html)
+
+    def test_paintable_value_keeps_its_unit_next_to_the_input(self):
+        """With a scenario active the value becomes an ``<input>``; the unit
+        must survive that swap rather than being dropped with the text."""
+        alternative = ScenarioFactory(
+            workspace=self.workspace, scenario_type=ScenarioType.ALTERNATIVE
+        )
+
+        response = self._inspect(
+            {**TILE_PROPERTIES, "median_income": 43521.0},
+            query=f"?scenario={alternative.pk}",
+        )
+
+        assert response.status_code == 200
+        html = response.content.decode()
+        assert re.search(
+            r'<input[^>]*value="43521\.0"[^>]*/>\s*<span class="text-muted">\$/yr</span>',
+            html,
+        )
+
     def test_parcel_pane_is_active_with_layer_tabs(self):
         """The Parcel pane stays the default tab when other layers do match."""
         other_layer = LayerFactory(workspace=self.workspace, name="VMT 6")
         with patch(
             "brewgis.workspace.views.panels._fetch_layer_row_for_feature",
             side_effect=lambda layer, _feature_id: (
-                [{"name": "vmt_total", "label": "Vmt Total", "value": 12.5}]
+                [
+                    {
+                        "name": "area_parcel",
+                        "label": "Parcel Area",
+                        "value": 12.5,
+                        "unit": "acres",
+                    }
+                ]
                 if layer.pk == other_layer.pk
                 else None
             ),
@@ -110,5 +154,7 @@ class TestPanelFeatureInspect(TestCase):
         assert "active" in _pane_class(html).split()
         assert "nav-tabs" in html
         assert f'id="layer-inspect-tab-{other_layer.pk}"' in html
-        assert "Vmt Total" in html
+        assert "Parcel Area" in html
         assert "12.5" in html
+        # An analysis layer's own rows are suffixed like the parcel's.
+        assert re.search(r'12\.5\s*<span class="text-muted">acres</span>', html)

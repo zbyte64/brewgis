@@ -764,7 +764,7 @@ export class BrewGisMap extends LitElement {
       }
     }
 
-    const rows: { label: string; value: unknown }[] = []
+    const rows: { label: string; value: unknown; unit: string }[] = []
     for (let i = 0; i < this.layers.length; i++) {
       const layer = this.layers[i]
       const attributeColumn = layer.attribute_column
@@ -780,7 +780,11 @@ export class BrewGisMap extends LitElement {
       const value = features[0].properties?.[attributeColumn]
       if (value === undefined || value === null) continue
 
-      rows.push({ label: layer.attribute_label || attributeColumn, value })
+      rows.push({
+        label: layer.attribute_label || attributeColumn,
+        value,
+        unit: layer.attribute_unit ?? '',
+      })
     }
 
     if (primaryId === null && rows.length === 0) {
@@ -831,10 +835,15 @@ export class BrewGisMap extends LitElement {
     this._hoveredFeatureId = id
   }
 
-  /** Show (creating on first use) a floating tooltip of symbology attribute values at lngLat. */
+  /**
+   * Show (creating on first use) a floating tooltip of symbology attribute
+   * values at lngLat. Each value is suffixed with its column's unit
+   * (``24.73 acres``); a column with no unit (``built_form_key``, counts)
+   * renders bare.
+   */
   private _showHoverTooltip(
     lngLat: maplibregl.LngLat,
-    rows: { label: string; value: unknown }[],
+    rows: { label: string; value: unknown; unit: string }[],
   ): void {
     if (!this._map) return
 
@@ -842,10 +851,13 @@ export class BrewGisMap extends LitElement {
       .map((row) => {
         const value =
           typeof row.value === 'number' ? Number(row.value.toFixed(2)) : String(row.value)
+        const unit = row.unit
+          ? ` <span style="color:#666;font-weight:400;">${_escapeHtml(row.unit)}</span>`
+          : ''
         return (
           '<div style="display:flex;justify-content:space-between;gap:10px;font-size:0.75rem;white-space:nowrap;">' +
           `<span style="color:#666;">${_escapeHtml(String(row.label))}</span>` +
-          `<span style="font-weight:600;">${_escapeHtml(String(value))}</span></div>`
+          `<span style="font-weight:600;">${_escapeHtml(String(value))}${unit}</span></div>`
         )
       })
       .join('')

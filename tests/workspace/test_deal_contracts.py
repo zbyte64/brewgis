@@ -84,3 +84,31 @@ def test_create_indexes_sql_defaults_to_public_base_canvas() -> None:
     assert stmts
     for stmt in stmts:
         assert "public.base_canvas" in stmt
+
+
+def test_column_units_are_a_known_display_vocabulary() -> None:
+    """Every column's unit is one of the units the UI knows how to render.
+
+    Catches a naming convention misfiring on a column (e.g. an ``area_*``
+    count being labelled "acres") rather than pinning each column's value.
+    """
+    units = {BaseCanvasSchema.unit(name) for name in BaseCanvasSchema.COLUMN_NAMES}
+    assert units == {"", "acres", "sq ft", "%", "$/yr", "intersections/km²"}
+
+
+def test_column_units_cover_area_building_currency_and_percent() -> None:
+    """Representative columns carry the unit their name implies."""
+    assert BaseCanvasSchema.unit("area_parcel") == "acres"
+    assert BaseCanvasSchema.unit("residential_irrigated_area") == "acres"
+    assert BaseCanvasSchema.unit("bldg_area_mf") == "sq ft"
+    assert BaseCanvasSchema.unit("median_income") == "$/yr"
+    assert BaseCanvasSchema.unit("rent_burden_pct") == "%"
+    assert BaseCanvasSchema.unit("pct_minority") == "%"
+    assert BaseCanvasSchema.unit("intersection_density") == "intersections/km²"
+
+
+def test_counts_and_unknown_columns_have_no_unit() -> None:
+    """Counts stay bare, and a column the schema doesn't define is never guessed."""
+    for name in ("pop", "du", "emp_ret", "parcel_id", "built_form_key"):
+        assert BaseCanvasSchema.unit(name) == ""
+    assert BaseCanvasSchema.unit("vmt_total") == ""

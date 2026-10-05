@@ -36,6 +36,7 @@ from brewgis.workspace.models import Scenario
 from brewgis.workspace.models import ScenarioType
 from brewgis.workspace.models import SymbologyConfig
 from brewgis.workspace.models import Workspace
+from brewgis.workspace.services.analysis_column_units import resolve_column_unit
 from brewgis.workspace.services.base_canvas_schema import BaseCanvasSchema
 from brewgis.workspace.services.canvas_view_manager import build_paintable_column_meta
 from brewgis.workspace.symbology.generator import generate_maplibre_style
@@ -112,6 +113,16 @@ def _resolve_attribute_label(column: str) -> str:
     if col_def:
         return col_def.label
     return column.replace("_", " ").title()
+
+
+def _resolve_attribute_unit(table: str, column: str) -> str:
+    """Unit suffix for a symbology attribute column, or ``""`` when it has none.
+
+    Hover tooltips append this to the value they show (``24.73 acres``,
+    ``1,240 kg/yr``): the SQLMesh model publishing *table* declares the unit
+    for its own columns, and the base canvas schema covers the parcel columns.
+    """
+    return resolve_column_unit(table, column)
 
 
 def _resolve_viewport(workspace: Workspace) -> dict[str, object]:
@@ -394,10 +405,11 @@ def view_workspace_map(request: HttpRequest, workspace_pk: int) -> HttpResponse:
         # column driving it is also surfaced to the frontend so hover
         # tooltips can show just the column(s) actually used for styling
         # (e.g. built_form_key, vmt_total) instead of every column on the
-        # layer's table.
+        # layer's table — together with that column's display unit.
         data["name"] = layer.name
         data["attribute_column"] = ""
         data["attribute_label"] = ""
+        data["attribute_unit"] = ""
         try:
             config = layer.symbology
             style = generate_maplibre_style(config)
@@ -407,6 +419,9 @@ def view_workspace_map(request: HttpRequest, workspace_pk: int) -> HttpResponse:
                 data["attribute_column"] = config.attribute_column
                 data["attribute_label"] = _resolve_attribute_label(
                     config.attribute_column
+                )
+                data["attribute_unit"] = _resolve_attribute_unit(
+                    layer.db_table, config.attribute_column
                 )
         except SymbologyConfig.DoesNotExist:
             pass

@@ -4,9 +4,9 @@ MODEL (
   description 'Share of parcel trips that stay inside the study area, with internal and external trip volumes.',
   column_descriptions (
     parcel_id = 'Parcel identifier from the scenario end state (core_end_state).',
-    trips_internal = 'Trips per day with both ends inside the study area: intra-parcel plus internal outbound.',
+    trips_internal = 'Trips with both ends inside the study area (trips per day): intra-parcel plus internal outbound.',
     internal_capture_pct = 'Fraction (0-1) of parcel trips kept inside the study area, after friction attenuation.',
-    trips_external = 'Trips per day leaving or crossing the study area: total trips minus internal trips.',
+    trips_external = 'Trips leaving or crossing the study area (trips per day): total trips minus internal trips.',
     geometry = 'Parcel geometry copied from the scenario end state (EPSG:4326).'
   ),
   blueprints @analysis_blueprints('internal_capture'),

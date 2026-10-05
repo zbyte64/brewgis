@@ -56,6 +56,7 @@ const mockMap = {
   removeControl: vi.fn(),
   setFeatureState: vi.fn(),
   removeFeatureState: vi.fn(),
+  getLayoutProperty: vi.fn().mockReturnValue('visible'),
 }
 
 // Helper to trigger events in tests (e.g. triggerMockEvent('moveend'))
@@ -79,22 +80,37 @@ const mockNavControl = vi.fn()
 const mockScaleControl = vi.fn()
 const mockAttributionControl = vi.fn()
 
+/**
+ * The hover tooltip's popup. Chainable like MapLibre's, so the component can
+ * keep calling `.setLngLat(...).setHTML(...).addTo(...)`, and the HTML it was
+ * given stays readable from `setHTML.mock.calls`.
+ */
+const mockPopup = {
+  setLngLat: vi.fn().mockReturnThis(),
+  setHTML: vi.fn().mockReturnThis(),
+  addTo: vi.fn().mockReturnThis(),
+  remove: vi.fn(),
+}
+const mockPopupCtor = vi.fn(() => mockPopup)
+
 vi.mock('maplibre-gl', () => ({
   default: {
     Map: vi.fn(() => mockMap),
     NavigationControl: mockNavControl,
     ScaleControl: mockScaleControl,
     AttributionControl: mockAttributionControl,
+    Popup: mockPopupCtor,
     MapLibreGL: { setRTLTextPlugin: vi.fn() },
   },
   Map: vi.fn(() => mockMap),
   NavigationControl: mockNavControl,
   ScaleControl: mockScaleControl,
   AttributionControl: mockAttributionControl,
+  Popup: mockPopupCtor,
 }))
 
 vi.mock('maplibre-gl-draw', () => ({
   default: vi.fn(() => mockDrawInstance),
 }))
 
-export { mockMap, mockDrawInstance, triggerMockEvent }
+export { mockMap, mockDrawInstance, mockPopup, triggerMockEvent }

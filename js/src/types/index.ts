@@ -33,6 +33,8 @@ export interface LayerConfig {
   attribute_column?: string
   /** Human-readable label for attribute_column (e.g. "Built Form"). */
   attribute_label?: string
+  /** Display unit for attribute_column (e.g. "acres"), or "" when it has none. */
+  attribute_unit?: string
 }
 
 export interface ViewportChangeEvent {
