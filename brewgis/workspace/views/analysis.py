@@ -141,7 +141,9 @@ class AnalysisLaunchForm(forms.Form):
         # The parcel/built-form/base-canvas tables are derived per scenario by
         # the model blueprints, but constraints and column mapping are per-run
         # inputs — explicit fields, never JSON.
-        _add_scenario_input_fields(self, constraints=True, column_mapping=True)
+        _add_scenario_input_fields(
+            self, constraints=True, column_mapping=True, scenario=scenario
+        )
 
     # Constraint-discount and column-mapping fields are added in ``__init__``
     # (from ``_CONSTRAINT_LAYERS`` / ``CANONICAL_COLUMN_NAMES``, the same
@@ -152,11 +154,8 @@ class AnalysisLaunchForm(forms.Form):
 
     def scenario_constraints(self) -> list[dict[str, Any]]:
         """Constraint layers to persist on the scenario for this run."""
-        return [
-            {"table": table, "discount_pct": data, "geom_col": geom_col}
-            for field_name, table, geom_col, _default_pct in _CONSTRAINT_LAYERS
-            if (data := self.cleaned_data.get(field_name)) is not None
-        ]
+        scenario = cast("Scenario | None", self.cleaned_data.get("scenario"))
+        return _constraint_layers_from_form(self, scenario)
 
     def scenario_column_mapping(self) -> dict[str, str]:
         """Parcel column mapping to persist on the scenario for this run."""
@@ -196,8 +195,31 @@ _CONSTRAINT_LAYERS: list[tuple[str, str, str, int]] = [
 ]
 
 
+def _constraint_entries(scenario: Scenario | None) -> dict[str, dict[str, Any]]:
+    """Map each configured constraint's bare table name to its stored entry.
+
+    A constraint's ``table`` may be schema-qualified (``fresno.floodplains``)
+    when its layer is published under a regional SQLMesh namespace rather than
+    ``public`` — ``constraint_geometries`` resolves a bare name in ``public``
+    only. Keyed on the table's last dot-separated segment so a qualified path
+    round-trips through the discount-% fields below instead of being
+    overwritten with the bare, ``public``-resolving default every time either
+    analysis form is submitted.
+    """
+    if scenario is None:
+        return {}
+    return {
+        str(entry.get("table") or "").rsplit(".", 1)[-1]: entry
+        for entry in scenario.constraints or []
+    }
+
+
 def _add_scenario_input_fields(
-    form: forms.Form, *, constraints: bool, column_mapping: bool
+    form: forms.Form,
+    *,
+    constraints: bool,
+    column_mapping: bool,
+    scenario: Scenario | None = None,
 ) -> None:
     """Add the constraint-discount and column-mapping fields to *form*.
 
@@ -207,12 +229,15 @@ def _add_scenario_input_fields(
     actually resolves through ``env_constraint`` / ``core``.
     """
     if constraints:
+        existing = _constraint_entries(scenario)
         for field_name, table, _geom_col, default_pct in _CONSTRAINT_LAYERS:
+            current = existing.get(table)
+            initial_pct = current["discount_pct"] if current else default_pct
             form.fields[field_name] = forms.IntegerField(
                 required=False,
                 min_value=0,
                 max_value=100,
-                initial=default_pct,
+                initial=initial_pct,
                 label=f"{table.replace('_', ' ').title()} discount %",
                 help_text="% of this layer's overlapping acreage excluded from developable land.",
             )
@@ -223,6 +248,33 @@ def _add_scenario_input_fields(
                 label=f"{name.replace('_', ' ').title()} column override",
                 help_text=f"Use if your source table names this column something other than '{name}'.",
             )
+
+
+def _constraint_layers_from_form(
+    form: forms.Form, scenario: Scenario | None
+) -> list[dict[str, Any]]:
+    """Rebuild the constraint list from a form's discount-% fields.
+
+    Preserves each layer's existing (possibly schema-qualified) ``table`` and
+    ``geom_col`` from *scenario* — see :func:`_constraint_entries`  — falling
+    back to the bare ``_CONSTRAINT_LAYERS`` default only for a layer *scenario*
+    has never configured.
+    """
+    existing = _constraint_entries(scenario)
+    layers = []
+    for field_name, table, default_geom_col, _default_pct in _CONSTRAINT_LAYERS:
+        data = form.cleaned_data.get(field_name)
+        if data is None:
+            continue
+        current = existing.get(table)
+        layers.append(
+            {
+                "table": current["table"] if current else table,
+                "discount_pct": data,
+                "geom_col": current["geom_col"] if current else default_geom_col,
+            }
+        )
+    return layers
 
 
 def _add_parameter_fields(form: forms.Form, module: str, scenario: Scenario) -> None:
@@ -289,6 +341,7 @@ class AnalysisModuleForm(forms.Form):
             self,
             constraints="env_constraint" in deps,
             column_mapping="core" in deps,
+            scenario=scenario,
         )
         _add_parameter_fields(self, module, scenario)
 
@@ -332,11 +385,7 @@ class AnalysisModuleForm(forms.Form):
         empty is skipped — except a ``str`` parameter, whose empty value *is*
         its "unset" value and is therefore stored as-is.
         """
-        constraints = [
-            {"table": table, "discount_pct": data, "geom_col": geom_col}
-            for field_name, table, geom_col, _default_pct in _CONSTRAINT_LAYERS
-            if (data := self.cleaned_data.get(field_name)) is not None
-        ]
+        constraints = _constraint_layers_from_form(self, scenario)
         column_mapping = {
             name: self.cleaned_data[f"column_{name}"]
             for name in CANONICAL_COLUMN_NAMES

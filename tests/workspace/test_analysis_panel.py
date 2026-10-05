@@ -213,6 +213,52 @@ class TestAnalysisModuleForm(TestCase):
         } in alt_scenario.constraints
         assert alt_scenario.column_mapping == {"pop": "population"}
 
+    @patch(
+        "brewgis.workspace.views.analysis.check_analysis_prerequisites", return_value=[]
+    )
+    def test_apply_scenario_params_preserves_schema_qualified_constraint_table(
+        self, _mock_prereq
+    ):
+        """A constraint layer published under a regional namespace (not
+        ``public``) keeps its schema-qualified table through a relaunch.
+
+        ``constraint_geometries`` resolves a bare table name in ``public``
+        only, so silently rewriting ``fresno.floodplains`` back to the bare
+        ``floodplains`` default on every launch breaks the model for any
+        scenario whose constraint layers live outside ``public`` (see
+        AnalysisRun #130)."""
+        alt_scenario = ScenarioFactory(
+            workspace=self.workspace,
+            scenario_type=ScenarioType.ALTERNATIVE,
+            constraints=[
+                {
+                    "table": "fresno.floodplains",
+                    "discount_pct": 100,
+                    "geom_col": "geom",
+                },
+            ],
+        )
+        form = AnalysisModuleForm(
+            {
+                "scenario": alt_scenario.pk,
+                "floodplain_discount_pct": 80,
+            },
+            workspace=self.workspace,
+            scenario=alt_scenario,
+            module="water_demand",
+        )
+        assert form.is_valid(), form.errors
+        assert form.fields["floodplain_discount_pct"].initial == 100
+
+        form.apply_scenario_params(alt_scenario)
+
+        alt_scenario.refresh_from_db()
+        assert {
+            "table": "fresno.floodplains",
+            "discount_pct": 80,
+            "geom_col": "geom",
+        } in alt_scenario.constraints
+
 
 @pytest.mark.views
 class TestAnalysisPanelViews(TestCase):
