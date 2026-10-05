@@ -1,6 +1,5 @@
 """Property-based tests for dbt SQL reference formulas.  No database needed."""
 # ruff: noqa: ANN201
-# mypy: ignore-errors
 
 from __future__ import annotations
 

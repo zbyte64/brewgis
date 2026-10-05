@@ -24,6 +24,7 @@ from math import radians
 from math import sin
 from typing import TYPE_CHECKING
 from typing import Any
+from typing import cast
 
 import deal
 from celery import current_app
@@ -1158,7 +1159,9 @@ def run_built_form_paint(
         user=user,
         allocations=allocations,
         operation_type="built_form",
-        built_form_names=dict.fromkeys(allocations, built_form.name),
+        # ``name`` is a non-null CharField on both BuildingType and PlaceType, so
+        # the cast only recovers the str type lost through the model union.
+        built_form_names=dict.fromkeys(allocations, cast("str", built_form.name)),
     )
 
 

@@ -35,7 +35,6 @@ inheriting the project's.
 For models that use ``source()`` instead of ``ref()``, use *source_tables*
 instead.
 """
-# mypy: ignore-errors
 
 from __future__ import annotations
 

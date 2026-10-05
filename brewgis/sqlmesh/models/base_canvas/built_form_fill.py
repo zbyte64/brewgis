@@ -68,6 +68,7 @@ from __future__ import annotations
 
 from typing import TYPE_CHECKING
 from typing import Any
+from typing import cast
 
 from sqlglot import exp
 from sqlmesh import model
@@ -235,7 +236,10 @@ def execute(evaluator: MacroEvaluator, **kwargs: Any) -> str:
 
     source_ref = str(evaluator.blueprint_var("source_ref"))
     workspace_id = int(str(evaluator.blueprint_var("workspace_id")))
-    all_columns = [str(column) for column in evaluator.blueprint_var("all_columns", [])]
+    all_columns = [
+        str(column)
+        for column in cast("list[Any]", evaluator.blueprint_var("all_columns", []))
+    ]
 
     acres = _ACRES.format(p="")
     source_acres = _ACRES.format(p="s.")

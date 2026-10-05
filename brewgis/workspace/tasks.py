@@ -4,7 +4,9 @@
 from __future__ import annotations
 
 import logging
+from typing import TYPE_CHECKING
 from typing import Any
+from typing import Protocol
 
 from celery import shared_task
 from celery.utils.log import get_task_logger
@@ -26,8 +28,29 @@ from brewgis.workspace.services.stitcher import impute_built_form_default
 from brewgis.workspace.services.stitcher import impute_constant
 from brewgis.workspace.symbology.auto import auto_generate_symbology
 
+if TYPE_CHECKING:
+    from collections.abc import Callable
+
 logger = get_task_logger(__name__)
 _plain_logger = logging.getLogger(__name__)
+
+
+class _CeleryTask(Protocol):
+    """The task object ``@shared_task`` returns.
+
+    ``celery`` ships no annotations, so a decorated task is inferred as the plain
+    function it was defined as and ``.delay()``/``.apply_async()`` — the two
+    methods the decorator attaches — do not exist on it as far as a type checker
+    is concerned. This is what the ``@_celery_task`` decorator below returns.
+    """
+
+    def delay(self, *args: Any, **kwargs: Any) -> Any: ...
+    def apply_async(self, *args: Any, **kwargs: Any) -> Any: ...
+
+
+def _celery_task(**options: Any) -> Callable[[Callable[..., Any]], _CeleryTask]:
+    """``shared_task`` with the task-object type it actually returns (see above)."""
+    return shared_task(**options)
 
 
 # ────────────────────────────────────────────────────────────
@@ -35,7 +58,7 @@ _plain_logger = logging.getLogger(__name__)
 # ────────────────────────────────────────────────────────────
 
 
-@shared_task(
+@_celery_task(
     bind=True,
     name="export_building_types",
     autoretry_for=(RuntimeError,),
@@ -76,7 +99,7 @@ def export_building_types_task(  # type: ignore[no-untyped-def]
 # ────────────────────────────────────────────────────────────
 
 
-@shared_task(bind=True, max_retries=2, default_retry_delay=30)
+@_celery_task(bind=True, max_retries=2, default_retry_delay=30)
 def run_census_fetch(  # type: ignore[no-untyped-def]
     self,
     run_pk: int,
@@ -145,7 +168,7 @@ def run_census_fetch(  # type: ignore[no-untyped-def]
     return {"count": row_count}
 
 
-@shared_task(bind=True, max_retries=2, default_retry_delay=30)
+@_celery_task(bind=True, max_retries=2, default_retry_delay=30)
 def run_lehd_fetch(  # type: ignore[no-untyped-def]
     self,
     run_pk: int,
@@ -213,7 +236,7 @@ def run_lehd_fetch(  # type: ignore[no-untyped-def]
     return {"count": row_count}
 
 
-@shared_task(bind=True, max_retries=2, default_retry_delay=30)
+@_celery_task(bind=True, max_retries=2, default_retry_delay=30)
 def run_poi_fetch(  # type: ignore[no-untyped-def]
     self,
     run_pk: int,
@@ -272,7 +295,7 @@ def run_poi_fetch(  # type: ignore[no-untyped-def]
     return {"count": row_count}
 
 
-@shared_task(bind=True, max_retries=2, default_retry_delay=30)
+@_celery_task(bind=True, max_retries=2, default_retry_delay=30)
 def run_raster_fetch(  # type: ignore[no-untyped-def]
     self,
     run_pk: int,
@@ -326,7 +349,7 @@ def run_raster_fetch(  # type: ignore[no-untyped-def]
     return {"count": row_count}
 
 
-@shared_task(bind=True, max_retries=2, default_retry_delay=30)
+@_celery_task(bind=True, max_retries=2, default_retry_delay=30)
 def run_spatial_allocation(  # type: ignore[no-untyped-def]
     self,
     run_pk: int,
@@ -363,7 +386,7 @@ def run_spatial_allocation(  # type: ignore[no-untyped-def]
     return result
 
 
-@shared_task(bind=True, max_retries=2, default_retry_delay=30)
+@_celery_task(bind=True, max_retries=2, default_retry_delay=30)
 def run_column_stitching(  # type: ignore[no-untyped-def]
     self,
     run_pk: int,
@@ -417,7 +440,7 @@ def run_column_stitching(  # type: ignore[no-untyped-def]
 # ────────────────────────────────────────────────────────────
 
 
-@shared_task(bind=True, max_retries=2, default_retry_delay=30)
+@_celery_task(bind=True, max_retries=2, default_retry_delay=30)
 def generate_report_task(self, report_pk: int) -> dict:  # type: ignore[no-untyped-def]
     """Generate a report (scenario comparison, paint tracking, or map export) as PDF."""
     from pathlib import Path
@@ -583,7 +606,7 @@ def _build_report_scenario_metrics(scenario: Any) -> dict[str, Any]:
 # ────────────────────────────────────────────────────────────
 
 
-@shared_task(bind=True, max_retries=1, default_retry_delay=10)
+@_celery_task(bind=True, max_retries=1, default_retry_delay=10)
 def run_paint_operation(self, run_pk: int) -> dict:  # type: ignore[no-untyped-def]
     """Execute a background paint run (direct/built-form/match/fill).
 
@@ -644,7 +667,7 @@ def run_paint_operation(self, run_pk: int) -> dict:  # type: ignore[no-untyped-d
 # ────────────────────────────────────────────────────────────
 
 
-@shared_task(
+@_celery_task(
     bind=True,
     max_retries=1,
     default_retry_delay=10,
@@ -684,7 +707,7 @@ def run_analysis_task(self, run_pk: int) -> None:  # type: ignore[no-untyped-def
 # ────────────────────────────────────────────────────────────
 
 
-@shared_task(bind=True, max_retries=1, default_retry_delay=30)
+@_celery_task(bind=True, max_retries=1, default_retry_delay=30)
 def reconcile_scenario_canvases_task(self) -> dict:  # type: ignore[no-untyped-def]
     """Re-materialize any scenario canvas view a plan left missing or stale.
 

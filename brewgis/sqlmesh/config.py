@@ -24,6 +24,7 @@ import logging as _logging
 import os
 import threading
 from typing import TYPE_CHECKING
+from typing import Any
 from urllib.parse import urlparse
 
 import sqlglot.expressions as _exp
@@ -41,10 +42,12 @@ if TYPE_CHECKING:
     from brewgis.workspace.services.duckdb_pool import DuckDBReadOnlyPool
 
 _logger = _logging.getLogger(__name__)
-_drop_data_object_orig = None
-_create_table_orig = None
-_singleton_get_orig = None
-_singleton_get_cursor_orig = None
+# The pre-patch implementations, captured by ``_install_monkeypatch`` at import
+# time and called through by the wrappers below. ``None`` until then, hence Any.
+_drop_data_object_orig: Any = None
+_create_table_orig: Any = None
+_singleton_get_orig: Any = None
+_singleton_get_cursor_orig: Any = None
 
 # Read-only mode flag — set SQLMESH_DUCKDB_READONLY=1 in the environment
 # before any SQLMesh import to enable thread-local read-only DuckDB connections
@@ -265,6 +268,23 @@ def _attach_path(db_kwargs: dict[str, str | int]) -> str:
 _pg_attach_path = _attach_path(_db_kwargs)
 
 
+def _pg_conn_config(**overrides: Any) -> PostgresConnectionConfig:
+    """``PostgresConnectionConfig`` for the configured database.
+
+    ``_db_kwargs`` mixes ``str`` and ``int`` values, so it cannot be splatted
+    into the typed constructor; read each key explicitly instead, at call time
+    (``use_database`` rewrites ``database`` in place).
+    """
+    return PostgresConnectionConfig(
+        host=str(_db_kwargs["host"]),
+        port=int(_db_kwargs["port"]),
+        user=str(_db_kwargs["user"]),
+        password=str(_db_kwargs["password"]),
+        database=str(_db_kwargs["database"]),
+        **overrides,
+    )
+
+
 def use_database(name: str) -> str:
     """Point both gateways at the Postgres database *name*; return the previous one.
 
@@ -336,11 +356,11 @@ def _parse_for_rewrite(sql: str) -> list[_exp.Expr] | None:
     return parsed
 
 
-_pg_get_catalog_orig = None
-_pg_get_current_catalog_orig = None
-_pg_to_sql_orig = None
-_pg_execute_orig = None
-_pg_fetch_native_df_orig = None
+_pg_get_catalog_orig: Any = None
+_pg_get_current_catalog_orig: Any = None
+_pg_to_sql_orig: Any = None
+_pg_execute_orig: Any = None
+_pg_fetch_native_df_orig: Any = None
 
 
 def _pg_get_catalog(self):
@@ -413,10 +433,10 @@ def config_factory(*, cache_dir: str | None = None, **variables):
         cache_dir=cache_dir,
         gateways={
             "postgis": GatewayConfig(
-                connection=PostgresConnectionConfig(concurrent_tasks=8, **_db_kwargs),
-                state_connection=PostgresConnectionConfig(**_db_kwargs),
+                connection=_pg_conn_config(concurrent_tasks=8),
+                state_connection=_pg_conn_config(),
                 state_schema="sqlmesh_state",
-                test_connection=PostgresConnectionConfig(**_db_kwargs),
+                test_connection=_pg_conn_config(),
             ),
             "duckdb": GatewayConfig(
                 connection=DuckDBConnectionConfig(
@@ -531,7 +551,7 @@ def config_factory(*, cache_dir: str | None = None, **variables):
         ),
         linter=LinterConfig(
             enabled=True,
-            warn_rules=[
+            warn_rules={
                 "invalidselectstarexpansion",
                 "NoTransformInJoinWhere",
                 "noselectstar",
@@ -554,7 +574,7 @@ def config_factory(*, cache_dir: str | None = None, **variables):
                 # "nomissingunittest",
                 "DuckDBTransformWarning",
                 "DegradingSRIDCast",
-            ],
+            },
         ),
         variables={
             # Census API key (loaded from env; empty string = public data only)

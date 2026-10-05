@@ -193,7 +193,9 @@ def build_analysis_modules(workspace: Workspace) -> list[dict[str, object]]:
 
     modules = [dict(module) for module in ANALYSIS_MODULES]
     for module in modules:
-        module["prereq_status"] = status_by_key[module["key"]]
+        module_key = module["key"]
+        assert isinstance(module_key, str)
+        module["prereq_status"] = status_by_key[module_key]
     return modules
 
 

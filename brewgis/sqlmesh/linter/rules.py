@@ -54,7 +54,7 @@ class NoTransformInJoinWhere(Rule):
                 continue
 
             # Walk parent chain to find the surrounding context.
-            parent: exp.Expression | None = node.parent
+            parent: exp.Expr | None = node.parent
             while parent is not None:
                 if isinstance(parent, (exp.Join, exp.OnCondition)):
                     line = getattr(node, "line", None)
@@ -2073,7 +2073,7 @@ class AuditColumnExistence(Rule):
         }
     )
 
-    def check_model(self, model: Model) -> RuleViolation | None:
+    def check_model(self, model: Model) -> RuleViolation | list[RuleViolation] | None:
         if not isinstance(model, SqlModel):
             return None
 

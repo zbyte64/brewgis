@@ -140,7 +140,7 @@ def _canvas_model_fqns() -> dict[int, str]:
     )
 
     return {
-        int(profile["scenario_id"]): (
+        int(str(profile["scenario_id"])): (
             f"brewgis.{MODEL_SCHEMA}.canvas_{profile['scenario_id']}"
         )
         for profile in scenario_canvas_profiles()

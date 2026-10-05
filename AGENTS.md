@@ -133,8 +133,7 @@ make lint-custom   # Custom ruff anti-pattern checks
 make lint-fix      # Ruff auto-fix
 make format        # Ruff formatter
 make format-check  # Check formatting without changes
-make typecheck     # mypy strict mode
-make typecheck-fast # basedpyright (faster local iteration)
+make typecheck     # basedpyright type checker (replaced mypy; ~10s)
 make lint-dbt      # SQLFluff SQL lint (legacy)
 ```
 
@@ -168,7 +167,7 @@ npm run test      # vitest
 - **Formatter:** Ruff format (replaces Black), double quotes, 119 character line length
 - **Naming:** `snake_case` for functions/variables, `PascalCase` for classes
 - **Imports:** `from __future__ import annotations` at module top using PEP 604 syntax. TYPE_CHECKING guards for circular imports. Ruff enforces isort with `force-single-line = true`.
-- **Type annotations:** mypy strict mode with `disallow_untyped_defs`. PEP 604 union syntax (`str | None` instead of `Optional[str]`). Per-module exceptions for Alembic, SQLMesh, etc.
+- **Type annotations:** basedpyright (`typeCheckingMode = "standard"`, run with `make typecheck`). PEP 604 union syntax (`str | None` instead of `Optional[str]`). `reportAttributeAccessIssue` and `reportIncompatibleVariableOverride` are disabled — only mypy's django-stubs plugin could satisfy them.
 - **Keyword arguments for 3+ params:** Functions with three or more required parameters MUST be called with keyword arguments.
 - **Template indent:** 2 spaces (djLint)
 - **@deal contracts:** Preferred over conventional unit tests where ergonomic — encode invariants declaratively. Enabled via `DEAL_ENABLED=1`.
@@ -262,7 +261,7 @@ npm run test      # vitest
 |`config/urls.py`|Root URLconf: admin, allauth, workspace app, debug toolbar|
 |`config/celery_app.py`|Celery 5.4 app with DatabaseScheduler|
 |`config/wsgi.py`|WSGI with Werkzeug ProxyMiddleware for tile server proxying|
-|`pyproject.toml`|Tool config (pytest, coverage, mypy, ruff, djlint, basedpyright, vulture) — single source of truth|
+|`pyproject.toml`|Tool config (pytest, coverage, basedpyright, ruff, djlint, vulture) — single source of truth|
 |`Makefile`|42 targets for Docker-based dev lifecycle|
 |`.pre-commit-config.yaml`|24 hooks: linting, formatting, type checking, django-upgrade 6.0, codespell, custom checks|
 |`package.json`|Frontend: lit, maplibre-gl, vite 6, vitest 3, typescript 5.7, eslint 9, prettier 3.5|
@@ -291,9 +290,9 @@ npm run test      # vitest
 - **Ingestion:** dlt (3 pipeline modules) → DuckDB (preferred: caches HTTP, handles raster/zip natively) → FULL-bridge to PostGIS
 - **Linter/Formatter:** Ruff (`ruff` for linting, `ruff format` for formatting). 119 char line length.
 - **Template linter:** djLint (profile: `django`, indent: 2 spaces)
-- **Type checker:** mypy strict mode (CI, with django-stubs). basedpyright (fast local mode, `make typecheck-fast`).
+- **Type checker:** basedpyright (`typeCheckingMode = "standard"`, with django-stubs — replaced mypy, whose cold Docker runs took hours). Blocking in CI (`make typecheck` in the test job) and a pre-commit hook on the host.
 - **CI:** GitHub Actions — pre-commit (24 hooks) + Docker-based pytest + SQLMesh plan/apply
-- **Pre-commit hooks:** trailing-whitespace, end-of-file-fixer, check-json/toml/yaml/xml, debug-statements, ruff (--fix --exit-zero), ruff-format, djlint-reformat-django, prettier (JS/TS/JSON/YAML/CSS/MD), django-upgrade (target 6.0), eslint (JS/TS), tsc --noEmit, mypy, codespell, custom anti-pattern rules (4 local hooks: check-method-decorator, no-anchor-tags, brewgis-antipatterns)
+- **Pre-commit hooks:** trailing-whitespace, end-of-file-fixer, check-json/toml/yaml/xml, debug-statements, ruff (--fix --exit-zero), ruff-format, djlint-reformat-django, prettier (JS/TS/JSON/YAML/CSS/MD), django-upgrade (target 6.0), eslint (JS/TS), tsc --noEmit, basedpyright, codespell, custom anti-pattern rules (4 local hooks: check-method-decorator, no-anchor-tags, brewgis-anti-patterns)
 - **Frontend build:** Vite 6 + TypeScript 5.7, compiled to ES module (lit + maplibre-gl inlined, 1.3MB)
 - **JS tests:** vitest 3 with jsdom, mocked MapLibre backend
 

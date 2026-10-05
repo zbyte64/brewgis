@@ -50,6 +50,7 @@ from brewgis.workspace.views.built_forms import HtmxResponseMixin
 if TYPE_CHECKING:
     from django.http import HttpRequest
     from django.http import HttpResponse
+    from django.http import HttpResponseBase
 
 logger = logging.getLogger(__name__)
 
@@ -122,7 +123,9 @@ class SelectBaseCanvasView(HtmxResponseMixin, FormView):
     success_url_name = "workspace:workspace_map"
     extra_context = {"title": "Select Base Canvas"}
 
-    def dispatch(self, request: HttpRequest, *args: Any, **kwargs: Any) -> HttpResponse:
+    def dispatch(
+        self, request: HttpRequest, *args: Any, **kwargs: Any
+    ) -> HttpResponseBase:
         self.workspace = get_object_or_404(Workspace, pk=kwargs["workspace_pk"])
         return super().dispatch(request, *args, **kwargs)
 

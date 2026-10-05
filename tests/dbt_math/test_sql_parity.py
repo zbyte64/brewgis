@@ -10,7 +10,6 @@ Each test:
 No SQL is duplicated — the dbt model files are the single source of truth.
 """
 # ruff: noqa: ANN201
-# mypy: ignore-errors
 
 from __future__ import annotations
 

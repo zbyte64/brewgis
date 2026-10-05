@@ -120,7 +120,7 @@ def _modeled_scenario_ids() -> set[int]:
         scenario_canvas_profiles,
     )
 
-    return {int(profile["scenario_id"]) for profile in scenario_canvas_profiles()}
+    return {int(str(profile["scenario_id"])) for profile in scenario_canvas_profiles()}
 
 
 def modeled_scenarios(scenarios: Iterable[Scenario]) -> list[Scenario]:

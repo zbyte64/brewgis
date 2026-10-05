@@ -72,6 +72,7 @@ class CreateLayerView(HtmxResponseMixin, CreateView):
 
     def form_valid(self, form: Any) -> HttpResponse:
         self.object = form.save()
+        assert self.object is not None
         with suppress(Exception):
             auto_generate_symbology(self.object)
         return super().form_valid(form)

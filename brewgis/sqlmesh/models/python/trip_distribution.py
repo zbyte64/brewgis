@@ -240,7 +240,8 @@ def execute(
         ys=parcels["y"].to_numpy(dtype=float) * km_per_unit,
         emp=parcels["emp"].to_numpy(dtype=float),
         du=parcels["du"].to_numpy(dtype=float),
-        **network,
+        zones=network.get("zones"),
+        zone_distance_km=network.get("zone_distance_km"),
     )
 
     return pd.DataFrame(

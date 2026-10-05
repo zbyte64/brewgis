@@ -11,6 +11,7 @@ from django.contrib.auth.decorators import user_passes_test
 from django.db import connection
 from django.db import transaction
 from django.db.models import Max
+from django.db.models import QuerySet
 from django.http import Http404
 from django.views.decorators.http import require_safe
 
@@ -221,8 +222,10 @@ def view_workspace_map(request: HttpRequest, workspace_pk: int) -> HttpResponse:
     scenario = resolve_scenario_param(request, workspace)
     is_alternative_scenario = scenario.scenario_type == ScenarioType.ALTERNATIVE
     canvas_view_name: str | None = None
+    canvas_source_id: str = ""
+    canvas_tiles_url: str = ""
     paintable_column_meta: list[dict[str, str]] = []
-    built_forms_data: dict[str, list[dict[str, object]]] = {}
+    built_forms_data: dict[str, QuerySet[BuildingType] | QuerySet[PlaceType]] = {}
     paint_url: str = ""
     clear_url: str = ""
     grid_url: str = ""

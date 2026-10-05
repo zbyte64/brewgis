@@ -54,5 +54,5 @@ def register_blueprint_model[FuncT: Callable[..., Any]](
     if not blueprints:
         return func
     # A registry decorator registers *func* and hands the same function back;
-    # mypy cannot express that for a declaration whose ``__call__`` is generic.
+    # basedpyright cannot express that for a declaration whose ``__call__`` is generic.
     return cast("FuncT", declaration(func))

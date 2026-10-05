@@ -65,9 +65,7 @@ def _quoted(name: str, *, field: str) -> str:
 
 
 @macro()
-def constraint_geometries(
-    evaluator: MacroEvaluator, constraints_json: str
-) -> exp.Expression:
+def constraint_geometries(evaluator: MacroEvaluator, constraints_json: str) -> exp.Expr:
     """Expand a scenario's constraint configuration into a polygon relation.
 
     Returns a subquery with one row per constraint polygon:

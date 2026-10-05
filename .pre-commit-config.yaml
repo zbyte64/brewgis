@@ -145,17 +145,18 @@ repos:
         pass_filenames: false
         stages: [manual]
 
-  # Python type checking via mypy (slow — runs in Docker)
+  # Python type checking via basedpyright (~10s for the whole app). The CI
+  # pre-commit job skips it (that runner has no project dependencies); the
+  # 'test' job runs `make typecheck` inside the built image instead.
   - repo: local
     hooks:
-      - id: mypy
-        name: mypy
-        entry: docker compose -f docker-compose.local.yml run --rm django mypy --cache-dir /tmp/.mypy_cache brewgis
+      - id: basedpyright
+        name: basedpyright
+        entry: basedpyright brewgis/
         language: system
         files: ^brewgis/.*\.py$
         pass_filenames: false
         require_serial: true
-        stages: [manual]
 
 # sets up .pre-commit-ci.yaml to ensure pre-commit dependencies stay up to date
 ci:

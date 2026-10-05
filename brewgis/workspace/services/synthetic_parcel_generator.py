@@ -14,6 +14,7 @@ from __future__ import annotations
 
 import math
 import random
+from typing import cast
 
 import deal
 import geopandas as gpd
@@ -417,7 +418,7 @@ def generate_synthetic_parcels(
     # Sort columns to match base canvas schema order, preserve geometry
     schema_cols = [c for c in BaseCanvasSchema.COLUMN_NAMES if c not in ("parcel_id",)]
     existing = [c for c in schema_cols if c in gdf.columns]
-    return gdf[existing]
+    return cast("gpd.GeoDataFrame", gdf[existing])
 
 
 @deal.post(lambda result: all(v >= -1e-10 for v in result.values()))

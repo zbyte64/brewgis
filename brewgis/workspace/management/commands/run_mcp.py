@@ -7,6 +7,7 @@ import os
 import sys
 import threading
 import time
+from typing import cast
 
 import duckdb
 from django.core.management.base import BaseCommand
@@ -63,10 +64,13 @@ class Command(BaseCommand):
         # Allow sync Django ORM calls from FastMCP's async stdio context
         os.environ.setdefault("DJANGO_ALLOW_ASYNC_UNSAFE", "true")
 
-        transport: str = options.get("transport", "sse")
-        auth_token: str | None = options.get("auth_token") or os.environ.get(
-            "MCP_AUTH_TOKEN"
-        )
+        # argparse validates these (type=str/choices, default None), so their
+        # runtime types are already correct — cast to recover them from the
+        # untyped options bag without adding a runtime check.
+        transport: str = cast("str", options.get("transport", "sse"))
+        auth_token: str | None = cast(
+            "str | None", options.get("auth_token")
+        ) or os.environ.get("MCP_AUTH_TOKEN")
 
         if transport == "sse":
             self._handle_sse(auth_token, options)
@@ -98,7 +102,8 @@ class Command(BaseCommand):
             )
 
         host: str = str(options.get("host", "0.0.0.0"))
-        port: int = int(options.get("port", 8002))
+        # argparse declares --port with type=int, so the options bag holds an int.
+        port: int = cast("int", options.get("port", 8002))
 
         logger.info(
             "Starting BrewGIS MCP server over Streamable HTTP on %s:%d...",
@@ -130,7 +135,8 @@ class Command(BaseCommand):
             )
 
         host: str = str(options.get("host", "0.0.0.0"))
-        port: int = int(options.get("port", 8002))
+        # argparse declares --port with type=int, so the options bag holds an int.
+        port: int = cast("int", options.get("port", 8002))
 
         logger.info("Starting BrewGIS MCP server over SSE on %s:%d...", host, port)
         run_sse(host=host, port=port)
@@ -145,7 +151,8 @@ class Command(BaseCommand):
         db_path = "/app/planning/duckdb_cache.db"
         if not self._check_duckdb_available(db_path, timeout=2.0):
             if options.get("wait"):
-                timeout = options.get("wait_timeout", 300)
+                # argparse declares --wait-timeout with type=int.
+                timeout = cast("int", options.get("wait_timeout", 300))
                 if not self._wait_for_duckdb(db_path, timeout):
                     self.stderr.write(
                         f"run_mcp: Timed out waiting for DuckDB lock after {timeout}s.\n"

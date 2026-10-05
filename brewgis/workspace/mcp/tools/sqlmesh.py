@@ -4,6 +4,7 @@ import logging
 import os
 from pathlib import Path
 from typing import Any
+from typing import cast
 
 from pydantic import BaseModel
 
@@ -45,7 +46,10 @@ class _ContextCache:
         """Return a fresh-enough context, reloading if any source file changed."""
         latest_mtime = self._compute_latest_mtime()
         if self._context is None or latest_mtime > self._load_time:
-            ctx = get_context(**dict(sorted(variables.items())))
+            # SQLMesh project variables (never ``cache_dir``, which
+            # ``get_context`` takes as its first parameter): the cast only
+            # tells the checker the unpacked keys cannot collide with it.
+            ctx = get_context(**cast("dict[str, Any]", dict(sorted(variables.items()))))
             self._context = ctx
             self._load_time = latest_mtime
         return self._context

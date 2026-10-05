@@ -13,7 +13,6 @@ matching the dbt model or macro name.
 All functions are pure: no I/O, no mutations.  numpy arrays are assumed
 to be non-None and have matching lengths (validated by contracts).
 """
-# mypy: ignore-errors
 # ruff: noqa: ARG005, PLR0913, PLR0917, ERA001
 
 from __future__ import annotations

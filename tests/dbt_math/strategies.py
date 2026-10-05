@@ -5,7 +5,6 @@ receives from its upstream ref().  Values are bounded to physically
 meaningful ranges — no negative dwelling units, no infinite areas.
 """
 # ruff: noqa: ANN201
-# mypy: ignore-errors
 
 from __future__ import annotations
 

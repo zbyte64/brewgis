@@ -32,6 +32,7 @@ import pickle
 from collections.abc import Iterator  # noqa: TC003
 from typing import TYPE_CHECKING
 from typing import Any
+from typing import cast
 
 import geopandas as gpd
 import numpy as np
@@ -316,7 +317,7 @@ def execute(
 ) -> Iterator[pd.DataFrame]:
     """Return SACOG training-model features or infer Fresno features from imagery."""
     logger = logging.getLogger(__name__)
-    region = context.blueprint_var("region")
+    region = cast("str", context.blueprint_var("region"))
     source_table = context.blueprint_var("source_table", "")
 
     if source_table:

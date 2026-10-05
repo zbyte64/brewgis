@@ -290,7 +290,7 @@ def _is_raise_or_reraise(node: ast.AST) -> bool:
     return False
 
 
-def _handler_only_logs(body: list[ast.AST]) -> bool:
+def _handler_only_logs(body: list[ast.stmt]) -> bool:
     """Return True if every statement in *body* is just logging/pass."""
     for stmt in body:
         if isinstance(stmt, ast.Pass):
@@ -513,67 +513,6 @@ def _find_direct_sqlalchemy_imports(
 
     return violations
     return violations
-
-
-def _find_dlt_pipeline_scope(
-    module_names: list[str],
-    code: str,
-    message: str,
-    allowed_dir_prefixes: frozenset[str],
-    allowed_files: frozenset[str],
-    path: str | Path,
-    source: str,
-    tree: ast.AST,
-) -> list[dict[str, Any]]:
-    """Generic restricted-import checker."""
-    p = Path(path)
-    posix = p.as_posix()
-
-    # Only enforce within workspace app
-    if "/brewgis/workspace/" not in posix:
-        return []
-
-    # Check if this file is in an allowed directory
-    for prefix in allowed_dir_prefixes:
-        # Check relative path from workspace/
-        workspace_idx = posix.find("/brewgis/workspace/")
-        if workspace_idx != -1:
-            rel = posix[workspace_idx + len("/brewgis/workspace/") :]
-            if rel.startswith(prefix):
-                return []
-
-    # Check if this file is in the allowed files list
-    if p.name in allowed_files:
-        return []
-
-    violations: list[dict[str, Any]] = []
-    for node in ast.walk(tree):
-        if isinstance(node, ast.Import):
-            for alias in node.names:
-                for mod in module_names:
-                    if alias.name == mod or alias.name.startswith(mod + "."):
-                        violations.append(
-                            _violation(
-                                code,
-                                message,
-                                path,
-                                getattr(node, "lineno", 0),
-                            )
-                        )
-                        break
-        elif isinstance(node, ast.ImportFrom):
-            if node.module:
-                for mod in module_names:
-                    if node.module == mod or node.module.startswith(mod + "."):
-                        violations.append(
-                            _violation(
-                                code,
-                                message,
-                                path,
-                                getattr(node, "lineno", 0),
-                            )
-                        )
-                        break
 
 
 # ══════════════════════════════════════════════════════════════════

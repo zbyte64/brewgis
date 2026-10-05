@@ -15,7 +15,9 @@ from typing import TYPE_CHECKING
 from typing import Any
 
 from django.db import connection
+from sqlmesh.core.constants import EPOCH
 from sqlmesh.core.context import Context
+from sqlmesh.utils import Verbosity
 from sqlmesh.utils.errors import ConflictingPlanError
 
 from brewgis.sqlmesh.config import config_factory
@@ -299,8 +301,8 @@ def _rebuild_unbuilt_published(
     their results were computed from the table that went missing — the one case
     where the cheap repair is not enough.
     """
-    restate = set(plan_kwargs.get("restate_models") or ())
-    rebuilt = set(restate)
+    restate: set[str] = set(plan_kwargs.get("restate_models") or ())
+    rebuilt: set[str] = set(restate)
     for _ in range(_MAX_REBUILD_PASSES):
         plan = builder.build()
         unbuilt = [
@@ -344,7 +346,7 @@ def run_sqlmesh_plan(  # noqa: PLR0913
     auto_apply: bool = True,
     create_from: str | None = None,
     variables: dict[str, object] = {},
-    restate_models: Iterable[str] | bool = False,
+    restate_models: Iterable[str] | bool | None = False,
     always_include_local_changes: bool | None = None,
     cache_dir: str | None = None,
     repair_unbuilt_promotions: bool = False,
@@ -470,7 +472,7 @@ def run_sqlmesh_plan(  # noqa: PLR0913
 
 
 def _resolve_restatements(
-    context: Context, *, environment: str, restate_models: Iterable[str] | bool
+    context: Context, *, environment: str, restate_models: Iterable[str] | bool | None
 ) -> list[str] | None:
     """Resolve the plan's ``restate_models`` argument to a concrete model list.
 
@@ -525,7 +527,10 @@ def run_sqlmesh_test(
         verbose: Enable verbose test output.
     """
     context = get_context()
-    result = context.test(models=models, verbose=verbose)
+    result = context.test(
+        match_patterns=models,
+        verbosity=Verbosity.VERBOSE if verbose else Verbosity.DEFAULT,
+    )
     passed = result.count("FAILED") == 0 if isinstance(result, str) else True
     logger.info("SQLMesh test completed")
     return passed
@@ -573,9 +578,9 @@ def evaluate_model(
     """
     context = get_context()
     return context.evaluate(
-        start=None,
-        end=None,
-        execution_time=None,
+        start=EPOCH,
+        end=EPOCH,
+        execution_time=EPOCH,
         model_or_snapshot="snapshot",
         model_name=model_name,
         environment=environment,

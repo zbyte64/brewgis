@@ -47,6 +47,7 @@ from __future__ import annotations
 
 from typing import TYPE_CHECKING
 from typing import Any
+from typing import cast
 
 from sqlmesh import model
 from sqlmesh.core.model.definition import ModelKindName
@@ -111,9 +112,12 @@ def execute(evaluator: MacroEvaluator, **kwargs: Any) -> str:
     from brewgis.workspace.services.canvas_view_manager import build_canvas_view_select
 
     base_table = str(evaluator.blueprint_var("base_table"))
-    is_sqlmesh_base = int(evaluator.blueprint_var("is_sqlmesh_base", 1))
-    scenario_id = int(evaluator.blueprint_var("scenario_id"))
-    all_columns = [str(column) for column in evaluator.blueprint_var("all_columns", [])]
+    is_sqlmesh_base = int(str(evaluator.blueprint_var("is_sqlmesh_base", 1)))
+    scenario_id = int(str(evaluator.blueprint_var("scenario_id")))
+    all_columns = [
+        str(column)
+        for column in cast("list[Any]", evaluator.blueprint_var("all_columns", []))
+    ]
     base_ref = (
         str(evaluator.blueprint_var("base_model")) if is_sqlmesh_base else base_table
     )

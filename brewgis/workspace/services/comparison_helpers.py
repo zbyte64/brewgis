@@ -7,6 +7,7 @@ by the ``compare_sacog_basemap`` management command.
 from __future__ import annotations
 
 from pathlib import Path
+from typing import cast
 
 import geopandas as gpd
 from django.conf import settings
@@ -50,7 +51,7 @@ def _load_parcels(limit: int, cache_dir: str | None = None) -> gpd.GeoDataFrame:
         gdf = gpd.GeoDataFrame.from_postgis(sql, get_engine(), geom_col="geometry")
         gdf.to_file(str(cache_path), driver="GeoJSON")
 
-    return gdf
+    return cast("gpd.GeoDataFrame", gdf)
 
 
 def _query_table_as_dict(table_name: str) -> dict[str, float]:

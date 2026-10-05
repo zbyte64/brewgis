@@ -79,7 +79,7 @@ make shell           # Django shell
 make test            # Run all tests
 make lint            # Ruff linter
 make format          # Ruff formatter
-make typecheck       # mypy strict mode
+make typecheck       # basedpyright type checker
 make check           # Full CI pipeline
 ```
 
@@ -124,7 +124,7 @@ celery -A brewgis.config.celery_app worker -l info  # Celery on host
 | Frontend | Bootstrap 5.2, htmx 2.0, Chart.js 4.4 |
 | Templates | Django templates with django-template-partials |
 | SEO/UX | django-allauth, crispy forms, role-based access |
-| Tools | Ruff, mypy strict, pytest, Playwright, djLint, SQLFluff |
+| Tools | Ruff, basedpyright, pytest, Playwright, djLint, SQLFluff |
 
 ## Project Structure
 

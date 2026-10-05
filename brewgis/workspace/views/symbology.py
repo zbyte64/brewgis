@@ -128,6 +128,10 @@ def _build_context(
             config = layer.symbology
         except SymbologyConfig.DoesNotExist:
             config = SymbologyConfig(layer=layer)
+        if config is None:
+            # The reverse OneToOne descriptor is typed Optional. A layer with
+            # no saved config falls back to an in-memory one, same as above.
+            config = SymbologyConfig(layer=layer)
 
     # Defensive: normalize in-memory so a palette_name saved with the wrong
     # case (e.g. by an older/external caller) still matches the (lowercase)

@@ -6,8 +6,8 @@ Applied to a function-based view, it silently wraps incorrectly, causing a
 TypeError at runtime.  This hook flags every ``@method_decorator`` that is
 applied to a ``def`` (standalone function) rather than a ``class``.
 
-Neither ruff nor mypy can catch this — the decorator type signature is too
-generic.  This hook fills that gap.
+Neither ruff nor basedpyright can catch this — the decorator type signature is
+too generic.  This hook fills that gap.
 """
 
 from __future__ import annotations

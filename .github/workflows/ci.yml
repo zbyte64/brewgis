@@ -38,10 +38,15 @@ jobs:
           cache-dependency-path: 'requirements/*.txt'
 
       # Consider using pre-commit.ci for open source project
-      - name: Run pre-commit (skip mypy — needs Docker infra)
+      #
+      # basedpyright is skipped: this runner has none of the project's
+      # dependencies installed, so it would type-check against an empty
+      # environment and pass vacuously. The `test` job runs `make typecheck`
+      # inside the built image, where django-stubs and the rest resolve.
+      - name: Run pre-commit
         uses: pre-commit/action@v3.0.1
         env:
-          SKIP: mypy
+          SKIP: basedpyright
 
   test:
     runs-on: ubuntu-latest
@@ -100,8 +105,10 @@ jobs:
       - name: Run DB Migrations
         run: make migrate
 
-      #- name: Run type check
-      #  run: make typecheck
+      # Blocking gate: basedpyright in the built image (the linter job skips its
+      # pre-commit hook, which would run without any project dependencies).
+      - name: Run type check
+        run: make typecheck
 
       - name: Run test suite (excludes e2e and integration)
         run: make test

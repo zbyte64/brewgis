@@ -212,11 +212,8 @@ format-check:  ## Check formatting without changes
 	$(COMPOSE_RUN) ruff format --check brewgis/ tests/
 
 .PHONY: typecheck
-typecheck:  ## Run mypy type checker
-	$(COMPOSE_RUN) mypy --cache-dir /tmp/.mypy_cache brewgis
-.PHONY: typecheck-fast
-typecheck-fast:  ## Run basedpyright type checker (host mode, faster)
-	basedpyright brewgis/
+typecheck:  ## Run basedpyright type checker (replaces mypy; ~10s for the whole app)
+	$(COMPOSE_RUN) basedpyright brewgis/
 
 .PHONY: dead-code
 dead-code:  ## Find dead Python code (vulture)
@@ -250,12 +247,13 @@ setup:  ## Install git hooks and local dependencies
 	@echo "    (This will auto-format any unstaged files.)"
 	@pre-commit run --all-files || true
 	@echo ""
-	@echo "==> To also run the slow checking hooks (mypy, tsc, eslint, etc.):"
+	@echo "==> To also run the manual-stage hooks (tsc, eslint, basedpyright, etc.):"
 	@echo "    pre-commit run --hook-stage manual --all-files"
 	@echo ""
-	@echo "==> For a faster type-checking alternative to mypy, install basedpyright:"
-	@echo "    pip install basedpyright"
-	@echo "    then: make typecheck-fast"
+	@echo "==> Type checking is basedpyright: 'make typecheck' runs it in the django"
+	@echo "    container, and the pre-commit hook runs it on the host (install it with"
+	@echo "    'pip install basedpyright'):"
+	@echo "    make typecheck"
 	@echo ""
 	@echo "==> Done. Make sure to 'pip install -r requirements/local.txt' if developing on host."
 

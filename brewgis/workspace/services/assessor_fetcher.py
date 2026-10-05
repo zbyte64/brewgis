@@ -11,6 +11,7 @@ import json
 import logging
 from pathlib import Path
 from typing import Any
+from typing import cast
 
 import geopandas as gpd
 import requests
@@ -216,7 +217,7 @@ def fetch_parcels_arcgis(
             # Normalize column names — cached files from older code may have ``parcel_id``
             if "parcel_id" in gdf.columns:
                 gdf = gdf.rename(columns={"parcel_id": "apn"})
-            return gdf
+            return cast("gpd.GeoDataFrame", gdf)
 
     logger.info(
         "Fetching parcels from ArcGIS PARCELS/MapServer/8 (max_pages=%s)",
@@ -254,7 +255,7 @@ def fetch_parcels_arcgis(
     CACHE_DIR.mkdir(parents=True, exist_ok=True)
     gdf.to_parquet(cache_path)
     logger.info("Cached %d parcels to %s", len(gdf), cache_path)
-    return gdf
+    return cast("gpd.GeoDataFrame", gdf)
 
 
 def fetch_sales_arcgis(
@@ -293,7 +294,7 @@ def fetch_sales_arcgis(
             # Normalize column names — cached files from older code may have ``parcel_id``
             if "parcel_id" in gdf.columns:
                 gdf = gdf.rename(columns={"parcel_id": "apn"})
-            return gdf
+            return cast("gpd.GeoDataFrame", gdf)
 
     logger.info(
         "Fetching sales from ArcGIS ASSESSOR/MapServer/1 (max_pages=%s)",
@@ -335,7 +336,7 @@ def fetch_sales_arcgis(
     CACHE_DIR.mkdir(parents=True, exist_ok=True)
     gdf.to_parquet(cache_path)
     logger.info("Cached %d sales records to %s", len(gdf), cache_path)
-    return gdf
+    return cast("gpd.GeoDataFrame", gdf)
 
 
 def load_to_postgis(
@@ -384,9 +385,12 @@ def load_to_postgis(
             dup_mask = parcels["apn"].duplicated(keep=False)
             if dup_mask.any():
                 dup_count = dup_mask.sum()
-                parcels = parcels.sort_values(
-                    "lotsize", ascending=False
-                ).drop_duplicates(subset="apn", keep="first")
+                parcels = cast(
+                    "gpd.GeoDataFrame",
+                    parcels.sort_values("lotsize", ascending=False).drop_duplicates(
+                        subset="apn", keep="first"
+                    ),
+                )
                 logger.warning(
                     "Deduplicated %d duplicate APN rows (kept largest lotsize per APN)",
                     dup_count,
@@ -432,7 +436,8 @@ def load_to_postgis(
             dup_mask = sales["apn"].duplicated(keep=False)
             if dup_mask.any():
                 dup_count = dup_mask.sum()
-                sales = (
+                sales = cast(
+                    "gpd.GeoDataFrame",
                     sales.assign(
                         _completeness_rank=sales["living_area"].notna().astype(int)
                         + sales["building_sf"].notna().astype(int),
@@ -442,7 +447,7 @@ def load_to_postgis(
                         ascending=[False, False],
                     )
                     .drop_duplicates(subset="apn", keep="first")
-                    .drop(columns=["_completeness_rank"])
+                    .drop(columns=["_completeness_rank"]),
                 )
                 logger.warning(
                     "Deduplicated %d duplicate APN sales rows (kept most complete data)",
@@ -511,9 +516,12 @@ def write_to_geoparquet(
         if "apn" in parcels.columns:
             dup_mask = parcels["apn"].duplicated(keep=False)
             if dup_mask.any():
-                parcels = parcels.sort_values(
-                    "lotsize", ascending=False
-                ).drop_duplicates(subset="apn", keep="first")
+                parcels = cast(
+                    "gpd.GeoDataFrame",
+                    parcels.sort_values("lotsize", ascending=False).drop_duplicates(
+                        subset="apn", keep="first"
+                    ),
+                )
                 logger.warning(
                     "Deduplicated %d duplicate APN rows (kept largest lotsize per APN)",
                     dup_mask.sum(),
@@ -528,7 +536,8 @@ def write_to_geoparquet(
         if "apn" in sales.columns:
             dup_mask = sales["apn"].duplicated(keep=False)
             if dup_mask.any():
-                sales = (
+                sales = cast(
+                    "gpd.GeoDataFrame",
                     sales.assign(
                         _completeness_rank=sales["living_area"].notna().astype(int)
                         + sales["building_sf"].notna().astype(int),
@@ -538,7 +547,7 @@ def write_to_geoparquet(
                         ascending=[False, False],
                     )
                     .drop_duplicates(subset="apn", keep="first")
-                    .drop(columns=["_completeness_rank"])
+                    .drop(columns=["_completeness_rank"]),
                 )
                 logger.warning(
                     "Deduplicated %d duplicate APN sales rows (kept most complete data)",

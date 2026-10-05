@@ -14,6 +14,7 @@ authors = [
 ]
 dependencies = [
     "argon2-cffi==23.1.0",
+    "basedpyright>=1.39",
     "celery==5.4.0",
     "cmap==0.7.2",
     "coverage==7.6.8",
@@ -33,7 +34,7 @@ dependencies = [
     "django-model-utils==5.0.0",
     "django-ninja==1.6.2",
     "django-redis==6.0.0",
-    "django-stubs[compatible-mypy]==6.0.3",
+    "django-stubs==6.0.3",
     "djlint==1.36.1",
     "dlt[postgres]>=1.0,<2.0",
     "factory-boy==3.3.1",
@@ -46,7 +47,6 @@ dependencies = [
     "ipdb==0.13.13",
     "jupysql>=0.10,<1.0",
     "mcp>=1.0.0",
-    "mypy==1.13.0",
     "numpy>=2.0,<3.0",
     "pandas==2.2.3",
     "pandas-stubs==2.2.3.241009",
@@ -118,61 +118,6 @@ timeout_func_only = true
 include = ["brewgis/**"]
 omit = ["*/migrations/*", "*/tests/*"]
 plugins = ["django_coverage_plugin"]
-
-# ==== mypy ====
-[tool.mypy]
-python_version = "3.12"
-check_untyped_defs = true
-warn_return_any = true
-warn_unreachable = true
-disallow_incomplete_defs = true
-disallow_untyped_defs = true
-warn_unused_ignores = true
-warn_redundant_casts = true
-warn_unused_configs = true
-plugins = [
-    "mypy_django_plugin.main",
-]
-
-[[tool.mypy.overrides]]
-ignore_errors = true
-
-# Packages without stubs:
-module = [
-    # Django migrations should not produce any errors:
-    "*.migrations.*",
-    "celery",
-    "celery.*",
-    "environ",
-    "geopandas",
-    "pandas",
-    "shapely",
-    "shapely.*",
-    "requests",
-    "werkzeug.*",
-    "crispy_forms.*",
-    "weasyprint",
-    "rasterio",
-    "rasterio.*",
-    "dlt",
-    "dlt.*",
-]
-ignore_missing_imports = true
-
-[[tool.mypy.overrides]]
-# Existing untyped code — gradually remove overrides as functions are typed
-module = [
-    "brewgis.workspace.views",
-    "brewgis.workspace.models",
-    "brewgis.conftest",
-    "brewgis.config.celery_app",
-    "brewgis.config.wsgi",
-    "brewgis.config.urls",
-]
-disallow_untyped_defs = false
-
-[tool.django-stubs]
-django_settings_module = "brewgis.config.settings"
 
 # ==== djLint ====
 [tool.djlint]
@@ -288,17 +233,29 @@ ignore = [
 [tool.ruff.lint.isort]
 force-single-line = true
 
-# ==== basedpyright (fast type checking) ====
+# ==== basedpyright (type checking) ====
 
-# basedpyright is a fast alternative to mypy, written in Go.
+# basedpyright is a pyright fork (TypeScript, shipped as the `basedpyright`
+# PyPI package) and replaces mypy here: it reads the same django-stubs `.pyi`
+# files, but checks all of `brewgis/` in ~10s instead of hours.
 # Install: pip install basedpyright
-# Run:     make typecheck-fast
+# Run:     make typecheck
 #
-# It uses the same type stubs as mypy (django-stubs) but runs 10-100x faster.
+# The two disabled rules below are the ones only mypy's django-stubs *plugin*
+# can satisfy. pyright reads django-stubs' static stubs but cannot run that
+# plugin, so these report false positives on anything Django's metaprogramming
+# creates: reverse FK/M2M accessors (`layer.symbology`), `Manager[User]`
+# methods injected by django_stubs_ext, CBV class attributes (`template_name`),
+# and SQLMesh's decorator API (`from sqlmesh import model, macro, audit`).
 [tool.basedpyright]
 include = ["brewgis"]
 typeCheckingMode = "standard"
-useLibraryCodeForTypes = true
+# Only trust libraries that ship types (py.typed or a stub package). With this
+# on, pyright type-checks the source of *untyped* dependencies (django-environ's
+# unannotated `default=NOTSET`, geopandas' internal DataFrame helpers, ...) and
+# reports their false positives against our call sites — the equivalent of the
+# `ignore_missing_imports`/`ignore_errors` overrides the old mypy config carried.
+useLibraryCodeForTypes = false
 reportUnknownParameterType = "none"
 reportUnknownArgumentType = "none"
 reportUnknownVariableType = "none"
@@ -308,6 +265,8 @@ reportMissingTypeStubs = "none"
 reportMissingImports = "none"
 reportPrivateImportUsage = "none"
 reportMissingModuleSource = "none"
+reportAttributeAccessIssue = "none"
+reportIncompatibleVariableOverride = "none"
 executionEnvironments = [{ root = "brewgis", extraPaths = ["."] }]
 
 # ==== Vulture (dead code detection) ====

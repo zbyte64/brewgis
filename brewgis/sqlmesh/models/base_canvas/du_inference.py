@@ -61,7 +61,7 @@ def _load_du_model() -> tuple[MultiOutputRegressor, list[str]]:
             "No cached LightGBM DU model found for the DU regressor. "
             "Run compare_sacog_basemap first to train models in planning/lightgbm_cache/."
         )
-    # mypy: the pickled object is a MultiOutputRegressor; attribute access below
+    # basedpyright: the pickled object is a MultiOutputRegressor; attribute access below
     # is safe at runtime.
     model_obj: Any = payload["model"]
     targets = payload["targets"]
