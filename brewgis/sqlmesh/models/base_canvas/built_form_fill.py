@@ -304,10 +304,7 @@ matched AS (
     LEFT JOIN LATERAL (
         SELECT *
         FROM built_forms bf
-        WHERE ({du_basis}
-           OR {emp_basis}
-           OR {key_basis})
-          AND {category_requirement}
+        WHERE {category_requirement}
         ORDER BY
             -- A preference on top of the bases below, never a basis of its
             -- own: the sector the parcel's jobs are in. Its constraint — the
