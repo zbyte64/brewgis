@@ -26,7 +26,8 @@ MODEL (
     overture_industrial_sqft = 'Overture industrial-class floor area (sq ft): footprint x levels x overlap.',
     overture_other_sqft = 'Overture floor area in the other class (sq ft): footprint x levels x overlap.',
     footprint_ratio = 'Total building floor area divided by parcel lot area (sq ft per sq ft).',
-    land_development_category = 'Land development category of the parcel from the assessor record.'
+    land_development_category = 'Land development category of the parcel from the assessor record.',
+    dominant_building_class = 'Raw Overture building class (house, apartments, school, retail, church, hospital, etc. -- the source taxonomy, not the 4-bucket class_category grouping) with the most footprint x levels x overlap area on the parcel; ''vacant'' when the parcel has no building footprint, ''unclassified'' when every covering building is VIDA-sourced (no Overture class).'
   ),
   audits (
     not_null(columns := (apn)),
@@ -55,10 +56,38 @@ MODEL (
 --   - land_development_category: from assessor_use_codes via landuse prefix
 --   - overture_*_sqft: per-class floor-area buckets using Overture class system
 --     (replaces the need for a separate spatial join in parcel_building_sqft_by_type)
+--   - dominant_building_class: the raw Overture class (not the 4-bucket
+--     class_category grouping) with the most footprint x levels x overlap
+--     area on the parcel — 'vacant'/'unclassified' when no building or no
+--     Overture-classed building covers the parcel
 
-WITH building_stats AS (
+WITH building_joined AS (
+    -- The spatial join, materialized once: building_stats and
+    -- dominant_class both aggregate from this CTE instead of repeating the
+    -- CROSS JOIN LATERAL (Postgres auto-materializes a CTE referenced more
+    -- than once).
     SELECT
         sap.apn,
+        bwa.*
+    FROM brewgis.@{region}.assessor_parcels sap
+    CROSS JOIN LATERAL (
+        SELECT
+            b.*,
+            CASE
+                WHEN ST_CoveredBy(b.local_geometry, sap.local_geometry)
+                    THEN 1.0
+                ELSE ST_Area(ST_Intersection(sap.local_geometry, b.local_geometry))
+                     / NULLIF(ST_Area(b.local_geometry), 0)
+            END AS overlap_ratio
+        FROM brewgis.@{region}.buildings_combined_pg b
+        WHERE sap.local_geometry && b.local_geometry
+          AND ST_Intersects(sap.local_geometry, b.local_geometry)
+    ) bwa
+),
+
+building_stats AS (
+    SELECT
+        bwa.apn,
         SUM(bwa.footprint_sqft * COALESCE(bwa.levels, 1) * bwa.overlap_ratio) AS total_footprint_sqft,
         COUNT(*) AS building_count,
         MAX(bwa.height) AS max_height,
@@ -113,21 +142,32 @@ WITH building_stats AS (
                 ELSE 0
             END * bwa.overlap_ratio
         )::double precision AS overture_other_sqft
-    FROM brewgis.@{region}.assessor_parcels sap
-    CROSS JOIN LATERAL (
-        SELECT
-            b.*,
-            CASE
-                WHEN ST_CoveredBy(b.local_geometry, sap.local_geometry)
-                    THEN 1.0
-                ELSE ST_Area(ST_Intersection(sap.local_geometry, b.local_geometry))
-                     / NULLIF(ST_Area(b.local_geometry), 0)
-            END AS overlap_ratio
-        FROM brewgis.@{region}.buildings_combined_pg b
-        WHERE sap.local_geometry && b.local_geometry
-          AND ST_Intersects(sap.local_geometry, b.local_geometry)
-    ) bwa
-    GROUP BY sap.apn
+    FROM building_joined bwa
+    GROUP BY bwa.apn
+),
+
+class_weighted AS (
+    -- Per-parcel, per-raw-class floor area (footprint x levels x overlap),
+    -- the same weighting the overture_*_sqft buckets above use. VIDA rows
+    -- (bf_source IN ('google', 'microsoft')) carry no Overture class and are
+    -- excluded here, not folded into a bucket.
+    SELECT
+        apn,
+        class,
+        SUM(footprint_sqft * COALESCE(levels, 1) * overlap_ratio) AS weighted_area
+    FROM building_joined
+    WHERE class IS NOT NULL
+    GROUP BY apn, class
+),
+
+dominant_class AS (
+    -- The raw class with the most weighted floor area per parcel; ties break
+    -- alphabetically for a deterministic result.
+    SELECT DISTINCT ON (apn)
+        apn,
+        class AS dominant_building_class
+    FROM class_weighted
+    ORDER BY apn, weighted_area DESC, class ASC
 )
 
 SELECT
@@ -156,9 +196,14 @@ SELECT
              / NULLIF(sap.lot_size_acres * 43560, 0)
         ELSE 0
     END AS footprint_ratio,
-    sap.land_development_category
+    sap.land_development_category,
+    COALESCE(
+        dc.dominant_building_class,
+        CASE WHEN COALESCE(bs.total_footprint_sqft, 0) <= 0 THEN 'vacant' ELSE 'unclassified' END
+    ) AS dominant_building_class
 FROM brewgis.@{region}.assessor_parcels sap
-LEFT JOIN building_stats bs ON sap.apn = bs.apn;
+LEFT JOIN building_stats bs ON sap.apn = bs.apn
+LEFT JOIN dominant_class dc ON sap.apn = dc.apn;
 
 -- post_statements
   CREATE INDEX IF NOT EXISTS @snapshot_hash('idx_parcel_building_footprints_geometry_')

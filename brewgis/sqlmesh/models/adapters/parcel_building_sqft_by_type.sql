@@ -19,6 +19,7 @@ MODEL (
     non_residential_building_count = 'Number of buildings outside the Overture residential classes.',
     max_levels = 'Maximum floor count among the buildings on the parcel (levels).',
     land_development_category = 'Land development category of the parcel, from the assessor use code prefix.',
+    dominant_building_class = 'Raw Overture building class with the most footprint x levels x overlap area on the parcel; ''vacant'' with no building footprint, ''unclassified'' when every covering building is VIDA-sourced.',
     geometry = 'Parcel boundary geometry (EPSG:4326) from the assessor parcel row.'
   ),
   audits (
@@ -52,6 +53,7 @@ SELECT
     non_residential_building_count,
     max_levels,
     land_development_category,
+    dominant_building_class,
     geometry
 FROM brewgis.@{region}.parcel_building_footprints;
 

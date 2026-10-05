@@ -29,6 +29,8 @@ from sqlmesh.core.model.definition import ModelKindName
 from brewgis.sqlmesh.macros.region_blueprints import REGIONS
 from brewgis.sqlmesh.models.python._cache import load_latest_model
 from brewgis.sqlmesh.models.python._feature_cols import _RESNET_PC_COLS
+from brewgis.sqlmesh.models.python._feature_cols import BLDG_CLASS_FALLBACK
+from brewgis.sqlmesh.models.python._feature_cols import BLDG_CLASS_PREFIX
 from brewgis.sqlmesh.models.python._feature_cols import LDC_FALLBACK
 from brewgis.sqlmesh.models.python._feature_cols import LDC_PREFIX
 from brewgis.sqlmesh.models.python._feature_cols import fitted_feature_names
@@ -93,8 +95,15 @@ def _build_feature_matrix(
     ldc_cats = sorted(
         {c.removeprefix(LDC_PREFIX) for c in expected_cols if c.startswith(LDC_PREFIX)}
     )
+    bldg_classes = sorted(
+        {
+            c.removeprefix(BLDG_CLASS_PREFIX)
+            for c in expected_cols
+            if c.startswith(BLDG_CLASS_PREFIX)
+        }
+    )
 
-    df = _encode_one_hots(df, ldc_cats or None)
+    df = _encode_one_hots(df, ldc_cats or None, bldg_classes or None)
 
     return df[expected_cols].astype(np.float32)
 
@@ -187,6 +196,8 @@ def execute(
             dw.apn,
             COALESCE(dw.land_development_category, '{LDC_FALLBACK}')
                 AS land_development_category,
+            COALESCE(dw.dominant_building_class, '{BLDG_CLASS_FALLBACK}')
+                AS dominant_building_class,
             COALESCE(dw.lot_size_acres, 0)::double precision
                 AS lot_size_acres,
             COALESCE(dw.highway_intersection_density, 0)::double precision

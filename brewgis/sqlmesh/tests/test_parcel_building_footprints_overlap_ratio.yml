@@ -248,3 +248,135 @@ test_non_area_aggregates_unchanged:
           building_count: 2
           max_levels: 3
           max_height: 18.0
+
+test_dominant_building_class_picks_the_larger_weighted_class:
+  model: brewgis.sacog.parcel_building_footprints
+  gateway: postgis
+  inputs:
+    brewgis.sacog.assessor_parcels:
+      rows:
+        - apn: "PARCEL_DOMCLASS"
+          lot_size_acres: 2.3
+          geometry: "POLYGON((0 0, 100 0, 100 100, 0 100, 0 0))"
+          wgs84_geometry: "POLYGON((0 0, 100 0, 100 100, 0 100, 0 0))"
+          local_geometry: "POLYGON((0 0, 100 0, 100 100, 0 100, 0 0))"
+          land_development_category: "urban"
+      columns:
+        geometry: GEOMETRY
+        wgs84_geometry: GEOMETRY
+        local_geometry: GEOMETRY
+    brewgis.sacog.buildings_combined_pg:
+      rows:
+        # Small house: 1000 sqft x 1 level = 1000 weighted sqft.
+        - geometry: "POLYGON((10 10, 20 10, 20 20, 10 20, 10 10))"
+          wgs84_geometry: "POLYGON((10 10, 20 10, 20 20, 10 20, 10 10))"
+          footprint_sqft: 1000.0
+          levels: 1
+          class: "house"
+          class_category: "residential"
+          bf_source: "overture"
+          confidence: 0.9
+          height: 5.0
+          source: "overture"
+          source_id: "bldg_house"
+          local_geometry: "POLYGON((10 10, 20 10, 20 20, 10 20, 10 10))"
+        # Large school: 2000 sqft x 2 levels = 4000 weighted sqft; dominant.
+        - geometry: "POLYGON((30 10, 60 10, 60 60, 30 60, 30 10))"
+          wgs84_geometry: "POLYGON((30 10, 60 10, 60 60, 30 60, 30 10))"
+          footprint_sqft: 2000.0
+          levels: 2
+          class: "school"
+          class_category: "other"
+          bf_source: "overture"
+          confidence: 0.9
+          height: 10.0
+          source: "overture"
+          source_id: "bldg_school"
+          local_geometry: "POLYGON((30 10, 60 10, 60 60, 30 60, 30 10))"
+      columns:
+        geometry: GEOMETRY
+        wgs84_geometry: GEOMETRY
+        local_geometry: GEOMETRY
+  outputs:
+    query:
+      partial: true
+      rows:
+        - apn: "PARCEL_DOMCLASS"
+          dominant_building_class: "school"
+
+test_dominant_building_class_unclassified_for_vida_only_parcel:
+  model: brewgis.sacog.parcel_building_footprints
+  gateway: postgis
+  inputs:
+    brewgis.sacog.assessor_parcels:
+      rows:
+        - apn: "PARCEL_VIDA_ONLY"
+          lot_size_acres: 2.3
+          geometry: "POLYGON((0 0, 100 0, 100 100, 0 100, 0 0))"
+          wgs84_geometry: "POLYGON((0 0, 100 0, 100 100, 0 100, 0 0))"
+          local_geometry: "POLYGON((0 0, 100 0, 100 100, 0 100, 0 0))"
+          land_development_category: "urban"
+      columns:
+        geometry: GEOMETRY
+        wgs84_geometry: GEOMETRY
+        local_geometry: GEOMETRY
+    brewgis.sacog.buildings_combined_pg:
+      rows:
+        # VIDA building: no Overture class (class is NULL).
+        - geometry: "POLYGON((10 10, 60 10, 60 60, 10 60, 10 10))"
+          wgs84_geometry: "POLYGON((10 10, 60 10, 60 60, 10 60, 10 10))"
+          footprint_sqft: 1000.0
+          levels: 1
+          class_category: "mixed"
+          bf_source: "google"
+          confidence: 0.8
+          height: 5.0
+          source: "vida"
+          source_id: "bldg_vida"
+          local_geometry: "POLYGON((10 10, 60 10, 60 60, 10 60, 10 10))"
+      columns:
+        geometry: GEOMETRY
+        wgs84_geometry: GEOMETRY
+        local_geometry: GEOMETRY
+  outputs:
+    query:
+      partial: true
+      rows:
+        - apn: "PARCEL_VIDA_ONLY"
+          dominant_building_class: "unclassified"
+
+test_dominant_building_class_vacant_for_empty_parcel:
+  model: brewgis.sacog.parcel_building_footprints
+  gateway: postgis
+  inputs:
+    brewgis.sacog.assessor_parcels:
+      rows:
+        - apn: "PARCEL_EMPTY"
+          lot_size_acres: 2.3
+          geometry: "POLYGON((0 0, 100 0, 100 100, 0 100, 0 0))"
+          wgs84_geometry: "POLYGON((0 0, 100 0, 100 100, 0 100, 0 0))"
+          local_geometry: "POLYGON((0 0, 100 0, 100 100, 0 100, 0 0))"
+          land_development_category: "urban"
+      columns:
+        geometry: GEOMETRY
+        wgs84_geometry: GEOMETRY
+        local_geometry: GEOMETRY
+    brewgis.sacog.buildings_combined_pg:
+      rows: []
+      columns:
+        geometry: GEOMETRY
+        wgs84_geometry: GEOMETRY
+        local_geometry: GEOMETRY
+        footprint_sqft: DOUBLE
+        levels: INTEGER
+        class: TEXT
+        class_category: TEXT
+        bf_source: TEXT
+        confidence: DOUBLE
+        height: DOUBLE
+  outputs:
+    query:
+      partial: true
+      rows:
+        - apn: "PARCEL_EMPTY"
+          dominant_building_class: "vacant"

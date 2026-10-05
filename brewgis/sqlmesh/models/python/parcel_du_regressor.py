@@ -27,6 +27,7 @@ from brewgis.sqlmesh.models.python._cache import compute_data_hash
 from brewgis.sqlmesh.models.python._cache import save_model
 from brewgis.sqlmesh.models.python._cache import try_load_cached
 from brewgis.sqlmesh.models.python._feature_cols import _RESNET_PC_COLS
+from brewgis.sqlmesh.models.python._feature_cols import BLDG_CLASS_FALLBACK
 from brewgis.sqlmesh.models.python._feature_cols import LDC_FALLBACK
 from brewgis.sqlmesh.models.python._predict import predict_in_batches
 
@@ -85,6 +86,14 @@ LGBM_PARAMS: dict[str, Any] = {
 
 MIN_R2 = 0.10
 
+# Per-parcel dominant Overture building class (raw taxonomy: house, school,
+# retail, church, ... — not the 4-bucket class_category grouping), computed
+# in parcel_building_footprints by footprint x levels x overlap area and
+# carried through parcel_building_sqft_by_type. COALESCE guards a parcel
+# whose bs row is entirely missing (LEFT JOIN miss), matching LDC_FALLBACK's
+# role for land_development_category. One-hot encoded below.
+_DOMINANT_BUILDING_CLASS_SQL = f"COALESCE(bs.dominant_building_class, '{BLDG_CLASS_FALLBACK}') AS dominant_building_class"
+
 
 def _fetch_du_training_data(context: ExecutionContext) -> pd.DataFrame:
     """Fetch reference DU data with features for regression training."""
@@ -114,6 +123,7 @@ def _fetch_du_training_data(context: ExecutionContext) -> pd.DataFrame:
             {target_col},
             ap.lot_size_acres,
             COALESCE(ap.land_development_category, '{LDC_FALLBACK}') AS land_development_category,
+            {_DOMINANT_BUILDING_CLASS_SQL},
             COALESCE(bs.total_footprint_sqft, 0) AS total_footprint_sqft,
             COALESCE(bs.building_count, 0) AS building_count,
             COALESCE(bs.footprint_ratio, 0) AS footprint_ratio,
@@ -157,6 +167,7 @@ def _stream_inference_data(
             ap.apn,
             ap.lot_size_acres,
             COALESCE(ap.land_development_category, '{LDC_FALLBACK}') AS land_development_category,
+            {_DOMINANT_BUILDING_CLASS_SQL},
             COALESCE(bs.total_footprint_sqft, 0) AS total_footprint_sqft,
             COALESCE(bs.building_count, 0) AS building_count,
             COALESCE(bs.footprint_ratio, 0) AS footprint_ratio,
@@ -186,6 +197,7 @@ def _stream_inference_data(
 def _encode_one_hots(
     df: pd.DataFrame,
     ldev_cats: list[str] | None = None,
+    bldg_classes: list[str] | None = None,
 ) -> pd.DataFrame:
     """One-hot encode categorical features (no built_form_key encoding)."""
     parts = [df]
@@ -193,12 +205,19 @@ def _encode_one_hots(
         ldev_oh = pd.get_dummies(df["land_development_category"], prefix="ldc")
         ldev_oh = ldev_oh.reindex(columns=[f"ldc_{c}" for c in ldev_cats], fill_value=0)
         parts.append(ldev_oh)
+    if bldg_classes is not None:
+        bldg_oh = pd.get_dummies(df["dominant_building_class"], prefix="bldg_class")
+        bldg_oh = bldg_oh.reindex(
+            columns=[f"bldg_class_{c}" for c in bldg_classes], fill_value=0
+        )
+        parts.append(bldg_oh)
     return pd.concat(parts, axis=1)
 
 
 def _feature_matrix(
     df: pd.DataFrame,
     ldev_cats: list[str] | None = None,
+    bldg_classes: list[str] | None = None,
 ) -> pd.DataFrame:
     """Build full feature matrix with one-hot encoded columns (no built_form_key)."""
     df = df.copy()
@@ -206,10 +225,12 @@ def _feature_matrix(
     df["max_levels"] = df["max_levels"].fillna(1).astype(np.int32)
     for col in NUMERIC_FEATURES:
         df[col] = df[col].astype(np.float32)
-    df = _encode_one_hots(df, ldev_cats)
+    df = _encode_one_hots(df, ldev_cats, bldg_classes)
     oh_cols = []
     if ldev_cats is not None:
         oh_cols += [f"ldc_{c}" for c in ldev_cats]
+    if bldg_classes is not None:
+        oh_cols += [f"bldg_class_{c}" for c in bldg_classes]
     return df[NUMERIC_FEATURES + oh_cols + _RESNET_PC_COLS]
 
 
@@ -287,8 +308,9 @@ def execute(
 
     # Prepare features for both datasets
     ldev_cats = sorted(train_df["land_development_category"].unique().tolist())
+    bldg_classes = sorted(train_df["dominant_building_class"].unique().tolist())
 
-    x_train = _feature_matrix(train_df, ldev_cats)
+    x_train = _feature_matrix(train_df, ldev_cats, bldg_classes)
     y_train = train_df[DU_TARGETS].to_numpy()
 
     # Train or load cached model (type-keyed: one cache namespace per regressor)
@@ -324,7 +346,7 @@ def execute(
     del y_train
 
     def _features(df: pd.DataFrame) -> pd.DataFrame:
-        return _feature_matrix(df, ldev_cats)
+        return _feature_matrix(df, ldev_cats, bldg_classes)
 
     results_parts: list[pd.DataFrame] = []
     for apns, y_batch in predict_in_batches(

@@ -32,6 +32,8 @@ from sqlmesh.core.model.definition import ModelKindName
 from brewgis.sqlmesh.macros.region_blueprints import REGIONS
 from brewgis.sqlmesh.models.python._cache import load_latest_model
 from brewgis.sqlmesh.models.python._feature_cols import _RESNET_PC_COLS
+from brewgis.sqlmesh.models.python._feature_cols import BLDG_CLASS_FALLBACK
+from brewgis.sqlmesh.models.python._feature_cols import BLDG_CLASS_PREFIX
 from brewgis.sqlmesh.models.python._feature_cols import LDC_FALLBACK
 from brewgis.sqlmesh.models.python._feature_cols import LDC_PREFIX
 from brewgis.sqlmesh.models.python._feature_cols import fitted_feature_names
@@ -93,6 +95,7 @@ def _base_query(dw_table: str) -> str:
             dw.apn,
             dw.lot_size_acres,
             COALESCE(dw.land_development_category, '{LDC_FALLBACK}') AS land_development_category,
+            COALESCE(dw.dominant_building_class, '{BLDG_CLASS_FALLBACK}') AS dominant_building_class,
             COALESCE(dw.{DU_RATIO_DENOMINATOR}, 0) AS {DU_RATIO_DENOMINATOR},
             COALESCE(dw.building_count, 0) AS building_count,
             COALESCE(dw.footprint_ratio, 0) AS footprint_ratio,
@@ -160,7 +163,7 @@ def execute(
         "DU model expects %d feature columns (%d numeric, %d one-hot, %d ResNet PC)",
         len(expected_cols),
         sum(1 for c in expected_cols if c in NUMERIC_FEATURES),
-        sum(1 for c in expected_cols if c.startswith(LDC_PREFIX)),
+        sum(1 for c in expected_cols if c.startswith((LDC_PREFIX, BLDG_CLASS_PREFIX))),
         sum(1 for c in expected_cols if c.startswith("pc")),
     )
 
@@ -204,7 +207,7 @@ def execute(
         # One-hot columns: zero-initialise every trained category, then set the
         # ones this parcel belongs to; categories absent here stay zero.
         for col in expected_cols:
-            if col.startswith(LDC_PREFIX):
+            if col.startswith((LDC_PREFIX, BLDG_CLASS_PREFIX)):
                 df[col] = 0
 
         ldc_series = df["land_development_category"]
@@ -212,6 +215,12 @@ def execute(
             col = f"{LDC_PREFIX}{cat}"
             if col in df.columns:
                 df[col] = (ldc_series == cat).astype(int)
+
+        bldg_class_series = df["dominant_building_class"]
+        for cat in bldg_class_series.unique():
+            col = f"{BLDG_CLASS_PREFIX}{cat}"
+            if col in df.columns:
+                df[col] = (bldg_class_series == cat).astype(int)
 
         return df[expected_cols]
 
