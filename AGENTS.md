@@ -82,7 +82,7 @@ Key rules:
 |`config/`|Django settings (single file), root URLconf, Celery app, WSGI with tile server proxying|
 |`tests/`|~82 test files across 8 subdirectories|
 |`tests/workspace/`|~56 test files covering models, views, paint, filters, allocation, fetchers, ETL, built forms, MCP, stats|
-|`tests/dbt_math/`|SQLMesh parity tests: Python reference implementations with @deal + Hypothesis + SQLMesh integration tests|
+|`tests/dbt_math/`|SQLMesh parity tests: Python reference oracles (with @deal contracts) driven against the real models through `run_model()`, plus structural contracts over the loaded project|
 |`tests/e2e/`|Playwright BDD e2e tests: feature files, page objects, session-scoped browser|
 |`tests/review/`|UX design review tests: feature files, screenshots, same POMs as e2e|
 |`tests/features/` + `tests/isolation_orchestration/`|Shared BDD isolation feature file consumed at two abstraction levels (raw SQL vs Django model)|
@@ -302,8 +302,8 @@ npm run test      # vitest
 - **Runner:** Django's DiscoverRunner. Config: `--ds=brewgis.config.settings --reuse-db --import-mode=importlib`, 300s timeout
 - **Coverage:** coverage with django_coverage_plugin, includes `brewgis/**`, excludes `*/migrations/*` and `*/tests/*`, **60% threshold**
 - **BDD:** Gherkin `.feature` files in `tests/e2e/features/`, `tests/review/features/`, `tests/features/` — shared across two abstraction levels
-- **Property-based:** Hypothesis for numerical invariants in tests/dbt_math/ (mode choice shares sum to 1, trip conservation, SQL math parity vs Python reference)
-- **@deal contracts:** Design-by-contract for function pre/post conditions. Used in test reference implementations and symbology classifiers. Enable with `DEAL_ENABLED=1`.
+- **Property-based:** Hypothesis for numerical invariants in `tests/workspace/` and `tests/dbt_math/`'s differential oracles; `tests/dbt_math/test_sql_parity.py` runs the real SQLMesh model against the Python reference it mirrors (no reference is tested against itself)
+- **@deal contracts:** Design-by-contract for function pre/post conditions. Used in test reference oracles and in production services (symbology classifiers, paint constraints, pipeline). Enable with `DEAL_ENABLED=1` (run by `make test-deal`).
 - **Factory Boy:** 11 factories in `tests/factories.py` (UserFactory, WorkspaceFactory, LayerFactory, SymbologyConfigFactory, StyleClassFactory, ScenarioFactory, AnalysisRunFactory, PaintedCanvasFactory, BuildingTypeFactory, PlaceTypeFactory, PlaceTypeBuildingTypeMixFactory)
 - **pytestarch (architecture guards):** 2 rules remain in `tests/test_architecture.py` — most migrated to custom ruff rules in `brewgis/_ruff_rules/rules.py`
 - **SQLMesh audits:** 86 SQL assertion files for pipeline data quality (replaces Soda)

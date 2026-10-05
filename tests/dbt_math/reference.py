@@ -1,17 +1,19 @@
-"""Pure Python reference implementations of dbt SQL model formulas.
+"""Pure Python oracles for the analysis SQL models' formulas.
 
-Each function mirrors a dbt SQL model's SELECT expressions exactly.
-Decorated with ``@deal.pre`` / ``@deal.post`` contracts that document
-and enforce the mathematical invariants at runtime.
+Each function mirrors a SQLMesh model's SELECT expressions exactly, and is only
+ever used as the expected value in ``test_sql_parity.py`` — which runs the real
+model and asserts its output matches. A mirror that drifts from the SQL shows up
+there as a parity failure; it is never tested against itself.
 
-Contracts are enforced only when ``DEAL_ENABLED=1`` (``make test-deal``).
-Otherwise they serve as executable documentation.
+The ``@deal.pre`` / ``@deal.post`` contracts document the mathematical
+invariants and are enforced only when ``DEAL_ENABLED=1`` (``conftest.py``
+disables them otherwise), so in CI they are executable documentation.
 
 Naming convention: ``compute_<output>`` or ``compute_<model>_<output>``
-matching the dbt model or macro name.
+matching the model or macro name.
 
 All functions are pure: no I/O, no mutations.  numpy arrays are assumed
-to be non-None and have matching lengths (validated by contracts).
+to be non-None and have matching lengths.
 """
 # ruff: noqa: ARG005, PLR0913, PLR0917, ERA001
 
@@ -997,61 +999,8 @@ def compute_trip_generation(
     )
 
 
-# ══════════════════════════════════════════════════════════════════════
-#  Internal Capture  (internal_capture.sql)
-# ══════════════════════════════════════════════════════════════════════
-
-
-@deal.pre(
-    lambda out, inbound, intra, frac, length, radius: (
-        np.all(out >= 0) & np.all(length >= 0)
-    )
-)
-@deal.pre(
-    lambda out, inbound, intra, frac, length, radius: (
-        np.all(intra >= 0) & np.all(inbound >= 0)
-    )
-)
-@deal.pre(lambda out, inbound, intra, frac, length, radius: 0 <= frac <= 1)
-@deal.pre(lambda out, inbound, intra, frac, length, radius: radius > 0)
-@deal.post(lambda result: np.all(result[0] >= 0))  # trips_internal
-@deal.post(lambda result: np.all(result[1] <= 1.0 + 1e-10))  # internal_capture_pct
-@deal.post(lambda result: np.all(result[1] >= 0))
-@deal.post(lambda result: np.all(result[2] >= 0))  # trips_external
-@deal.post(
-    lambda result: np.all(
-        result[2] >= result[0] - 1e-10,  # external ≥ internal - epsilon
-    )
-)
-def compute_internal_capture(
-    trips_outbound: np.ndarray,
-    trips_inbound: np.ndarray,
-    trips_intra_parcel: np.ndarray,
-    parcel_capture_fraction: float,
-    avg_trip_length_km: np.ndarray,
-    study_area_radius_km: float,
-    intrazonal_friction: float = 0.15,
-) -> tuple[np.ndarray, np.ndarray, np.ndarray]:
-    """SQL: ``internal_capture`` — trips staying within the study area.
-
-    The capture fraction is computed at the study-area level (not per-parcel).
-    For individual parcels we compute::
-
-        internal_capture_pct = min(1.0, fraction * exp(-friction * length / radius))
-
-    Returns (trips_internal, internal_capture_pct, trips_external).
-    """
-    capture_pct = np.where(
-        avg_trip_length_km > 0,
-        np.minimum(
-            1.0,
-            parcel_capture_fraction
-            * np.exp(-intrazonal_friction * avg_trip_length_km / study_area_radius_km),
-        ),
-        1.0,  # zero trip length → all internal
-    )
-    trips_internal = trips_intra_parcel + trips_outbound * capture_pct
-    trips_external = np.maximum(
-        0, trips_inbound - trips_intra_parcel - (trips_outbound * capture_pct)
-    )
-    return trips_internal, capture_pct, trips_external
+# ``internal_capture`` has no reference here: test_result_view_geometry.py drives
+# the model directly, and the mirror this module used to carry had drifted (it
+# measured external trips off trips_inbound, while the model measures them off
+# trips_total — the QA the parity tests could not catch while they only ran the
+# mirror against itself).

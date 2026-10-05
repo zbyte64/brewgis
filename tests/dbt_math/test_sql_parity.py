@@ -19,12 +19,18 @@ import numpy as np
 import pandas as pd
 import pytest
 
+from tests.dbt_math.reference import compute_agriculture
+from tests.dbt_math.reference import compute_building_water_ghg
+from tests.dbt_math.reference import compute_energy_demand
+from tests.dbt_math.reference import compute_impervious_surface
 from tests.dbt_math.reference import compute_mode_choice
+from tests.dbt_math.reference import compute_physical_activity
 from tests.dbt_math.reference import compute_property_tax
 from tests.dbt_math.reference import compute_service_costs
 from tests.dbt_math.reference import compute_transport_ghg
 from tests.dbt_math.reference import compute_trip_generation
 from tests.dbt_math.reference import compute_vmt
+from tests.dbt_math.reference import compute_water_demand
 from tests.dbt_math.sqlmesh_model_runner import run_model
 
 pytestmark = [
@@ -411,4 +417,398 @@ def test_trip_generation_parity(parity_scenario: str) -> None:
         "trips_nhb",
     )
     for column, expected in zip(columns, reference, strict=True):
+        assert np.allclose(result[column], expected, atol=1e-6), column
+
+
+# ══════════════════════════════════════════════════════════════════════
+#  Land consumption — Impervious Surface
+# ══════════════════════════════════════════════════════════════════════
+
+
+@pytest.mark.slow
+def test_land_consumption_parity(parity_scenario: str) -> None:
+    """``land_consumption``'s impervious-surface columns match the reference.
+
+    The reference carries the module's parameter defaults (ground coverage,
+    parking per unit / per employee, parking space size, row fraction), which
+    are what a run with no scenario overrides renders.
+    """
+    du = np.array([0.0, 5.0, 100.0, 2.5])
+    bsqt = np.array([0.0, 2000.0, 50000.0, 100.0])
+    emp = np.array([0.0, 3.0, 50.0, 1.0])
+    gross = np.array([1.0, 2.0, 5.0, 0.5])
+    dev = np.array([0.0, 1.0, 4.0, 0.25])
+    pid = np.arange(len(du), dtype=int)
+
+    imp_sqft, imp_acres, pervious, imp_pct = compute_impervious_surface(
+        bsqt, du, emp, gross, dev
+    )
+
+    es_df = _core_es_df(
+        pid,
+        du=du,
+        emp=emp,
+        building_sqft_total=bsqt,
+        area_gross_acres=gross,
+        acres_developed=dev,
+        built_form_id=np.array([None, "bf a", "bf b", "bf c"], dtype=object),
+        parcel_acres_developed=dev,
+        parcel_acres_agriculture=np.zeros(len(pid)),
+        parcel_acres_open_space=np.zeros(len(pid)),
+        parcel_acres_vacant=gross,
+    )
+    result = run_model(
+        "land_consumption",
+        upstream={"core_end_state": es_df},
+        scenario_schema=parity_scenario,
+    ).sort_values("parcel_id")
+
+    assert np.allclose(result["impervious_sqft"], imp_sqft, atol=1e-3)
+    assert np.allclose(result["impervious_acres"], imp_acres, atol=1e-9)
+    assert np.allclose(result["pervious_acres"], pervious, atol=1e-9)
+    assert np.allclose(result["impervious_pct"], imp_pct, atol=1e-9)
+
+
+# ══════════════════════════════════════════════════════════════════════
+#  Physical Activity
+# ══════════════════════════════════════════════════════════════════════
+
+
+@pytest.mark.slow
+def test_physical_activity_parity(parity_scenario: str) -> None:
+    """``physical_activity`` MET-hours match the reference.
+
+    Each active mode uses its own mean trip length and speed (the parameter
+    defaults), never the region's vehicle trip length.
+    """
+    walk = np.array([0.0, 40.0, 250.0])
+    bike = np.array([0.0, 12.0, 60.0])
+    auto = np.array([0.0, 300.0, 1200.0])
+    transit = np.array([0.0, 25.0, 90.0])
+    pid = np.arange(len(walk), dtype=int)
+
+    ref = compute_physical_activity(walk, bike, 0.8, 3.2, auto, transit)
+
+    mc_df = pd.DataFrame(
+        {
+            "parcel_id": pid,
+            "trips_walk": walk,
+            "trips_bike": bike,
+            "trips_auto": auto,
+            "trips_transit": transit,
+        }
+    )
+    es_df = _core_es_df(pid)
+
+    result = run_model(
+        "physical_activity",
+        upstream={"mode_choice": mc_df, "core_end_state": es_df},
+        scenario_schema=parity_scenario,
+    ).sort_values("parcel_id")
+
+    for column, expected in zip(
+        ("walk_met_hours", "bike_met_hours", "total_met_hours", "active_trip_share"),
+        (ref[0], ref[1], ref[2], ref[5]),
+        strict=True,
+    ):
+        assert np.allclose(result[column], expected, atol=1e-9), column
+
+
+# ══════════════════════════════════════════════════════════════════════
+#  Water Demand
+# ══════════════════════════════════════════════════════════════════════
+
+
+@pytest.mark.slow
+def test_water_demand_parity(parity_scenario: str) -> None:
+    """``water_demand`` L/yr by category matches the reference.
+
+    One parcel is in an ETo zone (outdoor at the ETo depth), one has no zone
+    (NULL depth → the built form's flat outdoor rate), which is the COALESCE
+    branch the reference's NaN sentinel reproduces.
+    """
+    pop = np.array([0.0, 250.0, 40.0])
+    indoor = np.array([200.0, 180.0, 210.0])
+    emp = np.array([0.0, 50.0, 5.0])
+    res_irr = np.array([0.0, 0.5, 0.1])
+    com_irr = np.array([0.0, 0.2, 0.0])
+    eto = np.array([np.nan, 1449.0, 900.0])
+    flat_outdoor = np.array([100.0, 95.0, 105.0])
+    pid = np.arange(len(pop), dtype=int)
+
+    ref = compute_water_demand(pop, indoor, emp, res_irr, com_irr, eto, flat_outdoor)
+
+    es_df = _core_es_df(
+        pid,
+        pop=pop,
+        emp=emp,
+        du=np.array([0.0, 100.0, 16.0]),
+        acres_developed=np.array([0.0, 1.0, 0.2]),
+        indoor_water_rate=indoor,
+        residential_irrigated_area=res_irr,
+        commercial_irrigated_area=com_irr,
+        annual_eto_mm=eto,
+        outdoor_water_rate=flat_outdoor,
+    )
+    result = run_model(
+        "water_demand",
+        upstream={"core_end_state": es_df},
+        scenario_schema=parity_scenario,
+    ).sort_values("parcel_id")
+
+    for column, expected in zip(
+        (
+            "water_demand_res_indoor",
+            "water_demand_res_outdoor",
+            "water_demand_nonres_indoor",
+            "water_demand_nonres_outdoor",
+            "water_demand_total",
+            "water_demand_per_unit",
+        ),
+        ref,
+        strict=True,
+    ):
+        assert np.allclose(result[column], expected, atol=1e-6), column
+
+
+# ══════════════════════════════════════════════════════════════════════
+#  Building & Water GHG
+# ══════════════════════════════════════════════════════════════════════
+
+
+@pytest.mark.slow
+def test_building_water_ghg_parity(parity_scenario: str) -> None:
+    """``building_water_ghg`` CO2e matches the reference.
+
+    Energy and water are read from their models' outputs; the reference carries
+    the parameter defaults for the eGRID, gas, and water/wastewater factors.
+    """
+    e_res = np.array([0.0, 12000.0, 4000.0])
+    e_nonres = np.array([0.0, 5000.0, 1500.0])
+    g_res = np.array([0.0, 9000.0, 3000.0])
+    g_nonres = np.array([0.0, 2000.0, 800.0])
+    w_total = np.array([0.0, 2.5e6, 4.0e5])
+    pop = np.array([0.0, 250.0, 40.0])
+    pid = np.arange(len(pop), dtype=int)
+
+    ref = compute_building_water_ghg(e_res, e_nonres, g_res, g_nonres, w_total, pop)
+
+    ed_df = pd.DataFrame(
+        {
+            "parcel_id": pid,
+            "energy_electricity_res": e_res,
+            "energy_gas_res": g_res,
+            "energy_electricity_nonres": e_nonres,
+            "energy_gas_nonres": g_nonres,
+        }
+    )
+    wd_df = pd.DataFrame({"parcel_id": pid, "water_demand_total": w_total})
+    es_df = _core_es_df(pid, pop=pop)
+
+    result = run_model(
+        "building_water_ghg",
+        upstream={
+            "energy_demand": ed_df,
+            "water_demand": wd_df,
+            "core_end_state": es_df,
+        },
+        scenario_schema=parity_scenario,
+    ).sort_values("parcel_id")
+
+    for column, expected in zip(
+        (
+            "co2e_energy_total_kg",
+            "co2e_water_total_kg",
+            "co2e_total_kg",
+            "co2e_per_capita_kg",
+        ),
+        ref,
+        strict=True,
+    ):
+        assert np.allclose(result[column], expected, atol=1e-3, rtol=1e-9), column
+
+
+# ══════════════════════════════════════════════════════════════════════
+#  Agriculture
+# ══════════════════════════════════════════════════════════════════════
+
+
+@pytest.mark.slow
+def test_agriculture_parity(parity_scenario: str) -> None:
+    """``agriculture`` production and resource columns match the reference.
+
+    Every parcel qualifies (agricultural acres, or developed rural acres), so
+    the model's WHERE keeps them all and the rows line up with the reference.
+    """
+    ag = np.array([5.0, 50.0, 0.0, 10.0])
+    dev = np.array([0.0, 0.0, 30.0, 5.0])
+    rural = np.array([False, False, True, False])
+    pid = np.arange(len(ag), dtype=int)
+
+    ref = compute_agriculture(ag, dev, rural)
+
+    es_df = _core_es_df(
+        pid,
+        parcel_acres_agriculture=ag,
+        acres_developed=dev,
+        land_development_category=np.where(rural, "rural", "urban"),
+    )
+    result = run_model(
+        "agriculture",
+        upstream={"core_end_state": es_df},
+        scenario_schema=parity_scenario,
+    ).sort_values("parcel_id")
+
+    for column, expected in zip(
+        (
+            "acres_cultivated",
+            "crop_yield_tons",
+            "market_value",
+            "production_cost",
+            "net_return",
+            "water_consumption_af",
+            "labor_hours",
+            "truck_trips",
+        ),
+        ref,
+        strict=True,
+    ):
+        assert np.allclose(result[column], expected, atol=1e-6), column
+
+
+# ══════════════════════════════════════════════════════════════════════
+#  Energy Demand
+# ══════════════════════════════════════════════════════════════════════
+
+_ZONE = 7
+"""The CEC Building Climate Zone the synthetic baselines cover."""
+
+_RES_DU_TYPES = ("detsf_ll", "detsf_sl", "attsf", "mf")
+_RES_ELEC = np.array([7000.0, 6000.0, 5000.0, 4000.0])
+_RES_GAS = np.array([1000.0, 900.0, 800.0, 700.0])
+
+_COM_USES = (
+    "retail_services",
+    "restaurant",
+    "accommodation",
+    "arts_entertainment",
+    "other_services",
+    "office_services",
+    "public_admin",
+    "education",
+    "medical_services",
+    "transport_warehousing",
+    "wholesale",
+)
+_COM_ELEC = np.array([14.0 + i for i in range(len(_COM_USES))])
+_COM_GAS = np.array([0.09 + i * 0.01 for i in range(len(_COM_USES))])
+
+
+def _zone_rates(rates: np.ndarray, zones: np.ndarray) -> np.ndarray:
+    """One rate row per parcel: the zone's rates, or NaN where the zone is not covered."""
+    return np.array(
+        [rates if zone == _ZONE else np.full(len(rates), np.nan) for zone in zones]
+    )
+
+
+@pytest.mark.slow
+def test_energy_demand_parity(parity_scenario: str) -> None:
+    """``energy_demand`` kWh/yr matches the reference.
+
+    Three branches: a parcel in a covered zone uses the zone's per-class
+    intensities, one with no zone and one in an uncovered zone fall back to the
+    built form's flat EUI, and a covered parcel with no dwelling units or area
+    keeps the zone branch's zero.
+    """
+    # 0 in-zone with dwelling units + retail area; 1 no zone; 2 uncovered zone;
+    # 3 in-zone but empty.
+    zones = np.array([_ZONE, np.nan, 99.0, _ZONE])
+    du_ll = np.array([10.0, 5.0, 0.0, 0.0])
+    du_sl = np.array([0.0, 0.0, 0.0, 0.0])
+    du_attsf = np.array([0.0, 0.0, 0.0, 0.0])
+    du_mf2to4 = np.array([0.0, 0.0, 4.0, 0.0])
+    du_mf5p = np.array([0.0, 0.0, 6.0, 0.0])
+    res_sqft = np.array([5000.0, 2000.0, 1000.0, 0.0])
+    com_sqft = np.array([50.0, 300.0, 200.0, 0.0])
+    elec_eui = np.array([100.0, 100.0, 80.0, 100.0])
+    gas_eui = np.array([50.0, 50.0, 40.0, 50.0])
+    pid = np.arange(4, dtype=int)
+
+    # Every commercial use type present for use 0 only.
+    com_areas = {use: np.zeros(4) for use in _COM_USES}
+    com_areas["retail_services"][0] = 1000.0
+
+    du_matrix = np.column_stack([du_ll, du_sl, du_attsf, du_mf2to4 + du_mf5p])
+    com_area_matrix = np.column_stack([com_areas[use] for use in _COM_USES])
+
+    ref = compute_energy_demand(
+        du_matrix,
+        _zone_rates(_RES_ELEC, zones),
+        _zone_rates(_RES_GAS, zones),
+        com_area_matrix,
+        _zone_rates(_COM_ELEC, zones),
+        _zone_rates(_COM_GAS, zones),
+        res_sqft,
+        com_sqft,
+        elec_eui,
+        gas_eui,
+    )
+
+    residential_seed = pd.DataFrame(
+        {
+            "zone": np.full(len(_RES_DU_TYPES), _ZONE),
+            "du_type": np.array(_RES_DU_TYPES, dtype=object),
+            "elec_kwh_per_du_yr": _RES_ELEC,
+            "gas_therm_per_du_yr": _RES_GAS,
+        }
+    )
+    commercial_seed = pd.DataFrame(
+        {
+            "zone": np.full(len(_COM_USES), _ZONE),
+            "use_type": np.array(_COM_USES, dtype=object),
+            "elec_kwh_per_sqft_yr": _COM_ELEC,
+            "gas_therm_per_sqft_yr": _COM_GAS,
+        }
+    )
+
+    es_df = _core_es_df(
+        pid,
+        du=du_ll + du_sl + du_attsf + du_mf2to4 + du_mf5p,
+        acres_developed=np.zeros(4),
+        building_sqft_total=res_sqft + com_sqft,
+        building_sqft_residential=res_sqft,
+        building_sqft_commercial=com_sqft,
+        du_detsf_ll=du_ll,
+        du_detsf_sl=du_sl,
+        du_attsf=du_attsf,
+        du_mf2to4=du_mf2to4,
+        du_mf5p=du_mf5p,
+        electricity_eui=elec_eui,
+        gas_eui=gas_eui,
+        title24_zone=zones,
+        **{f"bldg_area_{use}": com_areas[use] for use in _COM_USES},
+    )
+
+    result = run_model(
+        "energy_demand",
+        upstream={"core_end_state": es_df},
+        seeds={
+            "residential_energy_baseline": residential_seed,
+            "commercial_energy_baseline": commercial_seed,
+        },
+        scenario_schema=parity_scenario,
+    ).sort_values("parcel_id")
+
+    for column, expected in zip(
+        (
+            "energy_electricity_res",
+            "energy_gas_res",
+            "energy_electricity_nonres",
+            "energy_gas_nonres",
+            "energy_total",
+            "energy_intensity_kwh_per_sqft",
+        ),
+        ref,
+        strict=True,
+    ):
         assert np.allclose(result[column], expected, atol=1e-6), column

@@ -58,6 +58,10 @@ from brewgis.workspace.analysis.sqlmesh_runner import run_sqlmesh_plan
 # per-run FQN, so nothing collides between runs.
 _ENVIRONMENT = "prod"
 
+# The physical schema SQLMesh's catalog alias maps ``brewgis.seeds`` onto, where
+# a model that reads a seed at its absolute FQN (``energy_demand``) finds it.
+_SEED_SCHEMA = "seeds"
+
 # DataFrame columns written as jsonb rather than text — a model expands these
 # with jsonb_each_text, which a text column rejects.
 _JSONB_COLUMNS: frozenset[str] = frozenset({"jobs_by_sector"})
@@ -67,6 +71,7 @@ def run_model(
     model_name: str,
     upstream: dict[str, pd.DataFrame] | None = None,
     source_tables: dict[str, pd.DataFrame] | None = None,
+    seeds: dict[str, pd.DataFrame] | None = None,
     vars_: dict[str, Any] | None = None,
     *,
     scenario_schema: str,
@@ -85,6 +90,12 @@ def run_model(
         source_tables: ``{table_name: DataFrame}`` for models that use
             ``source('source_name', 'table_name')``.  Written to the
             schema specified by ``vars_['source_schema']``.
+        seeds: ``{seed_table: DataFrame}`` for models that read a project seed
+            at its absolute FQN (``@ref_model('brewgis.seeds.<name>')``, e.g.
+            ``energy_demand``'s energy baselines). Written into the shared
+            ``seeds`` schema — the physical schema the catalog alias maps
+            ``brewgis.seeds`` onto — and only the named tables are dropped
+            afterwards.
         vars_: Extra SQLMesh config variables.
         scenario_schema: The analyzed scenario's schema the run's blueprint
             renders into (``ascn<scenario_pk>``), from the ``parity_scenario``
@@ -109,6 +120,7 @@ def run_model(
 
     upstream = upstream or {}
     source_tables = source_tables or {}
+    seeds = seeds or {}
     base_vars = dict(vars_) if vars_ else {}
     source_schema = base_vars.get("source_schema", scratch_schema)
 
@@ -126,6 +138,10 @@ def run_model(
             _write_df(scenario_schema, ref_name, df)
         for src_name, df in source_tables.items():
             _write_df(source_schema, src_name, df)
+        if seeds:
+            _ensure_schema(_SEED_SCHEMA)
+            for seed_name, df in seeds.items():
+                _write_df(_SEED_SCHEMA, seed_name, df)
 
         # `select` takes the FQN, not the bare name: every scenario has its own
         # instance of the model, and only this scenario's blueprint reads this
@@ -150,6 +166,10 @@ def run_model(
         _drop_schema(scratch_schema)
         if source_schema != scratch_schema:
             _clean_schema(source_schema, list(source_tables))
+        if seeds:
+            # The ``seeds`` schema is shared with the project's own materialized
+            # seeds, so only the tables this run wrote are dropped.
+            _clean_schema(_SEED_SCHEMA, list(seeds))
 
 
 def _read_model(model_fqn: str, cache_dir: str) -> pd.DataFrame:
