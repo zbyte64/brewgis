@@ -18,6 +18,7 @@ from brewgis.workspace.analysis.pipeline import launch_analysis_run
 from brewgis.workspace.models import ScenarioType
 from brewgis.workspace.views.analysis import AnalysisModuleForm
 from tests.factories import AnalysisRunFactory
+from tests.factories import LayerFactory
 from tests.factories import ScenarioFactory
 from tests.factories import UserFactory
 from tests.factories import WorkspaceFactory
@@ -553,6 +554,263 @@ class TestAnalysisPanelViews(TestCase):
             response, reverse("workspace:analysis_status", kwargs={"run_pk": run.pk})
         )
         self.assertContains(response, "every 2s")
+
+
+class TestAnalysisModuleDrawer(TestCase):
+    """A layer's per-analysis icon opens the run in the right drawer.
+
+    The drawer shows the one analysis the layer belongs to — its name,
+    description and the run responsible — not the whole Analysis panel, and
+    leaves the Layers panel where it is.
+    """
+
+    def setUp(self):
+        self.user = UserFactory()
+        self.workspace = WorkspaceFactory()
+        self.scenario = ScenarioFactory(workspace=self.workspace)
+        self.client.force_login(self.user)
+        self.drawer_url = reverse(
+            "workspace:analysis_module_details",
+            args=[self.workspace.pk, "water_demand"],
+        )
+
+    def test_drawer_names_the_analysis_and_shows_its_run(self):
+        run = AnalysisRunFactory(
+            workspace=self.workspace,
+            scenario=self.scenario,
+            modules=["water_demand"],
+            status="completed",
+        )
+        response = self.client.get(
+            self.drawer_url, {"scenario": self.scenario.pk, "panel": "1"}
+        )
+        assert response.status_code == 200
+        self.assertContains(response, "Water Demand")
+        self.assertContains(response, f"analysis-status-{run.pk}")
+        self.assertContains(response, "Rerun")
+        # The drawer is a view of this analysis, not a card in a list, so it
+        # has no "Hide details" control — its own close button is the way out.
+        self.assertNotContains(response, "Hide details")
+
+    def test_drawer_without_a_run_offers_the_configure_control(self):
+        AnalysisRunFactory(
+            workspace=self.workspace,
+            scenario=self.scenario,
+            modules=["vmt"],
+            status="completed",
+        )
+        response = self.client.get(
+            self.drawer_url, {"scenario": self.scenario.pk, "panel": "1"}
+        )
+        assert response.status_code == 200
+        # The view behind such a layer may have been published outside the
+        # Analysis panel, so the drawer reports the missing run record without
+        # claiming the analysis never ran.
+        self.assertContains(response, "No analysis run is recorded")
+        self.assertContains(
+            response,
+            reverse(
+                "workspace:analysis_module_configure",
+                args=[self.workspace.pk, "water_demand"],
+            ),
+        )
+        self.assertNotContains(response, "Rerun")
+
+    def test_drawer_shows_the_active_parameters_a_rematerialization_reads(self):
+        """The values come off the Scenario — the same merge the blueprints bake
+        in — so this is what a rerun or a direct SQLMesh plan will read."""
+        self.scenario.analysis_params = {"nonres_indoor_water_rate": 55.0}
+        self.scenario.constraints = [
+            {"table": "floodplains", "discount_pct": 100, "geom_col": "geom"}
+        ]
+        self.scenario.column_mapping = {"pop": "population"}
+        self.scenario.save(
+            update_fields=["analysis_params", "constraints", "column_mapping"]
+        )
+        response = self.client.get(
+            self.drawer_url, {"scenario": self.scenario.pk, "panel": "1"}
+        )
+        assert response.status_code == 200
+        self.assertContains(response, "Active parameters")
+        self.assertContains(response, "nonres_indoor_water_rate")
+        self.assertContains(response, "55.0")
+        self.assertContains(response, "Constraint discounts")
+        self.assertContains(response, "floodplains")
+        self.assertContains(response, "Column mapping")
+        self.assertContains(response, "population")
+        self.assertContains(response, self.scenario.name)
+
+    def test_drawer_marks_unset_parameters_as_defaults(self):
+        response = self.client.get(
+            self.drawer_url, {"scenario": self.scenario.pk, "panel": "1"}
+        )
+        assert response.status_code == 200
+        # The registry default renders, marked as such.
+        self.assertContains(response, "40.0")
+        self.assertContains(response, "default")
+
+    def test_drawer_shows_parameters_for_a_module_no_run_touched(self):
+        """The case that started this: a total_ghg layer whose producing run is
+        not recorded still opens a drawer with its live parameter values."""
+        response = self.client.get(
+            reverse(
+                "workspace:analysis_module_details",
+                args=[self.workspace.pk, "total_ghg"],
+            ),
+            {"scenario": self.scenario.pk, "panel": "1"},
+        )
+        assert response.status_code == 200
+        self.assertContains(response, "transport_target_avg_trip_length_km")
+        self.assertContains(response, "6.42")
+        self.assertContains(response, "No analysis run is recorded")
+
+    def test_drawer_ignores_another_scenarios_run(self):
+        other_scenario = ScenarioFactory(workspace=self.workspace)
+        AnalysisRunFactory(
+            workspace=self.workspace,
+            scenario=other_scenario,
+            modules=["water_demand"],
+            status="completed",
+        )
+        response = self.client.get(
+            self.drawer_url, {"scenario": self.scenario.pk, "panel": "1"}
+        )
+        assert response.status_code == 200
+        self.assertContains(response, "No analysis run is recorded")
+
+
+class TestRunDetailsRerun(TestCase):
+    """The run-details fragment offers rerunning the analysis behind it."""
+
+    def setUp(self):
+        self.user = UserFactory()
+        self.workspace = WorkspaceFactory()
+        self.scenario = ScenarioFactory(workspace=self.workspace)
+        self.client.force_login(self.user)
+        self.details_url = reverse(
+            "workspace:analysis_module_details",
+            args=[self.workspace.pk, "water_demand"],
+        )
+
+    def test_details_offer_rerun_for_a_finished_run(self):
+        AnalysisRunFactory(
+            workspace=self.workspace,
+            scenario=self.scenario,
+            modules=["water_demand"],
+            status="completed",
+        )
+        response = self.client.get(self.details_url, {"scenario": self.scenario.pk})
+        assert response.status_code == 200
+        # Rerun posts the run's own scenario to the module-launch endpoint: the
+        # parameters a run reads live on the Scenario, so this reuses them.
+        self.assertContains(response, "Rerun")
+        self.assertContains(
+            response,
+            reverse(
+                "workspace:analysis_module_launch",
+                args=[self.workspace.pk, "water_demand"],
+            ),
+        )
+        self.assertContains(response, f'name="scenario" value="{self.scenario.pk}"')
+        # Inline in the card list the fragment can be hidden again; the drawer
+        # presentation (hide_details) drops this control.
+        self.assertContains(response, "Hide details")
+
+    def test_details_hide_rerun_while_the_run_is_active(self):
+        AnalysisRunFactory(
+            workspace=self.workspace,
+            scenario=self.scenario,
+            modules=["water_demand"],
+            status="running",
+            started_at=timezone.now(),
+        )
+        response = self.client.get(self.details_url, {"scenario": self.scenario.pk})
+        assert response.status_code == 200
+        self.assertNotContains(response, "Rerun")
+
+    @patch(
+        "brewgis.workspace.views.analysis.check_analysis_prerequisites",
+        new=lambda **_kwargs: [],
+    )
+    @patch("brewgis.workspace.views.analysis.launch_analysis_run")
+    def test_rerun_posts_only_the_scenario_and_reuses_stored_parameters(
+        self, mock_launch
+    ):
+        """Rerun reuses the run's inputs: the parameters live on the Scenario,
+        so posting nothing but its pk launches the same analysis again."""
+        self.scenario.analysis_params = {"nonres_indoor_water_rate": 55.0}
+        self.scenario.save(update_fields=["analysis_params"])
+        mock_launch.return_value = AnalysisRunFactory(
+            workspace=self.workspace,
+            scenario=self.scenario,
+            modules=["water_demand"],
+            status="pending",
+        )
+        response = self.client.post(
+            reverse(
+                "workspace:analysis_module_launch",
+                args=[self.workspace.pk, "water_demand"],
+            ),
+            {"scenario": self.scenario.pk},
+        )
+        assert response.status_code == 200
+        mock_launch.assert_called_once()
+        _, kwargs = mock_launch.call_args
+        assert kwargs["module_names"] == ["water_demand"]
+        self.scenario.refresh_from_db()
+        assert self.scenario.analysis_params == {"nonres_indoor_water_rate": 55.0}
+
+
+class TestLayersPanelAnalysisIcon(TestCase):
+    """The Layers panel gives an analysis result layer a run icon.
+
+    The icon opens that analysis's run in the right drawer, leaving the Layers
+    panel in place; imported and canvas layers get no such affordance.
+    """
+
+    def setUp(self):
+        self.user = UserFactory()
+        self.client.force_login(self.user)
+        self.workspace = WorkspaceFactory()
+        self.scenario = ScenarioFactory(
+            workspace=self.workspace, scenario_type=ScenarioType.BASE
+        )
+        LayerFactory(
+            workspace=self.workspace,
+            key=f"water_demand_{self.scenario.pk}",
+            name="Water Demand",
+            db_table="water_demand",
+            scenario=self.scenario,
+        )
+        LayerFactory(
+            workspace=self.workspace,
+            key="imported_parcels",
+            name="Imported Parcels",
+            db_table="imported_parcels",
+            scenario=None,
+        )
+        self.panel_url = reverse("workspace:panel_layer_list", args=[self.workspace.pk])
+
+    def _html(self) -> str:
+        response = self.client.get(f"{self.panel_url}?scenario={self.scenario.pk}")
+        assert response.status_code == 200
+        return response.content.decode()
+
+    def test_analysis_layer_opens_its_run_in_the_right_drawer(self):
+        html = self._html()
+        drawer_url = reverse(
+            "workspace:analysis_module_details",
+            args=[self.workspace.pk, "water_demand"],
+        )
+        assert f"{drawer_url}?panel=1" in html
+        # Right drawer, not the left sidebar: the Layers panel stays put.
+        assert 'hx-target="#right-panel-content"' in html
+        assert "open-panel:Analysis: Water Demand" in html
+        assert "#left-sidebar-content" not in html
+
+    def test_imported_layer_gets_no_run_icon(self):
+        """Only the analysis result layer carries the affordance."""
+        assert self._html().count("open-panel:Analysis:") == 1
 
 
 class TestLaunchAnalysisRun(TestCase):

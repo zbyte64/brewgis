@@ -20,6 +20,7 @@ from django.views.generic.edit import FormView
 
 from brewgis.workspace.analysis.layer_registry import BASE_CANVAS_LAYER_KEY
 from brewgis.workspace.analysis.layer_registry import PAINTED_FEATURES_LAYER_KEY
+from brewgis.workspace.analysis.layer_registry import analysis_modules_by_layer
 from brewgis.workspace.analysis.layer_registry import register_result_layer
 from brewgis.workspace.analysis.layer_registry import visible_layers_for_panel
 from brewgis.workspace.models import Layer
@@ -247,6 +248,7 @@ def layer_delete(request: HttpRequest, pk: int) -> HttpResponse:
             "layer_configs": {},
             "swatch_backgrounds": swatch_backgrounds,
             "sqlmesh_links": sqlmesh_links,
+            "analysis_modules": analysis_modules_by_layer(visible),
             "layers_for_panel": visible,
         }
         response = render(

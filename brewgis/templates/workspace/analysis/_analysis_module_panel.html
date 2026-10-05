@@ -1,0 +1,89 @@
+{% load i18n %}
+
+{% comment %}
+The right-drawer view of one analysis (``analysis_module_details?panel=1``),
+opened from a layer's per-analysis icon in the Layers panel — which is left in
+place.
+
+It shows the inputs the analysis actually runs on: the scenario's parameter
+values, constraint discounts and column mapping, which is what
+``sqlmesh/macros/analysis_blueprints.py`` bakes into the scenario's models when
+they are rendered. That makes the drawer useful for a layer whose view exists
+but whose producing run is not recorded (a plan applied outside the Analysis
+panel): the layer still links here, and the values shown are still the ones a
+rematerialization will read.
+{% endcomment %}
+<div class="analysis-module-panel" style="font-size: 0.75rem;">
+  <h6 class="mb-1" style="font-size: 0.8rem;">{{ analysis.label }}</h6>
+  <p class="text-muted mb-2" style="font-size: 0.7rem;">{{ analysis.description }}</p>
+  {% if scenario %}
+    <p class="mb-2" style="font-size: 0.7rem;">
+      <span class="text-muted">{% translate "Scenario" %}:</span>
+      {{ scenario.name }}
+      <span class="badge bg-secondary">{{ scenario.get_scenario_type_display }}</span>
+    </p>
+  {% endif %}
+  <h6 class="text-muted mb-1"
+      style="font-size: 0.7rem;
+             text-transform: uppercase">{% translate "Active parameters" %}</h6>
+  {% if parameters %}
+    <table class="table table-sm table-bordered mb-3" style="font-size: 0.7rem;">
+      <tbody>
+        {% for parameter in parameters %}
+          <tr>
+            <th class="fw-normal" style="width: 55%">{{ parameter.name }}</th>
+            <td>
+              <code>{{ parameter.value }}</code>
+              {% if not parameter.overridden %}<span class="text-muted">default</span>{% endif %}
+            </td>
+          </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  {% else %}
+    <p class="text-muted mb-3" style="font-size: 0.7rem;">{% translate "This analysis has no tunable parameters." %}</p>
+  {% endif %}
+  {% if analysis.needs_constraints and constraints %}
+    <h6 class="text-muted mb-1"
+        style="font-size: 0.7rem;
+               text-transform: uppercase">{% translate "Constraint discounts" %}</h6>
+    <table class="table table-sm table-bordered mb-3" style="font-size: 0.7rem;">
+      <tbody>
+        {% for constraint in constraints %}
+          <tr>
+            <th class="fw-normal" style="width: 55%">{{ constraint.table }}</th>
+            <td>{{ constraint.discount_pct }}%</td>
+          </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  {% endif %}
+  {% if analysis.needs_column_mapping and column_mapping %}
+    <h6 class="text-muted mb-1"
+        style="font-size: 0.7rem;
+               text-transform: uppercase">{% translate "Column mapping" %}</h6>
+    <table class="table table-sm table-bordered mb-3" style="font-size: 0.7rem;">
+      <tbody>
+        {% for canonical, source in column_mapping.items %}
+          <tr>
+            <th class="fw-normal" style="width: 55%">{{ canonical }}</th>
+            <td>{{ source }}</td>
+          </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  {% endif %}
+  {% if run %}
+    {% include "workspace/analysis/_analysis_details.html" with analysis=analysis run=run vmt_fee_data=vmt_fee_data hide_details=True %}
+  {% else %}
+    <div class="alert alert-secondary py-1 px-2 mb-2"
+         style="font-size: 0.7rem">
+      {% translate "No analysis run is recorded for this module in this scenario. The layer's view exists — it was published outside the Analysis panel — and the values above are still what a rematerialization reads." %}
+    </div>
+  {% endif %}
+  <button type="button"
+          class="btn btn-sm btn-outline-primary w-100"
+          hx-get="{% url 'workspace:analysis_module_configure' workspace.pk analysis.key %}{% if scenario %}?scenario={{ scenario.pk }}{% endif %}"
+          hx-target="#right-panel-content"
+          hx-swap="innerHTML">{% translate "Configure & Run" %}</button>
+</div>

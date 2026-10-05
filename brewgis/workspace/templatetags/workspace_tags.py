@@ -9,6 +9,8 @@ from django import template
 from django.template.defaultfilters import stringfilter
 from django.utils import timezone
 
+from brewgis.workspace.analysis.module_registry import get_module_label
+
 if TYPE_CHECKING:
     from datetime import datetime
 
@@ -61,6 +63,17 @@ def analysis_status_badge(status: str) -> str:
         "failed": "danger",
     }
     return badge_map.get(status, "secondary")
+
+
+@register.filter
+def analysis_module_label(module_key: str) -> str:
+    """Return the human-readable label of an analysis module key.
+
+    Usage in templates: ``{{ module_key|analysis_module_label }}`` — the
+    Layers panel titles a layer's analysis drawer with the analysis's name
+    this way, without the layer context having to carry the label too.
+    """
+    return get_module_label(module_key)
 
 
 @register.filter

@@ -1,16 +1,37 @@
 {% load i18n %}
 
 {% comment %}
-The module's last run, opened from its card in the map view's Analysis panel.
+The module's last run: opened from its card in the map view's Analysis panel,
+or as the body of the right-drawer view a layer's per-analysis icon opens (see
+_analysis_module_panel.html).
 The run detail itself is the fragment the status page and the launch response
 render — it carries its own htmx poll, so an active run keeps refreshing here.
 {% endcomment %}
 <div class="analysis-details mb-2">
-  <div class="d-flex justify-content-end">
-    <button type="button"
-            class="btn btn-sm btn-outline-secondary py-0 px-1"
-            style="font-size: 0.7rem"
-            hx-on:click="this.closest('.analysis-details').remove()">{% translate "Hide details" %}</button>
+  <div class="d-flex justify-content-between align-items-center mb-1 gap-1">
+    {% if run.status != "pending" and run.status != "running" %}
+      {# Re-run through the module form endpoint with only the scenario: the #}
+      {# parameters a run reads live on the Scenario (see #}
+      {# AnalysisModuleForm.apply_scenario_params), so this reuses the same #}
+      {# inputs the run behind the layer was launched with. #}
+      <form hx-post="{% url 'workspace:analysis_module_launch' run.workspace_id analysis.key %}"
+            hx-target="#right-panel-content"
+            hx-swap="innerHTML"
+            hx-disable="find button[type=submit]"
+            data-panel-event="open-panel:Analysis: {{ analysis.label }}">
+        {% csrf_token %}
+        <input type="hidden" name="scenario" value="{{ run.scenario_id }}" />
+        <button type="submit"
+                class="btn btn-sm btn-outline-primary py-0 px-2"
+                style="font-size: 0.7rem">{% translate "Rerun" %}</button>
+      </form>
+    {% endif %}
+    {% if not hide_details %}
+      <button type="button"
+              class="btn btn-sm btn-outline-secondary py-0 px-1 ms-auto"
+              style="font-size: 0.7rem"
+              hx-on:click="this.closest('.analysis-details').remove()">{% translate "Hide details" %}</button>
+    {% endif %}
   </div>
   {% include "workspace/analysis/status.html#analysis-status" %}
 </div>

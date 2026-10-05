@@ -17,6 +17,7 @@ from django.views.decorators.http import require_GET
 from django.views.decorators.http import require_http_methods
 from django.views.decorators.http import require_POST
 
+from brewgis.workspace.analysis.layer_registry import analysis_modules_by_layer
 from brewgis.workspace.analysis.layer_registry import visible_layers_for_panel
 from brewgis.workspace.models import Layer
 from brewgis.workspace.models import LayerGroup
@@ -184,6 +185,7 @@ def layer_group_move_layer(request: HttpRequest, layer_pk: int) -> HttpResponse:
             "layer_configs": {},
             "swatch_backgrounds": swatch_backgrounds,
             "sqlmesh_links": sqlmesh_links,
+            "analysis_modules": analysis_modules_by_layer(visible),
             "layers_for_panel": visible,
         }
         return render(request, "workspace/partials/_layer_list_panel.html", context)

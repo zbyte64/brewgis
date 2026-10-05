@@ -20,6 +20,7 @@ from brewgis.workspace.analysis.module_registry import get_default_palette
 from brewgis.workspace.analysis.module_registry import get_module_label
 from brewgis.workspace.analysis.module_registry import get_result_table_names
 from brewgis.workspace.analysis.module_registry import model_fqn
+from brewgis.workspace.analysis.module_registry import module_for_result_table
 from brewgis.workspace.analysis.module_registry import resolve_module_order
 from brewgis.workspace.palettes import PALETTES
 from brewgis.workspace.palettes import get_diverging_names
@@ -221,6 +222,36 @@ class TestGetResultTableNames:
         """An unknown module returns an empty list."""
         result = get_result_table_names("nonexistent", scenario_id="1")
         assert result == []
+
+
+class TestModuleForResultTable:
+    """Tests for ``module_for_result_table`` — the reverse result-view index."""
+
+    def test_result_view_maps_back_to_its_module(self) -> None:
+        """A layer's ``db_table`` is the bare model name; it maps to its module."""
+        assert module_for_result_table("water_demand") == "water_demand"
+
+    def test_secondary_result_view_maps_to_the_same_module(self) -> None:
+        """core publishes two views; both name the single module that owns them."""
+        assert module_for_result_table("core_end_state") == "core"
+        assert module_for_result_table("core_increment") == "core"
+
+    def test_non_analysis_table_has_no_module(self) -> None:
+        """Imported data and empty names are not analysis results."""
+        assert module_for_result_table("imported_parcels") is None
+        assert module_for_result_table("") is None
+
+    def test_index_covers_every_registered_result_view(self) -> None:
+        """The reverse index is exactly ``MODULE_RESULT_TABLES`` inverted.
+
+        The Layers panel trusts this to tell an analysis layer from an
+        imported one, so every registered result view must resolve — and must
+        resolve unambiguously (a table owned by two modules would make the
+        icon open the wrong run).
+        """
+        for module, tables in MODULE_RESULT_TABLES.items():
+            for table in tables:
+                assert module_for_result_table(table) == module
 
 
 class TestModelFqn:

@@ -24,6 +24,7 @@ from django.views.decorators.http import require_POST
 
 from brewgis.workspace.analysis.layer_registry import BASE_CANVAS_LAYER_KEY
 from brewgis.workspace.analysis.layer_registry import PAINTED_FEATURES_LAYER_KEY
+from brewgis.workspace.analysis.layer_registry import analysis_modules_by_layer
 from brewgis.workspace.analysis.layer_registry import ensure_painted_features_layer
 from brewgis.workspace.analysis.layer_registry import visible_layers_for_panel
 from brewgis.workspace.models import Basemap
@@ -187,6 +188,7 @@ def panel_layer_list(request: HttpRequest, workspace_pk: int) -> HttpResponse:
             table=f"scenario_{scenario.slug}_canvas",
         )
 
+    visible = visible_layers_for_panel(workspace, scenario)
     context: dict[str, object] = {
         "workspace": workspace,
         "scenario": scenario,
@@ -195,7 +197,7 @@ def panel_layer_list(request: HttpRequest, workspace_pk: int) -> HttpResponse:
         # layers plus this scenario's results, never another scenario's (see
         # visible_layers_for_panel). Passed for a BASE scenario too: its
         # analysis results belong to it just as an ALTERNATIVE's do.
-        "layers_for_panel": visible_layers_for_panel(workspace, scenario),
+        "layers_for_panel": visible,
     }
 
     # Pre-fetch symbology configs for inline legend swatches
@@ -219,6 +221,10 @@ def panel_layer_list(request: HttpRequest, workspace_pk: int) -> HttpResponse:
             for layer in workspace.layers.all()
         }
     )
+
+    # Analysis result layers, keyed by layer pk → the module that produced
+    # them, so the panel can offer each one an icon that opens its run.
+    context["analysis_modules"] = analysis_modules_by_layer(visible)
 
     # Pre-compute active filter expressions for map auto-apply
     active_maplibre_filters: dict[str, list | None] = {}

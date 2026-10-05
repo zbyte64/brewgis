@@ -554,6 +554,30 @@ def _get_active_scenario(request: HttpRequest, workspace: Workspace) -> Scenario
     return Scenario.objects.filter(pk=scenario_pk, workspace=workspace).first()
 
 
+def _module_parameter_rows(
+    scenario: Scenario | None, module_key: str
+) -> list[dict[str, Any]]:
+    """Return the active parameter values a rematerialization reads for *module_key*.
+
+    One row per ``module_registry.ANALYSIS_PARAMETERS`` entry the module owns:
+    the scenario's override when it has one, otherwise the registry default.
+    That is the same merge ``AnalysisModuleForm`` writes to the scenario and
+    ``sqlmesh/macros/analysis_blueprints.py`` bakes into the models' blueprints,
+    so these rows are the inputs a rerun or a direct SQLMesh plan will use —
+    which is what makes them worth showing next to a layer whose view may have
+    been built outside the Analysis panel.
+    """
+    overrides = (scenario.analysis_params or {}) if scenario is not None else {}
+    return [
+        {
+            "name": param.name,
+            "value": overrides.get(param.name, param.default),
+            "overridden": param.name in overrides,
+        }
+        for param in get_module_parameters(module_key)
+    ]
+
+
 def _get_analysis_meta(module_key: str) -> dict[str, Any]:
     """Look up one analysis's card metadata by module key, or 404."""
     meta = next(
@@ -630,11 +654,38 @@ def analysis_module_details(
     parameters, failure cause, traceback and log — and keeps polling while the
     run is active — without sending the user off the map. An analysis that has
     never run has no details, so it renders as nothing.
+
+    ``?panel=1`` is the right-drawer presentation of the same thing, opened by
+    a layer's per-analysis icon in the Layers panel: the module is named and
+    described above the *active inputs a rematerialization reads* — the
+    scenario's parameter overrides, constraint discounts and column mapping,
+    which is what ``sqlmesh/macros/analysis_blueprints.py`` bakes into the
+    models when they are (re)rendered — followed by the run responsible when
+    one is recorded, or a note that the view was published outside the Analysis
+    panel. The layer is shown either way: its view exists and is being tiled,
+    whether or not a run row survives.
     """
     workspace = get_object_or_404(Workspace, pk=workspace_pk)
     meta = _get_analysis_meta(module_key)
     scenario = _get_active_scenario(request, workspace)
     run = _module_last_run(workspace, scenario, module_key)
+
+    if request.GET.get("panel") == "1":
+        return render(
+            request,
+            "workspace/analysis/_analysis_module_panel.html",
+            {
+                "workspace": workspace,
+                "scenario": scenario,
+                "analysis": meta,
+                "run": run,
+                "vmt_fee_data": _vmt_fee_data(run) if run else None,
+                "parameters": _module_parameter_rows(scenario, module_key),
+                "constraints": (scenario.constraints or []) if scenario else [],
+                "column_mapping": ((scenario.column_mapping or {}) if scenario else {}),
+            },
+        )
+
     if run is None:
         return HttpResponse("")
     return render(

@@ -104,6 +104,26 @@ MODULE_RESULT_TABLES: dict[str, list[str]] = {
 }
 
 
+# Reverse of ``MODULE_RESULT_TABLES``: a result view's bare name → the module
+# that publishes it. Analysis result views are registered as Layers whose
+# ``db_table`` is that bare name, so this is what lets the Layers panel tell an
+# analysis layer from an imported one and know which module's run to open.
+RESULT_TABLE_MODULES: dict[str, str] = {
+    table: module for module, tables in MODULE_RESULT_TABLES.items() for table in tables
+}
+
+
+def module_for_result_table(table: str) -> str | None:
+    """Return the analysis module publishing result view *table*, or None.
+
+    *table* is the bare view name (``Layer.db_table`` for a result layer, not
+    the schema-qualified name). None means the table is not an analysis result
+    — an imported layer, a canvas layer, or a support model a run happens to
+    publish without it backing a module of its own.
+    """
+    return RESULT_TABLE_MODULES.get(table)
+
+
 # Module → the SQLMesh models that implement it, by bare model name. These are
 # the models a module's run selects (see ``model_fqn``). Unlike
 # ``MODULE_RESULT_TABLES`` this holds only names that really are models —

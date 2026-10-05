@@ -8,6 +8,7 @@ so the results are discoverable by the tile server and map component.
 from __future__ import annotations
 
 import logging
+from typing import TYPE_CHECKING
 from typing import Any
 
 from django.db import connection
@@ -15,6 +16,7 @@ from django.db.models import Q
 from django.db.models import QuerySet
 
 from brewgis.workspace.analysis.module_registry import get_primary_column
+from brewgis.workspace.analysis.module_registry import module_for_result_table
 from brewgis.workspace.models import Layer
 from brewgis.workspace.models import LayerGroup
 from brewgis.workspace.models import Scenario
@@ -22,6 +24,9 @@ from brewgis.workspace.models import ScenarioType
 from brewgis.workspace.models import StyleClass
 from brewgis.workspace.models import SymbologyConfig
 from brewgis.workspace.models import Workspace
+
+if TYPE_CHECKING:
+    from collections.abc import Iterable
 
 logger = logging.getLogger(__name__)
 
@@ -170,6 +175,24 @@ def visible_layers_for_panel(
     if scenario is None or scenario.scenario_type != ScenarioType.ALTERNATIVE:
         layers = layers.exclude(key=PAINTED_FEATURES_LAYER_KEY)
     return layers
+
+
+def analysis_modules_by_layer(layers: Iterable[Layer]) -> dict[int, str]:
+    """Map ``Layer.pk`` → analysis module key for analysis result layers.
+
+    A run registers one Layer per result view with that view's bare name as
+    ``db_table`` (see :func:`register_result_layer` callers), so the module
+    registry's reverse index answers which module produced a layer. Layers
+    with no module behind them — imported data, the canvas layers, a run's
+    support models — are absent from the result. The Layers panel uses this to
+    mark analysis layers and open the run that produced them.
+    """
+    modules: dict[int, str] = {}
+    for layer in layers:
+        module = module_for_result_table(layer.db_table)
+        if module:
+            modules[layer.pk] = module
+    return modules
 
 
 def _get_table_columns(schema: str, table: str) -> list[dict[str, Any]]:
