@@ -3,8 +3,8 @@
 
 Connects to the DuckDB database used by the SQLMesh staging gateway
 (`SQLMESH_DUCKDB_PATH`, defaulting to /app/planning/duckdb_cache.db) and
-evaluates SQL statements interactively. Extensions (httpfs, spatial) are
-loaded the same way the sqlmesh gateway does.
+evaluates SQL statements interactively. Extensions (httpfs, spatial, arcgis)
+are loaded the same way the sqlmesh gateway does.
 
 Usage:
     make duckdb            # inside the docker compose environment
@@ -52,8 +52,10 @@ def render(cursor: duckdb.DuckDBPyConnection) -> str:
 
 def main() -> int:
     path = sys.argv[1] if len(sys.argv) > 1 else DEFAULT_DB
-    con = duckdb.connect(path)
-    for ext in ("httpfs", "spatial"):
+    # arcgis is unsigned (see brewgis/sqlmesh/config.py), and the ArcGIS
+    # staging views cannot bind without it.
+    con = duckdb.connect(path, config={"allow_unsigned_extensions": "true"})
+    for ext in ("httpfs", "spatial", "arcgis"):
         con.execute(f"LOAD {ext}")
     print(f"Connected to {path} (DuckDB {duckdb.__version__})")
     print(HELP)

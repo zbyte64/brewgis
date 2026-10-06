@@ -1,11 +1,61 @@
 """Pre-download DuckDB extensions into the image cache.
 
 This runs at Docker build time.  At runtime, INSTALL is a no-op (~0.01s).
+
+The arcgis extension (https://github.com/zbyte64/duckdb-arcgis) is not in any
+DuckDB repository: its release zip is downloaded, checked against the pinned
+digest and unpacked into a local extension repository at
+``ARCGIS_REPOSITORY/v<duckdb version>/<platform>/``, then installed from it.
+The SQLMesh duckdb gateway names the same repository (``INSTALL arcgis FROM
+...`` is a no-op for an extension already installed from that origin, while a
+bare ``INSTALL arcgis`` would refuse it as coming from another origin). The
+binary is built for one exact DuckDB version and is unsigned, so the connection
+must allow unsigned extensions and ``duckdb`` in requirements/base.txt must
+match ``ARCGIS_DUCKDB_VERSION``.
 """
+
+import hashlib
+import io
+import urllib.request
+import zipfile
+from pathlib import Path
 
 import duckdb
 
-con = duckdb.connect()
+ARCGIS_RELEASE = "v0.1.0"
+ARCGIS_DUCKDB_VERSION = "1.5.6"
+ARCGIS_REPOSITORY = Path("/opt/duckdb-extensions")
+# sha256 of each release asset, from the GitHub release's asset digests.
+ARCGIS_SHA256 = {
+    "linux_amd64": "a4eaec32b528447f90b6d13136d16fcd91c38557c7d3b0d1199eeb147e9f40b4",
+    "linux_arm64": "e6ce831f237a298611904da3cab0ae96fb94bdeaa9a77fe110966ffd0e967633",
+}
+
+
+def stage_arcgis(platform: str) -> None:
+    if duckdb.__version__ != ARCGIS_DUCKDB_VERSION:
+        msg = (
+            f"arcgis {ARCGIS_RELEASE} is built for DuckDB {ARCGIS_DUCKDB_VERSION}, "
+            f"but the image has DuckDB {duckdb.__version__}"
+        )
+        raise RuntimeError(msg)
+    asset = f"arcgis-{ARCGIS_RELEASE}-duckdb-v{ARCGIS_DUCKDB_VERSION}-{platform}.zip"
+    url = f"https://github.com/zbyte64/duckdb-arcgis/releases/download/{ARCGIS_RELEASE}/{asset}"
+    with urllib.request.urlopen(url, timeout=300) as response:
+        payload = response.read()
+    digest = hashlib.sha256(payload).hexdigest()
+    if digest != ARCGIS_SHA256[platform]:
+        msg = f"{asset}: sha256 {digest} does not match the pinned {ARCGIS_SHA256[platform]}"
+        raise RuntimeError(msg)
+    target = ARCGIS_REPOSITORY / f"v{ARCGIS_DUCKDB_VERSION}" / platform
+    target.mkdir(parents=True, exist_ok=True)
+    with zipfile.ZipFile(io.BytesIO(payload)) as archive:
+        (target / "arcgis.duckdb_extension").write_bytes(
+            archive.read("arcgis.duckdb_extension")
+        )
+
+
+con = duckdb.connect(config={"allow_unsigned_extensions": "true"})
 try:
     for ext in [
         "httpfs",
@@ -22,6 +72,9 @@ try:
         else:
             con.execute(f"INSTALL {ext}")
         con.execute(f"LOAD {ext}")
+    stage_arcgis(con.execute("SELECT platform FROM pragma_platform()").fetchall()[0][0])
+    con.execute(f"FORCE INSTALL arcgis FROM '{ARCGIS_REPOSITORY}'")
+    con.execute("LOAD arcgis")
     print("DuckDB extensions pre-loaded into image cache")
 finally:
     con.close()

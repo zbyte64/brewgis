@@ -73,7 +73,7 @@ _MODEL_LOCATION = re.compile(r"at '[^']*sqlmesh/models/(?P<rel>[\w/.-]+\.sql)'")
 # The model's own name, as declared in its MODEL DDL (``name a.b.c,``).
 _MODEL_DDL_NAME = re.compile(r"\bname\s+(?P<name>[A-Za-z_][\w.]*)\s*,", re.MULTILINE)
 # A render failure names the macro that raised, which the model file alone
-# doesn't identify (``arcgis_page_urls`` is called from several models).
+# doesn't identify (one macro is called from several models).
 _MACRO_EVALUATION = re.compile(
     r"An error occurred during evaluation of '(?P<macro>[^']+)'"
 )

@@ -65,6 +65,26 @@ _DUCKDB_TMP = os.environ.get(
     "SQLMESH_DUCKDB_TMP",
     "/app/planning/duckdb_tmp",
 )
+# Local DuckDB extension repository the django image stages the arcgis
+# extension in (compose/local/django/preload_duckdb.py). The extension is in no
+# DuckDB repository, so the gateway installs it FROM here — a no-op once the
+# image has installed it from the same origin.
+_DUCKDB_EXTENSION_REPOSITORY = "/opt/duckdb-extensions"
+
+
+class _UnsignedExtensionsDuckDBConnectionConfig(DuckDBConnectionConfig):
+    """DuckDB connection config whose databases may load unsigned extensions.
+
+    The arcgis extension (https://github.com/zbyte64/duckdb-arcgis) is not
+    signed by DuckDB, and ``allow_unsigned_extensions`` can only be set while a
+    database is opened — ``connector_config`` items run as ``SET`` statements
+    after the extensions load, too late for it. ``DuckDBConnectionConfig`` has
+    no field for ``duckdb.connect(config=...)``, so it is passed here.
+    """
+
+    @property
+    def _static_connection_kwargs(self) -> dict[str, Any]:
+        return {"config": {"allow_unsigned_extensions": "true"}}
 
 
 def _get_readonly_pool() -> DuckDBReadOnlyPool:
@@ -439,7 +459,7 @@ def config_factory(*, cache_dir: str | None = None, **variables):
                 test_connection=_pg_conn_config(),
             ),
             "duckdb": GatewayConfig(
-                connection=DuckDBConnectionConfig(
+                connection=_UnsignedExtensionsDuckDBConnectionConfig(
                     catalogs={
                         "duckdb": _DUCKDB_PATH,
                         "brewgis": DuckDBAttachOptions(
@@ -454,15 +474,20 @@ def config_factory(*, cache_dir: str | None = None, **variables):
                         "cache_httpfs",
                         "zipfs",
                         "raster",
+                        # arcgis_query() for the ArcGIS FeatureServer /
+                        # MapServer staging models; its requests go through
+                        # httpfs, so cache_httpfs and the http_* policy below
+                        # apply to them.
+                        {
+                            "name": "arcgis",
+                            "repository": f"'{_DUCKDB_EXTENSION_REPOSITORY}'",
+                        },
                     ],
                     connector_config={
                         "temp_directory": _DUCKDB_TMP,
                         # cache_httpfs on-disk block cache. NO force_download:
                         # it made every s3:// parquet file an upfront full
                         # download (277 GB theme -> never completes).
-                        # ArcGIS FeatureServers (FEMA NFHL, CA DOC farmland)
-                        # that mishandle Range requests are covered by
-                        # cache_httpfs' default auto_fallback_to_full_download.
                         #
                         # IMPORTANT: the extension must be a CURRENT community
                         # build. The artifact pinned in images built before

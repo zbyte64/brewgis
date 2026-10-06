@@ -1,12 +1,12 @@
 MODEL (
   name duckdb.california.forecasting_climate_zones,
   kind VIEW,
-  description 'DuckDB staging VIEW fetching the CEC Forecasting Climate Zones FeatureServer for all of California.',
+  description 'DuckDB staging VIEW reading the CEC Forecasting Climate Zones FeatureServer for all of California through arcgis_query.',
   column_descriptions (
     fcz_zone = 'CEC electricity-demand Forecasting Climate Zone number (the layer''s FZ_Number, 0-20) the polygon belongs to.',
     fcz_name = 'FZ_Name label of the forecasting climate zone (planning-area name such as SMUD Service Territory).',
     planning_area = 'Plnng_Area utility planning area label the zone belongs to (PG&E, SCE, SDG&E, LADWP, NCNC, …).',
-    geometry = 'Zone polygon parsed from the page GeoJSON with ST_GeomFromGeoJSON (EPSG:4326 lon/lat); the layer mixes Polygon and MultiPolygon features.'
+    geometry = 'Zone polygon returned by arcgis_query in EPSG:4326 lon/lat; the layer mixes Polygon and MultiPolygon features.'
   ),
   gateway duckdb,
   dialect duckdb,
@@ -18,16 +18,11 @@ MODEL (
   )
 );
 
--- CEC Forecasting Climate Zones — DuckDB VIEW that fetches the whole statewide
--- layer via read_json_auto.
---
--- Each page is a GeoJSON FeatureCollection (RFC 7946, EPSG:4326 — honored by
--- ST_GeomFromGeoJSON on each feature geometry). The service caps responses at
--- 2000 records/request, so @arcgis_page_urls emits paginated URLs (step 2000).
--- The layer held 28 polygons (21 zones, 0-20, one polygon per zone fragment)
--- when this was written (2026-10-01, verified against the service's
--- returnCountOnly), so one page is the whole set; extra pages would come back
--- empty.
+-- CEC Forecasting Climate Zones — DuckDB VIEW over the whole statewide layer.
+-- arcgis_query (the arcgis extension) returns the layer's fields as typed
+-- columns plus an EPSG:4326 geometry. The layer held 28 polygons (21 zones,
+-- 0-20, one polygon per zone fragment) when this was written (2026-10-01,
+-- verified against the service's returnCountOnly).
 --
 -- No envelope: the zones are statewide reference geography shared by every
 -- region (see building_climate_zones_duckdb.sql).
@@ -43,20 +38,15 @@ MODEL (
 -- ids but a superseded forecasting-zone numbering (Sacramento 6) whose rows
 -- also contain non-zone ids (1307, 1310), so this model follows the published
 -- CEC layer rather than that table.
+--
+-- FZ_Number is published as a Single (FLOAT) field holding whole zone numbers,
+-- so the cast to INTEGER is exact.
 
 SELECT
-    feature.properties.FZ_Number::INTEGER AS fcz_zone,
-    feature.properties.FZ_Name::VARCHAR AS fcz_name,
-    feature.properties.Plnng_Area::VARCHAR AS planning_area,
-    ST_GeomFromGeoJSON(to_json(feature.geometry)) AS geometry
-FROM read_json_auto(
-    @arcgis_page_urls(
-        'https://services3.arcgis.com/bWPjFyq029ChCGur/arcgis/rest/services/ForecastingClimateZones_CEC_2015/FeatureServer/0/query',
-        '1=1',
-        'FZ_Number,FZ_Name,Plnng_Area',
-        geometry = NULL,
-        pages = 1
-    ),
-    format = 'auto'
-) r,
-UNNEST(r.features) AS t(feature);
+    FZ_Number::INTEGER AS fcz_zone,
+    FZ_Name AS fcz_name,
+    Plnng_Area AS planning_area,
+    geometry
+FROM arcgis_query(
+    'https://services3.arcgis.com/bWPjFyq029ChCGur/arcgis/rest/services/ForecastingClimateZones_CEC_2015/FeatureServer/0'
+);

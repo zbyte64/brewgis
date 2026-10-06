@@ -20,8 +20,9 @@ MODEL (
   gateway duckdb
 );
 
--- Assessor Sales Bridge — materializes the DuckDB VIEW (which reads from
--- local GeoParquet) into a PostGIS-accessible table.
+-- Assessor Sales Bridge — materializes the DuckDB VIEW (which reads the
+-- ASSESSOR/MapServer/1 layer through arcgis_query) into a PostGIS-accessible
+-- table.
 --
 -- Replaces the public.sacog_assessor_sales_raw table previously created
 -- by the dlt assessor pipeline.

@@ -15,7 +15,7 @@ MODEL (
 
 -- Fresno Parcels Bridge — materializes the DuckDB fetch VIEW into PostGIS.
 --
--- DuckDB ST_Read emits EPSG:4326 geometry (GeoJSON lon/lat), but the
+-- arcgis_query emits EPSG:4326 geometry (lon/lat), but the
 -- DuckDB-to-PostGIS transfer writes SRID-less WKB: the ST_SetCRS this SELECT
 -- applies is not carried over, so the geometry lands as SRID 0 (measured; the
 -- probe is recorded in osm/food_pois_raw.sql).

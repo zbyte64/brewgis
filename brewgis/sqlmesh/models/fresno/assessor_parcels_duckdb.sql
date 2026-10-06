@@ -1,9 +1,9 @@
 MODEL (
   name duckdb.fresno.assessor_parcels,
   kind VIEW,
-  description 'DuckDB staging VIEW fetching every page of the Fresno County assessor roll MapServer (FC_PARCEL_SELECT).',
+  description 'DuckDB staging VIEW reading the Fresno County assessor roll MapServer (FC_PARCEL_SELECT) through arcgis_query.',
   column_descriptions (
-    apn = 'Assessor parcel number (APN) from the MapServer feature properties, trimmed to non-empty values.',
+    apn = 'Assessor parcel number (APN) from the MapServer APN field, trimmed to non-empty values.',
     use_primary = 'USE_PRIMARY assessor land-use code of the parcel (e.g. S01, A99, ALM).',
     use_secondary = 'USE_SECONDARY assessor land-use code of the parcel.',
     use_high_best = 'USE_HIGH_BEST assessor highest-and-best-use code of the parcel.',
@@ -12,7 +12,7 @@ MODEL (
     assess_imp_val = 'ASSESS_IMP_VAL assessed improvement value of the parcel (dollars).',
     total_assessed_value = 'TOTAL_ASSESSED_VALUE total assessed value of the parcel (dollars).',
     tax_area_code = 'TAX_AREA_CODE county tax-area code of the parcel.',
-    geometry = 'Feature geometry parsed from the page GeoJSON with ST_GeomFromGeoJSON (EPSG:4326 lon/lat).'
+    geometry = 'Parcel polygon returned by arcgis_query in EPSG:4326 lon/lat.'
   ),
   gateway duckdb,
   dialect duckdb,
@@ -30,52 +30,41 @@ MODEL (
   )
 );
 
--- Fresno Assessor Parcels — DuckDB VIEW fetching and parsing every page of the
--- Fresno County assessor roll MapServer (FC_PARCEL_SELECT) via read_json_auto.
---
--- Each page is a GeoJSON FeatureCollection (crs EPSG:4326, honored by
--- ST_GeomFromGeoJSON on each feature geometry). The service caps responses
--- at 2000 records/request, so @arcgis_page_urls emits paginated URLs
--- (step 2000) as a constant list_value(...) literal — DuckDB does not accept
--- subqueries or lateral columns inside table functions, so the page list
--- cannot be read from another relation. orderByFields=OBJECTID makes
--- resultOffset paging deterministic (the MapServer gives no stable row order
--- otherwise). The page count is declared by the call site, never probed, so
--- rendering this model never touches the network (see @arcgis_page_urls).
+-- Fresno Assessor Parcels — DuckDB VIEW over the Fresno County assessor roll
+-- MapServer (FC_PARCEL_SELECT). arcgis_query (the arcgis extension) pages
+-- through the whole layer — ordered by its object id, so the pages neither
+-- overlap nor skip features — and returns its fields as typed columns plus an
+-- EPSG:4326 geometry. The roll had 340,005 features in-bbox when this was
+-- written (2026-09-23).
 --
 -- The envelope is the Fresno region bounding box (the same box fresno.parcels
 -- and the Overture fresno blueprints use), so this roll spans the same area as
--- every other fresno source. The roll had 340,005 features in-bbox = 171 pages
--- when this was written (2026-09-23); pages = 216 covers ~432k features, and
--- _MAX_PAGE_COUNT was raised to 256 to stay above that. Extra pages come back
--- empty; too few pages truncate the roll silently, so raise `pages` when the
--- roll outgrows 432k features.
+-- every other fresno source. inSR declares the envelope lon/lat: the layer is
+-- projected (SR 2228), and without it the server reads the envelope in that SR
+-- and returns zero features.
 --
 -- Grain is one row per situs-address feature (a parcel with several addresses
 -- appears more than once); the assessor adapter collapses to one row per APN.
 -- Rows without an APN are not identifiable parcels and are dropped.
 
 SELECT
-    feature.properties.APN::VARCHAR AS apn,
-    feature.properties.USE_PRIMARY::VARCHAR AS use_primary,
-    feature.properties.USE_SECONDARY::VARCHAR AS use_secondary,
-    feature.properties.USE_HIGH_BEST::VARCHAR AS use_high_best,
-    feature.properties.LOT_AREA::DOUBLE AS lot_size_acres,
-    feature.properties.ASSESS_LAND_VAL::DOUBLE AS assess_land_val,
-    feature.properties.ASSESS_IMP_VAL::DOUBLE AS assess_imp_val,
-    feature.properties.TOTAL_ASSESSED_VALUE::DOUBLE AS total_assessed_value,
-    feature.properties.TAX_AREA_CODE::VARCHAR AS tax_area_code,
-    ST_GeomFromGeoJSON(to_json(feature.geometry)) AS geometry
-FROM read_json_auto(
-    @arcgis_page_urls(
-        'https://gisprod10.co.fresno.ca.us/server/rest/services/FC_PARCEL_SELECT/MapServer/0/query',
-        '1=1',
-        'APN,USE_PRIMARY,USE_SECONDARY,USE_HIGH_BEST,LOT_AREA,ASSESS_LAND_VAL,ASSESS_IMP_VAL,TOTAL_ASSESSED_VALUE,TAX_AREA_CODE',
-        geometry = '{"xmin":-119.95,"ymin":36.60,"xmax":-119.55,"ymax":36.92}',
-        pages = 216,
-        order_by = 'OBJECTID'
-    ),
-    format = 'auto'
-) r,
-UNNEST(r.features) AS t(feature)
-WHERE length(trim(feature.properties.APN::VARCHAR)) > 0;
+    APN AS apn,
+    USE_PRIMARY AS use_primary,
+    USE_SECONDARY AS use_secondary,
+    USE_HIGH_BEST AS use_high_best,
+    LOT_AREA::DOUBLE AS lot_size_acres,
+    ASSESS_LAND_VAL::DOUBLE AS assess_land_val,
+    ASSESS_IMP_VAL::DOUBLE AS assess_imp_val,
+    TOTAL_ASSESSED_VALUE::DOUBLE AS total_assessed_value,
+    TAX_AREA_CODE AS tax_area_code,
+    geometry
+FROM arcgis_query(
+    'https://gisprod10.co.fresno.ca.us/server/rest/services/FC_PARCEL_SELECT/MapServer/0',
+    query_params := MAP {
+        'geometry': '{"xmin":-119.95,"ymin":36.60,"xmax":-119.55,"ymax":36.92}',
+        'geometryType': 'esriGeometryEnvelope',
+        'inSR': '4326',
+        'spatialRel': 'esriSpatialRelIntersects'
+    }
+)
+WHERE length(trim(APN)) > 0;

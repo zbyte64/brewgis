@@ -22,9 +22,9 @@ MODEL (
 -- SACOG Assessor Sales — building characteristics from Sacramento County Assessor,
 -- keyed by apn.
 --
--- Reads from brewgis.assessor_sales (populated by the assessor dlt pipeline
--- from ASSESSOR/MapServer/1) and renames columns for downstream building
--- median computation.
+-- Reads from brewgis.sacog.assessor_sales_raw (bridged from
+-- duckdb.sacog.assessor_sales, which reads ASSESSOR/MapServer/1) and renames
+-- columns for downstream building median computation.
 
 SELECT
     apn,

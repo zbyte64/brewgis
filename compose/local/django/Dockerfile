@@ -149,8 +149,11 @@ COPY --from=frontend-build-stage \
   /src/brewgis/static/js/brew-gis-map.js.map \
   /opt/brewgis-frontend/js/
 
-# Pre-download DuckDB extensions so INSTALL is a no-op at runtime
+# Pre-download DuckDB extensions so INSTALL is a no-op at runtime. The arcgis
+# extension is staged in a local extension repository under /opt (outside the
+# bind-mounted APP_HOME), which the SQLMesh duckdb gateway installs from.
 COPY ./compose/local/django/preload_duckdb.py /tmp/preload_duckdb.py
-RUN su - dev-user -c "python3 /tmp/preload_duckdb.py" && rm /tmp/preload_duckdb.py
+RUN install -d -o dev-user -g dev-user /opt/duckdb-extensions \
+  && su - dev-user -c "python3 /tmp/preload_duckdb.py" && rm /tmp/preload_duckdb.py
 
 ENTRYPOINT ["/entrypoint"]

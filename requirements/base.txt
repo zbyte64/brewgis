@@ -12,7 +12,7 @@ flower==2.0.1  # https://github.com/mher/flower
 psycopg2==2.9.10
 pydantic==2.10.3
 mcp>=1.0.0  # https://github.com/modelcontextprotocol/python-sdk
-duckdb==1.5.4
+duckdb==1.5.6  # pinned to the arcgis extension's build (compose/local/django/preload_duckdb.py)
 docker==7.1.0  # https://github.com/docker/docker-py
 
 # Django

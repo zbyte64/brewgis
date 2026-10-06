@@ -1,12 +1,12 @@
 MODEL (
   name duckdb.fresno.wetlands,
   kind VIEW,
-  description 'DuckDB staging VIEW fetching the CA Fish and Wildlife NWI wetland FeatureServer.',
+  description 'DuckDB staging VIEW reading the CA Fish and Wildlife NWI wetland FeatureServer through arcgis_query.',
   column_descriptions (
-    attribute = 'ATTRIBUTE classification from the NWI feature properties; the fetch keeps Fresh values.',
-    wetland_type = 'WETLAND_TYPE wetland label from the NWI feature properties.',
-    acres = 'ACRES attribute from the NWI feature properties (acres, as published by the source).',
-    geometry = 'Wetland polygon parsed from the page GeoJSON with ST_GeomFromGeoJSON (EPSG:4326 lon/lat).'
+    attribute = 'ATTRIBUTE classification from the NWI FeatureServer; the fetch keeps Fresh values.',
+    wetland_type = 'WETLAND_TYPE wetland label from the NWI FeatureServer.',
+    acres = 'ACRES attribute from the NWI FeatureServer (acres, as published by the source).',
+    geometry = 'Wetland polygon returned by arcgis_query in EPSG:4326 lon/lat.'
   ),
   gateway duckdb,
   dialect duckdb,
@@ -18,40 +18,31 @@ MODEL (
   )
 );
 
--- Freshwater wetlands (Fresno County area) — DuckDB VIEW that fetches and
--- parses every page of the CA Dept of Fish & Wildlife BIOS NWI FeatureServer
--- via read_json_auto.
---
--- Each page is a GeoJSON FeatureCollection (RFC 7946, EPSG:4326 — honored by
--- ST_GeomFromGeoJSON on each feature geometry). The service caps responses at
--- 2000 records/request, so @arcgis_page_urls emits paginated URLs (step 2000)
--- as a constant list_value(...) literal — DuckDB does not accept subqueries
--- or lateral columns inside table functions, so the page list cannot be read
--- from another relation. The page count is declared by the call site, never
--- probed, so rendering this model never touches the network (see
--- @arcgis_page_urls). The ATTRIBUTE LIKE '%Fresh%' filter matches the legacy
+-- Freshwater wetlands (Fresno County area) — DuckDB VIEW over the CA Dept of
+-- Fish & Wildlife BIOS NWI FeatureServer. arcgis_query (the arcgis extension)
+-- pages through every feature matching the server-side where clause and
+-- envelope and returns the layer's fields as typed columns plus an EPSG:4326
+-- geometry. The ATTRIBUTE LIKE '%Fresh%' filter matches the legacy
 -- fresno_downloader query; it legitimately yields zero features for the fresno
 -- region envelope (0 features when this was written, 2026-09-23, verified
 -- against both the previous downtown box and the current region box), so the
--- table may be empty. The declared 4 pages bound a future wetland layer at
--- ~8,000 polygons.
+-- table may be empty.
 --
 -- The envelope is the Fresno region bounding box (matching fresno.parcels)
 -- so the constraint layer covers every parcel in the base canvas.
 
 SELECT
-    feature.properties.ATTRIBUTE::VARCHAR AS attribute,
-    feature.properties.WETLAND_TYPE::VARCHAR AS wetland_type,
-    feature.properties.ACRES::DOUBLE AS acres,
-    ST_GeomFromGeoJSON(to_json(feature.geometry)) AS geometry
-FROM read_json_auto(
-    @arcgis_page_urls(
-        'https://services2.arcgis.com/Uq9r85Potqm3MfRV/ArcGIS/rest/services/biosds2630_fpu/FeatureServer/0/query',
-        'ATTRIBUTE LIKE ''%Fresh%''',
-        'ATTRIBUTE,WETLAND_TYPE,ACRES',
-        geometry = '{"xmin":-119.95,"ymin":36.60,"xmax":-119.55,"ymax":36.92}',
-        pages = 4
-    ),
-    format = 'auto'
-) r,
-UNNEST(r.features) AS t(feature);
+    ATTRIBUTE AS attribute,
+    WETLAND_TYPE AS wetland_type,
+    ACRES AS acres,
+    geometry
+FROM arcgis_query(
+    'https://services2.arcgis.com/Uq9r85Potqm3MfRV/ArcGIS/rest/services/biosds2630_fpu/FeatureServer/0',
+    where_clause := 'ATTRIBUTE LIKE ''%Fresh%''',
+    query_params := MAP {
+        'geometry': '{"xmin":-119.95,"ymin":36.60,"xmax":-119.55,"ymax":36.92}',
+        'geometryType': 'esriGeometryEnvelope',
+        'inSR': '4326',
+        'spatialRel': 'esriSpatialRelIntersects'
+    }
+);
