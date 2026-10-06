@@ -479,13 +479,11 @@ def config_factory(*, cache_dir: str | None = None, **variables):
                         "zipfs",
                         "raster",
                         # arcgis_query() for the ArcGIS FeatureServer /
-                        # MapServer staging models; its requests go through
-                        # httpfs, so the http_* policy below applies to them.
-                        # Their caching is arcgis_cache_directory (below), not
-                        # cache_httpfs: the extension asks httpfs for a full
-                        # GET, which httpfs sends while opening the file —
-                        # before cache_httpfs consults its disk cache — so
-                        # cache_httpfs only spares repeats within one process.
+                        # MapServer staging models. With arcgis_cache_directory
+                        # set (below), its requests go straight to httpfs' HTTP
+                        # client — the http_* policy below applies — and bypass
+                        # the file system, so cache_httpfs never stores them;
+                        # arcgis_cache_directory is their only cache.
                         {
                             "name": "arcgis",
                             "repository": f"'{_DUCKDB_EXTENSION_REPOSITORY}'",

@@ -22,13 +22,13 @@ from pathlib import Path
 
 import duckdb
 
-ARCGIS_RELEASE = "v0.2.0"
+ARCGIS_RELEASE = "v0.2.1"
 ARCGIS_DUCKDB_VERSION = "1.5.6"
 ARCGIS_REPOSITORY = Path("/opt/duckdb-extensions")
 # sha256 of each release asset, from the GitHub release's asset digests.
 ARCGIS_SHA256 = {
-    "linux_amd64": "d1859846af8d936d7202373710764198e1cdd8b10e6e39ac2e07e3dc3a3b97f4",
-    "linux_arm64": "2f422d65912098b27bc0e0e20d7568fc907640bf259ba97a458e0df6bac5f1f0",
+    "linux_amd64": "04ecb0b219fe5540578fae56ff5310eccfac3da55be5b31a3f35c12cee3bf370",
+    "linux_arm64": "16372575656d60530aa85dd534c6751ce62d49999adcb578da9f04c41b8aba7d",
 }
 
 
