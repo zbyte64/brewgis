@@ -70,6 +70,10 @@ _DUCKDB_TMP = os.environ.get(
 # DuckDB repository, so the gateway installs it FROM here — a no-op once the
 # image has installed it from the same origin.
 _DUCKDB_EXTENSION_REPOSITORY = "/opt/duckdb-extensions"
+_ARCGIS_CACHE_DIRECTORY = os.environ.get(
+    "SQLMESH_ARCGIS_CACHE_DIRECTORY",
+    "/app/planning/arcgis_cache",
+)
 
 
 class _UnsignedExtensionsDuckDBConnectionConfig(DuckDBConnectionConfig):
@@ -476,8 +480,12 @@ def config_factory(*, cache_dir: str | None = None, **variables):
                         "raster",
                         # arcgis_query() for the ArcGIS FeatureServer /
                         # MapServer staging models; its requests go through
-                        # httpfs, so cache_httpfs and the http_* policy below
-                        # apply to them.
+                        # httpfs, so the http_* policy below applies to them.
+                        # Their caching is arcgis_cache_directory (below), not
+                        # cache_httpfs: the extension asks httpfs for a full
+                        # GET, which httpfs sends while opening the file —
+                        # before cache_httpfs consults its disk cache — so
+                        # cache_httpfs only spares repeats within one process.
                         {
                             "name": "arcgis",
                             "repository": f"'{_DUCKDB_EXTENSION_REPOSITORY}'",
@@ -485,6 +493,17 @@ def config_factory(*, cache_dir: str | None = None, **variables):
                     ],
                     connector_config={
                         "temp_directory": _DUCKDB_TMP,
+                        # arcgis persistent response cache: every successful
+                        # ArcGIS response (layer metadata, count / object id
+                        # planning requests, pages) is stored here and served
+                        # to every later process, so a plan or analysis run
+                        # re-fetches no layer it has fetched before. No
+                        # arcgis_cache_ttl_seconds: entries never expire, like
+                        # the cache_httpfs blocks above. To pick up new source
+                        # data, run `CALL arcgis_clear_cache('<layer url>')`
+                        # (or no argument for everything) and re-run the
+                        # staging model.
+                        "arcgis_cache_directory": _ARCGIS_CACHE_DIRECTORY,
                         # cache_httpfs on-disk block cache. NO force_download:
                         # it made every s3:// parquet file an upfront full
                         # download (277 GB theme -> never completes).
