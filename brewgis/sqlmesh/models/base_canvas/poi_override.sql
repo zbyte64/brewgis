@@ -1,101 +1,101 @@
 MODEL (
   name brewgis.@{region}.base_canvas_poi_override,
   kind FULL,
-  description 'Parcel-level base canvas with the OpenStreetMap points of interest inside each parcel turned into a built form: a parcel containing a POI of a mapped category takes the built form key that category maps to, and its dwelling units are set from that built form''s density, and the LEHD jobs base_canvas_combined allocated to each census block are redistributed across the block''s parcels so a matched parcel claims its built form''s jobs per acre in its jobs_by_sector mix, never changing the block''s job total.',
+  description 'Parcel-level base canvas with the OpenStreetMap points of interest inside each parcel turned into a built form: a parcel holding an NCES school takes the schools built form and keeps its CCD jobs, any other parcel containing a POI of a mapped category takes the built form key that category maps to, dwelling units are set from the built form''s density, and the LEHD jobs base_canvas_school_override allocated to each census block are redistributed across the block''s other parcels so a matched parcel claims its built form''s jobs per acre in its jobs_by_sector mix, never changing the block''s job total.',
   column_descriptions (
     parcel_id = 'Unique parcel identifier; one row per parcel in the base canvas.',
     geometry = 'Parcel boundary geometry (MultiPolygon, EPSG:4326).',
     local_geometry = 'Parcel boundary in the local projected SRID used for area and clipping math.',
     county = 'County the parcel falls in, carried from the parcel source.',
-    land_development_category = 'Land development category carried from base_canvas_combined.',
-    built_form_key = 'Built form key: the POI-derived built form when a point of interest falls in the parcel, otherwise the key base_canvas_combined assigned.',
-    intersection_density = 'Intersection density carried from base_canvas_combined (intersections per square mile).',
+    land_development_category = 'Land development category carried from base_canvas_school_override.',
+    built_form_key = 'Built form key: the schools category''s built form on a parcel holding an NCES school, else the POI-derived built form when a point of interest falls in the parcel, otherwise the key base_canvas_school_override assigned.',
+    intersection_density = 'Intersection density carried from base_canvas_school_override (intersections per square mile).',
     area_gross = 'Gross parcel area including right-of-way (acres).',
     area_gross_acres = 'Gross parcel area including right-of-way (acres, explicit unit alias of area_gross).',
     area_parcel_acres = 'Parcel area inside the parcel boundary (acres).',
     area_dev_condition_acres = 'Portion of the parcel in developed condition (acres).',
     area_row_acres = 'Portion of the parcel in public right-of-way (acres).',
-    area_parcel_res = 'Residential parcel area carried from base_canvas_combined (acres).',
+    area_parcel_res = 'Residential parcel area carried from base_canvas_school_override (acres).',
     area_parcel_res_acres = 'Total residential parcel area (acres, explicit unit alias of area_parcel_res).',
-    area_parcel_emp_ag = 'Agricultural employment parcel area carried from base_canvas_combined (acres).',
+    area_parcel_emp_ag = 'Agricultural employment parcel area carried from base_canvas_school_override (acres).',
     area_parcel_emp_ag_acres = 'Agricultural employment parcel area (acres, alias of area_parcel_emp_ag).',
-    area_parcel_emp = 'Total employment parcel area carried from base_canvas_combined (acres).',
+    area_parcel_emp = 'Total employment parcel area carried from base_canvas_school_override (acres).',
     area_parcel_emp_acres = 'Total employment parcel area (acres, explicit unit alias of area_parcel_emp).',
-    area_parcel_mixed_use = 'Mixed-use parcel area carried from base_canvas_combined (acres).',
+    area_parcel_mixed_use = 'Mixed-use parcel area carried from base_canvas_school_override (acres).',
     area_parcel_mixed_use_acres = 'Mixed-use parcel area (acres, explicit unit alias of area_parcel_mixed_use).',
-    area_parcel_no_use = 'Parcel area with no assigned use carried from base_canvas_combined (acres).',
+    area_parcel_no_use = 'Parcel area with no assigned use carried from base_canvas_school_override (acres).',
     area_parcel_no_use_acres = 'Parcel area with no assigned use (acres, explicit unit alias of area_parcel_no_use).',
-    pop = 'Population carried from base_canvas_combined (people).',
-    pop_groupquarter = 'Group quarters population carried from base_canvas_combined (people).',
-    hh = 'Households carried from base_canvas_combined (count).',
-    du = 'Dwelling units: the matched built form''s du_per_acre times the parcel acres, otherwise the value base_canvas_combined derived (count).',
-    du_estimated = 'Dwelling units the dasymetric regressor estimated, carried from base_canvas_combined (count).',
-    du_detsf = 'Detached single-family dwelling units: zero on a parcel overridden to a built form, otherwise carried from base_canvas_combined (count).',
-    du_detsf_sl = 'Detached single-family small-lot dwelling units: zero on an overridden parcel, otherwise carried from base_canvas_combined (count).',
-    du_detsf_ll = 'Detached single-family large-lot dwelling units: zero on an overridden parcel, otherwise carried from base_canvas_combined (count).',
-    du_attsf = 'Attached single-family dwelling units: zero on an overridden parcel, otherwise carried from base_canvas_combined (count).',
-    du_mf = 'Multi-family dwelling units: zero on an overridden parcel, otherwise carried from base_canvas_combined (count).',
-    du_mf2to4 = 'Multi-family 2-4 unit dwelling units: zero on an overridden parcel, otherwise carried from base_canvas_combined (count).',
-    du_mf5p = 'Multi-family 5+ unit dwelling units: zero on an overridden parcel, otherwise carried from base_canvas_combined (count).',
-    du_subtype = 'Dwelling unit subtype key carried from base_canvas_combined.',
-    is_residential = 'Residential flag: 0 when the parcel was overridden to a built form, otherwise the flag base_canvas_combined derived.',
-    residential_building_sqft = 'Residential building floor area carried from base_canvas_combined (sq ft).',
-    commercial_building_sqft = 'Commercial building floor area carried from base_canvas_combined (sq ft).',
-    industrial_building_sqft = 'Industrial building floor area carried from base_canvas_combined (sq ft).',
-    other_building_sqft = 'Other building floor area carried from base_canvas_combined (sq ft).',
-    total_footprint_sqft = 'Total building footprint area carried from base_canvas_combined (sq ft).',
-    building_count = 'Number of buildings on the parcel carried from base_canvas_combined (count).',
-    footprint_ratio = 'Building footprint share of the parcel carried from base_canvas_combined (ratio, 0-1).',
-    max_levels = 'Maximum building levels on the parcel carried from base_canvas_combined (count).',
-    emp_dasym_weight = 'Lot-size-based employment weight carried from base_canvas_combined (weight).',
-    emp = 'Total employment: the parcel''s census block''s base_canvas_combined jobs split by claim — a matched parcel claims its built form''s emp_per_acre times its acres, any other parcel its base_canvas_combined jobs; a block whose claims are all zero keeps its jobs as allocated (jobs).',
-    emp_ret = 'Retail employment: the overridden retail sub-sectors summed when a built form matched, otherwise base_canvas_combined''s value scaled by the block redistribution (jobs).',
-    emp_off = 'Office employment: the overridden office sub-sectors summed when a built form matched, otherwise base_canvas_combined''s value scaled by the block redistribution (jobs).',
-    emp_pub = 'Public employment: the overridden public sub-sectors summed when a built form matched, otherwise base_canvas_combined''s value scaled by the block redistribution (jobs).',
-    emp_ind = 'Industrial employment: the overridden industrial sub-sectors summed when a built form matched, otherwise base_canvas_combined''s value scaled by the block redistribution (jobs).',
-    emp_ag = 'Agricultural employment: the overridden agricultural sub-sectors summed when a built form matched, otherwise base_canvas_combined''s value scaled by the block redistribution (jobs).',
-    emp_military = 'Military employment: the matched built form''s military share of the parcel''s redistributed jobs, otherwise base_canvas_combined''s value scaled by the block redistribution (jobs).',
-    emp_retail_services = 'Retail services employment: the matched built form''s share of the parcel''s redistributed jobs, otherwise base_canvas_combined''s value scaled by the block redistribution (jobs).',
-    emp_restaurant = 'Restaurant employment: the matched built form''s share of the parcel''s redistributed jobs, otherwise base_canvas_combined''s value scaled by the block redistribution (jobs).',
-    emp_accommodation = 'Accommodation employment: the matched built form''s share of the parcel''s redistributed jobs, otherwise base_canvas_combined''s value scaled by the block redistribution (jobs).',
-    emp_arts_entertainment = 'Arts and entertainment employment: the matched built form''s share of the parcel''s redistributed jobs, otherwise base_canvas_combined''s value scaled by the block redistribution (jobs).',
-    emp_other_services = 'Other services employment: the matched built form''s share of the parcel''s redistributed jobs, otherwise base_canvas_combined''s value scaled by the block redistribution (jobs).',
-    emp_office_services = 'Office services employment: the matched built form''s share of the parcel''s redistributed jobs, otherwise base_canvas_combined''s value scaled by the block redistribution (jobs).',
-    emp_medical_services = 'Medical services employment: the matched built form''s share of the parcel''s redistributed jobs, otherwise base_canvas_combined''s value scaled by the block redistribution (jobs).',
-    emp_public_admin = 'Public administration employment: the matched built form''s share of the parcel''s redistributed jobs, otherwise base_canvas_combined''s value scaled by the block redistribution (jobs).',
-    emp_education = 'Education employment: the matched built form''s share of the parcel''s redistributed jobs, otherwise base_canvas_combined''s value scaled by the block redistribution (jobs).',
-    emp_manufacturing = 'Manufacturing employment: the matched built form''s share of the parcel''s redistributed jobs, otherwise base_canvas_combined''s value scaled by the block redistribution (jobs).',
-    emp_wholesale = 'Wholesale employment: the matched built form''s share of the parcel''s redistributed jobs, otherwise base_canvas_combined''s value scaled by the block redistribution (jobs).',
-    emp_transport_warehousing = 'Transport and warehousing employment: the matched built form''s share of the parcel''s redistributed jobs, otherwise base_canvas_combined''s value scaled by the block redistribution (jobs).',
-    emp_utilities = 'Utilities employment: the matched built form''s share of the parcel''s redistributed jobs, otherwise base_canvas_combined''s value scaled by the block redistribution (jobs).',
-    emp_construction = 'Construction employment: the matched built form''s share of the parcel''s redistributed jobs, otherwise base_canvas_combined''s value scaled by the block redistribution (jobs).',
-    emp_agriculture = 'Agriculture employment: the matched built form''s share of the parcel''s redistributed jobs, otherwise base_canvas_combined''s value scaled by the block redistribution (jobs).',
-    emp_extraction = 'Extraction employment: the matched built form''s share of the parcel''s redistributed jobs, otherwise base_canvas_combined''s value scaled by the block redistribution (jobs).',
-    bldg_area_detsf_sl = 'Detached single-family small-lot building floor area carried from base_canvas_combined (sq ft).',
-    bldg_area_detsf_ll = 'Detached single-family large-lot building floor area carried from base_canvas_combined (sq ft).',
-    bldg_area_attsf = 'Attached single-family building floor area carried from base_canvas_combined (sq ft).',
-    bldg_area_mf = 'Multi-family building floor area carried from base_canvas_combined (sq ft).',
-    bldg_area_retail_services = 'Retail services building floor area carried from base_canvas_combined (sq ft).',
-    bldg_area_restaurant = 'Restaurant building floor area carried from base_canvas_combined (sq ft).',
-    bldg_area_accommodation = 'Accommodation building floor area carried from base_canvas_combined (sq ft).',
-    bldg_area_arts_entertainment = 'Arts and entertainment building floor area carried from base_canvas_combined (sq ft).',
-    bldg_area_other_services = 'Other services building floor area carried from base_canvas_combined (sq ft).',
-    bldg_area_office_services = 'Office services building floor area carried from base_canvas_combined (sq ft).',
-    bldg_area_public_admin = 'Public administration building floor area carried from base_canvas_combined (sq ft).',
-    bldg_area_education = 'Education building floor area carried from base_canvas_combined (sq ft).',
-    bldg_area_medical_services = 'Medical services building floor area carried from base_canvas_combined (sq ft).',
-    bldg_area_transport_warehousing = 'Transport and warehousing building floor area carried from base_canvas_combined (sq ft).',
-    bldg_area_wholesale = 'Wholesale building floor area carried from base_canvas_combined (sq ft).',
-    residential_irrigated_area = 'Residential irrigated area carried from base_canvas_combined (acres).',
-    commercial_irrigated_area = 'Commercial irrigated area carried from base_canvas_combined (acres).',
-    median_income = 'Median household income carried from base_canvas_combined ($ per year).',
-    rent_burden_pct = 'Rent-burdened household share carried from base_canvas_combined (% as 0-100).',
-    pct_minority = 'Share of people of color carried from base_canvas_combined (% as 0-100).',
-    pct_college_educated = 'College-educated adult share carried from base_canvas_combined (% as 0-100).',
-    cost_burden_pct = 'Cost-burdened household share carried from base_canvas_combined (% as 0-100).',
-    tree_canopy_fraction = 'Tree canopy share of the parcel carried from base_canvas_combined (ratio, 0-1).',
-    vacancy_rate = 'Housing vacancy rate carried from base_canvas_combined (ratio, 0-1).',
-    du_pop_dasym_weight = 'Dasymetric DU and population weight carried from base_canvas_combined (weight).',
+    pop = 'Population carried from base_canvas_school_override (people).',
+    pop_groupquarter = 'Group quarters population carried from base_canvas_school_override (people).',
+    hh = 'Households carried from base_canvas_school_override (count).',
+    du = 'Dwelling units: the matched built form''s du_per_acre times the parcel acres, otherwise the value base_canvas_school_override derived (count).',
+    du_estimated = 'Dwelling units the dasymetric regressor estimated, carried from base_canvas_school_override (count).',
+    du_detsf = 'Detached single-family dwelling units: zero on a parcel overridden to a built form, otherwise carried from base_canvas_school_override (count).',
+    du_detsf_sl = 'Detached single-family small-lot dwelling units: zero on an overridden parcel, otherwise carried from base_canvas_school_override (count).',
+    du_detsf_ll = 'Detached single-family large-lot dwelling units: zero on an overridden parcel, otherwise carried from base_canvas_school_override (count).',
+    du_attsf = 'Attached single-family dwelling units: zero on an overridden parcel, otherwise carried from base_canvas_school_override (count).',
+    du_mf = 'Multi-family dwelling units: zero on an overridden parcel, otherwise carried from base_canvas_school_override (count).',
+    du_mf2to4 = 'Multi-family 2-4 unit dwelling units: zero on an overridden parcel, otherwise carried from base_canvas_school_override (count).',
+    du_mf5p = 'Multi-family 5+ unit dwelling units: zero on an overridden parcel, otherwise carried from base_canvas_school_override (count).',
+    du_subtype = 'Dwelling unit subtype key carried from base_canvas_school_override.',
+    is_residential = 'Residential flag: 0 when the parcel was overridden to a built form, otherwise the flag base_canvas_school_override derived.',
+    residential_building_sqft = 'Residential building floor area carried from base_canvas_school_override (sq ft).',
+    commercial_building_sqft = 'Commercial building floor area carried from base_canvas_school_override (sq ft).',
+    industrial_building_sqft = 'Industrial building floor area carried from base_canvas_school_override (sq ft).',
+    other_building_sqft = 'Other building floor area carried from base_canvas_school_override (sq ft).',
+    total_footprint_sqft = 'Total building footprint area carried from base_canvas_school_override (sq ft).',
+    building_count = 'Number of buildings on the parcel carried from base_canvas_school_override (count).',
+    footprint_ratio = 'Building footprint share of the parcel carried from base_canvas_school_override (ratio, 0-1).',
+    max_levels = 'Maximum building levels on the parcel carried from base_canvas_school_override (count).',
+    emp_dasym_weight = 'Lot-size-based employment weight carried from base_canvas_school_override (weight).',
+    emp = 'Total employment: the parcel''s census block''s base_canvas_school_override jobs split by claim — a matched parcel claims its built form''s emp_per_acre times its acres, any other parcel its base_canvas_school_override jobs; a block whose claims are all zero keeps its jobs as allocated, and a parcel holding an NCES school keeps its base_canvas_school_override jobs unchanged (jobs).',
+    emp_ret = 'Retail employment: the overridden retail sub-sectors summed when a built form matched, otherwise base_canvas_school_override''s value scaled by the block redistribution (jobs).',
+    emp_off = 'Office employment: the overridden office sub-sectors summed when a built form matched, otherwise base_canvas_school_override''s value scaled by the block redistribution (jobs).',
+    emp_pub = 'Public employment: the overridden public sub-sectors summed when a built form matched, otherwise base_canvas_school_override''s value scaled by the block redistribution (jobs).',
+    emp_ind = 'Industrial employment: the overridden industrial sub-sectors summed when a built form matched, otherwise base_canvas_school_override''s value scaled by the block redistribution (jobs).',
+    emp_ag = 'Agricultural employment: the overridden agricultural sub-sectors summed when a built form matched, otherwise base_canvas_school_override''s value scaled by the block redistribution (jobs).',
+    emp_military = 'Military employment: the matched built form''s military share of the parcel''s redistributed jobs, otherwise base_canvas_school_override''s value scaled by the block redistribution (jobs).',
+    emp_retail_services = 'Retail services employment: the matched built form''s share of the parcel''s redistributed jobs, otherwise base_canvas_school_override''s value scaled by the block redistribution (jobs).',
+    emp_restaurant = 'Restaurant employment: the matched built form''s share of the parcel''s redistributed jobs, otherwise base_canvas_school_override''s value scaled by the block redistribution (jobs).',
+    emp_accommodation = 'Accommodation employment: the matched built form''s share of the parcel''s redistributed jobs, otherwise base_canvas_school_override''s value scaled by the block redistribution (jobs).',
+    emp_arts_entertainment = 'Arts and entertainment employment: the matched built form''s share of the parcel''s redistributed jobs, otherwise base_canvas_school_override''s value scaled by the block redistribution (jobs).',
+    emp_other_services = 'Other services employment: the matched built form''s share of the parcel''s redistributed jobs, otherwise base_canvas_school_override''s value scaled by the block redistribution (jobs).',
+    emp_office_services = 'Office services employment: the matched built form''s share of the parcel''s redistributed jobs, otherwise base_canvas_school_override''s value scaled by the block redistribution (jobs).',
+    emp_medical_services = 'Medical services employment: the matched built form''s share of the parcel''s redistributed jobs, otherwise base_canvas_school_override''s value scaled by the block redistribution (jobs).',
+    emp_public_admin = 'Public administration employment: the matched built form''s share of the parcel''s redistributed jobs, otherwise base_canvas_school_override''s value scaled by the block redistribution (jobs).',
+    emp_education = 'Education employment: the matched built form''s share of the parcel''s redistributed jobs, otherwise base_canvas_school_override''s value scaled by the block redistribution (jobs).',
+    emp_manufacturing = 'Manufacturing employment: the matched built form''s share of the parcel''s redistributed jobs, otherwise base_canvas_school_override''s value scaled by the block redistribution (jobs).',
+    emp_wholesale = 'Wholesale employment: the matched built form''s share of the parcel''s redistributed jobs, otherwise base_canvas_school_override''s value scaled by the block redistribution (jobs).',
+    emp_transport_warehousing = 'Transport and warehousing employment: the matched built form''s share of the parcel''s redistributed jobs, otherwise base_canvas_school_override''s value scaled by the block redistribution (jobs).',
+    emp_utilities = 'Utilities employment: the matched built form''s share of the parcel''s redistributed jobs, otherwise base_canvas_school_override''s value scaled by the block redistribution (jobs).',
+    emp_construction = 'Construction employment: the matched built form''s share of the parcel''s redistributed jobs, otherwise base_canvas_school_override''s value scaled by the block redistribution (jobs).',
+    emp_agriculture = 'Agriculture employment: the matched built form''s share of the parcel''s redistributed jobs, otherwise base_canvas_school_override''s value scaled by the block redistribution (jobs).',
+    emp_extraction = 'Extraction employment: the matched built form''s share of the parcel''s redistributed jobs, otherwise base_canvas_school_override''s value scaled by the block redistribution (jobs).',
+    bldg_area_detsf_sl = 'Detached single-family small-lot building floor area carried from base_canvas_school_override (sq ft).',
+    bldg_area_detsf_ll = 'Detached single-family large-lot building floor area carried from base_canvas_school_override (sq ft).',
+    bldg_area_attsf = 'Attached single-family building floor area carried from base_canvas_school_override (sq ft).',
+    bldg_area_mf = 'Multi-family building floor area carried from base_canvas_school_override (sq ft).',
+    bldg_area_retail_services = 'Retail services building floor area carried from base_canvas_school_override (sq ft).',
+    bldg_area_restaurant = 'Restaurant building floor area carried from base_canvas_school_override (sq ft).',
+    bldg_area_accommodation = 'Accommodation building floor area carried from base_canvas_school_override (sq ft).',
+    bldg_area_arts_entertainment = 'Arts and entertainment building floor area carried from base_canvas_school_override (sq ft).',
+    bldg_area_other_services = 'Other services building floor area carried from base_canvas_school_override (sq ft).',
+    bldg_area_office_services = 'Office services building floor area carried from base_canvas_school_override (sq ft).',
+    bldg_area_public_admin = 'Public administration building floor area carried from base_canvas_school_override (sq ft).',
+    bldg_area_education = 'Education building floor area carried from base_canvas_school_override (sq ft).',
+    bldg_area_medical_services = 'Medical services building floor area carried from base_canvas_school_override (sq ft).',
+    bldg_area_transport_warehousing = 'Transport and warehousing building floor area carried from base_canvas_school_override (sq ft).',
+    bldg_area_wholesale = 'Wholesale building floor area carried from base_canvas_school_override (sq ft).',
+    residential_irrigated_area = 'Residential irrigated area carried from base_canvas_school_override (acres).',
+    commercial_irrigated_area = 'Commercial irrigated area carried from base_canvas_school_override (acres).',
+    median_income = 'Median household income carried from base_canvas_school_override ($ per year).',
+    rent_burden_pct = 'Rent-burdened household share carried from base_canvas_school_override (% as 0-100).',
+    pct_minority = 'Share of people of color carried from base_canvas_school_override (% as 0-100).',
+    pct_college_educated = 'College-educated adult share carried from base_canvas_school_override (% as 0-100).',
+    cost_burden_pct = 'Cost-burdened household share carried from base_canvas_school_override (% as 0-100).',
+    tree_canopy_fraction = 'Tree canopy share of the parcel carried from base_canvas_school_override (ratio, 0-1).',
+    vacancy_rate = 'Housing vacancy rate carried from base_canvas_school_override (ratio, 0-1).',
+    du_pop_dasym_weight = 'Dasymetric DU and population weight carried from base_canvas_school_override (weight).',
     occupied_du = 'Occupied dwelling units, du times one minus vacancy rate rounded to 2 decimals, recomputed from the overridden du (count).',
     land_use = 'Land use label from the parcel source, matched against the regional land use crosswalk.',
     assessor_use_code = 'Assessor use code from the parcel source, matched on its first two digits.'
@@ -142,22 +142,29 @@ MODEL (
 -- retuning a transit station's ``emp_per_acre`` is a one-line change in
 -- ``workspace/built_forms/default_library.py``.
 --
--- Employment is redistributed, never created: the LEHD jobs base_canvas_combined
+-- Employment is redistributed, never created: the LEHD jobs base_canvas_school_override
 -- allocated to a census block (pooled by each parcel's point on surface) are
 -- split across the block's parcels in proportion to their claims. A matched
 -- parcel claims its built form's ``emp_per_acre`` times its acres and takes its
 -- share in that form's ``jobs_by_sector`` mix; any other parcel claims the jobs
--- base_canvas_combined gave it and keeps its own sector mix, scaled. So a POI
+-- base_canvas_school_override gave it and keeps its own sector mix, scaled. So a POI
 -- draws jobs from its block's other parcels — a 300-acre school campus whose
 -- block holds 400 jobs gets at most 400 — and every block's job total, hence
 -- the region's (``assert_employment_conserved``), is unchanged.
 --
--- One row per parcel: ``DISTINCT ON`` keeps the lowest-priority-number category
--- (hospitals before schools before ... before parks). A parcel no POI matched
--- keeps every column of ``base_canvas_combined`` except its job columns, which
+-- NCES public schools come before every POI. A parcel holding a CCD school
+-- (``brewgis.<region>.school_parcels``) takes the built form the ``schools``
+-- category maps to whatever POIs it contains, and keeps the jobs
+-- base_canvas_school_override already gave it from the CCD: it is pinned —
+-- it claims nothing from its block and its block's redistribution skips it.
+--
+-- One row per parcel: ``DISTINCT ON`` keeps a school parcel's CCD match, else
+-- the lowest-priority-number category (hospitals before schools before ...
+-- before parks). A parcel no POI matched
+-- keeps every column of ``base_canvas_school_override`` except its job columns, which
 -- scale with its block's redistribution (unchanged in a block with no POI).
 --
--- The output column set is ``base_canvas_combined``'s, verbatim and in order —
+-- The output column set is ``base_canvas_school_override``'s, verbatim and in order —
 -- this model is a drop-in replacement for it in the base canvas chain.
 --
 -- Every share in the library is normalized to sum to 100 (the
@@ -169,33 +176,60 @@ MODEL (
 -- rather than split: the library carries no per-subtype share to split them by.
 
 WITH combined AS (
-    SELECT * FROM brewgis.@{region}.base_canvas_combined
+    SELECT * FROM brewgis.@{region}.base_canvas_school_override
 ),
 
--- The built form the parcel's highest-priority POI category maps to. A point on
--- a shared boundary intersects both parcels; each parcel independently keeps its
--- own best match, so at most the shared edge is counted twice.
-poi_match AS (
-    SELECT DISTINCT ON (p.parcel_id)
-        p.parcel_id,
-        COALESCE(NULLIF(p.area_gross, 0), NULLIF(p.area_parcel_acres, 0), 0.0) AS acres,
-        pm.built_form_key
+-- Parcels holding a CCD school: pinned to the schools category's built form,
+-- with the jobs base_canvas_school_override gave them.
+school_parcel AS (
+    SELECT DISTINCT parcel_id
+    FROM brewgis.@{region}.school_parcels
+),
+
+-- The built form the parcel's highest-priority POI category maps to, a school
+-- parcel's CCD match first. A point on a shared boundary intersects both
+-- parcels; each parcel independently keeps its own best match, so at most the
+-- shared edge is counted twice.
+poi_hits AS (
+    SELECT p.parcel_id, pm.built_form_key, pm.priority, FALSE AS pinned
     FROM combined p
     JOIN brewgis.@{region}.poi poi
         ON ST_Intersects(p.geometry, poi.geometry)
     JOIN brewgis.seeds.poi_built_form_map pm
         ON pm.poi_category = poi.category
-    ORDER BY p.parcel_id, pm.priority
+    UNION ALL
+    SELECT sp.parcel_id, pm.built_form_key, pm.priority, TRUE AS pinned
+    FROM school_parcel sp
+    JOIN brewgis.seeds.poi_built_form_map pm
+        ON pm.poi_category = 'schools'
+),
+
+poi_match AS (
+    SELECT DISTINCT ON (h.parcel_id)
+        h.parcel_id,
+        COALESCE(NULLIF(p.area_gross, 0), NULLIF(p.area_parcel_acres, 0), 0.0) AS acres,
+        h.built_form_key,
+        h.pinned
+    FROM poi_hits h
+    JOIN combined p
+        ON p.parcel_id = h.parcel_id
+    ORDER BY h.parcel_id, h.pinned DESC, h.priority
 ),
 
 -- The census block holding each parcel's point on surface: the pool its jobs are
 -- redistributed within. The predicate probes the blocks' GiST index on
--- geometry. A parcel outside every block pools alone and keeps its jobs.
+-- geometry. A parcel outside every block pools alone and keeps its jobs, and so
+-- does a school parcel: its jobs come from the CCD, not its block.
 parcel_pool AS (
     SELECT
         c.parcel_id,
-        COALESCE(blk.geoid, 'parcel:' || c.parcel_id::text) AS pool_id
+        CASE
+            WHEN sp.parcel_id IS NOT NULL THEN 'school:' || c.parcel_id::text
+            ELSE COALESCE(blk.geoid, 'parcel:' || c.parcel_id::text)
+        END AS pool_id
     FROM combined c
+    LEFT JOIN school_parcel sp
+        ON sp.parcel_id = c.parcel_id
     LEFT JOIN LATERAL (
         SELECT b.geoid
         FROM brewgis.@{region}.census_2020_block_projected b
@@ -206,18 +240,19 @@ parcel_pool AS (
 ),
 
 -- Each parcel's claim on its pool's jobs: a matched parcel claims its built
--- form's emp_per_acre over its acres, any other parcel the jobs
--- base_canvas_combined allocated it. Every other ``o_*`` value is null for a
--- parcel no POI matched.
+-- form's emp_per_acre over its acres, any other parcel — a pinned school parcel
+-- included, alone in its pool — the jobs base_canvas_school_override allocated
+-- it. Every other ``o_*`` value is null for a parcel no POI matched.
 matched AS (
     SELECT
         c.*,
         pp.pool_id,
         m.parcel_id IS NOT NULL AS o_matched,
+        COALESCE(m.pinned, FALSE) AS o_pinned,
         m.built_form_key AS o_built_form_key,
         COALESCE(b.du_per_acre, 0.0) * m.acres AS o_du_total,
         CASE
-            WHEN m.parcel_id IS NOT NULL THEN COALESCE(b.emp_per_acre, 0.0) * m.acres
+            WHEN m.parcel_id IS NOT NULL AND NOT m.pinned THEN COALESCE(b.emp_per_acre, 0.0) * m.acres
             ELSE COALESCE(c.emp, 0.0)
         END AS o_emp_claim,
         CASE WHEN COALESCE(b.du_per_acre, 0) > 0 THEN 1 ELSE 0 END AS o_is_residential,
@@ -260,13 +295,14 @@ pools AS (
 -- Redistribution within the pool's LEHD total: every parcel's jobs become its
 -- claim times the pool's jobs per claim, so the pool's job total is unchanged.
 -- A matched parcel's jobs are o_emp_total; any other parcel's columns are all
--- scaled by o_emp_scale, keeping its sector mix.
+-- scaled by o_emp_scale, keeping its sector mix. A pinned school parcel keeps
+-- its jobs exactly.
 redistributed AS (
     SELECT
         m.*,
-        m.o_matched AND p.jobs_per_claim IS NOT NULL AS o_form_jobs,
+        m.o_matched AND NOT m.o_pinned AND p.jobs_per_claim IS NOT NULL AS o_form_jobs,
         m.o_emp_claim * p.jobs_per_claim AS o_emp_total,
-        COALESCE(p.jobs_per_claim, 1.0) AS o_emp_scale
+        CASE WHEN m.o_pinned THEN 1.0 ELSE COALESCE(p.jobs_per_claim, 1.0) END AS o_emp_scale
     FROM matched m
     JOIN pools p
         ON m.pool_id = p.pool_id
@@ -422,7 +458,7 @@ SELECT
     c.tree_canopy_fraction,
     c.vacancy_rate,
     c.du_pop_dasym_weight,
-    -- Occupancy is du times one minus vacancy in base_canvas_combined; an
+    -- Occupancy is du times one minus vacancy in base_canvas_school_override; an
     -- overridden parcel's du is not the one that produced its carried value, so
     -- the two are recomputed together.
     CASE WHEN c.o_matched

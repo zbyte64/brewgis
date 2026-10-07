@@ -1,0 +1,301 @@
+# Unit tests for the NCES school employment override in
+# brewgis.sacog.base_canvas_school_override.
+#
+# A parcel holding a CCD school (brewgis.sacog.school_parcels) takes its
+# schools' estimated jobs as education employment, drawn in turn from:
+#   1. its own census block's education jobs;
+#   2. its district office's block's education jobs beyond the office staff;
+#   3. the region's remaining education jobs, every block giving the same share.
+# Education jobs therefore move between blocks while the region's total holds,
+# every other parcel's education is scaled by what its block kept, and a school
+# parcel's non-education jobs move to its block's other parcels.
+#
+# Three blocks: A (x 0-10) holds the school, B (x 20-30) the district office,
+# C (x 40-50) a college.
+
+test_school_draws_its_block_then_its_district_office:
+  description: "A 40-job school takes its block's 6 education jobs and 34 from its district office's block, which keeps 66 (office staff 10 included); its 6 retail jobs go to its neighbour, the college is untouched"
+  model: brewgis.sacog.base_canvas_school_override
+  gateway: postgis
+  inputs:
+    brewgis.sacog.base_canvas_combined:
+      rows:
+        - parcel_id: 1
+          geometry: "MULTIPOLYGON(((1 1, 3 1, 3 3, 1 3, 1 1)))"
+          county: Sacramento
+          built_form_key: mixed_use
+          emp: 10.0
+          emp_pub: 4.0
+          emp_education: 4.0
+          emp_ret: 6.0
+          emp_retail_services: 6.0
+        - parcel_id: 2
+          geometry: "MULTIPOLYGON(((5 1, 7 1, 7 3, 5 3, 5 1)))"
+          county: Sacramento
+          built_form_key: mixed_use
+          emp: 10.0
+          emp_pub: 2.0
+          emp_education: 2.0
+          emp_off: 8.0
+          emp_office_services: 8.0
+        - parcel_id: 3
+          geometry: "MULTIPOLYGON(((21 1, 23 1, 23 3, 21 3, 21 1)))"
+          county: Sacramento
+          built_form_key: mixed_use
+          emp: 100.0
+          emp_pub: 100.0
+          emp_education: 100.0
+        - parcel_id: 4
+          geometry: "MULTIPOLYGON(((41 1, 43 1, 43 3, 41 3, 41 1)))"
+          county: Sacramento
+          built_form_key: mixed_use
+          emp: 50.0
+          emp_pub: 50.0
+          emp_education: 50.0
+      columns: &combined_columns
+          parcel_id: INT
+          geometry: GEOMETRY(MultiPolygon, 4326)
+          local_geometry: GEOMETRY
+          county: TEXT
+          land_development_category: TEXT
+          built_form_key: TEXT
+          intersection_density: DECIMAL
+          area_gross: DOUBLE
+          area_gross_acres: DOUBLE
+          area_parcel_acres: DOUBLE
+          area_dev_condition_acres: DOUBLE
+          area_row_acres: DOUBLE
+          area_parcel_res: DOUBLE
+          area_parcel_res_acres: DOUBLE
+          area_parcel_emp_ag: DOUBLE
+          area_parcel_emp_ag_acres: DOUBLE
+          area_parcel_emp: DOUBLE
+          area_parcel_emp_acres: DOUBLE
+          area_parcel_mixed_use: DOUBLE
+          area_parcel_mixed_use_acres: DOUBLE
+          area_parcel_no_use: DOUBLE
+          area_parcel_no_use_acres: DOUBLE
+          pop: DOUBLE
+          pop_groupquarter: DOUBLE
+          hh: DOUBLE
+          du: DOUBLE
+          du_estimated: DOUBLE
+          du_detsf: DOUBLE
+          du_detsf_sl: DOUBLE
+          du_detsf_ll: DOUBLE
+          du_attsf: DOUBLE
+          du_mf: DOUBLE
+          du_mf2to4: DOUBLE
+          du_mf5p: DOUBLE
+          du_subtype: TEXT
+          is_residential: INT
+          residential_building_sqft: DOUBLE
+          commercial_building_sqft: DOUBLE
+          industrial_building_sqft: DOUBLE
+          other_building_sqft: DOUBLE
+          total_footprint_sqft: DOUBLE
+          building_count: INT
+          footprint_ratio: DOUBLE
+          max_levels: DECIMAL
+          emp_dasym_weight: DOUBLE
+          emp: DOUBLE
+          emp_ret: DOUBLE
+          emp_off: DOUBLE
+          emp_pub: DOUBLE
+          emp_ind: DOUBLE
+          emp_ag: DOUBLE
+          emp_military: DOUBLE
+          emp_retail_services: DOUBLE
+          emp_restaurant: DOUBLE
+          emp_accommodation: DOUBLE
+          emp_arts_entertainment: DOUBLE
+          emp_other_services: DOUBLE
+          emp_office_services: DOUBLE
+          emp_medical_services: DOUBLE
+          emp_public_admin: DOUBLE
+          emp_education: DOUBLE
+          emp_manufacturing: DOUBLE
+          emp_wholesale: DOUBLE
+          emp_transport_warehousing: DOUBLE
+          emp_utilities: DOUBLE
+          emp_construction: DOUBLE
+          emp_agriculture: DOUBLE
+          emp_extraction: DOUBLE
+          bldg_area_detsf_sl: DOUBLE
+          bldg_area_detsf_ll: DOUBLE
+          bldg_area_attsf: DOUBLE
+          bldg_area_mf: DOUBLE
+          bldg_area_retail_services: DOUBLE
+          bldg_area_restaurant: DOUBLE
+          bldg_area_accommodation: DOUBLE
+          bldg_area_arts_entertainment: DOUBLE
+          bldg_area_other_services: DOUBLE
+          bldg_area_office_services: DOUBLE
+          bldg_area_public_admin: DOUBLE
+          bldg_area_education: DOUBLE
+          bldg_area_medical_services: DOUBLE
+          bldg_area_transport_warehousing: DOUBLE
+          bldg_area_wholesale: DOUBLE
+          residential_irrigated_area: DOUBLE
+          commercial_irrigated_area: DOUBLE
+          median_income: DOUBLE
+          rent_burden_pct: DOUBLE
+          pct_minority: DOUBLE
+          pct_college_educated: DOUBLE
+          cost_burden_pct: DOUBLE
+          tree_canopy_fraction: DOUBLE
+          vacancy_rate: DOUBLE
+          du_pop_dasym_weight: DOUBLE
+          occupied_du: DECIMAL
+          land_use: TEXT
+          assessor_use_code: TEXT
+    brewgis.sacog.school_parcels:
+      rows:
+        - {ncessch: "060000000001", leaid: "0600001", staff: 40.0, parcel_id: 1}
+      columns: &school_parcel_columns
+        ncessch: TEXT
+        leaid: TEXT
+        staff: DOUBLE
+        parcel_id: INT
+    brewgis.sacog.ccd_districts:
+      rows:
+        - leaid: "0600001"
+          office_staff_fte: 10.0
+          geometry: "POINT(22 2)"
+      columns: &district_columns
+        leaid: TEXT
+        lea_name: TEXT
+        school_year: INT
+        teachers_fte: DOUBLE
+        staff_fte: DOUBLE
+        office_staff_fte: DOUBLE
+        geometry: GEOMETRY(Point, 4326)
+    brewgis.sacog.census_2020_block_projected:
+      rows: &block_rows
+        - geoid: "060670001001000"
+          geometry: "MULTIPOLYGON(((0 0, 10 0, 10 10, 0 10, 0 0)))"
+        - geoid: "060670001001001"
+          geometry: "MULTIPOLYGON(((20 0, 30 0, 30 10, 20 10, 20 0)))"
+        - geoid: "060670001001002"
+          geometry: "MULTIPOLYGON(((40 0, 50 0, 50 10, 40 10, 40 0)))"
+      columns: &block_columns
+        geoid: TEXT
+        geometry: GEOMETRY(MultiPolygon, 4326)
+  outputs:
+    query:
+      partial: true
+      rows:
+        - parcel_id: 1
+          emp: 40.0
+          emp_pub: 40.0
+          emp_education: 40.0
+          emp_ret: 0.0
+          emp_retail_services: 0.0
+        - parcel_id: 2
+          emp: 14.0
+          emp_pub: 0.0
+          emp_education: 0.0
+          emp_off: 14.0
+          emp_office_services: 14.0
+        - parcel_id: 3
+          emp: 66.0
+          emp_pub: 66.0
+          emp_education: 66.0
+        - parcel_id: 4
+          emp: 50.0
+          emp_pub: 50.0
+          emp_education: 50.0
+
+test_school_draws_the_region_pro_rata_when_its_office_is_elsewhere:
+  description: "A 60-job school in an education-less block whose district office is outside every block takes 60 from the region's 120 education jobs, half of each block's"
+  model: brewgis.sacog.base_canvas_school_override
+  gateway: postgis
+  inputs:
+    brewgis.sacog.base_canvas_combined:
+      rows:
+        - parcel_id: 1
+          geometry: "MULTIPOLYGON(((1 1, 3 1, 3 3, 1 3, 1 1)))"
+          county: Sacramento
+          built_form_key: mixed_use
+          emp: 0.0
+        - parcel_id: 3
+          geometry: "MULTIPOLYGON(((21 1, 23 1, 23 3, 21 3, 21 1)))"
+          county: Sacramento
+          built_form_key: mixed_use
+          emp: 30.0
+          emp_pub: 30.0
+          emp_education: 30.0
+        - parcel_id: 4
+          geometry: "MULTIPOLYGON(((41 1, 43 1, 43 3, 41 3, 41 1)))"
+          county: Sacramento
+          built_form_key: mixed_use
+          emp: 90.0
+          emp_pub: 90.0
+          emp_education: 90.0
+      columns: *combined_columns
+    brewgis.sacog.school_parcels:
+      rows:
+        - {ncessch: "060000000001", leaid: "0600001", staff: 60.0, parcel_id: 1}
+      columns: *school_parcel_columns
+    brewgis.sacog.ccd_districts:
+      rows:
+        - leaid: "0600001"
+          office_staff_fte: 10.0
+          geometry: "POINT(100 100)"
+      columns: *district_columns
+    brewgis.sacog.census_2020_block_projected:
+      rows: *block_rows
+      columns: *block_columns
+  outputs:
+    query:
+      partial: true
+      rows:
+        - parcel_id: 1
+          emp: 60.0
+          emp_education: 60.0
+        - parcel_id: 3
+          emp: 15.0
+          emp_education: 15.0
+        - parcel_id: 4
+          emp: 45.0
+          emp_education: 45.0
+
+test_school_keeps_its_blocks_surplus_education_when_no_neighbour_holds_any:
+  description: "A 20-job school alone in a block of 50 education jobs keeps all 50: no other parcel of the block holds education jobs to keep the surplus, and no school elsewhere asks for it"
+  model: brewgis.sacog.base_canvas_school_override
+  gateway: postgis
+  inputs:
+    brewgis.sacog.base_canvas_combined:
+      rows:
+        - parcel_id: 1
+          geometry: "MULTIPOLYGON(((1 1, 3 1, 3 3, 1 3, 1 1)))"
+          county: Sacramento
+          built_form_key: mixed_use
+          emp: 50.0
+          emp_pub: 50.0
+          emp_education: 50.0
+        - parcel_id: 2
+          geometry: "MULTIPOLYGON(((5 1, 7 1, 7 3, 5 3, 5 1)))"
+          county: Sacramento
+          built_form_key: mixed_use
+      columns: *combined_columns
+    brewgis.sacog.school_parcels:
+      rows:
+        - {ncessch: "060000000001", leaid: "0600001", staff: 20.0, parcel_id: 1}
+      columns: *school_parcel_columns
+    brewgis.sacog.ccd_districts:
+      rows: []
+      columns: *district_columns
+    brewgis.sacog.census_2020_block_projected:
+      rows: *block_rows
+      columns: *block_columns
+  outputs:
+    query:
+      partial: true
+      rows:
+        - parcel_id: 1
+          emp: 50.0
+          emp_education: 50.0
+        - parcel_id: 2
+          emp: null
+          emp_education: null

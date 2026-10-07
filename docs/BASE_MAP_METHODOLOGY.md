@@ -840,6 +840,15 @@ Population allocation uses **Census 2020 blocks** as the source zone. Demographi
 | Dwelling units | Assessor + built_form_key | Parcel-level | Estimated directly, not allocated from ACS |
 | Demographics | ACS block group | ~4,000 ac | Area-weighted mean over intersecting parcels |
 | Employment | LEHD LODES WAC block | ~200 ac | Sector-constrained by building sqft type |
+| School employment | NCES Common Core of Data school + district | School point | Teacher FTE × district school-based staff per teacher, drawn from LODES education jobs |
+
+### School employment (NCES Common Core of Data)
+
+LODES places a job at the address its employer reports, and school districts commonly report one address for every worksite — the Census Bureau's LODES methodology report (CES-WP-25-52) names school districts as the most common case. In the SACOG 2008 LODES, San Juan USD's office block holds 2,623 education jobs, Sacramento City USD's 1,919 and Folsom-Cordova USD's (125 E. Bidwell St., Folsom) 2,443, while Folsom-Cordova's 30 school blocks hold 4% of their estimated staff. Redistributing within a block cannot fix this: a school whose block LODES left empty has nothing to claim.
+
+`models/ccd/` reads the CCD school and district directories (Urban Institute Education Data Portal full-file CSVs, one layout for every year since 1986) for the school year containing the region's `lodes_year`. `school_staff` estimates each school's jobs as its teacher FTE × its district's (staff − district-office staff) / teachers (California: 1.75 in 2007-08, 2.24 in 2020-21; the region's pooled ratio where a district's falls outside 1–4). `base_canvas_school_override`, between `base_canvas_combined` and `base_canvas_poi_override`, gives each parcel holding a school those jobs as `emp_education`, drawn in turn from its own block's education jobs, its district office's block (beyond the CCD district-office staff, which stay), and pro rata from the region's remaining education jobs. Education jobs are the one carve-out from the per-block rule: they move between blocks, and only the region's education total is held; a school parcel's non-education jobs go to its block's other parcels. `base_canvas_poi_override` then gives school parcels the `schools` category's built form ahead of any OSM POI and leaves their jobs alone.
+
+Private schools are not in the CCD and keep the OSM POI path.
 
 ---
 
