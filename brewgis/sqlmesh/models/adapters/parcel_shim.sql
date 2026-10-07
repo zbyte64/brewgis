@@ -12,7 +12,7 @@ MODEL (
     county = 'County name supplied by the region blueprint.',
     land_development_category = 'Land development category of the parcel; NULL here, filled downstream.',
     built_form_key = 'Built form classification key of the parcel; NULL here, filled downstream.',
-    intersection_density = 'Intersection density around the parcel (per km2); NULL here, filled downstream.',
+    intersection_density = 'Intersection density around the parcel (per square mile); NULL here, filled downstream.',
     pop = 'Total population of the parcel (people); NULL here, filled downstream.',
     hh = 'Households on the parcel (count); NULL here, filled downstream.',
     du = 'Dwelling units on the parcel (count); NULL here, filled downstream.',

@@ -8,7 +8,7 @@ MODEL (
     county = 'County name assigned to the parcel by the region blueprint (Sacramento for SACOG).',
     land_development_category = 'Land development category (land use class) assigned by the base canvas.',
     built_form_key = 'Built form key classifying the development form of the parcel.',
-    intersection_density = 'Intersection density around the parcel (intersections per km2).',
+    intersection_density = 'Intersection density around the parcel (intersections per square mile).',
     area_gross = 'Gross area of the parcel (acres).',
     area_gross_acres = 'Gross area of the parcel (acres; rounded duplicate of area_gross).',
     area_parcel_acres = 'Parcel area (acres).',

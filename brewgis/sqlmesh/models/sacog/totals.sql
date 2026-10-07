@@ -60,7 +60,7 @@ MODEL (
     bldg_area_wholesale = 'Total Wholesale Building Area across brewgis (sq ft).',
     residential_irrigated_area = 'Total Residential Irrigated Area across brewgis (acres).',
     commercial_irrigated_area = 'Total Commercial Irrigated Area across brewgis (acres).',
-    intersection_density = 'Total Intersection Density across brewgis (intersections per km2).',
+    intersection_density = 'Total Intersection Density across brewgis (intersections per square mile).',
     median_income = 'Total Median Household Income across brewgis ($ per year).',
     pct_minority = 'Total Percent People of Color across brewgis (% as 0-100).',
     pct_college_educated = 'Total Percent College-Educated across brewgis (% as 0-100).',

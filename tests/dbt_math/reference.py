@@ -353,8 +353,8 @@ def compute_mode_choice(
     trips_nhb = _c(np.asarray(trips_nhb, dtype=float))
 
     area_sqmi = _c(np.asarray(area_gross_acres, dtype=float)) / 640.0
-    # intersections per km2 -> per square mile
-    int_sqmi = _c(np.asarray(intersection_density, dtype=float)) * 2.58998811
+    # intersection_density is already intersections per square mile
+    int_sqmi = _c(np.asarray(intersection_density, dtype=float))
     pop_m = _c(np.asarray(pop, dtype=float))
     emp_cell = _c(np.asarray(emp, dtype=float))
     emp_1m = _c(np.asarray(emp_1mile, dtype=float))
@@ -375,20 +375,27 @@ def compute_mode_choice(
 
     # pop+emp per square mile over the quarter-mile acres, and the jobs-vs-
     # population mix (the reference's tMXD_pop_emp_m_sq / tMXD_jobs_v_pop).
-    pop_emp_sqmi = (
-        (qmb_pop_m + qmb_emp_m)
-        / np.maximum(
-            _c(np.asarray(qmb_res_acres, dtype=float))
-            + _c(np.asarray(qmb_emp_acres, dtype=float))
-            + _c(np.asarray(qmb_mixed_acres, dtype=float)),
-            1e-9,
-        )
-        * 640.0
+    # Both are UrbanFootprint's zero cases: no developed quarter-mile acres is
+    # a density of 0 (its log term skipped), and no quarter-mile population or
+    # jobs is a mix at the 0.01 floor.
+    qmb_acres = (
+        _c(np.asarray(qmb_res_acres, dtype=float))
+        + _c(np.asarray(qmb_emp_acres, dtype=float))
+        + _c(np.asarray(qmb_mixed_acres, dtype=float))
     )
-    mix = np.maximum(
-        1.0
-        - np.abs(0.2 * qmb_pop_m - qmb_emp_m)
-        / np.maximum(0.2 * qmb_pop_m + qmb_emp_m, 1e-9),
+    pop_emp_sqmi = np.where(
+        qmb_acres > 0,
+        (qmb_pop_m + qmb_emp_m) / np.where(qmb_acres > 0, qmb_acres, 1.0) * 640.0,
+        0.0,
+    )
+    mix_den = 0.2 * qmb_pop_m + qmb_emp_m
+    mix = np.where(
+        mix_den > 0,
+        np.maximum(
+            1.0
+            - np.abs(0.2 * qmb_pop_m - qmb_emp_m) / np.where(mix_den > 0, mix_den, 1.0),
+            0.01,
+        ),
         0.01,
     )
 

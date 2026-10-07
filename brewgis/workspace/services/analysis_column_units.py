@@ -56,7 +56,7 @@ _UNIT_PHRASES: dict[str, str] = {
     "miles per household per year": "mi/hh/yr",
     "km": "km",
     "people per acre": "people/acre",
-    "intersections per km2": "intersections/km²",
+    "intersections per square mile": "intersections/sq mi",
     "trips per day": "trips/day",
     "tons": "tons",
     "hours": "hr",

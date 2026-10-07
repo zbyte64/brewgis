@@ -159,23 +159,26 @@ def test_mode_choice_parity(parity_scenario: str) -> None:
     # Purpose trips, the end-state attributes the D-variables read, and the
     # quarter-mile / one-mile context. Parcel 0 has no trips at all, which is
     # the zero-denominator case (its shares are NULL, its trip counts zero).
-    trips_hbw = np.array([0.0, 30.0, 80.0, 12.0], dtype=float)
-    trips_hbo = np.array([0.0, 70.0, 175.0, 28.0], dtype=float)
-    trips_nhb = np.array([0.0, 40.0, 100.0, 16.0], dtype=float)
-    area = np.array([1.0, 0.5, 4.0, 2.0], dtype=float)
-    intersection_density = np.array([0.0, 5.0, 30.0, 2.0], dtype=float)
-    pop = np.array([0.0, 60.0, 250.0, 40.0], dtype=float)
-    hh = np.array([0.0, 25.0, 100.0, 16.0], dtype=float)
-    emp = np.array([0.0, 4.0, 40.0, 2.0], dtype=float)
-    # NULL on two parcels: the model then falls back to the built form's
+    # Parcel 4 is undeveloped land beside a job site: jobs in its quarter mile
+    # but no developed acres there, so its density has no denominator — the
+    # UrbanFootprint zero case (density 0, its log term skipped).
+    trips_hbw = np.array([0.0, 30.0, 80.0, 12.0, 900.0], dtype=float)
+    trips_hbo = np.array([0.0, 70.0, 175.0, 28.0, 2100.0], dtype=float)
+    trips_nhb = np.array([0.0, 40.0, 100.0, 16.0, 1200.0], dtype=float)
+    area = np.array([1.0, 0.5, 4.0, 2.0, 574.0], dtype=float)
+    intersection_density = np.array([0.0, 5.0, 30.0, 2.0, 1.0], dtype=float)
+    pop = np.array([0.0, 60.0, 250.0, 40.0, 0.0], dtype=float)
+    hh = np.array([0.0, 25.0, 100.0, 16.0, 0.0], dtype=float)
+    emp = np.array([0.0, 4.0, 40.0, 2.0, 5745.0], dtype=float)
+    # NULL on three parcels: the model then falls back to the built form's
     # household size (or 2.577).
-    household_size = np.array([np.nan, 2.4, np.nan, 2.6], dtype=float)
-    qmb_pop = np.array([0.0, 800.0, 4000.0, 300.0], dtype=float)
-    qmb_emp = np.array([0.0, 200.0, 1500.0, 50.0], dtype=float)
-    qmb_res_acres = np.array([0.0, 40.0, 100.0, 20.0], dtype=float)
-    qmb_emp_acres = np.array([0.0, 10.0, 30.0, 5.0], dtype=float)
-    qmb_mixed_acres = np.array([0.0, 5.0, 12.0, 2.0], dtype=float)
-    emp_1mile = np.array([0.0, 900.0, 6000.0, 250.0], dtype=float)
+    household_size = np.array([np.nan, 2.4, np.nan, 2.6, np.nan], dtype=float)
+    qmb_pop = np.array([0.0, 800.0, 4000.0, 300.0, 0.0], dtype=float)
+    qmb_emp = np.array([0.0, 200.0, 1500.0, 50.0, 5745.0], dtype=float)
+    qmb_res_acres = np.array([0.0, 40.0, 100.0, 20.0, 0.0], dtype=float)
+    qmb_emp_acres = np.array([0.0, 10.0, 30.0, 5.0, 0.0], dtype=float)
+    qmb_mixed_acres = np.array([0.0, 5.0, 12.0, 2.0, 0.0], dtype=float)
+    emp_1mile = np.array([0.0, 900.0, 6000.0, 250.0, 17916.0], dtype=float)
     pid = np.arange(len(trips_hbw), dtype=int)
 
     reference = compute_mode_choice(
@@ -252,6 +255,12 @@ def test_mode_choice_parity(parity_scenario: str) -> None:
     )
     for column, expected in zip(columns, reference, strict=True):
         assert np.allclose(result[column], expected, atol=1e-8, equal_nan=True), column
+
+    # Every parcel with trips splits them exactly once (assert_mode_share_sum),
+    # the zero-acre parcel included.
+    share_sum = result[[c for c in columns if c.startswith("mode_share_")]].sum(axis=1)
+    has_trips = result["mode_share_auto"].notna()
+    assert np.allclose(share_sum[has_trips], 1.0, atol=0.01)
 
 
 # ══════════════════════════════════════════════════════════════════════

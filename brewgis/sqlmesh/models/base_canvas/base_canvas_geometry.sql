@@ -12,7 +12,7 @@ MODEL (
     county = 'County name of the parcel from the parcels source.',
     land_development_category = 'Land development category, preferring the dasymetric value.',
     built_form_key = 'Built form key, preferring the dasymetric value over the parcel value.',
-    intersection_density = 'Intersection density at the parcel (intersections per km2).',
+    intersection_density = 'Intersection density at the parcel (intersections per square mile).',
     pop = 'Population of the parcel passed through from the parcels source (people).',
     hh = 'Household count of the parcel, passed through from the parcels source.',
     du = 'Dwelling unit count of the parcel, passed through from the parcels source.',

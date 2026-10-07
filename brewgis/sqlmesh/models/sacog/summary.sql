@@ -117,7 +117,7 @@ MODEL (
     brew_bldg_area_wholesale = 'BrewGIS total wholesale building area (sq ft).',
     brew_residential_irrigated_area = 'BrewGIS total residential irrigated area (acres).',
     brew_commercial_irrigated_area = 'BrewGIS total commercial irrigated area (acres).',
-    brew_intersection_density = 'BrewGIS total intersection density (intersections per km2).',
+    brew_intersection_density = 'BrewGIS total intersection density (intersections per square mile).',
     brew_median_income = 'Sum of household median income over BrewGIS base canvas parcels ($ per year).',
     brew_pct_minority = 'Sum of percent people of color over BrewGIS base canvas parcels (% as 0-100).',
     brew_pct_college_educated = 'Sum of percent college-educated over BrewGIS base canvas parcels (% as 0-100).',

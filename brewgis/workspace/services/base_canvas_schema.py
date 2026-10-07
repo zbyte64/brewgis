@@ -285,7 +285,7 @@ def _derive_unit(name: str) -> str:
     the bare number.
     """
     if name == "intersection_density":
-        return "intersections/km²"
+        return "intersections/sq mi"
     if name == "median_income":
         return "$/yr"
     if name.endswith("_pct") or name.startswith("pct_"):

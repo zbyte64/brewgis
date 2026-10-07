@@ -5,7 +5,7 @@ MODEL (
   column_descriptions (
     parcel_id = 'Parcel identifier mapped from the detected id column of the test_parcels seed.',
     built_form_key = 'Built form key, hard-coded to 2 (standard single-family residential) here.',
-    intersection_density = 'Intersection density (per km2) from gross area in acres, clamped to 0.5 to 25.',
+    intersection_density = 'Intersection density (per square mile) from gross area in acres, clamped to 0.5 to 25.',
     land_development_category = 'Land development category, hard-coded to standard for every parcel here.',
     geom = 'Parcel geometry from the test_parcels seed (EPSG:4326).',
     land_use = 'Land use value carried through from the test_parcels seed.',

@@ -41,11 +41,14 @@ MODEL (
 --
 -- with sigma(x) = 1 / (1 + exp(-x)). Auto is whatever is left, exactly as the
 -- reference computes it — so its share falls as the walk / transit / bike /
--- capture sigmoids rise. The four non-auto sigmoids are applied independently,
--- so on a pathological parcel they can together over-claim; the GREATEST is
--- what keeps auto at zero then, and the shares sum to exactly 1 wherever it
--- does not bind (which is every parcel of a real canvas — see
--- assert_mode_share_sum).
+-- capture sigmoids rise. Walk, transit and bike are applied independently to
+-- the same post-capture trips, as the reference does walk and transit (it has
+-- no bike); none is taken from another's remainder. They can together
+-- over-claim only on a parcel whose logits are saturated; the GREATEST keeps
+-- auto at zero then, and assert_mode_share_sum fails the plan. UrbanFootprint's
+-- own SACOG export never exceeds a 48.5% non-auto share, and the one input
+-- that did saturate them here — the quarter-mile density over zero developed
+-- acres — follows the reference's zero rule below.
 --
 -- The coefficients below are UrbanFootprint's published constants
 -- (vmt_model_constants.py), hardcoded here the way the previous model hardcoded
@@ -87,9 +90,11 @@ WITH attrs AS (
         -- into every logit and leave the whole row's shares NULL, which the
         -- mode-share audit reads as a split of 0 instead of a missing one.
         COALESCE(es.area_gross_acres, 0.0) / 640.0 AS area_sqmi,
-        -- intersections per km2 -> per square mile (the reference's
-        -- intersections_qtrmi is aliased to intersections_sqmi).
-        COALESCE(es.intersection_density, 0.0) * 2.58998811 AS int_sqmi,
+        -- Already intersections per square mile — the reference's
+        -- intersections_qtrmi, which it reads from intersection_density_sqmi.
+        -- The density adapters count intersections within 402 m and divide by
+        -- that circle's area in square miles; no conversion applies.
+        COALESCE(es.intersection_density, 0.0) AS int_sqmi,
         COALESCE(
             NULLIF(COALESCE(es.pop, 0.0) / NULLIF(es.hh, 0), 0.0),
             es.household_size,
@@ -97,24 +102,38 @@ WITH attrs AS (
         ) AS hh_size,
         @blueprint_var('transport_vehicles_per_capita') AS veh,
         COALESCE(es.emp, 0.0) AS emp_cell,
-        (COALESCE(qm.qmb_pop, 0.0) + COALESCE(qm.qmb_emp, 0.0))
-            / GREATEST(
-                COALESCE(qm.qmb_res_acres, 0.0)
+        -- Population + jobs per square mile of developed quarter-mile acres.
+        -- With no developed acres in the quarter mile the density is 0, so its
+        -- log term is skipped — the reference's tMXD_pop_emp_m_sq = 0
+        -- (vmt_calculate_log_odds.py). Flooring the acres instead turns
+        -- undeveloped land beside a job site into ~1e15 per square mile and
+        -- saturates every walk / transit / bike sigmoid.
+        CASE
+            WHEN COALESCE(qm.qmb_res_acres, 0.0)
                 + COALESCE(qm.qmb_emp_acres, 0.0)
-                + COALESCE(qm.qmb_mixed_acres, 0.0),
-                1e-9
-            ) * 640.0 AS pop_emp_sqmi,
+                + COALESCE(qm.qmb_mixed_acres, 0.0) > 0
+            THEN (COALESCE(qm.qmb_pop, 0.0) + COALESCE(qm.qmb_emp, 0.0))
+                / (
+                    COALESCE(qm.qmb_res_acres, 0.0)
+                    + COALESCE(qm.qmb_emp_acres, 0.0)
+                    + COALESCE(qm.qmb_mixed_acres, 0.0)
+                ) * 640.0
+            ELSE 0.0
+        END AS pop_emp_sqmi,
         COALESCE(qm.emp_1mile, 0.0) AS emp_1m,
         -- Land-use mix: jobs-vs-population balance over the quarter mile,
-        -- floored at 0.01 (the reference's tMXD_jobs_v_pop).
-        GREATEST(
-            1.0 - ABS(0.2 * COALESCE(qm.qmb_pop, 0.0) - COALESCE(qm.qmb_emp, 0.0))
-                / GREATEST(
-                    0.2 * COALESCE(qm.qmb_pop, 0.0) + COALESCE(qm.qmb_emp, 0.0),
-                    1e-9
-                ),
-            0.01
-        ) AS mix
+        -- floored at 0.01 (the reference's tMXD_jobs_v_pop). With neither
+        -- population nor jobs in the quarter mile there is no balance to
+        -- measure: the reference's tCT is 0 there, so the mix is the floor.
+        CASE
+            WHEN 0.2 * COALESCE(qm.qmb_pop, 0.0) + COALESCE(qm.qmb_emp, 0.0) > 0
+            THEN GREATEST(
+                1.0 - ABS(0.2 * COALESCE(qm.qmb_pop, 0.0) - COALESCE(qm.qmb_emp, 0.0))
+                    / (0.2 * COALESCE(qm.qmb_pop, 0.0) + COALESCE(qm.qmb_emp, 0.0)),
+                0.01
+            )
+            ELSE 0.01
+        END AS mix
     FROM @{scenario_schema}.trip_generation AS tg
     LEFT JOIN @{scenario_schema}.core_end_state AS es
         ON tg.parcel_id = es.parcel_id

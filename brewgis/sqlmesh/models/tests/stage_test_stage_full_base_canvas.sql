@@ -9,7 +9,7 @@ MODEL (
     geometry = 'Parcel geometry passed through from the test_base_canvas seed (EPSG:4326).',
     land_development_category = 'Land development category passed through from the test_base_canvas seed.',
     built_form_key = 'Built form key passed through from the test_base_canvas seed.',
-    intersection_density = 'Intersection density passed through from the test_base_canvas seed (per km2).',
+    intersection_density = 'Intersection density passed through from the test_base_canvas seed (per square mile).',
     area_gross = 'Gross parcel area (acres), ST_Area of the seed geometry divided by 4046.86.',
     geography_id = 'Geography identifier, zero-filled in this fixture.',
     area_parcel = 'Parcel area (acres).',

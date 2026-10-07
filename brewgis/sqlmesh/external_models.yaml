@@ -8,7 +8,7 @@
     geometry: Parcel boundary geometry (MultiPolygon, EPSG:4326).
     land_development_category: Land development category resolved from parcel, assessor code or land use crosswalk.
     built_form_key: Built form key from the parcel source, defaulting to mixed_use when blank.
-    intersection_density: Intersection density (intersections per km2); OSM, else parcel, else calibration.
+    intersection_density: Intersection density (intersections per square mile); OSM, else parcel, else calibration.
     area_gross: Gross parcel area including right-of-way (acres).
     area_parcel: Parcel area inside the parcel boundary (acres).
     area_dev_condition: Portion of the parcel in developed condition (acres).
@@ -698,7 +698,7 @@
     geometry: Parcel boundary geometry (MultiPolygon, EPSG:4326).
     land_development_category: Land development category from the v1 source; blank where the source names none.
     built_form_key: Built form key from the v1 source, the SACOG v1 bt__ key.
-    intersection_density: Intersection density (intersections per km2).
+    intersection_density: Intersection density (intersections per square mile).
     area_gross: Gross parcel area including right-of-way (acres).
     area_parcel: Parcel area inside the parcel boundary (acres).
     pop: Population from the v1 source (people).

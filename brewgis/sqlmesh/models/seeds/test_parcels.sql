@@ -18,7 +18,7 @@ MODEL (
     emp = 'Modeled employment assigned to the parcel (jobs).',
     land_development_category = 'Land development category of the parcel used by the calibration seeds.',
     built_form_key = 'Built form key classifying the parcel built form.',
-    intersection_density = 'Intersection density at the parcel (intersections per km2).',
+    intersection_density = 'Intersection density at the parcel (intersections per square mile).',
     land_use = 'Land use label of the parcel (text).',
     assessor_use_code = 'Assessor use code of the parcel, mapped to a category by the assessor_use_codes seed.',
     bldg_area_detsf_sl = 'Detached single-family small-lot building area (sq ft).',

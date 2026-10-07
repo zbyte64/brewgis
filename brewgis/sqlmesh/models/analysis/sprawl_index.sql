@@ -7,7 +7,7 @@ MODEL (
     area_gross_acres = 'Gross parcel area (acres).',
     pop = 'Population allocated to the parcel (people).',
     population_density = 'Population divided by gross parcel area (people per acre).',
-    intersection_density = 'Intersection density (intersections per km2).',
+    intersection_density = 'Intersection density (intersections per square mile).',
     land_development_category = 'Land development category (urban, compact, standard or rural).',
     emp = 'Employment allocated to the parcel (jobs).',
     density_score = 'Percentile rank of the parcel population density (0-1).',

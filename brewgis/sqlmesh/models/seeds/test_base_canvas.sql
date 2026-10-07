@@ -11,7 +11,7 @@ MODEL (
     geometry_key = 'Key identifying the geometry variant of the row.',
     land_development_category = 'Land development category of the base canvas row.',
     built_form_key = 'Built form key of the base canvas row.',
-    intersection_density = 'Intersection density at the row (intersections per km2).',
+    intersection_density = 'Intersection density at the row (intersections per square mile).',
     area_gross = 'Gross area of the base canvas row (acres).',
     area_parcel = 'Parcel area (acres).',
     area_dev_condition = 'Development condition area (acres).',

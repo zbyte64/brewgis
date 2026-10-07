@@ -4,7 +4,7 @@ MODEL (
   description 'Test fixture: staging VIEW matching the overture_intersection_density schema from test lot size.',
   column_descriptions (
     apn = 'Assessor parcel number (APN) of the test parcel.',
-    intersection_density = 'Proxy intersection density (per km2) from lot size, clamped between 0.5 and 50.',
+    intersection_density = 'Proxy intersection density (per square mile) from lot size, clamped between 0.5 and 50.',
     geometry = 'Parcel geometry from the test assessor parcels seed (EPSG:4326).'
   ),
   audits (

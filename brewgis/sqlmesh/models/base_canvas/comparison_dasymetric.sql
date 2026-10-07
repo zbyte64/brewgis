@@ -48,7 +48,7 @@ MODEL (
     is_residential = 'Residential flag placeholder; null in this model.',
     footprint_ratio = 'Footprint ratio of the intersecting APNs, weighted by intersection-area share (0-1).',
     max_levels = 'Maximum building levels of the intersecting APNs, weighted by area share.',
-    intersection_density = 'Intersection density of the intersecting APNs, weighted by area share (per km2).',
+    intersection_density = 'Intersection density of the intersecting APNs, weighted by area share (per square mile).',
     hh_size = 'Mean household size weighted by intersection-area share (people per household).',
     vacancy_rate = 'Vacancy rate weighted by intersection-area share (fraction 0-1).',
     emp_ret_per_acre = 'Retail employment per acre from the employment-ratios regressor (jobs per acre).',

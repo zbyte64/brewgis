@@ -9,7 +9,7 @@ MODEL (
     county = 'County the parcel falls in, carried from the parcel source.',
     land_development_category = 'Land development category resolved from parcel, assessor code or land use crosswalk.',
     built_form_key = 'Built form key from the parcel source, defaulting to mixed_use when null.',
-    intersection_density = 'Intersection density (intersections per km2); OSM, else parcel, else calibration.',
+    intersection_density = 'Intersection density (intersections per square mile); OSM, else parcel, else calibration.',
     area_gross = 'Gross parcel area including right-of-way (acres).',
     area_gross_acres = 'Gross parcel area including right-of-way (acres, explicit unit alias of area_gross).',
     area_parcel_acres = 'Parcel area inside the parcel boundary (acres).',

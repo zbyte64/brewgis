@@ -36,7 +36,7 @@ MODEL (
     parcel_acres_agriculture = 'Agricultural parcel acres from the end state (acres).',
     parcel_acres_open_space = 'Open-space parcel acres from the end state (acres); passed through.',
     parcel_acres_vacant = 'Vacant parcel acres from the end state (acres); passed through.',
-    intersection_density = 'Change in intersection density (intersections per km2).',
+    intersection_density = 'Change in intersection density (intersections per square mile).',
     geometry = 'Parcel boundary geometry, from the end state or the base canvas (EPSG:4326).'
   ),
   blueprints @analysis_blueprints('core_increment'),

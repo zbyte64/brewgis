@@ -9,7 +9,7 @@ MODEL (
     geometry = 'Parcel geometry passed through from the test_parcels seed (EPSG:4326).',
     land_development_category = 'Land development category, hard-coded to standard for every parcel in this fixture.',
     built_form_key = 'Built form key, hard-coded to 2 for every parcel in this fixture.',
-    intersection_density = 'Intersection density from seed geometry area (per km2), clamped between 0.5 and 25.',
+    intersection_density = 'Intersection density from seed geometry area (per square mile), clamped between 0.5 and 25.',
     area_gross = 'Gross parcel area (acres), ST_Area of the seed geometry divided by 4046.86.',
     area_parcel = 'Parcel area (acres).',
     area_dev_condition = 'Area of the parcel in developed condition (acres).',

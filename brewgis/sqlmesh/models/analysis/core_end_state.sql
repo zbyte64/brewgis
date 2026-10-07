@@ -38,7 +38,7 @@ MODEL (
     parcel_acres_agriculture = 'Parcel acres in agricultural employment use, read from the base layer (acres).',
     parcel_acres_open_space = 'Parcel acres neither developed nor vacant: gross area less developed and no-use acres (acres).',
     parcel_acres_vacant = 'Parcel acres in no use, read from the base layer (acres).',
-    intersection_density = 'Intersection density (intersections per km2), read from the base layer.',
+    intersection_density = 'Intersection density (intersections per square mile), read from the base layer.',
     land_development_category = 'Land development category, read from the base layer.',
     title24_zone = 'CEC Title-24 Building Climate Zone (1-16) whose polygon contains the parcel centroid; null for a parcel outside California.',
     fcz_zone = 'CEC electricity-demand Forecasting Climate Zone (0-20) whose polygon contains the parcel centroid; null for a parcel outside California.',

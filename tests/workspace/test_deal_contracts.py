@@ -93,7 +93,7 @@ def test_column_units_are_a_known_display_vocabulary() -> None:
     count being labelled "acres") rather than pinning each column's value.
     """
     units = {BaseCanvasSchema.unit(name) for name in BaseCanvasSchema.COLUMN_NAMES}
-    assert units == {"", "acres", "sq ft", "%", "$/yr", "intersections/km²"}
+    assert units == {"", "acres", "sq ft", "%", "$/yr", "intersections/sq mi"}
 
 
 def test_column_units_cover_area_building_currency_and_percent() -> None:
@@ -104,7 +104,7 @@ def test_column_units_cover_area_building_currency_and_percent() -> None:
     assert BaseCanvasSchema.unit("median_income") == "$/yr"
     assert BaseCanvasSchema.unit("rent_burden_pct") == "%"
     assert BaseCanvasSchema.unit("pct_minority") == "%"
-    assert BaseCanvasSchema.unit("intersection_density") == "intersections/km²"
+    assert BaseCanvasSchema.unit("intersection_density") == "intersections/sq mi"
 
 
 def test_counts_and_unknown_columns_have_no_unit() -> None:

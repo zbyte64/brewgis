@@ -13,7 +13,7 @@ MODEL (
     sqft_per_emp_industrial = 'Calibrated building area per industrial employee (sq ft per job).',
     res_irrigation_frac = 'Fraction of residential outdoor area assumed irrigated (0-1).',
     com_irrigation_frac = 'Fraction of commercial outdoor area assumed irrigated (0-1).',
-    intersection_density = 'Calibrated intersection density for the category (intersections per km2).'
+    intersection_density = 'Calibrated intersection density for the category (intersections per square mile).'
   ),
   columns (
     land_development_category TEXT,

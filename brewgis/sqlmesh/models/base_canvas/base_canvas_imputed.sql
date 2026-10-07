@@ -12,7 +12,7 @@ MODEL (
     county = 'County the parcel falls in, carried from the parcel source.',
     land_development_category = 'Land development category carried from base_canvas_poi_override.',
     built_form_key = 'Built form key carried from base_canvas_poi_override.',
-    intersection_density = 'Intersection density imputed from the county average, else 12.5 (intersections per km2).',
+    intersection_density = 'Intersection density imputed from the county average, else 12.5 (intersections per square mile).',
     area_gross = 'Gross parcel area including right-of-way (acres).',
     area_gross_acres = 'Gross parcel area including right-of-way (acres, explicit unit alias of area_gross).',
     area_parcel_acres = 'Parcel area inside the parcel boundary (acres).',
