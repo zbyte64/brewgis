@@ -2,23 +2,27 @@
 #
 # A parcel containing a point of an OpenStreetMap POI category takes the built
 # form key that category maps to (brewgis.seeds.poi_built_form_map) and reads its
-# dwelling units and employment from that built form's densities and
-# jobs_by_sector mix (brewgis.seeds.default_built_forms) times the parcel's acres:
+# dwelling units from that built form's density times its acres. Jobs are only
+# redistributed within the census block holding each parcel's point on surface:
+# a matched parcel claims its form's emp_per_acre times its acres, any other
+# parcel the jobs base_canvas_combined gave it, and the block's jobs are split in
+# proportion to the claims, so no block's job total changes:
 #   - the mapped category with the lowest priority number wins when a parcel
 #     contains several (hospitals before schools before parks);
-#   - the built form's shares split its job total across the sectors it declares,
-#     and the base canvas group columns (emp_ret/emp_off/...) are their sums;
+#   - a matched parcel's share is split by its form's shares across the sectors
+#     it declares, and the group columns (emp_ret/emp_off/...) are their sums;
+#   - an unmatched parcel's job columns all scale by the same factor;
 #   - every mapped form is non-residential, so du and its subtypes are zero;
-#   - a parcel no POI matched passes base_canvas_combined through untouched.
+#   - a parcel no POI matched, in a block with no POI, is untouched.
 #
 # The two seed inputs are stubbed with the library's own values so the assertions
 # do not move when a density is retuned in default_library.py — the shape of the
-# override is what is under test here, not the library's numbers. Both fixtures
-# declare geometry as plain GEOMETRY so the parcels' and the points' SRID agree;
-# every parcel is 2.0 acres.
+# override is what is under test here, not the library's numbers. Every parcel is
+# 2.0 acres and, unless a test says otherwise, every parcel lies in the one block
+# stubbed below — so a single-parcel test's parcel keeps its 3 jobs.
 
 test_school_parcel_takes_k12_school:
-  description: "Parcel containing a school point takes K-12 School: no dwellings, all jobs in education"
+  description: "Parcel containing a school point takes K-12 School: no dwellings, its block's 3 jobs all in education"
   model: brewgis.sacog.base_canvas_poi_override
   gateway: postgis
   inputs:
@@ -205,6 +209,13 @@ test_school_parcel_takes_k12_school:
         - {poi_category: sports, built_form_key: Sports/Recreation, priority: 9}
         - {poi_category: places_of_worship, built_form_key: Place of Worship, priority: 10}
         - {poi_category: parks, built_form_key: Park and/or Open Space, priority: 11}
+    brewgis.sacog.census_2020_block_projected:
+      rows: &block_rows
+        - geoid: "060670001001000"
+          geometry: "MULTIPOLYGON(((-1 -1, 11 -1, 11 5, -1 5, -1 -1)))"
+      columns: &block_columns
+        geoid: TEXT
+        geometry: GEOMETRY(MultiPolygon, 4326)
   outputs:
     query:
       partial: true
@@ -219,9 +230,9 @@ test_school_parcel_takes_k12_school:
           du_mf2to4: 0.0
           du_mf5p: 0.0
           is_residential: 0
-          emp: 40.0
-          emp_pub: 40.0
-          emp_education: 40.0
+          emp: 3.0
+          emp_pub: 3.0
+          emp_education: 3.0
           emp_ret: 0.0
           emp_off: 0.0
           emp_ind: 0.0
@@ -232,8 +243,8 @@ test_school_parcel_takes_k12_school:
           emp_public_admin: 0.0
           occupied_du: 0.0
 
-test_park_parcel_gets_no_dwellings_and_no_jobs:
-  description: "Parcel containing only a park point takes Park and/or Open Space: zero dwellings and zero jobs"
+test_park_parcel_gives_its_jobs_to_its_block:
+  description: "Parcel containing only a park point takes Park and/or Open Space: zero dwellings, and its 3 jobs move to the block's other parcel"
   model: brewgis.sacog.base_canvas_poi_override
   gateway: postgis
   inputs:
@@ -249,6 +260,15 @@ test_park_parcel_gets_no_dwellings_and_no_jobs:
           is_residential: 1
           emp: 3.0
           occupied_du: 9.5
+        - parcel_id: 7
+          geometry: "MULTIPOLYGON(((0 3, 1 3, 1 4, 0 4, 0 3)))"
+          county: Fresno
+          land_development_category: urban
+          built_form_key: mixed_use
+          area_gross: 2.0
+          emp: 5.0
+          emp_ret: 5.0
+          emp_retail_services: 5.0
       columns: *combined_columns
     brewgis.sacog.poi:
       rows: *poi_rows
@@ -258,11 +278,15 @@ test_park_parcel_gets_no_dwellings_and_no_jobs:
       rows: *library_rows
     brewgis.seeds.poi_built_form_map:
       rows: *map_rows
+    brewgis.sacog.census_2020_block_projected:
+      rows: *block_rows
+      columns: *block_columns
   outputs:
     query:
       partial: true
       rows:
-        - built_form_key: Park and/or Open Space
+        - parcel_id: 2
+          built_form_key: Park and/or Open Space
           du: 0.0
           du_detsf_sl: 0.0
           is_residential: 0
@@ -275,6 +299,11 @@ test_park_parcel_gets_no_dwellings_and_no_jobs:
           emp_military: 0.0
           emp_education: 0.0
           emp_retail_services: 0.0
+        - parcel_id: 7
+          built_form_key: mixed_use
+          emp: 8.0
+          emp_ret: 8.0
+          emp_retail_services: 8.0
 
 test_parcel_without_poi_is_unchanged:
   description: "Parcel containing no point keeps base_canvas_combined's built form, dwellings, jobs and occupancy"
@@ -310,6 +339,9 @@ test_parcel_without_poi_is_unchanged:
       rows: *library_rows
     brewgis.seeds.poi_built_form_map:
       rows: *map_rows
+    brewgis.sacog.census_2020_block_projected:
+      rows: *block_rows
+      columns: *block_columns
   outputs:
     query:
       partial: true
@@ -350,6 +382,9 @@ test_school_beats_park_on_priority:
       rows: *library_rows
     brewgis.seeds.poi_built_form_map:
       rows: *map_rows
+    brewgis.sacog.census_2020_block_projected:
+      rows: *block_rows
+      columns: *block_columns
   outputs:
     query:
       partial: true
@@ -357,9 +392,9 @@ test_school_beats_park_on_priority:
         - built_form_key: K-12 School
           du: 0.0
           is_residential: 0
-          emp: 40.0
-          emp_pub: 40.0
-          emp_education: 40.0
+          emp: 3.0
+          emp_pub: 3.0
+          emp_education: 3.0
 
 test_hospital_beats_school_on_priority:
   description: "Parcel containing a hospital point and a school point takes the hospital, with all jobs in medical services"
@@ -387,15 +422,18 @@ test_hospital_beats_school_on_priority:
       rows: *library_rows
     brewgis.seeds.poi_built_form_map:
       rows: *map_rows
+    brewgis.sacog.census_2020_block_projected:
+      rows: *block_rows
+      columns: *block_columns
   outputs:
     query:
       partial: true
       rows:
         - built_form_key: Medical Facility
           du: 0.0
-          emp: 352.0
-          emp_off: 352.0
-          emp_medical_services: 352.0
+          emp: 3.0
+          emp_off: 3.0
+          emp_medical_services: 3.0
           emp_pub: 0.0
           emp_education: 0.0
 
@@ -425,15 +463,90 @@ test_shopping_splits_its_jobs_across_sectors:
       rows: *library_rows
     brewgis.seeds.poi_built_form_map:
       rows: *map_rows
+    brewgis.sacog.census_2020_block_projected:
+      rows: *block_rows
+      columns: *block_columns
   outputs:
     query:
       partial: true
       rows:
         - built_form_key: Neighborhood Retail
           du: 0.0
-          emp: 50.0
-          emp_ret: 50.0
-          emp_retail_services: 40.0
-          emp_restaurant: 10.0
+          emp: 3.0
+          emp_ret: 3.0
+          emp_retail_services: 2.4
+          emp_restaurant: 0.6
           emp_off: 0.0
           emp_pub: 0.0
+
+test_poi_parcel_draws_jobs_from_its_own_block_only:
+  description: "A school claims 40 jobs against a neighbour's 60 in a 60-job block: it gets 24, the neighbour keeps 36 in its own sector, and another block is untouched"
+  model: brewgis.sacog.base_canvas_poi_override
+  gateway: postgis
+  inputs:
+    brewgis.sacog.base_canvas_combined:
+      rows:
+        - parcel_id: 1
+          geometry: "MULTIPOLYGON(((0 0, 2 0, 2 2, 0 2, 0 0)))"
+          county: Fresno
+          land_development_category: undeveloped
+          built_form_key: mixed_use
+          area_gross: 2.0
+          emp: 0.0
+        - parcel_id: 8
+          geometry: "MULTIPOLYGON(((0 3, 1 3, 1 4, 0 4, 0 3)))"
+          county: Fresno
+          land_development_category: urban
+          built_form_key: mixed_use
+          area_gross: 2.0
+          emp: 60.0
+          emp_off: 60.0
+          emp_office_services: 60.0
+        - parcel_id: 9
+          geometry: "MULTIPOLYGON(((21 0, 22 0, 22 1, 21 1, 21 0)))"
+          county: Fresno
+          land_development_category: urban
+          built_form_key: mixed_use
+          area_gross: 2.0
+          emp: 10.0
+          emp_ret: 10.0
+          emp_retail_services: 10.0
+      columns: *combined_columns
+    brewgis.sacog.poi:
+      rows: *poi_rows
+    brewgis.sacog.poi_raw:
+      rows: *poi_rows
+    brewgis.seeds.default_built_forms:
+      rows: *library_rows
+    brewgis.seeds.poi_built_form_map:
+      rows: *map_rows
+    brewgis.sacog.census_2020_block_projected:
+      rows:
+        - geoid: "060670001001000"
+          geometry: "MULTIPOLYGON(((-1 -1, 11 -1, 11 5, -1 5, -1 -1)))"
+        - geoid: "060670001001001"
+          geometry: "MULTIPOLYGON(((20 -1, 30 -1, 30 5, 20 5, 20 -1)))"
+      columns: *block_columns
+  outputs:
+    query:
+      partial: true
+      rows:
+        - parcel_id: 1
+          built_form_key: K-12 School
+          emp: 24.0
+          emp_pub: 24.0
+          emp_education: 24.0
+          emp_off: 0.0
+          emp_office_services: 0.0
+          emp_ret: 0.0
+          emp_retail_services: 0.0
+        - parcel_id: 8
+          built_form_key: mixed_use
+          emp: 36.0
+          emp_off: 36.0
+          emp_office_services: 36.0
+        - parcel_id: 9
+          built_form_key: mixed_use
+          emp: 10.0
+          emp_ret: 10.0
+          emp_retail_services: 10.0

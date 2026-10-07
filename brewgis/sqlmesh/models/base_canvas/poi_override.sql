@@ -1,7 +1,7 @@
 MODEL (
   name brewgis.@{region}.base_canvas_poi_override,
   kind FULL,
-  description 'Parcel-level base canvas with the OpenStreetMap points of interest inside each parcel turned into a built form: a parcel containing a POI of a mapped category takes the built form key that category maps to, and its dwelling units and employment are set from that built form''s densities and jobs_by_sector mix instead of the regressor/LEHD allocation.',
+  description 'Parcel-level base canvas with the OpenStreetMap points of interest inside each parcel turned into a built form: a parcel containing a POI of a mapped category takes the built form key that category maps to, and its dwelling units are set from that built form''s density, and the LEHD jobs base_canvas_combined allocated to each census block are redistributed across the block''s parcels so a matched parcel claims its built form''s jobs per acre in its jobs_by_sector mix, never changing the block''s job total.',
   column_descriptions (
     parcel_id = 'Unique parcel identifier; one row per parcel in the base canvas.',
     geometry = 'Parcel boundary geometry (MultiPolygon, EPSG:4326).',
@@ -48,29 +48,29 @@ MODEL (
     footprint_ratio = 'Building footprint share of the parcel carried from base_canvas_combined (ratio, 0-1).',
     max_levels = 'Maximum building levels on the parcel carried from base_canvas_combined (count).',
     emp_dasym_weight = 'Lot-size-based employment weight carried from base_canvas_combined (weight).',
-    emp = 'Total employment: the matched built form''s emp_per_acre times the parcel acres, otherwise the value base_canvas_combined derived (jobs).',
-    emp_ret = 'Retail employment: the overridden retail sub-sectors summed when a built form matched, otherwise carried from base_canvas_combined (jobs).',
-    emp_off = 'Office employment: the overridden office sub-sectors summed when a built form matched, otherwise carried from base_canvas_combined (jobs).',
-    emp_pub = 'Public employment: the overridden public sub-sectors summed when a built form matched, otherwise carried from base_canvas_combined (jobs).',
-    emp_ind = 'Industrial employment: the overridden industrial sub-sectors summed when a built form matched, otherwise carried from base_canvas_combined (jobs).',
-    emp_ag = 'Agricultural employment: the overridden agricultural sub-sectors summed when a built form matched, otherwise carried from base_canvas_combined (jobs).',
-    emp_military = 'Military employment: the overridden military share when a built form matched, otherwise carried from base_canvas_combined (jobs).',
-    emp_retail_services = 'Retail services employment: the matched built form''s share of its job total, otherwise carried from base_canvas_combined (jobs).',
-    emp_restaurant = 'Restaurant employment: the matched built form''s share of its job total, otherwise carried from base_canvas_combined (jobs).',
-    emp_accommodation = 'Accommodation employment: the matched built form''s share of its job total, otherwise carried from base_canvas_combined (jobs).',
-    emp_arts_entertainment = 'Arts and entertainment employment: the matched built form''s share of its job total, otherwise carried from base_canvas_combined (jobs).',
-    emp_other_services = 'Other services employment: the matched built form''s share of its job total, otherwise carried from base_canvas_combined (jobs).',
-    emp_office_services = 'Office services employment: the matched built form''s share of its job total, otherwise carried from base_canvas_combined (jobs).',
-    emp_medical_services = 'Medical services employment: the matched built form''s share of its job total, otherwise carried from base_canvas_combined (jobs).',
-    emp_public_admin = 'Public administration employment: the matched built form''s share of its job total, otherwise carried from base_canvas_combined (jobs).',
-    emp_education = 'Education employment: the matched built form''s share of its job total, otherwise carried from base_canvas_combined (jobs).',
-    emp_manufacturing = 'Manufacturing employment: the matched built form''s share of its job total, otherwise carried from base_canvas_combined (jobs).',
-    emp_wholesale = 'Wholesale employment: the matched built form''s share of its job total, otherwise carried from base_canvas_combined (jobs).',
-    emp_transport_warehousing = 'Transport and warehousing employment: the matched built form''s share of its job total, otherwise carried from base_canvas_combined (jobs).',
-    emp_utilities = 'Utilities employment: the matched built form''s share of its job total, otherwise carried from base_canvas_combined (jobs).',
-    emp_construction = 'Construction employment: the matched built form''s share of its job total, otherwise carried from base_canvas_combined (jobs).',
-    emp_agriculture = 'Agriculture employment: the matched built form''s share of its job total, otherwise carried from base_canvas_combined (jobs).',
-    emp_extraction = 'Extraction employment: the matched built form''s share of its job total, otherwise carried from base_canvas_combined (jobs).',
+    emp = 'Total employment: the parcel''s census block''s base_canvas_combined jobs split by claim — a matched parcel claims its built form''s emp_per_acre times its acres, any other parcel its base_canvas_combined jobs; a block whose claims are all zero keeps its jobs as allocated (jobs).',
+    emp_ret = 'Retail employment: the overridden retail sub-sectors summed when a built form matched, otherwise base_canvas_combined''s value scaled by the block redistribution (jobs).',
+    emp_off = 'Office employment: the overridden office sub-sectors summed when a built form matched, otherwise base_canvas_combined''s value scaled by the block redistribution (jobs).',
+    emp_pub = 'Public employment: the overridden public sub-sectors summed when a built form matched, otherwise base_canvas_combined''s value scaled by the block redistribution (jobs).',
+    emp_ind = 'Industrial employment: the overridden industrial sub-sectors summed when a built form matched, otherwise base_canvas_combined''s value scaled by the block redistribution (jobs).',
+    emp_ag = 'Agricultural employment: the overridden agricultural sub-sectors summed when a built form matched, otherwise base_canvas_combined''s value scaled by the block redistribution (jobs).',
+    emp_military = 'Military employment: the matched built form''s military share of the parcel''s redistributed jobs, otherwise base_canvas_combined''s value scaled by the block redistribution (jobs).',
+    emp_retail_services = 'Retail services employment: the matched built form''s share of the parcel''s redistributed jobs, otherwise base_canvas_combined''s value scaled by the block redistribution (jobs).',
+    emp_restaurant = 'Restaurant employment: the matched built form''s share of the parcel''s redistributed jobs, otherwise base_canvas_combined''s value scaled by the block redistribution (jobs).',
+    emp_accommodation = 'Accommodation employment: the matched built form''s share of the parcel''s redistributed jobs, otherwise base_canvas_combined''s value scaled by the block redistribution (jobs).',
+    emp_arts_entertainment = 'Arts and entertainment employment: the matched built form''s share of the parcel''s redistributed jobs, otherwise base_canvas_combined''s value scaled by the block redistribution (jobs).',
+    emp_other_services = 'Other services employment: the matched built form''s share of the parcel''s redistributed jobs, otherwise base_canvas_combined''s value scaled by the block redistribution (jobs).',
+    emp_office_services = 'Office services employment: the matched built form''s share of the parcel''s redistributed jobs, otherwise base_canvas_combined''s value scaled by the block redistribution (jobs).',
+    emp_medical_services = 'Medical services employment: the matched built form''s share of the parcel''s redistributed jobs, otherwise base_canvas_combined''s value scaled by the block redistribution (jobs).',
+    emp_public_admin = 'Public administration employment: the matched built form''s share of the parcel''s redistributed jobs, otherwise base_canvas_combined''s value scaled by the block redistribution (jobs).',
+    emp_education = 'Education employment: the matched built form''s share of the parcel''s redistributed jobs, otherwise base_canvas_combined''s value scaled by the block redistribution (jobs).',
+    emp_manufacturing = 'Manufacturing employment: the matched built form''s share of the parcel''s redistributed jobs, otherwise base_canvas_combined''s value scaled by the block redistribution (jobs).',
+    emp_wholesale = 'Wholesale employment: the matched built form''s share of the parcel''s redistributed jobs, otherwise base_canvas_combined''s value scaled by the block redistribution (jobs).',
+    emp_transport_warehousing = 'Transport and warehousing employment: the matched built form''s share of the parcel''s redistributed jobs, otherwise base_canvas_combined''s value scaled by the block redistribution (jobs).',
+    emp_utilities = 'Utilities employment: the matched built form''s share of the parcel''s redistributed jobs, otherwise base_canvas_combined''s value scaled by the block redistribution (jobs).',
+    emp_construction = 'Construction employment: the matched built form''s share of the parcel''s redistributed jobs, otherwise base_canvas_combined''s value scaled by the block redistribution (jobs).',
+    emp_agriculture = 'Agriculture employment: the matched built form''s share of the parcel''s redistributed jobs, otherwise base_canvas_combined''s value scaled by the block redistribution (jobs).',
+    emp_extraction = 'Extraction employment: the matched built form''s share of the parcel''s redistributed jobs, otherwise base_canvas_combined''s value scaled by the block redistribution (jobs).',
     bldg_area_detsf_sl = 'Detached single-family small-lot building floor area carried from base_canvas_combined (sq ft).',
     bldg_area_detsf_ll = 'Detached single-family large-lot building floor area carried from base_canvas_combined (sq ft).',
     bldg_area_attsf = 'Attached single-family building floor area carried from base_canvas_combined (sq ft).',
@@ -102,7 +102,8 @@ MODEL (
   ),
   audits (
     not_null(columns := (parcel_id)),
-    number_of_rows(threshold := 1)
+    number_of_rows(threshold := 1),
+    assert_employment_conserved
   ),
   -- The POI *bridge*, in addition to the published VIEW the SELECT reads:
   -- SQLMesh substitutes a referenced model's physical table in this model's
@@ -135,22 +136,33 @@ MODEL (
 --
 -- A parcel that contains a point of a mapped POI category takes the built form
 -- key that category maps to (``brewgis.seeds.poi_built_form_map``) and its
--- dwelling units and employment are read from that built form's densities and
--- ``jobs_by_sector`` mix (``brewgis.seeds.default_built_forms``) times the
--- parcel's acres. Nothing here is a literal: the densities live in the seeded
--- Building Type library, so retuning a transit station's ``emp_per_acre`` is a
--- one-line change in ``workspace/built_forms/default_library.py``.
+-- dwelling units are read from that built form's density
+-- (``brewgis.seeds.default_built_forms``) times the parcel's acres. Nothing here
+-- is a literal: the densities live in the seeded Building Type library, so
+-- retuning a transit station's ``emp_per_acre`` is a one-line change in
+-- ``workspace/built_forms/default_library.py``.
+--
+-- Employment is redistributed, never created: the LEHD jobs base_canvas_combined
+-- allocated to a census block (pooled by each parcel's point on surface) are
+-- split across the block's parcels in proportion to their claims. A matched
+-- parcel claims its built form's ``emp_per_acre`` times its acres and takes its
+-- share in that form's ``jobs_by_sector`` mix; any other parcel claims the jobs
+-- base_canvas_combined gave it and keeps its own sector mix, scaled. So a POI
+-- draws jobs from its block's other parcels — a 300-acre school campus whose
+-- block holds 400 jobs gets at most 400 — and every block's job total, hence
+-- the region's (``assert_employment_conserved``), is unchanged.
 --
 -- One row per parcel: ``DISTINCT ON`` keeps the lowest-priority-number category
 -- (hospitals before schools before ... before parks). A parcel no POI matched
--- passes every column of ``base_canvas_combined`` through untouched.
+-- keeps every column of ``base_canvas_combined`` except its job columns, which
+-- scale with its block's redistribution (unchanged in a block with no POI).
 --
 -- The output column set is ``base_canvas_combined``'s, verbatim and in order —
 -- this model is a drop-in replacement for it in the base canvas chain.
 --
 -- Every share in the library is normalized to sum to 100 (the
 -- ``default_built_forms`` model), so a mapped form's ``emp_*`` sub-sectors add
--- back up to its ``emp`` and the downstream reconciliation audits
+-- back up to its redistributed ``emp`` and the downstream reconciliation audits
 -- (``assert_employment_exclusivity``, ``assert_du_subtype_sum_equals_du``) see
 -- a single-sector parcel rather than a mix. All mapped forms are
 -- non-residential (``du_per_acre`` 0), so the DU subtype columns are zeroed
@@ -176,15 +188,38 @@ poi_match AS (
     ORDER BY p.parcel_id, pm.priority
 ),
 
--- The matched built form's job total over the parcel's acres, and that form's
--- raw share mix. Every ``o_*`` value is null for a parcel no POI matched.
+-- The census block holding each parcel's point on surface: the pool its jobs are
+-- redistributed within. The predicate probes the blocks' GiST index on
+-- geometry. A parcel outside every block pools alone and keeps its jobs.
+parcel_pool AS (
+    SELECT
+        c.parcel_id,
+        COALESCE(blk.geoid, 'parcel:' || c.parcel_id::text) AS pool_id
+    FROM combined c
+    LEFT JOIN LATERAL (
+        SELECT b.geoid
+        FROM brewgis.@{region}.census_2020_block_projected b
+        WHERE ST_Intersects(b.geometry, ST_PointOnSurface(c.geometry))
+        ORDER BY b.geoid
+        LIMIT 1
+    ) blk ON TRUE
+),
+
+-- Each parcel's claim on its pool's jobs: a matched parcel claims its built
+-- form's emp_per_acre over its acres, any other parcel the jobs
+-- base_canvas_combined allocated it. Every other ``o_*`` value is null for a
+-- parcel no POI matched.
 matched AS (
     SELECT
         c.*,
+        pp.pool_id,
         m.parcel_id IS NOT NULL AS o_matched,
         m.built_form_key AS o_built_form_key,
         COALESCE(b.du_per_acre, 0.0) * m.acres AS o_du_total,
-        COALESCE(b.emp_per_acre, 0.0) * m.acres AS o_emp_total,
+        CASE
+            WHEN m.parcel_id IS NOT NULL THEN COALESCE(b.emp_per_acre, 0.0) * m.acres
+            ELSE COALESCE(c.emp, 0.0)
+        END AS o_emp_claim,
         CASE WHEN COALESCE(b.du_per_acre, 0) > 0 THEN 1 ELSE 0 END AS o_is_residential,
         (b.jobs_by_sector ->> 'retail_services')::double precision AS o_share_retail_services,
         (b.jobs_by_sector ->> 'restaurant')::double precision AS o_share_restaurant,
@@ -204,15 +239,43 @@ matched AS (
         (b.jobs_by_sector ->> 'extraction')::double precision AS o_share_extraction,
         (b.jobs_by_sector ->> 'military')::double precision AS o_share_military
     FROM combined c
+    JOIN parcel_pool pp
+        ON c.parcel_id = pp.parcel_id
     LEFT JOIN poi_match m
         ON c.parcel_id = m.parcel_id
     LEFT JOIN brewgis.seeds.default_built_forms b
         ON b.key = m.built_form_key
 ),
 
+-- The pool's jobs per unit of claim. A pool whose claims are all zero (only
+-- parks hold its jobs) has no ratio and every parcel in it keeps its jobs.
+pools AS (
+    SELECT
+        pool_id,
+        SUM(COALESCE(emp, 0.0)) / NULLIF(SUM(o_emp_claim), 0) AS jobs_per_claim
+    FROM matched
+    GROUP BY pool_id
+),
+
+-- Redistribution within the pool's LEHD total: every parcel's jobs become its
+-- claim times the pool's jobs per claim, so the pool's job total is unchanged.
+-- A matched parcel's jobs are o_emp_total; any other parcel's columns are all
+-- scaled by o_emp_scale, keeping its sector mix.
+redistributed AS (
+    SELECT
+        m.*,
+        m.o_matched AND p.jobs_per_claim IS NOT NULL AS o_form_jobs,
+        m.o_emp_claim * p.jobs_per_claim AS o_emp_total,
+        COALESCE(p.jobs_per_claim, 1.0) AS o_emp_scale
+    FROM matched m
+    JOIN pools p
+        ON m.pool_id = p.pool_id
+),
+
 -- The built form's jobs split by share: each sub-sector is its own share of the
--- form's job total, and each group column is the sum of its own sub-sectors (the
--- base canvas groups, per services/base_canvas_pipeline.py _EMPLOYMENT_COLUMNS).
+-- parcel's redistributed job total, and each group column is the sum of its own
+-- sub-sectors (the base canvas groups, per services/base_canvas_pipeline.py
+-- _EMPLOYMENT_COLUMNS).
 resolved AS (
     SELECT
         m.*,
@@ -259,7 +322,7 @@ resolved AS (
             COALESCE(m.o_share_agriculture, 0.0)
             + COALESCE(m.o_share_extraction, 0.0)
         ) / 100.0 AS o_emp_ag
-    FROM matched m
+    FROM redistributed m
 )
 
 SELECT
@@ -308,29 +371,32 @@ SELECT
     c.footprint_ratio,
     c.max_levels,
     c.emp_dasym_weight,
-    CASE WHEN c.o_matched THEN c.o_emp_total ELSE c.emp END AS emp,
-    CASE WHEN c.o_matched THEN c.o_emp_ret ELSE c.emp_ret END AS emp_ret,
-    CASE WHEN c.o_matched THEN c.o_emp_off ELSE c.emp_off END AS emp_off,
-    CASE WHEN c.o_matched THEN c.o_emp_pub ELSE c.emp_pub END AS emp_pub,
-    CASE WHEN c.o_matched THEN c.o_emp_ind ELSE c.emp_ind END AS emp_ind,
-    CASE WHEN c.o_matched THEN c.o_emp_ag ELSE c.emp_ag END AS emp_ag,
-    CASE WHEN c.o_matched THEN c.o_emp_military ELSE c.emp_military END AS emp_military,
-    CASE WHEN c.o_matched THEN c.o_emp_retail_services ELSE c.emp_retail_services END AS emp_retail_services,
-    CASE WHEN c.o_matched THEN c.o_emp_restaurant ELSE c.emp_restaurant END AS emp_restaurant,
-    CASE WHEN c.o_matched THEN c.o_emp_accommodation ELSE c.emp_accommodation END AS emp_accommodation,
-    CASE WHEN c.o_matched THEN c.o_emp_arts_entertainment ELSE c.emp_arts_entertainment END AS emp_arts_entertainment,
-    CASE WHEN c.o_matched THEN c.o_emp_other_services ELSE c.emp_other_services END AS emp_other_services,
-    CASE WHEN c.o_matched THEN c.o_emp_office_services ELSE c.emp_office_services END AS emp_office_services,
-    CASE WHEN c.o_matched THEN c.o_emp_medical_services ELSE c.emp_medical_services END AS emp_medical_services,
-    CASE WHEN c.o_matched THEN c.o_emp_public_admin ELSE c.emp_public_admin END AS emp_public_admin,
-    CASE WHEN c.o_matched THEN c.o_emp_education ELSE c.emp_education END AS emp_education,
-    CASE WHEN c.o_matched THEN c.o_emp_manufacturing ELSE c.emp_manufacturing END AS emp_manufacturing,
-    CASE WHEN c.o_matched THEN c.o_emp_wholesale ELSE c.emp_wholesale END AS emp_wholesale,
-    CASE WHEN c.o_matched THEN c.o_emp_transport_warehousing ELSE c.emp_transport_warehousing END AS emp_transport_warehousing,
-    CASE WHEN c.o_matched THEN c.o_emp_utilities ELSE c.emp_utilities END AS emp_utilities,
-    CASE WHEN c.o_matched THEN c.o_emp_construction ELSE c.emp_construction END AS emp_construction,
-    CASE WHEN c.o_matched THEN c.o_emp_agriculture ELSE c.emp_agriculture END AS emp_agriculture,
-    CASE WHEN c.o_matched THEN c.o_emp_extraction ELSE c.emp_extraction END AS emp_extraction,
+    CASE WHEN c.o_form_jobs THEN c.o_emp_total ELSE c.emp * c.o_emp_scale END AS emp,
+    CASE WHEN c.o_form_jobs THEN c.o_emp_ret ELSE c.emp_ret * c.o_emp_scale END AS emp_ret,
+    CASE WHEN c.o_form_jobs THEN c.o_emp_off ELSE c.emp_off * c.o_emp_scale END AS emp_off,
+    CASE WHEN c.o_form_jobs THEN c.o_emp_pub ELSE c.emp_pub * c.o_emp_scale END AS emp_pub,
+    CASE WHEN c.o_form_jobs THEN c.o_emp_ind ELSE c.emp_ind * c.o_emp_scale END AS emp_ind,
+    CASE WHEN c.o_form_jobs THEN c.o_emp_ag ELSE c.emp_ag * c.o_emp_scale END AS emp_ag,
+    CASE WHEN c.o_form_jobs THEN c.o_emp_military ELSE c.emp_military * c.o_emp_scale END AS emp_military,
+    CASE WHEN c.o_form_jobs THEN c.o_emp_retail_services ELSE c.emp_retail_services * c.o_emp_scale END AS emp_retail_services,
+    CASE WHEN c.o_form_jobs THEN c.o_emp_restaurant ELSE c.emp_restaurant * c.o_emp_scale END AS emp_restaurant,
+    CASE WHEN c.o_form_jobs THEN c.o_emp_accommodation ELSE c.emp_accommodation * c.o_emp_scale END AS emp_accommodation,
+    CASE WHEN c.o_form_jobs THEN c.o_emp_arts_entertainment ELSE c.emp_arts_entertainment * c.o_emp_scale END AS emp_arts_entertainment,
+    CASE WHEN c.o_form_jobs THEN c.o_emp_other_services ELSE c.emp_other_services * c.o_emp_scale END AS emp_other_services,
+    CASE WHEN c.o_form_jobs THEN c.o_emp_office_services ELSE c.emp_office_services * c.o_emp_scale END AS emp_office_services,
+    CASE WHEN c.o_form_jobs THEN c.o_emp_medical_services ELSE c.emp_medical_services * c.o_emp_scale END AS emp_medical_services,
+    CASE WHEN c.o_form_jobs THEN c.o_emp_public_admin ELSE c.emp_public_admin * c.o_emp_scale END AS emp_public_admin,
+    CASE WHEN c.o_form_jobs THEN c.o_emp_education ELSE c.emp_education * c.o_emp_scale END AS emp_education,
+    CASE WHEN c.o_form_jobs THEN c.o_emp_manufacturing ELSE c.emp_manufacturing * c.o_emp_scale END AS emp_manufacturing,
+    CASE WHEN c.o_form_jobs THEN c.o_emp_wholesale ELSE c.emp_wholesale * c.o_emp_scale END AS emp_wholesale,
+    CASE WHEN c.o_form_jobs
+        THEN c.o_emp_transport_warehousing
+        ELSE c.emp_transport_warehousing * c.o_emp_scale
+    END AS emp_transport_warehousing,
+    CASE WHEN c.o_form_jobs THEN c.o_emp_utilities ELSE c.emp_utilities * c.o_emp_scale END AS emp_utilities,
+    CASE WHEN c.o_form_jobs THEN c.o_emp_construction ELSE c.emp_construction * c.o_emp_scale END AS emp_construction,
+    CASE WHEN c.o_form_jobs THEN c.o_emp_agriculture ELSE c.emp_agriculture * c.o_emp_scale END AS emp_agriculture,
+    CASE WHEN c.o_form_jobs THEN c.o_emp_extraction ELSE c.emp_extraction * c.o_emp_scale END AS emp_extraction,
     c.bldg_area_detsf_sl,
     c.bldg_area_detsf_ll,
     c.bldg_area_attsf,
