@@ -23,7 +23,7 @@ MODEL (
     imputed_units = 'Median dwelling unit count among the nearest neighbour parcels.',
     imputed_living_sqft = 'Median living area among the nearest neighbour parcels (sq ft).',
     imputed_building_sqft = 'Median total building area among the nearest neighbour parcels (sq ft).',
-    imputed_from_tier = 'Narrowest tier that supplied neighbours: 1 block group, 2 tract, 3 county-wide.',
+    imputed_from_tier = 'Narrowest tier that supplied neighbours: 1 block group, 2 tract, 3 within 5 km.',
     neighbor_count = 'Number of neighbour parcels used in the estimate, up to 5 per tier.'
   ),
   audits (
@@ -43,7 +43,7 @@ MODEL (
 -- Three-tier fallback strategy:
 --   Tier 1 — same block_group_geoid + same land_development_category
 --   Tier 2 — same tract_geoid + same land_development_category
---   Tier 3 — same land_development_category (county-wide)
+--   Tier 3 — same land_development_category within 5 km
 --
 -- k = 5 (default footprint_imputation_k)
 
@@ -59,7 +59,7 @@ latest_block_groups AS (
 unknown AS (
     SELECT
         pbf.apn,
-        pbf.geometry,
+        sap.local_geometry,
         pbf.footprint_ratio,
         pbf.building_count,
         pbf.lot_size_acres,
@@ -68,6 +68,7 @@ unknown AS (
         pbg.tract_geoid
     FROM brewgis.@{region}.parcel_building_footprints pbf
     JOIN latest_block_groups pbg ON pbf.apn = pbg.apn
+    JOIN brewgis.@{region}.assessor_parcels sap ON pbf.apn = sap.apn
     LEFT JOIN brewgis.@{region}.parcel_sales_features k ON pbf.apn = k.apn
     WHERE pbf.footprint_ratio > 0
       AND k.apn IS NULL
@@ -230,7 +231,7 @@ tier2_ranked AS (
     FROM tier2
 ),
 
--- Tier 3: fallback — same land_development_category (county-wide)
+-- Tier 3: fallback — same land_development_category within 5 km
 tier3 AS (
     SELECT
         u.apn,
@@ -263,9 +264,12 @@ tier3 AS (
     FROM unknown u
     LEFT JOIN county_stats cs
         ON u.land_development_category = cs.land_development_category
+    -- Known parcels within 5 km, found through the GiST index on
+    -- parcel_sales_features.local_geometry: the probe returns only known
+    -- parcels, not every assessor parcel in the radius.
     JOIN brewgis.@{region}.parcel_sales_features k
-        ON u.land_development_category = k.land_development_category
-       AND ST_DWithin(u.geometry, k.geometry, 5000)
+        ON ST_DWithin(u.local_geometry, k.local_geometry, @metres_in_local_units(5000.0))
+       AND u.land_development_category = k.land_development_category
        AND k.footprint_ratio BETWEEN
            u.footprint_ratio - 3 * COALESCE(cs.s_fr, u.footprint_ratio + 1)
            AND u.footprint_ratio + 3 * COALESCE(cs.s_fr, u.footprint_ratio + 1)

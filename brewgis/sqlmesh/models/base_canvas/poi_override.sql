@@ -104,13 +104,31 @@ MODEL (
     not_null(columns := (parcel_id)),
     number_of_rows(threshold := 1)
   ),
+  -- The POI *bridge*, in addition to the published VIEW the SELECT reads:
+  -- SQLMesh substitutes a referenced model's physical table in this model's
+  -- statements only for a declared dependency, and the pre_statements index
+  -- must land on the bridge (Postgres rejects an index on the VIEW).
   depends_on (
     brewgis.seeds.default_built_forms,
     brewgis.seeds.poi_built_form_map,
-    brewgis.@{region}.poi
+    brewgis.@{region}.poi,
+    brewgis.@{region}.poi_raw
   ),
   blueprints @region_blueprints()
 );
+
+-- pre_statements
+-- GiST expression index on the POI bridge so the parcel/POI ST_Intersects in
+-- poi_match is an index probe per parcel instead of a nested loop over every
+-- parcel x POI pair. The expression is exactly what the published
+-- brewgis.<region>.poi VIEW inlines into the predicate (ST_SetSRID(geometry,
+-- 4326)); an index on the bare column holds SRID 0 and is never used. It cannot
+-- live in the bridge's own post_statements: the bridge is duckdb-gateway, and
+-- DuckDB has no ST_SetSRID. Version-scoped name for the same reason as
+-- analysis/core_end_state.sql.
+  CREATE INDEX IF NOT EXISTS @snapshot_hash('idx_poi_bridge_geom_')
+  ON brewgis.@{region}.poi_raw
+  USING GIST (ST_SetSRID(geometry, 4326));
 
 -- Base Canvas POI Override — the base canvas with OpenStreetMap points of
 -- interest turned into built forms.

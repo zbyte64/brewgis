@@ -35,6 +35,7 @@ WITH latest_block_groups AS (
 SELECT DISTINCT ON (pbf.apn)
     pbf.apn,
     pbf.geometry,
+    sap.local_geometry,
     pbf.footprint_ratio,
     pbf.building_count,
     pbf.lot_size_acres,
@@ -47,6 +48,7 @@ SELECT DISTINCT ON (pbf.apn)
     s.building_sf AS building_sqft
 FROM brewgis.{region}.parcel_building_footprints pbf
 JOIN latest_block_groups pbg ON pbf.apn = pbg.apn
+JOIN brewgis.{region}.assessor_parcels sap ON pbf.apn = sap.apn
 JOIN {sales_raw_table} s ON pbf.apn = s.apn
 WHERE pbf.footprint_ratio > 0
   AND s.property_type IS NOT NULL
@@ -57,6 +59,7 @@ EMPTY_QUERY = """
 SELECT
     NULL::text AS apn,
     NULL::geometry AS geometry,
+    NULL::geometry AS local_geometry,
     NULL::double precision AS footprint_ratio,
     NULL::integer AS building_count,
     NULL::double precision AS lot_size_acres,
@@ -85,6 +88,7 @@ _SALES_RAW_TABLE = {
     column_descriptions={
         "apn": "Assessor parcel number (APN) of the parcel.",
         "geometry": "Parcel boundary geometry (EPSG:4326) from parcel_building_footprints.",
+        "local_geometry": "Parcel boundary in the region local SRID from assessor_parcels; GiST-indexed for the k-NN radius probe.",
         "footprint_ratio": "Building floor area divided by parcel lot area (ratio 0-1).",
         "building_count": "Number of buildings on the parcel.",
         "lot_size_acres": "Parcel lot size (acres).",
@@ -99,6 +103,7 @@ _SALES_RAW_TABLE = {
     columns={
         "apn": "text",
         "geometry": "geometry",
+        "local_geometry": "geometry",
         "footprint_ratio": "double",
         "building_count": "int",
         "lot_size_acres": "double",
@@ -117,12 +122,16 @@ _SALES_RAW_TABLE = {
     depends_on=[
         "brewgis.@{region}.parcel_building_footprints",
         "brewgis.@{region}.parcel_block_groups",
+        "brewgis.@{region}.assessor_parcels",
         "@IF(@sales_raw_table != '', brewgis.sacog.assessor_sales_raw, brewgis.@{region}.parcel_shim)",
     ],
     post_statements=[
         "CREATE INDEX IF NOT EXISTS "
         "@snapshot_hash('idx_parcel_sales_features_geometry_') "
         "ON @this_model USING GIST (geometry)",
+        "CREATE INDEX IF NOT EXISTS "
+        "@snapshot_hash('idx_parcel_sales_features_local_geom_') "
+        "ON @this_model USING GIST (local_geometry)",
         "CREATE INDEX IF NOT EXISTS "
         "@snapshot_hash('idx_parcel_sales_features_apn_') "
         "ON @this_model USING btree (apn)",

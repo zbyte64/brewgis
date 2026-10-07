@@ -176,6 +176,8 @@ test_school_parcel_takes_k12_school:
           category: shopping
           subcategory: "shop=supermarket"
           geometry: "POINT(9 1)"
+    brewgis.sacog.poi_raw:
+      rows: *poi_rows
     brewgis.seeds.default_built_forms:
       rows: &library_rows
         # The library's own densities and mixes, so a retune in
@@ -250,6 +252,8 @@ test_park_parcel_gets_no_dwellings_and_no_jobs:
       columns: *combined_columns
     brewgis.sacog.poi:
       rows: *poi_rows
+    brewgis.sacog.poi_raw:
+      rows: *poi_rows
     brewgis.seeds.default_built_forms:
       rows: *library_rows
     brewgis.seeds.poi_built_form_map:
@@ -300,6 +304,8 @@ test_parcel_without_poi_is_unchanged:
       columns: *combined_columns
     brewgis.sacog.poi:
       rows: *poi_rows
+    brewgis.sacog.poi_raw:
+      rows: *poi_rows
     brewgis.seeds.default_built_forms:
       rows: *library_rows
     brewgis.seeds.poi_built_form_map:
@@ -338,6 +344,8 @@ test_school_beats_park_on_priority:
       columns: *combined_columns
     brewgis.sacog.poi:
       rows: *poi_rows
+    brewgis.sacog.poi_raw:
+      rows: *poi_rows
     brewgis.seeds.default_built_forms:
       rows: *library_rows
     brewgis.seeds.poi_built_form_map:
@@ -372,6 +380,8 @@ test_hospital_beats_school_on_priority:
           occupied_du: 9.5
       columns: *combined_columns
     brewgis.sacog.poi:
+      rows: *poi_rows
+    brewgis.sacog.poi_raw:
       rows: *poi_rows
     brewgis.seeds.default_built_forms:
       rows: *library_rows
@@ -408,6 +418,8 @@ test_shopping_splits_its_jobs_across_sectors:
           occupied_du: 9.5
       columns: *combined_columns
     brewgis.sacog.poi:
+      rows: *poi_rows
+    brewgis.sacog.poi_raw:
       rows: *poi_rows
     brewgis.seeds.default_built_forms:
       rows: *library_rows
