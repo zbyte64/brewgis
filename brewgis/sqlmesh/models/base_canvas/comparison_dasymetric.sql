@@ -66,13 +66,12 @@ MODEL (
 -- Region Comparison Dasymetric Crosswalk — enriches parcels with dasymetric
 -- weights, DU estimation, and regressor predictions.
 --
--- For regions with real assessor APNs (SACOG) multiple parcels can share one
--- APN (or one parcel intersects several APNs); scalar quantities are
--- allocated proportionally by intersection area then summed per parcel.
--- For regions without assessor data (Fresno) the dasymetric_intersections
--- adapter yields a 1:1 parcel→apn mapping, so apn_weight = 1.0 and the sums
--- pass values through unchanged.  Identical SQL — the adapter difference
--- makes both cases work.
+-- Both regions read a county assessor roll, so several parcels can share one
+-- APN and one parcel can overlap several APNs: each APN's scalar quantities
+-- are split across the parcels it overlaps in proportion to the polygon
+-- overlap area (dasymetric_intersections), then summed per parcel. An APN
+-- that lies inside one parcel has apn_weight = 1.0 and passes through
+-- unchanged.
 --
 -- Categorical columns are taken from the APN with the largest intersection
 -- area for that parcel. The aggregation by parcel_id produces exactly one

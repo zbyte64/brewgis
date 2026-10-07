@@ -1,0 +1,47 @@
+test_dasymetric_intersections_weights_by_true_overlap:
+  # A neighbouring APN that only shares an edge with the parcel must not receive
+  # any of its allocation, and a partial overlap is weighted by the shared area
+  # (local_srid, EPSG:3310 metres, reported in sq ft) — not by bounding boxes.
+  model: brewgis.sacog.dasymetric_intersections
+  gateway: postgis
+  inputs:
+    brewgis.sacog.parcel_shim:
+      rows:
+        - parcel_id: "P1"
+          geometry: "POLYGON((0 0, 10 0, 10 10, 0 10, 0 0))"
+          local_geometry: "POLYGON((0 0, 10 0, 10 10, 0 10, 0 0))"
+      columns:
+        parcel_id: TEXT
+        geometry: GEOMETRY
+        local_geometry: GEOMETRY
+    brewgis.sacog.assessor_parcels:
+      rows:
+        - apn: "APN_INSIDE"
+          geometry: "POLYGON((0 0, 10 0, 10 5, 0 5, 0 0))"
+          local_geometry: "POLYGON((0 0, 10 0, 10 5, 0 5, 0 0))"
+        - apn: "APN_EDGE"
+          geometry: "POLYGON((10 0, 20 0, 20 10, 10 10, 10 0))"
+          local_geometry: "POLYGON((10 0, 20 0, 20 10, 10 10, 10 0))"
+        - apn: "APN_PARTIAL"
+          geometry: "POLYGON((0 5, 10 5, 10 15, 0 15, 0 5))"
+          local_geometry: "POLYGON((0 5, 10 5, 10 15, 0 15, 0 5))"
+      columns:
+        apn: TEXT
+        geometry: GEOMETRY
+        local_geometry: GEOMETRY
+    brewgis.sacog.parcel_dasymetric_weights:
+      rows:
+        - apn: "APN_INSIDE"
+        - apn: "APN_EDGE"
+        - apn: "APN_PARTIAL"
+      columns:
+        apn: TEXT
+  outputs:
+    query:
+      rows:
+        - parcel_id: "P1"
+          apn: "APN_INSIDE"
+          intersect_area_sqft: 538.195
+        - parcel_id: "P1"
+          apn: "APN_PARTIAL"
+          intersect_area_sqft: 538.195
