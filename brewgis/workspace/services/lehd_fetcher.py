@@ -2,7 +2,7 @@
 
 The LODES fetch itself is a SQLMesh model: ``duckdb.<region>.lodes_raw`` reads
 the gzipped WAC CSV from the CES FTP through httpfs and
-``brewgis.<region>.wac_block_raw`` splits CNS sectors into NAICS sub-sectors on
+``brewgis.<region>.wac_block_raw`` maps CNS sectors to base-canvas sub-sectors on
 the way into PostGIS. Django's part is the import form, the plan, and the copy
 into the workspace schema (see ``tasks.run_lehd_fetch``); what remains here are
 the WAC variable names, the sub-sector split rules, and the aggregate-column
@@ -22,30 +22,33 @@ logger = logging.getLogger(__name__)
 
 
 # LODES WAC columns: w_geocode (15-digit GEOID), C000 (total jobs),
-# CNS01-CNS17 (NAICS sector aggregates per block)
+# CNS01-CNS20 (the 20 two-digit NAICS sectors per block, LODES8 tech doc)
 
 LODES_WAC_VARIABLES: dict[str, str] = {
     "C000": "emp",
-    "CNS01": "cns_goods_producing",
-    "CNS02": "cns_manufacturing",
-    "CNS03": "cns_trade_transport_utilities",
-    "CNS04": "cns_information",
-    "CNS05": "cns_finance_insurance",
-    "CNS06": "cns_real_estate",
-    "CNS07": "cns_professional_services",
-    "CNS08": "cns_management",
-    "CNS09": "cns_admin_support",
-    "CNS10": "cns_educational_services",
-    "CNS11": "cns_health_care",
-    "CNS12": "cns_arts_entertainment",
-    "CNS13": "cns_accommodation_food",
-    "CNS14": "cns_other_services",
-    "CNS15": "cns_public_administration",
-    "CNS16": "cns_unclassified",
-    "CNS17": "cns_armed_forces",
+    "CNS01": "cns_agriculture",  # NAICS 11
+    "CNS02": "cns_mining",  # NAICS 21
+    "CNS03": "cns_utilities",  # NAICS 22
+    "CNS04": "cns_construction",  # NAICS 23
+    "CNS05": "cns_manufacturing",  # NAICS 31-33
+    "CNS06": "cns_wholesale",  # NAICS 42
+    "CNS07": "cns_retail",  # NAICS 44-45
+    "CNS08": "cns_transportation_warehousing",  # NAICS 48-49
+    "CNS09": "cns_information",  # NAICS 51
+    "CNS10": "cns_finance_insurance",  # NAICS 52
+    "CNS11": "cns_real_estate",  # NAICS 53
+    "CNS12": "cns_professional_services",  # NAICS 54
+    "CNS13": "cns_management",  # NAICS 55
+    "CNS14": "cns_admin_support",  # NAICS 56
+    "CNS15": "cns_educational_services",  # NAICS 61
+    "CNS16": "cns_health_care",  # NAICS 62
+    "CNS17": "cns_arts_entertainment",  # NAICS 71
+    "CNS18": "cns_accommodation_food",  # NAICS 72
+    "CNS19": "cns_other_services",  # NAICS 81
+    "CNS20": "cns_public_administration",  # NAICS 92
 }
 
-# ── CBP-Based Sub-Sector Splitting Rules ──────────────────────────────
+# ── CNS → Base-Canvas Sub-Sector Rules ────────────────────────────────
 #
 # Each key is a LODES CNS column name. The value is a list of (target_sub_sector, source_spec)
 # tuples where source_spec is:
@@ -53,45 +56,34 @@ LODES_WAC_VARIABLES: dict[str, str] = {
 #   * A float — fixed fraction of the CNS total
 #   * None — takes the remainder after all previous non-None entries in the list
 #
-# CBP proportions are computed per-county from Census CBP API data.
+# Only CNS18 (NAICS 72) is split, by the CBP NAICS 721 share of NAICS 72.
+# LODES has no military segment, so emp_military has no source.
 
 _NAICS_SPLIT_RULES: dict[str, list[tuple[str, str | float | None]]] = {
-    # CNS01 (Goods producing NAICS 11-23) → CBP-based split
-    "CNS01": [
-        ("emp_agriculture", r"^11\s*-*"),
-        ("emp_extraction", r"^21\s*-*"),
-        ("emp_construction", None),  # remainder (NAICS 23)
-    ],
-    # CNS02 (Manufacturing 31-33) → fixed national ratio
-    "CNS02": [
-        ("emp_manufacturing", 1.0),
-    ],
-    # CNS03 (Trade, Transport, Utilities) → CBP split
-    "CNS03": [
-        ("emp_transport_warehousing", r"^(48|49)\s*-*"),
-        ("emp_utilities", r"^22\s*-*"),
-        ("emp_wholesale", r"^42\s*-*"),  # split wholesale via CBP
-        ("emp_retail_services", None),  # remainder = retail (44-45) only
-    ],
-    # CNS04-09 → all map to office services
-    "CNS04": [("emp_office_services", 1.0)],  # Information (51)
-    "CNS05": [("emp_office_services", 1.0)],  # Finance & Insurance (52)
-    "CNS06": [("emp_office_services", 1.0)],  # Real Estate (53)
-    "CNS07": [("emp_office_services", 1.0)],  # Professional Services (54)
-    "CNS08": [("emp_office_services", 1.0)],  # Management (55)
-    "CNS09": [("emp_office_services", 1.0)],  # Admin & Support (56)
-    # CNS10-12 → direct mappings
-    "CNS10": [("emp_education", 1.0)],  # Educational Services (61)
-    "CNS11": [("emp_medical_services", 1.0)],  # Health Care (62)
-    "CNS12": [("emp_arts_entertainment", 1.0)],  # Arts, Entertainment (71)
-    # CNS13 (Accommodation/Food 72) → CBP split
-    "CNS13": [
+    "CNS01": [("emp_agriculture", 1.0)],
+    "CNS02": [("emp_extraction", 1.0)],
+    "CNS03": [("emp_utilities", 1.0)],
+    "CNS04": [("emp_construction", 1.0)],
+    "CNS05": [("emp_manufacturing", 1.0)],
+    "CNS06": [("emp_wholesale", 1.0)],
+    "CNS07": [("emp_retail_services", 1.0)],
+    "CNS08": [("emp_transport_warehousing", 1.0)],
+    # CNS09-14 (NAICS 51-56) → office services
+    "CNS09": [("emp_office_services", 1.0)],
+    "CNS10": [("emp_office_services", 1.0)],
+    "CNS11": [("emp_office_services", 1.0)],
+    "CNS12": [("emp_office_services", 1.0)],
+    "CNS13": [("emp_office_services", 1.0)],
+    "CNS14": [("emp_office_services", 1.0)],
+    "CNS15": [("emp_education", 1.0)],
+    "CNS16": [("emp_medical_services", 1.0)],
+    "CNS17": [("emp_arts_entertainment", 1.0)],
+    "CNS18": [
         ("emp_accommodation", r"^721\s*-*"),
         ("emp_restaurant", None),  # remainder (722)
     ],
-    "CNS14": [("emp_other_services", 1.0)],  # Other Services (81)
-    "CNS15": [("emp_public_admin", 1.0)],  # Public Administration (92)
-    "CNS17": [("emp_military", 1.0)],  # Armed Forces
+    "CNS19": [("emp_other_services", 1.0)],
+    "CNS20": [("emp_public_admin", 1.0)],
 }
 
 # Aggregate employment columns used in base canvas

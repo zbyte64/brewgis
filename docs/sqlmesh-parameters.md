@@ -640,8 +640,9 @@ in rough descending order of frequency:
 5. **Sigmoid SL/LL split** parameters (steepness, midpoint) — replaced
    fixed 0.15ac lot-size boundary with intersection-density-based sigmoid.
 
-6. **CBP employment proportion variables** (`cbp_11`, `cbp_21`, etc.) —
-   parameterized from hard-coded zeros to `@VAR()` references (commit 689af81).
+6. **CBP employment proportion variable** (`cbp_721`, the NAICS 721 share of
+   LODES CNS18) — parameterized from a hard-coded zero to an `@VAR()` reference
+   (commit 689af81).
 
 ### Tuning Strategy
 

@@ -4,30 +4,30 @@ MODEL (
     unique_key (geoid, data_year),
     batch_size 100000
   ),
-  description 'Block-level LEHD LODES WAC employment whose CNS sectors are split into NAICS sub-sectors with CBP county proportions and TIGER-matched geometry, one row per block and year.',
+  description 'Block-level LEHD LODES WAC employment with its CNS01-CNS20 NAICS sectors mapped to base-canvas sub-sectors and TIGER-matched geometry, one row per block and year.',
   column_descriptions (
     geoid = '15-digit census block GEOID (state+county+tract+block FIPS) from LODES w_geocode.',
     geometry = 'Block geometry (EPSG:4326) from TIGER/Line, matched at block, block group or tract level.',
-    emp = 'Total jobs reported for the block by LODES C000, before any sub-sector split.',
+    emp = 'Total jobs reported for the block by LODES C000.',
     data_year = 'First day of the LODES year (make_date(@lodes_year, 1, 1)) the jobs refer to.',
-    emp_education = 'Education employment (jobs): CNS10 plus the fixed education share of CNS18-20 jobs.',
-    emp_medical_services = 'Medical services employment (jobs): CNS11 plus the fixed medical share of CNS18-20 jobs.',
-    emp_public_admin = 'Public administration jobs: CNS15 plus the fixed public administration share of CNS18-20.',
-    emp_agriculture = 'Agricultural employment (jobs): CNS01 times the CBP NAICS 11 proportion, plus a CNS16 share.',
-    emp_extraction = 'Extraction employment (jobs): CNS01 times the CBP NAICS 21 proportion, plus a CNS16 share.',
-    emp_construction = 'Construction jobs: CNS01 remainder after the CBP agriculture and extraction shares.',
-    emp_manufacturing = 'Manufacturing employment (jobs): CNS02 plus a proportional share of the CNS16 jobs.',
-    emp_transport_warehousing = 'Transport and warehousing jobs: CNS03 times the CBP NAICS 48 and 49 shares.',
-    emp_utilities = 'Utilities employment (jobs): CNS03 times the CBP NAICS 22 proportion.',
-    emp_wholesale = 'Wholesale employment (jobs): CNS03 times the CBP NAICS 42 proportion.',
-    emp_retail_services = 'Retail services jobs: CNS03 remainder after CBP transport, utilities and wholesale shares.',
-    emp_office_services = 'Office services employment (jobs): the total of CNS04 through CNS09 plus a CNS16 share.',
-    emp_arts_entertainment = 'Arts and entertainment jobs: CNS12 plus a proportional share of the CNS16 jobs.',
-    emp_accommodation = 'Accommodation employment (jobs): CNS13 times the CBP NAICS 721 proportion.',
-    emp_restaurant = 'Restaurant employment (jobs): CNS13 remainder after the CBP NAICS 721 accommodation share.',
-    emp_other_services = 'Other services employment (jobs): CNS14 plus a proportional share of the CNS16 jobs.',
-    emp_military = 'Military employment (jobs): CNS17 plus a proportional share of the CNS16 jobs.',
-    emp_ag = 'Agricultural employment (jobs), the CBP-split CNS01 value (base canvas aggregate).',
+    emp_education = 'Educational services jobs: LODES CNS15 (NAICS 61).',
+    emp_medical_services = 'Health care and social assistance jobs: LODES CNS16 (NAICS 62).',
+    emp_public_admin = 'Public administration jobs: LODES CNS20 (NAICS 92).',
+    emp_agriculture = 'Agriculture, forestry, fishing and hunting jobs: LODES CNS01 (NAICS 11).',
+    emp_extraction = 'Mining, quarrying, and oil and gas extraction jobs: LODES CNS02 (NAICS 21).',
+    emp_construction = 'Construction jobs: LODES CNS04 (NAICS 23).',
+    emp_manufacturing = 'Manufacturing jobs: LODES CNS05 (NAICS 31-33).',
+    emp_transport_warehousing = 'Transportation and warehousing jobs: LODES CNS08 (NAICS 48-49).',
+    emp_utilities = 'Utilities jobs: LODES CNS03 (NAICS 22).',
+    emp_wholesale = 'Wholesale trade jobs: LODES CNS06 (NAICS 42).',
+    emp_retail_services = 'Retail trade jobs: LODES CNS07 (NAICS 44-45).',
+    emp_office_services = 'Office services jobs: LODES CNS09 through CNS14 (NAICS 51-56) summed.',
+    emp_arts_entertainment = 'Arts, entertainment and recreation jobs: LODES CNS17 (NAICS 71).',
+    emp_accommodation = 'Accommodation jobs: LODES CNS18 (NAICS 72) times the CBP NAICS 721 share (@cbp_721).',
+    emp_restaurant = 'Food services jobs: LODES CNS18 (NAICS 72) remainder after the accommodation share.',
+    emp_other_services = 'Other services jobs: LODES CNS19 (NAICS 81).',
+    emp_military = 'Military jobs, always 0: LODES WAC has no armed-forces segment; kept for the base canvas schema.',
+    emp_ag = 'Agricultural employment (jobs), equal to emp_agriculture (base canvas aggregate).',
     emp_ret = 'Retail employment (jobs): the five retail sub-sectors summed (base canvas aggregate).',
     emp_off = 'Office employment (jobs): office services plus medical services (base canvas aggregate).',
     emp_pub = 'Public employment (jobs): education plus public administration (base canvas aggregate).',
@@ -39,12 +39,14 @@ MODEL (
   blueprints @region_blueprints()
 );
 
--- LEHD LODES WAC → Block-Level Employment (Raw CNS Split)
+-- LEHD LODES WAC → Block-Level Employment
 --
 -- Joins lodes_raw staging data with TIGER/Line block geometry (15-digit
--- GEOID), splits CNS employment into NAICS-based sub-sectors using CBP
--- proportions, and distributes CNS16 (unclassified) employment
--- proportionally across sub-sectors.
+-- GEOID) and maps the LODES CNS01-CNS20 NAICS sectors (LODES8 tech doc,
+-- WAC table) to base-canvas sub-sectors. Every CNS column maps one-to-one
+-- except CNS09-CNS14 (office services) and CNS18 (NAICS 72), which is split
+-- into accommodation (721) and food services (722) by @cbp_721. LODES WAC
+-- has no armed-forces segment, so emp_military is 0.
 --
 -- Geometry resolution — three-tier fallback:
 --   Tier 1: exact 15-digit geoid match to tiger_blocks (preferred)
@@ -52,17 +54,7 @@ MODEL (
 --   Tier 3: any block group in the same census tract (tiger_block_groups)
 --   Excluded: blocks with no TIGER match at any tier
 --
--- CBP proportion parameters (SQLMesh @VAR variables, defaulting to passthrough):
---   @VAR('cbp_11', 0.0)          = agriculture share of CNS01
---   @VAR('cbp_21', 0.0)          = extraction share of CNS01
---   @VAR('cbp_48', 0.0)          = transport share of CNS03
---   @VAR('cbp_49', 0.0)          = warehousing share of CNS03
---   @VAR('cbp_22', 0.0)          = utilities share of CNS03
---   @VAR('cbp_42', 0.0)          = wholesale share of CNS03
---   @VAR('cbp_721', 0.0)         = accommodation share of CNS13
---   @VAR('cns18_20_edu_frac', 0.24)  = education share of CNS18-20 govt workers
---   @VAR('cns18_20_med_frac', 0.37)  = medical share of CNS18-20 govt workers
---   @VAR('cns18_20_pub_frac', 0.39)  = public admin share of CNS18-20 govt workers
+-- @VAR('cbp_721', 0.0) = NAICS 721 (accommodation) share of CNS18 (NAICS 72)
 
 WITH lodes_blocks AS (
     SELECT DISTINCT
@@ -100,70 +92,33 @@ block_geometry_map AS (
     WHERE COALESCE(tb.wgs84_geometry, tbg.wgs84_geometry, tbg_fallback.wgs84_geometry) IS NOT NULL
 ),
 
-cbp_sub_sectors AS (
+sectors AS (
     SELECT
         lr.w_geocode AS geoid,
         ST_Multi(bm.geometry) AS geometry,
-        lr.c000,
-        -- CNS01 -> goods producing: agriculture (11), extraction (21), remainder construction (23)
-        CASE WHEN COALESCE(lr.cns01, 0) > 0
-            THEN GREATEST(0, ROUND(COALESCE(lr.cns01, 0)::numeric * @VAR('cbp_11', 0.0), 1))
-            ELSE 0 END AS emp_agriculture_cbp,
-        CASE WHEN COALESCE(lr.cns01, 0) > 0
-            THEN GREATEST(0, ROUND(COALESCE(lr.cns01, 0)::numeric * @VAR('cbp_21', 0.0), 1))
-            ELSE 0 END AS emp_extraction_cbp,
-        CASE WHEN COALESCE(lr.cns01, 0) > 0
-            THEN GREATEST(0, COALESCE(lr.cns01, 0)::numeric
-                - ROUND(COALESCE(lr.cns01, 0)::numeric * @VAR('cbp_11', 0.0), 1)
-                - ROUND(COALESCE(lr.cns01, 0)::numeric * @VAR('cbp_21', 0.0), 1))
-            ELSE 0 END AS emp_construction_cbp,
-        -- CNS02 -> manufacturing
-        COALESCE(lr.cns02, 0)::numeric AS emp_manufacturing_cbp,
-        -- CNS03 -> trade/transport/utilities
-        CASE WHEN COALESCE(lr.cns03, 0) > 0
-            THEN GREATEST(0, ROUND(COALESCE(lr.cns03, 0)::numeric * (@VAR('cbp_48', 0.0) + @VAR('cbp_49', 0.0)), 1))
-            ELSE 0 END AS emp_transport_warehousing_cbp,
-        CASE WHEN COALESCE(lr.cns03, 0) > 0
-            THEN GREATEST(0, ROUND(COALESCE(lr.cns03, 0)::numeric * @VAR('cbp_22', 0.0), 1))
-            ELSE 0 END AS emp_utilities_cbp,
-        CASE WHEN COALESCE(lr.cns03, 0) > 0
-            THEN GREATEST(0, ROUND(COALESCE(lr.cns03, 0)::numeric * @VAR('cbp_42', 0.0), 1))
-            ELSE 0 END AS emp_wholesale_cbp,
-        CASE WHEN COALESCE(lr.cns03, 0) > 0
-            THEN GREATEST(0, COALESCE(lr.cns03, 0)::numeric
-                - ROUND(COALESCE(lr.cns03, 0)::numeric * (@VAR('cbp_48', 0.0) + @VAR('cbp_49', 0.0)), 1)
-                - ROUND(COALESCE(lr.cns03, 0)::numeric * @VAR('cbp_22', 0.0), 1)
-                - ROUND(COALESCE(lr.cns03, 0)::numeric * @VAR('cbp_42', 0.0), 1))
-            ELSE 0 END AS emp_retail_services_cbp,
-        -- CNS04-CNS09 -> office services
-        (COALESCE(lr.cns04, 0) + COALESCE(lr.cns05, 0) + COALESCE(lr.cns06, 0)
-            + COALESCE(lr.cns07, 0) + COALESCE(lr.cns08, 0) + COALESCE(lr.cns09, 0)
-        )::numeric AS emp_office_services_cbp,
-        -- CNS10 -> education
-        COALESCE(lr.cns10, 0)::numeric AS emp_education_cbp,
-        -- CNS11 -> medical
-        COALESCE(lr.cns11, 0)::numeric AS emp_medical_services_cbp,
-        -- CNS12 -> arts/entertainment
-        COALESCE(lr.cns12, 0)::numeric AS emp_arts_entertainment_cbp,
-        -- CNS13 -> accommodation/food: accommodation (721), remainder restaurant (722)
-        CASE WHEN COALESCE(lr.cns13, 0) > 0
-            THEN GREATEST(0, ROUND(COALESCE(lr.cns13, 0)::numeric * @VAR('cbp_721', 0.0), 1))
-            ELSE 0 END AS emp_accommodation_cbp,
-        CASE WHEN COALESCE(lr.cns13, 0) > 0
-            THEN GREATEST(0, COALESCE(lr.cns13, 0)::numeric
-                - ROUND(COALESCE(lr.cns13, 0)::numeric * @VAR('cbp_721', 0.0), 1))
-            ELSE 0 END AS emp_restaurant_cbp,
-        -- CNS14 -> other services
-        COALESCE(lr.cns14, 0)::numeric AS emp_other_services_cbp,
-        -- CNS15 + CNS18-20 -> public admin (all government sectors)
-        COALESCE(lr.cns15, 0)::numeric AS emp_public_admin_cbp,
-        -- CNS18-20: government workers (Federal, State, Local) distributed
-        -- to education/medical/public_admin via fixed fractions.
-        COALESCE(lr.cns18, 0) + COALESCE(lr.cns19, 0) + COALESCE(lr.cns20, 0) AS cns18_20_govt,
-        -- CNS17 -> military
-        COALESCE(lr.cns17::numeric, 0)::numeric AS emp_military_cbp,
-        -- CNS16 unclassified (distributed in later CTE)
-        COALESCE(lr.cns16::numeric, 0)::numeric AS cns16_unclassified
+        lr.c000 AS emp,
+        COALESCE(lr.cns01, 0)::numeric AS emp_agriculture,
+        COALESCE(lr.cns02, 0)::numeric AS emp_extraction,
+        COALESCE(lr.cns03, 0)::numeric AS emp_utilities,
+        COALESCE(lr.cns04, 0)::numeric AS emp_construction,
+        COALESCE(lr.cns05, 0)::numeric AS emp_manufacturing,
+        COALESCE(lr.cns06, 0)::numeric AS emp_wholesale,
+        COALESCE(lr.cns07, 0)::numeric AS emp_retail_services,
+        COALESCE(lr.cns08, 0)::numeric AS emp_transport_warehousing,
+        -- CNS09-CNS14 (NAICS 51-56) -> office services
+        (COALESCE(lr.cns09, 0) + COALESCE(lr.cns10, 0) + COALESCE(lr.cns11, 0)
+            + COALESCE(lr.cns12, 0) + COALESCE(lr.cns13, 0) + COALESCE(lr.cns14, 0)
+        )::numeric AS emp_office_services,
+        COALESCE(lr.cns15, 0)::numeric AS emp_education,
+        COALESCE(lr.cns16, 0)::numeric AS emp_medical_services,
+        COALESCE(lr.cns17, 0)::numeric AS emp_arts_entertainment,
+        -- CNS18 (NAICS 72): accommodation (721), remainder food services (722)
+        ROUND(COALESCE(lr.cns18, 0)::numeric * @VAR('cbp_721', 0.0), 1) AS emp_accommodation,
+        COALESCE(lr.cns18, 0)::numeric
+            - ROUND(COALESCE(lr.cns18, 0)::numeric * @VAR('cbp_721', 0.0), 1) AS emp_restaurant,
+        COALESCE(lr.cns19, 0)::numeric AS emp_other_services,
+        COALESCE(lr.cns20, 0)::numeric AS emp_public_admin,
+        0::numeric AS emp_military
     FROM brewgis.@{region}.lodes_raw lr
     JOIN block_geometry_map bm
         ON lr.w_geocode = bm.block_geoid
@@ -171,252 +126,13 @@ cbp_sub_sectors AS (
       AND LEFT(lr.w_geocode, 5) IN (
         SELECT CONCAT(@state_fips, c) FROM UNNEST(STRING_TO_ARRAY(@county_fips, ',')) AS c
       )
-),
-
--- Compute CBP-based aggregate columns and classified_total for CNS16 distribution.
-cbp_aggregates AS (
-    SELECT
-        *,
-        (emp_retail_services_cbp + emp_restaurant_cbp + emp_accommodation_cbp
-            + emp_arts_entertainment_cbp + emp_other_services_cbp) AS emp_ret_cbpm,
-        (emp_office_services_cbp + emp_medical_services_cbp) AS emp_off_cbpm,
-        (emp_education_cbp + emp_public_admin_cbp) AS emp_pub_cbpm,
-        (emp_manufacturing_cbp + emp_wholesale_cbp + emp_transport_warehousing_cbp
-            + emp_utilities_cbp + emp_construction_cbp) AS emp_ind_cbpm,
-        -- Total classified employment (excludes CNS16 and C000)
-        (
-            emp_agriculture_cbp + emp_extraction_cbp + emp_construction_cbp
-            + emp_manufacturing_cbp + emp_transport_warehousing_cbp
-            + emp_utilities_cbp + emp_wholesale_cbp + emp_retail_services_cbp
-            + emp_office_services_cbp + emp_education_cbp + emp_medical_services_cbp
-            + emp_arts_entertainment_cbp + emp_accommodation_cbp + emp_restaurant_cbp
-            + emp_other_services_cbp + emp_public_admin_cbp + emp_military_cbp
-        ) AS classified_total
-    FROM cbp_sub_sectors
-),
-
--- Uses CBP proportions directly (SACOG calibration removed).
-calibrated_sectors AS (
-    SELECT
-        geoid,
-        geometry,
-        c000 AS emp,
-        cns18_20_govt,
-        cns16_unclassified,
-        emp_agriculture_cbp AS emp_agriculture_calibrated,
-        emp_extraction_cbp AS emp_extraction_calibrated,
-        emp_construction_cbp AS emp_construction_calibrated,
-        emp_manufacturing_cbp AS emp_manufacturing_calibrated,
-        emp_transport_warehousing_cbp AS emp_transport_warehousing_calibrated,
-        emp_utilities_cbp AS emp_utilities_calibrated,
-        emp_wholesale_cbp AS emp_wholesale_calibrated,
-        emp_retail_services_cbp AS emp_retail_services_calibrated,
-        emp_office_services_cbp AS emp_office_services_calibrated,
-        emp_education_cbp AS emp_education_calibrated,
-        emp_medical_services_cbp AS emp_medical_services_calibrated,
-        emp_arts_entertainment_cbp AS emp_arts_entertainment_calibrated,
-        emp_accommodation_cbp AS emp_accommodation_calibrated,
-        emp_restaurant_cbp AS emp_restaurant_calibrated,
-        emp_other_services_cbp AS emp_other_services_calibrated,
-        emp_public_admin_cbp AS emp_public_admin_calibrated,
-        emp_military_cbp AS emp_military_calibrated,
-        emp_agriculture_cbp AS emp_ag,
-        emp_ret_cbpm AS emp_ret,
-        emp_off_cbpm AS emp_off,
-        emp_pub_cbpm AS emp_pub,
-        emp_ind_cbpm AS emp_ind,
-        classified_total
-    FROM cbp_aggregates
-),
-
-with_cns16 AS (
-    SELECT
-        geoid,
-        geometry,
-        emp,
-        cns18_20_govt,
-        ROUND(emp_agriculture_calibrated +
-            CASE
-                WHEN cns16_unclassified > 0 AND classified_total > 0
-                THEN cns16_unclassified * emp_agriculture_calibrated / classified_total
-                WHEN cns16_unclassified > 0 AND classified_total = 0
-                THEN cns16_unclassified / 17.0
-                ELSE 0
-            END, 1) AS emp_agriculture,
-        ROUND(emp_extraction_calibrated +
-            CASE
-                WHEN cns16_unclassified > 0 AND classified_total > 0
-                THEN cns16_unclassified * emp_extraction_calibrated / classified_total
-                WHEN cns16_unclassified > 0 AND classified_total = 0
-                THEN cns16_unclassified / 17.0
-                ELSE 0
-            END, 1) AS emp_extraction,
-        ROUND(emp_construction_calibrated +
-            CASE
-                WHEN cns16_unclassified > 0 AND classified_total > 0
-                THEN cns16_unclassified * emp_construction_calibrated / classified_total
-                WHEN cns16_unclassified > 0 AND classified_total = 0
-                THEN cns16_unclassified / 17.0
-                ELSE 0
-            END, 1) AS emp_construction,
-        ROUND(emp_manufacturing_calibrated +
-            CASE
-                WHEN cns16_unclassified > 0 AND classified_total > 0
-                THEN cns16_unclassified * emp_manufacturing_calibrated / classified_total
-                WHEN cns16_unclassified > 0 AND classified_total = 0
-                THEN cns16_unclassified / 17.0
-                ELSE 0
-            END, 1) AS emp_manufacturing,
-        ROUND(emp_transport_warehousing_calibrated +
-            CASE
-                WHEN cns16_unclassified > 0 AND classified_total > 0
-                THEN cns16_unclassified * emp_transport_warehousing_calibrated / classified_total
-                WHEN cns16_unclassified > 0 AND classified_total = 0
-                THEN cns16_unclassified / 17.0
-                ELSE 0
-            END, 1) AS emp_transport_warehousing,
-        ROUND(emp_utilities_calibrated +
-            CASE
-                WHEN cns16_unclassified > 0 AND classified_total > 0
-                THEN cns16_unclassified * emp_utilities_calibrated / classified_total
-                WHEN cns16_unclassified > 0 AND classified_total = 0
-                THEN cns16_unclassified / 17.0
-                ELSE 0
-            END, 1) AS emp_utilities,
-        ROUND(emp_wholesale_calibrated +
-            CASE
-                WHEN cns16_unclassified > 0 AND classified_total > 0
-                THEN cns16_unclassified * emp_wholesale_calibrated / classified_total
-                WHEN cns16_unclassified > 0 AND classified_total = 0
-                THEN cns16_unclassified / 17.0
-                ELSE 0
-            END, 1) AS emp_wholesale,
-        ROUND(emp_retail_services_calibrated +
-            CASE
-                WHEN cns16_unclassified > 0 AND classified_total > 0
-                THEN cns16_unclassified * emp_retail_services_calibrated / classified_total
-                WHEN cns16_unclassified > 0 AND classified_total = 0
-                THEN cns16_unclassified / 17.0
-                ELSE 0
-            END, 1) AS emp_retail_services,
-        ROUND(emp_office_services_calibrated +
-            CASE
-                WHEN cns16_unclassified > 0 AND classified_total > 0
-                THEN cns16_unclassified * emp_office_services_calibrated / classified_total
-                WHEN cns16_unclassified > 0 AND classified_total = 0
-                THEN cns16_unclassified / 17.0
-                ELSE 0
-            END, 1) AS emp_office_services,
-        ROUND(emp_education_calibrated +
-            CASE
-                WHEN cns16_unclassified > 0 AND classified_total > 0
-                THEN cns16_unclassified * emp_education_calibrated / classified_total
-                WHEN cns16_unclassified > 0 AND classified_total = 0
-                THEN cns16_unclassified / 17.0
-                ELSE 0
-            END, 1) AS emp_education,
-        ROUND(emp_medical_services_calibrated +
-            CASE
-                WHEN cns16_unclassified > 0 AND classified_total > 0
-                THEN cns16_unclassified * emp_medical_services_calibrated / classified_total
-                WHEN cns16_unclassified > 0 AND classified_total = 0
-                THEN cns16_unclassified / 17.0
-                ELSE 0
-            END, 1) AS emp_medical_services,
-        ROUND(emp_arts_entertainment_calibrated +
-            CASE
-                WHEN cns16_unclassified > 0 AND classified_total > 0
-                THEN cns16_unclassified * emp_arts_entertainment_calibrated / classified_total
-                WHEN cns16_unclassified > 0 AND classified_total = 0
-                THEN cns16_unclassified / 17.0
-                ELSE 0
-            END, 1) AS emp_arts_entertainment,
-        ROUND(emp_accommodation_calibrated +
-            CASE
-                WHEN cns16_unclassified > 0 AND classified_total > 0
-                THEN cns16_unclassified * emp_accommodation_calibrated / classified_total
-                WHEN cns16_unclassified > 0 AND classified_total = 0
-                THEN cns16_unclassified / 17.0
-                ELSE 0
-            END, 1) AS emp_accommodation,
-        ROUND(emp_restaurant_calibrated +
-            CASE
-                WHEN cns16_unclassified > 0 AND classified_total > 0
-                THEN cns16_unclassified * emp_restaurant_calibrated / classified_total
-                WHEN cns16_unclassified > 0 AND classified_total = 0
-                THEN cns16_unclassified / 17.0
-                ELSE 0
-            END, 1) AS emp_restaurant,
-        ROUND(emp_other_services_calibrated +
-            CASE
-                WHEN cns16_unclassified > 0 AND classified_total > 0
-                THEN cns16_unclassified * emp_other_services_calibrated / classified_total
-                WHEN cns16_unclassified > 0 AND classified_total = 0
-                THEN cns16_unclassified / 17.0
-                ELSE 0
-            END, 1) AS emp_other_services,
-        ROUND(emp_public_admin_calibrated +
-            CASE
-                WHEN cns16_unclassified > 0 AND classified_total > 0
-                THEN cns16_unclassified * emp_public_admin_calibrated / classified_total
-                WHEN cns16_unclassified > 0 AND classified_total = 0
-                THEN cns16_unclassified / 17.0
-                ELSE 0
-            END, 1) AS emp_public_admin,
-        ROUND(emp_military_calibrated +
-            CASE
-                WHEN cns16_unclassified > 0 AND classified_total > 0
-                THEN cns16_unclassified * emp_military_calibrated / classified_total
-                WHEN cns16_unclassified > 0 AND classified_total = 0
-                THEN cns16_unclassified / 17.0
-                ELSE 0
-            END, 1) AS emp_military,
-        emp_ag,
-        emp_ret,
-        emp_off,
-        emp_pub,
-        emp_ind
-    FROM calibrated_sectors
-),
-
--- Distribute CNS18-20 government employment across education, medical,
--- and public_admin sub-sectors using fixed fractions from dbt default vars.
-with_govt AS (
-    SELECT
-        geoid,
-        geometry,
-        emp,
-        make_date(@lodes_year::int, 1, 1) AS data_year,
-        ROUND(emp_education + cns18_20_govt * @VAR('cns18_20_edu_frac', 0.24), 1) AS emp_education,
-        ROUND(emp_medical_services + cns18_20_govt * @VAR('cns18_20_med_frac', 0.37), 1) AS emp_medical_services,
-        ROUND(emp_public_admin + cns18_20_govt * @VAR('cns18_20_pub_frac', 0.39), 1) AS emp_public_admin,
-        emp_agriculture,
-        emp_extraction,
-        emp_construction,
-        emp_manufacturing,
-        emp_transport_warehousing,
-        emp_utilities,
-        emp_wholesale,
-        emp_retail_services,
-        emp_office_services,
-        emp_arts_entertainment,
-        emp_accommodation,
-        emp_restaurant,
-        emp_other_services,
-        emp_military,
-        emp_ag,
-        emp_ret,
-        emp_off,
-        emp_pub,
-        emp_ind
-    FROM with_cns16
 )
 
 SELECT
     geoid,
     geometry,
     emp,
-    data_year,
+    make_date(@lodes_year::int, 1, 1) AS data_year,
     emp_education,
     emp_medical_services,
     emp_public_admin,
@@ -434,12 +150,14 @@ SELECT
     emp_restaurant,
     emp_other_services,
     emp_military,
-    emp_ag,
-    emp_ret,
-    emp_off,
-    emp_pub,
-    emp_ind
-FROM with_govt;
+    emp_agriculture AS emp_ag,
+    (emp_retail_services + emp_restaurant + emp_accommodation
+        + emp_arts_entertainment + emp_other_services) AS emp_ret,
+    (emp_office_services + emp_medical_services) AS emp_off,
+    (emp_education + emp_public_admin) AS emp_pub,
+    (emp_manufacturing + emp_wholesale + emp_transport_warehousing
+        + emp_utilities + emp_construction) AS emp_ind
+FROM sectors;
 
 -- post_statements
   CREATE INDEX IF NOT EXISTS @snapshot_hash('idx_wac_block_raw_geom_')

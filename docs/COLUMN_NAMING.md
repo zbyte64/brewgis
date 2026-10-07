@@ -121,12 +121,13 @@ Areas are in **acres** unless suffixed with `_sqft`.
 | `emp_pub` | — | Public aggregate (public_admin + education). |
 | `emp_ind` | — | Industrial aggregate (manufacturing + wholesale + transport_warehousing + utilities + construction + extraction + agriculture). |
 | `emp_ag` | — | Agriculture aggregate (agriculture only currently). |
-| `emp_military` | — | Armed forces (LODES CNS17). |
+| `emp_military` | — | Military jobs; always 0 from LODES (WAC has no military segment). |
 
 ### Detail sectors
 
-Each aggregate bucket breaks down into detail sub-sector columns via LODES
-NAICS splits (CBP county proportion or SACOG-calibrated defaults):
+Each aggregate bucket breaks down into detail sub-sector columns mapped from
+the LODES CNS01–CNS20 NAICS sectors; only NAICS 72 (CNS18) is split, into 721
+and 722 by the CBP county share `cbp_721`:
 
 | Canonical | Aggregate Parent(s) | NAICS |
 |---|---|---|
@@ -462,30 +463,33 @@ Raw ACS variables from dlt (normalized to lowercase, `_e` suffix):
 |---|---|---|
 | `w_geocode` | w_geocode | 15-digit block GEOID |
 | `c000` | C000 | Total jobs |
-| `cns01`–`cns17` | CNS01–CNS17 | NAICS sector job counts |
+| `cns01`–`cns20` | CNS01–CNS20 | Two-digit NAICS sector job counts |
 | `year` | — | Year |
 
 LEHD intermediate sub-sector columns (not persisted but used in computation):
 
 | Intermediate | Source | Meaning |
 |---|---|---|
-| `cns_goods_producing` | CNS01 | Goods producing |
-| `cns_manufacturing` | CNS02 | Manufacturing |
-| `cns_trade_transport_utilities` | CNS03 | Trade, transport, utilities |
-| `cns_information` | CNS04 | Information |
-| `cns_finance_insurance` | CNS05 | Finance & insurance |
-| `cns_real_estate` | CNS06 | Real estate |
-| `cns_professional_services` | CNS07 | Professional services |
-| `cns_management` | CNS08 | Management |
-| `cns_admin_support` | CNS09 | Admin & support |
-| `cns_educational_services` | CNS10 | Educational services |
-| `cns_health_care` | CNS11 | Health care |
-| `cns_arts_entertainment` | CNS12 | Arts & entertainment |
-| `cns_accommodation_food` | CNS13 | Accommodation & food |
-| `cns_other_services` | CNS14 | Other services |
-| `cns_public_administration` | CNS15 | Public administration |
-| `cns_unclassified` | CNS16 | Unclassified |
-| `cns_armed_forces` | CNS17 | Armed forces |
+| `cns_agriculture` | CNS01 | Agriculture, forestry, fishing & hunting (NAICS 11) |
+| `cns_mining` | CNS02 | Mining, quarrying, oil & gas extraction (NAICS 21) |
+| `cns_utilities` | CNS03 | Utilities (NAICS 22) |
+| `cns_construction` | CNS04 | Construction (NAICS 23) |
+| `cns_manufacturing` | CNS05 | Manufacturing (NAICS 31-33) |
+| `cns_wholesale` | CNS06 | Wholesale trade (NAICS 42) |
+| `cns_retail` | CNS07 | Retail trade (NAICS 44-45) |
+| `cns_transportation_warehousing` | CNS08 | Transportation & warehousing (NAICS 48-49) |
+| `cns_information` | CNS09 | Information (NAICS 51) |
+| `cns_finance_insurance` | CNS10 | Finance & insurance (NAICS 52) |
+| `cns_real_estate` | CNS11 | Real estate & rental (NAICS 53) |
+| `cns_professional_services` | CNS12 | Professional, scientific & technical (NAICS 54) |
+| `cns_management` | CNS13 | Management of companies (NAICS 55) |
+| `cns_admin_support` | CNS14 | Admin, support & waste management (NAICS 56) |
+| `cns_educational_services` | CNS15 | Educational services (NAICS 61) |
+| `cns_health_care` | CNS16 | Health care & social assistance (NAICS 62) |
+| `cns_arts_entertainment` | CNS17 | Arts, entertainment & recreation (NAICS 71) |
+| `cns_accommodation_food` | CNS18 | Accommodation & food services (NAICS 72) |
+| `cns_other_services` | CNS19 | Other services (NAICS 81) |
+| `cns_public_administration` | CNS20 | Public administration (NAICS 92) |
 
 ### POI staging (`poi`)
 

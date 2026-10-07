@@ -703,14 +703,8 @@ def config_factory(*, cache_dir: str | None = None, **variables):
             "cbp_county_emp_public_admin": 0.0,
             "cbp_county_emp_military": 0.0,
             "cbp_preserve_fraction": 0.5,
-            # ---- CBP NAICS CNS sub-sector proportions (wac_block_raw.sql) ----
-            "cbp_11": 0.0,  # NAICS 11 (ag) share of CNS01
-            "cbp_21": 0.0,  # NAICS 21 (extraction) share of CNS01
-            "cbp_48": 0.0,  # NAICS 48 (transport) share of CNS03
-            "cbp_49": 0.0,  # NAICS 49 (warehousing) share of CNS03
-            "cbp_22": 0.0,  # NAICS 22 (utilities) share of CNS03
-            "cbp_42": 0.0,  # NAICS 42 (wholesale) share of CNS03
-            "cbp_721": 0.0,  # NAICS 721 (accommodation) share of CNS13
+            # ---- CBP NAICS split of LODES CNS18 (wac_block_raw.sql) ----
+            "cbp_721": 0.0,  # NAICS 721 (accommodation) share of CNS18 (NAICS 72)
             # Transportation
             # These two are referenced by no model — kept as the last
             # transport-domain config vars. Every param the analysis models

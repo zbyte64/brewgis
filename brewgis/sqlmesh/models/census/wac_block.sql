@@ -22,7 +22,7 @@ MODEL (
     emp_restaurant = 'Restaurant employment (jobs) after the C000 gap distribution and CBP scaling.',
     emp_other_services = 'Other services employment (jobs) after the C000 gap distribution and CBP scaling.',
     emp_public_admin = 'Public administration employment (jobs) after the C000 gap distribution and CBP scaling.',
-    emp_military = 'Military employment (jobs), carried through without CBP county scaling.',
+    emp_military = 'Military employment (jobs), always 0 because LODES WAC has no armed-forces segment.',
     emp_ret = 'Retail employment (jobs): retail services, restaurant, accommodation, arts and other services.',
     emp_off = 'Office employment (jobs): office services plus medical services.',
     emp_pub = 'Public employment (jobs): education plus public administration.',
@@ -37,12 +37,13 @@ MODEL (
 
 -- LEHD LODES WAC → Block Group Employment (CBP County Scaling)
 --
--- Reads CNS-split sub-sector employment from wac_block_raw and applies
+-- Reads the CNS01-CNS20 sub-sector employment from wac_block_raw and applies
 -- two corrections:
 --
 -- 1. C000 gap distribution — LODES disclosure suppression means
---    SUM(CNS01..CNS17) < C000 for many blocks.  This distributes the
+--    SUM(CNS01..CNS20) < C000 for some blocks.  This distributes the
 --    gap (C000 - SUM(sub-sectors)) proportionally across sub-sectors
+--    (evenly over the 16 non-military sub-sectors when all are zero)
 --    so that emp = SUM(sub-sectors) before CBP scaling begins.
 --
 -- 2. CBP county-level scaling — Census County Business Patterns (CBP)
@@ -124,121 +125,116 @@ gap_distributed AS (
             WHEN c000_gap > 0 AND total_sub > 0
             THEN c000_gap * COALESCE(emp_agriculture, 0) / total_sub
             WHEN c000_gap > 0 AND total_sub = 0
-            THEN c000_gap / 17.0
+            THEN c000_gap / 16.0
             ELSE 0
         END AS emp_agriculture,
         COALESCE(emp_extraction, 0) + CASE
             WHEN c000_gap > 0 AND total_sub > 0
             THEN c000_gap * COALESCE(emp_extraction, 0) / total_sub
             WHEN c000_gap > 0 AND total_sub = 0
-            THEN c000_gap / 17.0
+            THEN c000_gap / 16.0
             ELSE 0
         END AS emp_extraction,
         COALESCE(emp_construction, 0) + CASE
             WHEN c000_gap > 0 AND total_sub > 0
             THEN c000_gap * COALESCE(emp_construction, 0) / total_sub
             WHEN c000_gap > 0 AND total_sub = 0
-            THEN c000_gap / 17.0
+            THEN c000_gap / 16.0
             ELSE 0
         END AS emp_construction,
         COALESCE(emp_manufacturing, 0) + CASE
             WHEN c000_gap > 0 AND total_sub > 0
             THEN c000_gap * COALESCE(emp_manufacturing, 0) / total_sub
             WHEN c000_gap > 0 AND total_sub = 0
-            THEN c000_gap / 17.0
+            THEN c000_gap / 16.0
             ELSE 0
         END AS emp_manufacturing,
         COALESCE(emp_transport_warehousing, 0) + CASE
             WHEN c000_gap > 0 AND total_sub > 0
             THEN c000_gap * COALESCE(emp_transport_warehousing, 0) / total_sub
             WHEN c000_gap > 0 AND total_sub = 0
-            THEN c000_gap / 17.0
+            THEN c000_gap / 16.0
             ELSE 0
         END AS emp_transport_warehousing,
         COALESCE(emp_utilities, 0) + CASE
             WHEN c000_gap > 0 AND total_sub > 0
             THEN c000_gap * COALESCE(emp_utilities, 0) / total_sub
             WHEN c000_gap > 0 AND total_sub = 0
-            THEN c000_gap / 17.0
+            THEN c000_gap / 16.0
             ELSE 0
         END AS emp_utilities,
         COALESCE(emp_wholesale, 0) + CASE
             WHEN c000_gap > 0 AND total_sub > 0
             THEN c000_gap * COALESCE(emp_wholesale, 0) / total_sub
             WHEN c000_gap > 0 AND total_sub = 0
-            THEN c000_gap / 17.0
+            THEN c000_gap / 16.0
             ELSE 0
         END AS emp_wholesale,
         COALESCE(emp_retail_services, 0) + CASE
             WHEN c000_gap > 0 AND total_sub > 0
             THEN c000_gap * COALESCE(emp_retail_services, 0) / total_sub
             WHEN c000_gap > 0 AND total_sub = 0
-            THEN c000_gap / 17.0
+            THEN c000_gap / 16.0
             ELSE 0
         END AS emp_retail_services,
         COALESCE(emp_office_services, 0) + CASE
             WHEN c000_gap > 0 AND total_sub > 0
             THEN c000_gap * COALESCE(emp_office_services, 0) / total_sub
             WHEN c000_gap > 0 AND total_sub = 0
-            THEN c000_gap / 17.0
+            THEN c000_gap / 16.0
             ELSE 0
         END AS emp_office_services,
         COALESCE(emp_education, 0) + CASE
             WHEN c000_gap > 0 AND total_sub > 0
             THEN c000_gap * COALESCE(emp_education, 0) / total_sub
             WHEN c000_gap > 0 AND total_sub = 0
-            THEN c000_gap / 17.0
+            THEN c000_gap / 16.0
             ELSE 0
         END AS emp_education,
         COALESCE(emp_medical_services, 0) + CASE
             WHEN c000_gap > 0 AND total_sub > 0
             THEN c000_gap * COALESCE(emp_medical_services, 0) / total_sub
             WHEN c000_gap > 0 AND total_sub = 0
-            THEN c000_gap / 17.0
+            THEN c000_gap / 16.0
             ELSE 0
         END AS emp_medical_services,
         COALESCE(emp_arts_entertainment, 0) + CASE
             WHEN c000_gap > 0 AND total_sub > 0
             THEN c000_gap * COALESCE(emp_arts_entertainment, 0) / total_sub
             WHEN c000_gap > 0 AND total_sub = 0
-            THEN c000_gap / 17.0
+            THEN c000_gap / 16.0
             ELSE 0
         END AS emp_arts_entertainment,
         COALESCE(emp_accommodation, 0) + CASE
             WHEN c000_gap > 0 AND total_sub > 0
             THEN c000_gap * COALESCE(emp_accommodation, 0) / total_sub
             WHEN c000_gap > 0 AND total_sub = 0
-            THEN c000_gap / 17.0
+            THEN c000_gap / 16.0
             ELSE 0
         END AS emp_accommodation,
         COALESCE(emp_restaurant, 0) + CASE
             WHEN c000_gap > 0 AND total_sub > 0
             THEN c000_gap * COALESCE(emp_restaurant, 0) / total_sub
             WHEN c000_gap > 0 AND total_sub = 0
-            THEN c000_gap / 17.0
+            THEN c000_gap / 16.0
             ELSE 0
         END AS emp_restaurant,
         COALESCE(emp_other_services, 0) + CASE
             WHEN c000_gap > 0 AND total_sub > 0
             THEN c000_gap * COALESCE(emp_other_services, 0) / total_sub
             WHEN c000_gap > 0 AND total_sub = 0
-            THEN c000_gap / 17.0
+            THEN c000_gap / 16.0
             ELSE 0
         END AS emp_other_services,
         COALESCE(emp_public_admin, 0) + CASE
             WHEN c000_gap > 0 AND total_sub > 0
             THEN c000_gap * COALESCE(emp_public_admin, 0) / total_sub
             WHEN c000_gap > 0 AND total_sub = 0
-            THEN c000_gap / 17.0
+            THEN c000_gap / 16.0
             ELSE 0
         END AS emp_public_admin,
-        COALESCE(emp_military, 0) + CASE
-            WHEN c000_gap > 0 AND total_sub > 0
-            THEN c000_gap * COALESCE(emp_military, 0) / total_sub
-            WHEN c000_gap > 0 AND total_sub = 0
-            THEN c000_gap / 17.0
-            ELSE 0
-        END AS emp_military
+        -- LODES has no military segment: emp_military is 0 and takes no gap share.
+        COALESCE(emp_military, 0) AS emp_military
     FROM raw_with_gap
 ),
 
