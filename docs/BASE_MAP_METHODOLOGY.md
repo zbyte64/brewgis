@@ -865,6 +865,12 @@ When splitting parcel area into residential, employment, mixed-use, and no-use c
 
 This ensures alignment with SACOG's methodology, which also uses the county's official parcel database as the primary source for land-use classification. The building footprint data refines the density and intensity within each use category rather than overriding the jurisdiction's own determination.
 
+`land_development_category` is derived in `adapters/assessor_parcels.py`:
+
+- **SACOG** reads the first letter of the county code per the Sacramento County Assessor's [Land Use Code Quick Reference](http://assessor.saccounty.gov/content/dam/assessor/forms/LandUseCodeQuickReference.pdf): `A` residential, `B` retail-commercial, `C` office, `D` personal care and health, `E` church and welfare, `F` recreational and `W` public and utilities are `urban`; `G` is `industrial`; `H` is `agricultural`; `I` (vacant land) is `undeveloped`; `M` (parks, flood plain, levees, ditches, private roads, remnants) is `undeveloped` except `MUTIL` utilities, which is `urban`.
+- **Fresno** reads the roll's highest-and-best-use code: `A`/`O` on 2+ acres is `agricultural`, every other coded parcel `urban`.
+- **No usable code** (blank, or Fresno's `XXX`/`000`) is not taken to mean vacant. Fresno leaves every tax-exempt APN uncoded — schools, the airport, government campuses — so such a parcel is `urban` when a building stands on it and `undeveloped` otherwise.
+
 ### Why Overture buildings are critical
 
 - Building footprint provides the spatial mask for large-lot residential parcels.

@@ -19,12 +19,10 @@ test_acres_conversion_typical_sfr_lot:
         landuse: TEXT
         zone: TEXT
         jurisdiction: TEXT
-    brewgis.seeds.assessor_use_codes:
+    brewgis.sacog.buildings_combined_pg:
       rows: []
       columns:
-        use_code: TEXT
-        use_description: TEXT
-        category: TEXT
+        local_geometry: GEOMETRY
   vars:
     local_srid: 3310
   outputs:

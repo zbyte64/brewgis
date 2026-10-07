@@ -14,6 +14,9 @@ land_development_category``) to the shared enrichment pipeline.
   (``use_primary`` is not a usable signal — its A## codes are apartment/condo
   pads and apartment master parcels). ``zone``/``jurisdiction`` stay NULL — no
   consumer needs a public per-parcel zoning join.
+- Both: an APN the roll gives no usable use code is categorized by building
+  evidence (urban when a building stands on it, otherwise undeveloped), never
+  assumed vacant.
 
 The branch is driven by the region (Fresno's roll codes are a different code
 system from SACOG's); a region whose ``source_table`` blueprint variable is
@@ -37,6 +40,15 @@ from brewgis.sqlmesh.macros.region_blueprints import REGIONS
 if TYPE_CHECKING:
     from sqlmesh.core.macros import MacroEvaluator
 
+# SACOG land_development_category reads the first letter of Sacramento County's
+# six-character assessor land use code (Assessor "Land Use Code Quick
+# Reference"): A residential, B retail-commercial, C office, D personal care and
+# health, E church and welfare, F recreational and W public and utilities
+# (federal, state, county, city, public school, special district) are urban;
+# G is industrial; H is agriculture; I is vacant land. M is miscellaneous land —
+# parks, flood plain, levees, ditches, private roads, too-small remnants — and
+# is undeveloped, except MUTIL (utility, power, sewer), which is urban. A blank
+# or unrecognized code takes the building-evidence category.
 SACOG_QUERY = """
 SELECT
     c.apn,
@@ -49,24 +61,15 @@ SELECT
     c.zone,
     c.jurisdiction,
     COALESCE(
-        auc.category,
         CASE
-            WHEN c.landuse IS NULL OR c.landuse = '' THEN 'undeveloped'
-            WHEN LEFT(c.landuse::text, 1) = 'A' THEN 'urban'
-            WHEN LEFT(c.landuse::text, 1) = 'B' THEN 'urban'
-            WHEN LEFT(c.landuse::text, 1) = 'C' THEN 'urban'
-            WHEN LEFT(c.landuse::text, 1) = 'D' THEN 'undeveloped'
-            WHEN LEFT(c.landuse::text, 1) = 'E' THEN 'urban'
-            WHEN LEFT(c.landuse::text, 1) = 'F' THEN 'agricultural'
-            WHEN LEFT(c.landuse::text, 1) = 'G' THEN 'undeveloped'
-            WHEN LEFT(c.landuse::text, 1) = 'H' THEN 'urban'
-            WHEN LEFT(c.landuse::text, 1) = 'I' THEN 'industrial'
-            WHEN LEFT(c.landuse::text, 2) IN ('MP','MR','MW','MD','MF','MG','ML') THEN 'undeveloped'
-            WHEN LEFT(c.landuse::text, 1) = 'M' THEN 'urban'
-            WHEN LEFT(c.landuse::text, 1) = 'W' THEN 'undeveloped'
-            ELSE 'undeveloped'
+            WHEN LEFT(c.landuse::text, 1) IN ('A', 'B', 'C', 'D', 'E', 'F', 'W') THEN 'urban'
+            WHEN LEFT(c.landuse::text, 1) = 'G' THEN 'industrial'
+            WHEN LEFT(c.landuse::text, 1) = 'H' THEN 'agricultural'
+            WHEN LEFT(c.landuse::text, 1) = 'I' THEN 'undeveloped'
+            WHEN LEFT(c.landuse::text, 5) = 'MUTIL' THEN 'urban'
+            WHEN LEFT(c.landuse::text, 1) = 'M' THEN 'undeveloped'
         END,
-        'urban'
+        {uncoded_category}
     ) AS land_development_category
 FROM (
     WITH
@@ -181,9 +184,7 @@ FROM (
         WHERE rn = 1
     )
     SELECT * FROM combined
-) c
-LEFT JOIN brewgis.seeds.assessor_use_codes auc
-    ON LEFT(COALESCE(c.landuse::text, ''), 2) = auc.use_code::text;
+) c;
 """
 
 PASSTHROUGH_QUERY = """
@@ -223,7 +224,8 @@ FROM brewgis.{region}.parcel_shim ps;
 # acre apartment/condo pads and A99 is an apartment *master* parcel (one APN
 # carries 6,963 situs addresses), and a hand-built crop-code list picks up
 # non-farm codes alongside the real ones (CHU, GAR and WAH are all under 1
-# acre median). Blank/XXX/000 codes have no assessable use → undeveloped.
+# acre median). Blank/XXX/000 codes carry no assessable use, so they take the
+# building-evidence category (UNCODED_CATEGORY_SQL) rather than 'undeveloped'.
 FRESNO_ASSESSOR_QUERY = """
 WITH collapsed AS (
     SELECT
@@ -252,28 +254,48 @@ resolved AS (
             CASE WHEN lot_size_acres > 0 THEN lot_size_acres END,
             (ST_Area(ST_Transform(wgs84_geometry, {local_srid})) * {sqm_per_square_unit}
                 / 4046.8564224)::double precision
-        ) AS lot_size_acres
+        ) AS lot_size_acres,
+        ST_Transform(wgs84_geometry, {local_srid}) AS local_geometry
     FROM collapsed
 )
 SELECT
     apn,
     wgs84_geometry AS geometry,
     ST_Centroid(wgs84_geometry) AS centroid,
-    ST_Transform(wgs84_geometry, {local_srid}) AS local_geometry,
-    ST_Centroid(ST_Transform(wgs84_geometry, {local_srid})) AS centroid_local,
+    local_geometry,
+    ST_Centroid(local_geometry) AS centroid_local,
     lot_size_acres,
     use_primary AS landuse,
     NULL::text AS zone,
     NULL::text AS jurisdiction,
     CASE
         WHEN use_primary IS NULL OR trim(use_primary) = '' OR use_primary IN ('XXX','000')
-            THEN 'undeveloped'
+            THEN {uncoded_category}
         WHEN use_high_best IN ('A','O') AND lot_size_acres >= 2
             THEN 'agricultural'
         ELSE 'urban'
     END AS land_development_category
-FROM resolved;
+FROM resolved c;
 """
+
+# A parcel the roll gives no usable use code is not thereby vacant: Fresno's
+# roll leaves every tax-exempt APN uncoded (schools, the airport, government
+# campuses — 4,247 'T'-suffix APNs, zero assessed value) and SACOG's has a few
+# blank codes. Buildings are the evidence: a building standing on the parcel
+# (its point on surface inside the parcel) makes it urban, otherwise it is
+# undeveloped. The && probe drives buildings_combined_pg's GiST index on
+# local_geometry, so this is one index lookup per uncoded parcel; COALESCE/CASE
+# evaluate it only for those. Requires the outer row aliased ``c`` with a
+# ``local_geometry`` column.
+UNCODED_CATEGORY_SQL = """CASE
+            WHEN EXISTS (
+                SELECT 1
+                FROM brewgis.{region}.buildings_combined_pg b
+                WHERE b.local_geometry && c.local_geometry
+                  AND ST_Intersects(c.local_geometry, ST_PointOnSurface(b.local_geometry))
+            ) THEN 'urban'
+            ELSE 'undeveloped'
+        END"""
 
 
 _SOURCE_TABLE = {
@@ -296,7 +318,10 @@ _SOURCE_TABLE = {
         "landuse": "Assessor land use code of the parcel (SACOG landuse, Fresno use_primary).",
         "zone": "Assessor zoning code of the parcel; NULL where the region has no per-parcel zoning source.",
         "jurisdiction": "Jurisdiction the parcel lies in; NULL where the region has no per-parcel zoning source.",
-        "land_development_category": "Development category of the parcel from the assessor use code.",
+        "land_development_category": (
+            "Development category of the parcel (urban, industrial, agricultural, undeveloped) from the assessor "
+            "use code; a parcel with no usable code is urban when a building stands on it, otherwise undeveloped."
+        ),
     },
     columns={
         "apn": "text",
@@ -316,6 +341,7 @@ _SOURCE_TABLE = {
     ],
     depends_on=[
         "@IF(@source_table != '', brewgis.@{region}.assessor_parcels_raw, brewgis.@{region}.parcel_shim)",
+        "brewgis.@{region}.buildings_combined_pg",
     ],
     post_statements=[
         "CREATE INDEX IF NOT EXISTS "
@@ -352,16 +378,19 @@ def execute(evaluator: MacroEvaluator, **kwargs: Any) -> str:
         return PASSTHROUGH_QUERY.format(region=region)
     local_srid = require_local_srid(evaluator)
     unit_m = metres_per_unit(local_srid)
+    uncoded_category = UNCODED_CATEGORY_SQL.format(region=region)
     if region == "fresno":
         return FRESNO_ASSESSOR_QUERY.format(
             source_table=source_table,
             local_srid=local_srid,
             sqm_per_square_unit=repr(unit_m**2),
+            uncoded_category=uncoded_category,
         )
     return SACOG_QUERY.format(
         source_table=source_table,
         local_srid=local_srid,
         sqm_per_square_unit=repr(unit_m**2),
+        uncoded_category=uncoded_category,
         buffer_5m=repr(5.0 / unit_m),
         buffer_30m=repr(30.0 / unit_m),
     )

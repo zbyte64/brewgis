@@ -33,12 +33,10 @@ test_subunit_apns_consolidated:
         landuse: TEXT
         zone: TEXT
         jurisdiction: TEXT
-    brewgis.seeds.assessor_use_codes:
+    brewgis.sacog.buildings_combined_pg:
       rows: []
       columns:
-        use_code: TEXT
-        use_description: TEXT
-        category: TEXT
+        local_geometry: GEOMETRY
   vars:
     local_srid: 3310
   outputs:
@@ -68,12 +66,10 @@ test_normal_parcels_pass_through:
         landuse: TEXT
         zone: TEXT
         jurisdiction: TEXT
-    brewgis.seeds.assessor_use_codes:
+    brewgis.sacog.buildings_combined_pg:
       rows: []
       columns:
-        use_code: TEXT
-        use_description: TEXT
-        category: TEXT
+        local_geometry: GEOMETRY
   vars:
     local_srid: 3310
   outputs:

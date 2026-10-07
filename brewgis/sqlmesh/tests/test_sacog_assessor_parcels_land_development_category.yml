@@ -1,0 +1,98 @@
+# Unit test for land_development_category in brewgis.sacog.assessor_parcels.
+#
+# The category reads the first letter of Sacramento County's assessor land use
+# code (Assessor "Land Use Code Quick Reference"): public & utilities (W),
+# personal care & health (D) and recreational (F) land is developed, G is
+# industrial, H agriculture, I vacant; M miscellaneous land is undeveloped
+# except MUTIL utilities. An APN with no code is not thereby vacant: a building
+# standing on it makes it urban, otherwise it is undeveloped.
+#
+# Every APN is a separate 0.01-degree square with a positive lotsize (the
+# pass-through path, no sub-unit consolidation). The one building stands inside
+# BLANK_WITH_BUILDING's square, given in EPSG:3310 like the real
+# buildings_combined_pg.local_geometry.
+
+test_land_use_code_maps_to_development_category:
+  model: brewgis.sacog.assessor_parcels
+  gateway: postgis
+  inputs:
+    brewgis.sacog.assessor_parcels_raw:
+      rows:
+        - apn: "PUBLIC_SCHOOL"
+          lotsize: 43560.0
+          landuse: "WFAC0A"
+          wgs84_geometry: "SRID=4326;POLYGON((-121.30 38.5,-121.29 38.5,-121.29 38.51,-121.30 38.51,-121.30 38.5))"
+        - apn: "HOSPITAL"
+          lotsize: 43560.0
+          landuse: "DA0000"
+          wgs84_geometry: "SRID=4326;POLYGON((-121.32 38.5,-121.31 38.5,-121.31 38.51,-121.32 38.51,-121.32 38.5))"
+        - apn: "GOLF_COURSE"
+          lotsize: 43560.0
+          landuse: "FAB00A"
+          wgs84_geometry: "SRID=4326;POLYGON((-121.34 38.5,-121.33 38.5,-121.33 38.51,-121.34 38.51,-121.34 38.5))"
+        - apn: "WAREHOUSE"
+          lotsize: 43560.0
+          landuse: "GCGB0A"
+          wgs84_geometry: "SRID=4326;POLYGON((-121.36 38.5,-121.35 38.5,-121.35 38.51,-121.36 38.51,-121.36 38.5))"
+        - apn: "DRY_PASTURE"
+          lotsize: 43560.0
+          landuse: "HN0000"
+          wgs84_geometry: "SRID=4326;POLYGON((-121.38 38.5,-121.37 38.5,-121.37 38.51,-121.38 38.51,-121.38 38.5))"
+        - apn: "VACANT_RESIDENTIAL"
+          lotsize: 43560.0
+          landuse: "IAA000"
+          wgs84_geometry: "SRID=4326;POLYGON((-121.40 38.5,-121.39 38.5,-121.39 38.51,-121.40 38.51,-121.40 38.5))"
+        - apn: "PARK"
+          lotsize: 43560.0
+          landuse: "MPARK0"
+          wgs84_geometry: "SRID=4326;POLYGON((-121.42 38.5,-121.41 38.5,-121.41 38.51,-121.42 38.51,-121.42 38.5))"
+        - apn: "UTILITY"
+          lotsize: 43560.0
+          landuse: "MUTIL0"
+          wgs84_geometry: "SRID=4326;POLYGON((-121.44 38.5,-121.43 38.5,-121.43 38.51,-121.44 38.51,-121.44 38.5))"
+        - apn: "BLANK_WITH_BUILDING"
+          lotsize: 43560.0
+          landuse: ""
+          wgs84_geometry: "SRID=4326;POLYGON((-121.5 38.5,-121.49 38.5,-121.49 38.51,-121.5 38.51,-121.5 38.5))"
+        - apn: "NULL_WITHOUT_BUILDING"
+          lotsize: 43560.0
+          wgs84_geometry: "SRID=4326;POLYGON((-121.52 38.5,-121.51 38.5,-121.51 38.51,-121.52 38.51,-121.52 38.5))"
+      columns:
+        geometry: GEOMETRY
+        wgs84_geometry: GEOMETRY
+        apn: TEXT
+        lotsize: DOUBLE
+        landuse: TEXT
+        zone: TEXT
+        jurisdiction: TEXT
+    brewgis.sacog.buildings_combined_pg:
+      rows:
+        - local_geometry: "SRID=3310;POLYGON((-130235.66 55323.33,-130200.82 55322.78,-130200.12 55367.24,-130234.96 55367.79,-130235.66 55323.33))"
+      columns:
+        local_geometry: GEOMETRY
+  vars:
+    local_srid: 3310
+  outputs:
+    query:
+      partial: true
+      rows:
+        - apn: "BLANK_WITH_BUILDING"
+          land_development_category: urban
+        - apn: "DRY_PASTURE"
+          land_development_category: agricultural
+        - apn: "GOLF_COURSE"
+          land_development_category: urban
+        - apn: "HOSPITAL"
+          land_development_category: urban
+        - apn: "NULL_WITHOUT_BUILDING"
+          land_development_category: undeveloped
+        - apn: "PARK"
+          land_development_category: undeveloped
+        - apn: "PUBLIC_SCHOOL"
+          land_development_category: urban
+        - apn: "UTILITY"
+          land_development_category: urban
+        - apn: "VACANT_RESIDENTIAL"
+          land_development_category: undeveloped
+        - apn: "WAREHOUSE"
+          land_development_category: industrial

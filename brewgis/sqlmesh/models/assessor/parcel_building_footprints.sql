@@ -53,7 +53,7 @@ MODEL (
 --   - max_levels: maximum number of floors
 --   - mean_confidence: mean VIDA confidence score (Google buildings)
 --   - footprint_ratio: footprint area / parcel lot area (0-1)
---   - land_development_category: from assessor_use_codes via landuse prefix
+--   - land_development_category: carried from assessor_parcels
 --   - overture_*_sqft: per-class floor-area buckets using Overture class system
 --     (replaces the need for a separate spatial join in parcel_building_sqft_by_type)
 --   - dominant_building_class: the raw Overture class (not the 4-bucket
