@@ -1,0 +1,46 @@
+test_training_parcel_map_shares_measure_true_overlap:
+  # An APN that only shares an edge with the reference parcel, or overlaps a
+  # sliver of it, must not look like a match: the trainers keep only pairs
+  # whose overlap covers most of both parcels.
+  model: brewgis.sacog.training_parcel_map
+  gateway: postgis
+  inputs:
+    brewgis.sacog.parcel_shim:
+      rows:
+        - parcel_id: "P1"
+          geometry: "POLYGON((0 0, 100 0, 100 100, 0 100, 0 0))"
+      columns:
+        parcel_id: TEXT
+        geometry: GEOMETRY
+    brewgis.sacog.assessor_parcels:
+      rows:
+        - apn: "APN_SAME"
+          geometry: "POLYGON((0 0, 100 0, 100 100, 0 100, 0 0))"
+        - apn: "APN_EDGE"
+          geometry: "POLYGON((100 0, 200 0, 200 100, 100 100, 100 0))"
+        - apn: "APN_SLIVER"
+          geometry: "POLYGON((90 0, 190 0, 190 100, 90 100, 90 0))"
+        - apn: "APN_INSIDE"
+          geometry: "POLYGON((0 0, 50 0, 50 50, 0 50, 0 0))"
+      columns:
+        apn: TEXT
+        geometry: GEOMETRY
+  outputs:
+    query:
+      rows:
+        - parcel_id: "P1"
+          apn: "APN_EDGE"
+          apn_overlap_share: 0.0
+          parcel_overlap_share: 0.0
+        - parcel_id: "P1"
+          apn: "APN_INSIDE"
+          apn_overlap_share: 1.0
+          parcel_overlap_share: 0.25
+        - parcel_id: "P1"
+          apn: "APN_SAME"
+          apn_overlap_share: 1.0
+          parcel_overlap_share: 1.0
+        - parcel_id: "P1"
+          apn: "APN_SLIVER"
+          apn_overlap_share: 0.1
+          parcel_overlap_share: 0.1

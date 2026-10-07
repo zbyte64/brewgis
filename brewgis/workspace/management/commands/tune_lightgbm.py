@@ -23,6 +23,7 @@ from sklearn.model_selection import RandomizedSearchCV
 if TYPE_CHECKING:
     from sqlmesh import Context
 
+from brewgis.sqlmesh.models.python.parcel_du_regressor import DU_SAMPLE_WEIGHT
 from brewgis.sqlmesh.models.python.parcel_du_regressor import DU_TARGETS
 from brewgis.sqlmesh.models.python.parcel_du_regressor import (
     NUMERIC_FEATURES as DU_NUMERIC_FEATURES,
@@ -46,6 +47,7 @@ from brewgis.sqlmesh.models.python.parcel_emp_ratios_regressor import (
 from brewgis.sqlmesh.models.python.parcel_sqft_regressor import (
     NUMERIC_FEATURES as SQFT_NUMERIC_FEATURES,
 )
+from brewgis.sqlmesh.models.python.parcel_sqft_regressor import SQFT_SAMPLE_WEIGHT
 from brewgis.sqlmesh.models.python.parcel_sqft_regressor import (
     _feature_matrix as sqft_feature_matrix,
 )
@@ -98,6 +100,7 @@ def _tune_model(
         targets = [c for c in EMP_RATIO_TARGETS if c in df.columns and df[c].sum() > 0]
         numeric_features = EMP_NUMERIC_FEATURES
         feature_matrix = emp_feature_matrix
+        sample_weight = None
         # ~96% of parcels have no employment; the trainer keeps them.
         train_df = df.copy()
     elif is_du:
@@ -106,6 +109,7 @@ def _tune_model(
         targets = DU_TARGETS
         numeric_features = DU_NUMERIC_FEATURES
         feature_matrix = du_feature_matrix
+        sample_weight = DU_SAMPLE_WEIGHT
         # DU=0 parcels teach the regressor the zero case, so they stay in.
         train_df = df.copy()
     else:
@@ -114,6 +118,7 @@ def _tune_model(
         targets = _get_sqft_targets(df)
         numeric_features = SQFT_NUMERIC_FEATURES
         feature_matrix = sqft_feature_matrix
+        sample_weight = SQFT_SAMPLE_WEIGHT
         train_df = df[df[targets].sum(axis=1) > 0].copy()
 
     logger.info("%s: loaded %d training parcels", label, len(df))
@@ -138,6 +143,9 @@ def _tune_model(
 
     x_all = feature_matrix(train_df, ldev_cats).to_numpy()
     y_all = train_df[targets].to_numpy()
+    # The trainers' own row weighting (None for EMP), so the search optimises
+    # the loss the fitted model actually minimises.
+    w_all = train_df[sample_weight].to_numpy() if sample_weight else None
 
     n = len(x_all)
     n_tune = min(int(n * tune_fraction), 100_000, n)
@@ -145,6 +153,7 @@ def _tune_model(
     idx = rng.choice(n, n_tune, replace=False)
     x_tune = x_all[idx]
     y_tune = y_all[idx]
+    w_tune = None if w_all is None else w_all[idx]
 
     logger.info(
         "%s: tuning on %d/%d samples, %d iter x %d-fold CV",
@@ -177,7 +186,7 @@ def _tune_model(
     )
 
     start = time.time()
-    search.fit(x_tune, y_tune[:, 0])
+    search.fit(x_tune, y_tune[:, 0], sample_weight=w_tune)
     elapsed = time.time() - start
 
     best_params = search.best_params_

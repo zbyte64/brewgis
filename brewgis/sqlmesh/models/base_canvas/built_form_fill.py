@@ -14,7 +14,7 @@ and is kept.
 The source is never written to: this model materializes a table of its own, so
 the import stays reversible (unchecking the box drops the model and the
 workspace reads its source again). ``models/base_canvas/`` is where the other
-Python models over derived base canvases live (``du_regressor.py`` and
+Python models over derived base canvases live (``du_inference.py`` and
 friends).
 
 One instance per opted-in workspace, resolved while SQLMesh imports this module.

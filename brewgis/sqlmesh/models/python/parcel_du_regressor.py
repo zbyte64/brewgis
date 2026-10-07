@@ -29,6 +29,9 @@ from brewgis.sqlmesh.models.python._cache import try_load_cached
 from brewgis.sqlmesh.models.python._feature_cols import _RESNET_PC_COLS
 from brewgis.sqlmesh.models.python._feature_cols import BLDG_CLASS_FALLBACK
 from brewgis.sqlmesh.models.python._feature_cols import LDC_FALLBACK
+from brewgis.sqlmesh.models.python._feature_cols import MIN_RATIO_DENOMINATOR_SQFT
+from brewgis.sqlmesh.models.python._feature_cols import TRAINING_MATCH_ORDER_SQL
+from brewgis.sqlmesh.models.python._feature_cols import TRAINING_MATCH_SQL
 from brewgis.sqlmesh.models.python._predict import predict_in_batches
 
 if TYPE_CHECKING:
@@ -86,6 +89,20 @@ LGBM_PARAMS: dict[str, Any] = {
 
 MIN_R2 = 0.10
 
+# Each training row is weighted by the building area serving multiplies its
+# ratio by, so the loss tracks dwelling-unit error rather than ratio error.
+# Unweighted, a ratio error on a 40,000 sq ft school costs no more than one on
+# a house, and the model gives every building class roughly the residential
+# ratio: schools, offices and parking structures, which carry no dwelling units
+# in the SACOG reference, were served tens of units each.
+DU_SAMPLE_WEIGHT = DU_RATIO_DENOMINATOR
+
+# Everything that decides how the cached model is fitted; part of the cache key.
+DU_FIT_CONFIG: dict[str, Any] = {
+    "params": LGBM_PARAMS,
+    "sample_weight": DU_SAMPLE_WEIGHT,
+}
+
 # Per-parcel dominant Overture building class (raw taxonomy: house, school,
 # retail, church, ... — not the 4-bucket class_category grouping), computed
 # in parcel_building_footprints by footprint x levels x overlap area and
@@ -109,12 +126,11 @@ def _fetch_du_training_data(context: ExecutionContext) -> pd.DataFrame:
         f"COALESCE(rf.{c}, 0.0) AS {c}" for c in _RESNET_PC_COLS
     )
 
-    # Dwelling units per square foot of Overture building area. NULLIF guards
-    # parcels with no observed building area (the ratio is 0 there), matching
-    # the SQFT trainer and the employment-ratio trainer.
+    # Dwelling units per square foot of Overture building area. Only rows
+    # whose building area reaches MIN_RATIO_DENOMINATOR_SQFT train (WHERE
+    # below), matching the SQFT trainer, so the denominator is never ~0.
     target_col = ",\n\t".join(
-        f"COALESCE(ref.{t} / NULLIF(bs.{DU_RATIO_DENOMINATOR}, 0), 0) AS {t}"
-        for t in DU_TARGETS
+        f"COALESCE(ref.{t}, 0) / bs.{DU_RATIO_DENOMINATOR} AS {t}" for t in DU_TARGETS
     )
 
     df = context.fetchdf(
@@ -140,7 +156,9 @@ def _fetch_du_training_data(context: ExecutionContext) -> pd.DataFrame:
         LEFT JOIN {highway} hw ON tpm.apn = hw.apn
         LEFT JOIN {path} pw ON tpm.apn = pw.apn
         LEFT JOIN {features} rf ON tpm.apn = rf.apn
-        ORDER BY ap.apn
+        WHERE {TRAINING_MATCH_SQL}
+          AND bs.{DU_RATIO_DENOMINATOR} >= {MIN_RATIO_DENOMINATOR_SQFT}
+        ORDER BY {TRAINING_MATCH_ORDER_SQL}
         """
     )
     return df
@@ -237,7 +255,7 @@ def _feature_matrix(
 @model(
     "brewgis.assessor.parcel_du_regressor",
     kind=dict(name=ModelKindName.FULL),
-    description="DU training cache: SACOG LightGBM dwelling units by type, read by the region du_regressor models.",
+    description="DU training cache: SACOG LightGBM dwelling units by type, read by the region du_inference models.",
     column_descriptions={
         "apn": "Assessor parcel number (APN) the prediction belongs to.",
         "du_attsf": "Predicted attached single-family dwelling units.",
@@ -283,9 +301,10 @@ def execute(
     df = _fetch_du_training_data(context)
     logger.info("LightGBM DU: %d training parcels from reference", len(df))
 
-    # Include all parcels in training — DU=0 parcels teach the regressor
-    # to output zero for non-residential parcels (agricultural, industrial,
-    # undeveloped), fixing the previous over-prediction for those categories.
+    # Every matched parcel with building area trains, DU=0 ones included —
+    # they teach the regressor to output zero for non-residential parcels
+    # (agricultural, industrial, undeveloped), fixing the previous
+    # over-prediction for those categories.
     train_df = df.copy()
     nonzero_count = (train_df[DU_TARGETS].sum(axis=1) > 0).sum()
     zero_count = (train_df[DU_TARGETS].sum(axis=1) == 0).sum()
@@ -315,7 +334,7 @@ def execute(
 
     # Train or load cached model (type-keyed: one cache namespace per regressor)
     combo = pd.concat([x_train.reset_index(drop=True), pd.DataFrame(y_train)], axis=1)
-    data_hash = compute_data_hash(combo)
+    data_hash = compute_data_hash(combo, DU_FIT_CONFIG)
     payload = try_load_cached(data_hash, "du")
 
     if payload is None:
@@ -324,21 +343,27 @@ def execute(
         )
         base_model = LGBMRegressor(**LGBM_PARAMS)
         model_obj = MultiOutputRegressor(base_model, n_jobs=1)
-        model_obj.fit(x_tr, y_tr)
-        y_train_pred = model_obj.predict(x_va)
+        model_obj.fit(x_tr, y_tr, sample_weight=x_tr[DU_SAMPLE_WEIGHT].to_numpy())
+        # Score what serving emits — dwelling units, the clipped ratio times
+        # the parcel's building area — not the ratio itself.
+        footprint_va = x_va[DU_RATIO_DENOMINATOR].to_numpy()[:, None]
+        du_va = y_va * footprint_va
+        du_pred = np.maximum(model_obj.predict(x_va), 0.0) * footprint_va
 
         for i, target in enumerate(DU_TARGETS):
-            r2 = r2_score(y_va[:, i], y_train_pred[:, i])
-            logger.info("LightGBM DU: %s R² = %.4f", target, r2)
+            r2 = r2_score(du_va[:, i], du_pred[:, i])
+            logger.info("LightGBM DU: %s dwelling-unit R² = %.4f", target, r2)
 
-        mean_r2 = r2_score(y_va, y_train_pred, multioutput="uniform_average")
-        logger.info("LightGBM DU: mean R² = %.4f", mean_r2)
+        mean_r2 = r2_score(du_va, du_pred, multioutput="uniform_average")
+        logger.info("LightGBM DU: mean dwelling-unit R² = %.4f", mean_r2)
 
         if mean_r2 < MIN_R2:
-            logger.warning("LightGBM DU: mean R² %.4f < %.2f", mean_r2, MIN_R2)
+            logger.warning(
+                "LightGBM DU: mean dwelling-unit R² %.4f < %.2f", mean_r2, MIN_R2
+            )
 
         save_model(model_obj, data_hash, "du", DU_TARGETS)
-        del y_train_pred
+        del du_pred
     else:
         model_obj = payload["model"]
     # free memory

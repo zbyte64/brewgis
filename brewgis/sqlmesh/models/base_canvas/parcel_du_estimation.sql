@@ -37,7 +37,7 @@ MODEL (
 --
 -- Tier 1: Direct assessor unit observation (from the region sales adapter)
 -- Tier 2: LightGBM regressor prediction (du_total_regressor from
---         @{region}.du_regressor, which reads features from
+--         @{region}.du_inference, which reads features from
 --         @{region}.parcel_dasymetric_weights).
 -- Fallback: 0.0 (non-residential parcels).
 --

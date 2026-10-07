@@ -145,8 +145,26 @@ class TestLightgbmCache:
         df = pd.DataFrame({"lot_size_acres": [1.0, 2.0], "building_count": [1, 2]})
         renamed = df.rename(columns={"lot_size_acres": "parcel_acres"})
 
-        assert _cache.compute_data_hash(df) != _cache.compute_data_hash(renamed)
-        assert _cache.compute_data_hash(df) == _cache.compute_data_hash(df.copy())
+        config = {"params": {"n_estimators": 100}}
+        assert _cache.compute_data_hash(df, config) != _cache.compute_data_hash(
+            renamed, config
+        )
+        assert _cache.compute_data_hash(df, config) == _cache.compute_data_hash(
+            df.copy(), config
+        )
+
+    def test_data_hash_covers_fit_config(self) -> None:
+        """The same data fitted another way must not reuse the old artifact."""
+        df = pd.DataFrame({"lot_size_acres": [1.0, 2.0], "building_count": [1, 2]})
+        unweighted = {"params": {"n_estimators": 100}, "sample_weight": None}
+        weighted = {
+            "params": {"n_estimators": 100},
+            "sample_weight": "total_footprint_sqft",
+        }
+
+        assert _cache.compute_data_hash(df, unweighted) != _cache.compute_data_hash(
+            df, weighted
+        )
 
     def test_stale_feature_artifact_skipped(self, tmp_path: Path) -> None:
         """An artifact the current feature set cannot build loses to a usable one.

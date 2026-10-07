@@ -28,6 +28,8 @@ from brewgis.sqlmesh.models.python._cache import try_load_cached
 from brewgis.sqlmesh.models.python._feature_cols import _RESNET_PC_COLS
 from brewgis.sqlmesh.models.python._feature_cols import BLDG_CLASS_FALLBACK
 from brewgis.sqlmesh.models.python._feature_cols import LDC_FALLBACK
+from brewgis.sqlmesh.models.python._feature_cols import TRAINING_MATCH_ORDER_SQL
+from brewgis.sqlmesh.models.python._feature_cols import TRAINING_MATCH_SQL
 from brewgis.sqlmesh.models.python._predict import predict_in_batches
 
 if TYPE_CHECKING:
@@ -127,7 +129,8 @@ def _fetch_emp_training_data(context: ExecutionContext) -> pd.DataFrame:
         LEFT JOIN {highway} hw ON tpm.apn = hw.apn
         LEFT JOIN {path} pw ON tpm.apn = pw.apn
         LEFT JOIN {features} rf ON tpm.apn = rf.apn
-        ORDER BY ap.apn
+        WHERE {TRAINING_MATCH_SQL}
+        ORDER BY {TRAINING_MATCH_ORDER_SQL}
         """
     )
 
@@ -295,7 +298,7 @@ def execute(
 
     # Train or load cached model (type-keyed: one cache namespace per regressor)
     combo = pd.concat([x_train.reset_index(drop=True), pd.DataFrame(y_train)], axis=1)
-    data_hash = compute_data_hash(combo)
+    data_hash = compute_data_hash(combo, {"params": LGBM_PARAMS, "sample_weight": None})
     payload = try_load_cached(data_hash, "emp_ratios")
 
     if payload is None:

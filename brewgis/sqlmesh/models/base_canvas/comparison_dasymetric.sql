@@ -139,7 +139,7 @@ scaled AS (
         de.du_mf2to4_regressor    * aw.apn_weight AS du_mf2to4,
         de.du_mf5p_regressor      * aw.apn_weight AS du_mf5p,
         de.du_total_regressor     * aw.apn_weight AS du_total_regressor,
-        -- Building sqft from sqft_regressor (renamed for downstream compat)
+        -- Building sqft from sqft_inference (renamed for downstream compat)
         dr.bldg_sqft_detsf_sl          * aw.apn_weight AS bldg_area_detsf_sl,
         dr.bldg_sqft_detsf_ll          * aw.apn_weight AS bldg_area_detsf_ll,
         dr.bldg_sqft_attsf             * aw.apn_weight AS bldg_area_attsf,
@@ -158,7 +158,7 @@ scaled AS (
         -- Rates from du_estimation
         de.hh_size,
         de.vacancy_rate,
-        -- Employment sector ratios from emp_ratios_regressor
+        -- Employment sector ratios from emp_ratios_inference
         er.emp_ret_per_acre AS emp_ret_per_acre,
         er.emp_off_per_acre AS emp_off_per_acre,
         er.emp_pub_per_acre AS emp_pub_per_acre,

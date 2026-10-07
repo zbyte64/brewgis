@@ -8,7 +8,9 @@ trainer records the fitted feature list inside the artifact
 (``feature_names_in_``) and inference reads it back from there, so the serving
 side never carries a second, drifting copy of the contract. The helpers here
 let the cache loader reject an artifact the current feature set cannot build
-instead of handing its feature list to ``model.predict``.
+instead of handing its feature list to ``model.predict``. The module also holds
+the training-row selection (label matching, ratio denominator floor) the
+trainers share.
 
 Minimal module with no third-party imports — SQLMesh serializes python model
 module namespaces and rejects unpicklable values.
@@ -43,6 +45,26 @@ LDC_FALLBACK = "standard"
 # parcel falls in the same bucket at fit and predict time.
 BLDG_CLASS_PREFIX = "bldg_class_"
 BLDG_CLASS_FALLBACK = "vacant"
+
+# Training-label matching. brewgis.sacog.training_parcel_map (aliased ``tpm``)
+# pairs every reference parcel with every APN it touches, edge contacts
+# included, so most APNs have several candidate labels. A trainer takes an
+# APN's label only from a reference parcel that covers at least this share of
+# the APN and that the APN covers at least this share of (near one-to-one);
+# the ORDER BY makes the ``DISTINCT ON (ap.apn)`` pick deterministic.
+TRAINING_MATCH_MIN_OVERLAP_SHARE = 0.5
+TRAINING_MATCH_SQL = (
+    f"tpm.apn_overlap_share >= {TRAINING_MATCH_MIN_OVERLAP_SHARE}"
+    f" AND tpm.parcel_overlap_share >= {TRAINING_MATCH_MIN_OVERLAP_SHARE}"
+)
+TRAINING_MATCH_ORDER_SQL = "ap.apn, tpm.apn_overlap_share DESC, tpm.parcel_id"
+
+# Smallest Overture building area (sq ft) a DU/SQFT training row may divide its
+# reference stock by. A building clipped by the parcel edge leaves footprints
+# down to 0.001 sq ft, which turn a parcel's whole stock into hundreds of units
+# per sq ft and dominate both the fit and its R². Serving multiplies by the
+# same small footprint, so those parcels receive little stock either way.
+MIN_RATIO_DENOMINATOR_SQFT = 100.0
 
 
 def fitted_feature_names(model: Any) -> list[str] | None:

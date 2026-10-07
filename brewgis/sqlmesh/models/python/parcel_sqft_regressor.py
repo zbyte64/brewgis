@@ -28,6 +28,9 @@ from brewgis.sqlmesh.models.python._cache import try_load_cached
 from brewgis.sqlmesh.models.python._feature_cols import _RESNET_PC_COLS
 from brewgis.sqlmesh.models.python._feature_cols import BLDG_CLASS_FALLBACK
 from brewgis.sqlmesh.models.python._feature_cols import LDC_FALLBACK
+from brewgis.sqlmesh.models.python._feature_cols import MIN_RATIO_DENOMINATOR_SQFT
+from brewgis.sqlmesh.models.python._feature_cols import TRAINING_MATCH_ORDER_SQL
+from brewgis.sqlmesh.models.python._feature_cols import TRAINING_MATCH_SQL
 from brewgis.sqlmesh.models.python._predict import predict_in_batches
 
 if TYPE_CHECKING:
@@ -88,6 +91,17 @@ LGBM_PARAMS: dict[str, Any] = {
 MIN_R2 = 0.10
 MIN_TRAIN_SAMPLES = 100
 
+# Each training row is weighted by the footprint serving multiplies its shares
+# by, so the loss tracks square-foot error rather than share error (the same
+# reasoning as the DU trainer's DU_SAMPLE_WEIGHT).
+SQFT_SAMPLE_WEIGHT = "total_footprint_sqft"
+
+# Everything that decides how the cached model is fitted; part of the cache key.
+SQFT_FIT_CONFIG: dict[str, Any] = {
+    "params": LGBM_PARAMS,
+    "sample_weight": SQFT_SAMPLE_WEIGHT,
+}
+
 # Per-parcel dominant Overture building class (raw taxonomy: house, school,
 # retail, church, ... — not the 4-bucket class_category grouping), computed
 # in parcel_building_footprints by footprint x levels x overlap area and
@@ -119,10 +133,11 @@ def _fetch_sqft_training_data(context: ExecutionContext) -> pd.DataFrame:
     path = context.resolve_table("brewgis.sacog.path_intersection_density")
     features = context.resolve_table("brewgis.assessor.parcel_resnet_features")
     # Targets are sqft of each type as a share of the parcel's total footprint.
-    # NULLIF guards parcels with no footprint (share is 0 there), matching the
-    # employment-ratio trainer.
-    total = "NULLIF(COALESCE(bs.total_footprint_sqft, 0), 0)"
-    cols = ", ".join(f"COALESCE(ref.{c} / {total}, 0) as {c}" for c in SQFT_TARGETS)
+    # Only rows whose footprint reaches MIN_RATIO_DENOMINATOR_SQFT train (WHERE
+    # below), matching the DU trainer, so the denominator is never ~0.
+    cols = ", ".join(
+        f"COALESCE(ref.{c}, 0) / bs.total_footprint_sqft AS {c}" for c in SQFT_TARGETS
+    )
 
     # pc columns keep the adapter's names: _feature_matrix selects
     # _RESNET_PC_COLS by name, so a suffixed alias makes it miss every one.
@@ -155,7 +170,9 @@ def _fetch_sqft_training_data(context: ExecutionContext) -> pd.DataFrame:
         LEFT JOIN {highway} hw ON tpm.apn = hw.apn
         LEFT JOIN {path} pw ON tpm.apn = pw.apn
         LEFT JOIN {features} rf ON tpm.apn = rf.apn
-        ORDER BY ap.apn
+        WHERE {TRAINING_MATCH_SQL}
+          AND bs.total_footprint_sqft >= {MIN_RATIO_DENOMINATOR_SQFT}
+        ORDER BY {TRAINING_MATCH_ORDER_SQL}
         """
     )
 
@@ -338,7 +355,7 @@ def execute(
 
     # Train or load cached model (type-keyed: one cache namespace per regressor)
     combo = pd.concat([x_train.reset_index(drop=True), pd.DataFrame(y_train)], axis=1)
-    data_hash = compute_data_hash(combo)
+    data_hash = compute_data_hash(combo, SQFT_FIT_CONFIG)
     payload = try_load_cached(data_hash, "sqft")
 
     if payload is None:
@@ -347,21 +364,27 @@ def execute(
         )
         base_model = LGBMRegressor(**LGBM_PARAMS)
         model_obj = MultiOutputRegressor(base_model, n_jobs=1)
-        model_obj.fit(x_tr, y_tr)
-        y_train_pred = model_obj.predict(x_va)
+        model_obj.fit(x_tr, y_tr, sample_weight=x_tr[SQFT_SAMPLE_WEIGHT].to_numpy())
+        # Score what serving emits — square feet, the clipped share times the
+        # parcel's footprint — not the share itself.
+        footprint_va = x_va["total_footprint_sqft"].to_numpy()[:, None]
+        sqft_va = y_va * footprint_va
+        sqft_pred = np.maximum(model_obj.predict(x_va), 0.0) * footprint_va
 
         for i, target in enumerate(sqft_targets):
-            r2 = r2_score(y_va[:, i], y_train_pred[:, i])
-            logger.info("LightGBM SQFT: %s R² = %.4f", target, r2)
+            r2 = r2_score(sqft_va[:, i], sqft_pred[:, i])
+            logger.info("LightGBM SQFT: %s square-foot R² = %.4f", target, r2)
 
-        mean_r2 = r2_score(y_va, y_train_pred, multioutput="uniform_average")
-        logger.info("LightGBM SQFT: mean R² = %.4f", mean_r2)
+        mean_r2 = r2_score(sqft_va, sqft_pred, multioutput="uniform_average")
+        logger.info("LightGBM SQFT: mean square-foot R² = %.4f", mean_r2)
 
         if mean_r2 < MIN_R2:
-            logger.warning("LightGBM SQFT: mean R² %.4f < %.2f", mean_r2, MIN_R2)
+            logger.warning(
+                "LightGBM SQFT: mean square-foot R² %.4f < %.2f", mean_r2, MIN_R2
+            )
 
         save_model(model_obj, data_hash, "sqft", sqft_targets)
-        del y_train_pred
+        del sqft_pred
     else:
         model_obj = payload["model"]
     # free memory

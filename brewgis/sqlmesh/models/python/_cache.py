@@ -70,18 +70,23 @@ def _ensure_cache_dir() -> Path:
     return _CACHE_DIR
 
 
-def compute_data_hash(df: pd.DataFrame) -> str:
-    """Compute a content hash of a DataFrame for cache key.
+def compute_data_hash(df: pd.DataFrame, fit_config: dict[str, Any]) -> str:
+    """Compute a content hash of the training data and how it is fitted, for cache key.
 
     The column labels are part of the digest. ``hash_pandas_object`` hashes the
     cells row-wise, so two frames holding identical values under different
     feature names would otherwise share a key, and a model cached for the older
     names would silently skip retraining.
+
+    *fit_config* (estimator parameters, sample weighting) is digested too: the
+    same data fitted a different way is a different model, and keying on the
+    data alone would keep serving the artifact fitted the old way.
     """
     h = hashlib.sha256()
     for col in df.columns:
         h.update(f"{col}\x00".encode())
     h.update(pd.util.hash_pandas_object(df).to_numpy().tobytes())
+    h.update(repr(sorted(fit_config.items())).encode())
     return h.hexdigest()
 
 
