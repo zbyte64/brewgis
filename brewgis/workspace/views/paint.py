@@ -42,8 +42,8 @@ from django.views.decorators.http import require_POST
 from brewgis.workspace.built_forms.allocation import AllocationEngine
 from brewgis.workspace.built_forms.allocation import AllocationResult
 from brewgis.workspace.built_forms.matching import dominant_employment_sector
+from brewgis.workspace.built_forms.matching import eligible_building_types
 from brewgis.workspace.built_forms.matching import prefer_same_sector
-from brewgis.workspace.built_forms.matching import require_same_category
 from brewgis.workspace.built_forms.models import BuildingType
 from brewgis.workspace.built_forms.models import PlaceType
 from brewgis.workspace.models import GEOMETRY_EDIT_ID_SEQUENCE
@@ -1227,21 +1227,29 @@ def run_match_built_form(
             )
             continue
 
-        # One rule on top of the density basis, never a basis of its own: the
-        # parcel's land development category is a constraint — only Building
-        # Types naming it survive — and the employment sector is a preference
-        # within what survives. A parcel whose category no type declares has no
-        # candidates at all rather than falling through to a neighbouring
-        # category; a parcel that names no category is not constrained.
+        # Rules on top of the density basis, never a basis of their own. A
+        # parcel with dwelling units only takes a housing type (one declaring a
+        # du_type), of its own land development category unless that category
+        # has none; any other parcel only takes a type naming its category — a
+        # parcel whose category no type declares has no candidates rather than
+        # falling through to a neighbouring category, and a parcel that names
+        # no category is not constrained. The employment sector is then a
+        # preference within what survives.
         candidates = list(
-            require_same_category(candidates, row.get("land_development_category"))
+            eligible_building_types(
+                candidates,
+                category=row.get("land_development_category"),
+                dwelling_units=du_value,
+            )
         )
         if not candidates:
             unmatched.append(
                 {
                     "feature_id": fid,
                     "message": (
-                        "No Building Type in land development category "
+                        "No housing Building Type matches this parcel's density."
+                        if du_value > 0
+                        else "No Building Type in land development category "
                         f"'{row.get('land_development_category')}' matches this "
                         "parcel's density."
                     ),

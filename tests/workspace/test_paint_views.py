@@ -678,12 +678,16 @@ class TestMatchBuiltFormView(TestCase):
         assert response.json()["matches"][0]["building_type_id"] == urban_bt.pk
 
     def test_reports_a_parcel_whose_category_no_type_names_as_unmatched(self):
-        """The constraint does not fall back: a category nothing declares matches nothing."""
+        """The constraint does not fall back: a category nothing declares matches nothing.
+
+        A parcel without dwelling units — one with homes falls back to any
+        housing type instead (``matching.eligible_building_types``).
+        """
         BuildingTypeFactory(
             workspace=self.workspace,
             name="Urban Type",
-            du_per_acre=21.0,
-            emp_per_acre=0.0,
+            du_per_acre=0.0,
+            emp_per_acre=30.0,
             land_development_category="urban",
         )
         self.client.force_login(self.user)
@@ -693,8 +697,8 @@ class TestMatchBuiltFormView(TestCase):
             {
                 "1": {
                     "id": 1,
-                    "du": 200.0,
-                    "emp": 0.0,
+                    "du": 0.0,
+                    "emp": 200.0,
                     "area_gross": 10.0,
                     "area_parcel": 10.0,
                     "land_development_category": "conservation",

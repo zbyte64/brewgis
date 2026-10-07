@@ -1,8 +1,9 @@
 # ruff: noqa: ARG002 — the ``db`` fixture is an argument, not a reference
 """Tests for the built-form matching rules (``built_forms.matching``).
 
-One constraint (the parcel's land development category) and one preference (the
-parcel's dominant employment sector) sit on top of the density bases. Each is
+Two constraints (housing for a parcel with dwelling units, then the parcel's land
+development category) and one preference (the parcel's dominant employment
+sector) sit on top of the density bases. Each is
 implemented twice — Python for the paint surfaces, SQL for the base-canvas fill
 model — so each pair is tested for agreement, not just for its own behavior.
 """
@@ -17,6 +18,8 @@ from django.db import connection
 from brewgis.workspace.built_forms.matching import category_requirement_sql
 from brewgis.workspace.built_forms.matching import declared_sectors
 from brewgis.workspace.built_forms.matching import dominant_employment_sector
+from brewgis.workspace.built_forms.matching import eligibility_sql
+from brewgis.workspace.built_forms.matching import eligible_building_types
 from brewgis.workspace.built_forms.matching import prefer_same_sector
 from brewgis.workspace.built_forms.matching import require_same_category
 from brewgis.workspace.built_forms.models import BuildingType
@@ -172,3 +175,139 @@ class TestSectorVocabulary:
             jobs_by_sector={"office_services": 70.0, "warehousing": 30.0},
         )
         assert declared_sectors(partial) == {"office_services": 70.0}
+
+
+def _housing_library() -> list[BuildingType]:
+    """Housing in two categories, non-housing in three — the Fresno shape."""
+    return [
+        _building_type(
+            name="Urban SF",
+            land_development_category="urban",
+            du_type="detsf_sl",
+            du_per_acre=6.0,
+        ),
+        _building_type(
+            name="Rural Residential",
+            land_development_category="rural",
+            du_type="detsf_ll",
+            du_per_acre=0.5,
+        ),
+        _building_type(
+            name="Medical Facility",
+            land_development_category="urban",
+            du_type="",
+            emp_per_acre=176.0,
+        ),
+        _building_type(
+            name="Blank Place Type", land_development_category="undeveloped", du_type=""
+        ),
+        _building_type(
+            name="Agriculture", land_development_category="agricultural", du_type=""
+        ),
+    ]
+
+
+@pytest.mark.models
+class TestHousingConstraint:
+    """A parcel with dwelling units only ever takes a Building Type that houses people."""
+
+    def test_dwelling_units_exclude_non_housing_of_the_same_category(self) -> None:
+        eligible = eligible_building_types(
+            _housing_library(), category="urban", dwelling_units=2.0
+        )
+        assert [building_type.name for building_type in eligible] == ["Urban SF"]
+
+    def test_a_category_without_housing_falls_back_to_every_housing_type(self) -> None:
+        """A farmhouse on agricultural land, homes on 'undeveloped' land."""
+        for category in ("agricultural", "undeveloped"):
+            eligible = eligible_building_types(
+                _housing_library(), category=category, dwelling_units=1.0
+            )
+            assert [building_type.name for building_type in eligible] == [
+                "Urban SF",
+                "Rural Residential",
+            ]
+
+    def test_parcels_without_dwelling_units_keep_the_category_rule(self) -> None:
+        for dwelling_units in (0.0, -1.0):
+            eligible = eligible_building_types(
+                _housing_library(), category="urban", dwelling_units=dwelling_units
+            )
+            assert [building_type.name for building_type in eligible] == [
+                "Urban SF",
+                "Medical Facility",
+            ]
+        assert (
+            eligible_building_types(
+                _housing_library(), category="conservation", dwelling_units=0.0
+            )
+            == []
+        )
+
+    def test_a_blank_du_type_is_not_housing(self) -> None:
+        blank = _building_type(
+            name="Blank", land_development_category="urban", du_type="   "
+        )
+        assert (
+            eligible_building_types([blank], category="urban", dwelling_units=3.0) == []
+        )
+
+
+# du: NULL, none, some; category: unset, blank, one with housing, one without.
+PARCEL_ROWS: list[tuple[float | None, str | None]] = [
+    (du, category)
+    for du in (None, 0.0, 2.0)
+    for category in (None, "  ", "urban", "agricultural", "conservation")
+]
+
+
+@pytest.mark.models
+class TestEligibilitySqlMatchesPythonRule:
+    """The fill model's WHERE admits exactly what the paint surfaces' rule admits."""
+
+    def test_agrees_on_every_parcel_and_form(self, db) -> None:
+        library = _housing_library()
+        predicate = eligibility_sql(
+            parcel_prefix="s.", form_prefix="bf.", forms_relation="forms"
+        )
+        parcels = ", ".join(["(%s::int, %s::float8, %s::text)"] * len(PARCEL_ROWS))
+        forms = ", ".join(["(%s::text, %s::text, %s::text)"] * len(library))
+        # The interpolated text is the rule under test and every value is a
+        # placeholder, so this is not injection-shaped.
+        query = (
+            "WITH forms(name, land_development_category, du_type) AS (VALUES "  # noqa: S608
+            + forms
+            + ")"
+            " SELECT s.idx, bf.name, CASE WHEN "
+            + predicate
+            + " THEN true ELSE false END"
+            " FROM (VALUES " + parcels + ") AS s(idx, du, land_development_category)"
+            " CROSS JOIN forms AS bf"
+        )
+        params: list[Any] = []
+        for building_type in library:
+            params += [
+                building_type.name,
+                building_type.land_development_category,
+                building_type.du_type,
+            ]
+        for index, (du, category) in enumerate(PARCEL_ROWS):
+            params += [index, du, category]
+
+        with connection.cursor() as cursor:
+            cursor.execute(query, params)
+            rows = cursor.fetchall()
+
+        admitted_sql: dict[int, set[str]] = {}
+        for index, name, admitted in rows:
+            admitted_sql.setdefault(index, set())
+            if admitted:
+                admitted_sql[index].add(name)
+        for index, (du, category) in enumerate(PARCEL_ROWS):
+            expected = {
+                building_type.name
+                for building_type in eligible_building_types(
+                    library, category=category, dwelling_units=float(du or 0.0)
+                )
+            }
+            assert admitted_sql[index] == expected, (du, category)

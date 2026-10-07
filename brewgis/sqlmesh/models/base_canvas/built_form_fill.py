@@ -28,12 +28,18 @@ applied per parcel in one pass. One constraint, then one preference, then the
 density bases — ``built_forms.matching`` holds all of them and the Python twins
 the paint surfaces call:
 
-- **Eligibility.** A parcel whose ``land_development_category`` is set (not
-  NULL, not blank) admits only the Building Types naming that same category —
-  a type naming none is not eligible, and a parcel whose category no type
-  declares matches nothing here rather than taking a neighbouring category's
-  archetype. This gates the key basis below exactly as it gates the density
-  ones.
+- **Housing.** A parcel whose source ``du`` is positive admits only Building
+  Types that declare a ``du_type`` — the housing class the analysis prices its
+  residents by — so a parcel with homes is never filled as a Medical Facility
+  or a Blank Place Type. Among those the category rule below applies, unless
+  the parcel's category declares no housing type at all, in which case every
+  housing type is eligible.
+- **Eligibility.** Otherwise, a parcel whose ``land_development_category`` is
+  set (not NULL, not blank) admits only the Building Types naming that same
+  category — a type naming none is not eligible, and a parcel whose category
+  no type declares matches nothing here rather than taking a neighbouring
+  category's archetype. Both rules gate the key basis below exactly as they
+  gate the density ones.
 - **Sector preference.** Among what is eligible, a Building Type declaring the
   parcel's dominant employment sector ranks ahead of one that does not, and
   ahead of the basis ranking below. With no sector declared on either side the
@@ -187,8 +193,8 @@ _FILL_MODEL = model(
         "One workspace's built-form-filled base canvas: the source base canvas"
         " with every parcel whose built_form_key names no Building Type of the"
         " workspace assigned the closest-matching one of the parcel's own land"
-        " development category, and du, pop, hh and emp filled where the source"
-        " value is NULL."
+        " development category (a housing type for a parcel with dwelling units),"
+        " and du, pop, hh and emp filled where the source value is NULL."
     ),
     audits=[
         ("not_null", {"columns": [exp.to_column("parcel_id")]}),
@@ -230,7 +236,7 @@ def execute(evaluator: MacroEvaluator, **kwargs: Any) -> str:
     while loading the project, before anything has configured Django — and the
     matching rules live in modules that import Django.
     """
-    from brewgis.workspace.built_forms.matching import category_requirement_sql
+    from brewgis.workspace.built_forms.matching import eligibility_sql
     from brewgis.workspace.built_forms.matching import sector_preference_sql
     from brewgis.workspace.services.built_form_keys import PLACEHOLDER_BUILT_FORM_KEY
 
@@ -256,8 +262,8 @@ def execute(evaluator: MacroEvaluator, **kwargs: Any) -> str:
         _fill_expression(column, acres, placeholder=PLACEHOLDER_BUILT_FORM_KEY)
         for column in all_columns
     )
-    category_requirement = category_requirement_sql(
-        parcel_prefix="s.", form_prefix="bf."
+    eligibility = eligibility_sql(
+        parcel_prefix="s.", form_prefix="bf.", forms_relation="built_forms"
     )
     sector_preference = sector_preference_sql(parcel_prefix="s.", form_prefix="bf.")
 
@@ -272,6 +278,7 @@ built_forms AS (
         id,
         name AS key,
         land_development_category,
+        du_type,
         COALESCE(du_per_acre, 0.0) AS du_per_acre,
         COALESCE(emp_per_acre, 0.0) AS emp_per_acre,
         household_size,
@@ -304,13 +311,14 @@ matched AS (
     LEFT JOIN LATERAL (
         SELECT *
         FROM built_forms bf
-        WHERE {category_requirement}
+        WHERE {eligibility}
         ORDER BY
             -- A preference on top of the bases below, never a basis of its
-            -- own: the sector the parcel's jobs are in. Its constraint — the
-            -- parcel's land development category — sits in the WHERE above,
-            -- so no candidate here names a different category. `matching`
-            -- holds both rules and their Python twins, which the paint
+            -- own: the sector the parcel's jobs are in. The constraints sit in
+            -- the WHERE above — a parcel with dwelling units sees only housing
+            -- types, and only its own category's unless that category has
+            -- none; any other parcel sees only its own category. `matching`
+            -- holds the rules and their Python twins, which the paint
             -- surfaces use; the three bases are ranked below.
             {sector_preference},
             CASE

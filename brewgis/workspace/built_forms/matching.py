@@ -30,6 +30,18 @@ archetype whose density then filled it with dwelling units it does not have.
 The sector stays a preference because it is a claim about the *building*, and
 absent a sector match the density bases still know something useful.
 
+Both sit under one rule that outranks them — **housing**. A parcel that holds
+dwelling units only takes a Building Type that houses people (one declaring a
+``du_type``): the analysis prices residential trips, energy and water by that
+housing class, so a parcel with homes under a Medical Facility or a Blank
+Place Type is a parcel whose residents generate nothing. The category
+constraint still applies among the housing types, except where the parcel's
+category declares none — a farmhouse on agricultural land, homes on land the
+ETL calls undeveloped — and there every housing type is eligible: the parcel
+already has its dwelling units, so a housing archetype from another category
+adds none, which is the failure the category constraint exists to prevent.
+A parcel without dwelling units is not affected.
+
 The density basis then chooses within whatever the two left — a parcel with no
 sector match keeps the full eligible set.
 
@@ -40,8 +52,9 @@ declares them under the same ``<sector>`` key in ``jobs_by_sector``.
 
 Each rule exists twice — once for the paint surfaces, which hold a parcel row
 in Python, and once for the base-canvas fill model, which applies it inside a
-``LEFT JOIN LATERAL``: :func:`require_same_category` /
-:func:`category_requirement_sql` and :func:`dominant_employment_sector` /
+``LEFT JOIN LATERAL``: :func:`eligible_building_types` /
+:func:`eligibility_sql` (housing, then :func:`require_same_category` /
+:func:`category_requirement_sql`) and :func:`dominant_employment_sector` /
 :func:`dominant_employment_sector_sql` (with the ranking form
 :func:`sector_preference_sql`). Each pair must agree — on the sector tie-break
 (the alphabetically first sector), on what counts as a blank category, and on
@@ -107,6 +120,58 @@ def require_same_category(
         for building_type in candidates
         if str(building_type.land_development_category or "").strip() == wanted
     ]
+
+
+def houses_people(building_type: BuildingType) -> bool:
+    """Return whether *building_type* declares a housing class (``du_type``)."""
+    return bool(str(building_type.du_type or "").strip())
+
+
+def eligible_building_types(
+    candidates: Sequence[BuildingType], *, category: str | None, dwelling_units: float
+) -> Sequence[BuildingType]:
+    """Return the *candidates* a parcel may take: the housing rule, then the category.
+
+    A parcel with no dwelling units (*dwelling_units* <= 0) gets exactly
+    :func:`require_same_category`. One with dwelling units gets only the
+    housing types (:func:`houses_people`) — those of its own category, or every
+    housing type when its category declares none. An empty result means the
+    library has no housing type at all; the caller reports the parcel
+    unmatched.
+    """
+    if dwelling_units <= 0:
+        return require_same_category(candidates, category)
+    housing = [
+        building_type for building_type in candidates if houses_people(building_type)
+    ]
+    return require_same_category(housing, category) or housing
+
+
+def eligibility_sql(
+    *, parcel_prefix: str, form_prefix: str, forms_relation: str
+) -> str:
+    """Return SQL admitting only the *form_prefix* rows the parcel may take.
+
+    The SQL twin of :func:`eligible_building_types`, written for a ``WHERE``
+    clause. *forms_relation* is the relation holding the whole candidate
+    library (the same rows *form_prefix* ranges over); it answers whether the
+    parcel's category declares any housing type. The dwelling-unit test reads
+    ``COALESCE(du, 0) > 0``, the Python side's ``float(row.get("du") or 0.0)``.
+    """
+    category = category_requirement_sql(
+        parcel_prefix=parcel_prefix, form_prefix=form_prefix
+    )
+    housing_in_category = category_requirement_sql(
+        parcel_prefix=parcel_prefix, form_prefix="h."
+    )
+    form_houses = f"btrim(COALESCE({form_prefix}du_type, '')) <> ''"
+    return (
+        f"((COALESCE({parcel_prefix}du, 0) <= 0 AND {category})"
+        f" OR (COALESCE({parcel_prefix}du, 0) > 0 AND {form_houses}"
+        f" AND ({category} OR NOT EXISTS ("
+        f"SELECT 1 FROM {forms_relation} AS h"
+        f" WHERE btrim(COALESCE(h.du_type, '')) <> '' AND {housing_in_category}))))"
+    )
 
 
 def prefer_same_sector(
