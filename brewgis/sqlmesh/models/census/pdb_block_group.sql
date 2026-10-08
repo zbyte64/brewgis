@@ -19,7 +19,7 @@ MODEL (
     not_null(columns := (geoid, data_year)),
     assert_pdb_block_group_coverage
   ),
-  blueprints @region_blueprints()
+  blueprints @region_blueprints('fresno')
 );
 
 -- Census Planning Database (PDB) → Block Group Demographics Table
@@ -35,6 +35,13 @@ MODEL (
 -- dropping 174 block groups — which cover 52,382 canvas parcels — from every
 -- PDB-derived column. assert_pdb_block_group_coverage fails if this model's output
 -- is missing a block group the source provides.
+--
+-- Fresno only. SACOG reconstructs a historical base layer (LODES 2008, ACS
+-- 2009-2013 on 2013 block groups) that the comparison and the ResNet training
+-- are measured against; its bg_vintage stays 2013 on purpose, and this release's
+-- 2020 block groups are both the wrong geography (395 of the 1,461 in SACOG's
+-- counties have no 2013 counterpart) and the wrong era for it. Nothing reads this model since the
+-- basemap rewrite (277440b), so excluding SACOG drops no consumer.
 
 WITH raw_derived AS (
     SELECT

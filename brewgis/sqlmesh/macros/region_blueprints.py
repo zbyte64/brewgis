@@ -78,8 +78,13 @@ def _variable_sql(name: str, value: str | int | Decimal) -> str:
 
 
 @macro()
-def region_blueprints(evaluator) -> list[exp.Expr]:
+def region_blueprints(evaluator, *regions: exp.Expr) -> list[exp.Expr]:
     """One blueprint entry per region, built from ``region_profiles()``.
+
+    ``@region_blueprints()`` emits every region in ``REGIONS``;
+    ``@region_blueprints('fresno')`` only the regions named, for a source that
+    does not fit every region (the Planning Database's 2020 block groups have no
+    place in SACOG's historical reconstruction).
 
     Models reference only the variables they need (e.g. ``@{region}``); SQLMesh
     drops unreferenced blueprint variables, so emitting the full profile per
@@ -92,6 +97,11 @@ def region_blueprints(evaluator) -> list[exp.Expr]:
     ``analysis_blueprints.analysis_blueprints``).
     """
     profiles = region_profiles()
+    selected = [r.name for r in regions] or list(REGIONS)
+    unknown = sorted(set(selected) - set(REGIONS))
+    if unknown:
+        msg = f"region_blueprints: unknown region(s) {unknown}; known: {list(REGIONS)}"
+        raise ValueError(msg)
     entries = [
         sqlglot.parse_one(
             "("
@@ -103,5 +113,6 @@ def region_blueprints(evaluator) -> list[exp.Expr]:
             into=exp.Tuple,
         )
         for region in REGIONS
+        if region in selected
     ]
     return [exp.Tuple(expressions=entries)]

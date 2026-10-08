@@ -19,7 +19,8 @@ MODEL (
     data_year = 'PDB vintage year (2024) the record belongs to.'
   ),
   gateway duckdb,
-  blueprints @region_blueprints()
+  -- Fresno only, as pdb_raw (see pdb_block_group.sql).
+  blueprints @region_blueprints('fresno')
 );
 
 -- PDB Raw Bridge — materializes the DuckDB VIEW (which reads from Census API)

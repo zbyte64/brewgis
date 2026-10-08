@@ -20,7 +20,9 @@ MODEL (
   ),
   gateway duckdb,
   dialect duckdb,
-  blueprints @region_blueprints()
+  -- Fresno only: the PDB is the 2018-2022 release on 2020 block groups, which
+  -- has no place in SACOG's 2008/2013 reconstruction (see pdb_block_group.sql).
+  blueprints @region_blueprints('fresno')
 );
 
 -- Census Planning Database (PDB) raw data — DuckDB reads directly from Census API via httpfs.
