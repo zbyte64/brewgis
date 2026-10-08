@@ -20,13 +20,6 @@ MODEL (
   )
 );
 
--- pre hooks
--- (overture_transport is DuckDB gateway, so indexes must live here)
-  CREATE INDEX IF NOT EXISTS @snapshot_hash('idx_overture_transport_geometry_')
-  ON brewgis.sacog.overture_transport USING GIST (geometry);
-  CREATE INDEX IF NOT EXISTS @snapshot_hash('idx_overture_transport_local_geometry_')
-  ON brewgis.sacog.overture_transport USING GIST (local_geometry);
-
 -- Overture Road Surface — per-parcel road intersection statistics.
 --
 -- Computes paved and unpaved road metrics within each parcel using Overture
@@ -42,6 +35,10 @@ MODEL (
 -- areas are measured there and converted from that CRS's own unit to metres.
 -- local_geometry is computed from wgs84_geometry since the bridge sets
 -- local_geometry=NULL (DuckDB geographic→projected ST_Transform is unreliable).
+--
+-- The join probes the parcels' GiST index on geometry once per road segment;
+-- the roads' side is a computed expression no index covers, and
+-- overture_transport is a VIEW, which Postgres cannot index anyway.
 
 WITH parcels AS (
     SELECT
