@@ -103,7 +103,9 @@ MODEL (
   audits (
     not_null(columns := (parcel_id)),
     number_of_rows(threshold := 1),
-    assert_employment_conserved
+    assert_employment_conserved,
+    assert_subsector_sum_equals_emp,
+    assert_column_non_negative(column_name := emp)
   ),
   -- The POI *bridge*, in addition to the published VIEW the SELECT reads:
   -- SQLMesh substitutes a referenced model's physical table in this model's

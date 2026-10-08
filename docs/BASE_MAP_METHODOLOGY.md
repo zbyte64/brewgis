@@ -839,7 +839,7 @@ Population allocation uses **Census 2020 blocks** as the source zone. Demographi
 | Households | Derived | Parcel-level | du × (1 - vacancy_rate) |
 | Dwelling units | Assessor + built_form_key | Parcel-level | Estimated directly, not allocated from ACS |
 | Demographics | ACS block group | ~4,000 ac | Area-weighted mean over intersecting parcels |
-| Employment | LEHD LODES WAC block | ~200 ac | Sector-constrained by building sqft type |
+| Employment | LEHD LODES WAC block | ~200 ac | Sector-constrained by building sqft type; each sector falls back to the lot-size weight in a block where it has no rate-based weight, and a parcel's `emp` is its sectors' sum |
 | School employment | NCES Common Core of Data school + district | School point | Teacher FTE × district school-based staff per teacher, drawn from LODES education jobs |
 
 ### School employment (NCES Common Core of Data)
