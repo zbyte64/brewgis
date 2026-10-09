@@ -26,6 +26,8 @@ from brewgis.workspace.analysis.layer_registry import visible_layers_for_panel
 from brewgis.workspace.models import Layer
 from brewgis.workspace.models import SymbologyConfig
 from brewgis.workspace.models import Workspace
+from brewgis.workspace.services.spatial_filter import layer_owns_filter_models
+from brewgis.workspace.services.spatial_filter import refresh_filter_models
 from brewgis.workspace.services.sqlmesh_tables import get_table_preview
 from brewgis.workspace.services.sqlmesh_tables import list_sqlmesh_layer_candidates
 from brewgis.workspace.services.sqlmesh_tables import list_sqlmesh_tables
@@ -218,7 +220,13 @@ def layer_delete(request: HttpRequest, pk: int) -> HttpResponse:
         return HttpResponse("Cannot delete canvas layers", status=400)
 
     workspace_pk = workspace.pk
+    # A filtered layer's table is a SQLMesh model: deleting the layer (or the
+    # layer a filter was applied to, which cascades to it) un-applies the
+    # filter, and the model nothing draws any more is dropped.
+    drops_filter_models = layer_owns_filter_models(layer)
     layer.delete()
+    if drops_filter_models:
+        refresh_filter_models()
 
     if request.headers.get("HX-Request") == "true":
         # Re-render the list the row was removed from, scoped to the scenario

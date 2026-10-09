@@ -1,28 +1,29 @@
-"""Spatial filter — Python SQL model (blueprinted, one per filtered layer).
+"""Layer filter — Python SQL model (blueprinted, one per applied filter).
 
-A layer whose active :class:`~brewgis.workspace.models.LayerFilter` tree contains
-a ``spatial`` node cannot be filtered client-side, so this model materializes the
-layer's spatially-filtered copy as a new table, and ``Layer.effective_source``
-points the layer's tiles at it. One model per layer with an active spatial
+Applying a :class:`~brewgis.workspace.models.LayerFilter` materializes the rows
+it keeps as this new table, which a new Layer (``LayerFilter.output_layer``)
+draws; the filtered layer itself is never changed. One model per applied
 filter, resolved while SQLMesh imports this module; the profiles — and the
 reason the SELECT is assembled from them — are in
 ``macros/spatial_filter_blueprints.py``.
 
-Each condition's filter side is a *projection* model
-(``models/spatial_filter/spatial_filter_source.py``), not the raw other-layer
-table: the projection carries the other table's geometry in the region's local
-CRS behind a GiST index, which is what keeps this model's ``EXISTS`` an index
-probe per row instead of a scan of a view (often not indexable at all). The
-projection is named in the profile by
+The whole tree is compiled to one ``WHERE`` predicate
+(``services.filter_compiler.FilterCompiler.compile``): column conditions and
+spatial conditions alike. Each spatial condition's filter side is a
+*projection* model (``models/spatial_filter/spatial_filter_source.py``), not the
+raw other-layer table: the projection carries the other table's geometry in the
+region's local CRS behind a GiST index, which is what keeps the ``EXISTS`` an
+index probe per row instead of a scan of a view (often not indexable at all).
+The projection is named in the profile by
 ``services.spatial_filter.FILTER_REF_KEY``, so the stored ``filter_json`` — which
-the client-side compiler also reads — stays free of it.
+the editor and the preview also read — stays free of it.
 
-With no layer filtered there is nothing to instantiate and the module registers
+With no filter applied there is nothing to instantiate and the module registers
 no model at all — see :mod:`brewgis.sqlmesh.blueprint_models` for why an empty
 list cannot be handed to ``@model`` instead.
 
 No ``columns`` declaration and no ``column_descriptions``: the output's column
-set is the per-layer source's, which SQLMesh infers through lineage (same
+set is the filtered layer's, which SQLMesh infers through lineage (same
 rationale as ``models/base_canvas/built_form_fill.py``).
 """
 
@@ -55,30 +56,32 @@ if TYPE_CHECKING:
 # reason ``models/adapters/assessor_parcels.py`` imports both at module level).
 
 # Resolved when SQLMesh imports this module (i.e. while loading the project) —
-# one entry per layer with an active spatial filter at that moment.
+# one entry per filter applied at that moment.
 _PROFILES = spatial_filter_profiles()
 
-# One declaration, applied once per filtered layer below: with no layer filtered
+# One declaration, applied once per applied filter below: with none applied
 # there is nothing to instantiate.
 _FILTER_MODEL = model(
     name=f"brewgis.{MODEL_SCHEMA}.@{{model_table}}",
     kind=ModelKindName.FULL,
     description=(
-        "One layer's spatially-filtered copy: its source table rows that"
-        " intersect (or are excluded from) the configured filter layer"
-        " geometries, optionally within a distance buffer."
+        "One applied layer filter's rows: the filtered layer's rows matching"
+        " the filter's column conditions and its spatial conditions (intersect"
+        " or exclude another layer's geometries, optionally within a distance"
+        " buffer). Drawn by the filter's own layer."
     ),
     # No ``number_of_rows`` audit, deliberately: with SQLMesh's threshold
     # semantics (``HAVING COUNT(*) <= threshold``) any threshold fails an empty
-    # model, and an empty result is a legitimate outcome here — an ``excludes``
-    # filter over a covering layer, or an ``intersects`` one whose filter layer
-    # has no features nearby, both select zero rows and the layer should simply
-    # draw nothing. The index below is what the tiles need.
+    # model, and an empty result is a legitimate outcome here — a column
+    # condition no row meets, an ``excludes`` filter over a covering layer, or an
+    # ``intersects`` one whose filter layer has no features nearby all select
+    # zero rows and the layer should simply draw nothing. The index below is
+    # what the tiles need.
     post_statements=[
         (
             "CREATE INDEX IF NOT EXISTS "
             "@snapshot_hash('idx_spatial_filter_geometry_') "
-            "ON @this_model USING GIST (geometry)"
+            "ON @this_model USING GIST (@{source_geom})"
         ),
     ],
     blueprints=[dict(profile) for profile in _PROFILES],
@@ -87,51 +90,41 @@ _FILTER_MODEL = model(
 
 
 def execute(evaluator: MacroEvaluator, **kwargs: Any) -> str:
-    """Return the layer's filtered SELECT.
+    """Return the applied filter's SELECT.
 
     The returned string is not macro-rendered again by SQLMesh, so the blueprint
     variables are resolved here through the evaluator — including the source
     reference, which is a bare model FQN or ``schema.table`` and is used verbatim
     (SQLMesh snapshot-resolves a bare FQN when rendering the query).
 
-    Only ``compile_spatial_predicate`` is imported inside ``execute``: SQLMesh
-    imports this module while loading the project, where importing
+    Only the compilers are imported inside ``execute``: SQLMesh imports this
+    module while loading the project, where importing
     ``brewgis.workspace.services`` would pull in Django models before anything
     has configured Django. The geometry macros are module-level for the reason
     documented above.
     """
-    from brewgis.workspace.services.spatial_filter import compile_spatial_predicate
+    from brewgis.workspace.services.filter_compiler import FilterCompiler
+    from brewgis.workspace.services.spatial_filter import quote_ident
 
     source_ref = str(evaluator.blueprint_var("source_ref"))
     source_geom = str(evaluator.blueprint_var("source_geom", "geometry"))
     raw_columns = evaluator.blueprint_var("all_columns", []) or []
-    spatial_filters = evaluator.blueprint_var("spatial_filters", []) or []
-    all_columns = [str(column) for column in raw_columns]
+    filter_json = evaluator.blueprint_var("filter_json", {}) or {}
 
     local_srid = require_local_srid(evaluator)
-    mpu = metres_per_unit(local_srid)
-
-    # A spatial filter whose tree is only columns (impossible here — the profile
-    # macro keeps only trees with a spatial node) contributes no predicate; the
-    # layer's empty predicate list means "every row", the identity of the filter.
-    predicates = [
-        predicate
-        for filter_json in spatial_filters
-        if (
-            predicate := compile_spatial_predicate(
-                filter_json,
-                source_geom=source_geom,
-                local_srid=local_srid,
-                mpu=mpu,
-            )
-        )
-    ]
-    where = " AND ".join(f"({predicate})" for predicate in predicates) or "TRUE"
-    columns = ",\n    ".join(all_columns)
+    where = FilterCompiler().compile(
+        filter_json,
+        source_geom=source_geom,
+        local_srid=local_srid,
+        mpu=metres_per_unit(local_srid),
+    )
+    columns = ",\n    ".join(
+        f"src.{quote_ident(str(column))}" for column in raw_columns
+    )
 
     return f"SELECT\n    {columns}\nFROM {source_ref} AS src\nWHERE {where}"
 
 
-# One model per filtered layer: with none filtered, registering nothing is what
+# One model per applied filter: with none applied, registering nothing is what
 # keeps an empty blueprint list from becoming a phantom model.
 execute = register_blueprint_model(_FILTER_MODEL, execute, _PROFILES)

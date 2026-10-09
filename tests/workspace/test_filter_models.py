@@ -22,7 +22,7 @@ class TestLayerFilterModel(TestCase):
         flt = LayerFilter.objects.create(layer=self.layer, name="Test Filter")
         self.assertEqual(flt.name, "Test Filter")
         self.assertEqual(flt.filter_json, {})
-        self.assertFalse(flt.is_active)
+        self.assertIsNone(flt.filtered_layer)
         self.assertIsNotNone(flt.created_at)
         self.assertIsNotNone(flt.updated_at)
         self.assertEqual(flt.layer, self.layer)
@@ -49,16 +49,6 @@ class TestLayerFilterModel(TestCase):
         self.assertEqual(flt.filter_json["type"], "group")
         self.assertEqual(flt.filter_json["operator"], "AND")
         self.assertEqual(len(flt.filter_json["children"]), 1)
-
-    def test_is_active_flag(self) -> None:
-        """A filter should be togglable between active and inactive."""
-        flt = LayerFilter.objects.create(
-            layer=self.layer, name="Active Filter", is_active=True
-        )
-        self.assertTrue(flt.is_active)
-        flt.is_active = False
-        flt.save()
-        self.assertFalse(flt.is_active)
 
     def test_filter_str_representation(self) -> None:
         """String representation should include filter name and layer name."""

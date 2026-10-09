@@ -6,6 +6,7 @@ import json
 from typing import Any
 
 from django.contrib.auth.decorators import user_passes_test
+from django.db import transaction
 from django.http import HttpRequest
 from django.http import HttpResponse
 from django.http import JsonResponse
@@ -19,8 +20,10 @@ from brewgis.workspace.analysis.layer_registry import _get_table_columns
 from brewgis.workspace.models import Layer
 from brewgis.workspace.models import LayerFilter
 from brewgis.workspace.services.filter_compiler import FilterCompiler
-from brewgis.workspace.services.spatial_filter import has_spatial_node
-from brewgis.workspace.services.spatial_filter import refresh_spatial_filter_layer
+from brewgis.workspace.services.spatial_filter import FilterNotMaterializableError
+from brewgis.workspace.services.spatial_filter import apply_filter
+from brewgis.workspace.services.spatial_filter import refresh_filter_models
+from brewgis.workspace.services.spatial_filter import unapply_filter
 
 _GEOMETRY_DATA_TYPES = {"geometry", "geography", "USER-DEFINED"}
 
@@ -36,11 +39,14 @@ def _column_metadata(layer: Layer) -> list[dict[str, Any]]:
     ]
 
 
-def _filter_list_context(layer: Layer) -> dict[str, Any]:
+def _filter_list_context(
+    layer: Layer, apply_error: str | None = None
+) -> dict[str, Any]:
     """Build shared context for filter list partial."""
     return {
         "layer": layer,
-        "filters": layer.filters.all(),
+        "filters": layer.filters.select_related("output_layer"),
+        "apply_error": apply_error,
     }
 
 
@@ -88,11 +94,6 @@ def _editor_context(
         "columns": _column_metadata(layer),
         "layers": _spatial_layer_options(layer),
     }
-
-
-def _active_filters_for_layer(layer: Layer) -> list[LayerFilter]:
-    """Return active filters for a layer."""
-    return list(layer.filters.filter(is_active=True))
 
 
 @user_passes_test(lambda u: u.is_authenticated)
@@ -165,20 +166,26 @@ def layer_filter_edit(request: HttpRequest, pk: int) -> HttpResponse:
                 _editor_context(flt.layer, flt, error=f"Invalid filter JSON: {e}"),
             )
         flt.name = name
-        was_spatial = flt.is_active and has_spatial_node(flt.filter_json)
         flt.filter_json = parsed
-        flt.save()
-        # A spatial condition lives in a materialized table, so editing one into
-        # or out of the filter changes which table the layer draws from. The
-        # plan is synchronous, like the base-canvas fill toggle.
-        source_changed = was_spatial or (flt.is_active and has_spatial_node(parsed))
-        if source_changed:
-            refresh_spatial_filter_layer(flt.layer)
-        context = _filter_list_context(flt.layer)
-        response = render(request, "workspace/filter/list.html", context)
-        if source_changed:
-            # The map resolves the tile source from the database on render — see
-            # ``layer_filter_toggle`` for why this cannot be a MapLibre filter.
+        applied = flt.filtered_layer is not None
+        try:
+            with transaction.atomic():
+                flt.save()
+                if applied:
+                    # The filtered layer is a materialized table, so an edited
+                    # tree has to be rebuilt before the map reads it again.
+                    refresh_filter_models(flt)
+        except FilterNotMaterializableError as e:
+            return render(
+                request,
+                "workspace/filter/editor.html",
+                _editor_context(flt.layer, flt, error=str(e)),
+            )
+        response = render(
+            request, "workspace/filter/list.html", _filter_list_context(flt.layer)
+        )
+        if applied:
+            # The map resolves layers and their tiles when the page renders.
             response["HX-Refresh"] = "true"
         return response
     # GET — return editor with existing data
@@ -192,19 +199,18 @@ def layer_filter_edit(request: HttpRequest, pk: int) -> HttpResponse:
 @require_POST
 @user_passes_test(lambda u: u.is_authenticated)
 def layer_filter_delete(request: HttpRequest, pk: int) -> HttpResponse:
-    """Delete a filter and return the list partial."""
+    """Delete a filter (and its filtered layer, by cascade); return the list partial."""
     flt = get_object_or_404(LayerFilter, pk=pk)
     layer = flt.layer
-    # Deleting the last active spatial filter must drop the layer's materialized
-    # filter table, so the layer goes back to reading its declared source (and
-    # the page must reload to pick that source up — see ``layer_filter_toggle``).
-    was_active_spatial = flt.is_active and has_spatial_node(flt.filter_json)
+    applied = flt.filtered_layer is not None
     flt.delete()
-    if was_active_spatial:
-        refresh_spatial_filter_layer(layer)
-    context = _filter_list_context(layer)
-    response = render(request, "workspace/filter/list.html", context)
-    if was_active_spatial:
+    response = render(
+        request, "workspace/filter/list.html", _filter_list_context(layer)
+    )
+    if applied:
+        # The cascade removed the filtered layer: drop its model, and reload so
+        # the map and the layer list lose it too.
+        refresh_filter_models()
         response["HX-Refresh"] = "true"
     return response
 
@@ -212,50 +218,32 @@ def layer_filter_delete(request: HttpRequest, pk: int) -> HttpResponse:
 @require_POST
 @user_passes_test(lambda u: u.is_authenticated)
 def layer_filter_toggle(request: HttpRequest, pk: int) -> HttpResponse:
-    """Toggle the active state of a filter."""
+    """Apply a filter as a new layer, or remove the layer it was applied as.
+
+    Applying never touches the filtered layer: the filter's rows are
+    materialized as a new table and registered as a new Layer beside it
+    (``services.spatial_filter.apply_filter``). The plan is synchronous, like
+    the base-canvas fill toggle, and the page reloads because the map resolves
+    its layers and their tile sources when it renders.
+    """
     flt = get_object_or_404(LayerFilter, pk=pk)
-    flt.is_active = not flt.is_active
-    flt.save()
-
     layer = flt.layer
-    if has_spatial_node(flt.filter_json):
-        # Toggling a spatial filter on materializes the layer's filtered table
-        # and toggling it off drops it — either way the layer's tile source
-        # changes, so the plan/purge runs and the page reloads. The map resolves
-        # a layer's tile source from the database when it renders, so setting a
-        # MapLibre filter cannot show the change: the browser keeps requesting
-        # the table the page was loaded with. The base-canvas fill toggle answers
-        # the same problem with a page load.
-        refresh_spatial_filter_layer(layer)
-        response = render(
-            request, "workspace/filter/list.html", _filter_list_context(layer)
-        )
-        response["HX-Refresh"] = "true"
-        return response
-
-    # Build combined filter expression for all active filters on this layer
-    compiler = FilterCompiler()
-    active = layer.filters.filter(is_active=True)
-    if active:
-        combined = {
-            "type": "group",
-            "operator": "AND",
-            "children": [f.filter_json for f in active],
-        }
-        maplibre_filter = compiler.compile_to_maplibre(combined)
+    if flt.filtered_layer is not None:
+        unapply_filter(flt)
     else:
-        maplibre_filter = None
-
-    context = _filter_list_context(layer)
-    response = render(request, "workspace/filter/list.html", context)
-    response["HX-Trigger"] = json.dumps(
-        {
-            "filter-preview": {
-                "layerKey": layer.db_table,
-                "filterExpression": maplibre_filter,
-            },
-        }
+        try:
+            with transaction.atomic():
+                apply_filter(flt)
+        except FilterNotMaterializableError as e:
+            return render(
+                request,
+                "workspace/filter/list.html",
+                _filter_list_context(layer, apply_error=str(e)),
+            )
+    response = render(
+        request, "workspace/filter/list.html", _filter_list_context(layer)
     )
+    response["HX-Refresh"] = "true"
     return response
 
 
@@ -295,7 +283,9 @@ def layer_filter_preview(request: HttpRequest, pk: int) -> JsonResponse:
         {
             "id": flt.pk,
             "name": flt.name,
-            "is_active": flt.is_active,
+            "filtered_layer": filtered.key
+            if (filtered := flt.filtered_layer)
+            else None,
             "filter_json": flt.filter_json,
             "expression": _human_readable_expression(flt.filter_json),
         }

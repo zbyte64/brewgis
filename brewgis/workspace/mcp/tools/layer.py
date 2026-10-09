@@ -16,8 +16,10 @@ from brewgis.workspace.models import ScenarioType
 from brewgis.workspace.models import SymbologyConfig
 from brewgis.workspace.models import Workspace
 from brewgis.workspace.services.column_inspector import get_table_schema
-from brewgis.workspace.services.spatial_filter import has_spatial_node
-from brewgis.workspace.services.spatial_filter import refresh_spatial_filter_layer
+from brewgis.workspace.services.spatial_filter import apply_filter
+from brewgis.workspace.services.spatial_filter import layer_owns_filter_models
+from brewgis.workspace.services.spatial_filter import refresh_filter_models
+from brewgis.workspace.services.spatial_filter import unapply_filter
 from brewgis.workspace.symbology.auto import auto_generate_symbology
 from brewgis.workspace.symbology.generator import generate_maplibre_style
 
@@ -274,13 +276,15 @@ def register_tools(server: object) -> None:
             return []
         workspace = get_object_or_404(Workspace, pk=ws_pk)
         layer = get_object_or_404(Layer, key=layer_key, workspace=workspace)
-        filters = LayerFilter.objects.filter(layer=layer)
+        filters = LayerFilter.objects.filter(layer=layer).select_related("output_layer")
         return [
             {
                 "id": f.pk,
                 "name": f.name,
                 "filter_json": f.filter_json,
-                "is_active": f.is_active,
+                "filtered_layer_key": filtered.key
+                if (filtered := f.filtered_layer)
+                else None,
             }
             for f in filters
         ]
@@ -402,7 +406,10 @@ def register_tools(server: object) -> None:
             return {"error": "Invalid workspace slug", "deleted": False}
         workspace = get_object_or_404(Workspace, pk=ws_pk)
         layer = get_object_or_404(Layer, key=layer_key, workspace=workspace)
+        drops_filter_models = layer_owns_filter_models(layer)
         layer.delete()
+        if drops_filter_models:
+            refresh_filter_models()
         return {"deleted": True, "key": layer_key}
 
     @server.tool()  # type: ignore[attr-defined]
@@ -412,7 +419,11 @@ def register_tools(server: object) -> None:
         name: str,
         filter_json: str = "{}",
     ) -> dict[str, Any]:
-        """Create a new filter for a layer."""
+        """Create a filter for a layer and apply it as a new layer.
+
+        The filtered layer is untouched: the filter's matching rows become a new
+        layer, whose key is returned.
+        """
         try:
             ws_pk = int(workspace_slug)
         except ValueError:
@@ -423,12 +434,9 @@ def register_tools(server: object) -> None:
             layer=layer,
             name=name,
             filter_json=json.loads(filter_json),
-            is_active=True,
         )
-        # Created active, so a spatial condition must materialize the layer's
-        # filtered table before the map reads it (synchronous, like the view).
-        refresh_spatial_filter_layer(layer)
-        return {"id": f.pk, "name": f.name}
+        filtered = apply_filter(f)
+        return {"id": f.pk, "name": f.name, "filtered_layer_key": filtered.key}
 
     @server.tool()  # type: ignore[attr-defined]
     def toggle_filter(
@@ -437,7 +445,7 @@ def register_tools(server: object) -> None:
         filter_id: int,
         enabled: bool,
     ) -> dict[str, Any]:
-        """Enable or disable a filter."""
+        """Apply a filter as a new layer (enabled) or remove that layer (disabled)."""
         try:
             ws_pk = int(workspace_slug)
         except ValueError:
@@ -445,13 +453,13 @@ def register_tools(server: object) -> None:
         workspace = get_object_or_404(Workspace, pk=ws_pk)
         get_object_or_404(Layer, key=layer_key, workspace=workspace)
         f = get_object_or_404(LayerFilter, pk=filter_id)
-        f.is_active = enabled
-        f.save()
-        if has_spatial_node(f.filter_json):
-            # Enabling materializes the layer's filtered table, disabling drops
-            # it — either way the layer's tile source changes.
-            refresh_spatial_filter_layer(f.layer)
-        return {"id": f.pk, "is_active": f.is_active}
+        filtered = f.filtered_layer
+        if enabled and filtered is None:
+            filtered = apply_filter(f)
+        elif not enabled and filtered is not None:
+            unapply_filter(f)
+            filtered = None
+        return {"id": f.pk, "filtered_layer_key": filtered.key if filtered else None}
 
     @server.tool()  # type: ignore[attr-defined]
     def delete_filter_tool(
@@ -467,11 +475,10 @@ def register_tools(server: object) -> None:
         workspace = get_object_or_404(Workspace, pk=ws_pk)
         get_object_or_404(Layer, key=layer_key, workspace=workspace)
         f = get_object_or_404(LayerFilter, pk=filter_id)
-        # Deleting the last active spatial filter must drop the layer's
-        # materialized filter table, so the layer reverts to its source.
-        was_active_spatial = f.is_active and has_spatial_node(f.filter_json)
-        layer = f.layer
+        # Deleting an applied filter cascades to its filtered layer, whose
+        # model then has to be dropped.
+        applied = f.filtered_layer is not None
         f.delete()
-        if was_active_spatial:
-            refresh_spatial_filter_layer(layer)
+        if applied:
+            refresh_filter_models()
         return {"deleted": True, "id": filter_id}

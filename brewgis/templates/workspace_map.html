@@ -1320,33 +1320,6 @@
       });
     })();
 
-    // ── Active filter auto-apply on map load ─────────────────
-    var mapEl = document.querySelector('brew-gis-map');
-    if (mapEl) {
-      mapEl.addEventListener('mapready', function() {
-        var filterEl = document.getElementById('active-filter-data');
-        if (!filterEl || !filterEl.dataset.filters) return;
-        try {
-          var filterData = JSON.parse(filterEl.dataset.filters);
-          for (var layerKey in filterData) {
-            if (!Object.prototype.hasOwnProperty.call(filterData, layerKey)) continue;
-            var expr = filterData[layerKey];
-            var map = mapEl._map || mapEl['_map'];
-            if (!map) return;
-            var style = map.getStyle();
-            if (!style || !style.layers) return;
-            var targetLayer = style.layers.find(function(l) {
-              return l.id.indexOf(layerKey) === 0;
-            });
-            if (!targetLayer) continue;
-            try {
-              map.setFilter(targetLayer.id, expr || null);
-            } catch (e) {}
-          }
-        } catch (e) {}
-      });
-    }
-
     // ── Layer reorder (drag-and-drop) ──────────────────────────
     (function() {
       var dragSrc = null;

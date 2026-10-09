@@ -70,7 +70,7 @@ Key rules:
 |`brewgis/workspace/tasks.py`|8 Celery tasks for data import, export, allocation, stitching, report generation|
 |`brewgis/workspace/analysis/`|Pipeline orchestrator, module/layer registries, equity preprocessor (food access is SQLMesh: `osm/food_pois*.sql`; road-network distances: `overture/road_network_*`, `python/network_zone_distance.py`) |
 |`brewgis/workspace/symbology/`|Map style generation (classifiers, generator, auto-config, legend, stats), 22 color palettes|
-|`brewgis/workspace/services/`|~34 service modules: base canvas ETL pipeline (1047 lines), schema, fetchers (Census, LEHD, POI, NLCD), spatial allocator, stitcher, imputation engine, built form classifier, paint constraints, scenario cloner, canvas view manager, geospatial filter models + predicate (`spatial_filter.py`), `_db.py` (cached SQLAlchemy singleton)|
+|`brewgis/workspace/services/`|~34 service modules: base canvas ETL pipeline (1047 lines), schema, fetchers (Census, LEHD, POI, NLCD), spatial allocator, stitcher, imputation engine, built form classifier, paint constraints, scenario cloner, canvas view manager, layer filters materialized as new layers (`spatial_filter.py`, SQL/MapLibre compilers in `filter_compiler.py`), `_db.py` (cached SQLAlchemy singleton)|
 |`brewgis/workspace/mcp/`|MCP server: FastMCP stdio entrypoint, auth stub, 8 tool modules|
 |`brewgis/workspace/dlt_pipelines/`|dlt pipeline modules (nlcd) — load directly into DuckDB (caches HTTP, handles raster/zip)|
 |`brewgis/workspace/management/commands/`|Management commands: import_sacog_demo, populate_base_canvas, materialize_sacog_base_canvas, compare_sacog_basemap, onboard_geography, run_mcp, export_story_packet, restore_demo_db|
@@ -239,7 +239,7 @@ npm run test      # vitest
 
 |`brewgis/workspace/dlt_pipelines/__init__.py`|dlt pipeline package: nlcd pipeline modules|
 |`brewgis/workspace/services/base_canvas_pipeline.py`|1047-line 11-step ETL pipeline (raw SQL with SQL injection quoting)|
-|`brewgis/workspace/services/spatial_filter.py`|Geospatial filters: `Layer.effective_source`'s filtered table + the SQL predicate (index-driven probe of a projected filter source)|
+|`brewgis/workspace/services/spatial_filter.py`|Layer filters: applying a `LayerFilter` materializes its rows as a new table + new `Layer` (`LayerFilter.output_layer`) and never changes the filtered layer; projected, indexed filter sources for spatial conditions|
 |`brewgis/workspace/services/_db.py`|Cached SQLAlchemy engine singleton (functools.lru_cache)|
 |`brewgis/sqlmesh/config.py`|SQLMesh config: Postgres dialect, 51 config variables, gateway settings|
 |`brewgis/_ruff_rules/rules.py`|6 custom Ruff lint rules for project anti-patterns|

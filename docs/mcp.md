@@ -86,9 +86,9 @@ python manage.py run_mcp
 | `preview_symbology_style(workspace_slug, layer_key, symbology_type)` | Preview MapLibre style JSON | Sync |
 | `create_layer(workspace_slug, name, table_schema, table_name, geometry_type, key?)` | Register a PostGIS table as a layer | Sync |
 | `delete_layer_tool(workspace_slug, layer_key)` | Delete a layer | Sync |
-| `create_filter(workspace_slug, layer_key, name, filter_json)` | Create a layer filter | Sync |
-| `toggle_filter(workspace_slug, layer_key, filter_id, enabled)` | Enable/disable a filter | Sync |
-| `delete_filter_tool(workspace_slug, layer_key, filter_id)` | Delete a filter | Sync |
+| `create_filter(workspace_slug, layer_key, name, filter_json)` | Create a layer filter and apply it as a new layer (returns `filtered_layer_key`); the filtered layer is unchanged | Sync |
+| `toggle_filter(workspace_slug, layer_key, filter_id, enabled)` | Apply a filter as a new layer (`enabled`) or remove that layer | Sync |
+| `delete_filter_tool(workspace_slug, layer_key, filter_id)` | Delete a filter and its filtered layer | Sync |
 
 ### Paint Tools
 

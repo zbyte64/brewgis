@@ -165,6 +165,20 @@ class Layer(models.Model):
         ),
     )
 
+    source_filter = models.OneToOneField(
+        "LayerFilter",
+        on_delete=models.CASCADE,
+        null=True,
+        blank=True,
+        related_name="output_layer",
+        help_text=(
+            "The filter whose matching rows this layer draws: applying a "
+            "LayerFilter materializes a new table and registers it as this new "
+            "layer, leaving the filtered layer untouched. Deleting the filter "
+            "deletes this layer; deleting this layer un-applies the filter."
+        ),
+    )
+
     class Meta:
         # Group first (ungrouped layers sort last, after all named groups),
         # then each group's own display_order — so `{% regroup %}` in the
@@ -176,33 +190,18 @@ class Layer(models.Model):
     def __str__(self) -> str:
         return self.name
 
-    def effective_source(self) -> tuple[str, str]:
-        """The ``(schema, table)`` this layer's tiles are drawn from.
-
-        A layer with an active spatial filter cannot be filtered client-side, so
-        it reads the materialized copy of itself that SQLMesh builds
-        (``services.spatial_filter``); every other layer reads its declared
-        source. The MapLibre layer id stays ``self.key`` either way, so the
-        client-side column-filter mapping (keyed by layer key) is unaffected.
-        """
-        from brewgis.workspace.services.spatial_filter import SPATIAL_FILTER_SCHEMA
-        from brewgis.workspace.services.spatial_filter import filter_model_table
-        from brewgis.workspace.services.spatial_filter import (
-            layer_has_active_spatial_filter,
-        )
-
-        if layer_has_active_spatial_filter(self):
-            return (SPATIAL_FILTER_SCHEMA, filter_model_table(self.pk))
+    def source_table(self) -> tuple[str, str]:
+        """The ``(schema, table)`` this layer's tiles are drawn from."""
         return (self.db_schema or self.workspace.db_schema, self.db_table)
 
     def _source_id(self) -> str:
         """Return the tile server source identifier (schema.table)."""
-        schema, table = self.effective_source()
+        schema, table = self.source_table()
         return _tile_source_id(schema, table)
 
     def resolve_tiles_url(self, tile_matrix_set: str = "WebMercatorQuad") -> str:
         """Return the raw tile URL template (tipg only; for backward compat)."""
-        schema, table = self.effective_source()
+        schema, table = self.source_table()
         return _tile_url_template(
             schema,
             table,
@@ -212,7 +211,7 @@ class Layer(models.Model):
 
     def to_maplibre_source(self) -> dict:
         """Return a MapLibre GL JS source specification dict."""
-        schema, table = self.effective_source()
+        schema, table = self.source_table()
         return _maplibre_vector_source(
             schema, table, backend=self.workspace.tile_server_backend
         )
@@ -1074,9 +1073,11 @@ class DataSource(models.Model):
 class LayerFilter(models.Model):
     """A saved filter expression for a layer.
 
-    Stores an expression tree in JSON format that can be applied to filter
-    features displayed on the map. Supports column filters, geometry filters,
-    join filters, and AND/OR composition.
+    Stores an expression tree in JSON format — column and spatial conditions
+    under AND/OR groups. Applying a filter never changes the layer it filters:
+    it materializes the matching rows as a new table and registers that table
+    as a new :class:`Layer` (``output_layer``, see ``services.spatial_filter``).
+    A filter is applied exactly while that layer exists.
     """
 
     layer = models.ForeignKey(
@@ -1090,10 +1091,6 @@ class LayerFilter(models.Model):
         blank=True,
         help_text='Expression tree: {"type": "group", "operator": "AND"|"OR", "children": [...]}',
     )
-    is_active = models.BooleanField(
-        default=False,
-        help_text="When active, this filter is applied to the layer on the map.",
-    )
     created_at = models.DateTimeField(auto_now_add=True)
     updated_at = models.DateTimeField(auto_now=True)
 
@@ -1104,6 +1101,14 @@ class LayerFilter(models.Model):
 
     def __str__(self) -> str:
         return f"{self.name} ({self.layer.name})"
+
+    @property
+    def filtered_layer(self) -> Layer | None:
+        """The layer this filter's rows are materialized into; ``None`` until applied."""
+        try:
+            return self.output_layer
+        except Layer.DoesNotExist:
+            return None
 
 
 class LayerGroup(models.Model):

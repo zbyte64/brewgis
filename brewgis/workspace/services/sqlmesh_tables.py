@@ -20,8 +20,11 @@ from django.db import connection
 
 from brewgis.sqlmesh.model_names import MODEL_SCHEMA_PREFIX
 from brewgis.sqlmesh.model_names import RESULT_SCHEMA_PREFIX
+from brewgis.workspace.models import LayerFilter
 from brewgis.workspace.models import Workspace
 from brewgis.workspace.services.base_canvas_schema import BaseCanvasSchema
+from brewgis.workspace.services.spatial_filter import SPATIAL_FILTER_SCHEMA
+from brewgis.workspace.services.spatial_filter import filter_model_table
 
 # ``scenario_canvas`` holds the per-scenario canvas models (one model per
 # ALTERNATIVE scenario, ``canvas_<scenario_id>`` — see
@@ -41,11 +44,11 @@ from brewgis.workspace.services.base_canvas_schema import BaseCanvasSchema
 # offering it back as an importable source would let a workspace base itself on
 # its own derivative.
 #
-# ``spatial_filter`` holds the per-layer spatial-filter models
-# (``sqlmesh/macros/spatial_filter_blueprints.py``), which a layer draws from
-# while it has an active spatial filter (``Layer.effective_source``). Like the
-# fill output it is derived from a source the layer already points at, so it is
-# not itself an importable source.
+# ``spatial_filter`` holds the applied layer-filter models
+# (``sqlmesh/macros/spatial_filter_blueprints.py``), each drawn by its filter's
+# own Layer (``LayerFilter.output_layer``), plus the projections their spatial
+# conditions probe. A filtered layer is reached through that Layer, so it is not
+# itself an importable source.
 #
 # The same schemas plus ``public`` are what the *data catalog* hides: ``public``
 # holds Django's own tables and the legacy ``public.base_canvas``, none of which
@@ -153,6 +156,11 @@ def _blueprinted_model_tables() -> frozenset[tuple[str, str]]:
     that resolves which layer the workspace reads — so a link built from this
     can never disagree with the table the base canvas layer is registered
     under.
+
+    Likewise every applied layer filter has one
+    ``spatial_filter.filter_<filter pk>`` (see
+    ``sqlmesh/macros/spatial_filter_blueprints.py``), exactly while its filtered
+    layer exists — which is also what lets that layer be filtered in turn.
     """
     tables: set[tuple[str, str]] = set()
     for workspace in Workspace.objects.filter(fill_built_form=True).only(
@@ -160,6 +168,12 @@ def _blueprinted_model_tables() -> frozenset[tuple[str, str]]:
     ):
         schema, _, table = workspace.effective_base_table().rpartition(".")
         tables.add((schema or "public", table))
+    tables.update(
+        (SPATIAL_FILTER_SCHEMA, filter_model_table(pk))
+        for pk in LayerFilter.objects.filter(output_layer__isnull=False).values_list(
+            "pk", flat=True
+        )
+    )
     return frozenset(tables)
 
 

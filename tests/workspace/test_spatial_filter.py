@@ -1,12 +1,12 @@
-"""Tests for geospatial layer filters.
+"""Tests for layer filters, materialized as a new layer.
 
-A ``spatial`` node cannot be evaluated client-side, so it is compiled to SQL
-(``services.spatial_filter``) and materialized by two blueprinted SQLMesh models:
-a projection per filter source (``spatial_filter_source``) and a copy of the
-filtered layer that probes it (``spatial_filter``). These tests pin the
-predicate's shape, the client-side compiler's decision to ignore the node, the
-profiles SQLMesh instantiates each model from, and the source resolution that
-decides whether a layer can have one at all.
+Applying a filter never touches the layer it filters: the matching rows are
+materialized by a blueprinted SQLMesh model (``spatial_filter``, one per applied
+filter, probing a projection per spatial filter source,
+``spatial_filter_source``) and registered as a new Layer. These tests pin the
+predicate that model selects with, the preview compiler's decision to ignore
+spatial nodes, the profiles SQLMesh instantiates each model from, the new
+layer's lifecycle, and that the filtered layer stays exactly as it was.
 """
 
 from __future__ import annotations
@@ -25,26 +25,31 @@ from brewgis.sqlmesh.macros.spatial_filter_blueprints import spatial_filter_prof
 from brewgis.sqlmesh.macros.spatial_filter_blueprints import (
     spatial_filter_source_profiles,
 )
+from brewgis.workspace.models import Layer
 from brewgis.workspace.models import LayerFilter
+from brewgis.workspace.models import LayerGroup
 from brewgis.workspace.services.filter_compiler import FilterCompiler
 from brewgis.workspace.services.spatial_filter import SPATIAL_FILTER_SCHEMA
 from brewgis.workspace.services.spatial_filter import all_filter_sources
-from brewgis.workspace.services.spatial_filter import compile_spatial_predicate
+from brewgis.workspace.services.spatial_filter import apply_filter
 from brewgis.workspace.services.spatial_filter import filter_model_fqn
 from brewgis.workspace.services.spatial_filter import filter_model_table
 from brewgis.workspace.services.spatial_filter import filter_source_model_fqn
 from brewgis.workspace.services.spatial_filter import filter_source_model_table
 from brewgis.workspace.services.spatial_filter import filter_source_of_node
-from brewgis.workspace.services.spatial_filter import filter_source_ref
+from brewgis.workspace.services.spatial_filter import filter_sources
 from brewgis.workspace.services.spatial_filter import geometry_column
-from brewgis.workspace.services.spatial_filter import has_spatial_node
-from brewgis.workspace.services.spatial_filter import layer_filter_sources
-from brewgis.workspace.services.spatial_filter import layer_has_active_spatial_filter
+from brewgis.workspace.services.spatial_filter import layer_owns_filter_models
 from brewgis.workspace.services.spatial_filter import model_backed_table_ref
 from brewgis.workspace.services.spatial_filter import registered_geometry_column
-from brewgis.workspace.services.spatial_filter import source_ref_for_layer
-from brewgis.workspace.services.spatial_filter import spatial_nodes
+from brewgis.workspace.services.spatial_filter import spatial_predicate
+from brewgis.workspace.services.spatial_filter import table_ref
+from brewgis.workspace.services.spatial_filter import unapply_filter
+from brewgis.workspace.services.sqlmesh_tables import _model_backed_tables
 from tests.factories import LayerFactory
+from tests.factories import ScenarioFactory
+from tests.factories import StyleClassFactory
+from tests.factories import SymbologyConfigFactory
 
 if TYPE_CHECKING:
     from collections.abc import Iterator
@@ -52,14 +57,20 @@ if TYPE_CHECKING:
     from django.http import HttpResponse
     from django.test import Client
 
-    from brewgis.workspace.models import Layer
-
-# A projected CRS (CA Albers) — the predicate only ever embeds the number.
+# A projected CRS (CA Albers, metres) — the region's local CRS in these tests.
 _LOCAL_SRID = 3310
 
 # A resolved projection FQN, as the blueprint macro injects it into a profile's
 # copy of a condition.
 _FILTER_REF = 'brewgis."spatial_filter"."src_deadbeef"'
+
+_DU_EQ_5 = {
+    "type": "column",
+    "field": "du",
+    "operator": "eq",
+    "value": "5",
+    "value_type": "number",
+}
 
 
 def _node(**overrides: object) -> dict:
@@ -76,9 +87,14 @@ def _node(**overrides: object) -> dict:
     return node
 
 
-def _compile(node: dict, *, source_geom: str = "geometry", mpu: float = 1.0) -> str:
-    """Compile *node*'s spatial predicate for a metres-per-unit factor of *mpu*."""
-    return compile_spatial_predicate(
+def _stored(node: dict) -> dict:
+    """*node* as the editor stores it — without the macro-injected ``filter_ref``."""
+    return {key: value for key, value in node.items() if key != "filter_ref"}
+
+
+def _predicate(node: dict, *, source_geom: str = "geometry", mpu: float = 1.0) -> str:
+    """Compile one spatial *node* for a metres-per-unit factor of *mpu*."""
+    return spatial_predicate(
         node, source_geom=source_geom, local_srid=_LOCAL_SRID, mpu=mpu
     )
 
@@ -107,42 +123,11 @@ def geometry_probe_tables(db) -> Iterator[None]:
         cursor.execute("DROP SCHEMA IF EXISTS spatial_filter_probe CASCADE")
 
 
-class TestHasSpatialNode:
-    """Detection drives both the blueprint profiles and the tile-source routing."""
-
-    def test_spatial_node_detected(self) -> None:
-        assert has_spatial_node(_node()) is True
-
-    def test_nested_spatial_node_detected(self) -> None:
-        tree = {
-            "type": "group",
-            "operator": "AND",
-            "children": [
-                {"type": "column", "field": "du"},
-                {"type": "group", "operator": "OR", "children": [_node()]},
-            ],
-        }
-        assert has_spatial_node(tree) is True
-
-    def test_column_only_tree_is_not_spatial(self) -> None:
-        tree = {
-            "type": "group",
-            "operator": "AND",
-            "children": [{"type": "column", "field": "du"}],
-        }
-        assert has_spatial_node(tree) is False
-
-    def test_non_dict_and_empty_group_are_not_spatial(self) -> None:
-        assert has_spatial_node(None) is False
-        assert has_spatial_node([]) is False
-        assert has_spatial_node({"type": "group", "children": []}) is False
-
-
-class TestCompileSpatialPredicate:
-    """The SQL the layer model's WHERE clause is built from."""
+class TestSpatialPredicate:
+    """The SQL one spatial condition contributes to the filter model's WHERE."""
 
     def test_intersects_without_buffer(self) -> None:
-        sql = _compile(_node())
+        sql = _predicate(_node())
         assert sql.startswith("EXISTS (SELECT 1 FROM ")
         assert "ST_Intersects(" in sql
         assert "ST_DWithin(" not in sql
@@ -156,11 +141,12 @@ class TestCompileSpatialPredicate:
         assert 'f."sf_geometry"' in sql
 
     def test_excludes_negates_the_exists(self) -> None:
-        sql = _compile(_node(mode="excludes"))
-        assert sql.startswith("NOT EXISTS (SELECT 1 FROM ")
+        assert _predicate(_node(mode="excludes")).startswith(
+            "NOT EXISTS (SELECT 1 FROM "
+        )
 
     def test_buffer_is_converted_from_metres(self) -> None:
-        sql = _compile(_node(buffer_meters=500))
+        sql = _predicate(_node(buffer_meters=500))
         assert "ST_DWithin(" in sql
         # mpu 1.0 is a metre-based CRS: 500 metres is 500 units. The number is
         # rendered from the metres-per-unit factor, never assumed.
@@ -169,52 +155,83 @@ class TestCompileSpatialPredicate:
 
     def test_buffer_scales_by_metres_per_unit(self) -> None:
         """A CRS in US survey feet needs the metre buffer divided by ~3.28."""
-        sql = _compile(_node(buffer_meters=500), mpu=0.30480060960121924)
-        assert "1640.416" in sql
-
-    def test_own_source_geometry_column_is_used(self) -> None:
-        sql = _compile(_node(), source_geom="local_geometry")
-        assert f'ST_Transform(src."local_geometry", {_LOCAL_SRID})' in sql
-
-    def test_group_keeps_only_the_spatial_child(self) -> None:
-        tree = {
-            "type": "group",
-            "operator": "AND",
-            "children": [{"type": "column", "field": "du"}, _node()],
-        }
-        sql = _compile(tree)
-        assert sql.startswith("(EXISTS (SELECT 1 FROM ")
-        assert sql.endswith("))")
-        assert "du" not in sql
-
-    def test_group_with_two_spatial_children_joins_with_the_operator(self) -> None:
-        tree = {
-            "type": "group",
-            "operator": "OR",
-            "children": [
-                _node(filter_ref='brewgis."spatial_filter"."src_one"'),
-                _node(filter_ref='brewgis."spatial_filter"."src_two"'),
-            ],
-        }
-        sql = _compile(tree)
-        assert " OR " in sql
-        assert '"src_one"' in sql
-        assert '"src_two"' in sql
-
-    def test_column_only_tree_has_no_predicate(self) -> None:
-        assert _compile({"type": "column", "field": "du"}) == ""
-
-    def test_empty_and_missing_trees_have_no_predicate(self) -> None:
-        assert _compile({}) == ""
-        assert (
-            compile_spatial_predicate(
-                None, source_geom="geometry", local_srid=_LOCAL_SRID, mpu=1.0
-            )
-            == ""
+        assert "1640.416" in _predicate(
+            _node(buffer_meters=500), mpu=0.30480060960121924
         )
 
+    def test_own_source_geometry_column_is_used(self) -> None:
+        sql = _predicate(_node(), source_geom="local_geometry")
+        assert f'ST_Transform(src."local_geometry", {_LOCAL_SRID})' in sql
+
     def test_zero_buffer_is_a_plain_intersection(self) -> None:
-        assert "ST_DWithin(" not in _compile(_node(buffer_meters=0))
+        assert "ST_DWithin(" not in _predicate(_node(buffer_meters=0))
+
+
+class TestFilteredRows:
+    """The rows a filter model selects, run against PostGIS.
+
+    The whole tree — column and spatial conditions under any group operator —
+    is one predicate, so an ``OR`` across a spatial and a column condition keeps
+    the rows either one matches.
+    """
+
+    @pytest.fixture
+    def rows(self, db) -> Iterator[None]:
+        with connection.cursor() as cursor:
+            cursor.execute("CREATE EXTENSION IF NOT EXISTS postgis")
+            cursor.execute("DROP SCHEMA IF EXISTS filter_rows_probe CASCADE")
+            cursor.execute("CREATE SCHEMA filter_rows_probe")
+            # The filtered layer: three parcels along a line, 4326.
+            cursor.execute(
+                "CREATE TABLE filter_rows_probe.parcels AS "
+                "SELECT * FROM (VALUES "
+                "(1, 'residential', ST_Transform(ST_SetSRID(ST_MakePoint(0, 0), 3310), 4326)),"
+                "(2, 'commercial', ST_Transform(ST_SetSRID(ST_MakePoint(100, 0), 3310), 4326)),"
+                "(3, 'residential', ST_Transform(ST_SetSRID(ST_MakePoint(10000, 0), 3310), 4326))"
+                ") AS t(id, land_use, geometry)"
+            )
+            # A projected filter source, as spatial_filter_source materializes it.
+            cursor.execute(
+                "CREATE TABLE filter_rows_probe.proj AS "
+                "SELECT ST_SetSRID(ST_MakePoint(0, 0), 3310) AS sf_geometry"
+            )
+        yield
+        with connection.cursor() as cursor:
+            cursor.execute("DROP SCHEMA IF EXISTS filter_rows_probe CASCADE")
+
+    @staticmethod
+    def _ids(tree: dict) -> list[int]:
+        where = FilterCompiler().compile(
+            tree, source_geom="geometry", local_srid=_LOCAL_SRID, mpu=1.0
+        )
+        with connection.cursor() as cursor:
+            cursor.execute(
+                f"SELECT src.id FROM filter_rows_probe.parcels AS src WHERE {where} "  # noqa: S608 (compiled predicate)
+                "ORDER BY src.id"
+            )
+            return [row[0] for row in cursor.fetchall()]
+
+    def _near(self, **overrides: object) -> dict:
+        return _node(filter_ref="filter_rows_probe.proj", **overrides)
+
+    def test_buffer_selects_rows_within_the_distance(self, rows) -> None:
+        assert self._ids(self._near(buffer_meters=150)) == [1, 2]
+
+    def test_excludes_keeps_the_rows_outside(self, rows) -> None:
+        assert self._ids(self._near(mode="excludes", buffer_meters=150)) == [3]
+
+    def test_column_and_spatial_conditions_combine(self, rows) -> None:
+        residential = {
+            "type": "column",
+            "field": "land_use",
+            "operator": "eq",
+            "value": "residential",
+        }
+        near = self._near(buffer_meters=150)
+        both = {"type": "group", "operator": "AND", "children": [residential, near]}
+        either = {"type": "group", "operator": "OR", "children": [residential, near]}
+        assert self._ids(both) == [1]
+        assert self._ids(either) == [1, 2, 3]
 
 
 class TestClientSideSkip:
@@ -251,10 +268,10 @@ class TestClientSideSkip:
 class TestModelNaming:
     """Both models' names are derivable from their input alone, by both sides."""
 
-    def test_layer_table_name_is_keyed_on_the_layer(self) -> None:
+    def test_filter_table_name_is_keyed_on_the_filter(self) -> None:
         assert filter_model_table(42) == "filter_42"
 
-    def test_layer_fqn_quotes_every_part(self) -> None:
+    def test_filter_fqn_quotes_every_part(self) -> None:
         assert filter_model_fqn(42) == f'brewgis."{SPATIAL_FILTER_SCHEMA}"."filter_42"'
 
     def test_source_table_name_is_keyed_on_the_source_identity(self) -> None:
@@ -304,12 +321,12 @@ class TestNodeSource:
 
 
 class TestSourceResolution:
-    """Which tables each model may read from, and how they are named."""
+    """How a filter model names the tables it reads."""
 
     def test_external_model_uses_a_bare_two_part_reference(self, db) -> None:
         # Declared in sqlmesh/external_models.yaml as brewgis.public.base_canvas;
         # SQLMesh qualifies the bare form against the project.
-        assert source_ref_for_layer("public", "base_canvas") == "public.base_canvas"
+        assert table_ref("public", "base_canvas") == "public.base_canvas"
 
     def test_model_backed_table_uses_the_project_fqn(self, monkeypatch) -> None:
         monkeypatch.setattr(
@@ -317,92 +334,172 @@ class TestSourceResolution:
             lambda: frozenset({("sacog", "parcels")}),
         )
         assert model_backed_table_ref("sacog", "parcels") == "brewgis.sacog.parcels"
-        assert source_ref_for_layer("sacog", "parcels") == "brewgis.sacog.parcels"
+        assert table_ref("sacog", "parcels") == "brewgis.sacog.parcels"
 
-    def test_unknown_table_resolves_to_nothing_for_a_filtered_layer(self, db) -> None:
-        assert source_ref_for_layer("public", "no_such_table_xyz") is None
+    def test_any_other_table_is_read_by_its_bare_name(self, db) -> None:
+        # An imported shapefile is filtered like any other layer: the model only
+        # has to read it.
+        assert table_ref("public", "my_import") == "public.my_import"
 
-    def test_unknown_table_still_resolves_for_a_filter_source(self, db) -> None:
-        # A filter source only has to be readable — the projection copies it and
-        # adds no dependency — so it never needs a model-backed reference.
-        assert filter_source_ref("public", "no_such_table_xyz") == (
-            "public.no_such_table_xyz"
+    def test_an_applied_filters_table_is_model_backed(self, db) -> None:
+        """A filtered layer can itself be filtered, through its model's FQN."""
+        flt = LayerFilter.objects.create(
+            layer=LayerFactory(), name="DU", filter_json=_DU_EQ_5
         )
+        table = (SPATIAL_FILTER_SCHEMA, filter_model_table(flt.pk))
+        assert table not in _model_backed_tables()
+
+        apply_filter(flt)
+
+        assert table in _model_backed_tables()
 
 
-class TestActiveSpatialFilter:
-    """Layer-level predicates the views and the tile routing both use."""
+class TestApplyFilter:
+    """Applying a filter creates a new layer and leaves the filtered one alone."""
 
     @pytest.fixture
-    def layer(self, db) -> Layer:
-        return LayerFactory()
-
-    def test_column_only_filters_do_not_count(self, layer) -> None:
-        LayerFilter.objects.create(
-            layer=layer,
-            name="DU",
-            filter_json={
-                "type": "group",
-                "operator": "AND",
-                "children": [{"type": "column", "field": "du"}],
-            },
-            is_active=True,
+    def source(self, db) -> Layer:
+        workspace_layer = LayerFactory(
+            name="Parcels",
+            db_schema="sacog",
+            db_table="parcels",
+            geometry_type="fill",
+            display_order=3,
         )
-        assert layer_has_active_spatial_filter(layer) is False
-
-    def test_inactive_spatial_filter_does_not_count(self, layer) -> None:
-        LayerFilter.objects.create(
-            layer=layer, name="Near POIs", filter_json=_node(), is_active=False
+        workspace_layer.group = LayerGroup.objects.create(
+            workspace=workspace_layer.workspace, name="Land"
         )
-        assert layer_has_active_spatial_filter(layer) is False
+        workspace_layer.scenario = ScenarioFactory(workspace=workspace_layer.workspace)
+        workspace_layer.save()
+        return workspace_layer
 
-    def test_active_spatial_filter_counts(self, layer) -> None:
-        LayerFilter.objects.create(
-            layer=layer, name="Near POIs", filter_json=_node(), is_active=True
+    def test_a_new_layer_draws_the_filters_table(self, source) -> None:
+        flt = LayerFilter.objects.create(
+            layer=source, name="Five DU", filter_json=_DU_EQ_5
         )
-        assert layer_has_active_spatial_filter(layer) is True
+
+        filtered = apply_filter(flt)
+
+        assert filtered.pk != source.pk
+        assert filtered.source_table() == (SPATIAL_FILTER_SCHEMA, f"filter_{flt.pk}")
+        assert filtered.name == "Parcels — Five DU"
+        assert flt.filtered_layer == filtered
+        assert filtered.workspace == source.workspace
+        assert filtered.group == source.group
+        assert filtered.scenario == source.scenario
+        assert filtered.geometry_type == source.geometry_type
+
+    def test_the_filtered_layer_is_unchanged(self, source) -> None:
+        before = (
+            source.source_table(),
+            source.to_maplibre_source(),
+            source.resolve_tiles_url(),
+        )
+        flt = LayerFilter.objects.create(
+            layer=source, name="Near POIs", filter_json=_stored(_node())
+        )
+
+        apply_filter(flt)
+
+        source = Layer.objects.get(pk=source.pk)
+        after = (
+            source.source_table(),
+            source.to_maplibre_source(),
+            source.resolve_tiles_url(),
+        )
+        assert after == before
+
+    def test_symbology_is_copied_not_shared(self, source) -> None:
+        config = SymbologyConfigFactory(layer=source, symbology_type="categorical")
+        StyleClassFactory(symbology=config, label="A")
+        StyleClassFactory(symbology=config, label="B")
+        flt = LayerFilter.objects.create(layer=source, name="DU", filter_json=_DU_EQ_5)
+
+        filtered = apply_filter(flt)
+
+        copy = filtered.symbology
+        assert copy.pk != config.pk
+        assert copy.symbology_type == "categorical"
+        assert sorted(c.label for c in copy.classes.all()) == ["A", "B"]
+        assert config.classes.count() == 2
+
+    def test_unapplying_deletes_only_the_new_layer(self, source) -> None:
+        flt = LayerFilter.objects.create(layer=source, name="DU", filter_json=_DU_EQ_5)
+        filtered = apply_filter(flt)
+
+        unapply_filter(flt)
+
+        assert not Layer.objects.filter(pk=filtered.pk).exists()
+        assert Layer.objects.filter(pk=source.pk).exists()
+        assert LayerFilter.objects.get(pk=flt.pk).filtered_layer is None
+
+    def test_deleting_the_filter_deletes_its_layer(self, source) -> None:
+        flt = LayerFilter.objects.create(layer=source, name="DU", filter_json=_DU_EQ_5)
+        filtered = apply_filter(flt)
+
+        flt.delete()
+
+        assert not Layer.objects.filter(pk=filtered.pk).exists()
+
+    def test_deleting_the_new_layer_unapplies_the_filter(self, source) -> None:
+        flt = LayerFilter.objects.create(layer=source, name="DU", filter_json=_DU_EQ_5)
+        filtered = apply_filter(flt)
+        assert layer_owns_filter_models(filtered)
+
+        filtered.delete()
+
+        assert LayerFilter.objects.get(pk=flt.pk).filtered_layer is None
+
+    def test_deleting_the_filtered_layer_deletes_the_new_layer(self, source) -> None:
+        flt = LayerFilter.objects.create(layer=source, name="DU", filter_json=_DU_EQ_5)
+        filtered = apply_filter(flt)
+        assert layer_owns_filter_models(source)
+
+        source.delete()
+
+        assert not Layer.objects.filter(pk=filtered.pk).exists()
+
+    def test_a_layer_with_only_unapplied_filters_owns_no_models(self, source) -> None:
+        LayerFilter.objects.create(layer=source, name="DU", filter_json=_DU_EQ_5)
+        assert not layer_owns_filter_models(source)
 
 
 class TestFilterSourceTraversal:
     """Which sources a plan has to build projections for."""
 
-    def test_node_sources_are_deduped_and_ordered(self, db) -> None:
-        layer = LayerFactory()
-        LayerFilter.objects.create(
-            layer=layer,
-            name="Near POIs",
-            filter_json={
-                "type": "group",
-                "operator": "AND",
-                "children": [
-                    _node(source="poi.points"),
-                    _node(source="poi.points", mode="excludes"),
-                    _node(source="other.stops", source_geom="geom"),
-                ],
-            },
-            is_active=True,
-        )
+    _TREE = {
+        "type": "group",
+        "operator": "AND",
+        "children": [
+            _stored(_node(source="poi.points")),
+            _stored(_node(source="poi.points", mode="excludes")),
+            _DU_EQ_5,
+            _stored(_node(source="other.stops", source_geom="geom")),
+        ],
+    }
 
-        assert layer_filter_sources(layer) == [
+    def test_node_sources_are_deduped_and_ordered(self) -> None:
+        assert filter_sources(self._TREE) == [
             ("poi", "points", "geometry"),
             ("other", "stops", "geom"),
         ]
+
+    def test_only_applied_filters_need_projections(self, db) -> None:
+        layer = LayerFactory()
+        flt = LayerFilter.objects.create(
+            layer=layer, name="Mixed", filter_json=self._TREE
+        )
+        assert all_filter_sources() == []
+
+        apply_filter(flt)
+
         assert all_filter_sources() == [
             ("poi", "points", "geometry"),
             ("other", "stops", "geom"),
         ]
 
-    def test_column_filters_contribute_no_sources(self, db) -> None:
-        layer = LayerFactory()
-        LayerFilter.objects.create(
-            layer=layer,
-            name="DU",
-            filter_json={"type": "column", "field": "du"},
-            is_active=True,
-        )
-        assert layer_filter_sources(layer) == []
-        assert all_filter_sources() == []
-        assert spatial_nodes() == {}
+    def test_column_filters_contribute_no_sources(self) -> None:
+        assert filter_sources(_DU_EQ_5) == []
 
 
 class TestGeometryColumn:
@@ -423,32 +520,36 @@ class TestGeometryColumn:
 class TestSpatialFilterProfiles:
     """The per-model facts SQLMesh instantiates one model from."""
 
-    def test_no_layers_with_spatial_filters_yields_no_profiles(self, db) -> None:
-        LayerFactory()
+    def test_unapplied_filters_yield_no_profiles(self, db) -> None:
+        LayerFilter.objects.create(
+            layer=LayerFactory(), name="Near POIs", filter_json=_stored(_node())
+        )
         assert spatial_filter_profiles() == []
         assert spatial_filter_source_profiles() == []
         assert spatial_filter_model_fqns() == []
 
-    def test_column_only_filter_yields_no_profile(self, db) -> None:
-        layer = LayerFactory()
-        LayerFilter.objects.create(
-            layer=layer,
-            name="DU",
-            filter_json={"type": "column", "field": "du"},
-            is_active=True,
-        )
-        assert spatial_filter_profiles() == []
+    def test_column_only_filter_gets_a_model(self, db) -> None:
+        layer = LayerFactory(db_schema="public", db_table="base_canvas")
+        flt = LayerFilter.objects.create(layer=layer, name="DU", filter_json=_DU_EQ_5)
+        apply_filter(flt)
+
+        profiles = spatial_filter_profiles()
+
+        assert [profile["model_table"] for profile in profiles] == [f"filter_{flt.pk}"]
+        assert profiles[0]["filter_json"] == _DU_EQ_5
+        assert spatial_filter_source_profiles() == []
 
     def test_source_profile_carries_the_projection_facts(
         self, db, geometry_probe_tables
     ) -> None:
-        layer = LayerFactory()
-        LayerFilter.objects.create(
-            layer=layer,
+        flt = LayerFilter.objects.create(
+            layer=LayerFactory(),
             name="Near places",
-            filter_json=_node(source="spatial_filter_probe.places", source_geom="geom"),
-            is_active=True,
+            filter_json=_stored(
+                _node(source="spatial_filter_probe.places", source_geom="geom")
+            ),
         )
+        apply_filter(flt)
 
         profiles = spatial_filter_source_profiles()
 
@@ -467,87 +568,102 @@ class TestSpatialFilterProfiles:
         layer = LayerFactory(
             key="parcels", name="Parcels", db_schema="public", db_table="base_canvas"
         )
-        node = _node(
-            source="spatial_filter_probe.places",
-            source_geom="geom",
-            buffer_meters=250,
+        stored = _stored(
+            _node(
+                source="spatial_filter_probe.places",
+                source_geom="geom",
+                buffer_meters=250,
+            )
         )
-        stored = {key: value for key, value in node.items() if key != "filter_ref"}
-        LayerFilter.objects.create(
-            layer=layer, name="Near places", filter_json=stored, is_active=True
+        tree = {"type": "group", "operator": "OR", "children": [_DU_EQ_5, stored]}
+        flt = LayerFilter.objects.create(
+            layer=layer, name="Near places", filter_json=tree
         )
+        apply_filter(flt)
 
         profiles = spatial_filter_profiles()
 
         assert len(profiles) == 1
         profile = profiles[0]
-        assert profile["model_table"] == f"filter_{layer.pk}"
+        assert profile["model_table"] == f"filter_{flt.pk}"
         assert profile["source_ref"] == "public.base_canvas"
         assert profile["source_geom"] == "geometry"
         columns = profile["all_columns"]
         assert isinstance(columns, list)
         assert "geometry" in columns
         assert "parcel_id" in columns
-        resolved = profile["spatial_filters"]
-        assert isinstance(resolved, list)
-        # The profile's copy is the stored condition plus the projection it
-        # reads — the stored tree itself never carries that key, because the
-        # client-side compiler reads the same tree.
-        assert resolved[0] == {
-            **stored,
-            "filter_ref": filter_source_model_fqn(
-                "spatial_filter_probe", "places", "geom"
-            ),
+        # The profile's copy is the stored tree with each spatial condition
+        # naming the projection it reads — the stored tree itself never carries
+        # that key, because the editor and the preview read the same tree.
+        assert profile["filter_json"] == {
+            **tree,
+            "children": [
+                _DU_EQ_5,
+                {
+                    **stored,
+                    "filter_ref": filter_source_model_fqn(
+                        "spatial_filter_probe", "places", "geom"
+                    ),
+                },
+            ],
         }
+        assert "filter_ref" not in json.dumps(
+            LayerFilter.objects.get(pk=flt.pk).filter_json
+        )
 
-    def test_layer_with_an_unresolvable_source_is_skipped(
+    def test_filter_on_an_unreadable_table_is_skipped(
         self, db, geometry_probe_tables
     ) -> None:
-        """One bad layer is left out; its resolvable sibling still gets a model."""
-        good = LayerFactory(key="good", db_schema="public", db_table="base_canvas")
-        LayerFilter.objects.create(
-            layer=good,
+        """One bad filter is left out; its resolvable sibling still gets a model."""
+        good = LayerFilter.objects.create(
+            layer=LayerFactory(key="good", db_schema="public", db_table="base_canvas"),
             name="Near places",
-            filter_json=_node(source="spatial_filter_probe.places", source_geom="geom"),
-            is_active=True,
+            filter_json=_stored(
+                _node(source="spatial_filter_probe.places", source_geom="geom")
+            ),
         )
-        bad = LayerFactory(key="bad", db_schema="public", db_table="not_a_known_table")
-        LayerFilter.objects.create(
-            layer=bad, name="Near POIs", filter_json=_node(), is_active=True
+        bad = LayerFilter.objects.create(
+            layer=LayerFactory(
+                key="bad", db_schema="public", db_table="not_a_known_table"
+            ),
+            name="DU",
+            filter_json=_DU_EQ_5,
         )
+        apply_filter(good)
+        apply_filter(bad)
 
         profiles = spatial_filter_profiles()
 
         assert [profile["model_table"] for profile in profiles] == [f"filter_{good.pk}"]
 
-    def test_layer_whose_filter_source_has_no_projection_is_skipped(
+    def test_filter_whose_source_has_no_projection_is_skipped(
         self, db, geometry_probe_tables
     ) -> None:
-        layer = LayerFactory(db_schema="public", db_table="base_canvas")
-        LayerFilter.objects.create(
-            layer=layer,
+        flt = LayerFilter.objects.create(
+            layer=LayerFactory(db_schema="public", db_table="base_canvas"),
             name="Near attributes",
-            filter_json=_node(
-                source="spatial_filter_probe.attributes", source_geom="name"
+            filter_json=_stored(
+                _node(source="spatial_filter_probe.attributes", source_geom="name")
             ),
-            is_active=True,
         )
+        apply_filter(flt)
 
         assert spatial_filter_source_profiles() == []
         assert spatial_filter_profiles() == []
 
     def test_model_fqns_cover_both_model_kinds(self, db, geometry_probe_tables) -> None:
-        layer = LayerFactory(db_schema="public", db_table="base_canvas")
-        LayerFilter.objects.create(
-            layer=layer,
+        flt = LayerFilter.objects.create(
+            layer=LayerFactory(db_schema="public", db_table="base_canvas"),
             name="Near places",
-            filter_json=_node(source="spatial_filter_probe.places", source_geom="geom"),
-            is_active=True,
+            filter_json=_stored(
+                _node(source="spatial_filter_probe.places", source_geom="geom")
+            ),
         )
+        apply_filter(flt)
 
         assert sorted(spatial_filter_model_fqns()) == sorted(
             [
-                filter_model_fqn(layer.pk),
+                filter_model_fqn(flt.pk),
                 filter_source_model_fqn("spatial_filter_probe", "places", "geom"),
             ]
         )
@@ -636,13 +752,11 @@ class TestEditorLayerOptions:
         assert '"spatial_filter_probe.attributes"' not in _attr_json(response)
 
 
-class TestSpatialFilterViewTriggers:
-    """A spatial filter changes the layer's tile source, so the page reloads.
+class TestFilterLayerViews:
+    """The filter list's toggle applies a filter as a new layer, or removes it.
 
-    The map resolves a layer's tile source from the database when it renders, so
-    neither a MapLibre filter nor a partial swap can show the new rows: the layer
-    keeps requesting the table the page was loaded with. The base-canvas fill
-    toggle answers the same problem with a page load.
+    Every change to a filtered layer reloads the page: the map resolves its
+    layers and their tile sources when it renders.
     """
 
     @pytest.fixture
@@ -650,13 +764,15 @@ class TestSpatialFilterViewTriggers:
         client.force_login(user)
         return client
 
-    def test_toggling_a_spatial_filter_reloads_the_page(
-        self, logged_in_client, db
+    @pytest.mark.parametrize(
+        "tree", [_DU_EQ_5, _stored(_node())], ids=["column", "spatial"]
+    )
+    def test_toggling_creates_a_new_layer_and_reloads(
+        self, logged_in_client, db, tree
     ) -> None:
         layer = LayerFactory()
-        flt = LayerFilter.objects.create(
-            layer=layer, name="Near POIs", filter_json=_node(), is_active=False
-        )
+        before = layer.source_table()
+        flt = LayerFilter.objects.create(layer=layer, name="Picked", filter_json=tree)
 
         response = logged_in_client.post(
             reverse("workspace:layer_filter_toggle", kwargs={"pk": flt.pk})
@@ -665,39 +781,33 @@ class TestSpatialFilterViewTriggers:
         assert response.status_code == 200
         assert response["HX-Refresh"] == "true"
         assert "HX-Trigger" not in response
+        filtered = LayerFilter.objects.get(pk=flt.pk).filtered_layer
+        assert filtered is not None
+        assert filtered.pk != layer.pk
+        assert Layer.objects.get(pk=layer.pk).source_table() == before
 
-    def test_toggling_a_column_filter_keeps_the_live_preview(
+    def test_toggling_an_applied_filter_removes_its_layer(
         self, logged_in_client, db
     ) -> None:
         layer = LayerFactory()
-        flt = LayerFilter.objects.create(
-            layer=layer,
-            name="DU",
-            filter_json={
-                "type": "column",
-                "field": "du",
-                "operator": "eq",
-                "value": "5",
-                "value_type": "number",
-            },
-            is_active=False,
-        )
+        flt = LayerFilter.objects.create(layer=layer, name="DU", filter_json=_DU_EQ_5)
+        filtered = apply_filter(flt)
 
         response = logged_in_client.post(
             reverse("workspace:layer_filter_toggle", kwargs={"pk": flt.pk})
         )
 
-        assert response.status_code == 200
-        assert response["HX-Trigger"]
-        assert "HX-Refresh" not in response
+        assert response["HX-Refresh"] == "true"
+        assert not Layer.objects.filter(pk=filtered.pk).exists()
+        assert Layer.objects.filter(pk=layer.pk).exists()
 
-    def test_deleting_an_active_spatial_filter_reloads_the_page(
+    def test_deleting_an_applied_filter_reloads_the_page(
         self, logged_in_client, db
     ) -> None:
-        layer = LayerFactory()
         flt = LayerFilter.objects.create(
-            layer=layer, name="Near POIs", filter_json=_node(), is_active=True
+            layer=LayerFactory(), name="DU", filter_json=_DU_EQ_5
         )
+        filtered = apply_filter(flt)
 
         response = logged_in_client.post(
             reverse("workspace:layer_filter_delete", kwargs={"pk": flt.pk})
@@ -705,22 +815,48 @@ class TestSpatialFilterViewTriggers:
 
         assert response.status_code == 200
         assert response["HX-Refresh"] == "true"
+        assert not Layer.objects.filter(pk=filtered.pk).exists()
 
-    def test_editing_into_a_spatial_filter_reloads_the_page(
+    def test_deleting_an_unapplied_filter_does_not_reload(
         self, logged_in_client, db
     ) -> None:
-        layer = LayerFactory()
         flt = LayerFilter.objects.create(
-            layer=layer,
-            name="DU",
-            filter_json={"type": "column", "field": "du"},
-            is_active=True,
+            layer=LayerFactory(), name="DU", filter_json=_DU_EQ_5
         )
 
         response = logged_in_client.post(
+            reverse("workspace:layer_filter_delete", kwargs={"pk": flt.pk})
+        )
+
+        assert "HX-Refresh" not in response
+
+    def test_editing_an_applied_filter_reloads_the_page(
+        self, logged_in_client, db
+    ) -> None:
+        flt = LayerFilter.objects.create(
+            layer=LayerFactory(), name="DU", filter_json=_DU_EQ_5
+        )
+        apply_filter(flt)
+
+        response = logged_in_client.post(
             reverse("workspace:layer_filter_edit", kwargs={"pk": flt.pk}),
-            {"name": "Near POIs", "filter_json": json.dumps(_node())},
+            {"name": "Near POIs", "filter_json": json.dumps(_stored(_node()))},
         )
 
         assert response.status_code == 200
         assert response["HX-Refresh"] == "true"
+
+    def test_editing_an_unapplied_filter_does_not_reload(
+        self, logged_in_client, db
+    ) -> None:
+        flt = LayerFilter.objects.create(
+            layer=LayerFactory(), name="DU", filter_json=_DU_EQ_5
+        )
+
+        response = logged_in_client.post(
+            reverse("workspace:layer_filter_edit", kwargs={"pk": flt.pk}),
+            {"name": "Near POIs", "filter_json": json.dumps(_stored(_node()))},
+        )
+
+        assert response.status_code == 200
+        assert "HX-Refresh" not in response

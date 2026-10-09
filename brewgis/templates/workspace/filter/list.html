@@ -11,71 +11,82 @@
             hx-swap="innerHTML">{% translate "New Filter" %}</button>
   </div>
   <div id="filter-editor-{{ layer.pk }}"></div>
+  {% if apply_error %}
+    <div class="alert alert-danger py-1 px-2 mb-2"
+         role="alert"
+         style="font-size: 0.7rem">{{ apply_error }}</div>
+  {% endif %}
   {% if filters %}
     <div class="list-group list-group-flush" style="font-size: 0.7rem;">
       {% for flt in filters %}
-        <div class="list-group-item d-flex align-items-center gap-1 py-1 px-1 border-0 {% if flt.is_active %}border-start border-primary border-2{% endif %}">
-          <div class="flex-grow-1 min-width-0">
-            <div class="d-flex align-items-center gap-1">
-              <span class="fw-semibold text-truncate" style="max-width: 120px;">{{ flt.name }}</span>
-              {% if flt.is_active %}
-                <span class="badge bg-primary" style="font-size: 0.6rem;">{% translate "Active" %}</span>
-              {% endif %}
+        {% with filtered=flt.filtered_layer %}
+          <div class="list-group-item d-flex align-items-center gap-1 py-1 px-1 border-0 {% if filtered %}border-start border-primary border-2{% endif %}">
+            <div class="flex-grow-1 min-width-0">
+              <div class="d-flex align-items-center gap-1">
+                <span class="fw-semibold text-truncate" style="max-width: 120px;">{{ flt.name }}</span>
+                {% if filtered %}
+                  <span class="badge bg-primary"
+                        style="font-size: 0.6rem"
+                        title="{{ filtered.name }}">{% translate "Layer" %}</span>
+                {% endif %}
+              </div>
+              <div class="text-muted text-truncate"
+                   style="font-size: 0.65rem;
+                          max-width: 180px">{{ flt.filter_json|filter_expression|truncatechars:60 }}</div>
             </div>
-            <div class="text-muted text-truncate"
-                 style="font-size: 0.65rem;
-                        max-width: 180px">{{ flt.filter_json|filter_expression|truncatechars:60 }}</div>
+            <div class="d-flex gap-1 flex-shrink-0">
+              <button type="button"
+                      class="btn btn-sm py-0 px-1"
+                      style="font-size: 0.65rem"
+                      title="{% if filtered %}{% translate 'Remove filtered layer' %}{% else %}{% translate 'Create filtered layer' %}{% endif %}"
+                      hx-post="{% url 'workspace:layer_filter_toggle' flt.pk %}"
+                      hx-target="#filter-list-{{ layer.pk }}"
+                      hx-swap="outerHTML">
+                {% if filtered %}
+                  🔴
+                {% else %}
+                  🟢
+                {% endif %}
+              </button>
+              <button type="button"
+                      class="btn btn-sm py-0 px-1"
+                      style="font-size: 0.65rem"
+                      title="{% translate 'Edit' %}"
+                      hx-get="{% url 'workspace:layer_filter_edit' flt.pk %}"
+                      hx-target="#filter-editor-{{ layer.pk }}"
+                      hx-swap="innerHTML">✏️</button>
+              <button type="button"
+                      class="btn btn-sm py-0 px-1"
+                      style="font-size: 0.65rem"
+                      title="{% translate 'Preview' %}"
+                      hx-get="{% url 'workspace:layer_filter_preview' flt.pk %}"
+                      hx-target="#filter-preview-{{ layer.pk }}"
+                      hx-swap="innerHTML">👁️</button>
+              <button type="button"
+                      class="btn btn-sm py-0 px-1"
+                      style="font-size: 0.65rem"
+                      title="{% translate 'Preview on Map' %}"
+                      hx-post="{% url 'workspace:layer_filter_preview_map' flt.pk %}"
+                      hx-swap="none">🗺️</button>
+              <button type="button"
+                      class="btn btn-sm py-0 px-1 text-danger"
+                      style="font-size: 0.65rem"
+                      title="{% translate 'Delete' %}"
+                      hx-post="{% url 'workspace:layer_filter_delete' flt.pk %}"
+                      hx-target="#filter-list-{{ layer.pk }}"
+                      hx-swap="outerHTML"
+                      hx-confirm="{% if filtered %}{% translate 'Delete this filter and its filtered layer?' %}{% else %}{% translate 'Delete this filter?' %}{% endif %}">
+                🗑️
+              </button>
+            </div>
           </div>
-          <div class="d-flex gap-1 flex-shrink-0">
-            <button type="button"
-                    class="btn btn-sm py-0 px-1"
-                    style="font-size: 0.65rem"
-                    title="{% translate 'Toggle' %}"
-                    hx-post="{% url 'workspace:layer_filter_toggle' flt.pk %}"
-                    hx-target="#filter-list-{{ layer.pk }}"
-                    hx-swap="outerHTML">
-              {% if flt.is_active %}
-                🔴
-              {% else %}
-                🟢
-              {% endif %}
-            </button>
-            <button type="button"
-                    class="btn btn-sm py-0 px-1"
-                    style="font-size: 0.65rem"
-                    title="{% translate 'Edit' %}"
-                    hx-get="{% url 'workspace:layer_filter_edit' flt.pk %}"
-                    hx-target="#filter-editor-{{ layer.pk }}"
-                    hx-swap="innerHTML">✏️</button>
-            <button type="button"
-                    class="btn btn-sm py-0 px-1"
-                    style="font-size: 0.65rem"
-                    title="{% translate 'Preview' %}"
-                    hx-get="{% url 'workspace:layer_filter_preview' flt.pk %}"
-                    hx-target="#filter-preview-{{ layer.pk }}"
-                    hx-swap="innerHTML">👁️</button>
-            <button type="button"
-                    class="btn btn-sm py-0 px-1"
-                    style="font-size: 0.65rem"
-                    title="{% translate 'Preview on Map' %}"
-                    hx-post="{% url 'workspace:layer_filter_preview_map' flt.pk %}"
-                    hx-swap="none">🗺️</button>
-            <button type="button"
-                    class="btn btn-sm py-0 px-1 text-danger"
-                    style="font-size: 0.65rem"
-                    title="{% translate 'Delete' %}"
-                    hx-post="{% url 'workspace:layer_filter_delete' flt.pk %}"
-                    hx-target="#filter-list-{{ layer.pk }}"
-                    hx-swap="outerHTML"
-                    hx-confirm="{% translate 'Delete this filter?' %}">🗑️</button>
-          </div>
-        </div>
+        {% endwith %}
       {% endfor %}
     </div>
     <div id="filter-preview-{{ layer.pk }}" class="mt-1"></div>
   {% else %}
     <div class="text-muted text-center py-2" style="font-size: 0.7rem;">
-      {% translate "No filters. Create one to filter this layer's features." %}
+      {% translate "No filters. A filter creates a new layer from this layer's matching features." %}
     </div>
   {% endif %}
 </div>

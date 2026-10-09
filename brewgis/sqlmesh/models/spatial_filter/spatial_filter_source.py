@@ -11,7 +11,7 @@ it, so the filtered layer's ``EXISTS`` becomes an index probe per row.
 One model per *filter source* (the source's schema, table and geometry column —
 see ``services.spatial_filter.filter_source_model_table``), shared by every
 condition that reads the same table, resolved while SQLMesh imports this module.
-With no active spatial filter there is nothing to instantiate and the module
+With no applied spatial filter there is nothing to instantiate and the module
 registers no model at all — see :mod:`brewgis.sqlmesh.blueprint_models` for why
 an empty list cannot be handed to ``@model`` instead.
 
@@ -49,7 +49,7 @@ from brewgis.workspace.services.spatial_filter import PROJECTED_GEOMETRY_COLUMN
 from brewgis.workspace.services.spatial_filter import quote_ident
 
 # Resolved when SQLMesh imports this module (i.e. while loading the project) —
-# one entry per filter source an active spatial filter reads at that moment.
+# one entry per filter source an applied filter reads at that moment.
 _PROFILES = spatial_filter_source_profiles()
 
 _SOURCE_MODEL = model(

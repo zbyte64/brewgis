@@ -114,9 +114,9 @@ export type SpatialMode = 'intersects' | 'excludes'
 
 /**
  * A geospatial condition: intersect with (or exclude from) another layer's
- * geometry, optionally within a distance buffer. The server materializes a
- * filtered table for the layer and evaluates this predicate there
- * (`services.spatial_filter`), so the map's own filter expression ignores it.
+ * geometry, optionally within a distance buffer. Only the server evaluates it,
+ * when the filter is applied as a new layer (`services.spatial_filter`); the
+ * map-preview filter expression ignores it.
  */
 export interface SpatialNode {
   type: 'spatial'

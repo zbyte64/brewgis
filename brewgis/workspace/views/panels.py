@@ -37,7 +37,6 @@ from brewgis.workspace.models import Workspace
 from brewgis.workspace.services.analysis_column_units import resolve_column_unit
 from brewgis.workspace.services.base_canvas_schema import BaseCanvasSchema
 from brewgis.workspace.services.canvas_view_manager import build_paintable_column_meta
-from brewgis.workspace.services.filter_compiler import FilterCompiler
 from brewgis.workspace.services.sqlmesh_tables import sqlmesh_links_for_tables
 from brewgis.workspace.symbology.legend import swatch_background
 from brewgis.workspace.views.basemaps import _get_selected_basemap_id
@@ -233,24 +232,6 @@ def panel_layer_list(request: HttpRequest, workspace_pk: int) -> HttpResponse:
     # Analysis result layers, keyed by layer pk → the module that produced
     # them, so the panel can offer each one an icon that opens its run.
     context["analysis_modules"] = analysis_modules_by_layer(visible)
-
-    # Pre-compute active filter expressions for map auto-apply
-    active_maplibre_filters: dict[str, list | None] = {}
-    for layer in workspace.layers.all():
-        active_filters = layer.filters.filter(is_active=True)
-        if active_filters:
-            compiler = FilterCompiler()
-            combined = {
-                "type": "group",
-                "operator": "AND",
-                "children": [f.filter_json for f in active_filters],
-            }
-            active_maplibre_filters[layer.db_table] = compiler.compile_to_maplibre(
-                combined
-            )
-        else:
-            active_maplibre_filters[layer.db_table] = None
-    context["active_maplibre_filters"] = active_maplibre_filters
     return render(
         request,
         "workspace/partials/_layer_list_panel.html",

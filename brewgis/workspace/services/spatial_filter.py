@@ -1,28 +1,30 @@
-"""Geospatial layer filters — materialize a spatially-filtered copy of a layer.
+"""Layer filters — materialize a filter's matching rows as a new layer.
 
-A :class:`~brewgis.workspace.models.LayerFilter` whose tree contains a
-``spatial`` node cannot be evaluated client-side: MapLibre filters are pure
-column expressions and have no way to intersect a tile feature with another
-layer's geometry. Such a filter therefore materializes **new tables** that the
-layer then draws from (``Layer.effective_source``):
+Applying a :class:`~brewgis.workspace.models.LayerFilter` never changes the
+layer it filters. It materializes the rows the filter keeps as a **new table**
+and registers that table as a new :class:`~brewgis.workspace.models.Layer`
+(``LayerFilter.output_layer``); the filtered layer keeps drawing its own source.
+The filter is applied exactly while that layer exists. Two blueprinted SQLMesh
+models do the work:
 
+* ``models/spatial_filter/spatial_filter.py`` — one model per *applied filter*,
+  the filtered layer's rows matching the whole tree (column and spatial
+  conditions alike, compiled by ``services.filter_compiler``).
 * ``models/spatial_filter/spatial_filter_source.py`` — one model per *filter
-  source* table (the other layer a condition reads), copying its rows with the
-  geometry projected into the region's local CRS under a fixed name and a GiST
-  index on it.
-* ``models/spatial_filter/spatial_filter.py`` — one model per *filtered layer*,
-  its source rows that intersect (or are excluded from) the projected filter
-  geometries, optionally within a distance buffer.
+  source* table (the other layer a spatial condition reads), copying its rows
+  with the geometry projected into the region's local CRS under a fixed name and
+  a GiST index on it.
 
-Two models, not one, because the join has to be index-driven. A filter source is
-often a SQLMesh *view* (the virtual layer) — which Postgres cannot index at all
-— and an imported table is usually unindexed, so probing it row-by-row from the
-filtered layer is an O(rows x features) sequential scan. Projecting each source
-once into an indexed table turns that into an index probe per row. This is the
-project's standing rule for geometry joins ("never do intersectional joins on
-non-indexed geometries ... provide a materialized table projecting geometry onto
-a new indexed field"); ``models/base_canvas/hwy_intersection_points.sql`` and its
-siblings are the same pattern.
+Two models, not one, because a spatial join has to be index-driven. A filter
+source is often a SQLMesh *view* (the virtual layer) — which Postgres cannot
+index at all — and an imported table is usually unindexed, so probing it
+row-by-row from the filtered layer is an O(rows x features) sequential scan.
+Projecting each source once into an indexed table turns that into an index probe
+per row. This is the project's standing rule for geometry joins ("never do
+intersectional joins on non-indexed geometries ... provide a materialized table
+projecting geometry onto a new indexed field");
+``models/base_canvas/hwy_intersection_points.sql`` and its siblings are the same
+pattern.
 
 Naming — why the models live in ``spatial_filter`` rather than in the source's
 own schema: SQLMesh names a model's physical object
@@ -31,18 +33,17 @@ convention, so a short fixed schema keeps
 ``spatial_filter__filter_<pk>__<hash>`` and ``spatial_filter__src_<hash>__<hash>``
 far inside Postgres' 63-character identifier limit for any pk. That schema is
 excluded from the table catalog (``services.sqlmesh_tables._EXCLUDED_SCHEMAS``)
-— a derived copy is not itself an importable source.
+— a filtered layer is reached through its own Layer, never imported as a source.
 
 The module is imported by SQLMesh while it loads the project (the blueprint macro
-imports ``SPATIAL_FILTER_SCHEMA`` and ``has_spatial_node`` from here), so it has
-**no Django or SQLMesh import at module load**. Every symbol that needs either is
-imported inside the function body that uses it.
+and both models import from here), so it has **no Django or SQLMesh import at
+module load**. Every symbol that needs either is imported inside the function
+body that uses it.
 """
 
 from __future__ import annotations
 
 import hashlib
-from pathlib import Path
 from typing import TYPE_CHECKING
 from typing import Any
 
@@ -50,13 +51,14 @@ if TYPE_CHECKING:
     from collections.abc import Iterator
 
     from brewgis.workspace.models import Layer
+    from brewgis.workspace.models import LayerFilter
 
-# Schema holding the per-layer and per-source spatial-filter models.
+# Schema holding the per-filter and per-source models.
 SPATIAL_FILTER_SCHEMA = "spatial_filter"
 
-# ``filter_json`` node type for a geospatial condition. Shared by the SQL
-# compiler here, the client-side compiler (``services.filter_compiler``) and the
-# filter-builder component's TypeScript union.
+# ``filter_json`` node type for a geospatial condition. Shared by both compilers
+# (``services.filter_compiler``) and the filter-builder component's TypeScript
+# union.
 SPATIAL_NODE_TYPE = "spatial"
 
 # Column a projected filter source carries its local-CRS geometry under. The
@@ -70,48 +72,50 @@ _SOURCE_KEY = "source"
 _GEOMETRY_KEY = "source_geom"
 
 # A ``spatial`` node's resolved projection model, injected by the blueprint macro
-# (it is not part of the stored ``filter_json``, which the client-side compiler
-# also reads).
+# (it is not part of the stored ``filter_json``, which the editor and the
+# preview's MapLibre compiler also read).
 FILTER_REF_KEY = "filter_ref"
 
 # Geometry column assumed when a table has none registered in ``geometry_columns``.
 _DEFAULT_GEOMETRY_COLUMN = "geometry"
 
-# Must match ``services.sqlmesh_tables.SQLMESH_PROJECT_NAME`` — the leading
-# segment of every external-model name that is already project-qualified.
+# Must match ``services.sqlmesh_tables.SQLMESH_PROJECT_NAME`` — the catalog
+# segment of every model FQN.
 _SQLMESH_PROJECT_NAME = "brewgis"
-
-# An external model's name reduces to at least ``schema.table`` once the project
-# segment is dropped.
-_MIN_TABLE_PARTS = 2
 
 # Hex characters of the source-identity digest kept in a source model's name.
 _DIGEST_LENGTH = 8
 
-_SPATIAL_TYPES = frozenset({SPATIAL_NODE_TYPE})
+
+class FilterNotMaterializableError(ValueError):
+    """An applied filter the blueprints build no model for.
+
+    Raised before a filtered layer is planned, so a layer is never registered
+    over a table nothing creates.
+    """
 
 
-def filter_model_table(layer_pk: int) -> str:
-    """Return the bare table name of *layer_pk*'s spatial-filter model."""
-    return f"filter_{layer_pk}"
+def filter_model_table(filter_pk: int) -> str:
+    """Return the bare table name of *filter_pk*'s filtered-layer model."""
+    return f"filter_{filter_pk}"
 
 
-def filter_model_fqn(layer_pk: int) -> str:
-    """SQLMesh's name for *layer_pk*'s spatial-filter model.
+def filter_model_fqn(filter_pk: int) -> str:
+    """SQLMesh's name for *filter_pk*'s filtered-layer model.
 
     Mirrors ``views.base_canvas._fill_model_fqn``: the identifier parts are
     double-quoted so the FQN survives selector parsing.
     """
-    return f'brewgis."{SPATIAL_FILTER_SCHEMA}"."{filter_model_table(layer_pk)}"'
+    return f'brewgis."{SPATIAL_FILTER_SCHEMA}"."{filter_model_table(filter_pk)}"'
 
 
 def filter_source_model_table(schema: str, table: str, geometry: str) -> str:
     """Return the bare table name of the projection model for a filter source.
 
     Keyed on the source's identity (schema, table and geometry column), so two
-    layers filtering against the same table share one projection — and so the
-    name is stable across plans, which is what lets SQLMesh reuse the built
-    table instead of rebuilding it on every filter toggle.
+    filters reading the same table share one projection — and so the name is
+    stable across plans, which is what lets SQLMesh reuse the built table
+    instead of rebuilding it every time a filter is applied.
     """
     digest = hashlib.sha256(f"{schema}.{table}.{geometry}".encode()).hexdigest()
     return f"src_{digest[:_DIGEST_LENGTH]}"
@@ -125,27 +129,11 @@ def filter_source_model_fqn(schema: str, table: str, geometry: str) -> str:
     )
 
 
-def has_spatial_node(node: object) -> bool:
-    """Whether the expression *node* contains a ``spatial`` condition anywhere.
-
-    Walks groups recursively; a non-dict, a non-group leaf, and an empty group
-    all answer ``False``.
-    """
-    if not isinstance(node, dict):
-        return False
-    if node.get("type") in _SPATIAL_TYPES:
-        return True
-    children = node.get("children")
-    if isinstance(children, list):
-        return any(has_spatial_node(child) for child in children)
-    return False
-
-
 def _spatial_nodes(node: object) -> Iterator[dict[str, Any]]:
     """Yield every ``spatial`` node in the expression *node*, in tree order."""
     if not isinstance(node, dict):
         return
-    if node.get("type") in _SPATIAL_TYPES:
+    if node.get("type") == SPATIAL_NODE_TYPE:
         yield node
         return
     for child in node.get("children") or []:
@@ -156,8 +144,8 @@ def filter_source_of_node(node: dict[str, Any]) -> tuple[str, str, str] | None:
     """Return ``(schema, table, geometry)`` the ``spatial`` *node* reads.
 
     ``None`` when the node names no table — an unfinished condition in the
-    editor. Callers skip such a node rather than build a model over a table that
-    does not exist.
+    editor. Such a filter gets no model rather than one over a table that does
+    not exist.
     """
     source = str(node.get(_SOURCE_KEY) or "")
     schema, _, table = source.rpartition(".")
@@ -167,50 +155,64 @@ def filter_source_of_node(node: dict[str, Any]) -> tuple[str, str, str] | None:
     return (schema or "public", table, geometry)
 
 
-def layer_spatial_nodes(layer: Layer) -> list[dict[str, Any]]:
-    """Every active ``spatial`` node on *layer*, in filter/child order."""
-    return [
-        node
-        for filter_json in active_spatial_filter_jsons(layer)
-        for node in _spatial_nodes(filter_json)
-    ]
-
-
-def layer_filter_sources(layer: Layer) -> list[tuple[str, str, str]]:
-    """``(schema, table, geometry)`` of every filter source *layer*'s conditions read.
+def filter_sources(filter_json: object) -> list[tuple[str, str, str]]:
+    """``(schema, table, geometry)`` of every filter source *filter_json*'s spatial conditions read.
 
     Deduplicated and ordered, so a plan selection built from it is stable.
     """
     sources: dict[tuple[str, str, str], None] = {}
-    for node in layer_spatial_nodes(layer):
+    for node in _spatial_nodes(filter_json):
         source = filter_source_of_node(node)
         if source is not None:
             sources[source] = None
     return list(sources)
 
 
-def spatial_nodes() -> dict[Layer, list[dict[str, Any]]]:
-    """Every layer with an active spatial filter, mapped to its ``spatial`` nodes."""
-    from brewgis.workspace.models import Layer
+def applied_filters() -> list[LayerFilter]:
+    """Every filter that currently has a filtered layer, in pk order."""
+    from brewgis.workspace.models import LayerFilter
 
-    layers = Layer.objects.select_related("workspace").order_by("pk")
-    grouped: dict[Layer, list[dict[str, Any]]] = {}
-    for layer in layers:
-        nodes = layer_spatial_nodes(layer)
-        if nodes:
-            grouped[layer] = nodes
-    return grouped
+    return list(
+        LayerFilter.objects.filter(output_layer__isnull=False)
+        .select_related("layer__workspace")
+        .order_by("pk")
+    )
 
 
 def all_filter_sources() -> list[tuple[str, str, str]]:
     """``(schema, table, geometry)`` a projection model is needed for, deduplicated."""
     sources: dict[tuple[str, str, str], None] = {}
-    for nodes in spatial_nodes().values():
-        for node in nodes:
-            source = filter_source_of_node(node)
-            if source is not None:
-                sources[source] = None
+    for flt in applied_filters():
+        for source in filter_sources(flt.filter_json):
+            sources[source] = None
     return list(sources)
+
+
+def with_filter_refs(node: Any, resolved: set[str]) -> Any | None:
+    """Return a copy of *node* whose ``spatial`` nodes name their projection model.
+
+    *resolved* is the set of projection tables the blueprints define. ``None``
+    when any spatial condition reads a source without one — a model over it
+    could only fail the plan. The stored ``filter_json`` is never modified: the
+    editor and the preview compiler read it too.
+    """
+    if not isinstance(node, dict):
+        return node
+    if node.get("type") == SPATIAL_NODE_TYPE:
+        source = filter_source_of_node(node)
+        if source is None or filter_source_model_table(*source) not in resolved:
+            return None
+        return {**node, FILTER_REF_KEY: filter_source_model_fqn(*source)}
+    children = node.get("children")
+    if not isinstance(children, list):
+        return node
+    resolved_children = []
+    for child in children:
+        resolved_child = with_filter_refs(child, resolved)
+        if resolved_child is None:
+            return None
+        resolved_children.append(resolved_child)
+    return {**node, "children": resolved_children}
 
 
 def quote_ident(name: str) -> str:
@@ -229,7 +231,7 @@ def _positive_number(value: object) -> float | None:
     return number if number > 0 else None
 
 
-def _spatial_predicate(
+def spatial_predicate(
     node: dict[str, Any],
     *,
     source_geom: str,
@@ -259,71 +261,6 @@ def _spatial_predicate(
     # filter_ref is a model FQN the macro already quoted, so it is used verbatim.
     exists = f"EXISTS (SELECT 1 FROM {filter_ref} AS f WHERE {proximity})"  # noqa: S608 (quoted FQN)
     return f"NOT {exists}" if mode == "excludes" else exists
-
-
-def _walk_spatial(
-    node: dict[str, Any],
-    *,
-    source_geom: str,
-    local_srid: int,
-    mpu: float,
-) -> str | None:
-    """Return the spatial SQL for *node*, or ``None`` when it contributes none.
-
-    A ``column`` (or any other leaf) is evaluated client-side over the filtered
-    table, so it is skipped here rather than compiled. A group is ``None`` when
-    none of its children contribute.
-    """
-    node_type = node.get("type")
-    if node_type in _SPATIAL_TYPES:
-        return _spatial_predicate(
-            node, source_geom=source_geom, local_srid=local_srid, mpu=mpu
-        )
-    if node_type != "group":
-        return None
-    parts = [
-        part
-        for child in node.get("children") or []
-        if isinstance(child, dict)
-        and (
-            part := _walk_spatial(
-                child, source_geom=source_geom, local_srid=local_srid, mpu=mpu
-            )
-        )
-        is not None
-    ]
-    if not parts:
-        return None
-    operator = node.get("operator", "AND")
-    return f"({f' {operator} '.join(parts)})"
-
-
-def compile_spatial_predicate(
-    filter_json: dict[str, Any] | None,
-    *,
-    source_geom: str,
-    local_srid: int,
-    mpu: float,
-) -> str:
-    """Compile the spatial part of *filter_json* to a SQL WHERE fragment.
-
-    *source_geom* is the filtered layer's own geometry column (the model's
-    ``src`` alias); *local_srid* and *mpu* are the region's projection and its
-    metres-per-unit factor. Every ``spatial`` node must carry its
-    ``FILTER_REF_KEY`` (the blueprint macro resolves it), so the tree is the
-    *profile's* copy, not a stored ``filter_json``.
-
-    Returns ``""`` when the tree has no ``spatial`` node, so a purely
-    column-side filter contributes no WHERE clause.
-    """
-    if not isinstance(filter_json, dict):
-        return ""
-    return (
-        _walk_spatial(
-            filter_json, source_geom=source_geom, local_srid=local_srid, mpu=mpu
-        )
-        or ""
-    )
 
 
 def registered_geometry_column(schema: str, table: str) -> str | None:
@@ -359,43 +296,6 @@ def geometry_column(schema: str, table: str) -> str:
     return registered_geometry_column(schema, table) or _DEFAULT_GEOMETRY_COLUMN
 
 
-def active_spatial_filter_jsons(layer: Layer) -> list[dict[str, Any]]:
-    """Return the ``filter_json`` of *layer*'s active spatial filters, in pk order."""
-    return [
-        flt.filter_json
-        for flt in layer.filters.filter(is_active=True).order_by("pk")
-        if has_spatial_node(flt.filter_json)
-    ]
-
-
-def layer_has_active_spatial_filter(layer: Layer) -> bool:
-    """Whether *layer* draws from a materialized filter table right now."""
-    return bool(active_spatial_filter_jsons(layer))
-
-
-def external_model_tables() -> frozenset[tuple[str, str]]:
-    """``(schema, table)`` of every table SQLMesh knows through ``external_models.yaml``.
-
-    The file names each external table as a SQLMesh FQN — ``'"brewgis"."public"."base_canvas"'``
-    (project-qualified) or ``public.sacog_comparison_parcels`` (bare) — so the
-    project segment is dropped and the last two parts are the table's identity.
-    """
-    import yaml
-
-    path = Path(__file__).resolve().parents[2] / "sqlmesh" / "external_models.yaml"
-    entries = yaml.safe_load(path.read_text(encoding="utf-8")) or []
-    tables: set[tuple[str, str]] = set()
-    for entry in entries:
-        parts = [
-            part.strip().strip('"') for part in str(entry.get("name", "")).split(".")
-        ]
-        if parts and parts[0] == _SQLMESH_PROJECT_NAME:
-            parts = parts[1:]
-        if len(parts) >= _MIN_TABLE_PARTS:
-            tables.add((parts[-2], parts[-1]))
-    return frozenset(tables)
-
-
 def model_backed_table_ref(schema: str, table: str) -> str | None:
     """Return a model FQN a live SQLMesh model backs ``schema.table`` through.
 
@@ -411,56 +311,33 @@ def model_backed_table_ref(schema: str, table: str) -> str | None:
     return None
 
 
-def source_ref_for_layer(schema: str, table: str) -> str | None:
-    """Return the FROM reference a *filtered layer* model may read ``schema.table`` through.
+def table_ref(schema: str, table: str) -> str:
+    """Return the FROM reference a filter model reads ``schema.table`` through.
 
-    A model-backed table is named by its 3-part FQN, a table declared in
-    ``external_models.yaml`` by its bare ``schema.table``. Anything else (an
-    ad-hoc imported shapefile in ``public``, say) has no reference the layer
-    model may use, so ``None`` — the caller skips that layer with a warning
-    rather than emitting a model that cannot carry the layer's other rows.
-    """
-    ref = model_backed_table_ref(schema, table)
-    if ref is not None:
-        return ref
-    if (schema, table) in external_model_tables():
-        return f"{schema}.{table}"
-    return None
-
-
-def filter_source_ref(schema: str, table: str) -> str:
-    """Return the FROM reference a *filter source* model may read ``schema.table`` through.
-
-    Unlike a filtered layer's source, a filter source only has to be readable:
-    the projection copies its rows and adds no dependency the caller cares about,
-    so every table qualifies. A model-backed table still gets its FQN (that is
-    what makes the projection rebuild when the model's rows change); anything
-    else gets its bare ``schema.table``, which SQLMesh renders qualified against
-    the project's catalog.
+    A model-backed table gets its FQN, which makes the filter model rebuild when
+    that model's rows change; anything else (an imported shapefile, a table
+    declared in ``external_models.yaml``) gets its bare ``schema.table``, which
+    SQLMesh renders qualified against the project's catalog.
     """
     return model_backed_table_ref(schema, table) or f"{schema}.{table}"
 
 
-def _purge_undefined_spatial_filter_models() -> list[str]:
-    """De-list the spatial-filter models the project no longer defines.
+def _purge_undefined_spatial_filter_models(defined_fqns: list[str]) -> list[str]:
+    """De-list the filter models the project no longer defines.
 
-    A layer whose last spatial filter was switched off, and a filter source no
-    active spatial filter references any more, both leave a snapshot behind that
-    a later plan would try to promote — pointing a view at a physical object the
-    plan never creates, which fails the whole plan. The defined set is exactly
-    what the blueprint profiles currently emit, so anything else in the
-    ``spatial_filter`` schema is stale. Mirrors
+    An un-applied filter, and a filter source no applied filter reads any more,
+    both leave a snapshot behind that a later plan would try to promote —
+    pointing a view at a physical object the plan never creates, which fails the
+    whole plan. *defined_fqns* is exactly what the blueprint profiles currently
+    emit, so anything else in the ``spatial_filter`` schema is stale. Mirrors
     ``services.scenario_canvas._purge_models_for_deleted_scenarios``.
     """
-    from brewgis.sqlmesh.macros.spatial_filter_blueprints import (
-        spatial_filter_model_fqns,
-    )
     from brewgis.workspace.analysis.sqlmesh_runner import get_state_context
     from brewgis.workspace.analysis.sqlmesh_runner import normalize_fqn
     from brewgis.workspace.analysis.sqlmesh_runner import purge_models_from_environments
     from brewgis.workspace.analysis.sqlmesh_runner import snapshot_name
 
-    defined = {normalize_fqn(fqn) for fqn in spatial_filter_model_fqns()}
+    defined = {normalize_fqn(fqn) for fqn in defined_fqns}
     prefix = f"{_SQLMESH_PROJECT_NAME}.{SPATIAL_FILTER_SCHEMA}."
     stale: list[str] = []
     for environment in get_state_context().state_sync.get_environments():
@@ -473,41 +350,125 @@ def _purge_undefined_spatial_filter_models() -> list[str]:
     return purge_models_from_environments(stale)
 
 
-def refresh_spatial_filter_layer(layer: Layer) -> None:
-    """Bring the spatial-filter models in line with the active spatial filters.
+def refresh_filter_models(flt: LayerFilter | None = None) -> None:
+    """Bring the filter models in line with the applied filters.
 
-    Building or removing a filter changes which table *layer* draws from, and
-    which projections other layers' conditions read — so the changed layer's
-    model and every filter source it reads are planned together, and models the
-    blueprints no longer define are dropped from the environments first (a stale
-    snapshot fails the plan that would promote it). Mirrors
+    Models the blueprints no longer define are dropped from the environments
+    first (a stale snapshot fails the plan that would promote it). With *flt*,
+    its filtered-layer model and every filter source it reads are then planned —
+    after applying it, or after editing an applied filter's tree. Mirrors
     ``views.base_canvas.SelectBaseCanvasForm.form_valid``'s fill toggle —
     plan/purge plus a Martin refresh.
+
+    Raises:
+        FilterNotMaterializableError: *flt* is applied but the blueprints define
+            no model for it (its layer's table has no readable columns, or a
+            spatial condition reads a layer with no registered geometry).
 
     No-op under tests: the SQLMesh state schema belongs to the running stack,
     not to the test database a test process builds layers in.
     """
     from django.conf import settings
 
+    from brewgis.sqlmesh.macros.spatial_filter_blueprints import (
+        spatial_filter_model_fqns,
+    )
     from brewgis.workspace.analysis.sqlmesh_runner import run_sqlmesh_plan
     from brewgis.workspace.services.tile_server import ensure_martin_source
 
     if settings.TESTING:
         return
-    _purge_undefined_spatial_filter_models()
-    if layer_has_active_spatial_filter(layer):
-        select = [
-            filter_model_fqn(layer.pk),
+    defined = spatial_filter_model_fqns()
+    _purge_undefined_spatial_filter_models(defined)
+    if flt is None:
+        return
+    if filter_model_fqn(flt.pk) not in defined:
+        msg = (
+            f"Filter {flt.name!r} cannot be materialized: the table of layer "
+            f"{flt.layer.name or flt.layer.key!r} has no readable columns, or a "
+            "spatial condition reads a layer with no registered geometry."
+        )
+        raise FilterNotMaterializableError(msg)
+    run_sqlmesh_plan(
+        environment="prod",
+        select=[
+            filter_model_fqn(flt.pk),
             *(
                 filter_source_model_fqn(*source)
-                for source in layer_filter_sources(layer)
+                for source in filter_sources(flt.filter_json)
             ),
-        ]
-        run_sqlmesh_plan(
-            environment="prod",
-            select=select,
-            auto_apply=True,
-            no_prompts=True,
-        )
-    if layer.workspace.tile_server_backend == "martin":
-        ensure_martin_source(f"{SPATIAL_FILTER_SCHEMA}.{filter_model_table(layer.pk)}")
+        ],
+        auto_apply=True,
+        no_prompts=True,
+    )
+    if flt.layer.workspace.tile_server_backend == "martin":
+        ensure_martin_source(f"{SPATIAL_FILTER_SCHEMA}.{filter_model_table(flt.pk)}")
+
+
+def _copy_symbology(source: Layer, target: Layer) -> None:
+    """Give *target* a copy of *source*'s symbology (config and classes), if it has one."""
+    from brewgis.workspace.models import SymbologyConfig
+
+    config = SymbologyConfig.objects.filter(layer=source).first()
+    if config is None:
+        return
+    classes = list(config.classes.all())
+    config.pk = None
+    config.layer = target
+    config.save()
+    for style_class in classes:
+        style_class.pk = None
+        style_class.symbology = config
+        style_class.save()
+
+
+def apply_filter(flt: LayerFilter) -> Layer:
+    """Materialize *flt*'s rows as a new layer; the filtered layer is untouched.
+
+    The new layer sits beside its source — same group, scenario, geometry type
+    and symbology — and draws ``spatial_filter.filter_<pk>``. Synchronous, like
+    the base-canvas fill toggle: the table exists when this returns.
+    """
+    from brewgis.workspace.models import Layer
+
+    source = flt.layer
+    table = filter_model_table(flt.pk)
+    layer = Layer.objects.create(
+        workspace=source.workspace,
+        key=table,
+        name=f"{source.name or source.key} — {flt.name}",
+        description=f"{source.name or source.key} filtered by “{flt.name}”.",
+        geometry_type=source.geometry_type,
+        layer_source=source.layer_source,
+        db_schema=SPATIAL_FILTER_SCHEMA,
+        db_table=table,
+        group=source.group,
+        scenario=source.scenario,
+        display_order=source.display_order,
+        source_filter=flt,
+    )
+    _copy_symbology(source, layer)
+    refresh_filter_models(flt)
+    return layer
+
+
+def layer_owns_filter_models(layer: Layer) -> bool:
+    """Whether deleting *layer* deletes a filtered layer, leaving a model to drop.
+
+    True for a filtered layer itself, and for a layer with an applied filter
+    (deleting it cascades to that filter and so to its filtered layer). Ask
+    before the delete; call ``refresh_filter_models()`` after it.
+    """
+    return (
+        layer.source_filter_id is not None
+        or layer.filters.filter(output_layer__isnull=False).exists()
+    )
+
+
+def unapply_filter(flt: LayerFilter) -> None:
+    """Delete *flt*'s filtered layer and drop the models nothing reads any more."""
+    layer = flt.filtered_layer
+    if layer is None:
+        return
+    layer.delete()
+    refresh_filter_models()

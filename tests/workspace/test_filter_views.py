@@ -224,35 +224,16 @@ class TestLayerFilterToggle(TestCase):
         self.user = UserFactory()
         self.client.force_login(self.user)
         self.layer = LayerFactory()
-        self.filter = LayerFilter.objects.create(
-            layer=self.layer, name="Toggle Me", is_active=False
-        )
+        self.filter = LayerFilter.objects.create(layer=self.layer, name="Toggle Me")
         self.url = reverse(
             "workspace:layer_filter_toggle", kwargs={"pk": self.filter.pk}
         )
 
-    def test_toggle_active(self) -> None:
-        """POST should toggle is_active from False to True."""
-        response = self.client.post(self.url)
-        self.assertEqual(response.status_code, 200)
-        self.filter.refresh_from_db()
-        self.assertTrue(self.filter.is_active)
-
-    def test_toggle_inactive(self) -> None:
-        """POST should toggle is_active from True to False."""
-        self.filter.is_active = True
-        self.filter.save()
-        response = self.client.post(self.url)
-        self.assertEqual(response.status_code, 200)
-        self.filter.refresh_from_db()
-        self.assertFalse(self.filter.is_active)
-
     def test_toggle_requires_post(self) -> None:
-        """GET should not toggle."""
+        """GET should not apply the filter."""
         response = self.client.get(self.url)
         self.assertEqual(response.status_code, 405)
-        self.filter.refresh_from_db()
-        self.assertFalse(self.filter.is_active)
+        self.assertIsNone(LayerFilter.objects.get(pk=self.filter.pk).filtered_layer)
 
     def test_toggle_requires_auth(self) -> None:
         """Unauthenticated POST should be redirected."""
@@ -290,7 +271,7 @@ class TestLayerFilterPreview(TestCase):
         data = response.json()
         self.assertEqual(data["id"], self.filter.pk)
         self.assertEqual(data["name"], "Preview Me")
-        self.assertEqual(data["is_active"], False)
+        self.assertIsNone(data["filtered_layer"])
         self.assertIn("filter_json", data)
         self.assertIn("expression", data)
 
