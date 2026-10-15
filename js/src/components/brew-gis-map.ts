@@ -9,6 +9,7 @@ import type {
   LngLatBoundsTuple,
 } from '../types/index.js'
 import { generateLayerId, diffLayers } from '../utils/maplibre-helpers.js'
+import { MapSocket, type MapEvent } from '../utils/map-socket.js'
 import { PaintModeController } from './paint-mode.js'
 
 /** Padding, in pixels, kept clear around a located feature. */
@@ -16,6 +17,15 @@ const FOCUS_PADDING_PX = 80
 /** Zoom a located feature is fitted to at most, so one small parcel (or a
  * zero-area box around a point) doesn't fill the screen with a single lot. */
 const FOCUS_MAX_ZOOM = 18
+
+/** Quiet period, in ms, that collapses a burst of `layers.changed` events
+ * (a bulk import saves many layers) into one layer-list fetch. */
+const LAYERS_RELOAD_DEBOUNCE_MS = 150
+
+/** Structural equality for JSON-shaped layer config values. */
+function _sameJson(a: unknown, b: unknown): boolean {
+  return JSON.stringify(a) === JSON.stringify(b)
+}
 
 /** Escape text for safe interpolation into hover-tooltip HTML. */
 function _escapeHtml(value: string): string {
@@ -73,6 +83,17 @@ export class BrewGisMap extends LitElement {
   @property({ type: String, attribute: 'panel-side' })
   panelSide: 'left' | 'right' | 'bottom' | null = null
 
+  /** Websocket path of the workspace's map-event stream (`/ws/workspace/<pk>/map/`).
+   * When set, the map keeps itself current from server events — see
+   * `_handleMapEvent`. Unset (e.g. scenario comparison), the map is static. */
+  @property({ type: String, attribute: 'events-url' })
+  eventsUrl: string = ''
+
+  /** URL serving this map's layer configs as JSON (`map_layers_json`),
+   * fetched again whenever a `layers.changed` event arrives. */
+  @property({ type: String, attribute: 'layers-url' })
+  layersUrl: string = ''
+
   @property({ type: Object, attribute: 'transform-request' })
   transformRequest:
     | ((url: string, resourceType?: string) => { url: string; headers?: Record<string, string> })
@@ -80,6 +101,12 @@ export class BrewGisMap extends LitElement {
 
   /** Internal map instance. */
   private _map: maplibregl.Map | null = null
+
+  /** Map-event websocket, open while `eventsUrl` is set and the element is connected. */
+  private _socket: MapSocket | null = null
+
+  /** Pending debounced layer-list reload. */
+  private _layersReloadTimer: ReturnType<typeof setTimeout> | null = null
 
   /** Paint mode controller. */
   private _paintController: PaintModeController | null = null
@@ -124,6 +151,7 @@ export class BrewGisMap extends LitElement {
   override firstUpdated(_changedProperties: PropertyValues): void {
     super.firstUpdated(_changedProperties)
     this._initMap()
+    this._connectEvents()
   }
 
   /** @inheritdoc */
@@ -132,6 +160,10 @@ export class BrewGisMap extends LitElement {
 
     if (changedProperties.has('layers') && this._mapLoaded) {
       this._syncLayers()
+    }
+
+    if (changedProperties.has('eventsUrl') && changedProperties.get('eventsUrl') !== undefined) {
+      this._connectEvents()
     }
 
     if (changedProperties.has('viewport') && this.viewport && this._mapLoaded) {
@@ -161,6 +193,7 @@ export class BrewGisMap extends LitElement {
   /** @inheritdoc */
   override disconnectedCallback(): void {
     super.disconnectedCallback()
+    this._disconnectEvents()
     this._destroyMap()
   }
 
@@ -448,36 +481,149 @@ export class BrewGisMap extends LitElement {
    * server's cached copy for it) — but MapLibre caches tiles it has already
    * fetched for the current viewport, so a paint/clear/undo would otherwise
    * stay invisible until an unrelated pan/zoom evicted the stale tiles.
-   * Bumping a cache-busting param on the source's tile URLs forces exactly
-   * that source to re-request.
+   *
+   * A scenario's canvas view backs *two* independent MapLibre sources — the
+   * base layer (re-pointed at the canvas view, rendered with the workspace's
+   * real symbology) and the separate "is painted" highlight overlay layer
+   * (`canvasLayerId`). Each layer has its own source (see `_syncLayers`), so
+   * both are refreshed.
    */
   refreshCanvasTiles(): void {
+    const ids = [this.canvasLayerId, this.baseLayerId].filter((id) => !!id)
+    if (ids.length > 0) this.refreshLayerTiles(ids)
+  }
+
+  /**
+   * Force the given layers' tiles (by layer id or key; every layer when
+   * omitted) to be re-fetched, by bumping a cache-busting param on their
+   * sources' tile URLs. A TileJSON (`url`) source is re-requested instead.
+   */
+  refreshLayerTiles(layerIds?: string[]): void {
     if (!this._map) return
 
-    // A scenario's canvas view backs *two* independent MapLibre sources —
-    // the base layer (re-pointed at the canvas view, rendered with the
-    // workspace's real symbology — what a user is actually looking at) and
-    // the separate "is painted" highlight overlay layer (`canvasLayerId`).
-    // Each layer gets its own dedicated source (see `_syncLayers`), so
-    // busting only one leaves the other showing pre-paint tiles forever.
-    // Refresh whichever of the two are present.
+    const wanted = layerIds ? new Set(layerIds) : null
     const sourceIds = new Set(
-      [this.canvasLayerId, this.baseLayerId]
-        .map((layerId) => this._findSourceIdForLayerId(layerId))
+      this.layers
+        .filter((l) => !wanted || wanted.has(l.key) || (l.id !== undefined && wanted.has(l.id)))
+        .map((l) => this._findSourceIdForLayerId(l.id ?? l.key))
         .filter((id): id is string => !!id),
     )
-    if (sourceIds.size === 0) return
 
     const cacheBust = `_cb=${Date.now()}`
-    for (const sourceId of sourceIds) {
-      const source = this._map.getSource(sourceId) as maplibregl.VectorTileSource | undefined
-      if (!source || typeof source.setTiles !== 'function' || !source.tiles) continue
-      const tiles = source.tiles.map((url) => {
-        const sep = url.includes('?') ? '&' : '?'
-        return `${url}${sep}${cacheBust}`
-      })
-      source.setTiles(tiles)
+    const bust = (url: string): string => {
+      const base = url.replace(/([?&])_cb=\d+(&|$)/, (_m, lead: string, tail: string) =>
+        tail ? lead : '',
+      )
+      return `${base}${base.includes('?') ? '&' : '?'}${cacheBust}`
     }
+    for (const sourceId of sourceIds) {
+      const source = this._map.getSource<maplibregl.VectorTileSource>(sourceId)
+      if (!source) continue
+      if (typeof source.setTiles === 'function' && source.tiles) {
+        source.setTiles(source.tiles.map(bust))
+      } else if (typeof source.setUrl === 'function' && source.url) {
+        source.setUrl(bust(source.url))
+      }
+    }
+  }
+
+  /**
+   * Fetch the layer list from `layersUrl` and reconcile the map against it
+   * (`_syncLayers` adds, removes, restyles and reorders in place).
+   */
+  async reloadLayers(): Promise<void> {
+    if (!this.layersUrl) return
+    const response = await fetch(this.layersUrl, {
+      credentials: 'same-origin',
+      headers: { Accept: 'application/json' },
+    })
+    if (!response.ok) {
+      console.warn('brew-gis-map: layer reload failed', response.status)
+      return
+    }
+    this.layers = (await response.json()) as LayerConfig[]
+  }
+
+  /**
+   * Switch the basemap at runtime. `setStyle` drops the data layers with the
+   * old style; the `styledata` handler re-adds them.
+   */
+  setBasemapStyle(style: maplibregl.StyleSpecification | string): void {
+    if (!this._map) return
+    this._map.setStyle(style)
+  }
+
+  // ─── Map events (websocket) ─────────────────────────────
+
+  private _connectEvents(): void {
+    this._disconnectEvents()
+    if (!this.eventsUrl || typeof WebSocket === 'undefined') return
+    this._socket = new MapSocket(this.eventsUrl, {
+      onEvent: (event) => {
+        this._handleMapEvent(event)
+      },
+      onReconnected: () => {
+        this._resyncAfterReconnect()
+      },
+    })
+    this._socket.connect()
+  }
+
+  private _disconnectEvents(): void {
+    this._socket?.close()
+    this._socket = null
+    if (this._layersReloadTimer !== null) {
+      clearTimeout(this._layersReloadTimer)
+      this._layersReloadTimer = null
+    }
+  }
+
+  private _scheduleLayersReload(): void {
+    if (this._layersReloadTimer !== null) clearTimeout(this._layersReloadTimer)
+    this._layersReloadTimer = setTimeout(() => {
+      this._layersReloadTimer = null
+      void this.reloadLayers()
+    }, LAYERS_RELOAD_DEBOUNCE_MS)
+  }
+
+  /** Events missed while the socket was down are gone: resync everything. */
+  private _resyncAfterReconnect(): void {
+    this._scheduleLayersReload()
+    this.refreshLayerTiles()
+    this._dispatchMapEvent({ kind: 'socket.reconnected' })
+  }
+
+  /**
+   * Apply one server map event (see `services/map_events.py`), then re-dispatch
+   * it as a bubbling `map-event` so page scripts (legend, paint toolbar,
+   * toasts) can react too.
+   */
+  private _handleMapEvent(event: MapEvent): void {
+    switch (event.kind) {
+      case 'layers.changed':
+        this._scheduleLayersReload()
+        break
+      case 'tiles.changed': {
+        const scenarioId = event.scenario_id as number | null | undefined
+        const layerKeys = event.layer_keys as string[] | undefined
+        if (scenarioId != null) {
+          if (scenarioId === Number(this.scenarioId)) this.refreshCanvasTiles()
+        } else {
+          this.refreshLayerTiles(layerKeys)
+        }
+        break
+      }
+      case 'basemap.changed':
+        this.setBasemapStyle(event.style as maplibregl.StyleSpecification | string)
+        break
+    }
+    this._dispatchMapEvent(event)
+  }
+
+  private _dispatchMapEvent(event: MapEvent): void {
+    this.dispatchEvent(
+      new CustomEvent<MapEvent>('map-event', { detail: event, bubbles: true, composed: true }),
+    )
   }
 
   /**
@@ -1034,82 +1180,65 @@ export class BrewGisMap extends LitElement {
     }
   }
 
+  /**
+   * Reconcile the map's data layers with `layers`, in place: remove layers no
+   * longer listed, add new ones, carry source/paint/layout changes over to
+   * existing ones, and restack them in list order (first = bottom). Each layer
+   * owns a source with the layer's own id.
+   */
   private _syncLayers(): void {
     if (!this._map || !this._mapLoaded) return
+    const map = this._map
 
-    const { toAdd: _toAdd, toRemove } = diffLayers(this.layers, this._previousLayers)
+    const { toRemove } = diffLayers(this.layers, this._previousLayers)
 
-    // Remove stale layers (reverse order to maintain stack order)
     for (const id of toRemove) {
-      try {
-        if (this._map.getLayer(id)) {
-          this._map.removeLayer(id)
-        }
-      } catch {
-        // Layer might have been removed already
-      }
-
-      try {
-        if (this._map.getSource(id)) {
-          this._map.removeSource(id)
-        }
-      } catch {
-        // Source might have been removed already
-      }
+      this._removeDataLayer(id)
     }
 
     // Compute insertion point so data layers render below
     // water and roads in vector basemaps.
-    const allLayersBefore = (this._map?.getStyle().layers || []).map((l) => l.id)
     const beforeId = this._findBeforeId()
-    console.log(
-      '_syncLayers beforeId:',
-      beforeId,
-      '| total style layers:',
-      allLayersBefore.length,
-      '| adding:',
-      this.layers.length,
-      'layers',
-    )
 
-    // Add new layers
+    const previousById = new Map(
+      this._previousLayers.map((pl, i) => [generateLayerId(pl, i), pl] as const),
+    )
+    const resolvedIds: string[] = []
+
     for (let i = 0; i < this.layers.length; i++) {
       const layer = this.layers[i]
       const resolvedId = generateLayerId(layer, i)
+      resolvedIds.push(resolvedId)
+      const previous = previousById.get(resolvedId)
 
-      // Skip if this layer already exists
-      if (
-        this._previousLayers.some((pl) => {
-          const plId = generateLayerId(pl, this._previousLayers.indexOf(pl))
-          return plId === resolvedId
-        })
-      )
-        continue
-
-      // Extract source config from layer config
-      const sourceId = resolvedId
-      const { source, ...layerConfig } = layer
-
-      // Add source if not already present
-      if (!this._map.getSource(sourceId)) {
-        this._map.addSource(sourceId, source as maplibregl.SourceSpecification)
+      if (previous && map.getLayer(resolvedId)) {
+        if (previous.type !== layer.type || previous['source-layer'] !== layer['source-layer']) {
+          // A layer's type and source-layer are fixed once added.
+          this._removeDataLayer(resolvedId)
+        } else {
+          this._updateDataLayer(resolvedId, previous, layer)
+          continue
+        }
       }
 
-      // Add layer referencing the source
+      const { source, ...layerConfig } = layer
+      if (!map.getSource(resolvedId)) {
+        map.addSource(resolvedId, source as maplibregl.SourceSpecification)
+      }
       const mlLayer: maplibregl.LayerSpecification = {
         id: resolvedId,
         type: layerConfig.type,
-        source: sourceId,
+        source: resolvedId,
         ...(layerConfig['source-layer'] ? { 'source-layer': layerConfig['source-layer'] } : {}),
         ...(layerConfig.minzoom !== undefined ? { minzoom: layerConfig.minzoom } : {}),
         ...(layerConfig.maxzoom !== undefined ? { maxzoom: layerConfig.maxzoom } : {}),
         ...(layerConfig.paint ? { paint: layerConfig.paint } : {}),
         ...(layerConfig.layout ? { layout: layerConfig.layout } : {}),
       }
-
-      this._map.addLayer(mlLayer, beforeId)
-      console.log('  added layer:', resolvedId, 'before:', beforeId || '(top)')
+      map.addLayer(mlLayer, beforeId)
     }
+
+    this._restackDataLayers(resolvedIds, beforeId)
 
     this._previousLayers = [...this.layers]
 
@@ -1122,6 +1251,93 @@ export class BrewGisMap extends LitElement {
     // Not part of `layers` either — and a new style drops its source and
     // layers, so redraw it from the geometry it was last drawn for.
     if (this._locatedGeometry) this.showLocatedFeature(this._locatedGeometry)
+  }
+
+  /** Remove a data layer and its own source, plus any overlay drawn from that source. */
+  private _removeDataLayer(id: string): void {
+    if (!this._map) return
+    const map = this._map
+    if (map.getLayer(id)) map.removeLayer(id)
+    if (map.getSource(id)) {
+      // The hover/selection highlights draw from the canvas layer's source;
+      // they are re-added against the new source after the sync.
+      for (const styleLayer of map.getStyle().layers ?? []) {
+        if ('source' in styleLayer && styleLayer.source === id) map.removeLayer(styleLayer.id)
+      }
+      map.removeSource(id)
+    }
+  }
+
+  /** Carry a listed layer's changed source, paint, layout and zoom range over to the map. */
+  private _updateDataLayer(id: string, previous: LayerConfig, next: LayerConfig): void {
+    if (!this._map) return
+    const map = this._map
+
+    if (!_sameJson(previous.source, next.source)) {
+      const source = map.getSource(id) as maplibregl.VectorTileSource | undefined
+      const sameKind =
+        source && previous.source.type === next.source.type && previous.source.type === 'vector'
+      if (sameKind && next.source.tiles && typeof source.setTiles === 'function') {
+        source.setTiles(next.source.tiles)
+      } else if (sameKind && next.source.url && typeof source.setUrl === 'function') {
+        source.setUrl(next.source.url)
+      } else {
+        this._removeDataLayer(id)
+        const { source: spec, ...layerConfig } = next
+        map.addSource(id, spec as maplibregl.SourceSpecification)
+        map.addLayer({
+          id,
+          type: layerConfig.type,
+          source: id,
+          ...(layerConfig['source-layer'] ? { 'source-layer': layerConfig['source-layer'] } : {}),
+          ...(layerConfig.paint ? { paint: layerConfig.paint } : {}),
+          ...(layerConfig.layout ? { layout: layerConfig.layout } : {}),
+        } as maplibregl.LayerSpecification)
+        return
+      }
+    }
+
+    for (const [kind, prev, nextProps] of [
+      ['paint', previous.paint ?? {}, next.paint ?? {}],
+      ['layout', previous.layout ?? {}, next.layout ?? {}],
+    ] as const) {
+      for (const name of new Set([...Object.keys(prev), ...Object.keys(nextProps)])) {
+        if (_sameJson(prev[name], nextProps[name])) continue
+        if (kind === 'paint') map.setPaintProperty(id, name, nextProps[name])
+        else map.setLayoutProperty(id, name, nextProps[name])
+      }
+    }
+
+    if (previous.minzoom !== next.minzoom || previous.maxzoom !== next.maxzoom) {
+      map.setLayerZoomRange(id, next.minzoom ?? 0, next.maxzoom ?? 24)
+    }
+  }
+
+  /**
+   * Stack the data layers in list order (first = bottom) below the basemap's
+   * insertion point, when they are not already. The hover/selection
+   * highlights keep their place just under the layer they outline.
+   */
+  private _restackDataLayers(ids: string[], beforeId: string | undefined): void {
+    if (!this._map) return
+    const map = this._map
+    const ours = new Set(ids)
+    const current = (map.getStyle().layers ?? []).map((l) => l.id).filter((id) => ours.has(id))
+    if (current.length === ids.length && current.every((id, i) => id === ids[i])) return
+
+    for (const id of ids) {
+      if (map.getLayer(id)) map.moveLayer(id, beforeId)
+    }
+    const targetLayerId = this.canvasLayerId || this.baseLayerId
+    if (targetLayerId && map.getLayer(targetLayerId)) {
+      for (const overlayId of [
+        'brew-gis-selection-highlight',
+        'brew-gis-selection-highlight-outline',
+        'brew-gis-hover-highlight',
+      ]) {
+        if (map.getLayer(overlayId)) map.moveLayer(overlayId, targetLayerId)
+      }
+    }
   }
 
   private _destroyMap(): void {

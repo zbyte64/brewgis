@@ -416,6 +416,31 @@
       }
     });
 
+    // ─── Map events (websocket) ─────────────────────────────
+    // <brew-gis-map> re-dispatches every server map event as `map-event`
+    // after applying it to the map itself (layers, tiles, basemap). The page
+    // keeps its own pieces current here: the layer list, and a toast when a
+    // background run ends.
+    var layerPanelReloadTimer = null;
+    document.body.addEventListener('map-event', function (evt) {
+      var event = evt.detail || {};
+      if (event.kind === 'layers.changed' || event.kind === 'socket.reconnected') {
+        var panels = Alpine.store('panels');
+        if (!panels.leftSidebarOpen || panels.activePanel !== 'layers') return;
+        // A bulk change saves many layers: reload the list once per burst.
+        clearTimeout(layerPanelReloadTimer);
+        layerPanelReloadTimer = setTimeout(function () {
+          loadSidebarPanel('layers');
+        }, 150);
+      } else if (event.kind === 'analysis.run' || event.kind === 'import.run') {
+        var label = event.kind === 'analysis.run'
+          ? 'Analysis run #' + event.run_pk
+          : 'Import #' + event.run_pk + (event.import_type ? ' (' + event.import_type + ')' : '');
+        if (event.status === 'completed') showToast(label + ' finished.');
+        else if (event.status === 'failed') showToast(label + ' failed.');
+      }
+    });
+
     // ─── Symbology preview (Step 2) ──────────────────────────
     document.body.addEventListener('layer-style-preview', function(evt) {
       var detail = evt.detail;

@@ -19,3 +19,11 @@ Feature: Workspace Map
     Given the user is not logged in
     When I navigate to the map page for workspace "Map Test WS"
     Then I should be on the login page
+
+  @e2e
+  Scenario: Another tab's layer change reaches the open map without a reload
+    Given the workspace "Map Test WS" has a layer named "Live Layer"
+    When I navigate to the map page for workspace "Map Test WS"
+    And the map's live update connection is open
+    And another tab hides the layer "Live Layer"
+    Then the map shows the layer "Live Layer" as hidden without reloading

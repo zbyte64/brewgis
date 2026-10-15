@@ -600,4 +600,195 @@ describe('brew-gis-map', () => {
     expect(mockMap.removeLayer).not.toHaveBeenCalled()
     expect(mockMap.removeSource).not.toHaveBeenCalled()
   })
+
+  // Reconciling `layers` in place (map events re-fetch the list and set it)
+
+  describe('layer reconcile', () => {
+    const vectorLayer = (id: string, extra: Partial<LayerConfig> = {}): LayerConfig => ({
+      id,
+      key: id,
+      type: 'fill',
+      source: { type: 'vector', tiles: [`https://h/${id}/{z}/{x}/{y}`] },
+      paint: { 'fill-color': 'red' },
+      ...extra,
+    })
+
+    /** Sources and layers that exist once added, like a real map's. */
+    function trackStyle() {
+      const sources: Record<string, { setTiles: Mock; tiles?: string[] }> = {}
+      const layerIds: string[] = []
+      mockMap.addSource.mockImplementation((id: string, spec: { tiles?: string[] }) => {
+        sources[id] = { tiles: spec.tiles, setTiles: vi.fn() }
+      })
+      mockMap.getSource.mockImplementation((id: string) => sources[id] ?? null)
+      mockMap.addLayer.mockImplementation((spec: { id: string }) => layerIds.push(spec.id))
+      mockMap.getLayer.mockImplementation((id: string) => (layerIds.includes(id) ? {} : null))
+      mockMap.getStyle.mockImplementation(() => ({ layers: layerIds.map((id) => ({ id })) }))
+      mockMap.moveLayer.mockImplementation((id: string, before?: string) => {
+        layerIds.splice(layerIds.indexOf(id), 1)
+        layerIds.splice(before ? layerIds.indexOf(before) : layerIds.length, 0, id)
+      })
+      return { sources, layerIds }
+    }
+
+    afterEach(() => {
+      untrackSources()
+      mockMap.addLayer.mockImplementation(() => undefined)
+      mockMap.getLayer.mockImplementation(() => null)
+      mockMap.getStyle.mockImplementation(() => ({ layers: [] }))
+      mockMap.moveLayer.mockImplementation(() => undefined)
+    })
+
+    async function setLayers(el: Element, layers: LayerConfig[]) {
+      ;(el as unknown as MapInternals).layers = layers
+      await (el as any).updateComplete
+    }
+
+    it('restyles an existing layer without re-adding it', async () => {
+      trackStyle()
+      const { el } = await createAndAttach({ layers: [vectorLayer('a')] })
+      mockMap.addLayer.mockClear()
+
+      await setLayers(el, [vectorLayer('a', { paint: { 'fill-color': 'blue' } })])
+
+      expect(mockMap.setPaintProperty).toHaveBeenCalledWith('a', 'fill-color', 'blue')
+      expect(mockMap.addLayer).not.toHaveBeenCalled()
+      expect(mockMap.removeLayer).not.toHaveBeenCalled()
+    })
+
+    it('swaps tile URLs on the existing source', async () => {
+      const { sources } = trackStyle()
+      const { el } = await createAndAttach({ layers: [vectorLayer('a')] })
+
+      const next = vectorLayer('a', {
+        source: { type: 'vector', tiles: ['https://h/a2/{z}/{x}/{y}'] },
+      })
+      await setLayers(el, [next])
+
+      expect(sources.a.setTiles).toHaveBeenCalledWith(['https://h/a2/{z}/{x}/{y}'])
+      expect(mockMap.removeSource).not.toHaveBeenCalled()
+    })
+
+    it('adds new layers and removes dropped ones', async () => {
+      const { layerIds } = trackStyle()
+      const { el } = await createAndAttach({ layers: [vectorLayer('a')] })
+
+      await setLayers(el, [vectorLayer('b')])
+
+      expect(mockMap.removeLayer).toHaveBeenCalledWith('a')
+      expect(mockMap.removeSource).toHaveBeenCalledWith('a')
+      expect(layerIds).toContain('b')
+    })
+
+    it('restacks layers to match a reordered list', async () => {
+      const { layerIds } = trackStyle()
+      const { el } = await createAndAttach({ layers: [vectorLayer('a'), vectorLayer('b')] })
+      expect(layerIds).toEqual(['a', 'b'])
+
+      await setLayers(el, [vectorLayer('b'), vectorLayer('a')])
+
+      expect(layerIds).toEqual(['b', 'a'])
+      expect(mockMap.addLayer).toHaveBeenCalledTimes(2)
+    })
+  })
+
+  // Map events over the websocket
+
+  describe('map events', () => {
+    class FakeWebSocket extends EventTarget {
+      static OPEN = 1
+      static last: FakeWebSocket | null = null
+      readyState = 1
+      constructor(public url: string) {
+        super()
+        FakeWebSocket.last = this
+      }
+      send(event: unknown) {
+        this.dispatchEvent(new MessageEvent('message', { data: JSON.stringify(event) }))
+      }
+      close = vi.fn()
+    }
+
+    beforeEach(() => {
+      vi.stubGlobal('WebSocket', FakeWebSocket)
+    })
+
+    afterEach(() => {
+      vi.unstubAllGlobals()
+      untrackSources()
+    })
+
+    async function attachWithEvents(layers: LayerConfig[] = []) {
+      const el = createMapElement()
+      el.setAttribute('events-url', '/ws/workspace/7/map/')
+      el.setAttribute('layers-url', '/7/map/layers/?scenario=3')
+      el.setAttribute('scenario-id', '3')
+      el.setAttribute('canvas-layer-id', 'canvas')
+      el.setAttribute('layers', JSON.stringify(layers))
+      document.body.appendChild(el)
+      await (el as any).updateComplete
+      return el
+    }
+
+    it('opens the event socket on the page host', async () => {
+      await attachWithEvents()
+      expect(FakeWebSocket.last?.url).toMatch(/^ws:\/\/[^/]+\/ws\/workspace\/7\/map\/$/)
+    })
+
+    it('re-fetches and applies the layer list on layers.changed, once per burst', async () => {
+      vi.useFakeTimers()
+      const fresh = [{ id: 'n', key: 'n', type: 'fill', source: { type: 'vector', tiles: ['t'] } }]
+      const fetchMock = vi.fn().mockResolvedValue({ ok: true, json: () => Promise.resolve(fresh) })
+      vi.stubGlobal('fetch', fetchMock)
+      const el = await attachWithEvents()
+
+      FakeWebSocket.last!.send({ kind: 'layers.changed' })
+      FakeWebSocket.last!.send({ kind: 'layers.changed' })
+      await vi.advanceTimersByTimeAsync(200)
+      vi.useRealTimers()
+
+      expect(fetchMock).toHaveBeenCalledTimes(1)
+      expect(fetchMock.mock.calls[0][0]).toBe('/7/map/layers/?scenario=3')
+      expect((el as unknown as MapInternals).layers).toEqual(fresh)
+    })
+
+    it("cache-busts the canvas on its own scenario's tiles.changed only", async () => {
+      const setTiles = vi.fn()
+      mockMap.getSource.mockImplementation(() => ({
+        tiles: ['https://h/c/{z}/{x}/{y}?v=1'],
+        setTiles,
+      }))
+      await attachWithEvents([
+        { id: 'canvas', key: 'canvas', type: 'fill', source: { type: 'vector', tiles: ['x'] } },
+      ])
+
+      FakeWebSocket.last!.send({ kind: 'tiles.changed', scenario_id: 99 })
+      expect(setTiles).not.toHaveBeenCalled()
+
+      FakeWebSocket.last!.send({ kind: 'tiles.changed', scenario_id: 3 })
+      expect(setTiles).toHaveBeenCalledTimes(1)
+      expect(setTiles.mock.calls[0][0][0]).toMatch(/\?v=1&_cb=\d+$/)
+    })
+
+    it('switches the basemap and re-dispatches every event as map-event', async () => {
+      const el = await attachWithEvents()
+      const seen = vi.fn()
+      el.addEventListener('map-event', seen)
+
+      FakeWebSocket.last!.send({ kind: 'basemap.changed', style: 'https://style.json' })
+
+      expect(mockMap.setStyle).toHaveBeenCalledWith('https://style.json')
+      expect(seen.mock.calls[0][0].detail).toEqual({
+        kind: 'basemap.changed',
+        style: 'https://style.json',
+      })
+    })
+
+    it('closes the socket when the element is removed', async () => {
+      const el = await attachWithEvents()
+      const socket = FakeWebSocket.last!
+      el.remove()
+      expect(socket.close).toHaveBeenCalled()
+    })
+  })
 })

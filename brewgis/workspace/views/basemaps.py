@@ -18,6 +18,7 @@ from django.views.decorators.http import require_GET
 from django.views.decorators.http import require_http_methods
 
 from brewgis.workspace.models import Basemap
+from brewgis.workspace.services.map_events import notify_map
 
 logger = logging.getLogger(__name__)
 
@@ -134,6 +135,13 @@ def _post_basemap_select(request: HttpRequest, workspace_pk: int) -> HttpRespons
         basemap.name,
         basemap.pk,
         workspace_pk,
+    )
+    # The choice lives in this user's session, so only their open maps restyle.
+    notify_map(
+        workspace_id=workspace_pk,
+        kind="basemap.changed",
+        user_id=request.user.pk,
+        style=basemap.resolve_style(),
     )
 
     return render(

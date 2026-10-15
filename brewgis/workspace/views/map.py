@@ -6,13 +6,17 @@ import json
 import math
 import uuid
 from typing import TYPE_CHECKING
+from typing import Any
 
+from django.contrib.auth.decorators import login_required
 from django.contrib.auth.decorators import user_passes_test
 from django.db import connection
 from django.db import transaction
 from django.db.models import Max
 from django.db.models import QuerySet
 from django.http import Http404
+from django.http import JsonResponse
+from django.views.decorators.http import require_GET
 from django.views.decorators.http import require_safe
 
 if TYPE_CHECKING:
@@ -214,6 +218,164 @@ def _query_viewport(request: HttpRequest) -> dict[str, object] | None:
     return viewport
 
 
+def build_map_layer_data(
+    *, workspace: Workspace, scenario: Scenario, scheme_host: str
+) -> tuple[QuerySet[Layer], list[dict[str, Any]]]:
+    """The ``<brew-gis-map>`` layer configs for *scenario*: its layers and their dicts.
+
+    *scheme_host* (``https://host:port``) makes the tile URLs absolute. The map
+    page embeds this list, and ``map_layers_json`` serves the same list to an
+    open page reconciling after a ``layers.changed`` map event.
+    """
+    is_alternative_scenario = scenario.scenario_type == ScenarioType.ALTERNATIVE
+    canvas_source_id = ""
+    canvas_tiles_url = ""
+    if is_alternative_scenario:
+        # The scenario's canvas view: base canvas COALESCEd with its paints.
+        schema, view_name = scenario.base_layer_source()
+        canvas_source_id = f"{schema}.{view_name}"
+
+        # Martin's tile responses carry no Cache-Control/Expires header, so
+        # a plain page reload can have the browser reuse a previously
+        # cached tile for an extent painted since — the canvas view itself
+        # is always live (it is a view over workspace_paintedcanvas; see
+        # services.scenario_canvas), but the *browser* doesn't know that.
+        # Stamp the tile URL with the most recent paint write for this
+        # scenario so a repaint always changes the URL (and therefore the
+        # browser's cache key), the same way brew-gis-map.ts's
+        # refreshLayerTiles() cache-busts mid-session.
+        last_painted = PaintedCanvas.objects.filter(scenario=scenario).aggregate(
+            Max("painted_at")
+        )["painted_at__max"]
+        version_qs = f"?v={last_painted.timestamp():.0f}" if last_painted else ""
+
+        if workspace.tile_server_backend == "martin":
+            canvas_tiles_url = (
+                f"{scheme_host}/martin/{canvas_source_id}/{{z}}/{{x}}/{{y}}{version_qs}"
+            )
+        else:
+            canvas_tiles_url = (
+                f"{scheme_host}"
+                f"/tipg/collections/{canvas_source_id}/tiles/WebMercatorQuad/{{z}}/{{x}}/{{y}}{version_qs}"
+            )
+
+    # Build regular layer data. Scoped to the active scenario: a scenario's
+    # analysis results belong to it alone (each scenario owns an instance of
+    # every analysis model), so rendering another scenario's results here
+    # would draw the same analysis several times over, from data that isn't
+    # this scenario's.
+    layers = visible_layers_for_panel(workspace, scenario)
+    layer_data = []
+    for layer in layers:
+        is_painted_features_layer = layer.key == PAINTED_FEATURES_LAYER_KEY
+        if is_painted_features_layer and not is_alternative_scenario:
+            # This overlay has no source of its own — it only ever renders
+            # against the active ALTERNATIVE scenario's canvas view (below).
+            # Without one there's nothing to tile from, so skip it entirely
+            # rather than fall through to to_maplibre_source() with no
+            # db_table.
+            continue
+
+        data = LayerSchema.model_validate(layer).model_dump()
+        data["id"] = layer.key
+        data["type"] = layer.geometry_type
+        is_base_layer = layer.key == BASE_CANVAS_LAYER_KEY
+
+        if (is_base_layer or is_painted_features_layer) and is_alternative_scenario:
+            # A scenario is active: tile this layer from the scenario's
+            # canvas view (base canvas COALESCEd with any PaintedCanvas
+            # overrides) instead of the raw, unpainted base table — so the
+            # symbology below (breaks/colors/categories) actually reflects
+            # painted values instead of silently showing stale data.
+            data["source"] = {
+                "type": "vector",
+                "tiles": [canvas_tiles_url],
+                "promoteId": "parcel_id",
+            }
+            base_source_layer = (
+                "default"
+                if workspace.tile_server_backend == "tipg"
+                else canvas_source_id
+            )
+        else:
+            data["source"] = layer.to_maplibre_source()
+            if is_base_layer:
+                # Same fix as the scenario canvas view below: non-numeric
+                # parcel ids aren't valid native MVT feature ids, so without
+                # this, click-to-inspect can never resolve a clicked feature.
+                data["source"]["promoteId"] = "parcel_id"
+            base_source_layer = None
+
+        # Make tile URLs absolute (MapLibre v4+ requires absolute URLs
+        # for tile sources in web worker contexts).
+        if "tiles" in data["source"]:
+            data["source"]["tiles"] = [
+                t if t.startswith("http") else f"{scheme_host}{t}"
+                for t in data["source"]["tiles"]
+            ]
+
+        # MapLibre always requires a source-layer for a vector source — it's
+        # not tipg-specific. tipg's MVT layers are always named "default";
+        # Martin's TileJSON confirms it names each MVT layer after the
+        # source's own id (the same "{schema}.{table}" string used above).
+        if base_source_layer is not None:
+            data["source-layer"] = base_source_layer
+        elif workspace.tile_server_backend == "tipg":
+            data["source-layer"] = "default"
+        else:
+            data["source-layer"] = layer._source_id()  # noqa: SLF001
+
+        # Merge symbology-generated paint/layout if available. The attribute
+        # column driving it is also surfaced to the frontend so hover
+        # tooltips can show just the column(s) actually used for styling
+        # (e.g. built_form_key, vmt_total) instead of every column on the
+        # layer's table — together with that column's display unit.
+        data["name"] = layer.name
+        data["attribute_column"] = ""
+        data["attribute_label"] = ""
+        data["attribute_unit"] = ""
+        try:
+            config = layer.symbology
+            style = generate_maplibre_style(config)
+            data["paint"] = style["paint"]
+            data["layout"] = style["layout"]
+            if config.attribute_column:
+                data["attribute_column"] = config.attribute_column
+                data["attribute_label"] = _resolve_attribute_label(
+                    config.attribute_column
+                )
+                data["attribute_unit"] = _resolve_attribute_unit(
+                    layer.db_table, config.attribute_column
+                )
+        except SymbologyConfig.DoesNotExist:
+            pass
+
+        # Persisted visibility toggle
+        data.setdefault("layout", {})
+        data["layout"]["visibility"] = "visible" if layer.is_visible else "none"
+
+        layer_data.append(data)
+    return layers, layer_data
+
+
+@login_required
+@require_GET
+def map_layers_json(request: HttpRequest, workspace_pk: int) -> JsonResponse:
+    """The map's layer configs for ``?scenario=`` (default: base), as JSON.
+
+    ``<brew-gis-map>`` fetches this when a ``layers.changed`` map event says
+    its layer list is stale, and reconciles the map against it in place.
+    """
+    workspace = get_object_or_404(Workspace, pk=workspace_pk)
+    scenario = resolve_scenario_param(request, workspace)
+    _, layer_data = build_map_layer_data(
+        workspace=workspace,
+        scenario=scenario,
+        scheme_host=f"{request.scheme}://{request.get_host()}",
+    )
+    return JsonResponse(layer_data, safe=False)
+
+
 @user_passes_test(lambda u: u.is_authenticated)
 def view_workspace_map(request: HttpRequest, workspace_pk: int) -> HttpResponse:
     """Render the workspace map, optionally with scenario paint mode.
@@ -233,8 +395,6 @@ def view_workspace_map(request: HttpRequest, workspace_pk: int) -> HttpResponse:
     scenario = resolve_scenario_param(request, workspace)
     is_alternative_scenario = scenario.scenario_type == ScenarioType.ALTERNATIVE
     canvas_view_name: str | None = None
-    canvas_source_id: str = ""
-    canvas_tiles_url: str = ""
     paintable_column_meta: list[dict[str, str]] = []
     built_forms_data: dict[str, QuerySet[BuildingType] | QuerySet[PlaceType]] = {}
     paint_url: str = ""
@@ -253,35 +413,7 @@ def view_workspace_map(request: HttpRequest, workspace_pk: int) -> HttpResponse:
         # Build canvas view source (the COALESCE view for this scenario)
         schema, view_name = scenario.base_layer_source()
         canvas_view_name = view_name
-        canvas_source_id = f"{schema}.{view_name}"
         ensure_painted_features_layer(workspace, schema=schema, table=view_name)
-
-        # Build absolute base URL manually — must NOT go through
-        # build_absolute_uri()/iri_to_uri() which URL-encodes {z}/{x}/{y}
-        # template placeholders.
-        _request_scheme_host = f"{request.scheme}://{request.get_host()}"
-
-        # Martin's tile responses carry no Cache-Control/Expires header, so
-        # a plain page reload can have the browser reuse a previously
-        # cached tile for an extent painted since — the canvas view itself
-        # is always live (it is a view over workspace_paintedcanvas; see
-        # services.scenario_canvas), but the *browser* doesn't know that.
-        # Stamp the tile URL with the most recent paint write for this
-        # scenario so a repaint always changes the URL (and therefore the
-        # browser's cache key), the same way brew-gis-map.ts's
-        # refreshCanvasTiles() cache-busts mid-session.
-        last_painted = PaintedCanvas.objects.filter(scenario=scenario).aggregate(
-            Max("painted_at")
-        )["painted_at__max"]
-        _version_qs = f"?v={last_painted.timestamp():.0f}" if last_painted else ""
-
-        if workspace.tile_server_backend == "martin":
-            canvas_tiles_url = f"{_request_scheme_host}/martin/{canvas_source_id}/{{z}}/{{x}}/{{y}}{_version_qs}"
-        else:
-            canvas_tiles_url = (
-                f"{_request_scheme_host}"
-                f"/tipg/collections/{canvas_source_id}/tiles/WebMercatorQuad/{{z}}/{{x}}/{{y}}{_version_qs}"
-            )
 
         # Build column metadata for the paint toolbar dropdown
         paintable_column_meta = build_paintable_column_meta()
@@ -333,104 +465,12 @@ def view_workspace_map(request: HttpRequest, workspace_pk: int) -> HttpResponse:
             reverse("workspace:undo_paint", args=[workspace_pk, scenario.pk])
         )
 
-    # Build regular layer data. Scoped to the active scenario: a scenario's
-    # analysis results belong to it alone (each scenario owns an instance of
-    # every analysis model), so rendering another scenario's results here
-    # would draw the same analysis several times over, from data that isn't
-    # this scenario's.
-    layers = visible_layers_for_panel(workspace, scenario)
-    layer_data = []
-    for layer in layers:
-        is_painted_features_layer = layer.key == PAINTED_FEATURES_LAYER_KEY
-        if is_painted_features_layer and not is_alternative_scenario:
-            # This overlay has no source of its own — it only ever renders
-            # against the active ALTERNATIVE scenario's canvas view (below).
-            # Without one there's nothing to tile from, so skip it entirely
-            # rather than fall through to to_maplibre_source() with no
-            # db_table.
-            continue
-
-        data = LayerSchema.model_validate(layer).model_dump()
-        data["id"] = layer.key
-        data["type"] = layer.geometry_type
-        is_base_layer = layer.key == BASE_CANVAS_LAYER_KEY
-
-        if (is_base_layer or is_painted_features_layer) and is_alternative_scenario:
-            # A scenario is active: tile this layer from the scenario's
-            # canvas view (base canvas COALESCEd with any PaintedCanvas
-            # overrides) instead of the raw, unpainted base table — so the
-            # symbology below (breaks/colors/categories) actually reflects
-            # painted values instead of silently showing stale data.
-            data["source"] = {
-                "type": "vector",
-                "tiles": [canvas_tiles_url],
-                "promoteId": "parcel_id",
-            }
-            base_source_layer = (
-                "default"
-                if workspace.tile_server_backend == "tipg"
-                else canvas_source_id
-            )
-        else:
-            data["source"] = layer.to_maplibre_source()
-            if is_base_layer:
-                # Same fix as the scenario canvas view below: non-numeric
-                # parcel ids aren't valid native MVT feature ids, so without
-                # this, click-to-inspect can never resolve a clicked feature.
-                data["source"]["promoteId"] = "parcel_id"
-            base_source_layer = None
-
-        # Make tile URLs absolute (MapLibre v4+ requires absolute URLs
-        # for tile sources in web worker contexts).
-        # Build manually — build_absolute_uri() would URL-encode {z}/{x}/{y}.
-        _request_scheme_host = f"{request.scheme}://{request.get_host()}"
-        if "tiles" in data["source"]:
-            data["source"]["tiles"] = [
-                t if t.startswith("http") else f"{_request_scheme_host}{t}"
-                for t in data["source"]["tiles"]
-            ]
-
-        # MapLibre always requires a source-layer for a vector source — it's
-        # not tipg-specific. tipg's MVT layers are always named "default";
-        # Martin's TileJSON confirms it names each MVT layer after the
-        # source's own id (the same "{schema}.{table}" string used above).
-        if base_source_layer is not None:
-            data["source-layer"] = base_source_layer
-        elif workspace.tile_server_backend == "tipg":
-            data["source-layer"] = "default"
-        else:
-            data["source-layer"] = layer._source_id()  # noqa: SLF001
-
-        # Merge symbology-generated paint/layout if available. The attribute
-        # column driving it is also surfaced to the frontend so hover
-        # tooltips can show just the column(s) actually used for styling
-        # (e.g. built_form_key, vmt_total) instead of every column on the
-        # layer's table — together with that column's display unit.
-        data["name"] = layer.name
-        data["attribute_column"] = ""
-        data["attribute_label"] = ""
-        data["attribute_unit"] = ""
-        try:
-            config = layer.symbology
-            style = generate_maplibre_style(config)
-            data["paint"] = style["paint"]
-            data["layout"] = style["layout"]
-            if config.attribute_column:
-                data["attribute_column"] = config.attribute_column
-                data["attribute_label"] = _resolve_attribute_label(
-                    config.attribute_column
-                )
-                data["attribute_unit"] = _resolve_attribute_unit(
-                    layer.db_table, config.attribute_column
-                )
-        except SymbologyConfig.DoesNotExist:
-            pass
-
-        # Persisted visibility toggle
-        data.setdefault("layout", {})
-        data["layout"]["visibility"] = "visible" if layer.is_visible else "none"
-
-        layer_data.append(data)
+    layers, layer_data = build_map_layer_data(
+        workspace=workspace,
+        scenario=scenario,
+        # Built by hand: build_absolute_uri() would URL-encode {z}/{x}/{y}.
+        scheme_host=f"{request.scheme}://{request.get_host()}",
+    )
 
     # The map layer ID for the scenario canvas view (used by brew-gis-map for
     # feature selection). The painted-features Layer (see
@@ -509,6 +549,11 @@ def view_workspace_map(request: HttpRequest, workspace_pk: int) -> HttpResponse:
     context: dict[str, object] = {
         "layers_json": json.dumps(layer_data).replace("'", "\\u0027"),
         "layer_data": layer_data,
+        # <brew-gis-map> keeps itself current from the workspace's map events
+        # (consumers.MapEventsConsumer), re-fetching its layers from here.
+        "map_events_url": f"/ws/workspace/{workspace_pk}/map/",
+        "map_layers_url": reverse("workspace:map_layers_json", args=[workspace_pk])
+        + f"?scenario={scenario.pk}",
         "viewport_json": json.dumps(
             _query_viewport(request) or _resolve_viewport(workspace)
         ),

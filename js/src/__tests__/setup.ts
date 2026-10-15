@@ -57,6 +57,11 @@ const mockMap = {
   setFeatureState: vi.fn(),
   removeFeatureState: vi.fn(),
   getLayoutProperty: vi.fn().mockReturnValue('visible'),
+  setPaintProperty: vi.fn(),
+  setLayoutProperty: vi.fn(),
+  setLayerZoomRange: vi.fn(),
+  moveLayer: vi.fn(),
+  setStyle: vi.fn(),
 }
 
 // Helper to trigger events in tests (e.g. triggerMockEvent('moveend'))

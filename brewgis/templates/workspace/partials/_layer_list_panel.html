@@ -124,8 +124,7 @@
                         hx-post="{% url 'workspace:layer_delete' layer.pk %}"
                         hx-confirm="{% translate 'Delete this layer? This cannot be undone.' %}"
                         hx-target="#legend-list"
-                        hx-swap="outerHTML"
-                        hx-headers='{"HX-Trigger": "layer-deleted"}'>🗑️</button>
+                        hx-swap="outerHTML">🗑️</button>
               </div>
             {% endif %}
           </div>
