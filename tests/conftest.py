@@ -62,6 +62,8 @@ from tests.factories import UserFactory
 from tests.factories import WorkspaceFactory
 
 if TYPE_CHECKING:
+    from collections.abc import Generator
+
     from django.contrib.auth.models import User
 
     from brewgis.workspace.built_forms.models import BuildingType
@@ -71,6 +73,7 @@ if TYPE_CHECKING:
     from brewgis.workspace.models import Scenario
     from brewgis.workspace.models import SymbologyConfig
     from brewgis.workspace.models import Workspace
+    from tests.live_server import DaphneLiveServer
 
 
 # NOTE: This fixture differs from brewgis/conftest.py's `user` fixture.
@@ -97,6 +100,37 @@ def _celery_eager(settings) -> None:
     """
     settings.CELERY_TASK_ALWAYS_EAGER = True
     settings.CELERY_TASK_EAGER_PROPAGATES = True
+
+
+@pytest.fixture(scope="session")
+def live_server() -> Generator[DaphneLiveServer, None, None]:
+    """pytest-django's ``live_server``, served over ASGI by Daphne.
+
+    The map page holds a websocket to its workspace's event stream, which the
+    WSGI ``LiveServerThread`` cannot serve; see ``tests/live_server.py``.
+    pytest-django still upgrades a test using it to a transactional database.
+    """
+    from tests.live_server import DaphneLiveServer
+
+    server = DaphneLiveServer()
+    yield server
+    server.stop()
+
+
+@pytest.fixture
+def map_events(monkeypatch) -> list[tuple[str, dict]]:
+    """Map events published during the test, as ``(group, payload)`` pairs.
+
+    Events are published on commit (``services/map_events.py``), and a test's
+    transaction never commits: wrap the code under test in
+    ``django_capture_on_commit_callbacks(execute=True)`` to see them.
+    """
+    sent: list[tuple[str, dict]] = []
+    monkeypatch.setattr(
+        "brewgis.workspace.services.map_events._publish",
+        lambda group, payload: sent.append((group, payload)),
+    )
+    return sent
 
 
 @pytest.fixture

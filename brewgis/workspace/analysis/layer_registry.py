@@ -104,7 +104,11 @@ def ensure_painted_features_layer(
     if not created and table and (layer.db_table != table or layer.db_schema != schema):
         layer.db_table = table
         layer.db_schema = schema
-        layer.save(update_fields=["db_table", "db_schema"])
+        # A queryset update, not save(): no post_save, so no ``layers.changed``
+        # map event. Every map page and layer panel render re-stamps this, and
+        # the map never reads it — two tabs on different scenarios would
+        # otherwise make each other reload, forever.
+        Layer.objects.filter(pk=layer.pk).update(db_table=table, db_schema=schema)
 
     if created:
         group, _ = LayerGroup.objects.get_or_create(

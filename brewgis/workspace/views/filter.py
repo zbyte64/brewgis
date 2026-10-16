@@ -20,6 +20,7 @@ from brewgis.workspace.analysis.layer_registry import _get_table_columns
 from brewgis.workspace.models import Layer
 from brewgis.workspace.models import LayerFilter
 from brewgis.workspace.services.filter_compiler import FilterCompiler
+from brewgis.workspace.services.map_events import notify_map
 from brewgis.workspace.services.spatial_filter import FilterNotMaterializableError
 from brewgis.workspace.services.spatial_filter import apply_filter
 from brewgis.workspace.services.spatial_filter import refresh_filter_models
@@ -167,27 +168,29 @@ def layer_filter_edit(request: HttpRequest, pk: int) -> HttpResponse:
             )
         flt.name = name
         flt.filter_json = parsed
-        applied = flt.filtered_layer is not None
+        filtered_layer = flt.filtered_layer
         try:
             with transaction.atomic():
                 flt.save()
-                if applied:
+                if filtered_layer is not None:
                     # The filtered layer is a materialized table, so an edited
-                    # tree has to be rebuilt before the map reads it again.
+                    # tree has to be rebuilt before the map reads it again —
+                    # under the same layer, so open maps re-request its tiles.
                     refresh_filter_models(flt)
+                    notify_map(
+                        workspace_id=filtered_layer.workspace_id,
+                        kind="tiles.changed",
+                        layer_keys=[filtered_layer.key],
+                    )
         except FilterNotMaterializableError as e:
             return render(
                 request,
                 "workspace/filter/editor.html",
                 _editor_context(flt.layer, flt, error=str(e)),
             )
-        response = render(
+        return render(
             request, "workspace/filter/list.html", _filter_list_context(flt.layer)
         )
-        if applied:
-            # The map resolves layers and their tiles when the page renders.
-            response["HX-Refresh"] = "true"
-        return response
     # GET — return editor with existing data
     return render(
         request,
@@ -204,15 +207,11 @@ def layer_filter_delete(request: HttpRequest, pk: int) -> HttpResponse:
     layer = flt.layer
     applied = flt.filtered_layer is not None
     flt.delete()
-    response = render(
-        request, "workspace/filter/list.html", _filter_list_context(layer)
-    )
     if applied:
-        # The cascade removed the filtered layer: drop its model, and reload so
-        # the map and the layer list lose it too.
+        # The cascade removed the filtered layer (open maps drop it on the
+        # Layer delete signal); drop its model too.
         refresh_filter_models()
-        response["HX-Refresh"] = "true"
-    return response
+    return render(request, "workspace/filter/list.html", _filter_list_context(layer))
 
 
 @require_POST
@@ -223,8 +222,8 @@ def layer_filter_toggle(request: HttpRequest, pk: int) -> HttpResponse:
     Applying never touches the filtered layer: the filter's rows are
     materialized as a new table and registered as a new Layer beside it
     (``services.spatial_filter.apply_filter``). The plan is synchronous, like
-    the base-canvas fill toggle, and the page reloads because the map resolves
-    its layers and their tile sources when it renders.
+    the base-canvas fill toggle. Open maps pick up the new (or removed) layer
+    from the Layer signal's ``layers.changed`` event, so nothing reloads.
     """
     flt = get_object_or_404(LayerFilter, pk=pk)
     layer = flt.layer
@@ -240,11 +239,7 @@ def layer_filter_toggle(request: HttpRequest, pk: int) -> HttpResponse:
                 "workspace/filter/list.html",
                 _filter_list_context(layer, apply_error=str(e)),
             )
-    response = render(
-        request, "workspace/filter/list.html", _filter_list_context(layer)
-    )
-    response["HX-Refresh"] = "true"
-    return response
+    return render(request, "workspace/filter/list.html", _filter_list_context(layer))
 
 
 @require_POST

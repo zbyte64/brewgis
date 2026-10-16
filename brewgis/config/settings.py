@@ -56,6 +56,7 @@ DATABASES["default"]["ENGINE"] = "django.contrib.gis.db.backends.postgis"
 # ==============================================================================
 ROOT_URLCONF = "brewgis.config.urls"
 WSGI_APPLICATION = "brewgis.config.wsgi.application"
+ASGI_APPLICATION = "brewgis.config.asgi.application"
 
 # ==============================================================================
 # APPS
@@ -72,6 +73,7 @@ DJANGO_APPS = [
     "django.contrib.gis",
 ]
 THIRD_PARTY_APPS = [
+    "channels",
     "crispy_forms",
     "crispy_bootstrap5",
     "allauth",
@@ -82,7 +84,9 @@ THIRD_PARTY_APPS = [
 LOCAL_APPS = [
     "brewgis.workspace",
 ]
-INSTALLED_APPS = DJANGO_APPS + THIRD_PARTY_APPS + LOCAL_APPS
+# daphne leads the list so its ``runserver`` (ASGI, websockets) replaces
+# Django's; the dev branch keeps it ahead of whitenoise.runserver_nostatic.
+INSTALLED_APPS = ["daphne", *DJANGO_APPS, *THIRD_PARTY_APPS, *LOCAL_APPS]
 
 # ==============================================================================
 # AUTHENTICATION
@@ -253,6 +257,26 @@ CACHES = {
 }
 
 # ==============================================================================
+# CHANNELS — map events (services/map_events.py) reach browsers over websockets.
+# Redis carries them so Celery workers can publish to the web process; tests
+# use the in-memory layer (one process, no Redis).
+# ==============================================================================
+CHANNEL_LAYERS = {
+    "default": {
+        "BACKEND": "channels_redis.core.RedisChannelLayer",
+        "CONFIG": {
+            "hosts": [
+                {"address": REDIS_URL, "ssl_cert_reqs": None}
+                if REDIS_SSL
+                else REDIS_URL
+            ],
+        },
+    },
+}
+if TESTING:
+    CHANNEL_LAYERS = {"default": {"BACKEND": "channels.layers.InMemoryChannelLayer"}}
+
+# ==============================================================================
 # CELERY — Baseline
 # ==============================================================================
 if USE_TZ:
@@ -379,7 +403,7 @@ elif DEBUG:  # ── DEV MODE ────────────────�
     ALLOWED_HOSTS = ["localhost", "0.0.0.0", "127.0.0.1"]  # noqa: S104
 
     # WhiteNoise — serve static files without collectstatic in dev.
-    INSTALLED_APPS = ["whitenoise.runserver_nostatic", *INSTALLED_APPS]
+    INSTALLED_APPS = ["daphne", "whitenoise.runserver_nostatic", *INSTALLED_APPS[1:]]
 
     # Email — print to console in dev.
     EMAIL_BACKEND = env(

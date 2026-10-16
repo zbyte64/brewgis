@@ -385,7 +385,7 @@
 </script>
 <div class="map-shell__map"
      x-on:click="$store.panels.rightPanelOpen && $store.panels.closePanel()">
-  <brew-gis-map viewport='{{ viewport_json|safe }}' layers='{{ layer_data|json_attr|safe }}' base-layer-id="{{ base_layer_id }}"
+  <brew-gis-map viewport='{{ viewport_json|safe }}' layers='{{ layer_data|json_attr|safe }}' base-layer-id="{{ base_layer_id }}" events-url="{{ map_events_url }}" layers-url="{{ map_layers_url }}"
   {% if scenario %}
     mode="view" scenario-id="{{ scenario.pk }}" canvas-layer-id="{{ canvas_view_layer_id }}" selection-mode="{{ selection_mode }}"
   {% endif %}
@@ -715,9 +715,11 @@
       // Large selections run as a background Celery task (see PaintRun /
       // run_paint_operation) instead of blocking the request — the apply
       // endpoints respond immediately with either the finished result or a
-      // 202 + poll_url. Poll until it's no longer "accepted", showing a
-      // spinner the whole time so a slow paint doesn't look like nothing
-      // happened.
+      // 202 + run_id/poll_url. The map's event socket announces the run's
+      // end (a `paint.run` map-event), and only then is poll_url read once
+      // for the result, showing a spinner the whole time so a slow paint
+      // doesn't look like nothing happened. The repaint itself arrives as a
+      // `tiles.changed` event, which <brew-gis-map> applies on its own.
       function fetchJson(url, options) {
         return fetch(url, options).then(function(r) {
           return r.json().then(function(data) {
@@ -729,16 +731,30 @@
         });
       }
 
-      function pollPaintStatus(pollUrl) {
-        return fetchJson(pollUrl).then(function(result) {
-          if (result.data && result.data.status === 'accepted') {
-            return new Promise(function(resolve) {
-              setTimeout(function() {
-                resolve(pollPaintStatus(pollUrl));
-              }, 1000);
+      function waitForPaintRun(runId, pollUrl) {
+        return new Promise(function(resolve, reject) {
+          function check() {
+            fetchJson(pollUrl).then(function(result) {
+              if (result.data && result.data.status === 'accepted') return;
+              mapEl.removeEventListener('map-event', onMapEvent);
+              resolve(result);
+            }).catch(function(err) {
+              mapEl.removeEventListener('map-event', onMapEvent);
+              reject(err);
             });
           }
-          return result;
+
+          function onMapEvent(evt) {
+            var event = evt.detail;
+            var finished = event.kind === 'paint.run' && event.run_pk === runId &&
+              (event.status === 'completed' || event.status === 'failed');
+            // A reconnect means events may have been missed: look once.
+            if (finished || event.kind === 'socket.reconnected') check();
+          }
+          // Listen first, then look: a run that already ended (or ends in
+          // between) is caught either way.
+          mapEl.addEventListener('map-event', onMapEvent);
+          check();
         });
       }
 
@@ -754,15 +770,12 @@
           })
           .then(function(result) {
             if (result.data && result.data.status === 'accepted' && result.data.poll_url) {
-              return pollPaintStatus(result.data.poll_url);
+              return waitForPaintRun(result.data.run_id, result.data.poll_url);
             }
             return result;
           })
           .then(function(result) {
             renderPaintResult(result.ok, result.data);
-            if (result.ok) {
-              mapEl.refreshCanvasTiles();
-            }
             return result;
           })
           .catch(function(err) {
@@ -1269,7 +1282,7 @@
                     return r.data.message || 'Save failed.';
                   }).join('; ') + '</div>';
               }
-              if (mapEl.refreshCanvasTiles) mapEl.refreshCanvasTiles();
+              // The repaint arrives over the map's event socket (tiles.changed).
               inputs.forEach(function(input) {
                 input.setAttribute('data-original-value', input.value);
               });

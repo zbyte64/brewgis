@@ -35,6 +35,7 @@ User Browser                    Docker Compose Stack
 - **Request flow:** Browser → Django → View (FBV, FormView, CreateView) → Template (Bootstrap 5, htmx, Lit map component)
 - **Map flow:** Template renders `<brew-gis-map>` Lit component → fetches vector tiles from tipg or Martin → serves tiles from PostGIS
 - **Async flow:** Celery Beat (DatabaseScheduler via django-celery-beat) dispatches periodic tasks → Redis broker → Celery workers execute tasks
+- **Live map flow (Django Channels):** the server runs ASGI (`brewgis/config/asgi.py`: daphne, both `runserver` and production). HTTP is the WSGI app through `WsgiToAsgi`, so the Werkzeug tile proxy and `ATOMIC_REQUESTS` are unchanged. Websockets go to `workspace/consumers.py:MapEventsConsumer` (`ws/workspace/<pk>/map/`), which `<brew-gis-map events-url=…>` holds open. Anything that changes what the map draws calls `services/map_events.py:notify_map` → on commit → Redis channel layer (so Celery workers can publish too) → every socket on that workspace. Events are invalidations, not payloads: `layers.changed` makes the component re-fetch `map_layers_json` (the same `build_map_layer_data` list the page embeds) and reconcile in place (add/remove/restyle/restack); `tiles.changed` cache-busts sources; `paint.run`/`analysis.run`/`import.run` report run status; `basemap.changed` goes to the selecting user only. `workspace/signals.py` publishes for every `Layer`/`LayerGroup`/`SymbologyConfig` save or delete and every run status save, so new code that writes those rows needs nothing extra. The page never reloads (no `HX-Refresh`) and nothing polls paint status. A write that runs on every page render must not fire those signals (see `ensure_painted_features_layer`'s queryset update), or open tabs would make each other reload forever.
 - **GIS ingest:** User uploads GIS file → geopandas reads → `df.to_postgis()` via SQLAlchemy
 - **Data pipeline (dlt → DuckDB → SQLMesh):** dlt pipelines load raw data into DuckDB (caches HTTP fetches, supports raster and zip files natively) → SQLMesh stages with DuckDB VIEWs (gateway-managed virtual layer) then FULL-bridges into PostGIS → downstream SQLMesh analysis models run entirely in PostGIS
 - **Paint/overrides:** `PaintedCanvas` model stores per-feature, per-column overrides with undo/redo via `PaintEvent` log. Canvas views dynamically LEFT JOIN paints onto base data. Paint mode's grid (split) and merge tools write `ParcelGeometryEdit` rows instead — a result parcel, its geometry, and every base column — which the canvas view UNIONs in while hiding the parcels each edit replaces, so parcel boundaries are copy-on-write too (no `public.base_canvas` write).
@@ -70,7 +71,8 @@ Key rules:
 |`brewgis/workspace/tasks.py`|8 Celery tasks for data import, export, allocation, stitching, report generation|
 |`brewgis/workspace/analysis/`|Pipeline orchestrator, module/layer registries, equity preprocessor (food access is SQLMesh: `osm/food_pois*.sql`; road-network distances: `overture/road_network_*`, `python/network_zone_distance.py`) |
 |`brewgis/workspace/symbology/`|Map style generation (classifiers, generator, auto-config, legend, stats), 22 color palettes|
-|`brewgis/workspace/services/`|~34 service modules: base canvas ETL pipeline (1047 lines), schema, fetchers (Census, LEHD, POI, NLCD), spatial allocator, stitcher, imputation engine, built form classifier, paint constraints, scenario cloner, canvas view manager, layer filters materialized as new layers (`spatial_filter.py`, SQL/MapLibre compilers in `filter_compiler.py`), `_db.py` (cached SQLAlchemy singleton)|
+|`brewgis/workspace/services/`|~34 service modules: base canvas ETL pipeline (1047 lines), schema, fetchers (Census, LEHD, POI, NLCD), spatial allocator, stitcher, imputation engine, built form classifier, paint constraints, scenario cloner, canvas view manager, layer filters materialized as new layers (`spatial_filter.py`, SQL/MapLibre compilers in `filter_compiler.py`), live map events (`map_events.py`), `_db.py` (cached SQLAlchemy singleton)|
+|`brewgis/workspace/consumers.py`, `routing.py`, `signals.py`|Django Channels: the map-event websocket consumer, its URL route, and the model signals that publish layer/run changes to it|
 |`brewgis/workspace/mcp/`|MCP server: FastMCP stdio entrypoint, auth stub, 8 tool modules|
 |`brewgis/workspace/dlt_pipelines/`|dlt pipeline modules (nlcd) — load directly into DuckDB (caches HTTP, handles raster/zip)|
 |`brewgis/workspace/management/commands/`|Management commands: import_sacog_demo, populate_base_canvas, materialize_sacog_base_canvas, compare_sacog_basemap, onboard_geography, run_mcp, export_story_packet, restore_demo_db|
@@ -184,7 +186,7 @@ npm run test      # vitest
 - **django-celery-beat** DatabaseScheduler for periodic tasks
 - **Tile server:** Both tipg and Martin run; `TILE_SERVER_BACKEND` setting controls tile URL generation
 - **Settings** use `django-environ` for env-var-based configuration (12-factor)
-- **Tri-mode settings:** TESTING (fast hashers, locmem email), DEBUG (debug toolbar, console email, locmem cache), production (SSL/HSTS, Redis cache, Anymail/SMTP, gunicorn)
+- **Tri-mode settings:** TESTING (fast hashers, locmem email, in-memory channel layer), DEBUG (debug toolbar, console email, locmem cache), production (SSL/HSTS, Redis cache, Anymail/SMTP, daphne)
 - **View patterns:** FBVs (decorated with `@require_POST`/`@require_GET`/`@login_required`) dominant. CBVs (`CreateView`, `UpdateView`) reserved for built-forms CRUD.
 - **EAV paint overrides:** `PaintedCanvas` model stores per-feature, per-column overrides. `PaintEvent` model logs changes with batch_id grouping for undo/redo.
 - **Per-scenario SQL views:** `canvas_view_manager` dynamically creates views that LEFT JOIN paint overrides onto the base canvas.
@@ -263,6 +265,7 @@ npm run test      # vitest
 |`config/urls.py`|Root URLconf: admin, allauth, workspace app, debug toolbar|
 |`config/celery_app.py`|Celery 5.4 app with DatabaseScheduler|
 |`config/wsgi.py`|WSGI with Werkzeug ProxyMiddleware for tile server proxying|
+|`config/asgi.py`|ASGI entrypoint (`ASGI_APPLICATION`): HTTP → the WSGI app via `WsgiToAsgi`, websockets → `workspace/routing.py`|
 |`pyproject.toml`|Tool config (pytest, coverage, basedpyright, ruff, djlint, vulture) — single source of truth|
 |`Makefile`|42 targets for Docker-based dev lifecycle|
 |`.pre-commit-config.yaml`|24 hooks: linting, formatting, type checking, django-upgrade 6.0, codespell, custom checks|
@@ -327,6 +330,7 @@ npm run test      # vitest
 - Raw SQL fixtures for PostGIS-dependent integration tests (CREATE EXTENSION IF NOT EXISTS postgis).
 - SQLMesh plans run against the test database: `brewgis/sqlmesh/config.py:use_database(name)` re-points both gateways, and its catalog-alias patches keep the models' `brewgis` catalog logical (reported as `brewgis`, rewritten to the real database name in every statement sent to Postgres). See the `sqlmesh_test_database` fixture in `tests/dbt_math/conftest.py`.
 - Two conftest.py levels: `tests/conftest.py` (factory-backed fixtures, hypothesis profiles, deal config) vs `brewgis/conftest.py` (direct `create_user`, management-command oriented).
+- Browser tests' `live_server` is overridden in `tests/conftest.py` with `tests/live_server.py:DaphneLiveServer` — the ASGI app on a Daphne thread in the test process — because pytest-django's WSGI `LiveServerThread` cannot serve the map's websocket. Map events are published on commit, so a non-transactional test sees them only inside `django_capture_on_commit_callbacks(execute=True)`; the `map_events` fixture records them.
 - e2e tests (`transaction=True`) flush the whole test DB at teardown with a `TRUNCATE`, while the live server's request threads run each request inside one transaction (`ATOMIC_REQUESTS`). A request still in flight deadlocks the flush, so `tests/e2e/conftest.py::_quiet_server_before_flush` closes the page and waits for every other connection to leave its transaction before the flush starts.
 
 ## Gotchas & Patterns

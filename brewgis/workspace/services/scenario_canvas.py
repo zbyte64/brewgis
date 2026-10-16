@@ -13,8 +13,9 @@ server from serving stale tiles for it:
   the scenario itself is deleted. The model leaves the project on the next plan
   (the blueprint profiles no longer emit it).
 - :func:`purge_scenario_canvas_tiles` — drop the tile server's cached tiles for
-  the view. Paint writes do *not* need any view recreation: the canvas is a live
-  view over ``workspace_paintedcanvas``, so only the cache can be stale.
+  the view, and tell open map pages to re-request them. Paint writes do *not*
+  need any view recreation: the canvas is a live view over
+  ``workspace_paintedcanvas``, so only caches can be stale.
 """
 
 from __future__ import annotations
@@ -31,6 +32,7 @@ from brewgis.workspace.analysis.sqlmesh_runner import purge_models_from_environm
 from brewgis.workspace.analysis.sqlmesh_runner import run_sqlmesh_plan
 from brewgis.workspace.analysis.sqlmesh_runner import snapshot_name
 from brewgis.workspace.services.canvas_view_manager import _qi
+from brewgis.workspace.services.map_events import notify_map
 from brewgis.workspace.services.tile_server import purge_martin_cache
 
 if TYPE_CHECKING:
@@ -250,7 +252,14 @@ def purge_scenario_canvas_tiles(scenario: Scenario) -> None:
     without looking at the request, so a paint write stays invisible until its
     source's cache is purged (see
     ``brewgis.workspace.services.tile_server.purge_martin_cache``). tipg serves
-    straight from the database and needs nothing.
+    straight from the database and needs nothing. Either way the browser holds
+    its own tile cache, so open map pages are told to cache-bust the canvas
+    (``tiles.changed``, see ``services.map_events``).
     """
     if scenario.workspace.tile_server_backend == "martin":
         purge_martin_cache(canvas_view_qualifier(scenario))
+    notify_map(
+        workspace_id=scenario.workspace_id,
+        kind="tiles.changed",
+        scenario_id=scenario.pk,
+    )

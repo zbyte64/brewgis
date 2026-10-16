@@ -755,8 +755,9 @@ class TestEditorLayerOptions:
 class TestFilterLayerViews:
     """The filter list's toggle applies a filter as a new layer, or removes it.
 
-    Every change to a filtered layer reloads the page: the map resolves its
-    layers and their tile sources when it renders.
+    No change to a filtered layer reloads the page: open maps learn of it from
+    map events over their websocket (``services/map_events.py``) and patch
+    themselves in place.
     """
 
     @pytest.fixture
@@ -764,99 +765,121 @@ class TestFilterLayerViews:
         client.force_login(user)
         return client
 
+    @staticmethod
+    def _kinds(map_events: list[tuple[str, dict]]) -> list[str]:
+        return [payload["kind"] for _, payload in map_events]
+
     @pytest.mark.parametrize(
         "tree", [_DU_EQ_5, _stored(_node())], ids=["column", "spatial"]
     )
-    def test_toggling_creates_a_new_layer_and_reloads(
-        self, logged_in_client, db, tree
+    def test_toggling_creates_a_new_layer_and_announces_it(
+        self, logged_in_client, db, tree, map_events, django_capture_on_commit_callbacks
     ) -> None:
         layer = LayerFactory()
         before = layer.source_table()
         flt = LayerFilter.objects.create(layer=layer, name="Picked", filter_json=tree)
 
-        response = logged_in_client.post(
-            reverse("workspace:layer_filter_toggle", kwargs={"pk": flt.pk})
-        )
+        with django_capture_on_commit_callbacks(execute=True):
+            response = logged_in_client.post(
+                reverse("workspace:layer_filter_toggle", kwargs={"pk": flt.pk})
+            )
 
         assert response.status_code == 200
-        assert response["HX-Refresh"] == "true"
+        assert "HX-Refresh" not in response
         assert "HX-Trigger" not in response
         filtered = LayerFilter.objects.get(pk=flt.pk).filtered_layer
         assert filtered is not None
         assert filtered.pk != layer.pk
         assert Layer.objects.get(pk=layer.pk).source_table() == before
+        assert (
+            f"map.ws.{layer.workspace_id}",
+            {"kind": "layers.changed"},
+        ) in map_events
 
     def test_toggling_an_applied_filter_removes_its_layer(
-        self, logged_in_client, db
+        self, logged_in_client, db, map_events, django_capture_on_commit_callbacks
     ) -> None:
         layer = LayerFactory()
         flt = LayerFilter.objects.create(layer=layer, name="DU", filter_json=_DU_EQ_5)
         filtered = apply_filter(flt)
 
-        response = logged_in_client.post(
-            reverse("workspace:layer_filter_toggle", kwargs={"pk": flt.pk})
-        )
+        with django_capture_on_commit_callbacks(execute=True):
+            response = logged_in_client.post(
+                reverse("workspace:layer_filter_toggle", kwargs={"pk": flt.pk})
+            )
 
-        assert response["HX-Refresh"] == "true"
+        assert "HX-Refresh" not in response
         assert not Layer.objects.filter(pk=filtered.pk).exists()
         assert Layer.objects.filter(pk=layer.pk).exists()
+        assert "layers.changed" in self._kinds(map_events)
 
-    def test_deleting_an_applied_filter_reloads_the_page(
-        self, logged_in_client, db
+    def test_deleting_an_applied_filter_drops_its_layer_in_place(
+        self, logged_in_client, db, map_events, django_capture_on_commit_callbacks
     ) -> None:
         flt = LayerFilter.objects.create(
             layer=LayerFactory(), name="DU", filter_json=_DU_EQ_5
         )
         filtered = apply_filter(flt)
 
-        response = logged_in_client.post(
-            reverse("workspace:layer_filter_delete", kwargs={"pk": flt.pk})
-        )
+        with django_capture_on_commit_callbacks(execute=True):
+            response = logged_in_client.post(
+                reverse("workspace:layer_filter_delete", kwargs={"pk": flt.pk})
+            )
 
         assert response.status_code == 200
-        assert response["HX-Refresh"] == "true"
+        assert "HX-Refresh" not in response
         assert not Layer.objects.filter(pk=filtered.pk).exists()
+        assert "layers.changed" in self._kinds(map_events)
 
-    def test_deleting_an_unapplied_filter_does_not_reload(
-        self, logged_in_client, db
+    def test_deleting_an_unapplied_filter_announces_nothing(
+        self, logged_in_client, db, map_events, django_capture_on_commit_callbacks
     ) -> None:
         flt = LayerFilter.objects.create(
             layer=LayerFactory(), name="DU", filter_json=_DU_EQ_5
         )
 
-        response = logged_in_client.post(
-            reverse("workspace:layer_filter_delete", kwargs={"pk": flt.pk})
-        )
+        with django_capture_on_commit_callbacks(execute=True):
+            response = logged_in_client.post(
+                reverse("workspace:layer_filter_delete", kwargs={"pk": flt.pk})
+            )
 
         assert "HX-Refresh" not in response
+        assert map_events == []
 
-    def test_editing_an_applied_filter_reloads_the_page(
-        self, logged_in_client, db
+    def test_editing_an_applied_filter_refreshes_its_tiles(
+        self, logged_in_client, db, map_events, django_capture_on_commit_callbacks
     ) -> None:
         flt = LayerFilter.objects.create(
             layer=LayerFactory(), name="DU", filter_json=_DU_EQ_5
         )
-        apply_filter(flt)
+        filtered = apply_filter(flt)
 
-        response = logged_in_client.post(
-            reverse("workspace:layer_filter_edit", kwargs={"pk": flt.pk}),
-            {"name": "Near POIs", "filter_json": json.dumps(_stored(_node()))},
-        )
-
-        assert response.status_code == 200
-        assert response["HX-Refresh"] == "true"
-
-    def test_editing_an_unapplied_filter_does_not_reload(
-        self, logged_in_client, db
-    ) -> None:
-        flt = LayerFilter.objects.create(
-            layer=LayerFactory(), name="DU", filter_json=_DU_EQ_5
-        )
-
-        response = logged_in_client.post(
-            reverse("workspace:layer_filter_edit", kwargs={"pk": flt.pk}),
-            {"name": "Near POIs", "filter_json": json.dumps(_stored(_node()))},
-        )
+        with django_capture_on_commit_callbacks(execute=True):
+            response = logged_in_client.post(
+                reverse("workspace:layer_filter_edit", kwargs={"pk": flt.pk}),
+                {"name": "Near POIs", "filter_json": json.dumps(_stored(_node()))},
+            )
 
         assert response.status_code == 200
         assert "HX-Refresh" not in response
+        assert (
+            f"map.ws.{filtered.workspace_id}",
+            {"kind": "tiles.changed", "layer_keys": [filtered.key]},
+        ) in map_events
+
+    def test_editing_an_unapplied_filter_refreshes_nothing(
+        self, logged_in_client, db, map_events, django_capture_on_commit_callbacks
+    ) -> None:
+        flt = LayerFilter.objects.create(
+            layer=LayerFactory(), name="DU", filter_json=_DU_EQ_5
+        )
+
+        with django_capture_on_commit_callbacks(execute=True):
+            response = logged_in_client.post(
+                reverse("workspace:layer_filter_edit", kwargs={"pk": flt.pk}),
+                {"name": "Near POIs", "filter_json": json.dumps(_stored(_node()))},
+            )
+
+        assert response.status_code == 200
+        assert "HX-Refresh" not in response
+        assert "tiles.changed" not in self._kinds(map_events)

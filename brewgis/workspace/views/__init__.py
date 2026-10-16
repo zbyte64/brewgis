@@ -41,6 +41,7 @@ from .layer_groups import layer_group_delete  # noqa: F401
 from .layer_groups import layer_group_edit  # noqa: F401
 from .layer_groups import layer_group_list  # noqa: F401
 from .layer_groups import layer_group_move_layer  # noqa: F401
+from .map import map_layers_json  # noqa: F401
 from .map import view_public_scenario_map  # noqa: F401
 from .map import view_workspace_map  # noqa: F401
 from .merge import merge_paint_edits  # noqa: F401
