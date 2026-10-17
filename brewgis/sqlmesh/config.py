@@ -65,10 +65,10 @@ _DUCKDB_TMP = os.environ.get(
     "SQLMESH_DUCKDB_TMP",
     "/app/planning/duckdb_tmp",
 )
-# Local DuckDB extension repository the django image stages the arcgis
-# extension in (compose/local/django/preload_duckdb.py). The extension is in no
-# DuckDB repository, so the gateway installs it FROM here — a no-op once the
-# image has installed it from the same origin.
+# Local DuckDB extension repository the django image stages the httpfs fork and
+# the arcgis extension in (compose/local/django/preload_duckdb.py). Neither build
+# is in a DuckDB repository, so the gateway installs them FROM here — a no-op
+# once the image has installed them from the same origin.
 _DUCKDB_EXTENSION_REPOSITORY = "/opt/duckdb-extensions"
 _ARCGIS_CACHE_DIRECTORY = os.environ.get(
     "SQLMESH_ARCGIS_CACHE_DIRECTORY",
@@ -79,8 +79,9 @@ _ARCGIS_CACHE_DIRECTORY = os.environ.get(
 class _UnsignedExtensionsDuckDBConnectionConfig(DuckDBConnectionConfig):
     """DuckDB connection config whose databases may load unsigned extensions.
 
-    The arcgis extension (https://github.com/zbyte64/duckdb-arcgis) is not
-    signed by DuckDB, and ``allow_unsigned_extensions`` can only be set while a
+    The httpfs fork (https://github.com/zbyte64/duckdb-httpfs) and the arcgis
+    extension (https://github.com/zbyte64/duckdb-arcgis) are not signed by
+    DuckDB, and ``allow_unsigned_extensions`` can only be set while a
     database is opened — ``connector_config`` items run as ``SET`` statements
     after the extensions load, too late for it. ``DuckDBConnectionConfig`` has
     no field for ``duckdb.connect(config=...)``, so it is passed here.
@@ -472,7 +473,13 @@ def config_factory(*, cache_dir: str | None = None, **variables):
                         ),
                     },
                     extensions=[
-                        "httpfs",
+                        # The zbyte64/duckdb-httpfs build (206 Partial Content
+                        # fix, duckdb-httpfs#407) staged by the image — what
+                        # lets the Overpass fetches read overpass-api.de.
+                        {
+                            "name": "httpfs",
+                            "repository": f"'{_DUCKDB_EXTENSION_REPOSITORY}'",
+                        },
                         "spatial",
                         "postgres_scanner",
                         "cache_httpfs",
@@ -550,8 +557,8 @@ def config_factory(*, cache_dir: str | None = None, **variables):
                         # `SET http_timeout = 30` is how a 30 s timeout reached
                         # the food-access fetch of an unrelated node.
                         #
-                        # Overpass (models/osm/poi_duckdb.sql,
-                        # models/osm/food_pois_duckdb.sql) is slow and bursts
+                        # Overpass (models/osm/poi_raw*.sql,
+                        # models/osm/food_pois_raw.sql) is slow and bursts
                         # into outright stalls: measured 2026-09-28 against the
                         # Kumi mirror, a one-element bounding-box probe answered
                         # in 43 s / 144 s / 155 s / 188 s / 356 s / 639 s across

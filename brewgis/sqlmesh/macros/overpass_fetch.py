@@ -1,11 +1,11 @@
 """Overpass API query construction for the DuckDB POI fetch models.
 
 Single source of truth for the OpenStreetMap tag taxonomy behind
-``duckdb.osm.poi``: the URL that model fetches, the category/subcategory CASE
+``brewgis.osm.poi_raw``: the URL that model fetches, the category/subcategory CASE
 expressions it classifies rows with, and — through :data:`POI_CATEGORIES` — the
 category list Django's POI import form offers.
 
-It also holds the food-outlet tag set behind ``duckdb.@region.food_pois``, the
+It also holds the food-outlet tag set behind ``brewgis.@region.food_pois_raw``, the
 fetch the food-access analysis counts healthy and unhealthy outlets from. That
 set is deliberately separate from :data:`POI_CATEGORIES`: the import taxonomy
 classifies an element into one *category* for the map's POI layers, while food
@@ -53,7 +53,13 @@ if TYPE_CHECKING:
 # before this move, picked 2026-09-22 because the main instance stalled httpfs'
 # GET (30 s, then HTTP 504) while urllib fetched the identical URL in about a
 # second. Swapping this constant is the whole of a mirror move.
-OVERPASS_URL = "https://overpass.private.coffee/api/interpreter"
+#
+# Since 2026-10-17 the gateway loads the zbyte64/duckdb-httpfs v1.5.6-fix407
+# build (compose/local/django/preload_duckdb.py), which takes a 206 reply to a
+# full download and falls back to a full download when a 206 carries no matching
+# Content-Range — the replies that failed overpass-api.de above — so the fetches
+# go to the official instance instead of a mirror.
+OVERPASS_URL = "https://overpass-api.de/api/interpreter"
 
 # POI category definitions: category -> list of (tag key, tag value) filters.
 # An element belongs to the first category in this order that owns one of its

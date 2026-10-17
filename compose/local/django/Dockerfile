@@ -14,7 +14,9 @@ RUN npm run build
 
 
 # define an alias for the specific python version used in this file.
-FROM docker.io/python:3.12.14-slim-bookworm AS python
+# trixie (glibc 2.41), not bookworm (2.36): the zbyte64/duckdb-httpfs build that
+# preload_duckdb.py stages needs glibc 2.38.
+FROM docker.io/python:3.12.14-slim-trixie AS python
 
 # Python build stage
 FROM python AS python-build-stage
@@ -83,7 +85,7 @@ RUN apt-get update && apt-get install --no-install-recommends -y \
 # Playwright E2E test dependencies
 RUN apt-get update && apt-get install --no-install-recommends -y \
     libnss3 libnspr4 libatk-bridge2.0-0 libdrm2 libxkbcommon0 \
-    libxcomposite1 libxdamage1 libxrandr2 libgbm1 libasound2 \
+    libxcomposite1 libxdamage1 libxrandr2 libgbm1 libasound2t64 \
     libpango-1.0-0 libcairo2 libatspi2.0-0 \
     && rm -rf /var/lib/apt/lists/*
 
@@ -93,10 +95,11 @@ RUN apt-get update && apt-get install --no-install-recommends -y \
     libpangoft2-1.0-0 \
     && rm -rf /var/lib/apt/lists/*
 
-# Install Playwright browsers (chromium only to keep image lean)
+# Install Playwright browsers (chromium only to keep image lean). 1.55 is the
+# first release whose --with-deps knows Debian 13 (trixie).
 # Use a shared path so the dev-user can access them at runtime
 ENV PLAYWRIGHT_BROWSERS_PATH=/usr/local/share/ms-playwright
-RUN pip install playwright==1.52.0 && \
+RUN pip install playwright==1.55.0 && \
     mkdir -p /usr/local/share/ms-playwright && \
     playwright install chromium --with-deps
 
@@ -149,9 +152,10 @@ COPY --from=frontend-build-stage \
   /src/brewgis/static/js/brew-gis-map.js.map \
   /opt/brewgis-frontend/js/
 
-# Pre-download DuckDB extensions so INSTALL is a no-op at runtime. The arcgis
-# extension is staged in a local extension repository under /opt (outside the
-# bind-mounted APP_HOME), which the SQLMesh duckdb gateway installs from.
+# Pre-download DuckDB extensions so INSTALL is a no-op at runtime. The httpfs
+# fork and the arcgis extension are staged in a local extension repository
+# under /opt (outside the bind-mounted APP_HOME), which the SQLMesh duckdb
+# gateway installs from.
 COPY ./compose/local/django/preload_duckdb.py /tmp/preload_duckdb.py
 RUN install -d -o dev-user -g dev-user /opt/duckdb-extensions \
   && su - dev-user -c "python3 /tmp/preload_duckdb.py" && rm /tmp/preload_duckdb.py

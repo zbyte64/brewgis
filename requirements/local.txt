@@ -45,7 +45,7 @@ pytest-django==4.9.0  # https://github.com/pytest-dev/pytest-django
 pytest-asyncio==1.3.0  # https://github.com/pytest-dev/pytest-asyncio — Channels consumer tests
 pytest-bdd==8.1.0  # https://github.com/pytest-dev/pytest-bdd
 pytest-playwright==0.7.0  # https://github.com/microsoft/pytest-playwright
-playwright==1.52.0  # https://github.com/microsoft/playwright-python
+playwright==1.55.0  # https://github.com/microsoft/playwright-python
 
 # Interactive analysis
 # ------------------------------------------------------------------------------
