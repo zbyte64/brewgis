@@ -16,7 +16,7 @@ RUN npm run build
 # define an alias for the specific python version used in this file.
 # trixie (glibc 2.41), not bookworm (2.36): the zbyte64/duckdb-httpfs build that
 # preload_duckdb.py stages needs glibc 2.38.
-FROM docker.io/python:3.12.14-slim-trixie AS python
+FROM docker.io/python:3.12.15-slim-trixie AS python
 
 # Python build stage
 FROM python AS python-build-stage
