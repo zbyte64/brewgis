@@ -58,9 +58,12 @@ WORKDIR ${APP_HOME}
 RUN apt-get update && apt-get install --no-install-recommends -y \
   sudo git bash-completion nano ssh
 
-# Create devcontainer user and add it to sudoers
+# Create devcontainer user and add it to sudoers. HOME_MODE=0755: trixie's
+# login.defs defaults new homes to 0700, and docker-compose.yml runs the
+# container as the host's UID (CI's runner is 1001, not 1000), which must still
+# traverse /home/dev-user to reach the ./cache mount at /home/dev-user/.cache.
 RUN groupadd --gid 1000 dev-user \
-  && useradd --uid 1000 --gid dev-user --shell /bin/bash --create-home dev-user \
+  && useradd --uid 1000 --gid dev-user --shell /bin/bash --create-home --key HOME_MODE=0755 dev-user \
   && echo dev-user ALL=\(root\) NOPASSWD:ALL > /etc/sudoers.d/dev-user \
   && chmod 0440 /etc/sudoers.d/dev-user
 
