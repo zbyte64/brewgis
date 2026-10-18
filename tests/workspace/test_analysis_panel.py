@@ -13,6 +13,7 @@ from django.test import TestCase
 from django.urls import reverse
 from django.utils import timezone
 
+from brewgis.workspace.analysis.launch import launch_analysis
 from brewgis.workspace.analysis.module_registry import get_available_analyses
 from brewgis.workspace.analysis.pipeline import launch_analysis_run
 from brewgis.workspace.models import ScenarioType
@@ -67,9 +68,7 @@ class TestAnalysisModuleForm(TestCase):
         form = AnalysisModuleForm(
             workspace=self.workspace, scenario=self.scenario, module="water_demand"
         )
-        assert "floodplain_discount_pct" in form.fields
-        assert "wetlands_discount_pct" in form.fields
-        assert "steep_slopes_discount_pct" in form.fields
+        assert "constraint_0_table" in form.fields
         assert "column_pop" in form.fields
 
     def test_constraint_fields_absent_for_module_with_no_env_constraint_dependency(
@@ -80,7 +79,7 @@ class TestAnalysisModuleForm(TestCase):
         form = AnalysisModuleForm(
             workspace=self.workspace, scenario=self.scenario, module="acs_equity"
         )
-        assert "floodplain_discount_pct" not in form.fields
+        assert "constraint_0_table" not in form.fields
         assert "column_pop" not in form.fields
 
     def test_no_table_fields_the_models_derive_themselves(self):
@@ -128,12 +127,13 @@ class TestAnalysisModuleForm(TestCase):
         )
         assert capture_form.fields["transport_intrazonal_friction"].initial == 0.15
 
+    @patch("brewgis.workspace.analysis.launch.launch_analysis_run")
     @patch(
-        "brewgis.workspace.views.analysis.check_analysis_prerequisites", return_value=[]
+        "brewgis.workspace.analysis.launch.scenario_analysis_errors", return_value=[]
     )
-    def test_apply_scenario_params_persists_and_merges_parameters(self, _mock_prereq):
-        """Parameters from one module's run are stored, and saving a different
-        module's form does not discard them."""
+    def test_launched_parameters_are_stored_and_merged(self, _mock_prereq, _launch):
+        """Parameters from one module's run are stored, and launching a
+        different module's form does not discard them."""
         alt_scenario = ScenarioFactory(
             workspace=self.workspace, scenario_type=ScenarioType.ALTERNATIVE
         )
@@ -147,7 +147,11 @@ class TestAnalysisModuleForm(TestCase):
             module="internal_capture",
         )
         assert capture_form.is_valid(), capture_form.errors
-        capture_form.apply_scenario_params(alt_scenario)
+        launch_analysis(
+            scenario=alt_scenario,
+            modules=["internal_capture"],
+            inputs=capture_form.analysis_inputs(),
+        )
 
         alt_scenario.refresh_from_db()
         assert alt_scenario.analysis_params == {
@@ -170,7 +174,11 @@ class TestAnalysisModuleForm(TestCase):
             module="agriculture",
         )
         assert crop_form.is_valid(), crop_form.errors
-        crop_form.apply_scenario_params(alt_scenario)
+        launch_analysis(
+            scenario=alt_scenario,
+            modules=["agriculture"],
+            inputs=crop_form.analysis_inputs(),
+        )
 
         alt_scenario.refresh_from_db()
         assert alt_scenario.analysis_params == {
@@ -180,84 +188,56 @@ class TestAnalysisModuleForm(TestCase):
             "crop_yield_per_acre": 11.5,
         }
 
-    @patch(
-        "brewgis.workspace.views.analysis.check_analysis_prerequisites", return_value=[]
-    )
-    def test_apply_scenario_params_persists_constraints_and_column_mapping(
-        self, _mock_prereq
-    ):
-        """Launching with parameters stores them on the scenario, which is where
-        its analysis models read them from."""
-        alt_scenario = ScenarioFactory(
-            workspace=self.workspace, scenario_type=ScenarioType.ALTERNATIVE
-        )
+    def test_submitted_rows_become_the_scenarios_constraint_list(self):
+        """Every submitted row with a table is one constraint, in order; a row
+        whose table was cleared is removed, and blank cells are left to the
+        launch service's defaults rather than invented by the form."""
         form = AnalysisModuleForm(
             {
-                "scenario": alt_scenario.pk,
-                "floodplain_discount_pct": 50,
+                "scenario": self.scenario.pk,
+                "constraint_0_table": "fresno.floodplains",
+                "constraint_0_geom_col": "",
+                "constraint_0_discount_pct": "",
+                "constraint_1_table": "",
+                "constraint_1_discount_pct": "30",
+                "constraint_2_table": "public.sac_cnty_streams",
+                "constraint_2_geom_col": "wkb_geometry",
+                "constraint_2_discount_pct": "40",
                 "column_pop": "population",
             },
             workspace=self.workspace,
-            scenario=alt_scenario,
+            scenario=self.scenario,
             module="water_demand",
         )
         assert form.is_valid(), form.errors
 
-        form.apply_scenario_params(alt_scenario)
+        inputs = form.analysis_inputs()
 
-        alt_scenario.refresh_from_db()
-        assert {
-            "table": "floodplains",
-            "discount_pct": 50,
-            "geom_col": "geom",
-        } in alt_scenario.constraints
-        assert alt_scenario.column_mapping == {"pop": "population"}
-
-    @patch(
-        "brewgis.workspace.views.analysis.check_analysis_prerequisites", return_value=[]
-    )
-    def test_apply_scenario_params_preserves_schema_qualified_constraint_table(
-        self, _mock_prereq
-    ):
-        """A constraint layer published under a regional namespace (not
-        ``public``) keeps its schema-qualified table through a relaunch.
-
-        ``constraint_geometries`` resolves a bare table name in ``public``
-        only, so silently rewriting ``fresno.floodplains`` back to the bare
-        ``floodplains`` default on every launch breaks the model for any
-        scenario whose constraint layers live outside ``public`` (see
-        AnalysisRun #130)."""
-        alt_scenario = ScenarioFactory(
-            workspace=self.workspace,
-            scenario_type=ScenarioType.ALTERNATIVE,
-            constraints=[
-                {
-                    "table": "fresno.floodplains",
-                    "discount_pct": 100,
-                    "geom_col": "geom",
-                },
-            ],
-        )
-        form = AnalysisModuleForm(
+        assert inputs.constraints == [
+            {"table": "fresno.floodplains"},
             {
-                "scenario": alt_scenario.pk,
-                "floodplain_discount_pct": 80,
+                "table": "public.sac_cnty_streams",
+                "geom_col": "wkb_geometry",
+                "discount_pct": 40.0,
             },
+        ]
+        assert inputs.column_mapping == {"pop": "population"}
+
+    def test_module_without_constraint_rows_keeps_the_stored_inputs(self):
+        """A module whose chain never reads constraints or the column mapping
+        does not touch them."""
+        form = AnalysisModuleForm(
+            {"scenario": self.scenario.pk},
             workspace=self.workspace,
-            scenario=alt_scenario,
-            module="water_demand",
+            scenario=self.scenario,
+            module="acs_equity",
         )
         assert form.is_valid(), form.errors
-        assert form.fields["floodplain_discount_pct"].initial == 100
 
-        form.apply_scenario_params(alt_scenario)
+        inputs = form.analysis_inputs()
 
-        alt_scenario.refresh_from_db()
-        assert {
-            "table": "fresno.floodplains",
-            "discount_pct": 80,
-            "geom_col": "geom",
-        } in alt_scenario.constraints
+        assert inputs.constraints is None
+        assert inputs.column_mapping is None
 
 
 @pytest.mark.views
@@ -537,10 +517,10 @@ class TestAnalysisPanelViews(TestCase):
         self.assertNotContains(response, "textarea")
 
     @patch(
-        "brewgis.workspace.views.analysis.check_analysis_prerequisites", return_value=[]
+        "brewgis.workspace.analysis.launch.scenario_analysis_errors", return_value=[]
     )
-    @patch("brewgis.workspace.views.analysis.launch_analysis_run")
-    def test_launch_persists_module_parameters(self, mock_launch, mock_prereq):
+    @patch("brewgis.workspace.analysis.launch.launch_analysis_run")
+    def test_launch_persists_module_parameters(self, mock_launch, _mock_prereq):
         """A launch stores the module's parameter values on the scenario, which
         is where its analysis models read them from."""
         mock_launch.return_value = AnalysisRunFactory(
@@ -565,9 +545,9 @@ class TestAnalysisPanelViews(TestCase):
         assert self.scenario.analysis_params == {"nonres_indoor_water_rate": 55.0}
 
     @patch(
-        "brewgis.workspace.views.analysis.check_analysis_prerequisites", return_value=[]
+        "brewgis.workspace.analysis.launch.scenario_analysis_errors", return_value=[]
     )
-    @patch("brewgis.workspace.views.analysis.launch_analysis_run")
+    @patch("brewgis.workspace.analysis.launch.launch_analysis_run")
     def test_launch_dispatches_and_returns_immediately(self, mock_launch, mock_prereq):
         """Launching never blocks on completion — it hands off to Celery."""
         mock_launch.return_value = AnalysisRunFactory(
@@ -582,11 +562,7 @@ class TestAnalysisPanelViews(TestCase):
                 "workspace:analysis_module_launch",
                 args=[self.workspace.pk, "water_demand"],
             ),
-            {
-                "scenario": self.scenario.pk,
-                "parcel_table": "parcels",
-                "base_canvas_table": self.workspace.base_table,
-            },
+            {"scenario": self.scenario.pk},
         )
         assert response.status_code == 200
         mock_launch.assert_called_once()
@@ -747,13 +723,13 @@ class TestRunDetailsRerun(TestCase):
         )
         response = self.client.get(self.details_url, {"scenario": self.scenario.pk})
         assert response.status_code == 200
-        # Rerun posts the run's own scenario to the module-launch endpoint: the
-        # parameters a run reads live on the Scenario, so this reuses them.
+        # Rerun posts the run's own scenario to the rerun endpoint: the inputs
+        # a run reads live on the Scenario, so this reuses them.
         self.assertContains(response, "Rerun")
         self.assertContains(
             response,
             reverse(
-                "workspace:analysis_module_launch",
+                "workspace:analysis_module_rerun",
                 args=[self.workspace.pk, "water_demand"],
             ),
         )
@@ -775,17 +751,18 @@ class TestRunDetailsRerun(TestCase):
         self.assertNotContains(response, "Rerun")
 
     @patch(
-        "brewgis.workspace.views.analysis.check_analysis_prerequisites",
-        new=lambda **_kwargs: [],
+        "brewgis.workspace.analysis.launch.scenario_analysis_errors", return_value=[]
     )
-    @patch("brewgis.workspace.views.analysis.launch_analysis_run")
-    def test_rerun_posts_only_the_scenario_and_reuses_stored_parameters(
-        self, mock_launch
+    @patch("brewgis.workspace.analysis.launch.launch_analysis_run")
+    def test_rerun_posts_only_the_scenario_and_reuses_stored_inputs(
+        self, mock_launch, _mock_prereq
     ):
-        """Rerun reuses the run's inputs: the parameters live on the Scenario,
-        so posting nothing but its pk launches the same analysis again."""
+        """Rerun reuses the run's inputs: they live on the Scenario, so posting
+        nothing but its pk launches the same analysis again with every stored
+        input — parameters and column mapping alike — left as it was."""
         self.scenario.analysis_params = {"nonres_indoor_water_rate": 55.0}
-        self.scenario.save(update_fields=["analysis_params"])
+        self.scenario.column_mapping = {"pop": "population"}
+        self.scenario.save(update_fields=["analysis_params", "column_mapping"])
         mock_launch.return_value = AnalysisRunFactory(
             workspace=self.workspace,
             scenario=self.scenario,
@@ -794,7 +771,7 @@ class TestRunDetailsRerun(TestCase):
         )
         response = self.client.post(
             reverse(
-                "workspace:analysis_module_launch",
+                "workspace:analysis_module_rerun",
                 args=[self.workspace.pk, "water_demand"],
             ),
             {"scenario": self.scenario.pk},
@@ -805,6 +782,37 @@ class TestRunDetailsRerun(TestCase):
         assert kwargs["module_names"] == ["water_demand"]
         self.scenario.refresh_from_db()
         assert self.scenario.analysis_params == {"nonres_indoor_water_rate": 55.0}
+        assert self.scenario.column_mapping == {"pop": "population"}
+
+    @patch(
+        "brewgis.workspace.analysis.launch.scenario_analysis_errors", return_value=[]
+    )
+    @patch("brewgis.workspace.analysis.launch.launch_analysis_run")
+    def test_rerun_with_a_missing_constraint_table_opens_the_form_with_why(
+        self, mock_launch, _mock_prereq
+    ):
+        """A stored constraint naming a table that does not exist (a bare
+        ``floodplains``, resolved in ``public``) is refused before a run is
+        created, and the form that can correct it is shown with the reason."""
+        self.scenario.constraints = [
+            {"table": "floodplains", "discount_pct": 100, "geom_col": "geom"}
+        ]
+        self.scenario.save(update_fields=["constraints"])
+        response = self.client.post(
+            reverse(
+                "workspace:analysis_module_rerun",
+                args=[self.workspace.pk, "water_demand"],
+            ),
+            {"scenario": self.scenario.pk},
+        )
+        assert response.status_code == 400
+        self.assertContains(
+            response,
+            "Constraint table public.floodplains does not exist.",
+            status_code=400,
+        )
+        self.assertContains(response, 'name="constraint_0_table"', status_code=400)
+        mock_launch.assert_not_called()
 
 
 class TestLayersPanelAnalysisIcon(TestCase):

@@ -14,7 +14,7 @@ import pytest
 from django.conf import settings
 
 from brewgis.workspace.analysis.pipeline import MissingAnalysisResultsError
-from brewgis.workspace.analysis.pipeline import run_analysis_pipeline
+from brewgis.workspace.analysis.pipeline import launch_analysis_run
 from brewgis.workspace.analysis.pipeline import run_modules_sync
 from brewgis.workspace.tasks import run_analysis_task
 from tests.factories import ScenarioFactory
@@ -149,7 +149,7 @@ class TestFailedRunReportsCause:
 
         monkeypatch.setattr(SYNC, _publish_nothing)
 
-        run = run_analysis_pipeline(scenario_id=scenario.pk, module_names=["vmt"])
+        run = launch_analysis_run(scenario_id=scenario.pk, module_names=["vmt"])
 
         assert run.status == "failed"
         assert "vmt -> vmt" in run.failure_cause

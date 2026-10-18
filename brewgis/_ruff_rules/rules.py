@@ -570,6 +570,52 @@ def _find_dlt_pipeline_scope(
 
 
 # ══════════════════════════════════════════════════════════════════
+#  Rule: brewgis/analysis-launch-outside-service
+# ══════════════════════════════════════════════════════════════════
+#  Every analysis launcher (map view, full-page form, MCP tool, demo
+#  loader) must go through ``analysis/launch.py:launch_analysis`` so
+#  none can validate, store or execute a run differently. Importing
+#  the lower-level run starters anywhere else is a second launch path.
+
+# Name -> the files (relative to brewgis/workspace/) allowed to import it.
+_ANALYSIS_RUN_STARTERS: dict[str, frozenset[str]] = {
+    "launch_analysis_run": frozenset({"analysis/launch.py"}),
+    "_execute_analysis_run": frozenset({"tasks.py"}),
+    "run_analysis_task": frozenset({"analysis/pipeline.py"}),
+}
+
+
+def _find_analysis_launch_bypass(
+    source: str, tree: ast.AST, path: str | Path
+) -> list[dict[str, Any]]:
+    """Scan for analysis-launch-outside-service violations."""
+    posix = Path(path).resolve().as_posix()
+    marker = "/brewgis/workspace/"
+    if marker not in posix:
+        return []
+    rel = posix[posix.find(marker) + len(marker) :]
+
+    violations: list[dict[str, Any]] = []
+    for node in ast.walk(tree):
+        if not isinstance(node, ast.ImportFrom):
+            continue
+        for alias in node.names:
+            allowed = _ANALYSIS_RUN_STARTERS.get(alias.name)
+            if allowed is not None and rel not in allowed:
+                violations.append(
+                    _violation(
+                        "brewgis/analysis-launch-outside-service",
+                        f"`{alias.name}` imported outside {sorted(allowed)}. Start "
+                        "analysis runs with "
+                        "`brewgis.workspace.analysis.launch.launch_analysis`.",
+                        path,
+                        getattr(node, "lineno", 0),
+                    )
+                )
+    return violations
+
+
+# ══════════════════════════════════════════════════════════════════
 #  Public API
 # ══════════════════════════════════════════════════════════════════
 
@@ -596,6 +642,7 @@ def check_file(path: str | Path) -> list[dict[str, Any]]:
         _find_sql_ddl,
         _find_direct_sqlalchemy_imports,
         _find_dlt_pipeline_scope,
+        _find_analysis_launch_bypass,
     ]
 
     for rule in rules:

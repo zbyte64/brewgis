@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+import re
 from typing import Any
 from typing import cast
 
@@ -20,67 +21,23 @@ from django.utils.decorators import method_decorator
 from django.views.decorators.http import require_POST
 from django.views.generic.edit import FormView
 
-from brewgis.workspace.analysis.data_export import ensure_export_exists_isolated
+from brewgis.workspace.analysis.launch import AnalysisInputs
+from brewgis.workspace.analysis.launch import AnalysisLaunchError
+from brewgis.workspace.analysis.launch import launch_analysis
 from brewgis.workspace.analysis.module_registry import CANONICAL_COLUMN_NAMES
 from brewgis.workspace.analysis.module_registry import MODULE_LABELS
 from brewgis.workspace.analysis.module_registry import get_available_analyses
 from brewgis.workspace.analysis.module_registry import get_module_label
 from brewgis.workspace.analysis.module_registry import get_module_parameters
 from brewgis.workspace.analysis.module_registry import resolve_module_order
-from brewgis.workspace.analysis.pipeline import launch_analysis_run
-from brewgis.workspace.analysis.pipeline import run_analysis_pipeline
 from brewgis.workspace.analysis.run_health import reconcile_abandoned_run
 from brewgis.workspace.analysis.run_health import reconcile_abandoned_runs
 from brewgis.workspace.models import AnalysisRun
 from brewgis.workspace.models import Scenario
 from brewgis.workspace.models import ScenarioType
 from brewgis.workspace.models import Workspace
-from brewgis.workspace.services.preflight import PreflightError
 from brewgis.workspace.services.preflight import check_analysis_prerequisites
 from brewgis.workspace.views.built_forms import HtmxResponseMixin
-
-_BUILT_FORMS_TABLE = "built_forms"
-"""Table the analysis models read BuildingType definitions from.
-
-Schema-qualified with ``Workspace.db_schema`` on both sides — here and in
-``sqlmesh/macros/analysis_blueprints.py``, which bakes the same name into the
-scenario's model blueprints.
-"""
-
-
-def scenario_analysis_errors(
-    workspace: Workspace, scenario: Scenario
-) -> list[PreflightError]:
-    """Return the blocking prerequisite errors for analyzing *scenario*.
-
-    The analysis models derive everything they read from the scenario and its
-    workspace (see ``sqlmesh/macros/analysis_blueprints.py``), so those derived
-    inputs are what a launch is validated against — not values typed into a
-    form:
-
-    - the scenario's own parcel source: its canvas view for an ALTERNATIVE
-      scenario (base canvas + painted edits), the workspace's base canvas
-      otherwise (``Scenario.base_layer_table``);
-    - the workspace's exported built-forms table, which is mechanically
-      re-synced from the configured ``BuildingType`` rows first. That sync never
-      invents data — a workspace with no BuildingType rows still produces an
-      empty table, which the check below reports.
-
-    The export sync uses its own DB connection (not Django's request-scoped
-    one) so the write commits immediately: under ATOMIC_REQUESTS the whole view
-    runs in one transaction, but SQLMesh's engine adapter opens a separate
-    connection to run the plan — it can't see this table until it's actually
-    committed, not just pending in our own txn.
-    """
-    ensure_export_exists_isolated(
-        workspace, schema=workspace.db_schema, table=_BUILT_FORMS_TABLE
-    )
-    return check_analysis_prerequisites(
-        schema=workspace.db_schema,
-        parcel_table=scenario.base_layer_table,
-        built_form_table=_BUILT_FORMS_TABLE,
-        base_canvas_table=workspace.effective_base_table(),
-    )
 
 
 class AnalysisLaunchForm(forms.Form):
@@ -145,73 +102,32 @@ class AnalysisLaunchForm(forms.Form):
             self, constraints=True, column_mapping=True, scenario=scenario
         )
 
-    # Constraint-discount and column-mapping fields are added in ``__init__``
-    # (from ``_CONSTRAINT_LAYERS`` / ``CANONICAL_COLUMN_NAMES``, the same
-    # fields ``AnalysisModuleForm`` builds), so this multi-module launcher no
-    # longer requires typing JSON. Per-module analysis parameters are NOT
-    # offered here: this form launches several modules at once, so a parameter
-    # cannot be scoped to one of them (see ``AnalysisModuleForm``).
+    # Per-module analysis parameters are NOT offered here: this form launches
+    # several modules at once, so a parameter cannot be scoped to one of them
+    # (see ``AnalysisModuleForm``).
 
-    def scenario_constraints(self) -> list[dict[str, Any]]:
-        """Constraint layers to persist on the scenario for this run."""
-        scenario = cast("Scenario | None", self.cleaned_data.get("scenario"))
-        return _constraint_layers_from_form(self, scenario)
+    def analysis_inputs(self) -> AnalysisInputs:
+        """The inputs this submission sets on the scenario before its run."""
+        return _scenario_inputs_from_form(self)
 
-    def scenario_column_mapping(self) -> dict[str, str]:
-        """Parcel column mapping to persist on the scenario for this run."""
-        return {
-            name: self.cleaned_data[f"column_{name}"]
-            for name in CANONICAL_COLUMN_NAMES
-            if self.cleaned_data.get(f"column_{name}")
+
+# One editable row per configured constraint plus one blank row for adding
+# another. Rows are plain form fields (``constraint_<n>_table`` / ``_geom_col``
+# / ``_discount_pct``), so crispy renders them in both analysis forms' templates.
+_CONSTRAINT_FIELD = re.compile(r"constraint_(\d+)_(?:table|geom_col|discount_pct)")
+
+
+def _constraint_row_count(form: forms.Form, scenario: Scenario | None) -> int:
+    """Rows to build: every submitted row when bound, else the stored ones + 1."""
+    if form.is_bound:
+        indices = {
+            int(match.group(1))
+            for key in form.data
+            if (match := _CONSTRAINT_FIELD.fullmatch(key))
         }
-
-    def clean(self) -> dict[str, Any] | None:
-        """Validate analysis prerequisites before launching."""
-        data = super().clean()
-        if self.errors:
-            return data
-        if data is None:
-            return None
-
-        workspace: Workspace | None = data.get("workspace")
-        scenario: Scenario | None = data.get("scenario")
-        if workspace and scenario:
-            # The checked tables are derived from the scenario and its
-            # workspace (they are no longer form inputs), so every failure is
-            # reported as a form-level error.
-            for error in scenario_analysis_errors(workspace, scenario):
-                self.add_error(None, error.message)
-
-        return data
-
-
-# Fixed constraint layers offered as individual discount-% fields on both
-# analysis forms, so neither requires typing JSON. Each entry is
-# field_name, table, geom_col, default_pct.
-_CONSTRAINT_LAYERS: list[tuple[str, str, str, int]] = [
-    ("floodplain_discount_pct", "floodplains", "geom", 100),
-    ("wetlands_discount_pct", "wetlands", "geom", 100),
-    ("steep_slopes_discount_pct", "steep_slopes", "geom", 75),
-]
-
-
-def _constraint_entries(scenario: Scenario | None) -> dict[str, dict[str, Any]]:
-    """Map each configured constraint's bare table name to its stored entry.
-
-    A constraint's ``table`` may be schema-qualified (``fresno.floodplains``)
-    when its layer is published under a regional SQLMesh namespace rather than
-    ``public`` — ``constraint_geometries`` resolves a bare name in ``public``
-    only. Keyed on the table's last dot-separated segment so a qualified path
-    round-trips through the discount-% fields below instead of being
-    overwritten with the bare, ``public``-resolving default every time either
-    analysis form is submitted.
-    """
-    if scenario is None:
-        return {}
-    return {
-        str(entry.get("table") or "").rsplit(".", 1)[-1]: entry
-        for entry in scenario.constraints or []
-    }
+        return max(indices, default=-1) + 1
+    stored = (scenario.constraints or []) if scenario is not None else []
+    return len(stored) + 1
 
 
 def _add_scenario_input_fields(
@@ -221,25 +137,46 @@ def _add_scenario_input_fields(
     column_mapping: bool,
     scenario: Scenario | None = None,
 ) -> None:
-    """Add the constraint-discount and column-mapping fields to *form*.
+    """Add the constraint and column-mapping fields to *form*.
 
     Shared by both analysis forms so their field definitions can never drift
     apart: the full-page multi-module launcher always shows them, while a
     single-module form shows them only when the module's dependency chain
     actually resolves through ``env_constraint`` / ``core``.
+
+    The constraint rows edit the scenario's own ``Scenario.constraints`` — the
+    same ``{table, discount_pct, geom_col}`` list the MCP ``run_analysis`` tool
+    takes — so any configuration one launcher can set, the other can show and
+    keep. Validation and defaults live in
+    :func:`brewgis.workspace.analysis.launch.launch_analysis`.
     """
     if constraints:
-        existing = _constraint_entries(scenario)
-        for field_name, table, _geom_col, default_pct in _CONSTRAINT_LAYERS:
-            current = existing.get(table)
-            initial_pct = current["discount_pct"] if current else default_pct
-            form.fields[field_name] = forms.IntegerField(
+        stored = (scenario.constraints or []) if scenario is not None else []
+        for index in range(_constraint_row_count(form, scenario)):
+            entry = stored[index] if index < len(stored) else {}
+            number = index + 1
+            form.fields[f"constraint_{index}_table"] = forms.CharField(
+                required=False,
+                initial=entry.get("table", ""),
+                label=f"Constraint {number} table",
+                help_text=(
+                    "Polygon table, schema-qualified (e.g. fresno.floodplains); a bare "
+                    "name resolves in public. Clear it to remove the constraint."
+                ),
+            )
+            form.fields[f"constraint_{index}_geom_col"] = forms.CharField(
+                required=False,
+                initial=entry.get("geom_col", ""),
+                label=f"Constraint {number} geometry column",
+                help_text="Defaults to geom.",
+            )
+            form.fields[f"constraint_{index}_discount_pct"] = forms.FloatField(
                 required=False,
                 min_value=0,
                 max_value=100,
-                initial=initial_pct,
-                label=f"{table.replace('_', ' ').title()} discount %",
-                help_text="% of this layer's overlapping acreage excluded from developable land.",
+                initial=entry.get("discount_pct"),
+                label=f"Constraint {number} discount %",
+                help_text="% of the overlapping acreage excluded from developable land. Defaults to 100.",
             )
     if column_mapping:
         for name in CANONICAL_COLUMN_NAMES:
@@ -250,31 +187,49 @@ def _add_scenario_input_fields(
             )
 
 
-def _constraint_layers_from_form(
-    form: forms.Form, scenario: Scenario | None
-) -> list[dict[str, Any]]:
-    """Rebuild the constraint list from a form's discount-% fields.
+def _scenario_inputs_from_form(
+    form: forms.Form, params: dict[str, Any] | None = None
+) -> AnalysisInputs:
+    """Translate a validated analysis form into :class:`AnalysisInputs`.
 
-    Preserves each layer's existing (possibly schema-qualified) ``table`` and
-    ``geom_col`` from *scenario* — see :func:`_constraint_entries`  — falling
-    back to the bare ``_CONSTRAINT_LAYERS`` default only for a layer *scenario*
-    has never configured.
+    A section the form does not render (constraints or column mapping, for a
+    module whose chain does not read them) is ``None`` — the scenario keeps its
+    stored value. A rendered section replaces it: constraint rows with a blank
+    table are dropped, and blank geometry/discount cells are left out so the
+    launch service applies its defaults.
     """
-    existing = _constraint_entries(scenario)
-    layers = []
-    for field_name, table, default_geom_col, _default_pct in _CONSTRAINT_LAYERS:
-        data = form.cleaned_data.get(field_name)
-        if data is None:
-            continue
-        current = existing.get(table)
-        layers.append(
-            {
-                "table": current["table"] if current else table,
-                "discount_pct": data,
-                "geom_col": current["geom_col"] if current else default_geom_col,
-            }
-        )
-    return layers
+    constraints: list[dict[str, Any]] | None = None
+    if "constraint_0_table" in form.fields:
+        constraints = []
+        index = 0
+        while f"constraint_{index}_table" in form.fields:
+            table = form.cleaned_data.get(f"constraint_{index}_table")
+            if table:
+                entry: dict[str, Any] = {"table": table}
+                geom_col = form.cleaned_data.get(f"constraint_{index}_geom_col")
+                if geom_col:
+                    entry["geom_col"] = geom_col
+                discount = form.cleaned_data.get(f"constraint_{index}_discount_pct")
+                if discount is not None:
+                    entry["discount_pct"] = discount
+                constraints.append(entry)
+            index += 1
+    column_mapping: dict[str, str] | None = None
+    if f"column_{CANONICAL_COLUMN_NAMES[0]}" in form.fields:
+        column_mapping = {
+            name: form.cleaned_data[f"column_{name}"]
+            for name in CANONICAL_COLUMN_NAMES
+            if form.cleaned_data.get(f"column_{name}")
+        }
+    return AnalysisInputs(
+        constraints=constraints, column_mapping=column_mapping, params=params or {}
+    )
+
+
+def _add_launch_errors(form: forms.Form, error: AnalysisLaunchError) -> None:
+    """Report a refused launch on *form* as form-level errors."""
+    for preflight_error in error.errors:
+        form.add_error(None, preflight_error.message)
 
 
 def _add_parameter_fields(form: forms.Form, module: str, scenario: Scenario) -> None:
@@ -282,9 +237,8 @@ def _add_parameter_fields(form: forms.Form, module: str, scenario: Scenario) -> 
 
     One field per ``module_registry.ANALYSIS_PARAMETERS`` entry whose
     ``modules`` include *module*: the value the scenario has stored, falling
-    back to the parameter's default. The values are persisted by
-    ``AnalysisModuleForm.apply_scenario_params`` and baked into the scenario's
-    model blueprints.
+    back to the parameter's default. The values are stored on the scenario by
+    ``launch.launch_analysis`` and baked into the scenario's model blueprints.
     """
     field_classes: dict[str, type[forms.Field]] = {
         "float": forms.FloatField,
@@ -314,7 +268,7 @@ class AnalysisModuleForm(forms.Form):
     parameters (``module_registry.ANALYSIS_PARAMETERS``). The parcel/built-form/
     base-canvas tables are derived
     (``sqlmesh/macros/analysis_blueprints.py``), so they are validated rather
-    than entered — see ``scenario_analysis_errors``.
+    than entered — see ``launch.scenario_analysis_errors``.
     """
 
     scenario = forms.ModelChoiceField(
@@ -355,53 +309,19 @@ class AnalysisModuleForm(forms.Form):
                 workspace=self._workspace,
             )
 
-    def clean(self) -> dict[str, Any] | None:
-        """Validate analysis prerequisites before launching (same checks as AnalysisLaunchForm)."""
-        data = super().clean()
-        if self.errors:
-            return data
-        if data is None:
-            return None
+    def analysis_inputs(self) -> AnalysisInputs:
+        """The inputs this submission sets on the scenario before its run.
 
-        workspace: Workspace | None = self._workspace
-        scenario: Scenario | None = data.get("scenario")
-        if workspace and scenario:
-            for error in scenario_analysis_errors(workspace, scenario):
-                self.add_error(None, error.message)
-
-        return data
-
-    def apply_scenario_params(self, scenario: Scenario) -> None:
-        """Persist this run's parameters onto *scenario*.
-
-        The analysis models are blueprinted per scenario, so a run's inputs are
-        read from the Scenario at model-load time (see
-        ``sqlmesh/macros/analysis_blueprints.py``) — persisting them here is
-        what makes this launch, and any later rerun, use the same parameters.
-
-        Analysis parameters are *merged* rather than replaced: a module's form
-        only exposes its own parameters, so saving one must not discard the
-        values another module's run stored. A parameter whose field came back
-        empty is skipped — except a ``str`` parameter, whose empty value *is*
-        its "unset" value and is therefore stored as-is.
+        A parameter whose field came back empty is left out (the scenario keeps
+        its value) — except a ``str`` parameter, whose empty value *is* its
+        "unset" value and is therefore sent as-is.
         """
-        constraints = _constraint_layers_from_form(self, scenario)
-        column_mapping = {
-            name: self.cleaned_data[f"column_{name}"]
-            for name in CANONICAL_COLUMN_NAMES
-            if self.cleaned_data.get(f"column_{name}")
-        }
         params = {
             param.name: self.cleaned_data[param.name]
             for param in get_module_parameters(self._module)
             if self.cleaned_data.get(param.name) is not None
         }
-        scenario.constraints = constraints
-        scenario.column_mapping = column_mapping
-        scenario.analysis_params = {**scenario.analysis_params, **params}
-        scenario.save(
-            update_fields=["constraints", "column_mapping", "analysis_params"]
-        )
+        return _scenario_inputs_from_form(self, params)
 
 
 @method_decorator(user_passes_test(lambda u: u.is_authenticated), name="dispatch")
@@ -451,18 +371,15 @@ class AnalysisLaunchView(HtmxResponseMixin, FormView):
     def form_valid(self, form: AnalysisLaunchForm) -> HttpResponse:
         data = form.cleaned_data
         modules: list[str] = data["modules"]
-        scenario: Scenario = data["scenario"]
-
-        # The models are blueprinted per scenario, so this run's parameters are
-        # read off the Scenario when the plan loads it — persist them here.
-        scenario.constraints = form.scenario_constraints()
-        scenario.column_mapping = form.scenario_column_mapping()
-        scenario.save(update_fields=["constraints", "column_mapping"])
-
-        run = run_analysis_pipeline(
-            scenario_id=scenario.pk,
-            module_names=modules,
-        )
+        try:
+            run = launch_analysis(
+                scenario=data["scenario"],
+                modules=modules,
+                inputs=form.analysis_inputs(),
+            )
+        except AnalysisLaunchError as error:
+            _add_launch_errors(form, error)
+            return self.form_invalid(form)
 
         if self.request.htmx:  # type: ignore[attr-defined]
             html = render_to_string(
@@ -806,13 +723,66 @@ def analysis_module_launch(
             {"workspace": workspace, "scenario": None, "analysis": meta, "form": form},
             status=400,
         )
-
-    scenario: Scenario = form.cleaned_data["scenario"]
-    form.apply_scenario_params(scenario)
-    run = launch_analysis_run(
-        scenario_id=scenario.pk,
-        module_names=[module_key],
+    return _launch_module(
+        request,
+        meta=meta,
+        scenario=form.cleaned_data["scenario"],
+        inputs=form.analysis_inputs(),
+        form=form,
     )
+
+
+@require_POST
+@user_passes_test(lambda u: u.is_authenticated)
+def analysis_module_rerun(
+    request: HttpRequest, workspace_pk: int, module_key: str
+) -> HttpResponse:
+    """Launch one analysis again with exactly the inputs stored on its scenario.
+
+    A run's inputs live on the Scenario (see ``launch.launch_analysis``), so a
+    rerun sets none: it posts only the scenario. A rerun the launch service
+    refuses (a constraint table that no longer exists, say) opens the module's
+    parameter form with the reasons, where the stored inputs can be corrected.
+    """
+    workspace = get_object_or_404(Workspace, pk=workspace_pk)
+    meta = _get_analysis_meta(module_key)
+    scenario = get_object_or_404(
+        Scenario, pk=request.POST.get("scenario"), workspace=workspace
+    )
+    form = AnalysisModuleForm(workspace=workspace, scenario=scenario, module=module_key)
+    return _launch_module(
+        request,
+        meta=meta,
+        scenario=scenario,
+        inputs=AnalysisInputs(),
+        form=form,
+    )
+
+
+def _launch_module(
+    request: HttpRequest,
+    *,
+    meta: dict[str, Any],
+    scenario: Scenario,
+    inputs: AnalysisInputs,
+    form: AnalysisModuleForm,
+) -> HttpResponse:
+    """Launch *meta*'s module for *scenario*; on refusal re-render *form* with why."""
+    try:
+        run = launch_analysis(scenario=scenario, modules=[meta["key"]], inputs=inputs)
+    except AnalysisLaunchError as error:
+        return render(
+            request,
+            "workspace/analysis/_module_form.html",
+            {
+                "workspace": scenario.workspace,
+                "scenario": scenario,
+                "analysis": meta,
+                "form": form,
+                "launch_errors": [e.message for e in error.errors],
+            },
+            status=400,
+        )
 
     html = render_to_string(
         "workspace/analysis/status.html#analysis-status",

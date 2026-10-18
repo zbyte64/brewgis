@@ -26,12 +26,16 @@ loads, so it needs no separate NULL-filling pass.
 from __future__ import annotations
 
 import logging
+import time
 from typing import Any
 
 from django.core.management.base import BaseCommand
 from django.core.management.base import CommandError
 
 logger = logging.getLogger(__name__)
+
+# How often the analysis step re-reads its run while a Celery worker executes it.
+RUN_POLL_SECONDS = 5
 
 WORKSPACE_NAME = "SACOG Demo"
 WORKSPACE_SCHEMA = "sacog_demo"
@@ -391,9 +395,11 @@ class Command(BaseCommand):
         """Run the full analysis pipeline."""
         self.stdout.write("Phase 5: Analysis Pipeline...")
 
+        from brewgis.workspace.analysis.launch import AnalysisLaunchError
+        from brewgis.workspace.analysis.launch import launch_analysis
         from brewgis.workspace.analysis.pipeline import MODULE_RESULT_TABLES
         from brewgis.workspace.analysis.pipeline import resolve_module_order
-        from brewgis.workspace.analysis.pipeline import run_analysis_pipeline
+        from brewgis.workspace.analysis.run_health import reconcile_abandoned_run
         from brewgis.workspace.models import Scenario
         from brewgis.workspace.models import Workspace
 
@@ -418,16 +424,18 @@ class Command(BaseCommand):
         ordered_modules = resolve_module_order(all_modules)
         self.stdout.write(f"  ✓ Module order: {', '.join(ordered_modules)}")
 
-        # Record the run before planning: each scenario's analysis models are
-        # blueprinted, and the blueprint set comes from the scenarios that have
-        # an AnalysisRun (see sqlmesh/macros/analysis_blueprints.py), so the run
-        # has to exist before the plan loads the project. The plan itself reads
-        # every input off the Scenario and the Workspace — there are no plan-time
-        # variables to pass.
-        run = run_analysis_pipeline(
-            scenario_id=scenario.pk,
-            module_names=ordered_modules,
-        )
+        # The same launch service the map view and the MCP tool use: it records
+        # the run before the plan (the blueprint set comes from the scenarios
+        # that have an AnalysisRun, see sqlmesh/macros/analysis_blueprints.py)
+        # and the plan reads every input off the Scenario and the Workspace.
+        try:
+            run = launch_analysis(scenario=scenario, modules=ordered_modules)
+        except AnalysisLaunchError as error:
+            raise CommandError(f"Analysis not started: {error}") from error
+        while run.status in {"pending", "running"}:
+            time.sleep(RUN_POLL_SECONDS)
+            run.refresh_from_db()
+            reconcile_abandoned_run(run)
         if run.status == "completed":
             self.stdout.write(
                 self.style.SUCCESS("  ✓ Analysis pipeline completed successfully")

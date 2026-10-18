@@ -41,7 +41,8 @@ User Browser                    Docker Compose Stack
 - **Paint/overrides:** `PaintedCanvas` model stores per-feature, per-column overrides with undo/redo via `PaintEvent` log. Canvas views dynamically LEFT JOIN paints onto base data. Paint mode's grid (split) and merge tools write `ParcelGeometryEdit` rows instead — a result parcel, its geometry, and every base column — which the canvas view UNIONs in while hiding the parcels each edit replaces, so parcel boundaries are copy-on-write too (no `public.base_canvas` write).
 - **Base canvas employment:** LODES WAC CNS01–CNS20 are NAICS sectors (CNS15 = 61 education, CNS20 = 92 public administration; LODES8 tech doc), mapped in `census/wac_block_raw.sql` one-to-one except CNS09–14 (summed to office services) and CNS18 (split accommodation/restaurant by `cbp_721`); LODES has no military segment. School districts often report every worksite at the district office, so `models/ccd/` (NCES Common Core of Data school + district directories via the Urban Institute portal CSVs) estimates each public school's jobs and `base_canvas/school_override.sql` moves LODES education jobs onto the schools — education is the one sector allowed to move between census blocks (region total held). `base_canvas_poi_override` gives those school parcels the `schools` built form ahead of any OSM POI and leaves their jobs alone.
 - **MCP server:** FastMCP stdio server mirrors the view layer, exposing 8 tool modules for AI assistant integration
-- **Custom ruff rules:** `brewgis/_ruff_rules/rules.py` enforces 6 project-specific anti-patterns inline (replacing most old pytestarch rules)
+- **Custom ruff rules:** `brewgis/_ruff_rules/rules.py` enforces 7 project-specific anti-patterns inline (replacing most old pytestarch rules)
+- **Analysis launch:** every launcher — the map view's module form and Rerun button, the full-page form, the MCP `run_analysis` tool, `import_sacog_demo` — calls `analysis/launch.py:launch_analysis(scenario=, modules=, inputs=AnalysisInputs(...))`. It alone validates modules, constraints (each table and geometry column must exist, resolved as `constraint_geometries` renders them: bare name → `public`), column mapping and analysis parameters plus the scenario's prerequisites, stores the inputs on the Scenario (`None` keeps the stored value; params merge) and dispatches the run to Celery. The `brewgis/analysis-launch-outside-service` rule rejects importing `launch_analysis_run`/`_execute_analysis_run`/`run_analysis_task` anywhere else, so no launcher can validate, store or run an analysis differently.
 
 ## Tool Boundaries — Who Does What
 
@@ -246,7 +247,7 @@ npm run test      # vitest
 |`brewgis/workspace/services/spatial_filter.py`|Layer filters: applying a `LayerFilter` materializes its rows as a new table + new `Layer` (`LayerFilter.output_layer`) and never changes the filtered layer; projected, indexed filter sources for spatial conditions|
 |`brewgis/workspace/services/_db.py`|Cached SQLAlchemy engine singleton (functools.lru_cache)|
 |`brewgis/sqlmesh/config.py`|SQLMesh config: Postgres dialect, 51 config variables, gateway settings|
-|`brewgis/_ruff_rules/rules.py`|6 custom Ruff lint rules for project anti-patterns|
+|`brewgis/_ruff_rules/rules.py`|7 custom Ruff lint rules for project anti-patterns|
 |`_schema.yml`|Root-level column tests (not_null, unique, non_negative)|
 
 ### Templates

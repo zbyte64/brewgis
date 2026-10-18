@@ -5,6 +5,7 @@ from .analysis import analysis_list  # noqa: F401
 from .analysis import analysis_module_configure  # noqa: F401
 from .analysis import analysis_module_details  # noqa: F401
 from .analysis import analysis_module_launch  # noqa: F401
+from .analysis import analysis_module_rerun  # noqa: F401
 from .analysis import analysis_status  # noqa: F401
 from .analysis import check_prerequisites  # noqa: F401
 from .analysis import panel_analysis_card_list  # noqa: F401

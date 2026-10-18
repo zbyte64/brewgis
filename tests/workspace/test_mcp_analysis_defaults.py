@@ -1,31 +1,36 @@
 # ruff: noqa: ANN201, ANN202, ANN003, PLC0415
 """Tests that the MCP ``run_analysis`` tool analyzes the scenario's own parcel
-source and persists per-run parameters on the scenario.
+source and stores per-run inputs on the scenario through the same launch
+service as the map view's forms (``brewgis/workspace/analysis/launch.py``).
 
 The analysis models derive their inputs from the scenario (its painted-aware
 canvas view for an ALTERNATIVE scenario, the workspace's base canvas otherwise)
-and read constraints/column mapping off the Scenario row, so this tool validates
-those derived inputs and stores the parameters rather than passing plan
-variables (see ``sqlmesh/macros/analysis_blueprints.py``).
+and read constraints/column mapping/parameters off the Scenario row (see
+``sqlmesh/macros/analysis_blueprints.py``).
 """
 
 from __future__ import annotations
 
+from typing import Any
 from unittest.mock import MagicMock
 from unittest.mock import patch
 
 import pytest
+from django.db import connection
 
 from brewgis.workspace.models import ScenarioType
+from brewgis.workspace.services.preflight import PreflightError
 from tests.factories import ScenarioFactory
 from tests.factories import WorkspaceFactory
+
+LAUNCH = "brewgis.workspace.analysis.launch"
 
 
 def _get_run_analysis_tool():
     """Register the analysis MCP tools and return the ``run_analysis`` function."""
     from brewgis.workspace.mcp.tools.analysis import register_tools
 
-    captured: dict[str, object] = {}
+    captured: dict[str, Any] = {}
 
     def capture_tool(**_kw):
         def decorator(f):
@@ -55,11 +60,11 @@ class TestRunAnalysisScenarioInputs:
         """An ALTERNATIVE scenario is checked against its canvas view — the
         base canvas plus any painted edits — not the raw workspace table."""
         with (
+            patch(f"{LAUNCH}.ensure_export_exists_isolated"),
             patch(
-                "brewgis.workspace.mcp.tools.analysis.check_analysis_prerequisites",
-                return_value=[],
+                f"{LAUNCH}.check_analysis_prerequisites", return_value=[]
             ) as mock_preflight,
-            patch("brewgis.workspace.mcp.tools.analysis.run_analysis_pipeline"),
+            patch(f"{LAUNCH}.launch_analysis_run"),
         ):
             self.run_analysis(
                 workspace_slug=str(self.workspace.pk),
@@ -73,55 +78,76 @@ class TestRunAnalysisScenarioInputs:
             "public.base_canvas"
         )
 
-    def test_parameters_are_persisted_on_the_scenario(self):
-        """``params`` become the scenario's stored parameters, so the models
-        loaded for this run (and any later rerun) use them."""
-        constraints = [{"table": "floodplains", "discount_pct": 50, "geom_col": "geom"}]
+    def test_inputs_are_stored_on_the_scenario(self):
+        """``params`` become the scenario's stored inputs — constraints filled
+        with the same defaults the forms get — so the models loaded for this run
+        (and any later rerun) use them."""
+        with connection.cursor() as cursor:
+            cursor.execute("CREATE EXTENSION IF NOT EXISTS postgis")
+            cursor.execute(
+                "CREATE TABLE IF NOT EXISTS public.mcp_test_floodplains"
+                " (geom geometry(MultiPolygon, 4326))"
+            )
         with (
-            patch(
-                "brewgis.workspace.mcp.tools.analysis.check_analysis_prerequisites",
-                return_value=[],
-            ),
-            patch(
-                "brewgis.workspace.mcp.tools.analysis.run_analysis_pipeline"
-            ) as mock_run,
+            patch(f"{LAUNCH}.scenario_analysis_errors", return_value=[]),
+            patch(f"{LAUNCH}.launch_analysis_run") as mock_run,
         ):
             mock_run.return_value = MagicMock(pk=1, status="pending")
             self.run_analysis(
                 workspace_slug=str(self.workspace.pk),
                 scenario_slug=str(self.scenario.pk),
-                modules=["core"],
+                modules=["vmt"],
                 params={
-                    "constraints": constraints,
+                    "constraints": [
+                        {"table": "public.mcp_test_floodplains", "discount_pct": 50}
+                    ],
                     "column_mapping": {"pop": "population"},
+                    "analysis_params": {"transport_truck_factor": 0.05},
                 },
             )
 
         self.scenario.refresh_from_db()
-        assert self.scenario.constraints == constraints
+        assert self.scenario.constraints == [
+            {
+                "table": "public.mcp_test_floodplains",
+                "discount_pct": 50,
+                "geom_col": "geom",
+            }
+        ]
         assert self.scenario.column_mapping == {"pop": "population"}
+        assert self.scenario.analysis_params["transport_truck_factor"] == 0.05
         assert mock_run.call_args.kwargs["scenario_id"] == self.scenario.pk
 
-    def test_failed_preflight_does_not_persist_or_launch(self):
+    def test_failed_preflight_does_not_store_or_launch(self):
         """A prerequisite failure stops the run before touching the scenario."""
-        from brewgis.workspace.services.preflight import PreflightError
-
         with (
             patch(
-                "brewgis.workspace.mcp.tools.analysis.check_analysis_prerequisites",
+                f"{LAUNCH}.scenario_analysis_errors",
                 return_value=[PreflightError(field="parcel_table", message="nope")],
             ),
-            patch(
-                "brewgis.workspace.mcp.tools.analysis.run_analysis_pipeline"
-            ) as mock_run,
+            patch(f"{LAUNCH}.launch_analysis_run") as mock_run,
         ):
             result = self.run_analysis(
                 workspace_slug=str(self.workspace.pk),
                 scenario_slug=str(self.scenario.pk),
-                params={"constraints": [{"table": "x", "discount_pct": 1}]},
+                params={"column_mapping": {"pop": "population"}},
             )
 
         assert result["status"] == "FAILURE"
+        assert "nope" in result["message"]
         mock_run.assert_not_called()
         self.scenario.refresh_from_db()
-        assert self.scenario.constraints == []
+        assert self.scenario.column_mapping == {}
+
+    def test_unknown_params_key_is_refused(self):
+        """A misspelled input is reported rather than silently ignored."""
+        with patch(f"{LAUNCH}.launch_analysis_run") as mock_run:
+            result = self.run_analysis(
+                workspace_slug=str(self.workspace.pk),
+                scenario_slug=str(self.scenario.pk),
+                params={"constraint": []},
+            )
+
+        assert result["status"] == "FAILURE"
+        assert "constraint" in result["message"]
+        mock_run.assert_not_called()

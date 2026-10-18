@@ -129,9 +129,9 @@ def _create_analysis_run(
 def _execute_analysis_run(run: AnalysisRun) -> None:
     """Run a ``pending``/``running`` AnalysisRun's modules via SQLMesh in place.
 
-    Mutates and saves ``run``'s status as it goes, so both the synchronous
-    caller (:func:`run_analysis_pipeline`) and the Celery task that backs
-    :func:`launch_analysis_run` can share the exact same execution logic.
+    Mutates and saves ``run``'s status as it goes. The Celery task that backs
+    :func:`launch_analysis_run` is its only caller, so every run — whichever
+    launcher started it — executes through this one function.
 
     The whole attempt runs under :func:`run_heartbeat`, so a worker that dies
     without reaching either terminal write below (Celery's hard time limit, a
@@ -218,30 +218,16 @@ def _execute_analysis_run(run: AnalysisRun) -> None:
         wait_until_martin_ready(result.get("fqtns", []))
 
 
-def run_analysis_pipeline(
-    scenario_id: int,
-    module_names: list[str],
-    vars_: dict[str, Any] | None = None,
-) -> AnalysisRun:
-    """Create an AnalysisRun record and execute it synchronously via SQLMesh.
-
-    SQLMesh handles DAG traversal automatically — all modules run in a
-    single plan call. Blocks the caller until the run finishes; used by the
-    MCP tool and the full-page multi-module launcher, where a synchronous
-    result is expected. For a non-blocking launch (e.g. the map view's
-    Analysis panel), use :func:`launch_analysis_run` instead.
-    """
-    run = _create_analysis_run(scenario_id, module_names, vars_)
-    _execute_analysis_run(run)
-    return run
-
-
 def launch_analysis_run(
     scenario_id: int,
     module_names: list[str],
     vars_: dict[str, Any] | None = None,
 ) -> AnalysisRun:
     """Create an AnalysisRun and dispatch its execution to Celery.
+
+    Launchers do not call this directly: they go through
+    :func:`brewgis.workspace.analysis.launch.launch_analysis`, which validates
+    and stores the run's inputs first.
 
     Returns as soon as the run is recorded (``status="pending"``) — it does
     not wait for the analysis to finish. ``CELERY_TASK_ALWAYS_EAGER`` (the

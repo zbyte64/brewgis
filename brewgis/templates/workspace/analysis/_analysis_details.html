@@ -10,11 +10,10 @@ render — it carries its own htmx poll, so an active run keeps refreshing here.
 <div class="analysis-details mb-2">
   <div class="d-flex justify-content-between align-items-center mb-1 gap-1">
     {% if run.status != "pending" and run.status != "running" %}
-      {# Re-run through the module form endpoint with only the scenario: the #}
-      {# parameters a run reads live on the Scenario (see #}
-      {# AnalysisModuleForm.apply_scenario_params), so this reuses the same #}
-      {# inputs the run behind the layer was launched with. #}
-      <form hx-post="{% url 'workspace:analysis_module_launch' run.workspace_id analysis.key %}"
+      {# Rerun posts only the scenario: the inputs a run reads live on the #}
+      {# Scenario (see analysis/launch.py), so this reuses the same inputs #}
+      {# the run behind the layer was launched with. #}
+      <form hx-post="{% url 'workspace:analysis_module_rerun' run.workspace_id analysis.key %}"
             hx-target="#right-panel-content"
             hx-swap="innerHTML"
             hx-disable="find button[type=submit]"

@@ -5,15 +5,16 @@ from typing import Any
 
 from django.shortcuts import get_object_or_404
 
+from brewgis.workspace.analysis.launch import AnalysisInputs
+from brewgis.workspace.analysis.launch import AnalysisLaunchError
+from brewgis.workspace.analysis.launch import launch_analysis
 from brewgis.workspace.analysis.module_registry import MODULE_DEPENDENCIES
 from brewgis.workspace.analysis.module_registry import get_module_label
 from brewgis.workspace.analysis.module_registry import get_result_table_names
-from brewgis.workspace.analysis.pipeline import run_analysis_pipeline
 from brewgis.workspace.analysis.run_health import reconcile_abandoned_run
 from brewgis.workspace.models import AnalysisRun
 from brewgis.workspace.models import Scenario
 from brewgis.workspace.models import Workspace
-from brewgis.workspace.services.preflight import check_analysis_prerequisites
 
 logger = logging.getLogger(__name__)
 
@@ -53,12 +54,16 @@ def register_tools(server: object) -> None:
     ) -> dict[str, Any]:
         """Run analysis modules for a scenario.
 
-        ``params`` accepts the same per-run parameters the map view's analysis
-        forms collect — ``constraints`` (list of
-        ``{table, discount_pct, geom_col}``) and ``column_mapping``
-        (``{canonical_name: user_column}``). They are persisted on the scenario
-        before the plan, because that is where the scenario's analysis models
-        read them from (see ``sqlmesh/macros/analysis_blueprints.py``).
+        Goes through the same launch service as the map view's analysis forms
+        (``brewgis/workspace/analysis/launch.py``): the same validation, the same
+        rules for storing inputs on the scenario, the same background dispatch.
+        The run is returned ``pending``; poll ``get_analysis_status``.
+
+        ``params`` takes the inputs those forms collect — ``constraints`` (list
+        of ``{table, discount_pct, geom_col}``; replaces the scenario's),
+        ``column_mapping`` (``{canonical_name: user_column}``; replaces the
+        scenario's) and ``analysis_params`` (``{parameter: value}``; merged into
+        the scenario's). An omitted key keeps the scenario's stored value.
         """
         try:
             ws_pk = int(workspace_slug)
@@ -68,38 +73,28 @@ def register_tools(server: object) -> None:
         workspace = get_object_or_404(Workspace, pk=ws_pk)
         scenario = get_object_or_404(Scenario, pk=s_pk, workspace=workspace)
 
-        # The models derive their parcel source from the scenario itself (its
-        # canvas view for an ALTERNATIVE scenario, the workspace's base canvas
-        # otherwise — ``Scenario.base_layer_table``), so the prerequisites are
-        # checked against exactly those.
-        preflight = check_analysis_prerequisites(
-            schema=workspace.db_schema,
-            parcel_table=scenario.base_layer_table,
-            built_form_table="built_forms",
-            base_canvas_table=workspace.effective_base_table(),
-        )
-        if preflight:
-            errors_str = "; ".join(e.message for e in preflight)
+        p_params = dict(params or {})
+        unknown = set(p_params) - {"constraints", "column_mapping", "analysis_params"}
+        if unknown:
             return {
                 "status": "FAILURE",
-                "message": f"Prerequisites not met: {errors_str}",
+                "message": f"Unknown params: {', '.join(sorted(unknown))}",
             }
-
-        p_params = dict(params or {})
-        if "constraints" in p_params:
-            scenario.constraints = p_params["constraints"]
-        if "column_mapping" in p_params:
-            scenario.column_mapping = p_params["column_mapping"]
-        scenario.save(update_fields=["constraints", "column_mapping"])
-
-        from brewgis.workspace.analysis.module_registry import resolve_module_order
-
-        ordered = resolve_module_order(modules or list(MODULE_DEPENDENCIES))
-
-        run = run_analysis_pipeline(
-            scenario_id=scenario.pk,
-            module_names=ordered,
-        )
+        try:
+            run = launch_analysis(
+                scenario=scenario,
+                modules=modules or list(MODULE_DEPENDENCIES),
+                inputs=AnalysisInputs(
+                    constraints=p_params.get("constraints"),
+                    column_mapping=p_params.get("column_mapping"),
+                    params=p_params.get("analysis_params") or {},
+                ),
+            )
+        except AnalysisLaunchError as error:
+            return {
+                "status": "FAILURE",
+                "message": f"Analysis not started: {error}",
+            }
         return {
             "run_id": run.pk,
             "status": run.status,

@@ -66,14 +66,32 @@ class TestAnalysisLaunchForm(TestCase):
         assert "workspace" not in form.errors
         assert "modules" not in form.errors
 
-    def test_form_exposes_constraint_discount_fields_not_json(self):
-        """The launcher offers constraint discounts as plain number fields."""
-        form = AnalysisLaunchForm()
-        assert form.fields["floodplain_discount_pct"].initial == 100
-        assert form.fields["steep_slopes_discount_pct"].initial == 75
-        assert "column_pop" in form.fields
-        assert "constraints_json" not in form.fields
-        assert "column_mapping" not in form.fields
+    def test_form_shows_every_stored_constraint_plus_a_blank_row(self):
+        """The constraint rows edit the scenario's own list — whatever launcher
+        stored it — so a schema-qualified or extra layer is shown, not replaced
+        by a fixed default set."""
+        scenario = ScenarioFactory(
+            workspace=self.workspace,
+            constraints=[
+                {
+                    "table": "fresno.floodplains",
+                    "discount_pct": 100,
+                    "geom_col": "geom",
+                },
+                {
+                    "table": "public.sac_cnty_streams",
+                    "discount_pct": 40,
+                    "geom_col": "wkb_geometry",
+                },
+            ],
+        )
+        form = AnalysisLaunchForm(workspace=self.workspace, scenario=scenario)
+        assert form.fields["constraint_0_table"].initial == "fresno.floodplains"
+        assert form.fields["constraint_1_table"].initial == "public.sac_cnty_streams"
+        assert form.fields["constraint_1_geom_col"].initial == "wkb_geometry"
+        assert form.fields["constraint_1_discount_pct"].initial == 40
+        assert form.fields["constraint_2_table"].initial == ""
+        assert "constraint_3_table" not in form.fields
         assert not any(
             isinstance(field.widget, forms.Textarea) for field in form.fields.values()
         )
@@ -84,11 +102,12 @@ class TestAnalysisLaunchForm(TestCase):
             data={
                 "workspace": self.workspace.pk,
                 "modules": ["env_constraint"],
-                "floodplain_discount_pct": 150,
+                "constraint_0_table": "fresno.floodplains",
+                "constraint_0_discount_pct": 150,
             },
         )
         assert not form.is_valid()
-        assert "floodplain_discount_pct" in form.errors
+        assert "constraint_0_discount_pct" in form.errors
 
 
 @pytest.mark.views
@@ -149,7 +168,7 @@ class TestAnalysisLaunchView(TestCase):
             "workspace",
             "modules",
             "scenario",
-            "floodplain_discount_pct",
+            "constraint_0_table",
             "column_pop",
         }
         assert expected_fields.issubset(form.fields.keys())
@@ -172,12 +191,12 @@ class TestAnalysisLaunchView(TestCase):
         assert "form.html" in response.template_name
 
     @patch(
-        "brewgis.workspace.views.analysis.check_analysis_prerequisites", return_value=[]
+        "brewgis.workspace.analysis.launch.scenario_analysis_errors", return_value=[]
     )
-    @patch("brewgis.workspace.views.analysis.run_analysis_pipeline")
-    def test_post_valid_creates_run(self, mock_pipeline, mock_prereq):
-        """POST with valid data calls run_analysis_pipeline."""
-        mock_pipeline.return_value = AnalysisRunFactory(
+    @patch("brewgis.workspace.analysis.launch.launch_analysis_run")
+    def test_post_valid_dispatches_run(self, mock_launch, mock_prereq):
+        """A valid POST hands the run to the launch service's dispatch."""
+        mock_launch.return_value = AnalysisRunFactory(
             workspace=self.workspace,
             modules=["env_constraint"],
         )
@@ -187,14 +206,38 @@ class TestAnalysisLaunchView(TestCase):
             {
                 "workspace": self.workspace.pk,
                 "modules": ["env_constraint"],
-                "parcel_table": "parcels",
                 "scenario": self.scenario.pk,
             },
             HTTP_HX_REQUEST="true",
         )
         assert response.status_code in (200, 302)
-        mock_pipeline.assert_called_once()
+        mock_launch.assert_called_once()
         mock_prereq.assert_called_once()
+
+    @patch(
+        "brewgis.workspace.analysis.launch.scenario_analysis_errors", return_value=[]
+    )
+    @patch("brewgis.workspace.analysis.launch.launch_analysis_run")
+    def test_post_with_missing_constraint_table_is_refused(self, mock_launch, _prereq):
+        """The form reports a constraint table that does not exist instead of
+        launching a run that would fail inside its SQLMesh plan."""
+        self.client.force_login(self.user)
+        response = self.client.post(
+            reverse(LAUNCH_URL),
+            {
+                "workspace": self.workspace.pk,
+                "modules": ["env_constraint"],
+                "scenario": self.scenario.pk,
+                "constraint_0_table": "no_such_constraint_table",
+            },
+            HTTP_HX_REQUEST="true",
+        )
+        self.assertContains(
+            response, "Constraint table public.no_such_constraint_table does not exist."
+        )
+        mock_launch.assert_not_called()
+        self.scenario.refresh_from_db()
+        assert self.scenario.constraints == []
 
 
 @pytest.mark.views

@@ -23,7 +23,7 @@ from django.test import TestCase
 from brewgis.workspace.analysis.module_registry import MODULE_RESULT_TABLES
 from brewgis.workspace.analysis.module_registry import get_result_table_names
 from brewgis.workspace.analysis.module_registry import resolve_module_order
-from brewgis.workspace.analysis.pipeline import run_analysis_pipeline
+from brewgis.workspace.analysis.pipeline import launch_analysis_run
 from brewgis.workspace.models import AnalysisRun
 from tests.factories import ScenarioFactory
 from tests.factories import WorkspaceFactory
@@ -103,14 +103,14 @@ class TestWorkspaceIsolation(TestCase):
     def test_pipeline_creates_run_with_correct_workspace(
         self, mock_sync: MagicMock
     ) -> None:
-        """run_analysis_pipeline creates an AnalysisRun for the given workspace."""
+        """launch_analysis_run creates an AnalysisRun for the given workspace."""
         mock_sync.return_value = {"success": True, "completed": [], "results": []}
         vars_ = {
             "scenario_id": "test-ws-a",
             "target_schema": self.workspace_a.db_schema,
             "parcel_table": "parcels",
         }
-        run = run_analysis_pipeline(
+        run = launch_analysis_run(
             module_names=["env_constraint"],
             vars_=vars_,
             scenario_id=self.scenario_a.pk,
@@ -130,7 +130,7 @@ class TestWorkspaceIsolation(TestCase):
             "target_schema": self.workspace_a.db_schema,
             "parcel_table": "parcels",
         }
-        run = run_analysis_pipeline(
+        run = launch_analysis_run(
             module_names=["env_constraint"],
             vars_=vars_,
             scenario_id=self.scenario_a.pk,
@@ -150,7 +150,7 @@ class TestWorkspaceIsolation(TestCase):
             "target_schema": ws_b_schema,
             "parcel_table": "parcels",
         }
-        run = run_analysis_pipeline(
+        run = launch_analysis_run(
             module_names=["env_constraint"],
             scenario_id=self.scenario_b.pk,
             vars_=vars_b,
@@ -294,14 +294,14 @@ class TestScenarioIsolation(TestCase):
 
     @patch("brewgis.workspace.analysis.pipeline.run_modules_sync")
     def test_pipeline_stores_scenario_id(self, mock_sync: MagicMock) -> None:
-        """run_analysis_pipeline persists scenario_id in the run's vars."""
+        """launch_analysis_run persists scenario_id in the run's vars."""
         mock_sync.return_value = {"success": True, "completed": [], "results": []}
         vars_ = {
             "scenario_id": "scenario-a",
             "target_schema": "public",
             "parcel_table": "parcels",
         }
-        run = run_analysis_pipeline(
+        run = launch_analysis_run(
             module_names=["env_constraint"],
             vars_=vars_,
             scenario_id=self.scenario_a.pk,
@@ -320,7 +320,7 @@ class TestScenarioIsolation(TestCase):
             "target_schema": self.workspace.db_schema,
             "parcel_table": "parcels",
         }
-        run_a = run_analysis_pipeline(
+        run_a = launch_analysis_run(
             module_names=["env_constraint"],
             vars_=vars_a,
             scenario_id=self.scenario_a.pk,
@@ -331,7 +331,7 @@ class TestScenarioIsolation(TestCase):
             "target_schema": self.workspace.db_schema,
             "parcel_table": "parcels",
         }
-        run_b = run_analysis_pipeline(
+        run_b = launch_analysis_run(
             module_names=["env_constraint"],
             vars_=vars_b,
             scenario_id=self.scenario_b.pk,
@@ -425,11 +425,11 @@ class TestSingleModuleExecution(TestCase):
         self,
         mock_sync: MagicMock,
     ) -> None:
-        """run_analysis_pipeline with one module creates AnalysisRun with only that module chain."""
+        """launch_analysis_run with one module creates AnalysisRun with only that module chain."""
         mock_sync.return_value = {"success": True, "completed": [], "results": []}
         ws = WorkspaceFactory()
         sc = ScenarioFactory(workspace=ws)
-        run = run_analysis_pipeline(
+        run = launch_analysis_run(
             module_names=["env_constraint"],
             scenario_id=sc.pk,
         )
@@ -443,7 +443,7 @@ class TestSingleModuleExecution(TestCase):
         mock_sync.return_value = {"success": True, "completed": [], "results": []}
         ws = WorkspaceFactory()
         sc = ScenarioFactory(workspace=ws)
-        run = run_analysis_pipeline(
+        run = launch_analysis_run(
             module_names=["water_demand"],
             scenario_id=sc.pk,
         )
@@ -462,7 +462,7 @@ class TestSingleModuleExecution(TestCase):
     def test_pipeline_dispatches_all_modules_via_sync(
         self, mock_sync: MagicMock
     ) -> None:
-        """run_analysis_pipeline dispatches all resolved modules via run_modules_sync."""
+        """launch_analysis_run dispatches all resolved modules via run_modules_sync."""
         mock_sync.return_value = {"success": True, "completed": [], "results": []}
         ws = WorkspaceFactory()
         sc = ScenarioFactory(workspace=ws)
@@ -471,7 +471,7 @@ class TestSingleModuleExecution(TestCase):
             "target_schema": ws.db_schema,
             "parcel_table": "parcels",
         }
-        run_analysis_pipeline(
+        launch_analysis_run(
             module_names=["water_demand"],
             vars_=vars_,
             scenario_id=sc.pk,
@@ -487,7 +487,7 @@ class TestSingleModuleExecution(TestCase):
         mock_sync.return_value = {"success": True, "completed": [], "results": []}
         ws = WorkspaceFactory()
         sc = ScenarioFactory(workspace=ws)
-        run = run_analysis_pipeline(
+        run = launch_analysis_run(
             module_names=["core"],
             scenario_id=sc.pk,
         )
@@ -524,20 +524,20 @@ class TestNoCascadingAnalysisTriggers(TestCase):
     """Running one analysis must not inadvertently trigger other analyses.
 
     Verified behaviors:
-    - run_analysis_pipeline creates exactly ONE AnalysisRun record
+    - launch_analysis_run creates exactly ONE AnalysisRun record
     - No cross-workspace side effects from running analysis
     - No unintended extra records are created
     """
 
     @patch("brewgis.workspace.analysis.pipeline.run_modules_sync")
     def test_creates_exactly_one_analysis_run(self, mock_sync: MagicMock) -> None:
-        """run_analysis_pipeline creates exactly one new AnalysisRun."""
+        """launch_analysis_run creates exactly one new AnalysisRun."""
         mock_sync.return_value = {"success": True, "completed": [], "results": []}
         ws = WorkspaceFactory()
         sc = ScenarioFactory(workspace=ws)
         count_before = AnalysisRun.objects.count()
 
-        run = run_analysis_pipeline(
+        run = launch_analysis_run(
             module_names=["env_constraint"],
             scenario_id=sc.pk,
         )
@@ -559,7 +559,7 @@ class TestNoCascadingAnalysisTriggers(TestCase):
 
         b_count_before = AnalysisRun.objects.filter(workspace=ws_b).count()
 
-        run_analysis_pipeline(
+        launch_analysis_run(
             module_names=["env_constraint"],
             scenario_id=sc.pk,
         )
