@@ -943,11 +943,12 @@ def _enqueue(
 ) -> JsonResponse:
     """Create a PaintRun, kick off its Celery task, and respond.
 
-    In eager mode (``CELERY_TASK_ALWAYS_EAGER`` — the default in dev/tests)
-    ``.delay()`` runs the task inline before returning, so the run is
+    In eager mode (``CELERY_TASK_ALWAYS_EAGER`` — the default in tests and host
+    mode) ``.delay()`` runs the task inline before returning, so the run is
     already ``completed``/``failed`` by the time we respond — the caller
-    gets the same immediate result it always did. In production, the task
-    runs on a worker and the caller gets a 202 + poll URL instead.
+    gets the same immediate result it always did. Otherwise (the compose
+    stack's ``.envs/.django``), the task runs on a worker and the caller
+    gets a 202 + poll URL instead.
 
     Every view runs inside one transaction (``ATOMIC_REQUESTS``): the
     ``PaintRun`` row created just above isn't actually committed until this

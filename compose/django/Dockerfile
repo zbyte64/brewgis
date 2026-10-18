@@ -21,8 +21,6 @@ FROM docker.io/python:3.12.14-slim-trixie AS python
 # Python build stage
 FROM python AS python-build-stage
 
-ARG BUILD_ENVIRONMENT=local
-
 # Install apt packages
 RUN apt-get update && apt-get install --no-install-recommends -y \
   # dependencies for building Python packages
@@ -31,22 +29,20 @@ RUN apt-get update && apt-get install --no-install-recommends -y \
   libpq-dev
 
 # Requirements are installed here to ensure they will be cached.
-COPY ./requirements .
+COPY ./requirements.txt .
 
 # Create Python Dependency and Sub-Dependency Wheels.
 RUN pip wheel --wheel-dir /usr/src/app/wheels  \
-  -r ${BUILD_ENVIRONMENT}.txt
+  -r requirements.txt
 
 
 # Python 'run' stage
 FROM python AS python-run-stage
 
-ARG BUILD_ENVIRONMENT=local
 ARG APP_HOME=/app
 
 ENV PYTHONUNBUFFERED=1
 ENV PYTHONDONTWRITEBYTECODE=1
-ENV BUILD_ENV=${BUILD_ENVIRONMENT}
 ENV PYTHONPATH="/app"
 ENV DJANGO_SETTINGS_MODULE=brewgis.config.settings
 ENV DJANGO_READ_DOT_ENV_FILE=true
@@ -115,32 +111,32 @@ RUN --mount=type=bind,from=python-build-stage,source=/usr/src/app/wheels,target=
 RUN sed -i 's/Generator\[Context, None\]/Generator[Context, None, None]/g' \
   /usr/local/lib/python3.12/site-packages/web/server/settings.py
 
-COPY ./compose/production/django/entrypoint /entrypoint
+COPY ./compose/django/entrypoint /entrypoint
 RUN sed -i 's/\r$//g' /entrypoint
 RUN chmod +x /entrypoint
 
-COPY ./compose/local/django/start /start
+COPY ./compose/django/start /start
 RUN sed -i 's/\r$//g' /start
 RUN chmod +x /start
 
 
-COPY ./compose/local/django/celery/worker/start /start-celeryworker
+COPY ./compose/django/celery/worker/start /start-celeryworker
 RUN sed -i 's/\r$//g' /start-celeryworker
 RUN chmod +x /start-celeryworker
 
-COPY ./compose/local/django/celery/beat/start /start-celerybeat
+COPY ./compose/django/celery/beat/start /start-celerybeat
 RUN sed -i 's/\r$//g' /start-celerybeat
 RUN chmod +x /start-celerybeat
 
-COPY ./compose/local/django/celery/flower/start /start-flower
+COPY ./compose/django/celery/flower/start /start-flower
 RUN sed -i 's/\r$//g' /start-flower
 RUN chmod +x /start-flower
 
-COPY ./compose/local/django/start-mcp /start-mcp
+COPY ./compose/django/start-mcp /start-mcp
 RUN sed -i 's/\r$//g' /start-mcp
 RUN chmod +x /start-mcp
 
-COPY ./compose/local/django/start-sqlmesh-ui /start-sqlmesh-ui
+COPY ./compose/django/start-sqlmesh-ui /start-sqlmesh-ui
 RUN sed -i 's/\r$//g' /start-sqlmesh-ui
 RUN chmod +x /start-sqlmesh-ui
 
@@ -148,8 +144,8 @@ RUN chmod +x /start-sqlmesh-ui
 # copy application code to WORKDIR
 COPY . ${APP_HOME}
 
-# The map bundle from the frontend stage, plus its sourcemap (the dev image is
-# where the map gets debugged). Kept outside APP_HOME — see the stage above.
+# The map bundle from the frontend stage, plus its sourcemap. Kept outside
+# APP_HOME — see the stage above.
 COPY --from=frontend-build-stage \
   /src/brewgis/static/js/brew-gis-map.js \
   /src/brewgis/static/js/brew-gis-map.js.map \
@@ -159,7 +155,7 @@ COPY --from=frontend-build-stage \
 # fork and the arcgis extension are staged in a local extension repository
 # under /opt (outside the bind-mounted APP_HOME), which the SQLMesh duckdb
 # gateway installs from.
-COPY ./compose/local/django/preload_duckdb.py /tmp/preload_duckdb.py
+COPY ./compose/django/preload_duckdb.py /tmp/preload_duckdb.py
 RUN install -d -o dev-user -g dev-user /opt/duckdb-extensions \
   && su - dev-user -c "python3 /tmp/preload_duckdb.py" && rm /tmp/preload_duckdb.py
 

@@ -1,11 +1,11 @@
 volumes:
-  brewgis_local_postgres_data: {}
-  brewgis_local_postgres_data_backups: {}
-  brewgis_local_redis_data: {}
+  postgres_data: {}
+  postgres_data_backups: {}
+  redis_data: {}
 
 x-shared-django: &django
   user: "${UID:-1000}:${GID:-1000}"
-  image: brewgis_local_django
+  image: brewgis_django
   # HOME is pinned explicitly because the container's own /etc/passwd only
   # knows uid 1000 (dev-user). When UID/GID above are overridden to match
   # some other host user (e.g. CI's runner uid), the container has no
@@ -37,8 +37,8 @@ x-shared-django: &django
     - ./cache:/home/dev-user/.cache/
   env_file:
     - ./.env
-    - ./.envs/.local/.django
-    - ./.envs/.local/.postgres
+    - ./.envs/.django
+    - ./.envs/.postgres
   ulimits:
     nproc: 65535
     nofile: 65536
@@ -57,8 +57,8 @@ services:
     <<: *django
     build:
       context: .
-      dockerfile: ./compose/local/django/Dockerfile
-    container_name: brewgis_local_django
+      dockerfile: ./compose/django/Dockerfile
+    container_name: brewgis_django
     ports:
       - '8000:8000'
     command: /start
@@ -68,7 +68,7 @@ services:
     environment:
       HOME: /home/dev-user
       SQLMESH_HOME: /home/dev-user/.cache/sqlmesh
-      MARTIN_CONTAINER_NAME: brewgis_local_martin
+      MARTIN_CONTAINER_NAME: brewgis_martin
     # Docker socket: lets the app restart the martin container after an
     # analysis run creates new tables, since Martin only discovers tables
     # at process startup (no live-reload API). Scoped to this service only
@@ -96,8 +96,8 @@ services:
   postgres:
     build:
       context: .
-      dockerfile: ./compose/local/postgres/Dockerfile
-    container_name: brewgis_local_postgres
+      dockerfile: ./compose/postgres/Dockerfile
+    container_name: brewgis_postgres
     command:
       postgres
         -c work_mem=256MB -c shared_buffers=4GB -c effective_cache_size=12GB -c maintenance_work_mem=512MB
@@ -111,14 +111,14 @@ services:
     ports:
       - '5432:5432'
     volumes:
-      - brewgis_local_postgres_data:/var/lib/postgresql
-      - brewgis_local_postgres_data_backups:/backups
+      - postgres_data:/var/lib/postgresql
+      - postgres_data_backups:/backups
     env_file:
-      - ./.envs/.local/.postgres
+      - ./.envs/.postgres
 
   tipg:
     image: ghcr.io/developmentseed/tipg:latest
-    container_name: brewgis_local_tipg
+    container_name: brewgis_tipg
     environment:
       PORT: 8081
       TIPG_DEBUG: "True"
@@ -136,8 +136,8 @@ services:
 
   martin:
     image: ghcr.io/maplibre/martin:1.16.1
-    container_name: brewgis_local_martin
-    # -c points at a config file (see compose/local/martin/config.yaml)
+    container_name: brewgis_martin
+    # -c points at a config file (see compose/martin/config.yaml)
     # instead of using --default-srid/etc. as CLI flags, because we need
     # to override source_id_format to "{schema}.{table}" — brewgis
     # addresses tile sources that way, but Martin's zero-config default is
@@ -161,7 +161,7 @@ services:
     environment:
       DATABASE_URL: postgresql://rADfmsnMjDXKephNGWFkfdPkuSAjdASF:glm5bKLmVKkfdJaM9qkDREdor4y8uSEJZKZvLVwP5jeEX6YSnw6DnNG9EYvupSlg@postgres:5432/brewgis
     volumes:
-      - ./compose/local/martin:/martin-config:ro
+      - ./compose/martin:/martin-config:ro
     ports:
       - 3000
     depends_on:
@@ -169,15 +169,15 @@ services:
 
   redis:
     image: docker.io/redis:6
-    container_name: brewgis_local_redis
+    container_name: brewgis_redis
 
     volumes:
-      - brewgis_local_redis_data:/data
+      - redis_data:/data
 
 
   celeryworker:
     <<: *django
-    container_name: brewgis_local_celeryworker
+    container_name: brewgis_celeryworker
     command: /start-celeryworker
     # NOTE: a service-level `environment:` key REPLACES (not merges with)
     # the anchor's `environment:` block, so HOME and SQLMESH_HOME are
@@ -197,7 +197,7 @@ services:
 
   celerybeat:
     <<: *django
-    container_name: brewgis_local_celerybeat
+    container_name: brewgis_celerybeat
     depends_on:
       - redis
       - postgres
@@ -205,13 +205,13 @@ services:
 
   flower:
     <<: *django
-    container_name: brewgis_local_flower
+    container_name: brewgis_flower
     ports:
       - '5555:5555'
     command: /start-flower
   mcp:
     <<: *django
-    container_name: brewgis_local_mcp
+    container_name: brewgis_mcp
     depends_on:
       - redis
       - postgres
@@ -220,7 +220,7 @@ services:
     command: /start-mcp
   sqlmesh-ui:
     <<: *django
-    container_name: brewgis_local_sqlmesh_ui
+    container_name: brewgis_sqlmesh_ui
     depends_on:
       - postgres
     ports:

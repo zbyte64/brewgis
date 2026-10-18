@@ -66,7 +66,7 @@ TEST_PASSWORD = "map-render-parity-test-pw"  # noqa: S105
 
 FIXTURE_SCHEMA = "public"
 FIXTURE_TABLE = "map_render_parity_fixture"
-TIPG_CONTAINER_NAME = os.environ.get("TIPG_CONTAINER_NAME", "brewgis_local_tipg")
+TIPG_CONTAINER_NAME = os.environ.get("TIPG_CONTAINER_NAME", "brewgis_tipg")
 
 # Five well-separated squares, each a different graduated-symbology class,
 # over a quiet, empty stretch of the Sahara — chosen over open ocean (the
@@ -97,7 +97,7 @@ def _pg_dsn() -> str:
 
     Those are set correctly in every container regardless of how the
     process was started. Django's own DATABASE_URL, by contrast, is only
-    rewritten to the right host by compose/production/django/entrypoint —
+    rewritten to the right host by compose/django/entrypoint —
     a plain `docker exec`/`docker compose exec` shell (as this test is
     typically invoked from) does not run that entrypoint and would
     otherwise pick up the host-oriented value in `.env`.

@@ -323,8 +323,6 @@ brewgis/media/
 cache/
 .ipython/
 .env
-.envs/*
-!.envs/.local/
 # Vite build artifacts
 brewgis/static/js/brew-gis-map.js
 brewgis/static/js/brew-gis-map.js.map

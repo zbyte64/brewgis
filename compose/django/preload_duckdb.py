@@ -20,7 +20,7 @@ the same repository (``INSTALL x FROM ...`` is a no-op for an extension already
 installed from that origin, while a bare ``INSTALL x`` would refuse it as coming
 from another origin). Both binaries are built for one exact DuckDB version and
 are unsigned, so every connection that loads them must allow unsigned
-extensions and ``duckdb`` in requirements/base.txt must match
+extensions and ``duckdb`` in requirements.txt must match
 ``DUCKDB_VERSION``.
 """
 

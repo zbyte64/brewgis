@@ -26,7 +26,7 @@ All SQLMesh commands run through the Docker django container. The project root i
 
 ```bash
 # Full Docker invocation
-docker compose -f docker-compose.local.yml run --rm django sqlmesh -p brewgis/sqlmesh/ <command>
+docker compose -f docker-compose.yml run --rm django sqlmesh -p brewgis/sqlmesh/ <command>
 
 # Convenience Makefile targets
 make lint-sql          # sqlmesh lint

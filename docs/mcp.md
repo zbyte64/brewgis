@@ -34,10 +34,10 @@ stdin closes or SIGTERM.
 
 ```bash
 # Start the MCP service alongside other services
-docker compose -f docker-compose.local.yml up mcp
+docker compose -f docker-compose.yml up mcp
 ```
 
-The Docker service is configured in `docker-compose.local.yml` following the
+The Docker service is configured in `docker-compose.yml` following the
 same pattern as `celeryworker`.
 
 ## Auth Token
@@ -178,7 +178,7 @@ Add to your `claude_desktop_config.json`:
   "mcpServers": {
     "brewgis": {
       "command": "docker",
-      "args": ["compose", "-f", "docker-compose.local.yml", "run", "--rm", "mcp"],
+      "args": ["compose", "-f", "docker-compose.yml", "run", "--rm", "mcp"],
       "env": {
         "MCP_AUTH_TOKEN": "dev-token"
       }

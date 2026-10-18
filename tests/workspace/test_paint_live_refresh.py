@@ -45,7 +45,7 @@ reach) once its ``load`` event fires, which failed basemap tiles prevent.
 Requires the full local docker stack running (``docker compose up``) with
 Martin's docker socket mounted (so ``restart_martin()`` works) and
 ``CELERY_TASK_ALWAYS_EAGER=False`` in the running django/celeryworker
-containers (already brewgis's dev default — see ``.envs/.local/.django``).
+containers (already brewgis's dev default — see ``.envs/.django``).
 Run it with ``make test-live-stack``, or directly::
 
     pytest tests/workspace/test_paint_live_refresh.py -m live_stack -v

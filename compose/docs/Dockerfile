@@ -17,18 +17,17 @@ RUN apt-get update && apt-get install --no-install-recommends -y \
   && rm -rf /var/lib/apt/lists/*
 
 # Requirements are installed here to ensure they will be cached.
-COPY ./requirements /requirements
+COPY ./requirements.txt /requirements.txt
 
 # create python dependency wheels
 RUN pip wheel --no-cache-dir --wheel-dir /usr/src/app/wheels  \
-  -r /requirements/local.txt -r /requirements/production.txt \
-  && rm -rf /requirements
+  -r /requirements.txt \
+  && rm /requirements.txt
 
 
 # Python 'run' stage
 FROM python AS python-run-stage
 
-ARG BUILD_ENVIRONMENT
 ENV PYTHONUNBUFFERED=1
 ENV PYTHONDONTWRITEBYTECODE=1
 
@@ -55,7 +54,7 @@ COPY --from=python-build-stage /usr/src/app/wheels /wheels
 RUN pip install --no-cache /wheels/* \
   && rm -rf /wheels
 
-COPY ./compose/local/docs/start /start-docs
+COPY ./compose/docs/start /start-docs
 RUN sed -i 's/\r$//g' /start-docs
 RUN chmod +x /start-docs
 

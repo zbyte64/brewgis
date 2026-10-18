@@ -1,9 +1,0 @@
-# PRECAUTION: avoid production dependencies that aren't in development
-
--r base.txt
-
-psycopg[binary]==3.2.3  # https://github.com/psycopg/psycopg
-
-# Django
-# ------------------------------------------------------------------------------
-django-anymail==15.0  # https://github.com/anymail/django-anymail

@@ -142,7 +142,7 @@ brewgis/
   templates/           # Django templates + htmx partials
   static/js/           # Lit-based MapLibre GL JS web component
 config/
-  settings/            # Django settings (base, local, production, test)
+  settings.py          # Django settings (one config; DJANGO_TESTING adds test overrides)
   urls.py              # Root URLconf
   celery_app.py        # Celery app bootstrap
   wsgi.py              # WSGI config

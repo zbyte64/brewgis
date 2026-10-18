@@ -130,7 +130,7 @@ def purge_martin_cache(source_id: str) -> bool:
     """Drop *source_id*'s cached tiles via Martin's ``DELETE /cache/{source_id}``.
 
     *source_id* is Martin's ``{schema}.{table}`` source identifier (see
-    ``source_id_format`` in ``compose/local/martin/config.yaml``) — for a
+    ``source_id_format`` in ``compose/martin/config.yaml``) — for a
     scenario canvas view, its ``schema.view_name``.
 
     Requires ``endpoints.purge_cache: true`` in Martin's own config; a

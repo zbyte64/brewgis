@@ -35,7 +35,7 @@ jobs:
         with:
           python-version: '3.12'
           cache: 'pip'
-          cache-dependency-path: 'requirements/*.txt'
+          cache-dependency-path: 'requirements.txt'
 
       # Consider using pre-commit.ci for open source project
       #
@@ -61,7 +61,7 @@ jobs:
         uses: actions/cache@v6
         with:
           path: /tmp/.buildx-cache
-          key: ${{ runner.os }}-buildx-${{ hashFiles('requirements/*.txt', 'compose/**/Dockerfile') }}
+          key: ${{ runner.os }}-buildx-${{ hashFiles('requirements.txt', 'compose/**/Dockerfile') }}
           restore-keys: |
             ${{ runner.os }}-buildx-
 
@@ -212,7 +212,7 @@ jobs:
       # the two services that run application code. `docker compose run` also
       # reconciles its `depends_on` services, and here it recreates postgres —
       # starting django before that happens made its own boot-time
-      # `python manage.py migrate` (see compose/local/django/start) race the
+      # `python manage.py migrate` (see compose/django/start) race the
       # postgres restart, so the migration aborted with "Temporary failure in
       # name resolution", the container exited on `errexit`, and the dev server
       # never answered on :8000. `--no-deps` keeps this step from touching the

@@ -1,0 +1,103 @@
+--extra-index-url https://download.pytorch.org/whl/cpu
+
+python-slugify==8.0.4  # https://github.com/un33k/python-slugify
+Pillow==12.3.0  # https://github.com/python-pillow/Pillow
+argon2-cffi==23.1.0  # https://github.com/hynek/argon2_cffi
+whitenoise==6.8.2  # https://github.com/evansd/whitenoise
+redis==5.2.0  # https://github.com/redis/redis-py
+hiredis==3.0.0  # https://github.com/redis/hiredis-py
+celery==5.4.0  # pyup: < 6.0  # https://github.com/celery/celery
+django-celery-beat==2.9.0  # https://github.com/celery/django-celery-beat
+flower==2.0.1  # https://github.com/mher/flower
+psycopg2==2.9.10
+psycopg[binary]==3.2.3  # https://github.com/psycopg/psycopg
+pydantic==2.10.3
+mcp>=1.0.0  # https://github.com/modelcontextprotocol/python-sdk
+duckdb==1.5.6  # pinned to the arcgis extension's build (compose/django/preload_duckdb.py)
+docker==7.1.0  # https://github.com/docker/docker-py
+
+# Django
+# ------------------------------------------------------------------------------
+django>=6.0,<6.1  # pyup: < 6.1  # https://www.djangoproject.com/
+django-environ==0.11.2  # https://github.com/joke2k/django-environ
+django-model-utils==5.0.0  # https://github.com/jazzband/django-model-utils
+django-allauth[mfa]==65.16.0  # https://github.com/pennersr/django-allauth
+django-crispy-forms==2.6  # https://github.com/django-crispy-forms/django-crispy-forms
+crispy-bootstrap5==2026.3  # https://github.com/django-crispy-forms/crispy-bootstrap5
+django-ninja==1.6.2
+django-htmx==1.29.0  # https://github.com/adamchainz/django-htmx
+channels==4.3.2  # https://github.com/django/channels — websocket map events
+channels-redis==4.3.0  # https://github.com/django/channels_redis
+daphne==4.2.3  # https://github.com/django/daphne — ASGI server behind runserver
+
+numpy>=2.0,<3.0  # https://github.com/numpy/numpy (used by dbt Python models for T2/T3)
+cmap==0.7.2  # https://github.com/pyapp-kit/cmap — colormaps for layer symbology
+# Data Engineering
+geopandas[all]==1.0.1
+pandas==2.2.3
+polars[lazy,pyarrow]>=1.0,<2.0  # https://github.com/pola-rs/polars — fast DataFrame library for non-spatial pipelines
+GeoAlchemy2==0.20.0  # 0.19 and older build a bare sqlalchemy ColumnCollection (abstract since SQLAlchemy 2.1)
+dlt[postgres]>=1.0,<2.0  # https://github.com/dlt-hub/dlt — reliable data extraction from external APIs
+sqlmesh[postgres, duckdb]>=0.236.1,<1.0  # https://github.com/TobikoData/sqlmesh — data transformation framework (replaces dbt)
+statsmodels>=0.14,<1.0  # https://github.com/statsmodels/statsmodels — logit/regression for transport calibration
+weasyprint>=62,<71  # https://github.com/Kozea/WeasyPrint — HTML/CSS to PDF for reports
+
+rasterio>=1.3,<2.0  # https://github.com/rasterio/rasterio — GeoTIFF/COG reading for raster support
+
+lightgbm==4.6.0  # https://github.com/microsoft/LightGBM — gradient boosting for built form / DU / sqft models
+# PyTorch CPU-only for ResNet-34 image feature extraction (no CUDA needed)
+torch==2.14.0+cpu
+torchvision==0.29.0+cpu
+scikit-learn>=1.8,<2.0  # https://github.com/scikit-learn/scikit-learn — train_test_split, RandomizedSearchCV, MultiOutputRegressor
+
+# Development
+# ------------------------------------------------------------------------------
+Werkzeug[watchdog]==3.1.3 # https://github.com/pallets/werkzeug
+ipdb==0.13.13  # https://github.com/gotcha/ipdb
+watchfiles==1.0.0  # https://github.com/samuelcolvin/watchfiles
+fastapi>=0.115.0  # https://github.com/fastapi/fastapi — required by SQLMesh UI
+
+# Testing
+# ------------------------------------------------------------------------------
+basedpyright>=1.39  # https://github.com/DetachHead/basedpyright — fast type checker (replaces mypy)
+django-stubs==6.1.1  # https://github.com/typeddjango/django-stubs — stubs consumed by basedpyright
+pandas-stubs==2.2.3.241009  # https://github.com/pandas-dev/pandas-stubs
+pytest==8.3.3  # https://github.com/pytest-dev/pytest
+pytest-sugar==1.0.0  # https://github.com/Frozenball/pytest-sugar
+deal>=4.24  # https://github.com/life4/deal
+pytest-timeout>=2.3.0  # https://github.com/pytest-dev/pytest-timeout
+pytest-xdist>=3.6,<4.0  # https://github.com/pytest-dev/pytest-xdist
+hypothesis>=6.100  # https://github.com/HypothesisWorks/hypothesis
+pytestarch>=4.0,<5.0  # https://github.com/zyskarch/pytestarch — architecture guard rules
+
+
+# Documentation
+# ------------------------------------------------------------------------------
+sphinx==8.1.3  # https://github.com/sphinx-doc/sphinx
+sphinx-autobuild==2024.10.3 # https://github.com/GaretJax/sphinx-autobuild
+
+# Code quality
+# ------------------------------------------------------------------------------
+ruff>=0.11.0  # https://github.com/astral-sh/ruff
+coverage==7.16.2  # https://github.com/nedbat/coveragepy
+djlint==1.36.1  # https://github.com/Riverside-Healthcare/djLint
+sqlfluff>=3.3.0  # https://github.com/sqlfluff/sqlfluff
+sqlfluff-templater-dbt>=3.3.0  # https://github.com/sqlfluff/sqlfluff
+pre-commit==4.0.1  # https://github.com/pre-commit/pre-commit
+vulture>=2.16  # https://github.com/jendrikseipp/vulture — dead code detection
+
+# Django
+# ------------------------------------------------------------------------------
+factory-boy==3.3.1  # https://github.com/FactoryBoy/factory_boy
+
+django-debug-toolbar==6.2.0  # https://github.com/jazzband/django-debug-toolbar
+django-coverage-plugin==3.1.0  # https://github.com/nedbat/django_coverage_plugin
+pytest-django==4.9.0  # https://github.com/pytest-dev/pytest-django
+pytest-asyncio==1.3.0  # https://github.com/pytest-dev/pytest-asyncio — Channels consumer tests
+pytest-bdd==8.1.0  # https://github.com/pytest-dev/pytest-bdd
+pytest-playwright==0.7.0  # https://github.com/microsoft/pytest-playwright
+playwright==1.55.0  # https://github.com/microsoft/playwright-python
+
+# Interactive analysis
+# ------------------------------------------------------------------------------
+jupysql>=0.10,<1.0  # https://github.com/ploomber/jupysql — SQL magics for notebooks

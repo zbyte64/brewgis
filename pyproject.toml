@@ -26,7 +26,6 @@ dependencies = [
     "deal>=4.24",
     "django>=6.0,<6.1",
     "django-allauth[mfa]==65.16.0",
-    "django-anymail==15.0",
     "django-celery-beat==2.9.0",
     "django-template-lsp>=1.2,<2.0",
     "django-coverage-plugin==3.1.0",
@@ -36,7 +35,6 @@ dependencies = [
     "django-htmx==1.29.0",
     "django-model-utils==5.0.0",
     "django-ninja==1.6.2",
-    "django-redis==7.0.0",
     "django-stubs==6.1.1",
     "djlint==1.36.1",
     "dlt[postgres]>=1.0,<2.0",
@@ -229,7 +227,6 @@ ignore = [
 "brewgis/config/asgi.py" = ["PGH004"]
 "docs/conf.py" = ["PGH004"]
 "manage.py" = ["PGH004"]
-"merge_production_dotenvs_in_dotenv.py" = ["PGH004"]
 # Standard pytest fixture patterns
 "brewgis/conftest.py" = ["ANN001", "ARG001"]
 

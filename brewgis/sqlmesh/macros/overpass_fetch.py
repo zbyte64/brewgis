@@ -55,7 +55,7 @@ if TYPE_CHECKING:
 # second. Swapping this constant is the whole of a mirror move.
 #
 # Since 2026-10-17 the gateway loads the zbyte64/duckdb-httpfs v1.5.6-fix407
-# build (compose/local/django/preload_duckdb.py), which takes a 206 reply to a
+# build (compose/django/preload_duckdb.py), which takes a 206 reply to a
 # full download and falls back to a full download when a 206 carries no matching
 # Content-Range — the replies that failed overpass-api.de above — so the fetches
 # go to the official instance instead of a mirror.

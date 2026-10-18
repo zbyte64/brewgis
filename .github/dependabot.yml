@@ -15,8 +15,8 @@ updates:
   # support wildcards or recursively checking subdirectories. Check this issue for updates:
   # https://github.com/dependabot/dependabot-core/issues/2178
   - package-ecosystem: 'docker'
-    # Look for a `Dockerfile` in the `compose/local/django` directory
-    directory: 'compose/local/django/'
+    # Look for a `Dockerfile` in the `compose/django` directory
+    directory: 'compose/django/'
     # Every weekday
     schedule:
       interval: 'daily'
@@ -28,8 +28,8 @@ updates:
           - 'version-update:semver-minor'
 
   - package-ecosystem: 'docker'
-    # Look for a `Dockerfile` in the `compose/local/docs` directory
-    directory: 'compose/local/docs/'
+    # Look for a `Dockerfile` in the `compose/docs` directory
+    directory: 'compose/docs/'
     # Every weekday
     schedule:
       interval: 'daily'
@@ -41,22 +41,8 @@ updates:
           - 'version-update:semver-minor'
 
   - package-ecosystem: 'docker'
-    # Look for a `Dockerfile` in the `compose/local/node` directory
-    directory: 'compose/local/node/'
-    # Every weekday
-    schedule:
-      interval: 'daily'
-
-  - package-ecosystem: 'docker'
-    # Look for a `Dockerfile` in the `compose/production/aws` directory
-    directory: 'compose/production/aws/'
-    # Every weekday
-    schedule:
-      interval: 'daily'
-
-  - package-ecosystem: 'docker'
-    # Look for a `Dockerfile` in the `compose/production/django` directory
-    directory: 'compose/production/django/'
+    # Look for a `Dockerfile` in the `compose/postgres` directory
+    directory: 'compose/postgres/'
     # Every weekday
     schedule:
       interval: 'daily'
@@ -67,31 +53,9 @@ updates:
           - 'version-update:semver-major'
           - 'version-update:semver-minor'
 
-  - package-ecosystem: 'docker'
-    # Look for a `Dockerfile` in the `compose/production/postgres` directory
-    directory: 'compose/production/postgres/'
-    # Every weekday
-    schedule:
-      interval: 'daily'
-
-  - package-ecosystem: 'docker'
-    # Look for a `Dockerfile` in the `compose/production/traefik` directory
-    directory: 'compose/production/traefik/'
-    # Every weekday
-    schedule:
-      interval: 'daily'
-
-  - package-ecosystem: 'docker'
-    # Look for a `Dockerfile` in the `compose/production/nginx` directory
-    directory: 'compose/production/nginx/'
-    # Every weekday
-    schedule:
-      interval: 'daily'
-
-  # Enable version updates for Python/Pip - Production
+  # Enable version updates for Python/Pip
   - package-ecosystem: 'pip'
     # Look for a `requirements.txt` in the `root` directory
-    # also 'setup.cfg', 'runtime.txt' and 'requirements/*.txt'
     directory: '/'
     # Every weekday
     schedule:

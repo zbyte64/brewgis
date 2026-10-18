@@ -8,7 +8,7 @@ query the BrewGIS PostGIS database without writing Django views.
 
 ```bash
 # JupySQL is installed as a dev dependency:
-pip install -r requirements/local.txt  # includes jupysql
+pip install -r requirements.txt  # includes jupysql
 ```
 
 ## Connection

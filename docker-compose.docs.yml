@@ -1,12 +1,12 @@
 services:
   docs:
-    image: brewgis_local_docs
-    container_name: brewgis_local_docs
+    image: brewgis_docs
+    container_name: brewgis_docs
     build:
       context: .
-      dockerfile: ./compose/local/docs/Dockerfile
+      dockerfile: ./compose/docs/Dockerfile
     env_file:
-      - ./.envs/.local/.django
+      - ./.envs/.django
     volumes:
       - ./docs:/docs:z
       - ./config:/app/config:z

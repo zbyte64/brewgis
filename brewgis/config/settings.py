@@ -1,8 +1,7 @@
 """Django settings for Brew GIS.
 
-All environment-specific behavior flows from environment variables.
-Set DJANGO_DEBUG=True for development, DJANGO_TESTING=True for test suite,
-or neither for production.
+One configuration, the docker-compose stack's; DJANGO_TESTING=True switches
+on the test-suite overrides.
 """
 
 import socket
@@ -27,12 +26,9 @@ if READ_DOT_ENV_FILE:
 # MODE FLAGS
 # ==============================================================================
 # DJANGO_TESTING gates test-suite behavior (fast hashers, locmem email, etc.)
-# DJANGO_DEBUG gates dev behavior (debug toolbar, console email, etc.)
-# When neither is set, production settings apply.
 
 TESTING = env.bool("DJANGO_TESTING", default=False)
-# In test mode, DEBUG defaults to True so template debugging works.
-DEBUG = env.bool("DJANGO_DEBUG", default=TESTING)
+DEBUG = env.bool("DJANGO_DEBUG", default=True)
 
 # ==============================================================================
 # GENERAL
@@ -220,7 +216,7 @@ MANAGERS = ADMINS
 DJANGO_ADMIN_FORCE_ALLAUTH = env.bool("DJANGO_ADMIN_FORCE_ALLAUTH", default=False)
 
 # ==============================================================================
-# LOGGING — Baseline (overridden for production below)
+# LOGGING
 # ==============================================================================
 LOGGING = {
     "version": 1,
@@ -247,7 +243,7 @@ REDIS_URL = env("REDIS_URL", default="redis://redis:6379/0")
 REDIS_SSL = REDIS_URL.startswith("rediss://")
 
 # ==============================================================================
-# CACHES — Baseline (overridden per mode below)
+# CACHES
 # ==============================================================================
 CACHES = {
     "default": {
@@ -372,7 +368,7 @@ MAX_UPLOAD_SIZE = env.int("MAX_UPLOAD_SIZE", default=100 * 1024 * 1024)
 
 DATA_DOWNLOAD_CACHE_DIR = BASE_DIR / "planning"
 
-# Base URL of the `sqlmesh ui` web server (see compose/local/django/start-sqlmesh-ui),
+# Base URL of the `sqlmesh ui` web server (see compose/django/start-sqlmesh-ui),
 # used to link out to table/model details from the sqlmesh import pickers.
 SQLMESH_UI_URL = env("SQLMESH_UI_URL", default="http://localhost:8001")
 
@@ -380,9 +376,8 @@ SQLMESH_UI_URL = env("SQLMESH_UI_URL", default="http://localhost:8001")
 # ==============================================================================
 # MODE-SPECIFIC OVERRIDES
 # ==============================================================================
-# Test mode → fast hashers, locmem email, test auth key, no Dagster daemon.
-# Dev mode  → debug toolbar, console email, locmem cache, eager Celery.
-# Prod mode → SSL/HSTS, Redis cache, SMTP/Anymail, real Celery, admin logging.
+# Test mode → fast hashers, locmem email, test auth key.
+# Otherwise → the docker-compose stack: debug toolbar, console email.
 
 if TESTING:  # ── TEST MODE ────────────────────────────────────────────────
     SECRET_KEY = env(
@@ -395,17 +390,17 @@ if TESTING:  # ── TEST MODE ────────────────
     MEDIA_URL = "http://media.testserver"
     TOKEN_AUTH_KEY = env("TOKEN_AUTH_KEY", default="test-token-key-dev-only")
 
-elif DEBUG:  # ── DEV MODE ──────────────────────────────────────────────────
+else:
     SECRET_KEY = env(
         "DJANGO_SECRET_KEY",
         default="m42vNRcLUVAlAr68BB1CzaFwf60kiPM131JamMDe2lvWtS7nmfoJQuV6QcmlTH1t",
     )
     ALLOWED_HOSTS = ["localhost", "0.0.0.0", "127.0.0.1"]  # noqa: S104
 
-    # WhiteNoise — serve static files without collectstatic in dev.
+    # WhiteNoise — serve static files without collectstatic.
     INSTALLED_APPS = ["daphne", "whitenoise.runserver_nostatic", *INSTALLED_APPS[1:]]
 
-    # Email — print to console in dev.
+    # Email — print to console.
     EMAIL_BACKEND = env(
         "DJANGO_EMAIL_BACKEND",
         default="django.core.mail.backends.console.EmailBackend",
@@ -427,104 +422,3 @@ elif DEBUG:  # ── DEV MODE ────────────────�
     if env("USE_DOCKER") == "yes":
         hostname, _, ips = socket.gethostbyname_ex(socket.gethostname())
         INTERNAL_IPS += [".".join([*ip.split(".")[:-1], "1"]) for ip in ips]
-
-else:  # ── PRODUCTION MODE ─────────────────────────────────────────────────
-    SECRET_KEY = env("DJANGO_SECRET_KEY")  # required — no default
-    ALLOWED_HOSTS = env.list(
-        "DJANGO_ALLOWED_HOSTS", default=["github.com/zbyte64/brewgis"]
-    )
-
-    # Database connection pooling
-    DATABASES["default"]["CONN_MAX_AGE"] = env.int("CONN_MAX_AGE", default=60)
-
-    # Redis-backed cache
-    CACHES: dict[str, dict[str, object]] = {  # type: ignore[no-redef]
-        "default": {
-            "BACKEND": "django_redis.cache.RedisCache",
-            "LOCATION": REDIS_URL,
-            "OPTIONS": {
-                "CLIENT_CLASS": "django_redis.client.DefaultClient",
-                "IGNORE_EXCEPTIONS": True,
-            },
-        },
-    }
-
-    # Security — SSL, HSTS, secure cookies
-    SECURE_PROXY_SSL_HEADER = ("HTTP_X_FORWARDED_PROTO", "https")
-    SECURE_SSL_REDIRECT = env.bool("DJANGO_SECURE_SSL_REDIRECT", default=True)
-    SESSION_COOKIE_SECURE = True
-    SESSION_COOKIE_NAME = "__Secure-sessionid"
-    CSRF_COOKIE_SECURE = True
-    CSRF_COOKIE_NAME = "__Secure-csrftoken"
-    SECURE_HSTS_SECONDS = 60
-    SECURE_HSTS_INCLUDE_SUBDOMAINS = env.bool(
-        "DJANGO_SECURE_HSTS_INCLUDE_SUBDOMAINS", default=True
-    )
-    SECURE_HSTS_PRELOAD = env.bool("DJANGO_SECURE_HSTS_PRELOAD", default=True)
-    SECURE_CONTENT_TYPE_NOSNIFF = env.bool(
-        "DJANGO_SECURE_CONTENT_TYPE_NOSNIFF", default=True
-    )
-
-    # Static & Media storage
-    STORAGES = {
-        "default": {
-            "BACKEND": "django.core.files.storage.FileSystemStorage",
-        },
-        "staticfiles": {
-            "BACKEND": "whitenoise.storage.CompressedManifestStaticFilesStorage",
-        },
-    }
-
-    # Email — SMTP with Anymail
-    DEFAULT_FROM_EMAIL = env(
-        "DJANGO_DEFAULT_FROM_EMAIL",
-        default="Brew GIS <noreply@github.com/zbyte64/brewgis>",
-    )
-    SERVER_EMAIL = env("DJANGO_SERVER_EMAIL", default=DEFAULT_FROM_EMAIL)
-    EMAIL_SUBJECT_PREFIX = env("DJANGO_EMAIL_SUBJECT_PREFIX", default="[Brew GIS] ")
-    ACCOUNT_EMAIL_SUBJECT_PREFIX = EMAIL_SUBJECT_PREFIX
-    EMAIL_BACKEND = "django.core.mail.backends.smtp.EmailBackend"
-    INSTALLED_APPS += ["anymail"]
-    ANYMAIL: dict[str, object] = {}
-
-    # Admin URL from env (obscured in production)
-    ADMIN_URL = env("DJANGO_ADMIN_URL")
-
-    # Production logging — mail admins on 500s when DEBUG=False
-    LOGGING = {
-        "version": 1,
-        "disable_existing_loggers": False,
-        "filters": {
-            "require_debug_false": {"()": "django.utils.log.RequireDebugFalse"},
-        },
-        "formatters": {
-            "verbose": {
-                "format": "%(levelname)s %(asctime)s %(module)s %(process)d %(thread)d %(message)s",
-            },
-        },
-        "handlers": {
-            "mail_admins": {
-                "level": "ERROR",
-                "filters": ["require_debug_false"],
-                "class": "django.utils.log.AdminEmailHandler",
-            },
-            "console": {
-                "level": "DEBUG",
-                "class": "logging.StreamHandler",
-                "formatter": "verbose",
-            },
-        },
-        "root": {"level": "INFO", "handlers": ["console"]},
-        "loggers": {
-            "django.request": {
-                "handlers": ["mail_admins"],
-                "level": "ERROR",
-                "propagate": True,
-            },
-            "django.security.DisallowedHost": {
-                "level": "ERROR",
-                "handlers": ["console", "mail_admins"],
-                "propagate": True,
-            },
-        },
-    }

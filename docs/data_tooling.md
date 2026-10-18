@@ -168,7 +168,7 @@ Current usage:
 ### Setup
 
 ```bash
-pip install -r requirements/local.txt  # includes jupysql
+pip install -r requirements.txt  # includes jupysql
 ```
 
 ### Connection

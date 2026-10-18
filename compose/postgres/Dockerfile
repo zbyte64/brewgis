@@ -6,4 +6,4 @@ RUN apt-get update && apt-get install --no-install-recommends -y \
     && rm -rf /var/lib/apt/lists/*
 
 # Copy initialization scripts
-COPY ./compose/local/postgres/init-pgrouting.sql /docker-entrypoint-initdb.d/init-pgrouting.sql
+COPY ./compose/postgres/init-pgrouting.sql /docker-entrypoint-initdb.d/init-pgrouting.sql

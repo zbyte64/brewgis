@@ -9,7 +9,7 @@
 # any missing PG schemas.
 #
 # Prerequisites:
-#   - Docker stack is running (docker compose -f docker-compose.local.yml up)
+#   - Docker stack is running (docker compose -f docker-compose.yml up)
 #   - planning/urbanfootprint-sacog-source-db.sql.gz exists
 
 set -o errexit
@@ -19,6 +19,6 @@ set -o nounset
 cd "$(dirname "$0")/.."
 
 echo "=== Restoring UrbanFootprint SACOG demo database ==="
-docker compose -f docker-compose.local.yml run --rm django \
+docker compose -f docker-compose.yml run --rm django \
   python manage.py restore_demo_db
 echo "=== Done ==="

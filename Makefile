@@ -255,7 +255,7 @@ setup:  ## Install git hooks and local dependencies
 	@echo "    'pip install basedpyright'):"
 	@echo "    make typecheck"
 	@echo ""
-	@echo "==> Done. Make sure to 'pip install -r requirements/local.txt' if developing on host."
+	@echo "==> Done. Make sure to 'pip install -r requirements.txt' if developing on host."
 
 
 # ─────────────────────────────────────────────

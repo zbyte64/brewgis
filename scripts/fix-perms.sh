@@ -5,7 +5,7 @@
 # owned by root. This script re-owns them to match the host user.
 #
 # Usage:
-#   docker compose -f docker-compose.local.yml run --rm django bash /app/scripts/fix-perms.sh
+#   docker compose -f docker-compose.yml run --rm django bash /app/scripts/fix-perms.sh
 #
 # Or from inside the container:
 #   /app/scripts/fix-perms.sh

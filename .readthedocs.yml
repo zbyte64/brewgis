@@ -17,4 +17,4 @@ sphinx:
 # Python requirements required to build your docs
 python:
   install:
-    - requirements: requirements/local.txt
+    - requirements: requirements.txt

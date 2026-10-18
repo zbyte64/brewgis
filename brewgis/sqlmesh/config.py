@@ -66,7 +66,7 @@ _DUCKDB_TMP = os.environ.get(
     "/app/planning/duckdb_tmp",
 )
 # Local DuckDB extension repository the django image stages the httpfs fork and
-# the arcgis extension in (compose/local/django/preload_duckdb.py). Neither build
+# the arcgis extension in (compose/django/preload_duckdb.py). Neither build
 # is in a DuckDB repository, so the gateway installs them FROM here — a no-op
 # once the image has installed them from the same origin.
 _DUCKDB_EXTENSION_REPOSITORY = "/opt/duckdb-extensions"
