@@ -10,7 +10,7 @@ celery==5.4.0  # pyup: < 6.0  # https://github.com/celery/celery
 django-celery-beat==2.9.0  # https://github.com/celery/django-celery-beat
 flower==2.0.1  # https://github.com/mher/flower
 psycopg2==2.9.10
-psycopg[binary]==3.2.3  # https://github.com/psycopg/psycopg
+psycopg[binary]==3.3.6  # https://github.com/psycopg/psycopg
 pydantic==2.10.3
 mcp>=1.0.0  # https://github.com/modelcontextprotocol/python-sdk
 duckdb==1.5.6  # pinned to the arcgis extension's build (compose/django/preload_duckdb.py)
