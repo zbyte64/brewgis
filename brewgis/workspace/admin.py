@@ -8,7 +8,6 @@ from .models import DataSource
 from .models import DataSourceCategory
 from .models import PaintConstraint
 from .models import PaintedCanvas
-from .models import POICache
 from .models import Scenario
 from .models import Workspace
 
@@ -126,11 +125,3 @@ class DataSourceAdmin(admin.ModelAdmin):
     search_fields = ("name", "provider", "description")
     list_editable = ("is_importable",)
     autocomplete_fields = ("category",)
-
-
-@admin.register(POICache)
-class POICacheAdmin(admin.ModelAdmin):
-    list_display = ("workspace", "name", "source", "fetched_at")
-    list_filter = ("name", "source", "workspace")
-    search_fields = ("name",)
-    raw_id_fields = ("workspace",)

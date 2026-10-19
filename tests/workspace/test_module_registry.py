@@ -10,20 +10,20 @@ from unittest.mock import patch
 
 import pytest
 
+from brewgis.workspace.analysis.module_registry import ANALYSIS_PARAMETERS
 from brewgis.workspace.analysis.module_registry import MODULE_DEPENDENCIES
 from brewgis.workspace.analysis.module_registry import MODULE_RESULT_TABLES
 from brewgis.workspace.analysis.module_registry import MODULE_SQLMESH_SELECTORS
 from brewgis.workspace.analysis.module_registry import TABLE_PALETTE
 from brewgis.workspace.analysis.module_registry import TABLE_PRIMARY_COLUMN
-from brewgis.workspace.analysis.module_registry import analysis_parameter_defaults
 from brewgis.workspace.analysis.module_registry import get_default_palette
 from brewgis.workspace.analysis.module_registry import get_module_label
 from brewgis.workspace.analysis.module_registry import get_result_table_names
 from brewgis.workspace.analysis.module_registry import model_fqn
 from brewgis.workspace.analysis.module_registry import module_for_result_table
 from brewgis.workspace.analysis.module_registry import resolve_module_order
+from brewgis.workspace.palettes import DIVERGING_NAMES
 from brewgis.workspace.palettes import PALETTES
-from brewgis.workspace.palettes import get_diverging_names
 from tests.dbt_math import reference
 
 
@@ -163,7 +163,7 @@ class TestGetDefaultPalette:
 
     def test_signed_metrics_use_a_diverging_palette(self) -> None:
         """Metrics that read either side of zero diverge around it."""
-        diverging = set(get_diverging_names())
+        diverging = set(DIVERGING_NAMES)
         for table in ("core_increment", "agriculture", "fiscal_net_impact"):
             assert get_default_palette(table) in diverging, table
 
@@ -301,7 +301,7 @@ class TestModeChoiceParameterDefaults:
     """
 
     def test_bike_and_vehicle_defaults_match_the_reference(self) -> None:
-        defaults = analysis_parameter_defaults()
+        defaults = {p.name: p.default for p in ANALYSIS_PARAMETERS}
         assert defaults["transport_vehicles_per_capita"] == 0.8
         for name, value in reference.BIKE_PARAMETER_DEFAULTS.items():
             assert defaults[name] == value, name

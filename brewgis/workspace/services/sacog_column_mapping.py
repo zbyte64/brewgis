@@ -29,27 +29,6 @@ logger = logging.getLogger(__name__)
 # ``sacog_v1`` workspace imports and ``compare_sacog_basemap`` compares against.
 V1_BASE_TABLE = "public.sac_cnty_region_base_canvas"
 
-# Columns that exist in v1 but have no BaseCanvasSchema equivalent (kept for reference)
-V1_EXTRA_COLUMNS = frozenset(
-    {
-        "geography_id",
-        "source_id",
-        "region_lu_code",
-        "sqft_parcel",
-        "acres_parcel",
-        "developable_proportion",
-        "dev_pct",
-        "density_pct",
-        "gross_net_pct",
-        "dirty_flag",
-        "jurisdiction",
-        "county",
-        "clear_flag",
-        "created",
-        "updated",
-    }
-)
-
 
 @dataclass(frozen=True)
 class ColumnMapping:
@@ -215,20 +194,6 @@ V3_TO_MAPPING: dict[str, ColumnMapping] = {
 }
 
 
-def get_mapping(v3_column: str) -> ColumnMapping | None:
-    """Return the ColumnMapping for a BaseCanvasSchema column name."""
-    return V3_TO_MAPPING.get(v3_column)
-
-
-def v1_columns_present() -> list[str]:
-    """Return list of v1 column names that successfully map to BaseCanvasSchema."""
-    return [
-        m.v1_column
-        for m in ALL_MAPPINGS
-        if m.v1_column and m.v1_column != "geography_id"
-    ]
-
-
 # Columns whose values must come from the source's own parcel identity rather
 # than from ``ALL_MAPPINGS``. Every projection a workspace adopts has to carry
 # the source parcel key itself — the convention the comparison pipeline states
@@ -328,20 +293,3 @@ def build_materialized_select_sql(v1_table: str = V1_BASE_TABLE) -> str:
         )
         select_parts.append(f"    CAST({expression} AS {pg_type}) AS {_quote(v3_col)}")
     return "SELECT\n" + ",\n".join(select_parts) + f"\nFROM {v1_table}"
-
-
-def get_v1_columns_for_verification() -> dict[str, str]:
-    """Return ``{v3_column: v1_column}`` for columns that have a direct v1 counterpart.
-
-    The identity columns are left out: they are produced rather than copied
-    (the parcel key from ``geography_id``, the geometry from ``wkb_geometry``).
-    """
-    result: dict[str, str] = {}
-    for mapping in ALL_MAPPINGS:
-        if (
-            mapping.v1_column
-            and mapping.v3_column
-            and mapping.v1_column not in ("geography_id", "source_id", "wkb_geometry")
-        ):
-            result[mapping.v3_column] = mapping.v1_column
-    return result

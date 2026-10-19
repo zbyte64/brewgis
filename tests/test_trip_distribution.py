@@ -21,9 +21,9 @@ from hypothesis import assume
 from hypothesis import given
 from hypothesis import strategies as st
 
+from brewgis.sqlmesh.models.python._gravity_model import _gravity_model
 from brewgis.sqlmesh.models.python._network_zones import zone_distance_matrix
 from brewgis.sqlmesh.models.python._network_zones import zone_indices
-from brewgis.workspace.analysis.transport import _gravity_model
 
 
 class TestGravityModel:

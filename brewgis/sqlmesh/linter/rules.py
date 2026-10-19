@@ -1359,9 +1359,6 @@ _BASE_SCHEMAS = frozenset(
 )
 
 
-_AGGREGATE_FUNCS = frozenset({"AVG", "SUM", "COUNT", "MIN", "MAX"})
-
-
 def _is_comma_join(query: exp.Expr) -> bool:
     """Check if FROM clause contains comma-separated tables (implicit CROSS JOIN)."""
     for join in query.find_all(exp.Join):

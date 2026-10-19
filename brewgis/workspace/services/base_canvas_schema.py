@@ -312,15 +312,6 @@ def _get_cache() -> dict:
     return _cache
 
 
-def invalidate_cache() -> None:
-    """Force a reload of the schema cache on next access.
-
-    Call this after migrations or data changes to ``BaseCanvasColumn``.
-    """
-    global _cache
-    _cache = None
-
-
 # ── Re-export: BaseCanvasSchema class with same API ───────────────────
 
 
@@ -456,12 +447,3 @@ class BaseCanvasSchema:
     def avg_columns(cls) -> list[str]:
         """Columns that should be area-weighted averaged during spatial allocation."""
         return cls.group_by_aggregation_hint().get("avg", [])
-
-    @classmethod
-    def by_metatype(cls, metatype: str) -> list[str]:
-        """Return column names matching the given metatype."""
-        return [
-            col_def.name
-            for col_def in cls._COLUMNS.values()
-            if col_def.metatype == metatype
-        ]

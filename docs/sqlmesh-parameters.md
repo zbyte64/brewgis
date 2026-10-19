@@ -519,50 +519,20 @@ utility out of range: it produced 26.9 % auto / 50.6 % walk for the Elk Grove
 demo, an implausible split (the reference implementation lands on 84.5 % auto for
 the same area, see `planning/uf_vmt_comparison_20260929.md`). The port above
 lands on 83.3 % auto / 9.2 % walk / 4.5 % transit / 1.8 % bike / 1.2 % internal
-capture for that scenario. Note that the four sigmoids are applied
-independently, so they can over-claim on a pathological parcel; auto's zero clamp
-absorbs it, and the shares sum to exactly 1 wherever the clamp does not bind.
+capture for that scenario. The walk, transit and bike sigmoids are applied independently, so they can
+over-claim on a saturated parcel; transit and bike are then capped at the trips
+the modes before them left (capture, walk, transit, bike), so every purpose's
+split sums to exactly 1.
 
 ---
 
 ## 4. Macro Parameters
 
-### 4.1 `allocation.py`
-
-| Macro | Parameter | Default | Purpose |
-|---|---|---|---|
-| `compute_applied_acres` | `dev_pct`, `gross_net_pct` | — | **Unused** since `core_end_state` stopped deriving acres from the built form |
-| `compute_dwelling_units` | — | — | **Unused**: `core_end_state` reads `du`/`du_*` from the base layer |
-| `compute_population` | — | — | **Unused**: `core_end_state` reads `pop` from the base layer |
-| `compute_households` | — | — | **Unused**: `core_end_state` reads `hh` from the base layer (uses `1.0 - vacancy_rate/100`) |
-| `compute_employment` | — | — | **Unused**: `core_end_state` reads `emp` from the base layer |
-| `compute_floor_area` | — | `43560` | **Unused**: `core_end_state` reads `bldg_area_*` from the base layer (acres → sqft, physical constant) |
-| `classify_land_dev_category` | `urban_threshold` | `10.0` du/acre | **Unused**: `core_end_state` reads `land_development_category` from the base layer (**History**: SACOG-typical threshold) |
-| | `compact_threshold` | `5.0` du/acre | |
-| | `standard_threshold` | `1.0` du/acre | |
-
-### 4.2 `spatial_ops.py`
+### 4.1 `spatial_ops.py`
 
 | Macro | Arguments | Purpose |
 |---|---|---|
 | `constraint_min_overlap_sqm` | — | The minimum overlap (`5.0` m²) a constraint piece must have to count; smaller pieces are boundary noise (UrbanFootprint's own threshold) |
-| `compute_allocation_weight` | `source_alias`, `target_alias`, `source_geom`, `target_geom` | Area-weighted allocation factor (intersection area ÷ source area) between two geometries, both projected to `wm_srid` (default `3857`) |
-
-### 4.3 `gen_scenario_blueprints.py`
-
-Default built-form COALESCE values:
-
-| Column | Default | Notes |
-|---|---|---|
-| `household_size` | `2.5` | Fallback when built_forms missing household_size |
-| `vacancy_rate` | `5.0` | % |
-| All others | `0.0` | |
-
-### 4.4 `generic_tests.py`
-
-| Macro | Parameter | Default | Purpose |
-|---|---|---|---|
-| `test_proportion_sum` | `tolerance` | `0.01` | Max deviation from 1.0 for proportion assertions |
 
 ---
 
@@ -613,7 +583,6 @@ use-code schema changes.
 | `assert_bft_tier2_sfr_lot_bound` | 0.15 acres | Same boundary |
 | `assert_bft_landuse_A1_to_detsf` | sigmoid > 0.5, lot >= 0.08ac | Uses same 0.04/225 sigmoid params |
 | `assert_aggregate_consistency` | `> 0.5` | Employment sector sum tolerance |
-| `test_proportion_sum` tolerance | `0.01` | Mode share sum tolerance |
 
 ---
 

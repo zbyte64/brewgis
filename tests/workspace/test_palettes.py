@@ -9,12 +9,10 @@ from cmap import Colormap
 
 from brewgis.workspace.palettes import MAX_CATEGORICAL_COLORS
 from brewgis.workspace.palettes import PALETTES
+from brewgis.workspace.palettes import QUALITATIVE_NAMES
 from brewgis.workspace.palettes import _relative_luminance
 from brewgis.workspace.palettes import get_all_names
-from brewgis.workspace.palettes import get_diverging_names
 from brewgis.workspace.palettes import get_palette
-from brewgis.workspace.palettes import get_qualitative_names
-from brewgis.workspace.palettes import get_sequential_names
 from brewgis.workspace.palettes import preview_swatches
 from brewgis.workspace.palettes import sample_palette
 
@@ -32,24 +30,6 @@ class TestPaletteRegistry:
         with pytest.raises(KeyError, match="does_not_exist"):
             get_palette("does_not_exist")
 
-    def test_get_qualitative_names(self) -> None:
-        names = get_qualitative_names()
-        assert "material_set1" in names
-        assert "d3_category10" in names
-        assert "blues" not in names  # blues is sequential
-
-    def test_get_sequential_names(self) -> None:
-        names = get_sequential_names()
-        assert "blues" in names
-        assert "viridis" in names
-        assert "material_set1" not in names
-
-    def test_get_diverging_names(self) -> None:
-        names = get_diverging_names()
-        assert "rdbu" in names
-        assert "spectral" in names
-        assert "blues" not in names
-
     def test_get_all_names(self) -> None:
         all_names = get_all_names()
         assert len(all_names) > 20
@@ -66,7 +46,7 @@ class TestPaletteRegistry:
 
     def test_qualitative_palettes_use_nearest_interpolation(self) -> None:
         """Categorical palettes must not blend between unrelated classes."""
-        for name in get_qualitative_names():
+        for name in QUALITATIVE_NAMES:
             assert get_palette(name).category == "qualitative"
             assert get_palette(name).interpolation == "nearest"
 
@@ -82,7 +62,7 @@ class TestPaletteRegistry:
         8-12 stops and so repeat themselves."""
         colormap = get_palette("glasbey")
         assert colormap.category == "qualitative"
-        assert "glasbey" in get_qualitative_names()
+        assert "glasbey" in QUALITATIVE_NAMES
         assert len(colormap.color_stops) == MAX_CATEGORICAL_COLORS
         assert len(set(sample_palette(colormap, 40))) == 40
 

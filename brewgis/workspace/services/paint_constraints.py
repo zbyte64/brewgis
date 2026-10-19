@@ -92,37 +92,6 @@ def _evaluate(
     return op_map.get(operator, False)
 
 
-def check_paint_value(
-    workspace: Workspace,
-    column: str,
-    value: float | None,
-    *,
-    feature_id: str = "",
-) -> list[ConstraintViolation]:
-    """Evaluate all constraints for a single column/value pair.
-
-    Returns a list of violations (empty if none triggered).
-    """
-    constraints = PaintConstraint.objects.filter(
-        workspace=workspace,
-        column=column,
-    )
-
-    return [
-        ConstraintViolation(
-            feature_id=feature_id,
-            column=column,
-            operator=constraint.operator,
-            constraint_value=constraint.value,
-            painted_value=value,
-            message=constraint.message,
-            severity=constraint.severity,
-        )
-        for constraint in constraints
-        if _evaluate(constraint.operator, constraint.value, value)
-    ]
-
-
 def check_paint_batch(
     workspace: Workspace,
     paint_map: dict[str, dict[str, float | None]],
@@ -134,12 +103,11 @@ def check_paint_batch(
     Returns a ``ConstraintResult`` with all violations and a ``blocked``
     flag that is True if *any* blocking constraint was violated.
 
-    Fetches each distinct column's constraints once up front rather than
-    calling :func:`check_paint_value` (one query per feature/column pair) —
-    ``PaintConstraint`` rows are workspace-level, so the same handful of
-    rules apply to every feature; a large selection would otherwise mean
-    thousands of near-identical queries for what's really a small, reusable
-    rule set.
+    Fetches each distinct column's constraints once up front rather than one
+    query per feature/column pair — ``PaintConstraint`` rows are
+    workspace-level, so the same handful of rules apply to every feature; a
+    large selection would otherwise mean thousands of near-identical queries
+    for what's really a small, reusable rule set.
     """
     columns_touched = {
         column

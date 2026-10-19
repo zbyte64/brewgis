@@ -1013,9 +1013,7 @@ def _compute_intersection_density(target_table: str) -> None:
 def _impute_nulls(target_table: str) -> None:
     """Impute NULL values: set remaining NULLs to their schema defaults.
 
-    Uses a COALESCE-to-default per column.  The old pandas version
-    iterated ~70 columns in a Python for-loop through
-    ``ImputationEngine.national_rule()`` — this does the same in SQL.
+    Uses a COALESCE-to-default per column.
     """
     q = _q
     with connection.cursor() as cursor:
@@ -1096,9 +1094,3 @@ def _validate(target_table: str) -> None:
 
     schema, table = target_table.split(".")
     logger.info("  GX validation passed")
-
-
-def _validate_synthetic(target_table: str) -> None:
-    """Post-validate synthetic parcels (raises on failure)."""
-    schema_name, table_name = target_table.split(".")
-    logger.info("  GX synthetic_parcels validation passed")

@@ -15,9 +15,7 @@ from typing import TYPE_CHECKING
 from typing import Any
 
 from django.db import connection
-from sqlmesh.core.constants import EPOCH
 from sqlmesh.core.context import Context
-from sqlmesh.utils import Verbosity
 from sqlmesh.utils.errors import ConflictingPlanError
 
 from brewgis.sqlmesh.config import config_factory
@@ -496,105 +494,3 @@ def _resolve_restatements(
     if restate_models is True:
         return _models_in_environment(context, environment)
     return list(restate_models) if restate_models else None
-
-
-def run_sqlmesh_run(
-    environment: str | None = None,
-    *,
-    select: list[str] | None = None,
-    start: str | None = None,
-    end: str | None = None,
-):
-    """Run ``sqlmesh run`` for the given environment.
-
-    Executes any models that have not yet been run for the specified
-    interval (or directly if no environment is specified).
-    Audits are checked during execution as part of the model DDL ``audits`` clause.
-
-    Args:
-        environment: Target environment name (None = execute directly).
-        select: Optional list of model selectors.
-        start: Start date.
-        end: End date.
-    """
-    context = get_context()
-    logger.info("SQLMesh running for environment '%s'", environment)
-    return context.run(
-        environment=environment,
-        start=start,
-        end=end,
-        select_models=select,
-    )
-
-
-def run_sqlmesh_test(
-    *,
-    models: list[str] | None = None,
-    verbose: bool = False,
-):
-    """Run SQLMesh unit tests.
-
-    Args:
-        models: Optional list of model names to test.
-        verbose: Enable verbose test output.
-    """
-    context = get_context()
-    result = context.test(
-        match_patterns=models,
-        verbosity=Verbosity.VERBOSE if verbose else Verbosity.DEFAULT,
-    )
-    passed = result.count("FAILED") == 0 if isinstance(result, str) else True
-    logger.info("SQLMesh test completed")
-    return passed
-
-
-def run_sqlmesh_table_diff(
-    source_env: str,
-    target_env: str,
-    model: str | None = None,
-):
-    """Compare tables between two SQLMesh environments.
-
-    Args:
-        source_env: Source environment name.
-        target_env: Target environment name.
-        model: Optional model name to compare (compares all if None).
-
-    Returns:
-        Dict with diff results.
-    """
-    context = get_context()
-    return context.table_diff(
-        source=source_env,
-        target=target_env,
-        model=model,
-    )
-
-
-def evaluate_model(
-    model_name: str,
-    environment: str | None = None,
-    limit: int = 10,
-):
-    """Evaluate a single model and return its output.
-
-    Useful for ad-hoc verification during migration.
-
-    Args:
-        model_name: Fully qualified model name.
-        environment: Optional environment to evaluate in.
-        limit: Row limit.
-
-    Returns:
-        DataFrame with model output.
-    """
-    context = get_context()
-    return context.evaluate(
-        start=EPOCH,
-        end=EPOCH,
-        execution_time=EPOCH,
-        model_or_snapshot="snapshot",
-        model_name=model_name,
-        environment=environment,
-        limit=limit,
-    )

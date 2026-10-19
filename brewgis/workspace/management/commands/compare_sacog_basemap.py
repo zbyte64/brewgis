@@ -11,14 +11,12 @@ from __future__ import annotations
 
 import datetime
 import logging
-import re
 from pathlib import Path
 from typing import TYPE_CHECKING
 from typing import Any
 
 if TYPE_CHECKING:
     from sqlalchemy import Engine
-    from sqlmesh import Context
 
 from django.conf import settings
 from django.core.management.base import BaseCommand
@@ -35,120 +33,12 @@ LOG_FILE_PATH = CACHE_DIR / f"sacog_comparison_{_TIMESTAMP}.log"
 V1_BASE_CANVAS = "sac_cnty_region_base_canvas"
 V1_PARCELS = "sac_cnty_region_existing_land_use_parcels"
 logger = logging.getLogger(__name__)
-STATE_FIPS = "06"
-COUNTY_FIPS = "067"
-SACOG_COUNTIES = ["067", "005", "017", "061"]  # Sacramento, Amador, El Dorado, Placer
 # Vintage data years matching the SACOG v1 reference (2008-2012 era)
 ACS_YEAR = 2013  # ACS 5-year 2009-2013 (earliest with block group API support)
 LEHD_YEAR = 2008  # LODES 2008 (employment stats)
 NLCD_YEAR = 2011  # NLCD 2011 (closest to 2008-2012)
 
 LOCAL_SRID = 3310
-
-_SNAPSHOT_HASH_CALL = re.compile(r"@snapshot_hash\(\s*'([^']*)'\s*\)")
-
-
-def _expand_snapshot_hash(sql_text: str, hash_suffix: str) -> str:
-    """Resolve ``@snapshot_hash('prefix_')`` to ``prefix_<hash_suffix>``.
-
-    ``hash_suffix`` is the version suffix of the physical table name, e.g.
-    ``"sqlmesh__assessor.assessor__sacog_assessor_parcels__962285576"`` →
-    ``962285576``.
-    """
-    return _SNAPSHOT_HASH_CALL.sub(
-        lambda match: f"{match.group(1)}{hash_suffix}", sql_text
-    )
-
-
-def _repair_missing_indexes(
-    context: Context, environment: str, model_fqns: list[str]
-) -> int:
-    """Scan each model's post_statements for CREATE INDEX, check pg_indexes,
-    and create any indexes missing on the physical table.
-
-    Uses the SQLMesh context to read the live model definition (no hardcoded
-    index lists).  Resolves ``@this_model`` to the physical table name via the
-    latest snapshot's ``table_name()`` — the same version the plan will backfill.
-    """
-    engine = get_engine()
-    repaired = 0
-
-    for fqn in model_fqns:
-        model = context.get_model(fqn)
-        if model is None:
-            continue
-        raw_statements = getattr(model, "post_statements", [])
-        if not raw_statements:
-            continue
-
-        snapshot = context.get_snapshot(fqn, raise_if_missing=False)
-        if snapshot is None or not snapshot.version:
-            logger.debug("No snapshot for %s — skipping", fqn)
-            continue
-        physical_table = snapshot.table_name()
-        # Verify the physical table exists — the snapshot can exist in state
-        # (from a previous plan) without the table having been created yet.
-        schema, table = physical_table.split(".", 1)[-1].rsplit(".", 1)
-        with engine.connect() as conn:
-            table_exists = conn.execute(
-                text(
-                    "SELECT 1 FROM pg_class c"
-                    " JOIN pg_namespace n ON n.oid = c.relnamespace"
-                    " WHERE n.nspname = :schema AND c.relname = :table"
-                ),
-                {"schema": schema, "table": table},
-            ).fetchone()
-        if not table_exists:
-            logger.debug("Physical table %s not yet created — skipping", physical_table)
-            continue
-        for stmt in raw_statements:
-            # Convert SQLGlot expression to SQL text
-            sql_text = stmt.sql(dialect="postgres")
-            # Strip /* post_statements */ comment prefix if present
-            sql_text = re.sub(r"^/\*[^*]*\*/\s*", "", sql_text).strip()
-            if not sql_text.upper().startswith("CREATE INDEX"):
-                continue
-
-            # Resolve @this_model → physical table
-            rendered = sql_text.replace("@this_model", physical_table)
-            # Resolve @snapshot_hash('prefix_') → 'prefix_<hash>'
-            rendered = _expand_snapshot_hash(
-                rendered, physical_table.rsplit("__", 1)[-1]
-            )
-            m = re.search(r"IF\s+NOT\s+EXISTS\s+(\S+)", rendered)
-            if not m:
-                continue
-            idx_name = m.group(1).strip('"')
-
-            # Scope to the specific physical table — the index name alone
-            # can match an older snapshot version that has it.
-            # snapshot.table_name() may return 3-part (catalog.schema.table)
-            # or 2-part (schema.table); pg_indexes uses 2-part only.
-            table_2part = physical_table.split(".", 1)[-1]
-            schema, table = table_2part.rsplit(".", 1)
-            with engine.begin() as conn:
-                row = conn.execute(
-                    text(
-                        "SELECT 1 FROM pg_indexes"
-                        " WHERE indexname = :idx"
-                        "   AND schemaname = :schema"
-                        "   AND tablename = :table"
-                    ),
-                    {"idx": idx_name, "schema": schema, "table": table},
-                ).fetchone()
-                if row is None:
-                    logger.warning(
-                        "Missing index %s on %s (%s) — creating",
-                        idx_name,
-                        fqn,
-                        physical_table,
-                    )
-                    conn.execute(text(rendered))
-                    repaired += 1
-
-    if repaired:
-        logger.info("Repaired %d missing index(es)", repaired)
-    return repaired
 
 
 class _TeeOutput:
@@ -651,37 +541,6 @@ class Command(BaseCommand):
             val = totals.get(v3_col) or totals.get(v1_col)
             if val is not None:
                 self.stdout.write(f"    {label_name:25s} {val:>14,.0f}")
-
-    def _generate_report(
-        self,
-        ref: dict[str, float],
-        brew: dict[str, float],
-        etl_result: dict,
-        quick: bool,
-        correlations: dict[str, float] | None = None,
-        weighted_means: dict[str, float] | None = None,
-    ):
-        """Generate the markdown comparison report (thin wrapper for backward compat).
-
-        Legacy method expected by test suite. Delegates to
-        ``_generate_report_markdown``.
-        """
-        # Lazy imports — avoid loading analysis modules at import time
-        import brewgis.workspace.management.commands.compare_sacog_basemap as _cmd_mod
-        from brewgis.workspace.services.comparison_helpers import (
-            _generate_report_markdown,
-        )
-
-        report_path = _cmd_mod.REPORT_PATH
-
-        _generate_report_markdown(
-            ref,
-            brew,
-            correlations=correlations or {},
-            weighted_means=weighted_means or {},
-            output_path=report_path,
-            quick=quick,
-        )
 
 
 def _collect_diagnostics(

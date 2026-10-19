@@ -32,7 +32,7 @@ own schema: SQLMesh names a model's physical object
 convention, so a short fixed schema keeps
 ``spatial_filter__filter_<pk>__<hash>`` and ``spatial_filter__src_<hash>__<hash>``
 far inside Postgres' 63-character identifier limit for any pk. That schema is
-excluded from the table catalog (``services.sqlmesh_tables._EXCLUDED_SCHEMAS``)
+excluded from the table catalog (``services.sqlmesh_tables._is_excluded_schema``)
 — a filtered layer is reached through its own Layer, never imported as a source.
 
 The module is imported by SQLMesh while it loads the project (the blueprint macro

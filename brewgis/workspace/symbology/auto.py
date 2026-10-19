@@ -20,10 +20,7 @@ from brewgis.workspace.models import Scenario
 from brewgis.workspace.models import ScenarioType
 from brewgis.workspace.models import StyleClass
 from brewgis.workspace.models import SymbologyConfig
-from brewgis.workspace.palettes import get_diverging_names
 from brewgis.workspace.palettes import get_palette
-from brewgis.workspace.palettes import get_qualitative_names
-from brewgis.workspace.palettes import get_sequential_names
 from brewgis.workspace.palettes import sample_palette
 from brewgis.workspace.symbology.classifiers import classify
 from brewgis.workspace.symbology.stats import ColumnStatistics
@@ -117,13 +114,6 @@ def resolve_symbology_source(layer: Layer, scenario: Scenario) -> tuple[str, str
         return scenario.base_layer_source()
     schema = layer.db_schema or layer.workspace.db_schema
     return schema, layer.db_table
-
-
-_PALETTE_QUALITATIVE_NAMES = frozenset(get_qualitative_names())
-_PALETTE_SEQUENTIAL_NAMES = frozenset(get_sequential_names())
-_PALETTE_DIVERGING_NAMES = frozenset(get_diverging_names())
-_CATEGORICAL_PALETTES = _PALETTE_QUALITATIVE_NAMES
-_NUMERIC_PALETTES = _PALETTE_SEQUENTIAL_NAMES | _PALETTE_DIVERGING_NAMES
 
 
 def auto_generate_symbology(  # noqa: PLR0913

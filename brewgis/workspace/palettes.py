@@ -204,46 +204,9 @@ def get_palette(name: str) -> Colormap:
     return PALETTES[key]
 
 
-def get_qualitative_names() -> list[str]:
-    """Return sorted list of qualitative palette names."""
-    return sorted(QUALITATIVE_NAMES)
-
-
-def get_sequential_names() -> list[str]:
-    """Return sorted list of sequential palette names."""
-    return sorted(SEQUENTIAL_NAMES)
-
-
-def get_diverging_names() -> list[str]:
-    """Return sorted list of diverging palette names."""
-    return sorted(DIVERGING_NAMES)
-
-
 def get_all_names() -> list[str]:
     """Return sorted list of all palette names."""
     return sorted(PALETTES)
-
-
-def interpolate_color(
-    colormap: Colormap,
-    value: float,
-    min_val: float = 0.0,
-    max_val: float = 1.0,
-) -> str:
-    """Return the hex color at *value* within *colormap*.
-
-    *value* is clamped to ``[min_val, max_val]`` then normalised to ``[0, 1]``.
-    cmap resolves the actual color from there: linearly for sequential/
-    diverging palettes, snapped to the nearest class for qualitative ones
-    (per the ``Colormap``'s own ``interpolation`` mode) - so a degenerate
-    range (``min_val == max_val``) resolves to the midpoint color, ``0.5``.
-    """
-    if max_val == min_val:
-        t = 0.5
-    else:
-        t = (value - min_val) / (max_val - min_val)
-        t = max(0.0, min(1.0, t))
-    return colormap(t).hex.lower()
 
 
 def sample_palette(

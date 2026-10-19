@@ -124,10 +124,3 @@ def _register_canvas_layer(scenario: Scenario, *, source_name: str) -> None:
 
         with contextlib.suppress(Exception):
             auto_generate_symbology(layer)
-
-
-def _get_layer_model() -> type[Layer]:
-    """Lazy import to avoid circular dependency at module level."""
-    from brewgis.workspace.models import Layer
-
-    return Layer

@@ -283,13 +283,6 @@ def _find_early_return_empty_data(
 _BARE_BROAD_NAMES: frozenset[str] = frozenset({"Exception", "BaseException"})
 
 
-def _is_raise_or_reraise(node: ast.AST) -> bool:
-    """Return True if *node* is a raise statement or a call that re-raises."""
-    if isinstance(node, ast.Raise):
-        return True
-    return False
-
-
 def _handler_only_logs(body: list[ast.stmt]) -> bool:
     """Return True if every statement in *body* is just logging/pass."""
     for stmt in body:
@@ -342,12 +335,10 @@ def _find_silent_exception_swallows(
 
         for handler in node.handlers:
             # Catch bare except, except Exception, except BaseException
-            if handler.type is None or (
+            if handler.type is not None and not (
                 isinstance(handler.type, ast.Name)
                 and handler.type.id in _BARE_BROAD_NAMES
             ):
-                is_broad = True
-            else:
                 continue  # not a broad except
 
             # Check if handler has a re-raise anywhere
@@ -511,7 +502,6 @@ def _find_direct_sqlalchemy_imports(
                         )
                     )
 
-    return violations
     return violations
 
 

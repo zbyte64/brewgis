@@ -36,15 +36,6 @@ FROM parcels p, constraints c
 WHERE ST_Intersects(p.geom, c.geom);
 ```
 
-### `public.clamp_non_negative(val double precision)`
-
-Returns `GREATEST(0.0, val)`. Documents intent ("clamp to non-negative") vs raw `GREATEST(0, ...)`.
-
-```sql
-SELECT public.clamp_non_negative(-5.0);  -- 0.0
-SELECT public.clamp_non_negative(3.5);   -- 3.5
-```
-
 ### When to use vs. inline
 
 | Use the function | Inline the expression |
@@ -86,51 +77,6 @@ To install packages:
 ```bash
 cd brewgis/dbt_project && dbt deps
 ```
-
-### Project Macros (`utility.sql`)
-
-Located at `brewgis/dbt_project/macros/utility.sql`.
-
-| Macro | Purpose | Usage |
-|---|---|---|
-| `summarize_metric(ref_table, column)` | Generates a scalar SUM subquery | `{{ summarize_metric('core_end_state', 'population') }}` → `(SELECT COALESCE(SUM(population), 0) FROM ref(...)) AS total_population` |
-| `coalesce_zero(expression)` | Null-safe default | `{{ coalesce_zero('acres_consumed') }}` → `COALESCE(acres_consumed, 0.0)` |
-| `set_vars(names_to_defaults)` | Compress multiple var() calls | `{{ set_vars({'source_schema': 'public', 'parcel_table': 'parcels'}) }}` → one block vs 3+ lines |
-
-## Polars in Data Pipelines (Phase 3)
-
-[Polars](https://pola.rs) v1.0+ is available as an optional dependency for non-spatial DataFrame operations.
-
-### Modules using Polars
-
-| Module | What it does | Polars scope |
-|---|---|---|
-| `imputation_engine.py` | Three-tier cascade imputation | Accepts `pl.DataFrame` in addition to `pd.DataFrame` |
-
-### Pandas fallback pattern
-
-Every Polars-ported module follows the same pattern:
-
-```python
-try:
-    import polars as pl
-except ImportError:
-    pl = None
-
-# Later, in the method:
-if pl is not None and isinstance(df, pl.DataFrame):
-    return self._apply_polars(df, rules)
-return self._apply_pandas(df, rules)
-```
-
-This guarantees the module works with or without Polars installed. The pandas path is the default.
-
-### Adding a new Polars-ported module
-
-1. Add the try/except import block
-2. Write the Polars-native implementation alongside the pandas one
-3. Gate the dispatch on `if pl is not None and isinstance(df, pl.DataFrame)`
-4. Verify both paths with parity tests
 
 ## SQLAlchemy Core for Service SQL (Phase 4)
 
@@ -194,6 +140,5 @@ See `docs/jupysql.md` for detailed usage.
 |---|---|
 | 1 — Postgres Functions | `tests/workspace/test_sql_functions.py` (integration, needs PostGIS) |
 | 2 — dbt Packages | Existing `test_dbt_schema.py` + `dbt test` after `dbt deps` |
-| 3 — Polars | Existing `test_imputation_engine.py` covers pandas path; Polars path tested with `polars` installed |
 | 4 — SQLAlchemy | `test_canvas_view_manager.py` covers DDL changes |
 | 5 — JupySQL | Manual verification via notebooks |

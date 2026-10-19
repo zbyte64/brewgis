@@ -297,19 +297,3 @@ class AllocationEngine:
             )
 
         return result
-
-    @deal.post(
-        lambda result: result.developable_acres >= 0 and result.total_population >= 0
-    )
-    @staticmethod
-    def allocation_building_type_on_parcel(
-        parcel_acres: float,
-        building_type: BuildingType,
-        row_allocation_pct: float = 25.0,
-    ) -> AllocationResult:
-        """Alias for :meth:`allocation_building_type`."""
-        return AllocationEngine.allocation_building_type(
-            parcel_acres=parcel_acres,
-            building_type=building_type,
-            row_allocation_pct=row_allocation_pct,
-        )

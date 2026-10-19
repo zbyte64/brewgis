@@ -184,7 +184,6 @@ def _compute_emp_subtypes(total_emp: float, rng: random.Random) -> dict[str, flo
 def _compute_building_area(
     du_values: dict[str, float],
     emp_values: dict[str, float],
-    area_acres: float,  # noqa: ARG001
     rng: random.Random,
 ) -> dict[str, float]:
     """Estimate building areas from dwelling units and employment."""
@@ -370,9 +369,7 @@ def generate_synthetic_parcels(
             emp_details.update((k, 0.0) for k in keys)
 
         area_subtypes = _compute_area_subtypes(area_gross, category, rng)
-        bldg_area = _compute_building_area(
-            du_sub, {**emp_sub, **emp_details}, area_gross, rng
-        )
+        bldg_area = _compute_building_area(du_sub, {**emp_sub, **emp_details}, rng)
         irrigation = _compute_irrigation(area_gross, category, rng)
 
         row: dict = {

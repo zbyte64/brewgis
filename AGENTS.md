@@ -24,10 +24,9 @@ User Browser                    Docker Compose Stack
      │                                 │
      └── brewgis.workspace ────────────┘
               │
-              ├─ Models: 24 classes (Workspace, Layer, PaintedCanvas, Scenario, etc.)
+              ├─ Models: 23 classes (Workspace, Layer, PaintedCanvas, Scenario, etc.)
               ├─ Views: 22 modules (~82 URL patterns)
               ├─ SQLMesh: ~173 models (163 SQL, 10 Python), 86 audits, 22 macros, 39 seeds
-              ├─ dlt → DuckDB: 3 pipelines (NLCD, OSM) — DuckDB caches HTTP calls, handles raster/zip
               ├─ MCP server: 8 tool modules (FastMCP stdio)
               └─ GIS I/O: geopandas, rasterio for data ingest
 ```
@@ -60,7 +59,7 @@ Key rules:
 - Data transformations live in SQLMesh SQL models. NOT in Python services.
 - Use SQLMesh audits for row-level assertions; use `_schema.yml` column-level tests for `not_null`, `unique`, `non_negative`.
 - SQLMesh Python models are for compute that SQL cannot express (numpy gravity model, multinomial logit). They are the exception, not the pattern.
-- Django services call tools (SQLMesh runner, dlt pipelines). They do not implement the data work.
+- Django services call tools (the SQLMesh runner). They do not implement the data work.
 - **Analysis reads every stock column from the base layer; built forms supply only rates.** Dwelling units, population, households, employment (and its sector breakdown), floor area (`bldg_area_*`/`building_sqft_*`), parcel acres, irrigated areas, `land_development_category` and `intersection_density` are existing-condition fields carried on the base canvas and are read from `@parcel_table` unconditionally — no `scenario_type`, painted, or alternative branch (the reference is already the selected scenario's canvas, so a painted override arrives by itself). Built forms (`BuildingType`) supply only the rate/parameter fields the base layer does not carry: `indoor_water_rate`, `outdoor_water_rate`, `electricity_eui`, `gas_eui`, `household_size`, `du_type`, plus the `built_form_id` metadata. `du_per_acre`/`emp_per_acre`/`FAR` are painting inputs (what a paint operation writes as explicit `du`/`pop`/`hh`/`emp` overrides), never a substitute the analysis computes from. Energy and water demand key their *rates* on the parcel's CEC climate zones instead: `core_end_state` assigns `title24_zone`/`fcz_zone`/`eto_zone`/`annual_eto_mm` from the statewide `brewgis.california.*` CEC/CIMIS models and `energy_demand`/`water_demand` apply `brewgis.seeds.residential_energy_baseline` / `commercial_energy_baseline` (per CEC Building Climate Zone) and the ETo depth — falling back to the built form's `electricity_eui`/`gas_eui`/`outdoor_water_rate` only outside the zones' coverage.
 
 ## Key Directories
@@ -69,15 +68,14 @@ Key rules:
 |---|---|
 |`brewgis/workspace/`|The sole Django app — models, views, tasks, templates, services, analysis modules, symbology, built_forms, MCP server, management commands|
 |`brewgis/workspace/views/`|22 view modules split by feature (paint, analysis, scenarios, map, reports, built_forms, etc.)|
-|`brewgis/workspace/models.py`|24 model classes (Workspace, Layer, SymbologyConfig, StyleClass, Scenario, PaintedCanvas, AnalysisRun, DataImportRun, POICache, PaintConstraint, MergeAudit, PaintEvent, PaintRun, ParcelGeometryEdit, ScenarioReport, County, DataSourceCategory, DataSource, LayerFilter, LayerGroup, ExternalMapService, Basemap, BaseCanvasColumn, BaseCanvas)|
+|`brewgis/workspace/models.py`|23 model classes (Workspace, Layer, SymbologyConfig, StyleClass, Scenario, PaintedCanvas, AnalysisRun, DataImportRun, PaintConstraint, MergeAudit, PaintEvent, PaintRun, ParcelGeometryEdit, ScenarioReport, County, DataSourceCategory, DataSource, LayerFilter, LayerGroup, ExternalMapService, Basemap, BaseCanvasColumn, BaseCanvas)|
 |`brewgis/workspace/built_forms/models.py`|Built form sub-app: BuildingType (28 fields), PlaceType, PlaceTypeBuildingTypeMix|
-|`brewgis/workspace/tasks.py`|8 Celery tasks for data import, export, allocation, stitching, report generation|
-|`brewgis/workspace/analysis/`|Pipeline orchestrator, module/layer registries, equity preprocessor (food access is SQLMesh: `osm/food_pois*.sql`; road-network distances: `overture/road_network_*`, `python/network_zone_distance.py`) |
+|`brewgis/workspace/tasks.py`|9 Celery tasks for data import, allocation, stitching, paint runs, analysis runs, report generation|
+|`brewgis/workspace/analysis/`|Pipeline orchestrator, module/layer registries (food access is SQLMesh: `osm/food_pois*.sql`; road-network distances: `overture/road_network_*`, `python/network_zone_distance.py`) |
 |`brewgis/workspace/symbology/`|Map style generation (classifiers, generator, auto-config, legend, stats), 22 color palettes|
 |`brewgis/workspace/services/`|~34 service modules: base canvas ETL pipeline (1047 lines), schema, fetchers (Census, LEHD, POI, NLCD), spatial allocator, stitcher, imputation engine, built form classifier, paint constraints, scenario cloner, canvas view manager, layer filters materialized as new layers (`spatial_filter.py`, SQL/MapLibre compilers in `filter_compiler.py`), live map events (`map_events.py`), `_db.py` (cached SQLAlchemy singleton)|
 |`brewgis/workspace/consumers.py`, `routing.py`, `signals.py`|Django Channels: the map-event websocket consumer, its URL route, and the model signals that publish layer/run changes to it|
 |`brewgis/workspace/mcp/`|MCP server: FastMCP stdio entrypoint, auth stub, 8 tool modules|
-|`brewgis/workspace/dlt_pipelines/`|dlt pipeline modules (nlcd) — load directly into DuckDB (caches HTTP, handles raster/zip)|
 |`brewgis/workspace/management/commands/`|Management commands: import_sacog_demo, populate_base_canvas, materialize_sacog_base_canvas, compare_sacog_basemap, onboard_geography, run_mcp, export_story_packet, restore_demo_db|
 |`brewgis/sqlmesh/`|SQLMesh project: ~175 models across 15 subdirs, 22 macros, 39 seeds, 86 audits, config.py|
 |`brewgis/templates/`|~30 Django templates: base.html, workspace_map.html (main map page), workspace_detail.html, scenario_comparison.html, import_center.html, partials, allauth overrides|
@@ -229,13 +227,13 @@ npm run test      # vitest
 
 |File|Role|
 |---|---|
-|`brewgis/workspace/models.py`|24 model classes|
+|`brewgis/workspace/models.py`|23 model classes|
 |`brewgis/workspace/built_forms/models.py`|Built form models: BuildingType (28 fields), PlaceType, PlaceTypeBuildingTypeMix|
 |`brewgis/workspace/built_forms/default_library.py`|96-type default Building Type library (15 generic + 48 SACOG + 33 UF crop types) seeded into every workspace; `seed_default_built_forms`, `backfill_library_fields`|
 |`brewgis/workspace/built_forms/matching.py`|Closest-matching preferences over the density bases: same employment sector, then same land development category (Python rule + its SQL twin for the fill model)|
 |`brewgis/workspace/urls.py`|82 URL patterns under `app_name='workspace'`|
 |`brewgis/workspace/views/__init__.py`|Exports 71 view function/class from 22 view modules|
-|`brewgis/workspace/tasks.py`|8 Celery shared tasks (census, LEHD, POI, raster, allocation, stitching, report, building type export)|
+|`brewgis/workspace/tasks.py`|9 Celery shared tasks (census, LEHD, POI, raster, allocation, stitching, report, paint run, analysis run)|
 |`brewgis/workspace/admin.py`|9 admin registrations (12 including built_forms)|
 |`brewgis/workspace/palettes.py`|22 color palettes: 7 qualitative (incl. glasbey, ~200 distinct colors for 40+ categories), 10 sequential, 5 diverging|
 |`brewgis/workspace/templatetags/workspace_tags.py`|6 custom template filters: json_attr, model_verbose_name, analysis_status_badge, report_status_badge, dictlookup, list_index|
@@ -243,7 +241,6 @@ npm run test      # vitest
 |`brewgis/workspace/services/duckdb_pool.py`|DuckDB connection pool for data-loading operations — caches HTTP fetches, handles raster and zip files natively|
 |`brewgis/workspace/mcp/server.py`|FastMCP stdio server entrypoint with 8 tool modules|
 
-|`brewgis/workspace/dlt_pipelines/__init__.py`|dlt pipeline package: nlcd pipeline modules|
 |`brewgis/workspace/services/base_canvas_pipeline.py`|1047-line 11-step ETL pipeline (raw SQL with SQL injection quoting)|
 |`brewgis/workspace/services/spatial_filter.py`|Layer filters: applying a `LayerFilter` materializes its rows as a new table + new `Layer` (`LayerFilter.output_layer`) and never changes the filtered layer; projected, indexed filter sources for spatial conditions|
 |`brewgis/workspace/services/_db.py`|Cached SQLAlchemy engine singleton (functools.lru_cache)|
@@ -296,7 +293,7 @@ npm run test      # vitest
 - **Database:** PostgreSQL 17 + PostGIS 3.6 + pgRouting (`psycopg2-binary` on server)
 - **Cache/Queue:** Redis 6 (`django-redis`, `redis-py`, `hiredis`)
 - **Transformation:** SQLMesh (migrated from dbt)
-- **Ingestion:** dlt (3 pipeline modules) → DuckDB (preferred: caches HTTP, handles raster/zip natively) → FULL-bridge to PostGIS
+- **Ingestion:** dlt → DuckDB (preferred: caches HTTP, handles raster/zip natively) → FULL-bridge to PostGIS
 - **Linter/Formatter:** Ruff (`ruff` for linting, `ruff format` for formatting). 119 char line length.
 - **Template linter:** djLint (profile: `django`, indent: 2 spaces)
 - **Type checker:** basedpyright (`typeCheckingMode = "standard"`, with django-stubs — replaced mypy, whose cold Docker runs took hours). Blocking in CI (`make typecheck` in the test job) and a pre-commit hook on the host.

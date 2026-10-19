@@ -44,11 +44,6 @@ def scenario_analysis_fqns(scenario_pk: int) -> list[str]:
     ]
 
 
-def result_view_qualifier(scenario_pk: int, model_name: str) -> str:
-    """Return the ``schema.view_name`` a scenario's analysis result is read at."""
-    return f"{module_registry.result_schema_name(scenario_pk)}.{model_name}"
-
-
 def drop_scenario_analysis(scenario_pk: int) -> None:
     """Drop *scenario_pk*'s result views and de-list its analysis models.
 

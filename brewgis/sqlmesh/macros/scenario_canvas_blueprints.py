@@ -49,7 +49,7 @@ _logger = logging.getLogger(__name__)
 # Schema holding the per-scenario models. The views the map and tile servers
 # read are the scenario-named ones (see the module docstring); this schema is
 # implementation detail and is excluded from the table catalog (see
-# ``services.sqlmesh_tables._EXCLUDED_SCHEMAS``).
+# ``services.sqlmesh_tables._is_excluded_schema``).
 MODEL_SCHEMA = "scenario_canvas"
 
 

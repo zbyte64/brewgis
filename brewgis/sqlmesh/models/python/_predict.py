@@ -7,7 +7,6 @@ memory.
 
 from __future__ import annotations
 
-import os
 from typing import TYPE_CHECKING
 
 if TYPE_CHECKING:
@@ -17,14 +16,6 @@ if TYPE_CHECKING:
     import numpy as np
     import pandas as pd
     from sklearn.multioutput import MultiOutputRegressor
-
-
-def _batch_size() -> int:
-    """Configured batch size from env, default 50K."""
-    try:
-        return int(os.environ.get("LGBM_INFERENCE_BATCH_SIZE", "50000"))
-    except ValueError:
-        return 50000
 
 
 def predict_in_batches(

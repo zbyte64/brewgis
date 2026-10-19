@@ -81,7 +81,6 @@ from typing import TYPE_CHECKING
 from typing import Any
 
 from brewgis.workspace.built_forms.models import BuildingType
-from brewgis.workspace.built_forms.models import LandDevelopmentCategoryChoices
 from brewgis.workspace.built_forms.models import PlaceTypeBuildingTypeMix
 from brewgis.workspace.models import PaintedCanvas
 
@@ -95,84 +94,6 @@ _logger = logging.getLogger(__name__)
 # archetype, so it was dropped from the library; a workspace seeded while it was
 # still in the library holds its row.
 RETIRED_LIBRARY_NAMES: frozenset[str] = frozenset({"Civic/Institution"})
-
-# Catalog keys whose category is a non-residential fact — a lookup table for
-# the derivation rule below, one set per rule so the rule stays reviewable.
-_INDUSTRIAL_KEYS: frozenset[str] = frozenset(
-    {
-        "bt__heavy_industrial",
-        "bt__light_industrial",
-        "bt__light_industrialoffice",
-        "bt__agricultural_processingretail_employment",
-        "bt__airport_sacog",
-    }
-)
-_CONSERVATION_KEYS: frozenset[str] = frozenset(
-    {"bt__forest_sacog", "bt__water_sacog", "bt__park_andor_open_space_sacog"}
-)
-_UNDEVELOPED_KEYS: frozenset[str] = frozenset(
-    {"bt__urban_reserve", "bt__blank_place_type", "bt__road_sacog"}
-)
-_CATEGORY_BY_KEY: dict[str, str] = {
-    **dict.fromkeys(_INDUSTRIAL_KEYS, LandDevelopmentCategoryChoices.INDUSTRIAL),
-    **dict.fromkeys(_CONSERVATION_KEYS, LandDevelopmentCategoryChoices.CONSERVATION),
-    **dict.fromkeys(_UNDEVELOPED_KEYS, LandDevelopmentCategoryChoices.UNDEVELOPED),
-}
-_URBAN_DU_PER_ACRE = 12.0
-_SUBURBAN_DU_PER_ACRE = 4.0
-
-
-def derive_land_development_category(
-    *,
-    key: str,
-    name: str,
-    du_per_acre: float | None,
-    emp_per_acre: float | None,  # noqa: ARG001 — the rule keys off du, not emp
-    rural_flag: bool = False,
-) -> str:
-    """Return the land development category for one source catalog row.
-
-    The rule this module's SACOG entries were generated with, kept here so the
-    mapping from catalog facts to category is reviewable in one place. ``key``
-    is the catalog's built-form key (``bt__*``/``ct__*``), ``name`` its label
-    and ``du_per_acre``/``emp_per_acre`` its density band mid-point and
-    employment density. Order matters — the first matching rule wins:
-
-    1. a crop key, or SACOG's own Agriculture row → ``agricultural``
-    2. the catalog's rural flag → ``rural``
-    3. an "industrial" label, or a known industrial key → ``industrial``
-    4. a known conservation key → ``conservation``
-    5. a known unbuilt key (road, blank, urban reserve) → ``undeveloped``
-    6. residential density → ``urban`` at 12+ du/ac, ``suburban`` at 4+
-    7. everything else (employment, civic, education, medical, hotel, parking,
-       mixed use, military, university) → ``urban``
-    """
-    if key.startswith("ct__") or key == "bt__agriculture_sacog":
-        return LandDevelopmentCategoryChoices.AGRICULTURAL
-    if rural_flag:
-        return LandDevelopmentCategoryChoices.RURAL
-    if "industrial" in name.lower():
-        return LandDevelopmentCategoryChoices.INDUSTRIAL
-    keyed = _CATEGORY_BY_KEY.get(key)
-    if keyed is not None:
-        return keyed
-    return _category_from_density(du_per_acre)
-
-
-def _category_from_density(du_per_acre: float | None) -> str:
-    """Return the category implied by a residential density; ``urban`` if none.
-
-    Mid-band densities below the suburban threshold (farm homes, large-lot and
-    very-low-density detached) are ``rural``; a row with no residential density
-    at all is an employment, civic or education use and lands on ``urban``.
-    """
-    if du_per_acre is None or du_per_acre <= 0:
-        return LandDevelopmentCategoryChoices.URBAN
-    if du_per_acre >= _URBAN_DU_PER_ACRE:
-        return LandDevelopmentCategoryChoices.URBAN
-    if du_per_acre >= _SUBURBAN_DU_PER_ACRE:
-        return LandDevelopmentCategoryChoices.SUBURBAN
-    return LandDevelopmentCategoryChoices.RURAL
 
 
 def retire_library_entries(workspace: Workspace) -> int:

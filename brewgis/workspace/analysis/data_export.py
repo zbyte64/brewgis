@@ -62,9 +62,6 @@ _NULLABLE_TO_ZERO: set[str] = {
     "gas_eui",
 }
 
-_BOOL_COLUMNS: set[str] = set()
-_JSON_COLUMNS: set[str] = {"jobs_by_sector"}
-
 
 def _column_defs(field_map: dict[str, str]) -> str:
     """Build the column list for CREATE TABLE / INSERT statements.
@@ -302,33 +299,6 @@ def export_building_types_isolated(
     finally:
         conn.close()
     return row_count
-
-
-def ensure_export_exists(
-    workspace: Workspace,
-    schema: str = "public",
-    table: str = "built_forms",
-    **kwargs: Any,
-) -> int:
-    """Export unless the target table already holds the workspace's current rows.
-
-    "Current" is ``_export_is_current``: the table exists, holds rows, has the
-    current column set and matches the workspace's Building Types row for row.
-    Called before every pipeline run, so an unchanged workspace costs one
-    comparison instead of a re-export.
-    """
-    with connection.cursor() as cursor:
-        count = _export_is_current(cursor, workspace, schema, table)
-        if count is not None:
-            logger.info(
-                "Export table %s.%s already holds the current %d rows — skipping",
-                schema,
-                table,
-                count,
-            )
-            return count
-
-    return export_building_types(workspace, schema, table, **kwargs)
 
 
 def ensure_export_exists_isolated(

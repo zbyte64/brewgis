@@ -16,10 +16,10 @@ from pathlib import Path
 
 import pytest
 
+from brewgis.workspace.services.analysis_column_units import _UNIT_PHRASES
 from brewgis.workspace.services.analysis_column_units import column_units
 from brewgis.workspace.services.analysis_column_units import model_column_descriptions
 from brewgis.workspace.services.analysis_column_units import resolve_column_unit
-from brewgis.workspace.services.analysis_column_units import unit_phrases
 
 _MODELS_ROOT = Path(__file__).resolve().parents[2] / "brewgis" / "sqlmesh" / "models"
 _ANALYSIS_ROOT = _MODELS_ROOT / "analysis"
@@ -217,7 +217,7 @@ class TestColumnUnitsCoverage:
                 if units.get(column):
                     continue
                 for text in _PAREN_RE.findall(description):
-                    recognized = any(text == phrase for phrase in unit_phrases())
+                    recognized = any(text == phrase for phrase in _UNIT_PHRASES)
                     if not recognized and any(w in text for w in _UNIT_WORDS):
                         unrecognized.append(f"{table}.{column}: ({text})")
 
@@ -235,7 +235,7 @@ class TestColumnUnitsCoverage:
         ]
         unused = [
             phrase
-            for phrase in unit_phrases()
+            for phrase in _UNIT_PHRASES
             if not any(f"({phrase})" in text for text in descriptions)
         ]
         assert not unused, f"lexicon phrases no model states any more: {unused}"

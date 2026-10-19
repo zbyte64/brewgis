@@ -154,9 +154,7 @@ def _python_descriptions(text: str) -> dict[str, str]:
 def model_column_descriptions() -> dict[str, dict[str, str]]:
     """Return ``{table: {column: description}}`` for every model that declares one.
 
-    Parsed once per process. Exposed (alongside :func:`unit_phrases`) so the
-    coverage test can check the derivation against the descriptions the
-    lexicon does not recognize.
+    Parsed once per process.
     """
     global _descriptions_cache  # noqa: PLW0603 — process-lifetime memo
     if _descriptions_cache is not None:
@@ -210,11 +208,6 @@ def _load() -> dict[str, dict[str, str]]:
 def column_units(table: str) -> dict[str, str]:
     """Return ``{column: unit}`` for the model that publishes *table*."""
     return dict(_load().get(table, {}))
-
-
-def unit_phrases() -> dict[str, str]:
-    """Return the parenthetical phrases read as units, for tests."""
-    return dict(_UNIT_PHRASES)
 
 
 def resolve_column_unit(table: str, column: str) -> str:

@@ -69,8 +69,6 @@ DU_TYPES: tuple[tuple[str, str], ...] = (
     ("mf5p", "Multifamily, 5+ units"),
 )
 
-DU_TYPE_VALUES: tuple[str, ...] = tuple(value for value, _ in DU_TYPES)
-
 # UF's three housing classes, read off the du_type a built form declares.
 # ``attsf`` is the deliberate deviation documented in the module docstring.
 RESIDENTIAL_TRIP_RATES: dict[str, float] = {

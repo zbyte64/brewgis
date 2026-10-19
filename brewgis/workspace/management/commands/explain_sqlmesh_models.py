@@ -90,17 +90,6 @@ def _normalise_fqn(fqn: str) -> str:
     return fqn.replace('"', "")
 
 
-def _unqualify(fqn: str) -> str:
-    """Return the short name from a possibly-quoted FQN."""
-    return _normalise_fqn(fqn).rsplit(".", 1)[-1]
-
-
-def _extract_schema(fqn: str) -> str:
-    """Extract schema (second component) from a model FQN."""
-    parts = _normalise_fqn(fqn).split(".")
-    return parts[1] if len(parts) >= 2 else ""
-
-
 def discover_models_from_sqlmesh() -> dict[str, ModelInfo]:
     """Load SQLMesh context and build ModelInfo dict."""
     ctx = _get_sqlmesh_context()

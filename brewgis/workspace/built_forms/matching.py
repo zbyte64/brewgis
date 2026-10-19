@@ -194,21 +194,6 @@ def prefer_same_sector(
     return same_sector or candidates
 
 
-def declared_sectors(building_type: BuildingType) -> dict[str, float]:
-    """Return the canonical sectors *building_type* declares, and their shares.
-
-    Keys outside :py:data:`EMPLOYMENT_SECTORS` are dropped: a type whose
-    ``jobs_by_sector`` predates the sector vocabulary (``{"retail": 80}``)
-    declares nothing a parcel's ``emp_<sector>`` columns can be compared with.
-    """
-    declared = building_type.jobs_by_sector or {}
-    return {
-        sector: float(declared[sector])
-        for sector in EMPLOYMENT_SECTORS
-        if sector in declared and float(declared[sector] or 0.0) > 0.0
-    }
-
-
 def category_requirement_sql(*, parcel_prefix: str, form_prefix: str) -> str:
     """Return SQL admitting only *form_prefix* rows naming *parcel_prefix*'s category.
 

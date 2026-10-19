@@ -80,19 +80,6 @@ def _tile_source_id(schema: str, table: str) -> str:
     return f"{schema}.{table}"
 
 
-def _tile_url_template(
-    schema: str,
-    table: str,
-    tile_matrix_set: str = "WebMercatorQuad",
-    backend: str | None = None,
-) -> str:
-    """Return the raw tile URL template for a PostGIS schema.table."""
-    source_id = _tile_source_id(schema, table)
-    if (backend or settings.TILE_SERVER_BACKEND) == "martin":
-        return f"/martin/{source_id}"
-    return f"/tipg/collections/{source_id}/tiles/{tile_matrix_set}"
-
-
 def _maplibre_vector_source(
     schema: str, table: str, backend: str | None = None
 ) -> dict:
@@ -198,16 +185,6 @@ class Layer(models.Model):
         """Return the tile server source identifier (schema.table)."""
         schema, table = self.source_table()
         return _tile_source_id(schema, table)
-
-    def resolve_tiles_url(self, tile_matrix_set: str = "WebMercatorQuad") -> str:
-        """Return the raw tile URL template (tipg only; for backward compat)."""
-        schema, table = self.source_table()
-        return _tile_url_template(
-            schema,
-            table,
-            tile_matrix_set,
-            backend=self.workspace.tile_server_backend,
-        )
 
     def to_maplibre_source(self) -> dict:
         """Return a MapLibre GL JS source specification dict."""
@@ -686,36 +663,6 @@ class DataImportRun(models.Model):
 
     def __str__(self) -> str:
         return f"DataImportRun #{self.pk} [{self.import_type}] ({self.status})"
-
-
-class POICache(models.Model):
-    """GeoJSON cache of last successful POI fetch for offline fallback."""
-
-    workspace = models.ForeignKey(
-        Workspace,
-        on_delete=models.CASCADE,
-        related_name="poi_caches",
-    )
-    name = models.CharField(
-        max_length=128,
-        help_text="Cache identifier (e.g. 'food_poi').",
-    )
-    geojson_data = models.JSONField(
-        help_text="GeoJSON FeatureCollection of POI data.",
-    )
-    source = models.CharField(
-        max_length=64,
-        default="osm",
-        help_text="Original data source.",
-    )
-    fetched_at = models.DateTimeField(auto_now=True)
-
-    class Meta:
-        unique_together = ("workspace", "name")
-        verbose_name = "POI Cache"
-
-    def __str__(self) -> str:
-        return f"POICache[{self.workspace_id}]({self.name})"
 
 
 class ConstraintOperator(models.TextChoices):

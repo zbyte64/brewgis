@@ -3,7 +3,6 @@
 
 from __future__ import annotations
 
-import logging
 from typing import TYPE_CHECKING
 from typing import Any
 from typing import Protocol
@@ -13,7 +12,6 @@ from celery.utils.log import get_task_logger
 from django.conf import settings
 from django.utils import timezone
 
-from brewgis.workspace.analysis.data_export import export_building_types
 from brewgis.workspace.analysis.sqlmesh_runner import run_sqlmesh_plan
 from brewgis.workspace.models import DataImportRun
 from brewgis.workspace.models import Layer
@@ -32,7 +30,6 @@ if TYPE_CHECKING:
     from collections.abc import Callable
 
 logger = get_task_logger(__name__)
-_plain_logger = logging.getLogger(__name__)
 
 
 class _CeleryTask(Protocol):
@@ -56,42 +53,6 @@ def _celery_task(**options: Any) -> Callable[[Callable[..., Any]], _CeleryTask]:
 # ────────────────────────────────────────────────────────────
 #  Data export (prerequisite for core module)
 # ────────────────────────────────────────────────────────────
-
-
-@_celery_task(
-    bind=True,
-    name="export_building_types",
-    autoretry_for=(RuntimeError,),
-    max_retries=2,
-    default_retry_delay=30,
-)
-def export_building_types_task(  # type: ignore[no-untyped-def]
-    self,
-    workspace_id: int,
-    schema: str = "public",
-    table: str = "built_forms",
-    **kwargs: Any,
-) -> dict:
-    """Export a workspace's BuildingType Django records to a flat PostGIS table.
-
-    Creates ``{schema}.{table}`` with columns matching the
-    ``core_end_state`` dbt model's expectations.
-
-    Returns:
-        Dict with keys: success, count, error.
-    """
-    from brewgis.workspace.models import Workspace
-
-    workspace = Workspace.objects.get(pk=workspace_id)
-    count = export_building_types(workspace, schema=schema, table=table)
-    logger.info(
-        "Built form export complete: %d rows in %s.%s",
-        count,
-        schema,
-        table,
-    )
-
-    return {"success": True, "count": count, "error": None}
 
 
 # ────────────────────────────────────────────────────────────
@@ -705,24 +666,3 @@ def run_analysis_task(self, run_pk: int) -> None:  # type: ignore[no-untyped-def
 # ────────────────────────────────────────────────────────────
 #  Scenario canvases (SQLMesh-owned views the map and tile servers read)
 # ────────────────────────────────────────────────────────────
-
-
-@_celery_task(bind=True, max_retries=1, default_retry_delay=30)
-def reconcile_scenario_canvases_task(self) -> dict:  # type: ignore[no-untyped-def]
-    """Re-materialize any scenario canvas view a plan left missing or stale.
-
-    A ``sqlmesh plan`` whose selection excludes the canvas models (an
-    upstream-only ``--select-model '+<base model>'`` does) can promote a canvas
-    model's virtual view without recreating it, leaving that scenario's canvas
-    view pointing at a physical object that no longer exists. Schedule this
-    after plans — via django-celery-beat — or run it on demand
-    (``manage.py reconcile_scenario_canvases``) to close that window.
-
-    Returns:
-        Dict with keys: success, unhealthy, error.
-    """
-    from brewgis.workspace.services.scenario_canvas import reconcile_scenario_canvases
-
-    unhealthy = reconcile_scenario_canvases()
-    logger.info("Scenario canvas reconciliation done; unhealthy before: %s", unhealthy)
-    return {"success": True, "unhealthy": unhealthy, "error": None}

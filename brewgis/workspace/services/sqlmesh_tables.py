@@ -63,8 +63,6 @@ _INTERNAL_SCHEMAS = {
     "spatial_filter",
 }
 
-_EXCLUDED_SCHEMAS = _INTERNAL_SCHEMAS | {"public"}
-
 _POLYGON_TYPES = {"polygon", "multipolygon"}
 _LINE_TYPES = {"linestring", "multilinestring"}
 
@@ -186,7 +184,7 @@ def _model_backed_tables() -> frozenset[tuple[str, str]]:
 
     The two differ because the catalog answers "what may a workspace import as
     a source" — it excludes ``built_form_fill`` so a workspace cannot base
-    itself on its own fill output (``_EXCLUDED_SCHEMAS``) — while this answers
+    itself on its own fill output (``_is_excluded_schema``) — while this answers
     "what is a model-backed table a layer may be drawing". The workspace's
     base canvas layer reads exactly that excluded fill model, so it is in this
     pool and not in that catalog.

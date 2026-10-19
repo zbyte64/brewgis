@@ -807,8 +807,3 @@ ANALYSIS_PARAMETERS: tuple[AnalysisParameter, ...] = (
 def get_module_parameters(module: str) -> list[AnalysisParameter]:
     """Return the parameters shown on *module*'s per-analysis parameter form."""
     return [p for p in ANALYSIS_PARAMETERS if module in p.modules]
-
-
-def analysis_parameter_defaults() -> dict[str, object]:
-    """Return each analysis parameter's default value, keyed by name."""
-    return {p.name: p.default for p in ANALYSIS_PARAMETERS}

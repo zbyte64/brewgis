@@ -11,13 +11,9 @@ from __future__ import annotations
 import logging
 from typing import Any
 
-import pandas as pd
 from django.db import connection
 
 logger = logging.getLogger(__name__)
-
-from brewgis.workspace.services.imputation_engine import ImputationEngine
-from brewgis.workspace.services.imputation_engine import ImputationRule
 
 
 def impute_constant(
@@ -105,23 +101,3 @@ def impute_built_form_default(
         "rows_updated": rows_updated,
         "column": column,
     }
-
-
-def stitch_dataframe(
-    df: pd.DataFrame,
-    rules: list[ImputationRule],
-) -> list[Any]:
-    """Apply imputation rules to a DataFrame using the ImputationEngine.
-
-    This is a convenience wrapper around
-    :meth:`ImputationEngine.apply <brewgis.workspace.services.imputation_engine.ImputationEngine.apply>`.
-
-    Args:
-        df: DataFrame with columns to impute (modified in place).
-        rules: Imputation rules to apply (highest priority first).
-
-    Returns:
-        List of ImputationResult objects, one per rule.
-    """
-    engine = ImputationEngine()
-    return engine.apply(df, rules)

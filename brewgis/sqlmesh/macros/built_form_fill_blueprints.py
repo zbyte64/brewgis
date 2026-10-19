@@ -32,7 +32,7 @@ looking up the source), and SQLMesh names a model's physical object
 convention, so a short fixed schema keeps ``built_form_fill__fill_<pk>__<hash>``
 far inside Postgres' 63-character identifier limit for any pk. That schema is
 excluded from the table catalog and the base-canvas picker
-(``services.sqlmesh_tables._EXCLUDED_SCHEMAS``) — a workspace's fill output is
+(``services.sqlmesh_tables._is_excluded_schema``) — a workspace's fill output is
 not itself an importable source.
 
 ``built_form_fill_profiles()`` reads the live database, so the set of

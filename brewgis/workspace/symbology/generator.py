@@ -14,7 +14,7 @@ import deal
 from brewgis.workspace.models import StyleClass
 from brewgis.workspace.models import SymbologyConfig
 
-__all__ = ["auto_generate_style_from_layer", "generate_maplibre_style"]
+__all__ = ["generate_maplibre_style"]
 
 # A MapLibre "step" expression needs at least one threshold to step over —
 # the color below the first threshold, plus one (threshold, color) pair.
@@ -245,35 +245,3 @@ def generate_maplibre_style(
     if symbology.max_zoom < 22:
         layout["maxzoom"] = symbology.max_zoom
     return {"paint": paint, "layout": layout}
-
-
-def auto_generate_style_from_layer(
-    layer: Any, palette_name: str = "viridis"
-) -> dict[str, Any]:
-    """Auto-generate a MapLibre style dict for a layer.
-
-    This is a convenience method that creates a ``SymbologyConfig`` from
-    layer defaults and generates a style.  For full auto-generation with
-    statistics-based classification, see ``auto.py``.
-    """
-    # Build a minimal in-memory config surrogate for generation
-    config = SymbologyConfig(
-        layer=layer,
-        symbology_type="single",
-        attribute_column="",
-        default_color="#888888",
-        default_opacity=0.7,
-        stroke_color="",
-        stroke_width=1.0,
-        line_width=1.0,
-        circle_radius=4.0,
-        palette_name=palette_name,
-        reverse_palette=False,
-        num_classes=5,
-        classification_method="quantile",
-        null_handling="gray",
-        null_color="",
-        zero_transparent=False,
-        auto_generated=True,
-    )
-    return generate_maplibre_style(config)

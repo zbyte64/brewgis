@@ -16,7 +16,6 @@ Supported methods
 from __future__ import annotations
 
 import math
-from collections.abc import Callable
 from dataclasses import dataclass
 from dataclasses import field
 from typing import Any
@@ -54,8 +53,6 @@ class ClassificationResult:
 # ---------------------------------------------------------------------------
 # Helpers
 # ---------------------------------------------------------------------------
-
-_Classifier = Callable[..., ClassificationResult]
 
 _FMT_THRESHOLD = 1_000_000
 _FMT_SMALL_THRESHOLD = 0.01
