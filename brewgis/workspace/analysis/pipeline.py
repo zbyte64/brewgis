@@ -23,6 +23,7 @@ from django.db import connection
 from django.utils import timezone
 
 from brewgis.sqlmesh.macros.region_blueprints import REGIONS
+from brewgis.sqlmesh.macros.region_blueprints import analysis_region_profiles
 from brewgis.workspace.analysis import module_registry
 from brewgis.workspace.analysis.layer_registry import register_result_layer
 from brewgis.workspace.analysis.log_capture import capture_run_log
@@ -42,7 +43,7 @@ from brewgis.workspace.analysis.sqlmesh_runner import run_sqlmesh_plan
 from brewgis.workspace.models import AnalysisRun
 from brewgis.workspace.models import Scenario
 from brewgis.workspace.models import Workspace
-from brewgis.workspace.services.fetch_clone import road_network_region
+from brewgis.workspace.services.fetch_clone import workspace_region
 from brewgis.workspace.services.tile_server import restart_martin
 from brewgis.workspace.services.tile_server import wait_until_martin_ready
 
@@ -112,9 +113,6 @@ def _create_analysis_run(
         modules=ordered_modules,
         status="pending",
         vars=vars_ or {},
-        # Recorded for history only — the plan itself reads the mapping off the
-        # Scenario, which is where a run's parameters are now persisted.
-        column_mapping=scenario.column_mapping,
     )
 
     logger.info(
@@ -311,14 +309,15 @@ def run_modules_sync(
     restate = model_fqns_built_in("prod", selects) or None
     if "trip_distribution" in ordered:
         selects += _network_distance_inputs(scenario_id)
+    if "env_constraint" in ordered:
+        selects += _constraint_layer_inputs(_workspace_region(workspace_id))
     if "food_access" in ordered:
-        base_table = (
-            Workspace.objects.only("base_table").get(pk=workspace_id).base_table
+        region = _workspace_region(workspace_id)
+        selects += _food_access_inputs(
+            analysis_region_profiles()[region]["public_data_region"]
         )
-        selects += _food_access_inputs(road_network_region(base_table))
 
-    # The scenario's parameters — like its constraints, column mapping and
-    # painted canvas — are baked into these models' blueprints when they are
+    # The scenario's parameters — like its painted canvas — are baked into these models' blueprints when they are
     # *rendered*, and SQLMesh caches rendered model definitions on disk keyed by
     # model-file mtimes, never by the Scenario rows they come from. Loading from
     # that shared cache would re-materialize whichever run rendered it last
@@ -404,9 +403,9 @@ def _network_distance_inputs(scenario_id: int) -> list[str]:
     network, not the scenario's end state, and the cached zone matrix is what
     makes the network-distance option affordable to rerun.
 
-    The road network is selected for every region: which region a scenario
-    routes over is a blueprint fact (``road_network_region``), and a built
-    region network is a no-op in the plan.
+    The road network is selected for every pipeline region: which one a
+    scenario routes over is a blueprint fact (``public_data_region``), and a
+    built region network is a no-op in the plan.
 
     The subsegment chain is named as well: the DuckDB fetch VIEW, the bridge it
     lands in, and the published VIEW that re-tags the bridge's SRID. A model
@@ -468,6 +467,31 @@ def _trip_length_input(scenario_id: int) -> list[str]:
     state.
     """
     return [module_registry.model_fqn("trip_lengths", scenario_id)]
+
+
+def _workspace_region(workspace_id: int) -> str:
+    """The region whose models the workspace's scenarios are analyzed with.
+
+    Raises ``WorkspaceRegionError`` for a workspace in no region — the launch
+    service refuses those first, so this only fires for a run started around it.
+    """
+    return workspace_region(Workspace.objects.get(pk=workspace_id))
+
+
+def _constraint_layer_inputs(region: str) -> list[str]:
+    """The region's constraint layers and everything they are built from.
+
+    ``env_constraint`` reads ``brewgis.<region>.constraint_layers`` (the region
+    comes from the workspace's base table, see ``fetch_clone.workspace_region``),
+    which is a lineage dependency of every env_constraint instance but not an
+    analysis module. A model is only planned when a selector names it, so the
+    region model is named with SQLMesh's ``+`` upstream selector: whatever
+    fetches, bridges and re-tag VIEWs a region's layers are built from are
+    planned with it, and the region model stays the one place that decides
+    them. Selected, never restated: their inputs are the source layers, not the
+    scenario, and a built chain is a no-op in the plan.
+    """
+    return [f"+brewgis.{region}.constraint_layers"]
 
 
 def _food_access_inputs(region: str) -> list[str]:

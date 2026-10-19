@@ -15,8 +15,7 @@ owns the DDL, the load, and the post-load verification.
 Usage:
     make sacog-base-canvas
     python manage.py materialize_sacog_base_canvas
-    python manage.py materialize_sacog_base_canvas --source-table public.elk_grove_base_canvas \
-        --target-table public.elk_grove_base_canvas_v3 --replace
+    python manage.py materialize_sacog_base_canvas --target-table sacog_v1.base_canvas --replace
 
 Rebuilding an existing target truncates and reloads it, which keeps the views
 that read it (every scenario canvas of a workspace on that table) valid.
@@ -36,6 +35,7 @@ from django.db import connection
 
 from brewgis.workspace.services.base_canvas_schema import BaseCanvasSchema
 from brewgis.workspace.services.sacog_column_mapping import ALL_MAPPINGS
+from brewgis.workspace.services.sacog_column_mapping import V1_BASE_TABLE
 from brewgis.workspace.services.sacog_column_mapping import (
     build_materialized_select_sql,
 )
@@ -44,10 +44,12 @@ from brewgis.workspace.services.sqlmesh_tables import list_base_canvas_candidate
 
 #: The region's v1 base canvas: what ``compare_sacog_basemap`` and
 #: ``services.comparison_helpers`` call ``V1_BASE_CANVAS``, and what the SACOG
-#: v1 reference numbers in the docs refer to (502,874 parcels). Not the mapping
-#: module's ``V1_BASE_TABLE`` — that one defaults the demo *view* to Elk Grove.
-DEFAULT_SOURCE_TABLE = "public.sac_cnty_region_base_canvas"
-DEFAULT_TARGET_TABLE = "public.sacog_parcels_base_canvas"
+#: v1 reference numbers in the docs refer to (502,874 parcels).
+DEFAULT_SOURCE_TABLE = V1_BASE_TABLE
+#: The imported snapshot's base canvas. Its schema is the ``sacog_v1`` analysis
+#: region (``region_blueprints.analysis_region_profiles``), so a workspace on it
+#: is analyzed against the snapshot's own constraint layers and SACSIM zones.
+DEFAULT_TARGET_TABLE = "sacog_v1.base_canvas"
 
 #: v1 columns the projection reads, i.e. what makes a source a v1 base canvas.
 REQUIRED_SOURCE_COLUMNS: tuple[str, ...] = tuple(
@@ -194,6 +196,8 @@ class Command(BaseCommand):
 
     def _create_target(self, target: str, *, replace: bool) -> None:
         """Create *target* with the base canvas DDL, dropping it first if asked."""
+        schema = target.split(".", 1)[0]
+        self._execute(f"CREATE SCHEMA IF NOT EXISTS {schema}")
         if replace:
             self._execute(f"DROP TABLE IF EXISTS {target} CASCADE")
             self.stdout.write("  dropped the existing table and the views over it")

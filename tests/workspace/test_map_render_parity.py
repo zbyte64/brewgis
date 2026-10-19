@@ -183,11 +183,11 @@ def _setup_fixture(conn: psycopg.Connection) -> dict[str, Any]:
                 (name, slug, description, workspace_id, scenario_type,
                  base_year, horizon_year, schema_name, published,
                  public_token, created_at, updated_at,
-                 column_mapping, constraints, analysis_params)
+                 analysis_params)
             VALUES ('Baseline', 'parity-base', '', %s, 'base', 2023, 2050,
                     'scenario_parity-base', false, gen_random_uuid(),
                     now(), now(),
-                    '{}'::jsonb, '{}'::jsonb, '{}'::jsonb)
+                    '{}'::jsonb)
             """,
             (workspace_id,),
         )

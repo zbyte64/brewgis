@@ -102,7 +102,6 @@ via the `**variables` dict when calling `config_factory()` or via plan overrides
 | `transport_bike_beta_hhsize` | `-0.6` | mode_choice | ln(household size) coefficient |
 | `transport_bike_beta_veh` | `-0.9` | mode_choice | ln(vehicles per capita) coefficient |
 | `transport_truck_factor` | `0.031` | vmt | UrbanFootprint's `truck_adjustment_factor`, applied to the daily VMT as `vmt_daily_w_trucks` (and its annual form) |
-| `transport_trip_length_table` | `''` | vmt (and the modules downstream of it) | `schema.table` of the region's reference trip-length zones (`wkb_geometry` + the six `productions_*`/`attractions_*` round-trip-mile columns). SACOG points at `public.elk_grove_vmt_base_trip_lengths`; empty means the gravity fallback |
 | `transport_target_avg_trip_length_km` | `6.42` | vmt (and the modules downstream of it) | Regional mean one-way trip length (km) the gravity fallback is rescaled to; 6.42 km = 3.99 mi, SACSIM's regional one-way mean |
 | `transport_use_network_distance` | `False` | trip_distribution (and every module downstream of trip length) | Gravity model uses road-network distance between 2 km grid zones (`network_zone_distance`, pgRouting over the region's Overture drivable graph) instead of crow-flies distance |
 | `transport_ghg_co2_per_mile` | `0.411` | transport_ghg | kg CO2e/mi (EPA fleet average) |
@@ -439,9 +438,11 @@ parcel size and density: SACOG's canvas lands on ~1.2 km one-way against
 SACSIM's ~6.4 km, and VMT is proportional to it. `models/python/trip_lengths.py`
 is therefore the model every trip-length consumer reads (`vmt`):
 
-* a scenario that names `transport_trip_length_table` (SACOG's SACSIM reference
-  zones, restored from the source dump and set by `import_sacog_demo`) gets the
-  zone each parcel centroid falls in — the mean of that zone's six round-trip
+* a workspace whose analysis region ships reference zones (`trip_length_table`
+  in `macros/region_blueprints.py:analysis_region_profiles` — only the imported
+  SACOG v1 snapshot, `sacog_v1`, whose SACSIM zones
+  `public.elk_grove_vmt_base_trip_lengths` were restored from the dump) gets
+  the zone each parcel centroid falls in — the mean of that zone's six round-trip
   lengths, halved and converted to km, i.e. a real network distance — rescaled
   by the ratio of the table's regional mean to the parcels' own mean. Assigning
   each parcel its zone's length weights the zones by parcel density, which
@@ -544,7 +545,6 @@ absorbs it, and the shares sum to exactly 1 wherever the clamp does not bind.
 
 | Macro | Arguments | Purpose |
 |---|---|---|
-| `constraint_geometries` | `constraints_json` | Expands `Scenario.constraints` (`[{table, discount_pct, geom_col}]`) into the constraint-polygon relation `env_constraint` reads: `probe_geom` (EPSG:4326, for the index-driven `ST_Intersects`), `local_geom` (`local_srid`, for `ST_Intersection` and area), `discount_pct`. Names are validated as plain identifiers; an empty list yields the empty relation, so a scenario with no constraints keeps its gross area developable |
 | `constraint_min_overlap_sqm` | — | The minimum overlap (`5.0` m²) a constraint piece must have to count; smaller pieces are boundary noise (UrbanFootprint's own threshold) |
 | `compute_allocation_weight` | `source_alias`, `target_alias`, `source_geom`, `target_geom` | Area-weighted allocation factor (intersection area ÷ source area) between two geometries, both projected to `wm_srid` (default `3857`) |
 

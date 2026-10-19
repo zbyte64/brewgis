@@ -1,4 +1,14 @@
-"""Import SACOG v1 demo database into BrewGIS — end-to-end orchestration command.
+"""Import the SACOG v1 database snapshot as a workspace — end-to-end orchestration.
+
+The snapshot workspace is one of the two SACOG workspaces: it carries the
+UrbanFootprint v1 region base canvas as imported, and is compared with the
+workspace on ``sacog.base_canvas_reconciled`` (the reconstruction from public
+data) to validate the base layer construction. Its base canvas lives in the
+``sacog_v1`` schema, which is the ``sacog_v1`` analysis region
+(``region_blueprints.analysis_region_profiles``), so its analysis uses the data
+the snapshot shipped with: its streams/wetlands/vernal pools
+(``sacog_v1/constraint_layers.sql``), its SACSIM trip-length zones, and the v1
+built forms this command extracts.
 
 Usage:
     python manage.py import_sacog_demo [--step STEP] [--force]
@@ -32,51 +42,22 @@ from typing import Any
 from django.core.management.base import BaseCommand
 from django.core.management.base import CommandError
 
+from brewgis.workspace.services.sacog_column_mapping import V1_BASE_TABLE
+
 logger = logging.getLogger(__name__)
 
 # How often the analysis step re-reads its run while a Celery worker executes it.
 RUN_POLL_SECONDS = 5
 
-WORKSPACE_NAME = "SACOG Demo"
-WORKSPACE_SCHEMA = "sacog_demo"
+WORKSPACE_NAME = "SACOG v1"
+# The ``sacog_v1`` analysis region: the base canvas's schema decides which
+# region data the workspace's analysis reads (``fetch_clone.workspace_region``).
+WORKSPACE_SCHEMA = "sacog_v1"
 SCENARIO_NAME = "base"
 BASE_YEAR = 2012
 HORIZON_YEAR = 2050
 
-V1_BASE_TABLE = "public.elk_grove_base_canvas"
-BASE_CANVAS_TABLE = "base_canvas_v1"
-
-# SACSIM's zone-to-zone trip lengths, restored from the v1 source dump: the
-# reference data UrbanFootprint reads instead of deriving a trip length. The
-# scenario's ``trip_lengths`` model joins each parcel centroid to its zone and
-# uses that zone's mean one-way length (6 zones of round-trip miles / 6 / 2),
-# which is what makes this region's VMT comparable with UF's. Every other region
-# leaves ``transport_trip_length_table`` empty and gets the gravity fallback.
-TRIP_LENGTH_TABLE = "public.elk_grove_vmt_base_trip_lengths"
-
-# The scenario's environmental constraints (``Scenario.constraints``): the v1
-# dump's own constraint polygons, restored in ``public``. UrbanFootprint's
-# environmental-constraint module reads the same three layers — streams,
-# wetlands and vernal pools — so the demo's constrained acreage is comparable
-# with its export. Each layer takes the whole overlap (100 %), and the geometry
-# column is the dump's own ``wkb_geometry`` rather than the default ``geom``.
-CONSTRAINT_SOURCES: list[dict[str, object]] = [
-    {
-        "table": "public.sac_cnty_streams",
-        "discount_pct": 100,
-        "geom_col": "wkb_geometry",
-    },
-    {
-        "table": "public.sac_cnty_wetlands",
-        "discount_pct": 100,
-        "geom_col": "wkb_geometry",
-    },
-    {
-        "table": "public.sac_cnty_vernal_pools",
-        "discount_pct": 100,
-        "geom_col": "wkb_geometry",
-    },
-]
+BASE_CANVAS_TABLE = "base_canvas"
 
 SCENARIO_SLUG = "base"
 
@@ -101,7 +82,7 @@ CONSTRAINT_LAYER_TABLES: dict[str, dict[str, str]] = {
 
 
 class Command(BaseCommand):
-    help = "Import SACOG v1 demo database and run the full analysis pipeline."
+    help = "Import the SACOG v1 database snapshot as a workspace and analyze it."
 
     def add_arguments(self, parser: Any) -> None:
         parser.add_argument(
@@ -130,7 +111,7 @@ class Command(BaseCommand):
         force = options["force"]
 
         self.stdout.write(f"\n{'=' * 60}")
-        self.stdout.write(f"  Import SACOG v1 Demo — step: {step}")
+        self.stdout.write(f"  Import SACOG v1 snapshot — step: {step}")
         self.stdout.write(f"{'=' * 60}\n")
 
         steps_to_run = [
@@ -200,10 +181,11 @@ class Command(BaseCommand):
         # The library is seeded before the extraction, and that order is
         # load-bearing. A Building Type answers for a canvas key by name
         # (``services.built_form_keys``): the library's entries are named for the
-        # land uses, and 14 of the demo's 29 keys normalize onto one of those
-        # names, so the library already answers for them. The extraction then
-        # adds an entry only for the keys nothing answers for. Run the other way
-        # round, the extraction would claim all 29 keys first and the seeding
+        # land uses, and many of the snapshot's keys normalize onto one of those
+        # names (14 of Elk Grove's 29), so the library already answers for them.
+        # The extraction then adds an entry only for the keys nothing answers
+        # for. Run the other way round, the extraction would claim every key
+        # first and the seeding
         # that followed would add the library's own names beside them — two
         # Building Types matching one key, and every parcel carrying it counted
         # twice by ``core_end_state``.
@@ -219,13 +201,13 @@ class Command(BaseCommand):
         )
 
     def _resolve_workspace(self) -> Any:
-        """Get-or-create the demo workspace, pointed at this demo's base canvas.
+        """Get-or-create the snapshot workspace, pointed at the snapshot's base canvas.
 
         Get-or-create rather than create because ``built_forms`` and
         ``base_canvas`` may run before the ``workspace`` step. An existing
         workspace is repaired rather than left alone: one left on the
         ``base_table`` column's default (``public.base_canvas``) has the analysis
-        blueprints read a canvas that has nothing to do with this demo.
+        blueprints read a canvas that has nothing to do with the snapshot.
         """
         from brewgis.workspace.models import Workspace
 
@@ -268,34 +250,24 @@ class Command(BaseCommand):
 
         from brewgis.workspace.models import ScenarioType as ScenarioTypeModel
 
+        # A workspace has exactly one BASE scenario, so an existing one (the
+        # workspace was created in the UI, say) is adopted rather than joined by
+        # a second.
         scenario, created = Scenario.objects.get_or_create(
             workspace=ws,
-            name=SCENARIO_NAME,
+            scenario_type=ScenarioTypeModel.BASE,
             defaults={
+                "name": SCENARIO_NAME,
                 "slug": SCENARIO_SLUG,
                 "description": f"Base year {BASE_YEAR} — imported from v1 SACOG base canvas",
-                "scenario_type": ScenarioTypeModel.BASE,
                 "base_year": BASE_YEAR,
                 "horizon_year": HORIZON_YEAR,
             },
         )
         if created:
-            self.stdout.write(f"  ✓ Created scenario: {SCENARIO_NAME} ({BASE_YEAR})")
+            self.stdout.write(f"  ✓ Created scenario: {scenario.name} ({BASE_YEAR})")
         else:
-            self.stdout.write(f"  ✓ Scenario already exists: {SCENARIO_NAME}")
-
-        # The region's SACSIM reference trip lengths, so the scenario's
-        # ``trip_lengths`` model reads real zone lengths rather than the gravity
-        # fallback (see TRIP_LENGTH_TABLE). Region configuration lives in this
-        # region's loader: the model itself stays region-agnostic.
-        scenario.analysis_params = {
-            **(scenario.analysis_params or {}),
-            "transport_trip_length_table": TRIP_LENGTH_TABLE,
-        }
-        # The region's constraint layers, so the env_constraint module discounts
-        # developable acreage (see CONSTRAINT_SOURCES).
-        scenario.constraints = CONSTRAINT_SOURCES
-        scenario.save(update_fields=["analysis_params", "constraints"])
+            self.stdout.write(f"  ✓ Base scenario already exists: {scenario.name}")
 
         # Register constraint layers
         constraint_count = self._register_constraint_layers(ws)
@@ -318,7 +290,7 @@ class Command(BaseCommand):
                     "db_table": info["table"],
                     # The v1 constraint tables live in ``public``, not in the
                     # workspace schema: a blank ``db_schema`` would inherit
-                    # ``sacog_demo`` and point the layer at a table that does
+                    # ``sacog_v1`` and point the layer at a table that does
                     # not exist.
                     "db_schema": "public",
                     "layer_source": f"public.{info['table']}",
@@ -401,15 +373,18 @@ class Command(BaseCommand):
         from brewgis.workspace.analysis.pipeline import resolve_module_order
         from brewgis.workspace.analysis.run_health import reconcile_abandoned_run
         from brewgis.workspace.models import Scenario
+        from brewgis.workspace.models import ScenarioType
         from brewgis.workspace.models import Workspace
 
         # Load workspace and scenario
         try:
             ws = Workspace.objects.get(name=WORKSPACE_NAME)
-            scenario = Scenario.objects.get(workspace=ws, name=SCENARIO_NAME)
+            scenario = Scenario.objects.get(
+                workspace=ws, scenario_type=ScenarioType.BASE
+            )
         except (Workspace.DoesNotExist, Scenario.DoesNotExist):
             raise CommandError(
-                f"Workspace '{WORKSPACE_NAME}' or scenario '{SCENARIO_NAME}' not found. "
+                f"Workspace '{WORKSPACE_NAME}' or its base scenario not found. "
                 "Run '--step workspace' first."
             ) from None
 
@@ -467,6 +442,9 @@ class Command(BaseCommand):
             ("public.sac_cnty_streams", "streams constraint layer"),
             ("public.sac_cnty_wetlands", "wetlands constraint layer"),
             ("public.sac_cnty_vernal_pools", "vernal-pool constraint layer"),
+            # Read by the sacog_v1 analysis region (sacog_v1/constraint_layers.sql,
+            # analysis_region_profiles' trip_length_table), never named here.
+            ("public.elk_grove_vmt_base_trip_lengths", "SACSIM trip-length zones"),
         ]
 
         missing = []
@@ -504,10 +482,15 @@ class Command(BaseCommand):
         )
 
     def _register_base_canvas_layer(self, ws: Any) -> None:
-        """Register the materialized base canvas as a Layer record."""
+        """Register the materialized base canvas as a Layer record.
+
+        Update-or-create, like ``_resolve_workspace``: an existing layer of the
+        same key is repointed at the snapshot's table rather than left on
+        whatever it read before.
+        """
         from brewgis.workspace.models import Layer
 
-        Layer.objects.get_or_create(
+        Layer.objects.update_or_create(
             workspace=ws,
             key=BASE_CANVAS_TABLE,
             defaults={

@@ -381,22 +381,31 @@ convention. These are the v1 → v3 mappings:
 | `intersection_density_sqmi` | `intersection_density` | Network |
 | `geography_id` | `geography_id` | Identity |
 
+There are two SACOG workspaces, compared to validate the base layer
+construction: **SACOG Reconstruction**, on `sacog.base_canvas_reconciled` (the
+region pipeline's reconstruction from public data), and **SACOG v1**, on the
+UrbanFootprint v1 database snapshot's region canvas
+(`public.sac_cnty_region_base_canvas`) as imported. Each is analyzed against its
+own data — the base table's schema is the analysis region
+(`region_blueprints.analysis_region_profiles`): the reconstruction reads public
+FEMA/NWI constraint layers and the gravity trip-length fallback, the snapshot
+its own streams/wetlands/vernal pools and SACSIM zones.
+
 The v1 table lacks a base canvas' other columns (`area_dev_condition`, the
 `emp_*` breakdowns, …), so it cannot be adopted as a workspace's base canvas
-directly. `make sacog-base-canvas` materializes it as
-`public.sacog_parcels_base_canvas` with the full 85-column set, which the base
-canvas picker then offers as an imported table:
+directly. `import_sacog_demo` (and `make sacog-base-canvas` alone) materializes
+it as `sacog_v1.base_canvas` with the full 85-column set — in the `sacog_v1`
+schema, which is what makes a workspace on it the `sacog_v1` analysis region:
 
 ```bash
-make sacog-base-canvas
-python manage.py materialize_sacog_base_canvas --source-table public.elk_grove_base_canvas \
-  --target-table public.elk_grove_base_canvas_v3
+python manage.py import_sacog_demo            # workspace, v1 built forms, canvas, analysis
+python manage.py materialize_sacog_base_canvas  # the canvas table alone
 ```
 
 Three decisions distinguish the projection from what the v1 table itself holds
 (`services/sacog_column_mapping.py`, `build_materialized_select_sql`) — and they
-are the reason `import_sacog_demo --step base_canvas` materializes its demo
-canvas the same way rather than creating a view over the v1 table:
+are the reason the snapshot canvas is a materialized table rather than a view
+over the v1 table:
 
 - `parcel_id` and `geography_id` carry the v1 `geography_id` verbatim, not a
   `ROW_NUMBER()`. The comparison pipeline and the models join SACOG parcels by
@@ -423,8 +432,8 @@ not a model — anything the picker offers as an imported table — therefore ne
 two things before a scenario on it can be analysed:
 
 - an entry in `brewgis/sqlmesh/external_models.yaml` naming the table, so the
-  name stands for something (`"brewgis"."sacog_demo"."base_canvas_v1"` is the
-  SACOG demo's);
+  name stands for something (`"brewgis"."sacog_v1"."base_canvas"` is the
+  SACOG v1 snapshot's);
 - that entry **promoted** into the environment, because
   `ExecutionContext.resolve_table` looks the name up in the plan's snapshots and
   every Python analysis model calls it for its inputs whether or not it ends up

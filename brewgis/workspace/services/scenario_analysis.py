@@ -59,13 +59,18 @@ def drop_scenario_analysis(scenario_pk: int) -> None:
     Deleting the scenario removes its models from the blueprint profiles, but
     SQLMesh's stored environments would still list those snapshots — and a later
     plan that promotes such a stale entry points it at a physical object it
-    never creates, failing the whole plan. So they are removed from every
-    environment here, before any plan can trip over them.
+    never creates, failing the whole plan. So every model in the scenario's
+    ``ascn<pk>`` schema is removed from every environment here, before any plan
+    can trip over them — the support models too (``quarter_mile_context``,
+    ``trip_lengths``, ``network_zone_distance``), which no module selector
+    names: a deleted scenario's ``quarter_mile_context`` left in ``prod`` made
+    every later plan fail migrating it against an ``ascn<pk>.core_end_state``
+    that no longer existed.
     """
     schema = module_registry.result_schema_name(scenario_pk)
     with connection.cursor() as cursor:
         cursor.execute(f"DROP SCHEMA IF EXISTS {_qi(schema)} CASCADE")
-    purge_models_from_environments(scenario_analysis_fqns(scenario_pk))
+    purge_models_from_environments(schemas=[f"{MODEL_SCHEMA_PREFIX}{scenario_pk}"])
     logger.info("Dropped analysis result schema %s", schema)
 
 

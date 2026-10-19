@@ -5,18 +5,26 @@ The 28 models under ``models/analysis/`` used to be single models in the
 (``scenario_<id>`` + the default ``environment_suffix_target=SCHEMA``, which
 landed their virtual views at ``analysis__scenario_<id>.<name>``) and whose
 inputs came from plan-time ``variables`` (``parcel_table``, ``built_form_table``,
-``base_canvas_table``, ``constraints``, ``canonical_*``). That made every
-analysis run a whole SQLMesh environment and every per-run tunable a plan
-argument Django had to thread through.
+``base_canvas_table``, a scenario's constraint tables and column-name
+overrides). That made every analysis run a whole SQLMesh environment and every
+per-run tunable a plan argument Django had to thread through.
 
 They now follow the scenario-canvas pattern: this macro emits one model
 instance per scenario from the live ``Scenario`` table, so each scenario's
 analysis models are first-class SQLMesh models with stable names, materialized
 in ``prod``. Each model's ``on_virtual_update`` statement publishes its result
 at the location the Layers/Martin/UI paths already read,
-``analysis__scenario_<pk>.<model name>`` — so nothing downstream changes. The
-per-run tunables (``constraints``, ``column_mapping``) are persisted on the
-``Scenario`` (see ``workspace/models.py``) and baked into these blueprints.
+``analysis__scenario_<pk>.<model name>`` — so nothing downstream changes.
+
+Every input a model reads is resolved here, from the ``Workspace`` and
+``Scenario`` rows, never supplied by a launcher: the parcel source and built
+forms from the workspace, the analysis region from the workspace's base table
+(and through it the region's own data — ``brewgis.<region>.constraint_layers``,
+the trip-length zones and public-data region of
+``region_blueprints.analysis_region_profiles``), and the per-scenario value
+tunables (``Scenario.analysis_params``,
+see ``module_registry.ANALYSIS_PARAMETERS``). Column names are not
+configurable: the models read the columns the SQLMesh-built base canvas has.
 
 Naming — why the model is not named after the view it publishes: SQLMesh names a
 model's physical object ``{schema}__{table}__{version}`` (``SCHEMA_AND_TABLE``
@@ -44,7 +52,6 @@ cannot express the result of a live query.
 
 from __future__ import annotations
 
-import json
 import logging
 import multiprocessing
 from typing import Any
@@ -73,7 +80,8 @@ _IDENTIFIER_VARS = {
     "result_schema",
     "model_table",
     "parcel_key_type",
-    "road_network_region",
+    "region",
+    "public_data_region",
 }
 
 # Postgres column type -> the type a model declares for the parcel key. The key
@@ -94,11 +102,8 @@ _PARCEL_KEY_TYPES = {
 }
 
 
-def _parcel_key_type(base_table: str, column_mapping: dict[str, str]) -> str:
-    """The SQL type *base_table* keys its parcels on, as a model column type.
-
-    ``column_mapping`` is the scenario's canonical-name override: a scenario may
-    take its parcel id from a source column named something else.
+def _parcel_key_type(base_table: str) -> str:
+    """The SQL type *base_table*'s ``parcel_id`` column has, as a model column type.
 
     Falls back to TEXT when the table or column is not found — the assessor APN
     is the common case, and a wrong guess is not silent: the model's first insert
@@ -106,13 +111,12 @@ def _parcel_key_type(base_table: str, column_mapping: dict[str, str]) -> str:
     """
     from django.db import connection
 
-    column = column_mapping.get("parcel_id", "parcel_id")
     schema, _, table = base_table.partition(".")
     with connection.cursor() as cursor:
         cursor.execute(
             "SELECT data_type FROM information_schema.columns "
-            "WHERE table_schema = %s AND table_name = %s AND column_name = %s",
-            [schema, table, column],
+            "WHERE table_schema = %s AND table_name = %s AND column_name = 'parcel_id'",
+            [schema, table],
         )
         row = cursor.fetchone()
     if row is None:
@@ -227,26 +231,30 @@ def _scenario_profiles() -> list[dict[str, Any]]:
     ``parcel_table`` names the workspace's *effective* base layer — the
     built-form fill output when ``Workspace.fill_built_form`` is on, else its
     ``base_table`` — because that is the layer the scenario's parcels really
-    live in; ``parcel_key_type`` and the road-network region stay derived from
-    the raw ``base_table``, since they describe the source data. A base layer a
-    SQLMesh model publishes is named as the 3-part model FQN so the analysis
-    depends on it; any other base layer (an imported table — the picker offers
-    every loaded table with the base-canvas columns) is named as the plain
-    ``schema.table`` it is. ``parcel_table`` is ``None`` only for an ALTERNATIVE
-    scenario whose canvas model was not emitted (see
-    ``scenario_canvas_profiles``) — such a scenario is skipped with a warning
-    (mirroring that macro): one unplannable scenario must not make the whole
-    project unloadable, since these profiles are part of every model load.
+    live in; ``parcel_key_type`` and the ``region`` stay derived from the raw
+    ``base_table``, since they describe the source data. A base layer a SQLMesh
+    model publishes is named as the 3-part model FQN so the analysis depends on
+    it; any other base layer (an imported table in a region schema) is named as
+    the plain ``schema.table`` it is.
+
+    Two kinds of scenario get no profile, each logged: an ALTERNATIVE scenario
+    whose canvas model was not emitted (see ``scenario_canvas_profiles``), and
+    one whose workspace is in no region (``fetch_clone.workspace_region`` —
+    there is no default region). Skipping rather than raising is deliberate:
+    one unplannable scenario must not make the whole project unloadable, since
+    these profiles are part of every model load. The launch service refuses
+    such a scenario before it reaches a plan.
     """
     import django
 
     django.setup()
 
+    from brewgis.sqlmesh.macros.region_blueprints import analysis_region_profiles
     from brewgis.workspace.models import AnalysisRun
     from brewgis.workspace.models import Scenario
     from brewgis.workspace.models import ScenarioType
-    from brewgis.workspace.services.fetch_clone import region_for_base_table
-    from brewgis.workspace.services.fetch_clone import road_network_region
+    from brewgis.workspace.services.fetch_clone import WorkspaceRegionError
+    from brewgis.workspace.services.fetch_clone import workspace_region
     from brewgis.workspace.services.sqlmesh_tables import _model_backed_tables
     from brewgis.workspace.services.sqlmesh_tables import is_model_backed
 
@@ -257,6 +265,7 @@ def _scenario_profiles() -> list[dict[str, Any]]:
     )
     canvas_fqns: dict[int, str] | None = None
     model_backed = _model_backed_tables()
+    regions = analysis_region_profiles()
     profiles: list[dict[str, Any]] = []
     scenarios = (
         Scenario.objects.filter(pk__in=scenario_ids)
@@ -303,6 +312,24 @@ def _scenario_profiles() -> list[dict[str, Any]]:
             )
             continue
 
+        # A workspace in no region has no constraint layers, trip-length zones
+        # or road network to read, and no region is substituted for it. Its
+        # scenarios get no models; the launch service refuses them with this
+        # same message (``launch.scenario_analysis_errors``). Raising here
+        # instead would make the whole project unloadable — every other
+        # workspace's runs included — since these profiles are part of every
+        # model load.
+        try:
+            region = workspace_region(workspace)
+        except WorkspaceRegionError as error:
+            # A configuration error, not a crash: the message is the report.
+            logging.getLogger(_LOGGER_NAME).error(  # noqa: TRY400
+                "Scenario %s (%s) has no analysis models: %s",
+                scenario.pk,
+                scenario.slug,
+                error,
+            )
+            continue
         profile: dict[str, Any] = {
             "scenario_pk": int(scenario.pk),
             "scenario_id": scenario.slug,
@@ -315,24 +342,17 @@ def _scenario_profiles() -> list[dict[str, Any]]:
             "scenario_schema": f"{MODEL_SCHEMA_PREFIX}{scenario.pk}",
             "result_schema": RESULT_SCHEMA_TEMPLATE.format(pk=scenario.pk),
             "parcel_table": parcel_table,
-            "parcel_key_type": _parcel_key_type(
-                raw_base_table, scenario.column_mapping or {}
-            ),
+            "parcel_key_type": _parcel_key_type(raw_base_table),
             "built_form_table": f"{workspace.db_schema}.built_forms",
             "base_canvas_table": base_table,
-            "constraints": scenario.constraints,
-            # The region road network network_zone_distance routes over, and
-            # whether that region really is the workspace's (see
-            # ``fetch_clone.road_network_region``).
-            "road_network_region": road_network_region(raw_base_table),
-            "road_network_available": region_for_base_table(raw_base_table) is not None,
+            # The analysis region (``fetch_clone.workspace_region``): its own
+            # ``brewgis.<region>.constraint_layers`` and trip-length zones, and
+            # the pipeline region whose public-data models (food POIs, road
+            # network) cover it — see ``region_blueprints.analysis_region_profiles``.
+            "region": region,
+            "public_data_region": regions[region]["public_data_region"],
+            "trip_length_table": regions[region]["trip_length_table"],
         }
-        profile.update(
-            {
-                f"canonical_{name}": column
-                for name, column in (scenario.column_mapping or {}).items()
-            }
-        )
         # Every analysis parameter is baked into every blueprint, so a
         # blueprinted model resolves it without a config var or a plan-time
         # variable — rematerialization (which re-renders from these profiles
@@ -378,13 +398,6 @@ def _variable_sql(name: str, value: object) -> str:
     - ``@blueprint_var('name')`` re-parses this text as a SQL expression, which
       is what every *value* parameter uses: it is what makes ``0.85`` a numeric
       literal rather than the quoted identifier ``"0.85"``.
-
-    ``list``/``dict`` values (``constraints`` is a list of
-    ``{table, discount_pct, geom_col}`` objects) render as a *JSON string
-    literal* rather than ``ARRAY[...]``: an array has no element type that can
-    hold a heterogeneous record, and the array form would not parse — which
-    would break the whole model load, since the rendered blueprint text is
-    parsed before each model is created.
     """
     if name in _IDENTIFIER_VARS:
         return str(value)  # identifier, not a string literal
@@ -394,8 +407,6 @@ def _variable_sql(name: str, value: object) -> str:
         return "TRUE" if value else "FALSE"
     if isinstance(value, str):
         return "'" + value.replace("'", "''") + "'"
-    if isinstance(value, (list, dict)):
-        return "'" + json.dumps(value).replace("'", "''") + "'"
     return str(value)  # int -> exact numeric literal text
 
 

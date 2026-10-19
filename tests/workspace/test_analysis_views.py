@@ -8,13 +8,13 @@ from datetime import timedelta
 from unittest.mock import patch
 
 import pytest
-from django import forms
 from django.test import Client
 from django.test import RequestFactory
 from django.test import TestCase
 from django.urls import reverse
 from django.utils import timezone
 
+from brewgis.workspace.services.preflight import PreflightError
 from brewgis.workspace.views.analysis import AnalysisLaunchForm
 from brewgis.workspace.views.analysis import AnalysisLaunchView
 from tests.factories import AnalysisRunFactory
@@ -65,49 +65,6 @@ class TestAnalysisLaunchForm(TestCase):
         )
         assert "workspace" not in form.errors
         assert "modules" not in form.errors
-
-    def test_form_shows_every_stored_constraint_plus_a_blank_row(self):
-        """The constraint rows edit the scenario's own list — whatever launcher
-        stored it — so a schema-qualified or extra layer is shown, not replaced
-        by a fixed default set."""
-        scenario = ScenarioFactory(
-            workspace=self.workspace,
-            constraints=[
-                {
-                    "table": "fresno.floodplains",
-                    "discount_pct": 100,
-                    "geom_col": "geom",
-                },
-                {
-                    "table": "public.sac_cnty_streams",
-                    "discount_pct": 40,
-                    "geom_col": "wkb_geometry",
-                },
-            ],
-        )
-        form = AnalysisLaunchForm(workspace=self.workspace, scenario=scenario)
-        assert form.fields["constraint_0_table"].initial == "fresno.floodplains"
-        assert form.fields["constraint_1_table"].initial == "public.sac_cnty_streams"
-        assert form.fields["constraint_1_geom_col"].initial == "wkb_geometry"
-        assert form.fields["constraint_1_discount_pct"].initial == 40
-        assert form.fields["constraint_2_table"].initial == ""
-        assert "constraint_3_table" not in form.fields
-        assert not any(
-            isinstance(field.widget, forms.Textarea) for field in form.fields.values()
-        )
-
-    def test_form_rejects_out_of_range_constraint_discount(self):
-        """A discount above 100% is rejected by the field's bounds."""
-        form = AnalysisLaunchForm(
-            data={
-                "workspace": self.workspace.pk,
-                "modules": ["env_constraint"],
-                "constraint_0_table": "fresno.floodplains",
-                "constraint_0_discount_pct": 150,
-            },
-        )
-        assert not form.is_valid()
-        assert "constraint_0_discount_pct" in form.errors
 
 
 @pytest.mark.views
@@ -164,22 +121,10 @@ class TestAnalysisLaunchView(TestCase):
         view.setup(request)
         response = view.dispatch(request)
         form = response.context_data["form"]
-        expected_fields = {
-            "workspace",
-            "modules",
-            "scenario",
-            "constraint_0_table",
-            "column_pop",
-        }
-        assert expected_fields.issubset(form.fields.keys())
-        # Constraints/column mapping are plain fields, never raw JSON textareas.
-        assert not any(
-            isinstance(field.widget, forms.Textarea) for field in form.fields.values()
-        )
-        # The parcel/built-form/base-canvas tables are derived per scenario by
-        # the model blueprints (validated, not entered).
-        for derived in ("parcel_table", "built_form_table", "base_canvas_table"):
-            assert derived not in form.fields
+        # Every table and column a module reads is derived from the scenario
+        # and its workspace by the model blueprints, so the launcher offers no
+        # table or column override — only what to run, and against what.
+        assert set(form.fields) == {"workspace", "modules", "scenario"}
 
     def test_get_launch_page_uses_form_template(self):
         """GET response template name is 'form.html'."""
@@ -215,12 +160,13 @@ class TestAnalysisLaunchView(TestCase):
         mock_prereq.assert_called_once()
 
     @patch(
-        "brewgis.workspace.analysis.launch.scenario_analysis_errors", return_value=[]
+        "brewgis.workspace.analysis.launch.scenario_analysis_errors",
+        return_value=[PreflightError("built_form_table", "No built forms exported.")],
     )
     @patch("brewgis.workspace.analysis.launch.launch_analysis_run")
-    def test_post_with_missing_constraint_table_is_refused(self, mock_launch, _prereq):
-        """The form reports a constraint table that does not exist instead of
-        launching a run that would fail inside its SQLMesh plan."""
+    def test_post_refused_by_the_launch_service_shows_why(self, mock_launch, _prereq):
+        """A launch the service refuses re-renders the form with the reason
+        instead of creating a run that would fail inside its SQLMesh plan."""
         self.client.force_login(self.user)
         response = self.client.post(
             reverse(LAUNCH_URL),
@@ -228,16 +174,11 @@ class TestAnalysisLaunchView(TestCase):
                 "workspace": self.workspace.pk,
                 "modules": ["env_constraint"],
                 "scenario": self.scenario.pk,
-                "constraint_0_table": "no_such_constraint_table",
             },
             HTTP_HX_REQUEST="true",
         )
-        self.assertContains(
-            response, "Constraint table public.no_such_constraint_table does not exist."
-        )
+        self.assertContains(response, "No built forms exported.")
         mock_launch.assert_not_called()
-        self.scenario.refresh_from_db()
-        assert self.scenario.constraints == []
 
 
 @pytest.mark.views

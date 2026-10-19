@@ -68,6 +68,48 @@ def region_profiles() -> dict[str, dict[str, str | int | Decimal]]:
     }
 
 
+def analysis_region_profiles() -> dict[str, dict[str, str]]:
+    """Per-analysis-region facts: the regions a workspace can be analyzed in.
+
+    A workspace's analysis region is its base table's schema, and it must be one
+    of these (``fetch_clone.workspace_region``; there is no default). Every
+    region data pipeline in ``REGIONS`` is one — its workspaces analyze the base
+    canvas the pipeline reconstructs from public data — and so is ``sacog_v1``,
+    the SACOG base canvas imported from the UrbanFootprint v1 database snapshot
+    (``import_sacog_demo`` / ``materialize_sacog_base_canvas`` load it into the
+    ``sacog_v1`` schema). The two SACOG workspaces are compared to validate the
+    reconstruction, so each is analyzed against its own data:
+
+    - ``constraint_layers`` — the region's own ``brewgis.<region>.constraint_layers``
+      model (public FEMA flood zones + NWI wetlands for a pipeline region, the
+      snapshot's streams/wetlands/vernal pools for ``sacog_v1``);
+    - ``trip_length_table`` — reference trip-length zones (``schema.table``),
+      empty for the gravity fallback (``models/python/trip_lengths.py``). Only
+      the snapshot ships them: SACSIM's zones, restored from the dump, which
+      cover the whole SACOG region despite the table's Elk Grove name;
+    - ``public_data_region`` — the pipeline region whose public-data models
+      (OpenStreetMap food POIs, the Overture road network) cover this one. A
+      pipeline region is its own; the snapshot has none of its own, so it reads
+      the ``sacog`` fetches rather than fetching the same area twice.
+
+    A function for the same reason as ``region_profiles``.
+    """
+    return {
+        "sacog": {
+            "trip_length_table": "",
+            "public_data_region": "sacog",
+        },
+        "fresno": {
+            "trip_length_table": "",
+            "public_data_region": "fresno",
+        },
+        "sacog_v1": {
+            "trip_length_table": "public.elk_grove_vmt_base_trip_lengths",
+            "public_data_region": "sacog",
+        },
+    }
+
+
 def _variable_sql(name: str, value: str | int | Decimal) -> str:
     """Render one blueprint variable as the SQL literal text it originally had."""
     if name == "region":

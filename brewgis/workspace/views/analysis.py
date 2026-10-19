@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 import json
-import re
 from typing import Any
 from typing import cast
 
@@ -21,15 +20,12 @@ from django.utils.decorators import method_decorator
 from django.views.decorators.http import require_POST
 from django.views.generic.edit import FormView
 
-from brewgis.workspace.analysis.launch import AnalysisInputs
 from brewgis.workspace.analysis.launch import AnalysisLaunchError
 from brewgis.workspace.analysis.launch import launch_analysis
-from brewgis.workspace.analysis.module_registry import CANONICAL_COLUMN_NAMES
 from brewgis.workspace.analysis.module_registry import MODULE_LABELS
 from brewgis.workspace.analysis.module_registry import get_available_analyses
 from brewgis.workspace.analysis.module_registry import get_module_label
 from brewgis.workspace.analysis.module_registry import get_module_parameters
-from brewgis.workspace.analysis.module_registry import resolve_module_order
 from brewgis.workspace.analysis.run_health import reconcile_abandoned_run
 from brewgis.workspace.analysis.run_health import reconcile_abandoned_runs
 from brewgis.workspace.models import AnalysisRun
@@ -58,10 +54,8 @@ class AnalysisLaunchForm(forms.Form):
         required=True,
         label="Scenario",
         help_text=(
-            "Select a scenario for this analysis run. Its parcel source and "
-            "the parameters below are stored on the scenario, so rerunning it "
-            "— from here or from the map's Analysis panel — uses the same "
-            "inputs."
+            "Select a scenario for this analysis run. Its parcel source, "
+            "region data and stored parameters are what the run reads."
         ),
     )
 
@@ -95,135 +89,11 @@ class AnalysisLaunchForm(forms.Form):
                 workspace=self._workspace,
             )
 
-        # The parcel/built-form/base-canvas tables are derived per scenario by
-        # the model blueprints, but constraints and column mapping are per-run
-        # inputs — explicit fields, never JSON.
-        _add_scenario_input_fields(
-            self, constraints=True, column_mapping=True, scenario=scenario
-        )
-
     # Per-module analysis parameters are NOT offered here: this form launches
     # several modules at once, so a parameter cannot be scoped to one of them
-    # (see ``AnalysisModuleForm``).
-
-    def analysis_inputs(self) -> AnalysisInputs:
-        """The inputs this submission sets on the scenario before its run."""
-        return _scenario_inputs_from_form(self)
-
-
-# One editable row per configured constraint plus one blank row for adding
-# another. Rows are plain form fields (``constraint_<n>_table`` / ``_geom_col``
-# / ``_discount_pct``), so crispy renders them in both analysis forms' templates.
-_CONSTRAINT_FIELD = re.compile(r"constraint_(\d+)_(?:table|geom_col|discount_pct)")
-
-
-def _constraint_row_count(form: forms.Form, scenario: Scenario | None) -> int:
-    """Rows to build: every submitted row when bound, else the stored ones + 1."""
-    if form.is_bound:
-        indices = {
-            int(match.group(1))
-            for key in form.data
-            if (match := _CONSTRAINT_FIELD.fullmatch(key))
-        }
-        return max(indices, default=-1) + 1
-    stored = (scenario.constraints or []) if scenario is not None else []
-    return len(stored) + 1
-
-
-def _add_scenario_input_fields(
-    form: forms.Form,
-    *,
-    constraints: bool,
-    column_mapping: bool,
-    scenario: Scenario | None = None,
-) -> None:
-    """Add the constraint and column-mapping fields to *form*.
-
-    Shared by both analysis forms so their field definitions can never drift
-    apart: the full-page multi-module launcher always shows them, while a
-    single-module form shows them only when the module's dependency chain
-    actually resolves through ``env_constraint`` / ``core``.
-
-    The constraint rows edit the scenario's own ``Scenario.constraints`` — the
-    same ``{table, discount_pct, geom_col}`` list the MCP ``run_analysis`` tool
-    takes — so any configuration one launcher can set, the other can show and
-    keep. Validation and defaults live in
-    :func:`brewgis.workspace.analysis.launch.launch_analysis`.
-    """
-    if constraints:
-        stored = (scenario.constraints or []) if scenario is not None else []
-        for index in range(_constraint_row_count(form, scenario)):
-            entry = stored[index] if index < len(stored) else {}
-            number = index + 1
-            form.fields[f"constraint_{index}_table"] = forms.CharField(
-                required=False,
-                initial=entry.get("table", ""),
-                label=f"Constraint {number} table",
-                help_text=(
-                    "Polygon table, schema-qualified (e.g. fresno.floodplains); a bare "
-                    "name resolves in public. Clear it to remove the constraint."
-                ),
-            )
-            form.fields[f"constraint_{index}_geom_col"] = forms.CharField(
-                required=False,
-                initial=entry.get("geom_col", ""),
-                label=f"Constraint {number} geometry column",
-                help_text="Defaults to geom.",
-            )
-            form.fields[f"constraint_{index}_discount_pct"] = forms.FloatField(
-                required=False,
-                min_value=0,
-                max_value=100,
-                initial=entry.get("discount_pct"),
-                label=f"Constraint {number} discount %",
-                help_text="% of the overlapping acreage excluded from developable land. Defaults to 100.",
-            )
-    if column_mapping:
-        for name in CANONICAL_COLUMN_NAMES:
-            form.fields[f"column_{name}"] = forms.CharField(
-                required=False,
-                label=f"{name.replace('_', ' ').title()} column override",
-                help_text=f"Use if your source table names this column something other than '{name}'.",
-            )
-
-
-def _scenario_inputs_from_form(
-    form: forms.Form, params: dict[str, Any] | None = None
-) -> AnalysisInputs:
-    """Translate a validated analysis form into :class:`AnalysisInputs`.
-
-    A section the form does not render (constraints or column mapping, for a
-    module whose chain does not read them) is ``None`` — the scenario keeps its
-    stored value. A rendered section replaces it: constraint rows with a blank
-    table are dropped, and blank geometry/discount cells are left out so the
-    launch service applies its defaults.
-    """
-    constraints: list[dict[str, Any]] | None = None
-    if "constraint_0_table" in form.fields:
-        constraints = []
-        index = 0
-        while f"constraint_{index}_table" in form.fields:
-            table = form.cleaned_data.get(f"constraint_{index}_table")
-            if table:
-                entry: dict[str, Any] = {"table": table}
-                geom_col = form.cleaned_data.get(f"constraint_{index}_geom_col")
-                if geom_col:
-                    entry["geom_col"] = geom_col
-                discount = form.cleaned_data.get(f"constraint_{index}_discount_pct")
-                if discount is not None:
-                    entry["discount_pct"] = discount
-                constraints.append(entry)
-            index += 1
-    column_mapping: dict[str, str] | None = None
-    if f"column_{CANONICAL_COLUMN_NAMES[0]}" in form.fields:
-        column_mapping = {
-            name: form.cleaned_data[f"column_{name}"]
-            for name in CANONICAL_COLUMN_NAMES
-            if form.cleaned_data.get(f"column_{name}")
-        }
-    return AnalysisInputs(
-        constraints=constraints, column_mapping=column_mapping, params=params or {}
-    )
+    # (see ``AnalysisModuleForm``). Every table a module reads is derived from
+    # the scenario and its workspace (``sqlmesh/macros/analysis_blueprints.py``),
+    # so there is nothing else to enter.
 
 
 def _add_launch_errors(form: forms.Form, error: AnalysisLaunchError) -> None:
@@ -262,13 +132,12 @@ class AnalysisModuleForm(forms.Form):
     is bound to one specific analysis module and exposes every relevant
     parameter as its own field — no JSON entry required.
 
-    It collects the parameters a run can still act on: which scenario to run
-    against, how to discount constraint layers, how the scenario's parcel
-    source names the canonical columns, and that scenario's analysis
-    parameters (``module_registry.ANALYSIS_PARAMETERS``). The parcel/built-form/
-    base-canvas tables are derived
-    (``sqlmesh/macros/analysis_blueprints.py``), so they are validated rather
-    than entered — see ``launch.scenario_analysis_errors``.
+    It collects which scenario to run against and that scenario's analysis
+    parameters (``module_registry.ANALYSIS_PARAMETERS``). Every table the
+    module reads — parcel source, built forms, the region's constraint layers
+    and other region data — is derived (``sqlmesh/macros/analysis_blueprints.py``),
+    so it is validated rather than entered — see
+    ``launch.scenario_analysis_errors``.
     """
 
     scenario = forms.ModelChoiceField(
@@ -289,14 +158,6 @@ class AnalysisModuleForm(forms.Form):
         super().__init__(*args, **kwargs)  # type: ignore[arg-type]
 
         self._module = module
-        deps = resolve_module_order([module])
-
-        _add_scenario_input_fields(
-            self,
-            constraints="env_constraint" in deps,
-            column_mapping="core" in deps,
-            scenario=scenario,
-        )
         _add_parameter_fields(self, module, scenario)
 
         self.helper = FormHelper()
@@ -309,19 +170,18 @@ class AnalysisModuleForm(forms.Form):
                 workspace=self._workspace,
             )
 
-    def analysis_inputs(self) -> AnalysisInputs:
-        """The inputs this submission sets on the scenario before its run.
+    def analysis_params(self) -> dict[str, Any]:
+        """The parameters this submission sets on the scenario before its run.
 
         A parameter whose field came back empty is left out (the scenario keeps
         its value) — except a ``str`` parameter, whose empty value *is* its
         "unset" value and is therefore sent as-is.
         """
-        params = {
+        return {
             param.name: self.cleaned_data[param.name]
             for param in get_module_parameters(self._module)
             if self.cleaned_data.get(param.name) is not None
         }
-        return _scenario_inputs_from_form(self, params)
 
 
 @method_decorator(user_passes_test(lambda u: u.is_authenticated), name="dispatch")
@@ -372,11 +232,7 @@ class AnalysisLaunchView(HtmxResponseMixin, FormView):
         data = form.cleaned_data
         modules: list[str] = data["modules"]
         try:
-            run = launch_analysis(
-                scenario=data["scenario"],
-                modules=modules,
-                inputs=form.analysis_inputs(),
-            )
+            run = launch_analysis(scenario=data["scenario"], modules=modules)
         except AnalysisLaunchError as error:
             _add_launch_errors(form, error)
             return self.form_invalid(form)
@@ -624,9 +480,9 @@ def analysis_module_details(
     ``?panel=1`` is the right-drawer presentation of the same thing, opened by
     a layer's per-analysis icon in the Layers panel: the module is named and
     described above the *active inputs a rematerialization reads* — the
-    scenario's parameter overrides, constraint discounts and column mapping,
-    which is what ``sqlmesh/macros/analysis_blueprints.py`` bakes into the
-    models when they are (re)rendered — followed by the run responsible when
+    scenario's parameter values, which is what
+    ``sqlmesh/macros/analysis_blueprints.py`` bakes into the models when they
+    are (re)rendered — followed by the run responsible when
     one is recorded, or a note that the view was published outside the Analysis
     panel. The layer is shown either way: its view exists and is being tiled,
     whether or not a run row survives.
@@ -647,8 +503,6 @@ def analysis_module_details(
                 "run": run,
                 "vmt_fee_data": _vmt_fee_data(run) if run else None,
                 "parameters": _module_parameter_rows(scenario, module_key),
-                "constraints": (scenario.constraints or []) if scenario else [],
-                "column_mapping": ((scenario.column_mapping or {}) if scenario else {}),
             },
         )
 
@@ -727,7 +581,7 @@ def analysis_module_launch(
         request,
         meta=meta,
         scenario=form.cleaned_data["scenario"],
-        inputs=form.analysis_inputs(),
+        params=form.analysis_params(),
         form=form,
     )
 
@@ -737,12 +591,12 @@ def analysis_module_launch(
 def analysis_module_rerun(
     request: HttpRequest, workspace_pk: int, module_key: str
 ) -> HttpResponse:
-    """Launch one analysis again with exactly the inputs stored on its scenario.
+    """Launch one analysis again with exactly the parameters stored on its scenario.
 
-    A run's inputs live on the Scenario (see ``launch.launch_analysis``), so a
-    rerun sets none: it posts only the scenario. A rerun the launch service
-    refuses (a constraint table that no longer exists, say) opens the module's
-    parameter form with the reasons, where the stored inputs can be corrected.
+    A run's parameters live on the Scenario (see ``launch.launch_analysis``), so
+    a rerun sets none: it posts only the scenario. A rerun the launch service
+    refuses (an empty built-forms export, say) opens the module's parameter
+    form with the reasons.
     """
     workspace = get_object_or_404(Workspace, pk=workspace_pk)
     meta = _get_analysis_meta(module_key)
@@ -754,7 +608,7 @@ def analysis_module_rerun(
         request,
         meta=meta,
         scenario=scenario,
-        inputs=AnalysisInputs(),
+        params={},
         form=form,
     )
 
@@ -764,12 +618,12 @@ def _launch_module(
     *,
     meta: dict[str, Any],
     scenario: Scenario,
-    inputs: AnalysisInputs,
+    params: dict[str, Any],
     form: AnalysisModuleForm,
 ) -> HttpResponse:
     """Launch *meta*'s module for *scenario*; on refusal re-render *form* with why."""
     try:
-        run = launch_analysis(scenario=scenario, modules=[meta["key"]], inputs=inputs)
+        run = launch_analysis(scenario=scenario, modules=[meta["key"]], params=params)
     except AnalysisLaunchError as error:
         return render(
             request,

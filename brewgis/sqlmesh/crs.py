@@ -6,7 +6,7 @@ through the package path the repo's own code uses
 (``brewgis.sqlmesh.macros.geometry``), so a helper that two macro modules both
 import from inside that folder resolves to two distinct function objects. A
 model that pulls a macro from each module (``env_constraint.sql`` takes
-``@constraint_geometries`` from ``spatial_ops`` and ``@local_srid`` from
+``@constraint_min_overlap_sqm`` from ``spatial_ops`` and ``@local_srid`` from
 ``geometry``) then fails SQLMesh's python-env walk with ``duplicate definitions
 found`` — on every model load after the first in a process. A single import
 path keeps one object.

@@ -51,7 +51,7 @@ counts AS (
         COUNT(*) FILTER (WHERE fp.is_healthy) AS healthy_count,
         COUNT(*) FILTER (WHERE fp.is_unhealthy) AS unhealthy_count
     FROM parcels AS p
-    JOIN brewgis.@{road_network_region}.food_pois_local AS fp
+    JOIN brewgis.@{public_data_region}.food_pois_local AS fp
         ON ST_DWithin(
             p.local_geometry,
             fp.geometry,

@@ -119,8 +119,15 @@ def model_fqns_built_in(environment: str, model_fqns: Iterable[str]) -> list[str
     return [fqn for fqn in model_fqns if normalize_fqn(fqn) in built]
 
 
-def purge_models_from_environments(model_fqns: Iterable[str]) -> list[str]:
-    """Remove *model_fqns* from every SQLMesh environment.
+def purge_models_from_environments(
+    model_fqns: Iterable[str] = (), *, schemas: Iterable[str] = ()
+) -> list[str]:
+    """Remove *model_fqns*, and every model in *schemas*, from every environment.
+
+    *schemas* are model schemas within the ``brewgis`` catalog (``ascn<pk>``):
+    a schema that holds nothing but one owner's models is purged whole, so a
+    model the owner's lists never named (a support model added later) cannot
+    be left behind.
 
     Used when a model leaves the project without a plan (a deleted scenario's
     blueprinted analysis models, a dropped scenario canvas): the stored
@@ -138,8 +145,12 @@ def purge_models_from_environments(model_fqns: Iterable[str]) -> list[str]:
     from django.conf import settings
 
     wanted = {normalize_fqn(fqn) for fqn in model_fqns}
-    if not wanted or settings.TESTING:
+    prefixes = tuple(f"brewgis.{schema}." for schema in schemas)
+    if not (wanted or prefixes) or settings.TESTING:
         return []
+
+    def is_wanted(name: str) -> bool:
+        return name in wanted or name.startswith(prefixes)
 
     import uuid
 
@@ -150,15 +161,15 @@ def purge_models_from_environments(model_fqns: Iterable[str]) -> list[str]:
             (entry, normalize_fqn(snapshot_name(entry)))
             for entry in environment.snapshots_
         ]
-        if not any(name in wanted for _, name in entries):
+        if not any(is_wanted(name) for _, name in entries):
             continue
         updated = environment.copy(deep=True)
-        updated.snapshots_ = [entry for entry, name in entries if name not in wanted]
+        updated.snapshots_ = [entry for entry, name in entries if not is_wanted(name)]
         if environment.previous_finalized_snapshots_:
             updated.previous_finalized_snapshots_ = [
                 entry
                 for entry in environment.previous_finalized_snapshots_
-                if normalize_fqn(snapshot_name(entry)) not in wanted
+                if not is_wanted(normalize_fqn(snapshot_name(entry)))
             ]
         # ``promote`` refuses to rewrite an environment whose plan chain moved on.
         updated.previous_plan_id = environment.plan_id
@@ -167,8 +178,9 @@ def purge_models_from_environments(model_fqns: Iterable[str]) -> list[str]:
         touched.append(environment.name)
     if touched:
         logger.info(
-            "Removed model(s) %s from environment(s) %s",
+            "Removed model(s) %s and schema(s) %s from environment(s) %s",
             sorted(wanted),
+            sorted(prefixes),
             touched,
         )
     return touched
@@ -363,7 +375,7 @@ def run_sqlmesh_plan(  # noqa: PLR0913
         no_prompts: Auto-approve without interactive prompts.
         auto_apply: Apply the plan immediately after creation.
         create_from: Source environment to create from (virtual environment).
-        variables: Model variable overrides (e.g. ``parcel_table``, ``constraints``).
+        variables: Model variable overrides (e.g. ``parcel_table``).
         restate_models: If True, re-evaluate the selected models even if unchanged.
         always_include_local_changes: Whether the plan sees the models in the
             project as they are on disk. Default (``None``) is SQLMesh's own

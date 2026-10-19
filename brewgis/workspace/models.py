@@ -362,22 +362,6 @@ class Scenario(models.Model):
         blank=True,
         help_text="UUID token for public sharing link.",
     )
-    constraints = models.JSONField(
-        default=list,
-        blank=True,
-        help_text=(
-            "Analysis constraint layers: [{table, discount_pct, geom_col}]. "
-            "Baked into this scenario's analysis model blueprints."
-        ),
-    )
-    column_mapping = models.JSONField(
-        default=dict,
-        blank=True,
-        help_text=(
-            "Analysis column mapping {canonical_name: user_column} for this "
-            "scenario's parcel source (see module_registry.CANONICAL_COLUMN_NAMES)."
-        ),
-    )
     analysis_params = models.JSONField(
         default=dict,
         blank=True,
@@ -603,11 +587,6 @@ class AnalysisRun(models.Model):
         default=dict,
         blank=True,
         help_text="dbt variables used for this run.",
-    )
-    column_mapping = models.JSONField(
-        blank=True,
-        default=dict,
-        help_text="User-specified column name mappings (e.g. {'pop': 'population'}).",
     )
     started_at = models.DateTimeField(null=True, blank=True)
     completed_at = models.DateTimeField(null=True, blank=True)

@@ -688,8 +688,8 @@
     gluc: TEXT
     geometry: GEOMETRY(MULTIPOLYGON, 3310)
     parcel_id: INT
-- name: '"brewgis"."sacog_demo"."base_canvas_v1"'
-  description: SACOG v1 demo base canvas, one row per parcel with geometry, area, people, housing and jobs.
+- name: '"brewgis"."sacog_v1"."base_canvas"'
+  description: SACOG v1 database snapshot base canvas (sac_cnty_region_base_canvas as imported by import_sacog_demo), one row per parcel with geometry, area, people, housing and jobs.
   column_descriptions:
     parcel_id: BrewGIS parcel identifier, set to the SACOG v1 geography_id when the canvas is loaded.
     id_source: Always 'sacog_v1' for this canvas.
@@ -770,4 +770,49 @@
     emp_construction: DOUBLE PRECISION
     emp_agriculture: DOUBLE PRECISION
     emp_military: DOUBLE PRECISION
+  gateway: postgis
+- name: '"brewgis"."public"."sac_cnty_streams"'
+  description: SACOG v1 streams constraint polygons restored from the UrbanFootprint source dump, one polygon per row.
+  column_descriptions:
+    source_id: Feature identifier from the SACOG v1 source data.
+    wkb_geometry: 'Streams polygon in CA Albers (EPSG:3310) coordinates with no SRID recorded (SRID 0).'
+    area: Polygon area as recorded in the SACOG v1 layer (source units).
+    perimeter: Polygon perimeter as recorded in the SACOG v1 layer (source units).
+    stream_code: Stream code of the polygon in the SACOG v1 layer.
+  columns:
+    source_id: INT
+    wkb_geometry: GEOMETRY
+    area: NUMERIC
+    perimeter: NUMERIC
+    stream_code: VARCHAR
+  gateway: postgis
+- name: '"brewgis"."public"."sac_cnty_wetlands"'
+  description: SACOG v1 wetlands constraint polygons restored from the UrbanFootprint source dump, one polygon per row.
+  column_descriptions:
+    source_id: Feature identifier from the SACOG v1 source data.
+    wkb_geometry: 'Wetlands polygon in CA Albers (EPSG:3310) coordinates with no SRID recorded (SRID 0).'
+    area: Polygon area as recorded in the SACOG v1 layer (source units).
+    perimeter: Polygon perimeter as recorded in the SACOG v1 layer (source units).
+    wetland_code: Wetland code of the polygon in the SACOG v1 layer.
+  columns:
+    source_id: INT
+    wkb_geometry: GEOMETRY
+    area: NUMERIC
+    perimeter: NUMERIC
+    wetland_code: VARCHAR
+  gateway: postgis
+- name: '"brewgis"."public"."sac_cnty_vernal_pools"'
+  description: SACOG v1 vernal pools constraint polygons restored from the UrbanFootprint source dump, one polygon per row.
+  column_descriptions:
+    source_id: Feature identifier from the SACOG v1 source data.
+    wkb_geometry: 'Vernal pools polygon in CA Albers (EPSG:3310) coordinates with no SRID recorded (SRID 0).'
+    area: Polygon area as recorded in the SACOG v1 layer (source units).
+    perimeter: Polygon perimeter as recorded in the SACOG v1 layer (source units).
+    vernal_pool_code: Vernal pool code of the polygon in the SACOG v1 layer.
+  columns:
+    source_id: INT
+    wkb_geometry: GEOMETRY
+    area: NUMERIC
+    perimeter: NUMERIC
+    vernal_pool_code: VARCHAR
   gateway: postgis

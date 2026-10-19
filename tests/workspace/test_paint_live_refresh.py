@@ -204,10 +204,10 @@ def _setup_fixture(conn: psycopg.Connection) -> dict[str, Any]:
                 (name, slug, description, workspace_id, scenario_type,
                  base_year, horizon_year, schema_name, published,
                  public_token, created_at, updated_at,
-                 column_mapping, constraints, analysis_params)
+                 analysis_params)
             VALUES (%s, %s, '', %s, 'alternative', 2023, 2050, %s, false,
                     gen_random_uuid(), now(), now(),
-                    '{}'::jsonb, '{}'::jsonb, '{}'::jsonb)
+                    '{}'::jsonb)
             RETURNING id
             """,
             ("Test Scenario", slug, workspace_id, schema_name),
@@ -224,10 +224,10 @@ def _setup_fixture(conn: psycopg.Connection) -> dict[str, Any]:
                 (name, slug, description, workspace_id, scenario_type,
                  base_year, horizon_year, schema_name, published,
                  public_token, created_at, updated_at,
-                 column_mapping, constraints, analysis_params)
+                 analysis_params)
             VALUES ('Fixture Baseline', 'test-base', '', %s, 'base', 2023, 2050,
                     'scenario_test-base', false, gen_random_uuid(), now(), now(),
-                    '{}'::jsonb, '{}'::jsonb, '{}'::jsonb)
+                    '{}'::jsonb)
             """,
             (workspace_id,),
         )

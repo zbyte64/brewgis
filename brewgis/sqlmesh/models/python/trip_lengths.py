@@ -20,9 +20,11 @@ produce a trip length, but its absolute scale is an artifact of parcel size and
 density — SACOG's canvas lands on ~1.2 km one-way against SACSIM's ~6.4 km, and
 VMT is proportional to it, so every VMT number comes out ~5x low.
 
-So: when the scenario names a reference table (``transport_trip_length_table``,
-``schema.table``), that table wins. When it does not — Fresno, any region
-without such data — the model falls back to the gravity model's own
+So: when the workspace's analysis region ships a reference table
+(``trip_length_table`` in ``region_blueprints.analysis_region_profiles`` — the
+imported SACOG v1 snapshot's SACSIM zones), that table wins. When it does not —
+Fresno, the SACOG reconstruction, any region built from public data — the model
+falls back to the gravity model's own
 ``avg_trip_length_km``, which preserves the *spatial gradient* (parcels near
 employment attract shorter trips, rural ones longer), rescaled so the regional
 mean equals ``transport_target_avg_trip_length_km``. The gradient is what makes
@@ -41,9 +43,9 @@ length weights the zones by parcel density, which shrinks the regional mean
 (SACOG: 5.76 km against the table's 6.42 km, because parcels concentrate in the
 short-trip zones), while the rescale keeps the table's spatial structure — the
 same relationship to a published regional mean that the fallback has to its
-target. The identifier is interpolated into the fetch SQL directly
-(scenario-owned configuration, the same trust the scenario's ``parcel_table``
-gets), so it must never be built from user input.
+target. The identifier is interpolated into the fetch SQL directly (region
+configuration in the region profile, the same trust the scenario's
+``parcel_table`` gets), so it must never be built from user input.
 
 The zone join is a ``LEFT JOIN`` on purpose: a parcel whose centroid falls
 outside every zone keeps the scaled gravity value instead of dropping its trips
@@ -181,8 +183,8 @@ def execute(
     )
     # A reference table is region configuration: a plain ``schema.table`` name,
     # empty when the region ships none. It is interpolated into the fetch below
-    # the way ``parcel_table`` is — scenario-owned, never user-supplied SQL.
-    table = context.blueprint_var("transport_trip_length_table")
+    # the way ``parcel_table`` is — project-owned, never user-supplied SQL.
+    table = context.blueprint_var("trip_length_table")
     target = _as_float(
         context.blueprint_var("transport_target_avg_trip_length_km"),
         _DEFAULT_TARGET_AVG_TRIP_LENGTH_KM,
@@ -232,7 +234,7 @@ def execute(
             LEFT JOIN {table} AS z
                 ON ST_Contains(ST_Transform(z.wkb_geometry, {srid}), es.centroid_local)
             ORDER BY es.parcel_id
-            """  # noqa: S608 — the table is scenario-owned configuration
+            """  # noqa: S608 — the table is region configuration
         )
         gravity = gravity.merge(zones, on="parcel_id", how="left")
         # The reference table's own regional mean is the region's trip length;

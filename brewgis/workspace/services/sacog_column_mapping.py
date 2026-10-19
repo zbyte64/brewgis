@@ -1,6 +1,7 @@
 """SACOG v1 → BaseCanvasSchema column mapping.
 
-Maps columns from the v1 ``elk_grove_base_canvas`` table to the v3
+Maps columns from the v1 ``sac_cnty_region_base_canvas`` table (the SACOG
+region's base canvas in the UrbanFootprint v1 database snapshot) to the v3
 ``BaseCanvasSchema`` 77-column specification.
 
 Most columns map 1:1 with only prefix differences:
@@ -24,8 +25,9 @@ if TYPE_CHECKING:
 
 logger = logging.getLogger(__name__)
 
-# v1 source table that serves as the base for mapping
-V1_BASE_TABLE = "public.elk_grove_base_canvas"
+# The v1 snapshot's SACOG region base canvas (502,874 parcels): what the
+# ``sacog_v1`` workspace imports and ``compare_sacog_basemap`` compares against.
+V1_BASE_TABLE = "public.sac_cnty_region_base_canvas"
 
 # Columns that exist in v1 but have no BaseCanvasSchema equivalent (kept for reference)
 V1_EXTRA_COLUMNS = frozenset(
@@ -53,7 +55,7 @@ V1_EXTRA_COLUMNS = frozenset(
 class ColumnMapping:
     """A single column mapping from v1 → v3."""
 
-    # The v1 column name in elk_grove_base_canvas
+    # The v1 column name in sac_cnty_region_base_canvas
     v1_column: str
 
     # The v3 BaseCanvasSchema column name (if applicable)

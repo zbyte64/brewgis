@@ -34,12 +34,16 @@ for.
 from __future__ import annotations
 
 import logging
+from typing import TYPE_CHECKING
 from typing import Any
 
-from brewgis.sqlmesh.macros.region_blueprints import REGIONS
+from brewgis.sqlmesh.macros.region_blueprints import analysis_region_profiles
 from brewgis.sqlmesh.macros.region_blueprints import region_profiles
 from brewgis.workspace.services._db import get_engine
 from brewgis.workspace.services._db import text
+
+if TYPE_CHECKING:
+    from brewgis.workspace.models import Workspace
 
 logger = logging.getLogger(__name__)
 
@@ -152,24 +156,32 @@ def region_for_county(county_fips: str) -> str:
     return DEFAULT_REGION
 
 
-def region_for_base_table(base_table: str) -> str | None:
-    """Return the region whose SQLMesh models *base_table* belongs to, if any.
+class WorkspaceRegionError(ValueError):
+    """The workspace is not configured for analysis: it belongs to no region."""
 
-    A workspace base table is ``<schema>.<table>``; it belongs to a region when
-    its schema is one of :data:`region_blueprints.REGIONS`.
+
+def workspace_region(workspace: Workspace) -> str:
+    """Return the analysis region *workspace*'s scenarios are analyzed in.
+
+    The region is the base table's schema, which must name one of
+    ``region_blueprints.analysis_region_profiles`` — its constraint layers,
+    trip-length zones, road network and food POIs all come from that region's
+    models, so there is deliberately no default region to substitute.
+
+    Raises:
+        WorkspaceRegionError: the workspace's base table is in no region schema.
     """
-    schema, _, _ = base_table.partition(".")
-    return schema if schema in REGIONS else None
-
-
-def road_network_region(base_table: str) -> str:
-    """Return the region whose road network models a scenario on *base_table* names.
-
-    Falls back to :data:`DEFAULT_REGION` so the dependency always names a real
-    model; ``network_zone_distance`` refuses to route when
-    :func:`region_for_base_table` is ``None``.
-    """
-    return region_for_base_table(base_table) or DEFAULT_REGION
+    regions = analysis_region_profiles()
+    schema, _, _ = workspace.base_table.partition(".")
+    if schema not in regions:
+        msg = (
+            f"Workspace {workspace.pk} ({workspace.name}) is not configured for "
+            f"analysis: its base table {workspace.base_table!r} is not in a "
+            f"region schema ({', '.join(regions)}). Set the workspace's base "
+            "table to a region's base canvas."
+        )
+        raise WorkspaceRegionError(msg)
+    return schema
 
 
 def _quote(identifier: str) -> str:

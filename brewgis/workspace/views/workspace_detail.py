@@ -129,10 +129,6 @@ ANALYSIS_MODULES: list[dict[str, object]] = [
     },
 ]
 
-# Constraint tables whose presence in the workspace schema marks env_constraint
-# ready on the dashboard.
-_CONSTRAINT_LAYER_TABLES: tuple[str, ...] = ("floodplains", "wetlands", "steep_slopes")
-
 
 def _split_table_ref(schema: str, table_ref: str) -> tuple[str, str]:
     """Split a possibly schema-qualified "schema.table" reference."""
@@ -171,10 +167,6 @@ def build_analysis_modules(workspace: Workspace) -> list[dict[str, object]]:
         workspace.db_schema, workspace.effective_base_table()
     )
     base_parcels_ready = _table_has_rows(base_schema, base_name)
-    constraint_layers_ready = any(
-        _table_has_rows(workspace.db_schema, table)
-        for table in _CONSTRAINT_LAYER_TABLES
-    )
     scenario_ready = Scenario.objects.filter(workspace=workspace).exists()
     allocated_parcels_ready = AnalysisRun.objects.filter(
         workspace=workspace,
@@ -185,7 +177,9 @@ def build_analysis_modules(workspace: Workspace) -> list[dict[str, object]]:
 
     water_energy_status = _prereq_status(allocated_parcels_ready, density_factors_ready)
     status_by_key: dict[str, str] = {
-        "env_constraint": _prereq_status(base_parcels_ready, constraint_layers_ready),
+        # The region's constraint layers are a SQLMesh dependency the run
+        # builds itself (``brewgis.<region>.constraint_layers``).
+        "env_constraint": _prereq_status(base_parcels_ready),
         "core": _prereq_status(scenario_ready, base_parcels_ready),
         "water_demand": water_energy_status,
         "energy_demand": water_energy_status,

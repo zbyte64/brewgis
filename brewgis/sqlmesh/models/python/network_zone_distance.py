@@ -37,7 +37,6 @@ from brewgis.sqlmesh.blueprint_models import register_blueprint_model
 from brewgis.sqlmesh.macros.analysis_blueprints import analysis_blueprint_profiles
 from brewgis.sqlmesh.macros.geometry import metres_per_unit
 from brewgis.sqlmesh.macros.geometry import require_local_srid
-from brewgis.sqlmesh.macros.region_blueprints import REGIONS
 from brewgis.sqlmesh.models.python._network_zones import MAX_ZONES
 from brewgis.sqlmesh.models.python._network_zones import ZONE_CELL_METRES
 
@@ -116,25 +115,16 @@ def execute(
     """
     parcels = context.resolve_table(f"{context.blueprint_var('parcel_table')}")
     vertices = context.resolve_table(
-        f"brewgis.{context.blueprint_var('road_network_region')}.road_network_vertices"
+        f"brewgis.{context.blueprint_var('public_data_region')}.road_network_vertices"
     )
     edges = context.resolve_table(
-        f"brewgis.{context.blueprint_var('road_network_region')}.road_network_edges"
+        f"brewgis.{context.blueprint_var('public_data_region')}.road_network_edges"
     )
 
     if not context.blueprint_var("transport_use_network_distance"):
         # SQLMesh cannot insert an empty DataFrame; yielding nothing leaves the
         # table empty.
         return
-
-    scenario_pk = context.blueprint_var("scenario_pk")
-    if not context.blueprint_var("road_network_available"):
-        msg = (
-            f"transport_use_network_distance is enabled for scenario {scenario_pk}"
-            " but its workspace base table is not in a region with an Overture"
-            f" road network ({', '.join(REGIONS)})"
-        )
-        raise RuntimeError(msg)
 
     srid = require_local_srid(context)
     mpu = metres_per_unit(srid)

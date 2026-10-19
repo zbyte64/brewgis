@@ -6,7 +6,6 @@ to avoid duplicated MODULE_DEPENDENCIES, MODULE_RESULT_TABLES, and related mappi
 
 from __future__ import annotations
 
-import warnings
 from dataclasses import dataclass
 from typing import Any
 
@@ -488,34 +487,14 @@ def get_available_analyses() -> list[dict[str, Any]]:
     for key, label in MODULE_LABELS.items():
         if not MODULE_RESULT_TABLES.get(key):
             continue
-        deps = resolve_module_order([key])
         analyses.append(
             {
                 "key": key,
                 "label": label,
                 "description": MODULE_DESCRIPTIONS.get(key, ""),
-                "needs_constraints": "env_constraint" in deps,
-                "needs_column_mapping": "core" in deps,
             }
         )
     return analyses
-
-
-CANONICAL_COLUMN_NAMES: list[str] = [
-    "pop",
-    "hh",
-    "du",
-    "emp",
-    "county",
-    "geometry",
-    "median_income",
-    "rent_burden_pct",
-    "pct_minority",
-    "pct_college_educated",
-    "intersection_density",
-    "land_development_category",
-    "built_form_key",
-]
 
 
 @dataclass(frozen=True)
@@ -545,8 +524,8 @@ class AnalysisParameter:
 # ``health_bike_trip_length_km``) rather than the region's vehicle trip length.
 # ``internal_capture`` is deliberately absent even though its sibling
 # ``transport_use_network_distance`` lists it: that option moves
-# ``trip_distribution``'s own length, which internal capture reads, while these
-# two parameters only move ``trip_lengths``.
+# ``trip_distribution``'s own length, which internal capture reads, while the
+# target length only moves ``trip_lengths``.
 TRIP_LENGTH_MODULES: tuple[str, ...] = (
     "trip_distribution",
     "vmt",
@@ -700,14 +679,11 @@ ANALYSIS_PARAMETERS: tuple[AnalysisParameter, ...] = (
     # (``vmt_updater_tool.py``), applied on top of the daily VMT as
     # ``vmt_daily_w_trucks``.
     AnalysisParameter("transport_truck_factor", 0.031, "float", ("vmt",)),
-    # Trip length — where a region's one-way trip length comes from. The
-    # ``trip_lengths`` support model reads the table named here when a scenario
-    # sets one (SACOG's SACSIM reference zones, restored from the source dump
-    # and pointed at by ``import_sacog_demo``); an empty value is the fallback —
-    # the gravity model's own spatial gradient, rescaled to
-    # ``transport_target_avg_trip_length_km`` so any region lands on a realistic
+    # Trip length — the target regional mean for a region without reference
+    # trip-length zones (``trip_length_table`` in the analysis region profile, see
+    # ``sqlmesh/models/python/trip_lengths.py``): the gravity model's own
+    # spatial gradient is rescaled to it, so any region lands on a realistic
     # regional mean instead of the ~1 km a pure centroid distribution produces.
-    AnalysisParameter("transport_trip_length_table", "", "str", TRIP_LENGTH_MODULES),
     AnalysisParameter(
         "transport_target_avg_trip_length_km",
         6.42,
@@ -836,30 +812,3 @@ def get_module_parameters(module: str) -> list[AnalysisParameter]:
 def analysis_parameter_defaults() -> dict[str, object]:
     """Return each analysis parameter's default value, keyed by name."""
     return {p.name: p.default for p in ANALYSIS_PARAMETERS}
-
-
-def get_column_mapping_vars(
-    column_mapping: dict[str, str],
-) -> dict[str, str]:
-    """Convert user column mapping into canonical_{name} pipeline vars.
-
-    Args:
-        column_mapping: User-specified mapping like {'pop': 'population',
-            'hh': 'households'}.
-
-    Returns:
-        Dict of canonical_{name}: user_column_name for each known name
-        found in the mapping. Unknown names are ignored with a warning.
-    """
-    valid = set(CANONICAL_COLUMN_NAMES)
-    vars_: dict[str, str] = {}
-    for canonical_name, user_column in column_mapping.items():
-        canonical_name = canonical_name.strip().lower()
-        if canonical_name in valid:
-            vars_[f"canonical_{canonical_name}"] = user_column
-        else:
-            warnings.warn(
-                f"Unknown canonical column name '{canonical_name}' in "
-                f"column_mapping. Valid names: {CANONICAL_COLUMN_NAMES}"
-            )
-    return vars_

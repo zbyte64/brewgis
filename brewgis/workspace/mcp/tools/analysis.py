@@ -5,7 +5,6 @@ from typing import Any
 
 from django.shortcuts import get_object_or_404
 
-from brewgis.workspace.analysis.launch import AnalysisInputs
 from brewgis.workspace.analysis.launch import AnalysisLaunchError
 from brewgis.workspace.analysis.launch import launch_analysis
 from brewgis.workspace.analysis.module_registry import MODULE_DEPENDENCIES
@@ -56,14 +55,14 @@ def register_tools(server: object) -> None:
 
         Goes through the same launch service as the map view's analysis forms
         (``brewgis/workspace/analysis/launch.py``): the same validation, the same
-        rules for storing inputs on the scenario, the same background dispatch.
-        The run is returned ``pending``; poll ``get_analysis_status``.
+        rules for storing parameters on the scenario, the same background
+        dispatch. The run is returned ``pending``; poll ``get_analysis_status``.
 
-        ``params`` takes the inputs those forms collect — ``constraints`` (list
-        of ``{table, discount_pct, geom_col}``; replaces the scenario's),
-        ``column_mapping`` (``{canonical_name: user_column}``; replaces the
-        scenario's) and ``analysis_params`` (``{parameter: value}``; merged into
-        the scenario's). An omitted key keeps the scenario's stored value.
+        ``params`` is ``{parameter: value}`` over the analysis parameters
+        (``module_registry.ANALYSIS_PARAMETERS``), merged into the scenario's
+        stored values. The data each module reads — parcels, built forms, the
+        region's constraint layers — comes from the workspace and is built by
+        SQLMesh, so there are no tables or columns to pass.
         """
         try:
             ws_pk = int(workspace_slug)
@@ -73,22 +72,11 @@ def register_tools(server: object) -> None:
         workspace = get_object_or_404(Workspace, pk=ws_pk)
         scenario = get_object_or_404(Scenario, pk=s_pk, workspace=workspace)
 
-        p_params = dict(params or {})
-        unknown = set(p_params) - {"constraints", "column_mapping", "analysis_params"}
-        if unknown:
-            return {
-                "status": "FAILURE",
-                "message": f"Unknown params: {', '.join(sorted(unknown))}",
-            }
         try:
             run = launch_analysis(
                 scenario=scenario,
                 modules=modules or list(MODULE_DEPENDENCIES),
-                inputs=AnalysisInputs(
-                    constraints=p_params.get("constraints"),
-                    column_mapping=p_params.get("column_mapping"),
-                    params=p_params.get("analysis_params") or {},
-                ),
+                params=params,
             )
         except AnalysisLaunchError as error:
             return {

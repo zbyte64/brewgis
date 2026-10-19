@@ -15,8 +15,10 @@ from django.utils import timezone
 
 from brewgis.workspace.analysis.launch import launch_analysis
 from brewgis.workspace.analysis.module_registry import get_available_analyses
+from brewgis.workspace.analysis.module_registry import get_module_parameters
 from brewgis.workspace.analysis.pipeline import launch_analysis_run
 from brewgis.workspace.models import ScenarioType
+from brewgis.workspace.services.preflight import PreflightError
 from brewgis.workspace.views.analysis import AnalysisModuleForm
 from tests.factories import AnalysisRunFactory
 from tests.factories import LayerFactory
@@ -39,12 +41,6 @@ class TestGetAvailableAnalyses(TestCase):
         assert by_key["water_demand"]["label"] == "Water Demand"
         assert by_key["water_demand"]["description"]
 
-    def test_water_demand_needs_constraints_and_column_mapping(self):
-        """water_demand depends on core, which depends on env_constraint."""
-        by_key = {a["key"]: a for a in get_available_analyses()}
-        assert by_key["water_demand"]["needs_constraints"] is True
-        assert by_key["water_demand"]["needs_column_mapping"] is True
-
 
 class TestAnalysisModuleForm(TestCase):
     """Direct form unit tests — verifies per-module fields, no JSON fields."""
@@ -53,43 +49,20 @@ class TestAnalysisModuleForm(TestCase):
         self.workspace = WorkspaceFactory()
         self.scenario = ScenarioFactory(workspace=self.workspace)
 
-    def test_no_json_fields(self):
-        """The form never exposes a raw JSON textarea (unlike AnalysisLaunchForm)."""
+    def test_offers_only_the_scenario_and_the_modules_parameters(self):
+        """Every table and column a module reads — parcel source, built forms,
+        the region's constraint layers — is derived by the model blueprints, so
+        the form offers no table, column or JSON input: just the scenario and
+        the module's own parameters."""
         form = AnalysisModuleForm(
             workspace=self.workspace, scenario=self.scenario, module="water_demand"
         )
-        assert "constraints_json" not in form.fields
-        assert "column_mapping" not in form.fields
+        assert set(form.fields) == {"scenario"} | {
+            param.name for param in get_module_parameters("water_demand")
+        }
         assert not any(
             isinstance(field.widget, forms.Textarea) for field in form.fields.values()
         )
-
-    def test_constraint_fields_present_for_water_demand(self):
-        form = AnalysisModuleForm(
-            workspace=self.workspace, scenario=self.scenario, module="water_demand"
-        )
-        assert "constraint_0_table" in form.fields
-        assert "column_pop" in form.fields
-
-    def test_constraint_fields_absent_for_module_with_no_env_constraint_dependency(
-        self,
-    ):
-        """A module that never resolves through env_constraint or core gets no
-        constraint/column-mapping fields."""
-        form = AnalysisModuleForm(
-            workspace=self.workspace, scenario=self.scenario, module="acs_equity"
-        )
-        assert "constraint_0_table" not in form.fields
-        assert "column_pop" not in form.fields
-
-    def test_no_table_fields_the_models_derive_themselves(self):
-        """The parcel/built-form/base-canvas tables are derived per scenario by
-        the model blueprints, so the form must not offer them as inputs."""
-        form = AnalysisModuleForm(
-            workspace=self.workspace, scenario=self.scenario, module="water_demand"
-        )
-        for field in ("parcel_table", "built_form_table", "base_canvas_table"):
-            assert field not in form.fields
 
     def test_parameter_fields_are_scoped_to_the_module(self):
         """A module's form shows its own parameters — including those of the
@@ -150,7 +123,7 @@ class TestAnalysisModuleForm(TestCase):
         launch_analysis(
             scenario=alt_scenario,
             modules=["internal_capture"],
-            inputs=capture_form.analysis_inputs(),
+            params=capture_form.analysis_params(),
         )
 
         alt_scenario.refresh_from_db()
@@ -177,7 +150,7 @@ class TestAnalysisModuleForm(TestCase):
         launch_analysis(
             scenario=alt_scenario,
             modules=["agriculture"],
-            inputs=crop_form.analysis_inputs(),
+            params=crop_form.analysis_params(),
         )
 
         alt_scenario.refresh_from_db()
@@ -187,57 +160,6 @@ class TestAnalysisModuleForm(TestCase):
             "transport_use_network_distance": False,
             "crop_yield_per_acre": 11.5,
         }
-
-    def test_submitted_rows_become_the_scenarios_constraint_list(self):
-        """Every submitted row with a table is one constraint, in order; a row
-        whose table was cleared is removed, and blank cells are left to the
-        launch service's defaults rather than invented by the form."""
-        form = AnalysisModuleForm(
-            {
-                "scenario": self.scenario.pk,
-                "constraint_0_table": "fresno.floodplains",
-                "constraint_0_geom_col": "",
-                "constraint_0_discount_pct": "",
-                "constraint_1_table": "",
-                "constraint_1_discount_pct": "30",
-                "constraint_2_table": "public.sac_cnty_streams",
-                "constraint_2_geom_col": "wkb_geometry",
-                "constraint_2_discount_pct": "40",
-                "column_pop": "population",
-            },
-            workspace=self.workspace,
-            scenario=self.scenario,
-            module="water_demand",
-        )
-        assert form.is_valid(), form.errors
-
-        inputs = form.analysis_inputs()
-
-        assert inputs.constraints == [
-            {"table": "fresno.floodplains"},
-            {
-                "table": "public.sac_cnty_streams",
-                "geom_col": "wkb_geometry",
-                "discount_pct": 40.0,
-            },
-        ]
-        assert inputs.column_mapping == {"pop": "population"}
-
-    def test_module_without_constraint_rows_keeps_the_stored_inputs(self):
-        """A module whose chain never reads constraints or the column mapping
-        does not touch them."""
-        form = AnalysisModuleForm(
-            {"scenario": self.scenario.pk},
-            workspace=self.workspace,
-            scenario=self.scenario,
-            module="acs_equity",
-        )
-        assert form.is_valid(), form.errors
-
-        inputs = form.analysis_inputs()
-
-        assert inputs.constraints is None
-        assert inputs.column_mapping is None
 
 
 @pytest.mark.views
@@ -642,13 +564,7 @@ class TestAnalysisModuleDrawer(TestCase):
         """The values come off the Scenario — the same merge the blueprints bake
         in — so this is what a rerun or a direct SQLMesh plan will read."""
         self.scenario.analysis_params = {"nonres_indoor_water_rate": 55.0}
-        self.scenario.constraints = [
-            {"table": "floodplains", "discount_pct": 100, "geom_col": "geom"}
-        ]
-        self.scenario.column_mapping = {"pop": "population"}
-        self.scenario.save(
-            update_fields=["analysis_params", "constraints", "column_mapping"]
-        )
+        self.scenario.save(update_fields=["analysis_params"])
         response = self.client.get(
             self.drawer_url, {"scenario": self.scenario.pk, "panel": "1"}
         )
@@ -656,10 +572,6 @@ class TestAnalysisModuleDrawer(TestCase):
         self.assertContains(response, "Active parameters")
         self.assertContains(response, "nonres_indoor_water_rate")
         self.assertContains(response, "55.0")
-        self.assertContains(response, "Constraint discounts")
-        self.assertContains(response, "floodplains")
-        self.assertContains(response, "Column mapping")
-        self.assertContains(response, "population")
         self.assertContains(response, self.scenario.name)
 
     def test_drawer_marks_unset_parameters_as_defaults(self):
@@ -754,15 +666,14 @@ class TestRunDetailsRerun(TestCase):
         "brewgis.workspace.analysis.launch.scenario_analysis_errors", return_value=[]
     )
     @patch("brewgis.workspace.analysis.launch.launch_analysis_run")
-    def test_rerun_posts_only_the_scenario_and_reuses_stored_inputs(
+    def test_rerun_posts_only_the_scenario_and_reuses_stored_params(
         self, mock_launch, _mock_prereq
     ):
-        """Rerun reuses the run's inputs: they live on the Scenario, so posting
-        nothing but its pk launches the same analysis again with every stored
-        input — parameters and column mapping alike — left as it was."""
+        """Rerun reuses the run's parameters: they live on the Scenario, so
+        posting nothing but its pk launches the same analysis again with every
+        stored parameter left as it was."""
         self.scenario.analysis_params = {"nonres_indoor_water_rate": 55.0}
-        self.scenario.column_mapping = {"pop": "population"}
-        self.scenario.save(update_fields=["analysis_params", "column_mapping"])
+        self.scenario.save(update_fields=["analysis_params"])
         mock_launch.return_value = AnalysisRunFactory(
             workspace=self.workspace,
             scenario=self.scenario,
@@ -782,22 +693,15 @@ class TestRunDetailsRerun(TestCase):
         assert kwargs["module_names"] == ["water_demand"]
         self.scenario.refresh_from_db()
         assert self.scenario.analysis_params == {"nonres_indoor_water_rate": 55.0}
-        assert self.scenario.column_mapping == {"pop": "population"}
 
     @patch(
-        "brewgis.workspace.analysis.launch.scenario_analysis_errors", return_value=[]
+        "brewgis.workspace.analysis.launch.scenario_analysis_errors",
+        return_value=[PreflightError("built_form_table", "No built forms exported.")],
     )
     @patch("brewgis.workspace.analysis.launch.launch_analysis_run")
-    def test_rerun_with_a_missing_constraint_table_opens_the_form_with_why(
-        self, mock_launch, _mock_prereq
-    ):
-        """A stored constraint naming a table that does not exist (a bare
-        ``floodplains``, resolved in ``public``) is refused before a run is
-        created, and the form that can correct it is shown with the reason."""
-        self.scenario.constraints = [
-            {"table": "floodplains", "discount_pct": 100, "geom_col": "geom"}
-        ]
-        self.scenario.save(update_fields=["constraints"])
+    def test_refused_rerun_opens_the_form_with_why(self, mock_launch, _mock_prereq):
+        """A rerun the launch service refuses creates no run; the module's form
+        is shown with the reason."""
         response = self.client.post(
             reverse(
                 "workspace:analysis_module_rerun",
@@ -806,12 +710,8 @@ class TestRunDetailsRerun(TestCase):
             {"scenario": self.scenario.pk},
         )
         assert response.status_code == 400
-        self.assertContains(
-            response,
-            "Constraint table public.floodplains does not exist.",
-            status_code=400,
-        )
-        self.assertContains(response, 'name="constraint_0_table"', status_code=400)
+        self.assertContains(response, "No built forms exported.", status_code=400)
+        self.assertContains(response, 'name="scenario"', status_code=400)
         mock_launch.assert_not_called()
 
 

@@ -6,7 +6,7 @@ MODEL (
     parcel_id = 'Assessor parcel number (APN) of the parcel.',
     geometry = 'Parcel boundary geometry (EPSG:4326).',
     area_gross_acres = 'Gross parcel area (acres).',
-    constraint_acres = 'Parcel acres excluded from development by the scenario''s constraint layers (overlapping layers counted once), each discounted by its configured share and capped at the gross area (acres).',
+    constraint_acres = 'Parcel acres excluded from development by the region''s constraint layers (overlapping layers counted once), each discounted by its layer share and capped at the gross area (acres).',
     acres_developable = 'Gross area less the constraint acres: the acreage a scenario may develop (acres).',
     developable_proportion = 'Developable share of the gross area (0-1); zero without area.'
   ),
@@ -21,11 +21,16 @@ MODEL (
 
 -- Environmental constraint — the acreage each parcel loses to constrained land.
 --
--- Reads the scenario's own constraint configuration (``Scenario.constraints``,
--- ``[{table, discount_pct, geom_col}]``) and reports, per parcel, the part of
--- it covered by the configured constraint layers, each discounted by that
--- layer's share. ``acres_developable`` is the gross area less that coverage —
--- the acreage the allocation step may build on.
+-- Reads the constraint polygons of the workspace's region
+-- (``brewgis.@{region}.constraint_layers`` — ``region`` is resolved from the
+-- workspace's base table by macros/analysis_blueprints.py) and reports, per
+-- parcel, the part of it they cover, each layer discounted by its own
+-- ``discount_pct``. ``acres_developable`` is the gross area less that coverage
+-- — the acreage the allocation step may build on. Which layers a region
+-- constrains, and by how much, is decided in that region's model
+-- (constraints/constraint_layers.sql for a region data pipeline,
+-- sacog_v1/constraint_layers.sql for the SACOG snapshot); a reference to it is a lineage
+-- dependency, so planning this model builds the layers too.
 --
 -- It runs against whatever parcels the scenario's canvas holds, so a *base*
 -- scenario reports the existing constrained acreage (streams and wetlands do
@@ -36,9 +41,8 @@ MODEL (
 --
 -- Walk-through of the run: env_constraint runs before core, and
 -- ``core_end_state`` reads this model's ``acres_developable``, so a scenario's
--- end state already reflects the constraint discount. A scenario with no
--- constraints configured exports an empty constraint relation (see the macro),
--- which leaves every parcel whole.
+-- end state already reflects the constraint discount. A parcel no constraint
+-- polygon touches stays whole.
 --
 -- Shape, and why it looks the way it does:
 --
@@ -52,16 +56,18 @@ MODEL (
 --     lateral: Postgres materialises a CTE referenced more than once, and a
 --     materialised CTE has no index to probe. The lateral therefore reads the
 --     parcel table directly, and the final projection reads it again.
---   * Overlaps are tested in EPSG:4326 (``probe_geom``, the canvas's own CRS, so
---     the predicate is index-driven) and *measured* in the region's
---     ``local_srid`` (``local_geom``): a geographic CRS has no planar area.
+--   * Overlaps are tested in EPSG:4326 (the constraint layers' ``geom`` and the
+--     canvas's own CRS, so the predicate is index-driven) and *measured* in
+--     ``local_srid`` (the layers' ``local_geom``, made valid in that CRS): a
+--     geographic CRS has no planar area. The region's layers are
+--     pre-subdivided, so each outer polygon probes a small box.
 --   * The pieces are **unioned per (parcel, discount)**, so land covered by two
 --     constraint layers is counted once: a parcel cannot lose more acres than
 --     it has. Summing the raw intersections instead double-counts every
 --     cross-layer overlap — on the SACOG canvas that reported 40 parcels
 --     losing more acreage than they own, the worst by 3.3 acres. Layers with
---     different discounts are unioned in their own group (the configuration
---     carries no priority between layers), and the total is capped at the gross
+--     different discounts are unioned in their own group (a region's layers
+--     carry no priority between them), and the total is capped at the gross
 --     area for the same reason.
 --   * Constraint slivers below ``@constraint_min_overlap_sqm()`` m2 are dropped
 --     before the union. They are boundary noise, not constraints: on the SACOG
@@ -73,14 +79,14 @@ WITH hits AS (
         h.parcel_id,
         q.discount_pct,
         ST_Area(ST_Union(h.piece_local)) AS overlap_sqm
-    FROM @constraint_geometries(@blueprint_var('constraints')) AS q
+    FROM brewgis.@{region}.constraint_layers AS q
     JOIN LATERAL (
         SELECT
             p.parcel_id,
             ST_Intersection(q.local_geom, ST_Transform(p.geometry, @local_srid()))
                 AS piece_local
         FROM @ref_model(@parcel_table) AS p
-        WHERE ST_Intersects(q.probe_geom, p.geometry)
+        WHERE ST_Intersects(q.geom, p.geometry)
     ) AS h ON TRUE
     WHERE ST_Area(h.piece_local) > @constraint_min_overlap_sqm()
     GROUP BY h.parcel_id, q.discount_pct

@@ -776,7 +776,7 @@ class UnindexedJoin(Rule):
         if not isinstance(table, exp.Table):
             return None
 
-        # Skip dynamic/variable table references (@parcel_table, @constraint_table).
+        # Skip dynamic/variable table references (@parcel_table, @built_form_table).
         table_sql = table.sql()
         if table_sql.startswith("@"):
             return None

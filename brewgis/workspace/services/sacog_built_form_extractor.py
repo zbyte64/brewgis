@@ -25,6 +25,7 @@ from django.db import connection
 
 from brewgis.workspace.built_forms.models import BuildingType
 from brewgis.workspace.services.built_form_keys import normalize_built_form_key
+from brewgis.workspace.services.sacog_column_mapping import V1_BASE_TABLE
 
 if TYPE_CHECKING:
     from brewgis.workspace.models import Workspace
@@ -120,14 +121,16 @@ def _get_parcel_built_forms() -> list[tuple[str, str | None]]:
     trap :func:`_catalogue_profile` documents.
     """
     with connection.cursor() as cursor:
-        cursor.execute("""
+        cursor.execute(
+            f"""
             SELECT DISTINCT bc.built_form_key, c.name
-            FROM public.elk_grove_base_canvas bc
+            FROM {V1_BASE_TABLE} bc
             LEFT JOIN public.sacog_building_types_may14 c
                 ON c.key = bc.built_form_key
             WHERE bc.built_form_key IS NOT NULL AND bc.built_form_key != ''
             ORDER BY bc.built_form_key
-        """)
+            """  # noqa: S608 — V1_BASE_TABLE is a module constant, not input
+        )
         return [(row[0], row[1]) for row in cursor.fetchall()]
 
 

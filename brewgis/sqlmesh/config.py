@@ -649,9 +649,7 @@ def config_factory(*, cache_dir: str | None = None, **variables):
             # per-scenario config var — core_end_state). Region chains use the
             # blueprinted parcel_shim instances instead.
             "parcel_table": "brewgis.sacog.parcel_shim",
-            "constraint_table": "public.constraints",
             "built_form_table": "public.built_forms",
-            "constraints": [],
             # OSM intersection density table (empty = disabled, overridden per-caller)
             "osm_intersection_table": "",
             # Overture release tag for land cover/use themes
