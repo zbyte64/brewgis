@@ -35,20 +35,31 @@ MODEL (
 --
 --   icpm_p    = trips_p * sigma(ICPM_p)
 --   walk_p    = (trips_p - icpm_p) * sigma(WTPM_p)
---   transit_p = (trips_p - icpm_p) * sigma(TTPM_p)
---   bike_p    = (trips_p - icpm_p) * sigma(BTPM)
---   auto_p    = GREATEST(0, trips_p - icpm_p - walk_p - transit_p - bike_p)
+--   transit_p = LEAST((trips_p - icpm_p) * sigma(TTPM_p), trips_p - icpm_p - walk_p)
+--   bike_p    = LEAST((trips_p - icpm_p) * sigma(BTPM),
+--                     trips_p - icpm_p - walk_p - transit_p)
+--   auto_p    = trips_p - icpm_p - walk_p - transit_p - bike_p
 --
 -- with sigma(x) = 1 / (1 + exp(-x)). Auto is whatever is left, exactly as the
 -- reference computes it — so its share falls as the walk / transit / bike /
 -- capture sigmoids rise. Walk, transit and bike are applied independently to
 -- the same post-capture trips, as the reference does walk and transit (it has
--- no bike); none is taken from another's remainder. They can together
--- over-claim only on a parcel whose logits are saturated; the GREATEST keeps
--- auto at zero then, and assert_mode_share_sum fails the plan. UrbanFootprint's
--- own SACOG export never exceeds a 48.5% non-auto share, and the one input
--- that did saturate them here — the quarter-mile density over zero developed
--- acres — follows the reference's zero rule below.
+-- no bike); none is taken from another's remainder.
+--
+-- Independent sigmoids can together claim more than the post-capture trips
+-- (sigma(WTPM) + sigma(TTPM) + sigma(BTPM) > 1). UrbanFootprint leaves that
+-- unguarded: its vehicle trips (``tF_net_ixxi_p`` in
+-- vmt_calculate_final_results.py) go negative, and so does the parcel's VMT.
+-- Here each non-auto mode is instead capped, in a fixed order, at the trips
+-- the modes before it left: internal capture, walk, transit, then bike — so a
+-- purpose's split always partitions its trips, auto is never negative, and
+-- assert_mode_share_sum holds. Below saturation the caps are inactive and the
+-- split is the reference's. Saturation occurs in the densest job centers:
+-- downtown Sacramento's 9,000-15,000 jobs within a quarter mile over-claimed
+-- on 30-55 of SACOG's 502,874 parcels (bike, which the reference lacks, last
+-- in line). UrbanFootprint's own Elk Grove export never exceeds a 48.5%
+-- non-auto share. The quarter-mile density over zero developed acres, which
+-- once saturated them too, follows the reference's zero rule below.
 --
 -- The coefficients below are UrbanFootprint's published constants
 -- (vmt_model_constants.py), hardcoded here the way the previous model hardcoded
@@ -229,7 +240,8 @@ capture AS (
     FROM logits
 ),
 
--- The active-mode steps, each on whatever the internal capture left.
+-- The active-mode sigmoids, each applied to whatever the internal capture
+-- left; walk can never exceed that, transit and bike are capped below.
 active AS (
     SELECT
         parcel_id,
@@ -244,15 +256,37 @@ active AS (
         (trips_hbw - icpm_hbw) * (1.0 / (1.0 + EXP(-wtpm_hbw))) AS walk_hbw,
         (trips_hbo - icpm_hbo) * (1.0 / (1.0 + EXP(-wtpm_hbo))) AS walk_hbo,
         (trips_nhb - icpm_nhb) * (1.0 / (1.0 + EXP(-wtpm_nhb))) AS walk_nhb,
-        (trips_hbw - icpm_hbw) * (1.0 / (1.0 + EXP(-ttpm_hbw))) AS transit_hbw,
-        (trips_hbo - icpm_hbo) * (1.0 / (1.0 + EXP(-ttpm_hbo))) AS transit_hbo,
-        (trips_nhb - icpm_nhb) * (1.0 / (1.0 + EXP(-ttpm_nhb))) AS transit_nhb,
-        (trips_hbw - icpm_hbw) * (1.0 / (1.0 + EXP(-btpm))) AS bike_hbw,
-        (trips_hbo - icpm_hbo) * (1.0 / (1.0 + EXP(-btpm))) AS bike_hbo,
-        (trips_nhb - icpm_nhb) * (1.0 / (1.0 + EXP(-btpm))) AS bike_nhb
+        (trips_hbw - icpm_hbw) * (1.0 / (1.0 + EXP(-ttpm_hbw))) AS transit_raw_hbw,
+        (trips_hbo - icpm_hbo) * (1.0 / (1.0 + EXP(-ttpm_hbo))) AS transit_raw_hbo,
+        (trips_nhb - icpm_nhb) * (1.0 / (1.0 + EXP(-ttpm_nhb))) AS transit_raw_nhb,
+        (trips_hbw - icpm_hbw) * (1.0 / (1.0 + EXP(-btpm))) AS bike_raw_hbw,
+        (trips_hbo - icpm_hbo) * (1.0 / (1.0 + EXP(-btpm))) AS bike_raw_hbo,
+        (trips_nhb - icpm_nhb) * (1.0 / (1.0 + EXP(-btpm))) AS bike_raw_nhb
     FROM capture
+),
+
+-- Transit capped at what internal capture and walk left.
+transit_capped AS (
+    SELECT
+        *,
+        LEAST(transit_raw_hbw, trips_hbw - icpm_hbw - walk_hbw) AS transit_hbw,
+        LEAST(transit_raw_hbo, trips_hbo - icpm_hbo - walk_hbo) AS transit_hbo,
+        LEAST(transit_raw_nhb, trips_nhb - icpm_nhb - walk_nhb) AS transit_nhb
+    FROM active
+),
+
+-- Bike capped at what internal capture, walk and transit left.
+split AS (
+    SELECT
+        *,
+        LEAST(bike_raw_hbw, trips_hbw - icpm_hbw - walk_hbw - transit_hbw) AS bike_hbw,
+        LEAST(bike_raw_hbo, trips_hbo - icpm_hbo - walk_hbo - transit_hbo) AS bike_hbo,
+        LEAST(bike_raw_nhb, trips_nhb - icpm_nhb - walk_nhb - transit_nhb) AS bike_nhb
+    FROM transit_capped
 )
 
+-- Auto is the residual, never negative by construction (the GREATEST only
+-- absorbs floating-point residue of the subtraction).
 SELECT
     parcel_id,
     GREATEST(0.0, trips_hbw - icpm_hbw - walk_hbw - transit_hbw - bike_hbw)
@@ -275,7 +309,7 @@ SELECT
     (icpm_hbw + icpm_hbo + icpm_nhb) / NULLIF(total_trips, 0.0)
         AS mode_share_internal_capture,
     geometry
-FROM active
+FROM split
 ORDER BY parcel_id;
 
 -- post_statements

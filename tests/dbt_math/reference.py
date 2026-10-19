@@ -290,7 +290,10 @@ def _mode_choice_inputs_aligned(
 @deal.post(
     lambda result: np.all(
         np.isnan(result[5])
-        | ((result[5] + result[6] + result[7] + result[8] + result[9]) >= 1.0 - 1e-9)
+        | (
+            np.abs(result[5] + result[6] + result[7] + result[8] + result[9] - 1.0)
+            <= 1e-9
+        )
     )
 )
 def compute_mode_choice(
@@ -325,8 +328,8 @@ def compute_mode_choice(
     """SQL: ``mode_choice`` — UrbanFootprint's hierarchical sigmoid split.
 
     Mirrors the SQL model's purpose-by-purpose sequence: internal capture,
-    then walk / transit / bike on what the capture left, with auto as the
-    residual. The coefficients are UrbanFootprint's published log-odds
+    then walk / transit / bike on what the capture left — transit and bike
+    capped at what the modes before them left — with auto as the residual. The coefficients are UrbanFootprint's published log-odds
     constants (``vmt_model_constants.py``); the transit-accessibility terms
     (``emp30m_transit``, ``hh_within_quarter_mile_trans``) are dropped in both
     because BrewGIS has no transit network to source them.
@@ -466,8 +469,13 @@ def compute_mode_choice(
     icpm = trips * _sigma(icpm_logit)
     remaining = trips - icpm
     walk = remaining * _sigma(wtpm_logit)
-    transit = remaining * _sigma(ttpm_logit)
-    bike = remaining * _sigma(btpm_logit)[:, np.newaxis]
+    # Each later mode is capped at what the modes before it left, in the fixed
+    # order capture, walk, transit, bike (the reference itself lets auto go
+    # negative instead).
+    transit = np.minimum(remaining * _sigma(ttpm_logit), remaining - walk)
+    bike = np.minimum(
+        remaining * _sigma(btpm_logit)[:, np.newaxis], remaining - walk - transit
+    )
     auto = np.maximum(0.0, remaining - walk - transit - bike)
 
     trips_auto = auto.sum(axis=1)
