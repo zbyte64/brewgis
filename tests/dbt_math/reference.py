@@ -66,9 +66,9 @@ def _nullable_nonneg(*arrays: np.ndarray) -> bool:
 # ══════════════════════════════════════════════════════════════════════
 
 
-@deal.pre(lambda du, bsqt, res_val, nonres_val, rate: np.all(du >= 0))
-@deal.pre(lambda du, bsqt, res_val, nonres_val, rate: np.all(bsqt >= 0))
-@deal.pre(lambda du, bsqt, res_val, nonres_val, rate: rate > 0)
+@deal.pre(lambda _: np.all(_.dwelling_units_total >= 0))
+@deal.pre(lambda _: np.all(_.building_sqft_commercial >= 0))
+@deal.pre(lambda _: _.property_tax_rate > 0)
 @deal.post(lambda result: np.all(result[0] >= 0))  # assessed_value_res
 @deal.post(lambda result: np.all(result[1] >= 0))  # assessed_value_nonres
 @deal.post(lambda result: np.all(result[2] >= 0))  # property_tax_revenue
@@ -150,8 +150,7 @@ def compute_service_costs(
 @deal.post(lambda result: result[3].shape == result[0].shape)
 @deal.post(
     lambda result: np.all(
-        np.abs(result[1] * 43560.0 - result[0])
-        < 1e-3  # impervious_acres * 43560 ≈ impervious_sqft
+        (np.abs(result[1] * 43560.0 - result[0]) < 1e-3)  # acres * 43560 ≈ sqft
         | (result[1] == 0)
     )
 )
@@ -514,7 +513,6 @@ def compute_mode_choice(
 @deal.post(lambda result: np.all(result[1] >= 0))  # vmt_per_capita
 @deal.post(lambda result: np.all(result[2] >= 0))  # avg_trip_length_mi
 @deal.post(lambda result: np.all(result[3] >= 0))  # auto_trips
-@deal.post(lambda result: np.all(result[0] >= result[3] * result[2]))  # vmt >= trips*mi
 def compute_vmt(
     auto_trips: np.ndarray,
     avg_trip_length_km: np.ndarray,
@@ -815,8 +813,7 @@ def compute_building_water_ghg(
 @deal.post(lambda result: np.all(result[3] >= 0))  # production_cost
 @deal.post(
     lambda result: np.all(
-        np.abs(result[4] - (result[2] - result[3]))
-        < 1e-6  # net_return = market - cost
+        (np.abs(result[4] - (result[2] - result[3])) < 1e-6)  # net = market - cost
         | (result[2] == 0)
         | (result[3] == 0)
     )

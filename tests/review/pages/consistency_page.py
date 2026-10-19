@@ -21,15 +21,6 @@ class ConsistencyPage(BasePage):
         """Navigate to a given path."""
         self.page.goto(f"{self.base_url}{path}", wait_until="networkidle")
 
-    def breadcrumb_is_visible(self) -> bool:
-        """Check if breadcrumb navigation is present on the current page."""
-        return self.page.locator("nav[aria-label='breadcrumb']").is_visible()
-
-    def breadcrumb_items(self) -> list[str]:
-        """Return breadcrumb text items."""
-        items = self.page.locator("nav[aria-label='breadcrumb'] ol li")
-        return [it.inner_text().strip() for it in items.all()]
-
     def has_navbar(self) -> bool:
         """Check if the main navigation bar is present."""
         return self.page.locator("nav.navbar").is_visible()
@@ -41,7 +32,3 @@ class ConsistencyPage(BasePage):
             a.inner_text().strip()
             for a in nav.locator("a.nav-link, a.dropdown-item").all()
         ]
-
-    def has_empty_state_message(self, page_text: str) -> bool:
-        """Check if the page shows an empty state message."""
-        return self.page.locator(f"text={page_text}").is_visible()

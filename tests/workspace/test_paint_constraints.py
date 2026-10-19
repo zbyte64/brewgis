@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+from typing import TYPE_CHECKING
+
 import pytest
 from django.test import TestCase
 
@@ -9,13 +11,23 @@ from brewgis.workspace.models import ConstraintOperator
 from brewgis.workspace.models import ConstraintSeverity
 from brewgis.workspace.models import PaintConstraint
 from brewgis.workspace.services.paint_constraints import check_paint_batch
-from brewgis.workspace.services.paint_constraints import check_paint_value
 from tests.factories import WorkspaceFactory
+
+if TYPE_CHECKING:
+    from brewgis.workspace.models import Workspace
+    from brewgis.workspace.services.paint_constraints import ConstraintViolation
+
+
+def _violations(
+    workspace: Workspace, column: str, value: float | None, *, feature_id: str = "f0"
+) -> list[ConstraintViolation]:
+    """The violations of painting *value* into *column* on one feature."""
+    return check_paint_batch(workspace, {feature_id: {column: value}}).violations
 
 
 @pytest.mark.integration
-class TestCheckPaintValue(TestCase):
-    """Tests for :func:`check_paint_value` — single column/value evaluation.
+class TestConstraintRules(TestCase):
+    """Each constraint operator, evaluated by :func:`check_paint_batch` on one value.
 
     The ``_evaluate()`` function returns True (violation) when the comparison
     ``painted <op> constraint_value`` is True.  This gives each operator a
@@ -24,11 +36,11 @@ class TestCheckPaintValue(TestCase):
 
     def setUp(self) -> None:
         self.workspace = WorkspaceFactory()
-        self.column = "residential_units"
+        self.column = "du"
 
     def test_no_constraints_no_violations(self) -> None:
         """No PaintConstraint records → no violations."""
-        violations = check_paint_value(self.workspace, self.column, 100.0)
+        violations = _violations(self.workspace, self.column, 100.0)
         assert len(violations) == 0
 
     # ── LT  :: flags painted < threshold (minimum floor) ───────────────
@@ -42,7 +54,7 @@ class TestCheckPaintValue(TestCase):
             value=200.0,
             severity=ConstraintSeverity.BLOCK,
         )
-        violations = check_paint_value(self.workspace, self.column, 50.0)
+        violations = _violations(self.workspace, self.column, 50.0)
         assert len(violations) == 1
 
     def test_lt_passes_when_at_or_above(self) -> None:
@@ -54,7 +66,7 @@ class TestCheckPaintValue(TestCase):
             value=200.0,
             severity=ConstraintSeverity.BLOCK,
         )
-        violations = check_paint_value(self.workspace, self.column, 300.0)
+        violations = _violations(self.workspace, self.column, 300.0)
         assert len(violations) == 0
 
     # ── LTE :: flags painted <= threshold ─────────────────────────────
@@ -68,7 +80,7 @@ class TestCheckPaintValue(TestCase):
             value=100.0,
             severity=ConstraintSeverity.WARN,
         )
-        violations = check_paint_value(self.workspace, self.column, 100.0)
+        violations = _violations(self.workspace, self.column, 100.0)
         assert len(violations) == 1
 
     def test_lte_does_not_flag_above(self) -> None:
@@ -80,7 +92,7 @@ class TestCheckPaintValue(TestCase):
             value=100.0,
             severity=ConstraintSeverity.WARN,
         )
-        violations = check_paint_value(self.workspace, self.column, 150.0)
+        violations = _violations(self.workspace, self.column, 150.0)
         assert len(violations) == 0
 
     # ── GT  :: flags painted > threshold (maximum ceiling) ─────────────
@@ -94,7 +106,7 @@ class TestCheckPaintValue(TestCase):
             value=50.0,
             severity=ConstraintSeverity.BLOCK,
         )
-        violations = check_paint_value(self.workspace, self.column, 70.0)
+        violations = _violations(self.workspace, self.column, 70.0)
         assert len(violations) == 1
 
     def test_gt_passes_when_at_or_below(self) -> None:
@@ -106,7 +118,7 @@ class TestCheckPaintValue(TestCase):
             value=50.0,
             severity=ConstraintSeverity.BLOCK,
         )
-        violations = check_paint_value(self.workspace, self.column, 30.0)
+        violations = _violations(self.workspace, self.column, 30.0)
         assert len(violations) == 0
 
     # ── GTE :: flags painted >= threshold ─────────────────────────────
@@ -120,7 +132,7 @@ class TestCheckPaintValue(TestCase):
             value=100.0,
             severity=ConstraintSeverity.BLOCK,
         )
-        violations = check_paint_value(self.workspace, self.column, 100.0)
+        violations = _violations(self.workspace, self.column, 100.0)
         assert len(violations) == 1
 
     def test_gte_does_not_flag_below(self) -> None:
@@ -132,7 +144,7 @@ class TestCheckPaintValue(TestCase):
             value=100.0,
             severity=ConstraintSeverity.BLOCK,
         )
-        violations = check_paint_value(self.workspace, self.column, 50.0)
+        violations = _violations(self.workspace, self.column, 50.0)
         assert len(violations) == 0
 
     # ── EQ  :: flags painted == threshold (value blocklist) ────────────
@@ -146,7 +158,7 @@ class TestCheckPaintValue(TestCase):
             value=42.0,
             severity=ConstraintSeverity.BLOCK,
         )
-        violations = check_paint_value(self.workspace, self.column, 42.0)
+        violations = _violations(self.workspace, self.column, 42.0)
         assert len(violations) == 1
 
     def test_eq_does_not_flag_other_values(self) -> None:
@@ -158,7 +170,7 @@ class TestCheckPaintValue(TestCase):
             value=42.0,
             severity=ConstraintSeverity.BLOCK,
         )
-        violations = check_paint_value(self.workspace, self.column, 43.0)
+        violations = _violations(self.workspace, self.column, 43.0)
         assert len(violations) == 0
 
     # ── NOT_NULL :: flags any non-None value ──────────────────────────
@@ -171,7 +183,7 @@ class TestCheckPaintValue(TestCase):
             operator=ConstraintOperator.NOT_NULL,
             severity=ConstraintSeverity.BLOCK,
         )
-        violations = check_paint_value(self.workspace, self.column, 0.0)
+        violations = _violations(self.workspace, self.column, 0.0)
         assert len(violations) == 1
         assert violations[0].operator == ConstraintOperator.NOT_NULL
 
@@ -183,7 +195,7 @@ class TestCheckPaintValue(TestCase):
             operator=ConstraintOperator.NOT_NULL,
             severity=ConstraintSeverity.BLOCK,
         )
-        violations = check_paint_value(self.workspace, self.column, None)
+        violations = _violations(self.workspace, self.column, None)
         assert len(violations) == 0
 
     # ── Column / Workspace scoping ────────────────────────────────────
@@ -197,7 +209,7 @@ class TestCheckPaintValue(TestCase):
             value=42.0,
             severity=ConstraintSeverity.BLOCK,
         )
-        violations = check_paint_value(self.workspace, self.column, 42.0)
+        violations = _violations(self.workspace, self.column, 42.0)
         assert len(violations) == 0
 
     def test_different_workspace_not_checked(self) -> None:
@@ -210,7 +222,7 @@ class TestCheckPaintValue(TestCase):
             value=42.0,
             severity=ConstraintSeverity.BLOCK,
         )
-        violations = check_paint_value(self.workspace, self.column, 42.0)
+        violations = _violations(self.workspace, self.column, 42.0)
         assert len(violations) == 0
 
     def test_violation_includes_details(self) -> None:
@@ -223,9 +235,7 @@ class TestCheckPaintValue(TestCase):
             severity=ConstraintSeverity.BLOCK,
             message="Too low!",
         )
-        violations = check_paint_value(
-            self.workspace, self.column, 50.0, feature_id="f1"
-        )
+        violations = _violations(self.workspace, self.column, 50.0, feature_id="f1")
         assert len(violations) == 1
         v = violations[0]
         assert v.feature_id == "f1"
@@ -255,7 +265,7 @@ class TestCheckPaintValue(TestCase):
                 value=100.0,
                 severity=ConstraintSeverity.BLOCK,
             )
-        violations = check_paint_value(self.workspace, self.column, None)
+        violations = _violations(self.workspace, self.column, None)
         # Only NOT_NULL would trigger for None
         assert len(violations) == 0
 
@@ -276,17 +286,17 @@ class TestCheckPaintValue(TestCase):
             severity=ConstraintSeverity.WARN,
         )
         # 50 < 80 → TRUE (LT violation); 50 > 120 → FALSE (no GT violation)
-        violations = check_paint_value(self.workspace, self.column, 50.0)
+        violations = _violations(self.workspace, self.column, 50.0)
         assert len(violations) == 1
         assert violations[0].operator == ConstraintOperator.LT
 
         # 150 < 80 → FALSE (no LT violation); 150 > 120 → TRUE (GT violation)
-        violations = check_paint_value(self.workspace, self.column, 150.0)
+        violations = _violations(self.workspace, self.column, 150.0)
         assert len(violations) == 1
         assert violations[0].operator == ConstraintOperator.GT
 
         # 100 < 80 → FALSE (no LT violation); 100 > 120 → FALSE (no GT violation)
-        violations = check_paint_value(self.workspace, self.column, 100.0)
+        violations = _violations(self.workspace, self.column, 100.0)
         assert len(violations) == 0
 
 

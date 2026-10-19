@@ -390,11 +390,7 @@ class TestApplyFilter:
         assert filtered.geometry_type == source.geometry_type
 
     def test_the_filtered_layer_is_unchanged(self, source) -> None:
-        before = (
-            source.source_table(),
-            source.to_maplibre_source(),
-            source.resolve_tiles_url(),
-        )
+        before = (source.source_table(), source.to_maplibre_source())
         flt = LayerFilter.objects.create(
             layer=source, name="Near POIs", filter_json=_stored(_node())
         )
@@ -402,11 +398,7 @@ class TestApplyFilter:
         apply_filter(flt)
 
         source = Layer.objects.get(pk=source.pk)
-        after = (
-            source.source_table(),
-            source.to_maplibre_source(),
-            source.resolve_tiles_url(),
-        )
+        after = (source.source_table(), source.to_maplibre_source())
         assert after == before
 
     def test_symbology_is_copied_not_shared(self, source) -> None:

@@ -85,25 +85,3 @@ class TestIntersectionAcresFunction:
                 "'POLYGON((0 0, 10 0, 10 10, 0 10, 0 0))'::geometry)"
             )
             assert cur.fetchone()[0] == 0.0
-
-
-class TestClampFunction:
-    """Tests for public.clamp_non_negative()."""
-
-    def test_clamp_negative(self):
-        """Negative input should return 0.0."""
-        with connection.cursor() as cur:
-            cur.execute("SELECT public.clamp_non_negative(-5.0)")
-            assert cur.fetchone()[0] == 0.0
-
-    def test_clamp_positive(self):
-        """Positive input should return unchanged."""
-        with connection.cursor() as cur:
-            cur.execute("SELECT public.clamp_non_negative(3.5)")
-            assert cur.fetchone()[0] == 3.5
-
-    def test_clamp_zero(self):
-        """Zero input should return 0.0."""
-        with connection.cursor() as cur:
-            cur.execute("SELECT public.clamp_non_negative(0.0)")
-            assert cur.fetchone()[0] == 0.0

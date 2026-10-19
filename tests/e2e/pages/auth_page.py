@@ -62,10 +62,6 @@ class AuthPage(BasePage):
             raise AssertionError(msg)
         submit.click()
 
-    def is_on_login_page(self) -> bool:
-        """Check if we're on the login page."""
-        return "/accounts/login/" in self.page.url
-
     def get_error_text(self) -> str | None:
         """Get the error message text if present."""
         error = self.page.locator(".alert-error, .errorlist, .alert-danger")
@@ -77,7 +73,3 @@ class AuthPage(BasePage):
         """Click Sign Out in the navbar, then confirm on allauth's logout page."""
         self.page.get_by_role("link", name="Sign Out").click()
         self.page.get_by_role("button", name="Sign Out").click()
-
-    def is_logged_in(self) -> bool:
-        """Check if the Sign Out link is visible in the navbar."""
-        return self.page.get_by_role("link", name="Sign Out").is_visible()

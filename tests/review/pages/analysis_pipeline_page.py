@@ -25,10 +25,6 @@ class AnalysisPipelinePage(BasePage):
                 fields.append(text)
         return fields
 
-    def has_new_run_button(self) -> bool:
-        """Check if the 'New Run' button is present on the list page."""
-        return self.page.get_by_role("link", name="New Run").is_visible()
-
     def run_count(self) -> int:
         """Return the number of analysis runs listed."""
         return self.page.locator("table tbody tr").count()

@@ -16,7 +16,6 @@ import pytest
 from django.db import connection
 
 from brewgis.workspace.built_forms.matching import category_requirement_sql
-from brewgis.workspace.built_forms.matching import declared_sectors
 from brewgis.workspace.built_forms.matching import dominant_employment_sector
 from brewgis.workspace.built_forms.matching import eligibility_sql
 from brewgis.workspace.built_forms.matching import eligible_building_types
@@ -149,32 +148,6 @@ class TestCategoryConstraintSqlMatchesPythonRule:
             )
             expected = bool(require_same_category([candidate], parcel_category))
             assert admitted is expected, (parcel_category, form_category)
-
-
-@pytest.mark.models
-class TestSectorVocabulary:
-    """Reading a Building Type's declared sectors."""
-
-    def test_non_canonical_keys_are_dropped(self) -> None:
-        """A mix keyed by the old fixture's vocabulary matches no parcel column."""
-        legacy = _building_type(
-            name="Legacy", jobs_by_sector={"retail": 80, "food_service": 20}
-        )
-        assert declared_sectors(legacy) == {}
-
-    def test_canonical_keys_survive(self) -> None:
-        mixed = _building_type(
-            name="Mixed",
-            jobs_by_sector={"retail_services": 60.0, "restaurant": 40.0},
-        )
-        assert declared_sectors(mixed) == {"retail_services": 60.0, "restaurant": 40.0}
-
-    def test_limited_to_the_canonical_sectors(self) -> None:
-        partial = _building_type(
-            name="Partial",
-            jobs_by_sector={"office_services": 70.0, "warehousing": 30.0},
-        )
-        assert declared_sectors(partial) == {"office_services": 70.0}
 
 
 def _housing_library() -> list[BuildingType]:

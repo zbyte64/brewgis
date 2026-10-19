@@ -91,7 +91,6 @@ Key rules:
 |`tests/dbt_math/`|SQLMesh parity tests: Python reference oracles (with @deal contracts) driven against the real models through `run_model()`, plus structural contracts over the loaded project|
 |`tests/e2e/`|Playwright BDD e2e tests: feature files, page objects, session-scoped browser|
 |`tests/review/`|UX design review tests: feature files, screenshots, same POMs as e2e|
-|`tests/features/` + `tests/isolation_orchestration/`|Shared BDD isolation feature file consumed at two abstraction levels (raw SQL vs Django model)|
 |`_schema.yml`|Root-level column tests: not_null, unique, non_negative for base_canvas models|
 
 ## Development Commands
@@ -311,7 +310,7 @@ npm run test      # vitest
 - **Framework:** pytest 8.3 + pytest-django + pytest-sugar + Factory Boy + pytest-bdd + pytest-playwright
 - **Runner:** Django's DiscoverRunner. Config: `--ds=brewgis.config.settings --reuse-db --import-mode=importlib`, 300s timeout
 - **Coverage:** coverage with django_coverage_plugin, includes `brewgis/**`, excludes `*/migrations/*` and `*/tests/*`, **60% threshold**
-- **BDD:** Gherkin `.feature` files in `tests/e2e/features/`, `tests/review/features/`, `tests/features/` — shared across two abstraction levels
+- **BDD:** Gherkin `.feature` files in `tests/e2e/features/` and `tests/review/features/`
 - **Property-based:** Hypothesis for numerical invariants in `tests/workspace/` and `tests/dbt_math/`'s differential oracles; `tests/dbt_math/test_sql_parity.py` runs the real SQLMesh model against the Python reference it mirrors (no reference is tested against itself)
 - **@deal contracts:** Design-by-contract for function pre/post conditions. Used in test reference oracles and in production services (symbology classifiers, paint constraints, pipeline). Enable with `DEAL_ENABLED=1` (run by `make test-deal`).
 - **Factory Boy:** 11 factories in `tests/factories.py` (UserFactory, WorkspaceFactory, LayerFactory, SymbologyConfigFactory, StyleClassFactory, ScenarioFactory, AnalysisRunFactory, PaintedCanvasFactory, BuildingTypeFactory, PlaceTypeFactory, PlaceTypeBuildingTypeMixFactory)

@@ -8,8 +8,9 @@ import json
 import pytest
 from django.db import connection
 from django.test import TestCase
+from django.test import TransactionTestCase
 
-from brewgis.workspace.analysis.data_export import ensure_export_exists
+from brewgis.workspace.analysis.data_export import ensure_export_exists_isolated
 from brewgis.workspace.analysis.data_export import export_building_types
 from tests.factories import BuildingTypeFactory
 from tests.factories import WorkspaceFactory
@@ -116,57 +117,6 @@ class TestExportBuildingTypes(TestCase):
             ("Crop One", 0.0, "agricultural"),
             ("Urban One", 21.0, "urban"),
         ]
-
-    def test_ensure_export_rebuilds_a_table_missing_a_column(self) -> None:
-        """A populated table without the current column set is re-exported."""
-        BuildingTypeFactory.create_batch(2, workspace=self.workspace)
-        export_building_types(self.workspace, schema=TEST_SCHEMA, table=TEST_TABLE)
-        with connection.cursor() as cursor:
-            cursor.execute(
-                f'ALTER TABLE "{TEST_SCHEMA}"."{TEST_TABLE}" '
-                "DROP COLUMN land_development_category"
-            )
-
-        count = ensure_export_exists(
-            self.workspace, schema=TEST_SCHEMA, table=TEST_TABLE
-        )
-
-        assert count == 2
-        with connection.cursor() as cursor:
-            cursor.execute(
-                "SELECT column_name FROM information_schema.columns "
-                "WHERE table_schema = %s AND table_name = %s",
-                [TEST_SCHEMA, TEST_TABLE],
-            )
-            columns = {row[0] for row in cursor.fetchall()}
-        assert "land_development_category" in columns
-
-    def test_ensure_export_rebuilds_a_table_of_stale_rows(self) -> None:
-        """A built form edited since the last export is re-exported."""
-        building_type = BuildingTypeFactory(
-            workspace=self.workspace,
-            name="Crop One",
-            jobs_by_sector={"agriculture": 100.0},
-        )
-        export_building_types(self.workspace, schema=TEST_SCHEMA, table=TEST_TABLE)
-        building_type.jobs_by_sector = {"military": 100.0}
-        building_type.save(update_fields=["jobs_by_sector", "updated_at"])
-
-        assert (
-            ensure_export_exists(self.workspace, schema=TEST_SCHEMA, table=TEST_TABLE)
-            == 1
-        )
-
-        with connection.cursor() as cursor:
-            cursor.execute(f'SELECT jobs_by_sector FROM "{TEST_SCHEMA}"."{TEST_TABLE}"')
-            assert json.loads(cursor.fetchone()[0]) == {"military": 100.0}
-
-        # and a table already holding the current rows is left alone
-        export_building_types(self.workspace, schema=TEST_SCHEMA, table=TEST_TABLE)
-        assert (
-            ensure_export_exists(self.workspace, schema=TEST_SCHEMA, table=TEST_TABLE)
-            == 1
-        )
 
     def test_all_building_types_exported(self) -> None:
         """All BuildingType rows appear in the output table."""
@@ -302,8 +252,12 @@ class TestExportBuildingTypes(TestCase):
 
 
 @pytest.mark.integration
-class TestEnsureExportExists(TestCase):
-    """Tests for :func:`ensure_export_exists`."""
+class TestEnsureExportExists(TransactionTestCase):
+    """Tests for :func:`ensure_export_exists_isolated`, which every launch calls.
+
+    It reads and writes on its own connection, so the rows each test creates
+    have to be committed for it to see them.
+    """
 
     def setUp(self):
         self.workspace = WorkspaceFactory()
@@ -319,7 +273,7 @@ class TestEnsureExportExists(TestCase):
     def test_creates_table_on_first_call(self) -> None:
         """First call creates the table when it does not exist."""
         BuildingTypeFactory.create_batch(3, workspace=self.workspace)
-        count = ensure_export_exists(
+        count = ensure_export_exists_isolated(
             self.workspace, schema=TEST_SCHEMA, table=TEST_TABLE
         )
         assert count == 3
@@ -331,7 +285,7 @@ class TestEnsureExportExists(TestCase):
     def test_second_call_re_exports_when_rows_changed(self) -> None:
         """Building Types added since the last export reach the table."""
         BuildingTypeFactory.create_batch(2, workspace=self.workspace)
-        count1 = ensure_export_exists(
+        count1 = ensure_export_exists_isolated(
             self.workspace, schema=TEST_SCHEMA, table=TEST_TABLE
         )
         assert count1 == 2
@@ -339,7 +293,7 @@ class TestEnsureExportExists(TestCase):
         # the table is a cache of the workspace's Building Types, so rows added
         # since the last export have to be exported, not served around
         BuildingTypeFactory.create_batch(3, workspace=self.workspace)
-        count2 = ensure_export_exists(
+        count2 = ensure_export_exists_isolated(
             self.workspace, schema=TEST_SCHEMA, table=TEST_TABLE
         )
         assert count2 == 5
@@ -353,7 +307,7 @@ class TestEnsureExportExists(TestCase):
         BuildingTypeFactory.create_batch(3, workspace=self.workspace)
 
         # First export populates the table
-        count1 = ensure_export_exists(
+        count1 = ensure_export_exists_isolated(
             self.workspace, schema=TEST_SCHEMA, table=TEST_TABLE
         )
         assert count1 == 3
@@ -366,7 +320,7 @@ class TestEnsureExportExists(TestCase):
         BuildingTypeFactory.create_batch(2, workspace=self.workspace)
 
         # ensure_export_exists should re-export because the table is now empty
-        count2 = ensure_export_exists(
+        count2 = ensure_export_exists_isolated(
             self.workspace, schema=TEST_SCHEMA, table=TEST_TABLE
         )
         assert count2 == 5
@@ -377,7 +331,7 @@ class TestEnsureExportExists(TestCase):
 
     def test_empty_database_creates_empty_table(self) -> None:
         """No BuildingType records → table is created with 0 rows."""
-        count = ensure_export_exists(
+        count = ensure_export_exists_isolated(
             self.workspace, schema=TEST_SCHEMA, table=TEST_TABLE
         )
         assert count == 0
@@ -402,7 +356,9 @@ class TestEnsureExportExists(TestCase):
         table is a cache, so it is dropped and rebuilt from the source rows.
         """
         BuildingTypeFactory(workspace=self.workspace, name="Cell Check", du_type="mf5p")
-        ensure_export_exists(self.workspace, schema=TEST_SCHEMA, table=TEST_TABLE)
+        ensure_export_exists_isolated(
+            self.workspace, schema=TEST_SCHEMA, table=TEST_TABLE
+        )
 
         # Simulate a table exported before `du_type` was part of the contract.
         with connection.cursor() as cursor:
@@ -410,7 +366,7 @@ class TestEnsureExportExists(TestCase):
                 f'ALTER TABLE "{TEST_SCHEMA}"."{TEST_TABLE}" DROP COLUMN du_type'
             )
 
-        count = ensure_export_exists(
+        count = ensure_export_exists_isolated(
             self.workspace, schema=TEST_SCHEMA, table=TEST_TABLE
         )
         assert count == 1
@@ -421,3 +377,58 @@ class TestEnsureExportExists(TestCase):
                 ["Cell Check"],
             )
             assert cursor.fetchone()[0] == "mf5p"
+
+    def test_ensure_export_rebuilds_a_table_missing_a_column(self) -> None:
+        """A populated table without the current column set is re-exported."""
+        BuildingTypeFactory.create_batch(2, workspace=self.workspace)
+        export_building_types(self.workspace, schema=TEST_SCHEMA, table=TEST_TABLE)
+        with connection.cursor() as cursor:
+            cursor.execute(
+                f'ALTER TABLE "{TEST_SCHEMA}"."{TEST_TABLE}" '
+                "DROP COLUMN land_development_category"
+            )
+
+        count = ensure_export_exists_isolated(
+            self.workspace, schema=TEST_SCHEMA, table=TEST_TABLE
+        )
+
+        assert count == 2
+        with connection.cursor() as cursor:
+            cursor.execute(
+                "SELECT column_name FROM information_schema.columns "
+                "WHERE table_schema = %s AND table_name = %s",
+                [TEST_SCHEMA, TEST_TABLE],
+            )
+            columns = {row[0] for row in cursor.fetchall()}
+        assert "land_development_category" in columns
+
+    def test_ensure_export_rebuilds_a_table_of_stale_rows(self) -> None:
+        """A built form edited since the last export is re-exported."""
+        building_type = BuildingTypeFactory(
+            workspace=self.workspace,
+            name="Crop One",
+            jobs_by_sector={"agriculture": 100.0},
+        )
+        export_building_types(self.workspace, schema=TEST_SCHEMA, table=TEST_TABLE)
+        building_type.jobs_by_sector = {"military": 100.0}
+        building_type.save(update_fields=["jobs_by_sector", "updated_at"])
+
+        assert (
+            ensure_export_exists_isolated(
+                self.workspace, schema=TEST_SCHEMA, table=TEST_TABLE
+            )
+            == 1
+        )
+
+        with connection.cursor() as cursor:
+            cursor.execute(f'SELECT jobs_by_sector FROM "{TEST_SCHEMA}"."{TEST_TABLE}"')
+            assert json.loads(cursor.fetchone()[0]) == {"military": 100.0}
+
+        # and a table already holding the current rows is left alone
+        export_building_types(self.workspace, schema=TEST_SCHEMA, table=TEST_TABLE)
+        assert (
+            ensure_export_exists_isolated(
+                self.workspace, schema=TEST_SCHEMA, table=TEST_TABLE
+            )
+            == 1
+        )

@@ -40,13 +40,6 @@ class TestMcpServerRegistration:
 
         assert callable(run_sse)
 
-    def test_auth_stub(self) -> None:
-        """Auth stub returns None (Phase 5 not implemented)."""
-        from brewgis.workspace.mcp.auth import resolve_user
-
-        assert resolve_user() is None
-        assert resolve_user("some-token") is None
-
     def test_management_command_imports(self) -> None:
         """Management command can be imported."""
         from brewgis.workspace.management.commands.run_mcp import Command

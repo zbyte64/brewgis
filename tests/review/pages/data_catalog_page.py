@@ -53,36 +53,7 @@ class DataCatalogPage(BasePage):
         """Return the number of rows in the data catalog table."""
         return self._catalog_table().locator("tr").count()
 
-    def source_status(self, source_name: str) -> str:
-        """Return status badge text for a given source name."""
-        row = self._catalog_table().locator(f"tr:has(td:text-is('{source_name}'))")
-        if row.count() == 0:
-            return ""
-        cells = row.locator("td")
-        if cells.count() < 3:
-            return ""
-        return cells.nth(2).inner_text().strip()
-
-    def catalog_card_is_present(self) -> bool:
-        """Check that the Data Catalog card header is visible."""
-        return self.page.locator("h5:has-text('Data Catalog')").is_visible()
-
-    def has_quick_action_bar(self) -> bool:
-        """Check the quick-action button bar is present on the workspace detail page."""
-        return self.page.locator(".d-flex.gap-2.mb-4").is_visible()
-
     def quick_action_labels(self) -> list[str]:
         """Return the visible quick-action button labels."""
         bar = self.page.locator(".d-flex.gap-2.mb-4")
         return [btn.inner_text().strip() for btn in bar.locator("a, button").all()]
-
-    def get_column_headers(self) -> list[str]:
-        """Return the column header texts from the first data catalog table."""
-        headers = self.page.locator(
-            "div.card:has(h5:has-text('Data Catalog')) table thead tr th"
-        )
-        return [h.inner_text().strip() for h in headers.all()]
-
-    def has_source_rows(self) -> bool:
-        """Check if the catalog has any source rows."""
-        return self.source_count() > 0

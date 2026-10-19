@@ -55,13 +55,6 @@ class AnalysisModulesPage(BasePage):
 
         return result
 
-    def module_status(self, module_name: str) -> str:
-        """Return the status badge text for the given module."""
-        data = self.get_module_data(module_name)
-        if data is None:
-            return ""
-        return str(data.get("status", ""))
-
     def has_empty_message(self) -> bool:
         """Check if the modules panel shows 'No analysis modules available'."""
         return self.page.locator("text=No analysis modules available").is_visible()

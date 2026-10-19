@@ -48,19 +48,6 @@ class BuildingTypesPage(BuiltFormsPanelPage):
             state="visible", timeout=15000
         )
 
-    def has_form_field(self, field_label: str) -> bool:
-        """Check if a form field with the given label is visible."""
-        return self.page.get_by_label(field_label, exact=False).is_visible()
-
-    def row_names(self) -> list[str]:
-        """Names of the building types listed in the panel."""
-        return [
-            el.inner_text().strip()
-            for el in self.page.locator(
-                f"{self.BUILDING_ROWS} button:first-child"
-            ).all()
-        ]
-
 
 class PlaceTypesPage(BuiltFormsPanelPage):
     """Page object for the panel's place-type list and its drawer form."""
@@ -71,14 +58,3 @@ class PlaceTypesPage(BuiltFormsPanelPage):
         self.page.locator("#right-panel-content #form-content").wait_for(
             state="visible", timeout=15000
         )
-
-    def has_form_field(self, field_label: str) -> bool:
-        """Check if a form field with the given label is visible."""
-        return self.page.get_by_label(field_label, exact=False).is_visible()
-
-    def row_names(self) -> list[str]:
-        """Names of the place types listed in the panel."""
-        return [
-            el.inner_text().strip()
-            for el in self.page.locator(f"{self.PLACE_ROWS} button:first-child").all()
-        ]

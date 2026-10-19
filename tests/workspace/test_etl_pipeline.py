@@ -139,14 +139,6 @@ class TestETLPipeline:
             null_count = cursor.fetchone()[0]
             assert null_count == 0, f"{null_count} rows have NULLs in required columns"
 
-    def _query_sum(self, column: str) -> float:
-        """Return the column sum from the base canvas."""
-        with connection.cursor() as cursor:
-            cursor.execute(
-                f'SELECT COALESCE(SUM("{column}"), 0) FROM public.base_canvas'
-            )
-            return float(cursor.fetchone()[0])
-
     # ── Tests ─────────────────────────────────────────────────────────
 
     def test_synthetic_50_pipeline(self) -> None:

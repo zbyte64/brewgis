@@ -15,7 +15,6 @@ from brewgis.workspace.palettes import get_diverging_names
 from brewgis.workspace.palettes import get_palette
 from brewgis.workspace.palettes import get_qualitative_names
 from brewgis.workspace.palettes import get_sequential_names
-from brewgis.workspace.palettes import interpolate_color
 from brewgis.workspace.palettes import preview_swatches
 from brewgis.workspace.palettes import sample_palette
 
@@ -92,37 +91,6 @@ class TestPaletteRegistry:
         (reads as a hole) colors survive into the palette."""
         for stop in get_palette("glasbey").color_stops:
             assert 0.02 <= _relative_luminance(stop.color.hex) <= 0.75
-
-
-class TestInterpolateColor:
-    def test_single_stop_index(self) -> None:
-        colormap = get_palette("viridis")
-        first = colormap.color_stops[0].color.hex.lower()
-        last = colormap.color_stops[-1].color.hex.lower()
-        assert interpolate_color(colormap, 0, 0, 1) == first
-        assert interpolate_color(colormap, 1, 0, 1) == last
-
-    def test_degenerate_range_returns_midpoint(self) -> None:
-        """When min_val == max_val, return the colormap's midpoint color."""
-        colormap = get_palette("rdylbu")  # 11 stops, odd -> exact middle
-        mid_stop = colormap.color_stops[len(colormap.color_stops) // 2]
-        result = interpolate_color(colormap, 42.0, 42.0, 42.0)
-        assert result == mid_stop.color.hex.lower()
-
-    def test_clamp_low(self) -> None:
-        colormap = get_palette("blues")
-        expected = sample_palette(colormap, 1)[0]
-        assert interpolate_color(colormap, -100, 0, 100) == expected
-
-    def test_clamp_high(self) -> None:
-        colormap = get_palette("blues")
-        expected = colormap.color_stops[-1].color.hex.lower()
-        assert interpolate_color(colormap, 200, 0, 100) == expected
-
-    def test_qualitative_snaps_to_nearest_class(self) -> None:
-        colormap = get_palette("material_set1")
-        result = interpolate_color(colormap, 0.05, 0, 1)
-        assert result == colormap.color_stops[0].color.hex.lower()
 
 
 class TestSamplePalette:

@@ -21,10 +21,6 @@ class UploadPage(BasePage):
         """Navigate to the upload page."""
         self.navigate(self.base_url + "/upload/")
 
-    def has_file_field(self) -> bool:
-        """Check if the file upload field is present."""
-        return self.page.locator("input[type=file]").is_visible()
-
     def submit_empty(self) -> None:
         """Submit the form without any file selected.
 
@@ -34,8 +30,3 @@ class UploadPage(BasePage):
         """
         self.page.evaluate("document.querySelector('form').noValidate = true")
         self.page.click("button[type=submit]")
-
-    def get_validation_errors(self) -> list[str]:
-        """Get validation error messages."""
-        errors = self.page.locator(".invalid-feedback, .alert-danger, .errorlist")
-        return [e.text_content() or "" for e in errors.all() if e.is_visible()]
